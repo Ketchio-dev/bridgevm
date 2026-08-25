@@ -87,10 +87,11 @@ on current macOS, so the Settings route is the real one.
 - A Windows 11 ARM64 ISO. The app guides you through Microsoft's official
   download; nothing is fetched from third-party mirrors.
 - About 64 GiB of free disk for the guest image.
-- The experimental accelerated-graphics driver is test-signed; enabling it
-  requires Windows test-signing mode, which Windows may refuse while Secure
-  Boot policy blocks the change. BridgeVM reports that conflict explicitly
-  before anything is weakened; see
+- Guided 3D driver injection is currently unavailable. Test-signed packages
+  conflict with the Microsoft Secure Boot policy provisioned by the app, and a
+  package-local kernel-policy report is not signed provenance. BridgeVM rejects
+  both before creating install media or mutating Windows. Turn off 3D injection
+  to install Windows; see
   [`scripts/win-assets/DRIVERS-README.md`](../scripts/win-assets/DRIVERS-README.md).
 
 ## Updating, rolling back, uninstalling

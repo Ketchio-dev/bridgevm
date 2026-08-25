@@ -33,13 +33,13 @@ struct HvfWindowsDriverPreflight: Equatable {
             return .init(blocker: "kernel-policy-unverifiable", signingMode: mode,
                          testSigningRequired: required)
         }
-        return .init(blocker: nil, signingMode: mode, testSigningRequired: required)
+        return .init(blocker: "kernel-policy-provenance-unverifiable", signingMode: mode, testSigningRequired: required)
     }
 
     var userMessage: String? {
         blocker.map {
             "3D 드라이버 사전 점검 차단 [\($0)]: 이 설치는 Microsoft Secure Boot를 시드합니다. " +
-            "커널 정책 서명이 검증된 패키지를 선택하거나 3D 주입을 끄고 다시 생성하세요."
+            "서명 provenance 검증기는 아직 구현되지 않았습니다. 3D 주입을 끄고 다시 생성하세요."
         }
     }
 }

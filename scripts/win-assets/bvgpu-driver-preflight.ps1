@@ -13,12 +13,11 @@ function Resolve-BvGpuPreflight {
         [int]$ProblemCode)
     $blocker = "none"
     if ($SigningMode -notin @("test", "kernel-policy")) { $blocker = "signing-mode-unverifiable" }
+    elseif ($SigningMode -eq "kernel-policy") { $blocker = "kernel-policy-provenance-unverifiable" }
     elseif ($SecureBoot -eq "unknown") { $blocker = "secure-boot-state-unavailable" }
+    elseif ($TestSigningRequired -and $SecureBoot -eq "enabled") { $blocker = "test-signing-blocked-by-secure-boot" }
     elseif ($TestSigning -eq "unknown") { $blocker = "test-signing-state-unavailable" }
     elseif ($TestSigningRequired -and $Certificate -ne "valid") { $blocker = "test-certificate-unverifiable" }
-    elseif ($TestSigningRequired -and $TestSigning -ne "enabled" -and $SecureBoot -eq "enabled") {
-        $blocker = "test-signing-blocked-by-secure-boot"
-    }
     [pscustomobject]@{ Result = $(if ($blocker -eq "none") { "ready" } else { "blocked" })
         Blocker = $blocker; SigningMode = $SigningMode; TestSigningRequired = $TestSigningRequired
         SecureBoot = $SecureBoot; TestSigning = $TestSigning; Certificate = $Certificate
@@ -35,18 +34,19 @@ if ($SelfTest) {
     $base = @{ SigningMode="test"; TestSigningRequired=$true; SecureBoot="disabled"
         TestSigning="disabled"; Certificate="valid"; PnpStatus="Error"; ProblemCode=52 }
     Assert-Case "none" $base
-    $case = $base.Clone(); $case.SecureBoot="enabled"
-    Assert-Case "test-signing-blocked-by-secure-boot" $case
+    $case = $base.Clone(); $case.SecureBoot="enabled"; Assert-Case "test-signing-blocked-by-secure-boot" $case
+    $case = $base.Clone(); $case.SecureBoot="enabled"; $case.TestSigning="enabled"; Assert-Case "test-signing-blocked-by-secure-boot" $case
     $case = $base.Clone(); $case.Certificate="missing"
     Assert-Case "test-certificate-unverifiable" $case
     $case = $base.Clone(); $case.SecureBoot="unknown"
     Assert-Case "secure-boot-state-unavailable" $case
     $case = $base.Clone(); $case.SigningMode="unknown"
     Assert-Case "signing-mode-unverifiable" $case
+    $case = $base.Clone(); $case.SigningMode="kernel-policy"; $case.TestSigningRequired=$false
+    Assert-Case "kernel-policy-provenance-unverifiable" $case
     $case = $base.Clone(); $case.TestSigning="unknown"
     Assert-Case "test-signing-state-unavailable" $case
-    Write-Output "PASS: bvgpu preflight self-test (6 cases)"
-    exit 0
+    Write-Output "PASS: bvgpu preflight self-test (8 cases)"; exit 0
 }
 
 $reportPath = Join-Path $PackageDirectory "bridgevm-finalization-report.txt"

@@ -31,27 +31,26 @@ otherwise fail with a missing-file error.
 
 ## Experimental 3D display driver
 
-BridgeVM supports an experimental virtio-gpu 3D driver lifecycle. Two signing
-shapes are possible:
+BridgeVM has an experimental virtio-gpu 3D driver lifecycle. Two package
+shapes exist, but neither is currently accepted by the shipping guided flow:
 
-1. a package already trusted by Windows under its normal production signing
-   policy; or
-2. a development/test-signed package used by testers of the experimental
-   graphics path.
+1. kernel-policy packages require a signed provenance attestation verifier that
+   is not implemented; a package-local report is not trust evidence; and
+2. development/test-signed packages are only for SB-off developer guests.
 
 For the second case, the injector can stage a development-only activation.
 The shipping guided installer seeds Microsoft Secure Boot and therefore refuses
-a test-signed or unverifiable package **before it starts any install mutation**;
-the fallback is to disable 3D injection. In developer-prepared SB-off guests,
+test-signed packages and unsigned kernel-policy self-claims **before it starts
+any install mutation**; the fallback is to disable 3D injection. In developer-prepared SB-off guests,
 `bvinject.cmd` plants the first-boot handoff and `bvgpu-firstboot.cmd` runs a
 read-only signing/Secure Boot/BCD/PnP preflight before its first certificate,
 BCD or DriverStore mutation.
 
 The four-stage activation is intentional:
 
-1. prove the package/signing/Secure Boot/BCD/PnP state is compatible; only then
-   clean superseded certificates, enable BCD test-signing, trust the current
-   package certificate, and reboot;
+1. in an SB-off developer guest, prove the test package/signing/Secure
+   Boot/BCD/PnP state is compatible; only then clean superseded certificates,
+   enable BCD test-signing, trust the current package certificate, and reboot;
 2. remove superseded DriverStore generations and reboot;
 3. prove the store is clean, install exactly one package, and reboot;
 4. verify the live binding and package identity.

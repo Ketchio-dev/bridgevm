@@ -19,7 +19,7 @@ final class HvfWindowsDriverPreflightTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: package.path).sorted(), before)
     }
 
-    func testOnlyFullyVerifiedKernelPolicyPackagePasses() throws {
+    func testUnsignedKernelPolicyReportCannotAuthorizeInjection() throws {
         let package = try makePackage()
         try Data().write(to: package.appendingPathComponent("viogpu3d.inf"))
         try Data().write(to: package.appendingPathComponent("viogpu3d.sys"))
@@ -30,8 +30,8 @@ final class HvfWindowsDriverPreflightTests: XCTestCase {
         sys_kernel_policy_verified=true
         cat_kernel_policy_verified=true
         """, in: package)
-        XCTAssertNil(HvfWindowsDriverPreflight.inspect(packageDirectory: package.path).blocker)
-        XCTAssertNil(HvfWindowsInstallPlan.driverPackageError(package.path))
+        let inspection = HvfWindowsDriverPreflight.inspect(packageDirectory: package.path)
+        XCTAssertEqual(inspection.blocker, "kernel-policy-provenance-unverifiable"); XCTAssertNotNil(HvfWindowsInstallPlan.driverPackageError(package.path))
         try report("""
         finalization_complete=true
         signing_mode=kernel-policy

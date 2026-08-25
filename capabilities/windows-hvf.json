@@ -113,13 +113,14 @@
     {
       "id": "A9",
       "title": "In-app install",
-      "state": "PROVEN",
+      "state": "OPEN",
       "release_blocking": true,
-      "statement": "ISO selection through install, driver injection and a 3D desktop is reachable from the UI.",
-      "measured": "Fresh 64GiB Windows built bundle-only, OOBE completed, viogpu3d 120.41 stage4 reached, WDDM Status OK, create3d=514, submit3d=821, flush=237, final 1280x800 desktop.",
+      "statement": "ISO selection through Windows installation is reachable from the UI; 3D driver injection remains unavailable until BridgeVM verifies signed kernel-policy package provenance rather than trusting a package-local report.",
+      "measured": "Fresh 64GiB Windows built bundle-only, OOBE completed, viogpu3d 120.41 stage4 reached, WDDM Status OK, create3d=514, submit3d=821, flush=237, final 1280x800 desktop. Retraction 2026-08-25: the earlier 120.41 run proves a historical developer package reached a 3D desktop, but the guided host preflight trusted unsigned booleans in a package-local finalization report and guest stage1 still mutated TESTSIGNING/trust state. The current fail-closed product rejects test-signed, missing, invalid, unverifiable and unsigned kernel-policy provenance before install mutation; 3D-off Windows install remains the fallback. A9 is OPEN until a signed kernel-policy attestation verifier and clean-machine flow prove the full path.",
       "evidence_paths": [
         "docs/windows-arm/evidence/app-install-to-3d-desktop-20260730.md"
-      ]
+      ],
+      "known_defect": "Guided 3D driver injection is fail-closed: test-signed packages conflict with the Microsoft Secure Boot policy, and kernel-policy claims lack a signed provenance verifier. Disable 3D injection to install Windows."
     },
     {
       "id": "A10",

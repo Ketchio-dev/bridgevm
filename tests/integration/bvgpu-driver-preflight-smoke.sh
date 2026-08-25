@@ -6,7 +6,7 @@ FIRSTBOOT=scripts/win-assets/bvgpu-firstboot.cmd
 BUILDER=scripts/build-hvf-windows-driver-injector.sh; INJECTOR=scripts/win-assets/bvinject.cmd
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pwsh -NoProfile -File "$PREFLIGHT" -SelfTest \
-  | grep -q '^PASS: bvgpu preflight self-test (6 cases)$' || fail 'preflight self-test'
+  | grep -q '^PASS: bvgpu preflight self-test (8 cases)$' || fail 'preflight self-test'
 for mutation in 'bcdedit /set' 'certutil ' 'pnputil ' 'Remove-Item' 'dism '; do
   grep -Fqi "$mutation" "$PREFLIGHT" && fail "preflight mutates with $mutation"
 done
@@ -23,6 +23,6 @@ grep -Fq 'bvgpu-clean-driver-state.ps1 bvgpu-driver-preflight.ps1' "$BUILDER" \
   || fail 'builder does not stage preflight'
 grep -Fq 'copy /y %DRV%\..\bvgpu-driver-preflight.ps1' "$INJECTOR" \
   || fail 'injector does not copy preflight'
-grep -Fq 'driver_preflight_blocker=' scripts/run-hvf-windows-installed-boot-runner.sh \
-  || fail 'runner does not surface exact preflight blocker'
+grep -Fq 'driver_preflight_blocker=' scripts/run-hvf-windows-installed-boot-runner.sh && grep -Fq 'kernel-policy-provenance-unverifiable' "$PREFLIGHT" \
+  || fail 'exact fail-closed blockers are not surfaced'
 echo 'PASS: driver signing/Secure Boot preflight is read-only and first'
