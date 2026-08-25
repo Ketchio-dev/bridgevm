@@ -6,12 +6,12 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --out) OUT="$2"; shift 2;; --job-id) JOB_ID="$2"; shift 2;;
   *) echo "unknown audio-tier option $1" >&2; exit 2;; esac; done
 [[ -n "$OUT" ]] || { echo 'audio tier needs --out' >&2; exit 2; }; mkdir -p "$OUT/runs"
-TARGET=${TARGET:-$HOME/BridgeVM/work/net-live-20260724.raw}
-VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}; N=10
-for input in "$TARGET" "$VARS"; do head -c1 "$input" >/dev/null 2>&1 \
-  || { echo "cannot read audio source: $input" >&2; exit 1; }; done
-seal() { openssl dgst -sha256 -r "$1" | cut -d' ' -f1; }
-image_hash=$(seal "$TARGET"); vars_hash=$(seal "$VARS"); passed=0; status=0
+TARGET=${TARGET:-$HOME/BridgeVM/work/net-live-20260724.raw}; VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}; N=10
+source_hashes=$(python3 "$REPO/scripts/live-gates/seal-immutable-audio-sources.py" "$TARGET" "$VARS")
+IFS=$'\t' read -r image_hash vars_hash <<< "$source_hashes"
+[[ $image_hash =~ ^[0-9a-f]{64}$ && $vars_hash =~ ^[0-9a-f]{64}$ ]] \
+  || { echo 'audio sources did not seal' >&2; exit 1; }
+passed=0; status=0
 printf '{"tier":"t9-audio-teardown","sample_count":0,"outcome":"failed","pass":false}\n' >"$OUT/receipt.json"
 for run in $(seq 1 "$N"); do
   run_out="$OUT/runs/run$run"; mkdir -p "$run_out"
