@@ -7,6 +7,7 @@ use bridgevm_config::VmManifest;
 use bridgevm_config::VmMode;
 use bridgevm_network::NetworkMode;
 use bridgevm_network::NetworkPlanError;
+use std::os::unix::net::UnixListener;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
@@ -104,9 +105,9 @@ pub(super) fn temp_socket_path() -> PathBuf {
 /// into a timeout with a different message.
 pub(super) const TEST_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub(super) fn connect_for_test(socket_path: &Path) -> QmpClient {
-    // A rare EINVAL (~3 in 60 runs, cause unknown) is retried once, not hidden.
-    QmpClient::connect_with_timeout(socket_path, TEST_READ_TIMEOUT)
-        .or_else(|_| QmpClient::connect_with_timeout(socket_path, TEST_READ_TIMEOUT))
-        .unwrap_or_else(|error| panic!("connect to {} failed: {error}", socket_path.display()))
+pub(super) fn bound_client_for_test(socket_path: &Path) -> (UnixListener, QmpClient) {
+    let listener = UnixListener::bind(socket_path).unwrap();
+    let client = QmpClient::connect_with_timeout(socket_path, TEST_READ_TIMEOUT)
+        .unwrap_or_else(|error| panic!("connect to {} failed: {error}", socket_path.display()));
+    (listener, client)
 }

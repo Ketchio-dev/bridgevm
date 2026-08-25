@@ -782,7 +782,7 @@ crates/bridgevm-qemu/src/snapshot_jobs.rs	84	0
 crates/bridgevm-qemu/src/tests_split/helpers.rs	98	0
 crates/bridgevm-qemu/src/tests_split/mod.rs	0	0
 crates/bridgevm-qemu/src/tests_split/part_1.rs	556	0
-crates/bridgevm-qemu/src/tests_split/part_2.rs	515	0
+crates/bridgevm-qemu/src/tests_split/part_2.rs	508	0
 crates/bridgevm-qemu/src/tests_split/part_3.rs	94	0
 crates/bridgevm-qemu/src/vnc_display.rs	64	0
 crates/bridgevm-resource-manager/src/lib.rs	325	0

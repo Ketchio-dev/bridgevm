@@ -203,7 +203,7 @@ fn job_status_terminal_classification() {
 #[test]
 fn wait_for_job_returns_when_job_concludes() {
     let socket_path = temp_socket_path();
-    let listener = UnixListener::bind(&socket_path).unwrap();
+    let (listener, mut client) = bound_client_for_test(&socket_path);
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         stream
@@ -238,7 +238,6 @@ fn wait_for_job_returns_when_job_concludes() {
         stream.write_all(b"\n").unwrap();
     });
 
-    let mut client = connect_for_test(&socket_path);
     client.negotiate().unwrap();
     wait_for_job(
         &mut client,
@@ -254,7 +253,7 @@ fn wait_for_job_returns_when_job_concludes() {
 #[test]
 fn wait_for_job_surfaces_job_error() {
     let socket_path = temp_socket_path();
-    let listener = UnixListener::bind(&socket_path).unwrap();
+    let (listener, mut client) = bound_client_for_test(&socket_path);
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         stream
@@ -280,7 +279,6 @@ fn wait_for_job_surfaces_job_error() {
         stream.write_all(b"\n").unwrap();
     });
 
-    let mut client = connect_for_test(&socket_path);
     client.negotiate().unwrap();
     let error = wait_for_job(
         &mut client,
@@ -415,7 +413,7 @@ fn qmp_stop_and_cont_round_trip_over_fake_socket() {
 #[test]
 fn qmp_client_can_read_terminal_event() {
     let socket_path = temp_socket_path();
-    let listener = UnixListener::bind(&socket_path).unwrap();
+    let (listener, mut client) = bound_client_for_test(&socket_path);
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         stream
@@ -428,7 +426,6 @@ fn qmp_client_can_read_terminal_event() {
         stream.write_all(b"\n").unwrap();
     });
 
-    let mut client = connect_for_test(&socket_path);
     let event = client.read_event().unwrap();
 
     assert_eq!(event.name, "SHUTDOWN");
@@ -442,14 +439,13 @@ fn qmp_client_can_read_terminal_event() {
 #[test]
 fn qmp_client_rejects_oversized_envelope() {
     let socket_path = temp_socket_path();
-    let listener = UnixListener::bind(&socket_path).unwrap();
+    let (listener, mut client) = bound_client_for_test(&socket_path);
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         let oversized = vec![b'x'; MAX_QMP_ENVELOPE_BYTES as usize + 1];
         let _ = stream.write_all(&oversized);
     });
 
-    let mut client = connect_for_test(&socket_path);
     let error = client.read_envelope().unwrap_err();
     assert!(error.to_string().contains("exceeded 1048576 bytes"));
 
@@ -460,13 +456,12 @@ fn qmp_client_rejects_oversized_envelope() {
 #[test]
 fn qmp_client_rejects_incomplete_envelope() {
     let socket_path = temp_socket_path();
-    let listener = UnixListener::bind(&socket_path).unwrap();
+    let (listener, mut client) = bound_client_for_test(&socket_path);
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         stream.write_all(br#"{"event":"SHUTDOWN"}"#).unwrap();
     });
 
-    let mut client = connect_for_test(&socket_path);
     let error = client.read_envelope().unwrap_err();
     assert!(error.to_string().contains("incomplete envelope"));
 
@@ -477,7 +472,7 @@ fn qmp_client_rejects_incomplete_envelope() {
 #[test]
 fn qmp_execute_rejects_event_flood_before_command_return() {
     let socket_path = temp_socket_path();
-    let listener = UnixListener::bind(&socket_path).unwrap();
+    let (listener, mut client) = bound_client_for_test(&socket_path);
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         stream.write_all(b"{\"QMP\":{}}\n").unwrap();
@@ -497,7 +492,6 @@ fn qmp_execute_rejects_event_flood_before_command_return() {
         }
     });
 
-    let mut client = connect_for_test(&socket_path);
     client.negotiate().unwrap();
     let error = client.execute(QmpCommand::query_status()).unwrap_err();
     assert!(error
@@ -511,7 +505,7 @@ fn qmp_execute_rejects_event_flood_before_command_return() {
 #[test]
 fn qmp_event_wait_rejects_non_event_flood() {
     let socket_path = temp_socket_path();
-    let listener = UnixListener::bind(&socket_path).unwrap();
+    let (listener, mut client) = bound_client_for_test(&socket_path);
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         for _ in 0..MAX_QMP_SKIPPED_ENVELOPES {
@@ -521,7 +515,6 @@ fn qmp_event_wait_rejects_non_event_flood() {
         }
     });
 
-    let mut client = connect_for_test(&socket_path);
     let error = client.read_event().unwrap_err();
     assert!(error
         .to_string()
