@@ -918,6 +918,7 @@ scripts/live-gates/write-a3-title-receipt.py	179	0
 scripts/live-gates/write-missing-receipt.sh	19	0
 scripts/live-gates/write-windows-closure-receipt.py	165	0
 scripts/win-assets/bv-windows-closure-proof.ps1	148	0
+scripts/win-assets/bvgpu-driver-preflight.ps1	79	0
 scripts/windows-1.0-closure-interact.sh	185	0
 scripts/win-assets/bvgpu-d3d11-identity.ps1	24	0
 scripts/harvest-hvf-windows-postmortem.sh	118	0
@@ -1048,7 +1049,8 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerEventSurface.swift	119	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift	380	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	50	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift	407	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	581	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	580	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsDriverPreflight.swift	45	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallView.swift	141	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/TailOffsetReader.swift	47	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMIdentityLifecycle.swift	451	0
@@ -1085,7 +1087,8 @@ apps/macos/Tests/BridgeVMControlTests/HvfEngineTests.swift	1612	0
 apps/macos/Tests/BridgeVMControlTests/QemuCompatToolLookupTests.swift	55
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsBootSeedTests.swift	270	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsImportTests.swift	224	0
-apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallTests.swift	402	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallTests.swift	401	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsDriverPreflightTests.swift	57	0
 apps/macos/Tests/BridgeVMControlTests/LibraryModelPersistenceTests.swift	112	0
 apps/macos/Tests/BridgeVMControlTests/VMConfigTests.swift	555	0
 apps/macos/Tests/BridgeVMControlTests/VMCreationSafetyTests.swift	190	0
@@ -1107,7 +1110,7 @@ packaging/macos/write-artifact-manifest.sh	300	0
 scripts/build-guest-agent-linux.sh	56	0
 scripts/build-hvf-edk2-secure-firmware.sh	184	0
 scripts/build-hvf-windows-d3d10-smoke.sh	39	0
-scripts/build-hvf-windows-driver-injector.sh	416	0
+scripts/build-hvf-windows-driver-injector.sh	415	0
 scripts/build-hvf-windows-scripted-source.sh	91	0
 scripts/build-hvf-windows-viogpu3d-injector.sh	94	0
 scripts/build-linux-tools.sh	27	0
@@ -1180,6 +1183,7 @@ tests/integration/application-consistent-fsfreeze-backend-smoke.sh	253	0
 tests/integration/application-consistent-snapshot-cli-smoke.sh	174	0
 tests/integration/application-consistent-snapshot-live-opt-in-smoke.sh	355	0
 tests/integration/boot-media-download-cli-smoke.sh	215	0
+tests/integration/bvgpu-driver-preflight-smoke.sh	28	0
 tests/integration/boot-media-download-fake-curl-smoke.sh	178	0
 tests/integration/clone-cli-smoke.sh	264	0
 tests/integration/delete-cli-smoke.sh	181	0
@@ -1282,7 +1286,7 @@ tests/integration/hvf-windows-installed-boot-p3-readiness-smoke.sh	173	0
 tests/integration/hvf-windows-installed-boot-vtpm-lifecycle-smoke.sh	56	0
 tests/integration/hvf-windows-p3-gpu-readiness-smoke.sh	229	0
 tests/integration/hvf-windows-viogpu3d-build-kit-smoke.sh	162	0
-tests/integration/hvf-windows-viogpu3d-firstboot-asset-smoke.sh	322	0
+tests/integration/hvf-windows-viogpu3d-firstboot-asset-smoke.sh	319	0
 tests/integration/hvf-windows-viogpu3d-injector-wrapper-smoke.sh	143	0
 tests/integration/hvf-windows-viogpu3d-package-check-smoke.sh	1018	0
 tests/integration/hvf-windows-viogpu3d-package-inventory-smoke.sh	189	0

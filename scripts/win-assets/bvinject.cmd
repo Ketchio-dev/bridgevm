@@ -230,6 +230,10 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
     echo BVINJECT ERROR: driver-state cleanup missing
     goto :end
   )
+  if not exist %DRV%\..\bvgpu-driver-preflight.ps1 (
+    echo BVINJECT ERROR: driver preflight missing
+    goto :end
+  )
   if not exist %WIN%\BridgeVM\viogpu3d\ mkdir %WIN%\BridgeVM\viogpu3d
   rem Reinjection means a new package/activation attempt. Never let markers
   rem from an older package skip the trust or bind stages.
@@ -257,6 +261,7 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   )
   copy /y %DRV%\..\bvgpu-firstboot.cmd %WIN%\BridgeVM\bvgpu-firstboot.cmd >nul
   copy /y %DRV%\..\bvgpu-clean-driver-state.ps1 %WIN%\BridgeVM\bvgpu-clean-driver-state.ps1 >nul
+  copy /y %DRV%\..\bvgpu-driver-preflight.ps1 %WIN%\BridgeVM\bvgpu-driver-preflight.ps1 >nul
   if exist %DRV%\..\bvgpu-real-title-gate.ps1 copy /y %DRV%\..\bvgpu-real-title-gate.ps1 %WIN%\BridgeVM\bvgpu-real-title-gate.ps1 >nul
   if exist %DRV%\..\bvgpu-title-gate.ps1 copy /y %DRV%\..\bvgpu-title-gate.ps1 %WIN%\BridgeVM\bvgpu-title-gate.ps1 >nul
   copy /y %DRV%\..\bvgpu-diagnostics-run.cmd %WIN%\BridgeVM\bvgpu-diagnostics-run.cmd >nul

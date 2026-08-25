@@ -152,8 +152,7 @@ final class HvfWindowsInstallTests: XCTestCase {
         XCTAssertNotNil(HvfWindowsInstallPlan.driverPackageError(pkg.path))
         try Data().write(to: pkg.appendingPathComponent("viogpu3d.inf"))
         XCTAssertNotNil(HvfWindowsInstallPlan.driverPackageError(pkg.path))
-        try Data().write(to: pkg.appendingPathComponent("viogpu3d.sys"))
-        XCTAssertNil(HvfWindowsInstallPlan.driverPackageError(pkg.path))
+        try Data().write(to: pkg.appendingPathComponent("viogpu3d.sys")); XCTAssertNotNil(HvfWindowsInstallPlan.driverPackageError(pkg.path))
     }
 
     // MARK: create factory

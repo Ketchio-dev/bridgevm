@@ -203,10 +203,9 @@ if [[ -f "$ASSETS/bvgpu-firstboot.cmd" ]]; then
   log "staging first-boot GPU activation \\bvgpu-firstboot.cmd"
   cp "$ASSETS/bvgpu-firstboot.cmd" "$DST_VOL/bvgpu-firstboot.cmd"
 fi
-if [[ -f "$ASSETS/bvgpu-clean-driver-state.ps1" ]]; then
-  log "staging driver-state cleanup \\bvgpu-clean-driver-state.ps1"
-  cp "$ASSETS/bvgpu-clean-driver-state.ps1" "$DST_VOL/bvgpu-clean-driver-state.ps1"
-fi
+for asset in bvgpu-clean-driver-state.ps1 bvgpu-driver-preflight.ps1; do
+  [[ ! -f "$ASSETS/$asset" ]] || { log "staging driver policy \\$asset"; cp "$ASSETS/$asset" "$DST_VOL/$asset"; }
+done
 if [[ -f "$ASSETS/bvgpu-real-title-gate.ps1" ]]; then
   log "staging real-title promotion gate \\bvgpu-real-title-gate.ps1"
   cp "$ASSETS/bvgpu-real-title-gate.ps1" "$DST_VOL/bvgpu-real-title-gate.ps1"

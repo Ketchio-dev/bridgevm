@@ -95,6 +95,7 @@ struct HvfWindowsInstallPlan: Equatable {
         "scripts/win-assets/bvinject.cmd",
         "scripts/win-assets/bvgpu-firstboot.cmd",
         "scripts/win-assets/bvgpu-clean-driver-state.ps1",
+        "scripts/win-assets/bvgpu-driver-preflight.ps1",
         "scripts/win-assets/bvgpu-diagnostics-run.cmd",
         "scripts/win-assets/bvgpu-diagnostics-service.c",
         "scripts/win-assets/bvagent.ps1",
@@ -102,8 +103,6 @@ struct HvfWindowsInstallPlan: Equatable {
         "scripts/win-tests/bridgevm-vulkan-draw-smoke.c",
         "scripts/win-tests/bridgevm-vulkan-draw-shaders.h",
     ]
-
-    // MARK: computed paths
 
     /// Cache identity changes on a same-name/same-size file replacement too:
     /// the file number catches replacement while mtime catches in-place edits.
@@ -210,7 +209,7 @@ struct HvfWindowsInstallPlan: Equatable {
         guard lowered.contains(where: { $0.hasSuffix(".sys") }) else {
             return "드라이버 패키지 폴더에 .sys 파일이 없습니다."
         }
-        return nil
+        return HvfWindowsDriverPreflight.inspect(packageDirectory: directory).userMessage
     }
 
     func validationError() -> String? {

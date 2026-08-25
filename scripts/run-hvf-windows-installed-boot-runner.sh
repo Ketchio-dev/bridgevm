@@ -1111,12 +1111,7 @@ run_installed_boot_probe() {
   write_installed_boot_target_stat
 }
 
-# Boot-reliability evidence: did *this* run reach [stage4] done?
-# The firstboot log persists on the guest disk, so its mere content proves
-# nothing about the current boot. Fail-closed like the title gate: the marker
-# counts only when the log also changed during this run. When no prior hash
-# could be read ("unavailable"), freshness is unknown and is reported as such
-# rather than assumed.
+# Require a fresh firstboot PASS and surface the read-only driver's exact blocker.
 write_firstboot_stage_report() {
   [[ "${VIRTIO_GPU_3D:-0}" == "1" ]] || return 0
 
@@ -1128,6 +1123,7 @@ write_firstboot_stage_report() {
   local fresh=0
   local stage4_pass=0
   local last_stage="none"
+  local preflight="missing" blocker="unknown"
 
   if [[ -f "$log" ]]; then
     current_sha="$(shasum -a 256 "$log" | awk '{print $1}')"
@@ -1136,6 +1132,9 @@ write_firstboot_stage_report() {
     fi
     last_stage="$(grep -oE '\[stage[0-9]+\]' "$log" | tail -1 | tr -d '[]')"
     [[ -n "$last_stage" ]] || last_stage="none"
+    preflight="$(grep '^BVGPU_PREFLIGHT ' "$log" | tail -1)"
+    [[ -n "$preflight" ]] || preflight="missing"
+    blocker="$(sed -nE 's/.* blocker=([^ ]+).*/\1/p' <<<"$preflight")"; [[ -n "$blocker" ]] || blocker="unknown"
   fi
   if [[ "$pre_sha" != "unavailable" && "$current_sha" != "$pre_sha" ]]; then
     fresh=1
@@ -1152,6 +1151,7 @@ write_firstboot_stage_report() {
     printf 'firstboot_pre_run_sha256=%s\n' "$pre_sha"
     printf 'firstboot_current_sha256=%s\n' "$current_sha"
     printf 'last_stage_observed=%s\n' "$last_stage"
+    printf 'driver_preflight_blocker=%s\ndriver_preflight=%s\n' "$blocker" "$preflight"
     printf 'stage4_pass=%s\n' "$stage4_pass"
   } > "$report"
   return 0

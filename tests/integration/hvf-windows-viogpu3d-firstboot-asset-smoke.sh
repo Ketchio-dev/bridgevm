@@ -73,7 +73,7 @@ assert_block_before() {
     || fail "$label expected '$first' before '$second'"
 }
 
-assert_file_contains "$FIRSTBOOT" "FOUR-STAGE" "firstboot contract"
+assert_file_contains "$FIRSTBOOT" "FOUR-STAGE" "firstboot contract"; bash tests/integration/bvgpu-driver-preflight-smoke.sh
 assert_file_contains "$FIRSTBOOT" "set TASK_NAME=BridgeVM-VioGpu3DFirstBoot" "firstboot scheduled task"
 assert_file_contains "$FIRSTBOOT" "-File C:\BridgeVM\bvgpu-diagnostics.ps1" "firstboot diagnostics invocation"
 assert_file_contains "$FIRSTBOOT" "-File C:\BridgeVM\bvgpu-vulkan-probe.ps1" "firstboot Vulkan probe invocation"
@@ -119,7 +119,8 @@ assert_file_contains "$INJECTOR" "copy /y %DRV%\..\bvgpu-diagnostics.ps1" "injec
 assert_file_contains "$INJECTOR" "copy /y %DRV%\..\bvgpu-vulkan-probe.ps1" "injector Vulkan probe copy"
 assert_file_contains "$BUILD_INJECTOR" 'cp "$ASSETS/bvgpu-diagnostics.ps1" "$DST_VOL/bvgpu-diagnostics.ps1"' "builder diagnostics staging"
 assert_file_contains "$BUILD_INJECTOR" 'cp "$ASSETS/bvgpu-vulkan-probe.ps1" "$DST_VOL/bvgpu-vulkan-probe.ps1"' "builder Vulkan probe staging"
-assert_file_contains "$BUILD_INJECTOR" 'cp "$ASSETS/bvgpu-clean-driver-state.ps1" "$DST_VOL/bvgpu-clean-driver-state.ps1"' "builder cleanup staging"
+assert_file_contains "$BUILD_INJECTOR" 'bvgpu-clean-driver-state.ps1 bvgpu-driver-preflight.ps1' "builder driver-policy assets"
+assert_file_contains "$BUILD_INJECTOR" 'cp "$ASSETS/$asset" "$DST_VOL/$asset"' "builder driver-policy staging"
 assert_file_contains "$BUILD_INJECTOR" 'cp "$ASSETS/bvgpu-real-title-gate.ps1" "$DST_VOL/bvgpu-real-title-gate.ps1"' "builder real-title gate staging"
 assert_file_contains "$BUILD_INJECTOR" 'cp "$ASSETS/bvgpu-title-gate.ps1" "$DST_VOL/bvgpu-title-gate.ps1"' "builder generic title gate staging"
 assert_file_contains "$BUILD_INJECTOR" 'DIAGNOSTICS_ONLY="${DIAGNOSTICS_ONLY:-0}"' "builder diagnostics-only switch"

@@ -39,13 +39,18 @@ shapes are possible:
 2. a development/test-signed package used by testers of the experimental
    graphics path.
 
-For the second case, the current injector/first-boot flow automates activation.
-`bvinject.cmd` stages the package and plants the first-boot handoff;
-`bvgpu-firstboot.cmd` then performs the required live-Windows sequence.
+For the second case, the injector can stage a development-only activation.
+The shipping guided installer seeds Microsoft Secure Boot and therefore refuses
+a test-signed or unverifiable package **before it starts any install mutation**;
+the fallback is to disable 3D injection. In developer-prepared SB-off guests,
+`bvinject.cmd` plants the first-boot handoff and `bvgpu-firstboot.cmd` runs a
+read-only signing/Secure Boot/BCD/PnP preflight before its first certificate,
+BCD or DriverStore mutation.
 
 The four-stage activation is intentional:
 
-1. clean superseded test certificates, enable BCD test-signing, trust the current
+1. prove the package/signing/Secure Boot/BCD/PnP state is compatible; only then
+   clean superseded certificates, enable BCD test-signing, trust the current
    package certificate, and reboot;
 2. remove superseded DriverStore generations and reboot;
 3. prove the store is clean, install exactly one package, and reboot;

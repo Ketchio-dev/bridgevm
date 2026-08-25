@@ -49,6 +49,10 @@ goto :done
 
 :stage1
 set STAGE=stage1
+echo [stage1] read-only signing and Secure Boot preflight >> "%LOG%"
+if not exist C:\BridgeVM\bvgpu-driver-preflight.ps1 goto :fail
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-driver-preflight.ps1 -PackageDirectory "%PKG%" -OutPath C:\BridgeVM\viogpu3d-preflight.log >> "%LOG%" 2>&1
+if errorlevel 1 goto :fail
 echo [stage1] purge superseded certs + testsigning on + trust current cert >> "%LOG%"
 if not exist C:\BridgeVM\bvgpu-clean-driver-state.ps1 goto :fail
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-clean-driver-state.ps1 -Phase Certificates -PackageDirectory "%PKG%" >> "%LOG%" 2>&1
