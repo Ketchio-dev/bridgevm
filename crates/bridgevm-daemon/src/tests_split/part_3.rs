@@ -165,7 +165,7 @@ fn daemon_fast_spawn_immediate_exit_reconcile_clears_runtime_state() {
 }
 
 #[test]
-fn daemon_connection_creates_redacted_diagnostic_bundle() {
+fn daemon_connection_exports_only_fixed_structural_diagnostics() {
     let store = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     let token = store.guest_tools_token("legacy").unwrap().token;
@@ -192,22 +192,35 @@ fn daemon_connection_creates_redacted_diagnostic_bundle() {
     };
 
     assert!(bundle.output.exists());
-    assert!(bundle.files.contains(&PathBuf::from("manifest.yaml")));
-    assert!(bundle.files.contains(&PathBuf::from("logs/qemu.log")));
-    assert!(bundle
-        .files
-        .contains(&PathBuf::from("metadata/download.json")));
-    assert!(bundle
-        .files
-        .contains(&PathBuf::from("diagnostic-bundle.json")));
-
-    let log = fs::read_to_string(bundle.output.join("logs").join("qemu.log")).unwrap();
-    assert!(!log.contains(&token));
-    assert!(log.contains("<redacted>"));
-    let download =
-        fs::read_to_string(bundle.output.join("metadata").join("download.json")).unwrap();
-    assert!(!download.contains("signature=secret"));
-    assert!(download.contains("https://example.invalid/image.iso?<redacted>"));
+    assert_eq!(
+        bundle.files,
+        [
+            "vm-summary.json",
+            "record-05.json",
+            "log-summary.json",
+            "diagnostic-bundle.json",
+        ]
+        .map(PathBuf::from)
+    );
+    for file in &bundle.files {
+        let content = fs::read_to_string(bundle.output.join(file)).unwrap();
+        for forbidden in [
+            token.as_str(),
+            "signature=secret",
+            "legacy",
+            "manifest.yaml",
+            "qemu.log",
+            "download.json",
+        ] {
+            assert!(
+                !content.contains(forbidden),
+                "{} leaked {forbidden}",
+                file.display()
+            );
+        }
+    }
+    let metadata = fs::read_to_string(bundle.output.join("diagnostic-bundle.json")).unwrap();
+    assert_eq!(metadata.matches("<redacted>").count(), 3);
 }
 
 #[test]

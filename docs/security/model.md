@@ -77,12 +77,12 @@ problem: the token file must be delivered to the guest with permissions
 appropriate for the future service account, and QEMU command lines must continue
 to avoid containing the token value.
 
-`bridgevm diagnostics bundle <vm> --output <dir>` follows the same assumption
-that support artifacts may leave the local trust boundary. The diagnostics
-bundle collects `manifest.yaml`, `logs/`, and `metadata/`, then writes
-`diagnostic-bundle.json`, but excludes disks, installer or restore media,
-sockets, and lock files. Bundle JSON is redacted before it is written: the
-guest-tools token is removed, and sensitive JSON keys are replaced with redacted
-values instead of being copied into the bundle. URL query strings in JSON
-metadata are also replaced with a redacted marker so signed download URLs do
-not leak through support artifacts.
+`bridgevm diagnostics bundle <vm> --output <dir>` assumes support artifacts may
+leave the local trust boundary and therefore uses an allowlist, not recursive
+copy plus a denylist. It emits a categorical manifest summary, an aggregate log
+count/byte summary, and a fixed set of structural JSON records projected onto
+allowlisted keys and enum values under generic filenames. Raw manifests, logs,
+metadata trees, disk/media bytes, UEFI vars, vTPM state, keys, clipboard data,
+filenames and absolute paths are not copied. Unknown fields/values are removed
+or redacted. Symlink, non-regular, malformed and oversized allowlist inputs fail
+the whole staged export; only a complete bundle is atomically published.
