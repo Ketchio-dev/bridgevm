@@ -1012,3 +1012,47 @@ This relocates the remaining latency work: the target is the guest's input and
 timer servicing under load, not the host's blit path, and not the wake
 scheduling alone (which was already shown above to leave 7 of 12 lanes failing
 even if made exact). B4 stays **OPEN**.
+
+## Batch 9 — 2026-08-25, overdue observation moved before automation work
+
+Fresh complete t8 job `20260825-032534-61218-23891` ran at green `main`
+`0ea368e90f945d5c40d414a2b9ea886faad94878`. It is an honest FAIL:
+
+```
+landed 9/20 p95_first_changed_ms=704 (limit 250)
+```
+
+- receipt commit matches; `sample_count=20`, `pass=false`;
+- gate log SHA-256
+  `ee4493462ed58850251b96c3f1bea87b434ae3ec63d9a54b22945b809f183922`;
+- summary SHA-256
+  `f5c817a869a598552a443635aa2707dd934df5ef21f874265d2656ae46042148`.
+
+Eight lanes — 4, 5, 6, 9, 11, 15, 17 and 20 — retained
+`result=baseline-not-presented` with `peak_white_px=0`: a stable all-black real
+active IOSurface, so no click was injected. Seven of the eight had 176–276
+failed ctx-7 submits. Run 6 had **zero** ctx-7 failed submits yet was equally
+black. The earlier iff separator is therefore retracted for this fresh batch:
+ctx-7 poison remains sufficient for black, but is no longer necessary. Three
+other failures (runs 2, 7 and 10) were nonblack `invalid-target` refusals.
+
+The nine valid landed latencies were 154, 171, 175, 217, 327, 428, 485, 609 and
+704 ms. Only 4/9 meet 250 ms, so the latency half still fails independently.
+
+The print-only overdue move improved coverage but did not close its blind spot.
+Five landed holds substantially overshot the configured 200 ms:
+
+| run | guest hold | overshoot | host overdue line |
+|---:|---:|---:|---:|
+| 1 | 396 ms | 196 ms | 196734 us |
+| 3 | 254 ms | 54 ms | 65745 us |
+| 12 | 240 ms | 40 ms | 29693 us |
+| 14 | **320 ms** | **120 ms** | **absent** |
+| 16 | 362 ms | 162 ms | 184973 us |
+
+Thus observing at the start of the automation pass was not early enough. The
+source has a direct controller-MMIO path that calls
+`drain_xhci_pointer_input_reports` before any automation pass; that common
+drain can consume the due report and erase its deadline. The next instrument is
+to observe lateness at the actual drain boundary, still print-only. No wake or
+pacing change is justified by this batch.
