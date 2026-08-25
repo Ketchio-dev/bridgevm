@@ -75,57 +75,8 @@ check "the installed-boot runner captures both post-mortem phases" \
     'grep -Fq '\''harvest_guest_windows_postmortem pre-run'\'' "$BOOT_RUNNER" && grep -Fq '\''harvest_guest_windows_postmortem post-run'\'' "$BOOT_RUNNER"'
 
 # --- read-only Windows post-mortem boundary ------------------------------
-postmortem_src="$WORK/postmortem-source"
-postmortem_image="$WORK/postmortem.dmg"
-postmortem_evidence="$WORK/postmortem-evidence"
-postmortem_logs="$postmortem_src/Windows/System32/winevt/Logs"
-mkdir -p "$postmortem_src/Windows/System32/Tasks" "$postmortem_logs" "$WORK/postmortem-mount"
-printf 'agent-current\n' > "$postmortem_src/bvagent.log"
-printf '<Task>fixed</Task>\n' > "$postmortem_src/Windows/System32/Tasks/BridgeVM Guest Agent"
-printf 'winlogon\n' > "$postmortem_logs/Microsoft-Windows-Winlogon%4Operational.evtx"
-printf 'system\n' > "$postmortem_logs/System.evtx"
-ln -s System.evtx "$postmortem_logs/Microsoft-Windows-TaskScheduler%4Operational.evtx"
-mkfile -n 33554433 "$postmortem_logs/Security.evtx"
-printf 'not-allowlisted\n' > "$postmortem_logs/Unexpected.evtx"
-
-check "the post-mortem harvester refuses a writable volume" \
-    '! "$POSTMORTEM_HARVEST" --volume "$postmortem_src" --evidence-dir "$WORK/refused" --phase pre-run >/dev/null 2>&1'
-hdiutil create -quiet -size 64m -fs HFS+ -srcfolder "$postmortem_src" \
-    -format UDRW "$postmortem_image"
-postmortem_image_before="$(shasum -a 256 "$postmortem_image" | awk '{print $1}')"
-POSTMORTEM_MOUNT="$WORK/postmortem-mount"
-hdiutil attach -readonly -nobrowse -mountpoint "$POSTMORTEM_MOUNT" "$postmortem_image" >/dev/null || { echo "FAIL: hdiutil attach" >&2; exit 1; }
-
-"$POSTMORTEM_HARVEST" --volume "$POSTMORTEM_MOUNT" \
-    --evidence-dir "$postmortem_evidence" --phase pre-run
-check "pre-run post-mortem state is metadata only" \
-    'grep -q $'"'"'^agent_log\\t.*\\tmetadata-only\\t'"'"' "$postmortem_evidence/windows-postmortem-pre-run.tsv"'
-check "the post-mortem manifest proves a read-only mount" \
-    'grep -q $'"'"'^media_read_only\\ttrue$'"'"' "$postmortem_evidence/windows-postmortem-pre-run.tsv" && grep -q $'"'"'^volume_read_only\\ttrue$'"'"' "$postmortem_evidence/windows-postmortem-pre-run.tsv"'
-check "pre-run post-mortem capture copies no guest file" \
-    '[ ! -e "$postmortem_evidence/windows-postmortem" ]'
-
-"$POSTMORTEM_HARVEST" --volume "$POSTMORTEM_MOUNT" \
-    --evidence-dir "$postmortem_evidence" --phase post-run
-postmortem_manifest="$postmortem_evidence/windows-postmortem-post-run.tsv"
-check "the post-mortem manifest has exactly six fixed artifact ids" \
-    '[ "$(awk -F '\''\\t'\'' '\''$1 ~ /^(agent_log|agent_task|winlogon_evtx|task_scheduler_evtx|security_evtx|system_evtx)$/ {n++} END {print n+0}'\'' "$postmortem_manifest")" -eq 6 ]'
-check "the post-mortem harvester refuses symlink inputs" \
-    'grep -q $'"'"'^task_scheduler_evtx\\t.*\\trefused-symlink\\t'"'"' "$postmortem_manifest"'
-check "the post-mortem harvester refuses oversize inputs" \
-    'grep -q $'"'"'^security_evtx\\t.*\\trefused-oversize\\t33554433\\t'"'"' "$postmortem_manifest"'
-check "the post-mortem harvester copies only bounded allowlisted files" \
-    '[ "$(find "$postmortem_evidence/windows-postmortem" -type f | wc -l | tr -d " ")" -eq 4 ]'
-check "an unlisted guest event log is never copied" \
-    '[ ! -e "$postmortem_evidence/windows-postmortem/Unexpected.evtx" ] && ! grep -q "Unexpected.evtx" "$postmortem_manifest"'
-check "post-mortem evidence paths are relative and private-path free" \
-    '! grep -E '\''/Users/|/tmp/|BridgeVM/work'\'' "$postmortem_manifest"'
-
-hdiutil detach "$POSTMORTEM_MOUNT" -quiet
-POSTMORTEM_MOUNT=""
-postmortem_image_after="$(shasum -a 256 "$postmortem_image" | awk '{print $1}')"
-check "read-only post-mortem harvest leaves the guest image byte-identical" \
-    '[ "$postmortem_image_before" = "$postmortem_image_after" ]'
+# shellcheck source=tests/integration/live-gate-postmortem-boundary.sh
+source "$REPO/tests/integration/live-gate-postmortem-boundary.sh"
 
 # --- no inbound network path --------------------------------------------
 # A local queue that grew a listener would be a self-hosted runner with extra
@@ -187,6 +138,8 @@ check "the job is queued" '"$CLI" status | grep -q "queued .*$job_id"'
 
 check "the job records its commit and tier" 'grep -q "^commit=[0-9a-f]\{40\}$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env" && grep -q "^tier=t1-vtimer$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env"'
 check "B4, audio and glyph tiers keep fixed scopes" 'audio_job="$($CLI submit t9-audio-teardown)"; glyph_job="$($CLI submit t11-glyph-scene-pilot)"; grep -q "^tier=t9-audio-teardown$" "$BRIDGEVM_LIVE_ROOT/queued/$audio_job/job.env" && grep -q "^tier=t11-glyph-scene-pilot$" "$BRIDGEVM_LIVE_ROOT/queued/$glyph_job/job.env" && grep -q "N=20 OUT=" "$REPO/scripts/live-gates/run-pointer-reliability-tier.sh" && test -x "$REPO/scripts/live-gates/run-audio-teardown-tier.sh" && grep -Fq '\''bash "$REPO/scripts/live-gates/$helper"'\'' "$REPO/scripts/live-gates/run-tier.sh" && grep -q "N=10" "$REPO/scripts/live-gates/run-audio-teardown-tier.sh" && python3 "$REPO/scripts/live-gates/seal-immutable-audio-sources.py" --self-test | grep -q PASS && bash "$REPO/scripts/live-gates/prepare-audio-lane-media.sh" --self-test | grep -q PASS && python3 "$REPO/scripts/live-gates/write-audio-teardown-receipt.py" --self-test | grep -q PASS; rm -rf "$BRIDGEVM_LIVE_ROOT/queued/$audio_job" "$BRIDGEVM_LIVE_ROOT/queued/$glyph_job"'
+
+check "B4 failures record an honest cause and no cause can pass" 'bash "$REPO/scripts/verify-pointer-click-reliability.sh" --selftest | grep -q "^pointer reliability parser: PASS" && grep -q "landed=\$ok cause=\$cause" "$REPO/scripts/verify-pointer-click-reliability.sh" && ! grep -qE "cause=[a-z-]+.*landed=true|landed=\$\{?ok\}?.*(scene-never-presented|scene-absent)" "$REPO/scripts/verify-pointer-click-reliability.sh" && grep -Fq '\''[[ "$landed" -eq "$N" && "$p95" != none && "$p95" -le "$P95_LIMIT_MS" ]]'\'' "$REPO/scripts/verify-pointer-click-reliability.sh"'
 
 # The A3 tier must seal a copied input manifest at submit time. It may not
 # retain a caller-owned path that can be edited after submission.

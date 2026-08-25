@@ -38,6 +38,21 @@ parse_run_log() { # fired press release stuck first_ms; edge = press+release
   echo "$fired $press $release $stuck ${first:-none}"
 }
 
+# Why a run did not land. A run whose target scene never reached the active
+# surface never received an injected click at all, so counting it as a lost
+# pointer report misattributes a presentation failure to input. This only
+# labels an already-failed run; it never converts one into a pass.
+classify_failure() { # run-dir -> cause
+  local baseline="$1/visible/baseline.env" peak
+  if [[ -f "$baseline" ]]; then
+    peak=$(awk -F= '$1=="peak_white_px"{print $2}' "$baseline" 2>/dev/null)
+    [[ "$peak" == 0 ]] && { echo scene-never-presented; return; }
+    echo scene-unsettled; return
+  fi
+  [[ -f "$1/visible/visible.env" ]] || { echo scene-absent; return; }
+  echo pointer-reaction
+}
+
 if [[ "${1:-}" == "--selftest" ]]; then
   d=$(mktemp -d); t="$d/run.log"; p="$d/bvptr.log"; c="$d/click.log"; mkdir "$d/visible" "$d/share"; printf 'BVTARGET click count=1\r\n' > "$c"
   printf 'BVTARGET ready width=1600 height=900 screen_x=0 screen_y=0 center_x=800 center_y=450 virtual_x=0 virtual_y=0 virtual_w=1600 virtual_h=900 hwnd=9\r\n' > "$d/share/bv-pointer-target-ready.log"
@@ -57,6 +72,13 @@ if [[ "${1:-}" == "--selftest" ]]; then
   printf 'BVPTR begin duration_ms=20 poll_ms=4 session=1 input_desktop_open=1 foreground=9 cursor_x=800 cursor_y=450 utc=x\r\nBVPTR summary presses=0 releases=0 edges=0 moves=0 first_press_ms=-1 first_release_ms=-1 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p" "$c")
   [[ "$r" == "true 0 0 0 none" ]] || fail "selftest lost-click parse: got '$r'"
+  c=$(classify_failure "$d"); [[ "$c" == pointer-reaction ]] || fail "selftest reaction cause: got '$c'"
+  printf 'result=baseline-not-presented\nsamples=544\nfinal_white_px=0\npeak_white_px=0\n' > "$d/visible/baseline.env"
+  c=$(classify_failure "$d"); [[ "$c" == scene-never-presented ]] || fail "selftest never-presented cause: got '$c'"
+  printf 'result=baseline-not-presented\nsamples=544\nfinal_white_px=3\npeak_white_px=12000\n' > "$d/visible/baseline.env"
+  c=$(classify_failure "$d"); [[ "$c" == scene-unsettled ]] || fail "selftest unsettled cause: got '$c'"
+  rm -f "$d/visible/baseline.env" "$d/visible/visible.env"
+  c=$(classify_failure "$d"); [[ "$c" == scene-absent ]] || fail "selftest absent cause: got '$c'"
   rm -rf "$d"; echo "pointer reliability parser: PASS (selftest)"; exit 0
 fi
 
@@ -68,9 +90,10 @@ for i in $(seq 1 "$N"); do
   RUN="$run" WORK="$work" TARGET="$TARGET" VARS="$VARS" VIOGPU_DIR="$VIOGPU_DIR" \
     bash scripts/run-pointer-click-reliability-case.sh || true
   read -r fired press release stuck first <<<"$(parse_run_log "$run/run.log" "$run/share/bvptr.log" "$run/share/bv-pointer-target-click.log")"
-  ok=false
+  ok=false; cause=none
   [[ "$fired" == true && "$press" -ge 1 && "$release" -ge 1 && "$stuck" == 0 && "$first" =~ ^[0-9]+$ ]] && { ok=true; landed=$((landed+1)); firsts+=("$first"); }
-  echo "run $i: fired=$fired press=$press release=$release stuck=$stuck first_changed_ms=$first landed=$ok" | tee -a "$OUT/summary.txt"
+  [[ "$ok" == true ]] || cause=$(classify_failure "$run")
+  echo "run $i: fired=$fired press=$press release=$release stuck=$stuck first_changed_ms=$first landed=$ok cause=$cause" | tee -a "$OUT/summary.txt"
   rm -rf "$work"
 done
 

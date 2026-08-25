@@ -1331,7 +1331,8 @@ tests/integration/lifecycle-suspend-resume-cli-smoke.sh	157	0
 tests/integration/install-verify-smoke.sh	181	0
 tests/integration/glyph-region-observation-smoke.py	26	0
 tests/integration/glyph-scene-pilot-smoke.sh	14	0
-tests/integration/live-gate-policy-smoke.sh	307	0
+tests/integration/live-gate-policy-smoke.sh	260	0
+tests/integration/live-gate-postmortem-boundary.sh	55	0
 tests/integration/qmp-stress-live-tier-smoke.sh	23	0
 tests/integration/windows-closure-live-tier-smoke.sh	65	0
 tests/integration/viogpu3d-submit-trace-policy-smoke.sh	12	0
