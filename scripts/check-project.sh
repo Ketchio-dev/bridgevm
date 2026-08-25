@@ -51,10 +51,10 @@ step "tests are reachable" python3 scripts/check-tests-are-reachable.py
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
 step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py
 step "viogpu3d submit trace policy" tests/integration/viogpu3d-submit-trace-policy-smoke.sh
+step "Windows product injection deny" tests/integration/hvf-windows-product-injection-deny-smoke.sh
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 step "install verify" bash tests/integration/install-verify-smoke.sh
-
 step "rustfmt" cargo "$TOOLCHAIN" fmt --all --check
 
 if [[ $FAST -eq 1 ]]; then

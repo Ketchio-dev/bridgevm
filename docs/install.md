@@ -87,11 +87,11 @@ on current macOS, so the Settings route is the real one.
 - A Windows 11 ARM64 ISO. The app guides you through Microsoft's official
   download; nothing is fetched from third-party mirrors.
 - About 64 GiB of free disk for the guest image.
-- Guided 3D driver injection is currently unavailable. Test-signed packages
-  conflict with the Microsoft Secure Boot policy provisioned by the app, and a
-  package-local kernel-policy report is not signed provenance. BridgeVM rejects
-  both before creating install media or mutating Windows. Turn off 3D injection
-  to install Windows; see
+- Windows-HVF 3D driver injection is currently unavailable for install and
+  installed-disk import. Test-signed packages conflict with the Microsoft
+  Secure Boot policy provisioned by the app, and a package-local kernel-policy
+  report is not signed provenance. BridgeVM exposes only 3D-off install/import
+  until a signed provenance verifier exists; see
   [`scripts/win-assets/DRIVERS-README.md`](../scripts/win-assets/DRIVERS-README.md).
 
 ## Updating, rolling back, uninstalling

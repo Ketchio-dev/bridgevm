@@ -1048,7 +1048,7 @@ apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	44	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	64	0
 apps/macos/Sources/BridgeVMControl/ContentView.swift	551	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	314	0
-apps/macos/Sources/BridgeVMControl/CreateVM.swift	950	0
+apps/macos/Sources/BridgeVMControl/CreateVM.swift	910	0
 apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	176	0
 apps/macos/Sources/BridgeVMControl/FirstRunView.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
@@ -1306,6 +1306,7 @@ tests/integration/hvf-windows-installed-boot-p3-gpu-trace-report-smoke.sh	142	0
 tests/integration/hvf-windows-installed-boot-p3-readiness-smoke.sh	173	0
 tests/integration/hvf-windows-installed-boot-vtpm-lifecycle-smoke.sh	56	0
 tests/integration/hvf-windows-p3-gpu-readiness-smoke.sh	229	0
+tests/integration/hvf-windows-product-injection-deny-smoke.sh	17	0
 tests/integration/hvf-windows-viogpu3d-build-kit-smoke.sh	162	0
 tests/integration/hvf-windows-viogpu3d-firstboot-asset-smoke.sh	319	0
 tests/integration/hvf-windows-viogpu3d-injector-wrapper-smoke.sh	143	0
