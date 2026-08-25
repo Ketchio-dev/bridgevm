@@ -1130,9 +1130,9 @@ write_firstboot_stage_report() {
     if grep -Fq '[stage4] done' "$log"; then
       marker_pass=1
     fi
-    last_stage="$(grep -oE '\[stage[0-9]+\]' "$log" | tail -1 | tr -d '[]')"
+    last_stage="$(grep -oE '\[stage[0-9]+\]' "$log" | tail -1 | tr -d '[]' || true)"
     [[ -n "$last_stage" ]] || last_stage="none"
-    preflight="$(grep '^BVGPU_PREFLIGHT ' "$log" | tail -1)"
+    preflight="$(grep '^BVGPU_PREFLIGHT ' "$log" | tail -1 || true)"
     [[ -n "$preflight" ]] || preflight="missing"
     blocker="$(sed -nE 's/.* blocker=([^ ]+).*/\1/p' <<<"$preflight")"; [[ -n "$blocker" ]] || blocker="unknown"
   fi

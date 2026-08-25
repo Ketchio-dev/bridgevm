@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"; cd "$ROOT"
-PREFLIGHT=scripts/win-assets/bvgpu-driver-preflight.ps1
-FIRSTBOOT=scripts/win-assets/bvgpu-firstboot.cmd
+PREFLIGHT=scripts/win-assets/bvgpu-driver-preflight.ps1; FIRSTBOOT=scripts/win-assets/bvgpu-firstboot.cmd
 BUILDER=scripts/build-hvf-windows-driver-injector.sh; INJECTOR=scripts/win-assets/bvinject.cmd
 fail() { echo "FAIL: $*" >&2; exit 1; }
-pwsh -NoProfile -File "$PREFLIGHT" -SelfTest \
-  | grep -q '^PASS: bvgpu preflight self-test (8 cases)$' || fail 'preflight self-test'
-for mutation in 'bcdedit /set' 'certutil ' 'pnputil ' 'Remove-Item' 'dism '; do
-  grep -Fqi "$mutation" "$PREFLIGHT" && fail "preflight mutates with $mutation"
-done
+pwsh -NoProfile -File "$PREFLIGHT" -SelfTest | grep -q '^PASS: bvgpu preflight self-test (8 cases)$' || fail 'preflight self-test'
+for mutation in 'bcdedit /set' 'certutil ' 'pnputil ' 'Remove-Item' 'dism '; do grep -Fqi "$mutation" "$PREFLIGHT" && fail "preflight mutates with $mutation"; done
 stage1="$(awk '{sub(/\r$/,"")} $0==":stage1"{p=1} p{print} $0==":stage2"{exit}' "$FIRSTBOOT")"
 before() {
   local first second
@@ -25,4 +21,8 @@ grep -Fq 'copy /y %DRV%\..\bvgpu-driver-preflight.ps1' "$INJECTOR" \
   || fail 'injector does not copy preflight'
 grep -Fq 'driver_preflight_blocker=' scripts/run-hvf-windows-installed-boot-runner.sh && grep -Fq 'kernel-policy-provenance-unverifiable' "$PREFLIGHT" \
   || fail 'exact fail-closed blockers are not surfaced'
-echo 'PASS: driver signing/Secure Boot preflight is read-only and first'
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT; mkdir "$TMP/guest-logs"
+printf '[bvgpu-firstboot] partial\n[stage1] rebooting\n' > "$TMP/guest-logs/viogpu3d-firstboot.log"
+report="$(bash -c 'set -euo pipefail; source scripts/run-hvf-windows-installed-boot-runner.sh; VIRTIO_GPU_3D=1; EVIDENCE_DIR="$1"; PRE_RUN_FIRSTBOOT_SHA256=missing; write_firstboot_stage_report; cat "$EVIDENCE_DIR/firstboot-stage.txt"' _ "$TMP")" || fail 'partial firstboot report aborted'
+grep -Fqx 'last_stage_observed=stage1' <<<"$report" && grep -Fqx 'driver_preflight=missing' <<<"$report" \
+  || fail 'partial firstboot report did not retain missing preflight honestly'; echo 'PASS: driver signing/Secure Boot preflight is read-only and first'
