@@ -747,3 +747,25 @@ present in black lanes *before* any containment existed (batch `20260824-003132`
 B4 defect and it is untouched by anything in this feature.
 
 B4 remains **OPEN**.
+
+### Batch 8 — the revert is confirmed by measurement
+
+t8 job `20260824-204245-4732-52` at main `36e03ba`, the first batch after the
+revert: **`landed 12/20 p95_first_changed_ms=778 (limit 250)`**, seven black
+lanes, gate log SHA-256 `7a7a5876…`. The landed count **doubles** against the
+6/20 the same code base produced with containment enabled, restoring the
+12–15/20 band every pre-containment batch sat in.
+
+| batch | containment | landed | black |
+|---|---|---|---|
+| `20260823-113151` | none | 13/20 | 0 |
+| `20260824-003132` | none | 15/20 | 4 |
+| `20260824-115428` | narrow | 12/20 | 6 |
+| `20260824-154650` | wide | 11/20 | 6 |
+| `20260824-182810` | wide+prefix | 6/20 | 10 |
+| `20260824-204245` | **none (reverted)** | **12/20** | 7 |
+
+The revert was argued from a trend; this batch tests it prospectively and the
+prediction holds. It does not make B4 pass — 12/20 against a 20/20 gate, p95 778
+against 250 — but it removes a regression I introduced and returns the tree to
+the honest pre-containment baseline.
