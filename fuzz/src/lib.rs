@@ -9,8 +9,9 @@
 //! Every target must accept arbitrary bytes and either parse them or decline.
 //! A panic is a finding: these inputs are guest-controlled.
 
-use bridgevm_hvf::net_nat::{EthernetFrame, Ipv4Packet, TcpSegment, UdpDatagram};
+use bridgevm_hvf::net_nat::{EthernetFrame, Ipv4Packet, NatBackend, TcpSegment, UdpDatagram};
 use bridgevm_hvf::nvme::SubmissionEntry;
+use bridgevm_hvf::virtio_net::NetBackend as _;
 use bridgevm_hvf::virtio_gpu_3d::CtrlHdr3d;
 
 /// NVMe submission-queue entry decode. The entry is a fixed 64 bytes read
@@ -43,8 +44,8 @@ pub fn xhci_trb(data: &[u8]) {
     std::hint::black_box((decoded.control, decoded.length));
 }
 
-/// Guest network frame parsing, down every layer the NAT reaches.
 pub fn nat_packet(data: &[u8]) {
+    let mut backend = NatBackend::new(); backend.transmit(data); std::hint::black_box(backend.stats());
     if let Some(frame) = EthernetFrame::parse(data) {
         std::hint::black_box(frame.ethertype);
     }

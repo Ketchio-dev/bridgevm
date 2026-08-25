@@ -191,9 +191,11 @@ crates/bridgevm-hvf/src/media_lock.rs	131	1
 crates/bridgevm-hvf/src/msix.rs	395	0
 crates/bridgevm-hvf/src/net_nat/handle_outbound_ipv4.rs	869	0
 crates/bridgevm-hvf/src/net_nat/icmp_reply_rejection_reason.rs	512	13
-crates/bridgevm-hvf/src/net_nat/macaddr.rs	919	0
+crates/bridgevm-hvf/src/net_nat/macaddr.rs	902	0
+crates/bridgevm-hvf/src/net_nat/nat_stats.rs	36	0
 crates/bridgevm-hvf/src/net_nat/mod.rs	4	0
 crates/bridgevm-hvf/src/net_nat/tests/helpers.rs	212	0
+crates/bridgevm-hvf/src/net_nat/tests/ingress_policy.rs	77	0
 crates/bridgevm-hvf/src/net_nat/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/net_nat/tests/part_1.rs	851	0
 crates/bridgevm-hvf/src/no_qemu_plan.rs	192	0
