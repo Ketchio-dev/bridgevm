@@ -4,7 +4,6 @@ pub(crate) mod vtimer_recovery;
 mod input_control_wake;
 #[path = "../hvf_gic_boot_probe/pointer_deadline_trace.rs"]
 mod pointer_deadline_trace;
-
 use super::*;
 use crate::boot_media_setup::attach_boot_media;
 use crate::final_report::persist_and_report_stop;
@@ -14,7 +13,6 @@ use crate::hvf_setup::{create_gic, create_vm};
 use crate::probe_config::ProbeConfig;
 use crate::probe_setup::prepare_platform;
 use crate::watchpoint_setup::watchpoint_config;
-
 pub(crate) fn run() -> ExitCode {
     let mut fatal_vcpu_run_error = false;
     let mut fatal_reset_error = false;
@@ -794,6 +792,7 @@ pub(crate) fn run() -> ExitCode {
                     );
                     let platform = &mut *platform_guard;
                     automation_gate.note_checked();
+                    if let Some(d) = platform.xhci_pointer_report_deadline() { pointer_deadline_trace::report_overdue(d); }
                     live_input.tick(platform, &mut guest_ram, std::time::Instant::now());
                     if serial_reached_linux_panic(platform.uart_output(), &mut serial_stop_scans) {
                         Some("serial reached Linux kernel panic".into())

@@ -1966,7 +1966,7 @@ final class DashboardViewModelTests: XCTestCase {
           message: "Dev VM suspended."
         )
       ),
-      performDelayNanos: 50_000_000
+      performDelayNanos: 60_000_000_000
     )
     let model = DashboardViewModel(client: client)
 
@@ -1980,7 +1980,7 @@ final class DashboardViewModelTests: XCTestCase {
     await model.perform(.restart, on: virtualMachine)
     XCTAssertEqual(client.performedActionRequests.map(\.action), [.pause])
 
-    await firstAction.value
+    firstAction.cancel(); await firstAction.value
     XCTAssertNil(model.activeActionID)
   }
 

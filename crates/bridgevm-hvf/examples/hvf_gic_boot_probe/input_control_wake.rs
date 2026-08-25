@@ -57,7 +57,6 @@ impl PointerDeadlineWake {
 
     pub fn arm(&self, platform: &VirtPlatform, wake: &mut SetupInputHostWake) {
         let Some(deadline) = platform.xhci_pointer_report_deadline() else { return; };
-        super::pointer_deadline_trace::report_overdue(deadline);
         self.arm_at(deadline, wake);
     }
 
