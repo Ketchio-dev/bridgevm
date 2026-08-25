@@ -969,3 +969,46 @@ latency half are now separated and none of them alone accounts for it:
 the gate's press/click ambiguity (3 lanes), the guest hold overshoot
 (`corr = 0.77`), and a residual presentation delay that survives both
 corrections (4 lanes at 312–425 ms with holds of 221–275 ms). B4 stays **OPEN**.
+
+### Batch 8, fifth pass — the residual delay is not the hold, and not the GPU
+
+The previous pass left four press-timed lanes unexplained (312, 341, 347,
+425 ms with holds of 221–275 ms). Isolating the nine lanes that the pixel
+evidence shows were timed at the `MouseDown` repaint gives an ordering result
+that constrains the cause.
+
+Within those nine lanes alone, `corr(hold, first_changed_ms) = 0.81`
+(Spearman 0.77; 0.73 with the most extreme lane removed, so it is not driven by
+one point). **But the hold cannot be the cause of these latencies.** The watcher
+stops at the first frame that differs from the baseline, and for these nine lanes
+that frame is the `MouseDown` repaint — which the guest paints *before* it
+releases the button. A delay that is measured after the captured frame cannot
+have produced it. The correlation is therefore evidence of a **common cause**,
+not of the hold delaying the repaint.
+
+Two candidates were separated by measuring GPU throughput per lane from
+`virtio-gpu.jsonl`:
+
+| run | latency | hold | scanout blits | trace events |
+|---|---|---|---|---|
+| 1 | 189 | 205 | 139 | 5945 |
+| 2 | 190 | 204 | 142 | 5945 |
+| 12 | 220 | 223 | 142 | 6076 |
+| 4 | 238 | 192 | 156 | 6110 |
+| 13 | 247 | 221 | 131 | 5965 |
+| 9 | 312 | 221 | 141 | 5976 |
+| 14 | 341 | 234 | 132 | 6231 |
+| 7 | 347 | 292 | 143 | 5940 |
+| 11 | 425 | 275 | 163 | 6120 |
+
+`corr(blits, latency) = 0.38` and `corr(events, latency) = 0.43`, against 0.81
+for the hold. The GPU is doing essentially the same amount of work in a 189 ms
+lane and a 425 ms lane, so the residual delay is **not** GPU throughput and not
+presentation bandwidth. What moves together is the pair of quantities that both
+depend on the guest scheduling a timer and servicing input — the button-release
+timer and the repaint that follows the press.
+
+This relocates the remaining latency work: the target is the guest's input and
+timer servicing under load, not the host's blit path, and not the wake
+scheduling alone (which was already shown above to leave 7 of 12 lanes failing
+even if made exact). B4 stays **OPEN**.
