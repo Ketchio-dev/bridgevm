@@ -1,13 +1,13 @@
 //! Nonterminal QMP supervisor event coverage.
 
 use super::helpers::*;
+use super::parked_backend::parked_test_backend;
 use super::wait::wait_up_to_ten_seconds;
 use crate::*;
 use bridgevm_qemu::qmp_socket_path;
 use bridgevm_storage::{RunnerMetadata, VmRuntimeState};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
-use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
@@ -61,11 +61,10 @@ fn reconcile_children_records_nonterminal_qmp_events_without_cleanup() {
         thread::sleep(Duration::from_millis(100));
     });
 
-    let child = Command::new("sh").arg("-c").arg("sleep 5").spawn().unwrap();
     let mut state = DaemonState::new(store.clone());
     state
         .children
-        .insert("legacy".to_string(), SupervisedBackend::new(child));
+        .insert("legacy".to_string(), parked_test_backend());
 
     assert!(wait_up_to_ten_seconds(|| {
         state.reconcile_children().unwrap();

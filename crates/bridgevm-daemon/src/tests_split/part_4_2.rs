@@ -1,6 +1,7 @@
 //! Split test module.
 
 use super::helpers::*;
+use super::parked_backend::*;
 use crate::*;
 use bridgevm_agent_protocol::AgentAuth;
 use bridgevm_agent_protocol::AgentCapability;
@@ -121,11 +122,10 @@ fn daemon_sends_guest_tools_command_and_tracks_result() {
         thread::sleep(Duration::from_millis(250));
     });
 
-    let child = Command::new("sh").arg("-c").arg("sleep 5").spawn().unwrap();
     let mut state = DaemonState::new(store.clone());
     state
         .children
-        .insert("legacy".to_string(), SupervisedBackend::new(child));
+        .insert("legacy".to_string(), parked_test_backend());
 
     state.reconcile_children().unwrap();
     let command = AgentEnvelope::with_request_id(
@@ -147,9 +147,7 @@ fn daemon_sends_guest_tools_command_and_tracks_result() {
     assert_eq!(command.request_id.as_deref(), Some("clipboard-1"));
     assert_eq!(command.pending_commands, 1);
 
-    state.reconcile_children().unwrap();
-    let backend = state.children.get("legacy").unwrap();
-    assert_eq!(backend.guest_tools_commands.pending_count(), 0);
+    assert!(wait_for_guest_tools_commands(&mut state, "legacy"));
     let runtime = store
         .guest_tools_runtime_metadata("legacy")
         .unwrap()
@@ -188,9 +186,7 @@ fn daemon_sends_guest_tools_command_and_tracks_result() {
     assert_eq!(command.request_id.as_deref(), Some("mount-1"));
     assert_eq!(command.pending_commands, 1);
 
-    state.reconcile_children().unwrap();
-    let backend = state.children.get("legacy").unwrap();
-    assert_eq!(backend.guest_tools_commands.pending_count(), 0);
+    assert!(wait_for_guest_tools_commands(&mut state, "legacy"));
     let runtime = store
         .guest_tools_runtime_metadata("legacy")
         .unwrap()

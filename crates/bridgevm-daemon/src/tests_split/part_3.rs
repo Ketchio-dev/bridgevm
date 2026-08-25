@@ -1,6 +1,7 @@
 //! Split test module.
 
 use super::helpers::*;
+use super::parked_backend::parked_test_backend;
 use super::wait::wait_up_to_ten_seconds;
 use crate::*;
 use bridgevm_agent_protocol::AgentAuth;
@@ -333,11 +334,10 @@ fn daemon_performance_sample_runs_guest_benchmark_when_session_is_connected() {
         thread::sleep(Duration::from_millis(250));
     });
 
-    let child = Command::new("sh").arg("-c").arg("sleep 5").spawn().unwrap();
     let mut state = DaemonState::new(store.clone());
     state
         .children
-        .insert("legacy".to_string(), SupervisedBackend::new(child));
+        .insert("legacy".to_string(), parked_test_backend());
 
     let output = store.root().join("daemon-performance-with-benchmark");
     let response = state
