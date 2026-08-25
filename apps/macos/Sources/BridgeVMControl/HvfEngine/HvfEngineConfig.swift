@@ -26,15 +26,6 @@ struct HvfEngineConfig: Equatable {
     var virtioGpu3d: Bool
     var nvmeBufferedIO: Bool
     var ctlFilePath: String
-    /// WinPE driver-injector image booted as NSID 1 for one firstboot cycle;
-    /// staged by the install/import flows through the inject-pending marker.
-    var placeholderNsid1Path: String?
-    /// Enables the wrapper's BOOT_TIMER ramfb lines; the injection flow uses
-    /// the `source=virtio-gpu` capture line as its 3D-active confirmation.
-    var bootTimerDesktopAgent: Bool = false
-    /// Present while a driver injection is pending. The session renames it to
-    /// the done marker once the display switches to the 3D scanout.
-    var injectPendingMarkerPath: String?
     /// The app deliberately prefers the high-performance renderer lane. It is
     /// a launch-policy switch only: falling back to balanced does not mutate
     /// the guest disk, firmware vars, or driver package.
@@ -51,7 +42,6 @@ struct HvfEngineConfig: Equatable {
         // yet; the detail view routes it to the install panel instead.
         if config.installPending == true { return nil }
         let evidenceDir = config.bundlePath + "/logs/hvf"
-        let injection = pendingInjection(bundlePath: config.bundlePath)
         return HvfEngineConfig(
             targetDiskPath: config.diskPath ?? (config.bundlePath + "/disks/hvf-target.raw"),
             uefiVarsPath: config.bundlePath + "/metadata/hvf-vars.fd",
@@ -66,30 +56,10 @@ struct HvfEngineConfig: Equatable {
             virtioGpu3d: true,
             nvmeBufferedIO: true,
             ctlFilePath: config.bundlePath + "/metadata/hvf.ctl",
-            placeholderNsid1Path: injection?.injectorPath,
-            bootTimerDesktopAgent: injection != nil,
-            injectPendingMarkerPath: injection?.markerPath,
             vtpmStateDir: config.bundlePath + "/metadata/vtpm",
             swtpmBin: VTPMStateSecurity.defaultSwtpmCommand(),
             vtpmKeyID: config.slug
         )
-    }
-
-    /// Reads the inject-pending marker (first line = injector image path) and
-    /// returns it only when both the marker and the injector image exist.
-    static func pendingInjection(
-        bundlePath: String,
-        fileManager: FileManager = .default
-    ) -> (markerPath: String, injectorPath: String)? {
-        let markerPath = bundlePath + "/" + HvfWindowsInstallPlan.injectPendingMarker
-        guard let data = fileManager.contents(atPath: markerPath),
-              let firstLine = String(data: data, encoding: .utf8)?
-                  .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true)
-                  .first
-        else { return nil }
-        let injectorPath = String(firstLine)
-        guard fileManager.isReadableFile(atPath: injectorPath) else { return nil }
-        return (markerPath, injectorPath)
     }
 
     /// The versioned launch manifest this configuration means, as consumed by
@@ -224,12 +194,6 @@ struct HvfEngineConfig: Equatable {
                 "--virtio-gpu-device-id", "1050",
                 "--gpu-trace-protocol", "virgl"
             ])
-        }
-        if let placeholderNsid1Path {
-            args.append(contentsOf: ["--placeholder-nsid1", placeholderNsid1Path])
-        }
-        if bootTimerDesktopAgent {
-            args.append("--boot-timer-desktop-agent")
         }
         return args
     }

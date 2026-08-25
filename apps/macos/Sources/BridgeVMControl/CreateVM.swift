@@ -439,12 +439,7 @@ extension VMLibrary {
         return cfg
     }
 
-    /// Create a Windows 11 ARM VM on the from-scratch HVF engine directly from
-    /// an ISO. The bundle is created immediately with installPending=true and a
-    /// persisted HvfWindowsInstallRequest; the detail panel then runs the
-    /// proven WinPE scripted-install pipeline (WIM apply + bcdboot + unattended
-    /// OOBE) and, when requested, stages the viogpu3d 3D driver injection for
-    /// the first boot.
+    /// Create an install-pending Windows HVF VM; 3D needs signed provenance.
     static func createWindowsHVFInstall(name: String, isoPath: String, diskGiB: Int,
                                         injectViogpu3d: Bool, driverPackageDir: String?,
                                         storageDir: URL? = nil,
@@ -453,7 +448,8 @@ extension VMLibrary {
                                         networkEnabled: Bool = true,
                                         persist: Bool = true) -> VMConfig? {
         let fm = FileManager.default
-        guard let name = normalizedVMName(name),
+        guard windowsHVFInjectionError(requested: injectViogpu3d) == nil,
+              let name = normalizedVMName(name),
               diskGiB >= Int(HvfWindowsInstallPlan.minimumDiskGiB),
               isReadableRegularFile(isoPath),
               let reserved = reserveDestination(name, storageBase: storageDir ?? root) else { return nil }
@@ -489,21 +485,19 @@ extension VMLibrary {
         return cfg
     }
 
-    static func windowsHVFImportInjectionError(requested: Bool) -> String? {
+    static func windowsHVFInjectionError(requested: Bool) -> String? {
         guard requested else { return nil }
         return HvfWindowsDriverPreflight.message(for: HvfWindowsDriverPreflight.provenanceBlocker)
     }
 
-    /// Import a proven installed Windows raw disk and its matching writable UEFI
-    /// vars store. A blank raw disk is not selectable because this engine does
-    /// not implement the Windows installer path yet.
+    /// Import an installed raw disk and matching writable UEFI vars.
     static func createWindowsHVF(name: String, targetDiskPath: String, varsPath: String,
                                  storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
                                  memMiB: Int = 6144, cpuCount: Int = 4,
                                  networkEnabled: Bool = true, injectViogpu3d: Bool = false,
                                  persist: Bool = true) -> VMConfig? {
         let fm = FileManager.default
-        guard windowsHVFImportInjectionError(requested: injectViogpu3d) == nil,
+        guard windowsHVFInjectionError(requested: injectViogpu3d) == nil,
               let name = normalizedVMName(name),
               windowsHVFImportError(targetDiskPath: targetDiskPath, varsPath: varsPath) == nil else { return nil }
 
@@ -910,9 +904,14 @@ struct CreateVMSheet: View {
         }
         let m = mode; let iso = isoPath
         let hvfTarget = hvfTargetPath; let hvfVars = hvfVarsPath
+        if (mode == .windowsHVF || mode == .windowsHVFInstall),
+           let injectionError = VMLibrary.windowsHVFInjectionError(requested: hvfInject) {
+            error = injectionError
+            working = false
+            return
+        }
         if mode == .windowsHVF,
-           let importError = VMLibrary.windowsHVFImportInjectionError(requested: hvfInject)
-            ?? VMLibrary.windowsHVFImportError(targetDiskPath: hvfTarget, varsPath: hvfVars) {
+           let importError = VMLibrary.windowsHVFImportError(targetDiskPath: hvfTarget, varsPath: hvfVars) {
             error = importError
             working = false
             return

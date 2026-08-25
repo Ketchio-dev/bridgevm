@@ -79,19 +79,16 @@ final class HvfWindowsInstallTests: XCTestCase {
         XCTAssertTrue(command.contains(plan.tmpTargetPath))
     }
 
-    func testSourceAndInjectorBuildsPassEnvironmentNotShellStrings() throws {
-        let plan = try makePlan(slug: "envy", inject: true)
+    func testSourceBuildPassesEnvironmentNotShellStrings() throws {
+        let plan = try makePlan(slug: "plain")
         let source = plan.sourceBuildCommand()
         XCTAssertEqual(source.environment["ISO"], plan.request.isoPath)
         XCTAssertEqual(source.environment["OUT"], plan.sourceImagePath)
-        let injector = try XCTUnwrap(plan.injectorBuildCommand())
-        XCTAssertEqual(injector.environment["VIOGPU3D_DIR"], plan.request.driverPackageDir)
-        XCTAssertEqual(injector.environment["OUT"], plan.injectorImagePath)
     }
 
-    func testInjectorBuildIsOmittedWithoutInjection() throws {
-        let plan = try makePlan(slug: "plain", inject: false)
-        XCTAssertNil(plan.injectorBuildCommand())
+    func testPlanValidationBlocksInjectionBeforeFilesystemLookups() throws {
+        let error = try XCTUnwrap(makePlan(slug: "blocked", inject: true).validationError())
+        XCTAssertTrue(error.contains(HvfWindowsDriverPreflight.provenanceBlocker))
     }
 
     // MARK: validation
@@ -101,17 +98,6 @@ final class HvfWindowsInstallTests: XCTestCase {
         XCTAssertEqual(
             plan.validationError(),
             "앱 설치 리소스가 없습니다: scripts/build-hvf-windows-scripted-source.sh")
-    }
-
-    func testInjectionResourceClosureIncludesBuildersGuestPayloadAndSmokeSource() {
-        XCTAssertTrue(HvfWindowsInstallPlan.injectorResourcePaths.contains(
-            "scripts/build-hvf-windows-driver-injector.sh"))
-        XCTAssertTrue(HvfWindowsInstallPlan.injectorResourcePaths.contains(
-            "scripts/win-assets/bvagent.ps1"))
-        XCTAssertTrue(HvfWindowsInstallPlan.injectorResourcePaths.contains(
-            "scripts/win-tests/bridgevm-vulkan-draw-smoke.c"))
-        XCTAssertTrue(HvfWindowsInstallPlan.injectorResourcePaths.contains(
-            "scripts/win-tests/bridgevm-vulkan-draw-shaders.h"))
     }
 
     func testValidationRejectsMissingIsoAndDriverPackage() throws {
@@ -275,60 +261,6 @@ final class HvfWindowsInstallTests: XCTestCase {
             name: "Too Small", isoPath: iso.path, diskGiB: 32,
             injectViogpu3d: false, driverPackageDir: nil,
             storageDir: temp, persist: false))
-    }
-
-    // MARK: injection marker → engine config
-
-    func testPendingInjectionMarkerFeedsWrapperArguments() throws {
-        let temp = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: temp) }
-        let bundle = temp.appendingPathComponent("bundle.vmbridge", isDirectory: true)
-        for sub in ["disks", "metadata"] {
-            try FileManager.default.createDirectory(
-                at: bundle.appendingPathComponent(sub), withIntermediateDirectories: true)
-        }
-        let injector = bundle.appendingPathComponent("disks/viogpu3d-injector.raw")
-        try Data(count: 512).write(to: injector)
-        let marker = bundle.appendingPathComponent(HvfWindowsInstallPlan.injectPendingMarker)
-        try Data("\(injector.path)\n".utf8).write(to: marker)
-
-        let injection = try XCTUnwrap(HvfEngineConfig.pendingInjection(bundlePath: bundle.path))
-        XCTAssertEqual(injection.injectorPath, injector.path)
-
-        var config = try XCTUnwrap(HvfEngineConfig.libraryVM(VMConfig(
-            id: "vm", name: "vm", displayName: "vm", backendKind: "hvf-engine",
-            bootMode: "windows-hvf", bundlePath: bundle.path, runnerPath: "",
-            launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
-            leasesPath: "", guestName: "vm", displayWidth: 1280, displayHeight: 800,
-            installPending: false)))
-        XCTAssertEqual(config.placeholderNsid1Path, injector.path)
-        XCTAssertTrue(config.bootTimerDesktopAgent)
-        let arguments = config.wrapperArguments()
-        let placeholderIndex = try XCTUnwrap(arguments.firstIndex(of: "--placeholder-nsid1"))
-        XCTAssertEqual(arguments[placeholderIndex + 1], injector.path)
-        XCTAssertTrue(arguments.contains("--boot-timer-desktop-agent"))
-
-        // Without the marker the same VM boots with no injector attached.
-        try FileManager.default.removeItem(at: marker)
-        config = try XCTUnwrap(HvfEngineConfig.libraryVM(VMConfig(
-            id: "vm", name: "vm", displayName: "vm", backendKind: "hvf-engine",
-            bootMode: "windows-hvf", bundlePath: bundle.path, runnerPath: "",
-            launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
-            leasesPath: "", guestName: "vm", displayWidth: 1280, displayHeight: 800,
-            installPending: false)))
-        XCTAssertNil(config.placeholderNsid1Path)
-        XCTAssertFalse(config.wrapperArguments().contains("--placeholder-nsid1"))
-    }
-
-    func testPendingInjectionIgnoresMarkerWithMissingInjectorImage() throws {
-        let temp = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: temp) }
-        let bundle = temp.appendingPathComponent("bundle.vmbridge", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: bundle.appendingPathComponent("metadata"), withIntermediateDirectories: true)
-        let marker = bundle.appendingPathComponent(HvfWindowsInstallPlan.injectPendingMarker)
-        try Data("/nonexistent/injector.raw\n".utf8).write(to: marker)
-        XCTAssertNil(HvfEngineConfig.pendingInjection(bundlePath: bundle.path))
     }
 
     // MARK: progress filtering

@@ -50,7 +50,6 @@ final class HvfEngineSession: ObservableObject {
     private var liveInputHandle: FileHandle?
     private var liveInputPath: URL?
     private var liveInputWriteFailureReported = false
-    private var injectionConfirmed = false
     private let processIsRunning: (String) -> Bool
     private let vtpmKeyProvider: VTPMStateKeyProviding
 
@@ -168,7 +167,6 @@ final class HvfEngineSession: ObservableObject {
         stopCommandSent = false
         stopDeadline = nil
         events = []
-        injectionConfirmed = false
         liveInputWriteFailureReported = false
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -450,7 +448,6 @@ final class HvfEngineSession: ObservableObject {
             for event in BvAgentEvent.parse(lines: lines) {
                 handle(event)
             }
-            checkInjectionProgress(lines)
         }
         if let lastHeartbeatDate {
             lastHeartbeatAge = Date().timeIntervalSince(lastHeartbeatDate)
@@ -478,29 +475,6 @@ final class HvfEngineSession: ObservableObject {
                 }
                 self.stopDeadline = nil
             }
-        }
-    }
-
-    /// The injection boot confirms driver activation the moment the display
-    /// pipeline switches from ramfb to the 3D scanout: the wrapper's
-    /// BOOT_TIMER line reports `source=virtio-gpu ... state=captured` only
-    /// when viogpu3d is bound and presenting. The pending marker is then
-    /// retired so later boots run without the injector disk.
-    private func checkInjectionProgress(_ lines: [String]) {
-        guard !injectionConfirmed, let markerPath = config.injectPendingMarkerPath else { return }
-        guard lines.contains(where: {
-            $0.contains("source=virtio-gpu") && $0.contains("state=captured")
-        }) else { return }
-        injectionConfirmed = true
-        let doneName = (HvfWindowsInstallPlan.injectDoneMarker as NSString).lastPathComponent
-        let donePath = (markerPath as NSString).deletingLastPathComponent + "/" + doneName
-        let fileManager = FileManager.default
-        try? fileManager.removeItem(atPath: donePath)
-        do {
-            try fileManager.moveItem(atPath: markerPath, toPath: donePath)
-            append(.unknown("viogpu3d 3D 디스플레이 활성 확인 — 다음 부팅부터 인젝터 없이 시작합니다"))
-        } catch {
-            append(.unknown("3D 활성은 확인했지만 주입 마커 정리에 실패했습니다: \(error.localizedDescription)"))
         }
     }
 
@@ -553,7 +527,6 @@ final class HvfEngineSession: ObservableObject {
     }
 
     private func resetObservedRuntimeState(clearEvents: Bool) {
-        injectionConfirmed = false
         tailReader = TailOffsetReader()
         lastHeartbeatDate = nil
         lastHeartbeatAge = nil
