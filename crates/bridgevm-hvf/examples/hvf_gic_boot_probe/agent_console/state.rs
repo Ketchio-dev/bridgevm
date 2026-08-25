@@ -44,7 +44,7 @@ pub(super) const SHARE_MS_FLOOR: u64 = 500;
 
 pub(super) const DEFAULT_SHARE_MAX_KB: u64 = 8192;
 
-pub(super) const SHARE_PUT_CHUNK_BYTES: usize = 24 * 1024;
+pub(super) const SHARE_PUT_CHUNK_BYTES: usize = 11 * 1024;
 
 pub(super) const COMMAND_OUTPUT_CHUNK_BYTES: usize = 24 * 1024;
 

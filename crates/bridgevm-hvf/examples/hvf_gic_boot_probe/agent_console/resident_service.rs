@@ -133,7 +133,7 @@ impl AgentConsoleHarness {
                             req_kind(&req),
                             now.duration_since(self.start).as_millis()
                         );
-                        self.queue.push_front(req);
+                        self.queue.push_front(rewind_share_put_for_retransmit(req));
                     }
                     self.overdue_beats = 0;
                 }

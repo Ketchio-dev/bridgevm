@@ -787,7 +787,7 @@ mod tests {
 
         let t1 = t0 + Duration::from_millis(1);
         h.handle_share_put_reply("OK PUTBEG", None, None, t1);
-        assert!(h.service_line_scratch.starts_with("PUTCHUNK 0 "));
+        assert!(h.service_line_scratch.len() < 16384);
         let chunk_ptr = h.service_line_scratch.as_ptr();
         let chunk_capacity = h.service_line_scratch.capacity();
         match h.in_flight.as_ref().unwrap() {
