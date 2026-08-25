@@ -1452,3 +1452,11 @@ scripts/package-dmg.sh	45
 install.sh	44	0
 scripts/render-graphics-compatibility.py	245	0
 tests/fixtures/fake-swtpm.py	77	0
+scripts/live-gates/analyze-b4-umd-diagnostic.py	198	0
+scripts/live-gates/b4-diagnostic-package.py	346	0
+scripts/live-gates/run-b4-umd-diagnostic-tier.sh	99	0
+scripts/live-gates/verify-live-sealed-input.sh	22	0
+scripts/run-b4-umd-diagnostic-case.sh	152	0
+scripts/win-assets/b4-dbwin-capture.ps1	155	0
+scripts/win-assets/b4-install-diagnostic-package.ps1	154	0
+tests/integration/b4-umd-diagnostic-live-tier-smoke.sh	60	0

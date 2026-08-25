@@ -15,5 +15,5 @@ case "$TIER" in
       --input-manifest-hash "$manifest_hash" --reason "$reason" || true
     ;;
   t9-audio-teardown) printf '{"tier":"t9-audio-teardown","gate_id":"a5-audio-teardown-quality","criterion":"A5-quality","job_id":"%s","commit":"%s","image_sha256":"absent","vars_sha256":"absent","sample_count":10,"outcome":"%s","pass":false}\n' "$JOB_ID" "$COMMIT" "$reason" >"$DIR/receipt.json" ;;
-  t11-glyph-scene-pilot) printf '{"tier":"t11-glyph-scene-pilot","criterion":"glyph-diagnostic-only","job_id":"%s","commit":"%s","sample_count":0,"outcome":"%s","pass":false}\n' "$JOB_ID" "$COMMIT" "$reason" >"$DIR/receipt.json" ;;
+  t11-glyph-scene-pilot|t12-b4-umd-diagnostic) printf '{"tier":"%s","criterion":"%s","job_id":"%s","commit":"%s","sample_count":0,"outcome":"%s","pass":false}\n' "$TIER" "$([ "$TIER" = t11-glyph-scene-pilot ] && echo glyph-diagnostic-only || echo B4)" "$JOB_ID" "$COMMIT" "$reason" >"$DIR/receipt.json" ;;
 esac

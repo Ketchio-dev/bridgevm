@@ -55,7 +55,7 @@ cmd_submit() {
     # Reject an unknown tier here rather than at claim time. A typo (or a
     # `--help` mistaken for a tier) must not sit in the queue looking like work.
     case "$tier" in
-        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure|t8-pointer-reliability|t9-audio-teardown|t10-qmp-stress|t11-glyph-scene-pilot) ;;
+        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure|t8-pointer-reliability|t9-audio-teardown|t10-qmp-stress|t11-glyph-scene-pilot|t12-b4-umd-diagnostic) ;;
         *) echo "unknown tier $tier" >&2; usage >&2; exit 2 ;;
     esac
 
@@ -67,7 +67,8 @@ cmd_submit() {
             *) echo "unknown submit option $1" >&2; exit 2 ;;
         esac
     done
-    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ]; then
+    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] \
+        || [ "$tier" = t12-b4-umd-diagnostic ]; then
         [ -f "$input_manifest" ] || {
             echo "$tier needs --input-manifest PATH" >&2
             exit 2
@@ -87,22 +88,30 @@ cmd_submit() {
     local id="$(date +%Y%m%d-%H%M%S)-$$-$RANDOM"
     local staging="$QUEUE_ROOT/.staging-$id"
     mkdir -p "$staging"
-    local manifest_sha="" binary_sha=""
+    local manifest_sha="" binary_sha="" sealed_package_sha=""
     if [ -n "$input_manifest" ]; then
         cp "$input_manifest" "$staging/input-manifest.tsv"
         chmod 600 "$staging/input-manifest.tsv"
         manifest_sha="$(shasum -a 256 "$staging/input-manifest.tsv" | cut -d' ' -f1)"
-        local binary_path expected_binary_sha
-        binary_path="$(awk -F '\t' '$1=="binary"{print $2}' "$staging/input-manifest.tsv")"
-        expected_binary_sha="$(awk -F '\t' '$1=="binary"{print $3}' "$staging/input-manifest.tsv")"
-        [ -f "$binary_path" ] || { rm -rf "$staging"; echo "sealed binary is missing" >&2; exit 2; }
-        cp "$binary_path" "$staging/hvf_gic_boot_probe"
-        chmod 500 "$staging/hvf_gic_boot_probe"
-        binary_sha="$(shasum -a 256 "$staging/hvf_gic_boot_probe" | cut -d' ' -f1)"
-        if [ "$binary_sha" != "$expected_binary_sha" ]; then
-            rm -rf "$staging"
-            echo "sealed binary hash does not match the input manifest" >&2
-            exit 2
+        if [ "$tier" = t12-b4-umd-diagnostic ]; then
+            if ! sealed_package_sha="$(python3 "$(dirname "$0")/b4-diagnostic-package.py" copy \
+                --manifest "$staging/input-manifest.tsv" --out "$staging/sealed-package")"; then
+                rm -rf "$staging"; echo "B4 package sealing failed" >&2; exit 2
+            fi
+        fi
+        if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ]; then
+            local binary_path expected_binary_sha
+            binary_path="$(awk -F '\t' '$1=="binary"{print $2}' "$staging/input-manifest.tsv")"
+            expected_binary_sha="$(awk -F '\t' '$1=="binary"{print $3}' "$staging/input-manifest.tsv")"
+            [ -f "$binary_path" ] || { rm -rf "$staging"; echo "sealed binary is missing" >&2; exit 2; }
+            cp "$binary_path" "$staging/hvf_gic_boot_probe"
+            chmod 500 "$staging/hvf_gic_boot_probe"
+            binary_sha="$(shasum -a 256 "$staging/hvf_gic_boot_probe" | cut -d' ' -f1)"
+            if [ "$binary_sha" != "$expected_binary_sha" ]; then
+                rm -rf "$staging"
+                echo "sealed binary hash does not match the input manifest" >&2
+                exit 2
+            fi
         fi
     fi
     {
@@ -112,6 +121,7 @@ cmd_submit() {
         printf 'submitted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         [ -z "$manifest_sha" ] || printf 'input_manifest_sha256=%s\n' "$manifest_sha"
         [ -z "$binary_sha" ] || printf 'sealed_binary_sha256=%s\n' "$binary_sha"
+        [ -z "$sealed_package_sha" ] || printf 'sealed_package_sha256=%s\n' "$sealed_package_sha"
     } > "$staging/job.env"
     # Build the job outside the queue, then move it in, so a worker never sees
     # a half-written job.

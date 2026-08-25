@@ -75,21 +75,15 @@ run_job() {
         return 1
     fi
 
-    local tier_args=()
-    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ]; then
-        local manifest="$dir/input-manifest.tsv" sealed_binary="$dir/hvf_gic_boot_probe"
-        local expected_manifest actual_manifest expected_binary actual_binary
-        expected_manifest="$(awk -F= '$1=="input_manifest_sha256"{print $2}' "$dir/job.env")"
-        actual_manifest="$(shasum -a 256 "$manifest" 2>/dev/null | cut -d' ' -f1 || true)"
-        expected_binary="$(awk -F= '$1=="sealed_binary_sha256"{print $2}' "$dir/job.env")"
-        actual_binary="$(shasum -a 256 "$sealed_binary" 2>/dev/null | cut -d' ' -f1 || true)"
-        if [ -z "$expected_manifest" ] || [ "$actual_manifest" != "$expected_manifest" ] \
-            || [ -z "$expected_binary" ] || [ "$actual_binary" != "$expected_binary" ]; then
-            log "job $job_id manifest or binary is missing or changed after submission"
-            printf 'result=refused-sealed-input\n' > "$dir/result.env"
-            return 1
-        fi
-        tier_args=(--input-manifest "$manifest" --sealed-binary "$sealed_binary")
+    local tier_args=() manifest="$dir/input-manifest.tsv"
+    case "$tier" in
+        t6-a3-title|t7-windows-closure) tier_args=(--input-manifest "$manifest" --sealed-binary "$dir/hvf_gic_boot_probe") ;;
+        t12-b4-umd-diagnostic) tier_args=(--input-manifest "$manifest" --sealed-package "$dir/sealed-package") ;;
+    esac
+    if (( ${#tier_args[@]} )) && ! "$REPO/scripts/live-gates/verify-live-sealed-input.sh" "$tier" "$dir" "$REPO"; then
+        log "job $job_id sealed input is missing or changed after submission"
+        printf 'result=refused-sealed-input\n' > "$dir/result.env"
+        return 1
     fi
 
     # A detached worktree at the sealed SHA. The development checkout keeps

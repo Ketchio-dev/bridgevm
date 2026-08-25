@@ -1,32 +1,18 @@
-diff --git a/src/gallium/frontends/d3d10umd/Debug.h b/src/gallium/frontends/d3d10umd/Debug.h
-index efdf318..9b5d6dd 100644
---- a/src/gallium/frontends/d3d10umd/Debug.h
-+++ b/src/gallium/frontends/d3d10umd/Debug.h
-@@ -60,11 +60,7 @@ AssertFail(const char *expr, const char *file, unsigned line, const char *functi
- #endif
-
-
--#if 0 && !defined(NDEBUG)
--#define LOG_ENTRYPOINT() DebugPrintf("%s\n", __func__)
--#else
--#define LOG_ENTRYPOINT() (void)0
--#endif
-+#define LOG_ENTRYPOINT() DebugPrintf("BV-D3D10-ENTRY %s\n", __func__)
-
- #define LOG_UNSUPPORTED_ENTRYPOINT() DebugPrintf("%s XXX\n", __func__)
-
 diff --git a/src/gallium/winsys/virgl/gdi/virgl_gdi_winsys.c b/src/gallium/winsys/virgl/gdi/virgl_gdi_winsys.c
-index 0b3c811..f9eb330 100644
+index 0b3c8119df9..0b2d613aa4d 100644
 --- a/src/gallium/winsys/virgl/gdi/virgl_gdi_winsys.c
 +++ b/src/gallium/winsys/virgl/gdi/virgl_gdi_winsys.c
-@@ -691,6 +691,20 @@ virgl_gdi_cmd_buf_build_alloc_lists(struct virgl_gdi_cmd_buf *cbuf)
+@@ -691,6 +691,23 @@ virgl_gdi_cmd_buf_build_alloc_lists(struct virgl_gdi_cmd_buf *cbuf)
     }
  }
-
+ 
++static volatile LONG bridgevm_trace_grow_failed;
++
 +static void
 +bridgevm_trace_alloc_list_grow_failure(struct virgl_gdi_cmd_buf *cbuf,
 +                                       struct virgl_hw_res *res)
 +{
++   InterlockedExchange(&bridgevm_trace_grow_failed, 1);
 +   static volatile LONG emitted;
 +   if (InterlockedIncrement(&emitted) > 32)
 +      return;
@@ -40,7 +26,7 @@ index 0b3c811..f9eb330 100644
  static void
  virgl_gdi_cmd_buf_add_res(struct virgl_winsys *qws,
                            struct virgl_gdi_cmd_buf *cbuf,
-@@ -707,6 +721,7 @@ virgl_gdi_cmd_buf_add_res(struct virgl_winsys *qws,
+@@ -707,6 +724,7 @@ virgl_gdi_cmd_buf_add_res(struct virgl_winsys *qws,
     if (cbuf->alloc_count >= cbuf->max_alloc) {
        unsigned new_size = cbuf->max_alloc + 256;
        if (!virgl_gdi_cmd_buf_grow_res_list(cbuf, new_size)) {
@@ -48,19 +34,24 @@ index 0b3c811..f9eb330 100644
           assert(cbuf->alloc_count < cbuf->max_alloc);
           return;
        }
-@@ -857,6 +872,25 @@ virgl_gdi_cmd_buf_destroy(struct virgl_cmd_buf *_cbuf)
+@@ -857,6 +875,30 @@ virgl_gdi_cmd_buf_destroy(struct virgl_cmd_buf *_cbuf)
     FREE(cbuf);
  }
-
+ 
 +/*
 + * Keep this diagnostic visible in release UMD builds.  The Windows smoke
-+ * runner captures OutputDebugStringA, allowing us to distinguish an empty
-+ * VirGL command buffer from a rejected D3D runtime render callback.
++ * runner captures OutputDebugStringA after an allocation-vector growth
++ * failure, retaining the bounded submit state immediately around the defect.
 + */
 +static void
 +bridgevm_trace_submit(const char *stage, struct virgl_gdi_cmd_buf *cbuf,
 +                      unsigned command_length, long status)
 +{
++   if (!InterlockedCompareExchange(&bridgevm_trace_grow_failed, 0, 0))
++      return;
++   static volatile LONG emitted;
++   if (InterlockedIncrement(&emitted) > 64)
++      return;
 +   char message[256];
 +   snprintf(message, sizeof(message),
 +            "BV-VIRGL-SUBMIT stage=%s cdw=%u driver_length=%u command_length=%u allocations=%u max_alloc=%u d3d_list_size=%u status=0x%08lx cmd_buffer=%u alloc_list=%u patch_list=%u\n",
@@ -74,10 +65,10 @@ index 0b3c811..f9eb330 100644
  static int
  virgl_gdi_winsys_submit_cmd(struct virgl_winsys *qws,
                              struct virgl_cmd_buf *_cbuf,
-@@ -897,7 +931,10 @@ virgl_gdi_winsys_submit_cmd(struct virgl_winsys *qws,
+@@ -897,7 +939,10 @@ virgl_gdi_winsys_submit_cmd(struct virgl_winsys *qws,
        }
     }
-
+ 
 +   bridgevm_trace_submit("before-render", cbuf, render.CommandLength, 0);
     NTSTATUS Status = cbuf->ctx->render(cbuf->ctx, &render);
 +   bridgevm_trace_submit("after-render", cbuf, render.CommandLength,

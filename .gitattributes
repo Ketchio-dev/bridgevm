@@ -7,3 +7,4 @@
 # no `git diff --stat` showed, and buried a 27-line change in a 269-line
 # whole-file rewrite. -text pins whatever each file already is.
 scripts/win-assets/** -text whitespace=cr-at-eol
+scripts/patches/virtio-win-mesa-submit-trace.patch text eol=lf whitespace=-blank-at-eol

@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
-# Dispatch one live-gate tier and leave a receipt in --out.
-#
-# Tiers are declared in PLAN.md. Only T5 produces A1 shipping evidence; no
-# lower tier may weaken A1. T6 requires every independent title run to pass.
+# Dispatch one declared live-gate tier without weakening its criterion.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 TIER="${1:?run-tier.sh needs a tier}"
 shift || true
 
-OUT=""
-INPUT_MANIFEST=""
-SEALED_BINARY=""
+OUT=""; INPUT_MANIFEST=""; SEALED_BINARY=""; SEALED_PACKAGE=""
 JOB_ID="local-$(date +%Y%m%d-%H%M%S)"
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -19,6 +14,7 @@ while [ $# -gt 0 ]; do
         --job-id) JOB_ID="$2"; shift 2 ;;
         --input-manifest) INPUT_MANIFEST="$2"; shift 2 ;;
         --sealed-binary) SEALED_BINARY="$2"; shift 2 ;;
+        --sealed-package) SEALED_PACKAGE="$2"; shift 2 ;;
         --lanes) LANES="$2"; shift 2 ;;
         *) echo "unknown run-tier option $1" >&2; exit 2 ;;
     esac
@@ -107,6 +103,9 @@ case "$TIER" in
     t8-pointer-reliability|t9-audio-teardown|t10-qmp-stress|t11-glyph-scene-pilot)
         case "$TIER" in t8-pointer-reliability) helper=run-pointer-reliability-tier.sh ;; t9-audio-teardown) helper=run-audio-teardown-tier.sh ;; t10-qmp-stress) helper=run-qmp-stress-tier.sh ;; *) helper=run-glyph-scene-pilot-tier.sh ;; esac
         bash "$REPO/scripts/live-gates/$helper" --out "$OUT" --job-id "$JOB_ID" ;;
+    t12-b4-umd-diagnostic)
+        bash "$REPO/scripts/live-gates/run-b4-umd-diagnostic-tier.sh" --out "$OUT" \
+          --job-id "$JOB_ID" --input-manifest "$INPUT_MANIFEST" --sealed-package "$SEALED_PACKAGE" ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)
         # These need private Windows media and 20+ minutes per boot. They are
         # declared so the queue and its policy tests are exercised, but they

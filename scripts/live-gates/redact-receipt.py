@@ -83,7 +83,7 @@ ALLOWED_FIELDS = frozenset(
         "driver_hash",
         "image_hash",
         "vars_hash",
-        "binary_hash", "injector_sha256", "agent_sha256", "prepared_image_sha256", "prepared_vars_sha256", "injector_boot_observed", "f1_driver_load", "f2_resize", "f3_window_verbs", "f4_glyph_observation", "active_scanout_capture", "landed", "p95_first_changed_ms", "baseline_iterations", "baseline_matches", "load_processes", "callback_errors", "frames_rendered",
+        "binary_hash", "injector_sha256", "agent_sha256", "prepared_image_sha256", "prepared_vars_sha256", "injector_boot_observed", "f1_driver_load", "f2_resize", "f3_window_verbs", "f4_glyph_observation", "active_scanout_capture", "landed", "p95_first_changed_ms", "baseline_iterations", "baseline_matches", "load_processes", "callback_errors", "frames_rendered", "sealed_package_sha256", "diagnostic_umd_sha256", "diagnostic_version", "installed_diagnostic_verified", "installed_umd_sha256", "driver_version", "diagnostic_correlation", "diagnostic_guest_event_count", "diagnostic_submit_event_count", "diagnostic_max_submit_allocations", "diagnostic_max_submit_capacity", "diagnostic_max_d3d_list_size", "diagnostic_host_event_count", "diagnostic_guest_resource_id", "diagnostic_host_resource_id",
     }
 )
 
