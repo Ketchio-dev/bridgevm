@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Deterministic project check.
 #
 # The gate referenced by AGENTS.md and by CI; it must pass before work is called
 # done. No live virtualization: no Hypervisor.framework, Windows media or GPU.
