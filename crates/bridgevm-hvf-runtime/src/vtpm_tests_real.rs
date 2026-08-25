@@ -6,6 +6,10 @@ use super::super::*;
 use super::{scratch_state, wait_for_state_file};
 use std::path::PathBuf;
 
+#[path = "vtpm_tests_flash_binary.rs"]
+mod flash_binary;
+use flash_binary::write_flash_swtpm;
+
 #[test]
 fn a_real_swtpm_serves_sockets_and_dies_with_the_handle() {
     let swtpm = PathBuf::from("/opt/homebrew/bin/swtpm");
@@ -41,24 +45,7 @@ fn a_binary_that_dies_just_after_binding_its_sockets_is_not_trusted() {
     let dir = std::env::temp_dir().join(format!("bv-vtpm-flashbin-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let script = dir.join("flash-swtpm.sh");
-    std::fs::write(
-        &script,
-        "#!/bin/sh\n\
-         # Bind both sockets the way swtpm does, then exit like a bad key.\n\
-         for arg in \"$@\"; do\n\
-         \x20 case \"$arg\" in\n\
-         \x20   *path=*) p=${arg#*path=}; p=${p%%,*}; nc -lU \"$p\" >/dev/null 2>&1 &\n\
-         \x20   ;;\n\
-         \x20 esac\n\
-         done\n\
-         sleep 0.05\n\
-         exit 1\n",
-    )
-    .unwrap();
-    let mut permissions = std::fs::metadata(&script).unwrap().permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
-    std::fs::set_permissions(&script, permissions).unwrap();
+    let script = write_flash_swtpm(&dir);
 
     let outcome = start_swtpm(&VtpmConfig {
         state_dir: scratch_state("flash"),
