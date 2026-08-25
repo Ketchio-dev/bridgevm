@@ -888,6 +888,7 @@ scripts/verify-reset-recreate.sh	113	0
 scripts/verify-app-third-party-notices.sh	63	0
 scripts/verify-pointer-click-reliability.sh	110	0
 scripts/validate-windows-compatibility-matrix.py	85	0
+scripts/validate-clean-machine-matrix.py	64	0
 scripts/run-pointer-click-reliability-case.sh	53	0
 scripts/pointer_iosurface.py	43	0
 scripts/iosurface_capture.py	53	0

@@ -39,6 +39,7 @@ step "contract and schema json" json_valid docs/machine-contract/qemu-virt-devia
 step "capability evidence" python3 scripts/check-capability-evidence.py
 step "capability test counts" python3 scripts/check-capability-test-counts.py
 step "compatibility matrix contract" python3 scripts/validate-windows-compatibility-matrix.py --self-test
+step "clean-machine matrix contract" python3 scripts/validate-clean-machine-matrix.py --self-test
 step "documentation system" bash scripts/check-documentation-system.sh
 step "documentation references" python3 scripts/check-doc-references.py
 step "structural budgets" scripts/check-refactor-budgets.sh
