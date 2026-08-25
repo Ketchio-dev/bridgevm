@@ -55,7 +55,7 @@ cmd_submit() {
     # Reject an unknown tier here rather than at claim time. A typo (or a
     # `--help` mistaken for a tier) must not sit in the queue looking like work.
     case "$tier" in
-        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure|t8-pointer-reliability|t10-qmp-stress) ;;
+        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure|t8-pointer-reliability|t9-audio-teardown|t10-qmp-stress) ;;
         *) echo "unknown tier $tier" >&2; usage >&2; exit 2 ;;
     esac
 

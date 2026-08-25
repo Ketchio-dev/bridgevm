@@ -663,7 +663,8 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/device_shape.rs	278	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/exception_trace.rs	173	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_diagnostics.rs	259	3
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_memory.rs	219	8
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs	259	16
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs	255	16
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_outcomes.rs	46	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_stats.rs	56	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard.rs	424	21
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_support.rs	41	2
@@ -911,6 +912,7 @@ crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	387	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	477	13
 scripts/install-bridgevm.sh	209	0
 scripts/live-gates/run-a3-title-tier.sh	90	0
+scripts/live-gates/run-audio-teardown-tier.sh	28	0
 scripts/live-gates/run-windows-closure-tier.sh	116	0
 scripts/live-gates/a3-title-manifest.sh	47	0
 scripts/live-gates/verify-windows-closure-binary.sh	7	0
@@ -920,6 +922,9 @@ scripts/live-gates/a3-title-payload.sh	22	0
 scripts/live-gates/a3-title-payload.py	128	0
 scripts/live-gates/a3-title-payload-stage.sh	52	0
 scripts/live-gates/write-a3-title-receipt.py	179	0
+scripts/live-gates/write-audio-teardown-receipt.py	24	0
+scripts/live-gates/audio_teardown_summary.py	12	0
+scripts/live-gates/audio_teardown_receipt_self_test.py	18	0
 scripts/live-gates/write-missing-receipt.sh	19	0
 scripts/live-gates/write-windows-closure-receipt.py	165	0
 scripts/win-assets/bv-windows-closure-proof.ps1	148	0
@@ -1140,7 +1145,7 @@ scripts/find-hvf-windows-viogpu3d-packages.sh	210	0
 scripts/live-gates/bridgevm-live-worker.sh	173	0
 scripts/live-gates/install-studio-queue.sh	84	0
 scripts/live-gates/run-pointer-reliability-tier.sh	59	0
-scripts/live-gates/run-tier.sh	159	0
+scripts/live-gates/run-tier.sh	158	0
 scripts/measure-pointer-latency.sh	60	0
 scripts/notarize-submit.sh	51	0
 scripts/p1-boot-gate.sh	312	0
@@ -1170,7 +1175,7 @@ scripts/stage-vz-linux-demo-vm.sh	189	0
 scripts/stage-vz-ubuntu-desktop-vm.sh	176	0
 scripts/venus-render-server-molten.sh	6	0
 scripts/verify-agent-clipboard-share.sh	225	0
-scripts/verify-audio-playback.sh	155	0
+scripts/verify-audio-playback.sh	154	0
 scripts/verify-d3d11-title-fps.sh	243	0
 scripts/verify-dynamic-resize.sh	112	0
 scripts/verify-keyboard-input.sh	176	0
@@ -1401,7 +1406,7 @@ scripts/venus_feature.py	41	0
 scripts/drop-injector-boot-entry.py	44	0
 scripts/fb-rate.py	113	0
 scripts/generate-xctest-manifest.py	107	0
-scripts/live-gates/redact-receipt.py	247	0
+scripts/live-gates/redact-receipt.py	246	0
 scripts/live-gates/qmp-close-race-baseline.rs	27	0
 scripts/live-gates/run-qmp-stress-tier.sh	49	0
 scripts/live-gates/verify-qmp-stress.py	60	0

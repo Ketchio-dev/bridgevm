@@ -186,8 +186,8 @@ check "submit returns in under 10s" '[ "$elapsed" -lt 10 ]'
 check "the job is queued" '"$CLI" status | grep -q "queued .*$job_id"'
 
 # --- the exact commit is sealed at submit time ---------------------------
-check "the job records a commit" 'grep -q "^commit=[0-9a-f]\{40\}$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env"'
-check "the job records its tier" 'grep -q "^tier=t1-vtimer$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env"'
+check "the job records its commit and tier" 'grep -q "^commit=[0-9a-f]\{40\}$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env" && grep -q "^tier=t1-vtimer$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env"'
+check "the audio tier fixes and verifies all ten runs" 'audio_job="$($CLI submit t9-audio-teardown)"; grep -q "^tier=t9-audio-teardown$" "$BRIDGEVM_LIVE_ROOT/queued/$audio_job/job.env" && grep -q "N=10" "$REPO/scripts/live-gates/run-audio-teardown-tier.sh" && python3 "$REPO/scripts/live-gates/write-audio-teardown-receipt.py" --self-test | grep -q PASS; rm -rf "$BRIDGEVM_LIVE_ROOT/queued/$audio_job"'
 
 # The A3 tier must seal a copied input manifest at submit time. It may not
 # retain a caller-owned path that can be edited after submission.

@@ -104,9 +104,8 @@ case "$TIER" in
         "$REPO/scripts/live-gates/$helper" --out "$OUT" --input-manifest "$INPUT_MANIFEST" \
             --sealed-binary "$SEALED_BINARY" --job-id "$JOB_ID"
         ;;
-    t8-pointer-reliability|t10-qmp-stress)
-        helper=run-pointer-reliability-tier.sh
-        [[ "$TIER" == t8-pointer-reliability ]] || helper=run-qmp-stress-tier.sh
+    t8-pointer-reliability|t9-audio-teardown|t10-qmp-stress)
+        case "$TIER" in t8-pointer-reliability) helper=run-pointer-reliability-tier.sh ;; t9-audio-teardown) helper=run-audio-teardown-tier.sh ;; *) helper=run-qmp-stress-tier.sh ;; esac
         "$REPO/scripts/live-gates/$helper" --out "$OUT" --job-id "$JOB_ID" ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)
         # These need private Windows media and 20+ minutes per boot. They are

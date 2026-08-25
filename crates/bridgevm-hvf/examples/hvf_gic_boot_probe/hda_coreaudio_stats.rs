@@ -3,6 +3,7 @@
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use super::hda_coreaudio_outcomes::CoreAudioOutcomes;
 
 pub(super) struct Shared {
     pub(super) ring: Mutex<VecDeque<u8>>,
@@ -14,7 +15,7 @@ pub(super) struct Shared {
     dropped_bytes: AtomicU64,
     format_drops: AtomicU64,
     ring_full_drops: AtomicU64,
-    pub(super) callback_errors: AtomicU64,
+    pub(super) outcomes: CoreAudioOutcomes,
 }
 
 impl Shared {
@@ -26,7 +27,7 @@ impl Shared {
             dropped_bytes: AtomicU64::new(0),
             format_drops: AtomicU64::new(0),
             ring_full_drops: AtomicU64::new(0),
-            callback_errors: AtomicU64::new(0),
+            outcomes: CoreAudioOutcomes::new(),
         }
     }
 
@@ -47,14 +48,14 @@ impl Shared {
     }
 
     pub(super) fn print_stats(&self) {
+        let (unexpected, teardown, stop, dispose) = self.outcomes.snapshot();
         println!(
-            "hda CoreAudio stats: frames_rendered={} drops={} dropped_bytes={} format_drops={} ring_full_drops={} callback_errors={}",
+            "hda CoreAudio stats: frames_rendered={} drops={} dropped_bytes={} format_drops={} ring_full_drops={} unexpected_callback_errors={unexpected} teardown_reenqueue_refusals={teardown} stop_errors={stop} dispose_errors={dispose}",
             self.frames_rendered.load(Ordering::Relaxed),
             self.dropped_writes.load(Ordering::Relaxed),
             self.dropped_bytes.load(Ordering::Relaxed),
             self.format_drops.load(Ordering::Relaxed),
             self.ring_full_drops.load(Ordering::Relaxed),
-            self.callback_errors.load(Ordering::Relaxed)
         );
     }
 }
