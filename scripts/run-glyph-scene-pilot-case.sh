@@ -19,8 +19,9 @@ cmd="powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMPtr\\bv-win
 grep -Eq "^BVWINDOW hwnd=$hwnd exists=True pid=[0-9]+ rect=50,60,700,500 foreground=$hwnd\r?$" "$CASE/run.log"||fail 'window geometry/foreground mismatch'
 for _ in $(seq 1 120); do [[ -s "$CASE/active-scanout.fb.iosurface" ]]&&break; sleep 1; done
 [[ -s "$CASE/active-scanout.fb.iosurface" ]]||fail 'active CGL IOSurface absent'
-printf 'KEY text-hex:427269646765564d20476c7970682050726f6265204142434445464748494a4b4c4d4e4f505152535455565758595a206162636465666768696a6b6c6d6e6f707172737475767778797a20303132333435363738392021402324255e262a2829\n' >>"$INPUT"
-wait_for 'live input accepted: command=Key\(' 1 30||fail 'fixed text not accepted'; sleep 2
+# The inner HID text action accepts at most 32 decoded bytes. Keep the exact
+# 96-byte scene string in three bounded actions (the outer line cap is larger).
+n=0; for chunk in 427269646765564d20476c7970682050726f6265204142434445464748494a4b 4c4d4e4f505152535455565758595a206162636465666768696a6b6c6d6e6f70 7172737475767778797a20303132333435363738392021402324255e262a2829; do n=$((n+1)); printf 'KEY text-hex:%s\n' "$chunk" >>"$INPUT"; wait_for 'live input accepted: command=Key\(' "$n" 30||fail 'fixed text not accepted'; done; sleep 2
 printf 'WINBOUNDS %s 50 60 701 500\n' "$hwnd" >>"$CTL"; wait_for "^BVAGENT WINBOUNDS $hwnd 50 60 701 500 -> OK WINBOUNDS$" 1 60||fail 'intermediate geometry failed'
 python3 scripts/capture-active-iosurface.py --iosurface "$CASE/active-scanout.fb.iosurface" --out "$CASE/glyph-scene" --ready "$CASE/glyph-capture.ready" --timeout-ms 10000 --settle-ms 250 >"$CASE/glyph-capture.log" 2>&1 & capture=$!
 for _ in $(seq 1 30); do [[ -s "$CASE/glyph-capture.ready" ]]&&break; sleep 1; done; [[ -s "$CASE/glyph-capture.ready" ]]||fail 'capture did not arm'
