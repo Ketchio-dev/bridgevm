@@ -52,15 +52,6 @@ struct HvfWindowsInstallPlan: Equatable {
     /// line is the placeholder NSID-1 injector image path for the next boot.
     static let injectPendingMarker = "metadata/hvf-inject-pending"
     static let injectDoneMarker = "metadata/hvf-inject-done"
-    /// The prebuilt injector produced by earlier lab sessions; reused by the
-    /// import flow so importing does not require the Windows ISO.
-    static var sharedInjectorCandidates: [String] {
-        [
-            "\(NSHomeDirectory())/BridgeVM/bridgevm-app-viogpu3d-injector.raw",
-            "\(NSHomeDirectory())/BridgeVM/win-viogpu3d-injector.raw",
-        ]
-    }
-
     static var varsTemplateCandidates: [String] {
         var candidates: [String] = []
         if let override = ProcessInfo.processInfo.environment["BRIDGEVM_UEFI_VARS_TEMPLATE"],

@@ -1,6 +1,6 @@
 import Foundation
-
 struct HvfWindowsDriverPreflight: Equatable {
+    static let provenanceBlocker = "kernel-policy-provenance-unverifiable"
     let blocker: String?
     let signingMode: String
     let testSigningRequired: Bool?
@@ -33,13 +33,13 @@ struct HvfWindowsDriverPreflight: Equatable {
             return .init(blocker: "kernel-policy-unverifiable", signingMode: mode,
                          testSigningRequired: required)
         }
-        return .init(blocker: "kernel-policy-provenance-unverifiable", signingMode: mode, testSigningRequired: required)
+        return .init(blocker: provenanceBlocker, signingMode: mode, testSigningRequired: required)
     }
 
-    var userMessage: String? {
-        blocker.map {
-            "3D 드라이버 사전 점검 차단 [\($0)]: 이 설치는 Microsoft Secure Boot를 시드합니다. " +
-            "서명 provenance 검증기는 아직 구현되지 않았습니다. 3D 주입을 끄고 다시 생성하세요."
-        }
+    static func message(for blocker: String) -> String {
+        "3D 드라이버 사전 점검 차단 [\(blocker)]: Windows-HVF 3D 주입에는 검증된 서명 " +
+        "provenance가 필요합니다. 검증기는 아직 구현되지 않았습니다. 3D 주입을 끄고 다시 생성하세요."
     }
+
+    var userMessage: String? { blocker.map(Self.message) }
 }

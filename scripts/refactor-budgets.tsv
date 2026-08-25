@@ -1048,7 +1048,7 @@ apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	44	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	64	0
 apps/macos/Sources/BridgeVMControl/ContentView.swift	551	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	314	0
-apps/macos/Sources/BridgeVMControl/CreateVM.swift	980	0
+apps/macos/Sources/BridgeVMControl/CreateVM.swift	951	0
 apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	176	0
 apps/macos/Sources/BridgeVMControl/FirstRunView.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
@@ -1066,7 +1066,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerEventSurface.swift	119	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift	380	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	50	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift	407	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	580	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	571	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsDriverPreflight.swift	45	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallView.swift	141	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/TailOffsetReader.swift	47	0
@@ -1104,6 +1104,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfEngineTests.swift	1612	0
 apps/macos/Tests/BridgeVMControlTests/QemuCompatToolLookupTests.swift	55
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsBootSeedTests.swift	270	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsImportTests.swift	224	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsImportInjectionPreflightTests.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallTests.swift	401	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsDriverPreflightTests.swift	57	0
 apps/macos/Tests/BridgeVMControlTests/LibraryModelPersistenceTests.swift	112	0

@@ -489,31 +489,9 @@ extension VMLibrary {
         return cfg
     }
 
-    /// Stage a viogpu3d driver injection for an imported VM's next boot by
-    /// cloning a prebuilt injector image into the bundle and writing the
-    /// inject-pending marker. Returns a Korean error message on failure.
-    static func stageWindowsHVFInjection(bundlePath: String) -> String? {
-        let fm = FileManager.default
-        guard let shared = HvfWindowsInstallPlan.sharedInjectorCandidates
-            .first(where: { fm.isReadableFile(atPath: $0) }) else {
-            return "인젝터 이미지가 없습니다. 'Windows 설치(HVF)' 모드로 한 번 설치하거나 인젝터를 먼저 만들어 주세요."
-        }
-        let destination = bundlePath + "/disks/viogpu3d-injector.raw"
-        if !fm.fileExists(atPath: destination) {
-            let clone = Shell.run("/bin/cp", ["-c", shared, destination])
-            if clone.code != 0 {
-                do { try fm.copyItem(atPath: shared, toPath: destination) } catch {
-                    return "인젝터 이미지를 VM 번들로 복사하지 못했습니다."
-                }
-            }
-        }
-        let marker = bundlePath + "/" + HvfWindowsInstallPlan.injectPendingMarker
-        do {
-            try Data("\(destination)\n".utf8).write(to: URL(fileURLWithPath: marker), options: [.atomic])
-        } catch {
-            return "드라이버 주입 마커를 기록하지 못했습니다."
-        }
-        return nil
+    static func windowsHVFImportInjectionError(requested: Bool) -> String? {
+        guard requested else { return nil }
+        return HvfWindowsDriverPreflight.message(for: HvfWindowsDriverPreflight.provenanceBlocker)
     }
 
     /// Import a proven installed Windows raw disk and its matching writable UEFI
@@ -522,10 +500,11 @@ extension VMLibrary {
     static func createWindowsHVF(name: String, targetDiskPath: String, varsPath: String,
                                  storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
                                  memMiB: Int = 6144, cpuCount: Int = 4,
-                                 networkEnabled: Bool = true,
+                                 networkEnabled: Bool = true, injectViogpu3d: Bool = false,
                                  persist: Bool = true) -> VMConfig? {
         let fm = FileManager.default
-        guard let name = normalizedVMName(name),
+        guard windowsHVFImportInjectionError(requested: injectViogpu3d) == nil,
+              let name = normalizedVMName(name),
               windowsHVFImportError(targetDiskPath: targetDiskPath, varsPath: varsPath) == nil else { return nil }
 
         let storageBase = storageDir ?? root
@@ -932,7 +911,8 @@ struct CreateVMSheet: View {
         let m = mode; let iso = isoPath
         let hvfTarget = hvfTargetPath; let hvfVars = hvfVarsPath
         if mode == .windowsHVF,
-           let importError = VMLibrary.windowsHVFImportError(targetDiskPath: hvfTarget, varsPath: hvfVars) {
+           let importError = VMLibrary.windowsHVFImportInjectionError(requested: hvfInject)
+            ?? VMLibrary.windowsHVFImportError(targetDiskPath: hvfTarget, varsPath: hvfVars) {
             error = importError
             working = false
             return
@@ -941,7 +921,6 @@ struct CreateVMSheet: View {
         let inject = hvfInject; let driverDir = hvfDriverDir; let disk = diskGiB
         let mem = ramMiB; let cpu = cpuCount; let net = hvfNetwork
         Task.detached {
-            var stagingError: String?
             let cfg: VMConfig?
             switch m {
             case .ubuntu:
@@ -953,10 +932,7 @@ struct CreateVMSheet: View {
             case .windowsHVF:
                 cfg = VMLibrary.createWindowsHVF(name: nm, targetDiskPath: hvfTarget, varsPath: hvfVars,
                                                  storageDir: sd, width: w, height: h, memMiB: mem, cpuCount: cpu,
-                                                 networkEnabled: net)
-                if inject, let created = cfg {
-                    stagingError = VMLibrary.stageWindowsHVFInjection(bundlePath: created.bundlePath)
-                }
+                                                 networkEnabled: net, injectViogpu3d: inject)
             case .windowsHVFInstall:
                 cfg = VMLibrary.createWindowsHVFInstall(name: nm, isoPath: iso, diskGiB: disk,
                                                         injectViogpu3d: inject,
@@ -964,15 +940,10 @@ struct CreateVMSheet: View {
                                                         storageDir: sd, width: w, height: h,
                                                         memMiB: mem, cpuCount: cpu, networkEnabled: net)
             }
-            let injectionWarning = stagingError
             await MainActor.run {
                 working = false
                 if let cfg = cfg, library.add(cfg) {
-                    if let injectionWarning {
-                        error = "VM은 만들었지만 드라이버 주입 준비 실패: \(injectionWarning)"
-                    } else {
-                        dismiss()
-                    }
+                    dismiss()
                 } else { error = "생성 또는 VM 라이브러리 저장 실패" }
             }
         }
