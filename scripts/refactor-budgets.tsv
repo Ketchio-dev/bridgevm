@@ -30,7 +30,9 @@ crates/bridgevm-agentd/src/tests_split/part_1.rs	681	0
 crates/bridgevm-api/src/boot_media.rs	487	0
 crates/bridgevm-api/src/boot_media_meta.rs	317	0
 crates/bridgevm-api/src/contract.rs	139	0
-crates/bridgevm-api/src/diagnostics.rs	119	0
+crates/bridgevm-api/src/diagnostics.rs	90	0
+crates/bridgevm-api/src/diagnostic_allowlist.rs	194	0
+crates/bridgevm-api/src/diagnostic_record_reader.rs	18	0
 crates/bridgevm-api/src/dispatch.rs	483	0
 crates/bridgevm-api/src/evidence_read.rs	382	0
 crates/bridgevm-api/src/evidence_util.rs	381	0
@@ -39,7 +41,7 @@ crates/bridgevm-api/src/guest_tools.rs	391	0
 crates/bridgevm-api/src/launch_readiness.rs	289	0
 crates/bridgevm-api/src/lib.rs	211	0
 crates/bridgevm-api/src/network.rs	186	0
-crates/bridgevm-api/src/performance.rs	594	0
+crates/bridgevm-api/src/performance.rs	438	0
 crates/bridgevm-api/src/process/apple_vz.rs	294	0
 crates/bridgevm-api/src/process/compatibility.rs	286	0
 crates/bridgevm-api/src/process/display.rs	373	1
@@ -61,7 +63,7 @@ crates/bridgevm-api/src/response_tests/mod.rs	0	0
 crates/bridgevm-api/src/response_tests/part_1.rs	349	0
 crates/bridgevm-api/src/response_tests/part_2.rs	851	0
 crates/bridgevm-api/src/response_tests/part_3.rs	617	0
-crates/bridgevm-api/src/response_tests/part_4.rs	818	0
+crates/bridgevm-api/src/response_tests/part_4.rs	776	0
 crates/bridgevm-api/src/response_tests/part_5.rs	705	0
 crates/bridgevm-api/src/shares.rs	125	0
 crates/bridgevm-api/src/ssh_ports.rs	156	0
@@ -155,7 +157,7 @@ crates/bridgevm-daemon/src/tests_split/mod.rs	0	0
 crates/bridgevm-daemon/src/tests_split/part_1.rs	183	0
 crates/bridgevm-daemon/src/tests_split/part_1_proxy_windows.rs	294	0
 crates/bridgevm-daemon/src/tests_split/part_2.rs	525	0
-crates/bridgevm-daemon/src/tests_split/part_3.rs	613	0
+crates/bridgevm-daemon/src/tests_split/part_3.rs	601	0
 crates/bridgevm-daemon/src/tests_split/part_4.rs	505	0
 crates/bridgevm-daemon/src/tests_split/part_4_2.rs	623	0
 crates/bridgevm-daemon/src/tests_split/part_4_3.rs	55	2
@@ -191,9 +193,11 @@ crates/bridgevm-hvf/src/media_lock.rs	131	1
 crates/bridgevm-hvf/src/msix.rs	395	0
 crates/bridgevm-hvf/src/net_nat/handle_outbound_ipv4.rs	869	0
 crates/bridgevm-hvf/src/net_nat/icmp_reply_rejection_reason.rs	512	13
-crates/bridgevm-hvf/src/net_nat/macaddr.rs	919	0
+crates/bridgevm-hvf/src/net_nat/macaddr.rs	902	0
+crates/bridgevm-hvf/src/net_nat/nat_stats.rs	36	0
 crates/bridgevm-hvf/src/net_nat/mod.rs	4	0
 crates/bridgevm-hvf/src/net_nat/tests/helpers.rs	212	0
+crates/bridgevm-hvf/src/net_nat/tests/ingress_policy.rs	77	0
 crates/bridgevm-hvf/src/net_nat/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/net_nat/tests/part_1.rs	851	0
 crates/bridgevm-hvf/src/no_qemu_plan.rs	192	0
@@ -1184,7 +1188,7 @@ tests/integration/boot-media-download-cli-smoke.sh	215	0
 tests/integration/boot-media-download-fake-curl-smoke.sh	178	0
 tests/integration/clone-cli-smoke.sh	264	0
 tests/integration/delete-cli-smoke.sh	181	0
-tests/integration/diagnostics-cli-smoke.sh	319	0
+tests/integration/diagnostics-cli-smoke.sh	106	0
 tests/integration/disk-compact-cli-smoke.sh	220	0
 tests/integration/disk-create-inspect-cli-smoke.sh	297	0
 tests/integration/disk-verify-cli-smoke.sh	220	0
