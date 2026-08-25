@@ -823,3 +823,51 @@ targeted exactly this shape and made every batch worse (see above). The failing
 transfer is a symptom of guest state the host cannot reconstruct; refusing it
 does not give the guest its backing. B4 remains **OPEN** and the next step is
 guest-side.
+
+### Batch 8, second pass — the guest omits backing for exactly the resource it then uses
+
+Continuing on `20260824-204245-4732-52`. Looking at the commands immediately
+before each black lane's first failing submit shows the defect directly. Run 3,
+seqs 1528–1540:
+
+```
+1528..1539  RESOURCE_ATTACH_BACKING  147 148 149 150 151 152 153 154 156 157 158   all OK_NODATA
+1540        SUBMIT_3D ctx=7  first_command=43 (TRANSFER3D)                          ERR_UNSPEC
+```
+
+The guest backs a contiguous burst and **skips exactly 155** — the resource the
+very next submit transfers against. The same shape appears in five of the seven
+black lanes:
+
+| lane | target | contiguous burst backed just before the failure | target in burst |
+|---|---|---|---|
+| run 3 | 155 | 147–154, 156–158 | no |
+| run 5 | 150 | 142–149, 151–155 | no |
+| run 10 | 315 | 307–314 | no |
+| run 17 | 311 | 303–310 | no |
+| run 20 | 301 | 293–300, 302–308 | no |
+
+And the omission is permanent, not merely late: resources 155, 150, 311 and 301
+are **never** given backing anywhere in their session, while their immediate
+id-neighbours are backed normally (156 at seq 1537, 151 at 1648, 312 at 5051,
+302 at 2966).
+
+**This is a guest-driver omission, and it is not a host-side race.** The
+create→backing latency distributions are identical across classes (p50 21–23
+seqs, p95 554–646, max 4.2–5.1k in both), and the number of ctx-7 `PIPE_BUFFER`s
+sitting unbacked more than 40 seqs after creation fully overlaps (black 33–42,
+landed 10–41). Landed lanes are exposed to the same windows; black lanes are the
+ones where the guest additionally *skipped* a backing and then used the
+resource. Host integrity is clean in both classes:
+`descriptor_chain_rejected=0`, zero failed `RESOURCE_ATTACH_BACKING`, one
+virtqueue, no reordering.
+
+Two black lanes (16, 18) do not show the burst pattern; there the resource had
+been backed for earlier incarnations of the same id and the final
+create→attach cycle simply never received one.
+
+The next step is therefore squarely guest-side: identify why the Windows VirGL
+driver omits `RESOURCE_ATTACH_BACKING` for one resource in a burst it otherwise
+backs completely. Nothing on the host can supply that backing — the reverted
+containment proved that refusing the transfer only makes matters worse.
+B4 remains **OPEN**.
