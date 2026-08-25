@@ -866,6 +866,14 @@ Two black lanes (16, 18) do not show the burst pattern; there the resource had
 been backed for earlier incarnations of the same id and the final
 create→attach cycle simply never received one.
 
+**The host is exonerated by construction.** Every lane's trace carries a strictly
+contiguous sequence numbering with **zero gaps** — run 3 spans seq 1..6715 with
+no break, and all 20 lanes are contiguous — so BridgeVM demonstrably processed
+every command the guest posted and dropped none. Combined with
+`descriptor_chain_rejected=0` and zero failed `RESOURCE_ATTACH_BACKING`, there is
+no host-side path by which the missing backing could have been lost in transit:
+the command was never sent.
+
 The next step is therefore squarely guest-side: identify why the Windows VirGL
 driver omits `RESOURCE_ATTACH_BACKING` for one resource in a burst it otherwise
 backs completely. Nothing on the host can supply that backing — the reverted
