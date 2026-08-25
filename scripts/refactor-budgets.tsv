@@ -940,7 +940,9 @@ scripts/live-gates/audio_teardown_summary.py	12	0
 scripts/live-gates/audio_teardown_receipt_self_test.py	18	0
 scripts/live-gates/write-missing-receipt.sh	12	0
 scripts/live-gates/missing-receipt-shapes.sh	38	0
-scripts/live-gates/worker-job-finalize.sh	40	0
+scripts/live-gates/worker-job-finalize.sh	20	0
+scripts/live-gates/finalize-live-job.sh	35	0
+scripts/live-gates/recover-live-jobs.sh	27	0
 scripts/live-gates/write-windows-closure-receipt.py	165	0
 scripts/win-assets/bv-windows-closure-proof.ps1	148	0
 scripts/win-assets/bvgpu-driver-preflight.ps1	79	0
@@ -1164,7 +1166,7 @@ scripts/check-capability-evidence.py	73	0
 scripts/check-supply-chain.sh	52	0
 scripts/check-virgl-integer-attributes.sh	72	0
 scripts/find-hvf-windows-viogpu3d-packages.sh	210	0
-scripts/live-gates/bridgevm-live-worker.sh	155	0
+scripts/live-gates/bridgevm-live-worker.sh	139	0
 scripts/live-gates/install-studio-queue.sh	84	0
 scripts/live-gates/run-pointer-reliability-tier.sh	59	0
 scripts/live-gates/run-tier.sh	158	0
@@ -1336,7 +1338,8 @@ tests/integration/glyph-region-observation-smoke.py	26	0
 tests/integration/glyph-scene-pilot-smoke.sh	14	0
 tests/integration/live-gate-policy-smoke.sh	260	0
 tests/integration/live-gate-postmortem-boundary.sh	55	0
-tests/integration/live-gate-receipt-honesty.sh	24	0
+tests/integration/live-gate-receipt-honesty.sh	19	0
+tests/integration/live-gate-recovery-smoke.sh	12	0
 tests/integration/qmp-stress-live-tier-smoke.sh	23	0
 tests/integration/windows-closure-live-tier-smoke.sh	65	0
 tests/integration/viogpu3d-submit-trace-policy-smoke.sh	12	0

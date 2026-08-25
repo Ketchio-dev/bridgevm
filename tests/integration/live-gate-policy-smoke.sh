@@ -92,7 +92,7 @@ check "the installer refuses to sit beside a runner" \
 no_match "nothing in the queue path uses sudo" \
     '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 check "live tier receipt, clone, stress and diagnostic policies pass" \
-    'python3 "$A3_RECEIPT" --self-test | grep -q "PASS" && "$REPO/tests/integration/windows-closure-live-tier-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/qmp-stress-live-tier-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/glyph-scene-pilot-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/b4-umd-diagnostic-live-tier-smoke.sh" | grep -q "PASS"'
+    'python3 "$A3_RECEIPT" --self-test | grep -q "PASS" && "$REPO/tests/integration/windows-closure-live-tier-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/qmp-stress-live-tier-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/glyph-scene-pilot-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/b4-umd-diagnostic-live-tier-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/live-gate-recovery-smoke.sh" | grep -q "PASS"'
 check "the A3 payload archive is fail-closed" \
     '"$A3_PAYLOAD" --self-test | grep -q "PASS"'
 check "the A3 payload uses bounded share chunks" \
