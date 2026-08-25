@@ -890,6 +890,8 @@ scripts/verify-pointer-click-reliability.sh	110	0
 scripts/run-pointer-click-reliability-case.sh	53	0
 scripts/pointer_iosurface.py	43	0
 scripts/iosurface_capture.py	53	0
+scripts/iosurface_settle.py	12	0
+scripts/glyph_region_analysis.py	39	0
 scripts/watch-pointer-visible-reaction.py	41	0
 scripts/prepare-pointer-reliability-source.sh	82	0
 scripts/pointer-reliability-vm.sh	36	0
@@ -914,6 +916,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	477	13
 scripts/install-bridgevm.sh	209	0
 scripts/live-gates/run-a3-title-tier.sh	90	0
 scripts/live-gates/run-audio-teardown-tier.sh	28	0
+scripts/live-gates/run-glyph-scene-pilot-tier.sh	19	0
 scripts/live-gates/run-windows-closure-tier.sh	116	0
 scripts/live-gates/a3-title-manifest.sh	47	0
 scripts/live-gates/verify-windows-closure-binary.sh	7	0
@@ -1163,6 +1166,7 @@ scripts/run-hvf-windows-installed-boot-runner.sh	1405	0
 scripts/run-hvf-windows-installed-boot-usage.sh	209	0
 scripts/run-hvf-windows-installed-boot-validation.sh	345	0
 scripts/run-hvf-windows-installed-boot.sh	27	0
+scripts/run-glyph-scene-pilot-case.sh	31	0
 scripts/run-hvf-windows-scripted-install.sh	375	0
 scripts/run-swift-tests.sh	75	0
 scripts/run-venus-device-smoke.sh	56	0
@@ -1308,7 +1312,9 @@ tests/integration/lifecycle-plan-cli-smoke.sh	141	0
 tests/integration/lifecycle-restart-cli-smoke.sh	134	0
 tests/integration/lifecycle-suspend-resume-cli-smoke.sh	157	0
 tests/integration/install-verify-smoke.sh	181	0
-tests/integration/live-gate-policy-smoke.sh	308	0
+tests/integration/glyph-region-observation-smoke.py	26	0
+tests/integration/glyph-scene-pilot-smoke.sh	14	0
+tests/integration/live-gate-policy-smoke.sh	307	0
 tests/integration/qmp-stress-live-tier-smoke.sh	23	0
 tests/integration/windows-closure-live-tier-smoke.sh	65	0
 tests/integration/viogpu3d-submit-trace-policy-smoke.sh	12	0
