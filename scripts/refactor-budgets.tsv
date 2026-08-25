@@ -885,6 +885,7 @@ runners/hvf-runner/src/supervise_cli_tests.rs	41	0
 scripts/verify-reset-recreate.sh	113	0
 scripts/verify-app-third-party-notices.sh	63	0
 scripts/verify-pointer-click-reliability.sh	110	0
+scripts/validate-windows-compatibility-matrix.py	85	0
 scripts/run-pointer-click-reliability-case.sh	53	0
 scripts/pointer_iosurface.py	43	0
 scripts/watch-pointer-visible-reaction.py	41	0

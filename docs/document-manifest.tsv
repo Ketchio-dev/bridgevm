@@ -102,3 +102,4 @@ docs/windows-arm/evidence/a1-p1-boot-gate-10of10-20260810.md	current	windows-gra
 docs/windows-arm/evidence/a3-d3d11-title-fps-3of3-20260812.md	current	windows-graphics	GOAL.md
 HANDOFF.md	historical-evidence	project-status	STATUS.md
 docs/windows-arm/evidence/windows-1.0-closure-f1-f4-20260820.md	current	windows-graphics	GOAL.md
+docs/windows-arm/windows-compatibility-matrix-contract.md	reference	windows-graphics	docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md
