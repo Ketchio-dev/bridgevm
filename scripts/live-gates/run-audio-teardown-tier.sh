@@ -7,30 +7,12 @@ while [[ $# -gt 0 ]]; do case "$1" in
   *) echo "unknown audio-tier option $1" >&2; exit 2;; esac; done
 [[ -n "$OUT" ]] || { echo 'audio tier needs --out' >&2; exit 2; }; mkdir -p "$OUT/runs"
 TARGET=${TARGET:-$HOME/BridgeVM/work/net-live-20260724.raw}
-VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}; N=${N:-10}
+VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}; N=10
 for input in "$TARGET" "$VARS"; do head -c1 "$input" >/dev/null 2>&1 \
   || { echo "cannot read audio source: $input" >&2; exit 1; }; done
 seal() { openssl dgst -sha256 -r "$1" | cut -d' ' -f1; }
 image_hash=$(seal "$TARGET"); vars_hash=$(seal "$VARS"); passed=0; status=0
-write_receipt() { local outcome="$1" pass="$2"; cat >"$OUT/receipt.json" <<EOF
-{
-  "tier": "t9-audio-teardown",
-  "gate_id": "a5-audio-teardown-quality",
-  "criterion": "A5-quality",
-  "job_id": "$JOB_ID",
-  "commit": "$(git -C "$REPO" rev-parse HEAD)",
-  "image_sha256": "$image_hash",
-  "vars_sha256": "$vars_hash",
-  "host_model": "$(sysctl -n hw.model)",
-  "macos_version": "$(sw_vers -productVersion)",
-  "sample_count": $N,
-  "finished_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "outcome": "$outcome",
-  "pass": $pass
-}
-EOF
-}
-write_receipt failed false
+printf '{"tier":"t9-audio-teardown","sample_count":0,"outcome":"failed","pass":false}\n' >"$OUT/receipt.json"
 for run in $(seq 1 "$N"); do
   run_out="$OUT/runs/run$run"; mkdir -p "$run_out"
   if OUT="$run_out" TARGET="$TARGET" VARS="$VARS" \
@@ -40,6 +22,7 @@ for run in $(seq 1 "$N"); do
 done
 printf 'passed %s/%s\n' "$passed" "$N" >"$OUT/summary.txt"
 [[ "$passed" == "$N" ]] || status=1
-write_receipt "$([[ $status == 0 ]] && echo completed || echo failed)" \
-  "$([[ $status == 0 ]] && echo true || echo false)"
+python3 "$REPO/scripts/live-gates/write-audio-teardown-receipt.py" --out "$OUT" \
+  --job "$JOB_ID" --commit "$(git -C "$REPO" rev-parse HEAD)" \
+  --image "$image_hash" --vars "$vars_hash" || status=1
 exit "$status"

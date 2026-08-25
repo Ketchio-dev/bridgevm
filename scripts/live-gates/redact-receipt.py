@@ -83,7 +83,7 @@ ALLOWED_FIELDS = frozenset(
         "driver_hash",
         "image_hash",
         "vars_hash",
-        "binary_hash", "injector_sha256", "agent_sha256", "prepared_image_sha256", "prepared_vars_sha256", "injector_boot_observed", "f1_driver_load", "f2_resize", "f3_window_verbs", "f4_glyph_observation", "active_scanout_capture", "landed", "p95_first_changed_ms",
+        "binary_hash", "injector_sha256", "agent_sha256", "prepared_image_sha256", "prepared_vars_sha256", "injector_boot_observed", "f1_driver_load", "f2_resize", "f3_window_verbs", "f4_glyph_observation", "active_scanout_capture", "landed", "p95_first_changed_ms", "callback_errors", "frames_rendered",
     }
 )
 
@@ -146,12 +146,12 @@ def _self_test() -> int:
             raise SystemExit(1)
 
     # Allowed fields survive.
-    out = redact({"probe": "hvf_vtimer_cancel", "iterations": 10000, "pass": True})
+    out = redact({"probe": "hvf_vtimer_cancel", "iterations": 10000, "pass": True,
+                  "callback_errors": 0})
     check(out["probe"] == "hvf_vtimer_cancel", "an allowed string field is kept")
     check(out["iterations"] == 10000, "an allowed numeric field is kept")
-    check(out["pass"] is True, "an allowed boolean field is kept")
-    hashes = redact({"ppsspp_payload_sha256": "ab" * 32,
-                     "ppsspp_executable_sha256": "cd" * 32})
+    check(out["pass"] is True and out["callback_errors"] == 0, "allowed result fields are kept")
+    hashes = redact({"ppsspp_payload_sha256": "ab" * 32, "ppsspp_executable_sha256": "cd" * 32})
     check(len(hashes) == 2, "PPSSPP payload and executable identities are kept")
 
     # Unknown fields are dropped rather than published.

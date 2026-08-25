@@ -911,7 +911,7 @@ crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	387	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	477	13
 scripts/install-bridgevm.sh	209	0
 scripts/live-gates/run-a3-title-tier.sh	90	0
-scripts/live-gates/run-audio-teardown-tier.sh	45	0
+scripts/live-gates/run-audio-teardown-tier.sh	28	0
 scripts/live-gates/run-windows-closure-tier.sh	116	0
 scripts/live-gates/a3-title-manifest.sh	47	0
 scripts/live-gates/verify-windows-closure-binary.sh	7	0
@@ -921,6 +921,7 @@ scripts/live-gates/a3-title-payload.sh	22	0
 scripts/live-gates/a3-title-payload.py	128	0
 scripts/live-gates/a3-title-payload-stage.sh	52	0
 scripts/live-gates/write-a3-title-receipt.py	179	0
+scripts/live-gates/write-audio-teardown-receipt.py	33	0
 scripts/live-gates/write-missing-receipt.sh	19	0
 scripts/live-gates/write-windows-closure-receipt.py	165	0
 scripts/win-assets/bv-windows-closure-proof.ps1	148	0

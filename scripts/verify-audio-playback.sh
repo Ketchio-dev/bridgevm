@@ -135,8 +135,8 @@ UNEXPECTED=$(grep -oE 'unexpected_callback_errors=[0-9]+' <<< "$STATS" | cut -d=
 TEARDOWN=$(grep -oE 'teardown_reenqueue_refusals=[0-9]+' <<< "$STATS" | cut -d= -f2)
 STOP_ERRORS=$(grep -oE 'stop_errors=[0-9]+' <<< "$STATS" | cut -d= -f2)
 DISPOSE_ERRORS=$(grep -oE 'dispose_errors=[0-9]+' <<< "$STATS" | cut -d= -f2)
-
-if [[ "${FRAMES:-0}" -gt 0 && "${DROPS:-1}" -eq 0 && "${UNEXPECTED:-1}" -eq 0 && "${STOP_ERRORS:-1}" -eq 0 && "${DISPOSE_ERRORS:-1}" -eq 0 ]]; then
+CALLBACK_ERRORS=$((${UNEXPECTED:-1} + ${STOP_ERRORS:-1} + ${DISPOSE_ERRORS:-1}))
+if [[ "${FRAMES:-0}" -gt 0 && "${DROPS:-1}" -eq 0 && "$CALLBACK_ERRORS" -eq 0 ]]; then
   echo "A5 audio: PASS (frames_rendered=$FRAMES drops=$DROPS unexpected=$UNEXPECTED teardown_refusals=${TEARDOWN:-?})"
   A5=pass
 else
@@ -146,8 +146,8 @@ else
 fi
 
 printf '%s\n' "out_dir=$OUT" "a5_audio=$A5" "frames_rendered=${FRAMES:-}" "drops=${DROPS:-}" \
-  "unexpected_callback_errors=${UNEXPECTED:-}" "teardown_reenqueue_refusals=${TEARDOWN:-}" \
-  "stop_errors=${STOP_ERRORS:-}" "dispose_errors=${DISPOSE_ERRORS:-}" \
+  "callback_errors=$CALLBACK_ERRORS" "unexpected_callback_errors=${UNEXPECTED:-}" \
+  "teardown_reenqueue_refusals=${TEARDOWN:-}" "stop_errors=${STOP_ERRORS:-}" "dispose_errors=${DISPOSE_ERRORS:-}" \
   "guest_sound_device_status=${DEV_STATUS:-}" > "$OUT/summary.txt"
 cat "$OUT/summary.txt"
 
