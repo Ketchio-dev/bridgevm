@@ -1,19 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-TIER="$1"; DIR="$2"; WORKTREE="$3"; JOB_ID="$4"; COMMIT="$5"
+TIER="$1"; DIR="$2"; WORKTREE="$3"; JOB_ID="$4"; COMMIT="$5"; reason="${6:-failed-before-receipt}"
 [[ -f "$DIR/receipt.json" ]] && exit 0
-reason=failed-before-receipt; [[ -f "$DIR/cancel.requested" ]] && reason=canceled
-case "$TIER" in
-  t6-a3-title)
-    python3 "$WORKTREE/scripts/live-gates/write-a3-title-receipt.py" \
-      --out "$DIR" --job-id "$JOB_ID" --commit "$COMMIT" --reason "$reason"
-    ;;
-  t7-windows-closure)
-    manifest_hash="$(awk -F= '$1=="input_manifest_sha256"{print $2}' "$DIR/job.env")"
-    python3 "$WORKTREE/scripts/live-gates/write-windows-closure-receipt.py" \
-      --out "$DIR" --job-id "$JOB_ID" --commit "$COMMIT" \
-      --input-manifest-hash "$manifest_hash" --reason "$reason" || true
-    ;;
-  t9-audio-teardown) printf '{"tier":"t9-audio-teardown","gate_id":"a5-audio-teardown-quality","criterion":"A5-quality","job_id":"%s","commit":"%s","image_sha256":"absent","vars_sha256":"absent","sample_count":10,"outcome":"%s","pass":false}\n' "$JOB_ID" "$COMMIT" "$reason" >"$DIR/receipt.json" ;;
-  t11-glyph-scene-pilot|t12-b4-umd-diagnostic) printf '{"tier":"%s","criterion":"%s","job_id":"%s","commit":"%s","sample_count":0,"outcome":"%s","pass":false}\n' "$TIER" "$([ "$TIER" = t11-glyph-scene-pilot ] && echo glyph-diagnostic-only || echo B4)" "$JOB_ID" "$COMMIT" "$reason" >"$DIR/receipt.json" ;;
-esac
+[[ -f "$DIR/cancel.requested" ]] && reason=canceled
+# shellcheck source=scripts/live-gates/missing-receipt-shapes.sh
+source "$(dirname "${BASH_SOURCE[0]}")/missing-receipt-shapes.sh"
+python_receipt "$TIER" "$DIR" "$WORKTREE" "$JOB_ID" "$COMMIT" "$reason" && exit 0
+gate=""; criterion=""; extra=""
+flat_receipt_fields "$TIER" || exit 0
+printf '{"tier":"%s","gate_id":"%s","criterion":"%s","job_id":"%s","commit":"%s",%s"outcome":"%s","pass":false}\n' \
+  "$TIER" "$gate" "$criterion" "$JOB_ID" "$COMMIT" "$extra" "$reason" > "$DIR/receipt.json"

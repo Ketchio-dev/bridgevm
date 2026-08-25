@@ -74,10 +74,8 @@ check "the installed-boot runner attaches post-mortem media read-only" \
 check "the installed-boot runner captures both post-mortem phases" \
     'grep -Fq '\''harvest_guest_windows_postmortem pre-run'\'' "$BOOT_RUNNER" && grep -Fq '\''harvest_guest_windows_postmortem post-run'\'' "$BOOT_RUNNER"'
 
-# --- read-only Windows post-mortem boundary ------------------------------
 # shellcheck source=tests/integration/live-gate-postmortem-boundary.sh
 source "$REPO/tests/integration/live-gate-postmortem-boundary.sh"
-
 # --- no inbound network path --------------------------------------------
 # A local queue that grew a listener would be a self-hosted runner with extra
 # steps, which is exactly what a public repo must not have.
@@ -232,6 +230,8 @@ check "a queued job cancels immediately" '"$CLI" cancel "$second" | grep -q "can
 check "the canceled job is done" '"$CLI" status | grep -q "done .*$second"'
 
 # --- tiers refuse to invent evidence -------------------------------------
+# shellcheck source=tests/integration/live-gate-receipt-honesty.sh
+source "$REPO/tests/integration/live-gate-receipt-honesty.sh"
 check "an unknown tier is rejected" '! "$TIER" nonsense --out "$WORK/x" 2>/dev/null'
 t5_output="$(BASE_IMAGE="$WORK/absent.raw" BASE_VARS="$WORK/absent.fd" \
     INJECTOR="$WORK/absent-inj.raw" \
