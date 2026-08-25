@@ -62,13 +62,13 @@ come from the machine-readable registry rather than being maintained by hand.
 Release-blocking criteria proven: **18 / 19**. Open: A9.
 
 Known open defects:
-- **A9**: Guided 3D driver injection is fail-closed: test-signed packages conflict with the Microsoft Secure Boot policy, and kernel-policy claims lack a signed provenance verifier. Disable 3D injection to install Windows.
+- **A9**: Windows-HVF 3D driver injection is unavailable for install and import: test-signed packages conflict with Microsoft Secure Boot policy, and kernel-policy claims lack a signed provenance verifier. The product exposes only 3D-off install/import.
 - **B4**: Pointer clicks are unreliable: in the latest 10-boot live batch the host delivered every click but Windows acted on only 1 of 10. Keyboard input is unaffected. Tracked as criterion B4.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-08-25 at commit `9458ecd6dc9d518b40bc278c302be5d2690d9b35`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-08-25 at commit `28b0110e9496b7015c83ae485afb77ab86b90174`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 For the exact thresholds and receipts, see the

@@ -119,3 +119,24 @@ so the following code commit retracts product wording to Engineering Preview
 and requires its own fresh T0. The canceled t8, t9, t10 and t11 jobs at this SHA
 are not claimed as live criterion evidence.
 
+## 2026-08-25: final integrated code reseal
+
+Studio T0 job `20260825-104115-49180-24830` checked exact code commit
+`28b0110e9496b7015c83ae485afb77ab86b90174` on Mac16,9 / macOS 26.5.2.
+All 33 `scripts/check-project.sh` sections ran. Workspace tests reported 881
+passed and one ignored; the probe example reported 337 passed; the shim suites
+reported 419 + 199 (one skip) + 62 = 680 passed and zero failed. The generated
+BridgeVMControl manifest had exactly 200 entries, including the valid-source
+product injection no-mutation test, persisted-request ordering test and stale
+marker inertness test; 199 passed plus the one declared skip accounts for all
+200. The new deterministic Windows product injection deny policy also passed.
+Formatting, clippy, structural budgets, documentation, installer,
+active-IOSurface, UMD-trace policy, compatibility/clean-machine contracts and
+release-override checks passed. The sole failed step was the intentionally stale
+capability registry that this docs-only reseal refreshes. The complete
+`check.log` SHA-256 is
+`c0d8e8740f2e3fa41e78c1e7679b593fa02495e53e7675d51aade9adaa87b9d9`.
+The T0 receipt remains `pass=false`; it is not rewritten as passing. The t8,
+t9, t10 and t11 jobs queued after this T0 are independent live criteria and are
+not claimed by A11.
+
