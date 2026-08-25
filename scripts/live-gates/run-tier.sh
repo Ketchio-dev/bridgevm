@@ -106,7 +106,7 @@ case "$TIER" in
         ;;
     t8-pointer-reliability|t9-audio-teardown|t10-qmp-stress|t11-glyph-scene-pilot)
         case "$TIER" in t8-pointer-reliability) helper=run-pointer-reliability-tier.sh ;; t9-audio-teardown) helper=run-audio-teardown-tier.sh ;; t10-qmp-stress) helper=run-qmp-stress-tier.sh ;; *) helper=run-glyph-scene-pilot-tier.sh ;; esac
-        "$REPO/scripts/live-gates/$helper" --out "$OUT" --job-id "$JOB_ID" ;;
+        bash "$REPO/scripts/live-gates/$helper" --out "$OUT" --job-id "$JOB_ID" ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)
         # These need private Windows media and 20+ minutes per boot. They are
         # declared so the queue and its policy tests are exercised, but they

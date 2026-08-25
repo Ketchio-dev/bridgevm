@@ -18,15 +18,12 @@ use std::net::TcpListener;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::path::PathBuf;
 use std::process::Command;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-pub(super) static TEST_ID: AtomicU64 = AtomicU64::new(0);
+pub(super) use super::temp_store::temp_store;
 pub(super) static PROXY_WINDOW_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
@@ -63,13 +60,6 @@ impl Drop for EnvVarGuard {
             }
         }
     }
-}
-
-pub(super) fn temp_store() -> VmStore {
-    let mut path = PathBuf::from("/tmp");
-    let id = TEST_ID.fetch_add(1, Ordering::Relaxed);
-    path.push(format!("bvmd-{}-{}", std::process::id(), id));
-    VmStore::new(path)
 }
 
 pub(super) fn compatibility_manifest(name: &str) -> VmManifest {
