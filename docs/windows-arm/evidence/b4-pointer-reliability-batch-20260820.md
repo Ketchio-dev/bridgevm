@@ -1088,3 +1088,58 @@ commands intact. The bounded `BV-VIRGL-ALLOC-LIST-GROW-FAIL` development trace
 is intended to test only that candidate. No behavior change is justified until
 a diagnostic lane correlates the first poisoned resource id with that exact
 line.
+
+## Batch 9 re-read: the failures are presentation, not pointer loss (2026-08-25)
+
+The batch-9 receipt at `~/BridgeVM/live-queue/done/20260825-032534-61218-23891`
+reports `landed 9/20 p95_first_changed_ms=704`. Reading its retained per-run
+evidence changes what those eleven failures mean.
+
+Eight failing runs (4, 5, 6, 9, 11, 15, 17, 20) retained
+`visible/baseline.env` with `result=baseline-not-presented` and
+`peak_white_px=0`. The watcher aborts before injecting, so those runs never
+received a click at all: `bvptr.log` shows `BVPTR begin` followed by
+`presses=0 releases=0 edges=0 moves=0 ... stuck=0`, and no
+`bv-pointer-target-click.log` exists. Three more (2, 7, 10) have no
+`visible/` record and no ready line. Counting any of these as a lost pointer
+report attributes a presentation failure to input.
+
+The host trace separates the two classes exactly. Counting `SUBMIT_3D`
+responses whose bounded renderer diagnostic reports
+`renderer_resource_found=true` with `renderer_resource_backed=false`:
+
+| class | runs | submits referencing a never-backed resource |
+| --- | --- | --- |
+| landed | 1, 3, 8, 12, 13, 14, 16, 18, 19 | 0 in every run |
+| `scene-never-presented` | 4, 5, 6, 9, 11, 15, 17, 20 | exactly 1 in every run |
+| `scene-absent` | 2, 7, 10 | 1, 0, 0 |
+
+The separator holds in both directions, which the raw `SUBMIT_3D ERR_UNSPEC`
+count does not: run 18 landed with 24 such errors, none of which referenced a
+never-backed resource, and its first-change time was 217 ms. Bulk
+`ERR_UNSPEC` is therefore a consequence of the first poisoned submit, not the
+discriminator.
+
+"Never backed" alone is also not the discriminator. Passing runs create and
+`CTX_ATTACH_RESOURCE` many resources that never receive
+`RESOURCE_ATTACH_BACKING` (run 1: 40 of 311; run 3: 41 of 315; run 13: 46 of
+312). What only failing runs do is *submit* a command that references such a
+resource. In run 15 the poisoned resource is 154, created at seq 1582
+(`format=177 64x1 flags=0`), context-attached at 1583, never backed, and first
+referenced by the failing submit at seq 1644 on `ctx_id=7`
+(`renderer_command_id=43`, `renderer_status=22`). Run 5 (res 157), run 4
+(res 273) and run 20 (res 305) follow the identical create → ctx-attach →
+never-back → submit shape.
+
+`scripts/verify-pointer-click-reliability.sh` now records this cause per run
+(`scene-never-presented`, `scene-unsettled`, `scene-absent`,
+`pointer-reaction`). It only annotates an already-failed run: the fixed
+20/20, `stuck=0`, one-click and `p95 <= 250 ms` gate is unchanged, and no
+cause converts a failure into a pass. Its self-test asserts all four causes,
+and replaying the retained batch-9 directories through the extracted function
+reproduces the table above.
+
+This does not close B4 and does not name a fix. It says the remaining work is
+in the guest UMD's allocation-list/backing lifecycle rather than in HID
+delivery, which is precisely what the t12 diagnostic lane was built to confirm
+with the instrumented 120.48 package.
