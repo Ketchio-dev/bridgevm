@@ -1197,6 +1197,26 @@ never-backed-transfer diagnostic. It is therefore evidence for ctx-7 poison as
 the stable-black separator, but not evidence that every poison begins with the
 same transfer command.
 
+Run 18 also separates earlier than the renderer. Its contiguous trace creates
+resources 120–125 at seq 1469–1479, skips resource ids 126 and 127 entirely,
+then creates 128 at seq 1482. Later, the backing burst succeeds for resource
+125 at seq 1560, posts real `RESOURCE_ATTACH_BACKING` commands for 126 and 127
+at seq 1561/1562 which both receive host `ERR_UNSPEC`, and succeeds again for
+128 at seq 1563. No `RESOURCE_CREATE_3D` or `RESOURCE_CREATE_BLOB` for 126/127
+exists anywhere in the trace, and no descriptor chain is rejected. This is not
+the 1/3/4 UMD shape, where the resource exists and the backing command is never
+posted.
+
+The exact t8 package comes from builder commit `b192a42`, before the separate
+resident-KMD branch that moved the historically proven DISPATCH_LEVEL
+`AttachBacking` path out of PAGE and verified its linked PDB segment. That fact
+does not prove pageability caused run 18: the lane did not bugcheck, and the
+missing create commands precede the failed attaches. It does require testing
+the KMD correction together with, rather than instead of, the UMD diagnostic.
+Combined hosted build `32914557629` at builder merge `1ebf77d` is build input
+only until its PDB placement, UMD markers, package hashes and a prospective live
+lane all pass.
+
 This batch used the 120.45 package that already includes the per-command-buffer
 resource-reference correction, so that older theory remains falsified. The
 sealed t12 diagnostic tests only the narrower allocation-list growth-failure
