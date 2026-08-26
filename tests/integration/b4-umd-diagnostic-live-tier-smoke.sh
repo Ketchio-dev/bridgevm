@@ -25,7 +25,7 @@ pwsh -NoProfile -Command '$ErrorActionPreference="Stop"; foreach ($p in @("scrip
 grep -Fq "if (\$computedTree -cne \$packageFields[1]) { Fail 'package tree hash mismatch' }" scripts/win-assets/b4-install-diagnostic-package.ps1; grep -Fq 'Get-ChildItem -LiteralPath C:\BridgeVMPtr -Filter b4pkg-*.bin -File | Remove-Item -Force' scripts/run-b4-umd-diagnostic-case.sh; grep -Fq 'compgen -G "$CASE/share/b4pkg-*.bin"' scripts/run-b4-umd-diagnostic-case.sh
 package_dir="$WORK/package"; mkdir "$package_dir"
 for name in BridgeVM-viogpu3d-Test.cer bridgevm-package-provenance.env viogpu3d.cat viogpu3d.inf viogpu3d.sys viogpu_d3d10.dll virtio_icd.arm64.json vulkan_virtio.dll; do printf '%s\n' "$name" >"$package_dir/$name"; done
-printf 'DriverVer= 08/25/2026, 120.48.0.0\n' >>"$package_dir/viogpu3d.inf"
+printf 'DriverVer= 08/25/2026, 120.50.0.0\n' >>"$package_dir/viogpu3d.inf"
 printf 'BV-VIRGL-ALLOC-LIST-GROW-FAIL x\0BV-VIRGL-SUBMIT stage=x\n' >>"$package_dir/viogpu_d3d10.dll"
 manifest="$WORK/input.tsv"; tree_hash="$($PACKAGE write-manifest --dir "$package_dir" --out "$manifest")"
 B4_TREE_EXPECTED="$tree_hash" B4_TREE_MANIFEST="$manifest" pwsh -NoProfile -Command '$rows=Get-Content -LiteralPath $env:B4_TREE_MANIFEST; $text=New-Object Text.StringBuilder; foreach($row in $rows){$f=@($row -split "`t"); [void]$text.Append($f[0]).Append([char]0).Append($f[2]).Append("`n")}; $sha=[Security.Cryptography.SHA256]::Create(); try{$actual=([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::ASCII.GetBytes($text.ToString())))).Replace("-","").ToLowerInvariant()}finally{$sha.Dispose()}; if($actual -cne $env:B4_TREE_EXPECTED){throw "PowerShell package tree hash mismatch"}'

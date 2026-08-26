@@ -15,8 +15,8 @@ done
 [[ -n "$OUT" && -n "$INPUT_MANIFEST" && -n "$SEALED_PACKAGE" ]] || { echo 'B4 diagnostic tier needs --out, --input-manifest, and --sealed-package' >&2; exit 2; }
 mkdir -p "$OUT"
 PACKAGE_TOOL="$REPO/scripts/live-gates/b4-diagnostic-package.py"
-BUILDER_SHA=bb723b9e200ce765c7b262f5f9d6baeb2f481942
-EXPECTED_VERSION=120.48.0.0
+BUILDER_SHA=2f74d3332e50a71cf64bc25ee428fc0803334f81
+EXPECTED_VERSION=120.50.0.0
 commit="$(git -C "$REPO" rev-parse HEAD)"; image=absent; vars=absent
 manifest_hash=absent; package_hash=absent; umd_hash=absent
 sample_count=0; outcome=infrastructure-failed; analysis_path="$OUT/analysis.json"
@@ -74,7 +74,7 @@ trap finish EXIT
 manifest_hash="$(openssl dgst -sha256 -r "$INPUT_MANIFEST" | cut -d' ' -f1)"
 package_hash="$($PACKAGE_TOOL verify --manifest "$INPUT_MANIFEST" --dir "$SEALED_PACKAGE")"
 provenance="$SEALED_PACKAGE/bridgevm-package-provenance.env"
-grep -Fqx "VIOGPU3D_SOURCE_REF=d780b2b7f76301ef50282be973e95dbe6bba783f + mesa@cb531c440ff34a9c6334859dda0848132be49ec3 + builder@$BUILDER_SHA:submit-trace" "$provenance" || { echo 'diagnostic provenance ref mismatch' >&2; exit 1; }
+grep -Fqx "VIOGPU3D_SOURCE_REF=d780b2b7f76301ef50282be973e95dbe6bba783f + mesa@cb531c440ff34a9c6334859dda0848132be49ec3 + builder@$BUILDER_SHA:submit-trace+resident-kmd" "$provenance" || { echo 'diagnostic provenance ref mismatch' >&2; exit 1; }
 grep -Fq "DriverVer= 08/25/2026, $EXPECTED_VERSION" "$SEALED_PACKAGE/viogpu3d.inf" || { echo 'diagnostic INF version mismatch' >&2; exit 1; }
 for marker in 'BV-VIRGL-ALLOC-LIST-GROW-FAIL ' 'BV-VIRGL-SUBMIT stage='; do
   LC_ALL=C grep -aFq "$marker" "$SEALED_PACKAGE/viogpu_d3d10.dll" || { echo "diagnostic UMD marker absent: $marker" >&2; exit 1; }

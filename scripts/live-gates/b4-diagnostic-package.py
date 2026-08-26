@@ -24,7 +24,7 @@ FILES = (
 )
 MAX_FILE_BYTES = 64 * 1024 * 1024
 CHUNK_BYTES = 7 * 1024 * 1024
-EXPECTED_DRIVER_VERSION = b"120.48.0.0"
+EXPECTED_DRIVER_VERSION = b"120.50.0.0"
 REQUIRED_UMD_MARKERS = (
     b"BV-VIRGL-ALLOC-LIST-GROW-FAIL",
     b"BV-VIRGL-SUBMIT stage=",
@@ -93,7 +93,7 @@ def exact_directory(directory: Path) -> dict[str, tuple[str, int]]:
         raise Refusal("package directory does not contain the exact fixed inventory")
     inf = bounded_bytes(directory / "viogpu3d.inf").replace(b" ", b"")
     if b"DriverVer=" not in inf or EXPECTED_DRIVER_VERSION not in inf:
-        raise Refusal("diagnostic package does not carry the required 120.48 driver version")
+        raise Refusal("diagnostic package does not carry the required 120.50 driver version")
     if not contains_all(directory / "viogpu_d3d10.dll", REQUIRED_UMD_MARKERS):
         raise Refusal("diagnostic UMD does not contain the required trace markers")
     return {name: digest_file(directory / name) for name in FILES}
@@ -263,7 +263,7 @@ def self_test() -> None:
         for index, name in enumerate(FILES):
             payload = (name.encode("ascii") + b"\n") * (index + 1)
             if name == "viogpu3d.inf":
-                payload += b"DriverVer=08/25/2026,120.48.0.0\n"
+                payload += b"DriverVer=08/25/2026,120.50.0.0\n"
             if name == "viogpu_d3d10.dll":
                 payload += b"\0".join(REQUIRED_UMD_MARKERS)
             (source / name).write_bytes(payload)

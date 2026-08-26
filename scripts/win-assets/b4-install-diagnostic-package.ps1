@@ -6,7 +6,7 @@ $Share = 'C:\BridgeVMPtr'
 $ManifestPath = Join-Path $Share 'b4-package-manifest.tsv'
 $PackageRoot = 'C:\BridgeVM\B4DiagPackage'
 $ResultPath = Join-Path $Share $(if ($VerifyOnly) { 'b4-verify-result.log' } else { 'b4-install-result.log' })
-$ExpectedVersion = '120.48.0.0'
+$ExpectedVersion = '120.50.0.0'
 $Names = @(
   'BridgeVM-viogpu3d-Test.cer',
   'bridgevm-package-provenance.env',
@@ -135,7 +135,7 @@ try {
     $_.DeviceID -eq $device.InstanceId
   } | Select-Object -First 1
   if (-not $driver -or $driver.DriverVersion -cne $ExpectedVersion -or
-      $driver.InfName -cnotmatch '^oem[0-9]+[.]inf$') { Fail '120.48 driver is not bound' }
+      $driver.InfName -cnotmatch '^oem[0-9]+[.]inf$') { Fail '120.50 driver is not bound' }
   $boundInf = Join-Path $env:windir ('INF\' + $driver.InfName)
   $infHash = Hash (Join-Path $PackageRoot 'viogpu3d.inf')
   if ((Hash $boundInf) -cne $infHash) { Fail 'bound OEM INF differs from diagnostic package' }
