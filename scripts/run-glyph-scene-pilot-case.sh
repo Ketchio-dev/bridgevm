@@ -10,7 +10,7 @@ source scripts/pointer-reliability-vm.sh; trap pointer_vm_cleanup EXIT; pointer_
 for asset in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1; do wait_for "^BVAGENT SHARE host->guest $asset " 1 120||fail "share timeout $asset"; done
 printf 'RESIZE 1600x900\n' >>"$INPUT"; wait_for '^live input accepted: resize=1600x900$' 1 30||fail 'resize not accepted'
 send_ok 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bvgpu-apply-host-resolution.ps1 -Width 1600 -Height 900'||fail 'guest resize failed'
-send_ok 'cmd /c start "" notepad.exe' || fail 'Notepad launch failed' # non-blocking: Start-Process and CIM both wedged the single-threaded agent here
+send_ok 'powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '\''notepad.exe'\'' } | Out-Null; Write-Output BVNOTEPADSTARTED"'||fail 'Notepad launch failed' # cmd start inherited the agent pipe; CIM still needs a 120.50 retest after its prior guest reset
 before=$(grep -c '^BVAGENT WINLIST WINEND$' "$CASE/run.log" 2>/dev/null||true); printf 'WINLIST\n' >>"$CTL"; wait_for '^BVAGENT WINLIST WINEND$' $((before+1)) 60||fail 'WINLIST failed'
 line=$(grep '^BVAGENT WINLIST WIN ' "$CASE/run.log"|while IFS= read -r x; do title=$(awk '{print $10}'<<<"$x"|base64 -D 2>/dev/null||true); [[ "$title" == *Notepad* ]]&&{ echo "$x"; break; }; done||true); hwnd=$(awk '{print $4}'<<<"$line")
 [[ "$hwnd" =~ ^[1-9][0-9]*$ ]]||fail 'Notepad HWND absent'
