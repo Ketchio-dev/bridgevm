@@ -67,3 +67,35 @@ The criterion is OPEN and unmeasured. No blank-glyph claim, in either
 direction, is supported by these runs: the declared sample still requires
 caption/menu/tab regions at three resolutions and three DPI scales with pixel
 masks and a frame-time budget, and none of that has been captured yet.
+
+## Runs 7–8: the launch wedge mechanism, named from guest evidence
+
+Two more lanes ran after the retraction above. They sharpen the diagnosis from
+"intermittent" to a named mechanism.
+
+In every failing lane the retained guest `bvagent.log` *stops writing entirely*
+at the resize reply, while the host keeps printing its own 30-second
+`BVAGENT SERVICE alive` heartbeat. That heartbeat is a host print, not a guest
+reply (`resident_service.rs:21`), so it is not evidence the agent was healthy —
+the agent was blocked, not idle.
+
+`bvagent.ps1`'s `Invoke-B64` runs every command as
+`cmd.exe /c $cmd 2>&1 | Out-String`. `Out-String` returns only once every
+inherited handle closes, and a GUI child keeps the agent's stdout open for its
+whole lifetime. That is why all three earlier substitutions failed: each
+changed the verb, none changed the handle. The B4 pointer case has always
+launched through `> file 2>&1` for exactly this reason.
+
+Run 8 (`4568416`) applies that shape — `start "" notepad.exe >
+C:\BridgeVMPtr\notepad.out 2>&1` — and failed differently and earlier, at
+`helper exited 1 before agent`. Its evidence is a separate guest problem, not
+the launcher: generation 1 recorded `agent_handshake=false`,
+`stage4_marker_present=0` with `firstboot_fresh=1`, and its `run.log` ends with
+the guest still in `BdsDxe: starting Boot0003 "Windows Boot Manager"` when the
+720-second boot watchdog fired. Six of the eight lanes reached
+`agent_handshake=true`; this one never booted far enough to try.
+
+So two distinct failures are now separated: a launch that wedges the
+single-threaded agent through an inherited pipe (addressed), and guest boot
+flakiness after the reset boundary (not addressed, and not a scripting error).
+The criterion stays OPEN with no captured scene.
