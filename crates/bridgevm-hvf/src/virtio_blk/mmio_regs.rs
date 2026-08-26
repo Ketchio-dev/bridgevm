@@ -123,7 +123,7 @@ impl VirtioMmioBlock {
             REG_QUEUE_SEL => self.queue_sel = value as u32,
             REG_QUEUE_NUM => {
                 if self.queue_sel == 0 {
-                    self.queue_num = (value as u16).min(QUEUE_MAX);
+                    self.queue_num = value.min(u64::from(QUEUE_MAX)) as u16;
                 }
             }
             REG_QUEUE_ALIGN if self.transport == VirtioMmioTransport::Legacy => {

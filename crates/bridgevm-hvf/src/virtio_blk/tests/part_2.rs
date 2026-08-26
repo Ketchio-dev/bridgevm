@@ -137,7 +137,7 @@ fn pci_read_request_copies_iso_sector_to_guest() {
     mem.write(avail + 2, &1u16.to_le_bytes());
     mem.write(avail + 4, &0u16.to_le_bytes());
 
-    pci_write(&mut dev, REG_QUEUE_NUM, 8, &mut mem);
+    pci_write(&mut dev, REG_QUEUE_NUM, 0x1_0000, &mut mem);
     pci_write(&mut dev, REG_QUEUE_DESC_LOW, desc, &mut mem);
     pci_write(&mut dev, REG_QUEUE_DRIVER_LOW, avail, &mut mem);
     pci_write(&mut dev, REG_QUEUE_DEVICE_LOW, used, &mut mem);
