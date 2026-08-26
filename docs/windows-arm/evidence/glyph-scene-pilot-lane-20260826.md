@@ -166,3 +166,27 @@ Thirteen lanes have now run. Two defects are fixed with direct evidence (the
 remaining work is a guest-side instrument for the console stall, not another
 launcher rewrite. The criterion stays OPEN and glyph correctness remains
 `unmeasured`.
+
+## Run 14 and the instrument that cannot reach the guest yet
+
+Run 14 stalled identically: the resize completed on its own
+(`BV-APPLY| after=1600x900`, `BV-APPLY-DONE`, `exit=0`), the following
+`-LaunchNotepad` command was never echoed as a `BVAGENT CMD` line, and the
+guest `bvagent.log` stopped writing 3.5 minutes before the job ended while the
+host printed `SERVICE overdue ctl awaiting-reply=true`.
+
+The retained guest log cannot distinguish *the line never arrived* from *the
+command ran and never returned*, and that ambiguity is exactly why four
+successive launcher rewrites were guesses rather than fixes. `063fc10` closes
+it by bracketing `RUN`/`PS` with a begin/end pair carrying only the argument
+length and exit code — never the command text, which can contain guest paths.
+
+That instrument cannot take effect yet. The guest runs the agent baked into
+the sealed prepared image: `bvagent-package.log` records
+`agent_sha256=b7820834cee3f34ab895c88b31f9c6c0e96d8052c8b34ce5db691e2e968e844c`,
+which is the pre-change file, while the repository copy is now
+`7725827f7f45b31776a95c98afef76c1445da5d33288a73305c4fa049d8ebe0b`. The
+prepared media is immutable campaign input and is not re-cut here to chase a
+diagnosis. Re-preparing it is an operator decision, and until then the glyph
+console stall stays diagnosed only to the boundary the current evidence
+supports.
