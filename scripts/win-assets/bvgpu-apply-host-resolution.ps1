@@ -9,7 +9,7 @@
 # Basic Display Driver on this image and reports a single 800x600 mode, while the
 # virtio-gpu adapter is a later DISPLAY number.
 
-param([int]$Width = 0, [int]$Height = 0, [int]$TimeoutSeconds = 30, [switch]$LaunchPointerTarget)
+param([int]$Width = 0, [int]$Height = 0, [int]$TimeoutSeconds = 30, [switch]$LaunchPointerTarget, [switch]$LaunchNotepad)
 
 Add-Type -TypeDefinition @'
 using System;
@@ -45,6 +45,15 @@ function Get-Current([string]$dev) {
   return $null
 }
 
+# Launch from this script's own process, never from the agent console: the
+# agent reads each command to EOF through Out-String, so a GUI child that
+# inherits its stdout keeps that read pending for the child's whole lifetime.
+function Require-Notepad {
+  if (-not $LaunchNotepad) { return }
+  $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd /c notepad.exe > C:\BridgeVMPtr\notepad.out 2>&1' }
+  Write-Output ('BVNOTEPAD_LAUNCHED return=' + $result.ReturnValue + ' pid=' + $result.ProcessId)
+  if ($null -eq $result -or $result.ReturnValue -ne 0 -or $result.ProcessId -le 0) { exit 5 }
+}
 function Require-PointerTarget {
   if (-not $LaunchPointerTarget) { return }
   $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-target.ps1 -Width 1600 -Height 900 > C:\BridgeVM\bv-pointer-target.out 2>&1' }
@@ -97,6 +106,7 @@ Write-Output ("BV-APPLY| before=" + $before.dmPelsWidth + "x" + $before.dmPelsHe
 if ($before.dmPelsWidth -eq $Width -and $before.dmPelsHeight -eq $Height) {
   Write-Output ("BV-APPLY| after=${Width}x${Height}")
   Require-PointerTarget
+  Require-Notepad
   Write-Output 'BV-APPLY-DONE'; exit 0
 }
 
@@ -116,5 +126,6 @@ do {
 Write-Output ("BV-APPLY| after=" + $after.dmPelsWidth + "x" + $after.dmPelsHeight)
 if ($after.dmPelsWidth -eq $Width -and $after.dmPelsHeight -eq $Height) {
   Require-PointerTarget
+  Require-Notepad
   Write-Output 'BV-APPLY-DONE'; exit 0
 } else { Write-Output 'BV-APPLY-DONE'; exit 1 }
