@@ -1212,7 +1212,9 @@ scripts/run-vz-display-demo.sh	615	0
 scripts/run-xctest-shim-selftest.sh	20	0
 scripts/setup-macstudio-dev.sh	83	0
 scripts/stage-hvf-windows-viogpu3d-render-package.sh	372	0
-scripts/sign-hvf-windows-kernel-policy-package.py	330	0
+scripts/sign-hvf-windows-kernel-policy-package.py	289	0
+scripts/kernel_policy_openssl.py	49	0
+scripts/kernel_policy_sign_self_test.py	66	0
 scripts/stage-vz-linux-demo-vm.sh	189	0
 scripts/stage-vz-ubuntu-desktop-vm.sh	176	0
 scripts/venus-render-server-molten.sh	6	0

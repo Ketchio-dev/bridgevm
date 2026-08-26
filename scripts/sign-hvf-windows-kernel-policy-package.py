@@ -13,7 +13,12 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kernel_policy_openssl import resolve as resolve_openssl
+from kernel_policy_sign_self_test import self_test
 
 ATTESTATION = "bridgevm-kernel-policy-attestation.json"
 SIGNATURE = "bridgevm-kernel-policy-attestation.sig"
@@ -35,7 +40,7 @@ def parse_time(text: str) -> dt.datetime:
     if not DATE.fullmatch(text):
         raise Refusal(f"timestamp is not canonical UTC seconds: {text}")
     try:
-        return dt.datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.UTC)
+        return dt.datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
     except ValueError as exc:
         raise Refusal(f"invalid timestamp: {text}") from exc
 
@@ -240,56 +245,6 @@ def sign_package(
         raise
 
 
-def self_test(openssl: str) -> None:
-    with tempfile.TemporaryDirectory() as temp_text:
-        temp = Path(temp_text)
-        key = temp / "key.pem"
-        subprocess.run(
-            [openssl, "genpkey", "-algorithm", "ED25519", "-out", str(key)],
-            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        )
-        os.chmod(key, 0o600)
-        source = temp / "source"
-        source.mkdir()
-        payloads = {
-            "viogpu3d.inf": b"signed inf\n",
-            "viogpu3d.sys": b"signed sys\n",
-            "viogpu3d.cat": b"signed cat\n",
-        }
-        for name, payload in payloads.items():
-            (source / name).write_bytes(payload)
-        lines = [
-            "BridgeVM viogpu3d Windows WDK finalization",
-            "finalization_complete=true",
-            "signing_mode=kernel-policy",
-            "test_signing_required=false",
-            "sys_kernel_policy_verified=true",
-            "cat_kernel_policy_verified=true",
-        ]
-        lines.extend(f"sha256.{name}={hashlib.sha256(payload).hexdigest()}" for name, payload in payloads.items())
-        (source / REPORT).write_text("\n".join(lines) + "\n", encoding="ascii")
-        output = temp / "signed"
-        result = sign_package(
-            source, output, key, "self-test-key", "self-test-package",
-            "2026-08-25T00:00:00Z", "2026-08-26T00:00:00Z", openssl,
-        )
-        if not HASH.fullmatch(result["attestation_sha256"]):
-            raise AssertionError("self-test did not return an attestation hash")
-        mutated = temp / "mutated"
-        shutil.copytree(source, mutated)
-        with (mutated / REPORT).open("a", encoding="ascii") as stream:
-            stream.write("signing_mode=test\n")
-        try:
-            sign_package(
-                mutated, temp / "refused", key, "self-test-key", "mutated",
-                "2026-08-25T00:00:00Z", "2026-08-26T00:00:00Z", openssl,
-            )
-        except Refusal:
-            pass
-        else:
-            raise AssertionError("duplicate report policy was accepted")
-    print("PASS: signed kernel-policy package attestation self-test")
-
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -300,22 +255,26 @@ def main() -> int:
     parser.add_argument("--package-id")
     parser.add_argument("--issued-at")
     parser.add_argument("--expires-at")
-    parser.add_argument("--openssl", default="openssl")
+    parser.add_argument("--openssl")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
+    try:  # see kernel_policy_openssl: bare PATH openssl may be LibreSSL
+        openssl = resolve_openssl(args.openssl or "openssl", args.openssl is not None)
+    except RuntimeError as error:
+        raise SystemExit(f"REFUSED: {error}")
     if args.self_test:
-        self_test(args.openssl)
+        self_test(openssl, sign_package, Refusal, REPORT)
         return 0
     required = (args.source, args.out, args.private_key, args.package_id)
     if any(value is None for value in required):
         parser.error("--source, --out, --private-key and --package-id are required")
-    now = dt.datetime.now(dt.UTC).replace(microsecond=0)
+    now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
     issued_at = args.issued_at or now.strftime("%Y-%m-%dT%H:%M:%SZ")
     expires_at = args.expires_at or (now + dt.timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         result = sign_package(
             args.source, args.out, args.private_key, args.key_id, args.package_id,
-            issued_at, expires_at, args.openssl,
+            issued_at, expires_at, openssl,
         )
     except (OSError, subprocess.CalledProcessError, Refusal) as exc:
         print(f"REFUSED: {exc}", file=os.sys.stderr)
