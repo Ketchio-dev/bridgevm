@@ -2,7 +2,7 @@ diff --git a/src/gallium/winsys/virgl/gdi/virgl_gdi_winsys.h b/src/gallium/winsy
 index 9dab9a50560..5f8cbb2f7aa 100644
 --- a/src/gallium/winsys/virgl/gdi/virgl_gdi_winsys.h
 +++ b/src/gallium/winsys/virgl/gdi/virgl_gdi_winsys.h
-@@ -91,6 +91,7 @@ struct virgl_gdi_cmd_buf {
+@@ -91,7 +91,8 @@ struct virgl_gdi_cmd_buf {
     struct virgl_hw_res **res_bo;
     uint8_t *res_write;
  
@@ -15,7 +15,7 @@ diff --git a/src/gallium/winsys/virgl/gdi/virgl_gdi_winsys.c b/src/gallium/winsy
 index b2b64c5ec53..43f62d2a667 100644
 --- a/src/gallium/winsys/virgl/gdi/virgl_gdi_winsys.c
 +++ b/src/gallium/winsys/virgl/gdi/virgl_gdi_winsys.c
-@@ -647,27 +647,29 @@ static bool
+@@ -647,26 +647,24 @@ static bool
  virgl_gdi_cmd_buf_grow_res_list(struct virgl_gdi_cmd_buf *cbuf,
                                  unsigned new_size)
  {
@@ -57,7 +57,7 @@ index b2b64c5ec53..43f62d2a667 100644
     cbuf->max_alloc = new_size;
     return true;
  }
-@@ -692,7 +694,7 @@ virgl_gdi_cmd_buf_build_alloc_lists(struct virgl_gdi_cmd_buf *cbuf)
+@@ -692,7 +690,7 @@ virgl_gdi_cmd_buf_build_alloc_lists(struct virgl_gdi_cmd_buf *cbuf)
     }
  }
  
@@ -66,7 +66,7 @@ index b2b64c5ec53..43f62d2a667 100644
  virgl_gdi_cmd_buf_add_res(struct virgl_winsys *qws,
                            struct virgl_gdi_cmd_buf *cbuf,
                            struct virgl_hw_res *res, bool write_operation)
-@@ -701,7 +703,7 @@ virgl_gdi_cmd_buf_add_res(struct virgl_winsys *qws,
+@@ -701,7 +699,7 @@ virgl_gdi_cmd_buf_add_res(struct virgl_winsys *qws,
     for (int i = 0; i < cbuf->alloc_count; i++) {
        if (cbuf->res_bo[i] == res) {
           cbuf->res_write[i] |= write_operation;
@@ -75,7 +75,7 @@ index b2b64c5ec53..43f62d2a667 100644
        }
     }
  
-@@ -709,8 +711,10 @@ virgl_gdi_cmd_buf_add_res(struct virgl_winsys *qws,
+@@ -709,7 +707,9 @@ virgl_gdi_cmd_buf_add_res(struct virgl_winsys *qws,
        unsigned new_size = cbuf->max_alloc + 256;
        if (!virgl_gdi_cmd_buf_grow_res_list(cbuf, new_size)) {
 -         assert(cbuf->alloc_count < cbuf->max_alloc);
@@ -87,7 +87,7 @@ index b2b64c5ec53..43f62d2a667 100644
        }
     }
     assert(cbuf->alloc_count < cbuf->max_alloc);
-@@ -724,18 +728,22 @@ virgl_gdi_cmd_buf_add_res(struct virgl_winsys *qws,
+@@ -724,25 +724,27 @@ virgl_gdi_cmd_buf_add_res(struct virgl_winsys *qws,
     p_atomic_inc(&res->num_cs_references);
  
     cbuf->alloc_count++;
@@ -118,7 +118,7 @@ index b2b64c5ec53..43f62d2a667 100644
  }
  
  static bool
-@@ -858,6 +866,24 @@ virgl_gdi_cmd_buf_destroy(struct virgl_cmd_buf *_cbuf)
+@@ -858,6 +860,24 @@ virgl_gdi_cmd_buf_destroy(struct virgl_cmd_buf *_cbuf)
     FREE(cbuf);
  }
  
@@ -143,7 +143,7 @@ index b2b64c5ec53..43f62d2a667 100644
  static int
  virgl_gdi_winsys_submit_cmd(struct virgl_winsys *qws,
                              struct virgl_cmd_buf *_cbuf,
-@@ -878,6 +904,12 @@ virgl_gdi_winsys_submit_cmd(struct virgl_winsys *qws,
+@@ -878,6 +898,12 @@ virgl_gdi_winsys_submit_cmd(struct virgl_winsys *qws,
        render.CommandLength = cbuf->driver_length;
     }
  
@@ -156,7 +156,7 @@ index b2b64c5ec53..43f62d2a667 100644
     if (cbuf->alloc_count > cbuf->d3d_list_size) {
        unsigned new_size = cbuf->alloc_count + 256;
        if (!virgl_gdi_cmd_buf_resize_alloc_lists(cbuf, new_size)) {
-@@ -894,7 +926,10 @@ virgl_gdi_winsys_submit_cmd(struct virgl_winsys *qws,
+@@ -894,7 +920,10 @@ virgl_gdi_winsys_submit_cmd(struct virgl_winsys *qws,
        }
     }
  
