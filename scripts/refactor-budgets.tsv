@@ -946,6 +946,7 @@ scripts/live-gates/recover-live-jobs.sh	27	0
 scripts/live-gates/write-windows-closure-receipt.py	165	0
 scripts/win-assets/bv-windows-closure-proof.ps1	148	0
 scripts/win-assets/bvgpu-driver-preflight.ps1	79	0
+scripts/win-assets/bvgpu-frametime-series.ps1	85	0
 scripts/windows-1.0-closure-interact.sh	185	0
 scripts/win-assets/bvgpu-d3d11-identity.ps1	24	0
 scripts/harvest-hvf-windows-postmortem.sh	118	0
@@ -1350,6 +1351,7 @@ tests/integration/lifecycle-suspend-resume-cli-smoke.sh	157	0
 tests/integration/install-verify-smoke.sh	181	0
 tests/integration/glyph-region-observation-smoke.py	26	0
 tests/integration/glyph-scene-pilot-smoke.sh	14	0
+tests/integration/compatibility-frametime-instrument-smoke.sh	46	0
 tests/integration/live-gate-policy-smoke.sh	260	0
 tests/integration/live-gate-postmortem-boundary.sh	55	0
 tests/integration/live-gate-receipt-honesty.sh	19	0
