@@ -57,11 +57,11 @@ trap cleanup EXIT
 pointer_vm_start_until_agent
 for asset in bv-pointer-capture.ps1 bv-pointer-target.ps1 bvgpu-apply-host-resolution.ps1 \
   b4-install-diagnostic-package.ps1 b4-dbwin-capture.ps1 b4-package-manifest.tsv; do
-  wait_for "^BVAGENT SHARE host->guest $asset " 1 180 || fail "share timeout: $asset"
+  wait_for "^BVAGENT SHARE host->guest $asset " 1 1200 || fail "share timeout: $asset"
 done
 while IFS=$'\t' read -r kind _ _ chunk _ _; do
   [[ "$kind" == chunk ]] || continue
-  wait_for "^BVAGENT SHARE host->guest $chunk " 1 180 || fail "share timeout: $chunk"
+  wait_for "^BVAGENT SHARE host->guest $chunk " 1 1200 || fail "share timeout: $chunk"
 done < "$CASE/share/b4-package-manifest.tsv"
 install_command="powershell -NoProfile -Command \"Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMPtr\\b4-install-diagnostic-package.ps1' } | Out-Null; Write-Output B4INSTALL_LAUNCHED\""
 send_ok "$install_command" || fail 'diagnostic package installer launch failed'

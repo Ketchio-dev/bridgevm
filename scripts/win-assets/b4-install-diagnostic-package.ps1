@@ -47,7 +47,7 @@ try {
           $files.ContainsKey($index)) { Fail 'invalid or duplicate file row' }
       $files[$index] = [pscustomobject]@{ Name=$fields[2]; Size=[long]$fields[3]
         Hash=$fields[4]; Count=[int]$fields[5] }
-      if ($files[$index].Size -gt 67108864 -or $files[$index].Count -gt 10) {
+      if ($files[$index].Size -gt 67108864 -or $files[$index].Count -gt 64) {
         Fail ('file bounds exceeded: ' + $fields[2])
       }
       $chunks[$index] = New-Object Collections.ArrayList
@@ -60,7 +60,7 @@ try {
       }
       $index = [int]$fields[1]
       if (-not $chunks.ContainsKey($index)) { Fail 'chunk precedes file row' }
-      if ([long]$fields[4] -gt 7340032) { Fail 'chunk exceeds 7 MiB' }
+      if ([long]$fields[4] -gt 1048576) { Fail 'chunk exceeds 1 MiB' }
       [void]$chunks[$index].Add([pscustomobject]@{ Index=[int]$fields[2]
         Name=$fields[3]; Size=[long]$fields[4]; Hash=$fields[5] })
     } else { Fail 'unknown package manifest row' }
