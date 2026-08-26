@@ -13,7 +13,7 @@
 # way in is this CLI, run by this user, on this machine.
 #
 # Usage:
-#   bridgevm-live submit <tier> [--sha <sha>] [--input-manifest PATH]
+#   bridgevm-live submit <tier> [--sha SHA] [--input-manifest PATH] [--injector-vars PATH] [--injector-iso PATH]
 #   bridgevm-live status [job-id]
 #   bridgevm-live logs <job-id>
 #   bridgevm-live receipt <job-id>
@@ -25,6 +25,7 @@ QUEUE_ROOT="${BRIDGEVM_LIVE_ROOT:-$HOME/BridgeVM/live-queue}"
 QUEUED="$QUEUE_ROOT/queued"
 RUNNING="$QUEUE_ROOT/running"
 DONE="$QUEUE_ROOT/done"
+MEDIA_CACHE_ROOT="${BRIDGEVM_LIVE_MEDIA_CACHE:-$HOME/BridgeVM/media-cache}"
 
 usage() {
     sed -n '2,26p' "$0" | sed 's|^# \{0,1\}||'
@@ -59,11 +60,13 @@ cmd_submit() {
         *) echo "unknown tier $tier" >&2; usage >&2; exit 2 ;;
     esac
 
-    local sha="" input_manifest=""
+    local sha="" input_manifest="" injector_vars="" injector_iso=""
     while [ $# -gt 0 ]; do
         case "$1" in
             --sha) sha="$2"; shift 2 ;;
             --input-manifest) input_manifest="$2"; shift 2 ;;
+            --injector-vars) injector_vars="$2"; shift 2 ;;
+            --injector-iso) injector_iso="$2"; shift 2 ;;
             *) echo "unknown submit option $1" >&2; exit 2 ;;
         esac
     done
@@ -78,6 +81,10 @@ cmd_submit() {
         echo "--input-manifest is only valid for sealed-input tiers" >&2
         exit 2
     fi
+    if [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t12-b4-umd-diagnostic ]; then
+        [ -f "$injector_vars" ] && [ ! -L "$injector_vars" ] || { echo "$tier needs --injector-vars PATH" >&2; exit 2; }
+        [ -f "$injector_iso" ] && [ ! -L "$injector_iso" ] || { echo "$tier needs --injector-iso PATH" >&2; exit 2; }
+    elif [ -n "$injector_vars$injector_iso" ]; then echo "injector media options are only valid for B4 sealed-input tiers" >&2; exit 2; fi
 
     # Seal the exact commit at submit time. The working tree keeps moving; a
     # result must stay attributable to what actually ran.
@@ -89,7 +96,7 @@ cmd_submit() {
     local id="$(date +%Y%m%d-%H%M%S)-$$-$RANDOM"
     local staging="$QUEUE_ROOT/.staging-$id"
     mkdir -p "$staging"
-    local manifest_sha="" binary_sha="" sealed_package_sha="" compatibility_candidates_sha=""
+    local manifest_sha="" binary_sha="" sealed_package_sha="" compatibility_candidates_sha="" injector_vars_sha="" injector_iso_sha="" injector_iso_path=""
     if [ -n "$input_manifest" ]; then
         cp "$input_manifest" "$staging/input-manifest.tsv"
         chmod 600 "$staging/input-manifest.tsv"
@@ -99,6 +106,12 @@ cmd_submit() {
                 --manifest "$staging/input-manifest.tsv" --out "$staging/sealed-package")"; then
                 rm -rf "$staging"; echo "B4 package sealing failed" >&2; exit 2
             fi
+            cp "$injector_vars" "$staging/sealed-injector-vars.fd"; chmod 400 "$staging/sealed-injector-vars.fd"
+            injector_vars_sha="$(shasum -a 256 "$staging/sealed-injector-vars.fd" | cut -d' ' -f1)"
+            injector_iso_sha="$(openssl dgst -sha256 -r "$injector_iso" | cut -d' ' -f1)"; mkdir -p "$MEDIA_CACHE_ROOT/windows-install"
+            injector_iso_path="$MEDIA_CACHE_ROOT/windows-install/$injector_iso_sha.iso"
+            if [ ! -e "$injector_iso_path" ]; then dd if="$injector_iso" of="$injector_iso_path.tmp-$id" bs=1m conv=sparse 2>/dev/null; chmod 400 "$injector_iso_path.tmp-$id"; mv "$injector_iso_path.tmp-$id" "$injector_iso_path"; fi
+            [ -f "$injector_iso_path" ] && [ ! -L "$injector_iso_path" ] && [ ! -w "$injector_iso_path" ] && [ "$(openssl dgst -sha256 -r "$injector_iso_path" | cut -d' ' -f1)" = "$injector_iso_sha" ] || { rm -rf "$staging"; echo "B4 ISO cache sealing failed" >&2; exit 2; }
         fi
         if [ "$tier" = t13-compatibility-observation ]; then
             if ! compatibility_candidates_sha="$(python3 "$(dirname "$0")/compatibility-observation-input.py" copy \
@@ -134,6 +147,8 @@ cmd_submit() {
         [ -z "$binary_sha" ] || printf 'sealed_binary_sha256=%s\n' "$binary_sha"
         [ -z "$sealed_package_sha" ] || printf 'sealed_package_sha256=%s\n' "$sealed_package_sha"
         [ -z "$compatibility_candidates_sha" ] || printf 'compatibility_candidates_sha256=%s\n' "$compatibility_candidates_sha"
+        [ -z "$injector_vars_sha" ] || printf 'sealed_injector_vars_sha256=%s\n' "$injector_vars_sha"
+        [ -z "$injector_iso_sha" ] || { printf 'sealed_injector_iso_sha256=%s\n' "$injector_iso_sha"; printf 'sealed_injector_iso_path=%s\n' "$injector_iso_path"; }
     } > "$staging/job.env"
     # Build the job outside the queue, then move it in, so a worker never sees
     # a half-written job.

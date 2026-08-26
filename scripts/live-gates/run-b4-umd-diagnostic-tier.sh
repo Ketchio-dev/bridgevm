@@ -2,34 +2,30 @@
 # t12-b4-umd-diagnostic: one retained correlation lane, never a B4 pass.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-OUT=""; INPUT_MANIFEST=""; SEALED_PACKAGE=""; JOB_ID="local-$(date +%Y%m%d-%H%M%S)"
+OUT=""; INPUT_MANIFEST=""; SEALED_PACKAGE=""; SEALED_INJECTOR_VARS=""; SEALED_INJECTOR_ISO=""; JOB_ID="local-$(date +%Y%m%d-%H%M%S)"
 while (( $# )); do
   case "$1" in
     --out) OUT="$2"; shift 2 ;;
     --input-manifest) INPUT_MANIFEST="$2"; shift 2 ;;
-    --sealed-package) SEALED_PACKAGE="$2"; shift 2 ;;
-    --job-id) JOB_ID="$2"; shift 2 ;;
+    --sealed-package) SEALED_PACKAGE="$2"; shift 2 ;; --sealed-injector-vars) SEALED_INJECTOR_VARS="$2"; shift 2 ;;
+    --sealed-injector-iso) SEALED_INJECTOR_ISO="$2"; shift 2 ;; --job-id) JOB_ID="$2"; shift 2 ;;
     *) echo "unknown B4 diagnostic tier option $1" >&2; exit 2 ;;
   esac
 done
-[[ -n "$OUT" && -n "$INPUT_MANIFEST" && -n "$SEALED_PACKAGE" ]] || { echo 'B4 diagnostic tier needs --out, --input-manifest, and --sealed-package' >&2; exit 2; }
+[[ -n "$OUT" && -n "$INPUT_MANIFEST" && -n "$SEALED_PACKAGE" && -f "$SEALED_INJECTOR_VARS" && ! -L "$SEALED_INJECTOR_VARS" && -f "$SEALED_INJECTOR_ISO" && ! -L "$SEALED_INJECTOR_ISO" ]] || { echo 'B4 diagnostic tier needs all sealed B4 inputs' >&2; exit 2; }
 mkdir -p "$OUT"
 PACKAGE_TOOL="$REPO/scripts/live-gates/b4-diagnostic-package.py"
-EXPECTED_VERSION=120.50.0.0
-commit="$(git -C "$REPO" rev-parse HEAD)"; image=absent; vars=absent
-manifest_hash=absent; package_hash=absent; umd_hash=absent
+EXPECTED_VERSION=120.50.0.0; commit="$(git -C "$REPO" rev-parse HEAD)"; image=absent; vars=absent
+manifest_hash=absent; package_hash=absent; umd_hash=absent; inf_hash=absent
 sample_count=0; outcome=infrastructure-failed; analysis_path="$OUT/analysis.json"
 # shellcheck disable=SC2329
 write_receipt() {
   python3 - "$OUT" "$JOB_ID" "$commit" "$image" "$vars" "$manifest_hash" \
     "$package_hash" "$umd_hash" "$EXPECTED_VERSION" "$sample_count" "$outcome" "$analysis_path" <<'PY'
-import json, platform, subprocess, sys
-from pathlib import Path
+import json, platform, subprocess, sys; from pathlib import Path
 out = Path(sys.argv[1]); analysis_path = Path(sys.argv[12])
-host = subprocess.run(["sysctl", "-n", "hw.model"], text=True, capture_output=True)
-host_model = host.stdout.strip() if host.returncode == 0 else "unavailable"
-verify = out / "case/share/b4-verify-result.log"
-values = {}
+host = subprocess.run(["sysctl", "-n", "hw.model"], text=True, capture_output=True); host_model = host.stdout.strip() if host.returncode == 0 else "unavailable"
+verify = out / "case/share/b4-verify-result.log"; values = {}
 if verify.is_file():
     for line in verify.read_text(errors="replace").replace("\r", "").splitlines():
         if "=" in line:
@@ -74,11 +70,15 @@ manifest_hash="$(openssl dgst -sha256 -r "$INPUT_MANIFEST" | cut -d' ' -f1)"
 package_hash="$($PACKAGE_TOOL verify --manifest "$INPUT_MANIFEST" --dir "$SEALED_PACKAGE")"
 "$REPO/scripts/check-hvf-windows-viogpu3d-package.sh" --require-render-candidate "$SEALED_PACKAGE" >"$OUT/package-check.log"
 umd_hash="$(openssl dgst -sha256 -r "$SEALED_PACKAGE/viogpu_d3d10.dll" | cut -d' ' -f1)"
+inf_hash="$(openssl dgst -sha256 -r "$SEALED_PACKAGE/viogpu3d.inf" | cut -d' ' -f1)"
 PREPARED=${PREPARED:-$HOME/BridgeVM/prepared/windows-1.0/d7a95823e889db5f4a24948be50653aaec92fb789adc8ff763c27c83be080b16-c61e2136c23b5e0a681f5d33810f617ae6ffc3ea7df0a950248c311767714265}
 TARGET="$PREPARED/disk.raw"; VARS="$PREPARED/vars.fd"
 for input in "$TARGET" "$VARS"; do [[ -f "$input" && ! -L "$input" ]] && head -c1 "$input" >/dev/null 2>&1 || { echo "cannot read regular diagnostic Windows media: $input" >&2; exit 1; }; done
 image="$(openssl dgst -sha256 -r "$TARGET" | cut -d' ' -f1)"; vars="$(openssl dgst -sha256 -r "$VARS" | cut -d' ' -f1)"
 [[ "$(basename "$PREPARED")" == "$image-$vars" ]] || { echo 'prepared Windows media identity mismatch' >&2; exit 1; }
+OUT="$OUT/prepared" SOURCE="$TARGET" SOURCE_VARS="$VARS" VIOGPU_DIR="$SEALED_PACKAGE" VIOGPU_MANIFEST="$INPUT_MANIFEST" VIOGPU_PACKAGE_SHA256="$package_hash" VIOGPU_UMD_SHA256="$umd_hash" VIOGPU_INF_SHA256="$inf_hash" VIOGPU_INJECTOR_VARS="$SEALED_INJECTOR_VARS" VIOGPU_INJECTOR_ISO="$SEALED_INJECTOR_ISO" JOB_ID="$JOB_ID" bash "$REPO/scripts/prepare-pointer-reliability-source.sh"
+TARGET=$(awk -F= '$1=="target"{print substr($0,index($0,"=")+1)}' "$OUT/prepared/source.env"); VARS=$(awk -F= '$1=="vars"{print substr($0,index($0,"=")+1)}' "$OUT/prepared/source.env")
+image="$(openssl dgst -sha256 -r "$TARGET" | cut -d' ' -f1)"; vars="$(openssl dgst -sha256 -r "$VARS" | cut -d' ' -f1)"
 case_status=0
 RUN="$OUT/case" WORK="$OUT/work" TARGET="$TARGET" VARS="$VARS" VIOGPU_DIR="$SEALED_PACKAGE" INPUT_MANIFEST="$INPUT_MANIFEST" \
   bash "$REPO/scripts/run-b4-umd-diagnostic-case.sh" >"$OUT/gate.log" 2>&1 || case_status=$?

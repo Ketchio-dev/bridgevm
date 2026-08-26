@@ -1482,6 +1482,7 @@ tests/fixtures/fake-swtpm.py	77	0
 scripts/live-gates/analyze-b4-umd-diagnostic.py	198	0
 scripts/live-gates/b4-diagnostic-package.py	346	0
 scripts/live-gates/b4_host_resource_lifecycle.py	50	0
+scripts/live-gates/prepare-b4-offline-injection.sh	36	0
 scripts/live-gates/run-b4-umd-diagnostic-tier.sh	92	0
 scripts/live-gates/verify-live-sealed-input.sh	22	0
 scripts/run-b4-umd-diagnostic-case.sh	152	0

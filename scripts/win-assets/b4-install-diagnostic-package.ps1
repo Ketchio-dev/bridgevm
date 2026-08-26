@@ -1,10 +1,9 @@
 [CmdletBinding()]
-param([switch]$VerifyOnly)
+param([switch]$VerifyOnly, [string]$PackageRoot = 'C:\BridgeVM\B4DiagPackage')
 
 $ErrorActionPreference = 'Stop'
 $Share = 'C:\BridgeVMPtr'
 $ManifestPath = Join-Path $Share 'b4-package-manifest.tsv'
-$PackageRoot = 'C:\BridgeVM\B4DiagPackage'
 $ResultPath = Join-Path $Share $(if ($VerifyOnly) { 'b4-verify-result.log' } else { 'b4-install-result.log' })
 $ExpectedVersion = '120.50.0.0'
 $Names = @(
@@ -141,8 +140,8 @@ try {
   if ((Hash $boundInf) -cne $infHash) { Fail 'bound OEM INF differs from diagnostic package' }
   $repository = Join-Path $env:windir 'System32\DriverStore\FileRepository'
   $umdHash = $files[5].Hash
-  $umdMatches = @(Get-ChildItem -LiteralPath $repository -Filter 'viogpu_d3d10.dll' -File -Recurse |
-    Where-Object { (Hash $_.FullName) -ceq $umdHash })
+  $umdMatches = @(Get-ChildItem -LiteralPath $repository -Filter 'viogpu3d.inf' -File -Recurse |
+    Where-Object { $dll = Join-Path $_.DirectoryName 'viogpu_d3d10.dll'; (Hash $_.FullName) -ceq $files[3].Hash -and (Test-Path -LiteralPath $dll -PathType Leaf) -and (Hash $dll) -ceq $umdHash })
   if ($umdMatches.Count -lt 1) { Fail 'diagnostic UMD is absent from DriverStore' }
   Write-Result @('verified=true', ('package_sha256=' + $packageFields[1]),
     ('driver_version=' + $driver.DriverVersion), ('bound_inf_sha256=' + $infHash),

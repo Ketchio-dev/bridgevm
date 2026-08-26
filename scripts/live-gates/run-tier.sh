@@ -5,7 +5,7 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 TIER="${1:?run-tier.sh needs a tier}"
 shift || true
 
-OUT=""; INPUT_MANIFEST=""; SEALED_BINARY=""; SEALED_PACKAGE=""; SEALED_INPUTS=""
+OUT=""; INPUT_MANIFEST=""; SEALED_BINARY=""; SEALED_PACKAGE=""; SEALED_INPUTS=""; SEALED_INJECTOR_VARS=""; SEALED_INJECTOR_ISO=""
 JOB_ID="local-$(date +%Y%m%d-%H%M%S)"
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -13,7 +13,7 @@ while [ $# -gt 0 ]; do
         --job-id) JOB_ID="$2"; shift 2 ;;
         --input-manifest) INPUT_MANIFEST="$2"; shift 2 ;;
         --sealed-binary) SEALED_BINARY="$2"; shift 2 ;;
-        --sealed-package) SEALED_PACKAGE="$2"; shift 2 ;; --sealed-inputs) SEALED_INPUTS="$2"; shift 2 ;;
+        --sealed-package) SEALED_PACKAGE="$2"; shift 2 ;; --sealed-inputs) SEALED_INPUTS="$2"; shift 2 ;; --sealed-injector-vars) SEALED_INJECTOR_VARS="$2"; shift 2 ;; --sealed-injector-iso) SEALED_INJECTOR_ISO="$2"; shift 2 ;;
         --lanes) LANES="$2"; shift 2 ;;
         *) echo "unknown run-tier option $1" >&2; exit 2 ;;
     esac
@@ -99,13 +99,13 @@ case "$TIER" in
             --sealed-binary "$SEALED_BINARY" --job-id "$JOB_ID"
         ;;
     t8-pointer-reliability)
-        bash "$REPO/scripts/live-gates/run-pointer-reliability-tier.sh" --out "$OUT" --job-id "$JOB_ID" --input-manifest "$INPUT_MANIFEST" --sealed-package "$SEALED_PACKAGE" ;;
+        bash "$REPO/scripts/live-gates/run-pointer-reliability-tier.sh" --out "$OUT" --job-id "$JOB_ID" --input-manifest "$INPUT_MANIFEST" --sealed-package "$SEALED_PACKAGE" --sealed-injector-vars "$SEALED_INJECTOR_VARS" --sealed-injector-iso "$SEALED_INJECTOR_ISO" ;;
     t9-audio-teardown|t10-qmp-stress|t11-glyph-scene-pilot)
         case "$TIER" in t9-audio-teardown) helper=run-audio-teardown-tier.sh ;; t10-qmp-stress) helper=run-qmp-stress-tier.sh ;; *) helper=run-glyph-scene-pilot-tier.sh ;; esac
         bash "$REPO/scripts/live-gates/$helper" --out "$OUT" --job-id "$JOB_ID" ;;
     t12-b4-umd-diagnostic)
         bash "$REPO/scripts/live-gates/run-b4-umd-diagnostic-tier.sh" --out "$OUT" \
-          --job-id "$JOB_ID" --input-manifest "$INPUT_MANIFEST" --sealed-package "$SEALED_PACKAGE" ;;
+          --job-id "$JOB_ID" --input-manifest "$INPUT_MANIFEST" --sealed-package "$SEALED_PACKAGE" --sealed-injector-vars "$SEALED_INJECTOR_VARS" --sealed-injector-iso "$SEALED_INJECTOR_ISO" ;;
     t13-compatibility-observation) bash "$REPO/scripts/live-gates/run-compatibility-observation-tier.sh" --out "$OUT" --job-id "$JOB_ID" --input-manifest "$INPUT_MANIFEST" --sealed-inputs "$SEALED_INPUTS" --sealed-package "$SEALED_PACKAGE" ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)
         # These need private Windows media and 20+ minutes per boot. They are

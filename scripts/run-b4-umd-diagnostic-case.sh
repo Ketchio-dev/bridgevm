@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the sealed diagnostic UMD in one disposable clone and run one B4 scene.
+# Verify the prepared sealed diagnostic UMD in one clone and run one B4 scene.
 set -euo pipefail
 : "${RUN:?}" "${WORK:?}" "${TARGET:?}" "${VARS:?}" "${VIOGPU_DIR:?}" "${INPUT_MANIFEST:?}"
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); cd "$REPO"
@@ -8,6 +8,7 @@ CASE="$RUN"; parent="${CASE%/case}"; [[ -n "$parent" && "$parent" != / && "$CASE
 cp -c "$TARGET" "$WORK/disk.raw"; cp "$VARS" "$WORK/vars.fd"; chmod 600 "$WORK/disk.raw" "$WORK/vars.fd"
 PACKAGE_TOOL=scripts/live-gates/b4-diagnostic-package.py
 package_hash=$($PACKAGE_TOOL stage-share --manifest "$INPUT_MANIFEST" --dir "$VIOGPU_DIR" --share "$CASE/share")
+find "$CASE/share" -type f -name 'b4pkg-*.bin' -delete
 for asset in bv-pointer-capture.ps1 bv-pointer-target.ps1 bvgpu-apply-host-resolution.ps1 \
   b4-install-diagnostic-package.ps1 b4-dbwin-capture.ps1; do
   cp "scripts/win-assets/$asset" "$CASE/share/"
@@ -41,12 +42,6 @@ wait_shared_file() {
   return 1
 }
 scanout_ready() { awk 'index($0,"\"name\":\"SET_SCANOUT\"") && index($0,"\"response_name\":\"OK_NODATA\"") && index($0,"\"rect_w\":1600,\"rect_h\":900") { found=1 } END { exit !found }' "$RUN/virtio-gpu.jsonl" 2>/dev/null; }
-relink_generation() {
-  for path in run.log launcher.out virtio-gpu.jsonl active-scanout.fb active-scanout.fb.iosurface visible; do
-    ln -sfn "generation-$generation/$path" "$CASE/$path"
-  done
-  printf 'stable_generation=%s\n' "$generation" > "$CASE/reset.env"
-}
 # shellcheck disable=SC1091
 source scripts/pointer-reliability-vm.sh
 cleanup() {
@@ -57,29 +52,9 @@ trap cleanup EXIT
 pointer_vm_start_until_agent
 for asset in bv-pointer-capture.ps1 bv-pointer-target.ps1 bvgpu-apply-host-resolution.ps1 \
   b4-install-diagnostic-package.ps1 b4-dbwin-capture.ps1 b4-package-manifest.tsv; do
-  wait_for "^BVAGENT SHARE host->guest $asset " 1 1200 || fail "share timeout: $asset"
+  wait_for "^BVAGENT SHARE host->guest $asset " 1 120 || fail "share timeout: $asset"
 done
-while IFS=$'\t' read -r kind _ _ chunk _ _; do
-  [[ "$kind" == chunk ]] || continue
-  wait_for "^BVAGENT SHARE host->guest $chunk " 1 1200 || fail "share timeout: $chunk"
-done < "$CASE/share/b4-package-manifest.tsv"
-install_command="powershell -NoProfile -Command \"Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMPtr\\b4-install-diagnostic-package.ps1' } | Out-Null; Write-Output B4INSTALL_LAUNCHED\""
-send_ok "$install_command" || fail 'diagnostic package installer launch failed'
-wait_shared_file "$CASE/share/b4-install-result.log" '^install_ready=true$' 600 || fail 'diagnostic package install failed'
-grep -q "^package_sha256=$package_hash" "$CASE/share/b4-install-result.log" || fail 'guest install package hash mismatch'
-send_ok 'powershell -NoProfile -Command "Get-ChildItem -LiteralPath C:\BridgeVMPtr -Filter b4pkg-*.bin -File | Remove-Item -Force"' || fail 'diagnostic package staging cleanup failed'
-for _ in $(seq 1 180); do compgen -G "$CASE/share/b4pkg-*.bin" >/dev/null || break; sleep 1; done
-if compgen -G "$CASE/share/b4pkg-*.bin" >/dev/null; then fail 'diagnostic package staging deletion did not propagate'; fi
-send_ok 'shutdown /r /t 3' || fail 'diagnostic reboot request failed'
-for _ in $(seq 1 180); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
-kill -0 "$pid" 2>/dev/null && fail 'diagnostic reboot boundary timeout'
-set +e; wait "$pid"; reset_status=$?; set -e
-[[ "$reset_status" -eq 42 ]] || fail "diagnostic reboot helper exited $reset_status"
-generation=$((generation + 1)); : > "$CTL"; : > "$INPUT"
-pointer_vm_launch
-wait_for '^BVAGENT SERVICE alive' 1 1200 || fail 'agent absent after diagnostic reboot'
-relink_generation
-verify_command="powershell -NoProfile -Command \"Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMPtr\\b4-install-diagnostic-package.ps1 -VerifyOnly' } | Out-Null; Write-Output B4VERIFY_LAUNCHED\""
+verify_command="powershell -NoProfile -Command \"Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMPtr\\b4-install-diagnostic-package.ps1 -VerifyOnly -PackageRoot C:\\BridgeVM\\viogpu3d' } | Out-Null; Write-Output B4VERIFY_LAUNCHED\""
 send_ok "$verify_command" || fail 'diagnostic identity verifier launch failed'
 wait_shared_file "$CASE/share/b4-verify-result.log" '^verified=true$' 600 || fail 'installed diagnostic identity verification failed'
 grep -q "^package_sha256=$package_hash" "$CASE/share/b4-verify-result.log" || fail 'installed package tree hash mismatch'
