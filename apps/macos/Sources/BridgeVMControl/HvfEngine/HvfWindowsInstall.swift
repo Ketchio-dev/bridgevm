@@ -48,19 +48,6 @@ struct HvfWindowsInstallPlan: Equatable {
     var homeDirectory: String = NSHomeDirectory()
 
     static let minimumDiskGiB = 64
-    /// The injector marker consumed by HvfEngineConfig.libraryVM: its first
-    /// line is the placeholder NSID-1 injector image path for the next boot.
-    static let injectPendingMarker = "metadata/hvf-inject-pending"
-    static let injectDoneMarker = "metadata/hvf-inject-done"
-    /// The prebuilt injector produced by earlier lab sessions; reused by the
-    /// import flow so importing does not require the Windows ISO.
-    static var sharedInjectorCandidates: [String] {
-        [
-            "\(NSHomeDirectory())/BridgeVM/bridgevm-app-viogpu3d-injector.raw",
-            "\(NSHomeDirectory())/BridgeVM/win-viogpu3d-injector.raw",
-        ]
-    }
-
     static var varsTemplateCandidates: [String] {
         var candidates: [String] = []
         if let override = ProcessInfo.processInfo.environment["BRIDGEVM_UEFI_VARS_TEMPLATE"],
@@ -87,24 +74,6 @@ struct HvfWindowsInstallPlan: Equatable {
         "scripts/win-assets/bvdiskpart.txt",
     ]
 
-    static let injectorResourcePaths = [
-        "scripts/build-hvf-windows-viogpu3d-injector.sh",
-        "scripts/build-hvf-windows-driver-injector.sh",
-        "scripts/check-hvf-windows-viogpu3d-package.sh",
-        "scripts/win-assets/winpeshl-inject.ini",
-        "scripts/win-assets/bvinject.cmd",
-        "scripts/win-assets/bvgpu-firstboot.cmd",
-        "scripts/win-assets/bvgpu-clean-driver-state.ps1",
-        "scripts/win-assets/bvgpu-diagnostics-run.cmd",
-        "scripts/win-assets/bvgpu-diagnostics-service.c",
-        "scripts/win-assets/bvagent.ps1",
-        "scripts/win-assets/bvagent-install-service.c",
-        "scripts/win-tests/bridgevm-vulkan-draw-smoke.c",
-        "scripts/win-tests/bridgevm-vulkan-draw-shaders.h",
-    ]
-
-    // MARK: computed paths
-
     /// Cache identity changes on a same-name/same-size file replacement too:
     /// the file number catches replacement while mtime catches in-place edits.
     var sourceCacheKey: String {
@@ -114,7 +83,6 @@ struct HvfWindowsInstallPlan: Equatable {
     }
 
     var sourceImagePath: String { "\(homeDirectory)/BridgeVM/bridgevm-app-src/\(sourceCacheKey).raw" }
-    var injectorImagePath: String { "\(homeDirectory)/BridgeVM/bridgevm-app-viogpu3d-injector.raw" }
 
     var tmpTargetPath: String { "/tmp/bridgevm-appinstall-\(slug)-target.raw" }
     var tmpVarsPath: String { "/tmp/bridgevm-appinstall-\(slug)-vars.fd" }
@@ -122,9 +90,7 @@ struct HvfWindowsInstallPlan: Equatable {
 
     var bundleDiskPath: String { "\(bundlePath)/disks/hvf-target.raw" }
     var bundleVarsPath: String { "\(bundlePath)/metadata/hvf-vars.fd" }
-    var bundleInjectorPath: String { "\(bundlePath)/disks/viogpu3d-injector.raw" }
     var bundleInstallLogPath: String { "\(bundlePath)/logs/install-run.log" }
-    var injectPendingMarkerPath: String { "\(bundlePath)/\(Self.injectPendingMarker)" }
 
     var freshTargetSizeBytes: UInt64 { UInt64(request.diskGiB) * 1024 * 1024 * 1024 }
 
@@ -134,10 +100,6 @@ struct HvfWindowsInstallPlan: Equatable {
 
     var sourceImageIsCached: Bool {
         FileManager.default.isReadableFile(atPath: sourceImagePath)
-    }
-
-    var injectorImageIsCached: Bool {
-        FileManager.default.isReadableFile(atPath: injectorImagePath)
     }
 
     // MARK: commands
@@ -150,20 +112,6 @@ struct HvfWindowsInstallPlan: Equatable {
                 "OUT": sourceImagePath,
             ],
             arguments: ["bash", "scripts/build-hvf-windows-scripted-source.sh"]
-        )
-    }
-
-    /// Stage b: host-side WinPE injector image build (needs the ISO for
-    /// boot.wim, plus the checked viogpu3d driver package).
-    func injectorBuildCommand() -> (environment: [String: String], arguments: [String])? {
-        guard request.injectViogpu3d, let driverDir = request.driverPackageDir else { return nil }
-        return (
-            environment: [
-                "ISO": request.isoPath,
-                "VIOGPU3D_DIR": driverDir,
-                "OUT": injectorImagePath,
-            ],
-            arguments: ["bash", "scripts/build-hvf-windows-viogpu3d-injector.sh"]
         )
     }
 
@@ -210,16 +158,18 @@ struct HvfWindowsInstallPlan: Equatable {
         guard lowered.contains(where: { $0.hasSuffix(".sys") }) else {
             return "드라이버 패키지 폴더에 .sys 파일이 없습니다."
         }
-        return nil
+        return HvfWindowsDriverPreflight.inspect(packageDirectory: directory).userMessage
     }
 
     func validationError() -> String? {
+        if let blocker = VMLibrary.windowsHVFInjectionError(requested: request.injectViogpu3d) {
+            return blocker
+        }
         let fm = FileManager.default
         guard fm.isReadableFile(atPath: request.isoPath) else {
             return "Windows 11 ARM64 ISO 파일을 찾을 수 없습니다."
         }
         let requiredResources = Self.installResourcePaths
-            + (request.injectViogpu3d ? Self.injectorResourcePaths : [])
         if let missing = requiredResources.first(where: {
             !fm.isReadableFile(atPath: repoRoot.appendingPathComponent($0).path)
         }) {
@@ -234,14 +184,8 @@ struct HvfWindowsInstallPlan: Equatable {
         guard varsTemplatePath != nil else {
             return "UEFI vars 템플릿(edk2-arm-vars.fd)을 찾을 수 없습니다: brew install qemu"
         }
-        guard Self.whitespaceFree(sourceImagePath), Self.whitespaceFree(injectorImagePath) else {
+        guard Self.whitespaceFree(sourceImagePath) else {
             return "홈 디렉터리 경로에 공백이 있으면 설치 소스를 만들 수 없습니다."
-        }
-        if request.injectViogpu3d {
-            guard let driverDir = request.driverPackageDir, !driverDir.isEmpty else {
-                return "3D 드라이버 주입을 선택하면 드라이버 패키지 폴더가 필요합니다."
-            }
-            if let error = Self.driverPackageError(driverDir) { return error }
         }
         return nil
     }
@@ -252,7 +196,6 @@ struct HvfWindowsInstallPlan: Equatable {
 enum HvfWindowsInstallStage: Equatable {
     case idle
     case preparingSource
-    case buildingInjector
     case installing
     case finalizing
     case done
@@ -262,7 +205,6 @@ enum HvfWindowsInstallStage: Equatable {
         switch self {
         case .idle: return "대기"
         case .preparingSource: return "설치 소스 준비 (WIM 분할)"
-        case .buildingInjector: return "3D 드라이버 인젝터 준비"
         case .installing: return "Windows 무인 설치"
         case .finalizing: return "VM에 반영"
         case .done: return "완료"
@@ -293,7 +235,7 @@ final class HvfWindowsInstallSession: ObservableObject {
 
     var isRunning: Bool {
         switch stage {
-        case .preparingSource, .buildingInjector, .installing, .finalizing: return true
+        case .preparingSource, .installing, .finalizing: return true
         default: return false
         }
     }
@@ -329,21 +271,6 @@ final class HvfWindowsInstallSession: ObservableObject {
             }
         } else {
             appendLog("설치 소스 캐시 재사용: \(plan.sourceImagePath)")
-        }
-
-        if let injectorBuild = plan.injectorBuildCommand() {
-            if plan.injectorImageIsCached {
-                appendLog("인젝터 이미지 재사용: \(plan.injectorImagePath)")
-            } else {
-                stage = .buildingInjector
-                guard await runProcess(arguments: injectorBuild.arguments,
-                                       extraEnvironment: injectorBuild.environment,
-                                       progressLog: nil) else {
-                    try? FileManager.default.removeItem(atPath: plan.injectorImagePath)
-                    failUnlessCancelled("3D 드라이버 인젝터 생성이 실패했습니다.")
-                    return
-                }
-            }
         }
 
         stage = .installing
@@ -414,9 +341,6 @@ final class HvfWindowsInstallSession: ObservableObject {
         if !fm.fileExists(atPath: controlPath) {
             fm.createFile(atPath: controlPath, contents: nil)
         }
-        if plan.request.injectViogpu3d {
-            try stageInjectionForNextBoot()
-        }
         // Keep the request as a completed record rather than a pending one.
         let pending = URL(fileURLWithPath: plan.bundlePath)
             .appendingPathComponent(HvfWindowsInstallRequest.fileName)
@@ -424,19 +348,6 @@ final class HvfWindowsInstallSession: ObservableObject {
             .appendingPathComponent(HvfWindowsInstallRequest.doneFileName)
         try? fm.removeItem(at: done)
         try? fm.moveItem(at: pending, to: done)
-    }
-
-    private func stageInjectionForNextBoot() throws {
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: plan.bundleInjectorPath) {
-            let clone = Shell.run("/bin/cp", ["-c", plan.injectorImagePath, plan.bundleInjectorPath])
-            if clone.code != 0 {
-                try fm.copyItem(atPath: plan.injectorImagePath, toPath: plan.bundleInjectorPath)
-            }
-        }
-        try Data("\(plan.bundleInjectorPath)\n".utf8)
-            .write(to: URL(fileURLWithPath: plan.injectPendingMarkerPath), options: [.atomic])
-        appendLog("다음 부팅에서 viogpu3d 드라이버를 설치합니다.")
     }
 
     /// Stage into a bundle-local temporary name first, then rename into place,
