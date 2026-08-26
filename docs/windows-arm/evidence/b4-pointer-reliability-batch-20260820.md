@@ -1143,3 +1143,114 @@ This does not close B4 and does not name a fix. It says the remaining work is
 in the guest UMD's allocation-list/backing lifecycle rather than in HID
 delivery, which is precisely what the t12 diagnostic lane was built to confirm
 with the instrumented 120.48 package.
+
+## Batch 10 — 2026-08-26, exact live separator reproduction
+
+Exact-`8c7f45df90fe4c02b5392ff0fea01486dff64f7b` t8 job
+`20260825-182319-70695-30260` completed all 20 independent clones without queue
+intervention. Its retained result is an honest FAIL:
+
+```
+landed 15/20 p95_first_changed_ms=602 (limit 250)
+```
+
+The private receipt records `sample_count=20`, `pass=false`, image
+`2b810fc845baa2532adc71a9c22fa7f77e189bf085c1fe4c05f0e4fb8f685602`
+and vars
+`d7e868eafa0a5664179a76d7b4e990c941161c21b465f4733663c989066f1de1`
+on Mac16,9/macOS 26.5.2. Its raw SHA-256 is
+`9529bfc2993722521df2e8dc87ab3e951dabce1cf7543f1f85681e1936415145`;
+the redacted public receipt is
+`ba5114a105688dfe0106da9bca3101b602994db85d5d4b21dac6fec303b0781b`.
+Both compact key-sorted forms hash to
+`0388701a1f5f59eed9d4e647d279e2c9b4ea38c79015925e22ca872ec41cea22`,
+so redaction preserved the complete public result. Gate and summary SHA-256
+values are
+`908e83b10c4952f645f90f56c7c74b7b3f18a0d4fa5aa6b713f392239658d76d`
+and `2417549b250a11dbddd0bcd6df124606d29d208cf9f0630de3a83a05b22b8c31`.
+
+Runs 1, 3, 4 and 18 retained `baseline-not-presented` with
+`peak_white_px=0` and 540–544 settled samples: the real active IOSurface stayed
+black for the whole baseline window, so the gate correctly injected no click.
+Run 6 separately had no valid interactive desktop and no baseline record. The
+other fifteen runs each recorded exactly one guest press and release at
+`x=800 y=450`, `stuck=0`, and exactly one target click with a real IOSurface
+change. Their reaction times were:
+
+```
+119 123 126 171 183 184 187 220 237 359 415 436 538 561 602
+```
+
+Thus only 9/15 landed lanes meet 250 ms. Reliability and latency independently
+fail the unchanged criterion.
+
+The fresh host traces reproduce the renderer separator without making it more
+general than the evidence permits. Only the four stable-black lanes have failed
+ctx-7 submits, with counts 292/180/273/287 for runs 1/3/4/18; all sixteen other
+lanes, including scene-absent run 6, have zero. All twenty traces have zero
+`descriptor_chain_rejected` records. Runs 1/3/4 first report
+`vrend_renderer_transfer_iov` illegal resources 157/308/158 and exactly one
+bounded host diagnostic with `renderer_resource_backed=false`. Run 18 is a
+distinct first failure: `vrend_decode_create_sampler_view` reports illegal
+resource 126, followed by an illegal command buffer, with no bounded
+never-backed-transfer diagnostic. It is therefore evidence for ctx-7 poison as
+the stable-black separator, but not evidence that every poison begins with the
+same transfer command.
+
+This batch used the 120.45 package that already includes the per-command-buffer
+resource-reference correction, so that older theory remains falsified. The
+sealed t12 diagnostic tests only the narrower allocation-list growth-failure
+candidate and may accept it only when a guest marker resource id matches the
+first host never-backed transfer. A host-only, guest-only, mismatched or absent
+event remains a nonconfirmation. B4 stays **OPEN**.
+
+## Batch 10 at `8c7f45d`: the separator holds across 40 runs (2026-08-26)
+
+t8 job `20260825-182319-70695-30260` ran the unchanged 20-clone gate at exact
+head `8c7f45df90fe4c02b5392ff0fea01486dff64f7b`. It failed honestly:
+`landed 15/20`, `p95_first_changed_ms=602` against the fixed 250 ms limit,
+`outcome=failed`, `pass=false`. Receipt SHA-256 is
+`9529bfc2993722521df2e8dc87ab3e951dabce1cf7543f1f85681e1936415145` and
+gate-log SHA-256 is
+`908e83b10c4952f645f90f56c7c74b7b3f18a0d4fa5aa6b713f392239658d76d`.
+Landing improved from 9/20 to 15/20 but that is not a fix and is not claimed as
+one; nothing in the pointer or graphics path was changed between the batches.
+
+What the run does establish is the cause. Every run now records a cause, and
+counting two host-trace signals per run — `SUBMIT_3D ERR_UNSPEC` whose bounded
+renderer diagnostic reports `renderer_resource_found=true` with
+`renderer_resource_backed=false`, and `RESOURCE_ATTACH_BACKING` or
+`CTX_ATTACH_RESOURCE` answered with an error — gives:
+
+| run class | count | runs with either signal |
+| --- | --- | --- |
+| landed | 15 | 0 |
+| `scene-never-presented` | 4 | 4 |
+| `scene-absent` | 1 | 0 |
+
+Runs 1, 3 and 4 each carry exactly one poisoned submit; run 1's is seq 1612,
+`ctx_id=7`, resource 157, `renderer_command_id=43`, out of 1131 submits, while
+run 2 landed at 183 ms with zero out of 884. Resource 157 is the same id that
+poisoned run 5 of batch 9, so this is an independent live reproduction rather
+than a re-reading of the old evidence.
+
+Run 18 is the useful counterexample. It failed `scene-never-presented` with
+**zero** poisoned submits, so the submit signal alone is not sufficient. Its
+trace shows a different first failure of the same lifecycle:
+`CTX_ATTACH_RESOURCE` for resource 127 answered `ERR_INVALID_PARAMETER` at seq
+1481, then `RESOURCE_ATTACH_BACKING` for resources 126 and 127 answered
+`ERR_UNSPEC` at seq 1561–1562, and only afterwards did 287 `SUBMIT_3D`
+responses fail. The resource is unusable either way: it is never successfully
+backed before it is drawn with.
+
+Applying the combined signal to both retained batches — 40 independent runs —
+produces no counterexample in the direction that matters: **no landed run has
+either signal**. The only signal-free failures are the three `scene-absent`
+runs (batch 9 runs 7 and 10, batch 10 run 6), where the VM never reached the
+scene at all and no trace evidence is expected.
+
+This still does not close B4, and the 20/20 / `stuck=0` / one-click /
+`p95 <= 250 ms` gate is unchanged. It fixes the direction of the remaining
+work: the defect is in the guest UMD's resource backing lifecycle before the
+first draw, not in HID delivery, and the instrumented 120.48 diagnostic package
+is the right instrument to name the exact allocation-list line.
