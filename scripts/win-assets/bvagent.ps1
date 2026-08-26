@@ -435,8 +435,12 @@ while ($true) {
                     if ($null -ne $W -and $W::PostMessage($hw, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)) { Write-Line $h 'OK WINCLOSE' 'OK' }
                     else { Write-Line $h 'ERR WINCLOSE' 'ERR' }
                 }
-                'RUN'  { $r = Invoke-B64 $arg $false; Write-CommandResult $h $r }
-                'PS'   { $r = Invoke-B64 $arg $true;  Write-CommandResult $h $r }
+                # Bracket the command so a hang is attributable: the glyph lane saw the
+                # agent stop logging entirely while the host waited, with no way to tell
+                # whether the line arrived, ran, or never returned. Lengths only -- never
+                # the command text, which can carry guest paths.
+                'RUN'  { Log "RUN begin bytes=$($arg.Length)"; $r = Invoke-B64 $arg $false; Log "RUN end exit=$($r.Exit)"; Write-CommandResult $h $r }
+                'PS'   { Log "PS begin bytes=$($arg.Length)"; $r = Invoke-B64 $arg $true;  Log "PS end exit=$($r.Exit)"; Write-CommandResult $h $r }
                 'CLIPGET' {
                     # Return the guest Windows clipboard text as CLIP <base64(utf8)>.
                     # The host polls CLIPGET every second, and repeatedly opening
