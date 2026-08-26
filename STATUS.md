@@ -15,12 +15,12 @@ Release-blocking criteria proven: **18 / 19**. Open: A9.
 
 Known open defects:
 - **A9**: Windows-HVF 3D driver injection is unavailable for install and import: test-signed packages conflict with Microsoft Secure Boot policy, and the new signed-provenance verifier/snapshot primitive is not yet wired to either product flow or proven with a real kernel-policy package on a clean machine. The product exposes only 3D-off install/import.
-- **B4**: Pointer clicks are unreliable: in the latest 10-boot live batch the host delivered every click but Windows acted on only 1 of 10. Keyboard input is unaffected. Tracked as criterion B4.
+- **B4**: Pointer interaction is not yet reliable: the latest fixed 20-boot gate landed 15/20 with p95 visible-response latency 602 ms against the 250 ms limit. Four boots had a stable-black active IOSurface before injection and one lacked an interactive desktop; all 15 injected clicks were consumed exactly once at the correct coordinates. Keyboard input is unaffected. Tracked as criterion B4.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-08-25 at commit `cf53f46dba941e5d4d00f0f3fc17f10645e28392`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-08-25 at commit `cf6ca49d408cdbc99056931bcb96bded44b1ddfb`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 ## How to read the generated status
