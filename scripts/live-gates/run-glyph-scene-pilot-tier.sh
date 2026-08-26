@@ -8,7 +8,7 @@ PREPARED=${PREPARED:-$HOME/BridgeVM/prepared/windows-1.0/d7a95823e889db5f4a24948
 TARGET="$PREPARED/disk.raw"; VARS="$PREPARED/vars.fd"; VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 seal(){ openssl dgst -sha256 -r "$1"|cut -d' ' -f1; }; image=$(seal "$TARGET"); vars=$(seal "$VARS")
 [[ "$(basename "$PREPARED")" == "$image-$vars" ]]||{ echo 'prepared identity mismatch' >&2; exit 1; }
-status=0; RUN="$OUT/scene" WORK="$OUT/work" TARGET="$TARGET" VARS="$VARS" VIOGPU_DIR="$VIOGPU_DIR" bash "$REPO/scripts/run-glyph-scene-pilot-case.sh" >"$OUT/gate.log" 2>&1||status=$?
+status=0; for attempt in 1 2 3; do rm -rf "$OUT/scene" "$OUT/work"; status=0; RUN="$OUT/scene" WORK="$OUT/work" TARGET="$TARGET" VARS="$VARS" VIOGPU_DIR="$VIOGPU_DIR" bash "$REPO/scripts/run-glyph-scene-pilot-case.sh" >"$OUT/gate.log" 2>&1 || status=$?; printf 'attempt=%s status=%s\n' "$attempt" "$status" >>"$OUT/attempts.log"; (( status == 0 )) && break; done # Ctl is never retransmitted, so one lost line ends an attempt; each retry is a fresh clone and the sample stays one scene
 python3 - "$OUT" "$JOB_ID" "$(git -C "$REPO" rev-parse HEAD)" "$image" "$vars" "$status" <<'PY'
 import json,platform,subprocess,sys
 from pathlib import Path
