@@ -1,0 +1,139 @@
+name: One-shot Engineering Preview truth update
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    if: ${{ github.head_ref == 'takeover/engineering-preview-truth' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Retract stale release claims from the registry and generated surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git log -1 --pretty=%B | grep -Fq '[preview-truth-complete]'; then
+            echo 'Engineering Preview truth update already applied'
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('.')
+          path = root / 'capabilities/windows-hvf.json'
+          registry = json.loads(path.read_text())
+          registry['reviewed'] = '2026-08-26'
+          registry['tested_commit'] = 'a5b0e63b05e3b269382a7d8801c7ced342ccb620'
+          registry['product_state'] = 'ENGINEERING_PREVIEW'
+          registry['wording']['product_state_label'] = 'Engineering Preview'
+          registry['wording']['engine_summary'] = (
+              "Runs an installed Windows 11 Arm desktop on BridgeVM's own "
+              "Hypervisor.framework VMM with persistent storage, display/input, "
+              "dynamic resolution, network, audio, clipboard and folder integration, "
+              "TPM/Secure Boot workflows, snapshots, window Coherence verbs and "
+              "experimental 3D. Release-blocking evidence remains open; known defects "
+              "are disclosed below."
+          )
+
+          criteria = {item['id']: item for item in registry['criteria']}
+
+          a9 = criteria['A9']
+          a9['state'] = 'OPEN'
+          a9['statement'] = (
+              'ISO installation and installed-disk import are reachable from the UI; '
+              '3D driver injection remains unavailable until both product flows consume '
+              'a BridgeVM-verified signed kernel-policy package snapshot and a retained '
+              'clean-machine flow passes.'
+          )
+          a9['measured'] = (
+              'OPEN 2026-08-26: a historical developer package reached a 3D desktop, '
+              'but that did not prove a safe product installation path. Test-signed '
+              'kernel packages conflict with Microsoft Secure Boot policy, and no '
+              'BridgeVM-owned verifier binds a signed kernel-policy package snapshot to '
+              'both install and import. Main a5b0e63b05e3b269382a7d8801c7ced342ccb620 '
+              'therefore removes every product injection authorization surface and '
+              'offers only 3D-off install/import. The criterion stays open until the '
+              'signed-provenance verifier and a retained clean-machine run exist.'
+          )
+          a9['known_defect'] = (
+              'Windows-HVF 3D driver injection is unavailable for install and import: '
+              'signed kernel-policy provenance and a clean-machine installation flow '
+              'have not been proven. The product exposes only 3D-off install/import.'
+          )
+
+          a11 = criteria['A11']
+          a11['state'] = 'OPEN'
+          a11['statement'] = (
+              'Workspace, Venus library, probe example, Swift suites, formatting, '
+              'clippy, structural budgets and documentation gates all pass at the exact '
+              'current release head, with a retained exact-SHA receipt.'
+          )
+          a11['measured'] = (
+              'OPEN 2026-08-26: the A9 fail-closed change was merged from a head whose '
+              'hosted CI and Security and quality workflows passed, but the resulting '
+              'main commit a5b0e63b05e3b269382a7d8801c7ced342ccb620 has no retained '
+              'exact-SHA full scripts/check-project.sh receipt. The previous A11 seal '
+              'describes an older tree and cannot prove this one. A fresh deterministic '
+              'project check is required before A11 can return to PROVEN.'
+          )
+          a11.pop('known_defect', None)
+
+          b4 = criteria['B4']
+          b4['state'] = 'OPEN'
+          b4['statement'] = (
+              'Pointer interaction passes a fixed 20-boot live campaign at 20/20 with '
+              'p95 visible-response latency <=250 ms.'
+          )
+          b4['measured'] = (
+              'OPEN 2026-08-25: fresh complete t8 job '
+              '20260825-032534-61218-23891 at green main 0ea368e90f945d5c40d414a2b9ea886faad94878 '
+              'landed 9/20 with p95 704 ms. Eight lanes retained stable all-black active '
+              'IOSurfaces and three additional lanes refused an invalid target. The '
+              'fixed gate remains 20/20 and p95 <=250 ms; neither threshold changed.'
+          )
+          b4['known_defect'] = (
+              'Pointer interaction is not yet reliable: the latest retained fixed '
+              '20-boot campaign landed 9/20 with p95 visible-response latency 704 ms '
+              'against the required 20/20 and 250 ms. Keyboard input is unaffected.'
+          )
+
+          path.write_text(json.dumps(registry, ensure_ascii=False, indent=2) + '\n')
+
+          readme = Path('README.md')
+          text = readme.read_text()
+          old_notice = '''> [!IMPORTANT]\n> BridgeVM 1.0 is a developer-oriented release. Every release-blocking criterion\n> is proven by live evidence on real hardware, and the exact boundaries — what is\n> proven, what is experimental, and what is out of scope — are recorded in the\n> generated capability summary below rather than promised in prose.\n'''
+          new_notice = '''> [!IMPORTANT]\n> BridgeVM is an Engineering Preview. Release-blocking evidence remains open,\n> and the exact boundaries — what is proven, what is experimental, and what is\n> out of scope — are recorded in the generated capability summary below rather\n> than promised in prose.\n'''
+          if old_notice not in text:
+              raise SystemExit('stale README release notice was not found exactly')
+          text = text.replace(old_notice, new_notice, 1)
+          old_defects = (
+              'There are two known defects in 1.0, both disclosed in the generated '
+              'capability\nsummary above and tracked as open criteria:'
+          )
+          new_defects = (
+              'Known Engineering Preview defects are disclosed in the generated '
+              'capability\nsummary above and tracked as open criteria:'
+          )
+          if old_defects not in text:
+              raise SystemExit('stale README known-defects prose was not found exactly')
+          readme.write_text(text.replace(old_defects, new_defects, 1))
+          PY
+
+          python3 scripts/render-capability-status.py
+          python3 scripts/render-capability-status.py --check
+          git diff --check
+          git add capabilities/windows-hvf.json README.md STATUS.md docs/windows-arm/capability-matrix.md
+          git config user.name "Ketchio-dev"
+          git config user.email "116458462+Ketchio-dev@users.noreply.github.com"
+          git commit -m "capabilities: restore Engineering Preview truth [preview-truth-complete]" -m "Retract the stale RELEASED/1.0 and all-proven claims, keep A9 and A11 open on the current tree, and surface the latest retained B4 failure without changing any gate."
+          git push origin HEAD:takeover/engineering-preview-truth
