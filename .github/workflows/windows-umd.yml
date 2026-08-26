@@ -141,10 +141,16 @@ jobs:
             Sort-Object Name -Descending |
             Where-Object {
               (Test-Path (Join-Path $_.FullName "um\d3d10umddi.h")) -and
-              (Test-Path (Join-Path $_.FullName "shared\d3dkmddi.h"))
+              (Test-Path (Join-Path $_.FullName "um\d3dkmthk.h"))
             } |
             Select-Object -First 1
-          if ($null -eq $wdk) { throw "WDK D3D headers are missing" }
+          if ($null -eq $wdk) {
+            Write-Host "Available Windows Kit D3D headers:"
+            Get-ChildItem -LiteralPath $wdkRoot -Recurse -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -in @("d3d10umddi.h", "d3dkmthk.h", "d3dkmddi.h") } |
+              ForEach-Object { Write-Host $_.FullName }
+            throw "Windows SDK D3D UMD headers are missing"
+          }
 
           $cmdPath = Join-Path $env:RUNNER_TEMP "build-bridgevm-umd.cmd"
           @"
