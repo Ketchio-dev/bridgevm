@@ -102,7 +102,7 @@ jobs:
     name: build patched Windows ARM64 UMD
     needs: patch-integrity
     runs-on: windows-2025
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -129,6 +129,37 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "winflexbison3 install failed" }
           python -m pip install --disable-pip-version-check meson==1.7.2 ninja==1.11.1.4 packaging==25.0 mako==1.3.10 PyYAML==6.0.2
           if ($LASTEXITCODE -ne 0) { throw "Mesa Python tool install failed" }
+      - name: Install matching Windows SDK and WDK
+        shell: pwsh
+        run: |
+          if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+            throw "WinGet is unavailable on the hosted Windows image"
+          }
+          $packages = @(
+            "Microsoft.WindowsSDK.10.0.28000",
+            "Microsoft.WindowsWDK.10.0.28000"
+          )
+          foreach ($package in $packages) {
+            winget install --id $package --exact --source winget --silent `
+              --accept-source-agreements --accept-package-agreements `
+              --disable-interactivity
+            if ($LASTEXITCODE -ne 0) {
+              throw "winget installation failed for $package with $LASTEXITCODE"
+            }
+          }
+
+          $includeRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\Include"
+          $kit = Get-ChildItem -LiteralPath $includeRoot -Directory |
+            Sort-Object Name -Descending |
+            Where-Object {
+              (Test-Path (Join-Path $_.FullName "um\d3d10umddi.h")) -and
+              (Test-Path (Join-Path $_.FullName "shared\d3dkmthk.h"))
+            } |
+            Select-Object -First 1
+          if ($null -eq $kit) {
+            throw "Installed WDK does not expose the required D3D UMD headers"
+          }
+          Write-Host "Using Windows SDK/WDK headers from $($kit.FullName)"
       - name: Cross-build the ARM64 UMD payload
         shell: pwsh
         run: |
@@ -141,7 +172,7 @@ jobs:
             Sort-Object Name -Descending |
             Where-Object {
               (Test-Path (Join-Path $_.FullName "um\d3d10umddi.h")) -and
-              (Test-Path (Join-Path $_.FullName "um\d3dkmthk.h"))
+              (Test-Path (Join-Path $_.FullName "shared\d3dkmthk.h"))
             } |
             Select-Object -First 1
           if ($null -eq $wdk) {
