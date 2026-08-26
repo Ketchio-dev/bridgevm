@@ -139,3 +139,30 @@ The launch defect itself is real and fixed — `BVNOTEPAD_LAUNCHED return=0` is
 direct evidence — and so is the text-size defect from run 1. The criterion
 stays OPEN: no scene has been captured, and glyph correctness remains
 `unmeasured`.
+
+## Runs 12–13: retries added, and the failing step correctly attributed
+
+A `Ctl` request is deliberately never retransmitted — the single-threaded agent
+goes silent for the whole runtime of a long command, so a resend could run it
+twice — which means one lost console line ends an attempt outright. That
+exclusion is correct and was not weakened. Instead the tier now retries a
+wedged lane up to three times, each on a freshly cloned disk and vars, never
+resuming a partial attempt, and records every attempt's status. The retained
+sample stays exactly one scene.
+
+Run 12 exposed a mistake in the launch fix rather than a guest problem: folding
+`-LaunchNotepad` into the resize command made one command do two things, so all
+three attempts reported `guest resize failed` when it was the launch that hung
+— and the resize is the one step the successful lane proved works, with
+`exit=0` at `8c7f45d`. Run 13 sends the resize alone first and then invokes the
+same script again with `-LaunchNotepad`. The resize now completes on its own
+(`BV-APPLY-DONE` present, `exit=0`) and the failure is reported as
+`Notepad launch failed`, which is the step that actually failed.
+
+Thirteen lanes have now run. Two defects are fixed with direct evidence (the
+201-byte KEY command, and the GUI launch inheriting the agent's pending
+`Out-String` pipe — `BVNOTEPAD_LAUNCHED return=0 pid=5304` and the first-ever
+`WINLIST`). The launch remains intermittent across fresh clones, so the
+remaining work is a guest-side instrument for the console stall, not another
+launcher rewrite. The criterion stays OPEN and glyph correctness remains
+`unmeasured`.
