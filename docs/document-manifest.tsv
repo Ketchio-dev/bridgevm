@@ -106,3 +106,4 @@ HANDOFF.md	historical-evidence	project-status	STATUS.md
 docs/windows-arm/evidence/windows-1.0-closure-f1-f4-20260820.md	current	windows-graphics	GOAL.md
 docs/windows-arm/windows-compatibility-matrix-contract.md	reference	windows-graphics	docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md
 docs/windows-arm/clean-machine-matrix-contract.md	reference	windows-graphics	docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md
+docs/windows-arm/evidence/qmp-workspace-stress-60of60-20260826.md	current	development-process	docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md
