@@ -18,5 +18,5 @@ case "$TIER" in
     actual="$(python3 "$REPO/scripts/live-gates/b4-diagnostic-package.py" verify \
       --manifest "$MANIFEST" --dir "$DIR/sealed-package" 2>/dev/null || true)"
     [[ -n "$expected" && "$actual" == "$expected" ]] ;;
-  *) exit 2 ;;
+  *) [[ "$TIER" == t13-compatibility-observation ]] && exec "$REPO/scripts/live-gates/verify-compatibility-queue-input.sh" "$DIR" "$REPO"; exit 2 ;;
 esac

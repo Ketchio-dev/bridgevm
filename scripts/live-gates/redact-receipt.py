@@ -83,7 +83,7 @@ ALLOWED_FIELDS = frozenset(
         "driver_hash",
         "image_hash",
         "vars_hash",
-        "binary_hash", "injector_sha256", "agent_sha256", "prepared_image_sha256", "prepared_vars_sha256", "injector_boot_observed", "f1_driver_load", "f2_resize", "f3_window_verbs", "f4_glyph_observation", "active_scanout_capture", "landed", "p95_first_changed_ms", "baseline_iterations", "baseline_matches", "load_processes", "callback_errors", "frames_rendered", "sealed_package_sha256", "diagnostic_umd_sha256", "diagnostic_version", "installed_diagnostic_verified", "installed_umd_sha256", "driver_version", "diagnostic_correlation", "diagnostic_guest_event_count", "diagnostic_submit_event_count", "diagnostic_max_submit_allocations", "diagnostic_max_submit_capacity", "diagnostic_max_d3d_list_size", "diagnostic_host_event_count", "diagnostic_missing_create_attach_count", "diagnostic_guest_resource_id", "diagnostic_host_resource_id", "diagnostic_missing_create_resource_id",
+        "binary_hash", "injector_sha256", "agent_sha256", "prepared_image_sha256", "prepared_vars_sha256", "injector_boot_observed", "f1_driver_load", "f2_resize", "f3_window_verbs", "f4_glyph_observation", "active_scanout_capture", "landed", "p95_first_changed_ms", "baseline_iterations", "baseline_matches", "load_processes", "callback_errors", "frames_rendered", "sealed_package_sha256", "diagnostic_umd_sha256", "diagnostic_version", "installed_diagnostic_verified", "installed_umd_sha256", "driver_version", "diagnostic_correlation", "diagnostic_guest_event_count", "diagnostic_submit_event_count", "diagnostic_max_submit_allocations", "diagnostic_max_submit_capacity", "diagnostic_max_d3d_list_size", "diagnostic_host_event_count", "diagnostic_missing_create_attach_count", "diagnostic_guest_resource_id", "diagnostic_host_resource_id", "diagnostic_missing_create_resource_id", "compatibility_candidates_sha256", "compatibility_observation_sha256", "identities_verified", "apps_launched", "apps_visible", "clean_shutdowns", "series_rows", "vulkan_module_rows", "d3d11_module_rows", "d3d12_module_rows", "opengl_module_rows",
     }
 )
 
@@ -146,10 +146,10 @@ def _self_test() -> int:
             raise SystemExit(1)
 
     out = redact({"probe": "hvf_vtimer_cancel", "iterations": 10000, "pass": True,
-                  "baseline_matches": 20, "callback_errors": 0})
+                  "baseline_matches": 20, "callback_errors": 0, "compatibility_candidates_sha256": "ab" * 32, "identities_verified": 20})
     check(out["probe"] == "hvf_vtimer_cancel", "an allowed string field is kept")
     check(out["iterations"] == 10000, "an allowed numeric field is kept")
-    check(out["pass"] is True and out["baseline_matches"] == 20 and out["callback_errors"] == 0, "allowed result fields are kept")
+    check(out["pass"] is True and out["baseline_matches"] == 20 and out["callback_errors"] == 0 and out["identities_verified"] == 20 and len(out["compatibility_candidates_sha256"]) == 64, "allowed result fields are kept")
     hashes = redact({"ppsspp_payload_sha256": "ab" * 32, "ppsspp_executable_sha256": "cd" * 32})
     check(len(hashes) == 2, "PPSSPP payload and executable identities are kept")
 

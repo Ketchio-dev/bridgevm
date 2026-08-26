@@ -81,7 +81,7 @@ run_job() {
     local tier_args=() manifest="$dir/input-manifest.tsv"
     case "$tier" in
         t6-a3-title|t7-windows-closure) tier_args=(--input-manifest "$manifest" --sealed-binary "$dir/hvf_gic_boot_probe") ;;
-        t8-pointer-reliability|t12-b4-umd-diagnostic) tier_args=(--input-manifest "$manifest" --sealed-package "$dir/sealed-package") ;;
+        t8-pointer-reliability|t12-b4-umd-diagnostic) tier_args=(--input-manifest "$manifest" --sealed-package "$dir/sealed-package") ;; t13-compatibility-observation) tier_args=(--input-manifest "$manifest" --sealed-inputs "$dir/sealed-compatibility" --sealed-package "$dir/sealed-package") ;;
     esac
     if (( ${#tier_args[@]} )) && ! "$REPO/scripts/live-gates/verify-live-sealed-input.sh" "$tier" "$dir" "$REPO"; then
         log "job $job_id sealed input is missing or changed after submission"

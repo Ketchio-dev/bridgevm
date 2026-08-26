@@ -55,7 +55,7 @@ cmd_submit() {
     # Reject an unknown tier here rather than at claim time. A typo (or a
     # `--help` mistaken for a tier) must not sit in the queue looking like work.
     case "$tier" in
-        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure|t8-pointer-reliability|t9-audio-teardown|t10-qmp-stress|t11-glyph-scene-pilot|t12-b4-umd-diagnostic) ;;
+        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure|t8-pointer-reliability|t9-audio-teardown|t10-qmp-stress|t11-glyph-scene-pilot|t12-b4-umd-diagnostic|t13-compatibility-observation) ;;
         *) echo "unknown tier $tier" >&2; usage >&2; exit 2 ;;
     esac
 
@@ -68,8 +68,9 @@ cmd_submit() {
         esac
     done
     if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] \
-        || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t12-b4-umd-diagnostic ]; then
-        [ -f "$input_manifest" ] || {
+        || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t12-b4-umd-diagnostic ] \
+        || [ "$tier" = t13-compatibility-observation ]; then
+        [ -f "$input_manifest" ] && [ ! -L "$input_manifest" ] || {
             echo "$tier needs --input-manifest PATH" >&2
             exit 2
         }
@@ -88,7 +89,7 @@ cmd_submit() {
     local id="$(date +%Y%m%d-%H%M%S)-$$-$RANDOM"
     local staging="$QUEUE_ROOT/.staging-$id"
     mkdir -p "$staging"
-    local manifest_sha="" binary_sha="" sealed_package_sha=""
+    local manifest_sha="" binary_sha="" sealed_package_sha="" compatibility_candidates_sha=""
     if [ -n "$input_manifest" ]; then
         cp "$input_manifest" "$staging/input-manifest.tsv"
         chmod 600 "$staging/input-manifest.tsv"
@@ -97,6 +98,16 @@ cmd_submit() {
             if ! sealed_package_sha="$(python3 "$(dirname "$0")/b4-diagnostic-package.py" copy \
                 --manifest "$staging/input-manifest.tsv" --out "$staging/sealed-package")"; then
                 rm -rf "$staging"; echo "B4 package sealing failed" >&2; exit 2
+            fi
+        fi
+        if [ "$tier" = t13-compatibility-observation ]; then
+            if ! compatibility_candidates_sha="$(python3 "$(dirname "$0")/compatibility-observation-input.py" copy \
+                --manifest "$staging/input-manifest.tsv" --out "$staging/sealed-compatibility")"; then
+                rm -rf "$staging"; echo "compatibility input sealing failed" >&2; exit 2
+            fi
+            if ! sealed_package_sha="$(python3 "$(dirname "$0")/b4-diagnostic-package.py" copy \
+                --manifest "$staging/sealed-compatibility/b4-input-manifest.tsv" --out "$staging/sealed-package")"; then
+                rm -rf "$staging"; echo "compatibility driver package sealing failed" >&2; exit 2
             fi
         fi
         if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ]; then
@@ -122,6 +133,7 @@ cmd_submit() {
         [ -z "$manifest_sha" ] || printf 'input_manifest_sha256=%s\n' "$manifest_sha"
         [ -z "$binary_sha" ] || printf 'sealed_binary_sha256=%s\n' "$binary_sha"
         [ -z "$sealed_package_sha" ] || printf 'sealed_package_sha256=%s\n' "$sealed_package_sha"
+        [ -z "$compatibility_candidates_sha" ] || printf 'compatibility_candidates_sha256=%s\n' "$compatibility_candidates_sha"
     } > "$staging/job.env"
     # Build the job outside the queue, then move it in, so a worker never sees
     # a half-written job.

@@ -17,10 +17,10 @@ flat_receipt_fields() { # tier -> "gate_id criterion" + $extra
       gate=glyph-scene-channel; criterion=glyph-diagnostic-only; extra='"sample_count":0,' ;;
     t12-b4-umd-diagnostic)
       gate=b4-umd-host-resource-correlation; criterion=B4; extra='"sample_count":0,' ;;
+    t13-compatibility-observation) gate=windows-20-workload-observation; criterion=compatibility-diagnostic-only; extra='"sample_count":0,"required_run_count":20,"identities_verified":0,' ;;
     *) gate=queue-tier-failure; criterion="$1"; extra='"sample_count":0,' ;;
   esac
 }
-
 python_receipt() { # tier dir worktree job commit reason -> 0 when handled
   case "$1" in
     t6-a3-title)

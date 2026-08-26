@@ -40,8 +40,8 @@ Emit "id=$Id target_pid=$target warmup_s=$WarmupSeconds measure_s=$MeasureSecond
 # Finish the declared warmup before the measurement window opens.
 $remaining = ($deadline - (Get-Date)).TotalSeconds
 if ($remaining -gt 0) { Start-Sleep -Seconds ([Math]::Ceiling($remaining)) }
-
-$etl = Join-Path $OutDir "$Id.etl"
+$traceDir = Join-Path $env:TEMP 'BridgeVM-Frametime'; if (-not (Test-Path -LiteralPath $traceDir)) { [void](New-Item -ItemType Directory -Path $traceDir -Force) }
+$etl = Join-Path $traceDir "$Id.etl"
 Remove-Item -LiteralPath $etl -Force -ErrorAction SilentlyContinue
 logman stop bvft -ets 2>&1 | Out-Null
 $start = logman start bvft -ets -p "Microsoft-Windows-DxgKrnl" 0xFFFF 0x5 -o $etl -ct perf -bs 1024 -nb 64 256 2>&1
@@ -49,8 +49,7 @@ Emit ("logman_start=" + ($start -join ' ').Trim())
 Start-Sleep -Seconds $MeasureSeconds
 logman stop bvft -ets 2>&1 | Out-Null
 if (-not (Test-Path -LiteralPath $etl)) { Emit "id=$Id samples=0 reason=no-etl"; Write-Output 'BV-FT-DONE'; exit }
-
-$csv = Join-Path $OutDir "$Id.csv"
+$csv = Join-Path $traceDir "$Id.csv"
 Remove-Item -LiteralPath $csv -Force -ErrorAction SilentlyContinue
 & tracerpt.exe $etl -o $csv -of CSV -y 2>&1 | Out-Null
 if (-not (Test-Path -LiteralPath $csv)) { Emit "id=$Id samples=0 reason=tracerpt-failed"; Write-Output 'BV-FT-DONE'; exit }
@@ -82,4 +81,5 @@ $q = { param($p) $sorted[[int][Math]::Floor(($sorted.Count - 1) * $p)] }
 $sha = (Get-FileHash -LiteralPath $series -Algorithm SHA256).Hash.ToLower()
 Emit ("id=$Id samples=" + $lines.Count + " p50_ms=" + (& $q 0.50) + " p95_ms=" + (& $q 0.95) +
       " p99_ms=" + (& $q 0.99) + " series_sha256=" + $sha)
+Remove-Item -LiteralPath $etl,$csv -Force -ErrorAction SilentlyContinue
 Write-Output 'BV-FT-DONE'
