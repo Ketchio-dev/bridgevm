@@ -15,7 +15,6 @@ done
 [[ -n "$OUT" && -n "$INPUT_MANIFEST" && -n "$SEALED_PACKAGE" ]] || { echo 'B4 diagnostic tier needs --out, --input-manifest, and --sealed-package' >&2; exit 2; }
 mkdir -p "$OUT"
 PACKAGE_TOOL="$REPO/scripts/live-gates/b4-diagnostic-package.py"
-BUILDER_SHA=2f74d3332e50a71cf64bc25ee428fc0803334f81
 EXPECTED_VERSION=120.50.0.0
 commit="$(git -C "$REPO" rev-parse HEAD)"; image=absent; vars=absent
 manifest_hash=absent; package_hash=absent; umd_hash=absent
@@ -73,12 +72,6 @@ trap finish EXIT
 [[ -f "$INPUT_MANIFEST" && -d "$SEALED_PACKAGE" ]] || { echo 'sealed B4 diagnostic inputs are absent' >&2; exit 1; }
 manifest_hash="$(openssl dgst -sha256 -r "$INPUT_MANIFEST" | cut -d' ' -f1)"
 package_hash="$($PACKAGE_TOOL verify --manifest "$INPUT_MANIFEST" --dir "$SEALED_PACKAGE")"
-provenance="$SEALED_PACKAGE/bridgevm-package-provenance.env"
-grep -Fqx "VIOGPU3D_SOURCE_REF=d780b2b7f76301ef50282be973e95dbe6bba783f + mesa@cb531c440ff34a9c6334859dda0848132be49ec3 + builder@$BUILDER_SHA:submit-trace+resident-kmd" "$provenance" || { echo 'diagnostic provenance ref mismatch' >&2; exit 1; }
-grep -Fq "DriverVer= 08/25/2026, $EXPECTED_VERSION" "$SEALED_PACKAGE/viogpu3d.inf" || { echo 'diagnostic INF version mismatch' >&2; exit 1; }
-for marker in 'BV-VIRGL-ALLOC-LIST-GROW-FAIL ' 'BV-VIRGL-SUBMIT stage='; do
-  LC_ALL=C grep -aFq "$marker" "$SEALED_PACKAGE/viogpu_d3d10.dll" || { echo "diagnostic UMD marker absent: $marker" >&2; exit 1; }
-done
 "$REPO/scripts/check-hvf-windows-viogpu3d-package.sh" --require-render-candidate "$SEALED_PACKAGE" >"$OUT/package-check.log"
 umd_hash="$(openssl dgst -sha256 -r "$SEALED_PACKAGE/viogpu_d3d10.dll" | cut -d' ' -f1)"
 PREPARED=${PREPARED:-$HOME/BridgeVM/prepared/windows-1.0/d7a95823e889db5f4a24948be50653aaec92fb789adc8ff763c27c83be080b16-c61e2136c23b5e0a681f5d33810f617ae6ffc3ea7df0a950248c311767714265}

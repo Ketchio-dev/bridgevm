@@ -68,7 +68,7 @@ cmd_submit() {
         esac
     done
     if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] \
-        || [ "$tier" = t12-b4-umd-diagnostic ]; then
+        || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t12-b4-umd-diagnostic ]; then
         [ -f "$input_manifest" ] || {
             echo "$tier needs --input-manifest PATH" >&2
             exit 2
@@ -93,7 +93,7 @@ cmd_submit() {
         cp "$input_manifest" "$staging/input-manifest.tsv"
         chmod 600 "$staging/input-manifest.tsv"
         manifest_sha="$(shasum -a 256 "$staging/input-manifest.tsv" | cut -d' ' -f1)"
-        if [ "$tier" = t12-b4-umd-diagnostic ]; then
+        if [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t12-b4-umd-diagnostic ]; then
             if ! sealed_package_sha="$(python3 "$(dirname "$0")/b4-diagnostic-package.py" copy \
                 --manifest "$staging/input-manifest.tsv" --out "$staging/sealed-package")"; then
                 rm -rf "$staging"; echo "B4 package sealing failed" >&2; exit 2

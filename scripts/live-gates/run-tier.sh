@@ -21,7 +21,6 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$OUT" ] || { echo "run-tier.sh needs --out" >&2; exit 2; }
 mkdir -p "$OUT"
-
 # Hash of an input the tier will read, or "absent". Sealing these is what
 # makes a receipt reproducible: the images live outside the repository and
 # are mutable in principle. openssl, not shasum: shasum is Perl and ~5x
@@ -100,8 +99,10 @@ case "$TIER" in
         "$REPO/scripts/live-gates/$helper" --out "$OUT" --input-manifest "$INPUT_MANIFEST" \
             --sealed-binary "$SEALED_BINARY" --job-id "$JOB_ID"
         ;;
-    t8-pointer-reliability|t9-audio-teardown|t10-qmp-stress|t11-glyph-scene-pilot)
-        case "$TIER" in t8-pointer-reliability) helper=run-pointer-reliability-tier.sh ;; t9-audio-teardown) helper=run-audio-teardown-tier.sh ;; t10-qmp-stress) helper=run-qmp-stress-tier.sh ;; *) helper=run-glyph-scene-pilot-tier.sh ;; esac
+    t8-pointer-reliability)
+        bash "$REPO/scripts/live-gates/run-pointer-reliability-tier.sh" --out "$OUT" --job-id "$JOB_ID" --input-manifest "$INPUT_MANIFEST" --sealed-package "$SEALED_PACKAGE" ;;
+    t9-audio-teardown|t10-qmp-stress|t11-glyph-scene-pilot)
+        case "$TIER" in t9-audio-teardown) helper=run-audio-teardown-tier.sh ;; t10-qmp-stress) helper=run-qmp-stress-tier.sh ;; *) helper=run-glyph-scene-pilot-tier.sh ;; esac
         bash "$REPO/scripts/live-gates/$helper" --out "$OUT" --job-id "$JOB_ID" ;;
     t12-b4-umd-diagnostic)
         bash "$REPO/scripts/live-gates/run-b4-umd-diagnostic-tier.sh" --out "$OUT" \

@@ -11,7 +11,6 @@ import stat
 import tempfile
 from pathlib import Path
 
-
 FILES = (
     "BridgeVM-viogpu3d-Test.cer",
     "bridgevm-package-provenance.env",
@@ -25,6 +24,7 @@ FILES = (
 MAX_FILE_BYTES = 64 * 1024 * 1024
 CHUNK_BYTES = 7 * 1024 * 1024
 EXPECTED_DRIVER_VERSION = b"120.50.0.0"
+EXPECTED_PROVENANCE = b"VIOGPU3D_SOURCE_REF=d780b2b7f76301ef50282be973e95dbe6bba783f + mesa@cb531c440ff34a9c6334859dda0848132be49ec3 + builder@2f74d3332e50a71cf64bc25ee428fc0803334f81:submit-trace+resident-kmd"
 REQUIRED_UMD_MARKERS = (
     b"BV-VIRGL-ALLOC-LIST-GROW-FAIL",
     b"BV-VIRGL-SUBMIT stage=",
@@ -33,7 +33,6 @@ REQUIRED_UMD_MARKERS = (
 
 class Refusal(ValueError):
     pass
-
 
 def digest_file(path: Path) -> tuple[str, int]:
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -56,7 +55,6 @@ def digest_file(path: Path) -> tuple[str, int]:
         os.close(descriptor)
     return digest.hexdigest(), size
 
-
 def bounded_bytes(path: Path, limit: int = MAX_FILE_BYTES) -> bytes:
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(path, flags)
@@ -72,11 +70,9 @@ def bounded_bytes(path: Path, limit: int = MAX_FILE_BYTES) -> bytes:
     finally:
         os.close(descriptor)
 
-
 def contains_all(path: Path, markers: tuple[bytes, ...]) -> bool:
     data = bounded_bytes(path)
     return all(marker in data for marker in markers)
-
 
 def exact_directory(directory: Path) -> dict[str, tuple[str, int]]:
     try:
@@ -94,10 +90,12 @@ def exact_directory(directory: Path) -> dict[str, tuple[str, int]]:
     inf = bounded_bytes(directory / "viogpu3d.inf").replace(b" ", b"")
     if b"DriverVer=" not in inf or EXPECTED_DRIVER_VERSION not in inf:
         raise Refusal("diagnostic package does not carry the required 120.50 driver version")
+    provenance = bounded_bytes(directory / "bridgevm-package-provenance.env").splitlines()
+    if [line for line in provenance if line.startswith(b"VIOGPU3D_SOURCE_REF=")] != [EXPECTED_PROVENANCE]:
+        raise Refusal("diagnostic package provenance does not pin the required sources")
     if not contains_all(directory / "viogpu_d3d10.dll", REQUIRED_UMD_MARKERS):
         raise Refusal("diagnostic UMD does not contain the required trace markers")
     return {name: digest_file(directory / name) for name in FILES}
-
 
 def write_manifest(directory: Path, output: Path) -> str:
     inventory = exact_directory(directory)
@@ -108,7 +106,6 @@ def write_manifest(directory: Path, output: Path) -> str:
         manifest.write("".join(lines))
     os.chmod(output, 0o600)
     return tree_hash({name: inventory[name][0] for name in FILES})
-
 
 def read_manifest(path: Path) -> dict[str, tuple[Path, str]]:
     try:
@@ -264,6 +261,8 @@ def self_test() -> None:
             payload = (name.encode("ascii") + b"\n") * (index + 1)
             if name == "viogpu3d.inf":
                 payload += b"DriverVer=08/25/2026,120.50.0.0\n"
+            if name == "bridgevm-package-provenance.env":
+                payload += EXPECTED_PROVENANCE + b"\n"
             if name == "viogpu_d3d10.dll":
                 payload += b"\0".join(REQUIRED_UMD_MARKERS)
             (source / name).write_bytes(payload)
@@ -298,6 +297,7 @@ def self_test() -> None:
         for name, bad in (
             ("viogpu_d3d10.dll", b"uninstrumented"),
             ("viogpu3d.inf", b"DriverVer=07/25/2026,120.45.0.0\n"),
+            ("bridgevm-package-provenance.env", b"VIOGPU3D_SOURCE_REF=movable\n"),
         ):
             (source / name).write_bytes(bad)
             try:

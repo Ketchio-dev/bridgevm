@@ -13,7 +13,7 @@ case "$TIER" in
     expected="$(awk -F= '$1=="sealed_binary_sha256"{print $2}' "$DIR/job.env")"
     actual="$(shasum -a 256 "$DIR/hvf_gic_boot_probe" 2>/dev/null | cut -d' ' -f1 || true)"
     [[ -n "$expected" && "$actual" == "$expected" ]] ;;
-  t12-b4-umd-diagnostic)
+  t8-pointer-reliability|t12-b4-umd-diagnostic)
     expected="$(awk -F= '$1=="sealed_package_sha256"{print $2}' "$DIR/job.env")"
     actual="$(python3 "$REPO/scripts/live-gates/b4-diagnostic-package.py" verify \
       --manifest "$MANIFEST" --dir "$DIR/sealed-package" 2>/dev/null || true)"
