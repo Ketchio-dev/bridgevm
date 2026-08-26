@@ -22,10 +22,10 @@ networking, audio, guest integration, TPM/Secure Boot support, snapshots, and
 experimental accelerated 3D.
 
 > [!IMPORTANT]
-> BridgeVM 1.0 is a developer-oriented release. Every release-blocking criterion
-> is proven by live evidence on real hardware, and the exact boundaries — what is
-> proven, what is experimental, and what is out of scope — are recorded in the
-> generated capability summary below rather than promised in prose.
+> BridgeVM is an Engineering Preview. Release-blocking evidence remains open,
+> and the exact boundaries — what is proven, what is experimental, and what is
+> out of scope — are recorded in the generated capability summary below rather
+> than promised in prose.
 
 ## At a glance
 
@@ -57,17 +57,18 @@ model tests**, and **behavior observed in a real guest**. Capability claims belo
 come from the machine-readable registry rather than being maintained by hand.
 
 <!-- BEGIN GENERATED: capability-summary -->
-**Product state: 1.0.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Every release-blocking criterion is proven by live evidence; known open defects are disclosed below.
+**Product state: Engineering Preview.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Release-blocking evidence remains open; known defects are disclosed below.
 
-Release-blocking criteria proven: **19 / 19**. Open: none.
+Release-blocking criteria proven: **17 / 19**. Open: A9, A11.
 
 Known open defects:
-- **B4**: Pointer clicks are unreliable: in the latest 10-boot live batch the host delivered every click but Windows acted on only 1 of 10. Keyboard input is unaffected. Tracked as criterion B4.
+- **A9**: Windows-HVF 3D driver injection is unavailable for install and import: signed kernel-policy provenance and a clean-machine installation flow have not been proven. The product exposes only 3D-off install/import.
+- **B4**: Pointer interaction is not yet reliable: the latest retained fixed 20-boot campaign landed 9/20 with p95 visible-response latency 704 ms against the required 20/20 and 250 ms. Keyboard input is unaffected.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-08-20 at commit `edd757acad540156956ef7189ed8be2b2151801d`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-08-26 at commit `a5b0e63b05e3b269382a7d8801c7ced342ccb620`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 For the exact thresholds and receipts, see the
@@ -246,7 +247,7 @@ polish**, rather than proving that the core Windows VMM can reach a desktop:
 - continued hardening of recovery, migration, diagnostics, and failure UX;
 - broader compatibility guarantees beyond the measured evidence set.
 
-There are two known defects in 1.0, both disclosed in the generated capability
+Known Engineering Preview defects are disclosed in the generated capability
 summary above and tracked as open criteria:
 
 - **Pointer clicks are unreliable** (criterion B4). In the latest ten-boot live
