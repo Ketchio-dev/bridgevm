@@ -51,7 +51,12 @@ function Get-Current([string]$dev) {
 function Require-Notepad {
   if (-not $LaunchNotepad) { return }
   $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd /c notepad.exe > C:\BridgeVM\notepad.out 2>&1' }
-  Write-Output ('BVNOTEPAD_LAUNCHED return=' + $result.ReturnValue + ' pid=' + $result.ProcessId)
+  $line = 'BVNOTEPAD_LAUNCHED return=' + $result.ReturnValue + ' pid=' + $result.ProcessId
+  # Also record the outcome in the share. The console reply is what has been
+  # going missing, so a launch proved only by that reply cannot be told apart
+  # from one that never ran; the share sync is an independent channel.
+  [IO.File]::WriteAllText('C:\BridgeVMPtr\bvnotepad-ready.log', $line + "`r`n")
+  Write-Output $line
   if ($null -eq $result -or $result.ReturnValue -ne 0 -or $result.ProcessId -le 0) { exit 5 }
 }
 function Require-PointerTarget {
