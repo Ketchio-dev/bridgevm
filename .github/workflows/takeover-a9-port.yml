@@ -111,21 +111,11 @@ jobs:
           if missing_new:
               raise SystemExit(f"failed to register budget rows: {missing_new}")
           budget_path.write_text("\n".join(out) + "\n")
-
-          check = Path("scripts/check-project.sh")
-          text = check.read_text()
-          marker = 'step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py\n'
-          addition = 'step "Windows product injection deny" tests/integration/hvf-windows-product-injection-deny-smoke.sh\n'
-          if addition not in text:
-              if marker not in text:
-                  raise SystemExit("check-project insertion marker missing")
-              text = text.replace(marker, marker + addition, 1)
-          check.write_text(text)
           PY
 
-          git add "${paths[@]}" scripts/refactor-budgets.tsv scripts/check-project.sh
+          git add "${paths[@]}" scripts/refactor-budgets.tsv
           tests/integration/hvf-windows-product-injection-deny-smoke.sh
-          scripts/check-refactor-budgets.sh | tee /tmp/a9-budgets.log
+          scripts/check-refactor-budgets.sh
           git diff --cached --check
           git config user.name "Ketchio-dev"
           git config user.email "116458462+Ketchio-dev@users.noreply.github.com"
