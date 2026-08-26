@@ -439,12 +439,7 @@ extension VMLibrary {
         return cfg
     }
 
-    /// Create a Windows 11 ARM VM on the from-scratch HVF engine directly from
-    /// an ISO. The bundle is created immediately with installPending=true and a
-    /// persisted HvfWindowsInstallRequest; the detail panel then runs the
-    /// proven WinPE scripted-install pipeline (WIM apply + bcdboot + unattended
-    /// OOBE) and, when requested, stages the viogpu3d 3D driver injection for
-    /// the first boot.
+    /// Create an install-pending Windows HVF VM; 3D needs signed provenance.
     static func createWindowsHVFInstall(name: String, isoPath: String, diskGiB: Int,
                                         injectViogpu3d: Bool, driverPackageDir: String?,
                                         storageDir: URL? = nil,
@@ -453,7 +448,8 @@ extension VMLibrary {
                                         networkEnabled: Bool = true,
                                         persist: Bool = true) -> VMConfig? {
         let fm = FileManager.default
-        guard let name = normalizedVMName(name),
+        guard windowsHVFInjectionError(requested: injectViogpu3d) == nil,
+              let name = normalizedVMName(name),
               diskGiB >= Int(HvfWindowsInstallPlan.minimumDiskGiB),
               isReadableRegularFile(isoPath),
               let reserved = reserveDestination(name, storageBase: storageDir ?? root) else { return nil }
@@ -489,43 +485,20 @@ extension VMLibrary {
         return cfg
     }
 
-    /// Stage a viogpu3d driver injection for an imported VM's next boot by
-    /// cloning a prebuilt injector image into the bundle and writing the
-    /// inject-pending marker. Returns a Korean error message on failure.
-    static func stageWindowsHVFInjection(bundlePath: String) -> String? {
-        let fm = FileManager.default
-        guard let shared = HvfWindowsInstallPlan.sharedInjectorCandidates
-            .first(where: { fm.isReadableFile(atPath: $0) }) else {
-            return "인젝터 이미지가 없습니다. 'Windows 설치(HVF)' 모드로 한 번 설치하거나 인젝터를 먼저 만들어 주세요."
-        }
-        let destination = bundlePath + "/disks/viogpu3d-injector.raw"
-        if !fm.fileExists(atPath: destination) {
-            let clone = Shell.run("/bin/cp", ["-c", shared, destination])
-            if clone.code != 0 {
-                do { try fm.copyItem(atPath: shared, toPath: destination) } catch {
-                    return "인젝터 이미지를 VM 번들로 복사하지 못했습니다."
-                }
-            }
-        }
-        let marker = bundlePath + "/" + HvfWindowsInstallPlan.injectPendingMarker
-        do {
-            try Data("\(destination)\n".utf8).write(to: URL(fileURLWithPath: marker), options: [.atomic])
-        } catch {
-            return "드라이버 주입 마커를 기록하지 못했습니다."
-        }
-        return nil
+    static func windowsHVFInjectionError(requested: Bool) -> String? {
+        guard requested else { return nil }
+        return HvfWindowsDriverPreflight.message(for: HvfWindowsDriverPreflight.provenanceBlocker)
     }
 
-    /// Import a proven installed Windows raw disk and its matching writable UEFI
-    /// vars store. A blank raw disk is not selectable because this engine does
-    /// not implement the Windows installer path yet.
+    /// Import an installed raw disk and matching writable UEFI vars.
     static func createWindowsHVF(name: String, targetDiskPath: String, varsPath: String,
                                  storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
                                  memMiB: Int = 6144, cpuCount: Int = 4,
-                                 networkEnabled: Bool = true,
+                                 networkEnabled: Bool = true, injectViogpu3d: Bool = false,
                                  persist: Bool = true) -> VMConfig? {
         let fm = FileManager.default
-        guard let name = normalizedVMName(name),
+        guard windowsHVFInjectionError(requested: injectViogpu3d) == nil,
+              let name = normalizedVMName(name),
               windowsHVFImportError(targetDiskPath: targetDiskPath, varsPath: varsPath) == nil else { return nil }
 
         let storageBase = storageDir ?? root
@@ -587,8 +560,6 @@ struct CreateVMSheet: View {
     @State private var hvfVarsPath: String = ""
     @State private var diskGiB = 64
     @State private var hvfNetwork = true
-    @State private var hvfInject = false
-    @State private var hvfDriverDir: String = UserDefaults.standard.string(forKey: "hvfViogpu3dPackageDir") ?? ""
     @State private var storageDir: URL? = nil
     @State private var resIndex = 1
     @State private var showAdvanced = false
@@ -653,7 +624,7 @@ struct CreateVMSheet: View {
             HStack(spacing: 8) {
                 if osFamily == .windows {
                     subTile("ISO에서 설치", selected: mode == .windowsHVFInstall) {
-                        mode = .windowsHVFInstall; autofillWin11(); autofillDriverDir()
+                        mode = .windowsHVFInstall; autofillWin11()
                     }
                     subTile("설치된 디스크 가져오기", selected: mode == .windowsHVF) {
                         mode = .windowsHVF; isoPath = ""
@@ -683,12 +654,8 @@ struct CreateVMSheet: View {
                     Text(hvfVarsPath.isEmpty ? "선택된 vars 없음" : (hvfVarsPath as NSString).lastPathComponent)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
-                Toggle("첫 부팅에서 3D 그래픽 드라이버(viogpu3d) 자동 설치", isOn: $hvfInject)
-                    .font(.callout)
-                if hvfInject {
-                    Text("기존 인젝터 이미지를 재사용합니다. 게스트에 테스트 서명 모드가 활성화됩니다.")
-                        .font(.caption).foregroundColor(.secondary)
-                }
+                Text("3D 드라이버 주입은 서명 provenance 검증기가 없어 사용할 수 없습니다. 3D 주입 없이 가져옵니다.")
+                    .font(.caption).foregroundColor(.secondary)
             } else if mode == .windowsHVFInstall {
                 Text("Windows 11 ARM64 ISO에서 자체 HVF 엔진으로 무인 설치합니다. WinPE 스크립트 설치(디스크 파티션 + WIM 적용 + 무인 OOBE)가 자동으로 진행됩니다.")
                     .font(.callout).foregroundColor(.secondary)
@@ -697,15 +664,8 @@ struct CreateVMSheet: View {
                     Text(isoPath.isEmpty ? "선택된 ISO 없음" : (isoPath as NSString).lastPathComponent)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
-                Toggle("설치 후 3D 그래픽 드라이버(viogpu3d) 자동 설치", isOn: $hvfInject)
-                    .font(.callout)
-                if hvfInject {
-                    HStack {
-                        Button("드라이버 패키지…") { pickDriverDir() }
-                        Text(hvfDriverDir.isEmpty ? "선택된 패키지 없음" : (hvfDriverDir as NSString).lastPathComponent)
-                            .font(.caption).foregroundColor(.secondary).lineLimit(1)
-                    }
-                }
+                Text("3D 드라이버 주입은 서명 provenance 검증기가 없어 사용할 수 없습니다. Windows는 3D 주입 없이 설치합니다.")
+                    .font(.caption).foregroundColor(.secondary)
             } else {
                 Text(mode == .windows
                      ? "Windows 11 ARM ISO를 선택하면 QEMU + TPM 2.0으로 설치 마법사를 부팅합니다."
@@ -835,7 +795,6 @@ struct CreateVMSheet: View {
             ramMiB = clampRam(6144)
             diskGiB = 64
             autofillWin11()
-            autofillDriverDir()
         case .linux:
             mode = .ubuntu
             ramMiB = clampRam(4096)
@@ -866,31 +825,13 @@ struct CreateVMSheet: View {
         if let url = chooseFile(directories: false, extensions: ["fd", "vars"]) { hvfVarsPath = url.path }
     }
 
-    private func pickDriverDir() {
-        if let url = chooseFile(directories: true) {
-            hvfDriverDir = url.path
-            UserDefaults.standard.set(hvfDriverDir, forKey: "hvfViogpu3dPackageDir")
-        }
-    }
-
-    private func autofillDriverDir() {
-        guard hvfDriverDir.isEmpty else { return }
-        let candidates = [
-            "\(NSHomeDirectory())/BridgeVM/viogpu3d-prebuilt-candidates/arm64-ci/viogpu3d-full",
-        ]
-        for path in candidates where FileManager.default.fileExists(atPath: path) {
-            hvfDriverDir = path
-            return
-        }
-    }
-
     private var canCreate: Bool {
         guard !working, VMLibrary.normalizedVMName(name) != nil else { return false }
         switch mode {
         case .windowsHVF:
             return !hvfTargetPath.isEmpty && !hvfVarsPath.isEmpty
         case .windowsHVFInstall:
-            return !isoPath.isEmpty && (!hvfInject || !hvfDriverDir.isEmpty)
+            return !isoPath.isEmpty
         case .iso, .windows:
             return !isoPath.isEmpty && template != nil
         case .ubuntu:
@@ -938,10 +879,8 @@ struct CreateVMSheet: View {
             return
         }
         let sd = storageDir; let w = resolutions[resIndex].0; let h = resolutions[resIndex].1
-        let inject = hvfInject; let driverDir = hvfDriverDir; let disk = diskGiB
-        let mem = ramMiB; let cpu = cpuCount; let net = hvfNetwork
+        let disk = diskGiB; let mem = ramMiB; let cpu = cpuCount; let net = hvfNetwork
         Task.detached {
-            var stagingError: String?
             let cfg: VMConfig?
             switch m {
             case .ubuntu:
@@ -953,26 +892,17 @@ struct CreateVMSheet: View {
             case .windowsHVF:
                 cfg = VMLibrary.createWindowsHVF(name: nm, targetDiskPath: hvfTarget, varsPath: hvfVars,
                                                  storageDir: sd, width: w, height: h, memMiB: mem, cpuCount: cpu,
-                                                 networkEnabled: net)
-                if inject, let created = cfg {
-                    stagingError = VMLibrary.stageWindowsHVFInjection(bundlePath: created.bundlePath)
-                }
+                                                 networkEnabled: net, injectViogpu3d: false)
             case .windowsHVFInstall:
                 cfg = VMLibrary.createWindowsHVFInstall(name: nm, isoPath: iso, diskGiB: disk,
-                                                        injectViogpu3d: inject,
-                                                        driverPackageDir: inject ? driverDir : nil,
+                                                        injectViogpu3d: false, driverPackageDir: nil,
                                                         storageDir: sd, width: w, height: h,
                                                         memMiB: mem, cpuCount: cpu, networkEnabled: net)
             }
-            let injectionWarning = stagingError
             await MainActor.run {
                 working = false
                 if let cfg = cfg, library.add(cfg) {
-                    if let injectionWarning {
-                        error = "VM은 만들었지만 드라이버 주입 준비 실패: \(injectionWarning)"
-                    } else {
-                        dismiss()
-                    }
+                    dismiss()
                 } else { error = "생성 또는 VM 라이브러리 저장 실패" }
             }
         }

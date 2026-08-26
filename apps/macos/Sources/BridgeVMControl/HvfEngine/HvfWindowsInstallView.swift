@@ -44,7 +44,7 @@ struct HvfWindowsInstallView: View {
             row("ISO", (session.plan.request.isoPath as NSString).lastPathComponent)
             row("디스크", "\(session.plan.request.diskGiB) GiB")
             row("3D 드라이버", session.plan.request.injectViogpu3d
-                ? "설치 후 viogpu3d 자동 주입" : "주입 안 함")
+                ? "차단됨 — 서명 provenance 검증기 없음" : "주입 안 함")
             if session.plan.sourceImageIsCached {
                 row("설치 소스", "캐시 재사용")
             }
