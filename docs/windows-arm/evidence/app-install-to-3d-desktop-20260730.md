@@ -63,3 +63,45 @@ Evidence directory: `/tmp/bridgevm-a9-v3-work/firstboot-evidence`.
 
 This proves the app-generated fresh install can reach a real 3D Windows desktop.
 It does not substitute for the separate A2/A3 real-title FPS criteria.
+
+## Retraction and current production-signing boundary — 2026-08-25
+
+The opening sentence above was wrong to say this receipt closes A9. The run
+used a development package whose guest stages changed test-signing/trust state,
+and its host preflight trusted package-local claims that were not backed by a
+Microsoft kernel-policy signature. It remains valid historical evidence that
+the development package reached a 3D desktop; it is not production install or
+import evidence and A9 is **OPEN**.
+
+The product now fails closed before source inspection or destination mutation,
+pins and verifies a signed whole-package inventory, consumes only a
+verify-copy-reverify bundle-private snapshot in both internal flows, and keeps
+the user-visible 3D selector absent. That deterministic boundary still cannot
+manufacture the signature Windows requires. Microsoft's current
+[driver code-signing requirements](https://learn.microsoft.com/en-us/windows-hardware/drivers/dashboard/code-signing-reqs)
+require a Hardware Dev Center dashboard account with a valid EV certificate
+for both attestation and WHCP submissions. The
+[signing-options documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/dashboard/driver-signing-offerings)
+states that attestation is a testing path, requires that EV-backed Partner
+Center submission, and is not Windows certification or retail Windows Update
+publication. Microsoft also lists EV certificates as purchases from approved
+certificate authorities; obtaining one includes external organization and
+contact verification.
+
+The current builder provenance explicitly says `self-signed ... TEST-SIGNED
+ONLY`, and a reproducible host inventory now reports:
+
+```
+$ security find-identity -v -p codesigning
+0 valid identities found
+```
+
+No EV signing identity, Hardware Dev Center authorization, or returned
+Microsoft-signed catalog is present in this workspace. Purchasing an EV
+certificate, registering or acting for a legal organization, and submitting
+through its Partner Center account are external-authority actions; they cannot
+be inferred from permission to edit and test the repository. A9 remains OPEN
+until an authorized operator supplies the real Microsoft-signed package and a
+retained clean-machine install **and** import flow passes. Test signing,
+preproduction device provisioning, disabling Secure Boot, or reintroducing a
+guest trust mutation does not satisfy that gate.
