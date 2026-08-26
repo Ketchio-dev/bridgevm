@@ -11,10 +11,9 @@ import stat
 import tempfile
 from pathlib import Path
 
+from b4_host_resource_lifecycle import classify_trace
 
-GROW = re.compile(
-    r"BV-VIRGL-ALLOC-LIST-GROW-FAIL alloc_count=(\d+) max_alloc=(\d+) res_id=(\d+)"
-)
+GROW = re.compile(r"BV-VIRGL-ALLOC-LIST-GROW-FAIL alloc_count=(\d+) max_alloc=(\d+) res_id=(\d+)")
 SUBMIT = re.compile(
     r"BV-VIRGL-SUBMIT stage=(\S+) cdw=(\d+) driver_length=(\d+) command_length=(\d+) "
     r"allocations=(\d+) max_alloc=(\d+) d3d_list_size=(\d+)"
@@ -68,28 +67,8 @@ def analyze(
         }
         for match in SUBMIT.finditer(dbwin_text)
     ]
-    candidates: list[dict[str, int]] = []
-    trace_lines = bounded_text(trace_path).splitlines()[skip_trace_lines:]
-    for line_number, line in enumerate(trace_lines, 1):
-        if len(line) > 1024 * 1024:
-            raise ValueError(f"oversized JSONL record at line {line_number}")
-        record = json.loads(line)
-        if (
-            record.get("name") == "SUBMIT_3D"
-            and record.get("response_name") == "ERR_UNSPEC"
-            and record.get("renderer_command_id") in (43, 45)
-            and record.get("renderer_resource_found") is True
-            and record.get("renderer_resource_backed") is False
-            and isinstance(record.get("renderer_resource_id"), int)
-        ):
-            candidates.append(
-                {
-                    "seq": int(record["seq"]),
-                    "ctx_id": int(record.get("ctx_id", 0)),
-                    "command_id": int(record["renderer_command_id"]),
-                    "resource_id": int(record["renderer_resource_id"]),
-                }
-            )
+    trace_lines = bounded_text(trace_path).splitlines()
+    candidates, missing_create = classify_trace(trace_lines, skip_trace_lines)
     first_grow = grow_events[0] if grow_events else None
     first_host = candidates[0] if candidates else None
     correlated = bool(
@@ -107,8 +86,15 @@ def analyze(
         outcome = "guest-only"
     else:
         outcome = "resource-mismatch"
+    if missing_create:
+        if correlated:
+            outcome = "correlated-plus-missing-create"
+        elif first_grow or first_host:
+            outcome = "mixed-with-missing-create"
+        else:
+            outcome = "missing-create-attach"
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "outcome": outcome,
         "correlated": correlated,
         "dbwin_grow_fail_count": len(grow_events),
@@ -118,8 +104,10 @@ def analyze(
         "max_d3d_list_size": max((event["d3d_list_size"] for event in submit_events), default=0),
         "first_submit": submit_events[0] if submit_events else None,
         "host_never_backed_transfer_count": len(candidates),
+        "host_missing_create_attach_count": len(missing_create),
         "first_grow_fail": first_grow,
         "first_never_backed_transfer": first_host,
+        "first_missing_create_attach": missing_create[0] if missing_create else None,
     }
 
 
@@ -171,6 +159,17 @@ def self_test() -> None:
         )
         if analyze(dbwin, trace)["outcome"] != "resource-mismatch":
             raise AssertionError("mismatched resource ids were accepted")
+        dbwin.write_text("[dbwin] capture_ready\n", encoding="utf-8")
+        trace.write_text("\n".join(json.dumps(record) for record in (
+            {"seq": 1, "name": "RESOURCE_CREATE_3D", "response_name": "OK_NODATA", "resource_id": 10},
+            {"seq": 2, "name": "RESOURCE_UNREF", "response_name": "OK_NODATA", "resource_id": 10},
+            {"seq": 3, "name": "RESOURCE_CREATE_BLOB", "response_name": "OK_NODATA", "resource_id": 12},
+            {"seq": 4, "name": "RESOURCE_ATTACH_BACKING", "response_name": "ERR_UNSPEC", "resource_id": 10},
+            {"seq": 5, "name": "RESOURCE_ATTACH_BACKING", "response_name": "ERR_UNSPEC", "resource_id": 12},
+        )) + "\n", encoding="utf-8")
+        result = analyze(dbwin, trace, skip_trace_lines=3)
+        if result["outcome"] != "missing-create-attach" or result["host_missing_create_attach_count"] != 1 or result["first_missing_create_attach"]["resource_id"] != 10:
+            raise AssertionError("full resource lifecycle did not isolate the missing-create attach")
     print("PASS: B4 guest/host diagnostic correlation mutations")
 
 

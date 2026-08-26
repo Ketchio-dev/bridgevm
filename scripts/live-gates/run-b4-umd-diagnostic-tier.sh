@@ -36,7 +36,7 @@ if verify.is_file():
         if "=" in line:
             key, value = line.split("=", 1); values[key] = value
 analysis = json.loads(analysis_path.read_text()) if analysis_path.is_file() else {}
-guest = analysis.get("first_grow_fail") or {}; host = analysis.get("first_never_backed_transfer") or {}
+guest = analysis.get("first_grow_fail") or {}; host = analysis.get("first_never_backed_transfer") or {}; missing = analysis.get("first_missing_create_attach") or {}
 evidence = [str(path.relative_to(out)) for path in (
     out / "case/share/b4-dbwin.log", out / "case/virtio-gpu.jsonl", analysis_path,
     out / "case/analysis-window.env", out / "case/summary.txt",
@@ -58,9 +58,9 @@ receipt = {
     "diagnostic_max_submit_allocations": int(analysis.get("max_submit_allocations", 0)),
     "diagnostic_max_submit_capacity": int(analysis.get("max_submit_capacity", 0)),
     "diagnostic_max_d3d_list_size": int(analysis.get("max_d3d_list_size", 0)),
-    "diagnostic_host_event_count": int(analysis.get("host_never_backed_transfer_count", 0)),
+    "diagnostic_host_event_count": int(analysis.get("host_never_backed_transfer_count", 0)), "diagnostic_missing_create_attach_count": int(analysis.get("host_missing_create_attach_count", 0)),
     "diagnostic_guest_resource_id": guest.get("resource_id", "absent"),
-    "diagnostic_host_resource_id": host.get("resource_id", "absent"),
+    "diagnostic_host_resource_id": host.get("resource_id", "absent"), "diagnostic_missing_create_resource_id": missing.get("resource_id", "absent"),
     "evidence_paths": evidence, "outcome": sys.argv[11], "pass": False,
     "known_confounders": ["Diagnostic correlation only; B4 still requires 20/20 landed clicks and p95 <= 250 ms."],
 }
