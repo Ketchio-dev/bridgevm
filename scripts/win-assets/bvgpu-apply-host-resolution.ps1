@@ -50,7 +50,7 @@ function Get-Current([string]$dev) {
 # inherits its stdout keeps that read pending for the child's whole lifetime.
 function Require-Notepad {
   if (-not $LaunchNotepad) { return }
-  $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd /c notepad.exe > C:\BridgeVMPtr\notepad.out 2>&1' }
+  $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd /c notepad.exe > C:\BridgeVM\notepad.out 2>&1' }
   Write-Output ('BVNOTEPAD_LAUNCHED return=' + $result.ReturnValue + ' pid=' + $result.ProcessId)
   if ($null -eq $result -or $result.ReturnValue -ne 0 -or $result.ProcessId -le 0) { exit 5 }
 }
