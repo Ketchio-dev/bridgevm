@@ -99,3 +99,43 @@ So two distinct failures are now separated: a launch that wedges the
 single-threaded agent through an inherited pipe (addressed), and guest boot
 flakiness after the reset boundary (not addressed, and not a scripting error).
 The criterion stays OPEN with no captured scene.
+
+## Runs 9–11: the launch is fixed; the console stall is not the launcher
+
+Run 10 (`874205d`) moved the Notepad launch out of the agent console and into
+`bvgpu-apply-host-resolution.ps1`, using the same `Invoke-CimMethod` mechanism
+that has always launched the B4 pointer target from that script's own process.
+It worked: the lane printed
+
+```
+BVNOTEPAD_LAUNCHED return=0 pid=5304
+```
+
+the agent stayed responsive, and the run reached `WINLIST` for the first time
+in eleven lanes. It then wedged on `SERVICE overdue share-get`, because the
+redirect wrote `notepad.out` into `C:\BridgeVMPtr` — the synchronised share —
+so the host began fetching a file the guest still held open. Run 11 moves that
+output to `C:\BridgeVM`, outside the share, exactly where the B4 target's own
+`.out` file lives.
+
+Run 11 then failed earlier still, at `guest resize failed`, with only the
+initial `whoami` completing. That is the same console stall appearing one
+command sooner, and it is what the ten retained lanes now show as a whole:
+
+| stalled at | lanes |
+| --- | --- |
+| after `whoami` (resize never returned) | 1 |
+| after resize (next command never returned) | 6 |
+| after Notepad launch (`WINLIST` never returned) | 1 |
+| reached typing | 1 |
+| never booted | 1 |
+
+The stall is not attached to any particular command. Each fix moved the run
+further and the stall reappeared at whatever command came next, which
+falsifies "this verb blocks the agent" as a general explanation and points at
+the guest console/agent servicing under load after the reset boundary.
+
+The launch defect itself is real and fixed — `BVNOTEPAD_LAUNCHED return=0` is
+direct evidence — and so is the text-size defect from run 1. The criterion
+stays OPEN: no scene has been captured, and glyph correctness remains
+`unmeasured`.
