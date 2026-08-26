@@ -1,25 +1,30 @@
 name: One-shot A9 fail-closed port
 
 on:
-  push:
-    branches: [takeover/a9-fail-closed]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   port:
-    if: ${{ !contains(github.event.head_commit.message, '[a9-port-complete]') }}
+    if: ${{ github.head_ref == 'takeover/a9-fail-closed' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Port only the proven product fail-closed surface
         shell: bash
         run: |
           set -euo pipefail
+          if git log -1 --pretty=%B | grep -Fq '[a9-port-complete]'; then
+            echo 'A9 selective port already applied'
+            exit 0
+          fi
           SOURCE=28b0110e9496b7015c83ae485afb77ab86b90174
           git fetch --no-tags origin agent/known-problems-integration
           paths=(
@@ -74,13 +79,12 @@ jobs:
               raise SystemExit(f"missing existing budget rows: {missing_updates}")
 
           def insert_after(anchor: str, rows: list[tuple[str, int]]) -> None:
-              nonlocal_out = out
-              index = next((i for i, line in enumerate(nonlocal_out)
+              index = next((i for i, line in enumerate(out)
                             if line.startswith(anchor + "\t")), None)
               if index is None:
                   raise SystemExit(f"missing insertion anchor: {anchor}")
               additions = [f"{path}\t{loc}\t0" for path, loc in rows if path not in present]
-              nonlocal_out[index + 1:index + 1] = additions
+              out[index + 1:index + 1] = additions
               present.update(path for path, _ in rows)
 
           insert_after(
