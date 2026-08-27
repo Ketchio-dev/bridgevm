@@ -10,4 +10,5 @@ mod part_4_2;
 mod part_4_3;
 mod qmp_nonterminal;
 mod restart_owned;
+mod suspend_owned;
 mod wait;
