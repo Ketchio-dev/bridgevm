@@ -1,0 +1,169 @@
+name: One-shot virtio-gpu avail bound fix
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.head_ref == 'takeover/virtio-gpu-avail-bound'
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          components: rustfmt
+      - name: Apply and verify bounded GPU avail processing
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("crates/bridgevm-hvf/src/virtio_gpu")
+          module = root / "mod.rs"
+          queue = root / "virtqueue.rs"
+          pending = root / "queue_pending.rs"
+          tests_module = root / "tests/mod.rs"
+          pending_tests = root / "tests/queue_pending.rs"
+
+          def replace_once(path: Path, old: str, new: str, label: str) -> None:
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one anchor, found {count}")
+              path.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              module,
+              "mod protocol;\n",
+              "mod protocol;\nmod queue_pending;\n",
+              "GPU queue_pending module",
+          )
+          replace_once(
+              tests_module,
+              "mod helpers;\n",
+              "mod helpers;\nmod queue_pending;\n",
+              "GPU queue_pending tests",
+          )
+          replace_once(
+              queue,
+              "use super::*;\n",
+              "use super::queue_pending::pending_entries;\nuse super::*;\n",
+              "GPU pending helper import",
+          )
+          replace_once(
+              queue,
+              "        while self.queues[queue_index].last_avail_idx != avail_idx {\n",
+              "        for _ in 0..pending_entries(queue.last_avail_idx, avail_idx, queue_size) {\n",
+              "GPU avail loop",
+          )
+
+          pending.write_text(
+              """//! Caps one GPU queue notification at the queue's effective capacity.
+
+          pub(super) fn pending_entries(last_avail_idx: u16, avail_idx: u16, queue_size: u16) -> u16 {
+              avail_idx.wrapping_sub(last_avail_idx).min(queue_size)
+          }
+          """
+          )
+          pending_tests.write_text(
+              """use super::super::*;
+          use super::helpers::*;
+
+          #[test]
+          fn gpu_process_queue_caps_malformed_avail_delta_at_queue_size() {
+              let mut dev = VirtioPciGpu::new(1280, 800);
+              let mut mem = TestMem::new(0x4000_0000, 0x10000);
+              let desc = 0x4000_1000;
+              let avail = 0x4000_2000;
+              let used = 0x4000_3000;
+              let queue_size = 16u16;
+
+              setup_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
+              mem.write(avail + 2, &queue_size.wrapping_add(1).to_le_bytes());
+
+              pci_write(&mut dev, PCI_NOTIFY_CFG_OFFSET, 4, 0, &mut mem);
+
+              assert_eq!(dev.stats().queues[0].last_avail_idx, queue_size);
+              assert_eq!(
+                  u16::from_le_bytes(mem.read(used + 2, 2).try_into().unwrap()),
+                  queue_size
+              );
+          }
+          """
+          )
+          PY
+
+          cargo fmt --all
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          budget = Path("scripts/refactor-budgets.tsv")
+          targets = [
+              (
+                  "crates/bridgevm-hvf/src/virtio_gpu/queue_pending.rs",
+                  "crates/bridgevm-hvf/src/virtio_gpu/protocol.rs",
+              ),
+              (
+                  "crates/bridgevm-hvf/src/virtio_gpu/tests/queue_pending.rs",
+                  "crates/bridgevm-hvf/src/virtio_gpu/tests/part_3_2.rs",
+              ),
+          ]
+          declaration = re.compile(
+              r"^\s*((pub\s+)?(mod|use)\s+[^;{]*;|#\[path\s*=.*\])\s*$"
+          )
+
+          def measured_loc(path: Path) -> int:
+              loc = 0
+              header = True
+              for line in path.read_text().splitlines():
+                  if header and line.lstrip().startswith("//!"):
+                      continue
+                  if header and not line.strip():
+                      header = False
+                      continue
+                  header = False
+                  if declaration.match(line):
+                      continue
+                  loc += 1
+              return loc
+
+          lines = budget.read_text().splitlines()
+          for target, anchor in targets:
+              if any(line.split("\t", 1)[0] == target for line in lines):
+                  raise SystemExit(f"budget already contains {target}")
+              index = next(
+                  (i for i, line in enumerate(lines) if line.split("\t", 1)[0] == anchor),
+                  None,
+              )
+              if index is None:
+                  raise SystemExit(f"budget anchor missing: {anchor}")
+              lines.insert(index + 1, f"{target}\t{measured_loc(Path(target))}\t0")
+          budget.write_text("\n".join(lines) + "\n")
+          PY
+
+          rm -f .github/workflows/takeover-virtio-gpu-avail-bound.yml
+          cargo test -p bridgevm-hvf --locked \
+            gpu_process_queue_caps_malformed_avail_delta_at_queue_size
+          cargo check -p bridgevm-hvf --locked
+          scripts/check-refactor-budgets.sh
+          git diff --check
+
+          git add -A
+          git config user.name "Ketchio-dev"
+          git config user.email "116458462+Ketchio-dev@users.noreply.github.com"
+          git commit \
+            -m "gpu: bound avail processing by queue size [gpu-avail-bound-complete]" \
+            -m "Limit each virtio-gpu notification to the effective queue capacity so a corrupt or hostile avail index cannot amplify one control or cursor kick into a 65,535-command host loop."
+          git push origin HEAD:takeover/virtio-gpu-avail-bound
