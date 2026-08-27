@@ -221,17 +221,6 @@ pub(super) fn write_share_guest_path_into(dir: &str, name: &str, out: &mut Strin
     share_sync::append_guest_rel_into(name, out);
 }
 
-pub(super) fn share_put_req(name: String, bytes: Vec<u8>, hash: u64) -> ServiceReq {
-    let phase = if bytes.len() <= SHARE_PUT_CHUNK_BYTES {
-        SharePutPhase::Legacy
-    } else {
-        SharePutPhase::Beg
-    };
-    ServiceReq::SharePut {
-        name,
-        bytes,
-        hash,
-        next_chunk: 0,
-        phase,
-    }
-}
+#[path = "share/share_put.rs"]
+mod share_put;
+pub(super) use share_put::*;
