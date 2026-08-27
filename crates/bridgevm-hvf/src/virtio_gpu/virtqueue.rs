@@ -1,5 +1,6 @@
 //! Virtqueue transport: queue state, descriptor walking, gather/scatter, used ring, scratch pooling.
 
+use super::queue_pending::pending_entries;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 use crate::virtio_gpu_3d::CompletedFence;
@@ -134,7 +135,7 @@ impl VirtioGpu {
         let Some(avail_idx) = read_u16(mem, queue.driver + 2) else {
             return;
         };
-        while self.queues[queue_index].last_avail_idx != avail_idx {
+        for _ in 0..pending_entries(queue.last_avail_idx, avail_idx, queue_size) {
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
             let ring_off = 4 + u64::from(last_avail_idx % queue_size) * 2;
             let Some(head) = read_u16(mem, queue.driver + ring_off) else {
