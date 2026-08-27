@@ -1,4 +1,4 @@
-//! Bounds one notification's avail-ring work to the configured queue size.
+//! Caps each guest notification's avail-ring work at the active queue size.
 
 pub(super) fn pending_entries(last_avail_idx: u16, avail_idx: u16, queue_num: u16) -> u16 {
     avail_idx.wrapping_sub(last_avail_idx).min(queue_num)
