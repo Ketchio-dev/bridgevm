@@ -1,4 +1,4 @@
-//! Live VNC display reservations must never fail open on unknown metadata.
+//! Proves live VNC reservations fail closed when child metadata is unknown.
 
 use super::helpers::compatibility_manifest;
 use super::helpers::temp_store;
