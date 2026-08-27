@@ -34,7 +34,11 @@ fn exited_backend() -> (VmStore, DaemonState, PathBuf, PathBuf) {
             &RunnerMetadata {
                 engine: "fullvm".to_string(),
                 pid: Some(pid),
-                command: vec!["/bin/sh".to_string(), "-c".to_string(), "exit 0".to_string()],
+                command: vec![
+                    "/bin/sh".to_string(),
+                    "-c".to_string(),
+                    "exit 0".to_string(),
+                ],
                 log_path: bundle.join("logs").join("qemu.log"),
                 started_at_unix: 0,
                 dry_run: false,
