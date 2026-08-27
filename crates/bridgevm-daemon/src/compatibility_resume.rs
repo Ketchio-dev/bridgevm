@@ -108,8 +108,8 @@ impl DaemonState {
 
         let mut command = build_compatibility_resume_command(manifest, bundle)
             .map_err(|error| anyhow::anyhow!("{error}"))?;
-        let avoid = self.live_vnc_displays();
-        assign_free_vnc_display(&mut command, &avoid).map_err(|error| anyhow::anyhow!(error))?;
+        let avoid = self.live_vnc_displays()?;
+        assign_free_vnc_display(&mut command, &avoid).map_err(anyhow::Error::msg)?;
         let log_path = bundle.join("logs").join("qemu.log");
         let guest_tools = self
             .store

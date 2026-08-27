@@ -1,4 +1,4 @@
-//! Suspend, resume, stop, restart and cleanup of daemon-owned backends, and VNC display arbitration.
+//! Suspend, resume, stop, restart and cleanup of daemon-owned backends.
 
 use crate::*;
 use anyhow::Context;
@@ -8,10 +8,11 @@ use bridgevm_api::resume_backend;
 use bridgevm_api::suspend_backend;
 use bridgevm_api::BridgeVmResponse;
 use bridgevm_api::CurrentRuntimeEngine;
-use bridgevm_qemu::vnc_display_in_command;
 
 #[path = "backend_lifecycle/cleanup.rs"]
 mod cleanup;
+#[path = "backend_lifecycle/vnc_displays.rs"]
+mod vnc_displays;
 
 impl DaemonState {
     /// Keep daemon ownership until synchronous suspend has committed. A failed
@@ -82,18 +83,5 @@ impl DaemonState {
                 self.resume_compatibility_supervised(name, &bundle, &manifest)
             }
         }
-    }
-
-    /// VNC display numbers currently owned by this daemon's live supervised
-    /// backends, read back from their recorded launch commands. A newly launched
-    /// Compat VM avoids these so it doesn't collide on an in-use VNC port even
-    /// before the owning VM's QEMU has finished binding it.
-    pub(crate) fn live_vnc_displays(&self) -> Vec<u16> {
-        self.children
-            .keys()
-            .filter_map(|name| self.store.runner_metadata(name).ok().flatten())
-            .filter(|metadata| !metadata.dry_run && metadata.pid.is_some())
-            .filter_map(|metadata| vnc_display_in_command(&metadata.command))
-            .collect()
     }
 }
