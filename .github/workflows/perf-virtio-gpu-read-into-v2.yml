@@ -1,0 +1,112 @@
+name: One-shot virtio-gpu read-into verifier v2
+
+on:
+  push:
+    branches:
+      - perf/virtio-gpu-read-into
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          components: rustfmt,clippy
+      - name: Replace temporary GPU guest reads and verify reduced source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          import re
+
+          loop_old = base64.b64decode('ICAgICAgICBmb3IgZGVzYyBpbiBkZXNjcyB7CiAgICAgICAgICAgIGlmIGRlc2MuZmxhZ3MgJiBERVNDX0ZfV1JJVEUgIT0gMCB7CiAgICAgICAgICAgICAgICBjb250aW51ZTsKICAgICAgICAgICAgfQo=').decode()
+          loop_new = base64.b64decode('ICAgICAgICBmb3IgZGVzYyBpbiBkZXNjcy5pdGVyKCkuZmlsdGVyKHxkZXNjfCBkZXNjLmZsYWdzICYgREVTQ19GX1dSSVRFID09IDApIHsK').decode()
+          old = base64.b64decode('ICAgICAgICAgICAgbGV0IHN0YXJ0ID0gb3V0LmxlbigpOwogICAgICAgICAgICBsZXQgU29tZShlbmQpID0gc3RhcnQuY2hlY2tlZF9hZGQoZGVzYy5sZW4gYXMgdXNpemUpIGVsc2UgewogICAgICAgICAgICAgICAgb3V0LmNsZWFyKCk7CiAgICAgICAgICAgICAgICByZXR1cm47CiAgICAgICAgICAgIH07CiAgICAgICAgICAgIGlmIGVuZCA+IE1BWF9HUFVfUkVRVUVTVF9MRU4gewogICAgICAgICAgICAgICAgb3V0LmNsZWFyKCk7CiAgICAgICAgICAgICAgICByZXR1cm47CiAgICAgICAgICAgIH0KICAgICAgICAgICAgaWYgbGV0IFNvbWUoYnl0ZXMpID0gbWVtLnJlYWRfYnl0ZXMoZGVzYy5hZGRyLCBkZXNjLmxlbiBhcyB1c2l6ZSkgewogICAgICAgICAgICAgICAgb3V0LmV4dGVuZF9mcm9tX3NsaWNlKCZieXRlcyk7CiAgICAgICAgICAgIH0K').decode()
+          new = base64.b64decode('ICAgICAgICAgICAgbGV0IHN0YXJ0ID0gb3V0LmxlbigpOwogICAgICAgICAgICBsZXQgU29tZShlbmQpID0gc3RhcnQuY2hlY2tlZF9hZGQoZGVzYy5sZW4gYXMgdXNpemUpIGVsc2UgewogICAgICAgICAgICAgICAgb3V0LmNsZWFyKCk7CiAgICAgICAgICAgICAgICByZXR1cm47CiAgICAgICAgICAgIH07CiAgICAgICAgICAgIGlmIGVuZCA+IE1BWF9HUFVfUkVRVUVTVF9MRU4gewogICAgICAgICAgICAgICAgb3V0LmNsZWFyKCk7CiAgICAgICAgICAgICAgICByZXR1cm47CiAgICAgICAgICAgIH0KICAgICAgICAgICAgb3V0LnJlc2l6ZShlbmQsIDApOwogICAgICAgICAgICBpZiAhbWVtLnJlYWRfaW50byhkZXNjLmFkZHIsICZtdXQgb3V0W3N0YXJ0Li5lbmRdKSB7CiAgICAgICAgICAgICAgICBvdXQudHJ1bmNhdGUoc3RhcnQpOwogICAgICAgICAgICB9Cg==').decode()
+          test_source = base64.b64decode('Ly8hIFJlZ3Jlc3Npb24gZm9yIGFsbG9jYXRpb24tZnJlZSB2aXJ0aW8tZ3B1IHJlYWRhYmxlIGRlc2NyaXB0b3IgZ2F0aGVyaW5nLgoKdXNlIHN1cGVyOjpzdXBlcjo6KjsKdXNlIGNyYXRlOjpmd2NmZzo6R3Vlc3RNZW1vcnlNdXQ7CnVzZSBzdGQ6OmNlbGw6OkNlbGw7Cgpjb25zdCBGSVJTVF9HUEE6IHU2NCA9IDB4MTAwOwpjb25zdCBTRUNPTkRfR1BBOiB1NjQgPSAweDIwMDsKY29uc3QgTUlTU0lOR19HUEE6IHU2NCA9IDB4MzAwOwoKc3RydWN0IFJlYWRJbnRvT25seU1lbSB7CiAgICBieXRlczogVmVjPHU4PiwKICAgIHJlYWRfaW50b19jYWxsczogQ2VsbDx1c2l6ZT4sCn0KCmltcGwgUmVhZEludG9Pbmx5TWVtIHsKICAgIGZuIG5ldygpIC0+IFNlbGYgewogICAgICAgIGxldCBtdXQgYnl0ZXMgPSB2ZWMhWzB1ODsgMHgyODBdOwogICAgICAgIGJ5dGVzW0ZJUlNUX0dQQSBhcyB1c2l6ZS4uRklSU1RfR1BBIGFzIHVzaXplICsgNF0uY29weV9mcm9tX3NsaWNlKGIiaGVhZCIpOwogICAgICAgIGJ5dGVzW1NFQ09ORF9HUEEgYXMgdXNpemUuLlNFQ09ORF9HUEEgYXMgdXNpemUgKyA0XS5jb3B5X2Zyb21fc2xpY2UoYiJ0YWlsIik7CiAgICAgICAgU2VsZiB7CiAgICAgICAgICAgIGJ5dGVzLAogICAgICAgICAgICByZWFkX2ludG9fY2FsbHM6IENlbGw6Om5ldygwKSwKICAgICAgICB9CiAgICB9Cn0KCmltcGwgR3Vlc3RNZW1vcnlNdXQgZm9yIFJlYWRJbnRvT25seU1lbSB7CiAgICBmbiB3cml0ZV9ieXRlcygmbXV0IHNlbGYsIF9ncGE6IHU2NCwgX2RhdGE6ICZbdThdKSAtPiBib29sIHsKICAgICAgICBwYW5pYyEoIkdQVSByZXF1ZXN0IGdhdGhlciBtdXN0IG5vdCB3cml0ZSBndWVzdCBtZW1vcnkiKQogICAgfQoKICAgIGZuIHJlYWRfYnl0ZXMoJnNlbGYsIF9ncGE6IHU2NCwgX2xlbjogdXNpemUpIC0+IE9wdGlvbjxWZWM8dTg+PiB7CiAgICAgICAgcGFuaWMhKCJHUFUgcmVxdWVzdCBnYXRoZXIgbXVzdCBub3QgYWxsb2NhdGUgdGhyb3VnaCByZWFkX2J5dGVzIikKICAgIH0KCiAgICBmbiByZWFkX2ludG8oJnNlbGYsIGdwYTogdTY0LCBkc3Q6ICZtdXQgW3U4XSkgLT4gYm9vbCB7CiAgICAgICAgc2VsZi5yZWFkX2ludG9fY2FsbHMKICAgICAgICAgICAgLnNldChzZWxmLnJlYWRfaW50b19jYWxscy5nZXQoKS5zYXR1cmF0aW5nX2FkZCgxKSk7CiAgICAgICAgbGV0IE9rKHN0YXJ0KSA9IHVzaXplOjp0cnlfZnJvbShncGEpIGVsc2UgewogICAgICAgICAgICByZXR1cm4gZmFsc2U7CiAgICAgICAgfTsKICAgICAgICBsZXQgU29tZShlbmQpID0gc3RhcnQuY2hlY2tlZF9hZGQoZHN0LmxlbigpKSBlbHNlIHsKICAgICAgICAgICAgcmV0dXJuIGZhbHNlOwogICAgICAgIH07CiAgICAgICAgbGV0IFNvbWUoc3JjKSA9IHNlbGYuYnl0ZXMuZ2V0KHN0YXJ0Li5lbmQpIGVsc2UgewogICAgICAgICAgICByZXR1cm4gZmFsc2U7CiAgICAgICAgfTsKICAgICAgICBkc3QuY29weV9mcm9tX3NsaWNlKHNyYyk7CiAgICAgICAgdHJ1ZQogICAgfQp9CgojW3Rlc3RdCmZuIGdhdGhlcl9yZWFkYWJsZV91c2VzX3JlYWRfaW50b19hbmRfcHJlc2VydmVzX3VuYmFja2VkX3NraXBfc2VtYW50aWNzKCkgewogICAgbGV0IG1lbSA9IFJlYWRJbnRvT25seU1lbTo6bmV3KCk7CiAgICBsZXQgZGVzY3MgPSBbCiAgICAgICAgRGVzY3JpcHRvciB7CiAgICAgICAgICAgIGFkZHI6IEZJUlNUX0dQQSwKICAgICAgICAgICAgbGVuOiA0LAogICAgICAgICAgICBmbGFnczogMCwKICAgICAgICAgICAgbmV4dDogMCwKICAgICAgICB9LAogICAgICAgIERlc2NyaXB0b3IgewogICAgICAgICAgICBhZGRyOiAwLAogICAgICAgICAgICBsZW46IDY0LAogICAgICAgICAgICBmbGFnczogREVTQ19GX1dSSVRFLAogICAgICAgICAgICBuZXh0OiAwLAogICAgICAgIH0sCiAgICAgICAgRGVzY3JpcHRvciB7CiAgICAgICAgICAgIGFkZHI6IE1JU1NJTkdfR1BBLAogICAgICAgICAgICBsZW46IDQsCiAgICAgICAgICAgIGZsYWdzOiAwLAogICAgICAgICAgICBuZXh0OiAwLAogICAgICAgIH0sCiAgICAgICAgRGVzY3JpcHRvciB7CiAgICAgICAgICAgIGFkZHI6IFNFQ09ORF9HUEEsCiAgICAgICAgICAgIGxlbjogNCwKICAgICAgICAgICAgZmxhZ3M6IDAsCiAgICAgICAgICAgIG5leHQ6IDAsCiAgICAgICAgfSwKICAgIF07CiAgICBsZXQgbXV0IG91dCA9IHZlYyFbMHhmZjsgMzJdOwoKICAgIFZpcnRpb0dwdTo6Z2F0aGVyX3JlYWRhYmxlX2ludG8oJm1lbSwgJmRlc2NzLCAmbXV0IG91dCk7CgogICAgYXNzZXJ0X2VxIShvdXQsIGIiaGVhZHRhaWwiKTsKICAgIGFzc2VydF9lcSEobWVtLnJlYWRfaW50b19jYWxscy5nZXQoKSwgMyk7Cn0K').decode()
+
+          source = Path('crates/bridgevm-hvf/src/virtio_gpu/virtqueue.rs')
+          text = source.read_text()
+          if text.count(loop_old) != 1:
+              raise SystemExit('virtio-gpu writable filter anchor changed')
+          text = text.replace(loop_old, loop_new, 1)
+          if text.count(old) != 1:
+              raise SystemExit('virtio-gpu gather anchor changed')
+          source.write_text(text.replace(old, new, 1))
+
+          tests_mod = Path('crates/bridgevm-hvf/src/virtio_gpu/tests/mod.rs')
+          mod_text = tests_mod.read_text()
+          anchor = 'mod queue_pending;\n'
+          if mod_text.count(anchor) != 1 or 'mod read_into;' in mod_text:
+              raise SystemExit('virtio-gpu test module anchor changed')
+          tests_mod.write_text(mod_text.replace(anchor, anchor + 'mod read_into;\n', 1))
+
+          test_path = Path('crates/bridgevm-hvf/src/virtio_gpu/tests/read_into.rs')
+          if test_path.exists():
+              raise SystemExit('virtio-gpu read-into regression already exists')
+          test_path.write_text(test_source)
+
+          declaration = re.compile(r'^\s*(?:(?:pub\s+)?(?:mod|use)\s+[^;{]*;|#\[path\s*=\s*[^]]*\])\s*$')
+          def structural_loc(path: str) -> int:
+              header = True
+              loc = 0
+              for line in Path(path).read_text().splitlines():
+                  if header and re.match(r'^\s*//!', line):
+                      continue
+                  if header and re.match(r'^\s*$', line):
+                      header = False
+                      continue
+                  header = False
+                  if declaration.match(line):
+                      continue
+                  loc += 1
+              return loc
+
+          budgets_path = Path('scripts/refactor-budgets.tsv')
+          budgets = budgets_path.read_text()
+          source_rel = str(source)
+          source_pattern = re.compile(rf'^{re.escape(source_rel)}\t(\d+)\t0$', re.MULTILINE)
+          source_match = source_pattern.search(budgets)
+          if source_match is None:
+              raise SystemExit('virtio-gpu virtqueue budget row missing')
+          source_loc = structural_loc(source_rel)
+          if source_loc > int(source_match.group(1)):
+              raise SystemExit('virtio-gpu optimization unexpectedly grew source debt')
+          budgets = source_pattern.sub(f'{source_rel}\t{source_loc}\t0', budgets, count=1)
+          test_rel = str(test_path)
+          if re.search(rf'^{re.escape(test_rel)}\t', budgets, re.MULTILINE):
+              raise SystemExit('virtio-gpu read-into test budget already exists')
+          budget_anchor = 'crates/bridgevm-hvf/src/virtio_gpu/tests/queue_pending.rs\t21\t0\n'
+          if budgets.count(budget_anchor) != 1:
+              raise SystemExit('virtio-gpu budget insertion anchor changed')
+          budgets = budgets.replace(budget_anchor, budget_anchor + f'{test_rel}\t{structural_loc(test_rel)}\t0\n', 1)
+          budgets_path.write_text(budgets)
+          PY
+
+          cargo fmt --all
+          for attempt in $(seq 1 10); do
+            echo "virtio-gpu read-into regression attempt ${attempt}/10"
+            cargo test -p bridgevm-hvf --locked gather_readable_uses_read_into_and_preserves_unbacked_skip_semantics
+          done
+          cargo test -p bridgevm-hvf --locked
+          cargo clippy -p bridgevm-hvf --all-targets --locked -- -D warnings
+          scripts/check-refactor-budgets.sh
+          git diff --check
+
+          rm -f .github/workflows/perf-virtio-gpu-read-into.yml .github/workflows/perf-virtio-gpu-read-into-v2.yml
+          git add -A
+          git config user.name Ketchio-dev
+          git config user.email 116458462+Ketchio-dev@users.noreply.github.com
+          git commit -m 'gpu: gather request descriptors without temporary allocations [gpu-read-into-complete]' -m 'Fill retained request scratch through read_into, roll back only an unreadable descriptor, and express writable filtering without growing structural debt. Prove the path never invokes read_bytes and preserve overflow and request-size behavior.'
+          git push origin HEAD:perf/virtio-gpu-read-into
