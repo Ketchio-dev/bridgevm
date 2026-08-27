@@ -1,0 +1,41 @@
+name: One-shot audio verifier main update
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    if: github.head_ref == 'takeover/audio-verifier-fail-closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Merge current main and revalidate deterministic gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Ketchio-dev"
+          git config user.email "116458462+Ketchio-dev@users.noreply.github.com"
+          git fetch origin main
+          git merge --no-edit origin/main
+
+          python3 scripts/audio-playback-result.py --self-test
+          python3 scripts/check-python-scripts.py
+          bash -n scripts/verify-audio-playback.sh
+          scripts/check-refactor-budgets.sh
+          git diff --check
+
+          rm -f .github/workflows/takeover-audio-update-main.yml
+          git add -A
+          git commit \
+            -m "ci: remove one-shot audio main updater [audio-main-update-complete]" \
+            -m "Retain the validated audio result classifier while bringing the branch onto the current protected main, then remove this temporary updater before pushing."
+          git push origin HEAD:takeover/audio-verifier-fail-closed
