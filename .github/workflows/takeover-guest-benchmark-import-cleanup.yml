@@ -1,0 +1,77 @@
+name: One-shot guest benchmark import cleanup
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.head_ref == 'takeover/guest-benchmark-handshake-wait'
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          components: rustfmt,clippy
+      - name: Remove extracted imports and verify all targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          part = Path("crates/bridgevm-daemon/src/tests_split/part_3.rs")
+          text = part.read_text()
+          extracted_imports = [
+              "use bridgevm_agent_protocol::AgentAuth;\n",
+              "use bridgevm_agent_protocol::AgentCapability;\n",
+              "use bridgevm_agent_protocol::AgentEnvelope;\n",
+              "use bridgevm_agent_protocol::AgentMessage;\n",
+              "use bridgevm_agent_protocol::DEFAULT_BENCHMARK_DURATION_MILLIS;\n",
+              "use bridgevm_agent_protocol::PROTOCOL_VERSION;\n",
+              "use bridgevm_agentd::encode_envelope_line;\n",
+              "use std::io::BufRead;\n",
+              "use std::io::BufReader;\n",
+              "use std::io::Write;\n",
+              "use std::os::unix::net::UnixListener;\n",
+              "use std::thread;\n",
+              "use std::time::Duration;\n",
+          ]
+          for import_line in extracted_imports:
+              if text.count(import_line) != 1:
+                  raise SystemExit(f"extracted import anchor changed: {import_line.strip()}")
+              text = text.replace(import_line, "", 1)
+          part.write_text(text)
+
+          target = Path("crates/bridgevm-daemon/src/tests_split/performance_guest_benchmark.rs")
+          target_text = target.read_text()
+          anchor = "use std::time::Duration;\n#[test]\n"
+          if target_text.count(anchor) != 1:
+              raise SystemExit("focused test spacing anchor changed")
+          target.write_text(target_text.replace(anchor, "use std::time::Duration;\n\n#[test]\n", 1))
+          PY
+
+          cargo fmt --all
+          rm -f .github/workflows/takeover-guest-benchmark-import-cleanup.yml
+          cargo test -p bridgevm-daemon --locked \
+            daemon_performance_sample_runs_guest_benchmark_when_session_is_connected
+          cargo clippy -p bridgevm-daemon --all-targets --locked -- -D warnings
+          scripts/check-refactor-budgets.sh
+          git diff --check
+
+          git add -A
+          git config user.name "Ketchio-dev"
+          git config user.email "116458462+Ketchio-dev@users.noreply.github.com"
+          git commit \
+            -m "test: clean extracted guest benchmark imports [guest-benchmark-imports-complete]" \
+            -m "Remove benchmark-only imports from the original shard and verify every daemon target under clippy -D warnings after the focused test extraction."
+          git push origin HEAD:takeover/guest-benchmark-handshake-wait
