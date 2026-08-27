@@ -13,28 +13,56 @@ use bridgevm_qemu::quit as qmp_quit;
 use bridgevm_qemu::vnc_display_in_command;
 use bridgevm_storage::VmRuntimeState;
 use std::io::ErrorKind;
+use std::process::Child;
 use std::thread;
 use std::time::Duration;
 
+fn terminate_child(child: &mut Child, name: &str) -> Result<()> {
+    let mut exited = false;
+    for _ in 0..40 {
+        if child
+            .try_wait()
+            .with_context(|| format!("failed to poll backend '{name}'"))?
+            .is_some()
+        {
+            exited = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    if exited {
+        return Ok(());
+    }
+    match child.kill() {
+        Ok(()) => {}
+        // The child can exit between our poll and the kill. Reap below.
+        Err(error) if error.kind() == ErrorKind::InvalidInput => {}
+        Err(error) => {
+            let _ = child.wait();
+            return Err(error).with_context(|| format!("failed to terminate backend '{name}'"));
+        }
+    }
+    let _ = child.wait();
+    Ok(())
+}
+
 impl DaemonState {
-    /// Suspend a backend through the daemon.
-    ///
-    /// Suspend is synchronous (pause -> save state -> quit). If the daemon owns
-    /// the child, drop our `Child`/QMP handles first (without killing) so the
-    /// api suspend path can drive QMP and terminate the recorded pid without the
-    /// reconcile loop racing it. The api suspend path leaves the VM `suspended`.
+    /// Keep daemon ownership until synchronous suspend has committed. A failed
+    /// QMP or runner preflight therefore leaves the original backend supervised.
     pub(crate) fn suspend_backend_supervised(&mut self, name: &str) -> Result<BridgeVmResponse> {
-        // Release the owned handles before the synchronous suspend so the
-        // supervisor does not poll/clear state underneath it. The api suspend
-        // path is responsible for terminating the recorded pid.
-        self.children.remove(name);
+        let owned = self.children.contains_key(name);
+        let qmp_supervisor = self
+            .store
+            .qmp_supervisor_metadata(name)
+            .context("failed to read QMP supervisor metadata")?;
         let metadata = suspend_backend(&self.store, name).map_err(anyhow::Error::msg)?;
+        if owned {
+            self.terminate_owned_child(name)?;
+        }
         Ok(BridgeVmResponse::RunnerStatus {
             metadata: Some(metadata),
-            qmp_supervisor: self
-                .store
-                .qmp_supervisor_metadata(name)
-                .context("failed to read QMP supervisor metadata")?,
+            qmp_supervisor,
         })
     }
 
@@ -89,6 +117,18 @@ impl DaemonState {
         }
     }
 
+    fn terminate_owned_child(&mut self, name: &str) -> Result<()> {
+        {
+            let backend = self
+                .children
+                .get_mut(name)
+                .with_context(|| format!("backend is not owned by this daemon for '{name}'"))?;
+            terminate_child(&mut backend.child, name)?;
+        }
+        self.children.remove(name);
+        Ok(())
+    }
+
     pub(crate) fn cleanup_owned_backend(
         &mut self,
         name: &str,
@@ -100,41 +140,7 @@ impl DaemonState {
             qmp_quit(&socket_path).context("failed to send QMP quit")?;
         }
 
-        let mut backend = self
-            .children
-            .remove(name)
-            .with_context(|| format!("backend is not owned by this daemon for '{name}'"))?;
-        let mut exited = false;
-        for _ in 0..40 {
-            if backend
-                .child
-                .try_wait()
-                .with_context(|| format!("failed to poll backend '{name}'"))?
-                .is_some()
-            {
-                exited = true;
-                break;
-            }
-            thread::sleep(Duration::from_millis(50));
-        }
-
-        if !exited {
-            match backend.child.kill() {
-                Ok(()) => {}
-                // The child can exit between our poll and the kill; Rust returns
-                // InvalidInput for an already-exited child. Fine -- reap below.
-                Err(error) if error.kind() == ErrorKind::InvalidInput => {}
-                // A genuine kill failure: still reap what we can so the child can
-                // never orphan, then surface the error.
-                Err(error) => {
-                    let _ = backend.child.wait();
-                    return Err(error)
-                        .with_context(|| format!("failed to terminate backend '{name}'"));
-                }
-            }
-            let _ = backend.child.wait();
-        }
-
+        self.terminate_owned_child(name)?;
         self.store
             .transition_state(name, VmRuntimeState::Stopped)
             .context("failed to mark VM stopped")?;
