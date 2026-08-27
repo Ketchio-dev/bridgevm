@@ -55,7 +55,6 @@ pub(crate) fn serve(
     let mut last_reconcile = Instant::now();
     let (request_sender, request_receiver) = mpsc::channel::<PendingDaemonRequest>();
     let active_clients = Arc::new(AtomicUsize::new(0));
-
     loop {
         if SHUTDOWN_REQUESTED.load(Ordering::SeqCst) {
             println!("bridgevmd received shutdown signal; reaping supervised backends");
@@ -68,7 +67,6 @@ pub(crate) fn serve(
             let response = state.handle_request(pending.request);
             let _ = pending.response_sender.send(response);
         }
-
         match listener.accept() {
             Ok(stream) => {
                 spawn_connection_worker(
