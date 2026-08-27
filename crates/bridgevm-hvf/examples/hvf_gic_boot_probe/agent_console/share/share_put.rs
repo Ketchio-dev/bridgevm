@@ -1,4 +1,4 @@
-//! Host-to-guest shared-file PUT construction, retry, and reply correlation.
+//! Host-to-guest shared-file PUT state machine, retry, and reply correlation.
 
 use super::*;
 
