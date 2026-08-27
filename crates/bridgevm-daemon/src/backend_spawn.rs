@@ -1,5 +1,7 @@
 //! Cold-start spawn of the Fast Mode and Compatibility backends, including readiness gating.
 
+use crate::compatibility_resume::commit_started_child;
+use crate::compatibility_resume::PendingChild;
 use crate::*;
 use anyhow::Context;
 use anyhow::Result;
@@ -19,7 +21,6 @@ use bridgevm_qemu::assign_free_vnc_display;
 use bridgevm_qemu::build_compatibility_command;
 use bridgevm_storage::LaunchReadinessMetadata;
 use bridgevm_storage::RunnerMetadata;
-use bridgevm_storage::VmRuntimeState;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -85,6 +86,10 @@ impl DaemonState {
                 launch_readiness_blocker_summary(&readiness)
             );
         }
+        let qmp_supervisor = self
+            .store
+            .qmp_supervisor_metadata(name)
+            .context("failed to read QMP supervisor metadata")?;
 
         fs::create_dir_all(bundle.join("logs")).context("failed to create VM log directory")?;
         let log_path: PathBuf = plan.launch_spec().logs.runner_log_path.clone().into();
@@ -111,12 +116,13 @@ impl DaemonState {
                     config.lightvm_runner.display()
                 )
             })?;
+        let pending_child = PendingChild::new(child);
 
         let mut command = vec![config.lightvm_runner.display().to_string()];
         command.extend(args);
         let metadata = RunnerMetadata {
             engine: "lightvm".to_string(),
-            pid: Some(child.id()),
+            pid: Some(pending_child.id()),
             command,
             log_path,
             started_at_unix: now_unix(),
@@ -128,21 +134,13 @@ impl DaemonState {
             launch_readiness: Some(readiness),
             runtime_control: None,
         };
-        self.store
-            .write_runner_metadata(name, &metadata)
-            .context("failed to write Fast Mode runner metadata")?;
-        self.store
-            .transition_state(name, VmRuntimeState::Running)
-            .context("failed to mark VM running")?;
+        let child = commit_started_child(&self.store, name, &metadata, pending_child)?;
         self.children
             .insert(name.to_string(), SupervisedBackend::new(child));
 
         Ok(BridgeVmResponse::RunnerStatus {
             metadata: Some(metadata),
-            qmp_supervisor: self
-                .store
-                .qmp_supervisor_metadata(name)
-                .context("failed to read QMP supervisor metadata")?,
+            qmp_supervisor,
         })
     }
 
@@ -235,6 +233,10 @@ impl DaemonState {
             .store
             .guest_tools_runner_metadata(name)
             .context("failed to prepare guest tools runner metadata")?;
+        let qmp_supervisor = self
+            .store
+            .qmp_supervisor_metadata(name)
+            .context("failed to read QMP supervisor metadata")?;
         fs::create_dir_all(bundle.join("logs")).context("failed to create VM log directory")?;
         let stdout = fs::OpenOptions::new()
             .create(true)
@@ -251,10 +253,11 @@ impl DaemonState {
             .stderr(Stdio::from(stderr))
             .spawn()
             .with_context(|| format!("failed to spawn {}", command.program))?;
+        let pending_child = PendingChild::new(child);
 
         let metadata = RunnerMetadata {
             engine: runtime_engine.runner_metadata_engine().to_string(),
-            pid: Some(child.id()),
+            pid: Some(pending_child.id()),
             command: command.render_shell_words(),
             log_path,
             started_at_unix: now_unix(),
@@ -266,21 +269,13 @@ impl DaemonState {
             launch_readiness: None,
             runtime_control: None,
         };
-        self.store
-            .write_runner_metadata(name, &metadata)
-            .context("failed to write runner metadata")?;
-        self.store
-            .transition_state(name, VmRuntimeState::Running)
-            .context("failed to mark VM running")?;
+        let child = commit_started_child(&self.store, name, &metadata, pending_child)?;
         self.children
             .insert(name.to_string(), SupervisedBackend::new(child));
 
         Ok(BridgeVmResponse::RunnerStatus {
             metadata: Some(metadata),
-            qmp_supervisor: self
-                .store
-                .qmp_supervisor_metadata(name)
-                .context("failed to read QMP supervisor metadata")?,
+            qmp_supervisor,
         })
     }
 }
