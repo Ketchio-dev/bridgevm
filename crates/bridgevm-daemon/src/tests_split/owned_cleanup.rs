@@ -35,7 +35,11 @@ fn exited_owned_backend() -> (VmStore, DaemonState, PathBuf, PathBuf) {
             &RunnerMetadata {
                 engine: "fullvm".to_string(),
                 pid: Some(pid),
-                command: vec!["/bin/sh".to_string(), "-c".to_string(), "exit 0".to_string()],
+                command: vec![
+                    "/bin/sh".to_string(),
+                    "-c".to_string(),
+                    "exit 0".to_string(),
+                ],
                 log_path: bundle.join("logs").join("qemu.log"),
                 started_at_unix: 0,
                 dry_run: false,
@@ -77,9 +81,10 @@ fn owned_cleanup_retries_failed_stopped_state_persistence() {
     let error = state.stop_owned_backend("legacy").unwrap_err();
 
     assert!(error.to_string().contains("failed to mark VM stopped"));
-    assert!(state.children.get_mut("legacy").is_some_and(|backend| {
-        backend.child.try_wait().unwrap().is_some()
-    }));
+    assert!(state
+        .children
+        .get_mut("legacy")
+        .is_some_and(|backend| { backend.child.try_wait().unwrap().is_some() }));
     assert!(store.runner_metadata("legacy").unwrap().is_some());
 
     fs::remove_dir(&state_path).unwrap();
@@ -99,9 +104,10 @@ fn owned_cleanup_retries_failed_runner_metadata_removal() {
     assert!(error
         .to_string()
         .contains("failed to clear runner metadata"));
-    assert!(state.children.get_mut("legacy").is_some_and(|backend| {
-        backend.child.try_wait().unwrap().is_some()
-    }));
+    assert!(state
+        .children
+        .get_mut("legacy")
+        .is_some_and(|backend| { backend.child.try_wait().unwrap().is_some() }));
     assert_eq!(
         store.state("legacy").unwrap().state,
         VmRuntimeState::Stopped
