@@ -399,6 +399,7 @@ crates/bridgevm-hvf/src/virtio_blk/mmio_regs.rs	204	0
 crates/bridgevm-hvf/src/virtio_blk/mod.rs	9	0
 crates/bridgevm-hvf/src/virtio_blk/pci_transport.rs	129	0
 crates/bridgevm-hvf/src/virtio_blk/protocol.rs	117	0
+crates/bridgevm-hvf/src/virtio_blk/queue_pending.rs	34	0
 crates/bridgevm-hvf/src/virtio_blk/snapshot.rs	90	0
 crates/bridgevm-hvf/src/virtio_blk/tests/mod.rs	472	0
 crates/bridgevm-hvf/src/virtio_blk/tests/part_2.rs	476	0
