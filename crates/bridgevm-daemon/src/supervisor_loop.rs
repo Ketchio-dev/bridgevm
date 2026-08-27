@@ -171,11 +171,13 @@ impl DaemonState {
         }
 
         for name in exited {
-            self.children.remove(&name);
-            let _ = self.store.transition_state(&name, VmRuntimeState::Stopped);
+            self.store
+                .force_transition_state(&name, VmRuntimeState::Stopped)
+                .with_context(|| format!("failed to mark exited backend '{name}' stopped"))?;
             self.store
                 .clear_runner_metadata(&name)
                 .with_context(|| format!("failed to clear runner metadata for '{name}'"))?;
+            self.children.remove(&name);
         }
         for name in terminal {
             if self.children.contains_key(&name) {
