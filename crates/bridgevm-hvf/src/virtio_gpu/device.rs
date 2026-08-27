@@ -8,6 +8,7 @@ use crate::virtio_gpu_3d::VirtioGpu3d;
 use crate::virtio_gpu_3d::VirtioGpu3dBackend;
 use crate::virtio_gpu_trace::VirtioGpuTraceRecorder;
 use std::collections::BTreeMap;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
@@ -42,7 +43,7 @@ pub struct VirtioGpu {
     pub(crate) fb_sink: Option<FbSink>,
     pub(crate) three_d: VirtioGpu3d,
     pub(crate) pending_fenced: Vec<PendingFencedResponse>,
-    pub(crate) pending_vblank: Vec<PendingVblankResponse>,
+    pub(crate) pending_vblank: VecDeque<PendingVblankResponse>,
     pub(crate) completed_fences_scratch: Vec<CompletedFence>,
     pub(crate) descriptor_scratch: Vec<Descriptor>,
     pub(crate) parked_descriptor_scratch: Vec<Vec<Descriptor>>,
@@ -137,7 +138,7 @@ impl VirtioGpu {
             fb_sink: FbSink::from_env(),
             three_d: VirtioGpu3d::new(),
             pending_fenced: Vec::new(),
-            pending_vblank: Vec::new(),
+            pending_vblank: VecDeque::new(),
             completed_fences_scratch: Vec::new(),
             descriptor_scratch: Vec::new(),
             parked_descriptor_scratch: Vec::new(),
