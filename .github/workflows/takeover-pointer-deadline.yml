@@ -32,6 +32,25 @@ jobs:
             "https://raw.githubusercontent.com/Ketchio-dev/bridgevm/${source_sha}/.github/scripts/apply-pointer-earliest-deadline.py" \
             -o .github/scripts/apply-pointer-earliest-deadline.py
 
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path(".github/scripts/apply-pointer-earliest-deadline.py")
+          text = path.read_text()
+          old = '''    include = ''' + "'''" + '''
+          #[path = "pointer_deadline_tests.rs"]
+          mod pointer_deadline_tests;
+          ''' + "'''" + '''
+          '''
+          new = '''    include = ''' + "'''" + '''#[path = "pointer_deadline_tests.rs"]
+          mod pointer_deadline_tests;
+          ''' + "'''" + '''
+          '''
+          if text.count(old) != 1:
+              raise SystemExit("pointer test include anchor changed")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
           python3 .github/scripts/apply-pointer-earliest-deadline.py code
           python3 - <<'PY'
           from pathlib import Path
