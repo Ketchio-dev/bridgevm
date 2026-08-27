@@ -1,0 +1,218 @@
+name: Finalize contiguous CoreAudio ring drain
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/perf-coreaudio-bulk-drain.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.head_ref == 'perf/coreaudio-bulk-drain'
+    runs-on: macos-15
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          components: rustfmt,clippy
+      - name: Replace per-byte callback drain with two contiguous copies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          helper = Path(
+              "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_buffer.rs"
+          )
+          if helper.exists():
+              raise SystemExit(f"unexpected pre-existing helper: {helper}")
+          helper.write_text(
+              "//! Pure byte-ring draining for the CoreAudio render callback.\n\n"
+              "use std::collections::VecDeque;\n\n"
+              "pub(crate) fn drain_ring_into(ring: &mut VecDeque<u8>, output: &mut [u8]) -> usize {\n"
+              "    let copied = ring.len().min(output.len());\n"
+              "    output.fill(0);\n"
+              "    {\n"
+              "        let (first, second) = ring.as_slices();\n"
+              "        let first_len = first.len().min(copied);\n"
+              "        output[..first_len].copy_from_slice(&first[..first_len]);\n"
+              "        let second_len = copied - first_len;\n"
+              "        output[first_len..copied].copy_from_slice(&second[..second_len]);\n"
+              "    }\n"
+              "    drop(ring.drain(..copied));\n"
+              "    copied\n"
+              "}\n\n"
+              "#[cfg(test)]\n"
+              "mod tests {\n"
+              "    use super::*;\n\n"
+              "    #[test]\n"
+              "    fn contiguous_bytes_fill_the_output_and_leave_the_tail() {\n"
+              "        let mut ring = VecDeque::from([1, 2, 3, 4, 5]);\n"
+              "        let mut output = [0; 3];\n"
+              "        assert_eq!(drain_ring_into(&mut ring, &mut output), 3);\n"
+              "        assert_eq!(output, [1, 2, 3]);\n"
+              "        assert_eq!(ring, VecDeque::from([4, 5]));\n"
+              "    }\n\n"
+              "    #[test]\n"
+              "    fn wrapped_ring_copies_both_internal_slices_in_order() {\n"
+              "        let mut ring = VecDeque::with_capacity(8);\n"
+              "        ring.extend(0u8..8);\n"
+              "        for _ in 0..5 {\n"
+              "            ring.pop_front();\n"
+              "        }\n"
+              "        ring.extend(8u8..13);\n"
+              "        assert!(!ring.as_slices().1.is_empty());\n"
+              "        let mut output = [0; 8];\n"
+              "        assert_eq!(drain_ring_into(&mut ring, &mut output), 8);\n"
+              "        assert_eq!(output, [5, 6, 7, 8, 9, 10, 11, 12]);\n"
+              "        assert!(ring.is_empty());\n"
+              "    }\n\n"
+              "    #[test]\n"
+              "    fn underrun_zero_fills_the_unwritten_tail() {\n"
+              "        let mut ring = VecDeque::from([7, 8]);\n"
+              "        let mut output = [0xff; 5];\n"
+              "        assert_eq!(drain_ring_into(&mut ring, &mut output), 2);\n"
+              "        assert_eq!(output, [7, 8, 0, 0, 0]);\n"
+              "        assert!(ring.is_empty());\n"
+              "    }\n\n"
+              "    #[test]\n"
+              "    fn empty_ring_outputs_silence() {\n"
+              "        let mut ring = VecDeque::new();\n"
+              "        let mut output = [0xff; 4];\n"
+              "        assert_eq!(drain_ring_into(&mut ring, &mut output), 0);\n"
+              "        assert_eq!(output, [0; 4]);\n"
+              "    }\n"
+              "}\n"
+          )
+
+          root = Path("crates/bridgevm-hvf/examples/hvf_gic_boot_probe.rs")
+          root_text = root.read_text()
+          declaration = re.compile(
+              r'(?P<block>#\[path\s*=\s*"hvf_gic_boot_probe/hda_coreaudio\.rs"\]\s*\nmod\s+hda_coreaudio;)'
+          )
+          matches = list(declaration.finditer(root_text))
+          if len(matches) != 1:
+              raise SystemExit(
+                  f"expected one hda_coreaudio module declaration, found {len(matches)}"
+              )
+          addition = (
+              matches[0].group("block")
+              + '\n#[path = "hvf_gic_boot_probe/hda_coreaudio_buffer.rs"]\n'
+              + "mod hda_coreaudio_buffer;"
+          )
+          root.write_text(
+              root_text[: matches[0].start()]
+              + addition
+              + root_text[matches[0].end() :]
+          )
+
+          audio = Path(
+              "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs"
+          )
+          text = audio.read_text()
+          import_line = "use crate::hda_coreaudio_buffer::drain_ring_into;\n"
+          if import_line in text:
+              raise SystemExit("CoreAudio buffer import already exists")
+          first_use = re.search(r"^use ", text, re.MULTILINE)
+          if first_use is None:
+              raise SystemExit("could not locate first CoreAudio import")
+          text = text[: first_use.start()] + import_line + text[first_use.start() :]
+
+          loop = re.compile(
+              r'(?P<indent>^[ \t]*)for\s+(?P<byte>[A-Za-z_][A-Za-z0-9_]*)\s+in\s+'
+              r'(?P<output>[A-Za-z_][A-Za-z0-9_]*)\.iter_mut\(\)\s*\{\s*\n'
+              r'(?P=indent)[ \t]+\*(?P=byte)\s*=\s*'
+              r'(?P<ring>[A-Za-z_][A-Za-z0-9_]*)\.pop_front\(\)\.unwrap_or\(0\);\s*\n'
+              r'(?P=indent)\}',
+              re.MULTILINE,
+          )
+          matches = list(loop.finditer(text))
+          if len(matches) != 1:
+              raise SystemExit(
+                  f"expected one per-byte CoreAudio drain, found {len(matches)}"
+              )
+          match = matches[0]
+          replacement = (
+              f'{match.group("indent")}drain_ring_into(&mut {match.group("ring")}, '
+              f'{match.group("output")});'
+          )
+          text = text[: match.start()] + replacement + text[match.end() :]
+          audio.write_text(text)
+          PY
+
+          cargo fmt --all
+          grep -q 'drain_ring_into' \
+            crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs
+          ! grep -q 'pop_front().unwrap_or(0)' \
+            crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs
+
+          for attempt in $(seq 1 10); do
+            echo "CoreAudio ring helper regression attempt ${attempt}/10"
+            cargo test -p bridgevm-hvf --example hvf_gic_boot_probe --locked \
+              hda_coreaudio_buffer
+          done
+          cargo test -p bridgevm-hvf --all-targets --locked
+          cargo clippy -p bridgevm-hvf --all-targets --locked -- -D warnings
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          declaration = re.compile(
+              r'^\s*(?:(?:pub\s+)?(?:mod|use)\s+[^;{]*;|#\[path\s*=\s*[^]]*\])\s*$'
+          )
+          path = Path(
+              "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_buffer.rs"
+          )
+          header = True
+          loc = 0
+          unsafe = 0
+          for line in path.read_text().splitlines():
+              unsafe += len(re.findall(r"\bunsafe\s*\{", line))
+              if header and re.match(r"^\s*//!", line):
+                  continue
+              if header and re.match(r"^\s*$", line):
+                  header = False
+                  continue
+              header = False
+              if declaration.match(line):
+                  continue
+              loc += 1
+
+          budgets = Path("scripts/refactor-budgets.tsv")
+          text = budgets.read_text()
+          if str(path) in text:
+              raise SystemExit("CoreAudio buffer helper already has a budget row")
+          anchor = (
+              "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs"
+              "\t259\t16\n"
+          )
+          if text.count(anchor) != 1:
+              raise SystemExit("CoreAudio budget insertion anchor changed")
+          budgets.write_text(
+              text.replace(anchor, anchor + f"{path}\t{loc}\t{unsafe}\n", 1)
+          )
+          print(f"registered {path}: loc={loc} unsafe={unsafe}")
+          PY
+
+          scripts/check-refactor-budgets.sh
+          git diff --check
+          rm -f .github/workflows/perf-coreaudio-bulk-drain.yml
+          git add -A
+          git config user.name Ketchio-dev
+          git config user.email 116458462+Ketchio-dev@users.noreply.github.com
+          git commit \
+            -m "audio: drain callback bytes in contiguous slices [coreaudio-bulk-drain-complete]" \
+            -m "Copy the readable VecDeque slices into each CoreAudio output buffer in at most two bulk copies, zero-fill underruns, and remove exactly the copied prefix. Preserve callback timing, sample format, queue capacity, and lifecycle behavior."
+          git push origin HEAD:perf/coreaudio-bulk-drain
