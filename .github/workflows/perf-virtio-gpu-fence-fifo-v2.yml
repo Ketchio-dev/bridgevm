@@ -1,4 +1,4 @@
-name: One-shot virtio-gpu fence FIFO verifier v2
+name: One-shot virtio-gpu fence FIFO verifier v3
 
 on:
   push:
@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   verify:
+    if: ${{ !contains(github.event.head_commit.message, '[gpu-fence-fifo-complete]') }}
     runs-on: macos-15
     timeout-minutes: 35
     steps:
@@ -27,78 +28,225 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import base64
 
-          device = Path('crates/bridgevm-hvf/src/virtio_gpu/device.rs')
+          device = Path("crates/bridgevm-hvf/src/virtio_gpu/device.rs")
           text = device.read_text()
           for old, new in [
               (
-                  'pub(crate) pending_fenced: Vec<PendingFencedResponse>,',
-                  'pub(crate) pending_fenced: VecDeque<PendingFencedResponse>,',
+                  "pub(crate) pending_fenced: Vec<PendingFencedResponse>,",
+                  "pub(crate) pending_fenced: VecDeque<PendingFencedResponse>,",
               ),
-              ('pending_fenced: Vec::new(),', 'pending_fenced: VecDeque::new(),'),
+              ("pending_fenced: Vec::new(),", "pending_fenced: VecDeque::new(),"),
           ]:
               if text.count(old) != 1:
-                  raise SystemExit(f'device fence queue anchor changed: {old}')
+                  raise SystemExit(f"device fence queue anchor changed: {old}")
               text = text.replace(old, new, 1)
           device.write_text(text)
 
-          virtqueue = Path('crates/bridgevm-hvf/src/virtio_gpu/virtqueue.rs')
+          virtqueue = Path("crates/bridgevm-hvf/src/virtio_gpu/virtqueue.rs")
           text = virtqueue.read_text()
-          old = 'self.pending_fenced.push(PendingFencedResponse {'
-          new = 'self.pending_fenced.push_back(PendingFencedResponse {'
+          old = "self.pending_fenced.push(PendingFencedResponse {"
+          new = "self.pending_fenced.push_back(PendingFencedResponse {"
           if text.count(old) != 1:
-              raise SystemExit('fenced response enqueue anchor changed')
+              raise SystemExit("fenced response enqueue anchor changed")
           virtqueue.write_text(text.replace(old, new, 1))
 
-          fence = Path('crates/bridgevm-hvf/src/virtio_gpu/fence.rs')
+          fence = Path("crates/bridgevm-hvf/src/virtio_gpu/fence.rs")
           text = fence.read_text()
-          start_marker = '        let mut index = 0;\n'
-          end_marker = '            let pending_response = self.pending_fenced.remove(index);\n'
+          start_marker = "        let mut index = 0;\n"
+          end_marker = "            let pending_response = self.pending_fenced.remove(index);\n"
           if text.count(start_marker) != 1 or text.count(end_marker) != 1:
-              raise SystemExit('indexed fence retirement line markers changed')
+              raise SystemExit("indexed fence retirement anchors changed")
           start = text.index(start_marker)
           end = text.index(end_marker, start) + len(end_marker)
-          replacement = ''.join([
-              '        for _ in 0..self.pending_fenced.len() {\n',
-              '            let pending_response = self\n',
-              '                .pending_fenced\n',
-              '                .pop_front()\n',
-              '                .expect("pending fence count came from the queue length");\n',
-              '            let ready = completed.iter().any(|completed| {\n',
-              '                completed.ctx_id == pending_response.fence.ctx_id\n',
-              '                    && completed.ring_idx == pending_response.fence.ring_idx\n',
-              '                    && completed.fence_id >= pending_response.fence.fence_id\n',
-              '            });\n',
-              '            if !ready {\n',
-              '                self.pending_fenced.push_back(pending_response);\n',
-              '                continue;\n',
-              '            }\n\n',
+          replacement = "".join([
+              "        for _ in 0..self.pending_fenced.len() {\n",
+              "            let pending_response = self.pending_fenced.pop_front().unwrap();\n",
+              "            let ready = completed.iter().any(|completed| {\n",
+              "                completed.ctx_id == pending_response.fence.ctx_id\n",
+              "                    && completed.ring_idx == pending_response.fence.ring_idx\n",
+              "                    && completed.fence_id >= pending_response.fence.fence_id\n",
+              "            });\n",
+              "            if !ready {\n",
+              "                self.pending_fenced.push_back(pending_response);\n",
+              "                continue;\n",
+              "            }\n\n",
           ])
           fence.write_text(text[:start] + replacement + text[end:])
 
-          part3 = Path('crates/bridgevm-hvf/src/virtio_gpu/tests/part_3.rs')
+          part3 = Path("crates/bridgevm-hvf/src/virtio_gpu/tests/part_3.rs")
           text = part3.read_text()
-          pointer_line = '    let pending_ptr = dev.gpu.pending_fenced.as_ptr();\n'
-          pointer_assert = '    assert_eq!(dev.gpu.pending_fenced.as_ptr(), pending_ptr);\n'
+          pointer_line = "    let pending_ptr = dev.gpu.pending_fenced.as_ptr();\n"
+          pointer_assert = "    assert_eq!(dev.gpu.pending_fenced.as_ptr(), pending_ptr);\n"
           if text.count(pointer_line) != 1:
-              raise SystemExit('pending Vec pointer setup anchor changed')
+              raise SystemExit("pending Vec pointer setup anchor changed")
           if text.count(pointer_assert) != 2:
-              raise SystemExit('pending Vec pointer assertion anchors changed')
-          part3.write_text(text.replace(pointer_line, '', 1).replace(pointer_assert, ''))
+              raise SystemExit("pending Vec pointer assertion anchors changed")
+          part3.write_text(text.replace(pointer_line, "", 1).replace(pointer_assert, ""))
 
-          tests_mod = Path('crates/bridgevm-hvf/src/virtio_gpu/tests/mod.rs')
+          tests_mod = Path("crates/bridgevm-hvf/src/virtio_gpu/tests/mod.rs")
           text = tests_mod.read_text()
-          anchor = 'mod descriptor_chain_trace;\n'
-          if text.count(anchor) != 1 or 'mod fence_fifo;' in text:
-              raise SystemExit('virtio-gpu fence test module anchor changed')
-          tests_mod.write_text(text.replace(anchor, anchor + 'mod fence_fifo;\n', 1))
-
-          test_path = Path('crates/bridgevm-hvf/src/virtio_gpu/tests/fence_fifo.rs')
-          if test_path.exists():
-              raise SystemExit('fence FIFO regression already exists')
-          test_path.write_bytes(base64.b64decode('Ly8hIEZJRk8gZmVuY2UgcmV0aXJlbWVudCBwcmVzZXJ2ZXMgZGVsaXZlcnkgYW5kIHJldGFpbmVkLXJlc3BvbnNlIG9yZGVyLgoKdXNlIHN1cGVyOjpzdXBlcjo6KjsKdXNlIHN1cGVyOjpoZWxwZXJzOjoqOwp1c2UgY3JhdGU6OnZpcnRpb19ncHVfM2Q6OkNvbXBsZXRlZEZlbmNlOwoKY29uc3QgVVNFRF9HUEE6IHU2NCA9IDB4NDAwMF8xMDAwOwoKZm4gcGVuZGluZ19yZXNwb25zZSgKICAgIHF1ZXVlOiBWaXJ0aW9HcHVRdWV1ZSwKICAgIGhlYWQ6IHUxNiwKICAgIHJlc3BvbnNlX2dwYTogdTY0LAogICAgcmVzcG9uc2VfYnl0ZTogdTgsCiAgICBmZW5jZTogQ29tcGxldGVkRmVuY2UsCikgLT4gUGVuZGluZ0ZlbmNlZFJlc3BvbnNlIHsKICAgIFBlbmRpbmdGZW5jZWRSZXNwb25zZSB7CiAgICAgICAgcXVldWVfaW5kZXg6IDAsCiAgICAgICAgcXVldWUsCiAgICAgICAgaGVhZCwKICAgICAgICBkZXNjczogdmVjIVtEZXNjcmlwdG9yIHsKICAgICAgICAgICAgYWRkcjogcmVzcG9uc2VfZ3BhLAogICAgICAgICAgICBsZW46IDQsCiAgICAgICAgICAgIGZsYWdzOiBERVNDX0ZfV1JJVEUsCiAgICAgICAgICAgIG5leHQ6IDAsCiAgICAgICAgfV0sCiAgICAgICAgcmVzcG9uc2U6IHZlYyFbcmVzcG9uc2VfYnl0ZTsgNF0sCiAgICAgICAgZmVuY2UsCiAgICB9Cn0KCmZuIHVzZWRfaGVhZChtZW06ICZUZXN0TWVtLCBpbmRleDogdTY0KSAtPiB1MzIgewogICAgdTMyOjpmcm9tX2xlX2J5dGVzKAogICAgICAgIG1lbS5yZWFkKFVTRURfR1BBICsgNCArIGluZGV4ICogOCwgNCkKICAgICAgICAgICAgLnRyeV9pbnRvKCkKICAgICAgICAgICAgLnVud3JhcCgpLAogICAgKQp9CgojW3Rlc3RdCmZuIGZlbmNlX3JldGlyZW1lbnRfZGVsaXZlcnNfcmVhZHlfZW50cmllc19hbmRfcHJlc2VydmVzX3VucmVhZHlfZmlmb19vcmRlcigpIHsKICAgIGxldCAobXV0IGRldiwgYmFja2VuZCkgPSBkZXZfd2l0aF9tb2NrKCk7CiAgICBsZXQgbXV0IG1lbSA9IFRlc3RNZW06Om5ldygweDQwMDBfMDAwMCwgMHgxMDAwMCk7CiAgICBsZXQgbXV0IHF1ZXVlID0gVmlydGlvR3B1UXVldWU6Om5ldygwKTsKICAgIHF1ZXVlLnNpemUgPSA4OwogICAgcXVldWUucmVhZHkgPSB0cnVlOwogICAgcXVldWUuZGV2aWNlID0gVVNFRF9HUEE7CgogICAgbGV0IGVudHJpZXMgPSBbCiAgICAgICAgKAogICAgICAgICAgICAxMCwKICAgICAgICAgICAgMHg0MDAwXzIwMDAsCiAgICAgICAgICAgIDB4YTEsCiAgICAgICAgICAgIENvbXBsZXRlZEZlbmNlIHsKICAgICAgICAgICAgICAgIGN0eF9pZDogMSwKICAgICAgICAgICAgICAgIHJpbmdfaWR4OiAwLAogICAgICAgICAgICAgICAgZmVuY2VfaWQ6IDEsCiAgICAgICAgICAgIH0sCiAgICAgICAgKSwKICAgICAgICAoCiAgICAgICAgICAgIDExLAogICAgICAgICAgICAweDQwMDBfMjEwMCwKICAgICAgICAgICAgMHhiMiwKICAgICAgICAgICAgQ29tcGxldGVkRmVuY2UgewogICAgICAgICAgICAgICAgY3R4X2lkOiAyLAogICAgICAgICAgICAgICAgcmluZ19pZHg6IDAsCiAgICAgICAgICAgICAgICBmZW5jZV9pZDogNSwKICAgICAgICAgICAgfSwKICAgICAgICApLAogICAgICAgICgKICAgICAgICAgICAgMTIsCiAgICAgICAgICAgIDB4NDAwMF8yMjAwLAogICAgICAgICAgICAweGMzLAogICAgICAgICAgICBDb21wbGV0ZWRGZW5jZSB7CiAgICAgICAgICAgICAgICBjdHhfaWQ6IDEsCiAgICAgICAgICAgICAgICByaW5nX2lkeDogMCwKICAgICAgICAgICAgICAgIGZlbmNlX2lkOiAyLAogICAgICAgICAgICB9LAogICAgICAgICksCiAgICAgICAgKAogICAgICAgICAgICAxMywKICAgICAgICAgICAgMHg0MDAwXzIzMDAsCiAgICAgICAgICAgIDB4ZDQsCiAgICAgICAgICAgIENvbXBsZXRlZEZlbmNlIHsKICAgICAgICAgICAgICAgIGN0eF9pZDogMywKICAgICAgICAgICAgICAgIHJpbmdfaWR4OiAwLAogICAgICAgICAgICAgICAgZmVuY2VfaWQ6IDEsCiAgICAgICAgICAgIH0sCiAgICAgICAgKSwKICAgIF07CiAgICBmb3IgKGhlYWQsIHJlc3BvbnNlX2dwYSwgcmVzcG9uc2VfYnl0ZSwgZmVuY2UpIGluIGVudHJpZXMgewogICAgICAgIGRldi5ncHUucGVuZGluZ19mZW5jZWQucHVzaF9iYWNrKHBlbmRpbmdfcmVzcG9uc2UoCiAgICAgICAgICAgIHF1ZXVlLAogICAgICAgICAgICBoZWFkLAogICAgICAgICAgICByZXNwb25zZV9ncGEsCiAgICAgICAgICAgIHJlc3BvbnNlX2J5dGUsCiAgICAgICAgICAgIGZlbmNlLAogICAgICAgICkpOwogICAgfQogICAgbGV0IHBlbmRpbmdfY2FwYWNpdHkgPSBkZXYuZ3B1LnBlbmRpbmdfZmVuY2VkLmNhcGFjaXR5KCk7CgogICAgYmFja2VuZC5sb2NrKCkudW53cmFwKCkuY29tcGxldGVkLnB1c2goQ29tcGxldGVkRmVuY2UgewogICAgICAgIGN0eF9pZDogMSwKICAgICAgICByaW5nX2lkeDogMCwKICAgICAgICBmZW5jZV9pZDogMiwKICAgIH0pOwogICAgZGV2LmRyYWluX2NvbXBsZXRlZF9mZW5jZXMoJm11dCBtZW0pOwoKICAgIGFzc2VydF9lcSEoCiAgICAgICAgZGV2LmdwdQogICAgICAgICAgICAucGVuZGluZ19mZW5jZWQKICAgICAgICAgICAgLml0ZXIoKQogICAgICAgICAgICAubWFwKHxwZW5kaW5nfCAocGVuZGluZy5mZW5jZS5jdHhfaWQsIHBlbmRpbmcuZmVuY2UuZmVuY2VfaWQpKQogICAgICAgICAgICAuY29sbGVjdDo6PFZlYzxfPj4oKSwKICAgICAgICB2ZWMhWygyLCA1KSwgKDMsIDEpXQogICAgKTsKICAgIGFzc2VydF9lcSEoZGV2LmdwdS5wZW5kaW5nX2ZlbmNlZC5jYXBhY2l0eSgpLCBwZW5kaW5nX2NhcGFjaXR5KTsKICAgIGFzc2VydF9lcSEoCiAgICAgICAgdTE2Ojpmcm9tX2xlX2J5dGVzKG1lbS5yZWFkKFVTRURfR1BBICsgMiwgMikudHJ5X2ludG8oKS51bndyYXAoKSksCiAgICAgICAgMgogICAgKTsKICAgIGFzc2VydF9lcSEoKHVzZWRfaGVhZCgmbWVtLCAwKSwgdXNlZF9oZWFkKCZtZW0sIDEpKSwgKDEwLCAxMikpOwogICAgYXNzZXJ0X2VxIShtZW0ucmVhZCgweDQwMDBfMjAwMCwgNCksIHZlYyFbMHhhMTsgNF0pOwogICAgYXNzZXJ0X2VxIShtZW0ucmVhZCgweDQwMDBfMjIwMCwgNCksIHZlYyFbMHhjMzsgNF0pOwogICAgYXNzZXJ0X2VxIShtZW0ucmVhZCgweDQwMDBfMjEwMCwgNCksIHZlYyFbMDsgNF0pOwogICAgYXNzZXJ0X2VxIShtZW0ucmVhZCgweDQwMDBfMjMwMCwgNCksIHZlYyFbMDsgNF0pOwogICAgYXNzZXJ0IShkZXYuZ3B1LmRlc2NyaXB0b3Jfc2NyYXRjaC5jYXBhY2l0eSgpID49IDEpOwogICAgYXNzZXJ0IShkZXYuZ3B1LnJlc3BvbnNlX3NjcmF0Y2guY2FwYWNpdHkoKSA+PSA0KTsKICAgIGFzc2VydF9lcSEoZGV2LmdwdS5wYXJrZWRfZGVzY3JpcHRvcl9zY3JhdGNoLmxlbigpLCAxKTsKICAgIGFzc2VydF9lcSEoZGV2LmdwdS5wYXJrZWRfcmVzcG9uc2Vfc2NyYXRjaC5sZW4oKSwgMSk7CgogICAgYmFja2VuZC5sb2NrKCkudW53cmFwKCkuY29tcGxldGVkLmV4dGVuZChbCiAgICAgICAgQ29tcGxldGVkRmVuY2UgewogICAgICAgICAgICBjdHhfaWQ6IDIsCiAgICAgICAgICAgIHJpbmdfaWR4OiAwLAogICAgICAgICAgICBmZW5jZV9pZDogNSwKICAgICAgICB9LAogICAgICAgIENvbXBsZXRlZEZlbmNlIHsKICAgICAgICAgICAgY3R4X2lkOiAzLAogICAgICAgICAgICByaW5nX2lkeDogMCwKICAgICAgICAgICAgZmVuY2VfaWQ6IDEsCiAgICAgICAgfSwKICAgIF0pOwogICAgZGV2LmRyYWluX2NvbXBsZXRlZF9mZW5jZXMoJm11dCBtZW0pOwoKICAgIGFzc2VydCEoZGV2LmdwdS5wZW5kaW5nX2ZlbmNlZC5pc19lbXB0eSgpKTsKICAgIGFzc2VydF9lcSEoCiAgICAgICAgdTE2Ojpmcm9tX2xlX2J5dGVzKG1lbS5yZWFkKFVTRURfR1BBICsgMiwgMikudHJ5X2ludG8oKS51bndyYXAoKSksCiAgICAgICAgNAogICAgKTsKICAgIGFzc2VydF9lcSEoKHVzZWRfaGVhZCgmbWVtLCAyKSwgdXNlZF9oZWFkKCZtZW0sIDMpKSwgKDExLCAxMykpOwogICAgYXNzZXJ0X2VxIShtZW0ucmVhZCgweDQwMDBfMjEwMCwgNCksIHZlYyFbMHhiMjsgNF0pOwogICAgYXNzZXJ0X2VxIShtZW0ucmVhZCgweDQwMDBfMjMwMCwgNCksIHZlYyFbMHhkNDsgNF0pOwp9Cg=='))
+          anchor = "mod descriptor_chain_trace;\n"
+          if text.count(anchor) != 1 or "mod fence_fifo;" in text:
+              raise SystemExit("virtio-gpu fence test module anchor changed")
+          tests_mod.write_text(text.replace(anchor, anchor + "mod fence_fifo;\n", 1))
           PY
+
+          cat > crates/bridgevm-hvf/src/virtio_gpu/tests/fence_fifo.rs <<'RS'
+          //! FIFO fence retirement preserves delivery and retained-response order.
+          
+          use super::super::*;
+          use super::helpers::*;
+          use crate::virtio_gpu_3d::CompletedFence;
+          
+          const USED_GPA: u64 = 0x4000_1000;
+          
+          fn pending_response(
+              queue: VirtioGpuQueue,
+              head: u16,
+              response_gpa: u64,
+              response_byte: u8,
+              fence: CompletedFence,
+          ) -> PendingFencedResponse {
+              PendingFencedResponse {
+                  queue_index: 0,
+                  queue,
+                  head,
+                  descs: vec![Descriptor {
+                      addr: response_gpa,
+                      len: 4,
+                      flags: DESC_F_WRITE,
+                      next: 0,
+                  }],
+                  response: vec![response_byte; 4],
+                  fence,
+              }
+          }
+          
+          fn used_head(mem: &TestMem, index: u64) -> u32 {
+              u32::from_le_bytes(
+                  mem.read(USED_GPA + 4 + index * 8, 4)
+                      .try_into()
+                      .unwrap(),
+              )
+          }
+          
+          #[test]
+          fn fence_retirement_delivers_ready_entries_and_preserves_unready_fifo_order() {
+              let (mut dev, backend) = dev_with_mock();
+              let mut mem = TestMem::new(0x4000_0000, 0x10000);
+              let mut queue = VirtioGpuQueue::new(0);
+              queue.size = 8;
+              queue.ready = true;
+              queue.device = USED_GPA;
+          
+              let entries = [
+                  (
+                      10,
+                      0x4000_2000,
+                      0xa1,
+                      CompletedFence {
+                          ctx_id: 1,
+                          ring_idx: 0,
+                          fence_id: 1,
+                      },
+                  ),
+                  (
+                      11,
+                      0x4000_2100,
+                      0xb2,
+                      CompletedFence {
+                          ctx_id: 2,
+                          ring_idx: 0,
+                          fence_id: 5,
+                      },
+                  ),
+                  (
+                      12,
+                      0x4000_2200,
+                      0xc3,
+                      CompletedFence {
+                          ctx_id: 1,
+                          ring_idx: 0,
+                          fence_id: 2,
+                      },
+                  ),
+                  (
+                      13,
+                      0x4000_2300,
+                      0xd4,
+                      CompletedFence {
+                          ctx_id: 3,
+                          ring_idx: 0,
+                          fence_id: 1,
+                      },
+                  ),
+              ];
+              for (head, response_gpa, response_byte, fence) in entries {
+                  dev.gpu.pending_fenced.push_back(pending_response(
+                      queue,
+                      head,
+                      response_gpa,
+                      response_byte,
+                      fence,
+                  ));
+              }
+              let pending_capacity = dev.gpu.pending_fenced.capacity();
+          
+              backend.lock().unwrap().completed.push(CompletedFence {
+                  ctx_id: 1,
+                  ring_idx: 0,
+                  fence_id: 2,
+              });
+              dev.drain_completed_fences(&mut mem);
+          
+              assert_eq!(
+                  dev.gpu
+                      .pending_fenced
+                      .iter()
+                      .map(|pending| (pending.fence.ctx_id, pending.fence.fence_id))
+                      .collect::<Vec<_>>(),
+                  vec![(2, 5), (3, 1)]
+              );
+              assert_eq!(dev.gpu.pending_fenced.capacity(), pending_capacity);
+              assert_eq!(
+                  u16::from_le_bytes(mem.read(USED_GPA + 2, 2).try_into().unwrap()),
+                  2
+              );
+              assert_eq!((used_head(&mem, 0), used_head(&mem, 1)), (10, 12));
+              assert_eq!(mem.read(0x4000_2000, 4), vec![0xa1; 4]);
+              assert_eq!(mem.read(0x4000_2200, 4), vec![0xc3; 4]);
+              assert_eq!(mem.read(0x4000_2100, 4), vec![0; 4]);
+              assert_eq!(mem.read(0x4000_2300, 4), vec![0; 4]);
+              assert!(dev.gpu.descriptor_scratch.capacity() >= 1);
+              assert!(dev.gpu.response_scratch.capacity() >= 4);
+              assert_eq!(dev.gpu.parked_descriptor_scratch.len(), 1);
+              assert_eq!(dev.gpu.parked_response_scratch.len(), 1);
+          
+              backend.lock().unwrap().completed.extend([
+                  CompletedFence {
+                      ctx_id: 2,
+                      ring_idx: 0,
+                      fence_id: 5,
+                  },
+                  CompletedFence {
+                      ctx_id: 3,
+                      ring_idx: 0,
+                      fence_id: 1,
+                  },
+              ]);
+              dev.drain_completed_fences(&mut mem);
+          
+              assert!(dev.gpu.pending_fenced.is_empty());
+              assert_eq!(
+                  u16::from_le_bytes(mem.read(USED_GPA + 2, 2).try_into().unwrap()),
+                  4
+              );
+              assert_eq!((used_head(&mem, 2), used_head(&mem, 3)), (11, 13));
+              assert_eq!(mem.read(0x4000_2100, 4), vec![0xb2; 4]);
+              assert_eq!(mem.read(0x4000_2300, 4), vec![0xd4; 4]);
+          }
+          RS
 
           cargo fmt --all
           python3 - <<'PY'
@@ -124,48 +272,48 @@ jobs:
                   loc += 1
               return loc
 
-          budgets_path = Path('scripts/refactor-budgets.tsv')
+          budgets_path = Path("scripts/refactor-budgets.tsv")
           budgets = budgets_path.read_text()
           existing = [
-              'crates/bridgevm-hvf/src/virtio_gpu/device.rs',
-              'crates/bridgevm-hvf/src/virtio_gpu/fence.rs',
-              'crates/bridgevm-hvf/src/virtio_gpu/virtqueue.rs',
-              'crates/bridgevm-hvf/src/virtio_gpu/tests/part_3.rs',
+              "crates/bridgevm-hvf/src/virtio_gpu/device.rs",
+              "crates/bridgevm-hvf/src/virtio_gpu/fence.rs",
+              "crates/bridgevm-hvf/src/virtio_gpu/virtqueue.rs",
+              "crates/bridgevm-hvf/src/virtio_gpu/tests/part_3.rs",
           ]
           for path in existing:
               pattern = re.compile(rf'^{re.escape(path)}\t(\d+)\t0$', re.MULTILINE)
               match = pattern.search(budgets)
               if match is None:
-                  raise SystemExit(f'budget row missing: {path}')
+                  raise SystemExit(f"budget row missing: {path}")
               old_ceiling = int(match.group(1))
               loc = structural_loc(path)
               if loc > old_ceiling:
-                  raise SystemExit(f'{path} grew from ceiling {old_ceiling} to {loc}')
-              budgets = pattern.sub(f'{path}\t{loc}\t0', budgets, count=1)
+                  raise SystemExit(f"{path} grew from ceiling {old_ceiling} to {loc}")
+              budgets = pattern.sub(f"{path}\t{loc}\t0", budgets, count=1)
 
-          test_path = 'crates/bridgevm-hvf/src/virtio_gpu/tests/fence_fifo.rs'
+          test_path = "crates/bridgevm-hvf/src/virtio_gpu/tests/fence_fifo.rs"
           if re.search(rf'^{re.escape(test_path)}\t', budgets, re.MULTILINE):
-              raise SystemExit('fence FIFO test budget already exists')
+              raise SystemExit("fence FIFO test budget already exists")
           anchor_pattern = re.compile(
               r'^crates/bridgevm-hvf/src/virtio_gpu/tests/descriptor_chain_trace.rs\t\d+\t0$',
               re.MULTILINE,
           )
           anchor = anchor_pattern.search(budgets)
           if anchor is None:
-              raise SystemExit('fence FIFO budget insertion anchor changed')
-          row = f'{test_path}\t{structural_loc(test_path)}\t0'
-          budgets = budgets[:anchor.end()] + '\n' + row + budgets[anchor.end():]
+              raise SystemExit("fence FIFO budget insertion anchor changed")
+          row = f"{test_path}\t{structural_loc(test_path)}\t0"
+          budgets = budgets[:anchor.end()] + "\n" + row + budgets[anchor.end():]
           budgets_path.write_text(budgets)
           PY
 
-          grep -q 'pending_fenced: VecDeque<PendingFencedResponse>' crates/bridgevm-hvf/src/virtio_gpu/device.rs
-          grep -q 'pending_fenced.push_back' crates/bridgevm-hvf/src/virtio_gpu/virtqueue.rs
-          grep -q '\.pop_front()' crates/bridgevm-hvf/src/virtio_gpu/fence.rs
-          ! grep -q 'pending_fenced.remove' crates/bridgevm-hvf/src/virtio_gpu/fence.rs
+          grep -q 'pending_fenced: VecDeque<PendingFencedResponse>'             crates/bridgevm-hvf/src/virtio_gpu/device.rs
+          grep -q 'pending_fenced.push_back'             crates/bridgevm-hvf/src/virtio_gpu/virtqueue.rs
+          grep -q 'pending_fenced.pop_front'             crates/bridgevm-hvf/src/virtio_gpu/fence.rs
+          ! grep -q 'pending_fenced.remove'             crates/bridgevm-hvf/src/virtio_gpu/fence.rs
+
           for attempt in $(seq 1 10); do
             echo "virtio-gpu fence FIFO regression attempt ${attempt}/10"
-            cargo test -p bridgevm-hvf --locked \
-              fence_retirement_delivers_ready_entries_and_preserves_unready_fifo_order
+            cargo test -p bridgevm-hvf --locked               fence_retirement_delivers_ready_entries_and_preserves_unready_fifo_order
           done
           cargo test -p bridgevm-hvf --locked
           cargo clippy -p bridgevm-hvf --all-targets --locked -- -D warnings
@@ -176,7 +324,5 @@ jobs:
           git add -A
           git config user.name Ketchio-dev
           git config user.email 116458462+Ketchio-dev@users.noreply.github.com
-          git commit \
-            -m 'gpu: retire completed fences through a FIFO [gpu-fence-fifo-complete]' \
-            -m 'Store pending fence responses in VecDeque and scan exactly the initial queue length with pop_front/push_back. Ready responses retain delivery order, unready responses retain queue order, and repeated Vec::remove(index) tail shifts disappear without changing fence matching, used-ring writes, interrupts, or buffer recycling.'
+          git commit             -m 'gpu: retire completed fences through a FIFO [gpu-fence-fifo-complete]'             -m 'Use VecDeque pop_front/push_back to scan exactly the initial pending-fence queue. Ready responses retain delivery order, unready responses retain FIFO order, and indexed Vec tail shifting is removed without raising structural-debt ceilings.'
           git push origin HEAD:perf/virtio-gpu-fence-fifo
