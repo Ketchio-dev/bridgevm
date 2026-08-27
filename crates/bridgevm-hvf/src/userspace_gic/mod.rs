@@ -302,17 +302,6 @@ impl UserspaceGic {
         (1u64 << self.num_cpus) - 1
     }
 
-    /// Which CPU a routed SPI targets. IRM (1-of-N) delivers to CPU0 (QEMU
-    /// parity); explicit affinity must match a CPU's linear MPIDR.
-    fn route_target(&self, intid: usize) -> Option<usize> {
-        let route = self.dist.route[intid];
-        if route & IROUTER_IRM != 0 {
-            return Some(0);
-        }
-        let affinity = ((route >> 8) & 0xff) << 8 | (route & 0xff);
-        (0..self.num_cpus).find(|&c| machine::cpu_mpidr(c as u64) == affinity)
-    }
-
     fn spi_candidate_for_cpu(&self, cpu: usize, threshold: u8) -> Option<PendingCandidate> {
         if self.dist.ctlr & GICD_CTLR_ENABLE_G1NS == 0 {
             return None;
@@ -327,7 +316,7 @@ impl UserspaceGic {
                 if !(group1 && enabled && pending && !active) {
                     return None;
                 }
-                if self.route_target(intid) != Some(cpu) {
+                if !self.spi_routes_to_cpu(intid, cpu) {
                     return None;
                 }
                 let priority = self.dist.priority[intid];
@@ -759,6 +748,11 @@ impl UserspaceGic {
 }
 
 mod mmio_regs;
+mod routing;
+
+#[cfg(test)]
+#[path = "routing_tests.rs"]
+mod routing_tests;
 
 #[cfg(test)]
 #[path = "userspace_gic_tests.rs"]
