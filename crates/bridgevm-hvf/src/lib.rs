@@ -20,6 +20,7 @@ pub mod acpi;
 pub mod checkpoint;
 pub mod dtb;
 pub mod fwcfg;
+mod guest_memory;
 pub mod hda;
 pub mod host_entropy;
 pub mod machine;
