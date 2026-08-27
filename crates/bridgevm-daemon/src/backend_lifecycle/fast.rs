@@ -1,4 +1,5 @@
 //! Fast Mode lifecycle opt-in policy shared by suspend and resume.
+//! Discovering helper paths is never authorization to start an Apple VZ guest.
 
 use crate::FastModeSpawnConfig;
 use anyhow::Result;
