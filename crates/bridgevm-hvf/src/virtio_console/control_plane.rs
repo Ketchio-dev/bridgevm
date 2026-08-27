@@ -1,5 +1,6 @@
 //! The virtio-console control protocol: encoding, control-TX handling, port open/name.
 
+use super::queue_pending::pending_entries;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 
@@ -30,7 +31,7 @@ impl VirtioConsole {
         let mut progressed = false;
         let mut descs = std::mem::take(&mut self.descriptor_scratch);
         let mut bytes = std::mem::take(&mut self.read_scratch);
-        while self.queues[queue_index].last_avail_idx != avail_idx {
+        for _ in 0..pending_entries(queue.last_avail_idx, avail_idx, queue.size) {
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
             let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
             let Some(head) = read_u16(mem, queue.driver + ring_off) else {
