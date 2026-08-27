@@ -1,0 +1,249 @@
+name: Finalize direct virtio-net TX guest reads
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/perf-virtio-net-read-into.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.head_ref == 'perf/virtio-net-read-into'
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          components: rustfmt,clippy
+      - name: Append TX descriptors through caller-owned scratch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          helper = Path("crates/bridgevm-hvf/src/guest_memory_append.rs")
+          if helper.exists():
+              raise SystemExit(f"unexpected pre-existing helper: {helper}")
+          helper.write_text(
+              "//! Append guest bytes into caller-owned scratch without a temporary allocation.\n\n"
+              "use crate::fwcfg::GuestMemoryMut;\n\n"
+              "pub(crate) fn append_guest_bytes(\n"
+              "    mem: &dyn GuestMemoryMut,\n"
+              "    guest_addr: u64,\n"
+              "    len: usize,\n"
+              "    output: &mut Vec<u8>,\n"
+              ") -> Option<()> {\n"
+              "    let start = output.len();\n"
+              "    let end = start.checked_add(len)?;\n"
+              "    output.resize(end, 0);\n"
+              "    if !mem.read_into(guest_addr, &mut output[start..end]) {\n"
+              "        output.truncate(start);\n"
+              "        return None;\n"
+              "    }\n"
+              "    Some(())\n"
+              "}\n"
+          )
+
+          lib = Path("crates/bridgevm-hvf/src/lib.rs")
+          lib_text = lib.read_text()
+          anchor = "mod fwcfg;\n"
+          if lib_text.count(anchor) != 1:
+              raise SystemExit("bridgevm-hvf lib module anchor changed")
+          lib.write_text(lib_text.replace(anchor, anchor + "mod guest_memory_append;\n", 1))
+
+          path = Path("crates/bridgevm-hvf/src/virtio_net/virtqueue.rs")
+          text = path.read_text()
+          import_anchor = "use crate::fwcfg::GuestMemoryMut;\n"
+          if text.count(import_anchor) != 1:
+              raise SystemExit("virtio-net GuestMemoryMut import anchor changed")
+          text = text.replace(
+              import_anchor,
+              import_anchor + "use crate::guest_memory_append::append_guest_bytes;\n",
+              1,
+          )
+
+          marker = "read_bytes"
+          occurrences = [m.start() for m in re.finditer(marker, text)]
+          if not occurrences:
+              raise SystemExit("virtio-net no longer contains a read_bytes gather candidate")
+
+          def statement_start(source: str, pos: int) -> int:
+              line = source.rfind("\n", 0, pos) + 1
+              while line > 0:
+                  previous = source.rfind("\n", 0, line - 1) + 1
+                  candidate = source[previous:pos]
+                  if "let bytes" in candidate:
+                      return previous
+                  if source[previous:line].strip().endswith((";", "{", "}")):
+                      break
+                  line = previous
+              return source.rfind("\n", 0, pos) + 1
+
+          def statement_end(source: str, start: int) -> int:
+              depth = 0
+              in_string = False
+              escaped = False
+              for index in range(start, len(source)):
+                  char = source[index]
+                  if in_string:
+                      if escaped:
+                          escaped = False
+                      elif char == "\\":
+                          escaped = True
+                      elif char == '"':
+                          in_string = False
+                      continue
+                  if char == '"':
+                      in_string = True
+                  elif char in "([{":
+                      depth += 1
+                  elif char in ")]}":
+                      depth -= 1
+                  elif char == ";" and depth == 0:
+                      return index + 1
+              raise SystemExit("unterminated Rust statement")
+
+          def split_args(call: str):
+              depth = 0
+              in_string = False
+              escaped = False
+              for index, char in enumerate(call):
+                  if in_string:
+                      if escaped:
+                          escaped = False
+                      elif char == "\\":
+                          escaped = True
+                      elif char == '"':
+                          in_string = False
+                      continue
+                  if char == '"':
+                      in_string = True
+                  elif char in "([{<":
+                      depth += 1
+                  elif char in ")]}>":
+                      depth -= 1
+                  elif char == "," and depth == 0:
+                      return call[:index].strip(), call[index + 1 :].strip()
+              raise SystemExit(f"could not split read_bytes arguments: {call!r}")
+
+          candidates = []
+          for pos in occurrences:
+              start = statement_start(text, pos)
+              first_end = statement_end(text, start)
+              first = text[start:first_end]
+              if not re.search(r"\blet\s+bytes\s*=", first):
+                  continue
+              open_paren = first.find("read_bytes(") + len("read_bytes")
+              if open_paren < len("read_bytes"):
+                  continue
+              depth = 0
+              close_paren = None
+              for i in range(open_paren, len(first)):
+                  if first[i] == "(":
+                      depth += 1
+                  elif first[i] == ")":
+                      depth -= 1
+                      if depth == 0:
+                          close_paren = i
+                          break
+              if close_paren is None:
+                  continue
+              addr, length = split_args(first[open_paren + 1 : close_paren])
+
+              next_start = first_end
+              while next_start < len(text) and text[next_start].isspace():
+                  next_start += 1
+              second_end = statement_end(text, next_start)
+              second = text[next_start:second_end]
+              match = re.fullmatch(
+                  r"(?P<target>[A-Za-z_][A-Za-z0-9_\.]*)\.extend_from_slice\(&bytes\);",
+                  second.strip(),
+              )
+              if not match:
+                  continue
+              function_start = text.rfind("fn ", 0, start)
+              brace = text.find("{", function_start, start)
+              signature = text[function_start:brace]
+              if "Option<" not in signature:
+                  raise SystemExit(f"candidate is not inside an Option-returning function: {signature}")
+              candidates.append((start, second_end, addr, length, match.group("target")))
+
+          if len(candidates) != 1:
+              raise SystemExit(f"expected one virtio-net TX gather candidate, found {len(candidates)}")
+          start, end, addr, length, target = candidates[0]
+          indent = text[start : text.find("let bytes", start)]
+          replacement = (
+              f"{indent}append_guest_bytes(mem, {addr}, {length}, &mut {target})?;"
+          )
+          text = text[:start] + replacement + text[end:]
+          path.write_text(text)
+          PY
+
+          cargo fmt --all
+          grep -q '^mod guest_memory_append;$' crates/bridgevm-hvf/src/lib.rs
+          grep -q 'append_guest_bytes' crates/bridgevm-hvf/src/virtio_net/virtqueue.rs
+
+          for attempt in $(seq 1 10); do
+            echo "virtio-net TX scratch regression attempt ${attempt}/10"
+            cargo test -p bridgevm-hvf --locked \
+              tx_notify_reuses_descriptor_and_packet_scratch_across_frames
+          done
+          cargo test -p bridgevm-hvf --locked \
+            tx_notify_strips_virtio_net_header_posts_used_and_raises_msix
+          cargo test -p bridgevm-hvf --locked
+          cargo clippy -p bridgevm-hvf --all-targets --locked -- -D warnings
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          declaration = re.compile(
+              r'^\s*(?:(?:pub\s+)?(?:mod|use)\s+[^;{]*;|#\[path\s*=\s*[^]]*\])\s*$'
+          )
+          path = Path("crates/bridgevm-hvf/src/guest_memory_append.rs")
+          header = True
+          loc = 0
+          for line in path.read_text().splitlines():
+              if header and re.match(r"^\s*//!", line):
+                  continue
+              if header and re.match(r"^\s*$", line):
+                  header = False
+                  continue
+              header = False
+              if declaration.match(line):
+                  continue
+              loc += 1
+
+          budgets = Path("scripts/refactor-budgets.tsv")
+          text = budgets.read_text()
+          row = f"{path}\t{loc}\t0\n"
+          if str(path) in text:
+              raise SystemExit("guest-memory helper already has a budget row")
+          anchor = "crates/bridgevm-hvf/src/fwcfg.rs\t771\t0\n"
+          if text.count(anchor) != 1:
+              raise SystemExit("refactor budget insertion anchor changed")
+          budgets.write_text(text.replace(anchor, anchor + row, 1))
+          print(f"registered {path} at structural LOC {loc}")
+          PY
+
+          scripts/check-refactor-budgets.sh
+          git diff --check
+          rm -f .github/workflows/perf-virtio-net-read-into.yml
+          git add -A
+          git config user.name Ketchio-dev
+          git config user.email 116458462+Ketchio-dev@users.noreply.github.com
+          git commit \
+            -m "net: append TX descriptors directly into scratch [virtio-net-read-into-complete]" \
+            -m "Read guest descriptor bytes directly into the reusable packet buffer through GuestMemoryMut::read_into. Restore the original length on read failure, preserve all descriptor and packet validation, and remove the per-descriptor temporary Vec and second copy."
+          git push origin HEAD:perf/virtio-net-read-into
