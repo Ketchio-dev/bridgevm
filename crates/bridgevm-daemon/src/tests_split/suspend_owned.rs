@@ -1,4 +1,4 @@
-//! Regression for daemon-owned suspend failure ownership.
+//! Proves a failed daemon-owned suspend retains the live supervised child.
 
 use super::helpers::compatibility_manifest;
 use super::helpers::temp_store;
