@@ -1,0 +1,404 @@
+name: One-shot HDA PCM read-into verifier
+
+on:
+  push:
+    branches:
+      - perf/hda-pcm-read-into
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          components: rustfmt,clippy
+      - name: Reuse PCM DMA scratch and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          source = Path('crates/bridgevm-hvf/src/hda/hdapcmsink.rs')
+          text = source.read_text()
+          sink_block = '''use std::{
+              fs::{File, OpenOptions},
+              io::Write,
+              path::Path,
+              time::{Duration, Instant},
+          };
+
+          use crate::{fwcfg::GuestMemoryMut, msix::MsixMessage};
+
+          /// Host-provided destination for decoded interleaved PCM stream bytes.
+          ///
+          /// Implementations run on the vCPU thread while the platform lock is held, so
+          /// live sinks must return promptly and move potentially blocking work elsewhere.
+          pub trait HdaPcmSink: Send {
+              fn write_pcm(&mut self, samples: &[u8], rate: u32, channels: u8, bits: u8);
+          }
+
+          /// Raw PCM file sink used by `BRIDGEVM_HDA_PCM_OUT`.
+          pub struct FilePcmSink {
+              pub(crate) file: Option<File>,
+          }
+
+          impl FilePcmSink {
+              pub fn create<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+                  let file = OpenOptions::new()
+                      .create(true)
+                      .truncate(true)
+                      .write(true)
+                      .open(path)?;
+                  Ok(Self { file: Some(file) })
+              }
+          }
+
+          impl HdaPcmSink for FilePcmSink {
+              fn write_pcm(&mut self, samples: &[u8], _rate: u32, _channels: u8, _bits: u8) {
+                  let Some(file) = self.file.as_mut() else {
+                      return;
+                  };
+                  if let Err(error) = file.write_all(samples) {
+                      eprintln!("hda: disabling PCM capture after write error: {error}");
+                      self.file = None;
+                  }
+              }
+          }
+          '''
+          sink_import = '''#[path = "pcm_sink.rs"]
+          mod pcm_sink;
+          pub use pcm_sink::{FilePcmSink, HdaPcmSink};
+
+          use std::{
+              path::Path,
+              time::{Duration, Instant},
+          };
+
+          use crate::{fwcfg::GuestMemoryMut, msix::MsixMessage};
+          '''
+          if text.count(sink_block) != 1:
+              raise SystemExit('HDA PCM sink extraction anchor changed')
+          text = text.replace(sink_block, sink_import, 1)
+
+          fields = '''    pub(crate) pcm_sink: Option<Box<dyn HdaPcmSink>>,
+              pub(crate) pcm_sink_overridden: bool,
+          '''
+          new_fields = '''    pub(crate) pcm_sink: Option<Box<dyn HdaPcmSink>>,
+              pub(crate) pcm_scratch: Vec<u8>,
+              pub(crate) pcm_sink_overridden: bool,
+          '''
+          if text.count(fields) != 1:
+              raise SystemExit('HDA PCM field anchor changed')
+          text = text.replace(fields, new_fields, 1)
+
+          init = '''            pcm_sink,
+                      pcm_sink_overridden: false,
+          '''
+          new_init = '''            pcm_sink,
+                      pcm_scratch: Vec::new(),
+                      pcm_sink_overridden: false,
+          '''
+          if text.count(init) != 1:
+              raise SystemExit('HDA PCM initializer anchor changed')
+          text = text.replace(init, new_init, 1)
+
+          old_read = '''            let Some(bytes) =
+                          mem.read_bytes(address + u64::from(self.stream.bdl_offset), chunk_len)
+                      else {
+                          self.stream.sts |= SDSTS_DESE;
+                          self.stream.ctl &= !SDCTL_RUN;
+                          break;
+                      };
+                      if let Some(output) = self.pcm_sink.as_mut() {
+                          output.write_pcm(&bytes, rate, channels, bits);
+                      }
+          '''
+          new_read = '''            self.pcm_scratch.resize(chunk_len, 0);
+                      if !mem.read_into(
+                          address + u64::from(self.stream.bdl_offset),
+                          &mut self.pcm_scratch,
+                      ) {
+                          self.stream.sts |= SDSTS_DESE;
+                          self.stream.ctl &= !SDCTL_RUN;
+                          break;
+                      }
+                      if let Some(output) = self.pcm_sink.as_mut() {
+                          output.write_pcm(&self.pcm_scratch, rate, channels, bits);
+                      }
+          '''
+          if text.count(old_read) != 1:
+              raise SystemExit('HDA PCM guest-read anchor changed')
+          source.write_text(text.replace(old_read, new_read, 1))
+
+          sink = source.with_name('pcm_sink.rs')
+          if sink.exists():
+              raise SystemExit('HDA PCM sink module already exists')
+          sink.write_text('''//! Host PCM destinations for the HDA playback stream.
+
+          use std::{
+              fs::{File, OpenOptions},
+              io::Write,
+              path::Path,
+          };
+
+          /// Host-provided destination for decoded interleaved PCM stream bytes.
+          ///
+          /// Implementations run on the vCPU thread while the platform lock is held, so
+          /// live sinks must return promptly and move potentially blocking work elsewhere.
+          pub trait HdaPcmSink: Send {
+              fn write_pcm(&mut self, samples: &[u8], rate: u32, channels: u8, bits: u8);
+          }
+
+          /// Raw PCM file sink used by `BRIDGEVM_HDA_PCM_OUT`.
+          pub struct FilePcmSink {
+              pub(crate) file: Option<File>,
+          }
+
+          impl FilePcmSink {
+              pub fn create<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+                  let file = OpenOptions::new()
+                      .create(true)
+                      .truncate(true)
+                      .write(true)
+                      .open(path)?;
+                  Ok(Self { file: Some(file) })
+              }
+          }
+
+          impl HdaPcmSink for FilePcmSink {
+              fn write_pcm(&mut self, samples: &[u8], _rate: u32, _channels: u8, _bits: u8) {
+                  let Some(file) = self.file.as_mut() else {
+                      return;
+                  };
+                  if let Err(error) = file.write_all(samples) {
+                      eprintln!("hda: disabling PCM capture after write error: {error}");
+                      self.file = None;
+                  }
+              }
+          }
+          ''')
+
+          tests_mod = Path('crates/bridgevm-hvf/src/hda/tests/mod.rs')
+          mod_text = tests_mod.read_text()
+          anchor = 'mod part_1;\n'
+          if mod_text.count(anchor) != 1 or 'mod read_into;' in mod_text:
+              raise SystemExit('HDA test module anchor changed')
+          tests_mod.write_text(mod_text.replace(anchor, anchor + 'mod read_into;\n', 1))
+
+          test_path = Path('crates/bridgevm-hvf/src/hda/tests/read_into.rs')
+          if test_path.exists():
+              raise SystemExit('HDA PCM read-into regression already exists')
+          test_path.write_text('''//! Regression for allocation-free HDA playback DMA reads.
+
+          use super::super::*;
+          use crate::fwcfg::GuestMemoryMut;
+          use std::cell::Cell;
+          use std::sync::{Arc, Mutex};
+          use std::time::Duration;
+
+          const BDL_GPA: u64 = 0x1000;
+          const PCM_GPA: u64 = 0x2000;
+
+          struct ReadIntoOnlyMem {
+              bytes: Vec<u8>,
+              read_into_calls: Cell<usize>,
+          }
+
+          impl ReadIntoOnlyMem {
+              fn new(pcm: &[u8]) -> Self {
+                  let mut bytes = vec![0u8; 0x4000];
+                  let bdl = BDL_GPA as usize;
+                  bytes[bdl..bdl + 8].copy_from_slice(&PCM_GPA.to_le_bytes());
+                  bytes[bdl + 8..bdl + 12]
+                      .copy_from_slice(&u32::try_from(pcm.len()).unwrap().to_le_bytes());
+                  let pcm_start = PCM_GPA as usize;
+                  bytes[pcm_start..pcm_start + pcm.len()].copy_from_slice(pcm);
+                  Self {
+                      bytes,
+                      read_into_calls: Cell::new(0),
+                  }
+              }
+          }
+
+          impl GuestMemoryMut for ReadIntoOnlyMem {
+              fn write_bytes(&mut self, gpa: u64, data: &[u8]) -> bool {
+                  let Ok(start) = usize::try_from(gpa) else {
+                      return false;
+                  };
+                  let Some(end) = start.checked_add(data.len()) else {
+                      return false;
+                  };
+                  let Some(dst) = self.bytes.get_mut(start..end) else {
+                      return false;
+                  };
+                  dst.copy_from_slice(data);
+                  true
+              }
+
+              fn read_bytes(&self, _gpa: u64, _len: usize) -> Option<Vec<u8>> {
+                  panic!("HDA playback DMA must not allocate through read_bytes")
+              }
+
+              fn read_into(&self, gpa: u64, dst: &mut [u8]) -> bool {
+                  let Ok(start) = usize::try_from(gpa) else {
+                      return false;
+                  };
+                  let Some(end) = start.checked_add(dst.len()) else {
+                      return false;
+                  };
+                  let Some(src) = self.bytes.get(start..end) else {
+                      return false;
+                  };
+                  dst.copy_from_slice(src);
+                  self.read_into_calls
+                      .set(self.read_into_calls.get().saturating_add(1));
+                  true
+              }
+          }
+
+          #[derive(Clone, Debug, PartialEq, Eq)]
+          struct CapturedPcm {
+              bytes: Vec<u8>,
+              rate: u32,
+              channels: u8,
+              bits: u8,
+          }
+
+          struct CaptureSink(Arc<Mutex<Vec<CapturedPcm>>>);
+
+          impl HdaPcmSink for CaptureSink {
+              fn write_pcm(&mut self, samples: &[u8], rate: u32, channels: u8, bits: u8) {
+                  self.0.lock().unwrap().push(CapturedPcm {
+                      bytes: samples.to_vec(),
+                      rate,
+                      channels,
+                      bits,
+                  });
+              }
+          }
+
+          fn write(ctrl: &mut HdaController, mem: &mut ReadIntoOnlyMem, offset: u64, size: u8, value: u64) {
+              ctrl.mmio_write(offset, size, value, mem);
+          }
+
+          #[test]
+          fn playback_dma_reuses_read_into_scratch_across_polls() {
+              let expected: Vec<u8> = (0..192).map(|value| value as u8).collect();
+              let mut mem = ReadIntoOnlyMem::new(&expected);
+              let writes = Arc::new(Mutex::new(Vec::new()));
+              let mut ctrl = HdaController::with_pcm_output_path::<&std::path::Path>(None);
+              ctrl.set_pcm_sink(Some(Box::new(CaptureSink(Arc::clone(&writes)))));
+
+              write(&mut ctrl, &mut mem, REG_GCTL, 4, 1);
+              write(&mut ctrl, &mut mem, REG_SD_BDPL, 4, BDL_GPA);
+              write(&mut ctrl, &mut mem, REG_SD_CBL, 4, expected.len() as u64);
+              write(&mut ctrl, &mut mem, REG_SD_LVI, 2, 0);
+              write(&mut ctrl, &mut mem, REG_SD_FMT, 2, 0x0011);
+              write(&mut ctrl, &mut mem, REG_SD_CTL, 1, u64::from(SDCTL_RUN));
+
+              ctrl.poll_for_duration(&mut mem, Duration::from_millis(1));
+              let scratch_capacity = ctrl.pcm_scratch.capacity();
+              let scratch_ptr = ctrl.pcm_scratch.as_ptr();
+              assert!(scratch_capacity >= expected.len());
+
+              ctrl.poll_for_duration(&mut mem, Duration::from_millis(1));
+
+              assert_eq!(ctrl.pcm_scratch.capacity(), scratch_capacity);
+              assert_eq!(ctrl.pcm_scratch.as_ptr(), scratch_ptr);
+              assert_eq!(mem.read_into_calls.get(), 4);
+              assert_eq!(
+                  *writes.lock().unwrap(),
+                  vec![
+                      CapturedPcm {
+                          bytes: expected.clone(),
+                          rate: 48_000,
+                          channels: 2,
+                          bits: 16,
+                      },
+                      CapturedPcm {
+                          bytes: expected,
+                          rate: 48_000,
+                          channels: 2,
+                          bits: 16,
+                      },
+                  ]
+              );
+          }
+          ''')
+
+          declaration = re.compile(
+              r'^\s*(?:(?:pub\s+)?(?:mod|use)\s+[^;{]*;|#\[path\s*=\s*[^]]*\])\s*$'
+          )
+
+          def structural_loc(path: str) -> int:
+              header = True
+              loc = 0
+              for line in Path(path).read_text().splitlines():
+                  if header and re.match(r'^\s*//!', line):
+                      continue
+                  if header and re.match(r'^\s*$', line):
+                      header = False
+                      continue
+                  header = False
+                  if declaration.match(line):
+                      continue
+                  loc += 1
+              return loc
+
+          budgets_path = Path('scripts/refactor-budgets.tsv')
+          budgets = budgets_path.read_text()
+          source_rel = str(source)
+          source_pattern = re.compile(rf'^{re.escape(source_rel)}\t(\d+)\t0$', re.MULTILINE)
+          source_match = source_pattern.search(budgets)
+          if source_match is None:
+              raise SystemExit('HDA source budget row missing')
+          source_loc = structural_loc(source_rel)
+          if source_loc > int(source_match.group(1)):
+              raise SystemExit('HDA optimization unexpectedly grew source debt')
+          budgets = source_pattern.sub(f'{source_rel}\t{source_loc}\t0', budgets, count=1)
+
+          for new_path, anchor in [
+              (str(sink), f'{source_rel}\t{source_loc}\t0\n'),
+              (str(test_path), 'crates/bridgevm-hvf/src/hda/tests/helpers.rs\t110\t0\n'),
+          ]:
+              if re.search(rf'^{re.escape(new_path)}\t', budgets, re.MULTILINE):
+                  raise SystemExit(f'budget row already exists: {new_path}')
+              if budgets.count(anchor) != 1:
+                  raise SystemExit(f'budget insertion anchor changed: {anchor!r}')
+              budgets = budgets.replace(
+                  anchor,
+                  anchor + f'{new_path}\t{structural_loc(new_path)}\t0\n',
+                  1,
+              )
+          budgets_path.write_text(budgets)
+          PY
+
+          cargo fmt --all
+          for attempt in $(seq 1 10); do
+            echo "HDA PCM read-into regression attempt ${attempt}/10"
+            cargo test -p bridgevm-hvf --locked playback_dma_reuses_read_into_scratch_across_polls
+          done
+          cargo test -p bridgevm-hvf --locked
+          cargo clippy -p bridgevm-hvf --all-targets --locked -- -D warnings
+          scripts/check-refactor-budgets.sh
+          git diff --check
+
+          rm -f .github/workflows/perf-hda-pcm-read-into.yml
+          git add -A
+          git config user.name Ketchio-dev
+          git config user.email 116458462+Ketchio-dev@users.noreply.github.com
+          git commit \
+            -m 'hda: reuse scratch for playback DMA reads [hda-pcm-read-into-complete]' \
+            -m 'Extract host PCM sinks, fill a retained playback buffer through read_into, and prove two consecutive DMA polls reuse the same allocation while preserving sample format and cyclic BDL behavior.'
+          git push origin HEAD:perf/hda-pcm-read-into
