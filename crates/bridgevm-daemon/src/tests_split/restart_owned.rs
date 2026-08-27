@@ -1,4 +1,4 @@
-//! Regression for daemon-owned restart process replacement.
+//! Proves daemon-owned restart replaces and re-tracks the backend process.
 
 use super::helpers::compatibility_manifest;
 use super::helpers::temp_store;
