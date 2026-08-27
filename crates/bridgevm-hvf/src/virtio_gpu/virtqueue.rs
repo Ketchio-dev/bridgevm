@@ -250,7 +250,7 @@ impl VirtioGpu {
             };
             if self.three_d.create_fence(fence) {
                 self.trace_fence_create(fence, true, "parked");
-                self.pending_fenced.push(PendingFencedResponse {
+                self.pending_fenced.push_back(PendingFencedResponse {
                     queue_index,
                     queue: *queue,
                     head,
