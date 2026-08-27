@@ -1,5 +1,6 @@
 //! The packet path: TX drain to the backend, RX delivery with the virtio-net header, doorbells.
 
+use super::queue_pending::pending_entries;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 
@@ -42,7 +43,7 @@ impl<B: NetBackend> VirtioNet<B> {
         };
         let mut descs = std::mem::take(&mut self.descriptor_scratch);
         let mut packet = std::mem::take(&mut self.tx_packet_scratch);
-        while self.queues[queue_index].last_avail_idx != avail_idx {
+        for _ in 0..pending_entries(queue.last_avail_idx, avail_idx, queue.size) {
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
             let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
             let Some(head) = read_u16(mem, queue.driver + ring_off) else {

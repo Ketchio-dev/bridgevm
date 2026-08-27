@@ -507,11 +507,13 @@ crates/bridgevm-hvf/src/virtio_net/mod.rs	7	0
 crates/bridgevm-hvf/src/virtio_net/msix_bridge.rs	114	0
 crates/bridgevm-hvf/src/virtio_net/pci_transport.rs	125	0
 crates/bridgevm-hvf/src/virtio_net/protocol.rs	133	0
+crates/bridgevm-hvf/src/virtio_net/queue_pending.rs	3	0
 crates/bridgevm-hvf/src/virtio_net/register_codec.rs	101	0
 crates/bridgevm-hvf/src/virtio_net/snapshot.rs	91	0
 crates/bridgevm-hvf/src/virtio_net/tests/helpers.rs	200	0
 crates/bridgevm-hvf/src/virtio_net/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/virtio_net/tests/part_1.rs	618	0
+crates/bridgevm-hvf/src/virtio_net/tests/queue_pending.rs	22	0
 crates/bridgevm-hvf/src/virtio_net/transport_regs.rs	368	0
 crates/bridgevm-hvf/src/virtio_net/virtqueue.rs	143	0
 crates/bridgevm-hvf/src/windows_arm/boot_disk_io.rs	382	0
