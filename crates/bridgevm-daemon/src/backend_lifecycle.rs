@@ -10,13 +10,21 @@ use bridgevm_api::CurrentRuntimeEngine;
 
 #[path = "backend_lifecycle/cleanup.rs"]
 mod cleanup;
+#[path = "backend_lifecycle/fast.rs"]
+mod fast;
 #[path = "backend_lifecycle/vnc_displays.rs"]
 mod vnc_displays;
 
 impl DaemonState {
-    /// Keep daemon ownership until synchronous suspend has committed. A failed
-    /// QMP or runner preflight therefore leaves the original backend supervised.
+    /// Keep daemon ownership until synchronous suspend commits; failures retain the child.
     pub(crate) fn suspend_backend_supervised(&mut self, name: &str) -> Result<BridgeVmResponse> {
+        let (_, manifest) = self.store.get_vm(name).context("failed to read VM")?;
+        if CurrentRuntimeEngine::for_manifest(&manifest) == CurrentRuntimeEngine::AppleVz {
+            fast::require_real_start(
+                "suspend",
+                "refusing to start a VM while handling suspend",
+            )?;
+        }
         let owned = self.children.contains_key(name);
         let qmp_supervisor = self
             .store
@@ -33,12 +41,8 @@ impl DaemonState {
         })
     }
 
-    /// Resume a backend through the daemon, tracking the new child in the
-    /// supervisor exactly like cold-start `run` so reconcile/stop see it.
-    ///
-    /// Fast Mode relaunches `lightvm-runner` with `--apple-vz-restore-state`
-    /// only when real start is explicitly enabled. Compatibility Mode relaunches
-    /// QEMU with `-loadvm <tag>`. Both children stay daemon-owned.
+    /// Resume through the daemon so the replacement child remains supervised.
+    /// Fast Mode requires real-start opt-in; Compatibility Mode reloads QEMU state.
     pub(crate) fn resume_backend_supervised(&mut self, name: &str) -> Result<BridgeVmResponse> {
         if self.children.contains_key(name) {
             anyhow::bail!("backend is already running for '{name}'");
@@ -57,12 +61,10 @@ impl DaemonState {
                         state_path.display()
                     );
                 }
-                let Some(config) = FastModeSpawnConfig::from_env()? else {
-                    anyhow::bail!(
-                        "Fast Mode resume requires explicit real-start opt-in \
-                         (BRIDGEVM_APPLE_VZ_ALLOW_REAL_START=1); refusing to launch a detached backend"
-                    );
-                };
+                let config = fast::require_real_start(
+                    "resume",
+                    "refusing to launch a detached backend",
+                )?;
                 self.spawn_fast_backend_with_restore(
                     name,
                     bundle,
