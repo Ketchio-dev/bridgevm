@@ -1,0 +1,96 @@
+name: One-shot virtio-gpu vblank FIFO verifier
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.head_ref == 'perf/virtio-gpu-vblank-fifo'
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          components: rustfmt,clippy
+      - name: Replace front-removing Vec with a FIFO and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path('crates/bridgevm-hvf/src/virtio_gpu/device.rs'): [
+                  (
+                      'use std::collections::BTreeMap;\n',
+                      'use std::collections::{BTreeMap, VecDeque};\n',
+                  ),
+                  (
+                      'pub(crate) pending_vblank: Vec<PendingVblankResponse>,',
+                      'pub(crate) pending_vblank: VecDeque<PendingVblankResponse>,',
+                  ),
+                  ('pending_vblank: Vec::new(),', 'pending_vblank: VecDeque::new(),'),
+              ],
+              Path('crates/bridgevm-hvf/src/virtio_gpu/virtqueue.rs'): [
+                  (
+                      'self.pending_vblank.push(PendingVblankResponse {',
+                      'self.pending_vblank.push_back(PendingVblankResponse {',
+                  ),
+              ],
+              Path('crates/bridgevm-hvf/src/virtio_gpu/vblank.rs'): [
+                  (
+                      'let pending_response = self.pending_vblank.remove(0);',
+                      'let pending_response = self\n'
+                      '            .pending_vblank\n'
+                      '            .pop_front()\n'
+                      '            .expect("pending vblank queue was checked non-empty");',
+                  ),
+              ],
+          }
+
+          for path, edits in replacements.items():
+              text = path.read_text()
+              for old, new in edits:
+                  count = text.count(old)
+                  if count != 1:
+                      raise SystemExit(f'{path}: expected one anchor, found {count}: {old!r}')
+                  text = text.replace(old, new, 1)
+              path.write_text(text)
+          PY
+
+          cargo fmt --all
+          grep -q 'pending_vblank: VecDeque<PendingVblankResponse>' \
+            crates/bridgevm-hvf/src/virtio_gpu/device.rs
+          grep -q 'pending_vblank.push_back' \
+            crates/bridgevm-hvf/src/virtio_gpu/virtqueue.rs
+          grep -q 'pop_front()' crates/bridgevm-hvf/src/virtio_gpu/vblank.rs
+          ! grep -q 'pending_vblank.remove(0)' \
+            crates/bridgevm-hvf/src/virtio_gpu/vblank.rs
+
+          for attempt in $(seq 1 10); do
+            echo "vblank FIFO regression attempt ${attempt}/10"
+            cargo test -p bridgevm-hvf --locked \
+              host_vblank_pacing_parks_empty_context_zero_submits_and_retires_one_per_interval
+          done
+          cargo test -p bridgevm-hvf --locked
+          cargo clippy -p bridgevm-hvf --all-targets --locked -- -D warnings
+          scripts/check-refactor-budgets.sh
+          git diff --check
+
+          rm -f .github/workflows/perf-virtio-gpu-vblank-fifo.yml
+          git add -A
+          git config user.name Ketchio-dev
+          git config user.email 116458462+Ketchio-dev@users.noreply.github.com
+          git commit \
+            -m 'gpu: retire paced vblank responses through a FIFO [vblank-fifo-complete]' \
+            -m 'Use VecDeque push_back/pop_front for the paced context-zero completion queue. This preserves the existing three-response FIFO regression while removing the O(n) tail shift performed by Vec::remove(0) at every vblank retirement. No timing policy, queue depth, interrupt, or capability claim changes.'
+          git push origin HEAD:perf/virtio-gpu-vblank-fifo
