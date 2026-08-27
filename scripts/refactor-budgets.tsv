@@ -413,11 +413,13 @@ crates/bridgevm-hvf/src/virtio_console/msix_bridge.rs	104	0
 crates/bridgevm-hvf/src/virtio_console/notify.rs	50	0
 crates/bridgevm-hvf/src/virtio_console/pci_transport.rs	140	0
 crates/bridgevm-hvf/src/virtio_console/protocol.rs	163	0
+crates/bridgevm-hvf/src/virtio_console/queue_pending.rs	3	0
 crates/bridgevm-hvf/src/virtio_console/register_codec.rs	116	0
 crates/bridgevm-hvf/src/virtio_console/snapshot.rs	123	0
 crates/bridgevm-hvf/src/virtio_console/tests/helpers.rs	405	0
 crates/bridgevm-hvf/src/virtio_console/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/virtio_console/tests/part_1.rs	774	0
+crates/bridgevm-hvf/src/virtio_console/tests/queue_pending.rs	43	0
 crates/bridgevm-hvf/src/virtio_console/trace.rs	21	0
 crates/bridgevm-hvf/src/virtio_console/transport_regs.rs	353	0
 crates/bridgevm-hvf/src/virtio_console/virtqueue.rs	284	0

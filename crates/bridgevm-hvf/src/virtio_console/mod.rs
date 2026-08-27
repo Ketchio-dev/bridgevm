@@ -12,6 +12,7 @@ mod msix_bridge;
 mod notify;
 mod pci_transport;
 mod protocol;
+mod queue_pending;
 mod register_codec;
 pub(crate) mod snapshot;
 mod transport_regs;
