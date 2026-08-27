@@ -35,3 +35,5 @@ fn pointer_trigger_uses_its_actual_now_for_first_emission_pacing() {
     assert!(platform.drain_xhci_pointer_input_reports(&mut mem));
     assert_eq!(platform.xhci_pointer_input_report_stats().emitted_release_reports, 1);
 }
+#[path = "pointer_deadline_tests.rs"]
+mod pointer_deadline_tests;

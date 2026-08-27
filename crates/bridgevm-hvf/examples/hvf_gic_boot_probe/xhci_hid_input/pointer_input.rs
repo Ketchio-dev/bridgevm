@@ -6,6 +6,7 @@ use bridgevm_hvf::xhci::{
 };
 
 use super::marker::{MarkerEnvError, ProbeMarker, MARKER_MAX_BYTES};
+use super::pointer_deadline::{next_deadline, PointerRamfbDelayCheckpoint};
 use super::report_text::{contains_bytes, IncrementalMarkerScan};
 
 const POINTER_INPUT_DEFAULT_MARKER: &[u8] = b"BdsDxe: starting Boot";
@@ -68,13 +69,6 @@ impl XhciPointerInputEnvError {
             Self::Marker(error) => error.name(),
         }
     }
-}
-
-#[derive(Debug)]
-struct PointerRamfbDelayCheckpoint {
-    label: String,
-    delay: Duration,
-    emitted: bool,
 }
 
 #[derive(Debug)]
@@ -237,8 +231,13 @@ impl XhciPointerInputTrigger {
         now: Instant,
     ) -> Option<Instant> {
         self.complete_pending_fire_if_report_emitted_at(platform, now);
-        for deadline in [platform.xhci_pointer_report_deadline(), self.next_checkpoint_deadline()].into_iter().flatten() {
-            if deadline > now { return Some(deadline); }
+        if let Some(deadline) = next_deadline(
+            now,
+            platform.xhci_pointer_report_deadline(),
+            self.fired_at,
+            &self.ramfb_delay_checkpoints,
+        ) {
+            return Some(deadline);
         }
         if self.fired || self.attempted_in_current_controller_generation(platform)
             || !self.marker_scan.contains_new(platform.uart_output(), self.marker.as_bytes()) {
@@ -363,12 +362,6 @@ impl XhciPointerInputTrigger {
         }
         let stats = platform.xhci_pointer_input_report_stats();
         stats.queued_reports == emitted_reports(stats)
-    }
-
-    fn next_checkpoint_deadline(&self) -> Option<Instant> {
-        let fired_at = self.fired_at?;
-        self.ramfb_delay_checkpoints.iter().find(|c| !c.emitted)
-            .and_then(|c| fired_at.checked_add(c.delay))
     }
 
     fn emit_due_ramfb_delay_checkpoints<F>(&mut self, now: Instant, emit_checkpoint: &mut F)
