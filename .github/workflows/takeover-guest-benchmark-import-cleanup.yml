@@ -39,11 +39,6 @@ jobs:
               "use bridgevm_agent_protocol::DEFAULT_BENCHMARK_DURATION_MILLIS;\n",
               "use bridgevm_agent_protocol::PROTOCOL_VERSION;\n",
               "use bridgevm_agentd::encode_envelope_line;\n",
-              "use std::io::BufRead;\n",
-              "use std::io::BufReader;\n",
-              "use std::io::Write;\n",
-              "use std::os::unix::net::UnixListener;\n",
-              "use std::thread;\n",
               "use std::time::Duration;\n",
           ]
           for import_line in extracted_imports:
@@ -73,5 +68,5 @@ jobs:
           git config user.email "116458462+Ketchio-dev@users.noreply.github.com"
           git commit \
             -m "test: clean extracted guest benchmark imports [guest-benchmark-imports-complete]" \
-            -m "Remove benchmark-only imports from the original shard and verify every daemon target under clippy -D warnings after the focused test extraction."
+            -m "Remove benchmark-only imports from the original shard while retaining the reader, writer, listener, and thread imports still required by its QMP regression. Verify every daemon target under clippy -D warnings."
           git push origin HEAD:takeover/guest-benchmark-handshake-wait
