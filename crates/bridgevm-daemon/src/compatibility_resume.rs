@@ -132,8 +132,8 @@ impl DaemonState {
             let rollback = self.store.clear_runner_metadata(name);
             if let Err(rollback_error) = rollback {
                 anyhow::bail!(
-"failed to mark VM running: {error}; runner metadata rollback also failed: {rollback_error}"
-      );
+                    "failed to mark VM running: {error}; runner metadata rollback also failed: {rollback_error}"
+                );
             }
             anyhow::bail!("failed to mark VM running: {error}");
         }
@@ -143,9 +143,9 @@ impl DaemonState {
             .insert(name.to_string(), SupervisedBackend::new(child));
         if let Err(error) = fs::remove_file(&marker_path) {
             eprintln!(
-      "bridgevmd resume: VM '{name}' is running but the consumed suspend marker could not be removed at {}: {error}",
-      marker_path.display()
-  );
+                "bridgevmd resume: VM '{name}' is running but the consumed suspend marker could not be removed at {}: {error}",
+                marker_path.display()
+            );
         }
 
         Ok(BridgeVmResponse::RunnerStatus {
