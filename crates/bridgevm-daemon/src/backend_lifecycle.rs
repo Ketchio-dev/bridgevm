@@ -169,12 +169,6 @@ impl DaemonState {
 
     pub(crate) fn restart_owned_backend(&mut self, name: &str) -> Result<BridgeVmResponse> {
         self.cleanup_owned_backend(name, true)?;
-        Ok(BridgeVmResponse::State {
-            name: name.to_string(),
-            metadata: self
-                .store
-                .transition_state(name, VmRuntimeState::Running)
-                .context("failed to mark VM running after restart")?,
-        })
+        self.spawn_backend(name)
     }
 }
