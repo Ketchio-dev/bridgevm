@@ -128,7 +128,7 @@ impl VirtioGpu {
 
         // Retire exactly one response. Even if the vCPU did not exit for several
         // intervals, do not catch up in a burst.
-        let pending_response = self.pending_vblank.remove(0);
+        let pending_response = self.pending_vblank.pop_front().expect("nonempty");
         let used_len =
             Self::scatter_write(mem, &pending_response.descs, &pending_response.response);
         Self::write_used(

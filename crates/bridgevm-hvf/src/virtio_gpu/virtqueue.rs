@@ -214,7 +214,7 @@ impl VirtioGpu {
             && read_le_u32(&request, 24) == Some(0)
             && read_le_u32(&response, 0) == Some(VIRTIO_GPU_RESP_OK_NODATA)
         {
-            self.pending_vblank.push(PendingVblankResponse {
+            self.pending_vblank.push_back(PendingVblankResponse {
                 queue_index,
                 queue: *queue,
                 head,
