@@ -1,5 +1,6 @@
 //! Split test module.
 
+mod fast_resume_opt_in;
 mod helpers;
 mod owned_cleanup;
 mod part_1;
