@@ -27,43 +27,19 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import base64
           import re
+
+          old = base64.b64decode('ICAgICAgICAgICAgbGV0IHN0YXJ0ID0gb3V0LmxlbigpOwogICAgICAgICAgICBsZXQgU29tZShlbmQpID0gc3RhcnQuY2hlY2tlZF9hZGQoZGVzYy5sZW4gYXMgdXNpemUpIGVsc2UgewogICAgICAgICAgICAgICAgcmV0dXJuIGZhbHNlOwogICAgICAgICAgICB9OwogICAgICAgICAgICBpZiBlbmQgPiBtYXhfbGVuIHsKICAgICAgICAgICAgICAgIHJldHVybiBmYWxzZTsKICAgICAgICAgICAgfQogICAgICAgICAgICAvLyBgcmVhZF9ieXRlc2AgdmFsaWRhdGVzIHRoZSBndWVzdCByYW5nZSBiZWZvcmUgYWxsb2NhdGluZyBpbiB0aGUKICAgICAgICAgICAgLy8gbGl2ZSBSQU0gaW1wbGVtZW50YXRpb24uIE9ubHkgYXBwZW5kIGFmdGVyIHRoYXQgdmFsaWRhdGlvbiBzbyBhbgogICAgICAgICAgICAvLyB1bmJhY2tlZCwgb3ZlcnNpemVkIGRlc2NyaXB0b3IgY2Fubm90IHJlc2l6ZSByZXVzYWJsZSBzY3JhdGNoLgogICAgICAgICAgICBsZXQgU29tZShieXRlcykgPSBtZW0ucmVhZF9ieXRlcyhkZXNjLmFkZHIsIGRlc2MubGVuIGFzIHVzaXplKSBlbHNlIHsKICAgICAgICAgICAgICAgIHJldHVybiBmYWxzZTsKICAgICAgICAgICAgfTsKICAgICAgICAgICAgb3V0LmV4dGVuZF9mcm9tX3NsaWNlKCZieXRlcyk7Cg==').decode()
+          new = base64.b64decode('ICAgICAgICAgICAgaWYgIWFwcGVuZF9ndWVzdF9ieXRlc19ib3VuZGVkKAogICAgICAgICAgICAgICAgbWVtLAogICAgICAgICAgICAgICAgZGVzYy5hZGRyLAogICAgICAgICAgICAgICAgZGVzYy5sZW4gYXMgdXNpemUsCiAgICAgICAgICAgICAgICBtYXhfbGVuLAogICAgICAgICAgICAgICAgb3V0LAogICAgICAgICAgICApIHsKICAgICAgICAgICAgICAgIHJldHVybiBmYWxzZTsKICAgICAgICAgICAgfQo=').decode()
+          test_source = base64.b64decode('Ly8hIFJlZ3Jlc3Npb24gZm9yIGFsbG9jYXRpb24tZnJlZSBjb25zb2xlIFRYIGRlc2NyaXB0b3IgZ2F0aGVyaW5nLgoKdXNlIHN1cGVyOjpzdXBlcjo6KjsKdXNlIGNyYXRlOjpmd2NmZzo6R3Vlc3RNZW1vcnlNdXQ7CnVzZSBzdGQ6OmNlbGw6OkNlbGw7Cgpjb25zdCBERVNDX0dQQTogdTY0ID0gMHgxMDA7CmNvbnN0IFBBWUxPQURfR1BBOiB1NjQgPSAweDIwMDsKCnN0cnVjdCBSZWFkSW50b09ubHlNZW0gewogICAgYnl0ZXM6IFZlYzx1OD4sCiAgICByZWFkX2ludG9fY2FsbHM6IENlbGw8dXNpemU+LAp9CgppbXBsIFJlYWRJbnRvT25seU1lbSB7CiAgICBmbiBuZXcocGF5bG9hZDogJlt1OF0pIC0+IFNlbGYgewogICAgICAgIGxldCBtdXQgYnl0ZXMgPSB2ZWMhWzB1ODsgMHg0MDBdOwogICAgICAgIGxldCBkZXNjID0gREVTQ19HUEEgYXMgdXNpemU7CiAgICAgICAgYnl0ZXNbZGVzYy4uZGVzYyArIDhdLmNvcHlfZnJvbV9zbGljZSgmUEFZTE9BRF9HUEEudG9fbGVfYnl0ZXMoKSk7CiAgICAgICAgYnl0ZXNbZGVzYyArIDguLmRlc2MgKyAxMl0KICAgICAgICAgICAgLmNvcHlfZnJvbV9zbGljZSgmdTMyOjp0cnlfZnJvbShwYXlsb2FkLmxlbigpKS51bndyYXAoKS50b19sZV9ieXRlcygpKTsKICAgICAgICBsZXQgcGF5bG9hZF9zdGFydCA9IFBBWUxPQURfR1BBIGFzIHVzaXplOwogICAgICAgIGJ5dGVzW3BheWxvYWRfc3RhcnQuLnBheWxvYWRfc3RhcnQgKyBwYXlsb2FkLmxlbigpXS5jb3B5X2Zyb21fc2xpY2UocGF5bG9hZCk7CiAgICAgICAgU2VsZiB7CiAgICAgICAgICAgIGJ5dGVzLAogICAgICAgICAgICByZWFkX2ludG9fY2FsbHM6IENlbGw6Om5ldygwKSwKICAgICAgICB9CiAgICB9Cn0KCmltcGwgR3Vlc3RNZW1vcnlNdXQgZm9yIFJlYWRJbnRvT25seU1lbSB7CiAgICBmbiB3cml0ZV9ieXRlcygmbXV0IHNlbGYsIF9ncGE6IHU2NCwgX2RhdGE6ICZbdThdKSAtPiBib29sIHsKICAgICAgICBwYW5pYyEoImNvbnNvbGUgVFggZ2F0aGVyIG11c3Qgbm90IHdyaXRlIGd1ZXN0IG1lbW9yeSIpCiAgICB9CgogICAgZm4gcmVhZF9ieXRlcygmc2VsZiwgX2dwYTogdTY0LCBfbGVuOiB1c2l6ZSkgLT4gT3B0aW9uPFZlYzx1OD4+IHsKICAgICAgICBwYW5pYyEoImNvbnNvbGUgVFggZ2F0aGVyIG11c3Qgbm90IGFsbG9jYXRlIHRocm91Z2ggcmVhZF9ieXRlcyIpCiAgICB9CgogICAgZm4gcmVhZF9pbnRvKCZzZWxmLCBncGE6IHU2NCwgZHN0OiAmbXV0IFt1OF0pIC0+IGJvb2wgewogICAgICAgIGxldCBPayhzdGFydCkgPSB1c2l6ZTo6dHJ5X2Zyb20oZ3BhKSBlbHNlIHsKICAgICAgICAgICAgcmV0dXJuIGZhbHNlOwogICAgICAgIH07CiAgICAgICAgbGV0IFNvbWUoZW5kKSA9IHN0YXJ0LmNoZWNrZWRfYWRkKGRzdC5sZW4oKSkgZWxzZSB7CiAgICAgICAgICAgIHJldHVybiBmYWxzZTsKICAgICAgICB9OwogICAgICAgIGxldCBTb21lKHNyYykgPSBzZWxmLmJ5dGVzLmdldChzdGFydC4uZW5kKSBlbHNlIHsKICAgICAgICAgICAgcmV0dXJuIGZhbHNlOwogICAgICAgIH07CiAgICAgICAgZHN0LmNvcHlfZnJvbV9zbGljZShzcmMpOwogICAgICAgIHNlbGYucmVhZF9pbnRvX2NhbGxzCiAgICAgICAgICAgIC5zZXQoc2VsZi5yZWFkX2ludG9fY2FsbHMuZ2V0KCkuc2F0dXJhdGluZ19hZGQoMSkpOwogICAgICAgIHRydWUKICAgIH0KfQoKI1t0ZXN0XQpmbiByZWFkX2NoYWluX2ludG9fcmVhZHNfZGVzY3JpcHRvcnNfYW5kX3BheWxvYWRfd2l0aG91dF9yZWFkX2J5dGVzKCkgewogICAgbGV0IHBheWxvYWQgPSBiImNvbnNvbGUtcGF5bG9hZCI7CiAgICBsZXQgbWVtID0gUmVhZEludG9Pbmx5TWVtOjpuZXcocGF5bG9hZCk7CiAgICBsZXQgbXV0IHF1ZXVlID0gVmlydGlvQ29uc29sZVF1ZXVlOjpuZXcoMCk7CiAgICBxdWV1ZS5zaXplID0gMTsKICAgIHF1ZXVlLnJlYWR5ID0gdHJ1ZTsKICAgIHF1ZXVlLmRlc2MgPSBERVNDX0dQQTsKICAgIGxldCBtdXQgZGVzY3MgPSBWZWM6OndpdGhfY2FwYWNpdHkoMSk7CiAgICBsZXQgbXV0IG91dCA9IHZlYyFbMHhmZjsgcGF5bG9hZC5sZW4oKV07CgogICAgYXNzZXJ0IShWaXJ0aW9Db25zb2xlOjpyZWFkX2NoYWluX2ludG8oCiAgICAgICAgJm1lbSwKICAgICAgICAmcXVldWUsCiAgICAgICAgMCwKICAgICAgICAmbXV0IGRlc2NzLAogICAgICAgICZtdXQgb3V0LAogICAgICAgIHBheWxvYWQubGVuKCksCiAgICApKTsKICAgIGFzc2VydF9lcSEob3V0LCBwYXlsb2FkKTsKICAgIGFzc2VydF9lcSEobWVtLnJlYWRfaW50b19jYWxscy5nZXQoKSwgMik7Cn0K').decode()
 
           virtqueue = Path('crates/bridgevm-hvf/src/virtio_console/virtqueue.rs')
           text = virtqueue.read_text()
           import_anchor = 'use crate::fwcfg::GuestMemoryMut;\n'
           if text.count(import_anchor) != 1:
               raise SystemExit('virtio-console import anchor changed')
-          text = text.replace(
-              import_anchor,
-              import_anchor + 'use crate::guest_memory::append_guest_bytes_bounded;\n',
-              1,
-          )
-          old = '''            let start = out.len();
-            let Some(end) = start.checked_add(desc.len as usize) else {
-                return false;
-            };
-            if end > max_len {
-                return false;
-            }
-            // `read_bytes` validates the guest range before allocating in the
-            // live RAM implementation. Only append after that validation so an
-            // unbacked, oversized descriptor cannot resize reusable scratch.
-            let Some(bytes) = mem.read_bytes(desc.addr, desc.len as usize) else {
-                return false;
-            };
-            out.extend_from_slice(&bytes);
-'''
-          new = '''            if !append_guest_bytes_bounded(
-                mem,
-                desc.addr,
-                desc.len as usize,
-                max_len,
-                out,
-            ) {
-                return false;
-            }
-'''
+          text = text.replace(import_anchor, import_anchor + 'use crate::guest_memory::append_guest_bytes_bounded;\n', 1)
           if text.count(old) != 1:
               raise SystemExit('virtio-console read-chain anchor changed')
           virtqueue.write_text(text.replace(old, new, 1))
@@ -78,90 +54,9 @@ jobs:
           test_path = Path('crates/bridgevm-hvf/src/virtio_console/tests/read_into.rs')
           if test_path.exists():
               raise SystemExit('virtio-console read-into regression already exists')
-          test_path.write_text('''//! Regression for allocation-free console TX descriptor gathering.
+          test_path.write_text(test_source)
 
-use super::super::*;
-use crate::fwcfg::GuestMemoryMut;
-use std::cell::Cell;
-
-const DESC_GPA: u64 = 0x100;
-const PAYLOAD_GPA: u64 = 0x200;
-
-struct ReadIntoOnlyMem {
-    bytes: Vec<u8>,
-    read_into_calls: Cell<usize>,
-}
-
-impl ReadIntoOnlyMem {
-    fn new(payload: &[u8]) -> Self {
-        let mut bytes = vec![0u8; 0x400];
-        let desc = DESC_GPA as usize;
-        bytes[desc..desc + 8].copy_from_slice(&PAYLOAD_GPA.to_le_bytes());
-        bytes[desc + 8..desc + 12]
-            .copy_from_slice(&u32::try_from(payload.len()).unwrap().to_le_bytes());
-        let payload_start = PAYLOAD_GPA as usize;
-        bytes[payload_start..payload_start + payload.len()].copy_from_slice(payload);
-        Self {
-            bytes,
-            read_into_calls: Cell::new(0),
-        }
-    }
-}
-
-impl GuestMemoryMut for ReadIntoOnlyMem {
-    fn write_bytes(&mut self, _gpa: u64, _data: &[u8]) -> bool {
-        panic!("console TX gather must not write guest memory")
-    }
-
-    fn read_bytes(&self, _gpa: u64, _len: usize) -> Option<Vec<u8>> {
-        panic!("console TX gather must not allocate through read_bytes")
-    }
-
-    fn read_into(&self, gpa: u64, dst: &mut [u8]) -> bool {
-        let Ok(start) = usize::try_from(gpa) else {
-            return false;
-        };
-        let Some(end) = start.checked_add(dst.len()) else {
-            return false;
-        };
-        let Some(src) = self.bytes.get(start..end) else {
-            return false;
-        };
-        dst.copy_from_slice(src);
-        self.read_into_calls
-            .set(self.read_into_calls.get().saturating_add(1));
-        true
-    }
-}
-
-#[test]
-fn read_chain_into_reads_descriptors_and_payload_without_read_bytes() {
-    let payload = b"console-payload";
-    let mem = ReadIntoOnlyMem::new(payload);
-    let mut queue = VirtioConsoleQueue::new(0);
-    queue.size = 1;
-    queue.ready = true;
-    queue.desc = DESC_GPA;
-    let mut descs = Vec::with_capacity(1);
-    let mut out = vec![0xff; payload.len()];
-
-    assert!(VirtioConsole::read_chain_into(
-        &mem,
-        &queue,
-        0,
-        &mut descs,
-        &mut out,
-        payload.len(),
-    ));
-    assert_eq!(out, payload);
-    assert_eq!(mem.read_into_calls.get(), 2);
-}
-''')
-
-          declaration = re.compile(
-              r'^\s*(?:(?:pub\s+)?(?:mod|use)\s+[^;{]*;|#\[path\s*=\s*[^]]*\])\s*$'
-          )
-
+          declaration = re.compile(r'^\s*(?:(?:pub\s+)?(?:mod|use)\s+[^;{]*;|#\[path\s*=\s*[^]]*\])\s*$')
           def structural_loc(path: str) -> int:
               header = True
               loc = 0
@@ -188,26 +83,20 @@ fn read_chain_into_reads_descriptors_and_payload_without_read_bytes() {
           if source_loc > int(source_match.group(1)):
               raise SystemExit('virtio-console optimization unexpectedly grew source debt')
           budgets = source_pattern.sub(f'{source_path}\t{source_loc}\t0', budgets, count=1)
-
           test_rel = str(test_path)
           if re.search(rf'^{re.escape(test_rel)}\t', budgets, re.MULTILINE):
               raise SystemExit('virtio-console read-into test budget already exists')
           anchor = 'crates/bridgevm-hvf/src/virtio_console/tests/queue_pending.rs\t43\t0\n'
           if budgets.count(anchor) != 1:
               raise SystemExit('virtio-console budget insertion anchor changed')
-          budgets = budgets.replace(
-              anchor,
-              anchor + f'{test_rel}\t{structural_loc(test_rel)}\t0\n',
-              1,
-          )
+          budgets = budgets.replace(anchor, anchor + f'{test_rel}\t{structural_loc(test_rel)}\t0\n', 1)
           budgets_path.write_text(budgets)
           PY
 
           cargo fmt --all
           for attempt in $(seq 1 10); do
             echo "virtio-console read-into regression attempt ${attempt}/10"
-            cargo test -p bridgevm-hvf --locked \
-              read_chain_into_reads_descriptors_and_payload_without_read_bytes
+            cargo test -p bridgevm-hvf --locked read_chain_into_reads_descriptors_and_payload_without_read_bytes
           done
           cargo test -p bridgevm-hvf --locked
           cargo clippy -p bridgevm-hvf --all-targets --locked -- -D warnings
@@ -218,7 +107,5 @@ fn read_chain_into_reads_descriptors_and_payload_without_read_bytes() {
           git add -A
           git config user.name Ketchio-dev
           git config user.email 116458462+Ketchio-dev@users.noreply.github.com
-          git commit \
-            -m 'console: gather TX payloads directly into reusable scratch [console-read-into-complete]' \
-            -m 'Reuse the bounded guest-memory append helper for console TX chains, proving both descriptor and payload reads stay on read_into while retaining overflow, maximum-length, unbacked-range, and scratch rollback behavior.'
+          git commit -m 'console: gather TX payloads directly into reusable scratch [console-read-into-complete]' -m 'Reuse the bounded guest-memory append helper for console TX chains, proving both descriptor and payload reads stay on read_into while retaining overflow, maximum-length, unbacked-range, and scratch rollback behavior.'
           git push origin HEAD:perf/virtio-console-read-into
