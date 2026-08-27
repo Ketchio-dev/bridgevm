@@ -13,4 +13,5 @@ mod qmp_nonterminal;
 mod reconcile_exited;
 mod restart_owned;
 mod suspend_owned;
+mod vnc_displays;
 mod wait;
