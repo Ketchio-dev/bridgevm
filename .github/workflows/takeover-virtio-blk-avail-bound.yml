@@ -62,7 +62,7 @@ jobs:
           pending.write_text(
               """//! Bounds one notification's avail-ring work to the configured queue size.
 
-          pub(super) const fn pending_entries(
+          pub(super) fn pending_entries(
               last_avail_idx: u16,
               avail_idx: u16,
               queue_num: u16,
