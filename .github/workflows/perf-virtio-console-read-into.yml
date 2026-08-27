@@ -1,0 +1,225 @@
+name: One-shot virtio-console read-into verifier
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.head_ref == 'perf/virtio-console-read-into'
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          components: rustfmt,clippy
+      - name: Replace temporary guest reads and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          virtqueue = Path('crates/bridgevm-hvf/src/virtio_console/virtqueue.rs')
+          text = virtqueue.read_text()
+          import_anchor = 'use crate::fwcfg::GuestMemoryMut;\n'
+          if text.count(import_anchor) != 1:
+              raise SystemExit('virtio-console import anchor changed')
+          text = text.replace(
+              import_anchor,
+              import_anchor + 'use crate::guest_memory::append_guest_bytes_bounded;\n',
+              1,
+          )
+          old = '''            let start = out.len();
+            let Some(end) = start.checked_add(desc.len as usize) else {
+                return false;
+            };
+            if end > max_len {
+                return false;
+            }
+            // `read_bytes` validates the guest range before allocating in the
+            // live RAM implementation. Only append after that validation so an
+            // unbacked, oversized descriptor cannot resize reusable scratch.
+            let Some(bytes) = mem.read_bytes(desc.addr, desc.len as usize) else {
+                return false;
+            };
+            out.extend_from_slice(&bytes);
+'''
+          new = '''            if !append_guest_bytes_bounded(
+                mem,
+                desc.addr,
+                desc.len as usize,
+                max_len,
+                out,
+            ) {
+                return false;
+            }
+'''
+          if text.count(old) != 1:
+              raise SystemExit('virtio-console read-chain anchor changed')
+          virtqueue.write_text(text.replace(old, new, 1))
+
+          tests_mod = Path('crates/bridgevm-hvf/src/virtio_console/tests/mod.rs')
+          mod_text = tests_mod.read_text()
+          mod_anchor = 'mod queue_pending;\n'
+          if mod_text.count(mod_anchor) != 1 or 'mod read_into;' in mod_text:
+              raise SystemExit('virtio-console test module anchor changed')
+          tests_mod.write_text(mod_text.replace(mod_anchor, mod_anchor + 'mod read_into;\n', 1))
+
+          test_path = Path('crates/bridgevm-hvf/src/virtio_console/tests/read_into.rs')
+          if test_path.exists():
+              raise SystemExit('virtio-console read-into regression already exists')
+          test_path.write_text('''//! Regression for allocation-free console TX descriptor gathering.
+
+use super::super::*;
+use crate::fwcfg::GuestMemoryMut;
+use std::cell::Cell;
+
+const DESC_GPA: u64 = 0x100;
+const PAYLOAD_GPA: u64 = 0x200;
+
+struct ReadIntoOnlyMem {
+    bytes: Vec<u8>,
+    read_into_calls: Cell<usize>,
+}
+
+impl ReadIntoOnlyMem {
+    fn new(payload: &[u8]) -> Self {
+        let mut bytes = vec![0u8; 0x400];
+        let desc = DESC_GPA as usize;
+        bytes[desc..desc + 8].copy_from_slice(&PAYLOAD_GPA.to_le_bytes());
+        bytes[desc + 8..desc + 12]
+            .copy_from_slice(&u32::try_from(payload.len()).unwrap().to_le_bytes());
+        let payload_start = PAYLOAD_GPA as usize;
+        bytes[payload_start..payload_start + payload.len()].copy_from_slice(payload);
+        Self {
+            bytes,
+            read_into_calls: Cell::new(0),
+        }
+    }
+}
+
+impl GuestMemoryMut for ReadIntoOnlyMem {
+    fn write_bytes(&mut self, _gpa: u64, _data: &[u8]) -> bool {
+        panic!("console TX gather must not write guest memory")
+    }
+
+    fn read_bytes(&self, _gpa: u64, _len: usize) -> Option<Vec<u8>> {
+        panic!("console TX gather must not allocate through read_bytes")
+    }
+
+    fn read_into(&self, gpa: u64, dst: &mut [u8]) -> bool {
+        let Ok(start) = usize::try_from(gpa) else {
+            return false;
+        };
+        let Some(end) = start.checked_add(dst.len()) else {
+            return false;
+        };
+        let Some(src) = self.bytes.get(start..end) else {
+            return false;
+        };
+        dst.copy_from_slice(src);
+        self.read_into_calls
+            .set(self.read_into_calls.get().saturating_add(1));
+        true
+    }
+}
+
+#[test]
+fn read_chain_into_reads_descriptors_and_payload_without_read_bytes() {
+    let payload = b"console-payload";
+    let mem = ReadIntoOnlyMem::new(payload);
+    let mut queue = VirtioConsoleQueue::new(0);
+    queue.size = 1;
+    queue.ready = true;
+    queue.desc = DESC_GPA;
+    let mut descs = Vec::with_capacity(1);
+    let mut out = vec![0xff; payload.len()];
+
+    assert!(VirtioConsole::read_chain_into(
+        &mem,
+        &queue,
+        0,
+        &mut descs,
+        &mut out,
+        payload.len(),
+    ));
+    assert_eq!(out, payload);
+    assert_eq!(mem.read_into_calls.get(), 2);
+}
+''')
+
+          declaration = re.compile(
+              r'^\s*(?:(?:pub\s+)?(?:mod|use)\s+[^;{]*;|#\[path\s*=\s*[^]]*\])\s*$'
+          )
+
+          def structural_loc(path: str) -> int:
+              header = True
+              loc = 0
+              for line in Path(path).read_text().splitlines():
+                  if header and re.match(r'^\s*//!', line):
+                      continue
+                  if header and re.match(r'^\s*$', line):
+                      header = False
+                      continue
+                  header = False
+                  if declaration.match(line):
+                      continue
+                  loc += 1
+              return loc
+
+          budgets_path = Path('scripts/refactor-budgets.tsv')
+          budgets = budgets_path.read_text()
+          source_path = 'crates/bridgevm-hvf/src/virtio_console/virtqueue.rs'
+          source_pattern = re.compile(rf'^{re.escape(source_path)}\t(\d+)\t0$', re.MULTILINE)
+          source_match = source_pattern.search(budgets)
+          if source_match is None:
+              raise SystemExit('virtio-console virtqueue budget row missing')
+          source_loc = structural_loc(source_path)
+          if source_loc > int(source_match.group(1)):
+              raise SystemExit('virtio-console optimization unexpectedly grew source debt')
+          budgets = source_pattern.sub(f'{source_path}\t{source_loc}\t0', budgets, count=1)
+
+          test_rel = str(test_path)
+          if re.search(rf'^{re.escape(test_rel)}\t', budgets, re.MULTILINE):
+              raise SystemExit('virtio-console read-into test budget already exists')
+          anchor = 'crates/bridgevm-hvf/src/virtio_console/tests/queue_pending.rs\t43\t0\n'
+          if budgets.count(anchor) != 1:
+              raise SystemExit('virtio-console budget insertion anchor changed')
+          budgets = budgets.replace(
+              anchor,
+              anchor + f'{test_rel}\t{structural_loc(test_rel)}\t0\n',
+              1,
+          )
+          budgets_path.write_text(budgets)
+          PY
+
+          cargo fmt --all
+          for attempt in $(seq 1 10); do
+            echo "virtio-console read-into regression attempt ${attempt}/10"
+            cargo test -p bridgevm-hvf --locked \
+              read_chain_into_reads_descriptors_and_payload_without_read_bytes
+          done
+          cargo test -p bridgevm-hvf --locked
+          cargo clippy -p bridgevm-hvf --all-targets --locked -- -D warnings
+          scripts/check-refactor-budgets.sh
+          git diff --check
+
+          rm -f .github/workflows/perf-virtio-console-read-into.yml
+          git add -A
+          git config user.name Ketchio-dev
+          git config user.email 116458462+Ketchio-dev@users.noreply.github.com
+          git commit \
+            -m 'console: gather TX payloads directly into reusable scratch [console-read-into-complete]' \
+            -m 'Reuse the bounded guest-memory append helper for console TX chains, proving both descriptor and payload reads stay on read_into while retaining overflow, maximum-length, unbacked-range, and scratch rollback behavior.'
+          git push origin HEAD:perf/virtio-console-read-into
