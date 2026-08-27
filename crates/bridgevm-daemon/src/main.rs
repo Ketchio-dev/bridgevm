@@ -16,6 +16,7 @@ fn main() -> Result<()> {
 mod backend_lifecycle;
 mod backend_spawn;
 mod cli;
+mod compatibility_resume;
 mod daemon_state;
 mod guest_tools_protocol;
 mod guest_tools_runtime_metadata;

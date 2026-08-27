@@ -131,6 +131,7 @@ crates/bridgevm-config/src/validation.rs	199	0
 crates/bridgevm-core/src/lib.rs	414	0
 crates/bridgevm-core/src/lib_tests.rs	233	0
 crates/bridgevm-daemon/src/backend_lifecycle.rs	257	0
+crates/bridgevm-daemon/src/compatibility_resume.rs	188	0
 crates/bridgevm-daemon/src/backend_spawn.rs	260	0
 crates/bridgevm-daemon/src/cli.rs	39	0
 crates/bridgevm-daemon/src/daemon_state.rs	138	0
