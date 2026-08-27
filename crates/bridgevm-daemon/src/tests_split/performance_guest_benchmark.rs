@@ -10,7 +10,8 @@ use bridgevm_agent_protocol::AgentMessage;
 use bridgevm_agent_protocol::DEFAULT_BENCHMARK_DURATION_MILLIS;
 use bridgevm_agent_protocol::PROTOCOL_VERSION;
 use bridgevm_agentd::encode_envelope_line;
-use bridgevm_api::{BridgeVmRequest, BridgeVmResponse};
+use bridgevm_api::BridgeVmRequest;
+use bridgevm_api::BridgeVmResponse;
 use bridgevm_storage::VmRuntimeState;
 use std::fs;
 use std::io::BufRead;
@@ -76,7 +77,6 @@ fn daemon_performance_sample_runs_guest_benchmark_when_session_is_connected() {
             error_code: None,
             message: Some("benchmark complete".to_string()),
             result: Some(serde_json::json!({
-                "requested_duration_millis": DEFAULT_BENCHMARK_DURATION_MILLIS,
                 "budget_duration_millis": DEFAULT_BENCHMARK_DURATION_MILLIS,
                 "cpu": {
                     "iterations": 4096,
