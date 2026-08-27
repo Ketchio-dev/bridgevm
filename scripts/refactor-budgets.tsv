@@ -1133,6 +1133,7 @@ packaging/macos/build-release-candidate.sh	338	0
 packaging/macos/preflight-release-credentials.sh	186	0
 packaging/macos/verify-release-candidate.sh	892	0
 packaging/macos/write-artifact-manifest.sh	300	0
+scripts/audio-playback-result.py	105	0
 scripts/build-guest-agent-linux.sh	56	0
 scripts/build-hvf-edk2-secure-firmware.sh	184	0
 scripts/build-hvf-windows-d3d10-smoke.sh	39	0
@@ -1152,7 +1153,7 @@ scripts/check-project.sh	98	0
 scripts/check-refactor-budgets.sh	72	1
 scripts/check-release-overrides.sh	74	0
 scripts/check-shell-scripts.sh	61	0
-scripts/check-python-scripts.py	52	0
+scripts/check-python-scripts.py	51	0
 scripts/check-workflow-yaml.py	73	0
 scripts/check-capability-evidence.py	73	0
 scripts/check-supply-chain.sh	52	0
@@ -1191,7 +1192,7 @@ scripts/stage-vz-linux-demo-vm.sh	189	0
 scripts/stage-vz-ubuntu-desktop-vm.sh	176	0
 scripts/venus-render-server-molten.sh	6	0
 scripts/verify-agent-clipboard-share.sh	225	0
-scripts/verify-audio-playback.sh	155	0
+scripts/verify-audio-playback.sh	153	0
 scripts/verify-d3d11-title-fps.sh	243	0
 scripts/verify-dynamic-resize.sh	112	0
 scripts/verify-keyboard-input.sh	176	0
