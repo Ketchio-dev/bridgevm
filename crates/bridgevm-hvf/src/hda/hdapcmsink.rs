@@ -2,50 +2,16 @@
 
 use super::*;
 
+#[path = "pcm_sink.rs"]
+mod pcm_sink;
+pub use pcm_sink::{FilePcmSink, HdaPcmSink};
+
 use std::{
-    fs::{File, OpenOptions},
-    io::Write,
     path::Path,
     time::{Duration, Instant},
 };
 
 use crate::{fwcfg::GuestMemoryMut, msix::MsixMessage};
-
-/// Host-provided destination for decoded interleaved PCM stream bytes.
-///
-/// Implementations run on the vCPU thread while the platform lock is held, so
-/// live sinks must return promptly and move potentially blocking work elsewhere.
-pub trait HdaPcmSink: Send {
-    fn write_pcm(&mut self, samples: &[u8], rate: u32, channels: u8, bits: u8);
-}
-
-/// Raw PCM file sink used by `BRIDGEVM_HDA_PCM_OUT`.
-pub struct FilePcmSink {
-    pub(crate) file: Option<File>,
-}
-
-impl FilePcmSink {
-    pub fn create<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(path)?;
-        Ok(Self { file: Some(file) })
-    }
-}
-
-impl HdaPcmSink for FilePcmSink {
-    fn write_pcm(&mut self, samples: &[u8], _rate: u32, _channels: u8, _bits: u8) {
-        let Some(file) = self.file.as_mut() else {
-            return;
-        };
-        if let Err(error) = file.write_all(samples) {
-            eprintln!("hda: disabling PCM capture after write error: {error}");
-            self.file = None;
-        }
-    }
-}
 
 pub const BAR_SIZE: u32 = 0x4000;
 pub(crate) const MSI_CONTROLLER_VECTOR: u16 = 0;
@@ -214,6 +180,7 @@ pub struct HdaController {
     pub(crate) last_poll: Option<Instant>,
     pub(crate) byte_time_remainder: u64,
     pub(crate) pcm_sink: Option<Box<dyn HdaPcmSink>>,
+    pub(crate) pcm_scratch: Vec<u8>,
     pub(crate) pcm_sink_overridden: bool,
     pub(crate) interrupt_asserted: bool,
     pub(crate) interrupt_pending: bool,
@@ -287,6 +254,7 @@ impl HdaController {
             last_poll: None,
             byte_time_remainder: 0,
             pcm_sink,
+            pcm_scratch: Vec::new(),
             pcm_sink_overridden: false,
             interrupt_asserted: false,
             interrupt_pending: false,
@@ -726,15 +694,17 @@ impl HdaController {
                 self.write_position_buffer(mem);
                 continue;
             }
-            let Some(bytes) =
-                mem.read_bytes(address + u64::from(self.stream.bdl_offset), chunk_len)
-            else {
+            self.pcm_scratch.resize(chunk_len, 0);
+            if !mem.read_into(
+                address + u64::from(self.stream.bdl_offset),
+                &mut self.pcm_scratch,
+            ) {
                 self.stream.sts |= SDSTS_DESE;
                 self.stream.ctl &= !SDCTL_RUN;
                 break;
-            };
+            }
             if let Some(output) = self.pcm_sink.as_mut() {
-                output.write_pcm(&bytes, rate, channels, bits);
+                output.write_pcm(&self.pcm_scratch, rate, channels, bits);
             }
             self.stream.bdl_offset += chunk_len as u32;
             self.stream.lpib += chunk_len as u32;

@@ -191,9 +191,11 @@ crates/bridgevm-hvf/src/dtb.rs	660	0
 crates/bridgevm-hvf/src/host_entropy.rs	100	1
 crates/bridgevm-hvf/src/fwcfg.rs	771	0
 crates/bridgevm-hvf/src/hda/codec_parameter.rs	95	0
-crates/bridgevm-hvf/src/hda/hdapcmsink.rs	971	0
+crates/bridgevm-hvf/src/hda/hdapcmsink.rs	939	0
+crates/bridgevm-hvf/src/hda/pcm_sink.rs	41	0
 crates/bridgevm-hvf/src/hda/mod.rs	4	0
 crates/bridgevm-hvf/src/hda/tests/helpers.rs	110	0
+crates/bridgevm-hvf/src/hda/tests/read_into.rs	130	0
 crates/bridgevm-hvf/src/hda/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/hda/tests/part_1.rs	395	0
 crates/bridgevm-hvf/src/lib.rs	49	0
