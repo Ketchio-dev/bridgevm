@@ -351,10 +351,7 @@ impl VirtioGpu {
         out: &mut Vec<u8>,
     ) {
         out.clear();
-        for desc in descs {
-            if desc.flags & DESC_F_WRITE != 0 {
-                continue;
-            }
+        for desc in descs.iter().filter(|desc| desc.flags & DESC_F_WRITE == 0) {
             let start = out.len();
             let Some(end) = start.checked_add(desc.len as usize) else {
                 out.clear();
@@ -364,8 +361,9 @@ impl VirtioGpu {
                 out.clear();
                 return;
             }
-            if let Some(bytes) = mem.read_bytes(desc.addr, desc.len as usize) {
-                out.extend_from_slice(&bytes);
+            out.resize(end, 0);
+            if !mem.read_into(desc.addr, &mut out[start..end]) {
+                out.truncate(start);
             }
         }
     }
