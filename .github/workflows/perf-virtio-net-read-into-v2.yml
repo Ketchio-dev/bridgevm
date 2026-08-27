@@ -1,0 +1,47 @@
+name: One-shot allocation-free virtio-net TX verifier
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.head_ref == 'perf/virtio-net-read-into'
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          components: rustfmt,clippy
+      - name: Replace allocating payload reads and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/one-shot/perf-virtio-net-read-into.py.txt
+          cargo fmt --all -- --check
+          grep -q 'append_guest_bytes_bounded' crates/bridgevm-hvf/src/virtio_net/datapath.rs
+          ! grep -q 'mem.read_bytes(desc.addr' crates/bridgevm-hvf/src/virtio_net/datapath.rs
+          for attempt in $(seq 1 10); do
+            echo "virtio-net read_into regression attempt ${attempt}/10"
+            cargo test -p bridgevm-hvf --locked tx_chain_reads_descriptors_and_payload_without_read_bytes
+          done
+          cargo test -p bridgevm-hvf --locked
+          cargo clippy -p bridgevm-hvf --all-targets --locked -- -D warnings
+          scripts/check-refactor-budgets.sh
+          git diff --check
+          rm -f .github/workflows/perf-virtio-net-read-into-v2.yml
+          rm -f .github/one-shot/perf-virtio-net-read-into.py.txt
+          rm -f .github/ci-poke-virtio-net-read-into.txt
+          git add -A
+          git config user.name Ketchio-dev
+          git config user.email 116458462+Ketchio-dev@users.noreply.github.com
+          git commit -m 'net: gather TX payloads directly into reusable scratch [virtio-net-read-into-complete]' -m 'Replace descriptor-local read_bytes allocations and second copies with bounded read_into fills of the retained TX packet buffer. Add a shared bounded append helper and a regression memory that panics if the allocating API is used.'
+          git push origin HEAD:perf/virtio-net-read-into
