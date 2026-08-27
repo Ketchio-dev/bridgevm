@@ -18,12 +18,11 @@ pub(super) fn next_deadline(
     let checkpoint_deadline = fired_at.and_then(|fired_at| {
         checkpoints
             .iter()
-            .find(|checkpoint| !checkpoint.emitted)
-            .and_then(|checkpoint| fired_at.checked_add(checkpoint.delay))
+            .filter(|checkpoint| !checkpoint.emitted)
+            .filter_map(|checkpoint| fired_at.checked_add(checkpoint.delay))
+            .filter(|deadline| *deadline > now)
+            .min()
     });
-    [report_deadline, checkpoint_deadline]
-        .into_iter()
-        .flatten()
-        .filter(|deadline| *deadline > now)
-        .min()
+    let deadlines = [report_deadline, checkpoint_deadline];
+    deadlines.into_iter().flatten().filter(|deadline| *deadline > now).min()
 }

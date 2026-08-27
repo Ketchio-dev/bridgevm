@@ -22,7 +22,7 @@ fn pending_pointer_wake_uses_the_earliest_future_deadline() {
     let mut trigger = XhciPointerInputTrigger::from_env_value_with_ramfb_delay_ms(
         "pointer-input",
         "click:center",
-        &[1_000],
+        &[5_000, 1_000, 3_000],
     )
     .unwrap();
     emit_uart(&mut platform, b"BdsDxe: starting Boot");
@@ -37,7 +37,7 @@ fn pending_pointer_wake_uses_the_earliest_future_deadline() {
         Some(fired_at + Duration::from_secs(5))
     );
     assert_eq!(
-        trigger.pending_host_wake_deadline_at(&platform, fired_at),
-        Some(fired_at + Duration::from_secs(1))
+        trigger.pending_host_wake_deadline_at(&platform, fired_at + Duration::from_secs(2)),
+        Some(fired_at + Duration::from_secs(3))
     );
 }
