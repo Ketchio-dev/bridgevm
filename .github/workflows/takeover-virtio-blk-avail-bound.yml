@@ -111,32 +111,6 @@ jobs:
 
           target = "crates/bridgevm-hvf/src/virtio_blk/queue_pending.rs"
           budget = Path("scripts/refactor-budgets.tsv")
-          source = Path(target)
-
-          def measured_loc(path: Path) -> int:
-              loc = 0
-              header_mode = True
-              skipping_use = False
-              for raw in path.read_text().splitlines():
-                  stripped = raw.strip()
-                  if header_mode and (not stripped or stripped.startswith("//!")):
-                      continue
-                  header_mode = False
-                  if skipping_use:
-                      if stripped.endswith(";"):
-                          skipping_use = False
-                      continue
-                  if stripped.startswith("use ") or stripped.startswith("pub use "):
-                      if not stripped.endswith(";"):
-                          skipping_use = True
-                      continue
-                  if stripped.startswith("mod ") and stripped.endswith(";"):
-                      continue
-                  if stripped.startswith("#[path ="):
-                      continue
-                  loc += 1
-              return loc
-
           lines = budget.read_text().splitlines()
           if any(line.split("\t", 1)[0] == target for line in lines):
               raise SystemExit(f"budget already contains {target}")
@@ -147,7 +121,7 @@ jobs:
           )
           if index is None:
               raise SystemExit("virtio-blk protocol budget anchor missing")
-          lines.insert(index + 1, f"{target}\t{measured_loc(source)}\t0")
+          lines.insert(index + 1, f"{target}\t34\t0")
           budget.write_text("\n".join(lines) + "\n")
           PY
 
