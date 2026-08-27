@@ -8,44 +8,10 @@ use bridgevm_api::resume_backend;
 use bridgevm_api::suspend_backend;
 use bridgevm_api::BridgeVmResponse;
 use bridgevm_api::CurrentRuntimeEngine;
-use bridgevm_qemu::qmp_socket_path;
-use bridgevm_qemu::quit as qmp_quit;
 use bridgevm_qemu::vnc_display_in_command;
-use bridgevm_storage::VmRuntimeState;
-use std::io::ErrorKind;
-use std::process::Child;
-use std::thread;
-use std::time::Duration;
 
-fn terminate_child(child: &mut Child, name: &str) -> Result<()> {
-    let mut exited = false;
-    for _ in 0..40 {
-        if child
-            .try_wait()
-            .with_context(|| format!("failed to poll backend '{name}'"))?
-            .is_some()
-        {
-            exited = true;
-            break;
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-
-    if exited {
-        return Ok(());
-    }
-    match child.kill() {
-        Ok(()) => {}
-        // The child can exit between our poll and the kill. Reap below.
-        Err(error) if error.kind() == ErrorKind::InvalidInput => {}
-        Err(error) => {
-            let _ = child.wait();
-            return Err(error).with_context(|| format!("failed to terminate backend '{name}'"));
-        }
-    }
-    let _ = child.wait();
-    Ok(())
-}
+#[path = "backend_lifecycle/cleanup.rs"]
+mod cleanup;
 
 impl DaemonState {
     /// Keep daemon ownership until synchronous suspend has committed. A failed
@@ -59,6 +25,7 @@ impl DaemonState {
         let metadata = suspend_backend(&self.store, name).map_err(anyhow::Error::msg)?;
         if owned {
             self.terminate_owned_child(name)?;
+            self.children.remove(name);
         }
         Ok(BridgeVmResponse::RunnerStatus {
             metadata: Some(metadata),
@@ -117,45 +84,6 @@ impl DaemonState {
         }
     }
 
-    fn terminate_owned_child(&mut self, name: &str) -> Result<()> {
-        {
-            let backend = self
-                .children
-                .get_mut(name)
-                .with_context(|| format!("backend is not owned by this daemon for '{name}'"))?;
-            terminate_child(&mut backend.child, name)?;
-        }
-        self.children.remove(name);
-        Ok(())
-    }
-
-    pub(crate) fn cleanup_owned_backend(
-        &mut self,
-        name: &str,
-        send_qmp_quit: bool,
-    ) -> Result<BridgeVmResponse> {
-        let (bundle, _) = self.store.get_vm(name).context("failed to read VM")?;
-        let socket_path = qmp_socket_path(&bundle);
-        if send_qmp_quit && socket_path.exists() {
-            qmp_quit(&socket_path).context("failed to send QMP quit")?;
-        }
-
-        self.terminate_owned_child(name)?;
-        self.store
-            .transition_state(name, VmRuntimeState::Stopped)
-            .context("failed to mark VM stopped")?;
-        self.store
-            .clear_runner_metadata(name)
-            .context("failed to clear runner metadata")?;
-        Ok(BridgeVmResponse::RunnerStatus {
-            metadata: None,
-            qmp_supervisor: self
-                .store
-                .qmp_supervisor_metadata(name)
-                .context("failed to read QMP supervisor metadata")?,
-        })
-    }
-
     /// VNC display numbers currently owned by this daemon's live supervised
     /// backends, read back from their recorded launch commands. A newly launched
     /// Compat VM avoids these so it doesn't collide on an in-use VNC port even
@@ -167,14 +95,5 @@ impl DaemonState {
             .filter(|metadata| !metadata.dry_run && metadata.pid.is_some())
             .filter_map(|metadata| vnc_display_in_command(&metadata.command))
             .collect()
-    }
-
-    pub(crate) fn stop_owned_backend(&mut self, name: &str) -> Result<BridgeVmResponse> {
-        self.cleanup_owned_backend(name, true)
-    }
-
-    pub(crate) fn restart_owned_backend(&mut self, name: &str) -> Result<BridgeVmResponse> {
-        self.cleanup_owned_backend(name, true)?;
-        self.spawn_backend(name)
     }
 }

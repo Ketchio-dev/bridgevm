@@ -101,10 +101,10 @@ impl DaemonState {
         let names: Vec<String> = self.children.keys().cloned().collect();
         for name in names {
             if let Err(error) = self.cleanup_owned_backend(&name, true) {
-                // The graceful path bailed (e.g. an unresponsive QMP socket).
-                // If the child is still owned here, cleanup failed before
-                // killing it, so force-kill so it cannot orphan; otherwise it
-                // was already killed and only a later metadata step failed.
+                // Cleanup deliberately retains ownership on every failure,
+                // including a persistence failure after the child has exited.
+                // Remove and force-reap the retained entry here so daemon exit
+                // can never orphan a still-running process.
                 if let Some(mut backend) = self.children.remove(&name) {
                     eprintln!(
                         "bridgevmd shutdown: graceful reap of '{name}' failed ({error:#}); force-killing"
