@@ -1,0 +1,128 @@
+name: One-shot CoreAudio bulk drain verifier
+
+on:
+  push:
+    branches:
+      - perf/coreaudio-bulk-drain
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          components: rustfmt,clippy
+      - name: Replace callback byte loop with bulk ring draining
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          import re
+
+          old = base64.b64decode('ICAgIGZvciBieXRlIGluIGRlc3RpbmF0aW9uLml0ZXJfbXV0KCkudGFrZShyaW5nLmxlbigpLm1pbihjYXBhY2l0eSkpIHsKICAgICAgICAqYnl0ZSA9IHJpbmcucG9wX2Zyb250KCkudW53cmFwKCk7CiAgICB9Cg==').decode()
+          new = base64.b64decode('ICAgIGxldCBfID0gZHJhaW5fcmluZ19pbnRvKCZtdXQgcmluZywgZGVzdGluYXRpb24pOwo=').decode()
+          helper_source = base64.b64decode('Ly8hIEJ1bGsgZHJhaW5pbmcgZm9yIHRoZSBDb3JlQXVkaW8gY2FsbGJhY2sncyBieXRlIHJpbmcuCgp1c2Ugc3RkOjpjb2xsZWN0aW9uczo6VmVjRGVxdWU7CgpwdWIoc3VwZXIpIGZuIGRyYWluX3JpbmdfaW50byhyaW5nOiAmbXV0IFZlY0RlcXVlPHU4PiwgZGVzdGluYXRpb246ICZtdXQgW3U4XSkgLT4gdXNpemUgewogICAgbGV0IGNvdW50ID0gcmluZy5sZW4oKS5taW4oZGVzdGluYXRpb24ubGVuKCkpOwogICAgaWYgY291bnQgPT0gMCB7CiAgICAgICAgcmV0dXJuIDA7CiAgICB9CgogICAgbGV0IChmaXJzdCwgc2Vjb25kKSA9IHJpbmcuYXNfc2xpY2VzKCk7CiAgICBsZXQgZmlyc3RfbGVuID0gZmlyc3QubGVuKCkubWluKGNvdW50KTsKICAgIGRlc3RpbmF0aW9uWy4uZmlyc3RfbGVuXS5jb3B5X2Zyb21fc2xpY2UoJmZpcnN0Wy4uZmlyc3RfbGVuXSk7CiAgICBsZXQgc2Vjb25kX2xlbiA9IGNvdW50IC0gZmlyc3RfbGVuOwogICAgaWYgc2Vjb25kX2xlbiAhPSAwIHsKICAgICAgICBkZXN0aW5hdGlvbltmaXJzdF9sZW4uLmNvdW50XS5jb3B5X2Zyb21fc2xpY2UoJnNlY29uZFsuLnNlY29uZF9sZW5dKTsKICAgIH0KICAgIGRyb3AocmluZy5kcmFpbiguLmNvdW50KSk7CiAgICBjb3VudAp9CgojW2NmZyh0ZXN0KV0KbW9kIHRlc3RzIHsKICAgIHVzZSBzdXBlcjo6KjsKCiAgICAjW3Rlc3RdCiAgICBmbiBkcmFpbnNfY29udGlndW91c19ieXRlc19hbmRfbGVhdmVzX2Rlc3RpbmF0aW9uX3RhaWxfdW50b3VjaGVkKCkgewogICAgICAgIGxldCBtdXQgcmluZyA9IFZlY0RlcXVlOjpmcm9tKFsxLCAyLCAzXSk7CiAgICAgICAgbGV0IG11dCBkZXN0aW5hdGlvbiA9IFsweGVlOyA1XTsKCiAgICAgICAgYXNzZXJ0X2VxIShkcmFpbl9yaW5nX2ludG8oJm11dCByaW5nLCAmbXV0IGRlc3RpbmF0aW9uKSwgMyk7CiAgICAgICAgYXNzZXJ0X2VxIShkZXN0aW5hdGlvbiwgWzEsIDIsIDMsIDB4ZWUsIDB4ZWVdKTsKICAgICAgICBhc3NlcnQhKHJpbmcuaXNfZW1wdHkoKSk7CiAgICB9CgogICAgI1t0ZXN0XQogICAgZm4gcGFydGlhbF9kZXN0aW5hdGlvbl9sZWF2ZXNfcmVtYWluaW5nX3JpbmdfYnl0ZXNfaW5fb3JkZXIoKSB7CiAgICAgICAgbGV0IG11dCByaW5nID0gVmVjRGVxdWU6OmZyb20oWzEsIDIsIDMsIDRdKTsKICAgICAgICBsZXQgbXV0IGRlc3RpbmF0aW9uID0gWzA7IDJdOwoKICAgICAgICBhc3NlcnRfZXEhKGRyYWluX3JpbmdfaW50bygmbXV0IHJpbmcsICZtdXQgZGVzdGluYXRpb24pLCAyKTsKICAgICAgICBhc3NlcnRfZXEhKGRlc3RpbmF0aW9uLCBbMSwgMl0pOwogICAgICAgIGFzc2VydF9lcSEocmluZywgVmVjRGVxdWU6OmZyb20oWzMsIDRdKSk7CiAgICB9CgogICAgI1t0ZXN0XQogICAgZm4gZHJhaW5zX3dyYXBwZWRfcmluZ19hY3Jvc3NfYm90aF9pbnRlcm5hbF9zbGljZXMoKSB7CiAgICAgICAgbGV0IG11dCByaW5nID0gVmVjRGVxdWU6OndpdGhfY2FwYWNpdHkoNCk7CiAgICAgICAgcmluZy5leHRlbmQoWzEsIDIsIDMsIDRdKTsKICAgICAgICBhc3NlcnRfZXEhKHJpbmcucG9wX2Zyb250KCksIFNvbWUoMSkpOwogICAgICAgIGFzc2VydF9lcSEocmluZy5wb3BfZnJvbnQoKSwgU29tZSgyKSk7CiAgICAgICAgYXNzZXJ0X2VxIShyaW5nLnBvcF9mcm9udCgpLCBTb21lKDMpKTsKICAgICAgICByaW5nLmV4dGVuZChbNSwgNiwgN10pOwogICAgICAgIGFzc2VydCEoIXJpbmcuYXNfc2xpY2VzKCkuMS5pc19lbXB0eSgpKTsKCiAgICAgICAgbGV0IG11dCBkZXN0aW5hdGlvbiA9IFswOyA0XTsKICAgICAgICBhc3NlcnRfZXEhKGRyYWluX3JpbmdfaW50bygmbXV0IHJpbmcsICZtdXQgZGVzdGluYXRpb24pLCA0KTsKICAgICAgICBhc3NlcnRfZXEhKGRlc3RpbmF0aW9uLCBbNCwgNSwgNiwgN10pOwogICAgICAgIGFzc2VydCEocmluZy5pc19lbXB0eSgpKTsKICAgIH0KCiAgICAjW3Rlc3RdCiAgICBmbiBlbXB0eV9yaW5nX2RvZXNfbm90X3RvdWNoX2Rlc3RpbmF0aW9uKCkgewogICAgICAgIGxldCBtdXQgcmluZyA9IFZlY0RlcXVlOjpuZXcoKTsKICAgICAgICBsZXQgbXV0IGRlc3RpbmF0aW9uID0gWzB4YWE7IDNdOwoKICAgICAgICBhc3NlcnRfZXEhKGRyYWluX3JpbmdfaW50bygmbXV0IHJpbmcsICZtdXQgZGVzdGluYXRpb24pLCAwKTsKICAgICAgICBhc3NlcnRfZXEhKGRlc3RpbmF0aW9uLCBbMHhhYTsgM10pOwogICAgfQp9Cg==').decode()
+
+          source = Path('crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs')
+          text = source.read_text()
+          module_anchor = '#[path = "hda_coreaudio_stats.rs"]\nmod hda_coreaudio_stats;\n'
+          if text.count(module_anchor) != 1:
+              raise SystemExit('CoreAudio module anchor changed')
+          text = text.replace(
+              module_anchor,
+              '#[path = "hda_coreaudio_ring.rs"]\nmod hda_coreaudio_ring;\n' + module_anchor,
+              1,
+          )
+          import_anchor = 'use hda_coreaudio_stats::Shared;\n'
+          if text.count(import_anchor) != 1:
+              raise SystemExit('CoreAudio import anchor changed')
+          text = text.replace(
+              import_anchor,
+              'use hda_coreaudio_ring::drain_ring_into;\n' + import_anchor,
+              1,
+          )
+          if text.count(old) != 1:
+              raise SystemExit('CoreAudio byte-drain loop anchor changed')
+          source.write_text(text.replace(old, new, 1))
+
+          helper = source.with_name('hda_coreaudio_ring.rs')
+          if helper.exists():
+              raise SystemExit('CoreAudio ring helper already exists')
+          helper.write_text(helper_source)
+
+          declaration = re.compile(r'^\s*(?:(?:pub\s+)?(?:mod|use)\s+[^;{]*;|#\[path\s*=\s*[^]]*\])\s*$')
+          def structural_loc(path: str) -> int:
+              header = True
+              loc = 0
+              for line in Path(path).read_text().splitlines():
+                  if header and re.match(r'^\s*//!', line):
+                      continue
+                  if header and re.match(r'^\s*$', line):
+                      header = False
+                      continue
+                  header = False
+                  if declaration.match(line):
+                      continue
+                  loc += 1
+              return loc
+
+          budgets_path = Path('scripts/refactor-budgets.tsv')
+          budgets = budgets_path.read_text()
+          source_rel = str(source)
+          source_pattern = re.compile(rf'^{re.escape(source_rel)}\t(\d+)\t(\d+)$', re.MULTILINE)
+          source_match = source_pattern.search(budgets)
+          if source_match is None:
+              raise SystemExit('CoreAudio source budget row missing')
+          source_loc = structural_loc(source_rel)
+          old_loc = int(source_match.group(1))
+          unsafe_ceiling = int(source_match.group(2))
+          if source_loc > old_loc:
+              raise SystemExit(f'CoreAudio callback extraction grew source debt: {old_loc} -> {source_loc}')
+          budgets = source_pattern.sub(
+              f'{source_rel}\t{source_loc}\t{unsafe_ceiling}',
+              budgets,
+              count=1,
+          )
+          helper_rel = str(helper)
+          if re.search(rf'^{re.escape(helper_rel)}\t', budgets, re.MULTILINE):
+              raise SystemExit('CoreAudio helper budget already exists')
+          source_row = f'{source_rel}\t{source_loc}\t{unsafe_ceiling}\n'
+          if budgets.count(source_row) != 1:
+              raise SystemExit('CoreAudio helper insertion anchor changed after reseal')
+          budgets = budgets.replace(
+              source_row,
+              source_row + f'{helper_rel}\t{structural_loc(helper_rel)}\t0\n',
+              1,
+          )
+          budgets_path.write_text(budgets)
+          PY
+
+          cargo fmt --all
+          for attempt in $(seq 1 10); do
+            echo "CoreAudio ring regression attempt ${attempt}/10"
+            cargo test -p bridgevm-hvf --locked --example hvf_gic_boot_probe hda_coreaudio_ring
+          done
+          cargo test -p bridgevm-hvf --all-targets --locked
+          cargo clippy -p bridgevm-hvf --all-targets --locked -- -D warnings
+          scripts/check-refactor-budgets.sh
+          git diff --check
+
+          rm -f .github/workflows/perf-coreaudio-bulk-drain.yml
+          git add -A
+          git config user.name Ketchio-dev
+          git config user.email 116458462+Ketchio-dev@users.noreply.github.com
+          git commit \
+            -m 'audio: bulk-drain CoreAudio callback ring [coreaudio-bulk-drain-complete]' \
+            -m 'Copy at most two contiguous VecDeque slices into the already zero-filled AudioQueue buffer, then drain the consumed prefix in one operation. Cover contiguous, wrapped, partial, and empty rings while preserving try-lock and underrun behavior.'
+          git push origin HEAD:perf/coreaudio-bulk-drain
