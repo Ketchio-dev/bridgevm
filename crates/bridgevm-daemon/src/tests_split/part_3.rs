@@ -3,13 +3,6 @@
 use super::helpers::*;
 use super::wait::wait_up_to_ten_seconds;
 use crate::*;
-use bridgevm_agent_protocol::AgentAuth;
-use bridgevm_agent_protocol::AgentCapability;
-use bridgevm_agent_protocol::AgentEnvelope;
-use bridgevm_agent_protocol::AgentMessage;
-use bridgevm_agent_protocol::DEFAULT_BENCHMARK_DURATION_MILLIS;
-use bridgevm_agent_protocol::PROTOCOL_VERSION;
-use bridgevm_agentd::encode_envelope_line;
 use bridgevm_api::BridgeVmRequest;
 use bridgevm_api::BridgeVmResponse;
 use bridgevm_qemu::qmp_socket_path;
@@ -23,7 +16,6 @@ use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
-use std::time::Duration;
 
 #[test]
 fn daemon_fast_spawn_opt_in_supervises_lightvm_runner_child() {
