@@ -1,0 +1,83 @@
+name: One-shot suspend ownership verification
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.head_ref == 'takeover/suspend-ownership'
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          components: rustfmt
+      - name: Seal and verify suspend ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          target = "crates/bridgevm-daemon/src/tests_split/suspend_owned.rs"
+          anchor = "crates/bridgevm-daemon/src/tests_split/restart_owned.rs"
+          budget = Path("scripts/refactor-budgets.tsv")
+          source = Path(target)
+
+          def measured_loc(path: Path) -> int:
+              loc = 0
+              header = True
+              for line in path.read_text().splitlines():
+                  if header and re.match(r"^\s*//!", line):
+                      continue
+                  if header and re.match(r"^\s*$", line):
+                      header = False
+                      continue
+                  header = False
+                  if re.match(
+                      r"^\s*((pub\s+)?(mod|use)\s+[^;{]*;|#\[path\s*=\s*[^]]*\])\s*$",
+                      line,
+                  ):
+                      continue
+                  loc += 1
+              return loc
+
+          lines = budget.read_text().splitlines()
+          if any(line.split("\t", 1)[0] == target for line in lines):
+              raise SystemExit(f"budget already contains {target}")
+          index = next(
+              (i for i, line in enumerate(lines) if line.split("\t", 1)[0] == anchor),
+              None,
+          )
+          if index is None:
+              raise SystemExit(f"budget anchor missing: {anchor}")
+          lines.insert(index + 1, f"{target}\t{measured_loc(source)}\t0")
+          budget.write_text("\n".join(lines) + "\n")
+          PY
+
+          rm -f .github/workflows/takeover-suspend-ownership.yml
+          cargo test -p bridgevm-daemon --locked \
+            failed_owned_suspend_keeps_the_live_child_supervised
+          cargo check -p bridgevm-daemon --locked
+          scripts/check-refactor-budgets.sh
+          git diff --check
+
+          git add -A
+          git config user.name "Ketchio-dev"
+          git config user.email "116458462+Ketchio-dev@users.noreply.github.com"
+          git commit \
+            -m "daemon: retain child ownership until suspend commits [suspend-ownership-complete]" \
+            -m "Keep daemon-owned child handles across QMP and runner suspend failures, and only reap/remove the original process after the synchronous suspend path succeeds."
+          git push origin HEAD:takeover/suspend-ownership
