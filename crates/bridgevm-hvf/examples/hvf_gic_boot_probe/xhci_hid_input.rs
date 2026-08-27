@@ -4,6 +4,8 @@ mod boot_key;
 mod hid_semantic_summary;
 #[path = "xhci_hid_input/marker.rs"]
 mod marker;
+#[path = "xhci_hid_input/pointer_deadline.rs"]
+mod pointer_deadline;
 #[path = "xhci_hid_input/pointer_input.rs"]
 mod pointer_input;
 #[path = "xhci_hid_input/report_text.rs"]

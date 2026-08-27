@@ -733,7 +733,9 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/boot_key_tests.rs
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/hid_semantic_summary.rs	169	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/marker.rs	148	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/marker_tests.rs	72	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/pointer_input.rs	774	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/pointer_input.rs	767	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/pointer_deadline.rs	27	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/pointer_deadline_tests.rs	42	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/pointer_input_tests.rs	195	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/pointer_trigger_clock_tests.rs	36	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/report_text.rs	54	0
