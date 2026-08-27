@@ -22,29 +22,13 @@ jobs:
         run: |
           python3 -m pip install --quiet pyyaml
           command -v shellcheck
-      - name: Patch permanent gate, reseal budgets, and verify
+      - name: Reseal budgets and verify through the permanent Python gate
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           import re
-
-          ci_path = Path('.github/workflows/ci.yml')
-          ci = ci_path.read_text()
-          anchor = (
-              '      - name: every tracked Python script compiles\n'
-              '        run: python3 scripts/check-python-scripts.py\n'
-          )
-          addition = (
-              '      - name: audio playback result classifier rejects invalid telemetry\n'
-              '        run: python3 scripts/audio-playback-result.py --self-test\n'
-          )
-          if ci.count(anchor) != 1:
-              raise SystemExit('CI Python gate anchor changed')
-          if addition in ci:
-              raise SystemExit('audio classifier CI gate already exists')
-          ci_path.write_text(ci.replace(anchor, anchor + addition, 1))
 
           declaration = re.compile(
               r'^\s*(?:(?:pub\s+)?(?:mod|use)\s+[^;{]*;|#\[path\s*=\s*[^]]*\])\s*$'
@@ -67,9 +51,9 @@ jobs:
 
           budgets_path = Path('scripts/refactor-budgets.tsv')
           budgets = budgets_path.read_text()
-          measured = {}
           for path in [
               'scripts/check-project.sh',
+              'scripts/check-python-scripts.py',
               'scripts/verify-audio-playback.sh',
           ]:
               pattern = re.compile(rf'^{re.escape(path)}\t(\d+)\t0$', re.MULTILINE)
@@ -81,21 +65,16 @@ jobs:
               if loc > old_ceiling:
                   raise SystemExit(f'{path} grew from ceiling {old_ceiling} to {loc}')
               budgets = pattern.sub(f'{path}\t{loc}\t0', budgets, count=1)
-              measured[path] = loc
               print(f'resealed {path}: {old_ceiling} -> {loc}')
 
           new_path = 'scripts/audio-playback-result.py'
           if re.search(rf'^{re.escape(new_path)}\t', budgets, re.MULTILINE):
               raise SystemExit('audio classifier budget row already exists')
           new_loc = structural_loc(new_path)
-          anchor_row = 'scripts/build-guest-agent-linux.sh\t56\t0\n'
-          if budgets.count(anchor_row) != 1:
+          anchor = 'scripts/build-guest-agent-linux.sh\t56\t0\n'
+          if budgets.count(anchor) != 1:
               raise SystemExit('script budget insertion anchor changed')
-          budgets = budgets.replace(
-              anchor_row,
-              f'{new_path}\t{new_loc}\t0\n' + anchor_row,
-              1,
-          )
+          budgets = budgets.replace(anchor, f'{new_path}\t{new_loc}\t0\n' + anchor, 1)
           budgets_path.write_text(budgets)
           print(f'registered {new_path}: {new_loc}')
           PY
@@ -117,5 +96,5 @@ jobs:
           git config user.email "116458462+Ketchio-dev@users.noreply.github.com"
           git commit \
             -m "fix: fail closed on invalid audio playback results [audio-verifier-complete]" \
-            -m "Require a clean launcher exit, positive rendered frames, zero drops, and zero CoreAudio callback errors. Reject missing, malformed, duplicate, and negative counters through a hosted self-tested classifier, wire that classifier into the permanent truth gate, and reseal structural budgets at measured sizes. Closes #122."
+            -m "Require a clean launcher exit, positive rendered frames, zero drops, and zero CoreAudio callback errors. Reject missing, malformed, duplicate, and negative counters through a hosted self-tested classifier, invoke that classifier from the Python gate already required by CI, and reseal structural budgets at measured sizes. Closes #122."
           git push origin HEAD:takeover/audio-verifier-fail-closed
