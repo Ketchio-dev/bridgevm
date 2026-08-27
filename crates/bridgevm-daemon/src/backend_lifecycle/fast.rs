@@ -3,10 +3,7 @@
 use crate::FastModeSpawnConfig;
 use anyhow::Result;
 
-pub(super) fn require_real_start(
-    action: &str,
-    refusal: &str,
-) -> Result<FastModeSpawnConfig> {
+pub(super) fn require_real_start(action: &str, refusal: &str) -> Result<FastModeSpawnConfig> {
     let Some(config) = FastModeSpawnConfig::from_env()? else {
         anyhow::bail!(
             "Fast Mode {action} requires explicit real-start opt-in \

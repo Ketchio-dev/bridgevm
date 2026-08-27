@@ -73,8 +73,7 @@ fn supervised_fast_restore_spawns_and_tracks_restored_child_without_global_env()
         Some(pid)
     );
     assert!(metadata.command.windows(2).any(|words| {
-        words[0] == "--apple-vz-restore-state"
-            && words[1] == state_path.display().to_string()
+        words[0] == "--apple-vz-restore-state" && words[1] == state_path.display().to_string()
     }));
     assert!(wait_up_to_ten_seconds(|| argv_log.exists()));
 
