@@ -32,7 +32,7 @@ jobs:
               Path('crates/bridgevm-hvf/src/virtio_gpu/device.rs'): [
                   (
                       'use std::collections::BTreeMap;\n',
-                      'use std::collections::{BTreeMap, VecDeque};\n',
+                      'use std::collections::BTreeMap;\nuse std::collections::VecDeque;\n',
                   ),
                   (
                       'pub(crate) pending_vblank: Vec<PendingVblankResponse>,',
@@ -64,6 +64,8 @@ jobs:
               path.write_text(text)
           PY
 
+          grep -q '^use std::collections::VecDeque;$' \
+            crates/bridgevm-hvf/src/virtio_gpu/device.rs
           grep -q 'pending_vblank: VecDeque<PendingVblankResponse>' \
             crates/bridgevm-hvf/src/virtio_gpu/device.rs
           grep -q 'pending_vblank.push_back' \
