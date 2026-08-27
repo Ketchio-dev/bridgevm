@@ -220,8 +220,8 @@ impl DaemonState {
         // collide on TCP 5900. Avoid displays already handed to live children
         // (their QEMU may not have bound the port yet, so a bare probe would
         // hand the same :0 to two back-to-back launches).
-        let avoid = self.live_vnc_displays();
-        assign_free_vnc_display(&mut command, &avoid).map_err(|error| anyhow::anyhow!(error))?;
+        let avoid = self.live_vnc_displays()?;
+        assign_free_vnc_display(&mut command, &avoid).map_err(anyhow::Error::msg)?;
         // Test-only escape hatch (mirrors BRIDGEVM_APPLE_VZ_RUNNER): append extra
         // QEMU args without touching the product command builder. The
         // application-consistent live opt-in smoke uses this to attach a NoCloud
