@@ -3,6 +3,7 @@
 use super::queue_pending::pending_entries;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
+use crate::guest_memory::append_guest_bytes_bounded;
 
 impl<B: NetBackend> VirtioNet<B> {
     pub(crate) fn notify_queue(&mut self, queue_index: u16, mem: &mut dyn GuestMemoryMut) {
@@ -80,17 +81,15 @@ impl<B: NetBackend> VirtioNet<B> {
             if desc.flags & DESC_F_WRITE != 0 {
                 return false;
             }
-            let start = packet.len();
-            let Some(end) = start.checked_add(desc.len as usize) else {
-                return false;
-            };
-            if end > MAX_TX_PACKET_LEN {
+            if !append_guest_bytes_bounded(
+                mem,
+                desc.addr,
+                desc.len as usize,
+                MAX_TX_PACKET_LEN,
+                packet,
+            ) {
                 return false;
             }
-            let Some(bytes) = mem.read_bytes(desc.addr, desc.len as usize) else {
-                return false;
-            };
-            packet.extend_from_slice(&bytes);
         }
         packet.len() >= VIRTIO_NET_HDR_LEN
     }
