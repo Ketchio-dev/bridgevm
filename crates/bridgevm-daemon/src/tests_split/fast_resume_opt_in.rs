@@ -1,4 +1,5 @@
 //! Fast resume must preserve the daemon's explicit Apple VZ launch opt-in.
+//! The positive restore path injects configuration directly so unrelated env-sensitive tests remain isolated.
 
 use super::helpers::ready_fast_manifest;
 use super::helpers::temp_store;
