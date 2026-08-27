@@ -1,14 +1,6 @@
 #!/usr/bin/env bash
-# Verifies A5 (audio): PCM produced inside the guest reaches the host's
-# CoreAudio ring.
-#
-# The pass condition is frames_rendered>0 AND drops==0, read from the sink's
-# end-of-run line. Both halves matter: drops==0 on its own is what a stream
-# that never started looks like, since nothing was there to drop.
-#
-# Playback is driven through the agent with SoundPlayer, which blocks until the
-# wav finishes, so when the command returns the guest has genuinely pushed the
-# samples into the HDA stream.
+# Verifies A5 (audio): guest PCM reaches the host CoreAudio ring.
+# PASS requires frames_rendered>0, zero drops/callback errors, and clean launcher exit.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -31,6 +23,15 @@ cp "$VARS" "$WORK/vars.fd"
 CTL=$OUT/agent.ctl
 : > "$CTL"
 RUN_LOG=$OUT/run.log
+LAUNCHER=""
+
+cleanup() {
+  if [[ -n "$LAUNCHER" ]]; then
+    kill "$LAUNCHER" 2>/dev/null || true
+  fi
+  pkill -f hvf_gic_boot_probe 2>/dev/null || true
+}
+trap cleanup EXIT
 
 wait_for() { # $1 = pattern, $2 = count, $3 = timeout
   local deadline=$((SECONDS + $3)) n
@@ -50,11 +51,8 @@ send() { # $1 = ctl line, $2 = completion pattern
     || fail_early "no reply for: ${1:0:60}"
 }
 
-# The host wraps anything that is not a protocol verb as RUN <base64(cmd)>
-# itself (agent_console/protocol.rs:91-112, is_raw_verb). Wrapping it here too
-# produced a double wrap, and the guest ran the literal word "RUN":
-#   cmd.exe : 'RUN' is not recognized as an internal or external command
-# So the command goes over the wire as plain text.
+# The host wraps anything that is not a protocol verb as RUN <base64(cmd)>.
+# Wrapping here too would make the guest run the literal word RUN.
 run_guest() { # $1 = shell command, $2 = completion pattern
   local before line
   before=$(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG" 2>/dev/null || true)
@@ -70,7 +68,6 @@ powershell_encoded() { # stdin/string -> UTF-16LE base64 for -EncodedCommand
   printf '%s' "$1" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n'
 }
 
-# --hda-coreaudio turns on both the device and the CoreAudio sink.
 scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" \
   --evidence-dir "$OUT" --watchdog-ms $((BOOT_TIMEOUT * 1000)) \
@@ -81,24 +78,18 @@ scripts/run-hvf-windows-installed-boot.sh \
   --gpu-trace-protocol venus --viogpu3d-dir "$VIOGPU_DIR" \
   > "$OUT/launcher.out" 2>&1 &
 LAUNCHER=$!
-trap 'kill $LAUNCHER 2>/dev/null || true; pkill -f hvf_gic_boot_probe 2>/dev/null || true' EXIT
 
 wait_for '^BVAGENT SERVICE start' 1 "$BOOT_TIMEOUT" \
   || fail_early "agent never reached service state within ${BOOT_TIMEOUT}s"
 echo "agent up at ${SECONDS}s"
 
-# The device has to be present and started inside Windows before playback
-# means anything -- otherwise a silent guest and a broken host ring look the
-# same.
+# Require a started Windows sound device before playback evidence is meaningful.
 run_guest 'powershell -NoProfile -Command "(Get-CimInstance Win32_SoundDevice | Select-Object -First 1 -ExpandProperty Status)"' \
   '^BVAGENT END '
 DEV_STATUS=$(grep -A4 'BVAGENT CMD' "$RUN_LOG" | grep -oE '\bOK\b' | tail -1 || true)
 echo "guest sound device status: ${DEV_STATUS:-<unknown>}"
 
-# The sink only accepts 48 kHz stereo s16 and drops anything else, so generate
-# a wav in exactly that format rather than trusting a bundled Windows asset.
-# 2 seconds of a 440 Hz tone: long enough that a few dropped buffers would show
-# up, short enough not to stretch the run.
+# Generate two seconds of 48 kHz stereo s16, the only format this sink accepts.
 GEN='$p="C:\BridgeVM\a5-tone.wav";$sr=48000;$sec=2;$n=$sr*$sec;'
 GEN+='$ms=New-Object System.IO.MemoryStream;$bw=New-Object System.IO.BinaryWriter($ms);'
 GEN+='$data=$n*4;'
@@ -115,8 +106,7 @@ run_guest "powershell -NoProfile -EncodedCommand $GEN_ENCODED" '^BVAGENT END '
 grep -q '^wav_bytes=384044$' < <(tr -d '\r' < "$RUN_LOG") \
   || fail_early "generated wav was not the expected 384044 bytes"
 
-# SoundPlayer.PlaySync blocks until playback finishes, so a successful return
-# means the frames really were handed to the audio stack.
+# PlaySync returns only after Windows hands the complete wav to its audio stack.
 PLAY='(New-Object System.Media.SoundPlayer "C:\BridgeVM\a5-tone.wav").PlaySync(); Write-Output "played=1"'
 PLAY_ENCODED=$(powershell_encoded "$PLAY")
 run_guest "powershell -NoProfile -EncodedCommand $PLAY_ENCODED" '^BVAGENT END '
@@ -124,21 +114,27 @@ grep -q '^played=1$' < <(tr -d '\r' < "$RUN_LOG") \
   || fail_early "SoundPlayer did not report completion"
 echo "playback returned at ${SECONDS}s"
 
-# The stats line is printed when the sink is dropped, i.e. at end of run.
+# The sink prints its final counters while the launcher shuts down.
 printf '%s\n' 'shutdown /s /t 3' >> "$CTL"
-wait "$LAUNCHER" 2>/dev/null || true
+set +e
+wait "$LAUNCHER" 2>/dev/null
+LAUNCHER_EXIT=$?
+set -e
+LAUNCHER=""
 
-STATS=$(grep -E '^hda CoreAudio stats:' "$RUN_LOG" | tail -1)
-FRAMES=$(grep -oE 'frames_rendered=[0-9]+' <<< "$STATS" | cut -d= -f2)
-# Anchored on a leading space so it cannot match dropped_bytes; a greedy sed
-# expression swallowed the rest of the line and got this wrong.
-DROPS=$(grep -oE '(^| )drops=[0-9]+' <<< "$STATS" | tr -d ' ' | cut -d= -f2)
-
-if [[ "${FRAMES:-0}" -gt 0 ]] && [[ "${DROPS:-1}" -eq 0 ]]; then
-  echo "A5 audio: PASS (frames_rendered=$FRAMES drops=$DROPS)"
+STATS=$(grep -E '^hda CoreAudio stats:' "$RUN_LOG" | tail -1 || true)
+FRAMES=""; DROPS=""; CALLBACK_ERRORS=""
+set +e
+COUNTERS=$(python3 scripts/audio-playback-result.py \
+  --launcher-exit "$LAUNCHER_EXIT" --stats-line "$STATS")
+CLASSIFIER_EXIT=$?
+set -e
+if (( CLASSIFIER_EXIT == 0 )); then
+  read -r FRAMES DROPS CALLBACK_ERRORS <<< "$COUNTERS"
+  echo "A5 audio: PASS (frames_rendered=$FRAMES drops=$DROPS callback_errors=$CALLBACK_ERRORS launcher_exit=$LAUNCHER_EXIT)"
   A5=pass
 else
-  echo "A5 audio: FAIL (frames_rendered=${FRAMES:-?} drops=${DROPS:-?})" >&2
+  echo "A5 audio: FAIL (frames_rendered=? drops=? callback_errors=? launcher_exit=$LAUNCHER_EXIT)" >&2
   echo "  line: ${STATS:-<none>}" >&2
   A5=fail
 fi
@@ -146,8 +142,10 @@ fi
 {
   echo "out_dir=$OUT"
   echo "a5_audio=$A5"
-  echo "frames_rendered=${FRAMES:-}"
-  echo "drops=${DROPS:-}"
+  echo "frames_rendered=$FRAMES"
+  echo "drops=$DROPS"
+  echo "callback_errors=$CALLBACK_ERRORS"
+  echo "launcher_exit=$LAUNCHER_EXIT"
   echo "guest_sound_device_status=${DEV_STATUS:-}"
 } > "$OUT/summary.txt"
 cat "$OUT/summary.txt"
