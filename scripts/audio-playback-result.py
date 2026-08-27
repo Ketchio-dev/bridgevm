@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the final A5 CoreAudio counters without starting a VM."""
+"""Validate final A5 CoreAudio counters and launcher exit without starting a VM."""
 
 from __future__ import annotations
 
