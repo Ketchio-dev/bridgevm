@@ -8,6 +8,7 @@ mod device_state;
 mod msix_bridge;
 mod pci_transport;
 mod protocol;
+mod queue_pending;
 mod register_codec;
 mod snapshot;
 mod transport_regs;
