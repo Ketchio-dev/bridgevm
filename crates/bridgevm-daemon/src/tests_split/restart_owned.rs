@@ -50,10 +50,9 @@ fn daemon_owned_restart_spawns_and_tracks_replacement_child() {
         .transition_state("legacy", VmRuntimeState::Running)
         .unwrap();
     let mut state = DaemonState::new(store.clone());
-    state.children.insert(
-        "legacy".to_string(),
-        SupervisedBackend::new(old_child),
-    );
+    state
+        .children
+        .insert("legacy".to_string(), SupervisedBackend::new(old_child));
 
     let response = state.restart_owned_backend("legacy").unwrap();
     let BridgeVmResponse::RunnerStatus {
@@ -65,10 +64,7 @@ fn daemon_owned_restart_spawns_and_tracks_replacement_child() {
     };
     let new_pid = metadata.pid.expect("replacement pid");
     assert_ne!(new_pid, old_pid);
-    assert_eq!(
-        state.children.get("legacy").unwrap().child.id(),
-        new_pid
-    );
+    assert_eq!(state.children.get("legacy").unwrap().child.id(), new_pid);
     assert_eq!(
         store.state("legacy").unwrap().state,
         VmRuntimeState::Running
