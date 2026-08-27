@@ -1,0 +1,251 @@
+name: One-shot userspace GIC direct-route verifier
+
+on:
+  push:
+    branches:
+      - perf/userspace-gic-direct-route-match
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: ${{ !contains(github.event.head_commit.message, '[gic-direct-route-complete]') }}
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          components: rustfmt,clippy
+      - name: Remove nested CPU scans from SPI candidate matching
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          module = Path("crates/bridgevm-hvf/src/userspace_gic/mod.rs")
+          text = module.read_text()
+          route_target = '''    /// Which CPU a routed SPI targets. IRM (1-of-N) delivers to CPU0 (QEMU
+              /// parity); explicit affinity must match a CPU's linear MPIDR.
+              fn route_target(&self, intid: usize) -> Option<usize> {
+                  let route = self.dist.route[intid];
+                  if route & IROUTER_IRM != 0 {
+                      return Some(0);
+                  }
+                  let affinity = ((route >> 8) & 0xff) << 8 | (route & 0xff);
+                  (0..self.num_cpus).find(|&c| machine::cpu_mpidr(c as u64) == affinity)
+              }
+
+          '''
+          if text.count(route_target) != 1:
+              raise SystemExit("userspace GIC route_target anchor changed")
+          text = text.replace(route_target, "", 1)
+
+          old = "                if self.route_target(intid) != Some(cpu) {\n"
+          new = "                if !self.spi_routes_to_cpu(intid, cpu) {\n"
+          if text.count(old) != 1:
+              raise SystemExit("SPI candidate route-match anchor changed")
+          text = text.replace(old, new, 1)
+
+          module_anchor = "mod mmio_regs;\n"
+          if text.count(module_anchor) != 1 or "mod routing;" in text:
+              raise SystemExit("userspace GIC module anchor changed")
+          text = text.replace(module_anchor, module_anchor + "mod routing;\n", 1)
+
+          test_anchor = '''#[cfg(test)]
+          #[path = "userspace_gic_tests.rs"]
+          mod userspace_gic_tests;
+          '''
+          replacement = '''#[cfg(test)]
+          #[path = "routing_tests.rs"]
+          mod routing_tests;
+
+          #[cfg(test)]
+          #[path = "userspace_gic_tests.rs"]
+          mod userspace_gic_tests;
+          '''
+          if text.count(test_anchor) != 1:
+              raise SystemExit("userspace GIC test module anchor changed")
+          module.write_text(text.replace(test_anchor, replacement, 1))
+          PY
+
+          cat > crates/bridgevm-hvf/src/userspace_gic/routing.rs <<'RS'
+          //! SPI affinity routing shared by candidate scans and mutation paths.
+          
+          use super::*;
+          
+          impl UserspaceGic {
+              fn route_affinity(route: u64) -> u64 {
+                  ((route >> 8) & 0xff) << 8 | (route & 0xff)
+              }
+          
+              /// Which CPU a routed SPI targets. IRM (1-of-N) delivers to CPU0
+              /// for QEMU parity; explicit affinity resolves against modelled CPUs.
+              pub(super) fn route_target(&self, intid: usize) -> Option<usize> {
+                  let route = self.dist.route[intid];
+                  if route & IROUTER_IRM != 0 {
+                      return Some(0);
+                  }
+                  let affinity = Self::route_affinity(route);
+                  (0..self.num_cpus)
+                      .find(|&cpu| machine::cpu_mpidr(cpu as u64) == affinity)
+              }
+          
+              /// Match the already-known candidate CPU directly. Unlike
+              /// `route_target`, this never scans every modelled CPU.
+              pub(super) fn spi_routes_to_cpu(&self, intid: usize, cpu: usize) -> bool {
+                  if cpu >= self.num_cpus {
+                      return false;
+                  }
+                  let route = self.dist.route[intid];
+                  if route & IROUTER_IRM != 0 {
+                      return cpu == 0;
+                  }
+                  machine::cpu_mpidr(cpu as u64) == Self::route_affinity(route)
+              }
+          }
+          RS
+
+          cat > crates/bridgevm-hvf/src/userspace_gic/routing_tests.rs <<'RS'
+          //! Direct SPI route matching must remain identical to target resolution.
+          
+          use super::*;
+          
+          #[test]
+          fn direct_spi_route_match_agrees_with_target_resolution() {
+              let mut gic = UserspaceGic::new(16);
+              let intid = 40;
+              let routes = [
+                  IROUTER_IRM,
+                  0,
+                  1,
+                  2,
+                  7,
+                  15,
+                  1 << 8,
+                  (0xff << 8) | 0xff,
+                  0xabcd_0000_0000_0005,
+              ];
+          
+              for route in routes {
+                  gic.dist.route[intid] = route;
+                  let target = gic.route_target(intid);
+                  for cpu in 0..=gic.num_cpus() {
+                      assert_eq!(
+                          gic.spi_routes_to_cpu(intid, cpu),
+                          target == Some(cpu),
+                          "route={route:#x} cpu={cpu} target={target:?}"
+                      );
+                  }
+              }
+          }
+          
+          #[test]
+          fn spi_candidate_uses_explicit_and_irm_routes_without_cross_cpu_delivery() {
+              let mut gic = UserspaceGic::new(4);
+              let intid = 40;
+              let (reg, bit) = Distributor::bit(intid);
+              gic.dist.ctlr = GICD_CTLR_ENABLE_G1NS;
+              gic.dist.group[reg] |= bit;
+              gic.dist.enabled[reg] |= bit;
+              gic.dist.pending[reg] |= bit;
+              gic.dist.priority[intid] = 0x20;
+          
+              gic.dist.route[intid] = 2;
+              for cpu in 0..4 {
+                  assert_eq!(
+                      gic.spi_candidate_for_cpu(cpu, 0xff).map(|candidate| candidate.intid),
+                      (cpu == 2).then_some(intid as u32)
+                  );
+              }
+          
+              gic.dist.route[intid] = IROUTER_IRM;
+              for cpu in 0..4 {
+                  assert_eq!(
+                      gic.spi_candidate_for_cpu(cpu, 0xff).map(|candidate| candidate.intid),
+                      (cpu == 0).then_some(intid as u32)
+                  );
+              }
+          }
+          RS
+
+          cargo fmt --all
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          declaration = re.compile(
+              r'^\s*(?:(?:pub\s+)?(?:mod|use)\s+[^;{]*;|#\[path\s*=\s*[^]]*\])\s*$'
+          )
+
+          def structural_loc(path: str) -> int:
+              header = True
+              loc = 0
+              for line in Path(path).read_text().splitlines():
+                  if header and re.match(r'^\s*//!', line):
+                      continue
+                  if header and re.match(r'^\s*$', line):
+                      header = False
+                      continue
+                  header = False
+                  if declaration.match(line):
+                      continue
+                  loc += 1
+              return loc
+
+          budgets_path = Path("scripts/refactor-budgets.tsv")
+          budgets = budgets_path.read_text()
+          parent = "crates/bridgevm-hvf/src/userspace_gic/mod.rs"
+          parent_pattern = re.compile(rf'^{re.escape(parent)}\t(\d+)\t0$', re.MULTILINE)
+          match = parent_pattern.search(budgets)
+          if match is None:
+              raise SystemExit("userspace GIC parent budget row missing")
+          old_parent_ceiling = int(match.group(1))
+          parent_loc = structural_loc(parent)
+          if parent_loc >= old_parent_ceiling:
+              raise SystemExit(
+                  f"routing extraction did not lower parent: {old_parent_ceiling} -> {parent_loc}"
+              )
+          budgets = parent_pattern.sub(f"{parent}\t{parent_loc}\t0", budgets, count=1)
+
+          new_paths = [
+              "crates/bridgevm-hvf/src/userspace_gic/routing.rs",
+              "crates/bridgevm-hvf/src/userspace_gic/routing_tests.rs",
+          ]
+          for path in new_paths:
+              if re.search(rf'^{re.escape(path)}\t', budgets, re.MULTILINE):
+                  raise SystemExit(f"budget row already exists: {path}")
+          insertion = "".join(f"{path}\t{structural_loc(path)}\t0\n" for path in new_paths)
+          parent_row = f"{parent}\t{parent_loc}\t0\n"
+          if budgets.count(parent_row) != 1:
+              raise SystemExit("resealed parent budget insertion anchor changed")
+          budgets = budgets.replace(parent_row, parent_row + insertion, 1)
+          budgets_path.write_text(budgets)
+          print(f"userspace GIC parent structural LOC: {old_parent_ceiling} -> {parent_loc}")
+          PY
+
+          grep -q 'if !self.spi_routes_to_cpu(intid, cpu)'             crates/bridgevm-hvf/src/userspace_gic/mod.rs
+          grep -q 'machine::cpu_mpidr(cpu as u64) == Self::route_affinity(route)'             crates/bridgevm-hvf/src/userspace_gic/routing.rs
+          ! grep -q 'self.route_target(intid) != Some(cpu)'             crates/bridgevm-hvf/src/userspace_gic/mod.rs
+
+          for attempt in $(seq 1 10); do
+            echo "userspace GIC direct-route regressions attempt ${attempt}/10"
+            cargo test -p bridgevm-hvf --locked userspace_gic::routing_tests
+          done
+          cargo test -p bridgevm-hvf --locked
+          cargo clippy -p bridgevm-hvf --all-targets --locked -- -D warnings
+          scripts/check-refactor-budgets.sh
+          git diff --check
+
+          rm -f .github/workflows/perf-userspace-gic-direct-route.yml
+          git add -A
+          git config user.name Ketchio-dev
+          git config user.email 116458462+Ketchio-dev@users.noreply.github.com
+          git commit             -m 'gic: compare SPI routes directly during pending scans [gic-direct-route-complete]'             -m 'Move SPI affinity decoding into a focused routing module. Candidate scans compare the current CPU directly instead of resolving every candidate through a full CPU search, while set_spi and MSI paths retain route_target semantics. Focused tests prove parity for explicit, IRM, invalid, and out-of-range routes.'
+          git push origin HEAD:perf/userspace-gic-direct-route-match
