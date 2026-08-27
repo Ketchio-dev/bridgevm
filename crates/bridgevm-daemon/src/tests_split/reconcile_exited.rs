@@ -1,4 +1,4 @@
-//! Reconcile must retain exited children until state and runner cleanup persist.
+//! Proves exited children stay owned until state and runner cleanup persist.
 
 use super::helpers::compatibility_manifest;
 use super::helpers::temp_store;
