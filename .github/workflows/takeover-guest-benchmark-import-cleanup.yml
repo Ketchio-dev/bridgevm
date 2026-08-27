@@ -22,7 +22,7 @@ jobs:
         with:
           toolchain: 1.97.0
           components: rustfmt,clippy
-      - name: Remove extracted imports and verify all targets
+      - name: Remove extracted imports and verify final tree
         shell: bash
         run: |
           set -euo pipefail
@@ -46,19 +46,15 @@ jobs:
                   raise SystemExit(f"extracted import anchor changed: {import_line.strip()}")
               text = text.replace(import_line, "", 1)
           part.write_text(text)
-
-          target = Path("crates/bridgevm-daemon/src/tests_split/performance_guest_benchmark.rs")
-          target_text = target.read_text()
-          anchor = "use std::time::Duration;\n#[test]\n"
-          if target_text.count(anchor) != 1:
-              raise SystemExit("focused test spacing anchor changed")
-          target.write_text(target_text.replace(anchor, "use std::time::Duration;\n\n#[test]\n", 1))
           PY
 
           cargo fmt --all
           rm -f .github/workflows/takeover-guest-benchmark-import-cleanup.yml
-          cargo test -p bridgevm-daemon --locked \
-            daemon_performance_sample_runs_guest_benchmark_when_session_is_connected
+          for attempt in $(seq 1 10); do
+            echo "focused guest benchmark regression attempt ${attempt}/10"
+            cargo test -p bridgevm-daemon --locked \
+              daemon_performance_sample_runs_guest_benchmark_when_session_is_connected
+          done
           cargo clippy -p bridgevm-daemon --all-targets --locked -- -D warnings
           scripts/check-refactor-budgets.sh
           git diff --check
@@ -68,5 +64,5 @@ jobs:
           git config user.email "116458462+Ketchio-dev@users.noreply.github.com"
           git commit \
             -m "test: clean extracted guest benchmark imports [guest-benchmark-imports-complete]" \
-            -m "Remove benchmark-only imports from the original shard while retaining the reader, writer, listener, and thread imports still required by its QMP regression. Verify every daemon target under clippy -D warnings."
+            -m "Remove benchmark-only imports from the original shard, retain only the QMP regression dependencies it still uses, delete the one-shot verifier, and prove the focused handshake regression ten consecutive times before pushing."
           git push origin HEAD:takeover/guest-benchmark-handshake-wait
