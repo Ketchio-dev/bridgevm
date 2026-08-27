@@ -55,7 +55,6 @@ pub(crate) fn serve(
     let mut last_reconcile = Instant::now();
     let (request_sender, request_receiver) = mpsc::channel::<PendingDaemonRequest>();
     let active_clients = Arc::new(AtomicUsize::new(0));
-
     loop {
         if SHUTDOWN_REQUESTED.load(Ordering::SeqCst) {
             println!("bridgevmd received shutdown signal; reaping supervised backends");
@@ -68,7 +67,6 @@ pub(crate) fn serve(
             let response = state.handle_request(pending.request);
             let _ = pending.response_sender.send(response);
         }
-
         match listener.accept() {
             Ok(stream) => {
                 spawn_connection_worker(
@@ -171,11 +169,13 @@ impl DaemonState {
         }
 
         for name in exited {
-            self.children.remove(&name);
-            let _ = self.store.transition_state(&name, VmRuntimeState::Stopped);
+            self.store
+                .force_transition_state(&name, VmRuntimeState::Stopped)
+                .with_context(|| format!("failed to mark exited backend '{name}' stopped"))?;
             self.store
                 .clear_runner_metadata(&name)
                 .with_context(|| format!("failed to clear runner metadata for '{name}'"))?;
+            self.children.remove(&name);
         }
         for name in terminal {
             if self.children.contains_key(&name) {

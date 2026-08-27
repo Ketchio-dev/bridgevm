@@ -9,6 +9,7 @@ mod part_4;
 mod part_4_2;
 mod part_4_3;
 mod qmp_nonterminal;
+mod reconcile_exited;
 mod restart_owned;
 mod suspend_owned;
 mod wait;

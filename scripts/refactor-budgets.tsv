@@ -153,6 +153,7 @@ crates/bridgevm-daemon/src/spawn_config.rs	164	0
 crates/bridgevm-daemon/src/supervisor_loop.rs	170	1
 crates/bridgevm-daemon/src/tests_split/helpers.rs	178	0
 crates/bridgevm-daemon/src/tests_split/qmp_nonterminal.rs	94	0
+crates/bridgevm-daemon/src/tests_split/reconcile_exited.rs	101	0
 crates/bridgevm-daemon/src/tests_split/restart_owned.rs	76	0
 crates/bridgevm-daemon/src/tests_split/suspend_owned.rs	37	0
 crates/bridgevm-daemon/src/tests_split/wait.rs	16	0
