@@ -98,7 +98,7 @@ fn daemon_performance_sample_runs_guest_benchmark_when_session_is_connected() {
         thread::sleep(Duration::from_millis(250));
     });
 
-    let child = Command::new("sh").arg("-c").arg("sleep 5").spawn().unwrap();
+    let child = Command::new("sh").arg("-c").arg("sleep 15").spawn().unwrap();
     let mut state = DaemonState::new(store.clone());
     state
         .children
