@@ -17,6 +17,7 @@ mod fence;
 pub(crate) mod interrupt;
 mod pci_device;
 mod protocol;
+mod queue_pending;
 mod registers;
 mod resource;
 mod scanout;
