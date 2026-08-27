@@ -43,6 +43,7 @@ step "documentation references" python3 scripts/check-doc-references.py
 step "structural budgets" scripts/check-refactor-budgets.sh
 step "shell scripts" bash scripts/check-shell-scripts.sh
 step "python scripts" python3 scripts/check-python-scripts.py
+step "audio result classifier" python3 scripts/audio-playback-result.py --self-test
 step "workflow yaml" python3 scripts/check-workflow-yaml.py
 step "daemon DTO decoders" python3 scripts/check-daemon-dto-decoders.py
 step "swift force casts" python3 scripts/check-swift-force-casts.py
@@ -66,8 +67,7 @@ else
   step "tests (venus lib)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --lib --features venus --locked
   step "tests (probe example)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --features venus --example hvf_gic_boot_probe --locked
 
-  # The non-Apple platform stubs only compile on a non-Apple target, so a
-  # macOS-only gate cannot see them drift. Skipped here, required in CI.
+  # Cross-check non-Apple stubs when the target is installed; CI always requires it.
   if rustup target list --installed --toolchain "${TOOLCHAIN#+}" 2>/dev/null \
       | grep -q '^aarch64-unknown-linux-gnu$'; then
     step "cross-compile (linux stubs)" cargo "$TOOLCHAIN" check --workspace \
