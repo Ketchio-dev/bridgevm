@@ -1,0 +1,204 @@
+from pathlib import Path
+import re
+
+lib = Path("crates/bridgevm-hvf/src/lib.rs")
+text = lib.read_text()
+old = "pub mod fwcfg;\npub mod hda;"
+new = "pub mod fwcfg;\nmod guest_memory;\npub mod hda;"
+if text.count(old) != 1:
+    raise SystemExit("lib.rs module anchor changed")
+lib.write_text(text.replace(old, new, 1))
+
+datapath = Path("crates/bridgevm-hvf/src/virtio_net/datapath.rs")
+text = datapath.read_text()
+import_anchor = "use crate::fwcfg::GuestMemoryMut;\n"
+if text.count(import_anchor) != 1:
+    raise SystemExit("datapath import anchor changed")
+text = text.replace(
+    import_anchor,
+    import_anchor + "use crate::guest_memory::append_guest_bytes_bounded;\n",
+    1,
+)
+old = """            let start = packet.len();
+            let Some(end) = start.checked_add(desc.len as usize) else {
+                return false;
+            };
+            if end > MAX_TX_PACKET_LEN {
+                return false;
+            }
+            let Some(bytes) = mem.read_bytes(desc.addr, desc.len as usize) else {
+                return false;
+            };
+            packet.extend_from_slice(&bytes);"""
+new = """            if !append_guest_bytes_bounded(
+                mem,
+                desc.addr,
+                desc.len as usize,
+                MAX_TX_PACKET_LEN,
+                packet,
+            ) {
+                return false;
+            }"""
+if text.count(old) != 1:
+    raise SystemExit("virtio-net TX gather anchor changed")
+datapath.write_text(text.replace(old, new, 1))
+
+tests_mod = Path("crates/bridgevm-hvf/src/virtio_net/tests/mod.rs")
+text = tests_mod.read_text()
+anchor = "mod queue_pending;\n"
+if text.count(anchor) != 1:
+    raise SystemExit("virtio-net tests module anchor changed")
+tests_mod.write_text(text.replace(anchor, "mod queue_pending;\nmod read_into;\n", 1))
+
+Path("crates/bridgevm-hvf/src/guest_memory.rs").write_text(
+    """//! Allocation-free helpers for bounded reads from guest RAM into reusable buffers.
+
+use crate::fwcfg::GuestMemoryMut;
+
+pub(crate) fn append_guest_bytes_bounded(
+    mem: &dyn GuestMemoryMut,
+    gpa: u64,
+    len: usize,
+    max_len: usize,
+    out: &mut Vec<u8>,
+) -> bool {
+    let start = out.len();
+    let Some(end) = start.checked_add(len) else {
+        return false;
+    };
+    if end > max_len {
+        return false;
+    }
+    out.resize(end, 0);
+    if mem.read_into(gpa, &mut out[start..end]) {
+        return true;
+    }
+    out.truncate(start);
+    false
+}
+"""
+)
+
+Path("crates/bridgevm-hvf/src/virtio_net/tests/read_into.rs").write_text(
+    """//! Regression for allocation-free TX descriptor gathering.
+
+use super::super::*;
+use crate::fwcfg::GuestMemoryMut;
+use std::cell::Cell;
+
+const DESC_GPA: u64 = 0x100;
+const PAYLOAD_GPA: u64 = 0x200;
+
+struct ReadIntoOnlyMem {
+    bytes: Vec<u8>,
+    read_into_calls: Cell<usize>,
+}
+
+impl ReadIntoOnlyMem {
+    fn new(payload: &[u8]) -> Self {
+        let mut bytes = vec![0u8; 0x400];
+        let desc = DESC_GPA as usize;
+        bytes[desc..desc + 8].copy_from_slice(&PAYLOAD_GPA.to_le_bytes());
+        bytes[desc + 8..desc + 12]
+            .copy_from_slice(&u32::try_from(payload.len()).unwrap().to_le_bytes());
+        let payload_start = PAYLOAD_GPA as usize;
+        bytes[payload_start..payload_start + payload.len()].copy_from_slice(payload);
+        Self {
+            bytes,
+            read_into_calls: Cell::new(0),
+        }
+    }
+}
+
+impl GuestMemoryMut for ReadIntoOnlyMem {
+    fn write_bytes(&mut self, _gpa: u64, _data: &[u8]) -> bool {
+        panic!("TX gather must not write guest memory")
+    }
+
+    fn read_bytes(&self, _gpa: u64, _len: usize) -> Option<Vec<u8>> {
+        panic!("TX gather must not allocate through read_bytes")
+    }
+
+    fn read_into(&self, gpa: u64, dst: &mut [u8]) -> bool {
+        let Ok(start) = usize::try_from(gpa) else {
+            return false;
+        };
+        let Some(end) = start.checked_add(dst.len()) else {
+            return false;
+        };
+        let Some(src) = self.bytes.get(start..end) else {
+            return false;
+        };
+        dst.copy_from_slice(src);
+        self.read_into_calls
+            .set(self.read_into_calls.get().saturating_add(1));
+        true
+    }
+}
+
+#[test]
+fn tx_chain_reads_descriptors_and_payload_without_read_bytes() {
+    let mut payload = vec![0u8; VIRTIO_NET_HDR_LEN];
+    payload.extend_from_slice(b"ping");
+    let mem = ReadIntoOnlyMem::new(&payload);
+    let mut queue = VirtioNetQueue::new(0);
+    queue.size = 1;
+    queue.ready = true;
+    queue.desc = DESC_GPA;
+    let mut descs = Vec::with_capacity(1);
+    let mut packet = vec![0xff; payload.len()];
+
+    assert!(VirtioNet::<LoopbackTestBackend>::tx_frame_from_chain_into(
+        &mem,
+        &queue,
+        0,
+        &mut descs,
+        &mut packet,
+    ));
+    assert_eq!(packet, payload);
+    assert_eq!(mem.read_into_calls.get(), 2);
+}
+"""
+)
+
+simple_decl = re.compile(
+    r"^\s*((pub\s+)?(mod|use)\s+[^;{]*;|#\[path\s*=.*\])\s*$"
+)
+
+
+def budget_loc(path: Path) -> int:
+    loc = 0
+    header = True
+    for line in path.read_text().splitlines():
+        if header and re.match(r"^\s*//!", line):
+            continue
+        if header and not line.strip():
+            header = False
+            continue
+        header = False
+        if simple_decl.match(line):
+            continue
+        loc += 1
+    return loc
+
+
+budgets = Path("scripts/refactor-budgets.tsv")
+rows = budgets.read_text().splitlines()
+existing = {
+    "crates/bridgevm-hvf/src/virtio_net/datapath.rs": budget_loc(datapath),
+}
+rewritten = []
+for row in rows:
+    key = row.split("\t", 1)[0]
+    if key in existing:
+        rewritten.append(f"{key}\t{existing.pop(key)}\t0")
+    else:
+        rewritten.append(row)
+if existing:
+    raise SystemExit(f"missing existing budget rows: {sorted(existing)}")
+for path in [
+    Path("crates/bridgevm-hvf/src/guest_memory.rs"),
+    Path("crates/bridgevm-hvf/src/virtio_net/tests/read_into.rs"),
+]:
+    rewritten.append(f"{path.as_posix()}\t{budget_loc(path)}\t0")
+budgets.write_text("\n".join(rewritten) + "\n")
