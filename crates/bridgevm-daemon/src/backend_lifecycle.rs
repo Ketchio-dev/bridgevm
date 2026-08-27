@@ -3,27 +3,16 @@
 use crate::*;
 use anyhow::Context;
 use anyhow::Result;
-use bridgevm_api::build_compatibility_resume_command;
-use bridgevm_api::compat_suspend_marker_path;
-use bridgevm_api::compatibility_launch_dependency_blockers;
-use bridgevm_api::compatibility_launch_readiness_metadata;
 use bridgevm_api::fast_suspend_state_path;
 use bridgevm_api::resume_backend;
 use bridgevm_api::suspend_backend;
-use bridgevm_api::verify_compatibility_resume_loaded;
 use bridgevm_api::BridgeVmResponse;
 use bridgevm_api::CurrentRuntimeEngine;
-use bridgevm_qemu::assign_free_vnc_display;
 use bridgevm_qemu::qmp_socket_path;
 use bridgevm_qemu::quit as qmp_quit;
 use bridgevm_qemu::vnc_display_in_command;
-use bridgevm_storage::RunnerMetadata;
 use bridgevm_storage::VmRuntimeState;
-use std::fs;
 use std::io::ErrorKind;
-use std::path::Path;
-use std::process::Command;
-use std::process::Stdio;
 use std::thread;
 use std::time::Duration;
 
@@ -98,100 +87,6 @@ impl DaemonState {
                 self.resume_compatibility_supervised(name, &bundle, &manifest)
             }
         }
-    }
-
-    pub(crate) fn resume_compatibility_supervised(
-        &mut self,
-        name: &str,
-        bundle: &Path,
-        manifest: &bridgevm_config::VmManifest,
-    ) -> Result<BridgeVmResponse> {
-        let marker_path = compat_suspend_marker_path(bundle, name);
-        if !marker_path.exists() {
-            anyhow::bail!(
-                "no saved Compatibility Mode state to resume from at {}; suspend the VM first",
-                marker_path.display()
-            );
-        }
-        let (disk, active_disk) = self
-            .store
-            .prepare_active_disk(name)
-            .context("failed to prepare active disk")?;
-        if !disk.exists {
-            anyhow::bail!("active disk is not ready: {}", disk.path.display());
-        }
-        let readiness = compatibility_launch_readiness_metadata(
-            &disk,
-            compatibility_launch_dependency_blockers(manifest, bundle),
-        );
-        if !readiness.ready {
-            anyhow::bail!(
-                "Compatibility Mode launch readiness failed: {}",
-                launch_readiness_blocker_summary(&readiness)
-            );
-        }
-
-        let mut command = build_compatibility_resume_command(manifest, bundle)
-            .map_err(|error| anyhow::anyhow!("{error}"))?;
-        // Pin a free VNC display so a resumed Compat VM doesn't collide on 5900,
-        // avoiding displays already owned by this daemon's live children.
-        let avoid = self.live_vnc_displays();
-        assign_free_vnc_display(&mut command, &avoid).map_err(|error| anyhow::anyhow!(error))?;
-        let log_path = bundle.join("logs").join("qemu.log");
-        let guest_tools = self
-            .store
-            .guest_tools_runner_metadata(name)
-            .context("failed to prepare guest tools runner metadata")?;
-        fs::create_dir_all(bundle.join("logs")).context("failed to create VM log directory")?;
-        let stdout = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_path)
-            .context("failed to open QEMU log file")?;
-        let stderr = stdout
-            .try_clone()
-            .context("failed to clone QEMU log file")?;
-        let mut child = Command::new(&command.program)
-            .args(&command.args)
-            .stdout(Stdio::from(stdout))
-            .stderr(Stdio::from(stderr))
-            .spawn()
-            .with_context(|| format!("failed to spawn {}", command.program))?;
-        verify_compatibility_resume_loaded(&mut child, bundle, &log_path)
-            .map_err(anyhow::Error::msg)?;
-
-        let metadata = RunnerMetadata {
-            engine: "fullvm".to_string(),
-            pid: Some(child.id()),
-            command: command.render_shell_words(),
-            log_path,
-            started_at_unix: now_unix(),
-            dry_run: false,
-            launch_spec_path: None,
-            guest_tools: Some(guest_tools),
-            disk: Some(disk),
-            active_disk: Some(active_disk),
-            launch_readiness: None,
-            runtime_control: None,
-        };
-        self.store
-            .write_runner_metadata(name, &metadata)
-            .context("failed to write runner metadata")?;
-        // Resume marker consumed.
-        let _ = fs::remove_file(&marker_path);
-        self.store
-            .transition_state(name, VmRuntimeState::Running)
-            .context("failed to mark VM running")?;
-        self.children
-            .insert(name.to_string(), SupervisedBackend::new(child));
-
-        Ok(BridgeVmResponse::RunnerStatus {
-            metadata: Some(metadata),
-            qmp_supervisor: self
-                .store
-                .qmp_supervisor_metadata(name)
-                .context("failed to read QMP supervisor metadata")?,
-        })
     }
 
     pub(crate) fn cleanup_owned_backend(
