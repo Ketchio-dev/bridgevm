@@ -1,0 +1,57 @@
+name: One-shot shared PUT correlation fix
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.head_ref == 'takeover/share-put-correlation'
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          components: rustfmt
+      - name: Apply and verify the phase-correlated PUT fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha=86ba7be2c30f609f99e70e88bbc9a1389765f443
+          mkdir -p .github/scripts
+          curl --fail --location --silent --show-error \
+            "https://raw.githubusercontent.com/Ketchio-dev/bridgevm/${source_sha}/.github/scripts/apply-share-put-correlation-v2.py" \
+            -o .github/scripts/apply-share-put-correlation-v2.py
+          curl --fail --location --silent --show-error \
+            "https://raw.githubusercontent.com/Ketchio-dev/bridgevm/${source_sha}/.github/scripts/patch-share-put-budget-parser.py" \
+            -o .github/scripts/patch-share-put-budget-parser.py
+
+          python3 .github/scripts/patch-share-put-budget-parser.py
+          python3 .github/scripts/apply-share-put-correlation-v2.py
+          rm -f \
+            .github/scripts/apply-share-put-correlation-v2.py \
+            .github/scripts/patch-share-put-budget-parser.py \
+            .github/workflows/takeover-share-put.yml
+
+          cargo fmt --all
+          cargo test -p bridgevm-hvf --example hvf_gic_boot_probe --locked share_put
+          cargo check -p bridgevm-hvf --example hvf_gic_boot_probe --locked
+          scripts/check-refactor-budgets.sh
+          git diff --check
+
+          git add -A
+          git config user.name "Ketchio-dev"
+          git config user.email "116458462+Ketchio-dev@users.noreply.github.com"
+          git commit \
+            -m "share: correlate chunked PUT retries and replies [share-put-correlation-complete]" \
+            -m "Restart timed-out chunked transfers from PUTBEG and accept replies only in the matching Legacy/Beg/Chunk/End phase so delayed terminal replies cannot complete a newly truncated transfer."
+          git push origin HEAD:takeover/share-put-correlation
