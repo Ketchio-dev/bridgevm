@@ -10,8 +10,7 @@ use bridgevm_agent_protocol::AgentMessage;
 use bridgevm_agent_protocol::DEFAULT_BENCHMARK_DURATION_MILLIS;
 use bridgevm_agent_protocol::PROTOCOL_VERSION;
 use bridgevm_agentd::encode_envelope_line;
-use bridgevm_api::BridgeVmRequest;
-use bridgevm_api::BridgeVmResponse;
+use bridgevm_api::{BridgeVmRequest, BridgeVmResponse};
 use bridgevm_storage::VmRuntimeState;
 use std::fs;
 use std::io::BufRead;
@@ -21,6 +20,7 @@ use std::os::unix::net::UnixListener;
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
+
 #[test]
 fn daemon_performance_sample_runs_guest_benchmark_when_session_is_connected() {
     let store = temp_store();
