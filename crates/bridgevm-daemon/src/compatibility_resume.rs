@@ -1,32 +1,38 @@
-//! Supervised Compatibility Mode resume and pre-ownership child cleanup.
+//! Supervised backend child ownership across resume and cold start.
 
 use crate::*;
-use anyhow::{Context, Result};
-use bridgevm_api::{
-    build_compatibility_resume_command, compat_suspend_marker_path,
-    compatibility_launch_dependency_blockers, compatibility_launch_readiness_metadata,
-    verify_compatibility_resume_loaded, BridgeVmResponse,
-};
+use anyhow::Context;
+use anyhow::Result;
+use bridgevm_api::build_compatibility_resume_command;
+use bridgevm_api::compat_suspend_marker_path;
+use bridgevm_api::compatibility_launch_dependency_blockers;
+use bridgevm_api::compatibility_launch_readiness_metadata;
+use bridgevm_api::verify_compatibility_resume_loaded;
+use bridgevm_api::BridgeVmResponse;
 use bridgevm_qemu::assign_free_vnc_display;
-use bridgevm_storage::{RunnerMetadata, VmRuntimeState};
+use bridgevm_storage::RunnerMetadata;
+use bridgevm_storage::VmRuntimeState;
+use bridgevm_storage::VmStore;
 use std::fs;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::Child;
+use std::process::Command;
+use std::process::Stdio;
 
-struct PendingChild {
+pub(crate) struct PendingChild {
     child: Option<Child>,
 }
 
 impl PendingChild {
-    fn new(child: Child) -> Self {
+    pub(crate) fn new(child: Child) -> Self {
         Self { child: Some(child) }
     }
 
-    fn child_mut(&mut self) -> &mut Child {
+    pub(crate) fn child_mut(&mut self) -> &mut Child {
         self.child.as_mut().expect("pending child must exist")
     }
 
-    fn id(&self) -> u32 {
+    pub(crate) fn id(&self) -> u32 {
         self.child.as_ref().expect("pending child must exist").id()
     }
 
@@ -45,6 +51,27 @@ impl Drop for PendingChild {
             let _ = child.wait();
         }
     }
+}
+
+pub(crate) fn commit_started_child(
+    store: &VmStore,
+    name: &str,
+    metadata: &RunnerMetadata,
+    pending_child: PendingChild,
+) -> Result<Child> {
+    store
+        .write_runner_metadata(name, metadata)
+        .context("failed to write runner metadata")?;
+    if let Err(error) = store.transition_state(name, VmRuntimeState::Running) {
+        let rollback = store.clear_runner_metadata(name);
+        if let Err(rollback_error) = rollback {
+            anyhow::bail!(
+                "failed to mark VM running: {error}; runner metadata rollback also failed: {rollback_error}"
+            );
+        }
+        anyhow::bail!("failed to mark VM running: {error}");
+    }
+    Ok(pending_child.commit())
 }
 
 impl DaemonState {
@@ -125,20 +152,7 @@ impl DaemonState {
             launch_readiness: None,
             runtime_control: None,
         };
-        self.store
-            .write_runner_metadata(name, &metadata)
-            .context("failed to write runner metadata")?;
-        if let Err(error) = self.store.transition_state(name, VmRuntimeState::Running) {
-            let rollback = self.store.clear_runner_metadata(name);
-            if let Err(rollback_error) = rollback {
-                anyhow::bail!(
-                    "failed to mark VM running: {error}; runner metadata rollback also failed: {rollback_error}"
-                );
-            }
-            anyhow::bail!("failed to mark VM running: {error}");
-        }
-
-        let child = pending_child.commit();
+        let child = commit_started_child(&self.store, name, &metadata, pending_child)?;
         self.children
             .insert(name.to_string(), SupervisedBackend::new(child));
         if let Err(error) = fs::remove_file(&marker_path) {
@@ -160,7 +174,9 @@ mod tests {
     use super::*;
     use std::env;
     use std::thread;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::Duration;
+    use std::time::SystemTime;
+    use std::time::UNIX_EPOCH;
 
     fn marker_path(label: &str) -> std::path::PathBuf {
         let nonce = SystemTime::now()
@@ -171,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn uncommitted_resume_child_is_killed_on_drop() {
+    fn uncommitted_child_is_killed_on_drop() {
         let marker = marker_path("pending-child");
         let _ = fs::remove_file(&marker);
         let child = Command::new("sh")
@@ -189,7 +205,7 @@ mod tests {
     }
 
     #[test]
-    fn committed_resume_child_is_transferred_to_the_caller() {
+    fn committed_child_is_transferred_to_the_caller() {
         let child = Command::new("sh").arg("-c").arg("exit 0").spawn().unwrap();
         let mut child = PendingChild::new(child).commit();
         assert!(child.wait().unwrap().success());
