@@ -11,6 +11,7 @@ mod media_backend;
 mod mmio_regs;
 mod pci_transport;
 mod protocol;
+mod queue_pending;
 pub(crate) mod snapshot;
 mod virtqueue;
 

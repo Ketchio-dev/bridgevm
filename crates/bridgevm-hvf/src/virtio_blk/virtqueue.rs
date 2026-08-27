@@ -1,5 +1,6 @@
 //! Descriptor chain walking, the avail-ring consumption loop, and used-ring publish.
 
+use super::queue_pending::pending_entries;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 
@@ -29,7 +30,7 @@ impl VirtioMmioBlock {
         };
         let mut descs = std::mem::take(&mut self.descriptor_scratch);
         let mut read_buf = std::mem::take(&mut self.read_scratch);
-        while self.last_avail_idx != avail_idx {
+        for _ in 0..pending_entries(self.last_avail_idx, avail_idx, self.queue_num) {
             let ring_off = 4 + u64::from(self.last_avail_idx % self.queue_num) * 2;
             let Some(head) = read_u16(mem, self.queue_driver + ring_off) else {
                 break;
