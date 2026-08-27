@@ -4,7 +4,6 @@ use crate::*;
 use anyhow::Context;
 use anyhow::Result;
 use bridgevm_api::fast_suspend_state_path;
-use bridgevm_api::resume_backend;
 use bridgevm_api::suspend_backend;
 use bridgevm_api::BridgeVmResponse;
 use bridgevm_api::CurrentRuntimeEngine;
@@ -37,11 +36,9 @@ impl DaemonState {
     /// Resume a backend through the daemon, tracking the new child in the
     /// supervisor exactly like cold-start `run` so reconcile/stop see it.
     ///
-    /// Fast Mode: relaunch `lightvm-runner` with `--apple-vz-restore-state`.
-    /// Compatibility Mode: relaunch QEMU with `-loadvm <tag>`. In both cases the
-    /// child is inserted into `self.children`. When the Fast Mode real-start
-    /// env is not configured, fall back to the daemon-less api resume (which is
-    /// detached, matching legacy behavior).
+    /// Fast Mode relaunches `lightvm-runner` with `--apple-vz-restore-state`
+    /// only when real start is explicitly enabled. Compatibility Mode relaunches
+    /// QEMU with `-loadvm <tag>`. Both children stay daemon-owned.
     pub(crate) fn resume_backend_supervised(&mut self, name: &str) -> Result<BridgeVmResponse> {
         if self.children.contains_key(name) {
             anyhow::bail!("backend is already running for '{name}'");
@@ -60,24 +57,19 @@ impl DaemonState {
                         state_path.display()
                     );
                 }
-                if let Some(config) = FastModeSpawnConfig::from_env()? {
-                    return self.spawn_fast_backend_with_restore(
-                        name,
-                        bundle,
-                        manifest,
-                        config,
-                        Some(state_path),
+                let Some(config) = FastModeSpawnConfig::from_env()? else {
+                    anyhow::bail!(
+                        "Fast Mode resume requires explicit real-start opt-in \
+                         (BRIDGEVM_APPLE_VZ_ALLOW_REAL_START=1); refusing to launch a detached backend"
                     );
-                }
-                // Real-start env not configured: fall back to detached api resume.
-                let metadata = resume_backend(&self.store, name).map_err(anyhow::Error::msg)?;
-                Ok(BridgeVmResponse::RunnerStatus {
-                    metadata: Some(metadata),
-                    qmp_supervisor: self
-                        .store
-                        .qmp_supervisor_metadata(name)
-                        .context("failed to read QMP supervisor metadata")?,
-                })
+                };
+                self.spawn_fast_backend_with_restore(
+                    name,
+                    bundle,
+                    manifest,
+                    config,
+                    Some(state_path),
+                )
             }
             CurrentRuntimeEngine::QemuCompatibility => {
                 self.resume_compatibility_supervised(name, &bundle, &manifest)
