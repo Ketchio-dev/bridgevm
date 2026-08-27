@@ -1,6 +1,7 @@
 //! Split test module.
 
 mod helpers;
+mod owned_cleanup;
 mod part_1;
 mod part_1_proxy_windows;
 mod part_2;
