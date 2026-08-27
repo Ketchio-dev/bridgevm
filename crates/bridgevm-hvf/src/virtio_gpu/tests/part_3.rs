@@ -209,7 +209,6 @@ fn fence_defers_used_ring_until_mock_signals_with_ring_idx() {
     assert_eq!(used_idx, 1);
     assert_eq!(dev.stats().three_d.fences_pending, 1);
     let pending_capacity = dev.gpu.pending_fenced.capacity();
-    let pending_ptr = dev.gpu.pending_fenced.as_ptr();
     let parked_desc_capacity = dev.gpu.pending_fenced[0].descs.capacity();
     let parked_response_capacity = dev.gpu.pending_fenced[0].response.capacity();
     assert!(pending_capacity >= 1);
@@ -232,7 +231,6 @@ fn fence_defers_used_ring_until_mock_signals_with_ring_idx() {
     dev.drain_completed_fences(&mut mem);
     assert_eq!(dev.stats().three_d.fences_pending, 1);
     assert_eq!(dev.gpu.pending_fenced.capacity(), pending_capacity);
-    assert_eq!(dev.gpu.pending_fenced.as_ptr(), pending_ptr);
     let completed_capacity = dev.gpu.completed_fences_scratch.capacity();
     let completed_ptr = dev.gpu.completed_fences_scratch.as_ptr();
     assert!(completed_capacity >= 1);
@@ -245,7 +243,6 @@ fn fence_defers_used_ring_until_mock_signals_with_ring_idx() {
     dev.drain_completed_fences(&mut mem);
     assert_eq!(dev.stats().three_d.fences_pending, 0);
     assert_eq!(dev.gpu.pending_fenced.capacity(), pending_capacity);
-    assert_eq!(dev.gpu.pending_fenced.as_ptr(), pending_ptr);
     assert_eq!(
         dev.gpu.completed_fences_scratch.capacity(),
         completed_capacity

@@ -55,20 +55,18 @@ impl VirtioGpu {
         for fence in &completed {
             self.trace_fence_complete(*fence);
         }
-        let mut index = 0;
-        while index < self.pending_fenced.len() {
+        for _ in 0..self.pending_fenced.len() {
+            let pending_response = self.pending_fenced.pop_front().unwrap();
             let ready = completed.iter().any(|completed| {
-                let pending_response = &self.pending_fenced[index];
                 completed.ctx_id == pending_response.fence.ctx_id
                     && completed.ring_idx == pending_response.fence.ring_idx
                     && completed.fence_id >= pending_response.fence.fence_id
             });
             if !ready {
-                index += 1;
+                self.pending_fenced.push_back(pending_response);
                 continue;
             }
 
-            let pending_response = self.pending_fenced.remove(index);
             let used_len =
                 Self::scatter_write(mem, &pending_response.descs, &pending_response.response);
             self.trace_fence_delivery(pending_response.fence, used_len);
