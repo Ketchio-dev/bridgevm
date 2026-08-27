@@ -11,8 +11,11 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, TryLockError};
 
 use bridgevm_hvf::hda::HdaPcmSink;
+#[path = "hda_coreaudio_ring.rs"]
+mod hda_coreaudio_ring;
 #[path = "hda_coreaudio_stats.rs"]
 mod hda_coreaudio_stats;
+use hda_coreaudio_ring::drain_ring_into;
 use hda_coreaudio_stats::Shared;
 
 const SAMPLE_RATE: u32 = 48_000;
@@ -217,9 +220,7 @@ unsafe fn fill_from_ring(buffer: AudioQueueBufferRef, shared: &Shared) {
         Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
         Err(TryLockError::WouldBlock) => return,
     };
-    for byte in destination.iter_mut().take(ring.len().min(capacity)) {
-        *byte = ring.pop_front().unwrap();
-    }
+    let _ = drain_ring_into(&mut ring, destination);
 }
 
 unsafe fn fill_with_silence(buffer: AudioQueueBufferRef) {

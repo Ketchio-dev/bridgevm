@@ -684,7 +684,8 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/device_shape.rs	278	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/exception_trace.rs	173	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_diagnostics.rs	259	3
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_memory.rs	219	8
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs	259	16
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs	257	16
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_ring.rs	66	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_stats.rs	56	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard.rs	424	21
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_support.rs	41	2
