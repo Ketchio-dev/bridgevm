@@ -130,7 +130,8 @@ crates/bridgevm-config/src/tests_split/part_1.rs	585	0
 crates/bridgevm-config/src/validation.rs	199	0
 crates/bridgevm-core/src/lib.rs	414	0
 crates/bridgevm-core/src/lib_tests.rs	233	0
-crates/bridgevm-daemon/src/backend_lifecycle.rs	66	0
+crates/bridgevm-daemon/src/backend_lifecycle.rs	61	0
+crates/bridgevm-daemon/src/backend_lifecycle/fast.rs	10	0
 crates/bridgevm-daemon/src/backend_lifecycle/cleanup.rs	85	0
 crates/bridgevm-daemon/src/backend_lifecycle/vnc_displays.rs	28	0
 crates/bridgevm-daemon/src/compatibility_resume.rs	188	0
@@ -154,7 +155,8 @@ crates/bridgevm-daemon/src/snapshot_orchestration.rs	151	0
 crates/bridgevm-daemon/src/spawn_config.rs	164	0
 crates/bridgevm-daemon/src/supervisor_loop.rs	170	1
 crates/bridgevm-daemon/src/tests_split/helpers.rs	178	0
-crates/bridgevm-daemon/src/tests_split/fast_resume_opt_in.rs	166	0
+crates/bridgevm-daemon/src/tests_split/fast_resume_opt_in.rs	142	0
+crates/bridgevm-daemon/src/tests_split/fast_restore_supervision.rs	76	0
 crates/bridgevm-daemon/src/tests_split/owned_cleanup.rs	108	0
 crates/bridgevm-daemon/src/tests_split/qmp_nonterminal.rs	94	0
 crates/bridgevm-daemon/src/tests_split/reconcile_exited.rs	101	0
