@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
+use crate::guest_memory::append_guest_bytes_bounded;
 
 pub(crate) struct RxQueueDeliveryState<'a> {
     pub(crate) queues: &'a mut [VirtioConsoleQueue; QUEUE_COUNT],
@@ -147,20 +148,9 @@ impl VirtioConsole {
             if desc.flags & DESC_F_WRITE != 0 {
                 return false;
             }
-            let start = out.len();
-            let Some(end) = start.checked_add(desc.len as usize) else {
-                return false;
-            };
-            if end > max_len {
+            if !append_guest_bytes_bounded(mem, desc.addr, desc.len as usize, max_len, out) {
                 return false;
             }
-            // `read_bytes` validates the guest range before allocating in the
-            // live RAM implementation. Only append after that validation so an
-            // unbacked, oversized descriptor cannot resize reusable scratch.
-            let Some(bytes) = mem.read_bytes(desc.addr, desc.len as usize) else {
-                return false;
-            };
-            out.extend_from_slice(&bytes);
         }
         true
     }

@@ -432,9 +432,10 @@ crates/bridgevm-hvf/src/virtio_console/tests/helpers.rs	405	0
 crates/bridgevm-hvf/src/virtio_console/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/virtio_console/tests/part_1.rs	774	0
 crates/bridgevm-hvf/src/virtio_console/tests/queue_pending.rs	43	0
+crates/bridgevm-hvf/src/virtio_console/tests/read_into.rs	73	0
 crates/bridgevm-hvf/src/virtio_console/trace.rs	21	0
 crates/bridgevm-hvf/src/virtio_console/transport_regs.rs	353	0
-crates/bridgevm-hvf/src/virtio_console/virtqueue.rs	284	0
+crates/bridgevm-hvf/src/virtio_console/virtqueue.rs	279	0
 crates/bridgevm-hvf/src/virtio_gpu/async_present.rs	276	0
 crates/bridgevm-hvf/src/virtio_gpu/bytes.rs	29	0
 crates/bridgevm-hvf/src/virtio_gpu/command.rs	82	0
