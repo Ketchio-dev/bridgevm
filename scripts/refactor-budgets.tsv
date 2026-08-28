@@ -1169,10 +1169,11 @@ scripts/check-capability-evidence.py	73	0
 scripts/check-supply-chain.sh	52	0
 scripts/check-virgl-integer-attributes.sh	72	0
 scripts/find-hvf-windows-viogpu3d-packages.sh	210	0
-scripts/live-gates/bridgevm-live-worker.sh	173	0
+scripts/live-gates/bridgevm-live-worker.sh	180	0
 scripts/live-gates/install-studio-queue.sh	84	0
-scripts/live-gates/run-pointer-reliability-tier.sh	59	0
-scripts/live-gates/run-tier.sh	159	0
+scripts/live-gates/pointer-input-manifest.sh	38	0
+scripts/live-gates/run-pointer-reliability-tier.sh	61	0
+scripts/live-gates/run-tier.sh	161	0
 scripts/measure-pointer-latency.sh	60	0
 scripts/notarize-submit.sh	51	0
 scripts/p1-boot-gate.sh	312	0
@@ -1334,6 +1335,7 @@ tests/integration/lifecycle-plan-cli-smoke.sh	141	0
 tests/integration/lifecycle-restart-cli-smoke.sh	134	0
 tests/integration/lifecycle-suspend-resume-cli-smoke.sh	157	0
 tests/integration/install-verify-smoke.sh	181	0
+tests/integration/b4-sealed-submit-smoke.sh	18	0
 tests/integration/live-gate-policy-smoke.sh	308	0
 tests/integration/qmp-stress-live-tier-smoke.sh	23	0
 tests/integration/windows-closure-live-tier-smoke.sh	65	0

@@ -107,7 +107,9 @@ case "$TIER" in
     t8-pointer-reliability|t10-qmp-stress)
         helper=run-pointer-reliability-tier.sh
         [[ "$TIER" == t8-pointer-reliability ]] || helper=run-qmp-stress-tier.sh
-        "$REPO/scripts/live-gates/$helper" --out "$OUT" --job-id "$JOB_ID" ;;
+        helper_args=(--out "$OUT" --job-id "$JOB_ID")
+        [[ "$TIER" != t8-pointer-reliability ]] || helper_args+=(--input-manifest "$INPUT_MANIFEST")
+        "$REPO/scripts/live-gates/$helper" "${helper_args[@]}" ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)
         # These need private Windows media and 20+ minutes per boot. They are
         # declared so the queue and its policy tests are exercised, but they

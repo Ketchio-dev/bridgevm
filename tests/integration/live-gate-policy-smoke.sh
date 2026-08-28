@@ -204,8 +204,8 @@ check "A3 submit copies and seals the release binary" \
     'test -x "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/hvf_gic_boot_probe" && grep -q "^sealed_binary_sha256=[0-9a-f]\{64\}$" "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/job.env"'
 check "A3 submit rejects a missing manifest" \
     '! "$CLI" submit t6-a3-title --input-manifest "$WORK/missing" >/dev/null 2>&1'
-check "non-A3 tiers reject an input manifest" \
-    '! "$CLI" submit t0-check --input-manifest "$manifest" >/dev/null 2>&1'
+check "unsealed tiers reject an input manifest; B4 seals exact inputs" \
+    '! "$CLI" submit t0-check --input-manifest "$manifest" >/dev/null 2>&1 && "$REPO/tests/integration/b4-sealed-submit-smoke.sh" | grep -q "PASS"'
 malformed_out="$WORK/malformed-a3"
 check "the A3 tier refuses a malformed manifest before build" \
     '! "$TIER" t6-a3-title --out "$malformed_out" --input-manifest "$manifest" --job-id policy-smoke >/dev/null 2>&1'

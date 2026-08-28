@@ -3,9 +3,9 @@
 set -euo pipefail
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); cd "$REPO"
 OUT=${OUT:?}; SOURCE=${SOURCE:?}; SOURCE_VARS=${SOURCE_VARS:?}; VIOGPU_DIR=${VIOGPU_DIR:?}; JOB_ID=${JOB_ID:?}
-ROOT=${POINTER_PREPARED_ROOT:-$HOME/BridgeVM/prepared/pointer-reliability}
-WORK=$HOME/BridgeVM/work/pointer-source-$JOB_ID; STAGE=$WORK/stage
+ROOT=${POINTER_PREPARED_ROOT:-$HOME/BridgeVM/prepared/pointer-reliability}; WORK=$HOME/BridgeVM/work/pointer-source-$JOB_ID; STAGE=$WORK/stage
 seal() { openssl dgst -sha256 -r "$1" 2>/dev/null | cut -d' ' -f1 | tr -d '\n'; }
+tree_seal() { (cd "$1" && find . -type f ! -type l -exec shasum -a 256 {} + | LC_ALL=C sort -k2 | shasum -a 256 | cut -d' ' -f1); }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 value() { awk -F= -v key="$2" '$1==key{print substr($0,index($0,"=")+1)}' "$1"; }
 write_result() {
@@ -14,13 +14,13 @@ write_result() {
     "$dir/disk.raw" "$dir/vars.fd" "$image" "$vars" > "$OUT/source.env"
 }
 [[ -f "$SOURCE" && ! -L "$SOURCE" && ! -w "$SOURCE" && -f "$SOURCE_VARS" && ! -L "$SOURCE_VARS" && ! -w "$SOURCE_VARS" ]] || fail 'source media must be immutable regular files'
-source_image=$(seal "$SOURCE"); source_vars=$(seal "$SOURCE_VARS")
+source_image=$(seal "$SOURCE"); source_vars=$(seal "$SOURCE_VARS"); source_driver=$(tree_seal "$VIOGPU_DIR")
 [[ "$(basename "$(dirname "$SOURCE")")" == "$source_image-$source_vars" ]] || fail 'source hash identity mismatch'
 mkdir -p "$ROOT" "$OUT"
 found=''
 for meta in "$ROOT"/*/retained.env; do
   [[ -f "$meta" ]] || continue
-  [[ $(value "$meta" source_image_sha256) == "$source_image" && $(value "$meta" source_vars_sha256) == "$source_vars" ]] || continue
+  [[ $(value "$meta" source_image_sha256) == "$source_image" && $(value "$meta" source_vars_sha256) == "$source_vars" && $(value "$meta" source_driver_sha256) == "$source_driver" ]] || continue
   dir=$(dirname "$meta"); image=$(value "$meta" image_sha256); vars=$(value "$meta" vars_sha256)
   [[ $(value "$meta" firstboot_ready) == true && $(basename "$dir") == "$image-$vars" \
     && ! -w "$dir/disk.raw" && ! -w "$dir/vars.fd" && $(seal "$dir/disk.raw") == "$image" && $(seal "$dir/vars.fd") == "$vars" ]] || fail 'cached B4 source failed verification'
@@ -76,7 +76,7 @@ image=$(seal "$STAGE/disk.raw"); vars=$(seal "$STAGE/vars.fd"); retained=$ROOT/$
 [[ ! -e "$retained" ]] || fail 'prepared B4 identity already exists'
 {
   echo firstboot_ready=true; echo "image_sha256=$image"; echo "vars_sha256=$vars"
-  echo "source_image_sha256=$source_image"; echo "source_vars_sha256=$source_vars"
+  echo "source_image_sha256=$source_image"; echo "source_vars_sha256=$source_vars"; echo "source_driver_sha256=$source_driver"
 } > "$STAGE/retained.env"
 chmod 400 "$STAGE/disk.raw" "$STAGE/vars.fd" "$STAGE/retained.env"; mv "$STAGE" "$retained"
 write_result "$retained" "$image" "$vars"
