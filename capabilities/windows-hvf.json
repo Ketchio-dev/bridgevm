@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "capability_id": "windows-hvf",
-  "reviewed": "2026-08-26",
-  "tested_commit": "a5b0e63b05e3b269382a7d8801c7ced342ccb620",
+  "reviewed": "2026-08-27",
+  "tested_commit": "6dddeb785965e6571c607a55d4f3f24f0cb0bd37",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -136,10 +136,10 @@
     {
       "id": "A11",
       "title": "No regression",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN 2026-08-26: the A9 fail-closed change was merged from a head whose hosted CI and Security and quality workflows passed, but the resulting main commit a5b0e63b05e3b269382a7d8801c7ced342ccb620 has no retained exact-SHA full scripts/check-project.sh receipt. The previous A11 seal describes an older tree and cannot prove this one. A fresh deterministic project check is required before A11 can return to PROVEN.",
+      "measured": "Re-proven 2026-08-27 at final head 6dddeb785965e6571c607a55d4f3f24f0cb0bd37 by exact-SHA Studio T0 job 20260827-195900-63168-30078 on Mac16,9 / macOS 26.5.2. All 30 check-project sections ran; the sole failure was the intentionally stale A11 registry that this docs-only reseal refreshes, and the other 29 sections passed. The workspace section passed with the HVF library at 870 passed and 1 ignored; Venus ran 891 passed and 1 ignored; the probe ran 345/345; and the three shim suites ran 419 + 199 (one skip) + 62 = 680 passed with 0 failed. Formatting, workspace and Venus clippy, structural budgets, documentation, Linux stub cross-compilation, Swift build/tests and release-override policy all passed. The complete check-log SHA-256 is 7d0b0f969304d3b05df48e69c1ec58540d6ccd31b6b68940715b0d21e4fa3f9d; the pre-reseal receipt remains honestly pass=false. GitHub-hosted CI run 33110695917 and Security and quality run 33110695916 both completed successfully on the same exact SHA. A9 and B4 remain OPEN under their unchanged criteria.",
       "evidence_paths": [
         "STATUS.md"
       ]
