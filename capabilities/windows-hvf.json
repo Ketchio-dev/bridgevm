@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "capability_id": "windows-hvf",
-  "reviewed": "2026-08-27",
-  "tested_commit": "6dddeb785965e6571c607a55d4f3f24f0cb0bd37",
+  "reviewed": "2026-08-28",
+  "tested_commit": "810b2ac1c736470bece221477c9fc4385f5916de",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -139,7 +139,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "Re-proven 2026-08-27 at final head 6dddeb785965e6571c607a55d4f3f24f0cb0bd37 by exact-SHA Studio T0 job 20260827-195900-63168-30078 on Mac16,9 / macOS 26.5.2. All 30 check-project sections ran; the sole failure was the intentionally stale A11 registry that this docs-only reseal refreshes, and the other 29 sections passed. The workspace section passed with the HVF library at 870 passed and 1 ignored; Venus ran 891 passed and 1 ignored; the probe ran 345/345; and the three shim suites ran 419 + 199 (one skip) + 62 = 680 passed with 0 failed. Formatting, workspace and Venus clippy, structural budgets, documentation, Linux stub cross-compilation, Swift build/tests and release-override policy all passed. The complete check-log SHA-256 is 7d0b0f969304d3b05df48e69c1ec58540d6ccd31b6b68940715b0d21e4fa3f9d; the pre-reseal receipt remains honestly pass=false. GitHub-hosted CI run 33110695917 and Security and quality run 33110695916 both completed successfully on the same exact SHA. A9 and B4 remain OPEN under their unchanged criteria.",
+      "measured": "Re-proven 2026-08-28 at final head 810b2ac1c736470bece221477c9fc4385f5916de. GitHub-hosted CI run 33177402203 passed rustfmt, workspace tests on macOS 15 and macOS 26, all-target clippy with warnings denied, MSRV 1.85, Linux-stub cross-check, native Venus checks/tests/host probe/device smoke, structural budgets, capability/documentation gates, and the complete macOS app build plus Swift and XCTest-shim suites. Security and quality run 33177402220 passed fuzz corpus smoke with the refreshed standalone lockfile, all Loom models, graphics-claim checks, live-gate policy, and supply-chain policy. Diagnostic post-performance audit run 33178479268 independently passed exact-head workspace tests, all-target clippy and structural budgets, then isolated its sole project-fast failure to the intentionally stale A11 seal; the remaining fast checks passed and the working tree was clean. This docs-only reseal records those retained exact-SHA results without changing A9 or B4, which remain OPEN under their unchanged criteria.",
       "evidence_paths": [
         "STATUS.md"
       ]
