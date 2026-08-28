@@ -8,4 +8,4 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../fuzz"
 TOOLCHAIN="${BRIDGEVM_RUST_TOOLCHAIN:-1.97.0}"
-exec cargo "+$TOOLCHAIN" run --release --bin smoke "$@"
+exec cargo "+$TOOLCHAIN" run --locked --release --bin smoke "$@"
