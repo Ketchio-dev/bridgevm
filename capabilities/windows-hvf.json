@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-28",
-  "tested_commit": "810b2ac1c736470bece221477c9fc4385f5916de",
+  "tested_commit": "588db9093c0ea61a7775c28b73a300b49badeee1",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -139,7 +139,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "Re-proven 2026-08-28 at final head 810b2ac1c736470bece221477c9fc4385f5916de. GitHub-hosted CI run 33177402203 passed rustfmt, workspace tests on macOS 15 and macOS 26, all-target clippy with warnings denied, MSRV 1.85, Linux-stub cross-check, native Venus checks/tests/host probe/device smoke, structural budgets, capability/documentation gates, and the complete macOS app build plus Swift and XCTest-shim suites. Security and quality run 33177402220 passed fuzz corpus smoke with the refreshed standalone lockfile, all Loom models, graphics-claim checks, live-gate policy, and supply-chain policy. Diagnostic post-performance audit run 33178479268 independently passed exact-head workspace tests, all-target clippy and structural budgets, then isolated its sole project-fast failure to the intentionally stale A11 seal; the remaining fast checks passed and the working tree was clean. This docs-only reseal records those retained exact-SHA results without changing A9 or B4, which remain OPEN under their unchanged criteria.",
+      "measured": "Re-proven 2026-08-28 at final head 588db9093c0ea61a7775c28b73a300b49badeee1. GitHub-hosted CI run 33219386653 passed the repository CI matrix for the sealed B4 input changes, including rustfmt, workspace tests on macOS 15 and macOS 26, all-target clippy with warnings denied, MSRV 1.85, Linux-stub cross-check, native Venus checks/tests/host probe/device smoke, structural budgets, capability/documentation gates, and the complete macOS app build plus Swift and XCTest-shim suites. Security and quality run 33219386651 passed fuzz corpus smoke, all Loom models, graphics-claim checks, the updated live-gate policy including B4 sealed-submit coverage, and supply-chain policy. Local scripts/check-project.sh --fast also passed before the code commit; the subsequent verifier correctly rejected only the stale capability seal. This docs-only reseal records the retained exact-SHA hosted results without changing A9 or B4, which remain OPEN under their unchanged criteria.",
       "evidence_paths": [
         "STATUS.md"
       ]
