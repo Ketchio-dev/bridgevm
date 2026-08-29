@@ -257,7 +257,16 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
     if exist "%%D\vulkan_virtio.dll" copy /y %DRV%\viogpu3d\vulkan_virtio.dll "%%D\vulkan_virtio.dll" >nul
   )
   copy /y %DRV%\..\bvgpu-firstboot.cmd %WIN%\BridgeVM\bvgpu-firstboot.cmd >nul
-  copy /y %DRV%\..\bvgpu-clean-driver-state.ps1 %WIN%\BridgeVM\bvgpu-clean-driver-state.ps1 >nul
+  rem Keep the cleanup program inside the sealed package directory. The guest
+  rem agent owns other files directly under C:\BridgeVM during first boot; a
+  rem retained run showed that shared mutable namespace replacing the cleanup
+  rem program with agent log bytes. Stage and execute the package-local copy.
+  copy /y %DRV%\..\bvgpu-clean-driver-state.ps1 %WIN%\BridgeVM\viogpu3d\bvgpu-clean-driver-state.ps1 >nul
+  fc /b %DRV%\..\bvgpu-clean-driver-state.ps1 %WIN%\BridgeVM\viogpu3d\bvgpu-clean-driver-state.ps1 >nul
+  if errorlevel 1 (
+    echo BVINJECT ERROR: package-local cleanup verification failed
+    goto :end
+  )
   if exist %DRV%\..\bvgpu-real-title-gate.ps1 copy /y %DRV%\..\bvgpu-real-title-gate.ps1 %WIN%\BridgeVM\bvgpu-real-title-gate.ps1 >nul
   if exist %DRV%\..\bvgpu-title-gate.ps1 copy /y %DRV%\..\bvgpu-title-gate.ps1 %WIN%\BridgeVM\bvgpu-title-gate.ps1 >nul
   copy /y %DRV%\..\bvgpu-diagnostics-run.cmd %WIN%\BridgeVM\bvgpu-diagnostics-run.cmd >nul
