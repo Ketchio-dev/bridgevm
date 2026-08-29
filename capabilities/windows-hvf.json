@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "capability_id": "windows-hvf",
-  "reviewed": "2026-08-28",
-  "tested_commit": "db81c72c9f2385e8bac29d6bf5c3178ec0fe5a95",
+  "reviewed": "2026-08-29",
+  "tested_commit": "6747e163641372226249743b3c5a0e627e87cbfd",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -139,7 +139,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "Re-proven 2026-08-29 at exact code head db81c72c9f2385e8bac29d6bf5c3178ec0fe5a95. GitHub-hosted CI run 33248782784 passed the repository CI matrix for the fail-closed Windows firstboot cleanup isolation change, including rustfmt, workspace tests on macOS 15 and macOS 26, all-target clippy with warnings denied, MSRV 1.85, Linux-stub cross-check, native Venus checks/tests/host probe/device smoke, structural budgets, capability/documentation gates, and the complete macOS app build plus Swift and XCTest-shim suites. Security and quality run 33248782722 passed fuzz corpus smoke, all Loom models, graphics-claim checks, live-gate policy, and supply-chain policy. The retained live firstboot run independently completed stage1 through stage4 with stage4_pass=1, BVGPU-DRIVERSTORE-CLEAN-PASS, BVGPU-DRIVER-STATE-PASS, bound driver 120.45.0.0, and exact expected/bound INF identity. This docs-only reseal records the exact-SHA hosted results without changing A9 or B4, which remain OPEN under their unchanged criteria.",
+      "measured": "Re-proven 2026-08-29 at exact code head 6747e163641372226249743b3c5a0e627e87cbfd. GitHub-hosted CI run 33278975760 passed the repository CI matrix for the fail-closed B4 baseline classification change, including rustfmt, workspace tests on macOS 15 and macOS 26, all-target clippy with warnings denied, MSRV 1.85, Linux-stub cross-check, native Venus checks/tests/host probe/device smoke, structural budgets, capability/documentation gates, and the complete macOS app build plus Swift and XCTest-shim suites. Security and quality run 33278975740 passed fuzz corpus smoke, all Loom models, graphics-claim checks, live-gate policy, and supply-chain policy. The retained live firstboot run independently completed stage1 through stage4 with stage4_pass=1, BVGPU-DRIVERSTORE-CLEAN-PASS, BVGPU-DRIVER-STATE-PASS, bound driver 120.45.0.0, and exact expected/bound INF identity. This docs-only reseal records the exact-SHA hosted results without changing A9 or B4, which remain OPEN under their unchanged criteria.",
       "evidence_paths": [
         "STATUS.md"
       ]
