@@ -132,6 +132,7 @@ set STAGE=stage4
 call :require_new_boot C:\BridgeVM\stage3.boot
 if errorlevel 2 goto :done
 if errorlevel 1 goto :fail
+if exist C:\BridgeVM\bridgevm-display-only-firstboot.txt goto :vulkan_ok
 echo [stage4] exercise Vulkan loader and Venus ICD >> "%LOG%"
 set VN_DEBUG=init,result
 set MESA_LOG_FILE=C:\BridgeVM\bvgpu-mesa-vulkan.log
@@ -153,6 +154,10 @@ cmd /c exit /b %VULKAN_STATUS%
 goto :fail
 
 :vulkan_ok
+if exist C:\BridgeVM\bridgevm-display-only-firstboot.txt (
+  echo [stage4] Vulkan/draw probes skipped by B4 display-only preparation policy >> "%LOG%"
+  goto :draw_smoke_done
+)
 echo [stage4] run Vulkan draw smoke with image-level assertion >> "%LOG%"
 if not exist C:\BridgeVM\bvgpu-vulkan-draw-smoke.exe (
   echo [stage4] Vulkan draw smoke missing, skipped >> "%LOG%"

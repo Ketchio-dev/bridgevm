@@ -113,6 +113,7 @@ if exist %DRV%\..\bridgevm-diagnostics-only.txt (
   rem Optional: only present when a run is testing an ICD behaviour switch.
   if exist %DRV%\..\vn-debug-extra.txt copy /y %DRV%\..\vn-debug-extra.txt %WIN%\BridgeVM\vn-debug-extra.txt >nul
   if exist %DRV%\..\keep-running.txt copy /y %DRV%\..\keep-running.txt %WIN%\BridgeVM\keep-running.txt >nul
+  if exist %DRV%\..\bridgevm-display-only-firstboot.txt copy /y %DRV%\..\bridgevm-display-only-firstboot.txt %WIN%\BridgeVM\bridgevm-display-only-firstboot.txt >nul
   copy /y %DRV%\..\bvgpu-diagnostics-service.exe %WIN%\BridgeVM\bvgpu-diagnostics-service.exe >nul
   copy /y %DRV%\..\bvgpu-d3dkmt-probe.exe %WIN%\BridgeVM\bvgpu-d3dkmt-probe.exe >nul
   if not exist "%WIN%\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup\" mkdir "%WIN%\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
@@ -263,6 +264,7 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   rem Optional: only present when a run is testing an ICD behaviour switch.
   if exist %DRV%\..\vn-debug-extra.txt copy /y %DRV%\..\vn-debug-extra.txt %WIN%\BridgeVM\vn-debug-extra.txt >nul
   if exist %DRV%\..\keep-running.txt copy /y %DRV%\..\keep-running.txt %WIN%\BridgeVM\keep-running.txt >nul
+  if exist %DRV%\..\bridgevm-display-only-firstboot.txt copy /y %DRV%\..\bridgevm-display-only-firstboot.txt %WIN%\BridgeVM\bridgevm-display-only-firstboot.txt >nul
   copy /y %DRV%\..\bvgpu-diagnostics-service.exe %WIN%\BridgeVM\bvgpu-diagnostics-service.exe >nul
   echo pending > %WIN%\BridgeVM\viogpu3d-firstboot-pending.flag
   if exist %DRV%\..\bvgpu-diagnostics.ps1 copy /y %DRV%\..\bvgpu-diagnostics.ps1 %WIN%\BridgeVM\bvgpu-diagnostics.ps1 >nul
