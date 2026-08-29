@@ -83,7 +83,7 @@ ALLOWED_FIELDS = frozenset(
         "driver_hash",
         "image_hash",
         "vars_hash",
-        "binary_hash", "injector_sha256", "agent_sha256", "prepared_image_sha256", "prepared_vars_sha256", "injector_boot_observed", "f1_driver_load", "f2_resize", "f3_window_verbs", "f4_glyph_observation", "active_scanout_capture", "landed", "p95_first_changed_ms", "baseline_iterations", "baseline_matches", "load_processes",
+        "binary_hash", "injector_sha256", "agent_sha256", "prepared_image_sha256", "prepared_vars_sha256", "injector_boot_observed", "f1_driver_load", "f2_resize", "f3_window_verbs", "f4_glyph_observation", "active_scanout_capture", "landed", "pointer_sample_count", "rendering_package_regressions", "p95_first_changed_ms", "baseline_iterations", "baseline_matches", "load_processes",
     }
 )
 

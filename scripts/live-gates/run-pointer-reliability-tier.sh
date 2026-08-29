@@ -33,9 +33,9 @@ N="${N:-20}" OUT="$OUT/batch" TARGET="$TARGET" VARS="$VARS" VIOGPU3D_DIR="$VIOGP
 
 landed=$(sed -n 's/^landed \([0-9]*\/[0-9]*\).*/\1/p' "$OUT/batch/summary.txt" 2>/dev/null | tail -1)
 p95=$(sed -n 's/.*p95_first_changed_ms=\([0-9a-z]*\).*/\1/p' "$OUT/batch/summary.txt" 2>/dev/null | tail -1)
+pointer_samples=$(sed -n 's/^landed [0-9]*\/\([0-9]*\).*/\1/p' "$OUT/batch/summary.txt" 2>/dev/null | tail -1); rendering_regressions=$(sed -n 's/.*rendering_package_regressions=\([0-9]*\).*/\1/p' "$OUT/batch/summary.txt" 2>/dev/null | tail -1)
 outcome=completed; pass=true
 [ "$status" -eq 0 ] || { outcome=failed; pass=false; }
-
 # Fields must be on the redact-receipt allowlist or they are dropped.
 cat > "$OUT/receipt.json" <<EOF
 {
@@ -50,7 +50,7 @@ cat > "$OUT/receipt.json" <<EOF
   "input_manifest_sha256": "$(seal "$INPUT_MANIFEST")",
   "host_model": "$(sysctl -n hw.model)",
   "macos_version": "$(sw_vers -productVersion)",
-  "sample_count": ${N:-20},
+  "sample_count": ${N:-20}, "pointer_sample_count": ${pointer_samples:-0}, "rendering_package_regressions": ${rendering_regressions:-0},
   "landed": "${landed:-unknown}",
   "p95_first_changed_ms": "${p95:-unknown}",
   "finished_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
