@@ -32,6 +32,13 @@
         <ProtectYourPC>3</ProtectYourPC>
       </OOBE>
       <TimeZone>UTC</TimeZone>
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>1</Order>
+          <CommandLine>powershell.exe -NoProfile -Command "Set-LocalUser -Name 'bridge' -PasswordNeverExpires $true"</CommandLine>
+          <Description>Keep the unattended lab account available for BridgeVM guest-agent gates</Description>
+        </SynchronousCommand>
+      </FirstLogonCommands>
       <UserAccounts>
         <LocalAccounts>
           <LocalAccount wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
