@@ -27,7 +27,7 @@ IMAGE_HASH="$(seal "$TARGET")"; VARS_HASH="$(seal "$VARS")"
 [[ -n "$TARGET" && -n "$VARS" && "$(basename "$(dirname "$TARGET")")" == "$IMAGE_HASH-$VARS_HASH" ]] || { echo 'B4 prepared source identity mismatch' >&2; exit 1; }
 
 status=0
-N="${N:-20}" OUT="$OUT/batch" TARGET="$TARGET" VARS="$VARS" \
+N="${N:-20}" OUT="$OUT/batch" TARGET="$TARGET" VARS="$VARS" VIOGPU3D_DIR="$VIOGPU_DIR" \
   bash "$REPO/scripts/verify-pointer-click-reliability.sh" \
   > "$OUT/gate.log" 2>&1 || status=$?
 
