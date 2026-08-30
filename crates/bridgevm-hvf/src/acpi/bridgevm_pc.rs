@@ -7,7 +7,7 @@ use super::*;
 use crate::machine::bridgevm_pc as board;
 
 const PC_OEM_TABLE_ID: &[u8; 8] = b"BVMPC   ";
-const XSDT_ENTRY_COUNT: usize = 7;
+pub const BRIDGEVM_PC_ACPI_TABLES_GPA: u64 = board::BOOT_INFO.base + 0x2000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeVmPcAcpiBlobs {
@@ -31,9 +31,9 @@ pub fn build_bridgevm_pc_acpi(cpu_count: u64) -> BridgeVmPcAcpiBlobs {
     let spcr = build_pc_spcr();
     let dbg2 = build_pc_dbg2();
 
-    let base = board::BOOT_INFO.base;
+    let base = BRIDGEVM_PC_ACPI_TABLES_GPA;
     let off_xsdt = 0;
-    let off_dsdt = off_xsdt + xsdt_len_for(XSDT_ENTRY_COUNT);
+    let off_dsdt = off_xsdt + xsdt_len_for(7);
     let off_fadt = off_dsdt + dsdt.len() as u64;
     let off_madt = off_fadt + fadt_len();
     let off_pptt = off_madt + madt.len() as u64;

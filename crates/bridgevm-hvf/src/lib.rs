@@ -17,6 +17,7 @@ use std::{
 // dedicated files like these rather than growing the legacy probe monolith
 // below. See docs/decisions/hvf-windows-engine-strategy.md and docs/reference/hvf-windows-platform-contract-gap.md.
 pub mod acpi;
+pub mod bridgevm_pc_boot_info;
 pub mod bridgevm_pc_gic;
 pub mod checkpoint;
 pub mod dtb;

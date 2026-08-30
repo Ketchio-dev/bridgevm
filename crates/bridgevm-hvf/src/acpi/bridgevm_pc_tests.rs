@@ -38,8 +38,8 @@ fn contains(bytes: &[u8], needle: &[u8]) -> bool {
 #[test]
 fn pc_acpi_is_finalized_inside_the_handoff_aperture() {
     let blobs = build_bridgevm_pc_acpi(4);
-    assert_eq!(blobs.tables_base, board::BOOT_INFO.base);
-    assert!(blobs.tables.len() as u64 <= board::BOOT_INFO.size);
+    assert_eq!(blobs.tables_base, BRIDGEVM_PC_ACPI_TABLES_GPA);
+    assert!(blobs.tables_base + blobs.tables.len() as u64 <= board::BOOT_INFO.end());
     assert_eq!(&blobs.rsdp[..8], b"RSD PTR ");
     assert_eq!(le64(&blobs.rsdp, 24), blobs.tables_base);
     assert_eq!(

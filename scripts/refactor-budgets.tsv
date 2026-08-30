@@ -202,6 +202,8 @@ crates/bridgevm-hvf/src/hda/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/hda/tests/part_1.rs	395	0
 crates/bridgevm-hvf/src/lib.rs	49	0
 crates/bridgevm-hvf/src/bridgevm_pc.rs	192	0
+crates/bridgevm-hvf/src/bridgevm_pc_boot_info.rs	139	0
+crates/bridgevm-hvf/src/bridgevm_pc_boot_info_tests.rs	121	0
 crates/bridgevm-hvf/src/machine.rs	350	0
 crates/bridgevm-hvf/src/machine_plan.rs	367	0
 crates/bridgevm-hvf/src/media.rs	605	0
@@ -268,7 +270,8 @@ crates/bridgevm-hvf/src/pflash.rs	319	0
 crates/bridgevm-hvf/src/pl011.rs	244	0
 crates/bridgevm-hvf/src/pl031.rs	153	0
 crates/bridgevm-hvf/src/platform_pc.rs	113	0
-crates/bridgevm-hvf/src/platform_pc_firmware.rs	55	0
+crates/bridgevm-hvf/src/platform_pc_firmware.rs	36	0
+crates/bridgevm-hvf/src/platform_pc_firmware_tests.rs	32	0
 crates/bridgevm-hvf/src/platform_pc_tests.rs	68	0
 crates/bridgevm-hvf/src/platform/apple/diagnostic_vector.rs	192	6
 crates/bridgevm-hvf/src/platform/apple/ffi.rs	220	0
