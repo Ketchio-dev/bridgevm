@@ -71,6 +71,15 @@ the independent board addresses. This remains one live interrupt-path run, not
 a firmware, Windows, or device-SPI result. See the
 [exact-head receipt](../windows-arm/evidence/bridgevm-pc-gic-irq-live-20260830.md).
 
+A third bounded probe at exact BridgeVM code head
+`d7a9d191b8acd37939a94e5ef2f14cceb83d8d13` mapped the complete 64 KiB
+boot-info image read-only at `0x2600_0000`. A minimal EL1 guest validated the
+`BVMBOOT1` magic, ABI v1, 112-byte header checksum and RSDP signature, followed
+the RSDP pointer to `0x2600_2000`, and validated the XSDT signature before
+returning result `1`. This proves live mapping and guest visibility only; no
+firmware phase executed. See the
+[exact-head receipt](../windows-arm/evidence/bridgevm-pc-boot-info-live-20260830.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -83,6 +92,19 @@ button. PSCI owns vCPU startup, shutdown and reset coordination.
 must not depend on it; after firmware processing, Windows sees standard UEFI,
 ACPI, SMBIOS, PCIe and device interfaces.
 
+The first independent firmware module is a build-only DXE consumer in
+`BridgeVmPcPkg`. It uses generic TianoCore `MdePkg` interfaces, validates the
+fixed boot-info header, required ACPI v1 table set, FADT-to-DSDT link, SMBIOS
+3.0 entry point and complete structure stream, then publishes the standard
+UEFI ACPI 2.0 and SMBIOS 3.0 configuration-table GUIDs. It builds reproducibly
+as an AArch64 PE/COFF driver from pinned source, but it is not a firmware volume
+and does not implement reset-vector, SEC/PEI/DXE-core or UEFI boot services.
+At exact BridgeVM code head
+`49f2c8fdebb1c5c4bc445840fb7923afddfd099c`, the offline build pinned EDK2
+`b03a21a63e3bd001f52c527e5a57feddb53a690b`, GCC 16.1.0 and iasl 20260408.
+The resulting 12,288-byte development driver has SHA-256
+`01f555aec886cf241f277c53ac2bf57d38fd064a8ae4b6508f4f4897802efccc`.
+
 ## Implementation gates
 
 | Gate | State |
@@ -91,6 +113,8 @@ ACPI, SMBIOS, PCIe and device interfaces.
 | Minimal memory layout, vars flash, UART, RTC and PCIe ECAM runtime | implemented, host-unit only |
 | Host GIC geometry validation and bounded placement probe | live single-run placement passed |
 | HVF RAM mapping and architected-timer PPI delivery | live single-run passed; firmware and device SPI integration open |
+| Boot-info v1 mapping and EL1 pointer traversal | live single-run passed; firmware execution open |
+| ACPI/SMBIOS DXE consumer | reproducible module build only; no firmware-volume claim |
 | Independently built and audited UEFI firmware | open |
 | UEFI ACPI/SMBIOS/GOP/block-I/O handoff | open |
 | Windows installer and installed-disk boot | open |

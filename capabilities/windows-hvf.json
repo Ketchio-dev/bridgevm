@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-30",
-  "tested_commit": "5db0948751d41f2f8f200e01431f6c7ea5ee355e",
+  "tested_commit": "49f2c8fdebb1c5c4bc445840fb7923afddfd099c",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -139,7 +139,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "Re-proven 2026-08-30 at exact tested code head 5db0948751d41f2f8f200e01431f6c7ea5ee355e. The complete local scripts/check-project.sh passed, including workspace and Venus tests, the probe example, Rust formatting and clippy policy, structural budgets, documentation gates, Swift build/tests and all XCTest-shim suites. GitHub-hosted CI run 33328773656 passed the repository matrix, including the Rust 1.98 latest-stable advisory, and Security and quality run 33328775153 passed fuzz corpus smoke, Loom, graphics-claim, live-gate and supply-chain policy checks. An exact-head live single-run probe also delivered the BridgeVM Virtual ARM PC architected-timer PPI in-kernel at the independent GIC and RAM addresses; it is not firmware or Windows boot evidence. A9 remains OPEN. B4 is separately PROVEN by exact-head Studio t8 job 20260830-134316-74417-14894: fixed N=20 landed 20/20 with zero rendering/package regressions and p95 243 ms.",
+      "measured": "Re-proven 2026-08-30 at exact tested code head 49f2c8fdebb1c5c4bc445840fb7923afddfd099c. The complete local scripts/check-project.sh passed, including workspace and Venus tests, the probe examples, Rust formatting and clippy policy, structural budgets, documentation gates, Swift build/tests and all XCTest-shim suites. GitHub-hosted CI run 33331915348 passed the repository matrix, including the Rust 1.98 latest-stable advisory, and Security and quality run 33331878973 passed fuzz corpus smoke, Loom, graphics-claim, live-gate and supply-chain policy checks. The independent BridgeVmPcPkg ACPI/SMBIOS DXE consumer also built reproducibly from pinned EDK2 as a 12,288-byte AArch64 development driver with SHA-256 01f555aec886cf241f277c53ac2bf57d38fd064a8ae4b6508f4f4897802efccc; this is a module-build result, not a firmware or Windows boot claim. A separate exact-head live single-run probe at d7a9d191b8acd37939a94e5ef2f14cceb83d8d13 showed an EL1 guest reading boot-info v1 and following its RSDP to XSDT. A9 remains OPEN. B4 is separately PROVEN by exact-head Studio t8 job 20260830-134316-74417-14894: fixed N=20 landed 20/20 with zero rendering/package regressions and p95 243 ms.",
       "evidence_paths": [
         "STATUS.md"
       ]
