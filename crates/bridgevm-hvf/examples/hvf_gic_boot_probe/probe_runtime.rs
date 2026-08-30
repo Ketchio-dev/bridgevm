@@ -353,29 +353,33 @@ pub(crate) fn run() -> ExitCode {
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
                 last_pre_run_pc = drain_pc;
                 crate::usgic_bridge::pre_run(0, vcpu);
-                let pending = {
-                    let mut platform_guard = lock_platform(
-                        &platform,
-                        smp_trace.as_deref(),
-                        0,
-                        "cpu0 pre-run platform mutex",
-                    );
-                    let platform = &mut *platform_guard;
-                    if let Some(bridge) = kd_serial_bridge.as_mut() {
-                        bridge.pump(platform);
-                    }
-                    drain_stats.prepare_pending_delivery(
-                        platform,
-                        &mut guest_ram,
-                        drain_trace,
-                        DrainContext {
-                            location: DrainLocation::PreRun,
-                            exit: exits,
-                            pc: drain_pc,
-                        },
-                    )
-                };
-                drain_stats.complete_pending_delivery(pending, drain_trace);
+                if pre_run_drain_gate.should_drain_primary_pre_run() {
+                    let pending = {
+                        let mut platform_guard = lock_platform(
+                            &platform,
+                            smp_trace.as_deref(),
+                            0,
+                            "cpu0 pre-run platform mutex",
+                        );
+                        let platform = &mut *platform_guard;
+                        if let Some(bridge) = kd_serial_bridge.as_mut() {
+                            bridge.pump(platform);
+                        }
+                        drain_stats.prepare_pending_delivery(
+                            platform,
+                            &mut guest_ram,
+                            drain_trace,
+                            DrainContext {
+                                location: DrainLocation::PreRun,
+                                exit: exits,
+                                pc: drain_pc,
+                            },
+                        )
+                    };
+                    drain_stats.complete_pending_delivery(pending, drain_trace);
+                } else {
+                    drain_stats.record_pre_run_skip();
+                }
                 let reason = match run_hvf_vcpu_once(vcpu, exit) {
                     Ok(reason) => reason,
                     Err(r) => {
@@ -475,11 +479,7 @@ pub(crate) fn run() -> ExitCode {
                             let srt = ((esr >> 16) & 0x1f) as u32;
                             let is_write = (esr >> 6) & 1 == 1;
                             trace_isv0_data_abort(esr, last_pc, ipa);
-                            // srt=31 is WZR/XZR (stores write zero, loads
-                            // discard) — never index the HV register file,
-                            // where slot 31 is the PC. Linux emits `str wzr`
-                            // for zero MMIO writes; this leaked the guest PC
-                            // into device registers (virtio feature_select).
+                            // srt=31 is WZR/XZR; never leak register-file slot 31 (PC) into MMIO.
                             let op = if is_write {
                                 let mut v = 0u64;
                                 if srt != 31 {
@@ -594,6 +594,7 @@ pub(crate) fn run() -> ExitCode {
                             }
                             record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
                             drain_stats.complete_pending_delivery(pending, drain_trace);
+                            pre_run_drain_gate.note_primary_post_mmio_drain();
                             if trace_this_fwcfg {
                                 println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
                             }

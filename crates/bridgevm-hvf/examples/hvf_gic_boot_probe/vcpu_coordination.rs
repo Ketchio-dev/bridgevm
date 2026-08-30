@@ -2,6 +2,10 @@
 
 use crate::*;
 
+#[path = "vcpu_coordination/drain_gate.rs"]
+mod drain_gate;
+pub(crate) use drain_gate::PreRunDrainGate;
+
 pub(crate) struct VcpuControl {
     pub(crate) state: Mutex<PsciState>,
     pub(crate) condvar: Condvar,
@@ -103,34 +107,6 @@ impl SecondaryTerminalSignal {
     }
 }
 
-pub(crate) struct PreRunDrainGate {
-    pub(crate) enabled: bool,
-    pub(crate) secondary_pending: AtomicBool,
-}
-
-impl PreRunDrainGate {
-    pub(crate) fn from_env() -> Self {
-        Self::new(env_flag_default("BRIDGEVM_DRAIN_GATE", true))
-    }
-    pub(crate) const fn new(enabled: bool) -> Self {
-        Self {
-            enabled,
-            secondary_pending: AtomicBool::new(true),
-        }
-    }
-    pub(crate) fn should_drain_secondary_pre_run(&self) -> bool {
-        if !self.enabled {
-            return true;
-        }
-        self.secondary_pending.swap(false, Ordering::AcqRel)
-    }
-    pub(crate) fn mark_secondary_pending(&self) {
-        if self.enabled {
-            self.secondary_pending.store(true, Ordering::Release);
-        }
-    }
-}
-
 pub(crate) struct AutomationGate {
     pub(crate) always_check: bool,
     pub(crate) serial_dirty: bool,
@@ -197,39 +173,6 @@ mod automation_gate_tests {
         assert!(gate.should_check(true));
         gate.note_checked();
         assert!(!gate.should_check(false));
-    }
-}
-
-#[cfg(test)]
-mod pre_run_drain_gate_tests {
-    use super::*;
-
-    #[test]
-    fn enabled_gate_allows_initial_secondary_drain_once() {
-        let gate = PreRunDrainGate::new(true);
-
-        assert!(gate.should_drain_secondary_pre_run());
-        assert!(!gate.should_drain_secondary_pre_run());
-    }
-
-    #[test]
-    fn enabled_gate_allows_drain_after_pending_marker() {
-        let gate = PreRunDrainGate::new(true);
-
-        assert!(gate.should_drain_secondary_pre_run());
-        assert!(!gate.should_drain_secondary_pre_run());
-        gate.mark_secondary_pending();
-        assert!(gate.should_drain_secondary_pre_run());
-        assert!(!gate.should_drain_secondary_pre_run());
-    }
-
-    #[test]
-    fn disabled_gate_preserves_always_drain_behavior() {
-        let gate = PreRunDrainGate::new(false);
-
-        assert!(gate.should_drain_secondary_pre_run());
-        assert!(gate.should_drain_secondary_pre_run());
-        assert!(gate.should_drain_secondary_pre_run());
     }
 }
 
