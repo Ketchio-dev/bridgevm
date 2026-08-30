@@ -53,7 +53,7 @@ send() {
 }
 BRIDGEVM_BOOT_PROGRESS_KILL=1 scripts/run-hvf-windows-installed-boot.sh --target "$STAGE/disk.raw" --vars "$STAGE/vars.fd" \
   --evidence-dir "$OUT/preparation" \
-  --watchdog-ms 720000 --ram-mib 6144 --smp-cpus 4 --max-reboots 8 --release --enable-xhci \
+  --watchdog-ms 720000 --ram-mib 6144 --smp-cpus 4 --max-reboots 8 --release --enable-xhci --no-guest-disk-harvest \
   --agent-service-control "$CTL" --agent-share-host "$OUT/preparation/share" --agent-share-guest 'C:\BridgeVMPtr' \
   --agent-share-ms 500 --virtio-gpu-3d --gpu-trace "$OUT/preparation/virtio-gpu.jsonl" --gpu-trace-protocol venus \
   --viogpu3d-dir "$VIOGPU_DIR" > "$OUT/preparation/launcher.out" 2>&1 &

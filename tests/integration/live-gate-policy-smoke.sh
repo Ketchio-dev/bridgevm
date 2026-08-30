@@ -169,7 +169,7 @@ check "the A3 verifier requests final diagnostics only from failure cleanup" 'gr
 check "the A3 diagnostic stop remains bounded by its existing grace" 'grep -q '\''deadline=$((SECONDS + DIAGNOSTIC_GRACE))'\'' "$A3_VERIFY"'
 check "the installed boot runner explicitly forwards the diagnostic request" 'grep -q '\''BRIDGEVM_HOST_DIAGNOSTIC_STOP_REQUEST='\'' "$BOOT_RUNNER"'
 check "B4 pointer lanes avoid post-HVF raw-disk mounts" \
-    'grep -q -- "--no-guest-disk-harvest" "$REPO/scripts/pointer-reliability-vm.sh"'
+    'grep -q -- "--no-guest-disk-harvest" "$REPO/scripts/pointer-reliability-vm.sh" && grep -q -- "--no-guest-disk-harvest" "$REPO/scripts/prepare-pointer-reliability-source.sh"'
 check "disk-harvest suppression fails closed for fresh title logs" \
     'grep -q "cannot be combined with title gates" "$REPO/scripts/run-hvf-windows-installed-boot-args.sh"'
 
