@@ -177,6 +177,8 @@ crates/bridgevm-daemon/src/unix_time.rs	16	0
 crates/bridgevm-fullvm/src/lib.rs	26	0
 crates/bridgevm-hvf/src/acpi/acpi_header_len.rs	868	0
 crates/bridgevm-hvf/src/acpi/aml_field_length.rs	733	0
+crates/bridgevm-hvf/src/acpi/bridgevm_pc.rs	295	0
+crates/bridgevm-hvf/src/acpi/bridgevm_pc_tests.rs	182	0
 crates/bridgevm-hvf/src/acpi/mod.rs	4	0
 crates/bridgevm-hvf/src/acpi/tests/helpers.rs	198	0
 crates/bridgevm-hvf/src/acpi/tests/mod.rs	0	0
@@ -266,6 +268,7 @@ crates/bridgevm-hvf/src/pflash.rs	319	0
 crates/bridgevm-hvf/src/pl011.rs	244	0
 crates/bridgevm-hvf/src/pl031.rs	153	0
 crates/bridgevm-hvf/src/platform_pc.rs	113	0
+crates/bridgevm-hvf/src/platform_pc_firmware.rs	55	0
 crates/bridgevm-hvf/src/platform_pc_tests.rs	68	0
 crates/bridgevm-hvf/src/platform/apple/diagnostic_vector.rs	192	6
 crates/bridgevm-hvf/src/platform/apple/ffi.rs	220	0

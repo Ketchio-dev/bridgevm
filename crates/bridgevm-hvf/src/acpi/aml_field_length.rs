@@ -71,12 +71,13 @@ pub(crate) fn resource_word_bus_number(min: u16, max: u16) -> Vec<u8> {
 }
 
 pub(crate) fn resource_dword_memory(base: u64, size: u64) -> Vec<u8> {
-    let base = u32::try_from(base).expect("DWordMemory base exceeds 32 bits");
-    let size = u32::try_from(size).expect("DWordMemory size exceeds 32 bits");
     let max = base
         .checked_add(size)
-        .and_then(|v| v.checked_sub(1))
+        .and_then(|value| value.checked_sub(1))
         .expect("DWordMemory range overflow");
+    let base = u32::try_from(base).expect("DWordMemory base exceeds 32 bits");
+    let size = u32::try_from(size).expect("DWordMemory size exceeds 32 bits");
+    let max = u32::try_from(max).expect("DWordMemory maximum exceeds 32 bits");
     let mut out = vec![0x87, 0x17, 0x00, 0x00, 0x0C, 0x01]; // Memory, min/max fixed, read-write
     out.extend_from_slice(&0u32.to_le_bytes()); // granularity
     out.extend_from_slice(&base.to_le_bytes());

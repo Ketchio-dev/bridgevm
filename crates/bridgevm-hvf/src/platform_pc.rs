@@ -3,6 +3,10 @@
 //! This intentionally remains separate from the shipping platform. It proves
 //! that BridgeVM-owned device models can execute at the new board addresses;
 //! GIC setup, firmware tables and guest boot are later live-gated boundaries.
+//! Construction is explicit opt-in and must never become the default silently.
+
+#[path = "platform_pc_firmware.rs"]
+mod firmware;
 
 use crate::machine::bridgevm_pc as board;
 use crate::machine::Region;
@@ -11,6 +15,7 @@ use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
 use crate::pl031::Pl031;
 use crate::platform_virt::{MmioOp, MmioOutcome};
+pub use firmware::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BridgeVmPcMemoryLayout {
@@ -30,7 +35,6 @@ pub struct BridgeVmPcPlatform {
 }
 
 impl BridgeVmPcPlatform {
-    /// Explicit opt-in: this experimental board must never be selected by default.
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         assert_eq!(board::first_overlap(), None);

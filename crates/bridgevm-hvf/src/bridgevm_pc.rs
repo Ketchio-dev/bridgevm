@@ -24,6 +24,9 @@ pub const PCIE_ECAM: Region = Region::new(0x4000_0000, 0x1000_0000);
 pub const PCIE_MMIO_32: Region = Region::new(0x5000_0000, 0xB000_0000);
 pub const RAM_BASE: u64 = 0x1_0000_0000;
 pub const PCIE_MMIO_64: Region = Region::new(0x20_0000_0000, 0x20_0000_0000);
+pub const PCIE_MMIO_64_NON_PREFETCH: Region = Region::new(PCIE_MMIO_64.base, PCIE_MMIO_64.size / 2);
+pub const PCIE_MMIO_64_PREFETCH: Region =
+    Region::new(PCIE_MMIO_64_NON_PREFETCH.end(), PCIE_MMIO_64.size / 2);
 
 pub const GIC_MSI_INTID_BASE: u32 = 128;
 pub const GIC_MSI_INTID_COUNT: u32 = 64;
@@ -32,6 +35,11 @@ pub const SPI_RTC: u32 = 33;
 pub const SPI_TPM: u32 = 34;
 pub const SPI_PCIE_INTA: u32 = 40;
 pub const SPI_OFFSET: u32 = 32;
+pub const PPI_PMU: u32 = 7;
+pub const PPI_TIMER_HYP: u32 = 10;
+pub const PPI_TIMER_VIRT: u32 = 11;
+pub const PPI_TIMER_SECURE: u32 = 13;
+pub const PPI_TIMER_NONSEC: u32 = 14;
 pub const GICV3_REDIST_STRIDE: u64 = 0x2_0000;
 pub const MAX_CPUS: u64 = 64;
 const _: () = assert!(MAX_CPUS * GICV3_REDIST_STRIDE <= GIC_REDIST.size);
@@ -166,6 +174,9 @@ mod tests {
         assert_eq!(ram_region(0), None);
         assert_eq!(ram_region(8 << 30), Some(Region::new(RAM_BASE, 8 << 30)));
         assert_eq!(ram_region(PCIE_MMIO_64.base - RAM_BASE + 1), None);
+        assert_eq!(PCIE_MMIO_64_NON_PREFETCH.base, PCIE_MMIO_64.base);
+        assert_eq!(PCIE_MMIO_64_NON_PREFETCH.end(), PCIE_MMIO_64_PREFETCH.base);
+        assert_eq!(PCIE_MMIO_64_PREFETCH.end(), PCIE_MMIO_64.end());
     }
 
     #[test]
@@ -180,6 +191,7 @@ mod tests {
     #[test]
     fn interrupt_and_cpu_numbering_are_deterministic() {
         assert_eq!(spi_to_intid(SPI_UART), 64);
+        assert_eq!(PPI_TIMER_VIRT + 16, 27);
         assert_eq!(cpu_mpidr(0), 0);
         assert_eq!(cpu_mpidr(16), 0x100);
     }
