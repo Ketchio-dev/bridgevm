@@ -117,6 +117,16 @@ table signature. This is one live DXE-dispatch run, not complete UEFI or
 Windows boot evidence. See the
 [exact-head receipt](../windows-arm/evidence/bridgevm-pc-dxe-dispatch-live-20260830.md).
 
+An eighth bounded probe at exact BridgeVM code head
+`290f6b9c9c72c5659b53e1ae7ae10c8407cda720` inserted the BridgeVM-owned
+platform-table driver before the marker. The driver validated the complete
+boot-info ACPI and SMBIOS payloads and installed the standard ACPI 2.0 and
+SMBIOS 3 configuration-table GUIDs. After the marker returned, an independent
+host parser walked the EFI system table and required seven bounded entries plus
+the exact RSDP and SMBIOS anchor pointers. This is one live platform-table
+publication run, not complete UEFI or Windows boot evidence. See the
+[exact-head receipt](../windows-arm/evidence/bridgevm-pc-platform-tables-live-20260830.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -129,18 +139,22 @@ button. PSCI owns vCPU startup, shutdown and reset coordination.
 must not depend on it; after firmware processing, Windows sees standard UEFI,
 ACPI, SMBIOS, PCIe and device interfaces.
 
-The first independent firmware module is a build-only DXE consumer in
+The first independent firmware module is a DXE consumer in
 `BridgeVmPcPkg`. It uses generic TianoCore `MdePkg` interfaces, validates the
 fixed boot-info header, required ACPI v1 table set, FADT-to-DSDT link, SMBIOS
 3.0 entry point and complete structure stream, then publishes the standard
-UEFI ACPI 2.0 and SMBIOS 3.0 configuration-table GUIDs. It builds reproducibly
-as an AArch64 PE/COFF driver from pinned source, but it is not a firmware volume
-and does not implement reset-vector, SEC/PEI/DXE-core or UEFI boot services.
-At exact BridgeVM code head
+UEFI ACPI 2.0 and SMBIOS 3.0 configuration-table GUIDs. It first built
+reproducibly as a standalone AArch64 PE/COFF driver at exact BridgeVM code head
 `49f2c8fdebb1c5c4bc445840fb7923afddfd099c`, the offline build pinned EDK2
 `b03a21a63e3bd001f52c527e5a57feddb53a690b`, GCC 16.1.0 and iasl 20260408.
 The resulting 12,288-byte development driver has SHA-256
 `01f555aec886cf241f277c53ac2bf57d38fd064a8ae4b6508f4f4897802efccc`.
+At exact code head `290f6b9c9c72c5659b53e1ae7ae10c8407cda720`, the
+driver used unaligned-safe ACPI header reads, built with SHA-256
+`16b3fdd6ede6d5aea14d26419351cf262ef358692fd28682dbbafe74c22438b5`,
+and was integrated into the bounded DXE firmware volume. One HVF run proved
+that DXE dispatched it and that both table pointers appeared in the EFI system
+table. This does not establish the remaining UEFI services or protocols.
 
 The package also contains a BridgeVM-owned reset entry built independently of
 that DXE module. At exact BridgeVM code head
@@ -171,6 +185,13 @@ One HVF run entered generic DXE Core and dispatched the BridgeVM probe. UEFI
 architectural protocols, boot/runtime-service completeness and Windows remain
 open.
 
+The following exact-head tranche added `PlatformTablesDxe` before the marker.
+Pinned tools produced a byte-reproducible 64 MiB FD with SHA-256
+`1227e77889f26cb19c0e2fef2b446b727c39fa652b863c21474692dd65128873`.
+One HVF run proved that the EFI system table published the exact ACPI 2.0 and
+SMBIOS 3 pointers. Architectural protocols, variables, boot manager, GOP,
+block I/O and Windows remain open.
+
 ## Implementation gates
 
 | Gate | State |
@@ -179,14 +200,15 @@ open.
 | Minimal memory layout, vars flash, UART, RTC and PCIe ECAM runtime | implemented, host-unit only |
 | Host GIC geometry validation and bounded placement probe | live single-run placement passed |
 | HVF RAM mapping and architected-timer PPI delivery | live single-run passed; firmware and device SPI integration open |
-| Boot-info v1 mapping and EL1 pointer traversal | live single-run passed; firmware execution open |
-| ACPI/SMBIOS DXE consumer | reproducible module build only; no firmware-volume claim |
+| Boot-info v1 mapping and EL1 pointer traversal | live single-run passed; firmware validation and consumption passed separately |
+| ACPI/SMBIOS DXE consumer | reproducible firmware-volume build and live single-run publication passed |
 | Reset vector at GPA zero | live single-run passed; SEC, PI HOB and DXE-dispatch continuations passed separately |
 | Freestanding SEC validation | live single-run passed; bounded PI HOB and DXE-dispatch continuations passed separately |
 | Bounded PI HOB construction | live single-run passed; firmware-volume and DXE-dispatch continuation passed separately |
 | Generic DXE Core and BridgeVM marker dispatch | live single-run passed; architectural protocols and boot manager open |
 | Independently built and audited UEFI firmware | open |
-| UEFI ACPI/SMBIOS/GOP/block-I/O handoff | open |
+| UEFI ACPI/SMBIOS handoff | live single-run publication passed; fixed-sample and Windows consumption open |
+| UEFI GOP and block-I/O handoff | open |
 | Windows installer and installed-disk boot | open |
 | Storage, input, network, graphics and reset live gates | open |
 | TPM, Secure Boot and recovery lifecycle | open |
