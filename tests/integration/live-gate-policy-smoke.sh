@@ -63,6 +63,8 @@ check "the A3 receipt writer is executable" '[ -x "$A3_RECEIPT" ]'
 check "the A3 payload validator is executable" '[ -x "$A3_PAYLOAD" ] && [ -x "$A3_PAYLOAD_VALIDATOR" ]'
 check "the A3 payload staging policy is executable" '[ -x "$A3_STAGE" ]'
 check "the plist is well formed" 'plutil -lint "$PLIST" >/dev/null'
+check "the queue stays background while each requested gate gets app scheduling policy" \
+    'grep -A1 -q "<key>ProcessType</key>" "$PLIST" && grep -q '"'"'taskpolicy -a caffeinate'"'"' "$WORKER"'
 check "the Windows post-mortem harvester is executable" '[ -x "$POSTMORTEM_HARVEST" ]'
 check "the installed-boot runner attaches post-mortem media read-only" \
     'awk '\''/^harvest_guest_windows_postmortem\(\)/,/^}/'\'' "$BOOT_RUNNER" | grep -Fq -- '\''-imagekey diskimage-class=CRawDiskImage -readonly "$TARGET"'\'''

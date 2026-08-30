@@ -104,13 +104,13 @@ run_job() {
     mkdir -p "$WORK_ROOT"
     git -C "$REPO" worktree add --detach "$worktree" "$commit" >>"$dir/run.log" 2>&1
 
-    # Per-job target dir so concurrent cargo invocations cannot race, and
-    # `caffeinate` because a long gate must not be cut short by sleep.
+    # Per-job target dir avoids cargo races; application policy keeps live
+    # performance gates comparable, and caffeinate prevents sleep truncation.
     local status=0
     (
         cd "$worktree"
         export CARGO_TARGET_DIR="$WORK_ROOT/$job_id/target"
-        caffeinate -dimsu "$worktree/scripts/live-gates/run-tier.sh" \
+        taskpolicy -a caffeinate -dimsu "$worktree/scripts/live-gates/run-tier.sh" \
             "$tier" --out "$dir" --job-id "$job_id" \
             ${tier_args[@]+"${tier_args[@]}"}
     ) >>"$dir/run.log" 2>&1 &

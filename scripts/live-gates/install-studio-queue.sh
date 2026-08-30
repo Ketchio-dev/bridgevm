@@ -30,7 +30,7 @@ esac
 
 command -v git >/dev/null || fail "git is required"
 command -v python3 >/dev/null || fail "python3 is required (receipt redaction)"
-command -v caffeinate >/dev/null || fail "caffeinate is required (long gates)"
+command -v caffeinate >/dev/null && command -v taskpolicy >/dev/null || fail "caffeinate and taskpolicy are required (comparable long gates)"
 
 if ! command -v cargo >/dev/null; then
     fail "cargo is required; install the pinned toolchain first"
