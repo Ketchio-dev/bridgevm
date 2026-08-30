@@ -164,14 +164,14 @@ check "the A3 outer wait starts after bounded host preflight" \
     'grep -q "wait_for .*Boot watchdog:.*HOST_PREFLIGHT_TIMEOUT" "$A3_VERIFY"'
 check "the A3 outer wait leaves post-mortem diagnostic grace" \
     'grep -q '\''BOOT_TIMEOUT + DIAGNOSTIC_GRACE'\'' "$A3_VERIFY"'
-check "the A3 verifier notices an exited launcher while waiting" \
-    'grep -q '\''kill -0 "$LAUNCHER"'\'' "$A3_VERIFY"'
-check "the A3 verifier requests final diagnostics only from failure cleanup" \
-    'grep -q '\''(( status == 0 )) || diagnostic_stop'\'' "$A3_VERIFY" && grep -q '\''mv "$tmp" "$DIAGNOSTIC_STOP_REQUEST"'\'' "$A3_VERIFY"'
-check "the A3 diagnostic stop remains bounded by its existing grace" \
-    'grep -q '\''deadline=$((SECONDS + DIAGNOSTIC_GRACE))'\'' "$A3_VERIFY"'
-check "the installed boot runner explicitly forwards the diagnostic request" \
-    'grep -q '\''BRIDGEVM_HOST_DIAGNOSTIC_STOP_REQUEST='\'' "$BOOT_RUNNER"'
+check "the A3 verifier notices an exited launcher while waiting" 'grep -q '\''kill -0 "$LAUNCHER"'\'' "$A3_VERIFY"'
+check "the A3 verifier requests final diagnostics only from failure cleanup" 'grep -q '\''(( status == 0 )) || diagnostic_stop'\'' "$A3_VERIFY" && grep -q '\''mv "$tmp" "$DIAGNOSTIC_STOP_REQUEST"'\'' "$A3_VERIFY"'
+check "the A3 diagnostic stop remains bounded by its existing grace" 'grep -q '\''deadline=$((SECONDS + DIAGNOSTIC_GRACE))'\'' "$A3_VERIFY"'
+check "the installed boot runner explicitly forwards the diagnostic request" 'grep -q '\''BRIDGEVM_HOST_DIAGNOSTIC_STOP_REQUEST='\'' "$BOOT_RUNNER"'
+check "B4 pointer lanes avoid post-HVF raw-disk mounts" \
+    'grep -q -- "--no-guest-disk-harvest" "$REPO/scripts/pointer-reliability-vm.sh"'
+check "disk-harvest suppression fails closed for fresh title logs" \
+    'grep -q "cannot be combined with title gates" "$REPO/scripts/run-hvf-windows-installed-boot-args.sh"'
 
 start=$(date +%s)
 job_id="$("$CLI" submit t1-vtimer)"
