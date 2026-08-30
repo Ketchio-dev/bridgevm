@@ -1,9 +1,4 @@
-## @file
-# Bounded DXE-dispatch live marker for BridgeVM Virtual ARM PC.
-#
 # SPDX-License-Identifier: Apache-2.0
-##
-
 [Defines]
   INF_VERSION                    = 0x00010005
   BASE_NAME                      = BridgeVmPcDxeProbe
@@ -14,6 +9,8 @@
 
 [Sources]
   DxeProbe.c
+  RuntimeProbe.c
+  RuntimeProbe.h
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -21,5 +18,8 @@
 [LibraryClasses]
   UefiDriverEntryPoint
 
+[Protocols]
+  gEfiRuntimeArchProtocolGuid                 ## CONSUMES
+
 [Depex]
-  TRUE
+  gEfiRuntimeArchProtocolGuid

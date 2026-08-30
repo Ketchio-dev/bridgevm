@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# Build the development-only BridgeVM PC platform-table DXE probe firmware.
+# Build the development-only BridgeVM PC RuntimeDxe/platform-table probe.
 set -euo pipefail
 
 readonly EXPECTED_EDK2_COMMIT="b03a21a63e3bd001f52c527e5a57feddb53a690b"
 readonly EXPECTED_GCC_VERSION="aarch64-elf-gcc (GCC) 16.1.0"
 readonly EXPECTED_LD_VERSION="GNU ld (GNU Binutils) 2.46.1"
 readonly EXPECTED_REBASED_DXE_SHA256="b4ca5c00ef7e1b4104776005fe3c07978c78e39d92d2f035cfa72edabdf77d10"
+readonly EXPECTED_RUNTIME_SHA256="1ec9344d12805f32ae7e68a1a0d755ad00f5b7b59414a75cebfaaaae19ffab75"
 readonly EXPECTED_PLATFORM_SHA256="16b3fdd6ede6d5aea14d26419351cf262ef358692fd28682dbbafe74c22438b5"
-readonly EXPECTED_PROBE_SHA256="463912d8120a00dbcf1cc2493857b318b092889fcd473df53fc1bfa363c4afac"
+readonly EXPECTED_PROBE_SHA256="d0cf902d9cfec6456c23a09b10d5aca49010a88e30ce4e1ed888cfa3f54e8256"
 readonly EXPECTED_VECTOR_SHA256="a8d8a79279903253dd7dcc4d34a43aa5c00ac597cf45db613c9d23f03c69ddba"
-readonly EXPECTED_FV_SHA256="6b78484a8fca00ad55385a0d32910bc0a138ad2043b4eecf22c5696ccac1b0b1"
-readonly EXPECTED_FD_SHA256="1227e77889f26cb19c0e2fef2b446b727c39fa652b863c21474692dd65128873"
+readonly EXPECTED_FV_SHA256="d7b88cf02b786e4cdefec0190d863eb949470c9d221d43f4064b535489dc61c9"
+readonly EXPECTED_FD_SHA256="0a05d8ecb5bb96eb4088eda2f6c357aa044afb8cdbf92fd629c652da9dc89138"
 readonly FLASH_SIZE=$((0x04000000))
 readonly FV_OFFSET=$((0x00100000))
 readonly FV_SIZE=$((0x00100000))
@@ -52,22 +53,31 @@ build_root="$(mktemp -d "/tmp/bridgevm-pc-dxe-entry.XXXXXX")"
 trap 'rm -rf "$build_root"' EXIT
 "$repo_root/scripts/build-bridgevm-pc-dxe-core-fv.sh" \
   "$edk2_root" "$build_root/core"
+"$repo_root/scripts/build-bridgevm-pc-runtime-dxe.sh" \
+  "$edk2_root" "$build_root/runtime"
 "$repo_root/scripts/build-bridgevm-pc-edk2-consumer.sh" \
   "$edk2_root" "$build_root/drivers"
 
 core="$build_root/DxeCore.efi"
+runtime="$build_root/RuntimeDxe.efi"
 platform="$build_root/PlatformTables.efi"
 probe="$build_root/DxeProbe.efi"
 cp "$build_root/core/BridgeVmPcDxeCore.efi" "$core"
+cp "$build_root/runtime/RuntimeDxe.efi" "$runtime"
 cp "$build_root/drivers/BridgeVmPcPlatformTablesDxe.efi" "$platform"
 cp "$edk2_root/Build/BridgeVmPc/RELEASE_GCC/AARCH64/BridgeVmPcDxeProbe.efi" "$probe"
 "$tool_root/GenFw" --rebase 0x100400000 -r "$core"
 "$tool_root/GenFw" -z -r "$probe"
 rebased_sha256="$(shasum -a 256 "$core" | awk '{print $1}')"
+runtime_sha256="$(shasum -a 256 "$runtime" | awk '{print $1}')"
 platform_sha256="$(shasum -a 256 "$platform" | awk '{print $1}')"
 probe_sha256="$(shasum -a 256 "$probe" | awk '{print $1}')"
 [[ "$rebased_sha256" == "$EXPECTED_REBASED_DXE_SHA256" ]] || {
   echo "rebased DXE Core digest ${rebased_sha256} does not match ${EXPECTED_REBASED_DXE_SHA256}" >&2
+  exit 68
+}
+[[ "$runtime_sha256" == "$EXPECTED_RUNTIME_SHA256" ]] || {
+  echo "RuntimeDxe digest ${runtime_sha256} does not match ${EXPECTED_RUNTIME_SHA256}" >&2
   exit 68
 }
 [[ "$platform_sha256" == "$EXPECTED_PLATFORM_SHA256" ]] || {
@@ -80,7 +90,7 @@ probe_sha256="$(shasum -a 256 "$probe" | awk '{print $1}')"
 }
 
 "$repo_root/scripts/build-bridgevm-pc-dxe-fv.sh" \
-  "$edk2_root" "$build_root" "$core" "$platform" "$probe"
+  "$edk2_root" "$build_root" "$core" "$runtime" "$platform" "$probe"
 fv="$build_root/BridgeVmPcDxeEntry.fv"
 
 fv_sha256="$(shasum -a 256 "$fv" | awk '{print $1}')"
@@ -148,41 +158,10 @@ artifact_sha256="$(shasum -a 256 "$artifact" | awk '{print $1}')"
   exit 71
 }
 cp "$fv" "$output_dir/BridgeVmPcDxeEntry.fv"
-source_tree_sha256="$(python3 - "$repo_root/crates/bridgevm-hvf/firmware/BridgeVmPcPkg" <<'PY'
-import hashlib
-import pathlib
-import sys
-
-root = pathlib.Path(sys.argv[1])
-digest = hashlib.sha256()
-for path in sorted(item for item in root.rglob("*") if item.is_file()):
-    name = path.relative_to(root).as_posix().encode()
-    data = path.read_bytes()
-    digest.update(len(name).to_bytes(4, "big") + name)
-    digest.update(len(data).to_bytes(8, "big") + data)
-print(digest.hexdigest())
-PY
-)"
-
-receipt="$output_dir/BridgeVmPcDxeEntry.build.json"
-printf '%s\n' \
-  '{' \
-  '  "schemaVersion": 1,' \
-  '  "artifactKind": "development-only-reset-to-dxe-platform-table-probe",' \
-  "  \"edk2Commit\": \"${EXPECTED_EDK2_COMMIT}\"," \
-  "  \"gccVersion\": \"${gcc_version}\"," \
-  "  \"ldVersion\": \"${ld_version}\"," \
-  "  \"sourceTreeSha256\": \"${source_tree_sha256}\"," \
-  "  \"resetVectorSize\": ${vector_size}," \
-  "  \"resetVectorSha256\": \"${vector_sha256}\"," \
-  "  \"rebasedDxeCoreSha256\": \"${rebased_sha256}\"," \
-  "  \"platformTablesDxeSha256\": \"${platform_sha256}\"," \
-  "  \"dxeProbeSha256\": \"${probe_sha256}\"," \
-  "  \"firmwareVolumeSha256\": \"${fv_sha256}\"," \
-  "  \"size\": ${FLASH_SIZE}," \
-  "  \"sha256\": \"${artifact_sha256}\"," \
-  '  "claimBoundary": "bounded DXE dispatch and ACPI/SMBIOS configuration-table publication only; no architectural-protocol, boot manager, or Windows boot claim"' \
-  '}' > "$receipt"
+receipt="$("$repo_root/scripts/write-bridgevm-pc-dxe-receipt.sh" \
+  "$output_dir" "$repo_root" "$EXPECTED_EDK2_COMMIT" "$gcc_version" "$ld_version" \
+  "$vector_size" "$vector_sha256" "$rebased_sha256" "$runtime_sha256" \
+  "$platform_sha256" "$probe_sha256" "$fv_sha256" "$artifact_sha256" "$FLASH_SIZE")"
 
 echo "built $artifact"
 echo "sha256 $artifact_sha256"

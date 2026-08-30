@@ -2,15 +2,20 @@ use bridgevm_hvf::machine::bridgevm_pc as board;
 use std::fmt;
 #[path = "contract/firmware.rs"]
 mod firmware;
+#[path = "contract/runtime_services.rs"]
+mod runtime_services;
 #[path = "contract/system_table.rs"]
 mod system_table;
+#[cfg(test)]
+#[path = "contract/tests.rs"]
+mod tests;
 pub use firmware::validate as validate_firmware;
 
 pub const RAM_PAGES: usize = 8192;
 pub const RAM_EXECUTABLE: bool = true;
-pub const PROBE_TITLE: &str = "BridgeVM Virtual ARM PC platform-table DXE probe: PASS";
+pub const PROBE_TITLE: &str = "BridgeVM Virtual ARM PC runtime DXE probe: PASS";
 pub const LIVE_PROOF: &str =
-    "LIVE PROOF: BridgeVM published ACPI 2.0 and SMBIOS 3 through the EFI system table";
+    "LIVE PROOF: RuntimeDxe installed its architectural protocol and callable CRC32 service";
 const RESULT_OFFSET: usize = 0x1000;
 const DXE_RESULT_OFFSET: usize = 0x2000;
 const HOB_OFFSET: usize = 0x4000;
@@ -23,6 +28,7 @@ const DXE_CORE_ENTRY_OFFSET: u64 = 0x40_6bec;
 pub struct DxeResult {
     system_table: u64,
     published: system_table::PublishedTables,
+    runtime: runtime_services::RuntimeProof,
 }
 
 pub type SecResult = DxeResult;
@@ -35,9 +41,12 @@ impl fmt::Display for DxeResult {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "sec_result=1 hob_count=7 hob_list_gpa={:#x} hob_list_size=272 dxe_result=8 system_table={:#x} configuration_entries={} acpi={:#x} smbios={:#x}",
+            "sec_result=1 hob_count=7 hob_list_gpa={:#x} hob_list_size=272 dxe_result=9 system_table={:#x} runtime_services={:#x} runtime_protocol={:#x} runtime_crc32={:#x} configuration_entries={} acpi={:#x} smbios={:#x}",
             board::RAM_BASE + HOB_OFFSET as u64,
             self.system_table,
+            self.runtime.services,
+            self.runtime.protocol,
+            self.runtime.crc32,
             self.published.entry_count,
             self.published.acpi,
             self.published.smbios
@@ -160,42 +169,23 @@ pub fn validate_dxe_result(ram: &[u8]) -> Result<DxeResult, String> {
     header(hob, 264, 0xffff, 8, "end HOB")?;
 
     let dxe = ram
-        .get(DXE_RESULT_OFFSET..DXE_RESULT_OFFSET + 16)
+        .get(DXE_RESULT_OFFSET..DXE_RESULT_OFFSET + 56)
         .ok_or_else(|| "DXE result is outside probe RAM".to_string())?;
     expect(
         "DXE dispatch stage",
         u32_at(dxe, 0, "DXE dispatch stage")?,
-        8,
-    )?;
-    expect(
-        "DXE result reserved",
-        u32_at(dxe, 4, "DXE result reserved")?,
-        0,
+        9,
     )?;
     let system_table = u64_at(dxe, 8, "DXE system-table pointer")?;
     let published = system_table::validate(ram, system_table)?;
+    let runtime = runtime_services::validate(ram, system_table, dxe)?;
     Ok(DxeResult {
         system_table,
         published,
+        runtime,
     })
 }
 
 pub fn validate_sec_result(ram: &[u8]) -> Result<SecResult, String> {
     validate_dxe_result(ram)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_non_contract_firmware_size() {
-        assert!(validate_firmware(&[0; 64]).unwrap_err().contains("FD size"));
-    }
-
-    #[test]
-    fn rejects_a_missing_dxe_dispatch_result() {
-        let ram = vec![0; 0x80_0000];
-        assert!(validate_dxe_result(&ram).unwrap_err().contains("SEC stage"));
-    }
 }

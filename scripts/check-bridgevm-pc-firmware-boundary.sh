@@ -41,10 +41,10 @@ grep -Fq 'pub const BOOT_INFO: Region = Region::new(0x2600_0000, 0x1_0000);' "$R
 awk '/^[[:space:]]+[A-Za-z0-9]+Pkg\/.*\.dec$/ {print $1}' \
   "$PKG"/Drivers/*/*.inf | sort -u |
   diff -u - <(printf '%s\n' BridgeVmPcPkg/BridgeVmPcPkg.dec MdePkg/MdePkg.dec)
-grep -Fq 'b03a21a63e3bd001f52c527e5a57feddb53a690b' "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh"
-grep -Fq 'MdeModulePkg/Core/Dxe/DxeMain.inf' "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh"
-grep -Fq '022e09f7e60c3f1cf5b1416a66714b642714e827ba085957383ea3264f3f4ed6' "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh"
+grep -Fq 'b03a21a63e3bd001f52c527e5a57feddb53a690b' "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh" && grep -Fq 'MdeModulePkg/Core/Dxe/DxeMain.inf' "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh" && grep -Fq '022e09f7e60c3f1cf5b1416a66714b642714e827ba085957383ea3264f3f4ed6' "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh"
+grep -Fq 'b03a21a63e3bd001f52c527e5a57feddb53a690b' "$ROOT/scripts/build-bridgevm-pc-runtime-dxe.sh" && grep -Fq 'MdeModulePkg/Core/RuntimeDxe/RuntimeDxe.inf' "$ROOT/scripts/build-bridgevm-pc-runtime-dxe.sh"
+awk '/^\[Depex\]/{inside=1;next} /^\[/{inside=0} inside && /gEfiRuntimeArchProtocolGuid/{found=1} END{exit !found}' "$PKG/Drivers/DxeProbe/DxeProbe.inf"
 grep -Fq 'BridgeVmPcDxeProbe.efi' "$ROOT/scripts/build-bridgevm-pc-dxe-entry-firmware.sh" && grep -Fq '#define READ_HEADER32' "$PKG/Drivers/PlatformTablesDxe/AcpiValidation.c" && ! grep -Eq 'Table->(Length|Signature)' "$PKG/Drivers/PlatformTablesDxe/AcpiValidation.c"
-bash -n "$ROOT/scripts/build-bridgevm-pc-edk2-consumer.sh" "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh" "$ROOT/scripts/build-bridgevm-pc-dxe-entry-firmware.sh"
+bash -n "$ROOT/scripts/build-bridgevm-pc-edk2-consumer.sh" "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh" "$ROOT/scripts/build-bridgevm-pc-runtime-dxe.sh" "$ROOT/scripts/build-bridgevm-pc-dxe-entry-firmware.sh" "$ROOT/scripts/build-bridgevm-pc-dxe-fv.sh" "$ROOT/scripts/write-bridgevm-pc-dxe-receipt.sh"
 "$ROOT/scripts/check-bridgevm-pc-reset-vector-boundary.sh"
 echo "PASS: BridgeVmPcPkg uses only its versioned ABI and approved generic EDK2 boundary"

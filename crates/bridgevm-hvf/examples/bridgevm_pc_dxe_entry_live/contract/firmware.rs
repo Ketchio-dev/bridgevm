@@ -1,14 +1,11 @@
 use super::{bytes_at, expect, u64_at, FV_OFFSET, FV_SIZE};
 use bridgevm_hvf::machine::bridgevm_pc as board;
 use sha2::{Digest, Sha256};
+#[path = "firmware_guids.rs"]
+mod guids;
+use guids::{DXE_CORE, PLATFORM_TABLES, RUNTIME_DXE};
 
-const EXPECTED_FD_SHA256: &str = "1227e77889f26cb19c0e2fef2b446b727c39fa652b863c21474692dd65128873";
-const DXE_CORE_GUID: [u8; 16] = [
-    0x7f, 0xcb, 0xa2, 0xd6, 0x18, 0x6a, 0x2f, 0x4e, 0xb4, 0x3b, 0x99, 0x20, 0xa7, 0x33, 0x70, 0x0a,
-];
-const PLATFORM_TABLES_GUID: [u8; 16] = [
-    0x6d, 0x37, 0xf1, 0xb6, 0x28, 0x3e, 0x1b, 0x42, 0xa6, 0x4c, 0x2b, 0x5e, 0x0d, 0x18, 0x53, 0x97,
-];
+const EXPECTED_FD_SHA256: &str = "0a05d8ecb5bb96eb4088eda2f6c357aa044afb8cdbf92fd629c652da9dc89138";
 
 fn sha256(bytes: &[u8]) -> String {
     let hash = Sha256::digest(bytes);
@@ -38,11 +35,16 @@ pub fn validate(bytes: &[u8]) -> Result<String, String> {
     expect(
         "DXE Core file GUID",
         bytes_at::<16>(fv, 0x78, "DXE Core file GUID")?,
-        DXE_CORE_GUID,
+        DXE_CORE,
+    )?;
+    expect(
+        "RuntimeDxe file GUID",
+        fv.windows(16).any(|window| window == RUNTIME_DXE),
+        true,
     )?;
     expect(
         "PlatformTablesDxe file GUID",
-        fv.windows(16).any(|window| window == PLATFORM_TABLES_GUID),
+        fv.windows(16).any(|window| window == PLATFORM_TABLES),
         true,
     )?;
     Ok(digest)
