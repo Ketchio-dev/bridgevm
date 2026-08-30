@@ -89,6 +89,15 @@ one live reset-entry run; the image still contains no SEC C environment, PI
 HOB list, DXE core or UEFI services. See the
 [exact-head receipt](../windows-arm/evidence/bridgevm-pc-reset-vector-live-20260830.md).
 
+A fifth bounded probe at exact BridgeVM code head
+`2d097a066d6a9868df5a99b8c67ab504e3d9c046` extended that reset path. It
+set a stack at `0x1_0002_0000`, crossed the AArch64 C ABI, and ran a
+freestanding BridgeVM SEC validator that checked the full boot-info header,
+checksum, reserved fields, table ranges, RAM geometry and CPU count before
+returning result `1`. This is one live reset-to-SEC run; it still constructs no
+PI HOB list and enters no DXE core. See the
+[exact-head receipt](../windows-arm/evidence/bridgevm-pc-sec-live-20260830.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -123,6 +132,12 @@ flash image with SHA-256
 The entry executed once on HVF, but it is only a reset skeleton and does not
 yet load the independently built DXE module.
 
+The next exact-head tranche added a freestanding SEC C continuation to that
+image. Its reset/SEC entry is 616 bytes, the complete development FD has
+SHA-256 `745241de5a20d9240ec31c8000abb6f8ad04544a7ba7b9b4fe8c6f9b012cd890`,
+and one HVF run passed the full fail-closed handoff validation. PI HOB
+construction and DXE loading remain open.
+
 ## Implementation gates
 
 | Gate | State |
@@ -134,6 +149,7 @@ yet load the independently built DXE module.
 | Boot-info v1 mapping and EL1 pointer traversal | live single-run passed; firmware execution open |
 | ACPI/SMBIOS DXE consumer | reproducible module build only; no firmware-volume claim |
 | Reset vector at GPA zero | live single-run passed; SEC/HOB/DXE continuation open |
+| Freestanding SEC validation | live single-run passed; PI HOB and DXE continuation open |
 | Independently built and audited UEFI firmware | open |
 | UEFI ACPI/SMBIOS/GOP/block-I/O handoff | open |
 | Windows installer and installed-disk boot | open |

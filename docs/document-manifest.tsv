@@ -92,6 +92,7 @@ docs/machine-contract/bridgevm-virtual-arm-pc-v1.md	current	windows-architecture
 docs/windows-arm/evidence/bridgevm-pc-gic-irq-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-boot-info-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-reset-vector-live-20260830.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-sec-live-20260830.md	current	windows-architecture	-
 docs/reference/bridgevm-virt-platform.md	reference	windows-platform	-
 docs/testing/apple-silicon-live-gates.md	current	development-process	-
 docs/windows-arm/smccc-trng-psci-contract.md	current	windows-hvf-engine	-
