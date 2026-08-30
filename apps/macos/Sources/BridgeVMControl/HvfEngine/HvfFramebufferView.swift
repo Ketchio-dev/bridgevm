@@ -26,6 +26,7 @@ final class FBLayerView: NSView {
     private var guestSize: CGSize = .zero
     private var lastProcessedSeq: UInt64 = .max
     private var iosurfacePresenter = HvfIOSurfacePresenter()
+    private var pointerMoves = HvfPointerMoveMailbox()
     private var frameDisplayLink: CADisplayLink?
     private var pointerTrackingArea: NSTrackingArea?
 
@@ -73,6 +74,7 @@ final class FBLayerView: NSView {
     }
 
     @objc private func step(_ link: CADisplayLink) {
+        defer { flushPendingPointerMove() }
         if presentIOSurfaceIfAvailable(at: link.timestamp) {
             return
         }
@@ -179,36 +181,22 @@ final class FBLayerView: NSView {
         stopDisplayLink()
         resetMapping()
         iosurfacePresenter.reset()
+        pointerMoves.reset()
         guestSize = .zero
         layer?.contents = nil
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard let session, hasGuestSize else {
-            return
-        }
-
-        session.sendPointerMove(
-            location: point(event),
-            viewSize: bounds.size,
-            imageSize: guestSize
-        )
+        pointerMoves.offer(point(event))
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let session, hasGuestSize else {
-            return
-        }
-
-        session.sendPointerMove(
-            location: point(event),
-            viewSize: bounds.size,
-            imageSize: guestSize
-        )
+        pointerMoves.offer(point(event))
     }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        pointerMoves.reset()
 
         guard let session, hasGuestSize else {
             return
@@ -222,6 +210,7 @@ final class FBLayerView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        pointerMoves.reset()
         guard let session, hasGuestSize else {
             return
         }
@@ -235,6 +224,7 @@ final class FBLayerView: NSView {
 
     override func rightMouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        pointerMoves.reset()
 
         guard let session, hasGuestSize else {
             return
@@ -248,6 +238,7 @@ final class FBLayerView: NSView {
     }
 
     override func rightMouseUp(with event: NSEvent) {
+        pointerMoves.reset()
         guard let session, hasGuestSize else {
             return
         }
@@ -326,6 +317,11 @@ final class FBLayerView: NSView {
 
     private func point(_ event: NSEvent) -> CGPoint {
         convert(event.locationInWindow, from: nil)
+    }
+
+    private func flushPendingPointerMove() {
+        guard let location = pointerMoves.take(), let session, hasGuestSize else { return }
+        session.sendPointerMove(location: location, viewSize: bounds.size, imageSize: guestSize)
     }
 
     private func startDisplayLink() {

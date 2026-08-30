@@ -1088,13 +1088,14 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	358	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	572	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	614	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	461	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	457	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestCommand.swift	35	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfIOSurfaceScanout.swift	52	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfIOSurfacePresenter.swift	60	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfIncrementalMarkerReader.swift	68	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLiveDisplay.swift	78	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerEventSurface.swift	119	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerMoveMailbox.swift	20	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift	380	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	50	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift	407	0
@@ -1134,6 +1135,7 @@ apps/macos/Tests/BridgeVMControlTests/ControlModelResourceTests.swift	141	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportTests.swift	145	0
 apps/macos/Tests/BridgeVMControlTests/HvfEngineTests.swift	1580	0
 apps/macos/Tests/BridgeVMControlTests/HvfIOSurfaceDescriptorTests.swift	49	0
+apps/macos/Tests/BridgeVMControlTests/HvfPointerMoveMailboxTests.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/QemuCompatToolLookupTests.swift	55
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsBootSeedTests.swift	270	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsImportTests.swift	224	0
