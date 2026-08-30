@@ -59,10 +59,10 @@ FADT-to-DSDT link, the SMBIOS 3 entry point and the bounded structure stream.
 It then installed the standard ACPI 2.0 and SMBIOS 3.0 configuration-table
 GUIDs through DXE Boot Services.
 
-The marker probe ran only after the platform driver because its dependency
-expression requires both table GUIDs. It wrote stage `8` and the EFI system
-table pointer to guest RAM. The host did not accept the stage marker alone: it
-dereferenced the system table inside mapped RAM, required the standard
+The firmware volume placed the marker after the platform driver, and the
+marker exit was observed only after the platform driver had run. It wrote
+stage `8` and the EFI system table pointer to guest RAM. The host did not
+accept the stage marker alone: it dereferenced the system table inside mapped RAM, required the standard
 signature, bounded the configuration-table count to `5..=32`, rejected
 duplicate ACPI or SMBIOS entries, and required the published pointers to equal
 the board's boot-info RSDP and SMBIOS anchor GPAs. The passing table contained

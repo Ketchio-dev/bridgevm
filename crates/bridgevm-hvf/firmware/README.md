@@ -46,14 +46,25 @@ driver, not a bootable firmware volume. It does not establish reset-vector,
 UEFI-service, installer or Windows boot support.
 
 The pinned generic DXE Core can separately be packaged into a reproducible
-1 MiB PI firmware volume:
+1 MiB PI firmware volume, and the generic RuntimeDxe can be built as a pinned
+AArch64 PE/COFF image:
 
 ```sh
 scripts/build-bridgevm-pc-dxe-core-fv.sh /path/to/edk2 /path/to/output
+scripts/build-bridgevm-pc-runtime-dxe.sh /path/to/edk2 /path/to/output
 ```
 
-That output is a build-only loader input. It is not connected to the reset
-image and does not prove DXE entry, UEFI services or Windows boot.
+The bounded development probe integrates those generic modules with the
+BridgeVM platform-table driver and a protocol-gated marker:
+
+```sh
+scripts/build-bridgevm-pc-dxe-entry-firmware.sh /path/to/edk2 /path/to/output
+```
+
+One live HVF run has dispatched RuntimeDxe, located its Runtime Architectural
+Protocol, called `CalculateCrc32`, and retained the ACPI/SMBIOS configuration
+tables. This does not prove variables, time/reset services, virtual-address
+transition, BDS, installer or Windows boot.
 
 The same package now contains the first BridgeVM-owned reset entry. It builds a
 64 MiB development flash image with executable code at the board's fixed GPA

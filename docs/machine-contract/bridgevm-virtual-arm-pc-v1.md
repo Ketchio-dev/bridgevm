@@ -127,6 +127,16 @@ the exact RSDP and SMBIOS anchor pointers. This is one live platform-table
 publication run, not complete UEFI or Windows boot evidence. See the
 [exact-head receipt](../windows-arm/evidence/bridgevm-pc-platform-tables-live-20260830.md).
 
+A ninth bounded probe at exact BridgeVM code head
+`0890d838e1dbc20f0ab393646023d2d8014a9b91` inserted the pinned generic
+`RuntimeDxe` before both BridgeVM drivers. The marker's dependency expression
+required the standard Runtime Architectural Protocol, located that protocol,
+checked the runtime-services table and called `CalculateCrc32`. An independent
+host parser matched the returned service pointers to their table slots and
+revalidated the ACPI and SMBIOS entries. This is one live RuntimeDxe run, not
+proof of variables, virtual-address transition, BDS, or Windows boot. See the
+[exact-head receipt](../windows-arm/evidence/bridgevm-pc-runtime-dxe-live-20260830.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -192,6 +202,15 @@ One HVF run proved that the EFI system table published the exact ACPI 2.0 and
 SMBIOS 3 pointers. Architectural protocols, variables, boot manager, GOP,
 block I/O and Windows remain open.
 
+The next exact-head tranche added unmodified, BSD-2-Clause-Patent TianoCore
+`RuntimeDxe` from the same pinned revision. Pinned tools produced a
+byte-reproducible 64 MiB FD with SHA-256
+`0a05d8ecb5bb96eb4088eda2f6c357aa044afb8cdbf92fd629c652da9dc89138`.
+One HVF run proved the standard Runtime Architectural Protocol was installed
+and that `CalculateCrc32` was callable, while ACPI and SMBIOS remained present.
+Variable, time and reset implementations, virtual-address transition,
+`ExitBootServices`, BDS, GOP, block I/O and Windows remain open.
+
 ## Implementation gates
 
 | Gate | State |
@@ -205,7 +224,8 @@ block I/O and Windows remain open.
 | Reset vector at GPA zero | live single-run passed; SEC, PI HOB and DXE-dispatch continuations passed separately |
 | Freestanding SEC validation | live single-run passed; bounded PI HOB and DXE-dispatch continuations passed separately |
 | Bounded PI HOB construction | live single-run passed; firmware-volume and DXE-dispatch continuation passed separately |
-| Generic DXE Core and BridgeVM marker dispatch | live single-run passed; architectural protocols and boot manager open |
+| Generic DXE Core and BridgeVM marker dispatch | live single-run passed; Runtime Architectural Protocol subsequently passed, other required protocols and boot manager open |
+| Runtime Architectural Protocol and CRC32 service | live single-run passed; virtual-address transition and complete runtime services open |
 | Independently built and audited UEFI firmware | open |
 | UEFI ACPI/SMBIOS handoff | live single-run publication passed; fixed-sample and Windows consumption open |
 | UEFI GOP and block-I/O handoff | open |
