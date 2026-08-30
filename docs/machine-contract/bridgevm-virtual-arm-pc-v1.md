@@ -107,6 +107,16 @@ This is one live reset-to-HOB run; it still contains no firmware volume and
 enters no DXE core. See the
 [exact-head receipt](../windows-arm/evidence/bridgevm-pc-hob-live-20260830.md).
 
+A seventh bounded probe at exact BridgeVM code head
+`183571b5a0d60d44d84e9eb7b62b6d5d69959b0e` embedded a pinned generic DXE
+Core and a BridgeVM-owned marker driver in a development firmware volume. The
+IPL appended FV and module-allocation HOBs, entered the fixed-rebased core, and
+the core created an EFI system table and dispatched the marker. An independent
+host parser required seven exact HOBs, marker stage `8` and the standard system
+table signature. This is one live DXE-dispatch run, not complete UEFI or
+Windows boot evidence. See the
+[exact-head receipt](../windows-arm/evidence/bridgevm-pc-dxe-dispatch-live-20260830.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -153,6 +163,14 @@ reset/SEC/HOB entry is 1,168 bytes, the complete development FD has SHA-256
 and one HVF run validated the exact five-HOB list in guest RAM. Firmware-volume
 discovery and DXE loading remain open.
 
+The next exact-head tranche added a development-only firmware volume, bounded
+DXE IPL and fail-closed EL1 exception vector. Pinned tools produced a
+6,144-byte entry and a 64 MiB FD with SHA-256
+`57c134b8f3f42bb9bb020936d4d87926b0d6563bfa0339bb110996a6e4ed6da6`.
+One HVF run entered generic DXE Core and dispatched the BridgeVM probe. UEFI
+architectural protocols, boot/runtime-service completeness and Windows remain
+open.
+
 ## Implementation gates
 
 | Gate | State |
@@ -163,9 +181,10 @@ discovery and DXE loading remain open.
 | HVF RAM mapping and architected-timer PPI delivery | live single-run passed; firmware and device SPI integration open |
 | Boot-info v1 mapping and EL1 pointer traversal | live single-run passed; firmware execution open |
 | ACPI/SMBIOS DXE consumer | reproducible module build only; no firmware-volume claim |
-| Reset vector at GPA zero | live single-run passed; SEC and PI HOB continuations passed separately; DXE open |
-| Freestanding SEC validation | live single-run passed; bounded PI HOB continuation passed separately; DXE open |
-| Bounded PI HOB construction | live single-run passed; firmware-volume and DXE continuation open |
+| Reset vector at GPA zero | live single-run passed; SEC, PI HOB and DXE-dispatch continuations passed separately |
+| Freestanding SEC validation | live single-run passed; bounded PI HOB and DXE-dispatch continuations passed separately |
+| Bounded PI HOB construction | live single-run passed; firmware-volume and DXE-dispatch continuation passed separately |
+| Generic DXE Core and BridgeVM marker dispatch | live single-run passed; architectural protocols and boot manager open |
 | Independently built and audited UEFI firmware | open |
 | UEFI ACPI/SMBIOS/GOP/block-I/O handoff | open |
 | Windows installer and installed-disk boot | open |
