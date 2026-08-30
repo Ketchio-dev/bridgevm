@@ -263,6 +263,8 @@ crates/bridgevm-hvf/src/pcie/virtio_caps.rs	317	0
 crates/bridgevm-hvf/src/pflash.rs	319	0
 crates/bridgevm-hvf/src/pl011.rs	244	0
 crates/bridgevm-hvf/src/pl031.rs	153	0
+crates/bridgevm-hvf/src/platform_pc.rs	113	0
+crates/bridgevm-hvf/src/platform_pc_tests.rs	68	0
 crates/bridgevm-hvf/src/platform/apple/diagnostic_vector.rs	192	6
 crates/bridgevm-hvf/src/platform/apple/ffi.rs	220	0
 crates/bridgevm-hvf/src/platform/apple/firmware_irq.rs	204	5

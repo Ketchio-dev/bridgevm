@@ -53,37 +53,22 @@ pub struct PciDeviceContract {
     pub transport: DeviceTransport,
 }
 
-pub const PCI_DEVICES: [PciDeviceContract; 6] = [
+const fn pci_device(role: &'static str, bdf: &'static str) -> PciDeviceContract {
     PciDeviceContract {
-        role: "system-storage",
-        bdf: "00:01.0",
+        role,
+        bdf,
         transport: DeviceTransport::Pcie,
-    },
-    PciDeviceContract {
-        role: "usb-input",
-        bdf: "00:02.0",
-        transport: DeviceTransport::Pcie,
-    },
-    PciDeviceContract {
-        role: "network",
-        bdf: "00:03.0",
-        transport: DeviceTransport::Pcie,
-    },
-    PciDeviceContract {
-        role: "display",
-        bdf: "00:04.0",
-        transport: DeviceTransport::Pcie,
-    },
-    PciDeviceContract {
-        role: "audio",
-        bdf: "00:05.0",
-        transport: DeviceTransport::Pcie,
-    },
-    PciDeviceContract {
-        role: "guest-agent",
-        bdf: "00:06.0",
-        transport: DeviceTransport::Pcie,
-    },
+    }
+}
+
+pub const PCI_DEVICES: [PciDeviceContract; 7] = [
+    pci_device("system-storage", "00:01.0"),
+    pci_device("usb-input", "00:02.0"),
+    pci_device("installer-media", "00:03.0"),
+    pci_device("network", "00:04.0"),
+    pci_device("display", "00:05.0"),
+    pci_device("guest-agent", "00:06.0"),
+    pci_device("audio", "00:07.0"),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,7 +174,7 @@ mod tests {
             .iter()
             .all(|device| device.transport == DeviceTransport::Pcie));
         assert_eq!(PCI_DEVICES[0].bdf, "00:01.0");
-        assert_eq!(PCI_DEVICES[5].bdf, "00:06.0");
+        assert_eq!(PCI_DEVICES[6].bdf, "00:07.0");
     }
 
     #[test]

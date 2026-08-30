@@ -48,8 +48,9 @@ The normative values live in
 | PCIe 64-bit MMIO | `0x20_0000_0000` | `0x20_0000_0000` |
 
 The board has no legacy paravirtual MMIO array and no compatibility firmware
-configuration device. Boot storage, xHCI input, network, display, audio and the
-guest-agent transport are PCIe functions with version-stable BDF assignments.
+configuration device. System storage, xHCI input, installer media, network,
+display, guest-agent transport and audio are PCIe functions at `00:01.0`
+through `00:07.0`, respectively.
 The runtime must query Hypervisor.framework's GIC region sizes, alignments and
 supported SPI range and fail closed if this map cannot be configured.
 
@@ -70,7 +71,8 @@ ACPI, SMBIOS, PCIe and device interfaces.
 | Gate | State |
 |---|---|
 | Versioned identity, address map and overlap tests | implemented, static only |
-| Runtime memory/MMIO/GIC routing | open |
+| Minimal memory layout, vars flash, UART, RTC and PCIe ECAM runtime | implemented, host-unit only |
+| HVF memory mapping, GIC and interrupt routing | open |
 | Independently built and audited UEFI firmware | open |
 | UEFI ACPI/SMBIOS/GOP/block-I/O handoff | open |
 | Windows installer and installed-disk boot | open |
