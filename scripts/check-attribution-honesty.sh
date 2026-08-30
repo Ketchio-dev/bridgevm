@@ -40,12 +40,12 @@ fi
 # Claiming derivation from a specific other VMM or graphics stack is exactly
 # the unfounded admission this check exists to prevent. Interface names are
 # fine; it is the derivation verb next to a product name that is not.
+source scripts/check-attribution-product-names.sh
 derivation_hits=$(
   grep -rniE \
     '(derived from|based on|ported from|adapted from|copied from|borrowed from|taken from|fork of)[^.]{0,40}\b(qemu|crosvm|u[t]m|parallels|vmware|virtualbox|bochs|xen)\b' \
     --include='*.rs' --include='*.swift' --include='*.md' \
     --exclude-dir=.git --exclude-dir=target --exclude-dir=build \
-    --exclude-dir=archive \
     --exclude=THIRD-PARTY-NOTICES.md \
     . 2>/dev/null || true
   grep -rniE \

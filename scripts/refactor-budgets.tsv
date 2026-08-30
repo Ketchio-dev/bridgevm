@@ -1171,6 +1171,7 @@ scripts/build-hvf-windows-viogpu3d-injector.sh	94	0
 scripts/build-linux-tools.sh	27	0
 scripts/build-venus-host-deps.sh	124	0
 scripts/check-attribution-honesty.sh	100	0
+scripts/check-attribution-product-names.sh	12	0
 scripts/check-documentation-system.sh	168	0
 scripts/check-fuzz-smoke.sh	11	0
 scripts/check-hvf-windows-p3-gpu-readiness.sh	335	0

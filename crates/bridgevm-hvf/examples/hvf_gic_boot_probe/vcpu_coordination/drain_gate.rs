@@ -12,7 +12,7 @@ pub(crate) struct PreRunDrainGate {
 
 impl PreRunDrainGate {
     pub(crate) fn from_env() -> Self {
-        Self::new(env_flag_default("BRIDGEVM_DRAIN_GATE", false))
+        Self::new(env_flag_default("BRIDGEVM_DRAIN_GATE", true))
     }
 
     pub(crate) const fn new(enabled: bool) -> Self {

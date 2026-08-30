@@ -83,3 +83,10 @@ not reclassified as pointer failures or successes.
 
 This package is self-signed and test-mode-only. It is B4 experimental evidence,
 not Microsoft kernel-policy signing provenance, and does not close A9.
+
+Two later fixed 20-lane campaigns found a session-wide latency and shutdown
+slowdown on both the then-current head and an exact replay of this proven
+commit. Those failures and the resulting source-only hypothesis retraction are
+retained in the
+[follow-up record](b4-pointer-followup-session-variance-20260830.md); they do
+not rewrite this passing receipt.
