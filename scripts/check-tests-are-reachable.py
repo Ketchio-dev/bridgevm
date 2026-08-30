@@ -34,6 +34,7 @@ SUITES = [
     (["test", "--workspace", "--locked"], True),
     (["test", "-p", "bridgevm-hvf", "--example", "hvf_gic_boot_probe", "--locked"], True),
     (["test", "-p", "bridgevm-hvf", "--example", "hvf_vtimer_cancel_probe", "--locked"], True),
+    (["test", "-p", "bridgevm-hvf", "--example", "bridgevm_pc_irq_live", "--locked"], True),
     (["test", "-p", "bridgevm-hvf", "--features", "venus", "--lib", "--locked"], False),
     (
         ["test", "-p", "bridgevm-hvf", "--features", "venus", "--example",
@@ -46,8 +47,7 @@ SUITES = [
 # make this gate minutes slower. check-loom.sh already fails when they compile
 # to nothing, which is exactly the condition this gate looks for.
 EXEMPT = {
-    "crates/bridgevm-hvf/tests/loom_psci.rs",
-    "crates/bridgevm-hvf/tests/loom_reset_generation.rs",
+    "crates/bridgevm-hvf/tests/loom_psci.rs", "crates/bridgevm-hvf/tests/loom_reset_generation.rs",
 }
 
 
