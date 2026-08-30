@@ -12,6 +12,7 @@ final class TailOffsetReader {
             offset = 0
             pending.removeAll(keepingCapacity: true)
         }
+        guard fileSize != offset else { return [] }
         guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
         defer { try? handle.close() }
         do {
@@ -24,7 +25,6 @@ final class TailOffsetReader {
         }
         return drainLines()
     }
-
     /// Consume whole lines in one pass and drop the consumed prefix once.
     ///
     /// Removing each line from the front as it was parsed re-copied every
