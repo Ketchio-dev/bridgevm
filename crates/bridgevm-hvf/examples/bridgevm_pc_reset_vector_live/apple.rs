@@ -1,4 +1,4 @@
-use super::contract::{result_gpa, validate_firmware, PASS_RESULT, RESULT_OFFSET};
+use super::contract::{result_gpa, validate_firmware, validate_sec_result, SecResult};
 use bridgevm_hvf::machine::bridgevm_pc as board;
 use bridgevm_hvf::platform_pc::BridgeVmPcPlatform;
 use std::alloc::{alloc_zeroed, dealloc, Layout};
@@ -114,7 +114,7 @@ unsafe fn execute_reset_vector(
     firmware: &mut AlignedMemory,
     boot_info: &mut AlignedMemory,
     ram: &mut AlignedMemory,
-) -> Result<u32, String> {
+) -> Result<SecResult, String> {
     status(
         "map flash code",
         hv_vm_map(
@@ -171,8 +171,9 @@ unsafe fn execute_reset_vector(
     let unmap = hv_vm_unmap(board::FLASH_CODE.base, firmware.layout.size());
     firmware_result?;
     status("unmap flash code", unmap)?;
-    Ok(std::ptr::read_volatile(
-        ram.pointer.as_ptr().add(RESULT_OFFSET).cast::<u32>(),
+    validate_sec_result(std::slice::from_raw_parts(
+        ram.pointer.as_ptr(),
+        ram.layout.size(),
     ))
 }
 
@@ -180,7 +181,7 @@ unsafe fn run_unsafe(firmware_bytes: &[u8], firmware_sha256: &str) -> Result<(),
     let bundle = BridgeVmPcPlatform::build_firmware_tables(1, 512 << 20)?;
     let mut firmware = AlignedMemory::new(firmware_bytes.len())?;
     let mut boot_info = AlignedMemory::new(board::BOOT_INFO.size as usize)?;
-    let mut ram = AlignedMemory::new(PAGE_ALIGNMENT * 2)?;
+    let mut ram = AlignedMemory::new(PAGE_ALIGNMENT * 4)?;
     firmware.bytes_mut().copy_from_slice(firmware_bytes);
     boot_info
         .bytes_mut()
@@ -198,10 +199,6 @@ unsafe fn run_unsafe(firmware_bytes: &[u8], firmware_sha256: &str) -> Result<(),
     let destroy = hv_vm_destroy();
     let result = run_result?;
     status("destroy VM", destroy)?;
-    if result != PASS_RESULT {
-        return Err(format!("reset vector returned stage {result}"));
-    }
-
     println!("BridgeVM Virtual ARM PC reset-vector probe: PASS");
     println!("board={} abi={}", board::BOARD_ID, board::BOARD_ABI_VERSION);
     println!(
@@ -211,12 +208,12 @@ unsafe fn run_unsafe(firmware_bytes: &[u8], firmware_sha256: &str) -> Result<(),
         board::RAM_BASE
     );
     println!(
-        "result={result} result_gpa={:#x} boot_info={:#x}",
+        "{result} result_gpa={:#x} boot_info={:#x}",
         result_gpa()?,
         board::BOOT_INFO.base
     );
     println!("firmware_sha256={firmware_sha256}");
-    println!("LIVE PROOF: reset at GPA zero entered BridgeVM SEC C and validated boot-info v1");
+    println!("LIVE PROOF: BridgeVM SEC validated boot-info v1 and built the bounded PI HOB list");
     Ok(())
 }
 

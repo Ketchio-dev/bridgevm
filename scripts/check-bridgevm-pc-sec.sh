@@ -9,7 +9,7 @@ grep -Fq '.equ BRIDGE_VM_PC_STACK_TOP,       0x100020000' "$SEC/BridgeVmPcResetV
 grep -Fq '#define BRIDGE_VM_PC_STACK_TOP              0x100020000ULL' "$SEC/BridgeVmPcSec.h"
 bash -n "$ROOT/scripts/build-bridgevm-pc-reset-vector.sh"
 cc -std=c11 -O2 -Wall -Wextra -Werror -I "$SEC" \
-  "$SEC/BridgeVmPcSec.c" "$ROOT/tests/fixtures/bridgevm-pc-sec-host-test.c" \
+  "$SEC/BridgeVmPcSec.c" "$SEC/BridgeVmPcHob.c" "$ROOT/tests/fixtures/bridgevm-pc-sec-host-test.c" \
   -o "$BUILD/bridgevm-pc-sec-host-test"
 "$BUILD/bridgevm-pc-sec-host-test"
-echo "PASS: BridgeVM PC SEC rejects corrupt handoffs and accepts the v1 contract"
+echo "PASS: BridgeVM PC SEC rejects corrupt handoffs and builds the bounded PI HOB list"

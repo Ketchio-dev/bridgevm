@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0
 **/
 
-#include "BridgeVmPcSec.h"
+#include "BridgeVmPcHob.h"
 
 static uint32_t
 RangeIsInsideBootInfo(uint64_t Base, uint32_t Length)
@@ -28,7 +28,7 @@ HeaderChecksumIsZero(const volatile BRIDGE_VM_PC_BOOT_INFO *BootInfo)
 }
 
 uint32_t
-BridgeVmPcSecMain(const volatile BRIDGE_VM_PC_BOOT_INFO *BootInfo)
+BridgeVmPcValidateBootInfo(const volatile BRIDGE_VM_PC_BOOT_INFO *BootInfo)
 {
   if (BootInfo->Magic != BRIDGE_VM_PC_BOOT_INFO_MAGIC) {
     return BRIDGE_VM_PC_SEC_BAD_MAGIC;
@@ -56,7 +56,7 @@ BridgeVmPcSecMain(const volatile BRIDGE_VM_PC_BOOT_INFO *BootInfo)
     return BRIDGE_VM_PC_SEC_BAD_TABLE_RANGE;
   }
   if (BootInfo->RamBase != BRIDGE_VM_PC_RAM_BASE ||
-      BootInfo->RamSize < BRIDGE_VM_PC_STACK_TOP - BRIDGE_VM_PC_RAM_BASE ||
+      BootInfo->RamSize < BRIDGE_VM_PC_FREE_MEMORY_BOTTOM - BRIDGE_VM_PC_RAM_BASE ||
       BootInfo->RamSize > BRIDGE_VM_PC_HIGH_MMIO_BASE - BRIDGE_VM_PC_RAM_BASE ||
       BootInfo->CpuCount == 0 || BootInfo->CpuCount > BRIDGE_VM_PC_MAX_CPUS) {
     return BRIDGE_VM_PC_SEC_BAD_MACHINE;

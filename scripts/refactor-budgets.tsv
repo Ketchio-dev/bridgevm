@@ -685,6 +685,8 @@ crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/PlatformTablesDxe/PlatformTab
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/PlatformTablesDxe/PlatformTablesDxe.inf	37	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcResetVector.S	51	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcResetVector.ld	27	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcHob.c	133	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcHob.h	122	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcSec.c	65	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcSec.h	67	0
 crates/bridgevm-hvf/examples/bridgevm_pc_gic_probe.rs	141	6
@@ -694,6 +696,7 @@ crates/bridgevm-hvf/examples/bridgevm_pc_boot_info_live/guest.rs	84	0
 crates/bridgevm-hvf/examples/bridgevm_pc_reset_vector_live.rs	20	0
 crates/bridgevm-hvf/examples/bridgevm_pc_reset_vector_live/apple.rs	237	8
 crates/bridgevm-hvf/examples/bridgevm_pc_reset_vector_live/contract.rs	63	0
+crates/bridgevm-hvf/examples/bridgevm_pc_reset_vector_live/contract/hob.rs	260	0
 crates/bridgevm-hvf/examples/bridgevm_pc_irq_live.rs	388	9
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe.rs	188	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/boot_media_setup.rs	111	0

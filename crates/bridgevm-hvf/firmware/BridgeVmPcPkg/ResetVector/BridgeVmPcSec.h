@@ -31,6 +31,7 @@
 #define BRIDGE_VM_PC_SEC_BAD_CHECKSUM        4U
 #define BRIDGE_VM_PC_SEC_BAD_TABLE_RANGE     5U
 #define BRIDGE_VM_PC_SEC_BAD_MACHINE         6U
+#define BRIDGE_VM_PC_SEC_BAD_HOB             7U
 
 typedef struct __attribute__((packed)) {
   uint64_t Magic;
@@ -60,8 +61,5 @@ typedef struct __attribute__((packed)) {
 
 _Static_assert(sizeof(BRIDGE_VM_PC_BOOT_INFO) == BRIDGE_VM_PC_BOOT_INFO_HEADER_SIZE,
                "BridgeVM boot-info v1 header size changed");
-
-uint32_t
-BridgeVmPcSecMain(const volatile BRIDGE_VM_PC_BOOT_INFO *BootInfo);
 
 #endif

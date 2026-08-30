@@ -21,13 +21,14 @@ _start:
   cbnz    x4, SecondaryPark
 
   movz    x0, #0x2600, lsl #16
+  movz    x1, #0x1000
+  movk    x1, #0x0001, lsl #32
+  movz    x2, #0x4000
+  movk    x2, #0x0001, lsl #32
   movz    x6, #0x0002, lsl #16
   movk    x6, #0x0001, lsl #32
   mov     sp, x6
   bl      BridgeVmPcSecMain
-  movz    x1, #0x1000
-  movk    x1, #0x0001, lsl #32
-  str     w0, [x1]
   hvc     #0
 
 PrimaryPark:

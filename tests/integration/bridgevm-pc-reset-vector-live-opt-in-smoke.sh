@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Opt-in live proof for the BridgeVM Virtual ARM PC reset entry at GPA zero.
-# It does not execute SEC, PEI, DXE, UEFI services or Windows.
+# Opt-in live proof for BridgeVM PC reset, SEC and bounded PI HOB construction.
+# It does not execute PEI, DXE, UEFI services or Windows.
 set -euo pipefail
 
 if [[ "${BRIDGEVM_HVF_ALLOW_LIVE_BRIDGEVM_PC_RESET_VECTOR:-0}" != "1" ]]; then
@@ -34,7 +34,7 @@ echo "$OUT"
 echo "$OUT" | grep -q "BridgeVM Virtual ARM PC reset-vector probe: PASS"
 echo "$OUT" | grep -q "board=com.ketchio.bridgevm.virtual-arm-pc abi=1"
 echo "$OUT" | grep -q "reset_vector=0x0 firmware_size=0x4000000 ram=0x100000000"
-echo "$OUT" | grep -q "result=1 result_gpa=0x100001000 boot_info=0x26000000"
-echo "$OUT" | grep -q "LIVE PROOF: reset at GPA zero entered BridgeVM SEC C and validated boot-info v1"
+echo "$OUT" | grep -q "result=1 hob_count=5 hob_list_gpa=0x100004000 hob_list_size=176 result_gpa=0x100001000 boot_info=0x26000000"
+echo "$OUT" | grep -q "LIVE PROOF: BridgeVM SEC validated boot-info v1 and built the bounded PI HOB list"
 echo "binary_sha256=$(shasum -a 256 "$BIN" | awk '{print $1}')"
-echo "PASS: BridgeVM Virtual ARM PC v1 reset vector entered its bounded SEC continuation"
+echo "PASS: BridgeVM Virtual ARM PC v1 reset, SEC and PI HOB continuation"

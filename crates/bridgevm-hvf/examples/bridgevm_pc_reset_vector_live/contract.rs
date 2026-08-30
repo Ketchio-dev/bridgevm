@@ -1,11 +1,12 @@
 use bridgevm_hvf::machine::bridgevm_pc as board;
 use sha2::{Digest, Sha256};
-
+#[path = "contract/hob.rs"]
+mod hob;
+pub use hob::{validate_sec_result, SecResult};
 pub const RESULT_OFFSET: usize = 0x1000;
 pub const PASS_RESULT: u32 = 1;
 pub const EXPECTED_FD_SHA256: &str =
-    "745241de5a20d9240ec31c8000abb6f8ad04544a7ba7b9b4fe8c6f9b012cd890";
-
+    "8db976249ff86c9613d0a13a0d811ee68a94ef90835d524deb451b927bc332d6";
 pub fn result_gpa() -> Result<u64, String> {
     board::RAM_BASE
         .checked_add(RESULT_OFFSET as u64)
@@ -35,7 +36,6 @@ pub fn validate_firmware(bytes: &[u8]) -> Result<String, String> {
     }
     Ok(digest)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
