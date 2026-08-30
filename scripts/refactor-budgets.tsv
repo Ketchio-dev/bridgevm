@@ -407,6 +407,7 @@ crates/bridgevm-hvf/src/venus_backend/submit_3d.rs	40	2
 crates/bridgevm-hvf/src/venus_backend/submit_diagnostic.rs	42	1
 crates/bridgevm-hvf/src/venus_backend/threaded_scanout.rs	64	2
 crates/bridgevm-hvf/src/venus_backend/threaded_submit.rs	18	1
+crates/bridgevm-hvf/src/venus_backend/threaded_worker.rs	82	0
 crates/bridgevm-hvf/src/venus_backend/tests/helpers.rs	0	0
 crates/bridgevm-hvf/src/venus_backend/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/venus_backend/tests/part_1.rs	31	0

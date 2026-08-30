@@ -25,6 +25,7 @@ include!("ffi_submit.rs");
 include!("submit_3d.rs");
 include!("submit_diagnostic.rs");
 include!("threaded_submit.rs");
+include!("threaded_worker.rs");
 pub(crate) type virgl_renderer_gl_context = *mut c_void;
 
 #[repr(C)]
@@ -413,46 +414,21 @@ impl ThreadedVenusBackend {
     pub fn new_for_protocol(protocol: VirtioGpuRendererProtocol) -> Result<Self, String> {
         let (sender, receiver) = mpsc::channel::<VenusWorkerMessage>();
         let (init_sender, init_receiver) = mpsc::sync_channel(1);
+        let (fence_tx, fence_rx) = mpsc::channel();
+        let worker_fence_tx = fence_tx.clone();
         let worker = thread::Builder::new()
             .name("bridgevm-venus-renderer".to_string())
-            .spawn(move || {
-                let mut backend = match VenusBackend::new_for_protocol(protocol) {
-                    Ok(backend) => {
-                        let _ = init_sender.send(Ok(()));
-                        backend
-                    }
-                    Err(error) => {
-                        let _ = init_sender.send(Err(error));
-                        return;
-                    }
-                };
-                while let Ok(message) = receiver.recv() {
-                    match message {
-                        VenusWorkerMessage::Run(job) => {
-                            job(&mut backend);
-                        }
-                        VenusWorkerMessage::Shutdown => {
-                            // Shutdown quiet is not a stall.
-                            backend.poll_watchdog.disarm();
-                            backend.reset();
-                            break;
-                        }
-                    }
-                }
-            })
+            .spawn(move || run_venus_worker(protocol, receiver, init_sender, worker_fence_tx))
             .map_err(|error| format!("failed to spawn Venus renderer thread: {error}"))?;
 
         match init_receiver.recv() {
-            Ok(Ok(())) => {
-                let (fence_tx, fence_rx) = mpsc::channel();
-                Ok(Self {
-                    protocol,
-                    sender,
-                    worker: Some(worker),
-                    fence_rx,
-                    fence_tx,
-                })
-            }
+            Ok(Ok(())) => Ok(Self {
+                protocol,
+                sender,
+                worker: Some(worker),
+                fence_rx,
+                fence_tx,
+            }),
             Ok(Err(error)) => {
                 let _ = worker.join();
                 Err(error)
