@@ -667,7 +667,7 @@ final class HvfWindowsBackend: VMBackend {
             shareGuestDir: nil,
             virtioNet: config.networkEnabled ?? true,
             virtioGpu3d: true,
-            nvmeBufferedIO: true,
+            nvmeBufferedIO: false,
             ctlFilePath: ctlFilePath
         )
     }

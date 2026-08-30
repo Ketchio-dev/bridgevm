@@ -19,7 +19,7 @@ struct HvfEngineView: View {
     @State private var shareGuestDir = "C:\\bridgevm-share"
     @State private var virtioNet = false
     @State private var virtioGpu3d = true
-    @State private var nvmeBufferedIO = true
+    @State private var nvmeBufferedIO = false
     @State private var ctlFilePath = ""
     @State private var ctlInput = ""
     @State private var keyboardInput = ""
@@ -124,7 +124,7 @@ struct HvfEngineView: View {
                     Toggle("Clipboard sync", isOn: $clipboardSync)
                     Toggle("Virtio net", isOn: $virtioNet)
                     Toggle("VirGL 3D", isOn: $virtioGpu3d)
-                    Toggle("Buffered NVMe", isOn: $nvmeBufferedIO)
+                    Toggle("Buffered NVMe (diagnostic)", isOn: $nvmeBufferedIO)
                     Toggle("Shared folder", isOn: $shareEnabled)
                     Spacer()
                 }
@@ -559,7 +559,7 @@ struct HvfEngineView: View {
                                shareGuestDir: nil,
                                virtioNet: false,
                                virtioGpu3d: true,
-                               nvmeBufferedIO: true,
+                               nvmeBufferedIO: false,
                                ctlFilePath: "\(evidence)/bvagent.ctl")
     }
 }

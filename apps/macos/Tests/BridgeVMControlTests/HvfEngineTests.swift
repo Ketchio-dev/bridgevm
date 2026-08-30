@@ -79,7 +79,7 @@ final class HvfEngineConfigTests: XCTestCase {
         XCTAssertEqual(config?.ramMiB, 8192)
         XCTAssertEqual(config?.smpCpus, 8)
         XCTAssertEqual(config?.virtioNet, true)
-        XCTAssertEqual(config?.virtioGpu3d, true)
+        XCTAssertTrue(config?.virtioGpu3d == true && config?.nvmeBufferedIO == false)
         XCTAssertEqual(config?.performanceRisk, .aggressive)
         XCTAssertEqual(config?.vtpmStateDir, "/library/win11/bundle.vmbridge/metadata/vtpm")
         XCTAssertEqual(config?.vtpmKeyID, "win11")
@@ -1218,7 +1218,7 @@ final class HvfWindowsBackendTests: XCTestCase {
         XCTAssertTrue(command.contains("'--smp-cpus' '1'"))
         XCTAssertTrue(command.contains(">\(Shell.shQuote(backend.launcherLogPath)) 2>&1"))
         XCTAssertFalse(command.contains(">\(Shell.shQuote(backend.evidenceDir + "/run.log")) 2>&1"))
-        XCTAssertFalse(command.contains("BRIDGEVM_VIRTIO_CONSOLE="))
+        XCTAssertFalse(command.contains("BRIDGEVM_VIRTIO_CONSOLE=") || command.contains("'--nvme-buffered-io'"))
     }
 
     func testRunInGuestAppendsCtlAndParsesReply() throws {
