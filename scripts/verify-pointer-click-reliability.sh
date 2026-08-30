@@ -18,8 +18,10 @@ VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 
 parse_run_log() { # fired press release stuck first_ms classification
-  local log="$1" ptr="${2:-/dev/null}" click="${3:-/dev/null}" first='' fired=false press=0 release=0 edges=0 stuck=1 ready cx cy hid_x hid_y env baseline
+  local log="$1" ptr="${2:-/dev/null}" click="${3:-/dev/null}" first='' fired=false press=0 release=0 edges=0 stuck=1 ready cx cy hid_x hid_y env baseline trace
   baseline="$(dirname "$log")/visible/baseline.env"
+  trace="$(dirname "$log")/virtio-gpu.jsonl"
+  grep -Eqs 'Illegal resource|context error reported' "$log" "$trace" 2>/dev/null && { echo 'false 0 0 1 renderer-error rendering-package-regression'; return; }
   grep -qx 'result=baseline-not-presented' "$baseline" 2>/dev/null && { echo 'false 0 0 1 baseline-not-presented rendering-package-regression'; return; }
   ready=$(tr -d '\r' < "$(dirname "$log")/share/bv-pointer-target-ready.log" 2>/dev/null || true)
   [[ "$ready" =~ ^BVTARGET.ready.width=1600.height=900.screen_x=([-0-9]+).screen_y=([-0-9]+).center_x=([-0-9]+).center_y=([-0-9]+).virtual_x=([-0-9]+).virtual_y=([-0-9]+).virtual_w=([0-9]+).virtual_h=([0-9]+).hwnd=([1-9][0-9]*)$ ]] || { echo 'false 0 0 1 invalid-target pointer'; return; }
@@ -48,6 +50,9 @@ if [[ "${1:-}" == "--selftest" ]]; then
   printf 'BVPTR begin duration_ms=20 poll_ms=4 session=1 input_desktop_open=1 foreground=9 cursor_x=800 cursor_y=450 utc=x\r\nBVPTR press t_ms=3 x=800 y=450 fg=9\r\nBVPTR release t_ms=40 x=800 y=450 fg=9\r\nBVPTR summary presses=1 releases=1 edges=0 moves=0 first_press_ms=3 first_release_ms=40 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p" "$c")
   [[ "$r" == "true 1 1 0 250 pointer" ]] || fail "selftest good-run parse: got '$r'"
+  printf 'vrend_renderer_transfer_iov: context error reported 7 "venus-win32" Illegal resource 230\n' >> "$t"; r=$(parse_run_log "$t" "$p" "$c")
+  [[ "$r" == "false 0 0 1 renderer-error rendering-package-regression" ]] || fail "selftest renderer parse: got '$r'"
+  printf 'live input accepted: command=Pointer("click:16384x16384")\n' > "$t"
   printf 'result=baseline-not-presented\nfinal_white_px=0\n' > "$d/visible/baseline.env"
   r=$(parse_run_log "$t" "$p" "$c")
   [[ "$r" == "false 0 0 1 baseline-not-presented rendering-package-regression" ]] || fail "selftest baseline parse: got '$r'"
