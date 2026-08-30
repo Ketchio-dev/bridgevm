@@ -80,6 +80,15 @@ returning result `1`. This proves live mapping and guest visibility only; no
 firmware phase executed. See the
 [exact-head receipt](../windows-arm/evidence/bridgevm-pc-boot-info-live-20260830.md).
 
+A fourth bounded probe at exact BridgeVM code head
+`5ed86f6bfa9bfb615bd2308178002710aa34f958` placed a reproducibly built
+64 MiB development flash image at GPA zero and entered its BridgeVM-owned
+AArch64 reset code there. The primary path validated the `BVMBOOT1` handoff at
+`0x2600_0000`, stored result `1` in system RAM and returned through HVC. This is
+one live reset-entry run; the image still contains no SEC C environment, PI
+HOB list, DXE core or UEFI services. See the
+[exact-head receipt](../windows-arm/evidence/bridgevm-pc-reset-vector-live-20260830.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -105,6 +114,15 @@ At exact BridgeVM code head
 The resulting 12,288-byte development driver has SHA-256
 `01f555aec886cf241f277c53ac2bf57d38fd064a8ae4b6508f4f4897802efccc`.
 
+The package also contains a BridgeVM-owned reset entry built independently of
+that DXE module. At exact BridgeVM code head
+`5ed86f6bfa9bfb615bd2308178002710aa34f958`, pinned GCC 16.1.0 and GNU
+binutils 2.46.1 produced a 92-byte entry at offset zero of a 64 MiB development
+flash image with SHA-256
+`af815a96240bb3cfd2ab19f6c853b70f609bdfca78f4a0885a08fb3ff9dbdf41`.
+The entry executed once on HVF, but it is only a reset skeleton and does not
+yet load the independently built DXE module.
+
 ## Implementation gates
 
 | Gate | State |
@@ -115,6 +133,7 @@ The resulting 12,288-byte development driver has SHA-256
 | HVF RAM mapping and architected-timer PPI delivery | live single-run passed; firmware and device SPI integration open |
 | Boot-info v1 mapping and EL1 pointer traversal | live single-run passed; firmware execution open |
 | ACPI/SMBIOS DXE consumer | reproducible module build only; no firmware-volume claim |
+| Reset vector at GPA zero | live single-run passed; SEC/HOB/DXE continuation open |
 | Independently built and audited UEFI firmware | open |
 | UEFI ACPI/SMBIOS/GOP/block-I/O handoff | open |
 | Windows installer and installed-disk boot | open |
