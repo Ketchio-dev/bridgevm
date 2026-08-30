@@ -8,7 +8,7 @@ HEADER="$PKG/Include/BridgeVmPc/BootInfo.h"
 RUST_INFO="$ROOT/crates/bridgevm-hvf/src/bridgevm_pc_boot_info.rs"
 RUST_BOARD="$ROOT/crates/bridgevm-hvf/src/bridgevm_pc.rs"
 
-if rg -n -i 'qemu|armvirt|ovmf|fw[_-]?cfg|utm' "$PKG"; then
+if rg -n -i 'qemu|armvirt|ovmf|fw[_-]?cfg|u[t]m' "$PKG"; then
   echo "FAIL: BridgeVmPcPkg references a prohibited compatibility platform" >&2
   exit 1
 fi

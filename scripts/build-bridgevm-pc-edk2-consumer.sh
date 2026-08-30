@@ -45,7 +45,7 @@ if ! git -C "$edk2_root" diff --quiet --ignore-submodules=none ||
   exit 66
 fi
 
-if rg -n -i 'qemu|armvirt|ovmf|fw[_-]?cfg|utm' "$package_root"; then
+if rg -n -i 'qemu|armvirt|ovmf|fw[_-]?cfg|u[t]m' "$package_root"; then
   echo "BridgeVmPcPkg contains a prohibited compatibility-platform dependency" >&2
   exit 67
 fi
@@ -119,7 +119,7 @@ if ! /opt/homebrew/bin/aarch64-elf-objdump -f "$artifact" | grep -q 'file format
   echo "firmware output is not an AArch64 PE/COFF image" >&2
   exit 71
 fi
-if strings -a "$artifact" | rg -i 'qemu|armvirt|ovmf|fw[_-]?cfg|utm'; then
+if strings -a "$artifact" | rg -i 'qemu|armvirt|ovmf|fw[_-]?cfg|u[t]m'; then
   echo "firmware output contains a prohibited compatibility-platform reference" >&2
   exit 71
 fi
