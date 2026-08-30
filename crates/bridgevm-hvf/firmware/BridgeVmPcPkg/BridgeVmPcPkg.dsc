@@ -17,7 +17,6 @@
   SUPPORTED_ARCHITECTURES        = AARCH64
   BUILD_TARGETS                  = DEBUG|RELEASE
   SKUID_IDENTIFIER              = DEFAULT
-
 [LibraryClasses]
   BaseLib|MdePkg/Library/BaseLib/BaseLib.inf
   BaseMemoryLib|MdePkg/Library/BaseMemoryLib/BaseMemoryLib.inf
@@ -29,3 +28,4 @@
 
 [Components]
   BridgeVmPcPkg/Drivers/PlatformTablesDxe/PlatformTablesDxe.inf
+  BridgeVmPcPkg/Drivers/DxeProbe/DxeProbe.inf

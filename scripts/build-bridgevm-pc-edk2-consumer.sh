@@ -55,7 +55,7 @@ while IFS= read -r dependency; do
     *) echo "unapproved EDK2 package dependency: ${dependency}" >&2; exit 67 ;;
   esac
 done < <(awk '/^[[:space:]]+[A-Za-z0-9]+Pkg\/.*\.dec$/ {print $1}' \
-  "$package_root/Drivers/PlatformTablesDxe/PlatformTablesDxe.inf")
+  "$package_root"/Drivers/*/*.inf | sort -u)
 
 gcc_version="$(/opt/homebrew/bin/aarch64-elf-gcc --version | head -1)"
 iasl_version="$(/opt/homebrew/bin/iasl -v | awk '/version/{print $NF; exit}')"

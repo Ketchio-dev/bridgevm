@@ -39,11 +39,12 @@ grep -Fq 'pub const MAX_CPUS: u64 = 64;' "$RUST_BOARD"
 grep -Fq 'pub const RAM_BASE: u64 = 0x1_0000_0000;' "$RUST_BOARD"
 grep -Fq 'pub const BOOT_INFO: Region = Region::new(0x2600_0000, 0x1_0000);' "$RUST_BOARD"
 awk '/^[[:space:]]+[A-Za-z0-9]+Pkg\/.*\.dec$/ {print $1}' \
-  "$PKG/Drivers/PlatformTablesDxe/PlatformTablesDxe.inf" |
-  diff -u - <(printf '%s\n' MdePkg/MdePkg.dec BridgeVmPcPkg/BridgeVmPcPkg.dec)
+  "$PKG"/Drivers/*/*.inf | sort -u |
+  diff -u - <(printf '%s\n' BridgeVmPcPkg/BridgeVmPcPkg.dec MdePkg/MdePkg.dec)
 grep -Fq 'b03a21a63e3bd001f52c527e5a57feddb53a690b' "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh"
 grep -Fq 'MdeModulePkg/Core/Dxe/DxeMain.inf' "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh"
 grep -Fq '022e09f7e60c3f1cf5b1416a66714b642714e827ba085957383ea3264f3f4ed6' "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh"
-bash -n "$ROOT/scripts/build-bridgevm-pc-edk2-consumer.sh" "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh"
+grep -Fq 'BridgeVmPcDxeProbe.efi' "$ROOT/scripts/build-bridgevm-pc-dxe-entry-firmware.sh"
+bash -n "$ROOT/scripts/build-bridgevm-pc-edk2-consumer.sh" "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh" "$ROOT/scripts/build-bridgevm-pc-dxe-entry-firmware.sh"
 "$ROOT/scripts/check-bridgevm-pc-reset-vector-boundary.sh"
 echo "PASS: BridgeVmPcPkg uses only its versioned ABI and approved generic EDK2 boundary"

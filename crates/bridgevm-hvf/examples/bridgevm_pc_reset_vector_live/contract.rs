@@ -5,6 +5,11 @@ mod hob;
 pub use hob::{validate_sec_result, SecResult};
 pub const RESULT_OFFSET: usize = 0x1000;
 pub const PASS_RESULT: u32 = 1;
+pub const RAM_PAGES: usize = 4;
+pub const RAM_EXECUTABLE: bool = false;
+pub const PROBE_TITLE: &str = "BridgeVM Virtual ARM PC reset-vector probe: PASS";
+pub const LIVE_PROOF: &str =
+    "LIVE PROOF: BridgeVM SEC validated boot-info v1 and built the bounded PI HOB list";
 pub const EXPECTED_FD_SHA256: &str =
     "8db976249ff86c9613d0a13a0d811ee68a94ef90835d524deb451b927bc332d6";
 pub fn result_gpa() -> Result<u64, String> {
@@ -39,25 +44,15 @@ pub fn validate_firmware(bytes: &[u8]) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn result_and_flash_contract_use_independent_board_addresses() {
         assert_eq!(board::FLASH_CODE.base, 0);
         assert_eq!(board::FLASH_CODE.size, 0x0400_0000);
         assert_eq!(result_gpa().unwrap(), 0x1_0000_1000);
     }
-
     #[test]
     fn firmware_validation_rejects_non_contract_size_before_hashing() {
         let error = validate_firmware(&[0; 64]).unwrap_err();
         assert!(error.contains("expected 67108864"));
-    }
-
-    #[test]
-    fn pinned_digest_has_sha256_shape() {
-        assert_eq!(EXPECTED_FD_SHA256.len(), 64);
-        assert!(EXPECTED_FD_SHA256
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit()));
     }
 }

@@ -1,0 +1,25 @@
+## @file
+# Bounded DXE-dispatch live marker for BridgeVM Virtual ARM PC.
+#
+# SPDX-License-Identifier: Apache-2.0
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = BridgeVmPcDxeProbe
+  FILE_GUID                      = 36A32D32-548B-4970-A32A-68B01E131B4A
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = BridgeVmPcDxeProbeEntry
+
+[Sources]
+  DxeProbe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+
+[Depex]
+  TRUE

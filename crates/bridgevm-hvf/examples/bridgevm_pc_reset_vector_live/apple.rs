@@ -1,4 +1,4 @@
-use super::contract::{result_gpa, validate_firmware, validate_sec_result, SecResult};
+use super::contract::{self, result_gpa, validate_firmware, validate_sec_result, SecResult};
 use bridgevm_hvf::machine::bridgevm_pc as board;
 use bridgevm_hvf::platform_pc::BridgeVmPcPlatform;
 use std::alloc::{alloc_zeroed, dealloc, Layout};
@@ -8,6 +8,8 @@ use std::ptr::{null_mut, NonNull};
 use std::sync::mpsc;
 use std::time::Duration;
 
+#[path = "hvc_diagnostics.rs"]
+mod hvc_diagnostics;
 type HvReturn = i32;
 type HvVcpu = u64;
 const HV_SUCCESS: HvReturn = 0;
@@ -52,7 +54,6 @@ unsafe extern "C" {
     fn hv_vcpus_exit(vcpus: *const HvVcpu, vcpu_count: u32) -> HvReturn;
     fn hv_vcpu_set_reg(vcpu: HvVcpu, reg: u32, value: u64) -> HvReturn;
 }
-
 struct AlignedMemory {
     pointer: NonNull<u8>,
     layout: Layout,
@@ -77,7 +78,6 @@ impl Drop for AlignedMemory {
         unsafe { dealloc(self.pointer.as_ptr(), self.layout) }
     }
 }
-
 fn status(label: &str, value: HvReturn) -> Result<(), String> {
     (value == HV_SUCCESS)
         .then_some(())
@@ -107,6 +107,7 @@ unsafe fn run_vcpu(vcpu: HvVcpu, exit: *mut HvVcpuExit) -> Result<(), String> {
             "unexpected reset-vector exception EC={ec:#x} ESR={esr:#x}"
         ));
     }
+    hvc_diagnostics::print_hvc_arguments(vcpu, esr)?;
     Ok(())
 }
 
@@ -141,7 +142,9 @@ unsafe fn execute_reset_vector(
                     ram.pointer.as_ptr().cast(),
                     board::RAM_BASE,
                     ram.layout.size(),
-                    HV_MEMORY_READ | HV_MEMORY_WRITE,
+                    HV_MEMORY_READ
+                        | HV_MEMORY_WRITE
+                        | (contract::RAM_EXECUTABLE as u64 * HV_MEMORY_EXEC),
                 ),
             )?;
             let ram_result = (|| {
@@ -181,7 +184,7 @@ unsafe fn run_unsafe(firmware_bytes: &[u8], firmware_sha256: &str) -> Result<(),
     let bundle = BridgeVmPcPlatform::build_firmware_tables(1, 512 << 20)?;
     let mut firmware = AlignedMemory::new(firmware_bytes.len())?;
     let mut boot_info = AlignedMemory::new(board::BOOT_INFO.size as usize)?;
-    let mut ram = AlignedMemory::new(PAGE_ALIGNMENT * 4)?;
+    let mut ram = AlignedMemory::new(PAGE_ALIGNMENT * contract::RAM_PAGES)?;
     firmware.bytes_mut().copy_from_slice(firmware_bytes);
     boot_info
         .bytes_mut()
@@ -199,7 +202,7 @@ unsafe fn run_unsafe(firmware_bytes: &[u8], firmware_sha256: &str) -> Result<(),
     let destroy = hv_vm_destroy();
     let result = run_result?;
     status("destroy VM", destroy)?;
-    println!("BridgeVM Virtual ARM PC reset-vector probe: PASS");
+    println!("{}", contract::PROBE_TITLE);
     println!("board={} abi={}", board::BOARD_ID, board::BOARD_ABI_VERSION);
     println!(
         "reset_vector={:#x} firmware_size={:#x} ram={:#x}",
@@ -213,7 +216,7 @@ unsafe fn run_unsafe(firmware_bytes: &[u8], firmware_sha256: &str) -> Result<(),
         board::BOOT_INFO.base
     );
     println!("firmware_sha256={firmware_sha256}");
-    println!("LIVE PROOF: BridgeVM SEC validated boot-info v1 and built the bounded PI HOB list");
+    println!("{}", contract::LIVE_PROOF);
     Ok(())
 }
 

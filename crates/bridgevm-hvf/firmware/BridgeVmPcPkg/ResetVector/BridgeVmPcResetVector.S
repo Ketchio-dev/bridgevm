@@ -3,19 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0
 **/
-
   .arch armv8-a
   .section .text.reset, "ax", %progbits
   .balign 4
   .global _start
   .type _start, %function
-
   .equ BRIDGE_VM_PC_BOOT_INFO_BASE, 0x26000000
   .equ BRIDGE_VM_PC_RESULT_GPA,      0x100001000
-  .equ BRIDGE_VM_PC_STACK_TOP,       0x100020000
-
 _start:
   msr     DAIFSet, #0xf
+#ifdef BRIDGE_VM_PC_DXE_ENTRY
+  bl      BridgeVmPcInstallExceptionVector
+#endif
   mrs     x4, MPIDR_EL1
   and     x4, x4, #0xffff
   cbnz    x4, SecondaryPark
@@ -29,7 +28,17 @@ _start:
   movk    x6, #0x0001, lsl #32
   mov     sp, x6
   bl      BridgeVmPcSecMain
+#ifdef BRIDGE_VM_PC_DXE_ENTRY
+  movz    x0, #0x1000
+  movk    x0, #0x0001, lsl #32
+  movz    x1, #0x4000
+  movk    x1, #0x0001, lsl #32
+  bl      BridgeVmPcDxeIplMain
+  dsb     sy
+  hvc     #2
+#else
   hvc     #0
+#endif
 
 PrimaryPark:
   wfe
