@@ -334,8 +334,8 @@ build_installed_boot_env_args() {
   # Forward the agent-console ServiceWake interval (probe_runtime.rs, default
   # 250ms, clamp 50..10000): each wake is an hv_vcpus_exit cancel.
   [[ -z "${BRIDGEVM_AGENT_WAKE_MS:-}" ]] || ENV_ARGS+=("BRIDGEVM_AGENT_WAKE_MS=$BRIDGEVM_AGENT_WAKE_MS")
-  # A1 exit: swap Apple's in-kernel GICv3 for the userspace device model
-  # (usgic_bridge.rs). QEMU-hvf boots this host 10/10 in this configuration.
+  # A1 diagnostic: swap Apple's in-kernel GICv3 for BridgeVM's userspace device
+  # model (usgic_bridge.rs). This remains opt-in and does not change the default.
   [[ -z "${BRIDGEVM_USERSPACE_GIC:-}" ]] || ENV_ARGS+=("BRIDGEVM_USERSPACE_GIC=$BRIDGEVM_USERSPACE_GIC")
   [[ -z "${BRIDGEVM_USGIC_TRACE:-}" ]] || ENV_ARGS+=("BRIDGEVM_USGIC_TRACE=$BRIDGEVM_USGIC_TRACE")
   [[ -z "${BRIDGEVM_USGIC_RING:-}" ]] || ENV_ARGS+=("BRIDGEVM_USGIC_RING=$BRIDGEVM_USGIC_RING")

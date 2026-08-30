@@ -3,12 +3,12 @@ import Foundation
 /// Seeds a "Windows Boot Manager" UEFI boot variable into a freshly-installed
 /// disk's EDK2 varstore so its FIRST boot reaches Windows.
 ///
-/// Why this is needed: the ArmVirtQemu firmware this engine boots does not
-/// auto-create a boot option for the NVMe-backed ESP, and WinPE's bcdboot
-/// writes the on-disk BCD but leaves no NVRAM boot entry. A cleanly installed
-/// disk therefore drops to the UEFI shell. Windows itself only registers its
-/// NVRAM entry on its first successful launch — a chicken-and-egg the seed
-/// breaks. The device path is partition-signature based (HD(GPT-GUID) →
+/// Why this is needed: the pinned UEFI build does not auto-create a boot option
+/// for the NVMe-backed ESP, and WinPE's bcdboot writes the on-disk BCD but leaves
+/// no NVRAM boot entry. A cleanly installed disk therefore drops to the UEFI
+/// shell. Windows itself only registers its NVRAM entry on its first successful
+/// launch — a chicken-and-egg the seed breaks. The device path is
+/// partition-signature based (HD(GPT-GUID) →
 /// \EFI\Microsoft\Boot\bootmgfw.efi), so it needs only the freshly-assigned
 /// ESP partition GUID read from the target's GPT; after the first seeded boot
 /// Windows maintains its own entry.

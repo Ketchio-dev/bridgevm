@@ -1,10 +1,11 @@
 //! Minimal Intel P30-style NOR flash model for UEFI variable storage.
 //!
-//! ArmVirtQemu's `VirtNorFlashDxe` does not treat the writable pflash bank as
-//! plain RAM. It sends Intel StrataFlash command sequences and polls the status
-//! register while updating the UEFI variable store. The Path A live probe used to
-//! map the vars bank as writable RAM, so those command writes modified the backing
-//! bytes and the firmware spun forever waiting for `P30_SR_BIT_WRITE`.
+//! A UEFI NOR-flash driver does not treat the writable pflash bank as plain RAM.
+//! The guest-visible device follows the Intel P30 command protocol: command
+//! sequences select array/status/ID/CFI modes, and program or erase operations
+//! complete through status polling. An earlier BridgeVM probe mapped the vars bank
+//! as writable RAM, so command writes corrupted backing bytes and status polling
+//! never observed the ready bit.
 
 use crate::platform_virt::{MmioOp, MmioOutcome};
 
