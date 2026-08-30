@@ -34,7 +34,7 @@ SUITES = [
     (["test", "--workspace", "--locked"], True),
     *[
         (["test", "-p", "bridgevm-hvf", "--example", example, "--locked"], True)
-        for example in ("hvf_gic_boot_probe", "hvf_vtimer_cancel_probe", "bridgevm_pc_irq_live", "bridgevm_pc_boot_info_live", "bridgevm_pc_reset_vector_live")
+        for example in ("hvf_gic_boot_probe", "hvf_vtimer_cancel_probe", "bridgevm_pc_irq_live", "bridgevm_pc_boot_info_live", "bridgevm_pc_reset_vector_live", "bridgevm_pc_dxe_entry_live")
     ],
     (["test", "-p", "bridgevm-hvf", "--features", "venus", "--lib", "--locked"], False),
     (
