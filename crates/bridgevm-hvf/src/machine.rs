@@ -14,6 +14,9 @@
 //! Pure data + logic — no Hypervisor.framework calls, so it builds and tests on
 //! any host.
 
+#[path = "bridgevm_pc.rs"]
+pub mod bridgevm_pc;
+
 /// A guest-physical address range `[base, base + size)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Region {

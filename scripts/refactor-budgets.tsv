@@ -199,6 +199,7 @@ crates/bridgevm-hvf/src/hda/tests/read_into.rs	130	0
 crates/bridgevm-hvf/src/hda/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/hda/tests/part_1.rs	395	0
 crates/bridgevm-hvf/src/lib.rs	49	0
+crates/bridgevm-hvf/src/bridgevm_pc.rs	192	0
 crates/bridgevm-hvf/src/machine.rs	350	0
 crates/bridgevm-hvf/src/machine_plan.rs	367	0
 crates/bridgevm-hvf/src/media.rs	605	0
