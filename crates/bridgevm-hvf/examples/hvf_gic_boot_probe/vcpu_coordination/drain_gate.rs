@@ -1,4 +1,4 @@
-//! Coalesce secondary-vCPU drains while preserving asynchronous wake drains.
+//! Optionally coalesce secondary-vCPU drains while preserving asynchronous wake drains.
 //!
 //! CPU0 deliberately does not use this gate: host workers can complete async
 //! device work between its post-MMIO drain and the following pre-run drain.
@@ -12,7 +12,7 @@ pub(crate) struct PreRunDrainGate {
 
 impl PreRunDrainGate {
     pub(crate) fn from_env() -> Self {
-        Self::new(env_flag_default("BRIDGEVM_DRAIN_GATE", true))
+        Self::new(env_flag_default("BRIDGEVM_DRAIN_GATE", false))
     }
 
     pub(crate) const fn new(enabled: bool) -> Self {
