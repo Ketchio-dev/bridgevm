@@ -98,6 +98,15 @@ returning result `1`. This is one live reset-to-SEC run; it still constructs no
 PI HOB list and enters no DXE core. See the
 [exact-head receipt](../windows-arm/evidence/bridgevm-pc-sec-live-20260830.md).
 
+A sixth bounded probe at exact BridgeVM code head
+`10a0aae10b22e2aa88780fcac17088d7acdd83e8` added PI HOB construction.
+After validating boot-info v1, SEC wrote a five-entry, 176-byte list at
+`0x1_0000_4000`: PHIT, system-memory resource, stack allocation, CPU and end
+HOBs. An independent host parser validated every field after the HVC exit.
+This is one live reset-to-HOB run; it still contains no firmware volume and
+enters no DXE core. See the
+[exact-head receipt](../windows-arm/evidence/bridgevm-pc-hob-live-20260830.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -138,6 +147,12 @@ SHA-256 `745241de5a20d9240ec31c8000abb6f8ad04544a7ba7b9b4fe8c6f9b012cd890`,
 and one HVF run passed the full fail-closed handoff validation. PI HOB
 construction and DXE loading remain open.
 
+The following exact-head tranche added the bounded PI HOB producer. Its
+reset/SEC/HOB entry is 1,168 bytes, the complete development FD has SHA-256
+`8db976249ff86c9613d0a13a0d811ee68a94ef90835d524deb451b927bc332d6`,
+and one HVF run validated the exact five-HOB list in guest RAM. Firmware-volume
+discovery and DXE loading remain open.
+
 ## Implementation gates
 
 | Gate | State |
@@ -148,8 +163,9 @@ construction and DXE loading remain open.
 | HVF RAM mapping and architected-timer PPI delivery | live single-run passed; firmware and device SPI integration open |
 | Boot-info v1 mapping and EL1 pointer traversal | live single-run passed; firmware execution open |
 | ACPI/SMBIOS DXE consumer | reproducible module build only; no firmware-volume claim |
-| Reset vector at GPA zero | live single-run passed; SEC/HOB/DXE continuation open |
-| Freestanding SEC validation | live single-run passed; PI HOB and DXE continuation open |
+| Reset vector at GPA zero | live single-run passed; SEC and PI HOB continuations passed separately; DXE open |
+| Freestanding SEC validation | live single-run passed; bounded PI HOB continuation passed separately; DXE open |
+| Bounded PI HOB construction | live single-run passed; firmware-volume and DXE continuation open |
 | Independently built and audited UEFI firmware | open |
 | UEFI ACPI/SMBIOS/GOP/block-I/O handoff | open |
 | Windows installer and installed-disk boot | open |
