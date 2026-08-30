@@ -1,0 +1,14 @@
+## @file
+# BridgeVM Virtual ARM PC firmware package.
+#
+# SPDX-License-Identifier: Apache-2.0
+##
+
+[Defines]
+  DEC_SPECIFICATION              = 0x00010005
+  PACKAGE_NAME                   = BridgeVmPcPkg
+  PACKAGE_GUID                   = 0F90D864-A11B-4289-8B60-F613D7157FF0
+  PACKAGE_VERSION                = 0.1
+
+[Includes]
+  Include

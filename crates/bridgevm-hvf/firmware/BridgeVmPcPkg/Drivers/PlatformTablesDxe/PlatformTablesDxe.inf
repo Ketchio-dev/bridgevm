@@ -1,0 +1,37 @@
+## @file
+# BridgeVM boot-info v1 ACPI/SMBIOS configuration-table consumer.
+#
+# SPDX-License-Identifier: Apache-2.0
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = BridgeVmPcPlatformTablesDxe
+  FILE_GUID                      = B6F1376D-3E28-421B-A64C-2B5E0D185397
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 0.1
+  ENTRY_POINT                    = BridgeVmPcPlatformTablesDxeEntryPoint
+
+[Sources]
+  AcpiValidation.c
+  BootInfoValidation.c
+  PlatformTablesDxe.c
+  PlatformTablesDxe.h
+
+[Packages]
+  MdePkg/MdePkg.dec
+  BridgeVmPcPkg/BridgeVmPcPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Guids]
+  gEfiAcpi20TableGuid
+  gEfiSmbios3TableGuid
+
+[Depex]
+  TRUE

@@ -52,9 +52,9 @@ step "tests are reachable" python3 scripts/check-tests-are-reachable.py
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
 step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
+step "BridgeVM PC firmware boundary" scripts/check-bridgevm-pc-firmware-boundary.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 step "install verify" bash tests/integration/install-verify-smoke.sh
-# --- formatting --------------------------------------------------------------
 step "rustfmt" cargo "$TOOLCHAIN" fmt --all --check
 
 if [[ $FAST -eq 1 ]]; then

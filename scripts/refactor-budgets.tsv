@@ -675,6 +675,14 @@ crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe.rs	488	10
 crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe/guest_code.rs	149	0
 crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe/options.rs	198	0
 crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe/receipt.rs	262	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/BridgeVmPcPkg.dec	14	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/BridgeVmPcPkg.dsc	31	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Include/BridgeVmPc/BootInfo.h	64	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/PlatformTablesDxe/AcpiValidation.c	204	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/PlatformTablesDxe/BootInfoValidation.c	190	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/PlatformTablesDxe/PlatformTablesDxe.c	55	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/PlatformTablesDxe/PlatformTablesDxe.h	18	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/PlatformTablesDxe/PlatformTablesDxe.inf	37	0
 crates/bridgevm-hvf/examples/bridgevm_pc_gic_probe.rs	141	6
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_info_live.rs	13	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_info_live/apple.rs	213	8
@@ -1493,6 +1501,8 @@ scripts/render-capability-status.py	272	0
 scripts/package-tarball.sh	51
 scripts/measure-pointer-latency-batch.sh	36
 scripts/check-hvf-windows-coherence-protocol.sh	45
+scripts/build-bridgevm-pc-edk2-consumer.sh	157	0
+scripts/check-bridgevm-pc-firmware-boundary.sh	50	0
 scripts/package-dmg.sh	45
 install.sh	44	0
 scripts/render-graphics-compatibility.py	245	0
