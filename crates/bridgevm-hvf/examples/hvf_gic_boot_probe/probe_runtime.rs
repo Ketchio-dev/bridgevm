@@ -344,33 +344,33 @@ pub(crate) fn run() -> ExitCode {
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
                 last_pre_run_pc = drain_pc;
                 crate::usgic_bridge::pre_run(0, vcpu);
-                if pre_run_drain_gate.should_drain_primary_pre_run() {
-                    let pending = {
-                        let mut platform_guard = lock_platform(
-                            &platform,
-                            smp_trace.as_deref(),
-                            0,
-                            "cpu0 pre-run platform mutex",
-                        );
-                        let platform = &mut *platform_guard;
-                        if let Some(bridge) = kd_serial_bridge.as_mut() {
-                            bridge.pump(platform);
-                        }
-                        drain_stats.prepare_pending_delivery(
-                            platform,
-                            &mut guest_ram,
-                            drain_trace,
-                            DrainContext {
-                                location: DrainLocation::PreRun,
-                                exit: exits,
-                                pc: drain_pc,
-                            },
-                        )
-                    };
-                    drain_stats.complete_pending_delivery(pending, drain_trace);
-                } else {
-                    drain_stats.record_pre_run_skip();
-                }
+                // CPU0 always drains here. A renderer worker can finish an
+                // asynchronous present after the post-MMIO drain but before
+                // this pre-run site; treating the two drains as duplicates can
+                // strand the newest frame until the guest exits again.
+                let pending = {
+                    let mut platform_guard = lock_platform(
+                        &platform,
+                        smp_trace.as_deref(),
+                        0,
+                        "cpu0 pre-run platform mutex",
+                    );
+                    let platform = &mut *platform_guard;
+                    if let Some(bridge) = kd_serial_bridge.as_mut() {
+                        bridge.pump(platform);
+                    }
+                    drain_stats.prepare_pending_delivery(
+                        platform,
+                        &mut guest_ram,
+                        drain_trace,
+                        DrainContext {
+                            location: DrainLocation::PreRun,
+                            exit: exits,
+                            pc: drain_pc,
+                        },
+                    )
+                };
+                drain_stats.complete_pending_delivery(pending, drain_trace);
                 let reason = match run_hvf_vcpu_once(vcpu, exit) {
                     Ok(reason) => reason,
                     Err(r) => {
@@ -584,7 +584,6 @@ pub(crate) fn run() -> ExitCode {
                             }
                             record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
                             drain_stats.complete_pending_delivery(pending, drain_trace);
-                            pre_run_drain_gate.note_primary_post_mmio_drain();
                             if trace_this_fwcfg {
                                 println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
                             }

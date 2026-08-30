@@ -669,7 +669,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_bar2.rs	37	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_setup.rs	12	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_setup.rs	88	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_config.rs	83	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	1006	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	1005	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/vtimer_recovery.rs	90	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_setup.rs	89	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/watchpoint_setup.rs	14	0
@@ -757,7 +757,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vblank_wake/waiter.rs	31	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator.rs	195	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator_tests.rs	144	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination.rs	334	1
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/drain_gate.rs	87	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/drain_gate.rs	54	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination_tests.rs	118	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_debug.rs	107	4
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state.rs	341	2
