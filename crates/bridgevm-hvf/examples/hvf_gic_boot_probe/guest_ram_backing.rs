@@ -50,7 +50,7 @@ pub(crate) unsafe fn zero_mapped_memory(pointer: *mut u8, len: usize) {
     // SAFETY: the caller supplies the live guest-RAM allocation and its exact
     // mapped length. MADV_ZERO preserves the mapping while logically zeroing
     // pages without first faulting every page into the process.
-    let page_aligned = (pointer as usize).is_multiple_of(0x4000) && len.is_multiple_of(0x4000);
+    let page_aligned = (pointer as usize & 0x3fff) == 0 && (len & 0x3fff) == 0;
     let status = if page_aligned {
         unsafe { libc::madvise(pointer.cast(), len, libc::MADV_ZERO) }
     } else {
