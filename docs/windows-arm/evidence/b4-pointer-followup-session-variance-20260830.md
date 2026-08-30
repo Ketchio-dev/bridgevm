@@ -82,3 +82,37 @@ The next comparable release-cut measurement should be one predeclared fixed
 20-lane run after a normal host-session reset, with the same immutable inputs
 and unchanged 250 ms threshold. A restart is an environmental reset, not a
 reason to discard these failures or retry repeatedly until a pass appears.
+
+## Application-policy follow-up: latency recovers, one rendering lane fails
+
+Exact-head Studio job `20260830-092312-35783-15762` tested
+`c1812fbe8148699456fdd04078f178b2c5355666`, which launches explicitly
+submitted gates with application scheduling policy while leaving the idle
+queue service in its background class. It used the same sealed input-manifest
+SHA-256, `9d5844483ef72d9c240e5ccff473089b4b51b2533e232b95f322503fa4b19f94`.
+
+The job did not pass B4:
+
+| result | measured value | required value |
+| --- | ---: | ---: |
+| pointer samples landed | 19/19 | 20/20 |
+| rendering/package regressions | 1 | 0 |
+| pointer visible-response p95 | 238 ms | <=250 ms |
+
+Lane 5 never presented the target baseline. No click was fired, so the gate
+correctly classified it as `rendering-package-regression`, excluded it from
+pointer success/failure counts, and failed the whole campaign for having only
+19 pointer samples. The other 19 lanes recorded one press, one release, no
+stuck button and a landed click. Their latencies were:
+
+```text
+205 121 214 168 3 217 151 231 131 224
+71 90 238 228 147 91 173 74 155
+```
+
+A scan of all 20 `run.log` and `virtio-gpu.jsonl` files found no `Illegal
+resource` or `context error reported` marker. That absence does not turn lane
+5 into a pointer sample. The result is evidence that the scheduling correction
+removed the observed latency failure in this campaign, while the independent
+rendering/package reliability defect still blocks B4. A fresh driver candidate
+must pass the unchanged zero-regression, fixed-N=20 gate before B4 can close.

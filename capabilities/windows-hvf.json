@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-30",
-  "tested_commit": "c1812fbe8148699456fdd04078f178b2c5355666",
+  "tested_commit": "e8d3b507aeaea8e8e4ef138ce75af89d0833ba27",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -139,7 +139,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "Re-proven 2026-08-30 at exact code head c1812fbe8148699456fdd04078f178b2c5355666. The complete local scripts/check-project.sh passed, including workspace and Venus tests, the probe example, Rust formatting and clippy policy, structural budgets, documentation gates, Swift build/tests and all XCTest-shim suites. GitHub-hosted CI run 33313815035 passed the repository matrix, and Security and quality run 33313815005 passed fuzz corpus smoke, Loom, graphics-claim, live-gate and supply-chain policy checks. A9 remains OPEN. B4 is separately OPEN because fixed 20-lane follow-ups at 6048ebb084e7d1e2b1b78c7dcbe546b47c1c6e51 and an exact replay of 080462846acbe4cb784bd9b532d7cd39921aa549 both landed 20/20 with zero renderer/package regressions but failed the unchanged latency limit at p95 808 ms and 839 ms.",
+      "measured": "Re-proven 2026-08-30 at exact code head e8d3b507aeaea8e8e4ef138ce75af89d0833ba27. The complete local scripts/check-project.sh passed, including workspace and Venus tests, the probe example, Rust formatting and clippy policy, structural budgets, documentation gates, Swift build/tests and all XCTest-shim suites. GitHub-hosted CI run 33315481661 passed the repository matrix, and Security and quality run 33315482746 passed fuzz corpus smoke, Loom, graphics-claim, live-gate and supply-chain policy checks. A9 remains OPEN. B4 is separately OPEN: exact-head campaign 20260830-092312-35783-15762 met the latency limit for all 19 pointer-classified lanes at p95 238 ms but recorded one rendering/package regression, so it did not supply the required 20 pointer samples with zero regressions.",
       "evidence_paths": [
         "STATUS.md"
       ]
@@ -281,7 +281,7 @@
       "state": "OPEN",
       "release_blocking": false,
       "statement": "Pointer interaction passes a fixed 20-boot live campaign at 20/20 with p95 visible-response latency <=250 ms.",
-      "measured": "OPEN 2026-08-30. Retained Studio t8 job 20260829-215356-7576-17586 at sealed BridgeVM commit 080462846acbe4cb784bd9b532d7cd39921aa549 landed 20/20 pointer samples with zero rendering/package regressions and p95 245 ms. Later fixed campaigns 20260830-061513-18964-30182 at 6048ebb084e7d1e2b1b78c7dcbe546b47c1c6e51 and 20260830-063655-32633-32243 at an exact replay of the retained source also landed 20/20 with zero rendering/package regressions but failed the unchanged latency limit at p95 808 ms and 839 ms. Their boot means simultaneously moved from 18.31 seconds to 43.73 and 43.45 seconds. The retained pass ran before the Studio LaunchAgent was installed, while the failed campaigns ran through its Background process class; c1812fbe8148699456fdd04078f178b2c5355666 makes every explicitly submitted gate use application scheduling policy. That is a measurement-backed candidate explanation, not closure. B4 closes only after a new exact-head sealed fixed N=20 campaign passes 20/20 with zero rendering/package regressions and p95 at or below 250 ms.",
+      "measured": "OPEN 2026-08-30. Retained Studio t8 job 20260829-215356-7576-17586 at sealed BridgeVM commit 080462846acbe4cb784bd9b532d7cd39921aa549 landed 20/20 pointer samples with zero rendering/package regressions and p95 245 ms. Later fixed campaigns 20260830-061513-18964-30182 at 6048ebb084e7d1e2b1b78c7dcbe546b47c1c6e51 and 20260830-063655-32633-32243 at an exact replay of the retained source also landed 20/20 with zero rendering/package regressions but failed the unchanged latency limit at p95 808 ms and 839 ms. Exact-head campaign 20260830-092312-35783-15762 at c1812fbe8148699456fdd04078f178b2c5355666 then landed all 19 pointer-classified samples at p95 238 ms, but lane 5 never presented the baseline and was classified as one rendering/package regression. It therefore failed the required 20 pointer samples and zero-regression boundary. No Illegal resource or context error reported marker appeared in any of its 20 run logs or renderer traces. B4 closes only after a new exact-head sealed fixed N=20 campaign passes 20/20 with zero rendering/package regressions and p95 at or below 250 ms.",
       "evidence_paths": [
         "docs/windows-arm/evidence/b4-pointer-batch-20260817.md",
         "docs/windows-arm/evidence/b4-pointer-latency-20260816.md",
@@ -290,7 +290,7 @@
         "docs/windows-arm/evidence/b4-pointer-reliability-proven-20260830.md",
         "docs/windows-arm/evidence/b4-pointer-followup-session-variance-20260830.md"
       ],
-      "known_defect": "Pointer clicks landed 20/20 in the two latest fixed campaigns, but visible-response p95 was 808 ms and 839 ms against the 250 ms limit. A scheduling-policy correction is awaiting a new sealed 20-lane gate."
+      "known_defect": "The latest fixed campaign met the latency limit for all 19 pointer-classified lanes at p95 238 ms, but one baseline-not-presented lane was a rendering/package regression. The criterion still lacks 20 pointer samples with zero regressions."
     },
     {
       "id": "B5",
