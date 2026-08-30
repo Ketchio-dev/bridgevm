@@ -54,7 +54,7 @@ pub fn plan_for_geometry(
         && geometry.redistributor_region_size <= board::GIC_REDIST.size
         && geometry.msi_region_size <= board::GIC_MSI_FRAME.size;
     if !regions_fit {
-        return Err("Hypervisor.framework GIC regions do not fit the v1 map".to_string());
+        return Err(format!("host GIC regions do not fit v1: {geometry:?}"));
     }
     let bases_align = aligned(board::GIC_DIST.base, geometry.distributor_alignment)
         && aligned(board::GIC_REDIST.base, geometry.redistributor_alignment)

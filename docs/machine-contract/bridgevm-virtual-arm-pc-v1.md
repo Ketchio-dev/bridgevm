@@ -37,7 +37,7 @@ The normative values live in
 | firmware variables | `0x0400_0000` | `0x0400_0000` |
 | GICv3 distributor | `0x2000_0000` | `0x0001_0000` |
 | GICv3 redistributors | `0x2100_0000` | `0x0200_0000` |
-| MSI frame | `0x2300_0000` | `0x0000_1000` |
+| MSI frame | `0x2300_0000` | `0x0001_0000` |
 | PL011 debug UART | `0x2400_0000` | `0x0000_1000` |
 | PL031 RTC | `0x2401_0000` | `0x0000_1000` |
 | TPM 2.0 TIS | `0x2500_0000` | `0x0000_5000` |
@@ -53,6 +53,13 @@ display, guest-agent transport and audio are PCIe functions at `00:01.0`
 through `00:07.0`, respectively.
 The runtime must query Hypervisor.framework's GIC region sizes, alignments and
 supported SPI range and fail closed if this map cannot be configured.
+
+The first 2026-08-30 live placement probe correctly failed because the draft
+reserved only 4 KiB for the MSI frame while this Mac's Hypervisor.framework
+reported a 64 KiB size and alignment. The unreleased v1 draft was corrected to
+64 KiB, then a repeated probe created the GIC at the v1 distributor,
+redistributor and MSI addresses. This is a live single-run host-placement
+receipt, not evidence that firmware or Windows boots this board.
 
 ## Firmware and Windows boundary
 
@@ -72,7 +79,7 @@ ACPI, SMBIOS, PCIe and device interfaces.
 |---|---|
 | Versioned identity, address map and overlap tests | implemented, static only |
 | Minimal memory layout, vars flash, UART, RTC and PCIe ECAM runtime | implemented, host-unit only |
-| Host GIC geometry validation and bounded placement probe | implemented, live result pending |
+| Host GIC geometry validation and bounded placement probe | live single-run placement passed; integration open |
 | HVF memory mapping and device interrupt routing | open |
 | Independently built and audited UEFI firmware | open |
 | UEFI ACPI/SMBIOS/GOP/block-I/O handoff | open |

@@ -4,13 +4,13 @@ fn supported_geometry() -> AppleGicGeometry {
     AppleGicGeometry {
         distributor_size: 0x1_0000,
         distributor_alignment: 0x1_0000,
-        redistributor_region_size: 0x100_0000,
+        redistributor_region_size: 0x200_0000,
         redistributor_size: 0x2_0000,
         redistributor_alignment: 0x1_0000,
-        msi_region_size: 0x1000,
-        msi_region_alignment: 0x1000,
+        msi_region_size: 0x1_0000,
+        msi_region_alignment: 0x1_0000,
         spi_intid_base: 32,
-        spi_intid_count: 960,
+        spi_intid_count: 988,
     }
 }
 
