@@ -36,7 +36,6 @@
 //!   BRIDGEVM_AARCH64_UEFI_VARS_WRITABLE=1 ...        # write back to vars path
 //!   BRIDGEVM_SWTPM_DATA_SOCKET=/path/to/swtpm.sock ... # opt-in TPM2 TIS backend; supervisor owns swtpm lifecycle
 
-use std::alloc::{alloc_zeroed, Layout};
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -108,6 +107,7 @@ probe_modules!(
     "hvf_gic_boot_probe/gpu_shm_setup.rs" => gpu_shm_setup,
     "hvf_gic_boot_probe/guest_diagnostics.rs" => guest_diagnostics,
     "hvf_gic_boot_probe/guest_memory.rs" => guest_memory,
+    "hvf_gic_boot_probe/guest_ram_backing.rs" => guest_ram_backing,
     "hvf_gic_boot_probe/host_support.rs" => host_support,
     "hvf_gic_boot_probe/hvf_abi.rs" => hvf_abi,
     "hvf_gic_boot_probe/interrupt_delivery.rs" => interrupt_delivery,

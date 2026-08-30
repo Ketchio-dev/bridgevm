@@ -9,6 +9,7 @@ use crate::boot_media_setup::attach_boot_media;
 use crate::final_report::persist_and_report_stop;
 use crate::gpu_shm_bar2::refresh_on_ecam_write;
 use crate::gpu_shm_setup::install_gpu_shm_port;
+use crate::guest_ram_backing::GuestRamBacking;
 use crate::hvf_setup::{create_gic, create_vm};
 use crate::probe_config::ProbeConfig;
 use crate::probe_setup::prepare_platform;
@@ -49,19 +50,9 @@ pub(crate) fn run() -> ExitCode {
             swtpm_control_socket.as_deref(),
         );
 
-        let ram_layout = Layout::from_size_align(ram_size, 0x1_0000).unwrap();
-        let ram = alloc_zeroed(ram_layout);
+        let ram_backing = GuestRamBacking::allocate_and_map(machine::RAM_BASE, ram_size);
+        let ram = ram_backing.pointer();
         assert!(boot_dtb.len() < ram_size, "DTB must fit in guest RAM");
-        assert_eq!(
-            hv_vm_map(
-                ram as *mut c_void,
-                machine::RAM_BASE,
-                ram_size,
-                HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC
-            ),
-            0,
-            "map ram"
-        );
 
         let mut vcpu: HvVcpuT = 0;
         let mut exit: *mut HvVcpuExit = null_mut();

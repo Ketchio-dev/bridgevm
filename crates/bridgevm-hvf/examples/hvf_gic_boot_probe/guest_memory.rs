@@ -176,11 +176,9 @@ impl GuestMemoryMut for MappedRam {
 
 pub(crate) fn reset_guest_ram_for_boot(guest_ram: &mut MappedRam, dtb: &[u8]) {
     assert!(dtb.len() < guest_ram.len, "DTB must fit in guest RAM");
-    unsafe {
-        // SAFETY: Category 10/11 - `guest_ram.ptr` points to the live RAM mapping
-        // with `guest_ram.len` bytes allocated by the probe before this helper runs.
-        std::ptr::write_bytes(guest_ram.ptr, 0, guest_ram.len);
-    }
+    // SAFETY: the mapped RAM view carries the live allocation pointer and its
+    // exact allocation length for the whole probe lifetime.
+    unsafe { guest_ram_backing::zero_mapped_memory(guest_ram.ptr, guest_ram.len) };
     assert!(
         guest_ram.write_bytes(machine::RAM_BASE, dtb),
         "copy DTB to guest RAM base"

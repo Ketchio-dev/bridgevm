@@ -23,9 +23,9 @@ pub(crate) fn serial_reached_linux_panic(serial: &[u8], scans: &mut SerialStopSc
 pub(crate) fn map_file(path: &Path, ipa: u64, region_bytes: usize, flags: u64) {
     let data = read_bounded_file(path, region_bytes)
         .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    let layout = Layout::from_size_align(region_bytes, 0x1_0000).unwrap();
+    let layout = std::alloc::Layout::from_size_align(region_bytes, 0x1_0000).unwrap();
     unsafe {
-        let mem = alloc_zeroed(layout);
+        let mem = std::alloc::alloc_zeroed(layout);
         std::ptr::copy_nonoverlapping(data.as_ptr(), mem, data.len());
         assert_eq!(
             hv_vm_map(mem as *mut c_void, ipa, region_bytes, flags),
