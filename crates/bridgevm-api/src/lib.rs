@@ -123,7 +123,6 @@ pub use ssh_ports::*;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::test_support::*;
 
     #[test]
