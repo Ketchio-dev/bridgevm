@@ -51,8 +51,9 @@ pub struct DeviceSurfaces {
     /// shipping choice; venus additionally wires MoltenVK + BAR2 sizing.
     pub virtio_gpu_3d: Option<GpuSurface>,
     /// The app's shipping renderer lane (wrapper --performance-risk
-    /// aggressive): direct renderer, async scanout, IOSurface scanout, no
-    /// synchronous readback. Launch policy only -- media is untouched.
+    /// aggressive): direct renderer, async scanout, and IOSurface scanout.
+    /// CPU readback remains paced at the display-export cadence for evidence
+    /// and fallback consumers. Launch policy only -- media is untouched.
     pub aggressive_performance: bool,
     /// Buffered NVMe I/O (the app ships it on).
     pub nvme_buffered_io: bool,
@@ -167,7 +168,6 @@ pub fn helper_env(manifest: &LaunchManifest, launch: &HelperLaunch) -> Vec<(&'st
                 env.push(("BRIDGEVM_VIRTIO_GPU_DIRECT_RENDERER", "1".to_string()));
                 env.push(("BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT", "1".to_string()));
                 env.push(("BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT", "1".to_string()));
-                env.push(("BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS", "0".to_string()));
             }
             if !gpu.virgl {
                 // venus needs MoltenVK in process and a BAR2 EDK2 can assign.

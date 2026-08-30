@@ -413,9 +413,9 @@ scanout_export_env_output="$(
 )" || fail "installed boot scanout export env failed: $scanout_export_env_output"
 assert_contains "$scanout_export_env_output" "BRIDGEVM_DISPLAY_EXPORT_FB=$EVIDENCE/display.fb" "scanout export env"
 assert_contains "$scanout_export_env_output" "BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1" "scanout export env"
+! grep -qx 'BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=0' <<< "$scanout_export_env_output" || fail "aggressive policy enabled uncapped CPU readback"
 scanout_readback_last="$(printf '%s\n' "$scanout_export_env_output" | grep '^BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=' | tail -1)"
-[[ "$scanout_readback_last" == "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=100" ]] || \
-  fail "shared framebuffer export overrode paced evidence readback: $scanout_readback_last"
+[[ "$scanout_readback_last" == "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=100" ]] || fail "shared framebuffer export overrode paced evidence readback: $scanout_readback_last"
 
 daily_output="$(
   scripts/run-hvf-windows-installed-boot.sh \

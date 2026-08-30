@@ -100,9 +100,9 @@ Options:
   --performance-risk MODE Select balanced or aggressive (default: balanced).
                           Aggressive requires --virtio-gpu-3d and enables the
                           direct renderer, deferred scanout, IOSurface GPU blit,
-                          and uncapped scanout readback. The mode is recorded in
-                          preflight evidence and is media-independent, so a
-                          failed run can return to balanced immediately.
+                          and a 100 ms CPU evidence/fallback readback cadence.
+                          The recorded, media-independent mode can return to
+                          balanced without changing VM media.
   --virtio-gpu-3d         Attach the virtio-gpu PCI device with the selected
                           3D backend, expose the viogpu3d bind-id alias
                           DEV_10F7 by default, build hvf_gic_boot_probe with

@@ -462,15 +462,15 @@ build_installed_boot_env_args() {
       ENV_ARGS+=('BRIDGEVM_VIRTIO_GPU_DIRECT_RENDERER=1')
     fi
     if [[ "${PERFORMANCE_RISK:-balanced}" == "aggressive" ]]; then
-      # Explicit high-performance lane. These knobs remove the threaded
-      # renderer handoff and synchronous CPU readback from the hot present
-      # path. The policy is visible in preflight evidence and can be rolled
-      # back with --performance-risk balanced without changing VM media.
+      # Explicit high-performance lane. IOSurface serves the live display;
+      # keep the CPU evidence/fallback feed paced because zero means uncapped
+      # readback, not disabled. A later display-export or caller value can pick
+      # another cadence; the recorded policy remains media-independent.
       ENV_ARGS+=(
         'BRIDGEVM_VIRTIO_GPU_DIRECT_RENDERER=1'
         'BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT=1'
         'BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1'
-        'BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=0'
+        'BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=100'
       )
     fi
     # The venus (Vulkan-passthrough) host backend needs MoltenVK loaded in

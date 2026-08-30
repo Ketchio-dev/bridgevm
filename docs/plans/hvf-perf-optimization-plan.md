@@ -234,6 +234,16 @@ bridgevm-hvf` must stay green at every stage boundary.
 - **P3 — 1080p display** (firmware, not VMM code): rebuild vendored ArmVirtQemu
   GOP at 1920x1080 or persist via vars flash; host ramfb handles any geometry.
   ~4.3x pixel traffic on unaccelerated CPU drawing — do last.
+- **P4 — accelerated-display readback pacing** (small launch-policy fix): the
+  aggressive profile previously set `BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=0`
+  while describing that value as disabling synchronous CPU readback. In the
+  device contract, zero is deliberately an *uncapped* interval, so the direct
+  renderer fallback could copy and composite the whole scanout on every guest
+  flush even though IOSurface already served the live display. The app now
+  retains its 100 ms display-export cadence and the standalone wrapper uses
+  100 ms as its aggressive default; an explicit caller override still wins.
+  Unit/policy tests establish the launch contract. Treat the performance effect
+  as a hypothesis until a sealed live before/after receipt measures it.
 
 ## Backlog (out of campaign scope)
 - NVMe worker-thread async IO (doorbell → worker + MSI-X completion) — the real

@@ -201,9 +201,9 @@ fn the_app_surfaces_reproduce_the_wrapper_device_shape() {
     assert_eq!(get("BRIDGEVM_VIRTIO_NET_BACKEND"), "nat");
     assert_eq!(get("BRIDGEVM_HDA_COREAUDIO"), "1");
     assert_eq!(get("BRIDGEVM_NVME_BUFFERED_IO"), "1");
-    // The aggressive lane: exactly the wrapper's four knobs. The scanout
-    // readback override runs AFTER the display-export default, so the last
-    // value wins in the child env -- assert the ordering holds.
+    // The aggressive lane uses IOSurface for the live display, while CPU
+    // readback stays at the display-export cadence for evidence/fallback.
+    // A zero interval means uncapped readback, not disabled readback.
     assert_eq!(get("BRIDGEVM_VIRTIO_GPU_DIRECT_RENDERER"), "1");
     assert_eq!(get("BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT"), "1");
     assert_eq!(get("BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT"), "1");
@@ -212,11 +212,7 @@ fn the_app_surfaces_reproduce_the_wrapper_device_shape() {
         .filter(|(k, _)| *k == "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS")
         .map(|(_, v)| v.as_str())
         .collect();
-    assert_eq!(
-        readbacks.last(),
-        Some(&"0"),
-        "aggressive readback=0 must win over the display-export default"
-    );
+    assert_eq!(readbacks, vec!["100"]);
     let _ = std::fs::remove_file(&disk);
     let _ = std::fs::remove_file(&vars);
 }
