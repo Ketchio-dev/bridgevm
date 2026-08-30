@@ -7,7 +7,7 @@ use crate::fwcfg::GuestMemoryMut;
 /// completion. The identify controller AERL field advertises this as zero-based.
 pub const MAX_ASYNC_EVENT_REQUESTS: u8 = 4;
 
-// ---- Security protocol values (NVMe 1.4 §5.22 / QEMU nvme_security_*) -----
+// ---- Security protocol values (NVMe 1.4 §5.22) -----------------------------
 pub(crate) const SECURITY_PROTOCOL_INFORMATION: u8 = 0x00;
 
 pub(crate) const SECURITY_PROTOCOL_DMTF_SPDM: u8 = 0xe8;
@@ -45,16 +45,14 @@ impl NvmeController {
         CommandResult::pending()
     }
 
-    /// SECURITY SEND. QEMU advertises the opcode, but without an SPDM socket it
-    /// rejects every protocol as invalid-field. Keep that shape while the
-    /// controller only supports the discovery receive path below.
+    /// SECURITY SEND. This controller has no writable security-protocol
+    /// backend, so every request fails closed as invalid-field with DNR.
     pub(crate) fn admin_security_send(&self, _cmd: &SubmissionEntry) -> u16 {
         SC_INVALID_FIELD_DNR
     }
 
-    /// SECURITY RECEIVE. Match QEMU's default no-SPDM behavior: the only
-    /// successful request is SECP=0/SPSP=0, which returns the supported security
-    /// protocol list. SPDM and certificate paths remain invalid-field.
+    /// SECURITY RECEIVE. SECP=0/SPSP=0 returns the supported-protocol list;
+    /// SPDM and certificate paths remain unsupported and fail closed.
     pub(crate) fn admin_security_receive(
         &self,
         cmd: &SubmissionEntry,
@@ -69,9 +67,8 @@ impl NvmeController {
                     return SC_INVALID_FIELD_DNR;
                 }
                 let mut resp = [0u8; SECURITY_PROTOCOL_INFO_LIST_LEN];
-                // QEMU reports a two-byte supported-protocol list containing
-                // Security Protocol Information and a second zero entry when no
-                // SPDM socket is configured.
+                // Two-byte list: the discovery protocol followed by the
+                // required zero terminator. No SPDM protocol is advertised.
                 resp[7] = 2;
                 resp[8] = SECURITY_PROTOCOL_INFORMATION;
                 resp[9] = 0;

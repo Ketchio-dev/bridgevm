@@ -706,7 +706,7 @@ struct CreateVMSheet: View {
                 Spacer()
             }
 
-            DisclosureGroup("고급 설정 (VMware·UTM 스타일)", isExpanded: $showAdvanced) {
+            DisclosureGroup("고급 설정", isExpanded: $showAdvanced) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Text("메모리").frame(width: 64, alignment: .leading)

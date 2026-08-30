@@ -62,7 +62,7 @@ pub struct AgentConsoleHarness {
     pub(super) start: Instant,
     pub(super) timeout: Duration,
     /// Scripted console tests intentionally preserve their historical
-    /// per-vCPU-exit polling cadence. The BOOT_TIMER-only desktop oracle uses
+    /// per-vCPU-exit polling cadence. The BOOT_TIMER-only desktop signal uses
     /// the probe's periodic ServiceWake instead, so measurement does not add a
     /// platform-mutex acquisition to every CPU0 exit.
     pub(super) scripted_test: bool,

@@ -7,11 +7,16 @@ behind it and the checks that keep it true.
 
 ## What BridgeVM's own code is
 
-The virtual machine monitor is written in Rust against Apple's
-Hypervisor.framework: the vCPU execution loop, the guest memory map, firmware
-and device tables, and the virtio, NVMe, xHCI, GPU, TPM and network device
-models. It is not a port, translation or rewrite of another VMM, and no source
-was taken from one.
+The virtual machine monitor is maintained as BridgeVM-owned Rust code against
+Apple's Hypervisor.framework and published guest-interface specifications. That
+scope includes the vCPU execution loop, guest memory map, firmware and device
+tables, and the virtio, NVMe, xHCI, GPU, TPM and network device models.
+
+This repository audit can establish what is present in the current tree and
+what the build ships. It cannot provide a legal guarantee about every past
+development session. Current BridgeVM work therefore treats other VMM source
+as out of scope and derives owned behavior from public specifications,
+BridgeVM's declared contracts, tests and live receipts.
 
 Implementing a published interface is not derivation from a particular
 implementation of it. BridgeVM implements the virtio specification, the NVMe and
@@ -22,6 +27,20 @@ interface being implemented rather than crediting an unrelated product for it.
 The practical consequence for writing: describing behaviour as "the same
 mechanism product X uses" reads as an admission of copying even when the code is
 original. Name the API or specification instead.
+
+## Provenance map
+
+| Boundary | Examples | Repository treatment |
+| --- | --- | --- |
+| BridgeVM-owned implementation | HVF lifecycle, memory map, PCIe/MMIO dispatch, GIC, NVMe, xHCI, virtio transports, ACPI/SMBIOS generators | Apache-2.0 source in this repository; behavior is justified by public specifications, declared contracts and BridgeVM evidence |
+| Required compatibility ABI | QEMU `virt` machine contract, `qemu,fw-cfg-mmio`, `QEMU`/`QEMU CFG` protocol literals | Names and byte values remain where bundled firmware requires interoperability; isolated in the machine contract and `fwcfg.rs`, not treated as source provenance |
+| Modified third-party component | virglrenderer | Upstream licence and copyright retained; exact local patch and pinned upstream revision remain visible |
+| Unmodified third-party component | EDK2, swtpm/libtpms, dynamically linked support libraries, guest drivers and Mesa payloads | Kept outside BridgeVM-owned code and distributed only with the licences and notices recorded in `THIRD-PARTY-NOTICES.md` |
+| External compatibility executable | user-installed `qemu-system-*` | Launched only by the Compatibility Engine; not linked, embedded or redistributed by BridgeVM |
+
+Changing prose does not establish code provenance. The enforceable boundary is
+the tracked source, dependency graph, shipped artifact inventory, visible patch
+set and repeatable licence checks.
 
 ## What is used but not written here
 

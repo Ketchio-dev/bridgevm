@@ -119,8 +119,8 @@ fn erdp_mmio_does_not_bypass_pointer_report_pacing() {
         &mut mem,
     );
     assert_eq!(emitted(&platform), (1, 0, 0));
-    // Once elapsed, a ready guest TD is sufficient: ERDP is event-ring
-    // backpressure, not HID report pacing (matching QEMU xHCI).
+    // Once elapsed, a ready guest TD is sufficient: ERDP applies event-ring
+    // backpressure and does not define HID report pacing.
     platform.set_host_now(base + Duration::from_millis(30));
     platform.drain_xhci_pointer_input_reports(&mut mem);
     assert_eq!(emitted(&platform), (1, 1, 0));

@@ -179,8 +179,8 @@ undebuggable in a black box. We are not a black box:
    `--protocol venus` for capset 4 or `--protocol virgl` for capset 1/2.
 3. Guest protocol-specific user-mode test passes (`vulkaninfo`/`vkcube` for
    venus; D3D10/GL smoke for virgl).
-4. DXVK d3d11 → a real DX11 title (the Parallels-parity flag).
-5. vkd3d-proton d3d12 (beyond Parallels).
+4. DXVK d3d11 → a real DX11 title (the release workload gate).
+5. vkd3d-proton d3d12 (future work).
 
 ## Status
 - Driver source located + branch identified; device feature-compatibility

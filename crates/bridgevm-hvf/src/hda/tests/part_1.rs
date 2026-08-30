@@ -157,8 +157,7 @@ fn codec_enumeration_reports_subsystem_id_on_root_and_afg() {
     // GET_PARAMETER(0x01) is AC_PAR_SUBSYSTEM_ID (intel-hda-defs.h), NOT a
     // reserved parameter: hdaudio.sys queries it during enumeration and
     // rejects a codec whose function group reports 0, so both the root and
-    // the AFG must return a valid subsystem id (matching QEMU's output
-    // codec, which exposes AC_PAR_SUBSYSTEM_ID on both nodes).
+    // the AFG must return a valid subsystem id on both nodes.
     let observed = [
         (0x000f_0000, CODEC_VENDOR_ID),         // AC_PAR_VENDOR_ID
         (0x000f_0001, CODEC_IMPLEMENTATION_ID), // root AC_PAR_SUBSYSTEM_ID

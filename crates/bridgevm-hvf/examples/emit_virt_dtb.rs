@@ -1,4 +1,4 @@
-//! Emit the QEMU-`virt`-shaped device tree to a file, for `dtc` verification.
+//! Emit BridgeVM's current platform device tree for `dtc` verification.
 //!
 //! Usage: `cargo run -p bridgevm-hvf --example emit_virt_dtb -- <out.dtb> [cpus] [ram_gib]`
 //! then `dtc -I dtb -O dts <out.dtb>` to inspect / validate it.

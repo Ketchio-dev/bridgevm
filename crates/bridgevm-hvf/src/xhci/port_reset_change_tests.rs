@@ -35,9 +35,8 @@ fn acked_connected_port_hcrst_reannounces_fresh_connect_change_event() {
     // When: HCRST clears controller-programmed state for the same still-connected device.
     xhci.mmio_write(0x40, 4, u64::from(USB_CMD_HCRST));
 
-    // Then: the reset controller re-detects the attached device (QEMU oracle:
-    // xhci_reset re-runs xhci_port_update, which re-posts CSC), so the next
-    // driver instance sees a fresh connect change rather than a silent port.
+    // Then: the controller re-detects the attached device and reposts CSC, so
+    // the next driver instance sees a fresh connection rather than silence.
     let post_hcrst_portsc = xhci.mmio_read(PORT_REG_BASE, 4) as u32;
     assert_eq!(
         post_hcrst_portsc & (PORTSC_CCS | PORTSC_PP | PORTSC_SPEED_HIGH | PORTSC_CSC),

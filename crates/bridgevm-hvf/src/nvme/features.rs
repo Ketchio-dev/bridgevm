@@ -20,8 +20,8 @@ pub(crate) fn feature_capabilities(fid: u8) -> Option<u32> {
 }
 
 impl NvmeController {
-    /// SET FEATURES (NVMe 1.4 §5.21). Keep the small set Windows probes aligned
-    /// with QEMU defaults; unsupported features remain harmless no-ops here.
+    /// SET FEATURES (NVMe 1.4 §5.21). Unsupported optional features remain
+    /// harmless no-ops; stateful features are handled explicitly below.
     pub(crate) fn admin_set_features(&mut self, cmd: &SubmissionEntry) -> u16 {
         let fid = (cmd.cdw10 & 0xff) as u8;
         match fid {

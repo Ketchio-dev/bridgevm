@@ -21,7 +21,7 @@ impl AgentConsoleHarness {
         self.scripted_test && !self.periodic_test
     }
     /// A READY hello or proactive PONG is emitted by the logon agent, making
-    /// it a stable desktop oracle that is not invalidated by clock pixels.
+    /// it a stable desktop signal that is not invalidated by clock pixels.
     pub fn desktop_ready(&self) -> bool {
         !matches!(
             self.state,

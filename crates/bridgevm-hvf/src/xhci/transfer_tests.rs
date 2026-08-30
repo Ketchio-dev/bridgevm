@@ -98,9 +98,8 @@ fn ep0_event_data_control_td_posts_only_event_data_transfer_event() {
 
 #[test]
 fn ep0_short_control_read_completes_with_short_packet_code() {
-    // Given: winload requests a 64-byte device descriptor read; the device
-    // only has 18 bytes. QEMU oracle: a short TD completes with Short
-    // Packet (13) and EDTLA = bytes transferred, not Success.
+    // Winload requests a 64-byte device descriptor but the descriptor is only
+    // 18 bytes. xHCI reports Short Packet (13) and EDTLA = bytes transferred.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0x8000);
     write_ep0_input_context(&mut mem, EP0_RING | 1);

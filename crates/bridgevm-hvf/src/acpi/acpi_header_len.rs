@@ -14,13 +14,13 @@ pub(crate) const OEM_REVISION: u32 = 1;
 pub(crate) const CREATOR_ID: &[u8; 4] = b"BVM ";
 pub(crate) const CREATOR_REVISION: u32 = 1;
 
-/// QEMU fw_cfg file carrying the concatenated ACPI tables.
+/// fw_cfg file carrying the concatenated ACPI tables.
 pub const ACPI_TABLE_FILE: &str = "etc/acpi/tables";
-/// QEMU fw_cfg file carrying the RSDP.
+/// fw_cfg file carrying the RSDP.
 pub const ACPI_RSDP_FILE: &str = "etc/acpi/rsdp";
-/// QEMU fw_cfg file carrying loader/linker commands.
+/// fw_cfg file carrying loader/linker commands.
 pub const ACPI_LOADER_FILE: &str = "etc/table-loader";
-/// QEMU-compatible fw_cfg file allocated as the TPM 2.0 measured-boot log.
+/// fw_cfg file allocated as the TPM 2.0 measured-boot log.
 pub const ACPI_TPM_LOG_FILE: &str = "etc/tpm/log";
 pub const TPM_LOG_AREA_MINIMUM_SIZE: usize = 64 * 1024;
 
@@ -30,15 +30,15 @@ pub struct AcpiBlobs {
     /// `etc/acpi/rsdp` — the Root System Description Pointer (36 bytes, v2).
     ///
     /// Checksum bytes are zero here; the firmware computes final checksums after
-    /// applying `loader` relocations, matching QEMU's `bios-linker-loader`.
+    /// applying the `bios-linker-loader` relocation contract.
     pub rsdp: Vec<u8>,
     /// `etc/acpi/tables` — XSDT, FADT, DSDT, MADT, PPTT, GTDT, MCFG, SPCR and
     /// DBG2, concatenated in the order their physical addresses are laid out.
     ///
     /// Checksum bytes are zero here; the firmware computes final checksums after
-    /// applying `loader` relocations, matching QEMU's `bios-linker-loader`.
+    /// applying the `bios-linker-loader` relocation contract.
     pub tables: Vec<u8>,
-    /// `etc/table-loader` — QEMU loader commands that allocate the two files,
+    /// `etc/table-loader` — loader commands that allocate the two files,
     /// relocate all table-internal pointers, and compute final ACPI checksums.
     pub loader: Vec<u8>,
     /// Zero-initialized firmware-writable measured-boot log allocation. It is
@@ -314,8 +314,7 @@ pub(crate) fn build_table_loader(
 ) -> Vec<u8> {
     let mut loader = Vec::new();
 
-    // QEMU prepends allocation commands while building; emit the final order
-    // directly so all files are allocated before pointer/checksum commands.
+    // Allocate every file before emitting pointer and checksum commands.
     loader.extend(alloc_entry(
         ACPI_RSDP_FILE,
         RSDP_ALLOC_ALIGN,

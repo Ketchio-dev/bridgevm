@@ -335,7 +335,7 @@ fn identify_controller_produces_completion_and_valid_struct() {
     assert_eq!(
         oacs & 1,
         1,
-        "OACS advertises Security Send/Receive like QEMU's default NVMe"
+        "OACS advertises the implemented Security Send/Receive surface"
     );
     let nn = u32::from_le_bytes([id[516], id[517], id[518], id[519]]);
     assert_eq!(nn, 1, "one namespace");
@@ -347,8 +347,8 @@ fn identify_controller_produces_completion_and_valid_struct() {
     assert_eq!(id[512], 0x66, "SQES = 64-byte entries");
     assert_eq!(id[513], 0x44, "CQES = 16-byte entries");
     assert_eq!(
-        id[525], VWC_QEMU_DEFAULT,
-        "VWC advertises QEMU's present cache plus broadcast-NSID flush support"
+        id[525], VWC_IDENTIFY_CAPABILITIES,
+        "VWC advertises a present cache plus broadcast-NSID flush support"
     );
     assert!(
         id[768..1024].starts_with(b"nqn.2026-06.dev.bridgevm:bridgevm-hvf:nvme0\0"),

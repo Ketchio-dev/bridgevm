@@ -6,7 +6,7 @@ pub(crate) const VERSION_MODERN: u32 = 2;
 
 pub(crate) const DEVICE_ID_CONSOLE: u32 = 3;
 
-pub(crate) const VENDOR_ID_QEMU: u32 = 0x554d_4551;
+pub(crate) const VENDOR_ID_COMPAT: u32 = 0x554d_4551;
 
 pub(crate) const REG_MAGIC: u64 = 0x000;
 

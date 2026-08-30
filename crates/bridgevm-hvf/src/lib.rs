@@ -13,7 +13,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-// Modules of the "QEMU virt contract" path (Path A). New platform code lands in
+// Modules of BridgeVM's current firmware-compatible platform. New code lands in
 // dedicated files like these rather than growing the legacy probe monolith
 // below. See docs/decisions/hvf-windows-engine-strategy.md and docs/reference/hvf-windows-platform-contract-gap.md.
 pub mod acpi;

@@ -85,17 +85,17 @@ pub(crate) const CODEC_ROOT: u8 = 0;
 pub(crate) const CODEC_AFG: u8 = 1;
 pub(crate) const CODEC_DAC: u8 = 2;
 pub(crate) const CODEC_SPEAKER: u8 = 3;
-// QEMU's hda-duplex codec identity (the output path is nodes 2 -> 3).
+// Stable virtual codec identity; the output path is nodes 2 -> 3.
 pub(crate) const CODEC_VENDOR_ID: u32 = 0x1af4_0022;
 pub(crate) const CODEC_IMPLEMENTATION_ID: u32 = CODEC_VENDOR_ID;
 pub(crate) const CODEC_REVISION_ID: u32 = 0x0010_0101;
 pub(crate) const CODEC_AFG_CHILD_NODE_COUNT: u32 =
     ((CODEC_DAC as u32) << 16) | (CODEC_SPEAKER - CODEC_DAC + 1) as u32;
 pub(crate) const CODEC_AFG_CAPABILITIES: u32 = 0x0000_0808;
-pub(crate) const CODEC_PCM_SIZE_RATES: u32 = 0x0002_01fc; // QEMU: 16..96 kHz, signed 16-bit.
+pub(crate) const CODEC_PCM_SIZE_RATES: u32 = 0x0002_01fc; // 16..96 kHz, signed 16-bit.
 pub(crate) const CODEC_STREAM_FORMATS: u32 = 0x0000_0001; // PCM.
 
-// QEMU's output AFG exposes the required parameter but no explicit Dx bits.
+// The virtual output AFG exposes the parameter but no explicit Dx bits.
 pub(crate) const CODEC_AFG_POWER_STATES: u32 = 0;
 pub(crate) const CODEC_WIDGET_POWER_STATES: u32 = 0x0000_000f; // D0, D1, D2, and D3.
 pub(crate) const CODEC_OUTPUT_AMP_CAPS: u32 = 0x8003_4a4a;
@@ -618,8 +618,8 @@ impl HdaController {
             produced = true;
             guard += 1;
         }
-        // Match QEMU: raise the RIRB interrupt once the CORB ring drains, even
-        // if fewer than RINTCNT responses accumulated. Windows' hdaudio.sys
+        // Raise the RIRB interrupt once the CORB ring drains, even if fewer
+        // than RINTCNT responses accumulated. Windows' hdaudio.sys
         // submits small verb batches (e.g. a lone GET_PARAMETER during codec
         // enumeration) and waits for the RIRB interrupt; without this it would
         // never be notified for a sub-threshold batch and times out — which is

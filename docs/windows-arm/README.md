@@ -95,11 +95,11 @@ The local Windows installer currently available in this workspace is:
 ISO/Win11_25H2_English_Arm64_v2.iso
 ```
 
-Use it as the baseline image for observing Windows 11 Arm boot requirements.
-The first observations can still use the restricted QEMU/HVF path because that
-path already reaches Windows Setup and exposes what Windows expects from
-firmware, display, input, storage, TPM, and Secure Boot. Those observations feed
-the BridgeVM HVF VMM design; they do not make QEMU the target engine.
+Use it as the baseline image for measuring BridgeVM's Windows 11 Arm behavior.
+Platform requirements come from public Microsoft, Arm, UEFI, ACPI, PCI, USB,
+NVMe, TCG and virtio specifications plus direct BridgeVM guest evidence.
+Compatibility Engine runs remain separate regression controls and are not
+implementation source material for the BridgeVM HVF engine.
 
 ## Development Order (historical sequence)
 
@@ -545,12 +545,12 @@ the BridgeVM HVF VMM design; they do not make QEMU the target engine.
      not claim UEFI boot, installer boot, persistent boot disk lifecycle, or
      Windows boot support.
 
-2. **Use QEMU/HVF as the observation bridge**
-   - Boot the local Windows 11 Arm ISO through the restricted Compatibility
-     profile.
-   - Record the exact firmware, disk, display, input, TPM, Secure Boot, and
-     installer behaviors Windows requires.
-   - Keep this evidence separate from any "fast path" claim.
+2. **Establish the Windows platform requirements independently**
+   - Derive required interfaces from public specifications and Microsoft
+     platform documentation.
+   - Record firmware, disk, display, input, TPM, Secure Boot and installer
+     behavior directly from BridgeVM probes and guest diagnostics.
+   - Keep Compatibility Engine controls separate from implementation decisions.
 
 3. **Define the minimum BridgeVM HVF machine**
    - AArch64 vCPU create/run/exit loop.
@@ -565,9 +565,9 @@ the BridgeVM HVF VMM design; they do not make QEMU the target engine.
      deterministic exits.
    - Add metadata and smoke tests that prove QEMU is not in the process tree.
 
-5. **Boot Windows installer without QEMU**
+5. **Boot the Windows installer on BridgeVM HVF**
    - Present the Windows ISO and target disk through BridgeVM-owned devices.
-   - Reach the same setup screen currently proven through QEMU/HVF.
+   - Reach the required Windows Setup surface through the BridgeVM engine.
    - Preserve graphical/serial evidence and runner metadata.
 
 6. **Complete a usable Windows install**

@@ -1,25 +1,24 @@
 //! TPM 2.0 Physical Presence Interface shared-memory page.
 //!
-//! TCG PPI 1.3 and QEMU expose a 0x400-byte, little-endian memory window next
-//! to the TIS registers. Firmware and the ACPI `_DSM` exchange request/result
+//! TCG PPI 1.3 uses a 0x400-byte, little-endian memory window next to the TIS
+//! registers. Firmware and the ACPI `_DSM` exchange request/result
 //! fields through this window. It is RAM, not a register file: bytes survive a
 //! platform reset so firmware can consume an OS request on the next boot.
 
 pub const MMIO_SIZE: u64 = 0x400;
 
-/// QEMU fw_cfg discovery record consumed by EDK2's
-/// `Tcg2PhysicalPresenceLibQemu` implementation.
+/// Legacy fw_cfg discovery record consumed by the bundled EDK2 firmware.
 pub const TPM_PPI_FW_CFG_FILE: &str = "etc/tpm/config";
-/// Packed `QEMU_FWCFG_TPM_CONFIG` size: address + TPM version + PPI version.
+/// Packed discovery-record size: address + TPM version + PPI version.
 pub const TPM_PPI_FW_CFG_CONFIG_SIZE: usize = 6;
-pub const QEMU_TPM_VERSION_2: u8 = 2;
-pub const QEMU_TPM_PPI_VERSION_1_30: u8 = 1;
+pub const FW_CFG_TPM_VERSION_2: u8 = 2;
+pub const FW_CFG_TPM_PPI_VERSION_1_30: u8 = 1;
 
 /// One policy byte for each PPI operation number (FUNC[0..=255]).
 pub const FUNC_OFFSET: usize = 0x000;
 pub const FUNC_COUNT: usize = 0x100;
 
-/// PPI parameter-block fields, matching QEMU/TCG PPI 1.3.
+/// TCG PPI 1.3 parameter-block fields.
 pub const PPIN_OFFSET: usize = 0x100;
 pub const PPIP_OFFSET: usize = 0x101;
 pub const PPRP_OFFSET: usize = 0x105;
@@ -35,16 +34,16 @@ pub const FUNC_ALLOWED_USER_REQUIRED: u8 = 3;
 pub const FUNC_ALLOWED_USER_NOT_REQUIRED: u8 = 4;
 pub const FUNC_MASK: u8 = 7;
 
-/// Build QEMU's packed, little-endian `QEMU_FWCFG_TPM_CONFIG` record.
+/// Build the bundled firmware's packed, little-endian discovery record.
 ///
 /// Merely mapping the PPI page and publishing the ACPI `_DSM` is insufficient:
 /// EDK2 discovers the page through this record, initializes the supported
 /// operation policy, and processes pending requests during PlatformBootManager.
-pub fn build_qemu_fw_cfg_tpm_config(ppi_address: u32) -> [u8; TPM_PPI_FW_CFG_CONFIG_SIZE] {
+pub fn build_fw_cfg_tpm_config(ppi_address: u32) -> [u8; TPM_PPI_FW_CFG_CONFIG_SIZE] {
     let mut config = [0; TPM_PPI_FW_CFG_CONFIG_SIZE];
     config[..4].copy_from_slice(&ppi_address.to_le_bytes());
-    config[4] = QEMU_TPM_VERSION_2;
-    config[5] = QEMU_TPM_PPI_VERSION_1_30;
+    config[4] = FW_CFG_TPM_VERSION_2;
+    config[5] = FW_CFG_TPM_PPI_VERSION_1_30;
     config
 }
 
@@ -59,7 +58,7 @@ pub struct TpmPpiStats {
 ///
 /// The function-policy array starts as all `NOT_IMPLEMENTED`. Firmware may
 /// populate it before handing control to the OS. `reset_runtime_state` keeps
-/// the bytes intact, matching QEMU's RAM-backed PPI handoff across reboot.
+/// the bytes intact so the mailbox survives the required reboot handoff.
 #[derive(Debug, Clone)]
 pub struct TpmPpi {
     bytes: [u8; MMIO_SIZE as usize],
@@ -136,9 +135,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fw_cfg_config_matches_qemu_and_edk2_packed_contract() {
+    fn fw_cfg_config_has_the_declared_packed_layout() {
         assert_eq!(
-            build_qemu_fw_cfg_tpm_config(0x0c00_5000),
+            build_fw_cfg_tpm_config(0x0c00_5000),
             [0x00, 0x50, 0x00, 0x0c, 2, 1]
         );
     }

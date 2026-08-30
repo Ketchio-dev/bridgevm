@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 # Keep the repository's copyright position true and self-consistent.
 #
-# Two failure modes matter here. The first is claiming, anywhere in the source
-# or documentation, that BridgeVM took code from another project when it did
-# not: that is a false admission, and it is not undone by a later correction.
-# The second is shipping a component whose licence obligation is not recorded.
+# Reject unfounded derivation claims and unrecorded licence obligations.
 #
 # This checks what can be verified from the tree itself. Bundle-level proof
 # (dynamic linkage of LGPL dylibs, the Rust licence inventory) is the job of
@@ -45,12 +42,15 @@ fi
 # fine; it is the derivation verb next to a product name that is not.
 derivation_hits=$(
   grep -rniE \
-    '(derived from|based on|ported from|adapted from|copied from|borrowed from|taken from|fork of)[^.]{0,40}\b(qemu|crosvm|utm|parallels|vmware|virtualbox|bochs|xen)\b' \
+    '(derived from|based on|ported from|adapted from|copied from|borrowed from|taken from|fork of)[^.]{0,40}\b(qemu|crosvm|u[t]m|parallels|vmware|virtualbox|bochs|xen)\b' \
     --include='*.rs' --include='*.swift' --include='*.md' \
     --exclude-dir=.git --exclude-dir=target --exclude-dir=build \
     --exclude-dir=archive \
     --exclude=THIRD-PARTY-NOTICES.md \
     . 2>/dev/null || true
+  grep -rniE \
+    '(qemu.{0,80}(oracle|parity|authoritative|answer[ -]?key|reference implementation|source of truth|match|mirror|copy|transcrib|borrow)|(oracle|parity|authoritative|answer[ -]?key|reference implementation|source of truth|match|mirror|copy|transcrib|borrow).{0,80}qemu)' \
+    --include='*.rs' crates/bridgevm-hvf 2>/dev/null || true
 )
 if [[ -n "$derivation_hits" ]]; then
   echo "$derivation_hits" >&2

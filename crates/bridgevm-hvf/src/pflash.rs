@@ -1,4 +1,4 @@
-//! Minimal Intel P30-style NOR flash model for QEMU `virt` pflash variables.
+//! Minimal Intel P30-style NOR flash model for UEFI variable storage.
 //!
 //! ArmVirtQemu's `VirtNorFlashDxe` does not treat the writable pflash bank as
 //! plain RAM. It sends Intel StrataFlash command sequences and polls the status

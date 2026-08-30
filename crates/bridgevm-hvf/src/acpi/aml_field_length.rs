@@ -204,8 +204,8 @@ pub(crate) fn build_pci_root_osc_method() -> Vec<u8> {
     known_uuid_body.extend(aml_create_dword_field(&aml_arg(3), 4, b"CDW2"));
     known_uuid_body.extend(aml_create_dword_field(&aml_arg(3), 8, b"CDW3"));
     known_uuid_body.extend(aml_store(&cdw3, &local0));
-    // Match QEMU's generic PCI host bridge policy: grant OS control for
-    // PCIeHotplug, SHPCHotplug, PME, AER and PCIeCapability, but not LTR.
+    // Grant OS control for PCIeHotplug, SHPCHotplug, PME, AER, and
+    // PCIeCapability, but not the unimplemented LTR feature.
     known_uuid_body.extend(aml_binary_op(AML_AND_OP, &local0, &aml_byte(0x1F), &local0));
     known_uuid_body.extend(aml_if(
         &aml_not_equal(&aml_arg(1), &aml_byte(1)),
@@ -270,8 +270,8 @@ pub(crate) fn build_tpm_tis_dsdt_device() -> Vec<u8> {
     aml_device(b"TPM0", &body)
 }
 
-/// TCG PPI 1.3 `_DSM` and the reset-attack-mitigation `_DSM`, following
-/// QEMU's guest ABI. The methods exchange state through the adjacent 0x400-byte
+/// TCG PPI 1.3 `_DSM` and reset-attack-mitigation `_DSM`. The methods exchange
+/// state through the adjacent 0x400-byte
 /// [`crate::tpm_ppi`] shared-memory window.
 pub(crate) fn build_tpm_ppi_aml() -> Vec<u8> {
     let zero = vec![AML_ZERO_OP];
@@ -312,8 +312,8 @@ pub(crate) fn build_tpm_ppi_aml() -> Vec<u8> {
         &[(b"MOVV", 8)],
     ));
 
-    // Windows cannot reliably DerefOf an indexed SystemMemory field. Match
-    // QEMU by creating a one-byte dynamic OperationRegion for FUNC[operation].
+    // Windows cannot reliably DerefOf an indexed SystemMemory field, so create
+    // a one-byte dynamic OperationRegion for FUNC[operation].
     let mut tpfn = Vec::new();
     let upper_bits = aml_binary_op(AML_AND_OP, &aml_arg(0), &aml_dword(0xffff_ff00), &zero);
     tpfn.extend(aml_if(
@@ -452,8 +452,8 @@ pub(crate) fn build_tpm_ppi_aml() -> Vec<u8> {
     out
 }
 
-/// TPM2 ACPI table for a FIFO/TIS device, matching QEMU's revision-4 client
-/// table and the TCG ACPI layout. The loader relocates LASA (offset 68) to the
+/// TPM2 ACPI revision-4 client table for a FIFO/TIS device, following the TCG
+/// ACPI layout. The loader relocates LASA (offset 68) to the
 /// separately allocated `etc/tpm/log` buffer.
 pub(crate) fn build_tpm2() -> Vec<u8> {
     let mut t = Table::new(b"TPM2", 4);
@@ -469,7 +469,7 @@ pub(crate) fn build_tpm2() -> Vec<u8> {
     table
 }
 
-/// QEMU-like DSDT surface for devices Linux/Windows enumerate through ACPI.
+/// DSDT surface for devices Linux and Windows enumerate through ACPI.
 /// MADT/GTDT/MCFG/SPCR/DBG2 carry the architectural tables, while this AML names
 /// the platform devices the OS driver core expects to bind (`ACPI0007` CPU
 /// devices, `ARMH0011` PL011, `PNP0A08` PCI root bridge and a power button).
@@ -498,8 +498,7 @@ pub(crate) fn build_madt(cpu_count: u64) -> Vec<u8> {
     t.u32(0); // Local Interrupt Controller Address (unused on GICv3)
     t.u32(0); // Flags (no PC-AT 8259)
 
-    // GIC Distributor (type 0x0C) — exactly one. QEMU emits the GICD before
-    // per-CPU GICC structures.
+    // GIC Distributor (type 0x0C) — exactly one, before per-CPU GICC entries.
     t.u8(0x0C); // Type = GICD
     t.u8(24); // Length
     t.u16(0); // reserved
@@ -560,8 +559,7 @@ pub(crate) fn redistributor_base(cpu: u64) -> u64 {
     machine::GIC_REDIST.base + cpu * machine::GICV3_REDIST_STRIDE
 }
 
-/// Linear MPIDR affinity for `cpu` (Aff0 = 0..15, Aff1 = group of 16), matching
-/// the scheme QEMU `virt` uses for small CPU counts.
+/// Linear MPIDR affinity for `cpu` (Aff0 = 0..15, Aff1 = group of 16).
 pub(crate) fn mpidr_for(cpu: u64) -> u64 {
     machine::cpu_mpidr(cpu)
 }
@@ -595,9 +593,8 @@ pub(crate) fn append_pptt_processor_node(
     }
 }
 
-/// PPTT (Processor Properties Topology Table). Match QEMU's simple homogeneous
-/// topology for `virt`: one root package node, one socket node, and one leaf
-/// processor node per ACPI Processor UID.
+/// PPTT homogeneous topology: one root package node, one socket node, and one
+/// leaf processor node per ACPI Processor UID.
 pub(crate) fn build_pptt(cpu_count: u64) -> Vec<u8> {
     let mut t = Table::new(b"PPTT", 2);
 

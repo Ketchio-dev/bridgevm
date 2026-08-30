@@ -1,4 +1,4 @@
-//! The assembled Path A "QEMU virt" platform, decomposed by responsibility:
+//! BridgeVM's assembled firmware-compatible platform, split by responsibility:
 //! machine assembly, firmware handoff, MMIO dispatch, interrupt routing, and
 //! one module per device family.
 mod bootorder;

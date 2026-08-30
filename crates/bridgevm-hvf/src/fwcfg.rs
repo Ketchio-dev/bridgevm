@@ -1,28 +1,21 @@
-//! QEMU `fw_cfg` (firmware configuration) MMIO device model.
+//! Legacy `fw_cfg` firmware-compatibility adapter.
 //!
-//! This is the keystone device for the BridgeVM HVF "QEMU virt contract" path
-//! (Path A in `docs/decisions/hvf-windows-engine-strategy.md`). Stock ArmVirtQemu firmware
-//! (BridgeVM's pinned ArmVirtQemu secure+TPM2 code volume) discovers
-//! the guest ACPI tables, SMBIOS, boot order and the kernel/initrd through
-//! `fw_cfg`. Without it the firmware has no ACPI to hand to a Windows or Linux
-//! guest — the root cause catalogued in
-//! `docs/reference/hvf-windows-platform-contract-gap.md`.
+//! BridgeVM's pinned ArmVirtQemu EDK2 code volume discovers guest ACPI tables,
+//! SMBIOS, boot order and direct-boot payloads through the published `fw_cfg`
+//! wire ABI. This module isolates that firmware dependency from BridgeVM's
+//! independently implemented platform and device models.
 //!
-//! On the QEMU `virt` machine the device lives at MMIO base `0x0902_0000`,
-//! window size `0x18`, device-tree `compatible = "qemu,fw-cfg-mmio"`. This module
-//! models that register file: the selector/data "traditional" interface and the
-//! DMA interface. It is host-only and unit-testable; the HVF run loop maps guest
+//! The compatibility window lives at MMIO base `0x0902_0000`, has size `0x18`,
+//! and retains the protocol's `qemu,fw-cfg-mmio` DT identifier. This module
+//! models only the selector/data and DMA register ABI. The HVF run loop maps guest
 //! MMIO accesses onto [`FwCfg::mmio_read`] / [`FwCfg::mmio_write`] and supplies a
 //! [`GuestMemoryMut`] accessor so the DMA path can move bytes in and out of guest
-//! RAM. Nothing here calls into Hypervisor.framework, so it builds and tests on
-//! any host.
-//!
-//! References: QEMU `hw/nvram/fw_cfg.c`, `docs/specs/fw_cfg.txt`, and the
-//! `qemu,fw-cfg-mmio` device-tree binding.
+//! RAM. The literal signatures and selector values below are interoperability
+//! identifiers, not implementation-source provenance.
 
 use std::collections::BTreeMap;
 
-/// MMIO base of `fw_cfg` on the QEMU `virt` machine (`fw-cfg@9020000`).
+/// MMIO base of the firmware-compatibility window (`fw-cfg@9020000`).
 pub const FW_CFG_MMIO_BASE: u64 = 0x0902_0000;
 /// MMIO window size (`reg = <... 0x18>`): DATA(8) + SELECTOR(2)+pad + DMA(8).
 pub const FW_CFG_MMIO_SIZE: u64 = 0x18;
@@ -42,17 +35,17 @@ pub const KEY_FILE_DIR: u16 = 0x0019;
 /// First selector handed out to dynamically registered named files.
 pub const KEY_FILE_FIRST: u16 = 0x0020;
 
-/// `FW_CFG_KERNEL_SIZE` — QEMU `-kernel` payload size.
+/// `FW_CFG_KERNEL_SIZE` — direct-boot kernel payload size.
 pub const KEY_KERNEL_SIZE: u16 = 0x0008;
-/// `FW_CFG_INITRD_SIZE` — QEMU `-initrd` payload size.
+/// `FW_CFG_INITRD_SIZE` — direct-boot initrd payload size.
 pub const KEY_INITRD_SIZE: u16 = 0x000b;
-/// `FW_CFG_KERNEL_DATA` — QEMU `-kernel` payload bytes.
+/// `FW_CFG_KERNEL_DATA` — direct-boot kernel payload bytes.
 pub const KEY_KERNEL_DATA: u16 = 0x0011;
-/// `FW_CFG_INITRD_DATA` — QEMU `-initrd` payload bytes.
+/// `FW_CFG_INITRD_DATA` — direct-boot initrd payload bytes.
 pub const KEY_INITRD_DATA: u16 = 0x0012;
-/// `FW_CFG_CMDLINE_SIZE` — QEMU `-append` command line size.
+/// `FW_CFG_CMDLINE_SIZE` — direct-boot command-line size.
 pub const KEY_CMDLINE_SIZE: u16 = 0x0014;
-/// `FW_CFG_CMDLINE_DATA` — QEMU `-append` command line bytes.
+/// `FW_CFG_CMDLINE_DATA` — direct-boot command-line bytes.
 pub const KEY_CMDLINE_DATA: u16 = 0x0015;
 
 // `FW_CFG_ID` feature bits.
@@ -145,7 +138,7 @@ struct FileMeta {
     size: u32,
 }
 
-/// A modelled QEMU `fw_cfg` device.
+/// The modelled `fw_cfg` compatibility boundary.
 #[derive(Debug, Clone)]
 pub struct FwCfg {
     entries: BTreeMap<u16, Entry>,
@@ -163,7 +156,7 @@ impl Default for FwCfg {
 
 impl FwCfg {
     /// Create a device pre-populated with the mandatory `SIGNATURE`, `ID` and an
-    /// (empty) `FILE_DIR` entry, matching a freshly reset QEMU `fw_cfg`.
+    /// empty `FILE_DIR` entry required by the declared reset contract.
     pub fn new() -> Self {
         let mut entries = BTreeMap::new();
         entries.insert(
@@ -294,7 +287,7 @@ impl FwCfg {
     }
 
     /// Read the next byte of the selected entry, advancing the cursor. Reads past
-    /// the end (or of an unknown selector) return `0`, matching QEMU.
+    /// the end (or of an unknown selector) return `0` by protocol policy.
     pub fn read_data_byte(&mut self) -> u8 {
         let byte = self
             .current()
@@ -355,7 +348,7 @@ impl FwCfg {
     //
     // The `qemu,fw-cfg-mmio` selector and DMA registers are big-endian. DATA is
     // a byte stream consumed by normal little-endian AArch64 loads: a 32-bit
-    // read of bytes "QEMU" must produce SIGNATURE_32('Q','E','M','U')
+    // The protocol literal "QEMU" is exposed in little-endian register order.
     // (0x554d4551), while big-endian entries such as FILE_DIR remain
     // big-endian bytes that firmware explicitly swaps after reading.
 

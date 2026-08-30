@@ -12,7 +12,7 @@ use crate::fwcfg::KEY_SIGNATURE;
 use crate::machine;
 use crate::pcie::PcieMmioTarget;
 use crate::pcie::NVME_BDF;
-use crate::tpm_ppi::build_qemu_fw_cfg_tpm_config;
+use crate::tpm_ppi::build_fw_cfg_tpm_config;
 use crate::tpm_ppi::TpmPpiStats;
 use crate::tpm_ppi::TPM_PPI_FW_CFG_FILE;
 use crate::tpm_tis::TpmTisStats;
@@ -56,7 +56,7 @@ fn tpm_presence_wires_mmio_and_acpi_as_one_contract() {
     p.fw_cfg.select(ppi_config_selector);
     assert_eq!(
         p.fw_cfg.read_data(ppi_config_size),
-        build_qemu_fw_cfg_tpm_config(machine::TPM_PPI.base as u32)
+        build_fw_cfg_tpm_config(machine::TPM_PPI.base as u32)
     );
     assert_eq!(
         p.on_mmio(

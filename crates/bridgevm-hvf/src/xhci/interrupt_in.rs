@@ -16,8 +16,7 @@ const SLOT_ID: u32 = 1;
 const ENDPOINT_ID_DCI3: u32 = 3;
 const MAX_LINK_TRBS_PER_DOORBELL: usize = 8;
 const TRANSFER_EVENT_ED: u32 = 1 << 2;
-/// QEMU oracle: a TD that moves fewer bytes than requested completes with
-/// Short Packet, not Success.
+/// xHCI completion code 13 for a TD shorter than the requested transfer.
 const COMPLETION_CODE_SHORT_PACKET: u32 = 13;
 
 impl XhciController {

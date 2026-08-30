@@ -57,7 +57,7 @@ pub(crate) const SC_INTERNAL_DEVICE_ERROR: u16 = 0x0006;
 /// Do Not Retry bit, carried in the NVMe completion status code field.
 pub(crate) const SC_DNR: u16 = 0x4000;
 
-/// QEMU's default for unsupported optional/vendor command surfaces.
+/// Fail-closed status for unsupported optional/vendor command surfaces.
 pub(crate) const SC_INVALID_FIELD_DNR: u16 = SC_INVALID_FIELD | SC_DNR;
 
 /// Invalid Opcode.

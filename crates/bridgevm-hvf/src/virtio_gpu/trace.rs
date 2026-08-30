@@ -24,7 +24,7 @@ impl VirtioGpu {
                 width,
                 height,
                 DEVICE_ID_GPU,
-                VENDOR_ID_QEMU,
+                VENDOR_ID_COMPAT,
                 QUEUE_COUNT,
                 QUEUE_MAX,
                 VIRTIO_GPU_MSIX_VECTOR_COUNT,

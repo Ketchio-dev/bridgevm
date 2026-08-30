@@ -103,7 +103,7 @@ static ENGINE_DESCRIPTORS: [VmEngineDescriptor; 3] = [
         windows_11_arm_role: "compatibility fallback, not the Parallels-like target",
         qemu_usage: "required",
         product_state: EngineProductState::Compatibility,
-        product_state_detail: "useful fallback with a UTM-class performance ceiling",
+        product_state_detail: "useful fallback with a software-emulation performance ceiling",
     },
 ];
 

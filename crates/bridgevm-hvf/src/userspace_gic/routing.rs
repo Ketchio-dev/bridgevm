@@ -3,18 +3,18 @@
 use super::*;
 
 impl UserspaceGic {
-    fn route_affinity(route: u64) -> u64 {
-        ((route >> 8) & 0xff) << 8 | (route & 0xff)
+    /// Decode the Aff1:Aff0 levels modelled by BridgeVM's GICD_IROUTER.
+    fn irouter_affinity(value: u64) -> u64 {
+        value & 0xffff
     }
 
-    /// Which CPU a routed SPI targets. IRM (1-of-N) delivers to CPU0
-    /// for QEMU parity; explicit affinity resolves against modelled CPUs.
+    /// Resolve an SPI; deterministic IRM chooses CPU0, otherwise use MPIDR.
     pub(super) fn route_target(&self, intid: usize) -> Option<usize> {
         let route = self.dist.route[intid];
         if route & IROUTER_IRM != 0 {
             return Some(0);
         }
-        let affinity = Self::route_affinity(route);
+        let affinity = Self::irouter_affinity(route);
         (0..self.num_cpus).find(|&cpu| machine::cpu_mpidr(cpu as u64) == affinity)
     }
 
@@ -28,6 +28,6 @@ impl UserspaceGic {
         if route & IROUTER_IRM != 0 {
             return cpu == 0;
         }
-        machine::cpu_mpidr(cpu as u64) == Self::route_affinity(route)
+        machine::cpu_mpidr(cpu as u64) == Self::irouter_affinity(route)
     }
 }

@@ -115,7 +115,7 @@ impl WritableMedia {
     }
 }
 
-/// QEMU-style direct Linux boot inputs exposed through fixed fw_cfg selectors.
+/// Direct Linux boot inputs exposed through fixed fw_cfg selectors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinuxBootMedia {
     pub kernel_path: PathBuf,
@@ -153,7 +153,7 @@ impl LinuxBootMedia {
             .transpose()
     }
 
-    /// EDK2's generic QEMU loader requires the command line blob to include its
+    /// The bundled EDK2 loader requires the command-line blob to include its
     /// terminating NUL. Environment variables cannot carry NULs, so append one.
     pub fn cmdline_bytes(&self) -> Vec<u8> {
         let mut bytes = self.cmdline.as_bytes().to_vec();
@@ -273,8 +273,8 @@ impl VirtBootMediaConfig {
         cfg.platform_devices.virtio_boot_media_present = virtio_iso_present;
         cfg.platform_devices.virtio_net_present = env_flag("BRIDGEVM_VIRTIO_NET");
         cfg.platform_devices.virtio_gpu_present = env_flag("BRIDGEVM_VIRTIO_GPU");
-        // The BOOT_TIMER agent oracle communicates exclusively over the
-        // virtio-console agent port. Make the oracle self-contained even for
+        // The BOOT_TIMER desktop probe communicates exclusively over the
+        // virtio-console agent port. Make the probe self-contained even for
         // direct probe invocations that do not use the installed-boot wrapper.
         cfg.platform_devices.virtio_console_present =
             env_flag("BRIDGEVM_VIRTIO_CONSOLE") || env_flag("BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT");
@@ -526,7 +526,7 @@ mod tests {
     }
 
     #[test]
-    fn boot_timer_agent_oracle_implies_virtio_console() {
+    fn boot_timer_agent_signal_implies_virtio_console() {
         let _guard = ENV_LOCK.lock().unwrap();
         clear_probe_disable_env();
         env::set_var("BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT", "yes");

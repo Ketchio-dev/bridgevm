@@ -128,7 +128,7 @@ impl VirtPlatform {
     }
     /// Empty virtio-mmio transport slot. Advertise a valid legacy register block with
     /// DeviceID 0 so the firmware sees "valid transport, no device" and skips it
-    /// silently — matching QEMU's empty slots. Returning 0 (no magic) instead made
+    /// silently. Returning 0 (no magic) instead made the bundled firmware's
     /// VirtioMmioInit fail with EFI_UNSUPPORTED and log 32 errors per boot.
     pub(crate) fn virtio_mmio_access(
         &mut self,

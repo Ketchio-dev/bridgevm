@@ -34,7 +34,7 @@ impl NvmeController {
         }
     }
 
-    /// NVM FLUSH (0x00). QEMU accepts NSID 1 and broadcast alike.
+    /// NVM FLUSH (0x00). Accept an allocated NSID or the broadcast NSID.
     pub(crate) fn io_flush(&mut self, cmd: &SubmissionEntry) -> u16 {
         if cmd.nsid == u32::MAX {
             return self.flush_all_namespaces();

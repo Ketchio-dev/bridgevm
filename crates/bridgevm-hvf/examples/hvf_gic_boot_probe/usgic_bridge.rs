@@ -1,11 +1,10 @@
 //! Bridge between the probe's run loops and the userspace GICv3.
 //!
 //! `BRIDGEVM_USERSPACE_GIC=1` swaps Apple's in-kernel `hv_gic` for the
-//! `bridgevm_hvf::userspace_gic` device model — the configuration QEMU-hvf
-//! proved boots this host 10/10 while the in-kernel GIC measures 14/40
-//! (docs/windows-arm/evidence/a1-qemu-userspace-gic-control-20260808.md).
+//! `bridgevm_hvf::userspace_gic` device model. Retained live transition
+//! evidence is in `a1-userspace-gic-swap-20260808.md`.
 //!
-//! Contract with the run loops (QEMU parity):
+//! Contract with the run loops:
 //! - GICD/GICR/GICv2m data aborts and trapped ICC_* sysregs route here;
 //! - every `hv_vcpu_run` is preceded by `pre_run` (vtimer level sync +
 //!   `hv_vcpu_set_pending_interrupt`, which HVF consumes per run);
@@ -92,7 +91,7 @@ pub(crate) fn register_vcpu(cpu: usize, vcpu: HvVcpuT) {
         // reads 0 without the in-kernel GIC and guests never issue ICC_*
         // accesses (EDK2/Windows check this field before selecting the
         // sysreg interface). Advertise GIC=1; the unallocated ICC encodings
-        // then trap to us as EC_SYS_REG_TRAP (same contract QEMU-hvf uses).
+        // then trap to the Arm system-register interface implemented below.
         unsafe {
             let mut pfr0 = 0u64;
             if hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_ID_AA64PFR0_EL1, &mut pfr0) == 0 {

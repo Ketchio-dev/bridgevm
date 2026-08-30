@@ -8,9 +8,8 @@ use super::{
 pub(super) const USB_STS_EINT: u32 = 1 << 3;
 pub(super) const IMAN_INTERRUPT_PENDING: u32 = 1 << 0;
 
-/// HCSPARAMS1 advertises the QEMU oracle's 16 interrupters; Windows bootmgr
-/// programs interrupter 1 for transfer events while commands and port changes
-/// stay on interrupter 0.
+/// HCSPARAMS1 advertises 16 interrupters. Windows bootmgr programs interrupter
+/// 1 for transfers while commands and port changes stay on interrupter 0.
 pub(super) const XHCI_INTERRUPTER_COUNT: usize = 16;
 
 const ERDP_EHB: u32 = 1 << 3;

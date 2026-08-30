@@ -41,7 +41,7 @@ fn generated_smbios_tables_are_registered_by_default() {
 }
 
 #[test]
-fn default_fw_cfg_matches_qemu_display_none_without_ramfb_file() {
+fn default_fw_cfg_omits_the_optional_ramfb_file() {
     let mut p = platform();
 
     assert_eq!(find_fw_cfg_file_entry(&mut p, b"etc/ramfb"), None);
@@ -49,7 +49,7 @@ fn default_fw_cfg_matches_qemu_display_none_without_ramfb_file() {
 }
 
 #[test]
-fn ramfb_opt_in_registers_qemu_ramfb_file() {
+fn ramfb_opt_in_registers_the_compatibility_file() {
     let mut p = platform_with_ramfb();
     let (_, size) = fw_cfg_file_entry(&mut p, b"etc/ramfb");
 
@@ -138,15 +138,15 @@ fn fw_cfg_dma_write_updates_ramfb_config() {
 }
 
 #[test]
-fn default_fw_cfg_bootorder_targets_qemu_virtio_blk_pci_installer() {
+fn default_fw_cfg_bootorder_targets_the_virtio_blk_pci_installer() {
     let mut p = platform();
     let bootorder = fw_cfg_file_entry(&mut p, b"bootorder");
-    assert_eq!(bootorder.1, bootorder::QEMU_VIRTIO_BLK_PCI_BOOTORDER.len());
+    assert_eq!(bootorder.1, bootorder::VIRTIO_BLK_PCI_BOOTORDER.len());
 
     p.fw_cfg.select(bootorder.0);
     assert_eq!(
         p.fw_cfg.read_data(bootorder.1),
-        bootorder::QEMU_VIRTIO_BLK_PCI_BOOTORDER
+        bootorder::VIRTIO_BLK_PCI_BOOTORDER
     );
 }
 

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "contract": "qemu-virt-compatible",
-  "reference": "QEMU 11.0.1 virt (GICv3), docs/reference/qemu-virt-aarch64-gicv3.dts",
+  "reference": "BridgeVM virt platform contract, docs/reference/bridgevm-virt-platform.md",
   "summary": "BridgeVM presents a QEMU virt-compatible guest contract so stock ArmVirtQemu firmware and stock Windows 11 ARM media work unmodified. It is not bit-identical. Every known deviation is listed here.",
   "deviations": [
     {

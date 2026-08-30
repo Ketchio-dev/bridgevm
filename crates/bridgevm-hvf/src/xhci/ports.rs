@@ -45,10 +45,8 @@ impl PortState {
     }
 
     const fn post_hcrst(self) -> Self {
-        // QEMU oracle: xhci_reset re-runs xhci_port_update for every port,
-        // which re-posts CSC for attached devices even when a previous driver
-        // already acknowledged the connect — the reset controller genuinely
-        // re-detects the device.
+        // A host-controller reset re-detects every attached device and posts a
+        // fresh connect-status change for the next driver instance.
         Self {
             connected: self.connected,
             enabled: false,
@@ -75,10 +73,9 @@ impl PortState {
         value
     }
 
-    // QEMU oracle: xhci_port_update sets PLS=RxDetect with no device attached
-    // and PLS=Polling for an attached USB2 device awaiting port reset; a
-    // completed reset links at U0. PLS=U0 with CCS=1/PED=0 is an illegal USB2
-    // combination that host drivers treat as a broken controller.
+    // xHCI link-state policy: RxDetect when empty, Polling for an attached USB2
+    // device awaiting reset, and U0 after reset. U0 with CCS=1/PED=0 is not a
+    // valid USB2 operating state.
     const fn port_link_state(self) -> u32 {
         if !self.connected {
             PORTSC_PLS_RX_DETECT

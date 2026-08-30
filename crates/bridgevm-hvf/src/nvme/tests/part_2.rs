@@ -139,7 +139,7 @@ fn get_log_page_command_effects_completes_with_supported_commands() {
 }
 
 #[test]
-fn get_log_page_vendor_logs_match_qemu_invalid_field_dnr() {
+fn unsupported_vendor_logs_fail_closed_with_invalid_field_dnr() {
     let (mut ctrl, mut mem) = enabled_controller();
     let numd = (512u32 / 4) - 1;
     for (slot, lid) in [0xc0u8, 0xc1].into_iter().enumerate() {
@@ -156,13 +156,13 @@ fn get_log_page_vendor_logs_match_qemu_invalid_field_dnr() {
         assert_eq!(
             completion_status(&read_completion(&mem, ACQ_BASE, slot as u16)),
             SC_INVALID_FIELD_DNR,
-            "vendor log page {lid:#x} matches QEMU's unsupported default with DNR"
+            "vendor log page {lid:#x} must fail closed with DNR"
         );
     }
 }
 
 #[test]
-fn security_receive_protocol_info_matches_qemu_no_spdm_default() {
+fn security_receive_reports_no_spdm_support() {
     let (mut ctrl, mut mem) = enabled_controller();
     let cdw10 = u32::from(SECURITY_PROTOCOL_INFORMATION) << 24;
     let sqe = encode_sqe(
@@ -280,7 +280,7 @@ fn get_features_number_of_queues_reports_capacity_in_completion_dw0() {
 }
 
 #[test]
-fn get_features_volatile_write_cache_matches_qemu_default() {
+fn get_features_reports_declared_volatile_write_cache_state() {
     let (mut ctrl, mut mem) = enabled_controller();
     let current = encode_sqe(
         ADMIN_OP_GET_FEATURES,
@@ -297,7 +297,7 @@ fn get_features_volatile_write_cache_matches_qemu_default() {
     assert_eq!(
         completion_dw0(&cqe),
         1,
-        "QEMU reports volatile write cache enabled by default"
+        "volatile write cache starts enabled"
     );
 
     let caps = encode_sqe(
@@ -316,7 +316,7 @@ fn get_features_volatile_write_cache_matches_qemu_default() {
     assert_eq!(
         completion_dw0(&cqe),
         FEATURE_CAP_CHANGEABLE,
-        "QEMU reports VWC as a changeable feature"
+        "VWC is reported as changeable"
     );
 
     let default = encode_sqe(
@@ -335,7 +335,7 @@ fn get_features_volatile_write_cache_matches_qemu_default() {
     assert_eq!(
         completion_dw0(&cqe),
         0,
-        "QEMU reports VWC default as disabled even when current is enabled"
+        "VWC default remains disabled even when current is enabled"
     );
 
     let saved = encode_sqe(
@@ -354,7 +354,7 @@ fn get_features_volatile_write_cache_matches_qemu_default() {
     assert_eq!(
         completion_dw0(&cqe),
         0,
-        "QEMU falls saved VWC back to the default value"
+        "VWC saved selection falls back to its default value"
     );
 }
 
@@ -441,7 +441,7 @@ fn get_features_apst_returns_zero_table() {
 }
 
 #[test]
-fn get_features_unknown_feature_matches_qemu_invalid_field_dnr() {
+fn get_features_unknown_feature_fails_closed_with_invalid_field_dnr() {
     let (mut ctrl, mut mem) = enabled_controller();
     for (slot, fid) in [0xd0u8, 0x7f].into_iter().enumerate() {
         let sqe = encode_sqe(
@@ -457,7 +457,7 @@ fn get_features_unknown_feature_matches_qemu_invalid_field_dnr() {
         assert_eq!(
             completion_status(&read_completion(&mem, ACQ_BASE, slot as u16)),
             SC_INVALID_FIELD_DNR,
-            "feature {fid:#x} matches QEMU's unsupported default with DNR"
+            "feature {fid:#x} must fail closed with DNR"
         );
     }
 }

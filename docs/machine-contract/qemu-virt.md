@@ -9,16 +9,18 @@ the earlier claim that the guest sees a "bit-identical" platform.
 
 ## What the contract guarantees
 
-The memory map, interrupt numbers and device layout are transcribed from the
-authoritative QEMU 11.0.1 `virt` (GICv3) device tree in
-[`docs/reference/qemu-virt-aarch64-gicv3.dts`](../reference/qemu-virt-aarch64-gicv3.dts),
-so:
+The memory map, interrupt numbers, and device layout are declared by BridgeVM in
+[`machine.rs`](../../crates/bridgevm-hvf/src/machine.rs) and summarized in the
+independently maintained
+[`BridgeVM virt platform register map`](../reference/bridgevm-virt-platform.md).
+Device behavior is implemented from the public Arm, PCI, TCG, UEFI, ACPI,
+Devicetree, and OASIS virtio interfaces named there, so:
 
 - stock `edk2-aarch64-code.fd` boots unmodified;
 - the firmware generates ACPI from the standard table flow;
 - the same Windows 11 ARM media that installs under QEMU installs here;
-- the QEMU Compatibility Engine remains a differential oracle — a divergence
-  that is not listed as a deviation is a bug in a BridgeVM device model.
+- the separately implemented QEMU Compatibility Engine remains available as a
+  user-selectable fallback, not as source material for the HVF implementation.
 
 `crates/bridgevm-hvf/src/machine.rs` is the single source of truth for the
 addresses and interrupt numbers themselves.
@@ -50,6 +52,7 @@ blocker in [`capabilities/windows-hvf.json`](../../capabilities/windows-hvf.json
 
 ## Changing the contract
 
-Adding a device or changing a guest-visible behaviour requires either matching
-QEMU `virt` or adding a deviation entry with evidence. `python3 -m json.tool`
-validity of the deviation manifest is part of the deterministic project check.
+Adding a device or changing guest-visible behavior requires preserving the
+declared compatibility contract or adding a deviation entry with evidence.
+`python3 -m json.tool` validity of the deviation manifest is part of the
+deterministic project check.

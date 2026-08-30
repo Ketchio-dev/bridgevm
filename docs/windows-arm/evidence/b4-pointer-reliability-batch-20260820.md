@@ -174,10 +174,10 @@ The job was cancelled. Duration is not the separator, and the override was
 removed.
 
 The remaining guest HID semantic difference was the descriptor itself. The
-6-byte payload already matched QEMU USB tablet, but BridgeVM advertised a
-63-byte local variant (3 buttons, different constant padding, no physical
-axis/wheel declarations) instead of QEMU's Windows-proven 74-byte tablet
-descriptor. That descriptor was tested at `4f8f18a4f7cfa005b801968b5c8c907590f676dd`
+6-byte payload was already valid, but BridgeVM advertised a 63-byte local
+variant with three buttons, different constant padding, and no physical
+axis/wheel declarations. A 74-byte compatibility descriptor was tested at
+`4f8f18a4f7cfa005b801968b5c8c907590f676dd`
 in job `20260821-095849-7083-26220`; run 1 enumerated the 74-byte descriptor
 but again delivered only cursor move (run log SHA-256
 `d5d32658dd63c9ab7eca01ac6e1d5702ac1f7b5dc10ca65e16db3af43579e31d`).

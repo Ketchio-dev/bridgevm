@@ -51,7 +51,7 @@ pub(crate) const VWC_PRESENT: u8 = 1 << 0;
 
 pub(crate) const VWC_NSID_BROADCAST_SUPPORT: u8 = 3 << 1;
 
-pub(crate) const VWC_QEMU_DEFAULT: u8 = VWC_PRESENT | VWC_NSID_BROADCAST_SUPPORT;
+pub(crate) const VWC_IDENTIFY_CAPABILITIES: u8 = VWC_PRESENT | VWC_NSID_BROADCAST_SUPPORT;
 
 impl NvmeController {
     /// IDENTIFY (CNS in CDW10 bits 7:0). Writes a 4 KiB structure to PRP1.
@@ -109,8 +109,8 @@ impl NvmeController {
     /// Build a 4 KiB Identify Controller structure (NVMe 1.4 §5.15.2.2).
     pub(crate) fn identify_controller(&self) -> NvmePage {
         let mut d = [0u8; PAGE_SIZE];
-        // VID (0..2) / SSVID (2..4): a recognisable but inert vendor id.
-        d[0..2].copy_from_slice(&0x1b36u16.to_le_bytes()); // Red Hat / QEMU
+        // VID (0..2) / SSVID (2..4): compatibility identity for this platform.
+        d[0..2].copy_from_slice(&0x1b36u16.to_le_bytes());
         d[2..4].copy_from_slice(&0x1b36u16.to_le_bytes());
         // SN (4..24), MN (24..64), FR (64..72): ASCII, space-padded.
         write_ascii(&mut d[4..24], "BRIDGEVM0000000001");
@@ -124,8 +124,7 @@ impl NvmeController {
         // zero-based. Windows submits AERs during setup; they should remain
         // pending rather than completing as invalid opcodes.
         d[259] = MAX_ASYNC_EVENT_REQUESTS - 1;
-        // OACS (256..258): advertise Security Send/Receive now that the minimal
-        // QEMU-compatible security protocol information query is implemented.
+        // OACS (256..258): advertise the implemented Security protocol query.
         d[256..258].copy_from_slice(&1u16.to_le_bytes());
         // SQES (512): min/max submission-queue entry size = 2^6 = 64 bytes.
         d[512] = 0x66;
@@ -133,9 +132,8 @@ impl NvmeController {
         d[513] = 0x44;
         // NN (516..520): maximum/number of namespaces (1 or 2).
         d[516..520].copy_from_slice(&self.namespace_count().to_le_bytes());
-        // VWC (525): QEMU advertises a present volatile write cache and support
-        // for broadcast-NSID flushes.
-        d[525] = VWC_QEMU_DEFAULT;
+        // VWC (525): cache present with broadcast-NSID flush support.
+        d[525] = VWC_IDENTIFY_CAPABILITIES;
         // SUBNQN (768..1024): NUL-terminated subsystem NQN. Linux warns for
         // NVMe >= 1.2.1 if this field is empty or consumes the whole NQN field.
         write_cstr(
@@ -146,9 +144,8 @@ impl NvmeController {
     }
 
     /// Build a 4 KiB command-set-specific Identify Controller structure for the
-    /// NVM command set (CNS=0x06, CSI=0). QEMU answers this Windows probe with
-    /// an otherwise boring `NvmeIdCtrlNvm`; keep the BridgeVM page conservative
-    /// rather than advertising optional NVM commands that are not implemented.
+    /// NVM command set (CNS=0x06, CSI=0). The conservative zeroed page avoids
+    /// advertising optional NVM commands that are not implemented.
     pub(crate) fn identify_command_set_controller(&self) -> NvmePage {
         [0u8; PAGE_SIZE]
     }

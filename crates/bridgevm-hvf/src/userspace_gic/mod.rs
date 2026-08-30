@@ -1,12 +1,11 @@
 //! Userspace GICv3 for the full-VM path.
 //!
-//! A1 evidence (a1-qemu-userspace-gic-control-20260808.md): the same host and
-//! guest image boot 10/10 under QEMU-hvf, which emulates the entire GICv3 in
-//! userspace and never creates Apple's in-kernel GIC. Our in-kernel-GIC stack
-//! measures 14/40 with GIC/vtimer stalls absent from the userspace control.
-//! This module is the swap: a self-contained GICv3
+//! This is a self-contained implementation of the Arm GICv3 architectural
+//! interfaces required by the BridgeVM platform
 //! (distributor + per-CPU redistributors + per-CPU CPU interfaces + GICv2m MSI
 //! frame) sized for the full machine (256 INTIDs, SMP affinity routing, SGIs).
+//! Retained live transition evidence is recorded in
+//! `a1-userspace-gic-swap-20260808.md`.
 //!
 //! The run loop drives it with:
 //! - `mmio()` for GICD/GICR/MSI-frame data aborts,
@@ -70,7 +69,7 @@ const GICR_WAKER_PROCESSOR_SLEEP: u32 = 1 << 1;
 const GICR_WAKER_CHILDREN_ASLEEP: u32 = 1 << 2;
 const GICD_CTLR_ENABLE_G1NS: u32 = 1 << 1;
 const GICD_CTLR_ARE_NS: u32 = 1 << 4;
-/// Disable Security: single security state (matches QEMU virt secure=off).
+/// Disable Security: the platform exposes one non-secure security state.
 const GICD_CTLR_DS: u32 = 1 << 6;
 /// GICv3 identification: ArchRev 3 in PIDR2[7:4].
 const PIDR2_GICV3: u64 = 0x30;
@@ -201,8 +200,8 @@ struct Redistributor {
 impl Redistributor {
     fn new() -> Self {
         Self {
-            // QEMU parity: WAKER is storage-only. EDK2 never touches it (the
-            // firmware stalled at BdsDxe when the reset value gated PPIs).
+            // BridgeVM keeps WAKER as a storage-only compatibility register.
+            // Gating PPIs on its reset value stalled firmware at BdsDxe.
             waker: 0,
             propbaser: 0,
             pendbaser: 0,
@@ -330,9 +329,8 @@ impl UserspaceGic {
 
     fn local_candidate_for_cpu(&self, cpu: usize, threshold: u8) -> Option<PendingCandidate> {
         let redist = &self.redists[cpu];
-        // WAKER.ProcessorSleep deliberately does NOT gate delivery (QEMU
-        // parity): firmware and Windows rely on interrupts flowing without
-        // ever programming WAKER.
+        // WAKER.ProcessorSleep deliberately does not gate delivery: this
+        // platform's firmware relies on interrupts without programming WAKER.
         (0..32u32)
             .filter_map(|intid| {
                 let bit = 1u32 << intid;

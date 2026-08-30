@@ -203,8 +203,8 @@ impl VirtPlatform {
             .saturating_add(stats.emitted_wheel_reports);
         let pending_reports = stats.queued_reports.saturating_sub(emitted_reports);
         for _ in 0..pending_reports.min(MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS as u64) {
-            // QEMU's TD-driven HID schedule: ERDP is event-ring capacity, not
-            // report pacing, so a ready TD plus elapsed hold is sufficient.
+            // ERDP describes event-ring capacity, not HID report pacing, so a
+            // ready TD plus the elapsed hold is sufficient.
             if !self.report_pacing_allows_emission(self.xhci_dci5_last_emission) {
                 break;
             }

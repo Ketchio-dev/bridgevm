@@ -670,7 +670,7 @@ fn pcie_nvme_endpoint_routes_bar0_to_controller_registers() {
 }
 
 #[test]
-fn linux_boot_blobs_register_qemu_numeric_fw_cfg_items() {
+fn linux_boot_blobs_register_numeric_fw_cfg_items() {
     let mut p = platform();
     p.set_linux_boot_blobs(
         b"kernel-image".to_vec(),

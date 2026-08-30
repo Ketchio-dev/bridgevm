@@ -54,7 +54,7 @@ fn every_table_is_checksum_valid() {
 }
 
 #[test]
-fn table_loader_has_qemu_shape_and_commands() {
+fn table_loader_has_declared_files_and_commands() {
     let blobs = build_acpi(2);
     assert_eq!(blobs.loader.len() % LOADER_ENTRY_LEN, 0);
     let commands: Vec<u32> = blobs
@@ -167,7 +167,7 @@ fn fadt_is_hw_reduced_and_points_at_the_dsdt() {
 }
 
 #[test]
-fn dsdt_names_qemu_like_uart_pci_and_power_devices() {
+fn dsdt_names_uart_pci_and_power_devices() {
     let blobs = build_acpi(2);
     let tables = split_tables(&blobs.tables);
     let dsdt = find(&tables, "DSDT");
@@ -297,7 +297,7 @@ fn optional_tpm_tis_has_windows_hid_and_mmio_resource() {
 }
 
 #[test]
-fn dsdt_pci_root_osc_matches_qemu_control_policy() {
+fn dsdt_pci_root_osc_grants_only_implemented_controls() {
     let blobs = build_acpi(1);
     let tables = split_tables(&blobs.tables);
     let dsdt = find(&tables, "DSDT");
@@ -318,7 +318,7 @@ fn dsdt_pci_root_osc_matches_qemu_control_policy() {
     }
     assert!(
         contains_bytes(dsdt, &[AML_AND_OP, AML_LOCAL0_OP, AML_BYTE_PREFIX, 0x1F]),
-        "_OSC must mask OS-requested PCIe control to QEMU's supported feature set"
+        "_OSC must mask OS-requested PCIe control to the implemented feature set"
     );
     assert!(
         contains_bytes(
@@ -339,7 +339,7 @@ fn madt_has_one_gicc_per_cpu_plus_gicd_and_gicr() {
         let blobs = build_acpi(cpu_count);
         let tables = split_tables(&blobs.tables);
         let madt = find(&tables, "APIC");
-        assert_eq!(madt[8], 4, "MADT revision must match QEMU virt");
+        assert_eq!(madt[8], 4, "MADT revision must be 4");
         // Walk the interrupt-controller structures after the 8-byte MADT body.
         let mut off = ACPI_HEADER_LEN + 8;
         let mut gicc = 0u64;
@@ -393,12 +393,12 @@ fn madt_gicc_redistributor_base_uses_machine_constants() {
     let blobs = build_acpi(3);
     let tables = split_tables(&blobs.tables);
     let madt = find(&tables, "APIC");
-    // QEMU emits the GICD after the MADT body; the first GICC follows it.
+    // The GICD follows the MADT body; the first GICC follows the GICD.
     let gicc0 = ACPI_HEADER_LEN + 8 + 24;
     assert_eq!(
         le32(madt, gicc0 + 20),
         ppi_to_gsiv(machine::PPI_PMU),
-        "GICC must advertise QEMU-like PMU PPI GSIV",
+        "GICC must advertise the platform PMU PPI GSIV",
     );
     let gicr_base = le64(madt, gicc0 + 60);
     assert_eq!(gicr_base, machine::GIC_REDIST.base);
@@ -416,7 +416,7 @@ fn madt_gicd_uses_machine_dist_base() {
     let blobs = build_acpi(1);
     let tables = split_tables(&blobs.tables);
     let madt = find(&tables, "APIC");
-    // The GICD follows the 8-byte MADT body, matching QEMU virt.
+    // The GICD follows the 8-byte MADT body.
     let gicd = ACPI_HEADER_LEN + 8;
     assert_eq!(madt[gicd], 0x0C, "expected GICD at computed offset");
     let dist_base = le64(madt, gicd + 8);
@@ -425,12 +425,12 @@ fn madt_gicd_uses_machine_dist_base() {
 }
 
 #[test]
-fn pptt_has_qemu_like_root_socket_and_cpu_leaf_nodes() {
+fn pptt_has_root_socket_and_cpu_leaf_nodes() {
     let cpu_count = 3u64;
     let blobs = build_acpi(cpu_count);
     let tables = split_tables(&blobs.tables);
     let pptt = find(&tables, "PPTT");
-    assert_eq!(pptt[8], 2, "PPTT revision must match QEMU");
+    assert_eq!(pptt[8], 2, "PPTT revision must be 2");
 
     let mut nodes = Vec::new();
     let mut off = ACPI_HEADER_LEN;
@@ -534,7 +534,7 @@ fn dbg2_describes_the_pl011_debug_port() {
     let blobs = build_acpi(1);
     let tables = split_tables(&blobs.tables);
     let dbg2 = find(&tables, "DBG2");
-    assert_eq!(dbg2[8], 0, "DBG2 revision must match QEMU virt");
+    assert_eq!(dbg2[8], 0, "DBG2 revision must be 0");
 
     let device_info_offset = le32(dbg2, ACPI_HEADER_LEN) as usize;
     assert_eq!(device_info_offset, 44);

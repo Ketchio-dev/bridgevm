@@ -27,7 +27,7 @@ use crate::ramfb::RAMFB_FW_CFG_FILE;
 use crate::smbios::build_smbios;
 use crate::smbios::SMBIOS_ANCHOR_FILE;
 use crate::smbios::SMBIOS_TABLE_FILE;
-use crate::tpm_ppi::build_qemu_fw_cfg_tpm_config;
+use crate::tpm_ppi::build_fw_cfg_tpm_config;
 use crate::tpm_ppi::TpmPpi;
 use crate::tpm_ppi::TPM_PPI_FW_CFG_FILE;
 use crate::tpm_tis::Tpm2Backend;
@@ -100,9 +100,8 @@ impl VirtPlatform {
         Self::new_with_config(VirtPlatformConfig::new(cfg))
     }
 
-    /// Build the platform with QEMU's `ramfb` fw_cfg file registered. QEMU only
-    /// exposes this surface when a framebuffer device is requested, not for
-    /// `-display none`, so the default constructor leaves it absent.
+    /// Build the platform with the optional `ramfb` fw_cfg file registered.
+    /// The default constructor leaves this compatibility surface absent.
     pub fn new_with_ramfb(cfg: VirtFdtConfig) -> Self {
         Self::new_with_config(VirtPlatformConfig::with_ramfb(cfg))
     }
@@ -133,7 +132,7 @@ impl VirtPlatform {
         let mut fw_cfg = FwCfg::new();
         // Minimal real control entries the firmware/OS consult.
         if config.devices.virtio_boot_media_present {
-            fw_cfg.add_file("bootorder", bootorder::qemu_virtio_blk_pci_bootorder());
+            fw_cfg.add_file("bootorder", bootorder::virtio_blk_pci_bootorder());
         }
         // `etc/system-states` advertises which ACPI S-states are enabled; the
         // firmware may write it back, so it is writable. 6 bytes: S3, S4, ... .
@@ -152,15 +151,15 @@ impl VirtPlatform {
         fw_cfg.add_file(ACPI_LOADER_FILE, acpi.loader);
         if let Some(tpm_log) = acpi.tpm_log {
             fw_cfg.add_file(ACPI_TPM_LOG_FILE, tpm_log);
-            // The pinned ArmVirtQemu EDK2 firmware uses this QEMU-compatible
-            // record to discover and initialize the PPI page before processing
+            // The pinned EDK2 firmware uses this compatibility record to
+            // discover and initialize the PPI page before processing
             // pending OS requests. Keep it under the same TPM-presence branch
             // as ACPI, the event log, MMIO routing, and the concrete backend.
             let ppi_address = u32::try_from(machine::TPM_PPI.base)
-                .expect("TPM PPI address must fit QEMU's 32-bit fw_cfg contract");
+                .expect("TPM PPI address must fit the 32-bit fw_cfg record");
             fw_cfg.add_file(
                 TPM_PPI_FW_CFG_FILE,
-                build_qemu_fw_cfg_tpm_config(ppi_address).to_vec(),
+                build_fw_cfg_tpm_config(ppi_address).to_vec(),
             );
         }
         let smbios = build_smbios(config.fdt.cpu_count, config.fdt.ram_size);

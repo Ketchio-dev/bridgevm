@@ -25,7 +25,7 @@
 //!   BRIDGEVM_VIRTIO_CONSOLE=1 BRIDGEVM_VIRTIO_CONSOLE_TEST=1 BRIDGEVM_VIRTIO_CONSOLE_CMDS='whoami|ver' BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=180000 ... # drive bvagent.ps1 over virtio-console
 //!   BRIDGEVM_HDA=1 BRIDGEVM_HDA_COREAUDIO=1 ...       # play guest HDA PCM on Mac speakers
 //!
-//! Optional QEMU-style Linux direct boot:
+//! Optional fw_cfg Linux direct boot:
 //!   BRIDGEVM_LINUX_KERNEL=/path/to/Image BRIDGEVM_LINUX_CMDLINE='console=ttyAMA0' ... # BRIDGEVM_LINUX_INITRD optional
 //!   BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX=0 ...           # keep running after early Linux logs
 //!   BRIDGEVM_RAM_MIB=4096 ...                         # Windows-scale RAM experiments

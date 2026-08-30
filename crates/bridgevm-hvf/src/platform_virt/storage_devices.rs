@@ -65,9 +65,8 @@ impl VirtPlatform {
         self.nvme.attach_second_namespace_raw_file(path, write_back)
     }
 
-    /// Attach a read-only Windows/Linux installer ISO to the last QEMU virt
-    /// virtio-mmio transport slot. QEMU's own `virtio-blk-device` oracle uses
-    /// slot 31 (`0x0a003e00`) for an explicitly added MMIO block device.
+    /// Attach a read-only installer ISO to the final legacy virtio-mmio
+    /// transport slot (`0x0a003e00`).
     pub fn attach_virtio_iso(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
         if !self.devices.legacy_virtio_mmio_present {
             return Ok(());

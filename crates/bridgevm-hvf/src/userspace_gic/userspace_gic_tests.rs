@@ -295,8 +295,8 @@ fn redistributor_typer_marks_last_and_affinity() {
 
 #[test]
 fn waker_is_storage_only_and_never_gates_delivery() {
-    // QEMU parity: EDK2 never programs WAKER; delivery must flow with the
-    // register untouched, and writes only round-trip the sleep bit.
+    // The declared platform policy keeps delivery active when firmware leaves
+    // WAKER untouched; writes only round-trip the sleep bit.
     let mut gic = UserspaceGic::new(1);
     gic.sysreg(0, ICC_PMR_EL1, false, 0xff);
     gic.sysreg(0, ICC_IGRPEN1_EL1, false, 1);
@@ -375,7 +375,7 @@ fn unrouted_spi_falls_back_nowhere_and_irm_picks_cpu0() {
     assert_eq!(gic.set_spi(70, true), 0);
     assert!(!gic.line_asserted(0));
 
-    // IRM (1-of-N): QEMU parity routes to CPU0.
+    // BridgeVM's deterministic IRM (1-of-N) selection chooses CPU0.
     gic.mmio(
         machine::GIC_DIST.base + GICD_IROUTER + 70 * 8,
         8,

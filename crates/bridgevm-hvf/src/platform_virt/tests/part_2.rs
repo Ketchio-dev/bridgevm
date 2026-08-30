@@ -516,7 +516,7 @@ fn xhci_bar_and_command_do_not_enable_nvme_liveness_or_decode() {
 }
 
 #[test]
-fn xhci_bar_reports_qemu_capability_registers() {
+fn xhci_bar_reports_declared_capability_registers() {
     let mut p = platform();
     let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
     let base = machine::PCIE_MMIO_32.base + 0x2_0000;

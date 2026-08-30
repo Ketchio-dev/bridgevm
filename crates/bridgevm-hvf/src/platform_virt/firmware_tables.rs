@@ -37,8 +37,8 @@ impl VirtPlatform {
         self.ramfb.config()
     }
 
-    /// Register QEMU direct-Linux-boot payloads in the fixed fw_cfg slots that
-    /// ArmVirtQemu's `QemuKernelLoaderFsDxe` reads before BDS falls through to
+    /// Register direct-Linux-boot payloads in the fixed fw_cfg slots that the
+    /// bundled firmware reads before BDS falls through to
     /// normal boot options. `cmdline` must include the terminating NUL byte.
     pub fn set_linux_boot_blobs(
         &mut self,
@@ -51,11 +51,11 @@ impl VirtPlatform {
             "Linux fw_cfg cmdline blob must be NUL-terminated"
         );
         let initrd = initrd.unwrap_or_default();
-        // SAFE-EXPECT: fw_cfg direct-boot size registers are u32 by QEMU contract.
+        // SAFE-EXPECT: fw_cfg direct-boot size registers are u32 by protocol.
         let kernel_len = u32::try_from(kernel.len()).expect("kernel blob >4 GiB");
-        // SAFE-EXPECT: fw_cfg direct-boot size registers are u32 by QEMU contract.
+        // SAFE-EXPECT: fw_cfg direct-boot size registers are u32 by protocol.
         let initrd_len = u32::try_from(initrd.len()).expect("initrd blob >4 GiB");
-        // SAFE-EXPECT: fw_cfg direct-boot size registers are u32 by QEMU contract.
+        // SAFE-EXPECT: fw_cfg direct-boot size registers are u32 by protocol.
         let cmdline_len = u32::try_from(cmdline.len()).expect("cmdline blob >4 GiB");
         self.fw_cfg
             .add_item(KEY_KERNEL_SIZE, kernel_len.to_le_bytes().to_vec());
@@ -69,10 +69,8 @@ impl VirtPlatform {
     }
 
     /// Register the guest ACPI tables (`etc/acpi/rsdp`, `etc/acpi/tables`,
-    /// `etc/table-loader`) the firmware installs. On Path A these come from the
-    /// QEMU-style table generator; until that lands this lets callers attach
-    /// known-good bytes (e.g. captured from the QEMU oracle) so the rest of the
-    /// pipeline can be exercised end to end.
+    /// `etc/table-loader`) that firmware installs. Callers may attach generated
+    /// BridgeVM tables so the complete firmware pipeline can be exercised.
     pub fn set_acpi_tables(&mut self, rsdp: Vec<u8>, tables: Vec<u8>, loader: Vec<u8>) {
         self.fw_cfg.add_file(ACPI_RSDP_FILE, rsdp);
         self.fw_cfg.add_file(ACPI_TABLE_FILE, tables);

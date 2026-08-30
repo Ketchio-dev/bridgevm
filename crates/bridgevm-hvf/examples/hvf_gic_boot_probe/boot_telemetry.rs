@@ -365,7 +365,7 @@ mod boot_timer_tests {
     }
 
     #[test]
-    fn agent_oracle_marks_desktop_without_exact_frame_checksum() {
+    fn agent_signal_marks_desktop_without_exact_frame_checksum() {
         let now = Instant::now();
         let mut timer = BootTimer::new(true, now, Duration::from_secs(1), None, Vec::new());
         timer.desktop_agent = true;

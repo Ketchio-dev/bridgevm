@@ -10,8 +10,8 @@ pub(crate) fn codec_parameter(nid: u8, parameter: u8) -> u32 {
     }
     match (nid, parameter) {
         (CODEC_ROOT, 0x00) => CODEC_VENDOR_ID,
-        // AC_PAR_SUBSYSTEM_ID (0x01). QEMU's output codec exposes it on the
-        // root AND the audio function group; hdaudio.sys queries it during
+        // AC_PAR_SUBSYSTEM_ID (0x01). Expose it on both the root and audio
+        // function group because hdaudio.sys queries it during
         // enumeration and treats a missing/zero value as an invalid codec,
         // aborting before it reads the AFG's SUBORDINATE_NODE_COUNT (0x04) —
         // which is exactly the "reads AFG basics then never descends" wall.
@@ -34,9 +34,9 @@ pub(crate) fn codec_parameter(nid: u8, parameter: u8) -> u32 {
 
 pub(crate) fn afg_parameter(parameter: u8) -> Option<u32> {
     Some(match parameter {
-        0x01 => CODEC_IMPLEMENTATION_ID, // AC_PAR_SUBSYSTEM_ID (QEMU AFG has it)
+        0x01 => CODEC_IMPLEMENTATION_ID,    // AC_PAR_SUBSYSTEM_ID
         0x04 => CODEC_AFG_CHILD_NODE_COUNT, // NID 2 DAC, NID 3 pin
-        0x05 => 0x0000_0001,             // audio function group
+        0x05 => 0x0000_0001,                // audio function group
         0x08 => CODEC_AFG_CAPABILITIES,
         0x0a => CODEC_PCM_SIZE_RATES,
         0x0b => CODEC_STREAM_FORMATS,

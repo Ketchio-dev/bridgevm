@@ -20,7 +20,7 @@ const fn portsc_offset(port: usize) -> u64 {
 }
 
 #[test]
-fn reports_qemu_capability_and_extended_capability_registers() {
+fn reports_declared_capability_and_extended_capability_registers() {
     let xhci = XhciController::new();
 
     assert_eq!(PORT_REG_BASE, u64::from(XHCI_CAP_LENGTH) + 0x400);

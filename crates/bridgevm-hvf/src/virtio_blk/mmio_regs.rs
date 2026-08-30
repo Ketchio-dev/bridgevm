@@ -64,7 +64,7 @@ impl VirtioMmioBlock {
             REG_MAGIC => u64::from(MAGIC_VALUE),
             REG_VERSION => u64::from(self.transport.version()),
             REG_DEVICE_ID => u64::from(DEVICE_ID_BLOCK),
-            REG_VENDOR_ID => u64::from(VENDOR_ID_QEMU),
+            REG_VENDOR_ID => u64::from(VENDOR_ID_COMPAT),
             REG_DEVICE_FEATURES => u64::from(self.device_features()),
             REG_DRIVER_FEATURES => {
                 u64::from(self.driver_features[self.driver_features_sel.min(1) as usize])

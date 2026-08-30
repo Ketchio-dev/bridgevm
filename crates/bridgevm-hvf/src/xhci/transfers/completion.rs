@@ -15,8 +15,7 @@ const TRB_IOC: u32 = 1 << 5;
 const TRB_CHAIN: u32 = 1 << 4;
 const TRANSFER_EVENT_ED: u32 = 1 << 2;
 const COMPLETION_CODE_SUCCESS: u32 = 1;
-/// QEMU oracle: a TD that moves fewer bytes than requested completes with
-/// Short Packet, not Success (xhci_xfer_report rewrites the ccode).
+/// xHCI completion code 13 for a TD shorter than the requested transfer.
 const COMPLETION_CODE_SHORT_PACKET: u32 = 13;
 const COMPLETION_CODE_SHIFT: u32 = 24;
 const SLOT_ID: u32 = 1;

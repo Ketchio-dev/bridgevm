@@ -59,7 +59,7 @@ QEMU `virt` platform-bus MMIO reservation at `0x0c000000`, a persistent 1 KiB
 PPI mailbox at `0x0c005000`, PPI 1.3 and reset-mitigation `_DSM` AML, optional
 ACPI `TPM0`/`MSFT0101`/`_CRS` emission, and platform/run-loop dispatch selected
 by `BRIDGEVM_SWTPM_DATA_SOCKET`. When that concrete TPM path is present,
-BridgeVM also publishes QEMU's exact 6-byte `etc/tpm/config` record
+BridgeVM also publishes the bundled firmware's 6-byte `etc/tpm/config` record
 (`0x0c005000` little-endian, TPM 2, PPI 1.30). That record activates the pinned
 ArmVirtQemu EDK2 `Tcg2PhysicalPresenceLibQemu` implementation, which initializes
 the PPI policy and processes pending requests in PlatformBootManager; the file
@@ -77,7 +77,7 @@ collected non-system dylib closure with rewritten install names, component
 licenses, and a digest manifest. The app implements a separate-code AES-GCM
 recovery package bound to VM ID and exact state fingerprint, fresh-TPM APFS
 clone, and confirmed reset that archives old state/key and emits a receipt.
-ACPI also emits QEMU's revision-4 TPM2 FIFO table and relocates its LASA field
+ACPI also emits the revision-4 TPM2 FIFO table and relocates its LASA field
 to a zero-initialized 64 KiB `etc/tpm/log` allocation. Construction fails if
 ACPI presence and backend
 presence disagree. The default EDK2 code volume is now a reproducible,
@@ -305,8 +305,8 @@ Method for each: reach the surface, capture ramfb/trace evidence, fix, prove.
 - First test on the real desktop: does the existing keyboard register in a desktop app
   (Notepad)? The Setup-GUI non-response may be Setup-specific, and a booted desktop can
   finally run **guest-side diagnostic tools** we never had in WinPE.
-- Add a **pointer**: model a USB HID **absolute pointer / tablet** (like QEMU `usb-tablet`)
-  as a second HID endpoint on the xHCI — absolute coordinates avoid pointer-capture and
+- Add a **pointer**: model a standards-based USB HID **absolute pointer / tablet**
+  as a second HID endpoint on the xHCI. Absolute coordinates avoid pointer-capture and
   are what VMs use. Needs a report descriptor + an inject path for move/click.
 - If keys still don't register: diagnose the HID report descriptor + input routing with
   guest tools; try boot-protocol vs report-protocol, or a distinct HID interface.

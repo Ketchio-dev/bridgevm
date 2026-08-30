@@ -1,16 +1,14 @@
 //! Minimal SMBIOS blobs for the Path A `fw_cfg` handoff.
 //!
-//! ArmVirtQemu's SMBIOS platform driver reads QEMU-compatible records from
-//! `etc/smbios/smbios-tables` and installs them through EFI's SMBIOS protocol.
-//! QEMU also exposes an `etc/smbios/smbios-anchor` entry point blob; its address
-//! and checksum fields are deliberately zero because firmware finalizes them
-//! after placing the SMBIOS tables.
+//! The current firmware reads `etc/smbios/smbios-tables` and installs the
+//! records through EFI's SMBIOS protocol. Entry-point address and checksum
+//! fields remain zero until firmware places and finalizes the tables.
 
 use crate::machine;
 
-/// QEMU fw_cfg file carrying the SMBIOS 3.0 entry point.
+/// fw_cfg file carrying the SMBIOS 3.0 entry point.
 pub const SMBIOS_ANCHOR_FILE: &str = "etc/smbios/smbios-anchor";
-/// QEMU fw_cfg file carrying concatenated SMBIOS structures.
+/// fw_cfg file carrying concatenated SMBIOS structures.
 pub const SMBIOS_TABLE_FILE: &str = "etc/smbios/smbios-tables";
 
 const HANDLE_TYPE0: u16 = 0x0000;
@@ -35,7 +33,7 @@ pub struct SmbiosBlobs {
     pub tables: Vec<u8>,
 }
 
-/// Build a small QEMU-style SMBIOS surface for a `cpu_count`-CPU guest.
+/// Build BridgeVM's SMBIOS surface for a `cpu_count`-CPU guest.
 pub fn build_smbios(cpu_count: u64, ram_size: u64) -> SmbiosBlobs {
     assert!(cpu_count >= 1, "SMBIOS requires at least one CPU");
     assert!(
@@ -201,7 +199,7 @@ fn append_type16(tables: &mut Vec<u8>, ram_size: u64) {
     let mut f = Vec::new();
     f.push(0x01); // Location: Other
     f.push(0x03); // Use: system memory
-    f.push(0x06); // Error correction: multi-bit ECC, matching QEMU/SeaBIOS
+    f.push(0x06); // Error correction: multi-bit ECC.
     if size_kb < MAX_TYPE16_STD_KB {
         f.extend_from_slice(&(size_kb as u32).to_le_bytes());
         f.extend_from_slice(&0xFFFEu16.to_le_bytes());
@@ -348,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn anchor_has_qemu_smbios30_shape() {
+    fn anchor_has_smbios30_entry_point_shape() {
         let blobs = build_smbios(1, 512 * MB);
         assert_eq!(&blobs.anchor[..5], b"_SM3_");
         assert_eq!(blobs.anchor[5], 0, "firmware owns final checksum");

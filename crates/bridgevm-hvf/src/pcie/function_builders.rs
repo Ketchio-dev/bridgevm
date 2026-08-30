@@ -3,8 +3,8 @@
 use super::*;
 
 impl Function {
-    /// The QEMU PCIe host bridge at `00:00.0`: type-0 header, no BARs, no
-    /// capabilities. A clean, enumerable root complex.
+    /// BridgeVM's PCIe host bridge at `00:00.0`: type-0 header, no BARs, no
+    /// capabilities.
     pub(crate) fn host_bridge() -> Self {
         Self {
             bdf: (0, 0, 0),
@@ -27,9 +27,8 @@ impl Function {
         // (BAR0/BAR1 pair). EDK2's NvmExpressDxe refuses to bind a 32-bit BAR0.
         // Expose a 64-bit BAR0 like the xHCI endpoint EDK2 binds, and hardwire
         // the low BAR's memory-type bits (bit 2 = 64-bit) into its read-back so
-        // an un-programmed BAR0 reads 0x4 — matching QEMU's NVMe (which EDK2
-        // boots) and the PCI spec, where those type bits are read-only rather
-        // than only appearing during a sizing probe.
+        // an unprogrammed BAR0 reads 0x4. PCI defines these type bits as
+        // read-only, not as values that appear only during a sizing probe.
         let (mut bar0, bar1) = Bar::memory64(NVME_BAR0_SIZE);
         bar0.value = bar0.type_bits;
         bars[0] = bar0;
@@ -41,7 +40,7 @@ impl Function {
             NVME_MSIX_PBA_OFFSET,
         );
         // Capability chain: MSI-X (0x40) -> Power Management (0x50) ->
-        // PCI Express (0x60, terminates), mirroring QEMU's NVMe endpoint.
+        // PCI Express (0x60, terminates).
         let mut cap_bytes: Vec<(u16, u8)> = msix
             .to_bytes(NVME_PM_CAP_OFFSET)
             .into_iter()
@@ -66,8 +65,8 @@ impl Function {
             bdf: NVME_BDF,
             vendor_device: (u32::from(NVME_DEVICE_ID) << 16) | u32::from(NVME_VENDOR_ID),
             revision_class: (NVME_CLASS_CODE << 8) | u32::from(NVME_REVISION),
-            // Match QEMU's NVMe subsystem IDs (1af4:1100); some enumerators
-            // distrust a zero subsystem ID.
+            // Preserve the fixed compatibility subsystem ID; some enumerators
+            // distrust an all-zero subsystem identity.
             subsystem_ids: (u32::from(NVME_SUBSYSTEM_ID) << 16)
                 | u32::from(NVME_SUBSYSTEM_VENDOR_ID),
             command: 0,
@@ -78,7 +77,7 @@ impl Function {
         }
     }
 
-    /// QEMU-oracle virtio block installer media endpoint at `00:03.0`.
+    /// Virtio block installer-media endpoint at `00:03.0`.
     pub(crate) fn virtio_blk() -> Self {
         let mut bars = [Bar::default(); NUM_BARS];
         bars[0] = Bar::io(VIRTIO_BLK_BAR0_SIZE);
@@ -289,10 +288,9 @@ impl Function {
             command: 0,
             bars,
             cap_ptr: HDA_MSI_CAP_OFFSET,
-            // MSI-only: our platform describes no legacy INTx GSI routing for
-            // PCI slots (all other functions are pin 0), so advertising INTA —
-            // as QEMU can, because it ships an ACPI _PRT — makes Windows try to
-            // reserve an unroutable IRQ line and fail with a resource conflict.
+            // MSI-only: this platform describes no legacy INTx GSI routing for
+            // PCI slots. Advertising INTA would make Windows reserve an
+            // unroutable IRQ line and fail with a resource conflict.
             interrupt_pin: 0,
             cap_bytes,
         }

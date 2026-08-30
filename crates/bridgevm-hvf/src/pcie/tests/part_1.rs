@@ -100,7 +100,7 @@ fn boot_media_config_space_bytes_stay_byte_identical() {
 }
 
 #[test]
-fn boot_media_endpoint_reports_qemu_oracle_identity_at_00_03_0() {
+fn boot_media_endpoint_reports_declared_identity_at_00_03_0() {
     let ecam = PcieEcam::new();
     let (bus, dev, func) = VIRTIO_BLK_BDF;
 
@@ -117,7 +117,7 @@ fn boot_media_endpoint_reports_qemu_oracle_identity_at_00_03_0() {
 }
 
 #[test]
-fn boot_media_endpoint_reports_qemu_oracle_subsystem_id() {
+fn boot_media_endpoint_reports_declared_subsystem_id() {
     let ecam = PcieEcam::new();
     let (bus, dev, func) = VIRTIO_BLK_BDF;
 
@@ -133,11 +133,11 @@ fn boot_media_endpoint_reports_qemu_oracle_subsystem_id() {
 }
 
 #[test]
-fn boot_media_given_bars_when_sizing_then_matches_qemu_oracle_shape() {
+fn boot_media_bars_report_the_declared_transport_shape() {
     let mut ecam = PcieEcam::new();
     let (bus, dev, func) = VIRTIO_BLK_BDF;
 
-    // Given: QEMU's virtio-blk-pci exposes BAR0 as 0x80 bytes of PIO.
+    // BAR0 is the 0x80-byte transitional virtio PCI I/O region.
     let bar0 = ecam_offset(bus, dev, func, REG_BAR0);
     ecam.cfg_write(bar0, 4, 0xFFFF_FFFF);
     let bar0_readback = ecam.cfg_read(bar0, 4) as u32;
@@ -741,7 +741,7 @@ fn bar_decode_ignores_addresses_below_programmed_base() {
 }
 
 #[test]
-fn qemu_xhci_endpoint_reports_oracle_identity_at_00_02_0() {
+fn xhci_endpoint_reports_declared_identity_at_00_02_0() {
     let ecam = PcieEcam::new();
 
     let vd = ecam.cfg_read(ecam_offset(0, 2, 0, REG_VENDOR_DEVICE), 4);

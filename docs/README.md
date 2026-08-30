@@ -132,14 +132,15 @@ defined by the present source tree, the current docs above, `LICENSE`, and
 ## Reference material
 
 - [Phase 0 architecture](architecture/phase-0.md) — early architecture history.
-- [QEMU virt AArch64 GICv3 DTS](reference/qemu-virt-aarch64-gicv3.dts) — machine
-  contract reference data.
+- [BridgeVM virt platform register map](reference/bridgevm-virt-platform.md) —
+  independently maintained guest-visible layout and public interface sources.
 - [Windows platform contract gap](reference/hvf-windows-platform-contract-gap.md) — earlier
   platform bring-up reference.
 - [KD serial bring-up](reference/hvf-kd-serial-bringup.md) — kernel-debugging procedure.
 
-Reference data exists to make interfaces and experiments reproducible. It is not
-a statement that BridgeVM source code was copied from the referenced project.
+Reference data exists to make interfaces and experiments reproducible. Current
+BridgeVM implementations are governed by the public specifications named in
+their module and platform documentation.
 Third-party source actually redistributed by BridgeVM remains governed by its
 own license and attribution requirements.
 

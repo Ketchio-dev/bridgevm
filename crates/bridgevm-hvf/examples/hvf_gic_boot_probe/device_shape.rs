@@ -115,10 +115,10 @@ fn device_shape_lines(
     } else {
         "virtio-gpu-pci: disabled".to_string()
     };
-    let legacy_parity = if devices.legacy_virtio_mmio_present {
-        "qemu oracle parity: legacy virtio-mmio slot 31 kept as installer ISO fallback"
+    let legacy_slot = if devices.legacy_virtio_mmio_present {
+        "legacy virtio-mmio slot 31 kept as installer ISO fallback"
     } else {
-        "qemu oracle parity: legacy virtio-mmio slot 31 omitted by disable switch"
+        "legacy virtio-mmio slot 31 omitted by disable switch"
     };
     let tpm = if devices.tpm_tis_present {
         format!(
@@ -151,7 +151,7 @@ fn device_shape_lines(
         virtio_net,
         virtio_gpu,
         tpm,
-        legacy_parity.to_string(),
+        legacy_slot.to_string(),
     ]
 }
 

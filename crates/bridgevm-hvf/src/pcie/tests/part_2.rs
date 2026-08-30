@@ -5,7 +5,7 @@ use super::helpers::*;
 use crate::machine;
 
 #[test]
-fn qemu_xhci_exposes_msix_and_pcie_capabilities() {
+fn xhci_exposes_msix_and_pcie_capabilities() {
     let ecam = PcieEcam::new();
     let status = ecam.cfg_read(ecam_offset(0, 2, 0, REG_COMMAND_STATUS), 4) >> 16;
     assert_ne!(status & u64::from(STATUS_CAP_LIST), 0);
@@ -42,7 +42,7 @@ fn qemu_xhci_exposes_msix_and_pcie_capabilities() {
 }
 
 #[test]
-fn qemu_xhci_bar0_is_64bit_16k_memory_bar() {
+fn xhci_bar0_is_64bit_16k_memory_bar() {
     let mut ecam = PcieEcam::new();
     let bar0 = ecam_offset(0, 2, 0, REG_BAR0);
     let bar1 = ecam_offset(0, 2, 0, REG_BAR0 + 4);
@@ -55,7 +55,7 @@ fn qemu_xhci_bar0_is_64bit_16k_memory_bar() {
 }
 
 #[test]
-fn qemu_xhci_64bit_bar_decodes_low_mmio_after_command_enable() {
+fn xhci_64bit_bar_decodes_low_mmio_after_command_enable() {
     let mut ecam = PcieEcam::new();
     let bar0 = ecam_offset(0, 2, 0, REG_BAR0);
     let bar1 = ecam_offset(0, 2, 0, REG_BAR0 + 4);
@@ -83,7 +83,7 @@ fn qemu_xhci_64bit_bar_decodes_low_mmio_after_command_enable() {
 }
 
 #[test]
-fn qemu_xhci_64bit_bar_decodes_high_mmio_after_command_enable() {
+fn xhci_64bit_bar_decodes_high_mmio_after_command_enable() {
     let mut ecam = PcieEcam::new();
     let bar0 = ecam_offset(0, 2, 0, REG_BAR0);
     let bar1 = ecam_offset(0, 2, 0, REG_BAR0 + 4);
@@ -182,8 +182,8 @@ fn nvme_endpoint_reports_storage_class_and_bar0() {
     assert_eq!(rc >> 8, u64::from(NVME_CLASS_CODE));
     assert_eq!(rc & 0xFF, u64::from(NVME_REVISION));
 
-    // BAR0 is a 64-bit memory BAR: unprogrammed it reads back only its
-    // hardwired type bits (bit 2 = 64-bit), matching QEMU's NVMe endpoint.
+    // PCI requires the hardwired 64-bit memory type bit to survive while BAR0
+    // is unprogrammed.
     assert_eq!(ecam.cfg_read(ecam_offset(0, 1, 0, REG_BAR0), 4), 0x4);
     assert_eq!(ecam.cfg_read(ecam_offset(0, 1, 0, REG_BAR0 + 4), 4), 0);
 }

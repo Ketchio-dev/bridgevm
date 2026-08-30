@@ -1,216 +1,92 @@
-# HVF Windows path: platform-contract gap vs. QEMU `virt`
+# HVF Windows firmware-compatibility boundary
 
-_Last updated: 2026-06-21._
+_Last updated: 2026-08-30._
 
-> **Status note:** this document records the original contract gap that motivated
-> Path A. The active Path A source of truth is now
-> [`crates/bridgevm-hvf/src/machine.rs`](../../crates/bridgevm-hvf/src/machine.rs) plus
-> [`crates/bridgevm-hvf/src/platform_virt/`](../../crates/bridgevm-hvf/src/platform_virt).
-> That implementation now boots stock ArmVirtQemu firmware to the UEFI shell and
-> QEMU direct Linux boot blobs through Debian installer userspace startup. The legacy
-> `src/lib.rs` probe map below is retained as historical context, not as the
-> desired machine model.
+## Status
 
-## Why this document exists
+This is a historical design note. It explains why BridgeVM's current HVF
+platform contains a narrow QEMU-compatible firmware boundary; it is not an
+implementation specification and does not make another VMM's source material a
+design authority.
 
-The live HVF firmware smokes (`tests/integration/windows-arm-hvf-real-edk2-*`)
-load **QEMU's** ArmVirtQemu firmware build:
+The normative BridgeVM platform sources are:
 
-```
-FIRMWARE = /opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-aarch64-code.fd
-VARS     = /opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-arm-vars.fd
-```
+- [`crates/bridgevm-hvf/src/machine.rs`](../../crates/bridgevm-hvf/src/machine.rs)
+- [`crates/bridgevm-hvf/src/platform_virt/`](../../crates/bridgevm-hvf/src/platform_virt)
+- [`bridgevm-virt-platform.md`](bridgevm-virt-platform.md)
+- [`qemu-virt-deviations.json`](../machine-contract/qemu-virt-deviations.json)
 
-That firmware does **not** boot on an arbitrary platform. ArmVirtQemu discovers
-its world from the device tree QEMU hands it and from the `fw_cfg` device, and it
-installs the **guest ACPI tables that QEMU generates and exposes through
-`fw_cfg`** (`etc/acpi/tables`, `etc/acpi/rsdp`, `etc/table-loader`). It expects a
-GICv3 (with an ITS for MSI), a `pci-host-ecam-generic` root complex, PL011/PL031,
-and flash banks — all at the QEMU `virt` addresses, described by a QEMU-shaped DTB.
+The current release path still boots a pinned ArmVirtQemu EDK2 firmware image.
+That binary expects the published `fw_cfg` wire ABI, including the
+`qemu,fw-cfg-mmio` device-tree identifier and fixed protocol signatures. Those
+names are retained as interoperability identifiers. BridgeVM implements the
+surrounding virtual platform and device behavior in Rust.
 
-Originally `bridgevm-hvf` presented almost none of that and loaded QEMU's firmware
-onto a **non-QEMU platform**. That mismatch — not a firmware bug — was the root
-cause of the `try-recommended-vbar` / `low-vector-repair` /
-`restore-before-eret` / `diagnostic` vector-patching seen in the early firmware
-run-loop smokes: the firmware faulted early because the hardware underneath it was
-not the hardware it was built for, and the run loop tried to patch around the
-faults instead of supplying the contract.
+## Original failure
 
-> **Windows 11 ARM consumes ACPI, not a device tree.** A DTB handed to the
-> *firmware* is fine and expected (that is how ArmVirtQemu works); the DTB just has
-> to describe the QEMU-shaped platform, including the `fw_cfg` and PCIe nodes, so
-> the firmware can emit ACPI for the guest. The current DTB does neither.
+The first HVF probe loaded the pinned firmware over a different experimental
+memory map. Its flash, interrupt-controller, UART, RTC, PCIe and legacy virtio
+windows did not describe one coherent machine. Firmware failed before it could
+publish the ACPI and SMBIOS data needed by Windows, and early experiments tried
+to repair control flow after each fault.
 
-## The authoritative contract (regenerate it yourself)
+That conclusion is retained as a failed design: patching vectors or register
+state cannot substitute for a consistent guest-visible platform contract.
 
-Everything below was dumped from the **exact** QEMU the smokes use, so it is the
-real contract, not from memory:
+The most important original collisions were:
 
-```sh
-qemu-system-aarch64 -machine virt,gic-version=3,dumpdtb=virt.dtb \
-  -cpu cortex-a72 -m 6144 -smp 4
-dtc -I dtb -O dts virt.dtb -o virt.dts
-```
+| Surface | Early probe | Firmware-compatible platform | Consequence |
+| --- | ---: | ---: | --- |
+| code flash | `0x0800_0000` | `0x0000_0000` | overlapped the interrupt-controller region expected by the firmware |
+| GIC distributor | `0x1001_0000` | `0x0800_0000` | interrupt discovery and routing disagreed |
+| PL011 UART | experimental device window | `0x0900_0000` | console discovery disagreed |
+| PL031 RTC | experimental device window | `0x0901_0000` | timer/RTC discovery disagreed |
+| PCIe ECAM | absent | `0x40_1000_0000` | firmware could not enumerate PCI endpoints |
+| `fw_cfg` | absent | `0x0902_0000` | firmware could not receive generated ACPI, SMBIOS or boot metadata |
+| RAM | `0x4000_0000` | `0x4000_0000` | already consistent |
 
-A decompiled reference copy is checked in at
-[`docs/reference/qemu-virt-aarch64-gicv3.dts`](qemu-virt-aarch64-gicv3.dts).
-Re-dump it whenever the bundled QEMU version changes — the addresses are stable
-across recent QEMU releases but the ECAM/highmem layout can shift with options.
+Historical QEMU/HVF control runs helped distinguish a firmware-contract failure
+from an HVF execution failure. They are retained as experiment evidence only;
+BridgeVM behavior is specified by its own machine contract, public hardware
+standards and live BridgeVM gate receipts.
 
-### QEMU `virt` device map (GICv3, QEMU 11.0.1)
+## Current boundary
 
-| Node (DT) | Base | Size | `compatible` |
-| --- | --- | --- | --- |
-| `flash@0` (pflash code+vars) | `0x0000_0000` | 2 × `0x0400_0000` | `cfi-flash` |
-| `intc@8000000` GICD | `0x0800_0000` | `0x0001_0000` | `arm,gic-v3` |
-| `intc@8000000` GICR | `0x080A_0000` | `0x00F6_0000` | `arm,gic-v3` |
-| `its@8080000` (MSI) | `0x0808_0000` | `0x0002_0000` | `arm,gic-v3-its` |
-| `pl011@9000000` UART | `0x0900_0000` | `0x0000_1000` | `arm,pl011` |
-| `pl031@9010000` RTC | `0x0901_0000` | `0x0000_1000` | `arm,pl031` |
-| `fw-cfg@9020000` | `0x0902_0000` | `0x0000_0018` | `qemu,fw-cfg-mmio` |
-| `virtio_mmio@a000000…` (32) | `0x0A00_0000` | 32 × `0x200` | `virtio,mmio` |
-| `pcie@10000000` ECAM | `0x40_1000_0000` | `0x1000_0000` | `pci-host-ecam-generic` |
-| PCIe 32-bit MMIO window | `0x1000_0000` | `0x2EFF_0000` | (ranges) |
-| PCIe 64-bit MMIO window | `0x80_0000_0000` | `0x80_0000_0000` | (ranges) |
-| `memory@40000000` RAM | `0x4000_0000` | guest size | — |
+The compatibility layer is intentionally small and explicit:
 
-GIC: `gic-version=3`, `#interrupt-cells = <3>`, ITS is `msi-controller`.
+- `fwcfg.rs` implements the selector/data and DMA wire protocol required by the
+  pinned firmware.
+- `tpm_ppi.rs` publishes the packed PPI discovery record consumed by that
+  firmware.
+- the DTB advertises the legacy `qemu,fw-cfg-mmio` identifier because changing
+  it would prevent the current firmware from binding.
+- protocol literals such as `QEMU` and `QEMU CFG` remain byte-exact where the
+  wire ABI requires them.
 
-### Legacy `bridgevm-hvf` probe map (`crates/bridgevm-hvf/src/lib.rs`)
+These identifiers do not authorize copying another VMM's implementation.
+Behavior outside this boundary is defined from public specifications such as
+Arm GIC, PL011, PL031, PCIe, NVMe, xHCI, ACPI, SMBIOS, TCG and virtio, plus
+BridgeVM's declared contract and tests.
 
-| Constant | Base |
-| --- | --- |
-| `WINDOWS_ARM_UEFI_LOW_CODE_ALIAS_IPA` | `0x0000_0000` |
-| `WINDOWS_ARM_UEFI_LOW_VARS_ALIAS_IPA` | `0x0400_0000` |
-| `WINDOWS_ARM_UEFI_CODE_IPA` (pflash) | `0x0800_0000` |
-| `WINDOWS_ARM_UEFI_VARS_IPA` (pflash) | `0x0C00_0000` |
-| `WINDOWS_ARM_DEVICE_MMIO_IPA` (window) | `0x1000_0000` (256 MiB) |
-| └ virtio installer ISO MMIO | `0x1000_2000` |
-| └ virtio target disk MMIO | `0x1000_3000` |
-| └ GIC distributor MMIO | `0x1001_0000` |
-| └ GIC redistributor MMIO | `0x1002_0000` |
-| `WINDOWS_ARM_GUEST_RAM_IPA` | `0x4000_0000` |
-| platform DTB | `0x4001_0000` |
+## Independent-platform direction
 
-## The original gap, side by side
+The planned BridgeVM Virtual ARM PC is a separate, versioned board contract
+built from public Arm BSA/SBSA/SBBR/SystemReady, UEFI, ACPI, SMBIOS, PSCI/SMCCC,
+GICv3, PCIe ECAM, NVMe, xHCI, TCG and virtio specifications. Its firmware must be
+independently auditable and must not require the legacy `fw_cfg` boundary.
 
-| Capability | QEMU `virt` (the firmware's contract) | `bridgevm-hvf` today | Verdict |
-| --- | --- | --- | --- |
-| **`fw_cfg`** | `0x0902_0000`, `qemu,fw-cfg-mmio` | **absent** (0 references) | **MISSING — keystone.** No path for the guest ACPI tables, SMBIOS, boot order, kernel/initrd. ArmVirtQemu has nothing to install → ACPI-dependent Windows cannot boot. |
-| **PCIe ECAM** | `pci-host-ecam-generic` @ `0x40_1000_0000` | **absent** (0 references) | **MISSING.** No NVMe, no virtio-pci, no MSI-targeted devices. |
-| **GIC ITS (MSI)** | `its@8080000`, `msi-controller` | **absent** | **MISSING.** No MSI/MSI-X for PCIe devices. |
-| GIC distributor | `0x0800_0000` (in-kernel `hv_gic` or modelled) | userspace skeleton @ `0x1001_0000` | MISMATCH — wrong base, and a hand-rolled model (see [strategy](../decisions/hvf-windows-engine-strategy.md)). |
-| GIC redistributor | `0x080A_0000` | userspace skeleton @ `0x1002_0000` | MISMATCH. |
-| pflash (code) | `0x0000_0000` | `0x0800_0000` | MISMATCH — bridgevm's code pflash sits exactly where QEMU puts the **GIC distributor**. |
-| PCIe 32-bit MMIO window | `0x1000_0000` | reused as the device MMIO window | COLLISION. |
-| PL011 / PL031 | `0x0900_0000` / `0x0901_0000` | inside the `0x1000_0000` window | MISMATCH (address). |
-| virtio transport | virtio-**mmio** @ `0x0A00_0000`, 0x200 stride | virtio-mmio @ `0x1000_2000`/`0x1000_3000` | MISMATCH (base, stride, count); and virtio-mmio is the wrong transport for an inbox-driver Windows install (see strategy). |
-| RAM base | `0x4000_0000` | `0x4000_0000` | ✅ **MATCH — the only one.** |
+That board remains experimental until it satisfies the same real-hardware boot,
+installation, input, graphics, storage, security and performance gates as the
+current platform. Until then, the existing contract and its documented
+deviations remain the shipping truth.
 
-**Original bottom line:** of QEMU `virt`'s entire device map, the legacy HVF probe
-map reproduced only the RAM base. The two genuinely missing subsystems —
-`fw_cfg` and PCIe ECAM (+ ITS) — were precisely the ones that gated ACPI and
-storage, i.e. the ones that gate Windows booting at all.
+## Evidence discipline
 
-## What this implies (see the strategy doc for the decision)
-
-There are two coherent ways to stop loading QEMU firmware onto a non-QEMU platform.
-The chosen direction is **Path A — converge on the QEMU `virt` contract** so the
-stock `edk2-aarch64-code.fd` boots unmodified and the guest ACPI/PCIe/Windows-media
-behaviour matches the QEMU stack that already installs Windows 11 ARM. Rationale,
-the rejected alternative (Path B, own platform + own EDK2 + hand-written ACPI), and
-the sequenced plan live in
-[`docs/decisions/hvf-windows-engine-strategy.md`](../decisions/hvf-windows-engine-strategy.md).
-
-Path A now has `fw_cfg`, a QEMU-shaped DTB, Apple `hv_gic`, PL011, PL031, empty
-virtio-mmio slots, PCIe ECAM host-bridge config space, a first NVMe endpoint at
-`00:01.0` with BAR0 routing and raw host-file media hooks, and a minimal P30
-pflash vars model wired behind `VirtPlatform::on_mmio()` with live-probe
-snapshot/writeback hooks. The stock ArmVirtQemu firmware boots to the UEFI shell.
-ACPI blobs are now delivered through QEMU-style `etc/acpi/rsdp`,
-`etc/acpi/tables` and `etc/table-loader` fw_cfg files, and SMBIOS blobs are
-delivered through `etc/smbios/smbios-anchor` and `etc/smbios/smbios-tables`.
-QEMU-style Linux `-kernel`/`-initrd`/`-append` fw_cfg blobs now boot Debian's
-arm64 installer kernel through EFI, ACPI, SMBIOS/DMI, GIC/timer init,
-`ARMH0011` PL011 console binding, `PCI0` root bridge enumeration, QEMU-like PCI
-`_OSC`, ACPI0007 CPU device enumeration, basic PPTT CPU topology, PMU IRQ
-metadata, ECAM reservation through `PNP0C02`, initramfs unpack, root ext4 mount,
-`/boot` and `/boot/efi` mounts, `sysinit.target`, and `basic.target`. The latest
-live HVF run no longer logs the previous
-`topology_sysfs_init`, `cpuinfo`, `cacheinfo`, `No PPTT table found`, `No ACPI PMU
-IRQ`, or invalid-DMI diagnostics. The ECAM PnP reservation warning is also
-present in the QEMU+HVF oracle, so it is no longer treated as a BridgeVM-only
-platform gap. The current Apple `hv_gic` path deliberately advertises the MSI
-surface as a GICv2m-compatible Generic MSI Frame (Apple's GICM registers) rather
-than MADT ITS + IORT: the in-kernel GIC does not expose guest-visible LPIs/ITS,
-while Linux falls back to the MSI-frame driver when the GIC distributor lacks LPI
-support. The Windows ISO oracle now narrows the installer-media gap: QEMU/HVF with
-ACPI enabled and `-cdrom` exposes the ISO as `.../CDROM(0x0)` and reaches
-`Press any key to boot from CD or DVD...`; the same ISO attached as BridgeVM's
-raw NVMe namespace fails the firmware boot option with `Not Found`. BridgeVM's
-older virtio-mmio block ISO prototype on slot 31 is discovered by firmware and
-services reads successfully, but it is now only an explicit fallback
-(`BRIDGEVM_INSTALLER_ISO_TRANSPORT=mmio`). The live probe defaults the installer
-ISO to a read-only PCI `virtio-blk-pci` endpoint at `00:03.0`, matching the QEMU
-oracle's storage slot shape while remaining honest that this is fixed block media,
-not true CD-ROM/removable-media or xHCI/USB-storage semantics. The PCI boot-media
-parity work is tracked by
-`.omo/ulw-loop/evidence/task-5-bridgevm-hvf-pci-boot-media-parity-device-shape.txt`
-and the follow-up live evidence target
-`.omo/ulw-loop/evidence/bridgevm-hvf-pci-boot-media-parity-live-hvf.txt`. The
-pre-switch legacy-mmio live evidence exposes PMUVer in `ID_AA64DFR0_EL1`, injects
-a PL011 byte after the CD prompt is printed, reaches `Loading files...`, reads
-hundreds of MiB from the ISO without virtio I/O errors, and enters Windows high
-virtual-address code.
-The active gap has moved from basic ISO reachability and the old loader
-`ConvertPages`/cdboot-stub frontier to Windows PCI/NVMe command flow and the
-remaining QEMU device-shape differences; the NVMe model now retains a bounded
-recent command/completion trace for that diff.
-The latest NVMe admin-command pass accepts Windows Asynchronous Event Requests as
-pending, handles the observed standard `Get Features` probes, completes
-`Identify` CNS `0x06` for the NVM command set, models QEMU's command-effects log
-page `0x05`, handles the firmware-slot log page, advertises Security Send/Receive
-with QEMU's default no-SPDM behavior, and eliminates `invalid-opcode`
-completions. The Windows loader currently issues two zero-length `SECURITY_RECV`
-probes and probes optional/vendor surfaces (`Get Features` FID `0xd0`/`0x7f`
-and log pages `0xc0`/`0xc1`); BridgeVM now reports QEMU-like
-`invalid-field | DNR` for those unsupported paths. The 120 s post-DNR live run
-still reaches Windows high virtual-address SVC state after reading `645730816`
-bytes from the ISO with zero virtio I/O errors and no unmodelled MMIO. The
-stage-1 translation dump from the same frontier resolves
-`pc=0xfffff80145081cdc` through `TTBR1_EL1` to `ipa=0x100481cdc`, owned by
-`ntkrnlmp.pdb` at RVA `0x481cdc`; the low ELR/FAR user-address context currently
-fails the guest page-table walk at an invalid L0 descriptor. The
-volatile write cache surface now follows QEMU's observed behaviour: Identify
-Controller advertises VWC `0x7`, `Get Features` FID `0x06` reports the current
-cache enabled, and NVM Flush (`0x00`) succeeds for namespace and broadcast-NSID
-requests. Write-back raw namespaces now back that completion with `File::sync_data()`;
-tests cover both namespace selectors, broadcast fan-out, read-only COW no-op, and
-host-sync error reporting. The latest PCIe MMIO register-summary pass shows Windows repeatedly
-ringing NVMe queue doorbells, polling `CSTS`/`CC`/`ASQ`, and reading optional
-no-CMB registers `CMBLOC`/`CMBSZ` as zero. Its NVMe summary has only the
-expected pending Asynchronous Event Requests and no other pending commands, so
-the current differential target is Windows high-VA/SVC context and QEMU device
-shape parity rather than a plain missing-completion bug.
-The remaining gap is above firmware: the PCI boot-media default has now been
-validated far enough to reach Windows 11 Setup with ramfb enabled. The repeatable
-probe recipe injects a PL011 space after `BdsDxe: starting Boot0001`; the run
-serves 234 PCI virtio boot-media reads and reads `646239744` bytes from the ISO.
-A no-target-disk run captured Setup's `Install driver to show hardware` page, but
-the follow-up disk-shaped target run attaches a separate GPT raw NVMe image with
-the same PCI installer ISO and captures `Select language settings` instead:
-`.omo/ulw-loop/evidence/G002-C002-disk-shaped-nvme-source-live-hvf.txt` plus
-`.omo/ulw-loop/evidence/ramfb-g002-disk-shaped-nvme-source/ramfb-800x600-13c7a0000-0ccc66f0651d4a64.png`.
-That makes the current minimal storage recipe: PCI `virtio-blk-pci` boot media
-for the read-only ISO and a separate writable NVMe namespace for the install
-target. The first xHCI input slice now reports one powered, connected high-speed
-root-port candidate, which moves firmware from powered-only PORTSC polling into
-USB enumeration. Live evidence
-`.omo/ulw-loop/evidence/G003-C002-connected-port-live-hvf.txt` reaches the same
-Windows Setup `Select language settings` page, but the serial tail now reports
-`XhcInitializeDeviceSlot: Enable Slot Failed, Status = Time out`. Continue with
-the smallest xHCI command-ring/event-ring completion needed for `Enable Slot`,
-then layer USB HID descriptors and queued keyboard/tablet events. In parallel,
-keep tightening Windows-relevant ACPI/device-path details beyond the now-modelled
-PL011 DBG2 surface, add network/guest-agent devices, and then run Windows
-installer validation again.
+- Compatibility-engine runs may mention QEMU directly in commands, logs and
+  receipts.
+- Historical comparisons remain failures or controls; they are never rewritten
+  into release proof.
+- A source-level similarity claim is not inferred from protocol compatibility.
+- Guest-visible changes require an entry in
+  [`qemu-virt-deviations.json`](../machine-contract/qemu-virt-deviations.json)
+  and live validation at the stated sample count.

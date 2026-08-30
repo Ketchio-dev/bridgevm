@@ -29,9 +29,8 @@ impl VenusBackend {
             self.protocol.label(),
             cmdbuf.len()
         );
-        // QEMU's legacy virgl command path submits the buffer for renderer
-        // diagnostics but does not turn a vrend context error into a virtio
-        // command error. Keep VirGL tolerant while retaining diagnostics.
+        // The legacy VirGL path records renderer diagnostics without turning
+        // a vrend context error into a virtio command error.
         Submit3dResult {
             accepted: self.protocol == VirtioGpuRendererProtocol::Virgl,
             diagnostic,

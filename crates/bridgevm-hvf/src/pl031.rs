@@ -1,9 +1,8 @@
-//! Minimal PL031 RTC model for the Path A QEMU `virt` platform.
+//! Minimal PL031 RTC model for the BridgeVM virtual platform.
 //!
-//! The PL031 lives at [`crate::machine::RTC`] (`0x0901_0000`) on QEMU `virt`.
-//! Firmware generally needs only a sane `RTCDR` seconds counter and the PrimeCell
-//! ID registers, but this also keeps the small writable register set QEMU
-//! exposes so later OS probes do not see an inert block.
+//! Independently defined from the programmer's model in Arm DDI 0224C, this
+//! implements the counter, match interrupt, mask/clear, load, control, and
+//! PrimeCell identification registers used by firmware and the guest OS.
 
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -148,7 +147,7 @@ mod tests {
     }
 
     #[test]
-    fn primecell_ids_match_qemu_pl031() {
+    fn primecell_ids_match_arm_ddi_0224c() {
         let mut rtc = Pl031::new_at_epoch(0);
         assert_eq!(rtc.mmio_read(0xfe0, 4), 0x31);
         assert_eq!(rtc.mmio_read(0xfe4, 4), 0x10);

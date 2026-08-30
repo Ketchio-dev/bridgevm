@@ -12,8 +12,7 @@ const PORTSC_PP: u32 = 1 << 9;
 
 #[test]
 fn empty_port_reports_rx_detect_link_state() {
-    // QEMU oracle: xhci_port_update leaves PLS=RxDetect(5) when no device is
-    // attached, so an empty powered port reads PP | PLS=RxDetect.
+    // xHCI PORTSC reports PLS=RxDetect(5) for an empty powered port.
     let xhci = XhciController::new();
 
     let portsc = xhci.mmio_read(PORT_REG_BASE + PORT_REG_STRIDE, 4) as u32;
@@ -37,9 +36,8 @@ fn enabled_connected_port_reports_u0_link_state() {
 
 #[test]
 fn connected_port_awaiting_reset_reports_polling_link_state() {
-    // QEMU oracle: a connected USB2 device that has not completed a port reset
-    // links at Polling(7); PLS=U0 with PED=0 is an illegal USB2 combination
-    // that makes the Windows bootmgr xHCI driver distrust the controller.
+    // A connected USB2 device awaiting reset reports Polling(7); U0 with PED=0
+    // is not a valid USB2 operating state.
     let mut xhci = XhciController::new();
 
     xhci.mmio_write(0x40, 4, u64::from(USB_CMD_HCRST));

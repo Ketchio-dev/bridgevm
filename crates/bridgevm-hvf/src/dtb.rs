@@ -1,11 +1,8 @@
-//! Flattened Device Tree (FDT/DTB) builder and a QEMU-`virt`-shaped generator.
+//! Flattened Device Tree (FDT/DTB) builder for BridgeVM's `virt` platform.
 //!
-//! Path A hands the stock ArmVirtQemu firmware a device tree describing the
-//! platform; the firmware parses it (memory, CPUs, GICv3, `fw_cfg`, PCIe, virtio)
-//! and emits ACPI for the guest. The legacy probe harness builds a minimal,
-//! non-QEMU DTB (no `fw_cfg`/PCIe nodes); this module replaces it with a faithful
-//! QEMU-`virt` tree generated from the single source of truth in
-//! [`crate::machine`].
+//! Path A hands firmware a device tree describing memory, CPUs, GICv3,
+//! firmware configuration, PCIe, and virtio. The tree is generated from the
+//! BridgeVM-owned source of truth in [`crate::machine`].
 //!
 //! [`FdtBuilder`] is a generic DTB v17 serializer (big-endian, 4-byte aligned
 //! tokens, deduplicated strings block). [`build_virt_fdt`] uses it to emit the
@@ -13,8 +10,8 @@
 //! firmware acceptance on an entitled host is the next milestone (the live HVF
 //! bring-up in `docs/decisions/hvf-windows-engine-strategy.md`).
 //!
-//! Reference: the DTB binary format (`dtspec`) and
-//! `docs/reference/qemu-virt-aarch64-gicv3.dts`.
+//! References: the Devicetree Specification and
+//! `docs/reference/bridgevm-virt-platform.md`.
 
 use std::collections::BTreeMap;
 
@@ -229,7 +226,7 @@ const IRQ_SPI: u32 = 0;
 const IRQ_PPI: u32 = 1;
 const IRQ_LEVEL_HI: u32 = 4;
 
-/// Build a QEMU-`virt`-shaped device tree from [`crate::machine`].
+/// Build BridgeVM's `virt`-compatible device tree from [`crate::machine`].
 pub fn build_virt_fdt(cfg: &VirtFdtConfig) -> Vec<u8> {
     build_virt_fdt_with_devices(cfg, VirtFdtDeviceConfig::default())
 }
@@ -248,8 +245,8 @@ pub fn build_virt_fdt_with_devices(cfg: &VirtFdtConfig, devices: VirtFdtDeviceCo
     b.prop_str_list("compatible", &["linux,dummy-virt"]);
     b.prop_str("model", "bridgevm-virt");
     b.prop_empty("dma-coherent");
-    // All devices inherit the GIC as their interrupt parent (QEMU sets this on
-    // the root); without it `dtc` warns and OS interrupt routing is ambiguous.
+    // All devices inherit the GIC as their interrupt parent; without this root
+    // property, `dtc` warns and OS interrupt routing is ambiguous.
     b.prop_cells("interrupt-parent", &[PHANDLE_GIC]);
 
     // /chosen

@@ -44,7 +44,7 @@ pub const STS_RESPONSE_RETRY: u8 = 0x02;
 
 const STS_TPM_FAMILY_2_0: u32 = 1 << 26;
 // TIS 1.3 for TPM 2.0, low-level interrupt capability, dynamic burst count,
-// 64-byte transfer support, and the four interrupt classes QEMU advertises.
+// 64-byte transfer support and the four TIS interrupt classes.
 const INTERFACE_CAPABILITY_TPM2: u32 = 0x3000_0697;
 // FIFO interface, five localities, and TIS supported. The selector remains
 // FIFO and intentionally does not advertise CRB.
@@ -100,7 +100,7 @@ pub trait Tpm2Backend: fmt::Debug + Send {
 ///
 /// Sent as a 4-byte big-endian command number followed by a 4-byte big-endian
 /// `init_flags`; the response is a 4-byte big-endian result code (`0` = success).
-/// This mirrors QEMU's `tpm_emulator` machine-reset path.
+/// The connection survives reset while TIS-local state returns to its defaults.
 #[cfg(unix)]
 const SWTPM_CMD_INIT: u32 = 0x0000_0002;
 

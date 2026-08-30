@@ -70,7 +70,7 @@ impl Default for PcieEcam {
 
 impl PcieEcam {
     /// A fresh root complex: one host bridge at `00:00.0`, one NVMe endpoint at
-    /// `00:01.0`, and the QEMU-oracle installer media endpoint at `00:03.0`.
+    /// `00:01.0`, and the installer-media endpoint at `00:03.0`.
     pub fn new() -> Self {
         Self::new_with_config(PcieEcamConfig::default())
     }

@@ -2,10 +2,10 @@
 
 // ---- The host bridge identity (00:00.0) -------------------------------------
 
-/// Red Hat, Inc. — the vendor QEMU uses for its paravirtual root complex.
+/// Compatibility vendor identity retained by the existing VM bundle ABI.
 pub const HOST_BRIDGE_VENDOR_ID: u16 = 0x1b36;
 
-/// "QEMU PCIe Host bridge" device id.
+/// Host-bridge device identity retained by the existing VM bundle ABI.
 pub const HOST_BRIDGE_DEVICE_ID: u16 = 0x0008;
 
 /// Class code `0x060000`: base class 0x06 (bridge), sub-class 0x00 (host
@@ -17,15 +17,13 @@ pub const HOST_BRIDGE_REVISION: u8 = 0x00;
 
 // ---- The first storage endpoint (00:01.0) -----------------------------------
 
-/// Bus/device/function used by the first NVMe controller. QEMU command lines
-/// commonly attach the first user device at slot 1, leaving `00:00.0` for the
-/// host bridge.
+/// Bus/device/function used by the first NVMe controller.
 pub const NVME_BDF: (u8, u8, u8) = (0, 1, 0);
 
-/// Vendor id used by QEMU's PCIe devices.
+/// Compatibility vendor id used by the existing platform version.
 pub const NVME_VENDOR_ID: u16 = 0x1b36;
 
-/// Device id for the BridgeVM/QEMU-style NVMe endpoint.
+/// Device id for the BridgeVM NVMe endpoint.
 pub const NVME_DEVICE_ID: u16 = 0x0010;
 
 /// Class code `0x010802`: mass storage / NVM Express / NVMe.
@@ -42,15 +40,14 @@ pub const NVME_BAR0_SIZE: u32 = 0x4000;
 /// PCI capability-list offset for the NVMe endpoint's MSI-X capability.
 pub const NVME_MSIX_CAP_OFFSET: u8 = 0x40;
 
-/// NVMe subsystem IDs matching QEMU's `nvme` device (subsystem vendor 0x1af4,
-/// subsystem id 0x1100), which EDK2 boots.
+/// Stable subsystem identity exposed to firmware and the guest.
 pub const NVME_SUBSYSTEM_VENDOR_ID: u16 = 0x1af4;
 
 pub const NVME_SUBSYSTEM_ID: u16 = 0x1100;
 
 /// Power Management capability offset chained between MSI-X and PCI Express.
-/// QEMU's NVMe (which EDK2 boots) exposes a PM capability; EDK2 may power the
-/// endpoint to D0 through it before the driver touches the controller.
+/// Firmware may transition the endpoint to D0 through this capability before
+/// the driver touches the controller.
 pub const NVME_PM_CAP_OFFSET: u8 = 0x50;
 
 /// Minimal PCI Power Management capability (ID 0x01): PMC version 3, PMCSR in
@@ -59,9 +56,7 @@ pub(crate) const NVME_PM_CAP_BYTES: [u8; 8] = [0x01, 0x00, 0x03, 0x00, 0x08, 0x0
 
 /// PCI Express capability offset chained after the NVMe Power Management
 /// capability. NVMe is a PCIe endpoint; EDK2's NvmExpressDxe only binds a device
-/// that advertises a PCI Express capability (our xHCI endpoint has one and EDK2
-/// binds it, QEMU's NVMe has one and EDK2 boots it), so the NVMe endpoint must
-/// expose one too.
+/// that advertises a PCI Express capability, so the NVMe endpoint exposes one.
 pub const NVME_PCIE_CAP_OFFSET: u8 = 0x60;
 
 /// Number of MSI-X vectors exposed by the NVMe endpoint: one admin vector plus
@@ -74,28 +69,28 @@ pub const NVME_MSIX_TABLE_OFFSET: u32 = 0x2000;
 /// Offset of the MSI-X Pending Bit Array in BAR0.
 pub const NVME_MSIX_PBA_OFFSET: u32 = 0x3000;
 
-// ---- The QEMU xHCI controller endpoint (00:02.0) ---------------------------
+// ---- The xHCI controller endpoint (00:02.0) --------------------------------
 
-/// Bus/device/function QEMU uses for `qemu-xhci` in the Windows installer oracle.
+/// Stable bus/device/function for the xHCI controller.
 pub const XHCI_BDF: (u8, u8, u8) = (0, 2, 0);
 
-/// Vendor id used by QEMU's xHCI controller.
+/// Compatibility vendor id used by the existing platform version.
 pub const XHCI_VENDOR_ID: u16 = 0x1b36;
 
-/// Device id for QEMU's `qemu-xhci` endpoint.
+/// Device id for the xHCI endpoint.
 pub const XHCI_DEVICE_ID: u16 = 0x000d;
 
 /// Class code `0x0c0330`: serial bus / USB / xHCI.
 pub const XHCI_CLASS_CODE: u32 = 0x000c_0330;
 
-/// Revision id reported by QEMU's `qemu-xhci`.
+/// Revision id reported by the xHCI endpoint.
 pub const XHCI_REVISION: u8 = 0x01;
 
 pub const XHCI_SUBSYSTEM_VENDOR_ID: u16 = 0x1af4;
 
 pub const XHCI_SUBSYSTEM_ID: u16 = 0x1100;
 
-/// QEMU's 64-bit xHCI memory BAR size.
+/// 64-bit xHCI memory BAR size.
 pub const XHCI_BAR0_SIZE: u32 = 0x4000;
 
 /// PCI capability-list offset for the xHCI endpoint's MSI-X capability.
@@ -104,7 +99,7 @@ pub const XHCI_MSIX_CAP_OFFSET: u8 = 0x90;
 /// PCI Express capability offset following the MSI-X capability.
 pub const XHCI_PCIE_CAP_OFFSET: u8 = 0xa0;
 
-/// Number of MSI-X vectors exposed by QEMU's xHCI endpoint.
+/// Number of MSI-X vectors exposed by the xHCI endpoint.
 pub const XHCI_MSIX_VECTOR_COUNT: u16 = 16;
 
 /// Offset of the xHCI MSI-X table in BAR0.
@@ -118,16 +113,15 @@ pub(crate) const XHCI_PCIE_CAP_BYTES: [u8; 20] = [
     0x00, 0x00, 0x11, 0x00,
 ];
 
-// ---- The QEMU-oracle installer media endpoint (00:03.0) --------------------
+// ---- The installer-media endpoint (00:03.0) --------------------------------
 
-/// Bus/device/function QEMU uses for the Windows installer media device in the
-/// live GICv3 oracle (`virtio-blk-pci` behind the PCI root).
+/// Bus/device/function for the Windows installer-media virtio block endpoint.
 pub const VIRTIO_BLK_BDF: (u8, u8, u8) = (0, 3, 0);
 
 /// Red Hat virtio vendor id.
 pub const VIRTIO_BLK_VENDOR_ID: u16 = 0x1af4;
 
-/// Transitional virtio block device id reported by QEMU's `virtio-blk-pci`.
+/// Transitional virtio block device id from the OASIS virtio PCI assignment.
 pub const VIRTIO_BLK_DEVICE_ID: u16 = 0x1001;
 
 /// Class code `0x010000`: mass storage / SCSI storage controller.
@@ -237,8 +231,7 @@ pub const VIRTIO_GPU_MSIX_CAP_OFFSET: u8 = 0x84;
 
 /// One configuration vector plus one vector per virtio-gpu queue.
 ///
-/// This matches QEMU's virtio-gpu PCI transport and the viogpu3d KMD's fixed
-/// assignment: config=0, controlq=1, cursorq=2.
+/// The viogpu3d KMD uses the fixed assignment config=0, controlq=1, cursorq=2.
 pub const VIRTIO_GPU_MSIX_VECTOR_COUNT: u16 = 3;
 
 /// Offset of the virtio-gpu MSI-X table in BAR1.
@@ -302,14 +295,14 @@ pub const HDA_REVISION: u8 = 0x01;
 
 pub const HDA_BAR0_SIZE: u32 = crate::hda::BAR_SIZE;
 
-/// BridgeVM/QEMU-compatible subsystem identity, matching the other emulated
-/// PCI endpoints rather than claiming a physical Intel board subsystem.
+/// Compatibility subsystem identity shared by BridgeVM's virtual endpoints;
+/// it does not claim a physical Intel board subsystem.
 pub const HDA_SUBSYSTEM_VENDOR_ID: u16 = 0x1af4;
 
 pub const HDA_SUBSYSTEM_ID: u16 = 0x1100;
 
-/// QEMU's intel-hda model and Windows hdaudbus.sys expect the standard MSI
-/// capability at this fixed absolute config-space offset.
+/// Windows hdaudbus.sys expects the standard MSI capability at this fixed
+/// absolute config-space offset.
 pub const HDA_MSI_CAP_OFFSET: u8 = 0x60;
 
 /// 64-bit, single-vector standard MSI capability. Message Control starts at

@@ -33,8 +33,7 @@ pub struct NvmeController {
     /// Command-specific result for the *next* completion's DW0 (e.g. the queue
     /// count granted by SET FEATURES). Consumed when the completion is posted.
     pub(crate) last_feature_result: u32,
-    /// Current volatile write cache state. QEMU's default NVMe endpoint
-    /// advertises a present cache and boots with it enabled.
+    /// Current volatile write-cache state; Identify advertises it as present.
     pub(crate) volatile_write_cache_enabled: bool,
     /// BAR-backed MSI-X table and PBA for this endpoint.
     pub(crate) msix: MsixTable,

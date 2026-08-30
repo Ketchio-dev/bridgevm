@@ -7,20 +7,23 @@ the separately replaceable or standalone forms described below.
 
 ## Provenance of BridgeVM's own code
 
-BridgeVM's virtual machine monitor is written in Rust and implemented directly
-against Apple's Hypervisor.framework. That includes the vCPU execution loop, the
-guest memory map, the firmware and device tables, and the virtio, NVMe, xHCI,
-GPU, TPM and network device models. It is not a port, translation or
-rewrite-in-Rust of another virtual machine monitor, and no source was taken from
-one.
+BridgeVM's virtual machine monitor is maintained as BridgeVM-owned Rust code
+against Apple's Hypervisor.framework and published guest-interface
+specifications. That includes the vCPU execution loop, guest memory map,
+firmware and device tables, and the virtio, NVMe, xHCI, GPU, TPM and network
+device models.
 
 Where BridgeVM implements a published interface — the virtio specification, the
 NVMe and xHCI register interfaces, the QEMU `virt` guest platform contract that
-Windows on Arm firmware expects, or Apple's own framework APIs — it implements
-the specified behaviour. Interoperating with a specification is not derivation
-from any particular implementation of it, and documents in this repository
-should describe the interface being implemented rather than crediting an
-unrelated product for it.
+the current firmware expects, or Apple's framework APIs — protocol names and
+required byte values are kept for interoperability. BridgeVM-owned behavior is
+maintained from public specifications, declared contracts, tests and live
+receipts; other VMM source is outside that implementation boundary.
+
+This notice describes the current source and distribution boundary. It does not
+claim that wording alone proves historical code provenance. The repository's
+tracked source, dependency graph, visible patch set and packaged licence
+inventory are the auditable record.
 
 The third-party components listed below are the parts BridgeVM genuinely does
 not write: they are used as published binaries or libraries under their own

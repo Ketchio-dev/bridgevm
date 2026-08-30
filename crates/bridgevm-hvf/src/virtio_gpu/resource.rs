@@ -32,7 +32,7 @@ pub(crate) fn copy_backing_to_resource(
     }
     let stride = u64::from(resource.width) * 4;
     let row_bytes = ((x_end - rect.x) as usize) * 4;
-    // Per the virtio-gpu spec (and QEMU), `offset` locates the box's top-left
+    // Per the OASIS virtio-gpu contract, `offset` locates the box's top-left
     // (rect.x, rect.y) in the backing; source rows advance by `stride` from
     // there. So the backing offset for absolute pixel (x, y) is
     // offset + (y - rect.y) * stride + (x - rect.x) * 4 — NOT offset + y*stride

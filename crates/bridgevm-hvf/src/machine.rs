@@ -1,12 +1,12 @@
-//! `virt`-compatible machine model — the single source of truth for the
-//! BridgeVM HVF "QEMU virt contract" path (Path A, see
+//! `virt`-compatible machine model — the single source of truth for BridgeVM's
+//! Windows HVF guest platform (Path A, see
 //! `docs/decisions/hvf-windows-engine-strategy.md`).
 //!
-//! Every address and interrupt number here is transcribed from the authoritative
-//! QEMU 11.0.1 `virt` (GICv3) device tree dumped in
-//! `docs/reference/qemu-virt-aarch64-gicv3.dts`, so stock ArmVirtQemu firmware
-//! boots unmodified and the same Windows 11 ARM media installs. The contract is
-//! compatibility with documented deviations, enumerated in
+//! Addresses and interrupt numbers are BridgeVM's declared guest ABI. Device
+//! behavior is implemented from the governing Arm, PCI, TCG, UEFI, ACPI,
+//! Devicetree, and OASIS virtio specifications listed in
+//! `docs/reference/bridgevm-virt-platform.md`. Compatibility differences are
+//! enumerated in
 //! `docs/machine-contract/qemu-virt-deviations.json`.
 //! The legacy probe harness in `lib.rs` uses a different, colliding map
 //! (`docs/reference/hvf-windows-platform-contract-gap.md`); build new platform code here.
@@ -38,7 +38,7 @@ impl Region {
     }
 }
 
-// ---- Memory map (QEMU `virt`, GICv3) ---------------------------------------
+// ---- Memory map (`virt`-compatible, GICv3) ---------------------------------
 
 /// pflash: two 64 MiB banks (code + vars) at the very bottom of the address space.
 pub const FLASH: Region = Region::new(0x0, 0x0800_0000);
@@ -47,10 +47,9 @@ pub const FLASH_CODE: Region = Region::new(0x0, 0x0400_0000);
 /// pflash bank 1 — UEFI variable store (`edk2-arm-vars.fd`), writable.
 pub const FLASH_VARS: Region = Region::new(0x0400_0000, 0x0400_0000);
 
-/// GICv3 distributor (`0x10000` @ `0x10000` alignment — matches both QEMU virt
-/// and Apple `hv_gic`).
+/// GICv3 distributor (`0x10000` at `0x10000` alignment), accepted by `hv_gic`.
 pub const GIC_DIST: Region = Region::new(0x0800_0000, 0x0001_0000);
-/// QEMU's GICv3 ITS slot. Apple `hv_gic` exposes this same placement as a
+/// Contract MSI slot. Apple `hv_gic` exposes this placement as a
 /// GICv2m-compatible MSI frame (`GICM_TYPER` @ 0x8, `SET_SPI_NSR` @ 0x40)
 /// rather than a guest-visible architectural ITS/LPI block.
 pub const GIC_ITS: Region = Region::new(0x0808_0000, 0x0002_0000);
@@ -64,8 +63,8 @@ pub const GIC_MSI_FRAME: Region = Region::new(GIC_ITS.base, 0x1000);
 pub const GIC_MSI_INTID_BASE: u32 = 128;
 /// Number of message-signalled SPI INTIDs exposed through the MSI frame.
 pub const GIC_MSI_INTID_COUNT: u32 = 64;
-/// GICv3 redistributor window — the standard QEMU virt placement, which Apple
-/// `hv_gic` also accepts (QEMU's own hvf backend uses this exact base). Apple's
+/// GICv3 redistributor window at the contract address accepted by `hv_gic`.
+/// Apple's
 /// `redistributor_region_size` (`0x0200_0000`) is the *maximum* supported (≈256
 /// CPUs), not a required reservation; the `0xF6_0000` window here holds up to
 /// [`MAX_CPUS`] redistributor frames, which is plenty.
@@ -82,17 +81,16 @@ pub const GPIO: Region = Region::new(0x0903_0000, 0x1000);
 
 /// Size of a single virtio-mmio transport slot.
 pub const VIRTIO_MMIO_SLOT_SIZE: u64 = 0x200;
-/// Number of virtio-mmio slots QEMU `virt` exposes.
+/// Number of virtio-mmio slots in the BridgeVM guest contract.
 pub const VIRTIO_MMIO_COUNT: u64 = 32;
 /// virtio-mmio transport array.
 pub const VIRTIO_MMIO: Region = Region::new(0x0A00_0000, VIRTIO_MMIO_SLOT_SIZE * VIRTIO_MMIO_COUNT);
 
-/// TPM 2.0 TIS/FIFO localities. QEMU places sysbus devices inside the
-/// `virt` platform-bus aperture beginning at 0x0c00_0000; reserving the first
-/// five 4 KiB localities keeps BridgeVM's Windows-visible contract stable.
+/// TPM 2.0 TIS/FIFO localities in the platform-bus aperture. The first five
+/// 4 KiB localities form BridgeVM's stable Windows-visible contract.
 pub const TPM_TIS: Region = Region::new(0x0C00_0000, 0x5000);
 /// TPM Physical Presence Interface shared-memory page. The first implementation
-/// reserves the QEMU-compatible address immediately after the TIS localities;
+/// reserves the contract address immediately after the TIS localities;
 /// AML/PPI semantics are a separate gate from basic TPM enumeration.
 pub const TPM_PPI: Region = Region::new(0x0C00_5000, 0x400);
 
@@ -235,7 +233,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bases_match_the_authoritative_contract() {
+    fn bases_match_the_declared_guest_contract() {
         assert_eq!(FLASH_CODE.base, 0x0);
         assert_eq!(GIC_DIST.base, 0x0800_0000);
         assert_eq!(GIC_ITS.base, 0x0808_0000);

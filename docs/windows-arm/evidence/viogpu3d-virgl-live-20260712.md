@@ -70,8 +70,8 @@ with status zero.
 
 The final v18 compatibility run is preserved at
 `/Users/user/BridgeVM/viogpu3d-dev1050-legacy-virgl-proof-20260712-v18`.
-It matches QEMU's legacy VirGL wire behavior by retaining five renderer-side
-submit diagnostics in the host log without converting them into guest-visible
+It uses the retained legacy VirGL compatibility policy: five renderer-side
+submit diagnostics stay in the host log without becoming guest-visible
 `SUBMIT_3D` failures. Across 11,846 trace events there were zero virtio-gpu
 error responses, the required trace and resident-agent gates both returned
 status zero, and the 30-second desktop PNG has SHA-256
