@@ -45,6 +45,19 @@ before verifying the reproducible digest. Its output is a development-only DXE
 driver, not a bootable firmware volume. It does not establish reset-vector,
 UEFI-service, installer or Windows boot support.
 
+The same package now contains the first BridgeVM-owned reset entry. It builds a
+64 MiB development flash image with executable code at the board's fixed GPA
+zero:
+
+```sh
+scripts/build-bridgevm-pc-reset-vector.sh /path/to/output
+```
+
+The reset code masks interrupts, parks non-boot CPUs, validates the fixed
+`BVMBOOT1` handoff magic and leaves a bounded result in system RAM. This image
+establishes only the reset-vector/flash skeleton. It contains no SEC, PEI, DXE
+core, UEFI services, variables, boot manager or Windows loader.
+
 ## Rebuild the product firmware
 ```
 git clone --recurse-submodules --branch edk2-stable202605 \

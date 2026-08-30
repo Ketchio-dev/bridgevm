@@ -12,11 +12,10 @@ if rg -n -i 'qemu|armvirt|ovmf|fw[_-]?cfg|u[t]m' "$PKG"; then
   echo "FAIL: BridgeVmPcPkg references a prohibited compatibility platform" >&2
   exit 1
 fi
-if find "$PKG" -type f ! \( -name '*.c' -o -name '*.h' -o -name '*.dec' -o -name '*.dsc' -o -name '*.inf' \) | grep -q .; then
+if find "$PKG" -type f ! \( -name '*.c' -o -name '*.h' -o -name '*.dec' -o -name '*.dsc' -o -name '*.inf' -o -name '*.S' -o -name '*.ld' \) | grep -q .; then
   echo "FAIL: BridgeVmPcPkg contains an unapproved file type" >&2
   exit 1
 fi
-
 required_header_values=(
   '#define BRIDGE_VM_PC_BOOT_INFO_BASE           0x26000000ULL'
   '#define BRIDGE_VM_PC_BOOT_INFO_SIZE           0x00010000U'
@@ -47,4 +46,5 @@ awk '/^[[:space:]]+[A-Za-z0-9]+Pkg\/.*\.dec$/ {print $1}' \
   "$PKG/Drivers/PlatformTablesDxe/PlatformTablesDxe.inf" |
   diff -u - <(printf '%s\n' MdePkg/MdePkg.dec BridgeVmPcPkg/BridgeVmPcPkg.dec)
 bash -n "$ROOT/scripts/build-bridgevm-pc-edk2-consumer.sh"
+"$ROOT/scripts/check-bridgevm-pc-reset-vector-boundary.sh"
 echo "PASS: BridgeVmPcPkg uses only its versioned ABI and approved generic EDK2 boundary"

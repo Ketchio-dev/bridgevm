@@ -32,10 +32,10 @@ TEST_FN = re.compile(r"#\[test\]\s*\n\s*(?:async\s+)?fn\s+(\w+)", re.M)
 # built outside this repository, so they are optional.
 SUITES = [
     (["test", "--workspace", "--locked"], True),
-    (["test", "-p", "bridgevm-hvf", "--example", "hvf_gic_boot_probe", "--locked"], True),
-    (["test", "-p", "bridgevm-hvf", "--example", "hvf_vtimer_cancel_probe", "--locked"], True),
-    (["test", "-p", "bridgevm-hvf", "--example", "bridgevm_pc_irq_live", "--locked"], True),
-    (["test", "-p", "bridgevm-hvf", "--example", "bridgevm_pc_boot_info_live", "--locked"], True),
+    *[
+        (["test", "-p", "bridgevm-hvf", "--example", example, "--locked"], True)
+        for example in ("hvf_gic_boot_probe", "hvf_vtimer_cancel_probe", "bridgevm_pc_irq_live", "bridgevm_pc_boot_info_live", "bridgevm_pc_reset_vector_live")
+    ],
     (["test", "-p", "bridgevm-hvf", "--features", "venus", "--lib", "--locked"], False),
     (
         ["test", "-p", "bridgevm-hvf", "--features", "venus", "--example",
