@@ -102,8 +102,20 @@ or smoke does not imply universal game/API compatibility.
 
 ## Distribution
 
+BridgeVM now defines two non-overlapping distribution channels. The **General
+Preview** is the only user-facing artifact: it is 3D-off, contains no Windows
+kernel package, does not require TESTSIGNING, and does not weaken Secure Boot
+policy. **Graphics Lab** is a separate contributor workflow for hash-sealed,
+test-signed experiments on disposable guests; it is not a consumer edition and
+cannot satisfy A9.
+
+The published `v1.0.0` predates the current A9 fail-closed boundary and is not
+recommended. A safe successor must carry a machine-readable
+`BridgeVM-release.json` contract. The terminal installer refuses any release
+without that contract, even if its archive checksum is otherwise valid.
+
 BridgeVM does not need Developer ID signing or Apple notarization to remain
-usable. The repository has an ad-hoc-signing development path, and the packaging
+technically usable. The repository has an ad-hoc-signing path, and the packaging
 path produces a DMG without paid Apple credentials.
 
 Users may need to explicitly trust/open the downloaded app in macOS.
@@ -112,20 +124,20 @@ This is a distribution/trust UX limitation, not a VMM execution requirement.
 BridgeVM does not redistribute Windows. Users supply their own Windows 11 Arm
 media and license.
 
-Experimental Windows graphics packages can have a separate signing constraint.
-The current test-driver activation flow stages the package and performs live
-Windows TESTSIGNING/certificate/bind/reboot steps. Windows may reject enabling
-test mode when Secure Boot policy prevents the BCD change; that case must remain
-an explicit error instead of silently weakening security.
+Experimental Windows graphics packages have a separate signing constraint and
+remain confined to Graphics Lab. Windows may reject test mode when Secure Boot
+policy prevents the BCD change; that case remains an explicit error instead of
+silently weakening security.
 
 Production Windows driver signing remains a future usability/distribution
 milestone for users who should not need test mode. It is not made unnecessary by
 using a user-provided ISO, because ISO ownership and kernel-driver trust are
 separate concerns.
 
-## Known limitations in 1.0
+## Known limitations
 
-The 1.0 boundary is the proven evidence set, not universal compatibility:
+The Engineering Preview boundary is the proven evidence set, not universal
+compatibility:
 
 - GPU compatibility is much narrower than "all Vulkan/D3D11 software";
 - driver setup and recovery remain developer-oriented;
@@ -149,14 +161,15 @@ The 1.0 boundary is the proven evidence set, not universal compatibility:
 The highest-value work from this point is:
 
 1. keep the ad-hoc DMG deterministic, license-complete, and easy to verify;
-2. keep README/status/documentation consistent with the capability registry;
-3. simplify user-supplied Windows ISO installation and driver setup;
-4. make test-signing/Secure Boot conflicts explicit in the UI and diagnostics;
-5. broaden real application compatibility and collect frame-time rather than
+2. publish a fail-closed General Preview successor to the historical `v1.0.0`;
+3. keep README/status/documentation consistent with the capability registry;
+4. simplify user-supplied Windows ISO installation while keeping it 3D-off;
+5. keep test-signing/Secure Boot conflicts isolated to Graphics Lab;
+6. broaden real application compatibility and collect frame-time rather than
    average-FPS-only data;
-6. run longer graphics/reset/resize/recovery soak coverage;
-7. improve clean-machine install, diagnostics export, and recovery UX;
-8. re-run the final no-regression gate at each preview tag/head.
+7. run longer graphics/reset/resize/recovery soak coverage;
+8. improve clean-machine install, diagnostics export, and recovery UX;
+9. re-run the final no-regression gate at each preview tag/head.
 
 Developer ID/notarization, production Windows driver signing, and stronger
 artifact provenance can be added later without blocking technical users from

@@ -38,6 +38,7 @@ step "capability registry" python3 scripts/render-capability-status.py --check
 step "contract and schema json" json_valid docs/machine-contract/qemu-virt-deviations.json schemas/bridgevm-capability-v1.json
 step "capability evidence" python3 scripts/check-capability-evidence.py
 step "capability test counts" python3 scripts/check-capability-test-counts.py
+step "general preview manifest" python3 scripts/generate-general-preview-manifest.py --self-test
 step "documentation system" bash scripts/check-documentation-system.sh
 step "documentation references" python3 scripts/check-doc-references.py
 step "structural budgets" scripts/check-refactor-budgets.sh
@@ -53,7 +54,6 @@ step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 step "install verify" bash tests/integration/install-verify-smoke.sh
-
 # --- formatting --------------------------------------------------------------
 step "rustfmt" cargo "$TOOLCHAIN" fmt --all --check
 

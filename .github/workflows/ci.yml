@@ -190,6 +190,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: capability registry is valid and generated blocks are current
         run: python3 scripts/render-capability-status.py --check
+      - name: general preview release contract is fail-closed
+        run: python3 scripts/generate-general-preview-manifest.py --self-test
       - name: machine contract and schema are valid JSON
         run: |
           python3 -m json.tool docs/machine-contract/qemu-virt-deviations.json >/dev/null

@@ -16,35 +16,10 @@ WORK=$(mktemp -d "/tmp/bridgevm-install.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 VERSION="v9.9.9"
 TARBALL="BridgeVM-$VERSION.tar.gz"
+RELEASE_MANIFEST="BridgeVM-release.json"
 pass=0 fail=0
-
-make_bundle() { # $1: dir to create BridgeVM.app in, $2: bundle id
-  local app="$1/BridgeVM.app"
-  mkdir -p "$app/Contents/MacOS"
-  cat > "$app/Contents/Info.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>CFBundleIdentifier</key><string>$2</string>
-  <key>CFBundleExecutable</key><string>bridgevm</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-</dict></plist>
-EOF
-  cp /bin/ls "$app/Contents/MacOS/bridgevm"
-  codesign --force --sign - "$app" >/dev/null 2>&1
-}
-
-make_assets() { # $1: asset dir, $2: dir containing BridgeVM.app (release shape)
-  mkdir -p "$1"
-  tar -czf "$1/$TARBALL" -C "$2" "BridgeVM.app"
-  (cd "$1" && shasum -a 256 "$TARBALL" > SHA256SUMS)
-}
-
-run_installer() { # $1: asset dir, $2: dest, then extra args
-  local assets="$1" dest="$2"; shift 2
-  BRIDGEVM_INSTALL_ASSET_DIR="$assets" BRIDGEVM_INSTALL_VERSION="$VERSION" \
-    bash scripts/install-bridgevm.sh --dest "$dest" "$@"
-}
+# shellcheck source=tests/integration/install-release-fixtures.sh
+source tests/integration/install-release-fixtures.sh
 
 check() { # $1: name, $2: expected exit (ok|fail), then command...
   local name="$1" expect="$2"; shift 2
@@ -88,6 +63,30 @@ NO_ENTRY="$WORK/no-entry"; cp -R "$GOOD_ASSETS" "$NO_ENTRY"
 : > "$NO_ENTRY/SHA256SUMS"
 check "missing checksum entry refuses" fail run_installer "$NO_ENTRY" "$DEST"
 
+LEGACY="$WORK/legacy-assets"; cp -R "$GOOD_ASSETS" "$LEGACY"
+rm "$LEGACY/$RELEASE_MANIFEST"
+check "legacy release without channel contract refuses" fail run_installer "$LEGACY" "$DEST"
+
+WRONG_CHANNEL="$WORK/wrong-channel"; cp -R "$GOOD_ASSETS" "$WRONG_CHANNEL"
+python3 - "$WRONG_CHANNEL/$RELEASE_MANIFEST" <<'EOF'
+import json, sys
+path = sys.argv[1]; value = json.load(open(path)); value["channel"] = "graphics-lab"
+open(path, "w").write(json.dumps(value))
+EOF
+write_sums "$WRONG_CHANNEL"
+check "experimental channel contract refuses" fail run_installer "$WRONG_CHANNEL" "$DEST"
+
+DRIVER_INCLUDED="$WORK/driver-included"; cp -R "$GOOD_ASSETS" "$DRIVER_INCLUDED"
+python3 - "$DRIVER_INCLUDED/$RELEASE_MANIFEST" <<'EOF'
+import json, sys
+path = sys.argv[1]; value = json.load(open(path))
+value["windows_graphics"]["kernel_driver_included"] = True
+open(path, "w").write(json.dumps(value))
+EOF
+write_sums "$DRIVER_INCLUDED"
+check "general preview carrying a kernel driver refuses" fail \
+  run_installer "$DRIVER_INCLUDED" "$DEST"
+
 # --- bundle identity and signature failures ----------------------------------
 WRONG_ID="$WORK/wrong-id-content"; mkdir -p "$WRONG_ID"
 make_bundle "$WRONG_ID" "dev.evil.impostor"
@@ -111,7 +110,7 @@ with tarfile.open(path, "w:gz") as tf:
     info = tarfile.TarInfo("../escape"); info.size = len(data)
     tf.addfile(info, io.BytesIO(data))
 EOF
-(cd "$TRAV" && shasum -a 256 "$TARBALL" > SHA256SUMS)
+make_manifest "$TRAV"; write_sums "$TRAV"
 check "path traversal refuses" fail run_installer "$TRAV" "$DEST"
 
 ABS="$WORK/abs-assets"; mkdir -p "$ABS"
@@ -121,7 +120,7 @@ with tarfile.open(sys.argv[1], "w:gz") as tf:
     info = tarfile.TarInfo("/tmp/absolute-escape"); data = b"x"
     info.size = len(data); tf.addfile(info, io.BytesIO(data))
 EOF
-(cd "$ABS" && shasum -a 256 "$TARBALL" > SHA256SUMS)
+make_manifest "$ABS"; write_sums "$ABS"
 check "absolute path refuses" fail run_installer "$ABS" "$DEST"
 
 SYM="$WORK/sym-content"; mkdir -p "$SYM"
@@ -136,7 +135,7 @@ echo x > "$TWO/extra-file"
 TWO_ASSETS="$WORK/two-assets"
 mkdir -p "$TWO_ASSETS"
 tar -czf "$TWO_ASSETS/$TARBALL" -C "$TWO" "BridgeVM.app" "extra-file"
-(cd "$TWO_ASSETS" && shasum -a 256 "$TARBALL" > SHA256SUMS)
+make_manifest "$TWO_ASSETS"; write_sums "$TWO_ASSETS"
 check "extra archive entries refuse" fail run_installer "$TWO_ASSETS" "$DEST"
 
 # --- destination and rollback ------------------------------------------------

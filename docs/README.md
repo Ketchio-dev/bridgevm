@@ -13,6 +13,10 @@ win.
 
 - [Project overview](../README.md) — what BridgeVM is, current capability state,
   quick start, preview distribution, and repository map.
+- [Install and update](install.md) — verified one-command install, DMG path,
+  source build, rollback, and uninstall.
+- [Distribution channels](distribution-channels.md) — General Preview versus
+  the isolated Graphics Lab security boundary.
 - [Current status](../STATUS.md) — concise evidence-backed product boundary.
 - [Windows capability matrix](windows-arm/capability-matrix.md) — fixed criteria,
   thresholds, measurements, and evidence paths.

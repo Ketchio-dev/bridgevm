@@ -940,6 +940,8 @@ crates/bridgevm-hvf/src/userspace_gic/mmio_regs.rs	352	0
 crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	387	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	477	13
 scripts/install-bridgevm.sh	209	0
+scripts/generate-general-preview-manifest.py	117	0
+tests/integration/install-release-fixtures.sh	42	0
 scripts/live-gates/run-a3-title-tier.sh	90	0
 scripts/live-gates/run-windows-closure-tier.sh	116	0
 scripts/live-gates/a3-title-manifest.sh	47	0
@@ -1334,7 +1336,7 @@ tests/integration/hvf-windows-vtpm-live-evidence-verifier-smoke.sh	131	0
 tests/integration/lifecycle-plan-cli-smoke.sh	141	0
 tests/integration/lifecycle-restart-cli-smoke.sh	134	0
 tests/integration/lifecycle-suspend-resume-cli-smoke.sh	157	0
-tests/integration/install-verify-smoke.sh	181	0
+tests/integration/install-verify-smoke.sh	180	0
 tests/integration/b4-sealed-submit-smoke.sh	18	0
 tests/integration/live-gate-policy-smoke.sh	308	0
 tests/integration/qmp-stress-live-tier-smoke.sh	23	0

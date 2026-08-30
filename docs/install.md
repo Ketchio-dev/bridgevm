@@ -1,31 +1,40 @@
 # Installing BridgeVM
 
-BridgeVM 1.0 runs Windows 11 ARM on Apple Silicon Macs (M1 or later). It is
-distributed without an Apple Developer ID, which changes nothing about what the
-app can do and one thing about how you first open it. Both supported install
-paths are below, with the honest trade-off of each.
+BridgeVM runs Windows 11 Arm on Apple-silicon Macs (M1 or later). The General
+Preview is distributed without an Apple Developer ID and is not notarized. That
+changes how macOS establishes trust on first open; it does not authorize Windows
+test drivers. General Preview installs and imports Windows in 3D-off mode.
+
+> [!WARNING]
+> The published `v1.0.0` predates the current fail-closed driver policy and is
+> no longer recommended. It has no General Preview channel manifest, so the
+> installer below refuses it. Until a successor is published, use the
+> [current-source build](#build-the-current-source) instead.
 
 ## Path 1 — terminal installer (recommended)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash -s -- --launch
 ```
 
 The bootstrap fetches the full installer at a pinned SHA-256 and refuses to run
 anything else. The installer then fails closed at every step:
 
-1. resolves the release and the exact expected asset name (drafts and
-   prereleases are refused);
-2. downloads the tarball and the release `SHA256SUMS`, and verifies the
-   tarball's checksum before opening it;
-3. audits the archive before extraction — absolute paths, `..` entries,
+1. selects the newest non-draft, non-prerelease release carrying
+   `BridgeVM-release.json`;
+2. verifies that the release contract identifies a 3D-off General Preview with
+   no Windows kernel driver, no TESTSIGNING requirement, and no product driver
+   injection;
+3. downloads the tarball and `SHA256SUMS`, then verifies both the contract and
+   tarball before opening the archive;
+4. audits the archive before extraction — absolute paths, `..` entries,
    anything outside a single `BridgeVM.app`, and symlinks escaping the bundle
    are all refused;
-4. verifies `codesign --verify --deep --strict`, the bundle identifier, the
+5. verifies `codesign --verify --deep --strict`, the bundle identifier, the
    declared executable, and that the binary is Apple Silicon native;
-5. stages the verified app next to the destination, moves your existing app to
+6. stages the verified app next to the destination, moves your existing app to
    a backup, renames the new app into place, and re-verifies it there;
-6. on any failure after your old app was moved, the old app is restored
+7. on any failure after your old app was moved, the old app is restored
    automatically. On success the backup is removed unless you pass
    `--keep-backup`.
 
@@ -36,7 +45,7 @@ Useful options (forwarded through the one-liner with `bash -s --`):
 
 ```text
 --version <tag>   install an exact release (e.g. v1.0.0)
---latest          latest non-draft release (default)
+--latest          latest verified General Preview (default)
 --dry-run         verify everything, install nothing
 --dest <dir>      install somewhere other than /Applications
 --keep-backup     keep the previous app as a .backup bundle
@@ -62,10 +71,11 @@ without the Gatekeeper dialog. That is a UX property, not a security property �
 the integrity guarantees come from the checks above, not from skipping
 quarantine.
 
-## Path 2 — dmg from the Releases page
+## Path 2 — DMG from the Releases page
 
-Download the `.dmg` from the latest GitHub Release, verify it, open it, and
-drag BridgeVM into Applications:
+Download the `.dmg`, `BridgeVM-release.json`, and `SHA256SUMS` from a release
+identified as **General Preview**. Do not use the historical `v1.0.0`. Verify
+the DMG, open it, and drag BridgeVM into Applications:
 
 ```sh
 shasum -a 256 BridgeVM-*.dmg   # compare against SHA256SUMS on the release
@@ -87,11 +97,28 @@ on current macOS, so the Settings route is the real one.
 - A Windows 11 ARM64 ISO. The app guides you through Microsoft's official
   download; nothing is fetched from third-party mirrors.
 - About 64 GiB of free disk for the guest image.
-- The experimental accelerated-graphics driver is test-signed; enabling it
-  requires Windows test-signing mode, which Windows may refuse while Secure
-  Boot policy blocks the change. BridgeVM reports that conflict explicitly
-  before anything is weakened; see
-  [`scripts/win-assets/DRIVERS-README.md`](../scripts/win-assets/DRIVERS-README.md).
+- No graphics-driver package is needed or accepted by the General Preview.
+  Windows-HVF creation shows that 3D injection is unavailable and proceeds
+  without it.
+
+## Build the current source
+
+Use this path while the safe successor to `v1.0.0` is still being prepared, or
+whenever you want to inspect exactly what you run:
+
+```sh
+git clone https://github.com/Ketchio-dev/bridgevm.git
+cd bridgevm
+cargo build --workspace --locked
+swift build --package-path apps/macos
+packaging/macos/build-debug-app-bundle.sh
+open target/macos/BridgeVMApp.app
+```
+
+This produces a local ad-hoc-signed development app. It does not turn the
+checkout into release evidence. Contributors should follow
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) and run the appropriate deterministic
+checks.
 
 ## Updating, rolling back, uninstalling
 
@@ -113,3 +140,9 @@ on current macOS, so the Settings route is the real one.
   `codesign --verify --deep --strict /Applications/BridgeVM.app`.
 - macOS may quarantine the app if you copy it through a browser-synced folder;
   use the System Settings "Open Anyway" flow above if the block appears.
+- The checksum and ad-hoc signature establish artifact integrity relative to
+  the GitHub release; they do not establish a Developer ID publisher identity.
+
+Graphics-driver development is a separate, opt-in test environment. It is not
+an installation option in the General Preview; see the
+[distribution channel contract](distribution-channels.md).

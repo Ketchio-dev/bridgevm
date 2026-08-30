@@ -75,6 +75,7 @@ docs/windows-arm/evidence/a5-a6-a7-live-20260817.md	current	windows-guest-integr
 docs/windows-arm/evidence/a19-snapshot-restore-20260805.md	current	windows-storage	-
 docs/windows-arm/evidence/a17-live-queue-receipts-20260805.md	current	testing	-
 docs/install.md	current	user-installation	-
+docs/distribution-channels.md	current	distribution-policy	-
 docs/windows-arm/iso-download-spike-20260817.md	current	windows-install	-
 docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md	current	windows-graphics	GOAL.md
 docs/windows-arm/snapshot-scope-v1.md	current	windows-snapshots	-
