@@ -44,7 +44,7 @@ awk '/^[[:space:]]+[A-Za-z0-9]+Pkg\/.*\.dec$/ {print $1}' \
 grep -Fq 'b03a21a63e3bd001f52c527e5a57feddb53a690b' "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh"
 grep -Fq 'MdeModulePkg/Core/Dxe/DxeMain.inf' "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh"
 grep -Fq '022e09f7e60c3f1cf5b1416a66714b642714e827ba085957383ea3264f3f4ed6' "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh"
-grep -Fq 'BridgeVmPcDxeProbe.efi' "$ROOT/scripts/build-bridgevm-pc-dxe-entry-firmware.sh"
+grep -Fq 'BridgeVmPcDxeProbe.efi' "$ROOT/scripts/build-bridgevm-pc-dxe-entry-firmware.sh" && grep -Fq '#define READ_HEADER32' "$PKG/Drivers/PlatformTablesDxe/AcpiValidation.c" && ! grep -Eq 'Table->(Length|Signature)' "$PKG/Drivers/PlatformTablesDxe/AcpiValidation.c"
 bash -n "$ROOT/scripts/build-bridgevm-pc-edk2-consumer.sh" "$ROOT/scripts/build-bridgevm-pc-dxe-core-fv.sh" "$ROOT/scripts/build-bridgevm-pc-dxe-entry-firmware.sh"
 "$ROOT/scripts/check-bridgevm-pc-reset-vector-boundary.sh"
 echo "PASS: BridgeVmPcPkg uses only its versioned ABI and approved generic EDK2 boundary"

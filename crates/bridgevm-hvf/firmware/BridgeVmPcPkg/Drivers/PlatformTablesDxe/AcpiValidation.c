@@ -8,9 +8,11 @@
 #include <IndustryStandard/Acpi65.h>
 #include <Library/BaseLib.h>
 #include <BridgeVmPc/BootInfo.h>
-
 #include "PlatformTablesDxe.h"
 
+#define READ_HEADER32(Table, Field) \
+  ReadUnaligned32 ((CONST UINT32 *)((CONST UINT8 *)(Table) + \
+                   OFFSET_OF (EFI_ACPI_DESCRIPTION_HEADER, Field)))
 STATIC
 BOOLEAN
 ChecksumIsZero (
@@ -21,16 +23,13 @@ ChecksumIsZero (
   CONST UINT8  *Bytes;
   UINT8        Sum;
   UINTN        Index;
-
   Bytes = Buffer;
   Sum   = 0;
   for (Index = 0; Index < Length; Index++) {
     Sum = (UINT8)(Sum + Bytes[Index]);
   }
-
   return Sum == 0;
 }
-
 STATIC
 BOOLEAN
 RangeWithin (
@@ -41,15 +40,12 @@ RangeWithin (
   )
 {
   UINT64  Offset;
-
   if ((Length == 0) || (Address < Base)) {
     return FALSE;
   }
-
   Offset = Address - Base;
   return (Offset <= Size) && (Length <= (Size - Offset));
 }
-
 STATIC
 UINT8
 AcpiTableBit (
@@ -75,7 +71,6 @@ AcpiTableBit (
       return 0;
   }
 }
-
 EFI_STATUS
 BridgeVmPcValidateAcpi (
   IN CONST BRIDGE_VM_PC_BOOT_INFO  *BootInfo
@@ -90,9 +85,10 @@ BridgeVmPcValidateAcpi (
   UINT64                                               TableAddress;
   UINTN                                                EntryCount;
   UINTN                                                Index;
+  UINT32                                               TableLength;
+  UINT32                                               TableSignature;
   UINT8                                                TableBit;
   UINT8                                                SeenTables;
-
   Rsdp = (CONST VOID *)(UINTN)BootInfo->RsdpGpa;
   if ((BootInfo->RsdpLength != sizeof (*Rsdp)) ||
       (Rsdp->Signature != EFI_ACPI_6_5_ROOT_SYSTEM_DESCRIPTION_POINTER_SIGNATURE) ||
@@ -104,22 +100,21 @@ BridgeVmPcValidateAcpi (
   {
     return EFI_COMPROMISED_DATA;
   }
-
-  Xsdt = (CONST VOID *)(UINTN)BootInfo->AcpiTablesGpa;
-  if ((Xsdt->Signature != EFI_ACPI_6_5_EXTENDED_SYSTEM_DESCRIPTION_TABLE_SIGNATURE) ||
-      (Xsdt->Length < sizeof (*Xsdt)) ||
-      (Xsdt->Length > BootInfo->AcpiTablesLength) ||
-      (((Xsdt->Length - sizeof (*Xsdt)) % sizeof (UINT64)) != 0) ||
-      !ChecksumIsZero (Xsdt, Xsdt->Length))
+  Xsdt           = (CONST VOID *)(UINTN)BootInfo->AcpiTablesGpa;
+  TableLength    = READ_HEADER32 (Xsdt, Length);
+  TableSignature = READ_HEADER32 (Xsdt, Signature);
+  if ((TableSignature != EFI_ACPI_6_5_EXTENDED_SYSTEM_DESCRIPTION_TABLE_SIGNATURE) ||
+      (TableLength < sizeof (*Xsdt)) ||
+      (TableLength > BootInfo->AcpiTablesLength) ||
+      (((TableLength - sizeof (*Xsdt)) % sizeof (UINT64)) != 0) ||
+      !ChecksumIsZero (Xsdt, TableLength))
   {
     return EFI_COMPROMISED_DATA;
   }
-
-  EntryCount = (Xsdt->Length - sizeof (*Xsdt)) / sizeof (UINT64);
+  EntryCount = (TableLength - sizeof (*Xsdt)) / sizeof (UINT64);
   if (EntryCount != 7) {
     return EFI_COMPROMISED_DATA;
   }
-
   Fadt       = NULL;
   SeenTables = 0;
   for (Index = 0; Index < EntryCount; Index++) {
@@ -137,27 +132,29 @@ BridgeVmPcValidateAcpi (
       return EFI_COMPROMISED_DATA;
     }
 
-    Table = (CONST VOID *)(UINTN)TableAddress;
-    if ((Table->Length < sizeof (*Table)) ||
+    Table          = (CONST VOID *)(UINTN)TableAddress;
+    TableLength    = READ_HEADER32 (Table, Length);
+    TableSignature = READ_HEADER32 (Table, Signature);
+    if ((TableLength < sizeof (*Table)) ||
         !RangeWithin (
            TableAddress,
-           Table->Length,
+           TableLength,
            BootInfo->AcpiTablesGpa,
            BootInfo->AcpiTablesLength
            ) ||
-        !ChecksumIsZero (Table, Table->Length))
+        !ChecksumIsZero (Table, TableLength))
     {
       return EFI_COMPROMISED_DATA;
     }
 
-    TableBit = AcpiTableBit (Table->Signature);
+    TableBit = AcpiTableBit (TableSignature);
     if ((TableBit == 0) || ((SeenTables & TableBit) != 0)) {
       return EFI_COMPROMISED_DATA;
     }
 
     SeenTables = (UINT8)(SeenTables | TableBit);
-    if (Table->Signature == EFI_ACPI_6_5_FIXED_ACPI_DESCRIPTION_TABLE_SIGNATURE) {
-      if (Table->Length != sizeof (*Fadt)) {
+    if (TableSignature == EFI_ACPI_6_5_FIXED_ACPI_DESCRIPTION_TABLE_SIGNATURE) {
+      if (TableLength != sizeof (*Fadt)) {
         return EFI_COMPROMISED_DATA;
       }
 
@@ -186,16 +183,18 @@ BridgeVmPcValidateAcpi (
     return EFI_COMPROMISED_DATA;
   }
 
-  Dsdt = (CONST VOID *)(UINTN)DsdtAddress;
-  if ((Dsdt->Signature != SIGNATURE_32 ('D', 'S', 'D', 'T')) ||
-      (Dsdt->Length < sizeof (*Dsdt)) ||
+  Dsdt           = (CONST VOID *)(UINTN)DsdtAddress;
+  TableLength    = READ_HEADER32 (Dsdt, Length);
+  TableSignature = READ_HEADER32 (Dsdt, Signature);
+  if ((TableSignature != SIGNATURE_32 ('D', 'S', 'D', 'T')) ||
+      (TableLength < sizeof (*Dsdt)) ||
       !RangeWithin (
          DsdtAddress,
-         Dsdt->Length,
+         TableLength,
          BootInfo->AcpiTablesGpa,
          BootInfo->AcpiTablesLength
          ) ||
-      !ChecksumIsZero (Dsdt, Dsdt->Length))
+      !ChecksumIsZero (Dsdt, TableLength))
   {
     return EFI_COMPROMISED_DATA;
   }

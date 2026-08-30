@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Opt-in live proof for BridgeVM PC reset-to-DXE Core dispatch.
+# Opt-in live proof for BridgeVM PC ACPI/SMBIOS publication in DXE.
 set -euo pipefail
 
 if [[ "${BRIDGEVM_HVF_ALLOW_LIVE_BRIDGEVM_PC_DXE_ENTRY:-0}" != "1" ]]; then
-  echo "SKIP: set BRIDGEVM_HVF_ALLOW_LIVE_BRIDGEVM_PC_DXE_ENTRY=1 to run the BridgeVM PC DXE-entry proof"
+  echo "SKIP: set BRIDGEVM_HVF_ALLOW_LIVE_BRIDGEVM_PC_DXE_ENTRY=1 to run the BridgeVM PC DXE platform-table proof"
   exit 0
 fi
 if [[ "$(sysctl -n kern.hv_support 2>/dev/null || echo 0)" != "1" ]]; then
@@ -32,11 +32,11 @@ codesign --sign - --entitlements "$ENT" --force "$BIN"
 
 OUT="$($BIN "$FD")"
 echo "$OUT"
-echo "$OUT" | grep -q "BridgeVM Virtual ARM PC DXE-dispatch probe: PASS"
+echo "$OUT" | grep -q "BridgeVM Virtual ARM PC platform-table DXE probe: PASS"
 echo "$OUT" | grep -q "board=com.ketchio.bridgevm.virtual-arm-pc abi=1"
 echo "$OUT" | grep -q "reset_vector=0x0 firmware_size=0x4000000 ram=0x100000000"
-echo "$OUT" | grep -Eq "sec_result=1 hob_count=7 hob_list_gpa=0x100004000 hob_list_size=272 dxe_result=8 system_table=0x[0-9a-f]+ system_table_signature=0x5453595320494249"
-echo "$OUT" | grep -q "firmware_sha256=57c134b8f3f42bb9bb020936d4d87926b0d6563bfa0339bb110996a6e4ed6da6"
-echo "$OUT" | grep -q "LIVE PROOF: DXE Core created the UEFI system table and dispatched the BridgeVM probe"
+echo "$OUT" | grep -Eq "sec_result=1 hob_count=7 hob_list_gpa=0x100004000 hob_list_size=272 dxe_result=8 system_table=0x[0-9a-f]+ configuration_entries=[0-9]+ acpi=0x26001000 smbios=0x2600c000"
+echo "$OUT" | grep -q "firmware_sha256=1227e77889f26cb19c0e2fef2b446b727c39fa652b863c21474692dd65128873"
+echo "$OUT" | grep -q "LIVE PROOF: BridgeVM published ACPI 2.0 and SMBIOS 3 through the EFI system table"
 echo "binary_sha256=$(shasum -a 256 "$BIN" | awk '{print $1}')"
-echo "PASS: BridgeVM Virtual ARM PC entered DXE Core and dispatched its bounded marker"
+echo "PASS: BridgeVM Virtual ARM PC published its platform tables through DXE"

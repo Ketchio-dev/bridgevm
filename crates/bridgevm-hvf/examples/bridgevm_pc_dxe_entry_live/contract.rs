@@ -1,14 +1,16 @@
 use bridgevm_hvf::machine::bridgevm_pc as board;
-use sha2::{Digest, Sha256};
 use std::fmt;
+#[path = "contract/firmware.rs"]
+mod firmware;
+#[path = "contract/system_table.rs"]
+mod system_table;
+pub use firmware::validate as validate_firmware;
 
-pub const EXPECTED_FD_SHA256: &str =
-    "57c134b8f3f42bb9bb020936d4d87926b0d6563bfa0339bb110996a6e4ed6da6";
 pub const RAM_PAGES: usize = 8192;
 pub const RAM_EXECUTABLE: bool = true;
-pub const PROBE_TITLE: &str = "BridgeVM Virtual ARM PC DXE-dispatch probe: PASS";
+pub const PROBE_TITLE: &str = "BridgeVM Virtual ARM PC platform-table DXE probe: PASS";
 pub const LIVE_PROOF: &str =
-    "LIVE PROOF: DXE Core created the UEFI system table and dispatched the BridgeVM probe";
+    "LIVE PROOF: BridgeVM published ACPI 2.0 and SMBIOS 3 through the EFI system table";
 const RESULT_OFFSET: usize = 0x1000;
 const DXE_RESULT_OFFSET: usize = 0x2000;
 const HOB_OFFSET: usize = 0x4000;
@@ -16,11 +18,11 @@ const FV_OFFSET: usize = 0x10_0000;
 const FV_SIZE: usize = 0x10_0000;
 const DXE_CORE_LOAD_OFFSET: u64 = 0x40_0000;
 const DXE_CORE_ENTRY_OFFSET: u64 = 0x40_6bec;
-const EFI_SYSTEM_TABLE_SIGNATURE: u64 = 0x5453_5953_2049_4249;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DxeResult {
     system_table: u64,
+    published: system_table::PublishedTables,
 }
 
 pub type SecResult = DxeResult;
@@ -33,10 +35,12 @@ impl fmt::Display for DxeResult {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "sec_result=1 hob_count=7 hob_list_gpa={:#x} hob_list_size=272 dxe_result=8 system_table={:#x} system_table_signature={:#x}",
+            "sec_result=1 hob_count=7 hob_list_gpa={:#x} hob_list_size=272 dxe_result=8 system_table={:#x} configuration_entries={} acpi={:#x} smbios={:#x}",
             board::RAM_BASE + HOB_OFFSET as u64,
             self.system_table,
-            EFI_SYSTEM_TABLE_SIGNATURE
+            self.published.entry_count,
+            self.published.acpi,
+            self.published.smbios
         )
     }
 }
@@ -76,42 +80,6 @@ fn header(bytes: &[u8], offset: usize, kind: u16, size: u16, label: &str) -> Res
     expect(label, u16_at(bytes, offset, label)?, kind)?;
     expect(label, u16_at(bytes, offset + 2, label)?, size)?;
     expect(label, u32_at(bytes, offset + 4, label)?, 0)
-}
-
-fn sha256(bytes: &[u8]) -> String {
-    let hash = Sha256::digest(bytes);
-    let mut digest = String::with_capacity(64);
-    for byte in hash {
-        const HEX: &[u8; 16] = b"0123456789abcdef";
-        digest.push(HEX[(byte >> 4) as usize] as char);
-        digest.push(HEX[(byte & 0xf) as usize] as char);
-    }
-    digest
-}
-
-pub fn validate_firmware(bytes: &[u8]) -> Result<String, String> {
-    let expected_len = board::FLASH_CODE.size as usize;
-    expect("DXE-entry FD size", bytes.len(), expected_len)?;
-    let digest = sha256(bytes);
-    expect("DXE-entry FD digest", digest.as_str(), EXPECTED_FD_SHA256)?;
-    let fv = bytes
-        .get(FV_OFFSET..FV_OFFSET + FV_SIZE)
-        .ok_or_else(|| "DXE firmware volume is outside flash".to_string())?;
-    expect("FV length", u64_at(fv, 0x20, "FV length")?, FV_SIZE as u64)?;
-    expect(
-        "FV signature",
-        bytes_at::<4>(fv, 0x28, "FV signature")?,
-        *b"_FVH",
-    )?;
-    expect(
-        "DXE Core file GUID",
-        bytes_at::<16>(fv, 0x78, "DXE Core file GUID")?,
-        [
-            0x7f, 0xcb, 0xa2, 0xd6, 0x18, 0x6a, 0x2f, 0x4e, 0xb4, 0x3b, 0x99, 0x20, 0xa7, 0x33,
-            0x70, 0x0a,
-        ],
-    )?;
-    Ok(digest)
 }
 
 pub fn validate_dxe_result(ram: &[u8]) -> Result<DxeResult, String> {
@@ -205,16 +173,11 @@ pub fn validate_dxe_result(ram: &[u8]) -> Result<DxeResult, String> {
         0,
     )?;
     let system_table = u64_at(dxe, 8, "DXE system-table pointer")?;
-    let table_offset = system_table
-        .checked_sub(board::RAM_BASE)
-        .and_then(|offset| usize::try_from(offset).ok())
-        .ok_or_else(|| format!("DXE system table {system_table:#x} is below RAM"))?;
-    expect(
-        "EFI system-table signature",
-        u64_at(ram, table_offset, "EFI system-table signature")?,
-        EFI_SYSTEM_TABLE_SIGNATURE,
-    )?;
-    Ok(DxeResult { system_table })
+    let published = system_table::validate(ram, system_table)?;
+    Ok(DxeResult {
+        system_table,
+        published,
+    })
 }
 
 pub fn validate_sec_result(ram: &[u8]) -> Result<SecResult, String> {
