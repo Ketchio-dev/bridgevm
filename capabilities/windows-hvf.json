@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-30",
-  "tested_commit": "561469fa1a469b9650b9ab7be7f27c5126051438",
+  "tested_commit": "c1812fbe8148699456fdd04078f178b2c5355666",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -139,7 +139,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "Re-proven 2026-08-30 at exact code head 561469fa1a469b9650b9ab7be7f27c5126051438. GitHub-hosted CI run 33311375704 passed the repository CI matrix after the independent-engine wording, repository organization, attribution guard and proven HVF drain pacing restoration, including rustfmt, workspace tests on macOS 15 and macOS 26, all-target clippy with warnings denied, MSRV 1.85, Linux-stub cross-check, native Venus checks/tests/host probe/device smoke, structural budgets, all documentation classifications and resolved link targets, and the complete macOS app build plus Swift and XCTest-shim suites. Security and quality run 33311375679 passed fuzz corpus smoke, all Loom models, graphics-claim checks, live-gate policy, and supply-chain policy. The retained live firstboot run independently completed stage1 through stage4 with stage4_pass=1, BVGPU-DRIVERSTORE-CLEAN-PASS, BVGPU-DRIVER-STATE-PASS, bound driver 120.45.0.0, and exact expected/bound INF identity. A9 remains OPEN. B4 retains its separate 20/20, p95 245 ms PROVEN receipt; fixed 20-lane follow-ups at 6048ebb084e7d1e2b1b78c7dcbe546b47c1c6e51 and an exact replay of 080462846acbe4cb784bd9b532d7cd39921aa549 both landed 20/20 with zero renderer/package regressions but failed the unchanged latency limit at p95 808 ms and 839 ms. Those failed follow-ups falsify a recent-code-only cause and remain recorded as session-variance evidence rather than replacing the retained receipt.",
+      "measured": "Re-proven 2026-08-30 at exact code head c1812fbe8148699456fdd04078f178b2c5355666. The complete local scripts/check-project.sh passed, including workspace and Venus tests, the probe example, Rust formatting and clippy policy, structural budgets, documentation gates, Swift build/tests and all XCTest-shim suites. GitHub-hosted CI run 33313815035 passed the repository matrix, and Security and quality run 33313815005 passed fuzz corpus smoke, Loom, graphics-claim, live-gate and supply-chain policy checks. A9 remains OPEN. B4 is separately OPEN because fixed 20-lane follow-ups at 6048ebb084e7d1e2b1b78c7dcbe546b47c1c6e51 and an exact replay of 080462846acbe4cb784bd9b532d7cd39921aa549 both landed 20/20 with zero renderer/package regressions but failed the unchanged latency limit at p95 808 ms and 839 ms.",
       "evidence_paths": [
         "STATUS.md"
       ]
@@ -278,10 +278,10 @@
     {
       "id": "B4",
       "title": "Pointer click reliability",
-      "state": "PROVEN",
+      "state": "OPEN",
       "release_blocking": false,
       "statement": "Pointer interaction passes a fixed 20-boot live campaign at 20/20 with p95 visible-response latency <=250 ms.",
-      "measured": "PROVEN 2026-08-30: complete Studio t8 job 20260829-215356-7576-17586 at sealed BridgeVM commit 080462846acbe4cb784bd9b532d7cd39921aa549 landed 20/20 pointer samples with zero rendering/package regressions and p95 first-visible-change latency 245 ms against the unchanged 250 ms limit. Every independent disk/vars clone recorded host fire, guest press and release, one target click, stuck=0, and an active-CGL-IOSurface change. The public receipt seals image 7385d2005f3c48c40519a2d9cf2b9f975a3763ad8f37e84937d5ddf8429b0f8b, vars bec224d27c8681d2db69583e933e2d99b6fa5265d91d37373cb7a2c8b71853cd, driver tree c46486e5643317002b8848ac855324bc397e6ee6ac6e2987da7af0c61c6a3860, and input manifest 9d5844483ef72d9c240e5ccff473089b4b51b2533e232b95f322503fa4b19f94. Historical failed job 20260825-032534-61218-23891 remains recorded as 9/20, p95 704 ms; its rendering/package failures were not rewritten as pointer outcomes. Follow-up jobs 20260830-061513-18964-30182 at 6048ebb084e7d1e2b1b78c7dcbe546b47c1c6e51 and 20260830-063655-32633-32243 at the exact proven source commit both landed 20/20 with zero rendering/package regressions but failed p95 at 808 ms and 839 ms. The exact-source replay falsifies a recent-code-only attribution and identifies unresolved temporal host/session variance; both runs remain failed follow-ups and do not substitute for the retained passing receipt.",
+      "measured": "OPEN 2026-08-30. Retained Studio t8 job 20260829-215356-7576-17586 at sealed BridgeVM commit 080462846acbe4cb784bd9b532d7cd39921aa549 landed 20/20 pointer samples with zero rendering/package regressions and p95 245 ms. Later fixed campaigns 20260830-061513-18964-30182 at 6048ebb084e7d1e2b1b78c7dcbe546b47c1c6e51 and 20260830-063655-32633-32243 at an exact replay of the retained source also landed 20/20 with zero rendering/package regressions but failed the unchanged latency limit at p95 808 ms and 839 ms. Their boot means simultaneously moved from 18.31 seconds to 43.73 and 43.45 seconds. The retained pass ran before the Studio LaunchAgent was installed, while the failed campaigns ran through its Background process class; c1812fbe8148699456fdd04078f178b2c5355666 makes every explicitly submitted gate use application scheduling policy. That is a measurement-backed candidate explanation, not closure. B4 closes only after a new exact-head sealed fixed N=20 campaign passes 20/20 with zero rendering/package regressions and p95 at or below 250 ms.",
       "evidence_paths": [
         "docs/windows-arm/evidence/b4-pointer-batch-20260817.md",
         "docs/windows-arm/evidence/b4-pointer-latency-20260816.md",
@@ -289,7 +289,8 @@
         "docs/windows-arm/evidence/b4-pointer-reliability-gate-20260820.md",
         "docs/windows-arm/evidence/b4-pointer-reliability-proven-20260830.md",
         "docs/windows-arm/evidence/b4-pointer-followup-session-variance-20260830.md"
-      ]
+      ],
+      "known_defect": "Pointer clicks landed 20/20 in the two latest fixed campaigns, but visible-response p95 was 808 ms and 839 ms against the 250 ms limit. A scheduling-policy correction is awaiting a new sealed 20-lane gate."
     },
     {
       "id": "B5",
