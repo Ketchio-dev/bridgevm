@@ -1,6 +1,7 @@
 //! net_nat, split for the 1000-line rule.
 mod handle_outbound_ipv4;
 mod icmp_reply_rejection_reason;
+mod idle_eviction;
 mod macaddr;
 mod nat_stats;
 

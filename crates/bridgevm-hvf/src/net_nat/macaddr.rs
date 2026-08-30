@@ -427,10 +427,13 @@ pub struct HostSocketOutboundIpv4Handler {
     pub(crate) pending_socket_errors: u64,
     pub(crate) dns_resolver: StdIpv4Addr,
     pub(crate) epoch: Instant,
+    pub(crate) last_idle_sweep_ms: u64,
     pub(crate) idle_timeout_ms: u64,
     pub(crate) max_flows: usize,
     pub(crate) max_icmp_flows: usize,
     pub(crate) tcp_isn_counter: u32,
+    #[cfg(test)]
+    pub(crate) idle_sweep_count: u64,
 }
 
 pub(crate) const HOST_SOCKET_UDP_RECV_SCRATCH_LEN: usize = 2048;
@@ -471,10 +474,13 @@ impl HostSocketOutboundIpv4Handler {
             pending_socket_errors: 0,
             dns_resolver,
             epoch: Instant::now(),
+            last_idle_sweep_ms: 0,
             idle_timeout_ms: Self::DEFAULT_IDLE_TIMEOUT_MS,
             max_flows: Self::DEFAULT_MAX_FLOWS,
             max_icmp_flows: Self::DEFAULT_MAX_ICMP_FLOWS,
             tcp_isn_counter: 0x4256_0000,
+            #[cfg(test)]
+            idle_sweep_count: 0,
         }
     }
 
@@ -496,20 +502,6 @@ impl HostSocketOutboundIpv4Handler {
     pub(crate) fn next_tcp_isn(&mut self) -> u32 {
         self.tcp_isn_counter = self.tcp_isn_counter.wrapping_add(0x1f3d_5b79);
         self.tcp_isn_counter
-    }
-
-    pub(crate) fn evict_idle_flows(&mut self) {
-        let now = self.now_ms();
-        let timeout = self.idle_timeout_ms;
-        self.udp_flows
-            .retain(|_, flow| now.saturating_sub(flow.last_activity) <= timeout);
-        self.tcp_flows
-            .retain(|_, flow| now.saturating_sub(flow.last_activity) <= timeout);
-        self.icmp_flows
-            .retain(|_, flow| now.saturating_sub(flow.last_activity) <= timeout);
-        evict_lru(&mut self.udp_flows, self.max_flows);
-        evict_lru(&mut self.tcp_flows, self.max_flows);
-        evict_lru(&mut self.icmp_flows, self.max_icmp_flows);
     }
 
     pub(crate) fn get_or_create_icmp_flow(
