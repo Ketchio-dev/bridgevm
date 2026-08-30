@@ -391,7 +391,8 @@ crates/bridgevm-hvf/src/ramfb/snapshot.rs	221	0
 crates/bridgevm-hvf/src/ramfb/snapshot_tests.rs	270	0
 crates/bridgevm-hvf/src/psci.rs	119	0
 crates/bridgevm-hvf/src/psci_tests.rs	173	0
-crates/bridgevm-hvf/src/smbios.rs	393	0
+crates/bridgevm-hvf/src/smbios.rs	366	0
+crates/bridgevm-hvf/src/smbios_tests.rs	116	0
 crates/bridgevm-hvf/src/smccc_trng.rs	174	0
 crates/bridgevm-hvf/src/smccc_trng_tests.rs	220	0
 crates/bridgevm-hvf/src/stage1.rs	438	0
