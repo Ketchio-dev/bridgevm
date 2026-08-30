@@ -4,7 +4,6 @@
 fn async_present_returns_flush_without_blocking_on_the_renderer() {
     let (mut dev, backend, mut mem) = deferred_scanout_dev();
     backend.lock().unwrap().async_present = true;
-    // Stall the worker so the present cannot possibly have completed.
     backend.lock().unwrap().async_present_stall = true;
     dev.gpu.set_3d_scanout_async_present(true);
 
@@ -28,11 +27,11 @@ fn async_present_applies_the_readback_once_the_worker_finishes() {
     let (mut dev, backend, mut mem) = deferred_scanout_dev();
     backend.lock().unwrap().async_present = true;
     dev.gpu.set_3d_scanout_async_present(true);
+    dev.gpu.scanout.fill(0xaa);
 
     submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
     dev.gpu.service_deferred_3d_scanout();
     dev.gpu.service_deferred_3d_scanout();
-    // A later drain collects the finished present.
     dev.gpu.service_deferred_3d_scanout();
 
     assert_eq!(
@@ -40,6 +39,7 @@ fn async_present_applies_the_readback_once_the_worker_finishes() {
         vec![(31, 1280, 800)]
     );
     assert_eq!(dev.stats().scanout_readbacks, 1);
+    assert!(dev.gpu.scanout_readback_scratch.iter().all(|byte| *byte == 0xaa));
 }
 
 #[test]

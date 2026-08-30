@@ -1,6 +1,5 @@
 //! virtio-gpu device model, decomposed by responsibility: wire protocol,
-//! register planes, virtqueue transport, the 2D and blob command families,
-//! scanout presentation, interrupts, and diagnostics.
+//! register planes, queues, command families, presentation and diagnostics.
 #[cfg(test)]
 mod tests;
 
@@ -23,6 +22,7 @@ mod resource;
 mod scanout;
 mod scanout_3d;
 mod scanout_async;
+mod scanout_async_apply;
 mod scanout_blit;
 mod scanout_readback;
 mod snapshot;

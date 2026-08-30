@@ -5,12 +5,9 @@
 //! and returns, so the vCPU stops paying renderer latency, then applies the
 //! result on a later drain.
 //!
-//! Enabled by opt-in. With `scanout_async_present` false, nothing here runs
-//! and the inline path is used exactly as before, so the synchronous behaviour
-//! stays available as a fallback.
+//! Opt-in; disabling it keeps the synchronous fallback unchanged.
 
 use super::*;
-use crate::virtio_gpu_3d::ScanoutPresentResult;
 use std::fmt::Write as _;
 use std::time::Instant;
 
@@ -95,11 +92,8 @@ impl VirtioGpu {
                 true
             }
             None => {
-                // Undo the admission so the synchronous path resumes exactly as
-                // if async had never been enabled. The scratch buffer was moved
-                // into the refused call and is gone; the synchronous path
-                // resizes it before use, so it costs one reallocation on this
-                // single transition and nothing afterwards.
+                // Restore synchronous fallback. The moved scratch buffer is
+                // reallocated once when that path next resizes it.
                 self.async_present.complete(self.scanout_resource);
                 self.scanout_async_present = false;
                 false
@@ -129,60 +123,6 @@ impl VirtioGpu {
         if let Some(next) = next {
             self.dispatch_async_present(next, rect);
         }
-    }
-
-    fn apply_async_present(
-        &mut self,
-        request: PresentRequest,
-        rect: Rect,
-        result: &ScanoutPresentResult,
-    ) {
-        if let Some(surface_id) = result.surface_id {
-            self.record_3d_scanout_blit(
-                request.resource_id,
-                surface_id,
-                request.width,
-                request.height,
-                result.blit_duration_ns,
-            );
-            self.pending_3d_scanout_blitted = true;
-        }
-        if result.readback_ok != Some(true) {
-            return;
-        }
-        let len = scanout_len(request.width, request.height);
-        if self.scanout_readback_scratch.len() < len {
-            return;
-        }
-        let composited = composite_host_3d_to_scanout(
-            &self.scanout_readback_scratch,
-            request.width,
-            request.height,
-            &mut self.scanout,
-            self.width,
-            self.height,
-            rect,
-        );
-        if !composited {
-            return;
-        }
-        self.last_3d_scanout_readback = Some(Instant::now());
-        self.scanout_readback_count = self.scanout_readback_count.saturating_add(1);
-        let bytes = u64::from(request.width)
-            .saturating_mul(u64::from(request.height))
-            .saturating_mul(4);
-        self.scanout_readback_bytes = self.scanout_readback_bytes.saturating_add(bytes);
-        let count = self.scanout_readback_count;
-        let (width, height) = (request.width, request.height);
-        let resource_id = request.resource_id;
-        let transfer_ns = result.readback_duration_ns;
-        self.record_trace_fields("scanout_readback", |fields| {
-            let _ = write!(
-                fields,
-                ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"bytes\":{bytes},\"duration_ns\":{transfer_ns},\"transfer_ns\":{transfer_ns},\"composite_ns\":0,\"deferred\":1,\"count\":{count}"
-            );
-        });
-        self.publish_scanout_fb();
     }
 
     fn record_async_present_cancel(
