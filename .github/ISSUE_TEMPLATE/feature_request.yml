@@ -1,0 +1,57 @@
+name: Feature request
+description: Propose a user problem or focused engineering improvement
+title: "feature: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Start with the user problem. A proposal that changes a capability threshold, security boundary, or guest-visible machine contract needs explicit justification and evidence.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Windows HVF engine
+        - macOS app and onboarding
+        - Apple VZ engine
+        - QEMU Compatibility Engine
+        - Packaging or installer
+        - CLI or automation
+        - Documentation or contribution experience
+        - Unsure
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Who is blocked, and what can they not do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: Describe observable behavior, not only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include a smaller workaround if one exists.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or examples
+      description: Link comparable tools, measurements, traces, or existing BridgeVM documents.
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Project boundaries
+      options:
+        - label: This request does not depend on lowering an existing criterion.
+          required: true
+        - label: I identified any security, signing, private-media, or machine-contract impact above.
+          required: true

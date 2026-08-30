@@ -1,0 +1,75 @@
+name: Bug report
+description: Report reproducible BridgeVM behavior that looks wrong
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not attach Windows media, VM disks, UEFI vars, vTPM state, recovery keys, credentials, or unredacted private paths. Security issues belong in private vulnerability reporting.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Windows HVF engine
+        - macOS app and onboarding
+        - Apple VZ engine
+        - QEMU Compatibility Engine
+        - Packaging or installer
+        - CLI or daemon
+        - Documentation
+        - CI or developer tooling
+        - Unsure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Release tag or full Git commit, if known.
+      placeholder: v1.2.3 or 40-character commit
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host
+      description: Mac model/chip and macOS version.
+      placeholder: MacBook Pro M3 Pro, macOS 15.6
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include the first visible error and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Open BridgeVM…
+        2. Create or start…
+        3. Observe…
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Paste only the smallest relevant log excerpt. Remove secrets, media paths, usernames, and tokens.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I searched existing issues and the current status first.
+          required: true
+        - label: This report contains no private guest artifacts or credentials.
+          required: true
+        - label: This is not an undisclosed security vulnerability.
+          required: true
