@@ -8,7 +8,7 @@ SEC="$RESET"
 LINKER="$RESET/BridgeVmPcResetVector.ld"
 BOARD="$ROOT/crates/bridgevm-hvf/src/bridgevm_pc.rs"
 
-if rg -n -i 'qemu|armvirt|ovmf|fw[_-]?cfg|u[t]m' "$RESET"; then
+if grep -R -n -i -E 'qemu|armvirt|ovmf|fw[_-]?cfg|u[t]m' "$RESET"; then
   echo "FAIL: reset-vector source references a prohibited compatibility platform" >&2
   exit 1
 fi
