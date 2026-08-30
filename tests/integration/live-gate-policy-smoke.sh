@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 # Policy tests for the Studio live-gate queue.
-#
-# These assert the properties that make a local queue acceptable on a public
-# repository: no inbound listener, no runner registration, atomic job claiming,
-# and receipts that are redacted before anyone can read them.
+# No listener/runner; claiming is atomic and published receipts are redacted.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 CLI="$REPO/scripts/live-gates/bridgevm-live"
 WORKER="$REPO/scripts/live-gates/bridgevm-live-worker.sh"
+RECOVER="$REPO/scripts/live-gates/recover-stale-jobs.sh"
 INSTALL="$REPO/scripts/live-gates/install-studio-queue.sh"
 PLIST="$REPO/scripts/live-gates/com.ketchio.bridgevm-live.plist"
 REDACT="$REPO/scripts/live-gates/redact-receipt.py"
@@ -40,10 +38,7 @@ check() {
     fi
 }
 
-# Assert a pattern is absent. Separate from `check` because passing a regex
-# through `eval` needs two rounds of quoting and silently mangles backslashes.
-# Comments are stripped first: these files *describe* the listener they must
-# not open, and matching prose would make the check unfalsifiable in reverse.
+# Keep regexes out of eval and ignore comments that describe forbidden shapes.
 no_match() {
     local description="$1" pattern="$2"
     shift 2
@@ -57,9 +52,9 @@ no_match() {
     fi
 }
 
-# --- shape ---------------------------------------------------------------
 check "the CLI is executable" '[ -x "$CLI" ]'
 check "the worker is executable" '[ -x "$WORKER" ]'
+check "the stale-job reconciler is executable" '[ -x "$RECOVER" ]'
 check "the installer is executable" '[ -x "$INSTALL" ]'
 check "the redactor is executable" '[ -x "$REDACT" ]'
 check "the tier dispatcher is executable" '[ -x "$TIER" ]'
@@ -74,7 +69,6 @@ check "the installed-boot runner attaches post-mortem media read-only" \
 check "the installed-boot runner captures both post-mortem phases" \
     'grep -Fq '\''harvest_guest_windows_postmortem pre-run'\'' "$BOOT_RUNNER" && grep -Fq '\''harvest_guest_windows_postmortem post-run'\'' "$BOOT_RUNNER"'
 
-# --- read-only Windows post-mortem boundary ------------------------------
 postmortem_src="$WORK/postmortem-source"
 postmortem_image="$WORK/postmortem.dmg"
 postmortem_evidence="$WORK/postmortem-evidence"
@@ -177,7 +171,6 @@ check "the A3 diagnostic stop remains bounded by its existing grace" \
 check "the installed boot runner explicitly forwards the diagnostic request" \
     'grep -q '\''BRIDGEVM_HOST_DIAGNOSTIC_STOP_REQUEST='\'' "$BOOT_RUNNER"'
 
-# --- submit returns immediately -----------------------------------------
 start=$(date +%s)
 job_id="$("$CLI" submit t1-vtimer)"
 elapsed=$(( $(date +%s) - start ))
@@ -185,7 +178,6 @@ check "submit returns a job id" '[ -n "$job_id" ]'
 check "submit returns in under 10s" '[ "$elapsed" -lt 10 ]'
 check "the job is queued" '"$CLI" status | grep -q "queued .*$job_id"'
 
-# --- the exact commit is sealed at submit time ---------------------------
 check "the job records a commit" 'grep -q "^commit=[0-9a-f]\{40\}$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env"'
 check "the job records its tier" 'grep -q "^tier=t1-vtimer$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env"'
 
@@ -244,13 +236,21 @@ check "the installed-boot runner honors a sealed prebuilt binary" \
     'grep -Fq '"'"'BRIDGEVM_PREBUILT_PROBE requires an absolute regular release binary with --skip-build'"'"' "$BOOT_RUNNER"'
 rm -rf "$BRIDGEVM_LIVE_ROOT/queued/$a3_job"
 
-# --- claiming is atomic --------------------------------------------------
 claimed="$("$CLI" next)"
 check "next claims the job" '[ -n "$claimed" ]'
 check "the claimed job moved to running" '"$CLI" status | grep -q "running .*$job_id"'
 check "a second worker cannot claim it" '! "$CLI" next'
 
-# --- receipts are only served redacted -----------------------------------
+# A sole worker may be killed by logout or launchd. Its next generation must
+# retain the abandoned job as a failure instead of leaving it running forever.
+recovery_queue="$WORK/recovery-queue"; stale="$recovery_queue/running/stale-job"
+mkdir -p "$stale" "$recovery_queue/done" "$WORK/recovery-work"
+printf 'job_id=stale-job\ntier=t8-pointer-reliability\ncommit=%040d\n' 0 > "$stale/job.env"
+"$RECOVER" "$REPO" "$recovery_queue" "$WORK/recovery-work" 2>/dev/null
+check "an abandoned running job is retained as interrupted" \
+    'grep -q "^result=interrupted-worker-exit$" "$recovery_queue/done/stale-job/result.env"'
+check "the stale job no longer claims to be running" '[ ! -e "$stale" ]'
+
 cat > "$claimed/receipt.json" <<'JSON'
 {"gate_id":"a3-d3d11-real-title-3run","criterion":"A3","tested_commit":"0123456789abcdef0123456789abcdef01234567","tier":"t6-a3-title","pass":true,"passes":3,"sample_count":1200,"fps_p50":[58.82,58.82,58.82],"title_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","evidence_paths":["run-1/summary.txt"],"disk_path":"/Users/me/win11.qcow2","vars_path":"/tmp/VARS.fd"}
 JSON
@@ -270,7 +270,6 @@ check "the published receipt keeps FPS samples" \
 check "the published receipt keeps only relative evidence paths" \
     '"$CLI" receipt "$job_id" | grep -q "run-1/summary.txt"'
 
-# --- cancellation --------------------------------------------------------
 check "cancelling a running job requests, not kills" \
     '"$CLI" cancel "$job_id" | grep -q "cancellation requested"'
 check "the cancel request is visible to the worker" '[ -f "$claimed/cancel.requested" ]'
@@ -279,7 +278,6 @@ second="$("$CLI" submit t0-check)"
 check "a queued job cancels immediately" '"$CLI" cancel "$second" | grep -q "canceled"'
 check "the canceled job is done" '"$CLI" status | grep -q "done .*$second"'
 
-# --- tiers refuse to invent evidence -------------------------------------
 check "an unknown tier is rejected" '! "$TIER" nonsense --out "$WORK/x" 2>/dev/null'
 t5_output="$(BASE_IMAGE="$WORK/absent.raw" BASE_VARS="$WORK/absent.fd" \
     INJECTOR="$WORK/absent-inj.raw" \
@@ -300,8 +298,8 @@ chmod 644 "$WORK/unreadable.raw"
 check "a present but unreadable input is refused too" \
     'printf "%s" "$unreadable_output" | grep -q "unreadable.raw"'
 
-# --- the installer is safe to inspect ------------------------------------
 check "the installer supports a dry run" '"$INSTALL" --dry-run >/dev/null 2>&1 || true'
+check "the installer guards LaunchAgent privacy-protected source paths" 'grep -q "LaunchAgent privacy policy" "$INSTALL"'
 no_match "the installer stores no credentials" \
     'password|token=|api[_-]key' "$INSTALL"
 

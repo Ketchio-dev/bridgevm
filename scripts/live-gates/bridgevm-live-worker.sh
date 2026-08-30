@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Drain the Studio live-gate queue: claim one job, run its tier at the exact
-# sealed commit, publish a redacted receipt.
-#
+# Drain the Studio live-gate queue at the exact sealed commit.
 # Runs as a user LaunchAgent. No sudo, no inbound socket, no GitHub
 # registration; the queue is a directory this user owns.
 set -euo pipefail
@@ -15,6 +13,7 @@ QUEUE_ROOT="${BRIDGEVM_LIVE_ROOT:-$HOME/BridgeVM/live-queue}"
 WORK_ROOT="${BRIDGEVM_LIVE_WORK:-$HOME/BridgeVM/live-work}"
 CLI="$REPO/scripts/live-gates/bridgevm-live"
 REDACT="$REPO/scripts/live-gates/redact-receipt.py"
+RECOVER="$REPO/scripts/live-gates/recover-stale-jobs.sh"
 
 # Canonical Windows media lives on the external SSD and must never be deleted
 # to make room. Stop the job instead and say so.
@@ -167,6 +166,7 @@ main() {
         log "another worker holds the lock; exiting"
         exit 0
     fi
+    "$RECOVER" "$REPO" "$QUEUE_ROOT" "$WORK_ROOT"
 
     local claimed
     while claimed="$("$CLI" next 2>/dev/null)"; do

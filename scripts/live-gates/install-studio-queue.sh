@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
 # Install the Studio live-gate LaunchAgent for the current user. Idempotent.
-#
-# Deliberately not a daemon and not a GitHub runner:
-#   - user agent, so no sudo and no root-owned queue;
-#   - no inbound socket, so nothing off this machine can enqueue work;
-#   - no runner registration, because this repository is public and a fork's
-#     pull_request workflow must never execute on a personal machine.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -24,6 +18,12 @@ DRY_RUN=0
 fail() { echo "preflight: $*" >&2; exit 1; }
 
 echo "== preflight =="
+REPO_PHYSICAL="$(cd "$REPO" && pwd -P)"
+case "$REPO_PHYSICAL/" in
+    "$HOME/Desktop/"*|"$HOME/Documents/"*|"$HOME/Downloads/"*)
+        fail "clone the repository outside Desktop/Documents/Downloads; LaunchAgent privacy policy blocks $REPO_PHYSICAL"
+        ;;
+esac
 
 [ -x "$WORKER" ] || fail "worker is not executable: $WORKER"
 [ -f "$TEMPLATE" ] || fail "missing plist template: $TEMPLATE"
