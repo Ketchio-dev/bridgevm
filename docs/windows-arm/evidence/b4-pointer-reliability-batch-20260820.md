@@ -91,7 +91,7 @@ This receipt falsifies malformed transfer length/completion and a single bad
 interrupter vector. It did not yet distinguish an MSI-X message that was never
 generated from one rejected by the host GIC.
 
-A follow-up diagnostic job, `20260821-040346-74328-24747` at
+A follow-up diagnostic job, `20260821-040346-74328-24747` at BridgeVM source SHA
 `a2381bce92a2f0f4b7cdb378cbc70f8e12f1bbcd`, enabled the existing
 `--trace-irq` path. It was intentionally cancelled after three failed runs
 because the first run already supplied the requested separator; this
@@ -126,7 +126,8 @@ that it retained the active input desktop; `GetAsyncKeyState` may return zero
 outside that desktop. The probe now records nonzero session ID, successful
 `OpenInputDesktop`, and foreground HWND, and the parser fails closed unless
 all three prove an interactive desktop. Diagnostic t8 job
-`20260821-064039-29474-29147` at `1d62a904413596775e04fabd2bdff042cc83dd79`
+`20260821-064039-29474-29147` at BridgeVM source SHA
+`1d62a904413596775e04fabd2bdff042cc83dd79`
 then proved exactly that in its first run (`session=1`,
 `input_desktop_open=1`, foreground HWND `197210`) while the click still had
 zero transitions; the run log SHA-256 is
@@ -134,7 +135,7 @@ zero transitions; the run log SHA-256 is
 The job was cancelled after this separator and is diagnostic, not closure
 evidence. The next probe records cursor-coordinate transitions on that same
 active desktop, separating loss of all DCI5 reports from button-only semantic
-loss. Diagnostic job `20260821-071532-41007-26374` at
+loss. Diagnostic job `20260821-071532-41007-26374` at BridgeVM source SHA
 `9f7d57a2b6dcaaefb98332fabbab59c932b6dce1` supplied that separator in run 1:
 the active-desktop cursor moved from `(400,300)` to `(544,380)` at 18,023 ms,
 while press/release/edge remained zero (run log SHA-256
@@ -144,7 +145,7 @@ button/release specifically do not.
 
 In the same run, move/button/release events occupied consecutive Event Ring
 slots while ERDP stayed at the move event. DCI5 event-consumption pacing was
-then tried at `2eadc8619516fc2a6630435f0a1edbb74004d9b2` (job
+then tried at BridgeVM source SHA `2eadc8619516fc2a6630435f0a1edbb74004d9b2` (job
 `20260821-075716-55962-11868`). Run 1 proved the gate worked — each next report
 posted only after ERDP advanced — but move alone still reached user32 and the
 button was lost (run log SHA-256
@@ -161,11 +162,11 @@ post-MMIO pointer delivery through the platform pacing gate. A platform BAR
 regression requires ERDP MMIO at unchanged host time to leave button pending,
 then release button and release reports only at consecutive 30 ms host-time
 steps. The generic EHB experiment and event-consumption pacing are absent. First-run
-job `20260821-084346-79164-23719` at
+job `20260821-084346-79164-23719` at BridgeVM source SHA
 `cc77de82e24280f261a969e9765a96eb39012080` proved the bypass was removed but
 still lost the button at the default 30 ms interval (run log SHA-256
 `545670861e4aaecde1059c3265cb2b192d321bf05dad81dbb6cee2704480980e`), so it
-was cancelled. A normalized 100 ms hold was then measured at
+was cancelled. A normalized 100 ms hold was then measured at BridgeVM source SHA
 `0a11c25a224693637ed7529172aa3098138d554c` in job
 `20260821-091826-91520-28485`; runtime confirmed the 100 ms interval, but run 1
 again delivered only move (run log SHA-256
@@ -176,7 +177,7 @@ removed.
 The remaining guest HID semantic difference was the descriptor itself. The
 6-byte payload was already valid, but BridgeVM advertised a 63-byte local
 variant with three buttons, different constant padding, and no physical
-axis/wheel declarations. A 74-byte compatibility descriptor was tested at
+axis/wheel declarations. A 74-byte compatibility descriptor was tested at BridgeVM source SHA
 `4f8f18a4f7cfa005b801968b5c8c907590f676dd`
 in job `20260821-095849-7083-26220`; run 1 enumerated the 74-byte descriptor
 but again delivered only cursor move (run log SHA-256
@@ -185,7 +186,7 @@ The job was cancelled. Descriptor shape is not the separator, so that change
 was removed rather than retained as an unrelated compatibility change.
 
 The next trace added Normal TRB report-buffer GPA, TD-end GPA, and Event Data
-parameter. Diagnostic job `20260821-104402-25279-6208` at
+parameter. Diagnostic job `20260821-104402-25279-6208` at BridgeVM source SHA
 `33c8600ebaffb6371ed35660ed865c69464130b4` showed distinct move/button buffers
 (`…8800`, `…8a00`) and distinct Event Data cookies; release reused move's
 buffer, not button's. Button cannot have been overwritten by release in the
@@ -194,7 +195,8 @@ same DMA buffer. Run 1 still delivered only move (run log SHA-256
 job was cancelled.
 
 The next diagnostic sent move+press with no release. As required, job
-`20260821-111848-37586-7823` at `b43f1bc770f76c9fdc663e4adb923b8c8f41a2b8`
+`20260821-111848-37586-7823` at BridgeVM source SHA
+`b43f1bc770f76c9fdc663e4adb923b8c8f41a2b8`
 failed the gate (`press=1`, `release=0`, `stuck=1`), but its first run proved
 the button path: on the active desktop, cursor move arrived at 31,847 ms and
 button high-bit press at 31,871 ms, 24 ms later (run log SHA-256
@@ -204,14 +206,14 @@ completion, MSI and user32 press delivery are all exonerated; the loss occurs
 only when release follows before the guest/probe observes the transition.
 
 The normal move+click workload was restored with a 200 ms report interval in
-job `20260821-115318-49986-28036` at
+job `20260821-115318-49986-28036` at BridgeVM source SHA
 `7658ba6b00b060bc76ff7941f8e2d285c4dc09e6`; run 1 still delivered only move
 (run log SHA-256
 `b5ab849349adff862115fc17846e895573ac9a251f57ebf243ddf60805d3156a`).
 The job was cancelled. Even a near-limit hold is not sufficient after the
 leading move report.
 
-The next diagnostic sent click-only at
+The next diagnostic sent click-only at BridgeVM source SHA
 `c086581f40101ceb90283a7c70ff57476730c913` in job
 `20260821-122823-62528-13973`. It still delivered only cursor move (from the
 button report's absolute coordinates), with no button transition (run log SHA-256
@@ -219,7 +221,7 @@ button report's absolute coordinates), with no button transition (run log SHA-25
 job was cancelled. A leading move
 report is not the cause; release following press is the separator.
 
-The next diagnostic used a deliberately over-limit 1000 ms hold at
+The next diagnostic used a deliberately over-limit 1000 ms hold at BridgeVM source SHA
 `50b9dc25f6b745dcbd879340419b76ad5ae25c96` in job
 `20260821-130407-75761-3874`. It still delivered only move, but monotonic trace
 proved the supposedly 1000 ms path emitted move→button after only 622 ms and
@@ -235,7 +237,7 @@ now writes its actual `now` into the platform immediately before queue/drain.
 A synthetic-clock regression seeds a 900 ms stale sample and requires release
 to remain blocked until 1000 ms after the actual trigger, not 100 ms after it.
 The normal move+click workload uses a 200 ms interval, below the fixed 250 ms
-limit. Actual-time pacing alone was then measured at
+limit. Actual-time pacing alone was then measured at BridgeVM source SHA
 `ec73d63e917e0daeaf2b47fbeb20dad2df1daabc` in job
 `20260821-134702-91382-12896`: move→button was 578 ms and button→release
 4,462 ms, but all three events still posted before ERDP moved and only cursor
@@ -277,7 +279,7 @@ B4 remains OPEN pending the corrected normal 20/20 receipt.
 ### 2026-08-22 prepared-media diagnostics
 
 The first attempt to move t8 from the non-display `net-live` source to the
-immutable t7-proven driver-ready pair, job `20260822-045326-10470-19681` at
+immutable t7-proven driver-ready pair, job `20260822-045326-10470-19681` at BridgeVM source SHA
 `1cc1feaf6797c19ecab5c08e6a1c091577e64fbc`, was cancelled before guest boot.
 The source is correctly mode 400 and APFS `cp -c` preserved that mode on the
 private clone, so NVMe open failed with `Permission denied`. The correction
@@ -285,7 +287,7 @@ changes only each run's disk and vars copies to mode 600; source hashes and
 mode 400 permissions remained unchanged. This is host-staging diagnosis, not
 B4 evidence.
 
-The corrected staging run, cancelled job `20260822-050458-14669-13015` at
+The corrected staging run, cancelled job `20260822-050458-14669-13015` at BridgeVM source SHA
 `78c777860ca532241f007edd3c298eae3ad013f6`, proved the prepared guest is
 GPU-driver active (9,366 virtio-gpu trace records), but also falsified the
 claim that changing the image alone supplied the fixed visible target. The
