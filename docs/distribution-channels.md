@@ -54,7 +54,7 @@ Its contract is:
   BridgeVM commit that the receipt names.
 
 The retained B4 campaign passed its fixed 20-lane pointer gate at 20/20 with
-p95 245 ms and no rendering/package regression lanes. That supports the exact
+p95 243 ms and no rendering/package regression lanes. That supports the exact
 experimental package tested in the receipt. It does not establish Microsoft
 kernel-policy signing provenance and therefore does not close A9. See the
 [B4 receipt](windows-arm/evidence/b4-pointer-reliability-proven-20260830.md) and

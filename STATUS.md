@@ -15,12 +15,11 @@ Release-blocking criteria proven: **18 / 19**. Open: A9.
 
 Known open defects:
 - **A9**: Windows-HVF 3D driver injection is unavailable for install and import: signed kernel-policy provenance and a clean-machine installation flow have not been proven. The product exposes only 3D-off install/import.
-- **B4**: The latest fixed campaign met the latency limit for all 19 pointer-classified lanes at p95 238 ms, but one baseline-not-presented lane was a rendering/package regression. The criterion still lacks 20 pointer samples with zero regressions.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-08-30 at commit `e8d3b507aeaea8e8e4ef138ce75af89d0833ba27`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-08-30 at commit `e38ba7c9dc252d13977a4e3c69564cc88abb1b35`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 ## How to read the generated status
