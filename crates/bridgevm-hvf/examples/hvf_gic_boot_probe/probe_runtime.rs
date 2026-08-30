@@ -407,8 +407,8 @@ pub(crate) fn run() -> ExitCode {
                     setup_input_host_wake.canceled_by_host_wake(reason, &watchdog_fired);
                 let service_wake_canceled =
                     agent_service_wake.canceled_by_service_wake(reason, &watchdog_fired);
-                let setup_input_wake_canceled = setup_input_wake_canceled
-                    || input_control_wake.canceled(reason, &watchdog_fired);
+                let input_wake = input_control_wake.canceled(reason, &watchdog_fired);
+                let setup_input_wake_canceled = setup_input_wake_canceled || input_wake;
                 let vblank_wake_canceled =
                     gpu_vblank_wake.canceled_by_vblank_wake(reason, &watchdog_fired);
                 let automation_tick_canceled = sample_tick_canceled
@@ -427,8 +427,7 @@ pub(crate) fn run() -> ExitCode {
                 if reason == EXIT_CANCELED {
                     // Any cancel can swallow an in-flight vtimer fire. Check
                     // terminal flags even when an automation wake merged into
-                    // the same exit; the host diagnostic request must not be
-                    // consumed as an ordinary service tick.
+                    // A host diagnostic request must not become a service tick.
                     vtimer_recovery::recover_swallowed_vtimer_fire(vcpu);
                     if let Some(reason) = cancel_stop_reason(
                         &watchdog_fired,
@@ -785,7 +784,8 @@ pub(crate) fn run() -> ExitCode {
                     let platform = &mut *platform_guard;
                     automation_gate.note_checked();
                     if let Some(d) = platform.xhci_pointer_report_deadline() { pointer_deadline_trace::report_overdue(d); }
-                    live_input.tick(platform, &mut guest_ram, std::time::Instant::now());
+                    let now = std::time::Instant::now();
+                    live_input.tick(platform, &mut guest_ram, now, input_wake);
                     if serial_reached_linux_panic(platform.uart_output(), &mut serial_stop_scans) {
                         Some("serial reached Linux kernel panic".into())
                     } else {

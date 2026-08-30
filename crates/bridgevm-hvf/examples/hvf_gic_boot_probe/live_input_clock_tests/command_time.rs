@@ -1,4 +1,4 @@
-use super::{InputControlFile, LiveInputController, POLL_INTERVAL};
+use super::super::{InputControlFile, LiveInputController, POLL_INTERVAL};
 use crate::xhci_hid_input::test_support::{
     configure_dci3_and_dci5_interrupt_in_over_bar0, new_platform_and_ram, program_xhci_bar0,
     write_dci5_normal_trb, DCI5_POINTER_BUFFER, DCI5_RING, TRB_SIZE,
@@ -24,7 +24,7 @@ fn live_pointer_uses_command_now_instead_of_stale_cached_time() {
     let mut input = LiveInputController { source: Some(InputControlFile::from_path(path.clone())), offset: 0,
         partial: String::new(), pending: VecDeque::new(), accepted_pointer_moves: 0,
         next_poll: command_now - POLL_INTERVAL };
-    input.tick(&mut platform, &mut mem, command_now);
+    input.tick(&mut platform, &mut mem, command_now, false);
     assert_eq!(platform.xhci_pointer_input_report_stats().emitted_button_reports, 1); assert_eq!(platform.xhci_pointer_report_deadline(), Some(command_now + Duration::from_secs(1)));
     platform.set_host_now(base + Duration::from_secs(1));
     platform.drain_xhci_pointer_input_reports(&mut mem);

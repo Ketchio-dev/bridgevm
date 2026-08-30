@@ -31,7 +31,6 @@ impl LiveInputCommand {
     }
 }
 
-/// Parse a `RESIZE <width>x<height>` argument (e.g. `1920x1080`).
 fn parse_resize(value: &str) -> Option<(u32, u32)> {
     let (w, h) = value.trim().split_once('x')?;
     Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
@@ -65,8 +64,9 @@ impl LiveInputController {
         platform: &mut VirtPlatform,
         mem: &mut dyn GuestMemoryMut,
         now: Instant,
+        event_wake: bool,
     ) {
-        if !self.poll_due(now) {
+        if !event_wake && !self.poll_due(now) {
             return;
         }
         self.next_poll = now + POLL_INTERVAL;
@@ -252,7 +252,7 @@ impl LiveInputController {
 }
 
 #[cfg(test)]
-#[path = "live_input_clock_tests.rs"]
+#[path = "live_input_clock_tests/mod.rs"]
 mod clock_tests;
 #[cfg(test)]
 mod tests {
