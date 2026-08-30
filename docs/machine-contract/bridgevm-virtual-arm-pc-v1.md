@@ -72,7 +72,8 @@ ACPI, SMBIOS, PCIe and device interfaces.
 |---|---|
 | Versioned identity, address map and overlap tests | implemented, static only |
 | Minimal memory layout, vars flash, UART, RTC and PCIe ECAM runtime | implemented, host-unit only |
-| HVF memory mapping, GIC and interrupt routing | open |
+| Host GIC geometry validation and bounded placement probe | implemented, live result pending |
+| HVF memory mapping and device interrupt routing | open |
 | Independently built and audited UEFI firmware | open |
 | UEFI ACPI/SMBIOS/GOP/block-I/O handoff | open |
 | Windows installer and installed-disk boot | open |

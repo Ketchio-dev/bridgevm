@@ -260,6 +260,8 @@ crates/bridgevm-hvf/src/pcie/tests/part_1.rs	753	0
 crates/bridgevm-hvf/src/pcie/tests/part_2.rs	601	0
 crates/bridgevm-hvf/src/pcie/trace.rs	15	0
 crates/bridgevm-hvf/src/pcie/virtio_caps.rs	317	0
+crates/bridgevm-hvf/src/bridgevm_pc_gic.rs	105	0
+crates/bridgevm-hvf/src/bridgevm_pc_gic_tests.rs	50	0
 crates/bridgevm-hvf/src/pflash.rs	319	0
 crates/bridgevm-hvf/src/pl011.rs	244	0
 crates/bridgevm-hvf/src/pl031.rs	153	0
@@ -665,6 +667,7 @@ crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe.rs	488	10
 crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe/guest_code.rs	149	0
 crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe/options.rs	198	0
 crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe/receipt.rs	262	0
+crates/bridgevm-hvf/examples/bridgevm_pc_gic_probe.rs	141	6
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe.rs	188	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/boot_media_setup.rs	111	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/final_report.rs	385	0
