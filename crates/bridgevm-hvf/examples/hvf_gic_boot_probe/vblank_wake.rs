@@ -6,7 +6,7 @@
 //! one (the earlier `BRIDGEVM_VBLANK_HZ=120` boot freeze: driver init waits on
 //! NOP completions while exits sit at vtimer-only rates). This waker bounds
 //! retire latency the way `ServiceWake` bounds service-tick latency: a thread
-//! polls the device's lock-free `VblankWakeState` (never the platform mutex —
+//! waits on the device's platform-lock-free `VblankWakeState` (never the platform mutex —
 //! vCPU threads hold that almost continuously under 3D load, which is what
 //! sank every lock-taking host pacer variant) and forces ONE vCPU exit only
 //! when a parked NOP's deadline has actually passed. Under 3D load the guest
@@ -16,14 +16,13 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use bridgevm_hvf::virtio_gpu::VblankWakeState;
 
-use super::{hv_vcpus_exit, HvVcpuT, EXIT_CANCELED};
+use super::{HvVcpuT, EXIT_CANCELED};
 
-/// Idle-poll granularity while nothing is parked or a fire is outstanding.
-const IDLE_POLL: Duration = Duration::from_millis(2);
+#[path = "vblank_wake/waiter.rs"]
+mod waiter;
 
 pub struct VblankWake {
     fired: Arc<AtomicBool>,
@@ -48,32 +47,7 @@ impl VblankWake {
         }
         self.started = true;
         let fired = Arc::clone(&self.fired);
-        std::thread::spawn(move || loop {
-            // Never fire while a previous fire is unconsumed: each forced exit
-            // must map 1:1 onto one `fired` claim in the exit dispatcher, or
-            // the surplus EXIT_CANCELED is misattributed to the watchdog and
-            // stops the probe (live-observed: re-firing while the vCPU thread
-            // was blocked in a ramfb checkpoint dump killed boots at the 30s
-            // and 90s checkpoints).
-            if fired.load(Ordering::SeqCst) {
-                std::thread::sleep(IDLE_POLL);
-                continue;
-            }
-            let Some(remaining) = state.time_to_deadline(Instant::now()) else {
-                std::thread::sleep(IDLE_POLL);
-                continue;
-            };
-            if !remaining.is_zero() {
-                std::thread::sleep(remaining.min(IDLE_POLL));
-                continue;
-            }
-            fired.store(true, Ordering::SeqCst);
-            let v = vcpu;
-            // SAFETY: Category 8 - `v` is the live HVF vCPU handle owned by
-            // the probe loop, and the pointer is valid for this synchronous
-            // call that requests one vCPU to leave `hv_vcpu_run`.
-            unsafe { hv_vcpus_exit(&v, 1) };
-        });
+        std::thread::spawn(move || waiter::run(vcpu, state, fired));
     }
 
     pub fn canceled_by_vblank_wake(&self, exit_reason: u32, watchdog_fired: &AtomicBool) -> bool {

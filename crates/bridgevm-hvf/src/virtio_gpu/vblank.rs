@@ -3,27 +3,9 @@
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 use std::fmt::Write as _;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
-
-/// Lock-free wake signal for host vblank pacing. The device (behind the
-/// platform mutex, on a vCPU thread) publishes "a parked vsync NOP exists and
-/// becomes due at `deadline_ns`"; a host waker thread reads it WITHOUT any
-/// lock and forces a vCPU exit only when the deadline has passed, so the
-/// per-exit drain retires the NOP even while the guest idles in WFI. This is
-/// the piece the earlier host-pacing attempts lacked: a host thread must never
-/// contend for the platform mutex (vCPU threads hold it almost continuously
-/// under 3D load), and it must never force exits unconditionally (exit storm).
-#[derive(Debug)]
-pub struct VblankWakeState {
-    pub(crate) base: Instant,
-    pub(crate) parked: AtomicBool,
-    pub(crate) deadline_ns: AtomicU64,
-}
 
 #[derive(Debug, Clone)]
 pub(crate) struct PendingVblankResponse {
@@ -32,48 +14,6 @@ pub(crate) struct PendingVblankResponse {
     pub(crate) head: u16,
     pub(crate) descs: Vec<Descriptor>,
     pub(crate) response: Vec<u8>,
-}
-
-impl VblankWakeState {
-    pub fn new() -> Self {
-        Self {
-            base: Instant::now(),
-            parked: AtomicBool::new(false),
-            deadline_ns: AtomicU64::new(0),
-        }
-    }
-
-    pub(crate) fn publish(&self, parked: bool, deadline: Option<Instant>) {
-        let deadline_ns = deadline
-            .map(|d| {
-                u64::try_from(d.saturating_duration_since(self.base).as_nanos()).unwrap_or(u64::MAX)
-            })
-            .unwrap_or(0);
-        self.deadline_ns.store(deadline_ns, Ordering::SeqCst);
-        self.parked.store(parked, Ordering::SeqCst);
-    }
-
-    pub fn parked(&self) -> bool {
-        self.parked.load(Ordering::SeqCst)
-    }
-
-    /// Time remaining until the parked NOP is due, `Duration::ZERO` when due
-    /// now, or `None` when nothing is parked.
-    pub fn time_to_deadline(&self, now: Instant) -> Option<Duration> {
-        if !self.parked() {
-            return None;
-        }
-        let deadline_ns = self.deadline_ns.load(Ordering::SeqCst);
-        let now_ns =
-            u64::try_from(now.saturating_duration_since(self.base).as_nanos()).unwrap_or(u64::MAX);
-        Some(Duration::from_nanos(deadline_ns.saturating_sub(now_ns)))
-    }
-}
-
-impl Default for VblankWakeState {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl VirtioGpu {
@@ -91,7 +31,7 @@ impl VirtioGpu {
         });
     }
 
-    /// Share the lock-free wake signal a host waker thread polls to bound
+    /// Share the lock-free wake signal a host waker thread waits on to bound
     /// vblank retire latency while the guest idles (no vCPU exits).
     pub fn set_vblank_wake(&mut self, wake: Arc<VblankWakeState>) {
         self.vblank_wake = Some(wake);

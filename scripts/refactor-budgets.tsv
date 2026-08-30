@@ -489,7 +489,8 @@ crates/bridgevm-hvf/src/virtio_gpu/trace.rs	219	0
 crates/bridgevm-hvf/src/virtio_gpu/trace_fence.rs	53	0
 crates/bridgevm-hvf/src/virtio_gpu/trace_fields.rs	309	0
 crates/bridgevm-hvf/src/virtio_gpu/trace_submit.rs	38	0
-crates/bridgevm-hvf/src/virtio_gpu/vblank.rs	157	0
+crates/bridgevm-hvf/src/virtio_gpu/vblank.rs	100	0
+crates/bridgevm-hvf/src/virtio_gpu/vblank_wake_state.rs	95	0
 crates/bridgevm-hvf/src/virtio_gpu/venus_start_trace.rs	127	0
 crates/bridgevm-hvf/src/virtio_gpu/virtqueue.rs	404	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/backend.rs	224	3
@@ -747,7 +748,8 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/storage_effect_receipt.rs	154	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/storage_effect_receipt_tests.rs	232	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/storage_reporting.rs	179	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/trng_dispatch.rs	70	1
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vblank_wake.rs	66	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vblank_wake.rs	38	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vblank_wake/waiter.rs	31	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator.rs	195	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator_tests.rs	144	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination.rs	334	1
