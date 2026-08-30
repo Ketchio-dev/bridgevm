@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-30",
-  "tested_commit": "e38ba7c9dc252d13977a4e3c69564cc88abb1b35",
+  "tested_commit": "5db0948751d41f2f8f200e01431f6c7ea5ee355e",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -139,7 +139,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "Re-proven 2026-08-30 at exact tested code head e38ba7c9dc252d13977a4e3c69564cc88abb1b35. The complete local scripts/check-project.sh passed, including workspace and Venus tests, the probe example, Rust formatting and clippy policy, structural budgets, documentation gates, Swift build/tests and all XCTest-shim suites. GitHub-hosted CI run 33323930432 passed the repository matrix, and Security and quality run 33323931308 passed fuzz corpus smoke, Loom, graphics-claim, live-gate and supply-chain policy checks. A9 remains OPEN. B4 is separately PROVEN by exact-head Studio t8 job 20260830-134316-74417-14894: fixed N=20 landed 20/20 with zero rendering/package regressions and p95 243 ms.",
+      "measured": "Re-proven 2026-08-30 at exact tested code head 5db0948751d41f2f8f200e01431f6c7ea5ee355e. The complete local scripts/check-project.sh passed, including workspace and Venus tests, the probe example, Rust formatting and clippy policy, structural budgets, documentation gates, Swift build/tests and all XCTest-shim suites. GitHub-hosted CI run 33328773656 passed the repository matrix, including the Rust 1.98 latest-stable advisory, and Security and quality run 33328775153 passed fuzz corpus smoke, Loom, graphics-claim, live-gate and supply-chain policy checks. An exact-head live single-run probe also delivered the BridgeVM Virtual ARM PC architected-timer PPI in-kernel at the independent GIC and RAM addresses; it is not firmware or Windows boot evidence. A9 remains OPEN. B4 is separately PROVEN by exact-head Studio t8 job 20260830-134316-74417-14894: fixed N=20 landed 20/20 with zero rendering/package regressions and p95 243 ms.",
       "evidence_paths": [
         "STATUS.md"
       ]

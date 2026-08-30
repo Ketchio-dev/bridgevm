@@ -61,6 +61,16 @@ reported a 64 KiB size and alignment. The unreleased v1 draft was corrected to
 redistributor and MSI addresses. This is a live single-run host-placement
 receipt, not evidence that firmware or Windows boots this board.
 
+A second bounded probe at exact BridgeVM code head
+`5db0948751d41f2f8f200e01431f6c7ea5ee355e` mapped executable guest RAM at
+`0x1_0000_0000`, created the same host GIC, configured its system-register CPU
+interface and virtual-timer PPI from a minimal EL1 guest, and observed that
+guest's IRQ handler write `flag=1`. It produced no
+`HV_EXIT_REASON_VTIMER_ACTIVATED` exit, demonstrating in-kernel PPI delivery at
+the independent board addresses. This remains one live interrupt-path run, not
+a firmware, Windows, or device-SPI result. See the
+[exact-head receipt](../windows-arm/evidence/bridgevm-pc-gic-irq-live-20260830.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -79,8 +89,8 @@ ACPI, SMBIOS, PCIe and device interfaces.
 |---|---|
 | Versioned identity, address map and overlap tests | implemented, static only |
 | Minimal memory layout, vars flash, UART, RTC and PCIe ECAM runtime | implemented, host-unit only |
-| Host GIC geometry validation and bounded placement probe | live single-run placement passed; integration open |
-| HVF memory mapping and device interrupt routing | open |
+| Host GIC geometry validation and bounded placement probe | live single-run placement passed |
+| HVF RAM mapping and architected-timer PPI delivery | live single-run passed; firmware and device SPI integration open |
 | Independently built and audited UEFI firmware | open |
 | UEFI ACPI/SMBIOS/GOP/block-I/O handoff | open |
 | Windows installer and installed-disk boot | open |
