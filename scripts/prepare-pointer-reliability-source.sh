@@ -51,15 +51,13 @@ send() {
   printf '%s\n' "$command" >> "$CTL"; wait_for '^BVAGENT END ' $((before + 1)) 180
   [[ $(grep -aE '^BVAGENT CMD .* exit=' "$LOG" | tail -1) == *' exit=0' ]]
 }
-BRIDGEVM_BOOT_PROGRESS_KILL=1 scripts/run-hvf-windows-installed-boot.sh \
-  --target "$STAGE/disk.raw" --vars "$STAGE/vars.fd" --evidence-dir "$OUT/preparation" \
+BRIDGEVM_BOOT_PROGRESS_KILL=1 scripts/run-hvf-windows-installed-boot.sh --target "$STAGE/disk.raw" --vars "$STAGE/vars.fd" \
+  --evidence-dir "$OUT/preparation" \
   --watchdog-ms 720000 --ram-mib 6144 --smp-cpus 4 --max-reboots 8 --release --enable-xhci \
-  --agent-service-control "$CTL" --agent-share-host "$OUT/preparation/share" \
-  --agent-share-guest 'C:\BridgeVMPtr' --agent-share-ms 500 --virtio-gpu-3d \
-  --gpu-trace "$OUT/preparation/virtio-gpu.jsonl" --gpu-trace-protocol venus \
+  --agent-service-control "$CTL" --agent-share-host "$OUT/preparation/share" --agent-share-guest 'C:\BridgeVMPtr' \
+  --agent-share-ms 500 --virtio-gpu-3d --gpu-trace "$OUT/preparation/virtio-gpu.jsonl" --gpu-trace-protocol venus \
   --viogpu3d-dir "$VIOGPU_DIR" > "$OUT/preparation/launcher.out" 2>&1 &
-pid=$!
-wait_for '^BVAGENT SERVICE start' 1 1200 || fail 'B4 source agent timeout'
+pid=$!; wait_for '^BVAGENT SERVICE start' 1 1200 || fail 'B4 source agent timeout'
 ready_cmd='powershell -NoProfile -Command "& schtasks.exe /Query /TN BridgeVM-VioGpu3DFirstBoot *> $null; $task=($LASTEXITCODE -eq 0); $ready=(Test-Path C:\BridgeVM\stage3.flag) -and (-not $task); if($ready){Write-Output BVFIRSTBOOT_READY; exit 0}; Write-Output BVFIRSTBOOT_PENDING; exit 3"'
 deadline=$((SECONDS + 2700)); ready=false
 while (( SECONDS < deadline )); do
@@ -72,6 +70,8 @@ for _ in $(seq 1 300); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
 kill -0 "$pid" 2>/dev/null && fail 'B4 source shutdown timeout'
 wait "$pid" || fail 'B4 source launcher failed'; pid=''
 [[ $(seal "$SOURCE") == "$source_image" && $(seal "$SOURCE_VARS") == "$source_vars" ]] || fail 'immutable source changed'
+[[ -f "$LOG" && -f "$OUT/preparation/virtio-gpu.jsonl" ]] || fail 'B4 source renderer evidence missing'
+grep -aEq 'Illegal resource|context error reported' "$LOG" "$OUT/preparation/virtio-gpu.jsonl" && fail 'B4 source rendering/package regression'
 image=$(seal "$STAGE/disk.raw"); vars=$(seal "$STAGE/vars.fd"); retained=$ROOT/$image-$vars
 [[ ! -e "$retained" ]] || fail 'prepared B4 identity already exists'
 {
