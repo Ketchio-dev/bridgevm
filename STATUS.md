@@ -15,12 +15,11 @@ Release-blocking criteria proven: **18 / 19**. Open: A9.
 
 Known open defects:
 - **A9**: Windows-HVF 3D driver injection is unavailable for install and import: signed kernel-policy provenance and a clean-machine installation flow have not been proven. The product exposes only 3D-off install/import.
-- **B4**: Pointer interaction is not yet reliable: the latest retained fixed 20-boot campaign landed 9/20 with p95 visible-response latency 704 ms against the required 20/20 and 250 ms. Keyboard input is unaffected.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-08-29 at commit `8a9728c85de4b7ee4b101e81f727257b5b4dc22a`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-08-30 at commit `8a9728c85de4b7ee4b101e81f727257b5b4dc22a`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 ## How to read the generated status
@@ -69,8 +68,8 @@ criteria.
 ### Display, input, and integration
 
 - virtio-gpu display;
-- keyboard input (absolute-pointer *delivery* is proven, but click reliability
-  is an open defect — see criterion B4 and the known limitations below);
+- keyboard and absolute-pointer input, including a fixed 20/20 live
+  pointer-click reliability campaign;
 - non-ASCII text path;
 - dynamic resize;
 - network connectivity;
@@ -137,11 +136,6 @@ The 1.0 boundary is the proven evidence set, not universal compatibility:
   scope;
 - some historical tools and evidence paths are still more lab-oriented than
   product-oriented;
-- **pointer clicks are unreliable** (criterion B4, open): in the latest live
-  batch the host delivered every click but the guest acted on 1 of 10
-  (`docs/windows-arm/evidence/b4-pointer-batch-20260817.md`). Every
-  host-visible counter is identical between a landed and a lost click, so the
-  next step is guest-side instrumentation. Keyboard input is unaffected;
 - the legacy `.qemuCompat` engine runs swtpm, qemu-system-aarch64 and the edk2
   firmware from fixed Homebrew paths, so on that path anything a user places
   there decides what the app runs and what the guest boots. That is how the

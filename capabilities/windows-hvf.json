@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "capability_id": "windows-hvf",
-  "reviewed": "2026-08-29",
+  "reviewed": "2026-08-30",
   "tested_commit": "8a9728c85de4b7ee4b101e81f727257b5b4dc22a",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
@@ -278,16 +278,16 @@
     {
       "id": "B4",
       "title": "Pointer click reliability",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": false,
       "statement": "Pointer interaction passes a fixed 20-boot live campaign at 20/20 with p95 visible-response latency <=250 ms.",
-      "known_defect": "Pointer interaction is not yet reliable: the latest retained fixed 20-boot campaign landed 9/20 with p95 visible-response latency 704 ms against the required 20/20 and 250 ms. Keyboard input is unaffected.",
-      "measured": "OPEN 2026-08-25: fresh complete t8 job 20260825-032534-61218-23891 at green main 0ea368e90f945d5c40d414a2b9ea886faad94878 landed 9/20 with p95 704 ms. Eight lanes retained stable all-black active IOSurfaces and three additional lanes refused an invalid target. The fixed gate remains 20/20 and p95 <=250 ms; neither threshold changed.",
+      "measured": "PROVEN 2026-08-30: complete Studio t8 job 20260829-215356-7576-17586 at sealed BridgeVM commit 080462846acbe4cb784bd9b532d7cd39921aa549 landed 20/20 pointer samples with zero rendering/package regressions and p95 first-visible-change latency 245 ms against the unchanged 250 ms limit. Every independent disk/vars clone recorded host fire, guest press and release, one target click, stuck=0, and an active-CGL-IOSurface change. The public receipt seals image 7385d2005f3c48c40519a2d9cf2b9f975a3763ad8f37e84937d5ddf8429b0f8b, vars bec224d27c8681d2db69583e933e2d99b6fa5265d91d37373cb7a2c8b71853cd, driver tree c46486e5643317002b8848ac855324bc397e6ee6ac6e2987da7af0c61c6a3860, and input manifest 9d5844483ef72d9c240e5ccff473089b4b51b2533e232b95f322503fa4b19f94. Historical failed job 20260825-032534-61218-23891 remains recorded as 9/20, p95 704 ms; its rendering/package failures were not rewritten as pointer outcomes.",
       "evidence_paths": [
         "docs/windows-arm/evidence/b4-pointer-batch-20260817.md",
         "docs/windows-arm/evidence/b4-pointer-latency-20260816.md",
         "docs/windows-arm/evidence/b4-pointer-reliability-batch-20260820.md",
-        "docs/windows-arm/evidence/b4-pointer-reliability-gate-20260820.md"
+        "docs/windows-arm/evidence/b4-pointer-reliability-gate-20260820.md",
+        "docs/windows-arm/evidence/b4-pointer-reliability-proven-20260830.md"
       ]
     },
     {

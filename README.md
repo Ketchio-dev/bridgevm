@@ -39,9 +39,8 @@ experimental accelerated 3D.
 
 - QEMU-free Windows 11 Arm execution on BridgeVM's own VMM;
 - persistent NVMe storage and UEFI variable state;
-- SMP, PCIe, xHCI keyboard input, virtio networking, and host audio (absolute
-  pointer delivery works, but click reliability is an open defect — see the
-  known limitations below);
+- SMP, PCIe, xHCI keyboard and absolute-pointer input, virtio networking, and
+  host audio, including a fixed 20/20 live pointer-click reliability gate;
 - dynamic display resizing, clipboard integration, and folder transfer through
   the guest-agent path;
 - TPM 2.0, Secure Boot, measured-boot evidence, encrypted vTPM lifecycle, and
@@ -63,12 +62,11 @@ Release-blocking criteria proven: **18 / 19**. Open: A9.
 
 Known open defects:
 - **A9**: Windows-HVF 3D driver injection is unavailable for install and import: signed kernel-policy provenance and a clean-machine installation flow have not been proven. The product exposes only 3D-off install/import.
-- **B4**: Pointer interaction is not yet reliable: the latest retained fixed 20-boot campaign landed 9/20 with p95 visible-response latency 704 ms against the required 20/20 and 250 ms. Keyboard input is unaffected.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-08-29 at commit `8a9728c85de4b7ee4b101e81f727257b5b4dc22a`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-08-30 at commit `8a9728c85de4b7ee4b101e81f727257b5b4dc22a`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 For the exact thresholds and receipts, see the
@@ -250,11 +248,6 @@ polish**, rather than proving that the core Windows VMM can reach a desktop:
 Known Engineering Preview defects are disclosed in the generated capability
 summary above and tracked as open criteria:
 
-- **Pointer clicks are unreliable** (criterion B4). In the latest ten-boot live
-  batch the host delivered every click but Windows acted on only one
-  ([`docs/windows-arm/evidence/b4-pointer-batch-20260817.md`](docs/windows-arm/evidence/b4-pointer-batch-20260817.md)).
-  Keyboard input is unaffected. The criterion stays open until a 20/20
-  reliability gate passes.
 - **Accelerated-path glyph rendering.** Body text renders correctly at the
   native guest resolution, but window titles, tab labels and menu bars can
   render as blank. It is investigated in
