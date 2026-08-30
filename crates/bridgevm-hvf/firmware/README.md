@@ -45,6 +45,16 @@ before verifying the reproducible digest. Its output is a development-only DXE
 driver, not a bootable firmware volume. It does not establish reset-vector,
 UEFI-service, installer or Windows boot support.
 
+The pinned generic DXE Core can separately be packaged into a reproducible
+1 MiB PI firmware volume:
+
+```sh
+scripts/build-bridgevm-pc-dxe-core-fv.sh /path/to/edk2 /path/to/output
+```
+
+That output is a build-only loader input. It is not connected to the reset
+image and does not prove DXE entry, UEFI services or Windows boot.
+
 The same package now contains the first BridgeVM-owned reset entry. It builds a
 64 MiB development flash image with executable code at the board's fixed GPA
 zero:

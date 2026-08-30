@@ -1513,6 +1513,7 @@ scripts/package-tarball.sh	51
 scripts/measure-pointer-latency-batch.sh	36
 scripts/check-hvf-windows-coherence-protocol.sh	45
 scripts/build-bridgevm-pc-edk2-consumer.sh	157	0
+scripts/build-bridgevm-pc-dxe-core-fv.sh	174	0
 scripts/check-bridgevm-pc-firmware-boundary.sh	50	0
 scripts/build-bridgevm-pc-reset-vector.sh	134	0
 scripts/check-bridgevm-pc-reset-vector-boundary.sh	28	0
