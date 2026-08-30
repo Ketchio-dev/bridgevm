@@ -1,12 +1,12 @@
 //! Wake the vCPU only when the host appends to the live-input control file.
 
-use std::path::PathBuf;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use std::time::{Duration, Instant};
 use crate::xhci_hid_input::SetupInputHostWake;
 use crate::{hv_vcpus_exit, watchdog_generation_matches, HvVcpuT, EXIT_CANCELED};
 use bridgevm_hvf::platform_virt::VirtPlatform;
 use std::sync::atomic::AtomicU64;
+use crate::live_input::InputControlFile;
 
 const POLL: Duration = Duration::from_millis(2);
 
@@ -20,14 +20,14 @@ impl InputControlWake {
 
     pub fn ensure_started(&mut self, vcpu: HvVcpuT) {
         if self.started { return; }
-        let Some(path) = std::env::var_os("BRIDGEVM_INPUT_CONTROL").filter(|p| !p.is_empty()).map(PathBuf::from) else { return; };
+        let Some(mut file) = InputControlFile::from_env() else { return; };
         self.started = true;
         let fired = Arc::clone(&self.fired);
         std::thread::spawn(move || {
-            let mut length = file_length(&path).unwrap_or(0);
+            let mut length = file.length().unwrap_or(0);
             loop {
                 if !fired.load(Ordering::SeqCst)
-                    && input_length_changed(&mut length, file_length(&path))
+                    && input_length_changed(&mut length, file.length())
                 {
                     fired.store(true, Ordering::SeqCst);
                     exit_vcpu(vcpu);
@@ -70,7 +70,6 @@ impl PointerDeadlineWake {
     }
 }
 fn exit_vcpu(vcpu: HvVcpuT) { unsafe { hv_vcpus_exit(&vcpu, 1) }; }
-fn file_length(path: &PathBuf) -> Option<u64> { std::fs::metadata(path).ok().map(|m| m.len()) }
 fn input_length_changed(previous: &mut u64, observed: Option<u64>) -> bool {
     let Some(observed) = observed else { return false; };
     if observed == *previous { return false; }

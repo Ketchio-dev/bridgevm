@@ -1,8 +1,6 @@
 use std::collections::VecDeque;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::os::fd::AsRawFd;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
@@ -10,7 +8,9 @@ use bridgevm_hvf::platform_virt::VirtPlatform;
 use bridgevm_hvf::xhci::{XhciPointerInputQueueError, XhciSetupInputQueueError};
 
 use crate::xhci_hid_input::{parse_pointer_input_actions, parse_setup_input_actions};
-
+#[path = "input_control_file.rs"]
+mod input_control_file;
+pub(crate) use input_control_file::InputControlFile;
 const POLL_INTERVAL: Duration = Duration::from_millis(16);
 const MAX_PENDING_COMMANDS: usize = 64;
 const MAX_COMMAND_BYTES: usize = 256;
@@ -38,7 +38,7 @@ fn parse_resize(value: &str) -> Option<(u32, u32)> {
 }
 
 pub struct LiveInputController {
-    path: Option<PathBuf>,
+    source: Option<InputControlFile>,
     offset: u64,
     partial: String,
     pending: VecDeque<LiveInputCommand>,
@@ -49,9 +49,7 @@ pub struct LiveInputController {
 impl LiveInputController {
     pub fn from_env() -> Self {
         Self {
-            path: std::env::var_os("BRIDGEVM_INPUT_CONTROL")
-                .filter(|value| !value.is_empty())
-                .map(PathBuf::from),
+            source: InputControlFile::from_env(),
             offset: 0,
             partial: String::new(),
             pending: VecDeque::new(),
@@ -60,7 +58,7 @@ impl LiveInputController {
         }
     }
 
-    pub fn poll_due(&self, now: Instant) -> bool { self.path.is_some() && now >= self.next_poll }
+    pub fn poll_due(&self, now: Instant) -> bool { self.source.is_some() && now >= self.next_poll }
 
     pub fn tick(
         &mut self,
@@ -142,19 +140,11 @@ impl LiveInputController {
     }
 
     fn read_new_commands(&mut self) {
-        let Some(path) = self.path.as_deref() else {
+        let Some(mut source) = self.source.take() else {
             return;
         };
-        let Ok(mut file) = OpenOptions::new().read(true).write(true).open(path) else {
-            return;
-        };
-        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
-            return;
-        }
-        self.read_new_commands_locked(&mut file);
-        unsafe {
-            libc::flock(file.as_raw_fd(), libc::LOCK_UN);
-        }
+        let _ = source.with_exclusive(|file| self.read_new_commands_locked(file));
+        self.source = Some(source);
     }
 
     fn read_new_commands_locked(&mut self, file: &mut File) {
@@ -266,7 +256,7 @@ impl LiveInputController {
 mod clock_tests;
 #[cfg(test)]
 mod tests {
-    use super::{LiveInputCommand, LiveInputController, COMPACT_AFTER_BYTES};
+    use super::{InputControlFile, LiveInputCommand, LiveInputController, COMPACT_AFTER_BYTES};
     use std::collections::VecDeque;
     use std::fs::{self, OpenOptions};
     use std::io::Write;
@@ -275,7 +265,7 @@ mod tests {
 
     fn controller() -> LiveInputController {
         LiveInputController {
-            path: None,
+            source: None,
             offset: 0,
             partial: String::new(),
             pending: VecDeque::new(),
@@ -287,7 +277,7 @@ mod tests {
     #[test]
     fn live_input_accepts_only_bounded_typed_commands() {
         let mut input = controller();
-        input.path = Some(PathBuf::from("input.ctl")); input.push_line("KEY text:abc123");
+        input.source = Some(InputControlFile::from_path(PathBuf::from("input.ctl"))); input.push_line("KEY text:abc123");
         input.push_line("POINTER click:100x200");
         input.push_line("UNKNOWN anything");
         assert_eq!(input.pending.len(), 2);
@@ -347,7 +337,7 @@ mod tests {
     #[test]
     fn live_input_accepts_a_bounded_snapshot_label_and_rejects_an_empty_one() {
         let mut input = LiveInputController {
-            path: None,
+            source: None,
             offset: 0,
             partial: String::new(),
             pending: VecDeque::new(),
@@ -378,7 +368,7 @@ mod tests {
         contents.push(b'\n');
         fs::write(&path, contents).unwrap();
         let mut input = LiveInputController {
-            path: Some(PathBuf::from(&path)),
+            source: Some(InputControlFile::from_path(PathBuf::from(&path))),
             offset: 0,
             partial: String::new(),
             pending: VecDeque::new(),
@@ -406,7 +396,7 @@ mod tests {
         ));
         fs::write(&path, b"KEY text:first\n").unwrap();
         let mut input = LiveInputController {
-            path: Some(PathBuf::from(&path)),
+            source: Some(InputControlFile::from_path(PathBuf::from(&path))),
             offset: 0,
             partial: String::new(),
             pending: VecDeque::new(),
