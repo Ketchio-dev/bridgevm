@@ -18,10 +18,12 @@ VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 
 parse_run_log() { # fired press release stuck first_ms classification
-  local log="$1" ptr="${2:-/dev/null}" click="${3:-/dev/null}" first='' fired=false press=0 release=0 edges=0 stuck=1 ready cx cy hid_x hid_y env baseline trace
+  local log="$1" ptr="${2:-/dev/null}" click="${3:-/dev/null}" first='' fired=false press=0 release=0 edges=0 stuck=1 ready cx cy hid_x hid_y env baseline trace case_failure
   baseline="$(dirname "$log")/visible/baseline.env"
   trace="$(dirname "$log")/virtio-gpu.jsonl"
+  case_failure="$(dirname "$log")/case-failure.class"
   grep -Eqs 'Illegal resource|context error reported' "$log" "$trace" 2>/dev/null && { echo 'false 0 0 1 renderer-error rendering-package-regression'; return; }
+  grep -qx 'rendering-package-regression' "$case_failure" 2>/dev/null && { echo 'false 0 0 1 case-setup-failure rendering-package-regression'; return; }
   grep -qx 'result=baseline-not-presented' "$baseline" 2>/dev/null && { echo 'false 0 0 1 baseline-not-presented rendering-package-regression'; return; }
   ready=$(tr -d '\r' < "$(dirname "$log")/share/bv-pointer-target-ready.log" 2>/dev/null || true)
   [[ "$ready" =~ ^BVTARGET.ready.width=1600.height=900.screen_x=([-0-9]+).screen_y=([-0-9]+).center_x=([-0-9]+).center_y=([-0-9]+).virtual_x=([-0-9]+).virtual_y=([-0-9]+).virtual_w=([0-9]+).virtual_h=([0-9]+).hwnd=([1-9][0-9]*)$ ]] || { echo 'false 0 0 1 invalid-target pointer'; return; }
@@ -57,6 +59,10 @@ if [[ "${1:-}" == "--selftest" ]]; then
   r=$(parse_run_log "$t" "$p" "$c")
   [[ "$r" == "false 0 0 1 baseline-not-presented rendering-package-regression" ]] || fail "selftest baseline parse: got '$r'"
   rm "$d/visible/baseline.env"
+  printf 'rendering-package-regression\n' > "$d/case-failure.class"
+  r=$(parse_run_log "$t" "$p" "$c")
+  [[ "$r" == "false 0 0 1 case-setup-failure rendering-package-regression" ]] || fail "selftest case-failure parse: got '$r'"
+  rm "$d/case-failure.class"
   : > "$c"; r=$(parse_run_log "$t" "$p" "$c")
   [[ "$r" == "false 0 0 1 invalid-click-count pointer" ]] || fail "selftest missing-click parse: got '$r'"
   printf 'BVTARGET click count=1\r\n' > "$c"
