@@ -115,6 +115,18 @@ fixed thresholds and retained receipts.
 - Running-state suspend is outside the v1 scope; powered-off snapshots are the
   supported persistence boundary.
 
+## Future direction
+
+Production Windows 3D driver injection is a future opportunity, not an active
+release commitment. Work can resume when BridgeVM has an organization or
+partner able to provide a Microsoft kernel-policy-signed ARM64 package. Both
+ISO install and installed-disk import must then verify that same package before
+changing a VM, followed by a retained clean-machine product-flow receipt.
+
+Until those external prerequisites exist, A9 remains OPEN, the General Preview
+stays 3D-off, and Graphics Lab results are not treated as production-signing
+evidence.
+
 ## Build from source
 
 Requirements: Apple silicon, macOS 14+, Xcode/Swift 5.9+, and Rust 1.85+.
