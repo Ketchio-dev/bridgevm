@@ -40,7 +40,7 @@ impl InputControlFile {
         Some(result)
     }
 
-    fn file(&mut self) -> Option<&mut File> {
+    pub(crate) fn file(&mut self) -> Option<&mut File> {
         if self.file.is_none() {
             self.file = OpenOptions::new()
                 .read(true)

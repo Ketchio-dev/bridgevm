@@ -1,14 +1,20 @@
 //! Wake the vCPU only when the host appends to the live-input control file.
 
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
-use std::time::{Duration, Instant};
+use std::sync::atomic::AtomicU64;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::time::Instant;
+
+use bridgevm_hvf::platform_virt::VirtPlatform;
+
+use crate::live_input::InputControlFile;
 use crate::xhci_hid_input::SetupInputHostWake;
 use crate::{hv_vcpus_exit, watchdog_generation_matches, HvVcpuT, EXIT_CANCELED};
-use bridgevm_hvf::platform_virt::VirtPlatform;
-use std::sync::atomic::AtomicU64;
-use crate::live_input::InputControlFile;
 
-const POLL: Duration = Duration::from_millis(2);
+#[path = "input_control_wake/vnode.rs"]
+mod vnode;
 
 pub struct InputControlWake {
     fired: Arc<AtomicBool>,
@@ -16,25 +22,23 @@ pub struct InputControlWake {
 }
 
 impl InputControlWake {
-    pub fn new() -> Self { Self { fired: Arc::new(AtomicBool::new(false)), started: false } }
+    pub fn new() -> Self {
+        Self {
+            fired: Arc::new(AtomicBool::new(false)),
+            started: false,
+        }
+    }
 
     pub fn ensure_started(&mut self, vcpu: HvVcpuT) {
-        if self.started { return; }
-        let Some(mut file) = InputControlFile::from_env() else { return; };
+        if self.started {
+            return;
+        }
+        let Some(file) = InputControlFile::from_env() else {
+            return;
+        };
         self.started = true;
         let fired = Arc::clone(&self.fired);
-        std::thread::spawn(move || {
-            let mut length = file.length().unwrap_or(0);
-            loop {
-                if !fired.load(Ordering::SeqCst)
-                    && input_length_changed(&mut length, file.length())
-                {
-                    fired.store(true, Ordering::SeqCst);
-                    exit_vcpu(vcpu);
-                }
-                std::thread::sleep(POLL);
-            }
-        });
+        std::thread::spawn(move || vnode::watch(file, vcpu, fired));
     }
 
     pub fn canceled(&self, reason: u32, watchdog: &AtomicBool) -> bool {
@@ -56,33 +60,27 @@ impl PointerDeadlineWake {
     pub fn new(vcpu: HvVcpuT, generation: (&Arc<AtomicU64>, u64)) -> Self { Self { vcpu, generation: Arc::clone(generation.0), boot_generation: generation.1 } }
 
     pub fn arm(&self, platform: &VirtPlatform, wake: &mut SetupInputHostWake) {
-        let Some(deadline) = platform.xhci_pointer_report_deadline() else { return; };
+        let Some(deadline) = platform.xhci_pointer_report_deadline() else {
+            return;
+        };
         self.arm_at(deadline, wake);
     }
 
     /// Arm `deadline` and report whether this call installed the timer, so a
     /// caller can log its own trigger label.
     pub fn arm_at(&self, deadline: Instant, wake: &mut SetupInputHostWake) -> bool {
-        let (generation, boot, vcpu) = (Arc::clone(&self.generation), self.boot_generation, self.vcpu);
+        let (generation, boot, vcpu) = (
+            Arc::clone(&self.generation),
+            self.boot_generation,
+            self.vcpu,
+        );
         wake.arm(deadline, move || {
-            if watchdog_generation_matches(&generation, boot) { exit_vcpu(vcpu); }
+            if watchdog_generation_matches(&generation, boot) {
+                exit_vcpu(vcpu);
+            }
         })
     }
 }
-fn exit_vcpu(vcpu: HvVcpuT) { unsafe { hv_vcpus_exit(&vcpu, 1) }; }
-fn input_length_changed(previous: &mut u64, observed: Option<u64>) -> bool {
-    let Some(observed) = observed else { return false; };
-    if observed == *previous { return false; }
-    *previous = observed; true
-}
-
-#[cfg(test)]
-#[test]
-fn only_real_control_file_length_changes_request_a_wake() {
-    let mut length = 0;
-    assert!(!input_length_changed(&mut length, None));
-    assert!(!input_length_changed(&mut length, Some(0)));
-    assert!(input_length_changed(&mut length, Some(31)));
-    assert!(!input_length_changed(&mut length, Some(31)));
-    assert!(input_length_changed(&mut length, Some(63)));
+fn exit_vcpu(vcpu: HvVcpuT) {
+    unsafe { hv_vcpus_exit(&vcpu, 1) };
 }
