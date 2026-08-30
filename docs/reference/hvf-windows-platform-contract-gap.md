@@ -4,8 +4,8 @@ _Last updated: 2026-06-21._
 
 > **Status note:** this document records the original contract gap that motivated
 > Path A. The active Path A source of truth is now
-> [`crates/bridgevm-hvf/src/machine.rs`](../crates/bridgevm-hvf/src/machine.rs) plus
-> [`crates/bridgevm-hvf/src/platform_virt/`](../crates/bridgevm-hvf/src/platform_virt).
+> [`crates/bridgevm-hvf/src/machine.rs`](../../crates/bridgevm-hvf/src/machine.rs) plus
+> [`crates/bridgevm-hvf/src/platform_virt/`](../../crates/bridgevm-hvf/src/platform_virt).
 > That implementation now boots stock ArmVirtQemu firmware to the UEFI shell and
 > QEMU direct Linux boot blobs through Debian installer userspace startup. The legacy
 > `src/lib.rs` probe map below is retained as historical context, not as the
@@ -53,7 +53,7 @@ dtc -I dtb -O dts virt.dtb -o virt.dts
 ```
 
 A decompiled reference copy is checked in at
-[`docs/reference/qemu-virt-aarch64-gicv3.dts`](reference/qemu-virt-aarch64-gicv3.dts).
+[`docs/reference/qemu-virt-aarch64-gicv3.dts`](qemu-virt-aarch64-gicv3.dts).
 Re-dump it whenever the bundled QEMU version changes — the addresses are stable
 across recent QEMU releases but the ECAM/highmem layout can shift with options.
 
@@ -99,7 +99,7 @@ GIC: `gic-version=3`, `#interrupt-cells = <3>`, ITS is `msi-controller`.
 | **`fw_cfg`** | `0x0902_0000`, `qemu,fw-cfg-mmio` | **absent** (0 references) | **MISSING — keystone.** No path for the guest ACPI tables, SMBIOS, boot order, kernel/initrd. ArmVirtQemu has nothing to install → ACPI-dependent Windows cannot boot. |
 | **PCIe ECAM** | `pci-host-ecam-generic` @ `0x40_1000_0000` | **absent** (0 references) | **MISSING.** No NVMe, no virtio-pci, no MSI-targeted devices. |
 | **GIC ITS (MSI)** | `its@8080000`, `msi-controller` | **absent** | **MISSING.** No MSI/MSI-X for PCIe devices. |
-| GIC distributor | `0x0800_0000` (in-kernel `hv_gic` or modelled) | userspace skeleton @ `0x1001_0000` | MISMATCH — wrong base, and a hand-rolled model (see [strategy](hvf-windows-engine-strategy.md)). |
+| GIC distributor | `0x0800_0000` (in-kernel `hv_gic` or modelled) | userspace skeleton @ `0x1001_0000` | MISMATCH — wrong base, and a hand-rolled model (see [strategy](../decisions/hvf-windows-engine-strategy.md)). |
 | GIC redistributor | `0x080A_0000` | userspace skeleton @ `0x1002_0000` | MISMATCH. |
 | pflash (code) | `0x0000_0000` | `0x0800_0000` | MISMATCH — bridgevm's code pflash sits exactly where QEMU puts the **GIC distributor**. |
 | PCIe 32-bit MMIO window | `0x1000_0000` | reused as the device MMIO window | COLLISION. |
@@ -120,7 +120,7 @@ stock `edk2-aarch64-code.fd` boots unmodified and the guest ACPI/PCIe/Windows-me
 behaviour matches the QEMU stack that already installs Windows 11 ARM. Rationale,
 the rejected alternative (Path B, own platform + own EDK2 + hand-written ACPI), and
 the sequenced plan live in
-[`docs/hvf-windows-engine-strategy.md`](hvf-windows-engine-strategy.md).
+[`docs/decisions/hvf-windows-engine-strategy.md`](../decisions/hvf-windows-engine-strategy.md).
 
 Path A now has `fw_cfg`, a QEMU-shaped DTB, Apple `hv_gic`, PL011, PL031, empty
 virtio-mmio slots, PCIe ECAM host-bridge config space, a first NVMe endpoint at

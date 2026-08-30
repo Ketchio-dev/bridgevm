@@ -1,6 +1,6 @@
 //! `virt`-compatible machine model — the single source of truth for the
 //! BridgeVM HVF "QEMU virt contract" path (Path A, see
-//! `docs/hvf-windows-engine-strategy.md`).
+//! `docs/decisions/hvf-windows-engine-strategy.md`).
 //!
 //! Every address and interrupt number here is transcribed from the authoritative
 //! QEMU 11.0.1 `virt` (GICv3) device tree dumped in
@@ -9,7 +9,7 @@
 //! compatibility with documented deviations, enumerated in
 //! `docs/machine-contract/qemu-virt-deviations.json`.
 //! The legacy probe harness in `lib.rs` uses a different, colliding map
-//! (`docs/hvf-windows-platform-contract-gap.md`); build new platform code here.
+//! (`docs/reference/hvf-windows-platform-contract-gap.md`); build new platform code here.
 //!
 //! Pure data + logic — no Hypervisor.framework calls, so it builds and tests on
 //! any host.
@@ -209,7 +209,7 @@ pub fn mmio_regions() -> [(&'static str, Region); 16] {
 
 /// First overlapping pair among the fixed MMIO regions, if any. A clean machine
 /// model returns `None`; this guards against the address collisions documented
-/// in `docs/hvf-windows-platform-contract-gap.md`.
+/// in `docs/reference/hvf-windows-platform-contract-gap.md`.
 pub fn first_overlap() -> Option<(&'static str, &'static str)> {
     let regions = mmio_regions();
     for i in 0..regions.len() {

@@ -1,12 +1,12 @@
 //! QEMU `fw_cfg` (firmware configuration) MMIO device model.
 //!
 //! This is the keystone device for the BridgeVM HVF "QEMU virt contract" path
-//! (Path A in `docs/hvf-windows-engine-strategy.md`). Stock ArmVirtQemu firmware
+//! (Path A in `docs/decisions/hvf-windows-engine-strategy.md`). Stock ArmVirtQemu firmware
 //! (BridgeVM's pinned ArmVirtQemu secure+TPM2 code volume) discovers
 //! the guest ACPI tables, SMBIOS, boot order and the kernel/initrd through
 //! `fw_cfg`. Without it the firmware has no ACPI to hand to a Windows or Linux
 //! guest — the root cause catalogued in
-//! `docs/hvf-windows-platform-contract-gap.md`.
+//! `docs/reference/hvf-windows-platform-contract-gap.md`.
 //!
 //! On the QEMU `virt` machine the device lives at MMIO base `0x0902_0000`,
 //! window size `0x18`, device-tree `compatible = "qemu,fw-cfg-mmio"`. This module

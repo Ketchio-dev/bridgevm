@@ -9,7 +9,7 @@ resident guest-agent control, restart, and experimental 3D. The remaining
 release gates are vTPM/Secure Boot lifecycle, a fresh signed ARM64 driver, live
 same-boot product receipts, and distribution signing/notarization. Use
 [STATUS.md](../../STATUS.md) for the concise state and the
-[Windows completion plan](../hvf-windows-install-completion-plan.md) for the
+[Windows completion plan](../plans/hvf-windows-install-completion-plan.md) for the
 authoritative sequence.
 
 BridgeVM's Windows 11 Arm goal is a non-QEMU, Mac-lightweight path that can

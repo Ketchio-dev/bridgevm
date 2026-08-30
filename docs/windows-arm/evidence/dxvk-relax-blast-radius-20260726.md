@@ -13,7 +13,7 @@ affects **every** D3D title, not just geometry-shader ones.
 ## Achievable feature level
 
 `D3D_FEATURE_LEVEL_11_0`, evidenced by the guest draw smoke
-(`docs/hvf-dxvk-d3d11-bringup-20260721.md`):
+(`docs/history/windows-hvf/hvf-dxvk-d3d11-bringup-20260721.md`):
 
 ```text
 BV-D3D11-DRAW-DEVICE feature_level=0xb000 mode=vb
@@ -88,6 +88,6 @@ git log --oneline -1 -- scripts/patches/dxvk-macos-venus-relax.patch
 ```
 
 Live receipts:
-- device + draw: `docs/hvf-dxvk-d3d11-bringup-20260721.md`
+- device + draw: `docs/history/windows-hvf/hvf-dxvk-d3d11-bringup-20260721.md`
 - windowed present on the visible desktop:
   `~/BridgeVM/runs/venus-activate-120.40-demo3-20260721-060901/present-demo-visible-desktop.ppm`

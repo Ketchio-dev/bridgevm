@@ -35,7 +35,7 @@ including:
 - PCI devices such as NVMe, xHCI, virtio networking, audio, TPM, and virtio-gpu.
 
 Every intentional guest-visible difference belongs in
-[`machine-contract/qemu-virt-deviations.json`](machine-contract/qemu-virt-deviations.json).
+[`machine-contract/qemu-virt-deviations.json`](../machine-contract/qemu-virt-deviations.json).
 
 ## Host implementation boundary
 
@@ -56,7 +56,7 @@ BridgeVM owns:
 
 Third-party firmware, rendering libraries, guest drivers, and TPM components stay
 inside their respective licensed component boundaries. See
-[`../THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md).
+[`../THIRD-PARTY-NOTICES.md`](../../THIRD-PARTY-NOTICES.md).
 
 ## Why keep multiple engines
 
@@ -151,8 +151,8 @@ The accelerated graphics path is intentionally layered:
 
 The non-accelerated display path remains a recovery boundary.
 
-See [3D architecture](hvf-3d-engine-plan.md) and the
-[graphics/integration roadmap](hvf-graphics-integration-gap-plan.md).
+See [3D architecture](../plans/hvf-3d-engine-plan.md) and the
+[graphics/integration roadmap](../plans/hvf-graphics-integration-gap-plan.md).
 
 ## Product sequencing
 
@@ -174,7 +174,7 @@ product requirement. Breadth for its own sake is not the goal.
 ## Evidence and source-of-truth rules
 
 Current product wording comes from
-[`../capabilities/windows-hvf.json`](../capabilities/windows-hvf.json).
+[`../capabilities/windows-hvf.json`](../../capabilities/windows-hvf.json).
 
 - `README.md` explains the project to users.
 - `STATUS.md` summarizes the current evidence boundary.

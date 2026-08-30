@@ -7,7 +7,7 @@ Last revised: 2026-08-13
 This document describes the remaining product work around display, graphics,
 and host/guest integration for BridgeVM's Windows HVF engine. Historical product
 comparisons have been removed; current capability claims come from the
-[capability matrix](windows-arm/capability-matrix.md).
+[capability matrix](../windows-arm/capability-matrix.md).
 
 ## Current product surface
 

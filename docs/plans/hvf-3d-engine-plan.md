@@ -7,7 +7,7 @@ Last revised: 2026-08-13
 This document describes the architecture and engineering boundaries of
 BridgeVM's accelerated graphics path. Current capability state and live
 measurements belong in the
-[Windows capability matrix](windows-arm/capability-matrix.md), not in this
+[Windows capability matrix](../windows-arm/capability-matrix.md), not in this
 active plan.
 
 ## Goal
@@ -145,7 +145,7 @@ The graphics stack can include components such as:
 | virtio Windows driver components | guest kernel/display/network packages | retain each package's license and notices |
 
 This table describes component roles only. The authoritative redistribution
-inventory is [`../THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md), and the
+inventory is [`../THIRD-PARTY-NOTICES.md`](../../THIRD-PARTY-NOTICES.md), and the
 packaging gates decide what is actually shipped.
 
 Code from a third-party project must not be copied into BridgeVM merely because

@@ -49,19 +49,19 @@ tests/integration/product-gates-report.sh
 
 **2026-07-21 update:** a real third-party title runs on the stack: PPSSPP
 1.20.4 (unmodified ARM64 build, native Vulkan backend) renders its full UI
-stably for 120 s (`docs/hvf-real-title-ppsspp-20260721.md`; host-visible
+stably for 120 s (`docs/history/windows-hvf/hvf-real-title-ppsspp-20260721.md`; host-visible
 window raised 64→512 MiB). Guest fence latency is solved (45→4,343 fps
 offscreen microbench, wait_avg ~181-189 us,
-`docs/hvf-venus-fence-latency-resolution-20260721.md`). A verified perf
+`docs/history/windows-hvf/hvf-venus-fence-latency-resolution-20260721.md`). A verified perf
 audit then established that the real displayed cadence is ~37 fps and the
 #1 measured host cost is the synchronous GPU→CPU scanout readback inside
 `RESOURCE_FLUSH` (14.09 s of a 120 s run; ~85% of it the GL transfer, per
 the new phase-split instrumentation). Landed since: readback pacing A/B
-knob + phase split (`docs/hvf-scanout-readback-ab-20260721.md`), and
+knob + phase split (`docs/history/windows-hvf/hvf-scanout-readback-ab-20260721.md`), and
 opt-in deferred scanout (`BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT=1`) that
 decouples the readback from the guest present — validated on PPSSPP,
 4,150/4,150 readbacks deferred-serviced
-(`docs/hvf-async-scanout-readback-20260721.md`). Runners now archive
+(`docs/history/windows-hvf/hvf-async-scanout-readback-20260721.md`). Runners now archive
 `C:\BridgeVM\*.log` into the evidence dir. Next perf rungs: Metal/IOSurface
 zero-copy scanout (kills the ~3 ms GL transfer), GPU-device-thread refactor
 (unblocks a host fence-poll thread), x64 DXVK title under Windows x64
@@ -74,8 +74,8 @@ the Venus WDDM render path (display-start wall closed 2026-07-19, driver
 matching virglrenderer shm-import patch, the in-guest draw smoke allocates,
 maps, renders, and reads back host-visible memory with checksums
 byte-identical to the same smoke run natively against MoltenVK
-(`docs/hvf-venus-wddm-display-resolution-20260719.md`,
-`docs/hvf-venus-hostvisible-map-resolution-20260720.md`). The next ladder
+(`docs/history/windows-hvf/hvf-venus-wddm-display-resolution-20260719.md`,
+`docs/history/windows-hvf/hvf-venus-hostvisible-map-resolution-20260720.md`). The next ladder
 rungs are a draw/fence timing baseline, DXVK d3d11 → a real DX11 title, then
 vkd3d-proton d3d12. The section below predates this and is kept for the
 package/injection tooling reference.
@@ -264,7 +264,7 @@ QEMU byte-comparison diagnostic spike.
 The from-scratch VMM (`crates/bridgevm-hvf`, directly on Apple Hypervisor.framework,
 QEMU-independent) now boots a real, installed **Windows 11 ARM64 desktop** and drives
 it with keyboard and pointer. Progress against the completion-plan milestone ladder
-([docs/hvf-windows-install-completion-plan.md](docs/hvf-windows-install-completion-plan.md)):
+([docs/plans/hvf-windows-install-completion-plan.md](docs/plans/hvf-windows-install-completion-plan.md)):
 
 | Milestone | State |
 | --- | --- |
@@ -332,8 +332,8 @@ v1 contract, packaged setup, and a clean UX still need work, and Windows
 still needs injected drivers rather than a turnkey driver story. The project's own strategy note flags this as the
 highest-cost / lowest-user-value track (QEMU+HVF already boots Windows 11 ARM today). Full
 history + reproduction recipes live in the assistant memory status file; strategy/gap context
-in [docs/hvf-windows-engine-strategy.md](docs/hvf-windows-engine-strategy.md) and
-[docs/hvf-windows-platform-contract-gap.md](docs/hvf-windows-platform-contract-gap.md).
+in [docs/decisions/hvf-windows-engine-strategy.md](docs/decisions/hvf-windows-engine-strategy.md) and
+[docs/reference/hvf-windows-platform-contract-gap.md](docs/reference/hvf-windows-platform-contract-gap.md).
 
 ## Parallels-class scope check
 The product plan explicitly targets the four Parallels-like axes, but they are

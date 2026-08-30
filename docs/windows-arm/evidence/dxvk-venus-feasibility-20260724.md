@@ -16,7 +16,7 @@
 > (`present-demo-visible-desktop.ppm`, 1280×800, 60,600 magenta pixels: a DXVK
 > D3D11 window composited by DWM on the Windows 11 desktop).
 >
-> **Authoritative status:** `docs/hvf-dxvk-d3d11-bringup-20260721.md`.
+> **Authoritative status:** `docs/history/windows-hvf/hvf-dxvk-d3d11-bringup-20260721.md`.
 > **Relaxation consequences:** `docs/windows-arm/evidence/dxvk-relax-blast-radius-20260726.md`.
 >
 > The analysis below is retained because it remains a correct description of

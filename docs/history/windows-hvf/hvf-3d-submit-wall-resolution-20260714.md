@@ -88,7 +88,7 @@ above.
 
 ## The old wall was a trace artifact
 
-`docs/hvf-3d-current-wall-20260713.md` anchored the Windows wall on "the owned
+`docs/history/windows-hvf/hvf-3d-current-wall-20260713.md` anchored the Windows wall on "the owned
 context emits no non-empty `SUBMIT_3D`". That statement was FALSE, produced by
 the GPU trace sampler: successful `SUBMIT_3D` commands were sampled
 (first 64, then every 1024th), and the Windows KMD's 60 Hz vsync no-op

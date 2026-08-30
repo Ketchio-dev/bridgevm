@@ -11,7 +11,7 @@
 //! tokens, deduplicated strings block). [`build_virt_fdt`] uses it to emit the
 //! essential `virt` nodes. The output is structurally valid and `dtc`-clean;
 //! firmware acceptance on an entitled host is the next milestone (the live HVF
-//! bring-up in `docs/hvf-windows-engine-strategy.md`).
+//! bring-up in `docs/decisions/hvf-windows-engine-strategy.md`).
 //!
 //! Reference: the DTB binary format (`dtspec`) and
 //! `docs/reference/qemu-virt-aarch64-gicv3.dts`.

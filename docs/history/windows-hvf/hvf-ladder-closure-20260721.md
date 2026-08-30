@@ -27,7 +27,7 @@ states, with evidence:
 - The rung existed to recover vCPU-thread time from the readback; the
   deferred+blit work removed that cost. `command` trace events now carry
   `duration_ns`, so the one remaining candidate (SUBMIT_3D GL decode) is
-  measurable; `docs/hvf-gpu-thread-design-20260721.md` holds the SPSC
+  measurable; `docs/plans/hvf-gpu-thread-design-20260721.md` holds the SPSC
   design and the reopen gate (>5%/s of a core in submit decode).
 
 ## Rung 3 — x64 DXVK under Windows x64 emulation: END-TO-END PROVEN

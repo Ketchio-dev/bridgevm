@@ -1,7 +1,7 @@
 # Responsibility-regroup tooling
 
 These moved ~1,900 items and methods across the workspace (PRs #32–#39) without
-changing a single function body. See `docs/refactor-handoff.md` for what is done,
+changing a single function body. See `docs/plans/refactor-handoff.md` for what is done,
 what is left, and why each safeguard here exists.
 
 Nothing here rewrites code. Every tool only decides *which file* an item lives in.
@@ -36,7 +36,7 @@ python3 scripts/refactor/fix_mod_reexports.py <package> crates/<crate>/src/<modu
 
 Then the usual gates: `cargo fmt --all`, `cargo check --workspace --all-targets`
 (zero warnings), `scripts/check-refactor-budgets.sh`, `git diff --check`, and the
-per-package test counts in `docs/refactor-handoff.md`.
+per-package test counts in `docs/plans/refactor-handoff.md`.
 
 ## Spec format
 

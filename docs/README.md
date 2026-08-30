@@ -2,7 +2,7 @@
 
 Document status: **Current**
 
-Last reviewed: 2026-08-13
+Last reviewed: 2026-08-29
 
 This index separates current product documentation, active engineering plans,
 and dated evidence. If a historical note conflicts with the root `README.md`,
@@ -27,6 +27,20 @@ win.
 - [Development system](development-system.md) — evidence levels, work packets,
   live gates, and definition of done.
 
+## Browse by purpose
+
+| Directory | Contents | Claim status |
+| --- | --- | --- |
+| [`decisions/`](decisions/) | Adopted architecture and product constraints | Current unless explicitly superseded |
+| [`plans/`](plans/) | Approved engineering direction and handoffs | Work in progress, not a product promise |
+| [`windows-arm/evidence/`](windows-arm/evidence/) | Retained live receipts and investigations | Applies only to the named build and fixture |
+| [`history/windows-hvf/`](history/windows-hvf/) | Dated Windows-HVF bring-up records | Historical; never overrides current status |
+| [`reference/`](reference/) | Stable debugging and machine reference material | Background and reproducibility material |
+| [`archive/`](archive/) | Superseded project-level documents | Historical only |
+
+The `docs/` root is intentionally small: it contains only this index and the
+current installation, distribution, development, and licensing entry points.
+
 ## Engine guides
 
 ### Windows HVF
@@ -34,11 +48,11 @@ win.
 - [Windows 11 Arm guide](windows-arm/README.md)
 - [Machine contract](machine-contract/qemu-virt.md)
 - [Machine-contract deviations](machine-contract/qemu-virt-deviations.json)
-- [Windows architecture and risk policy](hvf-competitive-architecture-and-risk-policy.md)
-- [Windows engine strategy](hvf-windows-engine-strategy.md)
+- [Windows architecture and risk policy](decisions/hvf-competitive-architecture-and-risk-policy.md)
+- [Windows engine strategy](decisions/hvf-windows-engine-strategy.md)
 - [Snapshot scope](windows-arm/snapshot-scope-v1.md)
 - [SMCCC TRNG / PSCI contract](windows-arm/smccc-trng-psci-contract.md)
-- [v1 suspend decision](hvf-windows-v1-suspend-decision.md)
+- [v1 suspend decision](decisions/hvf-windows-v1-suspend-decision.md)
 
 ### Apple VZ
 
@@ -56,13 +70,14 @@ win.
 
 These files describe engineering direction, not current product promises:
 
-- [Windows completion plan](hvf-windows-install-completion-plan.md)
-- [Windows 3D plan](hvf-p3-windows-3d-plan.md)
-- [3D architecture](hvf-3d-engine-plan.md)
-- [Graphics and integration roadmap](hvf-graphics-integration-gap-plan.md)
-- [Performance optimization plan](hvf-perf-optimization-plan.md)
-- [GPU thread design](hvf-gpu-thread-design-20260721.md)
-- [HVF refactor extraction plan](hvf-lib-refactor-extraction-plan.md)
+- [Windows completion plan](plans/hvf-windows-install-completion-plan.md)
+- [Windows 3D plan](plans/hvf-p3-windows-3d-plan.md)
+- [3D architecture](plans/hvf-3d-engine-plan.md)
+- [Graphics and integration roadmap](plans/hvf-graphics-integration-gap-plan.md)
+- [Performance optimization plan](plans/hvf-perf-optimization-plan.md)
+- [GPU thread design](plans/hvf-gpu-thread-design-20260721.md)
+- [HVF refactor extraction plan](plans/hvf-lib-refactor-extraction-plan.md)
+- [Structural refactor handoff](plans/refactor-handoff.md)
 
 Plans can contain experiments that were later falsified or superseded. Use the
 capability registry and dated receipts to decide what is proven.
@@ -103,8 +118,8 @@ material and they do not override current product state.
 
 Examples include:
 
-- dated `hvf-*-202607*.md` graphics, fence, scanout, WDDM, and title
-  investigations;
+- dated graphics, fence, scanout, WDDM, and title investigations under
+  [`history/windows-hvf/`](history/windows-hvf/);
 - older Windows evidence under `windows-arm/evidence/`;
 - [previous root README](archive/README-before-20260722.md);
 - [previous root STATUS](archive/STATUS-before-20260722.md).
@@ -119,9 +134,9 @@ defined by the present source tree, the current docs above, `LICENSE`, and
 - [Phase 0 architecture](architecture/phase-0.md) — early architecture history.
 - [QEMU virt AArch64 GICv3 DTS](reference/qemu-virt-aarch64-gicv3.dts) — machine
   contract reference data.
-- [Windows platform contract gap](hvf-windows-platform-contract-gap.md) — earlier
+- [Windows platform contract gap](reference/hvf-windows-platform-contract-gap.md) — earlier
   platform bring-up reference.
-- [KD serial bring-up](hvf-kd-serial-bringup.md) — kernel-debugging procedure.
+- [KD serial bring-up](reference/hvf-kd-serial-bringup.md) — kernel-debugging procedure.
 
 Reference data exists to make interfaces and experiments reproducible. It is not
 a statement that BridgeVM source code was copied from the referenced project.

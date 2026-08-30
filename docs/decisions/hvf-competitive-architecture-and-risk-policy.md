@@ -20,7 +20,7 @@ software have a stable machine shape.
 Compatibility is a protocol and machine-contract choice. BridgeVM owns the host
 runtime, device models, lifecycle, evidence surfaces, and product behavior.
 Guest-visible deviations are recorded in
-[`machine-contract/qemu-virt-deviations.json`](machine-contract/qemu-virt-deviations.json)
+[`machine-contract/qemu-virt-deviations.json`](../machine-contract/qemu-virt-deviations.json)
 instead of being hidden behind informal compatibility claims.
 
 The Windows engine currently includes:
@@ -90,7 +90,7 @@ A performance optimization is acceptable only when all of the following hold:
 
 A design note can explain why a mechanism exists, but it does not prove the
 mechanism works in a real guest. Capability promotion follows the evidence
-hierarchy in [`AGENTS.md`](../AGENTS.md): live receipts, live single runs,
+hierarchy in [`AGENTS.md`](../../AGENTS.md): live receipts, live single runs,
 automated tests, then static reasoning.
 
 No threshold is lowered to make a feature pass.
@@ -134,7 +134,7 @@ Snapshot and restore operations therefore require:
 - content digests and an atomic pair manifest;
 - refusal before live-file mutation when verification fails.
 
-See [`windows-arm/snapshot-scope-v1.md`](windows-arm/snapshot-scope-v1.md).
+See [`windows-arm/snapshot-scope-v1.md`](../windows-arm/snapshot-scope-v1.md).
 
 ## Graphics risk boundary
 
@@ -167,7 +167,7 @@ milestone and is not conflated with ownership of the Windows ISO.
 
 BridgeVM uses third-party firmware, runtime libraries, and guest components only
 under their respective licenses. Attribution and redistribution obligations are
-tracked in [`../THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md).
+tracked in [`../THIRD-PARTY-NOTICES.md`](../../THIRD-PARTY-NOTICES.md).
 
 Architecture documents should describe component roles and interfaces, not make
 claims that BridgeVM source code was copied from another product. Required

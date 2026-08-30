@@ -47,7 +47,7 @@ a fresh finalized ARM64 WDK package and same-boot Windows bind/title receipt,
 production driver signing, and completion of vTPM 2.0 + measured/Secure Boot
 migration, recovery, and guest proof.
 The competitive architecture and performance-risk decisions are fixed in
-`docs/hvf-competitive-architecture-and-risk-policy.md`: the app selects a
+`docs/decisions/hvf-competitive-architecture-and-risk-policy.md`: the app selects a
 rollback-safe aggressive renderer lane, while vTPM/Secure Boot must ship as a
 per-VM encrypted-state and Keychain-backed lifecycle rather than a
 guest-visible device checkbox.
@@ -90,20 +90,20 @@ policy, firmware build receipt, and license notices. A 2026-07-22 cloned live
 run reached the Windows desktop and completed 1,032 TIS commands with no
 backend or malformed-packet failures, including PCR, session, key-creation, and
 NV-public traffic; see the
-[dated command-path receipt](windows-arm/evidence/vtpm-windows-command-path-20260722.md).
+[dated command-path receipt](../windows-arm/evidence/vtpm-windows-command-path-20260722.md).
 A later same-day run drove a full PPI **clear** to completion — `Clear-Tpm -UsePPI`,
 in-process reboot, F12 firmware approval, one successful `TPM2_CC_Clear`
 (`clear=1`, 266 PPI writes), post-clear desktop, and clean shutdown — after
 power-cycling the vTPM on reset and reordering the firmware to process PPI
 before locking the platform hierarchy; see the
-[dated PPI-clear receipt](windows-arm/evidence/vtpm-windows-ppi-clear-20260722.md).
+[dated PPI-clear receipt](../windows-arm/evidence/vtpm-windows-ppi-clear-20260722.md).
 This still does **not** close the security gates: validated firmware-populated
 measured-boot events, clean-second-Mac migration,
 `Confirm-SecureBootUEFI`/PCR 7 proof, and BitLocker recovery remain.
 
 Windows HVF suspend/resume is explicitly not a v1 product capability; the
 experimental single-vCPU checkpoint path must not be advertised as durable
-suspend. See `docs/hvf-windows-v1-suspend-decision.md`.
+suspend. See `docs/decisions/hvf-windows-v1-suspend-decision.md`.
 
 Assistant memory with the full history: `bridgevm-hvf-engine-status.md`.
 

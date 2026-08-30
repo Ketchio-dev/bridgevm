@@ -2,7 +2,7 @@
 // contract that the bundled ArmVirtQemu firmware (edk2-aarch64-code.fd) expects.
 // Regenerate: qemu-system-aarch64 -machine virt,gic-version=3,dumpdtb=virt.dtb \
 //             -cpu cortex-a72 -m 6144 -smp 4 ; dtc -I dtb -O dts virt.dtb
-// Source QEMU: 11.0.1 (Homebrew). See docs/hvf-windows-platform-contract-gap.md
+// Source QEMU: 11.0.1 (Homebrew). See docs/reference/hvf-windows-platform-contract-gap.md
 // ---------------------------------------------------------------------------
 /dts-v1/;
 

@@ -10,7 +10,7 @@ full package has completed a live render-path proof. The preserved package carri
 with a canonical, UMD-registered minimal profile and strips the stale CAT/CER.
 Its finalized test package installed and bound live on 2026-07-12; the guest
 reported WDDM 1.3 and feature level 10_0 while a 23,421-event VirGL trace passed
-the protocol-specific P3 gate. See the [live evidence index](windows-arm/evidence/viogpu3d-virgl-live-20260712.md).
+the protocol-specific P3 gate. See the [live evidence index](../windows-arm/evidence/viogpu3d-virgl-live-20260712.md).
 
 ## The good news: our device is close to feature-compatible
 The concrete VirGL package comes from the ARM64-capable `akre` branch of
@@ -187,7 +187,7 @@ undebuggable in a black box. We are not a black box:
   confirmed by reading `viogpu_adapter.cpp`.
 - Host Venus stack proven (Linux, P2 + GPU execution). The corrected 128 MiB
   live baseline is 105.91 GB/s for fill and 117.14 GB/s for dependent copy; see
-  [the current wall](hvf-3d-current-wall-20260713.md). The older 136.14 result
+  [the current wall](../history/windows-hvf/hvf-3d-current-wall-20260713.md). The older 136.14 result
   used a narrow overwrite workload and is not comparable.
 - P3 host-side observability has started: `BRIDGEVM_VIRTIO_GPU_TRACE_JSONL=/path/to/trace.jsonl`
   now enables an env-gated JSONL recorder in the HVF virtio-gpu device. It
@@ -343,9 +343,9 @@ undebuggable in a black box. We are not a black box:
   Fixed with a `glFlush` after the Apple buffer upload, carried in the
   regenerated `virglrenderer-macos-venus.patch`; the diagnostic GL probe
   suite is preserved as `virglrenderer-macos-venus-bv-draw-probes.patch`.
-  See docs/hvf-3d-submit-wall-resolution-20260714.md. The remaining gates
+  See docs/history/windows-hvf/hvf-3d-submit-wall-resolution-20260714.md. The remaining gates
   are performance re-baselining (truthful tracing + flush cost), stress,
   production signing, and feature levels beyond 10_0.
 
 _Updated 2026-07-22. See [[bridgevm-hvf-engine-status]] and
-docs/hvf-3d-engine-plan.md._
+docs/plans/hvf-3d-engine-plan.md._

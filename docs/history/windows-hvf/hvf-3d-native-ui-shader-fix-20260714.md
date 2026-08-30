@@ -30,7 +30,7 @@ shaders that never touch this system value, so they render correctly — which
 is exactly the observed split.
 
 This is the concrete instance of the "intermittent vrend shader-translation
-hole" flagged in `docs/hvf-3d-perf-baseline-20260714.md`; it is
+hole" flagged in `docs/history/windows-hvf/hvf-3d-perf-baseline-20260714.md`; it is
 state-dependent (idle desktop does not trigger it; opening native
 DirectWrite-heavy UI does).
 
