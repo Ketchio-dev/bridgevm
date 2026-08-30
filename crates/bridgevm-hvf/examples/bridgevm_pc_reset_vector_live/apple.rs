@@ -180,7 +180,7 @@ unsafe fn run_unsafe(firmware_bytes: &[u8], firmware_sha256: &str) -> Result<(),
     let bundle = BridgeVmPcPlatform::build_firmware_tables(1, 512 << 20)?;
     let mut firmware = AlignedMemory::new(firmware_bytes.len())?;
     let mut boot_info = AlignedMemory::new(board::BOOT_INFO.size as usize)?;
-    let mut ram = AlignedMemory::new(PAGE_ALIGNMENT)?;
+    let mut ram = AlignedMemory::new(PAGE_ALIGNMENT * 2)?;
     firmware.bytes_mut().copy_from_slice(firmware_bytes);
     boot_info
         .bytes_mut()
@@ -216,7 +216,7 @@ unsafe fn run_unsafe(firmware_bytes: &[u8], firmware_sha256: &str) -> Result<(),
         board::BOOT_INFO.base
     );
     println!("firmware_sha256={firmware_sha256}");
-    println!("LIVE PROOF: BridgeVM Virtual ARM PC v1 reset vector executed at GPA zero");
+    println!("LIVE PROOF: reset at GPA zero entered BridgeVM SEC C and validated boot-info v1");
     Ok(())
 }
 

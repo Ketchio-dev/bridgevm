@@ -53,10 +53,11 @@ zero:
 scripts/build-bridgevm-pc-reset-vector.sh /path/to/output
 ```
 
-The reset code masks interrupts, parks non-boot CPUs, validates the fixed
-`BVMBOOT1` handoff magic and leaves a bounded result in system RAM. This image
-establishes only the reset-vector/flash skeleton. It contains no SEC, PEI, DXE
-core, UEFI services, variables, boot manager or Windows loader.
+The reset code masks interrupts, parks non-boot CPUs, establishes a stack in
+system RAM and enters a freestanding BridgeVM SEC C function. SEC validates the
+complete boot-info header, checksum, table ranges, RAM contract and CPU count,
+then leaves a bounded result in system RAM. This image contains no PI HOB list,
+PEI, DXE core, UEFI services, variables, boot manager or Windows loader.
 
 ## Rebuild the product firmware
 ```

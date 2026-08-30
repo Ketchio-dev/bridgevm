@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 pub const RESULT_OFFSET: usize = 0x1000;
 pub const PASS_RESULT: u32 = 1;
 pub const EXPECTED_FD_SHA256: &str =
-    "af815a96240bb3cfd2ab19f6c853b70f609bdfca78f4a0885a08fb3ff9dbdf41";
+    "745241de5a20d9240ec31c8000abb6f8ad04544a7ba7b9b4fe8c6f9b012cd890";
 
 pub fn result_gpa() -> Result<u64, String> {
     board::RAM_BASE

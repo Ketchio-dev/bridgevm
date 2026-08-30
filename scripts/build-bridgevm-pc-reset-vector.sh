@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
-# Build the BridgeVM-owned AArch64 reset vector into the 64 MiB flash-code
-# image. This development FD is the entry skeleton, not complete UEFI firmware.
+# Build the BridgeVM-owned AArch64 reset and SEC entry into the 64 MiB
+# flash-code image. This development FD is not complete UEFI firmware.
 set -euo pipefail
-
 readonly EXPECTED_GCC_VERSION="aarch64-elf-gcc (GCC) 16.1.0"
 readonly EXPECTED_LD_VERSION="GNU ld (GNU Binutils) 2.46.1"
-readonly EXPECTED_FD_SHA256="af815a96240bb3cfd2ab19f6c853b70f609bdfca78f4a0885a08fb3ff9dbdf41"
+readonly EXPECTED_FD_SHA256="745241de5a20d9240ec31c8000abb6f8ad04544a7ba7b9b4fe8c6f9b012cd890"
 readonly FLASH_SIZE=$((0x04000000))
 readonly VECTOR_LIMIT=$((0x1000))
-
 if [[ $# -ne 1 ]]; then
   echo "usage: $0 OUTPUT_DIR" >&2
   exit 64
 fi
-
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 source_root="$repo_root/crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector"
 output_dir="$1"
@@ -37,13 +34,16 @@ fi
 build_root="$(mktemp -d "/tmp/bridgevm-pc-reset-vector.XXXXXX")"
 trap 'rm -rf "$build_root"' EXIT
 object="$build_root/reset-vector.o"
+sec_object="$build_root/sec.o"
 elf="$build_root/reset-vector.elf"
 vector="$build_root/reset-vector.bin"
 
 "$gcc" -c -x assembler-with-cpp -ffreestanding -fno-pic \
   "$source_root/BridgeVmPcResetVector.S" -o "$object"
+"$gcc" -c -O2 -Wall -Wextra -Werror -ffreestanding -fno-builtin -fno-pic -fno-stack-protector \
+  "$source_root/BridgeVmPcSec.c" -o "$sec_object"
 "$ld" --build-id=none -nostdlib \
-  -T "$source_root/BridgeVmPcResetVector.ld" "$object" -o "$elf"
+  -T "$source_root/BridgeVmPcResetVector.ld" "$object" "$sec_object" -o "$elf"
 "$objcopy" -O binary "$elf" "$vector"
 
 start_address="$($nm -n "$elf" | awk '$3 == "_start" {print $1}')"
@@ -114,7 +114,7 @@ receipt="$output_dir/BridgeVmPcResetVector.build.json"
 printf '%s\n' \
   '{' \
   '  "schemaVersion": 1,' \
-  '  "artifactKind": "development-only-reset-vector-fd",' \
+  '  "artifactKind": "development-only-reset-sec-fd",' \
   '  "boardId": "com.ketchio.bridgevm.virtual-arm-pc",' \
   '  "boardAbi": 1,' \
   '  "resetVectorGpa": 0,' \
@@ -125,7 +125,7 @@ printf '%s\n' \
   "  \"vectorSha256\": \"${vector_sha256}\"," \
   "  \"size\": ${artifact_size}," \
   "  \"sha256\": \"${artifact_sha256}\"," \
-  '  "claimBoundary": "reset entry only; no SEC, PEI, DXE, UEFI service, or Windows boot claim"' \
+  '  "claimBoundary": "reset and bounded SEC validation only; no PI HOB, PEI, DXE, UEFI service, or Windows boot claim"' \
   '}' > "$receipt"
 
 echo "built $artifact"
