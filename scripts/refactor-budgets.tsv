@@ -464,6 +464,7 @@ crates/bridgevm-hvf/src/virtio_gpu/scanout/resize.rs	23	0
 crates/bridgevm-hvf/src/virtio_gpu/scanout_3d.rs	264	0
 crates/bridgevm-hvf/src/virtio_gpu/scanout_async.rs	195	0
 crates/bridgevm-hvf/src/virtio_gpu/scanout_blit.rs	53	0
+crates/bridgevm-hvf/src/virtio_gpu/scanout_readback.rs	56	0
 crates/bridgevm-hvf/src/virtio_gpu/trace_clock.rs	5	0
 crates/bridgevm-hvf/src/virtio_gpu/snapshot.rs	164	0
 crates/bridgevm-hvf/src/virtio_gpu/snapshot/geometry.rs	27	0

@@ -1,5 +1,6 @@
 //! 3D scanout presentation: GL readback pacing, IOSurface blit and verify, deferred flush.
 
+use super::scanout_readback::{fnv1a64, full_frame_readback};
 use super::*;
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -11,15 +12,6 @@ pub(crate) enum ScanoutReadbackOutcome {
     Done,
     NotDue,
     Gone,
-}
-
-pub(crate) fn fnv1a64(data: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for &byte in data {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hash
 }
 
 impl VirtioGpu {
@@ -155,16 +147,25 @@ impl VirtioGpu {
         let transfer_ok = present.readback_ok.unwrap_or(false);
         let transfer_ns = present.readback_duration_ns;
         let composite_started = Instant::now();
-        let readback_ok = transfer_ok
-            && composite_host_3d_to_scanout(
-                &self.scanout_readback_scratch,
+        let swap_readback = transfer_ok
+            && full_frame_readback(
                 readback_width,
                 readback_height,
-                &mut self.scanout,
                 self.width,
                 self.height,
                 rect,
             );
+        let readback_ok = transfer_ok
+            && (swap_readback
+                || composite_host_3d_to_scanout(
+                    &self.scanout_readback_scratch,
+                    readback_width,
+                    readback_height,
+                    &mut self.scanout,
+                    self.width,
+                    self.height,
+                    rect,
+                ));
         let composite_ns = composite_started
             .elapsed()
             .as_nanos()
@@ -175,9 +176,7 @@ impl VirtioGpu {
             .scanout_readback_nanoseconds
             .saturating_add(duration_ns);
         if readback_ok && self.scanout_iosurface_verify {
-            // Hash four orientations of the CPU readback so a single run
-            // identifies the transform the GPU blit applied: identity,
-            // y-flip, R<->B swap, and both.
+            // Hash four orientations to identify the GPU blit's transform.
             let scratch = &self.scanout_readback_scratch[..readback_len];
             let row_bytes = readback_width as usize * 4;
             let rows = readback_height as usize;
@@ -236,6 +235,9 @@ impl VirtioGpu {
                 });
             }
         }
+        if swap_readback {
+            std::mem::swap(&mut self.scanout, &mut self.scanout_readback_scratch);
+        }
         if readback_ok {
             self.last_3d_scanout_readback = Some(Instant::now());
             self.scanout_readback_count = self.scanout_readback_count.saturating_add(1);
@@ -247,8 +249,6 @@ impl VirtioGpu {
             let width = readback_width;
             let height = readback_height;
             let deferred_flag = u8::from(deferred);
-            // duration_ns spans scratch prep + GL transfer + CPU composite;
-            // transfer_ns/composite_ns isolate the two phases.
             self.record_trace_fields("scanout_readback", |fields| {
                 let _ = write!(
                     fields,
