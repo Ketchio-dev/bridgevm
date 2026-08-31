@@ -185,10 +185,24 @@ single-step (MDSCR.SS + trap_debug, EC 0x32) works, and that is too slow to
 reach the native-speed steady state. So neither of HVF's obvious guest-debug
 primitives can capture registers at 0x41838 as-is.
 
-**Revised tooling for next time:** the remaining viable options are (a) patch a
-`BRK #imm` into the loaded image in guest RAM at the target RVA before
-execution (a software breakpoint that traps as EC 0x3c, self-inflicted and
-reliably delivered) and read registers at that exit; or (b) run software
-single-step for far longer (dedicated long job) to reach steady state. Option
-(a) is the cleaner next step. Always give any debug-exception loop a
-self-terminating budget — single-step swallows the watchdog's hv_vcpus_exit.
+**BRK-patch attempt (also a dead end):** the BRK-in-guest-RAM probe was built —
+at arm time (before the target RVA first executes) the host reads the original
+4 bytes, writes `BRK #0` (`0xd4200000`), enables `trap_debug_exceptions`, and
+waits for `EC == 0x3c`. It **never fired** either. The guest instruction/data
+caches are on (SCTLR.C/I set by the board MMU), and a host write to the
+HVF-mapped RAM does not invalidate the guest caches, so the guest keeps
+fetching the original instruction — host RAM patching of guest code is not
+cache-coherent here.
+
+**All three guest-debug tooling paths are therefore exhausted** under HVF's
+constraints: software single-step works but is too slow to reach the
+native-speed steady state; hardware breakpoints are unavailable (HVF ignores
+the debug sys-regs); and host RAM code-patching is defeated by guest caches.
+Inspecting registers at the steady-state spin (0x41838) is not feasible with
+any of them as-is. Genuinely different options for a future session: patch the
+`BRK` into the **on-disk** `bootaa64.efi` on the per-run COW clone (EDK2 loads
+it with proper cache maintenance, so the trap instruction is actually
+executed — but confirm the BRK routes to the VMM under `trap_debug_exceptions`
+rather than to the guest's own EL1 vector, and note this needs the stub
+SecurityDxe to skip signature checks, which it does); or step back from
+per-wall bootmgfw RE toward building out a more complete board environment.
