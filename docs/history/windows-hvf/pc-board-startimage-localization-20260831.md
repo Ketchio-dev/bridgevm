@@ -358,3 +358,18 @@ event). So the next build-out is an **input path** that can actually inject a
 key into `ConIn` (a synthetic key source or a keyboard device), or identifying
 the exact event set the Boot Manager polls here. This is a genuinely later
 frontier than the dead-timer stall — the board now runs interrupt-driven.
+
+### Diagnostic: the wait is an event wait, not an IO poll (input, not storage)
+
+A run-loop MMIO histogram (example-only, reverted) settles the input-vs-IO
+question. Over a full 20s Windows run the guest issues only ~1500 MMIO accesses
+total — `pcie_ecam` ~1267 and 64-bit BAR ~208, and **zero** `pcie_mmio32` or GIC
+distributor/redistributor MMIO — while boot-service activity reaches ~8000
+calls. So the RaiseTPL/RestoreTPL wait loop does **no per-iteration MMIO**: it is
+a CPU/sysreg event wait (timer ticks acknowledged through the GIC `ICC_*`
+system registers), not a device poll. And the board's NVMe is **firmware-polled**
+— EDK2's `NvmExpressDxe` polls the completion-queue phase bit (which is how the
+sealed T13 probe reads `BOOTAA64.EFI` with no interrupt), so the Boot Manager's
+file reads never block on an interrupt either. Both rule out a storage/IO wait
+and point the next build squarely at an **input/event source** (a synthetic key
+into `ConIn`).
