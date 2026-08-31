@@ -1,7 +1,7 @@
 # Apple silicon live gates
 
 Document status: **Current**
-Last reviewed: **2026-08-11**
+Last reviewed: **2026-08-30**
 
 Live gates are the only evidence that can promote a Windows HVF capability.
 They need bare-metal Hypervisor.framework, WindowServer/CGL, private Windows
@@ -71,6 +71,10 @@ Properties the queue must hold:
 | T4 | Nightly 100-reset soak | Reset lifecycle evidence |
 | T5 | Weekly/release 10-boot A1 gate | A1 shipping evidence |
 | T6 | Three independent PPSSPP + DXVK real-title runs | A3 shipping evidence |
+| T7 | Fixed Windows closure campaign | Combined installed-guest acceptance evidence |
+| T8 | Fixed 20-lane pointer campaign | B4 pointer reliability evidence |
+| T9 | Fixed 20-lane BridgeVM PC firmware campaign | Experimental-board standard UEFI PCI development evidence |
+| T10 | Sixty loaded full-workspace rounds | QMP shutdown-race regression evidence |
 
 T0–T4 filter candidates. Only T5 produces A1 shipping evidence, and no faster
 tier may be used to lower a threshold. T6 requires all three runs to report
@@ -96,6 +100,14 @@ previous tree. Submit copies the signed release `binary` into the
 job directory, and the worker runs those exact sealed bytes rather than
 rebuilding after submission. Receipts preserve separate PPSSPP payload and
 embedded-executable hashes.
+
+T9 is deliberately not assigned a product capability criterion. It rebuilds
+the experimental BridgeVM Virtual ARM PC firmware and HVF runner from the
+sealed commit, then requires 20 independent lanes. Every lane owns a fresh
+variable-store file and must pass both a write process and a separate restore
+process, for 40 successful firmware boots. Passing T9 proves only the bounded
+standard UEFI PCI enumeration contract named in its receipt; it does not prove
+BAR operation, DMA, interrupts, Block I/O, GOP, BDS or Windows boot.
 
 ## Foreground wait policy
 

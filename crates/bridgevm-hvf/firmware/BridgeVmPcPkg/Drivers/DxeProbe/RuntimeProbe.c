@@ -1,11 +1,10 @@
 // RuntimeDxe service probe. SPDX-License-Identifier: Apache-2.0
 #include <Uefi.h>
 #include <Protocol/Runtime.h>
-#include "PcieProbe.h"
+#include <Library/BridgeVmPcPciProbeLib.h>
 #include "Result.h"
 #include "RuntimeProbe.h"
 #include "VariableProbe.h"
-#define BRIDGE_VM_PC_DXE_RESULT_GPA  0x100002000ULL
 #define BRIDGE_VM_PC_VARIABLE_WRITTEN_STAGE   10U
 #define BRIDGE_VM_PC_VARIABLE_RESTORED_STAGE  11U
 #define BRIDGE_VM_PC_RUNTIME_CRC32  0x3f6f728dU
@@ -54,7 +53,7 @@ BridgeVmPcRunRuntimeProbe (
     return Status;
   }
   Result = (volatile BRIDGE_VM_PC_DXE_RESULT *)(UINTN)BRIDGE_VM_PC_DXE_RESULT_GPA;
-  Status = BridgeVmPcValidatePcieIdentities (Result->PcieIdentity);
+  Status = BridgeVmPcValidatePcie (SystemTable, &Result->Pcie);
   if (EFI_ERROR (Status)) {
     return Status;
   }
@@ -66,7 +65,6 @@ BridgeVmPcRunRuntimeProbe (
   Result->ConvertPointer = (UINT64)(UINTN)SystemTable->RuntimeServices->ConvertPointer;
   Result->CalculateCrc32 = (UINT64)(UINTN)SystemTable->BootServices->CalculateCrc32;
   Result->Variable = Variable;
-  Result->PcieFunctionCount = BRIDGE_VM_PC_PCIE_FUNCTION_COUNT;
   Result->Stage = (Variable.State == 1) ?
                   BRIDGE_VM_PC_VARIABLE_WRITTEN_STAGE :
                   BRIDGE_VM_PC_VARIABLE_RESTORED_STAGE;

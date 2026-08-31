@@ -3,8 +3,9 @@
 #define BRIDGE_VM_PC_DXE_RESULT_H_
 
 #include <Uefi.h>
-#include "PcieProbe.h"
+#include <Library/BridgeVmPcPciProbeLib.h>
 #include "VariableProbe.h"
+#define BRIDGE_VM_PC_DXE_RESULT_GPA  0x100002000ULL
 
 typedef struct {
   UINT32 Stage;
@@ -16,8 +17,7 @@ typedef struct {
   UINT64 ConvertPointer;
   UINT64 CalculateCrc32;
   BRIDGE_VM_PC_VARIABLE_RESULT Variable;
-  UINT32 PcieFunctionCount;
-  UINT32 PcieIdentity[BRIDGE_VM_PC_PCIE_FUNCTION_COUNT];
+  BRIDGE_VM_PC_PCIE_RESULT Pcie;
 } BRIDGE_VM_PC_DXE_RESULT;
 
 #endif

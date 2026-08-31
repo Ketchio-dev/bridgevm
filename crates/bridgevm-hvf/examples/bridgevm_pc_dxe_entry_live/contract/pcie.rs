@@ -7,6 +7,11 @@ const RESULT_OFFSET: usize = 112;
 #[derive(Debug, Eq, PartialEq)]
 pub struct PcieProof {
     pub identities: [u32; FUNCTION_COUNT],
+    pub root_bridge_count: u32,
+    pub enumeration_complete: u32,
+    pub driver_binding_count: u32,
+    pub supported_status: u32,
+    pub connect_status: u32,
 }
 
 fn expected_identities() -> [u32; FUNCTION_COUNT] {
@@ -35,36 +40,26 @@ pub fn validate(result: &[u8]) -> Result<PcieProof, String> {
         *identity = u32_at(result, RESULT_OFFSET + 4 + index * 4, "PCIe identity")?;
         expect("PCIe identity", *identity, expected[index])?;
     }
-    Ok(PcieProof { identities })
+    let root_bridge_count = u32_at(result, RESULT_OFFSET + 36, "PCI root bridge count")?;
+    expect("PCI root bridge count", root_bridge_count, 1)?;
+    let enumeration_complete = u32_at(result, RESULT_OFFSET + 40, "PCI enumeration state")?;
+    expect("PCI enumeration state", enumeration_complete, 1)?;
+    let driver_binding_count = u32_at(result, RESULT_OFFSET + 44, "PCI driver binding count")?;
+    expect("PCI driver binding count", driver_binding_count, 1)?;
+    let supported_status = u32_at(result, RESULT_OFFSET + 48, "PCI bus supported status")?;
+    expect("PCI bus supported status", supported_status, 0)?;
+    let connect_status = u32_at(result, RESULT_OFFSET + 52, "PCI bus connect status")?;
+    expect("PCI bus connect status", connect_status, 0)?;
+    Ok(PcieProof {
+        identities,
+        root_bridge_count,
+        enumeration_complete,
+        driver_binding_count,
+        supported_status,
+        connect_status,
+    })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn fixture() -> Vec<u8> {
-        let mut result = vec![0; RESULT_OFFSET + 4 + FUNCTION_COUNT * 4];
-        result[RESULT_OFFSET..RESULT_OFFSET + 4]
-            .copy_from_slice(&(FUNCTION_COUNT as u32).to_le_bytes());
-        for (index, identity) in expected_identities().into_iter().enumerate() {
-            let offset = RESULT_OFFSET + 4 + index * 4;
-            result[offset..offset + 4].copy_from_slice(&identity.to_le_bytes());
-        }
-        result
-    }
-
-    #[test]
-    fn accepts_all_versioned_endpoint_identities() {
-        assert_eq!(
-            validate(&fixture()).unwrap().identities,
-            expected_identities()
-        );
-    }
-
-    #[test]
-    fn rejects_one_mismatched_firmware_identity() {
-        let mut result = fixture();
-        result[RESULT_OFFSET + 4 + 5 * 4] ^= 1;
-        assert!(validate(&result).unwrap_err().contains("PCIe identity"));
-    }
-}
+#[path = "pcie_tests.rs"]
+mod tests;

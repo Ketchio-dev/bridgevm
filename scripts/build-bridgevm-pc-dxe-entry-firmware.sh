@@ -8,10 +8,10 @@ readonly EXPECTED_REBASED_DXE_SHA256="cfe2ea1a7dc5573b4a5f6952e9177475ef91fb41da
 readonly EXPECTED_RUNTIME_SHA256="5b3a37c1403e77b51b8dafb16a796dcbc3080692617ff0eae8b759c979b4260d"
 readonly EXPECTED_VARIABLE_SHA256="3d6f0fbd9d155f76d6f1001ee67fce25e36bd5aef20bea088421a772a7500a90"
 readonly EXPECTED_PLATFORM_SHA256="16b3fdd6ede6d5aea14d26419351cf262ef358692fd28682dbbafe74c22438b5"
-readonly EXPECTED_PROBE_SHA256="de2d1a213c55f0134f7ab22d206ec6ac6fbc1d4453ad8bfb61980bc0aaea5778"
+readonly EXPECTED_PROBE_SHA256="3258c4efc888efa2415be86756af4fd9fcbd5ac874a89df838ce1c89c87b31e0"
 readonly EXPECTED_VECTOR_SHA256="3ec6ddb04175dbfbd84dc784a264c8f487410c03a0c4d4a38f630e8b06032226"
-readonly EXPECTED_FV_SHA256="a46c7561bb18104fe30ea91594b25fdc30b413eabe91fc8d1256d68c37fa06fd"
-readonly EXPECTED_FD_SHA256="352243b2ece7c3d0b0b0e97637e7a31aecc6a5fe8a34e389860ac2543a4e99f7"
+readonly EXPECTED_FV_SHA256="0b093cc672914ecf7b2b842b83d8325ffc870d1e314993cab963f78a01fcf78e"
+readonly EXPECTED_FD_SHA256="42e294e45119d08a5a8d6b4f28b5de9b79872be9282d700832460977bbd8282b"
 readonly FLASH_SIZE=$((0x04000000))
 readonly FV_OFFSET=$((0x00100000))
 readonly FV_SIZE=$((0x00100000))
@@ -55,11 +55,11 @@ trap 'rm -rf "$build_root"' EXIT
   "$edk2_root" "$build_root/variables"
 "$repo_root/scripts/build-bridgevm-pc-edk2-consumer.sh" \
   "$edk2_root" "$build_root/drivers"
-core="$build_root/DxeCore.efi"
-runtime="$build_root/RuntimeDxe.efi"
-variables="$build_root/VariableRuntimeDxe.efi"
-platform="$build_root/PlatformTables.efi"
-probe="$build_root/DxeProbe.efi"
+core="$build_root/DxeCore.efi"; runtime="$build_root/RuntimeDxe.efi"
+variables="$build_root/VariableRuntimeDxe.efi"; platform="$build_root/PlatformTables.efi"
+probe="$build_root/DxeProbe.efi"; pci_root="$build_root/drivers"
+cpu="$pci_root/ArmCpuDxe.efi"; cpu_io="$pci_root/CpuMmio2Dxe.efi"
+pci_bus="$pci_root/PciBusDxe.efi"; pci_host="$pci_root/PciHostBridgeDxe.efi"
 cp "$build_root/core/BridgeVmPcDxeCore.efi" "$core"
 cp "$build_root/runtime/RuntimeDxe.efi" "$runtime"
 cp "$build_root/variables/VariableRuntimeDxe.efi" "$variables"
@@ -67,33 +67,18 @@ cp "$build_root/drivers/BridgeVmPcPlatformTablesDxe.efi" "$platform"
 cp "$edk2_root/Build/BridgeVmPc/RELEASE_GCC/AARCH64/BridgeVmPcDxeProbe.efi" "$probe"
 "$tool_root/GenFw" --rebase 0x100400000 -r "$core"
 "$tool_root/GenFw" -z -r "$probe"
-rebased_sha256="$(shasum -a 256 "$core" | awk '{print $1}')"
-runtime_sha256="$(shasum -a 256 "$runtime" | awk '{print $1}')"
-variable_sha256="$(shasum -a 256 "$variables" | awk '{print $1}')"
-platform_sha256="$(shasum -a 256 "$platform" | awk '{print $1}')"
-probe_sha256="$(shasum -a 256 "$probe" | awk '{print $1}')"
-[[ "$rebased_sha256" == "$EXPECTED_REBASED_DXE_SHA256" ]] || {
-  echo "rebased DXE Core digest ${rebased_sha256} does not match ${EXPECTED_REBASED_DXE_SHA256}" >&2
-  exit 68
-}
-[[ "$runtime_sha256" == "$EXPECTED_RUNTIME_SHA256" ]] || {
-  echo "RuntimeDxe digest ${runtime_sha256} does not match ${EXPECTED_RUNTIME_SHA256}" >&2
-  exit 68
-}
-[[ "$variable_sha256" == "$EXPECTED_VARIABLE_SHA256" ]] || {
-  echo "variable-service digest ${variable_sha256} does not match ${EXPECTED_VARIABLE_SHA256}" >&2
-  exit 68
-}
-[[ "$platform_sha256" == "$EXPECTED_PLATFORM_SHA256" ]] || {
-  echo "platform-tables digest ${platform_sha256} does not match ${EXPECTED_PLATFORM_SHA256}" >&2
-  exit 68
-}
-[[ "$probe_sha256" == "$EXPECTED_PROBE_SHA256" ]] || {
-  echo "DXE probe digest ${probe_sha256} does not match ${EXPECTED_PROBE_SHA256}" >&2
-  exit 68
-}
+sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
+rebased_sha256="$(sha256 "$core")"; runtime_sha256="$(sha256 "$runtime")"
+variable_sha256="$(sha256 "$variables")"; platform_sha256="$(sha256 "$platform")"
+probe_sha256="$(sha256 "$probe")"; pci_receipt_sha256="$(sha256 "$pci_root/BridgeVmPcPciDxe.build.json")"
+[[ "$rebased_sha256" == "$EXPECTED_REBASED_DXE_SHA256" ]] || { echo "unexpected rebased DXE Core digest: $rebased_sha256" >&2; exit 68; }
+[[ "$runtime_sha256" == "$EXPECTED_RUNTIME_SHA256" ]] || { echo "unexpected RuntimeDxe digest: $runtime_sha256" >&2; exit 68; }
+[[ "$variable_sha256" == "$EXPECTED_VARIABLE_SHA256" ]] || { echo "unexpected variable-service digest: $variable_sha256" >&2; exit 68; }
+[[ "$platform_sha256" == "$EXPECTED_PLATFORM_SHA256" ]] || { echo "unexpected platform-tables digest: $platform_sha256" >&2; exit 68; }
+[[ "$probe_sha256" == "$EXPECTED_PROBE_SHA256" ]] || { echo "unexpected DXE probe digest: $probe_sha256" >&2; exit 68; }
 "$repo_root/scripts/build-bridgevm-pc-dxe-fv.sh" \
-  "$edk2_root" "$build_root" "$core" "$runtime" "$variables" "$platform" "$probe"
+  "$edk2_root" "$build_root" "$core" "$runtime" "$variables" "$platform" \
+  "$cpu" "$cpu_io" "$pci_bus" "$pci_host" "$probe"
 fv="$build_root/BridgeVmPcDxeEntry.fv"
 fv_sha256="$(shasum -a 256 "$fv" | awk '{print $1}')"
 [[ "$fv_sha256" == "$EXPECTED_FV_SHA256" ]] || {
@@ -160,7 +145,7 @@ cp "$fv" "$output_dir/BridgeVmPcDxeEntry.fv"
 receipt="$("$repo_root/scripts/write-bridgevm-pc-dxe-receipt.sh" \
   "$output_dir" "$repo_root" "$EXPECTED_EDK2_COMMIT" "$gcc_version" "$ld_version" \
   "$vector_size" "$vector_sha256" "$rebased_sha256" "$runtime_sha256" \
-  "$variable_sha256" "$platform_sha256" "$probe_sha256" "$fv_sha256" \
+  "$variable_sha256" "$platform_sha256" "$pci_receipt_sha256" "$probe_sha256" "$fv_sha256" \
   "$artifact_sha256" "$FLASH_SIZE")"
 echo "built $artifact"
 echo "sha256 $artifact_sha256"

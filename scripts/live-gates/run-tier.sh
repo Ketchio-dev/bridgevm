@@ -104,12 +104,9 @@ case "$TIER" in
         "$REPO/scripts/live-gates/$helper" --out "$OUT" --input-manifest "$INPUT_MANIFEST" \
             --sealed-binary "$SEALED_BINARY" --job-id "$JOB_ID"
         ;;
-    t8-pointer-reliability|t10-qmp-stress)
-        helper=run-pointer-reliability-tier.sh
-        [[ "$TIER" == t8-pointer-reliability ]] || helper=run-qmp-stress-tier.sh
-        helper_args=(--out "$OUT" --job-id "$JOB_ID")
-        [[ "$TIER" != t8-pointer-reliability ]] || helper_args+=(--input-manifest "$INPUT_MANIFEST")
-        "$REPO/scripts/live-gates/$helper" "${helper_args[@]}" ;;
+    t8-pointer-reliability|t9-bridgevm-pc-pci|t10-qmp-stress)
+        "$REPO/scripts/live-gates/run-special-tier.sh" \
+          "$TIER" "$OUT" "$JOB_ID" "$INPUT_MANIFEST" ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)
         # These need private Windows media and 20+ minutes per boot. They are
         # declared so the queue and its policy tests are exercised, but they

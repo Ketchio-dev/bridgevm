@@ -6,6 +6,10 @@ mod firmware;
 mod hob;
 #[path = "contract/pcie.rs"]
 mod pcie;
+#[path = "contract/pcie_display.rs"]
+mod pcie_display;
+#[path = "contract/probe_failure.rs"]
+mod probe_failure;
 #[path = "contract/result.rs"]
 mod result;
 #[path = "contract/runtime_services.rs"]
@@ -21,7 +25,6 @@ pub use firmware::validate as validate_firmware;
 pub use result::DxeResult;
 
 pub const RAM_PAGES: usize = 8192;
-pub const RAM_EXECUTABLE: bool = true;
 pub const PROBE_TITLE: &str = "BridgeVM Virtual ARM PC variable restore probe: PASS";
 pub const LIVE_PROOF: &str = "LIVE PROOF: a recreated HVF VM restored the non-volatile UEFI variable from the preserved vars backing";
 const RESULT_OFFSET: usize = 0x1000;
@@ -84,8 +87,9 @@ pub fn validate_dxe_result(
     hob::validate(ram, result, raw_dxe_stage)?;
 
     let dxe = ram
-        .get(DXE_RESULT_OFFSET..DXE_RESULT_OFFSET + 148)
+        .get(DXE_RESULT_OFFSET..DXE_RESULT_OFFSET + 168)
         .ok_or_else(|| "DXE result is outside probe RAM".to_string())?;
+    probe_failure::check(dxe, raw_dxe_stage)?;
     expect(
         "DXE dispatch stage",
         u32_at(dxe, 0, "DXE dispatch stage")?,

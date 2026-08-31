@@ -12,6 +12,8 @@ use std::ptr::null_mut;
 mod aligned_memory;
 #[path = "apple/command.rs"]
 mod command;
+#[path = "apple/image_diagnostics.rs"]
+mod image_diagnostics;
 #[path = "apple/in_memory.rs"]
 mod in_memory;
 #[path = "apple/mmio.rs"]
@@ -24,9 +26,7 @@ use aligned_memory::AlignedMemory;
 
 #[path = "../bridgevm_pc_reset_vector_live/hvc_diagnostics.rs"]
 mod hvc_diagnostics;
-type HvReturn = i32;
 type HvVcpu = u64;
-const HV_SUCCESS: HvReturn = 0;
 const HV_REG_PC: u32 = 31;
 const HV_REG_CPSR: u32 = 34;
 const HV_MEMORY_READ: u64 = 1;
@@ -50,25 +50,21 @@ struct HvVcpuExit {
 #[link(name = "Hypervisor", kind = "framework")]
 unsafe extern "C" {
     fn hv_vm_config_create() -> *mut c_void;
-    fn hv_vm_config_get_max_ipa_size(bits: *mut u32) -> HvReturn;
-    fn hv_vm_config_set_ipa_size(config: *mut c_void, bits: u32) -> HvReturn;
-    fn hv_vm_create(config: *mut c_void) -> HvReturn;
-    fn hv_vm_destroy() -> HvReturn;
-    fn hv_vm_map(addr: *mut c_void, ipa: u64, size: usize, flags: u64) -> HvReturn;
-    fn hv_vm_unmap(ipa: u64, size: usize) -> HvReturn;
-    fn hv_vcpu_create(
-        vcpu: *mut HvVcpu,
-        exit: *mut *mut HvVcpuExit,
-        config: *mut c_void,
-    ) -> HvReturn;
-    fn hv_vcpu_destroy(vcpu: HvVcpu) -> HvReturn;
-    fn hv_vcpu_run(vcpu: HvVcpu) -> HvReturn;
-    fn hv_vcpus_exit(vcpus: *const HvVcpu, vcpu_count: u32) -> HvReturn;
-    fn hv_vcpu_get_reg(vcpu: HvVcpu, reg: u32, value: *mut u64) -> HvReturn;
-    fn hv_vcpu_set_reg(vcpu: HvVcpu, reg: u32, value: u64) -> HvReturn;
+    fn hv_vm_config_get_max_ipa_size(bits: *mut u32) -> i32;
+    fn hv_vm_config_set_ipa_size(config: *mut c_void, bits: u32) -> i32;
+    fn hv_vm_create(config: *mut c_void) -> i32;
+    fn hv_vm_destroy() -> i32;
+    fn hv_vm_map(addr: *mut c_void, ipa: u64, size: usize, flags: u64) -> i32;
+    fn hv_vm_unmap(ipa: u64, size: usize) -> i32;
+    fn hv_vcpu_create(vcpu: *mut HvVcpu, exit: *mut *mut HvVcpuExit, config: *mut c_void) -> i32;
+    fn hv_vcpu_destroy(vcpu: HvVcpu) -> i32;
+    fn hv_vcpu_run(vcpu: HvVcpu) -> i32;
+    fn hv_vcpus_exit(vcpus: *const HvVcpu, vcpu_count: u32) -> i32;
+    fn hv_vcpu_get_reg(vcpu: HvVcpu, reg: u32, value: *mut u64) -> i32;
+    fn hv_vcpu_set_reg(vcpu: HvVcpu, reg: u32, value: u64) -> i32;
 }
-fn status(label: &str, value: HvReturn) -> Result<(), String> {
-    (value == HV_SUCCESS)
+fn status(label: &str, value: i32) -> Result<(), String> {
+    (value == 0)
         .then_some(())
         .ok_or_else(|| format!("{label} failed: {value:#x}"))
 }
@@ -116,9 +112,7 @@ unsafe fn execute_reset_vector(
                         ram.pointer.as_ptr().cast(),
                         board::RAM_BASE,
                         ram.layout.size(),
-                        HV_MEMORY_READ
-                            | HV_MEMORY_WRITE
-                            | (contract::RAM_EXECUTABLE as u64 * HV_MEMORY_EXEC),
+                        HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC,
                     ),
                 )?;
                 let ram_result = (|| {
@@ -132,7 +126,9 @@ unsafe fn execute_reset_vector(
                     let run_result = (|| {
                         status("set PC", hv_vcpu_set_reg(vcpu, HV_REG_PC, 0))?;
                         status("set CPSR", hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5))?;
-                        mmio::run_vcpu(vcpu, exit, &mut platform)
+                        let ram_bytes =
+                            std::slice::from_raw_parts(ram.pointer.as_ptr(), ram.layout.size());
+                        mmio::run_vcpu(vcpu, exit, &mut platform, ram_bytes)
                     })();
                     let destroy = hv_vcpu_destroy(vcpu);
                     run_result?;

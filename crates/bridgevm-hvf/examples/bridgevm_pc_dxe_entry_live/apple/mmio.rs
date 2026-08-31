@@ -12,7 +12,9 @@ const EC_DATA_ABORT: u64 = 0x24;
 const ISV: u64 = 1 << 24;
 const WRITE: u64 = 1 << 6;
 const SIGN_EXTEND: u64 = 1 << 21;
-const MAX_MMIO_EXITS: usize = 64;
+const MAX_MMIO_EXITS: usize = 8192;
+#[path = "mmio/interrupted.rs"]
+mod interrupted;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct DataAbort {
@@ -98,10 +100,11 @@ pub(super) unsafe fn run_vcpu(
     vcpu: HvVcpu,
     exit: *mut HvVcpuExit,
     platform: &mut BridgeVmPcPlatform,
+    ram: &[u8],
 ) -> Result<(), String> {
     let (stop_tx, stop_rx) = mpsc::channel();
     let watchdog = std::thread::spawn(move || {
-        if stop_rx.recv_timeout(Duration::from_secs(2)).is_err() {
+        if stop_rx.recv_timeout(Duration::from_secs(10)).is_err() {
             let _ = hv_vcpus_exit(&vcpu, 1);
         }
     });
@@ -110,7 +113,12 @@ pub(super) unsafe fn run_vcpu(
         loop {
             status("run vCPU", hv_vcpu_run(vcpu))?;
             if (*exit).reason != EXIT_EXCEPTION {
-                return Err(format!("unexpected vCPU exit reason {}", (*exit).reason));
+                return Err(interrupted::describe(
+                    vcpu,
+                    (*exit).reason,
+                    mmio_exits,
+                    ram,
+                )?);
             }
             let syndrome = (*exit).exception.syndrome;
             match (syndrome >> 26) & 0x3f {
@@ -118,7 +126,7 @@ pub(super) unsafe fn run_vcpu(
                     emulate(vcpu, exit, platform)?;
                     mmio_exits += 1;
                 }
-                EC_HVC if mmio_exits == contract::pcie_function_count() => {
+                EC_HVC if mmio_exits >= contract::pcie_function_count() => {
                     hvc_diagnostics::print_hvc_arguments(vcpu, syndrome)?;
                     return Ok(());
                 }
@@ -138,23 +146,5 @@ pub(super) unsafe fn run_vcpu(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn decodes_unsigned_word_read_and_write() {
-        let read = decode(0x9180_8005).unwrap();
-        assert_eq!(read.size, 4);
-        assert_eq!(read.register, 0);
-        assert!(!read.write);
-        let write = decode(0x9189_8045).unwrap();
-        assert_eq!(write.size, 4);
-        assert_eq!(write.register, 9);
-        assert!(write.write);
-    }
-
-    #[test]
-    fn rejects_an_abort_without_instruction_syndrome() {
-        assert!(decode(EC_DATA_ABORT << 26).is_err());
-    }
-}
+#[path = "mmio/tests.rs"]
+mod tests;

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Build the first BridgeVM Virtual ARM PC EDK2 module from an offline, pinned
-# TianoCore checkout. This produces a DXE driver, not a bootable firmware FD.
+# Build BridgeVM-owned EDK2 consumers from the pinned offline checkout.
 set -euo pipefail
 
 readonly EXPECTED_EDK2_COMMIT="b03a21a63e3bd001f52c527e5a57feddb53a690b"
@@ -155,3 +154,4 @@ printf '%s\n' \
 echo "built $artifact"
 echo "sha256 $artifact_sha256"
 echo "receipt $receipt"
+"$repo_root/scripts/build-bridgevm-pc-pci-dxe.sh" "$edk2_root" "$output_dir"

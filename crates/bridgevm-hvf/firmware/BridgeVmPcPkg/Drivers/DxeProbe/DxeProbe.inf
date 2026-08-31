@@ -4,21 +4,21 @@
   BASE_NAME                      = BridgeVmPcDxeProbe
   FILE_GUID                      = 36A32D32-548B-4970-A32A-68B01E131B4A
   MODULE_TYPE                    = DXE_DRIVER
-  VERSION_STRING                 = 1.0
   ENTRY_POINT                    = BridgeVmPcDxeProbeEntry
 [Sources]
   DxeProbe.c
-  PcieProbe.c
   RuntimeProbe.c
   VariableProbe.c
 [Packages]
   MdePkg/MdePkg.dec
+  BridgeVmPcPkg/BridgeVmPcPkg.dec
 [LibraryClasses]
   BaseMemoryLib
+  BridgeVmPcPciProbeLib
   UefiDriverEntryPoint
 [Protocols]
   gEfiRuntimeArchProtocolGuid                 ## CONSUMES
   gEfiVariableArchProtocolGuid                ## CONSUMES
   gEfiVariableWriteArchProtocolGuid           ## CONSUMES
 [Depex]
-  gEfiRuntimeArchProtocolGuid AND gEfiVariableArchProtocolGuid AND gEfiVariableWriteArchProtocolGuid
+  gEfiRuntimeArchProtocolGuid AND gEfiVariableArchProtocolGuid AND gEfiVariableWriteArchProtocolGuid AND gEfiPciRootBridgeIoProtocolGuid

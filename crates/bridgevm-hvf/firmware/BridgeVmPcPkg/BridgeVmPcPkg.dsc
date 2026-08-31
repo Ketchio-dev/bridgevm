@@ -2,8 +2,7 @@
 # Build description for the BridgeVM-owned firmware modules.
 #
 # This intentionally contains no compatibility-board package dependency. The
-# first tranche builds only the boot-info ACPI/SMBIOS configuration-table
-# consumer; a complete reset-vector firmware image is a later live gate.
+# It builds only BridgeVM-owned consumers and probe libraries.
 #
 # SPDX-License-Identifier: Apache-2.0
 ##
@@ -20,6 +19,7 @@
 [LibraryClasses]
   BaseLib|MdePkg/Library/BaseLib/BaseLib.inf
   BaseMemoryLib|MdePkg/Library/BaseMemoryLib/BaseMemoryLib.inf
+  BridgeVmPcPciProbeLib|BridgeVmPcPkg/Library/PciProbeLib/PciProbeLib.inf
   DebugLib|MdePkg/Library/BaseDebugLibNull/BaseDebugLibNull.inf
   PcdLib|MdePkg/Library/BasePcdLibNull/BasePcdLibNull.inf
   StackCheckLib|MdePkg/Library/StackCheckLibNull/StackCheckLibNull.inf
