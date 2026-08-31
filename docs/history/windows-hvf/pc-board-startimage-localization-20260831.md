@@ -373,3 +373,40 @@ sealed T13 probe reads `BOOTAA64.EFI` with no interrupt), so the Boot Manager's
 file reads never block on an interrupt either. Both rule out a storage/IO wait
 and point the next build squarely at an **input/event source** (a synthetic key
 into `ConIn`).
+
+## Breakthrough 4 (partial) + a reframing: the wait is an early-init spin
+
+Two changes were built to test the input hypothesis and to see past the wait:
+
+- **A synthetic `ConIn` key source** (`BdsInput.c`): a minimal Simple Text Input
+  whose `WaitForKey` event is always signaled and whose `ReadKeyStroke` yields
+  Enter, installed on its own handle with `gST->ConIn` repointed at it, right
+  before `StartImage`. A bring-up scaffold (a real HID keyboard replaces it
+  later).
+- **Filtered the trace ring**: `RaiseTPL`/`RestoreTPL` are no longer recorded
+  (the wrapper stays installed for ExitBootServices symmetry), so the bounded
+  126-entry ring shows the *meaningful* calls instead of drowning in the wait
+  loop's TPL churn.
+
+Result — the synthetic Enter key changes **nothing** (identical terminal PC,
+ESR, and ~8000 call count), and the filtered trace explains why: the Boot
+Manager's meaningful boot-service calls **stop at just 60** — one `GetVariable`
+(NOT_FOUND), two `HandleProtocol`, 56 `AllocatePool` of 0x13 bytes, then a 0x4d8
+and a 0x6620 buffer, one `AllocatePages` — and then the RaiseTPL/RestoreTPL loop
+runs forever. There is **no `CreateEvent`, no `Stall`, no `WaitForEvent`-implied
+event, no `LoadImage`, no filesystem open**. So the Boot Manager is stuck **very
+early**, before it ever reads the BCD or a file — not at a late boot menu — and
+because it created no events of its own, this is not `WaitForEvent` on its own
+events but a spin in its own code that `RaiseTPL(HIGH)`/`RestoreTPL(APP)` drives
+(each `RestoreTPL` dispatches the firmware's queued timer notifies). The virtual
+timer makes the guest service those interrupts (`ICC_EOIR1_EL1` writes) but that
+does not satisfy whatever condition the spin polls.
+
+This reframes the frontier: it is **not** an interactive keystroke prompt (the
+synthetic key disproves that) and **not** storage IO (the histogram/polled-NVMe
+argument). It is an early-init spin in the Boot Manager's runtime-loaded code
+(`0x27fe8956x`, above the static image), so the decisive next tool is
+**guest-side symbolication of that runtime-loaded region** — dumping and
+disassembling the code at the spin PC (the crash-survivable RAM-dump technique
+used elsewhere) to name the exact loop and the value it polls. The sealed T13
+BDS/ExitBootServices path stays **PASS, stage=11** through both changes.

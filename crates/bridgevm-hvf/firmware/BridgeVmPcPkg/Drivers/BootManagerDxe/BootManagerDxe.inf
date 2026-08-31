@@ -10,6 +10,7 @@
   ENTRY_POINT = BridgeVmPcBootManagerEntry
 [Sources]
   BdsConsole.c
+  BdsInput.c
   BdsSupport.c
   BootManagerDxe.c
   BootManagerDxe.h

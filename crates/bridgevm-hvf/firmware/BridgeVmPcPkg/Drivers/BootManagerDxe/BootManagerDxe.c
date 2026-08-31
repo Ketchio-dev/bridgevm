@@ -64,6 +64,7 @@ Boot (IN EFI_BDS_ARCH_PROTOCOL *This)
   Result ()->Stage = BRIDGE_VM_PC_BOOT_STAGE_STORAGE_CONNECTED;
   BridgeVmPcRecordGraphics ();
   BridgeVmPcWireGraphicsConsole ();
+  BridgeVmPcInstallSyntheticConIn ();
   FileSystems = NULL;
   Count = 0;
   Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiSimpleFileSystemProtocolGuid,

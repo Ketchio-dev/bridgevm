@@ -20,4 +20,7 @@ BridgeVmPcRecordGraphics (VOID);
 VOID
 BridgeVmPcWireGraphicsConsole (VOID);
 
+VOID
+BridgeVmPcInstallSyntheticConIn (VOID);
+
 #endif

@@ -131,15 +131,15 @@ TraceGetVariable (IN CHAR16 *VariableName, IN EFI_GUID *VendorGuid,
 STATIC EFI_TPL EFIAPI
 TraceRaiseTpl (IN EFI_TPL NewTpl)
 {
-  EFI_TPL Old = SAVED.RaiseTpl (NewTpl);
-  REC (BRIDGE_VM_PC_BS_CALL_RAISE_TPL, (UINT32)NewTpl, Old, 0);
-  return Old;
+  // Not recorded: a loaded image's steady WaitForEvent loop is almost all
+  // RaiseTPL/RestoreTPL, which would flood the bounded ring and hide the
+  // meaningful calls before the wait. Wrapper stays installed for symmetry.
+  return SAVED.RaiseTpl (NewTpl);
 }
 
 STATIC VOID EFIAPI
 TraceRestoreTpl (IN EFI_TPL OldTpl)
 {
-  REC (BRIDGE_VM_PC_BS_CALL_RESTORE_TPL, (UINT32)OldTpl, 0, 0);
   SAVED.RestoreTpl (OldTpl);
 }
 
