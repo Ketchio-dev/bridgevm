@@ -31,7 +31,7 @@ make_driver_ffs PlatformTables B6F1376D-3E28-421B-A64C-2B5E0D185397 "$platform" 
 make_driver_ffs ArmCpu B8D9777E-D72A-451F-9BDB-BAFB52A68415 "$cpu" "$build_root/drivers/ArmCpuDxe.depex"
 make_driver_ffs CpuMmio2 FBC36D76-CF22-2584-DBD8-85FF765BAEF1 "$cpu_io" "$build_root/drivers/CpuMmio2Dxe.depex"
 make_driver_ffs PciBus 93B80004-9FB3-11D4-9A3A-0090273FC14D "$pci_bus" "$build_root/drivers/ArmCpuDxe.depex"
-make_driver_ffs PciHostBridge 128FB770-5E79-4176-9E51-9BB268A17DD1 "$pci_host" "$build_root/drivers/PciHostBridgeDxe.depex" && make_driver_ffs NvmExpress 5BE3BDF4-53CF-46A3-A6A9-73C34A6E5EE3 "$nvme" -
+make_driver_ffs PciHostBridge 128FB770-5E79-4176-9E51-9BB268A17DD1 "$pci_host" "$build_root/drivers/PciHostBridgeDxe.depex" && make_driver_ffs NvmExpress 5BE3BDF4-53CF-46A3-A6A9-73C34A6E5EE3 "$nvme" "$build_root/drivers/ArmCpuDxe.depex"
 make_driver_ffs DxeProbe 36A32D32-548B-4970-A32A-68B01E131B4A "$probe" "$driver_root/DxeProbe/DxeProbe/OUTPUT/BridgeVmPcDxeProbe.depex"
 fv="$build_root/BridgeVmPcDxeEntry.fv"
 "$tool_root/GenFv" -o "$fv" -b 0x1000 -n 0x100 -f "$build_root/DxeCore.ffs" \
