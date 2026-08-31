@@ -232,6 +232,25 @@ productive direction is therefore (b) — stop per-wall RE and build out the
 board environment (a real GraphicsConsole on the GOP, a working ConIn, and the
 device stack) so the Boot Manager runs against a fuller platform — rather than
 more static probing.
+
+## Breakthrough: a real GOP console advances the Boot Manager (commit c6a8dcc3)
+
+Direction (b) paid off immediately. The ConSplitter virtual console had set
+`gST->ConOut` non-NULL but as a no-op sink, so the Boot Manager spun early
+(only 6 boot-service calls, at 0x41838). Adding **HiiDatabaseDxe** (the HII
+Font protocol) and **GraphicsConsoleDxe** (text rendering on the GOP
+framebuffer), and then pointing `gST->ConOut`/`StdErr` at the Simple Text
+Output that GraphicsConsole installs on the GOP handle (with a system-table CRC
+reseal, in BdsConsole.c) gives the Boot Manager a console that actually draws.
+With it, a live run jumps from **6 to ~4000 boot-service calls** and the
+terminal PC moves to a **different region (image RVA 0x19550)** — the Boot
+Manager now runs far past the old spin. It still ends on the watchdog
+(`windows_boot_proven=false`), so there is a later wall at ~0x19550, but this
+confirms the console was the real gap and that building out the board
+environment is the way forward. Next: enlarge the boot-service trace ring
+(currently 126) to see the ~3900 calls that scroll out, characterize the
+0x19550 wall, and continue the device/console build-out (a working ConIn is the
+likely next need).
 Inspecting registers at the steady-state spin (0x41838) is not feasible with
 any of them as-is. Genuinely different options for a future session: patch the
 `BRK` into the **on-disk** `bootaa64.efi` on the per-run COW clone (EDK2 loads
