@@ -582,3 +582,29 @@ The board now has a working interrupt controller, timer delivery, and an
 interrupt-driven guest that boots Windows deep past every prior wall. Full
 Windows boot (kernel handoff) is the next frontier; the terminal PC
 `0x27ea28a0c` and the `ram_dump` tool are the instruments to localize it.
+
+## Two more walls localized: a `brk` timing guard, then sustained-tick delivery
+
+**(1) Divide-by-zero timing guard (fixed, commit 2e8b1739).** The first thing the
+guest hit past the timer wall was a `brk #0xf004` at `0x27ea7d590`: it computes a
+divisor from `pmccntr_el0`-based timing and executes the break when the divisor
+rounds to zero, vectoring to a handler that dead-loops (`b .` at `0x27ea28a0c`).
+Cause: the crude sysreg passthrough returned garbage for `CNTFRQ_EL0` and a
+too-small counter delta, so cycles-per-time rounded to zero. Fixed by returning a
+real 24 MHz `CNTFRQ_EL0` and the host monotonic clock (`mach_absolute_time`) for
+timer/PMU counter reads. The `brk` is gone.
+
+**(2) Sustained tick delivery (open frontier).** Past the `brk`, the guest returns
+to the original tick-counter spin (`0x27fe89534`, waiting on `0x27fe8c0d8`), and
+that counter stays zero. Instrumenting the GIC shows why: the virtual timer fires
+**ten** times over 20s (the firmware's periodic `CNTV`, re-armed by the host each
+`EXIT_VTIMER`), the userspace GIC asserts the line every time (`enabled=true,
+line=true`), but the guest takes the interrupt **exactly once** — one `ICC_IAR1`
+ack of INTID 27, one `ICC_EOIR1`, active cleared — and then runs with **IRQs
+masked** (`cpsr` DAIF.I=1) while spinning on the counter. So the guest receives a
+single tick, masks interrupts, and waits for a counter that only an interrupt can
+advance. The next step is faithful sustained delivery — matching the shipping
+engine's full GIC/priority/EOI handling in `platform/apple/firmware_irq.rs`
+(device-IRQ-line snapshot, priority threshold, re-injection discipline) so the
+guest keeps taking ticks — and understanding the guest's mask/one-shot behavior
+so the tick counter advances to its target and the spin at `0x27fe89534` exits.
