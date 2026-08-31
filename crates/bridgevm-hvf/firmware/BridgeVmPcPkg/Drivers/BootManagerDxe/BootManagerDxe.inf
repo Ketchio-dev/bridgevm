@@ -12,7 +12,7 @@
 
 [Sources]
   BootManagerDxe.c
-
+  StartImageFailure.c
 [Packages]
   MdePkg/MdePkg.dec
   BridgeVmPcPkg/BridgeVmPcPkg.dec

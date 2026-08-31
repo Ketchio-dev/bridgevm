@@ -41,7 +41,7 @@ pub(super) fn windows(
         Err(error) => println!("boot_observation_error={error:?}"),
     }
     println!("termination={termination:?}");
-    state::write(&execution.state, &execution.serial);
+    state::write(&execution.state, &execution.serial, ram);
     println!("windows_boot_proven=false");
     if complete {
         println!("LIVE OBSERVATION: BDS loaded Windows BOOTAA64.EFI and StartImage did not return before the captured terminal boundary");

@@ -14,7 +14,7 @@
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
 #include <BridgeVmPc/BootResult.h>
-
+#include <BridgeVmPc/StartImageFailure.h>
 STATIC EFI_HANDLE mImageHandle;
 
 STATIC volatile BRIDGE_VM_PC_BOOT_RESULT *
@@ -160,7 +160,7 @@ Boot (IN EFI_BDS_ARCH_PROTOCOL *This)
   Result ()->Stage = BRIDGE_VM_PC_BOOT_STAGE_IMAGE_LOADED;
   EfiSignalEventReadyToBoot ();
   Result ()->Stage = BRIDGE_VM_PC_BOOT_STAGE_READY_TO_BOOT;
-  Status = gBS->StartImage (BootImage, NULL, NULL);
+  Status = BridgeVmPcStartImageAndRecord (BootImage);
   Stop (BRIDGE_VM_PC_BOOT_STAGE_APPLICATION_ENTRY, Status);
 }
 

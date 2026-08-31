@@ -1624,7 +1624,9 @@ crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/hvf.rs	72	1
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/memory.rs	79	4
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/report.rs	43	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/report_proof.rs	36	0
-crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/report_state.rs	19	0
+crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/report_state.rs	18	0
+crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/report_start_failure.rs	84	0
+crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/report_start_failure_tests.rs	42	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/result.rs	91	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/result_tests.rs	69	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/result_wire.rs	71	0
@@ -1636,6 +1638,8 @@ crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Applications/ExitBootServicesProbe/Ex
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/BridgeVmPcBoot.dsc	88	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BootManagerDxe.c	190	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BootManagerDxe.inf	56	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/StartImageFailure.c	46	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Include/BridgeVmPc/StartImageFailure.h	32	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Include/BridgeVmPc/BootResult.h	61	0
 scripts/build-bridgevm-pc-boot-firmware.sh	112	0
 scripts/build-bridgevm-pc-boot-fv.sh	61	0
