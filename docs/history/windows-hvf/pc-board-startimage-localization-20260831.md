@@ -86,6 +86,24 @@ entry installs the virtual console aggregators and sets `gST->ConOut` (and
 ConIn/StdErr) non-NULL. With this in place a live run now reports
 `diagnostic: COMPLETE` at `stage=7`: the Boot Manager enters and keeps running
 (the run ends on the boot watchdog, not an immediate StartImage return). That
-is the T14 handoff condition. Full Windows boot is still not proven
-(`windows_boot_proven=false`); the next frontier is what the Boot Manager does
-after entry (console rendering on the GOP, BCD/BlpArch initialization).
+is the T14 handoff condition, and the sealed t8 B4 pointer-reliability gate
+still lands 20/20 at p95 222 ms on the shipping engine at the same head, so the
+console addition regresses nothing.
+
+## Next wall (observed, not yet resolved)
+
+Full Windows boot is still not proven (`windows_boot_proven=false`). A local
+run with the observation watchdog extended to 150 s shows the Boot Manager
+makes only six boot-service calls and then spins inside its own image (PC
+ranges over image RVA 0x3f550..0x41838, an ~8 KiB loop) for the rest of the
+window without reaching BCD/file I/O. The six calls are: RaiseTPL/RestoreTPL;
+`GetVariable("Se…")` → EFI_NOT_READY; `HandleProtocol(LoadedImage)` → success;
+`HandleProtocol` (GUID Data1 0x09576e91) → success; and
+`AllocatePages(AllocateAddress, EfiLoaderData, at 0x102000)` → EFI_NOT_READY.
+The board has no RAM at the low fixed address 0x102000 (system RAM starts at
+0x1_0000_0000). The leading hypotheses for the spin are (a) a retry loop after
+the fixed-address allocation fails, or (b) an architectural-timer/delay loop
+that never completes because the board's timer contract does not match what the
+Boot Manager expects. Pinning it needs single-stepping the spin region (rebuild
+the tracer per the memory note). The extended watchdog was a local diagnostic
+and is not committed.
