@@ -2,28 +2,22 @@
 
 const OFFSET: usize = 0x3100;
 const MAGIC: u64 = 0x3146_4953_5043_4d42;
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 const CAPACITY: usize = 96;
-const HEADER: usize = 40;
+const HEADER: usize = 48;
 
 fn u32_at(bytes: &[u8], offset: usize) -> Result<u32, String> {
-    Ok(u32::from_le_bytes(
-        bytes
-            .get(offset..offset + 4)
-            .ok_or_else(|| "StartImage diagnostic u32 is outside RAM".to_string())?
-            .try_into()
-            .map_err(|_| "StartImage diagnostic u32 has the wrong size".to_string())?,
-    ))
+    let raw = bytes
+        .get(offset..offset + 4)
+        .ok_or("StartImage diagnostic u32 is outside RAM")?;
+    Ok(u32::from_le_bytes(raw.try_into().expect("bounded u32")))
 }
 
 fn u64_at(bytes: &[u8], offset: usize) -> Result<u64, String> {
-    Ok(u64::from_le_bytes(
-        bytes
-            .get(offset..offset + 8)
-            .ok_or_else(|| "StartImage diagnostic u64 is outside RAM".to_string())?
-            .try_into()
-            .map_err(|_| "StartImage diagnostic u64 has the wrong size".to_string())?,
-    ))
+    let raw = bytes
+        .get(offset..offset + 8)
+        .ok_or("StartImage diagnostic u64 is outside RAM")?;
+    Ok(u64::from_le_bytes(raw.try_into().expect("bounded u64")))
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -31,6 +25,7 @@ struct Failure {
     status: u64,
     exit_data_size: u64,
     exit_data_address: u64,
+    loaded_image_probe_status: u64,
     units: Vec<u16>,
 }
 
@@ -63,6 +58,7 @@ fn decode(ram: &[u8]) -> Result<Option<Failure>, String> {
         status: u64_at(bytes, 16)?,
         exit_data_size: u64_at(bytes, 24)?,
         exit_data_address: u64_at(bytes, 32)?,
+        loaded_image_probe_status: u64_at(bytes, 40)?,
         units,
     }))
 }
@@ -70,10 +66,11 @@ fn decode(ram: &[u8]) -> Result<Option<Failure>, String> {
 pub(super) fn write(ram: &[u8]) {
     match decode(ram) {
         Ok(Some(failure)) => println!(
-            "start_image_return=status:{:#x},exit_data_size:{},exit_data_address:{:#x},utf16_units:{},utf16_valid:{},text:{:?}",
+            "start_image_return=status:{:#x},exit_data_size:{},exit_data_address:{:#x},loaded_image_probe_status:{:#x},utf16_units:{},utf16_valid:{},text:{:?}",
             failure.status,
             failure.exit_data_size,
             failure.exit_data_address,
+            failure.loaded_image_probe_status,
             failure.units.len(),
             String::from_utf16(&failure.units).is_ok(),
             String::from_utf16_lossy(&failure.units)

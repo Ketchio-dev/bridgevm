@@ -7,6 +7,8 @@ use bridgevm_hvf::machine::bridgevm_pc as board;
 
 #[path = "report_proof.rs"]
 pub(super) mod proof;
+#[path = "report_stage.rs"]
+mod stage;
 #[path = "report_state.rs"]
 mod state;
 
@@ -34,10 +36,7 @@ pub(super) fn windows(
         media.ram_bytes >> 20
     );
     match boot {
-        Ok(boot) => println!(
-            "stage={} arch={:#x} filesystems={} image={:#x}+{:#x}",
-            boot.stage, boot.arch, boot.file_systems, boot.image_base, boot.image_size
-        ),
+        Ok(boot) => println!("{}", stage::line(&boot)),
         Err(error) => println!("boot_observation_error={error:?}"),
     }
     println!("termination={termination:?}");

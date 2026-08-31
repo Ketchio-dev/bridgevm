@@ -58,7 +58,6 @@
   gArmTokenSpaceGuid.PcdArmArchTimerVirtIntrNum|27
   gArmTokenSpaceGuid.PcdGicDistributorBase|0x20000000
   gArmTokenSpaceGuid.PcdGicRedistributorsBase|0x21000000
-  gArmTokenSpaceGuid.PcdGicIrsConfigFrameBase|0
   gArmTokenSpaceGuid.PcdMonitorConduitHvc|TRUE
   gArmPlatformTokenSpaceGuid.PcdPL031RtcBase|0x24010000
   gArmPlatformTokenSpaceGuid.PcdPL031RtcPpmAccuracy|300000000
@@ -85,4 +84,5 @@
   MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
   FatPkg/EnhancedFatDxe/Fat.inf
   BridgeVmPcPkg/Drivers/BootManagerDxe/BootManagerDxe.inf
+  BridgeVmPcPkg/Drivers/GraphicsOutputDxe/GraphicsOutputDxe.inf
   BridgeVmPcPkg/Applications/ExitBootServicesProbe/ExitBootServicesProbe.inf

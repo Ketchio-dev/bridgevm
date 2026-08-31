@@ -2,25 +2,19 @@
 
 const OFFSET: usize = 0x3000;
 const MAGIC: u64 = 0x544f_4f42_5043_4d42;
+const VERSION: u32 = 2;
+const LENGTH: usize = 144;
 
 fn u32_at(bytes: &[u8], offset: usize) -> Result<u32, String> {
-    Ok(u32::from_le_bytes(
-        bytes
-            .get(offset..offset + 4)
-            .ok_or_else(|| "boot result u32 is outside RAM".to_string())?
-            .try_into()
-            .map_err(|_| "boot result u32 has the wrong size".to_string())?,
-    ))
+    let raw = bytes.get(offset..offset + 4);
+    let raw = raw.ok_or("boot result u32 is outside RAM")?;
+    Ok(u32::from_le_bytes(raw.try_into().expect("bounded u32")))
 }
 
 fn u64_at(bytes: &[u8], offset: usize) -> Result<u64, String> {
-    Ok(u64::from_le_bytes(
-        bytes
-            .get(offset..offset + 8)
-            .ok_or_else(|| "boot result u64 is outside RAM".to_string())?
-            .try_into()
-            .map_err(|_| "boot result u64 has the wrong size".to_string())?,
-    ))
+    let raw = bytes.get(offset..offset + 8);
+    let raw = raw.ok_or("boot result u64 is outside RAM")?;
+    Ok(u64::from_le_bytes(raw.try_into().expect("bounded u64")))
 }
 
 #[derive(Debug)]
@@ -40,15 +34,18 @@ pub(crate) struct BootResult {
     pub(crate) exit_attempts: u32,
     pub(crate) system_table: u64,
     pub(crate) boot_services: u64,
+    pub(crate) gop_handles: u64,
+    pub(crate) framebuffer_base: u64,
+    pub(crate) framebuffer_size: u64,
 }
 
 pub(super) fn read(ram: &[u8]) -> Result<BootResult, String> {
     let result = ram
-        .get(OFFSET..OFFSET + 128)
+        .get(OFFSET..OFFSET + LENGTH)
         .ok_or_else(|| "boot result is outside RAM".to_string())?;
     let magic = u64_at(result, 0)?;
     let version = u32_at(result, 8)?;
-    if magic != MAGIC || version != 1 {
+    if magic != MAGIC || version != VERSION {
         return Err(format!(
             "boot result identity is invalid: magic={magic:#x} version={version}"
         ));
@@ -69,5 +66,8 @@ pub(super) fn read(ram: &[u8]) -> Result<BootResult, String> {
         exit_attempts: u32_at(result, 100)?,
         system_table: u64_at(result, 104)?,
         boot_services: u64_at(result, 112)?,
+        gop_handles: u64_at(result, 120)?,
+        framebuffer_base: u64_at(result, 128)?,
+        framebuffer_size: u64_at(result, 136)?,
     })
 }

@@ -86,7 +86,7 @@ for lane in $(seq 1 "$REQUIRED_LANES"); do
   attempted=$((attempted + 1))
   if "$binary" "$fd" "$lane_media" "$lane_vars" > "$lane_dir/run.log" 2>&1 &&
      [[ "$(grep -Fc 'BridgeVM Virtual ARM PC BDS/ESP/PE/ExitBootServices probe: PASS' "$lane_dir/run.log")" -eq 1 ]] &&
-     [[ "$(grep -Ec '^stage=11 arch=0xfff filesystems=1 image=0x[0-9a-f]+\+0x[0-9a-f]+$' "$lane_dir/run.log")" -eq 1 ]] &&
+     [[ "$(grep -Ec '^stage=11 arch=0xfff filesystems=1 image=0x[0-9a-f]+\+0x[0-9a-f]+ gop_handles=[1-9][0-9]* framebuffer=0x[0-9a-f]+\+0x[0-9a-f]+$' "$lane_dir/run.log")" -eq 1 ]] &&
      [[ "$(grep -Ec 'exit_boot_services_attempts=[1-3] ' "$lane_dir/run.log")" -eq 1 ]] &&
      [[ "$(grep -Fc 'LIVE PROOF: DXE Core invoked BDS, which loaded BOOTAA64.EFI from NVMe and reached code after ExitBootServices' "$lane_dir/run.log")" -eq 1 ]] &&
      [[ "$(stat -f %z "$lane_media")" -eq 67108864 ]] &&

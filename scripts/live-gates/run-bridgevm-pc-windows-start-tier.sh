@@ -112,7 +112,7 @@ attempted=1
   || refuse 'Windows Boot Manager diagnostic process failed' process-failed
 grep -q '^BridgeVM Virtual ARM PC Windows Boot Manager diagnostic: COMPLETE$' "$OUT/diagnostic.log" \
   || refuse 'diagnostic completion marker is absent' result-missing
-grep -Eq '^stage=7 arch=0xfff filesystems=[1-9][0-9]* image=0x[0-9a-f]+\+0x[0-9a-f]+$' "$OUT/diagnostic.log" \
+grep -Eq '^stage=7 arch=0xfff filesystems=[1-9][0-9]* image=0x[0-9a-f]+\+0x[0-9a-f]+ gop_handles=[1-9][0-9]* framebuffer=0x[0-9a-f]+\+0x[0-9a-f]+$' "$OUT/diagnostic.log" \
   || refuse 'Windows Boot Manager StartImage handoff was not observed' handoff-missing
 grep -q 'boot_media_mode=raw-cow ram_mib=6144 ' "$OUT/diagnostic.log" \
   || refuse 'raw COW or Windows RAM policy was not active' policy-mismatch

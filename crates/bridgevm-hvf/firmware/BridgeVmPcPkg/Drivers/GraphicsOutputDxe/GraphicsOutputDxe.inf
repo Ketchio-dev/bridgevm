@@ -1,0 +1,32 @@
+## @file
+# BridgeVM Virtual ARM PC reserved-RAM UEFI Graphics Output producer.
+# SPDX-License-Identifier: Apache-2.0
+##
+
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = BridgeVmPcGraphicsOutputDxe
+  FILE_GUID = 59BFB167-0E0C-4A04-9045-0658641760DF
+  MODULE_TYPE = DXE_DRIVER
+  ENTRY_POINT = BridgeVmPcGraphicsOutputEntry
+
+[Sources]
+  Blt.c
+  GraphicsOutputDxe.c
+  GraphicsOutputDxe.h
+
+[Packages]
+  MdePkg/MdePkg.dec
+  BridgeVmPcPkg/BridgeVmPcPkg.dec
+
+[LibraryClasses]
+  BaseMemoryLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid           ## PRODUCES
+  gEfiDevicePathProtocolGuid               ## PRODUCES
+
+[Depex]
+  TRUE

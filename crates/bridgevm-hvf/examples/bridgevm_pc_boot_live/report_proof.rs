@@ -18,10 +18,7 @@ pub(crate) fn write(
     println!(
         "firmware_sha256={firmware_hash} boot_media_sha256={media_hash} vars_sha256={vars_hash}"
     );
-    println!(
-        "stage={} arch={:#x} filesystems={} image={:#x}+{:#x}",
-        boot.stage, boot.arch, boot.file_systems, boot.image_base, boot.image_size
-    );
+    println!("{}", super::stage::line(&boot));
     println!(
         "memory_map={} descriptor={}/{} exit_boot_services_attempts={} mmio_exits={} vtimer_exits={}",
         boot.memory_map_size,

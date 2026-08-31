@@ -5,7 +5,6 @@
 #include <Uefi.h>
 #include <Guid/EventGroup.h>
 #include <Protocol/Bds.h>
-#include <Protocol/BlockIo.h>
 #include <Protocol/LoadedImage.h>
 #include <Protocol/SimpleFileSystem.h>
 #include <Library/BaseLib.h>
@@ -13,14 +12,14 @@
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
-#include <BridgeVmPc/BootResult.h>
 #include <BridgeVmPc/StartImageFailure.h>
+#include "BootManagerDxe.h"
 STATIC EFI_HANDLE mImageHandle;
 
 STATIC volatile BRIDGE_VM_PC_BOOT_RESULT *
 Result (VOID)
 {
-  return (volatile BRIDGE_VM_PC_BOOT_RESULT *)(UINTN)BRIDGE_VM_PC_BOOT_RESULT_GPA;
+  return BRIDGE_VM_PC_RESULT ();
 }
 
 STATIC VOID
@@ -30,64 +29,6 @@ Stop (IN UINT32 Stage, IN EFI_STATUS Status)
   Result ()->Stage = BRIDGE_VM_PC_BOOT_STAGE_ERROR | Stage;
   __asm__ __volatile__("dsb sy\n\thvc #1" ::: "memory");
   CpuDeadLoop ();
-}
-
-STATIC UINT64
-ArchitecturalProtocols (VOID)
-{
-  STATIC EFI_GUID *CONST Guids[] = {
-    &gEfiSecurityArchProtocolGuid, &gEfiCpuArchProtocolGuid,
-    &gEfiMetronomeArchProtocolGuid, &gEfiTimerArchProtocolGuid,
-    &gEfiWatchdogTimerArchProtocolGuid, &gEfiRuntimeArchProtocolGuid,
-    &gEfiVariableArchProtocolGuid, &gEfiVariableWriteArchProtocolGuid,
-    &gEfiCapsuleArchProtocolGuid, &gEfiMonotonicCounterArchProtocolGuid,
-    &gEfiResetArchProtocolGuid, &gEfiRealTimeClockArchProtocolGuid
-  };
-  UINT64 Mask = 0;
-  UINTN Index;
-  EFI_HANDLE *Handles;
-  UINTN Count;
-  for (Index = 0; Index < ARRAY_SIZE (Guids); ++Index) {
-    Handles = NULL;
-    Count = 0;
-    if (!EFI_ERROR (gBS->LocateHandleBuffer (ByProtocol, Guids[Index], NULL,
-                                             &Count, &Handles)) &&
-        (Count != 0)) {
-      Mask |= 1ULL << Index;
-    }
-    if (Handles != NULL) {
-      FreePool (Handles);
-    }
-  }
-  return Mask;
-}
-
-STATIC EFI_STATUS
-ConnectAll (VOID)
-{
-  EFI_HANDLE *Handles;
-  UINTN Count;
-  UINTN Index;
-  UINTN Previous = 0;
-  UINTN Pass;
-  EFI_STATUS Status;
-  for (Pass = 0; Pass < 8; ++Pass) {
-    Handles = NULL;
-    Count = 0;
-    Status = gBS->LocateHandleBuffer (AllHandles, NULL, NULL, &Count, &Handles);
-    if (EFI_ERROR (Status)) {
-      return Status;
-    }
-    for (Index = 0; Index < Count; ++Index) {
-      (VOID)gBS->ConnectController (Handles[Index], NULL, NULL, TRUE);
-    }
-    FreePool (Handles);
-    if ((Pass != 0) && (Count == Previous)) {
-      return EFI_SUCCESS;
-    }
-    Previous = Count;
-  }
-  return EFI_ABORTED;
 }
 
 STATIC VOID EFIAPI
@@ -102,7 +43,7 @@ Boot (IN EFI_BDS_ARCH_PROTOCOL *This)
   UINTN Index;
   (VOID)This;
   Result ()->Stage = BRIDGE_VM_PC_BOOT_STAGE_BDS_ENTERED;
-  Result ()->ArchitecturalProtocols = ArchitecturalProtocols ();
+  Result ()->ArchitecturalProtocols = BridgeVmPcArchitecturalProtocols ();
   if (Result ()->ArchitecturalProtocols != BRIDGE_VM_PC_ARCH_REQUIRED) {
     Stop (BRIDGE_VM_PC_BOOT_STAGE_ARCH_READY, EFI_NOT_FOUND);
   }
@@ -115,11 +56,12 @@ Boot (IN EFI_BDS_ARCH_PROTOCOL *This)
   if (EFI_ERROR (Status)) {
     Stop (BRIDGE_VM_PC_BOOT_STAGE_ARCH_READY, Status);
   }
-  Status = ConnectAll ();
+  Status = BridgeVmPcConnectAll ();
   if (EFI_ERROR (Status)) {
     Stop (BRIDGE_VM_PC_BOOT_STAGE_STORAGE_CONNECTED, Status);
   }
   Result ()->Stage = BRIDGE_VM_PC_BOOT_STAGE_STORAGE_CONNECTED;
+  BridgeVmPcRecordGraphics ();
   FileSystems = NULL;
   Count = 0;
   Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiSimpleFileSystemProtocolGuid,

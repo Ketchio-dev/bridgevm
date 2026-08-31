@@ -6,10 +6,11 @@
 #define BRIDGE_VM_PC_BOOT_RESULT_H_
 
 #include <Uefi.h>
+#include <BridgeVmPc/BootArch.h>
 
 #define BRIDGE_VM_PC_BOOT_RESULT_GPA     0x100003000ULL
 #define BRIDGE_VM_PC_BOOT_RESULT_MAGIC   0x544F4F4250434D42ULL
-#define BRIDGE_VM_PC_BOOT_RESULT_VERSION 1U
+#define BRIDGE_VM_PC_BOOT_RESULT_VERSION 2U
 
 #define BRIDGE_VM_PC_BOOT_STAGE_BDS_INSTALLED      1U
 #define BRIDGE_VM_PC_BOOT_STAGE_BDS_ENTERED        2U
@@ -23,20 +24,6 @@
 #define BRIDGE_VM_PC_BOOT_STAGE_EXIT_BOOT_SERVICES 10U
 #define BRIDGE_VM_PC_BOOT_STAGE_POST_EXIT           11U
 #define BRIDGE_VM_PC_BOOT_STAGE_ERROR               0x80000000U
-
-#define BRIDGE_VM_PC_ARCH_SECURITY       (1ULL << 0)
-#define BRIDGE_VM_PC_ARCH_CPU            (1ULL << 1)
-#define BRIDGE_VM_PC_ARCH_METRONOME      (1ULL << 2)
-#define BRIDGE_VM_PC_ARCH_TIMER          (1ULL << 3)
-#define BRIDGE_VM_PC_ARCH_WATCHDOG       (1ULL << 4)
-#define BRIDGE_VM_PC_ARCH_RUNTIME        (1ULL << 5)
-#define BRIDGE_VM_PC_ARCH_VARIABLE       (1ULL << 6)
-#define BRIDGE_VM_PC_ARCH_VARIABLE_WRITE (1ULL << 7)
-#define BRIDGE_VM_PC_ARCH_CAPSULE        (1ULL << 8)
-#define BRIDGE_VM_PC_ARCH_MONOTONIC      (1ULL << 9)
-#define BRIDGE_VM_PC_ARCH_RESET          (1ULL << 10)
-#define BRIDGE_VM_PC_ARCH_RTC            (1ULL << 11)
-#define BRIDGE_VM_PC_ARCH_REQUIRED       ((1ULL << 12) - 1ULL)
 
 typedef struct {
   UINT64 Magic;
@@ -56,6 +43,9 @@ typedef struct {
   UINT32 ExitBootServicesAttempts;
   UINT64 SystemTable;
   UINT64 BootServices;
+  UINT64 GopHandles;
+  UINT64 FrameBufferBase;
+  UINT64 FrameBufferSize;
 } BRIDGE_VM_PC_BOOT_RESULT;
 
 #endif

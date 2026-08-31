@@ -11,7 +11,9 @@
   ENTRY_POINT = BridgeVmPcBootManagerEntry
 
 [Sources]
+  BdsSupport.c
   BootManagerDxe.c
+  BootManagerDxe.h
   StartImageFailure.c
 [Packages]
   MdePkg/MdePkg.dec
@@ -43,14 +45,12 @@
   gEfiMonotonicCounterArchProtocolGuid     ## CONSUMES
   gEfiResetArchProtocolGuid                ## CONSUMES
   gEfiRealTimeClockArchProtocolGuid        ## CONSUMES
-  gEfiBlockIoProtocolGuid                  ## CONSUMES
+  gEfiGraphicsOutputProtocolGuid           ## CONSUMES
   gEfiSimpleFileSystemProtocolGuid         ## CONSUMES
   gEfiLoadedImageProtocolGuid              ## CONSUMES
 
 [Depex]
-  gEfiSecurityArchProtocolGuid AND gEfiCpuArchProtocolGuid AND
-  gEfiMetronomeArchProtocolGuid AND gEfiTimerArchProtocolGuid AND
-  gEfiWatchdogTimerArchProtocolGuid AND gEfiRuntimeArchProtocolGuid AND
-  gEfiVariableArchProtocolGuid AND gEfiVariableWriteArchProtocolGuid AND
-  gEfiCapsuleArchProtocolGuid AND gEfiMonotonicCounterArchProtocolGuid AND
-  gEfiResetArchProtocolGuid AND gEfiRealTimeClockArchProtocolGuid
+  gEfiSecurityArchProtocolGuid AND gEfiCpuArchProtocolGuid AND gEfiMetronomeArchProtocolGuid AND
+  gEfiTimerArchProtocolGuid AND gEfiWatchdogTimerArchProtocolGuid AND gEfiRuntimeArchProtocolGuid AND
+  gEfiVariableArchProtocolGuid AND gEfiVariableWriteArchProtocolGuid AND gEfiCapsuleArchProtocolGuid AND
+  gEfiMonotonicCounterArchProtocolGuid AND gEfiResetArchProtocolGuid AND gEfiRealTimeClockArchProtocolGuid

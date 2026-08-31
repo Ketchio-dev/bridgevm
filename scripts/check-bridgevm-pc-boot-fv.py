@@ -13,12 +13,12 @@ def pe_size(image: bytes) -> int:
 
 
 def main() -> None:
-    if len(sys.argv) != 26:
+    if len(sys.argv) != 27:
         raise SystemExit("usage: check-bridgevm-pc-boot-fv.py FV APP IMAGE...")
     fv = pathlib.Path(sys.argv[1]).read_bytes()
     app = pathlib.Path(sys.argv[2]).read_bytes()
     images = [pathlib.Path(path).read_bytes() for path in sys.argv[3:]]
-    if len(fv) != 0x100000 or len(images) != 23:
+    if len(fv) != 0x100000 or len(images) != 24:
         raise ValueError("boot FV has the wrong bounded size or image count")
     if struct.unpack_from("<Q", fv, 0x20)[0] != len(fv) or fv[0x28:0x2C] != b"_FVH":
         raise ValueError("boot FV header is invalid")
