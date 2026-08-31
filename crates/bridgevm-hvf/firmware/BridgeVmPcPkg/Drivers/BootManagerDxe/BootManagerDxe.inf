@@ -47,6 +47,7 @@
   gEfiRealTimeClockArchProtocolGuid        ## CONSUMES
   gEfiGraphicsOutputProtocolGuid           ## CONSUMES
   gEfiSimpleTextOutProtocolGuid            ## CONSUMES
+  gEfiSimpleTextInProtocolGuid             ## CONSUMES
   gEfiSimpleFileSystemProtocolGuid         ## CONSUMES
   gEfiLoadedImageProtocolGuid              ## CONSUMES
 [Depex]

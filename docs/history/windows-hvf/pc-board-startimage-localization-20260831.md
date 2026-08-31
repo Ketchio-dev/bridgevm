@@ -277,3 +277,43 @@ executed — but confirm the BRK routes to the VMM under `trap_debug_exceptions`
 rather than to the guest's own EL1 vector, and note this needs the stub
 SecurityDxe to skip signature checks, which it does); or step back from
 per-wall bootmgfw RE toward building out a more complete board environment.
+
+## Breakthrough 2: wiring ConIn advances the Boot Manager into a live timer-wait loop
+
+Building out the board environment (the proven lever above) paid off again.
+The console fix wired `gST->ConOut` but left `gST->ConIn` **NULL** — the exact
+symmetric hazard as the original blocker (a boot application that touches the
+console then dereferences a NULL pointer). ConSplitter installs a virtual
+Simple Text Input aggregator handle even with no physical keyboard, so
+`BdsConsole.c` now also locates a Simple Text Input producer and points
+`gST->ConIn`/`ConsoleInHandle` at it (single CRC reseal covering both). The
+Boot Manager's INF gained `gEfiSimpleTextInProtocolGuid`.
+
+Effect (live, `win25h2-scripted-source.raw` COW, firmware `82a6fa3b`): the Boot
+Manager no longer dead-stalls after ~56 `AllocatePool`. It now runs a **live
+RaiseTPL(0x1f)/RestoreTPL(0x4) polling loop of thousands of iterations** —
+i.e. it is executing, not stuck — before the 20s watchdog cancels the vCPU. The
+sealed T13 BDS/ExitBootServices path is **unchanged (still PASS, stage=11)**, so
+this is pure forward progress with no regression.
+
+### The next blocker is now precisely localized: the physical-timer interrupt
+
+The terminal state decodes the next wall exactly. `vcpu_final` is
+`pc:0x27fe89550, esr:0x6234f804`. ESR `EC = 0x18` (trapped MSR/MRS), and the ISS
+decodes to `Op0=3 Op1=3 CRn=14 CRm=2 Op2=2`, direction=write — that is a **write
+to `CNTP_CVAL_EL0`**, the *physical* timer compare register. The Boot Manager
+(through the firmware's TimerArch/event services) is arming the physical timer
+inside its RaiseTPL/RestoreTPL wait loop and spinning until the timeout event
+fires. It never fires: the board uses the **physical** timer
+(`ArmGenericTimerPhyCounterLib` + `ArmTimerDxe` programming `CNTP_*`), HVF traps
+the `CNTP_CVAL_EL0` write (hence EC 0x18), and the run loop masks `EXIT_VTIMER`
+and injects **no** physical-timer PPI — so the guest's timed wait can never
+complete. (The earlier "timer delivery didn't help" experiment is not a
+counter-example: it was run at the *old* AllocatePool stall, before ConIn let
+the guest reach this timer-arming loop at all.)
+
+Next: give the board a working architectural timer interrupt — the cleanest
+route is to switch the firmware to the **virtual** timer (`CNTV`, which HVF
+supports natively via `EXIT_VTIMER` + IRQ injection) and stop masking vtimer in
+the run loop, so the Boot Manager's timed wait completes and it proceeds toward
+reading the BCD. This is again "build out the board," now the timer path.

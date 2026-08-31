@@ -1645,12 +1645,12 @@ crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Applications/ExitBootServicesProbe/Ex
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Applications/ExitBootServicesProbe/ExitBootServicesProbe.inf	22	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/BridgeVmPcBoot.dsc	88	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BootManagerDxe.c	190	0
-crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BootManagerDxe.inf	56	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BootManagerDxe.inf	57	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BsTrace.c	109	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BsTrace.h	45	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BsWrappers.c	216	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BdsSupport.c	96	0
-crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BdsConsole.c	42	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BdsConsole.c	64	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BootManagerDxe.h	23	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/GraphicsOutputDxe/GraphicsOutputDxe.c	119	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/GraphicsOutputDxe/GraphicsOutputDxe.h	37	0
