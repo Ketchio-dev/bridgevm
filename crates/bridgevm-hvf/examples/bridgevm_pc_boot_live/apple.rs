@@ -14,6 +14,8 @@ mod gic;
 mod hvf;
 #[path = "memory.rs"]
 mod memory;
+#[path = "mmio.rs"]
+mod mmio;
 #[path = "ram_dump.rs"]
 mod ram_dump;
 #[path = "report.rs"]
@@ -22,6 +24,8 @@ mod report;
 mod result;
 #[path = "run_loop.rs"]
 mod run_loop;
+#[path = "us_gic.rs"]
+mod us_gic;
 #[path = "vars_file.rs"]
 mod vars_file;
 #[path = "vcpu_state.rs"]
@@ -36,6 +40,7 @@ struct Execution {
     run: Result<(usize, usize), String>,
     state: vcpu_state::VcpuState,
     serial: String,
+    result_snapshot: Option<result::BootResult>,
 }
 
 fn sha256(bytes: &[u8]) -> String {
@@ -80,7 +85,7 @@ unsafe fn execute(
         board::RAM_BASE,
         HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC,
     )?;
-    let geometry = gic::create()?;
+    let mut gic = gic::create()?;
     let mut vcpu = 0;
     let mut exit = null_mut();
     status(
@@ -98,16 +103,28 @@ unsafe fn execute(
         status("set CPSR", hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5))?;
         status("unmask VTimer", hv_vcpu_set_vtimer_mask(vcpu, false))?;
         let mut guest_ram = GuestRam::new(ram);
-        let run = run_loop::run(vcpu, exit, &mut platform, &mut guest_ram);
+        let mut result_snapshot = None;
+        let run = run_loop::run(
+            vcpu,
+            exit,
+            &mut platform,
+            &mut gic,
+            &mut guest_ram,
+            &mut result_snapshot,
+        );
         let state = vcpu_state::capture(vcpu, exit)?;
         ram_dump::maybe_dump(guest_ram.bytes(), state.pc);
         let serial = String::from_utf8_lossy(platform.uart_output()).into_owned();
-        Ok(Execution { run, state, serial })
+        Ok(Execution {
+            run,
+            state,
+            serial,
+            result_snapshot,
+        })
     })();
     let destroy = hv_vcpu_destroy(vcpu);
     run.and_then(|value| {
         status("destroy vCPU", destroy)?;
-        println!("gic_geometry={geometry:?}");
         Ok(value)
     })
 }

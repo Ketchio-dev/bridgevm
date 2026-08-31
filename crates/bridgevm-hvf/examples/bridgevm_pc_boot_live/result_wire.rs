@@ -17,7 +17,7 @@ fn u64_at(bytes: &[u8], offset: usize) -> Result<u64, String> {
     Ok(u64::from_le_bytes(raw.try_into().expect("bounded u64")))
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct BootResult {
     pub(crate) stage: u32,
     pub(crate) status: u64,

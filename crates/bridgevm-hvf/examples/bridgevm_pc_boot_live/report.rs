@@ -19,7 +19,14 @@ pub(super) fn windows(
     execution: Execution,
 ) -> Result<(), String> {
     let (firmware_hash, vars_hash) = hashes;
-    let boot = super::result::validate_windows_start(ram);
+    // Prefer the live RAM; if the Boot Manager has run far enough to overwrite
+    // the low-memory result record, fall back to the snapshot captured the
+    // moment the StartImage handoff first became valid.
+    let boot = match super::result::validate_windows_start(ram) {
+        Ok(boot) => Ok(boot),
+        Err(error) => execution.result_snapshot.clone().ok_or(error),
+    };
+    let advanced = boot.is_ok() && super::result::validate_windows_start(ram).is_err();
     let complete = boot.is_ok();
     let termination = match execution.run {
         Ok((mmio, vtimer)) => format!("hvc mmio_exits={mmio} vtimer_exits={vtimer}"),
@@ -43,6 +50,9 @@ pub(super) fn windows(
     state::write(&execution.state, &execution.serial, ram);
     println!("windows_boot_proven=false");
     if complete {
+        if advanced {
+            println!("boot_manager_advanced=true (overwrote the low-memory result record after StartImage)");
+        }
         println!("LIVE OBSERVATION: BDS loaded Windows BOOTAA64.EFI and StartImage did not return before the captured terminal boundary");
         Ok(())
     } else {

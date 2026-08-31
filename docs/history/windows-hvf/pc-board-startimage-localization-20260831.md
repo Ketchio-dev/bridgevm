@@ -547,3 +547,38 @@ at `0x27fe8c0d8` should leave zero once the Boot Manager's timer ISR is delivere
 its INTID, and the spin at `0x27fe89534` should fall through and boot progress
 past `0x27fe8956x`. The `ram_dump` tool and the filtered boot-service trace stay
 the instruments for confirming forward progress.
+
+## ★ LANDMARK: the userspace GIC boots the guest past the timer wall
+
+The port was implemented and it works. The boot-live example now builds a
+`UserspaceGic` instead of `hv_gic` (`us_gic.rs`, `gic.rs`), routes GIC-window
+MMIO through it and serves `ICC_*` traps via `UserspaceGic::sysreg`, passes
+through the other EL1-trapped registers (PMU counters return a monotonic value),
+re-arms `CNTV_CVAL` to a future `mach_absolute_time()` deadline and drives the
+timer PPI (INTID 27) on every `HV_EXIT_REASON_VTIMER`, and asserts the vCPU IRQ
+line with `hv_vcpu_set_pending_interrupt` after each exit (`run_loop.rs`,
+`mmio.rs`).
+
+Results (live):
+
+- **Sealed T13 BDS/ExitBootServices still PASSES, stage=11** under the userspace
+  GIC — the firmware's own GIC/timer stack runs correctly against the emulated
+  controller.
+- **The Windows tick wall is broken.** The `0x27fe89534` spin on the frozen
+  counter is *gone*; the Boot Manager runs far past `0x27fe8956x` into new code
+  (terminal PC now `0x27ea28a0c`), executing for the whole watchdog window with
+  very few traps — i.e. real guest execution, not a trap loop. It progresses so
+  far it overwrites the low-memory boot-result record after StartImage, which the
+  report now handles by validating a snapshot captured the moment the handoff
+  first became valid and printing `boot_manager_advanced=true`.
+
+Two dead-ends resolved along the way, both by mirroring the shipping engine:
+non-GIC EL1 sysreg traps (PMU perf-counter reads for CPU-speed calibration) must
+be served rather than faulted; and the vtimer must be **re-armed to a future
+deadline** on each activation, otherwise HVF re-fires it immediately and the host
+spins servicing millions of vtimer exits while the guest never advances.
+
+The board now has a working interrupt controller, timer delivery, and an
+interrupt-driven guest that boots Windows deep past every prior wall. Full
+Windows boot (kernel handoff) is the next frontier; the terminal PC
+`0x27ea28a0c` and the `ram_dump` tool are the instruments to localize it.

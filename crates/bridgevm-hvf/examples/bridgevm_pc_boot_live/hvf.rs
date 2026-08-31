@@ -2,16 +2,18 @@ use std::ffi::c_void;
 
 pub(super) type HvReturn = i32;
 pub(super) type HvVcpu = u64;
-pub(super) type HvGicConfig = *mut c_void;
 pub(super) const HV_REG_PC: u32 = 31;
 pub(super) const HV_REG_CPSR: u32 = 34;
 pub(super) const HV_SYS_REG_MPIDR_EL1: u16 = 0xc005;
+pub(super) const HV_SYS_REG_CNTV_CVAL_EL0: u16 = 0xdf1a;
+pub(super) const VTIMER_DEADLINE_TICKS: u64 = 50_000_000;
 pub(super) const HV_MEMORY_READ: u64 = 1;
 pub(super) const HV_MEMORY_WRITE: u64 = 2;
 pub(super) const HV_MEMORY_EXEC: u64 = 4;
 pub(super) const EXIT_CANCELED: u32 = 0;
 pub(super) const EXIT_EXCEPTION: u32 = 1;
 pub(super) const EXIT_VTIMER: u32 = 2;
+pub(super) const HV_INTERRUPT_TYPE_IRQ: u32 = 0;
 
 #[repr(C)]
 pub(super) struct HvVcpuExitException {
@@ -46,24 +48,12 @@ unsafe extern "C" {
     pub(super) fn hv_vcpu_set_reg(vcpu: HvVcpu, reg: u32, value: u64) -> HvReturn;
     pub(super) fn hv_vcpu_set_sys_reg(vcpu: HvVcpu, reg: u16, value: u64) -> HvReturn;
     pub(super) fn hv_vcpu_set_vtimer_mask(vcpu: HvVcpu, masked: bool) -> HvReturn;
-    pub(super) fn hv_gic_get_distributor_size(size: *mut usize) -> HvReturn;
-    pub(super) fn hv_gic_get_distributor_base_alignment(size: *mut usize) -> HvReturn;
-    pub(super) fn hv_gic_get_redistributor_region_size(size: *mut usize) -> HvReturn;
-    pub(super) fn hv_gic_get_redistributor_size(size: *mut usize) -> HvReturn;
-    pub(super) fn hv_gic_get_redistributor_base_alignment(size: *mut usize) -> HvReturn;
-    pub(super) fn hv_gic_get_msi_region_size(size: *mut usize) -> HvReturn;
-    pub(super) fn hv_gic_get_msi_region_base_alignment(size: *mut usize) -> HvReturn;
-    pub(super) fn hv_gic_get_spi_interrupt_range(base: *mut u32, count: *mut u32) -> HvReturn;
-    pub(super) fn hv_gic_config_create() -> HvGicConfig;
-    pub(super) fn hv_gic_config_set_distributor_base(config: HvGicConfig, base: u64) -> HvReturn;
-    pub(super) fn hv_gic_config_set_redistributor_base(config: HvGicConfig, base: u64) -> HvReturn;
-    pub(super) fn hv_gic_config_set_msi_region_base(config: HvGicConfig, base: u64) -> HvReturn;
-    pub(super) fn hv_gic_config_set_msi_interrupt_range(
-        config: HvGicConfig,
-        base: u32,
-        count: u32,
+    pub(super) fn hv_vcpu_set_pending_interrupt(
+        vcpu: HvVcpu,
+        interrupt_type: u32,
+        pending: bool,
     ) -> HvReturn;
-    pub(super) fn hv_gic_create(config: HvGicConfig) -> HvReturn;
+    pub(super) fn mach_absolute_time() -> u64;
 }
 
 pub(super) fn status(label: &str, value: HvReturn) -> Result<(), String> {
