@@ -13,6 +13,8 @@ mod layout;
 mod nvme;
 #[path = "platform_pc_pcie.rs"]
 mod pcie;
+#[path = "platform_pc_storage.rs"]
+mod storage;
 
 use crate::fwcfg::GuestMemoryMut;
 use crate::machine::bridgevm_pc as board;
@@ -113,10 +115,6 @@ impl BridgeVmPcPlatform {
         self.uart.output()
     }
 
-    pub fn load_nvme_disk_image(&mut self, image: Vec<u8>) {
-        self.nvme.load_disk_image(image);
-    }
-
     pub fn reset_runtime_state(&mut self) {
         self.uart = Pl011::new();
         self.rtc = Pl031::new();
@@ -130,6 +128,9 @@ impl BridgeVmPcPlatform {
 #[cfg(test)]
 #[path = "platform_pc_nvme_tests.rs"]
 mod nvme_tests;
+#[cfg(test)]
+#[path = "platform_pc_storage_tests.rs"]
+mod storage_tests;
 #[cfg(test)]
 #[path = "platform_pc_test_support.rs"]
 mod test_support;

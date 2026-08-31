@@ -2,51 +2,45 @@ use bridgevm_hvf::machine::bridgevm_pc as board;
 use bridgevm_hvf::platform_pc::BridgeVmPcPlatform;
 use sha2::{Digest, Sha256};
 use std::ffi::c_void;
-use std::path::PathBuf;
 use std::ptr::null_mut;
 
+#[path = "arguments.rs"]
+mod arguments;
+#[path = "boot_media.rs"]
+mod boot_media;
 #[path = "gic.rs"]
 mod gic;
 #[path = "hvf.rs"]
 mod hvf;
 #[path = "memory.rs"]
 mod memory;
+#[path = "report.rs"]
+mod report;
 #[path = "result.rs"]
 mod result;
 #[path = "run_loop.rs"]
 mod run_loop;
 #[path = "vars_file.rs"]
 mod vars_file;
+#[path = "vcpu_state.rs"]
+mod vcpu_state;
 use hvf::*;
 use memory::{AlignedMemory, GuestRam};
 
 const EXPECTED_FIRMWARE: &str = "9bf4152f31bf304a384341ee8f9fce7f9d2fc890b9302a19935e107596575849";
-const EXPECTED_MEDIA: &str = "a49be97db44c0d68b3382f3b1e46eba2fc7a3b12bcba14c1ec720f0511b71979";
-const RAM_SIZE: usize = 512 << 20;
 const VARS_SIZE: usize = 0x1_0000;
+
+struct Execution {
+    run: Result<(usize, usize), String>,
+    state: vcpu_state::VcpuState,
+    serial: String,
+}
 
 fn sha256(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
-}
-
-fn arguments() -> Result<(PathBuf, PathBuf, PathBuf), String> {
-    let mut args = std::env::args_os().skip(1).map(PathBuf::from);
-    let firmware = args.next().ok_or_else(|| {
-        "usage: bridgevm_pc_boot_live FIRMWARE_FD BOOT_MEDIA VARS_FILE".to_string()
-    })?;
-    let media = args.next().ok_or_else(|| {
-        "usage: bridgevm_pc_boot_live FIRMWARE_FD BOOT_MEDIA VARS_FILE".to_string()
-    })?;
-    let vars = args.next().ok_or_else(|| {
-        "usage: bridgevm_pc_boot_live FIRMWARE_FD BOOT_MEDIA VARS_FILE".to_string()
-    })?;
-    if args.next().is_some() {
-        return Err("bridgevm_pc_boot_live received extra arguments".to_string());
-    }
-    Ok((firmware, media, vars))
 }
 
 unsafe fn map(memory: &AlignedMemory, address: u64, flags: u64) -> Result<(), String> {
@@ -66,8 +60,8 @@ unsafe fn execute(
     variables: &mut AlignedMemory,
     boot_info: &mut AlignedMemory,
     ram: &mut AlignedMemory,
-    media: Vec<u8>,
-) -> Result<(result::BootResult, usize, usize, String), String> {
+    media: boot_media::BootMedia,
+) -> Result<Execution, String> {
     map(
         firmware,
         board::FLASH_CODE.base,
@@ -92,7 +86,7 @@ unsafe fn execute(
         hv_vcpu_create(&mut vcpu, &mut exit, null_mut()),
     )?;
     let mut platform = BridgeVmPcPlatform::new();
-    platform.load_nvme_disk_image(media);
+    media.attach(&mut platform)?;
     let run = (|| {
         status(
             "set MPIDR_EL1",
@@ -102,10 +96,10 @@ unsafe fn execute(
         status("set CPSR", hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5))?;
         status("unmask VTimer", hv_vcpu_set_vtimer_mask(vcpu, false))?;
         let mut guest_ram = GuestRam::new(ram);
-        let (mmio, vtimer) = run_loop::run(vcpu, exit, &mut platform, &mut guest_ram)?;
-        let boot_result = result::validate(guest_ram.bytes())?;
+        let run = run_loop::run(vcpu, exit, &mut platform, &mut guest_ram);
+        let state = vcpu_state::capture(vcpu, exit)?;
         let serial = String::from_utf8_lossy(platform.uart_output()).into_owned();
-        Ok((boot_result, mmio, vtimer, serial))
+        Ok(Execution { run, state, serial })
     })();
     let destroy = hv_vcpu_destroy(vcpu);
     run.and_then(|value| {
@@ -116,13 +110,19 @@ unsafe fn execute(
 }
 
 unsafe fn run_unsafe() -> Result<(), String> {
-    let (firmware_path, media_path, vars_path) = arguments()?;
+    let arguments::Arguments {
+        firmware: firmware_path,
+        media: media_path,
+        vars: vars_path,
+        windows_raw,
+    } = arguments::read()?;
     let firmware_bytes = std::fs::read(&firmware_path)
         .map_err(|error| format!("read firmware {}: {error}", firmware_path.display()))?;
-    let media_bytes = std::fs::read(&media_path)
-        .map_err(|error| format!("read boot media {}: {error}", media_path.display()))?;
+    let media = boot_media::BootMedia::open(&media_path, windows_raw)?;
+    let media_identity = media.identity();
+    let windows_diagnostic = media.is_windows_diagnostic();
+    let ram_size = media_identity.ram_bytes as usize;
     let firmware_hash = sha256(&firmware_bytes);
-    let media_hash = sha256(&media_bytes);
     if firmware_bytes.len() != board::FLASH_CODE.size as usize || firmware_hash != EXPECTED_FIRMWARE
     {
         return Err(format!(
@@ -130,18 +130,15 @@ unsafe fn run_unsafe() -> Result<(), String> {
             firmware_bytes.len()
         ));
     }
-    if media_hash != EXPECTED_MEDIA {
-        return Err(format!("unexpected boot-media hash: {media_hash}"));
-    }
     let (mut vars_file, vars_bytes) = vars_file::open(&vars_path)?;
     if vars_bytes.len() != VARS_SIZE {
         return Err(format!("unexpected vars size: {}", vars_bytes.len()));
     }
-    let bundle = BridgeVmPcPlatform::build_firmware_tables(1, RAM_SIZE as u64)?;
+    let bundle = BridgeVmPcPlatform::build_firmware_tables(1, ram_size as u64)?;
     let mut firmware = AlignedMemory::new(firmware_bytes.len())?;
     let mut variables = AlignedMemory::new(VARS_SIZE)?;
     let mut boot_info = AlignedMemory::new(board::BOOT_INFO.size as usize)?;
-    let mut ram = AlignedMemory::new(RAM_SIZE)?;
+    let mut ram = AlignedMemory::new(ram_size)?;
     firmware.bytes_mut().copy_from_slice(&firmware_bytes);
     variables.bytes_mut().copy_from_slice(&vars_bytes);
     boot_info
@@ -160,36 +157,20 @@ unsafe fn run_unsafe() -> Result<(), String> {
         &mut variables,
         &mut boot_info,
         &mut ram,
-        media_bytes,
+        media,
     );
     let destroy = hv_vm_destroy();
-    let (boot, mmio, vtimer, serial) = run?;
+    let execution = run?;
     status("destroy VM", destroy)?;
     vars_file::persist(&mut vars_file, variables.bytes())?;
     let vars_hash = sha256(variables.bytes());
-    println!("BridgeVM Virtual ARM PC BDS/ESP/PE/ExitBootServices probe: PASS");
-    println!("board={} abi={}", board::BOARD_ID, board::BOARD_ABI_VERSION);
-    println!(
-        "firmware_sha256={firmware_hash} boot_media_sha256={media_hash} vars_sha256={vars_hash}"
-    );
-    println!(
-        "stage={} arch={:#x} filesystems={} image={:#x}+{:#x}",
-        boot.stage, boot.arch, boot.file_systems, boot.image_base, boot.image_size
-    );
-    println!(
-        "memory_map={} descriptor={}/{} exit_boot_services_attempts={} mmio_exits={} vtimer_exits={}",
-        boot.memory_map_size,
-        boot.descriptor_size,
-        boot.descriptor_version,
-        boot.exit_attempts,
-        mmio,
-        vtimer
-    );
-    if !serial.is_empty() {
-        println!("serial={serial:?}");
+    if windows_diagnostic {
+        let boot = result::validate_windows_start(ram.bytes())?;
+        report::windows(&firmware_hash, media_identity, &vars_hash, boot, execution);
+        return Ok(());
     }
-    println!("LIVE PROOF: DXE Core invoked BDS, which loaded BOOTAA64.EFI from NVMe and reached code after ExitBootServices");
-    Ok(())
+    let boot = result::validate(ram.bytes())?;
+    report::proof(&firmware_hash, media_identity, &vars_hash, boot, execution)
 }
 
 pub(super) fn run() -> Result<(), String> {

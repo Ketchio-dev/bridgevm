@@ -55,7 +55,7 @@ cmd_submit() {
     # Reject an unknown tier here rather than at claim time. A typo (or a
     # `--help` mistaken for a tier) must not sit in the queue looking like work.
     case "$tier" in
-        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure|t8-pointer-reliability|t9-bridgevm-pc-pci|t10-qmp-stress|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit) ;;
+        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure|t8-pointer-reliability|t9-bridgevm-pc-pci|t10-qmp-stress|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start) ;;
         *) echo "unknown tier $tier" >&2; usage >&2; exit 2 ;;
     esac
 
@@ -67,7 +67,7 @@ cmd_submit() {
             *) echo "unknown submit option $1" >&2; exit 2 ;;
         esac
     done
-    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ]; then
+    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ]; then
         [ -f "$input_manifest" ] || {
             echo "$tier needs --input-manifest PATH" >&2
             exit 2
@@ -92,7 +92,7 @@ cmd_submit() {
         cp "$input_manifest" "$staging/input-manifest.tsv"
         chmod 600 "$staging/input-manifest.tsv"
         manifest_sha="$(shasum -a 256 "$staging/input-manifest.tsv" | cut -d' ' -f1)"
-        if [ "$tier" != t8-pointer-reliability ]; then
+        if [ "$tier" != t8-pointer-reliability ] && [ "$tier" != t14-bridgevm-pc-windows-start ]; then
             local binary_path expected_binary_sha
             binary_path="$(awk -F '\t' '$1=="binary"{print $2}' "$staging/input-manifest.tsv")"
             expected_binary_sha="$(awk -F '\t' '$1=="binary"{print $3}' "$staging/input-manifest.tsv")"

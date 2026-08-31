@@ -10,7 +10,7 @@ RECOVER="$REPO/scripts/live-gates/recover-stale-jobs.sh"
 INSTALL="$REPO/scripts/live-gates/install-studio-queue.sh"
 PLIST="$REPO/scripts/live-gates/com.ketchio.bridgevm-live.plist"
 REDACT="$REPO/scripts/live-gates/redact-receipt.py"
-TIER="$REPO/scripts/live-gates/run-tier.sh"
+TIER="$REPO/scripts/live-gates/run-tier.sh"; PC_WINDOWS_TIER="$REPO/scripts/live-gates/run-bridgevm-pc-windows-start-tier.sh"
 A3_TIER="$REPO/scripts/live-gates/run-a3-title-tier.sh"
 A3_RECEIPT="$REPO/scripts/live-gates/write-a3-title-receipt.py"
 A3_VERIFY="$REPO/scripts/verify-d3d11-title-fps.sh"
@@ -57,7 +57,7 @@ check "the worker is executable" '[ -x "$WORKER" ]'
 check "the stale-job reconciler is executable" '[ -x "$RECOVER" ]'
 check "the installer is executable" '[ -x "$INSTALL" ]'
 check "the redactor is executable" '[ -x "$REDACT" ]'
-check "the tier dispatcher is executable" '[ -x "$TIER" ]'
+check "the tier dispatcher is executable" '[ -x "$TIER" ] && [ -x "$PC_WINDOWS_TIER" ]'
 check "the A3 tier helper is executable" '[ -x "$A3_TIER" ]'
 check "the A3 receipt writer is executable" '[ -x "$A3_RECEIPT" ]'
 check "the A3 payload validator is executable" '[ -x "$A3_PAYLOAD" ] && [ -x "$A3_PAYLOAD_VALIDATOR" ]'
@@ -129,7 +129,7 @@ check "read-only post-mortem harvest leaves the guest image byte-identical" \
 check "the plist declares no socket" '! grep -q "<key>Sockets</key>" "$PLIST"'
 check "the plist is not a root daemon" '! grep -qi "UserName.*root" "$PLIST"'
 no_match "no component opens a listening socket" \
-    'nc +-l|socat|LISTEN|bind\(' "$CLI" "$WORKER" "$TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
+    'nc +-l|socat|LISTEN|bind\(' "$CLI" "$WORKER" "$TIER" "$PC_WINDOWS_TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 # The installer names actions-runner only to refuse installing beside one, so
 # this looks for the act of registering rather than the word.
 no_match "nothing registers a GitHub runner" \
@@ -137,9 +137,9 @@ no_match "nothing registers a GitHub runner" \
 check "the installer refuses to sit beside a runner" \
     'grep -q "actions-runner" "$INSTALL"'
 no_match "nothing in the queue path uses sudo" \
-    '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
+    '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$PC_WINDOWS_TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 check "live tier receipt, clone and QMP stress policies pass" \
-    'python3 "$A3_RECEIPT" --self-test | grep -q "PASS" && "$REPO/tests/integration/windows-closure-live-tier-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/qmp-stress-live-tier-smoke.sh" | grep -q "PASS"'
+    'python3 "$A3_RECEIPT" --self-test | grep -q "PASS" && "$REPO/tests/integration/windows-closure-live-tier-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/qmp-stress-live-tier-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/bridgevm-pc-windows-start-live-tier-smoke.sh" | grep -q "PASS"'
 check "the A3 payload archive is fail-closed" \
     '"$A3_PAYLOAD" --self-test | grep -q "PASS"'
 check "the A3 payload uses bounded share chunks" \

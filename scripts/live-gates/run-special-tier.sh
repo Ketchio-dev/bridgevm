@@ -3,8 +3,7 @@
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 TIER="${1:?run-special-tier.sh needs a tier}"; OUT="${2:?run-special-tier.sh needs an output directory}"
-JOB_ID="${3:?run-special-tier.sh needs a job id}"
-args=(--out "$OUT" --job-id "$JOB_ID")
+JOB_ID="${3:?run-special-tier.sh needs a job id}"; args=(--out "$OUT" --job-id "$JOB_ID")
 case "$TIER" in
   t8-pointer-reliability)
     helper=run-pointer-reliability-tier.sh
@@ -14,6 +13,7 @@ case "$TIER" in
   t11-bridgevm-pc-nvme-bar) helper=run-bridgevm-pc-nvme-bar-tier.sh ;;
   t12-bridgevm-pc-nvme-block) helper=run-bridgevm-pc-nvme-block-tier.sh ;;
   t13-bridgevm-pc-bds-exit) helper=run-bridgevm-pc-bds-exit-tier.sh ;;
+  t14-bridgevm-pc-windows-start) helper=run-bridgevm-pc-windows-start-tier.sh; args+=(--input-manifest "${4:-}") ;;
   *) echo "unknown special tier $TIER" >&2; exit 2 ;;
 esac
 "$REPO/scripts/live-gates/$helper" "${args[@]}"

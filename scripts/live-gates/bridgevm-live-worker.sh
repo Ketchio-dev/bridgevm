@@ -72,7 +72,7 @@ run_job() {
     fi
 
     local tier_args=()
-    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ]; then
+    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ]; then
         local manifest="$dir/input-manifest.tsv" sealed_binary="$dir/hvf_gic_boot_probe"
         local expected_manifest actual_manifest expected_binary actual_binary
         expected_manifest="$(awk -F= '$1=="input_manifest_sha256"{print $2}' "$dir/job.env")"
@@ -83,7 +83,7 @@ run_job() {
             return 1
         fi
         tier_args=(--input-manifest "$manifest")
-        if [ "$tier" != t8-pointer-reliability ]; then
+        if [ "$tier" != t8-pointer-reliability ] && [ "$tier" != t14-bridgevm-pc-windows-start ]; then
             expected_binary="$(awk -F= '$1=="sealed_binary_sha256"{print $2}' "$dir/job.env")"
             actual_binary="$(shasum -a 256 "$sealed_binary" 2>/dev/null | cut -d' ' -f1 || true)"
             if [ -z "$expected_binary" ] || [ "$actual_binary" != "$expected_binary" ]; then
