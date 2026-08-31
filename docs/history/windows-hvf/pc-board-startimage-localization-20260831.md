@@ -128,18 +128,26 @@ Boot Manager's timed wait never completes. Two experiments disproved it.
    service calls). Both experiments were reverted; nothing timer-related is
    committed.
 
-So the spin is **not** timer-driven. It is the Boot Manager polling an internal
-object: 0xc2698 does an indirect call through the vtable at offset +136 of the
-global object at `[0x308000+2736]` and loops until that call returns the awaited
-result, which never happens on this board. The `[x22+3568]`/`[x24+3576]`
-counters are iteration counts, not a timer.
+So the spin is **not** timer-driven. It was then localized further by dumping
+guest RAM (a temporary, reverted diagnostic that reads the globals through the
+loaded image base): `[0x308000+2744]` and `[0x308000+2736]` are both **0**, so
+the `0xc2698` vtable+136 indirect call is never reached (it is guarded by
+`cbz` on exactly those null globals). The vtable-poll theory is therefore also
+ruled out.
 
-**Corrected next step:** single-step the loop (rebuild the tracer per the
-memory note) to read, at run time, the object at `[0x308000+2736]`, the method
-at vtable+136, and what that poll returns each iteration. The leading candidate
-is a console/input poll that never completes because the added ConSplitter is a
-*virtual* console with no physical child — no GraphicsConsole rendering on the
-GOP and no real keyboard on ConIn — so a `WaitForKey`/`ReadKeyStroke` or a
-display-readiness poll spins. If so, the fix is a real console: GraphicsConsole
-on the GOP plus a working ConIn (xHCI keyboard, or a bounded input stub), not a
-timer change.
+The real spin is at image RVA **0x41838**: `mov x0,#0; bl 0x42500; cmp x0,#1;
+b.ne …` — the Boot Manager repeatedly calls **0x42500** and loops while the
+result is not what it awaits. 0x42500 queries an internal subsystem: it calls
+0x1ae9c8 (returns a context), loads `[ctx+24]`, and calls 0x1b0a20 / 0x1b0b60
+with GUID/key-like word constants (0x16000020, 0x250000c2, 0x25000008); it
+returns 1 only when a global `[0x2ef000+1632]` is null. Nearby helper 0x3f600
+reads **`PMCCNTR_EL0`** (the PMU cycle counter) for elapsed-time math, so the
+PMU cycle counter is also in play for this phase's timing.
+
+**Corrected next step:** capture registers at run time at 0x42500 (single-step
+or a hardware breakpoint with register dump) to see which key/context it queries
+through 0x1ae9c8/0x1b0a20 and what value it keeps getting, and confirm whether
+`PMCCNTR_EL0` advances for the guest on this board (if the PMU cycle counter is
+frozen at 0, cycle-based elapsed-time math never progresses). Both the
+vtable-object poll and the UEFI-timer-tick theories are already disproven; do
+not re-try them.
