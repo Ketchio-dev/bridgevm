@@ -24,7 +24,7 @@ PY
 )"
 receipt="$output_dir/BridgeVmPcDxeEntry.build.json"
 printf '%s\n' '{' '  "schemaVersion": 1,' \
-  '  "artifactKind": "development-only-reset-to-runtime-variable-platform-table-probe",' \
+  '  "artifactKind": "development-only-reset-to-runtime-variable-platform-table-pcie-ecam-probe",' \
   "  \"edk2Commit\": \"${edk2_commit}\"," \
   "  \"gccVersion\": \"${gcc_version}\"," \
   "  \"ldVersion\": \"${ld_version}\"," \
@@ -39,6 +39,6 @@ printf '%s\n' '{' '  "schemaVersion": 1,' \
   "  \"firmwareVolumeSha256\": \"${fv_sha}\"," \
   "  \"size\": ${artifact_size}," \
   "  \"sha256\": \"${artifact_sha}\"," \
-  '  "claimBoundary": "bounded same-boot variable services plus Runtime Architectural Protocol and ACPI/SMBIOS publication; reboot persistence, virtual-address transition, reset/time services, boot manager, and Windows boot remain unproven"' \
+  '  "claimBoundary": "bounded same-boot variable services, Runtime Architectural Protocol, ACPI/SMBIOS publication, and eight direct PCIe ECAM identity reads; standard PCI enumeration, BAR MMIO, DMA, interrupts, boot manager, and Windows boot remain unproven"' \
   '}' >"$receipt"
 echo "$receipt"

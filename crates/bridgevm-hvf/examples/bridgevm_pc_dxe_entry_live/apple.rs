@@ -7,8 +7,6 @@ use bridgevm_hvf::platform_pc::BridgeVmPcPlatform;
 use sha2::{Digest, Sha256};
 use std::ffi::c_void;
 use std::ptr::null_mut;
-use std::sync::mpsc;
-use std::time::Duration;
 
 #[path = "apple/aligned_memory.rs"]
 mod aligned_memory;
@@ -16,6 +14,8 @@ mod aligned_memory;
 mod command;
 #[path = "apple/in_memory.rs"]
 mod in_memory;
+#[path = "apple/mmio.rs"]
+mod mmio;
 #[path = "apple/process.rs"]
 mod process;
 #[path = "apple/vars_file.rs"]
@@ -33,7 +33,6 @@ const HV_MEMORY_READ: u64 = 1;
 const HV_MEMORY_WRITE: u64 = 2;
 const HV_MEMORY_EXEC: u64 = 4;
 const EXIT_EXCEPTION: u32 = 1;
-const EC_HVC: u64 = 0x16;
 
 #[repr(C)]
 struct HvVcpuExitException {
@@ -65,39 +64,13 @@ unsafe extern "C" {
     fn hv_vcpu_destroy(vcpu: HvVcpu) -> HvReturn;
     fn hv_vcpu_run(vcpu: HvVcpu) -> HvReturn;
     fn hv_vcpus_exit(vcpus: *const HvVcpu, vcpu_count: u32) -> HvReturn;
+    fn hv_vcpu_get_reg(vcpu: HvVcpu, reg: u32, value: *mut u64) -> HvReturn;
     fn hv_vcpu_set_reg(vcpu: HvVcpu, reg: u32, value: u64) -> HvReturn;
 }
 fn status(label: &str, value: HvReturn) -> Result<(), String> {
     (value == HV_SUCCESS)
         .then_some(())
         .ok_or_else(|| format!("{label} failed: {value:#x}"))
-}
-
-unsafe fn run_vcpu(vcpu: HvVcpu, exit: *mut HvVcpuExit) -> Result<(), String> {
-    let (stop_tx, stop_rx) = mpsc::channel();
-    let watchdog = std::thread::spawn(move || {
-        if stop_rx.recv_timeout(Duration::from_secs(2)).is_err() {
-            let _ = hv_vcpus_exit(&vcpu, 1);
-        }
-    });
-    let run = hv_vcpu_run(vcpu);
-    let _ = stop_tx.send(());
-    watchdog
-        .join()
-        .map_err(|_| "reset-vector probe watchdog panicked".to_string())?;
-    status("run vCPU", run)?;
-    if (*exit).reason != EXIT_EXCEPTION {
-        return Err(format!("unexpected vCPU exit reason {}", (*exit).reason));
-    }
-    let esr = (*exit).exception.syndrome;
-    let ec = (esr >> 26) & 0x3f;
-    if ec != EC_HVC {
-        return Err(format!(
-            "unexpected reset-vector exception EC={ec:#x} ESR={esr:#x}"
-        ));
-    }
-    hvc_diagnostics::print_hvc_arguments(vcpu, esr)?;
-    Ok(())
 }
 
 unsafe fn execute_reset_vector(
@@ -155,10 +128,11 @@ unsafe fn execute_reset_vector(
                         "create vCPU",
                         hv_vcpu_create(&mut vcpu, &mut exit, null_mut()),
                     )?;
+                    let mut platform = BridgeVmPcPlatform::new();
                     let run_result = (|| {
                         status("set PC", hv_vcpu_set_reg(vcpu, HV_REG_PC, 0))?;
                         status("set CPSR", hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5))?;
-                        run_vcpu(vcpu, exit)
+                        mmio::run_vcpu(vcpu, exit, &mut platform)
                     })();
                     let destroy = hv_vcpu_destroy(vcpu);
                     run_result?;

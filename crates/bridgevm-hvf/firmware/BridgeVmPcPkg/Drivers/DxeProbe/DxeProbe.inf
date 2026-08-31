@@ -8,10 +8,9 @@
   ENTRY_POINT                    = BridgeVmPcDxeProbeEntry
 [Sources]
   DxeProbe.c
+  PcieProbe.c
   RuntimeProbe.c
-  RuntimeProbe.h
   VariableProbe.c
-  VariableProbe.h
 [Packages]
   MdePkg/MdePkg.dec
 [LibraryClasses]

@@ -4,6 +4,10 @@ use std::fmt;
 mod firmware;
 #[path = "contract/hob.rs"]
 mod hob;
+#[path = "contract/pcie.rs"]
+mod pcie;
+#[path = "contract/result.rs"]
+mod result;
 #[path = "contract/runtime_services.rs"]
 mod runtime_services;
 #[path = "contract/system_table.rs"]
@@ -14,6 +18,7 @@ mod tests;
 #[path = "contract/variable_services.rs"]
 mod variable_services;
 pub use firmware::validate as validate_firmware;
+pub use result::DxeResult;
 
 pub const RAM_PAGES: usize = 8192;
 pub const RAM_EXECUTABLE: bool = true;
@@ -27,44 +32,14 @@ const FV_SIZE: usize = 0x10_0000;
 const DXE_CORE_LOAD_OFFSET: u64 = 0x40_0000;
 const DXE_CORE_ENTRY_OFFSET: u64 = 0x40_6bf4;
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct DxeResult {
-    system_table: u64,
-    published: system_table::PublishedTables,
-    runtime: runtime_services::RuntimeProof,
-    variable: variable_services::VariableProof,
-}
-
 pub type SecResult = DxeResult;
 
 pub fn result_gpa() -> Result<u64, String> {
     Ok(board::RAM_BASE + RESULT_OFFSET as u64)
 }
 
-impl fmt::Display for DxeResult {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "sec_result=1 hob_count=8 hob_list_gpa={:#x} hob_list_size=320 dxe_result={} system_table={:#x} runtime_services={:#x} runtime_protocol={:#x} runtime_crc32={:#x} variable_state={} variable_attributes={:#x} get_variable={:#x} set_variable={:#x} query_variable_info={:#x} variable_max_storage={} variable_remaining_storage={} variable_max_size={} configuration_entries={} acpi={:#x} smbios={:#x}",
-            board::RAM_BASE + HOB_OFFSET as u64,
-            self.variable.state.stage(),
-            self.system_table,
-            self.runtime.services,
-            self.runtime.protocol,
-            self.runtime.crc32,
-            self.variable.state.raw(),
-            self.variable.attributes,
-            self.variable.get_variable,
-            self.variable.set_variable,
-            self.variable.query_variable_info,
-            self.variable.maximum_storage,
-            self.variable.remaining_storage,
-            self.variable.maximum_variable_size,
-            self.published.entry_count,
-            self.published.acpi,
-            self.published.smbios
-        )
-    }
+pub const fn pcie_function_count() -> usize {
+    pcie::FUNCTION_COUNT
 }
 
 fn bytes_at<const N: usize>(bytes: &[u8], offset: usize, label: &str) -> Result<[u8; N], String> {
@@ -109,7 +84,7 @@ pub fn validate_dxe_result(
     hob::validate(ram, result, raw_dxe_stage)?;
 
     let dxe = ram
-        .get(DXE_RESULT_OFFSET..DXE_RESULT_OFFSET + 112)
+        .get(DXE_RESULT_OFFSET..DXE_RESULT_OFFSET + 148)
         .ok_or_else(|| "DXE result is outside probe RAM".to_string())?;
     expect(
         "DXE dispatch stage",
@@ -121,11 +96,13 @@ pub fn validate_dxe_result(
     let runtime = runtime_services::validate(ram, system_table, dxe)?;
     let variable =
         variable_services::validate(ram, runtime.services, dxe, expected_variable_state)?;
+    let pcie = pcie::validate(dxe)?;
     Ok(DxeResult {
         system_table,
         published,
         runtime,
         variable,
+        pcie,
     })
 }
 
