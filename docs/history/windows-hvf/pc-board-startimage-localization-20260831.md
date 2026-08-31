@@ -703,3 +703,19 @@ cached-time word and make it run** — either the guest's own periodic refresh
 that path reachable) or a host-side counter the emulation must keep live. The
 `hv_vm_protect` write-watch is committed (inert unless `BRIDGEVM_PC_WWATCH` is
 set) as the instrument for the next pass.
+
+## Confirmed coherent-writer: a host poke of the counter does not release the spin
+
+Poking `0x27fe8c0d8` from the host with an ever-increasing value on every exit (a
+reverted experiment) does **not** release the spin — the guest keeps reading the
+cached `0`. So the word is meant to be refreshed by a **coherent same-CPU
+writer** (an interrupt handler / callback running on the guest vCPU), not by DMA
+or an outside agent, which matches earlier evidence that host RAM patches are
+defeated by the guest's caches. Combined with everything above, the root cause is
+now singular and precise: `0x27fe8c0d8` is a firmware cached-time word,
+initialised to 0, that a guest-side timer/refresh routine must update — and that
+routine never runs because the guest sits **IRQ-masked** at this point, so the
+interrupt that would drive the refresh is never taken. The remaining question is
+purely *why the guest is IRQ-masked here* (which TPL/critical section it entered
+and whether an emulated value steered it there), and making that refresh path
+reachable. The `hv_vm_protect` write-watch is the committed instrument for it.
