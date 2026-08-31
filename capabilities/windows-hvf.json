@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-31",
-  "tested_commit": "bdc5e6e5c2aa5f2f9c9b59b12b7717e5a3966f41",
+  "tested_commit": "8f3dd9cce8e4cb6bdd9597b022e5000bca42b040",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -139,7 +139,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "Re-sealed 2026-08-31 at exact tested code head bdc5e6e5c2aa5f2f9c9b59b12b7717e5a3966f41. GitHub-hosted CI run 33356380313 and Security and quality run 33356381566 both passed at that exact head, including workspace tests, clippy, formatting, structural budgets, documentation, supply-chain, fuzz and loom gates. Studio t11 job 20260831-001851-66185-17681 passed the fixed N=20 standard UEFI NVMe BAR gate 20/20 with zero failed lanes. Its 40 separate BridgeVM process boots retained variable-file restoration and standard eight-function PciBusDxe enumeration, then used EFI_PCI_IO_PROTOCOL to validate the assigned 16 KiB NVMe BAR0 and read CAP 0x20020103ff plus version 0x10400 through 80 real endpoint MMIO reads. Public receipt SHA-256 is b7a37c663e549fef29c3e5aecfe0565ba7f864b8f811f64fa6fdf30fbd41841f and development FD SHA-256 is f3296c4c0bd7900fa6c09519ab00c88a2bcd293846849b3c509d9d0076d9833b. This proves NVMe BAR sizing, assignment, decode and register reads only, not DMA, MSI/MSI-X, queues, Block I/O, GOP, BDS, ExitBootServices or Windows boot. It does not change the shipping Windows board. A9 remains OPEN. B4 is separately PROVEN by exact-head Studio t8 job 20260830-134316-74417-14894: fixed N=20 landed 20/20 with zero rendering/package regressions and p95 243 ms.",
+      "measured": "Re-sealed 2026-08-31 at exact tested code head 8f3dd9cce8e4cb6bdd9597b022e5000bca42b040. GitHub-hosted CI run 33359438554 and Security and quality run 33359440008 both passed at that exact head, including workspace tests, clippy, formatting, structural budgets, documentation, supply-chain, fuzz and loom gates. Studio t12 job 20260831-010811-74407-18695 passed the fixed N=20 standard UEFI NVMe Block I/O gate 20/20 with zero failed lanes. Its 40 separate BridgeVM process boots retained variable-file restoration and standard eight-function PciBusDxe enumeration, loaded generic EDK2 NvmExpressDxe, exercised polling admin and I/O queues against guest DMA, exposed one 1 MiB namespace and read LBA0 through EFI_BLOCK_IO_PROTOCOL 40 times with 512-byte blocks, last block 2047 and the expected BRIDGEVM marker. Public receipt SHA-256 is b69ed5e611956bd390664ba0f6297e9800318168e3f6d8b3c638901e7b8a3a21 and development FD SHA-256 is 5ccc1ce31e631312ba52408c0858c97f8fbec6a9f2b032ed84f1635984c79f5e. This proves the polling NVMe queue, guest-DMA, namespace and standard UEFI Block I/O read path only, not MSI/MSI-X, write durability, GOP, BDS, ExitBootServices or Windows boot. It does not change the shipping Windows board. A9 remains OPEN. B4 is separately PROVEN by exact-head Studio t8 job 20260830-134316-74417-14894: fixed N=20 landed 20/20 with zero rendering/package regressions and p95 243 ms.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md",
@@ -148,7 +148,9 @@
         "docs/windows-arm/evidence/bridgevm-pc-standard-uefi-pci-live-20260830.md",
         "docs/windows-arm/evidence/bridgevm-pc-standard-uefi-pci-receipt-20260830.json",
         "docs/windows-arm/evidence/bridgevm-pc-nvme-bar-live-20260831.md",
-        "docs/windows-arm/evidence/bridgevm-pc-nvme-bar-receipt-20260831.json"
+        "docs/windows-arm/evidence/bridgevm-pc-nvme-bar-receipt-20260831.json",
+        "docs/windows-arm/evidence/bridgevm-pc-nvme-block-live-20260831.md",
+        "docs/windows-arm/evidence/bridgevm-pc-nvme-block-receipt-20260831.json"
       ]
     },
     {

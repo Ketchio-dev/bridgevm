@@ -203,6 +203,16 @@ boots, for 40 firmware boots and 80 validated register reads at assigned base
 Windows remain open. See the
 [fixed-sample receipt](../windows-arm/evidence/bridgevm-pc-nvme-bar-live-20260831.md).
 
+A sixteenth fixed-sample live gate at exact code head
+`8f3dd9cce8e4cb6bdd9597b022e5000bca42b040` extended the assigned BAR path
+through generic EDK2 `NvmExpressDxe`. The driver initialized the controller,
+created the polling admin and I/O queues through guest DMA, discovered one
+1 MiB namespace and published `EFI_BLOCK_IO_PROTOCOL`. All 20 independent
+lanes passed both separate-process boots, for 40 firmware boots and 40 LBA0
+reads returning the expected `BRIDGEVM` marker. MSI/MSI-X, write durability,
+GOP, BDS, `ExitBootServices` and Windows remain open. See the
+[fixed-sample receipt](../windows-arm/evidence/bridgevm-pc-nvme-block-live-20260831.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -317,6 +327,17 @@ separate process boots. Every boot validated the exact 16 KiB BAR resource,
 CAP `0x20020103ff`, NVMe 1.4 version `0x10400` and command `0x6`. DMA,
 interrupts, NVMe queues, Block I/O, GOP, BDS and Windows boot remain open.
 
+The next exact-head tranche added generic EDK2 `NvmExpressDxe` to the bounded
+firmware volume and routed the independent runtime's NVMe doorbells, queue
+memory and data buffers through live guest RAM. Pinned tools produced a
+byte-reproducible 64 MiB FD with SHA-256
+`5ccc1ce31e631312ba52408c0858c97f8fbec6a9f2b032ed84f1635984c79f5e`.
+The fixed `N=20` Studio tier passed 20/20 independent lane directories and 40
+separate process boots. Every boot found one namespace with 512-byte blocks
+and last block 2047, then read LBA0 through `EFI_BLOCK_IO_PROTOCOL` and
+returned marker `BRIDGEVM`. MSI/MSI-X, write durability, GOP, BDS,
+`ExitBootServices` and Windows boot remain open.
+
 ## Implementation gates
 
 | Gate | State |
@@ -325,6 +346,7 @@ interrupts, NVMe queues, Block I/O, GOP, BDS and Windows boot remain open.
 | Minimal memory layout, vars flash, UART, RTC and PCIe ECAM runtime | implemented, host-unit only |
 | Guest PCIe identity enumeration at the v1 ECAM | fixed `N=20` minimal-guest, direct-firmware and standard UEFI `PciBusDxe` probes passed for the host bridge and all seven endpoints |
 | Standard UEFI NVMe BAR0 sizing, assignment and MMIO | fixed `N=20` passed across 40 separate process boots; DMA, interrupts, queues and Block I/O open |
+| Standard UEFI NVMe polling queues, guest DMA and Block I/O read | fixed `N=20` passed across 40 separate process boots and 40 LBA0 reads; MSI/MSI-X, write durability, BDS and Windows open |
 | Host GIC geometry validation and bounded placement probe | live single-run placement passed |
 | HVF RAM mapping and architected-timer PPI delivery | live single-run passed; firmware and device SPI integration open |
 | Boot-info v1 mapping and EL1 pointer traversal | live single-run passed; firmware validation and consumption passed separately |
@@ -337,7 +359,7 @@ interrupts, NVMe queues, Block I/O, GOP, BDS and Windows boot remain open.
 | UEFI variable services across VM and process recreation | fixed `N=20` in-memory VM-recreate and fixed `N=20` file-backed separate-process probes passed with fresh RAM; host reboot, power-loss and crash recovery open |
 | Independently built and audited UEFI firmware | open |
 | UEFI ACPI/SMBIOS handoff | live single-run publication passed; fixed-sample and Windows consumption open |
-| UEFI GOP and block-I/O handoff | open |
+| UEFI GOP and block-I/O handoff | standard NVMe Block I/O read passed fixed `N=20`; GOP and Windows consumption open |
 | Windows installer and installed-disk boot | open |
 | Storage, input, network, graphics and reset live gates | open |
 | TPM, Secure Boot and recovery lifecycle | open |

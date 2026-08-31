@@ -102,6 +102,7 @@ docs/windows-arm/evidence/bridgevm-pc-pcie-ecam-live-20260830.md	current	windows
 docs/windows-arm/evidence/bridgevm-pc-firmware-pcie-ecam-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-standard-uefi-pci-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-nvme-bar-live-20260831.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-nvme-block-live-20260831.md	current	windows-architecture	-
 docs/reference/bridgevm-virt-platform.md	reference	windows-platform	-
 docs/testing/apple-silicon-live-gates.md	current	development-process	-
 docs/windows-arm/smccc-trng-psci-contract.md	current	windows-hvf-engine	-
