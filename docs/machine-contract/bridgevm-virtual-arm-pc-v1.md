@@ -148,6 +148,18 @@ checks. This does not prove process-, reboot- or power-loss persistence, BDS or
 Windows boot. See the
 [exact-head receipt](../windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md).
 
+An eleventh fixed-sample live probe at exact host-runner code head
+`7e749f814ef5f422eba8d57d6cc69e32103a9148` persisted that same validated
+64 KiB backing to a private file and launched two separate BridgeVM processes
+per lane. Each first process wrote and published the file without overwrite;
+each second process opened the exact-size regular file without following a
+final-component symbolic link, allocated fresh RAM and restored the payload in
+a new HVF VM. All 20 lanes passed both stages and refused an additional
+write-mode attempt against the existing path. This proves bounded
+process-restart persistence, not host-reboot, power-loss or crash-recovery
+semantics. See the
+[updated exact-head receipt](../windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -227,10 +239,11 @@ BridgeVM probe for `GetVariable`, `SetVariable` and `QueryVariableInfo`. Pinned
 tools produced a byte-reproducible 64 MiB FD with SHA-256
 `37c659e4ec70050790607ab58ec8eb9066284f13eedccb50795cf4623c642172`.
 A fixed 20-process live probe passed 20/20 two-VM recreations using fresh RAM
-and one explicitly preserved in-memory vars backing per process. File-backed
-process/reboot persistence, power-failure atomicity, authenticated policy,
-time and reset services, virtual-address transition, `ExitBootServices`, BDS,
-GOP, block I/O and Windows remain open.
+and one explicitly preserved in-memory vars backing per process. A subsequent
+fixed 20-lane probe passed 20/20 across two separate BridgeVM processes and a
+private file per lane. Host-reboot persistence, power-loss and crash recovery,
+authenticated policy, time and reset services, virtual-address transition,
+`ExitBootServices`, BDS, GOP, block I/O and Windows remain open.
 
 ## Implementation gates
 
@@ -247,7 +260,7 @@ GOP, block I/O and Windows remain open.
 | Bounded PI HOB construction | live single-run passed; firmware-volume and DXE-dispatch continuation passed separately |
 | Generic DXE Core and BridgeVM marker dispatch | live single-run passed; Runtime Architectural Protocol subsequently passed, other required protocols and boot manager open |
 | Runtime Architectural Protocol and CRC32 service | live single-run passed; virtual-address transition and complete runtime services open |
-| UEFI variable services across an HVF VM recreate | fixed `N=20` live probe passed with fresh RAM and preserved in-memory vars backing; process/reboot persistence and atomicity open |
+| UEFI variable services across VM and process recreation | fixed `N=20` in-memory VM-recreate and fixed `N=20` file-backed separate-process probes passed with fresh RAM; host reboot, power-loss and crash recovery open |
 | Independently built and audited UEFI firmware | open |
 | UEFI ACPI/SMBIOS handoff | live single-run publication passed; fixed-sample and Windows consumption open |
 | UEFI GOP and block-I/O handoff | open |

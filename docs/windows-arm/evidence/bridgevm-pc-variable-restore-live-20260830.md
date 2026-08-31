@@ -1,4 +1,4 @@
-# BridgeVM Virtual ARM PC: UEFI variable restore across recreated VMs (2026-08-30)
+# BridgeVM Virtual ARM PC: UEFI variable restore across VMs and processes (2026-08-30)
 
 ## Evidence rank and result
 
@@ -41,6 +41,62 @@ The local result record has SHA-256
 The ad-hoc-signed runner carries only the Hypervisor.framework entitlement and
 is a local probe, not a redistributable product binary.
 
+## Separate-process follow-up
+
+At exact host-runner code head
+`7e749f814ef5f422eba8d57d6cc69e32103a9148`, a second fixed-`N=20`
+campaign moved the preserved backing across a real process boundary. Each lane
+owned a distinct 64 KiB file and launched the signed runner twice:
+
+1. the first process required an absent target, started from erased bytes,
+   reached `dxe_result=10` / `variable_state=1`, synchronised a mode-0600
+   temporary file, and published it without replacing an existing path;
+2. that process exited completely;
+3. a second process opened only an exact-size regular file without following a
+   final-component symbolic link, created a new HVF VM and fresh RAM, and
+   reached `dxe_result=11` / `variable_state=2`; and
+4. an additional write-mode invocation had to reject the now-existing target.
+
+All 20 lanes passed both processes and the no-overwrite check. Every written,
+loaded, final and on-disk payload had SHA-256
+`c8589a00b6ca778e8333a3fed839ad2bd780854264823f69df5435d7ef5226f6`.
+A representative lane reported:
+
+```text
+BridgeVM Virtual ARM PC variable-file stage: PASS
+sec_result=1 hob_count=8 hob_list_gpa=0x100004000 hob_list_size=320 dxe_result=10 system_table=0x11ffb0018 runtime_services=0x11ffbff18 runtime_protocol=0x11ff82000 runtime_crc32=0x3f6f728d variable_state=1 variable_attributes=0x7 get_variable=0x11ff73dc8 set_variable=0x11ff75cc4 query_variable_info=0x11ff736a4 variable_max_storage=65508 variable_remaining_storage=65400 variable_max_size=964 configuration_entries=7 acpi=0x26001000 smbios=0x2600c000
+process_mode=written
+vars_loaded_sha256=71189f7fb6aed638640078fba3a35fda6c39c8962e74dcc75935aac948da9063
+vars_final_sha256=c8589a00b6ca778e8333a3fed839ad2bd780854264823f69df5435d7ef5226f6
+vars_file_sha256=c8589a00b6ca778e8333a3fed839ad2bd780854264823f69df5435d7ef5226f6
+BridgeVM Virtual ARM PC variable-file stage: PASS
+sec_result=1 hob_count=8 hob_list_gpa=0x100004000 hob_list_size=320 dxe_result=11 system_table=0x11ffb0018 runtime_services=0x11ffbff18 runtime_protocol=0x11ff82000 runtime_crc32=0x3f6f728d variable_state=2 variable_attributes=0x7 get_variable=0x11ff73dc8 set_variable=0x11ff75cc4 query_variable_info=0x11ff736a4 variable_max_storage=65508 variable_remaining_storage=65400 variable_max_size=964 configuration_entries=7 acpi=0x26001000 smbios=0x2600c000
+process_mode=restored
+vars_loaded_sha256=c8589a00b6ca778e8333a3fed839ad2bd780854264823f69df5435d7ef5226f6
+vars_final_sha256=c8589a00b6ca778e8333a3fed839ad2bd780854264823f69df5435d7ef5226f6
+vars_file_sha256=c8589a00b6ca778e8333a3fed839ad2bd780854264823f69df5435d7ef5226f6
+PASS: separate BridgeVM processes restored one fail-closed vars file
+```
+
+The immutable local seal is
+`bridgevm-pc-variable-process-7e749f814ef5`. Its exact identities are:
+
+| Item | SHA-256 |
+|---|---|
+| complete 20-lane log | `1aaa83d170f3f958e0e7374da9705ad026228d1eb0bad3d28be9b263fd3683cb` |
+| result record | `7acf26c25b8466bbb67aac38b151b6a3277b8de5a649a9f8fefd1eb6845866e1` |
+| 27-file content manifest | `6b3cca9fea42c3bd379c563a8681743f8160692589633b354b2dae8e4403900f` |
+| signed exact-head runner | `dcd815088fe4f390e105958a91767283e42485a208aa3fb56ab82c932cbb3480` |
+| exact Git source archive | `0ac2912f7739559d89001d54ad85368a09d2e8d57b0c1e49c4e53dcfba76a3fc` |
+
+The exact-head firmware rebuild retained FD SHA-256
+`37c659e4ec70050790607ab58ec8eb9066284f13eedccb50795cf4623c642172`,
+FV SHA-256
+`482e0803bbeb009e49b4bac4f24c0011734604cb1b4e7c67f705f917d69262da`
+and build-receipt SHA-256
+`0ea74bd7fe55320f8d1f77c6b77a42a71c5c27476a12157c5b26f490ac3e55a9`.
+The seal was made read-only after its content manifest was computed.
+
 ## What changed
 
 The development firmware volume now contains pinned generic `RuntimeDxe` and
@@ -64,6 +120,14 @@ eight exact HOBs, bounds every service pointer to mapped guest RAM, matches
 requires attributes `NV | BS | RT`, checks returned quota bounds, validates
 the authenticated variable-store header, and requires the backing hash to
 change after boot one and remain identical after boot two.
+
+The separate-process runner uses the same validator before publishing or
+accepting a backing. New files are written to a same-directory temporary file,
+synced, hard-linked into an absent destination, unlinked from the temporary
+name, and followed by a directory sync. Restore mode uses `O_NOFOLLOW` and
+requires an opened regular file of exactly 64 KiB. A file that already exists,
+a symbolic link, a short file or a failed sync is an error rather than a reason
+to continue with erased or partially trusted state.
 
 ## Failed candidates retained
 
@@ -122,14 +186,14 @@ and its bounded HVF regression passed after this integration.
 ## Claim boundary
 
 This proves that the development firmware can write and read one standard UEFI
-non-volatile variable, and that an explicitly preserved host-memory backing is
-restored by a newly created HVF VM with fresh RAM. It also retains the earlier
-Runtime Architectural Protocol, CRC32, ACPI and SMBIOS results.
+non-volatile variable, first across a recreated HVF VM with fresh RAM and then
+across two separate BridgeVM processes using one explicitly preserved file per
+lane. It also retains the earlier Runtime Architectural Protocol, CRC32, ACPI
+and SMBIOS results.
 
-It does **not** prove persistence across a BridgeVM process restart, host reboot
-or power loss; crash consistency or atomic file replacement; authenticated
-variable policy; Secure Boot; `SetVirtualAddressMap`; time or reset services;
-`ExitBootServices`; BDS; GOP; block I/O; Windows installation; or Windows boot.
-The independent board is still experimental and not used by the shipping
-Windows path. A9 remains OPEN. The separate B4 product result remains PROVEN at
-20/20 with p95 243 ms.
+It does **not** prove persistence across a host reboot or power loss; recovery
+from a process crash during publication; authenticated variable policy; Secure
+Boot; `SetVirtualAddressMap`; time or reset services; `ExitBootServices`; BDS;
+GOP; block I/O; Windows installation; or Windows boot. The independent board is
+still experimental and not used by the shipping Windows path. A9 remains OPEN.
+The separate B4 product result remains PROVEN at 20/20 with p95 243 ms.
