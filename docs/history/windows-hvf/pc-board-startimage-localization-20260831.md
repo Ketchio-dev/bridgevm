@@ -97,9 +97,9 @@ run with the observation watchdog extended to 150 s shows the Boot Manager
 makes only six boot-service calls and then spins inside its own image (PC
 ranges over image RVA 0x3f550..0x41838, an ~8 KiB loop) for the rest of the
 window without reaching BCD/file I/O. The six calls are: RaiseTPL/RestoreTPL;
-`GetVariable("Se…")` → EFI_NOT_READY; `HandleProtocol(LoadedImage)` → success;
+`GetVariable("Se…")` → EFI_NOT_FOUND; `HandleProtocol(LoadedImage)` → success;
 `HandleProtocol` (GUID Data1 0x09576e91) → success; and
-`AllocatePages(AllocateAddress, EfiLoaderData, at 0x102000)` → EFI_NOT_READY.
+`AllocatePages(AllocateAddress, EfiLoaderData, at 0x102000)` → EFI_NOT_FOUND.
 The board has no RAM at the low fixed address 0x102000 (system RAM starts at
 0x1_0000_0000), but the Boot Manager tolerates that (AllocateAddress failing is
 normal). The spin itself was localized by disassembling the loop:
