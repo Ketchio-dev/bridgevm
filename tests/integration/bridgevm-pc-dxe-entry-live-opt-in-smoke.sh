@@ -23,7 +23,7 @@ cd "$ROOT"
 cargo build -q -p bridgevm-hvf --example bridgevm_pc_dxe_entry_live
 BIN="target/debug/examples/bridgevm_pc_dxe_entry_live"
 codesign --sign - --entitlements apps/macos/HvfRunner.entitlements --force "$BIN"
-
+tests/integration/bridgevm-pc-variable-process-persistence.sh "$BIN" "$FD" "$WORK"
 OUT="$($BIN "$FD")"
 echo "$OUT"
 echo "$OUT" | grep -q "BridgeVM Virtual ARM PC variable restore probe: PASS"

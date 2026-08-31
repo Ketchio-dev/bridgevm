@@ -712,7 +712,12 @@ crates/bridgevm-hvf/examples/bridgevm_pc_reset_vector_live/contract.rs	63	0
 crates/bridgevm-hvf/examples/bridgevm_pc_reset_vector_live/hvc_diagnostics.rs	20	2
 crates/bridgevm-hvf/examples/bridgevm_pc_reset_vector_live/contract/hob.rs	260	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live.rs	13	0
-crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple.rs	287	8
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple.rs	213	6
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/aligned_memory.rs	28	3
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/command.rs	61	0
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/in_memory.rs	63	1
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/process.rs	64	1
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/vars_file.rs	79	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract.rs	124	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/firmware.rs	42	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/firmware_guids.rs	9	0
@@ -1342,6 +1347,7 @@ tests/integration/bridgevm-pc-gic-irq-live-opt-in-smoke.sh	37	0
 tests/integration/bridgevm-pc-boot-info-live-opt-in-smoke.sh	39	0
 tests/integration/bridgevm-pc-reset-vector-live-opt-in-smoke.sh	40	0
 tests/integration/bridgevm-pc-dxe-entry-live-opt-in-smoke.sh	40	0
+tests/integration/bridgevm-pc-variable-process-persistence.sh	31	0
 tests/integration/hvf-guest-entry-probe-cli-smoke.sh	94	0
 tests/integration/hvf-guest-entry-probe-live-opt-in-smoke.sh	60	0
 tests/integration/hvf-guest-entry-probe-runner-smoke.sh	94	0

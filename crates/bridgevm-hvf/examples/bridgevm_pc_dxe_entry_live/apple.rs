@@ -5,12 +5,22 @@ use super::contract::{
 use bridgevm_hvf::machine::bridgevm_pc as board;
 use bridgevm_hvf::platform_pc::BridgeVmPcPlatform;
 use sha2::{Digest, Sha256};
-use std::alloc::{alloc_zeroed, dealloc, Layout};
 use std::ffi::c_void;
-use std::path::PathBuf;
-use std::ptr::{null_mut, NonNull};
+use std::ptr::null_mut;
 use std::sync::mpsc;
 use std::time::Duration;
+
+#[path = "apple/aligned_memory.rs"]
+mod aligned_memory;
+#[path = "apple/command.rs"]
+mod command;
+#[path = "apple/in_memory.rs"]
+mod in_memory;
+#[path = "apple/process.rs"]
+mod process;
+#[path = "apple/vars_file.rs"]
+mod vars_file;
+use aligned_memory::AlignedMemory;
 
 #[path = "../bridgevm_pc_reset_vector_live/hvc_diagnostics.rs"]
 mod hvc_diagnostics;
@@ -24,7 +34,6 @@ const HV_MEMORY_WRITE: u64 = 2;
 const HV_MEMORY_EXEC: u64 = 4;
 const EXIT_EXCEPTION: u32 = 1;
 const EC_HVC: u64 = 0x16;
-const PAGE_ALIGNMENT: usize = 0x1_0000;
 
 #[repr(C)]
 struct HvVcpuExitException {
@@ -57,30 +66,6 @@ unsafe extern "C" {
     fn hv_vcpu_run(vcpu: HvVcpu) -> HvReturn;
     fn hv_vcpus_exit(vcpus: *const HvVcpu, vcpu_count: u32) -> HvReturn;
     fn hv_vcpu_set_reg(vcpu: HvVcpu, reg: u32, value: u64) -> HvReturn;
-}
-struct AlignedMemory {
-    pointer: NonNull<u8>,
-    layout: Layout,
-}
-
-impl AlignedMemory {
-    fn new(size: usize) -> Result<Self, String> {
-        let layout = Layout::from_size_align(size, PAGE_ALIGNMENT)
-            .map_err(|error| format!("guest allocation layout: {error}"))?;
-        let pointer = NonNull::new(unsafe { alloc_zeroed(layout) })
-            .ok_or_else(|| "guest allocation failed".to_string())?;
-        Ok(Self { pointer, layout })
-    }
-
-    fn bytes_mut(&mut self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.pointer.as_ptr(), self.layout.size()) }
-    }
-}
-
-impl Drop for AlignedMemory {
-    fn drop(&mut self) {
-        unsafe { dealloc(self.pointer.as_ptr(), self.layout) }
-    }
 }
 fn status(label: &str, value: HvReturn) -> Result<(), String> {
     (value == HV_SUCCESS)
@@ -200,75 +185,26 @@ unsafe fn execute_reset_vector(
     )
 }
 
-unsafe fn run_unsafe(firmware_bytes: &[u8], firmware_sha256: &str) -> Result<(), String> {
-    let bundle = BridgeVmPcPlatform::build_firmware_tables(1, 512 << 20)?;
-    let mut firmware = AlignedMemory::new(firmware_bytes.len())?;
-    let mut variables = AlignedMemory::new(PAGE_ALIGNMENT)?;
-    let mut boot_info = AlignedMemory::new(board::BOOT_INFO.size as usize)?;
-    firmware.bytes_mut().copy_from_slice(firmware_bytes);
-    variables.bytes_mut().fill(0xff);
-    boot_info
-        .bytes_mut()
-        .copy_from_slice(&bundle.boot_info.bytes);
-
-    let initial_vars_sha256 = sha256(variables.bytes_mut());
-    let mut results = Vec::new();
-    let mut vars_hashes = Vec::new();
-    let mut boot_rams = Vec::new();
-    for _ in 0..2 {
-        boot_rams.push(AlignedMemory::new(PAGE_ALIGNMENT * contract::RAM_PAGES)?);
+unsafe fn run_fresh_vm(
+    firmware: &mut AlignedMemory,
+    variables: &mut AlignedMemory,
+    boot_info: &mut AlignedMemory,
+    ram: &mut AlignedMemory,
+    expected_state: VariableState,
+) -> Result<SecResult, String> {
+    let config = hv_vm_config_create();
+    if config.is_null() {
+        return Err("hv_vm_config_create returned null".to_string());
     }
-    for (expected_state, ram) in [VariableState::Written, VariableState::Restored]
-        .into_iter()
-        .zip(boot_rams.iter_mut())
-    {
-        let config = hv_vm_config_create();
-        if config.is_null() {
-            return Err("hv_vm_config_create returned null".to_string());
-        }
-        let mut max_ipa = 0;
-        status("max IPA query", hv_vm_config_get_max_ipa_size(&mut max_ipa))?;
-        status("set max IPA", hv_vm_config_set_ipa_size(config, max_ipa))?;
-        status("create VM", hv_vm_create(config))?;
-        let run_result = execute_reset_vector(
-            &mut firmware,
-            &mut variables,
-            &mut boot_info,
-            ram,
-            expected_state,
-        );
-        let destroy = hv_vm_destroy();
-        let result = run_result?;
-        status("destroy VM", destroy)?;
-        validate_variable_store(variables.bytes_mut())?;
-        vars_hashes.push(sha256(variables.bytes_mut()));
-        results.push(result);
-    }
-    if initial_vars_sha256 == vars_hashes[0] || vars_hashes[0] != vars_hashes[1] {
-        return Err("vars backing did not change once and then remain stable".to_string());
-    }
-    let result = results
-        .pop()
-        .ok_or_else(|| "second variable-service boot is missing".to_string())?;
-    println!("{}", contract::PROBE_TITLE);
-    println!("board={} abi={}", board::BOARD_ID, board::BOARD_ABI_VERSION);
-    println!(
-        "reset_vector={:#x} firmware_size={:#x} ram={:#x}",
-        board::FLASH_CODE.base,
-        board::FLASH_CODE.size,
-        board::RAM_BASE
-    );
-    println!(
-        "{result} result_gpa={:#x} boot_info={:#x}",
-        result_gpa()?,
-        board::BOOT_INFO.base
-    );
-    println!("firmware_sha256={firmware_sha256}");
-    println!("vars_initial_sha256={initial_vars_sha256}");
-    println!("vars_written_sha256={}", vars_hashes[0]);
-    println!("vars_restored_sha256={}", vars_hashes[1]);
-    println!("{}", contract::LIVE_PROOF);
-    Ok(())
+    let mut max_ipa = 0;
+    status("max IPA query", hv_vm_config_get_max_ipa_size(&mut max_ipa))?;
+    status("set max IPA", hv_vm_config_set_ipa_size(config, max_ipa))?;
+    status("create VM", hv_vm_create(config))?;
+    let run_result = execute_reset_vector(firmware, variables, boot_info, ram, expected_state);
+    let destroy = hv_vm_destroy();
+    let result = run_result?;
+    status("destroy VM", destroy)?;
+    Ok(result)
 }
 
 fn sha256(bytes: &[u8]) -> String {
@@ -279,17 +215,18 @@ fn sha256(bytes: &[u8]) -> String {
 }
 
 pub fn run() -> Result<(), String> {
-    let mut args = std::env::args_os();
-    let _program = args.next();
-    let path = PathBuf::from(
-        args.next()
-            .ok_or_else(|| "usage: bridgevm_pc_dxe_entry_live FIRMWARE_FD".to_string())?,
-    );
-    if args.next().is_some() {
-        return Err("usage: bridgevm_pc_dxe_entry_live FIRMWARE_FD".to_string());
-    }
-    let firmware = std::fs::read(&path)
-        .map_err(|error| format!("read reset-vector FD {}: {error}", path.display()))?;
+    let arguments = command::parse()?;
+    let firmware = std::fs::read(&arguments.firmware).map_err(|error| {
+        format!(
+            "read reset-vector FD {}: {error}",
+            arguments.firmware.display()
+        )
+    })?;
     let digest = validate_firmware(&firmware)?;
-    unsafe { run_unsafe(&firmware, &digest) }
+    match arguments.mode {
+        command::RunMode::InMemory => unsafe { in_memory::run(&firmware, &digest) },
+        command::RunMode::VarsFile { path, expectation } => unsafe {
+            process::run(&firmware, &digest, &path, expectation)
+        },
+    }
 }
