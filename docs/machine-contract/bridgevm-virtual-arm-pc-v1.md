@@ -2,7 +2,7 @@
 
 Document status: **Experimental contract**
 
-Last reviewed: **2026-08-30**
+Last reviewed: **2026-08-31**
 
 This is the versioned guest contract for a future BridgeVM-owned virtual Arm
 PC. It is defined from public Arm system, UEFI, ACPI, SMBIOS, PSCI/SMCCC,
@@ -192,6 +192,17 @@ boots with variable-file restoration and zero failed lanes. BAR operation,
 DMA, interrupts, Block I/O, GOP, BDS and Windows remain open. See the
 [fixed-sample receipt](../windows-arm/evidence/bridgevm-pc-standard-uefi-pci-live-20260830.md).
 
+A fifteenth fixed-sample live gate at exact code head
+`bdc5e6e5c2aa5f2f9c9b59b12b7717e5a3966f41` extended that standard UEFI
+path through the first real endpoint BAR. Generic `PciBusDxe` sized and
+assigned the NVMe controller's 64-bit BAR0; the probe enabled memory decode
+and bus mastering through `EFI_PCI_IO_PROTOCOL`, then read CAP and VS through
+`PciIo->Mem.Read()`. All 20 independent lanes passed both separate-process
+boots, for 40 firmware boots and 80 validated register reads at assigned base
+`0x2000004000`. NVMe queue processing, DMA, interrupts, Block I/O, BDS and
+Windows remain open. See the
+[fixed-sample receipt](../windows-arm/evidence/bridgevm-pc-nvme-bar-live-20260831.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -296,13 +307,24 @@ PCI enumeration and exposed all eight exact `EFI_PCI_IO_PROTOCOL` identities.
 This establishes enumeration only; BAR operation, DMA, interrupts, endpoint
 queues, Block I/O, GOP, BDS and Windows boot remain open.
 
+The next exact-head tranche connected the independent runtime's programmed
+NVMe BAR0 to BridgeVM's NVMe register model and extended the standard PCI I/O
+probe through `GetBarAttributes()`, PCI decode enable and `PciIo->Mem.Read()`.
+Pinned tools produced a byte-reproducible 64 MiB FD with SHA-256
+`f3296c4c0bd7900fa6c09519ab00c88a2bcd293846849b3c509d9d0076d9833b`.
+The fixed `N=20` Studio tier passed 20/20 independent lane directories and 40
+separate process boots. Every boot validated the exact 16 KiB BAR resource,
+CAP `0x20020103ff`, NVMe 1.4 version `0x10400` and command `0x6`. DMA,
+interrupts, NVMe queues, Block I/O, GOP, BDS and Windows boot remain open.
+
 ## Implementation gates
 
 | Gate | State |
 |---|---|
 | Versioned identity, address map and overlap tests | implemented, static only |
 | Minimal memory layout, vars flash, UART, RTC and PCIe ECAM runtime | implemented, host-unit only |
-| Guest PCIe identity enumeration at the v1 ECAM | fixed `N=20` minimal-guest, direct-firmware and standard UEFI `PciBusDxe` probes passed for the host bridge and all seven endpoints; BAR and endpoint operation open |
+| Guest PCIe identity enumeration at the v1 ECAM | fixed `N=20` minimal-guest, direct-firmware and standard UEFI `PciBusDxe` probes passed for the host bridge and all seven endpoints |
+| Standard UEFI NVMe BAR0 sizing, assignment and MMIO | fixed `N=20` passed across 40 separate process boots; DMA, interrupts, queues and Block I/O open |
 | Host GIC geometry validation and bounded placement probe | live single-run placement passed |
 | HVF RAM mapping and architected-timer PPI delivery | live single-run passed; firmware and device SPI integration open |
 | Boot-info v1 mapping and EL1 pointer traversal | live single-run passed; firmware validation and consumption passed separately |
