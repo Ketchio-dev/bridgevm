@@ -608,3 +608,18 @@ engine's full GIC/priority/EOI handling in `platform/apple/firmware_irq.rs`
 (device-IRQ-line snapshot, priority threshold, re-injection discipline) so the
 guest keeps taking ticks — and understanding the guest's mask/one-shot behavior
 so the tick counter advances to its target and the spin at `0x27fe89534` exits.
+
+Two facts narrow it further. First, the single INTID 27 ISR that *does* run does
+**not** increment `0x27fe8c0d8` (it stays zero), so that counter is driven by a
+different interrupt. Second, the guest has **all three architected timer PPIs
+enabled** — INTID 30 (physical), 29 (secure) and 27 (virtual) — so the Boot
+Manager arms the physical timer and drives its tick from the INTID 30 ISR, which
+the host never delivers (HVF surfaces only the virtual timer). But driving INTID
+30 from the same periodic signal (a `set_ppi` added to the userspace GIC,
+experiment reverted) did **not** advance the counter either: the guest still
+takes exactly one interrupt and then runs with IRQs masked. So the true blocker
+is the **one-shot delivery + the guest masking interrupts after the first tick**,
+not simply the missing INTID — the fix must make the guest keep taking timer
+interrupts (sustained delivery with correct priority/EOI/injection discipline,
+and likely a physical-timer emulation that fires INTID 30 on its own `CNTP`
+schedule rather than piggy-backing the virtual timer).
