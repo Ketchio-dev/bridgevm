@@ -1,0 +1,25 @@
+{
+  "binary_hash": "4baa3f5306e0d0974a13cd5f0f1c0c58b720fa733c1928f3cf251b4d1ab92319",
+  "commit": "f6fbec0e5d5644d412614b1ca040449eac37c049",
+  "evidence_paths": [
+    "summary.tsv"
+  ],
+  "failures": 0,
+  "finished_at": "2026-08-31T06:24:07Z",
+  "gate_asset_hash": "9bf4152f31bf304a384341ee8f9fce7f9d2fc890b9302a19935e107596575849",
+  "gate_id": "bridgevm-pc-uefi-bds-exit-boot-services-n20",
+  "host_hardware": "Mac17,9",
+  "host_os": "26.5",
+  "image_sha256": "a49be97db44c0d68b3382f3b1e46eba2fc7a3b12bcba14c1ec720f0511b71979",
+  "job_id": "20260831-022309-85406-30344",
+  "known_confounders": [],
+  "outcome": "completed",
+  "pass": true,
+  "passes": 20,
+  "required_run_count": 20,
+  "run_count": 20,
+  "sample_count": 20,
+  "tested_commit": "f6fbec0e5d5644d412614b1ca040449eac37c049",
+  "tier": "t13-bridgevm-pc-bds-exit",
+  "vars_hash": "7200d2e84591a008c303027f02c60bfb5ed2a84b29285b009740694f27049faa"
+}

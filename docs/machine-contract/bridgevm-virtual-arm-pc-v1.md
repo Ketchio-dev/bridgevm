@@ -213,6 +213,17 @@ reads returning the expected `BRIDGEVM` marker. MSI/MSI-X, write durability,
 GOP, BDS, `ExitBootServices` and Windows remain open. See the
 [fixed-sample receipt](../windows-arm/evidence/bridgevm-pc-nvme-block-live-20260831.md).
 
+A seventeenth fixed-sample live gate at exact code head
+`f6fbec0e5d5644d412614b1ca040449eac37c049` added a BridgeVM-owned BDS policy
+and deterministic GPT/FAT16 ESP. After requiring all 12 PI architecture
+protocols and signalling EndOfDxe, BDS connected the NVMe stack, found one
+Simple File System handle and loaded `\EFI\BOOT\BOOTAA64.EFI` through standard
+UEFI boot services. All 20 independent lanes reached code after a successful
+`ExitBootServices`, each on the first attempt, with zero failed lanes. Windows
+Boot Manager, Windows kernel entry, GOP, write durability and MSI/MSI-X remain
+open. See the
+[fixed-sample receipt](../windows-arm/evidence/bridgevm-pc-bds-exit-live-20260831.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -338,6 +349,19 @@ and last block 2047, then read LBA0 through `EFI_BLOCK_IO_PROTOCOL` and
 returned marker `BRIDGEVM`. MSI/MSI-X, write durability, GOP, BDS,
 `ExitBootServices` and Windows boot remain open.
 
+The following exact-head tranche added the BDS architectural protocol, a
+removable-media boot policy and a deterministic ESP containing an AArch64 UEFI
+application. Pinned tools produced a byte-reproducible development FD with
+SHA-256
+`9bf4152f31bf304a384341ee8f9fce7f9d2fc890b9302a19935e107596575849`
+and ESP image with SHA-256
+`a49be97db44c0d68b3382f3b1e46eba2fc7a3b12bcba14c1ec720f0511b71979`.
+The fixed `N=20` Studio tier passed 20/20 independent disk-and-vars lanes.
+Every boot required architecture mask `0xfff`, loaded `BOOTAA64.EFI` from the
+NVMe filesystem, obtained a version-1 memory map and reached post-
+`ExitBootServices` stage 11 on its first attempt. Windows Boot Manager, Windows
+kernel entry, GOP, write durability and MSI/MSI-X remain open.
+
 ## Implementation gates
 
 | Gate | State |
@@ -347,6 +371,7 @@ returned marker `BRIDGEVM`. MSI/MSI-X, write durability, GOP, BDS,
 | Guest PCIe identity enumeration at the v1 ECAM | fixed `N=20` minimal-guest, direct-firmware and standard UEFI `PciBusDxe` probes passed for the host bridge and all seven endpoints |
 | Standard UEFI NVMe BAR0 sizing, assignment and MMIO | fixed `N=20` passed across 40 separate process boots; DMA, interrupts, queues and Block I/O open |
 | Standard UEFI NVMe polling queues, guest DMA and Block I/O read | fixed `N=20` passed across 40 separate process boots and 40 LBA0 reads; MSI/MSI-X, write durability, BDS and Windows open |
+| UEFI BDS, ESP image loading and `ExitBootServices` | fixed `N=20` passed across 20 independent disk-and-vars boots; Windows Boot Manager, kernel entry and GOP open |
 | Host GIC geometry validation and bounded placement probe | live single-run placement passed |
 | HVF RAM mapping and architected-timer PPI delivery | live single-run passed; firmware and device SPI integration open |
 | Boot-info v1 mapping and EL1 pointer traversal | live single-run passed; firmware validation and consumption passed separately |
@@ -354,12 +379,12 @@ returned marker `BRIDGEVM`. MSI/MSI-X, write durability, GOP, BDS,
 | Reset vector at GPA zero | live single-run passed; SEC, PI HOB and DXE-dispatch continuations passed separately |
 | Freestanding SEC validation | live single-run passed; bounded PI HOB and DXE-dispatch continuations passed separately |
 | Bounded PI HOB construction | live single-run passed; firmware-volume and DXE-dispatch continuation passed separately |
-| Generic DXE Core and BridgeVM marker dispatch | live single-run passed; Runtime Architectural Protocol subsequently passed, other required protocols and boot manager open |
+| Generic DXE Core and BridgeVM marker dispatch | live single-run passed; all 12 BDS prerequisite architecture protocols and boot manager subsequently passed fixed `N=20` |
 | Runtime Architectural Protocol and CRC32 service | live single-run passed; virtual-address transition and complete runtime services open |
 | UEFI variable services across VM and process recreation | fixed `N=20` in-memory VM-recreate and fixed `N=20` file-backed separate-process probes passed with fresh RAM; host reboot, power-loss and crash recovery open |
 | Independently built and audited UEFI firmware | open |
 | UEFI ACPI/SMBIOS handoff | live single-run publication passed; fixed-sample and Windows consumption open |
-| UEFI GOP and block-I/O handoff | standard NVMe Block I/O read passed fixed `N=20`; GOP and Windows consumption open |
+| UEFI GOP and block-I/O handoff | standard NVMe Block I/O read plus BDS/ESP consumption passed fixed `N=20`; GOP and Windows consumption open |
 | Windows installer and installed-disk boot | open |
 | Storage, input, network, graphics and reset live gates | open |
 | TPM, Secure Boot and recovery lifecycle | open |
