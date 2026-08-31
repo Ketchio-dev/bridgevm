@@ -65,6 +65,8 @@ check "the A3 payload staging policy is executable" '[ -x "$A3_STAGE" ]'
 check "the plist is well formed" 'plutil -lint "$PLIST" >/dev/null'
 check "the queue stays background while each requested gate gets app scheduling policy" \
     'grep -A1 -q "<key>ProcessType</key>" "$PLIST" && grep -q '"'"'taskpolicy -a caffeinate'"'"' "$WORKER"'
+check "the worker resolves only pushed exact commits and refuses unresolved worktrees" \
+    'grep -Fq '"'"'git -C "$REPO" fetch --no-tags origin'"'"' "$WORKER" && grep -Fq '"'"'cat-file -e "$commit^{commit}"'"'"' "$WORKER" && grep -q '"'"'refused-unknown-commit\|refused-worktree'"'"' "$WORKER"'
 check "the Windows post-mortem harvester is executable" '[ -x "$POSTMORTEM_HARVEST" ]'
 check "the installed-boot runner attaches post-mortem media read-only" \
     'awk '\''/^harvest_guest_windows_postmortem\(\)/,/^}/'\'' "$BOOT_RUNNER" | grep -Fq -- '\''-imagekey diskimage-class=CRawDiskImage -readonly "$TARGET"'\'''
@@ -123,9 +125,7 @@ postmortem_image_after="$(shasum -a 256 "$postmortem_image" | awk '{print $1}')"
 check "read-only post-mortem harvest leaves the guest image byte-identical" \
     '[ "$postmortem_image_before" = "$postmortem_image_after" ]'
 
-# --- no inbound network path --------------------------------------------
-# A local queue that grew a listener would be a self-hosted runner with extra
-# steps, which is exactly what a public repo must not have.
+# A listener would turn this local queue into a self-hosted runner; forbid it.
 check "the plist declares no socket" '! grep -q "<key>Sockets</key>" "$PLIST"'
 check "the plist is not a root daemon" '! grep -qi "UserName.*root" "$PLIST"'
 no_match "no component opens a listening socket" \
