@@ -7,6 +7,8 @@ use bridgevm_hvf::machine::bridgevm_pc as board;
 
 #[path = "report_proof.rs"]
 pub(super) mod proof;
+#[path = "report_state.rs"]
+mod state;
 
 pub(super) fn windows(
     hashes: (&str, &str),
@@ -39,18 +41,7 @@ pub(super) fn windows(
         Err(error) => println!("boot_observation_error={error:?}"),
     }
     println!("termination={termination:?}");
-    println!(
-        "vcpu_final=pc:{:#x},cpsr:{:#x},exit:{},esr:{:#x},va:{:#x},pa:{:#x}",
-        execution.state.pc,
-        execution.state.cpsr,
-        execution.state.exit_reason,
-        execution.state.syndrome,
-        execution.state.virtual_address,
-        execution.state.physical_address
-    );
-    if !execution.serial.is_empty() {
-        println!("serial={:?}", execution.serial);
-    }
+    state::write(&execution.state, &execution.serial);
     println!("windows_boot_proven=false");
     if complete {
         println!("LIVE OBSERVATION: BDS loaded Windows BOOTAA64.EFI and StartImage did not return before the captured terminal boundary");
