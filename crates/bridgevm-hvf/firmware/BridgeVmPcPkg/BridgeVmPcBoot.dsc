@@ -12,7 +12,6 @@
   SUPPORTED_ARCHITECTURES = AARCH64
   BUILD_TARGETS = RELEASE
   SKUID_IDENTIFIER = DEFAULT
-
 !include MdePkg/MdeLibs.dsc.inc
 
 [LibraryClasses]
@@ -83,6 +82,7 @@
   MdeModulePkg/Universal/Disk/PartitionDxe/PartitionDxe.inf
   MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
   FatPkg/EnhancedFatDxe/Fat.inf
+  MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf
   BridgeVmPcPkg/Drivers/BootManagerDxe/BootManagerDxe.inf
   BridgeVmPcPkg/Drivers/GraphicsOutputDxe/GraphicsOutputDxe.inf
   BridgeVmPcPkg/Applications/ExitBootServicesProbe/ExitBootServicesProbe.inf

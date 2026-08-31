@@ -64,10 +64,28 @@ tracer was reverted from the tree. To rebuild it:
   `hv_sys_reg` encoding is `(op0<<14)|(op1<<11)|(CRn<<7)|(CRm<<3)|op2`
   (`MPIDR_EL1 == 0xc005` confirms it).
 
-## Next step
+## Root cause (confirmed by disassembly)
 
-Disassemble `bootmgfw.efi` at RVA `0xe9830` / `0x2b1d50` / `0x2b1d70` (extract
-the PE from the image's ESP, or dump guest RAM at `0x27ee70000` after load) to
-identify the exact value it reads and rejects, then make the board provide a
-conforming value. Until a live run reaches `stage=7`, the Windows-start gate
-stays an honest FAIL.
+Extracted `BOOTAA64.EFI` from the image ESP and disassembled it
+(`aarch64-elf-objdump`; `.text` VA `0x1000` raw `0x400`; entry RVA `0x3a130`
+confirmed; `SizeOfImage 0x32b000` matches the loaded image). `EfiEntry`
+(`0x3a130`) calls the init at `0xe9830` with **`x0` = SystemTable**; that
+function does `ldr x9,[x0,#64]` then `cbz x9,0xe9c24`. `SystemTable+64` is
+**ConOut** (`EFI_SYSTEM_TABLE`: +64 ConOut, +88 RuntimeServices, +96
+BootServices). The traced taken branch at `0xe9894` is exactly this `cbz x9`,
+so **ConOut is NULL**, and `0xe9c24` returns the literal at `0xe9c58` =
+`0x8000000000000002` (EFI_INVALID_PARAMETER).
+
+**The Windows Boot Manager bails immediately when `gST->ConOut` is NULL.** The
+boot firmware shipped no console-output producer, so ConOut was NULL.
+
+## Resolution
+
+Added `MdeModulePkg/Universal/Console/ConSplitterDxe` to the boot firmware. Its
+entry installs the virtual console aggregators and sets `gST->ConOut` (and
+ConIn/StdErr) non-NULL. With this in place a live run now reports
+`diagnostic: COMPLETE` at `stage=7`: the Boot Manager enters and keeps running
+(the run ends on the boot watchdog, not an immediate StartImage return). That
+is the T14 handoff condition. Full Windows boot is still not proven
+(`windows_boot_proven=false`); the next frontier is what the Boot Manager does
+after entry (console rendering on the GOP, BCD/BlpArch initialization).
