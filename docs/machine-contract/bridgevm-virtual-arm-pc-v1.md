@@ -160,6 +160,17 @@ process-restart persistence, not host-reboot, power-loss or crash-recovery
 semantics. See the
 [updated exact-head receipt](../windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md).
 
+A twelfth fixed-sample live probe at exact code head
+`afb0106c535863bce542a4ada0b3b589e081baea` connected the board-specific ECAM
+routing to a minimal real HVF guest. Twenty independent processes each read the
+host bridge plus all seven versioned endpoint identities at `00:00.0` through
+`00:07.0`; all 20 lanes passed, for 160 validated stage-2 MMIO reads. The host
+required the exact read width, destination register, IPA, order and identity.
+This proves only guest-visible PCIe identity enumeration at the v1 ECAM
+address, not firmware PciBus, BAR, DMA, interrupt, Block I/O, GOP, BDS or
+Windows behavior. See the
+[exact-head receipt](../windows-arm/evidence/bridgevm-pc-pcie-ecam-live-20260830.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -251,6 +262,7 @@ authenticated policy, time and reset services, virtual-address transition,
 |---|---|
 | Versioned identity, address map and overlap tests | implemented, static only |
 | Minimal memory layout, vars flash, UART, RTC and PCIe ECAM runtime | implemented, host-unit only |
+| Guest PCIe identity enumeration at the v1 ECAM | fixed `N=20` live probe passed for the host bridge and all seven endpoints; firmware PciBus and endpoint operation open |
 | Host GIC geometry validation and bounded placement probe | live single-run placement passed |
 | HVF RAM mapping and architected-timer PPI delivery | live single-run passed; firmware and device SPI integration open |
 | Boot-info v1 mapping and EL1 pointer traversal | live single-run passed; firmware validation and consumption passed separately |
