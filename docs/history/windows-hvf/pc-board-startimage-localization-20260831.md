@@ -664,3 +664,19 @@ TPL_HIGH), and the missing piece is that BridgeVM device model not writing it.
 The next pass should identify which device operation precedes the spin (dump the
 Boot Manager's calls just before it raises TPL and enters `0x27fe89534`) and
 make that device's emulation post the completion word the guest polls.
+
+## Confirmed: the spin is a hard deadlock, not slow progress
+
+Extending the observation watchdog to 90 s leaves the guest pinned at the exact
+same PC (`0x27fe89568`, the pump inside the `0x27fe89534` wait) it holds at 20 s —
+zero forward motion over 70 extra seconds, and the boot-service trace ring comes
+back empty (the guest ran far enough to overwrite it, then stopped). So this is a
+genuine deadlock on `0x27fe8c0d8`, not a pacing problem. With the architected
+timer (INTID 27/30) and the PL011 TX-drain both ruled out, and static
+runtime-pointer chasing across RAM dumps hitting ASCII data rather than a clean
+sink object, the exact writer of `0x27fe8c0d8` cannot be resolved by static
+analysis alone. The next pass needs a **live guest debugger** (the KDCOM/PL011
+transport already built for the shipping engine, re-pointed at this board) to
+break on the counter's address and see which agent writes it — or a systematic
+device-write tracer that logs every guest-memory write near `0x27fe8c000`. That
+is the instrument gap; the location and the deadlock are fully pinned.
