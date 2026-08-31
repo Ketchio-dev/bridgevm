@@ -194,10 +194,26 @@ HVF-mapped RAM does not invalidate the guest caches, so the guest keeps
 fetching the original instruction — host RAM patching of guest code is not
 cache-coherent here.
 
-**All three guest-debug tooling paths are therefore exhausted** under HVF's
-constraints: software single-step works but is too slow to reach the
-native-speed steady state; hardware breakpoints are unavailable (HVF ignores
-the debug sys-regs); and host RAM code-patching is defeated by guest caches.
+**On-disk BRK/HVC patch attempt (a fourth path, also blocked for now):** the
+Boot Manager's on-disk `bootaa64.efi` was patched on a COW clone — file offset
+0x40c38 (which held `0x94000332` = `bl 0x42500`, confirming RVA 0x41838) was
+overwritten with `hvc #0` (`0xd4000002`), so EDK2 would load it with cache
+maintenance and the trap would actually execute (HVC always routes to EL2). The
+run still ended on the watchdog with PC at 0x41838 executing as the original
+`bl`, i.e. the patch did not reach the loaded image — the write through the
+`hdiutil`/macOS msdos mount did not persist into the `.raw` before the run. To
+make this work, patch the `.raw` at the **physical** byte offset of that file
+cluster (parse the FAT to resolve it) instead of writing through a mounted
+volume, and re-confirm the loaded bytes. The run did capture x0-x30 at 0x41838
+at the watchdog boundary: x0=0, x1=0, x2=0x4f, x19=image+0x142000,
+x30(LR)=image+0x3f56c (so 0x41838's function is called from ~0x3f568, the loop
+seen earlier), x6=0x70536f54 (ASCII "ToSp"). Not decisive on its own.
+
+**All four guest-debug tooling paths are therefore exhausted** under HVF's
+constraints as attempted: software single-step works but is too slow to reach
+the native-speed steady state; hardware breakpoints are unavailable (HVF
+ignores the debug sys-regs); host RAM code-patching is defeated by guest
+caches; and the on-disk patch did not persist through the mount.
 Inspecting registers at the steady-state spin (0x41838) is not feasible with
 any of them as-is. Genuinely different options for a future session: patch the
 `BRK` into the **on-disk** `bootaa64.efi` on the per-run COW clone (EDK2 loads
