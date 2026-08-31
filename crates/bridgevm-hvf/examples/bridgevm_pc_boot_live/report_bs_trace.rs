@@ -7,7 +7,7 @@ const CAPACITY: u32 = 126;
 const HEADER: usize = 16;
 const ENTRY: usize = 24;
 
-const NAMES: [&str; 12] = [
+const NAMES: [&str; 19] = [
     "HandleProtocol",
     "OpenProtocol",
     "LocateProtocol",
@@ -20,6 +20,13 @@ const NAMES: [&str; 12] = [
     "SetWatchdogTimer",
     "ExitBootServices",
     "GetVariable",
+    "RaiseTPL",
+    "RestoreTPL",
+    "CreateEvent",
+    "Stall",
+    "SetMem",
+    "CopyMem",
+    "InstallConfigurationTable",
 ];
 
 fn u32_at(bytes: &[u8], offset: usize) -> Option<u32> {
@@ -52,7 +59,7 @@ pub(super) fn write(ram: &[u8]) {
         let base = HEADER + (sequence % CAPACITY) as usize * ENTRY;
         let id = u32_at(bytes, base).unwrap_or(0);
         let name = match id {
-            1..=12 => NAMES[id as usize - 1],
+            1..=19 => NAMES[id as usize - 1],
             _ => "Unknown",
         };
         println!(

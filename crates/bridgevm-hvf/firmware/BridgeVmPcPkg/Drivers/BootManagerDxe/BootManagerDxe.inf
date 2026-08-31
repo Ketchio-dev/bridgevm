@@ -15,11 +15,12 @@
   BootManagerDxe.c
   BootManagerDxe.h
   BsTrace.c
+  BsTrace.h
+  BsWrappers.c
   StartImageFailure.c
 [Packages]
   MdePkg/MdePkg.dec
   BridgeVmPcPkg/BridgeVmPcPkg.dec
-
 [LibraryClasses]
   BaseLib
   DevicePathLib
@@ -48,7 +49,6 @@
   gEfiGraphicsOutputProtocolGuid           ## CONSUMES
   gEfiSimpleFileSystemProtocolGuid         ## CONSUMES
   gEfiLoadedImageProtocolGuid              ## CONSUMES
-
 [Depex]
   gEfiSecurityArchProtocolGuid AND gEfiCpuArchProtocolGuid AND gEfiMetronomeArchProtocolGuid AND
   gEfiTimerArchProtocolGuid AND gEfiWatchdogTimerArchProtocolGuid AND gEfiRuntimeArchProtocolGuid AND
