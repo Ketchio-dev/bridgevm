@@ -1614,13 +1614,14 @@ tests/fixtures/bridgevm-pc-sec-host-test.c	83	0
 crates/bridgevm-hvf/src/guest_memory.rs	22	0
 crates/bridgevm-hvf/src/virtio_net/tests/read_into.rs	73	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live.rs	13	0
-crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/apple.rs	153	4
+crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/apple.rs	152	4
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/arguments.rs	41	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/boot_media.rs	74	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/gic.rs	68	3
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/hvf.rs	72	1
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/memory.rs	79	4
-crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/report.rs	75	0
+crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/report.rs	54	0
+crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/report_proof.rs	36	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/result.rs	91	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/result_tests.rs	69	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/result_wire.rs	71	0

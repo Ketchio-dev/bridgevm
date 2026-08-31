@@ -164,13 +164,12 @@ unsafe fn run_unsafe() -> Result<(), String> {
     status("destroy VM", destroy)?;
     vars_file::persist(&mut vars_file, variables.bytes())?;
     let vars_hash = sha256(variables.bytes());
+    let hashes = (firmware_hash.as_str(), vars_hash.as_str());
     if windows_diagnostic {
-        let boot = result::validate_windows_start(ram.bytes())?;
-        report::windows(&firmware_hash, media_identity, &vars_hash, boot, execution);
-        return Ok(());
+        return report::windows(hashes, media_identity, ram.bytes(), execution);
     }
     let boot = result::validate(ram.bytes())?;
-    report::proof(&firmware_hash, media_identity, &vars_hash, boot, execution)
+    report::proof::write(hashes, media_identity, boot, execution)
 }
 
 pub(super) fn run() -> Result<(), String> {
