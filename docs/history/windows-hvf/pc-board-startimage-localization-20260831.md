@@ -476,3 +476,30 @@ never runs. The focused next step is to identify that handler's interrupt source
 (the Boot Manager installs its own `VBAR_EL1` and may arm the **physical** timer,
 which HVF does not deliver to the in-kernel GIC — only the virtual timer is
 native) and route/emulate it so the tick handler runs and the counter advances.
+
+## Architectural conclusion: the PC board needs a userspace GIC to boot Windows
+
+Across all four Windows runs the guest **never** produced a system-register trap
+(EC 0x18) or any exit other than MMIO data aborts, `HV_EXIT_REASON_VTIMER`, and
+the 20s watchdog cancel — the run loop's "unexpected EC" arm never fired. That
+means the guest's timer and GIC accesses — `CNTP_*`/`CNTV_*` arming,
+`CNTPCT`/`CNTVCT` reads, and the GIC CPU interface `ICC_IAR1_EL1`/`ICC_EOIR1_EL1`
+— **all execute natively** under the in-kernel `hv_gic` and HVF's sysreg
+passthrough. The host therefore has **no visibility into, and no control over,
+the interrupt path**: it cannot see which INTID the Boot Manager's ISR
+acknowledges, cannot intercept its timer arming, and cannot inject the
+per-CPU timer PPI (`hv_gic_set_spi` covers SPIs only, not PPIs). Combined with
+the fact that HVF delivers only the *virtual* timer to `hv_gic` natively, this is
+why the Boot Manager's tick ISR never runs.
+
+The shipping HVF engine boots Windows a different way: a **userspace GIC**
+(`platform_virt`) where the host owns interrupt injection, `IAR`/`EOI`, and
+timer emulation (see `set_windows_arm_firmware_vtimer_ppi_pending` and the
+interrupt-routing module). Under that model the host can arm/emulate the timer
+the Boot Manager programs and inject the exact PPI its ISR expects, and can
+observe the whole path. So the decisive next architecture for the independent
+board is to give it the **same userspace-GIC + timer-emulation + PPI-injection**
+model the shipping engine already uses to boot Windows, rather than the in-kernel
+`hv_gic` the boot-live example currently creates. That is a substantial, well
+scoped change (adopt `platform_virt`'s GIC/timer/interrupt-routing on the PC
+board), and it is the path that provably reaches a booted Windows elsewhere.
