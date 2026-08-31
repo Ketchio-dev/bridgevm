@@ -703,6 +703,9 @@ crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcMmu.S	111	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcSec.c	65	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcSec.h	65	0
 crates/bridgevm-hvf/examples/bridgevm_pc_gic_probe.rs	141	6
+crates/bridgevm-hvf/examples/bridgevm_pc_pcie_live.rs	13	0
+crates/bridgevm-hvf/examples/bridgevm_pc_pcie_live/apple.rs	231	7
+crates/bridgevm-hvf/examples/bridgevm_pc_pcie_live/contract.rs	106	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_info_live.rs	13	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_info_live/apple.rs	213	8
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_info_live/guest.rs	84	0
@@ -1348,6 +1351,7 @@ tests/integration/bridgevm-pc-boot-info-live-opt-in-smoke.sh	39	0
 tests/integration/bridgevm-pc-reset-vector-live-opt-in-smoke.sh	40	0
 tests/integration/bridgevm-pc-dxe-entry-live-opt-in-smoke.sh	40	0
 tests/integration/bridgevm-pc-variable-process-persistence.sh	31	0
+tests/integration/bridgevm-pc-pcie-live-opt-in-smoke.sh	28	0
 tests/integration/hvf-guest-entry-probe-cli-smoke.sh	94	0
 tests/integration/hvf-guest-entry-probe-live-opt-in-smoke.sh	60	0
 tests/integration/hvf-guest-entry-probe-runner-smoke.sh	94	0
