@@ -1650,6 +1650,7 @@ crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BsTrace.c	109	
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BsTrace.h	45	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BsWrappers.c	216	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BdsSupport.c	96	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BdsConsole.c	42	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/BootManagerDxe/BootManagerDxe.h	23	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/GraphicsOutputDxe/GraphicsOutputDxe.c	119	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/GraphicsOutputDxe/GraphicsOutputDxe.h	37	0

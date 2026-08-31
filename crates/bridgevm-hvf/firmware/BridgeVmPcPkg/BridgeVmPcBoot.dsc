@@ -2,7 +2,6 @@
 # Standard UEFI boot-transition modules for BridgeVM Virtual ARM PC.
 # SPDX-License-Identifier: Apache-2.0
 ##
-
 [Defines]
   PLATFORM_NAME = BridgeVmPcBoot
   PLATFORM_GUID = 2BAE7F00-632A-441C-B26A-C73432D8FB40
@@ -13,7 +12,6 @@
   BUILD_TARGETS = RELEASE
   SKUID_IDENTIFIER = DEFAULT
 !include MdePkg/MdeLibs.dsc.inc
-
 [LibraryClasses]
   ArmGenericTimerCounterLib|ArmPkg/Library/ArmGenericTimerPhyCounterLib/ArmGenericTimerPhyCounterLib.inf
   ArmLib|MdePkg/Library/ArmLib/ArmBaseLib.inf
@@ -24,6 +22,9 @@
   CapsuleLib|MdeModulePkg/Library/DxeCapsuleLibNull/DxeCapsuleLibNull.inf
   DebugLib|MdePkg/Library/BaseDebugLibNull/BaseDebugLibNull.inf
   DevicePathLib|MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
+  HiiLib|MdeModulePkg/Library/UefiHiiLib/UefiHiiLib.inf
+  UefiHiiServicesLib|MdeModulePkg/Library/UefiHiiServicesLib/UefiHiiServicesLib.inf
+  SortLib|MdeModulePkg/Library/UefiSortLib/UefiSortLib.inf
   DxeServicesLib|MdePkg/Library/DxeServicesLib/DxeServicesLib.inf
   DxeServicesTableLib|MdePkg/Library/DxeServicesTableLib/DxeServicesTableLib.inf
   IoLib|MdePkg/Library/BaseIoLibIntrinsic/BaseIoLibIntrinsic.inf
@@ -44,12 +45,10 @@
   UefiRuntimeLib|MdePkg/Library/UefiRuntimeLib/UefiRuntimeLib.inf
   UefiRuntimeServicesTableLib|MdePkg/Library/UefiRuntimeServicesTableLib/UefiRuntimeServicesTableLib.inf
   VariablePolicyHelperLib|MdeModulePkg/Library/VariablePolicyHelperLib/VariablePolicyHelperLib.inf
-
 [PcdsFeatureFlag]
   gEfiMdeModulePkgTokenSpaceGuid.PcdSupportUpdateCapsuleReset|FALSE
   gEfiMdeModulePkgTokenSpaceGuid.PcdSupportProcessCapsuleAtRuntime|FALSE
   gEfiMdeModulePkgTokenSpaceGuid.PcdUnicodeCollation2Support|TRUE
-
 [PcdsFixedAtBuild]
   gArmTokenSpaceGuid.PcdArmArchTimerSecIntrNum|29
   gArmTokenSpaceGuid.PcdArmArchTimerIntrNum|30
@@ -67,7 +66,6 @@
   gEfiMdeModulePkgTokenSpaceGuid.PcdCapsuleInRamSupport|FALSE
   gEfiMdePkgTokenSpaceGuid.PcdUefiVariableDefaultLang|"eng"
   gEfiMdePkgTokenSpaceGuid.PcdUefiVariableDefaultPlatformLang|"en-US"
-
 [Components]
   MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
   ArmPkg/Drivers/ArmGicDxe/ArmGicV3Dxe.inf
@@ -83,6 +81,8 @@
   MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
   FatPkg/EnhancedFatDxe/Fat.inf
   MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf
+  MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
+  MdeModulePkg/Universal/Console/GraphicsConsoleDxe/GraphicsConsoleDxe.inf
   BridgeVmPcPkg/Drivers/BootManagerDxe/BootManagerDxe.inf
   BridgeVmPcPkg/Drivers/GraphicsOutputDxe/GraphicsOutputDxe.inf
   BridgeVmPcPkg/Applications/ExitBootServicesProbe/ExitBootServicesProbe.inf

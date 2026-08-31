@@ -4,13 +4,10 @@
 **/
 #ifndef BRIDGE_VM_PC_BOOT_MANAGER_DXE_H_
 #define BRIDGE_VM_PC_BOOT_MANAGER_DXE_H_
-
 #include <Uefi.h>
 #include <BridgeVmPc/BootResult.h>
-
 #define BRIDGE_VM_PC_RESULT() \
   ((volatile BRIDGE_VM_PC_BOOT_RESULT *)(UINTN)BRIDGE_VM_PC_BOOT_RESULT_GPA)
-
 UINT64
 BridgeVmPcArchitecturalProtocols (VOID);
 
@@ -19,5 +16,8 @@ BridgeVmPcConnectAll (VOID);
 
 VOID
 BridgeVmPcRecordGraphics (VOID);
+
+VOID
+BridgeVmPcWireGraphicsConsole (VOID);
 
 #endif

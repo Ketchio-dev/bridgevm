@@ -6,8 +6,8 @@ readonly BROTLI_COMMIT="e230f474b87134e8c6c85b630084c612057f253e"
 readonly MIPI_COMMIT="370b5944c046bab043dd8b133727b2135af7747a"
 readonly SOURCE_EPOCH="1778208179"
 readonly GCC_VERSION="aarch64-elf-gcc (GCC) 16.1.0"
-readonly MODULES=(ArmGicV3Dxe ArmTimerDxe BridgeVmPcBootManagerDxe CapsuleRuntimeDxe DiskIoDxe Fat Metronome MonotonicCounterRuntimeDxe PartitionDxe RealTimeClock ResetSystemRuntimeDxe SecurityStubDxe WatchdogTimer EnglishDxe BridgeVmPcGraphicsOutputDxe BridgeVmPcExitBootServicesProbe ConSplitterDxe)
-readonly HASHES=(40862435b086a16becf606a01a4863f90403f6f12d46419906108b35796ab7af 047555aed42514cd3141887f6ef5b076468687fa6a278a1dde44fe6934604c0c fbb69c4b0ccdfe1f03df0ab10a45337d52ece309b5bef55fb192655de10e158c 00ee840a2087b7016dfc6d138bfaaf1e73028ed119be611b6b6305d4afdc5bb4 0032010bdd3844d27ae27f582e784309fd9917f4fc65cfd36b6cbc6903bd0222 910cec7c14fe3fe400657ff2659d5731361b281356d2b333e1f3385a659ce753 42e9dbc6ec2af5e96267f9d3a951d67e2c8668e55dfa69b4c23aa5af3100ce32 02544678cf971c1874e6bc44deadf1626079d493d82b8157510ad50d63d2d076 139543729ddc5b2335339b799aed8d05a02efafae21b84e5477313a230a3ad01 445b2afb4cdf632bc7a9cb1291df1d2a747837c0b70901e9a33eb79be996378f ea0d7c68b11079dcc1e715318498ecc8454a71abbd98443c4d307acb3564d072 e7ae45b3b59fddbaa38720f0f36dcf3f22d3f2b8649d86a8b6c2a18c5726b82c 312ba55df8f949264dd89c45d6c5e1aa4dc02b04a6bb00eb6728135b2a3d68d8 fe7427e41de3b7d09ea9df818794d87b0ebbf2d8c761591569f488e2e52c1edb e5227474efe839185d634cf4c90ba4e6891af5774a4b85d46af3feeeff996554 93f86906c18acdc8be76466ad5ff63f50358c52a68583cea703c1b97696fff85 aa0c5842fbb77f7827325a4aa864f1a805f490be2f939c9e1585852fd746fdb9)
+readonly MODULES=(ArmGicV3Dxe ArmTimerDxe BridgeVmPcBootManagerDxe CapsuleRuntimeDxe DiskIoDxe Fat Metronome MonotonicCounterRuntimeDxe PartitionDxe RealTimeClock ResetSystemRuntimeDxe SecurityStubDxe WatchdogTimer EnglishDxe BridgeVmPcGraphicsOutputDxe BridgeVmPcExitBootServicesProbe ConSplitterDxe HiiDatabase GraphicsConsoleDxe)
+readonly HASHES=(40862435b086a16becf606a01a4863f90403f6f12d46419906108b35796ab7af 047555aed42514cd3141887f6ef5b076468687fa6a278a1dde44fe6934604c0c e7fdafc1b31bc865a0eefb41062ac0a5daf942f449b745a046af9d726942aff3 00ee840a2087b7016dfc6d138bfaaf1e73028ed119be611b6b6305d4afdc5bb4 0032010bdd3844d27ae27f582e784309fd9917f4fc65cfd36b6cbc6903bd0222 910cec7c14fe3fe400657ff2659d5731361b281356d2b333e1f3385a659ce753 42e9dbc6ec2af5e96267f9d3a951d67e2c8668e55dfa69b4c23aa5af3100ce32 02544678cf971c1874e6bc44deadf1626079d493d82b8157510ad50d63d2d076 139543729ddc5b2335339b799aed8d05a02efafae21b84e5477313a230a3ad01 445b2afb4cdf632bc7a9cb1291df1d2a747837c0b70901e9a33eb79be996378f ea0d7c68b11079dcc1e715318498ecc8454a71abbd98443c4d307acb3564d072 e7ae45b3b59fddbaa38720f0f36dcf3f22d3f2b8649d86a8b6c2a18c5726b82c 312ba55df8f949264dd89c45d6c5e1aa4dc02b04a6bb00eb6728135b2a3d68d8 fe7427e41de3b7d09ea9df818794d87b0ebbf2d8c761591569f488e2e52c1edb e5227474efe839185d634cf4c90ba4e6891af5774a4b85d46af3feeeff996554 93f86906c18acdc8be76466ad5ff63f50358c52a68583cea703c1b97696fff85 aa0c5842fbb77f7827325a4aa864f1a805f490be2f939c9e1585852fd746fdb9 51eef30797753a448efbab489f5799ca59a6a753cd5988c415d679576949fc1b 03a8f9fc272bf13da22617a203cebbac4c531b2e147cba0c4fc5e56128ea73a2)
 if [[ $# -ne 2 ]]; then
   echo "usage: $0 /path/to/pinned-edk2 OUTPUT_DIR" >&2
   exit 64
@@ -50,8 +50,7 @@ build -a AARCH64 -t GCC -p BridgeVmPcPkg/BridgeVmPcBoot.dsc -b RELEASE -n 8 \
 built="$edk2/Build/BridgeVmPcBoot/RELEASE_GCC/AARCH64"; mkdir -p "$output"
 for index in "${!MODULES[@]}"; do
   name="${MODULES[$index]}"; artifact="$output/$name.efi"
-  cp "$built/$name.efi" "$artifact"; "$tools/GenFw" -z -r "$artifact"
-  /opt/homebrew/bin/aarch64-elf-objdump -f "$artifact" | grep -q 'pei-aarch64-little'
+  cp "$built/$name.efi" "$artifact"; "$tools/GenFw" -z -r "$artifact"; /opt/homebrew/bin/aarch64-elf-objdump -f "$artifact" | grep -q 'pei-aarch64-little'
   actual="$(shasum -a 256 "$artifact" | awk '{print $1}')"
   [[ "$actual" == "${HASHES[$index]}" ]] || {
     echo "$name digest $actual does not match ${HASHES[$index]}" >&2; exit 70;
@@ -69,6 +68,7 @@ declare -a depex=(
   "ResetSystemRuntimeDxe:MdeModulePkg/Universal/ResetSystemRuntimeDxe/ResetSystemRuntimeDxe/OUTPUT/ResetSystemRuntimeDxe.depex"
   "SecurityStubDxe:MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe/OUTPUT/SecurityStubDxe.depex"
   "WatchdogTimer:MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer/OUTPUT/WatchdogTimer.depex"
+  "HiiDatabase:MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe/OUTPUT/HiiDatabase.depex"
 )
 for item in "${depex[@]}"; do
   cp "$built/${item#*:}" "$output/${item%%:*}.depex"

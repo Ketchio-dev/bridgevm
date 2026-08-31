@@ -47,15 +47,15 @@ make_driver Partition 1FA1F39E-FEFF-4AAE-BD7B-38A070A3B609 "$boot/PartitionDxe.e
 make_driver English CD3BAFB6-50FB-4FE8-8E4E-AB74D2C1A600 "$boot/EnglishDxe.efi" "$boot/Metronome.depex"
 make_driver Fat 961578FE-B6B7-44C3-AF35-6BC705CD2B1F "$boot/Fat.efi" "$boot/Metronome.depex"
 make_driver ConSplit 408EDCEC-CF6D-477C-A5A8-B4844E3DE281 "$boot/ConSplitterDxe.efi" -
+make_driver Hii 348C4D62-BFBD-4882-9ECE-C80BB1C4783B "$boot/HiiDatabase.efi" "$boot/HiiDatabase.depex"
+make_driver GfxCon CCCB0C28-4B24-11D5-9A5A-0090273FC14D "$boot/GraphicsConsoleDxe.efi" -
 make_driver Gop 59BFB167-0E0C-4A04-9045-0658641760DF "$boot/BridgeVmPcGraphicsOutputDxe.efi" "$boot/BridgeVmPcGraphicsOutputDxe.depex"
 make_driver Bds 1E153CB8-CF1A-4CFA-A5E9-0E1817B68953 "$boot/BridgeVmPcBootManagerDxe.efi" "$boot/BridgeVmPcBootManagerDxe.depex"
-ffs=(DxeCore Runtime Variables Platform Cpu CpuIo PciBus PciHost Nvme Security Gic Timer Metronome Watchdog Capsule Monotonic Reset Rtc DiskIo Partition English Fat ConSplit Gop Bds)
+ffs=(DxeCore Runtime Variables Platform Cpu CpuIo PciBus PciHost Nvme Security Gic Timer Metronome Watchdog Capsule Monotonic Reset Rtc DiskIo Partition English Fat ConSplit Hii GfxCon Gop Bds)
 args=(); for name in "${ffs[@]}"; do args+=(-f "$build/$name.ffs"); done
 fv="$build/BridgeVmPcBoot.fv"; "$tools/GenFv" -o "$fv" -b 0x1000 -n 0x100 "${args[@]}" \
   -g "$FFS2_GUID" --FvNameGuid "$FV_GUID"
-images=("$core" "$runtime_dir/RuntimeDxe.efi" "$variable_dir/VariableRuntimeDxe.efi" "$drivers/BridgeVmPcPlatformTablesDxe.efi" "$drivers/ArmCpuDxe.efi" "$drivers/CpuMmio2Dxe.efi" "$drivers/PciBusDxe.efi" "$drivers/PciHostBridgeDxe.efi" "$drivers/NvmExpressDxe.efi" "$boot/SecurityStubDxe.efi" "$boot/ArmGicV3Dxe.efi" "$boot/ArmTimerDxe.efi" "$boot/Metronome.efi" "$boot/WatchdogTimer.efi" "$boot/CapsuleRuntimeDxe.efi" "$boot/MonotonicCounterRuntimeDxe.efi" "$boot/ResetSystemRuntimeDxe.efi" "$boot/RealTimeClock.efi" "$boot/DiskIoDxe.efi" "$boot/PartitionDxe.efi" "$boot/EnglishDxe.efi" "$boot/Fat.efi" "$boot/ConSplitterDxe.efi" "$boot/BridgeVmPcGraphicsOutputDxe.efi" "$boot/BridgeVmPcBootManagerDxe.efi")
+images=("$core" "$runtime_dir/RuntimeDxe.efi" "$variable_dir/VariableRuntimeDxe.efi" "$drivers/BridgeVmPcPlatformTablesDxe.efi" "$drivers/ArmCpuDxe.efi" "$drivers/CpuMmio2Dxe.efi" "$drivers/PciBusDxe.efi" "$drivers/PciHostBridgeDxe.efi" "$drivers/NvmExpressDxe.efi" "$boot/SecurityStubDxe.efi" "$boot/ArmGicV3Dxe.efi" "$boot/ArmTimerDxe.efi" "$boot/Metronome.efi" "$boot/WatchdogTimer.efi" "$boot/CapsuleRuntimeDxe.efi" "$boot/MonotonicCounterRuntimeDxe.efi" "$boot/ResetSystemRuntimeDxe.efi" "$boot/RealTimeClock.efi" "$boot/DiskIoDxe.efi" "$boot/PartitionDxe.efi" "$boot/EnglishDxe.efi" "$boot/Fat.efi" "$boot/ConSplitterDxe.efi" "$boot/HiiDatabase.efi" "$boot/GraphicsConsoleDxe.efi" "$boot/BridgeVmPcGraphicsOutputDxe.efi" "$boot/BridgeVmPcBootManagerDxe.efi")
 python3 "$(dirname "$0")/check-bridgevm-pc-boot-fv.py" "$fv" \
   "$boot/BridgeVmPcExitBootServicesProbe.efi" "${images[@]}"
-mkdir -p "$output"; cp "$fv" "$output/BridgeVmPcBoot.fv"
-echo "built $output/BridgeVmPcBoot.fv"
-echo "sha256 $(shasum -a 256 "$output/BridgeVmPcBoot.fv" | awk '{print $1}')"
+mkdir -p "$output"; cp "$fv" "$output/BridgeVmPcBoot.fv"; echo "built $output/BridgeVmPcBoot.fv sha256 $(shasum -a 256 "$output/BridgeVmPcBoot.fv" | awk '{print $1}')"
