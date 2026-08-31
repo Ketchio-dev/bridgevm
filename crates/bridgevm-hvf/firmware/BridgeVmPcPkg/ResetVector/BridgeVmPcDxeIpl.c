@@ -74,7 +74,7 @@ DxeCoreImageIsValid(const volatile uint8_t *Image)
   }
   Optional = Image + PeOffset + 24;
   return *(const volatile uint16_t *)Optional == 0x20BU &&
-         *(const volatile uint32_t *)(Optional + 16) == 0x6BECU &&
+         *(const volatile uint32_t *)(Optional + 16) == 0x6BF4U &&
          *(const volatile uint32_t *)(Optional + 24) == 0x00400000U &&
          *(const volatile uint32_t *)(Optional + 28) == 0x00000001U &&
          *(const volatile uint32_t *)(Optional + 56) == BRIDGE_VM_PC_DXE_CORE_IMAGE_SIZE &&
@@ -91,11 +91,11 @@ AppendDxeHobs(volatile BRIDGE_VM_PC_SEC_RESULT *Result, volatile uint8_t *HobLis
   volatile BRIDGE_VM_PC_HOB_HANDOFF_INFO *Phit =
     (volatile BRIDGE_VM_PC_HOB_HANDOFF_INFO *)HobList;
   volatile BRIDGE_VM_PC_HOB_FV_INFO *Fv =
-    (volatile BRIDGE_VM_PC_HOB_FV_INFO *)(HobList + 168);
+    (volatile BRIDGE_VM_PC_HOB_FV_INFO *)(HobList + 216);
   volatile BRIDGE_VM_PC_HOB_MODULE *Module =
-    (volatile BRIDGE_VM_PC_HOB_MODULE *)(HobList + 192);
+    (volatile BRIDGE_VM_PC_HOB_MODULE *)(HobList + 240);
   volatile BRIDGE_VM_PC_HOB_HEADER *End =
-    (volatile BRIDGE_VM_PC_HOB_HEADER *)(HobList + 264);
+    (volatile BRIDGE_VM_PC_HOB_HEADER *)(HobList + 312);
   uint32_t Index;
 
   SetHeader(&Fv->Header, BRIDGE_VM_PC_HOB_FV, sizeof(*Fv));
@@ -113,7 +113,7 @@ AppendDxeHobs(volatile BRIDGE_VM_PC_SEC_RESULT *Result, volatile uint8_t *HobLis
   SetGuid(&Module->ModuleName, 0xD6A2CB7FU, 0x6A18U, 0x4E2FU, DxeCoreData4);
   Module->EntryPoint = BRIDGE_VM_PC_DXE_CORE_ENTRY;
   SetHeader(End, BRIDGE_VM_PC_HOB_END, sizeof(*End));
-  Phit->EfiEndOfHobList = BRIDGE_VM_PC_HOB_LIST_GPA + 264;
+  Phit->EfiEndOfHobList = BRIDGE_VM_PC_HOB_LIST_GPA + 312;
   Result->HobCount = BRIDGE_VM_PC_DXE_HOB_COUNT;
   Result->HobListSize = BRIDGE_VM_PC_DXE_HOB_LIST_SIZE;
 }

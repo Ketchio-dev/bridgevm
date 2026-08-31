@@ -3,10 +3,11 @@ use bridgevm_hvf::machine::bridgevm_pc as board;
 use sha2::{Digest, Sha256};
 #[path = "firmware_guids.rs"]
 mod guids;
+#[path = "variable_firmware_guid.rs"]
+mod variable_guid;
 use guids::{DXE_CORE, PLATFORM_TABLES, RUNTIME_DXE};
-
-const EXPECTED_FD_SHA256: &str = "0a05d8ecb5bb96eb4088eda2f6c357aa044afb8cdbf92fd629c652da9dc89138";
-
+use variable_guid::VARIABLE_RUNTIME_DXE;
+const EXPECTED_FD_SHA256: &str = "37c659e4ec70050790607ab58ec8eb9066284f13eedccb50795cf4623c642172";
 fn sha256(bytes: &[u8]) -> String {
     let hash = Sha256::digest(bytes);
     let mut digest = String::with_capacity(64);
@@ -17,7 +18,6 @@ fn sha256(bytes: &[u8]) -> String {
     }
     digest
 }
-
 pub fn validate(bytes: &[u8]) -> Result<String, String> {
     let expected_len = board::FLASH_CODE.size as usize;
     expect("DXE-entry FD size", bytes.len(), expected_len)?;
@@ -37,15 +37,12 @@ pub fn validate(bytes: &[u8]) -> Result<String, String> {
         bytes_at::<16>(fv, 0x78, "DXE Core file GUID")?,
         DXE_CORE,
     )?;
-    expect(
-        "RuntimeDxe file GUID",
-        fv.windows(16).any(|window| window == RUNTIME_DXE),
-        true,
-    )?;
-    expect(
-        "PlatformTablesDxe file GUID",
-        fv.windows(16).any(|window| window == PLATFORM_TABLES),
-        true,
-    )?;
+    for (label, guid) in [
+        ("RuntimeDxe", RUNTIME_DXE),
+        ("VariableRuntimeDxe", VARIABLE_RUNTIME_DXE),
+        ("PlatformTablesDxe", PLATFORM_TABLES),
+    ] {
+        expect(label, fv.windows(16).any(|window| window == guid), true)?;
+    }
     Ok(digest)
 }

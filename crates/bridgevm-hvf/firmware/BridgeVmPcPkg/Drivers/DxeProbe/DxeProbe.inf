@@ -6,20 +6,20 @@
   MODULE_TYPE                    = DXE_DRIVER
   VERSION_STRING                 = 1.0
   ENTRY_POINT                    = BridgeVmPcDxeProbeEntry
-
 [Sources]
   DxeProbe.c
   RuntimeProbe.c
   RuntimeProbe.h
-
+  VariableProbe.c
+  VariableProbe.h
 [Packages]
   MdePkg/MdePkg.dec
-
 [LibraryClasses]
+  BaseMemoryLib
   UefiDriverEntryPoint
-
 [Protocols]
   gEfiRuntimeArchProtocolGuid                 ## CONSUMES
-
+  gEfiVariableArchProtocolGuid                ## CONSUMES
+  gEfiVariableWriteArchProtocolGuid           ## CONSUMES
 [Depex]
-  gEfiRuntimeArchProtocolGuid
+  gEfiRuntimeArchProtocolGuid AND gEfiVariableArchProtocolGuid AND gEfiVariableWriteArchProtocolGuid
