@@ -137,6 +137,17 @@ revalidated the ACPI and SMBIOS entries. This is one live RuntimeDxe run, not
 proof of variables, virtual-address transition, BDS, or Windows boot. See the
 [exact-head receipt](../windows-arm/evidence/bridgevm-pc-runtime-dxe-live-20260830.md).
 
+A tenth fixed-sample live probe at exact BridgeVM code head
+`cf8ad54f0f99f87e574d6af152ea8b64fe3d6d6f` added generic
+`VariableRuntimeDxe`, real AArch64 cache maintenance for DXE image loading and
+a reserved three-page identity map. In each of 20 independent processes, the
+first HVF VM wrote a non-volatile UEFI variable, was destroyed, and a second VM
+with fresh RAM restored the exact payload from the preserved host-memory vars
+backing. All 20 lanes passed while retaining the runtime, ACPI and SMBIOS
+checks. This does not prove process-, reboot- or power-loss persistence, BDS or
+Windows boot. See the
+[exact-head receipt](../windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -211,6 +222,16 @@ and that `CalculateCrc32` was callable, while ACPI and SMBIOS remained present.
 Variable, time and reset implementations, virtual-address transition,
 `ExitBootServices`, BDS, GOP, block I/O and Windows remain open.
 
+The following exact-head tranche added generic `VariableRuntimeDxe` and a
+BridgeVM probe for `GetVariable`, `SetVariable` and `QueryVariableInfo`. Pinned
+tools produced a byte-reproducible 64 MiB FD with SHA-256
+`37c659e4ec70050790607ab58ec8eb9066284f13eedccb50795cf4623c642172`.
+A fixed 20-process live probe passed 20/20 two-VM recreations using fresh RAM
+and one explicitly preserved in-memory vars backing per process. File-backed
+process/reboot persistence, power-failure atomicity, authenticated policy,
+time and reset services, virtual-address transition, `ExitBootServices`, BDS,
+GOP, block I/O and Windows remain open.
+
 ## Implementation gates
 
 | Gate | State |
@@ -226,6 +247,7 @@ Variable, time and reset implementations, virtual-address transition,
 | Bounded PI HOB construction | live single-run passed; firmware-volume and DXE-dispatch continuation passed separately |
 | Generic DXE Core and BridgeVM marker dispatch | live single-run passed; Runtime Architectural Protocol subsequently passed, other required protocols and boot manager open |
 | Runtime Architectural Protocol and CRC32 service | live single-run passed; virtual-address transition and complete runtime services open |
+| UEFI variable services across an HVF VM recreate | fixed `N=20` live probe passed with fresh RAM and preserved in-memory vars backing; process/reboot persistence and atomicity open |
 | Independently built and audited UEFI firmware | open |
 | UEFI ACPI/SMBIOS handoff | live single-run publication passed; fixed-sample and Windows consumption open |
 | UEFI GOP and block-I/O handoff | open |

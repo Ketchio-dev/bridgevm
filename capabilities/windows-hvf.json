@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-30",
-  "tested_commit": "0890d838e1dbc20f0ab393646023d2d8014a9b91",
+  "tested_commit": "cf8ad54f0f99f87e574d6af152ea8b64fe3d6d6f",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -139,9 +139,10 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "Re-sealed 2026-08-30 at exact tested code head 0890d838e1dbc20f0ab393646023d2d8014a9b91. Studio t0-check job 20260830-190616-5198-31792 ran the complete scripts/check-project.sh: every code and test step passed, including 2,114 reachable tests and the independent-firmware boundary, and its sole failure was the intentionally stale capability registry before this docs-only seal; check-log SHA-256 f25de71b59f17e328f0c58b0a58016a6b937c4c6d19cd219ab20a0b689c0a631. The preceding queue job 20260830-190447-3212-22994 failed before tests because the worker clone had not fetched the sealed commit; it is retained and is not supporting evidence. GitHub-hosted CI run 33340894307 passed the repository matrix and Security and quality run 33340895550 passed supply-chain, fuzz, Loom, graphics-claim and live-gate policy checks. An independent BridgeVM firmware live single run at the same tested code head entered generic DXE Core, dispatched RuntimeDxe, located the standard Runtime Architectural Protocol, called CalculateCrc32, and retained the exact ACPI 2.0 and SMBIOS 3 pointers in the EFI system table. Two pinned builds produced byte-identical 64 MiB FDs with SHA-256 0a05d8ecb5bb96eb4088eda2f6c357aa044afb8cdbf92fd629c652da9dc89138; this is bounded RuntimeDxe/platform-table evidence, not complete UEFI or Windows boot. The earlier exact-live reset/HOB FD remained byte-identical. A9 remains OPEN. B4 is separately PROVEN by exact-head Studio t8 job 20260830-134316-74417-14894: fixed N=20 landed 20/20 with zero rendering/package regressions and p95 243 ms.",
+      "measured": "Re-sealed 2026-08-30 at exact tested code head cf8ad54f0f99f87e574d6af152ea8b64fe3d6d6f. Studio t0-check job 20260830-204244-81226-9640 ran the complete scripts/check-project.sh: every code and test step passed, including 2,115 reachable tests and the independent-firmware boundary, and its sole failure was the intentionally stale capability registry before this documentation-only seal; check-log SHA-256 ef749c7263959942584c3015e78c649232c1388e9f6237fd47ab73308fe8b920. The preceding queue job 20260830-204136-80771-17798 failed before tests because the worker clone had not fetched the sealed commit; it is retained and is not supporting evidence. GitHub-hosted CI run 33345348851 passed the repository matrix and Security and quality run 33345350235 passed supply-chain, fuzz, Loom, graphics-claim and live-gate policy checks. At the same exact code head, a fixed N=20 BridgeVM firmware probe passed 20/20: each independent process wrote one non-volatile UEFI variable in an HVF VM, destroyed that VM, then restored the exact payload in a newly created VM with fresh RAM and the preserved in-memory vars backing. The exact live log SHA-256 is 01f264b9e6a5f72b924f90f5d10b646aa34ed2743e67422567f08d138f11c156. Two pinned builds produced byte-identical FD, FV and receipt; the 64 MiB FD SHA-256 is 37c659e4ec70050790607ab58ec8eb9066284f13eedccb50795cf4623c642172. This does not prove process/reboot persistence, power-failure atomicity, BDS or Windows boot. The earlier reset/HOB-only FD remained byte-identical. A9 remains OPEN. B4 is separately PROVEN by exact-head Studio t8 job 20260830-134316-74417-14894: fixed N=20 landed 20/20 with zero rendering/package regressions and p95 243 ms.",
       "evidence_paths": [
-        "STATUS.md"
+        "STATUS.md",
+        "docs/windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md"
       ]
     },
     {
