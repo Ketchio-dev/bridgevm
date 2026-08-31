@@ -245,12 +245,30 @@ reseal, in BdsConsole.c) gives the Boot Manager a console that actually draws.
 With it, a live run jumps from **6 to ~4000 boot-service calls** and the
 terminal PC moves to a **different region (image RVA 0x19550)** — the Boot
 Manager now runs far past the old spin. It still ends on the watchdog
-(`windows_boot_proven=false`), so there is a later wall at ~0x19550, but this
-confirms the console was the real gap and that building out the board
-environment is the way forward. Next: enlarge the boot-service trace ring
-(currently 126) to see the ~3900 calls that scroll out, characterize the
-0x19550 wall, and continue the device/console build-out (a working ConIn is the
-likely next need).
+(`windows_boot_proven=false`), so there is a later wall, but this confirms the
+console was the real gap and that building out the board environment is the way
+forward.
+
+Filtering RaiseTPL/RestoreTPL out of the trace (a reverted diagnostic) shows
+the Boot Manager now makes ~60 *meaningful* boot-service calls before it stalls:
+`GetVariable("Se…")` → NOT_FOUND, two `HandleProtocol`, then ~56 `AllocatePool`
+(EfiBootServicesData: many 0x13-byte structures, then 0x4d8 and 0x6620
+buffers), then one `AllocatePages` — after which the terminal PC is
+**0x27fe89550, which is ABOVE the loaded image** (ImageBase 0x27ee70000 +
+SizeOfImage 0x32b000 = 0x27f19b000). So the Boot Manager has moved out of its
+static image and is executing code in memory it allocated/loaded (a relocated
+or decompressed module), i.e. real forward progress, not the earlier
+static-image spin. Because this later stall is in runtime-loaded code, static
+disassembly of bootaa64.efi cannot reach it.
+
+Delivering the timer (switching the firmware to the virtual timer and injecting
+`hv_vcpu_set_pending_interrupt(IRQ)` + unmask on `EXIT_VTIMER`, mirroring the
+shipping engine) did **not** change this later stall either — same ~60 calls,
+same region — so, like the first spin, it is not timer-driven; that experiment
+was reverted. Next: to look past this wall, either dump/patch the runtime-loaded
+code region (0x27fe8xxxx) rather than the static image, or keep building out the
+board (a working ConIn / keyboard, and the storage/file path the Boot Manager
+will need to read the BCD) — building out the environment is the proven lever.
 Inspecting registers at the steady-state spin (0x41838) is not feasible with
 any of them as-is. Genuinely different options for a future session: patch the
 `BRK` into the **on-disk** `bootaa64.efi` on the per-run COW clone (EDK2 loads
