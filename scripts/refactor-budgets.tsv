@@ -1619,7 +1619,7 @@ tests/fixtures/bridgevm-pc-sec-host-test.c	83	0
 crates/bridgevm-hvf/src/guest_memory.rs	22	0
 crates/bridgevm-hvf/src/virtio_net/tests/read_into.rs	73	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live.rs	13	0
-crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/apple.rs	166	4
+crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/apple.rs	176	4
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/arguments.rs	41	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/boot_media.rs	74	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/gic.rs	68	3
@@ -1641,7 +1641,7 @@ crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/result_tests.rs	69	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/result_wire.rs	71	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/run_loop.rs	144	2
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/us_gic.rs	100	2
-crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/mmio.rs	118	3
+crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/mmio.rs	138	4
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/vars_file.rs	38	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/vcpu_state.rs	30	1
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Applications/ExitBootServicesProbe/ExitBootServicesProbe.c	84	0

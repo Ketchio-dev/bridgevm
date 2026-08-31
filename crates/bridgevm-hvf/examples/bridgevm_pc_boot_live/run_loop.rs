@@ -29,6 +29,7 @@ pub(super) unsafe fn run(
     gic: &mut UsGic,
     ram: &mut GuestRam<'_>,
     snapshot: &mut Option<super::result::BootResult>,
+    wwatch: Option<u64>,
 ) -> Result<(usize, usize), String> {
     let (stop_tx, stop_rx) = mpsc::channel();
     let watchdog = std::thread::spawn(move || {
@@ -48,7 +49,12 @@ pub(super) unsafe fn run(
                 let syndrome = (*exit).exception.syndrome;
                 match (syndrome >> 26) & 0x3f {
                     EC_DATA_ABORT => {
-                        super::mmio::emulate(vcpu, exit, platform, gic, ram)?;
+                        let addr = (*exit).exception.physical_address;
+                        if wwatch.map(|w| w & !0x3fff) == Some(addr & !0x3fff) {
+                            super::mmio::watched_write(vcpu, exit, ram, wwatch.unwrap())?;
+                        } else {
+                            super::mmio::emulate(vcpu, exit, platform, gic, ram)?;
+                        }
                         mmio_exits += 1;
                     }
                     EC_SYSREG => {

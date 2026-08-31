@@ -36,6 +36,7 @@ unsafe extern "C" {
     pub(super) fn hv_vm_create(config: *mut c_void) -> HvReturn;
     pub(super) fn hv_vm_destroy() -> HvReturn;
     pub(super) fn hv_vm_map(addr: *mut c_void, ipa: u64, size: usize, flags: u64) -> HvReturn;
+    pub(super) fn hv_vm_protect(ipa: u64, size: usize, flags: u64) -> HvReturn;
     pub(super) fn hv_vcpu_create(
         vcpu: *mut HvVcpu,
         exit: *mut *mut HvVcpuExit,

@@ -85,6 +85,15 @@ unsafe fn execute(
         board::RAM_BASE,
         HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC,
     )?;
+    let wwatch = std::env::var("BRIDGEVM_PC_WWATCH")
+        .ok()
+        .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok());
+    if let Some(gpa) = wwatch {
+        status(
+            "write-watch protect",
+            hv_vm_protect(gpa & !0x3fff, 0x4000, HV_MEMORY_READ | HV_MEMORY_EXEC),
+        )?;
+    }
     let mut gic = gic::create()?;
     let mut vcpu = 0;
     let mut exit = null_mut();
@@ -111,6 +120,7 @@ unsafe fn execute(
             &mut gic,
             &mut guest_ram,
             &mut result_snapshot,
+            wwatch,
         );
         let state = vcpu_state::capture(vcpu, exit)?;
         ram_dump::maybe_dump(guest_ram.bytes(), state.pc);

@@ -4,6 +4,7 @@
 use super::hvf::*;
 use super::memory::GuestRam;
 use super::us_gic::UsGic;
+use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::platform_pc::BridgeVmPcPlatform;
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome};
 
@@ -71,6 +72,42 @@ unsafe fn store_result(vcpu: HvVcpu, access: DataAbort, value: u64) -> Result<()
     let mut pc = 0;
     status("read MMIO PC", hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut pc))?;
     status("advance MMIO PC", hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4))
+}
+
+/// Handle a write fault on the write-watched page (mapped read+exec so writes
+/// trap): log the writer's PC when it hits the watched word, then complete the
+/// store into guest RAM so the guest is unaffected.
+pub(super) unsafe fn watched_write(
+    vcpu: HvVcpu,
+    exit: *mut HvVcpuExit,
+    ram: &mut GuestRam<'_>,
+    watch_gpa: u64,
+) -> Result<(), String> {
+    let address = (*exit).exception.physical_address;
+    let Ok(access) = decode((*exit).exception.syndrome) else {
+        // Store without a valid instruction syndrome (ISV=0). We cannot emulate
+        // the byte-exact write, but the page is otherwise data: advance past it
+        // so the watch keeps observing later, syndrome-valid stores.
+        if address == watch_gpa {
+            let mut pc = 0;
+            status("read watch PC", hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut pc))?;
+            eprintln!("WWATCH(isv0) gpa={address:#x} pc={pc:#x}");
+        }
+        let mut pc = 0;
+        status("read PC", hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut pc))?;
+        return status("advance PC", hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4));
+    };
+    let source = source_value(vcpu, access)?;
+    if address == watch_gpa {
+        let mut pc = 0;
+        status("read watch PC", hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut pc))?;
+        eprintln!(
+            "WWATCH gpa={address:#x} val={source:#x} size={} pc={pc:#x}",
+            access.size
+        );
+    }
+    ram.write_bytes(address, &source.to_le_bytes()[..access.size as usize]);
+    store_result(vcpu, access, 0)
 }
 
 pub(super) unsafe fn emulate(

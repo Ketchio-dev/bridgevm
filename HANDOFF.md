@@ -120,7 +120,7 @@ GOAL.md 기준 프로덕션 클로즈 (레지스트리 24/24 + 패키징 + NOTIC
 
 ## 2. Decisions & why
 
-- **V1은 구 스택(120.45 KMD + mesa venus + 우리 vendored virglrenderer)으로 닫는다.** UTM/Neptune/Triton 스택은 검증됐지만(아래) 구 UMD와 프로토콜 비호환 → V2 트랙. `~/BridgeVM/3d/prefix`는 구 스택으로 복원됨 (UTM 빌드는 `prefix-utm`, `prefix-utm-copy-20260809`에 보존).
+- **V1은 구 스택(120.45 KMD + mesa venus + 우리 vendored virglrenderer)으로 닫는다.** 비출시 실험 renderer/Neptune/Triton 스택은 검증됐지만(아래) 구 UMD와 프로토콜 비호환 → V2 트랙. `~/BridgeVM/3d/prefix`는 구 스택으로 복원됨 (실험 빌드는 격리된 prefix에 보존).
 - **상용화 라이선스 전략**: QEMU(GPL) 미배포(자체 VMM이 기본 경로이며, Compatibility Engine은 사용자가 설치한 qemu-system 바이너리를 실행할 뿐 링크·번들하지 않음) + DXMT는 미배포(향후 dylib 분리 배포 가능) + D3DMetal 금지(Apple 약관) + 나머지 MIT/BSD/Zlib + swtpm 계열 LGPL은 dylib 동적링크. → 클로즈드소스 유료 앱 가능.
 - **fence 폴링은 동기 유지 + pending-비면-스킵 게이트만** (a0a4424가 최종). 근거: 폴은 pending_fenced 있을 때만 도는데, 그 창에서 게스트 KMD가 fence MSI 대기 WFI → async 완료는 소비할 exit가 없어 영원 지연 (boot-1 create3d=281/flush=0 wedge 2회 재현). idle 결합 제거는 게이트만으로 충분 (20/20 소크).
 - **usgic kick은 line-edge에서만** (kick_if_line_changed, 26a762c): 이미 선 line에 재kick하면 hv_vcpus_exit가 게스트 STXR/exclusive monitor를 계속 깨서 livelock.
@@ -143,7 +143,7 @@ GOAL.md 기준 프로덕션 클로즈 (레지스트리 24/24 + 패키징 + NOTIC
 리포 밖:
 - `~/BridgeVM/work/canonical-a2-noparking-20260809.raw/-vars.fd`: powercfg CPMINCORES/CPMAXCORES=100, IDLEDISABLE=1 적용판 (core-parking 가설용이었으나 효과는 fence-fix가 냄 — 이미지 자체는 무해).
 - `~/BridgeVM/work/triton-kmd-v0.2.1/`: osy v0.2.1 WHQL KMD (Neptune-era, DEV_1050 전용).
-- `~/BridgeVM/3d/virglrenderer-utm/` (UTM macos-next + 우리 venus host-pointer-import 패치 병합, build-b2), `~/BridgeVM/3d/prefix-utm/`.
+- 비출시 실험 renderer checkout과 격리 prefix(venus host-pointer-import 실험 패치, build-b2). 이 자산은 현재 배포 입력이 아니다.
 - `~/BridgeVM/3d/virglrenderer`: 브랜치 `bridgevm-vendor-snapshot-20260809`에 워킹트리 스냅샷 커밋 (a20cbff).
 - `~/BridgeVM/injectors/inj-utm021.raw` (v0.2.1 + oem1/oem4 제거 마커).
 - /tmp 스크립트: `soak-nopark.sh`(10회 usgic 소크), `p1gate-final*.log`, `a3-dxvk.sh`, `park-repro.sh`, `mk-noparking.sh`, ntoskrnl/PDB 도구.
@@ -166,7 +166,7 @@ GOAL.md 기준 프로덕션 클로즈 (레지스트리 24/24 + 패키징 + NOTIC
 - **core-parking-off 이미지 (noparking)**: 만들었고 무해하지만 park의 원인이 아니었음 (fence 결합이 원인). BPR 미반영도 검토 — threshold가 보수적이라 원인 아님.
 - **kick 억제/vtimer synth만으로는 park 미해결**: 소크 8/10 유지. fence 게이트가 결정타.
 - **인젝터로 v0.2.1 드라이버 스왑**: BootOrder가 인젝터를 안 태움 (a2 vars). p1-boot-gate의 prepared-cache 방식만 인젝터 부팅 성공. 라이브 스왑 절차가 더 빠름.
-- **UTM virglrenderer를 구 UMD와 조합**: venus-win32 ctx SUBMIT ret=22 (프로토콜 비호환). 신구 혼용 불가 — 스택 전체를 세트로 교체해야 함.
+- **비출시 실험 renderer를 구 UMD와 조합**: venus-win32 ctx SUBMIT ret=22 (프로토콜 비호환). 신구 혼용 불가 — 스택 전체를 세트로 교체해야 함.
 - **VK_DRIVER_FILES 게스트 오버라이드**: 새 로더가 장치 레지스트리 ICD를 우선. DriverStore json의 bare-name LoadLibrary error 87은 System32 복사로 우회 가능 (v0.2.1 스택 실험 시).
 - **vulkaninfo 없는 게스트에서 PPSSPP를 ICD 판정에 쓰기**: PPSSPP 기본 백엔드가 D3D11이라 `--backend=VULKAN` 필수. GUI-blocking 명령은 반드시 `cmd /c start`로 분리 (에이전트 워커 점유 → share/ctl 전면 마비).
 - **A2를 usgic에서**: venus wedge (2nd vkCreateInstance 계열) 상존 — IK에서만 측정 가능. 반대로 부팅 신뢰성은 usgic에서만. **A1과 A2/A3가 서로 다른 GIC를 요구하는 상태가 현 최대 모순** — stage1 wedge를 잡으면 usgic로 통일 가능한지 재평가.

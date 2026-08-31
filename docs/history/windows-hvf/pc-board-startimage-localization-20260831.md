@@ -680,3 +680,26 @@ transport already built for the shipping engine, re-pointed at this board) to
 break on the counter's address and see which agent writes it — or a systematic
 device-write tracer that logs every guest-memory write near `0x27fe8c000`. That
 is the instrument gap; the location and the deadlock are fully pinned.
+
+## The write-watch cracks it: the counter is written once (to 0) and never again
+
+A page-write-watch (env-gated `BRIDGEVM_PC_WWATCH=<gpa>`; maps the counter's
+16 KB page read+exec via `hv_vm_protect` so writes trap, logs the writer's PC,
+then completes the store) settles the deadlock's cause. Over an entire run
+`0x27fe8c0d8` is written **exactly once — value 0, an 8-byte store from PC
+`0x10040d18c`** — and never changes afterward. So the spin at `0x27fe89534`,
+which waits for that word to differ from the value it snapshotted, waits forever
+because the word's updater never executes.
+
+The writer's PC sits in the low firmware image, in a **`pmccntr_el0`-based timing
+block** (`mrs x9, pmccntr_el0; sub x9,x9,base; udiv x9,x9,divisor; …` with a
+`brk #0xf004` divide-by-zero guard — the same shape as the earlier `0x27ea7d590`
+crash). So `0x27fe8c0d8` is a timing base/cached-time global, initialised to 0
+and meant to be refreshed by a timer/callback that never runs here (the guest
+sits IRQ-masked, and delivering INTID 27/30 did not refresh it). The remaining
+question is now sharply scoped: **find the code that is supposed to refresh this
+cached-time word and make it run** — either the guest's own periodic refresh
+(gated behind an interrupt the masked guest cannot take, so the fix is to make
+that path reachable) or a host-side counter the emulation must keep live. The
+`hv_vm_protect` write-watch is committed (inert unless `BRIDGEVM_PC_WWATCH` is
+set) as the instrument for the next pass.
