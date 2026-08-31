@@ -410,3 +410,42 @@ argument). It is an early-init spin in the Boot Manager's runtime-loaded code
 disassembling the code at the spin PC (the crash-survivable RAM-dump technique
 used elsewhere) to name the exact loop and the value it polls. The sealed T13
 BDS/ExitBootServices path stays **PASS, stage=11** through both changes.
+
+## Breakthrough 5: the spin is "wait for the tick counter to advance"
+
+A guest RAM dump at the terminal boundary (an env-gated dump added to the
+example — `BRIDGEVM_PC_DUMP=path` writes a window of `guest_ram.bytes()` around
+`state.pc`; reverted to keep the harness lean, trivially re-added) disassembles
+the spin exactly. Because the Boot Manager runs identity-mapped in boot
+services, the spin GVA `0x27fe8956x` is also its GPA, at offset `0x17fe8956x`
+into RAM (`RAM_BASE 0x1_0000_0000`). The loop is:
+
+```
+27fe89534:  stp x29,x30,[sp,#-48]!      ; function entry
+27fe89540:  adrp x19, 0x27fe8c000       ; x19 = module data page
+27fe89544:  ldr  x0, [x19, #216]        ; x0 = *(0x27fe8c0d8)  (initial)
+27fe89548:  str  x0, [sp, #40]          ; snapshot it
+27fe8954c:  ldr  x1, [sp, #40]          ; x1 = snapshot
+27fe89550:  ldr  x0, [x19, #216]        ; x0 = *(0x27fe8c0d8)  (current)
+27fe89554:  cmp  x1, x0
+27fe89558:  b.eq 0x27fe89568            ; while unchanged:
+27fe89568:  bl   0x27fe8b838            ;   pump()
+27fe8956c:  b    0x27fe8954c            ;   loop
+            ; (falls through to ret only once the value changes)
+```
+
+`0x27fe8b838` — the function called every iteration — is `nop;nop;nop;nop;nop;
+ret`, i.e. a pure CPU-relax stub. So the Boot Manager snapshots a global word at
+its data page + 0xd8 (`0x27fe8c0d8`) and **busy-waits for that word to change**,
+doing nothing but relax. That word is a tick/time counter the Boot Manager
+expects a handler to advance. It never advances, so the spin never exits — even
+though the virtual timer fires and the guest services interrupts
+(`ICC_EOIR1_EL1` writes). The wall is therefore precisely: **the Boot Manager's
+own tick counter is not being incremented despite interrupt servicing.** The
+focused next step is to find the writer of `[0x27fe8c000 + 0xd8]` (disassemble
+the module for a `str` to that slot — its timer ISR / notify path) and determine
+why the delivered interrupt does not reach it: most likely the INTID the guest
+reads from `ICC_IAR1_EL1` is not the timer PPI the Boot Manager's handler
+expects, or its timer is armed on a source the in-kernel GIC is not routing to
+that handler. This is a single, well-scoped guest-GIC question, not a broad
+search.
