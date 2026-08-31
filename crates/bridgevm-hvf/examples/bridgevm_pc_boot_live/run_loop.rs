@@ -131,10 +131,9 @@ pub(super) unsafe fn run(
                 }
             }
             EXIT_VTIMER => {
-                status(
-                    "mask unexpected VTimer",
-                    hv_vcpu_set_vtimer_mask(vcpu, true),
-                )?;
+                // Board uses the virtual timer; HVF auto-masks on the activation
+                // exit, so unmask to keep the in-kernel GIC delivering INTID 27.
+                status("unmask VTimer", hv_vcpu_set_vtimer_mask(vcpu, false))?;
                 vtimer_exits += 1;
             }
             EXIT_CANCELED => return Err("firmware watchdog canceled the vCPU".to_string()),

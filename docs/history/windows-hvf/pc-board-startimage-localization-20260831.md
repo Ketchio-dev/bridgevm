@@ -317,3 +317,44 @@ route is to switch the firmware to the **virtual** timer (`CNTV`, which HVF
 supports natively via `EXIT_VTIMER` + IRQ injection) and stop masking vtimer in
 the run loop, so the Boot Manager's timed wait completes and it proceeds toward
 reading the BCD. This is again "build out the board," now the timer path.
+
+## Breakthrough 3: the virtual timer makes the board interrupt-driven
+
+Two coordinated changes gave the board a live architectural timer:
+
+- **Firmware**: the DSC `ArmGenericTimerCounterLib` mapping was switched from
+  `ArmGenericTimerPhyCounterLib` to `ArmGenericTimerVirtCounterLib`, so the whole
+  timer stack (TimerLib, `ArmTimerDxe`) now reads `CNTVCT` and arms `CNTV_CVAL`
+  instead of the physical `CNTP_*`. `ArmTimerDxe` already registers the virtual
+  PPI (INTID 27, `PcdArmArchTimerVirtIntrNum`). Only three module hashes moved
+  (`ArmGicV3Dxe`, `ArmTimerDxe`, `Metronome`); firmware rehashed to
+  `45e18b5d…`.
+- **Run loop**: `EXIT_VTIMER` used to *mask* the vtimer as "unexpected" and
+  never unmask it, so the very first tick silenced the timer forever. It now
+  *unmasks* on the activation exit (HVF auto-masks there), letting the in-kernel
+  `hv_gic` keep delivering INTID 27. The vcpu already unmasks the vtimer once at
+  startup.
+
+Live effect (`win25h2` COW, firmware `45e18b5d`): the Boot Manager's terminal
+ESR changes from the `CNTP_CVAL_EL0` write to **`esr=0x62323018` = a write to
+`ICC_EOIR1_EL1`** (ISS `Op0=3 Op1=0 CRn=12 CRm=12 Op2=1`), the GIC
+End-Of-Interrupt register. The guest is now **taking and acknowledging
+interrupts** — the timer tick is delivered and serviced. Boot-service activity
+roughly **doubles** (max trace seq ~4059 → ~8059 in the same 20s window). The
+sealed T13 BDS/ExitBootServices path is **unchanged (still PASS, stage=11,
+`vtimer_exits=0`** — it completes before a tick is even needed), so no
+regression.
+
+### The next frontier: an input/event source
+
+Extending the watchdog to 75s shows the guest holds a **stable steady state**:
+same PC region (`0x27fe8956x`), same `ICC_EOIR1_EL1` ESR, and the trace seq
+grows linearly (~8059 at 20s → ~30059 at 75s, ~400 calls/s), entirely
+`RaiseTPL(0x1f)`/`RestoreTPL(0x4)`. That is a `WaitForEvent`/`CheckEvent`-style
+busy wait, now driven by the timer, that never completes because the event it
+waits on never arrives. With `ConIn` wired but **no key ever delivered**, the
+most likely event is a keystroke at a boot menu / prompt (or an IO-completion
+event). So the next build-out is an **input path** that can actually inject a
+key into `ConIn` (a synthetic key source or a keyboard device), or identifying
+the exact event set the Boot Manager polls here. This is a genuinely later
+frontier than the dead-timer stall — the board now runs interrupt-driven.

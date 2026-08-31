@@ -13,7 +13,7 @@
   SKUID_IDENTIFIER = DEFAULT
 !include MdePkg/MdeLibs.dsc.inc
 [LibraryClasses]
-  ArmGenericTimerCounterLib|ArmPkg/Library/ArmGenericTimerPhyCounterLib/ArmGenericTimerPhyCounterLib.inf
+  ArmGenericTimerCounterLib|ArmPkg/Library/ArmGenericTimerVirtCounterLib/ArmGenericTimerVirtCounterLib.inf
   ArmLib|MdePkg/Library/ArmLib/ArmBaseLib.inf
   ArmMonitorLib|ArmPkg/Library/ArmMonitorLib/ArmMonitorLib.inf
   BaseLib|MdePkg/Library/BaseLib/BaseLib.inf
