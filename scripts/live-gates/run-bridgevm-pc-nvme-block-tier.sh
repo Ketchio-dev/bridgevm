@@ -73,7 +73,7 @@ for lane in $(seq 1 "$REQUIRED_LANES"); do
   mkdir -p "$lane_dir"; attempted=$((attempted + 1))
   if "$REPO/tests/integration/bridgevm-pc-variable-process-persistence.sh" \
       "$binary" "$fd" "$lane_dir" > "$lane_dir/run.log" 2>&1 &&
-     [[ "$(grep -Ec 'nvme_bar_reads=2 nvme_bar0=0x[0-9a-f]+ nvme_bar0_len=16384 nvme_cap=0x20020103ff nvme_version=0x10400 nvme_command=0x6' "$lane_dir/run.log" || true)" -eq 2 ]] &&
+     [[ "$(grep -Ec 'nvme_bar_reads=2 nvme_bar0=0x[0-9a-f]+ nvme_bar0_len=16384 nvme_cap=0x20020103ff nvme_version=0x10400 nvme_command=0x7' "$lane_dir/run.log" || true)" -eq 2 ]] &&
      [[ "$(grep -Ec 'nvme_block_io=1 nvme_block_size=512 nvme_media_present=1 nvme_block_reads=1 nvme_last_block=2047 nvme_lba0_marker=0x4d56454744495242' "$lane_dir/run.log" || true)" -eq 2 ]]; then
     passes=$((passes + 1)); printf '%s\tpass\n' "$lane_name" >> "$OUT/summary.tsv"
   else

@@ -6,7 +6,7 @@ SPECIAL="$REPO/scripts/live-gates/run-special-tier.sh"
 CLI="$REPO/scripts/live-gates/bridgevm-live"
 grep -q 'REQUIRED_LANES=20' "$RUN"
 grep -q 'bridgevm-pc-standard-uefi-nvme-block-n20' "$RUN"
-grep -q 'nvme_block_io=1 nvme_block_size=512' "$RUN"
+[[ "$(grep -Ec 'nvme_command=0x7|nvme_block_io=1 nvme_block_size=512' "$RUN")" -eq 2 ]]
 grep -q 'codesign --sign - --entitlements' "$RUN"
 grep -q 't12-bridgevm-pc-nvme-block)' "$SPECIAL"
 queue="$(mktemp -d)"
