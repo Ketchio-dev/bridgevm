@@ -66,7 +66,7 @@ check "the plist is well formed" 'plutil -lint "$PLIST" >/dev/null'
 check "the queue stays background while each requested gate gets app scheduling policy" \
     'grep -A1 -q "<key>ProcessType</key>" "$PLIST" && grep -q '"'"'taskpolicy -a caffeinate'"'"' "$WORKER"'
 check "the worker resolves only pushed exact commits and refuses unresolved worktrees" \
-    'grep -Fq '"'"'git -C "$REPO" fetch --no-tags origin'"'"' "$WORKER" && grep -Fq '"'"'cat-file -e "$commit^{commit}"'"'"' "$WORKER" && grep -q '"'"'refused-unknown-commit\|refused-worktree'"'"' "$WORKER"'
+    'grep -Fq '"'"'fetch --no-tags origin "$commit"'"'"' "$WORKER" && grep -Fq '"'"'[[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]'"'"' "$WORKER" && grep -Fq '"'"'cat-file -e "$commit^{commit}"'"'"' "$WORKER" && grep -q '"'"'refused-unknown-commit\|refused-worktree'"'"' "$WORKER"'
 check "the Windows post-mortem harvester is executable" '[ -x "$POSTMORTEM_HARVEST" ]'
 check "the installed-boot runner attaches post-mortem media read-only" \
     'awk '\''/^harvest_guest_windows_postmortem\(\)/,/^}/'\'' "$BOOT_RUNNER" | grep -Fq -- '\''-imagekey diskimage-class=CRawDiskImage -readonly "$TARGET"'\'''

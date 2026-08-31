@@ -55,6 +55,9 @@ run_job() {
         log "refusing job in $dir: job.env has no job_id"
         return 1
     fi
+    if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+        printf 'result=refused-unknown-commit\n' > "$dir/result.env"; return 1
+    fi
 
     log "job $job_id tier=$tier commit=$commit"
     printf 'started_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$dir/job.env"
@@ -95,7 +98,7 @@ run_job() {
     local worktree="$WORK_ROOT/$job_id"
     mkdir -p "$WORK_ROOT"
     if ! git -C "$REPO" cat-file -e "$commit^{commit}" 2>/dev/null; then
-        git -C "$REPO" fetch --no-tags origin >>"$dir/run.log" 2>&1 || true
+        git -C "$REPO" fetch --no-tags origin "$commit" >>"$dir/run.log" 2>&1 || true
     fi
     if ! git -C "$REPO" cat-file -e "$commit^{commit}" 2>/dev/null; then
         log "job $job_id exact commit is unavailable after origin fetch"
