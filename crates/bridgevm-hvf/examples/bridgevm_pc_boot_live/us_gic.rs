@@ -14,7 +14,6 @@ use bridgevm_hvf::userspace_gic::UserspaceGic;
 
 pub(super) struct UsGic {
     inner: UserspaceGic,
-    tick: u64,
 }
 
 fn translate(addr: u64) -> Option<u64> {
@@ -33,7 +32,6 @@ impl UsGic {
     pub(super) fn new() -> Self {
         Self {
             inner: UserspaceGic::new(1),
-            tick: 0,
         }
     }
 
@@ -82,12 +80,16 @@ impl UsGic {
             status("read sysreg source", hv_vcpu_get_reg(vcpu, rt, &mut value))?;
             value
         };
+        const CNTFRQ_EL0: u16 = 0xdf00;
         let read_value = match self.inner.sysreg(0, sys_reg, is_read, write_value) {
             Some(result) => result.value,
-            None if is_read && (crn == 9 || crn == 14) => {
-                self.tick = self.tick.wrapping_add(0x1_0000);
-                self.tick
-            }
+            None if !is_read => 0,
+            // CNTFRQ_EL0 must report a real counter frequency, or the guest's
+            // cycles-per-time math divides by zero (brk #0xf004).
+            None if sys_reg == CNTFRQ_EL0 => 24_000_000,
+            // Timer/PMU counter reads (CRn 9/14) hand back the host monotonic
+            // clock so elapsed-time math advances by realistic, non-zero deltas.
+            None if crn == 9 || crn == 14 => mach_absolute_time(),
             None => 0,
         };
         if is_read && rt != 31 {
