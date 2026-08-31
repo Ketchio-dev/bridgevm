@@ -1,0 +1,56 @@
+## @file
+# BridgeVM Virtual ARM PC removable-media BDS policy.
+# SPDX-License-Identifier: Apache-2.0
+##
+
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = BridgeVmPcBootManagerDxe
+  FILE_GUID = 1E153CB8-CF1A-4CFA-A5E9-0E1817B68953
+  MODULE_TYPE = DXE_DRIVER
+  ENTRY_POINT = BridgeVmPcBootManagerEntry
+
+[Sources]
+  BootManagerDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  BridgeVmPcPkg/BridgeVmPcPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  DevicePathLib
+  MemoryAllocationLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+
+[Guids]
+  gEfiEndOfDxeEventGroupGuid
+  gEfiEventReadyToBootGuid
+
+[Protocols]
+  gEfiBdsArchProtocolGuid                  ## PRODUCES
+  gEfiSecurityArchProtocolGuid             ## CONSUMES
+  gEfiCpuArchProtocolGuid                  ## CONSUMES
+  gEfiMetronomeArchProtocolGuid            ## CONSUMES
+  gEfiTimerArchProtocolGuid                ## CONSUMES
+  gEfiWatchdogTimerArchProtocolGuid        ## CONSUMES
+  gEfiRuntimeArchProtocolGuid              ## CONSUMES
+  gEfiVariableArchProtocolGuid             ## CONSUMES
+  gEfiVariableWriteArchProtocolGuid        ## CONSUMES
+  gEfiCapsuleArchProtocolGuid              ## CONSUMES
+  gEfiMonotonicCounterArchProtocolGuid     ## CONSUMES
+  gEfiResetArchProtocolGuid                ## CONSUMES
+  gEfiRealTimeClockArchProtocolGuid        ## CONSUMES
+  gEfiBlockIoProtocolGuid                  ## CONSUMES
+  gEfiSimpleFileSystemProtocolGuid         ## CONSUMES
+  gEfiLoadedImageProtocolGuid              ## CONSUMES
+
+[Depex]
+  gEfiSecurityArchProtocolGuid AND gEfiCpuArchProtocolGuid AND
+  gEfiMetronomeArchProtocolGuid AND gEfiTimerArchProtocolGuid AND
+  gEfiWatchdogTimerArchProtocolGuid AND gEfiRuntimeArchProtocolGuid AND
+  gEfiVariableArchProtocolGuid AND gEfiVariableWriteArchProtocolGuid AND
+  gEfiCapsuleArchProtocolGuid AND gEfiMonotonicCounterArchProtocolGuid AND
+  gEfiResetArchProtocolGuid AND gEfiRealTimeClockArchProtocolGuid

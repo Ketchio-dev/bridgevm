@@ -1,0 +1,22 @@
+## @file
+# BridgeVM Virtual ARM PC removable-media ExitBootServices probe.
+# SPDX-License-Identifier: Apache-2.0
+##
+
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = BridgeVmPcExitBootServicesProbe
+  FILE_GUID = 1F7B53E8-BB36-4C43-86DD-AB05D7B9F0F0
+  MODULE_TYPE = UEFI_APPLICATION
+  ENTRY_POINT = UefiMain
+
+[Sources]
+  ExitBootServicesProbe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  BridgeVmPcPkg/BridgeVmPcPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  UefiApplicationEntryPoint

@@ -14,7 +14,7 @@ grep -Fq 'for round in $(seq 1 60)' "$RUN"
 grep -Fq 'cargo test --workspace --locked' "$RUN"
 grep -Fq 'verify-qmp-stress.py" --out "$OUT"' "$RUN"
 grep -Fq 't10-qmp-stress' "$CLI"
-grep -Fq 't8-pointer-reliability|t9-bridgevm-pc-pci|t10-qmp-stress|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block)' "$TIER"
+grep -Fq 't8-pointer-reliability|t9-bridgevm-pc-pci|t10-qmp-stress|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit)' "$TIER"
 grep -Fq 'UnixListener' "$BASELINE"
 ! grep -Eq 'TcpListener|TcpStream|sleep [0-9]{3}|sudo|actions-runner' "$RUN" "$BASELINE"
 bin="$(mktemp)"; trap 'rm -f "$bin"' EXIT
