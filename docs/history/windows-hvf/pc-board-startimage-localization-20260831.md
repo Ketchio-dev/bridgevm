@@ -623,3 +623,20 @@ not simply the missing INTID — the fix must make the guest keep taking timer
 interrupts (sustained delivery with correct priority/EOI/injection discipline,
 and likely a physical-timer emulation that fires INTID 30 on its own `CNTP`
 schedule rather than piggy-backing the virtual timer).
+
+Two further experiments narrow it decisively. **Sampling the guest `CPSR` at each
+of the ten vtimer fires shows `PSTATE.I = 1` (IRQs masked) every time** — the
+Boot Manager runs almost entirely with interrupts masked, opening only a brief
+window in which it took the single interrupt observed. And **driving INTID 30
+*exclusively* from the periodic signal (so it is not shadowed by the lower-INTID
+virtual PPI on acknowledge) still leaves `0x27fe8c0d8` at zero.** So the frozen
+counter is *not* advanced by the architected timer at all — neither INTID 27 nor
+INTID 30 touches it — which rules out the "missing physical-timer tick" theory
+for this specific counter. The remaining questions are therefore (a) what event
+actually writes `0x27fe8c0d8` (an ISR in a not-yet-dumped module, driven by some
+non-timer source), and (b) why the Boot Manager sits IRQ-masked for essentially
+the whole run — most plausibly it reached this masked spin down a path taken
+because some emulated value (a device register, or the calibrated timer period
+from the `mach_absolute_time` PMU reads) steered it wrong. Both are guest-side
+questions for the next focused pass, with the `ram_dump` tool (dump the exception
+vectors via `VBAR_EL1`, find the writer of `+0xd8`) as the instrument.
