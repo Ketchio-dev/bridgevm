@@ -151,3 +151,9 @@ through 0x1ae9c8/0x1b0a20 and what value it keeps getting, and confirm whether
 frozen at 0, cycle-based elapsed-time math never progresses). Both the
 vtable-object poll and the UEFI-timer-tick theories are already disproven; do
 not re-try them.
+
+Note on tooling: HVF's `hv_vcpu_get_sys_reg` does not expose PMCCNTR_EL0,
+CNTVCT_EL0, PMCR_EL0 or PMCNTENSET_EL0 (all return an error), so the host
+cannot sample them directly — the guest reads them with `mrs`, so confirming
+whether PMCCNTR advances needs a single-step capture of the `mrs` result, not
+a host-side `get_sys_reg`.
