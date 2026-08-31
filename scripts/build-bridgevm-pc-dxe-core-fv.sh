@@ -99,10 +99,8 @@ if ! "$objdump" -f "$build_root/DxeCore.efi" | grep -q 'file format pei-aarch64-
   echo "DXE Core output is not an AArch64 PE/COFF image" >&2
   exit 70
 fi
-if strings -a "$build_root/DxeCore.efi" | rg -i 'qemu|armvirt|ovmf|fw[_-]?cfg|u[t]m'; then
-  echo "DXE Core contains a prohibited compatibility-platform reference" >&2
-  exit 70
-fi
+strings -a "$build_root/DxeCore.efi" | \
+  "$repo_root/scripts/check-bridgevm-pc-prohibited-references.sh" stream "DXE Core"
 python3 - "$build_root/BridgeVmPcDxeCore.fv" <<'PY'
 import pathlib
 import struct

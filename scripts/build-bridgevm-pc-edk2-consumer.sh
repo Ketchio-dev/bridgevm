@@ -44,10 +44,8 @@ if ! git -C "$edk2_root" diff --quiet --ignore-submodules=none ||
   exit 66
 fi
 
-if rg -n -i 'qemu|armvirt|ovmf|fw[_-]?cfg|u[t]m' "$package_root"; then
-  echo "BridgeVmPcPkg contains a prohibited compatibility-platform dependency" >&2
-  exit 67
-fi
+"$repo_root/scripts/check-bridgevm-pc-prohibited-references.sh" \
+  tree "BridgeVmPcPkg dependency source" "$package_root"
 while IFS= read -r dependency; do
   case "$dependency" in
     MdePkg/MdePkg.dec|BridgeVmPcPkg/BridgeVmPcPkg.dec) ;;
@@ -118,10 +116,8 @@ if ! /opt/homebrew/bin/aarch64-elf-objdump -f "$artifact" | grep -q 'file format
   echo "firmware output is not an AArch64 PE/COFF image" >&2
   exit 71
 fi
-if strings -a "$artifact" | rg -i 'qemu|armvirt|ovmf|fw[_-]?cfg|u[t]m'; then
-  echo "firmware output contains a prohibited compatibility-platform reference" >&2
-  exit 71
-fi
+strings -a "$artifact" | "$repo_root/scripts/check-bridgevm-pc-prohibited-references.sh" \
+  stream "firmware output"
 
 artifact_sha256="$(shasum -a 256 "$artifact" | awk '{print $1}')"
 [[ "$artifact_sha256" == "$EXPECTED_ARTIFACT_SHA256" ]] || {

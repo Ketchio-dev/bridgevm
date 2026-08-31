@@ -40,11 +40,8 @@ if [[ "$gcc_version" != "$EXPECTED_GCC_VERSION" || "$ld_version" != "$EXPECTED_L
   echo "refusing unpinned firmware tools: gcc='${gcc_version}' ld='${ld_version}'" >&2
   exit 66
 fi
-if rg -n -i 'qemu|armvirt|ovmf|fw[_-]?cfg|u[t]m' \
-     "$repo_root/crates/bridgevm-hvf/firmware/BridgeVmPcPkg"; then
-  echo "BridgeVmPcPkg contains a prohibited compatibility-platform reference" >&2
-  exit 67
-fi
+"$repo_root/scripts/check-bridgevm-pc-prohibited-references.sh" tree BridgeVmPcPkg \
+  "$repo_root/crates/bridgevm-hvf/firmware/BridgeVmPcPkg"
 build_root="$(mktemp -d "/tmp/bridgevm-pc-dxe-entry.XXXXXX")"
 trap 'rm -rf "$build_root"' EXIT
 "$repo_root/scripts/build-bridgevm-pc-dxe-core-fv.sh" \

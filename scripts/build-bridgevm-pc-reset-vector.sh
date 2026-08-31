@@ -25,10 +25,8 @@ if [[ "$gcc_version" != "$EXPECTED_GCC_VERSION" || "$ld_version" != "$EXPECTED_L
   echo "refusing unpinned reset-vector tools: gcc='${gcc_version}' ld='${ld_version}'" >&2
   exit 65
 fi
-if rg -n -i 'qemu|armvirt|ovmf|fw[_-]?cfg|u[t]m' "$source_root"; then
-  echo "reset-vector source contains a prohibited compatibility-platform reference" >&2
-  exit 66
-fi
+"$repo_root/scripts/check-bridgevm-pc-prohibited-references.sh" \
+  tree "reset-vector source" "$source_root"
 build_root="$(mktemp -d "/tmp/bridgevm-pc-reset-vector.XXXXXX")"
 trap 'rm -rf "$build_root"' EXIT
 object="$build_root/reset-vector.o"
@@ -80,10 +78,8 @@ artifact_size="$(stat -f '%z' "$artifact")"
   echo "reset-vector FD has size ${artifact_size}, expected ${FLASH_SIZE}" >&2
   exit 68
 }
-if strings -a "$artifact" | rg -i 'qemu|armvirt|ovmf|fw[_-]?cfg|u[t]m'; then
-  echo "reset-vector FD contains a prohibited compatibility-platform reference" >&2
-  exit 68
-fi
+strings -a "$artifact" | "$repo_root/scripts/check-bridgevm-pc-prohibited-references.sh" \
+  stream "reset-vector FD"
 
 vector_sha256="$(shasum -a 256 "$vector" | awk '{print $1}')"
 artifact_sha256="$(shasum -a 256 "$artifact" | awk '{print $1}')"

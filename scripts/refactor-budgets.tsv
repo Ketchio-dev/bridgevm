@@ -1372,6 +1372,7 @@ tests/integration/bridgevm-pc-boot-info-live-opt-in-smoke.sh	39	0
 tests/integration/bridgevm-pc-reset-vector-live-opt-in-smoke.sh	40	0
 tests/integration/bridgevm-pc-dxe-entry-live-opt-in-smoke.sh	40	0
 tests/integration/bridgevm-pc-pci-live-tier-smoke.sh	22	0
+tests/integration/bridgevm-pc-prohibited-references-smoke.sh	18	0
 tests/integration/bridgevm-pc-variable-process-persistence.sh	31	0
 tests/integration/bridgevm-pc-pcie-live-opt-in-smoke.sh	28	0
 tests/integration/hvf-guest-entry-probe-cli-smoke.sh	94	0
@@ -1570,9 +1571,9 @@ scripts/render-capability-status.py	272	0
 scripts/package-tarball.sh	51
 scripts/measure-pointer-latency-batch.sh	36
 scripts/check-hvf-windows-coherence-protocol.sh	45
-scripts/build-bridgevm-pc-edk2-consumer.sh	157	0
-scripts/build-bridgevm-pc-dxe-core-fv.sh	167	0
-scripts/build-bridgevm-pc-dxe-entry-firmware.sh	154	0
+scripts/build-bridgevm-pc-edk2-consumer.sh	153	0
+scripts/build-bridgevm-pc-dxe-core-fv.sh	165	0
+scripts/build-bridgevm-pc-dxe-entry-firmware.sh	151	0
 scripts/build-bridgevm-pc-dxe-fv.sh	44	0
 scripts/build-bridgevm-pc-pci-dxe.sh	112	0
 scripts/build-bridgevm-pc-runtime-dxe.sh	118	0
@@ -1580,7 +1581,8 @@ scripts/build-bridgevm-pc-variable-dxe.sh	130	0
 scripts/check-bridgevm-pc-dxe-fv.py	39	0
 scripts/write-bridgevm-pc-dxe-receipt.sh	44	0
 scripts/check-bridgevm-pc-firmware-boundary.sh	50	0
-scripts/build-bridgevm-pc-reset-vector.sh	134	0
+scripts/build-bridgevm-pc-reset-vector.sh	130	0
+scripts/check-bridgevm-pc-prohibited-references.sh	24	0
 scripts/check-bridgevm-pc-reset-vector-boundary.sh	28	0
 scripts/check-bridgevm-pc-sec.sh	15	0
 scripts/package-dmg.sh	45
