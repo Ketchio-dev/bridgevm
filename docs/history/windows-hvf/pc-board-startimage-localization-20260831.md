@@ -736,3 +736,18 @@ branch (an error/fallback path) and skipped it. The next step is therefore a
 or a live debugger) to find where execution diverges from the updater path — not
 more interrupt/timer work, which is now exhausted as a cause. The `hv_vm_protect`
 write-watch and `ram_dump` remain the committed instruments.
+
+## Disk-independent: the same fixed-address module deadlocks for two Windows images
+
+Running a completely different Windows disk (`freshwin-venus-clean.raw`, an
+installed OS rather than the scripted install source) hangs at the **identical**
+PC `0x27fe89550`, same `esr`/`va`, same counter-wait module at the fixed base
+`0x27fe87000` — even though the loaded Boot Manager image base differs
+(`0x27ee70000` vs `0x27e9ef000`). Because the Boot Manager base varies with the
+image but the spinning module does not, that module is loaded at a **fixed
+address independent of the disk** (the firmware, or a boot library the firmware
+places), and the deadlock is a property of the **board environment**, not of any
+one Windows image. This rules out a disk-specific cause (a KD/debugger handshake
+or setup-only path) and confirms the spin is common firmware/boot-library code
+that both images drive. The remaining work is the guest control-flow trace to
+find why the counter-updater path is skipped in that common code.
