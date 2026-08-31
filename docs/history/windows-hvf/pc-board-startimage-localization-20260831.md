@@ -157,3 +157,24 @@ CNTVCT_EL0, PMCR_EL0 or PMCNTENSET_EL0 (all return an error), so the host
 cannot sample them directly — the guest reads them with `mrs`, so confirming
 whether PMCCNTR advances needs a single-step capture of the `mrs` result, not
 a host-side `get_sys_reg`.
+
+Single-step attempt and its limits (2026-08-31): the tracer was rebuilt and
+run against the ConOut firmware. Two lessons. (1) In single-step mode HVF's
+`hv_vcpus_exit` from the watchdog thread does **not** break the step loop —
+each `hv_vcpu_run` returns a software-step exit first — so the tracer MUST
+carry its own step budget or it hangs forever (a first run without one had to
+be killed after an hour). (2) Single-step is ~3000 steps/s, so a 300k-step
+budget covers only the first ~300k guest instructions after StartImage — the
+Boot Manager's entry and the start of its main loop — and does **not** reach
+the native-speed steady state (the 20s terminal PC 0x41838 is not in the
+captured set). The captured 363 unique in-image RVAs show an **active
+multi-function loop** (main body ~0x3a854..0x3ad d4 calling helpers at
+0x53504..0x536d0, 0x36490..0x366a0, 0x1e42d0..0x1e4378), and ~299k of the 300k
+steps were *out of image*, i.e. the Boot Manager is executing a lot of code
+outside its own image while only six wrapped boot-services calls are recorded
+— it is doing work, not sitting in a one-instruction spin.
+
+**Revised tooling for next time:** to study the steady-state at 0x41838, set a
+hardware breakpoint (DBGBVR/DBGBCR + MDSCR.MDE + trap_debug_exceptions) at
+0x41838 and dump registers there across hits, rather than single-stepping from
+the start; and always give any debug-exception loop a self-terminating budget.
