@@ -2,7 +2,6 @@ use super::{
     contract, hv_vcpu_get_reg, hv_vcpu_run, hv_vcpu_set_reg, hv_vcpus_exit, hvc_diagnostics,
     status, BridgeVmPcPlatform, HvVcpu, HvVcpuExit, EXIT_EXCEPTION, HV_REG_PC,
 };
-use bridgevm_hvf::machine::bridgevm_pc as board;
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -15,6 +14,8 @@ const SIGN_EXTEND: u64 = 1 << 21;
 const MAX_MMIO_EXITS: usize = 8192;
 #[path = "mmio/interrupted.rs"]
 mod interrupted;
+#[path = "mmio/range.rs"]
+mod range;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct DataAbort {
@@ -61,8 +62,8 @@ unsafe fn emulate(
     let syndrome = (*exit).exception.syndrome;
     let access = decode(syndrome)?;
     let ipa = (*exit).exception.physical_address;
-    if !board::PCIE_ECAM.contains(ipa) {
-        return Err(format!("firmware MMIO IPA {ipa:#x} is outside PCIe ECAM"));
+    if !range::contains(ipa) {
+        return Err(format!("firmware MMIO IPA {ipa:#x} is outside PCIe"));
     }
     let op = if access.write {
         let mut value = 0;

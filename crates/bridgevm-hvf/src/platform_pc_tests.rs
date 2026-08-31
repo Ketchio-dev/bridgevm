@@ -1,5 +1,6 @@
 use super::*;
 use crate::machine;
+use crate::machine::Region;
 use crate::pcie::{HDA_BDF, NVME_BDF, VIRTIO_CONSOLE_BDF, VIRTIO_GPU_BDF, XHCI_BDF};
 
 fn ecam_offset(bdf: (u8, u8, u8)) -> u64 {

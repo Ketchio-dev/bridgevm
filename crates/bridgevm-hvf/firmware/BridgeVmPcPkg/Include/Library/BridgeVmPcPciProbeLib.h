@@ -4,13 +4,11 @@
 #include <Uefi.h>
 #define BRIDGE_VM_PC_PCIE_FUNCTION_COUNT  8U
 typedef struct {
-  UINT32 FunctionCount;
-  UINT32 Identity[BRIDGE_VM_PC_PCIE_FUNCTION_COUNT];
-  UINT32 RootBridgeCount;
-  UINT32 EnumerationComplete;
-  UINT32 DriverBindingCount;
-  UINT32 SupportedStatus;
-  UINT32 ConnectStatus;
+  UINT32 FunctionCount, Identity[BRIDGE_VM_PC_PCIE_FUNCTION_COUNT];
+  UINT32 RootBridgeCount, EnumerationComplete, DriverBindingCount, SupportedStatus, ConnectStatus;
+  UINT32 NvmeBarReadCount, NvmeBarResourceType;
+  UINT64 NvmeBarBase, NvmeBarLength, NvmeControllerCapabilities;
+  UINT32 NvmeVersion, NvmeCommand;
 } BRIDGE_VM_PC_PCIE_RESULT;
 EFI_STATUS BridgeVmPcValidatePcie (
   IN EFI_SYSTEM_TABLE *SystemTable, OUT volatile BRIDGE_VM_PC_PCIE_RESULT *Result

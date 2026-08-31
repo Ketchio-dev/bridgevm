@@ -1,6 +1,8 @@
 use super::{expect, u32_at};
 use bridgevm_hvf::pcie;
-
+#[path = "pcie_nvme.rs"]
+mod nvme;
+pub use nvme::NvmeBarProof;
 pub const FUNCTION_COUNT: usize = 8;
 const RESULT_OFFSET: usize = 112;
 
@@ -12,8 +14,8 @@ pub struct PcieProof {
     pub driver_binding_count: u32,
     pub supported_status: u32,
     pub connect_status: u32,
+    pub nvme: NvmeBarProof,
 }
-
 fn expected_identities() -> [u32; FUNCTION_COUNT] {
     [
         (u32::from(pcie::HOST_BRIDGE_DEVICE_ID) << 16) | u32::from(pcie::HOST_BRIDGE_VENDOR_ID),
@@ -50,6 +52,7 @@ pub fn validate(result: &[u8]) -> Result<PcieProof, String> {
     expect("PCI bus supported status", supported_status, 0)?;
     let connect_status = u32_at(result, RESULT_OFFSET + 52, "PCI bus connect status")?;
     expect("PCI bus connect status", connect_status, 0)?;
+    let nvme = nvme::validate(result)?;
     Ok(PcieProof {
         identities,
         root_bridge_count,
@@ -57,9 +60,9 @@ pub fn validate(result: &[u8]) -> Result<PcieProof, String> {
         driver_binding_count,
         supported_status,
         connect_status,
+        nvme,
     })
 }
-
 #[cfg(test)]
 #[path = "pcie_tests.rs"]
 mod tests;

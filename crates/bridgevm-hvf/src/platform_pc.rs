@@ -7,23 +7,20 @@
 
 #[path = "platform_pc_firmware.rs"]
 mod firmware;
+#[path = "platform_pc_layout.rs"]
+mod layout;
+#[path = "platform_pc_pcie.rs"]
+mod pcie;
 
 use crate::machine::bridgevm_pc as board;
-use crate::machine::Region;
+use crate::nvme::NvmeController;
 use crate::pcie::{PcieEcam, PcieEcamConfig};
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
 use crate::pl031::Pl031;
 use crate::platform_virt::{MmioOp, MmioOutcome};
 pub use firmware::*;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BridgeVmPcMemoryLayout {
-    pub flash_code: Region,
-    pub flash_vars: Region,
-    pub boot_info: Region,
-    pub ram: Region,
-}
+pub use layout::*;
 
 #[derive(Debug)]
 pub struct BridgeVmPcPlatform {
@@ -31,6 +28,7 @@ pub struct BridgeVmPcPlatform {
     rtc: Pl031,
     pcie: PcieEcam,
     pcie_config: PcieEcamConfig,
+    nvme: NvmeController,
     flash_vars: P30NorFlash,
 }
 
@@ -53,21 +51,13 @@ impl BridgeVmPcPlatform {
             rtc: Pl031::new(),
             pcie: PcieEcam::new_with_config(pcie_config),
             pcie_config,
+            nvme: NvmeController::new(0),
             flash_vars: P30NorFlash::new(
                 board::FLASH_VARS.base,
                 board::FLASH_VARS.size as usize,
                 0x40000,
             ),
         }
-    }
-
-    pub fn memory_layout(ram_size: u64) -> Option<BridgeVmPcMemoryLayout> {
-        Some(BridgeVmPcMemoryLayout {
-            flash_code: board::FLASH_CODE,
-            flash_vars: board::FLASH_VARS,
-            boot_info: board::BOOT_INFO,
-            ram: board::ram_region(ram_size)?,
-        })
     }
 
     pub fn on_mmio(&mut self, gpa: u64, op: MmioOp) -> MmioOutcome {
@@ -101,6 +91,7 @@ impl BridgeVmPcPlatform {
                     MmioOutcome::WriteAck
                 }
             },
+            other @ ("pcie-mmio-32" | "pcie-mmio-64") => self.pcie_mmio_access(other, gpa, op),
             other => MmioOutcome::KnownUnimplemented(other),
         }
     }
@@ -121,6 +112,7 @@ impl BridgeVmPcPlatform {
         self.uart = Pl011::new();
         self.rtc = Pl031::new();
         self.pcie = PcieEcam::new_with_config(self.pcie_config);
+        self.nvme.reset_registers_keep_disks();
         self.flash_vars.reset_runtime_state();
     }
 }

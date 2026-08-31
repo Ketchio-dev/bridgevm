@@ -24,7 +24,7 @@ mod tests {
 
     #[test]
     fn reports_the_firmware_status_before_normal_contract_validation() {
-        let dxe = [0; 168];
+        let dxe = [0; 208];
         let error = check(&dxe, 0x8000_000e).unwrap_err();
         assert!(error.contains("EFI status 14"));
         assert!(error.contains("PCI root bridges=0"));

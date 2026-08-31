@@ -272,6 +272,9 @@ crates/bridgevm-hvf/src/pl031.rs	153	0
 crates/bridgevm-hvf/src/platform_pc.rs	113	0
 crates/bridgevm-hvf/src/platform_pc_firmware.rs	36	0
 crates/bridgevm-hvf/src/platform_pc_firmware_tests.rs	32	0
+crates/bridgevm-hvf/src/platform_pc_layout.rs	19	0
+crates/bridgevm-hvf/src/platform_pc_pcie.rs	25	0
+crates/bridgevm-hvf/src/platform_pc_pcie_tests.rs	66	0
 crates/bridgevm-hvf/src/platform_pc_tests.rs	68	0
 crates/bridgevm-hvf/src/platform/apple/diagnostic_vector.rs	192	6
 crates/bridgevm-hvf/src/platform/apple/ffi.rs	220	0
@@ -693,8 +696,8 @@ crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Library/PciHostBridgeLib/PciHostBridg
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Library/PciHostBridgeLib/PciHostBridgeLib.inf	16	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Library/PciProbeLib/PciDiscovery.c	84	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Library/PciProbeLib/PciIdentities.c	69	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Library/PciProbeLib/PciNvmeBar.c	163	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Library/PciProbeLib/PciProbeInternal.h	11	0
-crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Library/PciProbeLib/PciProbeLib.c	20	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Library/PciProbeLib/PciProbeLib.inf	19	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/PlatformTablesDxe/AcpiValidation.c	203	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Drivers/PlatformTablesDxe/BootInfoValidation.c	190	0
@@ -732,6 +735,7 @@ crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/image_diagnostics.
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/in_memory.rs	63	1
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/mmio.rs	143	2
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/mmio/interrupted.rs	36	1
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/mmio/range.rs	18	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/mmio/tests.rs	17	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/process.rs	64	1
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/vars_file.rs	79	0
@@ -741,6 +745,7 @@ crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/firmware_guids.
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/hob.rs	99	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie.rs	62	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie_display.rs	11	0
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie_nvme.rs	95	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie_tests.rs	36	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/probe_failure.rs	31	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/result.rs	37	0
@@ -1281,6 +1286,7 @@ scripts/live-gates/recover-stale-jobs.sh	42	0
 scripts/live-gates/install-studio-queue.sh	84	0
 scripts/live-gates/pointer-input-manifest.sh	38	0
 scripts/live-gates/run-bridgevm-pc-pci-tier.sh	79	0
+scripts/live-gates/run-bridgevm-pc-nvme-bar-tier.sh	81	0
 scripts/live-gates/run-pointer-reliability-tier.sh	61	0
 scripts/live-gates/run-special-tier.sh	19	0
 scripts/live-gates/run-tier.sh	158	0
@@ -1372,6 +1378,7 @@ tests/integration/bridgevm-pc-boot-info-live-opt-in-smoke.sh	39	0
 tests/integration/bridgevm-pc-reset-vector-live-opt-in-smoke.sh	40	0
 tests/integration/bridgevm-pc-dxe-entry-live-opt-in-smoke.sh	40	0
 tests/integration/bridgevm-pc-pci-live-tier-smoke.sh	22	0
+tests/integration/bridgevm-pc-nvme-bar-live-tier-smoke.sh	19	0
 tests/integration/bridgevm-pc-prohibited-references-smoke.sh	18	0
 tests/integration/bridgevm-pc-variable-process-persistence.sh	31	0
 tests/integration/bridgevm-pc-pcie-live-opt-in-smoke.sh	28	0

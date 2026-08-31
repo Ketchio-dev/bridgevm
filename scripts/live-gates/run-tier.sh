@@ -104,7 +104,7 @@ case "$TIER" in
         "$REPO/scripts/live-gates/$helper" --out "$OUT" --input-manifest "$INPUT_MANIFEST" \
             --sealed-binary "$SEALED_BINARY" --job-id "$JOB_ID"
         ;;
-    t8-pointer-reliability|t9-bridgevm-pc-pci|t10-qmp-stress)
+    t8-pointer-reliability|t9-bridgevm-pc-pci|t10-qmp-stress|t11-bridgevm-pc-nvme-bar)
         "$REPO/scripts/live-gates/run-special-tier.sh" \
           "$TIER" "$OUT" "$JOB_ID" "$INPUT_MANIFEST" ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)

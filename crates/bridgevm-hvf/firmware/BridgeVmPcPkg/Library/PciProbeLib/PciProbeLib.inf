@@ -8,7 +8,7 @@
 [Sources]
   PciDiscovery.c
   PciIdentities.c
-  PciProbeLib.c
+  PciNvmeBar.c
 [Packages]
   MdePkg/MdePkg.dec
   BridgeVmPcPkg/BridgeVmPcPkg.dec
