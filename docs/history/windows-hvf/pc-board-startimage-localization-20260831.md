@@ -449,3 +449,30 @@ reads from `ICC_IAR1_EL1` is not the timer PPI the Boot Manager's handler
 expects, or its timer is armed on a source the in-kernel GIC is not routing to
 that handler. This is a single, well-scoped guest-GIC question, not a broad
 search.
+
+### Deeper read: the counter is external-writer-only and frozen at zero
+
+Dumping the whole spinning module (1 MB from `0x27fe00000`) and disassembling it
+pins the counter's role and rules out an in-module writer. At the terminal
+boundary `*(0x27fe8c0d8) == 0`, and it stays zero across the 20s and 75s runs —
+it never advances. Its neighbors in that data page are function pointers and
+config (`0x27fe8c0c8 = 0x27fe892ec`, `0x27fe8c0e0 = 1`), i.e. it lives in a
+module state struct. The spin function `0x27fe89534` is called from one helper
+(`0x27fe8a0f8`) that formats a message (calls a `vsnprintf`-like routine at
+`0x27fe895c4`, with the format strings that sit right after the `nop`-pad at
+`0x27fe8b850`) and invokes a sink callback through a function pointer — this is
+the Boot Manager's **diagnostic/timestamped-logging path**, and the spin is its
+"wait for the timestamp/tick to advance" step.
+
+Crucially, **no instruction in the 1 MB module writes `0x27fe8c0d8`**: none of
+the 18 `adrp`s to its page `0x27fe8c000` is followed by a store to offset `0xd8`,
+and the only `str …,[x,#216]` sites use unrelated base registers. So the counter
+is advanced by code in **another image** — an interrupt handler (the timer tick)
+that lives outside this module and is not running. This confirms the wall is an
+**interrupt-delivery gap**, not anything in the Boot Manager's own module: the
+guest services *some* interrupt (`ICC_EOIR1_EL1` writes, most likely the
+firmware's own virtual-timer tick) but the handler that would bump this counter
+never runs. The focused next step is to identify that handler's interrupt source
+(the Boot Manager installs its own `VBAR_EL1` and may arm the **physical** timer,
+which HVF does not deliver to the in-kernel GIC — only the virtual timer is
+native) and route/emulate it so the tick handler runs and the counter advances.

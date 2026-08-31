@@ -14,6 +14,8 @@ mod gic;
 mod hvf;
 #[path = "memory.rs"]
 mod memory;
+#[path = "ram_dump.rs"]
+mod ram_dump;
 #[path = "report.rs"]
 mod report;
 #[path = "result.rs"]
@@ -98,6 +100,7 @@ unsafe fn execute(
         let mut guest_ram = GuestRam::new(ram);
         let run = run_loop::run(vcpu, exit, &mut platform, &mut guest_ram);
         let state = vcpu_state::capture(vcpu, exit)?;
+        ram_dump::maybe_dump(guest_ram.bytes(), state.pc);
         let serial = String::from_utf8_lossy(platform.uart_output()).into_owned();
         Ok(Execution { run, state, serial })
     })();
