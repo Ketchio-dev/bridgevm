@@ -1,6 +1,6 @@
 use super::super::vcpu_state::VcpuState;
-#[path = "report_start_failure.rs"]
-mod start_failure;
+#[path = "report_rings.rs"]
+mod rings;
 
 pub(super) fn write(state: &VcpuState, serial: &str, ram: &[u8]) {
     println!(
@@ -17,5 +17,5 @@ pub(super) fn write(state: &VcpuState, serial: &str, ram: &[u8]) {
     if !serial.is_empty() {
         println!("serial={serial:?}");
     }
-    start_failure::write(ram);
+    rings::write(ram);
 }

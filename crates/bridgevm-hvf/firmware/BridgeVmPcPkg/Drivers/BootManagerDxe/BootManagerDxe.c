@@ -12,6 +12,7 @@
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
+#include <BridgeVmPc/BootServiceTrace.h>
 #include <BridgeVmPc/StartImageFailure.h>
 #include "BootManagerDxe.h"
 STATIC EFI_HANDLE mImageHandle;
@@ -102,6 +103,7 @@ Boot (IN EFI_BDS_ARCH_PROTOCOL *This)
   Result ()->Stage = BRIDGE_VM_PC_BOOT_STAGE_IMAGE_LOADED;
   EfiSignalEventReadyToBoot ();
   Result ()->Stage = BRIDGE_VM_PC_BOOT_STAGE_READY_TO_BOOT;
+  BridgeVmPcArmBootServiceTrace ();
   Status = BridgeVmPcStartImageAndRecord (BootImage);
   Stop (BRIDGE_VM_PC_BOOT_STAGE_APPLICATION_ENTRY, Status);
 }

@@ -14,6 +14,7 @@
   BdsSupport.c
   BootManagerDxe.c
   BootManagerDxe.h
+  BsTrace.c
   StartImageFailure.c
 [Packages]
   MdePkg/MdePkg.dec
@@ -26,11 +27,10 @@
   UefiBootServicesTableLib
   UefiDriverEntryPoint
   UefiLib
-
+  UefiRuntimeServicesTableLib
 [Guids]
   gEfiEndOfDxeEventGroupGuid
   gEfiEventReadyToBootGuid
-
 [Protocols]
   gEfiBdsArchProtocolGuid                  ## PRODUCES
   gEfiSecurityArchProtocolGuid             ## CONSUMES
