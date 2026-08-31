@@ -9,11 +9,14 @@
 mod firmware;
 #[path = "platform_pc_layout.rs"]
 mod layout;
+#[path = "platform_pc_nvme.rs"]
+mod nvme;
 #[path = "platform_pc_pcie.rs"]
 mod pcie;
 
+use crate::fwcfg::GuestMemoryMut;
 use crate::machine::bridgevm_pc as board;
-use crate::nvme::NvmeController;
+use crate::nvme::{NvmeCompletionEvent, NvmeController};
 use crate::pcie::{PcieEcam, PcieEcamConfig};
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
@@ -29,6 +32,7 @@ pub struct BridgeVmPcPlatform {
     pcie: PcieEcam,
     pcie_config: PcieEcamConfig,
     nvme: NvmeController,
+    nvme_completion_scratch: Vec<NvmeCompletionEvent>,
     flash_vars: P30NorFlash,
 }
 
@@ -52,6 +56,7 @@ impl BridgeVmPcPlatform {
             pcie: PcieEcam::new_with_config(pcie_config),
             pcie_config,
             nvme: NvmeController::new(0),
+            nvme_completion_scratch: Vec::new(),
             flash_vars: P30NorFlash::new(
                 board::FLASH_VARS.base,
                 board::FLASH_VARS.size as usize,
@@ -60,7 +65,7 @@ impl BridgeVmPcPlatform {
         }
     }
 
-    pub fn on_mmio(&mut self, gpa: u64, op: MmioOp) -> MmioOutcome {
+    pub fn on_mmio(&mut self, gpa: u64, op: MmioOp, mem: &mut dyn GuestMemoryMut) -> MmioOutcome {
         let Some((name, region)) = board::fixed_regions()
             .into_iter()
             .find(|(_, region)| region.contains(gpa))
@@ -91,7 +96,7 @@ impl BridgeVmPcPlatform {
                     MmioOutcome::WriteAck
                 }
             },
-            other @ ("pcie-mmio-32" | "pcie-mmio-64") => self.pcie_mmio_access(other, gpa, op),
+            other @ ("pcie-mmio-32" | "pcie-mmio-64") => self.pcie_mmio_access(other, gpa, op, mem),
             other => MmioOutcome::KnownUnimplemented(other),
         }
     }
@@ -108,15 +113,26 @@ impl BridgeVmPcPlatform {
         self.uart.output()
     }
 
+    pub fn load_nvme_disk_image(&mut self, image: Vec<u8>) {
+        self.nvme.load_disk_image(image);
+    }
+
     pub fn reset_runtime_state(&mut self) {
         self.uart = Pl011::new();
         self.rtc = Pl031::new();
         self.pcie = PcieEcam::new_with_config(self.pcie_config);
         self.nvme.reset_registers_keep_disks();
+        self.nvme_completion_scratch.clear();
         self.flash_vars.reset_runtime_state();
     }
 }
 
+#[cfg(test)]
+#[path = "platform_pc_nvme_tests.rs"]
+mod nvme_tests;
+#[cfg(test)]
+#[path = "platform_pc_test_support.rs"]
+mod test_support;
 #[cfg(test)]
 #[path = "platform_pc_tests.rs"]
 mod tests;

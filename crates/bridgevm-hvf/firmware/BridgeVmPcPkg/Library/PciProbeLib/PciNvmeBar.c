@@ -9,7 +9,7 @@
 #define BRIDGE_VM_PC_NVME_CAP          0x00000020020103FFULL
 #define BRIDGE_VM_PC_NVME_VERSION      0x00010400U
 #define BRIDGE_VM_PC_NVME_COMMAND_MASK (EFI_PCI_COMMAND_MEMORY_SPACE | EFI_PCI_COMMAND_BUS_MASTER)
-STATIC_ASSERT (sizeof (BRIDGE_VM_PC_PCIE_RESULT) == 96, "unexpected PCI result size");
+STATIC_ASSERT (sizeof (BRIDGE_VM_PC_PCIE_RESULT) == 128, "unexpected PCI result size");
 STATIC
 BOOLEAN
 BridgeVmPcNvmeBarBaseIsValid (
@@ -142,22 +142,4 @@ BridgeVmPcValidateNvmeBar (
   return Status;
 }
 
-EFI_STATUS
-BridgeVmPcValidatePcie (
-  IN EFI_SYSTEM_TABLE *SystemTable,
-  OUT volatile BRIDGE_VM_PC_PCIE_RESULT *Result
-  )
-{
-  EFI_STATUS Status;
-
-  if ((SystemTable == NULL) || (SystemTable->BootServices == NULL) || (Result == NULL)) {
-    return EFI_INVALID_PARAMETER;
-  }
-  Result->FunctionCount = BRIDGE_VM_PC_PCIE_FUNCTION_COUNT;
-  Status = BridgeVmPcDiscoverPci (SystemTable, Result);
-  if (EFI_ERROR (Status)) {
-    return Status;
-  }
-  Status = BridgeVmPcValidatePciIdentities (SystemTable, Result);
-  return EFI_ERROR (Status) ? Status : BridgeVmPcValidateNvmeBar (SystemTable, Result);
-}
+#include "PciNvmeBlockIo.h"

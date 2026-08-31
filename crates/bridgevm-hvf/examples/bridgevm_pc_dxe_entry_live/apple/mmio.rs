@@ -1,6 +1,6 @@
 use super::{
     contract, hv_vcpu_get_reg, hv_vcpu_run, hv_vcpu_set_reg, hv_vcpus_exit, hvc_diagnostics,
-    status, BridgeVmPcPlatform, HvVcpu, HvVcpuExit, EXIT_EXCEPTION, HV_REG_PC,
+    status, BridgeVmPcPlatform, GuestRam, HvVcpu, HvVcpuExit, EXIT_EXCEPTION, HV_REG_PC,
 };
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome};
 use std::sync::mpsc;
@@ -16,7 +16,6 @@ const MAX_MMIO_EXITS: usize = 8192;
 mod interrupted;
 #[path = "mmio/range.rs"]
 mod range;
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct DataAbort {
     size: u8,
@@ -58,6 +57,7 @@ unsafe fn emulate(
     vcpu: HvVcpu,
     exit: *mut HvVcpuExit,
     platform: &mut BridgeVmPcPlatform,
+    ram: &mut GuestRam<'_>,
 ) -> Result<(), String> {
     let syndrome = (*exit).exception.syndrome;
     let access = decode(syndrome)?;
@@ -80,7 +80,7 @@ unsafe fn emulate(
     } else {
         MmioOp::Read { size: access.size }
     };
-    match (platform.on_mmio(ipa, op), op) {
+    match (platform.on_mmio(ipa, op, ram), op) {
         (MmioOutcome::ReadValue(value), MmioOp::Read { .. }) => {
             if access.register != 31 {
                 status(
@@ -101,7 +101,7 @@ pub(super) unsafe fn run_vcpu(
     vcpu: HvVcpu,
     exit: *mut HvVcpuExit,
     platform: &mut BridgeVmPcPlatform,
-    ram: &[u8],
+    ram: &mut GuestRam<'_>,
 ) -> Result<(), String> {
     let (stop_tx, stop_rx) = mpsc::channel();
     let watchdog = std::thread::spawn(move || {
@@ -118,13 +118,13 @@ pub(super) unsafe fn run_vcpu(
                     vcpu,
                     (*exit).reason,
                     mmio_exits,
-                    ram,
+                    ram.bytes(),
                 )?);
             }
             let syndrome = (*exit).exception.syndrome;
             match (syndrome >> 26) & 0x3f {
                 EC_DATA_ABORT if mmio_exits < MAX_MMIO_EXITS => {
-                    emulate(vcpu, exit, platform)?;
+                    emulate(vcpu, exit, platform, ram)?;
                     mmio_exits += 1;
                 }
                 EC_HVC if mmio_exits >= contract::pcie_function_count() => {

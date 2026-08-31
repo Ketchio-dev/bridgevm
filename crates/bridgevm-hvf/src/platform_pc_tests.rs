@@ -19,22 +19,22 @@ fn memory_layout_uses_only_the_new_board_contract() {
 fn uart_and_rtc_route_at_new_addresses_only() {
     let mut platform = BridgeVmPcPlatform::new();
     assert_eq!(
-        platform.on_mmio(
+        platform.on_mmio_without_dma(
             board::UART.base,
             MmioOp::Write {
                 size: 1,
                 value: b'B' as u64
-            }
+            },
         ),
         MmioOutcome::WriteAck
     );
     assert_eq!(platform.uart_output(), b"B");
     assert_eq!(
-        platform.on_mmio(board::RTC.base + 0xfe0, MmioOp::Read { size: 4 }),
+        platform.on_mmio_without_dma(board::RTC.base + 0xfe0, MmioOp::Read { size: 4 }),
         MmioOutcome::ReadValue(0x31)
     );
     assert_eq!(
-        platform.on_mmio(machine::UART.base, MmioOp::Read { size: 4 }),
+        platform.on_mmio_without_dma(machine::UART.base, MmioOp::Read { size: 4 }),
         MmioOutcome::Unmapped
     );
 }
@@ -49,7 +49,7 @@ fn new_ecam_exposes_the_reused_pcie_topology() {
         VIRTIO_CONSOLE_BDF,
         HDA_BDF,
     ] {
-        let result = platform.on_mmio(
+        let result = platform.on_mmio_without_dma(
             board::PCIE_ECAM.base + ecam_offset(bdf),
             MmioOp::Read { size: 2 },
         );
@@ -61,11 +61,11 @@ fn new_ecam_exposes_the_reused_pcie_topology() {
 fn unfinished_devices_fail_as_known_board_boundaries() {
     let mut platform = BridgeVmPcPlatform::new();
     assert_eq!(
-        platform.on_mmio(board::GIC_DIST.base, MmioOp::Read { size: 4 }),
+        platform.on_mmio_without_dma(board::GIC_DIST.base, MmioOp::Read { size: 4 }),
         MmioOutcome::KnownUnimplemented("gic-dist")
     );
     assert_eq!(
-        platform.on_mmio(board::BOOT_INFO.base, MmioOp::Read { size: 4 }),
+        platform.on_mmio_without_dma(board::BOOT_INFO.base, MmioOp::Read { size: 4 }),
         MmioOutcome::KnownUnimplemented("boot-info")
     );
 }

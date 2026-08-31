@@ -6,9 +6,7 @@
   MODULE_TYPE = BASE
   LIBRARY_CLASS = BridgeVmPcPciProbeLib|DXE_DRIVER
 [Sources]
-  PciDiscovery.c
-  PciIdentities.c
-  PciNvmeBar.c
+  PciProbe.c
 [Packages]
   MdePkg/MdePkg.dec
   BridgeVmPcPkg/BridgeVmPcPkg.dec
@@ -17,3 +15,4 @@
   gEfiPciEnumerationCompleteProtocolGuid  ## CONSUMES
   gEfiPciIoProtocolGuid                   ## CONSUMES
   gEfiPciRootBridgeIoProtocolGuid         ## CONSUMES
+  gEfiBlockIoProtocolGuid                 ## CONSUMES

@@ -8,10 +8,10 @@ readonly EXPECTED_REBASED_DXE_SHA256="cfe2ea1a7dc5573b4a5f6952e9177475ef91fb41da
 readonly EXPECTED_RUNTIME_SHA256="5b3a37c1403e77b51b8dafb16a796dcbc3080692617ff0eae8b759c979b4260d"
 readonly EXPECTED_VARIABLE_SHA256="3d6f0fbd9d155f76d6f1001ee67fce25e36bd5aef20bea088421a772a7500a90"
 readonly EXPECTED_PLATFORM_SHA256="16b3fdd6ede6d5aea14d26419351cf262ef358692fd28682dbbafe74c22438b5"
-readonly EXPECTED_PROBE_SHA256="860d62953e79f54365708058eb8b3d72bfef0558f776488786428e90f9508cb8"
+readonly EXPECTED_PROBE_SHA256="4c2f2901aaeb61f1dc69566d93fe7c18a06617ba6b95c7a7f94b0f606c31a88b"
 readonly EXPECTED_VECTOR_SHA256="3ec6ddb04175dbfbd84dc784a264c8f487410c03a0c4d4a38f630e8b06032226"
-readonly EXPECTED_FV_SHA256="f25ad27c72086de1ab3e4d74f54f41c5280c26bc055695c53741525b95322ba4"
-readonly EXPECTED_FD_SHA256="f3296c4c0bd7900fa6c09519ab00c88a2bcd293846849b3c509d9d0076d9833b"
+readonly EXPECTED_FV_SHA256="1a4dd36e1027f63dcb8781035e2a0027970c5d34958ad5c3e4014f5e3b4ad51f"
+readonly EXPECTED_FD_SHA256="13a7a9cc6c50ba9da6c8efabd28d42931cb0668c065e972595dde90fd3b5e1cc"
 readonly FLASH_SIZE=$((0x04000000))
 readonly FV_OFFSET=$((0x00100000))
 readonly FV_SIZE=$((0x00100000))
@@ -56,7 +56,7 @@ core="$build_root/DxeCore.efi"; runtime="$build_root/RuntimeDxe.efi"
 variables="$build_root/VariableRuntimeDxe.efi"; platform="$build_root/PlatformTables.efi"
 probe="$build_root/DxeProbe.efi"; pci_root="$build_root/drivers"
 cpu="$pci_root/ArmCpuDxe.efi"; cpu_io="$pci_root/CpuMmio2Dxe.efi"
-pci_bus="$pci_root/PciBusDxe.efi"; pci_host="$pci_root/PciHostBridgeDxe.efi"
+pci_bus="$pci_root/PciBusDxe.efi"; pci_host="$pci_root/PciHostBridgeDxe.efi"; nvme="$pci_root/NvmExpressDxe.efi"
 cp "$build_root/core/BridgeVmPcDxeCore.efi" "$core"
 cp "$build_root/runtime/RuntimeDxe.efi" "$runtime"
 cp "$build_root/variables/VariableRuntimeDxe.efi" "$variables"
@@ -75,7 +75,7 @@ probe_sha256="$(sha256 "$probe")"; pci_receipt_sha256="$(sha256 "$pci_root/Bridg
 [[ "$probe_sha256" == "$EXPECTED_PROBE_SHA256" ]] || { echo "unexpected DXE probe digest: $probe_sha256" >&2; exit 68; }
 "$repo_root/scripts/build-bridgevm-pc-dxe-fv.sh" \
   "$edk2_root" "$build_root" "$core" "$runtime" "$variables" "$platform" \
-  "$cpu" "$cpu_io" "$pci_bus" "$pci_host" "$probe"
+  "$cpu" "$cpu_io" "$pci_bus" "$pci_host" "$nvme" "$probe"
 fv="$build_root/BridgeVmPcDxeEntry.fv"
 fv_sha256="$(shasum -a 256 "$fv" | awk '{print $1}')"
 [[ "$fv_sha256" == "$EXPECTED_FV_SHA256" ]] || {

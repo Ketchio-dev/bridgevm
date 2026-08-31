@@ -1,8 +1,12 @@
 use super::{expect, u32_at};
-use bridgevm_hvf::pcie;
+#[path = "pcie_identities.rs"]
+mod identities;
 #[path = "pcie_nvme.rs"]
 mod nvme;
+#[path = "pcie_nvme_block.rs"]
+mod nvme_block;
 pub use nvme::NvmeBarProof;
+pub use nvme_block::NvmeBlockIoProof;
 pub const FUNCTION_COUNT: usize = 8;
 const RESULT_OFFSET: usize = 112;
 
@@ -15,19 +19,7 @@ pub struct PcieProof {
     pub supported_status: u32,
     pub connect_status: u32,
     pub nvme: NvmeBarProof,
-}
-fn expected_identities() -> [u32; FUNCTION_COUNT] {
-    [
-        (u32::from(pcie::HOST_BRIDGE_DEVICE_ID) << 16) | u32::from(pcie::HOST_BRIDGE_VENDOR_ID),
-        (u32::from(pcie::NVME_DEVICE_ID) << 16) | u32::from(pcie::NVME_VENDOR_ID),
-        (u32::from(pcie::XHCI_DEVICE_ID) << 16) | u32::from(pcie::XHCI_VENDOR_ID),
-        (u32::from(pcie::VIRTIO_BLK_DEVICE_ID) << 16) | u32::from(pcie::VIRTIO_BLK_VENDOR_ID),
-        (u32::from(pcie::VIRTIO_NET_DEVICE_ID) << 16) | u32::from(pcie::VIRTIO_NET_VENDOR_ID),
-        (u32::from(pcie::VIRTIO_GPU_DEVICE_ID) << 16) | u32::from(pcie::VIRTIO_GPU_VENDOR_ID),
-        (u32::from(pcie::VIRTIO_CONSOLE_DEVICE_ID) << 16)
-            | u32::from(pcie::VIRTIO_CONSOLE_VENDOR_ID),
-        (u32::from(pcie::HDA_DEVICE_ID) << 16) | u32::from(pcie::HDA_VENDOR_ID),
-    ]
+    pub nvme_block: NvmeBlockIoProof,
 }
 
 pub fn validate(result: &[u8]) -> Result<PcieProof, String> {
@@ -36,7 +28,7 @@ pub fn validate(result: &[u8]) -> Result<PcieProof, String> {
         u32_at(result, RESULT_OFFSET, "PCIe function count")?,
         FUNCTION_COUNT as u32,
     )?;
-    let expected = expected_identities();
+    let expected = identities::expected();
     let mut identities = [0; FUNCTION_COUNT];
     for (index, identity) in identities.iter_mut().enumerate() {
         *identity = u32_at(result, RESULT_OFFSET + 4 + index * 4, "PCIe identity")?;
@@ -47,12 +39,13 @@ pub fn validate(result: &[u8]) -> Result<PcieProof, String> {
     let enumeration_complete = u32_at(result, RESULT_OFFSET + 40, "PCI enumeration state")?;
     expect("PCI enumeration state", enumeration_complete, 1)?;
     let driver_binding_count = u32_at(result, RESULT_OFFSET + 44, "PCI driver binding count")?;
-    expect("PCI driver binding count", driver_binding_count, 1)?;
+    expect("PCI driver binding count", driver_binding_count, 2)?;
     let supported_status = u32_at(result, RESULT_OFFSET + 48, "PCI bus supported status")?;
     expect("PCI bus supported status", supported_status, 0)?;
     let connect_status = u32_at(result, RESULT_OFFSET + 52, "PCI bus connect status")?;
     expect("PCI bus connect status", connect_status, 0)?;
     let nvme = nvme::validate(result)?;
+    let nvme_block = nvme_block::validate(result)?;
     Ok(PcieProof {
         identities,
         root_bridge_count,
@@ -61,8 +54,12 @@ pub fn validate(result: &[u8]) -> Result<PcieProof, String> {
         supported_status,
         connect_status,
         nvme,
+        nvme_block,
     })
 }
+#[cfg(test)]
+#[path = "pcie_test_fixture.rs"]
+mod test_fixture;
 #[cfg(test)]
 #[path = "pcie_tests.rs"]
 mod tests;

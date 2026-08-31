@@ -47,7 +47,6 @@
 
 [PcdsFeatureFlag]
   gArmTokenSpaceGuid.PcdRemapUnusedMemoryNx|FALSE
-
 [PcdsFixedAtBuild]
   gEfiMdeModulePkgTokenSpaceGuid.PcdDxeNxMemoryProtectionPolicy|0
   gEfiMdePkgTokenSpaceGuid.PcdPciExpressBaseAddress|0x40000000
@@ -59,3 +58,4 @@
   UefiCpuPkg/CpuMmio2Dxe/CpuMmio2Dxe.inf
   MdeModulePkg/Bus/Pci/PciHostBridgeDxe/PciHostBridgeDxe.inf
   MdeModulePkg/Bus/Pci/PciBusDxe/PciBusDxe.inf
+  MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf

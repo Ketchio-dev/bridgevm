@@ -1,7 +1,7 @@
 use super::contract::{self, ENDPOINTS};
 use bridgevm_hvf::machine::bridgevm_pc as board;
 use bridgevm_hvf::platform_pc::BridgeVmPcPlatform;
-use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome};
+use bridgevm_hvf::platform_virt::{FlatGuestRam, MmioOp, MmioOutcome};
 use std::alloc::{alloc_zeroed, dealloc, Layout};
 use std::ffi::c_void;
 use std::ptr::{null_mut, NonNull};
@@ -108,9 +108,9 @@ fn status(label: &str, value: HvReturn) -> Result<(), String> {
         .then_some(())
         .ok_or_else(|| format!("{label} failed: {value:#x}"))
 }
-
 unsafe fn execute(vcpu: HvVcpu, exit: *mut HvVcpuExit) -> Result<[u64; 8], String> {
     let mut platform = BridgeVmPcPlatform::new();
+    let mut guest_ram = FlatGuestRam::new(board::RAM_BASE, PAGE_SIZE);
     let mut reads = 0usize;
     let (stop_tx, stop_rx) = mpsc::channel();
     let watchdog = std::thread::spawn(move || {
@@ -143,7 +143,7 @@ unsafe fn execute(vcpu: HvVcpu, exit: *mut HvVcpuExit) -> Result<[u64; 8], Strin
                             "PCIe access {reads} is outside its fixed contract: ESR={esr:#x} IPA={ipa:#x}"
                         ));
                     }
-                    let value = match platform.on_mmio(ipa, MmioOp::Read { size }) {
+                    let value = match platform.on_mmio(ipa, MmioOp::Read { size }, &mut guest_ram) {
                         MmioOutcome::ReadValue(value) => value,
                         outcome => return Err(format!("PCIe access was not handled: {outcome:?}")),
                     };

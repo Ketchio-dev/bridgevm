@@ -12,6 +12,8 @@ use std::ptr::null_mut;
 mod aligned_memory;
 #[path = "apple/command.rs"]
 mod command;
+#[path = "apple/guest_memory.rs"]
+mod guest_memory;
 #[path = "apple/image_diagnostics.rs"]
 mod image_diagnostics;
 #[path = "apple/in_memory.rs"]
@@ -23,7 +25,7 @@ mod process;
 #[path = "apple/vars_file.rs"]
 mod vars_file;
 use aligned_memory::AlignedMemory;
-
+use guest_memory::{load_test_media, GuestRam};
 #[path = "../bridgevm_pc_reset_vector_live/hvc_diagnostics.rs"]
 mod hvc_diagnostics;
 type HvVcpu = u64;
@@ -123,12 +125,12 @@ unsafe fn execute_reset_vector(
                         hv_vcpu_create(&mut vcpu, &mut exit, null_mut()),
                     )?;
                     let mut platform = BridgeVmPcPlatform::new();
+                    load_test_media(&mut platform);
                     let run_result = (|| {
                         status("set PC", hv_vcpu_set_reg(vcpu, HV_REG_PC, 0))?;
                         status("set CPSR", hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5))?;
-                        let ram_bytes =
-                            std::slice::from_raw_parts(ram.pointer.as_ptr(), ram.layout.size());
-                        mmio::run_vcpu(vcpu, exit, &mut platform, ram_bytes)
+                        let mut guest_ram = GuestRam::new(ram);
+                        mmio::run_vcpu(vcpu, exit, &mut platform, &mut guest_ram)
                     })();
                     let destroy = hv_vcpu_destroy(vcpu);
                     run_result?;

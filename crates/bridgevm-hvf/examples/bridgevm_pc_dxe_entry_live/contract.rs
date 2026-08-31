@@ -6,6 +6,8 @@ mod firmware;
 mod hob;
 #[path = "contract/pcie.rs"]
 mod pcie;
+#[path = "contract/pcie_devices_display.rs"]
+mod pcie_devices_display;
 #[path = "contract/pcie_display.rs"]
 mod pcie_display;
 #[path = "contract/probe_failure.rs"]
@@ -87,7 +89,7 @@ pub fn validate_dxe_result(
     hob::validate(ram, result, raw_dxe_stage)?;
 
     let dxe = ram
-        .get(DXE_RESULT_OFFSET..DXE_RESULT_OFFSET + 208)
+        .get(DXE_RESULT_OFFSET..DXE_RESULT_OFFSET + 240)
         .ok_or_else(|| "DXE result is outside probe RAM".to_string())?;
     probe_failure::check(dxe, raw_dxe_stage)?;
     expect(

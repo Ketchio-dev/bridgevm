@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Build the pinned standard UEFI PCI stack for the BridgeVM Virtual ARM PC.
 set -euo pipefail
-
 readonly EXPECTED_EDK2_COMMIT="b03a21a63e3bd001f52c527e5a57feddb53a690b"
 readonly EXPECTED_BROTLI_COMMIT="e230f474b87134e8c6c85b630084c612057f253e"
 readonly EXPECTED_MIPI_COMMIT="370b5944c046bab043dd8b133727b2135af7747a"
@@ -12,9 +11,9 @@ readonly EXPECTED_CPU_SHA256="0f5ede8ff76d4e3a7257696d353d31cc15be2e8b3087117700
 readonly EXPECTED_CPU_IO_SHA256="f59c2cfe4e20e404d4fdf6a04c779ee05b2db9b227faa9a34ca917c0784a2abc"
 readonly EXPECTED_HOST_SHA256="682028fbf86081ed359c3acf78eab7191988e7c70da6e553bcda3bdafef67301"
 readonly EXPECTED_BUS_SHA256="612cba33d56b6c3476d464f8b42d29e38a6c9f9703121e1e93bb4c98b34d37a7"
+readonly EXPECTED_NVME_SHA256="b1ed90a519879101af198cc373c22299d3b62921cc5ec7d2948d2def0221a11d"
 readonly EXPECTED_TRUE_DEPEX_SHA256="557c754d26e2667287367a856ea5fcd584f35ab796d24a6a875d1648a4637d23"
 readonly EXPECTED_HOST_DEPEX_SHA256="097f82885f39ca3b1f95c92c8322a8df04785ab576522a75b9bddf5da68ad9ad"
-
 if [[ $# -ne 2 ]]; then
   echo "usage: $0 /path/to/pinned-edk2 OUTPUT_DIR" >&2
   exit 64
@@ -66,10 +65,10 @@ if ! build -a AARCH64 -t GCC -p BridgeVmPcPkg/BridgeVmPcPci.dsc -b RELEASE -n 8 
   tail -200 "$build_root/build.log" >&2; exit 69
 fi
 built_root="$edk2_root/Build/BridgeVmPcPci/RELEASE_GCC/AARCH64"
-names=(ArmCpuDxe CpuMmio2Dxe PciHostBridgeDxe PciBusDxe)
-expected=("$EXPECTED_CPU_SHA256" "$EXPECTED_CPU_IO_SHA256" "$EXPECTED_HOST_SHA256" "$EXPECTED_BUS_SHA256")
+names=(ArmCpuDxe CpuMmio2Dxe PciHostBridgeDxe PciBusDxe NvmExpressDxe)
+expected=("$EXPECTED_CPU_SHA256" "$EXPECTED_CPU_IO_SHA256" "$EXPECTED_HOST_SHA256" "$EXPECTED_BUS_SHA256" "$EXPECTED_NVME_SHA256")
 mkdir -p "$output_dir"
-for index in 0 1 2 3; do
+for index in 0 1 2 3 4; do
   built="$built_root/${names[$index]}.efi"; artifact="$output_dir/${names[$index]}.efi"
   [[ -f "$built" ]] || { echo "missing ${names[$index]} output" >&2; exit 69; }
   cp "$built" "$artifact"; "$tool_root/GenFw" -z -r "$artifact"
@@ -106,7 +105,8 @@ printf '%s\n' '{' '  "schemaVersion": 1,' \
   "  \"cpuMmio2DxeSha256\": \"${EXPECTED_CPU_IO_SHA256}\"," \
   "  \"pciHostBridgeDxeSha256\": \"${EXPECTED_HOST_SHA256}\"," \
   "  \"pciBusDxeSha256\": \"${EXPECTED_BUS_SHA256}\"," \
-  '  "claimBoundary": "module build only; standard PCI enumeration, BAR operation, DMA, interrupts, boot manager, and Windows boot require separate live evidence"' \
+  "  \"nvmExpressDxeSha256\": \"${EXPECTED_NVME_SHA256}\"," \
+  '  "claimBoundary": "module build only; standard PCI enumeration, NVMe Block I/O, interrupts, boot manager, and Windows boot require separate live evidence"' \
   '}' >"$receipt"
 echo "built standard UEFI PCI stack in $output_dir"
 echo "receipt $receipt"

@@ -9,6 +9,8 @@ typedef struct {
   UINT32 NvmeBarReadCount, NvmeBarResourceType;
   UINT64 NvmeBarBase, NvmeBarLength, NvmeControllerCapabilities;
   UINT32 NvmeVersion, NvmeCommand;
+  UINT32 NvmeBlockIoCount, NvmeBlockSize, NvmeMediaPresent, NvmeReadCount;
+  UINT64 NvmeLastBlock, NvmeLba0Marker;
 } BRIDGE_VM_PC_PCIE_RESULT;
 EFI_STATUS BridgeVmPcValidatePcie (
   IN EFI_SYSTEM_TABLE *SystemTable, OUT volatile BRIDGE_VM_PC_PCIE_RESULT *Result
