@@ -181,6 +181,17 @@ standard UEFI PCI host-bridge protocols, `PciBusDxe`, BARs, endpoint operation,
 Block I/O, GOP, BDS and Windows remain open. See the
 [exact-head receipt](../windows-arm/evidence/bridgevm-pc-firmware-pcie-ecam-live-20260830.md).
 
+A fourteenth fixed-sample live gate at exact code head
+`a67f24977278e5d0f8a54ba443af961d2ef69e13` replaced those direct probe reads
+with a standard UEFI PCI path. The development firmware installed the
+root-bridge I/O protocol and generic `PciBusDxe`; its probe required the PCI
+driver binding, successful root-bridge connection, the enumeration-complete
+marker and eight `EFI_PCI_IO_PROTOCOL` handles with the exact v1 identities.
+All 20 independent lanes passed both separate-process boots, for 40 firmware
+boots with variable-file restoration and zero failed lanes. BAR operation,
+DMA, interrupts, Block I/O, GOP, BDS and Windows remain open. See the
+[fixed-sample receipt](../windows-arm/evidence/bridgevm-pc-standard-uefi-pci-live-20260830.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -275,13 +286,23 @@ process and all eight identities per VM. This is not a replacement for the
 standard UEFI PCI host-bridge and bus drivers; those remain open together with
 BAR MMIO, DMA, interrupts, Block I/O, GOP, BDS and Windows boot.
 
+The following exact-head tranche added a BridgeVM-owned PCI host-bridge
+library, generic `PciHostBridgeDxe`/`PciBusDxe` and a standard PCI I/O probe.
+Pinned tools produced a byte-reproducible 64 MiB FD with SHA-256
+`42e294e45119d08a5a8d6b4f28b5de9b79872be9282d700832460977bbd8282b`.
+The fixed `N=20` Studio tier passed 20/20 independent lane directories and 40
+separate process boots. Each boot reported one root bridge, completed standard
+PCI enumeration and exposed all eight exact `EFI_PCI_IO_PROTOCOL` identities.
+This establishes enumeration only; BAR operation, DMA, interrupts, endpoint
+queues, Block I/O, GOP, BDS and Windows boot remain open.
+
 ## Implementation gates
 
 | Gate | State |
 |---|---|
 | Versioned identity, address map and overlap tests | implemented, static only |
 | Minimal memory layout, vars flash, UART, RTC and PCIe ECAM runtime | implemented, host-unit only |
-| Guest PCIe identity enumeration at the v1 ECAM | fixed `N=20` minimal-guest and fixed `N=20` direct-firmware probes passed for the host bridge and all seven endpoints; standard firmware PciBus and endpoint operation open |
+| Guest PCIe identity enumeration at the v1 ECAM | fixed `N=20` minimal-guest, direct-firmware and standard UEFI `PciBusDxe` probes passed for the host bridge and all seven endpoints; BAR and endpoint operation open |
 | Host GIC geometry validation and bounded placement probe | live single-run placement passed |
 | HVF RAM mapping and architected-timer PPI delivery | live single-run passed; firmware and device SPI integration open |
 | Boot-info v1 mapping and EL1 pointer traversal | live single-run passed; firmware validation and consumption passed separately |

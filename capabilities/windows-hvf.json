@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-30",
-  "tested_commit": "b222143fccb3b75174d4e641d4d327c1cd8b98fa",
+  "tested_commit": "a67f24977278e5d0f8a54ba443af961d2ef69e13",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -139,12 +139,14 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "Re-sealed 2026-08-30 at exact tested code head b222143fccb3b75174d4e641d4d327c1cd8b98fa. Studio t0-check job 20260830-215443-71549-299 ran the complete scripts/check-project.sh: every code and test step passed, including 2,122 reachable tests, the independent-firmware boundary and all three Swift shim suites, and its sole failed step was the intentionally stale capability registry before this documentation-only seal; check-log SHA-256 0e0df56c8f8ebd7bc4661b94427356394ab51d2b6207c708cd289e5ab0552e7a. The preceding queue job 20260830-215349-71258-23787 failed before tests because the worker clone had not fetched the exact commit; it has no receipt and remains retained. GitHub-hosted CI run 33348860564 and Security and quality run 33348861765 both passed at the exact code head. At that same head, a fixed N=20 firmware probe passed 20/20 in independent ad-hoc-signed runner processes. Each process created two fresh HVF VMs, and the DXE probe validated all eight versioned PCIe ECAM identities in each VM, for 40 firmware boots and 320 reads. The complete live log SHA-256 is a315b36511f5524c5821b6eeee6fa45c1d0e77ce7602c06031be76775ed06495 and the immutable nine-artifact manifest SHA-256 is e6e6ec530772a45cf57d8cfb1d11a16e5ceec63e5beeff513abad6ee8e2edfe6. The preceding minimal-guest PCIe and process-persistent UEFI-variable N=20 results remain retained in their cited evidence. The firmware result proves direct ECAM identity visibility only, not standard PciBus, BAR/MMIO, DMA, MSI/MSI-X, Block I/O, GOP, BDS or Windows boot. It does not change the shipping Windows board. A9 remains OPEN. B4 is separately PROVEN by exact-head Studio t8 job 20260830-134316-74417-14894: fixed N=20 landed 20/20 with zero rendering/package regressions and p95 243 ms.",
+      "measured": "Re-sealed 2026-08-30 at exact tested code head a67f24977278e5d0f8a54ba443af961d2ef69e13. Studio t0-check job 20260830-234127-8555-13982 ran the complete scripts/check-project.sh: every code and test step passed, including the independent-firmware boundary, workspace/Venus/probe tests and all three Swift shim suites (419 + 203 with one skip + 62), and its sole failed step was the intentionally stale capability registry before this documentation-only seal; check-log SHA-256 a51b1b67abd74759f476a1bd656c4ae6e924633151dd24a15564e08ff0ffc2e6. The job and its failed receipt remain retained rather than being rewritten as a pass. GitHub-hosted CI run 33354295207 and Security and quality run 33354296401 both passed at the exact tested code head. At that same head, Studio t9 job 20260830-233459-98763-23619 passed the fixed N=20 standard UEFI PCI gate 20/20 with zero failed lanes. Its 40 separate BridgeVM process boots each reported one root bridge, completed PciBusDxe enumeration and exposed all eight exact EFI_PCI_IO_PROTOCOL identities while preserving per-lane variable-file restoration. Public receipt SHA-256 is d14beb276e80c306d5785b28894d4a1611fc34060db4f19663a558e59217cb91 and development FD SHA-256 is 42e294e45119d08a5a8d6b4f28b5de9b79872be9282d700832460977bbd8282b. The result proves standard enumeration only, not BAR operation, DMA, MSI/MSI-X, Block I/O, GOP, BDS, ExitBootServices or Windows boot. It does not change the shipping Windows board. A9 remains OPEN. B4 is separately PROVEN by exact-head Studio t8 job 20260830-134316-74417-14894: fixed N=20 landed 20/20 with zero rendering/package regressions and p95 243 ms.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md",
         "docs/windows-arm/evidence/bridgevm-pc-pcie-ecam-live-20260830.md",
-        "docs/windows-arm/evidence/bridgevm-pc-firmware-pcie-ecam-live-20260830.md"
+        "docs/windows-arm/evidence/bridgevm-pc-firmware-pcie-ecam-live-20260830.md",
+        "docs/windows-arm/evidence/bridgevm-pc-standard-uefi-pci-live-20260830.md",
+        "docs/windows-arm/evidence/bridgevm-pc-standard-uefi-pci-receipt-20260830.json"
       ]
     },
     {
