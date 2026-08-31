@@ -751,3 +751,22 @@ one Windows image. This rules out a disk-specific cause (a KD/debugger handshake
 or setup-only path) and confirms the spin is common firmware/boot-library code
 that both images drive. The remaining work is the guest control-flow trace to
 find why the counter-updater path is skipped in that common code.
+
+## Exit-trace: the guest is live in a bootmgfw PMCCNTR-timing loop, not a pure spin
+
+An exit-trace ring (env `BRIDGEVM_PC_XTRACE`, reverted) recording the PC of the
+last 160 host exits shows the terminal-PC snapshot was misleading: the guest is
+not sitting in the `0x27fe89534` counter-spin (which takes no exits) but is
+**live**, cycling between (a) bootmgfw at `0x27eb9ceb8` and (b) a generic MMIO
+write helper (`0x27fec81b4`, `str w1,[x0]; ret`) storing to `GICD+0x5008` and
+`GICD+0x500c`. `0x27eb9ceb8` is yet another `pmccntr_el0` timing block
+(`mrs pmccntr; smulh magic; asr #7; brk #0xf004 divide guard; sdiv` → a computed
+timestamp stored to a stack log record). So bootmgfw is in a **timing/telemetry
+loop** — repeatedly timestamping records with PMCCNTR and writing two adjacent
+GIC-distributor words — that never terminates. This reframes the wall a third
+time: not a dead spin, but a live bootmgfw loop whose exit condition is never met,
+and the pervasive `pmccntr_el0` use across every stuck site points squarely at
+the host PMCCNTR emulation (currently the raw host monotonic clock, whose deltas
+between two guest reads are dominated by real host/emulation wall-time rather
+than a plausible guest cycle count). Making PMCCNTR advance at a rate consistent
+with the guest's `CNTFRQ`-based expectation is the next concrete lever.
