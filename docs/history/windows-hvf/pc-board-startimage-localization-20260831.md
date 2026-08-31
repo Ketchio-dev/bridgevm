@@ -101,9 +101,27 @@ window without reaching BCD/file I/O. The six calls are: RaiseTPL/RestoreTPL;
 `HandleProtocol` (GUID Data1 0x09576e91) → success; and
 `AllocatePages(AllocateAddress, EfiLoaderData, at 0x102000)` → EFI_NOT_READY.
 The board has no RAM at the low fixed address 0x102000 (system RAM starts at
-0x1_0000_0000). The leading hypotheses for the spin are (a) a retry loop after
-the fixed-address allocation fails, or (b) an architectural-timer/delay loop
-that never completes because the board's timer contract does not match what the
-Boot Manager expects. Pinning it needs single-stepping the spin region (rebuild
-the tracer per the memory note). The extended watchdog was a local diagnostic
-and is not committed.
+0x1_0000_0000), but the Boot Manager tolerates that (AllocateAddress failing is
+normal). The spin itself was localized by disassembling the loop:
+
+- The loop body (near image RVA 0x3f540) calls a poll routine at RVA 0xc2698
+  every iteration and keeps timeout counters (`[x22+3568]` incremented and
+  compared to a limit `[x24+3576]`, calling 0x1e47a8 and resetting on expiry).
+- 0xc2698 loads a global object at `[0x308000+2736]` and makes an indirect
+  call through its vtable at offset +136 (`ldr x8,[x0]; ldr x8,[x8,#136];
+  blr`) — it polls a method on a Boot-Manager object each iteration.
+- The periodic handler 0x1e47a8 walks several objects (0x303000+0x960/0x7a0/
+  0x860/0x820) through 0x1e57f0, i.e. it services a list on a timer tick.
+
+This is a timed poll/event loop whose timeout is driven by a periodic tick.
+**Leading root-cause hypothesis: the board's example runner never delivers a
+timer interrupt to the guest.** `run_loop.rs` handles `EXIT_VTIMER` by masking
+the timer (`hv_vcpu_set_vtimer_mask(true)`) and injects no interrupt; nothing
+drives a periodic tick into the guest GIC. BDS completed because it never waits
+on a timer event, but the Boot Manager's UEFI timer events (TimerDxe → event
+dispatch) never fire, so its timed wait never completes and it spins forever
+before reaching BCD/file I/O. **Next fix to try: deliver the architectural
+timer interrupt to the guest in the runner (drive the timer PPI / stop masking
+the vtimer and route it), then re-check that T13/T14 do not regress.** The
+extended watchdog and disassembly were local diagnostics; only this note is
+committed.
