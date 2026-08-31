@@ -719,3 +719,20 @@ interrupt that would drive the refresh is never taken. The remaining question is
 purely *why the guest is IRQ-masked here* (which TPL/critical section it entered
 and whether an emulated value steered it there), and making that refresh path
 reachable. The `hv_vm_protect` write-watch is the committed instrument for it.
+
+## Ruled out: masking is not the cause — the updater path is simply never reached
+
+Force-unmasking the guest (clearing `CPSR.I` on every exit, a reverted
+experiment; the guest genuinely runs with `I=0` afterward) does **not** release
+the spin: `0x27fe8c0d8` stays 0 and the PC stays at `0x27fe89568`. So the
+interrupt-masking hypothesis is wrong — even with IRQs enabled the mechanism that
+should refresh the word does not run. Combined with the write-watch (written once
+to 0, never again) and the architected-timer/host-poke rule-outs, the conclusion
+is that the updater is a **guest code path that is simply never executed** in this
+run: the guest reached the counter-*waiter* without ever running the
+counter-*updater*, most likely because an earlier operation took a different
+branch (an error/fallback path) and skipped it. The next step is therefore a
+**guest control-flow trace** from the ~60-call point up to the spin (single-step
+or a live debugger) to find where execution diverges from the updater path — not
+more interrupt/timer work, which is now exhausted as a cause. The `hv_vm_protect`
+write-watch and `ram_dump` remain the committed instruments.
