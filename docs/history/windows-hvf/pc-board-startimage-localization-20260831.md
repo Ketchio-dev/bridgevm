@@ -640,3 +640,27 @@ because some emulated value (a device register, or the calibrated timer period
 from the `mach_absolute_time` PMU reads) steered it wrong. Both are guest-side
 questions for the next focused pass, with the `ram_dump` tool (dump the exception
 vectors via `VBAR_EL1`, find the writer of `+0xd8`) as the instrument.
+
+## Decisive: the spin sits under the firmware's own exception vectors
+
+Reading the guest system registers at the boundary (`hv_vcpu_get_sys_reg`, a
+reverted diagnostic) settles where the spin lives: **`VBAR_EL1 = 0x27fe8b000`**,
+inside the *same* module as the tick spin (`0x27fe87000`, whose PE header, spin
+at `0x27fe89534`, and vector table are one image). The IRQ vector at
+`VBAR+0x280 = 0x27fe8b280` saves the full register frame, sets the
+exception-type index, and branches to a classic EDK2 `CommonCExceptionHandler`
+(`0x27fe8a808 → 0x27fe8a3e0`) that captures `ELR/SPSR/ESR/FAR_EL1` and the FP
+state — i.e. this is the **firmware's own ArmExceptionLib/CpuDxe**, still the
+active exception owner while the Boot Manager runs on top of boot services.
+
+So the spin at `0x27fe89534` is firmware/boot code, and the guest is stuck there
+with **IRQs masked at the CPU (`CPSR` DAIF.I = 1**, i.e. raised to
+`TPL_HIGH_LEVEL`, which EDK2 implements with `ArmDisableInterrupts`) while
+polling a memory word (`0x27fe8c0d8`) that only something *external* can change.
+An interrupt handler cannot advance it (interrupts are masked), so if it is
+timer/ISR-driven this is a genuine deadlock — which means the counter is most
+likely written by a **device via DMA** (a completion flag the guest polls at
+TPL_HIGH), and the missing piece is that BridgeVM device model not writing it.
+The next pass should identify which device operation precedes the spin (dump the
+Boot Manager's calls just before it raises TPL and enters `0x27fe89534`) and
+make that device's emulation post the completion word the guest polls.
