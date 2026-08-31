@@ -174,7 +174,21 @@ steps were *out of image*, i.e. the Boot Manager is executing a lot of code
 outside its own image while only six wrapped boot-services calls are recorded
 — it is doing work, not sitting in a one-instruction spin.
 
-**Revised tooling for next time:** to study the steady-state at 0x41838, set a
-hardware breakpoint (DBGBVR/DBGBCR + MDSCR.MDE + trap_debug_exceptions) at
-0x41838 and dump registers there across hits, rather than single-stepping from
-the start; and always give any debug-exception loop a self-terminating budget.
+**Hardware-breakpoint attempt (also a dead end for now):** a breakpoint probe
+was built — arm store, then `DBGBVR0_EL1 = ImageBase+RVA`, `DBGBCR0_EL1`
+enabled (E, PMC=0b11, BAS=0b1111), `MDSCR_EL1.MDE`, `trap_debug_exceptions` —
+and it **never fired**, even at 0x41838 which is definitely executed (it is the
+native-speed terminal PC). Combined with `get_sys_reg` not exposing PMCCNTR/
+CNTVCT, this indicates **HVF's `set_sys_reg` does not honor the debug registers
+(DBGBVR0/DBGBCR0/MDSCR.MDE) for guest hardware breakpoints** — only software
+single-step (MDSCR.SS + trap_debug, EC 0x32) works, and that is too slow to
+reach the native-speed steady state. So neither of HVF's obvious guest-debug
+primitives can capture registers at 0x41838 as-is.
+
+**Revised tooling for next time:** the remaining viable options are (a) patch a
+`BRK #imm` into the loaded image in guest RAM at the target RVA before
+execution (a software breakpoint that traps as EC 0x3c, self-inflicted and
+reliably delivered) and read registers at that exit; or (b) run software
+single-step for far longer (dedicated long job) to reach steady state. Option
+(a) is the cleaner next step. Always give any debug-exception loop a
+self-terminating budget — single-step swallows the watchdog's hv_vcpus_exit.
