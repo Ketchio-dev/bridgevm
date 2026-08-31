@@ -113,25 +113,33 @@ normal). The spin itself was localized by disassembling the loop:
 - The periodic handler 0x1e47a8 walks several objects (0x303000+0x960/0x7a0/
   0x860/0x820) through 0x1e57f0, i.e. it services a list on a timer tick.
 
-This is a timed poll/event loop whose timeout is driven by a periodic tick.
-**Leading root-cause hypothesis: the board's example runner never delivers a
-timer interrupt to the guest.** `run_loop.rs` handles `EXIT_VTIMER` by masking
-the timer (`hv_vcpu_set_vtimer_mask(true)`) and injects no interrupt; nothing
-drives a periodic tick into the guest GIC. BDS completed because it never waits
-on a timer event, but the Boot Manager's UEFI timer events (TimerDxe → event
-dispatch) never fire, so its timed wait never completes and it spins forever
-before reaching BCD/file I/O. **Next fix to try: deliver the architectural
-timer interrupt to the guest in the runner (drive the timer PPI / stop masking
-the vtimer and route it), then re-check that T13/T14 do not regress.** The
-extended watchdog and disassembly were local diagnostics; only this note is
-committed.
+It looked like a timed poll/event loop, so a **timer hypothesis was tested and
+FALSIFIED**: the theory was that the runner never delivers a timer tick, so the
+Boot Manager's timed wait never completes. Two experiments disproved it.
 
-Reference pattern in our own shipping engine: `crates/bridgevm-hvf/src/
-platform/apple/firmware_run_loop.rs` handles `HV_EXIT_REASON_VTIMER_ACTIVATED`
-by confirming the auto-mask and then calling
-`service_windows_arm_firmware_vtimer_delivery(...)`, which re-arms
-`CNTV_CVAL_EL0` and records the timer PPI as pending so the interrupt reaches
-the guest. That path drives a userspace GIC; the PC example runner
-(`examples/bridgevm_pc_boot_live/run_loop.rs`) instead uses HVF's in-kernel GIC
-(`hv_gic_create`) and currently only masks, so the equivalent delivery for the
-in-kernel GIC has to be added there.
+1. Instrumenting the runner shows **`vtimer_exits == 0`** — HVF's virtual-timer
+   exit never fires, because the firmware uses the *physical* timer
+   (`ArmGenericTimerPhyCounterLib`, `PcdArmArchTimerIntrNum=30`).
+2. Switching the firmware to the *virtual* timer
+   (`ArmGenericTimerVirtCounterLib`) AND adding the runner-side delivery
+   (`hv_vcpu_set_pending_interrupt(IRQ)` + unmask on `EXIT_VTIMER`, mirroring
+   the shipping engine's `service_windows_arm_firmware_vtimer_delivery`) left
+   the spin **byte-for-byte identical** (same final PC `0x27feb1838`, same six
+   service calls). Both experiments were reverted; nothing timer-related is
+   committed.
+
+So the spin is **not** timer-driven. It is the Boot Manager polling an internal
+object: 0xc2698 does an indirect call through the vtable at offset +136 of the
+global object at `[0x308000+2736]` and loops until that call returns the awaited
+result, which never happens on this board. The `[x22+3568]`/`[x24+3576]`
+counters are iteration counts, not a timer.
+
+**Corrected next step:** single-step the loop (rebuild the tracer per the
+memory note) to read, at run time, the object at `[0x308000+2736]`, the method
+at vtable+136, and what that poll returns each iteration. The leading candidate
+is a console/input poll that never completes because the added ConSplitter is a
+*virtual* console with no physical child — no GraphicsConsole rendering on the
+GOP and no real keyboard on ConIn — so a `WaitForKey`/`ReadKeyStroke` or a
+display-readiness poll spins. If so, the fix is a real console: GraphicsConsole
+on the GOP plus a working ConIn (xHCI keyboard, or a bounded input stub), not a
+timer change.
