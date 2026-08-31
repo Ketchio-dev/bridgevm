@@ -171,6 +171,16 @@ address, not firmware PciBus, BAR, DMA, interrupt, Block I/O, GOP, BDS or
 Windows behavior. See the
 [exact-head receipt](../windows-arm/evidence/bridgevm-pc-pcie-ecam-live-20260830.md).
 
+A thirteenth fixed-sample live probe at exact code head
+`b222143fccb3b75174d4e641d4d327c1cd8b98fa` moved the same eight identity
+reads into the existing reset-to-DXE firmware image. Twenty independent
+processes each created two fresh HVF VMs; all 20 lanes passed, for 40 firmware
+boots and 320 validated ECAM reads while retaining the HOB, runtime-service,
+variable, ACPI and SMBIOS checks. This proves direct firmware visibility only;
+standard UEFI PCI host-bridge protocols, `PciBusDxe`, BARs, endpoint operation,
+Block I/O, GOP, BDS and Windows remain open. See the
+[exact-head receipt](../windows-arm/evidence/bridgevm-pc-firmware-pcie-ecam-live-20260830.md).
+
 ## Firmware and Windows boundary
 
 The firmware must publish ACPI and SMBIOS pointers through the standard UEFI
@@ -256,13 +266,22 @@ private file per lane. Host-reboot persistence, power-loss and crash recovery,
 authenticated policy, time and reset services, virtual-address transition,
 `ExitBootServices`, BDS, GOP, block I/O and Windows remain open.
 
+The next exact-head tranche added eight fail-closed direct ECAM identity reads
+to the same DXE probe. Pinned tools produced a byte-reproducible 64 MiB FD with
+SHA-256
+`352243b2ece7c3d0b0b0e97637e7a31aecc6a5fe8a34e389860ac2543a4e99f7`.
+A fixed 20-process live probe passed 20/20, covering two fresh HVF VMs per
+process and all eight identities per VM. This is not a replacement for the
+standard UEFI PCI host-bridge and bus drivers; those remain open together with
+BAR MMIO, DMA, interrupts, Block I/O, GOP, BDS and Windows boot.
+
 ## Implementation gates
 
 | Gate | State |
 |---|---|
 | Versioned identity, address map and overlap tests | implemented, static only |
 | Minimal memory layout, vars flash, UART, RTC and PCIe ECAM runtime | implemented, host-unit only |
-| Guest PCIe identity enumeration at the v1 ECAM | fixed `N=20` live probe passed for the host bridge and all seven endpoints; firmware PciBus and endpoint operation open |
+| Guest PCIe identity enumeration at the v1 ECAM | fixed `N=20` minimal-guest and fixed `N=20` direct-firmware probes passed for the host bridge and all seven endpoints; standard firmware PciBus and endpoint operation open |
 | Host GIC geometry validation and bounded placement probe | live single-run placement passed |
 | HVF RAM mapping and architected-timer PPI delivery | live single-run passed; firmware and device SPI integration open |
 | Boot-info v1 mapping and EL1 pointer traversal | live single-run passed; firmware validation and consumption passed separately |
