@@ -125,3 +125,13 @@ timer interrupt to the guest in the runner (drive the timer PPI / stop masking
 the vtimer and route it), then re-check that T13/T14 do not regress.** The
 extended watchdog and disassembly were local diagnostics; only this note is
 committed.
+
+Reference pattern in our own shipping engine: `crates/bridgevm-hvf/src/
+platform/apple/firmware_run_loop.rs` handles `HV_EXIT_REASON_VTIMER_ACTIVATED`
+by confirming the auto-mask and then calling
+`service_windows_arm_firmware_vtimer_delivery(...)`, which re-arms
+`CNTV_CVAL_EL0` and records the timer PPI as pending so the interrupt reaches
+the guest. That path drives a userspace GIC; the PC example runner
+(`examples/bridgevm_pc_boot_live/run_loop.rs`) instead uses HVF's in-kernel GIC
+(`hv_gic_create`) and currently only masks, so the equivalent delivery for the
+in-kernel GIC has to be added there.
