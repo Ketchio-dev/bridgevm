@@ -503,3 +503,47 @@ model the shipping engine already uses to boot Windows, rather than the in-kerne
 `hv_gic` the boot-live example currently creates. That is a substantial, well
 scoped change (adopt `platform_virt`'s GIC/timer/interrupt-routing on the PC
 board), and it is the path that provably reaches a booted Windows elsewhere.
+
+### Concrete port plan (grounded in the existing reusable modules)
+
+Reference implementation: `crates/bridgevm-hvf/src/platform/apple/firmware_run_loop.rs`
+(the shipping Windows-ARM run loop) plus the ready-to-reuse
+`crates/bridgevm-hvf/src/userspace_gic/` module, whose API already provides
+everything the CPU interface needs: `UserspaceGic::new(num_cpus)`, `mmio(ipa,
+width, write)` for the distributor/redistributor windows, `sysreg(cpu, reg,
+is_read, value)` for `ICC_*`, `set_vtimer_ppi(cpu, fired)`, `set_spi(intid,
+level)`, `send_msi`, and `line_asserted(cpu)`.
+
+The five integration points to bring into the boot-live example
+(`examples/bridgevm_pc_boot_live/`):
+
+1. **Stop creating `hv_gic`** (`gic.rs`): do not call `hv_gic_create`; construct
+   a `UserspaceGic` instead. Keep the same distributor/redistributor/MSI base
+   addresses the board's DTB/ACPI already advertise (`GIC_DIST 0x2000_0000`,
+   `GIC_REDIST 0x2100_0000`, `GIC_MSI_FRAME 0x2300_0000`). With no in-kernel GIC,
+   the guest's `ICC_*` and GIC-MMIO accesses now trap to the host.
+2. **Route GIC MMIO** in the run loop's data-abort path: when the fault address
+   is in the distributor/redistributor/MSI windows (`UserspaceGic::owns(ipa)`),
+   handle it with `gic.mmio(...)` instead of the platform MMIO bus.
+3. **Handle system-register traps (EC 0x18)** — currently the run loop's
+   "unexpected EC" arm. Decode with the same helper the shipping loop uses
+   (`decode_system_register_trap`) and dispatch `ICC_*` to `gic.sysreg(...)`,
+   writing back the read result and advancing PC.
+4. **Emulate the timer + inject its PPI**: keep unmasking on
+   `HV_EXIT_REASON_VTIMER`, but on each vtimer activation call
+   `gic.set_vtimer_ppi(0, true)` so INTID 27 becomes pending in the userspace
+   GIC; if the Boot Manager instead drives the physical timer, trap `CNTP_*`
+   (now that sysregs trap) and drive the same PPI from a host-tracked deadline
+   against `CNTPCT`.
+5. **Assert the IRQ line into the vCPU**: after each exit, if
+   `gic.line_asserted(0)` then `hv_vcpu_set_pending_interrupt(vcpu,
+   HV_INTERRUPT_TYPE_IRQ, true)` else `false` — this is the FFI the example must
+   add (it currently binds only `hv_vcpu_set_vtimer_mask`).
+
+Verification ladder: (a) the sealed T13 BDS/ExitBootServices path must still
+reach stage=11 under the userspace GIC (the firmware's `ArmGicV3Dxe`/`ArmTimerDxe`
+now run against the emulated GIC); (b) then the Windows path — the tick counter
+at `0x27fe8c0d8` should leave zero once the Boot Manager's timer ISR is delivered
+its INTID, and the spin at `0x27fe89534` should fall through and boot progress
+past `0x27fe8956x`. The `ram_dump` tool and the filtered boot-service trace stay
+the instruments for confirming forward progress.
