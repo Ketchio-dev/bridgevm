@@ -209,11 +209,29 @@ at the watchdog boundary: x0=0, x1=0, x2=0x4f, x19=image+0x142000,
 x30(LR)=image+0x3f56c (so 0x41838's function is called from ~0x3f568, the loop
 seen earlier), x6=0x70536f54 (ASCII "ToSp"). Not decisive on its own.
 
+A follow-up patched the `.raw` at the **physical** FAT-cluster offset
+(bootaa64.efi start cluster 5; file offset 0x40c38 resolves to raw offset
+0x543c38; the original bytes there were `0x94000332` = `bl 0x42500`, confirming
+the location). The write was verified in the `.raw`, and `boot_media` reads the
+`.raw` directly, yet the guest STILL ran 0x41838 as the original `bl`. The most
+likely explanation is **Boot Manager self-relocation**: bootmgfw re-copies /
+re-decompresses its own image after load and overwrites 0x41838 with the
+original instruction from an internal source that has no patch, so a static
+patch of the loaded image (whether in RAM or on disk) is defeated. Intercepting
+it would need the patch applied *after* that self-copy, i.e. real runtime debug
+control, which HVF does not provide here.
+
 **All four guest-debug tooling paths are therefore exhausted** under HVF's
 constraints as attempted: software single-step works but is too slow to reach
 the native-speed steady state; hardware breakpoints are unavailable (HVF
 ignores the debug sys-regs); host RAM code-patching is defeated by guest
-caches; and the on-disk patch did not persist through the mount.
+caches; and static image patching (RAM or on-disk) is defeated by Boot Manager
+self-relocation. Net: register-level inspection of the native-speed steady-state
+spin is not achievable with the tooling available in this session. The
+productive direction is therefore (b) — stop per-wall RE and build out the
+board environment (a real GraphicsConsole on the GOP, a working ConIn, and the
+device stack) so the Boot Manager runs against a fuller platform — rather than
+more static probing.
 Inspecting registers at the steady-state spin (0x41838) is not feasible with
 any of them as-is. Genuinely different options for a future session: patch the
 `BRK` into the **on-disk** `bootaa64.efi` on the per-run COW clone (EDK2 loads
