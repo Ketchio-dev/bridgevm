@@ -5,9 +5,9 @@ readonly EDK2_COMMIT="b03a21a63e3bd001f52c527e5a57feddb53a690b"
 readonly GCC_VERSION="aarch64-elf-gcc (GCC) 16.1.0"
 readonly LD_VERSION="GNU ld (GNU Binutils) 2.46.1"
 readonly CORE_SHA="cfe2ea1a7dc5573b4a5f6952e9177475ef91fb41da40c08e89c6f48bec2a4d90"
-readonly VECTOR_SHA="3ec6ddb04175dbfbd84dc784a264c8f487410c03a0c4d4a38f630e8b06032226"
+readonly VECTOR_SHA="5a9feed757d4c33f1868832357ba257c91a1b2c14dabb5b6836ee508aa26bff1"
 readonly FV_SHA="f3d0ef5f0aefb6d5b187fa3ce581b9219683a12fab8ff14cbfada4dd20188a5b"
-readonly FD_SHA="9bf4152f31bf304a384341ee8f9fce7f9d2fc890b9302a19935e107596575849"
+readonly FD_SHA="4e96111523912adb41c771addcefd5e81b4349b157868adac93dadcc80cee65f"
 readonly MEDIA_SHA="a49be97db44c0d68b3382f3b1e46eba2fc7a3b12bcba14c1ec720f0511b71979"
 readonly VARS_SHA="71189f7fb6aed638640078fba3a35fda6c39c8962e74dcc75935aac948da9063"
 readonly FLASH_SIZE=$((0x04000000)) FV_OFFSET=$((0x00100000)) FV_SIZE=$((0x00100000))
@@ -45,12 +45,11 @@ fv="$work/artifacts/BridgeVmPcBoot.fv"
 [[ "$(shasum -a 256 "$fv" | awk '{print $1}')" == "$FV_SHA" ]] || {
   echo "boot FV digest changed" >&2; exit 68;
 }
-"$repo/scripts/build-bridgevm-pc-boot-media.py" \
-  "$work/boot/BridgeVmPcExitBootServicesProbe.efi" "$work/BridgeVmPcBoot.img"
+"$repo/scripts/build-bridgevm-pc-boot-media.py" "$work/boot/BridgeVmPcExitBootServicesProbe.efi" "$work/BridgeVmPcBoot.img"
 [[ "$(shasum -a 256 "$work/BridgeVmPcBoot.img" | awk '{print $1}')" == "$MEDIA_SHA" ]] || {
   echo "boot media digest changed" >&2; exit 68;
 }
-reset="$work/reset.o"; exception="$work/exception.o"; mmu="$work/mmu.o"
+reset="$work/reset.o"; exception="$work/exception.o"; mmu="$work/mmu.o"; mmu_ram="$work/mmu-ram.o"
 sec="$work/sec.o"; hob="$work/hob.o"; ipl="$work/ipl.o"; elf="$work/firmware.elf"
 vector="$work/firmware.bin"
 "$gcc" -c -x assembler-with-cpp -DBRIDGE_VM_PC_DXE_ENTRY -ffreestanding -fno-pic \
@@ -59,12 +58,13 @@ vector="$work/firmware.bin"
   "$source_root/BridgeVmPcExceptionVector.S" -o "$exception"
 "$gcc" -c -x assembler-with-cpp -ffreestanding -fno-pic \
   "$source_root/BridgeVmPcMmu.S" -o "$mmu"
+"$gcc" -c -x assembler-with-cpp -ffreestanding -fno-pic "$source_root/BridgeVmPcMmuRam.S" -o "$mmu_ram"
 for item in "BridgeVmPcSec.c:$sec" "BridgeVmPcHob.c:$hob" "BridgeVmPcDxeIpl.c:$ipl"; do
   "$gcc" -c -O2 -Wall -Wextra -Werror -DBRIDGE_VM_PC_DXE_ENTRY -ffreestanding \
     -fno-builtin -fno-pic -fno-stack-protector "$source_root/${item%%:*}" -o "${item#*:}"
 done
 "$ld" --build-id=none -nostdlib -T "$source_root/BridgeVmPcDxeEntry.ld" \
-  "$reset" "$exception" "$mmu" "$sec" "$hob" "$ipl" -o "$elf"
+  "$reset" "$exception" "$mmu" "$mmu_ram" "$sec" "$hob" "$ipl" -o "$elf"
 "$objcopy" -O binary "$elf" "$vector"
 [[ "$($nm -n "$elf" | awk '$3 == "_start" {print $1}')" == 0000000000000000 ]]
 grep -qE '[[:space:]]hvc[[:space:]]+#?(0x)?2' < <("$objdump" -d "$elf")

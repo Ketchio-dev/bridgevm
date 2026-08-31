@@ -12,8 +12,9 @@
   .equ PAGE_TABLE_BASE, 0x100030000
   .equ NORMAL_BLOCK,    0x701
   .equ DEVICE_BLOCK,    0x0060000000000605
-
 BridgeVmPcEnableMmu:
+  stp     x19, x30, [sp, #-16]!
+  mov     x19, x0
   movz    x0, #0x0003, lsl #16
   movk    x0, #0x0001, lsl #32
   mov     x1, x0
@@ -71,10 +72,7 @@ BridgeVmPcEnableMmu:
   subs    x5, x5, #1
   b.ne    4b
 
-  movz    x3, #NORMAL_BLOCK
-  movz    x4, #0x0001, lsl #32
-  orr     x4, x4, x3
-  str     x4, [x1, #32]
+  bl      BridgeVmPcMapRam
 
   movz    x3, #0x0605
   movk    x3, #0x0060, lsl #48
@@ -106,6 +104,8 @@ BridgeVmPcEnableMmu:
   orr     x1, x1, #0x1000
   msr     sctlr_el1, x1
   isb
+  mov     x0, x19
+  ldp     x19, x30, [sp], #16
   ret
 
   .size BridgeVmPcEnableMmu, . - BridgeVmPcEnableMmu

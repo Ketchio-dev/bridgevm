@@ -9,9 +9,9 @@ readonly EXPECTED_RUNTIME_SHA256="5b3a37c1403e77b51b8dafb16a796dcbc3080692617ff0
 readonly EXPECTED_VARIABLE_SHA256="3d6f0fbd9d155f76d6f1001ee67fce25e36bd5aef20bea088421a772a7500a90"
 readonly EXPECTED_PLATFORM_SHA256="16b3fdd6ede6d5aea14d26419351cf262ef358692fd28682dbbafe74c22438b5"
 readonly EXPECTED_PROBE_SHA256="4c2f2901aaeb61f1dc69566d93fe7c18a06617ba6b95c7a7f94b0f606c31a88b"
-readonly EXPECTED_VECTOR_SHA256="3ec6ddb04175dbfbd84dc784a264c8f487410c03a0c4d4a38f630e8b06032226"
+readonly EXPECTED_VECTOR_SHA256="5a9feed757d4c33f1868832357ba257c91a1b2c14dabb5b6836ee508aa26bff1"
 readonly EXPECTED_FV_SHA256="ad51ab55c1d1f2d8db9171fcc38703a0e440dca0c572025a82c988a7a6310ded"
-readonly EXPECTED_FD_SHA256="5ccc1ce31e631312ba52408c0858c97f8fbec6a9f2b032ed84f1635984c79f5e"
+readonly EXPECTED_FD_SHA256="5d11384916f8a9a5ec33f849157f21b1440df52855a4fd0c272d99e3b5a705ef"
 readonly FLASH_SIZE=$((0x04000000))
 readonly FV_OFFSET=$((0x00100000))
 readonly FV_SIZE=$((0x00100000))
@@ -40,8 +40,7 @@ if [[ "$gcc_version" != "$EXPECTED_GCC_VERSION" || "$ld_version" != "$EXPECTED_L
   echo "refusing unpinned firmware tools: gcc='${gcc_version}' ld='${ld_version}'" >&2
   exit 66
 fi
-"$repo_root/scripts/check-bridgevm-pc-prohibited-references.sh" tree BridgeVmPcPkg \
-  "$repo_root/crates/bridgevm-hvf/firmware/BridgeVmPcPkg"
+"$repo_root/scripts/check-bridgevm-pc-prohibited-references.sh" tree BridgeVmPcPkg "$repo_root/crates/bridgevm-hvf/firmware/BridgeVmPcPkg"
 build_root="$(mktemp -d "/tmp/bridgevm-pc-dxe-entry.XXXXXX")"
 trap 'rm -rf "$build_root"' EXIT
 "$repo_root/scripts/build-bridgevm-pc-dxe-core-fv.sh" \
@@ -82,7 +81,7 @@ fv_sha256="$(shasum -a 256 "$fv" | awk '{print $1}')"
   echo "DXE entry FV digest ${fv_sha256} does not match ${EXPECTED_FV_SHA256}" >&2
   exit 69
 }
-reset_object="$build_root/reset.o"; exception_object="$build_root/exception.o"; mmu_object="$build_root/mmu.o"
+reset_object="$build_root/reset.o"; exception_object="$build_root/exception.o"; mmu_object="$build_root/mmu.o"; mmu_ram_object="$build_root/mmu-ram.o"
 sec_object="$build_root/sec.o"; hob_object="$build_root/hob.o"; ipl_object="$build_root/dxe-ipl.o"
 elf="$build_root/firmware.elf"
 vector="$build_root/firmware.bin"
@@ -92,6 +91,7 @@ vector="$build_root/firmware.bin"
   "$source_root/BridgeVmPcExceptionVector.S" -o "$exception_object"
 "$gcc" -c -x assembler-with-cpp -ffreestanding -fno-pic \
   "$source_root/BridgeVmPcMmu.S" -o "$mmu_object"
+"$gcc" -c -x assembler-with-cpp -ffreestanding -fno-pic "$source_root/BridgeVmPcMmuRam.S" -o "$mmu_ram_object"
 for item in "BridgeVmPcSec.c:$sec_object" "BridgeVmPcHob.c:$hob_object" \
             "BridgeVmPcDxeIpl.c:$ipl_object"; do
   source_file="${item%%:*}"
@@ -101,7 +101,7 @@ for item in "BridgeVmPcSec.c:$sec_object" "BridgeVmPcHob.c:$hob_object" \
     -fno-stack-protector "$source_root/$source_file" -o "$object_file"
 done
 "$ld" --build-id=none -nostdlib -T "$source_root/BridgeVmPcDxeEntry.ld" \
-  "$reset_object" "$exception_object" "$mmu_object" "$sec_object" "$hob_object" \
+  "$reset_object" "$exception_object" "$mmu_object" "$mmu_ram_object" "$sec_object" "$hob_object" \
   "$ipl_object" -o "$elf"
 "$objcopy" -O binary "$elf" "$vector"
 [[ "$($nm -n "$elf" | awk '$3 == "_start" {print $1}')" == "0000000000000000" ]]

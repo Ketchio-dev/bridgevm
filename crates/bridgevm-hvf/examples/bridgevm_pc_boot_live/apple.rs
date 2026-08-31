@@ -27,7 +27,7 @@ mod vcpu_state;
 use hvf::*;
 use memory::{AlignedMemory, GuestRam};
 
-const EXPECTED_FIRMWARE: &str = "9bf4152f31bf304a384341ee8f9fce7f9d2fc890b9302a19935e107596575849";
+const EXPECTED_FIRMWARE: &str = "4e96111523912adb41c771addcefd5e81b4349b157868adac93dadcc80cee65f";
 const VARS_SIZE: usize = 0x1_0000;
 
 struct Execution {

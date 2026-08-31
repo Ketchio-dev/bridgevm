@@ -7,7 +7,7 @@ mod guids;
 mod variable_guid;
 use guids::{DXE_CORE, PLATFORM_TABLES, RUNTIME_DXE};
 use variable_guid::VARIABLE_RUNTIME_DXE;
-const EXPECTED_FD_SHA256: &str = "5ccc1ce31e631312ba52408c0858c97f8fbec6a9f2b032ed84f1635984c79f5e";
+const EXPECTED_FD_SHA256: &str = "5d11384916f8a9a5ec33f849157f21b1440df52855a4fd0c272d99e3b5a705ef";
 fn sha256(bytes: &[u8]) -> String {
     let hash = Sha256::digest(bytes);
     let mut digest = String::with_capacity(64);

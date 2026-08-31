@@ -7,7 +7,6 @@ ASM="$RESET/BridgeVmPcResetVector.S"
 SEC="$RESET"
 LINKER="$RESET/BridgeVmPcResetVector.ld"
 BOARD="$ROOT/crates/bridgevm-hvf/src/bridgevm_pc.rs"
-
 if grep -R -n -i -E 'qemu|armvirt|ovmf|fw[_-]?cfg|u[t]m' "$RESET"; then
   echo "FAIL: reset-vector source references a prohibited compatibility platform" >&2
   exit 1
@@ -25,4 +24,5 @@ grep -Fq 'pub const FLASH_CODE: Region = Region::new(0x0000_0000, 0x0400_0000);'
 grep -Fq 'pub const BOOT_INFO: Region = Region::new(0x2600_0000, 0x1_0000);' "$BOARD"
 grep -Fq 'pub const RAM_BASE: u64 = 0x1_0000_0000;' "$BOARD"
 "$ROOT/scripts/check-bridgevm-pc-sec.sh"
+"$ROOT/scripts/check-bridgevm-pc-mmu.sh"
 echo "PASS: BridgeVM PC reset vector is fixed to the v1 flash, boot-info and RAM contract"

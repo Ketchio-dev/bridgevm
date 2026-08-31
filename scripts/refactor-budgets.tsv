@@ -720,6 +720,7 @@ crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcDxeEntry.ld	29	
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcHob.c	132	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcHob.h	121	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcMmu.S	111	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcMmuRam.S	45	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcSec.c	65	0
 crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector/BridgeVmPcSec.h	65	0
 crates/bridgevm-hvf/examples/bridgevm_pc_gic_probe.rs	141	6
@@ -1605,6 +1606,7 @@ scripts/check-bridgevm-pc-firmware-boundary.sh	50	0
 scripts/build-bridgevm-pc-reset-vector.sh	130	0
 scripts/check-bridgevm-pc-prohibited-references.sh	24	0
 scripts/check-bridgevm-pc-reset-vector-boundary.sh	28	0
+scripts/check-bridgevm-pc-mmu.sh	20	0
 scripts/check-bridgevm-pc-sec.sh	15	0
 scripts/package-dmg.sh	45
 install.sh	44	0
