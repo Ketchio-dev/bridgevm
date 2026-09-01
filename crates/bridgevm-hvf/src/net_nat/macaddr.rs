@@ -421,6 +421,7 @@ pub struct HostSocketOutboundIpv4Handler {
     pub(crate) icmp_flows: HashMap<IcmpFlowKey, IcmpFlow>,
     pub(crate) pending_tcp_resets: VecDeque<PendingTcpReset>,
     pub(crate) tcp_remove_scratch: Vec<TcpFlowKey>,
+    pub(crate) socket_readiness: super::socket_poll::HostSocketReadiness,
     pub(crate) udp_recv_scratch: [u8; HOST_SOCKET_UDP_RECV_SCRATCH_LEN],
     pub(crate) tcp_read_scratch: [u8; HOST_SOCKET_TCP_READ_SCRATCH_LEN],
     pub(crate) icmp_recv_scratch: [u8; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
@@ -454,35 +455,6 @@ impl HostSocketOutboundIpv4Handler {
     pub(crate) const DEFAULT_MAX_FLOWS: usize = 256;
     pub(crate) const DEFAULT_MAX_ICMP_FLOWS: usize = 32;
     pub(crate) const MAX_ICMP_RECV_PER_POLL: usize = 64;
-
-    pub fn new() -> Self {
-        Self::with_dns_resolver(
-            first_resolv_conf_nameserver().unwrap_or(StdIpv4Addr::new(1, 1, 1, 1)),
-        )
-    }
-
-    pub fn with_dns_resolver(dns_resolver: StdIpv4Addr) -> Self {
-        Self {
-            udp_flows: HashMap::new(),
-            tcp_flows: HashMap::new(),
-            icmp_flows: HashMap::new(),
-            pending_tcp_resets: VecDeque::new(),
-            tcp_remove_scratch: Vec::new(),
-            udp_recv_scratch: [0; HOST_SOCKET_UDP_RECV_SCRATCH_LEN],
-            tcp_read_scratch: [0; HOST_SOCKET_TCP_READ_SCRATCH_LEN],
-            icmp_recv_scratch: [0; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
-            pending_socket_errors: 0,
-            dns_resolver,
-            epoch: Instant::now(),
-            last_idle_sweep_ms: 0,
-            idle_timeout_ms: Self::DEFAULT_IDLE_TIMEOUT_MS,
-            max_flows: Self::DEFAULT_MAX_FLOWS,
-            max_icmp_flows: Self::DEFAULT_MAX_ICMP_FLOWS,
-            tcp_isn_counter: 0x4256_0000,
-            #[cfg(test)]
-            idle_sweep_count: 0,
-        }
-    }
 
     #[cfg(test)]
     pub(crate) fn with_idle_timeout_ms(mut self, ms: u64) -> Self {

@@ -8,49 +8,6 @@ use std::{
     net::{TcpStream, UdpSocket},
 };
 
-impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
-    fn handle_outbound_ipv4(&mut self, packet: &Ipv4Packet<'_>) {
-        match packet.protocol {
-            IPV4_PROTOCOL_UDP => {
-                if let Some(udp) = UdpDatagram::parse(packet.payload) {
-                    self.handle_udp(packet, &udp);
-                }
-            }
-            IPV4_PROTOCOL_TCP => {
-                if let Some(tcp) = TcpSegment::parse(packet.payload) {
-                    self.handle_tcp(packet, &tcp);
-                }
-            }
-            IPV4_PROTOCOL_ICMP if self.handle_icmp(packet).is_err() => {
-                self.pending_socket_errors = self.pending_socket_errors.saturating_add(1);
-            }
-            _ => {}
-        }
-    }
-
-    fn poll_host_sockets(
-        &mut self,
-        guest_mac: Option<MacAddr>,
-        reply_queue: &mut VecDeque<Vec<u8>>,
-        stats: &mut NatStats,
-    ) {
-        if self.pending_socket_errors != 0 {
-            stats.socket_errors = stats
-                .socket_errors
-                .saturating_add(self.pending_socket_errors);
-            self.pending_socket_errors = 0;
-        }
-        self.poll_udp(guest_mac, reply_queue, stats);
-        self.poll_tcp(guest_mac, reply_queue, stats);
-        self.poll_icmp(guest_mac, reply_queue, stats);
-        self.evict_idle_flows();
-    }
-
-    fn active_flow_counts(&self) -> (usize, usize) {
-        (self.tcp_flows.len(), self.udp_flows.len())
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct UdpFlowKey {
     pub(crate) guest_ip: Ipv4Addr,
