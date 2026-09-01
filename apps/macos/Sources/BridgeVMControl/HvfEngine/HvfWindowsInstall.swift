@@ -8,6 +8,7 @@ import Combine
 /// an interrupted install can be retried after an app relaunch.
 struct HvfWindowsInstallRequest: Codable, Equatable {
     var isoPath: String
+    var isoSHA256: String? = nil
     var diskGiB: Int
     var injectViogpu3d: Bool
     var driverPackageDir: String?
@@ -45,28 +46,29 @@ struct HvfWindowsInstallPlan: Equatable {
     let bundlePath: String
     let slug: String
     let request: HvfWindowsInstallRequest
+    let sealedISOSHA256: String
+    let sourceCacheKey: String
     var homeDirectory: String = NSHomeDirectory()
 
-    static let minimumDiskGiB = 64
-    static var varsTemplateCandidates: [String] {
-        var candidates: [String] = []
-        if let override = ProcessInfo.processInfo.environment["BRIDGEVM_UEFI_VARS_TEMPLATE"],
-           !override.isEmpty {
-            candidates.append((override as NSString).expandingTildeInPath)
-        }
-        candidates.append(contentsOf: [
-            "/opt/homebrew/share/qemu/edk2-arm-vars.fd",
-            "/usr/local/share/qemu/edk2-arm-vars.fd",
-        ])
-        return candidates
+    init(repoRoot: URL, bundlePath: String, slug: String, request: HvfWindowsInstallRequest) {
+        self.repoRoot = repoRoot
+        self.bundlePath = bundlePath
+        self.slug = slug
+        self.request = request
+        sealedISOSHA256 = request.isoSHA256
+            ?? HvfWindowsInstallCacheIdentity.sha256File(request.isoPath) ?? "absent"
+        sourceCacheKey = HvfWindowsInstallCacheIdentity.key(
+            isoSHA256: sealedISOSHA256, repoRoot: repoRoot)
     }
 
+    static let minimumDiskGiB = 64
     static var wimlibCandidates: [String] {
         ["/opt/homebrew/bin/wimlib-imagex", "/usr/local/bin/wimlib-imagex"]
     }
 
     static let installResourcePaths = [
         "scripts/build-hvf-windows-scripted-source.sh",
+        "scripts/hvf-disk-image-utils.sh",
         "scripts/run-hvf-windows-scripted-install.sh",
         "target/release/examples/hvf_gic_boot_probe",
         "scripts/win-assets/winpeshl.ini",
@@ -74,15 +76,10 @@ struct HvfWindowsInstallPlan: Equatable {
         "scripts/win-assets/bvdiskpart.txt",
     ]
 
-    /// Cache identity changes on a same-name/same-size file replacement too:
-    /// the file number catches replacement while mtime catches in-place edits.
-    var sourceCacheKey: String {
-        let name = URL(fileURLWithPath: request.isoPath).deletingPathExtension().lastPathComponent
-        let attributes = (try? FileManager.default.attributesOfItem(atPath: request.isoPath)) ?? [:]
-        return "\(VMConfig.slugify(name))-\((attributes[.size] as? NSNumber)?.uint64Value ?? 0)-\((attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0)-\(((attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0).bitPattern)"
-    }
-
     var sourceImagePath: String { "\(homeDirectory)/BridgeVM/bridgevm-app-src/\(sourceCacheKey).raw" }
+    var wimlibPath: String? {
+        Self.wimlibCandidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
 
     var tmpTargetPath: String { "/tmp/bridgevm-appinstall-\(slug)-target.raw" }
     var tmpVarsPath: String { "/tmp/bridgevm-appinstall-\(slug)-vars.fd" }
@@ -94,14 +91,6 @@ struct HvfWindowsInstallPlan: Equatable {
 
     var freshTargetSizeBytes: UInt64 { UInt64(request.diskGiB) * 1024 * 1024 * 1024 }
 
-    var varsTemplatePath: String? {
-        Self.varsTemplateCandidates.first { FileManager.default.isReadableFile(atPath: $0) }
-    }
-
-    var sourceImageIsCached: Bool {
-        FileManager.default.isReadableFile(atPath: sourceImagePath)
-    }
-
     // MARK: commands
 
     /// Stage a: host-side WinPE scripted-installer source build from the ISO.
@@ -110,16 +99,17 @@ struct HvfWindowsInstallPlan: Equatable {
             environment: [
                 "ISO": request.isoPath,
                 "OUT": sourceImagePath,
+                "WIMLIB": wimlibPath ?? "",
             ],
-            arguments: ["bash", "scripts/build-hvf-windows-scripted-source.sh"]
+            arguments: ["/bin/bash", "scripts/build-hvf-windows-scripted-source.sh"]
         )
     }
 
     /// Stage c: the unattended scripted install boot (WIM apply + bcdboot +
     /// unattended OOBE; reboots into the installed OS before exiting).
     func installCommand() -> [String] {
-        var arguments = [
-            "bash", "scripts/run-hvf-windows-scripted-install.sh",
+        let arguments = [
+            "/bin/bash", "scripts/run-hvf-windows-scripted-install.sh",
             "--source", sourceImagePath,
             "--target", tmpTargetPath,
             "--fresh-target-size", String(freshTargetSizeBytes),
@@ -129,9 +119,6 @@ struct HvfWindowsInstallPlan: Equatable {
             "--skip-build",
             "--watchdog-ms", "1500000",
         ]
-        if let template = varsTemplatePath {
-            arguments.append(contentsOf: ["--vars-template", template])
-        }
         return arguments
     }
 
@@ -169,6 +156,11 @@ struct HvfWindowsInstallPlan: Equatable {
         guard fm.isReadableFile(atPath: request.isoPath) else {
             return "Windows 11 ARM64 ISO 파일을 찾을 수 없습니다."
         }
+        guard HvfWindowsInstallCacheIdentity.sha256File(request.isoPath) == sealedISOSHA256 else {
+            return "선택한 Windows ISO가 VM 생성 후 변경되었습니다."
+        }
+        guard HvfWindowsInstallCacheIdentity.key(isoSHA256: sealedISOSHA256, repoRoot: repoRoot)
+                == sourceCacheKey else { return "Windows 설치 레시피 또는 wimlib가 변경되었습니다." }
         let requiredResources = Self.installResourcePaths
         if let missing = requiredResources.first(where: {
             !fm.isReadableFile(atPath: repoRoot.appendingPathComponent($0).path)
@@ -178,11 +170,8 @@ struct HvfWindowsInstallPlan: Equatable {
         guard request.diskGiB >= Self.minimumDiskGiB else {
             return "디스크 크기는 최소 \(Self.minimumDiskGiB) GiB여야 합니다."
         }
-        guard Self.wimlibCandidates.contains(where: { fm.isExecutableFile(atPath: $0) }) else {
+        guard wimlibPath != nil else {
             return "wimlib-imagex가 필요합니다: brew install wimlib"
-        }
-        guard varsTemplatePath != nil else {
-            return "UEFI vars 템플릿(edk2-arm-vars.fd)을 찾을 수 없습니다: brew install qemu"
         }
         guard Self.whitespaceFree(sourceImagePath) else {
             return "홈 디렉터리 경로에 공백이 있으면 설치 소스를 만들 수 없습니다."
@@ -260,7 +249,7 @@ final class HvfWindowsInstallSession: ObservableObject {
     }
 
     private func run() async {
-        if !plan.sourceImageIsCached {
+        if !(await plan.sourceImageCacheIsVerified()) {
             stage = .preparingSource
             let build = plan.sourceBuildCommand()
             guard await runProcess(arguments: build.arguments, extraEnvironment: build.environment,
@@ -274,6 +263,12 @@ final class HvfWindowsInstallSession: ObservableObject {
         }
 
         stage = .installing
+        do {
+            try HvfWindowsBootSeed.writeBundledSeed(to: plan.tmpVarsPath)
+        } catch {
+            failUnlessCancelled("번들된 UEFI vars 시드를 준비하지 못했습니다.")
+            return
+        }
         try? FileManager.default.createDirectory(
             atPath: plan.tmpEvidenceDir, withIntermediateDirectories: true)
         let installLog = URL(fileURLWithPath: plan.tmpEvidenceDir).appendingPathComponent("run.log")
@@ -384,6 +379,7 @@ final class HvfWindowsInstallSession: ObservableObject {
         process.arguments = arguments
         process.currentDirectoryURL = plan.repoRoot
         var environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("BRIDGEVM_") }
+        environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"
         for (key, value) in extraEnvironment { environment[key] = value }
         process.environment = environment
         let pipe = Pipe()

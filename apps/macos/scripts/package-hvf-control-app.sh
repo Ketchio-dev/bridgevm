@@ -112,6 +112,7 @@ for script in \
   run-hvf-windows-installed-boot-args.sh \
   run-hvf-windows-installed-boot-runner.sh \
   build-hvf-windows-scripted-source.sh \
+  hvf-disk-image-utils.sh \
   build-hvf-windows-viogpu3d-injector.sh \
   build-hvf-windows-driver-injector.sh \
   check-hvf-windows-viogpu3d-package.sh \

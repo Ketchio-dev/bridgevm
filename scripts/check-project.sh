@@ -54,11 +54,11 @@ step "HVF boot performance tier" tests/integration/hvf-boot-performance-tier-smo
 step "HVF NVMe performance tier" tests/integration/hvf-nvme-performance-tier-smoke.sh
 step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
+step "Windows product E2E contracts" tests/integration/windows-product-e2e-contract-smoke.sh
 step "BridgeVM PC firmware boundary" scripts/check-bridgevm-pc-firmware-boundary.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 step "install verify" bash tests/integration/install-verify-smoke.sh
 step "rustfmt" cargo "$TOOLCHAIN" fmt --all --check
-
 if [[ $FAST -eq 1 ]]; then
   printf '\n--- fast subset complete ---\n'
 else

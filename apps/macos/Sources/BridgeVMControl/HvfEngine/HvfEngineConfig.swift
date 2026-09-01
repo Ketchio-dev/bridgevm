@@ -35,7 +35,7 @@ struct HvfEngineConfig: Equatable {
     var vtpmStateDir: String? = nil
     var swtpmBin: String = VTPMStateSecurity.defaultSwtpmCommand()
     var vtpmKeyID: String? = nil
-
+    var allowsExperimental3D: Bool = true
     static func libraryVM(_ config: VMConfig) -> HvfEngineConfig? {
         guard config.engineKind == .hvfEngine else { return nil }
         // A VM whose unattended install has not completed has no bootable disk
@@ -53,12 +53,12 @@ struct HvfEngineConfig: Equatable {
             shareHostDir: nil,
             shareGuestDir: nil,
             virtioNet: config.networkEnabled ?? true,
-            virtioGpu3d: true,
+            virtioGpu3d: config.experimental3DAllowed ?? true,
             nvmeBufferedIO: false,
             ctlFilePath: config.bundlePath + "/metadata/hvf.ctl",
             vtpmStateDir: config.bundlePath + "/metadata/vtpm",
             swtpmBin: VTPMStateSecurity.defaultSwtpmCommand(),
-            vtpmKeyID: config.slug
+            vtpmKeyID: config.slug, allowsExperimental3D: config.experimental3DAllowed ?? true
         )
     }
 

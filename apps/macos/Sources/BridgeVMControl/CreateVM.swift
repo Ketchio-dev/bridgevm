@@ -99,7 +99,7 @@ extension VMLibrary {
         }
     }
 
-    private static func cloneOrCopyFile(from source: String, to destination: String) -> Bool {
+    static func cloneOrCopyFile(from source: String, to destination: String) -> Bool {
         let fm = FileManager.default
         let clone = Shell.run("/bin/cp", ["-c", source, destination])
         if clone.code == 0 { return true }
@@ -466,8 +466,9 @@ extension VMLibrary {
             return nil
         }
         let b = bundle.path
+        guard let managedISO = WindowsHVFProductPolicy.stageISO(isoPath, in: b) else { return nil }
         let request = HvfWindowsInstallRequest(
-            isoPath: URL(fileURLWithPath: isoPath).resolvingSymlinksInPath().standardizedFileURL.path,
+            isoPath: managedISO.path, isoSHA256: managedISO.sha256,
             diskGiB: diskGiB,
             injectViogpu3d: injectViogpu3d,
             driverPackageDir: driverPackageDir
@@ -479,7 +480,7 @@ extension VMLibrary {
                            leasesPath: "", guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: true,
                            isoPath: nil, diskPath: "\(b)/disks/hvf-target.raw",
-                           memMiB: memMiB, cpuCount: cpuCount, networkEnabled: networkEnabled)
+                           memMiB: memMiB, cpuCount: cpuCount, networkEnabled: networkEnabled, experimental3DAllowed: false)
         if persist, !save(cfg) { return nil }
         succeeded = true
         return cfg
@@ -539,7 +540,7 @@ extension VMLibrary {
                            leasesPath: "", guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: false,
                            isoPath: nil, diskPath: disk, memMiB: memMiB, cpuCount: cpuCount,
-                           networkEnabled: networkEnabled)
+                           networkEnabled: networkEnabled, experimental3DAllowed: false)
         if persist, !save(cfg) { return nil }
         succeeded = true
         return cfg
@@ -567,7 +568,6 @@ struct CreateVMSheet: View {
     @State private var cpuCount = 4
     @State private var working = false
     @State private var error = ""
-
     private let resolutions = [(1280, 800), (1440, 900), (1920, 1080), (2560, 1440)]
     enum OSFamily: Equatable { case windows, linux }
     enum Mode: Equatable {
@@ -863,7 +863,7 @@ struct CreateVMSheet: View {
 
     private func create() {
         let selectedTemplate = template
-        if mode != .windowsHVF, selectedTemplate == nil { error = "템플릿 VM이 없습니다"; return }
+        if WindowsHVFProductPolicy.requiresTemplate(mode) && selectedTemplate == nil { error = "템플릿 VM이 없습니다"; return }
         working = true; error = ""
         guard let nm = VMLibrary.normalizedVMName(name) else {
             error = "VM 이름은 제어문자 없이 1~\(VMLibrary.maximumVMNameCharacters)자이며 파일 ID 제한 안이어야 합니다."

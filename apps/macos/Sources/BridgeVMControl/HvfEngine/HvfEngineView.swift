@@ -124,6 +124,7 @@ struct HvfEngineView: View {
                     Toggle("Clipboard sync", isOn: $clipboardSync)
                     Toggle("Virtio net", isOn: $virtioNet)
                     Toggle("VirGL 3D", isOn: $virtioGpu3d)
+                        .disabled(!session.config.allowsExperimental3D)
                     Toggle("Buffered NVMe (diagnostic)", isOn: $nvmeBufferedIO)
                     Toggle("Shared folder", isOn: $shareEnabled)
                     Spacer()
@@ -419,7 +420,6 @@ struct HvfEngineView: View {
         session.sendText(keyboardInput)
         keyboardInput = ""
     }
-
     private func currentConfig() -> HvfEngineConfig {
         HvfEngineConfig(targetDiskPath: targetDiskPath,
                         uefiVarsPath: uefiVarsPath,
@@ -436,7 +436,7 @@ struct HvfEngineView: View {
                         ctlFilePath: ctlFilePath,
                         vtpmStateDir: session.config.vtpmStateDir,
                         swtpmBin: session.config.swtpmBin,
-                        vtpmKeyID: session.config.vtpmKeyID)
+                        vtpmKeyID: session.config.vtpmKeyID, allowsExperimental3D: session.config.allowsExperimental3D)
     }
 
     private func loadStateFromSession() {

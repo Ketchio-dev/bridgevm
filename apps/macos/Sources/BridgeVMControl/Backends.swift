@@ -40,7 +40,7 @@ struct VMConfig: Codable, Identifiable, Equatable {
     var memMiB: Int? = nil
     var cpuCount: Int? = nil
     var networkEnabled: Bool? = nil  // nil == default on; false disables the guest NIC (HVF only)
-
+    var experimental3DAllowed: Bool? = nil
     /// A config can be imported or hand-edited, so never trust its persisted ID
     /// as a filesystem component. Normalizing here keeps every caller inside the
     /// VM library even when an ID contains separators or traversal components.
@@ -666,9 +666,9 @@ final class HvfWindowsBackend: VMBackend {
             shareHostDir: nil,
             shareGuestDir: nil,
             virtioNet: config.networkEnabled ?? true,
-            virtioGpu3d: true,
+            virtioGpu3d: config.experimental3DAllowed ?? true,
             nvmeBufferedIO: false,
-            ctlFilePath: ctlFilePath
+            ctlFilePath: ctlFilePath, allowsExperimental3D: config.experimental3DAllowed ?? true
         )
     }
 

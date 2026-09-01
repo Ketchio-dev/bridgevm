@@ -1715,3 +1715,13 @@ scripts/windows_graphics_notice_git.py	234	0
 scripts/install-windows-graphics-notice-tools.sh	17	0
 scripts/install-hvf-windows-viogpu3d-build-kit-assets.sh	19	0
 tests/fixtures/create-windows-graphics-notice-fixture.py	30	0
+apps/macos/Sources/BridgeVMControl/WindowsHVFProductPolicy.swift	24	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeedInstall.swift	8	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallCacheIdentity.swift	62	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFileDigest.swift	22	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallCache.swift	26	0
+apps/macos/Tests/BridgeVMControlTests/WindowsHVFProductPolicyTests.swift	126	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallCacheTests.swift	30	0
+scripts/hvf-disk-image-utils.sh	23	0
+scripts/verify-windows-product-e2e-receipt.py	389	0
+tests/integration/windows-product-e2e-contract-smoke.sh	79	0

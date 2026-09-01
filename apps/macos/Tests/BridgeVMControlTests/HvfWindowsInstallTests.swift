@@ -40,11 +40,11 @@ final class HvfWindowsInstallTests: XCTestCase {
         plan.homeDirectory = "/Users/example"
         let originalPath = plan.sourceImagePath
         XCTAssertTrue(originalPath.hasPrefix(
-            "/Users/example/BridgeVM/bridgevm-app-src/win11-test-4096-"))
+            "/Users/example/BridgeVM/bridgevm-app-src/win11-"))
         XCTAssertTrue(HvfWindowsInstallPlan.whitespaceFree(originalPath))
 
-        // Replace the ISO atomically with different bytes but preserve name,
-        // size, and mtime. The file number must still invalidate the cache.
+        // Replace the ISO atomically while preserving name, size and mtime.
+        // The content digest must still invalidate the cache.
         try Data(repeating: 0xa5, count: 4096).write(to: iso, options: [.atomic])
         try FileManager.default.setAttributes([.modificationDate: fixedDate], ofItemAtPath: iso.path)
         var replacement = HvfWindowsInstallPlan(
@@ -70,7 +70,7 @@ final class HvfWindowsInstallTests: XCTestCase {
     func testInstallCommandCarriesFreshTargetSizeAndRelease() throws {
         let plan = try makePlan(slug: "big", diskGiB: 128)
         let command = plan.installCommand()
-        XCTAssertEqual(command.first, "bash")
+        XCTAssertEqual(command.first, "/bin/bash")
         XCTAssertTrue(command.contains("scripts/run-hvf-windows-scripted-install.sh"))
         let sizeIndex = try XCTUnwrap(command.firstIndex(of: "--fresh-target-size"))
         XCTAssertEqual(command[sizeIndex + 1], String(UInt64(128) * 1024 * 1024 * 1024))

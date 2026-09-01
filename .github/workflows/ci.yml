@@ -234,6 +234,8 @@ jobs:
         run: bash scripts/check-virgl-integer-attributes.sh
       - name: HVF Windows Coherence protocol
         run: bash scripts/check-hvf-windows-coherence-protocol.sh
+      - name: Windows product E2E contracts are fail-closed
+        run: bash tests/integration/windows-product-e2e-contract-smoke.sh
       - name: sealed Windows warm NVMe performance contracts
         run: bash tests/integration/hvf-nvme-performance-tier-smoke.sh
       - name: the gate scripts themselves are free of the enforced defect classes
