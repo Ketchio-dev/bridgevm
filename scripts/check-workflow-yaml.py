@@ -26,7 +26,7 @@ WORKFLOWS = ROOT / ".github/workflows"
 # Jobs whose loss would silently remove coverage this project relies on. Each
 # was added because something it checks had none.
 REQUIRED_JOBS = {
-    "ci.yml": {"fmt", "clippy", "test", "budgets", "swift", "truth", "linux-stubs"},
+    "ci.yml": {"fmt", "clippy", "test", "budgets", "swift", "truth", "linux-stubs", "windows-nvme-workload"},
     "release.yml": {"artifacts"},
     "security-quality.yml": {"supply-chain", "fuzz-smoke", "loom"},
 }

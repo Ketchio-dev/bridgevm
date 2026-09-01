@@ -9,7 +9,6 @@ REPO="${BRIDGEVM_REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
 QUEUE_ROOT="${BRIDGEVM_LIVE_ROOT:-$HOME/BridgeVM/live-queue}"
 WORK_ROOT="${BRIDGEVM_LIVE_WORK:-$HOME/BridgeVM/live-work}"
 CLI="$REPO/scripts/live-gates/bridgevm-live"
-REDACT="$REPO/scripts/live-gates/redact-receipt.py"
 RECOVER="$REPO/scripts/live-gates/recover-stale-jobs.sh"
 
 # Refuse low space rather than delete canonical Windows media.
@@ -72,7 +71,7 @@ run_job() {
     fi
 
     local tier_args=()
-    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ] || [ "$tier" = t15-hvf-boot-performance ]; then
+    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ] || [ "$tier" = t15-hvf-boot-performance ] || [ "$tier" = t16-hvf-nvme-performance ]; then
         local manifest="$dir/input-manifest.tsv" sealed_binary="$dir/hvf_gic_boot_probe"
         local expected_manifest actual_manifest expected_binary actual_binary
         expected_manifest="$(awk -F= '$1=="input_manifest_sha256"{print $2}' "$dir/job.env")"
@@ -149,7 +148,7 @@ run_job() {
 
     # Publish only a receipt that passes private-path redaction.
     if [ -f "$dir/receipt.json" ]; then
-        if ! python3 "$REDACT" --in "$dir/receipt.json" --out "$dir/receipt.public.json"; then
+        if ! python3 "$worktree/scripts/live-gates/redact-receipt.py" --in "$dir/receipt.json" --out "$dir/receipt.public.json"; then
             log "receipt for $job_id was refused by redaction; not publishing"
             printf 'receipt=withheld\n' >> "$dir/result.env"
         fi

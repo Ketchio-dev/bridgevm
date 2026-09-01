@@ -28,7 +28,6 @@ cleanup() {
 }
 trap cleanup EXIT
 export BRIDGEVM_LIVE_ROOT="$WORK/queue"
-
 checks=0
 check() {
     checks=$((checks + 1))
@@ -37,7 +36,6 @@ check() {
         exit 1
     fi
 }
-
 # Keep regexes out of eval and ignore comments that describe forbidden shapes.
 no_match() {
     local description="$1" pattern="$2"
@@ -51,7 +49,6 @@ no_match() {
         exit 1
     fi
 }
-
 check "the CLI is executable" '[ -x "$CLI" ]'
 check "the worker is executable" '[ -x "$WORKER" ]'
 check "the stale-job reconciler is executable" '[ -x "$RECOVER" ]'
@@ -128,7 +125,7 @@ check "read-only post-mortem harvest leaves the guest image byte-identical" \
 # A listener would turn this local queue into a self-hosted runner; forbid it.
 check "the plist declares no socket" '! grep -q "<key>Sockets</key>" "$PLIST"'
 check "the plist is not a root daemon" '! grep -qi "UserName.*root" "$PLIST"'
-check "the worker clears inherited variables before starting a tier" 'grep -Fq '\''/usr/bin/env -i HOME="$HOME"'\'' "$WORKER"'
+check "the agent and worker clear inherited variables and use the sealed redactor" 'grep -A1 -F "<string>/usr/bin/env</string>" "$PLIST" | grep -Fq "<string>-i</string>" && grep -Fq '\''/usr/bin/env -i HOME="$HOME"'\'' "$WORKER" && grep -Fq '\''$worktree/scripts/live-gates/redact-receipt.py'\'' "$WORKER"'
 no_match "no component opens a listening socket" \
     'nc +-l|socat|LISTEN|bind\(' "$CLI" "$WORKER" "$TIER" "$PC_WINDOWS_TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 # Match registration rather than the installer guard's actions-runner name.
@@ -178,10 +175,16 @@ elapsed=$(( $(date +%s) - start ))
 check "submit returns a job id" '[ -n "$job_id" ]'
 check "submit returns in under 10s" '[ "$elapsed" -lt 10 ]'
 check "the job is queued" '"$CLI" status | grep -q "queued .*$job_id"'
-
 check "the job records a commit" 'grep -q "^commit=[0-9a-f]\{40\}$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env"'
 check "the job records its tier" 'grep -q "^tier=t1-vtimer$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env"'
-
+ledger="$BRIDGEVM_LIVE_ROOT/job-ledger/$job_id/entry.env"; check "default submission burns a complete durable ledger entry" '[ "$(wc -l < "$ledger" | tr -d " ")" -eq 5 ] && grep -Fxq "job_id=$job_id" "$ledger" && grep -Fxq "tier=t1-vtimer" "$ledger" && grep -Eq "^commit=[0-9a-f]{40}$" "$ledger" && grep -Fxq "input_manifest_sha256=" "$ledger" && grep -Fxq "sealed_binary_sha256=" "$ledger"'
+explicit_id=Policy.explicit_1-safe; explicit_result="$("$CLI" submit t1-vtimer --job-id "$explicit_id")"; check "a canonical explicit job id is preserved exactly" '[ "$explicit_result" = "$explicit_id" ] && [ -f "$BRIDGEVM_LIVE_ROOT/queued/$explicit_id/job.env" ]'
+too_long="$(printf 'a%.0s' {1..129})"; check "noncanonical explicit job ids are rejected before publication" '! "$CLI" submit t1-vtimer --job-id ../escape >/dev/null 2>&1 && ! "$CLI" submit t1-vtimer --job-id -leading >/dev/null 2>&1 && ! "$CLI" submit t1-vtimer --job-id "$too_long" >/dev/null 2>&1'
+rm -rf "$BRIDGEVM_LIVE_ROOT/queued/$explicit_id"; check "a burned id cannot be reused after its queue job disappears" '! "$CLI" submit t1-vtimer --job-id "$explicit_id" >/dev/null 2>&1'
+partial_id=Policy.partial_1; mkdir -m 700 "$BRIDGEVM_LIVE_ROOT/job-ledger/$partial_id"; printf 'job_id=%s\n' "$partial_id" > "$BRIDGEVM_LIVE_ROOT/job-ledger/$partial_id/entry.env"; check "a partial ledger entry fails closed and permanently prevents reuse" '! "$CLI" submit t1-vtimer --job-id "$partial_id" >/dev/null 2>&1'
+race_id=Policy.atomic_1; ("$CLI" submit t1-vtimer --job-id "$race_id" > "$WORK/race-a.out" 2>/dev/null) & race_a=$!; ("$CLI" submit t1-vtimer --job-id "$race_id" > "$WORK/race-b.out" 2>/dev/null) & race_b=$!
+wait "$race_a" || true; wait "$race_b" || true
+check "the ledger burn is atomic across concurrent submissions" '[ "$(grep -l "^$race_id$" "$WORK"/race-*.out 2>/dev/null | wc -l | tr -d " ")" -eq 1 ] && [ -d "$BRIDGEVM_LIVE_ROOT/queued/$race_id" ] && [ "$(wc -l < "$BRIDGEVM_LIVE_ROOT/job-ledger/$race_id/entry.env" | tr -d " ")" -eq 5 ]'; rm -rf "$BRIDGEVM_LIVE_ROOT/queued/$race_id"
 # The A3 tier must seal a copied input manifest at submit time. It may not
 # retain a caller-owned path that can be edited after submission.
 manifest="$WORK/a3-inputs.tsv"
@@ -193,8 +196,8 @@ check "A3 submit copies the input manifest" \
     '[ -f "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/input-manifest.tsv" ]'
 check "A3 submit seals the copied manifest hash" \
     'grep -q "^input_manifest_sha256=[0-9a-f]\{64\}$" "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/job.env"'
-check "A3 submit copies and seals the release binary" \
-    'test -x "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/hvf_gic_boot_probe" && grep -q "^sealed_binary_sha256=[0-9a-f]\{64\}$" "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/job.env"'
+check "A3 submit copies and seals the release binary and ledger hashes" \
+    'test -x "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/hvf_gic_boot_probe" && grep -q "^sealed_binary_sha256=[0-9a-f]\{64\}$" "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/job.env" && cmp -s <(grep -E "^(input_manifest_sha256|sealed_binary_sha256)=" "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/job.env") <(grep -E "^(input_manifest_sha256|sealed_binary_sha256)=" "$BRIDGEVM_LIVE_ROOT/job-ledger/$a3_job/entry.env")'
 check "A3 submit rejects a missing manifest" \
     '! "$CLI" submit t6-a3-title --input-manifest "$WORK/missing" >/dev/null 2>&1'
 check "unsealed tiers reject an input manifest; B4 seals exact inputs" \
@@ -210,7 +213,6 @@ required = {"gate_id", "criterion", "tested_commit", "host_os", "host_hardware",
 assert required <= r.keys()
 assert r["criterion"] == "A3" and r["pass"] is False
 PY'
-
 # A syntactically complete and correctly hashed manifest must still fail closed
 # when its PPSSPP ZIP is unsafe. This reaches the extracted manifest verifier
 # and payload validator without invoking codesign or a VM.
@@ -236,7 +238,6 @@ check "the A3 tier refuses an unsafe sealed payload after manifest verification"
 check "the installed-boot runner honors a sealed prebuilt binary" \
     'grep -Fq '"'"'BRIDGEVM_PREBUILT_PROBE requires an absolute regular release binary with --skip-build'"'"' "$BOOT_RUNNER"'
 rm -rf "$BRIDGEVM_LIVE_ROOT/queued/$a3_job"
-
 claimed="$("$CLI" next)"
 check "next claims the job" '[ -n "$claimed" ]'
 check "the claimed job moved to running" '"$CLI" status | grep -q "running .*$job_id"'

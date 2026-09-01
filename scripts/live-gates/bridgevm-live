@@ -13,7 +13,7 @@
 # way in is this CLI, run by this user, on this machine.
 #
 # Usage:
-#   bridgevm-live submit <tier> [--sha <sha>] [--input-manifest PATH]
+#   bridgevm-live submit <tier> [--sha <sha>] [--input-manifest PATH] [--job-id ID]
 #   bridgevm-live status [job-id]
 #   bridgevm-live logs <job-id>
 #   bridgevm-live receipt <job-id>
@@ -25,13 +25,18 @@ QUEUE_ROOT="${BRIDGEVM_LIVE_ROOT:-$HOME/BridgeVM/live-queue}"
 QUEUED="$QUEUE_ROOT/queued"
 RUNNING="$QUEUE_ROOT/running"
 DONE="$QUEUE_ROOT/done"
+JOB_LEDGER="$QUEUE_ROOT/job-ledger"
 
 usage() {
     sed -n '2,26p' "$0" | sed 's|^# \{0,1\}||'
 }
 
 ensure_dirs() {
-    mkdir -p "$QUEUED" "$RUNNING" "$DONE"
+    mkdir -p "$QUEUED" "$RUNNING" "$DONE" "$JOB_LEDGER"
+    [ -d "$JOB_LEDGER" ] && [ ! -L "$JOB_LEDGER" ] || {
+        echo "job ledger must be a real directory" >&2; exit 1;
+    }
+    chmod 700 "$JOB_LEDGER"
 }
 
 # Job states are directories and a job moves between them with `mv`, which is
@@ -55,19 +60,20 @@ cmd_submit() {
     # Reject an unknown tier here rather than at claim time. A typo (or a
     # `--help` mistaken for a tier) must not sit in the queue looking like work.
     case "$tier" in
-        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure|t8-pointer-reliability|t9-bridgevm-pc-pci|t10-qmp-stress|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start|t15-hvf-boot-performance) ;;
+        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure|t8-pointer-reliability|t9-bridgevm-pc-pci|t10-qmp-stress|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start|t15-hvf-boot-performance|t16-hvf-nvme-performance) ;;
         *) echo "unknown tier $tier" >&2; usage >&2; exit 2 ;;
     esac
 
-    local sha="" input_manifest=""
+    local sha="" input_manifest="" requested_id="" job_id_set=0
     while [ $# -gt 0 ]; do
         case "$1" in
             --sha) sha="$2"; shift 2 ;;
             --input-manifest) input_manifest="$2"; shift 2 ;;
+            --job-id) [ $# -ge 2 ] || { echo "--job-id needs a value" >&2; exit 2; }; [ "$job_id_set" -eq 0 ] || { echo "--job-id may be given only once" >&2; exit 2; }; requested_id="$2"; job_id_set=1; shift 2 ;;
             *) echo "unknown submit option $1" >&2; exit 2 ;;
         esac
     done
-    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ] || [ "$tier" = t15-hvf-boot-performance ]; then
+    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ] || [ "$tier" = t15-hvf-boot-performance ] || [ "$tier" = t16-hvf-nvme-performance ]; then
         [ -f "$input_manifest" ] || {
             echo "$tier needs --input-manifest PATH" >&2
             exit 2
@@ -84,9 +90,20 @@ cmd_submit() {
     fi
 
     ensure_dirs
-    local id="$(date +%Y%m%d-%H%M%S)-$$-$RANDOM"
+    local id
+    if [ "$job_id_set" -eq 1 ]; then id="$requested_id"; else id="$(date +%Y%m%d-%H%M%S)-$$-$RANDOM"; fi
+    [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || { echo "job id is not canonical" >&2; exit 2; }
+    local ledger_entry="$JOB_LEDGER/$id"
+    if ! mkdir -m 700 "$ledger_entry" 2>/dev/null; then
+        echo "job id has already been burned: $id" >&2; exit 2
+    fi
+    printf 'job_id=%s\ntier=%s\ncommit=%s\n' "$id" "$tier" "$sha" > "$ledger_entry/entry.env"
+    chmod 600 "$ledger_entry/entry.env"
+    if job_dir "$id" >/dev/null 2>&1; then
+        echo "job id already exists in the queue: $id" >&2; exit 2
+    fi
     local staging="$QUEUE_ROOT/.staging-$id"
-    mkdir -p "$staging"
+    mkdir -m 700 "$staging"
     local manifest_sha="" binary_sha=""
     if [ -n "$input_manifest" ]; then
         cp "$input_manifest" "$staging/input-manifest.tsv"
@@ -115,6 +132,9 @@ cmd_submit() {
         [ -z "$manifest_sha" ] || printf 'input_manifest_sha256=%s\n' "$manifest_sha"
         [ -z "$binary_sha" ] || printf 'sealed_binary_sha256=%s\n' "$binary_sha"
     } > "$staging/job.env"
+    printf 'input_manifest_sha256=%s\nsealed_binary_sha256=%s\n' \
+        "$manifest_sha" "$binary_sha" >> "$ledger_entry/entry.env"
+    chmod 400 "$ledger_entry/entry.env"
     # Build the job outside the queue, then move it in, so a worker never sees
     # a half-written job.
     mv "$staging" "$QUEUED/$id"
