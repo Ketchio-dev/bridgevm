@@ -14,18 +14,18 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-RESOURCE_KEYS = {"image", "vars", "binary"}
+RESOURCE_KEYS = {"image", "vars", "binary", "renderer"}
 META_KEYS = {
     "binary_source_commit", "binary_profile", "binary_features", "rust_toolchain",
     "campaign_id", "campaign_mode", "campaign_role", "campaign_ordinal",
     "campaign_expected_runs",
 }
-HASH_FIELDS = ("image_sha256", "vars_sha256", "binary_hash", "config_sha256", "firmware_sha256")
+HASH_FIELDS = ("image_sha256", "vars_sha256", "binary_hash", "config_sha256", "firmware_sha256", "renderer_sha256")
 COMMON_FIELDS = (
     "harness_commit", "image_sha256", "vars_sha256", "config_sha256",
     "firmware_sha256", "host_model", "macos_version", "power_source_start",
     "power_source_end", "smp_cpus", "ram_mib", "binary_profile",
-    "binary_features", "rust_toolchain", "known_confounders",
+    "binary_features", "rust_toolchain", "workload_profile", "known_confounders",
 )
 AA_FIXTURE_ID = "0" * 32
 AB_FIXTURE_ID = "1" * 32
@@ -89,8 +89,8 @@ def _manifest(path: Path) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
             metadata[key] = row[1]
         else:
             raise ValueError(f"invalid manifest row for {key!r}")
-    if len(rows) != 12 or set(resources) != RESOURCE_KEYS or set(metadata) != META_KEYS:
-        raise ValueError("manifest must contain exactly 12 unique resource/metadata rows")
+    if len(rows) != 13 or set(resources) != RESOURCE_KEYS or set(metadata) != META_KEYS:
+        raise ValueError("manifest must contain exactly 13 unique resource/metadata rows")
     if metadata["campaign_mode"] not in ("AA", "AB"):
         raise ValueError("campaign_mode must be AA or AB")
     if metadata["campaign_role"] not in ("baseline", "candidate"):
@@ -141,14 +141,14 @@ def _validate_receipt(job: dict[str, Any], metadata: dict[str, str], resources: 
         "binary_source_commit": metadata["binary_source_commit"],
         "binary_profile": metadata["binary_profile"], "binary_features": metadata["binary_features"],
         "rust_toolchain": metadata["rust_toolchain"], "image_sha256": resources["image"][1],
-        "vars_sha256": resources["vars"][1], "binary_hash": resources["binary"][1],
+        "vars_sha256": resources["vars"][1], "binary_hash": resources["binary"][1], "renderer_sha256": resources["renderer"][1],
     }
     for field, value in expected.items():
         actual = receipt.get(field)
         if actual != value or (isinstance(value, int) and type(actual) is not int):
             raise ValueError(f"receipt {field} does not match its sealed manifest")
     fixed = {
-        "schema_version": 2, "tier": "t15-hvf-boot-performance", "gate_id": "hvf-boot-performance-diagnostic",
+        "schema_version": 2, "tier": "t15-hvf-boot-performance", "gate_id": "hvf-boot-performance-diagnostic", "workload_profile": "shipping-core-3d-boot-v1",
         "sample_count": 1, "run_count": 1, "required_run_count": 1,
         "passes": 1, "failures": 0, "outcome": "completed",
     }
@@ -209,12 +209,12 @@ def _attempt(job: dict[str, Any]) -> dict[str, Any]:
     fallback_hash = {
         "image_sha256": resources.get("image", (None, None))[1],
         "vars_sha256": resources.get("vars", (None, None))[1],
-        "binary_hash": resources.get("binary", (None, None))[1],
+        "binary_hash": resources.get("binary", (None, None))[1], "renderer_sha256": resources.get("renderer", (None, None))[1],
     }
     identity_fields = (
         "harness_commit", "binary_source_commit", "binary_profile", "binary_features",
         "rust_toolchain", "input_manifest_sha256", *HASH_FIELDS, "host_model", "macos_version",
-        "power_source_start", "power_source_end", "smp_cpus", "ram_mib",
+        "power_source_start", "power_source_end", "smp_cpus", "ram_mib", "workload_profile",
         "known_confounders",
     )
     identity = {
@@ -410,7 +410,7 @@ def _fixture(root: Path) -> None:
                 "campaign_ordinal": str(ordinal), "campaign_expected_runs": "6",
             }
             rows = [
-                f"image\t/sealed/image.raw\t{'a' * 64}", f"vars\t/sealed/vars.fd\t{'b' * 64}",
+                f"image\t/sealed/image.raw\t{'a' * 64}", f"vars\t/sealed/vars.fd\t{'b' * 64}", f"renderer\t/sealed/libvirglrenderer.dylib\t{'9' * 64}",
                 f"binary\t/sealed/probe\t{selected_binary}",
                 *[f"{key}\t{value}" for key, value in metadata.items()],
             ]
@@ -431,10 +431,10 @@ def _fixture(root: Path) -> None:
                 "tested_commit": selected_source, "image_sha256": "a" * 64,
                 "vars_sha256": "b" * 64, "binary_hash": selected_binary,
                 "input_manifest_sha256": manifest_hash,
-                "config_sha256": "c" * 64, "firmware_sha256": "f" * 64,
+                "config_sha256": "c" * 64, "firmware_sha256": "f" * 64, "renderer_sha256": "9" * 64, "workload_profile": "shipping-core-3d-boot-v1",
                 "host_model": "MacTest", "macos_version": "26.0",
                 "power_source_start": "AC Power", "power_source_end": "AC Power",
-                "smp_cpus": 4, "ram_mib": 6144, "known_confounders": ["full clone integrity hash immediately precedes boot (warm cache)"],
+                "smp_cpus": 4, "ram_mib": 6144, "known_confounders": ["full clone integrity hash immediately precedes boot (warm cache)", "boot harness omits product vTPM, clipboard/share, and long-lived app session"],
                 "desktop_elapsed_ms": float(100 - (10 if mode == "AB" and role == "candidate" else 0)),
                 "sample_count": 1, "run_count": 1, "required_run_count": 1,
                 "passes": 1, "failures": 0, "outcome": "completed", "pass": True, "valid": True,

@@ -16,7 +16,7 @@ perf_manifest_validate() {
   local repo="$1" manifest="$2" sealed_binary="$3"
   [[ -f "$manifest" && "$sealed_binary" == /* && -f "$sealed_binary" && ! -L "$sealed_binary" ]] || return 1
   awk -F '\t' '
-    $1 == "image" || $1 == "vars" || $1 == "binary" {
+    $1 == "image" || $1 == "vars" || $1 == "binary" || $1 == "renderer" {
       if (NF != 3 || $2 !~ /^\// || $3 !~ /^[0-9a-f]{64}$/) exit 1
       seen[$1]++; next
     }
@@ -30,13 +30,13 @@ perf_manifest_validate() {
     }
     { exit 1 }
     END {
-      split("image vars binary binary_source_commit binary_profile binary_features rust_toolchain campaign_id campaign_mode campaign_role campaign_ordinal campaign_expected_runs", keys, " ")
-      if (NR != 12) exit 1
+      split("image vars binary renderer binary_source_commit binary_profile binary_features rust_toolchain campaign_id campaign_mode campaign_role campaign_ordinal campaign_expected_runs", keys, " ")
+      if (NR != 13) exit 1
       for (i in keys) if (seen[keys[i]] != 1) exit 1
     }' "$manifest" || return 1
-  local image vars ordinal expected role mode
-  image="$(perf_manifest_value image "$manifest")"; vars="$(perf_manifest_value vars "$manifest")"
-  [[ -f "$image" && ! -L "$image" && -f "$vars" && ! -L "$vars" ]] || return 1
+  local image vars renderer ordinal expected role mode
+  image="$(perf_manifest_value image "$manifest")"; vars="$(perf_manifest_value vars "$manifest")"; renderer="$(perf_manifest_value renderer "$manifest")"
+  [[ -f "$image" && ! -L "$image" && -f "$vars" && ! -L "$vars" && -f "$renderer" && ! -L "$renderer" ]] || return 1
   PERF_BINARY_SOURCE_COMMIT="$(perf_manifest_value binary_source_commit "$manifest")"
   PERF_BINARY_PROFILE="$(perf_manifest_value binary_profile "$manifest")"
   PERF_BINARY_FEATURES="$(perf_manifest_value binary_features "$manifest")"
@@ -57,8 +57,8 @@ perf_manifest_validate() {
 }
 
 perf_manifest_verify_source_hashes() {
-  local manifest="$1" image vars
-  image="$(perf_manifest_value image "$manifest")"; vars="$(perf_manifest_value vars "$manifest")"
+  local manifest="$1" image vars renderer
+  image="$(perf_manifest_value image "$manifest")"; vars="$(perf_manifest_value vars "$manifest")"; renderer="$(perf_manifest_value renderer "$manifest")"
   [[ "$(perf_seal "$image")" == "$(perf_manifest_hash image "$manifest")" \
-    && "$(perf_seal "$vars")" == "$(perf_manifest_hash vars "$manifest")" ]]
+    && "$(perf_seal "$vars")" == "$(perf_manifest_hash vars "$manifest")" && "$(perf_seal "$renderer")" == "$(perf_manifest_hash renderer "$manifest")" ]]
 }

@@ -21,6 +21,7 @@ def main() -> int:
     )
     parser.add_argument("--aa-campaign", help="sealed A/A campaign id")
     parser.add_argument("--ab-campaign", help="optional sealed A/B campaign id")
+    parser.add_argument("--output", type=Path, help="write the successful JSON report to this path")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
@@ -33,7 +34,11 @@ def main() -> int:
     except EvidenceError as exc:
         print(json.dumps(exc.document(), indent=2, sort_keys=True), file=sys.stderr)
         return 1
-    print(json.dumps(result, indent=2, sort_keys=True))
+    rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
+    if args.output:
+        args.output.write_text(rendered, encoding="utf-8")
+    else:
+        sys.stdout.write(rendered)
     return 0
 
 

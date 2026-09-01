@@ -6,11 +6,13 @@ trap 'rm -rf "$WORK"' EXIT
 seal() { shasum -a 256 "$1" | cut -d' ' -f1; }
 printf image > "$WORK/image"
 printf vars > "$WORK/vars"
+printf renderer > "$WORK/renderer"
 printf '#!/bin/sh\nexit 0\n' > "$WORK/probe"
 chmod +x "$WORK/probe"
 base="$WORK/base.tsv"; manifest="$WORK/manifest.tsv"
 printf 'image\t%s\t%s\n' "$WORK/image" "$(seal "$WORK/image")" > "$base"
 printf 'vars\t%s\t%s\n' "$WORK/vars" "$(seal "$WORK/vars")" >> "$base"
+printf 'renderer\t%s\t%s\n' "$WORK/renderer" "$(seal "$WORK/renderer")" >> "$base"
 printf 'binary\t%s\t%s\nbinary_source_commit\t%s\nbinary_profile\trelease\nbinary_features\tvenus\nrust_toolchain\t1.97.0\n' \
   "$WORK/probe" "$(seal "$WORK/probe")" "$(git -C "$REPO" rev-parse HEAD)" >> "$base"
 cp "$base" "$manifest"
@@ -29,6 +31,6 @@ export BRIDGEVM_LIVE_ROOT="$WORK/queue"
 printf image > "$WORK/image"
 "$REPO/scripts/submit-hvf-boot-performance-campaign.sh" --mode AA --pairs 3 --campaign-id "$(printf %032d 1)" --baseline-manifest "$base" >/dev/null
 test "$(find "$BRIDGEVM_LIVE_ROOT/queued" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" = 6
-find "$BRIDGEVM_LIVE_ROOT/queued" -name input-manifest.tsv -exec awk 'END { exit NR != 12 }' {} \;
+find "$BRIDGEVM_LIVE_ROOT/queued" -name input-manifest.tsv -exec awk 'END { exit NR != 13 }' {} \;
 python3 "$REPO/scripts/report-hvf-boot-performance-ab.py" --self-test >/dev/null
 echo "HVF boot performance tier smoke: PASS"

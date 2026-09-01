@@ -28,7 +28,7 @@ fi
 [[ -n "$HARNESS_SHA" ]] || HARNESS_SHA="$(git -C "$REPO" rev-parse HEAD)"; [[ "$HARNESS_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "harness SHA must be 40 lowercase hex characters" >&2; exit 2; }
 validate_base() {
   awk -F '\t' '
-    $1 == "image" || $1 == "vars" || $1 == "binary" {
+    $1 == "image" || $1 == "vars" || $1 == "binary" || $1 == "renderer" {
       if (NF != 3 || $2 !~ /^\// || $3 !~ /^[0-9a-f]{64}$/) exit 1; seen[$1]++; next
     }
     $1 == "binary_source_commit" || $1 == "binary_profile" ||
@@ -37,8 +37,8 @@ validate_base() {
     }
     { exit 1 }
     END {
-      split("image vars binary binary_source_commit binary_profile binary_features rust_toolchain", keys, " ")
-      if (NR != 7) exit 1
+      split("image vars binary renderer binary_source_commit binary_profile binary_features rust_toolchain", keys, " ")
+      if (NR != 8) exit 1
       for (i in keys) if (seen[keys[i]] != 1) exit 1
     }' "$1"
 }

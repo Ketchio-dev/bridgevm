@@ -22,20 +22,22 @@ power_source() { command -v pmset >/dev/null && pmset -g batt | sed -n "s/^Now d
 export PERF_JOB_ID="$JOB_ID" PERF_HARNESS_COMMIT="$(git -C "$REPO" rev-parse HEAD)"
 export PERF_BINARY_SOURCE_COMMIT="unknown" PERF_BINARY_PROFILE="unknown" PERF_BINARY_FEATURES="unknown"
 export PERF_RUST_TOOLCHAIN="unknown" PERF_BINARY_HASH="absent" PERF_MANIFEST_HASH="absent"
-export PERF_IMAGE_HASH="absent" PERF_VARS_HASH="absent" PERF_FIRMWARE_HASH="absent" PERF_CONFIG_HASH="absent"
+export PERF_IMAGE_HASH="absent" PERF_VARS_HASH="absent" PERF_FIRMWARE_HASH="absent" PERF_RENDERER_HASH="absent" PERF_CONFIG_HASH="absent" PERF_WORKLOAD_PROFILE="shipping-core-3d-boot-v1"
 export PERF_CAMPAIGN_ID="unknown" PERF_CAMPAIGN_MODE="unknown" PERF_CAMPAIGN_ROLE="unknown"
 export PERF_CAMPAIGN_ORDINAL=0 PERF_CAMPAIGN_EXPECTED_RUNS=0
 export PERF_HOST_MODEL="$(sysctl -n hw.model 2>/dev/null || uname -m)" PERF_MACOS_VERSION="$(sw_vers -productVersion 2>/dev/null || uname -sr)"
 export PERF_POWER_SOURCE_START="$(power_source)" PERF_POWER_SOURCE_END="unknown"
 [[ -n "$PERF_POWER_SOURCE_START" ]] || PERF_POWER_SOURCE_START="unknown"
 export PERF_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-INVALID_REASON="failed-before-receipt"; RECEIPT_WRITTEN=0
+INVALID_REASON="failed-before-receipt"; RECEIPT_WRITTEN=0; RENDERER=""
 
 write_receipt() {
   local outcome="$1" passed="$2" desktop="$3" valid="$4" reason="$5"
   RECEIPT_WRITTEN=1; PERF_POWER_SOURCE_END="$(power_source)"
   [[ -n "$PERF_POWER_SOURCE_END" ]] || PERF_POWER_SOURCE_END="unknown"
-  if [[ "$PERF_POWER_SOURCE_START" == unknown || "$PERF_POWER_SOURCE_END" == unknown ]]; then
+  if [[ -n "$RENDERER" && "$(perf_seal "$RENDERER")" != "$PERF_RENDERER_HASH" ]]; then
+    outcome=failed; passed=false; valid=false; reason="renderer-changed-during-run"
+  elif [[ "$PERF_POWER_SOURCE_START" == unknown || "$PERF_POWER_SOURCE_END" == unknown ]]; then
     outcome=failed; passed=false; valid=false; reason="power-source-unknown"
   elif [[ "$PERF_POWER_SOURCE_START" != "$PERF_POWER_SOURCE_END" ]]; then
     outcome=failed; passed=false; valid=false; reason="power-source-changed"
@@ -63,6 +65,11 @@ if [[ "$VALIDATE_ONLY" == 1 ]]; then
 fi
 INVALID_REASON="unsigned-or-invalid-binary"
 codesign --verify --strict "$SEALED_BINARY" >/dev/null 2>&1 || exit 1
+INVALID_REASON="renderer-input-mismatch"
+RENDERER="$(perf_manifest_value renderer "$INPUT_MANIFEST")"; PERF_RENDERER_HASH="$(perf_seal "$RENDERER")"
+export PERF_RENDERER_HASH PERF_WORKLOAD_PROFILE
+[[ "$PERF_RENDERER_HASH" == "$(perf_manifest_hash renderer "$INPUT_MANIFEST")" ]] || exit 1
+otool -L "$SEALED_BINARY" | grep -Fq "$RENDERER" || exit 1
 
 TARGET="$(perf_manifest_value image "$INPUT_MANIFEST")"; VARS="$(perf_manifest_value vars "$INPUT_MANIFEST")"
 FIRMWARE="$REPO/crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd"
@@ -76,16 +83,18 @@ PERF_IMAGE_HASH="$(perf_seal "$OUT/media/target.raw")"; PERF_VARS_HASH="$(perf_s
 export PERF_IMAGE_HASH PERF_VARS_HASH
 [[ "$PERF_IMAGE_HASH" == "$(perf_manifest_hash image "$INPUT_MANIFEST")" \
   && "$PERF_VARS_HASH" == "$(perf_manifest_hash vars "$INPUT_MANIFEST")" ]] || exit 1
-PERF_CONFIG_HASH="$(printf '%s' "release;skip-build;daily;smp=4;ram=6144;virtio-net;xhci;agent-ready;shutdown;watchdog=120000;firmware=$PERF_FIRMWARE_HASH;warm-cache=clone-integrity-scan" | shasum -a 256 | cut -d' ' -f1)"
+PERF_CONFIG_HASH="$(printf '%s' "shipping-core-3d-boot-v1;release;skip-build;daily;smp=4;ram=6144;virtio-net;xhci;hda-coreaudio;virgl;device=1050;aggressive;display-fb=100ms;input-control;agent-ready;shutdown;watchdog=120000;firmware=$PERF_FIRMWARE_HASH;renderer=$PERF_RENDERER_HASH;warm-cache=clone-integrity-scan" | shasum -a 256 | cut -d' ' -f1)"
 export PERF_CONFIG_HASH
-printf 'harness_commit=%s\nbinary_source_commit=%s\nbinary_sha256=%s\nimage_sha256=%s\nvars_sha256=%s\nfirmware_sha256=%s\nconfig_sha256=%s\npower_source_start=%s\n' \
-  "$PERF_HARNESS_COMMIT" "$PERF_BINARY_SOURCE_COMMIT" "$PERF_BINARY_HASH" "$PERF_IMAGE_HASH" "$PERF_VARS_HASH" "$PERF_FIRMWARE_HASH" "$PERF_CONFIG_HASH" "$PERF_POWER_SOURCE_START" > "$OUT/measurement-identity.txt"
+printf 'harness_commit=%s\nbinary_source_commit=%s\nbinary_sha256=%s\nimage_sha256=%s\nvars_sha256=%s\nfirmware_sha256=%s\nrenderer_sha256=%s\nconfig_sha256=%s\nworkload_profile=%s\npower_source_start=%s\n' \
+  "$PERF_HARNESS_COMMIT" "$PERF_BINARY_SOURCE_COMMIT" "$PERF_BINARY_HASH" "$PERF_IMAGE_HASH" "$PERF_VARS_HASH" "$PERF_FIRMWARE_HASH" "$PERF_RENDERER_HASH" "$PERF_CONFIG_HASH" "$PERF_WORKLOAD_PROFILE" "$PERF_POWER_SOURCE_START" > "$OUT/measurement-identity.txt"
 
 INVALID_REASON="boot-wrapper-failed"; status=0
 BRIDGEVM_PREBUILT_PROBE="$SEALED_BINARY" "$REPO/scripts/run-hvf-windows-installed-boot.sh" \
   --target "$OUT/media/target.raw" --vars "$OUT/media/vars.fd" --firmware-code "$FIRMWARE" \
   --evidence-dir "$OUT/boot" --release --skip-build --daily --smp-cpus 4 --ram-mib 6144 \
-  --watchdog-ms 120000 --boot-timer --boot-timer-desktop-agent --virtio-net --enable-xhci \
+  --watchdog-ms 120000 --boot-timer --boot-timer-desktop-agent --virtio-net --enable-xhci --hda-coreaudio \
+  --virtio-gpu-3d --virtio-gpu-device-id 1050 --gpu-trace-protocol virgl --performance-risk aggressive \
+  --display-export-ms 100 --display-export-fb "$OUT/boot/display.fb" --input-control "$OUT/boot/input.ctl" \
   --shutdown-after-agent-ready > "$OUT/boot-wrapper.stdout" 2> "$OUT/boot-wrapper.stderr" || status=$?
 report_status=0
 "$REPO/scripts/report-hvf-boot-timer-metrics.sh" "$OUT/boot" > "$OUT/boot/boot-timer-report.tsv" || report_status=$?

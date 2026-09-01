@@ -45,8 +45,8 @@ def main() -> int:
         "input_manifest_sha256": required("PERF_MANIFEST_HASH"),
         "image_sha256": required("PERF_IMAGE_HASH"),
         "vars_sha256": required("PERF_VARS_HASH"),
-        "firmware_sha256": required("PERF_FIRMWARE_HASH"),
-        "config_sha256": required("PERF_CONFIG_HASH"),
+        "firmware_sha256": required("PERF_FIRMWARE_HASH"), "renderer_sha256": required("PERF_RENDERER_HASH"),
+        "config_sha256": required("PERF_CONFIG_HASH"), "workload_profile": required("PERF_WORKLOAD_PROFILE"),
         "campaign_id": required("PERF_CAMPAIGN_ID"),
         "campaign_mode": required("PERF_CAMPAIGN_MODE"),
         "campaign_role": required("PERF_CAMPAIGN_ROLE"),
@@ -72,7 +72,7 @@ def main() -> int:
         "outcome": required("PERF_RECEIPT_OUTCOME"),
         "pass": passed,
         "evidence_paths": ["boot/boot-timer-report.tsv"],
-        "known_confounders": ["full clone integrity hash immediately precedes boot (warm cache)"],
+        "known_confounders": ["full clone integrity hash immediately precedes boot (warm cache)", "boot harness omits product vTPM, clipboard/share, and long-lived app session"],
     }
     path = Path(sys.argv[1])
     path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
