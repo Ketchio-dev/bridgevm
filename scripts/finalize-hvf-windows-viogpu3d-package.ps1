@@ -305,11 +305,21 @@ $coreDllNames = @(
     "viogpu_d3d10_arm64.dll",
     "viogpu_wgl_arm64.dll"
 )
+$noticeNames = @(
+    "BridgeVM-MODIFICATIONS.txt",
+    "Mesa-license.rst",
+    "Mesa-patched-files-MIT.txt",
+    "Mesa-upstream-licenses.zip",
+    "THIRD-PARTY-NOTICE-SHA256SUMS",
+    "virtio-win-BSD-3-Clause.txt",
+    "virtio-win-mesa-submit-trace.patch",
+    "virtio-win-mesa-unbound-clear.patch"
+)
 $expectedInputNames = @(
     "bridgevm-package-provenance.env",
     "viogpu3d.inf",
     "viogpu3d.sys"
-) + $coreDllNames
+) + $coreDllNames + $noticeNames
 
 $inputItems = @(Get-ChildItem -LiteralPath $PackageDir -Force -Recurse)
 foreach ($item in $inputItems) {
@@ -346,6 +356,13 @@ Assert-PinnedInputManifest `
     -ManifestPath $PreFinalizationManifest `
     -InputDir $PackageDir `
     -ExpectedNames $expectedInputNames
+
+$NoticePackager = Join-Path $PSScriptRoot "package-windows-graphics-notices.py"
+if (-not (Test-Path -LiteralPath $NoticePackager -PathType Leaf)) {
+    throw "Windows graphics notice verifier is missing: $NoticePackager"
+}
+& python $NoticePackager verify --package $PackageDir
+if ($LASTEXITCODE -ne 0) { throw "Windows graphics notice verification failed" }
 
 $expectedInfSha256 = "f8bc2e3bb097d1d8f9d461745dc6665b65bddf53cbb986dc57df1059f374b5e9"
 $actualInfSha256 = (Get-FileHash -LiteralPath $InputInf -Algorithm SHA256).Hash.ToLowerInvariant()

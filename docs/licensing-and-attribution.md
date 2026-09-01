@@ -34,8 +34,10 @@ original. Name the API or specification instead.
 | --- | --- | --- |
 | BridgeVM-owned implementation | HVF lifecycle, memory map, PCIe/MMIO dispatch, GIC, NVMe, xHCI, virtio transports, ACPI/SMBIOS generators | Apache-2.0 source in this repository; behavior is justified by public specifications, declared contracts and BridgeVM evidence |
 | Required compatibility ABI | QEMU `virt` machine contract, `qemu,fw-cfg-mmio`, `QEMU`/`QEMU CFG` protocol literals | Names and byte values remain where bundled firmware requires interoperability; isolated in the machine contract and `fwcfg.rs`, not treated as source provenance |
-| Modified third-party component | virglrenderer | Upstream licence and copyright retained; exact local patch and pinned upstream revision remain visible |
-| Unmodified third-party component | EDK2, swtpm/libtpms, dynamically linked support libraries, guest drivers and Mesa payloads | Kept outside BridgeVM-owned code and distributed only with the licences and notices recorded in `THIRD-PARTY-NOTICES.md` |
+| Product-bundled modified third-party component | virglrenderer; TianoCore EDK2 secure firmware | Upstream licences and copyright retained; exact local patches, pinned revisions and patch digests remain visible |
+| Graphics Lab modified component | Mesa Windows UMD | Absent from the General Preview; CI artifacts carry the upstream licence overview, complete licence archive, patch files and modification record |
+| Internal-only modified component | DXVK relaxation; virglrenderer draw probes | Used only for private live validation or diagnostics; no patched binary is shipped or uploaded as a public CI artifact |
+| Other unmodified third-party component | swtpm/libtpms, dynamically linked support libraries and unmodified guest payloads | Kept outside BridgeVM-owned code and distributed only with the licences and notices recorded in `THIRD-PARTY-NOTICES.md` |
 | External compatibility executable | user-installed `qemu-system-*` | Launched only by the Compatibility Engine; not linked, embedded or redistributed by BridgeVM |
 
 Changing prose does not establish code provenance. The enforceable boundary is
@@ -48,14 +50,26 @@ Third-party components are used as published binaries or libraries under their
 own licences, and every one with an obligation is listed in the notices file
 with its licence, linkage form and what that obligation is.
 
-Only one component is modified rather than merely used: virglrenderer. Its local
-patch is kept at
-[`scripts/patches/virglrenderer-macos-venus.patch`](../scripts/patches/virglrenderer-macos-venus.patch)
-and applies to the upstream commit pinned in
-[`scripts/build-venus-host-deps.sh`](../scripts/build-venus-host-deps.sh).
-virglrenderer is MIT-licensed, its copyright notices are retained, and keeping
-the patch in the tree means the modification is visible rather than folded into
-a shipped binary.
+Every tracked third-party patch is registered in
+[`THIRD-PARTY-PATCHES.tsv`](../THIRD-PARTY-PATCHES.tsv). The registry binds the
+patch to an exact upstream revision, licence, distribution scope, licence text,
+licence SHA-256 and patch SHA-256. The deterministic registry check fails on
+an unregistered patch, a missing patch, an unrecognised scope, a stale digest
+or a missing licence text.
+
+Two patched results are product-bundled: virglrenderer and the secure TianoCore
+EDK2 firmware. Two Mesa patches feed only the Windows UMD CI/Graphics Lab
+artifact. One shared packager keeps its per-file licence archive, the unmodified
+virtio-win KMD licence, both patches and a digest-bound modification record in
+the CI, staged and finalized package. The DXVK relaxation and older
+virglrenderer draw probes remain internal-validation-only. Keeping these
+categories separate prevents an internal experiment from silently becoming a
+product dependency.
+
+The older `edk2-aarch64-code.fd` blob is a development-only compatibility and
+regression fixture. Its original build revision was not recorded, so current
+product packaging excludes it and uses only the reproducible secure firmware
+with the adjacent build receipt.
 
 ## What is deliberately not shipped
 
@@ -85,15 +99,17 @@ replace it, which is what LGPL requires.
 
 | Check | What it proves | Needs |
 | --- | --- | --- |
-| `scripts/check-attribution-honesty.sh` | The notices file still answers the provenance and guest-OS questions; no tracked OS image; no source or document claims derivation from another VMM; the virglrenderer patch is present and referenced; promised licence texts exist; `deny.toml` admits no copyleft licence | the tree |
+| `scripts/check-attribution-honesty.sh` | The notices file still answers the provenance and guest-OS questions; no tracked OS image; no source or document claims derivation from another VMM; promised licence texts exist; `deny.toml` admits no copyleft licence | the tree |
+| `scripts/check-third-party-patch-registry.sh` | Every tracked patch has exactly one scope, exact upstream revision, licence text, licence digest and patch digest; notices and licensing guidance link the registry | the tree |
 | `scripts/verify-app-third-party-notices.sh` | The bundled licence and notices match the repository byte for byte; every LGPL dylib is a separate Mach-O with a proven dynamic consumer; no static archives; the Rust inventory and licence-text bundle agree | a built `.app` |
 | `cargo deny check` | Every dependency licence is on the permissive allowlist | the lockfile |
 | `scripts/verify-rust-dependency-inventory.sh` and `scripts/verify-rust-license-bundle.sh` | The shipped inventory and licence texts cover the same package set | a generated inventory |
 
-The first three run in `scripts/check-project.sh` or hosted CI. The bundle-level
-checks run during release packaging, because they need an actual app.
+The tree-level attribution, patch-registry and dependency checks run in
+`scripts/check-project.sh` or hosted CI. Bundle-level checks run during release
+packaging, because they need an actual app.
 
-Each rule in the attribution check is mutation-verified: removing a required
-notices section, dropping the virglrenderer patch reference, re-adding a
-copyleft licence to `deny.toml`, or adding a derivation claim to a source file
-each make it fail.
+The attribution and patch-registry rules are mutation-verified: removing a
+required notices section, deleting a patch-registry row, changing a patch
+digest, re-adding a copyleft licence to `deny.toml`, or adding a derivation
+claim to a source file each make the relevant check fail.

@@ -5,7 +5,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="${1:-}"
 [[ -n "$APP" && -d "$APP/Contents" ]] || { echo "usage: scripts/verify-app-third-party-notices.sh APP" >&2; exit 2; }
-
 resources="$APP/Contents/Resources"
 frameworks="$APP/Contents/Frameworks"
 project_license="$resources/LICENSE"
@@ -17,6 +16,7 @@ cmp -s "$ROOT/THIRD-PARTY-NOTICES.md" "$notice" || {
   echo "bundled third-party notice differs from the repository source" >&2
   exit 1
 }
+"$ROOT/scripts/verify-bundled-firmware-provenance.sh" "$APP"
 for license in virglrenderer-MIT.txt libepoxy-MIT.txt; do
   [[ -s "$resources/licenses/$license" ]] || {
     echo "bundled host license is missing: $license" >&2

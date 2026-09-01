@@ -4,7 +4,8 @@ Two firmware artifacts are retained deliberately:
 
 - `edk2-aarch64-code.fd` is the earlier known-good NVMe-boot build. Its exact
   original build revision was not recorded, so it remains as a compatibility
-  and regression artifact instead of being silently replaced.
+  and regression artifact instead of being silently replaced. It is
+  development-only and is not installed by the macOS product packagers.
 - `edk2-aarch64-secure-code.fd` is the product default. It is built from
   tianocore/edk2 `edk2-stable202605`, commit
   `b03a21a63e3bd001f52c527e5a57feddb53a690b`, with Secure Boot, TPM2, and the

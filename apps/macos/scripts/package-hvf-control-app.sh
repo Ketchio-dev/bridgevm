@@ -70,8 +70,8 @@ install -d \
   "$stage_app/Contents/Frameworks"
 install -m 644 "$ROOT/LICENSE" \
   "$stage_app/Contents/Resources/LICENSE"
-install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" \
-  "$stage_app/Contents/Resources/THIRD-PARTY-NOTICES.md"
+install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" "$ROOT/THIRD-PARTY-PATCHES.tsv" \
+  "$stage_app/Contents/Resources"
 install -m 644 "$ROOT/docs/licenses/virglrenderer-MIT.txt" \
   "$stage_app/Contents/Resources/licenses/virglrenderer-MIT.txt"
 install -m 644 "$ROOT/docs/licenses/libepoxy-MIT.txt" \

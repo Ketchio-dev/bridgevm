@@ -57,16 +57,16 @@ if [[ -n "$derivation_hits" ]]; then
   fail "a file claims BridgeVM code derives from another product"
 fi
 
-# virglrenderer is the one third-party component BridgeVM modifies. The patch
-# must stay in the tree so the modification is visible rather than folded into
-# a shipped binary, and the notices must keep saying so.
-patch="scripts/patches/virglrenderer-macos-venus.patch"
-[[ -s "$patch" ]] || fail "the virglrenderer patch is missing: $patch"
-grep -qF "$patch" THIRD-PARTY-NOTICES.md ||
-  fail "THIRD-PARTY-NOTICES.md no longer points at the virglrenderer patch"
+# Every modified third-party source has an exact scope and digest.
+scripts/check-third-party-patch-registry.sh || fail "third-party patch registry failed"
+legacy_firmware="crates/bridgevm-hvf/firmware/edk2-aarch64-code.fd"
+legacy_product_hit="$(grep -rlF "$legacy_firmware" apps/macos/scripts packaging/macos 2>/dev/null || true)"
+[[ -z "$legacy_product_hit" ]] || fail "unsealed legacy firmware entered a product packaging path: $legacy_product_hit"
 
 # Every licence text the notices promise to ship must exist in the tree.
-for license_text in docs/licenses/virglrenderer-MIT.txt docs/licenses/libepoxy-MIT.txt; do
+for license_text in docs/licenses/virglrenderer-MIT.txt docs/licenses/libepoxy-MIT.txt \
+  docs/licenses/Mesa-patched-files-MIT.txt docs/licenses/DXVK-zlib.txt \
+  docs/licenses/virtio-win-BSD-3-Clause.txt crates/bridgevm-hvf/firmware/edk2-licenses.txt; do
   [[ -s "$license_text" ]] || fail "a promised licence text is missing: $license_text"
 done
 
