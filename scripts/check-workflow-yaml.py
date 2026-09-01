@@ -27,7 +27,7 @@ WORKFLOWS = ROOT / ".github/workflows"
 # was added because something it checks had none.
 REQUIRED_JOBS = {
     "ci.yml": {"fmt", "clippy", "test", "budgets", "swift", "truth", "linux-stubs", "windows-nvme-workload"},
-    "release.yml": {"artifacts"},
+    "release.yml": {"artifacts"}, "hvf-performance-binary.yml": {"build-attest"},
     "security-quality.yml": {"supply-chain", "fuzz-smoke", "loom"},
 }
 

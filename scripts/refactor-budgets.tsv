@@ -1370,6 +1370,7 @@ scripts/verify-dynamic-resize.sh	112	0
 scripts/verify-keyboard-input.sh	176	0
 scripts/verify-powered-off-snapshot.sh	118	0
 scripts/verify-snapshot-restore-boots.sh	162	0
+scripts/verify-hvf-performance-binary-provenance.sh	71	0
 scripts/verify-venus-native-artifacts.sh	49	0
 scripts/verify-vulkan-title-fps.sh	162	0
 scripts/win-tests/shaders/gen-vulkan-draw-shaders.sh	44	0

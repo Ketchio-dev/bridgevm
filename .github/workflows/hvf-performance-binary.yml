@@ -1,0 +1,68 @@
+name: HVF performance binary
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+concurrency:
+  group: hvf-performance-binary-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  build-attest:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      BRIDGEVM_3D_DIR: ${{ runner.temp }}/bridgevm-3d
+      BRIDGEVM_VENUS_PREFIX: ${{ runner.temp }}/bridgevm-3d/prefix
+      CANONICAL_RENDERER: /Users/user/BridgeVM/3d/prefix/lib/libvirglrenderer.1.dylib
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.1
+        with:
+          key: hvf-performance-binary
+      - name: Cache patched renderer build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/bridgevm-3d
+          key: hvf-performance-renderer-2a173ee-${{ hashFiles('scripts/build-venus-host-deps.sh', 'scripts/patches/virglrenderer-macos-venus.patch') }}
+      - name: Install renderer build dependencies
+        run: |
+          brew install meson ninja pkgconf libepoxy molten-vk vulkan-loader vulkan-headers
+          python3 -m pip install --break-system-packages pyyaml
+      - name: Build patched renderer and release probe
+        run: |
+          scripts/build-venus-host-deps.sh
+          install -d "$RUNNER_TEMP/hvf-performance-dist"
+          apps/macos/scripts/build-sign-hvf-windows-probe.sh --release \
+            --output "$RUNNER_TEMP/hvf-performance-dist/hvf_gic_boot_probe" >/dev/null
+      - name: Rewrite to the physical-lab renderer contract and re-sign
+        run: |
+          binary="$RUNNER_TEMP/hvf-performance-dist/hvf_gic_boot_probe"
+          linked="$(otool -L "$binary" | awk '/libvirglrenderer[^[:space:]]*\.dylib/ { print $1; exit }')"
+          [[ -n "$linked" && "$linked" != "$CANONICAL_RENDERER" ]]
+          install_name_tool -change "$linked" "$CANONICAL_RENDERER" "$binary"
+          codesign --force --sign - --entitlements apps/macos/HvfRunner.release.entitlements "$binary"
+          apps/macos/scripts/build-sign-hvf-windows-probe.sh --verify-only "$binary" >/dev/null
+          otool -L "$binary" | grep -Fq "$CANONICAL_RENDERER"
+          (cd "$RUNNER_TEMP/hvf-performance-dist" && shasum -a 256 hvf_gic_boot_probe > SHA256SUMS)
+      - name: Attest the final signed binary bytes
+        id: attest
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: ${{ runner.temp }}/hvf-performance-dist/hvf_gic_boot_probe
+      - name: Retain the binary and checksum
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hvf-performance-binary-${{ github.sha }}
+          path: ${{ runner.temp }}/hvf-performance-dist/*
+          if-no-files-found: error
+          retention-days: 30

@@ -16,7 +16,7 @@ python3 "$RENDER" --self-test | grep -q PASS
 bash "$MANIFEST" self-test | grep -q PASS
 python3 "$WRITER" --self-test | grep -q PASS
 python3 "$REPORT" --self-test | grep -q PASS
-python3 "$REPO/scripts/live-gates/redact-receipt.py" --self-test | grep -q PASS
+python3 "$REPO/scripts/live-gates/redact-receipt.py" --self-test | grep -q PASS; bash "$REPO/scripts/verify-hvf-performance-binary-provenance.sh" --self-test | grep -q PASS
 bash "$REPO/scripts/live-gates/hvf-nvme-performance-runtime-self-test.sh" "$TEMPORARY/runtime" | grep -q PASS
 head="$(git -C "$REPO" rev-parse HEAD)"
 for key in image vars firmware renderer; do printf 'fixture-%s\n' "$key" > "$TEMPORARY/$key"; done
