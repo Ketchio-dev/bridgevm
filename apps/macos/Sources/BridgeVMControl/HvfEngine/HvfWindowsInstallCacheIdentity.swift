@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 enum HvfWindowsInstallCacheIdentity {
-    private static let recipeVersion = "bridgevm-winpe-source-v4"
+    private static let recipeVersion = "bridgevm-winpe-source-v5"
     private static let recipePaths = [
         "scripts/build-hvf-windows-scripted-source.sh",
         "scripts/stage-hvf-windows-guest-payload.sh",
@@ -31,6 +31,8 @@ enum HvfWindowsInstallCacheIdentity {
         }
         hasher.update(data: Data("wimlib\n".utf8))
         update(&hasher, withFile: HvfWindowsWimlib.resolve(repoRoot: repoRoot))
+        hasher.update(data: Data("catalog-verifier\n".utf8))
+        update(&hasher, withFile: HvfWindowsCatalogVerifier.resolve(repoRoot: repoRoot))
         return "win11-" + hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 

@@ -54,7 +54,7 @@ jobs:
 
       - name: Install packaging dependencies
         run: |
-          brew install meson ninja pkgconf libepoxy molten-vk vulkan-loader vulkan-headers swtpm
+          brew install meson ninja pkgconf libepoxy molten-vk vulkan-loader vulkan-headers swtpm openssl@3
           python3 -m pip install --break-system-packages pyyaml
 
       - name: Build patched renderer

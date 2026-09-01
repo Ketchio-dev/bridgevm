@@ -31,7 +31,7 @@ PROVISION_STAGE="$MOUNT_ROOT/provisioning"
 "$SCRIPT_DIR/stage-hvf-windows-guest-payload.sh" \
   --payload-dir "${WINDOWS_GUEST_PAYLOAD_DIR:-}" --manifest "${WINDOWS_GUEST_PAYLOAD_MANIFEST:-}" \
   --assets "$ASSETS" --output "$PROVISION_STAGE" \
-  --openssl "${WINDOWS_GUEST_PAYLOAD_OPENSSL:-/usr/bin/openssl}"
+  --catalog-verifier "${WINDOWS_GUEST_PAYLOAD_CATALOG_VERIFIER:-}"
 UNATTEND_PATH="${WINDOWS_UNATTEND_PATH:-$ASSETS/unattend.xml}"
 [[ "$UNATTEND_PATH" == /* && -f "$UNATTEND_PATH" && ! -L "$UNATTEND_PATH" ]] || { echo "FAIL: unattend answer file must be an absolute regular non-symlink file" >&2; exit 1; }
 log "attaching ISO"

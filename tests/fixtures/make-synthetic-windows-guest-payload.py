@@ -43,7 +43,7 @@ def create(payload: Path, manifest: Path, openssl: str) -> None:
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         subprocess.run(
-            [openssl, "cms", "-sign", "-binary", "-nodetach", "-nosmimecap",
+            [openssl, "cms", "-sign", "-binary", "-nodetach", "-nosmimecap", "-econtent_type", "1.3.6.1.4.1.311.10.1",
              "-in", str(content), "-signer", str(certificate), "-inkey", str(key),
              "-outform", "DER", "-out", str(catalog)],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

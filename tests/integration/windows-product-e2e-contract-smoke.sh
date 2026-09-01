@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-product-e2e.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 FAKE="$TMP/bin"
 mkdir -p "$FAKE" "$TMP/assets"
+CATALOG_VERIFIER="$("$ROOT/tests/integration/build-windows-catalog-verifier-test-helper.sh" "$TMP")"
 cp "$ROOT/scripts/win-assets/"{winpeshl.ini,bvinstall.cmd,bvdiskpart.txt,unattend.xml,bvagent.ps1,bvagent-firstboot.ps1} "$TMP/assets/"
 printf 'fake ISO\n' > "$TMP/windows.iso"
 python3 "$ROOT/tests/fixtures/make-synthetic-windows-guest-payload.py" "$TMP/payload" "$TMP/payload.tsv"
@@ -65,7 +65,7 @@ chmod 755 "$FAKE/"*
 BRIDGEVM_HDIUTIL_LOG="$TMP/hdiutil.log" \
 ISO="$TMP/windows.iso" ASSETS="$TMP/assets" OUT="$TMP/source.raw" \
 WIMLIB="$FAKE/wimlib-imagex" \
-WINDOWS_GUEST_PAYLOAD_DIR="$TMP/payload" WINDOWS_GUEST_PAYLOAD_MANIFEST="$TMP/payload.tsv" \
+WINDOWS_GUEST_PAYLOAD_DIR="$TMP/payload" WINDOWS_GUEST_PAYLOAD_MANIFEST="$TMP/payload.tsv" WINDOWS_GUEST_PAYLOAD_CATALOG_VERIFIER="$CATALOG_VERIFIER" \
 TMPDIR="$TMP" PATH="$FAKE:/usr/bin:/bin:/usr/sbin:/sbin" \
   "$ROOT/scripts/build-hvf-windows-scripted-source.sh" >/dev/null
 [[ "$(grep -c '^attach ' "$TMP/hdiutil.log")" == 3 ]]

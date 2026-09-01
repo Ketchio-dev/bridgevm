@@ -9,19 +9,16 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from windows_catalog_test_support import build_catalog_verifier, invoke_stage
+
 
 ROOT = Path(__file__).resolve().parents[2]
-STAGE = ROOT / "scripts/stage-hvf-windows-guest-payload.sh"
 FIXTURE = ROOT / "tests/fixtures/make-synthetic-windows-guest-payload.py"
 ASSETS = ROOT / "scripts/win-assets"
-
-
-def invoke(payload: Path, manifest: Path, output: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [str(STAGE), "--payload-dir", str(payload), "--manifest", str(manifest),
-         "--assets", str(ASSETS), "--output", str(output)],
-        capture_output=True, text=True,
-    )
+def invoke(
+    payload: Path, manifest: Path, output: Path, verifier: Path
+) -> subprocess.CompletedProcess[str]:
+    return invoke_stage(payload, manifest, ASSETS, output, verifier)
 
 
 def require_block(result: subprocess.CompletedProcess[str], code: str) -> None:
@@ -57,9 +54,11 @@ def main() -> int:
         root = Path(temporary)
         payload = root / "payload"
         manifest = root / "manifest.tsv"
+        verifier = root / "bridgevm-catalog-verify"
+        build_catalog_verifier(verifier)
         subprocess.run([str(FIXTURE), str(payload), str(manifest)], check=True)
 
-        good = invoke(payload, manifest, root / "staged")
+        good = invoke(payload, manifest, root / "staged", verifier)
         assert good.returncode == 0, good.stderr
         receipt = (root / "staged/payload-receipt.tsv").read_text()
         for role in ("storage", "serial", "network"):
@@ -70,41 +69,41 @@ def main() -> int:
         storage = payload / "storage/storage.sys"
         original = storage.read_bytes()
         storage.write_bytes(original + b"mutation")
-        require_block(invoke(payload, manifest, root / "mutated"), "guest-payload-hash")
+        require_block(invoke(payload, manifest, root / "mutated", verifier), "guest-payload-hash")
         storage.write_bytes(original)
 
         altered = bytearray(original)
         struct.pack_into("<H", altered, 0x84, 0x8664)
         storage.write_bytes(altered)
         replace_hash(manifest, "storage/storage.sys", storage)
-        require_block(invoke(payload, manifest, root / "x64"), "guest-payload-architecture")
+        require_block(invoke(payload, manifest, root / "x64", verifier), "guest-payload-architecture")
         storage.write_bytes(original)
         replace_hash(manifest, "storage/storage.sys", storage)
 
         catalog = payload / "serial/serial.cat"
         signed_catalog = catalog.read_bytes()
+        content_offset = signed_catalog.index(b"synthetic BridgeVM catalog fixture")
+        catalog.write_bytes(signed_catalog[:content_offset] + b"X" + signed_catalog[content_offset + 1:])
+        replace_hash(manifest, "serial/serial.cat", catalog)
+        require_block(invoke(payload, manifest, root / "tampered-catalog", verifier), "guest-payload-catalog-signature")
         catalog.write_bytes(b"unsigned catalog")
         replace_hash(manifest, "serial/serial.cat", catalog)
-        require_block(invoke(payload, manifest, root / "unsigned"), "guest-payload-catalog-signature")
+        require_block(invoke(payload, manifest, root / "unsigned", verifier), "guest-payload-catalog-signature")
         catalog.write_bytes(signed_catalog)
         replace_hash(manifest, "serial/serial.cat", catalog)
 
         extra = payload / "network/unmanifested.dll"
         extra.write_bytes(original)
-        require_block(invoke(payload, manifest, root / "extra"), "guest-payload-file-set")
+        require_block(invoke(payload, manifest, root / "extra", verifier), "guest-payload-file-set")
         extra.unlink()
 
         missing_role = root / "missing-role.tsv"
         missing_role.write_text("\n".join(
             line for line in manifest.read_text().splitlines()
             if not line.startswith("driver\tnetwork\t")) + "\n")
-        require_block(invoke(payload, missing_role, root / "missing-role"), "guest-payload-roles")
+        require_block(invoke(payload, missing_role, root / "missing-role", verifier), "guest-payload-roles")
 
-        missing = subprocess.run(
-            [str(STAGE), "--payload-dir", str(root / "absent"), "--manifest", str(manifest),
-             "--assets", str(ASSETS), "--output", str(root / "missing")],
-            capture_output=True, text=True,
-        )
+        missing = invoke(root / "absent", manifest, root / "missing", verifier)
         require_block(missing, "guest-payload-missing")
 
         iso = root / "windows.iso"
@@ -113,6 +112,7 @@ def main() -> int:
         build_environment = {
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "ISO": str(iso),
             "ASSETS": str(ASSETS), "OUT": str(source_output), "WIMLIB": "/usr/bin/true",
+            "WINDOWS_GUEST_PAYLOAD_CATALOG_VERIFIER": str(verifier),
         }
         source = subprocess.run(
             [str(ROOT / "scripts/build-hvf-windows-scripted-source.sh")],

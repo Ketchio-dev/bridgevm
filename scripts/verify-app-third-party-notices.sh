@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Verify packaged notices and separately replaceable LGPL dynamic libraries.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="${1:-}"
@@ -17,6 +16,7 @@ cmp -s "$ROOT/THIRD-PARTY-NOTICES.md" "$notice" || {
 }
 "$ROOT/scripts/verify-bundled-firmware-provenance.sh" "$APP"
 "$ROOT/scripts/verify-bundled-wimlib-runtime.sh" "$APP"
+"$ROOT/apps/macos/scripts/bundle-windows-catalog-verifier.sh" --verify-only "$APP" >/dev/null
 for license in virglrenderer-MIT.txt libepoxy-MIT.txt; do
   [[ -s "$resources/licenses/$license" ]] || {
     echo "bundled host license is missing: $license" >&2

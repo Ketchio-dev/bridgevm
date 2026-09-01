@@ -1787,3 +1787,13 @@ scripts/win-assets/bvagent-firstboot.ps1	71	0
 scripts/win-assets/windows-guest-payload-v1.example.tsv	16	0
 tests/integration/bundled-wimlib-runtime-contract-smoke.sh	40	0
 tests/integration/windows-install-security-contract-smoke.py	51	0
+apps/macos/Helpers/bridgevm-catalog-verify.c	78	0
+apps/macos/Helpers/bridgevm-catalog-content-digest.c	98	0
+apps/macos/Helpers/bridgevm-catalog-content-digest.h	9	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsCatalogVerifier.swift	27	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsCatalogVerifierTests.swift	51	0
+apps/macos/scripts/bundle-windows-catalog-verifier.sh	118	0
+apps/macos/scripts/install-windows-catalog-verifier.sh	22	0
+scripts/build-windows-catalog-verifier.sh	46	0
+tests/integration/build-windows-catalog-verifier-test-helper.sh	14	0
+tests/integration/windows_catalog_test_support.py	29	0

@@ -6,7 +6,7 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-usage: stage-hvf-windows-guest-payload.sh --payload-dir DIR --manifest TSV --assets DIR --output DIR [--openssl PATH]
+usage: stage-hvf-windows-guest-payload.sh --payload-dir DIR --manifest TSV --assets DIR --output DIR --catalog-verifier PATH
 
 The manifest must use bridgevm-windows-guest-payload-v1 and list exactly the
 storage, serial and network roles. The output path must not already exist.
@@ -20,14 +20,14 @@ PAYLOAD_DIR=""
 MANIFEST=""
 ASSETS=""
 OUTPUT=""
-OPENSSL="/usr/bin/openssl"
+CATALOG_VERIFIER=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --payload-dir) [[ $# -ge 2 ]] || { usage; exit 2; }; PAYLOAD_DIR="$2"; shift 2 ;;
     --manifest) [[ $# -ge 2 ]] || { usage; exit 2; }; MANIFEST="$2"; shift 2 ;;
     --assets) [[ $# -ge 2 ]] || { usage; exit 2; }; ASSETS="$2"; shift 2 ;;
     --output) [[ $# -ge 2 ]] || { usage; exit 2; }; OUTPUT="$2"; shift 2 ;;
-    --openssl) [[ $# -ge 2 ]] || { usage; exit 2; }; OPENSSL="$2"; shift 2 ;;
+    --catalog-verifier) [[ $# -ge 2 ]] || { usage; exit 2; }; CATALOG_VERIFIER="$2"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
@@ -40,8 +40,12 @@ done
   fail guest-tools-missing "BridgeVM asset directory is unavailable"
 [[ "$OUTPUT" == /* && ! -e "$OUTPUT" ]] || \
   fail guest-payload-output "output must be an absent absolute path"
-[[ "$OPENSSL" == /* && -x "$OPENSSL" ]] || \
-  fail guest-payload-signature-tool "OpenSSL must be an absolute executable"
+[[ "$CATALOG_VERIFIER" == /* && -f "$CATALOG_VERIFIER" && -x "$CATALOG_VERIFIER" && ! -L "$CATALOG_VERIFIER" ]] || \
+  fail guest-payload-signature-tool "catalog verifier must be an absolute regular executable"
+
+sha256_file() {
+  /usr/bin/shasum -a 256 "$1" | /usr/bin/awk '{print $1}'
+}
 
 payload_real="$(cd "$PAYLOAD_DIR" && pwd -P)"
 manifest_real="$(cd "$(dirname "$MANIFEST")" && pwd -P)/$(basename "$MANIFEST")"
@@ -54,7 +58,7 @@ fi
 if find "$PAYLOAD_DIR" ! -type f ! -type d -print -quit | grep -q .; then fail guest-payload-file-set "payload tree contains a non-regular entry"; fi
 work="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-guest-payload.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
-manifest_hash="$("$OPENSSL" dgst -sha256 -r "$MANIFEST" | awk '{print $1}')"
+manifest_hash="$(sha256_file "$MANIFEST")"
 files="$work/files.tsv"
 drivers="$work/drivers.tsv"
 listed="$work/listed.txt"
@@ -136,7 +140,7 @@ while IFS=$'\t' read -r path expected; do
   (( bytes <= 268435456 )) || fail guest-payload-file-size "payload file exceeds 256 MiB: $path"
   total_bytes=$((total_bytes + bytes))
   (( total_bytes <= 1073741824 )) || fail guest-payload-file-size "payload exceeds 1 GiB"
-  actual_hash="$("$OPENSSL" dgst -sha256 -r "$source_path" | awk '{print $1}')"
+  actual_hash="$(sha256_file "$source_path")"
   [[ "$actual_hash" == "$expected" ]] || fail guest-payload-hash "SHA-256 mismatch: $path"
 done < "$files"
 
@@ -145,9 +149,8 @@ while IFS=$'\t' read -r role inf catalog binary_list; do
     fail guest-payload-schema "$role driver references an unlisted INF or CAT"
   LC_ALL=C grep -Eiq 'NTARM64' "$PAYLOAD_DIR/$inf" || \
     fail guest-payload-architecture "$role INF has no NTARM64 decoration"
-  "$OPENSSL" cms -verify -binary -inform DER -in "$PAYLOAD_DIR/$catalog" \
-    -noverify -out /dev/null >/dev/null 2>&1 || \
-    fail guest-payload-catalog-signature "$role catalog has no valid embedded CMS signature"
+  "$CATALOG_VERIFIER" "$PAYLOAD_DIR/$catalog" >/dev/null 2>&1 || \
+    fail guest-payload-catalog-signature "$role catalog has no valid PKCS#7 signature and content digest"
   IFS=',' read -r -a binary_items <<< "$binary_list"
   has_sys=0
   for binary in "${binary_items[@]}"; do
@@ -182,24 +185,24 @@ while IFS=$'\t' read -r path expected; do
   destination="$stage/drivers/$path"
   mkdir -p "$(dirname "$destination")"
   cp "$PAYLOAD_DIR/$path" "$destination"
-  [[ "$("$OPENSSL" dgst -sha256 -r "$destination" | awk '{print $1}')" == "$expected" ]] || \
+  [[ "$(sha256_file "$destination")" == "$expected" ]] || \
     fail guest-payload-staging "staged hash mismatch: $path"
 done < "$files"
 cp "$MANIFEST" "$stage/payload-manifest.tsv"
-[[ "$("$OPENSSL" dgst -sha256 -r "$stage/payload-manifest.tsv" | awk '{print $1}')" == "$manifest_hash" ]] || fail guest-payload-staging "manifest changed during staging"
+[[ "$(sha256_file "$stage/payload-manifest.tsv")" == "$manifest_hash" ]] || fail guest-payload-staging "manifest changed during staging"
 for asset in bvagent.ps1 bvagent-firstboot.ps1; do cp "$ASSETS/$asset" "$stage/agent/$asset"; done
 
 {
   printf 'schema\tbridgevm-windows-guest-payload-receipt-v1\n'
   printf 'architecture\tarm64\n'
   printf 'manifest_sha256\t%s\n' "$manifest_hash"
-  printf 'catalog_signature_policy\tcms-integrity-only-windows-trust-and-live-bind-still-required\n'
+  printf 'catalog_signature_policy\tpkcs7-signature-and-digest-only-windows-trust-and-live-bind-still-required\n'
   while IFS=$'\t' read -r role inf catalog binary_list; do
     printf 'driver\t%s\t%s\t%s\t%s\n' "$role" "$inf" "$catalog" "$binary_list"
   done < "$drivers"
   while IFS=$'\t' read -r path expected; do printf 'file\tdrivers/%s\t%s\n' "$path" "$expected"; done < "$files"
   for asset in bvagent.ps1 bvagent-firstboot.ps1; do
-    printf 'guest_tool\tagent/%s\t%s\n' "$asset" "$("$OPENSSL" dgst -sha256 -r "$stage/agent/$asset" | awk '{print $1}')"
+    printf 'guest_tool\tagent/%s\t%s\n' "$asset" "$(sha256_file "$stage/agent/$asset")"
   done
 } > "$stage/payload-receipt.tsv"
 

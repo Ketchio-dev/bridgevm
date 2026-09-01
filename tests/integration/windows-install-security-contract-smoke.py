@@ -7,9 +7,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from windows_catalog_test_support import build_catalog_verifier, invoke_stage
+
 ROOT = Path(__file__).resolve().parents[2]
 ASSETS = ROOT / "scripts/win-assets"
-
 
 def main() -> int:
     unattended = (ASSETS / "unattend.xml").read_text()
@@ -34,14 +35,12 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="bridgevm-special-payload.") as temporary:
         root = Path(temporary); payload = root / "payload"; manifest = root / "manifest.tsv"
+        catalog_verifier = root / "bridgevm-catalog-verify"
+        build_catalog_verifier(catalog_verifier)
         subprocess.run([str(ROOT / "tests/fixtures/make-synthetic-windows-guest-payload.py"),
                         str(payload), str(manifest)], check=True)
         fifo = payload / "network/unsupported.pipe"; os.mkfifo(fifo)
-        result = subprocess.run([
-            str(ROOT / "scripts/stage-hvf-windows-guest-payload.sh"),
-            "--payload-dir", str(payload), "--manifest", str(manifest),
-            "--assets", str(ASSETS), "--output", str(root / "output")],
-            capture_output=True, text=True)
+        result = invoke_stage(payload, manifest, ASSETS, root / "output", catalog_verifier)
         assert result.returncode != 0 and "BLOCKER[guest-payload-file-set]" in result.stderr
     print("PASS: Windows install credentials, completion marker, and payload entry types fail closed")
     return 0

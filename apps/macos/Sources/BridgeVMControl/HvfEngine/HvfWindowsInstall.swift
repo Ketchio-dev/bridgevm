@@ -89,6 +89,7 @@ struct HvfWindowsInstallPlan: Equatable {
         "scripts/win-assets/unattend.xml",
         "scripts/win-assets/bvagent.ps1",
         "scripts/win-assets/bvagent-firstboot.ps1",
+        "helpers/bridgevm-catalog-verify",
     ]
 
     var sourceImagePath: String {
@@ -96,6 +97,9 @@ struct HvfWindowsInstallPlan: Equatable {
             "Derived/WindowsInstallSources/\(sourceCacheKey).raw").path
     }
     var wimlibPath: String? { HvfWindowsWimlib.resolve(repoRoot: repoRoot) }
+    var catalogVerifierPath: String? {
+        HvfWindowsCatalogVerifier.resolve(repoRoot: repoRoot)
+    }
 
     var tmpTargetPath: String { "/tmp/bridgevm-appinstall-\(slug)-target.raw" }
     var tmpVarsPath: String { "/tmp/bridgevm-appinstall-\(slug)-vars.fd" }
@@ -118,6 +122,7 @@ struct HvfWindowsInstallPlan: Equatable {
                 "WIMLIB": wimlibPath ?? "",
                 "WINDOWS_GUEST_PAYLOAD_DIR": request.guestPayloadDirectory ?? "",
                 "WINDOWS_GUEST_PAYLOAD_MANIFEST": request.guestPayloadManifest ?? "",
+                "WINDOWS_GUEST_PAYLOAD_CATALOG_VERIFIER": catalogVerifierPath ?? "",
                 "WINDOWS_UNATTEND_PATH": request.unattendedPath ?? "",
             ],
             arguments: ["/bin/bash", "scripts/build-hvf-windows-scripted-source.sh"]
@@ -217,6 +222,9 @@ struct HvfWindowsInstallPlan: Equatable {
         }
         guard wimlibPath != nil else {
             return "앱에 서명·봉인된 wimlib-imagex helper가 없습니다. 앱을 다시 설치하세요."
+        }
+        guard catalogVerifierPath != nil else {
+            return "앱에 서명·봉인된 Windows catalog verifier가 없습니다. 앱을 다시 설치하세요."
         }
         return nil
     }
