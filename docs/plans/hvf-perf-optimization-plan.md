@@ -50,8 +50,8 @@ bridgevm-hvf` must stay green at every stage boundary.
 - For a source change comparison, first create an eight-row base manifest:
   `image`, `vars`, `binary`, `renderer`, `binary_source_commit`, `binary_profile`,
   `binary_features`, and `rust_toolchain`. Submit a predeclared alternating
-  campaign with `scripts/submit-hvf-boot-performance-campaign.sh --mode AA
-  --pairs 3 --baseline-manifest BASE.tsv`, then use `--mode AB` with both
+  counterbalanced AB/BA campaign with `scripts/submit-hvf-boot-performance-campaign.sh --mode AA
+  --pairs 4 --baseline-manifest BASE.tsv`, then use `--mode AB` with both
   baseline and candidate manifests. The submitter seals one campaign ID,
   ordinal, role and expected count into every attempt; omission, duplication,
   grouping, overlap, failure, or an unknown identity invalidates the campaign.
@@ -144,6 +144,22 @@ bridgevm-hvf` must stay green at every stage boundary.
   recording reuses retained line/field buffers and writes event names plus
   common/queue/fence/command detail fields directly into those buffers. Do NOT
   touch `record_command_trace`.
+
+  The 2026-09-01 host-socket readiness-filter experiment was **rejected**. A
+  sealed shipping-core A/A campaign of three pairs measured a 32.696% noise
+  bound; every second-in-pair sample was slower, exposing an unbalanced AB-only
+  ordering confounder. The subsequent three-pair A/B campaign measured baseline
+  READY samples of 27.887/21.852/25.199 s and candidate samples of
+  25.589/26.807/28.689 s. Its paired median change was +13.850% (slower), with a
+  95% interval of -8.240% to +22.675%, so `ab_exceeds_aa_noise=false` and
+  `claim_eligible=false`. The filter did reduce aggregate idle UDP/TCP host-read
+  retries by 98.529%, but that mechanism result did not replace the failed
+  user-visible metric; the candidate was reverted by `b52a3178`. The final
+  candidate sample also reported `socket_errors=3`. Reports and all attempts,
+  including the failed read-only-manifest submission, remain under
+  `/Users/user/BridgeVM-Workspace/lab/windows-gpu-and-vm-assets/performance/hvf-boot-20260901/`.
+  Campaign submission and reporting now counterbalance adjacent pair order as
+  AB, BA, AB, BA rather than assigning the second role to every even ordinal.
 - **Stage 3 — DMA path** (HIGH impact, MEDIUM risk): code implemented and the
   final live matrix covers its current-path correctness; isolated before/after
   performance attribution remains pending. The

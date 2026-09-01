@@ -14,8 +14,8 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown campaign option $1" >&2; exit 2 ;;
   esac
 done
-[[ "$MODE" =~ ^A[AB]$ && "$PAIRS" =~ ^[0-9]+$ && "$PAIRS" -ge 3 && -f "$BASELINE" ]] || {
-  echo "usage: $0 --mode AA|AB --pairs N>=3 --baseline-manifest PATH [--candidate-manifest PATH]" >&2
+[[ "$MODE" =~ ^A[AB]$ && "$PAIRS" =~ ^([468]|[1-9][0-9]*[02468])$ && -f "$BASELINE" ]] || {
+  echo "usage: $0 --mode AA|AB --pairs EVEN_N>=4 --baseline-manifest PATH [--candidate-manifest PATH]" >&2
   exit 2
 }
 if [[ "$MODE" == AB ]]; then
@@ -51,7 +51,7 @@ trap 'rm -rf "$WORK"' EXIT
 expected=$((PAIRS * 2))
 printf 'campaign_id=%s\nmode=%s\nexpected_runs=%s\nharness_sha=%s\n' "$CAMPAIGN_ID" "$MODE" "$expected" "$HARNESS_SHA"
 for ((ordinal = 1; ordinal <= expected; ordinal++)); do
-  if (( ordinal % 2 == 1 )); then
+  if (( (((ordinal - 1) / 2) + ordinal) % 2 == 1 )); then
     role=baseline; base="$BASELINE"
   else
     role=candidate; base="$BASELINE"

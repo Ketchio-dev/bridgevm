@@ -285,10 +285,8 @@ def load_campaign(root: Path, campaign_id: str, required_mode: str) -> dict[str,
                 errors.append(f"campaign ordinals do not exactly cover 1..{expected}")
         ordered = sorted(valid_jobs, key=lambda job: int(job["metadata"]["campaign_ordinal"]))
         for index, job in enumerate(ordered):
-            ordinal = int(job["metadata"]["campaign_ordinal"])
-            required_role = "baseline" if ordinal % 2 == 1 else "candidate"
-            if job["metadata"]["campaign_role"] != required_role:
-                errors.append(f"ordinal {ordinal} must have role {required_role}")
+            if index % 2 and {ordered[index - 1]["metadata"]["campaign_role"], job["metadata"]["campaign_role"]} != {"baseline", "candidate"}:
+                errors.append(f"ordinals {index} and {index + 1} must contain one baseline and one candidate")
             if index and (job["started"] < ordered[index - 1]["started"] or job["started"] < ordered[index - 1]["finished"]):
                 errors.append(f"ordinal {index + 1} is out of order or overlaps its predecessor")
     else:
@@ -345,8 +343,9 @@ def _side(jobs: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _summary(campaign: dict[str, Any]) -> dict[str, Any]:
     jobs = campaign["jobs"]
-    baseline_jobs = jobs[::2]
-    candidate_jobs = jobs[1::2]
+    pairs = [jobs[index:index + 2] for index in range(0, len(jobs), 2)]
+    baseline_jobs = [next(job for job in pair if job["metadata"]["campaign_role"] == "baseline") for pair in pairs]
+    candidate_jobs = [next(job for job in pair if job["metadata"]["campaign_role"] == "candidate") for pair in pairs]
     before = [float(job["receipt"]["desktop_elapsed_ms"]) for job in baseline_jobs]
     after = [float(job["receipt"]["desktop_elapsed_ms"]) for job in candidate_jobs]
     estimate, lower, upper = _paired_interval(before, after)
@@ -396,7 +395,8 @@ def _fixture(root: Path) -> None:
     def campaign(identifier: str, mode: str, source: str, other_source: str, binary: str, other_binary: str, day: int) -> None:
         for offset in range(6):
             ordinal = offset + 1
-            role = "baseline" if offset % 2 == 0 else "candidate"
+            baseline_first = (offset // 2) % 2 == 0
+            role = "baseline" if (offset % 2 == 0) == baseline_first else "candidate"
             prefix = "noise" if mode == "AA" else "change"
             job_id = f"{prefix}-{ordinal}"
             directory = root / "done" / job_id
