@@ -16,7 +16,7 @@ printf 'renderer\t%s\t%s\n' "$WORK/renderer" "$(seal "$WORK/renderer")" >> "$bas
 printf 'binary\t%s\t%s\nbinary_source_commit\t%s\nbinary_profile\trelease\nbinary_features\tvenus\nrust_toolchain\t1.97.0\n' \
   "$WORK/probe" "$(seal "$WORK/probe")" "$(git -C "$REPO" rev-parse HEAD)" >> "$base"
 cp "$base" "$manifest"
-printf 'campaign_id\t%032d\ncampaign_mode\tAA\ncampaign_role\tbaseline\ncampaign_ordinal\t1\ncampaign_expected_runs\t6\n' 0 >> "$manifest"
+printf 'campaign_id\t%032d\ncampaign_mode\tAA\ncampaign_role\tcandidate\ncampaign_ordinal\t3\ncampaign_expected_runs\t6\n' 0 >> "$manifest"
 "$REPO/scripts/live-gates/run-hvf-boot-performance-tier.sh" \
   --out "$WORK/validate" --input-manifest "$manifest" \
   --sealed-binary "$WORK/probe" --validate-only >/dev/null

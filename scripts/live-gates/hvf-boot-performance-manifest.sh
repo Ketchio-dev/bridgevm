@@ -49,7 +49,7 @@ perf_manifest_validate() {
     && "$PERF_CAMPAIGN_ID" =~ ^[0-9a-f]{32}$ && "$mode" =~ ^A[AB]$ \
     && "$role" =~ ^(baseline|candidate)$ && "$ordinal" =~ ^[0-9]+$ && "$expected" =~ ^[0-9]+$ ]] || return 1
   (( expected >= 6 && expected % 2 == 0 && ordinal >= 1 && ordinal <= expected )) || return 1
-  { (( ordinal % 2 == 1 )) && [[ "$role" == baseline ]]; } || { (( ordinal % 2 == 0 )) && [[ "$role" == candidate ]]; } || return 1
+  { (( ((((ordinal - 1) / 2) + ordinal) % 2) == 1 )) && [[ "$role" == baseline ]]; } || { (( ((((ordinal - 1) / 2) + ordinal) % 2) == 0 )) && [[ "$role" == candidate ]]; } || return 1
   git -C "$repo" cat-file -e "$PERF_BINARY_SOURCE_COMMIT^{commit}" 2>/dev/null || return 1
   PERF_CAMPAIGN_MODE="$mode"; PERF_CAMPAIGN_ROLE="$role"; PERF_CAMPAIGN_ORDINAL="$ordinal"; PERF_CAMPAIGN_EXPECTED_RUNS="$expected"
   PERF_BINARY_HASH="$(perf_seal "$sealed_binary")"
