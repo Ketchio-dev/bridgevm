@@ -28,7 +28,7 @@ fi
 
 export BRIDGEVM_LIVE_ROOT="$WORK/queue"
 printf image > "$WORK/image"
-job="$($REPO/scripts/live-gates/bridgevm-live submit t15-hvf-boot-performance \
+job="$("$REPO/scripts/live-gates/bridgevm-live" submit t15-hvf-boot-performance \
   --input-manifest "$manifest")"
 test -x "$BRIDGEVM_LIVE_ROOT/queued/$job/hvf_gic_boot_probe"
 grep -q '^sealed_binary_sha256=[0-9a-f]\{64\}$' "$BRIDGEVM_LIVE_ROOT/queued/$job/job.env"
