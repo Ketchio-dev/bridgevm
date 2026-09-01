@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-01",
-  "tested_commit": "77d86a77fb93f53df9cbdfbe3c3368286eedbbe4",
+  "tested_commit": "9d63f07dccf8399934baa640c6ebce72f28731d6",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -139,7 +139,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "Re-sealed 2026-09-01 at exact tested code head 77d86a77fb93f53df9cbdfbe3c3368286eedbbe4. GitHub-hosted CI run 33543866744, Security and quality run 33543866629 and Windows ARM64 UMD run 33543866711 all passed at that exact head, including workspace tests, test reachability, native Venus, clippy, formatting, structural budgets, supply-chain, fuzz and loom gates. Studio t13 job t13-77d86a77-n20 passed the fixed N=20 UEFI BDS/ESP/ExitBootServices gate 20/20 with zero failed lanes. Each independent disk-and-vars process boot required all 12 PI architecture protocols, signalled EndOfDxe, connected generic EDK2 PCI and NVMe drivers, found one Simple File System handle, loaded \\EFI\\BOOT\\BOOTAA64.EFI with boot policy, signalled ReadyToBoot, obtained the real memory map and reached code after ExitBootServices. Public receipt SHA-256 is ddbe6930db61c07df3ca59ab0e39224e9c18684fdbcc67860631fe4eb91f2e7b and development FD SHA-256 is 55a0aa3bff005ab6afa4b39ffbfaf239ffe12084aebd40f1202c87d1593fd8d3. This proves the development BDS, NVMe-backed ESP, PE load and ExitBootServices boundary only, not a fixed-count Windows Boot Manager pass, Windows kernel entry, Windows boot, write durability or production signing. It does not change the shipping Windows board. A9 remains OPEN. B4 remains separately PROVEN.",
+      "measured": "Re-sealed 2026-09-01 at exact tested code head 9d63f07dccf8399934baa640c6ebce72f28731d6. GitHub-hosted Security and quality run 33548294709 passed at that exact head. CI run 33548294700 passed every code, build and test job and correctly failed only its full-history freshness job while the registry still named the preceding tested head; this retained receipt closes that fail-closed transition, and integration still requires the subsequent seal SHA's own hosted CI and Windows ARM64 UMD to pass. Studio t13 job t13-9d63f07d-n20 passed the fixed N=20 UEFI BDS/ESP/ExitBootServices gate 20/20 with zero failed lanes. Each independent disk-and-vars process boot required all 12 PI architecture protocols, signalled EndOfDxe, connected generic EDK2 PCI and NVMe drivers, found one Simple File System handle, loaded \\EFI\\BOOT\\BOOTAA64.EFI with boot policy, signalled ReadyToBoot, obtained the real memory map and reached code after ExitBootServices. Public receipt SHA-256 is 034b6c20d2b2a0d9833cefe0f25e38647f8c2c537af777cd959c7ef3f1d3ecc5 and development FD SHA-256 is 55a0aa3bff005ab6afa4b39ffbfaf239ffe12084aebd40f1202c87d1593fd8d3. This proves the development BDS, NVMe-backed ESP, PE load and ExitBootServices boundary only, not a fixed-count Windows Boot Manager pass, Windows kernel entry, Windows boot, write durability or production signing. It does not change the shipping Windows board. A9 remains OPEN. B4 remains separately PROVEN.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md",
@@ -154,7 +154,8 @@
         "docs/windows-arm/evidence/bridgevm-pc-bds-exit-live-20260831.md",
         "docs/windows-arm/evidence/bridgevm-pc-bds-exit-receipt-20260831.json",
         "docs/windows-arm/evidence/bridgevm-pc-bds-exit-reseal-receipt-20260831.json",
-        "docs/windows-arm/evidence/bridgevm-pc-bds-exit-reseal-receipt-20260901.json"
+        "docs/windows-arm/evidence/bridgevm-pc-bds-exit-reseal-receipt-20260901.json",
+        "docs/windows-arm/evidence/bridgevm-pc-bds-exit-reseal-receipt-20260901-9d63f07d.json"
       ]
     },
     {

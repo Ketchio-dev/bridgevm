@@ -3,6 +3,26 @@
 This is development evidence for the experimental BridgeVM Virtual ARM PC. It
 does not change the shipping Windows board or promote the product state.
 
+## Exact-head re-seal after vTPM fixture cleanup
+
+Studio tier `t13-bridgevm-pc-bds-exit` job `t13-9d63f07d-n20` repeated the
+unchanged fixed N=20 gate on exact tested code head
+`9d63f07dccf8399934baa640c6ebce72f28731d6`. All 20 independent disk-and-vars
+lanes passed, with zero failed lanes and no known confounders. The public
+[`9d63f07d re-seal receipt`](bridgevm-pc-bds-exit-reseal-receipt-20260901-9d63f07d.json)
+has SHA-256
+`034b6c20d2b2a0d9833cefe0f25e38647f8c2c537af777cd959c7ef3f1d3ecc5`.
+
+The rebuilt development FD has SHA-256
+`55a0aa3bff005ab6afa4b39ffbfaf239ffe12084aebd40f1202c87d1593fd8d3`;
+the ESP image remained
+`a49be97db44c0d68b3382f3b1e46eba2fc7a3b12bcba14c1ec720f0511b71979`.
+GitHub-hosted Security and quality run `33548294709` passed at that exact code
+head. CI run `33548294700` passed every code, build and test job and failed
+only the freshness job because the registry still named the preceding tested
+head; this new receipt exists to close that fail-closed transition. No result
+is promoted until the subsequent full-history seal CI passes.
+
 ## Exact-head re-seal after descriptor and queue-runtime hardening
 
 Studio tier `t13-bridgevm-pc-bds-exit` job `t13-77d86a77-n20` repeated the
