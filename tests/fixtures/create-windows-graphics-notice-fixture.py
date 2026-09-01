@@ -9,6 +9,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
 SPEC = importlib.util.spec_from_file_location(
     "graphics_notices", ROOT / "scripts/package-windows-graphics-notices.py"
 )
@@ -21,8 +22,7 @@ SPEC.loader.exec_module(MODULE)
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit(f"usage: {sys.argv[0]} OUTPUT_DIRECTORY")
-    output = Path(sys.argv[1]).resolve()
-    MODULE.create_self_test_fixture(output)
+    MODULE.create_self_test_fixture(Path(sys.argv[1]).resolve())
     return 0
 
 

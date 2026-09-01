@@ -1348,7 +1348,7 @@ scripts/run-virgl-host-probe.sh	24	0
 scripts/run-vz-display-demo.sh	615	0
 scripts/run-xctest-shim-selftest.sh	20	0
 scripts/setup-macstudio-dev.sh	83	0
-scripts/stage-hvf-windows-viogpu3d-render-package.sh	372	0
+scripts/stage-hvf-windows-viogpu3d-render-package.sh	371	0
 scripts/stage-vz-linux-demo-vm.sh	189	0
 scripts/stage-vz-ubuntu-desktop-vm.sh	176	0
 scripts/venus-render-server-molten.sh	6	0
@@ -1697,6 +1697,8 @@ tests/integration/bridgevm-pc-windows-start-live-tier-smoke.sh	38	0
 tests/integration/bridgevm-pc-bds-exit-live-tier-smoke.sh	19	0
 scripts/check-third-party-patch-registry.sh	141	0
 scripts/verify-bundled-firmware-provenance.sh	35	0
-scripts/package-windows-graphics-notices.py	368	0
-scripts/install-hvf-windows-viogpu3d-build-kit-assets.sh	28	0
+scripts/package-windows-graphics-notices.py	362	0
+scripts/windows_graphics_notice_git.py	234	0
+scripts/install-windows-graphics-notice-tools.sh	17	0
+scripts/install-hvf-windows-viogpu3d-build-kit-assets.sh	19	0
 tests/fixtures/create-windows-graphics-notice-fixture.py	30	0

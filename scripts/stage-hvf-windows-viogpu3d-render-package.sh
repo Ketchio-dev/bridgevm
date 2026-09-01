@@ -283,8 +283,7 @@ cp "$ROOT/scripts/finalize-hvf-windows-viogpu3d-package.ps1" \
   "$tmp_dir/finalize-viogpu3d-package.ps1"
 cp "$ROOT/scripts/finalize-hvf-windows-viogpu3d-test-package.ps1" \
   "$tmp_dir/finalize-viogpu3d-test-package.ps1"
-cp "$ROOT/scripts/package-windows-graphics-notices.py" \
-  "$tmp_dir/package-windows-graphics-notices.py"
+"$ROOT/scripts/install-windows-graphics-notice-tools.sh" "$tmp_dir"
 
 {
   printf 'BridgeVM viogpu3d render-package stage\n'

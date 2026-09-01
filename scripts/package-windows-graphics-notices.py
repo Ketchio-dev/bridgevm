@@ -14,6 +14,8 @@ import tempfile
 from typing import NoReturn
 import zipfile
 
+import windows_graphics_notice_git as notice_git
+
 
 MESA_PATCHES = (
     "virtio-win-mesa-submit-trace.patch",
@@ -36,7 +38,7 @@ MESA_OVERVIEW_SHA256 = (
     "0d1a0472ecc81830e75c20d59b0ea02841e3db21255e0ebad97ab682c54d6615"
 )
 MESA_LICENSE_ARCHIVE_SHA256 = (
-    "485e561df118e7520af5056cba115677388be3f7c3ff6ef67c98e5c4abff4411"
+    "a4f9d06a13b810a6e4054ff54f4a8bb9ab8edfee4839b2a7ee83db40aba0ecc0"
 )
 
 
@@ -106,26 +108,6 @@ def regular_file(path: Path, label: str) -> None:
         fail(f"{label} is missing or is a symlink: {path}")
 
 
-def write_licence_zip(source: Path, destination: Path) -> None:
-    if not source.is_dir() or source.is_symlink():
-        fail(f"Mesa upstream licences directory is missing or is a symlink: {source}")
-    files = sorted(path for path in source.rglob("*") if path.is_file())
-    if not files:
-        fail("Mesa upstream licences directory is empty")
-    for path in source.rglob("*"):
-        if path.is_symlink():
-            fail(f"Mesa upstream licence path is a symlink: {path}")
-    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for path in files:
-            relative = path.relative_to(source).as_posix()
-            info = zipfile.ZipInfo(
-                f"Mesa-upstream-licenses/{relative}", (1980, 1, 1, 0, 0, 0)
-            )
-            info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = 0o100644 << 16
-            archive.writestr(info, path.read_bytes())
-
-
 def modification_record(mesa_revision: str, driver_binary_included: bool) -> str:
     return "\n".join(
         (
@@ -168,16 +150,20 @@ def assemble(mesa_source: Path, output: Path) -> None:
         fail(f"cannot read Mesa source revision: {error}")
     if actual_revision != mesa_revision:
         fail(f"Mesa source is not the registered revision: {actual_revision}")
-    overview = mesa_source / "docs/license.rst"
-    upstream_licenses = mesa_source / "licenses"
-    regular_file(overview, "Mesa licence overview")
     output.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(overview, output / "Mesa-license.rst")
+    try:
+        notice_git.write_pinned_notices(
+            mesa_source,
+            mesa_revision,
+            output / "Mesa-license.rst",
+            output / "Mesa-upstream-licenses.zip",
+        )
+    except notice_git.NoticeObjectError as error:
+        fail(str(error))
     shutil.copyfile(mesa_license, output / mesa_license.name)
     shutil.copyfile(driver_license, output / driver_license.name)
     for name, row in rows.items():
         shutil.copyfile(source_asset(root, row["path"]), output / name)
-    write_licence_zip(upstream_licenses, output / "Mesa-upstream-licenses.zip")
     if sha256(output / "Mesa-license.rst") != MESA_OVERVIEW_SHA256:
         fail("Mesa licence overview differs from the registered revision")
     if sha256(output / "Mesa-upstream-licenses.zip") != MESA_LICENSE_ARCHIVE_SHA256:
@@ -241,8 +227,15 @@ def verify(package: Path) -> None:
             ((member.external_attr >> 16) & 0o170000) == 0o120000
             for member in members
         )
-        if not names or len(names) != len(set(names)) or unsafe or symlink:
-            fail("Mesa upstream licence archive is empty or has an unsafe path")
+        noncanonical = any(
+            member.compress_type != zipfile.ZIP_STORED
+            or member.create_system != 3
+            or member.date_time != notice_git.FIXED_TIMESTAMP
+            or member.external_attr >> 16 != 0o100644
+            for member in members
+        )
+        if not names or len(names) != len(set(names)) or unsafe or symlink or noncanonical:
+            fail("Mesa upstream licence archive is empty, unsafe, or noncanonical")
     mesa_revision = next(iter(rows.values()))["upstream_revision"]
     record = (package / "BridgeVM-MODIFICATIONS.txt").read_text(encoding="ascii")
     driver_binary_included = str((package / "viogpu3d.sys").is_file()).lower()
@@ -286,10 +279,10 @@ def create_self_test_fixture(output: Path) -> None:
     shutil.copyfile(driver_license, output / driver_license.name)
     for name, row in rows.items():
         shutil.copyfile(source_asset(root, row["path"]), output / name)
-    with tempfile.TemporaryDirectory(prefix="bridgevm-mesa-licence-fixture.") as temp:
-        licence_dir = Path(temp)
-        (licence_dir / "MIT.txt").write_text("synthetic upstream MIT fixture\n")
-        write_licence_zip(licence_dir, output / "Mesa-upstream-licenses.zip")
+    notice_git.write_canonical_zip(
+        [("MIT.txt", b"synthetic upstream MIT fixture\n")],
+        output / "Mesa-upstream-licenses.zip",
+    )
     (output / "BridgeVM-MODIFICATIONS.txt").write_text(
         modification_record(mesa_revision, (output / "viogpu3d.sys").is_file()),
         encoding="ascii",
@@ -309,6 +302,7 @@ def expect_failure(action, marker: str) -> None:
 
 
 def self_test() -> None:
+    notice_git.self_test()
     with tempfile.TemporaryDirectory(prefix="bridgevm-windows-graphics-notices.") as temp:
         package = Path(temp)
         create_self_test_fixture(package)
