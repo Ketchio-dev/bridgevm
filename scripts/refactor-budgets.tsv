@@ -1485,7 +1485,7 @@ tests/integration/lifecycle-plan-cli-smoke.sh	141	0
 tests/integration/lifecycle-restart-cli-smoke.sh	134	0
 tests/integration/lifecycle-suspend-resume-cli-smoke.sh	157	0
 tests/integration/install-verify-smoke.sh	180	0
-tests/integration/b4-sealed-submit-smoke.sh	18	0
+tests/integration/b4-sealed-submit-smoke.sh	17	0
 tests/integration/live-gate-policy-smoke.sh	308	0
 tests/integration/qmp-stress-live-tier-smoke.sh	23	0
 tests/integration/windows-closure-live-tier-smoke.sh	65	0
