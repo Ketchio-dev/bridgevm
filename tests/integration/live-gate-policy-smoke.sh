@@ -64,7 +64,7 @@ check "the A3 payload validator is executable" '[ -x "$A3_PAYLOAD" ] && [ -x "$A
 check "the A3 payload staging policy is executable" '[ -x "$A3_STAGE" ]'
 check "the plist is well formed" 'plutil -lint "$PLIST" >/dev/null'
 check "the queue stays background while each requested gate gets app scheduling policy" \
-    'grep -A1 -q "<key>ProcessType</key>" "$PLIST" && grep -q '"'"'taskpolicy -a caffeinate'"'"' "$WORKER"'
+    'grep -A1 -q "<key>ProcessType</key>" "$PLIST" && grep -Fq '"'"'/usr/sbin/taskpolicy -a /usr/bin/caffeinate'"'"' "$WORKER"'
 check "the worker resolves only pushed exact commits and refuses unresolved worktrees" \
     'grep -Fq '"'"'fetch --no-tags origin "$commit"'"'"' "$WORKER" && grep -Fq '"'"'[[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]'"'"' "$WORKER" && grep -Fq '"'"'cat-file -e "$commit^{commit}"'"'"' "$WORKER" && grep -q '"'"'refused-unknown-commit\|refused-worktree'"'"' "$WORKER"'
 check "the Windows post-mortem harvester is executable" '[ -x "$POSTMORTEM_HARVEST" ]'
@@ -128,10 +128,10 @@ check "read-only post-mortem harvest leaves the guest image byte-identical" \
 # A listener would turn this local queue into a self-hosted runner; forbid it.
 check "the plist declares no socket" '! grep -q "<key>Sockets</key>" "$PLIST"'
 check "the plist is not a root daemon" '! grep -qi "UserName.*root" "$PLIST"'
+check "the worker clears inherited variables before starting a tier" 'grep -Fq '\''/usr/bin/env -i HOME="$HOME"'\'' "$WORKER"'
 no_match "no component opens a listening socket" \
     'nc +-l|socat|LISTEN|bind\(' "$CLI" "$WORKER" "$TIER" "$PC_WINDOWS_TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
-# The installer names actions-runner only to refuse installing beside one, so
-# this looks for the act of registering rather than the word.
+# Match registration rather than the installer guard's actions-runner name.
 no_match "nothing registers a GitHub runner" \
     'config\.sh +--url|RUNNER_TOKEN|--runnergroup' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 check "the installer refuses to sit beside a runner" \
@@ -172,8 +172,7 @@ check "B4 pointer lanes avoid post-HVF raw-disk mounts" \
     'grep -q -- "--no-guest-disk-harvest" "$REPO/scripts/pointer-reliability-vm.sh" && grep -q -- "--no-guest-disk-harvest" "$REPO/scripts/prepare-pointer-reliability-source.sh"'
 check "disk-harvest suppression fails closed for fresh title logs" \
     'grep -q "cannot be combined with title gates" "$REPO/scripts/run-hvf-windows-installed-boot-args.sh"'
-
-start=$(date +%s)
+    start=$(date +%s)
 job_id="$("$CLI" submit t1-vtimer)"
 elapsed=$(( $(date +%s) - start ))
 check "submit returns a job id" '[ -n "$job_id" ]'

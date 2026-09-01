@@ -110,19 +110,19 @@ run_job() {
         printf 'result=refused-worktree\n' > "$dir/result.env"
         return 1
     fi
-
-    # Per-job target avoids cargo races; task policy and caffeinate keep runs stable.
-    local status=0
+    # Per-job target avoids cargo races; run only an explicit non-secret environment.
+    local status=0 clean_user clean_path
+    clean_user="$(id -un)"; clean_path="$HOME/.cargo/bin:/opt/homebrew/opt/rustup/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     (
         cd "$worktree"
-        export CARGO_TARGET_DIR="$WORK_ROOT/$job_id/target"
-        taskpolicy -a caffeinate -dimsu "$worktree/scripts/live-gates/run-tier.sh" \
+        /usr/bin/env -i HOME="$HOME" USER="$clean_user" LOGNAME="$clean_user" SHELL=/bin/bash \
+            PATH="$clean_path" CARGO_TARGET_DIR="$WORK_ROOT/$job_id/target" \
+            /usr/sbin/taskpolicy -a /usr/bin/caffeinate -dimsu "$worktree/scripts/live-gates/run-tier.sh" \
             "$tier" --out "$dir" --job-id "$job_id" \
             ${tier_args[@]+"${tier_args[@]}"}
     ) >>"$dir/run.log" 2>&1 &
     local tier_pid=$!
 
-    # Poll cancellation so a rejected run cannot block the queue indefinitely.
     while kill -0 "$tier_pid" 2>/dev/null; do
         if [ -f "$dir/cancel.requested" ]; then
             log "job $job_id canceled; stopping its process group"
