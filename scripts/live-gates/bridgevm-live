@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Studio-local live gate queue.
+# Physical-Mac local live gate queue (historically the Studio queue).
 #
 # Live gates need bare-metal Hypervisor.framework, private Windows media and a
 # real GPU, so they cannot run on GitHub-hosted runners. The tempting fix --
@@ -55,7 +55,7 @@ cmd_submit() {
     # Reject an unknown tier here rather than at claim time. A typo (or a
     # `--help` mistaken for a tier) must not sit in the queue looking like work.
     case "$tier" in
-        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure|t8-pointer-reliability|t9-bridgevm-pc-pci|t10-qmp-stress|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start) ;;
+        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure|t8-pointer-reliability|t9-bridgevm-pc-pci|t10-qmp-stress|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start|t15-hvf-boot-performance) ;;
         *) echo "unknown tier $tier" >&2; usage >&2; exit 2 ;;
     esac
 
@@ -67,7 +67,7 @@ cmd_submit() {
             *) echo "unknown submit option $1" >&2; exit 2 ;;
         esac
     done
-    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ]; then
+    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ] || [ "$tier" = t15-hvf-boot-performance ]; then
         [ -f "$input_manifest" ] || {
             echo "$tier needs --input-manifest PATH" >&2
             exit 2

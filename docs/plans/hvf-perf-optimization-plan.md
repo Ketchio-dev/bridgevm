@@ -47,6 +47,15 @@ bridgevm-hvf` must stay green at every stage boundary.
 - Use `scripts/report-hvf-boot-timer-metrics.sh <evidence-dir>...` after the
   three-run matrix; it reads each `run.log` plus `preflight.txt` and emits
   per-run BOOT_TIMER rows and config-group medians.
+- For a source change comparison, submit alternating
+  `t15-hvf-boot-performance` jobs with a three-row sealed manifest (`image`,
+  `vars`, `binary`). Each job APFS-clones its own disk and vars, boots one
+  4-vCPU release sample, requires agent READY plus clean shutdown, and records
+  the exact binary/config/host/power identity. Pair the resulting job
+  directories with `scripts/report-hvf-boot-performance-ab.py --pair A B`.
+  The tier is diagnostic: fewer samples or a favorable point estimate never
+  changes a product criterion, and an A/B claim still has to exceed the prior
+  A/A noise interval.
 - Use `scripts/run-hvf-boot-timer-matrix.sh --target <raw> --vars <fd>
   --evidence-dir <fresh-dir> --release -- --daily --watchdog-ms 120000
   --virtio-net --enable-xhci --shutdown-after-agent-ready` to run the default

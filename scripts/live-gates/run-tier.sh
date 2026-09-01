@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dispatch one live-gate tier and leave a receipt in --out.
+# Dispatch one physical-Mac live-gate tier and leave a receipt in --out.
 #
 # Tiers are declared in PLAN.md. Only T5 produces A1 shipping evidence; no
 # lower tier may weaken A1. T6 requires every independent title run to pass.
@@ -104,9 +104,9 @@ case "$TIER" in
         "$REPO/scripts/live-gates/$helper" --out "$OUT" --input-manifest "$INPUT_MANIFEST" \
             --sealed-binary "$SEALED_BINARY" --job-id "$JOB_ID"
         ;;
-    t8-pointer-reliability|t9-bridgevm-pc-pci|t10-qmp-stress|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start)
+    t8-pointer-reliability|t9-bridgevm-pc-pci|t10-qmp-stress|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start|t15-hvf-boot-performance)
         "$REPO/scripts/live-gates/run-special-tier.sh" \
-          "$TIER" "$OUT" "$JOB_ID" "$INPUT_MANIFEST" ;;
+          "$TIER" "$OUT" "$JOB_ID" "$INPUT_MANIFEST" "$SEALED_BINARY" ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)
         # These need private Windows media and 20+ minutes per boot. They are
         # declared so the queue and its policy tests are exercised, but they

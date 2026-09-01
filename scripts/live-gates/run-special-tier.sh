@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Dispatch sealed or development-specialized Studio tiers.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 TIER="${1:?run-special-tier.sh needs a tier}"; OUT="${2:?run-special-tier.sh needs an output directory}"
@@ -14,6 +13,7 @@ case "$TIER" in
   t12-bridgevm-pc-nvme-block) helper=run-bridgevm-pc-nvme-block-tier.sh ;;
   t13-bridgevm-pc-bds-exit) helper=run-bridgevm-pc-bds-exit-tier.sh ;;
   t14-bridgevm-pc-windows-start) helper=run-bridgevm-pc-windows-start-tier.sh; args+=(--input-manifest "${4:-}") ;;
+  t15-hvf-boot-performance) helper=run-hvf-boot-performance-tier.sh; args+=(--input-manifest "${4:-}" --sealed-binary "${5:-}") ;;
   *) echo "unknown special tier $TIER" >&2; exit 2 ;;
 esac
 "$REPO/scripts/live-gates/$helper" "${args[@]}"

@@ -51,6 +51,7 @@ step "swift force casts" python3 scripts/check-swift-force-casts.py
 step "tests are reachable" python3 scripts/check-tests-are-reachable.py
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
 step "virtio queue narrowing" scripts/check-virtio-queue-narrowing.sh
+step "HVF boot performance tier" tests/integration/hvf-boot-performance-tier-smoke.sh
 step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
 step "BridgeVM PC firmware boundary" scripts/check-bridgevm-pc-firmware-boundary.sh
@@ -67,7 +68,6 @@ else
   step "tests (venus lib)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --lib --features venus --locked
   step "tests (probe example)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --features venus --example hvf_gic_boot_probe --locked
 
-  # Cross-check non-Apple stubs when the target is installed; CI always requires it.
   if rustup target list --installed --toolchain "${TOOLCHAIN#+}" 2>/dev/null \
       | grep -q '^aarch64-unknown-linux-gnu$'; then
     step "cross-compile (linux stubs)" cargo "$TOOLCHAIN" check --workspace \

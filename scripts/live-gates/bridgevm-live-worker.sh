@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Drain the Studio live-gate queue at the exact sealed commit as a user
+# Drain the physical-Mac live-gate queue at the exact sealed commit as a user
 # LaunchAgent, with no sudo, inbound socket or GitHub registration.
 set -euo pipefail
 # Put each tier in its own process group so cancellation kills its whole tree.
@@ -72,7 +72,7 @@ run_job() {
     fi
 
     local tier_args=()
-    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ]; then
+    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ] || [ "$tier" = t15-hvf-boot-performance ]; then
         local manifest="$dir/input-manifest.tsv" sealed_binary="$dir/hvf_gic_boot_probe"
         local expected_manifest actual_manifest expected_binary actual_binary
         expected_manifest="$(awk -F= '$1=="input_manifest_sha256"{print $2}' "$dir/job.env")"
