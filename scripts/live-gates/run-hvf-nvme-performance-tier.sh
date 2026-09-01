@@ -152,7 +152,7 @@ status=0; wait "$VM_PID" || status=$?; VM_PID=""
 [[ "$workload_status_ok" == 1 ]] || exit 1
 grep -Fxq 'status=0' "$BOOT/agent-service-gate.txt" || { INVALID_REASON=agent-service-gate-failed; exit 1; }
 kill -0 "$POWER_MONITOR_PID" 2>/dev/null || { INVALID_REASON=power-monitor-ended-early; exit 1; }
-stop_power_monitor
+stop_power_monitor || { INVALID_REASON=power-monitor-stop-failed; exit 1; }
 awk '$0 ~ /^Now drawing from / { seen++; if ($0 != "Now drawing from '\''AC Power'\''") bad=1 } END { exit !(seen >= 1 && !bad) }' "$POWER_LOG" \
   || { INVALID_REASON=power-source-changed-or-unknown; exit 1; }
 grep -Eq '^stop: PSCI .*\(system off\)' "$BOOT/run.log" || { INVALID_REASON=guest-shutdown-missing; exit 1; }

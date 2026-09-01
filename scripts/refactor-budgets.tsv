@@ -1310,12 +1310,14 @@ scripts/check-supply-chain.sh	52	0
 scripts/check-virgl-integer-attributes.sh	72	0
 scripts/check-virtio-queue-narrowing.sh	27	0
 scripts/find-hvf-windows-viogpu3d-packages.sh	210	0
-scripts/live-gates/bridgevm-live-worker.sh	180	0
+scripts/live-gates/bridgevm-live-worker.sh	177	0
 scripts/live-gates/recover-stale-jobs.sh	42	0
 scripts/live-gates/install-studio-queue.sh	84	0
 scripts/live-gates/hvf-boot-performance-manifest.sh	64	0
 scripts/live-gates/hvf-nvme-performance-manifest.sh	158	0
-scripts/live-gates/hvf-nvme-performance-runtime.sh	67	0
+scripts/live-gates/hvf-nvme-performance-runtime.sh	62	0
+scripts/live-gates/hvf-nvme-performance-runtime-self-test.sh	59	0
+scripts/live-gates/live-process-cleanup.sh	96	0
 scripts/live-gates/pointer-input-manifest.sh	38	0
 scripts/live-gates/run-bridgevm-pc-pci-tier.sh	79	0
 scripts/live-gates/run-bridgevm-pc-nvme-bar-tier.sh	81	0

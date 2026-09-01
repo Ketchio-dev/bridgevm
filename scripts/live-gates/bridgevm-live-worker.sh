@@ -10,6 +10,7 @@ QUEUE_ROOT="${BRIDGEVM_LIVE_ROOT:-$HOME/BridgeVM/live-queue}"
 WORK_ROOT="${BRIDGEVM_LIVE_WORK:-$HOME/BridgeVM/live-work}"
 CLI="$REPO/scripts/live-gates/bridgevm-live"
 RECOVER="$REPO/scripts/live-gates/recover-stale-jobs.sh"
+source "$REPO/scripts/live-gates/live-process-cleanup.sh"
 
 # Refuse low space rather than delete canonical Windows media.
 MIN_FREE_GIB="${BRIDGEVM_LIVE_MIN_FREE_GIB:-100}"
@@ -122,18 +123,12 @@ run_job() {
     ) >>"$dir/run.log" 2>&1 &
     local tier_pid=$!
 
-    while kill -0 "$tier_pid" 2>/dev/null; do
-        if [ -f "$dir/cancel.requested" ]; then
-            log "job $job_id canceled; stopping its process group"
-            # Negative pid stops the tier's whole process group.
-            kill -TERM -"$tier_pid" 2>/dev/null || kill -TERM "$tier_pid" 2>/dev/null
-            sleep 5
-            kill -KILL -"$tier_pid" 2>/dev/null || true
-            break
-        fi
-        sleep 2
-    done
-    wait "$tier_pid" 2>/dev/null || status=$?
+    if bridgevm_wait_for_tier_group "$tier_pid" "$dir/cancel.requested" "$job_id"; then
+        status="$BRIDGEVM_TIER_STATUS"
+    else
+        printf 'cleanup for tier process group %s was not confirmed\n' "$tier_pid" > "$QUEUE_ROOT/worker-cleanup-required"
+        return 126
+    fi
 
     if [ -f "$dir/cancel.requested" ]; then
         log "job $job_id was canceled"
@@ -165,12 +160,15 @@ main() {
         log "another worker holds the lock; exiting"
         exit 0
     fi
+    [[ ! -f "$QUEUE_ROOT/worker-cleanup-required" ]] || { log "worker is fenced: process-group cleanup needs operator review"; exit 126; }
     "$RECOVER" "$REPO" "$QUEUE_ROOT" "$WORK_ROOT"
 
     local claimed
     while claimed="$("$CLI" next 2>/dev/null)"; do
         [ -n "$claimed" ] || break
-        run_job "$claimed" || log "job in $claimed did not pass"
+        local run_status=0; run_job "$claimed" || run_status=$?
+        [[ "$run_status" != 126 ]] || { log "job in $claimed could not confirm cleanup; leaving it in running and fencing the queue"; exit 126; }
+        [[ "$run_status" == 0 ]] || log "job in $claimed did not pass"
         mv "$claimed" "$QUEUE_ROOT/done/$(basename "$claimed")"
     done
     log "queue drained"
