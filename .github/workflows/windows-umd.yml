@@ -44,6 +44,14 @@ jobs:
           ref: cb531c440ff34a9c6334859dda0848132be49ec3
           path: mesa
           fetch-depth: 1
+      - name: Record checked-out Mesa notice identity
+        shell: pwsh
+        run: |
+          $license = Join-Path $env:GITHUB_WORKSPACE "mesa\docs\license.rst"
+          $hash = (Get-FileHash -LiteralPath $license -Algorithm SHA256).Hash.ToLowerInvariant()
+          $bytes = (Get-Item -LiteralPath $license).Length
+          Write-Host "mesa_license_phase=checkout sha256=$hash bytes=$bytes"
+          git -C mesa check-attr text eol -- docs/license.rst
       - name: Apply the exact BridgeVM patch stack
         run: |
           git -C mesa apply --check "$GITHUB_WORKSPACE/scripts/patches/virtio-win-mesa-unbound-clear.patch"
@@ -124,6 +132,14 @@ jobs:
           ref: cb531c440ff34a9c6334859dda0848132be49ec3
           path: mesa
           fetch-depth: 1
+      - name: Record Windows Mesa notice checkout identity
+        shell: pwsh
+        run: |
+          $license = Join-Path $env:GITHUB_WORKSPACE "mesa\docs\license.rst"
+          $hash = (Get-FileHash -LiteralPath $license -Algorithm SHA256).Hash.ToLowerInvariant()
+          $bytes = (Get-Item -LiteralPath $license).Length
+          Write-Host "mesa_license_phase=windows-checkout sha256=$hash bytes=$bytes"
+          git -C mesa check-attr text eol -- docs/license.rst
       - name: Apply the exact BridgeVM patch stack
         shell: pwsh
         run: |
@@ -221,6 +237,13 @@ jobs:
           }
           $lines | Set-Content -LiteralPath (Join-Path $bin "SHA256SUMS") -Encoding Ascii
           $lines | ForEach-Object { Write-Host $_ }
+      - name: Record post-build Mesa notice identity
+        shell: pwsh
+        run: |
+          $license = Join-Path $env:GITHUB_WORKSPACE "mesa\docs\license.rst"
+          $hash = (Get-FileHash -LiteralPath $license -Algorithm SHA256).Hash.ToLowerInvariant()
+          $bytes = (Get-Item -LiteralPath $license).Length
+          Write-Host "mesa_license_phase=post-build sha256=$hash bytes=$bytes"
       - name: Bundle Mesa licences and modification record
         shell: pwsh
         run: |
