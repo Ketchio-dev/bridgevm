@@ -12,6 +12,11 @@ struct HvfWindowsInstallRequest: Codable, Equatable {
     var diskGiB: Int
     var injectViogpu3d: Bool
     var driverPackageDir: String?
+    var guestPayloadDirectory: String? = nil
+    var guestPayloadManifest: String? = nil
+    var guestPayloadIdentity: String? = nil
+    var unattendedPath: String? = nil
+    var unattendedIdentity: String? = nil
 
     static let fileName = "metadata/hvf-install.json"
     static let doneFileName = "metadata/hvf-install-done.json"
@@ -43,43 +48,54 @@ struct HvfWindowsInstallRequest: Codable, Equatable {
 
 struct HvfWindowsInstallPlan: Equatable {
     let repoRoot: URL
+    let libraryRoot: URL
     let bundlePath: String
     let slug: String
     let request: HvfWindowsInstallRequest
     let sealedISOSHA256: String
+    let sealedGuestPayloadIdentity: String
+    let sealedUnattendedIdentity: String
     let sourceCacheKey: String
-    var homeDirectory: String = NSHomeDirectory()
 
-    init(repoRoot: URL, bundlePath: String, slug: String, request: HvfWindowsInstallRequest) {
+    init(repoRoot: URL, libraryRoot: URL = VMLibrary.root, bundlePath: String,
+         slug: String, request: HvfWindowsInstallRequest) {
         self.repoRoot = repoRoot
+        self.libraryRoot = libraryRoot
         self.bundlePath = bundlePath
         self.slug = slug
         self.request = request
         sealedISOSHA256 = request.isoSHA256
             ?? HvfWindowsInstallCacheIdentity.sha256File(request.isoPath) ?? "absent"
+        sealedGuestPayloadIdentity = request.guestPayloadIdentity ?? "absent"
+        sealedUnattendedIdentity = request.unattendedIdentity ?? "default"
         sourceCacheKey = HvfWindowsInstallCacheIdentity.key(
-            isoSHA256: sealedISOSHA256, repoRoot: repoRoot)
+            isoSHA256: sealedISOSHA256,
+            guestPayloadIdentity: sealedGuestPayloadIdentity,
+            unattendedIdentity: sealedUnattendedIdentity,
+            repoRoot: repoRoot)
     }
 
     static let minimumDiskGiB = 64
-    static var wimlibCandidates: [String] {
-        ["/opt/homebrew/bin/wimlib-imagex", "/usr/local/bin/wimlib-imagex"]
-    }
-
     static let installResourcePaths = [
         "scripts/build-hvf-windows-scripted-source.sh",
+        "scripts/stage-hvf-windows-guest-payload.sh",
         "scripts/hvf-disk-image-utils.sh",
         "scripts/run-hvf-windows-scripted-install.sh",
+        "scripts/verify-hvf-windows-install-target.sh",
         "target/release/examples/hvf_gic_boot_probe",
         "scripts/win-assets/winpeshl.ini",
         "scripts/win-assets/bvinstall.cmd",
         "scripts/win-assets/bvdiskpart.txt",
+        "scripts/win-assets/unattend.xml",
+        "scripts/win-assets/bvagent.ps1",
+        "scripts/win-assets/bvagent-firstboot.ps1",
     ]
 
-    var sourceImagePath: String { "\(homeDirectory)/BridgeVM/bridgevm-app-src/\(sourceCacheKey).raw" }
-    var wimlibPath: String? {
-        Self.wimlibCandidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    var sourceImagePath: String {
+        libraryRoot.appendingPathComponent(
+            "Derived/WindowsInstallSources/\(sourceCacheKey).raw").path
     }
+    var wimlibPath: String? { HvfWindowsWimlib.resolve(repoRoot: repoRoot) }
 
     var tmpTargetPath: String { "/tmp/bridgevm-appinstall-\(slug)-target.raw" }
     var tmpVarsPath: String { "/tmp/bridgevm-appinstall-\(slug)-vars.fd" }
@@ -100,6 +116,9 @@ struct HvfWindowsInstallPlan: Equatable {
                 "ISO": request.isoPath,
                 "OUT": sourceImagePath,
                 "WIMLIB": wimlibPath ?? "",
+                "WINDOWS_GUEST_PAYLOAD_DIR": request.guestPayloadDirectory ?? "",
+                "WINDOWS_GUEST_PAYLOAD_MANIFEST": request.guestPayloadManifest ?? "",
+                "WINDOWS_UNATTEND_PATH": request.unattendedPath ?? "",
             ],
             arguments: ["/bin/bash", "scripts/build-hvf-windows-scripted-source.sh"]
         )
@@ -159,7 +178,11 @@ struct HvfWindowsInstallPlan: Equatable {
         guard HvfWindowsInstallCacheIdentity.sha256File(request.isoPath) == sealedISOSHA256 else {
             return "선택한 Windows ISO가 VM 생성 후 변경되었습니다."
         }
-        guard HvfWindowsInstallCacheIdentity.key(isoSHA256: sealedISOSHA256, repoRoot: repoRoot)
+        guard HvfWindowsInstallCacheIdentity.key(
+                isoSHA256: sealedISOSHA256,
+                guestPayloadIdentity: sealedGuestPayloadIdentity,
+                unattendedIdentity: sealedUnattendedIdentity,
+                repoRoot: repoRoot)
                 == sourceCacheKey else { return "Windows 설치 레시피 또는 wimlib가 변경되었습니다." }
         let requiredResources = Self.installResourcePaths
         if let missing = requiredResources.first(where: {
@@ -170,11 +193,30 @@ struct HvfWindowsInstallPlan: Equatable {
         guard request.diskGiB >= Self.minimumDiskGiB else {
             return "디스크 크기는 최소 \(Self.minimumDiskGiB) GiB여야 합니다."
         }
-        guard wimlibPath != nil else {
-            return "wimlib-imagex가 필요합니다: brew install wimlib"
+        let expectedPayloadDirectory = "\(bundlePath)/metadata/windows-guest-payload"
+        let expectedPayloadManifest = "\(bundlePath)/metadata/windows-guest-payload.tsv"
+        guard request.guestPayloadDirectory == expectedPayloadDirectory,
+              request.guestPayloadManifest == expectedPayloadManifest else {
+            return "게스트 드라이버 payload는 VM 번들에 봉인된 경로만 사용할 수 있습니다."
         }
-        guard Self.whitespaceFree(sourceImagePath) else {
-            return "홈 디렉터리 경로에 공백이 있으면 설치 소스를 만들 수 없습니다."
+        let payload = HvfWindowsGuestPayloadIdentity.inspect(
+            payloadDirectory: request.guestPayloadDirectory,
+            manifestPath: request.guestPayloadManifest)
+        if let error = payload.error { return error }
+        guard payload.digest == sealedGuestPayloadIdentity else {
+            return "VM 생성 후 게스트 드라이버 payload 또는 manifest가 변경되었습니다."
+        }
+        if request.unattendedPath != nil || request.unattendedIdentity != nil {
+            let expected = "\(bundlePath)/metadata/windows-install-unattend.xml"
+            guard request.unattendedPath == expected,
+                  request.unattendedIdentity == sealedUnattendedIdentity,
+                  HvfWindowsInstallCacheIdentity.sha256File(expected)
+                    == sealedUnattendedIdentity else {
+                return "E2E 설치 응답 파일이 VM 번들에 봉인되지 않았거나 변경되었습니다."
+            }
+        }
+        guard wimlibPath != nil else {
+            return "앱에 서명·봉인된 wimlib-imagex helper가 없습니다. 앱을 다시 설치하세요."
         }
         return nil
     }
@@ -209,8 +251,7 @@ final class HvfWindowsInstallSession: ObservableObject {
     @Published private(set) var startedAt: Date?
 
     let plan: HvfWindowsInstallPlan
-    /// Called on the main actor after a successful finalize so the library can
-    /// clear installPending and refresh.
+    /// Called after the transaction has durably published the completed config.
     var onCompleted: (() -> Void)?
 
     private var currentProcess: Process?
@@ -249,6 +290,14 @@ final class HvfWindowsInstallSession: ObservableObject {
     }
 
     private func run() async {
+        let sourceLock: HvfWindowsInstallSourceLock
+        do {
+            sourceLock = try HvfWindowsInstallSourceLock(sourceImagePath: plan.sourceImagePath)
+        } catch {
+            stage = .failed(error.localizedDescription)
+            return
+        }
+        defer { withExtendedLifetime(sourceLock) {} }
         if !(await plan.sourceImageCacheIsVerified()) {
             stage = .preparingSource
             let build = plan.sourceBuildCommand()
@@ -307,64 +356,8 @@ final class HvfWindowsInstallSession: ObservableObject {
     }
 
     private func finalizeMedia() throws {
-        let fm = FileManager.default
-        for sub in ["disks", "metadata", "logs/hvf"] {
-            try fm.createDirectory(
-                at: URL(fileURLWithPath: plan.bundlePath).appendingPathComponent(sub),
-                withIntermediateDirectories: true)
-        }
-        try replaceItem(at: plan.bundleDiskPath, withItemAt: plan.tmpTargetPath)
-        try replaceItem(at: plan.bundleVarsPath, withItemAt: plan.tmpVarsPath)
-        // Seed both the Windows Boot Manager entry and the pinned Microsoft
-        // Secure Boot policy. This is deliberately fail-closed: an install is
-        // not reported complete with a partially provisioned trust store.
-        let secureBootReceipt = try HvfWindowsBootSeed.seedFile(
-            varsPath: plan.bundleVarsPath, diskPath: plan.bundleDiskPath)
-        let receiptEncoder = JSONEncoder()
-        receiptEncoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try receiptEncoder.encode(secureBootReceipt).write(
-            to: URL(fileURLWithPath: plan.bundlePath)
-                .appendingPathComponent("metadata/secure-boot-provisioning.json"),
-            options: [.atomic])
+        try HvfWindowsInstallFinalization.finalize(plan: plan)
         appendLog("UEFI 부팅 항목과 Microsoft-only Secure Boot 키를 검증·시드했습니다.")
-        let installRunLog = URL(fileURLWithPath: plan.tmpEvidenceDir).appendingPathComponent("run.log")
-        if fm.fileExists(atPath: installRunLog.path) {
-            try? fm.removeItem(atPath: plan.bundleInstallLogPath)
-            try? fm.copyItem(atPath: installRunLog.path, toPath: plan.bundleInstallLogPath)
-        }
-        let controlPath = "\(plan.bundlePath)/metadata/hvf.ctl"
-        if !fm.fileExists(atPath: controlPath) {
-            fm.createFile(atPath: controlPath, contents: nil)
-        }
-        // Keep the request as a completed record rather than a pending one.
-        let pending = URL(fileURLWithPath: plan.bundlePath)
-            .appendingPathComponent(HvfWindowsInstallRequest.fileName)
-        let done = URL(fileURLWithPath: plan.bundlePath)
-            .appendingPathComponent(HvfWindowsInstallRequest.doneFileName)
-        try? fm.removeItem(at: done)
-        try? fm.moveItem(at: pending, to: done)
-    }
-
-    /// Stage into a bundle-local temporary name first, then rename into place,
-    /// so a crash mid-copy never leaves a half-written disk under the final
-    /// name. APFS clone keeps the 64 GiB sparse image instant when possible.
-    private func replaceItem(at destination: String, withItemAt source: String) throws {
-        let fm = FileManager.default
-        let staging = destination + ".staging-\(UUID().uuidString)"
-        defer { try? fm.removeItem(atPath: staging) }
-        do {
-            try fm.moveItem(atPath: source, toPath: staging)
-        } catch {
-            let clone = Shell.run("/bin/cp", ["-c", source, staging])
-            if clone.code != 0 {
-                try fm.copyItem(atPath: source, toPath: staging)
-            }
-            try? fm.removeItem(atPath: source)
-        }
-        if fm.fileExists(atPath: destination) {
-            try fm.removeItem(atPath: destination)
-        }
-        try fm.moveItem(atPath: staging, toPath: destination)
     }
 
     /// Runs one pipeline Process off the main actor, streaming its stdout and
@@ -379,7 +372,7 @@ final class HvfWindowsInstallSession: ObservableObject {
         process.arguments = arguments
         process.currentDirectoryURL = plan.repoRoot
         var environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("BRIDGEVM_") }
-        environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"
+        environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
         for (key, value) in extraEnvironment { environment[key] = value }
         process.environment = environment
         let pipe = Pipe()

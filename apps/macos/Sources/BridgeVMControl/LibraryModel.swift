@@ -1,12 +1,10 @@
 import Foundation
 import Combine
-
 /// Top-level model: the VM library + selection. Owns one per-VM ControlModel
 /// each (cached), so every VM polls and is controlled independently.
 @MainActor
 final class LibraryModel: ObservableObject {
     static let hvfEngineSelectionID = "__bridgevm_hvf_engine_experimental__"
-
     @Published var vms: [VMConfig] = []
     @Published var selectedID: String?
     @Published var showingCreate = false
@@ -20,17 +18,17 @@ final class LibraryModel: ObservableObject {
     @Published private(set) var cloningSlugs: Set<String> = []
     @Published private(set) var movingSlugs: Set<String> = []
     @Published private(set) var libraryIssues: [VMLibraryIssue] = []
-
     private var modelCache: [String: ControlModel] = [:]
     private let libraryRoot: URL
+    let e2eUnattendedPath: String?
     private let modelFactory: @MainActor (VMConfig) -> ControlModel
-
     // Host-capacity accounting (sum of RUNNING VMs vs host totals) to warn on oversubscription.
     var hostMemGiB: Double { Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824.0 }
     var hostCPU: Int { ProcessInfo.processInfo.activeProcessorCount }
     func runningModels() -> [ControlModel] { vms.compactMap { modelCache[$0.slug] }.filter { $0.running } }
     var usedMemGiB: Double { runningModels().reduce(0.0) { $0 + $1.memGiB } }
     var usedCPU: Int { runningModels().reduce(0) { $0 + $1.cpu } }
+    var rootURL: URL { libraryRoot }
 
     func deletionImpact(for cfg: VMConfig) -> VMLibraryDeletionImpact {
         VMLibrary.deletionImpact(for: cfg, rootURL: libraryRoot)
@@ -38,10 +36,12 @@ final class LibraryModel: ObservableObject {
 
     init(
         rootURL: URL = VMLibrary.root,
+        e2eUnattendedPath: String? = nil,
         migrateLegacy: Bool = true,
         modelFactory: @escaping @MainActor (VMConfig) -> ControlModel = { ControlModel(config: $0) }
     ) {
         libraryRoot = rootURL
+        self.e2eUnattendedPath = e2eUnattendedPath
         self.modelFactory = modelFactory
         if migrateLegacy {
             VMLibrary.migrateLegacyIfNeeded(rootURL: rootURL, legacy: VMConfig.loadLegacy())

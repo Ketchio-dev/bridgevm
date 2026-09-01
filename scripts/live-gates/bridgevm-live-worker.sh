@@ -72,7 +72,7 @@ run_job() {
     fi
 
     local tier_args=()
-    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ] || [ "$tier" = t15-hvf-boot-performance ] || [ "$tier" = t16-hvf-nvme-performance ]; then
+    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ] || [ "$tier" = t15-hvf-boot-performance ] || [ "$tier" = t16-hvf-nvme-performance ] || [ "$tier" = t17-windows-hvf-product-e2e ]; then
         local manifest="$dir/input-manifest.tsv" sealed_binary="$dir/hvf_gic_boot_probe"
         local expected_manifest actual_manifest expected_binary actual_binary
         expected_manifest="$(awk -F= '$1=="input_manifest_sha256"{print $2}' "$dir/job.env")"
@@ -83,7 +83,7 @@ run_job() {
             return 1
         fi
         tier_args=(--input-manifest "$manifest")
-        if [ "$tier" != t8-pointer-reliability ] && [ "$tier" != t14-bridgevm-pc-windows-start ]; then
+        if [ "$tier" != t8-pointer-reliability ] && [ "$tier" != t14-bridgevm-pc-windows-start ] && [ "$tier" != t17-windows-hvf-product-e2e ]; then
             expected_binary="$(awk -F= '$1=="sealed_binary_sha256"{print $2}' "$dir/job.env")"
             actual_binary="$(shasum -a 256 "$sealed_binary" 2>/dev/null | cut -d' ' -f1 || true)"
             if [ -z "$expected_binary" ] || [ "$actual_binary" != "$expected_binary" ]; then
@@ -141,12 +141,11 @@ run_job() {
     "$worktree/scripts/live-gates/write-missing-receipt.sh" \
         "$tier" "$dir" "$worktree" "$job_id" "$commit"
 
-    # Publish only a receipt that passes private-path redaction.
-    if [ -f "$dir/receipt.json" ]; then
-        if ! python3 "$worktree/scripts/live-gates/redact-receipt.py" --in "$dir/receipt.json" --out "$dir/receipt.public.json"; then
-            log "receipt for $job_id was refused by redaction; not publishing"
-            printf 'receipt=withheld\n' >> "$dir/result.env"
-        fi
+    # Publish only through the tier-aware redaction/schema boundary.
+    if [ ! -f "$dir/receipt.json" ] || ! "$worktree/scripts/live-gates/publish-receipt.sh" "$tier" "$dir" "$worktree" "$commit"; then
+        log "receipt for $job_id was refused by validation/redaction; failing job"
+        status=1
+        printf 'result=fail\nexit_code=1\nreceipt=withheld\n' > "$dir/result.env"
     fi
 
     git -C "$REPO" worktree remove --force "$worktree" >>"$dir/run.log" 2>&1 || true

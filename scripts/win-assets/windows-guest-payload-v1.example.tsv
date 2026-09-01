@@ -1,0 +1,16 @@
+# Example only. Replace every path and SHA-256 with the exact user-selected package files.
+schema	bridgevm-windows-guest-payload-v1
+architecture	arm64
+driver	storage	storage/viostor.inf	storage/viostor.cat	storage/viostor.sys
+driver	serial	serial/vioser.inf	serial/vioser.cat	serial/vioser.sys
+driver	network	network/netkvm.inf	network/netkvm.cat	network/netkvm.sys,network/netkvmco.dll
+file	storage/viostor.inf	REPLACE_WITH_LOWERCASE_SHA256
+file	storage/viostor.cat	REPLACE_WITH_LOWERCASE_SHA256
+file	storage/viostor.sys	REPLACE_WITH_LOWERCASE_SHA256
+file	serial/vioser.inf	REPLACE_WITH_LOWERCASE_SHA256
+file	serial/vioser.cat	REPLACE_WITH_LOWERCASE_SHA256
+file	serial/vioser.sys	REPLACE_WITH_LOWERCASE_SHA256
+file	network/netkvm.inf	REPLACE_WITH_LOWERCASE_SHA256
+file	network/netkvm.cat	REPLACE_WITH_LOWERCASE_SHA256
+file	network/netkvm.sys	REPLACE_WITH_LOWERCASE_SHA256
+file	network/netkvmco.dll	REPLACE_WITH_LOWERCASE_SHA256

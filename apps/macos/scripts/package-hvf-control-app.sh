@@ -7,28 +7,29 @@ IDENTITY="${BRIDGEVM_CODESIGN_IDENTITY:--}"
 SHORT_VERSION="${BRIDGEVM_BUNDLE_SHORT_VERSION:-0.1.0}"
 usage() {
   cat >&2 <<'EOF'
-usage: apps/macos/scripts/package-hvf-control-app.sh --output APP [--firmware-code FD]
-
+usage: apps/macos/scripts/package-hvf-control-app.sh --output APP --wimlib-runtime DIR [--firmware-code FD]
 Builds a self-contained BridgeVMControl.app for the custom Windows HVF path.
-The packager defaults to the checked-in pinned 3 MiB secure+TPM2 AArch64 UEFI
-code volume and never downloads firmware. Existing output is never overwritten.
-
+The pinned firmware is never downloaded; existing output is never overwritten.
+Build --wimlib-runtime with scripts/build-pinned-wimlib-runtime.sh.
 Environment:
   BRIDGEVM_CODESIGN_IDENTITY  signing identity, defaults to ad-hoc '-'
   BRIDGEVM_BUNDLE_SHORT_VERSION  CFBundleShortVersionString, defaults to 0.1.0
 EOF
 }
 OUTPUT=""
+WIMLIB_RUNTIME=""
 FIRMWARE_CODE="$ROOT/crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --output) [[ $# -ge 2 ]] || { usage; exit 2; }; OUTPUT="$2"; shift 2 ;;
+    --wimlib-runtime) [[ $# -ge 2 ]] || { usage; exit 2; }; WIMLIB_RUNTIME="$2"; shift 2 ;;
     --firmware-code) [[ $# -ge 2 ]] || { usage; exit 2; }; FIRMWARE_CODE="$2"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
 done
 [[ -n "$OUTPUT" ]] || { usage; exit 2; }
+[[ -n "$WIMLIB_RUNTIME" ]] || { echo "--wimlib-runtime is required" >&2; exit 2; }
 [[ "$OUTPUT" == *.app ]] || { echo "output must end in .app: $OUTPUT" >&2; exit 2; }
 [[ ! -e "$OUTPUT" ]] || { echo "refusing to overwrite existing output: $OUTPUT" >&2; exit 1; }
 [[ "$SHORT_VERSION" =~ ^[0-9]+(\.[0-9]+){2}([.-][0-9A-Za-z]+)*$ ]] || { echo "invalid bundle short version: $SHORT_VERSION" >&2; exit 2; }
@@ -46,12 +47,11 @@ output_parent="$(cd "$(dirname "$OUTPUT")" && pwd)"
 stage_root="$(mktemp -d "$output_parent/.bridgevm-package.XXXXXX")"
 stage_app="$stage_root/$(basename "$OUTPUT")"
 trap 'rm -rf "$stage_root"' EXIT
-
 swift_cache="$stage_root/swift-module-cache"
 swift_scratch="$stage_root/swift-build"
 CLANG_MODULE_CACHE_PATH="$swift_cache" SWIFTPM_MODULECACHE_OVERRIDE="$swift_cache" \
   swift build --disable-sandbox --package-path "$MACOS_DIR" --scratch-path "$swift_scratch" \
-  --configuration release --product BridgeVMControl
+  --configuration release
 swift_bin_dir="$(
   CLANG_MODULE_CACHE_PATH="$swift_cache" SWIFTPM_MODULECACHE_OVERRIDE="$swift_cache" \
     swift build --disable-sandbox --package-path "$MACOS_DIR" --scratch-path "$swift_scratch" \
@@ -59,7 +59,6 @@ swift_bin_dir="$(
 )"
 cargo build --locked --release -p bridgevm-cli
 cargo build --locked --release -p hvf-runner
-
 install -d \
   "$stage_app/Contents/MacOS" \
   "$stage_app/Contents/Resources/scripts/win-assets" \
@@ -104,7 +103,6 @@ printf '%s\n' \
   'bytes=3145728' \
   "sha256=$SECURE_FIRMWARE_SHA256" \
   > "$stage_app/Contents/Resources/firmware/manifest.txt"
-
 for script in \
   run-hvf-windows-installed-boot.sh \
   run-hvf-windows-installed-boot-usage.sh \
@@ -112,11 +110,13 @@ for script in \
   run-hvf-windows-installed-boot-args.sh \
   run-hvf-windows-installed-boot-runner.sh \
   build-hvf-windows-scripted-source.sh \
+  stage-hvf-windows-guest-payload.sh \
   hvf-disk-image-utils.sh \
   build-hvf-windows-viogpu3d-injector.sh \
   build-hvf-windows-driver-injector.sh \
   check-hvf-windows-viogpu3d-package.sh \
-  run-hvf-windows-scripted-install.sh
+  run-hvf-windows-scripted-install.sh \
+  verify-hvf-windows-install-target.sh
 do
   install -m 755 "$ROOT/scripts/$script" "$stage_app/Contents/Resources/scripts/$script"
 done
@@ -137,7 +137,9 @@ for asset in \
   bvgpu-diagnostics.ps1 \
   bvgpu-vulkan-probe.ps1 \
   bvgpu-diagnostics-startup.cmd \
-  bvagent.ps1 \
+  bvagent.ps1 bvagent-firstboot.ps1 bv-product-e2e-launch.ps1 \
+  bv-product-e2e.ps1 \
+  windows-guest-payload-v1.example.tsv \
   bvagent-install-service.c
 do
   install -m 644 "$ROOT/scripts/win-assets/$asset" \
@@ -147,24 +149,20 @@ for source in bridgevm-vulkan-draw-smoke.c bridgevm-vulkan-draw-shaders.h; do
   install -m 644 "$ROOT/scripts/win-tests/$source" \
     "$stage_app/Contents/Resources/scripts/win-tests/$source"
 done
-
 resource_bundle="$swift_bin_dir/BridgeVMApp_BridgeVMControl.bundle"
 [[ -d "$resource_bundle" ]] || {
   echo "SwiftPM resource bundle is missing: $resource_bundle" >&2
   exit 1
 }
 ditto "$resource_bundle" "$stage_app/Contents/Resources/$(basename "$resource_bundle")"
-
 BRIDGEVM_CODESIGN_IDENTITY="$IDENTITY" \
   "$MACOS_DIR/scripts/build-sign-hvf-windows-probe.sh" \
   --release \
   --output "$stage_app/Contents/Resources/target/release/examples/hvf_gic_boot_probe" \
   --bundle-frameworks "$stage_app/Contents/Frameworks" >/dev/null
-
 BRIDGEVM_CODESIGN_IDENTITY="$IDENTITY" \
   "$MACOS_DIR/scripts/bundle-swtpm-runtime.sh" \
   --app "$stage_app" >/dev/null
-
 sign_artifact() {
   if [[ "$IDENTITY" == "-" ]]; then
     codesign --force --sign - "$1" >/dev/null
@@ -173,7 +171,9 @@ sign_artifact() {
   fi
 }
 sign_artifact "$stage_app/Contents/Resources/target/release/bridgevm"
+"$MACOS_DIR/scripts/bundle-wimlib-runtime.sh" --runtime "$WIMLIB_RUNTIME" --app "$stage_app" --identity "$IDENTITY"
 sign_artifact "$stage_app/Contents/MacOS/BridgeVMControl"
+"$MACOS_DIR/scripts/package-hvf-product-e2e.sh" "$stage_app" "$swift_bin_dir" "$IDENTITY"
 sign_artifact "$stage_app"
 codesign --verify --deep --strict "$stage_app"
 "$MACOS_DIR/scripts/bundle-swtpm-runtime.sh" --verify-only "$stage_app" >/dev/null

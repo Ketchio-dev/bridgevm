@@ -34,23 +34,21 @@ final class HvfWindowsInstallTests: XCTestCase {
         try FileManager.default.setAttributes([.modificationDate: fixedDate], ofItemAtPath: iso.path)
         let request = HvfWindowsInstallRequest(
             isoPath: iso.path, diskGiB: 64, injectViogpu3d: false, driverPackageDir: nil)
-        var plan = HvfWindowsInstallPlan(
+        let plan = HvfWindowsInstallPlan(
             repoRoot: URL(fileURLWithPath: "/repo"), bundlePath: "/bundle",
             slug: "vm", request: request)
-        plan.homeDirectory = "/Users/example"
         let originalPath = plan.sourceImagePath
         XCTAssertTrue(originalPath.hasPrefix(
-            "/Users/example/BridgeVM/bridgevm-app-src/win11-"))
-        XCTAssertTrue(HvfWindowsInstallPlan.whitespaceFree(originalPath))
+            VMLibrary.root.appendingPathComponent("Derived/WindowsInstallSources/win11-").path))
+        XCTAssertTrue(originalPath.contains("Derived/WindowsInstallSources"))
 
         // Replace the ISO atomically while preserving name, size and mtime.
         // The content digest must still invalidate the cache.
         try Data(repeating: 0xa5, count: 4096).write(to: iso, options: [.atomic])
         try FileManager.default.setAttributes([.modificationDate: fixedDate], ofItemAtPath: iso.path)
-        var replacement = HvfWindowsInstallPlan(
+        let replacement = HvfWindowsInstallPlan(
             repoRoot: URL(fileURLWithPath: "/repo"), bundlePath: "/bundle",
             slug: "vm", request: request)
-        replacement.homeDirectory = "/Users/example"
         // sourceImagePath re-reads the ISO every time it is read, so the value
         // has to be captured while the file is still in this state. Comparing
         // the property itself after a later write would compare two reads of
@@ -60,10 +58,9 @@ final class HvfWindowsInstallTests: XCTestCase {
 
         // An in-place metadata/content change must also move to a new key.
         try Data(count: 8192).write(to: iso)
-        var regrown = HvfWindowsInstallPlan(
+        let regrown = HvfWindowsInstallPlan(
             repoRoot: URL(fileURLWithPath: "/repo"), bundlePath: "/bundle",
             slug: "vm", request: request)
-        regrown.homeDirectory = "/Users/example"
         XCTAssertNotEqual(regrown.sourceImagePath, replacementPath)
     }
 

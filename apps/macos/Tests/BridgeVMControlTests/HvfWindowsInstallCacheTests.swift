@@ -11,9 +11,9 @@ final class HvfWindowsInstallCacheTests: XCTestCase {
         try Data("iso".utf8).write(to: iso)
         let request = HvfWindowsInstallRequest(
             isoPath: iso.path, diskGiB: 64, injectViogpu3d: false, driverPackageDir: nil)
-        var plan = HvfWindowsInstallPlan(
-            repoRoot: temporary, bundlePath: "/tmp/bundle", slug: "cache", request: request)
-        plan.homeDirectory = temporary.path
+        let plan = HvfWindowsInstallPlan(
+            repoRoot: temporary, libraryRoot: temporary,
+            bundlePath: "/tmp/bundle", slug: "cache", request: request)
         try FileManager.default.createDirectory(
             at: URL(fileURLWithPath: plan.sourceImagePath).deletingLastPathComponent(),
             withIntermediateDirectories: true)

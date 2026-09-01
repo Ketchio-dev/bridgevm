@@ -38,8 +38,17 @@ VM data during an install or update.
 After the app opens:
 
 1. Choose **Windows → Install from ISO**.
-2. Select your Windows 11 Arm ISO and VM size.
+2. Select your Windows 11 Arm ISO, a signed ARM64 storage/serial/network
+   driver payload, its external SHA-256 manifest, and the VM size.
 3. Create the VM and let the unattended installation finish.
+
+An ISO alone is not sufficient for this Engineering Preview. The General
+Preview deliberately does not redistribute Windows kernel drivers; use
+[`windows-guest-payload-v1.example.tsv`](scripts/win-assets/windows-guest-payload-v1.example.tsv)
+to describe packages you are licensed to use. BridgeVM seals those exact
+inputs and refuses missing, changed, unsigned-CMS, non-ARM64, or incomplete
+payloads. This payload is for storage, serial integration, and networking; it
+does not enable the unavailable 3D injection path.
 
 > [!WARNING]
 > The published `v1.0.0` predates the current fail-closed driver policy and is

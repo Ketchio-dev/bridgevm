@@ -96,10 +96,22 @@ on current macOS, so the Settings route is the real one.
 
 - A Windows 11 ARM64 ISO. The app guides you through Microsoft's official
   download; nothing is fetched from third-party mirrors.
+- A user-supplied signed ARM64 driver payload containing exactly the storage,
+  serial and network roles, plus an external manifest derived from
+  [`windows-guest-payload-v1.example.tsv`](../scripts/win-assets/windows-guest-payload-v1.example.tsv).
+  The General Preview does not redistribute this payload. Its manifest must
+  list every file and exact SHA-256; the app copies and seals both inputs in
+  the VM bundle before installation.
 - About 64 GiB of free disk for the guest image.
 - No graphics-driver package is needed or accepted by the General Preview.
   Windows-HVF creation shows that 3D injection is unavailable and proceeds
   without it.
+
+The ISO by itself is therefore not enough today. Payload preflight verifies
+the declared ARM64 PE identity and each catalog's embedded CMS integrity; it
+does not claim that Windows accepted or bound a driver. That remains live guest
+evidence, and a missing or rejected payload leaves installation blocked rather
+than falling back to unsigned drivers.
 
 ## Build the current source
 

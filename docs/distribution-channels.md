@@ -20,6 +20,9 @@ Its contract is:
 - Windows-HVF ISO install and installed-disk import are 3D-off;
 - the app does not enable Windows TESTSIGNING or weaken Secure Boot policy;
 - users bring their own licensed Windows 11 Arm ISO;
+- ISO installation also requires a user-supplied signed ARM64
+  storage/serial/network payload and external SHA-256 manifest; these inputs
+  are sealed into the VM bundle but are not redistributed in the app;
 - the Mac app is ad-hoc signed, not Developer ID signed or notarized;
 - the release carries `BridgeVM-release.json` and `SHA256SUMS` beside the app
   archives.
@@ -94,7 +97,8 @@ Before publishing a General Preview draft:
 5. confirm the app bundle contains no `.sys`, `.cat`, `.inf`, `.cer`, `.pfx`,
    or `.p12` files;
 6. test the terminal installer with `--dry-run` and then on a clean Mac account;
-7. exercise Windows install from a user-supplied ISO with 3D injection absent;
+7. exercise Windows install from a user-supplied ISO and sealed signed ARM64
+   storage/serial/network payload with 3D injection absent;
 8. review release notes against `capabilities/windows-hvf.json` and publish only
    the generated capability wording;
 9. preserve the artifact hashes and workflow run URL with the release record.

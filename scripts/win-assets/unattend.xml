@@ -14,43 +14,14 @@
       <UserLocale>en-US</UserLocale>
     </component>
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-      <AutoLogon>
-        <Password>
-          <Value>bridge</Value>
-          <PlainText>true</PlainText>
-        </Password>
-        <Enabled>true</Enabled>
-        <LogonCount>999</LogonCount>
-        <Username>bridge</Username>
-      </AutoLogon>
-      <OOBE>
-        <HideEULAPage>true</HideEULAPage>
-        <HideLocalAccountScreen>true</HideLocalAccountScreen>
-        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
-        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
-        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
-        <ProtectYourPC>3</ProtectYourPC>
-      </OOBE>
       <TimeZone>UTC</TimeZone>
       <FirstLogonCommands>
         <SynchronousCommand wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
           <Order>1</Order>
-          <CommandLine>powershell.exe -NoProfile -Command "Set-LocalUser -Name 'bridge' -PasswordNeverExpires $true"</CommandLine>
-          <Description>Keep the unattended lab account available for BridgeVM guest-agent gates</Description>
+          <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\provisioning\agent\bvagent-firstboot.ps1</CommandLine>
+          <Description>Verify and register the sealed BridgeVM guest agent after the user completes Windows setup</Description>
         </SynchronousCommand>
       </FirstLogonCommands>
-      <UserAccounts>
-        <LocalAccounts>
-          <LocalAccount wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
-            <Password>
-              <Value>bridge</Value>
-              <PlainText>true</PlainText>
-            </Password>
-            <Group>Administrators</Group>
-            <Name>bridge</Name>
-          </LocalAccount>
-        </LocalAccounts>
-      </UserAccounts>
     </component>
   </settings>
 </unattend>

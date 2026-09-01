@@ -6,11 +6,11 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-product-e2e.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 FAKE="$TMP/bin"
 mkdir -p "$FAKE" "$TMP/assets"
-cp "$ROOT/scripts/win-assets/"{winpeshl.ini,bvinstall.cmd,bvdiskpart.txt,unattend.xml} "$TMP/assets/"
+cp "$ROOT/scripts/win-assets/"{winpeshl.ini,bvinstall.cmd,bvdiskpart.txt,unattend.xml,bvagent.ps1,bvagent-firstboot.ps1} "$TMP/assets/"
 printf 'fake ISO\n' > "$TMP/windows.iso"
+python3 "$ROOT/tests/fixtures/make-synthetic-windows-guest-payload.py" "$TMP/payload" "$TMP/payload.tsv"
 cat > "$FAKE/hdiutil" <<'MOCK'
 #!/usr/bin/env bash
-set -euo pipefail
 printf '%s\n' "$*" >> "$BRIDGEVM_HDIUTIL_LOG"
 case "$1" in
   attach)
@@ -62,18 +62,18 @@ case "$1" in
 esac
 MOCK
 chmod 755 "$FAKE/"*
-
 BRIDGEVM_HDIUTIL_LOG="$TMP/hdiutil.log" \
 ISO="$TMP/windows.iso" ASSETS="$TMP/assets" OUT="$TMP/source.raw" \
 WIMLIB="$FAKE/wimlib-imagex" \
+WINDOWS_GUEST_PAYLOAD_DIR="$TMP/payload" WINDOWS_GUEST_PAYLOAD_MANIFEST="$TMP/payload.tsv" \
 TMPDIR="$TMP" PATH="$FAKE:/usr/bin:/bin:/usr/sbin:/sbin" \
   "$ROOT/scripts/build-hvf-windows-scripted-source.sh" >/dev/null
-
 [[ "$(grep -c '^attach ' "$TMP/hdiutil.log")" == 3 ]]
 [[ "$(grep -c -- '-readonly' "$TMP/hdiutil.log")" == 1 ]]
 [[ "$(grep -c "$TMP/windows.iso" "$TMP/hdiutil.log")" == 1 ]]
 [[ "$(grep -c '^detach ' "$TMP/hdiutil.log")" == 3 ]]
 grep -q -- '-mountpoint .*/bridgevm-win-source\..*/iso' "$TMP/hdiutil.log"
 grep -q -- '-mountpoint .*/bridgevm-win-source\..*/dst' "$TMP/hdiutil.log"
-python3 "$ROOT/scripts/verify-windows-product-e2e-receipt.py" --self-test
+python3 "$ROOT/tests/integration/windows-guest-payload-verifier-smoke.py"; python3 "$ROOT/tests/integration/windows-install-security-contract-smoke.py"
+python3 "$ROOT/scripts/verify-windows-product-e2e-receipt.py" --self-test; "$ROOT/tests/integration/windows-product-e2e-live-tier-smoke.sh"
 echo "PASS: Windows product E2E deterministic contracts"

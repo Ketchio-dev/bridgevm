@@ -92,11 +92,11 @@ enum VMLibrary {
                 }
                 let data = try Data(contentsOf: f)
                 var cfg = try JSONDecoder().decode(VMConfig.self, from: data)
-                // The directory is the authoritative library identity. An
-                // embedded ID may be stale, duplicated, or path-like after a
-                // manual edit/import; accepting it could target another VM on
-                // save/delete.
+                // The directory is authoritative; never trust a persisted path-like ID.
                 cfg.id = canonicalID
+                let recovery = HvfWindowsInstallFinalization.reconcile(config: cfg, libraryRoot: rootURL)
+                cfg = recovery.config
+                if let message = recovery.issue { issues.append(VMLibraryIssue(path: f.path, message: message)) }
                 decoded.append((dir, cfg))
             } catch {
                 issues.append(VMLibraryIssue(path: f.path, message: "VM 설정을 읽을 수 없습니다: \(error.localizedDescription)"))

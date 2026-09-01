@@ -2,28 +2,35 @@ import CryptoKit
 import Foundation
 
 enum HvfWindowsInstallCacheIdentity {
-    private static let recipeVersion = "bridgevm-winpe-source-v2"
+    private static let recipeVersion = "bridgevm-winpe-source-v4"
     private static let recipePaths = [
         "scripts/build-hvf-windows-scripted-source.sh",
+        "scripts/stage-hvf-windows-guest-payload.sh",
         "scripts/hvf-disk-image-utils.sh",
         "scripts/win-assets/winpeshl.ini",
         "scripts/win-assets/bvinstall.cmd",
         "scripts/win-assets/bvdiskpart.txt",
         "scripts/win-assets/unattend.xml",
+        "scripts/win-assets/bvagent.ps1",
+        "scripts/win-assets/bvagent-firstboot.ps1",
     ]
 
-    static func key(isoSHA256: String, repoRoot: URL) -> String {
+    static func key(
+        isoSHA256: String,
+        guestPayloadIdentity: String = "absent",
+        unattendedIdentity: String = "default",
+        repoRoot: URL
+    ) -> String {
         var hasher = SHA256()
-        hasher.update(data: Data((recipeVersion + "\n" + isoSHA256 + "\n").utf8))
+        hasher.update(data: Data(
+            (recipeVersion + "\n" + isoSHA256 + "\n" + guestPayloadIdentity
+                + "\n" + unattendedIdentity + "\n").utf8))
         for relative in recipePaths {
             hasher.update(data: Data((relative + "\n").utf8))
             update(&hasher, withFile: repoRoot.appendingPathComponent(relative).path)
         }
-        let wimlib = HvfWindowsInstallPlan.wimlibCandidates.first {
-            FileManager.default.isExecutableFile(atPath: $0)
-        }
         hasher.update(data: Data("wimlib\n".utf8))
-        update(&hasher, withFile: wimlib)
+        update(&hasher, withFile: HvfWindowsWimlib.resolve(repoRoot: repoRoot))
         return "win11-" + hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 

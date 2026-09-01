@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Write the tier-specific fail-closed receipt when a runner died before doing so.
 set -euo pipefail
 TIER="$1"; DIR="$2"; WORKTREE="$3"; JOB_ID="$4"; COMMIT="$5"
 [[ -f "$DIR/receipt.json" ]] && exit 0
@@ -16,4 +15,5 @@ case "$TIER" in
       --out "$DIR" --job-id "$JOB_ID" --commit "$COMMIT" \
       --input-manifest-hash "$manifest_hash" --reason "$reason" || true
     ;;
+  t17-windows-hvf-product-e2e) "$WORKTREE/scripts/live-gates/write-windows-product-e2e-missing-receipt.sh" "$DIR" "$WORKTREE" "$JOB_ID" "$COMMIT" || true ;;
 esac

@@ -80,6 +80,8 @@ Properties the queue must hold:
 | T9 | Fixed 20-lane BridgeVM PC firmware campaign | Experimental-board standard UEFI PCI development evidence |
 | T10 | Sixty loaded full-workspace rounds | QMP shutdown-race regression evidence |
 | T15 | One sealed 4-vCPU release boot | Interleavable diagnostic sample for A/A noise and A/B performance comparisons |
+| T16 | Fixed sealed Windows NVMe workload | Counterbalanced A/A noise and A/B storage-performance evidence |
+| T17 | Packaged Windows-HVF 3D-off product E2E | One-lane diagnostic pilot or fixed three-lane release campaign |
 
 T0–T4 filter candidates. Only T5 produces A1 shipping evidence, and no faster
 tier may be used to lower a threshold. T6 requires all three runs to report
@@ -105,6 +107,31 @@ previous tree. Submit copies the signed release `binary` into the
 job directory, and the worker runs those exact sealed bytes rather than
 rebuilding after submission. Receipts preserve separate PPSSPP payload and
 embedded-executable hashes.
+
+T17 never substitutes an installed disk, harness acknowledgement or synthetic
+guest log for the packaged product command. Its private manifest fixes one
+packaged app, product helper, runner, firmware, Secure Boot policy, vars seed,
+guest payload, external payload manifest and user-supplied ISO by SHA-256.
+Missing app, ISO or guest-payload inputs produce a public `preflight-blocked`
+receipt with zero runs. Each sequential lane has a separate product library,
+share, VM slug, disk, vars, vTPM and powered-off snapshot. The requested disk,
+vars, vTPM and snapshot paths are the product-created files below
+`<library>/<slug>/bundle.vmbridge`; copying them to harness-owned evidence
+paths does not satisfy the contract. The host verifies the snapshot directory's
+manifest plus disk/vars pair and the actual lane-local installer-source cache
+receipt before cleanup. A pilot is one diagnostic run. Release is
+fixed at three of three, but even a passing receipt keeps `criterion_pass` and
+`capability_promotion` false: the 3D-off gate cannot close A9.
+The TSV contains exactly `campaign_mode` (`pilot` or `release`) plus
+`app_bundle`, `app_executable`, `product_helper`, `runner`, `firmware`,
+`secure_boot_policy`, `iso`, `bundled_vars_seed`, `guest_payload` and
+`guest_payload_manifest`. The guest payload is a symlink-free tree and its
+manifest must be outside that tree. The helper must be the sealed app-local
+`Contents/MacOS/BridgeVMProductE2E` command and accepts only
+`--windows-product-e2e --request FILE --result FILE`; an artifact without that
+command is a preflight blocker, not an invitation to invoke a harness. Private
+paths, ISO, media, vars, vTPM, guest payload and helper logs never enter the
+public receipt; the dedicated verifier is run both before and after redaction.
 
 T9 is deliberately not assigned a product capability criterion. It rebuilds
 the experimental BridgeVM Virtual ARM PC firmware and HVF runner from the

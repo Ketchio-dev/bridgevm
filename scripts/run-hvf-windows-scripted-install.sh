@@ -356,7 +356,7 @@ wait "$PROBE_PID"
 RUN_STATUS="$?"
 PROBE_PID=""
 set -e
-
+[[ "$RUN_STATUS" != 0 ]] || "$SCRIPT_DIR/verify-hvf-windows-install-target.sh" --target "$TARGET" > "$EVIDENCE_DIR/install-success.txt" || RUN_STATUS=1
 {
   printf 'run_status=%s\n' "$RUN_STATUS"
   date -u

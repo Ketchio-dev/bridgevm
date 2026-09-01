@@ -3,7 +3,6 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 #endif
-
 struct HvfEngineView: View {
     @StateObject private var session: HvfEngineSession
     @State private var targetDiskPath = ""
@@ -30,11 +29,9 @@ struct HvfEngineView: View {
     @State private var vtpmLifecycleError: String?
     @State private var confirmVTPMRestore = false
     @State private var confirmVTPMReset = false
-
     init(config: HvfEngineConfig = HvfEngineView.defaultConfig()) {
         _session = StateObject(wrappedValue: HvfEngineSession(config: config))
     }
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -43,12 +40,14 @@ struct HvfEngineView: View {
                 if session.config.vtpmStateDir != nil { vtpmLifecycleCard }
                 configCard
                 statusCard
+                HvfWindowsSnapshotCard(config: currentConfig(), repoRoot: session.repoRoot, vmStopped: vtpmLifecycleAvailable)
                 screenshotCard
                 eventFeedCard
             }
             .padding(20)
         }
         .navigationTitle("HVF Engine")
+        .accessibilityIdentifier("bridgevm.windows.runtime.view")
         .onAppear {
             loadStateFromSession()
             session.attachToRunningVM()
@@ -121,27 +120,27 @@ struct HvfEngineView: View {
                     Spacer()
                 }
                 HStack(spacing: 18) {
-                    Toggle("Clipboard sync", isOn: $clipboardSync)
-                    Toggle("Virtio net", isOn: $virtioNet)
+                    Toggle("Clipboard sync", isOn: $clipboardSync).accessibilityIdentifier("bridgevm.runtime.clipboard")
+                    Toggle("Virtio net", isOn: $virtioNet).accessibilityIdentifier("bridgevm.runtime.network")
                     Toggle("VirGL 3D", isOn: $virtioGpu3d)
                         .disabled(!session.config.allowsExperimental3D)
                     Toggle("Buffered NVMe (diagnostic)", isOn: $nvmeBufferedIO)
-                    Toggle("Shared folder", isOn: $shareEnabled)
+                    Toggle("Shared folder", isOn: $shareEnabled).accessibilityIdentifier("bridgevm.runtime.share.enabled")
                     Spacer()
                 }
                 if shareEnabled {
-                    pathRow("Host share", text: $shareHostDir, chooseDirectory: true)
+                    pathRow("Host share", text: $shareHostDir, chooseDirectory: true).accessibilityIdentifier("bridgevm.runtime.share.host")
                     HStack {
                         Text("Guest share").frame(width: 92, alignment: .leading)
                         TextField("C:\\bridgevm-share", text: $shareGuestDir)
                             .textFieldStyle(.roundedBorder)
-                            .font(.body.monospaced())
+                            .font(.body.monospaced()).accessibilityIdentifier("bridgevm.runtime.share.guest")
                     }
                 }
                 HStack(spacing: 8) {
                     TextField("Type text into Windows", text: $keyboardInput, onCommit: sendKeyboardText)
-                        .textFieldStyle(.roundedBorder)
-                    Button("Type", action: sendKeyboardText)
+                        .textFieldStyle(.roundedBorder).accessibilityIdentifier("bridgevm.runtime.keyboard.input")
+                    Button("Type", action: sendKeyboardText).accessibilityIdentifier("bridgevm.runtime.keyboard.send")
                     Button("Tab") { session.sendKey("tab") }
                     Button("Enter") { session.sendKey("enter") }
                     Button("Space") { session.sendKey("space") }
@@ -255,12 +254,13 @@ struct HvfEngineView: View {
                 HStack(spacing: 10) {
                     Button(action: start) { Label("Start", systemImage: "play.fill") }
                         .disabled(!bootConfigReady)
+                        .accessibilityIdentifier("bridgevm.windows.runtime.start")
                     Button(action: session.stop) { Label("Stop", systemImage: "stop.fill") }
+                        .accessibilityIdentifier("bridgevm.windows.runtime.stop")
                     Button(action: sendCtl) { Label("Send", systemImage: "paperplane.fill") }
-                        .disabled(ctlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(ctlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("bridgevm.runtime.ctl.send")
                     TextField("CLIPGET, CLIPSET ..., or guest shell command", text: $ctlInput, onCommit: sendCtl)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.body.monospaced())
+                        .textFieldStyle(.roundedBorder).font(.body.monospaced()).accessibilityIdentifier("bridgevm.runtime.ctl.input")
                 }
                 HStack(spacing: 24) {
                     infoItem("State", stateText)
@@ -289,7 +289,7 @@ struct HvfEngineView: View {
                     HvfDisplayWindowController.present(session: session, title: displayWindowTitle)
                 } label: {
                     Label("화면 창 열기", systemImage: "macwindow")
-                }
+                }.accessibilityIdentifier("bridgevm.runtime.display.open")
             }
             .padding(6)
             #else
@@ -379,7 +379,7 @@ struct HvfEngineView: View {
     }
 
     private var vtpmLifecycleAvailable: Bool {
-        session.connectionState == .stopped || session.connectionState == .timedOut
+        session.connectionState == .stopped
     }
 
     private func pathRow(_ label: String, text: Binding<String>, chooseDirectory: Bool) -> some View {

@@ -62,8 +62,12 @@ jobs:
 
       - name: Build and package the app
         run: |
+          bash scripts/build-pinned-wimlib-runtime.sh \
+            --output "$RUNNER_TEMP/wimlib-runtime"
           BRIDGEVM_BUNDLE_SHORT_VERSION="$BRIDGEVM_RELEASE_VERSION" \
-            bash apps/macos/scripts/package-hvf-control-app.sh --output "$RUNNER_TEMP/BridgeVM.app"
+            bash apps/macos/scripts/package-hvf-control-app.sh \
+              --output "$RUNNER_TEMP/BridgeVM.app" \
+              --wimlib-runtime "$RUNNER_TEMP/wimlib-runtime"
 
       - name: Verify third-party notices
         run: bash scripts/verify-app-third-party-notices.sh "$RUNNER_TEMP/BridgeVM.app"

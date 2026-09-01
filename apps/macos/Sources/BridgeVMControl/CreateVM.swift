@@ -3,7 +3,6 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 #endif
-
 // MARK: - Create logic (clone Ubuntu / from ISO)
 
 extension VMLibrary {
@@ -442,17 +441,23 @@ extension VMLibrary {
     /// Create an install-pending Windows HVF VM; 3D needs signed provenance.
     static func createWindowsHVFInstall(name: String, isoPath: String, diskGiB: Int,
                                         injectViogpu3d: Bool, driverPackageDir: String?,
+                                        guestPayloadDirectory: String? = nil,
+                                        guestPayloadManifest: String? = nil,
+                                        e2eUnattendedPath: String? = nil,
                                         storageDir: URL? = nil,
                                         width: Int = 1280, height: Int = 800,
                                         memMiB: Int = 6144, cpuCount: Int = 4,
                                         networkEnabled: Bool = true,
+                                        libraryRoot: URL = root,
                                         persist: Bool = true) -> VMConfig? {
         let fm = FileManager.default
         guard windowsHVFInjectionError(requested: injectViogpu3d) == nil,
               let name = normalizedVMName(name),
               diskGiB >= Int(HvfWindowsInstallPlan.minimumDiskGiB),
               isReadableRegularFile(isoPath),
-              let reserved = reserveDestination(name, storageBase: storageDir ?? root) else { return nil }
+              let reserved = reserveDestination(
+                name, storageBase: storageDir ?? libraryRoot, libraryRoot: libraryRoot
+              ) else { return nil }
         let slug = reserved.slug
         let destinationRoot = reserved.root
         var succeeded = false
@@ -467,11 +472,20 @@ extension VMLibrary {
         }
         let b = bundle.path
         guard let managedISO = WindowsHVFProductPolicy.stageISO(isoPath, in: b) else { return nil }
+        guard let inputs = WindowsHVFInstallInputPolicy.stage(
+            payloadDirectory: guestPayloadDirectory,
+            payloadManifest: guestPayloadManifest,
+            e2eUnattendedPath: e2eUnattendedPath, bundlePath: b) else { return nil }
         let request = HvfWindowsInstallRequest(
             isoPath: managedISO.path, isoSHA256: managedISO.sha256,
             diskGiB: diskGiB,
             injectViogpu3d: injectViogpu3d,
-            driverPackageDir: driverPackageDir
+            driverPackageDir: driverPackageDir,
+            guestPayloadDirectory: inputs.payload?.directory,
+            guestPayloadManifest: inputs.payload?.manifest,
+            guestPayloadIdentity: inputs.payload?.identity,
+            unattendedPath: inputs.unattended?.path,
+            unattendedIdentity: inputs.unattended?.sha256
         )
         guard request.save(bundlePath: b) else { return nil }
         let cfg = VMConfig(id: slug, name: name, displayName: name, backendKind: "hvf-engine",
@@ -481,7 +495,7 @@ extension VMLibrary {
                            displayWidth: width, displayHeight: height, installPending: true,
                            isoPath: nil, diskPath: "\(b)/disks/hvf-target.raw",
                            memMiB: memMiB, cpuCount: cpuCount, networkEnabled: networkEnabled, experimental3DAllowed: false)
-        if persist, !save(cfg) { return nil }
+        if persist, !save(cfg, rootURL: libraryRoot) { return nil }
         succeeded = true
         return cfg
     }
@@ -496,14 +510,17 @@ extension VMLibrary {
                                  storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
                                  memMiB: Int = 6144, cpuCount: Int = 4,
                                  networkEnabled: Bool = true, injectViogpu3d: Bool = false,
+                                 libraryRoot: URL = root,
                                  persist: Bool = true) -> VMConfig? {
         let fm = FileManager.default
         guard windowsHVFInjectionError(requested: injectViogpu3d) == nil,
               let name = normalizedVMName(name),
               windowsHVFImportError(targetDiskPath: targetDiskPath, varsPath: varsPath) == nil else { return nil }
 
-        let storageBase = storageDir ?? root
-        guard let reserved = reserveDestination(name, storageBase: storageBase) else { return nil }
+        let storageBase = storageDir ?? libraryRoot
+        guard let reserved = reserveDestination(
+            name, storageBase: storageBase, libraryRoot: libraryRoot
+        ) else { return nil }
         let slug = reserved.slug
         let destinationRoot = reserved.root
         var succeeded = false
@@ -541,38 +558,37 @@ extension VMLibrary {
                            displayWidth: width, displayHeight: height, installPending: false,
                            isoPath: nil, diskPath: disk, memMiB: memMiB, cpuCount: cpuCount,
                            networkEnabled: networkEnabled, experimental3DAllowed: false)
-        if persist, !save(cfg) { return nil }
+        if persist, !save(cfg, rootURL: libraryRoot) { return nil }
         succeeded = true
         return cfg
     }
 }
 
 // MARK: - Create sheet (gallery)
-
 struct CreateVMSheet: View {
     @ObservedObject var library: LibraryModel
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var osFamily: OSFamily = .windows
-    @State private var mode: Mode = .windowsHVFInstall
-    @State private var name = ""
-    @State private var isoPath: String = ""
-    @State private var hvfTargetPath: String = ""
-    @State private var hvfVarsPath: String = ""
-    @State private var diskGiB = 64
-    @State private var hvfNetwork = true
-    @State private var storageDir: URL? = nil
-    @State private var resIndex = 1
+    @Environment(\.dismiss) var dismiss
+    @State var osFamily: OSFamily = .windows
+    @State var mode: Mode = .windowsHVFInstall
+    @State var name = ""
+    @State var isoPath: String = ""
+    @State var guestPayloadPath: String = ""
+    @State var guestPayloadManifestPath: String = ""
+    @State var hvfTargetPath: String = ""
+    @State var hvfVarsPath: String = ""
+    @State var diskGiB = 64
+    @State var hvfNetwork = true
+    @State var storageDir: URL? = nil
+    @State var resIndex = 1
     @State private var showAdvanced = false
-    @State private var ramMiB = 6144
-    @State private var cpuCount = 4
-    @State private var working = false
-    @State private var error = ""
-    private let resolutions = [(1280, 800), (1440, 900), (1920, 1080), (2560, 1440)]
+    @State var ramMiB = 6144
+    @State var cpuCount = 4
+    @State var working = false
+    @State var error = ""
+    let resolutions = [(1280, 800), (1440, 900), (1920, 1080), (2560, 1440)]
     enum OSFamily: Equatable { case windows, linux }
     enum Mode: Equatable {
         case ubuntu, iso, windows, windowsHVF, windowsHVFInstall
-
         var family: OSFamily {
             switch self {
             case .ubuntu, .iso: return .linux
@@ -580,21 +596,17 @@ struct CreateVMSheet: View {
             }
         }
     }
-
-    private var template: VMConfig? {
+    var template: VMConfig? {
         library.vms.first { $0.backendKind == "fast-vz" && ($0.bootMode ?? "direct-kernel") == "direct-kernel" }
             ?? library.vms.first
     }
-
     /// Memory choices in MiB, capped just under host physical RAM.
     private var ramOptions: [Int] {
         let hostMiB = Int(library.hostMemGiB * 1024)
         let ceiling = max(4096, hostMiB - 4096) // leave headroom for macOS
         return [2048, 4096, 6144, 8192, 12288, 16384, 24576, 32768].filter { $0 <= ceiling }
     }
-
     private var maxCPU: Int { max(1, library.hostCPU - 1) }
-
     /// Modes that allocate a brand-new blank disk the user can size.
     private var createsFreshDisk: Bool {
         mode == .iso || mode == .windows || mode == .windowsHVFInstall
@@ -617,6 +629,7 @@ struct CreateVMSheet: View {
             // 1단계: 운영체제 선택 (Windows / Linux)
             HStack(spacing: 12) {
                 tile("Windows", "pc", selected: osFamily == .windows) { selectFamily(.windows) }
+                    .accessibilityIdentifier("bridgevm.create.os.windows")
                 tile("Linux", "terminal", selected: osFamily == .linux) { selectFamily(.linux) }
             }
 
@@ -626,6 +639,7 @@ struct CreateVMSheet: View {
                     subTile("ISO에서 설치", selected: mode == .windowsHVFInstall) {
                         mode = .windowsHVFInstall; autofillWin11()
                     }
+                    .accessibilityIdentifier("bridgevm.create.windows.install")
                     subTile("설치된 디스크 가져오기", selected: mode == .windowsHVF) {
                         mode = .windowsHVF; isoPath = ""
                     }
@@ -661,9 +675,24 @@ struct CreateVMSheet: View {
                     .font(.callout).foregroundColor(.secondary)
                 HStack {
                     Button("ISO 선택…") { pickISO() }
+                        .accessibilityIdentifier("bridgevm.create.windows.iso")
                     Text(isoPath.isEmpty ? "선택된 ISO 없음" : (isoPath as NSString).lastPathComponent)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
+                HStack {
+                    Button("ARM64 드라이버 폴더…") { pickGuestPayload() }
+                        .accessibilityIdentifier("bridgevm.create.windows.guest-payload")
+                    Text(guestPayloadPath.isEmpty ? "선택된 payload 없음" : (guestPayloadPath as NSString).lastPathComponent)
+                        .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                }
+                HStack {
+                    Button("Payload manifest…") { pickGuestPayloadManifest() }
+                        .accessibilityIdentifier("bridgevm.create.windows.guest-manifest")
+                    Text(guestPayloadManifestPath.isEmpty ? "선택된 manifest 없음" : (guestPayloadManifestPath as NSString).lastPathComponent)
+                        .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                }
+                Text("저장장치·직렬·네트워크용 서명된 ARM64 드라이버와 SHA-256 manifest가 필요합니다. 선택한 원본은 VM 번들에 복사·봉인됩니다.")
+                    .font(.caption).foregroundColor(.secondary)
                 Text("3D 드라이버 주입은 서명 provenance 검증기가 없어 사용할 수 없습니다. Windows는 3D 주입 없이 설치합니다.")
                     .font(.caption).foregroundColor(.secondary)
             } else {
@@ -680,7 +709,9 @@ struct CreateVMSheet: View {
 
             HStack {
                 Text("이름").frame(width: 64, alignment: .leading)
-                TextField(osFamily == .windows ? "Windows 11" : "Ubuntu 2", text: $name).textFieldStyle(.roundedBorder)
+                TextField(osFamily == .windows ? "Windows 11" : "Ubuntu 2", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("bridgevm.create.name")
             }
             if !name.isEmpty, VMLibrary.normalizedVMName(name) == nil {
                 Text("이름은 제어문자 없이 1~\(VMLibrary.maximumVMNameCharacters)자이며 파일 ID 제한 안이어야 합니다.")
@@ -754,6 +785,7 @@ struct CreateVMSheet: View {
                 Button(working ? "생성 중…" : "생성") { create() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canCreate)
+                    .accessibilityIdentifier("bridgevm.create.commit")
             }
         }
         .padding(20)
@@ -817,6 +849,16 @@ struct CreateVMSheet: View {
         if let url = chooseFile(directories: true) { storageDir = url }
     }
 
+    private func pickGuestPayload() {
+        if let url = chooseFile(directories: true) { guestPayloadPath = url.path }
+    }
+
+    private func pickGuestPayloadManifest() {
+        if let url = chooseFile(directories: false, extensions: ["tsv"]) {
+            guestPayloadManifestPath = url.path
+        }
+    }
+
     private func pickHVFTarget() {
         if let url = chooseFile(directories: false, extensions: ["raw", "img"]) { hvfTargetPath = url.path }
     }
@@ -831,7 +873,7 @@ struct CreateVMSheet: View {
         case .windowsHVF:
             return !hvfTargetPath.isEmpty && !hvfVarsPath.isEmpty
         case .windowsHVFInstall:
-            return !isoPath.isEmpty
+            return !isoPath.isEmpty && !guestPayloadPath.isEmpty && !guestPayloadManifestPath.isEmpty
         case .iso, .windows:
             return !isoPath.isEmpty && template != nil
         case .ubuntu:
@@ -861,50 +903,4 @@ struct CreateVMSheet: View {
         if FileManager.default.fileExists(atPath: candidate) { isoPath = candidate }
     }
 
-    private func create() {
-        let selectedTemplate = template
-        if WindowsHVFProductPolicy.requiresTemplate(mode) && selectedTemplate == nil { error = "템플릿 VM이 없습니다"; return }
-        working = true; error = ""
-        guard let nm = VMLibrary.normalizedVMName(name) else {
-            error = "VM 이름은 제어문자 없이 1~\(VMLibrary.maximumVMNameCharacters)자이며 파일 ID 제한 안이어야 합니다."
-            working = false
-            return
-        }
-        let m = mode; let iso = isoPath
-        let hvfTarget = hvfTargetPath; let hvfVars = hvfVarsPath
-        if mode == .windowsHVF,
-           let importError = VMLibrary.windowsHVFImportError(targetDiskPath: hvfTarget, varsPath: hvfVars) {
-            error = importError
-            working = false
-            return
-        }
-        let sd = storageDir; let w = resolutions[resIndex].0; let h = resolutions[resIndex].1
-        let disk = diskGiB; let mem = ramMiB; let cpu = cpuCount; let net = hvfNetwork
-        Task.detached {
-            let cfg: VMConfig?
-            switch m {
-            case .ubuntu:
-                cfg = selectedTemplate.flatMap { VMLibrary.cloneUbuntu(name: nm, template: $0, storageDir: sd, width: w, height: h, memMiB: mem, cpuCount: cpu) }
-            case .iso:
-                cfg = selectedTemplate.flatMap { VMLibrary.createFromISO(name: nm, isoPath: iso, template: $0, storageDir: sd, width: w, height: h, diskGiB: disk, memMiB: mem, cpuCount: cpu) }
-            case .windows:
-                cfg = selectedTemplate.flatMap { VMLibrary.createWindows(name: nm, isoPath: iso, template: $0, storageDir: sd, width: w, height: h, diskGiB: disk, memMiB: mem, cpuCount: cpu) }
-            case .windowsHVF:
-                cfg = VMLibrary.createWindowsHVF(name: nm, targetDiskPath: hvfTarget, varsPath: hvfVars,
-                                                 storageDir: sd, width: w, height: h, memMiB: mem, cpuCount: cpu,
-                                                 networkEnabled: net, injectViogpu3d: false)
-            case .windowsHVFInstall:
-                cfg = VMLibrary.createWindowsHVFInstall(name: nm, isoPath: iso, diskGiB: disk,
-                                                        injectViogpu3d: false, driverPackageDir: nil,
-                                                        storageDir: sd, width: w, height: h,
-                                                        memMiB: mem, cpuCount: cpu, networkEnabled: net)
-            }
-            await MainActor.run {
-                working = false
-                if let cfg = cfg, library.add(cfg) {
-                    dismiss()
-                } else { error = "생성 또는 VM 라이브러리 저장 실패" }
-            }
-        }
-    }
 }

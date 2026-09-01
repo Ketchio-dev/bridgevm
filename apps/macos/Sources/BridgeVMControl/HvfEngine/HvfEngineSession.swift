@@ -57,31 +57,29 @@ final class HvfEngineSession: ObservableObject {
         currentDirectoryPath: String = FileManager.default.currentDirectoryPath,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         executablePath: String? = Bundle.main.executableURL?.path,
-        resourcePath: String? = Bundle.main.resourceURL?.path
+        resourcePath: String? = Bundle.main.resourceURL?.path,
+        allowDevelopmentOverrides: Bool = _isDebugAssertConfiguration()
     ) -> URL {
-        // DEBUG only: this points the app at a checkout and makes it run that
-        // checkout's shell scripts. In a signed release build an environment
-        // variable must not be able to choose what code the app executes.
         #if DEBUG
-        if let override = environment["BRIDGEVM_REPO_ROOT"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !override.isEmpty {
-            let expanded = (override as NSString).expandingTildeInPath
-            let url = URL(fileURLWithPath: expanded, isDirectory: true)
-            if containsBootWrapper(url) { return url.resolvingSymlinksInPath() }
+        if allowDevelopmentOverrides {
+            if let override = environment["BRIDGEVM_REPO_ROOT"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !override.isEmpty {
+                let expanded = (override as NSString).expandingTildeInPath
+                let url = URL(fileURLWithPath: expanded, isDirectory: true)
+                if containsBootWrapper(url) { return url.resolvingSymlinksInPath() }
+            }
+            var candidates = [URL(fileURLWithPath: currentDirectoryPath, isDirectory: true)]
+            if let executablePath { candidates.append(URL(fileURLWithPath: executablePath).deletingLastPathComponent()) }
+            if let resourcePath { candidates.append(URL(fileURLWithPath: resourcePath, isDirectory: true)) }
+            for candidate in candidates {
+                if let root = repositoryRoot(startingAt: candidate) { return root }
+            }
         }
         #endif
-
-        var candidates = [URL(fileURLWithPath: currentDirectoryPath, isDirectory: true)]
-        if let executablePath {
-            candidates.append(URL(fileURLWithPath: executablePath).deletingLastPathComponent())
-        }
         if let resourcePath {
-            candidates.append(URL(fileURLWithPath: resourcePath, isDirectory: true))
+            return URL(fileURLWithPath: resourcePath, isDirectory: true).standardizedFileURL
         }
-        for candidate in candidates {
-            if let root = repositoryRoot(startingAt: candidate) { return root }
-        }
-        return URL(fileURLWithPath: currentDirectoryPath, isDirectory: true).standardizedFileURL
+        return URL(fileURLWithPath: "/BridgeVMUnavailableResources", isDirectory: true)
     }
 
     private nonisolated static func containsBootWrapper(_ root: URL) -> Bool {

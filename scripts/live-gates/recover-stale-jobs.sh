@@ -26,17 +26,8 @@ for dir in "$QUEUE_ROOT"/running/*; do
   fi
   grep -q '^finished_at=' "$dir/job.env" || \
     printf 'finished_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$dir/job.env"
-
-  worktree="$WORK_ROOT/$job_id"
-  if [[ -d "$worktree" ]]; then
-    "$worktree/scripts/live-gates/write-missing-receipt.sh" \
-      "$tier" "$dir" "$worktree" "$job_id" "$commit" || true
-    git -C "$worktree" worktree remove --force "$worktree" || true
-  fi
-  if [[ -f "$dir/receipt.json" && ! -f "$dir/receipt.public.json" ]]; then
-    python3 "$REPO/scripts/live-gates/redact-receipt.py" \
-      --in "$dir/receipt.json" --out "$dir/receipt.public.json" || true
-  fi
+  "$REPO/scripts/live-gates/recover-stale-receipt.sh" \
+    "$REPO" "$WORK_ROOT" "$dir" "$job_id" "$tier" "$commit"
   mv "$dir" "$QUEUE_ROOT/done/$job_id"
   echo "recovered stale job as interrupted: $job_id" >&2
 done

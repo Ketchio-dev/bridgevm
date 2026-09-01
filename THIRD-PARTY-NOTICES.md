@@ -59,6 +59,7 @@ digest-bound modification record beside the resulting binaries.
 | Vulkan-Headers / venus protocol headers | Apache-2.0 / MIT | build-time headers | none beyond notice |
 | Locked Rust crate dependencies | licenses recorded per package (permissive allowlist enforced by `deny.toml`) | statically linked into BridgeVM executables as permitted by each package license | ship the generated `rust-dependencies.tsv` inventory and applicable attribution |
 | swtpm + libtpms (vTPM) | BSD-3-Clause | bundled helper binary + dylibs | ship license text |
+| wimlib-imagex 1.14.5 | GPL-3.0-or-later | separately executed bundled command-line helper; not linked into BridgeVM | ship the exact GPL text, complete corresponding source archive and build recipe beside the binary; preserve the user's right to replace and redistribute it |
 | GLib / GObject / GIO / GModule, json-glib | LGPL-2.1+ | bundled **dynamic** libraries (swtpm dependencies), replaceable by path | ship license text + LGPL text; keep dynamic linkage |
 | gettext runtime (libintl) | LGPL-2.1+ | bundled dynamic library | same as GLib |
 | OpenSSL (libcrypto) | Apache-2.0 | bundled dynamic library | ship license + notice |
@@ -116,6 +117,10 @@ explained in [`docs/licensing-and-attribution.md`](docs/licensing-and-attributio
 - Host linkage is audited with `scripts/verify-app-third-party-notices.sh`:
   every LGPL library must be a separate `.dylib` and have a dynamic consumer
   visible in `otool -L`; static archives are rejected.
+- The standalone wimlib helper is audited with
+  `scripts/verify-bundled-wimlib-runtime.sh`: its signed binary, version,
+  system-only dynamic dependencies, GPL text, exact source archive and build
+  receipts must agree.
 - Locked Rust package names, versions, license expressions and registry sources
   are generated into `Contents/Resources/licenses/rust-dependencies.tsv`; their
   source license/notice files are bundled in `rust-license-texts.txt`.

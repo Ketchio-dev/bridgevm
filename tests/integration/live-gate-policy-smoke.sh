@@ -9,8 +9,8 @@ WORKER="$REPO/scripts/live-gates/bridgevm-live-worker.sh"
 RECOVER="$REPO/scripts/live-gates/recover-stale-jobs.sh"
 INSTALL="$REPO/scripts/live-gates/install-studio-queue.sh"
 PLIST="$REPO/scripts/live-gates/com.ketchio.bridgevm-live.plist"
-REDACT="$REPO/scripts/live-gates/redact-receipt.py"
-TIER="$REPO/scripts/live-gates/run-tier.sh"; PC_WINDOWS_TIER="$REPO/scripts/live-gates/run-bridgevm-pc-windows-start-tier.sh"
+REDACT="$REPO/scripts/live-gates/redact-receipt.py"; PUBLISH="$REPO/scripts/live-gates/publish-receipt.sh"
+TIER="$REPO/scripts/live-gates/run-tier.sh"; PC_WINDOWS_TIER="$REPO/scripts/live-gates/run-bridgevm-pc-windows-start-tier.sh"; T17_TIER="$REPO/scripts/live-gates/run-windows-product-e2e-tier.sh"
 A3_TIER="$REPO/scripts/live-gates/run-a3-title-tier.sh"
 A3_RECEIPT="$REPO/scripts/live-gates/write-a3-title-receipt.py"
 A3_VERIFY="$REPO/scripts/verify-d3d11-title-fps.sh"
@@ -125,16 +125,16 @@ check "read-only post-mortem harvest leaves the guest image byte-identical" \
 # A listener would turn this local queue into a self-hosted runner; forbid it.
 check "the plist declares no socket" '! grep -q "<key>Sockets</key>" "$PLIST"'
 check "the plist is not a root daemon" '! grep -qi "UserName.*root" "$PLIST"'
-check "the agent and worker clear inherited variables and use the sealed redactor" 'grep -A1 -F "<string>/usr/bin/env</string>" "$PLIST" | grep -Fq "<string>-i</string>" && grep -Fq '\''/usr/bin/env -i HOME="$HOME"'\'' "$WORKER" && grep -Fq '\''$worktree/scripts/live-gates/redact-receipt.py'\'' "$WORKER"'
+check "the agent and worker clear inherited variables and use the sealed publisher" 'grep -A1 -F "<string>/usr/bin/env</string>" "$PLIST" | grep -Fq "<string>-i</string>" && grep -Fq '\''/usr/bin/env -i HOME="$HOME"'\'' "$WORKER" && grep -Fq '\''publish-receipt.sh'\'' "$WORKER" && grep -Fq '\''redact-receipt.py'\'' "$PUBLISH"'
 no_match "no component opens a listening socket" \
-    'nc +-l|socat|LISTEN|bind\(' "$CLI" "$WORKER" "$TIER" "$PC_WINDOWS_TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
+    'nc +-l|socat|LISTEN|bind\(' "$CLI" "$WORKER" "$TIER" "$PC_WINDOWS_TIER" "$T17_TIER" "$PUBLISH" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 # Match registration rather than the installer guard's actions-runner name.
 no_match "nothing registers a GitHub runner" \
-    'config\.sh +--url|RUNNER_TOKEN|--runnergroup' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
+    'config\.sh +--url|RUNNER_TOKEN|--runnergroup' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$T17_TIER" "$PUBLISH" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 check "the installer refuses to sit beside a runner" \
     'grep -q "actions-runner" "$INSTALL"'
 no_match "nothing in the queue path uses sudo" \
-    '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$PC_WINDOWS_TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
+    '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$PC_WINDOWS_TIER" "$T17_TIER" "$PUBLISH" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 check "live tier receipt, clone and QMP stress policies pass" \
     'python3 "$A3_RECEIPT" --self-test | grep -q "PASS" && "$REPO/tests/integration/windows-closure-live-tier-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/qmp-stress-live-tier-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/bridgevm-pc-windows-start-live-tier-smoke.sh" | grep -q "PASS"'
 check "the A3 payload archive is fail-closed" \

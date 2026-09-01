@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Validate a public Windows-HVF 3D-off product E2E receipt."""
-
 from __future__ import annotations
 
 import argparse
@@ -27,6 +26,7 @@ HASH_FIELDS = (
     "final_disk_sha256",
     "final_vars_sha256",
     "secure_boot_receipt_sha256",
+    "guest_evidence_sha256",
 )
 STAGE_FIELDS = (
     "artifact_preflight_passes",
@@ -72,6 +72,7 @@ FAILURE_CODES = {
     "none",
     "missing-app-artifact",
     "missing-windows-iso",
+    "missing-guest-payload",
     "missing-wimlib",
     "hash-mismatch",
     "product-model-failed",
@@ -229,6 +230,7 @@ def validate(receipt: object, *, expected_commit: str | None = None, require_cla
         and failures == 0
         and previous == expected_runs
         and receipt["product_model_automated"]
+        and receipt["ui_frontend_automated"]
         and receipt["worker_cleanup_verified"]
         and all(receipt[field] != "absent" for field in HASH_FIELDS)
     )
@@ -317,8 +319,7 @@ def self_test() -> int:
     release = _fixture()
     accepts(release, claim=True)
     pilot = _fixture("pilot")
-    pilot.update({"artifact_signing_class": "development-ad-hoc", "clean_machine": False,
-                  "ui_frontend_automated": False, "claim_eligible": False})
+    pilot.update({"artifact_signing_class": "development-ad-hoc", "clean_machine": False, "claim_eligible": False})
     accepts(pilot)
     rejects(pilot, claim=True)
     blocked = _fixture("pilot")
@@ -339,7 +340,7 @@ def self_test() -> int:
         ("claim_eligible", False),
         ("criterion_pass", True),
         ("capability_promotion", True),
-        ("worker_cleanup_verified", False),
+        ("worker_cleanup_verified", False), ("ui_frontend_automated", False),
         ("elapsed_ms", 1),
         ("finished_at", "2026-08-31T23:59:59Z"),
     ]

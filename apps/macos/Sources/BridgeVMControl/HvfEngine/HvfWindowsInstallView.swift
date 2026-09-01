@@ -15,7 +15,7 @@ struct HvfWindowsInstallView: View {
             ?? HvfWindowsInstallRequest(isoPath: "", diskGiB: 64,
                                         injectViogpu3d: false, driverPackageDir: nil)
         let plan = HvfWindowsInstallPlan(
-            repoRoot: HvfEngineSession.defaultRepoRoot(),
+            repoRoot: HvfEngineSession.defaultRepoRoot(), libraryRoot: library.rootURL,
             bundlePath: config.bundlePath,
             slug: config.slug,
             request: request
@@ -36,6 +36,7 @@ struct HvfWindowsInstallView: View {
             .padding(20)
         }
         .onAppear { wireCompletion() }
+        .accessibilityIdentifier("bridgevm.windows.install.view")
     }
 
     private var requestCard: some View {
@@ -62,6 +63,7 @@ struct HvfWindowsInstallView: View {
                 if session.isRunning { ProgressView().controlSize(.small) }
                 Text(session.stage.label)
                     .foregroundColor(stageColor)
+                    .accessibilityIdentifier("bridgevm.windows.install.stage")
                 if case let .failed(message) = session.stage {
                     Text(message).font(.caption).foregroundColor(.red)
                 }
@@ -88,9 +90,10 @@ struct HvfWindowsInstallView: View {
     private var controlRow: some View {
         HStack {
             Button(session.isRunning ? "설치 진행 중…" : "설치 시작") { session.start() }
-                .disabled(session.isRunning || session.stage == .done)
+                .disabled(session.isRunning || session.stage == .done).accessibilityIdentifier("bridgevm.install.start")
             if session.isRunning {
                 Button("취소") { session.cancel() }
+                    .accessibilityIdentifier("bridgevm.windows.install.cancel")
             }
             Spacer()
         }
@@ -111,7 +114,7 @@ struct HvfWindowsInstallView: View {
                     }
                 }
                 .frame(height: 220)
-                .onChange(of: session.logLines.count) { count in
+                .onChange(of: session.logLines.count) { _, count in
                     if count > 0 { proxy.scrollTo(count - 1, anchor: .bottom) }
                 }
             }
@@ -132,9 +135,6 @@ struct HvfWindowsInstallView: View {
 
     private func wireCompletion() {
         session.onCompleted = { [weak library] in
-            var updated = config
-            updated.installPending = false
-            _ = VMLibrary.save(updated)
             library?.reload()
         }
     }

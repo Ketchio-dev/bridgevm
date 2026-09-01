@@ -4,7 +4,6 @@ import Darwin
 #endif
 #if canImport(AppKit)
 import AppKit
-
 /// Ensure the window appears and takes focus when launched as a SwiftPM
 /// executable (no .app bundle), rather than starting as a background agent.
 final class ControlAppDelegate: NSObject, NSApplicationDelegate {
@@ -15,7 +14,6 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }
 #endif
-
 @main
 enum BridgeVMControlMain {
     static func main() {
@@ -23,16 +21,16 @@ enum BridgeVMControlMain {
         if arguments.first == "--vtpm-lifecycle" {
             exit(VTPMLifecycleCommand.run(arguments: Array(arguments.dropFirst())))
         }
+        BridgeVMControlLaunchOptions.validateOrExit(arguments: arguments)
         BridgeVMControlApp.main()
     }
 }
-
 struct BridgeVMControlApp: App {
 #if canImport(AppKit)
     @NSApplicationDelegateAdaptor(ControlAppDelegate.self) private var appDelegate
 #endif
-    @StateObject private var library = LibraryModel()
-
+    @StateObject var library: LibraryModel
+    init() { _library = StateObject(wrappedValue: BridgeVMControlAppLaunch.libraryModel()) }
     var body: some Scene {
         WindowGroup("BridgeVM Control") {
             ContentView(library: library)
