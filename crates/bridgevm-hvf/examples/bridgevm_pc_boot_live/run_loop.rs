@@ -10,6 +10,15 @@ const EC_HVC: u64 = 0x16;
 const EC_SYSREG: u64 = 0x18;
 const EC_DATA_ABORT: u64 = 0x24;
 const MAX_EXITS: usize = 4_000_000;
+const MAX_WATCHDOG_SECS: u64 = 120;
+
+fn watchdog_secs() -> u64 {
+    std::env::var("BRIDGEVM_PC_WATCHDOG_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|seconds| (1..=MAX_WATCHDOG_SECS).contains(seconds))
+        .unwrap_or(20)
+}
 
 /// The boot-result page lives in low guest RAM, which the Windows Boot Manager
 /// reuses once it runs, so capture the validated StartImage-handoff record the
@@ -29,11 +38,14 @@ pub(super) unsafe fn run(
     gic: &mut UsGic,
     ram: &mut GuestRam<'_>,
     snapshot: &mut Option<super::result::BootResult>,
-    wwatch: Option<u64>,
+    windows_diagnostic: bool,
 ) -> Result<(usize, usize), String> {
     let (stop_tx, stop_rx) = mpsc::channel();
     let watchdog = std::thread::spawn(move || {
-        if stop_rx.recv_timeout(Duration::from_secs(20)).is_err() {
+        if stop_rx
+            .recv_timeout(Duration::from_secs(watchdog_secs()))
+            .is_err()
+        {
             let _ = hv_vcpus_exit(&vcpu, 1);
         }
     });
@@ -49,20 +61,31 @@ pub(super) unsafe fn run(
                 let syndrome = (*exit).exception.syndrome;
                 match (syndrome >> 26) & 0x3f {
                     EC_DATA_ABORT => {
-                        let addr = (*exit).exception.physical_address;
-                        if wwatch.map(|w| w & !0x3fff) == Some(addr & !0x3fff) {
-                            super::mmio::watched_write(vcpu, exit, ram, wwatch.unwrap())?;
-                        } else {
-                            super::mmio::emulate(vcpu, exit, platform, gic, ram)?;
-                        }
+                        super::mmio::emulate(vcpu, exit, platform, gic, ram)?;
                         mmio_exits += 1;
                     }
                     EC_SYSREG => {
                         gic.sysreg(vcpu, syndrome)?;
                         mmio_exits += 1;
                     }
+                    EC_HVC if windows_diagnostic => match super::psci::handle(vcpu)? {
+                        super::psci::Action::Resume => {}
+                        super::psci::Action::SystemOff => {
+                            return Err("Windows requested PSCI SYSTEM_OFF".to_string())
+                        }
+                        super::psci::Action::SystemReset => {
+                            return Err("Windows requested PSCI SYSTEM_RESET".to_string())
+                        }
+                    },
                     EC_HVC => return Ok((mmio_exits, vtimer_exits)),
-                    EC_WFX => return Err(format!("firmware entered WFx ESR={syndrome:#x}")),
+                    EC_WFX => {
+                        let mut pc = 0;
+                        status("read WFx PC", hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut pc))?;
+                        if syndrome & 1 == 0 && !gic.line_asserted() {
+                            std::thread::sleep(Duration::from_millis(1));
+                        }
+                        status("advance WFx PC", hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4))?;
+                    }
                     ec => {
                         return Err(format!(
                             "unexpected firmware exception EC={ec:#x} ESR={syndrome:#x}"
@@ -71,17 +94,8 @@ pub(super) unsafe fn run(
                 }
             }
             EXIT_VTIMER => {
-                // Virtual timer fired: re-arm CNTV_CVAL to a future deadline so
-                // HVF does not immediately re-fire (nobody else re-arms it once
-                // the guest installs its own vectors), make the timer PPI
-                // (INTID 27) pending in the userspace GIC, then unmask.
-                let deadline = mach_absolute_time().wrapping_add(VTIMER_DEADLINE_TICKS);
-                status(
-                    "re-arm CNTV_CVAL",
-                    hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_CNTV_CVAL_EL0, deadline),
-                )?;
+                status("mask VTimer", hv_vcpu_set_vtimer_mask(vcpu, true))?;
                 gic.vtimer_fired();
-                status("unmask VTimer", hv_vcpu_set_vtimer_mask(vcpu, false))?;
                 vtimer_exits += 1;
             }
             EXIT_CANCELED => return Err("firmware watchdog canceled the vCPU".to_string()),

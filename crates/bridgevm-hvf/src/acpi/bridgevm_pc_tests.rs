@@ -18,7 +18,7 @@ fn split_tables(bytes: &[u8]) -> Vec<&[u8]> {
         let end = offset.checked_add(length).unwrap();
         assert!(end <= bytes.len());
         tables.push(&bytes[offset..end]);
-        offset = end;
+        offset = align_table_offset(end as u64) as usize;
     }
     tables
 }
@@ -68,9 +68,9 @@ fn xsdt_and_fadt_point_to_exact_final_table_addresses() {
     let mut offset = 0u64;
     for table in &tables {
         starts.push(blobs.tables_base + offset);
-        offset += table.len() as u64;
+        offset = align_table_offset(offset + table.len() as u64);
     }
-
+    assert!(starts.iter().all(|start| start % 8 == 0));
     let xsdt = find_table(&tables, b"XSDT");
     let entries: Vec<u64> = xsdt[ACPI_HEADER_LEN..]
         .chunks_exact(8)

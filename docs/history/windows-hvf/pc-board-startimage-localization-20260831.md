@@ -770,3 +770,60 @@ the host PMCCNTR emulation (currently the raw host monotonic clock, whose deltas
 between two guest reads are dominated by real host/emulation wall-time rather
 than a plausible guest cycle count). Making PMCCNTR advance at a rate consistent
 with the guest's `CNTFRQ`-based expectation is the next concrete lever.
+
+## Correction: the timing narrative was wrong; Windows reaches LogonUI
+
+The final PMCCNTR conclusion above was also wrong. The exit trace recorded host
+trap boundaries, not all guest execution, and therefore could not establish that
+the timing loop was the blocking guest path. The write-watch was useful during
+localization, but its environment trigger and the later breakpoint/single-step
+instrumentation have been removed from the runner. Preserve the failed
+experiments above as the record; do not treat them as the current explanation.
+
+The actual sequence of board defects was found by continuing to read each new
+terminal state rather than extrapolating from the prior one:
+
+1. The firmware's variable-service aperture at `0x04000000..0x04010000` was not
+   registered as runtime MMIO in the DXE memory-space map. Windows therefore
+   reached `VariableRuntimeDxe` with an invalid runtime mapping and faulted.
+   `PlatformTablesDxe` now waits for the CPU architectural protocol and registers
+   that aperture as `EfiGcdMemoryTypeMemoryMappedIo` with UC, runtime and XP
+   attributes. A fresh source-image run no longer takes the former
+   VariableRuntimeDxe access violation; it reaches WinPE and requests PSCI
+   `SYSTEM_OFF` after the image's install script reports its expected harness
+   error (there is no second NVMe namespace to select as the target disk).
+2. The installed-image run then stopped on a 32-bit PCI MMIO access at
+   `0xffefc008`. The platform configuration had advertised HDA and four virtio
+   endpoints even though this runner had no runtime model for them. The PC board
+   inventory now exposes only the runtime-modelled NVMe and xHCI endpoints;
+   tests assert that the unmodelled endpoints return an absent vendor ID.
+3. NVMe/xHCI MSI-X messages are now drained into the userspace GIC, and EOI/DIR
+   of the virtual-timer PPI unmasks the HVF virtual timer. WFI/WFE resumes and
+   PSCI calls are handled by the live runner rather than misclassified as a
+   board crash.
+
+The decisive installed-image observation used fresh `cp -c` clones with
+separate disk and vars inodes under `pc-modeled-pcie.tCMf3k`. It ran for about
+73 seconds and stopped only at the configured 4,000,000-exit safety bound. The
+captured framebuffer visibly shows the Windows 11 sign-in UI for account
+`bridge` with the message that its sealed test-image password has expired and
+must be changed. Its hashes are:
+
+- BGRA: `7c75a5cd88bd79740039011b27bbd97ff1a8fa4f477da728d94f0e72906e2750`
+- PNG: `3b5217db2d2a6d1e1cd1ccc11501b422b5606d664857d6c402ca869cf7dbee3f`
+
+This is a **live single run** from an uncommitted development working tree based
+on `2303a14d2b4d171e5a862ed071d4e7768a561944`. It proves that this candidate
+firmware/board combination traversed firmware, Windows Boot Manager, kernel and
+LogonUI in that run. It does **not** satisfy any fixed-count release criterion,
+does not promote `product_state`, and does not close A9 or re-prove B4. Those
+claims require exact-commit receipts at their stated sample counts and green
+hosted CI.
+
+After removing the diagnostic write-watch, a local sealed-probe recheck was
+attempted twice. Both attempts stopped before any guest instruction because
+`hv_vm_create` returned host status `HV_DENIED (0xfae94007)`. This is neither a
+guest failure nor a pass; it supplies no live evidence for the cleaned tree.
+The focused Rust tests, example build and all deterministic checks other than
+the expected exact-head capability-freshness gate pass, but an exact-commit
+Studio run is still required.

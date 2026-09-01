@@ -6,7 +6,6 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 ##
-
 [Defines]
   PLATFORM_NAME                  = BridgeVmPc
   PLATFORM_GUID                  = 7AFA93B6-7311-466B-AB29-50131A268326
@@ -25,7 +24,6 @@
   StackCheckLib|MdePkg/Library/StackCheckLibNull/StackCheckLibNull.inf
   UefiBootServicesTableLib|MdePkg/Library/UefiBootServicesTableLib/UefiBootServicesTableLib.inf
   UefiDriverEntryPoint|MdePkg/Library/UefiDriverEntryPoint/UefiDriverEntryPoint.inf
-
 [Components]
   BridgeVmPcPkg/Drivers/PlatformTablesDxe/PlatformTablesDxe.inf
   BridgeVmPcPkg/Drivers/DxeProbe/DxeProbe.inf

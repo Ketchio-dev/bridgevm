@@ -10,8 +10,7 @@
 #include <Library/DebugLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiDriverEntryPoint.h>
-#include <BridgeVmPc/BootInfo.h>
-
+#include "PlatformTablesDxe.h"
 EFI_STATUS
 EFIAPI
 BridgeVmPcPlatformTablesDxeEntryPoint (
@@ -21,16 +20,18 @@ BridgeVmPcPlatformTablesDxeEntryPoint (
 {
   CONST BRIDGE_VM_PC_BOOT_INFO  *BootInfo;
   EFI_STATUS                    Status;
-
   (VOID)ImageHandle;
   (VOID)SystemTable;
 
+  Status = BridgeVmPcRegisterVariableStoreRuntimeMemory (SystemTable);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
   Status = BridgeVmPcValidateBootInfo (&BootInfo);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "BridgeVM PC: boot-info validation failed: %r\n", Status));
     return Status;
   }
-
   Status = gBS->InstallConfigurationTable (
                   &gEfiAcpi20TableGuid,
                   (VOID *)(UINTN)BootInfo->RsdpGpa
@@ -39,7 +40,6 @@ BridgeVmPcPlatformTablesDxeEntryPoint (
     DEBUG ((DEBUG_ERROR, "BridgeVM PC: ACPI publication failed: %r\n", Status));
     return Status;
   }
-
   Status = gBS->InstallConfigurationTable (
                   &gEfiSmbios3TableGuid,
                   (VOID *)(UINTN)BootInfo->SmbiosAnchorGpa

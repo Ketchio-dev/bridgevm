@@ -5,9 +5,9 @@ readonly EDK2_COMMIT="b03a21a63e3bd001f52c527e5a57feddb53a690b"
 readonly GCC_VERSION="aarch64-elf-gcc (GCC) 16.1.0"
 readonly LD_VERSION="GNU ld (GNU Binutils) 2.46.1"
 readonly CORE_SHA="cfe2ea1a7dc5573b4a5f6952e9177475ef91fb41da40c08e89c6f48bec2a4d90"
-readonly VECTOR_SHA="5a9feed757d4c33f1868832357ba257c91a1b2c14dabb5b6836ee508aa26bff1"
-readonly FV_SHA="4603b7e2fc80ed10ee9824a7c6d4c8cf56fcb90b33b7edd890e192532b277333"
-readonly FD_SHA="3ab850a71977d10e0456eaef5dece5e15c947e840d79682b64d0e3123742e7c5"
+readonly VECTOR_SHA="d66494fbeb6dd6f253dbb915ecff26f4b342e514582fb53cfbeeaefec0c7d775"
+readonly FV_SHA="1d66764c52d91bb8962dc56283971b8b446821881e4406d4dff99dd30e84f1c6"
+readonly FD_SHA="55a0aa3bff005ab6afa4b39ffbfaf239ffe12084aebd40f1202c87d1593fd8d3"
 readonly MEDIA_SHA="a49be97db44c0d68b3382f3b1e46eba2fc7a3b12bcba14c1ec720f0511b71979"
 readonly VARS_SHA="71189f7fb6aed638640078fba3a35fda6c39c8962e74dcc75935aac948da9063"
 readonly FLASH_SIZE=$((0x04000000)) FV_OFFSET=$((0x00100000)) FV_SIZE=$((0x00100000))
@@ -43,7 +43,7 @@ mkdir -p "$work/fv"
   "$work/runtime" "$work/variables" "$work/drivers" "$work/boot" "$work/artifacts"
 fv="$work/artifacts/BridgeVmPcBoot.fv"
 [[ "$(shasum -a 256 "$fv" | awk '{print $1}')" == "$FV_SHA" ]] || {
-  echo "boot FV digest changed" >&2; exit 68;
+  echo "boot FV digest $(shasum -a 256 "$fv" | awk '{print $1}') changed" >&2; exit 68;
 }
 "$repo/scripts/build-bridgevm-pc-boot-media.py" "$work/boot/BridgeVmPcExitBootServicesProbe.efi" "$work/BridgeVmPcBoot.img"
 [[ "$(shasum -a 256 "$work/BridgeVmPcBoot.img" | awk '{print $1}')" == "$MEDIA_SHA" ]] || {
@@ -84,7 +84,7 @@ with out.open('wb') as stream:
 vars_out.write_bytes(b'\xff' * 0x10000)
 PY
 [[ "$(shasum -a 256 "$fd" | awk '{print $1}')" == "$FD_SHA" ]] || {
-  echo "boot firmware digest changed" >&2; exit 70;
+  echo "boot firmware digest $(shasum -a 256 "$fd" | awk '{print $1}') changed" >&2; exit 70;
 }
 [[ "$(shasum -a 256 "$vars" | awk '{print $1}')" == "$VARS_SHA" ]] || {
   echo "boot vars digest changed" >&2; exit 70;

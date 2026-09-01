@@ -2,8 +2,8 @@
 # Reproducible generic UEFI runtime-service modules for BridgeVM PC.
 #
 # The variable store occupies the first 64 KiB of the reserved variables
-# aperture. The host preserves that memory between recreated VMs; neither
-# module claims power-failure atomicity or a virtual-address transition.
+# aperture. The host preserves that memory between recreated VMs. The platform
+# registers it as runtime MMIO; no module claims power-failure atomicity.
 #
 # SPDX-License-Identifier: Apache-2.0
 ##

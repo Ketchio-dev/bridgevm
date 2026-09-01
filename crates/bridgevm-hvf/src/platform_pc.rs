@@ -7,23 +7,31 @@
 
 #[path = "platform_pc_firmware.rs"]
 mod firmware;
+#[path = "platform_pc_interrupts.rs"]
+mod interrupts;
 #[path = "platform_pc_layout.rs"]
 mod layout;
 #[path = "platform_pc_nvme.rs"]
 mod nvme;
 #[path = "platform_pc_pcie.rs"]
 mod pcie;
+#[path = "platform_pc_runtime.rs"]
+mod runtime;
 #[path = "platform_pc_storage.rs"]
 mod storage;
+#[path = "platform_pc_xhci.rs"]
+mod xhci;
 
 use crate::fwcfg::GuestMemoryMut;
 use crate::machine::bridgevm_pc as board;
+use crate::msix::MsixMessage;
 use crate::nvme::{NvmeCompletionEvent, NvmeController};
 use crate::pcie::{PcieEcam, PcieEcamConfig};
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
 use crate::pl031::Pl031;
 use crate::platform_virt::{MmioOp, MmioOutcome};
+use crate::xhci::XhciController;
 pub use firmware::*;
 pub use layout::*;
 
@@ -34,6 +42,8 @@ pub struct BridgeVmPcPlatform {
     pcie: PcieEcam,
     pcie_config: PcieEcamConfig,
     nvme: NvmeController,
+    xhci: XhciController,
+    pending_msix: Vec<MsixMessage>,
     nvme_completion_scratch: Vec<NvmeCompletionEvent>,
     flash_vars: P30NorFlash,
 }
@@ -44,11 +54,11 @@ impl BridgeVmPcPlatform {
         assert_eq!(board::first_overlap(), None);
         let pcie_config = PcieEcamConfig {
             xhci_present: true,
-            hda_present: true,
-            virtio_blk_present: true,
-            virtio_net_present: true,
-            virtio_gpu_present: true,
-            virtio_console_present: true,
+            hda_present: false,
+            virtio_blk_present: false,
+            virtio_net_present: false,
+            virtio_gpu_present: false,
+            virtio_console_present: false,
             virtio_gpu_pci_device_id: crate::pcie::VIRTIO_GPU_DEVICE_ID,
             virtio_gpu_3d_enabled: false,
         };
@@ -58,6 +68,8 @@ impl BridgeVmPcPlatform {
             pcie: PcieEcam::new_with_config(pcie_config),
             pcie_config,
             nvme: NvmeController::new(0),
+            xhci: XhciController::new(),
+            pending_msix: Vec::new(),
             nvme_completion_scratch: Vec::new(),
             flash_vars: P30NorFlash::new(
                 board::FLASH_VARS.base,
@@ -95,6 +107,8 @@ impl BridgeVmPcPlatform {
                 MmioOp::Read { size } => MmioOutcome::ReadValue(self.pcie.cfg_read(offset, size)),
                 MmioOp::Write { size, value } => {
                     self.pcie.cfg_write(offset, size, value);
+                    self.flush_nvme_pending_msix();
+                    self.flush_xhci_pending_msix();
                     MmioOutcome::WriteAck
                 }
             },
@@ -114,20 +128,17 @@ impl BridgeVmPcPlatform {
     pub fn uart_output(&self) -> &[u8] {
         self.uart.output()
     }
-
-    pub fn reset_runtime_state(&mut self) {
-        self.uart = Pl011::new();
-        self.rtc = Pl031::new();
-        self.pcie = PcieEcam::new_with_config(self.pcie_config);
-        self.nvme.reset_registers_keep_disks();
-        self.nvme_completion_scratch.clear();
-        self.flash_vars.reset_runtime_state();
-    }
 }
 
 #[cfg(test)]
+#[path = "platform_pc_inventory_tests.rs"]
+mod inventory_tests;
+#[cfg(test)]
 #[path = "platform_pc_nvme_tests.rs"]
 mod nvme_tests;
+#[cfg(test)]
+#[path = "platform_pc_pcie_tests.rs"]
+mod pcie_tests;
 #[cfg(test)]
 #[path = "platform_pc_storage_tests.rs"]
 mod storage_tests;

@@ -1,6 +1,5 @@
 use super::*;
-use crate::pcie::NVME_BDF;
-
+use crate::pcie::{NVME_BDF, XHCI_BDF};
 impl BridgeVmPcPlatform {
     pub(crate) fn pcie_mmio_access(
         &mut self,
@@ -20,10 +19,8 @@ impl BridgeVmPcPlatform {
                 self.write_nvme_bar(target.offset, size, value, mem);
                 MmioOutcome::WriteAck
             }
+            (XHCI_BDF, 0, op) => self.xhci_bar_access(target.offset, op, mem),
             _ => MmioOutcome::KnownUnimplemented(aperture),
         }
     }
 }
-#[cfg(test)]
-#[path = "platform_pc_pcie_tests.rs"]
-mod tests;

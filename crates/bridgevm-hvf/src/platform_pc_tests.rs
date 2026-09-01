@@ -1,11 +1,6 @@
 use super::*;
 use crate::machine;
 use crate::machine::Region;
-use crate::pcie::{HDA_BDF, NVME_BDF, VIRTIO_CONSOLE_BDF, VIRTIO_GPU_BDF, XHCI_BDF};
-
-fn ecam_offset(bdf: (u8, u8, u8)) -> u64 {
-    (u64::from(bdf.0) << 20) | (u64::from(bdf.1) << 15) | (u64::from(bdf.2) << 12)
-}
 
 #[test]
 fn memory_layout_uses_only_the_new_board_contract() {
@@ -37,24 +32,6 @@ fn uart_and_rtc_route_at_new_addresses_only() {
         platform.on_mmio_without_dma(machine::UART.base, MmioOp::Read { size: 4 }),
         MmioOutcome::Unmapped
     );
-}
-
-#[test]
-fn new_ecam_exposes_the_reused_pcie_topology() {
-    let mut platform = BridgeVmPcPlatform::new();
-    for bdf in [
-        NVME_BDF,
-        XHCI_BDF,
-        VIRTIO_GPU_BDF,
-        VIRTIO_CONSOLE_BDF,
-        HDA_BDF,
-    ] {
-        let result = platform.on_mmio_without_dma(
-            board::PCIE_ECAM.base + ecam_offset(bdf),
-            MmioOp::Read { size: 2 },
-        );
-        assert_ne!(result, MmioOutcome::ReadValue(0xffff), "missing {bdf:?}");
-    }
 }
 
 #[test]

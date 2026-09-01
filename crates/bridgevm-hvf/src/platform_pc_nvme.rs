@@ -1,5 +1,4 @@
 use super::*;
-
 impl BridgeVmPcPlatform {
     pub(crate) fn write_nvme_bar(
         &mut self,
@@ -12,5 +11,6 @@ impl BridgeVmPcPlatform {
         self.nvme_completion_scratch.clear();
         self.nvme
             .process_into(mem, &mut self.nvme_completion_scratch);
+        self.queue_nvme_completion_msix();
     }
 }

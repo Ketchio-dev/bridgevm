@@ -10,7 +10,7 @@
   .type BridgeVmPcMapRam, %function
 
   .equ RAM_SIZE_OFFSET,  96
-  .equ NORMAL_BLOCK,     0x701
+  .equ NORMAL_BLOCK,     0x70d
   .equ RAM_FIRST_GIB,    4
   .equ RAM_MAX_BLOCKS,   124
 

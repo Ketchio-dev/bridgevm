@@ -10,10 +10,15 @@
 use super::hvf::*;
 use bridgevm_hvf::machine as sh;
 use bridgevm_hvf::machine::bridgevm_pc as pc;
+use bridgevm_hvf::msix::MsixMessage;
 use bridgevm_hvf::userspace_gic::UserspaceGic;
+
+#[path = "us_gic_interrupts.rs"]
+mod interrupts;
 
 pub(super) struct UsGic {
     inner: UserspaceGic,
+    msix_scratch: Vec<MsixMessage>,
 }
 
 fn translate(addr: u64) -> Option<u64> {
@@ -32,6 +37,7 @@ impl UsGic {
     pub(super) fn new() -> Self {
         Self {
             inner: UserspaceGic::new(1),
+            msix_scratch: Vec::new(),
         }
     }
 
@@ -95,8 +101,12 @@ impl UsGic {
         if is_read && rt != 31 {
             status("write sysreg dest", hv_vcpu_set_reg(vcpu, rt, read_value))?;
         }
+        self.finish_vtimer(vcpu, sys_reg, is_read, write_value)?;
         let mut pc = 0;
         status("read sysreg PC", hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut pc))?;
-        status("advance sysreg PC", hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4))
+        status(
+            "advance sysreg PC",
+            hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4),
+        )
     }
 }

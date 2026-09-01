@@ -8,6 +8,9 @@ use crate::machine::bridgevm_pc as board;
 
 const PC_OEM_TABLE_ID: &[u8; 8] = b"BVMPC   ";
 pub const BRIDGEVM_PC_ACPI_TABLES_GPA: u64 = board::BOOT_INFO.base + 0x2000;
+fn align_table_offset(offset: u64) -> u64 {
+    (offset + 7) & !7
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeVmPcAcpiBlobs {
@@ -15,14 +18,12 @@ pub struct BridgeVmPcAcpiBlobs {
     pub tables: Vec<u8>,
     pub tables_base: u64,
 }
-
 /// Build finalized ACPI tables in the board's firmware-handoff aperture.
 pub fn build_bridgevm_pc_acpi(cpu_count: u64) -> BridgeVmPcAcpiBlobs {
     assert!(
         (1..=board::MAX_CPUS).contains(&cpu_count),
         "BridgeVM PC ACPI CPU count is outside the v1 contract"
     );
-
     let dsdt = build_pc_dsdt(cpu_count);
     let madt = build_pc_madt(cpu_count);
     let pptt = retag_table(build_pptt(cpu_count));
@@ -30,17 +31,16 @@ pub fn build_bridgevm_pc_acpi(cpu_count: u64) -> BridgeVmPcAcpiBlobs {
     let mcfg = build_pc_mcfg();
     let spcr = build_pc_spcr();
     let dbg2 = build_pc_dbg2();
-
     let base = BRIDGEVM_PC_ACPI_TABLES_GPA;
     let off_xsdt = 0;
-    let off_dsdt = off_xsdt + xsdt_len_for(7);
-    let off_fadt = off_dsdt + dsdt.len() as u64;
-    let off_madt = off_fadt + fadt_len();
-    let off_pptt = off_madt + madt.len() as u64;
-    let off_gtdt = off_pptt + pptt.len() as u64;
-    let off_mcfg = off_gtdt + gtdt.len() as u64;
-    let off_spcr = off_mcfg + mcfg.len() as u64;
-    let off_dbg2 = off_spcr + spcr.len() as u64;
+    let off_dsdt = align_table_offset(off_xsdt + xsdt_len_for(7));
+    let off_fadt = align_table_offset(off_dsdt + dsdt.len() as u64);
+    let off_madt = align_table_offset(off_fadt + fadt_len());
+    let off_pptt = align_table_offset(off_madt + madt.len() as u64);
+    let off_gtdt = align_table_offset(off_pptt + pptt.len() as u64);
+    let off_mcfg = align_table_offset(off_gtdt + gtdt.len() as u64);
+    let off_spcr = align_table_offset(off_mcfg + mcfg.len() as u64);
+    let off_dbg2 = align_table_offset(off_spcr + spcr.len() as u64);
 
     let fadt = retag_table(build_fadt(base + off_dsdt));
     let xsdt = build_pc_xsdt(&[
@@ -52,12 +52,13 @@ pub fn build_bridgevm_pc_acpi(cpu_count: u64) -> BridgeVmPcAcpiBlobs {
         base + off_spcr,
         base + off_dbg2,
     ]);
-    assert_eq!(xsdt.len() as u64, off_dsdt);
+    assert_eq!(align_table_offset(xsdt.len() as u64), off_dsdt);
 
     let mut tables = Vec::new();
     for table in [
         &xsdt, &dsdt, &fadt, &madt, &pptt, &gtdt, &mcfg, &spcr, &dbg2,
     ] {
+        tables.resize(align_table_offset(tables.len() as u64) as usize, 0);
         tables.extend_from_slice(table);
     }
     assert!(
@@ -71,7 +72,6 @@ pub fn build_bridgevm_pc_acpi(cpu_count: u64) -> BridgeVmPcAcpiBlobs {
         tables_base: base,
     }
 }
-
 fn pc_table(signature: &[u8; 4], revision: u8) -> Table {
     let mut table = Table::new(signature, revision);
     table.bytes[16..24].copy_from_slice(PC_OEM_TABLE_ID);

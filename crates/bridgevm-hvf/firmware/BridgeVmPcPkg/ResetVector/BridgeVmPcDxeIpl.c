@@ -113,6 +113,7 @@ AppendDxeHobs(volatile BRIDGE_VM_PC_SEC_RESULT *Result, volatile uint8_t *HobLis
   SetGuid(&Module->ModuleName, 0xD6A2CB7FU, 0x6A18U, 0x4E2FU, DxeCoreData4);
   Module->EntryPoint = BRIDGE_VM_PC_DXE_CORE_ENTRY;
   SetHeader(End, BRIDGE_VM_PC_HOB_END, sizeof(*End));
+  Phit->EfiFreeMemoryBottom = BRIDGE_VM_PC_DXE_CORE_LOAD_BASE + BRIDGE_VM_PC_DXE_CORE_IMAGE_SIZE;
   Phit->EfiEndOfHobList = BRIDGE_VM_PC_HOB_LIST_GPA + 312;
   Result->HobCount = BRIDGE_VM_PC_DXE_HOB_COUNT;
   Result->HobListSize = BRIDGE_VM_PC_DXE_HOB_LIST_SIZE;
@@ -125,7 +126,6 @@ CleanDataToPointOfCoherency(const volatile void *Base, uint32_t Size)
   uintptr_t End = (uintptr_t)Base + Size;
   uint64_t Ctr;
   uintptr_t LineSize;
-
   __asm__ __volatile__("mrs %0, ctr_el0" : "=r" (Ctr));
   LineSize = 4U << ((Ctr >> 16) & 0xFU);
   Address = (uintptr_t)Base & ~(LineSize - 1U);

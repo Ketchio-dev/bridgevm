@@ -1,6 +1,5 @@
 use bridgevm_hvf::machine::bridgevm_pc as board;
 use bridgevm_hvf::platform_pc::BridgeVmPcPlatform;
-use sha2::{Digest, Sha256};
 use std::ffi::c_void;
 use std::ptr::null_mut;
 
@@ -8,6 +7,8 @@ use std::ptr::null_mut;
 mod arguments;
 #[path = "boot_media.rs"]
 mod boot_media;
+#[path = "digest.rs"]
+mod digest;
 #[path = "gic.rs"]
 mod gic;
 #[path = "hvf.rs"]
@@ -16,6 +17,8 @@ mod hvf;
 mod memory;
 #[path = "mmio.rs"]
 mod mmio;
+#[path = "psci.rs"]
+mod psci;
 #[path = "ram_dump.rs"]
 mod ram_dump;
 #[path = "report.rs"]
@@ -33,7 +36,7 @@ mod vcpu_state;
 use hvf::*;
 use memory::{AlignedMemory, GuestRam};
 
-const EXPECTED_FIRMWARE: &str = "3ab850a71977d10e0456eaef5dece5e15c947e840d79682b64d0e3123742e7c5";
+const EXPECTED_FIRMWARE: &str = "55a0aa3bff005ab6afa4b39ffbfaf239ffe12084aebd40f1202c87d1593fd8d3";
 const VARS_SIZE: usize = 0x1_0000;
 
 struct Execution {
@@ -41,13 +44,6 @@ struct Execution {
     state: vcpu_state::VcpuState,
     serial: String,
     result_snapshot: Option<result::BootResult>,
-}
-
-fn sha256(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 unsafe fn map(memory: &AlignedMemory, address: u64, flags: u64) -> Result<(), String> {
@@ -68,6 +64,7 @@ unsafe fn execute(
     boot_info: &mut AlignedMemory,
     ram: &mut AlignedMemory,
     media: boot_media::BootMedia,
+    windows_diagnostic: bool,
 ) -> Result<Execution, String> {
     map(
         firmware,
@@ -85,15 +82,6 @@ unsafe fn execute(
         board::RAM_BASE,
         HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC,
     )?;
-    let wwatch = std::env::var("BRIDGEVM_PC_WWATCH")
-        .ok()
-        .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok());
-    if let Some(gpa) = wwatch {
-        status(
-            "write-watch protect",
-            hv_vm_protect(gpa & !0x3fff, 0x4000, HV_MEMORY_READ | HV_MEMORY_EXEC),
-        )?;
-    }
     let mut gic = gic::create()?;
     let mut vcpu = 0;
     let mut exit = null_mut();
@@ -120,7 +108,7 @@ unsafe fn execute(
             &mut gic,
             &mut guest_ram,
             &mut result_snapshot,
-            wwatch,
+            windows_diagnostic,
         );
         let state = vcpu_state::capture(vcpu, exit)?;
         ram_dump::maybe_dump(guest_ram.bytes(), state.pc);
@@ -152,7 +140,7 @@ unsafe fn run_unsafe() -> Result<(), String> {
     let media_identity = media.identity();
     let windows_diagnostic = media.is_windows_diagnostic();
     let ram_size = media_identity.ram_bytes as usize;
-    let firmware_hash = sha256(&firmware_bytes);
+    let firmware_hash = digest::sha256(&firmware_bytes);
     if firmware_bytes.len() != board::FLASH_CODE.size as usize || firmware_hash != EXPECTED_FIRMWARE
     {
         return Err(format!(
@@ -188,12 +176,13 @@ unsafe fn run_unsafe() -> Result<(), String> {
         &mut boot_info,
         &mut ram,
         media,
+        windows_diagnostic,
     );
     let destroy = hv_vm_destroy();
     let execution = run?;
     status("destroy VM", destroy)?;
     vars_file::persist(&mut vars_file, variables.bytes())?;
-    let vars_hash = sha256(variables.bytes());
+    let vars_hash = digest::sha256(variables.bytes());
     let hashes = (firmware_hash.as_str(), vars_hash.as_str());
     if windows_diagnostic {
         return report::windows(hashes, media_identity, ram.bytes(), execution);
