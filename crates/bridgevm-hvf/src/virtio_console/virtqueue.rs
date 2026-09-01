@@ -144,11 +144,12 @@ impl VirtioConsole {
         if !Self::descriptor_chain_into(mem, queue, head, descs) {
             return false;
         }
+        if descs.iter().any(|desc| desc.flags & DESC_F_WRITE != 0) {
+            return false;
+        }
         for desc in descs.iter() {
-            if desc.flags & DESC_F_WRITE != 0 {
-                return false;
-            }
             if !append_guest_bytes_bounded(mem, desc.addr, desc.len as usize, max_len, out) {
+                out.clear();
                 return false;
             }
         }
@@ -162,11 +163,11 @@ impl VirtioConsole {
         second: &[u8],
     ) -> Option<usize> {
         let bytes_len = first.len().checked_add(second.len())?;
+        if descs.iter().any(|desc| desc.flags & DESC_F_WRITE == 0) {
+            return None;
+        }
         let mut offset = 0usize;
         for desc in descs {
-            if desc.flags & DESC_F_WRITE == 0 {
-                return None;
-            }
             let mut desc_addr = desc.addr;
             let mut desc_remaining = desc.len as usize;
             while desc_remaining > 0 && offset < bytes_len {

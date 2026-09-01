@@ -459,6 +459,7 @@ crates/bridgevm-hvf/src/virtio_console/protocol.rs	163	0
 crates/bridgevm-hvf/src/virtio_console/queue_pending.rs	3	0
 crates/bridgevm-hvf/src/virtio_console/register_codec.rs	116	0
 crates/bridgevm-hvf/src/virtio_console/snapshot.rs	123	0
+crates/bridgevm-hvf/src/virtio_console/tests/descriptor_access.rs	63	0
 crates/bridgevm-hvf/src/virtio_console/tests/helpers.rs	405	0
 crates/bridgevm-hvf/src/virtio_console/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/virtio_console/tests/part_1.rs	774	0
@@ -554,7 +555,7 @@ crates/bridgevm-hvf/src/virtio_gpu_3d/trace.rs	29	0
 crates/bridgevm-hvf/src/virtio_gpu_3d_preflight.rs	654	2
 crates/bridgevm-hvf/src/virtio_gpu_trace.rs	227	0
 crates/bridgevm-hvf/src/virtio_net/backend.rs	87	0
-crates/bridgevm-hvf/src/virtio_net/datapath.rs	131	0
+crates/bridgevm-hvf/src/virtio_net/datapath.rs	103	0
 crates/bridgevm-hvf/src/virtio_net/device_state.rs	158	0
 crates/bridgevm-hvf/src/virtio_net/mod.rs	7	0
 crates/bridgevm-hvf/src/virtio_net/msix_bridge.rs	114	0
@@ -564,10 +565,12 @@ crates/bridgevm-hvf/src/virtio_net/queue_pending.rs	3	0
 crates/bridgevm-hvf/src/virtio_net/register_codec.rs	101	0
 crates/bridgevm-hvf/src/virtio_net/snapshot.rs	91	0
 crates/bridgevm-hvf/src/virtio_net/tests/helpers.rs	200	0
+crates/bridgevm-hvf/src/virtio_net/tests/malformed_descriptor_access.rs	108	0
 crates/bridgevm-hvf/src/virtio_net/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/virtio_net/tests/part_1.rs	618	0
 crates/bridgevm-hvf/src/virtio_net/tests/queue_pending.rs	22	0
 crates/bridgevm-hvf/src/virtio_net/transport_regs.rs	368	0
+crates/bridgevm-hvf/src/virtio_net/tx_gather.rs	26	0
 crates/bridgevm-hvf/src/virtio_net/virtqueue.rs	143	0
 crates/bridgevm-hvf/src/windows_arm/boot_disk_io.rs	382	0
 crates/bridgevm-hvf/src/windows_arm/boot_disk_probe.rs	116	0
@@ -1303,6 +1306,7 @@ scripts/check-workflow-yaml.py	73	0
 scripts/check-capability-evidence.py	73	0
 scripts/check-supply-chain.sh	52	0
 scripts/check-virgl-integer-attributes.sh	72	0
+scripts/check-virtio-queue-narrowing.sh	27	0
 scripts/find-hvf-windows-viogpu3d-packages.sh	210	0
 scripts/live-gates/bridgevm-live-worker.sh	180	0
 scripts/live-gates/recover-stale-jobs.sh	42	0
@@ -1624,6 +1628,7 @@ scripts/render-graphics-compatibility.py	245	0
 tests/fixtures/fake-swtpm.py	77	0
 tests/fixtures/bridgevm-pc-sec-host-test.c	83	0
 crates/bridgevm-hvf/src/guest_memory.rs	22	0
+crates/bridgevm-hvf/src/virtio_queue.rs	21	0
 crates/bridgevm-hvf/src/virtio_net/tests/read_into.rs	73	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live.rs	13	0
 crates/bridgevm-hvf/examples/bridgevm_pc_boot_live/apple.rs	161	4

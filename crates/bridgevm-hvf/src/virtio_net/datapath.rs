@@ -3,7 +3,6 @@
 use super::queue_pending::pending_entries;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
-use crate::guest_memory::append_guest_bytes_bounded;
 
 impl<B: NetBackend> VirtioNet<B> {
     pub(crate) fn notify_queue(&mut self, queue_index: u16, mem: &mut dyn GuestMemoryMut) {
@@ -64,34 +63,6 @@ impl<B: NetBackend> VirtioNet<B> {
         packet.clear();
         self.descriptor_scratch = descs;
         self.tx_packet_scratch = packet;
-    }
-
-    pub(crate) fn tx_frame_from_chain_into(
-        mem: &dyn GuestMemoryMut,
-        queue: &VirtioNetQueue,
-        head: u16,
-        descs: &mut Vec<Descriptor>,
-        packet: &mut Vec<u8>,
-    ) -> bool {
-        packet.clear();
-        if !Self::descriptor_chain_into(mem, queue, head, descs) {
-            return false;
-        }
-        for desc in descs.iter() {
-            if desc.flags & DESC_F_WRITE != 0 {
-                return false;
-            }
-            if !append_guest_bytes_bounded(
-                mem,
-                desc.addr,
-                desc.len as usize,
-                MAX_TX_PACKET_LEN,
-                packet,
-            ) {
-                return false;
-            }
-        }
-        packet.len() >= VIRTIO_NET_HDR_LEN
     }
 
     pub(crate) fn deliver_rx_frame(&mut self, frame: &[u8], mem: &mut dyn GuestMemoryMut) -> bool {

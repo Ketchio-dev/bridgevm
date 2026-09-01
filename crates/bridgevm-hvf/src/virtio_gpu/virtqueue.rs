@@ -10,21 +10,13 @@ use std::fmt::Write as _;
 use std::time::Instant;
 
 pub(crate) const QUEUE_CONTROL: usize = 0;
-
 pub(crate) const QUEUE_CURSOR: usize = 1;
-
 pub(crate) const QUEUE_COUNT: usize = 2;
-
 pub(crate) const PARKED_RESPONSE_BUFFER_POOL_LIMIT: usize = 4;
-
 pub(crate) const QUEUE_MAX: u16 = 64;
-
 pub(crate) const DESC_SIZE: u64 = 16;
-
 pub(crate) const DESC_F_NEXT: u16 = 1;
-
 pub(crate) const DESC_F_WRITE: u16 = 2;
-
 pub(crate) const MAX_GPU_REQUEST_LEN: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -351,7 +343,15 @@ impl VirtioGpu {
         out: &mut Vec<u8>,
     ) {
         out.clear();
-        for desc in descs.iter().filter(|desc| desc.flags & DESC_F_WRITE == 0) {
+        let mut writable_seen = false;
+        for desc in descs {
+            if desc.flags & DESC_F_WRITE != 0 {
+                writable_seen = true;
+                continue;
+            }
+            if writable_seen {
+                return out.clear();
+            }
             let start = out.len();
             let Some(end) = start.checked_add(desc.len as usize) else {
                 out.clear();
@@ -363,7 +363,7 @@ impl VirtioGpu {
             }
             out.resize(end, 0);
             if !mem.read_into(desc.addr, &mut out[start..end]) {
-                out.truncate(start);
+                return out.clear();
             }
         }
     }

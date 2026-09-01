@@ -34,15 +34,15 @@ impl<B: NetBackend> VirtioNet<B> {
         if total_len == 0 {
             return true;
         }
+        if descs.iter().any(|desc| desc.flags & DESC_F_WRITE == 0) {
+            return false;
+        }
 
         let mut slice_index = 0usize;
         let mut slice_offset = 0usize;
         let mut written = 0usize;
 
         for desc in descs {
-            if desc.flags & DESC_F_WRITE == 0 {
-                return false;
-            }
             let mut desc_offset = 0usize;
             let desc_len = desc.len as usize;
             while desc_offset < desc_len && written < total_len {
