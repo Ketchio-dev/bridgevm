@@ -21,7 +21,7 @@ parse_run_log() { # fired press release stuck first_ms classification
   local log="$1" ptr="${2:-/dev/null}" click="${3:-/dev/null}" first='' fired=false press=0 release=0 edges=0 stuck=1 ready cx cy hid_x hid_y env baseline trace case_failure
   baseline="$(dirname "$log")/visible/baseline.env"
   trace="$(dirname "$log")/virtio-gpu.jsonl"
-  case_failure="$(dirname "$log")/case-failure.class"
+  case_failure=$(find "$(dirname "$log")" -maxdepth 2 -type f -name case-failure.class -print -quit 2>/dev/null || true)
   grep -Eqs 'Illegal resource|context error reported' "$log" "$trace" 2>/dev/null && { echo 'false 0 0 1 renderer-error rendering-package-regression'; return; }
   grep -qx 'rendering-package-regression' "$case_failure" 2>/dev/null && { echo 'false 0 0 1 case-setup-failure rendering-package-regression'; return; }
   grep -qx 'result=baseline-not-presented' "$baseline" 2>/dev/null && { echo 'false 0 0 1 baseline-not-presented rendering-package-regression'; return; }
@@ -59,10 +59,10 @@ if [[ "${1:-}" == "--selftest" ]]; then
   r=$(parse_run_log "$t" "$p" "$c")
   [[ "$r" == "false 0 0 1 baseline-not-presented rendering-package-regression" ]] || fail "selftest baseline parse: got '$r'"
   rm "$d/visible/baseline.env"
-  printf 'rendering-package-regression\n' > "$d/case-failure.class"
+  mkdir "$d/generation-0"; printf 'rendering-package-regression\n' > "$d/generation-0/case-failure.class"
   r=$(parse_run_log "$t" "$p" "$c")
   [[ "$r" == "false 0 0 1 case-setup-failure rendering-package-regression" ]] || fail "selftest case-failure parse: got '$r'"
-  rm "$d/case-failure.class"
+  rm -rf "$d/generation-0"
   : > "$c"; r=$(parse_run_log "$t" "$p" "$c")
   [[ "$r" == "false 0 0 1 invalid-click-count pointer" ]] || fail "selftest missing-click parse: got '$r'"
   printf 'BVTARGET click count=1\r\n' > "$c"
