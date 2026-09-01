@@ -3,6 +3,31 @@
 This is development evidence for the experimental BridgeVM Virtual ARM PC. It
 does not change the shipping Windows board or promote the product state.
 
+## Exact-head re-seal after the modeled Windows runtime changes
+
+Studio tier `t13-bridgevm-pc-bds-exit` job
+`20260831-215833-85415-10446` repeated the unchanged fixed N=20 gate on exact
+tested code head `772a587c08c17df6c8a99acd0b7db4df25e2d5c1`. All 20 independent
+disk-and-vars lanes passed, with zero failed lanes and no known confounders.
+The public
+[`re-seal receipt`](bridgevm-pc-bds-exit-reseal-receipt-20260831.json) has
+SHA-256 `eb0f208178e00b274d47161c6df3dc63d4f93b9bcf49e7b8d8b09842e4b25d6f`.
+
+The rebuilt development FD has SHA-256
+`55a0aa3bff005ab6afa4b39ffbfaf239ffe12084aebd40f1202c87d1593fd8d3`;
+the ESP image remained
+`a49be97db44c0d68b3382f3b1e46eba2fc7a3b12bcba14c1ec720f0511b71979`.
+GitHub-hosted CI run `33460676052` and Security and quality run `33460677655`
+both passed at that exact tested head.
+
+Exact-head Studio t14 job `20260831-215843-85527-335` separately completed one
+sealed diagnostic in which BDS loaded Windows `BOOTAA64.EFI`, `StartImage()`
+advanced without returning before the terminal boundary, and the guest result
+record was overwritten after that handoff. Its receipt deliberately records
+`single_run` and `windows_kernel_entry_not_proven`, while the diagnostic log
+records `windows_boot_proven=false`. This is live single-run signal, not a
+fixed-count Windows boot proof.
+
 ## Result
 
 Studio tier `t13-bridgevm-pc-bds-exit` job
