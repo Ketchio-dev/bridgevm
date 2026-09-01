@@ -207,6 +207,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: capability checks have complete Git history
+        run: test "$(git rev-parse --is-shallow-repository)" = false
       - name: capability registry is valid and generated blocks are current
         run: python3 scripts/render-capability-status.py --check
       - name: general preview release contract is fail-closed

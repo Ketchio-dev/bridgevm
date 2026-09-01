@@ -3,6 +3,24 @@
 This is development evidence for the experimental BridgeVM Virtual ARM PC. It
 does not change the shipping Windows board or promote the product state.
 
+## Exact-head re-seal after descriptor and queue-runtime hardening
+
+Studio tier `t13-bridgevm-pc-bds-exit` job `t13-77d86a77-n20` repeated the
+unchanged fixed N=20 gate on exact tested code head
+`77d86a77fb93f53df9cbdfbe3c3368286eedbbe4`. All 20 independent disk-and-vars
+lanes passed, with zero failed lanes and no known confounders. The public
+[`2026-09-01 re-seal receipt`](bridgevm-pc-bds-exit-reseal-receipt-20260901.json)
+has SHA-256
+`ddbe6930db61c07df3ca59ab0e39224e9c18684fdbcc67860631fe4eb91f2e7b`.
+
+The rebuilt development FD has SHA-256
+`55a0aa3bff005ab6afa4b39ffbfaf239ffe12084aebd40f1202c87d1593fd8d3`;
+the ESP image remained
+`a49be97db44c0d68b3382f3b1e46eba2fc7a3b12bcba14c1ec720f0511b71979`.
+GitHub-hosted CI run `33543866744`, Security and quality run `33543866629`
+and Windows ARM64 UMD run `33543866711` all passed at that exact tested code
+head. This re-seal does not promote A9 or the product state.
+
 ## Exact-head re-seal after the modeled Windows runtime changes
 
 Studio tier `t13-bridgevm-pc-bds-exit` job

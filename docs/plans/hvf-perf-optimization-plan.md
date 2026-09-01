@@ -204,6 +204,23 @@ bridgevm-hvf` must stay green at every stage boundary.
   throughput, write p99, flush-max and desktop-elapsed guardrails remain binding;
   no write, flush or desktop benefit is expected. A host microfilter can reject
   the candidate but cannot replace the guest workload.
+
+  The first two submitted storage campaigns were retained as invalid evidence:
+  one was interrupted by the old worker's false-pass cleanup path and one
+  exposed CRLF guest-marker parsing. After those harness defects were fixed,
+  campaign `a40f06e9d0835f324f413371fed57d75` completed 20/20 valid runs as
+  ten counterbalanced A/A pairs under exact harness commit
+  `3ffb66b1608b1a69ad0d2dae579c9bb59f1aadba`. Both labels used identical
+  binary bytes. Baseline-label and candidate-label read-throughput medians were
+  555.565 and 542.926 MiB/s, respectively; that difference is variation, not an
+  improvement. The paired directional delta was +2.724%, with a bootstrap 95%
+  interval of -25.526% to +7.796%, so the primary A/A noise bound is 25.526%.
+  This exceeds the predeclared generous 2.94% candidate ceiling by about 8.7x.
+  The fixed rule therefore stops before the diagnostic, implementation and A/B;
+  no PRP-prefix performance claim is permitted from this campaign. The
+  fail-closed report has SHA-256
+  `f90684a99ccb05b3d5fd8d90e58aa0bfc031f151cf8007119ea4d76142a30204`
+  and remains outside git with the private live evidence.
 - **Stage 3 — DMA path** (HIGH impact, MEDIUM risk): code implemented and the
   final live matrix covers its current-path correctness; isolated before/after
   performance attribution remains pending. The

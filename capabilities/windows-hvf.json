@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "capability_id": "windows-hvf",
-  "reviewed": "2026-08-31",
-  "tested_commit": "772a587c08c17df6c8a99acd0b7db4df25e2d5c1",
+  "reviewed": "2026-09-01",
+  "tested_commit": "77d86a77fb93f53df9cbdfbe3c3368286eedbbe4",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -139,7 +139,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "Re-sealed 2026-08-31 at exact tested code head 772a587c08c17df6c8a99acd0b7db4df25e2d5c1. GitHub-hosted CI run 33460676052 and Security and quality run 33460677655 both passed at that exact head, including workspace tests, test reachability, clippy, formatting, structural budgets, documentation, supply-chain, fuzz and loom gates. Studio t13 job 20260831-215833-85415-10446 passed the fixed N=20 UEFI BDS/ESP/ExitBootServices gate 20/20 with zero failed lanes. Each independent disk-and-vars process boot required all 12 PI architecture protocols, signalled EndOfDxe, connected generic EDK2 PCI and NVMe drivers, found one Simple File System handle, loaded \\EFI\\BOOT\\BOOTAA64.EFI with boot policy, signalled ReadyToBoot, obtained the real memory map and reached code after ExitBootServices. Public receipt SHA-256 is eb0f208178e00b274d47161c6df3dc63d4f93b9bcf49e7b8d8b09842e4b25d6f and development FD SHA-256 is 55a0aa3bff005ab6afa4b39ffbfaf239ffe12084aebd40f1202c87d1593fd8d3. This proves the development BDS, NVMe-backed ESP, PE load and ExitBootServices boundary only, not a fixed-count Windows Boot Manager pass, Windows kernel entry, Windows boot, write durability or production signing. Exact-head t14 job 20260831-215843-85527-335 separately observed Windows BOOTAA64.EFI StartImage advance in one diagnostic run, with windows_boot_proven=false. It does not change the shipping Windows board. A9 remains OPEN. B4 remains separately PROVEN.",
+      "measured": "Re-sealed 2026-09-01 at exact tested code head 77d86a77fb93f53df9cbdfbe3c3368286eedbbe4. GitHub-hosted CI run 33543866744, Security and quality run 33543866629 and Windows ARM64 UMD run 33543866711 all passed at that exact head, including workspace tests, test reachability, native Venus, clippy, formatting, structural budgets, supply-chain, fuzz and loom gates. Studio t13 job t13-77d86a77-n20 passed the fixed N=20 UEFI BDS/ESP/ExitBootServices gate 20/20 with zero failed lanes. Each independent disk-and-vars process boot required all 12 PI architecture protocols, signalled EndOfDxe, connected generic EDK2 PCI and NVMe drivers, found one Simple File System handle, loaded \\EFI\\BOOT\\BOOTAA64.EFI with boot policy, signalled ReadyToBoot, obtained the real memory map and reached code after ExitBootServices. Public receipt SHA-256 is ddbe6930db61c07df3ca59ab0e39224e9c18684fdbcc67860631fe4eb91f2e7b and development FD SHA-256 is 55a0aa3bff005ab6afa4b39ffbfaf239ffe12084aebd40f1202c87d1593fd8d3. This proves the development BDS, NVMe-backed ESP, PE load and ExitBootServices boundary only, not a fixed-count Windows Boot Manager pass, Windows kernel entry, Windows boot, write durability or production signing. It does not change the shipping Windows board. A9 remains OPEN. B4 remains separately PROVEN.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md",
@@ -153,7 +153,8 @@
         "docs/windows-arm/evidence/bridgevm-pc-nvme-block-receipt-20260831.json",
         "docs/windows-arm/evidence/bridgevm-pc-bds-exit-live-20260831.md",
         "docs/windows-arm/evidence/bridgevm-pc-bds-exit-receipt-20260831.json",
-        "docs/windows-arm/evidence/bridgevm-pc-bds-exit-reseal-receipt-20260831.json"
+        "docs/windows-arm/evidence/bridgevm-pc-bds-exit-reseal-receipt-20260831.json",
+        "docs/windows-arm/evidence/bridgevm-pc-bds-exit-reseal-receipt-20260901.json"
       ]
     },
     {
