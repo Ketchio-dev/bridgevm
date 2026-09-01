@@ -11,3 +11,4 @@ scripts/win-assets/** -text whitespace=cr-at-eol
 # Registry digests and cross-platform `git apply` consume checkout bytes.
 *.patch text eol=lf
 *.diff text eol=lf
+docs/licenses/** text eol=lf
