@@ -4,7 +4,6 @@ mod icmp_reply_rejection_reason;
 mod idle_eviction;
 mod macaddr;
 mod nat_stats;
-mod socket_poll;
 
 pub use handle_outbound_ipv4::*;
 pub(crate) use icmp_reply_rejection_reason::*;
