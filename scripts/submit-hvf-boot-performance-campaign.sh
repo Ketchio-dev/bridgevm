@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# Predeclare and submit a complete alternating T15 A/A or A/B campaign.
 set -euo pipefail
-
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 CLI="$REPO/scripts/live-gates/bridgevm-live"
-MODE=""; PAIRS=""; BASELINE=""; CANDIDATE=""; CAMPAIGN_ID=""
+MODE=""; PAIRS=""; BASELINE=""; CANDIDATE=""; CAMPAIGN_ID=""; HARNESS_SHA=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --mode) MODE="$2"; shift 2 ;;
@@ -12,6 +10,7 @@ while [[ $# -gt 0 ]]; do
     --baseline-manifest) BASELINE="$2"; shift 2 ;;
     --candidate-manifest) CANDIDATE="$2"; shift 2 ;;
     --campaign-id) CAMPAIGN_ID="$2"; shift 2 ;;
+    --harness-sha) HARNESS_SHA="$2"; shift 2 ;;
     *) echo "unknown campaign option $1" >&2; exit 2 ;;
   esac
 done
@@ -26,7 +25,7 @@ elif [[ -n "$CANDIDATE" ]]; then
 fi
 [[ -n "$CAMPAIGN_ID" ]] || CAMPAIGN_ID="$(openssl rand -hex 16)"
 [[ "$CAMPAIGN_ID" =~ ^[0-9a-f]{32}$ ]] || { echo "campaign id must be 32 lowercase hex characters" >&2; exit 2; }
-
+[[ -n "$HARNESS_SHA" ]] || HARNESS_SHA="$(git -C "$REPO" rev-parse HEAD)"; [[ "$HARNESS_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "harness SHA must be 40 lowercase hex characters" >&2; exit 2; }
 validate_base() {
   awk -F '\t' '
     $1 == "image" || $1 == "vars" || $1 == "binary" {
@@ -50,7 +49,7 @@ umask 077
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 expected=$((PAIRS * 2))
-printf 'campaign_id=%s\nmode=%s\nexpected_runs=%s\n' "$CAMPAIGN_ID" "$MODE" "$expected"
+printf 'campaign_id=%s\nmode=%s\nexpected_runs=%s\nharness_sha=%s\n' "$CAMPAIGN_ID" "$MODE" "$expected" "$HARNESS_SHA"
 for ((ordinal = 1; ordinal <= expected; ordinal++)); do
   if (( ordinal % 2 == 1 )); then
     role=baseline; base="$BASELINE"
@@ -62,6 +61,6 @@ for ((ordinal = 1; ordinal <= expected; ordinal++)); do
   cp "$base" "$manifest"
   printf 'campaign_id\t%s\ncampaign_mode\t%s\ncampaign_role\t%s\ncampaign_ordinal\t%s\ncampaign_expected_runs\t%s\n' \
     "$CAMPAIGN_ID" "$MODE" "$role" "$ordinal" "$expected" >> "$manifest"
-  job="$("$CLI" submit t15-hvf-boot-performance --input-manifest "$manifest")"
+  job="$("$CLI" submit t15-hvf-boot-performance --sha "$HARNESS_SHA" --input-manifest "$manifest")"
   printf 'ordinal=%s\trole=%s\tjob_id=%s\n' "$ordinal" "$role" "$job"
 done

@@ -55,6 +55,8 @@ bridgevm-hvf` must stay green at every stage boundary.
   baseline and candidate manifests. The submitter seals one campaign ID,
   ordinal, role and expected count into every attempt; omission, duplication,
   grouping, overlap, failure, or an unknown identity invalidates the campaign.
+  Pin `--harness-sha` to the A/A harness for later A/B campaigns so a candidate
+  source commit changes the measured binary, not the measurement machinery.
   Each job APFS-clones its own disk and vars, hashes the actual clones before
   boot, boots one 4-vCPU release sample, and requires agent READY plus clean
   shutdown. Report with `scripts/report-hvf-boot-performance-ab.py
