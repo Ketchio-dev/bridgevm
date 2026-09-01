@@ -176,6 +176,17 @@ bridgevm-hvf` must stay green at every stage boundary.
   sealed real Windows storage workload with throughput and latency-tail
   metrics. The existing host smoke and in-process NVMe microbenchmarks may
   filter an implementation but may not substitute for that workload.
+
+  The sealed ten-pair A/A completed 20/20 valid at constant binary, image,
+  vars, renderer, firmware, host, macOS, and AC-power identity. Its baseline
+  role measured p50 26.087 s and p95 28.354 s; its candidate role measured p50
+  23.346 s and p95 27.074 s. Because both roles used the same binary, that
+  apparent role difference is measurement variation, not an improvement. The
+  paired median was -3.427% with a bootstrap 95% interval of -16.260% to
+  +6.119%, giving a 16.260% A/A noise bound and `claim_eligible=false`. This is
+  above the predeclared 2.54% stop threshold, so no mapped-copy boot A/B is
+  permitted from this campaign. The preserved report is
+  `/Users/user/BridgeVM-Workspace/lab/windows-gpu-and-vm-assets/performance/hvf-boot-20260901/aa-counterbalanced-10pair-799dcf34-report.json`.
 - **Stage 3 — DMA path** (HIGH impact, MEDIUM risk): code implemented and the
   final live matrix covers its current-path correctness; isolated before/after
   performance attribution remains pending. The
