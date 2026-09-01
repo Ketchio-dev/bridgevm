@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = BridgeVmPcPciProbeLib
+  FILE_GUID = FC967B39-88CC-4AE7-BD18-12AA8F83D094
+  MODULE_TYPE = BASE
+  LIBRARY_CLASS = BridgeVmPcPciProbeLib|DXE_DRIVER
+[Sources]
+  PciProbe.c
+[Packages]
+  MdePkg/MdePkg.dec
+  BridgeVmPcPkg/BridgeVmPcPkg.dec
+[Protocols]
+  gEfiDriverBindingProtocolGuid           ## CONSUMES
+  gEfiPciEnumerationCompleteProtocolGuid  ## CONSUMES
+  gEfiPciIoProtocolGuid                   ## CONSUMES
+  gEfiPciRootBridgeIoProtocolGuid         ## CONSUMES
+  gEfiBlockIoProtocolGuid                 ## CONSUMES

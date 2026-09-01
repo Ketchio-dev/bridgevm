@@ -162,6 +162,7 @@ write_installed_boot_preflight() {
     printf 'agent_share_guest=%s\n' "${AGENT_SHARE_GUEST:-<unset>}"
     printf 'agent_share_ms=%s\n' "${AGENT_SHARE_MS:-<unset>}"
     printf 'agent_share_max_kb=%s\n' "${AGENT_SHARE_MAX_KB:-<unset>}"
+    printf 'guest_disk_harvest=%s\n' "$GUEST_DISK_HARVEST"
     printf 'nvme_buffered_io=%s\n' "$NVME_BUFFERED_IO"
     printf 'vtpm_enabled=%s\n' "$([[ -n "$VTPM_STATE_DIR" ]] && printf '1' || printf '0')"
     printf 'vtpm_state_dir=%s\n' "${VTPM_STATE_DIR:-<unset>}"
@@ -1095,16 +1096,14 @@ run_installed_boot_probe() {
   fi
   start_owned_swtpm
   write_probe_command_env
-  harvest_guest_windows_postmortem pre-run
-  capture_pre_run_real_title_gate_hash
-  capture_pre_run_title_gate_state
+  PRE_RUN_REAL_TITLE_SHA256="unavailable"; PRE_RUN_FIRSTBOOT_SHA256="unavailable"
+  if [[ "$GUEST_DISK_HARVEST" == "1" ]]; then harvest_guest_windows_postmortem pre-run; capture_pre_run_real_title_gate_hash; capture_pre_run_title_gate_state; else printf 'phase=pre-run\nstatus=disabled-by-policy\n' > "$EVIDENCE_DIR/windows-postmortem-pre-run-status.txt"; fi
   run_probe_process
   write_agent_shutdown_gate
   write_agent_service_gate
   write_host_pause_resume_gate
   write_virtio_gpu_trace_report
-  extract_guest_bridgevm_logs
-  harvest_guest_windows_postmortem post-run
+  if [[ "$GUEST_DISK_HARVEST" == "1" ]]; then extract_guest_bridgevm_logs; harvest_guest_windows_postmortem post-run; else printf 'phase=post-run\nstatus=disabled-by-policy\n' > "$EVIDENCE_DIR/windows-postmortem-post-run-status.txt"; fi
   write_title_gate_report
   write_real_title_gate_report
   write_firstboot_stage_report

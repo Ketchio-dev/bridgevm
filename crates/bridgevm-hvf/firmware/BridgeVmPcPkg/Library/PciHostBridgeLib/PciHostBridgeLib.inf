@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = BridgeVmPcPciHostBridgeLib
+  FILE_GUID                      = 4014294E-1775-407D-97E7-2EE44BD98B50
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = PciHostBridgeLib
+[Sources]
+  PciHostBridgeLib.c
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+[LibraryClasses]
+  BaseMemoryLib
+  MemoryAllocationLib

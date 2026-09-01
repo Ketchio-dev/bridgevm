@@ -1,0 +1,58 @@
+use bridgevm_hvf::machine::bridgevm_pc as board;
+use sha2::{Digest, Sha256};
+#[path = "contract/hob.rs"]
+mod hob;
+pub use hob::{validate_sec_result, SecResult};
+pub const RESULT_OFFSET: usize = 0x1000;
+pub const PASS_RESULT: u32 = 1;
+pub const RAM_PAGES: usize = 4;
+pub const RAM_EXECUTABLE: bool = false;
+pub const PROBE_TITLE: &str = "BridgeVM Virtual ARM PC reset-vector probe: PASS";
+pub const LIVE_PROOF: &str =
+    "LIVE PROOF: BridgeVM SEC validated boot-info v1 and built the bounded PI HOB list";
+pub const EXPECTED_FD_SHA256: &str =
+    "8db976249ff86c9613d0a13a0d811ee68a94ef90835d524deb451b927bc332d6";
+pub fn result_gpa() -> Result<u64, String> {
+    board::RAM_BASE
+        .checked_add(RESULT_OFFSET as u64)
+        .ok_or_else(|| "BridgeVM PC reset-vector result GPA overflow".to_string())
+}
+
+pub fn validate_firmware(bytes: &[u8]) -> Result<String, String> {
+    let expected_len = usize::try_from(board::FLASH_CODE.size)
+        .map_err(|_| "BridgeVM PC flash-code size exceeds host usize".to_string())?;
+    if bytes.len() != expected_len {
+        return Err(format!(
+            "reset-vector FD has {} bytes; expected {expected_len}",
+            bytes.len()
+        ));
+    }
+    let hash = Sha256::digest(bytes);
+    let mut digest = String::with_capacity(64);
+    for byte in hash {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        digest.push(HEX[(byte >> 4) as usize] as char);
+        digest.push(HEX[(byte & 0xf) as usize] as char);
+    }
+    if digest != EXPECTED_FD_SHA256 {
+        return Err(format!(
+            "reset-vector FD digest {digest} does not match {EXPECTED_FD_SHA256}"
+        ));
+    }
+    Ok(digest)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn result_and_flash_contract_use_independent_board_addresses() {
+        assert_eq!(board::FLASH_CODE.base, 0);
+        assert_eq!(board::FLASH_CODE.size, 0x0400_0000);
+        assert_eq!(result_gpa().unwrap(), 0x1_0000_1000);
+    }
+    #[test]
+    fn firmware_validation_rejects_non_contract_size_before_hashing() {
+        let error = validate_firmware(&[0; 64]).unwrap_err();
+        assert!(error.contains("expected 67108864"));
+    }
+}

@@ -145,10 +145,10 @@ assert_file_contains "$OUT/finalize-viogpu3d-package.ps1" 'Assert-PinnedInputMan
 assert_file_contains "$OUT/finalize-viogpu3d-package.ps1" '[System.IO.Directory]::Move($workingPackageDir, $FinalizedDir)' "PowerShell finalizer"
 assert_file_contains "$OUT/finalize-viogpu3d-test-package.ps1" 'New-SelfSignedCertificate' "PowerShell test finalizer"
 assert_file_contains "$OUT/finalize-viogpu3d-test-package.ps1" '$finalizationSucceeded = $true' "PowerShell test finalizer"
-assert_file_contains "$OUT/source-report.txt" 'windows_test_certificate_finalizer=' "source report"
+assert_file_contains "$OUT/build-viogpu3d-arm64.ps1" 'package-windows-graphics-notices.py' "notice assembly"
 assert_file_contains "$OUT/build-mesa-arm64.ps1" "-Dgallium-drivers=virgl" "Mesa ARM64 builder"
 assert_file_contains "$OUT/build-mesa-arm64.ps1" "-Dvulkan-drivers=" "Mesa ARM64 builder"
-assert_file_contains "$OUT/mesa-cross-arm64.ini" "arm64-pc-windows-msvc" "Mesa ARM64 cross file"
+[[ -f "$OUT/windows_graphics_notice_git.py" ]] && python3 "$OUT/package-windows-graphics-notices.py" self-test >/dev/null || fail "copied notice gate/helper failed"
 assert_file_contains "$OUT/viogpu3d-arehnman-arm64-minimal.inf" "UserModeDriverName" "minimal INF template"
 
 if bash scripts/prepare-hvf-windows-viogpu3d-build-kit.sh \

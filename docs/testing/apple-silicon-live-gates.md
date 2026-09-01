@@ -1,7 +1,7 @@
 # Apple silicon live gates
 
 Document status: **Current**
-Last reviewed: **2026-08-11**
+Last reviewed: **2026-08-30**
 
 Live gates are the only evidence that can promote a Windows HVF capability.
 They need bare-metal Hypervisor.framework, WindowServer/CGL, private Windows
@@ -13,7 +13,7 @@ they run, how they are scheduled, and what may leave the machine.
 | Work | Where | Why |
 | --- | --- | --- |
 | fmt, clippy, unit/integration tests, MSRV, budgets, docs and capability drift, dependency policy, fuzz smoke, host Venus build | GitHub-hosted Actions in the public repository | Deterministic, no private media, no virtualization |
-| Bare-metal HVF boots, guest install, GPU/title measurement, reset soaks | The development Mac Studio, through a local job queue | Requires Hypervisor.framework, a real GPU and private Windows media |
+| Bare-metal HVF boots, guest install, GPU/title measurement, reset soaks | The local physical Apple-silicon development Mac, through a local job queue | Requires Hypervisor.framework, a real GPU and private Windows media |
 
 Hosted CI stays authoritative for everything it can run. Moving an ordinary
 check to the local queue to hide a hosted failure is forbidden.
@@ -25,9 +25,13 @@ not to attach self-hosted runners to public repositories: a workflow reachable
 from a fork could execute untrusted code with the runner account's privileges,
 next to the VM images, Keychain and SSH keys on a personal machine.
 
-The agent already executes commands directly on the Studio, so a runner would
+The agent already executes commands directly on the development Mac, so a runner would
 add that risk without making a single test faster. What was actually missing is
 **asynchrony**, not a runner. The local queue provides it.
+
+The queue has no Mac Studio model dependency. Some script and service names
+retain `studio` for compatibility with the original machine, but the active
+worker may be this MacBook Pro or another explicitly installed local Mac.
 
 A dedicated secondary node (for example a second Apple silicon Mac used only for
 overnight runs) is a possible later addition. It is out of scope here, and no
@@ -71,6 +75,11 @@ Properties the queue must hold:
 | T4 | Nightly 100-reset soak | Reset lifecycle evidence |
 | T5 | Weekly/release 10-boot A1 gate | A1 shipping evidence |
 | T6 | Three independent PPSSPP + DXVK real-title runs | A3 shipping evidence |
+| T7 | Fixed Windows closure campaign | Combined installed-guest acceptance evidence |
+| T8 | Fixed 20-lane pointer campaign | B4 pointer reliability evidence |
+| T9 | Fixed 20-lane BridgeVM PC firmware campaign | Experimental-board standard UEFI PCI development evidence |
+| T10 | Sixty loaded full-workspace rounds | QMP shutdown-race regression evidence |
+| T15 | One sealed 4-vCPU release boot | Interleavable diagnostic sample for A/A noise and A/B performance comparisons |
 
 T0–T4 filter candidates. Only T5 produces A1 shipping evidence, and no faster
 tier may be used to lower a threshold. T6 requires all three runs to report
@@ -96,6 +105,14 @@ previous tree. Submit copies the signed release `binary` into the
 job directory, and the worker runs those exact sealed bytes rather than
 rebuilding after submission. Receipts preserve separate PPSSPP payload and
 embedded-executable hashes.
+
+T9 is deliberately not assigned a product capability criterion. It rebuilds
+the experimental BridgeVM Virtual ARM PC firmware and HVF runner from the
+sealed commit, then requires 20 independent lanes. Every lane owns a fresh
+variable-store file and must pass both a write process and a separate restore
+process, for 40 successful firmware boots. Passing T9 proves only the bounded
+standard UEFI PCI enumeration contract named in its receipt; it does not prove
+BAR operation, DMA, interrupts, Block I/O, GOP, BDS or Windows boot.
 
 ## Foreground wait policy
 

@@ -6,6 +6,7 @@ use crate::virtio_gpu_3d::VIRTIO_GPU_F_CONTEXT_INIT;
 use crate::virtio_gpu_3d::VIRTIO_GPU_F_RESOURCE_BLOB;
 use crate::virtio_gpu_3d::VIRTIO_GPU_F_VIRGL;
 use crate::virtio_gpu_trace::venus_start_trace_enabled;
+use crate::virtio_queue::clamp_u16;
 use std::fmt::Write as _;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
@@ -94,7 +95,7 @@ impl VirtioGpu {
             REG_DRIVER_FEATURES_SEL => self.driver_features_sel = value as u32,
             REG_DRIVER_FEATURES => self.write_driver_features(value),
             REG_QUEUE_SEL => self.queue_sel = value as u32,
-            REG_QUEUE_NUM => self.write_selected_queue(|q| q.size = (value as u16).min(QUEUE_MAX)),
+            REG_QUEUE_NUM => self.write_selected_queue(|q| q.size = clamp_u16(value, QUEUE_MAX)),
             REG_QUEUE_READY => self.write_selected_queue(|q| {
                 q.ready = value != 0;
                 if !q.ready {

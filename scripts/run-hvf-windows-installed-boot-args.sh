@@ -38,7 +38,7 @@ init_installed_boot_defaults() {
   REQUIRE_REAL_TITLE_GATE="0"
   TITLE_MANIFESTS=()
   TITLE_MANIFEST_COUNT=0
-  REQUIRE_TITLE_GATES="0"
+  REQUIRE_TITLE_GATES="0"; GUEST_DISK_HARVEST="1"
   SETUP_INPUT_ACTIONS=""
   SETUP_INPUT_MARKER=""
   SETUP_INPUT_FIRE_DELAY_MS=""
@@ -75,12 +75,9 @@ init_installed_boot_defaults() {
   AGENT_CLIPBOARD_SYNC="0"
   AGENT_SHARE_HOST=""
   AGENT_SHARE_GUEST=""
-  AGENT_SHARE_MS="2000"
-  AGENT_SHARE_MS_EXPLICIT="0"
-  AGENT_SHARE_MAX_KB="8192"
-  AGENT_SHARE_MAX_KB_EXPLICIT="0"
-  XHCI_POLICY=""
-  XHCI_REASON=""
+  AGENT_SHARE_MS="2000"; AGENT_SHARE_MS_EXPLICIT="0"
+  AGENT_SHARE_MAX_KB="8192"; AGENT_SHARE_MAX_KB_EXPLICIT="0"
+  XHCI_POLICY=""; XHCI_REASON=""
   TRACE_IRQ="0"
 }
 
@@ -176,6 +173,7 @@ parse_installed_boot_args() {
         agent_share_max_kb "$2" || { echo "FAIL: --agent-share-max-kb requires an integer from 1 to 1048576" >&2; exit 2; }
         AGENT_SHARE_MAX_KB="$2"; AGENT_SHARE_MAX_KB_EXPLICIT="1"; shift 2
         ;;
+      --no-guest-disk-harvest) GUEST_DISK_HARVEST="0"; shift ;;
       --enable-xhci) ENABLE_XHCI="1"; shift ;;
       --virtio-net) VIRTIO_NET="1"; shift ;;
       --hda) HDA_AUDIO="1"; shift ;;
@@ -383,6 +381,7 @@ validate_installed_boot_option_combinations() {
     echo "FAIL: --require-title-gates requires at least one --title-manifest" >&2
     exit 2
   fi
+  [[ "$GUEST_DISK_HARVEST" != "0" || ( "$REQUIRE_REAL_TITLE_GATE" != "1" && "$REQUIRE_TITLE_GATES" != "1" && "$TITLE_MANIFEST_COUNT" == "0" ) ]] || { echo "FAIL: --no-guest-disk-harvest cannot be combined with title gates that require fresh guest-disk logs" >&2; exit 2; }
   if [[ "$PERFORMANCE_RISK" == "aggressive" && "$VIRTIO_GPU_3D" != "1" ]]; then
     echo "FAIL: --performance-risk aggressive requires --virtio-gpu-3d" >&2
     exit 2
@@ -619,6 +618,7 @@ print_installed_boot_policy() {
     "BRIDGEVM_REQUIRE_REAL_TITLE_GATE=$REQUIRE_REAL_TITLE_GATE" \
     "BRIDGEVM_TITLE_MANIFESTS=$title_manifests_policy" \
     "BRIDGEVM_REQUIRE_TITLE_GATES=$REQUIRE_TITLE_GATES" \
+    "GUEST_DISK_HARVEST=$GUEST_DISK_HARVEST" \
     "BRIDGEVM_RAMFB_SAMPLE_MS=$RAMFB_SAMPLES" \
     "BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS=${SETUP_INPUT_ACTIONS:-<unset>}" \
     "BRIDGEVM_XHCI_SETUP_INPUT_SERIAL_MARKER=${SETUP_INPUT_MARKER:-<probe-default>}" \

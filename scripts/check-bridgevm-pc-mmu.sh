@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Guard the variable-RAM stage-1 identity-map contract.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RESET="$ROOT/crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector"
+VECTOR="$RESET/BridgeVmPcResetVector.S"; MMU="$RESET/BridgeVmPcMmu.S"; RAM="$RESET/BridgeVmPcMmuRam.S"
+awk '/movz    x0, #0x2600, lsl #16/ { info=1 } /bl      BridgeVmPcEnableMmu/ { call=info } END { exit !call }' "$VECTOR"
+grep -Fq 'stp     x19, x30, [sp, #-16]!' "$MMU"
+grep -Fq 'mov     x19, x0' "$MMU"
+grep -Fq 'bl      BridgeVmPcMapRam' "$MMU"
+grep -Fq 'mov     x0, x19' "$MMU"
+grep -Fq 'ldp     x19, x30, [sp], #16' "$MMU"
+grep -Fq 'ldr     x2, [x19, #RAM_SIZE_OFFSET]' "$RAM"
+grep -Fq 'lsr     x6, x2, #30' "$RAM"
+grep -Fq 'cinc    x6, x6, ne' "$RAM"
+grep -Fq '.equ RAM_MAX_BLOCKS,   124' "$RAM"
+grep -Fq 'csel    x6, x6, x2, ls' "$RAM"
+grep -Fq 'add     x5, x1, #(RAM_FIRST_GIB * 8)' "$RAM"
+grep -Fq 'movz    x8, #0x4000, lsl #16' "$RAM"
+echo "PASS: BridgeVM PC maps the bounded boot-info RAM span with 1 GiB blocks"

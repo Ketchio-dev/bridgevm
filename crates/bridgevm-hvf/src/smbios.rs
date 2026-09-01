@@ -4,7 +4,7 @@
 //! records through EFI's SMBIOS protocol. Entry-point address and checksum
 //! fields remain zero until firmware places and finalizes the tables.
 
-use crate::machine;
+use crate::machine::{self, bridgevm_pc};
 
 /// fw_cfg file carrying the SMBIOS 3.0 entry point.
 pub const SMBIOS_ANCHOR_FILE: &str = "etc/smbios/smbios-anchor";
@@ -33,23 +33,77 @@ pub struct SmbiosBlobs {
     pub tables: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SmbiosPlatform {
+    firmware_vendor: &'static str,
+    firmware_version: &'static str,
+    firmware_release_date: &'static str,
+    manufacturer: &'static str,
+    product: &'static str,
+    version: &'static str,
+    family: &'static str,
+    ram_base: u64,
+    max_cpus: u64,
+}
+
+const VIRT_PLATFORM: SmbiosPlatform = SmbiosPlatform {
+    firmware_vendor: "EDK II",
+    firmware_version: "edk2-stable202408-prebuilt.qemu.org",
+    firmware_release_date: "08/13/2024",
+    manufacturer: "BridgeVM",
+    product: "BridgeVM Virtual Machine",
+    version: "virt",
+    family: "Virtual Machine",
+    ram_base: machine::RAM_BASE,
+    max_cpus: machine::MAX_CPUS,
+};
+
+const BRIDGEVM_PC_PLATFORM: SmbiosPlatform = SmbiosPlatform {
+    firmware_vendor: "Ketchio",
+    firmware_version: "BridgeVM Firmware v1",
+    firmware_release_date: "08/30/2026",
+    manufacturer: bridgevm_pc::SMBIOS_MANUFACTURER,
+    product: bridgevm_pc::SMBIOS_PRODUCT,
+    version: "1",
+    family: "BridgeVM Virtual ARM PC",
+    ram_base: bridgevm_pc::RAM_BASE,
+    max_cpus: bridgevm_pc::MAX_CPUS,
+};
+
 /// Build BridgeVM's SMBIOS surface for a `cpu_count`-CPU guest.
 pub fn build_smbios(cpu_count: u64, ram_size: u64) -> SmbiosBlobs {
+    build_smbios_for_platform(cpu_count, ram_size, VIRT_PLATFORM)
+}
+
+/// Build the independent BridgeVM Virtual ARM PC v1 SMBIOS surface.
+pub fn build_bridgevm_pc_smbios(cpu_count: u64, ram_size: u64) -> SmbiosBlobs {
+    assert!(bridgevm_pc::ram_region(ram_size).is_some());
+    build_smbios_for_platform(cpu_count, ram_size, BRIDGEVM_PC_PLATFORM)
+}
+fn build_smbios_for_platform(
+    cpu_count: u64,
+    ram_size: u64,
+    platform: SmbiosPlatform,
+) -> SmbiosBlobs {
     assert!(cpu_count >= 1, "SMBIOS requires at least one CPU");
     assert!(
-        machine::redist_fits(cpu_count),
+        cpu_count <= platform.max_cpus,
         "cpu_count {cpu_count} exceeds GICv3 redistributor window",
     );
     assert!(ram_size > 0, "SMBIOS requires non-zero RAM");
+    platform
+        .ram_base
+        .checked_add(ram_size - 1)
+        .expect("SMBIOS RAM range overflows guest physical address space");
 
     let mut tables = Vec::new();
-    append_type0(&mut tables);
-    append_type1(&mut tables);
-    append_type3(&mut tables);
-    append_type4(&mut tables, cpu_count);
+    append_type0(&mut tables, platform);
+    append_type1(&mut tables, platform);
+    append_type3(&mut tables, platform);
+    append_type4(&mut tables, cpu_count, platform);
     append_type16(&mut tables, ram_size);
-    append_type17(&mut tables, ram_size);
-    append_type19(&mut tables, ram_size);
+    append_type17(&mut tables, ram_size, platform);
+    append_type19(&mut tables, ram_size, platform.ram_base);
     append_type32(&mut tables);
     append_type127(&mut tables);
 
@@ -78,7 +132,7 @@ fn append_record(tables: &mut Vec<u8>, typ: u8, handle: u16, formatted: &[u8], s
     }
 }
 
-fn append_type0(tables: &mut Vec<u8>) {
+fn append_type0(tables: &mut Vec<u8>, platform: SmbiosPlatform) {
     let mut f = Vec::new();
     f.push(1); // Vendor
     f.push(2); // BIOS Version
@@ -98,14 +152,14 @@ fn append_type0(tables: &mut Vec<u8>) {
         HANDLE_TYPE0,
         &f,
         &[
-            "EDK II",
-            "edk2-stable202408-prebuilt.qemu.org",
-            "08/13/2024",
+            platform.firmware_vendor,
+            platform.firmware_version,
+            platform.firmware_release_date,
         ],
     );
 }
 
-fn append_type1(tables: &mut Vec<u8>) {
+fn append_type1(tables: &mut Vec<u8>, platform: SmbiosPlatform) {
     let mut f = vec![
         1, // Manufacturer
         2, // Product Name
@@ -122,16 +176,16 @@ fn append_type1(tables: &mut Vec<u8>) {
         HANDLE_TYPE1,
         &f,
         &[
-            "BridgeVM",
-            "BridgeVM Virtual Machine",
-            "virt",
+            platform.manufacturer,
+            platform.product,
+            platform.version,
             "0",
-            "Virtual Machine",
+            platform.family,
         ],
     );
 }
 
-fn append_type3(tables: &mut Vec<u8>) {
+fn append_type3(tables: &mut Vec<u8>, platform: SmbiosPlatform) {
     let mut f = vec![
         1,    // Manufacturer
         0x01, // Type: Other
@@ -149,10 +203,16 @@ fn append_type3(tables: &mut Vec<u8>) {
     f.push(0); // Contained element count
     f.push(0); // Contained element record length
     f.push(0); // SKU
-    append_record(tables, 3, HANDLE_TYPE3, &f, &["BridgeVM", "virt", "0"]);
+    append_record(
+        tables,
+        3,
+        HANDLE_TYPE3,
+        &f,
+        &[platform.manufacturer, platform.version, "0"],
+    );
 }
 
-fn append_type4(tables: &mut Vec<u8>, cpu_count: u64) {
+fn append_type4(tables: &mut Vec<u8>, cpu_count: u64, platform: SmbiosPlatform) {
     let visible = cpu_count.min(u64::from(u16::MAX)) as u16;
     let visible_u8 = cpu_count.min(u64::from(u8::MAX)) as u8;
 
@@ -190,7 +250,7 @@ fn append_type4(tables: &mut Vec<u8>, cpu_count: u64) {
         4,
         HANDLE_TYPE4,
         &f,
-        &["CPU 0", "BridgeVM", "Virtual CPU"],
+        &["CPU 0", platform.manufacturer, "Virtual CPU"],
     );
 }
 
@@ -214,7 +274,7 @@ fn append_type16(tables: &mut Vec<u8>, ram_size: u64) {
     append_record(tables, 16, HANDLE_TYPE16, &f, &[]);
 }
 
-fn append_type17(tables: &mut Vec<u8>, ram_size: u64) {
+fn append_type17(tables: &mut Vec<u8>, ram_size: u64, platform: SmbiosPlatform) {
     let size_mb = ram_size.div_ceil(MB);
     let mut f = Vec::new();
     f.extend_from_slice(&HANDLE_TYPE16.to_le_bytes());
@@ -248,12 +308,18 @@ fn append_type17(tables: &mut Vec<u8>, ram_size: u64) {
     f.extend_from_slice(&0u16.to_le_bytes()); // Minimum voltage unknown
     f.extend_from_slice(&0u16.to_le_bytes()); // Maximum voltage unknown
     f.extend_from_slice(&0u16.to_le_bytes()); // Configured voltage unknown
-    append_record(tables, 17, HANDLE_TYPE17, &f, &["DIMM 0", "BridgeVM"]);
+    append_record(
+        tables,
+        17,
+        HANDLE_TYPE17,
+        &f,
+        &["DIMM 0", platform.manufacturer],
+    );
 }
 
-fn append_type19(tables: &mut Vec<u8>, ram_size: u64) {
-    let end = machine::RAM_BASE + ram_size - 1;
-    let start_kb = machine::RAM_BASE / KB;
+fn append_type19(tables: &mut Vec<u8>, ram_size: u64, ram_base: u64) {
+    let end = ram_base + ram_size - 1;
+    let start_kb = ram_base / KB;
     let end_kb = end / KB;
 
     let mut f = Vec::new();
@@ -269,7 +335,7 @@ fn append_type19(tables: &mut Vec<u8>, ram_size: u64) {
         f.extend_from_slice(&u32::MAX.to_le_bytes());
         f.extend_from_slice(&HANDLE_TYPE16.to_le_bytes());
         f.push(1);
-        f.extend_from_slice(&machine::RAM_BASE.to_le_bytes());
+        f.extend_from_slice(&ram_base.to_le_bytes());
         f.extend_from_slice(&end.to_le_bytes());
     }
     append_record(tables, 19, HANDLE_TYPE19, &f, &[]);
@@ -304,98 +370,5 @@ fn build_smbios30_anchor(tables_len: usize) -> Vec<u8> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn le16(b: &[u8], off: usize) -> u16 {
-        u16::from_le_bytes([b[off], b[off + 1]])
-    }
-    fn le32(b: &[u8], off: usize) -> u32 {
-        u32::from_le_bytes([b[off], b[off + 1], b[off + 2], b[off + 3]])
-    }
-    fn le64(b: &[u8], off: usize) -> u64 {
-        u64::from_le_bytes([
-            b[off],
-            b[off + 1],
-            b[off + 2],
-            b[off + 3],
-            b[off + 4],
-            b[off + 5],
-            b[off + 6],
-            b[off + 7],
-        ])
-    }
-
-    fn split_records(tables: &[u8]) -> Vec<&[u8]> {
-        let mut out = Vec::new();
-        let mut off = 0usize;
-        while off < tables.len() {
-            assert!(off + 4 <= tables.len(), "truncated SMBIOS record header");
-            let len = tables[off + 1] as usize;
-            assert!(len >= 4, "SMBIOS record length too small");
-            let mut end = off + len;
-            while end + 1 < tables.len() && (tables[end] != 0 || tables[end + 1] != 0) {
-                end += 1;
-            }
-            assert!(end + 1 < tables.len(), "SMBIOS record missing double NUL");
-            end += 2;
-            out.push(&tables[off..end]);
-            off = end;
-        }
-        out
-    }
-
-    #[test]
-    fn anchor_has_smbios30_entry_point_shape() {
-        let blobs = build_smbios(1, 512 * MB);
-        assert_eq!(&blobs.anchor[..5], b"_SM3_");
-        assert_eq!(blobs.anchor[5], 0, "firmware owns final checksum");
-        assert_eq!(blobs.anchor[6], 24);
-        assert_eq!(blobs.anchor[7], 3);
-        assert_eq!(blobs.anchor[8], 0);
-        assert_eq!(blobs.anchor[10], 1);
-        assert_eq!(le32(&blobs.anchor, 12), blobs.tables.len() as u32);
-        assert_eq!(le64(&blobs.anchor, 16), 0, "firmware owns final address");
-    }
-
-    #[test]
-    fn tables_have_expected_required_records() {
-        let blobs = build_smbios(1, 512 * MB);
-        let records = split_records(&blobs.tables);
-        let types: Vec<u8> = records.iter().map(|record| record[0]).collect();
-        assert_eq!(types, [0, 1, 3, 4, 16, 17, 19, 32, 127]);
-        assert!(String::from_utf8_lossy(&blobs.tables).contains("BridgeVM Virtual Machine"));
-        assert_eq!(records.last().unwrap()[0], 127);
-    }
-
-    #[test]
-    fn memory_records_describe_guest_ram() {
-        let blobs = build_smbios(1, 512 * MB);
-        let records = split_records(&blobs.tables);
-        let type16 = records.iter().find(|record| record[0] == 16).unwrap();
-        let type17 = records.iter().find(|record| record[0] == 17).unwrap();
-        let type19 = records.iter().find(|record| record[0] == 19).unwrap();
-
-        assert_eq!(le32(type16, 7), 512 * 1024);
-        assert_eq!(le16(type16, 13), 1);
-        assert_eq!(le16(type17, 12), 512);
-        assert_eq!(le32(type19, 4), (machine::RAM_BASE / KB) as u32);
-        assert_eq!(
-            le32(type19, 8),
-            ((machine::RAM_BASE + 512 * MB - 1) / KB) as u32
-        );
-    }
-
-    #[test]
-    fn processor_record_scales_with_cpu_count() {
-        let blobs = build_smbios(4, 512 * MB);
-        let records = split_records(&blobs.tables);
-        let type4 = records.iter().find(|record| record[0] == 4).unwrap();
-        assert_eq!(type4[35], 4, "core count");
-        assert_eq!(type4[36], 4, "core enabled");
-        assert_eq!(type4[37], 4, "thread count");
-        assert_eq!(le16(type4, 42), 4, "core count 2");
-        assert_eq!(le16(type4, 44), 4, "core enabled 2");
-        assert_eq!(le16(type4, 46), 4, "thread count 2");
-    }
-}
+#[path = "smbios_tests.rs"]
+mod tests;

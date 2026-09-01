@@ -4,12 +4,22 @@ on:
   push:
     branches: [main]
     paths:
+      - "THIRD-PARTY-PATCHES.tsv"
+      - "docs/licenses/Mesa-patched-files-MIT.txt"
+      - "docs/licenses/virtio-win-BSD-3-Clause.txt"
+      - "scripts/package-windows-graphics-notices.py"
+      - "scripts/windows_graphics_notice_git.py"
       - "scripts/patches/virtio-win-mesa-*.patch"
       - "scripts/win-assets/build-mesa-arm64.ps1"
       - "scripts/win-assets/mesa-cross-arm64.ini"
       - ".github/workflows/windows-umd.yml"
   pull_request:
     paths:
+      - "THIRD-PARTY-PATCHES.tsv"
+      - "docs/licenses/Mesa-patched-files-MIT.txt"
+      - "docs/licenses/virtio-win-BSD-3-Clause.txt"
+      - "scripts/package-windows-graphics-notices.py"
+      - "scripts/windows_graphics_notice_git.py"
       - "scripts/patches/virtio-win-mesa-*.patch"
       - "scripts/win-assets/build-mesa-arm64.ps1"
       - "scripts/win-assets/mesa-cross-arm64.ini"
@@ -97,6 +107,11 @@ jobs:
           assert 'bridgevm_trace_submit("resource-list-failed"' in submit
           print("PASS: UMD resource-list failure cannot emit or submit an untracked resource")
           PY
+      - name: Verify pinned Mesa notice objects
+        run: |
+          python3 scripts/package-windows-graphics-notices.py self-test
+          python3 scripts/package-windows-graphics-notices.py assemble \
+            --mesa-source mesa --output "$RUNNER_TEMP/mesa-notices"
 
   build-arm64:
     name: build patched Windows ARM64 UMD
@@ -105,6 +120,11 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Preserve upstream licence bytes
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: arehnman/virtio-win-mesa
@@ -208,10 +228,16 @@ jobs:
           }
           $lines | Set-Content -LiteralPath (Join-Path $bin "SHA256SUMS") -Encoding Ascii
           $lines | ForEach-Object { Write-Host $_ }
+      - name: Bundle Mesa licences and modification record
+        shell: pwsh
+        run: |
+          $bin = Join-Path $env:GITHUB_WORKSPACE "mesa-prefix-arm64\bin"
+          python scripts/package-windows-graphics-notices.py assemble --mesa-source mesa --output $bin
+          if ($LASTEXITCODE -ne 0) { throw "Windows graphics notice assembly failed" }
       - name: Retain the exact patched UMD build
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bridgevm-windows-arm64-umd-${{ github.sha }}
-          path: mesa-prefix-arm64/bin/*
+          path: mesa-prefix-arm64/bin/**
           if-no-files-found: error
           retention-days: 14

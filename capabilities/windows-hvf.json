@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "capability_id": "windows-hvf",
-  "reviewed": "2026-08-30",
-  "tested_commit": "c1812fbe8148699456fdd04078f178b2c5355666",
+  "reviewed": "2026-09-01",
+  "tested_commit": "9d63f07dccf8399934baa640c6ebce72f28731d6",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -139,9 +139,23 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "Re-proven 2026-08-30 at exact code head c1812fbe8148699456fdd04078f178b2c5355666. The complete local scripts/check-project.sh passed, including workspace and Venus tests, the probe example, Rust formatting and clippy policy, structural budgets, documentation gates, Swift build/tests and all XCTest-shim suites. GitHub-hosted CI run 33313815035 passed the repository matrix, and Security and quality run 33313815005 passed fuzz corpus smoke, Loom, graphics-claim, live-gate and supply-chain policy checks. A9 remains OPEN. B4 is separately OPEN because fixed 20-lane follow-ups at 6048ebb084e7d1e2b1b78c7dcbe546b47c1c6e51 and an exact replay of 080462846acbe4cb784bd9b532d7cd39921aa549 both landed 20/20 with zero renderer/package regressions but failed the unchanged latency limit at p95 808 ms and 839 ms.",
+      "measured": "Re-sealed 2026-09-01 at exact tested code head 9d63f07dccf8399934baa640c6ebce72f28731d6. GitHub-hosted Security and quality run 33548294709 passed at that exact head. CI run 33548294700 passed every code, build and test job and correctly failed only its full-history freshness job while the registry still named the preceding tested head; this retained receipt closes that fail-closed transition, and integration still requires the subsequent seal SHA's own hosted CI and Windows ARM64 UMD to pass. Studio t13 job t13-9d63f07d-n20 passed the fixed N=20 UEFI BDS/ESP/ExitBootServices gate 20/20 with zero failed lanes. Each independent disk-and-vars process boot required all 12 PI architecture protocols, signalled EndOfDxe, connected generic EDK2 PCI and NVMe drivers, found one Simple File System handle, loaded \\EFI\\BOOT\\BOOTAA64.EFI with boot policy, signalled ReadyToBoot, obtained the real memory map and reached code after ExitBootServices. Public receipt SHA-256 is 034b6c20d2b2a0d9833cefe0f25e38647f8c2c537af777cd959c7ef3f1d3ecc5 and development FD SHA-256 is 55a0aa3bff005ab6afa4b39ffbfaf239ffe12084aebd40f1202c87d1593fd8d3. This proves the development BDS, NVMe-backed ESP, PE load and ExitBootServices boundary only, not a fixed-count Windows Boot Manager pass, Windows kernel entry, Windows boot, write durability or production signing. It does not change the shipping Windows board. A9 remains OPEN. B4 remains separately PROVEN.",
       "evidence_paths": [
-        "STATUS.md"
+        "STATUS.md",
+        "docs/windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md",
+        "docs/windows-arm/evidence/bridgevm-pc-pcie-ecam-live-20260830.md",
+        "docs/windows-arm/evidence/bridgevm-pc-firmware-pcie-ecam-live-20260830.md",
+        "docs/windows-arm/evidence/bridgevm-pc-standard-uefi-pci-live-20260830.md",
+        "docs/windows-arm/evidence/bridgevm-pc-standard-uefi-pci-receipt-20260830.json",
+        "docs/windows-arm/evidence/bridgevm-pc-nvme-bar-live-20260831.md",
+        "docs/windows-arm/evidence/bridgevm-pc-nvme-bar-receipt-20260831.json",
+        "docs/windows-arm/evidence/bridgevm-pc-nvme-block-live-20260831.md",
+        "docs/windows-arm/evidence/bridgevm-pc-nvme-block-receipt-20260831.json",
+        "docs/windows-arm/evidence/bridgevm-pc-bds-exit-live-20260831.md",
+        "docs/windows-arm/evidence/bridgevm-pc-bds-exit-receipt-20260831.json",
+        "docs/windows-arm/evidence/bridgevm-pc-bds-exit-reseal-receipt-20260831.json",
+        "docs/windows-arm/evidence/bridgevm-pc-bds-exit-reseal-receipt-20260901.json",
+        "docs/windows-arm/evidence/bridgevm-pc-bds-exit-reseal-receipt-20260901-9d63f07d.json"
       ]
     },
     {
@@ -278,19 +292,20 @@
     {
       "id": "B4",
       "title": "Pointer click reliability",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": false,
       "statement": "Pointer interaction passes a fixed 20-boot live campaign at 20/20 with p95 visible-response latency <=250 ms.",
-      "measured": "OPEN 2026-08-30. Retained Studio t8 job 20260829-215356-7576-17586 at sealed BridgeVM commit 080462846acbe4cb784bd9b532d7cd39921aa549 landed 20/20 pointer samples with zero rendering/package regressions and p95 245 ms. Later fixed campaigns 20260830-061513-18964-30182 at 6048ebb084e7d1e2b1b78c7dcbe546b47c1c6e51 and 20260830-063655-32633-32243 at an exact replay of the retained source also landed 20/20 with zero rendering/package regressions but failed the unchanged latency limit at p95 808 ms and 839 ms. Their boot means simultaneously moved from 18.31 seconds to 43.73 and 43.45 seconds. The retained pass ran before the Studio LaunchAgent was installed, while the failed campaigns ran through its Background process class; c1812fbe8148699456fdd04078f178b2c5355666 makes every explicitly submitted gate use application scheduling policy. That is a measurement-backed candidate explanation, not closure. B4 closes only after a new exact-head sealed fixed N=20 campaign passes 20/20 with zero rendering/package regressions and p95 at or below 250 ms.",
+      "measured": "PROVEN and re-sealed 2026-08-31. Studio t8 job 20260831-215850-85969-24095 at exact tested code head 772a587c08c17df6c8a99acd0b7db4df25e2d5c1 used sealed input manifest 75caf98b80b95b8e5a7a31f6ed845dcbeaaa409ab7aa2013d1c4f32b84323c5a and driver tree 838fcbe165dbdae0f18fa1cf21b156b0114f49f1041b2df367541413b00aa9f1. Its fixed N=20 independent disk-and-vars lanes landed 20/20 pointer samples with zero rendering/package regressions, no stuck buttons, and nearest-rank p95 visible-response latency 227 ms against the unchanged 250 ms limit. Public receipt SHA-256 is f58c714aba7f3de2148715df5d95125912366cab886de7f165ae7c6e9bbeac52. The earlier 2026-08-30 proof, the 2026-08-31 failed 19/20 setup campaign, and the intervening fixed 20/20 mode-switch campaign remain retained. The package is self-signed and test-mode-only, so this result does not close A9.",
       "evidence_paths": [
         "docs/windows-arm/evidence/b4-pointer-batch-20260817.md",
         "docs/windows-arm/evidence/b4-pointer-latency-20260816.md",
         "docs/windows-arm/evidence/b4-pointer-reliability-batch-20260820.md",
         "docs/windows-arm/evidence/b4-pointer-reliability-gate-20260820.md",
         "docs/windows-arm/evidence/b4-pointer-reliability-proven-20260830.md",
-        "docs/windows-arm/evidence/b4-pointer-followup-session-variance-20260830.md"
-      ],
-      "known_defect": "Pointer clicks landed 20/20 in the two latest fixed campaigns, but visible-response p95 was 808 ms and 839 ms against the 250 ms limit. A scheduling-policy correction is awaiting a new sealed 20-lane gate."
+        "docs/windows-arm/evidence/b4-pointer-reliability-receipt-20260830.json",
+        "docs/windows-arm/evidence/b4-pointer-followup-session-variance-20260830.md",
+        "docs/windows-arm/evidence/b4-pointer-reliability-reseal-receipt-20260831.json"
+      ]
     },
     {
       "id": "B5",

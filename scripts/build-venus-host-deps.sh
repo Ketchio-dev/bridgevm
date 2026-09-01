@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BRIDGEVM_3D_DIR="${BRIDGEVM_3D_DIR:-"$HOME/BridgeVM/3d"}"
-VIRGL_COMMIT="${VIRGL_COMMIT:-2a173ee}"
+readonly VIRGL_COMMIT="2a173eef8c044abeddd2a9e842f52659bedd5376"
 PREFIX="$BRIDGEVM_3D_DIR/prefix"
 SRC_DIR="$BRIDGEVM_3D_DIR/virglrenderer"
 BUILD_DIR="$SRC_DIR/build-venus"

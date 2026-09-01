@@ -5,7 +5,7 @@ pointer_vm_launch() {
   BRIDGEVM_TRACE_DCI5_EMISSION=1 BRIDGEVM_XHCI_REPORT_INTERVAL_MS=200 BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1 BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT=0 BRIDGEVM_VIRTIO_GPU_ASYNC_PRESENT=0 \
   scripts/run-hvf-windows-installed-boot.sh --exit-on-reset \
     --target "$WORK/disk.raw" --vars "$WORK/vars.fd" --evidence-dir "$RUN" \
-    --watchdog-ms 720000 --ram-mib 6144 --smp-cpus 4 --release --enable-xhci \
+    --watchdog-ms 720000 --ram-mib 6144 --smp-cpus 4 --release --enable-xhci --no-guest-disk-harvest \
     --input-control "$INPUT" --display-export-fb "$RUN/active-scanout.fb" \
     --display-export-ms 100 --agent-service-control "$CTL" \
     --agent-share-host "$CASE/share" --agent-share-guest 'C:\BridgeVMPtr' --agent-share-ms 500 \

@@ -16,6 +16,7 @@ mod queue_pending;
 mod register_codec;
 pub(crate) mod snapshot;
 mod transport_regs;
+mod tx_gather;
 mod virtqueue;
 
 pub(crate) use control_plane::*;

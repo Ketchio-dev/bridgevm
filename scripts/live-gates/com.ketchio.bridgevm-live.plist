@@ -9,6 +9,13 @@
        Hypervisor.framework entitlement and GPU session. -->
   <key>ProgramArguments</key>
   <array>
+    <string>/usr/bin/env</string>
+    <string>-i</string>
+    <string>HOME=__HOME__</string>
+    <string>USER=__USER__</string>
+    <string>LOGNAME=__USER__</string>
+    <string>SHELL=/bin/bash</string>
+    <string>PATH=__HOME__/.cargo/bin:/opt/homebrew/opt/rustup/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <string>__WORKER__</string>
   </array>
 
@@ -36,6 +43,10 @@
          PATH, and a gate that builds anything needs cargo. -->
     <key>PATH</key>
     <string>__HOME__/.cargo/bin:/opt/homebrew/opt/rustup/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>TAILNET_PROXY_API_KEY</key>
+    <string></string>
+    <key>CLIPROXY_API_KEY</key>
+    <string></string>
   </dict>
 
   <!-- ProcessType Background keeps it off the interactive scheduler's

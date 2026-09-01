@@ -3,7 +3,7 @@
 set -euo pipefail
 : "${RUN:?}" "${WORK:?}" "${TARGET:?}" "${VARS:?}" "${VIOGPU_DIR:?}"
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); cd "$REPO"
-fail() { echo "FAIL: $*" >&2; exit 1; }
+fail() { [[ -z "${FAIL_CLASSIFICATION:-}" ]] || printf '%s\n' "$FAIL_CLASSIFICATION" > "$RUN/case-failure.class"; echo "FAIL: $*" >&2; exit 1; }
 CASE="$RUN"; rm -rf "$WORK"; mkdir -p "$WORK" "$CASE/share"
 cp -c "$TARGET" "$WORK/disk.raw"; cp "$VARS" "$WORK/vars.fd"; chmod 600 "$WORK/disk.raw" "$WORK/vars.fd"
 for asset in bv-pointer-capture.ps1 bv-pointer-target.ps1 bvgpu-apply-host-resolution.ps1; do cp "scripts/win-assets/$asset" "$CASE/share/"; done
@@ -34,9 +34,9 @@ for asset in bv-pointer-capture.ps1 bv-pointer-target.ps1 bvgpu-apply-host-resol
 done
 printf '%s\n' 'RESIZE 1600x900' >> "$INPUT"
 wait_for '^live input accepted: resize=1600x900$' 1 30 || fail 'host resize not accepted'
-send_ok 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bvgpu-apply-host-resolution.ps1 -Width 1600 -Height 900 -LaunchPointerTarget' || fail 'guest resize failed'
+send_ok 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bvgpu-apply-host-resolution.ps1 -Width 1600 -Height 900 -LaunchPointerTarget' || FAIL_CLASSIFICATION=rendering-package-regression fail 'guest resize failed'
 for _ in $(seq 1 120); do scanout_ready && break; sleep 1; done
-scanout_ready || fail 'active 1600x900 scanout absent'
+scanout_ready || FAIL_CLASSIFICATION=rendering-package-regression fail 'active 1600x900 scanout absent'
 for _ in $(seq 1 120); do grep -q '^BVTARGET ready width=1600 height=900 ' "$CASE/share/bv-pointer-target-ready.log" 2>/dev/null && break; sleep 1; done
 ready=$(tr -d '\r' < "$CASE/share/bv-pointer-target-ready.log" 2>/dev/null || true)
 [[ "$ready" =~ ^BVTARGET.ready.width=1600.height=900.screen_x=([-0-9]+).screen_y=([-0-9]+).center_x=([-0-9]+).center_y=([-0-9]+).virtual_x=([-0-9]+).virtual_y=([-0-9]+).virtual_w=([0-9]+).virtual_h=([0-9]+).hwnd=([1-9][0-9]*)$ ]] || { tr -d '\r' < "$CASE/share/bv-pointer-target-error.log" 2>/dev/null >&2 || true; fail 'target not ready'; }
@@ -44,7 +44,7 @@ sx=${BASH_REMATCH[1]}; sy=${BASH_REMATCH[2]}; cx=${BASH_REMATCH[3]}; cy=${BASH_R
 hid_x=$(( (cx - sx) * 32767 / 1599 )); hid_y=$(( (cy - sy) * 32767 / 899 ))
 printf 'POINTER move:%sx%s\n' "$hid_x" "$hid_y" >> "$INPUT"
 for _ in $(seq 1 120); do [[ -s "$RUN/active-scanout.fb.iosurface" ]] && break; sleep 1; done
-[[ -s "$RUN/active-scanout.fb.iosurface" ]] || fail 'active CGL IOSurface absent'; sleep 2
+[[ -s "$RUN/active-scanout.fb.iosurface" ]] || FAIL_CLASSIFICATION=rendering-package-regression fail 'active CGL IOSurface absent'; sleep 2
 send_ok 'powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '\''cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-capture.ps1 -DurationMs 20000 -ReadyPath C:\BridgeVMPtr\bvptr-ready.log -StopAfterClick > C:\BridgeVMPtr\bvptr.log 2>&1'\'' } | Out-Null; Write-Output BVPTR_LAUNCHED"' || fail 'probe launch failed'
 for _ in $(seq 1 120); do grep -q "^BVPTR_READY cursor_x=$cx cursor_y=$cy" "$CASE/share/bvptr-ready.log" 2>/dev/null && break; sleep 1; done
 grep -q "^BVPTR_READY cursor_x=$cx cursor_y=$cy" "$CASE/share/bvptr-ready.log" || fail 'probe not ready at target'

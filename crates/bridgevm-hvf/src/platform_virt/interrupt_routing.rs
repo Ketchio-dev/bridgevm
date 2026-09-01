@@ -8,11 +8,9 @@ impl VirtPlatform {
     /// HVF run loop turns these into `hv_gic_send_msi` calls after configuring
     /// Apple `hv_gic`'s MSI frame.
     pub fn take_pending_msix(&mut self) -> Vec<MsixMessage> {
-        if self.pending_msix.is_empty() {
-            Vec::new()
-        } else {
-            self.pending_msix.drain(..).collect()
-        }
+        let mut pending = Vec::with_capacity(self.pending_msix.len());
+        pending.append(&mut self.pending_msix);
+        pending
     }
 
     /// Drain pending MSI-X messages into caller-owned storage.
@@ -23,11 +21,9 @@ impl VirtPlatform {
     /// Drain level changes for legacy SPI-backed devices such as virtio-mmio.
     /// The live HVF loop turns these into `hv_gic_set_spi(intid, level)`.
     pub fn take_pending_spi_levels(&mut self) -> Vec<(u32, bool)> {
-        if self.pending_spi_levels.is_empty() {
-            Vec::new()
-        } else {
-            self.pending_spi_levels.drain(..).collect()
-        }
+        let mut pending = Vec::with_capacity(self.pending_spi_levels.len());
+        pending.append(&mut self.pending_spi_levels);
+        pending
     }
 
     /// Drain pending SPI level changes into caller-owned storage.

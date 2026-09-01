@@ -77,6 +77,7 @@ Options:
   --agent-share-max-kb N  Largest file synchronized in KiB, 1..1048576
                           (default: 8192). Use at least 32768 for the staged
                           viogpu3d render package.
+  --no-guest-disk-harvest Skip raw-disk log mounts; incompatible with title gates.
   --enable-xhci           Leave xHCI present for desktop input diagnosis.
   --virtio-net            Attach the virtio-net NIC (BRIDGEVM_VIRTIO_NET=1)
                           with the userspace NAT backend.
@@ -199,7 +200,6 @@ Options:
   --skip-build            Reuse the selected profile's existing hvf_gic_boot_probe.
   --print-policy          Print the enforced policy and exit.
   -h, --help              Show this help.
-
 Policy:
   The script launches with BRIDGEVM_DISABLE_XHCI=1 by default and a writable
   installed target so the installed OS can persist first-boot writes.

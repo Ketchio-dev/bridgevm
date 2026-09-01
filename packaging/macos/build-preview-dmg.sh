@@ -63,8 +63,7 @@ install_rust_license_bundle() {
 install_project_notices() {
   local resources="$1"
   install -m 644 "$ROOT/LICENSE" "$resources/LICENSE"
-  install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" \
-    "$resources/THIRD-PARTY-NOTICES.md"
+  install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" "$ROOT/THIRD-PARTY-PATCHES.tsv" "$resources"
   cmp -s "$ROOT/LICENSE" "$resources/LICENSE" || {
     echo "bundled project license differs from repository LICENSE: $resources" >&2
     exit 1
@@ -74,8 +73,9 @@ install_project_notices() {
     echo "bundled third-party notice differs from repository source: $resources" >&2
     exit 1
   }
+  cmp -s "$ROOT/THIRD-PARTY-PATCHES.tsv" "$resources/THIRD-PARTY-PATCHES.tsv" ||
+    { echo "bundled patch registry differs from repository source: $resources" >&2; exit 1; }
 }
-
 rm -rf "$APP"
 rm -f "$DMG" "$DMG.sha256"
 mkdir -p "$OUT_DIR" "$(dirname "$DMG")"
@@ -126,8 +126,8 @@ cleanup() {
 trap cleanup EXIT
 
 ditto "$APP" "$STAGE/$APP_NAME.app"
-install -m 644 "$ROOT/LICENSE" "$STAGE/LICENSE"
-install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" "$STAGE/THIRD-PARTY-NOTICES.md"
+install -m 644 "$ROOT/LICENSE" "$ROOT/THIRD-PARTY-NOTICES.md" \
+  "$ROOT/THIRD-PARTY-PATCHES.tsv" "$STAGE"
 ln -s /Applications "$STAGE/Applications"
 
 hdiutil create \

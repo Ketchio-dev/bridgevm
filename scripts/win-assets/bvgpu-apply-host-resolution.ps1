@@ -45,6 +45,21 @@ function Get-Current([string]$dev) {
   return $null
 }
 
+# ChangeDisplaySettingsEx requires a supported mode's enumerated DEVMODE;
+# changing only width/height on the current mode intermittently fails in viogpu.
+function Get-RequestedMode([string]$dev, [int]$width, [int]$height) {
+  $index = 0
+  while ($true) {
+    $candidate = New-Object DEVMODE
+    $candidate.dmSize = $size
+    if (-not [BvDisp]::EnumDisplaySettingsW($dev, $index, [ref]$candidate)) { return $null }
+    if ($candidate.dmPelsWidth -eq $width -and $candidate.dmPelsHeight -eq $height) {
+      return $candidate
+    }
+    $index++
+  }
+}
+
 function Require-PointerTarget {
   if (-not $LaunchPointerTarget) { return }
   $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-target.ps1 -Width 1600 -Height 900 > C:\BridgeVM\bv-pointer-target.out 2>&1' }
@@ -100,14 +115,24 @@ if ($before.dmPelsWidth -eq $Width -and $before.dmPelsHeight -eq $Height) {
   Write-Output 'BV-APPLY-DONE'; exit 0
 }
 
-$dm = $before
-$dm.dmPelsWidth = [uint32]$Width
-$dm.dmPelsHeight = [uint32]$Height
-$dm.dmFields = 0x80000 -bor 0x100000   # DM_PELSWIDTH | DM_PELSHEIGHT
-$rc = [BvDisp]::ChangeDisplaySettingsExW($target, [ref]$dm, [IntPtr]::Zero, 0x1, [IntPtr]::Zero)
+$deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+$attempt = 0
+$rc = -1
+do {
+  $dm = Get-RequestedMode $target $Width $Height
+  if ($null -eq $dm) {
+    Write-Output "BV-APPLY| requested_mode_not_ready attempt=$attempt"
+  } else {
+    $dm.dmFields = $dm.dmFields -bor 0x80000 -bor 0x100000
+    $attempt++
+    $rc = [BvDisp]::ChangeDisplaySettingsExW($target, [ref]$dm, [IntPtr]::Zero, 0x1, [IntPtr]::Zero)
+    Write-Output "BV-APPLY| change_attempt=$attempt rc=$rc"
+    if ($rc -eq 0) { break }
+  }
+  Start-Sleep -Milliseconds 500
+} while ((Get-Date) -lt $deadline)
 Write-Output "BV-APPLY| change_rc=$rc"
 
-$deadline = (Get-Date).AddSeconds(10)
 do {
   Start-Sleep -Milliseconds 500
   $after = Get-Current $target

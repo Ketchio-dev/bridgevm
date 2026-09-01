@@ -1,0 +1,829 @@
+# BridgeVM Virtual ARM PC — Windows Boot Manager StartImage localization
+
+Date: 2026-08-31. Board: the from-scratch BridgeVM Virtual ARM PC on the HVF
+engine (not the QEMU-compatibility engine). Classification: development
+diagnostic record. No shipping-capability claim; the Windows-start gate (T14)
+remains an honest FAIL and must not be reclassified until a live run reaches
+`stage=7` with the handoff line.
+
+## Symptom
+
+The standards firmware boots to BDS, connects NVMe, finds one FAT ESP, and
+`LoadImage` of `\EFI\BOOT\BOOTAA64.EFI` (Windows Boot Manager, `bootmgfw`)
+succeeds with a valid `EFI_LOADED_IMAGE_PROTOCOL` (`ImageBase 0x27ee70000`,
+`ImageSize 0x32b000`). `gBS->StartImage` then returns
+`EFI_INVALID_PARAMETER (0x8000000000000002)` with empty `ExitData`, and a
+re-probe of the image handle afterwards also returns `EFI_INVALID_PARAMETER`
+(the handle was unloaded), i.e. the entry point ran and returned.
+
+## What was ruled out (host-side, spec-based, fail-closed diagnostics)
+
+- **GOP absence is not the cause.** A BridgeVM-owned reserved-RAM Graphics
+  Output producer (1024x768 `PixelBlueGreenRedReserved8BitPerColor`) is present
+  and enumerated (`gop_handles=1`); the failure is identical with it.
+- **No failing UEFI service.** A boot-services recorder wrapping 19 entry
+  points (including the foundational `RaiseTPL`/`RestoreTPL`/`CreateEvent`/
+  `Stall`/`SetMem`/`CopyMem`) shows the Boot Manager issues **87 calls, all
+  `RaiseTPL(TPL_HIGH_LEVEL)`/`RestoreTPL` pairs, every one `EFI_SUCCESS`**.
+- **The StartImage mechanism is sound.** The board's own removable-media probe
+  application starts and reaches post-`ExitBootServices` through the identical
+  path (T13, 20/20). The failure is specific to `bootmgfw`.
+
+## Single-step localization (decisive)
+
+An HVF single-step tracer (host-side, no guest debugger) stepped the guest
+from just before `StartImage` and recorded every program counter inside the
+loaded image. Result:
+
+- `bootmgfw` entry point = **image RVA `0x3a130`**.
+- It executes 16 instructions, calls the function at **RVA `0xe9830`**
+  (helpers at `0x2b1d50` and `0x2b1d70`); that function performs the 87
+  successful `RaiseTPL`/`RestoreTPL` pairs and returns.
+- Control then jumps to the **error epilogue at RVA `0x3aaf8`** and returns
+  `EFI_INVALID_PARAMETER`. Only 77 in-image instructions run in total.
+
+So the bail is **internal Boot Manager logic in the function at RVA `0xe9830`**,
+which reads something the board provides directly — an ACPI table, an SMBIOS
+structure, an EFI variable, or a memory attribute — through direct memory
+access (not a boot service) and rejects it before doing any device or file I/O.
+
+## Reproducing the tracer (it was not committed)
+
+The tracer's firmware side is a store to a device-mapped arm address right
+before `StartImage`; that store is instrumentation and must not ship, so the
+tracer was reverted from the tree. To rebuild it:
+
+- BDS stores to a **device-mapped** arm GPA — use an ECAM offset for a bus the
+  board does not implement (e.g. `0x4FFFF000`). Do **not** use `0x30000000`:
+  the firmware MMU leaves it unmapped, so the store faults into the guest and
+  corrupts the run.
+- The host, on the data abort at that GPA, sets `MDSCR_EL1.SS` (the HVF
+  `hv_sys_reg` id for `MDSCR_EL1` is `0x8012`), sets `PSTATE.SS` (CPSR bit 21),
+  calls `hv_vcpu_set_trap_debug_exceptions(vcpu, true)`, then on each
+  `EC == 0x32` software-step exit records the PC and re-arms `CPSR.SS`. The
+  `hv_sys_reg` encoding is `(op0<<14)|(op1<<11)|(CRn<<7)|(CRm<<3)|op2`
+  (`MPIDR_EL1 == 0xc005` confirms it).
+
+## Root cause (confirmed by disassembly)
+
+Extracted `BOOTAA64.EFI` from the image ESP and disassembled it
+(`aarch64-elf-objdump`; `.text` VA `0x1000` raw `0x400`; entry RVA `0x3a130`
+confirmed; `SizeOfImage 0x32b000` matches the loaded image). `EfiEntry`
+(`0x3a130`) calls the init at `0xe9830` with **`x0` = SystemTable**; that
+function does `ldr x9,[x0,#64]` then `cbz x9,0xe9c24`. `SystemTable+64` is
+**ConOut** (`EFI_SYSTEM_TABLE`: +64 ConOut, +88 RuntimeServices, +96
+BootServices). The traced taken branch at `0xe9894` is exactly this `cbz x9`,
+so **ConOut is NULL**, and `0xe9c24` returns the literal at `0xe9c58` =
+`0x8000000000000002` (EFI_INVALID_PARAMETER).
+
+**The Windows Boot Manager bails immediately when `gST->ConOut` is NULL.** The
+boot firmware shipped no console-output producer, so ConOut was NULL.
+
+## Resolution
+
+Added `MdeModulePkg/Universal/Console/ConSplitterDxe` to the boot firmware. Its
+entry installs the virtual console aggregators and sets `gST->ConOut` (and
+ConIn/StdErr) non-NULL. With this in place a live run now reports
+`diagnostic: COMPLETE` at `stage=7`: the Boot Manager enters and keeps running
+(the run ends on the boot watchdog, not an immediate StartImage return). That
+is the T14 handoff condition, and the sealed t8 B4 pointer-reliability gate
+still lands 20/20 at p95 222 ms on the shipping engine at the same head, so the
+console addition regresses nothing.
+
+## Next wall (observed, not yet resolved)
+
+Full Windows boot is still not proven (`windows_boot_proven=false`). A local
+run with the observation watchdog extended to 150 s shows the Boot Manager
+makes only six boot-service calls and then spins inside its own image (PC
+ranges over image RVA 0x3f550..0x41838, an ~8 KiB loop) for the rest of the
+window without reaching BCD/file I/O. The six calls are: RaiseTPL/RestoreTPL;
+`GetVariable("Se…")` → EFI_NOT_FOUND; `HandleProtocol(LoadedImage)` → success;
+`HandleProtocol` (GUID Data1 0x09576e91) → success; and
+`AllocatePages(AllocateAddress, EfiLoaderData, at 0x102000)` → EFI_NOT_FOUND.
+The board has no RAM at the low fixed address 0x102000 (system RAM starts at
+0x1_0000_0000), but the Boot Manager tolerates that (AllocateAddress failing is
+normal). The spin itself was localized by disassembling the loop:
+
+- The loop body (near image RVA 0x3f540) calls a poll routine at RVA 0xc2698
+  every iteration and keeps timeout counters (`[x22+3568]` incremented and
+  compared to a limit `[x24+3576]`, calling 0x1e47a8 and resetting on expiry).
+- 0xc2698 loads a global object at `[0x308000+2736]` and makes an indirect
+  call through its vtable at offset +136 (`ldr x8,[x0]; ldr x8,[x8,#136];
+  blr`) — it polls a method on a Boot-Manager object each iteration.
+- The periodic handler 0x1e47a8 walks several objects (0x303000+0x960/0x7a0/
+  0x860/0x820) through 0x1e57f0, i.e. it services a list on a timer tick.
+
+It looked like a timed poll/event loop, so a **timer hypothesis was tested and
+FALSIFIED**: the theory was that the runner never delivers a timer tick, so the
+Boot Manager's timed wait never completes. Two experiments disproved it.
+
+1. Instrumenting the runner shows **`vtimer_exits == 0`** — HVF's virtual-timer
+   exit never fires, because the firmware uses the *physical* timer
+   (`ArmGenericTimerPhyCounterLib`, `PcdArmArchTimerIntrNum=30`).
+2. Switching the firmware to the *virtual* timer
+   (`ArmGenericTimerVirtCounterLib`) AND adding the runner-side delivery
+   (`hv_vcpu_set_pending_interrupt(IRQ)` + unmask on `EXIT_VTIMER`, mirroring
+   the shipping engine's `service_windows_arm_firmware_vtimer_delivery`) left
+   the spin **byte-for-byte identical** (same final PC `0x27feb1838`, same six
+   service calls). Both experiments were reverted; nothing timer-related is
+   committed.
+
+So the spin is **not** timer-driven. It was then localized further by dumping
+guest RAM (a temporary, reverted diagnostic that reads the globals through the
+loaded image base): `[0x308000+2744]` and `[0x308000+2736]` are both **0**, so
+the `0xc2698` vtable+136 indirect call is never reached (it is guarded by
+`cbz` on exactly those null globals). The vtable-poll theory is therefore also
+ruled out.
+
+The real spin is at image RVA **0x41838**: `mov x0,#0; bl 0x42500; cmp x0,#1;
+b.ne …` — the Boot Manager repeatedly calls **0x42500** and loops while the
+result is not what it awaits. 0x42500 queries an internal subsystem: it calls
+0x1ae9c8 (returns a context), loads `[ctx+24]`, and calls 0x1b0a20 / 0x1b0b60
+with GUID/key-like word constants (0x16000020, 0x250000c2, 0x25000008); it
+returns 1 only when a global `[0x2ef000+1632]` is null. Nearby helper 0x3f600
+reads **`PMCCNTR_EL0`** (the PMU cycle counter) for elapsed-time math, so the
+PMU cycle counter is also in play for this phase's timing.
+
+**Corrected next step:** capture registers at run time at 0x42500 (single-step
+or a hardware breakpoint with register dump) to see which key/context it queries
+through 0x1ae9c8/0x1b0a20 and what value it keeps getting, and confirm whether
+`PMCCNTR_EL0` advances for the guest on this board (if the PMU cycle counter is
+frozen at 0, cycle-based elapsed-time math never progresses). Both the
+vtable-object poll and the UEFI-timer-tick theories are already disproven; do
+not re-try them.
+
+Note on tooling: HVF's `hv_vcpu_get_sys_reg` does not expose PMCCNTR_EL0,
+CNTVCT_EL0, PMCR_EL0 or PMCNTENSET_EL0 (all return an error), so the host
+cannot sample them directly — the guest reads them with `mrs`, so confirming
+whether PMCCNTR advances needs a single-step capture of the `mrs` result, not
+a host-side `get_sys_reg`.
+
+Single-step attempt and its limits (2026-08-31): the tracer was rebuilt and
+run against the ConOut firmware. Two lessons. (1) In single-step mode HVF's
+`hv_vcpus_exit` from the watchdog thread does **not** break the step loop —
+each `hv_vcpu_run` returns a software-step exit first — so the tracer MUST
+carry its own step budget or it hangs forever (a first run without one had to
+be killed after an hour). (2) Single-step is ~3000 steps/s, so a 300k-step
+budget covers only the first ~300k guest instructions after StartImage — the
+Boot Manager's entry and the start of its main loop — and does **not** reach
+the native-speed steady state (the 20s terminal PC 0x41838 is not in the
+captured set). The captured 363 unique in-image RVAs show an **active
+multi-function loop** (main body ~0x3a854..0x3ad d4 calling helpers at
+0x53504..0x536d0, 0x36490..0x366a0, 0x1e42d0..0x1e4378), and ~299k of the 300k
+steps were *out of image*, i.e. the Boot Manager is executing a lot of code
+outside its own image while only six wrapped boot-services calls are recorded
+— it is doing work, not sitting in a one-instruction spin.
+
+**Hardware-breakpoint attempt (also a dead end for now):** a breakpoint probe
+was built — arm store, then `DBGBVR0_EL1 = ImageBase+RVA`, `DBGBCR0_EL1`
+enabled (E, PMC=0b11, BAS=0b1111), `MDSCR_EL1.MDE`, `trap_debug_exceptions` —
+and it **never fired**, even at 0x41838 which is definitely executed (it is the
+native-speed terminal PC). Combined with `get_sys_reg` not exposing PMCCNTR/
+CNTVCT, this indicates **HVF's `set_sys_reg` does not honor the debug registers
+(DBGBVR0/DBGBCR0/MDSCR.MDE) for guest hardware breakpoints** — only software
+single-step (MDSCR.SS + trap_debug, EC 0x32) works, and that is too slow to
+reach the native-speed steady state. So neither of HVF's obvious guest-debug
+primitives can capture registers at 0x41838 as-is.
+
+**BRK-patch attempt (also a dead end):** the BRK-in-guest-RAM probe was built —
+at arm time (before the target RVA first executes) the host reads the original
+4 bytes, writes `BRK #0` (`0xd4200000`), enables `trap_debug_exceptions`, and
+waits for `EC == 0x3c`. It **never fired** either. The guest instruction/data
+caches are on (SCTLR.C/I set by the board MMU), and a host write to the
+HVF-mapped RAM does not invalidate the guest caches, so the guest keeps
+fetching the original instruction — host RAM patching of guest code is not
+cache-coherent here.
+
+**On-disk BRK/HVC patch attempt (a fourth path, also blocked for now):** the
+Boot Manager's on-disk `bootaa64.efi` was patched on a COW clone — file offset
+0x40c38 (which held `0x94000332` = `bl 0x42500`, confirming RVA 0x41838) was
+overwritten with `hvc #0` (`0xd4000002`), so EDK2 would load it with cache
+maintenance and the trap would actually execute (HVC always routes to EL2). The
+run still ended on the watchdog with PC at 0x41838 executing as the original
+`bl`, i.e. the patch did not reach the loaded image — the write through the
+`hdiutil`/macOS msdos mount did not persist into the `.raw` before the run. To
+make this work, patch the `.raw` at the **physical** byte offset of that file
+cluster (parse the FAT to resolve it) instead of writing through a mounted
+volume, and re-confirm the loaded bytes. The run did capture x0-x30 at 0x41838
+at the watchdog boundary: x0=0, x1=0, x2=0x4f, x19=image+0x142000,
+x30(LR)=image+0x3f56c (so 0x41838's function is called from ~0x3f568, the loop
+seen earlier), x6=0x70536f54 (ASCII "ToSp"). Not decisive on its own.
+
+A follow-up patched the `.raw` at the **physical** FAT-cluster offset
+(bootaa64.efi start cluster 5; file offset 0x40c38 resolves to raw offset
+0x543c38; the original bytes there were `0x94000332` = `bl 0x42500`, confirming
+the location). The write was verified in the `.raw`, and `boot_media` reads the
+`.raw` directly, yet the guest STILL ran 0x41838 as the original `bl`. The most
+likely explanation is **Boot Manager self-relocation**: bootmgfw re-copies /
+re-decompresses its own image after load and overwrites 0x41838 with the
+original instruction from an internal source that has no patch, so a static
+patch of the loaded image (whether in RAM or on disk) is defeated. Intercepting
+it would need the patch applied *after* that self-copy, i.e. real runtime debug
+control, which HVF does not provide here.
+
+**All four guest-debug tooling paths are therefore exhausted** under HVF's
+constraints as attempted: software single-step works but is too slow to reach
+the native-speed steady state; hardware breakpoints are unavailable (HVF
+ignores the debug sys-regs); host RAM code-patching is defeated by guest
+caches; and static image patching (RAM or on-disk) is defeated by Boot Manager
+self-relocation. Net: register-level inspection of the native-speed steady-state
+spin is not achievable with the tooling available in this session. The
+productive direction is therefore (b) — stop per-wall RE and build out the
+board environment (a real GraphicsConsole on the GOP, a working ConIn, and the
+device stack) so the Boot Manager runs against a fuller platform — rather than
+more static probing.
+
+## Breakthrough: a real GOP console advances the Boot Manager (commit c6a8dcc3)
+
+Direction (b) paid off immediately. The ConSplitter virtual console had set
+`gST->ConOut` non-NULL but as a no-op sink, so the Boot Manager spun early
+(only 6 boot-service calls, at 0x41838). Adding **HiiDatabaseDxe** (the HII
+Font protocol) and **GraphicsConsoleDxe** (text rendering on the GOP
+framebuffer), and then pointing `gST->ConOut`/`StdErr` at the Simple Text
+Output that GraphicsConsole installs on the GOP handle (with a system-table CRC
+reseal, in BdsConsole.c) gives the Boot Manager a console that actually draws.
+With it, a live run jumps from **6 to ~4000 boot-service calls** and the
+terminal PC moves to a **different region (image RVA 0x19550)** — the Boot
+Manager now runs far past the old spin. It still ends on the watchdog
+(`windows_boot_proven=false`), so there is a later wall, but this confirms the
+console was the real gap and that building out the board environment is the way
+forward.
+
+Filtering RaiseTPL/RestoreTPL out of the trace (a reverted diagnostic) shows
+the Boot Manager now makes ~60 *meaningful* boot-service calls before it stalls:
+`GetVariable("Se…")` → NOT_FOUND, two `HandleProtocol`, then ~56 `AllocatePool`
+(EfiBootServicesData: many 0x13-byte structures, then 0x4d8 and 0x6620
+buffers), then one `AllocatePages` — after which the terminal PC is
+**0x27fe89550, which is ABOVE the loaded image** (ImageBase 0x27ee70000 +
+SizeOfImage 0x32b000 = 0x27f19b000). So the Boot Manager has moved out of its
+static image and is executing code in memory it allocated/loaded (a relocated
+or decompressed module), i.e. real forward progress, not the earlier
+static-image spin. Because this later stall is in runtime-loaded code, static
+disassembly of bootaa64.efi cannot reach it.
+
+Delivering the timer (switching the firmware to the virtual timer and injecting
+`hv_vcpu_set_pending_interrupt(IRQ)` + unmask on `EXIT_VTIMER`, mirroring the
+shipping engine) did **not** change this later stall either — same ~60 calls,
+same region — so, like the first spin, it is not timer-driven; that experiment
+was reverted. Next: to look past this wall, either dump/patch the runtime-loaded
+code region (0x27fe8xxxx) rather than the static image, or keep building out the
+board (a working ConIn / keyboard, and the storage/file path the Boot Manager
+will need to read the BCD) — building out the environment is the proven lever.
+Inspecting registers at the steady-state spin (0x41838) is not feasible with
+any of them as-is. Genuinely different options for a future session: patch the
+`BRK` into the **on-disk** `bootaa64.efi` on the per-run COW clone (EDK2 loads
+it with proper cache maintenance, so the trap instruction is actually
+executed — but confirm the BRK routes to the VMM under `trap_debug_exceptions`
+rather than to the guest's own EL1 vector, and note this needs the stub
+SecurityDxe to skip signature checks, which it does); or step back from
+per-wall bootmgfw RE toward building out a more complete board environment.
+
+## Breakthrough 2: wiring ConIn advances the Boot Manager into a live timer-wait loop
+
+Building out the board environment (the proven lever above) paid off again.
+The console fix wired `gST->ConOut` but left `gST->ConIn` **NULL** — the exact
+symmetric hazard as the original blocker (a boot application that touches the
+console then dereferences a NULL pointer). ConSplitter installs a virtual
+Simple Text Input aggregator handle even with no physical keyboard, so
+`BdsConsole.c` now also locates a Simple Text Input producer and points
+`gST->ConIn`/`ConsoleInHandle` at it (single CRC reseal covering both). The
+Boot Manager's INF gained `gEfiSimpleTextInProtocolGuid`.
+
+Effect (live, `win25h2-scripted-source.raw` COW, firmware `82a6fa3b`): the Boot
+Manager no longer dead-stalls after ~56 `AllocatePool`. It now runs a **live
+RaiseTPL(0x1f)/RestoreTPL(0x4) polling loop of thousands of iterations** —
+i.e. it is executing, not stuck — before the 20s watchdog cancels the vCPU. The
+sealed T13 BDS/ExitBootServices path is **unchanged (still PASS, stage=11)**, so
+this is pure forward progress with no regression.
+
+### The next blocker is now precisely localized: the physical-timer interrupt
+
+The terminal state decodes the next wall exactly. `vcpu_final` is
+`pc:0x27fe89550, esr:0x6234f804`. ESR `EC = 0x18` (trapped MSR/MRS), and the ISS
+decodes to `Op0=3 Op1=3 CRn=14 CRm=2 Op2=2`, direction=write — that is a **write
+to `CNTP_CVAL_EL0`**, the *physical* timer compare register. The Boot Manager
+(through the firmware's TimerArch/event services) is arming the physical timer
+inside its RaiseTPL/RestoreTPL wait loop and spinning until the timeout event
+fires. It never fires: the board uses the **physical** timer
+(`ArmGenericTimerPhyCounterLib` + `ArmTimerDxe` programming `CNTP_*`), HVF traps
+the `CNTP_CVAL_EL0` write (hence EC 0x18), and the run loop masks `EXIT_VTIMER`
+and injects **no** physical-timer PPI — so the guest's timed wait can never
+complete. (The earlier "timer delivery didn't help" experiment is not a
+counter-example: it was run at the *old* AllocatePool stall, before ConIn let
+the guest reach this timer-arming loop at all.)
+
+Next: give the board a working architectural timer interrupt — the cleanest
+route is to switch the firmware to the **virtual** timer (`CNTV`, which HVF
+supports natively via `EXIT_VTIMER` + IRQ injection) and stop masking vtimer in
+the run loop, so the Boot Manager's timed wait completes and it proceeds toward
+reading the BCD. This is again "build out the board," now the timer path.
+
+## Breakthrough 3: the virtual timer makes the board interrupt-driven
+
+Two coordinated changes gave the board a live architectural timer:
+
+- **Firmware**: the DSC `ArmGenericTimerCounterLib` mapping was switched from
+  `ArmGenericTimerPhyCounterLib` to `ArmGenericTimerVirtCounterLib`, so the whole
+  timer stack (TimerLib, `ArmTimerDxe`) now reads `CNTVCT` and arms `CNTV_CVAL`
+  instead of the physical `CNTP_*`. `ArmTimerDxe` already registers the virtual
+  PPI (INTID 27, `PcdArmArchTimerVirtIntrNum`). Only three module hashes moved
+  (`ArmGicV3Dxe`, `ArmTimerDxe`, `Metronome`); firmware rehashed to
+  `45e18b5d…`.
+- **Run loop**: `EXIT_VTIMER` used to *mask* the vtimer as "unexpected" and
+  never unmask it, so the very first tick silenced the timer forever. It now
+  *unmasks* on the activation exit (HVF auto-masks there), letting the in-kernel
+  `hv_gic` keep delivering INTID 27. The vcpu already unmasks the vtimer once at
+  startup.
+
+Live effect (`win25h2` COW, firmware `45e18b5d`): the Boot Manager's terminal
+ESR changes from the `CNTP_CVAL_EL0` write to **`esr=0x62323018` = a write to
+`ICC_EOIR1_EL1`** (ISS `Op0=3 Op1=0 CRn=12 CRm=12 Op2=1`), the GIC
+End-Of-Interrupt register. The guest is now **taking and acknowledging
+interrupts** — the timer tick is delivered and serviced. Boot-service activity
+roughly **doubles** (max trace seq ~4059 → ~8059 in the same 20s window). The
+sealed T13 BDS/ExitBootServices path is **unchanged (still PASS, stage=11,
+`vtimer_exits=0`** — it completes before a tick is even needed), so no
+regression.
+
+### The next frontier: an input/event source
+
+Extending the watchdog to 75s shows the guest holds a **stable steady state**:
+same PC region (`0x27fe8956x`), same `ICC_EOIR1_EL1` ESR, and the trace seq
+grows linearly (~8059 at 20s → ~30059 at 75s, ~400 calls/s), entirely
+`RaiseTPL(0x1f)`/`RestoreTPL(0x4)`. That is a `WaitForEvent`/`CheckEvent`-style
+busy wait, now driven by the timer, that never completes because the event it
+waits on never arrives. With `ConIn` wired but **no key ever delivered**, the
+most likely event is a keystroke at a boot menu / prompt (or an IO-completion
+event). So the next build-out is an **input path** that can actually inject a
+key into `ConIn` (a synthetic key source or a keyboard device), or identifying
+the exact event set the Boot Manager polls here. This is a genuinely later
+frontier than the dead-timer stall — the board now runs interrupt-driven.
+
+### Diagnostic: the wait is an event wait, not an IO poll (input, not storage)
+
+A run-loop MMIO histogram (example-only, reverted) settles the input-vs-IO
+question. Over a full 20s Windows run the guest issues only ~1500 MMIO accesses
+total — `pcie_ecam` ~1267 and 64-bit BAR ~208, and **zero** `pcie_mmio32` or GIC
+distributor/redistributor MMIO — while boot-service activity reaches ~8000
+calls. So the RaiseTPL/RestoreTPL wait loop does **no per-iteration MMIO**: it is
+a CPU/sysreg event wait (timer ticks acknowledged through the GIC `ICC_*`
+system registers), not a device poll. And the board's NVMe is **firmware-polled**
+— EDK2's `NvmExpressDxe` polls the completion-queue phase bit (which is how the
+sealed T13 probe reads `BOOTAA64.EFI` with no interrupt), so the Boot Manager's
+file reads never block on an interrupt either. Both rule out a storage/IO wait
+and point the next build squarely at an **input/event source** (a synthetic key
+into `ConIn`).
+
+## Breakthrough 4 (partial) + a reframing: the wait is an early-init spin
+
+Two changes were built to test the input hypothesis and to see past the wait:
+
+- **A synthetic `ConIn` key source** (`BdsInput.c`): a minimal Simple Text Input
+  whose `WaitForKey` event is always signaled and whose `ReadKeyStroke` yields
+  Enter, installed on its own handle with `gST->ConIn` repointed at it, right
+  before `StartImage`. A bring-up scaffold (a real HID keyboard replaces it
+  later).
+- **Filtered the trace ring**: `RaiseTPL`/`RestoreTPL` are no longer recorded
+  (the wrapper stays installed for ExitBootServices symmetry), so the bounded
+  126-entry ring shows the *meaningful* calls instead of drowning in the wait
+  loop's TPL churn.
+
+Result — the synthetic Enter key changes **nothing** (identical terminal PC,
+ESR, and ~8000 call count), and the filtered trace explains why: the Boot
+Manager's meaningful boot-service calls **stop at just 60** — one `GetVariable`
+(NOT_FOUND), two `HandleProtocol`, 56 `AllocatePool` of 0x13 bytes, then a 0x4d8
+and a 0x6620 buffer, one `AllocatePages` — and then the RaiseTPL/RestoreTPL loop
+runs forever. There is **no `CreateEvent`, no `Stall`, no `WaitForEvent`-implied
+event, no `LoadImage`, no filesystem open**. So the Boot Manager is stuck **very
+early**, before it ever reads the BCD or a file — not at a late boot menu — and
+because it created no events of its own, this is not `WaitForEvent` on its own
+events but a spin in its own code that `RaiseTPL(HIGH)`/`RestoreTPL(APP)` drives
+(each `RestoreTPL` dispatches the firmware's queued timer notifies). The virtual
+timer makes the guest service those interrupts (`ICC_EOIR1_EL1` writes) but that
+does not satisfy whatever condition the spin polls.
+
+This reframes the frontier: it is **not** an interactive keystroke prompt (the
+synthetic key disproves that) and **not** storage IO (the histogram/polled-NVMe
+argument). It is an early-init spin in the Boot Manager's runtime-loaded code
+(`0x27fe8956x`, above the static image), so the decisive next tool is
+**guest-side symbolication of that runtime-loaded region** — dumping and
+disassembling the code at the spin PC (the crash-survivable RAM-dump technique
+used elsewhere) to name the exact loop and the value it polls. The sealed T13
+BDS/ExitBootServices path stays **PASS, stage=11** through both changes.
+
+## Breakthrough 5: the spin is "wait for the tick counter to advance"
+
+A guest RAM dump at the terminal boundary (an env-gated dump added to the
+example — `BRIDGEVM_PC_DUMP=path` writes a window of `guest_ram.bytes()` around
+`state.pc`; reverted to keep the harness lean, trivially re-added) disassembles
+the spin exactly. Because the Boot Manager runs identity-mapped in boot
+services, the spin GVA `0x27fe8956x` is also its GPA, at offset `0x17fe8956x`
+into RAM (`RAM_BASE 0x1_0000_0000`). The loop is:
+
+```
+27fe89534:  stp x29,x30,[sp,#-48]!      ; function entry
+27fe89540:  adrp x19, 0x27fe8c000       ; x19 = module data page
+27fe89544:  ldr  x0, [x19, #216]        ; x0 = *(0x27fe8c0d8)  (initial)
+27fe89548:  str  x0, [sp, #40]          ; snapshot it
+27fe8954c:  ldr  x1, [sp, #40]          ; x1 = snapshot
+27fe89550:  ldr  x0, [x19, #216]        ; x0 = *(0x27fe8c0d8)  (current)
+27fe89554:  cmp  x1, x0
+27fe89558:  b.eq 0x27fe89568            ; while unchanged:
+27fe89568:  bl   0x27fe8b838            ;   pump()
+27fe8956c:  b    0x27fe8954c            ;   loop
+            ; (falls through to ret only once the value changes)
+```
+
+`0x27fe8b838` — the function called every iteration — is `nop;nop;nop;nop;nop;
+ret`, i.e. a pure CPU-relax stub. So the Boot Manager snapshots a global word at
+its data page + 0xd8 (`0x27fe8c0d8`) and **busy-waits for that word to change**,
+doing nothing but relax. That word is a tick/time counter the Boot Manager
+expects a handler to advance. It never advances, so the spin never exits — even
+though the virtual timer fires and the guest services interrupts
+(`ICC_EOIR1_EL1` writes). The wall is therefore precisely: **the Boot Manager's
+own tick counter is not being incremented despite interrupt servicing.** The
+focused next step is to find the writer of `[0x27fe8c000 + 0xd8]` (disassemble
+the module for a `str` to that slot — its timer ISR / notify path) and determine
+why the delivered interrupt does not reach it: most likely the INTID the guest
+reads from `ICC_IAR1_EL1` is not the timer PPI the Boot Manager's handler
+expects, or its timer is armed on a source the in-kernel GIC is not routing to
+that handler. This is a single, well-scoped guest-GIC question, not a broad
+search.
+
+### Deeper read: the counter is external-writer-only and frozen at zero
+
+Dumping the whole spinning module (1 MB from `0x27fe00000`) and disassembling it
+pins the counter's role and rules out an in-module writer. At the terminal
+boundary `*(0x27fe8c0d8) == 0`, and it stays zero across the 20s and 75s runs —
+it never advances. Its neighbors in that data page are function pointers and
+config (`0x27fe8c0c8 = 0x27fe892ec`, `0x27fe8c0e0 = 1`), i.e. it lives in a
+module state struct. The spin function `0x27fe89534` is called from one helper
+(`0x27fe8a0f8`) that formats a message (calls a `vsnprintf`-like routine at
+`0x27fe895c4`, with the format strings that sit right after the `nop`-pad at
+`0x27fe8b850`) and invokes a sink callback through a function pointer — this is
+the Boot Manager's **diagnostic/timestamped-logging path**, and the spin is its
+"wait for the timestamp/tick to advance" step.
+
+Crucially, **no instruction in the 1 MB module writes `0x27fe8c0d8`**: none of
+the 18 `adrp`s to its page `0x27fe8c000` is followed by a store to offset `0xd8`,
+and the only `str …,[x,#216]` sites use unrelated base registers. So the counter
+is advanced by code in **another image** — an interrupt handler (the timer tick)
+that lives outside this module and is not running. This confirms the wall is an
+**interrupt-delivery gap**, not anything in the Boot Manager's own module: the
+guest services *some* interrupt (`ICC_EOIR1_EL1` writes, most likely the
+firmware's own virtual-timer tick) but the handler that would bump this counter
+never runs. The focused next step is to identify that handler's interrupt source
+(the Boot Manager installs its own `VBAR_EL1` and may arm the **physical** timer,
+which HVF does not deliver to the in-kernel GIC — only the virtual timer is
+native) and route/emulate it so the tick handler runs and the counter advances.
+
+## Architectural conclusion: the PC board needs a userspace GIC to boot Windows
+
+Across all four Windows runs the guest **never** produced a system-register trap
+(EC 0x18) or any exit other than MMIO data aborts, `HV_EXIT_REASON_VTIMER`, and
+the 20s watchdog cancel — the run loop's "unexpected EC" arm never fired. That
+means the guest's timer and GIC accesses — `CNTP_*`/`CNTV_*` arming,
+`CNTPCT`/`CNTVCT` reads, and the GIC CPU interface `ICC_IAR1_EL1`/`ICC_EOIR1_EL1`
+— **all execute natively** under the in-kernel `hv_gic` and HVF's sysreg
+passthrough. The host therefore has **no visibility into, and no control over,
+the interrupt path**: it cannot see which INTID the Boot Manager's ISR
+acknowledges, cannot intercept its timer arming, and cannot inject the
+per-CPU timer PPI (`hv_gic_set_spi` covers SPIs only, not PPIs). Combined with
+the fact that HVF delivers only the *virtual* timer to `hv_gic` natively, this is
+why the Boot Manager's tick ISR never runs.
+
+The shipping HVF engine boots Windows a different way: a **userspace GIC**
+(`platform_virt`) where the host owns interrupt injection, `IAR`/`EOI`, and
+timer emulation (see `set_windows_arm_firmware_vtimer_ppi_pending` and the
+interrupt-routing module). Under that model the host can arm/emulate the timer
+the Boot Manager programs and inject the exact PPI its ISR expects, and can
+observe the whole path. So the decisive next architecture for the independent
+board is to give it the **same userspace-GIC + timer-emulation + PPI-injection**
+model the shipping engine already uses to boot Windows, rather than the in-kernel
+`hv_gic` the boot-live example currently creates. That is a substantial, well
+scoped change (adopt `platform_virt`'s GIC/timer/interrupt-routing on the PC
+board), and it is the path that provably reaches a booted Windows elsewhere.
+
+### Concrete port plan (grounded in the existing reusable modules)
+
+Reference implementation: `crates/bridgevm-hvf/src/platform/apple/firmware_run_loop.rs`
+(the shipping Windows-ARM run loop) plus the ready-to-reuse
+`crates/bridgevm-hvf/src/userspace_gic/` module, whose API already provides
+everything the CPU interface needs: `UserspaceGic::new(num_cpus)`, `mmio(ipa,
+width, write)` for the distributor/redistributor windows, `sysreg(cpu, reg,
+is_read, value)` for `ICC_*`, `set_vtimer_ppi(cpu, fired)`, `set_spi(intid,
+level)`, `send_msi`, and `line_asserted(cpu)`.
+
+The five integration points to bring into the boot-live example
+(`examples/bridgevm_pc_boot_live/`):
+
+1. **Stop creating `hv_gic`** (`gic.rs`): do not call `hv_gic_create`; construct
+   a `UserspaceGic` instead. Keep the same distributor/redistributor/MSI base
+   addresses the board's DTB/ACPI already advertise (`GIC_DIST 0x2000_0000`,
+   `GIC_REDIST 0x2100_0000`, `GIC_MSI_FRAME 0x2300_0000`). With no in-kernel GIC,
+   the guest's `ICC_*` and GIC-MMIO accesses now trap to the host.
+2. **Route GIC MMIO** in the run loop's data-abort path: when the fault address
+   is in the distributor/redistributor/MSI windows (`UserspaceGic::owns(ipa)`),
+   handle it with `gic.mmio(...)` instead of the platform MMIO bus.
+3. **Handle system-register traps (EC 0x18)** — currently the run loop's
+   "unexpected EC" arm. Decode with the same helper the shipping loop uses
+   (`decode_system_register_trap`) and dispatch `ICC_*` to `gic.sysreg(...)`,
+   writing back the read result and advancing PC.
+4. **Emulate the timer + inject its PPI**: keep unmasking on
+   `HV_EXIT_REASON_VTIMER`, but on each vtimer activation call
+   `gic.set_vtimer_ppi(0, true)` so INTID 27 becomes pending in the userspace
+   GIC; if the Boot Manager instead drives the physical timer, trap `CNTP_*`
+   (now that sysregs trap) and drive the same PPI from a host-tracked deadline
+   against `CNTPCT`.
+5. **Assert the IRQ line into the vCPU**: after each exit, if
+   `gic.line_asserted(0)` then `hv_vcpu_set_pending_interrupt(vcpu,
+   HV_INTERRUPT_TYPE_IRQ, true)` else `false` — this is the FFI the example must
+   add (it currently binds only `hv_vcpu_set_vtimer_mask`).
+
+Verification ladder: (a) the sealed T13 BDS/ExitBootServices path must still
+reach stage=11 under the userspace GIC (the firmware's `ArmGicV3Dxe`/`ArmTimerDxe`
+now run against the emulated GIC); (b) then the Windows path — the tick counter
+at `0x27fe8c0d8` should leave zero once the Boot Manager's timer ISR is delivered
+its INTID, and the spin at `0x27fe89534` should fall through and boot progress
+past `0x27fe8956x`. The `ram_dump` tool and the filtered boot-service trace stay
+the instruments for confirming forward progress.
+
+## ★ LANDMARK: the userspace GIC boots the guest past the timer wall
+
+The port was implemented and it works. The boot-live example now builds a
+`UserspaceGic` instead of `hv_gic` (`us_gic.rs`, `gic.rs`), routes GIC-window
+MMIO through it and serves `ICC_*` traps via `UserspaceGic::sysreg`, passes
+through the other EL1-trapped registers (PMU counters return a monotonic value),
+re-arms `CNTV_CVAL` to a future `mach_absolute_time()` deadline and drives the
+timer PPI (INTID 27) on every `HV_EXIT_REASON_VTIMER`, and asserts the vCPU IRQ
+line with `hv_vcpu_set_pending_interrupt` after each exit (`run_loop.rs`,
+`mmio.rs`).
+
+Results (live):
+
+- **Sealed T13 BDS/ExitBootServices still PASSES, stage=11** under the userspace
+  GIC — the firmware's own GIC/timer stack runs correctly against the emulated
+  controller.
+- **The Windows tick wall is broken.** The `0x27fe89534` spin on the frozen
+  counter is *gone*; the Boot Manager runs far past `0x27fe8956x` into new code
+  (terminal PC now `0x27ea28a0c`), executing for the whole watchdog window with
+  very few traps — i.e. real guest execution, not a trap loop. It progresses so
+  far it overwrites the low-memory boot-result record after StartImage, which the
+  report now handles by validating a snapshot captured the moment the handoff
+  first became valid and printing `boot_manager_advanced=true`.
+
+Two dead-ends resolved along the way, both by mirroring the shipping engine:
+non-GIC EL1 sysreg traps (PMU perf-counter reads for CPU-speed calibration) must
+be served rather than faulted; and the vtimer must be **re-armed to a future
+deadline** on each activation, otherwise HVF re-fires it immediately and the host
+spins servicing millions of vtimer exits while the guest never advances.
+
+The board now has a working interrupt controller, timer delivery, and an
+interrupt-driven guest that boots Windows deep past every prior wall. Full
+Windows boot (kernel handoff) is the next frontier; the terminal PC
+`0x27ea28a0c` and the `ram_dump` tool are the instruments to localize it.
+
+## Two more walls localized: a `brk` timing guard, then sustained-tick delivery
+
+**(1) Divide-by-zero timing guard (fixed, commit 2e8b1739).** The first thing the
+guest hit past the timer wall was a `brk #0xf004` at `0x27ea7d590`: it computes a
+divisor from `pmccntr_el0`-based timing and executes the break when the divisor
+rounds to zero, vectoring to a handler that dead-loops (`b .` at `0x27ea28a0c`).
+Cause: the crude sysreg passthrough returned garbage for `CNTFRQ_EL0` and a
+too-small counter delta, so cycles-per-time rounded to zero. Fixed by returning a
+real 24 MHz `CNTFRQ_EL0` and the host monotonic clock (`mach_absolute_time`) for
+timer/PMU counter reads. The `brk` is gone.
+
+**(2) Sustained tick delivery (open frontier).** Past the `brk`, the guest returns
+to the original tick-counter spin (`0x27fe89534`, waiting on `0x27fe8c0d8`), and
+that counter stays zero. Instrumenting the GIC shows why: the virtual timer fires
+**ten** times over 20s (the firmware's periodic `CNTV`, re-armed by the host each
+`EXIT_VTIMER`), the userspace GIC asserts the line every time (`enabled=true,
+line=true`), but the guest takes the interrupt **exactly once** — one `ICC_IAR1`
+ack of INTID 27, one `ICC_EOIR1`, active cleared — and then runs with **IRQs
+masked** (`cpsr` DAIF.I=1) while spinning on the counter. So the guest receives a
+single tick, masks interrupts, and waits for a counter that only an interrupt can
+advance. The next step is faithful sustained delivery — matching the shipping
+engine's full GIC/priority/EOI handling in `platform/apple/firmware_irq.rs`
+(device-IRQ-line snapshot, priority threshold, re-injection discipline) so the
+guest keeps taking ticks — and understanding the guest's mask/one-shot behavior
+so the tick counter advances to its target and the spin at `0x27fe89534` exits.
+
+Two facts narrow it further. First, the single INTID 27 ISR that *does* run does
+**not** increment `0x27fe8c0d8` (it stays zero), so that counter is driven by a
+different interrupt. Second, the guest has **all three architected timer PPIs
+enabled** — INTID 30 (physical), 29 (secure) and 27 (virtual) — so the Boot
+Manager arms the physical timer and drives its tick from the INTID 30 ISR, which
+the host never delivers (HVF surfaces only the virtual timer). But driving INTID
+30 from the same periodic signal (a `set_ppi` added to the userspace GIC,
+experiment reverted) did **not** advance the counter either: the guest still
+takes exactly one interrupt and then runs with IRQs masked. So the true blocker
+is the **one-shot delivery + the guest masking interrupts after the first tick**,
+not simply the missing INTID — the fix must make the guest keep taking timer
+interrupts (sustained delivery with correct priority/EOI/injection discipline,
+and likely a physical-timer emulation that fires INTID 30 on its own `CNTP`
+schedule rather than piggy-backing the virtual timer).
+
+Two further experiments narrow it decisively. **Sampling the guest `CPSR` at each
+of the ten vtimer fires shows `PSTATE.I = 1` (IRQs masked) every time** — the
+Boot Manager runs almost entirely with interrupts masked, opening only a brief
+window in which it took the single interrupt observed. And **driving INTID 30
+*exclusively* from the periodic signal (so it is not shadowed by the lower-INTID
+virtual PPI on acknowledge) still leaves `0x27fe8c0d8` at zero.** So the frozen
+counter is *not* advanced by the architected timer at all — neither INTID 27 nor
+INTID 30 touches it — which rules out the "missing physical-timer tick" theory
+for this specific counter. The remaining questions are therefore (a) what event
+actually writes `0x27fe8c0d8` (an ISR in a not-yet-dumped module, driven by some
+non-timer source), and (b) why the Boot Manager sits IRQ-masked for essentially
+the whole run — most plausibly it reached this masked spin down a path taken
+because some emulated value (a device register, or the calibrated timer period
+from the `mach_absolute_time` PMU reads) steered it wrong. Both are guest-side
+questions for the next focused pass, with the `ram_dump` tool (dump the exception
+vectors via `VBAR_EL1`, find the writer of `+0xd8`) as the instrument.
+
+## Decisive: the spin sits under the firmware's own exception vectors
+
+Reading the guest system registers at the boundary (`hv_vcpu_get_sys_reg`, a
+reverted diagnostic) settles where the spin lives: **`VBAR_EL1 = 0x27fe8b000`**,
+inside the *same* module as the tick spin (`0x27fe87000`, whose PE header, spin
+at `0x27fe89534`, and vector table are one image). The IRQ vector at
+`VBAR+0x280 = 0x27fe8b280` saves the full register frame, sets the
+exception-type index, and branches to a classic EDK2 `CommonCExceptionHandler`
+(`0x27fe8a808 → 0x27fe8a3e0`) that captures `ELR/SPSR/ESR/FAR_EL1` and the FP
+state — i.e. this is the **firmware's own ArmExceptionLib/CpuDxe**, still the
+active exception owner while the Boot Manager runs on top of boot services.
+
+So the spin at `0x27fe89534` is firmware/boot code, and the guest is stuck there
+with **IRQs masked at the CPU (`CPSR` DAIF.I = 1**, i.e. raised to
+`TPL_HIGH_LEVEL`, which EDK2 implements with `ArmDisableInterrupts`) while
+polling a memory word (`0x27fe8c0d8`) that only something *external* can change.
+An interrupt handler cannot advance it (interrupts are masked), so if it is
+timer/ISR-driven this is a genuine deadlock — which means the counter is most
+likely written by a **device via DMA** (a completion flag the guest polls at
+TPL_HIGH), and the missing piece is that BridgeVM device model not writing it.
+The next pass should identify which device operation precedes the spin (dump the
+Boot Manager's calls just before it raises TPL and enters `0x27fe89534`) and
+make that device's emulation post the completion word the guest polls.
+
+## Confirmed: the spin is a hard deadlock, not slow progress
+
+Extending the observation watchdog to 90 s leaves the guest pinned at the exact
+same PC (`0x27fe89568`, the pump inside the `0x27fe89534` wait) it holds at 20 s —
+zero forward motion over 70 extra seconds, and the boot-service trace ring comes
+back empty (the guest ran far enough to overwrite it, then stopped). So this is a
+genuine deadlock on `0x27fe8c0d8`, not a pacing problem. With the architected
+timer (INTID 27/30) and the PL011 TX-drain both ruled out, and static
+runtime-pointer chasing across RAM dumps hitting ASCII data rather than a clean
+sink object, the exact writer of `0x27fe8c0d8` cannot be resolved by static
+analysis alone. The next pass needs a **live guest debugger** (the KDCOM/PL011
+transport already built for the shipping engine, re-pointed at this board) to
+break on the counter's address and see which agent writes it — or a systematic
+device-write tracer that logs every guest-memory write near `0x27fe8c000`. That
+is the instrument gap; the location and the deadlock are fully pinned.
+
+## The write-watch cracks it: the counter is written once (to 0) and never again
+
+A page-write-watch (env-gated `BRIDGEVM_PC_WWATCH=<gpa>`; maps the counter's
+16 KB page read+exec via `hv_vm_protect` so writes trap, logs the writer's PC,
+then completes the store) settles the deadlock's cause. Over an entire run
+`0x27fe8c0d8` is written **exactly once — value 0, an 8-byte store from PC
+`0x10040d18c`** — and never changes afterward. So the spin at `0x27fe89534`,
+which waits for that word to differ from the value it snapshotted, waits forever
+because the word's updater never executes.
+
+The writer's PC sits in the low firmware image, in a **`pmccntr_el0`-based timing
+block** (`mrs x9, pmccntr_el0; sub x9,x9,base; udiv x9,x9,divisor; …` with a
+`brk #0xf004` divide-by-zero guard — the same shape as the earlier `0x27ea7d590`
+crash). So `0x27fe8c0d8` is a timing base/cached-time global, initialised to 0
+and meant to be refreshed by a timer/callback that never runs here (the guest
+sits IRQ-masked, and delivering INTID 27/30 did not refresh it). The remaining
+question is now sharply scoped: **find the code that is supposed to refresh this
+cached-time word and make it run** — either the guest's own periodic refresh
+(gated behind an interrupt the masked guest cannot take, so the fix is to make
+that path reachable) or a host-side counter the emulation must keep live. The
+`hv_vm_protect` write-watch is committed (inert unless `BRIDGEVM_PC_WWATCH` is
+set) as the instrument for the next pass.
+
+## Confirmed coherent-writer: a host poke of the counter does not release the spin
+
+Poking `0x27fe8c0d8` from the host with an ever-increasing value on every exit (a
+reverted experiment) does **not** release the spin — the guest keeps reading the
+cached `0`. So the word is meant to be refreshed by a **coherent same-CPU
+writer** (an interrupt handler / callback running on the guest vCPU), not by DMA
+or an outside agent, which matches earlier evidence that host RAM patches are
+defeated by the guest's caches. Combined with everything above, the root cause is
+now singular and precise: `0x27fe8c0d8` is a firmware cached-time word,
+initialised to 0, that a guest-side timer/refresh routine must update — and that
+routine never runs because the guest sits **IRQ-masked** at this point, so the
+interrupt that would drive the refresh is never taken. The remaining question is
+purely *why the guest is IRQ-masked here* (which TPL/critical section it entered
+and whether an emulated value steered it there), and making that refresh path
+reachable. The `hv_vm_protect` write-watch is the committed instrument for it.
+
+## Ruled out: masking is not the cause — the updater path is simply never reached
+
+Force-unmasking the guest (clearing `CPSR.I` on every exit, a reverted
+experiment; the guest genuinely runs with `I=0` afterward) does **not** release
+the spin: `0x27fe8c0d8` stays 0 and the PC stays at `0x27fe89568`. So the
+interrupt-masking hypothesis is wrong — even with IRQs enabled the mechanism that
+should refresh the word does not run. Combined with the write-watch (written once
+to 0, never again) and the architected-timer/host-poke rule-outs, the conclusion
+is that the updater is a **guest code path that is simply never executed** in this
+run: the guest reached the counter-*waiter* without ever running the
+counter-*updater*, most likely because an earlier operation took a different
+branch (an error/fallback path) and skipped it. The next step is therefore a
+**guest control-flow trace** from the ~60-call point up to the spin (single-step
+or a live debugger) to find where execution diverges from the updater path — not
+more interrupt/timer work, which is now exhausted as a cause. The `hv_vm_protect`
+write-watch and `ram_dump` remain the committed instruments.
+
+## Disk-independent: the same fixed-address module deadlocks for two Windows images
+
+Running a completely different Windows disk (`freshwin-venus-clean.raw`, an
+installed OS rather than the scripted install source) hangs at the **identical**
+PC `0x27fe89550`, same `esr`/`va`, same counter-wait module at the fixed base
+`0x27fe87000` — even though the loaded Boot Manager image base differs
+(`0x27ee70000` vs `0x27e9ef000`). Because the Boot Manager base varies with the
+image but the spinning module does not, that module is loaded at a **fixed
+address independent of the disk** (the firmware, or a boot library the firmware
+places), and the deadlock is a property of the **board environment**, not of any
+one Windows image. This rules out a disk-specific cause (a KD/debugger handshake
+or setup-only path) and confirms the spin is common firmware/boot-library code
+that both images drive. The remaining work is the guest control-flow trace to
+find why the counter-updater path is skipped in that common code.
+
+## Exit-trace: the guest is live in a bootmgfw PMCCNTR-timing loop, not a pure spin
+
+An exit-trace ring (env `BRIDGEVM_PC_XTRACE`, reverted) recording the PC of the
+last 160 host exits shows the terminal-PC snapshot was misleading: the guest is
+not sitting in the `0x27fe89534` counter-spin (which takes no exits) but is
+**live**, cycling between (a) bootmgfw at `0x27eb9ceb8` and (b) a generic MMIO
+write helper (`0x27fec81b4`, `str w1,[x0]; ret`) storing to `GICD+0x5008` and
+`GICD+0x500c`. `0x27eb9ceb8` is yet another `pmccntr_el0` timing block
+(`mrs pmccntr; smulh magic; asr #7; brk #0xf004 divide guard; sdiv` → a computed
+timestamp stored to a stack log record). So bootmgfw is in a **timing/telemetry
+loop** — repeatedly timestamping records with PMCCNTR and writing two adjacent
+GIC-distributor words — that never terminates. This reframes the wall a third
+time: not a dead spin, but a live bootmgfw loop whose exit condition is never met,
+and the pervasive `pmccntr_el0` use across every stuck site points squarely at
+the host PMCCNTR emulation (currently the raw host monotonic clock, whose deltas
+between two guest reads are dominated by real host/emulation wall-time rather
+than a plausible guest cycle count). Making PMCCNTR advance at a rate consistent
+with the guest's `CNTFRQ`-based expectation is the next concrete lever.
+
+## Correction: the timing narrative was wrong; Windows reaches LogonUI
+
+The final PMCCNTR conclusion above was also wrong. The exit trace recorded host
+trap boundaries, not all guest execution, and therefore could not establish that
+the timing loop was the blocking guest path. The write-watch was useful during
+localization, but its environment trigger and the later breakpoint/single-step
+instrumentation have been removed from the runner. Preserve the failed
+experiments above as the record; do not treat them as the current explanation.
+
+The actual sequence of board defects was found by continuing to read each new
+terminal state rather than extrapolating from the prior one:
+
+1. The firmware's variable-service aperture at `0x04000000..0x04010000` was not
+   registered as runtime MMIO in the DXE memory-space map. Windows therefore
+   reached `VariableRuntimeDxe` with an invalid runtime mapping and faulted.
+   `PlatformTablesDxe` now waits for the CPU architectural protocol and registers
+   that aperture as `EfiGcdMemoryTypeMemoryMappedIo` with UC, runtime and XP
+   attributes. A fresh source-image run no longer takes the former
+   VariableRuntimeDxe access violation; it reaches WinPE and requests PSCI
+   `SYSTEM_OFF` after the image's install script reports its expected harness
+   error (there is no second NVMe namespace to select as the target disk).
+2. The installed-image run then stopped on a 32-bit PCI MMIO access at
+   `0xffefc008`. The platform configuration had advertised HDA and four virtio
+   endpoints even though this runner had no runtime model for them. The PC board
+   inventory now exposes only the runtime-modelled NVMe and xHCI endpoints;
+   tests assert that the unmodelled endpoints return an absent vendor ID.
+3. NVMe/xHCI MSI-X messages are now drained into the userspace GIC, and EOI/DIR
+   of the virtual-timer PPI unmasks the HVF virtual timer. WFI/WFE resumes and
+   PSCI calls are handled by the live runner rather than misclassified as a
+   board crash.
+
+The decisive installed-image observation used fresh `cp -c` clones with
+separate disk and vars inodes under `pc-modeled-pcie.tCMf3k`. It ran for about
+73 seconds and stopped only at the configured 4,000,000-exit safety bound. The
+captured framebuffer visibly shows the Windows 11 sign-in UI for account
+`bridge` with the message that its sealed test-image password has expired and
+must be changed. Its hashes are:
+
+- BGRA: `7c75a5cd88bd79740039011b27bbd97ff1a8fa4f477da728d94f0e72906e2750`
+- PNG: `3b5217db2d2a6d1e1cd1ccc11501b422b5606d664857d6c402ca869cf7dbee3f`
+
+This is a **live single run** from an uncommitted development working tree based
+on `2303a14d2b4d171e5a862ed071d4e7768a561944`. It proves that this candidate
+firmware/board combination traversed firmware, Windows Boot Manager, kernel and
+LogonUI in that run. It does **not** satisfy any fixed-count release criterion,
+does not promote `product_state`, and does not close A9 or re-prove B4. Those
+claims require exact-commit receipts at their stated sample counts and green
+hosted CI.
+
+After removing the diagnostic write-watch, a local sealed-probe recheck was
+attempted twice. Both attempts stopped before any guest instruction because
+`hv_vm_create` returned host status `HV_DENIED (0xfae94007)`. This is neither a
+guest failure nor a pass; it supplies no live evidence for the cleaned tree.
+The focused Rust tests, example build and all deterministic checks other than
+the expected exact-head capability-freshness gate pass, but an exact-commit
+Studio run is still required.

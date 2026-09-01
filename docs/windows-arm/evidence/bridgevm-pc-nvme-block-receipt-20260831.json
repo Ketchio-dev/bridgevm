@@ -1,0 +1,23 @@
+{
+  "binary_hash": "ed23573689425cfe7f10cd64b34fad31de1b19799b4b51f2c44a27aa28a3b6e2",
+  "commit": "8f3dd9cce8e4cb6bdd9597b022e5000bca42b040",
+  "evidence_paths": [
+    "summary.tsv"
+  ],
+  "failures": 0,
+  "finished_at": "2026-08-31T05:09:27Z",
+  "gate_asset_hash": "5ccc1ce31e631312ba52408c0858c97f8fbec6a9f2b032ed84f1635984c79f5e",
+  "gate_id": "bridgevm-pc-standard-uefi-nvme-block-n20",
+  "host_hardware": "Mac17,9",
+  "host_os": "26.5",
+  "job_id": "20260831-010811-74407-18695",
+  "known_confounders": [],
+  "outcome": "completed",
+  "pass": true,
+  "passes": 20,
+  "required_run_count": 20,
+  "sample_count": 20,
+  "tested_commit": "8f3dd9cce8e4cb6bdd9597b022e5000bca42b040",
+  "tier": "t12-bridgevm-pc-nvme-block",
+  "vars_hash": "2d89d90e7b6337e1194211112bbcc83311d4d1ef3df9a38939f993c41dfdec55"
+}

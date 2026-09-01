@@ -13,15 +13,14 @@ Usage:
   redact-receipt.py --in receipt.json --out public.json
   redact-receipt.py --self-test
 """
-
 from __future__ import annotations
-
+import os
 import argparse
 import json
 import re
 import sys
+import tempfile
 from pathlib import Path
-
 # Fields safe to publish. Anything absent is dropped.
 ALLOWED_FIELDS = frozenset(
     {
@@ -83,10 +82,9 @@ ALLOWED_FIELDS = frozenset(
         "driver_hash",
         "image_hash",
         "vars_hash",
-        "binary_hash", "injector_sha256", "agent_sha256", "prepared_image_sha256", "prepared_vars_sha256", "injector_boot_observed", "f1_driver_load", "f2_resize", "f3_window_verbs", "f4_glyph_observation", "active_scanout_capture", "landed", "pointer_sample_count", "rendering_package_regressions", "p95_first_changed_ms", "baseline_iterations", "baseline_matches", "load_processes",
+        "binary_hash", "injector_sha256", "agent_sha256", "prepared_image_sha256", "prepared_vars_sha256", "injector_boot_observed", "f1_driver_load", "f2_resize", "f3_window_verbs", "f4_glyph_observation", "active_scanout_capture", "landed", "pointer_sample_count", "rendering_package_regressions", "p95_first_changed_ms", "baseline_iterations", "baseline_matches", "load_processes", "desktop_elapsed_ms", "smp_cpus", "ram_mib", "power_source", "config_sha256", "valid", "invalid_reason", "schema_version", "harness_commit", "binary_source_commit", "binary_profile", "binary_features", "rust_toolchain", "firmware_sha256", "renderer_sha256", "workload_profile", "power_source_start", "power_source_end", "power_log_sha256", "campaign_registry_sha256", "campaign_id", "campaign_mode", "campaign_role", "campaign_ordinal", "campaign_expected_runs", "workload_script_sha256", "raw_sha256", "result_sha256", "done_sha256", "warmup_sha256", "final_sha256", "nonce", "file_mib", "transfer_kib", "read_passes", "write_passes", "file_bytes", "transfer_bytes", "blocks_per_pass", "precondition_write_ops", "precondition_write_bytes", "warmup_read_ops", "warmup_read_bytes", "measured_read_ops", "measured_read_bytes", "measured_write_ops", "measured_write_bytes", "write_verify_read_ops", "read_result_count", "write_result_count", "final_verify_read_ops", "final_verify_read_bytes", "verified_read_ops", "flush_calls", "bytes_per_sector", "file_alignment_bytes", "required_alignment_bytes", "read_phase_elapsed_ns", "read_service_elapsed_ns", "write_phase_elapsed_ns", "write_and_flush_service_elapsed_ns", "read_phase_mib_per_sec", "read_service_mib_per_sec", "read_throughput_mib_s", "read_p50_ms", "read_p95_ms", "read_p99_ms", "read_max_ms", "write_durable_mib_per_sec", "write_and_flush_service_mib_per_sec", "write_durable_throughput_mib_s", "write_p50_ms", "write_p95_ms", "write_p99_ms", "write_max_ms", "flush_p50_ms", "flush_p95_ms", "flush_p99_ms", "flush_max_ms",
     }
 )
-
 # A value that looks like one of these is refused outright, even under an
 # allowed key: a hash field must carry a hash, not a path to the thing hashed.
 SECRET_VALUE_PATTERNS = (
@@ -97,18 +95,14 @@ SECRET_VALUE_PATTERNS = (
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     re.compile(r"(^|/)(Users|home)/[^/]+/", re.IGNORECASE),
 )
-
-
+SAFE_CONFOUNDER_VALUES = frozenset(("full clone integrity hash immediately precedes boot (warm cache)", "boot harness omits product vTPM, clipboard/share, and long-lived app session", "guest-unbuffered sequential I/O uses a host-warm backing image", "storage and desktop timing share one end-to-end live attempt", "a host power-source event monitor runs concurrently"))
 class RedactionError(ValueError):
     """A receipt carried a value that must never be published."""
-
 
 def _value_is_secret(value: object) -> bool:
     if not isinstance(value, str):
         return False
     return any(pattern.search(value) for pattern in SECRET_VALUE_PATTERNS)
-
-
 def redact(receipt: dict) -> dict:
     """Return the publishable subset of `receipt`.
 
@@ -127,17 +121,22 @@ def redact(receipt: dict) -> dict:
             raise RedactionError(f"field {key!r} carries a non-publishable value")
         if isinstance(value, list):
             for item in value:
-                if _value_is_secret(item):
+                if isinstance(item, (dict, list)):
+                    raise RedactionError(f"field {key!r} contains nested data")
+                if _value_is_secret(item) and not (key == "known_confounders" and item in SAFE_CONFOUNDER_VALUES):
                     raise RedactionError(f"field {key!r} carries a non-publishable value")
         if isinstance(value, dict):
             raise RedactionError(f"field {key!r} is nested; the allowlist is flat")
         public[key] = value
     return public
 
+def _write_new(path: Path, rendered: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("x", encoding="utf-8") as output:
+        output.write(rendered)
 
 def _self_test() -> int:
     checks = 0
-
     def check(condition: bool, description: str) -> None:
         nonlocal checks
         checks += 1
@@ -145,15 +144,24 @@ def _self_test() -> int:
             print(f"FAIL: {description}", file=sys.stderr)
             raise SystemExit(1)
 
+    def refuses(payload: object, description: str) -> None:
+        try:
+            redact(payload)  # type: ignore[arg-type]
+        except RedactionError:
+            check(True, description)
+        else:
+            check(False, description)
+
     out = redact({"probe": "hvf_vtimer_cancel", "iterations": 10000, "pass": True,
                   "baseline_matches": 20})
     check(out["probe"] == "hvf_vtimer_cancel", "an allowed string field is kept")
     check(out["iterations"] == 10000, "an allowed numeric field is kept")
     check(out["pass"] is True and out["baseline_matches"] == 20, "allowed result fields are kept")
-    hashes = redact({"ppsspp_payload_sha256": "ab" * 32,
-                     "ppsspp_executable_sha256": "cd" * 32})
-    check(len(hashes) == 2, "PPSSPP payload and executable identities are kept")
-
+    hashes = redact({"ppsspp_payload_sha256": "ab" * 32, "ppsspp_executable_sha256": "cd" * 32, "renderer_sha256": "34" * 32, "workload_script_sha256": "56" * 32,
+                     "firmware_sha256": "ef" * 32, "harness_commit": "1" * 40, "campaign_id": "2" * 32, "workload_profile": "shipping-core-3d-boot-v1"})
+    check(len(hashes) == 8, "artifact, harness, campaign, and workload identities are kept")
+    safe_confounders = list(SAFE_CONFOUNDER_VALUES)
+    check(redact({"known_confounders": safe_confounders})["known_confounders"] == safe_confounders, "fixed public confounders are kept")
     # Unknown fields are dropped rather than published.
     out = redact({"probe": "x", "disk_path": "/Users/me/win.qcow2"})
     check("disk_path" not in out, "an unknown field is dropped")
@@ -173,43 +181,32 @@ def _self_test() -> int:
         "-----BEGIN RSA PRIVATE KEY-----",
         "/Users/insighton/secret-notes",
     ):
-        try:
-            redact({"image_hash": bad})
-        except RedactionError:
-            checks += 1
-        else:
-            print(f"FAIL: {bad!r} should have been refused", file=sys.stderr)
-            raise SystemExit(1)
+        refuses({"image_hash": bad}, f"{bad!r} is refused")
 
     # A real hash under the same key is fine.
     out = redact({"image_hash": "sha256:" + "ab" * 32})
     check("image_hash" in out, "a genuine hash is publishable")
 
     # A list carrying a secret is refused, not silently trimmed.
-    try:
-        redact({"failures": ["ok", "/Users/me/win.vhdx"]})
-    except RedactionError:
-        checks += 1
-    else:
-        print("FAIL: a secret inside a list should be refused", file=sys.stderr)
-        raise SystemExit(1)
+    refuses({"known_confounders": ["ok", "/Users/me/win.vhdx"]}, "a secret inside a list is refused")
 
     # Nesting is refused because the allowlist cannot vouch for its contents.
-    try:
-        redact({"probe": "x", "outcome": {"nested": "value"}})
-    except RedactionError:
-        checks += 1
-    else:
-        print("FAIL: a nested object should be refused", file=sys.stderr)
-        raise SystemExit(1)
+    refuses({"probe": "x", "outcome": {"nested": "value"}}, "a nested object is refused")
+    for nested in ([{"nested": "value"}], [["nested"]]):
+        refuses({"evidence_paths": nested}, "a nested container inside a list is refused")
+    refuses([], "a non-object receipt is refused")
 
-    try:
-        redact([])  # type: ignore[arg-type]
-    except RedactionError:
-        checks += 1
-    else:
-        print("FAIL: a non-object receipt should be refused", file=sys.stderr)
-        raise SystemExit(1)
+    with tempfile.TemporaryDirectory(prefix="bridgevm-redactor-") as temporary:
+        victim = Path(temporary) / "victim"
+        linked = Path(temporary) / "public.json"
+        victim.write_text("do-not-overwrite", encoding="utf-8")
+        os.link(victim, linked)
+        try:
+            _write_new(linked, "replacement")
+        except FileExistsError:
+            check(victim.read_text(encoding="utf-8") == "do-not-overwrite", "an existing hardlink output is refused")
+        else:
+            check(False, "an existing hardlink output is refused")
 
     print(f"PASS: redact-receipt self-test ({checks} checks)")
     return 0
@@ -236,8 +233,11 @@ def main() -> int:
 
     rendered = json.dumps(public, indent=2, sort_keys=True) + "\n"
     if args.destination:
-        args.destination.parent.mkdir(parents=True, exist_ok=True)
-        args.destination.write_text(rendered)
+        try:
+            _write_new(args.destination, rendered)
+        except OSError as error:
+            print(f"refusing output {args.destination}: {error}", file=sys.stderr)
+            return 1
     else:
         sys.stdout.write(rendered)
     return 0

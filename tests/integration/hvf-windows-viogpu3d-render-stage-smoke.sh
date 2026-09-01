@@ -87,7 +87,7 @@ do
 done
 printf 'stale catalog must not be copied\n' > "$INPUT/viogpu3d.cat"
 printf 'stale certificate must not be copied\n' > "$INPUT/stale.cer"
-
+python3 tests/fixtures/create-windows-graphics-notice-fixture.py "$INPUT"
 (
   cd "$INPUT"
   for name in \
@@ -141,7 +141,7 @@ assert_file_contains "$OUT/README.txt" '.\finalize-viogpu3d-test-package.ps1' "s
 assert_file_contains "$OUT/README.txt" 'WDK supplies InfVerif and Inf2Cat' "stage readme"
 assert_file_contains "$OUT/README.txt" 'Windows SDK supplies SignTool' "stage readme"
 assert_file_contains "$OUT/README.txt" 'test_signing_required=true' "stage readme"
-assert_file_contains "$OUT/README.txt" 'not a Microsoft kernel-policy root' "stage readme"
+assert_file_contains "$OUT/package/BridgeVM-MODIFICATIONS.txt" 'general_preview_included=false' "staged notices"
 
 TEST_FINALIZER="$OUT/finalize-viogpu3d-test-package.ps1"
 assert_file_contains "$TEST_FINALIZER" 'New-SelfSignedCertificate' "Windows test finalizer"
@@ -154,14 +154,14 @@ assert_file_contains "$TEST_FINALIZER" '-TestSigning' "Windows test finalizer ex
 assert_file_contains "$TEST_FINALIZER" 'test_signing_required=true' "Windows test finalizer report contract"
 assert_file_contains "$TEST_FINALIZER" '@("-delstore", "Root", $certificate.Thumbprint)' "Windows test finalizer root cleanup"
 assert_file_contains "$TEST_FINALIZER" '@("-delstore", "TrustedPublisher", $certificate.Thumbprint)' "Windows test finalizer publisher cleanup"
-
 FINALIZER="$OUT/finalize-viogpu3d-package.ps1"
 assert_file_contains "$FINALIZER" 'Assert-PinnedInputManifest' "Windows finalizer"
 assert_file_contains "$FINALIZER" 'f8bc2e3bb097d1d8f9d461745dc6665b65bddf53cbb986dc57df1059f374b5e9' "Windows finalizer"
 assert_file_contains "$FINALIZER" 'InfVerif.exe' "Windows finalizer"
 assert_file_contains "$FINALIZER" 'Windows Kits\10\bin' "Windows finalizer"
 assert_file_contains "$FINALIZER" 'Windows Kits\10\Tools' "Windows finalizer"
-assert_file_contains "$FINALIZER" 'PROCESSOR_ARCHITEW6432' "Windows finalizer"
+assert_file_contains "$FINALIZER" 'package-windows-graphics-notices.py' "Windows finalizer notice gate"
+[[ -f "$OUT/windows_graphics_notice_git.py" ]] && python3 "$OUT/package-windows-graphics-notices.py" self-test >/dev/null || fail "staged notice gate/helper failed"
 assert_file_contains "$FINALIZER" 'supplies InfVerif/Inf2Cat' "Windows finalizer"
 assert_file_contains "$FINALIZER" 'Windows SDK supplies SignTool' "Windows finalizer"
 assert_file_contains "$FINALIZER" '[string]$Inf2CatOs = "auto"' "Windows finalizer Inf2Cat OS selection"

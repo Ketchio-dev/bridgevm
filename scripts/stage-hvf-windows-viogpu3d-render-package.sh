@@ -3,7 +3,6 @@
 # UMD-registered package. Windows WDK catalog generation and signing are a
 # separate, mandatory finalization step; stale signed metadata is never reused.
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROFILE="arehnman-arm64-minimal"
 INPUT_DIR="${INPUT_DIR:-}"
@@ -16,7 +15,6 @@ CANONICAL_INF="$ROOT/scripts/win-assets/viogpu3d-arehnman-arm64-minimal.inf"
 EXPECTED_CANONICAL_INF_SHA256="f8bc2e3bb097d1d8f9d461745dc6665b65bddf53cbb986dc57df1059f374b5e9"
 SOURCE_HEAD_OVERRIDE="${SOURCE_HEAD_OVERRIDE:-}"
 SOURCE_REPO="${SOURCE_REPO:-arehnman/kvm-guest-drivers-windows}"
-
 usage() {
   cat >&2 <<'EOF'
 usage: scripts/stage-hvf-windows-viogpu3d-render-package.sh \
@@ -49,23 +47,19 @@ finalize-viogpu3d-test-package.ps1 on an elevated disposable SDK/WDK machine, or
 finalize-viogpu3d-package.ps1 with a separately managed code-signing PFX.
 EOF
 }
-
 fail() {
   echo "FAIL: $*" >&2
   exit 1
 }
-
 sha256_file() {
   shasum -a 256 "$1" | awk '{print tolower($1)}'
 }
-
 read_bytes_dec() {
   local path="$1"
   local offset="$2"
   local count="$3"
   LC_ALL=C od -An -tu1 -j "$offset" -N "$count" "$path" 2>/dev/null
 }
-
 pe_arm64_gate() {
   local path="$1"
   local label="$2"
@@ -271,7 +265,6 @@ for name in "${required_files[@]:1}"; do
 done
 
 cp "$CANONICAL_INF" "$package_dir/viogpu3d.inf"
-
 input_manifest_sha256="$(sha256_file "$EXPECTED_INPUT_MANIFEST")"
 stage_id="arehnman-arm64-minimal-${input_manifest_sha256:0:16}"
 cat > "$package_dir/bridgevm-package-provenance.env" <<EOF
@@ -283,10 +276,14 @@ VIOGPU3D_PROTOCOL=virgl
 VIOGPU3D_PCI_DEVICE_ID=1050
 EOF
 
+python3 "$ROOT/scripts/package-windows-graphics-notices.py" stage \
+  --source "$INPUT_DIR" --output "$package_dir"
+
 cp "$ROOT/scripts/finalize-hvf-windows-viogpu3d-package.ps1" \
   "$tmp_dir/finalize-viogpu3d-package.ps1"
 cp "$ROOT/scripts/finalize-hvf-windows-viogpu3d-test-package.ps1" \
   "$tmp_dir/finalize-viogpu3d-test-package.ps1"
+"$ROOT/scripts/install-windows-graphics-notice-tools.sh" "$tmp_dir"
 
 {
   printf 'BridgeVM viogpu3d render-package stage\n'
@@ -353,6 +350,8 @@ default a managed PFX must already chain to a trusted kernel-policy root so
 SignTool /kp can verify it. Pass -TestSigning only for an explicitly test-mode
 package; that path verifies Authenticode and reports /kp as skipped, never passed.
 The unsigned package/ input is never modified.
+The package also retains the pinned driver licence, Mesa's per-file licence
+overview and complete licence archive, and the exact BridgeVM Mesa patches.
 
 Copy package-finalized/ back to the Mac, then require the repository gate:
 

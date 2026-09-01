@@ -7,3 +7,8 @@
 # no `git diff --stat` showed, and buried a 27-line change in a 269-line
 # whole-file rewrite. -text pins whatever each file already is.
 scripts/win-assets/** -text whitespace=cr-at-eol
+
+# Registry digests and cross-platform `git apply` consume checkout bytes.
+*.patch text eol=lf
+*.diff text eol=lf
+docs/licenses/** text eol=lf

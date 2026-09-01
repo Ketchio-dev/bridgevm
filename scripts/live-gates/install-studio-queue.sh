@@ -66,7 +66,7 @@ mkdir -p "$AGENTS" "$QUEUE_ROOT"/{queued,running,done} "$LOGDIR"
 chmod 700 "$QUEUE_ROOT"
 
 sed -e "s|__WORKER__|$WORKER|g" -e "s|__LOGDIR__|$LOGDIR|g" \
-    -e "s|__HOME__|$HOME|g" "$TEMPLATE" > "$PLIST"
+    -e "s|__HOME__|$HOME|g" -e "s|__USER__|$(id -un)|g" "$TEMPLATE" > "$PLIST"
 plutil -lint "$PLIST" >/dev/null || fail "generated plist is malformed"
 
 # Idempotent: unload an older revision before loading this one.

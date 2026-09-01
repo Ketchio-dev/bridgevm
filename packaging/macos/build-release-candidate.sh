@@ -259,7 +259,7 @@ run env \
 
 run install -d "$APP_LICENSES" "$HVF_LAB_LICENSES"
 run install -m 644 "$ROOT/LICENSE" "$APP_RESOURCES/LICENSE"
-run install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" "$APP_RESOURCES/THIRD-PARTY-NOTICES.md"
+run install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" "$ROOT/THIRD-PARTY-PATCHES.tsv" "$APP_RESOURCES"
 run python3 "$ROOT/scripts/generate-rust-dependency-inventory.py" \
   --output "$APP_LICENSES/rust-dependencies.tsv"
 run python3 "$ROOT/scripts/generate-rust-license-bundle.py" \
@@ -271,8 +271,7 @@ run "$ROOT/scripts/verify-rust-license-bundle.sh" \
   "$APP_LICENSES/rust-license-texts.txt"
 
 run install -m 644 "$ROOT/LICENSE" "$HVF_LAB_RESOURCES/LICENSE"
-run install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" \
-  "$HVF_LAB_RESOURCES/THIRD-PARTY-NOTICES.md"
+run install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" "$ROOT/THIRD-PARTY-PATCHES.tsv" "$HVF_LAB_RESOURCES"
 run install -m 644 "$ROOT/docs/licenses/virglrenderer-MIT.txt" \
   "$HVF_LAB_LICENSES/virglrenderer-MIT.txt"
 run install -m 644 "$ROOT/docs/licenses/libepoxy-MIT.txt" \

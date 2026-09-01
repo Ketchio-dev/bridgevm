@@ -11,12 +11,62 @@ change is opt-in; every behavioural change has a kill switch; `cargo test -p
 bridgevm-hvf` must stay green at every stage boundary.
 
 ## Measurement discipline (all stages)
-- 3 runs per config, report median. Record before/after in the commit message.
+- Freeze one primary user-visible metric before each change (for example
+  desktop READY time, click-to-visible p95, title frame-time p95, disk MiB/s or
+  idle host CPU). Mechanism counters such as exits/s, allocations/op and
+  readback bytes explain that metric; they never replace it.
+- Record an exact baseline identity: source SHA, release-binary SHA-256, host
+  model, macOS version, power mode, workload/configuration hash, and immutable
+  disk plus per-lane vars hashes. A result missing any applicable identity is
+  diagnostic only.
+- Calibrate noise with an A/A run before A/B work. Microbenchmarks warm caches,
+  collect at least 100 timed samples, retain outliers, and report estimate plus
+  95% confidence interval. A claimed improvement requires the complete change
+  interval to be beneficial and larger than the observed A/A noise interval.
+- Live A/B runs use the criterion's existing fixed sample count when one
+  exists; it is never reduced. New exploratory live metrics use at least three
+  interleaved runs per configuration for signal, but three runs alone do not
+  establish a product claim. Before and after are interleaved by repetition,
+  use independent disk-and-vars clones, and report every sample, p50, p95,
+  absolute delta, percentage delta and a paired 95% bootstrap interval.
+- Profile the shipping release path before editing it. Apple Time Profiler or
+  System Trace locates CPU/thread costs; explicit counters or signposts measure
+  execution frequency and duration because samples alone cannot establish how
+  often a function ran. Never benchmark a paraphrased replacement for the
+  shipped type.
+- GitHub-hosted runners prove deterministic correctness, not performance:
+  their machine assignment is not a stable A/B host. Numeric product evidence
+  is collected on the same quiet physical Mac with unchanged power policy; the
+  exact pushed SHA must still pass hosted CI and Security.
+- Keep a change only when its predeclared primary metric improves without a
+  correctness, security, capability, memory, CPU, latency-tail or throughput
+  regression elsewhere. If it does not, retain the failed measurement and
+  remove the optimization instead of changing the metric after the fact.
 - **Never measure with `BRIDGEVM_SMP_TRACE=1`** — its try_lock + 1ms-sleep loop
   (`examples/hvf_gic_boot_probe.rs` ~L460-497) fabricates lock latency.
 - Use `scripts/report-hvf-boot-timer-metrics.sh <evidence-dir>...` after the
   three-run matrix; it reads each `run.log` plus `preflight.txt` and emits
   per-run BOOT_TIMER rows and config-group medians.
+- For a source change comparison, first create an eight-row base manifest:
+  `image`, `vars`, `binary`, `renderer`, `binary_source_commit`, `binary_profile`,
+  `binary_features`, and `rust_toolchain`. Submit a predeclared alternating
+  counterbalanced AB/BA campaign with `scripts/submit-hvf-boot-performance-campaign.sh --mode AA
+  --pairs 4 --baseline-manifest BASE.tsv`, then use `--mode AB` with both
+  baseline and candidate manifests. The submitter seals one campaign ID,
+  ordinal, role and expected count into every attempt; omission, duplication,
+  grouping, overlap, failure, or an unknown identity invalidates the campaign.
+  Pin `--harness-sha` to the A/A harness for later A/B campaigns so a candidate
+  source commit changes the measured binary, not the measurement machinery.
+  Each job APFS-clones its own disk and vars, hashes the actual clones before
+  boot, verifies the linked VirGL renderer, and boots one 4-vCPU release sample
+  with the app's VirGL device `1050`, aggressive IOSurface lane, 100 ms display
+  export, xHCI, network and CoreAudio configuration. It requires agent READY
+  plus clean shutdown; the receipt states that vTPM, clipboard/share, and the
+  long-lived app session are omitted. Report with `scripts/report-hvf-boot-performance-ab.py
+  --queue-root ~/BridgeVM/live-queue --aa-campaign ID [--ab-campaign ID]`.
+  The A/B interval must be wholly beneficial and exceed the conservative A/A
+  noise bound. T15 remains exploratory and `claim_eligible=false`: three pairs
+  or a favorable point estimate never changes a product criterion.
 - Use `scripts/run-hvf-boot-timer-matrix.sh --target <raw> --vars <fd>
   --evidence-dir <fresh-dir> --release -- --daily --watchdog-ms 120000
   --virtio-net --enable-xhci --shutdown-after-agent-ready` to run the default
@@ -94,6 +144,83 @@ bridgevm-hvf` must stay green at every stage boundary.
   recording reuses retained line/field buffers and writes event names plus
   common/queue/fence/command detail fields directly into those buffers. Do NOT
   touch `record_command_trace`.
+
+  The 2026-09-01 host-socket readiness-filter experiment was **rejected**. A
+  sealed shipping-core A/A campaign of three pairs measured a 32.696% noise
+  bound; every second-in-pair sample was slower, exposing an unbalanced AB-only
+  ordering confounder. The subsequent three-pair A/B campaign measured baseline
+  READY samples of 27.887/21.852/25.199 s and candidate samples of
+  25.589/26.807/28.689 s. Its paired median change was +13.850% (slower), with a
+  95% interval of -8.240% to +22.675%, so `ab_exceeds_aa_noise=false` and
+  `claim_eligible=false`. The filter did reduce aggregate idle UDP/TCP host-read
+  retries by 98.529%, but that mechanism result did not replace the failed
+  user-visible metric; the candidate was reverted by `b52a3178`. The final
+  candidate sample also reported `socket_errors=3`. Reports and all attempts,
+  including the failed read-only-manifest submission, remain under
+  `/Users/user/BridgeVM-Workspace/lab/windows-gpu-and-vm-assets/performance/hvf-boot-20260901/`.
+  Campaign submission and reporting now counterbalance adjacent pair order as
+  AB, BA, AB, BA rather than assigning the second role to every even ordinal.
+
+  A valid four-pair counterbalanced A/A campaign at `799dcf34` subsequently
+  measured a paired-median 95% interval of -8.798% to +17.617%; its noise bound
+  is therefore 17.617%, not a performance result. A ten-pair recalibration was
+  sealed before selecting another candidate (campaign
+  `b930c0b3d0c074d4347c4bcd718fb154`). The following stop rule is fixed before
+  reading that result: all 20 runs must be valid, and the resulting A/A noise
+  bound must be below the candidate hot-path share. The next bounded candidate
+  is an environment-gated raw-NVMe mapped-copy read path that preserves the
+  existing `pread`, write, flush, and durability paths as fallbacks. The safe
+  profile attributed only about 2.54% of samples to the current direct-read
+  leaf, so an A/A noise bound at or above 2.54% stops this boot A/B; it does not
+  justify lowering the criterion. In that case the next prerequisite is a
+  sealed real Windows storage workload with throughput and latency-tail
+  metrics. The existing host smoke and in-process NVMe microbenchmarks may
+  filter an implementation but may not substitute for that workload.
+
+  The sealed ten-pair A/A completed 20/20 valid at constant binary, image,
+  vars, renderer, firmware, host, macOS, and AC-power identity. Its baseline
+  role measured p50 26.087 s and p95 28.354 s; its candidate role measured p50
+  23.346 s and p95 27.074 s. Because both roles used the same binary, that
+  apparent role difference is measurement variation, not an improvement. The
+  paired median was -3.427% with a bootstrap 95% interval of -16.260% to
+  +6.119%, giving a 16.260% A/A noise bound and `claim_eligible=false`. This is
+  above the predeclared 2.54% stop threshold, so no mapped-copy boot A/B is
+  permitted from this campaign. The preserved report is
+  `/Users/user/BridgeVM-Workspace/lab/windows-gpu-and-vm-assets/performance/hvf-boot-20260901/aa-counterbalanced-10pair-799dcf34-report.json`.
+
+  Before reading the result of the 2026-09-01 T16 Windows warm-sequential
+  storage A/A campaign (`cbacd53c634542839dd3e0152a3bf733`), the next
+  candidate and stop rule were frozen. The first candidate is a bounded PRP-list
+  prefix decoder: a page-aligned 128 KiB command needs 31 eight-byte PRP entries
+  (248 bytes), while the current decoder initializes and reads a 4 KiB list
+  page. The full-page-versus-prefix traffic ratio gives a deliberately generous
+  maximum primary read-throughput uplift of 2.94%. After A/A, one diagnostic
+  baseline run must measure the read-phase share attributable specifically to
+  PRP-list decode/read; if that share is `f`, the final candidate ceiling is
+  `min(2.94%, 100*f/(1-f))`. If the T16 A/A read-throughput noise bound is at or
+  above that ceiling, no implementation or A/B is permitted. The diagnostic
+  must count PRP-list calls, requested bytes, consumed entries and chained pages
+  against the sealed guest operation counts. Read p99 and the existing write
+  throughput, write p99, flush-max and desktop-elapsed guardrails remain binding;
+  no write, flush or desktop benefit is expected. A host microfilter can reject
+  the candidate but cannot replace the guest workload.
+
+  The first two submitted storage campaigns were retained as invalid evidence:
+  one was interrupted by the old worker's false-pass cleanup path and one
+  exposed CRLF guest-marker parsing. After those harness defects were fixed,
+  campaign `a40f06e9d0835f324f413371fed57d75` completed 20/20 valid runs as
+  ten counterbalanced A/A pairs under exact harness commit
+  `3ffb66b1608b1a69ad0d2dae579c9bb59f1aadba`. Both labels used identical
+  binary bytes. Baseline-label and candidate-label read-throughput medians were
+  555.565 and 542.926 MiB/s, respectively; that difference is variation, not an
+  improvement. The paired directional delta was +2.724%, with a bootstrap 95%
+  interval of -25.526% to +7.796%, so the primary A/A noise bound is 25.526%.
+  This exceeds the predeclared generous 2.94% candidate ceiling by about 8.7x.
+  The fixed rule therefore stops before the diagnostic, implementation and A/B;
+  no PRP-prefix performance claim is permitted from this campaign. The
+  fail-closed report has SHA-256
+  `f90684a99ccb05b3d5fd8d90e58aa0bfc031f151cf8007119ea4d76142a30204`
+  and remains outside git with the private live evidence.
 - **Stage 3 — DMA path** (HIGH impact, MEDIUM risk): code implemented and the
   final live matrix covers its current-path correctness; isolated before/after
   performance attribution remains pending. The

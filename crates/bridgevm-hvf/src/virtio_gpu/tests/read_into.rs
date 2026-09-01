@@ -1,4 +1,4 @@
-//! Regression for allocation-free virtio-gpu readable descriptor gathering.
+//! Fail-closed regressions for allocation-free readable descriptor gathering.
 
 use super::super::*;
 use crate::fwcfg::GuestMemoryMut;
@@ -51,39 +51,39 @@ impl GuestMemoryMut for ReadIntoOnlyMem {
     }
 }
 
+fn desc(addr: u64, flags: u16) -> Descriptor {
+    Descriptor {
+        addr,
+        len: 4,
+        flags,
+        next: 0,
+    }
+}
+
 #[test]
-fn gather_readable_uses_read_into_and_preserves_unbacked_skip_semantics() {
+fn unreadable_request_descriptor_clears_prefix_and_stops_before_suffix() {
     let mem = ReadIntoOnlyMem::new();
     let descs = [
-        Descriptor {
-            addr: FIRST_GPA,
-            len: 4,
-            flags: 0,
-            next: 0,
-        },
-        Descriptor {
-            addr: 0,
-            len: 64,
-            flags: DESC_F_WRITE,
-            next: 0,
-        },
-        Descriptor {
-            addr: MISSING_GPA,
-            len: 4,
-            flags: 0,
-            next: 0,
-        },
-        Descriptor {
-            addr: SECOND_GPA,
-            len: 4,
-            flags: 0,
-            next: 0,
-        },
+        desc(FIRST_GPA, 0),
+        desc(MISSING_GPA, 0),
+        desc(SECOND_GPA, 0),
+        desc(0, DESC_F_WRITE),
     ];
     let mut out = vec![0xff; 32];
-
     VirtioGpu::gather_readable_into(&mem, &descs, &mut out);
+    assert!(out.is_empty() && mem.read_into_calls.get() == 2);
+}
 
-    assert_eq!(out, b"headtail");
-    assert_eq!(mem.read_into_calls.get(), 3);
+#[test]
+fn readable_after_writable_clears_prefix_without_reading_any_suffix() {
+    let mem = ReadIntoOnlyMem::new();
+    let descs = [
+        desc(FIRST_GPA, 0),
+        desc(0, DESC_F_WRITE),
+        desc(MISSING_GPA, 0),
+        desc(SECOND_GPA, 0),
+    ];
+    let mut out = vec![0xff; 32];
+    VirtioGpu::gather_readable_into(&mem, &descs, &mut out);
+    assert!(out.is_empty() && mem.read_into_calls.get() == 1);
 }

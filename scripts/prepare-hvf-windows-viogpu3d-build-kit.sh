@@ -336,7 +336,7 @@ if (-not $SkipMesa) {
   if (-not (Test-Path -LiteralPath $MesaPrefixArm64 -PathType Container)) {
     throw "SkipMesa requires an existing MesaPrefixArm64: $MesaPrefixArm64"
   }
-  $MesaHead = "<external-prefix>"
+  $MesaHead = Checkout-PinnedGitRef -Path $MesaSrc -Repo $MesaRepo -Ref $MesaRef -Label "Mesa notices"
 }
 
 $TemplateInf = Join-Path $PSScriptRoot "viogpu3d-arehnman-arm64-minimal.inf"
@@ -367,28 +367,21 @@ VIOGPU3D_PROTOCOL=virgl
 VIOGPU3D_PCI_DEVICE_ID=1050
 "@ | Set-Content -Encoding ascii (Join-Path $OutputDir "bridgevm-package-provenance.env")
 
+$NoticePackager = Join-Path $PSScriptRoot "package-windows-graphics-notices.py"
+& python $NoticePackager assemble --mesa-source $MesaSrc --output $OutputDir
+if ($LASTEXITCODE -ne 0) { throw "Windows graphics notice assembly failed" }
+
 $PreFinalizationManifest = Join-Path `
   (Split-Path -Parent $OutputDir) `
   ((Split-Path -Leaf $OutputDir) + "-pre-finalization.sha256")
 if (Test-Path -LiteralPath $PreFinalizationManifest) {
   throw "Pre-finalization manifest already exists; use a clean WorkDir: $PreFinalizationManifest"
 }
-$ExpectedStageNames = @(
-  "bridgevm-package-provenance.env",
-  "viogpu3d.inf",
-  "viogpu3d.sys",
-  "libEGL_arm64.dll",
-  "libGLESv2_arm64.dll",
-  "opengl32_arm64.dll",
-  "viogpu_d3d10_arm64.dll",
-  "viogpu_wgl_arm64.dll"
-)
-$ManifestLines = @()
-foreach ($Name in @($ExpectedStageNames | Sort-Object)) {
-  $Path = Join-Path $OutputDir $Name
-  $Hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
-  $ManifestLines += "$Hash  $Name"
-}
+$ManifestLines = Get-ChildItem -LiteralPath $OutputDir -File |
+  Sort-Object Name | ForEach-Object {
+    $Hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$Hash  $($_.Name)"
+  }
 $ManifestLines | Set-Content -LiteralPath $PreFinalizationManifest -Encoding Ascii
 
 if ($CertificatePfx -ne "") {
@@ -430,6 +423,10 @@ already represented by the audited CI payload:
 
   driver 4c27e477e6560cea724d848b98149f03cb1f2083
   mesa   cb531c440ff34a9c6334859dda0848132be49ec3
+
+Every unsigned and finalized package carries the exact driver licence, Mesa's
+per-file licence overview and archive, both patches and their modification
+record. The notice verifier fails closed before Windows finalization.
 
 Run from a Visual Studio developer PowerShell:
 
@@ -557,22 +554,7 @@ fi
 
 write_powershell_builder "$OUT_DIR/build-viogpu3d-arm64.ps1"
 write_readme "$OUT_DIR/README.txt"
-cp "$ROOT/scripts/finalize-hvf-windows-viogpu3d-package.ps1" \
-  "$OUT_DIR/finalize-viogpu3d-package.ps1"
-cp "$ROOT/scripts/finalize-hvf-windows-viogpu3d-test-package.ps1" \
-  "$OUT_DIR/finalize-viogpu3d-test-package.ps1"
-cp "$ROOT/scripts/win-assets/viogpu3d-arehnman-arm64-minimal.inf" \
-  "$OUT_DIR/viogpu3d-arehnman-arm64-minimal.inf"
-cp "$ROOT/scripts/win-assets/build-mesa-arm64.ps1" \
-  "$OUT_DIR/build-mesa-arm64.ps1"
-cp "$ROOT/scripts/win-assets/mesa-cross-arm64.ini" \
-  "$OUT_DIR/mesa-cross-arm64.ini"
-cp "$ROOT/scripts/win-assets/run-submit-trace-build.cmd" \
-  "$OUT_DIR/run-submit-trace-build.cmd"
-cp "$ROOT/scripts/patches/virtio-win-mesa-unbound-clear.patch" \
-  "$OUT_DIR/virtio-win-mesa-unbound-clear.patch"
-cp "$ROOT/scripts/patches/virtio-win-mesa-submit-trace.patch" \
-  "$OUT_DIR/virtio-win-mesa-submit-trace.patch"
+"$ROOT/scripts/install-hvf-windows-viogpu3d-build-kit-assets.sh" "$OUT_DIR"
 
 REPORT="$OUT_DIR/source-report.txt"
 {

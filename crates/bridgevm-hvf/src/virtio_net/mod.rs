@@ -12,6 +12,7 @@ mod queue_pending;
 mod register_codec;
 mod snapshot;
 mod transport_regs;
+mod tx_gather;
 mod virtqueue;
 
 pub use backend::*;

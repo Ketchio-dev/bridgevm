@@ -17,6 +17,8 @@ use std::{
 // dedicated files like these rather than growing the legacy probe monolith
 // below. See docs/decisions/hvf-windows-engine-strategy.md and docs/reference/hvf-windows-platform-contract-gap.md.
 pub mod acpi;
+pub mod bridgevm_pc_boot_info;
+pub mod bridgevm_pc_gic;
 pub mod checkpoint;
 pub mod dtb;
 pub mod fwcfg;
@@ -32,6 +34,7 @@ pub mod pcie;
 pub mod pflash;
 pub mod pl011;
 pub mod pl031;
+pub mod platform_pc;
 pub mod platform_virt;
 pub mod psci;
 pub mod ramfb;
@@ -50,6 +53,7 @@ pub mod virtio_gpu_3d;
 pub mod virtio_gpu_3d_preflight;
 mod virtio_gpu_trace;
 pub mod virtio_net;
+mod virtio_queue;
 mod windows_arm_xhci_hid_boot_key_probe;
 pub mod xhci;
 

@@ -2,7 +2,6 @@
 
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
-use crate::guest_memory::append_guest_bytes_bounded;
 
 pub(crate) struct RxQueueDeliveryState<'a> {
     pub(crate) queues: &'a mut [VirtioConsoleQueue; QUEUE_COUNT],
@@ -132,29 +131,6 @@ impl VirtioConsole {
         Some(written)
     }
 
-    pub(crate) fn read_chain_into(
-        mem: &dyn GuestMemoryMut,
-        queue: &VirtioConsoleQueue,
-        head: u16,
-        descs: &mut Vec<Descriptor>,
-        out: &mut Vec<u8>,
-        max_len: usize,
-    ) -> bool {
-        out.clear();
-        if !Self::descriptor_chain_into(mem, queue, head, descs) {
-            return false;
-        }
-        for desc in descs.iter() {
-            if desc.flags & DESC_F_WRITE != 0 {
-                return false;
-            }
-            if !append_guest_bytes_bounded(mem, desc.addr, desc.len as usize, max_len, out) {
-                return false;
-            }
-        }
-        true
-    }
-
     pub(crate) fn scatter_write_partial_slices(
         mem: &mut dyn GuestMemoryMut,
         descs: &[Descriptor],
@@ -162,11 +138,11 @@ impl VirtioConsole {
         second: &[u8],
     ) -> Option<usize> {
         let bytes_len = first.len().checked_add(second.len())?;
+        if descs.iter().any(|desc| desc.flags & DESC_F_WRITE == 0) {
+            return None;
+        }
         let mut offset = 0usize;
         for desc in descs {
-            if desc.flags & DESC_F_WRITE == 0 {
-                return None;
-            }
             let mut desc_addr = desc.addr;
             let mut desc_remaining = desc.len as usize;
             while desc_remaining > 0 && offset < bytes_len {

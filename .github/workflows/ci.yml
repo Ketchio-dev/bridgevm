@@ -149,6 +149,25 @@ jobs:
       # Warnings are expected: macOS-only items are dead code on this target.
       - run: cargo check --workspace --target aarch64-unknown-linux-gnu --locked
 
+  windows-nvme-workload:
+    # The guest workload embeds C# compiled by Windows PowerShell. A hosted
+    # Windows compile catches language/PInvoke declaration drift without
+    # pretending to measure guest or Hypervisor.framework performance.
+    name: Windows NVMe workload compile
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: render and compile the sealed guest workload
+        shell: pwsh
+        run: |
+          $workload = Join-Path $env:RUNNER_TEMP 'bridgevm-nvme-workload.ps1'
+          $config = Join-Path $env:RUNNER_TEMP 'bridgevm-nvme-config.json'
+          python scripts/render-hvf-nvme-workload.py --output $workload --config-output $config --nonce 0123456789abcdef
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $workload -CompileOnly
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
   budgets:
     name: refactor budgets
     runs-on: ubuntu-latest
@@ -188,6 +207,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: capability checks have complete Git history
+        run: test "$(git rev-parse --is-shallow-repository)" = false
       - name: capability registry is valid and generated blocks are current
         run: python3 scripts/render-capability-status.py --check
       - name: general preview release contract is fail-closed
@@ -211,6 +234,8 @@ jobs:
         run: bash scripts/check-virgl-integer-attributes.sh
       - name: HVF Windows Coherence protocol
         run: bash scripts/check-hvf-windows-coherence-protocol.sh
+      - name: sealed Windows warm NVMe performance contracts
+        run: bash tests/integration/hvf-nvme-performance-tier-smoke.sh
       - name: the gate scripts themselves are free of the enforced defect classes
         run: bash scripts/check-shell-scripts.sh
       - name: every tracked Python script compiles

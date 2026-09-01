@@ -88,6 +88,22 @@ docs/archive/STATUS-before-20260722.md	historical-evidence	documentation-history
 docs/windows-arm/capability-matrix.md	current	windows-hvf-engine	-
 docs/windows-arm/graphics-compatibility.md	current	windows-graphics	GOAL.md
 docs/machine-contract/qemu-virt.md	current	windows-architecture	-
+docs/machine-contract/bridgevm-virtual-arm-pc-v1.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-gic-irq-live-20260830.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-boot-info-live-20260830.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-reset-vector-live-20260830.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-sec-live-20260830.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-hob-live-20260830.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-dxe-dispatch-live-20260830.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-platform-tables-live-20260830.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-runtime-dxe-live-20260830.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-pcie-ecam-live-20260830.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-firmware-pcie-ecam-live-20260830.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-standard-uefi-pci-live-20260830.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-nvme-bar-live-20260831.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-nvme-block-live-20260831.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-bds-exit-live-20260831.md	current	windows-architecture	-
 docs/reference/bridgevm-virt-platform.md	reference	windows-platform	-
 docs/testing/apple-silicon-live-gates.md	current	development-process	-
 docs/windows-arm/smccc-trng-psci-contract.md	current	windows-hvf-engine	-
@@ -106,3 +122,4 @@ docs/windows-arm/evidence/a1-p1-boot-gate-10of10-20260810.md	current	windows-gra
 docs/windows-arm/evidence/a3-d3d11-title-fps-3of3-20260812.md	current	windows-graphics	GOAL.md
 HANDOFF.md	historical-evidence	project-status	STATUS.md
 docs/windows-arm/evidence/windows-1.0-closure-f1-f4-20260820.md	current	windows-graphics	GOAL.md
+docs/history/windows-hvf/pc-board-startimage-localization-20260831.md	historical-evidence	windows-pc-board	-

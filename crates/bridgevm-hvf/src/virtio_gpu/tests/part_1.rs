@@ -505,11 +505,10 @@ fn get_edid_returns_checksum_valid_base_block() {
 }
 
 #[test]
-fn gather_readable_skips_writable_and_unbacked_descriptors() {
+fn gather_readable_accepts_request_prefix_before_writable_descriptors() {
     let mut mem = TestMem::new(0x4000_0000, 0x20000);
     mem.write(0x4000_1000, b"head");
-    mem.write(0x4000_2000, b"skip");
-    mem.write(0x4000_3000, b"tail");
+    mem.write(0x4000_2000, b"tail");
 
     let mut gathered = Vec::new();
     VirtioGpu::gather_readable_into(
@@ -524,19 +523,13 @@ fn gather_readable_skips_writable_and_unbacked_descriptors() {
             Descriptor {
                 addr: 0x4000_2000,
                 len: 4,
-                flags: DESC_F_WRITE,
-                next: 0,
-            },
-            Descriptor {
-                addr: 0x3fff_ff00,
-                len: 4,
                 flags: 0,
                 next: 0,
             },
             Descriptor {
                 addr: 0x4000_3000,
                 len: 4,
-                flags: 0,
+                flags: DESC_F_WRITE,
                 next: 0,
             },
         ],

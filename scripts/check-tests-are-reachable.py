@@ -32,8 +32,10 @@ TEST_FN = re.compile(r"#\[test\]\s*\n\s*(?:async\s+)?fn\s+(\w+)", re.M)
 # built outside this repository, so they are optional.
 SUITES = [
     (["test", "--workspace", "--locked"], True),
-    (["test", "-p", "bridgevm-hvf", "--example", "hvf_gic_boot_probe", "--locked"], True),
-    (["test", "-p", "bridgevm-hvf", "--example", "hvf_vtimer_cancel_probe", "--locked"], True),
+    *[
+        (["test", "-p", "bridgevm-hvf", "--example", example, "--locked"], True)
+        for example in ("hvf_gic_boot_probe", "hvf_vtimer_cancel_probe", "bridgevm_pc_irq_live", "bridgevm_pc_boot_info_live", "bridgevm_pc_reset_vector_live", "bridgevm_pc_dxe_entry_live", "bridgevm_pc_pcie_live", "bridgevm_pc_boot_live")
+    ],
     (["test", "-p", "bridgevm-hvf", "--features", "venus", "--lib", "--locked"], False),
     (
         ["test", "-p", "bridgevm-hvf", "--features", "venus", "--example",
@@ -45,10 +47,7 @@ SUITES = [
 # The loom models need RUSTFLAGS="--cfg loom" and a release build, which would
 # make this gate minutes slower. check-loom.sh already fails when they compile
 # to nothing, which is exactly the condition this gate looks for.
-EXEMPT = {
-    "crates/bridgevm-hvf/tests/loom_psci.rs",
-    "crates/bridgevm-hvf/tests/loom_reset_generation.rs",
-}
+EXEMPT = {"crates/bridgevm-hvf/tests/loom_psci.rs", "crates/bridgevm-hvf/tests/loom_reset_generation.rs"}
 
 
 def listed_tests(args: list[str]) -> set[str]:
