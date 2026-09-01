@@ -97,8 +97,7 @@ SECRET_VALUE_PATTERNS = (
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     re.compile(r"(^|/)(Users|home)/[^/]+/", re.IGNORECASE),
 )
-
-
+SAFE_CONFOUNDER_VALUES = frozenset(("full clone integrity hash immediately precedes boot (warm cache)", "boot harness omits product vTPM, clipboard/share, and long-lived app session"))
 class RedactionError(ValueError):
     """A receipt carried a value that must never be published."""
 
@@ -107,8 +106,6 @@ def _value_is_secret(value: object) -> bool:
     if not isinstance(value, str):
         return False
     return any(pattern.search(value) for pattern in SECRET_VALUE_PATTERNS)
-
-
 def redact(receipt: dict) -> dict:
     """Return the publishable subset of `receipt`.
 
@@ -127,7 +124,7 @@ def redact(receipt: dict) -> dict:
             raise RedactionError(f"field {key!r} carries a non-publishable value")
         if isinstance(value, list):
             for item in value:
-                if _value_is_secret(item):
+                if _value_is_secret(item) and not (key == "known_confounders" and item in SAFE_CONFOUNDER_VALUES):
                     raise RedactionError(f"field {key!r} carries a non-publishable value")
         if isinstance(value, dict):
             raise RedactionError(f"field {key!r} is nested; the allowlist is flat")
@@ -153,7 +150,8 @@ def _self_test() -> int:
     hashes = redact({"ppsspp_payload_sha256": "ab" * 32, "ppsspp_executable_sha256": "cd" * 32, "renderer_sha256": "34" * 32,
                      "firmware_sha256": "ef" * 32, "harness_commit": "1" * 40, "campaign_id": "2" * 32, "workload_profile": "shipping-core-3d-boot-v1"})
     check(len(hashes) == 7, "artifact, harness, campaign, and workload identities are kept")
-
+    safe_confounders = list(SAFE_CONFOUNDER_VALUES)
+    check(redact({"known_confounders": safe_confounders})["known_confounders"] == safe_confounders, "fixed public confounders are kept")
     # Unknown fields are dropped rather than published.
     out = redact({"probe": "x", "disk_path": "/Users/me/win.qcow2"})
     check("disk_path" not in out, "an unknown field is dropped")
@@ -187,7 +185,7 @@ def _self_test() -> int:
 
     # A list carrying a secret is refused, not silently trimmed.
     try:
-        redact({"failures": ["ok", "/Users/me/win.vhdx"]})
+        redact({"known_confounders": ["ok", "/Users/me/win.vhdx"]})
     except RedactionError:
         checks += 1
     else:
