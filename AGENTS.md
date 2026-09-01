@@ -89,24 +89,35 @@ New files are registered at their actual size.
 - Remove all temporary instrumentation before ending a session.
 - `GOAL.md`, `PLAN.md` and `HANDOFF.md` are operator-owned and are not staged.
 
-## 9. Long tests run asynchronously
+## 9. Long tests use the correct execution venue
 
-- **Do not wait in the foreground for anything expected to exceed 120 seconds.**
-  Submit it to the Studio local queue and record the job id.
+- Local deterministic developer checks, including `scripts/check-project.sh`,
+  may run in the foreground for up to **300 seconds**. This local result does
+  not replace the required GitHub-hosted CI result for a pushed SHA.
+- If a deterministic check is expected to exceed 300 seconds, run it on
+  GitHub-hosted Actions and record the run id. **Never submit an ordinary
+  deterministic check to the physical-Mac live queue merely because it is
+  slow.**
+- The physical-Mac live queue (historically called the Studio queue) is
+  reserved for live work that genuinely requires a physical Apple-silicon
+  Mac, bare-metal Hypervisor.framework, WindowServer/CGL, private Windows
+  media or a real GPU. Record its job id.
 - `sleep 6000`, long `while ps; sleep` loops and multi-hour synchronous tool
   calls are prohibited.
 - Poll hosted CI for at most 180 seconds, then record the run id and read it on
   a later turn.
-- A submitted job seals its commit, binary, image and vars hashes, so later
-  edits cannot change what it measured.
+- A submitted live-hardware job seals its commit, binary, image and vars
+  hashes, so later edits cannot change what it measured.
 - Fast tiers filter candidates. Only the release tier produces shipping
   evidence.
 
 ## 10. CI boundary
 
 - Everything deterministic runs on **GitHub-hosted** Actions.
-- Only work needing bare-metal Hypervisor.framework, WindowServer/CGL, private
-  Windows media or a real GPU runs on the local Studio queue.
+- Only work needing a physical Apple-silicon Mac, bare-metal
+  Hypervisor.framework, WindowServer/CGL, private Windows media or a real GPU
+  runs on the physical-Mac live queue. The particular Mac that drains this
+  queue is test infrastructure, not a product runtime or build dependency.
 - **No self-hosted runner is attached to this public repository.** A workflow
   reachable from a fork must never execute on a personal machine.
 - Moving an ordinary check off hosted CI to hide a failure is forbidden.
