@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# One sealed release boot sample for interleaved A/A and A/B campaigns.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -89,6 +88,7 @@ POWER_SOURCE="$(pmset -g batt | sed -n "s/^Now drawing from '\(.*\)'/\1/p")"
 mkdir -p "$OUT/media" "$OUT/boot"
 INVALID_REASON="apfs-clone-failed"
 cp -c "$TARGET" "$OUT/media/target.raw" && cp -c "$VARS" "$OUT/media/vars.fd" || exit 1
+chmod u+rw "$OUT/media/target.raw" "$OUT/media/vars.fd"
 {
   printf 'source_commit=%s\n' "$(git -C "$REPO" rev-parse HEAD)"
   printf 'binary_sha256=%s\nimage_sha256=%s\nvars_sha256=%s\n' "$BINARY_HASH" "$IMAGE_HASH" "$VARS_HASH"
