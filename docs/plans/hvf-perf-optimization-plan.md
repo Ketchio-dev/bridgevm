@@ -160,6 +160,22 @@ bridgevm-hvf` must stay green at every stage boundary.
   `/Users/user/BridgeVM-Workspace/lab/windows-gpu-and-vm-assets/performance/hvf-boot-20260901/`.
   Campaign submission and reporting now counterbalance adjacent pair order as
   AB, BA, AB, BA rather than assigning the second role to every even ordinal.
+
+  A valid four-pair counterbalanced A/A campaign at `799dcf34` subsequently
+  measured a paired-median 95% interval of -8.798% to +17.617%; its noise bound
+  is therefore 17.617%, not a performance result. A ten-pair recalibration was
+  sealed before selecting another candidate (campaign
+  `b930c0b3d0c074d4347c4bcd718fb154`). The following stop rule is fixed before
+  reading that result: all 20 runs must be valid, and the resulting A/A noise
+  bound must be below the candidate hot-path share. The next bounded candidate
+  is an environment-gated raw-NVMe mapped-copy read path that preserves the
+  existing `pread`, write, flush, and durability paths as fallbacks. The safe
+  profile attributed only about 2.54% of samples to the current direct-read
+  leaf, so an A/A noise bound at or above 2.54% stops this boot A/B; it does not
+  justify lowering the criterion. In that case the next prerequisite is a
+  sealed real Windows storage workload with throughput and latency-tail
+  metrics. The existing host smoke and in-process NVMe microbenchmarks may
+  filter an implementation but may not substitute for that workload.
 - **Stage 3 — DMA path** (HIGH impact, MEDIUM risk): code implemented and the
   final live matrix covers its current-path correctness; isolated before/after
   performance attribution remains pending. The
