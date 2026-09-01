@@ -4,7 +4,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd -P)"
 RENDER="$REPO/scripts/render-hvf-nvme-workload.py"
 MANIFEST="$REPO/scripts/live-gates/hvf-nvme-performance-manifest.sh"
-RUNNER="$REPO/scripts/live-gates/run-hvf-nvme-performance-tier.sh"
+RUNNER="$REPO/scripts/live-gates/run-hvf-nvme-performance-tier.sh"; RUNTIME="$REPO/scripts/live-gates/hvf-nvme-performance-runtime.sh"
 SUBMIT="$REPO/scripts/submit-hvf-nvme-performance-campaign.sh"
 WRITER="$REPO/scripts/write-hvf-nvme-performance-receipt.py"
 REPORT="$REPO/scripts/hvf_nvme_performance_report.py"
@@ -17,6 +17,7 @@ bash "$MANIFEST" self-test | grep -q PASS
 python3 "$WRITER" --self-test | grep -q PASS
 python3 "$REPORT" --self-test | grep -q PASS
 python3 "$REPO/scripts/live-gates/redact-receipt.py" --self-test | grep -q PASS
+source "$RUNTIME"; nvme_perf_runtime_self_test "$TEMPORARY/runtime"
 head="$(git -C "$REPO" rev-parse HEAD)"
 for key in image vars firmware renderer; do printf 'fixture-%s\n' "$key" > "$TEMPORARY/$key"; done
 printf 'baseline-binary\n' > "$TEMPORARY/binary-a"; printf 'candidate-binary\n' > "$TEMPORARY/binary-b"
@@ -67,8 +68,7 @@ awk -F '\t' -v p="$TEMPORARY/fake.ps1" -v h="$(seal "$TEMPORARY/fake.ps1")" \
   'BEGIN{OFS="\t"} $1=="workload_script"{$2=p;$3=h} {print}' "$lane" > "$TEMPORARY/fake.tsv"
 ! "$RUNNER" --out "$TEMPORARY/bad-out" --input-manifest "$TEMPORARY/fake.tsv" \
   --sealed-binary "$TEMPORARY/binary-a" --validate-only >/dev/null 2>&1
-grep -Fq 'BRIDGEVM_LIVE_ROOT="$QUEUE_ROOT" "$CLI" submit t16-hvf-nvme-performance' "$SUBMIT"
-grep -Fq -- '--job-id "$expected_job"' "$SUBMIT"
+grep -Fq 'BRIDGEVM_LIVE_ROOT="$QUEUE_ROOT" "$CLI" submit t16-hvf-nvme-performance' "$SUBMIT" && grep -Fq -- '--job-id "$expected_job"' "$SUBMIT"
 grep -Fq 'campaign-registry.tsv' "$SUBMIT" "$REPORT"
 grep -Fq 't16-hvf-nvme-performance' "$REPO/scripts/live-gates/bridgevm-live" "$REPO/scripts/live-gates/bridgevm-live-worker.sh" "$REPO/scripts/live-gates/run-tier.sh"
 echo "PASS: sealed T16 Windows warm NVMe performance contracts"

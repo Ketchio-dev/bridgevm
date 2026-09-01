@@ -1313,13 +1313,14 @@ scripts/live-gates/recover-stale-jobs.sh	42	0
 scripts/live-gates/install-studio-queue.sh	84	0
 scripts/live-gates/hvf-boot-performance-manifest.sh	64	0
 scripts/live-gates/hvf-nvme-performance-manifest.sh	158	0
+scripts/live-gates/hvf-nvme-performance-runtime.sh	67	0
 scripts/live-gates/pointer-input-manifest.sh	38	0
 scripts/live-gates/run-bridgevm-pc-pci-tier.sh	79	0
 scripts/live-gates/run-bridgevm-pc-nvme-bar-tier.sh	81	0
 scripts/live-gates/run-bridgevm-pc-nvme-block-tier.sh	84	0
 scripts/live-gates/run-pointer-reliability-tier.sh	61	0
 scripts/live-gates/run-hvf-boot-performance-tier.sh	120	0
-scripts/live-gates/run-hvf-nvme-performance-tier.sh	220	0
+scripts/live-gates/run-hvf-nvme-performance-tier.sh	182	0
 scripts/live-gates/write-hvf-boot-performance-receipt.py	83	0
 scripts/write-hvf-nvme-performance-receipt.py	598	0
 scripts/live-gates/run-special-tier.sh	19	0

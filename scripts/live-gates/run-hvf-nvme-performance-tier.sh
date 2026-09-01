@@ -21,16 +21,7 @@ mkdir -p "$OUT"
 
 seal() { openssl dgst -sha256 -r "$1" 2>/dev/null | cut -d' ' -f1 | tr -d '\n'; }
 power_source() { command -v pmset >/dev/null && pmset -g batt | sed -n "s/^Now drawing from '\(.*\)'/\1/p" || true; }
-wait_log() {
-  local pattern="$1" count="$2" timeout="$3" deadline=$((SECONDS + timeout)) observed
-  while (( SECONDS < deadline )); do
-    observed="$(grep -Ec "$pattern" "$BOOT/run.log" 2>/dev/null || true)"
-    [[ "$observed" =~ ^[0-9]+$ ]] && (( observed >= count )) && return 0
-    [[ -z "${VM_PID:-}" ]] || kill -0 "$VM_PID" 2>/dev/null || return 1
-    sleep 1
-  done
-  return 1
-}
+source "$REPO/scripts/live-gates/hvf-nvme-performance-runtime.sh"
 send_ok() {
   local command="$1" before
   before="$(grep -c '^BVAGENT END ' "$BOOT/run.log" 2>/dev/null || true)"
@@ -54,35 +45,6 @@ export NVME_PERF_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" NVME_PERF_DESKTOP_E
 POWER_LOG="$OUT/power-source.log"; : > "$POWER_LOG"
 export NVME_PERF_POWER_LOG_HASH="$(seal "$POWER_LOG")"
 INVALID_REASON=failed-before-receipt; RECEIPT_WRITTEN=0; VM_PID=""; POWER_MONITOR_PID=""; RENDERER=""; BOOT="$OUT/boot"
-
-stop_power_monitor() {
-  if [[ -n "$POWER_MONITOR_PID" ]] && kill -0 "$POWER_MONITOR_PID" 2>/dev/null; then kill "$POWER_MONITOR_PID" 2>/dev/null || true; wait "$POWER_MONITOR_PID" 2>/dev/null || true; fi
-  POWER_MONITOR_PID=""; NVME_PERF_POWER_LOG_HASH="$(seal "$POWER_LOG")"; export NVME_PERF_POWER_LOG_HASH
-}
-
-write_failed_receipt() {
-  local reason="$1" public_reason
-  case "$reason" in
-    workload-result-timeout) public_reason=workload-timeout ;;
-    agent-service-timeout) public_reason=guest-unreachable ;;
-    power-source-changed-or-unknown) public_reason=power-source-invalid ;;
-    power-monitor-*) public_reason=power-source-invalid ;;
-    workload-*) public_reason=workload-failed ;;
-    boot-wrapper-*|vm-exited-before-result) public_reason=worker-interrupted ;;
-    *) public_reason=artifact-invalid ;;
-  esac
-  NVME_PERF_POWER_SOURCE_END="$(power_source)"; [[ -n "$NVME_PERF_POWER_SOURCE_END" ]] || NVME_PERF_POWER_SOURCE_END=unknown
-  stop_power_monitor; export NVME_PERF_POWER_SOURCE_END
-  python3 "$WRITER" --failed-reason "$public_reason" --output "$OUT/receipt.json"
-  RECEIPT_WRITTEN=1
-}
-on_exit() {
-  local status="$?"
-  if [[ -n "$VM_PID" ]] && kill -0 "$VM_PID" 2>/dev/null; then kill "$VM_PID" 2>/dev/null || true; wait "$VM_PID" 2>/dev/null || true; fi
-  stop_power_monitor
-  [[ "$RECEIPT_WRITTEN" == 1 || "$VALIDATE_ONLY" == 1 ]] || write_failed_receipt "$INVALID_REASON" || true
-  return "$status"
-}
 trap on_exit EXIT
 
 INVALID_REASON=sealed-input-mismatch
