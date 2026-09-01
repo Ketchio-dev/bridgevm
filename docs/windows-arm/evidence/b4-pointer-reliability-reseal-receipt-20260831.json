@@ -1,0 +1,21 @@
+{
+  "commit": "772a587c08c17df6c8a99acd0b7db4df25e2d5c1",
+  "criterion": "B4",
+  "driver_store_hash": "838fcbe165dbdae0f18fa1cf21b156b0114f49f1041b2df367541413b00aa9f1",
+  "finished_at": "2026-09-01T02:45:25Z",
+  "gate_id": "b4-pointer-click-reliability",
+  "host_model": "Mac17,9",
+  "image_sha256": "5cec12c7fd7f5ec32e3a284c59ce28d827f0a932709854831d1da119021d90df",
+  "input_manifest_sha256": "75caf98b80b95b8e5a7a31f6ed845dcbeaaa409ab7aa2013d1c4f32b84323c5a",
+  "job_id": "20260831-215850-85969-24095",
+  "landed": "20/20",
+  "macos_version": "26.5",
+  "outcome": "completed",
+  "p95_first_changed_ms": "227",
+  "pass": true,
+  "pointer_sample_count": 20,
+  "rendering_package_regressions": 0,
+  "sample_count": 20,
+  "tier": "t8-pointer-reliability",
+  "vars_sha256": "bec224d27c8681d2db69583e933e2d99b6fa5265d91d37373cb7a2c8b71853cd"
+}

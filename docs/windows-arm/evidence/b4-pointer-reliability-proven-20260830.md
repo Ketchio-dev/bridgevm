@@ -1,5 +1,46 @@
 # B4: fixed 20-lane pointer gate passes 20/20 (2026-08-30)
 
+## Exact tested-head re-seal after the modeled runtime changes (2026-08-31)
+
+Studio t8 job `20260831-215850-85969-24095` repeated the unchanged fixed N=20
+gate at exact tested code head
+`772a587c08c17df6c8a99acd0b7db4df25e2d5c1`. All 20 independent disk-and-vars
+lanes landed, every lane recorded guest press and release with `stuck=0`, and
+every lane produced a visible active-IOSurface change. The terminal summary
+was:
+
+```text
+landed 20/20 rendering_package_regressions=0 required_pointer_samples=20 p95_first_changed_ms=227 (limit 250)
+B4 pointer reliability: PASS
+```
+
+The checked-in
+[`re-seal receipt`](b4-pointer-reliability-reseal-receipt-20260831.json) has
+SHA-256 `f58c714aba7f3de2148715df5d95125912366cab886de7f165ae7c6e9bbeac52`.
+It seals the same input-manifest and driver-tree identities as the 2026-08-30
+proof: respectively
+`75caf98b80b95b8e5a7a31f6ed845dcbeaaa409ab7aa2013d1c4f32b84323c5a`
+and `838fcbe165dbdae0f18fa1cf21b156b0114f49f1041b2df367541413b00aa9f1`.
+
+This re-seal followed a retained failed job,
+`20260831-213053-63870-3179`, which completed only 19 pointer samples. Lane 2
+failed before click injection because guest display mode application returned
+`DISP_CHANGE_FAILED (-1)`. The terminal summary incorrectly reported zero
+rendering/package regressions because cleanup moved `case-failure.class` under
+`generation-0` while the parser still looked only at the lane root. That
+classification bug did not turn the gate into a pass: the fixed-N shortfall
+already made the job fail, and the failed receipt remains retained.
+
+The mode helper now passes a supported DEVMODE obtained from
+[`EnumDisplaySettings`](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enumdisplaysettingsa)
+to
+[`ChangeDisplaySettingsExW`](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-changedisplaysettingsexw),
+with bounded retries. Job `20260831-214200-72569-31140` then passed 20/20 with
+p95 236 ms at the mode-fix commit. The exact tested-head job above repeated
+the full sample after the receipt parser learned the real post-cleanup failure
+location. No threshold, fixed sample count, renderer exclusion rule or latency
+calculation changed.
+
 ## Result
 
 Studio tier `t8-pointer-reliability` job
