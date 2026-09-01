@@ -197,6 +197,9 @@ jobs:
       # The installer's malicious-input and rollback gate needs codesign, so it
       # runs here rather than in the Linux truth job.
       - run: bash tests/integration/install-verify-smoke.sh
+      # The T17 contract signs and verifies a synthetic app bundle as part of
+      # its fail-closed checks, so it also requires the hosted macOS toolchain.
+      - run: bash tests/integration/windows-product-e2e-contract-smoke.sh
 
   truth:
     # Keeps the capability registry, the generated claim blocks and the
@@ -234,8 +237,6 @@ jobs:
         run: bash scripts/check-virgl-integer-attributes.sh
       - name: HVF Windows Coherence protocol
         run: bash scripts/check-hvf-windows-coherence-protocol.sh
-      - name: Windows product E2E contracts are fail-closed
-        run: bash tests/integration/windows-product-e2e-contract-smoke.sh
       - name: sealed Windows warm NVMe performance contracts
         run: bash tests/integration/hvf-nvme-performance-tier-smoke.sh
       - name: the gate scripts themselves are free of the enforced defect classes
