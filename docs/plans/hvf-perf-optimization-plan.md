@@ -11,7 +11,37 @@ change is opt-in; every behavioural change has a kill switch; `cargo test -p
 bridgevm-hvf` must stay green at every stage boundary.
 
 ## Measurement discipline (all stages)
-- 3 runs per config, report median. Record before/after in the commit message.
+- Freeze one primary user-visible metric before each change (for example
+  desktop READY time, click-to-visible p95, title frame-time p95, disk MiB/s or
+  idle host CPU). Mechanism counters such as exits/s, allocations/op and
+  readback bytes explain that metric; they never replace it.
+- Record an exact baseline identity: source SHA, release-binary SHA-256, host
+  model, macOS version, power mode, workload/configuration hash, and immutable
+  disk plus per-lane vars hashes. A result missing any applicable identity is
+  diagnostic only.
+- Calibrate noise with an A/A run before A/B work. Microbenchmarks warm caches,
+  collect at least 100 timed samples, retain outliers, and report estimate plus
+  95% confidence interval. A claimed improvement requires the complete change
+  interval to be beneficial and larger than the observed A/A noise interval.
+- Live A/B runs use the criterion's existing fixed sample count when one
+  exists; it is never reduced. New exploratory live metrics use at least three
+  interleaved runs per configuration for signal, but three runs alone do not
+  establish a product claim. Before and after are interleaved by repetition,
+  use independent disk-and-vars clones, and report every sample, p50, p95,
+  absolute delta, percentage delta and a paired 95% bootstrap interval.
+- Profile the shipping release path before editing it. Apple Time Profiler or
+  System Trace locates CPU/thread costs; explicit counters or signposts measure
+  execution frequency and duration because samples alone cannot establish how
+  often a function ran. Never benchmark a paraphrased replacement for the
+  shipped type.
+- GitHub-hosted runners prove deterministic correctness, not performance:
+  their machine assignment is not a stable A/B host. Numeric product evidence
+  is collected on the same quiet physical Mac with unchanged power policy; the
+  exact pushed SHA must still pass hosted CI and Security.
+- Keep a change only when its predeclared primary metric improves without a
+  correctness, security, capability, memory, CPU, latency-tail or throughput
+  regression elsewhere. If it does not, retain the failed measurement and
+  remove the optimization instead of changing the metric after the fact.
 - **Never measure with `BRIDGEVM_SMP_TRACE=1`** — its try_lock + 1ms-sleep loop
   (`examples/hvf_gic_boot_probe.rs` ~L460-497) fabricates lock latency.
 - Use `scripts/report-hvf-boot-timer-metrics.sh <evidence-dir>...` after the
