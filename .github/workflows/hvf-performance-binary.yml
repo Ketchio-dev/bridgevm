@@ -17,11 +17,13 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     env:
-      BRIDGEVM_3D_DIR: ${{ runner.temp }}/bridgevm-3d
-      BRIDGEVM_VENUS_PREFIX: ${{ runner.temp }}/bridgevm-3d/prefix
       CANONICAL_RENDERER: /Users/user/BridgeVM/3d/prefix/lib/libvirglrenderer.1.dylib
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure renderer paths
+        run: |
+          echo "BRIDGEVM_3D_DIR=$RUNNER_TEMP/bridgevm-3d" >> "$GITHUB_ENV"
+          echo "BRIDGEVM_VENUS_PREFIX=$RUNNER_TEMP/bridgevm-3d/prefix" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: 1.97.0
