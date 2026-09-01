@@ -48,7 +48,7 @@ verify_runtime() {
     echo 'catalog verifier retains a non-app-local libcrypto dependency' >&2
     exit 1
   }
-  if otool -L "$HELPER" | grep -E '/Users/|/opt/homebrew/|/usr/local/' >/dev/null; then
+  if otool -L "$HELPER" | awk 'NR > 1 { print $1 }' | grep -E '/Users/|/opt/homebrew/|/usr/local/' >/dev/null; then
     echo 'catalog verifier retains a development-host dependency path' >&2
     exit 1
   fi
