@@ -47,15 +47,21 @@ bridgevm-hvf` must stay green at every stage boundary.
 - Use `scripts/report-hvf-boot-timer-metrics.sh <evidence-dir>...` after the
   three-run matrix; it reads each `run.log` plus `preflight.txt` and emits
   per-run BOOT_TIMER rows and config-group medians.
-- For a source change comparison, submit alternating
-  `t15-hvf-boot-performance` jobs with a three-row sealed manifest (`image`,
-  `vars`, `binary`). Each job APFS-clones its own disk and vars, boots one
-  4-vCPU release sample, requires agent READY plus clean shutdown, and records
-  the exact binary/config/host/power identity. Pair the resulting job
-  directories with `scripts/report-hvf-boot-performance-ab.py --pair A B`.
-  The tier is diagnostic: fewer samples or a favorable point estimate never
-  changes a product criterion, and an A/B claim still has to exceed the prior
-  A/A noise interval.
+- For a source change comparison, first create a seven-row base manifest:
+  `image`, `vars`, `binary`, `binary_source_commit`, `binary_profile`,
+  `binary_features`, and `rust_toolchain`. Submit a predeclared alternating
+  campaign with `scripts/submit-hvf-boot-performance-campaign.sh --mode AA
+  --pairs 3 --baseline-manifest BASE.tsv`, then use `--mode AB` with both
+  baseline and candidate manifests. The submitter seals one campaign ID,
+  ordinal, role and expected count into every attempt; omission, duplication,
+  grouping, overlap, failure, or an unknown identity invalidates the campaign.
+  Each job APFS-clones its own disk and vars, hashes the actual clones before
+  boot, boots one 4-vCPU release sample, and requires agent READY plus clean
+  shutdown. Report with `scripts/report-hvf-boot-performance-ab.py
+  --queue-root ~/BridgeVM/live-queue --aa-campaign ID [--ab-campaign ID]`.
+  The A/B interval must be wholly beneficial and exceed the conservative A/A
+  noise bound. T15 remains exploratory and `claim_eligible=false`: three pairs
+  or a favorable point estimate never changes a product criterion.
 - Use `scripts/run-hvf-boot-timer-matrix.sh --target <raw> --vars <fd>
   --evidence-dir <fresh-dir> --release -- --daily --watchdog-ms 120000
   --virtio-net --enable-xhci --shutdown-after-agent-ready` to run the default

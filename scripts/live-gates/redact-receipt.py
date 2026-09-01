@@ -83,7 +83,7 @@ ALLOWED_FIELDS = frozenset(
         "driver_hash",
         "image_hash",
         "vars_hash",
-        "binary_hash", "injector_sha256", "agent_sha256", "prepared_image_sha256", "prepared_vars_sha256", "injector_boot_observed", "f1_driver_load", "f2_resize", "f3_window_verbs", "f4_glyph_observation", "active_scanout_capture", "landed", "pointer_sample_count", "rendering_package_regressions", "p95_first_changed_ms", "baseline_iterations", "baseline_matches", "load_processes", "desktop_elapsed_ms", "smp_cpus", "ram_mib", "power_source", "config_sha256", "valid", "invalid_reason",
+        "binary_hash", "injector_sha256", "agent_sha256", "prepared_image_sha256", "prepared_vars_sha256", "injector_boot_observed", "f1_driver_load", "f2_resize", "f3_window_verbs", "f4_glyph_observation", "active_scanout_capture", "landed", "pointer_sample_count", "rendering_package_regressions", "p95_first_changed_ms", "baseline_iterations", "baseline_matches", "load_processes", "desktop_elapsed_ms", "smp_cpus", "ram_mib", "power_source", "config_sha256", "valid", "invalid_reason", "schema_version", "harness_commit", "binary_source_commit", "binary_profile", "binary_features", "rust_toolchain", "firmware_sha256", "power_source_start", "power_source_end", "campaign_id", "campaign_mode", "campaign_role", "campaign_ordinal", "campaign_expected_runs",
     }
 )
 
@@ -150,9 +150,9 @@ def _self_test() -> int:
     check(out["probe"] == "hvf_vtimer_cancel", "an allowed string field is kept")
     check(out["iterations"] == 10000, "an allowed numeric field is kept")
     check(out["pass"] is True and out["baseline_matches"] == 20, "allowed result fields are kept")
-    hashes = redact({"ppsspp_payload_sha256": "ab" * 32,
-                     "ppsspp_executable_sha256": "cd" * 32})
-    check(len(hashes) == 2, "PPSSPP payload and executable identities are kept")
+    hashes = redact({"ppsspp_payload_sha256": "ab" * 32, "ppsspp_executable_sha256": "cd" * 32,
+                     "firmware_sha256": "ef" * 32, "harness_commit": "1" * 40, "campaign_id": "2" * 32})
+    check(len(hashes) == 5, "artifact, harness, and campaign identities are kept")
 
     # Unknown fields are dropped rather than published.
     out = redact({"probe": "x", "disk_path": "/Users/me/win.qcow2"})

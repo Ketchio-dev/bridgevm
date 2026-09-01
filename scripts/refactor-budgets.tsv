@@ -1311,12 +1311,14 @@ scripts/find-hvf-windows-viogpu3d-packages.sh	210	0
 scripts/live-gates/bridgevm-live-worker.sh	180	0
 scripts/live-gates/recover-stale-jobs.sh	42	0
 scripts/live-gates/install-studio-queue.sh	84	0
+scripts/live-gates/hvf-boot-performance-manifest.sh	64	0
 scripts/live-gates/pointer-input-manifest.sh	38	0
 scripts/live-gates/run-bridgevm-pc-pci-tier.sh	79	0
 scripts/live-gates/run-bridgevm-pc-nvme-bar-tier.sh	81	0
 scripts/live-gates/run-bridgevm-pc-nvme-block-tier.sh	84	0
 scripts/live-gates/run-pointer-reliability-tier.sh	61	0
 scripts/live-gates/run-hvf-boot-performance-tier.sh	120	0
+scripts/live-gates/write-hvf-boot-performance-receipt.py	83	0
 scripts/live-gates/run-special-tier.sh	19	0
 scripts/live-gates/run-tier.sh	158	0
 scripts/measure-pointer-latency.sh	60	0
@@ -1328,6 +1330,8 @@ scripts/prepare-vz-ubuntu-arm64-boot-artifacts.sh	708	0
 scripts/prepare-vz-ubuntu-cloudimg-fixture.sh	461	0
 scripts/report-hvf-boot-timer-metrics.sh	417	0
 scripts/report-hvf-boot-performance-ab.py	110	0
+scripts/hvf_boot_performance_report.py	513	0
+scripts/submit-hvf-boot-performance-campaign.sh	67	0
 scripts/run-hvf-boot-timer-matrix.sh	355	0
 scripts/run-hvf-linux-venus.sh	334	0
 scripts/run-hvf-vtimer-cancel-gate.sh	94	0
