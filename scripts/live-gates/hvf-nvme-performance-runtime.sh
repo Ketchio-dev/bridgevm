@@ -5,7 +5,7 @@ wait_log() {
   local pattern count timeout deadline observed
   pattern="$1"; count="$2"; timeout="$3"; deadline=$((SECONDS + timeout))
   while (( SECONDS < deadline )); do
-    observed="$(grep -Ec "$pattern" "$BOOT/run.log" 2>/dev/null || true)"
+    observed="$(tr '\r' '\n' < "$BOOT/run.log" 2>/dev/null | grep -Ec "$pattern" || true)"
     [[ "$observed" =~ ^[0-9]+$ ]] && (( observed >= count )) && return 0
     [[ -z "${VM_PID:-}" ]] || kill -0 "$VM_PID" 2>/dev/null || return 1
     sleep 1
@@ -44,7 +44,7 @@ write_failed_receipt() {
   esac
   NVME_PERF_POWER_SOURCE_END="$(power_source)"; [[ -n "$NVME_PERF_POWER_SOURCE_END" ]] || NVME_PERF_POWER_SOURCE_END=unknown
   stop_power_monitor; export NVME_PERF_POWER_SOURCE_END
-  python3 "$WRITER" --failed-reason "$public_reason" --output "$OUT/receipt.json"
+  python3 "$WRITER" --failed-reason "$public_reason" --output "$OUT/receipt.json" || return 1
   RECEIPT_WRITTEN=1
 }
 
@@ -59,7 +59,7 @@ on_exit() {
 
 nvme_perf_runtime_self_test() {
   local root="$1"
-  mkdir -p "$root/boot"; printf 'READY\n' > "$root/boot/run.log"
+  mkdir -p "$root/boot"; printf 'READY\r\n' > "$root/boot/run.log"
   ( BOOT="$root/boot"; VM_PID=""; wait_log '^READY$' 1 1; ! wait_log '^MISSING$' 1 1 )
   ! ( RECEIPT_WRITTEN=0; VALIDATE_ONLY=0; INVALID_REASON=self-test; VM_PID=""; POWER_MONITOR_PID="";
       terminate_vm() { :; }; stop_power_monitor() { :; }; write_failed_receipt() { RECEIPT_WRITTEN=1; };
