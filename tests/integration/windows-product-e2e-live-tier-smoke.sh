@@ -10,7 +10,6 @@ PUBLISH="$ROOT/scripts/live-gates/publish-receipt.sh"
 COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 checks=0
 check() { local message="$1"; shift; "$@" || { echo "FAIL: $message" >&2; exit 1; }; checks=$((checks + 1)); }
-
 python3 - "$ROOT" <<'PY'
 import importlib.util, json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
@@ -21,7 +20,6 @@ assert schema["additionalProperties"] is False
 assert set(schema["required"]) == set(schema["properties"]) == set(verify.REQUIRED_FIELDS)
 PY
 checks=$((checks + 1))
-
 missing_manifest="$TMP/missing-app.tsv"; missing_app="$TMP/Missing.app"
 printf 'campaign_mode\tpilot\n' > "$missing_manifest"
 printf 'app_bundle\t%s\t%064d\n' "$missing_app" 0 >> "$missing_manifest"
@@ -37,7 +35,6 @@ printf 'guest_payload_manifest\t%s/missing-guest-payload.tsv\t%064d\n' "$TMP" 0 
 missing_out="$TMP/missing-out"
 check "missing app blocks rather than inventing a run" bash -c '! "$1" --out "$2" --input-manifest "$3" --job-id missing-app >/dev/null 2>&1' _ "$TIER" "$missing_out" "$missing_manifest"
 check "missing app leaves a valid explicit blocker" bash -c '"$1" "$2" --expected-commit "$3" >/dev/null && grep -q '"'"'"failure_code": "missing-app-artifact"'"'"' "$2" && grep -q '"'"'"run_count": 0'"'"' "$2"' _ "$VERIFY" "$missing_out/receipt.json" "$COMMIT"
-
 APP="$TMP/BridgeVMControl.app"; RES="$APP/Contents/Resources"; MACOS="$APP/Contents/MacOS"
 mkdir -p "$MACOS" "$RES/target/release" "$RES/firmware" "$RES/BridgeVMControl_BridgeVMControl.bundle"
 printf '#!/bin/sh\nexit 0\n' > "$MACOS/BridgeVMControl"
@@ -62,7 +59,6 @@ codesign --force --deep --sign - "$APP" >/dev/null
 printf 'private Windows ISO fixture\n' > "$TMP/windows.iso"
 GUEST_PAYLOAD="$TMP/guest-payload"; GUEST_PAYLOAD_MANIFEST="$TMP/guest-payload.tsv"
 mkdir "$GUEST_PAYLOAD"; printf guest > "$GUEST_PAYLOAD/agent.bin"; printf 'agent.bin\tfixture\n' > "$GUEST_PAYLOAD_MANIFEST"
-
 write_manifest() {
   python3 - "$ROOT" "$APP" "$1" "$2" "$3" "$GUEST_PAYLOAD" "$GUEST_PAYLOAD_MANIFEST" <<'PY'
 import importlib.util, pathlib, sys
@@ -143,7 +139,11 @@ stale_root="$TMP/stale-queue"; stale="$stale_root/running/stale-t17"; mkdir -p "
 check "stale T17 without its sealed worktree never gets publicly redacted" "$ROOT/scripts/live-gates/recover-stale-jobs.sh" "$ROOT" "$stale_root" "$TMP/stale-work"
 check "stale T17 is retained as interrupted with its receipt withheld" bash -c 'test -f "$1/done/stale-t17/receipt.json" && test ! -e "$1/done/stale-t17/receipt.public.json" && grep -q '"'"'^receipt=withheld-no-sealed-worktree$'"'"' "$1/done/stale-t17/result.env"' _ "$stale_root"
 
-queue_root="$TMP/queue"; queued_id="t17-submit-fixture"
-check "queue accepts T17 only as a sealed-manifest tier without a fake binary" bash -c 'test "$(BRIDGEVM_LIVE_ROOT="$1" "$2" submit t17-windows-hvf-product-e2e --sha "$3" --input-manifest "$4" --job-id "$5")" = "$5" && test -f "$1/queued/$5/input-manifest.tsv" && test ! -e "$1/queued/$5/hvf_gic_boot_probe" && grep -Eq '"'"'^input_manifest_sha256=[0-9a-f]{64}$'"'"' "$1/queued/$5/job.env"' _ "$queue_root" "$ROOT/scripts/live-gates/bridgevm-live" "$COMMIT" "$noresult_manifest" "$queued_id"
-check "worker publication failure changes the job status to failure" grep -Fq 'status=1' "$ROOT/scripts/live-gates/bridgevm-live-worker.sh"
+queue_root="$TMP/queue"; queued_id="t17-worker-fixture"; worker="$ROOT/scripts/live-gates/bridgevm-live-worker.sh"
+check "queue accepts T17 only as a sealed-manifest tier without a fake binary" bash -c 'test "$(BRIDGEVM_LIVE_ROOT="$1" "$2" submit t17-windows-hvf-product-e2e --sha "$3" --input-manifest "$4" --job-id "$5")" = "$5" && test -f "$1/queued/$5/input-manifest.tsv" && test ! -e "$1/queued/$5/hvf_gic_boot_probe" && grep -Eq '"'"'^input_manifest_sha256=[0-9a-f]{64}$'"'"' "$1/queued/$5/job.env"' _ "$queue_root" "$ROOT/scripts/live-gates/bridgevm-live" "$COMMIT" "$missing_manifest" "$queued_id"
+check "resident worker derives manifest handoff from the sealed job envelope" env BRIDGEVM_REPO="$ROOT" BRIDGEVM_LIVE_ROOT="$queue_root" BRIDGEVM_LIVE_WORK="$TMP/worker-work" BRIDGEVM_LIVE_MIN_FREE_GIB=0 "$worker"
+check "sealed worktree reaches the T17 missing-app preflight receipt" bash -c '"$1" "$2/done/$3/receipt.public.json" --expected-commit "$4" >/dev/null && grep -q '"'"'"failure_code": "missing-app-artifact"'"'"' "$2/done/$3/receipt.json" && grep -q '"'"'"run_count": 0'"'"' "$2/done/$3/receipt.json" && grep -q '"'"'^exit_code=1$'"'"' "$2/done/$3/result.env"' _ "$VERIFY" "$queue_root" "$queued_id" "$COMMIT"
+tampered_id=t17-worker-tampered; check "a post-submit manifest mutation is staged" bash -c 'test "$(BRIDGEVM_LIVE_ROOT="$1" "$2" submit t17-windows-hvf-product-e2e --sha "$3" --input-manifest "$4" --job-id "$5")" = "$5" && printf tampered >> "$1/queued/$5/input-manifest.tsv"' _ "$queue_root" "$ROOT/scripts/live-gates/bridgevm-live" "$COMMIT" "$missing_manifest" "$tampered_id"
+check "worker fails closed on a sealed file/hash mismatch" bash -c 'BRIDGEVM_REPO="$1" BRIDGEVM_LIVE_ROOT="$2" BRIDGEVM_LIVE_WORK="$3" BRIDGEVM_LIVE_MIN_FREE_GIB=0 "$4" >/dev/null && grep -q '"'"'^result=refused-sealed-input$'"'"' "$2/done/$5/result.env" && test ! -e "$3/$5"' _ "$ROOT" "$queue_root" "$TMP/worker-work" "$worker" "$tampered_id"
+check "worker publication failure changes the job status to failure" grep -Fq 'status=1' "$worker"
 echo "PASS: Windows product E2E live-tier contracts ($checks checks)"

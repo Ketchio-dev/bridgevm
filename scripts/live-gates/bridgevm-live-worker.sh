@@ -71,28 +71,28 @@ run_job() {
         return 1
     fi
 
-    local tier_args=()
-    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ] || [ "$tier" = t15-hvf-boot-performance ] || [ "$tier" = t16-hvf-nvme-performance ] || [ "$tier" = t17-windows-hvf-product-e2e ]; then
-        local manifest="$dir/input-manifest.tsv" sealed_binary="$dir/hvf_gic_boot_probe"
-        local expected_manifest actual_manifest expected_binary actual_binary
-        expected_manifest="$(awk -F= '$1=="input_manifest_sha256"{print $2}' "$dir/job.env")"
-        actual_manifest="$(shasum -a 256 "$manifest" 2>/dev/null | cut -d' ' -f1 || true)"
-        if [ -z "$expected_manifest" ] || [ "$actual_manifest" != "$expected_manifest" ]; then
+    # t14-bridgevm-pc-windows-start and future tiers are routed by seals, not names.
+    local tier_args=() manifest="$dir/input-manifest.tsv" sealed_binary="$dir/hvf_gic_boot_probe"
+    local expected_manifest actual_manifest expected_binary actual_binary
+    expected_manifest="$(awk -F= '$1=="input_manifest_sha256"{print $2}' "$dir/job.env")"
+    expected_binary="$(awk -F= '$1=="sealed_binary_sha256"{print $2}' "$dir/job.env")"
+    if [ -n "$expected_manifest" ] || [ -e "$manifest" ] || [ -L "$manifest" ]; then
+        actual_manifest=""; if [[ -f "$manifest" && ! -L "$manifest" ]]; then actual_manifest="$(shasum -a 256 "$manifest" 2>/dev/null | cut -d' ' -f1 || true)"; fi
+        if [[ ! "$expected_manifest" =~ ^[0-9a-f]{64}$ ]] || [ "$actual_manifest" != "$expected_manifest" ]; then
             log "job $job_id manifest is missing or changed after submission"
             printf 'result=refused-sealed-input\n' > "$dir/result.env"
             return 1
         fi
         tier_args=(--input-manifest "$manifest")
-        if [ "$tier" != t8-pointer-reliability ] && [ "$tier" != t14-bridgevm-pc-windows-start ] && [ "$tier" != t17-windows-hvf-product-e2e ]; then
-            expected_binary="$(awk -F= '$1=="sealed_binary_sha256"{print $2}' "$dir/job.env")"
-            actual_binary="$(shasum -a 256 "$sealed_binary" 2>/dev/null | cut -d' ' -f1 || true)"
-            if [ -z "$expected_binary" ] || [ "$actual_binary" != "$expected_binary" ]; then
-                log "job $job_id binary is missing or changed after submission"
-                printf 'result=refused-sealed-input\n' > "$dir/result.env"
-                return 1
-            fi
-            tier_args+=(--sealed-binary "$sealed_binary")
+    fi
+    if [ -n "$expected_binary" ] || [ -e "$sealed_binary" ] || [ -L "$sealed_binary" ]; then
+        actual_binary=""; if [[ -f "$sealed_binary" && ! -L "$sealed_binary" ]]; then actual_binary="$(shasum -a 256 "$sealed_binary" 2>/dev/null | cut -d' ' -f1 || true)"; fi
+        if [[ ! "$expected_binary" =~ ^[0-9a-f]{64}$ ]] || [ "$actual_binary" != "$expected_binary" ]; then
+            log "job $job_id binary is missing or changed after submission"
+            printf 'result=refused-sealed-input\n' > "$dir/result.env"
+            return 1
         fi
+        tier_args+=(--sealed-binary "$sealed_binary")
     fi
 
     local worktree="$WORK_ROOT/$job_id"
