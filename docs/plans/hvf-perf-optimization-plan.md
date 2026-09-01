@@ -187,6 +187,23 @@ bridgevm-hvf` must stay green at every stage boundary.
   above the predeclared 2.54% stop threshold, so no mapped-copy boot A/B is
   permitted from this campaign. The preserved report is
   `/Users/user/BridgeVM-Workspace/lab/windows-gpu-and-vm-assets/performance/hvf-boot-20260901/aa-counterbalanced-10pair-799dcf34-report.json`.
+
+  Before reading the result of the 2026-09-01 T16 Windows warm-sequential
+  storage A/A campaign (`cbacd53c634542839dd3e0152a3bf733`), the next
+  candidate and stop rule were frozen. The first candidate is a bounded PRP-list
+  prefix decoder: a page-aligned 128 KiB command needs 31 eight-byte PRP entries
+  (248 bytes), while the current decoder initializes and reads a 4 KiB list
+  page. The full-page-versus-prefix traffic ratio gives a deliberately generous
+  maximum primary read-throughput uplift of 2.94%. After A/A, one diagnostic
+  baseline run must measure the read-phase share attributable specifically to
+  PRP-list decode/read; if that share is `f`, the final candidate ceiling is
+  `min(2.94%, 100*f/(1-f))`. If the T16 A/A read-throughput noise bound is at or
+  above that ceiling, no implementation or A/B is permitted. The diagnostic
+  must count PRP-list calls, requested bytes, consumed entries and chained pages
+  against the sealed guest operation counts. Read p99 and the existing write
+  throughput, write p99, flush-max and desktop-elapsed guardrails remain binding;
+  no write, flush or desktop benefit is expected. A host microfilter can reject
+  the candidate but cannot replace the guest workload.
 - **Stage 3 — DMA path** (HIGH impact, MEDIUM risk): code implemented and the
   final live matrix covers its current-path correctness; isolated before/after
   performance attribution remains pending. The
