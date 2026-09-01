@@ -28,7 +28,7 @@ if "$REPO/scripts/live-gates/run-hvf-boot-performance-tier.sh" \
   exit 1
 fi
 export BRIDGEVM_LIVE_ROOT="$WORK/queue"
-printf image > "$WORK/image"
+printf image > "$WORK/image"; chmod 400 "$base"
 "$REPO/scripts/submit-hvf-boot-performance-campaign.sh" --mode AA --pairs 3 --campaign-id "$(printf %032d 1)" --baseline-manifest "$base" >/dev/null
 test "$(find "$BRIDGEVM_LIVE_ROOT/queued" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" = 6
 find "$BRIDGEVM_LIVE_ROOT/queued" -name input-manifest.tsv -exec awk 'END { exit NR != 13 }' {} \;

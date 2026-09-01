@@ -58,7 +58,7 @@ for ((ordinal = 1; ordinal <= expected; ordinal++)); do
     [[ "$MODE" == AA ]] || base="$CANDIDATE"
   fi
   manifest="$WORK/manifest-$ordinal.tsv"
-  cp "$base" "$manifest"
+  install -m 600 "$base" "$manifest"
   printf 'campaign_id\t%s\ncampaign_mode\t%s\ncampaign_role\t%s\ncampaign_ordinal\t%s\ncampaign_expected_runs\t%s\n' \
     "$CAMPAIGN_ID" "$MODE" "$role" "$ordinal" "$expected" >> "$manifest"
   job="$("$CLI" submit t15-hvf-boot-performance --sha "$HARNESS_SHA" --input-manifest "$manifest")"
