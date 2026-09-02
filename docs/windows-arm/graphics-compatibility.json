@@ -1,7 +1,7 @@
 {
   "$comment": "Source of truth for graphics compatibility claims. Rendered into graphics-compatibility.md by scripts/render-graphics-compatibility.py; never hand-edit the generated block.",
   "schema_version": 1,
-  "updated": "2026-08-04",
+  "updated": "2026-09-01",
   "stack": {
     "guest_api": "D3D11 via DXVK",
     "translation": "DXVK (patched)",
@@ -56,15 +56,16 @@
     {
       "title": "PPSSPP",
       "api": "D3D11",
+      "criterion_id": "A3",
       "renders": true,
       "present_mode": "Composed: Flip",
-      "fps_p50": 20.0,
+      "fps_p50": 62.5,
       "fps_gate": 30.0,
-      "meets_gate": false,
-      "samples": 369,
-      "instrument": "PresentMon 2.5.1 (x64 under guest emulation)",
-      "evidence": "docs/windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md",
-      "notes": "Best unrepeatable outlier 28.38 FPS. No Hardware: Independent Flip observed; DWM composition is the leading explanation and is not yet confirmed."
+      "meets_gate": true,
+      "samples": 13277,
+      "instrument": "PPSSPP sceDisplaySetFrameBuf frame intervals from the guest log",
+      "evidence": "docs/windows-arm/evidence/a3-d3d11-title-fps-3of3-20260812.md",
+      "notes": "The fixed three-run live campaign passed 3/3. Per-run sample counts were 2633, 5275 and 5369; p50 values were 250.0, 62.5 and 62.5 FPS. Composed: Flip was observed in the earlier retained D3D11 title run; the campaign did not relax its 30 FPS threshold or substitute the self-authored smoke."
     },
     {
       "title": "bridgevm-d3d11-present-smoke (self-authored)",
@@ -80,17 +81,18 @@
       "notes": "A smoke test, not a real title. It does not substitute for the A3 gate and is listed only to show the instrument works."
     },
     {
-      "title": "vkcube / Vulkan title",
+      "title": "PPSSPP",
       "api": "Vulkan",
+      "criterion_id": "A2",
       "renders": true,
-      "present_mode": "unknown",
-      "fps_p50": null,
+      "present_mode": "not measured",
+      "fps_p50": 58.82,
       "fps_gate": 30.0,
-      "meets_gate": false,
-      "samples": 0,
-      "instrument": "none",
-      "evidence": "docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md",
-      "notes": "Rendering is confirmed visually, but PresentMon observes no present events for this swapchain, so no frame rate has been measured. A guest Vulkan present instrument is still required."
+      "meets_gate": true,
+      "samples": 7570,
+      "instrument": "PPSSPP sceDisplaySetFrameBuf frame intervals from the guest log",
+      "evidence": "docs/windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md",
+      "notes": "Three retained runs passed with 2511, 2528 and 2531 samples; each reported p50 58.82 FPS. The title's own guest frame intervals are used because this PPSSPP build emits no fps log lines and PresentMon does not observe this Vulkan swapchain."
     }
   ],
   "conformance": {

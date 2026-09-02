@@ -15,8 +15,11 @@ use bridgevm_hvf::hda::HdaPcmSink;
 mod hda_coreaudio_ring;
 #[path = "hda_coreaudio_stats.rs"]
 mod hda_coreaudio_stats;
+#[path = "hda_coreaudio_teardown.rs"]
+mod hda_coreaudio_teardown;
 use hda_coreaudio_ring::drain_ring_into;
 use hda_coreaudio_stats::Shared;
+use hda_coreaudio_teardown::dispose_failed_queue;
 
 const SAMPLE_RATE: u32 = 48_000;
 const CHANNELS: u8 = 2;
@@ -30,11 +33,8 @@ const AUDIO_FORMAT_LINEAR_PCM: u32 = u32::from_be_bytes(*b"lpcm");
 const AUDIO_FORMAT_FLAG_IS_SIGNED_INTEGER: u32 = 1 << 2;
 const AUDIO_FORMAT_FLAG_IS_PACKED: u32 = 1 << 3;
 
-type OsStatus = i32;
-type AudioQueueRef = *mut c_void;
-type AudioQueueBufferRef = *mut AudioQueueBuffer;
 type AudioQueueOutputCallback =
-    unsafe extern "C" fn(*mut c_void, AudioQueueRef, AudioQueueBufferRef);
+    unsafe extern "C" fn(*mut c_void, *mut c_void, *mut AudioQueueBuffer);
 
 #[repr(C)]
 struct AudioStreamBasicDescription {
@@ -66,7 +66,7 @@ struct CallbackContext {
 
 /// Fixed-format AudioQueue sink for the Windows HDA endpoint's s16le stream.
 pub struct CoreAudioPcmSink {
-    queue: AudioQueueRef,
+    queue: *mut c_void,
     callback_context: *mut CallbackContext,
     shared: Arc<Shared>,
 }
@@ -114,20 +114,20 @@ impl CoreAudioPcmSink {
             let status =
                 unsafe { AudioQueueAllocateBuffer(queue, AUDIO_QUEUE_BUFFER_BYTES, &mut buffer) };
             if status != 0 {
-                unsafe { dispose_failed_queue(queue, callback_context) };
+                unsafe { dispose_failed_queue(queue, callback_context, AudioQueueDispose) };
                 return Err(status_error("AudioQueueAllocateBuffer", status));
             }
             unsafe { fill_with_silence(buffer) };
             let status = unsafe { AudioQueueEnqueueBuffer(queue, buffer, 0, ptr::null()) };
             if status != 0 {
-                unsafe { dispose_failed_queue(queue, callback_context) };
+                unsafe { dispose_failed_queue(queue, callback_context, AudioQueueDispose) };
                 return Err(status_error("AudioQueueEnqueueBuffer", status));
             }
         }
 
         let status = unsafe { AudioQueueStart(queue, ptr::null()) };
         if status != 0 {
-            unsafe { dispose_failed_queue(queue, callback_context) };
+            unsafe { dispose_failed_queue(queue, callback_context, AudioQueueDispose) };
             return Err(status_error("AudioQueueStart", status));
         }
 
@@ -177,21 +177,25 @@ impl HdaPcmSink for CoreAudioPcmSink {
 
 impl Drop for CoreAudioPcmSink {
     fn drop(&mut self) {
-        unsafe {
-            let _ = AudioQueueStop(self.queue, 1);
-            let _ = AudioQueueDispose(self.queue, 1);
-            drop(Box::from_raw(self.callback_context));
-        }
+        self.shared.callback_failures.begin_stopping();
+        let (stop_status, dispose_status) = unsafe {
+            let stop = AudioQueueStop(self.queue, 1);
+            let dispose = AudioQueueDispose(self.queue, 1);
+            if dispose == 0 {
+                drop(Box::from_raw(self.callback_context));
+            }
+            (stop, dispose)
+        };
         // Always print the healthy case too; error-only telemetry cannot prove
         // A5's required frames_rendered>0 AND drops==0.
-        self.shared.print_stats();
+        self.shared.print_stats([stop_status, dispose_status]);
     }
 }
 
 unsafe extern "C" fn output_callback(
     user_data: *mut c_void,
-    queue: AudioQueueRef,
-    buffer: AudioQueueBufferRef,
+    queue: *mut c_void,
+    buffer: *mut AudioQueueBuffer,
 ) {
     if user_data.is_null() || buffer.is_null() {
         return;
@@ -200,14 +204,11 @@ unsafe extern "C" fn output_callback(
     fill_from_ring(buffer, &context.shared);
     let status = AudioQueueEnqueueBuffer(queue, buffer, 0, ptr::null());
     if status != 0 {
-        context
-            .shared
-            .callback_errors
-            .fetch_add(1, Ordering::Relaxed);
+        context.shared.callback_failures.record(status);
     }
 }
 
-unsafe fn fill_from_ring(buffer: AudioQueueBufferRef, shared: &Shared) {
+unsafe fn fill_from_ring(buffer: *mut AudioQueueBuffer, shared: &Shared) {
     fill_with_silence(buffer);
     let buffer = &mut *buffer;
     if buffer.audio_data.is_null() {
@@ -223,7 +224,7 @@ unsafe fn fill_from_ring(buffer: AudioQueueBufferRef, shared: &Shared) {
     let _ = drain_ring_into(&mut ring, destination);
 }
 
-unsafe fn fill_with_silence(buffer: AudioQueueBufferRef) {
+unsafe fn fill_with_silence(buffer: *mut AudioQueueBuffer) {
     if buffer.is_null() {
         return;
     }
@@ -238,12 +239,7 @@ unsafe fn fill_with_silence(buffer: AudioQueueBufferRef) {
     buffer.audio_data_byte_size = buffer.audio_data_bytes_capacity;
 }
 
-unsafe fn dispose_failed_queue(queue: AudioQueueRef, callback_context: *mut CallbackContext) {
-    let _ = AudioQueueDispose(queue, 1);
-    drop(Box::from_raw(callback_context));
-}
-
-fn status_error(operation: &str, status: OsStatus) -> String {
+fn status_error(operation: &str, status: i32) -> String {
     format!("{operation} failed with OSStatus {status} ({status:#010x})")
 }
 
@@ -255,20 +251,20 @@ extern "C" {
         callback_run_loop: *mut c_void,
         callback_run_loop_mode: *const c_void,
         flags: u32,
-        queue: *mut AudioQueueRef,
-    ) -> OsStatus;
+        queue: *mut *mut c_void,
+    ) -> i32;
     fn AudioQueueAllocateBuffer(
-        queue: AudioQueueRef,
+        queue: *mut c_void,
         buffer_byte_size: u32,
-        buffer: *mut AudioQueueBufferRef,
-    ) -> OsStatus;
+        buffer: *mut *mut AudioQueueBuffer,
+    ) -> i32;
     fn AudioQueueEnqueueBuffer(
-        queue: AudioQueueRef,
-        buffer: AudioQueueBufferRef,
+        queue: *mut c_void,
+        buffer: *mut AudioQueueBuffer,
         packet_description_count: u32,
         packet_descriptions: *const c_void,
-    ) -> OsStatus;
-    fn AudioQueueStart(queue: AudioQueueRef, start_time: *const c_void) -> OsStatus;
-    fn AudioQueueStop(queue: AudioQueueRef, immediate: u8) -> OsStatus;
-    fn AudioQueueDispose(queue: AudioQueueRef, immediate: u8) -> OsStatus;
+    ) -> i32;
+    fn AudioQueueStart(queue: *mut c_void, start_time: *const c_void) -> i32;
+    fn AudioQueueStop(queue: *mut c_void, immediate: u8) -> i32;
+    fn AudioQueueDispose(queue: *mut c_void, immediate: u8) -> i32;
 }

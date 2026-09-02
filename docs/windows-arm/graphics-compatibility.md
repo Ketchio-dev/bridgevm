@@ -4,7 +4,7 @@ What the D3D11 and Vulkan paths actually do today, generated from a
 registry so the table cannot drift from the code.
 
 <!-- BEGIN GENERATED: graphics-compatibility -->
-_Generated from `docs/windows-arm/graphics-compatibility.json` on 2026-08-04. Do not edit this block._
+_Generated from `docs/windows-arm/graphics-compatibility.json` on 2026-09-01. Do not edit this block._
 
 ## Stack
 
@@ -40,12 +40,12 @@ DXVK requests these for feature level 11_0. They are not provided, and each has 
 
 | Title | API | Renders | Present mode | p50 FPS | Gate | Meets gate | Samples |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| PPSSPP | D3D11 | yes | Composed: Flip | 20.0 | 30 | **no** | 369 |
+| PPSSPP | D3D11 | yes | Composed: Flip | 62.5 | 30 | yes | 13277 |
 | bridgevm-d3d11-present-smoke (self-authored) | D3D11 | yes | Composed: Flip | 54.3 | 30 | yes | 311 |
-| vkcube / Vulkan title | Vulkan | yes | unknown | not measured | 30 | **no** | 0 |
+| PPSSPP | Vulkan | yes | not measured | 58.8 | 30 | yes | 7570 |
 
-- **PPSSPP**: Best unrepeatable outlier 28.38 FPS. No Hardware: Independent Flip observed; DWM composition is the leading explanation and is not yet confirmed.
+- **PPSSPP**: The fixed three-run live campaign passed 3/3. Per-run sample counts were 2633, 5275 and 5369; p50 values were 250.0, 62.5 and 62.5 FPS. Composed: Flip was observed in the earlier retained D3D11 title run; the campaign did not relax its 30 FPS threshold or substitute the self-authored smoke.
 - **bridgevm-d3d11-present-smoke (self-authored)**: A smoke test, not a real title. It does not substitute for the A3 gate and is listed only to show the instrument works.
-- **vkcube / Vulkan title**: Rendering is confirmed visually, but PresentMon observes no present events for this swapchain, so no frame rate has been measured. A guest Vulkan present instrument is still required.
+- **PPSSPP**: Three retained runs passed with 2511, 2528 and 2531 samples; each reported p50 58.82 FPS. The title's own guest frame intervals are used because this PPSSPP build emits no fps log lines and PresentMon does not observe this Vulkan swapchain.
 
 <!-- END GENERATED: graphics-compatibility -->

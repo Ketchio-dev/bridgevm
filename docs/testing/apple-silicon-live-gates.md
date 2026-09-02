@@ -78,10 +78,14 @@ Properties the queue must hold:
 | T7 | Fixed Windows closure campaign | Combined installed-guest acceptance evidence |
 | T8 | Fixed 20-lane pointer campaign | B4 pointer reliability evidence |
 | T9 | Fixed 20-lane BridgeVM PC firmware campaign | Experimental-board standard UEFI PCI development evidence |
-| T10 | Sixty loaded full-workspace rounds | QMP shutdown-race regression evidence |
 | T15 | One sealed 4-vCPU release boot | Interleavable diagnostic sample for A/A noise and A/B performance comparisons |
 | T16 | Fixed sealed Windows NVMe workload | Preserved v1 STOP plus preregistered v2 A/A calibration; no live v2 result yet |
 | T17 | Packaged Windows-HVF 3D-off product E2E | One-lane diagnostic pilot or fixed three-lane release campaign |
+| T18 | Fixed CoreAudio playback and shutdown | B7 typed callback teardown evidence; exactly ten isolated lanes |
+
+The deterministic QMP close-race negative control and exactly 60 loaded
+full-workspace rounds run as the GitHub-hosted macOS `qmp-stress` CI job. They
+are not a physical-Mac live tier and make no guest-behaviour claim.
 
 T0–T4 filter candidates. Only T5 produces A1 shipping evidence, and no faster
 tier may be used to lower a threshold. T6 requires all three runs to report

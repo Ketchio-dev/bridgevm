@@ -8,7 +8,7 @@
 # data. scripts/check-install-bootstrap.sh keeps the pin in sync.
 #
 #   curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash
-#   ... | bash -s -- --version v1.0.0 --dry-run   # options are forwarded
+#   No safe downloadable release is published; the installer currently refuses.
 set -euo pipefail
 
 REPO="Ketchio-dev/bridgevm"

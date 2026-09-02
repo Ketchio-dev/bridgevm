@@ -22,18 +22,18 @@ an explicitly experimental graphics path.
 > Windows test driver, does not enable TESTSIGNING, and installs Windows with 3D
 > injection disabled.
 
-## Start in one command
+## Install status
 
-On an Apple-silicon Mac running macOS 14 or newer:
+There is currently no safe downloadable General Preview. The only published
+release, `v1.0.0`, predates the fail-closed driver policy, so `install.sh`
+intentionally refuses it. Build the current source by following the
+[installation guide](docs/install.md); do not work around the refusal or treat
+the superseded release as the current product.
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash -s -- --launch
-```
-
-The installer downloads the newest **General Preview**, verifies its release
-contract, SHA-256 checksum, archive layout, app identity, architecture, and
-ad-hoc code-signing seal, then installs it in `/Applications`. It never touches
-VM data during an install or update.
+After a safe successor is published, the installer will download the newest
+General Preview, verify its release contract, SHA-256 checksum, archive layout,
+app identity, architecture and ad-hoc code-signing seal, then install it in
+`/Applications`. It never touches VM data during an install or update.
 
 After the app opens:
 
@@ -49,12 +49,6 @@ to describe packages you are licensed to use. BridgeVM seals those exact
 inputs and refuses missing, changed, unsigned-CMS, non-ARM64, or incomplete
 payloads. This payload is for storage, serial integration, and networking; it
 does not enable the unavailable 3D injection path.
-
-> [!WARNING]
-> The published `v1.0.0` predates the current fail-closed driver policy and is
-> no longer recommended. Until its safe successor is published, the installer
-> intentionally refuses that legacy release instead of silently installing it.
-> See [installation options](docs/install.md) to build the current source.
 
 Prefer a DMG or want to inspect every verification step? Read the
 [installation guide](docs/install.md).

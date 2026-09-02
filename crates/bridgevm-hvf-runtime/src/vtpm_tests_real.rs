@@ -33,48 +33,46 @@ fn a_real_swtpm_serves_sockets_and_dies_with_the_handle() {
 
 #[test]
 fn a_binary_that_dies_just_after_binding_its_sockets_is_not_trusted() {
-    // swtpm binds its sockets before it decrypts the state directory, so a
-    // wrong key produces a process that briefly looks healthy and then exits.
-    // Socket existence handed back a live-looking handle that could not answer
-    // swtpm's readiness protocol. This reproduces that
-    // sequence without relying on a scheduler-sensitive grace period.
+    // Reproduce swtpm binding both sockets and then exiting before readiness.
     let dir = std::env::temp_dir().join(format!("bv-vtpm-flashbin-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let script = dir.join("flash-swtpm.sh");
+    let script = dir.join("flash-swtpm.py");
     std::fs::write(
         &script,
-        "#!/bin/sh\n\
-         # Bind both sockets the way swtpm does, then exit like a bad key.\n\
-         for arg in \"$@\"; do\n\
-         \x20 case \"$arg\" in\n\
-         \x20   *path=*) p=${arg#*path=}; p=${p%%,*}; nc -lU \"$p\" >/dev/null 2>&1 &\n\
-         \x20   ;;\n\
-         \x20 esac\n\
-         done\n\
-         sleep 0.05; for pid in $(jobs -p); do kill \"$pid\" 2>/dev/null; wait \"$pid\" 2>/dev/null; done\n\
-         exit 1\n",
+        "#!/usr/bin/env python3\n\
+         import socket, sys, time\n\
+         paths = [arg.split('path=', 1)[1].split(',', 1)[0] for arg in sys.argv if 'path=' in arg]\n\
+         assert len(paths) == 2 and len(set(paths)) == 2\n\
+         listeners = []\n\
+         for path in paths:\n\
+         \x20 listener = socket.socket(socket.AF_UNIX); listener.bind(path); listener.listen(); listeners.append(listener)\n\
+         open(__file__ + '.bound-two', 'x').close()\n\
+         time.sleep(0.05)\n",
     )
     .unwrap();
     let mut permissions = std::fs::metadata(&script).unwrap().permissions();
     std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
     std::fs::set_permissions(&script, permissions).unwrap();
 
+    let state = scratch_state("flash");
     let outcome = start_swtpm(&VtpmConfig {
-        state_dir: scratch_state("flash"),
+        state_dir: state.clone(),
         swtpm_bin: script,
         state_key: None,
     });
-    let _ = std::fs::remove_dir_all(&dir);
-
+    let bound_two = dir.join("flash-swtpm.py.bound-two").exists();
     let error = match outcome {
         Err(error) => error,
         Ok(_) => panic!("a process that exits right after binding must not be trusted"),
     };
+    assert!(bound_two, "fixture did not bind two distinct sockets");
     assert!(
         error.to_string().contains("sockets"),
         "the error must name the socket wait: {error}"
     );
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&state);
 }
 
 #[test]

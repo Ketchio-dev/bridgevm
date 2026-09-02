@@ -815,9 +815,10 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/exception_trace.rs	173	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_diagnostics.rs	259	3
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_memory.rs	217	8
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_ram_backing.rs	80	5
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs	257	16
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs	250	15
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_ring.rs	66	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_stats.rs	56	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_teardown.rs	264	4
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard.rs	424	21
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_support.rs	41	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_snapshot.rs	176	1
@@ -1512,7 +1513,8 @@ tests/integration/lifecycle-suspend-resume-cli-smoke.sh	157	0
 tests/integration/install-verify-smoke.sh	180	0
 tests/integration/b4-sealed-submit-smoke.sh	17	0
 tests/integration/live-gate-policy-smoke.sh	308	0
-tests/integration/qmp-stress-live-tier-smoke.sh	23	0
+tests/integration/qmp-stress-live-tier-smoke.sh	21	0
+tests/integration/audio-teardown-live-tier-smoke.sh	119	0
 tests/integration/windows-closure-live-tier-smoke.sh	65	0
 tests/integration/local-release-readiness-suite.sh	298	0
 tests/integration/log-viewer-cli-smoke.sh	170	0
@@ -1612,8 +1614,18 @@ scripts/fb-rate.py	113	0
 scripts/generate-xctest-manifest.py	107	0
 scripts/live-gates/redact-receipt.py	247	0
 scripts/live-gates/qmp-close-race-baseline.rs	27	0
-scripts/live-gates/run-qmp-stress-tier.sh	49	0
-scripts/live-gates/verify-qmp-stress.py	60	0
+scripts/live-gates/qmp_stress_contract.py	521	0
+scripts/live-gates/run-qmp-stress-tier.sh	43	0
+scripts/live-gates/verify-qmp-stress.py	34	0
+scripts/audio-teardown-result.py	260	0
+scripts/verify-audio-teardown-receipt.py	234	0
+scripts/live-gates/audio-teardown-manifest.py	152	0
+scripts/live-gates/run-audio-teardown-lane.sh	85	0
+scripts/live-gates/run-audio-teardown-tier.sh	114	0
+scripts/live-gates/publish-audio-teardown-receipt.sh	31	0
+scripts/live-gates/write-audio-teardown-missing-receipt.sh	23	0
+scripts/live-gates/write-audio-teardown-receipt.py	175	0
+scripts/win-assets/bv-audio-teardown.ps1	45	0
 scripts/qemu-a1-control.py	109	0
 scripts/refactor/braces.py	28	0
 scripts/refactor/drop_unused_glob.py	93	0
@@ -1645,7 +1657,7 @@ scripts/check-bridgevm-pc-mmu.sh	20	0
 scripts/check-bridgevm-pc-sec.sh	15	0
 scripts/package-dmg.sh	45
 install.sh	44	0
-scripts/render-graphics-compatibility.py	245	0
+scripts/render-graphics-compatibility.py	244	0
 tests/fixtures/fake-swtpm.py	77	0
 tests/fixtures/bridgevm-pc-sec-host-test.c	83	0
 crates/bridgevm-hvf/src/guest_memory.rs	22	0
@@ -1741,7 +1753,7 @@ scripts/live-gates/windows_product_e2e_artifacts.py	105	0
 scripts/live-gates/windows_product_e2e_guest_evidence.py	120	0
 scripts/live-gates/write-windows-product-e2e-receipt.py	229	0
 scripts/live-gates/run-windows-product-e2e-tier.sh	122	0
-scripts/live-gates/publish-receipt.sh	24	0
+scripts/live-gates/publish-receipt.sh	17	0
 scripts/live-gates/write-windows-product-e2e-missing-receipt.sh	17	0
 scripts/live-gates/recover-stale-receipt.sh	19	0
 tests/integration/windows-product-e2e-live-tier-smoke.sh	149	0

@@ -1,0 +1,68 @@
+name: Hosted QMP stress
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Exact current branch HEAD SHA to test
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qmp-stress-${{ inputs.commit }}
+  cancel-in-progress: false
+
+jobs:
+  qmp-stress:
+    # Deterministic host-process/workspace coverage: never use the physical-Mac
+    # queue and never claim guest behaviour from this result.
+    if: github.event.repository.fork == false
+    name: QMP close-race + 60 full workspaces
+    runs-on: macos-15
+    timeout-minutes: 180
+    env:
+      RUSTFLAGS: -D warnings
+      REQUESTED_COMMIT: ${{ inputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: bind the requested commit to this workflow run
+        run: |
+          [[ "$REQUESTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$REQUESTED_COMMIT" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.1
+        with:
+          key: qmp-stress
+      - name: run the hosted campaign
+        run: |
+          scripts/live-gates/run-qmp-stress-tier.sh \
+            --out "$RUNNER_TEMP/qmp-stress" \
+            --commit "$GITHUB_SHA" \
+            --workflow-head-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --repository "$GITHUB_REPOSITORY"
+      - name: verify retained receipt and evidence
+        if: always()
+        run: |
+          python3 scripts/live-gates/verify-qmp-stress.py \
+            --out "$RUNNER_TEMP/qmp-stress" --allow-failure \
+            --expected-commit "$GITHUB_SHA" \
+            --expected-workflow-head-sha "$GITHUB_SHA" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --expected-repository "$GITHUB_REPOSITORY"
+      - name: retain the hosted receipt and round logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qmp-stress-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qmp-stress
+          if-no-files-found: error
+          retention-days: 30

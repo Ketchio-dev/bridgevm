@@ -11,11 +11,15 @@ test drivers. General Preview installs and imports Windows in 3D-off mode.
 > installer below refuses it. Until a successor is published, use the
 > [current-source build](#build-the-current-source) instead.
 
-## Path 1 — terminal installer (recommended)
+## Path 1 — terminal installer (waiting for a safe release)
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash -s -- --launch
 ```
+
+Today this command exits without installing because no published release has
+the required General Preview contract. It is documented here for the safe
+successor; use the source-build path below in the meantime.
 
 The bootstrap fetches the full installer at a pinned SHA-256 and refuses to run
 anything else. The installer then fails closed at every step:
@@ -44,7 +48,7 @@ settings are never touched by install or update.
 Useful options (forwarded through the one-liner with `bash -s --`):
 
 ```text
---version <tag>   install an exact release (e.g. v1.0.0)
+--version <tag>   install an exact release carrying the required contract
 --latest          latest verified General Preview (default)
 --dry-run         verify everything, install nothing
 --dest <dir>      install somewhere other than /Applications

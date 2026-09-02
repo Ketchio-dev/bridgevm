@@ -8,12 +8,11 @@ case "$TIER" in
     helper=run-pointer-reliability-tier.sh
     args+=(--input-manifest "${4:-}") ;;
   t9-bridgevm-pc-pci) helper=run-bridgevm-pc-pci-tier.sh ;;
-  t10-qmp-stress) helper=run-qmp-stress-tier.sh ;;
   t11-bridgevm-pc-nvme-bar) helper=run-bridgevm-pc-nvme-bar-tier.sh ;;
   t12-bridgevm-pc-nvme-block) helper=run-bridgevm-pc-nvme-block-tier.sh ;;
   t13-bridgevm-pc-bds-exit) helper=run-bridgevm-pc-bds-exit-tier.sh ;;
   t14-bridgevm-pc-windows-start) helper=run-bridgevm-pc-windows-start-tier.sh; args+=(--input-manifest "${4:-}") ;;
-  t15-hvf-boot-performance|t16-hvf-nvme-performance|t17-windows-hvf-product-e2e) helper=run-hvf-boot-performance-tier.sh; [[ "$TIER" == t15-* ]] || helper=run-hvf-nvme-performance-tier.sh; [[ "$TIER" != t17-* ]] || helper=run-windows-product-e2e-tier.sh; args+=(--input-manifest "${4:-}"); [[ "$TIER" == t17-* ]] || args+=(--sealed-binary "${5:-}") ;;
+  t15-hvf-boot-performance|t16-hvf-nvme-performance|t17-windows-hvf-product-e2e|t18-audio-teardown) helper=run-hvf-boot-performance-tier.sh; [[ "$TIER" == t15-* ]] || helper=run-hvf-nvme-performance-tier.sh; [[ "$TIER" != t17-* ]] || helper=run-windows-product-e2e-tier.sh; [[ "$TIER" != t18-* ]] || helper=run-audio-teardown-tier.sh; args+=(--input-manifest "${4:-}"); [[ "$TIER" == t17-* ]] || args+=(--sealed-binary "${5:-}") ;;
   *) echo "unknown special tier $TIER" >&2; exit 2 ;;
 esac
 "$REPO/scripts/live-gates/$helper" "${args[@]}"

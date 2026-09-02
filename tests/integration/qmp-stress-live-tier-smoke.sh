@@ -1,23 +1,21 @@
 #!/usr/bin/env bash
-# Fast contract checks; never execute the 60-round tier here.
+# Fast hosted-contract checks; never execute the 60 rounds here.
 set -euo pipefail
-REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-RUN="$REPO/scripts/live-gates/run-qmp-stress-tier.sh"
-VERIFY="$REPO/scripts/live-gates/verify-qmp-stress.py"
-BASELINE="$REPO/scripts/live-gates/qmp-close-race-baseline.rs"
-CLI="$REPO/scripts/live-gates/bridgevm-live"
-TIER="$REPO/scripts/live-gates/run-tier.sh"
-[[ -x "$RUN" && -x "$VERIFY" ]]
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"; RUN="$REPO/scripts/live-gates/run-qmp-stress-tier.sh"
+VERIFY="$REPO/scripts/live-gates/verify-qmp-stress.py"; BASELINE="$REPO/scripts/live-gates/qmp-close-race-baseline.rs"
+WORKFLOW="$REPO/.github/workflows/qmp-stress.yml"; CLI="$REPO/scripts/live-gates/bridgevm-live"
+TIER="$REPO/scripts/live-gates/run-tier.sh"; SPECIAL="$REPO/scripts/live-gates/run-special-tier.sh"
 python3 "$VERIFY" --self-test | grep -q PASS
-grep -Fq 'for _ in $(seq 1 24)' "$RUN"
-grep -Fq 'for round in $(seq 1 60)' "$RUN"
-grep -Fq 'cargo test --workspace --locked' "$RUN"
-grep -Fq 'verify-qmp-stress.py" --out "$OUT"' "$RUN"
-grep -Fq 't10-qmp-stress' "$CLI"
-grep -Fq 't8-pointer-reliability|t9-bridgevm-pc-pci|t10-qmp-stress|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start|t15-hvf-boot-performance|t16-hvf-nvme-performance|t17-windows-hvf-product-e2e)' "$TIER"
+grep -Fq 'qmp-stress:' "$WORKFLOW"; grep -Fq 'run-qmp-stress-tier.sh' "$WORKFLOW"
+grep -Fq 'workflow_dispatch:' "$WORKFLOW"; grep -Fq 'github.event.repository.fork == false' "$WORKFLOW"
+grep -Fq 'RUNNER_ENVIRONMENT:-}" == github-hosted' "$RUN"
+grep -Fq 'for _ in $(seq 1 24)' "$RUN"; grep -Fq '/usr/bin/yes' "$RUN"; grep -Fq 'ps -o ppid=' "$RUN"; grep -Fq 'for round in $(seq 1 60)' "$RUN"
+grep -Fq 'loads_alive ||' "$RUN"; [[ "$(grep -Fc 'loads_alive ||' "$RUN")" -eq 3 ]]
+grep -Fq 'run-round --out "$OUT"' "$RUN"; grep -Fq 'cargo test --workspace --locked' "$REPO/scripts/live-gates/qmp_stress_contract.py"
+! grep -Fq 't10-qmp-stress' "$CLI" "$TIER" "$SPECIAL"
+! GITHUB_ACTIONS=false RUNNER_TEMP=/tmp "$RUN" 2>/dev/null
 grep -Fq 'UnixListener' "$BASELINE"
 ! grep -Eq 'TcpListener|TcpStream|sleep [0-9]{3}|sudo|actions-runner' "$RUN" "$BASELINE"
-bin="$(mktemp)"; trap 'rm -f "$bin"' EXIT
-rustc "$BASELINE" -o "$bin"
+bin="$(mktemp)"; trap 'rm -f "$bin"' EXIT; rustc "$BASELINE" -o "$bin"
 [[ "$($bin 20)" == $'baseline_iterations=20\nbaseline_einval_then_econnrefused=20' ]]
-echo 'PASS: QMP full-workspace stress tier contract and negative control'
+echo 'PASS: hosted QMP 20/20 negative control and exact 60-round contract'

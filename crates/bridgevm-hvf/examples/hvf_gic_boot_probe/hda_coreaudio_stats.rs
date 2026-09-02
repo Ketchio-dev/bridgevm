@@ -4,6 +4,8 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
+use super::hda_coreaudio_teardown::CallbackFailureCounters;
+
 pub(super) struct Shared {
     pub(super) ring: Mutex<VecDeque<u8>>,
     /// Guest PCM frames successfully copied into the host CoreAudio ring.
@@ -14,7 +16,7 @@ pub(super) struct Shared {
     dropped_bytes: AtomicU64,
     format_drops: AtomicU64,
     ring_full_drops: AtomicU64,
-    pub(super) callback_errors: AtomicU64,
+    pub(super) callback_failures: CallbackFailureCounters,
 }
 
 impl Shared {
@@ -26,7 +28,7 @@ impl Shared {
             dropped_bytes: AtomicU64::new(0),
             format_drops: AtomicU64::new(0),
             ring_full_drops: AtomicU64::new(0),
-            callback_errors: AtomicU64::new(0),
+            callback_failures: CallbackFailureCounters::new(),
         }
     }
 
@@ -46,15 +48,14 @@ impl Shared {
         self.record_drop(bytes);
     }
 
-    pub(super) fn print_stats(&self) {
-        println!(
-            "hda CoreAudio stats: frames_rendered={} drops={} dropped_bytes={} format_drops={} ring_full_drops={} callback_errors={}",
+    pub(super) fn print_stats(&self, lifecycle: [i32; 2]) {
+        self.callback_failures.print_stats(
             self.frames_rendered.load(Ordering::Relaxed),
             self.dropped_writes.load(Ordering::Relaxed),
             self.dropped_bytes.load(Ordering::Relaxed),
             self.format_drops.load(Ordering::Relaxed),
             self.ring_full_drops.load(Ordering::Relaxed),
-            self.callback_errors.load(Ordering::Relaxed)
+            lifecycle,
         );
     }
 }
