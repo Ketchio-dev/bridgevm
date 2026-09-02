@@ -107,7 +107,7 @@ final class T17ProductRunner {
     }
 
     private func createVM(_ ui: T17UIControlling) throws {
-        try ui.press("bridgevm.library.empty.create", timeout: 30)
+        try ui.press(T17UIContract.initialCreateControlIdentifier, timeout: 30)
         try ui.press("bridgevm.create.os.windows", timeout: 10)
         try ui.press("bridgevm.create.windows.install", timeout: 10)
         try ui.setText(request.vmName, identifier: "bridgevm.create.name", timeout: 10)
