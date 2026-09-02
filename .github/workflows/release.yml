@@ -76,7 +76,7 @@ jobs:
         run: bash scripts/verify-app-third-party-notices.sh "$RUNNER_TEMP/BridgeVM.app"
 
       - name: Verify packaged HVF release entitlements
-        run: bash scripts/verify-app-hvf-entitlements.sh "$RUNNER_TEMP/BridgeVM.app"
+        run: bash scripts/verify-app-hvf-entitlements.sh "$RUNNER_TEMP/BridgeVM.app" && bash scripts/verify-product-e2e-helper-app.sh "$RUNNER_TEMP/BridgeVM.app"
 
       - name: Refuse Windows kernel packages in the general artifact
         run: |

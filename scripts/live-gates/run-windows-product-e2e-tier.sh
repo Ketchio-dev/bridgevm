@@ -85,7 +85,7 @@ VALID=true
 if [[ -f "$OUT/cancel.requested" ]]; then emit canceled canceled 0 true || exit 1; exit 1; fi
 APP="$(json_value "$VERIFIED" assets.app_bundle.path)"
 HELPER="$(json_value "$VERIFIED" assets.product_helper.path)"
-if ! codesign --verify --deep --strict "$APP" >/dev/null 2>&1; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
+if ! codesign --verify --deep --strict "$APP" >/dev/null 2>&1 || ! "$REPO/scripts/verify-product-e2e-helper-app.sh" "$APP" >/dev/null 2>&1; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
 if codesign -dv --verbose=4 "$APP" 2>&1 | grep -q 'Authority=Developer ID Application' && spctl --assess --type execute "$APP" >/dev/null 2>&1; then SIGNING=developer-id-notarized; fi
 
 WORK="$(mktemp -d "/tmp/bridgevm-e2e-$JOB_ID.XXXXXX")"

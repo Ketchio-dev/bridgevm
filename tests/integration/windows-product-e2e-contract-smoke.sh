@@ -75,5 +75,5 @@ TMPDIR="$TMP" PATH="$FAKE:/usr/bin:/bin:/usr/sbin:/sbin" \
 grep -q -- '-mountpoint .*/bridgevm-win-source\..*/iso' "$TMP/hdiutil.log"
 grep -q -- '-mountpoint .*/bridgevm-win-source\..*/dst' "$TMP/hdiutil.log"
 python3 "$ROOT/tests/integration/windows-guest-payload-verifier-smoke.py"; python3 "$ROOT/tests/integration/windows-install-security-contract-smoke.py"
-python3 "$ROOT/scripts/verify-windows-product-e2e-receipt.py" --self-test; "$ROOT/tests/integration/windows-product-e2e-live-tier-smoke.sh"
+python3 "$ROOT/scripts/verify-windows-product-e2e-receipt.py" --self-test; "$ROOT/scripts/verify-product-e2e-helper-app.sh" --self-test; "$ROOT/tests/integration/windows-product-e2e-live-tier-smoke.sh"
 echo "PASS: Windows product E2E deterministic contracts"

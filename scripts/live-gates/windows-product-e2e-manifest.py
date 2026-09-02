@@ -7,7 +7,7 @@ ASSETS = ("app_bundle", "app_executable", "product_helper", "runner", "firmware"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 RELATIONS = {
     "app_executable": "Contents/MacOS/BridgeVMControl",
-    "product_helper": "Contents/MacOS/BridgeVMProductE2E",
+    "product_helper": "Contents/Helpers/BridgeVMProductE2E.app/Contents/MacOS/BridgeVMProductE2E",
     "runner": "Contents/Resources/target/release/hvf-runner",
     "firmware": "Contents/Resources/firmware/edk2-aarch64-secure-code.fd",
 }

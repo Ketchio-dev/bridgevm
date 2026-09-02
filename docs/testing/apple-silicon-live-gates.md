@@ -171,7 +171,8 @@ The TSV contains exactly `campaign_mode` (`pilot` or `release`) plus
 `secure_boot_policy`, `iso`, `bundled_vars_seed`, `guest_payload` and
 `guest_payload_manifest`. The guest payload is a symlink-free tree and its
 manifest must be outside that tree. The helper must be the sealed app-local
-`Contents/MacOS/BridgeVMProductE2E` command and accepts only
+`Contents/Helpers/BridgeVMProductE2E.app/Contents/MacOS/BridgeVMProductE2E`
+command, whose fixed bundle identifier is `dev.bridgevm.product-e2e`, and accepts only
 `--windows-product-e2e --request FILE --result FILE`; an artifact without that
 command is a preflight blocker, not an invitation to invoke a harness. Private
 paths, ISO, media, vars, vTPM, guest payload and helper logs never enter the

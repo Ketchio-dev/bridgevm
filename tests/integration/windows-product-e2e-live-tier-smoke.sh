@@ -24,7 +24,7 @@ missing_manifest="$TMP/missing-app.tsv"; missing_app="$TMP/Missing.app"
 printf 'campaign_mode\tpilot\n' > "$missing_manifest"
 printf 'app_bundle\t%s\t%064d\n' "$missing_app" 0 >> "$missing_manifest"
 printf 'app_executable\t%s/Contents/MacOS/BridgeVMControl\t%064d\n' "$missing_app" 0 >> "$missing_manifest"
-printf 'product_helper\t%s/Contents/MacOS/BridgeVMProductE2E\t%064d\n' "$missing_app" 0 >> "$missing_manifest"
+printf 'product_helper\t%s/Contents/Helpers/BridgeVMProductE2E.app/Contents/MacOS/BridgeVMProductE2E\t%064d\n' "$missing_app" 0 >> "$missing_manifest"
 printf 'runner\t%s/Contents/Resources/target/release/hvf-runner\t%064d\n' "$missing_app" 0 >> "$missing_manifest"
 printf 'firmware\t%s/Contents/Resources/firmware/edk2-aarch64-secure-code.fd\t%064d\n' "$missing_app" 0 >> "$missing_manifest"
 printf 'secure_boot_policy\t%s/Contents/Resources/B/secureboot-microsoft-windows-transition-aarch64-v1.6.5.json\t%064d\n' "$missing_app" 0 >> "$missing_manifest"
@@ -35,12 +35,12 @@ printf 'guest_payload_manifest\t%s/missing-guest-payload.tsv\t%064d\n' "$TMP" 0 
 missing_out="$TMP/missing-out"
 check "missing app blocks rather than inventing a run" bash -c '! "$1" --out "$2" --input-manifest "$3" --job-id missing-app >/dev/null 2>&1' _ "$TIER" "$missing_out" "$missing_manifest"
 check "missing app leaves a valid explicit blocker" bash -c '"$1" "$2" --expected-commit "$3" >/dev/null && grep -q '"'"'"failure_code": "missing-app-artifact"'"'"' "$2" && grep -q '"'"'"run_count": 0'"'"' "$2"' _ "$VERIFY" "$missing_out/receipt.json" "$COMMIT"
-APP="$TMP/BridgeVMControl.app"; RES="$APP/Contents/Resources"; MACOS="$APP/Contents/MacOS"
-mkdir -p "$MACOS" "$RES/target/release" "$RES/firmware" "$RES/BridgeVMControl_BridgeVMControl.bundle"
+APP="$TMP/BridgeVMControl.app"; RES="$APP/Contents/Resources"; MACOS="$APP/Contents/MacOS"; HELPER_APP="$APP/Contents/Helpers/BridgeVMProductE2E.app"; HELPER="$HELPER_APP/Contents/MacOS/BridgeVMProductE2E"
+mkdir -p "$MACOS" "$HELPER_APP/Contents/MacOS" "$RES/target/release" "$RES/firmware" "$RES/BridgeVMControl_BridgeVMControl.bundle"
 printf '#!/bin/sh\nexit 0\n' > "$MACOS/BridgeVMControl"
-printf '#!/bin/sh\nexec /usr/bin/python3 "$(dirname "$0")/../Resources/fake-product-helper.py" "$@"\n' > "$MACOS/BridgeVMProductE2E"
+printf '#!/bin/sh\nexec /usr/bin/python3 "$(dirname "$0")/../../../../Resources/fake-product-helper.py" "$@"\n' > "$HELPER"
 printf '#!/bin/sh\nexit 0\n' > "$RES/target/release/hvf-runner"
-chmod 755 "$MACOS/BridgeVMControl" "$MACOS/BridgeVMProductE2E" "$RES/target/release/hvf-runner"
+chmod 755 "$MACOS/BridgeVMControl" "$HELPER" "$RES/target/release/hvf-runner"
 printf firmware > "$RES/firmware/edk2-aarch64-secure-code.fd"
 python3 - "$RES/firmware/edk2-aarch64-secure-code.fd" "$RES/BridgeVMControl_BridgeVMControl.bundle/secureboot-microsoft-windows-transition-aarch64-v1.6.5.json" <<'PY'
 import hashlib,json,sys
@@ -49,13 +49,13 @@ policy={"schemaVersion":1,"policy":"fixture-policy","source":{"tag":"v1","commit
 open(sys.argv[2],"w").write(json.dumps(policy)+"\n")
 PY
 printf seed > "$RES/BridgeVMControl_BridgeVMControl.bundle/windows-boot-seed-vars.fd.gz"
-cp "$ROOT/tests/fixtures/fake-windows-product-e2e-helper.py" "$RES/fake-product-helper.py"
+cp "$ROOT/tests/fixtures/fake-windows-product-e2e-helper.py" "$RES/fake-product-helper.py"; cp "$ROOT/apps/macos/BridgeVMProductE2E-Info.plist" "$HELPER_APP/Contents/Info.plist"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict><key>CFBundleExecutable</key><string>BridgeVMControl</string><key>CFBundleIdentifier</key><string>dev.bridgevm.t17-fixture</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>
 PLIST
-codesign --force --deep --sign - "$APP" >/dev/null
+codesign --force --sign - "$HELPER_APP" >/dev/null; codesign --force --sign - "$APP" >/dev/null
 printf 'private Windows ISO fixture\n' > "$TMP/windows.iso"
 GUEST_PAYLOAD="$TMP/guest-payload"; GUEST_PAYLOAD_MANIFEST="$TMP/guest-payload.tsv"
 mkdir "$GUEST_PAYLOAD"; printf guest > "$GUEST_PAYLOAD/agent.bin"; printf 'agent.bin\tfixture\n' > "$GUEST_PAYLOAD_MANIFEST"
@@ -65,7 +65,7 @@ import importlib.util, pathlib, sys
 root, app, iso, mode, output, guest, guest_manifest = map(pathlib.Path, sys.argv[1:])
 spec=importlib.util.spec_from_file_location("manifest",root/"scripts/live-gates/windows-product-e2e-manifest.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 bundle=app/"Contents/Resources/BridgeVMControl_BridgeVMControl.bundle"
-assets={"app_bundle":app,"app_executable":app/"Contents/MacOS/BridgeVMControl","product_helper":app/"Contents/MacOS/BridgeVMProductE2E","runner":app/"Contents/Resources/target/release/hvf-runner","firmware":app/"Contents/Resources/firmware/edk2-aarch64-secure-code.fd","secure_boot_policy":bundle/"secureboot-microsoft-windows-transition-aarch64-v1.6.5.json","iso":iso,"bundled_vars_seed":bundle/"windows-boot-seed-vars.fd.gz","guest_payload":guest,"guest_payload_manifest":guest_manifest}
+assets={"app_bundle":app,"app_executable":app/"Contents/MacOS/BridgeVMControl","product_helper":app/"Contents/Helpers/BridgeVMProductE2E.app/Contents/MacOS/BridgeVMProductE2E","runner":app/"Contents/Resources/target/release/hvf-runner","firmware":app/"Contents/Resources/firmware/edk2-aarch64-secure-code.fd","secure_boot_policy":bundle/"secureboot-microsoft-windows-transition-aarch64-v1.6.5.json","iso":iso,"bundled_vars_seed":bundle/"windows-boot-seed-vars.fd.gz","guest_payload":guest,"guest_payload_manifest":guest_manifest}
 with output.open("x") as out:
     out.write(f"campaign_mode\t{mode}\n")
     for key,path in assets.items():
