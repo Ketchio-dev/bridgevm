@@ -134,3 +134,31 @@ rejects the retained earlier dry-run app.
 The registry-only commit recording this correction must itself pass hosted CI,
 Security and a complete exact-SHA T0 before it is a green release seal. Product
 state remains Engineering Preview; A9, B6, B8, B9 and B10 remain open.
+
+## T17 Accessibility helper identity reseal
+
+Tested code head `47fefe5fefe5f1a2946f9685af35ed1a7ec9bb40` replaces the
+bare `BridgeVMProductE2E` executable with a signed nested APPL bundle whose
+fixed bundle identifier is `dev.bridgevm.product-e2e`. The package, release and
+live-tier boundaries reject the former bare path, a changed identifier, a
+missing signature or a malformed nested app. This is a packaging correction;
+it is not live proof that macOS Accessibility accepts the new identity.
+
+- The focused Swift product-E2E suite passed 9/9, and the deterministic T17
+  contract passed all 41 checks at the exact committed head.
+- CI run `33600999709` completed with every independent code, build and test
+  job successful on macOS 15 and 26, including the T17 contract in the macOS
+  app suite. Only `capability and documentation drift` failed because the
+  registry deliberately still named the preceding tested code head.
+- Security and quality run `33600999725` passed all five jobs.
+- Studio T0 job `t0-47fefe5f-a11-preseal` ran the complete deterministic check
+  on `Mac17,9`, macOS `26.5`. Its public outcome is `failed`, `pass=false`
+  because registry freshness was the sole failed section; all remaining
+  sections passed. The retained `check.log` SHA-256 is
+  `c8a39cc4245da4ba42610a4cd3ed8edce1e1bbf094335381cf6c554c5f53bda6`.
+
+The registry-only commit recording this evidence must itself pass hosted CI,
+Security and an exact-SHA T0 before it becomes a green release seal. The three
+earlier `accessibility-untrusted` pilots remain failed evidence. A new packaged
+artifact and live pilot are still required; A9, B6, B8 and B9 remain open and
+the product remains Engineering Preview. B7 and B10 remain separately proven.
