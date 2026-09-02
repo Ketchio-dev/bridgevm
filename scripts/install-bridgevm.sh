@@ -13,8 +13,7 @@ set -euo pipefail
 REPO="${BRIDGEVM_INSTALL_REPO:-Ketchio-dev/bridgevm}"
 EXPECTED_APP="BridgeVM.app"
 EXPECTED_BUNDLE_ID="dev.bridgevm.control"
-RELEASE_MANIFEST="BridgeVM-release.json"
-DEST="/Applications"
+RELEASE_MANIFEST="BridgeVM-release.json" DEST="/Applications"
 VERSION=""
 DRY_RUN=0
 KEEP_BACKUP=0
@@ -52,8 +51,7 @@ if [[ -z "${BRIDGEVM_INSTALL_ASSET_DIR:-}" ]]; then
   [[ "$(uname -s)/$(uname -m)" == "Darwin/arm64" ]] ||
     fail "BridgeVM runs Windows 11 ARM on Apple Silicon Macs only"
 fi
-work=$(mktemp -d)
-backup=""
+work=$(mktemp -d); backup=""
 final_app="$DEST/$EXPECTED_APP"
 cleanup() {
   # On any failure after the old app was moved aside, put it back.
@@ -64,9 +62,7 @@ cleanup() {
   rm -rf "$work"
 }
 trap cleanup EXIT
-# Resolve only a non-prerelease carrying the general-preview contract. This
-# deliberately skips the historical v1.0.0 release, which predates that
-# fail-closed boundary.
+# Resolve only a non-prerelease carrying the General Preview contract.
 if [[ -z "$VERSION" ]]; then
   if [[ -n "${BRIDGEVM_INSTALL_ASSET_DIR:-}" ]]; then
     VERSION="${BRIDGEVM_INSTALL_VERSION:?test fixture must pin a version}"
@@ -83,8 +79,15 @@ else:
 fi
 [[ "$VERSION" =~ ^v[0-9]+(\.[0-9]+){2}([.-][0-9A-Za-z]+)*$ ]] ||
   fail "unexpected release tag shape: $VERSION"
-TARBALL="BridgeVM-$VERSION.tar.gz"
-log "release $VERSION, asset $TARBALL"
+TARBALL="BridgeVM-$VERSION.tar.gz"; log "release $VERSION, asset $TARBALL"
+release_json="$work/github-release.json" commit_json="$work/github-commit.json"
+if [[ -n "${BRIDGEVM_INSTALL_ASSET_DIR:-}" ]]; then
+  cp "$BRIDGEVM_INSTALL_ASSET_DIR/github-release.json" "$release_json" &&
+    cp "$BRIDGEVM_INSTALL_ASSET_DIR/github-commit.json" "$commit_json" || fail "test fixture has no release provenance metadata"
+else
+  curl -fsSL "https://api.github.com/repos/$REPO/releases/tags/$VERSION" -o "$release_json" || fail "could not resolve GitHub release metadata for $VERSION"
+  curl -fsSL "https://api.github.com/repos/$REPO/commits/$VERSION" -o "$commit_json" || fail "could not resolve the commit for release tag $VERSION"
+fi
 fetch() {
   if [[ -n "${BRIDGEVM_INSTALL_ASSET_DIR:-}" ]]; then
     cp "$BRIDGEVM_INSTALL_ASSET_DIR/$1" "$2"
@@ -105,25 +108,26 @@ verify_checksum() {
   [[ "$actual" == "$expected" ]] || fail "checksum mismatch for $name"
   log "checksum verified: $name $actual"
 }
-verify_checksum "$RELEASE_MANIFEST"
-verify_checksum "$TARBALL"
-/usr/bin/python3 - "$work/$RELEASE_MANIFEST" "$VERSION" <<'PY' ||
+verify_checksum "$RELEASE_MANIFEST"; verify_checksum "$TARBALL"
+/usr/bin/python3 - "$release_json" "$commit_json" "$work/$RELEASE_MANIFEST" \
+  "$VERSION" "$TARBALL" <<'PY' ||
 import json, re, sys
-manifest = json.load(open(sys.argv[1]))
+release, commit, manifest = (json.load(open(path)) for path in sys.argv[1:4])
+assets = {item.get("name") for item in release.get("assets", [])}
 graphics = manifest.get("windows_graphics", {})
-ok = (manifest.get("schema_version") == 1 and
-      manifest.get("project") == "BridgeVM" and
-      manifest.get("version") == sys.argv[2] and
-      manifest.get("channel") == "general-preview" and
+ok = (release.get("tag_name") == sys.argv[4] and not release.get("draft") and not release.get("prerelease") and
+      {"BridgeVM-release.json", "SHA256SUMS", sys.argv[5]} <= assets and
+      re.fullmatch(r"[0-9a-f]{40}", commit.get("sha", "")) and
+      manifest.get("schema_version") == 1 and manifest.get("project") == "BridgeVM" and
+      manifest.get("version") == sys.argv[4] and manifest.get("channel") == "general-preview" and
       manifest.get("product_state") == "ENGINEERING_PREVIEW" and
-      re.fullmatch(r"[0-9a-f]{40}", manifest.get("source_commit", "")) and
-      graphics.get("kernel_driver_included") is False and
-      graphics.get("test_signing_required") is False and
+      manifest.get("source_commit") == commit.get("sha") and
+      graphics.get("kernel_driver_included") is False and graphics.get("test_signing_required") is False and
       graphics.get("product_injection_available") is False and
       graphics.get("install_mode") == "3d-off")
 raise SystemExit(0 if ok else "release is not a fail-closed general preview")
 PY
-  fail "$VERSION has an invalid general-preview release contract"
+  fail "$VERSION is not a published, commit-bound General Preview"
 while IFS= read -r entry; do
   case "$entry" in
     /*) fail "archive contains an absolute path: $entry" ;;
@@ -132,8 +136,7 @@ while IFS= read -r entry; do
     *) fail "archive contains an entry outside $EXPECTED_APP: $entry" ;;
   esac
 done < <(tar -tzf "$work/$TARBALL")
-stage="$work/stage"
-mkdir "$stage"
+stage="$work/stage"; mkdir "$stage"
 tar -xzf "$work/$TARBALL" -C "$stage"
 entries=$(find "$stage" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
 [[ "$entries" == "1" && -d "$stage/$EXPECTED_APP" ]] ||

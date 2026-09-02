@@ -3,7 +3,6 @@
 # the existing app is touched, and the happy path must be atomic with rollback.
 # Runs offline against local fixtures (BRIDGEVM_INSTALL_ASSET_DIR).
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
@@ -75,7 +74,8 @@ open(path, "w").write(json.dumps(value))
 EOF
 write_sums "$WRONG_CHANNEL"
 check "experimental channel contract refuses" fail run_installer "$WRONG_CHANNEL" "$DEST"
-
+# shellcheck source=tests/integration/install-release-provenance-cases.sh
+source tests/integration/install-release-provenance-cases.sh
 DRIVER_INCLUDED="$WORK/driver-included"; cp -R "$GOOD_ASSETS" "$DRIVER_INCLUDED"
 python3 - "$DRIVER_INCLUDED/$RELEASE_MANIFEST" <<'EOF'
 import json, sys

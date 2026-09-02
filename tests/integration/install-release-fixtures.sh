@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Shared fixture builders for the fail-closed release installer smoke.
-
 make_bundle() { # $1: dir to create BridgeVM.app in, $2: bundle id
   local app="$1/BridgeVM.app"
   mkdir -p "$app/Contents/MacOS"
@@ -28,10 +27,11 @@ write_sums() { # $1: asset dir
 }
 
 make_assets() { # $1: asset dir, $2: dir containing BridgeVM.app
-  mkdir -p "$1"
-  tar -czf "$1/$TARBALL" -C "$2" "BridgeVM.app"
+  mkdir -p "$1"; tar -czf "$1/$TARBALL" -C "$2" "BridgeVM.app"
   make_manifest "$1"
   write_sums "$1"
+  python3 tests/integration/make-install-release-metadata.py "$1" "$VERSION" \
+    "$TARBALL" "$RELEASE_MANIFEST" "$(printf 'a%.0s' {1..40})"
 }
 
 run_installer() { # $1: asset dir, $2: destination, then installer options

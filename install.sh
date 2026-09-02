@@ -12,7 +12,7 @@
 set -euo pipefail
 
 REPO="Ketchio-dev/bridgevm"
-INSTALLER_SHA256="3d972f3ce49d950e9e9ab3a419faa67a227ac854cc3a4ed18c65dcacd4e7e7c2"
+INSTALLER_SHA256="11840b0810d0109c30fe10bd764ac5a2514d5b3b7ba540dc04c2a9d0058235fa"
 INSTALLER_URL="https://raw.githubusercontent.com/$REPO/main/scripts/install-bridgevm.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
