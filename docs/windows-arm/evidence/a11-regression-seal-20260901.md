@@ -100,3 +100,37 @@ signals, not live guest evidence. The registry-only commit that records this
 section must itself pass hosted CI, Security and a complete exact-SHA T0 before
 it is a green release seal. B7 remains separately proven. A9, B6, B8, B9 and
 B10 remain open, and the product remains Engineering Preview.
+
+## Packaged HVF entitlement correction and 2026-09-02 reseal
+
+Independent inspection rejected release dry-run `33588078623` even though its
+workflow had succeeded. The packaged `hvf_gic_boot_probe` carried
+`com.apple.security.hypervisor`, but the product's preceding `hvf-runner` did
+not. That artifact remains a failed experiment and is not a release candidate.
+
+Tested code head `7d92a62517c35d746cc84a71452c7602ec2064ad` routes release
+packaging through the locked runner signer, selects
+`HvfRunner.release.entitlements` for `--release`, excludes debug
+`get-task-allow`, and verifies both packaged HVF executables after the complete
+app is signed. The deterministic self-test accepts a release-entitlement pair
+and rejects both a missing entitlement and the debug entitlement. It also
+rejects the retained earlier dry-run app.
+
+- CI run `33589168317` passed every independent code, build and test job on
+  macOS 15 and 26, including the new packaged-entitlement self-test. Only
+  capability/documentation drift failed against the deliberately stale
+  registry.
+- Security and quality run `33589168261` passed all five jobs.
+- Studio T0 job `20260902-000111-70656-2849` completed on `Mac17,9`, macOS
+  `26.5`. Its public receipt is still `outcome=failed`, `pass=false` because
+  capability registry freshness was the sole failed step. Every other project
+  check passed, including the complete Rust workspace, Venus, probe, Swift,
+  shim and 21-case installer checks. Retained `check.log` SHA-256:
+  `4ea792a3f862ebb6f77d220a003af64725409243762f2050c3508fef4f9c887f`.
+- Release dry-run `33589193072` stopped at the full-history source boundary
+  before producing an artifact because the registry was stale. It is not
+  packaging evidence.
+
+The registry-only commit recording this correction must itself pass hosted CI,
+Security and a complete exact-SHA T0 before it is a green release seal. Product
+state remains Engineering Preview; A9, B6, B8, B9 and B10 remain open.
