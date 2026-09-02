@@ -337,11 +337,13 @@
     {
       "id": "B7",
       "title": "Audio teardown quality",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": false,
       "statement": "A fixed ten-run playback-and-shutdown campaign passes 10/10 with zero unexpected callback errors; expected shutdown statuses are separately typed and counted.",
-      "measured": "OPEN: the retained live playback rendered 400,948 frames with zero drops but printed callback_errors=3 during clean teardown. The implementation now types expected shutdown statuses separately and treats active, queue-invalidated and unclassified failures as unexpected, but no fixed ten-run teardown campaign has passed.",
+      "measured": "PROVEN 2026-09-01 at exact green seal 350a7e55457e8a60c069ce00287c74d9e9e23da5. Studio job 20260902-023340-t18-350a7e55 ran the fixed ten independent disk-and-vars lanes with no replacement and passed 10/10. Across 2,504,031 rendered frames it recorded zero drops, zero active/queue-invalidated/unclassified callback errors, zero unexpected callback errors, and zero AudioQueue stop or dispose errors. All 30 callback statuses occurred while stopping and were separately typed as expected EnqueueDuringReset. Input manifest SHA-256 is 3a8cf8ed9fa5d134fac6ef6b345816df01e70a24276fdbe91e826dd79244091a, sealed binary SHA-256 is 5912a1f291d9935d3d4d2270b37829de543645db2583c3e3f257b9296f1493e8, run-log-set SHA-256 is dd4780eb4a329a8bee97fbab2e307451733584becefc92a12fc8c4fb5176d853, and public receipt SHA-256 is 5844b7a086e7a3877ec34c0365331f23ea0f2baa2f62b0eab79d1ea0de491081. The receipt deliberately keeps claim_eligible=false and capability_promotion=false, so this closes B7 only and does not promote the product, A9, or any other open criterion.",
       "evidence_paths": [
+        "docs/windows-arm/evidence/b7-audio-teardown-live-20260901.md",
+        "docs/windows-arm/evidence/b7-audio-teardown-receipt-20260901.json",
         "docs/windows-arm/evidence/a5-a6-a7-live-20260817.md",
         "docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md",
         "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs",
