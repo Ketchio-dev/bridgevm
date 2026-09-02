@@ -74,3 +74,29 @@ The registry-only commit that records this section must itself receive green
 hosted CI and Security results before it becomes the release seal. B7 was
 separately proven by its fixed ten-run receipt. A9, B6, B8, B9 and B10 remain
 open, and the product remains Engineering Preview.
+
+## macOS 26 reconciliation correction and final reseal
+
+The final tested code head is
+`4fa4214931aac0cdf090a7b24943df3f4f349160`. Exact-head CI run
+`33587382844` passed every independent code, build and test job on macOS 15
+and 26. The corrected
+`reconcile_children_records_agent_update_notice_as_runtime_metadata` test
+passed in the macOS 26 workspace run, and the daemon suite passed 73/73 there.
+Only `capability and documentation drift` failed against the intentionally
+stale registry. Security and quality run `33587382867` passed all five jobs.
+
+Studio T0 job `20260901-233149-35337-15851` ran the complete deterministic
+project check on `Mac17,9`, macOS `26.5`. Its public receipt remains
+`outcome=failed` and `pass=false`; the sole failed section was the deliberately
+stale capability registry. Every other section passed, including the complete
+Rust workspace, Venus, probe, Swift, shim and 21-case installer checks. The
+retained `check.log` SHA-256 is
+`c1319cd75b712adb3d854924e8cab00ff82669c1b55db478c254af6b3315a40a`.
+
+Before submission, the exact reconciliation test also passed 20/20 sequential
+local runs and the full daemon suite passed 73/73. These are focused automated
+signals, not live guest evidence. The registry-only commit that records this
+section must itself pass hosted CI, Security and a complete exact-SHA T0 before
+it is a green release seal. B7 remains separately proven. A9, B6, B8, B9 and
+B10 remain open, and the product remains Engineering Preview.
