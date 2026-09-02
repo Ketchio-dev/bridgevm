@@ -2,7 +2,6 @@
 # Policy tests for the Studio live-gate queue.
 # No listener/runner; claiming is atomic and published receipts are redacted.
 set -euo pipefail
-
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 CLI="$REPO/scripts/live-gates/bridgevm-live"
 WORKER="$REPO/scripts/live-gates/bridgevm-live-worker.sh"
@@ -177,6 +176,7 @@ check "submit returns in under 10s" '[ "$elapsed" -lt 10 ]'
 check "the job is queued" '"$CLI" status | grep -q "queued .*$job_id"'
 check "the job records a commit" 'grep -q "^commit=[0-9a-f]\{40\}$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env"'
 check "the job records its tier" 'grep -q "^tier=t1-vtimer$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env"'
+bad_sha_id=Policy.bad_sha; check "submit rejects a malformed or unknown commit before burning an id" '! "$CLI" submit t1-vtimer --sha short --job-id "$bad_sha_id" >/dev/null 2>&1 && ! "$CLI" submit t1-vtimer --sha 0000000000000000000000000000000000000000 --job-id "$bad_sha_id" >/dev/null 2>&1 && [ ! -e "$BRIDGEVM_LIVE_ROOT/job-ledger/$bad_sha_id" ]'
 ledger="$BRIDGEVM_LIVE_ROOT/job-ledger/$job_id/entry.env"; check "default submission burns a complete durable ledger entry" '[ "$(wc -l < "$ledger" | tr -d " ")" -eq 5 ] && grep -Fxq "job_id=$job_id" "$ledger" && grep -Fxq "tier=t1-vtimer" "$ledger" && grep -Eq "^commit=[0-9a-f]{40}$" "$ledger" && grep -Fxq "input_manifest_sha256=" "$ledger" && grep -Fxq "sealed_binary_sha256=" "$ledger"'
 explicit_id=Policy.explicit_1-safe; explicit_result="$("$CLI" submit t1-vtimer --job-id "$explicit_id")"; check "a canonical explicit job id is preserved exactly" '[ "$explicit_result" = "$explicit_id" ] && [ -f "$BRIDGEVM_LIVE_ROOT/queued/$explicit_id/job.env" ]'
 too_long="$(printf 'a%.0s' {1..129})"; check "noncanonical explicit job ids are rejected before publication" '! "$CLI" submit t1-vtimer --job-id ../escape >/dev/null 2>&1 && ! "$CLI" submit t1-vtimer --job-id -leading >/dev/null 2>&1 && ! "$CLI" submit t1-vtimer --job-id "$too_long" >/dev/null 2>&1'

@@ -88,6 +88,9 @@ cmd_submit() {
     if [ -z "$sha" ]; then
         sha="$(git -C "$(dirname "$0")/../.." rev-parse HEAD)"
     fi
+    if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]] || ! git -C "$(dirname "$0")/../.." cat-file -e "$sha^{commit}" 2>/dev/null; then
+        echo "--sha must name an existing exact commit" >&2; exit 2
+    fi
 
     ensure_dirs
     local id
