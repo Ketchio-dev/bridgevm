@@ -16,6 +16,58 @@ virtualization stack. It includes persistent storage, display and input,
 networking, audio, guest integration, TPM/Secure Boot workflows, snapshots, and
 an explicitly experimental graphics path.
 
+## Measured on real hardware
+
+| Retained campaign | Result | Evidence boundary |
+| --- | ---: | --- |
+| Fresh Windows first boot | **10 / 10 passed** | Product-default campaign; fixed gate required at least 9/10 |
+| PPSSPP on experimental Vulkan | **58.82 FPS p50 in 3 / 3 runs** | One real title, not a claim about every Vulkan workload |
+| PPSSPP on the experimental D3D11-compatible subset | **3 / 3 runs above 30 FPS** | One real title; p50 was 250.0 / 62.5 / 62.5 FPS |
+| CoreAudio playback and shutdown | **10 / 10 passed** | 2,504,031 frames; zero drops and zero unexpected callback errors |
+| Defined release-blocking criteria | **18 / 19 proven** | A9 production 3D driver signing and installation remains open |
+
+These are retained campaign results on the measured hardware and exact sealed
+inputs, not estimates or promises for every application or Mac. The fixed
+thresholds and receipts are linked from the
+[Windows capability matrix](docs/windows-arm/capability-matrix.md).
+
+## What works today
+
+- installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM;
+- persistent NVMe storage and UEFI variable state;
+- four-vCPU execution, reset/recreate lifecycle, and clean shutdown;
+- keyboard, absolute pointer, dynamic resize, network, host audio, clipboard,
+  folder transfer, and guest-agent control;
+- TPM 2.0, Secure Boot and measured-boot workflows, encrypted vTPM state,
+  recovery/migration, and powered-off snapshots;
+- experimental Vulkan and D3D11-compatible paths in the separate engineering
+  evidence track;
+- deterministic hosted CI plus sealed real-hardware receipts for behavior that
+  CI cannot prove.
+
+BridgeVM distinguishes code that compiles, deterministic tests, and behavior
+observed in a real guest. The snapshot below is generated from the capability
+registry; it is the product wording source of truth.
+
+<!-- BEGIN GENERATED: capability-summary -->
+**Product state: Engineering Preview.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Release-blocking evidence remains open; known defects are disclosed below.
+
+Release-blocking criteria proven: **18 / 19**. Open: A9.
+
+Known open defects:
+- **A9**: Windows-HVF 3D driver injection is unavailable for install and import: signed kernel-policy provenance and a clean-machine installation flow have not been proven. The product exposes only 3D-off install/import.
+- **B6**: Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness.
+
+- Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
+- Guest platform: QEMU virt-compatible guest contract with documented deviations.
+
+State reviewed 2026-09-01 at commit `8171fdb5e4c64b7092f68818f3702f824eb0b435`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+<!-- END GENERATED: capability-summary -->
+
+See the [current status](STATUS.md) and
+[Windows capability matrix](docs/windows-arm/capability-matrix.md) for the
+fixed thresholds and retained receipts.
+
 > [!IMPORTANT]
 > BridgeVM is an **Engineering Preview**, not a production VM product. Bring
 > your own licensed Windows 11 Arm ISO. The general download does not contain a
@@ -65,43 +117,6 @@ bundled into the General Preview. Its B4 result proves the exact test package's
 pointer behavior; it does not close the A9 Microsoft kernel-policy signing
 requirement. Read the full [distribution channel contract](docs/distribution-channels.md)
 before using it.
-
-## What works today
-
-- installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM;
-- persistent NVMe storage and UEFI variable state;
-- four-vCPU execution, reset/recreate lifecycle, and clean shutdown;
-- keyboard, absolute pointer, dynamic resize, network, host audio, clipboard,
-  folder transfer, and guest-agent control;
-- TPM 2.0, Secure Boot and measured-boot workflows, encrypted vTPM state,
-  recovery/migration, and powered-off snapshots;
-- experimental Vulkan and D3D11-compatible paths in the separate engineering
-  evidence track;
-- deterministic hosted CI plus sealed real-hardware receipts for behavior that
-  CI cannot prove.
-
-BridgeVM distinguishes code that compiles, deterministic tests, and behavior
-observed in a real guest. The snapshot below is generated from the capability
-registry; it is the product wording source of truth.
-
-<!-- BEGIN GENERATED: capability-summary -->
-**Product state: Engineering Preview.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Release-blocking evidence remains open; known defects are disclosed below.
-
-Release-blocking criteria proven: **18 / 19**. Open: A9.
-
-Known open defects:
-- **A9**: Windows-HVF 3D driver injection is unavailable for install and import: signed kernel-policy provenance and a clean-machine installation flow have not been proven. The product exposes only 3D-off install/import.
-- **B6**: Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness.
-
-- Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
-- Guest platform: QEMU virt-compatible guest contract with documented deviations.
-
-State reviewed 2026-09-01 at commit `8171fdb5e4c64b7092f68818f3702f824eb0b435`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
-<!-- END GENERATED: capability-summary -->
-
-See the [current status](STATUS.md) and
-[Windows capability matrix](docs/windows-arm/capability-matrix.md) for the
-fixed thresholds and retained receipts.
 
 ## Known boundaries
 
