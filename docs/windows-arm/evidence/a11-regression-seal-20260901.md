@@ -37,11 +37,40 @@ The code-head CI failure is retained. It is not a green seal and cannot promote
 live evidence. The registry-only commit must be pushed and its exact SHA must
 receive successful hosted CI and Security results.
 
-## Explicitly open
+## Explicitly open at that seal
 
-The hosted QMP campaign at code head run `33582528722` is exploratory until the
+The hosted QMP campaign at code head run `33582528722` was exploratory until the
 same exact green seal passes the full 20/20 negative control and 60/60 workspace
-rounds and its artifact is independently verified. The audio teardown 10-run
-campaign, M1/M2/M3 clean-machine matrix, 20-workload compatibility matrix, A9
-Windows kernel acceptance and complete app-driven install/recovery E2E also
-remain open. Product state therefore remains Engineering Preview.
+rounds and its artifact is independently verified. At that seal, the audio
+teardown 10-run campaign, M1/M2/M3 clean-machine matrix, 20-workload
+compatibility matrix, A9 Windows kernel acceptance and complete app-driven
+install/recovery E2E were also open. Product state remained Engineering Preview.
+
+## Release-preparation reseal
+
+The later release-preparation code head is
+`99a3dfffa58485e402c685875d8d2c1b3752dbe1`.
+
+- Studio T0 job `20260901-231136-2069-30402` ran the complete deterministic
+  project check on `Mac17,9`, macOS `26.5`. Its public outcome is `failed` and
+  `pass=false` because the intentionally stale capability registry was the
+  sole failed step. Every other section passed. The retained `check.log`
+  SHA-256 is
+  `bebacbe5cc86a2cd60af6b7f1c6d625427028b7ceafb9cadb9a844abc9da4fc2`.
+- Security and quality run `33586100100` passed all five jobs at that exact
+  head.
+- CI run `33586100088` passed every independent code, build and test job. Only
+  `capability and documentation drift` failed against the stale registry.
+
+Release dry-run `33585644986` at earlier head
+`12831bf27446b979a41db2419686e090512d3c53` was canceled and is not promoted.
+It exposed that the release workflow's shallow checkout let the source-boundary
+step miss stale capability evidence. The final code head requires complete Git
+history and tests that invariant. A separate invalid manual T0 submission used
+a guessed unknown commit, produced no receipt and remains in the queue record;
+the final head rejects malformed or unknown commits before burning a job id.
+
+The registry-only commit that records this section must itself receive green
+hosted CI and Security results before it becomes the release seal. B7 was
+separately proven by its fixed ten-run receipt. A9, B6, B8, B9 and B10 remain
+open, and the product remains Engineering Preview.
