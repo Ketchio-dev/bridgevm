@@ -77,8 +77,7 @@ assert_independent_media() {
   : > "$root/media-inodes.tsv"
   for path in "$root"/lane-*/disk.raw "$root"/lane-*/vars.fd; do
     [[ -f "$path" && ! -L "$path" ]] || return 1
-    inode="$(stat -f %i "$path" 2>/dev/null || true)"
-    current="$(stat -f %d "$path" 2>/dev/null || true)"
+    read -r current inode < <(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(s.st_dev, s.st_ino)' "$path") || return 1
     [[ "$inode" =~ ^[0-9]+$ && "$current" =~ ^[0-9]+$ ]] || return 1
     [[ -z "$device" || "$current" == "$device" ]] || return 1
     device="$current"
