@@ -105,6 +105,7 @@ docs/windows-arm/evidence/bridgevm-pc-nvme-bar-live-20260831.md	current	windows-
 docs/windows-arm/evidence/bridgevm-pc-nvme-block-live-20260831.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-bds-exit-live-20260831.md	current	windows-architecture	-
 docs/windows-arm/evidence/a9-product-e2e-pilot-failures-20260901.md	current	windows-product	-
+docs/windows-arm/evidence/a11-regression-seal-20260901.md	current	testing	-
 docs/reference/bridgevm-virt-platform.md	reference	windows-platform	-
 docs/testing/apple-silicon-live-gates.md	current	development-process	-
 docs/windows-arm/smccc-trng-psci-contract.md	current	windows-hvf-engine	-

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-01",
-  "tested_commit": "5af45d6f7c15ba62145338b32dc4145d7eeb7f94",
+  "tested_commit": "8171fdb5e4c64b7092f68818f3702f824eb0b435",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -140,9 +140,10 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "Re-sealed 2026-09-01 at exact tested code head 5af45d6f7c15ba62145338b32dc4145d7eeb7f94. Studio t0-check job 20260901-210540-76009-9747 ran the complete deterministic project check on Mac17,9/macOS 26.5; its sole failed section was the intentionally stale capability registry, and the retained check log SHA-256 is e9b7dbc7faa2c602a8da41bebe70301f5014afe71f537b7d78b26ea99469303e. The same full check passed the T16 v1/v2 integration contracts, including the strict 48-lane A/A schema, deterministic pattern digests, host and guest quiescence evidence, no replacement or optional stopping, and fail-closed receipt/report validation. GitHub-hosted Security and quality run 33577994725 passed all five supply-chain, graphics-claim, live-gate-policy, fuzz and loom jobs. CI run 33577994637 passed every independent code, build and test job on macOS 15 and 26, including Rust workspace tests, Venus, Swift app suites, clippy, rustfmt, MSRV, cross-compile, structural budgets and the hosted compile of both sealed Windows NVMe workloads; only its full-history freshness job stopped at the intentionally stale registry. Earlier CI run 33577520818 exposed a Linux-only synthetic-fixture copy incompatibility rather than a guest or performance result; the failed run remains retained, fixture copying and inode checks are now host-portable, and the one-line reduction is locked by the 362-line structural budget. Hosted performance-binary run 33576854718 built and attested the calibration binary from code head 15a55c1d36962f4cc7a23e99decb84f2ed0e23f2, whose SHA-256 is c10d3373cc2e6a8d9751abbe3158aeeba0de17b4ef2481e4c57a7e7d521d78cd; that is provenance evidence only and no live v2 performance result exists. The two failed 44e808e7 T17 pilots remain recorded rather than rewritten: the first was a resident-worker contract mismatch and the second reached the packaged helper but stopped accessibility-untrusted before VM creation. This registry-only seal closes the expected freshness transition; its own hosted CI must still pass. Catalog certificate-chain trust and Windows kernel acceptance are not claimed, no live Windows install or complete product UI E2E has passed, A9 remains OPEN, and the product remains Engineering Preview.",
+      "measured": "Re-sealed 2026-09-01 around final head 8171fdb5e4c64b7092f68818f3702f824eb0b435. Studio t0-check job 20260902-021748-t0-8171fdb5-r2 ran the complete deterministic project check on Mac17,9/macOS 26.5; its public outcome is failed because the intentionally stale capability registry was the sole failed step, while every other project-check section passed. The retained check log SHA-256 is f74cbafad43de1bd64fc0b2f745016e76c8b76926d5a643098ebe9c913b1f110. The earlier job 20260902-021510-t0-8171fdb5 was interrupted by a worker restart and remains recorded without a receipt rather than rewritten as evidence. GitHub-hosted Security and quality run 33582509854 passed all five loom, graphics-claim, fuzz, supply-chain and live-gate-policy jobs at the exact code head. CI run 33582509937 passed every independent code, build and test job on macOS 15 and 26, including Rust workspace tests, Venus, Swift app suites, clippy, rustfmt, MSRV, cross-compile, structural budgets and the hosted compile of the sealed Windows NVMe workloads; only its capability and documentation drift job failed against the intentionally stale registry. This registry-only seal resolves that freshness transition, but its own hosted CI and Security runs must pass before the seal is treated as green. Hosted QMP run 33582528722 is still a non-promotable code-head experiment until an exact green seal runs and verifies 20/20 plus 60/60. No fixed ten-run audio teardown receipt, M1/M2/M3 clean-machine matrix, 20-workload compatibility matrix, live Windows install or complete product UI E2E has passed. A9 and B6 through B10 remain OPEN, and the product remains Engineering Preview.",
       "evidence_paths": [
         "STATUS.md",
+        "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
         "docs/windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md",
         "docs/windows-arm/evidence/bridgevm-pc-pcie-ecam-live-20260830.md",
         "docs/windows-arm/evidence/bridgevm-pc-firmware-pcie-ecam-live-20260830.md",
@@ -317,6 +318,76 @@
       "measured": "V1 is powered-off cold snapshot as an atomic disk plus UEFI vars pair; running-state save is V2.",
       "evidence_paths": [
         "docs/windows-arm/snapshot-scope-v1.md"
+      ]
+    },
+    {
+      "id": "B6",
+      "title": "Glyph correctness",
+      "state": "OPEN",
+      "release_blocking": false,
+      "statement": "Caption, menu and tab glyphs pass 3/3 at each of three declared resolutions and three declared scales with a verified pixel mask and frame time within 10% of baseline.",
+      "measured": "OPEN: body text has been observed, but title, tab and menu glyphs remain blank in the retained native-resolution Notepad scene. The active-CGL capture prerequisite is proven; the fixed 3-resolution by 3-scale live matrix and its pixel-mask/frame-time acceptance have not run.",
+      "evidence_paths": [
+        "docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md",
+        "docs/windows-arm/evidence/windows-1.0-closure-f1-f4-20260820.md",
+        "docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md"
+      ],
+      "known_defect": "Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness."
+    },
+    {
+      "id": "B7",
+      "title": "Audio teardown quality",
+      "state": "OPEN",
+      "release_blocking": false,
+      "statement": "A fixed ten-run playback-and-shutdown campaign passes 10/10 with zero unexpected callback errors; expected shutdown statuses are separately typed and counted.",
+      "measured": "OPEN: the retained live playback rendered 400,948 frames with zero drops but printed callback_errors=3 during clean teardown. The implementation now types expected shutdown statuses separately and treats active, queue-invalidated and unclassified failures as unexpected, but no fixed ten-run teardown campaign has passed.",
+      "evidence_paths": [
+        "docs/windows-arm/evidence/a5-a6-a7-live-20260817.md",
+        "docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md",
+        "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs",
+        "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_stats.rs",
+        "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_teardown.rs",
+        "scripts/audio-teardown-result.py",
+        "scripts/verify-audio-teardown-receipt.py"
+      ]
+    },
+    {
+      "id": "B8",
+      "title": "Clean-machine host matrix",
+      "state": "OPEN",
+      "release_blocking": false,
+      "statement": "Install, boot, update and rollback each retain per-cell receipts on M1, M2 and M3 Apple-silicon host generations; every untested cell remains explicitly untested.",
+      "measured": "OPEN: retained product and live evidence comes from one M4 Max host and one macOS build. No M1/M2/M3 clean-machine matrix exists.",
+      "evidence_paths": [
+        "docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md"
+      ]
+    },
+    {
+      "id": "B9",
+      "title": "Real-workload compatibility matrix",
+      "state": "OPEN",
+      "release_blocking": false,
+      "statement": "Twenty declared real workloads retain frame-time p50, p95 and p99 plus an exact result class for each workload.",
+      "measured": "OPEN: one real title across two API configurations has retained gate evidence. The declared 20-workload compatibility matrix has not run, so unmeasured titles are not inferred compatible.",
+      "evidence_paths": [
+        "docs/windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md",
+        "docs/windows-arm/evidence/a3-d3d11-title-fps-3of3-20260812.md",
+        "docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md"
+      ]
+    },
+    {
+      "id": "B10",
+      "title": "QMP full-workspace stress",
+      "state": "OPEN",
+      "release_blocking": false,
+      "statement": "The old QMP setup ordering reproduces 20/20 under 24 load processes, then exactly 60 sequential full cargo test --workspace --locked rounds pass with every compressed log and raw SHA-256 retained at one exact commit.",
+      "measured": "OPEN: the setup-race cause and focused fix are proven and verifier mutations reject 19 controls, 59 rounds and changed logs. No exact-scope 20/20 plus 60/60 full-workspace receipt has passed; this deterministic acceptance belongs on GitHub-hosted macOS rather than the physical-Mac queue.",
+      "evidence_paths": [
+        "docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md",
+        ".github/workflows/qmp-stress.yml",
+        "scripts/live-gates/run-qmp-stress-tier.sh",
+        "scripts/live-gates/qmp_stress_contract.py",
+        "scripts/live-gates/verify-qmp-stress.py"
       ]
     }
   ]
