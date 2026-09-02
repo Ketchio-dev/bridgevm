@@ -111,8 +111,8 @@ self_test() (
   mkdir "$temporary/lanes"; printf 'disk\n' > "$temporary/disk"; printf 'vars\n' > "$temporary/vars"
   for ordinal in {1..48}; do
     mkdir "$temporary/lanes/lane-$ordinal"
-    cp -c "$temporary/disk" "$temporary/lanes/lane-$ordinal/disk.raw"
-    cp -c "$temporary/vars" "$temporary/lanes/lane-$ordinal/vars.fd"
+    cp "$temporary/disk" "$temporary/lanes/lane-$ordinal/disk.raw"
+    cp "$temporary/vars" "$temporary/lanes/lane-$ordinal/vars.fd"
   done
   assert_independent_media "$temporary/lanes"
   printf 'mutated\n' >> "$temporary/public-seed.txt"
