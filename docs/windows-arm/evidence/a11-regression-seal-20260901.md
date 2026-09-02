@@ -162,3 +162,41 @@ Security and an exact-SHA T0 before it becomes a green release seal. The three
 earlier `accessibility-untrusted` pilots remain failed evidence. A new packaged
 artifact and live pilot are still required; A9, B6, B8 and B9 remain open and
 the product remains Engineering Preview. B7 and B10 remain separately proven.
+
+## T17 fresh-library product entry correction
+
+Exact package pilot `t17-86c5fd68-v1.1.0-pilot-r1` did not pass. Its ten
+sealed assets and package preflight succeeded, the Accessibility frontend
+started, and worker cleanup was verified, but no product stage completed. The
+lane reported `ui-element-missing`; public receipt SHA-256 is
+`086f88b7c6221977025c724ee54a4083f44b976fc6d847f14cecac0f420b74e4`.
+The failed result remains failed evidence.
+
+The failing state exposed a product-automation mismatch. An empty isolated
+library renders `FirstRunView`, while the helper waited for
+`bridgevm.library.empty.create`, an identifier present only in the different
+`emptyState` branch. Code head
+`5280ef56cc9f3f017aa36fe1196d9104b8437174` instead enters the existing new-VM
+flow through the always-visible `bridgevm.library.toolbar.create` control and
+adds a fixed identifier regression test. The focused product-E2E Swift suite
+passed 10/10 and the deterministic live-tier contract passed 41 checks.
+
+- CI run `33605274851` passed every independent code, build and test job on
+  macOS 15 and 26. Only capability/documentation drift failed against the
+  deliberately stale registry.
+- Security and quality run `33605274784` passed all five jobs.
+- Studio T0 job `t0-5280ef56-a11-preseal` failed only registry freshness; every
+  other project-check section passed. Retained `check.log` SHA-256 is
+  `95459b2c9b78189a7d499d6abfb3adf4ded3fd496bad1d329087d8ca218ae0fc`.
+- Release dry-run `33605319164` stopped at that same fail-closed source
+  boundary before building an artifact and is not release evidence.
+
+A local diagnostic package carrying the corrected helper was also not
+promoted. Pilot `t17-5280ef56-local-pilot-r1` failed closed as
+`accessibility-untrusted`; public receipt SHA-256 is
+`f9eb090c5a6bfbcfc852ac98a41553f488dd7fe2be9138f057f92db6e2359bfa`.
+Both helper bundles are ad-hoc signed and have different CDHash-bound
+designated requirements, so the previous macOS TCC row cannot authorize the
+new binary. The old row must be removed and the exact corrected helper added
+after user authentication before another pilot is submitted. A9, B6, B8 and
+B9 remain open and the product remains Engineering Preview.
