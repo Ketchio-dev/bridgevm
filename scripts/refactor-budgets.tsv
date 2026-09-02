@@ -1325,7 +1325,7 @@ scripts/live-gates/run-bridgevm-pc-nvme-bar-tier.sh	81	0
 scripts/live-gates/run-bridgevm-pc-nvme-block-tier.sh	84	0
 scripts/live-gates/run-pointer-reliability-tier.sh	61	0
 scripts/live-gates/run-hvf-boot-performance-tier.sh	120	0
-scripts/live-gates/run-hvf-nvme-performance-tier.sh	182	0
+scripts/live-gates/run-hvf-nvme-performance-tier.sh	24	0
 scripts/live-gates/write-hvf-boot-performance-receipt.py	83	0
 scripts/write-hvf-nvme-performance-receipt.py	598	0
 scripts/live-gates/run-special-tier.sh	19	0
@@ -1797,3 +1797,16 @@ apps/macos/scripts/install-windows-catalog-verifier.sh	22	0
 scripts/build-windows-catalog-verifier.sh	46	0
 tests/integration/build-windows-catalog-verifier-test-helper.sh	14	0
 tests/integration/windows_catalog_test_support.py	29	0
+scripts/hvf_nvme_performance_v2_report.py	627	0
+scripts/live-gates/hvf-nvme-performance-v2-environment.py	183	0
+scripts/live-gates/hvf-nvme-performance-v2-environment.sh	136	0
+scripts/live-gates/hvf-nvme-performance-v2-manifest.sh	420	0
+scripts/live-gates/hvf-nvme-performance-v2-quiescence.json	1	0
+scripts/live-gates/run-hvf-nvme-performance-v1-tier.sh	182	0
+scripts/live-gates/run-hvf-nvme-performance-v2-tier.sh	339	0
+scripts/render-hvf-nvme-workload-v2.py	1228	0
+scripts/submit-hvf-nvme-calibration-v2-campaign.sh	363	0
+scripts/verify-hvf-nvme-quiescence-v2.py	186	0
+scripts/win-assets/bv-nvme-quiescence-v2.ps1	72	0
+scripts/write-hvf-nvme-performance-v2-receipt.py	991	0
+tests/integration/hvf-nvme-performance-v2-tier-smoke.sh	40	0

@@ -144,7 +144,7 @@ dirty_harness="$(git -C "$REPO" status --porcelain --untracked-files=all -- \
   scripts/submit-hvf-nvme-performance-campaign.sh scripts/write-hvf-nvme-performance-receipt.py \
   scripts/live-gates/bridgevm-live scripts/live-gates/bridgevm-live-worker.sh \
   scripts/live-gates/redact-receipt.py \
-  scripts/live-gates/hvf-nvme-performance-manifest.sh scripts/live-gates/run-hvf-nvme-performance-tier.sh \
+  scripts/live-gates/hvf-nvme-performance-manifest.sh scripts/live-gates/run-hvf-nvme-performance-tier.sh scripts/live-gates/run-hvf-nvme-performance-v1-tier.sh \
   scripts/live-gates/run-special-tier.sh scripts/live-gates/run-tier.sh \
   tests/integration/hvf-nvme-performance-tier-smoke.sh)"
 [[ -z "$dirty_harness" ]] || fail "T16 harness inputs must be committed before live submission"

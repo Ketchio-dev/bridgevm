@@ -167,6 +167,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $workload -CompileOnly
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $workloadV2 = Join-Path $env:RUNNER_TEMP 'bridgevm-nvme-workload-v2.ps1'
+          $configV2 = Join-Path $env:RUNNER_TEMP 'bridgevm-nvme-config-v2.json'
+          python scripts/render-hvf-nvme-workload-v2.py --output $workloadV2 --config-output $configV2 --nonce 0123456789abcdef0123456789abcdef
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $workloadV2 -CompileOnly
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   budgets:
     name: refactor budgets

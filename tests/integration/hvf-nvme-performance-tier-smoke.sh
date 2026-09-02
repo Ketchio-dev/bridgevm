@@ -71,4 +71,4 @@ awk -F '\t' -v p="$TEMPORARY/fake.ps1" -v h="$(seal "$TEMPORARY/fake.ps1")" \
 grep -Fq 'BRIDGEVM_LIVE_ROOT="$QUEUE_ROOT" "$CLI" submit t16-hvf-nvme-performance' "$SUBMIT" && grep -Fq -- '--job-id "$expected_job"' "$SUBMIT"
 grep -Fq 'campaign-registry.tsv' "$SUBMIT" "$REPORT"
 grep -Fq 't16-hvf-nvme-performance' "$REPO/scripts/live-gates/bridgevm-live" "$REPO/scripts/live-gates/bridgevm-live-worker.sh" "$REPO/scripts/live-gates/run-tier.sh"
-echo "PASS: sealed T16 Windows warm NVMe performance contracts"
+exec "$REPO/tests/integration/hvf-nvme-performance-v2-tier-smoke.sh"

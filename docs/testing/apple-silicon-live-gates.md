@@ -80,7 +80,7 @@ Properties the queue must hold:
 | T9 | Fixed 20-lane BridgeVM PC firmware campaign | Experimental-board standard UEFI PCI development evidence |
 | T10 | Sixty loaded full-workspace rounds | QMP shutdown-race regression evidence |
 | T15 | One sealed 4-vCPU release boot | Interleavable diagnostic sample for A/A noise and A/B performance comparisons |
-| T16 | Fixed sealed Windows NVMe workload | Counterbalanced A/A noise and A/B storage-performance evidence |
+| T16 | Fixed sealed Windows NVMe workload | Preserved v1 STOP plus preregistered v2 A/A calibration; no live v2 result yet |
 | T17 | Packaged Windows-HVF 3D-off product E2E | One-lane diagnostic pilot or fixed three-lane release campaign |
 
 T0–T4 filter candidates. Only T5 produces A1 shipping evidence, and no faster
@@ -107,6 +107,46 @@ previous tree. Submit copies the signed release `binary` into the
 job directory, and the worker runs those exact sealed bytes rather than
 rebuilding after submission. Receipts preserve separate PPSSPP payload and
 embedded-executable hashes.
+
+T16 v1 remains a STOP: its 20/20-valid, ten-pair A/A used identical binary
+bytes but produced a 25.526% primary noise bound, above the predeclared 2.94%
+candidate ceiling. It therefore permits no PRP-prefix diagnostic,
+implementation, A/B run or performance claim. T16 v2 is a separate,
+preregistered measurement calibration and does not erase, replace or reinterpret
+that result. No live T16 v2 result exists yet.
+
+The fixed v2 geometry is a 2,048 MiB Windows file at
+`C:\ProgramData\BridgeVMPerf\nvme-seq-v2.bin`, 128 KiB transfers, queue depth
+one, 16 timed read passes and four durable write passes. It requires 24 pairs
+(48 lanes) under a fixed, seed-balanced baseline/candidate label and order
+schedule with identical binary bytes for both A/A labels. Each lane has its own
+disk clone and vars file. All 48 valid lanes are required, with per-call and
+per-pass raw timing retained: lane replacement, trimming, optional stopping and
+post-result sample extension are forbidden. The preregistered analysis uses
+the paired median and 10,000 paired bootstrap resamples.
+
+Each lane has a fixed 120-second post-clone-hash cooldown, remains on AC under
+the identical `pmset -g custom` configuration and `caffeinate`, and samples
+thermal state every five seconds with nominal-only acceptance. The host must be
+HID-idle for at least 300 seconds without reset, and no other live job may
+overlap. After guest READY, the guest settles for 120 seconds and must pass 30
+one-second quiescence samples: total-CPU median at most 10% and p95 at most
+20%, disk bytes/s median at most 1 MiB/s and p95 at most 4 MiB/s, and average
+disk-queue p95 at most 0.25, followed by 15 seconds of quiet. Defender remains
+enabled and unchanged, the workload file is marked `NOT_CONTENT_INDEXED`, and
+the existing 4-vCPU GPU, display, network and CoreAudio configuration remains
+fixed.
+
+Paired read-phase throughput is primary and its A/A noise bound must be
+strictly below 2.94% before any candidate diagnostic; equality or a larger
+bound is a STOP. Only a passing calibration permits one sealed baseline
+diagnostic of the PRP-list share `f`, with the final ceiling still
+`min(2.94%, 100*f/(1-f))`; v2 noise at or above that ceiling stops the work.
+Read p99, durable-write throughput, write p99, flush maximum and desktop elapsed
+remain guardrails. V2 remains `claim_eligible=false`, uses the same physical-Mac
+live tier historically called the Studio queue, needs about 320 GiB free, and
+reserves about eight hours. The queue is test infrastructure, not a product
+runtime or build dependency.
 
 T17 never substitutes an installed disk, harness acknowledgement or synthetic
 guest log for the packaged product command. Its private manifest fixes one

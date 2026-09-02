@@ -1,0 +1,1 @@
+{"cpu_percent":{"median_max":10,"p95_max":20},"disk_bytes_per_second":{"median_max":1048576,"p95_max":4194304},"disk_queue_length":{"p95_max":0.25},"interval_seconds":1,"post_ready_settle_seconds":120,"post_sample_quiet_seconds":15,"samples":30,"schema":"bridgevm.hvf-nvme-quiescence.v1"}

@@ -221,6 +221,43 @@ bridgevm-hvf` must stay green at every stage boundary.
   fail-closed report has SHA-256
   `f90684a99ccb05b3d5fd8d90e58aa0bfc031f151cf8007119ea4d76142a30204`
   and remains outside git with the private live evidence.
+
+  That v1 STOP remains binding; v2 is not a reinterpretation, replacement or
+  retry of the failed v1 evidence, and it does not authorise a candidate
+  diagnostic or implementation. T16 v2 is preregistered only as a new
+  measurement-instrument calibration. Its fixed Windows workload uses a
+  2,048 MiB file at
+  `C:\ProgramData\BridgeVMPerf\nvme-seq-v2.bin`, 128 KiB transfers, queue depth
+  one, 16 timed read passes and four durable write passes. The complete A/A is
+  24 pairs (48 lanes) under a fixed, seed-balanced baseline/candidate label and
+  order schedule; both labels use identical binary bytes. Every lane has its
+  own cloned disk and vars file. All 48 valid lanes are required: there is no
+  lane replacement, outlier trimming, optional stopping or post-result sample
+  extension. The analysis retains per-call and per-pass raw timing and uses the
+  preregistered paired median with 10,000 paired bootstrap resamples.
+
+  The host controls are a fixed 120-second cooldown after clone hashing, AC
+  power throughout, identical `pmset -g custom` configuration, `caffeinate`,
+  five-second thermal monitoring with nominal-only acceptance, at least 300
+  seconds of host-HID idleness without reset, and no overlapping live job. The
+  guest must reach READY, settle for 120 seconds, and then pass 30 one-second
+  quiescence samples: total-CPU median at most 10% and p95 at most 20%, disk
+  bytes/s median at most 1 MiB/s and p95 at most 4 MiB/s, and average disk-queue
+  p95 at most 0.25, followed by 15 seconds of quiet. Defender remains enabled
+  and unchanged; the data file is marked `NOT_CONTENT_INDEXED`; the existing
+  4-vCPU GPU, display, network and CoreAudio configuration is unchanged.
+
+  Primary calibration evidence is paired read-phase throughput. Its A/A noise
+  bound must be strictly below 2.94% before any candidate diagnostic is
+  permitted; equality or a larger value is a STOP. Only after that pass may
+  one sealed baseline diagnostic measure the PRP-list share `f`, after which
+  the final ceiling remains `min(2.94%, 100*f/(1-f))`; if the v2 noise bound is
+  at or above that ceiling, the work stops again. Read p99, durable-write
+  throughput, write p99, flush maximum and desktop elapsed are binding
+  guardrails. The campaign remains `claim_eligible=false`. It uses the same
+  physical-Mac live tier historically called the Studio queue, requires about
+  320 GiB of free space, and reserves about eight hours. No live v2 result
+  exists yet, so this preregistration supports no performance claim.
 - **Stage 3 — DMA path** (HIGH impact, MEDIUM risk): code implemented and the
   final live matrix covers its current-path correctness; isolated before/after
   performance attribution remains pending. The
