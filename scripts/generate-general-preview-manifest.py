@@ -77,7 +77,7 @@ def self_test(registry: dict) -> None:
         "hvf-windows-product-injection-deny-smoke.sh",
         "Refuse Windows kernel packages in the general artifact",
         "-iname '*.sys'",
-        "draft: true",
+        "draft: true", "fetch-depth: 0", "git rev-parse --is-shallow-repository",
     ):
         assert required in workflow, f"release workflow lost boundary: {required}"
     print("general preview manifest: PASS")
