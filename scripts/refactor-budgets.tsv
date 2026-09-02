@@ -1805,7 +1805,7 @@ scripts/live-gates/hvf-nvme-performance-v2-quiescence.json	1	0
 scripts/live-gates/run-hvf-nvme-performance-v1-tier.sh	182	0
 scripts/live-gates/run-hvf-nvme-performance-v2-tier.sh	339	0
 scripts/render-hvf-nvme-workload-v2.py	1228	0
-scripts/submit-hvf-nvme-calibration-v2-campaign.sh	363	0
+scripts/submit-hvf-nvme-calibration-v2-campaign.sh	362	0
 scripts/verify-hvf-nvme-quiescence-v2.py	186	0
 scripts/win-assets/bv-nvme-quiescence-v2.ps1	72	0
 scripts/write-hvf-nvme-performance-v2-receipt.py	991	0
