@@ -1277,6 +1277,7 @@ apps/macos/scripts/build-sign-hvf-runner.sh	143	0
 apps/macos/scripts/build-sign-hvf-windows-probe.sh	206	0
 apps/macos/scripts/bundle-swtpm-runtime.sh	330	0
 apps/macos/scripts/package-hvf-control-app.sh	182	0
+scripts/verify-app-hvf-entitlements.sh	66	0
 packaging/macos/app-name.sh	25	0
 packaging/macos/build-debug-app-bundle.sh	485	0
 packaging/macos/build-debug-dmg.sh	238	0

@@ -32,7 +32,6 @@ json_valid() {
   local path
   for path in "$@"; do python3 -m json.tool "$path" >/dev/null || return 1; done
 }
-
 step "capability registry" python3 scripts/render-capability-status.py --check
 step "contract and schema json" json_valid docs/machine-contract/qemu-virt-deviations.json schemas/bridgevm-capability-v1.json schemas/windows-hvf-3d-off-product-e2e-receipt-v1.json
 step "capability evidence" python3 scripts/check-capability-evidence.py
@@ -57,6 +56,7 @@ step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
 step "Windows product E2E contracts" tests/integration/windows-product-e2e-contract-smoke.sh
 step "BridgeVM PC firmware boundary" scripts/check-bridgevm-pc-firmware-boundary.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
+step "packaged HVF entitlements" scripts/verify-app-hvf-entitlements.sh --self-test
 step "install verify" bash tests/integration/install-verify-smoke.sh
 step "rustfmt" cargo "$TOOLCHAIN" fmt --all --check
 if [[ $FAST -eq 1 ]]; then

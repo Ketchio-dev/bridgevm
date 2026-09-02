@@ -206,6 +206,7 @@ jobs:
       # The T17 contract signs and verifies a synthetic app bundle as part of
       # its fail-closed checks, so it also requires the hosted macOS toolchain.
       - run: bash tests/integration/windows-product-e2e-contract-smoke.sh
+      - run: bash scripts/verify-app-hvf-entitlements.sh --self-test
 
   truth:
     # Keeps the capability registry, the generated claim blocks and the

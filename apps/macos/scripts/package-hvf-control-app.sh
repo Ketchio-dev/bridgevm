@@ -58,7 +58,6 @@ swift_bin_dir="$(
     --configuration release --show-bin-path
 )"
 cargo build --locked --release -p bridgevm-cli
-cargo build --locked --release -p hvf-runner
 install -d \
   "$stage_app/Contents/MacOS" \
   "$stage_app/Contents/Resources/scripts/win-assets" \
@@ -84,7 +83,8 @@ install -m 644 "$MACOS_DIR/BridgeVMControl-Info.plist" "$stage_app/Contents/Info
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$stage_app/Contents/Info.plist")" == "$SHORT_VERSION" ]] || { echo "bundle short version did not persist" >&2; exit 1; }
 install -m 755 "$swift_bin_dir/BridgeVMControl" "$stage_app/Contents/MacOS/BridgeVMControl"
 install -m 755 "$ROOT/target/release/bridgevm" "$stage_app/Contents/Resources/target/release/bridgevm"
-install -m 755 "$ROOT/target/release/hvf-runner" "$stage_app/Contents/Resources/target/release/hvf-runner"
+BRIDGEVM_CODESIGN_IDENTITY="$IDENTITY" "$MACOS_DIR/scripts/build-sign-hvf-runner.sh" --release \
+  --output "$stage_app/Contents/Resources/target/release/hvf-runner" >/dev/null
 install -m 644 "$FIRMWARE_CODE" "$stage_app/Contents/Resources/firmware/edk2-aarch64-secure-code.fd"
 install -m 644 \
   "$ROOT/crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd.build.json" \
@@ -174,6 +174,7 @@ sign_artifact "$stage_app/Contents/MacOS/BridgeVMControl"
 "$MACOS_DIR/scripts/package-hvf-product-e2e.sh" "$stage_app" "$swift_bin_dir" "$IDENTITY"
 sign_artifact "$stage_app"
 codesign --verify --deep --strict "$stage_app"
+"$ROOT/scripts/verify-app-hvf-entitlements.sh" "$stage_app" >/dev/null
 "$MACOS_DIR/scripts/bundle-swtpm-runtime.sh" --verify-only "$stage_app" >/dev/null
 "$ROOT/scripts/verify-app-third-party-notices.sh" "$stage_app" >/dev/null
 mv "$stage_app" "$OUTPUT"

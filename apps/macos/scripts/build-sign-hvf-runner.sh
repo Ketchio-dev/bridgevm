@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 MACOS_DIR="$ROOT/apps/macos"
 DEBUG_ENTITLEMENTS="$MACOS_DIR/HvfRunner.entitlements"
+RELEASE_ENTITLEMENTS="$MACOS_DIR/HvfRunner.release.entitlements"
 IDENTITY="${BRIDGEVM_CODESIGN_IDENTITY:--}"
 BUILD_PROFILE="debug"
 
@@ -17,8 +18,8 @@ verifies that entitlement, and prints the signed binary path.
 
 Environment:
   BRIDGEVM_CODESIGN_IDENTITY     codesign identity, defaults to ad-hoc '-'
-  BRIDGEVM_HVF_ENTITLEMENTS      entitlements plist path, defaults to
-                                  apps/macos/HvfRunner.entitlements
+  BRIDGEVM_HVF_ENTITLEMENTS      entitlement plist; debug by default, release
+                                  with --release
 
 The signed runner can execute the empty HVF VM create/destroy probe. It still
 does not enter firmware, create vCPUs, or boot Windows.
@@ -60,9 +61,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-ENTITLEMENTS="${BRIDGEVM_HVF_ENTITLEMENTS:-$DEBUG_ENTITLEMENTS}"
+[[ "$BUILD_PROFILE" == "release" ]] && DEFAULT_ENTITLEMENTS="$RELEASE_ENTITLEMENTS" || DEFAULT_ENTITLEMENTS="$DEBUG_ENTITLEMENTS"
+ENTITLEMENTS="${BRIDGEVM_HVF_ENTITLEMENTS:-$DEFAULT_ENTITLEMENTS}"
 LOCK_DIR="${BRIDGEVM_HVF_RUNNER_SIGN_LOCK_DIR:-$ROOT/target/.bridgevm-hvf-runner-sign.lock}"
-
 acquire_sign_lock() {
   install -d "$ROOT/target"
   local attempts=0
@@ -93,7 +94,6 @@ verify_entitlement() {
       ;;
   esac
 }
-
 acquire_sign_lock
 
 if [[ -n "$VERIFY_ONLY" ]]; then
@@ -113,11 +113,11 @@ fi
 
 case "$BUILD_PROFILE" in
   debug)
-    cargo build -p hvf-runner --quiet
+    cargo build -p hvf-runner --locked --quiet
     BIN="$ROOT/target/debug/hvf-runner"
     ;;
   release)
-    cargo build -p hvf-runner --release --quiet
+    cargo build -p hvf-runner --release --locked --quiet
     BIN="$ROOT/target/release/hvf-runner"
     ;;
   *)
