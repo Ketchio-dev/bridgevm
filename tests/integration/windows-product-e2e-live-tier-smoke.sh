@@ -74,6 +74,7 @@ with output.open("x") as out:
 PY
 }
 pilot_manifest="$TMP/pilot.tsv"; write_manifest "$TMP/windows.iso" pilot "$pilot_manifest"
+check "denied lane creation retains a verified failure receipt" bash -c 'mkdir() { case "${*: -1}" in */lane-1) return 73 ;; *) command mkdir "$@" ;; esac; }; export -f mkdir; ! "$1" --out "$2" --input-manifest "$3" --job-id denied-lane >/dev/null 2>&1 && "$4" "$2/receipt.json" --expected-commit "$5" >/dev/null && grep -q '"'"'"failure_code": "internal-error"'"'"' "$2/receipt.json" && grep -q '"'"'"worker_cleanup_verified": true'"'"' "$2/receipt.json" && grep -q '"'"'"run_count": 0'"'"' "$2/receipt.json" && test ! -e "$2/private/lane-1-helper.log"' _ "$TIER" "$TMP/denied-lane-out" "$pilot_manifest" "$VERIFY" "$COMMIT"
 missing_guest_manifest="$TMP/missing-guest.tsv"
 python3 - "$pilot_manifest" "$missing_guest_manifest" "$TMP/missing-payload" <<'PY'
 import sys
@@ -102,7 +103,6 @@ crosslane_out="$TMP/crosslane-out"; check "cross-lane hardlink alias fails isola
 missing_iso_manifest="$TMP/missing-iso.tsv"; write_manifest "$TMP/not-present.iso" pilot "$missing_iso_manifest"
 missing_iso_out="$TMP/missing-iso-out"
 check "missing ISO has its stable preflight blocker" bash -c '! "$1" --out "$2" --input-manifest "$3" --job-id missing-iso >/dev/null 2>&1 && grep -q '"'"'"failure_code": "missing-windows-iso"'"'"' "$2/receipt.json"' _ "$TIER" "$missing_iso_out" "$missing_iso_manifest"
-
 changed_manifest="$TMP/changed.tsv"; write_manifest "$TMP/windows.iso" pilot "$changed_manifest"; printf changed >> "$TMP/windows.iso"
 changed_out="$TMP/changed-out"
 check "post-seal mutation blocks before product execution" bash -c '! "$1" --out "$2" --input-manifest "$3" --job-id changed-input >/dev/null 2>&1 && grep -q '"'"'"failure_code": "hash-mismatch"'"'"' "$2/receipt.json" && test ! -e "$2/private/lane-1-helper.log"' _ "$TIER" "$changed_out" "$changed_manifest"

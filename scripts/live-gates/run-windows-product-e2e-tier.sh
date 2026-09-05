@@ -94,7 +94,7 @@ EXPECTED=1; [[ "$MODE" == release ]] && EXPECTED=3
 previous_inode=""
 for (( lane=1; lane<=EXPECTED; lane++ )); do
   if [[ -f "$OUT/cancel.requested" ]]; then emit canceled canceled "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
-  lane_root="$WORK/lane-$lane"; mkdir -m 700 "$lane_root"
+  lane_root="$WORK/lane-$lane"; mkdir -m 700 "$lane_root" || { emit preflight-blocked internal-error "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; }
   inode="$(stat -f '%i' "$lane_root")"
   [[ -z "$previous_inode" || "$inode" != "$previous_inode" ]] || { emit failed internal-error "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; }
   previous_inode="$inode"
