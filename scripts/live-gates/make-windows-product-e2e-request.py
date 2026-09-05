@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
+import os, sys
 from pathlib import Path
-
-
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from t17_external_storage import validate_lane
 ASSETS = (
     "app_bundle", "app_executable", "runner", "firmware", "secure_boot_policy",
     "iso", "bundled_vars_seed", "guest_payload", "guest_payload_manifest",
@@ -42,8 +42,8 @@ def main() -> int:
         raise ValueError("T17 verified inputs are incomplete")
     root = args.lane_root
     raw_root = str(root)
-    if not raw_root.startswith("/tmp/bridgevm-e2e-") or raw_root != os.path.normpath(raw_root):
-        raise ValueError("lane root is outside the fixed /tmp/bridgevm-e2e-* boundary")
+    validate_lane(root, verified, args.job_id, args.lane)
+    if raw_root != os.path.normpath(raw_root): raise ValueError("noncanonical lane root")
     if not root.is_dir() or root.is_symlink() or any(root.iterdir()):
         raise ValueError("lane root must be an existing empty non-symlink directory")
     nonce_prefix = args.nonce[:12]

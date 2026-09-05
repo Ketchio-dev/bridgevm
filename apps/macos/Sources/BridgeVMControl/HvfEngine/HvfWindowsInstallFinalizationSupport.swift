@@ -1,8 +1,7 @@
 import Foundation
 
 extension HvfWindowsInstallFinalization {
-    // Schema v1 still decodes because digest fields are optional, but validate
-    // refuses to resume it: same-size replacement cannot be disproved safely.
+    // Reject v1 journals: same-size replacement cannot be disproved safely.
     static let currentJournalSchemaVersion = 2
 
     static func paths(slug: String, libraryRoot: URL,
@@ -19,8 +18,8 @@ extension HvfWindowsInstallFinalization {
               journal.slug == paths.slug,
               journal.libraryRoot == HvfWindowsInstallDurability.canonical(paths.libraryRoot),
               journal.bundlePath == HvfWindowsInstallDurability.canonical(paths.bundle),
-              journal.sourceDiskPath == "/tmp/bridgevm-appinstall-\(paths.slug)-target.raw",
-              journal.sourceVarsPath == "/tmp/bridgevm-appinstall-\(paths.slug)-vars.fd",
+              journal.sourceDiskPath == HvfWindowsInstallTemporaryPaths.prefix(libraryRoot: paths.libraryRoot, slug: paths.slug) + "-target.raw",
+              journal.sourceVarsPath == HvfWindowsInstallTemporaryPaths.prefix(libraryRoot: paths.libraryRoot, slug: paths.slug) + "-vars.fd",
               journal.diskBytes > 0, journal.varsBytes > 0,
               journal.requestSHA256.count == 64,
               journal.diskSHA256?.count == 64,
@@ -29,6 +28,7 @@ extension HvfWindowsInstallFinalization {
             throw HvfWindowsInstallFinalizationError.unsupportedJournal
         }
         try validatePathIdentity(paths: paths, slug: journal.slug, bundlePath: journal.bundlePath)
+        if HvfWindowsInstallTemporaryPaths.validationError(libraryRoot: paths.libraryRoot) != nil { throw HvfWindowsInstallFinalizationError.unsupportedJournal }
     }
 
     static func validatePathIdentity(

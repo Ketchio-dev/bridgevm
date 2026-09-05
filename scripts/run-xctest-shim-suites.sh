@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Runs every XCTest function under the shim, per suite.
 #
-# Three per-suite runners rather than one merged binary: merging app and test
-# sources into one module produced 58 redeclaration errors (fileprivate
+# Per-suite runners: merging app and test sources produced redeclaration errors (fileprivate
 # symbols coexist as separate files and collide once merged). Per suite, the
 # app sources compile into a static library with -enable-testing and the test
 # sources into an executable against it -- file scope stays intact.
@@ -53,10 +52,11 @@ logged BridgeVMApp apps/macos/Sources/BridgeVMApp apps/macos/Tests/BridgeVMAppTe
 logged BridgeVMControl apps/macos/Sources/BridgeVMControl apps/macos/Tests/BridgeVMControlTests & pids+=($!)
 logged AppleVzRunnerCore apps/macos/Sources/AppleVzRunnerCore apps/macos/Tests/AppleVzRunnerTests \
     -framework Virtualization & pids+=($!)
+logged BridgeVMProductE2E apps/macos/Sources/BridgeVMProductE2E apps/macos/Tests/BridgeVMProductE2ETests & pids+=($!)
 
 failed=0
 for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
-for name in BridgeVMApp BridgeVMControl AppleVzRunnerCore; do cat "$WORK/log-$name"; done
+for name in BridgeVMApp BridgeVMControl AppleVzRunnerCore BridgeVMProductE2E; do cat "$WORK/log-$name"; done
 (( failed == 0 )) || { echo "FAIL: at least one shim suite failed" >&2; exit 1; }
 
-echo "PASS: all three shim suites"
+echo "PASS: all four shim suites"

@@ -19,6 +19,7 @@ PRIVATE="$OUT/private"; mkdir -m 700 "$PRIVATE"
 MANIFEST_TOOL="$REPO/scripts/live-gates/windows-product-e2e-manifest.py"
 WRITER="$REPO/scripts/live-gates/write-windows-product-e2e-receipt.py"
 REQUEST_WRITER="$REPO/scripts/live-gates/make-windows-product-e2e-request.py"
+STORAGE="$REPO/scripts/live-gates/t17-storage.py"
 VERIFIED="$PRIVATE/verified-inputs.json"
 COMMIT="$(git -C "$REPO" rev-parse HEAD)"
 STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -38,10 +39,9 @@ PY
 
 cleanup_work() {
   [[ -z "$WORK" ]] && return 0
-  case "$WORK" in "/tmp/bridgevm-e2e-$JOB_ID."??????) ;; *) return 1 ;; esac
   mount | grep -F "$WORK" >/dev/null 2>&1 && return 1
   pgrep -f "$WORK" >/dev/null 2>&1 && return 1
-  rm -rf -- "$WORK"
+  python3 "$STORAGE" cleanup "$VERIFIED" "$JOB_ID" "$WORK" || return 1
   [[ ! -e "$WORK" ]]
 }
 
@@ -88,7 +88,7 @@ HELPER="$(json_value "$VERIFIED" assets.product_helper.path)"
 if ! codesign --verify --deep --strict "$APP" >/dev/null 2>&1 || ! "$REPO/scripts/verify-product-e2e-helper-app.sh" "$APP" >/dev/null 2>&1; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
 if codesign -dv --verbose=4 "$APP" 2>&1 | grep -q 'Authority=Developer ID Application' && spctl --assess --type execute "$APP" >/dev/null 2>&1; then SIGNING=developer-id-notarized; fi
 
-WORK="$(mktemp -d "/tmp/bridgevm-e2e-$JOB_ID.XXXXXX")"
+WORK="$(python3 "$STORAGE" allocate "$VERIFIED" "$JOB_ID")"
 chmod 700 "$WORK"
 EXPECTED=1; [[ "$MODE" == release ]] && EXPECTED=3
 previous_inode=""

@@ -61,17 +61,18 @@ path_has_parent_component() {
 }
 
 require_destructive_media_path() {
-  local label="$1"
-  local path
+  local label="$1" path
   if path_has_parent_component "$2"; then
     echo "FAIL: destructive $label path must not contain '..' components: $2" >&2
     exit 2
   fi
+  case "$2" in /Volumes/*) python3 "$(dirname "${BASH_SOURCE[0]}")/t17_external_storage.py" "$2" || exit 2 ;; esac
   path="$(absolute_media_path "$2")"
   case "$path" in
     /tmp/bridgevm-*|/private/tmp/bridgevm-*) ;;
+    /Volumes/*) python3 "$(dirname "${BASH_SOURCE[0]}")/t17_external_storage.py" "$path" || exit 2 ;;
     *)
-      echo "FAIL: destructive $label path must be under /tmp/bridgevm-*: $2" >&2
+      echo "FAIL: destructive $label needs /tmp/bridgevm-* or pinned external T17 storage: $2" >&2
       exit 2
       ;;
   esac
@@ -85,8 +86,7 @@ require_destructive_media_path() {
   esac
 }
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SOURCE=""
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; SOURCE=""
 TARGET=""
 VARS=""
 EVIDENCE_DIR=""

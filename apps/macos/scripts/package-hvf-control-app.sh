@@ -111,7 +111,7 @@ for script in \
   run-hvf-windows-installed-boot-runner.sh \
   build-hvf-windows-scripted-source.sh \
   stage-hvf-windows-guest-payload.sh \
-  hvf-disk-image-utils.sh \
+  hvf-disk-image-utils.sh t17_external_storage.py \
   build-hvf-windows-viogpu3d-injector.sh \
   build-hvf-windows-driver-injector.sh \
   check-hvf-windows-viogpu3d-package.sh \

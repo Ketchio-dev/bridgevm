@@ -101,9 +101,9 @@ struct HvfWindowsInstallPlan: Equatable {
         HvfWindowsCatalogVerifier.resolve(repoRoot: repoRoot)
     }
 
-    var tmpTargetPath: String { "/tmp/bridgevm-appinstall-\(slug)-target.raw" }
-    var tmpVarsPath: String { "/tmp/bridgevm-appinstall-\(slug)-vars.fd" }
-    var tmpEvidenceDir: String { "/tmp/bridgevm-appinstall-\(slug)-evidence" }
+    var tmpTargetPath: String { HvfWindowsInstallTemporaryPaths.prefix(libraryRoot: libraryRoot, slug: slug) + "-target.raw" }
+    var tmpVarsPath: String { HvfWindowsInstallTemporaryPaths.prefix(libraryRoot: libraryRoot, slug: slug) + "-vars.fd" }
+    var tmpEvidenceDir: String { HvfWindowsInstallTemporaryPaths.prefix(libraryRoot: libraryRoot, slug: slug) + "-evidence" }
 
     var bundleDiskPath: String { "\(bundlePath)/disks/hvf-target.raw" }
     var bundleVarsPath: String { "\(bundlePath)/metadata/hvf-vars.fd" }
@@ -111,14 +111,13 @@ struct HvfWindowsInstallPlan: Equatable {
 
     var freshTargetSizeBytes: UInt64 { UInt64(request.diskGiB) * 1024 * 1024 * 1024 }
 
-    // MARK: commands
-
     /// Stage a: host-side WinPE scripted-installer source build from the ISO.
     func sourceBuildCommand() -> (environment: [String: String], arguments: [String]) {
         (
             environment: [
                 "ISO": request.isoPath,
                 "OUT": sourceImagePath,
+                "TMPDIR": URL(fileURLWithPath: tmpTargetPath).deletingLastPathComponent().path,
                 "WIMLIB": wimlibPath ?? "",
                 "WINDOWS_GUEST_PAYLOAD_DIR": request.guestPayloadDirectory ?? "",
                 "WINDOWS_GUEST_PAYLOAD_MANIFEST": request.guestPayloadManifest ?? "",
@@ -173,6 +172,7 @@ struct HvfWindowsInstallPlan: Equatable {
     }
 
     func validationError() -> String? {
+        if let error = HvfWindowsInstallTemporaryPaths.validationError(libraryRoot: libraryRoot) { return error }
         if let blocker = VMLibrary.windowsHVFInjectionError(requested: request.injectViogpu3d) {
             return blocker
         }
@@ -320,6 +320,7 @@ final class HvfWindowsInstallSession: ObservableObject {
         }
 
         stage = .installing
+        if let error = HvfWindowsInstallTemporaryPaths.validationError(libraryRoot: plan.libraryRoot) { failUnlessCancelled(error); return }
         do {
             try HvfWindowsBootSeed.writeBundledSeed(to: plan.tmpVarsPath)
         } catch {
