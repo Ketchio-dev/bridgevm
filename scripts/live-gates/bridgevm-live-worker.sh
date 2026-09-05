@@ -17,10 +17,6 @@ MIN_FREE_GIB="${BRIDGEVM_LIVE_MIN_FREE_GIB:-100}"
 
 log() { printf '%s %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 
-free_gib() {
-    df -g "$HOME" | awk 'NR==2 {print $4}'
-}
-
 # Live gates contend for GPU, vCPUs and guest media; run exactly one at a time.
 acquire_lock() {
     local lock="$QUEUE_ROOT/worker.lock"
@@ -62,15 +58,6 @@ run_job() {
     log "job $job_id tier=$tier commit=$commit"
     printf 'started_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$dir/job.env"
 
-    local available
-    available="$(free_gib)"
-    if [ "$available" -lt "$MIN_FREE_GIB" ]; then
-        # Refuse rather than free space: canonical images are immutable inputs.
-        log "only ${available}GiB free, need ${MIN_FREE_GIB}GiB"
-        printf 'result=refused-free-space\navailable_gib=%s\n' "$available" > "$dir/result.env"
-        return 1
-    fi
-
     # t14-bridgevm-pc-windows-start and future tiers are routed by seals, not names.
     local tier_args=() manifest="$dir/input-manifest.tsv" sealed_binary="$dir/hvf_gic_boot_probe"
     local expected_manifest actual_manifest expected_binary actual_binary
@@ -95,6 +82,14 @@ run_job() {
         tier_args+=(--sealed-binary "$sealed_binary")
     fi
 
+    local available
+    if ! available="$(python3 "$REPO/scripts/live-gates/t17-storage.py" space "$tier" "$manifest" "$HOME")"; then
+        printf 'result=refused-storage\n' > "$dir/result.env"; return 1
+    fi
+    if [ "$available" -lt "$MIN_FREE_GIB" ]; then
+        log "only ${available}GiB free, need ${MIN_FREE_GIB}GiB"
+        printf 'result=refused-free-space\navailable_gib=%s\n' "$available" > "$dir/result.env"; return 1
+    fi
     local worktree="$WORK_ROOT/$job_id"
     mkdir -p "$WORK_ROOT"
     if ! git -C "$REPO" cat-file -e "$commit^{commit}" 2>/dev/null; then

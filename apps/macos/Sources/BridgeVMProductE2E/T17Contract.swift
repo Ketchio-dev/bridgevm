@@ -102,8 +102,8 @@ struct T17Request: Decodable, Equatable {
             throw T17Blocker(code: "invalid-request", detail: "request identity or 3D policy is invalid")
         }
         let root = URL(fileURLWithPath: laneRoot, isDirectory: true).standardizedFileURL
-        guard !(laneRoot as NSString).pathComponents.contains(".."), laneRoot == root.path,
-              laneRoot.hasPrefix("/tmp/bridgevm-e2e-") || laneRoot.hasPrefix("/private/tmp/bridgevm-e2e-") else {
+        try T17StorageBoundary.validate(laneRoot)
+        guard !(laneRoot as NSString).pathComponents.contains(".."), laneRoot == root.path else {
             throw T17Blocker(code: "invalid-request", detail: "lane root is outside the fixed temporary boundary")
         }
         let library = root.appendingPathComponent("library", isDirectory: true)

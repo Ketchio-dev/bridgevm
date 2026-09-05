@@ -1831,3 +1831,14 @@ scripts/verify-hvf-nvme-quiescence-v2.py	186	0
 scripts/win-assets/bv-nvme-quiescence-v2.ps1	72	0
 scripts/write-hvf-nvme-performance-v2-receipt.py	991	0
 tests/integration/hvf-nvme-performance-v2-tier-smoke.sh	40	0
+scripts/t17_external_storage.py	106	0
+scripts/live-gates/t17-storage.py	61	0
+scripts/live-gates/t17_manifest_hashes.py	35	0
+tests/integration/t17-external-storage-smoke.py	102	0
+apps/macos/Sources/BridgeVMProductE2E/T17StorageBoundary.swift	23	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallTemporaryPaths.swift	26	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17StorageBoundaryTests.swift	14	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsExternalInstallPathsTests.swift	17	0
+apps/macos/Sources/BridgeVMProductE2E/T17CLI.swift	46	0
+scripts/live-gates/check-t17-storage-volume.py	46	0
+tests/integration/t17-external-foundation.swift	24	0

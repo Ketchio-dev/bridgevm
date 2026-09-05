@@ -178,6 +178,24 @@ command is a preflight blocker, not an invitation to invoke a harness. Private
 paths, ISO, media, vars, vTPM, guest payload and helper logs never enter the
 public receipt; the dedicated verifier is run both before and after redaction.
 
+T17 may explicitly seal an external APFS execution root with one additional TSV
+row: `storage_root<TAB>/Volumes/VOLUME/BridgeVM/live-t17/UUID<TAB>UUID`.
+Use the actual uppercase APFS volume UUID; create that dedicated directory
+before submission. The worker verifies the sealed row, actual mounted volume,
+writability and at least 100 GiB on that volume. It never falls back to internal
+storage when the external volume is absent, replaced, aliased or full. Other
+tiers retain their existing storage policies. Volume names in this contract
+cannot contain whitespace.
+
+The T17 product library, installer source cache, temporary installation disk and
+vars, installed VM and snapshots all live under the external lane. Clone sources
+must be staged on that same execution volume; cross-volume `cp -c` is not a
+space-saving clone. Small queue receipts and source worktrees can remain internal.
+Each job allocates a fresh private directory and records its device/inode before
+cleanup; changed roots and nested mounts are preserved as cleanup failures.
+Use a newly packaged app containing this contract: older helpers reject external
+requests. An external-storage check alone is not Windows installation evidence.
+
 T9 is deliberately not assigned a product capability criterion. It rebuilds
 the experimental BridgeVM Virtual ARM PC firmware and HVF runner from the
 sealed commit, then requires 20 independent lanes. Every lane owns a fresh

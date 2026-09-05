@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Strictly parse and authenticate the private T17 input manifest."""
 from __future__ import annotations
-import argparse, hashlib, json, os, re, stat, sys
+import argparse, json, os, re, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from t17_external_storage import storage_row, check_storage
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from t17_manifest_hashes import file_hash, tree_hash
 ASSETS = ("app_bundle", "app_executable", "product_helper", "runner", "firmware", "secure_boot_policy", "iso", "bundled_vars_seed", "guest_payload", "guest_payload_manifest")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 RELATIONS = {
@@ -13,32 +17,6 @@ RELATIONS = {
 }
 class ManifestError(ValueError):
     pass
-def file_hash(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-def tree_hash(root: Path, *, allow_symlinks: bool = True) -> str:
-    records: list[bytes] = []
-    for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
-        relative = path.relative_to(root).as_posix()
-        mode = path.lstat().st_mode
-        if stat.S_ISLNK(mode):
-            if not allow_symlinks:
-                raise ManifestError(f"guest payload contains a symlink: {relative}")
-            target = os.readlink(path)
-            if os.path.isabs(target) or root.resolve() not in path.resolve().parents:
-                raise ManifestError(f"app bundle symlink escapes its root: {relative}")
-            records.append(f"L\t{relative}\t{target}\n".encode())
-        elif stat.S_ISREG(mode):
-            executable = "1" if mode & 0o111 else "0"
-            records.append(f"F\t{relative}\t{executable}\t{file_hash(path)}\n".encode())
-        elif stat.S_ISDIR(mode):
-            records.append(f"D\t{relative}\n".encode())
-        else:
-            raise ManifestError(f"unsupported app bundle entry: {relative}")
-    return hashlib.sha256(b"".join(records)).hexdigest()
 def parse(path: Path) -> tuple[str, dict[str, tuple[Path, str]]]:
     if not path.is_file() or path.is_symlink():
         raise ManifestError("manifest is missing, non-regular, or a symlink")
@@ -46,8 +24,10 @@ def parse(path: Path) -> tuple[str, dict[str, tuple[Path, str]]]:
         raise ManifestError("manifest size is outside the fixed 32 KiB bound")
     mode: str | None = None
     assets: dict[str, tuple[Path, str]] = {}
+    storage_row(path)  # Reject duplicate/malformed metadata before filtering it.
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         fields = line.split("\t")
+        if fields[0] == "storage_root": continue
         if fields[0] == "campaign_mode" and len(fields) == 2 and mode is None:
             mode = fields[1]
             continue
@@ -86,7 +66,9 @@ def parse(path: Path) -> tuple[str, dict[str, tuple[Path, str]]]:
 def verify(path: Path) -> dict:
     try:
         mode, assets = parse(path)
-    except (OSError, UnicodeError, ManifestError) as error:
+        storage = storage_row(path)
+        if storage: check_storage(storage)
+    except (OSError, UnicodeError, ValueError) as error:
         return {"valid": False, "verified": False, "campaign_mode": "pilot", "failure_code": "internal-error", "detail": str(error), "assets": {}}
     public: dict[str, dict[str, str]] = {}
     for key, (candidate, expected) in assets.items():
@@ -96,12 +78,12 @@ def verify(path: Path) -> dict:
             return {"valid": True, "verified": False, "campaign_mode": mode, "failure_code": code, "detail": key, "assets": public}
         try:
             actual = tree_hash(candidate, allow_symlinks=key == "app_bundle") if key in ("app_bundle", "guest_payload") else file_hash(candidate)
-        except (OSError, ManifestError) as error:
+        except (OSError, ValueError) as error:
             return {"valid": True, "verified": False, "campaign_mode": mode, "failure_code": "hash-mismatch", "detail": key, "assets": public}
         public[key] = {"path": str(candidate), "sha256": actual}
         if actual != expected:
             return {"valid": True, "verified": False, "campaign_mode": mode, "failure_code": "hash-mismatch", "detail": key, "assets": public}
-    return {"valid": True, "verified": True, "campaign_mode": mode, "failure_code": "none", "detail": "none", "assets": public}
+    return {"valid": True, "verified": True, "campaign_mode": mode, "failure_code": "none", "detail": "none", "assets": public, **({"storage": storage} if storage else {})}
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
