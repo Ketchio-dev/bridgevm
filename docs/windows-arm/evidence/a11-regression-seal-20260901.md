@@ -484,3 +484,63 @@ The registry/docs-only follow-up updates the tested code pointer and retains
 both failed live diagnostics and the failed freshness workflow. Its own full
 local project check and exact-SHA hosted CI/Security must pass before the next
 live submission. Deterministic staging success is not live Windows proof.
+
+## Third T7 diagnostic: injection succeeded, proof boot did not
+
+Registry seal `bdad4cbc9426066bd4aed2045f08ad9e7dde74ba` passed the full
+committed-head local check, [CI 34057653381](https://github.com/Ketchio-dev/bridgevm/actions/runs/34057653381)
+and [Security 34057653391](https://github.com/Ketchio-dev/bridgevm/actions/runs/34057653391).
+Job `t7-bdad4cbc-b6-observation-r3` ran 20:26:47–20:33:22 UTC on 2026-09-06.
+Its terminal receipt is failed, one sample, zero passes; F1/F2/F3 are false
+and F4 blocked. Public receipt SHA-256:
+`1417fb1f7e26d6e5d46f1dfccf0d84d646188ae032df85f573212a4bfaabc1e5`.
+
+The actual staged disk, vars and injector had mode 600. Injection returned 0,
+injector boot and module identity were verified, and source hash rechecks
+passed. The immutable retained prepared disk has SHA-256
+`a015d92bb5be37e9c6cb0f14d54d53293753f5a5461d1c40dc39c9569d278d2e`;
+its paired target vars remain
+`bec224d27c8681d2db69583e933e2d99b6fa5265d91d37373cb7a2c8b71853cd`.
+Proof used another disk clone and distinct vars copy. This establishes that
+the earlier clone-permission failure was cleared, not that Windows proof passed.
+
+Proof RAMFB checkpoints at 1, 5, 15, 30 and 60 seconds had checksum
+`af552b4d7621db7e`. Visual inspection of the 30-second checkpoint showed
+TianoCore and Start boot option. It was not an active CGL Notepad capture.
+The existing boot-progress watchdog stopped the run after 120000 ms of low
+progress, four exits in the window and 72232 total exits before termination.
+The agent-service wait failed; no glyph scene was reached.
+
+Final owning-thread evidence identifies PC `0x1bf33ba04` in ArmCpuDxe with
+preceding WFI `0xd503207f` and current RET `0xd65f03c0`. CNTV_CTL was 1,
+virtual timer mask false, CVAL `0x74da4e607e3`, guest count `0x74da5107feb`.
+GICR enable was `0x6c000000`, pending and active zero, PMR `0xf8`, IGRPEN1 1.
+The owning-thread classifier reported parked, stall=false, timer PPI enabled
+but not pending. The generic watchdog stall label does not override this.
+There were zero virtual-timer exits and no drained MSI-X/SPI events. A bounded
+three-second host stack sample also showed the primary vCPU waiting inside
+Hypervisor, but neither observation proves a lost timer or its cause. The
+supplemental private sample SHA-256 is
+`15b1dd5e9ba4168f4f50331a79f74cc26b29616a449df7e366979d25a7ff9975`.
+
+Comparison with retained B4 job `20260829-215356-7576-17586`, lane run1,
+generation 0, narrows but does not isolate the cause. That lane recorded agent
+service start at t=18836 and guest shutdown, also with zero virtual-timer exits
+(14894 MSI-X drains). Both use a single NVMe target, no NSID1 placeholder,
+6144 MiB RAM, four CPUs, xHCI, synchronous IOSurface scanout and the same source
+vars identity. Firmware blobs in B4 harness
+`080462846acbe4cb784bd9b532d7cd39921aa549` and the r3 harness are identical
+by Git object comparison. Thus neither a different recorded NVMe topology nor
+a different committed firmware blob explains this pair of observations.
+
+Important confounders remain: B4 boots the original prepared disk beginning
+`7385d200`, while r3 boots its reinjected derivative beginning `a015d92b`;
+the harness/code generations differ substantially. B4 uses exit-on-reset,
+200 ms HID pacing and DCI5 tracing, whereas r3 uses in-process reboot handling,
+default 30 ms pacing, boot-progress kill, Venus-start tracing and PPM export.
+Share destinations and watchdog limits also differ. Do not label this a
+controlled A/B test or infer a disk, timer, renderer or firmware fix from it.
+The next diagnostic should isolate prepared media from execution configuration
+with sealed inputs and independent clones; it must not reduce the B6 matrix
+or substitute a pointer smoke for glyph correctness. Historical failures and
+current OPEN capability wording remain unchanged.
