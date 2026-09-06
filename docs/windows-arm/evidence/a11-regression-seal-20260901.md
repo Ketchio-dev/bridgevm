@@ -413,3 +413,74 @@ attested probe source remains `69dea55a1902e3c11834f87bc19b9995e79a504e`,
 separate from the corrected harness source. Input validity and deterministic
 tests do not close B6's live glyph matrix or T17's Accessibility blocker.
 All open criteria and the Engineering Preview product state are unchanged.
+
+## T7 input access and immutable-source clone permissions
+
+The preceding registry/docs seal `be239e3f245c37cd906c8741c16e64e662a35e3a`
+passed the full committed-head local project check,
+[CI 34056586757](https://github.com/Ketchio-dev/bridgevm/actions/runs/34056586757)
+and [Security 34056586708](https://github.com/Ketchio-dev/bridgevm/actions/runs/34056586708).
+The optional latest advisory was skipped. Two subsequent private T7 diagnostics
+used that exact harness and the separately attested probe source
+`69dea55a1902e3c11834f87bc19b9995e79a504e`. Neither produced a guest sample.
+
+Job `t7-be239e3f-b6-observation-r1` ran from 20:04:02 to 20:04:44 UTC on
+2026-09-06. Its outcome was `refused-input`, with zero samples and no injector
+boot or presented capture. The worker's log reports `Operation not permitted`
+when shasum reads the agent source in the Desktop checkout. Successful input
+verification in an interactive terminal did not establish worker access.
+The failed public receipt SHA-256 is
+`f199ef223af0d080363a518887bfadb8c44448ed2eab0270d5a6eef831e3d19e`.
+The agent source was then copied to the private campaign-input directory with
+mode 400 and identical SHA-256
+`b7820834cee3f34ab895c88b31f9c6c0e96d8052c8b34ce5db691e2e968e844c`.
+Only that path changed in the new manifest. No TCC settings, signed artifacts,
+canonical media or expected content hashes were changed.
+
+Job `t7-be239e3f-b6-observation-r2` ran from 20:06:45 to 20:08:43 UTC.
+Actual worker verification accepted all ten inputs and both embedded identity
+records. The module identity check also succeeded. The manifest SHA-256 was
+`cf1e062838fa386e1812be4b6fc5ec75c0cf1be75e0a3e1e42de2ab0f7e3ebc6`.
+This attempt then exited 101 before injection, with `failed-before-receipt`,
+zero samples and no F1-F4 evidence. Its public receipt SHA-256 is
+`657108f9cb6e4f30080cf38301f668d5b95ca3ef07d8d1a6b883083c536ff094`.
+
+The failing state is explicit: injection/run.log reports a panic at
+`boot_media_setup.rs:34` attaching the cloned NSID2 target, with `Permission
+denied (os error 13)`. Both before/after target stat show mode 400 on the cloned
+disk; cloned vars also have mode 400. Copying immutable sources preserved their
+read-only mode. HVF/GIC creation and renderer initialization occurred, but this
+does not demonstrate that a guest instruction ran or a Windows frame existed.
+Harvested historical guest files are not new-run injection evidence.
+
+Correction `40afd096db5376f4c5324bd273e5a3e0438855f6` extracts the injection
+stage copy operations to a small helper and changes only the three per-job
+copies to mode 600. Disks still use APFS `cp -c`; vars remain a separate copy.
+Copy or chmod errors fail closed, and the existing clone/source hash checks
+remain. Canonical input modes and contents are not modified. The fixture test
+executes the actual helper with mode-400 sources, checks different inodes and
+destination modes, writes to the clones and checks unchanged source bytes.
+Five mutations reject omitted chmod, source chmod and each missing destination.
+The new eight-line helper and 51-line test have actual-size budget entries;
+existing structural ceilings were not raised. Focused smoke and full precommit
+local project check passed within 300 seconds. Committing correctly makes A11
+freshness stale until independent hosted checks and a separate evidence seal.
+
+No corrected live attempt has yet run. These records establish two distinct
+pre-boot failures and a deterministic staging correction, not Windows glyph
+correctness, F1-F4 success, or any promotion of the product state.
+
+[CI 34057283267](https://github.com/Ketchio-dev/bridgevm/actions/runs/34057283267)
+completed with all independent required jobs successful, including every macOS
+app suite step. The optional latest advisory was skipped. The overall workflow
+remains FAILED because capability/documentation drift rejected the stale tested
+commit at `scripts/live-gates/run-windows-closure-tier.sh`.
+[Security 34057283256](https://github.com/Ketchio-dev/bridgevm/actions/runs/34057283256)
+succeeded at the exact corrected code head. The subsequent committed-head full
+local project check also failed only capability registry, with every other
+section passing within 300 seconds. This was not an overall PASS.
+
+The registry/docs-only follow-up updates the tested code pointer and retains
+both failed live diagnostics and the failed freshness workflow. Its own full
+local project check and exact-SHA hosted CI/Security must pass before the next
+live submission. Deterministic staging success is not live Windows proof.
