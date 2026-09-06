@@ -200,3 +200,52 @@ designated requirements, so the previous macOS TCC row cannot authorize the
 new binary. The old row must be removed and the exact corrected helper added
 after user authentication before another pilot is submitted. A9, B6, B8 and
 B9 remain open and the product remains Engineering Preview.
+
+## 2026-09-06 experiment-retention deterministic reseal
+
+Tested code head `06174b610277f26bfccecfda7c7b2c47428de8fa` adds the
+dry-run-first experiment archival tool, adversarial retention tests, the narrow
+upstream-process documentation attribution check, and detailed cleanup records.
+It does not establish new guest behaviour or change any capability threshold.
+
+- [CI 34045844404](https://github.com/Ketchio-dev/bridgevm/actions/runs/34045844404)
+  completed at that exact SHA with a **failure** conclusion. All independent
+  jobs succeeded: clippy, rustfmt, MSRV 1.85, native Venus tests, macOS app
+  suites, Windows NVMe workload compilation, Linux cross-compilation, macOS
+  15 and 26 tests, Venus feature checking and structural budgets. The optional
+  latest-stable advisory was skipped.
+- The sole failed job, `capability and documentation drift` (`101520619448`),
+  rejected the stale registry with `code changed since tested_commit
+  (scripts/archive-experiment.py); re-prove A11`. This is a real failed
+  workflow, not a green result or a waiver.
+- [Security 34045844400](https://github.com/Ketchio-dev/bridgevm/actions/runs/34045844400)
+  succeeded at the same SHA. All five jobs passed: live-gate policy, graphics
+  compatibility claims, fuzz corpus smoke, supply-chain policy and loom
+  interleaving models.
+- The precommit full local `scripts/check-project.sh` passed with new files
+  staged, including 13 retention tests and four attribution-policy tests.
+  ShellCheck was unavailable and the existing Swift shim suite reported one
+  skip. Crucially, freshness compares committed `tested_commit..HEAD`, not
+  staged content: that precommit PASS did not prove postcommit freshness.
+
+The registry/documentation-only follow-up points `tested_commit` to this code
+head, updates A11's measured narrative, and regenerates the capability blocks.
+The code-path freshness guard is unchanged. The follow-up must pass the full
+local project check and its own exact-SHA hosted CI and Security before it is
+called a green deterministic seal. Its run IDs and final results can be found
+on the hosted commit checks; pending results are recorded in the operator plan
+rather than described here as already successful.
+
+The full local check on the registry/documentation-only working tree completed
+within 300 seconds with `project check: PASS` and exit 0. Registry freshness
+and all three generated blocks passed. ShellCheck remained unavailable; the
+shim suites reported 419/419, 245 passed with one skipped, and 62/62. These are
+shim results, not Apple XCTest or live Windows guest evidence. Hosted checks
+for the forthcoming committed seal remain a separate required result.
+
+Current AGENTS instructions supersede the historical physical-Mac T0 venue
+above: deterministic checks run locally within 300 seconds or on GitHub-hosted
+Actions. No ordinary deterministic check is submitted to the live queue.
+This work is not a release, a packaging receipt or a live guest gate. Failed
+T15/T16 campaigns and T17 pilots remain failed; all capability states, open
+defects and the Engineering Preview product state remain unchanged.
