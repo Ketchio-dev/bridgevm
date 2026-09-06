@@ -249,3 +249,27 @@ Actions. No ordinary deterministic check is submitted to the live queue.
 This work is not a release, a packaging receipt or a live guest gate. Failed
 T15/T16 campaigns and T17 pilots remain failed; all capability states, open
 defects and the Engineering Preview product state remain unchanged.
+
+## 2026-09-06 hosted packaging dependency drift
+
+The registry seal `8d4eaab52d75fad17c9c9f59bdce23baa726de91` passed hosted
+CI `34048024431`, Security `34048024411`, and the full local project check.
+However, artifact-only [Release 34052275951](https://github.com/Ketchio-dev/bridgevm/actions/runs/34052275951)
+failed during packaging. Its source boundary and renderer build passed, but
+Homebrew supplied swtpm 0.10.2 while the bundle contract requires 0.10.1. The
+bundler correctly rejected that source; this run produced no verified package.
+
+The workflow correction installs the TPM pair from the official upstream Homebrew core
+commit [918b0d7fd69f045c93f45ce5caa3940735c52476](https://github.com/Homebrew/homebrew-core/tree/918b0d7fd69f045c93f45ce5caa3940735c52476),
+which defines swtpm 0.10.1 and libtpms 0.10.2 with source and bottle hashes.
+Only a fresh disposable hosted tap is accepted. Automatic updates and API
+formula resolution are disabled for this installation; the resolved commit,
+installed executable version and libtpms Cellar path are checked explicitly.
+The existing bundle version, dependency-closure, license and signature gates
+remain unchanged. No installed dependency on the user's Mac is modified.
+
+This pins the TPM formula snapshot, not every packaging dependency or the
+hosted runner image, and is not a bit-reproducible-build claim. The corrected
+workflow still needs exact-SHA hosted CI/Security and a successful artifact-only
+Release run before its package can enter the T17 preflight. A9 remains open;
+no live result, criterion, signing class or product state is promoted here.
