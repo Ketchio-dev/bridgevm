@@ -24,7 +24,7 @@ CTL="$OUT/agent.ctl"; : > "$CTL"
 INPUT="$OUT/input.ctl"; : > "$INPUT"
 RUN_LOG="$OUT/run.log"
 cp "$REPO/scripts/win-assets/bvgpu-apply-host-resolution.ps1" "$OUT/share/"
-cp "$REPO/scripts/win-assets/bv-windows-closure-proof.ps1" "$OUT/share/"
+cp "$REPO/scripts/win-assets/bv-windows-closure-proof.ps1" "$REPO/scripts/win-assets/bv-windows-closure-launch.ps1" "$OUT/share/"
 
 wait_for() {
   local pattern="$1" count="$2" timeout="$3" observed
@@ -104,7 +104,7 @@ LAUNCHER=$!
 
 # Agent READY precedes stage4; its successful completion deletes the scheduled task.
 wait_for '^BVAGENT SERVICE start' 1 "$AGENT_TIMEOUT" || { echo 'FAIL: agent service timeout' >&2; exit 1; }
-for file in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1; do
+for file in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1 bv-windows-closure-launch.ps1; do
   bytes=$(stat -f %z "$OUT/share/$file")
   wait_for "^BVAGENT SHARE host->guest $file bytes=$bytes " 1 180 \
     || { echo "FAIL: $file share timeout" >&2; exit 1; }
@@ -125,8 +125,8 @@ if send_ok "$DISPLAY_CMD" && grep -Eq '^BVF2 .* current=1600x900 modes=([2-9]|[1
   && grep '"name":"SET_SCANOUT"' "$OUT/virtio-gpu.jsonl" | grep '"response_name":"OK_NODATA"' | grep -q '"rect_w":1600,"rect_h":900'; then
   f2=pass
 fi
-LAUNCH_CMD='powershell -NoProfile -Command "Start-Process notepad.exe; Start-Sleep -Seconds 3; Write-Output BVNOTEPADSTARTED"'
-send_ok "$LAUNCH_CMD" || true
+LAUNCH_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-windows-closure-launch.ps1'
+send_ok "$LAUNCH_CMD" && wait_for '^BVAGENT SHARE guest->host bv-notepad-started.log bytes=' 1 30 || { echo 'FAIL: Notepad launch completion missing' >&2; exit 1; }
 send 'WINLIST' '^BVAGENT WINLIST WINEND$' || true
 win_line=$(grep '^BVAGENT WINLIST WIN ' "$RUN_LOG" | while IFS= read -r line; do
   title_b64=$(awk '{print $10}' <<<"$line")

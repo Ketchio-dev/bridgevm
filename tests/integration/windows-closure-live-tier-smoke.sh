@@ -16,7 +16,7 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 for executable in "$MANIFEST_HELPER" "$TIER" "$INTERACT" "$RECEIPT" "$MISSING"; do
   [[ -x "$executable" ]] || { echo "FAIL: not executable: $executable" >&2; exit 1; }
 done; grep -Eq "ValidateSet\('F1', 'Display', 'Window', 'Notepad'\)" "$PROOF" || { echo "FAIL: missing guest proof contract" >&2; exit 1; }
-python3 "$RECEIPT" --self-test | grep -q PASS
+python3 "$RECEIPT" --self-test | grep -q PASS; python3 "$ROOT/tests/integration/windows-closure-launch-smoke.py"
 
 # Manifest parser accepts only one exact entry for every required key and uses
 # the copied sealed binary, never a caller-owned binary path, for verification.
@@ -37,7 +37,7 @@ grep -Eq 'injector_boot_observed' "$TIER" && grep -Eq 'chmod 400.*disk.raw.*vars
 grep -Eq 'BVF1MODE.*has_1600x900' "$INTERACT" && grep -Eq 'BridgeVM-VioGpu3DFirstBoot.*stage3.flag' "$INTERACT"
 ready_line=$(grep -n 'wait_firstboot ||' "$INTERACT" | cut -d: -f1); f1_line=$(grep -n 'F1_CMD=' "$INTERACT" | cut -d: -f1); (( ready_line < f1_line ))
 grep -Eq 'RESIZE 1600x900.*SET_SCANOUT.*rect_w.*1600.*rect_h.*900' <(tr '\n' ' ' < "$INTERACT")
-for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE tesseract; do grep -Eq "$verb" "$INTERACT"; done
+for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE tesseract bv-notepad-started.log; do grep -Eq "$verb" "$INTERACT"; done
 # Guest stdout is relayed verbatim, so it keeps Windows CRLF while agent protocol
 # lines are LF-only: a `$`-anchored assertion over guest output can never match.
 # The WINLIST title must also be read from the field the host actually prints.
