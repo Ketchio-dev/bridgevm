@@ -262,7 +262,9 @@ bundler correctly rejected that source; this run produced no verified package.
 The workflow correction installs the TPM pair from the official upstream Homebrew core
 commit [918b0d7fd69f045c93f45ce5caa3940735c52476](https://github.com/Homebrew/homebrew-core/tree/918b0d7fd69f045c93f45ce5caa3940735c52476),
 which defines swtpm 0.10.1 and libtpms 0.10.2 with source and bottle hashes.
-Only a fresh disposable hosted tap is accepted. Automatic updates and API
+The hosted runner's existing tap is temporarily moved aside and restored on
+exit; the pinned tap is retained in runner temporary storage. Unexpected
+symlinks/non-repository paths and non-hosted execution are rejected. Automatic updates and API
 formula resolution are disabled for this installation; the resolved commit,
 installed executable version and libtpms Cellar path are checked explicitly.
 The existing bundle version, dependency-closure, license and signature gates
@@ -273,3 +275,11 @@ hosted runner image, and is not a bit-reproducible-build claim. The corrected
 workflow still needs exact-SHA hosted CI/Security and a successful artifact-only
 Release run before its package can enter the T17 preflight. A9 remains open;
 no live result, criterion, signing class or product state is promoted here.
+
+The first correction at `17adc661098d10757d1528a642ef42afedbd5d7c` also failed
+in [Release 34052972212](https://github.com/Ketchio-dev/bridgevm/actions/runs/34052972212):
+the runner already had a core checkout, and `test ... && test ...` did not
+abort on its first false command under Bash `errexit`. Git reinitialized the
+existing repository and then rejected adding its existing `origin`. No pinned
+installation or package was proven. The follow-up uses an explicit rejection
+branch and a preserve/restore transaction instead of assuming an absent tap.

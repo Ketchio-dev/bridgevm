@@ -69,9 +69,19 @@ jobs:
           set -euo pipefail
           test "$(uname -m)" = arm64
           test "$(brew --prefix)" = /opt/homebrew
+          test "$RUNNER_ENVIRONMENT" = github-hosted
           core="$(brew --repository)/Library/Taps/homebrew/homebrew-core"
-          # A fresh hosted tap only: never reset an existing checkout.
-          test ! -e "$core" && test ! -L "$core"
+          if [[ -L "$core" || ( -e "$core" && ! -d "$core/.git" ) ]]; then
+            echo "unexpected Homebrew core path" >&2; exit 1
+          fi
+          saved_core="$(mktemp -d "$RUNNER_TEMP/bridgevm-core.XXXXXX")"
+          # Preserve the runner's existing checkout without resetting it.
+          if [[ -d "$core" ]]; then mv "$core" "$saved_core/original"; fi
+          restore_core() {
+            if [[ -d "$core" ]]; then mv "$core" "$saved_core/pinned"; fi
+            if [[ -d "$saved_core/original" ]]; then mv "$saved_core/original" "$core"; fi
+          }
+          trap restore_core EXIT
           core_sha=918b0d7fd69f045c93f45ce5caa3940735c52476
           git init "$core"
           git -C "$core" remote add origin https://github.com/Homebrew/homebrew-core.git
@@ -80,7 +90,8 @@ jobs:
           test "$(git -C "$core" rev-parse HEAD)" = "$core_sha"
           brew install swtpm libtpms
           swtpm=/opt/homebrew/Cellar/swtpm/0.10.1/bin/swtpm
-          test -x "$swtpm" && test ! -L "$swtpm"
+          test -x "$swtpm"
+          test ! -L "$swtpm"
           "$swtpm" --version | grep -E '^TPM emulator version 0\.10\.1([[:space:],]|$)'
           test "$(realpath /opt/homebrew/opt/libtpms)" = /opt/homebrew/Cellar/libtpms/0.10.2
           echo "BRIDGEVM_SWTPM_BIN=$swtpm" >> "$GITHUB_ENV"
