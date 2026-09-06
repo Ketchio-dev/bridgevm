@@ -1831,3 +1831,7 @@ scripts/verify-hvf-nvme-quiescence-v2.py	186	0
 scripts/win-assets/bv-nvme-quiescence-v2.ps1	72	0
 scripts/write-hvf-nvme-performance-v2-receipt.py	991	0
 tests/integration/hvf-nvme-performance-v2-tier-smoke.sh	40	0
+scripts/archive-experiment.py	110	0
+scripts/experiment_retention.py	173	0
+tests/integration/experiment-retention-test.py	195	0
+tests/integration/attribution-process-doc-test.py	38	0

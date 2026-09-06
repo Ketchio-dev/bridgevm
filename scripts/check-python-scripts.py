@@ -7,7 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
-SELF_TESTS = ("scripts/audio-playback-result.py",)
+SELF_TESTS = ("scripts/audio-playback-result.py", "scripts/archive-experiment.py", "tests/integration/attribution-process-doc-test.py")
 
 def main() -> int:
     tracked = subprocess.run(

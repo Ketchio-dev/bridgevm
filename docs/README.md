@@ -26,6 +26,12 @@ win.
 - [Contributing](contributing/README.md) — development and verification workflow.
 - [Development system](development-system.md) — evidence levels, work packets,
   live gates, and definition of done.
+- [Experiment retention](reference/experiment-retention.md) — evidence, input
+  and output lifetimes, safe cleanup, and reproduction limits.
+- [Upstream development process comparison](reference/upstream-development-practices.md)
+  — official workflow observations and scoped BridgeVM recommendations.
+- [2026-09-06 experiment storage cleanup](history/windows-hvf/experiment-storage-cleanup-20260906.md)
+  — detailed campaign outcomes, per-run inventory, preserved evidence and space receipts.
 
 ## Browse by purpose
 
