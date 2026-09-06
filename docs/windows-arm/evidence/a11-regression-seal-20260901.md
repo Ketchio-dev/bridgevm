@@ -283,3 +283,55 @@ abort on its first false command under Bash `errexit`. Git reinitialized the
 existing repository and then rejected adding its existing `origin`. No pinned
 installation or package was proven. The follow-up uses an explicit rejection
 branch and a preserve/restore transaction instead of assuming an absent tap.
+
+## Verified hosted package and blocked T17 pilot
+
+The follow-up `e013d1bc82ffb741c979922d471f8ca3b252d6fe` passed
+[CI 34053212350](https://github.com/Ketchio-dev/bridgevm/actions/runs/34053212350),
+[Security 34053212343](https://github.com/Ketchio-dev/bridgevm/actions/runs/34053212343)
+and [artifact-only Release 34053212006](https://github.com/Ketchio-dev/bridgevm/actions/runs/34053212006).
+The full local project check also passed. These results establish the pinned
+TPM installation and package pipeline at this exact SHA, not Windows guest
+installation or release readiness. No tag or public release was created.
+
+Downloaded artifacts were checked against their retained `SHA256SUMS`:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `BridgeVM-release.json` | `f0ed3a1f1ea5f864ce8264a7532b843453a9f07b58e5c13e7d7fea889e12fef9` |
+| `BridgeVM-v1.1.0.dmg` | `731425df992e71c3de47bf3ecac0a71ed7f3819f1f700e979d0497aaa32bff7b` |
+| `BridgeVM-v1.1.0.tar.gz` | `72389192b7caa0e8abf3ee1458aac287f12ee9ebd037de5575ea566ea1dc72b0` |
+
+The release contract names exact source SHA e013d1bc, General Preview,
+Engineering Preview, 3D-off installation, no included Windows kernel driver,
+no product injection and no TESTSIGNING requirement. Its signing declaration
+is ad-hoc, not Developer ID or notarized. The 117-entry archive passed a
+path/type/duplicate/relative-symlink audit before extraction into a new local
+directory. Downloaded bytes then passed deep strict app signature validation,
+both packaged HVF entitlements, nested E2E helper identity/signature, TPM
+runtime dependency/hash/signature validation, firmware and wimlib provenance,
+and third-party notices (55 Rust dependencies, 12 frameworks and six LGPL
+dynamic consumers). Private inputs and extracted applications remain local.
+
+All ten T17 inputs were rehashed before the one-lane diagnostic
+`t17-e013d1bc-hosted-pilot-r1` was submitted. Its sealed manifest SHA-256 is
+`6146db63548d6b7b5b9819cecee10eded7728722bc9d678103a984cc5c01b8e4`.
+The physical-Mac queue ran the exact e013d1bc job on 2026-09-06 from
+19:06:11 to 19:06:53 UTC. **The pilot failed.** The private lane reported
+`accessibility-untrusted`, `ui_frontend_automated=false` and
+`cleanup_verified=true`. The public receipt reports `outcome=failed`,
+`failure_code=integration-failed`, zero passes from one run,
+`claim_eligible=false` and `worker_cleanup_verified=true`. Its retained public
+receipt SHA-256 is
+`2020ad340b9bb4df9cdc5956bb0a5fa531303244d937b6a72778a44fc6cf4246`.
+No remaining product/helper/HVF runner process was found after completion.
+
+The exact nested helper has the ad-hoc designated requirement CDHash
+`7C76137B5C6058FB9B2A11BBAEB31D877E6E4238` (hexadecimal bytes, not a Git commit).
+The next live attempt requires
+the user to authorize that downloaded helper in macOS Accessibility settings;
+an older same-name entry does not establish trust for these bytes. Do not
+edit TCC databases, bypass permission prompts or re-sign this sealed artifact.
+Do not repeat the pilot without a changed prerequisite. This is no installed
+Windows proof and no substitute for the fixed three-lane campaign. A9 and
+all other open criteria remain open; the product state is unchanged.
