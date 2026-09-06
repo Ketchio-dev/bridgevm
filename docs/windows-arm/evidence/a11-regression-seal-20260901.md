@@ -544,3 +544,99 @@ The next diagnostic should isolate prepared media from execution configuration
 with sealed inputs and independent clones; it must not reduce the B6 matrix
 or substitute a pointer smoke for glyph correctness. Historical failures and
 current OPEN capability wording remain unchanged.
+
+## Sealed two-media diagnostic: implementation and operation
+
+The `d1-windows-media-comparison` queue route runs the same existing closure
+proof twice, first on original media and then on reinjected media. It does not
+inject either source again. Both observations use one sealed binary, identical
+firmware, vars contents, renderer, driver tree and execution settings. Each
+gets a separate writable same-volume disk clone and vars copy. A lane's ordinary
+proof failure does not suppress the second observation, but changed inputs or
+media still in use stop the diagnostic. This fixed-order pair cannot establish
+repeatability or distinguish order effects; it is not the B6 acceptance matrix.
+
+The private UTF-8 TSV manifest requires these six exact two-column rows:
+
+```text
+schema	bridgevm.windows-media-comparison.v1
+purpose	diagnostic-only
+claim_eligible	false
+order	original,reinjected
+sample_count	2
+profile	windows-closure-proof-v1
+```
+
+It also requires exactly eight three-column asset rows, each containing its
+key, normalized absolute path and lowercase SHA-256: `original`, `reinjected`,
+`vars`, `binary`, `firmware`, `viogpu_dir`, `virglrenderer`, `moltenvk`.
+Do not include private paths or media in git. The two image hashes must differ;
+aliasing assets, duplicates, missing rows and changed contents are refused.
+Driver identity uses the filename-sorted SHA-256 listing convention, rejecting
+symlinks and ambiguous filenames. The worker's copied sealed binary is used
+instead of reopening the caller's binary path. Firmware is authenticated from
+the exact worker checkout's fixed `edk2-aarch64-secure-code.fd` path, not from
+an arbitrary replacement provided by the caller.
+
+After final exact-SHA CI/Security and worker compatibility checks, submit with:
+
+```sh
+scripts/live-gates/bridgevm-live submit d1-windows-media-comparison \
+  --sha <full-verified-harness-commit> \
+  --input-manifest <absolute-private-manifest.tsv> \
+  --job-id <unique-diagnostic-id>
+```
+
+The runner is asynchronous through the physical-Mac queue, not a foreground
+long test. The binary's attested source commit must be recorded separately
+when it differs from the harness commit. The output `diagnostic` directory
+must be new; the queue adapter creates it inside the existing job directory.
+Per-lane proof logs, original framebuffer data and any actual CGL captures stay
+private. A boot framebuffer is not substituted for the glyph scene. Sources
+and copied bytes are authenticated before each launch and inputs are checked
+again after each lane. Successful idle lane scratch is removed; unsafe or
+canceled scratch is retained for investigation, never treated as disposable
+while a guest may still own it.
+
+All result flags `pass`, `claim_eligible`, `criterion_pass` and
+`capability_promotion` remain false, including when both proof processes return
+zero. `diagnostic-complete` means both observations finished, not that any
+criterion passed. The adapter deliberately returns nonzero to the generic
+worker so its coarse queue status cannot advertise a criterion pass; inspect
+the diagnostic outcome and individual proof exit codes. Cancellation produces
+`canceled`, even when a partial private receipt already exists. Publication
+checks identity, fixed counts/order, safe field types and non-promotion flags;
+private paths and arbitrary lane data are not included in the public summary.
+
+The deterministic implementation checks cover 19 input rejection cases,
+actual APFS fixture copying with fake proof success/failure, source mutation,
+busy media, sealed CLI submission, dispatch refusal, cancellation finalization
+and publication. A separate dummy guest holds a real cloned file open while
+the actual worker process-group helper cancels its parent and descendants.
+That test checks terminated processes, retained scratch, unchanged original
+bytes/modes, no second lane after cancellation, and a claim-ineligible canceled
+public receipt. It also rejects source changes between sealing and copying.
+These are deterministic tests, not Windows execution evidence.
+
+The first actual cancellation fixture failed: `kill -0` succeeded just before
+process exit, the subsequent `ps` yielded empty state, and the common helper
+classified empty state as alive, returning cleanup status 126. Code head
+`e671ff0f31a0a330d2da0b63b8f8d07fb3c97eeb` requires a nonempty, non-zombie
+state. Empty/zombie/live state fixtures and actual group cancellation passed
+after correction. Temporary shell tracing was removed. The installed worker
+checkout must also receive this common helper correction while idle; merely
+fetching a new per-job worktree does not update the long-lived worker's helper.
+No diagnostic live pair has yet been submitted or measured.
+
+At that exact final code head,
+[CI 34059998099](https://github.com/Ketchio-dev/bridgevm/actions/runs/34059998099)
+completed with all independent required jobs successful and the optional latest
+advisory skipped. Its overall outcome remains FAILED: capability/documentation
+drift rejected the stale tested commit. [Security 34059998109](https://github.com/Ketchio-dev/bridgevm/actions/runs/34059998109)
+succeeded. Full pre-seal local project checks completed within 300 seconds with
+only capability registry failing. Those are not overall passes. This final
+registry/docs-only seal updates the code evidence pointer without altering the
+freshness guard and requires its own full local and exact-SHA hosted checks.
+Both complete private image hashes and all six common assets were authenticated
+by the actual diagnostic verifier before submission; input validity is not live
+proof. The installed worker update and actual media comparison remain pending.
