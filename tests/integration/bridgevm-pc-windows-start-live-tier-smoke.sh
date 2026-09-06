@@ -24,7 +24,7 @@ dd if=/dev/zero of="$vars" bs=65536 count=1 status=none
 printf 'image\t%s\t%s\n' "$image" "$(shasum -a 256 "$image" | cut -d' ' -f1)" > "$manifest"
 printf 'vars\t%s\t%s\n' "$vars" "$(shasum -a 256 "$vars" | cut -d' ' -f1)" >> "$manifest"
 export BRIDGEVM_LIVE_ROOT="$work/queue"
-job="$($CLI submit t14-bridgevm-pc-windows-start --input-manifest "$manifest")"
+job="$("$CLI" submit t14-bridgevm-pc-windows-start --input-manifest "$manifest")"
 queued="$BRIDGEVM_LIVE_ROOT/queued/$job"
 test -f "$queued/input-manifest.tsv"
 grep -q '^input_manifest_sha256=[0-9a-f]\{64\}$' "$queued/job.env"

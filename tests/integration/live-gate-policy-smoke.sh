@@ -135,7 +135,7 @@ check "the installer refuses to sit beside a runner" \
 no_match "nothing in the queue path uses sudo" \
     '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$PC_WINDOWS_TIER" "$T17_TIER" "$PUBLISH" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 check "live receipt, clone and hosted QMP stress policies pass" \
-    'python3 "$A3_RECEIPT" --self-test | grep -q "PASS" && "$REPO/tests/integration/windows-closure-live-tier-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/qmp-stress-live-tier-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/audio-teardown-live-tier-smoke.sh" | grep -q "PASS" && "$REPO/tests/integration/bridgevm-pc-windows-start-live-tier-smoke.sh" | grep -q "PASS"'
+    'python3 "$A3_RECEIPT" --self-test | grep "PASS" >/dev/null && "$REPO/tests/integration/windows-closure-live-tier-smoke.sh" | grep "PASS" >/dev/null && "$REPO/tests/integration/qmp-stress-live-tier-smoke.sh" | grep "PASS" >/dev/null && "$REPO/tests/integration/audio-teardown-live-tier-smoke.sh" | grep "PASS" >/dev/null && "$REPO/tests/integration/bridgevm-pc-windows-start-live-tier-smoke.sh" | grep "PASS" >/dev/null'
 check "the A3 payload archive is fail-closed" \
     '"$A3_PAYLOAD" --self-test | grep -q "PASS"'
 check "the A3 payload uses bounded share chunks" \
@@ -191,7 +191,7 @@ manifest="$WORK/a3-inputs.tsv"
 printf 'image\t/tmp/image\t%s\n' "$(printf image | shasum -a 256 | cut -d' ' -f1)" > "$manifest"
 printf '#!/bin/sh\nexit 0\n' > "$WORK/probe"; chmod +x "$WORK/probe"
 printf 'binary\t%s\t%s\n' "$WORK/probe" "$(shasum -a 256 "$WORK/probe" | cut -d' ' -f1)" >> "$manifest"
-a3_job="$($CLI submit t6-a3-title --input-manifest "$manifest")"
+a3_job="$("$CLI" submit t6-a3-title --input-manifest "$manifest")"
 check "A3 submit copies the input manifest" \
     '[ -f "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/input-manifest.tsv" ]'
 check "A3 submit seals the copied manifest hash" \
