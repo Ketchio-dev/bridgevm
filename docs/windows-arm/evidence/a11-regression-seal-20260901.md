@@ -335,3 +335,37 @@ edit TCC databases, bypass permission prompts or re-sign this sealed artifact.
 Do not repeat the pilot without a changed prerequisite. This is no installed
 Windows proof and no substitute for the fixed three-lane campaign. A9 and
 all other open criteria remain open; the product state is unchanged.
+
+## F4 presented-frame observation channel
+
+Code head `cf6fb990286a5a220bd843accd6c8fe7ebd3ef5f` corrects the remaining
+F4 capture caller: it no longer accepts the 2D virtio-gpu checkpoint that the
+retained all-black scene had falsified as presentation evidence. It enables
+synchronous IOSurface export and calls the existing generic active-CGL capture
+with a five-second limit. Newly presented seed advancement and nonblack full
+BGRA content remain required. Raw bytes, PPM and capture metadata are retained;
+the legacy PPM/hash path remains available to the observation report. A failed
+capture returns failure instead of falling back to the old framebuffer.
+
+The closure policy smoke now requires this channel and rejects the obsolete
+SNAPSHOT/checkpoint path, while preserving the guest-proof and OCR checks.
+Running the smoke in the actual whitespace-containing checkout also exposed
+an unquoted CLI command substitution, which was corrected. Focused policy and
+pure BGRA/geometry/stale/all-black tests passed. A synthetic adapter check
+verified successful copy/hash and refused-capture propagation. Existing file
+budgets were not raised. OCR remains observation, never the B6 pixel-mask gate.
+
+[CI 34054552449](https://github.com/Ketchio-dev/bridgevm/actions/runs/34054552449)
+completed with every independent required job successful, the optional advisory
+skipped, and only capability/documentation freshness failed against the older
+tested commit. This remains a failed workflow. [Security 34054552486](https://github.com/Ketchio-dev/bridgevm/actions/runs/34054552486)
+succeeded. The full precommit local project check passed, but its committed-head
+freshness comparison did not include the uncommitted script change. The
+registry/documentation-only follow-up therefore points to this exact code head
+and requires its own full local and hosted checks. No freshness guard changes.
+
+No corrected-channel live Notepad scene or B6 matrix has yet been measured.
+The next investigation must capture that exact visible failure before proposing
+a draw-path cause. B6 stays open with unchanged 3/3 observations at each of
+three resolutions and three scales, verified pixel masks and the 10% frame-time
+bound. T17's separate Accessibility prerequisite is unchanged.
