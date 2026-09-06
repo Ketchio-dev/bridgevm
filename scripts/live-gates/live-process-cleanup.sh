@@ -9,7 +9,7 @@ bridgevm_process_alive() {
   local pid="$1" state
   kill -0 "$pid" 2>/dev/null || return 1
   state="$(ps -o state= -p "$pid" 2>/dev/null | tr -d ' ')"
-  [[ "$state" != Z* ]]
+  [[ -n "$state" && "$state" != Z* ]]
 }
 
 bridgevm_process_group_alive() {
