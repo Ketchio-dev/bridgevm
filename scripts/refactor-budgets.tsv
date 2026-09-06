@@ -1843,3 +1843,5 @@ scripts/live-gates/windows-media-comparison-manifest.py	108	0
 tests/integration/windows-media-comparison-manifest-smoke.py	62	0
 scripts/live-gates/windows-media-comparison-runner.py	99	0
 tests/integration/windows-media-comparison-runner-smoke.py	83	0
+scripts/live-gates/windows-media-comparison-queue.py	103	0
+tests/integration/windows-media-comparison-queue-smoke.py	71	0
