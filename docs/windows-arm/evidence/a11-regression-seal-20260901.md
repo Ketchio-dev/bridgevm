@@ -369,3 +369,47 @@ The next investigation must capture that exact visible failure before proposing
 a draw-path cause. B6 stays open with unchanged 3/3 observations at each of
 three resolutions and three scales, verified pixel masks and the 10% frame-time
 bound. T17's separate Accessibility prerequisite is unchanged.
+
+## Closure guest-launch protocol and nested policy output
+
+Code head `24a3b5c1617560339c82bd21a73be8a56a55bfda` replaces the inline
+Notepad Start-Process call with a share-delivered CRLF PowerShell script,
+invoked through `-File`. It launches through `Invoke-CimMethod Win32_Process
+Create`, rejects an unsuccessful return or missing PID, and emits the named
+completion file after the existing three-second settle. The host requires that
+file to return through the agent share; it no longer ignores launch failure.
+The new eight-line payload and 36-line static test have actual-size structural
+registrations, without raising existing ceilings. Nine rejection mutations
+passed, including a corrected positive-newline requirement for CRLF validation.
+This static evidence does not prove CIM execution inside Windows.
+
+[Security 34055674449](https://github.com/Ketchio-dev/bridgevm/actions/runs/34055674449)
+failed at that code head with a real Broken-pipe error: a nested smoke emitted
+PASS, the parent `grep -q` closed the pipe, and later output failed. This is
+not a registry-only failure and is not reclassified as success. Code head
+`59eb783ea1bd6b95c838351844c8975e6bd3a169` changes the five nested output
+consumers to draining grep with output redirected to `/dev/null`, retaining
+pipefail. It also quotes two executable-path substitutions exposed by the real
+whitespace-containing checkout. A late-output success test and a producer that
+prints PASS then exits 7 demonstrate both pipe draining and error preservation.
+The actual complete live-policy deterministic suite passed all 99 checks.
+
+[CI 34055944404](https://github.com/Ketchio-dev/bridgevm/actions/runs/34055944404)
+completed with every independent required job successful, including macOS app
+suites, and the optional latest advisory skipped. The workflow remains FAILED:
+capability/documentation drift rejected the stale tested commit at
+`scripts/refactor-budgets.tsv`. [Security 34055944527](https://github.com/Ketchio-dev/bridgevm/actions/runs/34055944527)
+succeeded at the exact corrected code head. The subsequent full local project
+check completed within 300 seconds with only capability registry failing;
+every other step passed. That overall result is FAIL, not PASS.
+
+This registry/documentation-only seal points to the corrected code head and
+requires its own full local project check and exact-SHA hosted CI/Security.
+It does not weaken freshness or retrospectively change either failed workflow.
+The existing ten-input T7 verifier accepted the reconstructed private inputs,
+but no new live closure run has been submitted. This is preparation for a new
+B4-derived diagnostic, not a replay of the absent August T7 experiment. The
+attested probe source remains `69dea55a1902e3c11834f87bc19b9995e79a504e`,
+separate from the corrected harness source. Input validity and deterministic
+tests do not close B6's live glyph matrix or T17's Accessibility blocker.
+All open criteria and the Engineering Preview product state are unchanged.
