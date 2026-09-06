@@ -65,12 +65,11 @@ wait_firstboot() {
   return 1
 }
 capture_active_scanout() {
-  local label="$1" before line ppm
-  before=$(grep -c "ramfb checkpoint: label=$label " "$RUN_LOG" 2>/dev/null || true); printf 'SNAPSHOT %s\n' "$label" >> "$INPUT"
-  wait_for "ramfb checkpoint: label=$label state=captured " $((before + 1)) 30 || return 1
-  line=$(grep "ramfb checkpoint: label=$label state=captured " "$RUN_LOG" | tail -1); ppm=$(sed -E 's/^.* ppm=//' <<<"$line")
-  [[ "$(basename "$ppm")" == virtio-gpu-checkpoint-* && -s "$ppm" ]] || return 1
-  cp "$ppm" "$OUT/captures/$label.ppm"; shasum -a 256 "$OUT/captures/$label.ppm" > "$OUT/captures/$label.ppm.sha256"
+  local label="$1" capture="$OUT/captures/$1"
+  python3 "$REPO/scripts/capture-active-iosurface.py" --iosurface "$OUT/display.fb.iosurface" \
+    --out "$capture" --timeout-ms 5000 || return 1
+  cp "$capture/presented.ppm" "$OUT/captures/$label.ppm" || return 1
+  shasum -a 256 "$OUT/captures/$label.ppm" > "$OUT/captures/$label.ppm.sha256"
 }
 
 # A killed launcher writes no target-stat/firstboot/post-mortem evidence, which
@@ -89,6 +88,7 @@ cleanup() {
 trap cleanup EXIT
 
 BRIDGEVM_PREBUILT_PROBE="$BINARY" BRIDGEVM_VULKAN_LIB="$MOLTENVK" \
+BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1 BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT=0 BRIDGEVM_VIRTIO_GPU_ASYNC_PRESENT=0 \
 BRIDGEVM_BOOT_PROGRESS_KILL=1 \
 "$REPO/scripts/run-hvf-windows-installed-boot.sh" \
   --target "$TARGET" --vars "$VARS" --evidence-dir "$OUT" \
