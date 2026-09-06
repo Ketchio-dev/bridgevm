@@ -53,7 +53,7 @@ cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 rm -rf "$WORK"; mkdir -p "$STAGE" "$PROOF_WORK" "$OUT/injection" "$OUT/prepared"
 
-cp -c "$IMAGE" "$STAGE/disk.raw"; cp "$INJECTOR_VARS" "$STAGE/vars.fd"; cp -c "$INJECTOR" "$STAGE/injector.raw"
+source "$REPO/scripts/live-gates/windows-closure-stage.sh"; stage_closure_inputs || refuse 'injection clone preparation failed' clone-preparation-failed
 [[ "$(seal "$STAGE/disk.raw")" == "$SOURCE_IMAGE_HASH" && "$(seal "$STAGE/vars.fd")" == "$SOURCE_INJECTOR_VARS_HASH" \
   && "$(seal "$STAGE/injector.raw")" == "$SOURCE_INJECTOR_HASH" ]] || refuse 'initial clones differ from sealed inputs' clone-hash-mismatch
 BRIDGEVM_PREBUILT_PROBE="$SEALED_BINARY" BRIDGEVM_VULKAN_LIB="$MOLTENVK" \

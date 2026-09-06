@@ -1837,3 +1837,5 @@ tests/integration/experiment-retention-test.py	195	0
 tests/integration/attribution-process-doc-test.py	38	0
 scripts/win-assets/bv-windows-closure-launch.ps1	8	0
 tests/integration/windows-closure-launch-smoke.py	36	0
+scripts/live-gates/windows-closure-stage.sh	8	0
+tests/integration/windows-closure-stage-smoke.py	51	0

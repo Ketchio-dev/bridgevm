@@ -16,7 +16,7 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 for executable in "$MANIFEST_HELPER" "$TIER" "$INTERACT" "$RECEIPT" "$MISSING"; do
   [[ -x "$executable" ]] || { echo "FAIL: not executable: $executable" >&2; exit 1; }
 done; grep -Eq "ValidateSet\('F1', 'Display', 'Window', 'Notepad'\)" "$PROOF" || { echo "FAIL: missing guest proof contract" >&2; exit 1; }
-python3 "$RECEIPT" --self-test | grep -q PASS; python3 "$ROOT/tests/integration/windows-closure-launch-smoke.py"
+python3 "$RECEIPT" --self-test | grep -q PASS; python3 "$ROOT/tests/integration/windows-closure-launch-smoke.py"; python3 "$ROOT/tests/integration/windows-closure-stage-smoke.py"
 
 # Manifest parser accepts only one exact entry for every required key and uses
 # the copied sealed binary, never a caller-owned binary path, for verification.
@@ -25,8 +25,8 @@ grep -Eq 'actual="\$\(seal "\$SEALED_BINARY"\)"' "$MANIFEST_HELPER"
 grep -Eq 't7-windows-closure' "$CLI" "$WORKER" "$DISPATCH" "$MISSING" && grep -Eq 'verify-windows-closure-binary.sh' "$TIER"
 # Safety invariants that must fail if somebody regresses to booting originals
 # or sharing a writable vars file between injection and proof.
-grep -Eq 'cp -c "\$IMAGE" "\$STAGE/disk.raw"' "$TIER"
-grep -Eq 'cp "\$INJECTOR_VARS" "\$STAGE/vars.fd"' "$TIER"
+grep -Eq 'source.*windows-closure-stage.sh.*stage_closure_inputs.*refuse' "$TIER"
+grep -Eq 'cp "\$INJECTOR_VARS" "\$STAGE/vars.fd"' "$ROOT/scripts/live-gates/windows-closure-stage.sh"
 grep -Eq 'cp -c "\$RETAINED/disk.raw" "\$PROOF_WORK/disk.raw"' "$TIER" && grep -Eq 'cp "\$RETAINED/vars.fd" "\$PROOF_WORK/vars.fd"' "$TIER"
 grep -Eq 'prepared vars differ from the sealed target vars' "$TIER"
 grep -Eq 'SOURCE_IMAGE_HASH.*SOURCE_VARS_HASH' "$TIER" && grep -Eq 'prepared pair changed during proof' "$TIER"
