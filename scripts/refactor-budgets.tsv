@@ -1839,3 +1839,5 @@ scripts/win-assets/bv-windows-closure-launch.ps1	8	0
 tests/integration/windows-closure-launch-smoke.py	36	0
 scripts/live-gates/windows-closure-stage.sh	8	0
 tests/integration/windows-closure-stage-smoke.py	51	0
+scripts/live-gates/windows-media-comparison-manifest.py	108	0
+tests/integration/windows-media-comparison-manifest-smoke.py	62	0

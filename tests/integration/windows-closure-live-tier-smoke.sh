@@ -16,7 +16,7 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 for executable in "$MANIFEST_HELPER" "$TIER" "$INTERACT" "$RECEIPT" "$MISSING"; do
   [[ -x "$executable" ]] || { echo "FAIL: not executable: $executable" >&2; exit 1; }
 done; grep -Eq "ValidateSet\('F1', 'Display', 'Window', 'Notepad'\)" "$PROOF" || { echo "FAIL: missing guest proof contract" >&2; exit 1; }
-python3 "$RECEIPT" --self-test | grep -q PASS; python3 "$ROOT/tests/integration/windows-closure-launch-smoke.py"; python3 "$ROOT/tests/integration/windows-closure-stage-smoke.py"
+python3 "$RECEIPT" --self-test | grep -q PASS; python3 "$ROOT/tests/integration/windows-closure-launch-smoke.py"; python3 "$ROOT/tests/integration/windows-closure-stage-smoke.py"; python3 "$ROOT/tests/integration/windows-media-comparison-manifest-smoke.py"
 
 # Manifest parser accepts only one exact entry for every required key and uses
 # the copied sealed binary, never a caller-owned binary path, for verification.
