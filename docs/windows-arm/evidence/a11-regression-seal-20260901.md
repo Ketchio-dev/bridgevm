@@ -626,7 +626,8 @@ state. Empty/zombie/live state fixtures and actual group cancellation passed
 after correction. Temporary shell tracing was removed. The installed worker
 checkout must also receive this common helper correction while idle; merely
 fetching a new per-job worktree does not update the long-lived worker's helper.
-No diagnostic live pair has yet been submitted or measured.
+At that implementation checkpoint, no diagnostic live pair had been submitted
+or measured. The subsequent completed observation is recorded below.
 
 At that exact final code head,
 [CI 34059998099](https://github.com/Ketchio-dev/bridgevm/actions/runs/34059998099)
@@ -639,4 +640,263 @@ registry/docs-only seal updates the code evidence pointer without altering the
 freshness guard and requires its own full local and exact-SHA hosted checks.
 Both complete private image hashes and all six common assets were authenticated
 by the actual diagnostic verifier before submission; input validity is not live
-proof. The installed worker update and actual media comparison remain pending.
+proof. The installed worker update and actual media comparison were still
+pending at that checkpoint.
+
+## Two-media diagnostic result, 2026-09-06
+
+Job `d1-e8ceebe1-original-reinjected-r1` completed both observations at harness
+commit `e8ceebe12325a0c75f154d384ef315067cd5d20a`. Its public receipt SHA-256 is
+`6d0cccccbc1901275136f1a3315d89cd47cde6e2d44d274f65acdc70dbda9d92` and its
+sealed manifest SHA-256 is
+`e01bfd41467723645db463edd76a7dd83c27c43dd25c5b24658901e5c3d433c2`.
+The result is `diagnostic-complete`, with two samples, zero passes, and all four
+pass/promotion flags false. Each proof returned exit code 1; each lane's result
+records `source_integrity_verified=true`. Completion is not a gate pass.
+
+The original image SHA-256 is
+`7385d2005f3c48c40519a2d9cf2b9f975a3763ad8f37e84937d5ddf8429b0f8b`;
+the reinjected image SHA-256 is
+`a015d92bb5be37e9c6cb0f14d54d53293753f5a5461d1c40dc39c9569d278d2e`.
+Both use source vars SHA-256
+`bec224d27c8681d2db69583e933e2d99b6fa5265d91d37373cb7a2c8b71853cd`,
+with independent writable working copies. Private source images, vars,
+per-lane logs and framebuffer artifacts remain outside this repository.
+
+Both observations stopped before the Windows workload:
+
+| Observation | Original | Reinjected |
+| --- | --- | --- |
+| Proof exit code | 1 | 1 |
+| Boot-progress watchdog | 120000 ms, 4 exits in window | Same |
+| Final exit count / reboots | 72235 / 0 | Same |
+| Final CPU0 PC / LR | `0x1bf33ba04` / `0x478e2a14` | Same |
+| RAMFB checksum at 1, 5, 15, 30, 60, 90 seconds | `af552b4d7621db7e` | Same |
+| CNTV_CTL / host vtimer mask | `0x1` / false | Same |
+| CNTV_CVAL | `0x75f3866db40` | `0x760cc6e12dd` |
+
+The translated PC belongs to ArmCpuDxe, with a preceding WFI instruction
+`0xd503207f` and current RET instruction `0xd65f03c0`. The owning-thread GIC
+snapshot reports `parked (deadline passed, wake still deliverable)`,
+`stall=false`. Both have GICR ISENABLER0 `0x6c000000`, ISPENDR0 zero and
+ISACTIVER0 zero. That classifier does not establish why boot made no progress;
+it must not be confused with the separate boot-progress watchdog verdict.
+Zero virtual-timer exits also occurred in the historical successful B4 lane,
+so that count alone is not a distinguishing cause.
+
+The supported conclusion is narrow: reinjection is not necessary to reproduce
+this failure shape under the current common execution conditions. This pair
+does not identify a timer, interrupt, renderer, firmware or disk defect. Its
+fixed original-then-reinjected order and one observation per image do not
+establish repeatability. B6 remains OPEN; neither a Windows desktop nor a glyph
+correctness scene was demonstrated by these observations.
+
+### Next investigation, not an implemented fix
+
+The historical B4 lane's retained preflight records a release-build completion,
+replacement of an existing code signature, and an executable under that job's
+private live-work tree. On 2026-09-06 that exact executable path no longer
+exists. The inspected receipt, input manifests and preflight do not supply an
+executable SHA-256. This is an evidence gap, not proof that every archived copy
+is missing, and rebuilding cannot recover the identity of those old bytes.
+
+When using that historical lane, establish its actual executable identity;
+its harness commit alone is not proof of which binary ran. Compare one
+execution variable at a time on immutable-source clones, retaining the binary,
+firmware, vars and configuration identities alongside each result. If the
+historical executable cannot be authenticated, a rebuilt historical source is
+a new diagnostic artifact, not the old successful artifact. Configuration
+differences listed above remain confounders until isolated. Do not change timer
+delivery or relax watchdog/acceptance thresholds merely to obtain a passing
+run. Preserve this failed pair when recording any later correction.
+
+### Stronger retained control: the identical binary booted Windows
+
+Further inspection found B7 job `20260902-023340-t18-350a7e55`, whose retained
+executable was rehashed on 2026-09-06. It is byte-identical to the d1 binary:
+SHA-256 `5912a1f291d9935d3d4d2270b37829de543645db2583c3e3f257b9296f1493e8`.
+The B7 public receipt SHA-256 is
+`5844b7a086e7a3877ec34c0365331f23ea0f2baa2f62b0eab79d1ea0de491081`.
+It records ten completed audio-playback/shutdown lanes, not a graphics gate.
+All ten retained run-log hashes were recomputed and match their lane results;
+each log contains agent service start and PSCI system off. Service-start times
+in ordinal order are 22331, 23844, 22328, 24381, 23362, 23577, 21808, 22832,
+21584 and 22323 ms. Each lane result reports playback and shutdown passing.
+
+This is a stronger executable-identity control than the older B4 comparison.
+It contradicts a claim that these binary bytes cannot boot Windows at all.
+It does not prove that they boot the d1 media/configuration, nor does it
+establish that the host environment remained unchanged between dates.
+
+| Input or setting | Retained B7 control | Failed d1 pair |
+| --- | --- | --- |
+| Binary SHA-256 | `5912a1f2…` | Identical |
+| Firmware SHA-256 | `b1dc201b…` | Identical |
+| RAM / CPUs | 6144 MiB / 4 | Same |
+| Disk SHA-256 | `5ad7a304…` | `7385d200…` / `a015d92b…` |
+| Vars SHA-256 | `2f0e6892…` | `bec224d2…` |
+| xHCI | Disabled | Enabled |
+| Virtio GPU 3D | Disabled | Enabled, Venus |
+| HDA CoreAudio | Enabled | HDA disabled |
+| Watchdog setting | 1500000 ms | 3000000 ms, plus boot-progress kill |
+| Agent share interval / maximum file size | 1000 ms / 1024 KiB | 500 ms / 8192 KiB |
+
+The B7 source disk and vars identities are respectively
+`5ad7a304cfec4fe9320784b26b4d6895885361ddef2675d2411a759cb54165f8` and
+`2f0e68923bf0e4cc1bcfd51a6bb67eb661d48b90aef97ea3b03d4b2805b33ca7`.
+The differing disk, vars, devices and observation settings are confounders,
+not individually established causes. In particular, the unchanged timer
+recovery source and the existence of this identical-binary successful control
+do not justify a speculative timer or RAM-allocation rollback.
+
+The next diagnostic should anchor to these authenticated binary bytes and a
+currently reauthenticated disk/vars pair, first checking whether the retained
+successful configuration still boots, then changing one input at a time.
+Each configuration must be sealed and labeled diagnostic-only; the B7 audio
+gate must not be relabeled as B6, and the d1 original/reinjected labels must
+not be repurposed for unrelated media or configuration comparisons. A new
+control's failure is retained and investigated before attributing a changed
+lane to its intended variable. No timer fix or graphics promotion is recorded.
+
+## Retained B7 configuration no longer boots, 2026-09-06
+
+The prescribed control was executed. Job `t18-e8ceebe1-boot-control-r1` resubmitted
+the unmodified retained B7 input manifest
+`3a8cf8ed9fa5d134fac6ef6b345816df01e70a24276fdbe91e826dd79244091a`
+at harness commit `e8ceebe12325a0c75f154d384ef315067cd5d20a`. It started
+2026-09-06T21:45:25Z and finished 2026-09-06T22:11:52Z. Its public receipt
+SHA-256 is `433084bedddb3d65b9d856cc85c9cbfe850edfc5fa33aba5c24a0e1ad6fcb0bc`
+and the retained lane log SHA-256 is
+`3a5c0e397a1ebe7723bdb717e1645d5ceaee097b87befe86275ae003293e5cc0`.
+
+The control **failed**. The receipt records outcome `failed`, failure code
+`lane-failed`, `run_count` 1 against `required_run_count` 10, zero passes, and
+`criterion_pass`, `pass`, `claim_eligible` and `capability_promotion` all false.
+Elapsed time was 1555000 ms against a 568000 ms ten-lane successful reference.
+No criterion is promoted, demoted or rescored by this observation.
+
+Every sealed input matches the successful B7 job `20260902-023340-t18-350a7e55`:
+binary `5912a1f291d9935d3d4d2270b37829de543645db2583c3e3f257b9296f1493e8`,
+firmware `b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b`,
+source disk `5ad7a304cfec4fe9320784b26b4d6895885361ddef2675d2411a759cb54165f8`,
+source vars `2f0e68923bf0e4cc1bcfd51a6bb67eb661d48b90aef97ea3b03d4b2805b33ca7`,
+host model `Mac17,9`, macOS `26.5`. The recorded device shape lines are
+byte-identical between the two runs: 6144 MiB, 4 CPUs, 1500000 ms watchdog,
+xHCI disabled by `BRIDGEVM_DISABLE_XHCI`, HDA CoreAudio enabled, ramfb enabled,
+virtio-net, virtio-gpu and TPM disabled. The two dates fall in different host
+boot sessions; the host booted 2026-09-02 19:35 local, after the successful job.
+
+Lane 1 never reached `BVAGENT SERVICE start` within its 1500 s wait, so the
+launcher was terminated and `launcher.exit` records 124; `launcher.out` is empty
+and the tier stopped after the first lane. The guest did not reach Windows. The
+terminal state is a firmware-stage stall: `pc=0x1bf33ba04`, which resolves to
+`ArmCpuDxe` RVA 0x3a04 with `wfi` at the preceding instruction, `lr=0x478e2a14`,
+and a frame chain of `DxeCore` RVA 0xdb44 and 0xdfd0, then `BdsDxe` RVA 0xa3ac,
+then `DxeCore` RVA 0xb820 and entry 0x16b14. The captured ramfb checkpoint
+`0xaf552b4d7621db7e` shows the TianoCore splash and the text `Start boot option`.
+The boot-progress watchdog recorded `stalled_for_ms=120000 exits_in_window=4
+total_exits=71588 reboots=0 suspect=stalled-before-first-reboot`, and the final
+vCPU state is generation 1, PSCI `On`, 77031 exits. `CPSR=0x60000305` with
+`I(irq-masked)=0`, `CNTV_CTL=0x1`, `CNTV_CVAL=0x76ee675fd47`, vtimer
+`masked=false`. Wake attribution shows 5922 requests, all claimed, with 5921
+claimed by `agent-console` and 1 by `reboot-watchdog`, no surplus and no stale
+wakes. This is the same stall address, same frame chain and same boot-frame
+checksum already recorded for both d1 lanes.
+
+What this closes: the d1 pair's failure is **not** attributable to the reinjected
+image, to injection in general, or to any d1-only media identity, because the
+retained media and vars that previously produced ten passing lanes now stall in
+exactly the same place with the same executable and firmware bytes. The
+media-comparison hypothesis that d1 was built to test is therefore not supported.
+
+What this does not establish: it is one live lane, not a gate result. It does not
+distinguish a deterministic from an intermittent stall, does not identify a cause,
+and does not retroactively invalidate the 2026-09-02 B7 measurement, which stays
+sealed to the job and host session that produced it. It does mean the current head
+and host cannot be assumed to reproduce that configuration, so the final
+no-regression gate must be re-established rather than inherited. The differing
+d1 device settings remain confounders that were never isolated. No timer, RAM,
+renderer or NVMe change is justified by this observation, and no threshold,
+sample count or criterion wording is altered to accommodate it.
+
+## Sealed boot configuration fails 3/3 on the current host, 2026-09-07
+
+The B7 control above is expensive to observe: its lane waits 1500 s before it
+gives up. A cheaper independent control exists. Tier `t15-hvf-boot-performance`
+boots the same source disk and vars with a 120000 ms watchdog and reports
+time-to-desktop, so a stall costs two minutes instead of twenty-six. Job
+`20260901-115952-25838-5935` ran that tier on 2026-09-01 from input manifest
+`57058d9180f2d9fc99c79472e9c92722b3a5063667497b6bd5f91161fee18852` and passed,
+reaching the desktop in 26353 ms with 229856 exits, 4669 exits per second.
+
+That unmodified manifest was resubmitted three times at commit
+`e8ceebe12325a0c75f154d384ef315067cd5d20a` as
+`t15-e8ceebe1-host-boot-control-r1`, `-r2` and `-r3`, starting
+2026-09-07T15:36:04Z, 15:41:57Z and 15:44:42Z. Their public receipt SHA-256
+values are
+`2926f9337e204c5b94f3fa3353943bafcf3662b102f9aca82f86abb3fd5b28fd`,
+`5c449a14b43e9d2cf7968b609818c1550fdcd186e6193d01236053a2e9d41eef` and
+`9467c9a47a7af2e774f7fe80160013ef1e0c6e54df1bbf1d1d80359afc7b1a2e`.
+
+All three failed identically with `invalid_reason`
+`desktop_not_reached,run_status_nonzero`, no desktop time, and 0 of 8
+milestones. Sealed inputs are the ones the successful reference used: binary
+`df08c66fb5cbb31786adc5daa50c50b77980d0c6dda1a4e84d298d1f56fa0fbf` built from
+`d5d5ed9ce7e621a0b603b1195e872d16ec1f5659`, renderer
+`dc596bf39c7a9be4380d4f7d2ae57b8911c880cc719b3eebdccdb9303d6af168`, firmware
+`b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b`, disk
+`5ad7a304cfec4fe9320784b26b4d6895885361ddef2675d2411a759cb54165f8`, vars
+`2f0e68923bf0e4cc1bcfd51a6bb67eb661d48b90aef97ea3b03d4b2805b33ca7`, host
+`Mac17,9`, macOS 26.5 build 25F71, AC power at both ends of each run.
+
+The terminal state is the same one the B7 control and both d1 lanes recorded:
+`pc=0x1bf33ba04` in `ArmCpuDxe` immediately after `wfi`, reached through
+`DxeCore` RVA 0xdb44 and 0xdfd0, `BdsDxe` RVA 0xa3ac, and `DxeCore` RVA 0xb820.
+Each 120 s run contains exactly one distinct framebuffer checksum,
+`0xaf552b4d7621db7e`. The successful reference recorded that same checksum at
+its 1000 ms sample and a different one by 5000 ms, so the failing runs reach
+the normal one-second firmware state and then never leave it. The reference
+emits the `windows-boot-manager` and `edk2-bds` milestones between its 5000 ms
+and 15000 ms samples; the failing runs emit neither. Exit accounting shows the
+same shape: about 72700 exits during the first seconds of firmware execution,
+then roughly four exits per second for the remaining two minutes. The vtimer is
+`CNTV_CTL=0x1` with `masked=false`, and wake attribution reports 474 requests,
+474 claimed, zero surplus and zero stale, so the swallowed-fire recovery in
+`vtimer_recovery.rs` never triggered and has no bearing on this stall.
+
+This establishes three things and no more.
+
+First, the stall is deterministic on the current host for this sealed
+configuration, three runs of three, rather than an intermittent event.
+
+Second, it is not media-specific and not injection-specific. Three different
+disk images, two different probe binaries, and three different device
+configurations, including one with xHCI, virtio-net and virtio-gpu 3D enabled
+and one with all three disabled, stall at the same instruction with the same
+frame chain and the same frame. No d1 label, no B6 hypothesis and no clone or
+injection change is supported by this.
+
+Third, the host is not uniformly unable to run a guest. Inside job
+`t7-bdad4cbc-b6-observation-r3` on 2026-09-06, the injection lane reached the
+Windows kernel, its final `pc=0xfffff803dce999fc` resolving inside `ntkrnlmp`,
+while the proof lane in the same job stalled at `0x1bf33ba04`. The stall is
+confined to the configurations that boot the installed 68 GiB Windows disk.
+
+What is not established is the cause. Every live queue job since 2026-09-06 has
+failed, and the last live pass precedes the host reboot of 2026-09-02 19:35
+local, so the failure window and the current host boot session coincide; that
+is a correlation, not a mechanism. The host was not idle during these runs,
+which is a recorded confounder, but a reference boot that reaches the desktop
+in 26353 ms against a 120000 ms watchdog and a stall that produces zero of
+eight milestones make host load alone an implausible sole explanation. No
+macOS version or build change is recorded across the window.
+
+No criterion is promoted or demoted by this record, no threshold or sample
+count is changed, and no code fix is claimed. The practical consequence is that
+the A11 freshness and no-regression gate cannot be re-established on this host
+until this control passes again, and that the 2026-09-06 media-comparison
+investigation ran entirely inside a window where the sealed reference
+configuration itself does not boot. The next diagnostic changes one host-level
+variable at a time and re-runs this exact manifest, beginning with a host
+restart, since the host boot session is the only recorded difference between
+the last passing and every failing observation.
