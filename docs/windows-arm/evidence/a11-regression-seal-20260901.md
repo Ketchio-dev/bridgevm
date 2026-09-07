@@ -992,3 +992,71 @@ So the search is not host-wide, not device-shape, and not a boot-option launch
 failure. It is confined to whatever BdsDxe waits for between console setup and
 starting Boot0002, on media that used to complete that wait in seconds. No
 criterion, threshold or sample count changes, and no cause is claimed.
+
+## Root cause: the vtimer recovery holds the in-kernel GIC down, 2026-09-07
+
+The wait was named rather than inferred. `BdsDxe` was extracted from the
+shipped firmware volume `edk2-aarch64-secure-code.fd`: outer FV at 0x1000,
+file `9e21fd93-9c72-4c15-8c4b-e77f1db2d792` of type 0x0b, one LZMA
+GUID-defined section, an inner DXE FV of 86 modules. The recovered PE reports
+`AddressOfEntryPoint` 0x108bc, matching the `entry=0x108bc` the live frame
+chain records, so the RVA convention is the same. At RVA 0xa3ac the code is
+
+```
+ldr x5,[x0,#0x50] ; gBS->CreateEvent, w0 = 0x80000000 EVT_TIMER
+bl  #0x1084       ; ONE_SECOND
+ldr x3,[x1,#0x58] ; gBS->SetTimer, w1 = 2 TimerPeriodic
+ldr x3,[x0,#0x60] ; gBS->WaitForEvent, x0 = 2 events
+blr x3            ; <- the parked call
+ldr x1,[x0,#0x70] ; gBS->CloseEvent
+```
+
+which is `BdsWait` in `MdeModulePkg/Universal/BdsDxe/BdsEntry.c`, the boot
+countdown waiting on a one-second periodic timer event and the hotkey event.
+`ArmTimerDxe` in the same volume reads and writes only `cntv_ctl_el0`,
+`cntv_cval_el0` and `cntvct_el0`, with no `cntp_*` access at all, so the DXE
+tick has exactly one source: the virtual timer PPI.
+
+`recover_swallowed_vtimer_fire` unmasked the HVF vtimer, pulsed that mask and
+rewrote `CNTV_CVAL` on every canceled exit, roughly four times a second in a
+parked boot. Under the in-kernel GIC created by `hv_gic_create`, which owns the
+timer and delivers PPI 27 with no userspace exit, that is what keeps the
+interrupt from ever going pending. `ArmTimerDxe` stops ticking, the one-second
+event never signals, `BdsWait` never returns, and the firmware holds the boot
+progress bar without ever starting the boot option. That is the whole chain
+from the frozen frame to the register state: expired deadline, `ISTATUS` clear,
+PPI 27 enabled and not pending, `vtimer_exits=0` in healthy and parked runs
+alike because this path never used `EXIT_VTIMER`.
+
+An interleaved A/B settled it on one host, alternating in time, with identical
+disk `5ad7a304`, vars `2f0e6892`, renderer `dc596bf3` and firmware `b1dc201b`:
+
+| job | role | binary | outcome | desktop |
+| --- | --- | --- | --- | --- |
+| `t15-e8ceebe1-host-boot-control-r1/r2/r3` | baseline | `df08c66f` | failed | none |
+| `t15-ab-baseline-o1` | baseline | `df08c66f` | failed | none |
+| `t15-ab-baseline-o4` | baseline | `df08c66f` | failed | none |
+| `t15-23fecb43-norecovery-r2` | candidate | `37018b44` | completed | 21382 ms |
+| `t15-ab-candidate-o3` | candidate | `37018b44` | completed | 30300 ms |
+| `t15-13fb8213-fix-o6` | shipped head | `4385f381` | completed | 27284 ms |
+
+Baseline 0/5, recovery disabled 2/2, and the shipped removal 1/1. The passing
+runs print `BdsDxe: starting Boot0002 "Windows Boot Manager"` on the firmware
+serial and record the `windows-boot-manager` and `edk2-bds` milestones, which
+no parked run ever reached.
+
+The recovery is removed rather than gated, because its own header already
+recorded the same dynamic under the userspace GIC, where it was disabled for
+exactly this reason: the re-arm outran the synthesizer and the cure blocked the
+cure. No configuration is left in which it is measured to help. The 2026-08-06
+soak that motivated it, a 21/21 correlation between surplus cancels and the A1
+boot stall, is retained in the module header as retracted history; if that
+stall returns, the fix is derived against current HVF rather than restored.
+
+Scope of the damage. Every live queue job from 2026-09-06 onward was measured
+under this defect. That includes the `t17` pilot, the three `t7` B6
+observations, the `d1` media comparison and its published receipts, and the
+`t18` B7 control. None of those results promotes or demotes anything, and the
+d1 conclusion that the original and reinjected media fail identically says
+nothing about the media: both were parked by the harness. The 2026-09-01 and
+2026-09-02 passes predate the configuration that triggers it.
