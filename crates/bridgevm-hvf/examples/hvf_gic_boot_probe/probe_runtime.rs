@@ -425,10 +425,9 @@ pub(crate) fn run() -> ExitCode {
                     ]));
                 }
                 if reason == EXIT_CANCELED {
-                    // Any cancel can swallow an in-flight vtimer fire. Check
-                    // terminal flags even when an automation wake merged into
-                    // A host diagnostic request must not become a service tick.
-                    vtimer_recovery::recover_swallowed_vtimer_fire(vcpu);
+                    // Check terminal flags even when an automation wake merged
+                    // into this cancel: a host diagnostic request must not be
+                    // mistaken for a service tick.
                     if let Some(reason) = cancel_stop_reason(
                         &watchdog_fired,
                         stall_kill_fired.as_ref(),

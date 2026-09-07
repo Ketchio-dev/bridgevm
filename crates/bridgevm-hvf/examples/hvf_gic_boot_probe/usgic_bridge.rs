@@ -230,14 +230,11 @@ pub(crate) fn stall_report(vcpu0: HvVcpuT) {
         hv_vcpu_get_sys_reg(vcpu0, HV_SYS_REG_CNTV_CTL_EL0, &mut ctl);
         hv_vcpu_get_sys_reg(vcpu0, HV_SYS_REG_CNTV_CVAL_EL0, &mut cval);
         println!(
-            "USGIC stall cpu0 vtimer: ctl={ctl:#x} cval={cval:#x} guest_now={:#x} host_masked={} synth={} recov(calls={} pulses={} rearms={})",
+            "USGIC stall cpu0 vtimer: ctl={ctl:#x} cval={cval:#x} guest_now={:#x} host_masked={} synth={}",
             crate::host_support::host_cntvct()
                 .wrapping_sub(bridge.last_voff[0].load(Ordering::Relaxed)),
             bridge.vtimer_masked[0].load(Ordering::SeqCst),
-            bridge.synth_fires[0].load(Ordering::Relaxed),
-            crate::probe_runtime::vtimer_recovery::RECOVERY_CALLS.load(Ordering::Relaxed),
-            crate::probe_runtime::vtimer_recovery::RECOVERY_PULSES.load(Ordering::Relaxed),
-            crate::probe_runtime::vtimer_recovery::RECOVERY_REARMS.load(Ordering::Relaxed)
+            bridge.synth_fires[0].load(Ordering::Relaxed)
         );
         // The guest-visible exception state: if the guest parked in its own
         // vector (b .), ESR_EL1/ELR_EL1/FAR_EL1 name the exception that put

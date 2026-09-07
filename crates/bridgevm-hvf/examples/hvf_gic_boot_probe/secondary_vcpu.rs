@@ -340,7 +340,6 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             if shutdown.load(Ordering::SeqCst) {
                 return true;
             }
-            crate::probe_runtime::vtimer_recovery::recover_swallowed_vtimer_fire(vcpu);
             continue;
         }
         if reason == EXIT_VTIMER {
