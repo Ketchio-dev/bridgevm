@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-07",
-  "tested_commit": "13fb82138158e23faf8c00e8d10d790f1a0804b8",
+  "tested_commit": "7f31bfc8d97ebe173823f156ba99b13e6085295b",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -140,7 +140,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-09-07 vtimer-recovery removal reseal: tested code head 13fb82138158e23faf8c00e8d10d790f1a0804b8 removes recover_swallowed_vtimer_fire and its two call sites after an interleaved live A/B showed it is what parks UEFI. On one host with identical disk 5ad7a304, vars 2f0e6892 and firmware b1dc201b, the boot failed 0/5 with the recovery present and completed 2/2 without it, reaching the desktop in 21382 ms and 30300 ms; the shipped head itself then completed in 27284 ms as t15-13fb8213-fix-o6. The stall was traced to BdsWait, resolved by extracting BdsDxe from the shipped firmware volume, with ArmTimerDxe driving the DXE tick from the virtual timer alone. The vtimer_recovery.rs budget is lowered from 90/2 to 8/1. CI 34150191698 completed with all independent required jobs successful, only the dependent capability and documentation drift job failing on this reseal, and Security and quality 34150191671 succeeded.",
+      "measured": "2026-09-07 injector-verification reseal: tested code head 7f31bfc8d97ebe173823f156ba99b13e6085295b replaces the `fc /b` copy check in bvinject.cmd, which WinPE cannot run, with the copy exit status, a size comparison and the find-based header check firstboot already uses, and adds a smoke that rejects any injector command WinPE does not ship. The defect was found by live job t7-c193b7c0-fixed-b6-observation-r1, whose guest booted to the desktop and never left BVFIRSTBOOT_PENDING because the plant block had exited before the pending flag and activation service existed. Deterministic checks at this head: full scripts/check-project.sh PASS, firstboot asset smoke PASS with the new guard, injector WinPE-command smoke PASS and mutation-tested against the pre-fix injector and two synthetic violations. CI 34157310286 completed with all independent required jobs successful, only the dependent capability and documentation drift job failing on this reseal, and Security and quality 34157310288 succeeded.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",

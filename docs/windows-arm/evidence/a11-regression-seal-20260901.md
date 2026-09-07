@@ -1091,3 +1091,39 @@ sounded clean" are not the same claim.
 
 With this, the queue is producing passing criterion evidence again for the
 first time since 2026-09-02.
+
+## Injector copy-verification reseal, 2026-09-07
+
+The first B6 observation on the timer-fixed probe,
+`t7-c193b7c0-fixed-b6-observation-r1`, failed honestly on
+`firstboot stage4 readiness timeout` with the guest at the desktop and the
+agent alive for the whole 2700 s wait. The retained prepared disk and the
+sealed injector's `boot.wim` show the cause: `bvinject.cmd` verified the
+package-local cleanup copy with `fc /b`, WinPE ships no `fc.exe`, and the 9009
+took the block to `goto :end` before the pending flag and activation service
+were planted. Full account, hashes and inspection method:
+[b6-injector-firstboot-plant-failure-20260907.md](b6-injector-firstboot-plant-failure-20260907.md).
+
+Code head `7f31bfc8d97ebe173823f156ba99b13e6085295b` replaces that check with
+the copy's exit status, a `%~z` size comparison and the `find /c
+"[CmdletBinding()]"` header check `bvgpu-firstboot.cmd` already applies, and
+adds `tests/integration/hvf-windows-injector-winpe-commands-smoke.sh`, which
+tokenises every command the injector invokes and fails on anything outside
+cmd builtins plus the executables measured present in the sealed WinPE image.
+The smoke fails the pre-fix injector on `fc` and two synthetic violations on
+`certutil` and `powershell`. Full local `scripts/check-project.sh` PASS.
+[CI 34157310286](https://github.com/Ketchio-dev/bridgevm/actions/runs/34157310286)
+completed with every independent required job successful and only the
+dependent capability and documentation drift job failing against the older
+tested commit, as expected for a code head; [Security 34157310288](https://github.com/Ketchio-dev/bridgevm/actions/runs/34157310288)
+succeeded. This section reseals `tested_commit` at that head and must itself
+pass hosted CI and Security before it is a green seal.
+
+A fresh injector was built from this head through
+`scripts/build-hvf-windows-viogpu3d-injector.sh` with the same viogpu3d
+package tree (`c46486e5…`), agent (`b7820834…`) and display-only marker as
+the sealed 2026-08-29 injector; its SHA-256 is
+`98ad6b3b23315a149ab38136e84bd14785da09aba50c9459aa74d28ae07ced01`. Job
+`t7-7f31bfc8-fixed-injector-b6-observation-r1` (manifest `71631906…`) is the
+first observation with it. B6, A9, B8 and B9 remain open and the product
+remains Engineering Preview.
