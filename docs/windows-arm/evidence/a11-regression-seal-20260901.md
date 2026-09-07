@@ -1060,3 +1060,34 @@ observations, the `d1` media comparison and its published receipts, and the
 d1 conclusion that the original and reinjected media fail identically says
 nothing about the media: both were parked by the harness. The 2026-09-01 and
 2026-09-02 passes predate the configuration that triggers it.
+
+## The live gate system is restored: B7 10/10 at the fixed head, 2026-09-07
+
+The fix was taken back through a real criterion gate rather than only the cheap
+boot tier. Job `t18-13fb8213-b7-restore-r1` ran the sealed B7 audio profile at
+code head `13fb82138158e23faf8c00e8d10d790f1a0804b8` with the same disk
+`5ad7a304` and vars `2f0e6892` that the parked control used, differing from the
+2026-09-02 seal only in the probe binary,
+`4385f3817072ff94819a54ee002d18c5025779f67a2d17124789182232bbd974`.
+
+It passed **10/10** in 521000 ms, against 568000 ms for the 2026-09-02 seal and
+1555000 ms for the control that failed on lane 1. Input manifest SHA-256 is
+`f379af78331f230981442a0270499d87e7a1e7ce615d5f2bf730eb90f0ee372c`, run-log-set
+SHA-256 `8fa14fce24dacaf6b7f098f459fda500ebeeadf66b79b9ea8edb99b7cf738eec`, and
+public receipt SHA-256
+`ef0893405758d7f5eef9056810d01fec48d07f4346e835504ca9a9005895cafb`. Across
+2,492,193 rendered frames it recorded zero drops, zero unexpected callback
+errors and zero AudioQueue stop or dispose errors, with all 30 callback
+statuses typed as expected stopping EnqueueDuringReset. That is the same
+quality shape as the original seal.
+
+One observation the gate does not measure. The host was running other
+workloads, and a listener reported that the ten simultaneous lanes sounded
+audibly choppy through the Mac output. The receipt records zero drops on the
+guest-to-host PCM path, so this is host-side output contention across ten
+concurrent AudioQueues rather than anything the criterion counts. It is
+recorded here rather than dismissed, because "the counters are clean" and "it
+sounded clean" are not the same claim.
+
+With this, the queue is producing passing criterion evidence again for the
+first time since 2026-09-02.
