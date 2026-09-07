@@ -126,6 +126,7 @@ SMOKES=(
   "tests/integration/vz-display-demo-cli-smoke.sh"
   "tests/integration/vz-proxy-crop-evidence-verifier-smoke.sh"
   "tests/integration/hvf-windows-viogpu3d-firstboot-asset-smoke.sh"
+  "tests/integration/hvf-windows-injector-winpe-commands-smoke.sh"
   "tests/integration/hvf-windows-viogpu3d-package-check-smoke.sh"
   "tests/integration/hvf-windows-viogpu3d-package-inventory-smoke.sh"
   "tests/integration/hvf-windows-viogpu3d-injector-wrapper-smoke.sh"
@@ -150,7 +151,6 @@ SMOKES=(
 )
 
 cd "$ROOT"
-
 for smoke in "${SMOKES[@]}"; do
   echo "==> $smoke"
   "$ROOT/$smoke"

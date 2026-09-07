@@ -1504,6 +1504,7 @@ tests/integration/hvf-windows-installed-boot-vtpm-lifecycle-smoke.sh	56	0
 tests/integration/hvf-windows-p3-gpu-readiness-smoke.sh	229	0
 tests/integration/hvf-windows-viogpu3d-build-kit-smoke.sh	162	0
 tests/integration/hvf-windows-product-injection-deny-smoke.sh	17	0
+tests/integration/hvf-windows-injector-winpe-commands-smoke.sh	54	0
 tests/integration/hvf-windows-viogpu3d-firstboot-asset-smoke.sh	322	0
 tests/integration/hvf-windows-viogpu3d-injector-wrapper-smoke.sh	143	0
 tests/integration/hvf-windows-viogpu3d-package-check-smoke.sh	1018	0
