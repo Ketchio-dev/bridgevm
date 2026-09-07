@@ -949,3 +949,46 @@ which fails the project check with "code changed since tested_commit; re-prove
 A11". The revert restored the guard because the file content matches
 `tested_commit` again. A code candidate that is meant to survive must carry its
 own A11 re-proof, not merely a green local check.
+
+## Host-session hypothesis refuted; the stall is before the boot option, 2026-09-07
+
+The previous entry proposed a host restart because the host boot session was
+the only recorded difference between the passing reference and every failure.
+That reasoning is now withdrawn: it was refuted without restarting anything.
+
+Job `t7-bdad4cbc-host-contrast-r1` replayed the retained `t7-windows-closure`
+manifest `cf1e062838fa386e1812be4b6fc5ec75c0cf1be75e0a3e1e42de2ab0f7e3ebc6` at
+its original commit `bdad4cbc9426066bd4aed2045f08ad9e7dde74ba` on the current
+host. Within that one job, minutes apart, the injection lane reached Windows
+kernel space with final `pc=0xfffff802d562619c` and no PE owner within 512 MiB
+below it, while the proof lane parked at `pc=0x1bf33ba04` with eight identical
+splash frames. The same host, the same session and the same probe binary
+`5912a1f2` both boot a Windows guest and fail to boot one. A host restart
+cannot be justified by the evidence, and no host-wide inability to deliver
+guest timer interrupts survives this contrast.
+
+The device configuration does not separate the two either. The parked runs
+include one with xHCI, virtio-net and virtio-gpu 3D all enabled and one with
+all three disabled, and the 2026-09-01 reference booted with xHCI enabled. The
+only factor common to every parked run and absent from the booting lane is that
+the parked runs boot the installed 68 GiB Windows disk from its own variable
+store, which is also the configuration that booted in 26353 ms on 2026-09-01.
+
+Firmware serial output locates the stall precisely. The 2026-09-01 reference
+prints `BdsDxe: starting Boot0002 "Windows Boot Manager" from
+HD(1,GPT,E04E0289-B5EE-4D44-B90D-7D9FA5444B30,0x800,0x82000)/\EFI\Microsoft\Boot\bootmgfw.efi`.
+The parked runs print the firmware banner and the console setup escape
+sequences and then nothing at all. The boot option is never attempted. That is
+consistent with the recorded frame chain, `DxeCore` RVA 0xdb44 and 0xdfd0 under
+`BdsDxe` RVA 0xa3ac under `DxeCore` RVA 0xb820: BdsDxe has called into the DXE
+core and is waiting there, after console setup and before
+`EfiBootManagerBoot` announces a boot option.
+
+The `Timeout` variable was checked and does not distinguish the stores: the
+injector variable store and both installed-Windows stores carry the same entry.
+That candidate explanation is closed.
+
+So the search is not host-wide, not device-shape, and not a boot-option launch
+failure. It is confined to whatever BdsDxe waits for between console setup and
+starting Boot0002, on media that used to complete that wait in seconds. No
+criterion, threshold or sample count changes, and no cause is claimed.
