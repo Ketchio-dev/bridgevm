@@ -78,9 +78,10 @@ pub(crate) fn recover_swallowed_vtimer_fire(vcpu: HvVcpuT) {
                 // architectural contradiction ISTATUS cannot show if the
                 // comparator were level-evaluating. A CVAL written as "now"
                 // is already past by the time HVF programs its host timer;
-                // a small future deadline forces a fresh arm-and-expire edge,
-                // and the horizon has to outlast the host scheduling gap
-                // before this thread re-enters hv_vcpu_run.
+                // a small future deadline forces a fresh arm-and-expire
+                // edge. 240 ticks is 10us at 24MHz: unmeasurable to the
+                // guest against a deadline that was already 8.2M ticks
+                // overdue, but unambiguous to the emulation.
                 hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_CNTV_CVAL_EL0, guest_now + REARM_FUTURE_TICKS);
                 RECOVERY_REARMS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
@@ -88,9 +89,8 @@ pub(crate) fn recover_swallowed_vtimer_fire(vcpu: HvVcpuT) {
     }
 }
 
-/// 1ms at 24MHz. 240 ticks (10us) measured too short on a loaded host: the
-/// re-armed deadline was already past again by hv_vcpu_run re-entry.
-const REARM_FUTURE_TICKS: u64 = 24_000;
+/// 10us at the 24MHz architectural counter.
+const REARM_FUTURE_TICKS: u64 = 240;
 
 /// Diagnostics: how often the recovery ran / pulsed / re-armed. Read by the
 /// usgic stall report to tell "re-arm loop starves the fire" from "fire died
