@@ -900,3 +900,52 @@ configuration itself does not boot. The next diagnostic changes one host-level
 variable at a time and re-runs this exact manifest, beginning with a host
 restart, since the host boot session is the only recorded difference between
 the last passing and every failing observation.
+
+## Candidate vtimer re-arm horizon refuted, 2026-09-07
+
+The parked state was measured rather than inferred. In
+`t15-e8ceebe1-host-boot-control-r1` the probe reports
+`CNTVCT host=0x8cdfeb3a79e ... CVAL=0x8cdfe8ba7d6 gap=-2621384 ticks`, a
+deadline 109 ms in the past, with `CNTV_CTL=0x1`, HVF vtimer mask false,
+`GICR ISENABLER0=0x6c000000`, `ISPENDR0=0x0`, `ISACTIVER0=0x0`, `ICC PMR=0xf8`,
+`IGRPEN1=0x1`, and the verdict `parked (deadline passed, wake still
+deliverable)`. A deadline 109 ms stale at the end of a 120 s run cannot be one
+the firmware armed and lost near the start; it is being rewritten
+continuously, which on this path only `recover_swallowed_vtimer_fire` does,
+once per canceled exit at roughly four per second.
+
+That motivated a candidate: widen `REARM_FUTURE_TICKS` from 240 ticks, 10 us,
+to 24000 ticks, 1 ms, so the re-armed deadline outlasts the host scheduling
+gap before the thread re-enters `hv_vcpu_run`. It was built at
+`02fcbd867210bf1a61b7ae44d7c12ca86d0a715f`, binary
+`036b07f6daab7dcb08d28764db8339f7c63307cc03425e3735daa0c53f135394`, and run as
+`t15-02fcbd86-rearm-candidate-r1` against the manifest whose baseline failed
+three times earlier the same day, on the same host, with the same disk, vars,
+renderer and firmware.
+
+The candidate failed identically: no desktop, 0 of 8 milestones, a single
+framebuffer checksum for the whole run, `pc=0x1bf33ba04`, and `CVAL` 2309523
+ticks in the past. The 1 ms horizon changes nothing measurable, so the premise
+that re-entry outran a 10 us deadline does not explain this stall. The change
+was reverted; the tree keeps the horizon the earlier soaks were measured with
+rather than an unproven one.
+
+One further correction belongs in the record. The absence of `EXIT_VTIMER` was
+not evidence of a swallowed fire. Every failing run reports `vtimer_exits=0`,
+and so does the 2026-09-01 run that reached the desktop in 26353 ms; the
+in-kernel GIC delivers the timer PPI without a userspace exit, so that counter
+does not separate a healthy boot from this one. The reasoning that read a
+swallowed fire from it is withdrawn.
+
+What survives is narrower and still unexplained: the guest parks in the BDS
+wait, the timer comparator shows an expired deadline with `ISTATUS` clear and
+PPI 27 enabled but not pending, and no host-side re-arm at either horizon
+dislodges it. The passing reference and the failing runs differ in host boot
+session and host activity, not in any sealed input.
+
+A procedural note for the next attempt. Committing any change under `crates/`
+trips the registry freshness guard in `scripts/render-capability-status.py`,
+which fails the project check with "code changed since tested_commit; re-prove
+A11". The revert restored the guard because the file content matches
+`tested_commit` again. A code candidate that is meant to survive must carry its
+own A11 re-proof, not merely a green local check.
