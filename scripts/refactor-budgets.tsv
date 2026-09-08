@@ -4,6 +4,7 @@
 # raise one. Seeded 2026-07-22 at the pre-refactor baseline.
 #
 scripts/check-virgl-buffer-sampler.sh	16	0
+scripts/verify-glyph-pixel-mask.py	224	0
 tests/integration/virgl-buffer-sampler-translate.c	49	0
 # NOTE ON AGGREGATE HONESTY: extracting code from lib.rs into a sibling module
 # does NOT reduce total crate lines — module headers, imports, re-export shims,
