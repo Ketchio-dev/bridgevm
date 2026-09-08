@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-08",
-  "tested_commit": "7a391c313f9c58b073a9f9b854e3ae2a70dce954",
+  "tested_commit": "b0ef2061d5527f690cb9384f0b5aea3af892b4f7",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -140,7 +140,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-09-08 B6 correction and PresentMon staging reseal: tested code head 7a391c313f9c58b073a9f9b854e3ae2a70dce954 restores a smoke test an in-flight evidence-correction pass had mistakenly deleted (windows-closure-discard-smoke.sh, real regression coverage from 64a38e83, unrelated to any temporary diagnostic instrumentation), pins scripts/verify-presentmon-binary.py against the exact GitHub-reported PresentMon-2.5.1-x64.exe digest, and adds an untested guest capture asset targeting dwm.exe. No B6 tier exists yet. Full scripts/check-project.sh passed. This reseal must itself pass hosted workflows.",
+      "measured": "2026-09-08 B6 effective-DPI-and-capture reseal: tested code head b0ef2061d5527f690cb9384f0b5aea3af892b4f7 adds docs/windows-arm/evidence/b6-dpi-and-capture-live-20260908.md, a genuine live proof that bv-b6-window-dpi.ps1 answers correctly on a real hwnd and that the same window then produces a fresh presented capture, and corrects a prior claim that t7-c193b7c0-fixed-b6-observation-r1 was a completed proof. No code changed; B6 stays OPEN. Full scripts/check-project.sh passed. This reseal must itself pass hosted workflows.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
