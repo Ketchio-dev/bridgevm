@@ -97,17 +97,45 @@ observation at 1600x900 at 100% says nothing about repeatability.
    exists. Job `t7-7f31bfc8-fixed-injector-b6-observation-r1` (receipt
    `add1e95d…`) reached `BVFIRSTBOOT_READY` and passed F1, then every later
    command timed out because the guest powered off seconds later. The sealed
-   2026-08-29 injector carried no keep-running marker either, so the
-   2026-08-20 pass won the same race. The injector for this run was built
-   with `KEEP_RUNNING=1`, as `verify-agent-clipboard-share.sh` already does.
-2. **A modified document blocks both `WINCLOSE` and the tier's shutdown.**
-   With text typed into Notepad, `WM_CLOSE` shows the save prompt and
-   `shutdown /s /t 0` (not forced) is vetoed; the guest stayed at the desktop
-   for 50 minutes until the 3000 s watchdog cancelled the run
-   (`stop=watchdog (CANCELED)`), and the live display showed only the
-   wallpaper with no taskbar or dialog. The 2026-08-20 F3 pass closed the
-   window after the same key batches were sent, while its F4 frame was
-   all-black; whether those keys reached the document then is not
-   established. F3 needs a deliberate discard step before `WINCLOSE`, and the
-   tier's end-of-run shutdown needs to survive an unsaved document. Neither
-   is a criterion change.
+   2026-08-29 injector carried no keep-running marker either. The old
+   passing injector's marker state is unknown; its pass does not establish
+   the same race. This run used `KEEP_RUNNING=1`.
+2. **A modified document survived `WINCLOSE`; shutdown did not finish.**
+   The window remained listed as `*Untitled - Notepad` after `WM_CLOSE`.
+   A save prompt is a hypothesis, not an observed dialog. The subsequent
+   `shutdown /s /t 0` returned zero, but the guest stayed up until the
+   3000 s watchdog cancelled the run. The live display showed only wallpaper,
+   with no taskbar or dialog. These observations establish incomplete close
+   and shutdown, not the precise mechanism that prevented shutdown.
+
+## Interpretation correction
+
+The captured menu (`File/Edit/Format/View/Help`) and upgrade banner identify
+the classic Notepad presentation, not the tabbed application. Absence of a tab
+strip is therefore **not evidence of missing tab glyphs**. The reproduced
+defect is blank caption text despite a nonempty window title reported by
+WINLIST. Menu glyphs are readable; tab glyphs remain untested. Earlier wording
+that grouped the absent tabs with the reproduced defect was too strong.
+
+## Cleanup confirmed live, 2026-09-08
+
+Job `t7-64a38e83-discard-b6-observation-r1` ran code head
+`64a38e83d4c256f9552b1442d43f08f5cbd6f7e2` with the same sealed manifest
+`81c56875325f705fdf3728bb9e8449f3cd4ef129bedf6b3003dfb812e18d6e06`.
+It started at 01:24:48Z and its receipt finished at 01:32:57Z.
+Private and public receipt SHA-256 are both
+`8124b25b777e22e87d4e7ed4e7b9fd80aadd92299f450054c7e46e5ad835242a`.
+
+The guest reported `BVDISCARD hwnd=131502 pid=9084 stopped=True`, accepted
+`shutdown /s /f /t 0` with exit zero, and terminated with
+`stop: PSCI 0x84000008 (system off)` rather than the prior watchdog stop.
+F1 and F2 passed, F3 remained partial, and F4 was measured-visible-text.
+The receipt correctly remains `pass=false`, three passes and one failure;
+cleanup did not turn a failed window-close assertion into a pass.
+
+The second active-CGL capture advanced IOSurface seed 28 to 29 at 1600x900,
+with 1,439,262 nonblack pixels. PPM SHA-256:
+`d3b417846a82329112a636bf3897a635feff97a95f8b49d6a7bea821c2b03028`.
+Visual inspection again shows blank caption text with readable menus and
+document text. This supports a second caption-defect observation, not a tab
+defect or a completed B6 matrix.
