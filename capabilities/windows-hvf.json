@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-08",
-  "tested_commit": "9937b3120f1ce1469f36ca06eff20fa1dc410a78",
+  "tested_commit": "0cb60607908358f65ccbe6078572ceb4b75c3555",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -140,7 +140,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-09-08 B6 tab-scene spike reseal: tested code head 9937b3120f1ce1469f36ca06eff20fa1dc410a78 adds a diagnostic-only guest asset, scripts/win-assets/bv-b6-explorer-launch.ps1, that launches File Explorer; it is not wired into any shipped closure gate or F1-F4 acceptance. Full scripts/check-project.sh passed. Hosted CI for this head must itself pass; the docs-only predecessor at this same code already failed only the expected stale capability/documentation drift job before this reseal.",
+      "measured": "2026-09-08 B6 scale-mechanism spike reseal: tested code head 0cb60607908358f65ccbe6078572ceb4b75c3555 adds two diagnostic-only guest assets, bv-b6-read-logpixels.ps1 and bv-b6-set-scale.ps1, used only by an ad hoc, uncommitted harness variant to spike the B6 scale-change mechanism. Neither asset is wired into any shipped closure gate. Full scripts/check-project.sh passed. This reseal must itself pass hosted workflows.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
