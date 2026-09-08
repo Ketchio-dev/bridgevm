@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-07",
-  "tested_commit": "7f31bfc8d97ebe173823f156ba99b13e6085295b",
+  "tested_commit": "64a38e83d4c256f9552b1442d43f08f5cbd6f7e2",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -140,7 +140,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-09-07 injector-verification reseal: tested code head 7f31bfc8d97ebe173823f156ba99b13e6085295b replaces the `fc /b` copy check in bvinject.cmd, which WinPE cannot run, with the copy exit status, a size comparison and the find-based header check firstboot already uses, and adds a smoke that rejects any injector command WinPE does not ship. The defect was found by live job t7-c193b7c0-fixed-b6-observation-r1, whose guest booted to the desktop and never left BVFIRSTBOOT_PENDING because the plant block had exited before the pending flag and activation service existed. Deterministic checks at this head: full scripts/check-project.sh PASS, firstboot asset smoke PASS with the new guard, injector WinPE-command smoke PASS and mutation-tested against the pre-fix injector and two synthetic violations. CI 34157310286 completed with all independent required jobs successful, only the dependent capability and documentation drift job failing on this reseal, and Security and quality 34157310288 succeeded.",
+      "measured": "2026-09-07 closure-tier shutdown reseal: tested code head 64a38e83d4c256f9552b1442d43f08f5cbd6f7e2 forces both closure shutdowns and, only after F3 has been judged, runs a separate CRLF guest discard script that ends the process owning a window that survived WM_CLOSE. Live job t7-7f31bfc8-keeprunning-b6-observation-r1 had left Notepad with an unsaved document, the plain shutdown was vetoed and the guest idled 50 minutes to the watchdog. A new smoke pins the forced shutdowns on both paths, the discard ordering after the F3 verdict, the share and the line endings; mutation-tested against the pre-fix script and two synthetic regressions. Full scripts/check-project.sh PASS. CI 34176195419 completed with all independent required jobs successful, only the dependent capability and documentation drift job failing on this reseal, and Security and quality 34176195432 succeeded.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",

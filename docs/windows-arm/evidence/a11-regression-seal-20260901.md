@@ -1127,3 +1127,28 @@ the sealed 2026-08-29 injector; its SHA-256 is
 `t7-7f31bfc8-fixed-injector-b6-observation-r1` (manifest `71631906…`) is the
 first observation with it. B6, A9, B8 and B9 remain open and the product
 remains Engineering Preview.
+
+## Closure-tier shutdown reseal, 2026-09-07
+
+The observation run recorded in
+[b6-glyph-observation-active-iosurface-20260907.md](b6-glyph-observation-active-iosurface-20260907.md)
+also exposed a tier defect: F4 types into Notepad, so `WM_CLOSE` raises the
+save prompt, the window survives, and the tier's plain `shutdown /s /t 0` is
+vetoed; the guest idled at the desktop for 50 minutes until the 3000 s watchdog
+cancelled the run. Code head `64a38e83d4c256f9552b1442d43f08f5cbd6f7e2` forces
+both closure shutdowns and, only after F3 has already been judged, runs
+`scripts/win-assets/bv-windows-closure-discard.ps1`, a separate CRLF guest
+script that ends the process owning the surviving window and reports
+`BVDISCARD`. It is not a Coherence verb and cannot turn F3 into a pass;
+`tests/integration/windows-closure-discard-smoke.sh` pins the forced
+shutdowns on both paths, the ordering after the F3 verdict, the share and the
+line endings, and fails the pre-fix script and two synthetic regressions. Full
+local `scripts/check-project.sh` PASS.
+[CI 34176195419](https://github.com/Ketchio-dev/bridgevm/actions/runs/34176195419)
+completed with every independent required job successful and only the
+dependent capability and documentation drift job failing against the older
+tested commit; [Security 34176195432](https://github.com/Ketchio-dev/bridgevm/actions/runs/34176195432)
+succeeded. This section reseals `tested_commit` at that head and must itself
+pass hosted CI and Security before it is a green seal. The discard path is not
+yet live-proven; the next closure run will show it. B6, A9, B8 and B9 remain
+open and the product remains Engineering Preview.
