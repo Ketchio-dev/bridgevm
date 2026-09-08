@@ -1093,7 +1093,7 @@ scripts/live-gates/write-a3-title-receipt.py	179	0
 scripts/live-gates/write-missing-receipt.sh	19	0
 scripts/live-gates/write-windows-closure-receipt.py	165	0
 scripts/win-assets/bv-windows-closure-proof.ps1	148	0
-scripts/windows-1.0-closure-interact.sh	183	0
+scripts/windows-1.0-closure-interact.sh	190	0
 scripts/win-assets/bv-windows-closure-discard.ps1	20	0
 scripts/win-assets/bvgpu-d3d11-identity.ps1	24	0
 scripts/harvest-hvf-windows-postmortem.sh	118	0
