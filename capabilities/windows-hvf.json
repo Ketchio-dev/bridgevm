@@ -326,12 +326,13 @@
       "state": "OPEN",
       "release_blocking": false,
       "statement": "Caption, menu and tab glyphs pass 3/3 at each of three declared resolutions and three declared scales with a verified pixel mask and frame time within 10% of baseline.",
-      "measured": "OPEN: body text has been observed, but title, tab and menu glyphs remain blank in the retained native-resolution Notepad scene. The active-CGL capture prerequisite is proven; the fixed 3-resolution by 3-scale live matrix and its pixel-mask/frame-time acceptance have not run. The 2026-09-07 observation on the timer-fixed probe reached the desktop but could not run F1-F4: the sealed injector's plant block exits on a missing WinPE fc.exe, so firstboot never starts; the injector is corrected and must be rebuilt and resealed before B6 can be observed.",
+      "measured": "OPEN: the defect is now observed through the corrected active-IOSurface channel. Job t7-7f31bfc8-keeprunning-b6-observation-r1 on 2026-09-07 (receipt bcb1ae8a, capture a2f0bb82) presented a 1600x900 Notepad scene in which the menu, notification banner, body line and status bar render while the title text is blank (dark-pixel ratio 0.0000 in the title text zone against 0.0284 in the menu zone) and no tab strip is drawn. That is one observation at one resolution and scale; the fixed 3-resolution by 3-scale live matrix and its pixel-mask/frame-time acceptance have not run. The earlier same-day run could not run F1-F4 because the sealed injector's plant block exited on a missing WinPE fc.exe; that injector defect is fixed and re-proven live.",
       "evidence_paths": [
         "docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md",
         "docs/windows-arm/evidence/windows-1.0-closure-f1-f4-20260820.md",
         "docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md",
-        "docs/windows-arm/evidence/b6-injector-firstboot-plant-failure-20260907.md"
+        "docs/windows-arm/evidence/b6-injector-firstboot-plant-failure-20260907.md",
+        "docs/windows-arm/evidence/b6-glyph-observation-active-iosurface-20260907.md"
       ],
       "known_defect": "Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness."
     },
