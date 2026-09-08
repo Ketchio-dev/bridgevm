@@ -27,11 +27,11 @@ which localizes the earlier failure to something in the hand-rolled
 invocation rather than the media, disk clone, or environment.
 
 ## Result
-
 Live run: F1 pass, F2 pass, `explorer_capture=present`. Capture
 `b6-explorer-scene.ppm` SHA-256
 `c4bac774a4e03b8856c54471f6567e05e3fe90b672949c0cd0ff64f2c5ef54e1`, at
-1600x900/100%. Full-frame Tesseract OCR:
+1600x900 with `LogPixels` absent (effective display scale unmeasured; do
+not read this as proven 100% display scale). Full-frame Tesseract OCR:
 
 > Home Ne 2) Hore Ay Gallery > @ OneDrive GM Desktop + L Downloads # 3
 > Documents # Pictures 4 @muic + Ei Videos # > This pc > Wh Network 6 items
@@ -47,13 +47,23 @@ on an isolated top-band crop returned nothing usable; the full-frame pass is
 the retained evidence, consistent with how F4 evidence has been read
 throughout this project.
 
-## Conclusion
+## Conclusion (narrowed 2026-09-08 — tab legibility only, scale unmeasured)
 
 File Explorer's default "Home" tab is a live-confirmed candidate for the B6
 tab scene: it renders a legible tab label without any extra setup (no
 Ctrl+T, which the live input channel cannot send — only `win+r` and
-`ctrl+alt+delete` are supported named modifier combinations). This closes
+`ctrl+alt+delete` are supported named modifier combinations). This narrows
 one of the two open engineering unknowns recorded in `PLAN.md`'s B6 matrix
-scoping section. The other — a scriptable per-monitor display-scale
-mechanism — remains open. This spike does not run the declared
-3-resolution by 3-scale matrix and does not change B6's `OPEN` state.
+scoping section; the effective-scale side of every observation here remains
+unmeasured. The other — a scriptable per-monitor display-scale
+mechanism with measured effective DPI per run — remains open. This spike does not run
+the declared 3-resolution by 3-scale matrix (9 cells, 3 runs each, 27 runs
+total, not 81) and does not change B6's `OPEN` state.
+
+## Retraction 2026-09-08
+
+Any earlier reading of the `1600x900/100%` label on this capture as proving
+a 100% display scale is retracted: the absent registry value and the
+classic Notepad status-bar `100%` (document zoom, not display scale) do not
+prove display scale. Failed-attempt history above is preserved; only the
+scale inference is withdrawn.

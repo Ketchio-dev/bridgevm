@@ -1,4 +1,4 @@
-# B6 scale mechanism spike: registry + reboot proven live (2026-09-08)
+# B6 scale mechanism observation: registry persistence only, effective DPI unmeasured (corrected 2026-09-08)
 
 ## Question
 
@@ -27,12 +27,17 @@ before reading the value back.
 
 ## Result
 
-`BVLOGPIXELS value=absent` before (default 96/100%, unset), `reboot_recovered=true`,
-`BVLOGPIXELS value=144` after the restart. The value was written, survived a
-full guest restart, and read back correctly from the live guest's own
-registry query — not inferred from documentation. The existing agent
-auto-restart/reconnect behavior, already exercised by the driver-reboot
-tests, also covers a user-initiated scale-change restart without any new
+`BVLOGPIXELS value=absent` before (registry value unset; effective display
+scale unmeasured), `reboot_recovered=true`, `BVLOGPIXELS value=144` after
+the restart. The registry value was written, survived a full guest restart,
+and read back correctly from the live guest's own registry query — not
+inferred from documentation. This proves registry persistence only. It does
+not prove effective display DPI: no window/monitor DPI was read, no visual
+size comparison exists, and the absent-before value does not prove a 100%
+display scale. The classic Notepad status-bar `100%` seen in other captures
+is document zoom, not display scale, and is not used here as scale evidence.
+The existing agent auto-restart/reconnect behavior, already exercised by the
+driver-reboot tests, also covers a user-initiated restart without any new
 harness work.
 
 Both attempted visual captures (before and after) failed with
@@ -42,15 +47,23 @@ bug in the ad hoc harness (a 3-second sleep before capture, evidently too
 short or racing a stale scanout), not a defect in the scale mechanism; no
 visual size comparison exists yet.
 
-## Conclusion
+## Conclusion (narrowed 2026-09-08 — registry persistence only, not effective DPI)
 
-The registry-plus-restart mechanism is confirmed live: this closes the
-second and final open engineering unknown recorded in `PLAN.md`'s B6 matrix
-scoping section. Both spikes needed before building the declared 3x3x3
-harness are done:
-- tab scene: File Explorer's Home tab (see
-  `b6-tab-scene-spike-20260908.md`);
-- scale change: `bv-b6-set-scale.ps1` plus a guest restart (this document).
+The registry write-plus-restart path persists `LogPixels`/`Win8DpiScaling`
+across a restart live: this narrows, but does not close, the second open
+engineering unknown recorded in `PLAN.md`'s B6 matrix scoping section. What
+is proven is the write/survive/read-back sequence; effective display DPI at
+any scale remains unmeasured and no scale cell counts as declared until
+effective window/monitor DPI is proven per run. Tab scene status is unchanged
+(see `b6-tab-scene-spike-20260908.md`).
+
+## Retraction 2026-09-08 — prior wording exceeded the observation
+
+Any earlier reading of this spike as proving effective display DPI,
+proving 100%/150% display scales, or closing the scale prerequisite is
+retracted. The before/after captures both failed (see below), so no
+effective-scale evidence exists yet. Failed-attempt history is preserved
+verbatim below; only the conclusion drawn from it is narrowed.
 
 
 ## Follow-up: idle-desktop capture failure root-caused, 2026-09-08
@@ -59,27 +72,33 @@ The seed-advance failure above was chased further. Two more live attempts
 isolate the cause: a direct capture 8s after Explorer settled still failed
 with the same `RuntimeError`, and adding `POINTER move:400x300` immediately
 before the capture (matching the exact test-fixture grammar in
-`live_input.rs`) also failed. `run.log` confirms the pointer command was
-silently accepted -- `live_input.rs` only prints `kind=pointer_move` every
-1024th accepted move by design, so a single move produces no log line, but
-the underlying `queue_xhci_pointer_input_actions_with_mem` call still ran.
-No `RESOURCE_FLUSH`/new frame followed it in `virtio-gpu.jsonl`.
+`live_input.rs`) also failed. `run.log` shows no `kind=pointer_move` line
+for the single move (`live_input.rs` only prints that line every 1024th
+accepted move by design), and no `RESOURCE_FLUSH`/new frame followed it in
+`virtio-gpu.jsonl`.
 
-**Root cause: a bare pointer move does not invalidate the scanout.** Every
-capture that has ever succeeded in this project followed a real
-content-changing action -- typed text (F4), a resize (F2), or `WINCLOSE`
-(F3) -- never an idle desktop or a mouse move alone. The guest's hardware
-cursor is evidently composited on a separate plane that does not touch the
-exported IOSurface-backed scanout resource, so moving it alone never
-produces a new frame to capture.
+**Retraction 2026-09-08 — what the pointer/cursor sentences below do not prove:**
+the missing log line plus the failed capture do not establish that the
+pointer command was accepted, and they do not establish a hardware cursor
+plane. Cursor-plane composition and pointer delivery remain unproven. What
+is observed is only the correlation below, stated as a harness usage
+constraint, not as a proven mechanism.
 
-**Implication for the B6 matrix harness:** each of the 27 cells must
-capture immediately after a genuine content-changing action already
-proven to produce a fresh frame (e.g., typing into the scene, or the
-scene-launch action itself while it is still rendering), not after an
-idle settle-then-nudge pattern. This is not a new capture-tool bug to fix;
-it is a usage constraint the existing tool always had, now confirmed live
-rather than assumed.
+**Observed correlation: a bare pointer move did not invalidate the scanout
+in these attempts.** Every capture that has ever succeeded in this project
+followed a real content-changing action -- typed text (F4), a resize (F2),
+or `WINCLOSE` (F3) -- never an idle desktop or a mouse move alone. A
+possible explanation is a separately composited cursor plane that does not
+touch the exported IOSurface-backed scanout resource, but that mechanism is
+hypothesis, not established fact.
+
+**Implication for the B6 matrix harness:** each of the 9 cells (3 runs each,
+27 runs total, not 81) must capture immediately after a genuine
+content-changing action already proven to produce a fresh frame (e.g.,
+typing into the scene, or the scene-launch action itself while it is still
+rendering), not after an idle settle-then-nudge pattern. This is not a new
+capture-tool bug to fix; it is a usage constraint the existing tool always
+had, now confirmed live rather than assumed.
 Building the actual matrix harness must apply this constraint at every
 capture point; this does not run the matrix and does not change B6's
 `OPEN` state.

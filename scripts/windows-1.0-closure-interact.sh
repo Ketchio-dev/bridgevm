@@ -163,16 +163,9 @@ if [[ "$hwnd" =~ ^[0-9]+$ ]]; then
     if ! grep -Eq "^BVAGENT WINLIST WIN $hwnd " <<<"$final_list"; then
       f3=pass
     else
-      # F4 typed into the document, so a hypothesized save-prompt veto keeps
-      # WM_CLOSE from destroying the window (t7-7f31bfc8-keeprunning-b6-
-      # observation-r1). That mechanism was inferred, not directly observed,
-      # so capture the actual post-WINCLOSE screen before discarding: this is
-      # diagnostic-only and never changes f3 or the forced-shutdown outcome.
-      if capture_active_scanout f3-postclose-dialog; then
-        tesseract "$OUT/captures/f3-postclose-dialog.ppm" stdout \
-          2>"$OUT/captures/f3-postclose-tesseract.err" | tr '\r\n' ' ' \
-          > "$OUT/captures/f3-postclose-ocr.txt" || true
-      fi
+      # F4 typed into the document, so WM_CLOSE raised the save prompt and the
+      # window stayed (t7-7f31bfc8-keeprunning-b6-observation-r1). F3 stays
+      # partial; discard guest-side so the run ends instead of idling to the watchdog.
       send_ok "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-windows-closure-discard.ps1 -Hwnd $hwnd" || true
     fi
   fi

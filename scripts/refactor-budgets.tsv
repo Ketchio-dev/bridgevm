@@ -4,7 +4,7 @@
 # raise one. Seeded 2026-07-22 at the pre-refactor baseline.
 #
 scripts/check-virgl-buffer-sampler.sh	16	0
-scripts/verify-glyph-pixel-mask.py	224	0
+scripts/verify-glyph-pixel-mask.py	150	0
 tests/integration/virgl-buffer-sampler-translate.c	49	0
 # NOTE ON AGGREGATE HONESTY: extracting code from lib.rs into a sibling module
 # does NOT reduce total crate lines — module headers, imports, re-export shims,
@@ -1094,7 +1094,7 @@ scripts/live-gates/write-a3-title-receipt.py	179	0
 scripts/live-gates/write-missing-receipt.sh	19	0
 scripts/live-gates/write-windows-closure-receipt.py	165	0
 scripts/win-assets/bv-windows-closure-proof.ps1	148	0
-scripts/windows-1.0-closure-interact.sh	190	0
+scripts/windows-1.0-closure-interact.sh	183	0
 scripts/win-assets/bv-windows-closure-discard.ps1	20	0
 scripts/win-assets/bvgpu-d3d11-identity.ps1	24	0
 scripts/harvest-hvf-windows-postmortem.sh	118	0
@@ -1852,3 +1852,4 @@ tests/integration/windows-media-comparison-runner-smoke.py	83	0
 scripts/live-gates/windows-media-comparison-queue.py	103	0
 tests/integration/windows-media-comparison-queue-smoke.py	71	0
 tests/integration/windows-media-comparison-cancel-smoke.py	114	0
+scripts/verify-presentmon-binary.py	119	0

@@ -1,4 +1,4 @@
-# B6 single-scene spike: modern Notepad supplies caption, tab and menu together (2026-09-08)
+# B6 single-scene observation: modern Notepad supplies tab and menu; classic caption scene retained (2026-09-08)
 
 ## Question
 
@@ -6,10 +6,11 @@ B6's statement reads "Caption, menu and tab glyphs pass 3/3 at each of
 three declared resolutions and three declared scales." Every prior
 observation used classic `notepad.exe` (caption + menu, no tab strip) or
 File Explorer's redesigned command bar (tab strip, but no traditional
-dropdown menu). Before designing the matrix harness, this spike checks
-whether a single scene can supply all three glyph classes at once, so the
-27 required cells measure one scene rather than needing two scenes per
-cell.
+dropdown menu). Before designing the matrix harness, this spike asked
+*whether a single scene could supply all three glyph classes at once, so
+the 27 required runs would measure one scene rather than needing two
+scenes per cell. (Answer 2026-09-08: no — see Correction below; the
+classic caption scene is retained.)
 
 ## Method
 
@@ -33,28 +34,42 @@ Live job captured and OCR'd the result: capture SHA-256
 > Ln 1, Col 1 — 0 characters Windows (CRLF) Test Mode Windows 11 Home
 > Build 26100...
 
-Visual inspection confirms three distinct rows stacked at the top of one
+Visual inspection confirms two distinct rows stacked at the top of one
 window: a combined title/tab row (Notepad icon, window controls, an
 **"Untitled"** tab with its own close button and a `+` new-tab button --
 no separate traditional caption bar; the tab row itself plays that role in
 this Windows 11 redesign), then a plain **File / Edit / View** menu bar
-directly below it.
+directly below it. The capture was taken at 1600x900 with `LogPixels`
+absent (effective display scale unmeasured; do not read this as proven
+100% display scale).
 
-## Conclusion
+## Correction 2026-09-08 — tab row is not a classic caption
 
-The modern packaged Notepad supplies caption-equivalent, tab and menu
-glyphs together in one compact region of one window, live-confirmed at
-1600x900/100% on the fixed head. This is a strong single-scene candidate
-for the declared B6 matrix, avoiding the need to run two separate scenes
-(Notepad for caption/menu, File Explorer for tabs) per resolution/scale
-cell. Two new diagnostic-only guest assets support this:
+The tab row observed here is readable tab content, not a separate classic
+caption bar. It therefore does not cover the originally failing classic
+Notepad caption path: the classic caption/menu scene (the reproduced blank
+title-bar defect and its fix) must be retained alongside this packaged
+Notepad tab/menu scene. The B6 matrix needs both scenes per cell family,
+not one scene replacing the other.
+
+## Conclusion (narrowed 2026-09-08)
+
+The modern packaged Notepad supplies tab and menu glyphs together in one
+compact region of one window, live-confirmed at 1600x900 with unmeasured
+effective scale on the fixed head. This is a tab/menu scene candidate for
+the declared B6 matrix, alongside — not instead of — the classic Notepad
+caption/menu scene (and the File Explorer Home tab fallback). Two new
+diagnostic-only guest assets support this:
 `bv-b6-query-modern-notepad.ps1` and `bv-b6-modern-notepad-launch.ps1`;
 neither is wired into any shipped closure gate. The desktop watermark
 visible in the capture ("Test Mode ... Build 26100...") is retained as
 observed and is a pre-existing test-signing artifact of this image, not
 introduced by this spike.
 
-This does not run the matrix and does not change B6's `OPEN` state. All
-three B6 harness-design prerequisites identified in `PLAN.md` are now
-spiked with live evidence: tab scene, scale mechanism, and single-scene
-composition.
+## Retraction 2026-09-08
+
+Any earlier reading of this spike as supplying "caption, tab and menu
+together", as "caption-equivalent" coverage, or as a single scene that
+removes the need for the classic caption path is retracted. Failed-attempt
+history above is preserved; only the caption-coverage inference is
+withdrawn.

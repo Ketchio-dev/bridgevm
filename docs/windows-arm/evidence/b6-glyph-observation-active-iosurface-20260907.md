@@ -88,7 +88,10 @@ draw-path investigation can now start from this frame and this trace.
 It is not B6 evidence toward closure. The criterion demands 3/3 at each of
 three declared resolutions and three declared scales, a verified pixel mask
 and frame time within 10% of baseline; none of that was run, and one
-observation at 1600x900 at 100% says nothing about repeatability.
+observation at 1600x900 with unmeasured effective scale says nothing about
+repeatability. (Correction 2026-09-08: do not read this as a 100% display
+scale — the `LogPixels` value was absent and the status-bar `100%` is
+document zoom, neither proving display scale.)
 
 ## Two harness findings, recorded rather than fixed here
 
