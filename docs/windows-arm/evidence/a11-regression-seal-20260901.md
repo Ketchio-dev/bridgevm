@@ -1152,3 +1152,22 @@ succeeded. This section reseals `tested_commit` at that head and must itself
 pass hosted CI and Security before it is a green seal. The discard path is not
 yet live-proven; the next closure run will show it. B6, A9, B8 and B9 remain
 open and the product remains Engineering Preview.
+
+## Legacy integer buffer sampler reseal, 2026-09-08
+
+Tested code head `f1018e977718b409b3216d8d308a26222ad93716` corrects legacy
+TGSI buffer sampler typing without changing explicitly declared SVIEW types.
+The caption source and full diagnostic history are retained in
+[the glyph observation record](b6-glyph-observation-active-iosurface-20260907.md).
+The clean, non-instrumented candidate restored the classic Notepad caption
+in live job `t7-caption-clean-20260908-r1`, receipt `3f161aa0…`; this is not
+the required B6 resolution/scale and frame-time campaign.
+
+Full local `scripts/check-project.sh` passed. Hosted
+[CI 34186657230](https://github.com/Ketchio-dev/bridgevm/actions/runs/34186657230)
+passed every independent job, including real native shader translation tests
+for unsigned/signed/float inference and explicit declaration precedence. Only
+the dependent capability/documentation job failed against the previous tested
+commit. [Security 34186657180](https://github.com/Ketchio-dev/bridgevm/actions/runs/34186657180)
+succeeded. This registry-only reseal must itself pass hosted workflows.
+Product state stays Engineering Preview; B6, A9, B8 and B9 stay OPEN.
