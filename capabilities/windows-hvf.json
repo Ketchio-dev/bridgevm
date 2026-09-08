@@ -327,14 +327,15 @@
       "state": "OPEN",
       "release_blocking": false,
       "statement": "Caption, menu and tab glyphs pass 3/3 at each of three declared resolutions and three declared scales with a verified pixel mask and frame time within 10% of baseline.",
-      "measured": "OPEN: the reproduced classic Notepad caption defect is fixed by legacy integer buffer sampler typing in f1018e97. Clean non-instrumented live job t7-caption-clean-20260908-r1 (receipt 3f161aa0, capture 01f4783d) renders *Untitled - Notepad with menus and document text intact at 1600x900. Earlier blank-caption observations and failed diagnostics are retained. Classic Notepad has no tab strip; a diagnostic-only spike confirmed File Explorer's default Home tab renders a legible tab label at 1600x900/100% on this exact fixed head (capture c4bac774, OCR reads 'Home' plus full nav-pane chrome), so a tab scene is available for the matrix. The required three-resolution by three-scale, three-run-per-cell pixel-mask and frame-time matrix has not run; a scriptable per-monitor scale mechanism is still an open prerequisite. F3 remains partial and no full B6 criterion pass is claimed.",
+      "measured": "OPEN: the reproduced classic Notepad caption defect is fixed by legacy integer buffer sampler typing in f1018e97. Clean non-instrumented live job t7-caption-clean-20260908-r1 (receipt 3f161aa0, capture 01f4783d) renders *Untitled - Notepad with menus and document text intact at 1600x900. Earlier blank-caption observations and failed diagnostics are retained. Classic Notepad has no tab strip; a diagnostic-only spike confirmed File Explorer's default Home tab renders a legible tab label at 1600x900/100% on this exact fixed head (capture c4bac774, OCR reads 'Home' plus full nav-pane chrome). A second spike confirmed the scale mechanism: writing HKCU LogPixels=144/Win8DpiScaling=1 then restarting the guest changes LogPixels from absent(96/100%) to 144(150%) and reads back correctly after the agent reconnects; the same run's active-scanout captures failed with a stale-seed harness bug, so no visual size comparison exists yet. Both matrix prerequisites are now spiked, but the declared three-resolution by three-scale, three-run-per-cell pixel-mask and frame-time matrix has not run, and reliable post-restart capture must be fixed before it can.",
       "evidence_paths": [
         "docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md",
         "docs/windows-arm/evidence/windows-1.0-closure-f1-f4-20260820.md",
         "docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md",
         "docs/windows-arm/evidence/b6-injector-firstboot-plant-failure-20260907.md",
         "docs/windows-arm/evidence/b6-glyph-observation-active-iosurface-20260907.md",
-        "docs/windows-arm/evidence/b6-tab-scene-spike-20260908.md"
+        "docs/windows-arm/evidence/b6-tab-scene-spike-20260908.md",
+        "docs/windows-arm/evidence/b6-scale-mechanism-spike-20260908.md"
       ],
       "known_defect": "Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness."
     },
