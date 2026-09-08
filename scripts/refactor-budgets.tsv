@@ -1091,7 +1091,8 @@ scripts/live-gates/write-a3-title-receipt.py	179	0
 scripts/live-gates/write-missing-receipt.sh	19	0
 scripts/live-gates/write-windows-closure-receipt.py	165	0
 scripts/win-assets/bv-windows-closure-proof.ps1	148	0
-scripts/windows-1.0-closure-interact.sh	185	0
+scripts/windows-1.0-closure-interact.sh	183	0
+scripts/win-assets/bv-windows-closure-discard.ps1	20	0
 scripts/win-assets/bvgpu-d3d11-identity.ps1	24	0
 scripts/harvest-hvf-windows-postmortem.sh	118	0
 
@@ -1521,6 +1522,7 @@ tests/integration/live-gate-policy-smoke.sh	308	0
 tests/integration/qmp-stress-live-tier-smoke.sh	21	0
 tests/integration/audio-teardown-live-tier-smoke.sh	119	0
 tests/integration/windows-closure-live-tier-smoke.sh	65	0
+tests/integration/windows-closure-discard-smoke.sh	29	0
 tests/integration/local-release-readiness-suite.sh	298	0
 tests/integration/log-viewer-cli-smoke.sh	170	0
 tests/integration/macos-app-name-validation-smoke.sh	81	0

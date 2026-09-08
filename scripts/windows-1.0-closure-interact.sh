@@ -19,12 +19,9 @@ while [[ $# -gt 0 ]]; do
 done
 for required in OUT TARGET VARS BINARY VIOGPU_DIR MOLTENVK; do
   [[ -n "${!required}" ]] || { echo "missing --${required,,}" >&2; exit 2; }; done
-mkdir -p "$OUT/share" "$OUT/captures"
-CTL="$OUT/agent.ctl"; : > "$CTL"
-INPUT="$OUT/input.ctl"; : > "$INPUT"
-RUN_LOG="$OUT/run.log"
-cp "$REPO/scripts/win-assets/bvgpu-apply-host-resolution.ps1" "$OUT/share/"
-cp "$REPO/scripts/win-assets/bv-windows-closure-proof.ps1" "$REPO/scripts/win-assets/bv-windows-closure-launch.ps1" "$OUT/share/"
+mkdir -p "$OUT/share" "$OUT/captures"; RUN_LOG="$OUT/run.log"
+CTL="$OUT/agent.ctl"; : > "$CTL"; INPUT="$OUT/input.ctl"; : > "$INPUT"
+cp "$REPO/scripts/win-assets/bvgpu-apply-host-resolution.ps1" "$REPO/scripts/win-assets/bv-windows-closure-proof.ps1" "$REPO/scripts/win-assets/bv-windows-closure-launch.ps1" "$REPO/scripts/win-assets/bv-windows-closure-discard.ps1" "$OUT/share/"
 
 wait_for() {
   local pattern="$1" count="$2" timeout="$3" observed
@@ -78,7 +75,7 @@ capture_active_scanout() {
 cleanup() {
   local status=$?
   if [[ -n "${LAUNCHER:-}" ]] && kill -0 "$LAUNCHER" 2>/dev/null; then
-    printf 'shutdown /s /t 0\n' >> "$CTL" 2>/dev/null || true
+    printf 'shutdown /s /f /t 0\n' >> "$CTL" 2>/dev/null || true
     for _ in $(seq 1 480); do kill -0 "$LAUNCHER" 2>/dev/null || break; sleep 0.5; done
     kill "$LAUNCHER" 2>/dev/null || true
   fi
@@ -104,7 +101,7 @@ LAUNCHER=$!
 
 # Agent READY precedes stage4; its successful completion deletes the scheduled task.
 wait_for '^BVAGENT SERVICE start' 1 "$AGENT_TIMEOUT" || { echo 'FAIL: agent service timeout' >&2; exit 1; }
-for file in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1 bv-windows-closure-launch.ps1; do
+for file in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1 bv-windows-closure-launch.ps1 bv-windows-closure-discard.ps1; do
   bytes=$(stat -f %z "$OUT/share/$file")
   wait_for "^BVAGENT SHARE host->guest $file bytes=$bytes " 1 180 \
     || { echo "FAIL: $file share timeout" >&2; exit 1; }
@@ -165,20 +162,21 @@ if [[ "$hwnd" =~ ^[0-9]+$ ]]; then
     ' "$RUN_LOG")
     if ! grep -Eq "^BVAGENT WINLIST WIN $hwnd " <<<"$final_list"; then
       f3=pass
+    else
+      # F4 typed into the document, so WM_CLOSE raised the save prompt and the
+      # window stayed (t7-7f31bfc8-keeprunning-b6-observation-r1). F3 stays
+      # partial; discard guest-side so the run ends instead of idling to the watchdog.
+      send_ok "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-windows-closure-discard.ps1 -Hwnd $hwnd" || true
     fi
   fi
 fi
 
-printf 'shutdown /s /t 0\n' >> "$CTL"
-wait "$LAUNCHER" 2>/dev/null || true
-LAUNCHER=''
+# /f: an unsaved document vetoes a plain shutdown and holds the guest until the watchdog.
+printf 'shutdown /s /f /t 0\n' >> "$CTL"
+wait "$LAUNCHER" 2>/dev/null || true; LAUNCHER=''
 {
-  echo "f1_driver_load=$f1"
-  echo "f2_resize=$f2"
-  echo "f3_window_verbs=$f3"
-  echo "f4_glyph_observation=$f4"
-  echo 'requested=1600x900'
-  echo "notepad_hwnd=${hwnd:-absent}"
+  echo "f1_driver_load=$f1"; echo "f2_resize=$f2"; echo "f3_window_verbs=$f3"
+  echo "f4_glyph_observation=$f4"; echo 'requested=1600x900'; echo "notepad_hwnd=${hwnd:-absent}"
   echo "active_scanout_capture=$([[ -s "$OUT/captures/f4-notepad-focused.ppm" ]] && echo present || echo absent)"
 } > "$OUT/summary.txt"
 cat "$OUT/summary.txt"
