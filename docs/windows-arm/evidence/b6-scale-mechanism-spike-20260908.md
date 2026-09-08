@@ -52,7 +52,34 @@ harness are done:
   `b6-tab-scene-spike-20260908.md`);
 - scale change: `bv-b6-set-scale.ps1` plus a guest restart (this document).
 
-Building the actual matrix harness must still solve reliable post-restart
-active-scanout capture (the seed-advance failure above) before any of its
-27 required observations count as evidence. This does not run the matrix
-and does not change B6's `OPEN` state.
+
+## Follow-up: idle-desktop capture failure root-caused, 2026-09-08
+
+The seed-advance failure above was chased further. Two more live attempts
+isolate the cause: a direct capture 8s after Explorer settled still failed
+with the same `RuntimeError`, and adding `POINTER move:400x300` immediately
+before the capture (matching the exact test-fixture grammar in
+`live_input.rs`) also failed. `run.log` confirms the pointer command was
+silently accepted -- `live_input.rs` only prints `kind=pointer_move` every
+1024th accepted move by design, so a single move produces no log line, but
+the underlying `queue_xhci_pointer_input_actions_with_mem` call still ran.
+No `RESOURCE_FLUSH`/new frame followed it in `virtio-gpu.jsonl`.
+
+**Root cause: a bare pointer move does not invalidate the scanout.** Every
+capture that has ever succeeded in this project followed a real
+content-changing action -- typed text (F4), a resize (F2), or `WINCLOSE`
+(F3) -- never an idle desktop or a mouse move alone. The guest's hardware
+cursor is evidently composited on a separate plane that does not touch the
+exported IOSurface-backed scanout resource, so moving it alone never
+produces a new frame to capture.
+
+**Implication for the B6 matrix harness:** each of the 27 cells must
+capture immediately after a genuine content-changing action already
+proven to produce a fresh frame (e.g., typing into the scene, or the
+scene-launch action itself while it is still rendering), not after an
+idle settle-then-nudge pattern. This is not a new capture-tool bug to fix;
+it is a usage constraint the existing tool always had, now confirmed live
+rather than assumed.
+Building the actual matrix harness must apply this constraint at every
+capture point; this does not run the matrix and does not change B6's
+`OPEN` state.
