@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-08",
-  "tested_commit": "5261db567505691093f4731c7e612c0e4fc4db03",
+  "tested_commit": "9937b3120f1ce1469f36ca06eff20fa1dc410a78",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -140,7 +140,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-09-08 F3 post-close confirmation reseal: tested code head 5261db567505691093f4731c7e612c0e4fc4db03 adds a diagnostic-only active-IOSurface capture between WINCLOSE and the guest-side discard in the closure tier, changing no pass/fail outcome. Live job t7-5261db56-f3-postclose-r1 (receipt f1/f2 pass, f3 partial, f4 measured-visible-text, pass=false 3/1) captured and OCR'd the actual post-WINCLOSE screen: a second window titled Notepad with a Don't Save button, over the still-visible main frame. This directly confirms the standard Win32 save-changes prompt that a prior run only inferred; the closure gate's forced-shutdown-plus-discard path already handles it correctly. A first submission of this job at the wrong commit (c4e1a6ee, one commit before the capture landed) produced no new evidence and is retracted; see docs/windows-arm/evidence/f3-postclose-save-prompt-confirmed-20260908.md. Full scripts/check-project.sh passed. Hosted CI 34187673040 passed every independent job and failed only the expected stale capability/documentation guard; Security 34187673048 succeeded. This reseal does not promote any criterion.",
+      "measured": "2026-09-08 B6 tab-scene spike reseal: tested code head 9937b3120f1ce1469f36ca06eff20fa1dc410a78 adds a diagnostic-only guest asset, scripts/win-assets/bv-b6-explorer-launch.ps1, that launches File Explorer; it is not wired into any shipped closure gate or F1-F4 acceptance. Full scripts/check-project.sh passed. Hosted CI for this head must itself pass; the docs-only predecessor at this same code already failed only the expected stale capability/documentation drift job before this reseal.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",

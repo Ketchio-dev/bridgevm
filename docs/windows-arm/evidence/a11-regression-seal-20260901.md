@@ -1190,3 +1190,16 @@ capability/documentation guard against the previous tested commit.
 [Security 34187673048](https://github.com/Ketchio-dev/bridgevm/actions/runs/34187673048)
 succeeded. This registry-only reseal must itself pass hosted workflows.
 Product state stays Engineering Preview; B6, A9, B8 and B9 stay OPEN.
+
+## B6 tab-scene spike reseal, 2026-09-08
+
+Tested code head `9937b3120f1ce1469f36ca06eff20fa1dc410a78` adds a
+diagnostic-only guest asset, `scripts/win-assets/bv-b6-explorer-launch.ps1`,
+used only by an ad hoc, uncommitted harness variant to spike the B6 tab
+scene question. Full account:
+[the tab scene spike record](b6-tab-scene-spike-20260908.md). The asset
+itself is not wired into any shipped closure gate.
+
+Full local `scripts/check-project.sh` passed. This registry-only reseal must
+itself pass hosted workflows. Product state stays Engineering Preview; B6,
+A9, B8 and B9 stay OPEN.
