@@ -5,7 +5,7 @@ index 6207a74..eafa448 100644
 @@ -180,6 +180,10 @@ virgl_depends = [
     dl_dep,
  ]
-
+ 
 +if with_host_darwin
 +   virgl_depends += [dependency('appleframeworks', modules: ['OpenGL', 'IOSurface', 'CoreFoundation'], required: true)]
 +endif
@@ -18,17 +18,17 @@ index a29a4fc..d1a1200 100644
 --- a/src/venus/venus-protocol/vn_protocol_renderer_dispatches.h
 +++ b/src/venus/venus-protocol/vn_protocol_renderer_dispatches.h
 @@ -7,6 +7,7 @@
-
+ 
  #ifndef VN_PROTOCOL_RENDERER_DISPATCHES_H
  #define VN_PROTOCOL_RENDERER_DISPATCHES_H
 +#include <stdio.h>
-
+ 
  #include "vn_protocol_renderer_structs.h"
  #include "vn_protocol_renderer_transport.h"
 @@ -736,8 +737,12 @@ static inline void vn_dispatch_command(struct vn_dispatch_context *ctx)
              vn_cs_decoder_set_fatal(ctx->decoder);
      }
-
+ 
 -    if (vn_cs_decoder_get_fatal(ctx->decoder))
 +    if (vn_cs_decoder_get_fatal(ctx->decoder)) {
 +        /* BridgeVM: always surface CS errors — silent ring death is undebuggable. */
@@ -37,7 +37,7 @@ index a29a4fc..d1a1200 100644
          vn_dispatch_debug_log(ctx, "%s resulted in CS error", vn_dispatch_command_name(cmd_type));
 +    }
  }
-
+ 
  #endif /* VN_PROTOCOL_RENDERER_DISPATCHES_H */
 diff --git a/src/venus/vkr_context.c b/src/venus/vkr_context.c
 index 2ea5898..bf56607 100644
@@ -46,7 +46,7 @@ index 2ea5898..bf56607 100644
 @@ -372,6 +372,17 @@ vkr_context_create_resource(struct vkr_context *ctx,
     if (!blob_id && blob_flags == VIRGL_RENDERER_BLOB_FLAG_USE_MAPPABLE)
        return vkr_context_create_resource_from_shm(ctx, res_id, blob_size, out_blob);
-
+ 
 +   /* BridgeVM: the Windows Venus winsys uses the guest-vram-style ordering
 +    * where the mappable blob is created BEFORE vkAllocateMemory and the
 +    * allocation then imports the resource via VkImportMemoryResourceInfoMESA.
@@ -74,7 +74,7 @@ index 3e943bf..22439b2 100644
     ext_count += physical_dev->KHR_portability_subset;
     ext_count += physical_dev->KHR_external_memory_fd;
 @@ -150,6 +151,8 @@ vkr_dispatch_vkCreateDevice(struct vn_dispatch_context *dispatch,
-
+ 
        if (physical_dev->EXT_external_memory_metal)
           exts[ext_count++] = "VK_EXT_external_memory_metal";
 +      if (physical_dev->EXT_external_memory_host)
@@ -88,7 +88,7 @@ index 57a108d..206602e 100644
 +++ b/src/venus/vkr_device_memory.c
 @@ -14,9 +14,12 @@
  #include "vkr_physical_device.h"
-
+ 
  static bool
 -vkr_get_fd_info_from_resource_info(struct vkr_context *ctx,
 -                                   const VkImportMemoryResourceInfoMESA *res_info,
@@ -130,7 +130,7 @@ index 57a108d..206602e 100644
 @@ -41,12 +62,13 @@ vkr_get_fd_info_from_resource_info(struct vkr_context *ctx,
     if (fd < 0)
        return false;
-
+ 
 -   *out = (VkImportMemoryFdInfoKHR){
 +   *out_fd = (VkImportMemoryFdInfoKHR){
        .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
@@ -141,11 +141,11 @@ index 57a108d..206602e 100644
 +   *out_import = (const VkBaseInStructure *)out_fd;
     return true;
  }
-
+ 
 @@ -260,19 +282,23 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
        return;
     }
-
+ 
 -   /* translate VkImportMemoryResourceInfoMESA into VkImportMemoryFdInfoKHR in place */
 +   /* translate VkImportMemoryResourceInfoMESA into an import chain in place */
     VkImportMemoryFdInfoKHR local_import_info = { .fd = -1 };
@@ -163,16 +163,16 @@ index 57a108d..206602e 100644
           args->ret = VK_ERROR_INVALID_EXTERNAL_HANDLE;
           return;
        }
-
+ 
 -      prev_of_res_info->pNext = (const struct VkBaseInStructure *)&local_import_info;
 +      prev_of_res_info->pNext = import_struct;
     }
-
+ 
     VkExportMemoryAllocateInfo *export_info =
 @@ -281,6 +307,7 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
     /* track if driver has requested export allocation */
     const bool might_export = export_info && export_info->handleTypes;
-
+ 
 +
     /* XXX Force dma_buf/opaque fd export or gbm bo import until a new extension that
      * supports direct export from host visible memory
@@ -183,13 +183,13 @@ index 57a108d..206602e 100644
     VkExportMemoryAllocateInfo local_export_info;
 -   VkImportMemoryMetalHandleInfoEXT local_metal_import;
 +   VkImportMemoryHostPointerInfoEXT local_host_import;
-
+ 
     if ((property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && !res_info) {
        /* An implementation can support dma_buf import along with opaque fd export/import.
 @@ -357,13 +384,18 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
              return;
           }
-
+ 
 -         local_metal_import = (VkImportMemoryMetalHandleInfoEXT){
 -            .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_METAL_HANDLE_INFO_EXT,
 +         /* BridgeVM: MoltenVK 1.4.1's MTLBuffer import does not alias the
@@ -216,15 +216,15 @@ index dc1f42c..41add3e 100644
 +++ b/src/venus/vkr_library.c
 @@ -6,6 +6,7 @@
  #include "vkr_common.h"
-
+ 
  #include <dlfcn.h>
 +#include <stdlib.h>
-
+ 
  #include "vkr_library.h"
-
+ 
 @@ -43,7 +44,14 @@ vkr_library_load(struct vulkan_library *lib)
        return true;
-
+ 
  #ifdef __APPLE__
 -   lib->handle = dlopen("libvulkan.dylib", RTLD_NOW | RTLD_LOCAL);
 +   /* BridgeVM: absolute-path override that survives DYLD env stripping in
@@ -257,11 +257,11 @@ index 139b11a..6e0d08a 100644
 +++ b/src/venus/vkr_physical_device.h
 @@ -29,6 +29,7 @@ struct vkr_physical_device {
     bool KHR_external_semaphore_fd;
-
+ 
     bool EXT_external_memory_metal;
 +   bool EXT_external_memory_host;
     bool EXT_metal_objects;
-
+ 
     VkPhysicalDeviceMemoryProperties memory_properties;
 diff --git a/src/venus/vkr_queue.c b/src/venus/vkr_queue.c
 index 61b94be..68ed8ee 100644
@@ -270,7 +270,7 @@ index 61b94be..68ed8ee 100644
 @@ -586,6 +586,33 @@ vkr_dispatch_vkImportSemaphoreResourceMESA(
     /* resourceId 0 is for importing a signaled payload to sync_fd fence */
     assert(!res_info->resourceId);
-
+ 
 +   /* BridgeVM: MoltenVK has no sync-fd semaphore import.  Signal the binary
 +    * semaphore with an empty queue submit instead; ring execution is
 +    * sequential, so the signal lands before the guest's next submission
@@ -314,7 +314,7 @@ index fe36775..16332e3 100644
     if (!ctx)
        return EINVAL;
 @@ -1615,3 +1616,73 @@ int virgl_renderer_get_dev_fd(int ctx_id)
-
+ 
     return ctx->get_device_fd(ctx);
  }
 +
@@ -392,9 +392,9 @@ index 0bcafef..8a45ed9 100644
 --- a/src/virglrenderer.h
 +++ b/src/virglrenderer.h
 @@ -517,4 +517,44 @@ VIRGL_EXPORT int virgl_renderer_get_dev_fd(int ctx_id);
-
+ 
  #endif /* VIRGL_RENDERER_UNSTABLE_APIS */
-
+ 
 +
 +/* BridgeVM (macOS): GPU-blit the ctx0 scanout resource into a global
 + * IOSurface so the host window can composite without any CPU readback.
@@ -445,12 +445,12 @@ index eed56e4..afbde6f 100644
  {
     struct vrend_blitter_ctx *blit_ctx = &vrend_blit_ctx;
 +   GLint saved_swizzle[4];
-
+ 
     int dst_z;
     struct blit_point src0, src1;
 @@ -852,6 +853,13 @@ void vrend_renderer_blit_gl(ASSERTED struct vrend_context *ctx,
     glDrawBuffers(1, &buffers);
-
+ 
     glBindTexture(src_res->target, info->src_view);
 +   /* Texture parameters are shared between the blit and renderer contexts.
 +    * vrend_set_tex_param() may change the source object's swizzle, while the
@@ -470,7 +470,7 @@ index eed56e4..afbde6f 100644
 +                    saved_swizzle);
     glBindTexture(src_res->target, 0);
  }
-
+ 
 @@ -919,4 +929,3 @@ void vrend_blitter_fini(void)
     vrend_clicbs->destroy_gl_context(vrend_blit_ctx.gl_context);
     memset(&vrend_blit_ctx, 0, sizeof(vrend_blit_ctx));
@@ -483,7 +483,7 @@ index 7774a25..418c661 100644
 @@ -28,6 +28,10 @@
  #include <epoxy/gl.h>
  #include <fcntl.h>
-
+ 
 +#ifdef __APPLE__
 +#include <OpenGL/OpenGL.h>
 +#endif
@@ -494,7 +494,7 @@ index 7774a25..418c661 100644
 @@ -56,6 +60,27 @@ struct vrend_decode_ctx {
     struct vrend_context *grctx;
  };
-
+ 
 +static struct vrend_bridgevm_submit_diagnostic
 +   bridgevm_last_submit_diagnostic;
 +static bool bridgevm_submit_diagnostic_valid;
@@ -533,13 +533,13 @@ index 7774a25..418c661 100644
 +#ifdef __APPLE__
 +   CGLContextObj cgl_ctx = NULL;
 +#endif
-
+ 
  #define TRANSFER_HEADER_SIZE 4096
-
+ 
 @@ -2061,6 +2094,16 @@ static int vrend_decode_ctx_submit_cmd(struct virgl_context *ctx,
     if (bret == false)
        return EINVAL;
-
+ 
 +#ifdef __APPLE__
 +   /* CGL contexts are thread-local, while BridgeVM may service a serialized
 +    * virtio-gpu queue notification on any vCPU thread.  Apple requires the
@@ -562,20 +562,20 @@ index 7774a25..418c661 100644
 +      diagnostic_header = *buf;
 +      diagnostic_resource = 0;
 +      diagnostic_flags = VREND_BRIDGEVM_SUBMIT_DIAGNOSTIC_VALID_COMMAND;
-
+ 
 -      if (cmd >= VIRGL_MAX_COMMANDS)
 -         return EINVAL;
 +      if (cmd >= VIRGL_MAX_COMMANDS) {
 +         ret = EINVAL;
 +         goto out;
 +      }
-
+ 
        buf_offset += len + 1;
-
+ 
 @@ -2095,6 +2145,18 @@ static int vrend_decode_ctx_submit_cmd(struct virgl_context *ctx,
-
+ 
        TRACE_SCOPE_SLOW(vrend_get_comand_name(cmd));
-
+ 
 +      if (cmd == VIRGL_CCMD_TRANSFER3D && len >= VIRGL_TRANSFER3D_SIZE) {
 +         struct vrend_resource *res;
 +         diagnostic_resource = get_buf_entry(buf, VIRGL_RESOURCE_IW_RES_HANDLE);
@@ -619,10 +619,10 @@ index 7774a25..418c661 100644
 +#endif
 +   return ret;
  }
-
+ 
  static int vrend_decode_ctx_get_fencing_fd(UNUSED struct virgl_context *ctx)
 diff --git a/src/vrend/vrend_renderer.c b/src/vrend/vrend_renderer.c
-index 4bccc44..822630e 100644
+index 4bccc44..0127753 100644
 --- a/src/vrend/vrend_renderer.c
 +++ b/src/vrend/vrend_renderer.c
 @@ -409,13 +409,77 @@ struct sysval_uniform_block {
@@ -635,9 +635,9 @@ index 4bccc44..822630e 100644
     GLint drawid_base;
 +   GLint padding[3];
  };
-
+ 
  static struct global_renderer_state vrend_state;
-
+ 
 +#ifdef __APPLE__
 +/* Apple's OpenGL driver can fault when glBufferData creates a fresh sysval UBO
 + * after a program has been linked.  Allocate one share-group buffer while ctx0
@@ -715,16 +715,16 @@ index 4bccc44..822630e 100644
 +#endif
           }
        }
-
+ 
 @@ -2247,7 +2315,9 @@ static void vrend_destroy_program(struct vrend_linked_shader_program *ent)
        ent->ref_context->prog = NULL;
-
+ 
     if (ent->ubo_sysval_buffer_id != GL_INVALID_INDEX) {
 +#ifndef __APPLE__
         glDeleteBuffers(1, &ent->ubo_sysval_buffer_id);
 +#endif
     }
-
+ 
     if (ent->is_pipeline)
 @@ -4266,10 +4336,43 @@ static inline void vrend_fill_shader_key(struct vrend_sub_context *sub_ctx,
        /* Only use integer info when drawing to avoid stale info.
@@ -774,9 +774,20 @@ index 4bccc44..822630e 100644
        }
        if (type == PIPE_SHADER_FRAGMENT) {
           for (uint32_t i = 0; i < sub_ctx->nr_cbufs; i++) {
-@@ -5075,7 +5178,8 @@ static GLenum get_xfb_mode(GLenum mode)
+@@ -4325,6 +4428,10 @@ static inline void vrend_fill_shader_key(struct vrend_sub_context *sub_ctx,
+       }
+ 
+       if (view->texture->target == GL_TEXTURE_BUFFER) {
++         if (util_format_is_pure_uint(view->format))
++            vrend_shader_sampler_views_mask_set(key->sampler_buffer_uint_mask, i);
++         else if (util_format_is_pure_sint(view->format))
++            vrend_shader_sampler_views_mask_set(key->sampler_buffer_sint_mask, i);
+          enum pipe_swizzle swizzle[4];
+          if (vrend_get_swizzle(view, swizzle)) {
+             vrend_shader_sampler_views_mask_set(key->sampler_views_lower_swizzle_mask, i);
+@@ -5075,7 +5182,8 @@ static GLenum get_xfb_mode(GLenum mode)
  }
-
+ 
  static void vrend_draw_bind_vertex_legacy(struct vrend_context *ctx,
 -                                          struct vrend_vertex_element_array *va)
 +                                          struct vrend_vertex_element_array *va,
@@ -784,7 +795,7 @@ index 4bccc44..822630e 100644
  {
     uint32_t enable_bitmask;
     uint32_t disable_bitmask;
-@@ -5149,12 +5253,20 @@ static void vrend_draw_bind_vertex_legacy(struct vrend_context *ctx,
+@@ -5149,12 +5257,20 @@ static void vrend_draw_bind_vertex_legacy(struct vrend_context *ctx,
           disable_bitmask |= (1 << loc);
        } else {
           GLint size = !vrend_state.use_gles && (va->zyxw_bitmask & (1 << i)) ? GL_BGRA : ve->nr_chan;
@@ -796,7 +807,7 @@ index 4bccc44..822630e 100644
 +          * right element, matching glDraw*BaseInstance semantics. */
 +         if (base_instance && ve->base.instance_divisor)
 +            attrib_offset += (GLintptr)base_instance * (GLintptr)vbo->base.stride;
-
+ 
           enable_bitmask |= (1 << loc);
           if (util_format_is_pure_integer(ve->base.src_format)) {
 -            glVertexAttribIPointer(loc, size, ve->type, vbo->base.stride, (void *)(uintptr_t)(ve->base.src_offset + vbo->base.buffer_offset));
@@ -807,10 +818,10 @@ index 4bccc44..822630e 100644
           }
           glVertexAttribDivisorARB(loc, ve->base.instance_divisor);
        }
-@@ -5556,11 +5668,26 @@ vrend_fill_sysval_uniform_block (struct vrend_sub_context *sub_ctx)
+@@ -5556,11 +5672,26 @@ vrend_fill_sysval_uniform_block (struct vrend_sub_context *sub_ctx)
     if (sub_ctx->prog->virgl_block_bind == GL_INVALID_INDEX)
        return;
-
+ 
 +#ifdef __APPLE__
 +   {
 +#else
@@ -834,25 +845,25 @@ index 4bccc44..822630e 100644
        sub_ctx->prog->sysvalue_data_cookie = sub_ctx->sysvalue_data_cookie;
     }
  }
-@@ -5895,6 +6022,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+@@ -5895,6 +6026,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
     struct vrend_resource *indirect_res = NULL;
     struct vrend_resource *indirect_params_res = NULL;
     struct vrend_sub_context *sub_ctx = ctx->sub;
 +   bool emulate_base_instance = info->start_instance && !has_feature(feat_base_instance);
-
+ 
     if (ctx->in_error)
        return ENOTRECOVERABLE;
-@@ -5902,9 +6030,6 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+@@ -5902,9 +6034,6 @@ int vrend_draw_vbo(struct vrend_context *ctx,
     if (info->instance_count && !has_feature(feat_draw_instance))
        return EINVAL;
-
+ 
 -   if (info->start_instance && !has_feature(feat_base_instance))
 -      return EINVAL;
 -
     if (info->indirect.draw_count > 1 && !has_feature(feat_multi_draw_indirect))
        return EINVAL;
-
-@@ -6000,11 +6125,11 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+ 
+@@ -6000,11 +6129,11 @@ int vrend_draw_vbo(struct vrend_context *ctx,
        }
     } else {
        if (sub_ctx->ve) {
@@ -865,8 +876,8 @@ index 4bccc44..822630e 100644
 +         vrend_draw_bind_vertex_legacy(ctx, &va, emulate_base_instance ? info->start_instance : 0);
        }
     }
-
-@@ -6103,7 +6228,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+ 
+@@ -6103,7 +6232,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
           else
              glDrawArraysIndirect(mode, (GLvoid const *)(uintptr_t)info->indirect.offset);
        } else if (info->instance_count > 0) {
@@ -875,7 +886,7 @@ index 4bccc44..822630e 100644
              glDrawArraysInstancedBaseInstance(mode, start, count, info->instance_count, info->start_instance);
           else
              glDrawArraysInstancedARB(mode, start, count, info->instance_count);
-@@ -6135,7 +6260,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+@@ -6135,7 +6264,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
              glDrawElementsIndirect(mode, elsz, (GLvoid const *)(uintptr_t)info->indirect.offset);
        } else if (info->index_bias) {
           if (info->instance_count > 0) {
@@ -884,7 +895,7 @@ index 4bccc44..822630e 100644
                 glDrawElementsInstancedBaseVertexBaseInstance(mode, info->count, elsz, (void *)(uintptr_t)sub_ctx->ib.offset,
                                                               info->instance_count, info->index_bias, info->start_instance);
              else
-@@ -6147,7 +6272,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+@@ -6147,7 +6276,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
           else
              glDrawElementsBaseVertex(mode, info->count, elsz, (void *)(uintptr_t)sub_ctx->ib.offset, info->index_bias);
        } else if (info->instance_count > 0) {
@@ -893,7 +904,7 @@ index 4bccc44..822630e 100644
              glDrawElementsInstancedBaseInstance(mode, info->count, elsz, (void *)(uintptr_t)sub_ctx->ib.offset, info->instance_count, info->start_instance);
           } else
              glDrawElementsInstancedARB(mode, info->count, elsz, (void *)(uintptr_t)sub_ctx->ib.offset, info->instance_count);
-@@ -6835,10 +6960,11 @@ static void vrend_hw_emit_rs(struct vrend_context *ctx)
+@@ -6835,10 +6964,11 @@ static void vrend_hw_emit_rs(struct vrend_context *ctx)
             * already handled via Gallium */
            GLenum depthrule = state->clip_halfz ? GL_ZERO_TO_ONE : GL_NEGATIVE_ONE_TO_ONE;
            glClipControl(GL_LOWER_LEFT, depthrule);
@@ -907,10 +918,10 @@ index 4bccc44..822630e 100644
     }
     if (state->flatshade_first != ctx->sub->hw_rs_state.flatshade_first) {
        ctx->sub->hw_rs_state.flatshade_first = state->flatshade_first;
-@@ -7732,6 +7858,13 @@ int vrend_renderer_init(const struct vrend_if_cbs *cbs, uint32_t flags)
+@@ -7732,6 +7862,13 @@ int vrend_renderer_init(const struct vrend_if_cbs *cbs, uint32_t flags)
        goto fail;
     }
-
+ 
 +#ifdef __APPLE__
 +   glGenBuffers(1, &vrend_apple_sysval_buffer_id);
 +   glBindBuffer(GL_ARRAY_BUFFER, vrend_apple_sysval_buffer_id);
@@ -921,10 +932,10 @@ index 4bccc44..822630e 100644
     vrend_state.eventfd = -1;
     if (flags & VREND_USE_THREAD_SYNC) {
        if (flags & VREND_USE_ASYNC_FENCE_CB)
-@@ -7795,6 +7928,14 @@ vrend_renderer_fini(void)
+@@ -7795,6 +7932,14 @@ vrend_renderer_fini(void)
     vrend_video_fini();
  #endif
-
+ 
 +#ifdef __APPLE__
 +   if (vrend_apple_sysval_buffer_id) {
 +      vrend_clicbs->make_current(vrend_state.ctx0->sub->gl_context);
@@ -934,19 +945,19 @@ index 4bccc44..822630e 100644
 +#endif
 +
     vrend_destroy_context(vrend_state.ctx0);
-
+ 
     vrend_state.current_ctx = NULL;
-@@ -8031,6 +8172,7 @@ struct vrend_context *vrend_create_context(int id, uint32_t nlen, const char *de
+@@ -8031,6 +8176,7 @@ struct vrend_context *vrend_create_context(int id, uint32_t nlen, const char *de
     grctx->shader_cfg.has_texture_shadow_lod = has_feature(feat_texture_shadow_lod);
     grctx->shader_cfg.has_vs_layer = has_feature(feat_vs_layer_viewport);
     grctx->shader_cfg.has_vs_viewport_index = has_feature(feat_vs_viewport_index);
 +   grctx->shader_cfg.has_draw_parameters = has_feature(feat_draw_parameters);
-
+ 
     vrend_renderer_create_sub_ctx(grctx, 0);
     vrend_renderer_set_sub_ctx(grctx, 0);
-@@ -8290,6 +8432,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8290,6 +8436,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
  {
-
+ 
     GLbitfield buffer_storage_flags = 0;
 +#ifdef __APPLE__
 +   struct vrend_apple_buffer_texture_bindings saved;
@@ -956,46 +967,46 @@ index 4bccc44..822630e 100644
     if (flags & VIRGL_RESOURCE_FLAG_MAP_PERSISTENT) {
        buffer_storage_flags |= GL_MAP_PERSISTENT_BIT;
        /* Gallium's storage_flags_to_buffer_flags seems to drop some information, but we have to
-@@ -8343,7 +8490,7 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8343,7 +8494,7 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
  #endif
        else {
           virgl_error("Missing buffer storage and interop extensions\n");
 -         return;
 +         goto out;
        }
-
+ 
        gr->storage_bits |= VREND_STORAGE_GL_IMMUTABLE;
-@@ -8352,7 +8499,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8352,7 +8503,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
     } else
        glBufferData(gr->target, width, NULL, GL_STREAM_DRAW);
-
+ 
 +out:
     glBindBufferARB(gr->target, 0);
 +#ifdef __APPLE__
 +   vrend_apple_buffer_modify_end(&saved);
 +#endif
  }
-
+ 
  static int
-@@ -8943,6 +9094,7 @@ void vrend_renderer_resource_destroy(struct vrend_resource *res)
+@@ -8943,6 +9098,7 @@ void vrend_renderer_resource_destroy(struct vrend_resource *res)
     free(res);
  }
-
+ 
 +#ifndef __APPLE__
  struct virgl_sub_upload_data {
     GLenum target;
     struct pipe_box *box;
-@@ -8953,6 +9105,7 @@ static void iov_buffer_upload(void *cookie, uint32_t doff, void *src, int len)
+@@ -8953,6 +9109,7 @@ static void iov_buffer_upload(void *cookie, uint32_t doff, void *src, int len)
     struct virgl_sub_upload_data *d = cookie;
     glBufferSubData(d->target, d->box->x + doff, len, src);
  }
 +#endif
-
+ 
  static void vrend_scale_depth(void *ptr, int size, float scale_val)
  {
-@@ -9301,6 +9454,49 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
+@@ -9301,6 +9458,49 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
     }
-
+ 
     if (has_bit(res->storage_bits, VREND_STORAGE_GL_BUFFER)) {
 +#ifdef __APPLE__
 +      /* Apple's legacy OpenGL implementation can crash while updating its
@@ -1043,7 +1054,7 @@ index 4bccc44..822630e 100644
        GLuint map_flags = GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_WRITE_BIT;
        struct virgl_sub_upload_data d;
        d.box = info->box;
-@@ -9319,6 +9515,7 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
+@@ -9319,6 +9519,7 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
           glUnmapBuffer(res->target);
        }
        glBindBufferARB(res->target, 0);
@@ -1051,9 +1062,9 @@ index 4bccc44..822630e 100644
     } else {
        GLenum glformat;
        GLenum gltype;
-@@ -9970,6 +10167,34 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
+@@ -9970,6 +10171,34 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
     }
-
+ 
     if (has_bit(res->storage_bits, VREND_STORAGE_GL_BUFFER)) {
 +#ifdef __APPLE__
 +      if (!info->box->width)
@@ -1086,7 +1097,7 @@ index 4bccc44..822630e 100644
        glBindBufferARB(res->target, res->gl_id);
        void *data = glMapBufferRange(res->target, info->box->x, info->box->width, GL_MAP_READ_BIT);
        if (!data)
-@@ -9978,11 +10203,19 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
+@@ -9978,11 +10207,19 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
           vrend_write_to_iovec(iov, num_iovs, info->offset, data, info->box->width);
        glUnmapBuffer(res->target);
        glBindBufferARB(res->target, 0);
@@ -1094,7 +1105,7 @@ index 4bccc44..822630e 100644
     } else {
        int ret = -1;
        bool can_readpixels = true;
-
+ 
        can_readpixels = vrend_format_can_render(res->base.format) || vrend_format_is_ds(res->base.format);
 +#ifdef __APPLE__
 +      /* Apple's core profile rejects GL_BGRA readback from these renderer
@@ -1103,10 +1114,10 @@ index 4bccc44..822630e 100644
 +       * succeeds, so avoid a noisy and redundant framebuffer read first. */
 +      can_readpixels = false;
 +#endif
-
+ 
        if (can_readpixels)
           ret = vrend_transfer_send_readpixels(ctx, res, iov, num_iovs, info);
-@@ -10421,12 +10654,43 @@ static void vrend_resource_buffer_copy(UNUSED struct vrend_context *ctx,
+@@ -10421,12 +10658,43 @@ static void vrend_resource_buffer_copy(UNUSED struct vrend_context *ctx,
                                         uint32_t dstx, uint32_t srcx,
                                         uint32_t width)
  {
@@ -1142,15 +1153,15 @@ index 4bccc44..822630e 100644
 +#else
     glBindBuffer(GL_COPY_READ_BUFFER, src_res->gl_id);
     glBindBuffer(GL_COPY_WRITE_BUFFER, dst_res->gl_id);
-
+ 
     glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, srcx, dstx, width);
     glBindBuffer(GL_COPY_READ_BUFFER, 0);
     glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
 +#endif
  }
-
+ 
  static void vrend_resource_copy_fallback(struct vrend_resource *src_res,
-@@ -11201,8 +11465,8 @@ static void vrend_renderer_blit_int(struct vrend_context *ctx,
+@@ -11201,8 +11469,8 @@ static void vrend_renderer_blit_int(struct vrend_context *ctx,
        VREND_DEBUG(dbg_blit, ctx, "BLIT_INT: use FBO blit\n");
        vrend_renderer_blit_fbo(ctx, src_res, dst_res, &blit_info);
     } else {
@@ -1158,13 +1169,13 @@ index 4bccc44..822630e 100644
 -      blit_info.has_texture_srgb_decode = has_feature(feat_srgb_write_control);
 +      blit_info.has_srgb_write_control = has_feature(feat_srgb_write_control);
 +      blit_info.has_texture_srgb_decode = has_feature(feat_texture_srgb_decode);
-
+ 
        VREND_DEBUG(dbg_blit, ctx, "BLIT_INT: use GL fallback\n");
        vrend_renderer_blit_gl(ctx, src_res, dst_res, &blit_info);
-@@ -11626,8 +11890,14 @@ bool vrend_hw_switch_context(struct vrend_context *ctx, bool now)
+@@ -11626,8 +11894,14 @@ bool vrend_hw_switch_context(struct vrend_context *ctx, bool now)
     if (!ctx)
        return false;
-
+ 
 -   if (ctx == vrend_state.current_ctx && ctx->ctx_switch_pending == false)
 +   if (ctx == vrend_state.current_ctx && ctx->ctx_switch_pending == false) {
 +#ifdef __APPLE__
@@ -1174,10 +1185,10 @@ index 4bccc44..822630e 100644
 +#endif
        return true;
 +   }
-
+ 
     if (ctx->ctx_id != 0 && ctx->in_error) {
        return false;
-@@ -13819,3 +14089,220 @@ vrend_renderer_pipe_resource_get_layout(UNUSED struct vrend_context *ctx,
+@@ -13819,3 +14093,220 @@ vrend_renderer_pipe_resource_get_layout(UNUSED struct vrend_context *ctx,
     return EINVAL;
  }
  #endif
@@ -1405,7 +1416,7 @@ index adb1213..b86009e 100644
 @@ -64,6 +64,24 @@ struct virgl_context;
  struct virgl_resource;
  struct vrend_context;
-
+ 
 +struct vrend_bridgevm_submit_diagnostic {
 +   int renderer_status;
 +   uint32_t command_offset_dwords;
@@ -1430,7 +1441,7 @@ index adb1213..b86009e 100644
 @@ -407,6 +425,15 @@ int vrend_renderer_transfer_iov(struct vrend_context *ctx,
                                  const struct vrend_transfer_info *info,
                                  int transfer_mode);
-
+ 
 +#ifdef __APPLE__
 +/* BridgeVM: GPU-blit a scanout resource into a cached global IOSurface. */
 +int vrend_bridgevm_scanout_blit_iosurface(struct pipe_resource *pres,
@@ -1444,26 +1455,42 @@ index adb1213..b86009e 100644
                                   const struct vrend_transfer_info *info,
                                   int transfer_mode);
 diff --git a/src/vrend/vrend_shader.c b/src/vrend/vrend_shader.c
-index 4fe673c..787b325 100644
+index 4fe673c..791b6e9 100644
 --- a/src/vrend/vrend_shader.c
 +++ b/src/vrend/vrend_shader.c
 @@ -92,6 +92,7 @@
-
+ 
  enum vrend_sysval_uniform {
     UNIFORM_WINSYS_ADJUST_Y,
 +   UNIFORM_CLIP_HALFZ_FIXUP,
     UNIFORM_CLIP_PLANE,
     UNIFORM_ALPHA_REF_VAL,
     UNIFORM_PSTIPPLE_SAMPLER,
-@@ -291,6 +292,7 @@ struct dump_ctx {
+@@ -107,6 +108,7 @@ enum vec_type {
+ struct vrend_shader_sampler {
+    int tgsi_sampler_type;
+    enum tgsi_return_type tgsi_sampler_return;
++   bool return_type_declared;
+ };
+ 
+ struct vrend_shader_table {
+@@ -291,6 +293,7 @@ struct dump_ctx {
     int gs_num_invocations;
-
+ 
     const struct vrend_shader_key *key;
 +   struct vrend_shader_info *sinfo;
     int num_in_clip_dist;
     int num_out_clip_dist;
     int fs_uses_clipdist_input;
-@@ -1988,7 +1990,14 @@ iter_declaration(struct tgsi_iterate_context *iter,
+@@ -971,6 +974,7 @@ static bool add_samplers(struct dump_ctx *ctx, int first, int last, int sview_ty
+    for (int i = first; i <= last; i++) {
+       ctx->samplers[i].tgsi_sampler_return = sview_rtype;
+       ctx->samplers[i].tgsi_sampler_type = sview_type;
++      ctx->samplers[i].return_type_declared = true;
+    }
+ 
+    if (ctx->info.indirect_files & (1 << TGSI_FILE_SAMPLER)) {
+@@ -1988,7 +1992,14 @@ iter_declaration(struct tgsi_iterate_context *iter,
              virgl_error("Unsupported system value %d\n", decl->Semantic.Name);
              return false;
           }
@@ -1479,7 +1506,7 @@ index 4fe673c..787b325 100644
           ctx->system_values[i].override_no_wm = svmap->override_no_wm;
           snprintf(ctx->system_values[i].glsl_name, 64, "%s", name_prefix);
           if (decl->Semantic.Name == TGSI_SEMANTIC_DRAWID)
-@@ -2271,7 +2280,10 @@ static void emit_color_select(const struct dump_ctx *ctx,
+@@ -2271,7 +2282,10 @@ static void emit_color_select(const struct dump_ctx *ctx,
  static void emit_prescale(struct vrend_glsl_strbufs *glsl_strbufs)
  {
     emit_buf(glsl_strbufs, "gl_Position.y = gl_Position.y * winsys_adjust_y;\n");
@@ -1489,12 +1516,12 @@ index 4fe673c..787b325 100644
 +   glsl_strbufs->required_sysval_uniform_decls |=
 +      BIT(UNIFORM_WINSYS_ADJUST_Y) | BIT(UNIFORM_CLIP_HALFZ_FIXUP);
  }
-
+ 
  // TODO Consider exposing non-const ctx-> members as args to make *ctx const
-@@ -2550,6 +2562,20 @@ static void handle_vertex_proc_exit(const struct dump_ctx *ctx,
+@@ -2550,6 +2564,20 @@ static void handle_vertex_proc_exit(const struct dump_ctx *ctx,
         emit_fog_fixup_write(ctx, glsl_strbufs);
  }
-
+ 
 +static void handle_tess_eval_proc_exit(const struct dump_ctx *ctx,
 +                                       struct vrend_glsl_strbufs *glsl_strbufs,
 +                                       bool *has_clipvertex_so)
@@ -1512,7 +1539,28 @@ index 4fe673c..787b325 100644
  static void emit_fragment_logicop(const struct dump_ctx *ctx,
                                    struct vrend_glsl_strbufs *glsl_strbufs)
  {
-@@ -5956,13 +5982,9 @@ iter_instruction(struct tgsi_iterate_context *iter,
+@@ -2734,6 +2762,20 @@ static bool set_texture_reqs(struct dump_ctx *ctx,
+       return false;
+    }
+    ctx->samplers[sreg_index].tgsi_sampler_type = inst->Texture.Texture;
++   /* Legacy TGSI can declare only SAMP, without a typed SVIEW. For buffer
++    * views infer the return type from the bound format; sampling R8_UINT
++    * through samplerBuffer normalizes its bytes on Apple GL and corrupts
++    * subsequent integer texel addresses. Explicit SVIEW types remain authoritative. */
++   if (inst->Texture.Texture == TGSI_TEXTURE_BUFFER &&
++       !ctx->samplers[sreg_index].return_type_declared) {
++      if (vrend_shader_sampler_views_mask_get(ctx->key->sampler_buffer_uint_mask, sreg_index)) {
++         ctx->samplers[sreg_index].tgsi_sampler_return = TGSI_RETURN_TYPE_UINT;
++         ctx->shader_req_bits |= SHADER_REQ_INTS;
++      } else if (vrend_shader_sampler_views_mask_get(ctx->key->sampler_buffer_sint_mask, sreg_index)) {
++         ctx->samplers[sreg_index].tgsi_sampler_return = TGSI_RETURN_TYPE_SINT;
++         ctx->shader_req_bits |= SHADER_REQ_INTS;
++      }
++   }
+ 
+    ctx->shader_req_bits |= samplertype_to_req_bits(inst->Texture.Texture);
+ 
+@@ -5956,13 +5998,9 @@ iter_instruction(struct tgsi_iterate_context *iter,
           handle_vertex_proc_exit(ctx, &ctx->glsl_strbufs, &ctx->has_clipvertex_so);
        } else if (iter->processor.Processor == TGSI_PROCESSOR_TESS_CTRL && ctx->cfg->has_cull_distance) {
           emit_clip_dist_movs(ctx, &ctx->glsl_strbufs);
@@ -1529,7 +1577,7 @@ index 4fe673c..787b325 100644
        } else if (iter->processor.Processor == TGSI_PROCESSOR_FRAGMENT) {
           handle_fragment_proc_exit(ctx, &ctx->glsl_strbufs);
        }
-@@ -5971,6 +5993,9 @@ iter_instruction(struct tgsi_iterate_context *iter,
+@@ -5971,6 +6009,9 @@ iter_instruction(struct tgsi_iterate_context *iter,
     case TGSI_OPCODE_RET:
        if (iter->processor.Processor == TGSI_PROCESSOR_VERTEX) {
           handle_vertex_proc_exit(ctx, &ctx->glsl_strbufs, &ctx->has_clipvertex_so);
@@ -1539,7 +1587,7 @@ index 4fe673c..787b325 100644
        } else if (iter->processor.Processor == TGSI_PROCESSOR_FRAGMENT) {
           handle_fragment_proc_exit(ctx, &ctx->glsl_strbufs);
        }
-@@ -5980,7 +6005,17 @@ iter_instruction(struct tgsi_iterate_context *iter,
+@@ -5980,7 +6021,17 @@ iter_instruction(struct tgsi_iterate_context *iter,
        emit_buff(&ctx->glsl_strbufs, "%s = int(floor(%s)%s);\n", dsts[0], srcs[0], writemask);
        break;
     case TGSI_OPCODE_UARL:
@@ -1558,10 +1606,10 @@ index 4fe673c..787b325 100644
        break;
     case TGSI_OPCODE_XPD:
        emit_buff(&ctx->glsl_strbufs, "%s = %s(cross(vec3(%s), vec3(%s)));\n", dsts[0], get_string(dinfo.dstconv), srcs[0], srcs[1]);
-@@ -6347,7 +6382,11 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
+@@ -6347,7 +6398,11 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
        if (ctx->prog_type == TGSI_PROCESSOR_FRAGMENT && fs_emit_layout(ctx))
           emit_ext(glsl_strbufs, "ARB_fragment_coord_conventions", "require");
-
+ 
 -      if (ctx->ubo_used_mask)
 +      /* Uniform blocks are core in GLSL 1.40. Apple's core-profile compiler
 +       * deliberately does not expose GL_ARB_uniform_buffer_object as an
@@ -1569,11 +1617,11 @@ index 4fe673c..787b325 100644
 +       * though the same UBO syntax is valid in the selected language version. */
 +      if (ctx->ubo_used_mask && ctx->glsl_ver_required < 140)
           emit_ext(glsl_strbufs, "ARB_uniform_buffer_object", "require");
-
+ 
        if (ctx->num_cull_dist_prop || ctx->key->num_in_cull || ctx->key->num_out_cull)
-@@ -6361,10 +6400,19 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
+@@ -6361,10 +6416,19 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
        }
-
+ 
        for (uint32_t i = 0; i < ARRAY_SIZE(shader_req_table); i++) {
 -         if (shader_req_table[i].key == SHADER_REQ_SAMPLER_RECT && ctx->glsl_ver_required >= 140)
 +         const uint64_t key = shader_req_table[i].key;
@@ -1587,13 +1635,13 @@ index 4fe673c..787b325 100644
 +         if (ctx->glsl_ver_required >= 140 &&
 +             (key == SHADER_REQ_SAMPLER_RECT || key == SHADER_REQ_INSTANCE_ID))
              continue;
-
+ 
 -         if (ctx->shader_req_bits & shader_req_table[i].key) {
 +         if (ctx->shader_req_bits & key) {
              emit_ext(glsl_strbufs, shader_req_table[i].string, "require");
           }
        }
-@@ -8010,6 +8058,7 @@ static void emit_required_sysval_uniforms(struct vrend_strbuf *block, uint32_t m
+@@ -8010,6 +8074,7 @@ static void emit_required_sysval_uniforms(struct vrend_strbuf *block, uint32_t m
     strbuf_append(block, "\tvec4 clipp[8];\n");
     strbuf_appendf(block, "\tuint stipple_pattern[%d];\n", VREND_POLYGON_STIPPLE_SIZE);
     strbuf_append(block, "\tfloat winsys_adjust_y;\n");
@@ -1601,10 +1649,10 @@ index 4fe673c..787b325 100644
     strbuf_append(block, "\tfloat alpha_ref_val;\n");
     strbuf_append(block, "\tbool clip_plane_enabled;\n");
     strbuf_append(block, "\tint drawid_base;\n");
-@@ -8124,6 +8173,89 @@ bool vrend_shader_query_separable_program(const struct tgsi_token *tokens,
+@@ -8124,6 +8189,89 @@ bool vrend_shader_query_separable_program(const struct tgsi_token *tokens,
     return ctx.separable_program && supports_separable;
  }
-
+ 
 +struct integer_input_scan_ctx {
 +   struct tgsi_iterate_context iter;
 +   uint32_t *temp_taint;
@@ -1691,24 +1739,24 @@ index 4fe673c..787b325 100644
  bool vrend_convert_shader(const struct vrend_context *rctx,
                            const struct vrend_shader_cfg *cfg,
                            const struct tgsi_token *tokens,
-@@ -8138,6 +8270,10 @@ bool vrend_convert_shader(const struct vrend_context *rctx,
-
+@@ -8138,6 +8286,10 @@ bool vrend_convert_shader(const struct vrend_context *rctx,
+ 
     memset(&ctx, 0, sizeof(struct dump_ctx));
     ctx.cfg = cfg;
 +   ctx.sinfo = sinfo;
 +   sinfo->uarl_input_mask = vrend_shader_integer_input_mask(tokens, TGSI_OPCODE_UARL);
 +   sinfo->i2f_input_mask = vrend_shader_integer_input_mask(tokens, TGSI_OPCODE_I2F);
 +   sinfo->u2f_input_mask = vrend_shader_integer_input_mask(tokens, TGSI_OPCODE_U2F);
-
+ 
     /* First pass to deal with edge cases. */
     ctx.iter.iterate_declaration = iter_decls;
-@@ -8583,4 +8719,3 @@ bool vrend_shader_needs_alpha_func(const struct vrend_shader_key *key) {
+@@ -8583,4 +8735,3 @@ bool vrend_shader_needs_alpha_func(const struct vrend_shader_key *key) {
        return true;
     }
  }
 -
 diff --git a/src/vrend/vrend_shader.h b/src/vrend/vrend_shader.h
-index 7f5897b..4a20362 100644
+index 7f5897b..5393a5b 100644
 --- a/src/vrend/vrend_shader.h
 +++ b/src/vrend/vrend_shader.h
 @@ -143,6 +143,9 @@ struct vrend_shader_info {
@@ -1721,11 +1769,20 @@ index 7f5897b..4a20362 100644
     uint32_t fs_blend_equation_advanced;
     uint32_t fog_input_mask;
     uint32_t fog_output_mask;
-@@ -259,6 +262,7 @@ struct vrend_shader_cfg {
+@@ -219,6 +222,8 @@ struct vrend_shader_key {
+ 
+    uint64_t sampler_views_lower_swizzle_mask[VREND_SHADER_SAMPLER_VIEWS_MASK_LENGTH];
+    uint64_t sampler_views_emulated_rect_mask[VREND_SHADER_SAMPLER_VIEWS_MASK_LENGTH];
++   uint64_t sampler_buffer_uint_mask[VREND_SHADER_SAMPLER_VIEWS_MASK_LENGTH];
++   uint64_t sampler_buffer_sint_mask[VREND_SHADER_SAMPLER_VIEWS_MASK_LENGTH];
+    uint16_t tex_swizzle[PIPE_MAX_SHADER_SAMPLER_VIEWS];
+ 
+    uint8_t ssbo_binding_offset;
+@@ -259,6 +264,7 @@ struct vrend_shader_cfg {
     uint32_t has_texture_shadow_lod : 1;
     uint32_t has_vs_layer : 1;
     uint32_t has_vs_viewport_index : 1;
 +   uint32_t has_draw_parameters : 1;
  };
-
+ 
  struct vrend_context;

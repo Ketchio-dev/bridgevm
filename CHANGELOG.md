@@ -2,6 +2,15 @@
 
 All notable changes to BridgeVM are documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- Infer integer buffer sampler types for legacy TGSI shaders from their bound
+  view formats while preserving explicit sampler declarations. This restores
+  classic Notepad caption text in the tested Windows graphics scene; the full
+  glyph resolution/scale and frame-time acceptance matrix remains open.
+
 ## [1.0.0] - 2026-08-20
 
 Every release-blocking criterion in `capabilities/windows-hvf.json` is proven

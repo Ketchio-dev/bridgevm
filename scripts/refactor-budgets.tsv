@@ -3,6 +3,8 @@
 # this. Lower a ceiling only after an extraction actually reduces the file; never
 # raise one. Seeded 2026-07-22 at the pre-refactor baseline.
 #
+scripts/check-virgl-buffer-sampler.sh	16	0
+tests/integration/virgl-buffer-sampler-translate.c	49	0
 # NOTE ON AGGREGATE HONESTY: extracting code from lib.rs into a sibling module
 # does NOT reduce total crate lines — module headers, imports, re-export shims,
 # and test-module wrappers add boilerplate. Every extracted module must be added
