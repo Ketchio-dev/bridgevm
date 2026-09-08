@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-08",
-  "tested_commit": "b0ef2061d5527f690cb9384f0b5aea3af892b4f7",
+  "tested_commit": "965c658b2f639e0c34858d1c9315f4e3337c05c0",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -140,7 +140,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-09-08 B6 effective-DPI-and-capture reseal: tested code head b0ef2061d5527f690cb9384f0b5aea3af892b4f7 adds docs/windows-arm/evidence/b6-dpi-and-capture-live-20260908.md, a genuine live proof that bv-b6-window-dpi.ps1 answers correctly on a real hwnd and that the same window then produces a fresh presented capture, and corrects a prior claim that t7-c193b7c0-fixed-b6-observation-r1 was a completed proof. No code changed; B6 stays OPEN. Full scripts/check-project.sh passed. This reseal must itself pass hosted workflows.",
+      "measured": "2026-09-08 B6 scale-script parameterization reseal: tested code head 965c658b2f639e0c34858d1c9315f4e3337c05c0 generalizes bv-b6-set-scale.ps1 from a fixed 150% to a ValidateSet-restricted -LogPixels covering all three declared scales (96/120/144), live-confirmed at 96 against a clean guest boot. No committed caller referenced the old fixed signature. B6 stays OPEN; the declared 3x3x3 campaign has not run. Full scripts/check-project.sh passed. This reseal must itself pass hosted workflows.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
