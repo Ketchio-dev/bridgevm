@@ -1171,3 +1171,22 @@ the dependent capability/documentation job failed against the previous tested
 commit. [Security 34186657180](https://github.com/Ketchio-dev/bridgevm/actions/runs/34186657180)
 succeeded. This registry-only reseal must itself pass hosted workflows.
 Product state stays Engineering Preview; B6, A9, B8 and B9 stay OPEN.
+
+## F3 post-close confirmation reseal, 2026-09-08
+
+Tested code head `5261db567505691093f4731c7e612c0e4fc4db03` adds a
+diagnostic-only active-IOSurface capture between `WINCLOSE` and the guest-side
+discard in the closure tier; it changes no pass/fail outcome. Full account,
+including the retracted first submission at the wrong commit, is in
+[the F3 confirmation record](f3-postclose-save-prompt-confirmed-20260908.md).
+In short: the standard Win32 "save changes?" prompt is now directly captured
+and OCR'd, not inferred, and the existing forced-shutdown-plus-discard path
+already handles it.
+
+Full local `scripts/check-project.sh` passed. Hosted
+[CI 34187673040](https://github.com/Ketchio-dev/bridgevm/actions/runs/34187673040)
+passed every independent job and failed only the expected stale
+capability/documentation guard against the previous tested commit.
+[Security 34187673048](https://github.com/Ketchio-dev/bridgevm/actions/runs/34187673048)
+succeeded. This registry-only reseal must itself pass hosted workflows.
+Product state stays Engineering Preview; B6, A9, B8 and B9 stay OPEN.
