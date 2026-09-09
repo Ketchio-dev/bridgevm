@@ -6,6 +6,6 @@ enum BridgeVMControlAppLaunch {
         let options = try? BridgeVMControlLaunchOptions.parse(arguments: arguments)
         return LibraryModel(
             rootURL: options?.e2eLibraryRoot ?? VMLibrary.root,
-            e2eUnattendedPath: options?.e2eUnattendedPath?.path)
+            e2eUnattendedPath: options?.e2eUnattendedPath?.path, migrateLegacy: BridgeVMControlLaunchPolicy.shouldMigrateLegacy(options: options))
     }
 }

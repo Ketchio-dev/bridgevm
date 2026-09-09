@@ -121,7 +121,7 @@ final class T17Accessibility: T17UIControlling {
             }) { return match }
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         } while Date() < deadline
-        throw T17Blocker(code: "ui-element-missing", detail: "required accessibility identifier was not found: \(identifier)")
+        throw T17Blocker(code: "ui-element-missing", detail: "required accessibility identifier was not found: \(identifier); windows=\((attribute(application, kAXWindowsAttribute as CFString) as? [AXUIElement]).map { String($0.count) } ?? "unanswered") timeout_s=\(timeout)")
     }
 
     private func firstDescendant(of root: AXUIElement, role expected: String) -> AXUIElement? {

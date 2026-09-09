@@ -53,7 +53,7 @@ enum BridgeVMProductE2EMain {
             let request = try T17Request.load(cli.request)
             let outcome = T17ProductRunner(request: request).run()
             let result = outcome.evidence.result(
-                request: request, failureCode: outcome.failureCode,
+                request: request, failureCode: outcome.failureCode, failureDetail: outcome.failureDetail,
                 cleanupVerified: outcome.cleanupVerified,
                 installerSourcePath: outcome.installerSourcePath,
                 uiFrontendAutomated: outcome.uiFrontendAutomated

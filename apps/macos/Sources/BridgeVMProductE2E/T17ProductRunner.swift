@@ -4,7 +4,7 @@ import Foundation
 
 struct T17RunOutcome {
     var evidence: T17Evidence
-    var failureCode: String
+    var failureCode: String; var failureDetail: String
     var cleanupVerified: Bool
     var installerSourcePath: String
     var uiFrontendAutomated: Bool
@@ -23,7 +23,7 @@ final class T17ProductRunner {
 
     func run() -> T17RunOutcome {
         var evidence = T17Evidence(nonce: request.nonce)
-        var failure = "internal-error"
+        var failure = "internal-error"; var detail = ""
         var sourcePath = "absent"
         var uiFrontendAutomated = false
         do {
@@ -58,12 +58,12 @@ final class T17ProductRunner {
             try evidence.authenticate("guest_evidence_sha256", file: URL(fileURLWithPath: request.guestEvidencePath))
             failure = "none"
         } catch let blocker as T17Blocker {
-            failure = blocker.code
+            failure = blocker.code; detail = blocker.detail  // the code alone said nothing; keep the detail
         } catch {
-            failure = "internal-error"
+            failure = "internal-error"; detail = String(describing: error)
         }
         let clean = stopOwnedApplication()
-        return T17RunOutcome(evidence: evidence, failureCode: failure,
+        return T17RunOutcome(evidence: evidence, failureCode: failure, failureDetail: detail,
                              cleanupVerified: clean, installerSourcePath: sourcePath,
                              uiFrontendAutomated: uiFrontendAutomated)
     }

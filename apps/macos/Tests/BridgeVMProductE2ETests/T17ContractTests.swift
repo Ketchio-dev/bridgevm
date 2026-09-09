@@ -77,7 +77,7 @@ final class T17ContractTests: XCTestCase {
             with: JSONEncoder().encode(result)) as? [String: Any])
         XCTAssertEqual(object["ui_frontend_automated"] as? Bool, false)
         XCTAssertEqual(object["failure_code"] as? String, "accessibility-untrusted")
-        XCTAssertEqual(Set(object.keys).count, 31)
+        XCTAssertEqual(Set(object.keys).count, 32)
     }
 
     func testRunLogProofBindsByteOffsetsLinesNonceAndAudioCounters() throws {
@@ -140,7 +140,7 @@ final class T17ContractTests: XCTestCase {
         XCTAssertThrowsError(try T17SecureBootReceipt.verify(receipt: receiptURL, policy: policyURL))
     }
 
-    private func makeFixture() throws -> (root: URL, request: URL, bundle: URL, slug: String) {
+    func makeFixture() throws -> (root: URL, request: URL, bundle: URL, slug: String) {
         let root = URL(fileURLWithPath: "/tmp/bridgevm-e2e-swift-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         roots.append(root)

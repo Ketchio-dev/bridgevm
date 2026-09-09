@@ -104,7 +104,7 @@ for (( lane=1; lane<=EXPECTED; lane++ )); do
     --commit "$COMMIT" --mode "$MODE" --lane "$lane" --nonce "$nonce" --lane-root "$lane_root"
   ATTEMPTS=$lane
   set +e
-  "$HELPER" --windows-product-e2e --request "$request" --result "$result" >"$PRIVATE/lane-$lane-helper.log" 2>&1
+  "$REPO/scripts/live-gates/launch-product-e2e-helper.sh" "$HELPER" "$PRIVATE/lane-$lane-helper.log" "$request" "$result"
   helper_status=$?
   set -e
   if (( helper_status != 0 )) || [[ ! -f "$result" || -L "$result" ]]; then emit failed product-model-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi

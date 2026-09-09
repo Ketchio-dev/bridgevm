@@ -191,7 +191,7 @@ struct T17LaneResult: Encodable {
     let nonce: String
     let threeDInjection = false
     let uiFrontendAutomated: Bool
-    let failureCode: String
+    let failureCode: String; let failureDetail: String
     let cleanupVerified: Bool
     let installerSourcePath: String
     let stages: [T17Stage: Bool]
@@ -204,7 +204,7 @@ struct T17LaneResult: Encodable {
         try output.encode(campaignMode, forKey: .init("campaign_mode")); try output.encode(lane, forKey: .init("lane"))
         try output.encode(nonce, forKey: .init("nonce")); try output.encode(threeDInjection, forKey: .init("three_d_injection"))
         try output.encode(uiFrontendAutomated, forKey: .init("ui_frontend_automated"))
-        try output.encode(failureCode, forKey: .init("failure_code")); try output.encode(cleanupVerified, forKey: .init("cleanup_verified"))
+        try output.encode(failureCode, forKey: .init("failure_code")); try output.encode(failureDetail, forKey: .init("failure_detail")); try output.encode(cleanupVerified, forKey: .init("cleanup_verified"))
         try output.encode(installerSourcePath, forKey: .init("installer_source_path"))
         for stage in T17Stage.allCases { try output.encode(stages[stage] == true, forKey: .init(stage.rawValue)) }
         for field in T17Evidence.hashFields { try output.encode(hashes[field]!, forKey: .init(field)) }

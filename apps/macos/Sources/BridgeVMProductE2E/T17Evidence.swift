@@ -37,14 +37,14 @@ struct T17Evidence {
         hashes[field] = try Self.sha256(file)
     }
 
-    func result(request: T17Request, failureCode: String, cleanupVerified: Bool,
-                installerSourcePath: String, uiFrontendAutomated: Bool) -> T17LaneResult {
+    func result(request: T17Request, failureCode: String, failureDetail: String = "",
+                cleanupVerified: Bool, installerSourcePath: String, uiFrontendAutomated: Bool) -> T17LaneResult {
         let complete = T17Stage.allCases.allSatisfy { stages[$0] == true }
         return T17LaneResult(
             jobID: request.jobID, commit: request.commit, campaignMode: request.campaignMode,
             lane: request.lane, nonce: request.nonce,
             uiFrontendAutomated: uiFrontendAutomated,
-            failureCode: complete && cleanupVerified ? "none" : failureCode,
+            failureCode: complete && cleanupVerified ? "none" : failureCode, failureDetail: complete && cleanupVerified ? "" : failureDetail,
             cleanupVerified: cleanupVerified, installerSourcePath: installerSourcePath,
             stages: stages, hashes: hashes
         )
