@@ -5,6 +5,630 @@
 > 653 같은 테스트 개수는 그 시점의 값이다. 현재 상태는 `STATUS.md`와 능력
 > 레지스트리(`capabilities/windows-hvf.json`)를 보라.
 
+## 2026-09-08 B6 matrix build in progress; handed off mid-debugging, uncommitted
+
+User paused this session to continue with a different agent. Nothing here is
+committed; the repo is exactly at the `f4127baf` reseal from the prior
+section. All harness scripts and diagnostic logs described below are saved
+under `~/BridgeVM/manifests/b6-matrix-harness-20260908/` (scripts under
+`scripts/`, logs under `evidence/`) since they lived in `/tmp` and would
+otherwise be lost. Large scratch disk clones were deleted; only the small
+logs/summaries/captures were kept.
+
+**Goal**: execute the declared 3x3x3 B6 pixel-mask/frame-time matrix (9
+cells of 3 resolutions x 3 scales, 3 independent runs each, both scenes —
+classic Notepad caption+menu and packaged Notepad tab+menu — per run).
+Nothing in this campaign has actually run yet; three real bugs were found
+and one is fixed, two are open.
+
+**Bug 1 (fixed): capturing after an in-session guest reboot never works.**
+Two independent spikes (the original `b6-scale-mechanism-spike-20260908.md`
+and this session's first cell-harness attempt) both saw
+`scripts/capture-active-iosurface.py` fail every single time with
+`RuntimeError: active IOSurface seed did not advance` when the capture
+happened after a guest-triggered restart (`shutdown /r`) inside the *same*
+host launcher process — regardless of typing a genuine content-changing
+action first. The fix, confirmed live: split into two separate launcher
+processes against the *same* disk file (registry persists on disk; the
+in-process display-export/IOSurface pipeline does not survive a guest
+reboot). `~/BridgeVM/manifests/b6-matrix-harness-20260908/scripts/
+cell-set-scale.sh` boots once, sets resolution + LogPixels, shuts down
+cleanly. `~/BridgeVM/manifests/b6-matrix-harness-20260908/scripts/
+cell-capture.sh` then boots the same disk fresh and does the capture work
+with zero in-session reboots. This worked: `~/BridgeVM/manifests/
+b6-matrix-harness-20260908/evidence/cell1-scale/summary.txt` shows
+`scale_set=pass`, and `~/BridgeVM/manifests/b6-matrix-harness-20260908/
+evidence/cell1-capture/runs.json` run 1 shows `classic_capture: present`
+with a real capture under `~/BridgeVM/manifests/b6-matrix-harness-20260908/
+evidence/cell1-capture/captures/`.
+
+**Bug 2 (open): capturing a second, different window in the same boot still
+fails.** In that same run 1, the classic-Notepad capture succeeded, but the
+very next capture attempt (packaged Notepad, launched after classic closed)
+failed with the identical seed-did-not-advance error — and every capture in
+runs 2 and 3 failed too. Hypothesis, not yet confirmed: `display.fb`/
+`display.fb.iosurface` tracks one active scanout resource and does not
+follow a switch to a genuinely different window's resource once the first
+one goes away. Nothing in this project's history has ever captured two
+different windows in one boot before, so this may be a real, previously
+unexercised limit of `--display-export-fb`/`--display-export-ppm`, not a
+harness bug. Next step: read how the launcher (`run-hvf-windows-installed-
+boot.sh` / the Rust display-export code it wires up) decides which resource
+to export, and whether it re-arms on a new `SET_SCANOUT`. If it only arms
+once, either the matrix needs one boot per scene (tripling boot count: 9
+cells x 3 runs x 2 scenes = 54 capture boots plus 9 scale boots) or the
+export mechanism needs a code fix to re-track the active resource.
+
+**Bug 3 (open): PresentMon exits with code 7 every time.** Isolated with
+`~/BridgeVM/manifests/b6-matrix-harness-20260908/scripts/test-presentmon.sh`
+(a single boot, single classic-Notepad capture, single PresentMon
+invocation — log in `~/BridgeVM/manifests/b6-matrix-harness-20260908/
+evidence/presentmon-test/run.log`).
+Exit code 7 is PresentMon's own documented code for "failed to enable
+SeDebugPrivilege" (github.com/GameTechDev/PresentMon, `MainThread.cpp`):
+realtime (non-ETL) capture needs that privilege enabled on the calling
+process's token, and it is not enabled here even though the guest agent
+service should be running as `LocalSystem`. Next step: try `bv-b6-
+presentmon-capture.ps1` with PresentMon's own `--restart_as_admin` flag, or
+check what account the agent's Win32_Process-launched child processes
+actually run as (`whoami` from a launched process, not the service itself).
+
+**Also unverified**: the `POINTER click:547x303` guess meant to dismiss
+packaged Notepad's first-run tip popup has never been confirmed against a
+real capture (blocked on bug 2 before any packaged capture succeeded).
+Verify visually once bug 2 is fixed; the button center coordinate was
+estimated from `~/BridgeVM/work/b6-modern-notepad-evidence-20260908/
+b6-modern-notepad.png`, not measured precisely.
+
+**Registry state unchanged**: B6 is still `OPEN` at `capabilities/
+windows-hvf.json` tested_commit `f4127baf`. Do not promote it until the
+actual 27-run campaign completes with independently reviewed reference
+masks (none built yet) and passes `python3 scripts/verify-glyph-pixel-mask.py`.
+
+## 2026-09-08 B6 effective-DPI query and presented capture proven live together
+
+Third live attempt succeeded after two stalled at `wait_firstboot` (45 min
+each) on stale pre-caption-fix retained media. Root cause: both
+`0ab72f8792...` and `845fec6f6a...` "windows-1.0" retained pairs predate the
+2026-09-08 caption-fix rebuild; `schtasks.exe /Query /TN BridgeVM-
+VioGpu3DFirstBoot` returned "cannot find the file specified" on both — the
+task was never present, not merely slow. Switching to the exact retained
+pair (`0bee49d3ea6b...`) and asset set (binary `e08d6017ec87...`,
+virglrenderer `568e1544e05d...`) already used by the genuinely-passing
+`t7-caption-clean-20260908-r1` fixed it immediately.
+
+On hwnd `131652`: `bv-b6-window-dpi.ps1 -Hwnd 131652` exited 0 and printed
+`BVEFFECTIVEDPI hwnd=131652 dpi=96 awareness=2 monitor_scale=100`, then the
+same window received the proven typing-then-capture sequence and produced a
+fresh presented capture (SHA-256 `73121954e720...`) with caption, menu and
+typed text all legible. Full detail and the exact command exchange:
+`docs/windows-arm/evidence/b6-dpi-and-capture-live-20260908.md`. This clears
+the last engineering unknown blocking the B6 matrix harness build; it does
+not run any of the 27 declared cells, and does not touch B6's `OPEN` state.
+
+Correction: `t7-c193b7c0-fixed-b6-observation-r1`'s own receipt shows
+`f1_driver_load=false`, `pass=false` — it never reached firstboot. Do not
+cite it elsewhere as a completed proof.
+
+## 2026-09-08 B6 overclaim corrections resealed; PresentMon staged, no matrix tier yet
+
+Head `1f574b65` (code at `7a391c31`). CI 34200102762 and Security 34200102679
+both success at `1f574b65` — the reseal commit, not the code commit before it
+(`code_changed_since` in `scripts/capability_freshness.py` only clears once
+`tested_commit` points at the code commit and the reseal itself touches no
+`scripts/`/`crates/`/`apps/`/`tests/` path; checking CI at the code commit
+will always show the same "code changed since tested_commit" failure by
+design — check the reseal commit instead).
+
+**Restored a mistakenly deleted regression test.** An in-flight evidence-
+correction pass deleted `tests/integration/windows-closure-discard-smoke.sh`
+while removing completed diagnostic instrumentation. That test was introduced
+in `64a38e83` for the real forced-shutdown/discard fix — unrelated to any
+temporary instrumentation — and still passes against the corrected closure
+script. Restored verbatim from `64a38e83` before committing.
+
+**Staged, unwired PresentMon infrastructure.** `scripts/verify-presentmon-
+binary.py` pins the exact GitHub-reported digest for `PresentMon-2.5.1-
+x64.exe` (self-tested). `scripts/win-assets/bv-b6-presentmon-capture.ps1`
+targets `dwm.exe`, per the a2/a3 finding that windowed apps on this stack
+compose through DWM rather than owning a swapchain PresentMon sees directly;
+this asset has never run against a live guest. Neither is wired into a tier.
+
+**B6 stays OPEN.** No live-queue tier exists for the declared 3x3x3 matrix.
+`run-tier.sh`/`run-special-tier.sh` have no B6 case. Building one needs a host
+script (boot, set resolution, set scale + restart, launch scene, capture 3x
+per the seed-advance constraint in `b6-scale-mechanism-spike-20260908.md`,
+run the PresentMon capture, retrieve the CSV) and a receipt schema wired
+through `redact-receipt.py`'s allowlist — not started. Do not run any live
+cell before that tier exists and a reference mask has been built by
+independently reviewing one real capture per scene.
+
+## Active full-engineering goal: caption upload boundary investigation
+
+User objective is all engineering-resolvable problems, including glyphs;
+do not reduce it to diagnostics or mark the goal complete. Product code head
+f1018e97 integrates clean typed sampler correction and real translator CI test.
+Full local scripts/check-project.sh PASS before commit. Read exact hosted CI;
+code head needs A11 reseal after independent jobs succeed (freshness expected).
+Clean live job t7-caption-clean-20260908-r1 restored *Untitled - Notepad,
+receipt3f161aa0, capture01f4783d. No instrumentation in clean candidate or
+product patch. Private hooks removed from active diagnostic source tree.
+Next: B6 declared resolution/scale/tab scene and frame-time matrix, F3 proper
+save/discard interaction, then A9/workload/audio issues. Full goal remains open.
+
+## 2026-09-08 F3 post-close capture: first run invalid, corrected resubmission in flight
+
+Added a diagnostic-only capture in `windows-1.0-closure-interact.sh` (commit
+5261db56) to visually confirm, rather than infer, why WINCLOSE leaves the
+Notepad window listed after F4 typed text. **`t7-c4e1a6ee-f3-postclose-r1` is
+RETRACTED as evidence for this specific question**: it was submitted with
+`--sha c4e1a6ee`, one commit before the capture code landed, so the worktree
+checked out was the old script; `git show c4e1a6ee:...` confirms no capture
+call exists there. The run still correctly reproduced F1 pass/F2 pass/F3
+partial/F4 measured-visible-text (nothing wrong with that part), it just adds
+no new evidence toward the save-prompt hypothesis. Corrected resubmission
+`t7-5261db56-f3-postclose-r1` is running at the commit that actually contains
+`capture_active_scanout f3-postclose-dialog`. Read its receipt and
+`proof/captures/f3-postclose-dialog{.ppm,-ocr.txt}` before drawing any
+conclusion about the save dialog.
+
+## 2026-09-08 B6 tab scene observation: File Explorer's Home tab legible, effective scale unmeasured (corrected 2026-09-08)
+
+Docs-only commit `9937b312` (no code change; no reseal needed). Full account:
+`docs/windows-arm/evidence/b6-tab-scene-spike-20260908.md`. A hand-rolled
+standalone harness stalled at `BdsDxe: starting Boot0002 "Windows Boot
+Manager"` every time (cause unidentified, abandoned); reusing the actual
+proven `windows-1.0-closure-interact.sh` invocation verbatim (only the
+launched app swapped to `explorer.exe`) booted correctly first try. OCR of
+the capture reads `Home` first, plus full File Explorer nav-pane chrome
+(Desktop/Downloads/Documents/Pictures/Music/Videos/This PC/Network/Quick
+access/Search/Details/Views/Filter/Shared) legibly at 1600x900/100%. New
+reusable guest asset `scripts/win-assets/bv-b6-explorer-launch.ps1`
+(diagnostic-only, not wired into any shipped gate).
+
+This narrows one B6 observation (tab legibility with unmeasured effective
+scale), not a closed prerequisite. Still open: effective display DPI at any
+scale (`bvgpu-apply-host-resolution.ps1` only drives width/height, and
+registry persistence alone does not prove display scale). Do not build the
+9-cell, 3-runs-each (27 runs total) matrix harness until effective-DPI
+measurement also has live evidence.
+
+## 2026-09-08 B6 scale mechanism spike: registry persistence only, effective DPI unmeasured (corrected 2026-09-08)
+
+Docs+code commits `0cb60607` (assets) then `754613b6` (reseal), both green
+(CI/Security). Full account:
+`docs/windows-arm/evidence/b6-scale-mechanism-spike-20260908.md`. New guest
+assets `bv-b6-read-logpixels.ps1`/`bv-b6-set-scale.ps1` (both `-File`
+invocations, not inline `-Command` — this codebase's `cmd.exe /c` dispatch
+makes inline quoting fragile; every proven asset already avoids it).
+Live: `BVLOGPIXELS value=absent` before (registry value unset; effective
+scale unmeasured), `reboot_recovered=true`, `BVLOGPIXELS value=144` after
+a guest-initiated restart — the registry value wrote and survived reboot,
+read back from the live guest itself. This proves registry persistence
+only, not effective display DPI; the absent-before value and the
+status-bar `100%` (document zoom) do not prove display scale. Visual
+captures both failed with a stale-IOSurface-seed exception and are
+retained as failed attempts; no before/after size comparison exists yet.
+The later pointer-move attempt also failed without a new presented frame;
+cursor-plane composition and pointer acceptance remain unproven.
+
+Neither B6 matrix prerequisite is closed by this: the tab scene is a
+legibility observation with unmeasured effective scale, and the scale path
+is registry persistence without proven effective DPI. Building the actual
+9-cell, 3-runs-each (27 runs total, not 81) matrix harness still needs
+effective-DPI measurement plus the post-restart capture usage constraint
+(capture after a real content-changing action). Do not touch B6's `OPEN`
+state until that harness produces a real 3x3x3 pass.
+
+## 2026-09-08 B6 modern-Notepad observation: tab/menu scene; classic caption scene retained (corrected 2026-09-08)
+
+Commits `013485f3` (assets) then `2ca30601` (reseal), both green. Full account:
+`docs/windows-arm/evidence/b6-single-scene-spike-20260908.md`. Live query
+found `Microsoft.WindowsNotepad` 11.2501.31.0 already installed on this
+exact image; `notepad.exe` still resolves to the classic win32 binary, but
+launching by AUMID (`explorer.exe shell:AppsFolder\<PackageFamilyName>!App`)
+reaches the modern app. Visually confirmed: a combined title/tab row
+("Untitled" tab, close and `+` controls, no separate caption bar) with a
+plain File/Edit/View menu bar directly below. Correction 2026-09-08: this
+is a readable tab/menu scene, not classic-caption coverage — the tab row
+is not a separate classic caption bar, so the originally failing classic
+Notepad caption/menu scene must be retained alongside it. No single scene
+covers the matrix. The capture was at 1600x900 with `LogPixels` absent
+(effective scale unmeasured). New assets:
+`bv-b6-query-modern-notepad.ps1`,
+`bv-b6-modern-notepad-launch.ps1` (both diagnostic-only).
+
+All three B6 observations (modern tab/menu scene, File Explorer Home tab
+fallback, registry persistence) are narrowed live observations, none a
+closed prerequisite. Next actual work is building the permanent matrix
+harness: 3 resolutions x 3 scales x 3 runs (9 cells, 27 runs total),
+pixel-mask verification tooling (does not exist yet), and frame-time p50
+baseline comparison -- capturing after a real content-changing action each
+time (a bare pointer move did not invalidate the scanout in these
+attempts; mechanism unproven). B9's requirement is 20 declared real
+workloads with frame-time evidence each — not necessarily 19 purchased
+native ARM64 games — and no content is asserted impossible; unmeasured
+titles are simply unproven.
+
+## 2026-09-08 glyph pixel-mask verifier replaced with reference-mask contract (corrected 2026-09-08)
+
+Commits `da930f31` (tool) then `7724289d` (reseal), both green. Replaced,
+self-tested `scripts/verify-glyph-pixel-mask.py` compares each capture's
+explicitly masked pixels against an independently reviewed reference
+(mask JSON carries `reference_sha256` plus per-region pixel lists;
+verdict is `matches_reference`, not a B6 pass). Correction 2026-09-08:
+regression demonstrated empty regions and repeated no-text striped
+backgrounds both previously returned `pass=true`; the new version rejects
+them. The old tool's 46.98%/44.61% ink ratios and PASS on 3 identical
+copies are superseded and prove nothing about glyph correctness; masks
+must be independently reviewed per run with glyph-stroke plus
+background-guard pixels. This advances item 4 of the 6-item build list in
+`PLAN.md`'s final B6 scoping section as tooling only. Items 1-3 (scene,
+resolutions, scale) are narrowed observations with effective DPI still
+unmeasured, not proven cells; item 5 (frame time): PresentMon 2.5.1 x64 is
+now staged by Main from the official release with the GitHub published
+digest verified (956,768 bytes), so frame-time tooling is available, not
+an external blocker — do not substitute a GPU-trace `duration_ns` proxy
+for it. Item 6 (the 9-cell x 3-run campaign, 27 runs total, not 81) has
+not started.
+
+Isolated renderer worktree: ~/BridgeVM/work/caption-renderer-diagnostic,
+upstream 2a173eef plus shipped patch and private diagnostic hooks. Installed
+renderer untouched. Capture root ~/BridgeVM/work/caption-capture-20260908.
+R1 job t7-caption-diagnostic-20260908-r1 finished with receipt 0c5e0498;
+caption remains blank in PPM 58a8c009. Full submits 1161, decoded commands
+101837, draws 6967; all draw contexts match ordered decoder results. Saved
+draw-bindings.json, submit-correspondence.json, shaders/, analysis-summary.json.
+Decoder decode_capture.py validates framing/truncation. Private source patch
+and bv_caption_capture.h accompany measured renderer-r1.dylib (8abde145).
+
+Important: the 700x500 window surface is resource 251 in R1, created seq8857.
+It receives COPY_TRANSFER3D writes from guest iovec staging buffers; no host
+draw targets that lifetime. Context7 FS196 composites it. Initial full upload
+covers the title; later client uploads start y31/y78. Do not apply historical
+five-element glyph shader hypotheses to this surface without evidence.
+
+R2 finished (receipt8032985b): all18 upload reads exact. Initial title region
+is uniform BGRA(255,255,255,0), missing icon/buttons too: app surface excludes
+non-client chrome, not proof of missing guest title. Context5 target960x768
+resource167 is sampled by compositor7 FS243 adjacent to the client draw.
+R3 (receipt3158f63) zero target interpretation RETRACTED: R5 showed every
+glReadPixels returns1282 GL_INVALID_OPERATION despite FBO complete0x8cd5.
+Do not use R3/R4 calloc-zero pixels as target content. Candidate ctx5
+submit1012 FS441 samplers171/174,16 instances still grounded by metadata.
+Use timestamp/context matching: two decoded draws skip hook in R3.
+R4 (receiptf6d9fe7c) sampler0 guest backing524288 bytes allzero, sampler1
+only4096/81920 bytes (unavailable). Guest TBO backing is not GL data: full
+commands show RESOURCE_COPY_REGION fills its host buffer from another source.
+R5 (receipt71aa8df7) captures existing Apple copy fallback CPU bytes (kind6),
+which are nonzero: ctx5 buffer87 copies populate2589 bytes/nonzero1502;
+offset1680 also nonzero. No extra glGetBufferSubData added. Readback invalid.
+R6 failed pre-graphics (receipt8ea4919d): wrong diagnostic build prefix points
+at nonexistent /opt/homebrew/libexec/virgl_render_server. R7 sets baseline
+prefix /Users/user/BridgeVM/3d/prefix (server60492dbf) and succeeds.
+R7 receipt740e045a: eight glGetTexImage reads all GLerror0/FBOcomplete;
+target NOT zero: box/shadow shapes in RGB/alpha maps, no caption glyphs.
+Files11304-*.bin, r7-target-N.png, r7-target-alpha-last.png. Caption still blank.
+R8 finished receipt5c4781db: exact16 instance vertex descriptors + copied TBO
+bytes reconstruct text "Untitled - Notepad" (r8-glyph-index-mask.png), proving
+this is title draw. Linked GLSL fssamp0 is samplerBuffer, bound viewR8_UINT;
+sampled normalized float then floatBitsToUint forms invalid atlas x. Host GL
+smoke /tmp/bv-sampler-repro (source saved sampler-repro.c) proves byte181 gives
+float0.709804 vs usampler integer181, no GL errors. Concrete mechanism candidate.
+R9 running t7-caption-diagnostic-20260908-r9 renderer7da81cd3 manifestddc70698:
+generic shader-key uint/sint buffer-view masks select corresponding sampler
+return types in set_texture_reqs. No app/size/context predicates in candidate
+fix (diagnostic hooks still private). Need live title appearance before adopting;
+then clean product patch, regression tests for explicit sampler declarations
+and binding changes, non-instrumented live proof and unchanged B6 matrix.
+Previous renderer bytes copied to renderer-rN.dylib; copy R9 after it ends.
+Records use little-endian uint64[5]: sequence, kind, context, payload size,
+monotonic_ns. Kind2 draw uint64[64], kind3 upload uint64[12]+source bytes;
+kind UINT64_MAX explicitly marks capped output. Each stream cap128MiB.
+Remove temporary hooks from active external source tree after experiments;
+preserve patches/binaries/evidence. Do not overwrite canonical disks or vars.
+
+## 2026-09-07 B6 reproduced on the corrected channel; injector and closure-tier defects fixed
+
+Final evidence head `97c2bf4c3046efac2c1441b08563d0260b4e6a35`:
+CI 34177230977 and Security 34177230949 both success; full local
+`scripts/check-project.sh` PASS. Cleanup confirmed live; caption-only scope
+correction is committed. A11 tested code remains `64a38e83`.
+- `3bc8f75e` A11 reseal at `64a38e83` (docs/registry only).
+- `64a38e83` closure: forced shutdowns + guest-side discard after F3 is
+  judged (CI 34176195419: independent jobs green, drift red as expected;
+  Security 34176195432 success).
+- `7562a262` B6 observation record + registry `measured` (docs-only; CI and
+  Security both success).
+- `abf53500` A11 reseal at `7f31bfc8` (CI 34157788412 / Security
+  34157788423 success — green seal).
+- `7f31bfc8` injector `fc.exe` fix + WinPE command smoke (CI: all
+  independent jobs green, drift job red as expected; Security success).
+
+**Completed: `t7-64a38e83-discard-b6-observation-r1`**, 01:24:48–01:32:57Z
+on 2026-09-08. Receipt/public SHA-256 both
+`8124b25b777e22e87d4e7ed4e7b9fd80aadd92299f450054c7e46e5ad835242a`.
+`BVDISCARD hwnd=131502 pid=9084 stopped=True`, forced shutdown exit zero,
+then `stop: PSCI 0x84000008 (system off)`. F1/F2 pass, F3 partial,
+F4 measured-visible-text; receipt remains pass=false (3 passes, 1 failure).
+Second presented PPM `d3b417846a82329112a636bf3897a635feff97a95f8b49d6a7bea821c2b03028`,
+active-CGL seed 28→29. Caption still blank; menus and body readable.
+
+
+**The B6 defect is captured:** `t7-7f31bfc8-keeprunning-b6-observation-r1`,
+receipt `bcb1ae8a…`, F1 pass, F2 pass, F3 partial, F4
+`measured-visible-text` from `source=active-cgl-iosurface` seed 30→31.
+Title text zone ink 0.0000 vs menu 0.0284 vs body 0.0962. Correction:
+this is classic Notepad with an upgrade banner, so no tab strip is expected;
+tab glyphs are untested, not reproduced as defective. Earlier tab claims
+and the inferred save-dialog/shutdown-veto mechanism were too strong.
+Full record: `docs/windows-arm/evidence/b6-glyph-observation-active-iosurface-20260907.md`.
+Retained prepared pair `490ae154…-bec224d2…`. Next work is the draw-path
+investigation from that frame and `proof/virtio-gpu.jsonl` (185
+`SET_SCANOUT` 1600x900 OK after resize); not the matrix yet.
+
+**Injectors** (all `~/BridgeVM/injectors/`): `…fixed-plant…` `98ad6b3b…`
+(no keep-running; stage4 powers off ~5 s after READY — do not reuse for
+t7) and `…keeprunning…` `10760fb4…` (use this for t7). Both assets sidecar
+`6d0254bc…`, built from `7f31bfc8`; `bvinject.cmd` unchanged since, so
+they remain valid for `64a38e83` (the closure change is host-side + a new
+shared guest script, not on the injector).
+
+**Manifests**: `~/BridgeVM/manifests/t7-7f31bfc8-keeprunning-b6-observation.tsv`
+(`81c56875…`) is the one to resubmit at the resealed head.
+
+**Cleanup fixed and live-confirmed in `64a38e83`.** The prior run kept a
+modified Notepad window after WM_CLOSE and ended on the watchdog; a save
+prompt/veto was inferred, not directly observed. The new run forcibly
+discarded the owning process only after F3 was judged, then reached guest
+SYSTEM_OFF. F3 stays partial; no criterion was promoted by cleanup.
+
+**A9** still blocked on Accessibility for the exact packaged helper.
+
+## 2026-09-07 (earlier) injector fc.exe defect fixed, A11 resealed, second observation in flight
+
+Head `abf53500` (registry reseal at code head `7f31bfc8`). Read CI for
+`abf53500` (CI 34157788412, Security 34157788423) before treating the reseal
+as green. `7f31bfc8` CI 34157310286: every independent job green, only the
+dependent drift job red (expected for a code head); Security 34157310288
+success.
+
+**Fix (`7f31bfc8`).** `bvinject.cmd` verified the cleanup copy with
+`fc /b`; WinPE has no `fc.exe`, so the plant block died at 9009 before the
+pending flag, `Probe6` service and RunOnce existed. Replaced with copy exit
+status + `%~z` size compare + `find /c "[CmdletBinding()]"`. New
+`tests/integration/hvf-windows-injector-winpe-commands-smoke.sh` tokenises
+the injector and allows only cmd builtins plus `reg dism xcopy find wpeinit
+wpeutil` (measured present in the sealed boot.wim). Mutation-tested. Record:
+`docs/windows-arm/evidence/b6-injector-firstboot-plant-failure-20260907.md`.
+
+**Corrected injector** built via `build-hvf-windows-viogpu3d-injector.sh`
+(`VIOGPU3D_DIR=~/BridgeVM/download-b4-attachqueue-56df708`,
+`VIOGPU3D_PROTOCOL=venus`, `DISPLAY_ONLY_FIRSTBOOT=1`) at
+`~/BridgeVM/injectors/win25h2-7f31bfc8-fixed-plant-injector.raw`
+(`98ad6b3b…`, assets sidecar `6d0254bc…`). Same driver tree, agent, GUID and
+markers as the 2026-08-29 injector; only `bvinject.cmd` differs.
+
+**Job `t7-7f31bfc8-fixed-injector-b6-observation-r1`** (manifest
+`~/BridgeVM/manifests/t7-7f31bfc8-fixed-injector-b6-observation.tsv`,
+`71631906…`), started 19:58:03Z. All ten inputs verified. Read-only check of
+its retained prepared disk: `viogpu3d-firstboot-pending.flag` present,
+`BridgeVMGpuDiagnosticsProbe6` in offline SYSTEM, `!BridgeVMGpu3DStage1`
+RunOnce in offline SOFTWARE — the plant block now completes. (Registry key
+names are stored compressed-ASCII in hives; scan both encodings, my first
+UTF-16-only scan of the r1 disk was right only because the keys were truly
+absent, confirmed by the missing pending flag.) Firstboot then needs three
+staged reboots inside the proof lane's 2700 s wait. Read the receipt and
+`proof/captures/f4-*` next.
+**Result of `…fixed-injector…-r1` (20:05:30Z): honest FAIL, receipt
+`add1e95d…`, but the injector defect is closed live.** Three staged reboots
+(`PSCI SYSTEM_RESET 1/8..3/8`), `BVFIRSTBOOT_READY`, guest firstboot log
+`[stage4] done 20:04:02`, `stage4_pass=1`, and
+`BVF1 testsigning=True viogpu_status=OK … BVF1MODE current=1280x1024
+modes=28 has_1600x900=True`. The harness then sent `RESIZE 1600x900` and
+every later command timed out: stage4 ends with `shutdown /s /t 5` unless
+`C:\BridgeVM\keep-running.txt` exists (`bvgpu-firstboot.cmd:235`,
+opt-out since `0e0ba3c5`), the guest powered off ~5 s after READY, and the
+tier's `wait_firstboot` polls a flag that becomes true in the last seconds
+of the guest's life. F1 passed by racing the shutdown. The sealed August
+injector had no `keep-running.txt` either, so the same race existed then
+and was won by luck; `verify-agent-clipboard-share.sh` already builds its
+injector with `KEEP_RUNNING=1` for exactly this reason. Not a graphics
+finding; `SET_SCANOUT` 1280x1024 `ERR_UNSPEC` continues until the resize
+lands, which it never did here.
+
+**Third run `t7-7f31bfc8-keeprunning-b6-observation-r1` (started
+20:10:35Z): B6 REPRODUCED on the corrected channel.** Injector rebuilt with
+`KEEP_RUNNING=1` (`~/BridgeVM/injectors/win25h2-7f31bfc8-keeprunning-injector.raw`,
+`10760fb4…`, sidecar `6d0254bc…`, `bvinject.cmd` identical to head), manifest
+`~/BridgeVM/manifests/t7-7f31bfc8-keeprunning-b6-observation.tsv`
+(`81c56875…`). Three staged reboots, `BVFIRSTBOOT_READY`, then:
+`BVF1 … viogpu_status=OK`, `BVF1MODE current=1280x1024 modes=28`;
+`RESIZE 1600x900` → `BVF2 device=\\.\DISPLAY2 current=1600x900`;
+`WINLIST` → `131540 … "Untitled - Notepad"`, `WINBOUNDS … OK`,
+`WINFOCUS … OK`, `BVWINDOW hwnd=131540 exists=True rect=50,60,700,500
+foreground=131540`; three `text-hex` key batches accepted; F4 capture
+`proof/captures/f4-notepad-focused.ppm` SHA-256 `a2f0bb82…`, `capture.env`
+`source=active-cgl-iosurface iosurface_id=505 initial_seed=30
+captured_seed=31 nonblack_pixels=1439262` — a real presented frame, not
+ramfb. `WINCLOSE … OK`; the window persisted as `*Untitled - Notepad`
+(unsaved-changes prompt), so F3 is at most `partial` by the script's own
+rule.
+
+The frame, at 1600x900 with the Notepad window at (50,60)-(700,500):
+menu `File Edit Format View Help` readable; notification banner "A new
+version of Notepad is available." + `Launch` readable; body line
+`Probe ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789
+!@#$%^&*()` readable; status bar `Ln 1, Col 97 100% Windows (CRLF) UTF-8`
+readable. **Title bar text is blank** (Notepad icon and min/max/close
+glyphs drawn, no "Untitled - Notepad") and **no tab strip is drawn**.
+Measured, not eyeballed: dark-pixel ratio in the title text zone
+(x 90–600, y 62–90) is 0.0000 against 0.0284 in the menu text zone and
+0.0962 in the body; the title icon zone next to it is 0.0235. OCR
+(`f4-ocr.txt`) reads menu + body and no title. This is exactly the
+`known_defect` wording. Crops at `/tmp/b6-f4-title.png`,
+`/tmp/b6-f4-titlebar-only.png` (throwaway).
+
+What this is: the first observation of the B6 defect through the corrected
+active-IOSurface channel on a timer-fixed probe with a properly injected
+guest, one resolution, one scale, one run. What it is not: the 3x3 matrix,
+a pixel-mask verdict, or a frame-time measurement. B6 stays OPEN. The next
+work is the draw-path investigation the 2026-09-06 record deferred until
+this exact failure was captured.
+
+**Receipt pending at 20:32Z.** The harness sent `shutdown /s /t 0`
+(`BVAGENT CMD shutdown /s /t 0 exit=0` at guest t≈49 s after close) but the
+guest is still up (SERVICE alive t=919 s, wallpaper only, no taskbar, no
+dialog in `display-live.ppm`). `closure-interact` will wait 240 s in
+`cleanup` then `kill` the launcher; the tier watchdog is 3000 s. Read
+`bridgevm-live receipt t7-7f31bfc8-keeprunning-b6-observation-r1` on the
+next turn; expect `f4_glyph_observation=measured-visible-text` (OCR found
+menu/body words) and `pass=false` because F3 needs the window gone.
+
+**Reseal `abf53500`** (A11 `tested_commit` → `7f31bfc8`): CI 34157788412
+and Security 34157788423 both success — green seal.
+
+**Shell trap.** This harness shadows `find`/`sort` in `bash` tool calls;
+`windows-closure-manifest.sh`'s tree digest differs under them. The worker
+uses system tools and verified correctly. Dry-run manifest checks with
+`/usr/bin/find` and `/usr/bin/sort`.
+
+## 2026-09-07 continuation: fixed-probe B6 observation (first run, superseded above)
+
+Head still `c193b7c0`; hosted CI `34151817074` and Security `34151817059` both
+success, so the reseal is sealed. Tracked tree unchanged; only this file and
+`PLAN.md` (operator-owned) moved.
+
+**Live job `t7-c193b7c0-fixed-b6-observation-r1`** (tier t7-windows-closure,
+submitted 18:35:47Z, started 18:36:02Z). Manifest
+`~/BridgeVM/manifests/t7-c193b7c0-fixed-b6-observation.tsv`
+(`97271ae8…`) is the retained r3 manifest with only the `binary` row replaced
+by the fixed probe `4385f381…`; `verify-windows-closure-binary.sh` passed on
+it before submit. Injection lane: `injector_boot_observed=true`, clean
+`PSCI system off`, 178/178 successful NVMe writes; its serial also printed
+`BdsDxe: failed to load Boot0003 "Windows Boot Manager" … Not Found`
+before the injector took over (recorded, not interpreted). Proof lane: the
+60 s ramfb checkpoint (`proof/ramfb/…60000ms-0000.ppm`, converted at
+`/tmp/b6-proof-60s.png`) shows the Windows 11 desktop with the Test Mode
+watermark, BVAGENT service alive through t≈474 s, but
+`BVFIRSTBOOT_PENDING` on every poll (0 READY / 41 PENDING at last read,
+`stage3.flag`/task still pending) and 156 `SET_SCANOUT -> ERR_UNSPEC` lines.
+`wait_firstboot` allows 2700 s, then F1–F4. Read
+`bridgevm-live receipt t7-c193b7c0-fixed-b6-observation-r1` and
+`proof/captures/f4-*` before saying anything about glyphs. This is one run
+and a reproduction channel check only; it promotes nothing.
+
+**Local project check.** First run FAILed on `shell scripts` because this
+shell exports `CI=true` and shellcheck was not installed; installed it via
+Homebrew, gate PASS (406 scripts), full `scripts/check-project.sh` PASS.
+
+**A9** stays blocked on the unchanged Accessibility prerequisite for the
+exact packaged helper (CDHash `7C76137B…`); no pilot was resubmitted.
+
+**Terminal result (19:25:56Z): honest FAIL, `firstboot stage4 readiness
+timeout`.** Receipt/public SHA-256 both
+`48c45e71c024b854fc928c647afe5609fbe2f103a3388031513eeebb58c82c3b`;
+`injector_boot_observed=true`, `module_identity_verified=true`, F1/F2/F3
+false, F4 blocked, `active_scanout_capture=false`, 0 passes. Prepared pair
+retained at `~/BridgeVM/prepared/windows-1.0/845fec6f…-bec224d2…`. The
+guest reached the desktop (60 s ramfb: Windows 11 + Test Mode watermark),
+BVAGENT stayed alive 2700 s, and every `BVFIRSTBOOT` poll was PENDING
+(326 PENDING / 0 READY).
+
+**Root cause: `bvinject.cmd` aborts its viogpu3d plant block inside WinPE
+because `fc.exe` does not exist there.** Evidence, all read-only:
+- `hdiutil attach -readonly` of the retained prepared disk: `C:\BridgeVM`
+  has the package copied, `bvgpu-clean-driver-state.ps1` present in both
+  `C:\BridgeVM` and `C:\BridgeVM\viogpu3d\` (line 264 ran), stage1–3
+  flags/boots and `viogpu3d-firstboot.log` deleted (lines 237–249 ran), but
+  **no** `viogpu3d-firstboot-pending.flag` (line 278 never ran), no
+  `BridgeVMGpuDiagnosticsProbe6` and no `BridgeVMGpu3DStage1` in the
+  offline SYSTEM/SOFTWARE hives (UTF-16 scan, 0 hits; source image also 0).
+  `setupapi.offline.log` shows the 18:38:03Z DISM reflect of viogpu3d and
+  netkvm succeeded, i.e. everything before the plant block ran.
+- `wimlib-imagex dir` of the sealed injector's `boot.wim` image 2 (the one
+  `winpeshl.ini` launches): `bvinject.cmd` is byte-identical to the repo
+  (`3849bc93…`), and System32 contains no `fc.exe`, `comp.exe`,
+  `findstr.exe`, `certutil.exe` or `powershell.exe`. `fc /b` therefore
+  returns 9009, `if errorlevel 1` fires "package-local cleanup verification
+  failed", `goto :end` shuts WinPE down before the pending flag and service
+  are planted. The guard was added in `db81c72c` (2026-08-29 06:51 EDT);
+  the sealed injector `5ff1bba8…` was built 2026-08-29 21:30 EDT with it.
+  The 2026-08-20 F1–F4 PASS used injector `5eaedee1…`, which predates it.
+- The source image `7385d200…` still carries stage1–3 flags from its own
+  2026-08-30 01:48Z preparation, but no pending flag and no Probe6 service
+  (the runner consumes/deletes both), so a re-injection that plants nothing
+  leaves a guest that boots fine and never runs firstboot. That is exactly
+  the observed state. The vtimer fix is not implicated: the injector booted,
+  DISM ran, Windows reached the desktop.
+
+Secondary observation, not the cause: proof-lane virtio-gpu shows all 166
+`SET_SCANOUT` (1280x1024, resources 1/2/26) answered `ERR_UNSPEC` against
+the 800x600 device geometry (`scanout_geometry_in_range`); the tier's
+`RESIZE 1600x900` only happens after firstboot READY, so it never ran.
+Retained t16 boot lanes show the same pre-resize pattern.
+
+## 2026-09-07 vtimer recovery removed; live gates restored (committed)
+
+Head `c193b7c0`. Read `PLAN.md` top entry first; this section is what a fresh
+session must not re-discover.
+
+**What was wrong.** Every live job from 2026-09-06 onward parked UEFI at
+`pc=0x1bf33ba04` with the TianoCore splash and `Start boot option` frozen.
+Cause: `recover_swallowed_vtimer_fire` in the probe rewrote `CNTV_CVAL` and
+toggled the HVF vtimer mask on every canceled exit. Under the in-kernel GIC
+(`hv_gic_create`) that keeps PPI 27 from ever going pending; `ArmTimerDxe`
+drives the DXE tick from the virtual timer alone, so `BdsWait` never returned.
+Removed in `13fb8213`. Interleaved live A/B: baseline 0/5, recovery off 2/2,
+shipped head 1/1; then B7 10/10 in `c193b7c0`. Full account with the BdsDxe
+disassembly is in `docs/windows-arm/evidence/a11-regression-seal-20260901.md`.
+
+**Trap that will cost a session if missed.** Retained input manifests (t15
+`57058d91`, t18 `3a8cf8ed`, t7 `cf1e0628`) seal *old* probe binaries
+(`df08c66f`, `5912a1f2`) that still contain the removed recovery and therefore
+cannot boot. Re-running any of them verbatim reproduces the park. Build a
+current probe and write a manifest pointing at it instead. A known-good fixed
+binary is
+`~/BridgeVM-Workspace/lab/windows-gpu-and-vm-assets/performance/hvf-boot-20260907-fix/hvf_gic_boot_probe`
+(`4385f381`, built from `13fb8213`).
+
+**Voided evidence.** The 2026-09-06 `t17` pilot, three `t7` B6 observations,
+the `d1` media comparison and the `t18` control were all measured under the
+defect. They promote nothing, and d1's "original and reinjected fail
+identically" says nothing about media: the harness parked both.
+
+**Live queue mechanics** (invisible from the repo). Queue root
+`~/BridgeVM/live-queue` (`queued`/`running`/`done`/`job-ledger`); CLI
+`scripts/live-gates/bridgevm-live submit|status|logs|receipt|cancel`; the
+LaunchAgent `com.ketchio.bridgevm-live` runs the worker out of a *separate*
+checkout at `~/BridgeVM-Workspace/source/bridgevm-worker`. That worker resolves
+a job's commit only from `origin`, so a local-only commit returns
+`refused-unknown-commit`; either push it or
+`git -C ~/BridgeVM-Workspace/source/bridgevm-worker fetch --no-tags <repo path> <sha>`.
+Diagnostic branch `diag/vtimer-recovery-off` (`23fecb43`) is local only and is
+cited by candidate receipts; do not delete it.
+
+**Any commit under `crates/` fails the project check and CI.** The registry
+freshness guard (`scripts/capability_freshness.py`) fails with "code changed
+since tested_commit; re-prove A11", and CI's `capability and documentation
+drift` job goes red. That is expected: the code commit's CI is red on that one
+job, then a docs/registry-only reseal commit sets `tested_commit` to the code
+head, cites its CI run, and is itself green. `1700dc1d` is the worked example.
+
+**Structural budgets sit at zero headroom** on the probe files
+(`final_report.rs` 385/385, `probe_runtime.rs` 1005/1005, `gic_snapshot.rs`
+176/176). Ceilings may never be raised, so offset lines within the file or
+extract a module. `vtimer_recovery.rs` was lowered 90/2 to 8/1.
+
+**After every probe rebuild** re-sign it or `hv_vm_create` fails:
+`codesign --sign - --entitlements apps/macos/HvfRunner.entitlements --force <bin>`.
+The t15 tier additionally requires `codesign --verify --strict` and that
+`otool -L` names the manifest's renderer.
+
+**Where to start.** Read CI for `c193b7c0`. Then B6 remains open with an
+unproven reproduction channel, and A9 still blocks release; neither was touched
+by this work.
+
 ## 2026-08-16 gate coverage and dead defaults (committed)
 
 Where the next session should start, and what it must not re-discover.
