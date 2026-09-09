@@ -21,7 +21,7 @@ $argumentList = @(
     '--process_name', 'dwm.exe',
     '--timed', "$Seconds",
     '--terminate_after_timed',
-    '--terminate_existing_session',
+    '--stop_existing_session',
     '--v2_metrics',
     '--output_file', $OutputCsvPath
 )
