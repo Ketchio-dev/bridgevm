@@ -201,3 +201,28 @@ guarantee is unchanged -- it moved to the layer that can actually hold it.
 the JSON, one PPM per region with the selected stroke pixels in red and the
 background guards in blue. The criterion calls for a reviewed mask, and a mask
 nobody can look at is reviewed in name only.
+
+## Present latency: the caret was the clock, and stopping it is not the end
+
+`measure-glyph-present-latency.py` times one keystroke to the next seed
+advance. Its first live run was clocked by the text caret: classic Notepad's
+system caret blinks every 530 ms (`GetCaretBlinkTime`) and each blink repaints
+the surface, so six of fifteen samples never saw the surface hold still and the
+nine that did read 6 ms to 237 ms for the same keystroke -- the distance to the
+next blink as often as to the glyph. A number taken through that is not a
+measurement of the glyph, and no threshold was declared from it.
+
+`bv-b6-caret-still.ps1` calls `SetCaretBlinkTime(INFINITE)`; live it reports
+`before_ms=530 after_ms=4294967295 still=True` on all three runs, and no sample
+afterwards failed to settle. The tool now also watches the surface for 1500 ms
+before it arms and refuses to type into one that is still repainting.
+
+With the caret stopped: nine samples presented at 7.8, 14.9, 28.9, 36.5, 45.7,
+80.2, 116.9, 199.4 and 242.0 ms; six were refused as `ambient-repaint`, each
+with exactly one repaint in its window, and those refusals cluster directly
+after presented samples. The reading that fits is that one keystroke presents
+twice -- the glyph, then the status bar's `Ln 1, Col N` -- and the second lands
+in the next sample's ambient window. That is a hypothesis; the tool does not
+yet count presents after the key, so the next iteration should, and until it
+does the spread of the nine is not explained and no threshold is declared.
+Captures stayed 3/3 and 3/3 throughout.

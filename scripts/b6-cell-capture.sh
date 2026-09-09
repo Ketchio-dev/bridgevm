@@ -41,6 +41,7 @@ cp "$REPO/scripts/win-assets/bvgpu-apply-host-resolution.ps1" \
    "$REPO/scripts/win-assets/bv-b6-read-logpixels.ps1" \
    "$REPO/scripts/win-assets/bv-b6-modern-notepad-launch.ps1" \
    "$REPO/scripts/win-assets/bv-b6-modern-notepad-reset.ps1" \
+   "$REPO/scripts/win-assets/bv-b6-caret-still.ps1" \
    "$REPO/scripts/win-assets/bv-b6-presentmon-capture.ps1" \
    "$PRESENTMON" \
    "$OUT/share/"
@@ -167,7 +168,7 @@ LAUNCHER=$!
 wait_for '^BVAGENT SERVICE start' 1 "$AGENT_TIMEOUT" || { echo 'FAIL: agent service timeout' >&2; exit 1; }
 for file in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1 bv-windows-closure-launch.ps1 \
             bv-windows-closure-discard.ps1 bv-b6-window-dpi.ps1 bv-b6-read-logpixels.ps1 \
-            bv-b6-modern-notepad-reset.ps1 \
+            bv-b6-modern-notepad-reset.ps1 bv-b6-caret-still.ps1 \
             bv-b6-modern-notepad-launch.ps1 bv-b6-presentmon-capture.ps1 "$PRESENTMON_NAME"; do
   bytes=$(stat -f %z "$OUT/share/$file")
   wait_for "^BVAGENT SHARE host->guest $file bytes=$bytes " 1 300 \
@@ -304,10 +305,14 @@ for run in 1 2 3; do
       # presents in fifteen seconds on 2026-09-09). What the scene can be asked
       # is how long it takes to show a change; sample that here, five times, so
       # a threshold can later be declared against measured numbers.
+      # The system caret repaints the surface every half second and was
+      # stopping this clock as often as the glyph was; stop it first, and let
+      # the tool refuse any sample taken while the surface still repaints.
+      send_ok "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-b6-caret-still.ps1" || true
       for sample in 1 2 3 4 5; do
         python3 "$REPO/scripts/measure-glyph-present-latency.py" \
           --iosurface "$OUT/display.fb.iosurface" --input-control "$INPUT" \
-          --out "$OUT/latency/classic-run${run}-s${sample}" --key-hex 58 >&2 || true
+          --out "$OUT/latency/classic-run${run}-s${sample}" --key-hex 58 --ambient-ms 1500 >&2 || true
       done
       # Run PresentMon while the window is up, right after the fresh capture.
       PM_CSV="C:\\BridgeVMClosure\\presentmon-classic-run${run}.csv"
