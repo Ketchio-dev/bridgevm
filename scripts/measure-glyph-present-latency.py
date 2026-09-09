@@ -22,6 +22,12 @@ tool now also measures the ambient repaint cadence before it arms, records it,
 and refuses to report a latency when the surface was still repainting on its
 own -- a number taken through that noise is not a measurement of the glyph.
 
+After the first present it keeps watching for --after-ms and counts the
+presents that follow, with the gap to the second. The caret-stopped run left
+one thing unexplained: refused samples each carried exactly one repaint and
+sat right after presented ones, which reads as one keystroke presenting twice
+-- glyph, then the status bar. Counting settles that instead of guessing.
+
 It measures; it declares nothing. The threshold this feeds is a separate
 decision and has to be recorded before the cells that it judges.
 """
@@ -66,7 +72,7 @@ def settle(ref, settle_ms, timeout_ms):
     return None
 
 
-def measure(iosurface, input_control, key_hex, settle_ms, timeout_ms, ambient_ms):
+def measure(iosurface, input_control, key_hex, settle_ms, timeout_ms, ambient_ms, after_ms=600):
     ref, ident, width, height = lookup(iosurface)
     changes, period = ambient(ref, ambient_ms)
     record = {"iosurface_id": ident, "width": width, "height": height,
@@ -88,9 +94,23 @@ def measure(iosurface, input_control, key_hex, settle_ms, timeout_ms, ambient_ms
     while time.monotonic_ns() <= deadline:
         observed = seed(ref)
         if observed != settled:
+            first = time.monotonic_ns()
             record.update({"result": "presented", "settled_seed": settled,
                            "presented_seed": observed,
-                           "latency_ms": round((time.monotonic_ns() - started) / 1e6, 3)})
+                           "latency_ms": round((first - started) / 1e6, 3)})
+            # One keystroke may present more than once (glyph, then status bar).
+            # Count what follows so a later sample's ambient refusal can be read.
+            current, extra, second_gap = observed, 0, None
+            until = first + after_ms * 1_000_000
+            while time.monotonic_ns() <= until:
+                again = seed(ref)
+                if again != current:
+                    current, extra = again, extra + 1
+                    if second_gap is None:
+                        second_gap = round((time.monotonic_ns() - first) / 1e6, 3)
+                time.sleep(0.001)
+            record.update({"after_window_ms": after_ms, "presents_after_first": extra,
+                           "second_present_gap_ms": second_gap if second_gap is not None else "none"})
             return record
         time.sleep(0.001)
     record.update({"result": "no-present", "settled_seed": settled, "timeout_ms": timeout_ms})
@@ -124,6 +144,7 @@ def self_test():
             (set(range(1, 400)), "ambient-repaint"),   # never quiet
             ({2}, "ambient-repaint"),                   # one blink during ambient
             ({40}, "presented"),                        # quiet, then the glyph
+            ({40, 60}, "presented"),                    # glyph, then a second present
             (set(), "no-present"),                      # quiet forever
         )
         for flips, expected in cases:
@@ -133,11 +154,13 @@ def self_test():
             with tempfile.TemporaryDirectory() as root:
                 control = Path(root) / "input.ctl"
                 control.write_text("")
-                record = measure(Path(root) / "fb.iosurface", control, "41", 5, 400, 5)
+                record = measure(Path(root) / "fb.iosurface", control, "41", 5, 400, 5, after_ms=40)
                 assert record["result"] == expected, (expected, record)
                 if expected == "presented":
                     assert control.read_text() == "KEY text-hex:41\n"
                     assert record["latency_ms"] >= 0 and record["ambient_changes"] == 0
+                    assert record["presents_after_first"] == (1 if 60 in flips else 0), record
+                    assert (record["second_present_gap_ms"] != "none") == (60 in flips)
                 if expected == "ambient-repaint":
                     assert control.read_text() == "", "must not type into a noisy surface"
                     assert record["ambient_changes"] >= 1
@@ -159,13 +182,14 @@ def main():
     parser.add_argument("--settle-ms", type=int, default=750)
     parser.add_argument("--timeout-ms", type=int, default=5000)
     parser.add_argument("--ambient-ms", type=int, default=1500)
+    parser.add_argument("--after-ms", type=int, default=600)
     args = parser.parse_args()
     if args.self_test:
         return self_test()
     if not (args.iosurface and args.input_control and args.out):
         parser.error("--iosurface, --input-control and --out are required")
     record = measure(args.iosurface, args.input_control, args.key_hex,
-                     args.settle_ms, args.timeout_ms, args.ambient_ms)
+                     args.settle_ms, args.timeout_ms, args.ambient_ms, args.after_ms)
     write_env(args.out, record)
     print(" ".join(f"{k}={v}" for k, v in record.items()))
     return 0 if record["result"] == "presented" else 1

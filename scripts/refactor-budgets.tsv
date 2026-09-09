@@ -1859,6 +1859,6 @@ scripts/observe-active-iosurface.py	34	0
 scripts/win-assets/bv-b6-modern-notepad-reset.ps1	30	0
 scripts/build-glyph-pixel-mask.py	156	0
 scripts/verify-b6-cell.py	121	0
-scripts/measure-glyph-present-latency.py	175	0
+scripts/measure-glyph-present-latency.py	199	0
 scripts/agent-channel-lib.sh	59	0
 scripts/win-assets/bv-b6-caret-still.ps1	25	0

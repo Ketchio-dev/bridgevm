@@ -226,3 +226,23 @@ in the next sample's ambient window. That is a hypothesis; the tool does not
 yet count presents after the key, so the next iteration should, and until it
 does the spread of the nine is not explained and no threshold is declared.
 Captures stayed 3/3 and 3/3 throughout.
+
+## One keystroke, two presents -- confirmed by counting
+
+The tool now keeps watching for 600 ms after the first present and counts
+what follows. Live, same cell, same media: 14 of 15 samples presented and one
+was refused, against 9 and 6 the boot before. Seven of the fourteen keystrokes
+presented a second time, 126.8 to 282.5 ms after the first (p50 256.7). That
+second present is what the previous boot's six refusals were: it had been
+landing in the next sample's ambient window, and now it lands inside the
+sample that caused it. The ambient gate was right to refuse those; it was
+refusing the tail of the previous keystroke.
+
+What that boot did not explain, this one measures and still does not explain:
+latency is bimodal. Eight samples between 13.9 and 40.2 ms, six between 131.0
+and 303.4 ms, nothing in between (p50 40.2, p95 302.9). Whether a sample is
+fast or slow does not follow from whether it presented twice. Fourteen samples
+from one cell on one boot are not a baseline to declare a threshold from, and
+the two clusters mean p95 will swing hard at small n; the declaration waits for
+a baseline campaign of declared size, recorded before any matrix cell counts.
+Captures held at 3/3 and 3/3 with the caret stopped (`still=True` 3/3).
