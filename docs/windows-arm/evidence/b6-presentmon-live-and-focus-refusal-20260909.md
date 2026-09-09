@@ -155,3 +155,49 @@ foregrounds and no failures**, against 1/3 and 0/3 at the start of the day.
 
 The frame-time picture did not improve: the three CSVs carry 1, 3 and 2 data
 rows. That clause still cannot be measured against these scenes.
+
+## Run independence, and the frame-time clause failing outright
+
+Packaged Notepad restoring its previous session is fixed by
+`bv-b6-modern-notepad-reset.ps1`, which stops the app and clears its package
+LocalState before each run. Live: the reset reports `removed=0` on the first
+run and `removed=2` on the two after it, and the packaged window is listed as
+`Untitled - Notepad` throughout -- where the previous boot accumulated
+`*BridgeVM BridgeVM - Notepad` across runs. Both scenes captured 3/3 again, so
+the reset costs nothing and the three runs are now independent content, which
+is what the criterion asks for.
+
+The same boot settles the frame-time question in the other direction. All three
+PresentMon invocations exited 0 and wrote **no CSV at all**: PresentMon ran
+correctly and observed zero DWM presents in fifteen seconds. The boot before it
+recorded 1, 3 and 2 rows for the same scenes.
+
+That is not a sampling problem to be improved by a longer window or more runs.
+Whether a static Notepad scene yields any frames at all varies between boots,
+because DWM composes when something changes and nothing is changing. A clause
+reading "frame time within 10% of baseline" cannot be measured against a scene
+that sometimes produces no frames to time. The choice is to give the scenes
+something that presents continuously, or to re-declare the clause for scenes of
+this kind -- and, as with B8, the declaration has to be recorded before the
+measurement it governs.
+
+## The mask contract encoded a retracted assumption
+
+`verify-glyph-pixel-mask.py` required `caption`, `menu` and `tab` regions in
+one mask against one reference. `b6-single-scene-spike-20260908.md` had already
+asked whether one scene supplies all three and answered no in its own
+correction: packaged Notepad's tab row is not a classic caption bar, so the
+classic caption/menu scene is retained beside the packaged tab/menu one. The
+verifier was committed after that spike and did not carry the correction, so no
+capture this project can take would have satisfied it. Nothing exercised the
+contract, because no mask had ever been built.
+
+A mask now covers one scene and carries a subset of the three classes;
+`verify-b6-cell.py` requires the union across a cell's scenes to be all three,
+and refuses to count coverage from a scene that failed its own mask. The
+guarantee is unchanged -- it moved to the layer that can actually hold it.
+
+`build-glyph-pixel-mask.py` proposes a mask from a reference and writes, beside
+the JSON, one PPM per region with the selected stroke pixels in red and the
+background guards in blue. The criterion calls for a reviewed mask, and a mask
+nobody can look at is reviewed in name only.
