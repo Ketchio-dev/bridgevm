@@ -107,3 +107,51 @@ five attempts -- ten minutes per abandoned scene -- and then reported it as "no
 reply" when the agent had answered at once. Fixed to match `-> (OK|ERR)` and
 branch immediately. Worth noting because the campaign is 36 boots: a defect
 that only costs wall time still costs the whole budget.
+
+## Both scenes captured 3/3, and what it took
+
+Three further boots the same day closed the remaining harness defects. The
+first run with the corrected pointer units took packaged captures from 0/12 to
+2/3 and proved the click fallback -- `hwnd=327846 took foreground from the
+click on attempt 1`, where `SetForegroundWindow` had been refused -- but its
+own results could not be trusted, because two more defects were still mixing
+the scenes together:
+
+- **`find_hwnd` scanned the whole log.** It grepped every `WINLIST WIN` line
+  the boot had ever produced rather than the reply to the request it had just
+  sent, so when the current listing held no match it silently returned a window
+  from an earlier one. Run 3's classic scene got the packaged window's hwnd and
+  run 2's packaged scene got the classic one; a capture filed as
+  `classic-run3` is in fact the packaged window carrying three rounds of
+  accumulated text. Any label from that run is unreliable.
+- **Teardown was assumed, not observed.** `WINCLOSE` then discard then
+  `sleep 2`, with nothing checking that the window had gone -- and F3 already
+  established that `WINCLOSE` on a dirty document raises a save prompt and
+  leaves the window alive. `wait_window_gone` now polls the current listing
+  until the hwnd is absent.
+- **The packaged window was assumed to exist two seconds after launch.** It
+  sometimes does not; run 2 found none at all. The launch now polls.
+
+Packaged Notepad also restores its previous session on relaunch, exactly as its
+own first-run tip advertises, so its document accumulates across runs unless
+that is handled. B6 requires three independent runs, and a scene that carries
+state between them does not provide that.
+
+## Nine characters, and the space that caused them
+
+With the scenes finally isolated, the packaged scene still took exactly nine
+characters of an 84-character payload, every run, while classic Notepad took
+all 84 from the same chunks over the same input path. Nine is `BridgeVM` plus
+the space after it -- and that space is where packaged Notepad retitles its tab
+(`*BridgeVM - Notepad`) and, between runs, comes back under a different frame
+hwnd. Neither the 32-action cap nor the 28-character chunk size is anywhere
+near the limit, so neither explains it.
+
+A space-free payload settled it. `BridgeVM-p1ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`
+lands in full: the capture reads `Ln 1, Col 48` and `47 characters`, with the
+tab, the `File Edit View` menu row and the body text all legible. The final run
+is **3/3 classic and 3/3 packaged, six captures from six scenes, six confirmed
+foregrounds and no failures**, against 1/3 and 0/3 at the start of the day.
+
+The frame-time picture did not improve: the three CSVs carry 1, 3 and 2 data
+rows. That clause still cannot be measured against these scenes.
