@@ -246,3 +246,21 @@ from one cell on one boot are not a baseline to declare a threshold from, and
 the two clusters mean p95 will swing hard at small n; the declaration waits for
 a baseline campaign of declared size, recorded before any matrix cell counts.
 Captures held at 3/3 and 3/3 with the caret stopped (`still=True` 3/3).
+
+## The slow cluster is inside the guest
+
+Joining each sample to the host's `scanout_blit` trace (by the sample's env
+mtime, working back through the after-window and the measured latency) puts
+the first blit within a millisecond of what the tool measured on every
+sample -- 40.2 measured against 40.7 in the trace, 303.4 against 303.5 -- so
+the tool is timing the real host present, and in every slow sample there is
+exactly one blit, at that late time. No earlier present was missed or
+coalesced. The host's live-input poll runs every 16 ms
+(`live_input.rs`, `POLL_INTERVAL`), which bounds host-side jitter far below
+the 131-303 ms cluster.
+
+What remains is guest-side: between the host injecting the HID report and
+DWM presenting the glyph, the guest sometimes takes 130-300 ms and sometimes
+14-40, with nothing between. That reads like an idle cadence somewhere on the
+xHCI/HID or compositor path, and it is not a harness question any more. It is
+recorded here as the narrowed frontier, not diagnosed.
