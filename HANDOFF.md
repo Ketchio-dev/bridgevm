@@ -5,6 +5,50 @@
 > 653 같은 테스트 개수는 그 시점의 값이다. 현재 상태는 `STATUS.md`와 능력
 > 레지스트리(`capabilities/windows-hvf.json`)를 보라.
 
+## 2026-09-09 both open B6 bugs re-diagnosed; the 09-08 readings below are wrong
+
+The two open bugs recorded in the 2026-09-08 section were both misdiagnosed.
+Neither is a display-engine limit and neither needed the live boot the section
+asks for; the retained logs and the pinned binary already answered them. Fixes
+merged in PR #151 (`4a5eba8b`, `142f8257`, `294183ee`, reseal `ace8f318`).
+
+**Bug 3 was not a privilege failure.** `bv-b6-presentmon-capture.ps1` passed
+`--terminate_existing_session`. The pinned `PresentMon-2.5.1-x64.exe` documents
+that flag as "stop the existing session then exit", and carries the literal
+warning string `--terminate_existing_session exits without capturing anything;
+ignoring all other options`. Exit 7 came from that branch and never reached a
+privilege check, so the `SeDebugPrivilege` reading below is retracted; do not
+plan elevation work on the strength of it. The flag is now
+`--stop_existing_session`.
+
+The elevation question is separately open on different evidence: the agent's
+child processes run as `bridgevm\bridge`, not `LocalSystem` (`BVAGENT CMD
+whoami` in `~/BridgeVM/manifests/b6-matrix-harness-20260908/evidence/
+presentmon-test/run.log`). Realtime ETW capture may still need
+`--restart_as_admin`. No PresentMon CSV has been collected yet either way.
+
+**Bug 2 was a swallowed focus error, not a scanout-tracking limit.** The
+hypothesis below -- that `display.fb.iosurface` arms one resource and never
+re-tracks -- is refuted for the run it was drawn from. That boot's log contains
+exactly one `virtio-gpu: scanout IOSurface global id=417 (1600x900)` line, and
+that message and the descriptor write only happen when the id changes
+(`crates/bridgevm-hvf/src/virtio_gpu/scanout_blit.rs:39-48`), so the surface
+never changed and the descriptor was never stale. What failed is
+`SetForegroundWindow`: both later classic scenes answered `-> ERR WINFOCUS`,
+and `cell-capture.sh:207-208` sends the verb with `|| true`. Typing into a
+window that never took the foreground changes nothing, no blit follows, and the
+seed wait times out. Full reading, including the packaged scene's separate and
+still-unexplained cause: `docs/windows-arm/evidence/
+b6-second-capture-focus-refusal-20260909.md`.
+
+**The matrix does not need one boot per scene.** The 54-capture-boot plan the
+section below floats was contingent on the refuted hypothesis. Keep 27.
+
+A third defect surfaced while proving this: `verify-glyph-pixel-mask.py`
+compared capture distinctness by resolved path, so three hard links to one
+image passed the three-independent-captures rule. It now uses `samefile()`.
+
+
 ## 2026-09-08 B6 matrix build in progress; handed off mid-debugging, uncommitted
 
 User paused this session to continue with a different agent. Nothing here is
