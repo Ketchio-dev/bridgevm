@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "capability_id": "windows-hvf",
-  "reviewed": "2026-09-08",
-  "tested_commit": "965c658b2f639e0c34858d1c9315f4e3337c05c0",
+  "reviewed": "2026-09-09",
+  "tested_commit": "294183ee88aa1a969b99be5c62c1946587f8a495",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -140,7 +140,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-09-08 B6 scale-script parameterization reseal: tested code head 965c658b2f639e0c34858d1c9315f4e3337c05c0 generalizes bv-b6-set-scale.ps1 from a fixed 150% to a ValidateSet-restricted -LogPixels covering all three declared scales (96/120/144), live-confirmed at 96 against a clean guest boot. No committed caller referenced the old fixed signature. B6 stays OPEN; the declared 3x3x3 campaign has not run. Full scripts/check-project.sh passed. This reseal must itself pass hosted workflows.",
+      "measured": "2026-09-09 B6 tooling-defect reseal: tested code head 294183ee88aa1a969b99be5c62c1946587f8a495 fixes three harness defects that produced false evidence rather than any guest behaviour. bv-b6-presentmon-capture.ps1 passed --terminate_existing_session, which the pinned PresentMon-2.5.1-x64.exe documents as \"stop the existing session then exit\" and whose own warning string reads \"--terminate_existing_session exits without capturing anything; ignoring all other options\"; the observed exit code 7 therefore never reached a privilege check, and the earlier SeDebugPrivilege reading of it is retracted. The flag is now --stop_existing_session. verify-glyph-pixel-mask.py compared capture distinctness by resolved path, so three hard links to one image satisfied the three-independent-captures rule; it now compares file identity with samefile() and its self-test covers the alias case; that self-test first used Path.hardlink_to (Python 3.10+) and failed the gate on this host's Python 3.9.6, so it now uses os.link and the file holds its 150-line budget. None of the three has run against a live guest: no PresentMon CSV has been collected, and separately the agent's child processes run as bridgevm\\bridge rather than LocalSystem (BVAGENT CMD whoami in the retained presentmon-test log), so realtime ETW capture may still need elevation. B6 stays OPEN; the declared 3x3x3 campaign has not run. Full scripts/check-project.sh passed. This reseal must itself pass hosted workflows.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -158,7 +158,8 @@
         "docs/windows-arm/evidence/bridgevm-pc-bds-exit-reseal-receipt-20260831.json",
         "docs/windows-arm/evidence/bridgevm-pc-bds-exit-reseal-receipt-20260901.json",
         "docs/windows-arm/evidence/bridgevm-pc-bds-exit-reseal-receipt-20260901-9d63f07d.json",
-        "docs/windows-arm/evidence/f3-postclose-save-prompt-confirmed-20260908.md"
+        "docs/windows-arm/evidence/f3-postclose-save-prompt-confirmed-20260908.md",
+        "docs/windows-arm/evidence/b6-second-capture-focus-refusal-20260909.md"
       ]
     },
     {
