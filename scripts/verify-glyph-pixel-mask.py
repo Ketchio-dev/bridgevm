@@ -2,9 +2,9 @@
 """Compare exactly against reviewed reference RGB pixels; not a B6 campaign pass.
 Callers must prove reference correctness, effective DPI, independent live runs,
 presentation freshness and frame time; candidate/background agreement is not proof.
-Review masks for both expected glyph strokes and background guards.
-Mask JSON: {"reference_sha256": "...", "regions": {"caption":
-{"box": [x,y,w,h], "pixels": [local_pixel_index, ...]}, ...}}.
+Review strokes and guards. A mask covers one scene; verify-b6-cell.py requires all three.
+Mask JSON: {"reference_sha256": .., "regions": {"caption": {"box": [x,y,w,h],
+"pixels": [i, ..]}, ..}}.
 """
 from __future__ import annotations
 import argparse
@@ -73,8 +73,8 @@ def verify_cell(mask, reference, captures):
     if hashlib.sha256(reference.read_bytes()).hexdigest() != mask["reference_sha256"]:
         raise ValueError("reference hash mismatch")
     regions = mask["regions"]
-    if set(regions) != {"caption", "menu", "tab"}:
-        raise ValueError("caption, menu and tab masks are all required")
+    if not regions or regions.keys() - {"caption", "menu", "tab"}:
+        raise ValueError("regions must be drawn from caption, menu and tab")
     expected = Frame.load(reference)
     frames = [Frame.load(p) for p in captures]
     if any((f.width, f.height) != (expected.width, expected.height) for f in frames):

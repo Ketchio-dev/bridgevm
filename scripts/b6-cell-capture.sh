@@ -40,6 +40,7 @@ cp "$REPO/scripts/win-assets/bvgpu-apply-host-resolution.ps1" \
    "$REPO/scripts/win-assets/bv-b6-window-dpi.ps1" \
    "$REPO/scripts/win-assets/bv-b6-read-logpixels.ps1" \
    "$REPO/scripts/win-assets/bv-b6-modern-notepad-launch.ps1" \
+   "$REPO/scripts/win-assets/bv-b6-modern-notepad-reset.ps1" \
    "$REPO/scripts/win-assets/bv-b6-presentmon-capture.ps1" \
    "$PRESENTMON" \
    "$OUT/share/"
@@ -198,6 +199,7 @@ LAUNCHER=$!
 wait_for '^BVAGENT SERVICE start' 1 "$AGENT_TIMEOUT" || { echo 'FAIL: agent service timeout' >&2; exit 1; }
 for file in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1 bv-windows-closure-launch.ps1 \
             bv-windows-closure-discard.ps1 bv-b6-window-dpi.ps1 bv-b6-read-logpixels.ps1 \
+            bv-b6-modern-notepad-reset.ps1 \
             bv-b6-modern-notepad-launch.ps1 bv-b6-presentmon-capture.ps1 "$PRESENTMON_NAME"; do
   bytes=$(stat -f %z "$OUT/share/$file")
   wait_for "^BVAGENT SHARE host->guest $file bytes=$bytes " 1 300 \
@@ -347,6 +349,9 @@ for run in 1 2 3; do
     fi
   fi
 
+  # Packaged Notepad restores the previous run's document, so a run that did
+  # not reset it is not independent of the one before it.
+  send_ok "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-b6-modern-notepad-reset.ps1" || true
   MODERN_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-b6-modern-notepad-launch.ps1'
   if send_ok "$MODERN_CMD"; then
     mhwnd=""
