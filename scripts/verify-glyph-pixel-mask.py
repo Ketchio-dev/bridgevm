@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
-"""Compare captures with an independently reviewed reference and explicit mask.
-
-A match is only a pixel comparison, not a B6 campaign pass. The caller must
-separately prove reference correctness, effective DPI, independent live runs,
-presentation freshness and the frame-time budget. Background variation and
-agreement between candidate images are not evidence of correct glyphs.
-
+"""Compare exactly against reviewed reference RGB pixels; not a B6 campaign pass.
+Callers must prove reference correctness, effective DPI, independent live runs,
+presentation freshness and frame time; candidate/background agreement is not proof.
+Review masks for both expected glyph strokes and background guards.
 Mask JSON: {"reference_sha256": "...", "regions": {"caption":
 {"box": [x,y,w,h], "pixels": [local_pixel_index, ...]}, ...}}.
-Each selected pixel is compared exactly with the corresponding reference RGB.
-Include both expected glyph strokes and background guards in reviewed masks.
 """
 from __future__ import annotations
 
@@ -71,9 +66,9 @@ def selected_offsets(region, frame):
 
 
 def verify_cell(mask, reference, captures):
-    if len(captures) != 3 or len({p.resolve() for p in captures}) != 3:
-        raise ValueError("exactly three distinct capture paths required")
-    if reference.resolve() in {p.resolve() for p in captures}:
+    if len(captures) != 3 or any(p.samefile(q) for i, p in enumerate(captures) for q in captures[:i]):
+        raise ValueError("exactly three distinct capture files required")
+    if any(reference.samefile(p) for p in captures):
         raise ValueError("reference cannot be a candidate capture")
     if hashlib.sha256(reference.read_bytes()).hexdigest() != mask["reference_sha256"]:
         raise ValueError("reference hash mismatch")
@@ -114,7 +109,12 @@ def self_test():
         for p in captures:
             p.write_bytes(b"P6\n2 1\n255\n" + bytes([240, 240, 240, 241, 241, 241]))
         assert not verify_cell(mask, reference, captures)["matches_reference"]
-        for bad_mask, bad_captures in ((dict(mask, regions={}), captures),
+        reference_alias, capture_alias = root / "reference-alias.ppm", root / "capture-alias.ppm"
+        reference_alias.hardlink_to(reference)
+        capture_alias.hardlink_to(captures[0])
+        for bad_mask, bad_captures in ((mask, [reference_alias, *captures[1:]]),
+                                       (mask, [captures[0], capture_alias, captures[2]]),
+                                       (dict(mask, regions={}), captures),
                                        (mask, [captures[0]] * 3),
                                        (dict(mask, reference_sha256="0" * 64), captures)):
             try:
