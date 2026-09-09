@@ -366,8 +366,8 @@
       "title": "Clean-machine host matrix",
       "state": "OPEN",
       "release_blocking": false,
-      "statement": "Install, boot, update and rollback each retain per-cell receipts on M1, M2 and M3 Apple-silicon host generations; every untested cell remains explicitly untested.",
-      "measured": "OPEN: retained product and live evidence comes from one M4 Max host and one macOS build. No M1/M2/M3 clean-machine matrix exists.",
+      "statement": "Install, boot, update and rollback each retain per-cell receipts on every declared Apple-silicon host generation, declared as M4 and M5 on 2026-09-09; every untested cell remains explicitly untested, and generations outside the declared set are disclosed as uncovered rather than implied.",
+      "measured": "OPEN. Re-declared 2026-09-09, before any cell of the new set was run. The previous statement demanded receipts on M1, M2 and M3; this project has never had access to those machines, so that declaration could not produce a measurement and not one of its cells was ever attempted. An unmeasurable declaration reports nothing, so the set is now the generations this project can actually exercise: M4 (Mac16,9) and M5 (Mac17,9). Both already appear in retained evidence -- Mac16,9 in the B4 20/20 pointer batch and the A19 and t1-restore-boot snapshot receipts, Mac17,9 in the BridgeVM-PC NVMe block evidence, the 2026-09-07 B6 glyph observation and the 2026-09-09 A11 gate. Re-declaring closes nothing: no clean-machine install/boot/update/rollback per-cell receipt exists for either generation, so B8 stands at 0 of 8 declared cells (2 generations x 4 lifecycle steps). M1, M2 and M3 are now outside the declared matrix and are disclosed as uncovered in STATUS.md rather than silently dropped; widening the set again requires the hardware first and the declaration before the run, not after it.",
       "evidence_paths": [
         "docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md"
       ]

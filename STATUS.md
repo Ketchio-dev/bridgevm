@@ -143,7 +143,10 @@ compatibility:
 - GPU compatibility is much narrower than "all Vulkan/D3D11 software";
 - driver setup and recovery remain developer-oriented;
 - ad-hoc Mac distribution requires a user trust override for downloaded builds;
-- clean-machine coverage is smaller than a mature VM product needs;
+- clean-machine coverage is smaller than a mature VM product needs, and the
+  declared host matrix (B8) covers only the M4 and M5 Apple-silicon
+  generations this project can run on; M1, M2 and M3 are uncovered, not
+  implied to work;
 - update/rollback UX is not yet a stable public contract;
 - running-state suspend is intentionally outside the current v1 persistence
   scope;
