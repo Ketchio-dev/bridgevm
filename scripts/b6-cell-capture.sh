@@ -113,10 +113,30 @@ wait_second_boot() {
   wait_for '^BVAGENT SERVICE start' "$((baseline + 1))" "$AGENT_TIMEOUT"
 }
 
+wait_window_gone() {
+  local hwnd="$1" attempt before
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    before=$(wc -l < "$RUN_LOG")
+    send 'WINLIST' '^BVAGENT WINLIST WINEND$' || return 1
+    if ! tail -n "+$((before + 1))" "$RUN_LOG" | grep -q "^BVAGENT WINLIST WIN $hwnd "; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "FAIL: hwnd=$hwnd still listed after teardown" >&2
+  return 1
+}
+
 find_hwnd() {
-  local title_substr="$1" win_line
+  local title_substr="$1" win_line before
+  # Only the reply to *this* WINLIST counts. Scanning the whole log matched
+  # windows listed earlier in the boot: on 2026-09-09 run 3's classic scene got
+  # the packaged window's hwnd and run 2's packaged scene got the classic one,
+  # so scenes typed into each other and a capture labelled classic-run3 is
+  # actually the packaged window with three rounds of text accumulated in it.
+  before=$(wc -l < "$RUN_LOG")
   send 'WINLIST' '^BVAGENT WINLIST WINEND$' || return 1
-  win_line=$(grep '^BVAGENT WINLIST WIN ' "$RUN_LOG" | while IFS= read -r line; do
+  win_line=$(tail -n "+$((before + 1))" "$RUN_LOG" | grep '^BVAGENT WINLIST WIN ' | while IFS= read -r line; do
     local title_b64 title
     title_b64=$(awk '{print $10}' <<<"$line")
     title=$(printf '%s' "$title_b64" | base64 -D 2>/dev/null || true)
@@ -132,6 +152,19 @@ typing_hex_for_run() {
     1) printf '427269646765564d2050726f62652072756e31204142434445464748\n494a4b4c4d4e4f505152535455565758595a20616263646566676869\n6a6b6c6d6e6f707172737475767778797a2030313233343536373839\n' ;;
     2) printf '427269646765564d2050726f62652072756e32207a79787776757473\n7271706f6e6d6c6b6a696867666564636261205a5958575655545352\n51504f4e4d4c4b4a4948474645444342412039383736353433326162\n' ;;
     *) printf '427269646765564d2050726f62652072756e33204d4958454463617365\n30313233343536373839206162636465666768696a6b6c6d6e6f70\n7172737475767778797a4142434445464748494a4b4c4d4e4f505152\n' ;;
+  esac
+}
+
+# Packaged Notepad renames its tab on the first space and its frame hwnd
+# changes between runs; every packaged run has landed exactly the nine
+# characters up to and including that space, while classic Notepad takes all
+# 84 from the same chunks. This payload has no spaces so the scene can be
+# measured while that behaviour is characterised separately.
+packaged_typing_hex_for_run() {
+  case "$1" in
+    1) printf '427269646765564d2d7031414243444546474849\n4a4b4c4d4e4f5051525354555657\n58595a30313233343536373839\n' ;;
+    2) printf '427269646765564d2d7032617a62796378647765\n7666756774687369726a716b\n706c6f6d6e30393138323733\n' ;;
+    *) printf '427269646765564d2d7033516e5772457459754f\n69506c614b6a486766446453\n5a78436d566e42763132333435\n' ;;
   esac
 }
 
@@ -309,14 +342,19 @@ for run in 1 2 3; do
       send "WINCLOSE $hwnd" "^BVAGENT WINCLOSE $hwnd -> OK WINCLOSE$" || true
       sleep 2
       send_ok "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-windows-closure-discard.ps1 -Hwnd $hwnd" || true
+      wait_window_gone "$hwnd" || true
       sleep 2
     fi
   fi
 
   MODERN_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-b6-modern-notepad-launch.ps1'
   if send_ok "$MODERN_CMD"; then
-    sleep 2
-    mhwnd=$(find_hwnd 'ntitled')
+    mhwnd=""
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      sleep 2
+      mhwnd=$(find_hwnd 'Notepad')
+      [[ "$mhwnd" =~ ^[0-9]+$ ]] && break
+    done
     if [[ "$mhwnd" =~ ^[0-9]+$ ]]; then
       packaged_focus=fail
       if focus_window "$mhwnd"; then packaged_focus=pass; fi
@@ -335,7 +373,7 @@ for run in 1 2 3; do
       wait_after 'live input accepted: command=Pointer\(' "$_b_ptr" 15 || true
       sleep 1
       _b_key2=$(wait_baseline 'live input accepted: command=Key\(')
-      hexlines2=$(typing_hex_for_run "$run")
+      hexlines2=$(packaged_typing_hex_for_run "$run")
       while IFS= read -r hexline; do
         [[ -n "$hexline" ]] && printf 'KEY text-hex:%s\n' "$hexline" >> "$INPUT"
       done <<<"$hexlines2"
@@ -351,6 +389,7 @@ for run in 1 2 3; do
       send "WINCLOSE $mhwnd" "^BVAGENT WINCLOSE $mhwnd -> OK WINCLOSE$" || true
       sleep 2
       send_ok "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-windows-closure-discard.ps1 -Hwnd $mhwnd" || true
+      wait_window_gone "$mhwnd" || true
       sleep 2
     fi
   fi

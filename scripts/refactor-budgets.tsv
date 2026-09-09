@@ -1853,6 +1853,6 @@ scripts/live-gates/windows-media-comparison-queue.py	103	0
 tests/integration/windows-media-comparison-queue-smoke.py	71	0
 tests/integration/windows-media-comparison-cancel-smoke.py	114	0
 scripts/verify-presentmon-binary.py	119	0
-scripts/b6-cell-capture.sh	387	0
+scripts/b6-cell-capture.sh	426	0
 scripts/b6-cell-set-scale.sh	151	0
 scripts/observe-active-iosurface.py	34	0
