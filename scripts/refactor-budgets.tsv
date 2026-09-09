@@ -1094,7 +1094,7 @@ scripts/live-gates/write-a3-title-receipt.py	179	0
 scripts/live-gates/write-missing-receipt.sh	19	0
 scripts/live-gates/write-windows-closure-receipt.py	165	0
 scripts/win-assets/bv-windows-closure-proof.ps1	148	0
-scripts/windows-1.0-closure-interact.sh	183	0
+scripts/windows-1.0-closure-interact.sh	151	0
 scripts/win-assets/bv-windows-closure-discard.ps1	20	0
 scripts/win-assets/bvgpu-d3d11-identity.ps1	24	0
 scripts/harvest-hvf-windows-postmortem.sh	118	0
@@ -1308,7 +1308,7 @@ scripts/check-hvf-windows-p3-gpu-readiness.sh	335	0
 scripts/check-hvf-windows-viogpu3d-package.sh	1464	0
 scripts/check-install-bootstrap.sh	21	0
 scripts/check-loom.sh	30	0
-scripts/check-project.sh	100	0
+scripts/check-project.sh	101	0
 scripts/check-refactor-budgets.sh	72	1
 scripts/check-release-overrides.sh	74	0
 scripts/check-shell-scripts.sh	61	0
@@ -1853,9 +1853,11 @@ scripts/live-gates/windows-media-comparison-queue.py	103	0
 tests/integration/windows-media-comparison-queue-smoke.py	71	0
 tests/integration/windows-media-comparison-cancel-smoke.py	114	0
 scripts/verify-presentmon-binary.py	119	0
-scripts/b6-cell-capture.sh	431	0
-scripts/b6-cell-set-scale.sh	151	0
+scripts/b6-cell-capture.sh	408	0
+scripts/b6-cell-set-scale.sh	119	0
 scripts/observe-active-iosurface.py	34	0
 scripts/win-assets/bv-b6-modern-notepad-reset.ps1	30	0
 scripts/build-glyph-pixel-mask.py	156	0
 scripts/verify-b6-cell.py	121	0
+scripts/measure-glyph-present-latency.py	136	0
+scripts/agent-channel-lib.sh	59	0

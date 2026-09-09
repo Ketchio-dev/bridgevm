@@ -46,17 +46,9 @@ cp "$REPO/scripts/win-assets/bvgpu-apply-host-resolution.ps1" \
    "$OUT/share/"
 PRESENTMON_NAME="$(basename "$PRESENTMON")"
 
-wait_for() {
-  local pattern="$1" count="$2" timeout="$3" observed
-  local deadline=$((SECONDS + timeout))
-  while (( SECONDS < deadline )); do
-    observed=$(grep -cE "$pattern" "$RUN_LOG" 2>/dev/null || true)
-    (( observed >= count )) && return 0
-    kill -0 "$LAUNCHER" 2>/dev/null || return 1
-    sleep 0.25
-  done
-  return 1
-}
+# Agent control-channel helpers, shared with the other scripts that drive it.
+source "$REPO/scripts/agent-channel-lib.sh"
+
 
 # Baseline count of a pattern, taken before some action; call wait_after with
 # the same pattern to block until a strictly new match appears. An absolute
@@ -70,32 +62,8 @@ wait_after() {
   wait_for "$pattern" "$((baseline + 1))" "$timeout"
 }
 
-send() {
-  local command="$1" pattern="${2:-^BVAGENT END }" before
-  before=$(grep -cE "$pattern" "$RUN_LOG" 2>/dev/null || true)
-  printf '%s\n' "$command" >> "$CTL"
-  wait_for "$pattern" $((before + 1)) "$STEP_TIMEOUT" || {
-    echo "FAIL: no reply for ${command:0:100}" >&2
-    return 1
-  }
-}
 
-send_ok() {
-  local command="$1" before line
-  before=$(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG" 2>/dev/null || true)
-  send "$command" '^BVAGENT END '
-  line=$(grep -E '^BVAGENT CMD .* exit=' "$RUN_LOG" | tail -1)
-  [[ $(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG") -gt $before && "$line" == *' exit=0' ]]
-}
 
-wait_firstboot() {
-  local deadline=$((SECONDS + AGENT_TIMEOUT)) command='powershell -NoProfile -Command "& schtasks.exe /Query /TN BridgeVM-VioGpu3DFirstBoot *> $null; $task=($LASTEXITCODE -eq 0); $ready=(Test-Path C:\BridgeVM\stage3.flag) -and (-not $task); if($ready){Write-Output BVFIRSTBOOT_READY; exit 0}; Write-Output BVFIRSTBOOT_PENDING; exit 3"'
-  while (( SECONDS < deadline )); do
-    send_ok "$command" && grep -Eq '^BVFIRSTBOOT_READY\r?$' "$RUN_LOG" && return 0
-    sleep 5
-  done
-  return 1
-}
 
 capture_active_scanout() {
   local label="$1" capture="$OUT/captures/$1"
@@ -332,6 +300,15 @@ for run in 1 2 3; do
       wait_after 'live input accepted: command=Key\(' "$((_b_key + 2))" 30 || true
       sleep 2
       if [[ "$classic_focus" == pass ]] && capture_active_scanout "classic-run${run}"; then classic_capture=present; fi
+      # B6's frame-time clause reports nothing against a static scene (zero DWM
+      # presents in fifteen seconds on 2026-09-09). What the scene can be asked
+      # is how long it takes to show a change; sample that here, five times, so
+      # a threshold can later be declared against measured numbers.
+      for sample in 1 2 3 4 5; do
+        python3 "$REPO/scripts/measure-glyph-present-latency.py" \
+          --iosurface "$OUT/display.fb.iosurface" --input-control "$INPUT" \
+          --out "$OUT/latency/classic-run${run}-s${sample}" --key-hex 58 >&2 || true
+      done
       # Run PresentMon while the window is up, right after the fresh capture.
       PM_CSV="C:\\BridgeVMClosure\\presentmon-classic-run${run}.csv"
       PM_CMD="powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-b6-presentmon-capture.ps1 -PresentMonPath C:\\BridgeVMClosure\\$PRESENTMON_NAME -OutputCsvPath $PM_CSV -Seconds 15"

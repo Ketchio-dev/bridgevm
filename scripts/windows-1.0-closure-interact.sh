@@ -23,44 +23,12 @@ mkdir -p "$OUT/share" "$OUT/captures"; RUN_LOG="$OUT/run.log"
 CTL="$OUT/agent.ctl"; : > "$CTL"; INPUT="$OUT/input.ctl"; : > "$INPUT"
 cp "$REPO/scripts/win-assets/bvgpu-apply-host-resolution.ps1" "$REPO/scripts/win-assets/bv-windows-closure-proof.ps1" "$REPO/scripts/win-assets/bv-windows-closure-launch.ps1" "$REPO/scripts/win-assets/bv-windows-closure-discard.ps1" "$OUT/share/"
 
-wait_for() {
-  local pattern="$1" count="$2" timeout="$3" observed
-  local deadline=$((SECONDS + timeout))
-  while (( SECONDS < deadline )); do
-    observed=$(grep -cE "$pattern" "$RUN_LOG" 2>/dev/null || true)
-    (( observed >= count )) && return 0
-    kill -0 "$LAUNCHER" 2>/dev/null || return 1
-    sleep 0.25
-  done
-  return 1
-}
+# Agent control-channel helpers, shared with the other scripts that drive it.
+source "$REPO/scripts/agent-channel-lib.sh"
 
-send() {
-  local command="$1" pattern="${2:-^BVAGENT END }" before
-  before=$(grep -cE "$pattern" "$RUN_LOG" 2>/dev/null || true)
-  printf '%s\n' "$command" >> "$CTL"
-  wait_for "$pattern" $((before + 1)) "$STEP_TIMEOUT" || {
-    echo "FAIL: no reply for ${command:0:100}" >&2
-    return 1
-  }
-}
 
-send_ok() {
-  local command="$1" before line
-  before=$(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG" 2>/dev/null || true)
-  send "$command" '^BVAGENT END '
-  line=$(grep -E '^BVAGENT CMD .* exit=' "$RUN_LOG" | tail -1)
-  [[ $(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG") -gt $before && "$line" == *' exit=0' ]]
-}
 
-wait_firstboot() {
-  local deadline=$((SECONDS + AGENT_TIMEOUT)) command='powershell -NoProfile -Command "& schtasks.exe /Query /TN BridgeVM-VioGpu3DFirstBoot *> $null; $task=($LASTEXITCODE -eq 0); $ready=(Test-Path C:\BridgeVM\stage3.flag) -and (-not $task); if($ready){Write-Output BVFIRSTBOOT_READY; exit 0}; Write-Output BVFIRSTBOOT_PENDING; exit 3"'
-  while (( SECONDS < deadline )); do
-    send_ok "$command" && grep -Eq '^BVFIRSTBOOT_READY\r?$' "$RUN_LOG" && return 0
-    sleep 5
-  done
-  return 1
-}
+
 capture_active_scanout() {
   local label="$1" capture="$OUT/captures/$1"
   python3 "$REPO/scripts/capture-active-iosurface.py" --iosurface "$OUT/display.fb.iosurface" \
