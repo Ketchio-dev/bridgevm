@@ -7,10 +7,10 @@ Mask JSON: {"reference_sha256": "...", "regions": {"caption":
 {"box": [x,y,w,h], "pixels": [local_pixel_index, ...]}, ...}}.
 """
 from __future__ import annotations
-
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 
 
@@ -110,8 +110,8 @@ def self_test():
             p.write_bytes(b"P6\n2 1\n255\n" + bytes([240, 240, 240, 241, 241, 241]))
         assert not verify_cell(mask, reference, captures)["matches_reference"]
         reference_alias, capture_alias = root / "reference-alias.ppm", root / "capture-alias.ppm"
-        reference_alias.hardlink_to(reference)
-        capture_alias.hardlink_to(captures[0])
+        os.link(reference, reference_alias)
+        os.link(captures[0], capture_alias)
         for bad_mask, bad_captures in ((mask, [reference_alias, *captures[1:]]),
                                        (mask, [captures[0], capture_alias, captures[2]]),
                                        (dict(mask, regions={}), captures),
