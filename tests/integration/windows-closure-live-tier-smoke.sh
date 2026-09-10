@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 MANIFEST_HELPER="$ROOT/scripts/live-gates/windows-closure-manifest.sh"
 TIER="$ROOT/scripts/live-gates/run-windows-closure-tier.sh"
-INTERACT="$ROOT/scripts/windows-1.0-closure-interact.sh"
+INTERACT="$ROOT/scripts/windows-1.0-closure-interact.sh"; CHANNEL="$ROOT/scripts/agent-channel-lib.sh"
 PROOF="$ROOT/scripts/win-assets/bv-windows-closure-proof.ps1"
 RECEIPT="$ROOT/scripts/live-gates/write-windows-closure-receipt.py"
 CLI="$ROOT/scripts/live-gates/bridgevm-live"
@@ -34,14 +34,14 @@ grep -Eq 'injector_boot_observed' "$TIER" && grep -Eq 'chmod 400.*disk.raw.*vars
 
 # F1-F4 are checked from live outputs; a capture must be explicitly identified
 # as newly presented CGL content, never the old 2D checkpoint buffer.
-grep -Eq 'BVF1MODE.*has_1600x900' "$INTERACT" && grep -Eq 'BridgeVM-VioGpu3DFirstBoot.*stage3.flag' "$INTERACT"
+grep -Eq 'BVF1MODE.*has_1600x900' "$INTERACT" && grep -Fxq 'source "$REPO/scripts/agent-channel-lib.sh"' "$INTERACT" && grep -Eq 'BridgeVM-VioGpu3DFirstBoot.*stage3.flag' "$CHANNEL"
 ready_line=$(grep -n 'wait_firstboot ||' "$INTERACT" | cut -d: -f1); f1_line=$(grep -n 'F1_CMD=' "$INTERACT" | cut -d: -f1); (( ready_line < f1_line ))
 grep -Eq 'RESIZE 1600x900.*SET_SCANOUT.*rect_w.*1600.*rect_h.*900' <(tr '\n' ' ' < "$INTERACT")
 for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE tesseract bv-notepad-started.log; do grep -Eq "$verb" "$INTERACT"; done
 # Guest stdout is relayed verbatim, so it keeps Windows CRLF while agent protocol
 # lines are LF-only: a `$`-anchored assertion over guest output can never match.
 # The WINLIST title must also be read from the field the host actually prints.
-test "$(grep -cE '\\r\?\$' "$INTERACT")" -eq 4 || { echo 'FAIL: guest-output anchors are not CR-tolerant' >&2; exit 1; }
+test "$(cat "$INTERACT" "$CHANNEL" | grep -cE '\\r\?\$')" -eq 4 || { echo 'FAIL: guest-output anchors are not CR-tolerant' >&2; exit 1; }
 field="$(grep -oE "print \\\$[0-9]+\}' <<<\"\\\$line\"" "$INTERACT" | grep -oE '[0-9]+')"
 test "$(awk -v i="$field" '{print $i}' <<<"BVAGENT WINLIST WIN 42 7 50 60 700 500 $(printf Notepad | base64)" | base64 -D)" = Notepad || { echo 'FAIL: WINLIST title field does not match the host record' >&2; exit 1; }
 grep -Eq 'capture-active-iosurface.py.*display.fb.iosurface' "$INTERACT" && ! grep -Eq 'virtio-gpu-checkpoint-|SNAPSHOT' "$INTERACT" && grep -Eq 'BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1.*BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT=0.*BRIDGEVM_VIRTIO_GPU_ASYNC_PRESENT=0' "$INTERACT"
