@@ -78,7 +78,7 @@ Checkpoint `97589c0f7866288733ab7235395530d567cb9bc1` passed exact hosted CI
 active collection 34439581819 and sealed cell 34439581755. After the 150-percent
 B6 job terminated and process inspection found no worker/VM, the clean installed
 worker clone was fast-forwarded to that SHA with its LaunchAgent stopped and
-then bootstrapped again. Installed worker blob is
-`8f8bca45fdf128706af8109c7d311c099637b3e1`. The worker-level t0 guard is now
+then bootstrapped again. Installed worker script SHA-256 is
+`92cb8ed0ace5915fe628f573656a7a4305ee90b0203ee8c6dfb16e06a8042367`. The worker-level t0 guard is now
 deployed; no forbidden deterministic job was submitted to physical hardware to
 exercise it. The existing synthetic worker contracts remain the refusal evidence.
