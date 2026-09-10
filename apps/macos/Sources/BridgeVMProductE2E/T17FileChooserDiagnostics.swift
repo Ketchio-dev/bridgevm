@@ -29,7 +29,7 @@ enum T17FileChooserDiagnostics {
 
     private static func element(_ value: CFTypeRef?) -> String {
         guard let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return "none" }
-        let node = value as! AXUIElement
+        let node: AXUIElement = unsafeBitCast(value, to: AXUIElement.self)
         return label(attribute(node, kAXRoleAttribute).1) + "/" + label(attribute(node, kAXIdentifierAttribute).1)
     }
 
