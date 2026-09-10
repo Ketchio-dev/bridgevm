@@ -39,3 +39,13 @@ and exact-checkpoint hosted runs must be recorded separately.
 
 A9, A11, and B6 remain OPEN. This change proves no installation, reboot,
 glyph matrix, renderer performance, or release criterion.
+
+## Scope correction during B6 queue integration
+
+The statement above that dispatch refusal also covers a previously queued t0
+job was too broad. The worker checks out the job's sealed SHA. A job sealed
+at a revision before the refusal change would still use that older dispatcher.
+The six focused checks prove rejection by the revised CLI and dispatcher,
+not retroactive enforcement over older sealed revisions. A worker-level
+venue boundary remains to be implemented and tested; no old t0 job was run
+on the physical Mac to investigate this gap.
