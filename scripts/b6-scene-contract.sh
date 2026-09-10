@@ -39,7 +39,7 @@ find_hwnd() {
   win_line=$(tail -n "+$((before + 1))" "$log" | grep '^BVAGENT WINLIST WIN ' | while IFS= read -r line; do
     local title_b64 title
     title_b64=$(awk '{print $10}' <<<"$line")
-    title=$(printf '%s' "$title_b64" | base64 -D 2>/dev/null || true)
+    title=$(printf '%s' "$title_b64" | base64 -d 2>/dev/null || true)
     [[ "$title" == *"$title_substr"* ]] && { printf '%s\n' "$line"; }
   done | tail -1 || true)
   awk '{print $4}' <<<"${win_line:-}"
