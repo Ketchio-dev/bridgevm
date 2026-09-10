@@ -2,7 +2,6 @@
 """Physical-Mac B6 cell observation. Successful collection is never gate closure."""
 import argparse
 import datetime
-import hashlib
 import json
 import pathlib
 import platform
@@ -84,13 +83,13 @@ def validate_capture(out, config):
     return dict(schema_version=1, **config, run_count=3, frame_report_sha256=hashes, **NO_CLAIM)
 
 
-def run(args):
+def run(args, receipt_factory=None, complete=None):
     if not re.fullmatch("[A-Za-z0-9][A-Za-z0-9._-]{0,127}", args.job_id):
         raise ValueError("noncanonical job id")
     if not args.out.is_absolute() or not args.out.is_dir() or args.out.is_symlink():
         raise ValueError("output must be an existing absolute job directory")
     commit = subprocess.check_output(["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True).strip()
-    value = receipt(args.job_id, commit)
+    value = (receipt_factory or receipt)(args.job_id, commit)
     destination = args.out / "receipt.json"
     write_json(destination, value)
     stage = "input"
@@ -140,9 +139,10 @@ def run(args):
         value.update(valid=True, outcome="observed", failure_code="none", run_count=3,
                      result_sha256=file_hash(result_path),
                      evidence_paths=["cell-observation.json", "capture/summary.txt", "capture/runs.json"],
-                     known_confounders=["Single cell, not the 27-run matrix",
+                     known_confounders=value.get("known_confounders", []) + ["Single cell, not the 27-run matrix",
                                        "No reviewed glyph masks or accepted performance baseline",
                                        "full clone integrity hash immediately precedes boot (warm cache)"])
+        if complete is not None: stage = "diagnostic"; complete(value, args.out)
         status = 0
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         value.update(valid=False, outcome="failed", failure_code=stage + "-failed",
@@ -153,7 +153,7 @@ def run(args):
     return status
 
 
-def main():
+def main(run_cell=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=pathlib.Path, required=True)
     parser.add_argument("--job-id", required=True)
@@ -161,7 +161,7 @@ def main():
     parser.add_argument("--sealed-binary", type=pathlib.Path, required=True)
     args = parser.parse_args()
     try:
-        return run(args)
+        return (run_cell or run)(args)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print("B6 observation refused: " + str(error), file=sys.stderr)
         return 2

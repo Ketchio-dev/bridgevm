@@ -1898,3 +1898,7 @@ scripts/b6-caption-focus.sh	14
 tests/integration/b6-caption-focus-contract.py	56
 tests/integration/b6-caption-point-contract.ps1	37
 .github/workflows/b6-caption-focus-contracts.yml	21
+scripts/live-gates/b6_renderer_trace.py	59
+scripts/live-gates/run-b6-renderer-trace.py	37
+tests/integration/b6-renderer-trace-contract.py	116
+.github/workflows/b6-renderer-trace-contracts.yml	15

@@ -61,7 +61,7 @@ cmd_submit() {
     # `--help` mistaken for a tier) must not sit in the queue looking like work.
     case "$tier" in
         t0-check) echo "deterministic checks belong on GitHub-hosted Actions, not the physical-Mac live queue" >&2; exit 2 ;;
-        t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure|t8-pointer-reliability|t9-bridgevm-pc-pci|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start|t15-hvf-boot-performance|t16-hvf-nvme-performance|t17-windows-hvf-product-e2e|t18-audio-teardown|d1-windows-media-comparison|d2-b6-cell-observation) ;;
+        t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure|t8-pointer-reliability|t9-bridgevm-pc-pci|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start|t15-hvf-boot-performance|t16-hvf-nvme-performance|t17-windows-hvf-product-e2e|t18-audio-teardown|d1-windows-media-comparison|d2-b6-cell-observation|d3-b6-renderer-trace) ;;
         *) echo "unknown tier $tier" >&2; usage >&2; exit 2 ;;
     esac
 
@@ -74,7 +74,7 @@ cmd_submit() {
             *) echo "unknown submit option $1" >&2; exit 2 ;;
         esac
     done
-    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ] || [ "$tier" = t15-hvf-boot-performance ] || [ "$tier" = t16-hvf-nvme-performance ] || [ "$tier" = t17-windows-hvf-product-e2e ] || [ "$tier" = t18-audio-teardown ] || [ "$tier" = d1-windows-media-comparison ] || [ "$tier" = d2-b6-cell-observation ]; then
+    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ] || [ "$tier" = t15-hvf-boot-performance ] || [ "$tier" = t16-hvf-nvme-performance ] || [ "$tier" = t17-windows-hvf-product-e2e ] || [ "$tier" = t18-audio-teardown ] || [ "$tier" = d1-windows-media-comparison ] || [ "$tier" = d2-b6-cell-observation ] || [ "$tier" = d3-b6-renderer-trace ]; then
         [ -f "$input_manifest" ] || {
             echo "$tier needs --input-manifest PATH" >&2
             exit 2
