@@ -174,3 +174,26 @@ asynchronous NSOpenPanel completion API. Four native XCTest cases pass:
 deferred selection, cancel preserving the old selection, OK without a URL,
 and directory/file filtering. The candidate still needs a new sealed pilot;
 neither these tests nor the successful queued Accessibility check closes A9.
+
+## Queued chooser-state pilot r6, 2026-09-10
+
+`t17-f35bac2d-local-pilot-r6` tested
+`f35bac2df59d1804f7e69c7015f777c3ccc6d17d` from 03:04:33 to 03:05:28 UTC.
+The exact checkpoint's hosted CI `34431457559` and Security `34431457586`
+were green before submission. Its private lane result records artifact preflight
+and UI entry, but no proven VM creation, and cleanup verified. The failure was
+`input-selection-failed`: `file chooser could not be activated`.
+
+This is the mandatory activation guard in the new chooser driver, before its
+AX Raise/Go To shortcut. It is not evidence that PID-targeted keyboard delivery
+or GoToWindow discovery failed: neither operation was reached. Read-only
+observation while the owned product process was alive found an Open panel at
+Documents with Open disabled; no manual input was injected into the pilot.
+
+The public receipt SHA-256 is
+`85a32248f7d4bbc4a95c5541777164f5580394970fcdc7888bda8e1adaeb05d6`;
+the input manifest SHA-256 is
+`b0736d1b6922215962a9a01d2ab23fe30d2a3d1b112c277bf21738f74039350e`.
+The failed receipt remains retained. No Windows installation, full product
+journey, clean-machine flow or signed 3D policy provenance is proven by r6.
+A9 remains OPEN and product 3D injection remains unavailable.

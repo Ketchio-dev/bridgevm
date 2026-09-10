@@ -41,3 +41,30 @@ local project checks cannot establish the native Windows contract.
 
 Actual PresentMon/ETW behaviour, a changing real scene, a comparable baseline,
 the complete glyph matrix and release-tier receipts are still required.
+
+## Authenticated frame-time diagnostics
+
+The host analyzer now authenticates CSV bytes against an explicit SHA-256,
+requires a bounded regular file, rejects duplicate/missing/ragged columns,
+requires a single DWM process/swapchain, and rejects invalid numbers or a broken
+CPU timeline. It cross-checks FrameTime against CPUBusy plus CPUWait with only
+the exporter's four-decimal rounding allowance. The metric is the CPU interval
+between frames, not GPU duration or input latency, as specified by the
+[2.x metric contract linked from the pinned release](https://github.com/GameTechDev/PresentMon/blob/v2.3.0/README-ConsoleApplication.md)
+and implemented in the [v2.5.1 exporter](https://github.com/GameTechDev/PresentMon/blob/v2.5.1/PresentMon/CsvOutput.cpp).
+
+The CLI can summarize one authenticated stream or compare distinct baseline and
+candidate streams. It reports mean and nearest-rank p95 ratios and their separate
+10-percent comparisons. It never emits criterion_pass, claim_eligible or
+capability_promotion as true. A two-row minimum merely permits a diagnostic;
+it is not a sufficient live sample count. Workload equivalence, adequate capture
+coverage, declared baseline provenance, reviewed glyph masks and the full fixed
+matrix must still be established by the live gate. No acceptance aggregate is
+redefined by displaying these two statistics.
+
+Thirteen focused regression tests passed locally. The preserved classic-run2
+CSV (SHA-256 `211244c20d9e1e3d645860fff87e33938ac727b842cf97fd6744b69409029e92`)
+was also authenticated and parsed: only 3 frames across a 1133.1572 ms CPU-start
+span, with mean FrameTime 398.6863 ms. This sparse static-scene diagnostic is
+not a representative frame-rate measurement, a performance regression verdict,
+a comparable baseline, or evidence that the B6 frame-time clause passed.
