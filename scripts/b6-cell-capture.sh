@@ -49,6 +49,7 @@ PRESENTMON_NAME="$(basename "$PRESENTMON")"
 
 # Agent control-channel helpers, shared with the other scripts that drive it.
 source "$REPO/scripts/agent-channel-lib.sh"
+source "$REPO/scripts/b6-scene-contract.sh"
 
 
 # Baseline count of a pattern, taken before some action; call wait_after with
@@ -81,38 +82,6 @@ wait_second_boot() {
   # the restart this function is meant to wait for ever happens.
   local baseline="$1"
   wait_for '^BVAGENT SERVICE start' "$((baseline + 1))" "$AGENT_TIMEOUT"
-}
-
-wait_window_gone() {
-  local hwnd="$1" attempt before
-  for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    before=$(wc -l < "$RUN_LOG")
-    send 'WINLIST' '^BVAGENT WINLIST WINEND$' || return 1
-    if ! tail -n "+$((before + 1))" "$RUN_LOG" | grep -q "^BVAGENT WINLIST WIN $hwnd "; then
-      return 0
-    fi
-    sleep 2
-  done
-  echo "FAIL: hwnd=$hwnd still listed after teardown" >&2
-  return 1
-}
-
-find_hwnd() {
-  local title_substr="$1" win_line before
-  # Only the reply to *this* WINLIST counts. Scanning the whole log matched
-  # windows listed earlier in the boot: on 2026-09-09 run 3's classic scene got
-  # the packaged window's hwnd and run 2's packaged scene got the classic one,
-  # so scenes typed into each other and a capture labelled classic-run3 is
-  # actually the packaged window with three rounds of text accumulated in it.
-  before=$(wc -l < "$RUN_LOG")
-  send 'WINLIST' '^BVAGENT WINLIST WINEND$' || return 1
-  win_line=$(tail -n "+$((before + 1))" "$RUN_LOG" | grep '^BVAGENT WINLIST WIN ' | while IFS= read -r line; do
-    local title_b64 title
-    title_b64=$(awk '{print $10}' <<<"$line")
-    title=$(printf '%s' "$title_b64" | base64 -D 2>/dev/null || true)
-    [[ "$title" == *"$title_substr"* ]] && { printf '%s\n' "$line"; }
-  done | tail -1 || true)
-  awk '{print $4}' <<<"${win_line:-}"
 }
 
 # One typing payload per run index so each of the 3 runs is independent
@@ -291,7 +260,7 @@ for run in 1 2 3; do
       DPI_CMD="powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-b6-window-dpi.ps1 -Hwnd $hwnd"
       if send_ok "$DPI_CMD"; then
         classic_dpi_line=$(grep -E "^BVEFFECTIVEDPI hwnd=$hwnd " "$RUN_LOG" | tail -1 | tr -d '\r')
-        [[ -n "$classic_dpi_line" ]] && classic_dpi=pass
+        b6_dpi_matches "$classic_dpi_line" "$hwnd" "$LOGPIXELS" && classic_dpi=pass
       fi
       _b_key=$(wait_baseline 'live input accepted: command=Key\(')
       hexlines=$(typing_hex_for_run "$run")
@@ -326,14 +295,14 @@ for run in 1 2 3; do
       send "WINCLOSE $hwnd" "^BVAGENT WINCLOSE $hwnd -> OK WINCLOSE$" || true
       sleep 2
       send_ok "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-windows-closure-discard.ps1 -Hwnd $hwnd" || true
-      wait_window_gone "$hwnd" || true
+      wait_window_gone "$hwnd" || b6_scene_fail "$run" classic teardown-failed
       sleep 2
     fi
   fi
 
   # Packaged Notepad restores the previous run's document, so a run that did
   # not reset it is not independent of the one before it.
-  send_ok "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-b6-modern-notepad-reset.ps1" || true
+  send_ok "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-b6-modern-notepad-reset.ps1" || b6_scene_fail "$run" packaged reset-failed
   MODERN_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-b6-modern-notepad-launch.ps1'
   if send_ok "$MODERN_CMD"; then
     mhwnd=""
@@ -348,7 +317,7 @@ for run in 1 2 3; do
       DPI_CMD2="powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-b6-window-dpi.ps1 -Hwnd $mhwnd"
       if send_ok "$DPI_CMD2"; then
         packaged_dpi_line=$(grep -E "^BVEFFECTIVEDPI hwnd=$mhwnd " "$RUN_LOG" | tail -1 | tr -d '\r')
-        [[ -n "$packaged_dpi_line" ]] && packaged_dpi=pass
+        b6_dpi_matches "$packaged_dpi_line" "$mhwnd" "$LOGPIXELS" && packaged_dpi=pass
       fi
       # Dismiss the first-run tip so the tab/menu row is unobstructed. This
       # goes on the live-input channel ($INPUT), not the shell command
@@ -376,7 +345,7 @@ for run in 1 2 3; do
       send "WINCLOSE $mhwnd" "^BVAGENT WINCLOSE $mhwnd -> OK WINCLOSE$" || true
       sleep 2
       send_ok "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-windows-closure-discard.ps1 -Hwnd $mhwnd" || true
-      wait_window_gone "$mhwnd" || true
+      wait_window_gone "$mhwnd" || b6_scene_fail "$run" packaged teardown-failed
       sleep 2
     fi
   fi

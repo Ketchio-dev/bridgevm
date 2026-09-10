@@ -58,7 +58,7 @@ def verify_cell(scenes, verifier=None):
 
 
 def self_test():
-    import hashlib
+    import subprocess
     import tempfile
 
     class FakeVerifier:
@@ -98,7 +98,7 @@ def self_test():
             pass
         else:
             raise AssertionError("an empty cell was accepted")
-        assert hashlib.sha256(b"").hexdigest()
+    subprocess.run(["python3", str(Path(__file__).resolve().parents[1] / "tests/integration/b6-scene-contract-smoke.py")], check=True)
     print("b6 cell verification self-test: PASS")
     return 0
 

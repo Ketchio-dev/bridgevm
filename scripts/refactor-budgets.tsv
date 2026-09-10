@@ -1869,3 +1869,5 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17LaneDetailTests.swift	28	0
 apps/macos/Sources/BridgeVMProductE2E/T17Activation.swift	30	0
 apps/macos/Sources/BridgeVMControl/FileSelection.swift	39	0
 apps/macos/Tests/BridgeVMControlTests/FileSelectionTests.swift	74	0
+scripts/b6-scene-contract.sh	46	0
+tests/integration/b6-scene-contract-smoke.py	81	0

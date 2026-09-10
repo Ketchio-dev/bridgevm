@@ -1,30 +1,21 @@
-# Diagnostic-only guest asset for the B6 glyph matrix. Not part of any shipped
-# closure gate. Packaged Notepad restores the previous session's tabs and their
-# text when it is relaunched -- its own first-run tip advertises this -- so
-# without a reset each B6 run types into the document the last run left behind
-# and the runs are not independent, which is exactly what the criterion's
-# "3 independent runs" requires them to be. Observed live on 2026-09-09: three
-# runs accumulated into one document rather than producing three.
-#
-# The session lives in the package's LocalState. Stopping the app and removing
-# that state is the documented-shape reset; it touches only this package's own
-# data inside a disposable test guest.
+# Diagnostic reset inside a disposable B6 guest; failure must block the scene.
+# A retained document is not an independent run, even if a later capture looks
+# plausible. Do not swallow a locked file or an incomplete enumeration.
 $ErrorActionPreference = 'Stop'
-$pkg = Get-AppxPackage -Name Microsoft.WindowsNotepad -ErrorAction Stop
-Get-Process -Name Notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+$packages = @(Get-AppxPackage -Name Microsoft.WindowsNotepad -ErrorAction Stop)
+if ($packages.Count -ne 1) { throw 'Expected exactly one installed Notepad package' }
+$pkg = $packages[0]
+Get-Process -Name Notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction Stop
 Start-Sleep -Milliseconds 1500
 $state = Join-Path $env:LOCALAPPDATA "Packages\$($pkg.PackageFamilyName)\LocalState"
 $removed = 0
+$remaining = 0
 if (Test-Path -LiteralPath $state) {
-    foreach ($child in Get-ChildItem -LiteralPath $state -Force -ErrorAction SilentlyContinue) {
-        try {
-            Remove-Item -LiteralPath $child.FullName -Recurse -Force -ErrorAction Stop
-            $removed++
-        } catch {
-            # A file the app still holds open is not a reason to fail the run;
-            # report the count and let the caller judge the reset by the first
-            # capture's character count.
-        }
+    foreach ($child in Get-ChildItem -LiteralPath $state -Force -ErrorAction Stop) {
+        Remove-Item -LiteralPath $child.FullName -Recurse -Force -ErrorAction Stop
+        $removed++
     }
+    $remaining = @(Get-ChildItem -LiteralPath $state -Force -ErrorAction Stop).Count
+    if ($remaining -ne 0) { throw 'Notepad session reset left retained state' }
 }
-Write-Output "BVMODERNRESET family=$($pkg.PackageFamilyName) state_present=$(Test-Path -LiteralPath $state) removed=$removed"
+Write-Output "BVMODERNRESET family=$($pkg.PackageFamilyName) state_present=$(Test-Path -LiteralPath $state) removed=$removed remaining=$remaining success=True"

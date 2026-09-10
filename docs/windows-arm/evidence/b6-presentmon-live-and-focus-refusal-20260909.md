@@ -264,3 +264,34 @@ DWM presenting the glyph, the guest sometimes takes 130-300 ms and sometimes
 14-40, with nothing between. That reads like an idle cadence somewhere on the
 xHCI/HID or compositor path, and it is not a harness question any more. It is
 recorded here as the narrowed frontier, not diagnosed.
+
+## 2026-09-10: diagnostic success did not enforce all scene preconditions
+
+The ten-hour continuation found three remaining fail-open paths in the
+diagnostic harness. A nonempty BVEFFECTIVEDPI line counted as DPI success even
+when its window DPI and monitor scale differed from the requested cell.
+wait_window_gone failures were discarded with `|| true`, and the packaged
+session reset both swallowed deletion errors in PowerShell and had its exit
+status ignored by the caller. These code paths could admit a non-independent
+or incorrectly scaled scene; this finding does not assert that every earlier
+capture actually took one of those paths.
+
+The candidate requires the requested 96/120/144 window DPI and corresponding
+100/125/150 monitor scale on the exact queried hwnd. Scene teardown or reset
+failure writes scene-failure.env and ends the attempt before another scene can
+count. The reset requires exactly one installed package and zero remaining
+LocalState entries, and deletion/enumeration failures now propagate. Guest
+assets keep CRLF. Canonical media remain unchanged.
+
+Headless regression cases exercise the real shell helpers against wrong DPI,
+wrong monitor scale, wrong hwnd, malformed observations, old WINLIST entries,
+persistent windows, failed log reads and large replies. The large-reply case
+also prevents a `grep -q` SIGPIPE from masquerading as proof of window absence.
+The cases run through verify-b6-cell.py's self-test in the full project check.
+The stricter reset still needs a live guest run; no matrix cell is promoted.
+
+The suggestions above to re-declare the frame-time clause are not adopted by
+this continuation. The fixed within-10%-of-baseline requirement stays open.
+Keystroke-to-present latency is diagnostic evidence, not a replacement frame-
+time gate. A valid campaign still needs a declared changing scene workload,
+comparable baseline frame measurements, reviewed masks and every required cell.
