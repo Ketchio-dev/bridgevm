@@ -1203,3 +1203,21 @@ itself is not wired into any shipped closure gate.
 Full local `scripts/check-project.sh` passed. This registry-only reseal must
 itself pass hosted workflows. Product state stays Engineering Preview; B6,
 A9, B8 and B9 stay OPEN.
+
+## Evidence identity rejection, 2026-09-10
+
+A real repository blob object was accepted by the previous freshness helper:
+`git rev-parse HEAD:scripts/capability_freshness.py` named a blob, while
+`code_changed_since(blob, root)` returned `None`. The object-type lookup only
+checked its exit status, then a failed `git diff blob..HEAD` was treated as no
+changes. This is a reproduced verifier defect, not evidence that the actual
+registry's commit was a blob or that a live result passed.
+
+The corrected helper requires an available commit object and rejects comparison
+errors. A shallow checkout with missing tested history is missing evidence and
+must fetch that history; it cannot silently skip the comparison. Twelve focused
+regression cases passed against real temporary repositories and explicit Git
+error responses. Local project checks and the GitHub-hosted capability job now
+invoke the same test-and-registry wrapper. Existing structural ceilings remain
+unchanged. A11 stays OPEN until its full current-head regression/hosted seal is
+retained; no product or live criterion is promoted by this verifier repair.

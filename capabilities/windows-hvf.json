@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-10",
-  "tested_commit": "e359c174d80645c159eb239fdd968318cea961ec",
+  "tested_commit": "31bbe7d076ae7c09330b94782460e952e029216a",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: tested code head e359c174d80645c159eb239fdd968318cea961ec. Full local scripts/check-project.sh and ten native T17FileChooserTests passed. Hosted Security 34430915440 passed, but hosted CI 34430915347 failed because tested_commit still named the preceding B6 source tree. That failure is retained, not reclassified as a pass. This checkpoint updates the tested code identity without changing source or promoting a criterion. Exact checkpoint-SHA hosted CI/Security and the final release regression seal remain required. A9 r4/r5 did not prove VM creation; B6 still lacks its declared matrix and frame-time evidence.",
+      "measured": "OPEN: tested code head 31bbe7d076ae7c09330b94782460e952e029216a. Twelve deterministic freshness regression cases passed, including real Git blob/tree/tag rejection, missing shallow history, comparison errors and code-versus-documentation changes. The earlier chooser source passed the full project check and ten native tests; its f35bac2d checkpoint passed hosted CI 34431457559 and Security 34431457586. The e359c174 registry-drift CI failure remains retained. Exact current-checkpoint hosted CI/Security and the final release regression seal remain required. A9 and the B6 matrix/frame-time criterion are not promoted.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
