@@ -1,0 +1,21 @@
+name: B6 caption focus contracts
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  host-parser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 tests/integration/b6-caption-focus-contract.py
+  native-windows:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Native physical caption query on a synthetic window
+        shell: powershell
+        run: tests/integration/b6-caption-point-contract.ps1

@@ -1893,3 +1893,8 @@ scripts/live-gates/run-b6-cell-observation.py	171	0
 tests/integration/b6-cell-observation-contract.py	175	0
 .github/workflows/b6-sealed-cell-contracts.yml	15	0
 tests/integration/live-worker-venue-contract.py	73	0
+scripts/win-assets/bv-b6-caption-point.ps1	53
+scripts/b6-caption-focus.sh	14
+tests/integration/b6-caption-focus-contract.py	56
+tests/integration/b6-caption-point-contract.ps1	37
+.github/workflows/b6-caption-focus-contracts.yml	21

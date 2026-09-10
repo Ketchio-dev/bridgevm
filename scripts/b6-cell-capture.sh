@@ -41,7 +41,7 @@ cp "$REPO/scripts/win-assets/bvgpu-apply-host-resolution.ps1" \
    "$REPO/scripts/win-assets/bv-b6-read-logpixels.ps1" \
    "$REPO/scripts/win-assets/bv-b6-modern-notepad-launch.ps1" \
    "$REPO/scripts/win-assets/bv-b6-modern-notepad-reset.ps1" \
-   "$REPO/scripts/win-assets/bv-b6-caret-still.ps1" \
+   "$REPO/scripts/win-assets/bv-b6-caret-still.ps1" "$REPO/scripts/win-assets/bv-b6-caption-point.ps1" \
    "$REPO/scripts/win-assets/bv-b6-presentmon-capture.ps1" \
    "$PRESENTMON" \
    "$OUT/share/"
@@ -50,7 +50,7 @@ PRESENTMON_NAME="$(basename "$PRESENTMON")"
 # Agent control-channel helpers, shared with the other scripts that drive it.
 source "$REPO/scripts/agent-channel-lib.sh"
 source "$REPO/scripts/b6-scene-contract.sh"
-source "$REPO/scripts/b6-active-frame-time.sh"
+source "$REPO/scripts/b6-active-frame-time.sh"; source "$REPO/scripts/b6-caption-focus.sh"
 
 
 # Baseline count of a pattern, taken before some action; call wait_after with
@@ -138,7 +138,7 @@ LAUNCHER=$!
 wait_for '^BVAGENT SERVICE start' 1 "$AGENT_TIMEOUT" || { echo 'FAIL: agent service timeout' >&2; exit 1; }
 for file in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1 bv-windows-closure-launch.ps1 \
             bv-windows-closure-discard.ps1 bv-b6-window-dpi.ps1 bv-b6-read-logpixels.ps1 \
-            bv-b6-modern-notepad-reset.ps1 bv-b6-caret-still.ps1 \
+            bv-b6-modern-notepad-reset.ps1 bv-b6-caret-still.ps1 bv-b6-caption-point.ps1 \
             bv-b6-modern-notepad-launch.ps1 bv-b6-presentmon-capture.ps1 "$PRESENTMON_NAME"; do
   bytes=$(stat -f %z "$OUT/share/$file")
   wait_for "^BVAGENT SHARE host->guest $file bytes=$bytes " 1 300 \
@@ -212,7 +212,7 @@ focus_window() {
           # 2026-09-09: classic Notepad is refused the foreground on every run
           # after a packaged (UWP) scene has run, 5/5 both times. A click is
           # how a user takes focus and does not go through SetForegroundWindow.
-          echo "FOCUS: hwnd=$hwnd trying pointer click at $click" >&2
+          click=$(b6_caption_hid_point "$hwnd") || { echo "FOCUS: hwnd=$hwnd has no verified physical caption point" >&2; return 1; }; echo "FOCUS: hwnd=$hwnd trying verified caption click at $click" >&2
           _b_fp=$(wait_baseline 'live input accepted: command=Pointer\(')
           printf 'POINTER click:%s\n' "$click" >> "$INPUT"
           wait_after 'live input accepted: command=Pointer\(' "$_b_fp" 15 || true
@@ -258,7 +258,7 @@ for run in 1 2 3; do
     if [[ "$hwnd" =~ ^[0-9]+$ ]]; then
       send "WINBOUNDS $hwnd 50 60 700 500" "^BVAGENT WINBOUNDS $hwnd 50 60 700 500 -> OK WINBOUNDS$" || true
       classic_focus=fail
-      if focus_window "$hwnd" "$(hid_point 400 78)"; then classic_focus=pass; fi
+      if focus_window "$hwnd" caption; then classic_focus=pass; fi
       DPI_CMD="powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-b6-window-dpi.ps1 -Hwnd $hwnd"
       if send_ok "$DPI_CMD"; then
         classic_dpi_line=$(grep -E "^BVEFFECTIVEDPI hwnd=$hwnd " "$RUN_LOG" | tail -1 | tr -d '\r')
