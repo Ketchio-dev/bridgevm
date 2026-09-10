@@ -16,7 +16,7 @@ $checks = 0; function Query-Tip {
     $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$diagnostic`" -Query `"$script`" -Hwnd $Target -Width 1600 -Height 900"
     $child = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList $arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     try {
-        $deadline = [DateTime]::UtcNow.AddSeconds(20)
+        $null = $child.Handle; $deadline = [DateTime]::UtcNow.AddSeconds(20)
         while (!$child.HasExited -and [DateTime]::UtcNow -lt $deadline) {
             [System.Windows.Forms.Application]::DoEvents()
             Start-Sleep -Milliseconds 50
@@ -31,7 +31,7 @@ try {
     $hwnd = $form.Handle.ToInt64()
     $result = Query-Tip $hwnd
     if ($result.Code -ne 0 -or $result.Output.Trim() -notmatch "^BVTIPPOINT hwnd=$hwnd state=present x=\d+ y=\d+ owner=$hwnd$") {
-        throw "Visible owned button query failed: $($result.Error) $($result.Output)"
+        throw "Visible owned button query failed (exit=$($result.Code)): $($result.Error) $($result.Output)"
     }
     $checks++
     $button.Enabled = $false
