@@ -19,16 +19,14 @@ def _git(root: str, *args: str) -> subprocess.CompletedProcess:
 
 def code_changed_since(tested_commit: str, root: str) -> str | None:
     """Return the first changed code path since ``tested_commit``, if any."""
-    if _git(root, "cat-file", "-t", tested_commit).returncode != 0:
-        # In a full clone an unknown id is a registry defect (a mistyped seal
-        # passed silently on 2026-08-20); only a shallow checkout may skip it.
-        if _git(root, "rev-parse", "--is-shallow-repository").stdout.strip() != "true":
-            return f"tested_commit {tested_commit[:12]} is not a known commit"
-        return None
+    kind = _git(root, "cat-file", "-t", tested_commit)
+    if kind.returncode != 0 or kind.stdout.strip() != "commit":
+        # Missing history is missing evidence, even in a shallow checkout.
+        return f"tested_commit {tested_commit[:12]} is not an available commit; fetch its history"
     changed = _git(root, "diff", "--name-only", f"{tested_commit}..HEAD", "--", *CODE_PATHS)
-    if changed.returncode != 0 or not changed.stdout.strip():
-        return None
-    return changed.stdout.split()[0]
+    if changed.returncode != 0:
+        return f"could not compare tested_commit {tested_commit[:12]} with HEAD"
+    return changed.stdout.splitlines()[0] if changed.stdout.strip() else None
 
 
 def measured_head_mismatch(registry: dict) -> tuple[str, str] | None:

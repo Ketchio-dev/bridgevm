@@ -1874,3 +1874,5 @@ tests/integration/b6-scene-contract-smoke.py	81	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooser.swift	54	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserAX.swift	132	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserTests.swift	102	0
+scripts/check-capability-registry.sh	4	0
+tests/integration/capability-freshness-smoke.py	99	0

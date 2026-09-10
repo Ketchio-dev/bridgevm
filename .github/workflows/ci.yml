@@ -224,7 +224,7 @@ jobs:
       - name: capability checks have complete Git history
         run: test "$(git rev-parse --is-shallow-repository)" = false
       - name: capability registry is valid and generated blocks are current
-        run: python3 scripts/render-capability-status.py --check
+        run: bash scripts/check-capability-registry.sh
       - name: general preview release contract is fail-closed
         run: python3 scripts/generate-general-preview-manifest.py --self-test
       - name: machine contract and schema are valid JSON
