@@ -60,3 +60,30 @@ CI 34473855644 rejected stale registry freshness; this is not green release
 evidence. The submitted job `d3-b6-ebb94c8c-renderer-debug-r3` seals its source,
 probe, renderer and fixed logging policy. It must find actual TGSI and GLSL
 records before reporting a valid trace, and all promotion flags stay false.
+
+## Subsequent continuation
+
+Classification repair `cf465e5d` passed the full local project check, hosted CI
+34533860375 and Security 34533860483. This closes the document-registration
+omission, not A11's final release regression criterion.
+
+A9 diagnostic branch `7cc7148d` passed full local checks and exact hosted CI
+34475122806 / Security 34475124672. Pilots `t17-7cc7148d-local-pilot-r7` and
+`t17-7cc7148d-local-pilot-r8-observed` both failed waiting for the Go To location
+field; both lane results reported cleanup_verified=true. During r8, read-only
+AX observations and a screenshot showed the ordinary Open panel, not Go To.
+No observer click or key was added to that pilot. A separate isolated manual
+interaction could show GoToWindow / PathTextField and return the exact ISO
+selection AXValue, but this does not establish helper event delivery.
+
+The next diagnostic records bounded activation, frontmost PID, AX status,
+window role/identifier and focused-element metadata before/after PID-targeted
+keys and at timeout. It never records titles, input values or path strings;
+unknown role/identifier values are classified as other. Four focused context
+and privacy tests plus ten existing chooser tests passed. Transport and
+selection acceptance conditions are unchanged. A new live result is required.
+
+The renderer prefix repair independently reanalyzed the retained 10,162,048-byte
+capture log with its original SHA-256 unchanged: TGSI273 / GLSL273. This is
+explicitly offline reanalysis. The original diagnostic-failed receipt was not
+rewritten, and no glyph/performance criterion or product state was promoted.
