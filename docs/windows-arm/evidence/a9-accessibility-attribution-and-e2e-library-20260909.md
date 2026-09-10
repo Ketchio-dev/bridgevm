@@ -86,3 +86,38 @@ A9 stays `OPEN`. No VM creation, Windows installation, guest integration,
 shutdown or snapshot/restore was proven today. What changed is that the wall
 has a name, a mechanism, a fix in the tier, and instrumentation on the far side
 of it.
+
+## Same evening: what the first instrumented runs said
+
+With `failure_detail` in the lane result, the next local runs stopped being
+guesses.
+
+- **The LaunchServices launch had its own ambiguity.** A locally packaged
+  build from the fixed head was granted Accessibility and run through the
+  tier (`open -W -n -a <helper.app>`): `accessibility-untrusted`, with the
+  detail "macOS Accessibility permission is not granted". The same helper
+  binary exec'd directly from the shell: `ui_frontend_automated=true`. The
+  grant was on the right helper; `-a` was not launching it. `lsregister`
+  knows 24 registrations for `dev.bridgevm.product-e2e` -- every artifact ever
+  unpacked on this Mac -- and with `-a` LaunchServices may pick a registered
+  copy over the path it was given. The launcher now opens the bundle URL
+  without `-a`.
+- **Ad-hoc grants are per code hash, six times over.** `tccutil reset
+  Accessibility dev.bridgevm.product-e2e` reported six records reset, one per
+  build that had ever been granted. A "+"-added entry for a new build merged
+  into the existing row without updating its hash; only reset-then-add took.
+- **The press was refused, not the lookup.** Direct exec reached
+  `createVM` and failed at `identified UI element does not support press`:
+  `element()` found `bridgevm.library.toolbar.create` and
+  `AXUIElementPerformAction` returned non-success. A plain process launching
+  the same app the same way (`Process`, stdio redirected, valid lane) found the
+  app already frontmost and pressed with AXError 0. AXPress on a window that
+  is not key is refused, and this Mac runs a terminal manager (`cmux`) that
+  re-raised itself over System Settings and Finder throughout the evening.
+  The helper now re-fronts the app before a refused press and retries once,
+  and the detail reports the frontmost state when it still fails.
+- **Earlier experiments that "found no button" were launch failures**: the
+  app refuses `--e2e-unattend-path` that is not a regular file beside the
+  library root, and with stdio redirected that refusal was invisible.
+
+None of this is a queued pilot yet. A9 stays `OPEN`.

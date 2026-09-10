@@ -30,7 +30,7 @@ final class T17ProductRunner {
             try evidence.prove(.artifactPreflight)
             try prepareLane()
             let process = try launchApplication()
-            application = process
+            application = process; _ = T17Activation.bringToFront(pid: process.processIdentifier)
             let control = try T17Accessibility(pid: process.processIdentifier)
             ui = control
             uiFrontendAutomated = true

@@ -46,6 +46,7 @@ step "audio result classifier" python3 scripts/audio-playback-result.py --self-t
 step "glyph pixel mask" python3 scripts/verify-glyph-pixel-mask.py --self-test
 step "glyph pixel mask builder" python3 scripts/build-glyph-pixel-mask.py --self-test
 step "b6 cell verification" python3 scripts/verify-b6-cell.py --self-test
+step "glyph present latency" python3 scripts/measure-glyph-present-latency.py --self-test
 step "workflow yaml" python3 scripts/check-workflow-yaml.py
 step "daemon DTO decoders" python3 scripts/check-daemon-dto-decoders.py
 step "swift force casts" python3 scripts/check-swift-force-casts.py
