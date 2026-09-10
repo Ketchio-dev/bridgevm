@@ -123,3 +123,28 @@ Mesa's TGSI source-modifier documentation specifies type-dependent integer
 negation: https://docs.mesa3d.org/gallium/tgsi.html#source-modifiers .
 A minimal real-translator reproduction and an isolated candidate are the next
 steps; no blending rewrite or product-renderer cutover is justified yet.
+
+## PPM evidence parsing and candidate discovery failure
+
+A one-second bounded baseline reproduction found that the mask builder loops
+on a truncated PPM header. With a CRLF header and raster bytes
+`0,64,128,192,255,17`, it returned `10,0,64,128,192,255`. Code 1f8e1d20 shares
+one exact parser with the verifier and uses the digest from that same byte read.
+Eight boundary/hash-consistency contracts, existing glyph/scene self-tests and
+the full local project check passed. No reference is thereby reviewed or
+certified, and the existing mask/sample/frame-time criteria are unchanged.
+
+The private integer-negation candidate passed six real-translator output
+contracts; its baseline failed the four integer cases and passed both float/
+untyped controls. The existing six sampler inference/precedence cases passed
+on the candidate. These remain deterministic translator checks, not GPU proof.
+
+Job d3-b6-791c68e3-integer-negate-r1 failed host preflight because the manifest
+renderer path differed textually from the probe's load command. The bytes were
+not a live guest result. A new, separately sealed manifest used the exact load
+path for r2 without changing the library or the check. R2 passed scale setup,
+then failed capture: managed UI Automation FindAll returned E_UNEXPECTED
+(0x8000FFFF) during packaged-Notepad tip discovery. Only the classic first
+capture exists. The candidate's packaged-body effect is therefore unmeasured;
+no glyph fix is claimed. A same-head original-renderer control is queued/run
+separately to distinguish the shared discovery failure from renderer changes.
