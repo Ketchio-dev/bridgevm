@@ -1879,3 +1879,7 @@ tests/integration/capability-freshness-smoke.py	99	0
 scripts/win-assets/bv-b6-presentmon-capture.ps1	58	0
 tests/integration/b6-presentmon-capture-contract.ps1	82	0
 .github/workflows/b6-collector-contracts.yml	20	0
+scripts/b6_frame_times.py	106	0
+scripts/analyze-b6-frame-times.py	24	0
+tests/integration/b6-frame-time-contract.py	106	0
+.github/workflows/b6-frame-time-contracts.yml	18	0
