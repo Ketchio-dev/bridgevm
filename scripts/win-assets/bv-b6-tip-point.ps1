@@ -1,7 +1,8 @@
 param([long]$Hwnd, [int]$Width, [int]$Height)
 $ErrorActionPreference = 'Stop'
 if ($Hwnd -le 0 -or $Width -le 1 -or $Height -le 1) { throw 'Invalid tip target or display dimensions' }
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, UIAutomationClientsideProviders
+[System.Windows.Automation.ClientSettings]::RegisterClientSideProviderAssembly([UIAutomationClientsideProviders.UIAutomationClientSideProviders].Assembly.GetName())
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -30,8 +31,7 @@ $condition = [System.Windows.Automation.AndCondition]::new($type, $name)
 $matches = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
 $visible = @(foreach ($candidate in $matches) { if (!$candidate.Current.IsOffscreen) { $candidate } })
 if ($visible.Count -eq 0) {
-    Write-Output "BVTIPPOINT hwnd=$Hwnd state=not-found"
-    return
+    Write-Output "BVTIPPOINT hwnd=$Hwnd state=not-found"; return
 }
 if ($visible.Count -ne 1) { throw 'Ambiguous visible Got it buttons' }
 $button = $visible[0]
