@@ -144,3 +144,33 @@ was re-added through System Settings with Accessibility visibly enabled.
 That setting is not a queued-process trust receipt. The retained package was
 built from b27feaea; 7a97d6f8 changes only the deterministic policy test.
 No pilot has been submitted by this continuation, and A9 remains OPEN.
+
+## Ten-hour continuation: r3 passes trust and exposes a modal AX deadlock
+
+After hosted CI 34426736591 and Security 34426736616 both passed at
+fe8d6707, queued pilot t17-fe8d6707-local-pilot-r3 ran on Mac17,9 from
+2026-09-10 02:05:44 to 02:06:33 UTC and failed. Receipt SHA-256:
+9c48f0a9f5de411b459cca8156c21d61ddab910cc1d3801c2349f028ec50a75c.
+The private lane reports artifact_preflight=true, ui_frontend_automated=true,
+vm_created=false and cleanup_verified=true. The first create control is now
+past; the failing control is bridgevm.create.windows.iso. Both AX calls
+returned -25204 while activation_succeeded=true and frontmost=true. The SDK
+defines -25204 as cannotComplete, not actionUnsupported (-25206).
+
+A separate read-only UI diagnostic launched the same packaged app with an
+empty isolated E2E library. Pressing ISO opened the real file chooser. A
+one-second sample while it stayed open retained the causal call chain:
+NSAccessibilityEntryPointPerformAction -> accessibilityPerformPress ->
+CreateVMSheet.pickISO -> chooseFile -> NSSavePanel.runModal. The synchronous
+modal loop keeps the original AX request on the stack until the chooser is
+closed, while the E2E caller waits for that request before entering a path.
+Sample SHA-256:
+692bfb00cfad7f392fd8826cd7429b3f96bf0c184bf4b269a4eac8101d936299.
+The diagnostic chooser and owned application were closed without creating a
+VM or touching canonical media. This observation is not a criterion receipt.
+
+The candidate switches all six CreateVM file/directory pickers to the
+asynchronous NSOpenPanel completion API. Four native XCTest cases pass:
+deferred selection, cancel preserving the old selection, OK without a URL,
+and directory/file filtering. The candidate still needs a new sealed pilot;
+neither these tests nor the successful queued Accessibility check closes A9.

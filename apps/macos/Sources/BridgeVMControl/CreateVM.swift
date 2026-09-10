@@ -842,29 +842,27 @@ struct CreateVMSheet: View {
     }
 
     private func pickISO() {
-        if let url = chooseFile(directories: false, extensions: ["iso", "img", "dmg"]) { isoPath = url.path }
+        FileSelection.choose(directories: false, extensions: ["iso", "img", "dmg"]) { isoPath = $0.path }
     }
 
     private func pickStorage() {
-        if let url = chooseFile(directories: true) { storageDir = url }
+        FileSelection.choose(directories: true) { storageDir = $0 }
     }
 
     private func pickGuestPayload() {
-        if let url = chooseFile(directories: true) { guestPayloadPath = url.path }
+        FileSelection.choose(directories: true) { guestPayloadPath = $0.path }
     }
 
     private func pickGuestPayloadManifest() {
-        if let url = chooseFile(directories: false, extensions: ["tsv"]) {
-            guestPayloadManifestPath = url.path
-        }
+        FileSelection.choose(directories: false, extensions: ["tsv"]) { guestPayloadManifestPath = $0.path }
     }
 
     private func pickHVFTarget() {
-        if let url = chooseFile(directories: false, extensions: ["raw", "img"]) { hvfTargetPath = url.path }
+        FileSelection.choose(directories: false, extensions: ["raw", "img"]) { hvfTargetPath = $0.path }
     }
 
     private func pickHVFVars() {
-        if let url = chooseFile(directories: false, extensions: ["fd", "vars"]) { hvfVarsPath = url.path }
+        FileSelection.choose(directories: false, extensions: ["fd", "vars"]) { hvfVarsPath = $0.path }
     }
 
     private var canCreate: Bool {
@@ -879,19 +877,6 @@ struct CreateVMSheet: View {
         case .ubuntu:
             return template != nil
         }
-    }
-
-    private func chooseFile(directories: Bool, extensions: [String]? = nil) -> URL? {
-        #if canImport(AppKit)
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = directories
-        panel.canChooseFiles = !directories
-        if let extensions { panel.allowedContentTypes = extensions.compactMap { UTType(filenameExtension: $0) } }
-        return panel.runModal() == .OK ? panel.url : nil
-        #else
-        return nil
-        #endif
     }
 
     private func autofillWin11() {

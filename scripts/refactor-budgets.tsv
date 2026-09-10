@@ -1867,3 +1867,5 @@ apps/macos/Sources/BridgeVMControl/BridgeVMControlLaunchPolicy.swift	13	0
 apps/macos/Tests/BridgeVMControlTests/BridgeVMControlLaunchPolicyTests.swift	16	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17LaneDetailTests.swift	28	0
 apps/macos/Sources/BridgeVMProductE2E/T17Activation.swift	30	0
+apps/macos/Sources/BridgeVMControl/FileSelection.swift	39	0
+apps/macos/Tests/BridgeVMControlTests/FileSelectionTests.swift	74	0
