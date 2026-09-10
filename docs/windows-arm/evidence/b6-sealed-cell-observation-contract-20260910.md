@@ -168,3 +168,63 @@ Per-run records SHA-256:
 Caption-point code commit `a993051cedebb5b8193f1527bddea9c2cc60fd6f` passed five local host-parser unittest
 methods and the full local `scripts/check-project.sh`. This is deterministic
 source/host validation only; native Windows and a revised live cell remain pending.
+
+## Physical-caption fallback observed at 150 percent, under red documentation CI
+
+Diagnostic job `d2-b6-4f984051-1600x900-150-r2` at exact commit
+`4f984051897551a56393e9fb7dcda68bd4940fd3` completed from
+2026-09-10T05:30:53.425528Z to 2026-09-10T05:42:09.886799Z. The receipt is
+`valid=true`, `outcome=observed`, `failure_code=none`, `run_count=3` and
+`required_run_count=27`; all pass/claim/promotion flags remain false.
+Classic runs 2 and 3 authenticated physical point `(600,100)`, dpi=144,
+`hit=2`, with owner HWND matching target HWND (458786 and 328248). The first
+fallback click acquired actual foreground in each case, and both previously
+missing classic scene paths collected their captures and FrameTime CSVs.
+This supports the changed fallback on this observation, not universal focus
+reliability or completion of the glyph/performance matrix.
+
+Receipt SHA-256:
+`40975f0026732ff3d474e1c3e82712cf0d17dc6936495869996883a06661ecc8`.
+Cell-result SHA-256:
+`0777966537b20cf0248e19c592d4cd5840b0a6714abd6f79d86f19e4dce13bcd`.
+The source media/library/config hashes match the prior 150-percent attempt;
+the harness code changed and each attempt used its own fresh disk/vars clones.
+
+Exact 4f984051 hosted CI 34440966393 FAILED its documentation-reference step:
+a worker Git blob identifier in the venue evidence was interpreted as a missing
+commit. Security and all five B6 workflows passed, including native caption
+contracts 34440966394. The failed CI is not waived: this live result is diagnostic
+and is not promoted to release evidence. The introduced documentation notation
+issue is awaiting operator approval to correct.
+
+## First-run tip remains a separate layout-dependent problem
+
+The failed 150-percent attempt's first packaged capture visibly retained the
+first-run tip. Its `Got it` button occupied approximately x=518..729,y=235..281,
+while the previous harness clicked `(544,302)`. The tip covers some editor text.
+This is not a diagnosed renderer cause. Packaged editor text also appears
+cyan/blue-fringed at both observed display scales; no healthy reference or
+reviewed glyph mask establishes the cause or correctness.
+Original 150-percent packaged-run1 PPM SHA-256:
+`c982b22b0d02856ccb946381860589fd07183c17c69dfb964c2434f67474cba2`.
+Original classic-run1 PPM SHA-256:
+`7aee65dc58d5569de37e11c729598100a01fc4556dd1d9dc5d62d9141f91c606`.
+Visual inspection used separate PNG conversions; original bytes were unchanged.
+
+A new tip helper searches only descendants of the requested application window
+for the English `Got it` button, requires one visible enabled same-process match,
+and verifies actual window ownership at its physical center before the host
+sends a HID click. It then queries again for disappearance. UIA non-discovery is
+explicitly recorded as `not-found`, not visual proof of no overlay. English-name
+and application-provider coverage remain limitations until real guest captures
+are inspected. The public matrix and performance requirements are unchanged.
+Microsoft documents physical UIA bounds and recommends a narrow application
+search root rather than the entire desktop subtree:
+[BoundingRectangle](https://learn.microsoft.com/en-us/dotnet/api/system.windows.automation.automationelement.boundingrectangleproperty),
+[obtaining UIA elements](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-obtainingelements).
+
+Tip-target code `e02f9486a213ab0454aa753b8bbc89e62cd4fd38` passed five local host-parser/sequencing unittest
+methods. Full local `scripts/check-project.sh` failed exactly one step,
+`documentation references`, for the already-recorded blob notation issue.
+Native UIA tests and a new live attempt remain pending. This is not a completed
+project check or a release result.
