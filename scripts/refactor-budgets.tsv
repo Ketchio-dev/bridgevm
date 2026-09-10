@@ -1905,3 +1905,8 @@ tests/integration/b6-tip-point-contract.ps1	56
 tests/integration/b6-tip-tree.ps1	16
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserDiagnostics.swift	62	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserDiagnosticTests.swift	56	0
+scripts/live-gates/b6_renderer_trace.py	59
+scripts/live-gates/run-b6-renderer-trace.py	37
+tests/integration/b6-renderer-trace-contract.py	116
+.github/workflows/b6-renderer-trace-contracts.yml	15
+tests/integration/b6-renderer-trace-prefix-contract.py	49
