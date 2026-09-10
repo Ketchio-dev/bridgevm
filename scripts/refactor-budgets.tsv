@@ -1902,3 +1902,4 @@ scripts/live-gates/b6_renderer_trace.py	59
 scripts/live-gates/run-b6-renderer-trace.py	37
 tests/integration/b6-renderer-trace-contract.py	116
 .github/workflows/b6-renderer-trace-contracts.yml	15
+tests/integration/b6-renderer-trace-prefix-contract.py	49

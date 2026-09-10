@@ -63,7 +63,7 @@ class TraceContracts(unittest.TestCase):
 
     def test_success_authenticates_policy_without_promoting(self):
         with tempfile.TemporaryDirectory() as directory:
-            out, value = self.fixture(directory, b"FRAG\n#version 150\n")
+            out, value = self.fixture(directory, b"venus-win32: TGSI received:venus-win32: FRAG\nvenus-win32: GLSL:venus-win32: #version 140\n")
             evidence.finish_trace(runner.core, value, out)
             self.assertEqual(value["raw_sha256"], runner.core.file_hash(out / "renderer-trace-summary.json"))
             self.assertEqual(value["environment_policy_sha256"], runner.core.file_hash(out / "renderer-trace-policy.json"))

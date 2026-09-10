@@ -30,8 +30,8 @@ def log_evidence(path, limit=POLICY["max_log_bytes"]):
                 raise ValueError("renderer log grew beyond its limit")
             digest.update(raw)
             line = raw.strip()
-            tgsi += line in (b"FRAG", b"VERT", b"GEOM", b"TESS_CTRL", b"TESS_EVAL", b"COMP")
-            glsl += line.startswith(b"#version ")
+            tgsi += line.removeprefix(b"venus-win32: TGSI received:venus-win32: ") in (b"FRAG", b"VERT", b"GEOM", b"TESS_CTRL", b"TESS_EVAL", b"COMP")
+            glsl += line.removeprefix(b"venus-win32: GLSL:venus-win32: ").startswith(b"#version ")
         after = os.fstat(stream.fileno())
     identity = lambda item: (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns)
     if identity(before) != identity(after) or identity(after) != identity(os.stat(path, follow_symlinks=False)):
