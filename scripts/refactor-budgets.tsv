@@ -1902,3 +1902,4 @@ scripts/win-assets/bv-b6-tip-point.ps1	49
 scripts/b6-tip-dismiss.sh	32
 tests/integration/b6-tip-dismiss-contract.py	59
 tests/integration/b6-tip-point-contract.ps1	56
+tests/integration/b6-tip-tree.ps1	16

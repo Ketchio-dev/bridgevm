@@ -8,12 +8,12 @@ $form.Text = 'B6 native tip contract'; $form.StartPosition = 'Manual'; $form.Top
 $form.SetBounds(80, 80, 700, 500)
 $button = New-Object System.Windows.Forms.Button
 $button.Text = 'Got it'; $button.SetBounds(200, 180, 140, 50); $form.Controls.Add($button)
-$checks = 0
-function Query-Tip {
+$checks = 0; function Query-Tip {
     param([long]$Target)
     $id = [Guid]::NewGuid().ToString('N')
     $stdout = Join-Path $work "$id.out"; $stderr = Join-Path $work "$id.err"
-    $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$script`" -Hwnd $Target -Width 1600 -Height 900"
+    $diagnostic = Join-Path $PSScriptRoot "b6-tip-tree.ps1"
+    $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$diagnostic`" -Query `"$script`" -Hwnd $Target -Width 1600 -Height 900"
     $child = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList $arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     try {
         $deadline = [DateTime]::UtcNow.AddSeconds(20)
