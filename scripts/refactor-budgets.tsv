@@ -1892,3 +1892,4 @@ scripts/live-gates/b6_cell_inputs.py	133	0
 scripts/live-gates/run-b6-cell-observation.py	171	0
 tests/integration/b6-cell-observation-contract.py	175	0
 .github/workflows/b6-sealed-cell-contracts.yml	15	0
+tests/integration/live-worker-venue-contract.py	73	0

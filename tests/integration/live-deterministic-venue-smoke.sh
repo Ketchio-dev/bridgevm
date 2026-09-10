@@ -33,4 +33,4 @@ refused bash "$WORK/repo/scripts/live-gates/run-tier.sh" t0-check --out "$WORK/r
 [[ ! -e "$VENUE_MARKER" && ! -e "$WORK/result" ]] ||
     fail "refused dispatch executed the check or created a result directory"
 checks=$((checks + 1))
-printf 'PASS: deterministic venue contract (%s checks)\n' "$checks"
+python3 "$REPO/tests/integration/live-worker-venue-contract.py" && printf 'PASS: deterministic venue contract (%s checks plus worker contract)\n' "$checks"

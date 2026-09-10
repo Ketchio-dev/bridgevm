@@ -59,7 +59,7 @@ run_job() {
         printf 'result=refused-unknown-commit\n' > "$dir/result.env"; return 1
     fi
 
-    log "job $job_id tier=$tier commit=$commit"
+    [[ "$tier" != t0-check ]] || { log "refusing deterministic tier before sealed revision lookup"; printf 'result=refused-deterministic-venue\n' > "$dir/result.env"; return 1; }; log "job $job_id tier=$tier commit=$commit"
     printf 'started_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$dir/job.env"
 
     local available
