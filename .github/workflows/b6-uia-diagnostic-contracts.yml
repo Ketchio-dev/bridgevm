@@ -1,0 +1,19 @@
+name: B6 UIA diagnostic contracts
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  windows-apartments:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - shell: powershell
+        run: tests/integration/b6-uia-diagnostic-contract.ps1
+  host-contracts:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 tests/integration/b6-uia-diagnostic-contract.py

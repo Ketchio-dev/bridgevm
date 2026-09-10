@@ -12,7 +12,7 @@ b6_dpi_matches() {
 b6_scene_fail() {
   printf 'run=%s\nscene=%s\nfailure_code=%s\n' "$1" "$2" "$3" > "${OUT:?}/scene-failure.env"
   echo "FAIL: run=$1 scene=$2 $3; no subsequent scene may count" >&2; python3 "$(dirname "${BASH_SOURCE[0]}")/b6-observe-scene-failure.py" --out "$OUT" >&2 || true
-  exit 1
+  if declare -F b6_failure_diagnostics >/dev/null; then b6_failure_diagnostics "$@" || true; fi; exit 1
 }
 
 wait_window_gone() {

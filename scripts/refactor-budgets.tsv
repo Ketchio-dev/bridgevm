@@ -1915,3 +1915,8 @@ tests/integration/glyph-ppm-contract.py	117	0
 .github/workflows/glyph-pixel-contracts.yml	19	0
 scripts/b6-observe-scene-failure.py	40	0
 tests/integration/b6-scene-observation-contract.py	65	0
+scripts/b6-uia-failure-probe.sh	18	0
+scripts/win-assets/bv-b6-uia-diagnostic.ps1	28	0
+tests/integration/b6-uia-diagnostic-contract.py	67	0
+tests/integration/b6-uia-diagnostic-contract.ps1	28	0
+.github/workflows/b6-uia-diagnostic-contracts.yml	19	0
