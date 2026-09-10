@@ -1,0 +1,19 @@
+name: Glyph pixel evidence contracts
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  ppm-contracts:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 tests/integration/glyph-ppm-contract.py
+      - run: python3 scripts/build-glyph-pixel-mask.py --self-test
+      - run: python3 scripts/verify-glyph-pixel-mask.py --self-test
+      - run: python3 scripts/verify-b6-cell.py --self-test

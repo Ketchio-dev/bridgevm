@@ -14,36 +14,20 @@ instead of text is a badly chosen box, and the review PPM is where that shows.
 """
 from __future__ import annotations
 import argparse
-import hashlib
 import json
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from glyph_frame import Frame
 
 STROKES = 48
 GUARDS = 16
 
 
 def load_ppm(path):
-    data = path.read_bytes()
-    fields, offset = [], 0
-    while len(fields) < 4:
-        end = offset
-        while end < len(data) and data[end : end + 1] not in b" \t\r\n":
-            end += 1
-        token = data[offset:end]
-        if token.startswith(b"#"):
-            while end < len(data) and data[end : end + 1] not in b"\r\n":
-                end += 1
-        elif token:
-            fields.append(token)
-        offset = end + 1
-    if fields[0] != b"P6" or fields[3] != b"255":
-        raise ValueError("only binary 8-bit P6 PPM is supported")
-    width, height = int(fields[1]), int(fields[2])
-    pixels = data[offset : offset + width * height * 3]
-    if len(pixels) != width * height * 3:
-        raise ValueError("truncated PPM payload")
-    return width, height, bytearray(pixels)
+    frame = Frame.load(path)
+    return frame.width, frame.height, bytearray(frame.pixels)
 
 
 def region_pixels(width, box):
@@ -82,7 +66,8 @@ def review_ppm(width, pixels, box, strokes, guards, out):
 
 
 def build(reference, boxes, out, review_dir):
-    width, height, pixels = load_ppm(reference)
+    frame = Frame.load(reference)
+    width, height, pixels = frame.width, frame.height, frame.pixels
     regions = {}
     for name, box in boxes.items():
         strokes, guards = select(width, height, pixels, box)
@@ -91,7 +76,7 @@ def build(reference, boxes, out, review_dir):
             review_dir.mkdir(parents=True, exist_ok=True)
             review_ppm(width, pixels, box, strokes, guards, review_dir / f"{name}.ppm")
     mask = {
-        "reference_sha256": hashlib.sha256(reference.read_bytes()).hexdigest(),
+        "reference_sha256": frame.source_sha256,
         "regions": regions,
     }
     out.write_text(json.dumps(mask, indent=2) + "\n")

@@ -1910,3 +1910,6 @@ scripts/live-gates/run-b6-renderer-trace.py	37
 tests/integration/b6-renderer-trace-contract.py	116
 .github/workflows/b6-renderer-trace-contracts.yml	15
 tests/integration/b6-renderer-trace-prefix-contract.py	49
+scripts/glyph_frame.py	43	0
+tests/integration/glyph-ppm-contract.py	117	0
+.github/workflows/glyph-pixel-contracts.yml	19	0

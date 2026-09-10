@@ -11,42 +11,11 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 from pathlib import Path
 
-
-class Frame:
-    def __init__(self, width, height, pixels):
-        self.width, self.height, self.pixels = width, height, pixels
-
-    @classmethod
-    def load(cls, path):
-        data = path.read_bytes()
-        offset, fields = 0, []
-        while len(fields) < 4:
-            while offset < len(data) and data[offset] in b" \t\r\n\v\f":
-                offset += 1
-            if offset == len(data):
-                raise ValueError("truncated PPM header")
-            if data[offset] == 35:
-                end = data.find(b"\n", offset)
-                if end < 0:
-                    raise ValueError("unterminated PPM comment")
-                offset = end + 1
-                continue
-            start = offset
-            while offset < len(data) and data[offset] not in b" \t\r\n\v\f":
-                offset += 1
-            fields.append(data[start:offset])
-        if fields[0] != b"P6" or fields[3] != b"255":
-            raise ValueError("expected 8-bit binary PPM")
-        width, height = int(fields[1]), int(fields[2])
-        if width <= 0 or height <= 0 or offset == len(data):
-            raise ValueError("invalid PPM geometry or separator")
-        offset += 2 if data[offset:offset + 2] == b"\r\n" else 1
-        pixels = data[offset:]
-        if len(pixels) != width * height * 3:
-            raise ValueError("PPM raster length mismatch")
-        return cls(width, height, pixels)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from glyph_frame import Frame
 
 
 def selected_offsets(region, frame):
@@ -70,12 +39,12 @@ def verify_cell(mask, reference, captures):
         raise ValueError("exactly three distinct capture files required")
     if any(reference.samefile(p) for p in captures):
         raise ValueError("reference cannot be a candidate capture")
-    if hashlib.sha256(reference.read_bytes()).hexdigest() != mask["reference_sha256"]:
+    expected = Frame.load(reference)
+    if expected.source_sha256 != mask["reference_sha256"]:
         raise ValueError("reference hash mismatch")
     regions = mask["regions"]
     if not regions or regions.keys() - {"caption", "menu", "tab"}:
         raise ValueError("regions must be drawn from caption, menu and tab")
-    expected = Frame.load(reference)
     frames = [Frame.load(p) for p in captures]
     if any((f.width, f.height) != (expected.width, expected.height) for f in frames):
         raise ValueError("capture geometry differs from reference")

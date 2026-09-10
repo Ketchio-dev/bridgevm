@@ -43,7 +43,7 @@ step "structural budgets" scripts/check-refactor-budgets.sh
 step "shell scripts" bash scripts/check-shell-scripts.sh
 step "python scripts" python3 scripts/check-python-scripts.py
 step "audio result classifier" python3 scripts/audio-playback-result.py --self-test
-step "glyph pixel mask" python3 scripts/verify-glyph-pixel-mask.py --self-test
+step "glyph pixel mask" bash -c 'python3 scripts/verify-glyph-pixel-mask.py --self-test && python3 tests/integration/glyph-ppm-contract.py'
 step "glyph pixel mask builder" python3 scripts/build-glyph-pixel-mask.py --self-test
 step "b6 cell verification" python3 scripts/verify-b6-cell.py --self-test
 step "glyph present latency" python3 scripts/measure-glyph-present-latency.py --self-test
