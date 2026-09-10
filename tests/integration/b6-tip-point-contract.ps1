@@ -7,7 +7,7 @@ $form = New-Object System.Windows.Forms.Form
 $form.Text = 'B6 native tip contract'; $form.StartPosition = 'Manual'; $form.TopMost = $true
 $form.SetBounds(80, 80, 700, 500)
 $button = New-Object System.Windows.Forms.Button
-$button.Text = 'Got it'; $button.SetBounds(200, 180, 140, 50); $form.Controls.Add($button)
+$button.AccessibleRole = 'PushButton'; $button.FlatStyle = 'System'; $button.Text = 'Got it'; $button.SetBounds(200, 180, 140, 50); $form.Controls.Add($button)
 $checks = 0; function Query-Tip {
     param([long]$Target)
     $id = [Guid]::NewGuid().ToString('N')
@@ -44,7 +44,7 @@ try {
     $checks++
     $button.Text = 'Got it'
     $second = New-Object System.Windows.Forms.Button
-    $second.Text = 'Got it'; $second.SetBounds(360, 180, 140, 50); $form.Controls.Add($second)
+    $second.AccessibleRole = 'PushButton'; $second.FlatStyle = 'System'; $second.Text = 'Got it'; $second.SetBounds(360, 180, 140, 50); $form.Controls.Add($second)
     $result = Query-Tip $hwnd
     if ($result.Code -eq 0 -or $result.Error -notmatch 'Ambiguous visible Got it buttons') { throw 'Duplicate buttons not rejected for intended reason' }
     $checks++
