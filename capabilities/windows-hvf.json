@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-10",
-  "tested_commit": "31bbe7d076ae7c09330b94782460e952e029216a",
+  "tested_commit": "81e1dce9e278b74413af2d16b7ac5068246e5ef8",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: tested code head 31bbe7d076ae7c09330b94782460e952e029216a. Twelve deterministic freshness regression cases passed, including real Git blob/tree/tag rejection, missing shallow history, comparison errors and code-versus-documentation changes. The earlier chooser source passed the full project check and ten native tests; its f35bac2d checkpoint passed hosted CI 34431457559 and Security 34431457586. The e359c174 registry-drift CI failure remains retained. Exact current-checkpoint hosted CI/Security and the final release regression seal remain required. A9 and the B6 matrix/frame-time criterion are not promoted.",
+      "measured": "OPEN: tested code head 81e1dce9e278b74413af2d16b7ac5068246e5ef8. The preceding freshness checkpoint passed full local checks, twelve focused tests, hosted CI 34432130521 and Security 34432130553. The PresentMon collector now has a separate native Windows contract workflow; local Mac checks cannot establish that Windows process contract. Exact current-checkpoint hosted results and the final release regression seal remain required. A9 r6 failed at mandatory app activation before any Go To shortcut; no VM was created. B6 still requires its full glyph matrix and comparable real-workload frame-time evidence.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -343,7 +343,8 @@
         "docs/windows-arm/evidence/b6-scale-mechanism-spike-20260908.md",
         "docs/windows-arm/evidence/b6-single-scene-spike-20260908.md",
         "docs/windows-arm/evidence/b6-dpi-and-capture-live-20260908.md",
-        "docs/windows-arm/evidence/b6-presentmon-live-and-focus-refusal-20260909.md"
+        "docs/windows-arm/evidence/b6-presentmon-live-and-focus-refusal-20260909.md",
+        "docs/windows-arm/evidence/b6-presentmon-collector-contract-20260910.md"
       ],
       "known_defect": "Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness."
     },
