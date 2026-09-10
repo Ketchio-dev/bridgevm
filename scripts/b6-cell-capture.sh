@@ -50,6 +50,7 @@ PRESENTMON_NAME="$(basename "$PRESENTMON")"
 # Agent control-channel helpers, shared with the other scripts that drive it.
 source "$REPO/scripts/agent-channel-lib.sh"
 source "$REPO/scripts/b6-scene-contract.sh"
+source "$REPO/scripts/b6-active-frame-time.sh"
 
 
 # Baseline count of a pattern, taken before some action; call wait_after with
@@ -248,6 +249,7 @@ for run in 1 2 3; do
   classic_dpi=fail; classic_dpi_line=""; classic_capture=absent; classic_focus=fail
   packaged_dpi=fail; packaged_dpi_line=""; packaged_capture=absent; packaged_focus=fail
   presentmon_status=fail; presentmon_csv="absent"
+  packaged_presentmon_status=fail; packaged_presentmon_csv="absent"
 
   LAUNCH_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-windows-closure-launch.ps1'
   _b_notepad=$(wait_baseline '^BVAGENT SHARE guest->host bv-notepad-started\.log bytes=')
@@ -283,14 +285,8 @@ for run in 1 2 3; do
           --iosurface "$OUT/display.fb.iosurface" --input-control "$INPUT" \
           --out "$OUT/latency/classic-run${run}-s${sample}" --key-hex 58 --ambient-ms 1500 >&2 || true
       done
-      # Run PresentMon while the window is up, right after the fresh capture.
-      PM_CSV="C:\\BridgeVMClosure\\presentmon-classic-run${run}.csv"
-      PM_CMD="powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-b6-presentmon-capture.ps1 -PresentMonPath C:\\BridgeVMClosure\\$PRESENTMON_NAME -OutputCsvPath $PM_CSV -Seconds 15"
-      _b_pmcsv=$(wait_baseline "^BVAGENT SHARE guest->host presentmon-classic-run${run}\.csv bytes=")
-      if send_ok "$PM_CMD"; then
-        presentmon_status=pass
-        wait_after "^BVAGENT SHARE guest->host presentmon-classic-run${run}\.csv bytes=" "$_b_pmcsv" 60 || true
-        [[ -f "$OUT/share/presentmon-classic-run${run}.csv" ]] && presentmon_csv="present"
+      if b6_collect_active_frame_time classic "$run" "$hwnd"; then
+        presentmon_status=pass; presentmon_csv=present
       fi
       send "WINCLOSE $hwnd" "^BVAGENT WINCLOSE $hwnd -> OK WINCLOSE$" || true
       sleep 2
@@ -342,6 +338,9 @@ for run in 1 2 3; do
           --iosurface "$OUT/display.fb.iosurface" \
           --out "$OUT/captures/packaged-run${run}-observed" >&2 || true
       fi
+      if b6_collect_active_frame_time packaged "$run" "$mhwnd"; then
+        packaged_presentmon_status=pass; packaged_presentmon_csv=present
+      fi
       send "WINCLOSE $mhwnd" "^BVAGENT WINCLOSE $mhwnd -> OK WINCLOSE$" || true
       sleep 2
       send_ok "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-windows-closure-discard.ps1 -Hwnd $mhwnd" || true
@@ -352,14 +351,15 @@ for run in 1 2 3; do
 
   python3 - "$runs_json" "$run" "$classic_dpi" "$classic_dpi_line" "$classic_capture" \
     "$packaged_dpi" "$packaged_dpi_line" "$packaged_capture" "$presentmon_status" "$presentmon_csv" \
-    "$classic_focus" "$packaged_focus" <<'PY'
+    "$classic_focus" "$packaged_focus" "$packaged_presentmon_status" "$packaged_presentmon_csv" <<'PY'
 import json, sys
-path, run, cdpi, cline, ccap, pdpi, pline, pcap, pm, pmcsv, cfoc, pfoc = sys.argv[1:13]
+path, run, cdpi, cline, ccap, pdpi, pline, pcap, pm, pmcsv, cfoc, pfoc, ppm, ppmcsv = sys.argv[1:15]
 data = json.load(open(path))
 data.append({
     "run": int(run), "classic_dpi": cdpi, "classic_dpi_line": cline, "classic_capture": ccap,
     "packaged_dpi": pdpi, "packaged_dpi_line": pline, "packaged_capture": pcap,
     "presentmon_status": pm, "presentmon_csv": pmcsv,
+    "packaged_presentmon_status": ppm, "packaged_presentmon_csv": ppmcsv,
     # An absent capture means nothing without the focus it depended on.
     "classic_focus": cfoc, "packaged_focus": pfoc,
 })
@@ -367,7 +367,8 @@ json.dump(data, open(path, "w"), indent=2)
 PY
   [[ "$classic_focus" == pass && "$packaged_focus" == pass \
      && "$classic_dpi" == pass && "$classic_capture" == present \
-     && "$packaged_dpi" == pass && "$packaged_capture" == present ]] || overall_ok=false
+     && "$packaged_dpi" == pass && "$packaged_capture" == present \
+     && "$presentmon_status" == pass && "$packaged_presentmon_status" == pass ]] || overall_ok=false
 done
 
 printf 'shutdown /s /f /t 0\n' >> "$CTL"

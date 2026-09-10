@@ -1,0 +1,15 @@
+name: B6 active frame-time contracts
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Authenticate active-scene collection contracts
+        run: python3 tests/integration/b6-active-frame-time-contract.py
