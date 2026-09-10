@@ -678,18 +678,21 @@ struct CreateVMSheet: View {
                         .accessibilityIdentifier("bridgevm.create.windows.iso")
                     Text(isoPath.isEmpty ? "선택된 ISO 없음" : (isoPath as NSString).lastPathComponent)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                        .accessibilityIdentifier("bridgevm.create.windows.iso.selection").accessibilityValue(isoPath)
                 }
                 HStack {
                     Button("ARM64 드라이버 폴더…") { pickGuestPayload() }
                         .accessibilityIdentifier("bridgevm.create.windows.guest-payload")
                     Text(guestPayloadPath.isEmpty ? "선택된 payload 없음" : (guestPayloadPath as NSString).lastPathComponent)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                        .accessibilityIdentifier("bridgevm.create.windows.guest-payload.selection").accessibilityValue(guestPayloadPath)
                 }
                 HStack {
                     Button("Payload manifest…") { pickGuestPayloadManifest() }
                         .accessibilityIdentifier("bridgevm.create.windows.guest-manifest")
                     Text(guestPayloadManifestPath.isEmpty ? "선택된 manifest 없음" : (guestPayloadManifestPath as NSString).lastPathComponent)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                        .accessibilityIdentifier("bridgevm.create.windows.guest-manifest.selection").accessibilityValue(guestPayloadManifestPath)
                 }
                 Text("저장장치·직렬·네트워크용 서명된 ARM64 드라이버와 SHA-256 manifest가 필요합니다. 선택한 원본은 VM 번들에 복사·봉인됩니다.")
                     .font(.caption).foregroundColor(.secondary)

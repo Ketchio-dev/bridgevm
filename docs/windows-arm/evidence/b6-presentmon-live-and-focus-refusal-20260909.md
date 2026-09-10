@@ -295,3 +295,24 @@ this continuation. The fixed within-10%-of-baseline requirement stays open.
 Keystroke-to-present latency is diagnostic evidence, not a replacement frame-
 time gate. A valid campaign still needs a declared changing scene workload,
 comparable baseline frame measurements, reviewed masks and every required cell.
+
+### A9 chooser isolation checkpoint, 2026-09-10
+
+The asynchronous picker candidate ca92939f was exercised as
+`t17-ca92939f-local-pilot-r4` and `t17-ca92939f-local-observed-r5`. Both
+failed while waiting 60 seconds for `bridgevm.windows.install.view`, with
+four AX windows and no proven VM creation. Their public receipt SHA-256
+values are `1a87adc096c4cee0d1df88ef69c5521b58bfe2d7836b87c04144836f8e757c59`
+and `ab9d60cf3ea07d19143f1eac41140ec17685345f700ace884dc5267045ca3cdf`.
+Both private lane receipts record cleanup verified. Read-only observation
+of r5 showed Open panels still at Documents with Open disabled. The old
+helper advanced without proving path selection; the reason the keyboard
+input did not reach the chooser is not yet established. These are failed
+pilots, not A9 gate evidence and not B6 measurements.
+
+The next helper removes global keyboard text injection from chooser actions,
+addresses shortcuts to the product PID, waits for each chooser state, and
+requires dismissal plus the application's exact selected-path accessibility
+value. A missing AX response is not interpreted as a closed window. Native
+live confirmation of this new flow is still required; no criterion is
+promoted by this implementation or its deterministic tests.

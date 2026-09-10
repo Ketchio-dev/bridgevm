@@ -67,18 +67,10 @@ final class T17Accessibility: T17UIControlling {
     }
 
     func choose(path: String, from identifier: String, timeout: TimeInterval = 15) throws {
-        try press(identifier, timeout: timeout)
-        guard NSRunningApplication(processIdentifier: pid)?.activate(options: []) == true else {
-            throw T17Blocker(code: "input-selection-failed", detail: "application could not be activated for its file chooser")
+        let driver = T17FileChooserAX(pid: pid, identifier: identifier) {
+            try self.press(identifier, timeout: timeout)
         }
-        Thread.sleep(forTimeInterval: 0.4)
-        try key(code: 5, flags: [.maskCommand, .maskShift])
-        Thread.sleep(forTimeInterval: 0.2)
-        try type(path)
-        try key(code: 36)
-        Thread.sleep(forTimeInterval: 0.5)
-        try key(code: 36)
-        Thread.sleep(forTimeInterval: 0.5)
+        try T17FileChooser.choose(path: path, timeout: timeout, driver: driver)
     }
 
     func textSnapshot() -> [String] {
@@ -167,25 +159,4 @@ final class T17Accessibility: T17UIControlling {
         return AXValueGetValue(axValue, .cgSize, &size) ? size : nil
     }
 
-    private func key(code: CGKeyCode, flags: CGEventFlags = []) throws {
-        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
-              let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false) else {
-            throw T17Blocker(code: "input-selection-failed", detail: "CGEvent keyboard event creation failed")
-        }
-        down.flags = flags; up.flags = flags
-        down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
-    }
-
-    private func type(_ value: String) throws {
-        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
-              let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else {
-            throw T17Blocker(code: "input-selection-failed", detail: "CGEvent text event creation failed")
-        }
-        let units = Array(value.utf16)
-        units.withUnsafeBufferPointer { buffer in
-            down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
-            up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
-        }
-        down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
-    }
 }
