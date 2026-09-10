@@ -74,7 +74,7 @@ def main():
         assert result.returncode == 1 and not (root / "continued").exists(), result
         assert (root / "scene-failure.env").read_text() == (
             "run=2\nscene=packaged\nfailure_code=reset-failed\n")
-    print("PASS: B6 requested DPI, fresh window identity and fail-closed scene boundaries")
+    subprocess.run(["python3", str(ROOT / "tests/integration/b6-scene-observation-contract.py")], check=True); print("PASS: B6 requested DPI, fresh window identity and fail-closed scene boundaries")
 
 
 if __name__ == "__main__":

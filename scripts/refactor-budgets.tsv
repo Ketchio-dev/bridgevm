@@ -1913,3 +1913,5 @@ tests/integration/b6-renderer-trace-prefix-contract.py	49
 scripts/glyph_frame.py	43	0
 tests/integration/glyph-ppm-contract.py	117	0
 .github/workflows/glyph-pixel-contracts.yml	19	0
+scripts/b6-observe-scene-failure.py	40	0
+tests/integration/b6-scene-observation-contract.py	65	0
