@@ -72,3 +72,13 @@ The full local `scripts/check-project.sh` subsequently passed for code commit
 `codex-worker-venue-20260910/project-check.log`). Installed-worker deployment and
 exact checkpoint hosted checks remain pending at this record. The installed
 worker was idle with a clean worktree; that does not itself prove deployment.
+
+Checkpoint `97589c0f7866288733ab7235395530d567cb9bc1` passed exact hosted CI
+34439581741, Security 34439581832, collector 34439581847, FrameTime 34439581801,
+active collection 34439581819 and sealed cell 34439581755. After the 150-percent
+B6 job terminated and process inspection found no worker/VM, the clean installed
+worker clone was fast-forwarded to that SHA with its LaunchAgent stopped and
+then bootstrapped again. Installed worker blob is
+`8f8bca45fdf128706af8109c7d311c099637b3e1`. The worker-level t0 guard is now
+deployed; no forbidden deterministic job was submitted to physical hardware to
+exercise it. The existing synthetic worker contracts remain the refusal evidence.

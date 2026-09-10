@@ -126,3 +126,45 @@ Exact a399e341 hosted checks are green: CI 34437681356, Security 34437681408,
 collector 34437681409, FrameTime 34437681437, active collection 34437681468,
 sealed cell 34437681395. These results support that sealed observation only;
 B6 and the product state are not promoted.
+
+## 150-percent cell failure retained; caption-point correction pending live proof
+
+Job `d2-b6-a399e341-1600x900-150-r1` measured the same a399e341 code and
+1600x900 resolution with LogPixels=144. It ran from
+2026-09-10T05:06:02.836693Z to 2026-09-10T05:17:06.324055Z and terminated
+`valid=false`, `outcome=failed`, `failure_code=capture-failed`, `run_count=0`.
+All promotion/pass flags remain false. Its first paired run and all three
+packaged scenes collected data, but classic runs 2 and 3 failed foreground
+acquisition and have absent captures; this is not a completed cell.
+
+All reported scene windows had effective dpi=144 and monitor_scale=150. Classic
+HWNDs 262534 and 393246 were reported at visible bounds x=84, y=90, width=1032,
+height=741 before the WINBOUNDS request. The request `50 60 700 500` returned OK,
+then all five fallback attempts for each window clicked HID `8196x2842`, the
+hard-coded physical point `(400,78)`, and observed foreground HWND 65786 instead
+of the target. No post-WINBOUNDS physical rectangle or hit-test was captured,
+so the exact geometry explanation remains an inference, not a completed causal
+proof. The fixed point is visibly scale-dependent and lacks target authentication.
+
+Microsoft documents that GetWindowRect is DPI-virtualized while DWM extended
+frame bounds are physical coordinates:
+[GetWindowRect reference](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindowrect).
+The correction queries physical bounds under per-monitor-v2 thread awareness,
+requires an uncovered point owned by the exact target and `WM_NCHITTEST` result
+`HTCAPTION`, and converts that verified point into the existing HID coordinate
+range. The parent still verifies actual foreground after clicking. Host parser
+contracts reject stale/ambiguous responses, wrong owners, non-caption hit tests,
+offscreen coordinates and failed guest commands. Native Windows contracts and a
+new sealed live attempt are separately required; source reasoning is not proof
+that this fixes the observed guest failure. No glyph/performance threshold changes.
+
+Failed receipt SHA-256:
+`e40efa0c3b8d37b53f601953c44100143eb7fe11d48757710fbe3326889b2926`.
+Capture-stage log SHA-256:
+`381d843a55c9f1025d7086abe62fd0d67dc976a268c6ba9e2457f7ed37e0a443`.
+Per-run records SHA-256:
+`a68a4a4200f080dd4424e5f2c7c08ec3890024b5768cf924608f9b407fbd1744`.
+
+Caption-point code commit `a993051cedebb5b8193f1527bddea9c2cc60fd6f` passed five local host-parser unittest
+methods and the full local `scripts/check-project.sh`. This is deterministic
+source/host validation only; native Windows and a revised live cell remain pending.
