@@ -7,6 +7,7 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 TIER="${1:?run-tier.sh needs a tier}"
+[[ "$TIER" != t0-check ]] || { echo "deterministic checks belong on GitHub-hosted Actions, not the physical-Mac live queue" >&2; exit 2; }
 shift || true
 
 OUT=""
@@ -57,15 +58,6 @@ case "$TIER" in
     t1-vtimer)
         # Seconds, not minutes: the bare-metal cancellation/vtimer probe.
         if "$REPO/scripts/run-hvf-vtimer-cancel-gate.sh" --out "$OUT"; then
-            receipt completed true
-        else
-            receipt failed false
-            exit 1
-        fi
-        ;;
-    t0-check)
-        # The deterministic project check, useful as a queue smoke test.
-        if "$REPO/scripts/check-project.sh" > "$OUT/check.log" 2>&1; then
             receipt completed true
         else
             receipt failed false

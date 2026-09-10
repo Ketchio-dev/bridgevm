@@ -201,7 +201,7 @@ check "A3 submit copies and seals the release binary and ledger hashes" \
 check "A3 submit rejects a missing manifest" \
     '! "$CLI" submit t6-a3-title --input-manifest "$WORK/missing" >/dev/null 2>&1'
 check "unsealed tiers reject an input manifest; B4 seals exact inputs" \
-    '! "$CLI" submit t0-check --input-manifest "$manifest" >/dev/null 2>&1 && "$REPO/tests/integration/b4-sealed-submit-smoke.sh" | grep -q "PASS"'
+    '! "$CLI" submit t1-vtimer --input-manifest "$manifest" >/dev/null 2>&1 && "$REPO/tests/integration/b4-sealed-submit-smoke.sh" | grep -q "PASS"'
 malformed_out="$WORK/malformed-a3"
 check "the A3 tier refuses a malformed manifest before build" \
     '! "$TIER" t6-a3-title --out "$malformed_out" --input-manifest "$manifest" --job-id policy-smoke >/dev/null 2>&1'
@@ -276,7 +276,7 @@ check "cancelling a running job requests, not kills" \
     '"$CLI" cancel "$job_id" | grep -q "cancellation requested"'
 check "the cancel request is visible to the worker" '[ -f "$claimed/cancel.requested" ]'
 
-second="$("$CLI" submit t0-check)"
+second="$("$CLI" submit t1-vtimer)"
 check "a queued job cancels immediately" '"$CLI" cancel "$second" | grep -q "canceled"'
 check "the canceled job is done" '"$CLI" status | grep -q "done .*$second"'
 
@@ -304,5 +304,5 @@ check "the installer supports a dry run" '"$INSTALL" --dry-run >/dev/null 2>&1 |
 check "the installer guards LaunchAgent privacy-protected source paths" 'grep -q "LaunchAgent privacy policy" "$INSTALL"'
 no_match "the installer stores no credentials" \
     'password|token=|api[_-]key' "$INSTALL"
-
+check "deterministic checks stay off the live queue" '"$REPO/tests/integration/live-deterministic-venue-smoke.sh" | grep -q "PASS"'
 echo "PASS: live gate policy smoke ($checks checks)"

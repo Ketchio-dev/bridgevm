@@ -1883,3 +1883,4 @@ scripts/b6_frame_times.py	106	0
 scripts/analyze-b6-frame-times.py	24	0
 tests/integration/b6-frame-time-contract.py	106	0
 .github/workflows/b6-frame-time-contracts.yml	18	0
+tests/integration/live-deterministic-venue-smoke.sh	36	0
