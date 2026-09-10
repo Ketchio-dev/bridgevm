@@ -1898,3 +1898,7 @@ scripts/b6-caption-focus.sh	14
 tests/integration/b6-caption-focus-contract.py	56
 tests/integration/b6-caption-point-contract.ps1	37
 .github/workflows/b6-caption-focus-contracts.yml	21
+scripts/win-assets/bv-b6-tip-point.ps1	49
+scripts/b6-tip-dismiss.sh	32
+tests/integration/b6-tip-dismiss-contract.py	59
+tests/integration/b6-tip-point-contract.ps1	56

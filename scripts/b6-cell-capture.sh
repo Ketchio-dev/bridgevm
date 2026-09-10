@@ -41,7 +41,7 @@ cp "$REPO/scripts/win-assets/bvgpu-apply-host-resolution.ps1" \
    "$REPO/scripts/win-assets/bv-b6-read-logpixels.ps1" \
    "$REPO/scripts/win-assets/bv-b6-modern-notepad-launch.ps1" \
    "$REPO/scripts/win-assets/bv-b6-modern-notepad-reset.ps1" \
-   "$REPO/scripts/win-assets/bv-b6-caret-still.ps1" "$REPO/scripts/win-assets/bv-b6-caption-point.ps1" \
+   "$REPO/scripts/win-assets/bv-b6-caret-still.ps1" "$REPO/scripts/win-assets/bv-b6-caption-point.ps1" "$REPO/scripts/win-assets/bv-b6-tip-point.ps1" \
    "$REPO/scripts/win-assets/bv-b6-presentmon-capture.ps1" \
    "$PRESENTMON" \
    "$OUT/share/"
@@ -50,7 +50,7 @@ PRESENTMON_NAME="$(basename "$PRESENTMON")"
 # Agent control-channel helpers, shared with the other scripts that drive it.
 source "$REPO/scripts/agent-channel-lib.sh"
 source "$REPO/scripts/b6-scene-contract.sh"
-source "$REPO/scripts/b6-active-frame-time.sh"; source "$REPO/scripts/b6-caption-focus.sh"
+source "$REPO/scripts/b6-active-frame-time.sh"; source "$REPO/scripts/b6-caption-focus.sh"; source "$REPO/scripts/b6-tip-dismiss.sh"
 
 
 # Baseline count of a pattern, taken before some action; call wait_after with
@@ -138,7 +138,7 @@ LAUNCHER=$!
 wait_for '^BVAGENT SERVICE start' 1 "$AGENT_TIMEOUT" || { echo 'FAIL: agent service timeout' >&2; exit 1; }
 for file in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1 bv-windows-closure-launch.ps1 \
             bv-windows-closure-discard.ps1 bv-b6-window-dpi.ps1 bv-b6-read-logpixels.ps1 \
-            bv-b6-modern-notepad-reset.ps1 bv-b6-caret-still.ps1 bv-b6-caption-point.ps1 \
+            bv-b6-modern-notepad-reset.ps1 bv-b6-caret-still.ps1 bv-b6-caption-point.ps1 bv-b6-tip-point.ps1 \
             bv-b6-modern-notepad-launch.ps1 bv-b6-presentmon-capture.ps1 "$PRESENTMON_NAME"; do
   bytes=$(stat -f %z "$OUT/share/$file")
   wait_for "^BVAGENT SHARE host->guest $file bytes=$bytes " 1 300 \
@@ -315,15 +315,8 @@ for run in 1 2 3; do
         packaged_dpi_line=$(grep -E "^BVEFFECTIVEDPI hwnd=$mhwnd " "$RUN_LOG" | tail -1 | tr -d '\r')
         b6_dpi_matches "$packaged_dpi_line" "$mhwnd" "$LOGPIXELS" && packaged_dpi=pass
       fi
-      # Dismiss the first-run tip so the tab/menu row is unobstructed. This
-      # goes on the live-input channel ($INPUT), not the shell command
-      # channel ($CTL) -- POINTER/KEY are input-control verbs, not programs.
-      _b_ptr=$(wait_baseline 'live input accepted: command=Pointer\(')
-      # "Got it" on the packaged first-run tip, measured at (544, 302) px in
-      # captures/packaged-run1-observed/observed.ppm on 2026-09-09.
-      printf 'POINTER click:%s\n' "$(hid_point 544 302)" >> "$INPUT"
-      wait_after 'live input accepted: command=Pointer\(' "$_b_ptr" 15 || true
-      sleep 1
+      # Find the actual owned button; a fixed pixel from another DPI missed it.
+      b6_dismiss_packaged_tip "$mhwnd" || b6_scene_fail "$run" packaged tip-dismissal-failed
       _b_key2=$(wait_baseline 'live input accepted: command=Key\(')
       hexlines2=$(packaged_typing_hex_for_run "$run")
       while IFS= read -r hexline; do
