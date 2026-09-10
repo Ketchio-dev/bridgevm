@@ -2,11 +2,11 @@ param([long]$Hwnd, [int]$Width, [int]$Height)
 $ErrorActionPreference = 'Stop'
 if ($Hwnd -le 0 -or $Width -le 1 -or $Height -le 1) { throw 'Invalid tip target or display dimensions' }
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, UIAutomationClientsideProviders
-[System.Windows.Automation.ClientSettings]::RegisterClientSideProviderAssembly([UIAutomationClientsideProviders.UIAutomationClientSideProviders].Assembly.GetName())
-Add-Type -TypeDefinition @'
+Add-Type -ReferencedAssemblies UIAutomationClient, UIAutomationTypes -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class BvTipNative {
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)] public static void InitializeUIA() { var name = typeof(System.Windows.Automation.AutomationElement).Assembly.GetName(); name.Name = "UIAutomationClientsideProviders"; System.Windows.Automation.ClientSettings.RegisterClientSideProviderAssembly(name); }
     [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
@@ -20,7 +20,7 @@ public static class BvTipNative {
     }
 }
 '@
-if (![BvTipNative]::IsWindowVisible([IntPtr]$Hwnd)) { throw 'Tip target is absent or hidden' }
+[BvTipNative]::InitializeUIA(); if (![BvTipNative]::IsWindowVisible([IntPtr]$Hwnd)) { throw 'Tip target is absent or hidden' }
 $root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$Hwnd)
 if ($null -eq $root) { throw 'No UI Automation root for tip target' }
 $type = [System.Windows.Automation.PropertyCondition]::new(
