@@ -1,0 +1,20 @@
+name: B6 collector contracts
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collector:
+    name: Native Windows diagnostic collector contracts
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Test real native argument delivery, refusals and owned process cleanup
+        shell: powershell
+        run: .\tests\integration\b6-presentmon-capture-contract.ps1

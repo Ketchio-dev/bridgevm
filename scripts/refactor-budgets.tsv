@@ -1876,3 +1876,6 @@ apps/macos/Sources/BridgeVMProductE2E/T17FileChooserAX.swift	132	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserTests.swift	102	0
 scripts/check-capability-registry.sh	4	0
 tests/integration/capability-freshness-smoke.py	99	0
+scripts/win-assets/bv-b6-presentmon-capture.ps1	58	0
+tests/integration/b6-presentmon-capture-contract.ps1	82	0
+.github/workflows/b6-collector-contracts.yml	20	0
