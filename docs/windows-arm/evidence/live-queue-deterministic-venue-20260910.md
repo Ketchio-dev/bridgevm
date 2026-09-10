@@ -49,3 +49,26 @@ The six focused checks prove rejection by the revised CLI and dispatcher,
 not retroactive enforcement over older sealed revisions. A worker-level
 venue boundary remains to be implemented and tested; no old t0 job was run
 on the physical Mac to investigate this gap.
+
+## Worker-level implementation after the correction
+
+Code `705e1a1c` adds the refusal to the parent worker before it resolves or
+fetches a job's sealed revision. This is independent of the dispatcher in
+that revision. Two deterministic worker tests passed locally in 1.329 seconds:
+`t0-check` is refused before any Git call for two unresolved SHA fixtures,
+while an allowed hardware tier still reaches the fake revision resolver.
+The original six CLI/dispatcher checks also pass. Fake repositories, queue
+commands, Git, and disk-space responses keep these tests away from real VM
+execution or network fetches.
+
+The full project check and exact-checkpoint hosted results for this later
+change are still pending. The installed LaunchAgent worker has not yet been
+updated with this guard. Its deployment is deferred while the separately
+sealed B6 observation job is running. Source implementation must not be read
+as a claim that the deployed worker already enforces the new boundary.
+
+The full local `scripts/check-project.sh` subsequently passed for code commit
+`705e1a1cf4bedc5f9830937013964f5374612ea4` (log retained privately as
+`codex-worker-venue-20260910/project-check.log`). Installed-worker deployment and
+exact checkpoint hosted checks remain pending at this record. The installed
+worker was idle with a clean worktree; that does not itself prove deployment.
