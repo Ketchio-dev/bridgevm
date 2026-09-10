@@ -1888,3 +1888,7 @@ scripts/b6-active-frame-time.sh	39	0
 scripts/b6_presentmon_evidence.py	72	0
 tests/integration/b6-active-frame-time-contract.py	159	0
 .github/workflows/b6-active-frame-time-contracts.yml	15	0
+scripts/live-gates/b6_cell_inputs.py	133	0
+scripts/live-gates/run-b6-cell-observation.py	171	0
+tests/integration/b6-cell-observation-contract.py	175	0
+.github/workflows/b6-sealed-cell-contracts.yml	15	0

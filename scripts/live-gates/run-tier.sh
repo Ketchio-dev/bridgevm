@@ -91,6 +91,9 @@ case "$TIER" in
             exit 1
         fi
         ;;
+    d2-b6-cell-observation)
+        python3 "$REPO/scripts/live-gates/run-b6-cell-observation.py" --out "$OUT" --job-id "$JOB_ID" \
+          --input-manifest "$INPUT_MANIFEST" --sealed-binary "$SEALED_BINARY" ;;
     t6-a3-title|t7-windows-closure)
         helper=run-a3-title-tier.sh; [[ "$TIER" == t6-a3-title ]] || helper=run-windows-closure-tier.sh
         "$REPO/scripts/live-gates/$helper" --out "$OUT" --input-manifest "$INPUT_MANIFEST" \

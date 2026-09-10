@@ -1,0 +1,15 @@
+name: B6 sealed cell contracts
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Exercise sealed input and clone refusal contracts
+        run: python3 tests/integration/b6-cell-observation-contract.py
