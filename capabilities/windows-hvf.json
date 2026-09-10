@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-09",
-  "tested_commit": "7a97d6f8758373a606dc178ac7333f2dfc37d461",
+  "tested_commit": "4bf7de3440263b2c9a6464aac5d99de218b75726",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -116,7 +116,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "ISO installation and installed-disk import are reachable from the UI; 3D driver injection remains unavailable until both product flows consume a BridgeVM-verified signed kernel-policy package snapshot and a retained clean-machine flow passes.",
-      "measured": "OPEN 2026-09-09: every T17 lane result since the 2026-09-01 pilots -- seven jobs across four commits, including today's t17-e013d1bc-hosted-pilot-r2 submitted after Accessibility was granted to the exact sealed helper -- reads accessibility-untrusted with vm_created=false. The identical helper binary run from a Terminal shell against the same verified inputs passes AXIsProcessTrusted and reaches UI automation (ui_frontend_automated=true); under the queue (LaunchAgent -> env -i -> bash -> exec) macOS attributes the check to that chain, not to the trusted bundle. The tier now launches the helper through LaunchServices, proven for the mechanism by the shell run and exercised by the live-tier contract smoke, not yet by a queued job. Past the check the helper stopped at ui-element-missing; two causes were found and fixed at 88ddcb26: LibraryModel imported the user's legacy ubuntu-dev into the sealed empty E2E library, and the blocker's detail was dropped so the result could not name the element. A plain process reaches the create sheet by Accessibility in 0.2 s; why the helper's first press times out is the next question and the lane result now carries failure_detail to answer it. The helper is ad-hoc signed, so each rebuild needs the Accessibility grant again. No live VM creation, Windows installation, guest integration, shutdown or snapshot/restore was proven. Test-signed 3D kernel packages still conflict with Secure Boot policy and product injection remains disabled. A retained clean-machine flow is still absent. Evidence: docs/windows-arm/evidence/a9-accessibility-attribution-and-e2e-library-20260909.md.",
+      "measured": "OPEN: queued pilot t17-fe8d6707-local-pilot-r3 on 2026-09-10 passed the exact helper Accessibility check and opened the create sheet, then failed at bridgevm.create.windows.iso with AX cannotComplete (-25204) on both attempts despite frontmost=true. Cleanup passed and no VM was created. A retained stack sample of the same packaged UI shows AXPress blocked in CreateVMSheet.chooseFile -> NSSavePanel.runModal until the file chooser closes. The candidate uses asynchronous completion for all six creation/import pickers; four native XCTest cases and the full project check pass, but a newly sealed pilot is still required. The prior seven accessibility-untrusted jobs and the r3 failure remain retained. Signed kernel-policy provenance and a clean-machine 3D injection flow remain unproven; product 3D injection stays disabled. No Windows installation or full guest journey is proven by this pilot.",
       "evidence_paths": [
         "docs/windows-arm/evidence/app-install-to-3d-desktop-20260730.md",
         "docs/windows-arm/evidence/a9-product-e2e-pilot-failures-20260901.md",
@@ -141,7 +141,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-09-09 verification pending at tested code head 7a97d6f8758373a606dc178ac7333f2dfc37d461. The full project check after the A9 activation commit failed only capability-registry freshness; its other steps passed. Hosted Security and quality run 34426219459 failed a closure policy assertion that still searched for firstboot readiness in the caller after extraction into agent-channel-lib.sh. The corrected policy retains all four CR-tolerant guest-output assertions and explicitly requires the caller to source the helper; the full live-gate policy smoke passed 99 checks. A fresh complete project check and exact-head hosted CI/Security are still required. A9 remains OPEN; the new local package and Accessibility registration do not prove a T17 pilot or the fixed three-lane release gate.",
+      "measured": "OPEN: tested code head 4bf7de3440263b2c9a6464aac5d99de218b75726. The complete local scripts/check-project.sh passed on the asynchronous picker source tree, including the existing suites and four new FileSelection cases under the XCTest shim. Separately, the same four cases passed native XCTest. Exact-head hosted CI/Security for this change are pending. Prior head fe8d6707 passed hosted CI 34426736591 and Security 34426736616 after the closure-policy repair; the earlier failed Security run 34426219459 and stale-registry failure remain retained. A9 and B6 remain OPEN. This is a development checkpoint, not a final release regression seal.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
