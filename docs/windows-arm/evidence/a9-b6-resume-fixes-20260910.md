@@ -87,3 +87,39 @@ The renderer prefix repair independently reanalyzed the retained 10,162,048-byte
 capture log with its original SHA-256 unchanged: TGSI273 / GLSL273. This is
 explicitly offline reanalysis. The original diagnostic-failed receipt was not
 rewritten, and no glyph/performance criterion or product state was promoted.
+
+## Twelve-hour continuation: checked AX conversion and valid renderer trace
+
+Main f1d4a887 passed full local checks, CI 34536775123 and Security 34536775119
+after replacing the new forced AX cast with the existing CF-type-checked
+conversion pattern. The earlier bbfe7ecc forced-cast failure remains a failure.
+The rebuilt helper and its manifest authenticate locally; its Accessibility
+grant is not established because the computer-use native pipe failed to start.
+No new A9 pilot has been run and A9 remains OPEN.
+
+Physical job d3-b6-eedd819d-renderer-debug-r4 finished at 22:05:54 UTC.
+Its receipt is valid, outcome observed, failure_code none, run_count 3 against
+required_run_count 27, with pass/criterion_pass/claim_eligible/promotion false.
+Receipt SHA-256: 345e16b1d7a8c2d4d3895d702345479d5bb4f7d863a27ca4d4d3bdd4e65c5f.
+Capture trace SHA-256: 661c0081337152d5834c28f55ece9e310f072852c41884164fb1fcef7861f5f8.
+The capture has 273 TGSI and 273 GLSL headers in 10,015,877 raw bytes. This
+proves capture/parser compatibility, not glyph correctness or performance.
+Code 22868620 integrates the already-tested diagnostic without changing the
+renderer binary or any criterion. Its 25 focused contracts and complete local
+project check passed; exact integration-head hosted checks are still required.
+
+Visual inspection of the packaged Notepad body shows coloured/incomplete
+strokes both in this diagnostic and in the non-instrumented 568e1544 renderer's
+retained d2-b6-a399e341-1600x900-100-r1 capture. This is not an accepted glyph
+mask and is not a causal identification. The title, tab and menu are readable
+in these particular frames; that does not discharge the fixed matrix.
+
+A narrower arithmetic hypothesis comes from the retained r4 shader: TGSI
+`UADD TEMP[1].x, -TEMP[1].xxxx, IMM[1].wwww` uses an integer constant 8, but its
+GLSL applies `floatBitsToUint(vec4(-temp1).xxxx)` before unsigned addition.
+Offline IEEE-754 evaluation for x=0..7 yields 2147483656..2147483663 rather
+than 8..1. This is a static expression mismatch, not a GPU or live guest proof.
+Mesa's TGSI source-modifier documentation specifies type-dependent integer
+negation: https://docs.mesa3d.org/gallium/tgsi.html#source-modifiers .
+A minimal real-translator reproduction and an isolated candidate are the next
+steps; no blending rewrite or product-renderer cutover is justified yet.
