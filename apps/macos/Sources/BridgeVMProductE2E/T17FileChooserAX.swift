@@ -7,6 +7,12 @@ final class T17FileChooserAX: T17FileChooserDriving {
     private let identifier: String
     private let openControl: () throws -> Void
     private var panel: AXUIElement?
+    private var keyContext = "key not sent"
+    private var activationSucceeded: Bool?
+
+    var failureContext: String {
+        "timeout{\(T17FileChooserDiagnostics.snapshot(pid: pid))}; activation=\(activationSucceeded?.description ?? "unknown"); \(keyContext)"
+    }
 
     init(pid: pid_t, identifier: String, openControl: @escaping () throws -> Void) {
         self.pid = pid
@@ -30,7 +36,7 @@ final class T17FileChooserAX: T17FileChooserDriving {
     func showLocationField() throws {
         guard let panel else { throw T17FileChooser.failure("file chooser was absent") }
         // Activation is recovery, not proof that the chooser can accept input.
-        _ = T17Activation.bringToFront(pid: pid)
+        activationSucceeded = T17Activation.bringToFront(pid: pid)
         try action(panel, kAXRaiseAction)
         try key(5, flags: [.maskCommand, .maskShift])
     }
@@ -92,13 +98,7 @@ final class T17FileChooserAX: T17FileChooserDriving {
     }
 
     private func key(_ code: CGKeyCode, flags: CGEventFlags = []) throws {
-        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
-              let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false) else {
-            throw T17FileChooser.failure("file chooser keyboard event creation failed")
-        }
-        down.flags = flags; up.flags = flags
-        // Never send a private path or Return to whichever unrelated app steals focus.
-        down.postToPid(pid); up.postToPid(pid)
+        keyContext = try T17FileChooserDiagnostics.post(pid: pid, code: code, flags: flags)
     }
 
     private func action(_ element: AXUIElement, _ name: String) throws {

@@ -1,6 +1,6 @@
 import Foundation
-
 protocol T17FileChooserDriving {
+    var failureContext: String { get }
     func open() throws
     func panelIsPresent() throws -> Bool
     func showLocationField() throws
@@ -28,7 +28,7 @@ enum T17FileChooser {
         func wait(_ stage: String, until ready: () throws -> Bool) throws {
             repeat {
                 if try ready() { return }
-                if now() >= deadline { throw failure("timed out waiting for \(stage)") }
+                if now() >= deadline { throw failure("timed out waiting for \(stage)" + diagnosticSuffix(driver)) }
                 pause()
             } while true
         }
