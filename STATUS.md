@@ -11,7 +11,7 @@ receipts under `docs/windows-arm/evidence/`.
 <!-- BEGIN GENERATED: capability-summary -->
 **Product state: Engineering Preview.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Release-blocking evidence remains open; known defects are disclosed below.
 
-Release-blocking criteria proven: **18 / 19**. Open: A9.
+Release-blocking criteria proven: **17 / 19**. Open: A9, A11.
 
 Known open defects:
 - **A9**: Windows-HVF 3D driver injection is unavailable for install and import: signed kernel-policy provenance and a clean-machine installation flow have not been proven. The product exposes only 3D-off install/import.
@@ -20,7 +20,7 @@ Known open defects:
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-09-09 at commit `88ddcb266fce0bc17e4ca64b3b2aec6b7a7e1125`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-09-09 at commit `7a97d6f8758373a606dc178ac7333f2dfc37d461`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 ## How to read the generated status

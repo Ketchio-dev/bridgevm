@@ -121,3 +121,26 @@ guesses.
   library root, and with stdio redirected that refusal was invisible.
 
 None of this is a queued pilot yet. A9 stays `OPEN`.
+
+## Codex continuation: the first hosted check exposed a stale policy test
+
+Commit b27feaea retained the activation recovery and bundle-URL launcher,
+and now preserves both AXPress error codes without activating the app again
+while formatting a failure. Activation remains a recovery attempt; the code
+does not establish a general rule that every refused press is a focus error.
+
+The full project check passed before that commit. After the commit, another
+full run failed only capability-registry freshness; all its other steps passed.
+These are different outcomes, and the earlier pass does not seal the new head.
+Hosted Security and quality run 34426219459 also failed: the closure policy
+still searched the caller for firstboot readiness after that function moved
+to agent-channel-lib.sh. Commit 7a97d6f8 makes the policy check the imported
+helper and requires the source connection. All four CR-tolerant guest-output
+assertions remain required. The live-gate policy smoke then passed 99 checks.
+
+A11 is OPEN pending a fresh complete check and exact-head hosted CI/Security.
+The locally built package passed packaging checks and its exact nested helper
+was re-added through System Settings with Accessibility visibly enabled.
+That setting is not a queued-process trust receipt. The retained package was
+built from b27feaea; 7a97d6f8 changes only the deterministic policy test.
+No pilot has been submitted by this continuation, and A9 remains OPEN.

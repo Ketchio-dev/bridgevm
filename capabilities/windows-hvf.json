@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-09",
-  "tested_commit": "88ddcb266fce0bc17e4ca64b3b2aec6b7a7e1125",
+  "tested_commit": "7a97d6f8758373a606dc178ac7333f2dfc37d461",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -138,10 +138,10 @@
     {
       "id": "A11",
       "title": "No regression",
-      "state": "PROVEN",
+      "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-09-09 A9 attribution reseal: tested code head 88ddcb266fce0bc17e4ca64b3b2aec6b7a7e1125. The T17 tier launches the product E2E helper through LaunchServices so macOS attributes its Accessibility check to the trusted helper bundle rather than the queue worker's chain; LibraryModel no longer imports the legacy VM into an explicit --e2e-library-root (BridgeVMControlLaunchPolicy, tested); and the lane result carries failure_detail beside failure_code in the Swift contract, the receipt writer's LANE_KEYS and the fixture helper, with the element timeout naming the identifier and window count. Every touched file sat at its ratchet ceiling and landed net-zero or in new seeded files. Swift: 17 tests, 0 failures; Windows product E2E contract smoke: PASS (41 checks). Earlier today: B6 harness promoted, pointer units, focus precondition, scene isolation, session reset, mask contract, present-latency tool; agent-channel helpers extracted from three identical copies. B6 and A9 stay OPEN. Full scripts/check-project.sh passed. This reseal must itself pass hosted workflows.",
+      "measured": "2026-09-09 verification pending at tested code head 7a97d6f8758373a606dc178ac7333f2dfc37d461. The full project check after the A9 activation commit failed only capability-registry freshness; its other steps passed. Hosted Security and quality run 34426219459 failed a closure policy assertion that still searched for firstboot readiness in the caller after extraction into agent-channel-lib.sh. The corrected policy retains all four CR-tolerant guest-output assertions and explicitly requires the caller to source the helper; the full live-gate policy smoke passed 99 checks. A fresh complete project check and exact-head hosted CI/Security are still required. A9 remains OPEN; the new local package and Accessibility registration do not prove a T17 pilot or the fixed three-lane release gate.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -161,7 +161,8 @@
         "docs/windows-arm/evidence/bridgevm-pc-bds-exit-reseal-receipt-20260901-9d63f07d.json",
         "docs/windows-arm/evidence/f3-postclose-save-prompt-confirmed-20260908.md",
         "docs/windows-arm/evidence/b6-second-capture-focus-refusal-20260909.md",
-        "docs/windows-arm/evidence/b6-presentmon-live-and-focus-refusal-20260909.md"
+        "docs/windows-arm/evidence/b6-presentmon-live-and-focus-refusal-20260909.md",
+        "docs/windows-arm/evidence/a9-accessibility-attribution-and-e2e-library-20260909.md"
       ]
     },
     {
