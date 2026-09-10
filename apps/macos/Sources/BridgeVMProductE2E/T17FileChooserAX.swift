@@ -28,9 +28,9 @@ final class T17FileChooserAX: T17FileChooserDriving {
     }
 
     func showLocationField() throws {
-        guard let panel, T17Activation.bringToFront(pid: pid) else {
-            throw T17FileChooser.failure("file chooser could not be activated")
-        }
+        guard let panel else { throw T17FileChooser.failure("file chooser was absent") }
+        // Activation is recovery, not proof that the chooser can accept input.
+        _ = T17Activation.bringToFront(pid: pid)
         try action(panel, kAXRaiseAction)
         try key(5, flags: [.maskCommand, .maskShift])
     }
