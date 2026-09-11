@@ -1920,3 +1920,8 @@ scripts/win-assets/bv-b6-uia-diagnostic.ps1	28	0
 tests/integration/b6-uia-diagnostic-contract.py	67	0
 tests/integration/b6-uia-diagnostic-contract.ps1	28	0
 .github/workflows/b6-uia-diagnostic-contracts.yml	19	0
+scripts/win-assets/bv-b6-native-uia.cs	102	0
+scripts/win-assets/bv-b6-native-uia.ps1	30	0
+scripts/b6-uia-probe-command.sh	8	0
+tests/integration/b6-native-uia-contract.ps1	49	0
+.github/workflows/b6-native-uia-contracts.yml	12	0

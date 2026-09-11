@@ -43,10 +43,10 @@ touch "$OUT/continued"
 
     def test_both_modes_after_frame_still_fail(self):
         commands = self.invoke("complete")
-        self.assertEqual(len(commands), 2)
+        self.assertEqual(len(commands), 3); self.assertIn("bv-b6-native-uia.ps1 -Hwnd 42", commands[2])
         self.assertIn("-Sta ", commands[0])
         self.assertIn("-Mta ", commands[1])
-        self.assertTrue(all("-File C:\\BridgeVMClosure\\bv-b6-uia-diagnostic.ps1 -Hwnd 42" in c for c in commands))
+        self.assertTrue(all("-File C:\\BridgeVMClosure\\bv-b6-uia-diagnostic.ps1 -Hwnd 42" in c for c in commands[:2]))
 
     def test_timeout_stops_further_queries(self):
         self.assertEqual(len(self.invoke("timeout")), 1)
