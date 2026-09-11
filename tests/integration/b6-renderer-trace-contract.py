@@ -19,7 +19,6 @@ spec = importlib.util.spec_from_file_location("trace_runner", ROOT / "scripts/li
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 
-
 class TraceContracts(unittest.TestCase):
     def test_exact_log_hash_and_markers(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -87,7 +86,9 @@ class TraceContracts(unittest.TestCase):
             disk, variables = out / "disk", out / "variables"
             disk.write_bytes(b"disk"); variables.write_bytes(b"vars")
             args = argparse.Namespace(out=out, job_id="fixture", input_manifest=out / "manifest", sealed_binary=out / "probe")
-            records = {key: (out / key, "a" * 64) for key in ("image", "vars", "binary", "virglrenderer", "moltenvk", "viogpu_dir", "presentmon", "config")}
+            records = {key: (out / key, "a" * 64) for key in ("image", "vars", "binary", "virglrenderer", "moltenvk", "viogpu_dir", "presentmon", "config", "render_server")}
+            records["render_server"][0].write_bytes(b"server"); records["render_server"][0].chmod(0o500)
+            records["virglrenderer"][0].write_bytes(os.fsencode(records["render_server"][0]) + b"\0")
             core = runner.core
             with mock.patch.object(core.subprocess, "check_output", return_value=("a" * 40 + "\n")), \
                  mock.patch.object(core.subprocess, "run"), mock.patch.object(core.platform, "system", return_value="Darwin"), \
@@ -102,15 +103,14 @@ class TraceContracts(unittest.TestCase):
             value = json.loads((out / "receipt.json").read_text())
             self.assertEqual(status, 1)
             self.assertFalse(value["valid"])
+            self.assertEqual(value["run_count"], 0)
             self.assertEqual(value["failure_code"], "diagnostic-failed")
             self.assertEqual(value["tier"], evidence.TIER)
             self.assertIn(evidence.CONFOUNDERS[0], value["known_confounders"])
-
     def test_cli_requires_manifest_for_trace_tier(self):
         result = subprocess.run(["bash", str(ROOT / "scripts/live-gates/bridgevm-live"), "submit", evidence.TIER], capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("needs --input-manifest", result.stderr)
-
 
 if __name__ == "__main__":
     unittest.main()

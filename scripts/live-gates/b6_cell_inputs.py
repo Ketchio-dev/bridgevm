@@ -9,7 +9,7 @@ import stat
 import subprocess
 
 KEYS = frozenset(("image", "vars", "binary", "virglrenderer", "moltenvk",
-                  "viogpu_dir", "presentmon", "config"))
+                  "viogpu_dir", "presentmon", "config", "render_server"))
 RESOLUTIONS = frozenset(((1280, 720), (1600, 900), (1920, 1080)))
 
 

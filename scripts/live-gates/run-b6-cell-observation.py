@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 from b6_cell_inputs import clone_pair, file_hash, load_inputs, small_bytes, verify_inputs
-
+from b6_renderer_runtime import verify_renderer_runtime
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts"))
 from b6_frame_times import NO_CLAIM, summarize
@@ -99,7 +99,7 @@ def run(args, receipt_factory=None, complete=None):
         records, config = load_inputs(args.input_manifest, args.sealed_binary)
         names = dict(image="image_sha256", vars="vars_sha256", binary="binary_hash",
                      virglrenderer="virglrenderer_sha256", moltenvk="moltenvk_sha256",
-                     viogpu_dir="driver_store_hash", presentmon="gate_asset_hash", config="config_sha256")
+                     viogpu_dir="driver_store_hash", presentmon="gate_asset_hash", config="config_sha256", render_server="render_server_sha256")
         value.update({names[key]: digest for key, (_, digest) in records.items()})
         value["workload_profile"] = "b6-%sx%s-%sdpi-observation" % (config["width"], config["height"], config["logpixels"])
         stage = "host"
@@ -107,6 +107,7 @@ def run(args, receipt_factory=None, complete=None):
             raise ValueError("physical Apple-silicon Mac required")
         value["host_model"] = subprocess.check_output(["sysctl", "-n", "hw.model"], text=True).strip()
         value["macos_version"] = subprocess.check_output(["sw_vers", "-productVersion"], text=True).strip()
+        verify_renderer_runtime(records)
         subprocess.run([str(REPO / "scripts/live-gates/verify-windows-closure-binary.sh"),
                         str(args.sealed_binary), str(records["virglrenderer"][0])], check=True)
         stage = "clone"
@@ -151,7 +152,6 @@ def run(args, receipt_factory=None, complete=None):
         value["finished_at"] = now()
         write_json(destination, value, replace=True)
     return status
-
 
 def main(run_cell=None):
     parser = argparse.ArgumentParser(description=__doc__)

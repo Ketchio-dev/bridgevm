@@ -1949,3 +1949,6 @@ tests/integration/b6-display-producer-contract.ps1	49	0
 .github/workflows/b6-display-proof-contracts.yml	18	0
 tests/integration/b6-renderer-startup-contract.py	53	0
 .github/workflows/b6-renderer-startup-contracts.yml	11	0
+scripts/live-gates/b6_renderer_runtime.py	18	0
+tests/integration/b6-renderer-runtime-contract.py	79	0
+.github/workflows/b6-renderer-runtime-contracts.yml	11	0
