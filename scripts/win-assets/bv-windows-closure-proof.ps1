@@ -1,10 +1,10 @@
 param(
     [ValidateSet('F1', 'Display', 'Window', 'Notepad')]
     [string]$Action = 'F1',
-    [long]$Hwnd = 0
+    [long]$Hwnd = 0,
+    [ValidateSet('1280x720', '1600x900', '1920x1080')][string]$RequestedMode = '1600x900'
 )
 $ErrorActionPreference = 'Stop'
-
 function Get-ProblemCode($Device) {
     try {
         $property = Get-PnpDeviceProperty -InstanceId $Device.InstanceId `
@@ -97,7 +97,7 @@ function Write-F1Proof {
 function Write-DisplayProof {
     $display = Get-DisplayProof
     Write-Output ("BVF2 device=$($display.Device) current=$($display.Current) " +
-        "modes=$($display.Count) has_1600x900=$($display.Modes.Contains('1600x900'))")
+        "modes=$($display.Count) has_${RequestedMode}=$($display.Modes.Contains($RequestedMode))")
     if ($display.Count -le 1) { exit 11 }
 }
 

@@ -1,0 +1,18 @@
+name: B6 requested display proof contracts
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  fresh-host-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 tests/integration/b6-display-proof-contract.py
+  guest-producer:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - shell: powershell
+        run: tests/integration/b6-display-producer-contract.ps1

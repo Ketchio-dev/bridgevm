@@ -1943,3 +1943,7 @@ docs/windows-arm/evidence/a9-readonly-launch-context-20260911.md	47	0
 scripts/doc_code_identity.py	11	0
 tests/integration/doc-code-identity-contract.py	50	0
 .github/workflows/doc-code-identity-contracts.yml	11	0
+scripts/b6-display-proof.sh	13	0
+tests/integration/b6-display-proof-contract.py	77	0
+tests/integration/b6-display-producer-contract.ps1	49	0
+.github/workflows/b6-display-proof-contracts.yml	18	0

@@ -88,9 +88,9 @@ fi
 printf 'RESIZE %sx%s\n' "$WIDTH" "$HEIGHT" >> "$INPUT"; wait_for "^live input accepted: resize=${WIDTH}x${HEIGHT}\$" 1 30 || true
 APPLY_CMD="powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bvgpu-apply-host-resolution.ps1 -Width $WIDTH -Height $HEIGHT"
 send_ok "$APPLY_CMD" || true
-DISPLAY_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-windows-closure-proof.ps1 -Action Display'
+source "$REPO/scripts/b6-display-proof.sh"
 f2=fail
-if send_ok "$DISPLAY_CMD" && grep -Eq "^BVF2 .* current=${WIDTH}x${HEIGHT} modes=([2-9]|[1-9][0-9]+) has_${WIDTH}x${HEIGHT}=True\r?\$" "$RUN_LOG"; then
+if b6_display_matches "$WIDTH" "$HEIGHT"; then
   f2=pass
 fi
 
