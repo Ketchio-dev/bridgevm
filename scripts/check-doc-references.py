@@ -26,7 +26,7 @@ import os
 import re
 import subprocess
 import sys
-
+from doc_code_identity import is_cdhash_reference
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HISTORICAL = ("docs/archive/", "docs/handoffs/")
 # "Ketchio-dev" alone is not evidence of an external commit: it owns this
@@ -55,7 +55,6 @@ REPO_PATH = re.compile(
     r"/[A-Za-z0-9_./-]+)`"
 )
 SHA = re.compile(r"\b([0-9a-f]{40})\b")
-
 
 def tracked(pattern: str) -> list[str]:
     out = subprocess.run(
@@ -106,6 +105,7 @@ def main() -> int:
             if not check_commits:
                 continue
             for match in SHA.finditer(line):
+                if is_cdhash_reference(lines, number, match.start()): continue
                 commit = match.group(1)
                 exists = subprocess.run(
                     ["git", "cat-file", "-e", commit + "^{commit}"],

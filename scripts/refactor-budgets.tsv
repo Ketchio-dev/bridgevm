@@ -1940,3 +1940,6 @@ tests/integration/b6-asset-staging-contract.py	48	0
 .github/workflows/b6-asset-staging-contracts.yml	11	0
 docs/windows-arm/evidence/b6-physical-uia-observation-20260911.md	84	0
 docs/windows-arm/evidence/a9-readonly-launch-context-20260911.md	47	0
+scripts/doc_code_identity.py	11	0
+tests/integration/doc-code-identity-contract.py	50	0
+.github/workflows/doc-code-identity-contracts.yml	11	0
