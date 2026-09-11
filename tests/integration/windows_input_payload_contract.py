@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def verify_input_assets(staged: Path, receipt: str) -> None:
-    for name in ("bvagent.ps1", "bvagent-firstboot.ps1", "bvagent-input.ps1", "bvagent-unicode-input.cs", "bvagent-task.ps1"):
+    for name in ("bvagent.ps1", "bvagent-firstboot.ps1", "bvagent-input.ps1", "bvagent-unicode-input.cs", "bvagent-key-input.cs", "bvagent-task.ps1"):
         path = staged / "agent" / name
         assert path.is_file(), f"missing staged guest asset: {name}"
         digest = hashlib.sha256(path.read_bytes()).hexdigest()

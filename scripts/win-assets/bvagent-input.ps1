@@ -1,6 +1,6 @@
 $script:BvInputSourceRoot = $PSScriptRoot
 
-function Invoke-UnicodeInput([string]$Request, [scriptblock]$Sender = $null) {
+function Invoke-UnicodeInput([string]$Request, [scriptblock]$Sender = $null, [bool]$KeyInput = $false) {
     $requestId = 'invalid'
     try {
         if ($Request.Length -gt 87421) { throw 'unicode-request-length' }
@@ -15,11 +15,11 @@ function Invoke-UnicodeInput([string]$Request, [scriptblock]$Sender = $null) {
         $decoder = New-Object System.Text.UTF8Encoding($false, $true)
         $text = $decoder.GetString($bytes)
         if (-not ('BridgeVM.BvUnicodeInput' -as [type])) {
-            Add-Type -Path (Join-Path $script:BvInputSourceRoot 'bvagent-unicode-input.cs') -ErrorAction Stop
+            Add-Type -Path (Join-Path $script:BvInputSourceRoot 'bvagent-unicode-input.cs'),(Join-Path $script:BvInputSourceRoot 'bvagent-key-input.cs') -ErrorAction Stop
         }
         # Build validates UTF-16 before even a test sender can observe the text.
-        $expected = [uint32]([BridgeVM.BvUnicodeInput]::Build($text).Length)
-        $inserted = if ($null -eq $Sender) { [BridgeVM.BvUnicodeInput]::Insert($text) } else { & $Sender $text }
+        $expected = if ($KeyInput) { [uint32]([BridgeVM.BvUnicodeInput]::BuildKey($text).Length) } else { [uint32]([BridgeVM.BvUnicodeInput]::Build($text).Length) }
+        $inserted = if ($null -ne $Sender) { & $Sender $text } elseif ($KeyInput) { [BridgeVM.BvUnicodeInput]::InsertKey($text) } else { [BridgeVM.BvUnicodeInput]::Insert($text) }
         [BridgeVM.BvUnicodeInput]::RequireComplete([uint32]$inserted, $expected)
         return @{ Exit = 0; Out = ('BVINPUT_INSERTED {0} {1}' -f $requestId, $inserted) }
     } catch {

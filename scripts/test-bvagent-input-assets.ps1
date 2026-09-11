@@ -12,7 +12,7 @@ $root = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('N'))
 try {
     [void](New-Item -ItemType Directory -Path (Join-Path $root 'agent') -Force)
     $records = @()
-    foreach ($name in @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-task.ps1')) {
+    foreach ($name in @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-task.ps1')) {
         $path = Join-Path $root ('agent/' + $name)
         [IO.File]::WriteAllText($path, 'synthetic asset ' + $name)
         $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -34,7 +34,7 @@ try {
         if (-not $blocked) { throw 'missing guest code was accepted' }
         [IO.File]::WriteAllText($path, $original)
     }
-    foreach ($invalid in @(@($records[0], $records[1], $records[2]), @($records[0], $records[1], $records[2], $records[3], $records[3]))) {
+    foreach ($invalid in @(@($records[0..($records.Count - 2)]), @($records + ,$records[-1]))) {
         $blocked = $false
         try { Confirm-GuestAgentAssets $invalid $root | Out-Null } catch { $blocked = $true }
         if (-not $blocked) { throw 'incomplete/duplicate guest identity was accepted' }

@@ -4,7 +4,7 @@ pub(super) fn is_command(command: &str) -> bool {
         return false;
     }
     let mut fields = command.split(' ');
-    if fields.next() != Some("TEXTINPUT") {
+    if !matches!(fields.next(), Some("TEXTINPUT") | Some("KEYINPUT")) {
         return false;
     }
     let Some(id) = fields.next() else { return false };
@@ -28,6 +28,7 @@ mod tests {
     fn recognizes_single_correlated_unicode_request() {
         assert!(is_command(&format!("TEXTINPUT {ID} 7ZWc")));
         assert!(is_command(&format!("TEXTINPUT {ID} YQ==")));
+        assert!(is_command(&format!("KEYINPUT {ID} ZW50ZXI=")));
         assert!(!is_command(&format!("RUN {ID} YQ==")));
     }
 

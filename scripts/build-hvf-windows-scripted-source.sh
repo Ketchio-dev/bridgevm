@@ -12,7 +12,7 @@ SIZE_BYTES="${SIZE_BYTES:-17179869184}" # 16 GiB
 SWM_SPLIT_MB="${SWM_SPLIT_MB:-3800}"     # keep each .swm < FAT32 4 GiB limit
 log() { printf '[build-src] %s\n' "$*"; }
 [[ -f "$ISO" ]] || { echo "FAIL: ISO not found: $ISO" >&2; exit 1; }
-for f in winpeshl.ini bvinstall.cmd bvdiskpart.txt bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-task.ps1; do
+for f in winpeshl.ini bvinstall.cmd bvdiskpart.txt bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-task.ps1; do
   [[ -f "$ASSETS/$f" ]] || { echo "FAIL: missing asset $ASSETS/$f" >&2; exit 1; }
 done
 [[ "$WIMLIB" == /* && -x "$WIMLIB" ]] || { echo "FAIL: WIMLIB must name an absolute executable" >&2; exit 1; }

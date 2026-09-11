@@ -1,6 +1,6 @@
 param([string]$Source = (Join-Path $PSScriptRoot 'win-assets/bvagent-unicode-input.cs'))
 $ErrorActionPreference = 'Stop'
-Add-Type -Path $Source -ErrorAction Stop
+Add-Type -Path $Source,(Join-Path $PSScriptRoot 'win-assets/bvagent-key-input.cs') -ErrorAction Stop
 
 function Assert-Equal($Actual, $Expected, [string]$Label) {
     if ($Actual -ne $Expected) { throw "$Label expected=$Expected actual=$Actual" }

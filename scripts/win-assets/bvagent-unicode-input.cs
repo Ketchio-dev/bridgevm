@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 namespace BridgeVM {
     // Keep this type separate from the resident channel's P/Invoke declarations.
     // A successful return means stream insertion, NOT application consumption.
-    public static class BvUnicodeInput {
+    public static partial class BvUnicodeInput {
         public const int MaximumCodeUnits = 65536;
 
         [StructLayout(LayoutKind.Sequential)]
@@ -78,15 +78,7 @@ namespace BridgeVM {
         }
 
         public static uint Insert(string text) {
-            if (Environment.OSVersion.Platform != PlatformID.Win32NT || IntPtr.Size != 8) {
-                throw new PlatformNotSupportedException("unicode-input-requires-win64");
-            }
-            int size = Marshal.SizeOf(typeof(Input));
-            if (size != 40) { throw new InvalidOperationException("unicode-input-layout"); }
-            Input[] inputs = Build(text);
-            uint inserted = SendInput((uint)inputs.Length, inputs, size);
-            RequireComplete(inserted, (uint)inputs.Length);
-            return inserted;
+            return InsertEvents(Build(text));
         }
     }
 }

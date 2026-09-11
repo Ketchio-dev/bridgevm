@@ -2022,3 +2022,5 @@ scripts/win-assets/bvagent-input.ps1	28	0
 scripts/test-bvagent-input-assets.ps1	45	0
 tests/integration/windows_input_payload_contract.py	12	0
 scripts/win-assets/bvagent-task.ps1	15	0
+scripts/win-assets/bvagent-key-input.cs	73	0
+scripts/test-bvagent-key-input.ps1	40	0

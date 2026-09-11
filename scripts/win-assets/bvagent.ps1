@@ -99,7 +99,7 @@ try {
     . (Join-Path $PSScriptRoot 'bvagent-input.ps1')
 } catch {
     Log ('INPUT API unavailable: ' + $_.Exception.Message)
-    function Invoke-UnicodeInput([string]$Request, [scriptblock]$Sender = $null) {
+    function Invoke-UnicodeInput([string]$Request, [scriptblock]$Sender = $null, [bool]$KeyInput = $false) {
         return @{ Exit = 1; Out = 'BVINPUT_FAILED unavailable' }
     }
 }
@@ -387,6 +387,7 @@ while ($true) {
             switch ($tok) {
                 'PING' { Write-Line $h 'PONG' 'PONG' }
                 'TEXTINPUT' { Write-CommandResult $h (Invoke-UnicodeInput $arg) }
+                'KEYINPUT' { Write-CommandResult $h (Invoke-UnicodeInput $arg $null $true) }
                 'WINLIST' {
                     # Main app windows via the .NET process walk. The previous
                     # native-callback window walk hung the whole agent on

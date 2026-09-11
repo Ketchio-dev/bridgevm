@@ -38,7 +38,7 @@ def replace_hash(manifest: Path, relative: str, path: Path) -> None:
 
 def main() -> int:
     for name in (
-        "bvagent.ps1", "bvagent-firstboot.ps1", "bvagent-input.ps1", "bvagent-unicode-input.cs", "bvagent-task.ps1", "bvinstall.cmd", "bvdiskpart.txt",
+        "bvagent.ps1", "bvagent-firstboot.ps1", "bvagent-input.ps1", "bvagent-unicode-input.cs", "bvagent-key-input.cs", "bvagent-task.ps1", "bvinstall.cmd", "bvdiskpart.txt",
         "winpeshl.ini", "unattend.xml", "windows-guest-payload-v1.example.tsv",
     ):
         data = (ASSETS / name).read_bytes()

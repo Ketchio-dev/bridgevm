@@ -173,7 +173,7 @@ while IFS= read -r binary; do
   grep -Fqx "$binary" "$binaries" || fail guest-payload-schema "unassigned executable payload: $binary"
 done < <(grep -Ei '\.(sys|dll|exe)$' "$listed" || true)
 
-for asset in bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-task.ps1; do
+for asset in bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-task.ps1; do
   [[ -f "$ASSETS/$asset" && ! -L "$ASSETS/$asset" ]] || fail guest-tools-missing "missing BridgeVM asset: $asset"
   LC_ALL=C awk 'substr($0, length($0), 1) != "\r" { exit 1 }' "$ASSETS/$asset" || \
     fail guest-tools-line-endings "$asset must use CRLF line endings"
@@ -190,7 +190,7 @@ while IFS=$'\t' read -r path expected; do
 done < "$files"
 cp "$MANIFEST" "$stage/payload-manifest.tsv"
 [[ "$(sha256_file "$stage/payload-manifest.tsv")" == "$manifest_hash" ]] || fail guest-payload-staging "manifest changed during staging"
-for asset in bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-task.ps1; do cp "$ASSETS/$asset" "$stage/agent/$asset"; done
+for asset in bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-task.ps1; do cp "$ASSETS/$asset" "$stage/agent/$asset"; done
 
 {
   printf 'schema\tbridgevm-windows-guest-payload-receipt-v1\n'
@@ -201,7 +201,7 @@ for asset in bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode
     printf 'driver\t%s\t%s\t%s\t%s\n' "$role" "$inf" "$catalog" "$binary_list"
   done < "$drivers"
   while IFS=$'\t' read -r path expected; do printf 'file\tdrivers/%s\t%s\n' "$path" "$expected"; done < "$files"
-  for asset in bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-task.ps1; do
+  for asset in bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-task.ps1; do
     printf 'guest_tool\tagent/%s\t%s\n' "$asset" "$(sha256_file "$stage/agent/$asset")"
   done
 } > "$stage/payload-receipt.tsv"

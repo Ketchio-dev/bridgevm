@@ -121,7 +121,7 @@ if [[ "$NEEDS_GPU_SERVICE" == "1" ]]; then
   }
 fi
 if [[ "${PLANT_AGENT:-1}" == "1" ]]; then
-  [[ -f "$ASSETS/bvagent.ps1" && -f "$ASSETS/bvagent-install-service.c" && -f "$ASSETS/bvagent-input.ps1" && -f "$ASSETS/bvagent-unicode-input.cs" ]] || {
+  [[ -f "$ASSETS/bvagent.ps1" && -f "$ASSETS/bvagent-install-service.c" && -f "$ASSETS/bvagent-input.ps1" && -f "$ASSETS/bvagent-unicode-input.cs" && -f "$ASSETS/bvagent-key-input.cs" ]] || {
     echo "FAIL: missing guest-agent service assets" >&2
     exit 1
   }
@@ -175,7 +175,7 @@ fi
 # the source root. Enabled by default; set PLANT_AGENT=0 to skip.
 if [[ "${PLANT_AGENT:-1}" == "1" && -f "$ASSETS/bvagent.ps1" ]]; then
   log "staging guest agent \\bvagent.ps1 (single elevated ONLOGON task)"
-  cp "$ASSETS/bvagent.ps1" "$ASSETS/bvagent-input.ps1" "$ASSETS/bvagent-unicode-input.cs" "$DST_VOL/"
+  cp "$ASSETS/bvagent.ps1" "$ASSETS/bvagent-input.ps1" "$ASSETS/bvagent-unicode-input.cs" "$ASSETS/bvagent-key-input.cs" "$DST_VOL/"
   log "building ARM64 guest-agent scheduled-task installer service"
   zig cc -target aarch64-windows-gnu -Os -s \
     "$ASSETS/bvagent-install-service.c" \
