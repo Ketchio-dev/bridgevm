@@ -2,15 +2,6 @@
 import AppKit
 import SwiftUI
 
-struct HvfLiveDisplaySurface: View {
-    @ObservedObject var session: HvfEngineSession
-
-    var body: some View {
-        HvfFramebufferView(session: session)
-            .background(Color.black)
-    }
-}
-
 @MainActor
 final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
     private static var controllers: [ObjectIdentifier: HvfDisplayWindowController] = [:]

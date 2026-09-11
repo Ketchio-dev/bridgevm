@@ -1234,6 +1234,9 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfIOSurfaceScanout.swift	52	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfIOSurfacePresenter.swift	60	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfIncrementalMarkerReader.swift	68	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLiveDisplay.swift	78	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryController.swift	83	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryPanel.swift	47	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowInventoryControllerTests.swift	68	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerEventSurface.swift	119	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerMoveMailbox.swift	20	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift	380	0
@@ -2003,3 +2006,4 @@ apps/macos/Tests/BridgeVMControlTests/HvfControlWriteFailureTests.swift	32	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/setup_input/actions_tests.rs	87	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyCommand.swift	93	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/window_protocol_tests.rs	47	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLiveDisplaySurface.swift	13	0

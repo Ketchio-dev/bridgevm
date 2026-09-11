@@ -3,7 +3,7 @@ import Foundation
 final class TailOffsetReader {
     private var offset: UInt64 = 0
     private var pending = Data()
-
+    init(startingAt offset: UInt64 = 0) { self.offset = offset }
     func readNewLines(from url: URL) -> [String] {
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
               let size = attrs[.size] as? NSNumber else { return [] }
