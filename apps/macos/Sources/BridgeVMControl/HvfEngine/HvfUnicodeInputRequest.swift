@@ -13,10 +13,10 @@ struct HvfUnicodeInputRequest {
     private let markerPrefix: String
     private var phase = Phase.header
 
-    init?(text: String, now: Date, id: UUID = UUID()) {
-        guard !text.isEmpty, text.utf8.count <= 65_536 else { return nil }
-        command = "TEXTINPUT \(id.uuidString) \(Data(text.utf8).base64EncodedString())"
-        insertedEventCount = text.utf16.count * 2
+    init?(event: HvfOrderedInputQueue.Event, now: Date, id: UUID = UUID()) {
+        guard let encoding = HvfGuestInputEncoding(event) else { return nil }
+        command = "\(encoding.verb) \(id.uuidString) \(encoding.base64)"
+        insertedEventCount = encoding.insertedEventCount
         markerPrefix = "BVINPUT_INSERTED \(id.uuidString) "
         marker = markerPrefix + String(insertedEventCount)
         deadline = now.addingTimeInterval(30)

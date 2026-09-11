@@ -2024,3 +2024,5 @@ tests/integration/windows_input_payload_contract.py	12	0
 scripts/win-assets/bvagent-task.ps1	15	0
 scripts/win-assets/bvagent-key-input.cs	73	0
 scripts/test-bvagent-key-input.ps1	40	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestInputEncoding.swift	54	0
+apps/macos/Tests/BridgeVMControlTests/HvfGuestKeyInputRequestTests.swift	56	0
