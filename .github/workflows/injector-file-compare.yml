@@ -13,5 +13,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Compare complete binary streams and fail closed
         env:
-          CC: clang
+          CC: clang -D_CRT_SECURE_NO_WARNINGS
         run: python tests/integration/injector-file-compare-contract.py
