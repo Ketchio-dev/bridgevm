@@ -6,8 +6,7 @@ use std::time::{Duration, Instant};
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::platform_virt::VirtPlatform;
 use bridgevm_hvf::xhci::{XhciPointerInputQueueError, XhciSetupInputQueueError};
-
-use crate::xhci_hid_input::{parse_pointer_input_actions, parse_setup_input_actions};
+use crate::xhci_hid_input::parse_pointer_input_actions;
 #[path = "input_control_file.rs"]
 mod input_control_file;
 pub(crate) use input_control_file::InputControlFile;
@@ -16,7 +15,8 @@ const MAX_PENDING_COMMANDS: usize = 64;
 const MAX_COMMAND_BYTES: usize = 256;
 const MAX_READ_BYTES_PER_TICK: u64 = 1024 * 1024;
 const COMPACT_AFTER_BYTES: u64 = 1024 * 1024;
-
+#[path = "live_input/key_actions.rs"]
+mod key_actions;
 #[derive(Debug)]
 enum LiveInputCommand {
     Key(String),
@@ -75,13 +75,13 @@ impl LiveInputController {
             return;
         };
         let result = match command {
-            LiveInputCommand::Key(value) => match parse_setup_input_actions(value) {
+            LiveInputCommand::Key(value) => match key_actions::parse(value) {
                 Ok(actions) => platform
                     .queue_xhci_setup_input_actions_with_mem(&actions, mem)
                     .map(|()| true)
                     .map_err(|error| matches!(error, XhciSetupInputQueueError::Busy)),
                 Err(error) => {
-                    eprintln!("live input rejected: kind=key parse_error={}", error.name());
+                    eprintln!("live input rejected: kind=key parse_error={}", error);
                     Ok(false)
                 }
             },
