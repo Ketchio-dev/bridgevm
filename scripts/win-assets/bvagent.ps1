@@ -463,7 +463,7 @@ while ($true) {
                     # following poll serves it without reopening the clipboard.
                     try {
                         $txt = if ([string]::IsNullOrEmpty($arg)) { '' } else { [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg)) }
-                        Set-Clipboard -Value $txt -ErrorAction SilentlyContinue
+                        Set-Clipboard -Value $txt -ErrorAction Stop
                         $script:BvClipCache = $txt
                         $script:BvClipSeq = $K::GetClipboardSequenceNumber()
                         Write-Line $h 'OK CLIPSET' 'OK'

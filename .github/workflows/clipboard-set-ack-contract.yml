@@ -1,0 +1,12 @@
+name: Clipboard set acknowledgment contract
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  clipboard-set:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise the guest CLIPSET implementation
+        shell: powershell
+        run: tests/integration/clipboard-set-ack-contract.ps1

@@ -1976,3 +1976,5 @@ tests/fixtures/fake-windows-product-e2e-survivor.py	34
 tests/integration/firstboot-launcher-liveness-contract.py	59
 apps/macos/Sources/BridgeVMApp/Services/GuestWindowProxyViewport.swift	22	0
 apps/macos/Tests/BridgeVMAppTests/GuestWindowProxyViewportTests.swift	51	0
+tests/integration/clipboard-set-ack-contract.ps1	50	0
+.github/workflows/clipboard-set-ack-contract.yml	12	0
