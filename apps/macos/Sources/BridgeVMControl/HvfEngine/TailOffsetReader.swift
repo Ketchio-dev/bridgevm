@@ -17,7 +17,7 @@ final class TailOffsetReader {
         defer { try? handle.close() }
         do {
             try handle.seek(toOffset: offset)
-            let data = try handle.readToEnd() ?? Data()
+            let data = try handle.read(upToCount: 1_048_576) ?? Data()
             offset += UInt64(data.count)
             pending.append(data)
         } catch {
