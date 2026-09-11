@@ -1961,3 +1961,5 @@ tests/integration/b6-reference-inventory-contract.ps1	26
 scripts/b6-collect-reference-inventory.sh	25
 tests/integration/b6-reference-collection-contract.py	46
 .github/workflows/b6-reference-collection.yml	11
+scripts/b6-pre-readiness-inventory.sh	5
+tests/integration/b6-pre-readiness-inventory-contract.py	41

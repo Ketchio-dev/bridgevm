@@ -27,7 +27,6 @@ cp "$REPO/scripts/win-assets/bvgpu-apply-host-resolution.ps1" "$REPO/scripts/win
 source "$REPO/scripts/agent-channel-lib.sh"
 
 
-
 capture_active_scanout() {
   local label="$1" capture="$OUT/captures/$1"
   python3 "$REPO/scripts/capture-active-iosurface.py" --iosurface "$OUT/display.fb.iosurface" \
@@ -73,6 +72,7 @@ for file in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1 bv-wind
   wait_for "^BVAGENT SHARE host->guest $file bytes=$bytes " 1 180 \
     || { echo "FAIL: $file share timeout" >&2; exit 1; }
 done
+source "$REPO/scripts/b6-pre-readiness-inventory.sh"
 wait_firstboot || { echo 'FAIL: firstboot stage4 readiness timeout' >&2; exit 1; }
 
 f1=fail; f2=fail; f3=fail; f4=blocked; F1_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-windows-closure-proof.ps1 -Action F1'
