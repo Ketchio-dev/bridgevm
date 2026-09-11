@@ -46,14 +46,14 @@ send_ok() {
   line=$(grep -E '^BVAGENT CMD .* exit=' "$log" | tail -1)
   [[ $(grep -cE '^BVAGENT CMD .* exit=' "$log") -gt $before && "$line" == *' exit=0' ]]
 }
-
 wait_firstboot() {
   local log="${RUN_LOG:?agent-channel-lib needs RUN_LOG}"
   local deadline=$((SECONDS + ${AGENT_TIMEOUT:?agent-channel-lib needs AGENT_TIMEOUT}))
   local command='powershell -NoProfile -Command "& schtasks.exe /Query /TN BridgeVM-VioGpu3DFirstBoot *> $null; $taskExit=$LASTEXITCODE; $task=($taskExit -eq 0); $stage3=Test-Path C:\BridgeVM\stage3.flag; $ready=$stage3 -and (-not $task); Write-Output BVFIRSTBOOT_STAGE3_PRESENT=$stage3 BVFIRSTBOOT_TASK_QUERY_EXIT=$taskExit; if($ready){Write-Output BVFIRSTBOOT_READY; exit 0}; Write-Output BVFIRSTBOOT_PENDING; exit 3"'
   while (( SECONDS < deadline )); do
+    kill -0 "${LAUNCHER:?agent-channel-lib needs LAUNCHER}" 2>/dev/null || { echo 'FAIL: firstboot launcher exited before readiness' >&2; return 2; }
     send_ok "$command" && grep -Eq '^BVFIRSTBOOT_READY\r?$' "$log" && return 0
     sleep 5
   done
-  return 1
+  echo 'FAIL: firstboot readiness deadline expired' >&2; return 1
 }

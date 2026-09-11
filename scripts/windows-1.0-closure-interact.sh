@@ -73,7 +73,7 @@ for file in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1 bv-wind
     || { echo "FAIL: $file share timeout" >&2; exit 1; }
 done
 source "$REPO/scripts/b6-pre-readiness-inventory.sh"
-wait_firstboot || { echo 'FAIL: firstboot stage4 readiness timeout' >&2; exit 1; }
+wait_firstboot || { echo 'FAIL: firstboot stage4 readiness failed' >&2; exit 1; }
 
 f1=fail; f2=fail; f3=fail; f4=blocked; F1_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-windows-closure-proof.ps1 -Action F1'
 if send_ok "$F1_CMD" && grep -Eq '^BVF1 testsigning=True viogpu_status=OK viogpu_problem=0 vioserial_status=OK vioserial_problem=0 agent_sha256=[0-9a-f]{64}\r?$' "$RUN_LOG" \
