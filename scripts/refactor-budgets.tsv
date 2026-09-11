@@ -1955,3 +1955,6 @@ tests/integration/b6-renderer-runtime-contract.py	79	0
 docs/windows-arm/evidence/b6-renderer-runtime-reassessment-20260911.md	65	0
 tests/integration/agent-channel-acknowledgment-contract.py	47	0
 .github/workflows/agent-channel-acknowledgment.yml	11	0
+scripts/win-assets/bv-b6-reference-inventory.ps1	34
+tests/integration/b6-reference-inventory-contract.ps1	26
+.github/workflows/b6-reference-inventory.yml	11
