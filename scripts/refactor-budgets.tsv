@@ -1217,6 +1217,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	358	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	572	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	614	0
+apps/macos/Tests/BridgeVMControlTests/HvfHostKeyModifierTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteSessionTests.swift	84	0
 apps/macos/Tests/BridgeVMControlTests/HvfHostShortcutIsolationTests.swift	31	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	457	0
@@ -1992,3 +1993,4 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17ControlReplyTests.swift	34	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlReadinessTests.swift	33	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlWriteFailureTests.swift	32	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/setup_input/actions_tests.rs	87	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyCommand.swift	93	0
