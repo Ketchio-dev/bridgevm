@@ -25,4 +25,4 @@ try {
 } finally {
     Remove-Item -Recurse -Force $work
 }
-Write-Output 'PASS: STA/MTA diagnostic reporting preserves results and COM failures'
+Write-Output 'PASS: STA/MTA diagnostic reporting preserves results and COM failures'; exit 0
