@@ -44,11 +44,11 @@ struct T17CLI {
         return T17CLI(request: URL(fileURLWithPath: request).standardizedFileURL, result: resultURL)
     }
 }
-
 @main
 enum BridgeVMProductE2EMain {
     static func main() {
         do {
+            if try T17PermissionProbe.run(Array(CommandLine.arguments.dropFirst())) { return }
             let cli = try T17CLI.parse(Array(CommandLine.arguments.dropFirst()))
             let request = try T17Request.load(cli.request)
             let outcome = T17ProductRunner(request: request).run()
