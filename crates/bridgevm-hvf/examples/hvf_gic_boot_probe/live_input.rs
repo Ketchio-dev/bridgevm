@@ -12,11 +12,13 @@ mod input_control_file;
 pub(crate) use input_control_file::InputControlFile;
 const POLL_INTERVAL: Duration = Duration::from_millis(16);
 const MAX_PENDING_COMMANDS: usize = 64;
-const MAX_COMMAND_BYTES: usize = 256;
+use line_frames::MAX_COMMAND_BYTES;
 const MAX_READ_BYTES_PER_TICK: u64 = 1024 * 1024;
 const COMPACT_AFTER_BYTES: u64 = 1024 * 1024;
 #[path = "live_input/key_actions.rs"]
 mod key_actions;
+#[path = "live_input/line_frames.rs"]
+mod line_frames;
 #[derive(Debug)]
 enum LiveInputCommand {
     Key(String),
@@ -39,7 +41,7 @@ fn parse_resize(value: &str) -> Option<(u32, u32)> {
 pub struct LiveInputController {
     source: Option<InputControlFile>,
     offset: u64,
-    partial: String,
+    lines: line_frames::InputLines,
     pending: VecDeque<LiveInputCommand>,
     accepted_pointer_moves: u64,
     next_poll: Instant,
@@ -50,7 +52,7 @@ impl LiveInputController {
         Self {
             source: InputControlFile::from_env(),
             offset: 0,
-            partial: String::new(),
+            lines: Default::default(),
             pending: VecDeque::new(),
             accepted_pointer_moves: 0,
             next_poll: Instant::now(),
@@ -153,7 +155,7 @@ impl LiveInputController {
         };
         if len < self.offset {
             self.offset = 0;
-            self.partial.clear();
+            self.lines.clear();
         }
         if len == self.offset {
             return;
@@ -172,22 +174,12 @@ impl LiveInputController {
             return;
         }
         self.offset = self.offset.saturating_add(bytes.len() as u64);
-        self.partial.push_str(&String::from_utf8_lossy(&bytes));
-        while let Some(newline) = self.partial.find('\n') {
-            let line = self.partial[..newline]
-                .trim_end_matches('\r')
-                .trim()
-                .to_string();
-            self.partial.drain(..=newline);
+        for line in self.lines.consume(&bytes) {
             self.push_line(&line);
-        }
-        if self.partial.len() > MAX_COMMAND_BYTES {
-            self.partial.clear();
-            eprintln!("live input rejected: command_too_long");
         }
         if self.offset == len
             && self.offset >= COMPACT_AFTER_BYTES
-            && self.partial.is_empty()
+            && self.lines.is_empty()
             && file.set_len(0).is_ok()
         {
             self.offset = 0;
@@ -267,7 +259,7 @@ mod tests {
         LiveInputController {
             source: None,
             offset: 0,
-            partial: String::new(),
+            lines: Default::default(),
             pending: VecDeque::new(),
             accepted_pointer_moves: 0,
             next_poll: Instant::now(),
@@ -339,7 +331,7 @@ mod tests {
         let mut input = LiveInputController {
             source: None,
             offset: 0,
-            partial: String::new(),
+            lines: Default::default(),
             pending: VecDeque::new(),
             accepted_pointer_moves: 0,
             next_poll: Instant::now(),
@@ -370,7 +362,7 @@ mod tests {
         let mut input = LiveInputController {
             source: Some(InputControlFile::from_path(PathBuf::from(&path))),
             offset: 0,
-            partial: String::new(),
+            lines: Default::default(),
             pending: VecDeque::new(),
             accepted_pointer_moves: 0,
             next_poll: Instant::now(),
@@ -398,7 +390,7 @@ mod tests {
         let mut input = LiveInputController {
             source: Some(InputControlFile::from_path(PathBuf::from(&path))),
             offset: 0,
-            partial: String::new(),
+            lines: Default::default(),
             pending: VecDeque::new(),
             accepted_pointer_moves: 0,
             next_poll: Instant::now(),

@@ -22,7 +22,7 @@ fn live_pointer_uses_command_now_instead_of_stale_cached_time() {
     fs::write(&path, b"POINTER click:16384x16384\n").unwrap();
     let command_now = base + Duration::from_millis(900);
     let mut input = LiveInputController { source: Some(InputControlFile::from_path(path.clone())), offset: 0,
-        partial: String::new(), pending: VecDeque::new(), accepted_pointer_moves: 0,
+        lines: Default::default(), pending: VecDeque::new(), accepted_pointer_moves: 0,
         next_poll: command_now - POLL_INTERVAL };
     input.tick(&mut platform, &mut mem, command_now, false);
     assert_eq!(platform.xhci_pointer_input_report_stats().emitted_button_reports, 1); assert_eq!(platform.xhci_pointer_report_deadline(), Some(command_now + Duration::from_secs(1)));

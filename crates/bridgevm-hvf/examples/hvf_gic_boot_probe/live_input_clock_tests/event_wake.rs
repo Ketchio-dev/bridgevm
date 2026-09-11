@@ -16,7 +16,7 @@ fn vnode_event_wake_bypasses_the_periodic_poll_deadline() {
     let mut input = LiveInputController {
         source: Some(InputControlFile::from_path(path.clone())),
         offset: 0,
-        partial: String::new(),
+        lines: Default::default(),
         pending: VecDeque::new(),
         accepted_pointer_moves: 0,
         next_poll: now + Duration::from_secs(60),
