@@ -1,6 +1,6 @@
 param([Parameter(Mandatory = $true)][string]$FixturePath)
 $ErrorActionPreference = 'Stop'
-$fixtures = @(Get-Content -Raw -Encoding UTF8 -LiteralPath $FixturePath | ConvertFrom-Json)
+$fixtures = ConvertFrom-Json -InputObject (Get-Content -Raw -Encoding UTF8 -LiteralPath $FixturePath)
 if ($fixtures.Count -ne 4) { throw 'Expected four generated Swift fixtures' }
 function Set-Clipboard {
     [CmdletBinding()]
