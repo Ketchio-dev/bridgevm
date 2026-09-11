@@ -17,8 +17,8 @@ Its canonical bundle-path hash was
 
 | Observation | Value |
 | --- | --- |
-| Current helper designated requirement | `cdhash H"dc85a0414ec157cd8741f7f115cd0b16a52c4bf8"` |
-| Requirement shown in TCC mismatch log | `cdhash H"3243651768dbd73cbd193a61caef530f131544df"` |
+| Current helper designated requirement | CDHash `dc85a0414ec157cd8741f7f115cd0b16a52c4bf8` |
+| Requirement shown in TCC mismatch log | CDHash `3243651768dbd73cbd193a61caef530f131544df` |
 | TCC static requirement-check result | `-67050` |
 | Current helper strict signature verification | Valid on disk; satisfies its designated requirement |
 
