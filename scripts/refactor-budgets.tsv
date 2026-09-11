@@ -1989,3 +1989,4 @@ apps/macos/Sources/BridgeVMProductE2E/T17ControlReply.swift	27	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ControlReplyTests.swift	34	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlReadinessTests.swift	33	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlWriteFailureTests.swift	32	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/setup_input/actions_tests.rs	87	0
