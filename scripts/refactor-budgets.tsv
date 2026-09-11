@@ -2008,3 +2008,8 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/setup_input/actio
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyCommand.swift	93	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/window_protocol_tests.rs	47	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLiveDisplaySurface.swift	13	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOrderedInputQueue.swift	87	0
+apps/macos/Tests/BridgeVMControlTests/HvfOrderedInputQueueTests.swift	94	0
+scripts/win-assets/bvagent-unicode-input.cs	92	0
+scripts/test-bvagent-unicode-input.ps1	50	0
+.github/workflows/unicode-input-contract.yml	17	0

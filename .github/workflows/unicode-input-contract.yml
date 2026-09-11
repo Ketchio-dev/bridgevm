@@ -1,0 +1,17 @@
+name: Unicode input encoding contracts
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  unicode-input:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and check Unicode input without injecting native events
+        shell: ${{ matrix.shell }}
+        run: scripts/test-bvagent-unicode-input.ps1
