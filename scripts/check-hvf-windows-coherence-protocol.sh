@@ -33,7 +33,7 @@ grep -q 'WIN \$hw \$wpid' "$AGENT" || fail "agent WIN line lost its hwnd/pid fie
 grep -Eq '\$w = ' "$AGENT" && fail "a bare \$w assignment clobbers the \$W window-API type"
 grep -q "Write-Line \$h 'WINEND' 'WINEND'" "$AGENT" || fail "agent no longer terminates with WINEND"
 grep -q '"WINEND"' "$HOST" || fail "host parser no longer stops at WINEND"
-grep -q 'maxSplits: 7' "$HOST" || fail "host parser field split no longer matches the 8-field WIN line"
+grep -Fq 'GuestWindowRecord(protocolLine: line)' "$HOST" && grep -q 'maxSplits: 7' apps/macos/Sources/BridgeVMWindowProtocol/GuestWindowRecord.swift || fail "host parser delegation or shared 8-field WIN grammar is missing"
 grep -q 'testOutboundCommandsMatchTheAgentGrammar' "$TESTS" || fail "grammar pin test is gone"
 grep -q 'line == "WINEND"' "$CHANNEL/window_protocol.rs" || fail "channel no longer frames WINLIST"
 

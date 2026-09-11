@@ -44,13 +44,13 @@ SWIFTC_JOBS="${SWIFTC_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
 # shellcheck source=scripts/run-xctest-shim-suite.sh
 source "$ROOT/scripts/run-xctest-shim-suite.sh"
 
-# The suites share only the read-only shim library and each writes its own
-# lib<name>.a, so run concurrently they cost the longest rather than the sum
-# (59.1 s to 34.7 s). Logs are buffered per suite and each status checked.
+# Compile the shared window contract before either app suite uses it.
+swiftc -emit-module -emit-library -static -module-name BridgeVMWindowProtocol -target "$TARGET" \
+    -o "$WORK/libBridgeVMWindowProtocol.a" "$ROOT/apps/macos/Sources/BridgeVMWindowProtocol/"*.swift
 logged() { local n="$1"; shift; suite "$n" "$@" > "$WORK/log-$n" 2>&1; }
 
-logged BridgeVMApp apps/macos/Sources/BridgeVMApp apps/macos/Tests/BridgeVMAppTests & pids=($!)
-logged BridgeVMControl apps/macos/Sources/BridgeVMControl apps/macos/Tests/BridgeVMControlTests & pids+=($!)
+logged BridgeVMApp apps/macos/Sources/BridgeVMApp apps/macos/Tests/BridgeVMAppTests -I "$WORK" -L "$WORK" -lBridgeVMWindowProtocol & pids=($!)
+logged BridgeVMControl apps/macos/Sources/BridgeVMControl apps/macos/Tests/BridgeVMControlTests -I "$WORK" -L "$WORK" -lBridgeVMWindowProtocol & pids+=($!)
 logged AppleVzRunnerCore apps/macos/Sources/AppleVzRunnerCore apps/macos/Tests/AppleVzRunnerTests \
     -framework Virtualization & pids+=($!)
 

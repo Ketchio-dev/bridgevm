@@ -1,4 +1,5 @@
 import Foundation
+import BridgeVMWindowProtocol
 
 /// Parses the agent-console window protocol the Windows guest agent speaks.
 ///
@@ -15,26 +16,15 @@ enum HvfGuestWindowProtocol {
     var windows: [GuestToolsWindowAction] = []
     for line in lines {
       if line == "WINEND" { break }
-      let parts = line.split(separator: " ", maxSplits: 7).map(String.init)
-      guard parts.count == 8, parts[0] == "WIN" else { continue }
-      guard let id = HvfGuestWindowValidation.handle(parts[1]),
-        let pid = UInt32(parts[2]), pid > 0,
-        let x = Int(parts[3]), let y = Int(parts[4]),
-        let width = Int(parts[5]), let height = Int(parts[6]),
-        HvfGuestWindowValidation.bounds(x: x, y: y, width: width, height: height)
-      else { continue }
-      guard let titleData = Data(base64Encoded: parts[7]),
-        let title = String(data: titleData, encoding: .utf8),
-        !title.isEmpty
-      else { continue }
+      guard let record = GuestWindowRecord(protocolLine: line) else { continue }
       windows.append(
         GuestToolsWindowAction(
-          id: id,
-          title: title,
+          id: record.id,
+          title: record.title,
           source: "bvagent",
           focused: nil,
-          pid: Int(pid),
-          bounds: GuestToolsWindowBounds(x: x, y: y, width: width, height: height)
+          pid: Int(record.processID),
+          bounds: GuestToolsWindowBounds(x: record.x, y: record.y, width: record.width, height: record.height)
         ))
     }
     return windows

@@ -11,12 +11,15 @@ let package = Package(
         .executable(name: "BridgeVMProductE2E", targets: ["BridgeVMProductE2E"]),
     ],
     targets: [
+        .target(name: "BridgeVMWindowProtocol"),
         .executableTarget(
             name: "BridgeVMApp",
+            dependencies: ["BridgeVMWindowProtocol"],
             path: "Sources/BridgeVMApp"
         ),
         .executableTarget(
             name: "BridgeVMControl",
+            dependencies: ["BridgeVMWindowProtocol"],
             path: "Sources/BridgeVMControl",
             resources: [
                 .copy("Resources/windows-boot-seed-vars.fd.gz"),
@@ -24,10 +27,7 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "BridgeVMProductE2E", path: "Sources/BridgeVMProductE2E"),
-        .target(
-            name: "AppleVzRunnerCore",
-            path: "Sources/AppleVzRunnerCore"
-        ),
+        .target(name: "AppleVzRunnerCore", path: "Sources/AppleVzRunnerCore"),
         .executableTarget(
             name: "AppleVzRunner",
             dependencies: ["AppleVzRunnerCore"],
@@ -45,7 +45,7 @@ let package = Package(
         ),
         .testTarget(
             name: "BridgeVMControlTests",
-            dependencies: ["BridgeVMControl"],
+            dependencies: ["BridgeVMControl", "BridgeVMWindowProtocol"],
             path: "Tests/BridgeVMControlTests"
         ),
         .testTarget(name: "BridgeVMProductE2ETests", dependencies: ["BridgeVMProductE2E"], path: "Tests/BridgeVMProductE2ETests")
