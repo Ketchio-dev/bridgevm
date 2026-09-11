@@ -85,7 +85,7 @@ struct T17GuestJourney {
             guard let data = try? Data(contentsOf: self.runLog), data.count > before else { return false }
             let tail = String(decoding: data.suffix(from: before), as: UTF8.self)
                 .replacingOccurrences(of: "\r\n", with: "\n")
-            return tail.contains(marker) && tail.contains("BVAGENT END")
+            return T17ControlReply.succeeded(tail: tail, command: command, marker: marker)
         }) else {
             throw T17Blocker(code: "guest-evidence-missing", detail: "guest control command lacked its nonce-bound completion")
         }
