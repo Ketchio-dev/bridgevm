@@ -353,8 +353,9 @@ int main(void) {
   if (result != VK_SUCCESS || instance == VK_NULL_HANDLE)
     return fail(31, "create_instance", result);
   if (!load_instance_fns(instance)) return fail(31, "instance_fns", 0);
-
+  logf_line("instance_functions_ready");
   uint32_t device_count = 0;
+  logf_line("enumerate_physical_devices_begin");
   result = p_vkEnumeratePhysicalDevices(instance, &device_count, NULL);
   logf_line("enumerate_physical_devices_result=%d count=%u", result,
             device_count);
@@ -366,7 +367,6 @@ int main(void) {
   if ((result != VK_SUCCESS && result != VK_INCOMPLETE) ||
       physical == VK_NULL_HANDLE)
     return fail(32, "select_physical_device", result);
-
   VkPhysicalDeviceProperties props;
   p_vkGetPhysicalDeviceProperties(physical, &props);
   logf_line("device_name=%s vendor=0x%x device=0x%x api=0x%x",
