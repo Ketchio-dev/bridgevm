@@ -41,7 +41,7 @@ cp "$REPO/scripts/win-assets/bvgpu-apply-host-resolution.ps1" \
    "$REPO/scripts/win-assets/bv-b6-read-logpixels.ps1" \
    "$REPO/scripts/win-assets/bv-b6-modern-notepad-launch.ps1" \
    "$REPO/scripts/win-assets/bv-b6-modern-notepad-reset.ps1" \
-   "$REPO/scripts/win-assets/bv-b6-caret-still.ps1" "$REPO/scripts/win-assets/bv-b6-caption-point.ps1" "$REPO/scripts/win-assets/bv-b6-tip-point.ps1" "$REPO/scripts/win-assets/bv-b6-uia-diagnostic.ps1" "$REPO/scripts/win-assets/bv-b6-native-uia.ps1" "$REPO/scripts/win-assets/bv-b6-native-uia.cs bv-b6-physical-uia.cs" "$REPO/scripts/win-assets/bv-b6-native-tip-point.ps1" "$REPO/scripts/win-assets/bv-b6-tip-owner.cs" \
+   "$REPO/scripts/win-assets/bv-b6-caret-still.ps1" "$REPO/scripts/win-assets/bv-b6-caption-point.ps1" "$REPO/scripts/win-assets/bv-b6-tip-point.ps1" "$REPO/scripts/win-assets/bv-b6-uia-diagnostic.ps1" "$REPO/scripts/win-assets/bv-b6-native-uia.ps1" "$REPO/scripts/win-assets/bv-b6-native-uia.cs" "$REPO/scripts/win-assets/bv-b6-physical-uia.cs" "$REPO/scripts/win-assets/bv-b6-native-tip-point.ps1" "$REPO/scripts/win-assets/bv-b6-tip-owner.cs" \
    "$REPO/scripts/win-assets/bv-b6-presentmon-capture.ps1" \
    "$PRESENTMON" \
    "$OUT/share/"

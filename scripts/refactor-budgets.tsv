@@ -1936,3 +1936,5 @@ tests/integration/b6-physical-uia-contract.cs	40	0
 tests/integration/b6-physical-uia-contract.ps1	6	0
 apps/macos/Sources/BridgeVMProductE2E/T17PermissionProbe.swift	25	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17PermissionProbeTests.swift	35	0
+tests/integration/b6-asset-staging-contract.py	48	0
+.github/workflows/b6-asset-staging-contracts.yml	11	0
