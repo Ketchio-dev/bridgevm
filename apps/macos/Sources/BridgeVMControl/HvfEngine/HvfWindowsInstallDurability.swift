@@ -73,14 +73,7 @@ enum HvfWindowsInstallDurability {
     }
 
     static func readRegularFile(_ url: URL, maximumBytes: Int? = nil) throws -> Data {
-        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
-        guard values.isSymbolicLink != true, values.isRegularFile == true else {
-            throw HvfWindowsInstallFinalizationError.unsafePath(url.path)
-        }
-        if let maximumBytes, (values.fileSize ?? maximumBytes + 1) > maximumBytes {
-            throw HvfWindowsInstallFinalizationError.invalidState("파일이 허용 크기를 초과했습니다: \(url.path)")
-        }
-        return try Data(contentsOf: url)
+        try HvfWindowsInstallRegularFile.read(url, maximumBytes: maximumBytes)
     }
 
     static func fileSize(_ url: URL) throws -> UInt64 {
