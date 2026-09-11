@@ -1222,6 +1222,8 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	358	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	572	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	614	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryRequest.swift	66	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowInventoryRequestTests.swift	70	0
 apps/macos/Tests/BridgeVMControlTests/HvfPasteKeyOrderingTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfHostKeyModifierTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteSessionTests.swift	84	0
