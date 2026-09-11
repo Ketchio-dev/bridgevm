@@ -7,22 +7,6 @@ import Darwin
 import AppKit
 #endif
 
-/// How often an attached session may ask the operating system whether the VM
-/// it attached to is still alive.
-///
-/// A session that launched the VM holds a `Process` and can check for free. A
-/// session that attached to an already-running VM has no handle, so the only
-/// answer comes from `pgrep`, which measures about 24 ms here. Running that on
-/// every 100 ms poll would spend roughly a quarter of a core on it; once per
-/// second is about 2 percent.
-enum HvfAttachedLivenessSchedule {
-    static let interval: TimeInterval = 1
-
-    static func isDue(now: Date, next: Date) -> Bool { now >= next }
-
-    static func next(after now: Date) -> Date { now.addingTimeInterval(interval) }
-}
-
 enum HvfConnectionState: Equatable {
     case stopped
     case booting
@@ -43,6 +27,7 @@ final class HvfEngineSession: ObservableObject {
     private var tailReader = TailOffsetReader()
     private var lastHeartbeatDate: Date?
     private var serviceStarted = false
+    private var pendingPaste: HvfClipboardPaste?
     private var stopCommandSent = false
     private var stopDeadline: Date?
     private var attachedToExistingProcess = false
@@ -282,19 +267,17 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func sendText(_ value: String) {
-        // A USB HID keyboard sends physical key usages, not characters, so
-        // there is no usage code for "한" and the HID path can only ever carry
-        // printable ASCII. Silently dropping the rest (which this did) makes
-        // non-ASCII input look broken with no explanation, so split the two
-        // cases and route non-ASCII through the guest clipboard, which is
-        // base64(UTF-8) end to end (bvagent.ps1:377).
+        guard pendingPaste == nil else { append(.unknown("text input refused: clipboard paste pending")); return }
         let plan = HvfTextInputPlan.make(for: value)
         for chunk in plan.hidChunks {
             appendLiveInput("KEY text-hex:\(chunk)")
         }
         if let base64 = plan.clipboardBase64 {
-            guard sendCtl("CLIPSET \(base64)") else { return }
-            appendLiveInput("KEY ctrl+v")
+            guard serviceStarted, case .connected = connectionState else {
+                append(.unknown("clipboard paste refused: guest service is not connected")); return
+            }
+            let request = HvfClipboardPaste(base64: base64, now: Date())
+            if sendCtl(request.command) { pendingPaste = request }
         }
     }
 
@@ -442,6 +425,11 @@ final class HvfEngineSession: ObservableObject {
     private func poll() {
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
         let lines = tailReader.readNewLines(from: logURL)
+        if let ready = pendingPaste?.consume(lines: lines, now: Date()) {
+            pendingPaste = nil
+            if ready, case .connected = connectionState { appendLiveInput("KEY ctrl+v") }
+            else { append(.unknown("clipboard paste failed, expired or canceled")) }
+        }
         if !lines.isEmpty {
             for event in BvAgentEvent.parse(lines: lines) {
                 handle(event)
@@ -511,6 +499,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     private func markStopped() {
+        pendingPaste = nil
         timer?.invalidate()
         timer = nil
         process = nil
@@ -525,6 +514,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     private func resetObservedRuntimeState(clearEvents: Bool) {
+        pendingPaste = nil
         tailReader = TailOffsetReader()
         lastHeartbeatDate = nil
         lastHeartbeatAge = nil

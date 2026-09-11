@@ -1978,3 +1978,6 @@ apps/macos/Sources/BridgeVMApp/Services/GuestWindowProxyViewport.swift	22	0
 apps/macos/Tests/BridgeVMAppTests/GuestWindowProxyViewportTests.swift	51	0
 tests/integration/clipboard-set-ack-contract.ps1	50	0
 .github/workflows/clipboard-set-ack-contract.yml	12	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfClipboardPaste.swift	48	0
+apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteTests.swift	43	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfAttachedLivenessSchedule.swift	10	0
