@@ -940,29 +940,6 @@ final class HvfEngineSessionPathTests: XCTestCase {
         )))
     }
 
-    @MainActor
-    func testControlInputReportsWriteFailure() throws {
-        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: temp) }
-        let invalidControlPath = temp.appendingPathComponent("control-directory", isDirectory: true)
-        try FileManager.default.createDirectory(at: invalidControlPath, withIntermediateDirectories: true)
-        let config = HvfEngineConfig(
-            targetDiskPath: "target", uefiVarsPath: "vars", evidenceDir: temp.path,
-            watchdogMs: nil, ramMiB: 6144, smpCpus: 4, clipboardSync: true,
-            shareHostDir: nil, shareGuestDir: nil, virtioNet: true, virtioGpu3d: true,
-            nvmeBufferedIO: true, ctlFilePath: invalidControlPath.path
-        )
-        let session = HvfEngineSession(config: config, repoRoot: temp) { _ in true }
-
-        XCTAssertFalse(session.sendCtl("whoami"))
-        XCTAssertTrue(session.events.contains { event in
-            if case let .unknown(message) = event {
-                return message.hasPrefix("control command write failed:")
-            }
-            return false
-        })
-    }
 
     private func makeWrapper(at root: URL) throws {
         let scripts = root.appendingPathComponent("scripts", isDirectory: true)

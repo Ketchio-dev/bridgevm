@@ -244,6 +244,10 @@ final class HvfEngineSession: ObservableObject {
             append(.unknown("control command rejected: \(error.message)"))
             return false
         }
+        guard serviceStarted else {
+            append(.unknown("control command refused: guest service has not started"))
+            return false
+        }
         let path = config.ctlFilePath
         try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         if !FileManager.default.fileExists(atPath: path) {

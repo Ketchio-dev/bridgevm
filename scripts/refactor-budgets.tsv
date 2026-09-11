@@ -1986,3 +1986,5 @@ tests/integration/clipboard-paste-command-contract.ps1	44	0
 .github/workflows/clipboard-paste-command-contract.yml	30	0
 apps/macos/Sources/BridgeVMProductE2E/T17ControlReply.swift	27	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ControlReplyTests.swift	34	0
+apps/macos/Tests/BridgeVMControlTests/HvfControlReadinessTests.swift	33	0
+apps/macos/Tests/BridgeVMControlTests/HvfControlWriteFailureTests.swift	32	0
