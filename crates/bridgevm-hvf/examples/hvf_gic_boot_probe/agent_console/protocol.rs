@@ -118,7 +118,7 @@ pub(super) fn command_wire_line(command: &str) -> String {
 
 pub(super) fn write_command_wire_line_into(command: &str, out: &mut String) {
     let first = command.split_whitespace().next().unwrap_or("");
-    if is_raw_verb(first) {
+    if is_raw_verb(first) || unicode_input::is_command(command) {
         out.push_str(if super::window_protocol::window_request_id(command).is_some() { "WINLIST" } else { command });
         out.push('\n');
     } else {
@@ -133,3 +133,5 @@ pub(super) fn parse_out_line(line: &str) -> Option<(i32, &str)> {
     let (exit_code, output) = rest.split_once(' ')?;
     Some((exit_code.parse().ok()?, output))
 }
+#[path = "unicode_input.rs"]
+mod unicode_input;

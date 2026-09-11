@@ -2013,3 +2013,6 @@ apps/macos/Tests/BridgeVMControlTests/HvfOrderedInputQueueTests.swift	94	0
 scripts/win-assets/bvagent-unicode-input.cs	92	0
 scripts/test-bvagent-unicode-input.ps1	50	0
 .github/workflows/unicode-input-contract.yml	17	0
+scripts/win-assets/bvagent.ps1	749	0
+scripts/test-bvagent-unicode-request.ps1	47	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/unicode_input.rs	48	0

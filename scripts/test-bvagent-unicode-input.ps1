@@ -47,4 +47,4 @@ Assert-Throws { [BridgeVM.BvUnicodeInput]::RequireComplete(0, 0) } 'empty insert
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     Assert-Throws { [BridgeVM.BvUnicodeInput]::Insert('a') } 'non-Windows native call'
 }
-Write-Output 'Unicode input encoding/layout contracts: PASS (no native input injected)'
+& (Join-Path $PSScriptRoot 'test-bvagent-unicode-request.ps1')
