@@ -146,3 +146,5 @@ docs/windows-arm/evidence/b6-active-frame-time-collection-20260910.md	current	wi
 docs/windows-arm/evidence/b6-sealed-cell-observation-contract-20260910.md	current	windows-graphics	-
 docs/windows-arm/evidence/a9-b6-resume-fixes-20260910.md	historical-evidence	windows-product	-
 docs/windows-arm/evidence/b6-integer-negation-paired-observation-20260911.md	historical-evidence	windows-graphics	-
+docs/windows-arm/evidence/b6-physical-uia-observation-20260911.md	historical-evidence	b6-physical-uia	-
+docs/windows-arm/evidence/a9-readonly-launch-context-20260911.md	historical-evidence	a9-launch-context	-

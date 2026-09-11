@@ -1938,3 +1938,5 @@ apps/macos/Sources/BridgeVMProductE2E/T17PermissionProbe.swift	25	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17PermissionProbeTests.swift	35	0
 tests/integration/b6-asset-staging-contract.py	48	0
 .github/workflows/b6-asset-staging-contracts.yml	11	0
+docs/windows-arm/evidence/b6-physical-uia-observation-20260911.md	84	0
+docs/windows-arm/evidence/a9-readonly-launch-context-20260911.md	47	0
