@@ -267,6 +267,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func sendKey(_ action: String) {
+        guard pendingPaste == nil else { append(.unknown("key input refused: clipboard paste pending")); return }
         appendLiveInput("KEY \(action)")
     }
 
