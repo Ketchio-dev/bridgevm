@@ -1972,3 +1972,4 @@ tests/integration/injector-file-compare-wiring-contract.py	16
 scripts/win-assets/bv-firstboot-policy.cmd	24
 tests/integration/firstboot-policy-contract.ps1	49
 crates/bridgevm-hvf/src/venus_backend/tests/poll_dispatch.rs	18
+tests/fixtures/fake-windows-product-e2e-survivor.py	34

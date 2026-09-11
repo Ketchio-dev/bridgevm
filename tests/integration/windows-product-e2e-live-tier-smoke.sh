@@ -49,7 +49,7 @@ policy={"schemaVersion":1,"policy":"fixture-policy","source":{"tag":"v1","commit
 open(sys.argv[2],"w").write(json.dumps(policy)+"\n")
 PY
 printf seed > "$RES/BridgeVMControl_BridgeVMControl.bundle/windows-boot-seed-vars.fd.gz"
-cp "$ROOT/tests/fixtures/fake-windows-product-e2e-helper.py" "$RES/fake-product-helper.py"; cp "$ROOT/apps/macos/BridgeVMProductE2E-Info.plist" "$HELPER_APP/Contents/Info.plist"
+cp "$ROOT/tests/fixtures/fake-windows-product-e2e-helper.py" "$RES/fake-product-helper.py"; cp "$ROOT/tests/fixtures/fake-windows-product-e2e-survivor.py" "$RES/"; cp "$ROOT/apps/macos/BridgeVMProductE2E-Info.plist" "$HELPER_APP/Contents/Info.plist"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

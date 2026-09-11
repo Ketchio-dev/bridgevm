@@ -6,7 +6,7 @@ assert r["schema_version"] == "bridgevm.windows-hvf-3d-off-product-e2e-request.v
 assert r["vm_slug"] == f"bridgevm-t17-lane-{r['lane']}-{r['nonce'][:12]}"
 if "noresult" in r["job_id"]: raise SystemExit(0)
 if "survivor" in r["job_id"]:
-    subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)", r["lane_root"]], start_new_session=True)
+    subprocess.run([sys.executable, str(pathlib.Path(__file__).with_name("fake-windows-product-e2e-survivor.py")), r["lane_root"]], check=True)
     raise SystemExit(1)
 pathlib.Path(r["library_root_path"]).mkdir(); share=pathlib.Path(r["share_path"]); share.mkdir()
 (share/f"t17-{r['nonce'][:12]}.txt").write_text(f"bridgevm-t17-share-v1\n{r['nonce']}\n")
