@@ -2044,3 +2044,5 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallRegularFile.swift	
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallRegularFileTests.swift	86	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallRequestSnapshot.swift	28	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallRequestSnapshotTests.swift	59	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyFrames.swift	36	0
+apps/macos/Tests/BridgeVMControlTests/HvfCommandReplyReaderBoundsTests.swift	98	0
