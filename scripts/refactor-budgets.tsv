@@ -1925,3 +1925,6 @@ scripts/win-assets/bv-b6-native-uia.ps1	30	0
 scripts/b6-uia-probe-command.sh	8	0
 tests/integration/b6-native-uia-contract.ps1	49	0
 .github/workflows/b6-native-uia-contracts.yml	12	0
+scripts/win-assets/bv-b6-tip-owner.cs	24	0
+scripts/win-assets/bv-b6-native-tip-point.ps1	26	0
+.github/workflows/b6-native-tip-contracts.yml	12	0

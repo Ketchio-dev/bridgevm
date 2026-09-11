@@ -1,5 +1,5 @@
-$ErrorActionPreference = 'Stop'
-$script = (Resolve-Path (Join-Path $PSScriptRoot '../../scripts/win-assets/bv-b6-tip-point.ps1')).Path
+param([string]$Query = (Join-Path $PSScriptRoot '../../scripts/win-assets/bv-b6-tip-point.ps1')); $ErrorActionPreference = 'Stop'
+$script = (Resolve-Path $Query).Path
 Add-Type -AssemblyName System.Windows.Forms
 $work = Join-Path ([IO.Path]::GetTempPath()) ('b6-tip-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $work | Out-Null

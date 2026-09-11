@@ -18,7 +18,7 @@ class TipContracts(unittest.TestCase):
                        RESPONSE=response, FAILED="1" if failed else "0", HELPER=str(HELPER), COMMAND=command)
             result = subprocess.run(["bash", "-c", '''
 source "$HELPER"
-send_ok() { [[ "$FAILED" == 0 ]] || return 1; [[ -z "$RESPONSE" ]] || printf '%s\n' "$RESPONSE" >> "$RUN_LOG"; return 0; }
+send_ok() { [[ "$1" == *"powershell -Mta "* && "$1" == *"bv-b6-native-tip-point.ps1"* && "$FAILED" == 0 ]] || return 1; [[ -z "$RESPONSE" ]] || printf '%s\n' "$RESPONSE" >> "$RUN_LOG"; return 0; }
 wait_baseline() { printf 0; }
 wait_after() { return 0; }
 sleep() { :; }

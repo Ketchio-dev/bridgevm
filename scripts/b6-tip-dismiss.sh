@@ -4,7 +4,7 @@ b6_tip_hid_point() {
   [[ "$hwnd" =~ ^[1-9][0-9]*$ && "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || return 1
   [[ "$WIDTH" -gt 1 && "$HEIGHT" -gt 1 ]] || return 1
   before=$(wc -l < "$RUN_LOG")
-  send_ok "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-b6-tip-point.ps1 -Hwnd $hwnd -Width $WIDTH -Height $HEIGHT" || return 1
+  send_ok "powershell -Mta -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-b6-native-tip-point.ps1 -Hwnd $hwnd -Width $WIDTH -Height $HEIGHT" || return 1
   line=$(tail -n "+$((before + 1))" "$RUN_LOG" | tr '\r' '\n' | grep '^BVTIPPOINT ' || true)
   if [[ "$line" == "BVTIPPOINT hwnd=$hwnd state=not-found" ]]; then printf 'not-found'; return 0; fi
   [[ "$line" =~ ^BVTIPPOINT\ hwnd=([0-9]+)\ state=present\ x=([0-9]+)\ y=([0-9]+)\ owner=([0-9]+)$ ]] || return 1
