@@ -1,7 +1,8 @@
-use super::{LiveInputController, COMPACT_AFTER_BYTES, MAX_PENDING_COMMANDS, MAX_READ_BYTES_PER_TICK};
+use super::{LiveInputController, COMPACT_AFTER_BYTES, MAX_PENDING_COMMANDS};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-
+#[path = "read_budget.rs"]
+mod read_budget;
 impl LiveInputController {
     pub(super) fn read_new_commands_locked(&mut self, file: &mut File) {
         let Ok(len) = file.metadata().map(|metadata| metadata.len()) else {
@@ -17,8 +18,7 @@ impl LiveInputController {
         if file.seek(SeekFrom::Start(self.offset)).is_err() {
             return;
         }
-        let unread = len.saturating_sub(self.offset);
-        let read_limit = unread.min(MAX_READ_BYTES_PER_TICK);
+        let read_limit = read_budget::byte_budget(self.pending.len(), len.saturating_sub(self.offset));
         let mut bytes = Vec::with_capacity(read_limit as usize);
         if (&mut *file)
             .take(read_limit)
