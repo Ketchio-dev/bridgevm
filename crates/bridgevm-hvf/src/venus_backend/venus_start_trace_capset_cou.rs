@@ -596,17 +596,13 @@ impl VirtioGpu3dBackend for VenusBackend {
         // passive detector structurally cannot -- polling stopping outright.
         self.poll_watchdog
             .observe_poll(self.contexts.len(), outstanding);
-        // Poll EVERY live context, not just those with outstanding virtqueue
-        // fences: venus guests mostly synchronize via renderer-side fence
-        // FEEDBACK slots (Mesa spins on a shmem slot the renderer writes at
-        // retire time), which never involve virtqueue fences at all. On macOS
-        // there is no sync thread (no eventfd), so this poll is the only
-        // thing that retires renderer fences and writes those slots — gating
-        // it on outstanding_fences left vkWaitForFences spinning forever.
-        for &ctx_id in &self.contexts {
-            unsafe {
-                virgl_renderer_context_poll(ctx_id);
-            }
+        // The global dispatcher keeps VirGL polling and async Venus proxy
+        // completion separate. Direct context_poll enters proxy retirement,
+        // which asserts when ASYNC_FENCE_CB is enabled (live 2f00831a).
+        // Do not gate this on outstanding virtqueue fences: renderer feedback
+        // and query progress also depend on polling.
+        unsafe {
+            virgl_renderer_poll();
         }
     }
 

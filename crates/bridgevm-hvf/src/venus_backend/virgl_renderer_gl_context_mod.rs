@@ -199,7 +199,7 @@ unsafe extern "C" {
         ring_idx: u32,
         fence_id: u64,
     ) -> c_int;
-    pub(super) fn virgl_renderer_context_poll(ctx_id: u32);
+    pub(super) fn virgl_renderer_poll();
     pub(super) fn virgl_renderer_resource_create_blob(
         args: *const virgl_renderer_resource_create_blob_args,
     ) -> c_int;

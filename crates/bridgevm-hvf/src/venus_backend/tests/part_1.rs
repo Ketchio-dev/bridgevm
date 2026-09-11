@@ -1,7 +1,7 @@
 //! Split test module.
 
 use super::super::*;
-
+include!("poll_dispatch.rs");
 #[test]
 fn venus_advertises_vulkan_and_windows_shadow_capsets() {
     let protocol = VirtioGpuRendererProtocol::Venus;
