@@ -1,4 +1,5 @@
 path	class	topic	superseded_by
+docs/windows-first-coherence-integration-gap-20260911.md	active-plan	windows-coherence	-
 docs/README.md	current	documentation-index	-
 docs/development-system.md	current	development-process	-
 docs/reference/experiment-retention.md	reference	experiment-retention	-
