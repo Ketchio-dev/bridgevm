@@ -17,10 +17,11 @@ enum HvfGuestWindowProtocol {
       if line == "WINEND" { break }
       let parts = line.split(separator: " ", maxSplits: 7).map(String.init)
       guard parts.count == 8, parts[0] == "WIN" else { continue }
-      guard let pid = Int(parts[2]),
+      guard let id = HvfGuestWindowValidation.handle(parts[1]),
+        let pid = UInt32(parts[2]), pid > 0,
         let x = Int(parts[3]), let y = Int(parts[4]),
         let width = Int(parts[5]), let height = Int(parts[6]),
-        width > 0, height > 0
+        HvfGuestWindowValidation.bounds(x: x, y: y, width: width, height: height)
       else { continue }
       guard let titleData = Data(base64Encoded: parts[7]),
         let title = String(data: titleData, encoding: .utf8),
@@ -28,22 +29,25 @@ enum HvfGuestWindowProtocol {
       else { continue }
       windows.append(
         GuestToolsWindowAction(
-          id: parts[1],
+          id: id,
           title: title,
           source: "bvagent",
           focused: nil,
-          pid: pid,
+          pid: Int(pid),
           bounds: GuestToolsWindowBounds(x: x, y: y, width: width, height: height)
         ))
     }
     return windows
   }
 
-  static func boundsCommand(id: String, bounds: GuestToolsWindowBounds) -> String {
-    "WINBOUNDS \(id) \(bounds.x) \(bounds.y) \(bounds.width) \(bounds.height)"
+  static func boundsCommand(id: String, bounds: GuestToolsWindowBounds) -> String? {
+    guard let id = HvfGuestWindowValidation.handle(id),
+      HvfGuestWindowValidation.bounds(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height)
+    else { return nil }
+    return "WINBOUNDS \(id) \(bounds.x) \(bounds.y) \(bounds.width) \(bounds.height)"
   }
 
-  static func focusCommand(id: String) -> String { "WINFOCUS \(id)" }
+  static func focusCommand(id: String) -> String? { HvfGuestWindowValidation.handle(id).map { "WINFOCUS \($0)" } }
 
-  static func closeCommand(id: String) -> String { "WINCLOSE \(id)" }
+  static func closeCommand(id: String) -> String? { HvfGuestWindowValidation.handle(id).map { "WINCLOSE \($0)" } }
 }
