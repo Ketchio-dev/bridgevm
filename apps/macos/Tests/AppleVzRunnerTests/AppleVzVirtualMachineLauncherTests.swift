@@ -5,7 +5,7 @@ import XCTest
 
 final class AppleVzVirtualMachineLauncherTests: XCTestCase {
   func testStartAndWaitReturnsStoppedWhenMachineStops() async throws {
-    let machine = FakeVirtualMachine()
+    let machine = LauncherTestVirtualMachine()
     let launcher = AppleVzVirtualMachineLauncher(machine: machine)
 
     let task = Task {
@@ -26,7 +26,7 @@ final class AppleVzVirtualMachineLauncherTests: XCTestCase {
   }
 
   func testInterruptionRequestsGuestStopWhenAvailable() async throws {
-    let machine = FakeVirtualMachine()
+    let machine = LauncherTestVirtualMachine()
     machine.canRequestStop = true
     let launcher = AppleVzVirtualMachineLauncher(machine: machine)
 
@@ -48,7 +48,7 @@ final class AppleVzVirtualMachineLauncherTests: XCTestCase {
   }
 
   func testInterruptionFallsBackToForceStopWhenGuestStopUnavailable() async throws {
-    let machine = FakeVirtualMachine()
+    let machine = LauncherTestVirtualMachine()
     machine.canRequestStop = false
     machine.canStop = true
     let launcher = AppleVzVirtualMachineLauncher(machine: machine)
@@ -66,7 +66,7 @@ final class AppleVzVirtualMachineLauncherTests: XCTestCase {
   }
 
   func testInterruptionForceStopsAfterGraceWhenGuestStopDoesNotComplete() async throws {
-    let machine = FakeVirtualMachine()
+    let machine = LauncherTestVirtualMachine()
     machine.canRequestStop = true
     machine.canStop = false
     machine.onRequestStop = {
@@ -90,7 +90,7 @@ final class AppleVzVirtualMachineLauncherTests: XCTestCase {
   }
 
   func testInterruptionCanStopMachineBeforeStartCompletionReturns() async throws {
-    let machine = FakeVirtualMachine()
+    let machine = LauncherTestVirtualMachine()
     machine.autoCompleteStart = false
     machine.canRequestStop = true
     let launcher = AppleVzVirtualMachineLauncher(machine: machine)
@@ -135,49 +135,5 @@ final class AppleVzVirtualMachineLauncherTests: XCTestCase {
       }
       try await Task.sleep(for: .milliseconds(10))
     }
-  }
-}
-
-private final class FakeVirtualMachine: AppleVzVirtualMachineControlling {
-  var canRequestStop = false
-  var canStop = false
-  var autoCompleteStart = true
-  var autoNotifyStopOnForceStop = true
-  private(set) var startCallCount = 0
-  private(set) var requestStopCallCount = 0
-  private(set) var stopCallCount = 0
-  var onRequestStop: (() -> Void)?
-  private var stopHandler: ((Result<Void, Error>) -> Void)?
-
-  var hasStopHandler: Bool {
-    stopHandler != nil
-  }
-
-  func start(completionHandler: @escaping (Result<Void, Error>) -> Void) {
-    startCallCount += 1
-    if autoCompleteStart {
-      completionHandler(.success(()))
-    }
-  }
-
-  func requestStop() throws {
-    requestStopCallCount += 1
-    onRequestStop?()
-  }
-
-  func stop(completionHandler: @escaping (Result<Void, Error>) -> Void) {
-    stopCallCount += 1
-    completionHandler(.success(()))
-    if autoNotifyStopOnForceStop {
-      stopHandler?(.success(()))
-    }
-  }
-
-  func setStopHandler(_ handler: @escaping (Result<Void, Error>) -> Void) {
-    stopHandler = handler
-  }
-
-  func completeStop(_ result: Result<Void, Error>) {
-    stopHandler?(result)
   }
 }

@@ -9197,7 +9197,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     self.deleteResult = deleteResult
   }
 
-  func listVirtualMachines() async throws -> [VirtualMachine] {
+  @MainActor func listVirtualMachines() async throws -> [VirtualMachine] {
     if listDelayNanos > 0 {
       try await Task.sleep(nanoseconds: listDelayNanos)
     }
@@ -9208,11 +9208,11 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     displayStoreMetadataByID[id]
   }
 
-  func listBootTemplates() async throws -> [BootTemplate] {
+  @MainActor func listBootTemplates() async throws -> [BootTemplate] {
     try templatesResult.get()
   }
 
-  func inspectBootMediaStatus(on id: VirtualMachine.ID) async throws -> BootMediaStatus {
+  @MainActor func inspectBootMediaStatus(on id: VirtualMachine.ID) async throws -> BootMediaStatus {
     inspectedBootMediaStatusIDs.append(id)
     if bootMediaStatusDelayNanos > 0 {
       try await Task.sleep(nanoseconds: bootMediaStatusDelayNanos)
@@ -9220,7 +9220,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try bootMediaStatusResult.get()
   }
 
-  func inspectReadinessReport(on id: VirtualMachine.ID) async throws -> VMReadinessReport {
+  @MainActor func inspectReadinessReport(on id: VirtualMachine.ID) async throws -> VMReadinessReport {
     inspectedReadinessReportIDs.append(id)
     if readinessReportDelayNanos > 0 {
       try await Task.sleep(nanoseconds: readinessReportDelayNanos)
@@ -9228,7 +9228,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try readinessReportResult.get()
   }
 
-  func importBootMedia(
+  @MainActor func importBootMedia(
     sourcePath: String,
     kind: BootMediaStatusEntry.Kind?,
     on id: VirtualMachine.ID
@@ -9237,7 +9237,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try importResult.get()
   }
 
-  func verifyBootMedia(
+  @MainActor func verifyBootMedia(
     expectedSHA256: String,
     kind: BootMediaStatusEntry.Kind?,
     on id: VirtualMachine.ID
@@ -9246,7 +9246,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try verificationResult.get()
   }
 
-  func planBootMediaDownload(
+  @MainActor func planBootMediaDownload(
     url: String,
     expectedSHA256: String?,
     kind: BootMediaStatusEntry.Kind?,
@@ -9256,7 +9256,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try downloadPlanResult.get()
   }
 
-  func downloadBootMedia(
+  @MainActor func downloadBootMedia(
     kind: BootMediaStatusEntry.Kind?,
     on id: VirtualMachine.ID
   ) async throws -> BootMediaDownloadResultMetadata {
@@ -9264,7 +9264,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try downloadResult.get()
   }
 
-  func inspectLifecyclePlan(action: LifecyclePlanAction, on id: VirtualMachine.ID) async throws
+  @MainActor func inspectLifecyclePlan(action: LifecyclePlanAction, on id: VirtualMachine.ID) async throws
     -> LifecyclePlan
   {
     inspectedLifecyclePlanRequests.append((action, id))
@@ -9274,7 +9274,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try lifecyclePlanResult.get()
   }
 
-  func inspectOpenPortPlan(
+  @MainActor func inspectOpenPortPlan(
     guestPort: UInt16,
     scheme: String,
     on id: VirtualMachine.ID
@@ -9286,7 +9286,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try openPortPlanResult.get()
   }
 
-  func inspectSSHPlan(user: String, on id: VirtualMachine.ID) async throws -> SSHPlan {
+  @MainActor func inspectSSHPlan(user: String, on id: VirtualMachine.ID) async throws -> SSHPlan {
     inspectedSSHPlanRequests.append((user, id))
     if sshPlanDelayNanos > 0 {
       try await Task.sleep(nanoseconds: sshPlanDelayNanos)
@@ -9294,7 +9294,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try sshPlanResult.get()
   }
 
-  func inspectNetworkPlan(on id: VirtualMachine.ID) async throws -> NetworkPlan {
+  @MainActor func inspectNetworkPlan(on id: VirtualMachine.ID) async throws -> NetworkPlan {
     loadedNetworkPlanIDs.append(id)
     if networkPlanDelayNanos > 0 {
       try await Task.sleep(nanoseconds: networkPlanDelayNanos)
@@ -9302,7 +9302,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try networkPlanResult.get()
   }
 
-  func listPortForwards(on id: VirtualMachine.ID) async throws -> VMPortForwardList {
+  @MainActor func listPortForwards(on id: VirtualMachine.ID) async throws -> VMPortForwardList {
     listedPortForwardIDs.append(id)
     if portForwardListDelayNanos > 0 {
       try await Task.sleep(nanoseconds: portForwardListDelayNanos)
@@ -9310,21 +9310,21 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try portForwardListResult.get()
   }
 
-  func addPortForward(host: UInt16, guest: UInt16, on id: VirtualMachine.ID) async throws
+  @MainActor func addPortForward(host: UInt16, guest: UInt16, on id: VirtualMachine.ID) async throws
     -> VMPortForwardList
   {
     addedPortForwardRequests.append((host, guest, id))
     return try portForwardListResult.get()
   }
 
-  func removePortForward(host: UInt16, guest: UInt16, on id: VirtualMachine.ID) async throws
+  @MainActor func removePortForward(host: UInt16, guest: UInt16, on id: VirtualMachine.ID) async throws
     -> VMPortForwardList
   {
     removedPortForwardRequests.append((host, guest, id))
     return try portForwardListResult.get()
   }
 
-  func inspectGuestToolsStatus(on id: VirtualMachine.ID) async throws -> GuestToolsStatus {
+  @MainActor func inspectGuestToolsStatus(on id: VirtualMachine.ID) async throws -> GuestToolsStatus {
     inspectedGuestToolsStatusIDs.append(id)
     if guestToolsStatusDelayNanos > 0 {
       try await Task.sleep(nanoseconds: guestToolsStatusDelayNanos)
@@ -9332,7 +9332,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try guestToolsStatusResult.get()
   }
 
-  func inspectGuestToolsToken(on id: VirtualMachine.ID) async throws -> GuestToolsToken {
+  @MainActor func inspectGuestToolsToken(on id: VirtualMachine.ID) async throws -> GuestToolsToken {
     inspectedGuestToolsTokenIDs.append(id)
     if guestToolsTokenDelayNanos > 0 {
       try await Task.sleep(nanoseconds: guestToolsTokenDelayNanos)
@@ -9340,7 +9340,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try guestToolsTokenResult.get()
   }
 
-  func inspectGuestToolsLinuxCommand(
+  @MainActor func inspectGuestToolsLinuxCommand(
     transport: GuestToolsLinuxCommandTransport,
     on id: VirtualMachine.ID
   ) async throws -> GuestToolsLinuxCommand {
@@ -9355,7 +9355,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
       ?? .failure(VirtualMachineClientError.virtualMachineNotFound)).get()
   }
 
-  func listSharedFolders(on id: VirtualMachine.ID) async throws -> VMSharedFolderList {
+  @MainActor func listSharedFolders(on id: VirtualMachine.ID) async throws -> VMSharedFolderList {
     listedSharedFolderIDs.append(id)
     if sharedFolderListDelayNanos > 0 {
       try await Task.sleep(nanoseconds: sharedFolderListDelayNanos)
@@ -9363,7 +9363,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try sharedFolderListResult.get()
   }
 
-  func addSharedFolder(
+  @MainActor func addSharedFolder(
     named shareName: String,
     hostPath: String,
     readOnly: Bool,
@@ -9374,28 +9374,28 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try sharedFolderListResult.get()
   }
 
-  func removeSharedFolder(named shareName: String, on id: VirtualMachine.ID) async throws
+  @MainActor func removeSharedFolder(named shareName: String, on id: VirtualMachine.ID) async throws
     -> VMSharedFolderList
   {
     removedSharedFolderRequests.append((shareName, id))
     return try sharedFolderListResult.get()
   }
 
-  func mountApprovedSharedFolder(named shareName: String, on id: VirtualMachine.ID) async throws
+  @MainActor func mountApprovedSharedFolder(named shareName: String, on id: VirtualMachine.ID) async throws
     -> GuestToolsStatus?
   {
     mountedApprovedSharedFolderRequests.append((shareName, id))
     return try guestToolsStatusResult.get()
   }
 
-  func unmountApprovedSharedFolder(named shareName: String, on id: VirtualMachine.ID) async throws
+  @MainActor func unmountApprovedSharedFolder(named shareName: String, on id: VirtualMachine.ID) async throws
     -> GuestToolsStatus?
   {
     unmountedApprovedSharedFolderRequests.append((shareName, id))
     return try guestToolsStatusResult.get()
   }
 
-  func sendGuestToolsCommand(
+  @MainActor func sendGuestToolsCommand(
     _ command: GuestToolsAgentCommand,
     requestID: String?,
     on id: VirtualMachine.ID
@@ -9404,19 +9404,19 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try guestToolsCommandDispatchResult.get()
   }
 
-  func inspectRunnerStatus(on id: VirtualMachine.ID) async throws -> RunnerStatus? {
+  @MainActor func inspectRunnerStatus(on id: VirtualMachine.ID) async throws -> RunnerStatus? {
     inspectedRunnerStatusIDs.append(id)
     return try runnerStatusResult.get()
   }
 
-  func sendRuntimeControlCommand(_ command: String, on id: VirtualMachine.ID) async throws
+  @MainActor func sendRuntimeControlCommand(_ command: String, on id: VirtualMachine.ID) async throws
     -> RuntimeControlCommandResult
   {
     sentRuntimeControlCommandRequests.append((command, id))
     return try runtimeControlResult.get()
   }
 
-  func inspectQemuArgs(on id: VirtualMachine.ID) async throws -> QemuLaunchPlan {
+  @MainActor func inspectQemuArgs(on id: VirtualMachine.ID) async throws -> QemuLaunchPlan {
     inspectedQemuLaunchPlanIDs.append(id)
     if qemuLaunchPlanDelayNanos > 0 {
       try await Task.sleep(nanoseconds: qemuLaunchPlanDelayNanos)
@@ -9424,7 +9424,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try qemuLaunchPlanResult.get()
   }
 
-  func prepareRun(on id: VirtualMachine.ID) async throws -> RunnerStatus {
+  @MainActor func prepareRun(on id: VirtualMachine.ID) async throws -> RunnerStatus {
     preparedRunIDs.append(id)
     if prepareRunDelayNanos > 0 {
       try await Task.sleep(nanoseconds: prepareRunDelayNanos)
@@ -9432,7 +9432,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try prepareRunResult.get()
   }
 
-  func recommendMode(for choice: GuestChoice) async throws -> ModeRecommendation {
+  @MainActor func recommendMode(for choice: GuestChoice) async throws -> ModeRecommendation {
     requestedModeChoices.append(choice)
     if recommendationDelayNanos > 0 {
       try await Task.sleep(nanoseconds: recommendationDelayNanos)
@@ -9440,7 +9440,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try recommendationResult.get()
   }
 
-  func inspectSnapshotPreflightStatus(on id: VirtualMachine.ID) async throws
+  @MainActor func inspectSnapshotPreflightStatus(on id: VirtualMachine.ID) async throws
     -> SnapshotPreflightStatus
   {
     inspectedSnapshotPreflightStatusIDs.append(id)
@@ -9450,7 +9450,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try snapshotPreflightStatusResult.get()
   }
 
-  func listSnapshots(on id: VirtualMachine.ID) async throws -> [VMSnapshot] {
+  @MainActor func listSnapshots(on id: VirtualMachine.ID) async throws -> [VMSnapshot] {
     listedSnapshotIDs.append(id)
     if snapshotsDelayNanos > 0 {
       try await Task.sleep(nanoseconds: snapshotsDelayNanos)
@@ -9458,7 +9458,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try snapshotsResult.get()
   }
 
-  func inspectSnapshotChain(on id: VirtualMachine.ID) async throws -> VMSnapshotChain {
+  @MainActor func inspectSnapshotChain(on id: VirtualMachine.ID) async throws -> VMSnapshotChain {
     inspectedSnapshotChainIDs.append(id)
     if snapshotChainDelayNanos > 0 {
       try await Task.sleep(nanoseconds: snapshotChainDelayNanos)
@@ -9466,7 +9466,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try snapshotChainResult.get()
   }
 
-  func createSnapshot(named snapshotName: String, kind: VMSnapshotKind, on id: VirtualMachine.ID)
+  @MainActor func createSnapshot(named snapshotName: String, kind: VMSnapshotKind, on id: VirtualMachine.ID)
     async throws -> VMSnapshot
   {
     createdSnapshotRequests.append((snapshotName, kind, id))
@@ -9476,7 +9476,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try snapshotCreationResult.get()
   }
 
-  func createSnapshotDisk(named snapshotName: String, on id: VirtualMachine.ID) async throws
+  @MainActor func createSnapshotDisk(named snapshotName: String, on id: VirtualMachine.ID) async throws
     -> VMSnapshotDiskCreation
   {
     createdSnapshotDiskRequests.append((snapshotName, id))
@@ -9486,7 +9486,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try snapshotDiskCreationResult.get()
   }
 
-  func preparePrimaryDisk(on id: VirtualMachine.ID) async throws -> DiskPreparation {
+  @MainActor func preparePrimaryDisk(on id: VirtualMachine.ID) async throws -> DiskPreparation {
     preparedDiskIDs.append(id)
     if diskPreparationDelayNanos > 0 {
       try await Task.sleep(nanoseconds: diskPreparationDelayNanos)
@@ -9494,7 +9494,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try diskPreparationResult.get()
   }
 
-  func createPrimaryDisk(on id: VirtualMachine.ID) async throws -> VMDiskCreation {
+  @MainActor func createPrimaryDisk(on id: VirtualMachine.ID) async throws -> VMDiskCreation {
     createdDiskIDs.append(id)
     if diskCreationDelayNanos > 0 {
       try await Task.sleep(nanoseconds: diskCreationDelayNanos)
@@ -9502,7 +9502,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try diskCreationResult.get()
   }
 
-  func inspectPrimaryDisk(on id: VirtualMachine.ID) async throws -> VMDiskInspection {
+  @MainActor func inspectPrimaryDisk(on id: VirtualMachine.ID) async throws -> VMDiskInspection {
     inspectedDiskIDs.append(id)
     if diskInspectionDelayNanos > 0 {
       try await Task.sleep(nanoseconds: diskInspectionDelayNanos)
@@ -9510,7 +9510,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try diskInspectionResult.get()
   }
 
-  func verifyActiveDisk(on id: VirtualMachine.ID) async throws -> VMDiskVerification {
+  @MainActor func verifyActiveDisk(on id: VirtualMachine.ID) async throws -> VMDiskVerification {
     verifiedDiskIDs.append(id)
     if diskVerificationDelayNanos > 0 {
       try await Task.sleep(nanoseconds: diskVerificationDelayNanos)
@@ -9518,7 +9518,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try diskVerificationResult.get()
   }
 
-  func compactActiveDisk(on id: VirtualMachine.ID) async throws -> VMDiskCompaction {
+  @MainActor func compactActiveDisk(on id: VirtualMachine.ID) async throws -> VMDiskCompaction {
     compactedDiskIDs.append(id)
     if diskCompactionDelayNanos > 0 {
       try await Task.sleep(nanoseconds: diskCompactionDelayNanos)
@@ -9526,17 +9526,17 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try diskCompactionResult.get()
   }
 
-  func repairMetadata(on id: VirtualMachine.ID) async throws -> VMMetadataRepair {
+  @MainActor func repairMetadata(on id: VirtualMachine.ID) async throws -> VMMetadataRepair {
     repairedMetadataIDs.append(id)
     return try metadataRepairResult.get()
   }
 
-  func migrateManifest(on id: VirtualMachine.ID, dryRun: Bool) async throws -> VMManifestMigration {
+  @MainActor func migrateManifest(on id: VirtualMachine.ID, dryRun: Bool) async throws -> VMManifestMigration {
     migratedManifestRequests.append((id, dryRun))
     return try manifestMigrationResult.get()
   }
 
-  func restoreSnapshot(named snapshotName: String, on id: VirtualMachine.ID) async throws
+  @MainActor func restoreSnapshot(named snapshotName: String, on id: VirtualMachine.ID) async throws
     -> SnapshotRestoreResult
   {
     restoredSnapshotRequests.append((snapshotName, id))
@@ -9546,7 +9546,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try snapshotRestoreResult.get()
   }
 
-  func executeApplicationConsistentSnapshot(
+  @MainActor func executeApplicationConsistentSnapshot(
     named snapshotName: String,
     freezeTimeoutMillis: UInt64?,
     on id: VirtualMachine.ID
@@ -9558,7 +9558,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try applicationConsistentSnapshotExecutionResult.get()
   }
 
-  func reapplyRuntimeResources(
+  @MainActor func reapplyRuntimeResources(
     visibility: RuntimeResourceVisibility,
     on id: VirtualMachine.ID
   ) async throws -> RuntimeResourcePolicy {
@@ -9566,7 +9566,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try runtimeResourcePolicyResult.get()
   }
 
-  func createDiagnosticBundle(output: String?, on id: VirtualMachine.ID) async throws
+  @MainActor func createDiagnosticBundle(output: String?, on id: VirtualMachine.ID) async throws
     -> DiagnosticBundle
   {
     createdDiagnosticBundleRequests.append((output, id))
@@ -9576,7 +9576,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try diagnosticBundleResult.get()
   }
 
-  func createPerformanceBaseline(output: String?, on id: VirtualMachine.ID) async throws
+  @MainActor func createPerformanceBaseline(output: String?, on id: VirtualMachine.ID) async throws
     -> PerformanceBaseline
   {
     createdPerformanceBaselineRequests.append((output, id))
@@ -9586,7 +9586,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try performanceBaselineResult.get()
   }
 
-  func createPerformanceSample(
+  @MainActor func createPerformanceSample(
     output: String?,
     artifactBytes: UInt64,
     iterations: UInt16,
@@ -9600,7 +9600,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try performanceSampleResult.get()
   }
 
-  func inspectQMPStatus(on id: VirtualMachine.ID) async throws -> QMPStatus {
+  @MainActor func inspectQMPStatus(on id: VirtualMachine.ID) async throws -> QMPStatus {
     inspectedQMPStatusIDs.append(id)
     if qmpStatusDelayNanos > 0 {
       try await Task.sleep(nanoseconds: qmpStatusDelayNanos)
@@ -9608,7 +9608,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try qmpStatusResult.get()
   }
 
-  func viewLogs(kind: VMLogKind, bytes: UInt64?, on id: VirtualMachine.ID) async throws
+  @MainActor func viewLogs(kind: VMLogKind, bytes: UInt64?, on id: VirtualMachine.ID) async throws
     -> VMLogView
   {
     viewedLogRequests.append((kind, bytes, id))
@@ -9618,36 +9618,36 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     return try logViewResult.get()
   }
 
-  func createVirtualMachine(_ request: CreateVirtualMachineRequest) async throws -> VirtualMachine {
+  @MainActor func createVirtualMachine(_ request: CreateVirtualMachineRequest) async throws -> VirtualMachine {
     createdRequests.append(request)
     return try createResult.get()
   }
 
-  func cloneVirtualMachine(on id: VirtualMachine.ID, newName: String, linked: Bool) async throws
+  @MainActor func cloneVirtualMachine(on id: VirtualMachine.ID, newName: String, linked: Bool) async throws
     -> CloneVirtualMachineMetadata
   {
     clonedRequests.append((id, newName, linked))
     return try cloneResult.get()
   }
 
-  func deleteVirtualMachine(on id: VirtualMachine.ID) async throws -> VMDeletionMetadata {
+  @MainActor func deleteVirtualMachine(on id: VirtualMachine.ID) async throws -> VMDeletionMetadata {
     deletedVMIDs.append(id)
     return try deleteResult.get()
   }
 
-  func exportVirtualMachine(on id: VirtualMachine.ID, output: String) async throws
+  @MainActor func exportVirtualMachine(on id: VirtualMachine.ID, output: String) async throws
     -> VMExportMetadata
   {
     exportedVMRequests.append((id, output))
     return try exportResult.get()
   }
 
-  func importVirtualMachine(input: String, name: String?) async throws -> VMImportMetadata {
+  @MainActor func importVirtualMachine(input: String, name: String?) async throws -> VMImportMetadata {
     importedVMRequests.append((input, name))
     return try vmImportResult.get()
   }
 
-  func perform(_ action: VirtualMachineAction, on id: VirtualMachine.ID) async throws
+  @MainActor func perform(_ action: VirtualMachineAction, on id: VirtualMachine.ID) async throws
     -> VMActionResult
   {
     performedActionRequests.append((action, id))
