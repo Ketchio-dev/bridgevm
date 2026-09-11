@@ -303,7 +303,6 @@ int main(void) {
   FILE *f = fopen(log_path(), "w");
   if (f) fclose(f);
   logf_line("begin log=%s", log_path());
-
 #ifdef _WIN32
   /* Pin the Venus ICD so an unrelated software ICD cannot mask a package
    * failure, matching bvgpu-vulkan-probe.ps1. */
@@ -317,13 +316,13 @@ int main(void) {
 #endif
   logf_line("driver_files=%s",
             getenv("VK_DRIVER_FILES") ? getenv("VK_DRIVER_FILES") : "<unset>");
-
+  logf_line("loader_begin");
   p_vkGetInstanceProcAddr = load_vulkan_loader();
   if (!p_vkGetInstanceProcAddr) return fail(30, "loader", 0);
   p_vkCreateInstance = (PFN_vkCreateInstance)p_vkGetInstanceProcAddr(
       NULL, "vkCreateInstance");
   if (!p_vkCreateInstance) return fail(30, "vkCreateInstance_symbol", 0);
-
+  logf_line("loader_ready");
   VkApplicationInfo app = {
       .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
       .pApplicationName = "BridgeVM Venus draw smoke",
@@ -337,6 +336,7 @@ int main(void) {
       .pApplicationInfo = &app,
   };
   VkInstance instance = VK_NULL_HANDLE;
+  logf_line("create_instance_begin");
   VkResult result = p_vkCreateInstance(&instance_info, NULL, &instance);
   if (result == VK_ERROR_INCOMPATIBLE_DRIVER) {
     /* MoltenVK on the macOS host is a portability implementation and needs
