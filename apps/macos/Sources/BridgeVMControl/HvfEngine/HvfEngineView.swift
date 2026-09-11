@@ -570,6 +570,7 @@ enum HvfHostKeyCommand: Equatable {
     case ignored
 
     static func resolve(characters: String, modifiers: EventModifiers = []) -> HvfHostKeyCommand {
+        guard !modifiers.contains(.command) else { return .ignored }
         if characters == "\u{7f}", modifiers.contains(.control), modifiers.contains(.option) {
             return .key("ctrl+alt+delete")
         }
@@ -605,7 +606,6 @@ enum HvfHostKeyCommand: Equatable {
         case "\u{f70f}": return .key("f12")
         default:
             guard !characters.isEmpty,
-                  !modifiers.contains(.command),
                   !modifiers.contains(.control),
                   !modifiers.contains(.option) else { return .ignored }
             return .text(characters)
