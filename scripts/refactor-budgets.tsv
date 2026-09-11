@@ -2032,3 +2032,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/input_protocol.rs	
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfInputCapabilitiesRequest.swift	51	0
 apps/macos/Tests/BridgeVMControlTests/HvfInputCapabilitiesRequestTests.swift	50	0
 scripts/test-bvagent-input-capabilities.ps1	26	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfNegotiatedInputStream.swift	75	0
+apps/macos/Tests/BridgeVMControlTests/HvfNegotiatedInputStreamTests.swift	92	0
