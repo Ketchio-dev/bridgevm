@@ -133,5 +133,5 @@ pub(super) fn parse_out_line(line: &str) -> Option<(i32, &str)> {
     let (exit_code, output) = rest.split_once(' ')?;
     Some((exit_code.parse().ok()?, output))
 }
-#[path = "unicode_input.rs"]
+#[path = "input_protocol.rs"]
 mod unicode_input;

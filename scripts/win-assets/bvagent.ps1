@@ -104,6 +104,18 @@ try {
     }
 }
 
+function Get-InputCapabilities([string]$Request) {
+    try {
+        $probe = Invoke-UnicodeInput ($Request + ' YQ==') { param($text) [uint32]2 }
+        if ($probe.Exit -ne 0 -or [BridgeVM.BvUnicodeInput]::BuildKey('enter').Length -ne 2) {
+            throw 'input-support-unavailable'
+        }
+        return @{ Exit = 0; Out = ('BVINPUT_CAPS {0} 1 TEXTINPUT KEYINPUT 65536' -f $Request) }
+    } catch {
+        return @{ Exit = 1; Out = 'BVINPUT_CAPS_FAILED unavailable' }
+    }
+}
+
 function Gle { return [System.Runtime.InteropServices.Marshal]::GetLastWin32Error() }
 
 # CreateFile access rights as EXPLICIT [uint32] decimals. PowerShell 5.1 parses
@@ -388,6 +400,7 @@ while ($true) {
                 'PING' { Write-Line $h 'PONG' 'PONG' }
                 'TEXTINPUT' { Write-CommandResult $h (Invoke-UnicodeInput $arg) }
                 'KEYINPUT' { Write-CommandResult $h (Invoke-UnicodeInput $arg $null $true) }
+            'INPUTCAPS' { Write-CommandResult $h (Get-InputCapabilities $arg) }
                 'WINLIST' {
                     # Main app windows via the .NET process walk. The previous
                     # native-callback window walk hung the whole agent on

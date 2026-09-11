@@ -2028,3 +2028,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestInputEncoding.swift	54	0
 apps/macos/Tests/BridgeVMControlTests/HvfGuestKeyInputRequestTests.swift	56	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfAcknowledgedInputStream.swift	76	0
 apps/macos/Tests/BridgeVMControlTests/HvfAcknowledgedInputStreamTests.swift	90	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/input_protocol.rs	45	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfInputCapabilitiesRequest.swift	51	0
+apps/macos/Tests/BridgeVMControlTests/HvfInputCapabilitiesRequestTests.swift	50	0
+scripts/test-bvagent-input-capabilities.ps1	26	0

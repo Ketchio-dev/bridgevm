@@ -35,3 +35,5 @@ if ($result.Exit -eq 0 -or $null -ne $script:seen) { throw 'oversized request re
 Write-Output 'Unicode encoding and resident request contracts: PASS (no native input injected)'
 & (Join-Path $PSScriptRoot 'test-bvagent-input-assets.ps1')
 & (Join-Path $PSScriptRoot 'test-bvagent-key-input.ps1')
+
+& (Join-Path $PSScriptRoot 'test-bvagent-input-capabilities.ps1')
