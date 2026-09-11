@@ -136,13 +136,7 @@ extension HvfWindowsInstallFinalization {
     }
 
     static func validateRequest(_ url: URL, expectedSHA256: String? = nil) throws {
-        let data = try HvfWindowsInstallDurability.readRegularFile(
-            url, maximumBytes: VMLibrary.maximumConfigBytes)
-        _ = try JSONDecoder().decode(HvfWindowsInstallRequest.self, from: data)
-        if let expectedSHA256,
-           HvfWindowsInstallCacheIdentity.sha256File(url.path) != expectedSHA256 {
-            throw HvfWindowsInstallFinalizationError.invalidState("설치 요청 digest가 journal과 다릅니다.")
-        }
+        _ = try HvfWindowsInstallRequestSnapshot.load(url, expectedSHA256: expectedSHA256)
     }
 
     static func validateConfig(

@@ -85,9 +85,8 @@ enum HvfWindowsInstallFinalization {
             throw HvfWindowsInstallFinalizationError.invalidState(
                 "설치 대기 중인 동일 VM 설정을 찾을 수 없습니다.")
         }
-        let requestData = try HvfWindowsInstallDurability.readRegularFile(
-            paths.pendingRequest, maximumBytes: VMLibrary.maximumConfigBytes)
-        guard try JSONDecoder().decode(HvfWindowsInstallRequest.self, from: requestData) == plan.request else {
+        let requestSnapshot = try HvfWindowsInstallRequestSnapshot.load(paths.pendingRequest)
+        guard requestSnapshot.request == plan.request else {
             throw HvfWindowsInstallFinalizationError.invalidState("저장된 설치 요청이 실행 계획과 다릅니다.")
         }
         let sourceDisk = URL(fileURLWithPath: plan.tmpTargetPath)
@@ -102,7 +101,7 @@ enum HvfWindowsInstallFinalization {
             bundlePath: HvfWindowsInstallDurability.canonical(paths.bundle),
             sourceDiskPath: sourceDisk.path, sourceVarsPath: sourceVars.path,
             diskBytes: diskIdentity.bytes, varsBytes: varsIdentity.bytes,
-            requestSHA256: HvfWindowsInstallCacheIdentity.sha256File(paths.pendingRequest.path) ?? "",
+            requestSHA256: requestSnapshot.sha256,
             diskSHA256: diskIdentity.sha256, varsSHA256: varsIdentity.sha256,
             provisionedVarsSHA256: nil)
         try HvfWindowsInstallDurability.ensureDirectory(paths.transaction)
@@ -163,14 +162,9 @@ enum HvfWindowsInstallFinalization {
             try verifyProvisionedVars(journal, paths: paths)
         }
         if journal.phase < .requestStaged {
-            let data = try HvfWindowsInstallDurability.readRegularFile(
-                paths.pendingRequest, maximumBytes: VMLibrary.maximumConfigBytes)
-            _ = try JSONDecoder().decode(HvfWindowsInstallRequest.self, from: data)
-            guard HvfWindowsInstallCacheIdentity.sha256File(paths.pendingRequest.path)
-                    == journal.requestSHA256 else {
-                throw HvfWindowsInstallFinalizationError.invalidState("설치 요청이 transaction 중 변경되었습니다.")
-            }
-            try HvfWindowsInstallDurability.durableWrite(data, to: paths.stagedRequest)
+            let snapshot = try HvfWindowsInstallRequestSnapshot.load(
+                paths.pendingRequest, expectedSHA256: journal.requestSHA256)
+            try HvfWindowsInstallDurability.durableWrite(snapshot.data, to: paths.stagedRequest)
             try advance(&journal, to: .requestStaged, boundary: .requestStaged,
                         paths: paths, faultInjector: faultInjector)
         } else { try validateRequest(paths.stagedRequest, expectedSHA256: journal.requestSHA256) }

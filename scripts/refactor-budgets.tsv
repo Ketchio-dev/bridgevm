@@ -2042,3 +2042,5 @@ apps/macos/Tests/AppleVzRunnerTests/LauncherTestVirtualMachine.swift	55	0
 scripts/xctest-swiftc.sh	8	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallRegularFile.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallRegularFileTests.swift	86	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallRequestSnapshot.swift	28	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallRequestSnapshotTests.swift	59	0
