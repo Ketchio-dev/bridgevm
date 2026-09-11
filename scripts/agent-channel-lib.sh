@@ -50,7 +50,7 @@ send_ok() {
 wait_firstboot() {
   local log="${RUN_LOG:?agent-channel-lib needs RUN_LOG}"
   local deadline=$((SECONDS + ${AGENT_TIMEOUT:?agent-channel-lib needs AGENT_TIMEOUT}))
-  local command='powershell -NoProfile -Command "& schtasks.exe /Query /TN BridgeVM-VioGpu3DFirstBoot *> $null; $task=($LASTEXITCODE -eq 0); $ready=(Test-Path C:\BridgeVM\stage3.flag) -and (-not $task); if($ready){Write-Output BVFIRSTBOOT_READY; exit 0}; Write-Output BVFIRSTBOOT_PENDING; exit 3"'
+  local command='powershell -NoProfile -Command "& schtasks.exe /Query /TN BridgeVM-VioGpu3DFirstBoot *> $null; $taskExit=$LASTEXITCODE; $task=($taskExit -eq 0); $stage3=Test-Path C:\BridgeVM\stage3.flag; $ready=$stage3 -and (-not $task); Write-Output BVFIRSTBOOT_STAGE3_PRESENT=$stage3 BVFIRSTBOOT_TASK_QUERY_EXIT=$taskExit; if($ready){Write-Output BVFIRSTBOOT_READY; exit 0}; Write-Output BVFIRSTBOOT_PENDING; exit 3"'
   while (( SECONDS < deadline )); do
     send_ok "$command" && grep -Eq '^BVFIRSTBOOT_READY\r?$' "$log" && return 0
     sleep 5

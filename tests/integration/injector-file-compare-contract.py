@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Native binary comparator contract; not proof of execution inside WinPE."""
-import os
+import os, runpy
 from pathlib import Path
 import shlex
 import subprocess
 import tempfile
-
 root = Path(__file__).resolve().parents[2]
+runpy.run_path(str(root / "tests/integration/injector-file-compare-wiring-contract.py"))
 with tempfile.TemporaryDirectory(prefix="bridgevm-file-compare-") as directory:
     work = Path(directory)
     exe = work / ("compare.exe" if os.name == "nt" else "compare")

@@ -14,11 +14,17 @@ This supports the displayed failure; it does not replace live guest evidence.
 
 ## Repair candidate and limits
 
-The injector now builds and carries `bv-file-compare.exe`, invokes its explicit
-path, and retains the requirement for complete byte equality without I/O errors.
+The failed run used an old injector image. Source commit `7f31bfc8` had already
+replaced `fc` with copy-status, size and header checks on September 7.
+The initial investigation incorrectly treated the image's script as current
+source and incorrectly described an unrelated source change. That claim is retracted.
+
+The new integration preserves those checks and adds `bv-file-compare.exe` at
+an explicit bundled path, requiring complete byte equality without I/O errors.
 The portable C implementation returns nonzero for differences or read failures.
 Native contract cases cover empty files, chunk boundaries, binary data, length
-differences and missing inputs. A hosted Linux/Windows workflow runs the contract.
+differences and missing inputs. A source-wiring contract checks the call and
+failure guard. A hosted Linux/Windows workflow runs both contracts.
 
 Local native cases and an ARM64 Windows cross-build passed during development.
 Neither proves execution in WinPE. A newly built, sealed injector and live run

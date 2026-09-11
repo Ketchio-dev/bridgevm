@@ -266,13 +266,7 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
     echo BVINJECT ERROR: package-local cleanup copy failed
     goto :end
   )
-  rem WinPE ships no fc.exe or comp.exe. The `fc /b` that used to sit here
-  rem returned 9009 (command not found), `if errorlevel 1` took the error
-  rem path, and the block left before the pending flag and the activation
-  rem service were planted: the guest booted and firstboot never ran
-  rem (t7-c193b7c0-fixed-b6-observation-r1). Verify with what WinPE has:
-  rem equal sizes, then the PowerShell header the firstboot guard checks.
-  rem for-variables expand at execution, so this works inside the block.
+  rem Preserve the existing size/header checks; compare every byte as well.
   for %%S in (%DRV%\..\bvgpu-clean-driver-state.ps1) do for %%T in (%WIN%\BridgeVM\viogpu3d\bvgpu-clean-driver-state.ps1) do if not "%%~zS"=="%%~zT" (
     echo BVINJECT ERROR: package-local cleanup verification failed
     goto :end
@@ -280,6 +274,11 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   find /c "[CmdletBinding()]" %WIN%\BridgeVM\viogpu3d\bvgpu-clean-driver-state.ps1 >nul
   if errorlevel 1 (
     echo BVINJECT ERROR: package-local cleanup verification failed
+    goto :end
+  )
+  "%DRV%\..\bv-file-compare.exe" "%DRV%\..\bvgpu-clean-driver-state.ps1" "%WIN%\BridgeVM\viogpu3d\bvgpu-clean-driver-state.ps1" >nul
+  if errorlevel 1 (
+    echo BVINJECT ERROR: package-local cleanup byte comparison failed
     goto :end
   )
   if exist %DRV%\..\bvgpu-real-title-gate.ps1 copy /y %DRV%\..\bvgpu-real-title-gate.ps1 %WIN%\BridgeVM\bvgpu-real-title-gate.ps1 >nul
