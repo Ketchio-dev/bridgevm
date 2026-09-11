@@ -10,8 +10,8 @@ if ($query.truncated -or $query.match_count -ne $query.matches.Count) { throw 'N
 $visible = @($query.matches | Where-Object { !$_.is_offscreen })
 if ($visible.Count -eq 0) { Write-Output "BVTIPPOINT hwnd=$Hwnd state=not-found"; return }
 if ($visible.Count -ne 1) { throw 'Ambiguous visible Got it buttons' }
-$button = $visible[0]
-if (!$button.is_enabled -or $button.process_id -ne $query.root_process_id -or $query.root_process_id -ne [BvNativeTipOwner]::Process($Hwnd)) {
+$button = $visible[0]; $windowProcess = [BvNativeTipOwner]::Process($Hwnd)
+if (!$button.is_enabled -or $button.process_id -ne $query.root_process_id -or $query.root_process_id -ne $windowProcess) {
     throw 'Got it button is disabled or from a different process'
 }
 $rectangle = @($button.bounding_rectangle)
