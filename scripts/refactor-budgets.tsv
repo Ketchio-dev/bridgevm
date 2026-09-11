@@ -1931,3 +1931,6 @@ scripts/win-assets/bv-b6-native-tip-point.ps1	26	0
 tests/integration/virgl-integer-negate-translate.c	64	0
 apps/macos/Sources/BridgeVMProductE2E/T17TrustDiagnostic.swift	51	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17TrustDiagnosticTests.swift	42	0
+scripts/win-assets/bv-b6-physical-uia.cs	21	0
+tests/integration/b6-physical-uia-contract.cs	40	0
+tests/integration/b6-physical-uia-contract.ps1	6	0

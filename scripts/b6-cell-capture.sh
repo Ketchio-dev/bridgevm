@@ -41,7 +41,7 @@ cp "$REPO/scripts/win-assets/bvgpu-apply-host-resolution.ps1" \
    "$REPO/scripts/win-assets/bv-b6-read-logpixels.ps1" \
    "$REPO/scripts/win-assets/bv-b6-modern-notepad-launch.ps1" \
    "$REPO/scripts/win-assets/bv-b6-modern-notepad-reset.ps1" \
-   "$REPO/scripts/win-assets/bv-b6-caret-still.ps1" "$REPO/scripts/win-assets/bv-b6-caption-point.ps1" "$REPO/scripts/win-assets/bv-b6-tip-point.ps1" "$REPO/scripts/win-assets/bv-b6-uia-diagnostic.ps1" "$REPO/scripts/win-assets/bv-b6-native-uia.ps1" "$REPO/scripts/win-assets/bv-b6-native-uia.cs" "$REPO/scripts/win-assets/bv-b6-native-tip-point.ps1" "$REPO/scripts/win-assets/bv-b6-tip-owner.cs" \
+   "$REPO/scripts/win-assets/bv-b6-caret-still.ps1" "$REPO/scripts/win-assets/bv-b6-caption-point.ps1" "$REPO/scripts/win-assets/bv-b6-tip-point.ps1" "$REPO/scripts/win-assets/bv-b6-uia-diagnostic.ps1" "$REPO/scripts/win-assets/bv-b6-native-uia.ps1" "$REPO/scripts/win-assets/bv-b6-native-uia.cs bv-b6-physical-uia.cs" "$REPO/scripts/win-assets/bv-b6-native-tip-point.ps1" "$REPO/scripts/win-assets/bv-b6-tip-owner.cs" \
    "$REPO/scripts/win-assets/bv-b6-presentmon-capture.ps1" \
    "$PRESENTMON" \
    "$OUT/share/"
@@ -138,7 +138,7 @@ LAUNCHER=$!
 wait_for '^BVAGENT SERVICE start' 1 "$AGENT_TIMEOUT" || { echo 'FAIL: agent service timeout' >&2; exit 1; }
 for file in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1 bv-windows-closure-launch.ps1 \
             bv-windows-closure-discard.ps1 bv-b6-window-dpi.ps1 bv-b6-read-logpixels.ps1 \
-            bv-b6-modern-notepad-reset.ps1 bv-b6-caret-still.ps1 bv-b6-caption-point.ps1 bv-b6-tip-point.ps1 bv-b6-uia-diagnostic.ps1 bv-b6-native-uia.ps1 bv-b6-native-uia.cs bv-b6-native-tip-point.ps1 bv-b6-tip-owner.cs \
+            bv-b6-modern-notepad-reset.ps1 bv-b6-caret-still.ps1 bv-b6-caption-point.ps1 bv-b6-tip-point.ps1 bv-b6-uia-diagnostic.ps1 bv-b6-native-uia.ps1 bv-b6-native-uia.cs bv-b6-physical-uia.cs bv-b6-native-tip-point.ps1 bv-b6-tip-owner.cs \
             bv-b6-modern-notepad-launch.ps1 bv-b6-presentmon-capture.ps1 "$PRESENTMON_NAME"; do
   bytes=$(stat -f %z "$OUT/share/$file")
   wait_for "^BVAGENT SHARE host->guest $file bytes=$bytes " 1 300 \

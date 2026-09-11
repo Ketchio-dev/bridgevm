@@ -3,8 +3,8 @@ $ErrorActionPreference = 'Stop'
 if ($Hwnd -le 0 -or $Width -le 1 -or $Height -le 1) { throw 'Invalid tip target or display dimensions' }
 Add-Type -Path (Join-Path $PSScriptRoot 'bv-b6-tip-owner.cs')
 if (![BvNativeTipOwner]::Visible($Hwnd)) { throw 'Tip root is absent or hidden' }
-Add-Type -Path (Join-Path $PSScriptRoot 'bv-b6-native-uia.cs')
-$query = [BridgeVmNativeUia.Probe]::Query($Hwnd)
+Add-Type -Path @((Join-Path $PSScriptRoot 'bv-b6-native-uia.cs'), (Join-Path $PSScriptRoot 'bv-b6-physical-uia.cs'))
+$query = [BvPhysicalUia]::Query($Hwnd)
 if ($query.status -ne 'query-returned') { throw "Native UIA query failed at $($query.stage), HRESULT=$($query.hresult)" }
 if ($query.truncated -or $query.match_count -ne $query.matches.Count) { throw 'Native UIA match list is incomplete' }
 $visible = @($query.matches | Where-Object { !$_.is_offscreen })

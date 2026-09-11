@@ -9,4 +9,4 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - shell: powershell
-        run: tests/integration/b6-tip-point-contract.ps1 -Query scripts/win-assets/bv-b6-native-tip-point.ps1
+        run: tests/integration/b6-physical-uia-contract.ps1; tests/integration/b6-tip-point-contract.ps1 -Query scripts/win-assets/bv-b6-native-tip-point.ps1
