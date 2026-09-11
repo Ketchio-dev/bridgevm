@@ -5,7 +5,6 @@ import os
 import pathlib
 
 from b6_cell_inputs import regular_file
-
 TIER = "d3-b6-renderer-trace"
 POLICY = {"VREND_DEBUG": "shader,cmd,obj,d3d", "max_log_bytes": 128 * 1024 * 1024,
           "purpose": "renderer diagnosis only", "claim_eligible": False}
@@ -15,7 +14,6 @@ CONFOUNDERS = ["Fixed renderer logging may perturb execution",
                "VREND_DEBUG=shader,cmd,obj,d3d is set by the sealed diagnostic tier",
                "Diagnostic library builds may enable additional assertions",
                "Trace collection is not performance or product evidence"]
-
 
 def log_evidence(path, limit=POLICY["max_log_bytes"]):
     digest = hashlib.sha256()
@@ -30,6 +28,8 @@ def log_evidence(path, limit=POLICY["max_log_bytes"]):
                 raise ValueError("renderer log grew beyond its limit")
             digest.update(raw)
             line = raw.strip()
+            if line.startswith((b"proxy: failed to exec ", b"failed to initialize venus renderer")):
+                raise ValueError("renderer startup failed; captured frames cannot validate this observation")
             tgsi += line.removeprefix(b"venus-win32: TGSI received:venus-win32: ") in (b"FRAG", b"VERT", b"GEOM", b"TESS_CTRL", b"TESS_EVAL", b"COMP")
             glsl += line.removeprefix(b"venus-win32: GLSL:venus-win32: ").startswith(b"#version ")
         after = os.fstat(stream.fileno())

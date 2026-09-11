@@ -145,7 +145,7 @@ def run(args, receipt_factory=None, complete=None):
         if complete is not None: stage = "diagnostic"; complete(value, args.out)
         status = 0
     except (OSError, ValueError, subprocess.SubprocessError) as error:
-        value.update(valid=False, outcome="failed", failure_code=stage + "-failed",
+        value.update(valid=False, outcome="failed", run_count=0, failure_code=stage + "-failed",
                      diagnostic_error=str(error))
     finally:
         value["finished_at"] = now()
