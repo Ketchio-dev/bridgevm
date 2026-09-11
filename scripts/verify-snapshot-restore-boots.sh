@@ -40,22 +40,16 @@ cargo +1.97.0 build --release -p bridgevm-hvf --example snapshot_pair_cli --lock
   > "$OUT/build.log" 2>&1 || fail "snapshot_pair_cli build failed; see $OUT/build.log"
 
 WORK=$OUT/live
-mkdir -p "$WORK"
-trap 'pkill -f hvf_gic_boot_probe 2>/dev/null || true; rm -rf "$WORK"' EXIT INT TERM
+mkdir "$WORK" || fail "work directory must be new"
+source "$REPO/scripts/snapshot-restore-lifecycle.sh"
+trap snapshot_cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 cp -c "$DISK" "$WORK/disk.raw" || fail "clone disk"
 cp "$VARS" "$WORK/vars.fd" || fail "copy vars"
 
-send_wait() { # $1 = ctl, $2 = log, $3 = command
-  local ctl=$1 log=$2 cmd=$3 before
-  before=$(grep -cE '^BVAGENT END ' "$log" 2>/dev/null || true)
-  printf '%s\n' "$cmd" >> "$ctl"
-  local deadline=$((SECONDS + STEP_TIMEOUT)) n
-  while (( SECONDS < deadline )); do
-    n=$(grep -cE '^BVAGENT END ' "$log" 2>/dev/null || true)
-    (( n > before )) && return 0
-    sleep 0.5
-  done
-  return 1
+send_wait() { # ctl, log, command, isolated response path
+  python3 "$REPO/scripts/snapshot-restore-channel.py" "$1" "$2" "$3" "$STEP_TIMEOUT" "$4"
 }
 
 # Boot once: report the marker already on C:, write a new one, power off.
@@ -63,7 +57,7 @@ send_wait() { # $1 = ctl, $2 = log, $3 = command
 boot_and_mark() { # $1 = new marker text, $2 = phase name
   local marker=$1 phase=$2
   local pdir=$OUT/$phase
-  mkdir -p "$pdir"
+  mkdir "$pdir" || return 1
   local ctl=$pdir/agent.ctl log=$pdir/run.log
   : > "$ctl"
 
@@ -74,6 +68,7 @@ boot_and_mark() { # $1 = new marker text, $2 = phase name
     --agent-service-control "$ctl" \
     > "$pdir/launcher.out" 2>&1 &
   local launcher=$!
+  SNAPSHOT_LAUNCHER=$launcher
 
   local deadline=$((SECONDS + BOOT_TIMEOUT))
   while (( SECONDS < deadline )); do
@@ -89,34 +84,21 @@ boot_and_mark() { # $1 = new marker text, $2 = phase name
       echo "  the guest produced framebuffer output but no BVAGENT line:" >&2
       echo "  this image most likely has no virtio-serial driver or no agent" >&2
     fi
-    kill $launcher 2>/dev/null || true
-    pkill -f hvf_gic_boot_probe 2>/dev/null || true
-    wait $launcher 2>/dev/null || true
+    snapshot_stop_launcher
     return 1
   fi
 
   # Read what is there before writing. This readback is the observation the
   # whole gate turns on, so it happens first and is kept verbatim.
   send_wait "$ctl" "$log" \
-    "powershell -NoProfile -Command \"if (Test-Path '$GUEST_MARKER') { Get-Content '$GUEST_MARKER' } else { 'BV-NO-MARKER' }\"" \
-    || { kill $launcher 2>/dev/null || true; return 1; }
-  awk '/^BVAGENT CMD .*Test-Path/{f=1; next} /^BVAGENT END /{f=0} f' "$log" \
-    | tr -d '\r' > "$pdir/marker-before.txt"
+    "powershell -NoProfile -Command \"\$ErrorActionPreference='Stop'; if (Test-Path '$GUEST_MARKER') { Get-Content '$GUEST_MARKER' } else { 'BV-NO-MARKER' }\"" \
+    "$pdir/marker-before.txt" || { snapshot_stop_launcher; return 1; }
 
   send_wait "$ctl" "$log" \
-    "powershell -NoProfile -Command \"Set-Content -NoNewline -Path '$GUEST_MARKER' -Value '$marker'\"" \
-    || { kill $launcher 2>/dev/null || true; return 1; }
-
-  printf 'POWEROFF\n' >> "$ctl"
-  local off=$((SECONDS + STEP_TIMEOUT))
-  while (( SECONDS < off )); do
-    kill -0 $launcher 2>/dev/null || break
-    sleep 1
-  done
-  kill $launcher 2>/dev/null || true
-  pkill -f hvf_gic_boot_probe 2>/dev/null || true
-  wait $launcher 2>/dev/null || true
-  return 0
+    "powershell -NoProfile -Command \"\$ErrorActionPreference='Stop'; Set-Content -NoNewline -Encoding ascii -Path '$GUEST_MARKER' -Value '$marker'; if ((Get-Content -Raw '$GUEST_MARKER') -cne '$marker') { exit 1 }; Write-Output '$marker'\"" \
+    "$pdir/marker-after.txt" || { snapshot_stop_launcher; return 1; }
+  [[ $(cat "$pdir/marker-after.txt") == "$marker" ]] || { snapshot_stop_launcher; return 1; }
+  snapshot_shutdown "$ctl" "$log"
 }
 
 echo "=== phase 1: write the marker that must survive ==="
@@ -136,7 +118,7 @@ echo "=== phase 3: overwrite it, so a no-op restore cannot pass ==="
 CLOBBER="BV-CLOBBERED-$(date +%s)"
 boot_and_mark "$CLOBBER" phase3-clobber \
   || fail "guest never reached agent service state in phase 3"
-grep -q "$ORIGINAL" "$OUT/phase3-clobber/marker-before.txt" 2>/dev/null \
+[[ $(cat "$OUT/phase3-clobber/marker-before.txt") == "$ORIGINAL" ]] \
   || fail "phase 3 could not read back the marker phase 1 wrote (got: $(head -c 120 "$OUT/phase3-clobber/marker-before.txt" 2>/dev/null)); the marker does not persist across a power cycle, so this gate cannot measure a restore"
 echo "clobber marker: $CLOBBER"
 
@@ -152,7 +134,7 @@ READBACK=$OUT/phase5-restored/marker-before.txt
 if grep -q "$CLOBBER" "$READBACK" 2>/dev/null; then
   fail "restored guest still has the clobbered marker: the restore did not take effect"
 fi
-grep -q "$ORIGINAL" "$READBACK" 2>/dev/null \
+[[ $(cat "$READBACK") == "$ORIGINAL" ]] \
   || fail "restored guest has neither marker; read back: $(head -c 200 "$READBACK" 2>/dev/null)"
 
 echo
