@@ -63,3 +63,60 @@ window presentation.
 No Coherence completion, IME support, performance win or release promotion is
 claimed by this document. The next implementation scope is the shared record
 contract and correlated inventory path, not another isolated proxy-window demo.
+
+## Implementation update: read-only product inventory (2026-09-11)
+
+This update supersedes the earlier description of a missing product-side
+inventory connection. It does not supersede or expand the historical live
+primitive evidence, and it does not close a Coherence criterion.
+
+Source commit `fabf2f80` connected a read-only guest-window panel to the
+BridgeVMControl live display. Source commit `220235d1` subsequently bounded
+each incremental product log read to 1 MiB. The implementation now includes:
+
+- A shared validated window-record contract in
+  `apps/macos/Sources/BridgeVMWindowProtocol/GuestWindowRecord.swift`.
+- A host request identifier for WINLIST, retained in engine log receipts but
+  stripped before delivery to the existing guest protocol. This is host-side
+  correlation, not a guest-authenticated nonce or a guest lifetime identifier.
+- An atomic inventory collector in
+  `apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryRequest.swift`.
+  It publishes only after the matching WINEND and rejects malformed records,
+  duplicate handles, expired requests and resource-limit violations.
+- A controller that checks service readiness, clears inventory on an observed
+  restart or disconnect, and a user-triggered refresh panel in
+  `apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryPanel.swift`.
+  The panel explicitly identifies itself as read-only.
+
+The native controller tests exercise synthetic process/log state: partial
+results remain unpublished, a complete matching response is published, a
+restart in the same log batch clears the result, and an unavailable guest
+service prevents command submission. They do not demonstrate enumeration or
+window interaction inside a running Windows guest. The bounded-reader tests
+cover backlog continuation and UTF-8/line boundaries; they do not establish a
+latency improvement or an aggregate memory bound for unterminated lines.
+
+### Remaining integration work and evidence requirements
+
+1. Validate the shipped panel against the sealed application on real Windows,
+   including empty inventories, refresh, restart and service loss. A synthetic
+   log receipt must not substitute for that run.
+2. Establish guest-session-scoped window identity. A numeric HWND can be
+   reused, and a host query UUID alone cannot make an old selection safe for
+   later mutation.
+3. Define and implement the window-surface delivery path, native presentation,
+   ownership, dialogs and stacking. An inventory row or a cropped desktop
+   rectangle is not evidence of independently presented guest windows.
+4. Connect focus, move/resize and close with correlated outcomes and lifecycle
+   invalidation. Preserve the previous primitive evidence as primitive
+   evidence; do not describe it as proof of the current product path.
+5. Complete input/IME, DPI and multi-display behavior, then exercise the
+   applicable real-workload release gates at their unchanged sample counts.
+6. Compare equivalent Windows workloads against QEMU with matched resources
+   and recorded configurations. Neither log-read limits nor protocol unit
+   tests prove a performance win.
+
+No capability or product-state promotion follows from this update. The
+registry remains the authority for user-facing capability wording. Independent
+window presentation remains unconnected, and 3D acceleration remains deferred
+under the Windows-first development priority.
