@@ -56,7 +56,7 @@ logged AppleVzRunnerCore apps/macos/Sources/AppleVzRunnerCore apps/macos/Tests/A
 
 failed=0
 for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
-for name in BridgeVMApp BridgeVMControl AppleVzRunnerCore; do cat "$WORK/log-$name"; done
+for name in BridgeVMApp BridgeVMControl AppleVzRunnerCore; do cat "$WORK/log-$name"; grep -Eq '^shim XCTest: [1-9][0-9]* passed, 0 failed, [0-9]+ skipped$' "$WORK/log-$name" || failed=1; done
 (( failed == 0 )) || { echo "FAIL: at least one shim suite failed" >&2; exit 1; }
 
 echo "PASS: all three shim suites"
