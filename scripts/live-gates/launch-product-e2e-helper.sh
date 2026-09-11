@@ -4,7 +4,7 @@
 # the helper's Accessibility check to that chain and refused it seven runs in a
 # row, while the identical binary run from a Terminal shell passed and reached
 # UI automation (2026-09-09). `open` makes the helper bundle its own responsible
-# process, so the grant the user gave to dev.bridgevm.product-e2e applies.
+# process; its grant must also match its current code requirement (A9 TCC note).
 #
 # open -W returns when the helper exits but does not carry its exit status; the
 # result file is the contract, and the tier already treats its absence as a

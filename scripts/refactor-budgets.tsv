@@ -2036,3 +2036,4 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfNegotiatedInputStream.swift	75	0
 apps/macos/Tests/BridgeVMControlTests/HvfNegotiatedInputStreamTests.swift	92	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/control_reader.rs	49	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/backpressure_tests.rs	87	0
+docs/windows-arm/evidence/a9-stale-code-requirement-20260911.md	64	0
