@@ -120,7 +120,7 @@ if [[ "$hwnd" =~ ^[0-9]+$ ]]; then
       fi
     fi
     send "WINCLOSE $hwnd" "^BVAGENT WINCLOSE $hwnd -> OK WINCLOSE$" || true
-    sleep 2
+    sleep 2; capture_active_scanout f3-after-close || true
     before_final_list=$(grep -c '^BVAGENT WINLIST WINEND$' "$RUN_LOG" 2>/dev/null || true)
     send 'WINLIST' '^BVAGENT WINLIST WINEND$' || true
     final_list=$(awk -v prior="$before_final_list" '
