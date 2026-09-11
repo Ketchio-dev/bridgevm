@@ -1952,3 +1952,4 @@ tests/integration/b6-renderer-startup-contract.py	53	0
 scripts/live-gates/b6_renderer_runtime.py	18	0
 tests/integration/b6-renderer-runtime-contract.py	79	0
 .github/workflows/b6-renderer-runtime-contracts.yml	11	0
+docs/windows-arm/evidence/b6-renderer-runtime-reassessment-20260911.md	65	0
