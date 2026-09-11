@@ -1,0 +1,17 @@
+name: Injector binary comparison contract
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare complete binary streams and fail closed
+        env:
+          CC: clang
+        run: python tests/integration/injector-file-compare-contract.py

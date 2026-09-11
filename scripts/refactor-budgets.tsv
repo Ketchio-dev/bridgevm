@@ -1963,3 +1963,7 @@ tests/integration/b6-reference-collection-contract.py	46
 .github/workflows/b6-reference-collection.yml	11
 scripts/b6-pre-readiness-inventory.sh	5
 tests/integration/b6-pre-readiness-inventory-contract.py	41
+scripts/win-assets/bv-file-compare.c	32
+scripts/injector-file-compare-build.sh	8
+tests/integration/injector-file-compare-contract.py	39
+.github/workflows/injector-file-compare.yml	17

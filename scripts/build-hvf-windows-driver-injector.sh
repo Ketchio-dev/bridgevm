@@ -328,7 +328,7 @@ if [[ "$DIAGNOSTICS_ONLY" == "1" ]]; then
   [[ -f "$DST_VOL/bvgpu-diagnostics-startup.cmd" ]] || {
     echo "FAIL: diagnostics-only Startup launcher missing" >&2; exit 1; }
 fi
-
+source "$(dirname "${BASH_SOURCE[0]}")/injector-file-compare-build.sh"
 log "injecting bvinject payload into boot.wim image 2"
 wimlib-imagex update "$DST_VOL/sources/boot.wim" 2 <<UPDATE
 add "$ASSETS/winpeshl-inject.ini" /Windows/System32/winpeshl.ini
