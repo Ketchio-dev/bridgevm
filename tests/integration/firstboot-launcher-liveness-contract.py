@@ -14,7 +14,7 @@ AGENT_TIMEOUT=30; LAUNCHER=$$; calls=0; mode="$3"; child_active=0
 trap 'if [[ "$child_active" == 1 ]]; then kill "$LAUNCHER" 2>/dev/null || true; wait "$LAUNCHER" 2>/dev/null || true; fi' EXIT
 sleep() { :; }
 if [[ "$mode" == dead || "$mode" == dies ]]; then
-  /bin/sleep 30 & LAUNCHER=$!; child_active=1
+  (trap - EXIT; exec /bin/sleep 30) </dev/null >/dev/null 2>&1 & LAUNCHER=$!; child_active=1
 fi
 if [[ "$mode" == dead ]]; then
   kill "$LAUNCHER"; wait "$LAUNCHER" 2>/dev/null || true; child_active=0
