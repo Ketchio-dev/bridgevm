@@ -1928,3 +1928,4 @@ tests/integration/b6-native-uia-contract.ps1	49	0
 scripts/win-assets/bv-b6-tip-owner.cs	24	0
 scripts/win-assets/bv-b6-native-tip-point.ps1	26	0
 .github/workflows/b6-native-tip-contracts.yml	12	0
+tests/integration/virgl-integer-negate-translate.c	64	0

@@ -1560,7 +1560,39 @@ index 4fe673c..791b6e9 100644
  
     ctx->shader_req_bits |= samplertype_to_req_bits(inst->Texture.Texture);
  
-@@ -5956,13 +5998,9 @@ iter_instruction(struct tgsi_iterate_context *iter,
+@@ -4744,11 +4786,13 @@
+       char fp64_src[255];
+       int swz_idx = 0, pre_idx = 0;
+       bool isfloatabsolute = src->Register.Absolute && stype != TGSI_TYPE_DOUBLE;
++      bool isintegernegate = src->Register.Negate &&
++         (stype == TGSI_TYPE_SIGNED || stype == TGSI_TYPE_UNSIGNED);
+ 
+       sinfo->override_no_wm[i] = false;
+       sinfo->override_no_cast[i] = false;
+ 
+-      if (src->Register.Negate)
++      if (src->Register.Negate && !isintegernegate)
+          prefix[pre_idx++] = '-';
+       if (isfloatabsolute)
+          strcpy(&prefix[pre_idx++], "abs(");
+@@ -5223,6 +5267,16 @@
+       } break;
+       default:
+          return false;
++      }
++
++      if (isintegernegate) {
++         /* Negate the integer value, not the float carrying its bit pattern. */
++         if (strbuf_get_error(src_buf) || !strbuf_grow(src_buf, 3))
++            return false;
++         memmove(src_buf->buf + 2, src_buf->buf, src_buf->size + 1);
++         memcpy(src_buf->buf, "-(", 2);
++         src_buf->size += 2;
++         strbuf_append(src_buf, ")");
+       }
+ 
+       if (stype == TGSI_TYPE_DOUBLE) {
+@@ -5956,13 +6010,9 @@ iter_instruction(struct tgsi_iterate_context *iter,
           handle_vertex_proc_exit(ctx, &ctx->glsl_strbufs, &ctx->has_clipvertex_so);
        } else if (iter->processor.Processor == TGSI_PROCESSOR_TESS_CTRL && ctx->cfg->has_cull_distance) {
           emit_clip_dist_movs(ctx, &ctx->glsl_strbufs);
@@ -1577,7 +1609,7 @@ index 4fe673c..791b6e9 100644
        } else if (iter->processor.Processor == TGSI_PROCESSOR_FRAGMENT) {
           handle_fragment_proc_exit(ctx, &ctx->glsl_strbufs);
        }
-@@ -5971,6 +6009,9 @@ iter_instruction(struct tgsi_iterate_context *iter,
+@@ -5971,6 +6021,9 @@ iter_instruction(struct tgsi_iterate_context *iter,
     case TGSI_OPCODE_RET:
        if (iter->processor.Processor == TGSI_PROCESSOR_VERTEX) {
           handle_vertex_proc_exit(ctx, &ctx->glsl_strbufs, &ctx->has_clipvertex_so);
@@ -1587,7 +1619,7 @@ index 4fe673c..791b6e9 100644
        } else if (iter->processor.Processor == TGSI_PROCESSOR_FRAGMENT) {
           handle_fragment_proc_exit(ctx, &ctx->glsl_strbufs);
        }
-@@ -5980,7 +6021,17 @@ iter_instruction(struct tgsi_iterate_context *iter,
+@@ -5980,7 +6033,17 @@ iter_instruction(struct tgsi_iterate_context *iter,
        emit_buff(&ctx->glsl_strbufs, "%s = int(floor(%s)%s);\n", dsts[0], srcs[0], writemask);
        break;
     case TGSI_OPCODE_UARL:
@@ -1606,7 +1638,7 @@ index 4fe673c..791b6e9 100644
        break;
     case TGSI_OPCODE_XPD:
        emit_buff(&ctx->glsl_strbufs, "%s = %s(cross(vec3(%s), vec3(%s)));\n", dsts[0], get_string(dinfo.dstconv), srcs[0], srcs[1]);
-@@ -6347,7 +6398,11 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
+@@ -6347,7 +6410,11 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
        if (ctx->prog_type == TGSI_PROCESSOR_FRAGMENT && fs_emit_layout(ctx))
           emit_ext(glsl_strbufs, "ARB_fragment_coord_conventions", "require");
  
@@ -1619,7 +1651,7 @@ index 4fe673c..791b6e9 100644
           emit_ext(glsl_strbufs, "ARB_uniform_buffer_object", "require");
  
        if (ctx->num_cull_dist_prop || ctx->key->num_in_cull || ctx->key->num_out_cull)
-@@ -6361,10 +6416,19 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
+@@ -6361,10 +6428,19 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
        }
  
        for (uint32_t i = 0; i < ARRAY_SIZE(shader_req_table); i++) {
@@ -1641,7 +1673,7 @@ index 4fe673c..791b6e9 100644
              emit_ext(glsl_strbufs, shader_req_table[i].string, "require");
           }
        }
-@@ -8010,6 +8074,7 @@ static void emit_required_sysval_uniforms(struct vrend_strbuf *block, uint32_t m
+@@ -8010,6 +8086,7 @@ static void emit_required_sysval_uniforms(struct vrend_strbuf *block, uint32_t m
     strbuf_append(block, "\tvec4 clipp[8];\n");
     strbuf_appendf(block, "\tuint stipple_pattern[%d];\n", VREND_POLYGON_STIPPLE_SIZE);
     strbuf_append(block, "\tfloat winsys_adjust_y;\n");
@@ -1649,7 +1681,7 @@ index 4fe673c..791b6e9 100644
     strbuf_append(block, "\tfloat alpha_ref_val;\n");
     strbuf_append(block, "\tbool clip_plane_enabled;\n");
     strbuf_append(block, "\tint drawid_base;\n");
-@@ -8124,6 +8189,89 @@ bool vrend_shader_query_separable_program(const struct tgsi_token *tokens,
+@@ -8124,6 +8201,89 @@ bool vrend_shader_query_separable_program(const struct tgsi_token *tokens,
     return ctx.separable_program && supports_separable;
  }
  
@@ -1739,7 +1771,7 @@ index 4fe673c..791b6e9 100644
  bool vrend_convert_shader(const struct vrend_context *rctx,
                            const struct vrend_shader_cfg *cfg,
                            const struct tgsi_token *tokens,
-@@ -8138,6 +8286,10 @@ bool vrend_convert_shader(const struct vrend_context *rctx,
+@@ -8138,6 +8298,10 @@ bool vrend_convert_shader(const struct vrend_context *rctx,
  
     memset(&ctx, 0, sizeof(struct dump_ctx));
     ctx.cfg = cfg;
@@ -1750,7 +1782,7 @@ index 4fe673c..791b6e9 100644
  
     /* First pass to deal with edge cases. */
     ctx.iter.iterate_declaration = iter_decls;
-@@ -8583,4 +8735,3 @@ bool vrend_shader_needs_alpha_func(const struct vrend_shader_key *key) {
+@@ -8583,4 +8747,3 @@ bool vrend_shader_needs_alpha_func(const struct vrend_shader_key *key) {
        return true;
     }
  }
