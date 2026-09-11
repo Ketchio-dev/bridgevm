@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-t17.XXXXXX")"
-trap 'rm -rf "$TMP"' EXIT
+trap 'if [[ -d "$TMP/BridgeVMControl.app/Contents/Helpers/BridgeVMProductE2E.app" ]]; then /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$TMP/BridgeVMControl.app/Contents/Helpers/BridgeVMProductE2E.app" || { echo "FAIL: fixture registration cleanup failed; temporary app retained" >&2; exit 1; }; fi; rm -rf "$TMP"' EXIT
 TIER="$ROOT/scripts/live-gates/run-windows-product-e2e-tier.sh"
 MANIFEST_TOOL="$ROOT/scripts/live-gates/windows-product-e2e-manifest.py"
 VERIFY="$ROOT/scripts/verify-windows-product-e2e-receipt.py"
