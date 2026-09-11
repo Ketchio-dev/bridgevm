@@ -6,12 +6,12 @@ jobs:
   unicode-input:
     runs-on: windows-latest
     timeout-minutes: 5
-    strategy:
-      fail-fast: false
-      matrix:
-        shell: [powershell, pwsh]
     steps:
       - uses: actions/checkout@v4
-      - name: Compile and check Unicode input without injecting native events
-        shell: ${{ matrix.shell }}
+      - name: Check Unicode input with Windows PowerShell 5.1
+        shell: powershell
+        run: scripts/test-bvagent-unicode-input.ps1
+      - name: Check Unicode input with PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
         run: scripts/test-bvagent-unicode-input.ps1
