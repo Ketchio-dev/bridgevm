@@ -19,7 +19,7 @@ final class T17Accessibility: T17UIControlling {
 
     init(pid: pid_t) throws {
         guard AXIsProcessTrusted() else {
-            throw T17Blocker(code: "accessibility-untrusted", detail: "macOS Accessibility permission is not granted")
+            throw T17Blocker(code: "accessibility-untrusted", detail: T17TrustDiagnostic.detail())
         }
         self.pid = pid
         application = AXUIElementCreateApplication(pid)
