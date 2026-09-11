@@ -11,6 +11,22 @@ function Write-ProvisionLog([string]$Message) {
     Add-Content -LiteralPath $LogPath -Value $line -Encoding UTF8
 }
 
+function Confirm-GuestAgentAssets([object[]]$Records, [string]$Root) {
+    $agentHash = $null
+    foreach ($name in @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-task.ps1')) {
+        $entries = @($Records | Where-Object { $_.Count -eq 3 -and $_[0] -eq 'guest_tool' -and $_[1] -eq ('agent/' + $name) })
+        if ($entries.Count -ne 1 -or $entries[0][2] -notmatch '^[0-9a-f]{64}\z') {
+            throw ('guest-payload receipt has no unique asset hash: ' + $name)
+        }
+        $path = Join-Path $Root ('agent/' + $name)
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw ('guest asset missing: ' + $name) }
+        $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($hash -cne $entries[0][2]) { throw ('guest asset hash mismatch: ' + $name) }
+        if ($name -eq 'bvagent.ps1') { $agentHash = $hash }
+    }
+    return $agentHash
+}
+
 try {
     Write-ProvisionLog 'BVAGENT PROVISION START'
     if (-not (Test-Path -LiteralPath $ReceiptPath -PathType Leaf)) {
@@ -29,29 +45,10 @@ try {
     if ($architecture.Count -ne 1 -or $architecture[0][1] -ne 'arm64') {
         throw 'guest-payload receipt architecture is not arm64'
     }
-    $agentRecord = $records | Where-Object {
-        $_.Count -eq 3 -and $_[0] -eq 'guest_tool' -and $_[1] -eq 'agent/bvagent.ps1'
-    }
-    if ($agentRecord.Count -ne 1 -or $agentRecord[0][2] -notmatch '^[0-9a-f]{64}$') {
-        throw 'guest-payload receipt has no unique BridgeVM agent hash'
-    }
-    $actualAgentHash = (Get-FileHash -LiteralPath $AgentPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actualAgentHash -ne $agentRecord[0][2]) {
-        throw 'BridgeVM agent hash does not match the sealed receipt'
-    }
+    $actualAgentHash = Confirm-GuestAgentAssets $records $ProvisioningRoot
 
-    $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-    if ([string]::IsNullOrWhiteSpace($identity) -or $identity.EndsWith('$')) {
-        throw 'first-logon interactive user identity is unavailable'
-    }
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $AgentPath + '"'
-    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
-    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity
-    $principal = New-ScheduledTaskPrincipal -UserId $identity -LogonType Interactive -RunLevel Highest
-    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
-    $task = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings
-    Register-ScheduledTask -TaskName $TaskName -InputObject $task -Force | Out-Null
-    Start-ScheduledTask -TaskName $TaskName
+    . (Join-Path $ProvisioningRoot 'agent/bvagent-task.ps1')
+    $identity = Start-VerifiedGuestAgentTask $TaskName $AgentPath
 
     $receiptHash = (Get-FileHash -LiteralPath $ReceiptPath -Algorithm SHA256).Hash.ToLowerInvariant()
     [ordered]@{

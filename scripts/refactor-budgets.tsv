@@ -2018,3 +2018,7 @@ scripts/test-bvagent-unicode-request.ps1	47	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/unicode_input.rs	48	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfUnicodeInputRequest.swift	56	0
 apps/macos/Tests/BridgeVMControlTests/HvfUnicodeInputRequestTests.swift	70	0
+scripts/win-assets/bvagent-input.ps1	28	0
+scripts/test-bvagent-input-assets.ps1	45	0
+tests/integration/windows_input_payload_contract.py	12	0
+scripts/win-assets/bvagent-task.ps1	15	0

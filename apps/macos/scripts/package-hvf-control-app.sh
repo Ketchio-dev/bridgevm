@@ -137,7 +137,7 @@ for asset in \
   bvgpu-diagnostics.ps1 \
   bvgpu-vulkan-probe.ps1 \
   bvgpu-diagnostics-startup.cmd \
-  bvagent.ps1 bvagent-firstboot.ps1 bv-product-e2e-launch.ps1 \
+  bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-task.ps1 bv-product-e2e-launch.ps1 \
   bv-product-e2e.ps1 \
   windows-guest-payload-v1.example.tsv \
   bvagent-install-service.c

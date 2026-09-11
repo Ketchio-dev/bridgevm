@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 from windows_catalog_test_support import build_catalog_verifier, invoke_stage
+from windows_input_payload_contract import verify_input_assets
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,7 +38,7 @@ def replace_hash(manifest: Path, relative: str, path: Path) -> None:
 
 def main() -> int:
     for name in (
-        "bvagent.ps1", "bvagent-firstboot.ps1", "bvinstall.cmd", "bvdiskpart.txt",
+        "bvagent.ps1", "bvagent-firstboot.ps1", "bvagent-input.ps1", "bvagent-unicode-input.cs", "bvagent-task.ps1", "bvinstall.cmd", "bvdiskpart.txt",
         "winpeshl.ini", "unattend.xml", "windows-guest-payload-v1.example.tsv",
     ):
         data = (ASSETS / name).read_bytes()
@@ -63,8 +64,7 @@ def main() -> int:
         receipt = (root / "staged/payload-receipt.tsv").read_text()
         for role in ("storage", "serial", "network"):
             assert f"driver\t{role}\t" in receipt
-        assert (root / "staged/agent/bvagent.ps1").is_file()
-        assert (root / "staged/agent/bvagent-firstboot.ps1").is_file()
+        verify_input_assets(root / "staged", receipt)
 
         storage = payload / "storage/storage.sys"
         original = storage.read_bytes()

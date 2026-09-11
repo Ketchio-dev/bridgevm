@@ -3,22 +3,10 @@ $root = Join-Path $PSScriptRoot 'win-assets'
 $tokens = $null; $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'bvagent.ps1'), [ref]$tokens, [ref]$errors)
 if ($errors.Count -ne 0) { throw 'guest agent parse failure' }
-$assignment = $ast.Find({ param($node)
-    $node -is [Management.Automation.Language.AssignmentStatementAst] -and
-    $node.Left.Extent.Text -eq '$script:BvUnicodeInputSource'
-}, $true)
-if ($null -eq $assignment) { throw 'embedded Unicode source missing' }
-. ([scriptblock]::Create($assignment.Extent.Text))
-$original = [IO.File]::ReadAllText((Join-Path $root 'bvagent-unicode-input.cs'))
-if ($script:BvUnicodeInputSource.Replace("`r`n", "`n").TrimEnd() -cne $original.Replace("`r`n", "`n").TrimEnd()) {
-    throw 'embedded Unicode source differs from tested source'
+if (-not $ast.Extent.Text.Contains(". (Join-Path `$PSScriptRoot 'bvagent-input.ps1')")) {
+    throw 'resident agent does not load the fixed sibling input module'
 }
-$definition = $ast.Find({ param($node)
-    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-UnicodeInput'
-}, $true)
-if ($null -eq $definition) { throw 'guest Unicode handler missing' }
-. ([scriptblock]::Create($definition.Extent.Text))
-if (-not ('BridgeVM.BvUnicodeInput' -as [type])) { Add-Type -TypeDefinition $script:BvUnicodeInputSource }
+. (Join-Path $root 'bvagent-input.ps1')
 if (-not $ast.Extent.Text.Contains("'TEXTINPUT' { Write-CommandResult `$h (Invoke-UnicodeInput `$arg) }")) {
     throw 'guest dispatch does not invoke the Unicode handler/result writer'
 }
@@ -45,3 +33,4 @@ $script:seen = $null
 $result = Invoke-UnicodeInput "$id $oversized" $sender
 if ($result.Exit -eq 0 -or $null -ne $script:seen) { throw 'oversized request reached sender' }
 Write-Output 'Unicode encoding and resident request contracts: PASS (no native input injected)'
+& (Join-Path $PSScriptRoot 'test-bvagent-input-assets.ps1')
