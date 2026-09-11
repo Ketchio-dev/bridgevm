@@ -1958,3 +1958,6 @@ tests/integration/agent-channel-acknowledgment-contract.py	47	0
 scripts/win-assets/bv-b6-reference-inventory.ps1	34
 tests/integration/b6-reference-inventory-contract.ps1	26
 .github/workflows/b6-reference-inventory.yml	11
+scripts/b6-collect-reference-inventory.sh	25
+tests/integration/b6-reference-collection-contract.py	46
+.github/workflows/b6-reference-collection.yml	11

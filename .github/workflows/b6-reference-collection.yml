@@ -1,0 +1,11 @@
+name: B6 reference collection contract
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require acknowledged bounded observation-only collection
+        run: python3 tests/integration/b6-reference-collection-contract.py

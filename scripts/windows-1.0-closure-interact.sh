@@ -28,7 +28,6 @@ source "$REPO/scripts/agent-channel-lib.sh"
 
 
 
-
 capture_active_scanout() {
   local label="$1" capture="$OUT/captures/$1"
   python3 "$REPO/scripts/capture-active-iosurface.py" --iosurface "$OUT/display.fb.iosurface" \
@@ -139,6 +138,7 @@ if [[ "$hwnd" =~ ^[0-9]+$ ]]; then
   fi
 fi
 
+source "$REPO/scripts/b6-collect-reference-inventory.sh"
 # /f: an unsaved document vetoes a plain shutdown and holds the guest until the watchdog.
 printf 'shutdown /s /f /t 0\n' >> "$CTL"
 wait "$LAUNCHER" 2>/dev/null || true; LAUNCHER=''
