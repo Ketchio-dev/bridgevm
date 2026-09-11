@@ -2000,3 +2000,4 @@ apps/macos/Tests/BridgeVMControlTests/HvfControlReadinessTests.swift	33	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlWriteFailureTests.swift	32	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/setup_input/actions_tests.rs	87	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyCommand.swift	93	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/window_protocol_tests.rs	47	0

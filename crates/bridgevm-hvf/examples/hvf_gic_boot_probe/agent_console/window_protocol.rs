@@ -25,15 +25,16 @@ fn valid_window_record(line: &str) -> bool {
 pub(super) fn handle_window_reply(line: &str, command: &str) -> Option<ReplyProgress> {
     let verb = window_verb(command)?;
     if verb == "WINLIST" {
+        let label = window_list_label(command);
         if line == "WINEND" {
-            println!("BVAGENT WINLIST WINEND");
+            println!("BVAGENT {label} WINEND");
             return Some(ReplyProgress::Complete);
         }
         if line.starts_with("WIN ") {
             if valid_window_record(line) {
-                println!("BVAGENT WINLIST {line}");
+                println!("BVAGENT {label} {line}");
             } else {
-                println!("BVAGENT WINLIST malformed={line}");
+                println!("BVAGENT {label} malformed={line}");
             }
             return Some(ReplyProgress::Incomplete);
         }
@@ -54,30 +55,21 @@ pub(super) fn handle_window_reply(line: &str, command: &str) -> Option<ReplyProg
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn winlist_stays_in_flight_until_terminator() {
-        let title = base64_encode("Untitled - Notepad".as_bytes());
-        let record = format!("WIN 42 7 50 60 700 500 {title}");
-        assert!(matches!(handle_window_reply(&record, "WINLIST"), Some(ReplyProgress::Incomplete)));
-        assert!(matches!(handle_window_reply("WINEND", "WINLIST"), Some(ReplyProgress::Complete)));
-        assert!(matches!(handle_window_reply("WIN nope", "WINLIST"), Some(ReplyProgress::Incomplete)));
+pub(super) fn window_request_id(command: &str) -> Option<&str> {
+    let id = command.strip_prefix("WINLIST ")?;
+    if id.len() != 36 {
+        return None;
     }
-
-    #[test]
-    fn mutations_require_the_matching_reply() {
-        for verb in ["WINBOUNDS", "WINFOCUS", "WINCLOSE"] {
-            assert!(matches!(
-                handle_window_reply(&format!("OK {verb}"), verb),
-                Some(ReplyProgress::Complete)
-            ));
-        }
-        assert!(matches!(
-            handle_window_reply("OK WINFOCUS", "WINCLOSE"),
-            Some(ReplyProgress::Ignored)
-        ));
-    }
+    id.bytes().enumerate().all(|(index, byte)| {
+        if [8, 13, 18, 23].contains(&index) { byte == b'-' } else { byte.is_ascii_hexdigit() }
+    }).then_some(id)
 }
+
+fn window_list_label(command: &str) -> String {
+    window_request_id(command).map(|id| format!("WINLIST {id}"))
+        .unwrap_or_else(|| "WINLIST".to_string())
+}
+
+#[cfg(test)]
+#[path = "window_protocol_tests.rs"]
+mod tests;

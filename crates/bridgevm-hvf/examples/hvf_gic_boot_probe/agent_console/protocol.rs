@@ -119,7 +119,7 @@ pub(super) fn command_wire_line(command: &str) -> String {
 pub(super) fn write_command_wire_line_into(command: &str, out: &mut String) {
     let first = command.split_whitespace().next().unwrap_or("");
     if is_raw_verb(first) {
-        out.push_str(command);
+        out.push_str(if super::window_protocol::window_request_id(command).is_some() { "WINLIST" } else { command });
         out.push('\n');
     } else {
         out.push_str("RUN ");
