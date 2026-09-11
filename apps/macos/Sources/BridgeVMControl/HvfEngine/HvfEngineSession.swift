@@ -426,7 +426,7 @@ final class HvfEngineSession: ObservableObject {
         }
     }
 
-    private func poll() {
+    func poll() {
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
         let lines = tailReader.readNewLines(from: logURL)
         if let ready = pendingPaste?.consume(lines: lines, now: Date()) {
