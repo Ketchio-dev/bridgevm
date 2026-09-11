@@ -1,5 +1,4 @@
 import Foundation
-
 #if canImport(AppKit)
 import AppKit
 import SwiftUI
@@ -757,16 +756,17 @@ private final class GuestWindowProxyInputCaptureNSView: NSView {
       x: Double(local.x),
       y: Double(bounds.height - local.y)
     )
+    guard let point = plan.viewportPoint(hostPoint, width: bounds.width, height: bounds.height)
+    else { return }
     inputSender(
       .pointer(
         windowID: plan.windowID,
-        point: plan.guestPoint(forHostPoint: hostPoint),
+        point: point,
         action: action,
         button: button
       )
     )
   }
-
   private func guestKeyName(for event: NSEvent) -> String? {
     switch event.keyCode {
     case 36:
