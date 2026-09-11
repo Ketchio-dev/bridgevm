@@ -41,7 +41,7 @@ ALLOWED_FIELDS = frozenset(
         "ppsspp_executable_sha256",
         "dxvk_d3d11_sha256",
         "dxvk_dxgi_sha256",
-        "virglrenderer_sha256",
+        "virglrenderer_sha256", "render_server_sha256",
         "moltenvk_sha256",
         "gate_asset_hash",
         "input_manifest_sha256",
@@ -158,8 +158,8 @@ def _self_test() -> int:
     check(out["iterations"] == 10000, "an allowed numeric field is kept")
     check(out["pass"] is True and out["baseline_matches"] == 20, "allowed result fields are kept")
     hashes = redact({"ppsspp_payload_sha256": "ab" * 32, "ppsspp_executable_sha256": "cd" * 32, "renderer_sha256": "34" * 32, "workload_script_sha256": "56" * 32,
-                     "firmware_sha256": "ef" * 32, "harness_commit": "1" * 40, "campaign_id": "2" * 32, "workload_profile": "shipping-core-3d-boot-v1"})
-    check(len(hashes) == 8, "artifact, harness, campaign, and workload identities are kept")
+                     "firmware_sha256": "ef" * 32, "harness_commit": "1" * 40, "campaign_id": "2" * 32, "workload_profile": "shipping-core-3d-boot-v1", "render_server_sha256": "78" * 32})
+    check(len(hashes) == 9 and hashes["render_server_sha256"] == "78" * 32, "artifact, server, harness, campaign, and workload identities are kept")
     safe_confounders = list(SAFE_CONFOUNDER_VALUES)
     check(redact({"known_confounders": safe_confounders})["known_confounders"] == safe_confounders, "fixed public confounders are kept")
     # Unknown fields are dropped rather than published.
@@ -181,7 +181,7 @@ def _self_test() -> int:
         "-----BEGIN RSA PRIVATE KEY-----",
         "/Users/insighton/secret-notes",
     ):
-        refuses({"image_hash": bad}, f"{bad!r} is refused")
+        refuses({"image_hash": bad}, f"{bad!r} is refused"); refuses({"render_server_sha256": bad}, "private server identity is refused")
 
     # A real hash under the same key is fine.
     out = redact({"image_hash": "sha256:" + "ab" * 32})
