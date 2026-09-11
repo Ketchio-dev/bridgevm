@@ -16,13 +16,13 @@ suite() {
     if grep -rq 'Bundle\.module' "$ROOT/$sources"; then
         bundle_shim=("$WORK/bundle-module.swift")
     fi
-    swiftc -j "$SWIFTC_JOBS" -D DEBUG -emit-module -emit-library -static -module-name "$name" \
+    bash "$ROOT/scripts/xctest-swiftc.sh" -j "$SWIFTC_JOBS" -D DEBUG -emit-module -emit-library -static -module-name "$name" \
         -target "$TARGET" -enable-testing -o "$WORK/lib$name.a" \
         "${lib_sources[@]}" ${bundle_shim[@]+"${bundle_shim[@]}"} "$@"
     mkdir -p "$WORK/$name"
     python3 "$ROOT/scripts/generate-xctest-manifest.py" \
         "$ROOT/$tests" "$WORK/$name/main.swift"
-    swiftc -j "$SWIFTC_JOBS" -D DEBUG -target "$TARGET" -I "$WORK" -L "$WORK" -lXCTest "-l$name" \
+    bash "$ROOT/scripts/xctest-swiftc.sh" -j "$SWIFTC_JOBS" -D DEBUG -target "$TARGET" -I "$WORK" -L "$WORK" -lXCTest "-l$name" \
         -o "$WORK/run-$name" "$ROOT/$tests"/*.swift "$WORK/$name/main.swift" "$@"
     BV_SHIM_RESOURCES="$ROOT/apps/macos/Sources/BridgeVMControl/Resources" \
         "$WORK/run-$name"

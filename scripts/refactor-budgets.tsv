@@ -2039,3 +2039,4 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/backpressure_tests.rs
 docs/windows-arm/evidence/a9-stale-code-requirement-20260911.md	64	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/read_budget.rs	39	0
 apps/macos/Tests/AppleVzRunnerTests/LauncherTestVirtualMachine.swift	55	0
+scripts/xctest-swiftc.sh	8	0

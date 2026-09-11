@@ -18,7 +18,7 @@ trap 'rm -rf "$WORK"' EXIT
 TARGET=arm64-apple-macosx14.0
 
 echo "== shim =="
-swiftc -emit-module -emit-library -static -module-name XCTest -target "$TARGET" \
+bash "$ROOT/scripts/xctest-swiftc.sh" -emit-module -emit-library -static -module-name XCTest -target "$TARGET" \
     -o "$WORK/libXCTest.a" "$SHIM/XCTest.swift" "$SHIM/Runner.swift"
 
 # SwiftPM synthesizes Bundle.module for targets with resources; a shell build
@@ -45,7 +45,7 @@ SWIFTC_JOBS="${SWIFTC_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
 source "$ROOT/scripts/run-xctest-shim-suite.sh"
 
 # Compile the shared window contract before either app suite uses it.
-swiftc -emit-module -emit-library -static -module-name BridgeVMWindowProtocol -target "$TARGET" \
+bash "$ROOT/scripts/xctest-swiftc.sh" -emit-module -emit-library -static -module-name BridgeVMWindowProtocol -target "$TARGET" \
     -o "$WORK/libBridgeVMWindowProtocol.a" "$ROOT/apps/macos/Sources/BridgeVMWindowProtocol/"*.swift
 logged() { local n="$1"; shift; suite "$n" "$@" > "$WORK/log-$n" 2>&1; }
 
