@@ -42,7 +42,7 @@ send_ok() {
   local command="$1" before line
   local log="${RUN_LOG:?agent-channel-lib needs RUN_LOG}"
   before=$(grep -cE '^BVAGENT CMD .* exit=' "$log" 2>/dev/null || true)
-  send "$command" '^BVAGENT END '
+  send "$command" '^BVAGENT END ' || return 1
   line=$(grep -E '^BVAGENT CMD .* exit=' "$log" | tail -1)
   [[ $(grep -cE '^BVAGENT CMD .* exit=' "$log") -gt $before && "$line" == *' exit=0' ]]
 }

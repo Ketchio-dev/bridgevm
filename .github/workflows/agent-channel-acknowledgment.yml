@@ -1,0 +1,11 @@
+name: Agent channel acknowledgment contract
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require a fresh successful command and END acknowledgment
+        run: python3 tests/integration/agent-channel-acknowledgment-contract.py
