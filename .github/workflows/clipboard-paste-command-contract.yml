@@ -1,0 +1,30 @@
+name: Generated clipboard paste command contract
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  produce:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile the actual Swift command producer
+        run: |
+          swiftc apps/macos/Sources/BridgeVMControl/HvfEngine/HvfClipboardPaste.swift tests/integration/clipboard-paste-command-fixture.swift -o "$RUNNER_TEMP/paste-fixture"
+          "$RUNNER_TEMP/paste-fixture" > "$RUNNER_TEMP/paste-fixture.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-paste-commands
+          path: ${{ runner.temp }}/paste-fixture.json
+          retention-days: 7
+  windows-command:
+    needs: produce
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: synthetic-paste-commands
+          path: generated
+      - name: Execute generated PowerShell bodies with controlled clipboard outcomes
+        shell: powershell
+        run: tests/integration/clipboard-paste-command-contract.ps1 -FixturePath generated/paste-fixture.json
