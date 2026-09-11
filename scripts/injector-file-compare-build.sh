@@ -1,4 +1,4 @@
-# Sourced by the injector builder; never depend on optional WinPE fc.exe.
+cp "$ASSETS/bv-firstboot-policy.cmd" "$DST_VOL/bv-firstboot-policy.cmd"
 if [[ "$NEEDS_GPU_FIRSTBOOT" == "1" ]]; then
   [[ -f "$ASSETS/bv-file-compare.c" ]] || {
     echo "FAIL: binary comparator source missing" >&2; exit 1; }

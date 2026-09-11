@@ -1969,3 +1969,5 @@ scripts/injector-file-compare-build.sh	8
 tests/integration/injector-file-compare-contract.py	39
 .github/workflows/injector-file-compare.yml	17
 tests/integration/injector-file-compare-wiring-contract.py	16
+scripts/win-assets/bv-firstboot-policy.cmd	24
+tests/integration/firstboot-policy-contract.ps1	49
