@@ -10,7 +10,7 @@ public static class BvNativeTipOwner {
     [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr window, uint flags);
     public static bool Visible(long window) { return IsWindowVisible(new IntPtr(window)); }
-    public static uint Process(long window) {
+    public static long Process(long window) {
         uint process;
         if (GetWindowThreadProcessId(new IntPtr(window), out process) == 0) throw new InvalidOperationException("Window has no owning thread");
         return process;
