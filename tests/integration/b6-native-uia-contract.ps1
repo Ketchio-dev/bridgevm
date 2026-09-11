@@ -26,7 +26,7 @@ $form.Add_Shown({ [IO.File]::WriteAllText($Ready, [string]$form.Handle.ToInt64()
     $probe = Join-Path $root 'scripts/win-assets/bv-b6-native-uia.ps1'
     foreach ($target in @($hwndValue, [long]0)) {
         $stdout = Join-Path $temporary 'probe.out'; $stderr = Join-Path $temporary 'probe.err'
-        $child = Start-Process powershell.exe -ArgumentList @('-Mta', '-NoProfile', '-File', "`"$probe`"", '-Hwnd', [string]$target) -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        $child = Start-Process powershell.exe -ArgumentList @('-Mta', '-NoProfile', '-File', "`"$probe`"", '-Hwnd', [string]$target) -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr; $null = $child.Handle # PowerShell issue 5421: retain the handle for ExitCode.
         if (!$child.WaitForExit(20000)) { $child.Kill(); $child.WaitForExit(); throw 'Native COM query exceeded twenty seconds' }
         $child.Refresh()
         $records = @(Get-Content -LiteralPath $stdout | Where-Object { $_.StartsWith('BVNATIVEUIAPROBE ') })
