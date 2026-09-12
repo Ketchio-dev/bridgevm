@@ -28,6 +28,7 @@ final class FBLayerView: NSView {
     private var iosurfacePresenter = HvfIOSurfacePresenter()
     private var pointerMoves = HvfPointerMoveMailbox()
     private let pointerCapture = HvfPointerCapture()
+    private let inputFocusMonitor = HvfInputFocusMonitor()
     private var frameDisplayLink: CADisplayLink?
     private var pointerTrackingArea: NSTrackingArea?
 
@@ -57,6 +58,8 @@ final class FBLayerView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         pointerCapture.cancel()
+        session?.cancelOrderedInputTarget()
+        inputFocusMonitor.watch(window: window) { [weak session = session] in session?.cancelOrderedInputTarget() }
         pointerMoves.reset()
 
         if window != nil {
@@ -189,6 +192,8 @@ final class FBLayerView: NSView {
 
     func teardown() {
         pointerCapture.cancel()
+        session?.cancelOrderedInputTarget()
+        inputFocusMonitor.stop()
         stopDisplayLink()
         resetMapping()
         iosurfacePresenter.reset()
@@ -212,6 +217,7 @@ final class FBLayerView: NSView {
     override func resignFirstResponder() -> Bool {
         guard super.resignFirstResponder() else { return false }
         pointerCapture.cancel()
+        session?.cancelOrderedInputTarget()
         pointerMoves.reset()
         return true
     }
@@ -425,18 +431,5 @@ final class FBLayerView: NSView {
         HvfFramebufferFileIdentity.length(descriptor, matching: framebufferPath)
     }
 
-    private func readUInt32(
-        from pointer: UnsafeMutableRawPointer,
-        offset: Int
-    ) -> UInt32 {
-        UInt32(littleEndian: pointer.load(fromByteOffset: offset, as: UInt32.self))
-    }
-
-    private func readUInt64(
-        from pointer: UnsafeMutableRawPointer,
-        offset: Int
-    ) -> UInt64 {
-        UInt64(littleEndian: pointer.load(fromByteOffset: offset, as: UInt64.self))
-    }
 }
 #endif

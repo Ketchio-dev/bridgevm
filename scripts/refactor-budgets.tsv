@@ -2171,3 +2171,8 @@ apps/macos/Tests/BridgeVMControlTests/HvfPointerReleaseEncodingTests.swift	26	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerHeldState.swift	30	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRecoverableInputStream.swift	67	0
 apps/macos/Tests/BridgeVMControlTests/HvfPointerRecoveryTests.swift	85	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineRepositoryRoot.swift	49	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferScalarReads.swift	17	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSessionInputDriver.swift	66	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfInputFocusMonitor.swift	24	0
+apps/macos/Tests/BridgeVMControlTests/HvfOrderedSessionTransportTests.swift	89	0

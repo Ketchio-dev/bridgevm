@@ -28,6 +28,7 @@ final class HvfEngineSession: ObservableObject {
     private var lastHeartbeatDate: Date?
     private var serviceStarted = false
     private var pendingPaste: HvfClipboardPaste?
+    private let inputDriver = HvfSessionInputDriver()
     private var stopCommandSent = false
     private var stopDeadline: Date?
     private var attachedToExistingProcess = false
@@ -37,51 +38,6 @@ final class HvfEngineSession: ObservableObject {
     private var liveInputWriteFailureReported = false
     private let processIsRunning: (String) -> Bool
     private let vtpmKeyProvider: VTPMStateKeyProviding
-
-    nonisolated static func defaultRepoRoot(
-        currentDirectoryPath: String = FileManager.default.currentDirectoryPath,
-        environment: [String: String] = ProcessInfo.processInfo.environment,
-        executablePath: String? = Bundle.main.executableURL?.path,
-        resourcePath: String? = Bundle.main.resourceURL?.path,
-        allowDevelopmentOverrides: Bool = _isDebugAssertConfiguration()
-    ) -> URL {
-        #if DEBUG
-        if allowDevelopmentOverrides {
-            if let override = environment["BRIDGEVM_REPO_ROOT"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !override.isEmpty {
-                let expanded = (override as NSString).expandingTildeInPath
-                let url = URL(fileURLWithPath: expanded, isDirectory: true)
-                if containsBootWrapper(url) { return url.resolvingSymlinksInPath() }
-            }
-            var candidates = [URL(fileURLWithPath: currentDirectoryPath, isDirectory: true)]
-            if let executablePath { candidates.append(URL(fileURLWithPath: executablePath).deletingLastPathComponent()) }
-            if let resourcePath { candidates.append(URL(fileURLWithPath: resourcePath, isDirectory: true)) }
-            for candidate in candidates {
-                if let root = repositoryRoot(startingAt: candidate) { return root }
-            }
-        }
-        #endif
-        if let resourcePath {
-            return URL(fileURLWithPath: resourcePath, isDirectory: true).standardizedFileURL
-        }
-        return URL(fileURLWithPath: "/BridgeVMUnavailableResources", isDirectory: true)
-    }
-
-    private nonisolated static func containsBootWrapper(_ root: URL) -> Bool {
-        FileManager.default.isExecutableFile(
-            atPath: root.appendingPathComponent("scripts/run-hvf-windows-installed-boot.sh").path
-        )
-    }
-
-    private nonisolated static func repositoryRoot(startingAt start: URL) -> URL? {
-        var candidate = start.standardizedFileURL
-        while true {
-            if containsBootWrapper(candidate) { return candidate.resolvingSymlinksInPath() }
-            let parent = candidate.deletingLastPathComponent()
-            if parent.path == candidate.path { return nil }
-            candidate = parent
-        }
-    }
 
     init(
         config: HvfEngineConfig,
@@ -93,6 +49,8 @@ final class HvfEngineSession: ObservableObject {
         self.repoRoot = repoRoot
         self.processIsRunning = processIsRunning
         self.vtpmKeyProvider = vtpmKeyProvider
+        inputDriver.onPoll = { [weak self] in self?.poll() }
+        inputDriver.onDiagnostic = { [weak self] in self?.append(.unknown($0)) }
     }
 
     deinit {
@@ -195,6 +153,7 @@ final class HvfEngineSession: ObservableObject {
                 process = nil
                 return
             }
+            beginOwnedInputBoot()
             startPolling()
         } catch {
             vtpmKeyInput?.discard()
@@ -212,6 +171,7 @@ final class HvfEngineSession: ObservableObject {
             return
         }
         connectionState = .stopping
+        cancelOrderedInputTarget()
         stopDeadline = Date().addingTimeInterval(180)
         sendGracefulStopIfReady()
         if timer == nil { startPolling() }
@@ -244,6 +204,10 @@ final class HvfEngineSession: ObservableObject {
             append(.unknown("control command rejected: \(error.message)"))
             return false
         }
+        return appendControlCommand(cleaned)
+    }
+
+    private func appendControlCommand(_ cleaned: String) -> Bool {
         guard serviceStarted else {
             append(.unknown("control command refused: guest service has not started"))
             return false
@@ -268,11 +232,14 @@ final class HvfEngineSession: ObservableObject {
 
     func sendKey(_ action: String) {
         guard pendingPaste == nil else { append(.unknown("key input refused: clipboard paste pending")); return }
+        if inputDriver.route(.key(action), binding: inputBinding) { return }
         appendLiveInput("KEY \(action)")
     }
 
     func sendText(_ value: String) {
         guard pendingPaste == nil else { append(.unknown("text input refused: clipboard paste pending")); return }
+        guard !value.isEmpty else { return }
+        if inputDriver.route(.text(value), binding: inputBinding) { return }
         let plan = HvfTextInputPlan.make(for: value)
         for chunk in plan.hidChunks {
             appendLiveInput("KEY text-hex:\(chunk)")
@@ -313,11 +280,14 @@ final class HvfEngineSession: ObservableObject {
 
     func sendPointerScroll(_ delta: Int8, location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
         guard delta != 0, let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return }
+        if inputDriver.route(.pointer("scroll:\(delta)@\(point.x)x\(point.y)"), binding: inputBinding) { return }
         appendLiveInput("POINTER scroll:\(delta)@\(point.x)x\(point.y)")
     }
 
     private func sendPointerAction(_ action: String, location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
         guard let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return }
+        let verb = action == "release" ? "releaseall" : action.replacingOccurrences(of: "-", with: "")
+        if inputDriver.route(.pointer("\(verb):\(point.x)x\(point.y)"), binding: inputBinding) { return }
         appendLiveInput("POINTER \(action):\(point.x)x\(point.y)")
     }
 
@@ -332,6 +302,7 @@ final class HvfEngineSession: ObservableObject {
     #endif
 
     private func appendLiveInput(_ line: String) {
+        guard inputDriver.allowLegacyWrite(binding: inputBinding) else { return }
         let path = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("input.ctl")
         guard let data = "\(line)\n".data(using: .utf8) else { return }
         do {
@@ -455,6 +426,13 @@ final class HvfEngineSession: ObservableObject {
                 return
             }
         }
+        let connected: Bool
+        if case .connected = connectionState { connected = true } else { connected = false }
+        inputDriver.poll(binding: inputBinding, serviceReady: serviceStarted && connected, lines: lines) { [self] command in
+            guard command.utf8.count <= 87_434, !command.contains("\n"),
+                  !command.contains("\r"), !command.contains("\0") else { return false }
+            return appendControlCommand(command)
+        }
         if case .stopping = connectionState {
             sendGracefulStopIfReady()
             if let stopDeadline, Date() >= stopDeadline {
@@ -505,6 +483,7 @@ final class HvfEngineSession: ObservableObject {
 
     private func markStopped() {
         pendingPaste = nil
+        inputDriver.attachUnknown(binding: inputBinding)
         timer?.invalidate()
         timer = nil
         process = nil
@@ -520,6 +499,7 @@ final class HvfEngineSession: ObservableObject {
 
     private func resetObservedRuntimeState(clearEvents: Bool) {
         pendingPaste = nil
+        inputDriver.attachUnknown(binding: inputBinding)
         tailReader = TailOffsetReader()
         lastHeartbeatDate = nil
         lastHeartbeatAge = nil
@@ -536,6 +516,17 @@ final class HvfEngineSession: ObservableObject {
             events.removeFirst(events.count - 500)
         }
     }
+
+    private var inputBinding: [String] {
+        [config.targetDiskPath, config.uefiVarsPath, config.evidenceDir, config.ctlFilePath]
+    }
+
+    func beginOwnedInputBoot() {
+        pendingPaste = nil
+        inputDriver.beginOwnedBoot(binding: inputBinding)
+    }
+
+    func cancelOrderedInputTarget() { inputDriver.cancelTarget() }
 
 }
 
