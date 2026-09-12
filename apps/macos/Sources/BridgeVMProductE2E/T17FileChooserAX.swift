@@ -11,7 +11,7 @@ final class T17FileChooserAX: T17FileChooserDriving {
     private var activationSucceeded: Bool?
 
     var failureContext: String {
-        "timeout{\(T17FileChooserDiagnostics.snapshot(pid: pid))}; activation=\(activationSucceeded?.description ?? "unknown"); \(keyContext)"
+        "tree{\(T17FileChooserTreeDiagnostics.snapshot(application))}; timeout{\(T17FileChooserDiagnostics.snapshot(pid: pid))}; activation=\(activationSucceeded?.description ?? "unknown"); \(keyContext)"
     }
 
     init(pid: pid_t, identifier: String, openControl: @escaping () throws -> Void) {

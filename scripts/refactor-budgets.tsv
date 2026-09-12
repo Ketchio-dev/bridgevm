@@ -2081,6 +2081,8 @@ crates/bridgevm-storage/src/bundle_directory_permissions.rs	56	0
 crates/bridgevm-storage/src/bundle_copy_entries.rs	32	0
 crates/bridgevm-storage/src/bundle_archive_extract.rs	35	0
 crates/bridgevm-storage/src/tests_split/bundle_permissions.rs	98	0
+apps/macos/Sources/BridgeVMProductE2E/T17FileChooserTreeDiagnostics.swift	51	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserTreeDiagnosticTests.swift	41	0
 crates/bridgevm-hvf/src/net_nat/tests/tcp_readiness.rs	80	0
 crates/bridgevm-hvf/src/net_nat/tcp_connection_state.rs	17	0
 crates/bridgevm-hvf/src/net_nat/tests/tcp_fixture.rs	26	3
