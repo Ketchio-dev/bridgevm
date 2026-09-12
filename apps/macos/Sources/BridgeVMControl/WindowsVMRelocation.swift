@@ -17,10 +17,6 @@ extension VMLibrary {
               (try? source.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]).isDirectory) == true,
               (try? source.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true,
               !fm.fileExists(atPath: destination.path) else { return nil }
-        do {
-            try fm.createDirectory(at: destinationParent, withIntermediateDirectories: true)
-            try fm.moveItem(at: source, to: destination)
-        } catch { return nil }
 
         func rebased(_ path: String) -> String {
             guard !path.isEmpty else { return path }
@@ -41,6 +37,13 @@ extension VMLibrary {
         moved.diskPath = config.diskPath.map(rebased)
 
         let stateDirectory = destination.appendingPathComponent("metadata/vtpm", isDirectory: true)
+        guard let pending = try? VMRelocationJournal.begin(original: config, moved: moved, rootURL: rootURL) else {
+            return nil
+        }
+        do {
+            try fm.createDirectory(at: destinationParent, withIntermediateDirectories: true)
+            try fm.moveItem(at: source, to: destination)
+        } catch { return nil }
         do {
             guard save(moved, rootURL: rootURL) else { throw CocoaError(.fileWriteUnknown) }
             _ = try VTPMIdentityLifecycle(keyStore: KeychainVTPMStateKeyStore())
@@ -50,12 +53,11 @@ extension VMLibrary {
                     sourceBundle: source,
                     destinationBundle: destination
                 )
+            try fm.removeItem(at: pending)
             return moved
         } catch {
-            try? fm.moveItem(at: destination, to: source)
-            if let observed = VMRelocationRecovery.configuration(original: config, moved: moved, fileManager: fm) {
-                _ = save(observed, rootURL: rootURL)
-            }
+            recoverWindowsHVFMove(original: config, moved: moved, pending: pending,
+                                  rootURL: rootURL, fileManager: fm)
             return nil
         }
     }

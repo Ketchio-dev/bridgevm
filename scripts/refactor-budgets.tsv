@@ -2105,3 +2105,6 @@ apps/macos/Sources/BridgeVMControl/VMRelocationPaths.swift	35	0
 apps/macos/Tests/BridgeVMControlTests/VMRelocationPathsTests.swift	55	0
 apps/macos/Sources/BridgeVMControl/VMRelocationRecovery.swift	29	0
 apps/macos/Tests/BridgeVMControlTests/VMRelocationObservedStateTests.swift	73	0
+apps/macos/Sources/BridgeVMControl/VMRelocationJournal.swift	42	0
+apps/macos/Sources/BridgeVMControl/WindowsVMRelocationRollback.swift	16	0
+apps/macos/Tests/BridgeVMControlTests/VMRelocationJournalTests.swift	98	0
