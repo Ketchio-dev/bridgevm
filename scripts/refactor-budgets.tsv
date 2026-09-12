@@ -2188,3 +2188,6 @@ tests/integration/winpe-companion-diagnostic-test.py	103	0
 .github/workflows/winpe-companion-diagnostic.yml	13	0
 tests/integration/winpe_companion_size_cases.py	19	0
 tests/integration/winpe_companion_policy_cases.py	26	0
+tests/integration/injector-driver-metadata-test.py	50	0
+.github/workflows/injector-driver-metadata.yml	13	0
+tests/integration/injector-driver-fat-test.py	67	0

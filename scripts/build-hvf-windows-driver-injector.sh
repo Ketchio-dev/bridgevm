@@ -159,7 +159,7 @@ for spec in $DRIVER_DIRS; do
   name="${spec%%:*}"; src="${spec#*:}"
   log "staging driver '$name' at \\drivers\\$name"
   mkdir -p "$DST_VOL/drivers/$name"
-  cp "$src"/* "$DST_VOL/drivers/$name/"
+  /bin/cp -X "$src"/* "$DST_VOL/drivers/$name/"; /usr/sbin/dot_clean -m "$DST_VOL/drivers/$name"
 done
 
 if [[ -n "$PPSSPP_DIR" ]]; then
