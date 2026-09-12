@@ -8,14 +8,12 @@ use std::{fs, io};
 pub struct RuntimeLease {
     _pair: Option<LockedPair>,
     _logical: Option<MediaLease>,
-    _selected: Option<MediaLease>,
 }
 
 pub fn acquire(media: &mut VirtBootMediaConfig) -> io::Result<RuntimeLease> {
     let mut lease = RuntimeLease {
         _pair: None,
         _logical: None,
-        _selected: None,
     };
     let disks: Vec<_> = [&media.nvme_disk, &media.nvme_target]
         .into_iter()
@@ -49,9 +47,6 @@ pub fn acquire(media: &mut VirtBootMediaConfig) -> io::Result<RuntimeLease> {
     let original_vars = fs::canonicalize(&media.flash_vars.path)?;
     let pair = LockedPair::open(&original_disk, &original_vars)?;
     let (disk, vars) = pair.paths()?;
-    if disk != original_disk || vars != original_vars {
-        lease._selected = Some(MediaLease::acquire([disk.as_path(), vars.as_path()])?);
-    }
     let slot = media
         .nvme_disk
         .as_mut()

@@ -4,10 +4,11 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fs::{self, File, OpenOptions};
 use std::io;
-use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::path::Path;
+#[path = "media_lease_os.rs"]
+mod os;
 
 #[derive(Debug)]
 pub struct MediaLease {
@@ -24,9 +25,8 @@ impl MediaLease {
         if keys.is_empty() {
             return Ok(lease);
         }
-        // SAFETY: geteuid has no pointer arguments or additional preconditions.
-        let uid = unsafe { libc::geteuid() };
-        let root = private_root(uid)?;
+        let uid = os::uid();
+        let root = os::private_root(uid)?;
         for key in keys {
             let file = OpenOptions::new()
                 .read(true)
@@ -44,32 +44,20 @@ impl MediaLease {
             {
                 return Err(io::Error::other("unsafe media lease file"));
             }
-            // SAFETY: file owns a live descriptor for the duration of flock.
-            if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-                return Err(io::Error::last_os_error());
-            }
+            os::lock(&file, libc::LOCK_EX | libc::LOCK_NB)?;
             lease.files.push(file);
         }
         Ok(lease)
     }
 }
 
-fn private_root(uid: u32) -> io::Result<PathBuf> {
-    // A fixed namespace lets GUI processes and sanitized queue workers agree.
-    let root = PathBuf::from(format!("/tmp/bridgevm-media-leases-{uid}"));
-    match fs::DirBuilder::new().mode(0o700).create(&root) {
-        Ok(()) => {}
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-        Err(error) => return Err(error),
+impl Drop for MediaLease {
+    fn drop(&mut self) {
+        // close alone retains the lock while fork/dup descriptions survive.
+        for file in &self.files {
+            let _ = os::lock(file, libc::LOCK_UN);
+        }
     }
-    let metadata = fs::symlink_metadata(&root)?;
-    if !metadata.file_type().is_dir()
-        || metadata.uid() != uid
-        || metadata.permissions().mode() & 0o077 != 0
-    {
-        return Err(io::Error::other("unsafe media lease directory"));
-    }
-    Ok(root)
 }
 
 fn resource_keys(path: &Path) -> io::Result<Vec<String>> {

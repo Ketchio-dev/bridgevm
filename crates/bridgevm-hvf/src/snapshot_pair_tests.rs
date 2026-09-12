@@ -128,11 +128,11 @@ fn restore_puts_back_exactly_what_was_captured() {
     let disk = s.write("disk", b"original disk");
     let vars = s.write("vars", b"original vars");
     create_snapshot(&disk, &vars, &s.path("snap"), "vm", false, QUOTA).unwrap();
-
     fs::write(&disk, b"changed since").unwrap();
     fs::write(&vars, b"also changed").unwrap();
-
     restore_snapshot(&s.path("snap"), &disk, &vars, false).expect("restore");
+    let pair = managed::LockedPair::open(&disk, &vars).unwrap();
+    let (disk, vars) = pair.paths().unwrap();
     assert_eq!(fs::read(&disk).unwrap(), b"original disk");
     assert_eq!(fs::read(&vars).unwrap(), b"original vars");
 }

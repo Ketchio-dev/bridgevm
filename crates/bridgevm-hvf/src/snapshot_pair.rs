@@ -25,7 +25,6 @@ use std::path::{Path, PathBuf};
 mod free_space;
 #[path = "snapshot_manifest_json.rs"]
 mod manifest_json;
-use free_space::available_bytes;
 #[path = "snapshot_hash.rs"]
 mod snapshot_hash;
 use manifest_json::{escape_json, json_str, json_u64};
@@ -222,7 +221,9 @@ pub fn create_snapshot(
     }
 
     // Refuse before writing anything, not after filling the disk.
-    let _media_lease = crate::media_lease::MediaLease::acquire([disk, vars])?;
+    let _media_lease = managed::LockedPair::open(disk, vars)?;
+    let (selected_disk, selected_vars) = _media_lease.paths()?;
+    let (disk, vars) = (selected_disk.as_path(), selected_vars.as_path());
     let projected = fs::metadata(disk)?.len() + fs::metadata(vars)?.len();
     if projected > quota_bytes {
         return Err(SnapshotError::QuotaExceeded {
@@ -285,11 +286,10 @@ pub fn verify_snapshot(dir: &Path) -> Result<SnapshotManifest, SnapshotError> {
     Ok(manifest)
 }
 
-/// Restore a verified snapshot over the live pair.
-///
-/// Both hashes are checked first, but publication uses two separate renames.
-/// A failure between them can leave a mixed pair. This is a known A19 defect,
-/// not an atomic restore guarantee; normal-path tests do not prove otherwise.
+/// Restore by atomically selecting a complete managed generation.
+/// Disk and vars are logical identities; read their current files through
+/// managed::LockedPair while retaining ownership, not through the originals.
+/// An error after publication can still leave the complete new pair selected.
 pub fn restore_snapshot(
     dir: &Path,
     disk: &Path,
@@ -299,54 +299,7 @@ pub fn restore_snapshot(
     if vm_running {
         return Err(SnapshotError::VmRunning);
     }
-    let _media_lease = crate::media_lease::MediaLease::acquire([disk, vars])?;
-    let manifest = verify_snapshot(dir)?;
-
-    // Stage both beside their destinations before publishing either. A rename
-    // within a directory cannot fail for lack of space, so once both temps
-    // exist the pair swap is as close to atomic as the filesystem allows.
-    //
-    // The cost is real: for the length of a restore the volume holds the live
-    // pair, the snapshot, and a full second copy. Refuse up front when that
-    // does not fit, rather than discovering it partway through and leaving a
-    // half-written temp file behind that makes the next attempt worse.
-    let disk_tmp = temp_beside(disk);
-    let vars_tmp = temp_beside(vars);
-    let needed = manifest.disk_bytes + manifest.vars_bytes;
-    if let Some(available) = available_bytes(disk.parent().unwrap_or(Path::new("."))) {
-        if available < needed {
-            return Err(SnapshotError::InsufficientSpace { needed, available });
-        }
-    }
-
-    // Clean up on any failure: a stale multi-gigabyte temp file is how one
-    // failed restore turns into a volume with no room for the next.
-    let staged = (|| -> io::Result<()> {
-        copy_and_sync(&dir.join(DISK_NAME), &disk_tmp)?;
-        copy_and_sync(&dir.join(VARS_NAME), &vars_tmp)?;
-        Ok(())
-    })();
-    if let Err(e) = staged {
-        let _ = fs::remove_file(&disk_tmp);
-        let _ = fs::remove_file(&vars_tmp);
-        return Err(SnapshotError::Io(e));
-    }
-
-    fs::rename(&disk_tmp, disk)?;
-    fs::rename(&vars_tmp, vars)?;
-    sync_dir(disk.parent().unwrap_or(Path::new(".")))?;
-    if vars.parent() != disk.parent() {
-        sync_dir(vars.parent().unwrap_or(Path::new(".")))?;
-    }
-    Ok(manifest)
-}
-
-fn temp_beside(path: &Path) -> PathBuf {
-    let parent = path.parent().unwrap_or(Path::new("."));
-    parent.join(format!(
-        ".{}.restore",
-        path.file_name().unwrap_or_default().to_string_lossy()
-    ))
+    managed::LockedPair::open(disk, vars)?.restore(dir)
 }
 
 #[path = "managed_pair.rs"]

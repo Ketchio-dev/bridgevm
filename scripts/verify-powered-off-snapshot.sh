@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A19: prove a powered-off snapshot is a byte-exact atomic pair.
+# A19: check a powered-off snapshot's byte-exact selected pair.
 #
 # The unit tests prove the mechanism against synthetic files. This proves the
 # claim the criterion actually makes: that snapshotting the real disk and vars
@@ -23,10 +23,8 @@ QUOTA=${QUOTA:-$((80 * 1024 * 1024 * 1024))}
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-# openssl rather than shasum: shasum is a Perl script and runs about five
-# times slower, which on a 64 GiB image hashed six times is the difference
-# between minutes and most of an hour.
 sha256() { openssl dgst -sha256 -r "$1" | cut -d' ' -f1; }
+source "$REPO/scripts/snapshot-selected-hashes.sh"
 
 for required in "$DISK" "$VARS"; do
   [[ -e "$required" ]] || fail "missing required input: $required"
@@ -92,8 +90,7 @@ say "--- restore ---"
 "$CLI" restore "$WORK/snap" "$WORK/disk.raw" "$WORK/vars.fd" | tee -a "$RECEIPT" \
   || fail "restore failed"
 
-after_disk=$(sha256 "$WORK/disk.raw")
-after_vars=$(sha256 "$WORK/vars.fd")
+snapshot_selected_hashes
 say "after disk sha256: $after_disk"
 say "after vars sha256: $after_vars"
 
@@ -107,12 +104,13 @@ if "$CLI" restore "$WORK/snap" "$WORK/disk.raw" "$WORK/vars.fd" >>"$RECEIPT" 2>&
   fail "a tampered snapshot was restored"
 fi
 say "tampered snapshot refused"
-[[ "$(sha256 "$WORK/disk.raw")" == "$before_disk" ]] \
-  || fail "a refused restore modified the live disk"
+snapshot_selected_hashes
+[[ "$after_disk" == "$before_disk" && "$after_vars" == "$before_vars" ]] \
+  || fail "a refused restore modified the selected pair"
 say "live pair untouched by the refusal"
 
 say ""
 say "PASS: powered-off snapshot pair is byte-exact across create/restore"
 say "NOT PROVEN HERE: acceptance item 5 (a restored snapshot boots Windows and"
-say "  preserves a guest-created marker). A19 stays open until that runs."
+say "  preserves a guest-created marker) or interruption safety. A19 remains open."
 echo "receipt: $RECEIPT"

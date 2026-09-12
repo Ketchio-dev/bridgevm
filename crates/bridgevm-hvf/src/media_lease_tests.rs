@@ -1,4 +1,8 @@
 use super::*;
+use std::os::fd::AsRawFd;
+use std::path::PathBuf;
+#[path = "media_lease_lifecycle_tests.rs"]
+mod lifecycle;
 
 struct Scratch(PathBuf);
 
