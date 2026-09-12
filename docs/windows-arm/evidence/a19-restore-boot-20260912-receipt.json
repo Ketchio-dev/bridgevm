@@ -1,0 +1,17 @@
+{
+  "binary_features": "venus",
+  "binary_hash": "5cb73790ea32eda9c203110eea31734fa373a180c56489ed931da94ab6f2abac",
+  "binary_profile": "release",
+  "binary_source_commit": "9989d0d9fa9234f03e44d0bef92d6d81cdf2a28f",
+  "commit": "9989d0d9fa9234f03e44d0bef92d6d81cdf2a28f",
+  "finished_at": "2026-09-12T00:38:32.413526+00:00",
+  "image_sha256": "5ad7a304cfec4fe9320784b26b4d6895885361ddef2675d2411a759cb54165f8",
+  "input_manifest_sha256": "4ecc9d967e6e93426a71554e0c3c3ccd5972506570054d99f63ffefb5d21a921",
+  "job_id": "t1-restore-9989d0d9-native-shutdown-r3",
+  "outcome": "completed",
+  "pass": true,
+  "rust_toolchain": "1.97.0",
+  "sample_count": 1,
+  "tier": "t1-restore-boot",
+  "vars_sha256": "2f0e68923bf0e4cc1bcfd51a6bb67eb661d48b90aef97ea3b03d4b2805b33ca7"
+}

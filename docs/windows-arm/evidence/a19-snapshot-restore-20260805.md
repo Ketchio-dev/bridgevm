@@ -37,7 +37,7 @@ vars_sha256 8cc43bf0a11d8d1d68253069fed42667950a701c2f508a38c69e35b72fca3563
 `68719476736` bytes is 64 GiB exactly, so this is the real image rather than a
 scratch file.
 
-## What the phases prove
+## Recorded observations
 
 The job boots the guest three times and records a marker file from inside the
 guest each time:
@@ -48,13 +48,13 @@ guest each time:
 | `phase3-clobber` | `BV-ORIGINAL-1785935910` |
 | `phase5-restored` | `BV-ORIGINAL-1785935910` |
 
-Phase 1 boots before anything is written, so the guest reports no marker. A
-marker is then written and a snapshot taken. Phase 3 boots after the disk has
-been deliberately clobbered. Phase 5 boots after restoring from the snapshot.
+Phase 3 reads the original marker before attempting to write a different one.
+Phase 5 boots after restore and reports the original marker again.
 
-Phase 5 reporting the identical marker string that phase 3 wrote is the whole
-claim: the restore returned the guest to a state a guest process can observe,
-not merely a file that hashes correctly.
+These marker-before files alone do not prove the clobber write succeeded.
+The legacy waiter could accept an unrelated END record. This historical
+receipt needs its per-command logs; the stricter
+[2026-09-12 run](a19-restore-boot-20260912.md) supplies fresh restore-boot evidence.
 
 ## What this does not cover
 
@@ -64,5 +64,5 @@ This job is `t1-restore-boot`. The other acceptance items in
 document records only the restore-boot half, because that is the job whose
 receipt is retained.
 
-The full per-phase logs, `agent.ctl` transcripts and preflight output remain
-under the job directory.
+The original document reported per-phase logs under that job directory.
+That directory was unavailable at the documented path on 2026-09-12.
