@@ -255,8 +255,7 @@ final class FBLayerView: NSView {
             return
         }
 
-        let delta = Int8(clamping: Int(event.scrollingDeltaY.rounded()))
-        guard delta != 0 else {
+        guard let delta = HvfScrollDelta.hid(from: event.scrollingDeltaY) else {
             return
         }
 
