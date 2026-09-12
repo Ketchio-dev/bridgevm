@@ -74,7 +74,7 @@ cmd_submit() {
             *) echo "unknown submit option $1" >&2; exit 2 ;;
         esac
     done
-    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ] || [ "$tier" = t15-hvf-boot-performance ] || [ "$tier" = t16-hvf-nvme-performance ] || [ "$tier" = t17-windows-hvf-product-e2e ] || [ "$tier" = t18-audio-teardown ] || [ "$tier" = d1-windows-media-comparison ] || [ "$tier" = d2-b6-cell-observation ] || [ "$tier" = d3-b6-renderer-trace ]; then
+    if [ "$tier" = t1-restore-boot ] || [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ] || [ "$tier" = t8-pointer-reliability ] || [ "$tier" = t14-bridgevm-pc-windows-start ] || [ "$tier" = t15-hvf-boot-performance ] || [ "$tier" = t16-hvf-nvme-performance ] || [ "$tier" = t17-windows-hvf-product-e2e ] || [ "$tier" = t18-audio-teardown ] || [ "$tier" = d1-windows-media-comparison ] || [ "$tier" = d2-b6-cell-observation ] || [ "$tier" = d3-b6-renderer-trace ]; then
         [ -f "$input_manifest" ] || {
             echo "$tier needs --input-manifest PATH" >&2
             exit 2

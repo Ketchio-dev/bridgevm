@@ -59,13 +59,14 @@ boot_and_mark() { # $1 = new marker text, $2 = phase name
   local pdir=$OUT/$phase
   mkdir "$pdir" || return 1
   local ctl=$pdir/agent.ctl log=$pdir/run.log
+  local probe_args=(); [[ -z "${BRIDGEVM_PREBUILT_PROBE:-}" ]] || probe_args+=(--release --skip-build)
   : > "$ctl"
 
   scripts/run-hvf-windows-installed-boot.sh \
     --target "$WORK/disk.raw" --vars "$WORK/vars.fd" \
     --evidence-dir "$pdir" --watchdog-ms $((BOOT_TIMEOUT * 1000)) \
     --ram-mib 6144 --smp-cpus 4 \
-    --agent-service-control "$ctl" \
+    --agent-service-control "$ctl" ${probe_args[@]+"${probe_args[@]}"} \
     > "$pdir/launcher.out" 2>&1 &
   local launcher=$!
   SNAPSHOT_LAUNCHER=$launcher

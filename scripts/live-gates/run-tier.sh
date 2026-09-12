@@ -78,18 +78,8 @@ case "$TIER" in
         fi
         ;;
     t1-restore-boot)
-        # A19 acceptance item 5: boots the guest three times around a
-        # snapshot/restore, so it is far slower than t1-snapshot and kept
-        # separate rather than folded into it.
-        SEALED_IMAGE=$HOME/BridgeVM/work/rethink-fresh-12041-agent-vioserial.raw
-        SEALED_VARS=$HOME/BridgeVM/work/rethink-fresh-12041-agent-vioserial-vars.fd
-        echo "running the snapshot restore-and-boot gate" >&2
-        if OUT="$OUT" "$REPO/scripts/verify-snapshot-restore-boots.sh"; then
-            receipt completed true
-        else
-            receipt failed false
-            exit 1
-        fi
+        python3 "$REPO/scripts/live-gates/run-snapshot-restore-tier.py" \
+            "$OUT" "$JOB_ID" "$INPUT_MANIFEST" "$SEALED_BINARY"
         ;;
     d2-b6-cell-observation|d3-b6-renderer-trace)
         python3 "$REPO/scripts/live-gates/run-b6-${TIER#d?-b6-}.py" --out "$OUT" --job-id "$JOB_ID" \
