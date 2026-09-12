@@ -43,4 +43,4 @@ try {
         }
     }
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
-Write-Output 'PASS: real cmd companion copies, four missing-source refusals and locked-destination abort (not a WinPE boot)'
+Write-Output 'PASS: real cmd companion copies, four missing-source refusals and locked-destination abort (not a WinPE boot)'; exit 0
