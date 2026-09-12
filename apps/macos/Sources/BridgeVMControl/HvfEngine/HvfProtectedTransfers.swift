@@ -4,8 +4,8 @@ import Foundation
 /// back; callers must not report restoration of the original location.
 enum HvfProtectedTransfers {
     static func clone(name: String, template: VMConfig, libraryRoot: URL) -> VMConfig? {
-        try? HvfMediaLeaseSession.withOwnership(config: template) {
-            VMLibrary.cloneWindowsHVF(name: name, template: template, libraryRoot: libraryRoot)
+        HvfMediaLeaseSession.withCopyOwnership(config: template) { afterCopy in
+            VMLibrary.cloneWindowsHVF(name: name, template: template, libraryRoot: libraryRoot, afterCopy: afterCopy)
         }
     }
 

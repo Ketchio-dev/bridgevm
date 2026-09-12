@@ -2096,3 +2096,5 @@ crates/bridgevm-hvf/src/media_lease_session_test_support.rs	43	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMediaLeaseSession.swift	111	0
 apps/macos/Tests/BridgeVMControlTests/HvfMediaLeaseSessionTests.swift	45	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfProtectedTransfers.swift	17	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMediaOwnership.swift	41	0
+apps/macos/Tests/BridgeVMControlTests/HvfCloneValidationTests.swift	39	0

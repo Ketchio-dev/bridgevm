@@ -11,19 +11,6 @@ final class HvfMediaLeaseSession {
     private var released = false
     private static let ready = Data("bridgevm-media-lease-v1\n".utf8)
 
-    static func withOwnership<T>(config: VMConfig, operation: () throws -> T) throws -> T {
-        let root = HvfEngineSession.defaultRepoRoot()
-        let helper = root.appendingPathComponent("target/release/examples/snapshot_pair_cli")
-        let lease = try HvfMediaLeaseSession(
-            executable: helper,
-            disk: config.diskPath ?? (config.bundlePath + "/disks/hvf-target.raw"),
-            vars: config.bundlePath + "/metadata/hvf-vars.fd")
-        defer { lease.abort() }
-        let value = try operation()
-        try lease.finish()
-        return value
-    }
-
     init(executable: URL, disk: String, vars: String, timeout: TimeInterval = 5) throws {
         self.timeout = timeout
         guard timeout.isFinite, timeout > 0,

@@ -338,7 +338,8 @@ extension VMLibrary {
         name: String,
         template: VMConfig,
         storageDir: URL? = nil,
-        libraryRoot: URL = root
+        libraryRoot: URL = root,
+        afterCopy: () -> Bool = { true }
     ) -> VMConfig? {
         let fm = FileManager.default
         let sourceBundle = URL(fileURLWithPath: template.bundlePath, isDirectory: true)
@@ -359,6 +360,7 @@ extension VMLibrary {
         defer { if !succeeded { try? fm.removeItem(at: destinationRoot) } }
         let bundle = destinationRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true)
         guard cloneOrCopyDirectory(from: template.bundlePath, to: bundle.path) else { return nil }
+        guard afterCopy() else { return nil }
 
         let lifecycle = VTPMIdentityLifecycle(keyStore: KeychainVTPMStateKeyStore())
         let copiedState = bundle.appendingPathComponent("metadata/vtpm", isDirectory: true)
