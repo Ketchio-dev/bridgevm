@@ -2202,3 +2202,4 @@ tests/integration/guest-input-controller-test.py	75
 scripts/live-gates/guest_input_protocol.py	60
 tests/integration/guest-input-controller-framing-test.py	57
 scripts/test-guest-input-controller-wire.ps1	18
+.github/workflows/guest-input-controller-windows.yml	13
