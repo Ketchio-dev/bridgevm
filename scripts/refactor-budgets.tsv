@@ -2246,3 +2246,7 @@ scripts/live-gates/guest_input_group_liveness.py	12
 tests/integration/guest_input_cleanup_permission_tests.py	63
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserKeyboard.swift	34
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserKeyboardTests.swift	57
+scripts/win-assets/bvagent-window-inventory.ps1	50
+scripts/test-bvagent-window-inventory.ps1	48
+.github/workflows/coherence-inventory-wire.yml	17
+scripts/test-bvagent-window-inventory-errors.ps1	40

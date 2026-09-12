@@ -1,0 +1,17 @@
+name: Coherence resident inventory wire contracts
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Complete inventory encoding and fail-closed bounds
+        shell: ${{ matrix.shell }}
+        run: ./scripts/test-bvagent-window-inventory.ps1; ./scripts/test-bvagent-window-inventory-errors.ps1
