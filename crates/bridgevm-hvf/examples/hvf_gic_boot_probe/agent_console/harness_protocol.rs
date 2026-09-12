@@ -1,6 +1,10 @@
 //! Agent console scripted protocol and command response handling.
 
 use super::*;
+#[path = "input_receipt_label.rs"]
+mod input_receipt_label;
+#[path = "output_finish.rs"]
+mod output_finish;
 
 impl AgentConsoleHarness {
     /// Milliseconds since boot for the BVAGENT evidence prints, so live-run
@@ -227,6 +231,7 @@ impl AgentConsoleHarness {
     /// OUT <exit> <b64> or OUTBEG/OUTCHUNK*/OUTEND (RUN/PS), LSOK <b64> (LS),
     /// PUTOK <b64(path)> <bytes> (PUT), CLIP <b64> (CLIPGET), or OK <...> /
     pub(super) fn handle_reply_line(&mut self, line: &str, command: &str) -> ReplyProgress {
+        let command = input_receipt_label::label(command);
         if let Some(progress) = handle_window_reply(line, command) { return progress }
         if let Some(rest) = line.strip_prefix("OUTBEG ") {
             self.begin_out(rest);
@@ -497,39 +502,5 @@ impl AgentConsoleHarness {
             return;
         }
         accum.bytes.extend_from_slice(&bytes);
-    }
-    /// OUTEND <nchunks> — verify the full frame and render the historical
-    /// BVAGENT CMD/END envelope so existing log consumers remain compatible.
-    pub(super) fn finish_out(&mut self, command: &str, rest: &str) {
-        let Some(accum) = self.out_accum.take() else {
-            println!(
-                "BVAGENT CMD {command} exit=-1\n<chunked output protocol error: OUTEND without OUTBEG>\nBVAGENT END {command}"
-            );
-            return;
-        };
-        let end_count = rest.trim().parse::<usize>().ok();
-        let valid = accum.valid
-            && end_count == Some(accum.nchunks)
-            && accum.chunks_seen == accum.nchunks
-            && accum.bytes.len() == accum.total;
-        if valid {
-            let text = String::from_utf8_lossy(&accum.bytes);
-            println!(
-                "BVAGENT CMD {command} exit={}\n{text}\nBVAGENT END {command}",
-                accum.exit_code
-            );
-        } else {
-            println!(
-                "BVAGENT CMD {command} exit=-1\n<chunked output protocol error: declared-exit={} bytes={}/{} chunks={}/{} end={}>\nBVAGENT END {command}",
-                accum.exit_code,
-                accum.bytes.len(),
-                accum.total,
-                accum.chunks_seen,
-                accum.nchunks,
-                end_count
-                    .map(|value| value.to_string())
-                    .unwrap_or_else(|| "invalid".to_string())
-            );
-        }
     }
 }

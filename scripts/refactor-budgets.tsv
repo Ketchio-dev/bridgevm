@@ -2132,3 +2132,5 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserIdentityTests.swift	36	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserAXTree.swift	25	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfInputReceiptEnvelope.swift	25	0
 apps/macos/Tests/BridgeVMControlTests/HvfRedactedInputReceiptTests.swift	39	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/input_receipt_label.rs	49	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/output_finish.rs	38	0
