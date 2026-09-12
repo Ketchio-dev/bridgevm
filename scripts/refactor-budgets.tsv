@@ -2221,3 +2221,6 @@ scripts/live-gates/guest_input_profiles.py	12
 scripts/live-gates/guest_input_driver_variant.py	83
 tests/integration/guest-input-driver-variant-test.py	83
 .github/workflows/guest-input-driver-variant.yml	12
+tests/integration/window-inventory-restart.swift	41
+scripts/check-window-inventory-restart.sh	13
+.github/workflows/window-inventory-restart.yml	11

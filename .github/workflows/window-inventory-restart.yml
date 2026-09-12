@@ -1,0 +1,11 @@
+name: Coherence inventory restart ordering contracts
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: macos-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check-window-inventory-restart.sh

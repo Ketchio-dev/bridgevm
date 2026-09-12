@@ -27,12 +27,11 @@ struct HvfWindowInventoryRequest {
     ) -> Result<[GuestWindowRecord], HvfWindowInventoryError>? {
         guard !finished else { return nil }
         guard now < deadline else { return finish(.failure(.expired)) }
+        if lines.contains(where: { $0.hasPrefix("BVAGENT READY ") || $0.hasPrefix("BVAGENT re-READY ")
+            || $0.hasPrefix("BVAGENT SERVICE start") || $0.hasPrefix("PSCI SYSTEM_RESET:")
+            || $0.hasPrefix("PSCI_SYSTEM_RESET") }) { return finish(.failure(.restarted)) }
         for raw in lines {
             let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
-            if line.hasPrefix("BVAGENT READY ") || line.hasPrefix("BVAGENT re-READY ")
-                || line.hasPrefix("BVAGENT SERVICE start") || line.hasPrefix("PSCI SYSTEM_RESET:") {
-                return finish(.failure(.restarted))
-            }
             guard line.hasPrefix(prefix) else { continue }
             let payload = String(line.dropFirst(prefix.count))
             if payload == "WINEND" { return finish(.success(records)) }
