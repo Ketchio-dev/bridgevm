@@ -115,3 +115,19 @@ The reader does not claim snapshot consistency against concurrent writers or
 protection against substitution of intermediate path components. Guidance is
 read-only: no record is removed and no media is selected or repaired. These
 results do not close a live Windows or power-loss recovery criterion.
+
+## Failure before a move attempt
+
+Source: `05fc066f247aad545cec4c80e8cdaaaf910af210`.
+
+Destination-parent creation now follows path-safety preflight but precedes the
+pending record. If that creation fails, the VM is not marked as requiring move
+recovery because no move has been attempted. Failures once the move operation
+begins still retain the pending record; no inference about partial copies was
+added.
+
+A FileManager fault-injection test verifies zero move attempts, preserved source
+registration, no pending record and no destination directory after setup fails.
+The focused suite passed 24/24 tests and `scripts/check-project.sh` passed.
+This is deterministic setup-failure coverage, not a cross-volume or live guest
+recovery result.
