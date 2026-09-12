@@ -89,7 +89,7 @@ case "$TIER" in
         "$REPO/scripts/live-gates/$helper" --out "$OUT" --input-manifest "$INPUT_MANIFEST" \
             --sealed-binary "$SEALED_BINARY" --job-id "$JOB_ID"
         ;;
-    t8-pointer-reliability|t9-bridgevm-pc-pci|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start|t15-hvf-boot-performance|t16-hvf-nvme-performance|t17-windows-hvf-product-e2e|t18-audio-teardown|d1-windows-media-comparison|d4-winpe-companions)
+    t8-pointer-reliability|t9-bridgevm-pc-pci|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start|t15-hvf-boot-performance|t16-hvf-nvme-performance|t17-windows-hvf-product-e2e|t18-audio-teardown|d1-windows-media-comparison|d4-winpe-companions|d5-guest-input)
         "$REPO/scripts/live-gates/run-special-tier.sh" \
           "$TIER" "$OUT" "$JOB_ID" "$INPUT_MANIFEST" "$SEALED_BINARY" ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)

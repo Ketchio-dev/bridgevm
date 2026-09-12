@@ -2209,3 +2209,7 @@ tests/integration/guest-input-live-inputs-test.py	70
 .github/workflows/guest-input-live.yml	13
 scripts/live-gates/guest_input_live_cleanup.py	57
 tests/integration/guest-input-live-cleanup-test.py	69
+scripts/live-gates/guest_input_queue.py	96
+scripts/live-gates/guest_input_queue_receipt.py	88
+tests/integration/guest-input-queue-test.py	99
+.github/workflows/guest-input-queue.yml	13
