@@ -2,14 +2,17 @@ import SwiftUI
 
 extension CreateVMSheet {
     func create() {
+        creationFailureCode = ""
         let selectedTemplate = template
         if WindowsHVFProductPolicy.requiresTemplate(mode) && selectedTemplate == nil {
+            creationFailureCode = "template-unavailable"
             error = "템플릿 VM이 없습니다"
             return
         }
         working = true
         error = ""
         guard let normalizedName = VMLibrary.normalizedVMName(name) else {
+            creationFailureCode = "invalid-vm-name"
             error = "VM 이름은 제어문자 없이 1~\(VMLibrary.maximumVMNameCharacters)자이며 파일 ID 제한 안이어야 합니다."
             working = false
             return
@@ -24,6 +27,7 @@ extension CreateVMSheet {
         if selectedMode == .windowsHVF,
            let importError = VMLibrary.windowsHVFImportError(
             targetDiskPath: target, varsPath: vars) {
+            creationFailureCode = "hvf-import-invalid"
             error = importError
             working = false
             return
@@ -70,14 +74,7 @@ extension CreateVMSheet {
                     memMiB: memory, cpuCount: cpu, networkEnabled: network,
                     libraryRoot: libraryRoot)
             }
-            await MainActor.run {
-                working = false
-                if let config, library.add(config) {
-                    dismiss()
-                } else {
-                    error = "생성 또는 VM 라이브러리 저장 실패"
-                }
-            }
+            await MainActor.run { completeCreation(config) }
         }
     }
 }

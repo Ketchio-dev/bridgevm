@@ -1,0 +1,13 @@
+name: T17 owned readonly tree cleanup contracts
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Scoped readonly tree cleanup and identity refusals
+        run: python3 tests/integration/t17-owned-tree-cleanup-test.py

@@ -2250,3 +2250,11 @@ scripts/win-assets/bvagent-window-inventory.ps1	50
 scripts/test-bvagent-window-inventory.ps1	48
 .github/workflows/coherence-inventory-wire.yml	17
 scripts/test-bvagent-window-inventory-errors.ps1	40
+apps/macos/Sources/BridgeVMControl/CreateVMSheetCreationResult.swift	15
+apps/macos/Sources/BridgeVMProductE2E/T17AccessibilityTree.swift	34
+apps/macos/Sources/BridgeVMProductE2E/T17CreationProbe.swift	23
+apps/macos/Tests/BridgeVMProductE2ETests/T17CreationProbeTests.swift	65
+scripts/live-gates/t17_owned_tree_cleanup.py	136
+tests/integration/t17-owned-tree-cleanup-test.py	170
+.github/workflows/t17-owned-tree-cleanup.yml	13
+scripts/test-bvagent-window-inventory-native-schema.ps1	27

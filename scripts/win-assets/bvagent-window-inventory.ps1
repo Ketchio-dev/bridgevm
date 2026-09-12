@@ -22,10 +22,10 @@ function ConvertTo-BvWindowInventoryLines {
             throw 'Invalid window process ID'
         }
         $bounds = [Collections.Generic.List[string]]::new()
-        foreach ($name in @('X', 'Y', 'W', 'H')) {
+        foreach ($name in @('X', 'Y', 'Width', 'Height')) {
             [int]$value = 0
             if (-not [int]::TryParse([string]$row.$name, [Globalization.NumberStyles]::Integer,
-                    $culture, [ref]$value) -or ($name -in @('W', 'H') -and $value -le 0)) {
+                    $culture, [ref]$value) -or ($name -in @('Width', 'Height') -and $value -le 0)) {
                 throw 'Invalid window bounds'
             }
             $bounds.Add($value.ToString($culture))

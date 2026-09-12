@@ -7,11 +7,11 @@ permissions:
 jobs:
   contracts:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        shell: [powershell, pwsh]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - name: Complete inventory encoding and fail-closed bounds
-        shell: ${{ matrix.shell }}
-        run: ./scripts/test-bvagent-window-inventory.ps1; ./scripts/test-bvagent-window-inventory-errors.ps1
+      - name: Windows PowerShell 5.1 inventory contracts
+        shell: powershell
+        run: ./scripts/test-bvagent-window-inventory.ps1; ./scripts/test-bvagent-window-inventory-errors.ps1; ./scripts/test-bvagent-window-inventory-native-schema.ps1
+      - name: PowerShell 7 inventory contracts
+        shell: pwsh
+        run: ./scripts/test-bvagent-window-inventory.ps1; ./scripts/test-bvagent-window-inventory-errors.ps1; ./scripts/test-bvagent-window-inventory-native-schema.ps1

@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'win-assets/bvagent-window-inventory.ps1')
 function New-Row([string]$handle = '42', [string]$title = 'one') {
-    [pscustomobject]@{ Handle=$handle; ProcessId=7; X=-10; Y=20; W=300; H=180; Title=$title }
+    [pscustomobject]@{ Handle=$handle; ProcessId=7; X=-10; Y=20; Width=300; Height=180; Title=$title }
 }
 function Assert-True([bool]$value, [string]$message) { if (-not $value) { throw $message } }
 function Expect-Rejected([object[]]$rows) {
@@ -25,13 +25,13 @@ Expect-Rejected @($first, $first)
 foreach ($handle in @('0', '-1', '01', '18446744073709551616', '42 43')) {
     Expect-Rejected @($first, (New-Row $handle))
 }
-foreach ($field in @('ProcessId', 'X', 'Y', 'W', 'H')) {
+foreach ($field in @('ProcessId', 'X', 'Y', 'Width', 'Height')) {
     foreach ($value in @('not-an-integer', '4294967296')) {
         $bad = New-Row '44'; $bad.$field = $value
         Expect-Rejected @($first, $bad)
     }
 }
-foreach ($field in @('ProcessId', 'W', 'H')) {
+foreach ($field in @('ProcessId', 'Width', 'Height')) {
     $bad = New-Row '44'; $bad.$field = 0; Expect-Rejected @($first, $bad)
 }
 foreach ($title in @('', ([string][char]0xd800), ('x' * 3145728))) {

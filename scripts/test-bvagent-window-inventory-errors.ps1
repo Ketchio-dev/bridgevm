@@ -7,7 +7,7 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'win-assets/bvagent-window-inven
 $prefix = '$ErrorActionPreference = ''Continue''' + "`n. '" + $module.Replace("'", "''") + "'`n"
 $cases = @{
     invalid_utf8 = @'
-$row = [pscustomobject]@{Handle='42';ProcessId=7;X=0;Y=0;W=10;H=10;Title=([string][char]0xd800)}
+$row = [pscustomobject]@{Handle='42';ProcessId=7;X=0;Y=0;Width=10;Height=10;Title=([string][char]0xd800)}
 ConvertTo-BvWindowInventoryLines -Rows @($row)
 '@
     native_failure = @'

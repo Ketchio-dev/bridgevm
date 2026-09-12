@@ -588,6 +588,7 @@ struct CreateVMSheet: View {
     @State var cpuCount = 4
     @State var working = false
     @State var error = ""
+    @State var creationFailureCode = ""
     let resolutions = [(1280, 800), (1440, 900), (1920, 1080), (2560, 1440)]
     enum OSFamily: Equatable { case windows, linux }
     enum Mode: Equatable {
@@ -783,7 +784,8 @@ struct CreateVMSheet: View {
             }
             .font(.callout)
 
-            if !error.isEmpty { Text(error).font(.caption).foregroundColor(.red) }
+            if !error.isEmpty { Text(error).font(.caption).foregroundColor(.red)
+                .accessibilityIdentifier("bridgevm.create.error").accessibilityValue(creationFailureCode) }
 
             HStack {
                 Spacer()

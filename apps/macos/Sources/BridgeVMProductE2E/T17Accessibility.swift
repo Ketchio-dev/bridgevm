@@ -47,7 +47,7 @@ final class T17Accessibility: T17UIControlling {
     func setText(_ value: String, identifier: String, timeout: TimeInterval = 10) throws {
         let identified = try element(identifier, timeout: timeout)
         let target = role(of: identified) == (kAXTextFieldRole as String)
-            ? identified : (firstDescendant(of: identified, role: kAXTextFieldRole as String) ?? identified)
+            ? identified : (try firstDescendant(of: identified, role: kAXTextFieldRole as String) ?? identified)
         guard AXUIElementSetAttributeValue(target, kAXValueAttribute as CFString, value as CFTypeRef) == .success else {
             throw T17Blocker(code: "ui-element-missing", detail: "identified UI element does not accept text")
         }
@@ -74,7 +74,7 @@ final class T17Accessibility: T17UIControlling {
     }
 
     func textSnapshot() -> [String] {
-        descendants(of: application, limit: 12_000).compactMap { item in
+        ((try? descendants(of: application, limit: 12_000)) ?? []).compactMap { item in
             for name in [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
                 if let value = attribute(item, name as CFString) as? String, !value.isEmpty { return value }
             }
@@ -108,29 +108,23 @@ final class T17Accessibility: T17UIControlling {
     private func element(_ identifier: String, timeout: TimeInterval) throws -> AXUIElement {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
-            if let match = descendants(of: application, limit: 12_000).first(where: {
-                attribute($0, kAXIdentifierAttribute as CFString) as? String == identifier
+            let nodes = try descendants(of: application, limit: 12_000)
+            if let match = try T17CreationProbe.find(identifier, in: nodes, identifier: {
+                try T17AccessibilityTree.attribute($0, kAXIdentifierAttribute) as? String
+            }, value: {
+                try T17AccessibilityTree.attribute($0, kAXValueAttribute) as? String
             }) { return match }
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         } while Date() < deadline
         throw T17Blocker(code: "ui-element-missing", detail: "required accessibility identifier was not found: \(identifier); windows=\((attribute(application, kAXWindowsAttribute as CFString) as? [AXUIElement]).map { String($0.count) } ?? "unanswered") timeout_s=\(timeout)")
     }
 
-    private func firstDescendant(of root: AXUIElement, role expected: String) -> AXUIElement? {
-        descendants(of: root, limit: 128).first { role(of: $0) == expected }
+    private func firstDescendant(of root: AXUIElement, role expected: String) throws -> AXUIElement? {
+        try descendants(of: root, limit: 128).first { role(of: $0) == expected }
     }
 
-    private func descendants(of root: AXUIElement, limit: Int) -> [AXUIElement] {
-        var output: [AXUIElement] = []
-        var pending = [root]
-        while !pending.isEmpty && output.count < limit {
-            let item = pending.removeFirst()
-            output.append(item)
-            if let children = attribute(item, kAXChildrenAttribute as CFString) as? [AXUIElement] {
-                pending.append(contentsOf: children)
-            }
-        }
-        return output
+    private func descendants(of root: AXUIElement, limit: Int) throws -> [AXUIElement] {
+        try T17AccessibilityTree.nodes(root, limit: limit)
     }
 
     private func role(of element: AXUIElement) -> String? {

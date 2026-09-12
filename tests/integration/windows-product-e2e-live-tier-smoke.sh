@@ -10,6 +10,11 @@ PUBLISH="$ROOT/scripts/live-gates/publish-receipt.sh"
 COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 checks=0
 check() { local message="$1"; shift; "$@" || { echo "FAIL: $message" >&2; exit 1; }; checks=$((checks + 1)); }
+check_isolation_rejection() {
+  local out="$1" manifest="$2" job="$3" ordinal="$4"
+  if "$TIER" --out "$out" --input-manifest "$manifest" --job-id "$job" >"$out-tier.log" 2>&1; then return 1; fi
+  python3 -c 'import json,os,pathlib,re,shutil,stat,sys; out=pathlib.Path(sys.argv[1]); job=sys.argv[2]; ordinal=int(sys.argv[3]); guest=pathlib.Path(sys.argv[4])/"agent.bin"; private=out/"private"; r=json.loads((out/"receipt.json").read_text()); assert job in {"crosslane-fixture","alias-fixture","guest-alias-fixture"}; assert ordinal==(2 if job=="crosslane-fixture" else 1); assert (private/"lane-isolation-failed").read_text()==f"{ordinal}\n", "isolation branch was not observed"; assert r["outcome"]==r["failure_code"]=="cleanup-failed"; assert all(r[k] is False for k in ("worker_cleanup_verified","pass","claim_eligible","criterion_pass","capability_promotion")); assert (r["run_count"],r["passes"],r["failures"])==(ordinal,ordinal-1,1); assert r["expected_runs"]==(3 if ordinal==2 else 1); assert (private/"cleanup-failed").is_file(); assert (private/"lane-1-authenticated.json").exists()==(ordinal==2); assert not (private/f"lane-{ordinal}-authenticated.json").exists(); assert not (private/f"lane-{ordinal+1}-helper.log").exists(); roots=[line.removeprefix("lane_root=") for line in (private/f"lane-{ordinal}-helper.log").read_text().splitlines() if line.startswith("lane_root=")]; assert len(roots)==1; work=pathlib.Path(roots[0]).parent; assert roots==[str(work/f"lane-{ordinal}")]; assert re.fullmatch(r"/tmp/bridgevm-e2e-"+re.escape(job)+r"\.[A-Za-z0-9]{6}",str(work)); info=work.lstat(); assert stat.S_ISDIR(info.st_mode) and info.st_uid==os.geteuid(); assert set(os.listdir(work))=={f"lane-{i}" for i in range(1,ordinal+1)}; matches=[list(work.glob(f"lane-{i}/library/*/bundle.vmbridge/disks/hvf-target.raw")) for i in range(1,ordinal+1)]; assert all(len(paths)==1 for paths in matches); disks=[paths[0] for paths in matches]; targets=disks if ordinal==2 else [disks[0],guest if job=="guest-alias-fixture" else disks[0].parents[1]/"metadata/hvf-vars.fd"]; linked=[path.lstat() for path in targets]; assert all(stat.S_ISREG(s.st_mode) and s.st_uid==os.geteuid() and s.st_nlink==2 for s in linked); assert len({(s.st_dev,s.st_ino) for s in linked})==1; before=(guest.read_bytes(),guest.stat().st_mode,guest.stat().st_dev,guest.stat().st_ino); assert before[0]==b"guest"; shutil.rmtree(work); assert not os.path.lexists(work); assert (guest.read_bytes(),guest.stat().st_mode,guest.stat().st_dev,guest.stat().st_ino)==before' "$out" "$job" "$ordinal" "$GUEST_PAYLOAD"
+}
 python3 - "$ROOT" <<'PY'
 import importlib.util, json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
@@ -98,16 +103,14 @@ import json,sys
 r=json.load(open(sys.argv[1])); assert (r["expected_runs"],r["run_count"],r["passes"],r["failures"])==(3,3,3,0); assert r["pass"] and r["ui_frontend_automated"] and not r["claim_eligible"]
 PY' _ "$release_out/receipt.json"
 check "release lanes use three distinct private roots" bash -c 'test "$(grep -h '^"'"'lane_root='"'"' "$1"/private/lane-*-helper.log | sort -u | wc -l | tr -d " ")" = 3' _ "$release_out"
-crosslane_out="$TMP/crosslane-out"; check "cross-lane hardlink alias fails isolation" bash -c '! "$1" --out "$2" --input-manifest "$3" --job-id crosslane-fixture >/dev/null 2>&1 && grep -q '"'"'"failure_code": "integration-failed"'"'"' "$2/receipt.json"' _ "$TIER" "$crosslane_out" "$release_manifest"
+crosslane_out="$TMP/crosslane-out"; check "cross-lane isolation refusal and unverified cleanup remain visible" check_isolation_rejection "$crosslane_out" "$release_manifest" crosslane-fixture 2
 missing_iso_manifest="$TMP/missing-iso.tsv"; write_manifest "$TMP/not-present.iso" pilot "$missing_iso_manifest"
 missing_iso_out="$TMP/missing-iso-out"
 check "missing ISO has its stable preflight blocker" bash -c '! "$1" --out "$2" --input-manifest "$3" --job-id missing-iso >/dev/null 2>&1 && grep -q '"'"'"failure_code": "missing-windows-iso"'"'"' "$2/receipt.json"' _ "$TIER" "$missing_iso_out" "$missing_iso_manifest"
-
 changed_manifest="$TMP/changed.tsv"; write_manifest "$TMP/windows.iso" pilot "$changed_manifest"; printf changed >> "$TMP/windows.iso"
 changed_out="$TMP/changed-out"
 check "post-seal mutation blocks before product execution" bash -c '! "$1" --out "$2" --input-manifest "$3" --job-id changed-input >/dev/null 2>&1 && grep -q '"'"'"failure_code": "hash-mismatch"'"'"' "$2/receipt.json" && test ! -e "$2/private/lane-1-helper.log"' _ "$TIER" "$changed_out" "$changed_manifest"
 printf 'private Windows ISO fixture\n' > "$TMP/windows.iso"
-
 noresult_manifest="$TMP/noresult.tsv"; write_manifest "$TMP/windows.iso" pilot "$noresult_manifest"
 noresult_out="$TMP/noresult-out"
 check "zero-exit helper without a guest result cannot pass" bash -c '! "$1" --out "$2" --input-manifest "$3" --job-id noresult-fixture >/dev/null 2>&1 && grep -q '"'"'"failure_code": "product-model-failed"'"'"' "$2/receipt.json"' _ "$TIER" "$noresult_out" "$noresult_manifest"
@@ -115,14 +118,11 @@ survivor_out="$TMP/survivor-out"
 check "helper survivor withholds cleanup and leaves a cleanup-failed receipt" bash -xc 'trap '\''status=$?; if (( status != 0 )); then cat "$2-tier.log" "$2/receipt.json" "$2/private/lane-1-helper.log" >&2; fi'\'' EXIT; ! "$1" --out "$2" --input-manifest "$3" --job-id survivor-fixture >"$2-tier.log" 2>&1 && grep -q '"'"'"failure_code": "cleanup-failed"'"'"' "$2/receipt.json" && root=$(sed -n '"'"'s/^lane_root=//p'"'"' "$2/private/lane-1-helper.log") && test -d "$root" && pgrep -f "$root" >/dev/null && pkill -TERM -f "$root" && work=${root%/lane-1} && case "$work" in /tmp/bridgevm-e2e-survivor-fixture.??????) rm -rf -- "$work";; *) exit 1;; esac' _ "$TIER" "$survivor_out" "$noresult_manifest"
 malformed_out="$TMP/malformed-out"
 check "unknown lane evidence fails closed" bash -c '! "$1" --out "$2" --input-manifest "$3" --job-id malformed-fixture >/dev/null 2>&1 && grep -q '"'"'"failure_code": "integration-failed"'"'"' "$2/receipt.json"' _ "$TIER" "$malformed_out" "$noresult_manifest"
-for adversary in bad-hash alias guest-alias partial bad-snapshot bad-source-receipt bad-secure bad-guest bad-raw bad-audio bad-mutation; do adversary_out="$TMP/$adversary-out"; check "$adversary lane cannot produce PASS" bash -c '! "$1" --out "$2" --input-manifest "$3" --job-id "$4-fixture" >/dev/null 2>&1 && grep -q '"'"'"failure_code": "integration-failed"'"'"' "$2/receipt.json" && grep -q '"'"'"pass": false'"'"' "$2/receipt.json"' _ "$TIER" "$adversary_out" "$noresult_manifest" "$adversary"; done
-
+for adversary in bad-hash partial bad-snapshot bad-source-receipt bad-secure bad-guest bad-raw bad-audio bad-mutation; do adversary_out="$TMP/$adversary-out"; check "$adversary lane cannot produce PASS" bash -c '! "$1" --out "$2" --input-manifest "$3" --job-id "$4-fixture" >/dev/null 2>&1 && grep -q '"'"'"failure_code": "integration-failed"'"'"' "$2/receipt.json" && grep -q '"'"'"pass": false'"'"' "$2/receipt.json"' _ "$TIER" "$adversary_out" "$noresult_manifest" "$adversary"; done; for adversary in alias guest-alias; do check "$adversary isolation refusal and unverified cleanup remain visible" check_isolation_rejection "$TMP/$adversary-out" "$noresult_manifest" "$adversary-fixture" 1; done
 duplicate_manifest="$TMP/duplicate.tsv"; cp "$noresult_manifest" "$duplicate_manifest"; printf 'campaign_mode\tpilot\n' >> "$duplicate_manifest"; duplicate_out="$TMP/duplicate-out"
 check "duplicate manifest metadata blocks before product execution" bash -c '! "$1" --out "$2" --input-manifest "$3" --job-id duplicate-manifest >/dev/null 2>&1 && grep -q '"'"'"failure_code": "internal-error"'"'"' "$2/receipt.json" && test ! -e "$2/private/lane-1-helper.log"' _ "$TIER" "$duplicate_out" "$duplicate_manifest"
-
 cancel_out="$TMP/cancel-out"; mkdir "$cancel_out"; : > "$cancel_out/cancel.requested"
 check "pre-run cancellation writes a schema-valid canceled receipt" bash -c '! "$1" --out "$2" --input-manifest "$3" --job-id canceled-fixture >/dev/null 2>&1 && "$4" "$2/receipt.json" --expected-commit "$5" >/dev/null && grep -q '"'"'"outcome": "canceled"'"'"' "$2/receipt.json"' _ "$TIER" "$cancel_out" "$noresult_manifest" "$VERIFY" "$COMMIT"
-
 bad_publish="$TMP/bad-publish"; mkdir "$bad_publish"; cp "$pilot_out/receipt.json" "$bad_publish/receipt.json"
 python3 - "$bad_publish/receipt.json" <<'PY'
 import json,sys

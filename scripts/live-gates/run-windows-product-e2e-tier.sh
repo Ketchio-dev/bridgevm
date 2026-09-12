@@ -22,7 +22,7 @@ REQUEST_WRITER="$REPO/scripts/live-gates/make-windows-product-e2e-request.py"
 VERIFIED="$PRIVATE/verified-inputs.json"
 COMMIT="$(git -C "$REPO" rev-parse HEAD)"
 STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-WORK=""; EMITTED=0; MODE=pilot; ATTEMPTS=0; VALID=false; SIGNING=unverified
+WORK=""; WORK_ID=""; EMITTED=0; MODE=pilot; ATTEMPTS=0; VALID=false; SIGNING=unverified
 
 json_value() {
   python3 - "$1" "$2" <<'PY'
@@ -41,7 +41,7 @@ cleanup_work() {
   case "$WORK" in "/tmp/bridgevm-e2e-$JOB_ID."??????) ;; *) return 1 ;; esac
   mount | grep -F "$WORK" >/dev/null 2>&1 && return 1
   pgrep -f "$WORK" >/dev/null 2>&1 && return 1
-  rm -rf -- "$WORK"
+  python3 "$REPO/scripts/live-gates/t17_owned_tree_cleanup.py" --root "$WORK" --job-id "$JOB_ID" --identity "$WORK_ID" || return 1
   [[ ! -e "$WORK" ]]
 }
 
@@ -89,7 +89,7 @@ if ! codesign --verify --deep --strict "$APP" >/dev/null 2>&1 || ! "$REPO/script
 if ! SIGNING="$(bash "$REPO/scripts/live-gates/classify-product-e2e-signing.sh" "$APP")"; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
 
 WORK="$(mktemp -d "/tmp/bridgevm-e2e-$JOB_ID.XXXXXX")"
-chmod 700 "$WORK"
+WORK_ID="$(stat -f '%d:%i' "$WORK")"; chmod 700 "$WORK"
 EXPECTED=1; [[ "$MODE" == release ]] && EXPECTED=3
 previous_inode=""
 for (( lane=1; lane<=EXPECTED; lane++ )); do
@@ -108,7 +108,7 @@ for (( lane=1; lane<=EXPECTED; lane++ )); do
   helper_status=$?
   set -e
   if (( helper_status != 0 )) || [[ ! -f "$result" || -L "$result" ]]; then emit failed product-model-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
-  if find "$WORK" \( \( ! -type d ! -type f \) -o \( -type f -links +1 \) \) -print -quit | grep -q .; then emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
+  if find "$WORK" \( \( ! -type d ! -type f \) -o \( -type f -links +1 \) \) -print -quit | grep -q .; then printf '%s\n' "$lane" > "$PRIVATE/lane-isolation-failed"; emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if mount | grep -F "$lane_root" >/dev/null 2>&1 || pgrep -f "$lane_root" >/dev/null 2>&1; then emit cleanup-failed cleanup-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if ! python3 "$WRITER" --check-lane "$result" --request "$request" --stamp "$PRIVATE/lane-$lane-authenticated.json" --job-id "$JOB_ID" --commit "$COMMIT" --mode "$MODE" --ordinal "$lane"; then emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   next_verified="$PRIVATE/verified-after-lane-$lane.json"
