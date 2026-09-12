@@ -48,3 +48,27 @@ Automatic recovery, recovery UI, complete interrupted cross-volume copying and
 power-loss durability remain unproven. Atomic JSON replacement alone is not a
 power-loss durability claim. These tests do not close A19 or promote the product.
 Hosted CI must separately succeed for the pushed evidence-seal SHA.
+
+## Cached launch-readiness follow-up
+
+Source: `61c02283814e9e1f1c754097f50cf348dcb539dd`.
+
+A new test first established launch readiness with private disk/vars fixtures
+and executable placeholders, then created a pending relocation record. Before
+this fix the library excluded the VM but the cached configuration still returned
+launchReady=true. The failed baseline is retained; no guest was launched.
+
+Library-derived HVF configurations now carry their originating registration and
+library root. Readiness returns the launch blocker `relocation-pending` while
+that registration has an unresolved record. UI configuration editing preserves
+the context by copying the session configuration before updating editable fields.
+The isolated-root regression passes its explicit library root to the mapper.
+
+The focused readiness and relocation tests passed 15/15, and
+`scripts/check-project.sh` passed. The regression requires the specific pending
+relocation blocker, rather than accepting an unrelated missing-file failure.
+
+This does not establish process-launch race freedom, native runtime enforcement,
+or protection of independently constructed development configurations without
+library context. The test validates readiness, not a real Windows launch or UI
+interaction. Automatic repair and power-loss durability remain unproven.
