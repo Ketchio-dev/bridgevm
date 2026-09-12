@@ -221,12 +221,7 @@ final class VTPMProcessKeyInput {
 
 enum VTPMStateSecurity {
     static func createPrivateFile(_ data: Data, at url: URL) throws {
-        let descriptor = url.path.withCString {
-            Darwin.open($0, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, mode_t(0o600))
-        }
-        guard descriptor >= 0 else {
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-        }
+        let descriptor = try PrivateStateFileDescriptor.create(at: url)
         var succeeded = false
         defer {
             if !succeeded { _ = Darwin.ftruncate(descriptor, 0) }
