@@ -260,9 +260,10 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Powered-off snapshot export and restore keep a byte-exact atomic disk plus vars pair under an explicit byte quota.",
-      "measured": "The sealed 2026-09-12 t1-restore-9989d0d9-native-shutdown-r3 run passed the normal restore-boot marker sequence (item 5) with three natural shutdowns. However, a deterministic 8-byte fixture reproduced restore failure leaving new disk contents with old UEFI vars when the second rename was denied. Atomic pair replacement and interrupted-operation safety (item 6) are not proven; the previous PROVEN classification is retracted. Historical and normal-path live receipts remain recorded, not discarded.",
+      "measured": "The historical two-rename restore failed on an 8-byte fixture and the previous PROVEN classification remains retracted. Managed generation runtime cfae89d1 passed one normal Windows restore-boot run (t1-restore-cfae89d1-managed-pair-r4). Relative-identity runtime ff78cca1 passed one restore, whole-directory relocation and Windows boot run (t1-restore-ff78cca1-relocated-pair-r5). Each run had exact original/clobbered/restored marker observations and three natural shutdowns; each is a separate sample count 1, not pooled across code revisions. Full interrupted-operation safety, raw export and product lifecycle coverage remain unproven. Historical failed experiments and receipts are retained.",
       "evidence_paths": [
         "docs/windows-arm/evidence/a19-restore-atomicity-defect-20260912.md",
+        "docs/windows-arm/evidence/a19-managed-pair-20260912.md",
         "docs/windows-arm/evidence/a19-restore-boot-20260912.md",
         "docs/windows-arm/evidence/a19-snapshot-restore-20260805.md",
         "docs/windows-arm/snapshot-scope-v1.md",

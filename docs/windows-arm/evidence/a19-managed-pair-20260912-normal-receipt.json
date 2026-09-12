@@ -1,0 +1,17 @@
+{
+  "binary_features": "venus",
+  "binary_hash": "013d946144066e05ab76db19e77b32e0e6846849f5ad88828aeb0c278ca0b70c",
+  "binary_profile": "release",
+  "binary_source_commit": "cfae89d18e4de9ce51adc5631825ae891c1a7aed",
+  "commit": "cfae89d18e4de9ce51adc5631825ae891c1a7aed",
+  "finished_at": "2026-09-12T02:24:05.076147+00:00",
+  "image_sha256": "5ad7a304cfec4fe9320784b26b4d6895885361ddef2675d2411a759cb54165f8",
+  "input_manifest_sha256": "8b9fdc463584500c4b2913e529972cb3c370e71d82fefe3a210e7d70c22be482",
+  "job_id": "t1-restore-cfae89d1-managed-pair-r4",
+  "outcome": "completed",
+  "pass": true,
+  "rust_toolchain": "1.97.0",
+  "sample_count": 1,
+  "tier": "t1-restore-boot",
+  "vars_sha256": "2f0e68923bf0e4cc1bcfd51a6bb67eb661d48b90aef97ea3b03d4b2805b33ca7"
+}
