@@ -47,6 +47,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 cp -c "$DISK" "$WORK/disk.raw" || fail "clone disk"
 cp "$VARS" "$WORK/vars.fd" || fail "copy vars"
+chmod u+w "$WORK/disk.raw" "$WORK/vars.fd" || fail "make private clones writable"
 
 send_wait() { # ctl, log, command, isolated response path
   python3 "$REPO/scripts/snapshot-restore-channel.py" "$1" "$2" "$3" "$STEP_TIMEOUT" "$4"
