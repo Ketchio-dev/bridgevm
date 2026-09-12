@@ -20,7 +20,6 @@ public func runXCTestSuites(_ entries: [XCTestSuiteEntry]) -> Int32 {
     var passed = 0
     var failed = 0
     var skipped = 0
-    var failureLines: [String] = []
 
     // BV_XCTEST_TRACE=1: print each test before it runs, so a crash names
     // its test instead of dying anonymously between two suite summaries.
@@ -32,14 +31,14 @@ public func runXCTestSuites(_ entries: [XCTestSuiteEntry]) -> Int32 {
             passed += 1
         } else if failures.count == 1 && failures[0].hasPrefix("SKIPPED:") {
             skipped += 1
+            print("SKIP \(entry.name): \(failures[0])")
         } else {
             failed += 1
-            failureLines.append("FAIL \(entry.name)")
-            failureLines.append(contentsOf: failures.map { "     \($0)" })
+            print("FAIL \(entry.name)")
+            for failure in failures { print("     \(failure)") }
         }
     }
 
-    for line in failureLines { print(line) }
     print("shim XCTest: \(passed) passed, \(failed) failed, \(skipped) skipped")
     print("NOTE: measured under a shim, not Apple XCTest.")
     return failed == 0 ? 0 : 1
