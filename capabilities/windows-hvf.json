@@ -268,7 +268,7 @@
         "docs/windows-arm/snapshot-scope-v1.md",
         "crates/bridgevm-hvf/src/snapshot_pair.rs"
       ],
-      "known_defect": "A failed restore can leave a new disk paired with old UEFI vars because the two files are published with separate renames."
+      "known_defect": "Copying only the logical disk/vars originals after restore loses current managed state. Legacy managed storage relocated before identity migration is refused. Full interrupted-restore and product lifecycle gates remain unproven."
     },
     {
       "id": "B1",

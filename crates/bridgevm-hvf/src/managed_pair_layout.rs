@@ -1,20 +1,18 @@
-use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
 use std::io;
-use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
 pub(super) fn store_root(disk: &Path, vars: &Path) -> PathBuf {
-    let mut hash = Sha256::new();
-    for path in [disk, vars] {
-        let bytes = path.as_os_str().as_bytes();
-        hash.update((bytes.len() as u64).to_le_bytes());
-        hash.update(bytes);
-    }
-    let id: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
-    disk.parent().unwrap().join(format!(".bridgevm-pair-{id}"))
+    identity::stable_root(disk, vars)
 }
+
+pub(super) fn resolve_root(disk: &Path, vars: &Path) -> io::Result<PathBuf> {
+    identity::resolve(disk, vars)
+}
+#[path = "managed_pair_identity.rs"]
+mod identity;
 
 pub(super) fn initialize(root: &Path) -> io::Result<()> {
     if !private_directory(root, false)? {

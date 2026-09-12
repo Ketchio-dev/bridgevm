@@ -15,7 +15,7 @@ Release-blocking criteria proven: **16 / 19**. Open: A9, A11, A19.
 
 Known open defects:
 - **A9**: Windows-HVF 3D driver injection is unavailable for install and import: signed kernel-policy provenance and a clean-machine installation flow have not been proven. The product exposes only 3D-off install/import.
-- **A19**: A failed restore can leave a new disk paired with old UEFI vars because the two files are published with separate renames.
+- **A19**: Copying only the logical disk/vars originals after restore loses current managed state. Legacy managed storage relocated before identity migration is refused. Full interrupted-restore and product lifecycle gates remain unproven.
 - **B6**: Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.

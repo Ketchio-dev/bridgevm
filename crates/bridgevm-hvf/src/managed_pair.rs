@@ -27,7 +27,7 @@ impl LockedPair {
         if (dm.dev(), dm.ino()) == (vm.dev(), vm.ino()) {
             return Err(io::Error::other("disk and vars must be distinct files"));
         }
-        let root = layout::store_root(&disk, &vars);
+        let root = layout::resolve_root(&disk, &vars)?;
         let mut pair = Self {
             disk,
             vars,

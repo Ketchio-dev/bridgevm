@@ -30,7 +30,7 @@ pub fn acquire(media: &mut VirtBootMediaConfig) -> io::Result<RuntimeLease> {
         ])?);
         let vars = fs::canonicalize(&media.flash_vars.path)?;
         for disk in disks {
-            let root = layout::store_root(&fs::canonicalize(&disk.path)?, &vars);
+            let root = layout::resolve_root(&fs::canonicalize(&disk.path)?, &vars)?;
             match fs::symlink_metadata(root) {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
                 Err(error) => return Err(error),
