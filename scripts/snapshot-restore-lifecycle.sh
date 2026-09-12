@@ -18,7 +18,7 @@ snapshot_cleanup() {
 }
 snapshot_shutdown() {
   local ctl=$1 log=$2 deadline=$((SECONDS + STEP_TIMEOUT)) status=0
-  printf 'POWEROFF\n' >> "$ctl" || return 1
+  printf 'shutdown.exe /s /t 0\n' >> "$ctl" || return 1
   while kill -0 "$SNAPSHOT_LAUNCHER" 2>/dev/null; do
     (( SECONDS < deadline )) || { snapshot_stop_launcher; return 1; }
     sleep 0.25

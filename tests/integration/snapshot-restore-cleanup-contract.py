@@ -24,7 +24,7 @@ bridgevm_process_group_alive() { return 0; }
 cleaned=no
 snapshot_stop_launcher() { cleaned=yes; SNAPSHOT_LAUNCHER=""; }
 if snapshot_shutdown "$2/ctl" "$2/log"; then exit 8; fi
-[[ "$cleaned" == yes ]]
+[[ "$cleaned" == yes && $(cat "$2/ctl") == 'shutdown.exe /s /t 0' ]]
 ''')
 
     def test_unconfirmed_cleanup_preserves_work(self):
