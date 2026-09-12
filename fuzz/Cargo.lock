@@ -29,6 +29,15 @@ dependencies = [
 name = "bridgevm-hvf"
 version = "0.1.0"
 dependencies = [
+ "bridgevm-media",
+ "libc",
+ "sha2",
+]
+
+[[package]]
+name = "bridgevm-media"
+version = "0.1.0"
+dependencies = [
  "libc",
  "sha2",
 ]
