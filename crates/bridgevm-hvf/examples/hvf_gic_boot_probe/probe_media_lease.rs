@@ -1,22 +1,12 @@
 use super::*;
-use bridgevm_hvf::media_lease::MediaLease;
+use bridgevm_hvf::snapshot_pair::managed::runtime::{acquire, RuntimeLease};
 
-pub(super) fn prepare() -> Option<(ProbeConfig, MediaLease)> {
-    let config = ProbeConfig::from_env();
-    let mut paths = Vec::new();
-    for disk in [&config.media.nvme_disk, &config.media.nvme_target]
-        .into_iter()
-        .flatten()
-    {
-        paths.push(disk.path.as_path());
-    }
-    if !paths.is_empty() {
-        paths.push(config.media.flash_vars.path.as_path());
-    }
-    match MediaLease::acquire(paths) {
+pub(super) fn prepare() -> Option<(ProbeConfig, RuntimeLease)> {
+    let mut config = ProbeConfig::from_env();
+    match acquire(&mut config.media) {
         Ok(lease) => Some((config, lease)),
         Err(error) => {
-            eprintln!("media ownership refused before VM creation: {error}");
+            eprintln!("media ownership/selection refused before VM creation: {error}");
             None
         }
     }

@@ -3,11 +3,10 @@
 
 use super::{copy_and_sync, verify_snapshot, SnapshotError, SnapshotManifest};
 use crate::media_lease::MediaLease;
-use sha2::{Digest, Sha256};
+use layout::private_directory;
 use std::fs::{self, File};
 use std::io;
-use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 pub struct LockedPair {
@@ -27,14 +26,7 @@ impl LockedPair {
         if (dm.dev(), dm.ino()) == (vm.dev(), vm.ino()) {
             return Err(io::Error::other("disk and vars must be distinct files"));
         }
-        let mut hash = Sha256::new();
-        for path in [&disk, &vars] {
-            let bytes = path.as_os_str().as_bytes();
-            hash.update((bytes.len() as u64).to_le_bytes());
-            hash.update(bytes);
-        }
-        let id: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
-        let root = disk.parent().unwrap().join(format!(".bridgevm-pair-{id}"));
+        let root = layout::store_root(&disk, &vars);
         let pair = Self {
             disk,
             vars,
@@ -53,7 +45,7 @@ impl LockedPair {
         }
         let current = self.root.join("current");
         if !private_directory(&current, false)? {
-            return Ok((self.disk.clone(), self.vars.clone()));
+            return layout::original_paths(&self.root, &self.disk, &self.vars);
         }
         let disk = current.join("disk.raw");
         let vars = current.join("vars.fd");
@@ -81,9 +73,7 @@ impl LockedPair {
             return Err(io::Error::other("restore source must be outside managed storage").into());
         }
         let manifest = verify_snapshot(&snapshot)?;
-        private_directory(&self.root, true)?;
-        // Make the store entry durable before its first generation is selected.
-        File::open(self.root.parent().unwrap())?.sync_all()?;
+        layout::initialize(&self.root)?;
         let staged = self.root.join("staging");
         if private_directory(&staged, false)? {
             fs::remove_dir_all(&staged)?;
@@ -98,35 +88,15 @@ impl LockedPair {
         }
         File::open(&staged)?.sync_all()?;
         publish(&staged, &self.root.join("current"))?;
+        layout::acknowledge(&self.root)?;
         Ok(copied)
     }
 }
 
-fn private_directory(path: &Path, create: bool) -> io::Result<bool> {
-    if create {
-        match fs::DirBuilder::new().mode(0o700).create(path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(error),
-        }
-    }
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if !create && error.kind() == io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error),
-    };
-    // SAFETY: geteuid has no preconditions or pointer arguments.
-    let uid = unsafe { libc::geteuid() };
-    if !metadata.file_type().is_dir()
-        || metadata.uid() != uid
-        || metadata.permissions().mode() & 0o077 != 0
-    {
-        return Err(io::Error::other(
-            "managed storage must be a private owned directory",
-        ));
-    }
-    Ok(true)
-}
+#[path = "managed_pair_layout.rs"]
+mod layout;
+#[path = "managed_pair_runtime.rs"]
+pub mod runtime;
 
 #[cfg(test)]
 #[path = "managed_pair_tests.rs"]
