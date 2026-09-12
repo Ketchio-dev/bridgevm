@@ -2057,3 +2057,4 @@ tests/integration/snapshot-restore-seal-contract.py	87	0
 tests/integration/snapshot-restore-cleanup-contract.py	60	0
 tests/integration/snapshot-restore-clone-permissions-contract.py	53	0
 docs/windows-arm/evidence/a19-restore-boot-20260912.md	66	0
+docs/windows-arm/evidence/a19-restore-atomicity-defect-20260912.md	49	0

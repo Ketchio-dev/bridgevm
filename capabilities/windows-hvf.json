@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-10",
-  "tested_commit": "3081fe906cf44b619c1e2f49b18ba133663f75bf",
+  "tested_commit": "455deb971d8c8ce1b5fdefc14f5ffa134dc4586f",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -257,16 +257,18 @@
     {
       "id": "A19",
       "title": "Disk safety",
-      "state": "PROVEN",
+      "state": "OPEN",
       "release_blocking": true,
       "statement": "Powered-off snapshot export and restore keep a byte-exact atomic disk plus vars pair under an explicit byte quota.",
-      "measured": "Restore-boot proven by live-queue job 20260805-091656-10876-16297 (tier t1-restore-boot, outcome completed, pass true, commit e8eb8b9e3ac7, Mac16,9 / macOS 26.5.2) against the real 64 GiB image: create.txt records disk_bytes 68719476736 and disk_sha256 56b1361282933f2cf3e409604cdc2da81f8c6ad8536de2bdcc472818e204280d. The guest-observed marker goes BV-NO-MARKER before the write, BV-ORIGINAL-1785935910 after the disk is clobbered, and the identical BV-ORIGINAL-1785935910 after restore, so the restore returns state a guest process can read rather than a file that merely hashes correctly. The remaining acceptance items are covered by tier t1-snapshot through scripts/verify-powered-off-snapshot.sh, a different job.",
+      "measured": "The sealed 2026-09-12 t1-restore-9989d0d9-native-shutdown-r3 run passed the normal restore-boot marker sequence (item 5) with three natural shutdowns. However, a deterministic 8-byte fixture reproduced restore failure leaving new disk contents with old UEFI vars when the second rename was denied. Atomic pair replacement and interrupted-operation safety (item 6) are not proven; the previous PROVEN classification is retracted. Historical and normal-path live receipts remain recorded, not discarded.",
       "evidence_paths": [
+        "docs/windows-arm/evidence/a19-restore-atomicity-defect-20260912.md",
+        "docs/windows-arm/evidence/a19-restore-boot-20260912.md",
         "docs/windows-arm/evidence/a19-snapshot-restore-20260805.md",
         "docs/windows-arm/snapshot-scope-v1.md",
-        "crates/bridgevm-hvf/src/snapshot_pair.rs",
-        "crates/bridgevm-hvf/src/nvme/disk_export.rs"
-      ]
+        "crates/bridgevm-hvf/src/snapshot_pair.rs"
+      ],
+      "known_defect": "A failed restore can leave a new disk paired with old UEFI vars because the two files are published with separate renames."
     },
     {
       "id": "B1",
