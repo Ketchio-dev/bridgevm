@@ -349,6 +349,8 @@ fn temp_beside(path: &Path) -> PathBuf {
     ))
 }
 
+#[path = "managed_pair.rs"]
+pub mod managed;
 #[cfg(test)]
 #[path = "snapshot_pair_tests.rs"]
 mod snapshot_pair_tests;

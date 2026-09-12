@@ -2063,3 +2063,5 @@ crates/bridgevm-hvf/src/snapshot_publish_tests.rs	81	0
 crates/bridgevm-hvf/src/media_lease.rs	107	2
 crates/bridgevm-hvf/src/media_lease_tests.rs	138	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_media_lease.rs	21	0
+crates/bridgevm-hvf/src/managed_pair.rs	125	1
+crates/bridgevm-hvf/src/managed_pair_tests.rs	128	0
