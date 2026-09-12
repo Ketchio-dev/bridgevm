@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Join-Path $PSScriptRoot 'win-assets'
 if (-not ('BridgeVM.BvUnicodeInput' -as [type])) {
-    Add-Type -Path (Join-Path $root 'bvagent-unicode-input.cs'),(Join-Path $root 'bvagent-key-input.cs')
+    Add-Type -Path (Join-Path $root 'bvagent-unicode-input.cs'),(Join-Path $root 'bvagent-key-input.cs'),(Join-Path $root 'bvagent-pointer-input.cs')
 }
 . (Join-Path $root 'bvagent-input.ps1')
 $cases = @{

@@ -7,7 +7,7 @@ final class HvfNegotiatedInputStreamTests: XCTestCase {
 
     private func support(_ command: String) -> [String] {
         let id = command.split(separator: " ")[1]
-        return ["BVAGENT CMD \(command) exit=0", "BVINPUT_CAPS \(id) 1 TEXTINPUT KEYINPUT 65536",
+        return ["BVAGENT CMD \(command) exit=0", "BVINPUT_CAPS \(id) 1 TEXTINPUT KEYINPUT POINTERINPUT 65536",
                 "BVAGENT END \(command)"]
     }
 

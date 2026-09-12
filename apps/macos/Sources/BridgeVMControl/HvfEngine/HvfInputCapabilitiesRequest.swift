@@ -14,7 +14,7 @@ struct HvfInputCapabilitiesRequest {
     init(now: Date, id: UUID = UUID()) {
         command = "INPUTCAPS \(id.uuidString)"
         markerPrefix = "BVINPUT_CAPS \(id.uuidString) "
-        marker = markerPrefix + "1 TEXTINPUT KEYINPUT 65536"
+        marker = markerPrefix + "1 TEXTINPUT KEYINPUT POINTERINPUT 65536"
         deadline = now.addingTimeInterval(30)
     }
 
