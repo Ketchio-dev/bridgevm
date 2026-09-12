@@ -2203,3 +2203,9 @@ scripts/live-gates/guest_input_protocol.py	60
 tests/integration/guest-input-controller-framing-test.py	57
 scripts/test-guest-input-controller-wire.ps1	18
 .github/workflows/guest-input-controller-windows.yml	13
+scripts/live-gates/guest_input_live_inputs.py	75
+scripts/live-gates/run-guest-input-live.py	134
+tests/integration/guest-input-live-inputs-test.py	70
+.github/workflows/guest-input-live.yml	13
+scripts/live-gates/guest_input_live_cleanup.py	57
+tests/integration/guest-input-live-cleanup-test.py	69
