@@ -2224,3 +2224,10 @@ tests/integration/guest-input-driver-variant-test.py	83
 tests/integration/window-inventory-restart.swift	41
 scripts/check-window-inventory-restart.sh	13
 .github/workflows/window-inventory-restart.yml	11
+scripts/live-gates/coherence_inventory_observation.py	63
+scripts/live-gates/coherence_inventory_controller.py	35
+scripts/live-gates/guest_input_profile_dispatch.py	24
+scripts/win-assets/bv-coherence-multiwindow.ps1	42
+tests/integration/coherence-inventory-observation-test.py	77
+scripts/test-coherence-multiwindow.ps1	14
+.github/workflows/coherence-multiwindow.yml	22

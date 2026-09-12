@@ -57,13 +57,17 @@ class Controller:
             return []
         return data.decode("utf-8", errors="replace").replace("\r", "\n").splitlines()
 
-    def send(self, command, label, expected):
+    def write_command(self, command):
         offset = len(self.lines())
         fd = os.open(self.control, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW)
         with os.fdopen(fd, "ab", buffering=0) as stream:
             if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
                 raise ValueError("control must be regular")
             stream.write((command + "\n").encode("ascii"))
+        return offset
+
+    def send(self, command, label, expected):
+        offset = self.write_command(command)
         return self.wait(lambda: completed_reply(self.lines()[offset:], label, expected))
 
     def file(self, name):

@@ -1,0 +1,22 @@
+name: Coherence multiwindow diagnostic contracts
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  host:
+    runs-on: macos-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python tests/integration/coherence-inventory-observation-test.py
+  guest-syntax:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - shell: powershell
+        run: scripts/test-coherence-multiwindow.ps1
+      - shell: pwsh
+        run: scripts/test-coherence-multiwindow.ps1

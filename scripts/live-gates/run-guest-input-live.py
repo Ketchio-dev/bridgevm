@@ -16,7 +16,7 @@ from guest_input_controller import Controller
 from guest_input_live_inputs import load, clone_media, digest, PROFILE
 from guest_input_protocol import regular_bytes
 from guest_input_live_cleanup import finalize
-from guest_input_driver_variant import make_controller, PRODUCTION_PROFILE
+from guest_input_profile_dispatch import make_controller, sink_filename, observation_succeeded
 
 
 def interrupted(signum, frame):
@@ -35,6 +35,7 @@ def execute(args):
     if head != args.commit:
         raise ValueError("job source identity mismatch")
     paths, hashes, manifest_hash = load(Path(args.input_manifest), root)
+    profile = json.loads(regular_bytes(Path(args.input_manifest), 16384))["profile"]
     base = (Path.home() / "BridgeVM/work").resolve()
     work = base / ("guest-input-live-" + args.job_id)
     clones = clone_media(paths, hashes, work)
@@ -42,10 +43,10 @@ def execute(args):
     share.mkdir(mode=0o700)
     control = work / "agent.ctl"
     control.touch(mode=0o600, exist_ok=False)
-    sink = root / "scripts/win-assets/bv-input-order-sink.ps1"
+    sink = root / "scripts/win-assets" / sink_filename(profile)
     shutil.copyfile(sink, share / sink.name)
     receipt = {"schema": "bridgevm.guest-input-live-receipt.v1", "tier": "d5-guest-input",
-               "job_id": args.job_id, "commit": head, "profile": PRODUCTION_PROFILE if "driver" in paths else PROFILE,
+               "job_id": args.job_id, "commit": head, "profile": profile,
                "input_manifest_sha256": manifest_hash, "input_hashes": hashes,
                "sink_sha256": digest(sink), "claim_eligible": False,
                "criterion_pass": False, "production_ui_proven": False,
@@ -71,7 +72,7 @@ def execute(args):
         with (work / "launcher.log").open("xb") as log:
             process = subprocess.Popen(command, cwd=root, env=env, stdout=log,
                                        stderr=subprocess.STDOUT, start_new_session=True)
-            driver = make_controller(control, boot / "run.log", share, paths)
+            driver = make_controller(control, boot / "run.log", share, paths, profile)
             deadline = time.monotonic() + 300
             while not any(line.startswith("BVAGENT SERVICE start") for line in driver.lines()):
                 if process.poll() is not None or time.monotonic() >= deadline:
@@ -81,6 +82,7 @@ def execute(args):
             result = driver.run()
             receipt["guest_application_observed"] = result["guest_application_observed"]
             receipt["production_driver_observed"] = getattr(driver, "driver_observed", False)
+            if "coherence" in result: receipt["coherence"] = result["coherence"]
             receipt["nonce"] = result["nonce"]
             with control.open("ab", buffering=0) as stream:
                 stream.write(b"shutdown /s /t 0\n")
@@ -97,7 +99,7 @@ def execute(args):
             signal.signal(sig, signal.SIG_IGN)
         finalize(receipt, process, paths, hashes, clones, work)
     print(json.dumps(receipt, sort_keys=True))
-    return 0 if all(receipt[key] for key in ("complete", "cleanup_complete", "source_integrity", "guest_application_observed", "clean_shutdown")) and ("driver" not in paths or receipt["production_driver_observed"]) else 1
+    return 0 if all(receipt[key] for key in ("complete", "cleanup_complete", "source_integrity", "clean_shutdown")) and observation_succeeded(profile, receipt) else 1
 
 
 def main():
