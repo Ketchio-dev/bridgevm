@@ -166,3 +166,25 @@ Result collection uses a lock; no guest media or key material is involved.
 The focused suite passed 27/27 tests and `scripts/check-project.sh` passed.
 This checks contention over exclusive record creation, not multiple complete VM
 move operations, process-crash recovery or power-loss durability.
+
+## Registration replacement synchronization
+
+Source: `e8e1f45703738bde46d2a406d0d1501b4bdc0c60`.
+
+VMLibrary.save now writes a private temporary file in the registration directory,
+fsyncs its contents through the existing private-file writer, replaces vm.json
+with rename, and fsyncs the parent directory before reporting success. Existing
+symlink preflight and Boolean failure reporting remain in place. A failure after
+rename can still mean the replacement is visible; false does not promise that
+the previous registration is intact.
+
+The selected registration, library and relocation suite passed 46/46 tests;
+`scripts/check-project.sh` passed. New private-file tests cover creation and
+replacement with mode 0600, cleanup after rename refusal, and preservation of
+a directory mistakenly used as the destination. Existing lifecycle tests also
+exercise the new writer through VMLibrary.save.
+
+Failure inside private-file creation may leave a private temporary file. This
+change does not synchronize guest media, guarantee hostile-path race safety or
+prove complete power-loss recovery. These limits remain outside the tested
+registration replacement behavior.
