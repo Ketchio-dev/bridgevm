@@ -22,7 +22,7 @@ REQUEST_WRITER="$REPO/scripts/live-gates/make-windows-product-e2e-request.py"
 VERIFIED="$PRIVATE/verified-inputs.json"
 COMMIT="$(git -C "$REPO" rev-parse HEAD)"
 STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-WORK=""; EMITTED=0; MODE=pilot; ATTEMPTS=0; VALID=false; SIGNING=development-ad-hoc
+WORK=""; EMITTED=0; MODE=pilot; ATTEMPTS=0; VALID=false; SIGNING=unverified
 
 json_value() {
   python3 - "$1" "$2" <<'PY'
@@ -46,7 +46,7 @@ cleanup_work() {
 }
 
 emit() {
-  local outcome="$1" failure="$2" attempts="$3" valid="$4" signing="${5:-development-ad-hoc}" cleanup=0
+  local outcome="$1" failure="$2" attempts="$3" valid="$4" signing="${5:-unverified}" cleanup=0
   cleanup_work && cleanup=1 || { outcome=cleanup-failed; failure=cleanup-failed; : > "$PRIVATE/cleanup-failed"; }
   local args=(--out "$OUT/receipt.json" --private "$PRIVATE" --input-manifest "$INPUT_MANIFEST" --verified "$VERIFIED" --job-id "$JOB_ID" --commit "$COMMIT" --mode "$MODE" --attempts "$attempts" --started-at "$STARTED" --outcome "$outcome" --failure-code "$failure" --signing-class "$signing")
   (( cleanup == 1 )) && args+=(--cleanup)
@@ -86,7 +86,7 @@ if [[ -f "$OUT/cancel.requested" ]]; then emit canceled canceled 0 true || exit 
 APP="$(json_value "$VERIFIED" assets.app_bundle.path)"
 HELPER="$(json_value "$VERIFIED" assets.product_helper.path)"
 if ! codesign --verify --deep --strict "$APP" >/dev/null 2>&1 || ! "$REPO/scripts/verify-product-e2e-helper-app.sh" "$APP" >/dev/null 2>&1; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
-if codesign -dv --verbose=4 "$APP" 2>&1 | grep -q 'Authority=Developer ID Application' && spctl --assess --type execute "$APP" >/dev/null 2>&1; then SIGNING=developer-id-notarized; fi
+if ! SIGNING="$(bash "$REPO/scripts/live-gates/classify-product-e2e-signing.sh" "$APP")"; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
 
 WORK="$(mktemp -d "/tmp/bridgevm-e2e-$JOB_ID.XXXXXX")"
 chmod 700 "$WORK"

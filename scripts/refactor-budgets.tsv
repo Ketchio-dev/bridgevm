@@ -1785,6 +1785,8 @@ scripts/live-gates/windows_product_e2e_artifacts.py	105	0
 scripts/live-gates/windows_product_e2e_guest_evidence.py	120	0
 scripts/live-gates/write-windows-product-e2e-receipt.py	229	0
 scripts/live-gates/run-windows-product-e2e-tier.sh	121	0
+scripts/live-gates/classify-product-e2e-signing.sh	16	0
+tests/integration/windows-product-e2e-signing-class.py	57	0
 scripts/live-gates/publish-receipt.sh	17	0
 scripts/live-gates/write-windows-product-e2e-missing-receipt.sh	17	0
 scripts/live-gates/recover-stale-receipt.sh	19	0

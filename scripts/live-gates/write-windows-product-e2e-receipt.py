@@ -206,7 +206,7 @@ def main() -> int:
     parser.add_argument("--started-at", required=True)
     parser.add_argument("--outcome", choices=tuple(VERIFIER.OUTCOMES), required=True)
     parser.add_argument("--failure-code", choices=tuple(VERIFIER.FAILURE_CODES), required=True)
-    parser.add_argument("--signing-class", choices=("development-ad-hoc", "developer-id-notarized"), default="development-ad-hoc")
+    parser.add_argument("--signing-class", choices=("unverified", "development-ad-hoc", "development-signed", "developer-id-notarized"), default="unverified")
     parser.add_argument("--cleanup", action="store_true")
     parser.add_argument("--valid", action="store_true")
     args = parser.parse_args()

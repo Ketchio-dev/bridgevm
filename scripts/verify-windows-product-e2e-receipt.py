@@ -210,7 +210,7 @@ def validate(receipt: object, *, expected_commit: str | None = None, require_cla
         _boolean(receipt[field], field)
 
     signing = receipt["artifact_signing_class"]
-    if signing not in ("development-ad-hoc", "developer-id-notarized"):
+    if signing not in ("unverified", "development-ad-hoc", "development-signed", "developer-id-notarized"):
         raise ReceiptError("artifact_signing_class is not recognized")
     if receipt["outcome"] not in OUTCOMES or receipt["failure_code"] not in FAILURE_CODES:
         raise ReceiptError("outcome or failure_code is not recognized")
