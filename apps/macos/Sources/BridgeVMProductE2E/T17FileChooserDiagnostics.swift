@@ -49,14 +49,6 @@ enum T17FileChooserDiagnostics {
     }
 
     static func post(pid: pid_t, code: CGKeyCode, flags: CGEventFlags) throws -> String {
-        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
-              let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false) else {
-            throw T17FileChooser.failure("file chooser keyboard event creation failed")
-        }
-        let before = snapshot(pid: pid)
-        down.flags = flags; up.flags = flags
-        // Keep the existing PID-targeted transport; this change only records context.
-        down.postToPid(pid); up.postToPid(pid)
-        return "key=\(code)/\(flags.rawValue),before{\(before)},after{\(snapshot(pid: pid))}"
+        try T17FileChooserKeyboard.post(pid: pid, code: code, flags: flags)
     }
 }
