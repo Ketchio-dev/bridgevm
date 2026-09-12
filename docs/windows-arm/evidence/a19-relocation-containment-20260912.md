@@ -131,3 +131,25 @@ registration, no pending record and no destination directory after setup fails.
 The focused suite passed 24/24 tests and `scripts/check-project.sh` passed.
 This is deterministic setup-failure coverage, not a cross-volume or live guest
 recovery result.
+
+## Exclusive synchronized intent creation
+
+Source: `05b122c0fe875f64a18f4ff3bd0a6aac031dbf99`.
+
+Pending-record creation now reuses the private-file writer for O_EXCL and
+O_NOFOLLOW creation at mode 0600, complete writes and file fsync. The relocation
+writer then opens and fsyncs the parent directory before returning. The earlier
+atomic JSON replacement described above is superseded for intent creation.
+Existing records are not overwritten, including when another writer wins the
+creation race after the initial existence check.
+
+The focused suite passed 26/26 tests, and `scripts/check-project.sh` passed.
+New tests exercise normal record creation and its permissions, refusal to
+overwrite existing contents, and refusal of symlink destinations without
+changing the target. These are private-file tests, not power-cut experiments.
+
+Failed creation or synchronization can leave a partial or complete pending
+record and prevents the move from starting. Such records remain fail-closed.
+Record removal is not yet directory-synchronized. No F_FULLFSYNC guarantee,
+complete transaction durability, recovery automation or power-loss criterion
+pass is claimed by these changes.
