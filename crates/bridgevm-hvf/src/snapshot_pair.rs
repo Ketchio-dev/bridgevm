@@ -222,6 +222,7 @@ pub fn create_snapshot(
     }
 
     // Refuse before writing anything, not after filling the disk.
+    let _media_lease = crate::media_lease::MediaLease::acquire([disk, vars])?;
     let projected = fs::metadata(disk)?.len() + fs::metadata(vars)?.len();
     if projected > quota_bytes {
         return Err(SnapshotError::QuotaExceeded {
@@ -298,6 +299,7 @@ pub fn restore_snapshot(
     if vm_running {
         return Err(SnapshotError::VmRunning);
     }
+    let _media_lease = crate::media_lease::MediaLease::acquire([disk, vars])?;
     let manifest = verify_snapshot(dir)?;
 
     // Stage both beside their destinations before publishing either. A rename

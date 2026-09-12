@@ -2060,3 +2060,6 @@ docs/windows-arm/evidence/a19-restore-boot-20260912.md	66	0
 docs/windows-arm/evidence/a19-restore-atomicity-defect-20260912.md	49	0
 crates/bridgevm-hvf/src/snapshot_publish.rs	70	2
 crates/bridgevm-hvf/src/snapshot_publish_tests.rs	81	0
+crates/bridgevm-hvf/src/media_lease.rs	107	2
+crates/bridgevm-hvf/src/media_lease_tests.rs	138	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_media_lease.rs	21	0

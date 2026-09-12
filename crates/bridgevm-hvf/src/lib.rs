@@ -27,6 +27,7 @@ pub mod hda;
 pub mod host_entropy;
 pub mod machine;
 pub mod media;
+pub mod media_lease;
 pub mod msix;
 pub mod net_nat;
 pub mod nvme;

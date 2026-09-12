@@ -14,11 +14,15 @@ use crate::hvf_setup::{create_gic, create_vm};
 use crate::probe_config::ProbeConfig;
 use crate::probe_setup::prepare_platform;
 use crate::watchpoint_setup::watchpoint_config;
+#[path = "probe_media_lease.rs"]
+mod media_lease;
 pub(crate) fn run() -> ExitCode {
     let mut fatal_vcpu_run_error = false;
     let mut fatal_reset_error = false;
     let mut exit_for_recreate = false;
-    let config = ProbeConfig::from_env();
+    let Some((config, _media_lease)) = media_lease::prepare() else {
+        return ExitCode::FAILURE;
+    };
     let ProbeConfig {
         media,
         smp_cpus,
@@ -37,12 +41,10 @@ pub(crate) fn run() -> ExitCode {
         smp_trace_enabled,
         stop_on_linux,
     } = config;
-
     unsafe {
         create_vm();
         let _vm_guard = HvVmGuard;
         create_gic(smp_cpus as usize);
-
         let (mut platform, vars_data, boot_dtb) = prepare_platform(
             &media,
             platform_cfg,
