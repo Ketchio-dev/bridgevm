@@ -346,6 +346,7 @@ extension VMLibrary {
         let storageBase = storageDir ?? libraryRoot
         guard template.engineKind == .hvfEngine,
               template.installPending != true,
+              !VMRelocationJournal.isPending(template, rootURL: libraryRoot),
               let name = normalizedVMName(name),
               isReadableDirectory(template.bundlePath),
               !isSameOrDescendant(storageBase, of: sourceBundle),

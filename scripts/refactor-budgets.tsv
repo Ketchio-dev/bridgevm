@@ -2110,3 +2110,4 @@ apps/macos/Sources/BridgeVMControl/WindowsVMRelocationRollback.swift	16	0
 apps/macos/Tests/BridgeVMControlTests/VMRelocationJournalTests.swift	98	0
 apps/macos/Tests/BridgeVMControlTests/HvfRelocationReadinessTests.swift	48	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLibraryLaunchContext.swift	41	0
+apps/macos/Tests/BridgeVMControlTests/HvfPendingRelocationCloneTests.swift	34	0
