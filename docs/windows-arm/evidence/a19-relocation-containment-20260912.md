@@ -91,3 +91,27 @@ bytes are unchanged.
 The lookup uses the supplied library root. This preflight is not a substitute
 for media ownership, does not prove concurrent direct API calls are race-free,
 and does not repair the pending relocation. No Windows live criterion is closed.
+
+## Read-only recovery guidance
+
+Source: `fdf0bf88ffd45ff1d7ecbd307eb5883ef0a3a3d5`.
+
+Library issues now display recorded original and destination bundle paths when
+the pending record decodes with the expected schema and matching VM identity.
+Malformed records retain generic blocking guidance. Displaying recorded paths
+does not establish that either location exists or contains complete media.
+
+Record reading uses O_NOFOLLOW, O_NONBLOCK, an opened-descriptor fstat check,
+and a read capped at 1 MiB plus one overflow byte. Non-regular and oversized
+files are refused. This replaces an initial path-size check followed by an
+unbounded whole-file read, which did not bound allocation if the file grew.
+
+The focused suite passed 23/23 tests and `scripts/check-project.sh` passed.
+Additional tests cover actual-library path guidance and malformed-record
+fallback, ordinary file reads, oversized sparse files, symlinks, directories,
+missing files and FIFOs. These tests use private temporary files only.
+
+The reader does not claim snapshot consistency against concurrent writers or
+protection against substitution of intermediate path components. Guidance is
+read-only: no record is removed and no media is selected or repaired. These
+results do not close a live Windows or power-loss recovery criterion.
