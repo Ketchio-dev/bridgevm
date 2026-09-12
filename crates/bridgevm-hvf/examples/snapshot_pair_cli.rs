@@ -10,7 +10,7 @@ fn usage() -> ExitCode {
         "usage:\n  \
          snapshot_pair_cli create <disk> <vars> <dest> <vm-id> <quota-bytes>\n  \
          snapshot_pair_cli verify <snapshot-dir>\n  \
-         snapshot_pair_cli restore <snapshot-dir> <disk> <vars>"
+         snapshot_pair_cli restore <snapshot-dir> <disk> <vars>\n  snapshot_pair_cli lease <disk> <vars>"
     );
     ExitCode::from(2)
 }
@@ -21,9 +21,8 @@ fn main() -> ExitCode {
         return usage();
     };
 
-    // The VM is powered off by construction here: this binary is the only
-    // thing touching the media, and the gate runs it against clones.
     let result = match (command.as_str(), args.len()) {
+        ("lease", 3) => return bridgevm_hvf::media_lease_session::command(&args[1..]),
         ("create", 6) => {
             let Ok(quota) = args[5].parse::<u64>() else {
                 eprintln!("quota must be a number of bytes");

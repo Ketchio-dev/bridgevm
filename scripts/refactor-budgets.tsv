@@ -2090,3 +2090,6 @@ crates/bridgevm-media/src/media_lease_tests.rs	138	1
 crates/bridgevm-media/src/media_lease_lifecycle_tests.rs	57	2
 crates/bridgevm-storage/src/bundle_ownership.rs	48	0
 crates/bridgevm-storage/src/bundle_ownership_tests.rs	58	0
+crates/bridgevm-hvf/src/media_lease_session.rs	46	0
+crates/bridgevm-hvf/src/media_lease_session_tests.rs	118	0
+crates/bridgevm-hvf/src/media_lease_session_test_support.rs	43	0
