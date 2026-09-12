@@ -12,7 +12,7 @@ $root = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('N'))
 try {
     [void](New-Item -ItemType Directory -Path (Join-Path $root 'agent') -Force)
     $records = @()
-    foreach ($name in @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-task.ps1')) {
+    foreach ($name in @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-task.ps1')) {
         $path = Join-Path $root ('agent/' + $name)
         [IO.File]::WriteAllText($path, 'synthetic asset ' + $name)
         $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()

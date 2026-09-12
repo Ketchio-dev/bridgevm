@@ -13,7 +13,7 @@ function Write-ProvisionLog([string]$Message) {
 
 function Confirm-GuestAgentAssets([object[]]$Records, [string]$Root) {
     $agentHash = $null
-    foreach ($name in @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-task.ps1')) {
+    foreach ($name in @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-task.ps1')) {
         $entries = @($Records | Where-Object { $_.Count -eq 3 -and $_[0] -eq 'guest_tool' -and $_[1] -eq ('agent/' + $name) })
         if ($entries.Count -ne 1 -or $entries[0][2] -notmatch '^[0-9a-f]{64}\z') {
             throw ('guest-payload receipt has no unique asset hash: ' + $name)
