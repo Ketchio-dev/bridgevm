@@ -10,4 +10,4 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python3 tests/integration/injector-driver-metadata-test.py && python3 tests/integration/injector-driver-fat-test.py
+      - run: python3 tests/integration/injector-driver-metadata-test.py && python3 tests/integration/injector-driver-fat-test.py && python3 tests/integration/injector-boot-alias-test.py

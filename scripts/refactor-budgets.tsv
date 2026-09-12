@@ -2191,3 +2191,5 @@ tests/integration/winpe_companion_policy_cases.py	26	0
 tests/integration/injector-driver-metadata-test.py	50	0
 .github/workflows/injector-driver-metadata.yml	13	0
 tests/integration/injector-driver-fat-test.py	67	0
+scripts/stage-injector-boot-alias.sh	26	0
+tests/integration/injector-boot-alias-test.py	74	0

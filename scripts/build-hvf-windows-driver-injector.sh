@@ -153,7 +153,7 @@ rsync -a "$ISO_MNT/efi" "$DST_VOL"/
 [[ -d "$ISO_MNT/boot" ]] && rsync -a "$ISO_MNT/boot" "$DST_VOL"/ || true
 for f in bootmgr bootmgr.efi; do [[ -e "$ISO_MNT/$f" ]] && cp "$ISO_MNT/$f" "$DST_VOL"/ || true; done
 mkdir -p "$DST_VOL/sources"
-cp "$ISO_MNT/sources/boot.wim" "$DST_VOL/sources/boot.wim"
+cp "$ISO_MNT/sources/boot.wim" "$DST_VOL/sources/boot.wim"; bash "$(dirname "${BASH_SOURCE[0]}")/stage-injector-boot-alias.sh" "$DST_VOL"
 
 for spec in $DRIVER_DIRS; do
   name="${spec%%:*}"; src="${spec#*:}"
