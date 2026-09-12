@@ -398,8 +398,7 @@ while ($true) {
             $arg = if ($sp -lt 0) { '' } else { $line.Substring($sp + 1) }
             switch ($tok) {
                 'PING' { Write-Line $h 'PONG' 'PONG' }
-                'TEXTINPUT' { Write-CommandResult $h (Invoke-UnicodeInput $arg) }
-                'KEYINPUT' { Write-CommandResult $h (Invoke-UnicodeInput $arg $null $true) }
+                { $_ -in @('TEXTINPUT', 'KEYINPUT', 'POINTERINPUT') } { Write-CommandResult $h (Invoke-UnicodeInput $arg $null ($tok -eq 'KEYINPUT') ($tok -eq 'POINTERINPUT')) }
             'INPUTCAPS' { Write-CommandResult $h (Get-InputCapabilities $arg) }
                 'WINLIST' {
                     # Main app windows via the .NET process walk. The previous

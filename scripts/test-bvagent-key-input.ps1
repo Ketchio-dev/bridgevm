@@ -36,5 +36,5 @@ $script:keySenderCalled = $false
 $result = Invoke-UnicodeInput "$id $payload" { $script:keySenderCalled = $true; return [uint32]6 } $true
 if ($result.Exit -eq 0 -or $script:keySenderCalled) { throw 'unsupported key reached sender' }
 $agent = [IO.File]::ReadAllText((Join-Path $root 'bvagent.ps1'))
-if (-not $agent.Contains("'KEYINPUT' { Write-CommandResult `$h (Invoke-UnicodeInput `$arg `$null `$true) }")) { throw 'key dispatch missing' }
+if (-not $agent.Contains("{ `$_ -in @('TEXTINPUT', 'KEYINPUT', 'POINTERINPUT') } { Write-CommandResult `$h (Invoke-UnicodeInput `$arg `$null (`$tok -eq 'KEYINPUT') (`$tok -eq 'POINTERINPUT')) }")) { throw 'key dispatch missing' }
 Write-Output 'Guest editing key contracts: PASS (no native input injected)'

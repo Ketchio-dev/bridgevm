@@ -7,7 +7,7 @@ if (-not $ast.Extent.Text.Contains(". (Join-Path `$PSScriptRoot 'bvagent-input.p
     throw 'resident agent does not load the fixed sibling input module'
 }
 . (Join-Path $root 'bvagent-input.ps1')
-if (-not $ast.Extent.Text.Contains("'TEXTINPUT' { Write-CommandResult `$h (Invoke-UnicodeInput `$arg) }")) {
+if (-not $ast.Extent.Text.Contains("{ `$_ -in @('TEXTINPUT', 'KEYINPUT', 'POINTERINPUT') } { Write-CommandResult `$h (Invoke-UnicodeInput `$arg `$null (`$tok -eq 'KEYINPUT') (`$tok -eq 'POINTERINPUT')) }")) {
     throw 'guest dispatch does not invoke the Unicode handler/result writer'
 }
 $id = '01234567-89AB-CDEF-0123-456789ABCDEF'

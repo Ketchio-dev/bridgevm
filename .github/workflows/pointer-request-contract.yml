@@ -10,8 +10,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check pointer requests with Windows PowerShell 5.1
         shell: powershell
-        run: scripts/test-bvagent-pointer-request.ps1
+        run: scripts/test-bvagent-pointer-request.ps1; scripts/test-bvagent-input-dispatch.ps1
       - name: Check pointer requests with PowerShell 7
         if: ${{ !cancelled() }}
         shell: pwsh
-        run: scripts/test-bvagent-pointer-request.ps1
+        run: scripts/test-bvagent-pointer-request.ps1; scripts/test-bvagent-input-dispatch.ps1
