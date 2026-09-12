@@ -11,7 +11,7 @@ struct HvfFramebufferView: NSViewRepresentable {
         FBLayerView(session: session)
     }
 
-    func updateNSView(_ nsView: FBLayerView, context: Context) {}
+    func updateNSView(_ nsView: FBLayerView, context: Context) { nsView.updateSession(session) }
 
     static func dismantleNSView(_ nsView: FBLayerView, coordinator: ()) {
         nsView.teardown()
@@ -19,7 +19,7 @@ struct HvfFramebufferView: NSViewRepresentable {
 }
 
 final class FBLayerView: NSView {
-    private weak var session: HvfEngineSession?
+    private(set) weak var session: HvfEngineSession?
     private var fileDescriptor: Int32 = -1
     private var mappedPointer: UnsafeMutableRawPointer?
     private var mappedLength = 0
@@ -33,6 +33,13 @@ final class FBLayerView: NSView {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+
+    func updateSession(_ next: HvfEngineSession) {
+        guard session !== next else { return }
+        teardown()
+        session = next
+        if window != nil { startDisplayLink() }
+    }
 
     init(session: HvfEngineSession) {
         self.session = session
