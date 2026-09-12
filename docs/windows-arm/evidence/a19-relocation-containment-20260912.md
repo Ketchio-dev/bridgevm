@@ -153,3 +153,16 @@ record and prevents the move from starting. Such records remain fail-closed.
 Record removal is not yet directory-synchronized. No F_FULLFSYNC guarantee,
 complete transaction durability, recovery automation or power-loss criterion
 pass is claimed by these changes.
+
+## Concurrent record creation coverage
+
+Source: `1c6364d697237a1e26c4931c2059db0b741e5a08`.
+
+An additional private-file test calls the production record writer from 16
+concurrent attempts against the same destination. Exactly one succeeds, the
+remaining 15 report EEXIST, and the retained bytes match the successful writer.
+Result collection uses a lock; no guest media or key material is involved.
+
+The focused suite passed 27/27 tests and `scripts/check-project.sh` passed.
+This checks contention over exclusive record creation, not multiple complete VM
+move operations, process-crash recovery or power-loss durability.
