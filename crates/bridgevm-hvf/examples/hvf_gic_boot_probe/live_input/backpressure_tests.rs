@@ -4,7 +4,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-
+use std::sync::atomic::{AtomicU64, Ordering};
 struct Fixture {
     input: LiveInputController,
     path: PathBuf,
@@ -12,8 +12,8 @@ struct Fixture {
 
 impl Fixture {
     fn new(contents: &str) -> Self {
-        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let path = std::env::temp_dir().join(format!("bridgevm-input-backpressure-{}-{nonce}", std::process::id()));
+        let nonce = { static NEXT: AtomicU64 = AtomicU64::new(0); (SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(), NEXT.fetch_add(1, Ordering::Relaxed)) };
+        let path = std::env::temp_dir().join(format!("bridgevm-input-backpressure-{}-{}-{}", std::process::id(), nonce.0, nonce.1));
         let mut file = OpenOptions::new().write(true).create_new(true).open(&path).unwrap();
         file.write_all(contents.as_bytes()).unwrap();
         Self {
