@@ -147,7 +147,7 @@ enum VMLibrary {
             let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try enc.encode(cfg)
             guard data.count <= maximumConfigBytes else { return false }
-            try data.write(to: configURL, options: [.atomic])
+            try VMRegistrationWriter.write(data, to: configURL)
             return true
         } catch {
             return false

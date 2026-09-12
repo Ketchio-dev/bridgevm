@@ -2119,3 +2119,5 @@ apps/macos/Tests/BridgeVMControlTests/VMRelocationSetupFailureTests.swift	41	0
 apps/macos/Sources/BridgeVMControl/VMRelocationRecordWriter.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/VMRelocationRecordWriterTests.swift	35	0
 apps/macos/Tests/BridgeVMControlTests/VMRelocationConcurrentWriterTests.swift	48	0
+apps/macos/Sources/BridgeVMControl/VMRegistrationWriter.swift	22	0
+apps/macos/Tests/BridgeVMControlTests/VMRegistrationWriterTests.swift	34	0
