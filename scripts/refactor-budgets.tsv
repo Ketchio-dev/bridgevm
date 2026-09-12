@@ -2161,3 +2161,4 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/input_receipt_labe
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerInputEncoding.swift	31	0
 apps/macos/Tests/BridgeVMControlTests/HvfPointerInputStreamTests.swift	67	0
 apps/macos/Tests/BridgeVMControlTests/HvfPointerCapabilityTests.swift	40	0
+scripts/test-bvagent-pointer-scroll.ps1	27	0

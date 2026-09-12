@@ -10,8 +10,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check pointer builder with Windows PowerShell 5.1
         shell: powershell
-        run: scripts/test-bvagent-pointer-input.ps1
+        run: scripts/test-bvagent-pointer-scroll.ps1
       - name: Check pointer builder with PowerShell 7
         if: ${{ !cancelled() }}
         shell: pwsh
-        run: scripts/test-bvagent-pointer-input.ps1
+        run: scripts/test-bvagent-pointer-scroll.ps1
