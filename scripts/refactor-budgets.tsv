@@ -2077,3 +2077,7 @@ crates/bridgevm-hvf/src/managed_pair_identity_tests.rs	101	0
 scripts/snapshot-restore-relocation.sh	10	0
 tests/integration/snapshot-restore-relocation-contract.sh	47	0
 docs/windows-arm/evidence/a19-managed-pair-20260912.md	61	0
+crates/bridgevm-storage/src/bundle_directory_permissions.rs	56	0
+crates/bridgevm-storage/src/bundle_copy_entries.rs	32	0
+crates/bridgevm-storage/src/bundle_archive_extract.rs	35	0
+crates/bridgevm-storage/src/tests_split/bundle_permissions.rs	98	0

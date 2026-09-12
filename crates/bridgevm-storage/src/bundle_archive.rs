@@ -4,6 +4,9 @@ use crate::*;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+#[path = "bundle_archive_extract.rs"]
+mod extract;
+pub(crate) use extract::extract_bundle_tar;
 
 pub(crate) fn export_bundle_tar(
     source: &Path,
@@ -27,35 +30,6 @@ pub(crate) fn export_bundle_tar(
     let mut builder = tar::Builder::new(file);
     builder.append_dir_all(".", &staging)?;
     builder.finish()?;
-    Ok(())
-}
-
-pub(crate) fn extract_bundle_tar(input: &Path, output: &Path) -> Result<(), StorageError> {
-    fs::create_dir_all(output)?;
-    let file = fs::File::open(input)?;
-    let mut archive = tar::Archive::new(file);
-    for entry in archive.entries()? {
-        let mut entry = entry?;
-        let raw_path = entry.path()?.into_owned();
-        let Some(relative_path) = safe_archive_path(&raw_path) else {
-            return Err(StorageError::UnsafeArchiveEntry(raw_path));
-        };
-        if relative_path.as_os_str().is_empty() {
-            continue;
-        }
-        let destination = output.join(&relative_path);
-        let entry_type = entry.header().entry_type();
-        if entry_type.is_dir() {
-            fs::create_dir_all(&destination)?;
-        } else if entry_type.is_file() {
-            if let Some(parent) = destination.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            entry.unpack(&destination)?;
-        } else {
-            return Err(StorageError::UnsupportedBundleEntry(raw_path));
-        }
-    }
     Ok(())
 }
 

@@ -1,5 +1,6 @@
 //! Split test module.
 
+mod bundle_permissions;
 mod helpers;
 mod part_1;
 mod part_2;

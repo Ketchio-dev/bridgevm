@@ -3,6 +3,9 @@
 use crate::*;
 use std::fs;
 use std::path::Path;
+#[path = "bundle_copy_entries.rs"]
+mod entries;
+pub(crate) use entries::copy_dir_all_inner;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BundleCopySummary {
@@ -60,9 +63,10 @@ pub(crate) fn copy_dir_all(from: &Path, to: &Path) -> Result<BundleCopySummary, 
     if !metadata.file_type().is_dir() {
         return Err(StorageError::UnsupportedBundleEntry(from.to_path_buf()));
     }
-    fs::create_dir_all(to)?;
+    crate::bundle_directory_permissions::create(to)?;
     let mut copied_files = Vec::new();
     copy_dir_all_inner(from, from, to, &mut copied_files)?;
+    crate::bundle_directory_permissions::copy_mode(from, to)?;
     copied_files.sort();
     Ok(BundleCopySummary {
         file_count: copied_files.len() as u64,
@@ -72,37 +76,6 @@ pub(crate) fn copy_dir_all(from: &Path, to: &Path) -> Result<BundleCopySummary, 
             .any(|path| path.starts_with("metadata/")),
         files: copied_files,
     })
-}
-
-pub(crate) fn copy_dir_all_inner(
-    root: &Path,
-    from: &Path,
-    to: &Path,
-    copied_files: &mut Vec<String>,
-) -> Result<(), StorageError> {
-    let mut entries = fs::read_dir(from)?.collect::<Result<Vec<_>, _>>()?;
-    entries.sort_by_key(|entry| entry.file_name());
-    for entry in entries {
-        let from_path = entry.path();
-        if should_skip_bundle_copy_path(&from_path) {
-            continue;
-        }
-        let to_path = to.join(entry.file_name());
-        let file_type = entry.file_type()?;
-        if file_type.is_dir() {
-            fs::create_dir_all(&to_path)?;
-            copy_dir_all_inner(root, &from_path, &to_path, copied_files)?;
-        } else if file_type.is_file() {
-            fs::copy(&from_path, &to_path)?;
-            let relative = from_path
-                .strip_prefix(root)
-                .map_err(|_| StorageError::UnsupportedBundleEntry(from_path.clone()))?;
-            copied_files.push(relative.to_string_lossy().replace('\\', "/"));
-        } else {
-            return Err(StorageError::UnsupportedBundleEntry(from_path));
-        }
-    }
-    Ok(())
 }
 
 pub(crate) fn should_skip_bundle_copy_path(path: &Path) -> bool {

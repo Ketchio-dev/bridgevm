@@ -12,6 +12,7 @@ mod active_disk;
 pub(crate) mod application_consistent_snapshot;
 mod bundle_archive;
 mod bundle_copy;
+mod bundle_directory_permissions;
 mod bundle_layout;
 mod bundle_metadata;
 mod clock;
