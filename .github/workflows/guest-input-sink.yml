@@ -1,0 +1,13 @@
+name: Guest application input sink contracts
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: powershell
+        run: scripts/test-bvagent-input-sink.ps1
+      - shell: pwsh
+        run: scripts/test-bvagent-input-sink.ps1

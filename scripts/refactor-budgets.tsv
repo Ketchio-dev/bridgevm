@@ -2193,3 +2193,6 @@ tests/integration/injector-driver-metadata-test.py	50	0
 tests/integration/injector-driver-fat-test.py	67	0
 scripts/stage-injector-boot-alias.sh	26	0
 tests/integration/injector-boot-alias-test.py	74	0
+scripts/win-assets/bv-input-order-sink.ps1	103	0
+scripts/test-bvagent-input-sink.ps1	23	0
+.github/workflows/guest-input-sink.yml	13	0
