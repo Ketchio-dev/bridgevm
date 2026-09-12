@@ -1,0 +1,12 @@
+name: Sealed production input driver profile contracts
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: macos-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/integration/guest-input-driver-variant-test.py
+      - run: python3 tests/integration/guest-input-queue-test.py && python3 tests/integration/guest-input-controller-test.py

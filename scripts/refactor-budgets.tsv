@@ -2217,3 +2217,7 @@ scripts/live-gates/production-input-driver.swift	139
 scripts/build-production-input-driver.sh	13
 tests/integration/production-input-driver-test.py	79
 .github/workflows/production-input-driver.yml	12
+scripts/live-gates/guest_input_profiles.py	12
+scripts/live-gates/guest_input_driver_variant.py	83
+tests/integration/guest-input-driver-variant-test.py	83
+.github/workflows/guest-input-driver-variant.yml	12

@@ -16,6 +16,7 @@ from guest_input_controller import Controller
 from guest_input_live_inputs import load, clone_media, digest, PROFILE
 from guest_input_protocol import regular_bytes
 from guest_input_live_cleanup import finalize
+from guest_input_driver_variant import make_controller, PRODUCTION_PROFILE
 
 
 def interrupted(signum, frame):
@@ -44,11 +45,11 @@ def execute(args):
     sink = root / "scripts/win-assets/bv-input-order-sink.ps1"
     shutil.copyfile(sink, share / sink.name)
     receipt = {"schema": "bridgevm.guest-input-live-receipt.v1", "tier": "d5-guest-input",
-               "job_id": args.job_id, "commit": head, "profile": PROFILE,
+               "job_id": args.job_id, "commit": head, "profile": PRODUCTION_PROFILE if "driver" in paths else PROFILE,
                "input_manifest_sha256": manifest_hash, "input_hashes": hashes,
                "sink_sha256": digest(sink), "claim_eligible": False,
                "criterion_pass": False, "production_ui_proven": False,
-               "guest_application_observed": False, "clean_shutdown": False,
+               "guest_application_observed": False, "clean_shutdown": False, "production_driver_observed": False,
                "source_integrity": False, "complete": False}
     command = ["bash", str(root / "scripts/run-hvf-windows-installed-boot.sh"),
                "--target", str(clones["image"]), "--vars", str(clones["vars"]),
@@ -70,7 +71,7 @@ def execute(args):
         with (work / "launcher.log").open("xb") as log:
             process = subprocess.Popen(command, cwd=root, env=env, stdout=log,
                                        stderr=subprocess.STDOUT, start_new_session=True)
-            driver = Controller(control, boot / "run.log", share)
+            driver = make_controller(control, boot / "run.log", share, paths)
             deadline = time.monotonic() + 300
             while not any(line.startswith("BVAGENT SERVICE start") for line in driver.lines()):
                 if process.poll() is not None or time.monotonic() >= deadline:
@@ -79,6 +80,7 @@ def execute(args):
             driver.deadline = time.monotonic() + 120
             result = driver.run()
             receipt["guest_application_observed"] = result["guest_application_observed"]
+            receipt["production_driver_observed"] = getattr(driver, "driver_observed", False)
             receipt["nonce"] = result["nonce"]
             with control.open("ab", buffering=0) as stream:
                 stream.write(b"shutdown /s /t 0\n")
@@ -95,7 +97,7 @@ def execute(args):
             signal.signal(sig, signal.SIG_IGN)
         finalize(receipt, process, paths, hashes, clones, work)
     print(json.dumps(receipt, sort_keys=True))
-    return 0 if all(receipt[key] for key in ("complete", "cleanup_complete", "source_integrity", "guest_application_observed", "clean_shutdown")) else 1
+    return 0 if all(receipt[key] for key in ("complete", "cleanup_complete", "source_integrity", "guest_application_observed", "clean_shutdown")) and ("driver" not in paths or receipt["production_driver_observed"]) else 1
 
 
 def main():

@@ -80,6 +80,10 @@ class Controller:
         encoded = base64.b64encode(payload.encode()).decode()
         self.send(label + " " + encoded, label, "BVINPUT_INSERTED " + identifier + " " + str(count))
 
+    def dispatch_inputs(self, x, y):
+        for verb, payload, count in input_sequence(x, y):
+            self.input(verb, payload, count)
+
     def await_staged(self, guest, digest):
         # Only this read-only query may repeat. Input commands are never replayed.
         def probe():
@@ -113,8 +117,7 @@ class Controller:
         command = 'powershell.exe -NoProfile -Command "' + script + '"'
         self.send(command, command, "BVINPUT_SINK_STARTED " + self.nonce)
         x, y = ready_coordinates(self.file("ready-" + self.nonce + ".json"), self.nonce)
-        for verb, payload, count in input_sequence(x, y):
-            self.input(verb, payload, count)
+        self.dispatch_inputs(x, y)
         check_result(self.file("result-" + self.nonce + ".json"), self.nonce)
         return {"schema": "bridgevm.guest-input-diagnostic.v1", "nonce": self.nonce,
                 "guest_application_observed": True, "production_ui_proven": False,

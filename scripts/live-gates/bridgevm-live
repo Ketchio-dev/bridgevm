@@ -112,7 +112,7 @@ cmd_submit() {
     if [ -n "$input_manifest" ]; then
         cp "$input_manifest" "$staging/input-manifest.tsv"
         chmod 600 "$staging/input-manifest.tsv"
-        manifest_sha="$(shasum -a 256 "$staging/input-manifest.tsv" | cut -d' ' -f1)"
+        manifest_sha="$(shasum -a 256 "$staging/input-manifest.tsv" | cut -d' ' -f1)"; [ "$tier" != d5-guest-input ] || python3 "$(dirname "$0")/guest_input_driver_variant.py" "$staging/input-manifest.tsv" "$staging"
         if [ "$tier" != t8-pointer-reliability ] && [ "$tier" != t14-bridgevm-pc-windows-start ] && [ "$tier" != t17-windows-hvf-product-e2e ]; then
             local binary_path expected_binary_sha
             binary_path="$(if [ "$tier" = d5-guest-input ]; then python3 "$(dirname "$0")/guest_input_queue.py" binary-path "$staging/input-manifest.tsv"; else awk -F '\t' '$1=="binary"{print $2}' "$staging/input-manifest.tsv"; fi)"

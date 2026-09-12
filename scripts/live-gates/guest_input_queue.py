@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-
+from guest_input_driver_variant import bind
 from guest_input_live_inputs import digest, load
 from guest_input_protocol import regular_bytes
 import guest_input_queue_receipt as receipts
@@ -32,7 +32,7 @@ def effective(directory, root, commit, source, binary):
         raise ValueError("manifest binary identity differs from queue")
     value["assets"]["binary"]["path"] = str(binary.resolve())
     value["assets"]["firmware"]["path"] = str((root / "crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd").resolve())
-    target = directory / "effective-inputs.json"
+    bind(directory, value); target = directory / "effective-inputs.json"
     receipts.write_new(target, value)
     load(target, root)  # Validate all assets, including checkout-pinned firmware.
     return identity, target

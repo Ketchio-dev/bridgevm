@@ -7,8 +7,7 @@ import re
 import stat
 import subprocess
 
-PROFILE = "no-3d-installed-input-450s"
-ASSETS = {"image", "vars", "binary", "firmware"}
+from guest_input_profiles import PROFILE, asset_names
 
 
 def digest(path):
@@ -28,8 +27,8 @@ def load(manifest, root):
     value = json.loads(raw)
     if (set(value) != {"schema", "purpose", "profile", "assets"}
             or value["schema"] != "bridgevm.guest-input-live.v1"
-            or value["purpose"] != "diagnostic-only" or value["profile"] != PROFILE
-            or not isinstance(value["assets"], dict) or set(value["assets"]) != ASSETS):
+            or value["purpose"] != "diagnostic-only"
+            or not isinstance(value["assets"], dict) or set(value["assets"]) != asset_names(value["profile"])):
         raise ValueError("invalid diagnostic input manifest")
     paths, hashes, identities = {}, {}, set()
     for name, entry in value["assets"].items():
