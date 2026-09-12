@@ -2240,3 +2240,5 @@ tests/integration/coherence-candidate-test.py	63
 .github/workflows/coherence-candidate.yml	22
 scripts/live-gates/coherence_fixture_readiness.py	13
 tests/integration/coherence-fixture-readiness-test.py	43
+apps/macos/Sources/BridgeVMProductE2E/T17FileChooserGraph.swift	28	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserGraphTests.swift	41	0

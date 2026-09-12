@@ -1,6 +1,7 @@
 import ApplicationServices
 
 enum T17FileChooserAXTree {
+    static let relationships = [kAXChildrenAttribute, kAXWindowsAttribute]
     static func attribute(_ element: AXUIElement, _ name: String) throws -> AnyObject? {
         var value: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(element, name as CFString, &value)
@@ -12,14 +13,8 @@ enum T17FileChooserAXTree {
     }
 
     static func nodes(_ root: AXUIElement) throws -> [AXUIElement] {
-        var pending = [root]
-        var index = 0
-        while index < pending.count {
-            guard pending.count <= 12_000 else { throw T17FileChooser.failure("file chooser AX tree exceeded limit") }
-            let item = pending[index]
-            index += 1
-            pending.append(contentsOf: try attribute(item, kAXChildrenAttribute) as? [AXUIElement] ?? [])
-        }
-        return pending
+        try T17FileChooserGraph.walk(root: root, limit: 12_000, related: { node in
+            try relationships.flatMap { try attribute(node, $0) as? [AXUIElement] ?? [] }
+        }, hash: { CFHash($0) }, same: { CFEqual($0, $1) })
     }
 }
