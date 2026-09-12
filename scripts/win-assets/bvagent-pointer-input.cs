@@ -4,7 +4,6 @@ using System.Text.RegularExpressions;
 
 namespace BridgeVM {
     public static partial class BvUnicodeInput {
-        // Host HID coordinates are 0..32767; Windows absolute input is 0..65535.
         public static Input[] BuildPointer(string command) {
             if (String.IsNullOrEmpty(command) || command.Length > 64) {
                 throw new ArgumentException("pointer-input-length");
@@ -51,6 +50,7 @@ namespace BridgeVM {
             return true;
         }
 
+        public static uint InsertPointer(string command) { return InsertEvents(BuildPointer(command)); }
         private static Input MouseEvent(int x, int y, uint flags) {
             Input input = new Input();
             input.Type = 0; // INPUT_MOUSE; primary desktop, matching the VM display.

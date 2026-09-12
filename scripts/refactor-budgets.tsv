@@ -2039,6 +2039,8 @@ scripts/win-assets/bvagent-key-input.cs	73	0
 scripts/win-assets/bvagent-pointer-input.cs	63	0
 scripts/test-bvagent-pointer-input.ps1	41	0
 .github/workflows/pointer-input-contract.yml	17	0
+.github/workflows/pointer-request-contract.yml	17	0
+scripts/test-bvagent-pointer-request.ps1	35	0
 scripts/test-bvagent-key-input.ps1	40	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestInputEncoding.swift	54	0
 apps/macos/Tests/BridgeVMControlTests/HvfGuestKeyInputRequestTests.swift	56	0

@@ -1,0 +1,17 @@
+name: Native pointer request contracts
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  pointer-request:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check pointer requests with Windows PowerShell 5.1
+        shell: powershell
+        run: scripts/test-bvagent-pointer-request.ps1
+      - name: Check pointer requests with PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: scripts/test-bvagent-pointer-request.ps1
