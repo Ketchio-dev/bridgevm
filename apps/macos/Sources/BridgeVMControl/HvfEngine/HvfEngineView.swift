@@ -421,22 +421,21 @@ struct HvfEngineView: View {
         keyboardInput = ""
     }
     private func currentConfig() -> HvfEngineConfig {
-        HvfEngineConfig(targetDiskPath: targetDiskPath,
-                        uefiVarsPath: uefiVarsPath,
-                        evidenceDir: evidenceDir,
-                        watchdogMs: watchdogEnabled ? watchdogMs : nil,
-                        ramMiB: ramMiB,
-                        smpCpus: smpCpus,
-                        clipboardSync: clipboardSync,
-                        shareHostDir: shareEnabled ? shareHostDir : nil,
-                        shareGuestDir: shareEnabled ? shareGuestDir : nil,
-                        virtioNet: virtioNet,
-                        virtioGpu3d: virtioGpu3d,
-                        nvmeBufferedIO: nvmeBufferedIO,
-                        ctlFilePath: ctlFilePath,
-                        vtpmStateDir: session.config.vtpmStateDir,
-                        swtpmBin: session.config.swtpmBin,
-                        vtpmKeyID: session.config.vtpmKeyID, allowsExperimental3D: session.config.allowsExperimental3D)
+        var config = session.config
+        config.targetDiskPath = targetDiskPath
+        config.uefiVarsPath = uefiVarsPath
+        config.evidenceDir = evidenceDir
+        config.watchdogMs = watchdogEnabled ? watchdogMs : nil
+        config.ramMiB = ramMiB
+        config.smpCpus = smpCpus
+        config.clipboardSync = clipboardSync
+        config.shareHostDir = shareEnabled ? shareHostDir : nil
+        config.shareGuestDir = shareEnabled ? shareGuestDir : nil
+        config.virtioNet = virtioNet
+        config.virtioGpu3d = virtioGpu3d
+        config.nvmeBufferedIO = nvmeBufferedIO
+        config.ctlFilePath = ctlFilePath
+        return config
     }
 
     private func loadStateFromSession() {
@@ -563,4 +562,3 @@ struct HvfEngineView: View {
                                ctlFilePath: "\(evidence)/bvagent.ctl")
     }
 }
-

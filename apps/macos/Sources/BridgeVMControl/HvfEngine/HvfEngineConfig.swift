@@ -36,31 +36,7 @@ struct HvfEngineConfig: Equatable {
     var swtpmBin: String = VTPMStateSecurity.defaultSwtpmCommand()
     var vtpmKeyID: String? = nil
     var allowsExperimental3D: Bool = true
-    static func libraryVM(_ config: VMConfig) -> HvfEngineConfig? {
-        guard config.engineKind == .hvfEngine else { return nil }
-        // A VM whose unattended install has not completed has no bootable disk
-        // yet; the detail view routes it to the install panel instead.
-        if config.installPending == true { return nil }
-        let evidenceDir = config.bundlePath + "/logs/hvf"
-        return HvfEngineConfig(
-            targetDiskPath: config.diskPath ?? (config.bundlePath + "/disks/hvf-target.raw"),
-            uefiVarsPath: config.bundlePath + "/metadata/hvf-vars.fd",
-            evidenceDir: evidenceDir,
-            watchdogMs: nil,
-            ramMiB: config.memMiB ?? 6144,
-            smpCpus: config.cpuCount ?? 4,
-            clipboardSync: true,
-            shareHostDir: nil,
-            shareGuestDir: nil,
-            virtioNet: config.networkEnabled ?? true,
-            virtioGpu3d: config.experimental3DAllowed ?? true,
-            nvmeBufferedIO: false,
-            ctlFilePath: config.bundlePath + "/metadata/hvf.ctl",
-            vtpmStateDir: config.bundlePath + "/metadata/vtpm",
-            swtpmBin: VTPMStateSecurity.defaultSwtpmCommand(),
-            vtpmKeyID: config.slug, allowsExperimental3D: config.experimental3DAllowed ?? true
-        )
-    }
+    var libraryContext: HvfLibraryLaunchContext? = nil
 
     /// The versioned launch manifest this configuration means, as consumed by
     /// bridgevm-hvf-runtime (`hvf-runner --launch-spec`). Field names and the
@@ -230,7 +206,7 @@ extension HvfEngineConfig {
         repoRoot: URL,
         fileManager: FileManager = .default
     ) -> HvfWindowsReadinessReport {
-        var issues: [HvfWindowsReadinessIssue] = []
+        var issues = libraryContext?.readinessIssues ?? []
         func launch(_ code: String, _ summary: String) {
             issues.append(.init(code: code, scope: .launch, summary: summary))
         }
