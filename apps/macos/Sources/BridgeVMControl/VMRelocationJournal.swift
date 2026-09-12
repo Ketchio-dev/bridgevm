@@ -36,7 +36,7 @@ enum VMRelocationJournal {
             throw CocoaError(.fileWriteUnknown)
         }
         let record = Record(schema: "bridgevm.relocation-pending.v1", original: original, destination: moved)
-        try JSONEncoder().encode(record).write(to: recordURL, options: [.atomic])
+        try VMRelocationRecordWriter.write(JSONEncoder().encode(record), to: recordURL)
         return recordURL
     }
 }
