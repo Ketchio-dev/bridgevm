@@ -19,6 +19,11 @@ struct HvfGuestInputEncoding {
             value = key
             verb = "KEYINPUT"
             insertedEventCount = count
+        case let .pointer(pointer):
+            guard let count = HvfPointerInputEncoding.eventCount(pointer) else { return nil }
+            value = pointer
+            verb = "POINTERINPUT"
+            insertedEventCount = count
         }
         base64 = Data(value.utf8).base64EncodedString()
     }
@@ -44,11 +49,5 @@ struct HvfGuestInputEncoding {
         default: allowed = false
         }
         return allowed ? parts.count * 2 : nil
-    }
-}
-
-extension HvfUnicodeInputRequest {
-    init?(text: String, now: Date, id: UUID = UUID()) {
-        self.init(event: .text(text), now: now, id: id)
     }
 }

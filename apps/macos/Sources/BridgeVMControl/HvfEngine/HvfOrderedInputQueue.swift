@@ -6,10 +6,10 @@ struct HvfOrderedInputQueue {
     enum Event: Equatable {
         case text(String)
         case key(String)
-
+        case pointer(String)
         var byteCount: Int {
             switch self {
-            case .text(let value), .key(let value): return value.utf8.count
+            case .text(let value), .key(let value), .pointer(let value): return value.utf8.count
             }
         }
     }

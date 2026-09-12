@@ -2158,3 +2158,5 @@ tests/integration/input-receipt-transcript.swift	35	0
 scripts/check-input-receipt-transcript.sh	17	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/unicode_input_tests.rs	54	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/input_receipt_label_tests.rs	40	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerInputEncoding.swift	31	0
+apps/macos/Tests/BridgeVMControlTests/HvfPointerInputStreamTests.swift	67	0

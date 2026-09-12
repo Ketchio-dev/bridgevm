@@ -11,7 +11,7 @@ if ! cargo test -p bridgevm-hvf --example hvf_gic_boot_probe --locked \
 fi
 sources=apps/macos/Sources/BridgeVMControl/HvfEngine
 swiftc -parse-as-library \
-    "$sources/HvfOrderedInputQueue.swift" "$sources/HvfGuestInputEncoding.swift" \
+    "$sources/HvfOrderedInputQueue.swift" "$sources/HvfGuestInputEncoding.swift" "$sources/HvfPointerInputEncoding.swift" \
     "$sources/HvfInputReceiptEnvelope.swift" "$sources/HvfUnicodeInputRequest.swift" \
     tests/integration/input-receipt-transcript.swift -o "$work/receipt-contract"
 "$work/receipt-contract" "$work/transcript"
