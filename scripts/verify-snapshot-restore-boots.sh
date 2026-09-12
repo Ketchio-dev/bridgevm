@@ -38,17 +38,16 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 CLI=target/release/examples/snapshot_pair_cli
 cargo +1.97.0 build --release -p bridgevm-hvf --example snapshot_pair_cli --locked \
   > "$OUT/build.log" 2>&1 || fail "snapshot_pair_cli build failed; see $OUT/build.log"
-
 WORK=$OUT/live
 mkdir "$WORK" || fail "work directory must be new"
 source "$REPO/scripts/snapshot-restore-lifecycle.sh"
+source "$REPO/scripts/snapshot-restore-relocation.sh"
 trap snapshot_cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 cp -c "$DISK" "$WORK/disk.raw" || fail "clone disk"
 cp "$VARS" "$WORK/vars.fd" || fail "copy vars"
 chmod u+w "$WORK/disk.raw" "$WORK/vars.fd" || fail "make private clones writable"
-
 send_wait() { # ctl, log, command, isolated response path
   python3 "$REPO/scripts/snapshot-restore-channel.py" "$1" "$2" "$3" "$STEP_TIMEOUT" "$4"
 }
@@ -127,6 +126,7 @@ echo "clobber marker: $CLOBBER"
 echo "=== phase 4: restore ==="
 "$CLI" restore "$SNAP" "$WORK/disk.raw" "$WORK/vars.fd" \
   > "$OUT/restore.txt" 2>&1 || fail "restore failed; see $OUT/restore.txt"
+snapshot_relocate_live || fail "could not relocate restored pair without overwriting a destination"
 
 echo "=== phase 5: boot the restored pair and read the marker ==="
 boot_and_mark "BV-FINAL-$(date +%s)" phase5-restored \

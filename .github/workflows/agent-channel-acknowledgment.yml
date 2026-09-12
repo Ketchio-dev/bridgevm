@@ -8,4 +8,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Require a fresh successful command and END acknowledgment
-        run: python3 tests/integration/agent-channel-acknowledgment-contract.py && python3 tests/integration/firstboot-launcher-liveness-contract.py && python3 tests/integration/snapshot-restore-channel-contract.py && python3 tests/integration/snapshot-restore-seal-contract.py && python3 tests/integration/snapshot-restore-cleanup-contract.py && python3 tests/integration/snapshot-restore-clone-permissions-contract.py
+        run: python3 tests/integration/agent-channel-acknowledgment-contract.py && python3 tests/integration/firstboot-launcher-liveness-contract.py && python3 tests/integration/snapshot-restore-channel-contract.py && python3 tests/integration/snapshot-restore-seal-contract.py && python3 tests/integration/snapshot-restore-cleanup-contract.py && python3 tests/integration/snapshot-restore-clone-permissions-contract.py && bash tests/integration/snapshot-restore-relocation-contract.sh

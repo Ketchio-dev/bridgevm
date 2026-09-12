@@ -2074,3 +2074,5 @@ crates/bridgevm-hvf/src/media_lease_os.rs	38	2
 crates/bridgevm-hvf/src/media_lease_lifecycle_tests.rs	57	2
 crates/bridgevm-hvf/src/managed_pair_identity.rs	73	0
 crates/bridgevm-hvf/src/managed_pair_identity_tests.rs	101	0
+scripts/snapshot-restore-relocation.sh	10	0
+tests/integration/snapshot-restore-relocation-contract.sh	47	0
