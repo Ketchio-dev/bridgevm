@@ -27,6 +27,7 @@ final class FBLayerView: NSView {
     private var lastProcessedSeq: UInt64 = .max
     private var iosurfacePresenter = HvfIOSurfacePresenter()
     private var pointerMoves = HvfPointerMoveMailbox()
+    private let pointerCapture = HvfPointerCapture()
     private var frameDisplayLink: CADisplayLink?
     private var pointerTrackingArea: NSTrackingArea?
 
@@ -48,6 +49,8 @@ final class FBLayerView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        pointerCapture.cancel()
+        pointerMoves.reset()
 
         if window != nil {
             startDisplayLink()
@@ -178,6 +181,7 @@ final class FBLayerView: NSView {
     }
 
     func teardown() {
+        pointerCapture.cancel()
         stopDisplayLink()
         resetMapping()
         iosurfacePresenter.reset()
@@ -191,7 +195,18 @@ final class FBLayerView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        pointerMoves.offer(point(event))
+        let location = point(event)
+        pointerMoves.offer(location)
+        if let release = pointerRelease(at: location) { pointerCapture.updateRelease(release) }
+    }
+
+    override func rightMouseDragged(with event: NSEvent) { mouseDragged(with: event) }
+
+    override func resignFirstResponder() -> Bool {
+        guard super.resignFirstResponder() else { return false }
+        pointerCapture.cancel()
+        pointerMoves.reset()
+        return true
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -207,19 +222,17 @@ final class FBLayerView: NSView {
             viewSize: bounds.size,
             imageSize: guestSize
         )
+        if let release = pointerRelease(at: point(event)) { pointerCapture.arm(window: window, release: release) }
     }
 
     override func mouseUp(with event: NSEvent) {
         pointerMoves.reset()
-        guard let session, hasGuestSize else {
-            return
+        if let release = pointerRelease(at: point(event)) {
+            pointerCapture.disarm()
+            release()
+        } else {
+            pointerCapture.cancel()
         }
-
-        session.sendPointerRelease(
-            location: point(event),
-            viewSize: bounds.size,
-            imageSize: guestSize
-        )
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -235,19 +248,11 @@ final class FBLayerView: NSView {
             viewSize: bounds.size,
             imageSize: guestSize
         )
+        if let release = pointerRelease(at: point(event)) { pointerCapture.arm(window: window, release: release) }
     }
 
     override func rightMouseUp(with event: NSEvent) {
-        pointerMoves.reset()
-        guard let session, hasGuestSize else {
-            return
-        }
-
-        session.sendPointerRelease(
-            location: point(event),
-            viewSize: bounds.size,
-            imageSize: guestSize
-        )
+        mouseUp(with: event)
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -273,32 +278,17 @@ final class FBLayerView: NSView {
             return
         }
 
-        var modifiers: EventModifiers = []
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if !HvfFramebufferKeyInput.send(event, to: session) { super.keyDown(with: event) }
+    }
 
-        if flags.contains(.control) {
-            modifiers.insert(.control)
-        }
-        if flags.contains(.option) {
-            modifiers.insert(.option)
-        }
-        if flags.contains(.command) {
-            modifiers.insert(.command)
-        }
-        if flags.contains(.shift) {
-            modifiers.insert(.shift)
-        }
-
-        switch HvfHostKeyCommand.resolve(
-            characters: event.characters ?? "",
-            modifiers: modifiers
-        ) {
-        case let .key(action):
-            session.sendKey(action)
-        case let .text(text):
-            session.sendText(text)
-        case .ignored:
-            super.keyDown(with: event)
+    private func pointerRelease(at location: CGPoint) -> (() -> Void)? {
+        let viewSize = bounds.size, imageSize = guestSize
+        guard let session, HvfDisplayCoordinates.absolutePointer(
+            location: location, viewSize: viewSize, imageSize: imageSize
+        ) != nil else { return nil }
+        return { [weak self, weak session] in
+            self?.pointerMoves.reset()
+            session?.sendPointerRelease(location: location, viewSize: viewSize, imageSize: imageSize)
         }
     }
 

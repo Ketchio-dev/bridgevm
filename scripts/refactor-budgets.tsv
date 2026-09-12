@@ -1239,6 +1239,9 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryPanel.swift	47	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowInventoryControllerTests.swift	68	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerEventSurface.swift	119	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerMoveMailbox.swift	20	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerCapture.swift	39	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferKeyInput.swift	22	0
+apps/macos/Tests/BridgeVMControlTests/HvfPointerCaptureTests.swift	52	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift	380	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	50	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift	407	0
