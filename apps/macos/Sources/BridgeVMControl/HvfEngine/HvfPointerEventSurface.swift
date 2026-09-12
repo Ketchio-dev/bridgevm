@@ -5,7 +5,7 @@ import SwiftUI
 enum HvfScrollDelta {
     static func hid(from value: CGFloat) -> Int8? {
         guard value.isFinite, value != 0 else { return nil }
-        let rounded = Int(value.rounded())
+        let rounded = Int(max(-127, min(127, value)).rounded())
         let nonzero = rounded == 0 ? (value > 0 ? 1 : -1) : rounded
         return Int8(max(-127, min(127, nonzero)))
     }

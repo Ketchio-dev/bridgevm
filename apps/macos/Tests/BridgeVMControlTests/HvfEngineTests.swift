@@ -974,16 +974,16 @@ final class HvfDisplayCoordinatesTests: XCTestCase {
 
 final class HvfScrollDeltaTests: XCTestCase {
     func testMapsTrackpadFractionsAndMouseWheelStepsToNonzeroHIDDelta() {
-        XCTAssertEqual(HvfScrollDelta.hid(from: 0.1), 1)
-        XCTAssertEqual(HvfScrollDelta.hid(from: -0.1), -1)
+        for value in [CGFloat(0.1), .leastNonzeroMagnitude] { XCTAssertEqual(HvfScrollDelta.hid(from: value), 1) }
+        for value in [CGFloat(0.1), .leastNonzeroMagnitude] { XCTAssertEqual(HvfScrollDelta.hid(from: -value), -1) }
         XCTAssertEqual(HvfScrollDelta.hid(from: 4.6), 5)
     }
 
     func testClampsToSignedHIDReportRangeAndRejectsInvalidValues() {
-        XCTAssertEqual(HvfScrollDelta.hid(from: 1_000), 127)
-        XCTAssertEqual(HvfScrollDelta.hid(from: -1_000), -127)
+        for value in [CGFloat(1_000), .greatestFiniteMagnitude] { XCTAssertEqual(HvfScrollDelta.hid(from: value), 127) }
+        for value in [CGFloat(1_000), .greatestFiniteMagnitude] { XCTAssertEqual(HvfScrollDelta.hid(from: -value), -127) }
         XCTAssertNil(HvfScrollDelta.hid(from: 0))
-        XCTAssertNil(HvfScrollDelta.hid(from: .infinity))
+        for value in [CGFloat.infinity, -.infinity, .nan] { XCTAssertNil(HvfScrollDelta.hid(from: value)) }
     }
 }
 #endif
