@@ -36,8 +36,8 @@ def main() -> int:
     args = parser.parse_args()
     verified = json.loads(args.verified.read_text(encoding="utf-8"), object_pairs_hook=unique)
     assets = verified.get("assets")
-    if verified.get("verified") is not True or not isinstance(assets, dict):
-        raise ValueError("T17 inputs were not verified")
+    if verified.get("verified") is not True or not isinstance(assets, dict) or verified.get("campaign_mode") != args.mode:
+        raise ValueError("T17 inputs were not verified for the requested campaign mode")
     if any(not isinstance(assets.get(key), dict) or not isinstance(assets[key].get("path"), str) for key in ASSETS):
         raise ValueError("T17 verified inputs are incomplete")
     root = args.lane_root
