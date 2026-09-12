@@ -203,3 +203,22 @@ A test inspects the actual descriptor with F_GETFD and confirms FD_CLOEXEC,
 private mode, existing-file refusal and symlink refusal. The selected suite
 passed 47/47 tests and `scripts/check-project.sh` passed. These checks do not
 demonstrate an end-to-end child-process attack or complete secret isolation.
+
+## Actual exec inheritance test
+
+Source: `4acb8d4061bc7df0355accd154202ca133e356dd`.
+
+A POSIX-spawn test opens a descriptor through the production private-file
+opener and an intentionally inheritable control descriptor. The child shell
+must observe the control descriptor under /dev/fd and must not observe the
+private descriptor. This distinguishes close-on-exec behavior from a child that
+closes all extra descriptors. The child exited successfully with both checks.
+
+The first test version did not compile because strdup arguments were not
+converted from Swift strings explicitly. After correcting that conversion, the
+selected suite passed 48/48 tests and `scripts/check-project.sh` passed. The
+compilation failure is not counted as an executed inheritance test.
+
+Only private temporary empty files are involved. The result establishes this
+descriptor inheritance behavior, not an attack reproduction, guest isolation
+or a complete audit of secret-handling paths.
