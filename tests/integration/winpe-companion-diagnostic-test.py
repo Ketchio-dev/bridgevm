@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Deterministic D4 boundaries; no VM or Windows boot is simulated as proof."""
-from winpe_companion_size_cases import assert_vars_sizes
+from winpe_companion_policy_cases import assert_vars_sizes, assert_wrapper_policy
 import importlib.util
 import json
 from pathlib import Path
@@ -65,7 +65,7 @@ class DiagnosticTests(unittest.TestCase):
         for index, key in enumerate(inputs.ASSETS):
             path = self.root / (inputs.FIRMWARE if key == "firmware" else key)
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(bytes([index + 1]) * (64 * 1024 * 1024 if key == "vars" else 512))
+            path.write_bytes(bytes([index + 1]) * (64 * 1024 * 1024 if key == "vars" else 4096))
             records[key] = path, inputs.file_hash(path)
         text = "".join(k + "\t" + v + "\n" for k, v in inputs.FIXED.items())
         text += "".join(k + "\t" + str(p) + "\t" + h + "\n" for k, (p, h) in records.items())
@@ -96,7 +96,7 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(command[command.index("--placeholder-nsid1") + 1], str(clones["injector"]))
         self.assertNotIn("--virtio-gpu-3d", command)
         self.assertNotIn("--enable-xhci", command)
-        self.assertIn("--skip-build", command)
+        assert_wrapper_policy(self, command)
 
 
 if __name__ == "__main__":

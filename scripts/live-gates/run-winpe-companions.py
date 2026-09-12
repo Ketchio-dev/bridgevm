@@ -22,8 +22,8 @@ def command(repo, records, clones, evidence):
             "--firmware-code", str(records["firmware"][0]), "--evidence-dir", str(evidence),
             "--release", "--skip-build", "--watchdog-ms", "300000", "--max-reboots", "0",
             "--ram-mib", "4096", "--smp-cpus", "4", "--max-exits", "50000000",
-            "--ramfb-samples", "1000,15000,30000,60000,120000,240000,290000",
-            "--no-guest-disk-harvest"]
+            "--ramfb-samples", "1000,15000,30000,60000,90000,110000,120000",
+            "--display-export-ppm", str(evidence / "latest.ppm"), "--no-guest-disk-harvest"]
 
 
 def run(args):
