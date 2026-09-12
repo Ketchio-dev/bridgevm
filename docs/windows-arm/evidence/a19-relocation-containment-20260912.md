@@ -72,3 +72,22 @@ This does not establish process-launch race freedom, native runtime enforcement,
 or protection of independently constructed development configurations without
 library context. The test validates readiness, not a real Windows launch or UI
 interaction. Automatic repair and power-loss durability remain unproven.
+
+## Pending-source clone follow-up
+
+Source: `bf6e910d17a41561d215049ff6175224f602d634`.
+
+An actual VMLibrary clone test using a temporary bundle reproduced copying from
+a source with a pending relocation record. The afterCopy callback was reached;
+it returned false to stop before clone identity preparation or registration.
+The failed baseline is retained and was not reclassified as a passing result.
+
+The clone entry point now rejects a pending source record before destination
+reservation or copying. The focused clone, relocation and cached-readiness tests
+passed 20/20, and `scripts/check-project.sh` passed. The regression confirms the
+copy callback is not reached, the pending record remains and source fixture
+bytes are unchanged.
+
+The lookup uses the supplied library root. This preflight is not a substitute
+for media ownership, does not prove concurrent direct API calls are race-free,
+and does not repair the pending relocation. No Windows live criterion is closed.
