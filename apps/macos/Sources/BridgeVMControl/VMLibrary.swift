@@ -107,7 +107,7 @@ enum VMLibrary {
             if candidates.contains(where: { VMRelocationJournal.isPending($0.config, rootURL: rootURL) }) {
                 for candidate in candidates {
                     issues.append(VMLibraryIssue(path: candidate.directory.path,
-                        message: "VM 이동 복구 기록이 남아 있어 불러오지 않았습니다. 원본과 대상 번들 및 등록 상태를 확인하세요."))
+                        message: VMRelocationJournal.recoveryIssue(candidate.config, rootURL: rootURL)))
                 }
                 continue
             }

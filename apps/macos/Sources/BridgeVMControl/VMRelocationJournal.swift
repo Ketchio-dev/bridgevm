@@ -2,13 +2,13 @@ import Foundation
 
 /// A pending record is recovery evidence, never proof that either copy is complete.
 enum VMRelocationJournal {
-    private struct Record: Codable {
+    struct Record: Codable {
         let schema: String
         let original: VMConfig
         let destination: VMConfig
     }
 
-    private static func url(_ config: VMConfig, rootURL: URL) -> URL {
+    static func url(_ config: VMConfig, rootURL: URL) -> URL {
         rootURL.appendingPathComponent(config.slug, isDirectory: true)
             .appendingPathComponent(".relocation-pending.json")
     }
