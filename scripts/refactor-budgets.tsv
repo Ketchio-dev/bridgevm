@@ -2061,7 +2061,6 @@ docs/windows-arm/evidence/a19-restore-atomicity-defect-20260912.md	49	0
 crates/bridgevm-hvf/src/snapshot_publish.rs	70	2
 crates/bridgevm-hvf/src/snapshot_publish_tests.rs	81	0
 crates/bridgevm-hvf/src/media_lease.rs	107	2
-crates/bridgevm-hvf/src/media_lease_tests.rs	138	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_media_lease.rs	21	0
 crates/bridgevm-hvf/src/managed_pair.rs	125	1
 crates/bridgevm-hvf/src/managed_pair_tests.rs	128	0
@@ -2070,8 +2069,6 @@ crates/bridgevm-hvf/src/managed_pair_runtime.rs	62	0
 crates/bridgevm-hvf/src/managed_pair_runtime_tests.rs	109	0
 crates/bridgevm-hvf/src/managed_pair_api_tests.rs	86	0
 scripts/snapshot-selected-hashes.sh	10	0
-crates/bridgevm-hvf/src/media_lease_os.rs	38	2
-crates/bridgevm-hvf/src/media_lease_lifecycle_tests.rs	57	2
 crates/bridgevm-hvf/src/managed_pair_identity.rs	73	0
 crates/bridgevm-hvf/src/managed_pair_identity_tests.rs	101	0
 scripts/snapshot-restore-relocation.sh	10	0
@@ -2086,3 +2083,10 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserTreeDiagnosticTests.swift
 crates/bridgevm-hvf/src/net_nat/tests/tcp_readiness.rs	80	0
 crates/bridgevm-hvf/src/net_nat/tcp_connection_state.rs	17	0
 crates/bridgevm-hvf/src/net_nat/tests/tcp_fixture.rs	26	3
+crates/bridgevm-media/src/lib.rs	1	0
+crates/bridgevm-media/src/media_lease.rs	93	0
+crates/bridgevm-media/src/media_lease_os.rs	38	2
+crates/bridgevm-media/src/media_lease_tests.rs	138	1
+crates/bridgevm-media/src/media_lease_lifecycle_tests.rs	57	2
+crates/bridgevm-storage/src/bundle_ownership.rs	48	0
+crates/bridgevm-storage/src/bundle_ownership_tests.rs	58	0

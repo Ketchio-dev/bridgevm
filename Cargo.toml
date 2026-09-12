@@ -12,6 +12,7 @@ members = [
   "crates/bridgevm-hvf",
   "crates/bridgevm-hvf-runtime",
   "crates/bridgevm-lightvm",
+  "crates/bridgevm-media",
   "crates/bridgevm-network",
   "crates/bridgevm-qemu",
   "crates/bridgevm-resource-manager",

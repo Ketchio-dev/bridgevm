@@ -15,6 +15,7 @@ mod bundle_copy;
 mod bundle_directory_permissions;
 mod bundle_layout;
 mod bundle_metadata;
+mod bundle_ownership;
 mod clock;
 mod command_runner;
 mod disk_metadata;

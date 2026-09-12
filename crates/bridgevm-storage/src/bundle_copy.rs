@@ -59,10 +59,7 @@ pub(crate) fn collect_regular_files(
 }
 
 pub(crate) fn copy_dir_all(from: &Path, to: &Path) -> Result<BundleCopySummary, StorageError> {
-    let metadata = fs::symlink_metadata(from)?;
-    if !metadata.file_type().is_dir() {
-        return Err(StorageError::UnsupportedBundleEntry(from.to_path_buf()));
-    }
+    let _ownership = crate::bundle_ownership::acquire(from)?;
     crate::bundle_directory_permissions::create(to)?;
     let mut copied_files = Vec::new();
     copy_dir_all_inner(from, from, to, &mut copied_files)?;

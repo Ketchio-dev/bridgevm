@@ -194,6 +194,7 @@ dependencies = [
 name = "bridgevm-hvf"
 version = "0.1.0"
 dependencies = [
+ "bridgevm-media",
  "libc",
  "loom",
  "sha2",
@@ -211,6 +212,14 @@ name = "bridgevm-lightvm"
 version = "0.1.0"
 dependencies = [
  "bridgevm-core",
+]
+
+[[package]]
+name = "bridgevm-media"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "sha2",
 ]
 
 [[package]]
@@ -244,6 +253,7 @@ name = "bridgevm-storage"
 version = "0.1.0"
 dependencies = [
  "bridgevm-config",
+ "bridgevm-media",
  "bridgevm-qemu",
  "serde",
  "serde_json",
