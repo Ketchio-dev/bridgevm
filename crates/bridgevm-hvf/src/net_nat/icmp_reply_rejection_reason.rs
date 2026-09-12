@@ -174,20 +174,7 @@ pub(crate) fn would_block(err: &io::Error) -> bool {
     )
 }
 
-pub(crate) fn tcp_connect_error(stream: &TcpStream) -> io::Result<Option<i32>> {
-    match stream.take_error()? {
-        Some(err) => Ok(Some(err.raw_os_error().unwrap_or(1))),
-        None => {
-            let mut byte = [0u8; 0];
-            match stream.peek(&mut byte) {
-                Ok(_) => Ok(Some(0)),
-                Err(err) if would_block(&err) => Ok(None),
-                Err(err) if err.kind() == io::ErrorKind::NotConnected => Ok(None),
-                Err(err) => Ok(Some(err.raw_os_error().unwrap_or(1))),
-            }
-        }
-    }
-}
+pub(crate) use super::tcp_connection_state::tcp_connect_error;
 
 #[cfg(target_os = "macos")]
 #[derive(Debug)]

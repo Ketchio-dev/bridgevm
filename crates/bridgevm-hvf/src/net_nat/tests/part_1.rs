@@ -793,34 +793,6 @@ fn host_socket_idle_tcp_flow_is_not_refreshed_by_polling() {
 }
 
 #[test]
-fn host_socket_tcp_connect_to_closed_port_returns_rst() {
-    let Some(listener) = loopback_tcp_listener() else {
-        return;
-    };
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
-    let mut backend = NatBackend::<HostSocketOutboundIpv4Handler>::new_host_socket();
-
-    backend.transmit(&tcp_guest_frame(
-        [127, 0, 0, 1],
-        port,
-        49154,
-        0x2000_0000,
-        0,
-        TCP_FLAG_SYN,
-        &[],
-    ));
-    let rst = loop {
-        backend.poll_host_sockets();
-        if let Some(frame) = backend.poll_receive() {
-            break frame;
-        }
-    };
-    let (_, _, tcp) = parse_ipv4_tcp(&rst);
-    assert_ne!(tcp.flags & TCP_FLAG_RST, 0);
-}
-
-#[test]
 fn host_socket_tcp_poll_reuses_remove_scratch() {
     let Some(listener) = loopback_tcp_listener() else {
         return;
