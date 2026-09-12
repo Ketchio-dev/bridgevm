@@ -1,11 +1,11 @@
 """Observe current guest WINLIST without changing guest enumeration behavior."""
-import hashlib
 import json
 import uuid
 
 from guest_input_controller import Controller
 from guest_input_protocol import regular_bytes
-from coherence_inventory_observation import fixture, inventory, compare
+from coherence_candidate_observation import fixture, inventory, compare
+from coherence_fixture_readiness import await_staged_fixture
 
 
 class CoherenceController(Controller):
@@ -13,10 +13,7 @@ class CoherenceController(Controller):
         self.wait(lambda: any(line.startswith("BVAGENT SERVICE start") for line in self.lines()))
         if regular_bytes(self.control, 1):
             raise ValueError("exclusive empty control file required")
-        name = "bv-coherence-multiwindow.ps1"
-        guest = "C:\\BridgeVM\\input-proof\\" + name
-        digest = hashlib.sha256(regular_bytes(self.share / name, 1024 * 1024)).hexdigest().upper()
-        self.await_staged(guest, digest)
+        guest = await_staged_fixture(self)
         script = ("$r=Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments "
                   "@{CommandLine='powershell.exe -NoProfile -ExecutionPolicy Bypass -File " + guest
                   + " -Nonce " + self.nonce + "'}; if($r.ReturnValue -ne 0){exit 43}; "

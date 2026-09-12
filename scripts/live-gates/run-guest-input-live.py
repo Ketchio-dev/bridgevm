@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 import platform
 import re
-import shutil
 import signal
 import subprocess
 import sys
@@ -17,6 +16,7 @@ from guest_input_live_inputs import load, clone_media, digest, PROFILE
 from guest_input_protocol import regular_bytes
 from guest_input_live_cleanup import finalize
 from guest_input_profile_dispatch import make_controller, sink_filename, observation_succeeded
+from guest_input_fixture_staging import stage
 
 
 def interrupted(signum, frame):
@@ -43,12 +43,11 @@ def execute(args):
     share.mkdir(mode=0o700)
     control = work / "agent.ctl"
     control.touch(mode=0o600, exist_ok=False)
-    sink = root / "scripts/win-assets" / sink_filename(profile)
-    shutil.copyfile(sink, share / sink.name)
+    sink, fixture_assets = stage(root, share, profile)
     receipt = {"schema": "bridgevm.guest-input-live-receipt.v1", "tier": "d5-guest-input",
                "job_id": args.job_id, "commit": head, "profile": profile,
                "input_manifest_sha256": manifest_hash, "input_hashes": hashes,
-               "sink_sha256": digest(sink), "claim_eligible": False,
+               "sink_sha256": digest(sink), "fixture_assets": fixture_assets, "claim_eligible": False,
                "criterion_pass": False, "production_ui_proven": False,
                "guest_application_observed": False, "clean_shutdown": False, "production_driver_observed": False,
                "source_integrity": False, "complete": False}

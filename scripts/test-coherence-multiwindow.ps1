@@ -3,7 +3,7 @@ $path = Join-Path $PSScriptRoot 'win-assets/bv-coherence-multiwindow.ps1'
 $tokens = $null; $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
 if ($errors.Count -ne 0) { throw ($errors | Out-String) }
-$text = [IO.File]::ReadAllText($path)
+$text = [IO.File]::ReadAllText($path) + [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'win-assets/bv-coherence-inventory-proof.ps1'))
 if ($text -match '(?<!\r)\n') { throw 'guest fixture must use CRLF' }
 foreach ($required in @('foreach ($index in 0..1)', '$form.Show()', '$_.Handle.ToInt64()',
     'coherence-ready-', 'coherence-stop-', 'bridgevm.coherence-fixture.v1', '.TotalSeconds -ge 45',

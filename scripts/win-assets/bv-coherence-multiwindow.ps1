@@ -2,6 +2,7 @@ param([Guid]$Nonce)
 $ErrorActionPreference = 'Stop'
 if ($Nonce -eq [Guid]::Empty) { throw 'fresh nonce required' }
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+. (Join-Path $PSScriptRoot 'bv-coherence-inventory-proof.ps1')
 $root = Join-Path $env:SystemDrive 'BridgeVM\input-proof'
 $id = $Nonce.ToString('D')
 $ready = Join-Path $root ('coherence-ready-' + $id + '.json')
@@ -21,11 +22,7 @@ try {
         $forms += $form
         $form.Show()
     }
-    $windows = @($forms | ForEach-Object {
-        if (-not $_.Visible -or $_.Handle -eq [IntPtr]::Zero) { throw 'fixture window not visible' }
-        @{ id = $_.Handle.ToInt64().ToString(); title = $_.Text }
-    })
-    $value = @{ schema = 'bridgevm.coherence-fixture.v1'; nonce = $id; pid = $PID; windows = $windows }
+    $value = Get-BvCoherenceFixture $forms $id
     [IO.File]::WriteAllText($ready + '.tmp', ($value | ConvertTo-Json -Depth 4 -Compress), (New-Object Text.UTF8Encoding $false))
     Move-Item -LiteralPath ($ready + '.tmp') -Destination $ready
     $timer.Interval = 250
