@@ -198,6 +198,8 @@ jobs:
       - run: swift build --package-path apps/macos
       - run: bash scripts/run-swift-tests.sh
       - run: BV_XCTEST_SANITIZER=thread BV_XCTEST_TRACE=1 bash scripts/run-xctest-shim-suites.sh
+      - name: Product helper XCTest contracts (no live VM)
+        run: swift test --package-path apps/macos --filter BridgeVMProductE2ETests
       # A release build is what ships, and it is the only thing that can prove
       # the development overrides are absent from it. check-project.sh skips
       # this check unless a release build already exists, which on a runner it
