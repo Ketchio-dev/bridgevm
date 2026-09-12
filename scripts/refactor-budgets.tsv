@@ -2134,3 +2134,6 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfInputReceiptEnvelope.swift	25	0
 apps/macos/Tests/BridgeVMControlTests/HvfRedactedInputReceiptTests.swift	39	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/input_receipt_label.rs	49	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/output_finish.rs	38	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/input_receipt_transcript_test.rs	31	0
+tests/integration/input-receipt-transcript.swift	35	0
+scripts/check-input-receipt-transcript.sh	17	0

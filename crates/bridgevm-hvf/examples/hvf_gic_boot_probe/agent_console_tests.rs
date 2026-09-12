@@ -5,7 +5,7 @@ use super::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    include!("agent_console/input_receipt_transcript_test.rs");
     fn harness() -> AgentConsoleHarness {
         AgentConsoleHarness {
             start: Instant::now(),
