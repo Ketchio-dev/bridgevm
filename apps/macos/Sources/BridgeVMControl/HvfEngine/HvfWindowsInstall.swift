@@ -87,10 +87,8 @@ struct HvfWindowsInstallPlan: Equatable {
         "scripts/win-assets/bvinstall.cmd",
         "scripts/win-assets/bvdiskpart.txt",
         "scripts/win-assets/unattend.xml",
-        "scripts/win-assets/bvagent.ps1",
-        "scripts/win-assets/bvagent-firstboot.ps1",
         "helpers/bridgevm-catalog-verify",
-    ]
+    ] + HvfWindowsAgentAssets.requiredPaths
 
     var sourceImagePath: String {
         libraryRoot.appendingPathComponent(

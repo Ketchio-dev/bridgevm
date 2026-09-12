@@ -11,9 +11,7 @@ enum HvfWindowsInstallCacheIdentity {
         "scripts/win-assets/bvinstall.cmd",
         "scripts/win-assets/bvdiskpart.txt",
         "scripts/win-assets/unattend.xml",
-        "scripts/win-assets/bvagent.ps1",
-        "scripts/win-assets/bvagent-firstboot.ps1",
-    ]
+    ] + HvfWindowsAgentAssets.requiredPaths
 
     static func key(
         isoSHA256: String,

@@ -94,6 +94,21 @@ try {
     Log ("WINDOW API init FAILED: " + $_.Exception.Message)
 }
 
+# Optional inventory support must not break the resident command channel.
+$bvInventoryErrorAction = $ErrorActionPreference
+try {
+    $ErrorActionPreference = 'Stop'
+    . (Join-Path $PSScriptRoot 'bvagent-window-inventory.ps1')
+    if ($null -eq (Get-Command Get-BvWindowInventoryLines -CommandType Function -ErrorAction SilentlyContinue)) {
+        throw 'window-inventory-function-missing'
+    }
+} catch {
+    Log ('WINDOW INVENTORY unavailable: ' + $_.Exception.Message)
+    function Get-BvWindowInventoryLines { throw 'window-inventory-unavailable' }
+} finally {
+    $ErrorActionPreference = $bvInventoryErrorAction
+}
+
 # Optional input support must not break the resident command channel.
 try {
     . (Join-Path $PSScriptRoot 'bvagent-input.ps1')
@@ -401,40 +416,17 @@ while ($true) {
                 { $_ -in @('TEXTINPUT', 'KEYINPUT', 'POINTERINPUT') } { Write-CommandResult $h (Invoke-UnicodeInput $arg $null ($tok -eq 'KEYINPUT') ($tok -eq 'POINTERINPUT')) }
             'INPUTCAPS' { Write-CommandResult $h (Get-InputCapabilities $arg) }
                 'WINLIST' {
-                    # Main app windows via the .NET process walk. The previous
-                    # native-callback window walk hung the whole agent on
-                    # PS 5.1/ARM64 (live job 20260820-043633: WINLIST got no
-                    # reply and the channel was silent from that line on) - the
-                    # same marshaling boundary that once broke the channel
-                    # type. Get-Process main-window enumeration was live-proven
-                    # on this guest (coherence-windows-live-20260817) and
-                    # involves no native callback. Emits
-                    # WIN <hwnd> <pid> <x> <y> <w> <h> <base64(title)> per
-                    # line, WINEND terminates. Titleless windows are skipped.
-                    if ($null -eq $W) { Write-Line $h 'ERR WINLIST unavailable' 'ERR'; break }
-                    # $hw, never $w: PowerShell variables are case-insensitive,
-                    # so $w would clobber the $W window-API type itself
-                    # (live-caught: 'IntPtr does not contain DwmGetWindowAttribute'
-                    # and the swallowed throw meant WINEND never went out).
-                    # The try/finally guarantees the terminator: a reply without
-                    # WINEND leaves the host in-flight forever.
+                    # Materialize before writing: a provider failure must not
+                    # publish a partial list. ERR alone is the failure terminal.
                     try {
-                        foreach ($proc in (Get-Process | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero })) {
-                            $hw = $proc.MainWindowHandle
-                            $wpid = $proc.Id
-                            $title = [string]$proc.MainWindowTitle
-                            if ([string]::IsNullOrWhiteSpace($title)) { continue }
-                            $r = New-Object BridgeVM.BvWindow+BvRect
-                            # DWMWA_EXTENDED_FRAME_BOUNDS=9 excludes the invisible
-                            # resize border GetWindowRect includes.
-                            if ($W::DwmGetWindowAttribute($hw, 9, [ref]$r, 16) -ne 0) {
-                                if (-not $W::GetWindowRect($hw, [ref]$r)) { continue }
-                            }
-                            $b64 = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($title))
-                            Write-Line $h "WIN $hw $wpid $($r.Left) $($r.Top) $($r.Right - $r.Left) $($r.Bottom - $r.Top) $b64" 'WIN'
+                        $inventoryLines = @(Get-BvWindowInventoryLines)
+                        foreach ($inventoryLine in $inventoryLines) {
+                            Write-Line $h $inventoryLine 'WIN'
                         }
-                    } finally {
                         Write-Line $h 'WINEND' 'WINEND'
+                    } catch {
+                        Log ('WINLIST failed: ' + $_.Exception.Message)
+                        Write-Line $h 'ERR WINLIST unavailable' 'ERR'
                     }
                 }
                 'WINBOUNDS' {

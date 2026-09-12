@@ -2258,3 +2258,6 @@ scripts/live-gates/t17_owned_tree_cleanup.py	136
 tests/integration/t17-owned-tree-cleanup-test.py	170
 .github/workflows/t17-owned-tree-cleanup.yml	13
 scripts/test-bvagent-window-inventory-native-schema.ps1	27
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsAgentAssets.swift	13
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsAgentAssetsTests.swift	109
+scripts/test-bvagent-window-inventory-dispatch.ps1	80

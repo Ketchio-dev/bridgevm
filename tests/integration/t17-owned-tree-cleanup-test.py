@@ -130,20 +130,20 @@ class OwnedTreeCleanupTests(unittest.TestCase):
 
     def test_directory_replacement_between_stat_and_open_rejected(self):
         payload = self.make_readonly_payload(self.root)
-        original_open = os.open
-        replaced = False
-
+        payload.chmod(0o700)
+        original_open, replaced = os.open, False
         def replace_before_open(path, flags, *args, **kwargs):
             nonlocal replaced
             if path == "payload" and not replaced:
                 replaced = True
                 payload.rename(self.root / "retained-original")
+                (self.root / "retained-original").chmod(0o500)
                 payload.mkdir(mode=0o700)
             return original_open(path, flags, *args, **kwargs)
-
-        with mock.patch.object(CLEANUP.os, "open", side_effect=replace_before_open):
-            with self.assertRaises(ValueError):
+        with mock.patch.object(CLEANUP.os, "open", side_effect=replace_before_open), mock.patch.multiple(CLEANUP.os, fchmod=mock.DEFAULT, unlink=mock.DEFAULT, rmdir=mock.DEFAULT) as mutations:
+            with self.assertRaisesRegex(ValueError, "cleanup node identity changed"):
                 self.run_cleanup()
+        for mutation in mutations.values(): mutation.assert_not_called()
         self.assertTrue(replaced)
         original = self.root / "retained-original"
         self.assertEqual(stat.S_IMODE(original.stat().st_mode), 0o500)

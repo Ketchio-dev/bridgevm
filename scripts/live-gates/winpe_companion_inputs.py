@@ -12,7 +12,7 @@ FIXED = {"schema": "bridgevm.winpe-companions.v1", "purpose": "diagnostic-only",
          "profile": "no-3d-winpe-300s", "claim_eligible": "false"}
 FIRMWARE = "crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd"
 COMPANIONS = ("bvagent.ps1", "bvagent-input.ps1", "bvagent-unicode-input.cs",
-              "bvagent-key-input.cs", "bvagent-pointer-input.cs")
+              "bvagent-key-input.cs", "bvagent-pointer-input.cs", "bvagent-window-inventory.ps1", "bv-window-inventory.cs")
 
 
 def verify(records):

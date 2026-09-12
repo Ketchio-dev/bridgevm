@@ -5,7 +5,7 @@ $match = [regex]::Match($source, '(?s)rem BVINPUT_COMPANIONS_BEGIN\r?\n(?<body>.
 if (-not $match.Success -or $match.Index -gt $source.IndexOf('copy /y %DRV%\..\bvagent.ps1')) {
     throw 'companion block missing or published after the main agent'
 }
-$files = @('bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs')
+$files = @('bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-window-inventory.ps1', 'bv-window-inventory.cs')
 $root = Join-Path ([IO.Path]::GetTempPath()) ('BridgeVM injector input ' + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $root | Out-Null
 try {
@@ -43,4 +43,4 @@ try {
         }
     }
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
-Write-Output 'PASS: real cmd companion copies, four missing-source refusals and locked-destination abort (not a WinPE boot)'; exit 0
+Write-Output 'PASS: real cmd companion copies, six missing-source refusals and locked-destination abort (not a WinPE boot)'; exit 0

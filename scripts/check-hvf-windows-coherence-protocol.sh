@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
-AGENT=scripts/win-assets/bvagent.ps1
+AGENT=scripts/win-assets/bvagent.ps1; INVENTORY=scripts/win-assets/bvagent-window-inventory.ps1
 HOST=apps/macos/Sources/BridgeVMApp/Services/HvfGuestWindowProtocol.swift
 CHANNEL=crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console
 TESTS=apps/macos/Tests/BridgeVMAppTests/HvfGuestWindowProtocolTests.swift
@@ -17,8 +17,8 @@ for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE; do
   grep -q "'$verb'" "$AGENT" || fail "$verb missing from the agent ($AGENT)"
 done
 grep -q '\$W = \[BridgeVM.BvWindow\]' "$AGENT" || fail "WINLIST window P/Invoke type is not isolated from the channel type"
-# Native enumeration callbacks hang the PS 5.1/ARM64 agent (live job 20260820-043633: WINLIST never replied).
-! grep -q 'EnumWindows' "$AGENT" && grep -q 'Get-Process | Where-Object { \$_.MainWindowHandle' "$AGENT" || fail "WINLIST must enumerate via the process main-window walk, never a native callback"
+# PowerShell callbacks hung PS5.1/ARM64 (20260820-043633); the compiled-C# candidate is separately live-proven.
+! rg -q '::EnumWindows|EnumWindows\(' "$AGENT" && rg -Fq 'Get-BvWindowInventoryLines' "$AGENT" && rg -Fq 'Get-BvWindowInventoryLines' "$INVENTORY" || fail "WINLIST must delegate to compiled-C# inventory, not a PowerShell native callback"
 python3 -c 'import pathlib,sys; p=pathlib.Path(sys.argv[1]).read_bytes(); sys.exit(0 if p.count(b"\n") == p.count(b"\r\n") and b"\n" in p else 1)' "$AGENT" || fail "agent asset must use CRLF line endings"
 core_end=$(grep -n '^\$K = Add-Type -MemberDefinition' "$AGENT" | cut -d: -f1 || true); window_decl=$(grep -n 'public static class BvWindow' "$AGENT" | cut -d: -f1 || true); [[ -n "$core_end" && -n "$window_decl" && "$window_decl" -gt "$core_end" ]] || fail "window declarations leaked back into the live-proven channel P/Invoke type"
 for verb in WINBOUNDS WINFOCUS WINCLOSE; do
@@ -28,7 +28,7 @@ for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE; do
   grep -q "\"$verb\"" "$CHANNEL/protocol.rs" || fail "$verb is not raw on the agent channel"
 done
 # The list grammar: WIN lines then a WINEND terminator; tests pin field order.
-grep -q 'WIN \$hw \$wpid' "$AGENT" || fail "agent WIN line lost its hwnd/pid field order"
+rg -q 'WIN ' "$INVENTORY" && rg -Fq 'test-bvagent-window-inventory-native-schema.ps1' .github/workflows/coherence-inventory-wire.yml || fail "inventory grammar lost its real-native-row wire contract"
 # Lowercase $w aliases the case-insensitive $W window-API type variable.
 grep -Eq '\$w = ' "$AGENT" && fail "a bare \$w assignment clobbers the \$W window-API type"
 grep -q "Write-Line \$h 'WINEND' 'WINEND'" "$AGENT" || fail "agent no longer terminates with WINEND"
