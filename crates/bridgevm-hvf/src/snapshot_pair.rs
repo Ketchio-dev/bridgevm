@@ -2,9 +2,9 @@
 //!
 //! The two files are a unit: vars records which boot entry and which firmware
 //! state the disk was left in, so a disk from one moment paired with vars from
-//! another can boot into a state that never existed. Every operation here
-//! therefore has exactly two outcomes -- the old complete pair, or the new
-//! complete pair.
+//! another can boot into a state that never existed. Creation publishes a
+//! complete snapshot directory atomically. Restore still publishes two files
+//! separately; its mixed-pair failure defect keeps A19 open.
 //!
 //! The technique is a staging directory that is filled, fsynced, and only then
 //! renamed into place. `rename(2)` within a directory is atomic, so a crash
@@ -30,6 +30,8 @@ use free_space::available_bytes;
 mod snapshot_hash;
 use manifest_json::{escape_json, json_str, json_u64};
 use snapshot_hash::sha256_file;
+#[path = "snapshot_publish.rs"]
+mod snapshot_publish;
 
 /// Bytes copied per read/write when streaming a large disk image.
 const COPY_CHUNK: usize = 4 * 1024 * 1024;
@@ -251,10 +253,8 @@ pub fn create_snapshot(
     write_file_atomically(&staging.join(MANIFEST_NAME), manifest.to_json().as_bytes())?;
     sync_dir(&staging)?;
 
-    // One rename publishes both files at once.
-    let _ = fs::remove_dir_all(dest);
-    fs::rename(&staging, dest)?;
-    sync_dir(parent)?;
+    // Never remove the previous snapshot before its replacement is published.
+    snapshot_publish::publish(&staging, dest)?;
     Ok(manifest)
 }
 
@@ -286,9 +286,9 @@ pub fn verify_snapshot(dir: &Path) -> Result<SnapshotManifest, SnapshotError> {
 
 /// Restore a verified snapshot over the live pair.
 ///
-/// Both hashes are checked first. Only then are the live files replaced, each
-/// through a temp-and-rename, so a failure at any point leaves a complete
-/// pair rather than one new file beside one old one.
+/// Both hashes are checked first, but publication uses two separate renames.
+/// A failure between them can leave a mixed pair. This is a known A19 defect,
+/// not an atomic restore guarantee; normal-path tests do not prove otherwise.
 pub fn restore_snapshot(
     dir: &Path,
     disk: &Path,
