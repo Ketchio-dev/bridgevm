@@ -5,14 +5,7 @@ import signal
 import time
 
 from guest_input_live_inputs import digest
-
-
-def group_alive(pgid):
-    try:
-        os.killpg(pgid, 0)
-        return True
-    except ProcessLookupError:
-        return False
+from guest_input_group_liveness import group_alive
 
 
 def stop(process, grace=5):
@@ -27,6 +20,8 @@ def stop(process, grace=5):
         except ProcessLookupError:
             process.poll()
             return True
+        except PermissionError:
+            pass  # Permission denial is not absence; keep bounded observation.
         deadline = time.monotonic() + grace
         while time.monotonic() < deadline:
             process.poll()  # Reap the leader, but do not confuse it with the group.

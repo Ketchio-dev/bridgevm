@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/live-gates"))
 import guest_input_live_cleanup as cleanup
+from guest_input_cleanup_permission_tests import PermissionCleanup
 
 
 class Cleanup(unittest.TestCase):
@@ -33,10 +34,7 @@ class Cleanup(unittest.TestCase):
                 self.assertTrue(cleanup.stop(process, grace=2))
                 self.assertFalse(cleanup.group_alive(process.pid))
             finally:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+                self.assertTrue(cleanup.stop(process, grace=2))
                 process.wait(timeout=5)
 
     def test_refuses_current_group(self):
