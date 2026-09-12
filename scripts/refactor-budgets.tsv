@@ -837,6 +837,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/line_frames.rs	89	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/key_actions.rs	99	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input_clock_tests/mod.rs	0	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input_clock_tests/command_time.rs	34	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input_clock_tests/keyboard_time.rs	36	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input_clock_tests/event_wake.rs	28	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_wake.rs	77	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_wake/vnode.rs	155	5

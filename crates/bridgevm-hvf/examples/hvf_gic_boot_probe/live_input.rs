@@ -91,6 +91,7 @@ impl LiveInputController {
         let Some(command) = self.pending.front() else {
             return;
         };
+        platform.set_host_now(now);
         let result = match command {
             LiveInputCommand::Key(value) => match key_actions::parse(value) {
                 Ok(actions) => platform
@@ -103,7 +104,7 @@ impl LiveInputController {
                 }
             },
             LiveInputCommand::Pointer(value) => match parse_pointer_input_actions(value) {
-                Ok(actions) => { platform.set_host_now(now);
+                Ok(actions) => {
                     platform.queue_xhci_pointer_input_actions_with_mem(&actions, mem) }
                     .map(|()| true)
                     .map_err(|error| matches!(error, XhciPointerInputQueueError::Busy)),
