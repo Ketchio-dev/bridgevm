@@ -424,6 +424,21 @@ if exist %DRV%\..\bvagent.ps1 (
     echo BVINJECT ERROR: guest-agent installer service missing
     goto :end
   )
+  rem BVINPUT_COMPANIONS_BEGIN
+  for %%F in (bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-pointer-input.cs) do (
+    if not exist "%DRV%\..\%%F" (
+      echo BVINJECT ERROR: guest input companion missing: %%F
+      goto :end
+    )
+  )
+  for %%F in (bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-pointer-input.cs) do (
+    copy /y "%DRV%\..\%%F" "%WIN%\%%F" >nul
+    if errorlevel 1 (
+      echo BVINJECT ERROR: guest input companion copy failed: %%F
+      goto :end
+    )
+  )
+  rem BVINPUT_COMPANIONS_END
   if not exist %WIN%\BridgeVM\ mkdir %WIN%\BridgeVM
   if exist %WIN%\bvagent.ps1 copy /y %WIN%\bvagent.ps1 %WIN%\BridgeVM\bvagent.previous.ps1 >nul
   copy /y %DRV%\..\bvagent.ps1 %WIN%\bvagent.ps1 >nul

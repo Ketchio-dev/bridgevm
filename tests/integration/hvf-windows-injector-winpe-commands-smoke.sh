@@ -22,25 +22,9 @@ ALLOWED='call copy del dir echo exit for goto if md mkdir rd rem rmdir set setlo
 # Strip CRLF, comments, labels and block closers, then peel every leading
 # `if [not] exist X` / `if errorlevel N` / `if defined X` / `if "a"=="b"` /
 # `for ... do` prefix so the word left is the command actually executed.
-invoked="$(tr -d '\r' < "$INJECTOR" | awk '
-  {
-    sub(/^[[:space:]]+/, "")
-    if ($0 ~ /^(rem|@echo|:|\))/ || $0 == "") next
-    for (;;) {
-      if (match($0, /^if[[:space:]]+(not[[:space:]]+)?exist[[:space:]]+("[^"]*"|[^[:space:]]+)[[:space:]]+/) ||
-          match($0, /^if[[:space:]]+(not[[:space:]]+)?errorlevel[[:space:]]+[0-9]+[[:space:]]+/) ||
-          match($0, /^if[[:space:]]+(not[[:space:]]+)?defined[[:space:]]+[^[:space:]]+[[:space:]]+/) ||
-          match($0, /^if[[:space:]]+(\/i[[:space:]]+)?(not[[:space:]]+)?"[^"]*"=="[^"]*"[[:space:]]+/) ||
-          match($0, /^for[[:space:]]+(\/[dflrDFLR][[:space:]]+("[^"]*"[[:space:]]+)?)?%%[A-Za-z][[:space:]]+in[[:space:]]+\([^)]*\)[[:space:]]+do[[:space:]]+/)) {
-        $0 = substr($0, RLENGTH + 1)
-        continue
-      }
-      break
-    }
-    word = tolower($1)
-    sub(/^[^[:alnum:]]+/, "", word)
-    if (word ~ /^[a-z]/) print word
-  }' | sort -u)"
+python3 "$ROOT/tests/integration/injector-file-compare-wiring-contract.py"
+bash "$ROOT/tests/integration/winpe-invoked-commands-test.sh"
+invoked="$(tr -d '\r' < "$INJECTOR" | awk -f "$ROOT/tests/integration/winpe-invoked-commands.awk" | sort -u)"
 
 violations=""
 for word in $invoked; do

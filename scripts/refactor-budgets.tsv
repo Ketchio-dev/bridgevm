@@ -2176,3 +2176,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferScalarReads.swift	17	
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSessionInputDriver.swift	66	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfInputFocusMonitor.swift	24	0
 apps/macos/Tests/BridgeVMControlTests/HvfOrderedSessionTransportTests.swift	89	0
+scripts/test-bvagent-injector-delivery.ps1	46	0
+.github/workflows/injector-input-delivery.yml	15	0
+tests/integration/winpe-invoked-commands.awk	20	0
+tests/integration/winpe-invoked-commands-test.sh	15	0

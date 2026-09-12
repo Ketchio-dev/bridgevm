@@ -1,0 +1,15 @@
+name: WinPE agent companion delivery contracts
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  delivery:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise production copy block with Windows PowerShell 5.1
+        shell: powershell
+        run: scripts/test-bvagent-injector-delivery.ps1
+      - name: Exercise production copy block with PowerShell 7
+        shell: pwsh
+        run: scripts/test-bvagent-injector-delivery.ps1
