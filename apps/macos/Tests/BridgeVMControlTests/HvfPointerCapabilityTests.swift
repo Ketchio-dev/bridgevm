@@ -12,14 +12,14 @@ final class HvfPointerCapabilityTests: XCTestCase {
     }
 
     func testAllThreeEncodingsAreRequired() {
-        for capabilities in ["1 TEXTINPUT KEYINPUT 65536", "1 TEXTINPUT POINTERINPUT 65536",
+        for capabilities in ["1 TEXTINPUT KEYINPUT POINTERINPUT 65536", "1 TEXTINPUT KEYINPUT 65536", "1 TEXTINPUT POINTERINPUT 65536",
                              "1 KEYINPUT POINTERINPUT 65536", "1 TEXTINPUT KEYINPUT POINTERINPUT 65535"] {
             var request = HvfInputCapabilitiesRequest(now: now)
             let lines = receipt(request.command, capabilities: capabilities)
             XCTAssertEqual(request.consume(lines: lines, now: now), .failed(.invalidReceipt))
         }
         var complete = HvfInputCapabilitiesRequest(now: now)
-        let lines = receipt(complete.command, capabilities: "1 TEXTINPUT KEYINPUT POINTERINPUT 65536")
+        let lines = receipt(complete.command, capabilities: "2 TEXTINPUT KEYINPUT POINTERINPUT 65536")
         XCTAssertEqual(complete.consume(lines: lines, now: now), .supported)
     }
 

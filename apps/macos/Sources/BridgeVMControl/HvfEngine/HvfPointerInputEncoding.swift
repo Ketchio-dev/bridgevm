@@ -1,8 +1,8 @@
 import Foundation
-
 /// Matches the guest's strict primary-desktop pointer grammar and INPUT count.
 enum HvfPointerInputEncoding {
     static func eventCount(_ command: String) -> Int? {
+        if command.hasPrefix("scroll:") { return HvfPointerScrollEncoding.eventCount(command) }
         guard !command.isEmpty, command.utf8.count <= 64 else { return nil }
         let fields = command.split(separator: ":", omittingEmptySubsequences: false)
         guard fields.count == 2 else { return nil }

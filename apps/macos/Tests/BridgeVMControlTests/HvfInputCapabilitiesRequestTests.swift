@@ -5,7 +5,7 @@ import XCTest
 final class HvfInputCapabilitiesRequestTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 3_000)
     private let id = UUID(uuidString: "12345678-1234-1234-1234-123456789abc")!
-    private var marker: String { "BVINPUT_CAPS \(id.uuidString) 1 TEXTINPUT KEYINPUT POINTERINPUT 65536" }
+    private var marker: String { "BVINPUT_CAPS \(id.uuidString) 2 TEXTINPUT KEYINPUT POINTERINPUT 65536" }
 
     func testRequiresCompleteExactCapabilityReceipt() {
         var request = HvfInputCapabilitiesRequest(now: now, id: id)
@@ -44,7 +44,7 @@ final class HvfInputCapabilitiesRequestTests: XCTestCase {
 
     func testForeignAndOutOfOrderReceiptsCannotEnableSupport() {
         var request = HvfInputCapabilitiesRequest(now: now, id: id)
-        XCTAssertNil(request.consume(lines: ["BVINPUT_CAPS other 1 TEXTINPUT KEYINPUT POINTERINPUT 65536"], now: now))
+        XCTAssertNil(request.consume(lines: ["BVINPUT_CAPS other 2 TEXTINPUT KEYINPUT POINTERINPUT 65536"], now: now))
         XCTAssertEqual(request.consume(lines: [marker], now: now), .failed(.invalidReceipt))
     }
 }
