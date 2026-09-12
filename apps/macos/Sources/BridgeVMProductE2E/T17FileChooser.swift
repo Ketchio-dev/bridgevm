@@ -27,8 +27,9 @@ enum T17FileChooser {
         let deadline = now() + timeout
         func wait(_ stage: String, until ready: () throws -> Bool) throws {
             repeat {
-                if try ready() { return }
+                let isReady = try ready()
                 if now() >= deadline { throw failure("timed out waiting for \(stage)" + diagnosticSuffix(driver)) }
+                if isReady { return }
                 pause()
             } while true
         }
@@ -47,7 +48,6 @@ enum T17FileChooser {
             return try driver.selectedPath() == path
         }
     }
-
     static func failure(_ detail: String) -> T17Blocker {
         T17Blocker(code: "input-selection-failed", detail: detail)
     }
