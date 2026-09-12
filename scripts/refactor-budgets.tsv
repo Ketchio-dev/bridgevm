@@ -2130,3 +2130,5 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserDeadlineTests.swift	50	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserIdentity.swift	20	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserIdentityTests.swift	36	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserAXTree.swift	25	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfInputReceiptEnvelope.swift	25	0
+apps/macos/Tests/BridgeVMControlTests/HvfRedactedInputReceiptTests.swift	39	0

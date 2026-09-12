@@ -12,10 +12,12 @@ struct HvfUnicodeInputRequest {
     private let marker: String
     private let markerPrefix: String
     private var phase = Phase.header
+    private var envelope: HvfInputReceiptEnvelope
 
     init?(event: HvfOrderedInputQueue.Event, now: Date, id: UUID = UUID()) {
         guard let encoding = HvfGuestInputEncoding(event) else { return nil }
         command = "\(encoding.verb) \(id.uuidString) \(encoding.base64)"
+        envelope = HvfInputReceiptEnvelope(command: command)
         insertedEventCount = encoding.insertedEventCount
         markerPrefix = "BVINPUT_INSERTED \(id.uuidString) "
         marker = markerPrefix + String(insertedEventCount)
@@ -31,18 +33,16 @@ struct HvfUnicodeInputRequest {
             $0.hasPrefix("BVAGENT READY") || $0.hasPrefix("BVAGENT re-READY") ||
             $0.hasPrefix("BVAGENT SERVICE start") || $0.hasPrefix("PSCI_SYSTEM_RESET")
         }) { return finish(.failed(.restarted)) }
-        let header = "BVAGENT CMD \(command) exit="
-        let end = "BVAGENT END \(command)"
         for line in lines {
-            if line.hasPrefix(header) {
+            if let accepted = envelope.header(line) {
                 guard phase == .header else { return finish(.failed(.invalidReceipt)) }
-                guard line == header + "0" else { return finish(.failed(.guestRejected)) }
+                guard accepted else { return finish(.failed(.guestRejected)) }
                 phase = .marker
             } else if line.hasPrefix(markerPrefix) {
                 guard phase == .marker, line == marker else { return finish(.failed(.invalidReceipt)) }
                 phase = .end
-            } else if line == end {
-                guard phase == .end else { return finish(.failed(.invalidReceipt)) }
+            } else if envelope.isEnd(line) {
+                guard phase == .end, envelope.matchesEnd(line) else { return finish(.failed(.invalidReceipt)) }
                 return finish(.inserted)
             }
         }
