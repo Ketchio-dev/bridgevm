@@ -87,20 +87,9 @@ final class HvfWindowsBootSeedTests: XCTestCase {
         XCTAssertEqual(esp.partitionNumber, 1)
     }
 
-    /// Escape hatch used only during live E2E validation: when a real
-    /// installed disk is staged at a well-known path, produce a seeded vars
-    /// store from the pristine template so a live boot can verify the exact
-    /// Swift-produced image. Skipped in normal CI (no such disk).
+    /// Opt-in live fixture: explicit inputs and a fresh output retain the seeded image for a subsequent boot.
     func testSeedRealInstalledDiskWhenStaged() throws {
-        let disk = "/tmp/bridgevm-appinstall-e2e-app-target.raw"
-        let template = "/opt/homebrew/share/qemu/edk2-arm-vars.fd"
-        let out = "/tmp/bridgevm-appinstall-e2e-verify-vars.fd"
-        guard FileManager.default.isReadableFile(atPath: disk),
-              FileManager.default.isReadableFile(atPath: template) else {
-            throw XCTSkip("no staged installed disk; live-only helper")
-        }
-        try? FileManager.default.removeItem(atPath: out)
-        try FileManager.default.copyItem(atPath: template, toPath: out)
+        let (disk, out) = try HvfBootSeedLiveFixture.prepare()
         try HvfWindowsBootSeed.seedFile(varsPath: out, diskPath: disk)
         let seeded = try XCTUnwrap(FileManager.default.contents(atPath: out))
         // seedFile prefers the bundled seed and patches the ESP GUID into it,

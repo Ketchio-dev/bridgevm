@@ -2124,3 +2124,5 @@ apps/macos/Tests/BridgeVMControlTests/VMRegistrationWriterTests.swift	34	0
 apps/macos/Sources/BridgeVMControl/PrivateStateFileDescriptor.swift	15	0
 apps/macos/Tests/BridgeVMControlTests/PrivateStateFileDescriptorTests.swift	25	0
 apps/macos/Tests/BridgeVMControlTests/PrivateStateFileExecTests.swift	39	0
+apps/macos/Tests/BridgeVMControlTests/HvfBootSeedLiveFixture.swift	26	0
+apps/macos/Tests/BridgeVMControlTests/HvfBootSeedLiveFixtureTests.swift	50	0
