@@ -22,12 +22,24 @@ mod control_reader;
 #[cfg(test)]
 #[path = "live_input/backpressure_tests.rs"]
 mod backpressure_tests;
-#[derive(Debug)]
 enum LiveInputCommand {
     Key(String),
     Pointer(String),
     Resize { width: u32, height: u32 },
     Snapshot(String),
+}
+
+impl std::fmt::Debug for LiveInputCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            // Diagnostics must never persist typed text or individual keys.
+            Self::Key(_) => f.write_str("Key(<redacted>)"),
+            Self::Pointer(value) => f.debug_tuple("Pointer").field(value).finish(),
+            Self::Resize { width, height } => f.debug_struct("Resize")
+                .field("width", width).field("height", height).finish(),
+            Self::Snapshot(label) => f.debug_tuple("Snapshot").field(label).finish(),
+        }
+    }
 }
 
 impl LiveInputCommand {
@@ -233,6 +245,16 @@ mod tests {
             pending: VecDeque::new(),
             accepted_pointer_moves: 0,
             next_poll: Instant::now(),
+        }
+    }
+
+    #[test]
+    fn key_diagnostics_redact_payloads_for_all_debug_formats() {
+        for value in ["text:private-input", "text-hex:736563726574", "a", "ctrl+v",
+                      "text:line\nbreak", "malformed-private-input"] {
+            let command = LiveInputCommand::Key(value.into());
+            assert_eq!(format!("{command:?}"), "Key(<redacted>)");
+            assert_eq!(format!("{command:#?}"), "Key(<redacted>)");
         }
     }
 
