@@ -2180,3 +2180,10 @@ scripts/test-bvagent-injector-delivery.ps1	46	0
 .github/workflows/injector-input-delivery.yml	15	0
 tests/integration/winpe-invoked-commands.awk	20	0
 tests/integration/winpe-invoked-commands-test.sh	15	0
+scripts/live-gates/winpe_companion_inputs.py	74	0
+scripts/live-gates/winpe_companion_inspect.py	49	0
+scripts/live-gates/winpe_companion_receipt.py	87	0
+scripts/live-gates/run-winpe-companions.py	95	0
+tests/integration/winpe-companion-diagnostic-test.py	103	0
+.github/workflows/winpe-companion-diagnostic.yml	13	0
+tests/integration/winpe_companion_size_cases.py	19	0

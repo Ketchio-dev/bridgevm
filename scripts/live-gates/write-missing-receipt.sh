@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-TIER="$1"; DIR="$2"; WORKTREE="$3"; JOB_ID="$4"; COMMIT="$5"; [[ "$TIER" != d1-windows-media-comparison ]] || exec python3 "$WORKTREE/scripts/live-gates/windows-media-comparison-queue.py" finalize "$DIR" "$WORKTREE" "$COMMIT"
+TIER="$1"; DIR="$2"; WORKTREE="$3"; JOB_ID="$4"; COMMIT="$5"; [[ "$TIER" != d4-winpe-companions ]] || exec python3 "$WORKTREE/scripts/live-gates/winpe_companion_receipt.py" finalize "$DIR" "$COMMIT"; [[ "$TIER" != d1-windows-media-comparison ]] || exec python3 "$WORKTREE/scripts/live-gates/windows-media-comparison-queue.py" finalize "$DIR" "$WORKTREE" "$COMMIT"
 [[ -f "$DIR/receipt.json" ]] && exit 0
 reason=failed-before-receipt
 [[ -f "$DIR/cancel.requested" ]] && reason=canceled
