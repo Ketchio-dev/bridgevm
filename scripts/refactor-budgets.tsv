@@ -2168,3 +2168,6 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSessionInputRouter.swift	79	0
 apps/macos/Tests/BridgeVMControlTests/HvfSessionInputRouterTests.swift	88	0
 scripts/test-bvagent-pointer-release.ps1	23	0
 apps/macos/Tests/BridgeVMControlTests/HvfPointerReleaseEncodingTests.swift	26	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerHeldState.swift	30	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRecoverableInputStream.swift	67	0
+apps/macos/Tests/BridgeVMControlTests/HvfPointerRecoveryTests.swift	85	0

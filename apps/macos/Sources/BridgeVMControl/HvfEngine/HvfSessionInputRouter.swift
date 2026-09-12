@@ -6,7 +6,7 @@ struct HvfSessionInputRouter {
     private var eligible = false
     private var activated = false
     private(set) var failed = false
-    private var stream = HvfNegotiatedInputStream()
+    private var stream = HvfRecoverableInputStream()
     var state: HvfNegotiatedInputStream.State { stream.state }
     var count: Int { stream.count }
 
@@ -59,8 +59,8 @@ struct HvfSessionInputRouter {
         return update
     }
 
-    mutating func cancelTarget() -> HvfAcknowledgedInputStream.Update {
-        stream.reset(.targetChanged)
+    mutating func cancelTarget(now: Date = Date()) -> HvfAcknowledgedInputStream.Update {
+        stream.reset(.targetChanged, now: now)
     }
 
     private mutating func matches(_ next: [String]) -> Bool {
