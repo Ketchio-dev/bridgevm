@@ -37,11 +37,13 @@ extension VMLibrary {
         moved.diskPath = config.diskPath.map(rebased)
 
         let stateDirectory = destination.appendingPathComponent("metadata/vtpm", isDirectory: true)
+        do {
+            try fm.createDirectory(at: destinationParent, withIntermediateDirectories: true)
+        } catch { return nil }
         guard let pending = try? VMRelocationJournal.begin(original: config, moved: moved, rootURL: rootURL) else {
             return nil
         }
         do {
-            try fm.createDirectory(at: destinationParent, withIntermediateDirectories: true)
             try fm.moveItem(at: source, to: destination)
         } catch { return nil }
         do {

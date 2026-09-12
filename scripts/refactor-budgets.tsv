@@ -2115,3 +2115,4 @@ apps/macos/Sources/BridgeVMControl/VMRelocationGuidance.swift	26	0
 apps/macos/Tests/BridgeVMControlTests/VMRelocationGuidanceTests.swift	37	0
 apps/macos/Sources/BridgeVMControl/VMRelocationRecordReader.swift	19	0
 apps/macos/Tests/BridgeVMControlTests/VMRelocationRecordReaderTests.swift	39	0
+apps/macos/Tests/BridgeVMControlTests/VMRelocationSetupFailureTests.swift	41	0
