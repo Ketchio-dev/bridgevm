@@ -77,19 +77,20 @@ final class T17FileChooserAX: T17FileChooserDriving {
     }
 
     private func locationSheet() throws -> AXUIElement? {
-        guard let panel else { return nil }
-        return try nodes(panel).first { try attribute($0, kAXRoleAttribute) as? String == kAXSheetRole }
+        guard panel != nil else { return nil }
+        return try identified(in: application, id: "GoToWindow", roles: [kAXSheetRole])
     }
 
     private func locationField() throws -> AXUIElement? {
         guard let sheet = try locationSheet() else { return nil }
-        let descendants = try nodes(sheet)
-        for role in [kAXTextFieldRole, kAXComboBoxRole] {
-            if let field = try descendants.first(where: { try attribute($0, kAXRoleAttribute) as? String == role }) {
-                return field
-            }
-        }
-        return nil
+        return try identified(in: sheet, id: "PathTextField", roles: [kAXTextFieldRole, kAXComboBoxRole])
+    }
+
+    private func identified(in root: AXUIElement, id: String, roles: Set<String>) throws -> AXUIElement? {
+        try T17FileChooserIdentity.find(in: nodes(root), id: id, roles: roles, metadata: {
+            (try self.attribute($0, kAXIdentifierAttribute) as? String,
+             try self.attribute($0, kAXRoleAttribute) as? String)
+        }, same: { CFEqual($0, $1) })
     }
 
     private func openButton() throws -> AXUIElement? {
@@ -109,24 +110,10 @@ final class T17FileChooserAX: T17FileChooserDriving {
     }
 
     private func attribute(_ element: AXUIElement, _ name: String) throws -> AnyObject? {
-        var value: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(element, name as CFString, &value)
-        if result == .noValue || result == .attributeUnsupported { return nil }
-        guard result == .success else {
-            throw T17FileChooser.failure("file chooser \(name) read failed; ax_error=\(result.rawValue)")
-        }
-        return value
+        try T17FileChooserAXTree.attribute(element, name)
     }
 
     private func nodes(_ root: AXUIElement) throws -> [AXUIElement] {
-        var pending = [root]
-        var index = 0
-        while index < pending.count {
-            guard pending.count <= 12_000 else { throw T17FileChooser.failure("file chooser AX tree exceeded limit") }
-            let item = pending[index]
-            index += 1
-            pending.append(contentsOf: try attribute(item, kAXChildrenAttribute) as? [AXUIElement] ?? [])
-        }
-        return pending
+        try T17FileChooserAXTree.nodes(root)
     }
 }
