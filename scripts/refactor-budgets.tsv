@@ -2098,3 +2098,4 @@ apps/macos/Tests/BridgeVMControlTests/HvfMediaLeaseSessionTests.swift	45	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfProtectedTransfers.swift	17	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMediaOwnership.swift	41	0
 apps/macos/Tests/BridgeVMControlTests/HvfCloneValidationTests.swift	39	0
+apps/macos/Tests/BridgeVMControlTests/HvfCloneLeaseFailureTests.swift	89	0
