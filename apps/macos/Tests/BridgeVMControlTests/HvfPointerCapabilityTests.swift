@@ -19,7 +19,7 @@ final class HvfPointerCapabilityTests: XCTestCase {
             XCTAssertEqual(request.consume(lines: lines, now: now), .failed(.invalidReceipt))
         }
         var complete = HvfInputCapabilitiesRequest(now: now)
-        let lines = receipt(complete.command, capabilities: "2 TEXTINPUT KEYINPUT POINTERINPUT 65536")
+        let lines = receipt(complete.command, capabilities: "3 TEXTINPUT KEYINPUT POINTERINPUT 65536")
         XCTAssertEqual(complete.consume(lines: lines, now: now), .supported)
     }
 

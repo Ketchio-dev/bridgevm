@@ -2166,3 +2166,5 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerScrollEncoding.swift	11	0
 apps/macos/Tests/BridgeVMControlTests/HvfPointerScrollEncodingTests.swift	39	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSessionInputRouter.swift	79	0
 apps/macos/Tests/BridgeVMControlTests/HvfSessionInputRouterTests.swift	88	0
+scripts/test-bvagent-pointer-release.ps1	23	0
+apps/macos/Tests/BridgeVMControlTests/HvfPointerReleaseEncodingTests.swift	26	0

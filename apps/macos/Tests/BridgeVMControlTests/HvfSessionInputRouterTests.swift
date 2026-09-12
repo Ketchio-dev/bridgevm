@@ -10,7 +10,7 @@ final class HvfSessionInputRouterTests: XCTestCase {
         var command = ""
         _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { command = $0; return true }
         let id = command.split(separator: " ").last ?? "missing"
-        let lines = ["BVAGENT CMD \(command) exit=0", "BVINPUT_CAPS \(id) 2 TEXTINPUT KEYINPUT POINTERINPUT 65536",
+        let lines = ["BVAGENT CMD \(command) exit=0", "BVINPUT_CAPS \(id) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536",
                      "BVAGENT END \(command)"]
         _ = router.poll(binding: binding, serviceReady: true, lines: lines, now: now) { _ in false }
         _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { _ in false }

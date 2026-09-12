@@ -28,6 +28,7 @@ namespace BridgeVM {
                 case "move": return new Input[] { MouseEvent(x, y, 0x8001) };
                 case "press": return new Input[] { MouseEvent(x, y, 0x8003) };
                 case "release": return new Input[] { MouseEvent(x, y, 0x8005) };
+                case "releaseall": return new Input[] { MouseEvent(x, y, 0x8015) };
                 case "rightpress": return new Input[] { MouseEvent(x, y, 0x8009) };
                 case "rightrelease": return new Input[] { MouseEvent(x, y, 0x8011) };
                 case "click": down = 0x8003; up = 0x8005; break;

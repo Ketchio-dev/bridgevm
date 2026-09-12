@@ -17,7 +17,7 @@ enum HvfPointerInputEncoding {
             return (0...32767).contains(coordinate) && String(coordinate) == value
         }) else { return nil }
         switch fields[0] {
-        case "move", "press", "release", "rightpress", "rightrelease": return 1
+        case "move", "press", "release", "releaseall", "rightpress", "rightrelease": return 1
         case "click", "rightclick": return 2
         default: return nil
         }
