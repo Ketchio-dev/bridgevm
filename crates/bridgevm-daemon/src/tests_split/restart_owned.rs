@@ -65,10 +65,8 @@ fn daemon_owned_restart_spawns_and_tracks_replacement_child() {
     let new_pid = metadata.pid.expect("replacement pid");
     assert_ne!(new_pid, old_pid);
     assert_eq!(state.children.get("legacy").unwrap().child.id(), new_pid);
-    assert_eq!(
-        store.state("legacy").unwrap().state,
-        VmRuntimeState::Running
-    );
+    let current = store.state("legacy").unwrap().state;
+    assert_eq!(current, VmRuntimeState::Running);
     assert_eq!(
         store
             .runner_metadata("legacy")
@@ -76,7 +74,9 @@ fn daemon_owned_restart_spawns_and_tracks_replacement_child() {
             .and_then(|metadata| metadata.pid),
         Some(new_pid)
     );
-    assert!(wait_up_to_ten_seconds(|| launch_log.exists()));
+    let expected = format!("{new_pid}\n");
+    let launched = || fs::read_to_string(&launch_log).is_ok_and(|text| text == expected);
+    assert!(wait_up_to_ten_seconds(launched));
     assert_eq!(fs::read_to_string(&launch_log).unwrap().lines().count(), 1);
 
     let mut replacement = state.children.remove("legacy").unwrap();
