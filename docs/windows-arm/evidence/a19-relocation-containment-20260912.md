@@ -188,3 +188,18 @@ Failure inside private-file creation may leave a private temporary file. This
 change does not synchronize guest media, guarantee hostile-path race safety or
 prove complete power-loss recovery. These limits remain outside the tested
 registration replacement behavior.
+
+## Private descriptor inheritance
+
+Source: `d9d4fbfb5d61088ed42938ebb2385941cde8f3a2`.
+
+The private-file creation routine used by registration and relocation records
+previously omitted O_CLOEXEC. Opening is now extracted into a shared helper that
+sets O_CLOEXEC together with O_EXCL and O_NOFOLLOW at creation time, retaining
+mode 0600 and the existing write/fsync routine. This was a static flag omission,
+not a reproduced key disclosure.
+
+A test inspects the actual descriptor with F_GETFD and confirms FD_CLOEXEC,
+private mode, existing-file refusal and symlink refusal. The selected suite
+passed 47/47 tests and `scripts/check-project.sh` passed. These checks do not
+demonstrate an end-to-end child-process attack or complete secret isolation.
