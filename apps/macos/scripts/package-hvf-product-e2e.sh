@@ -11,6 +11,6 @@ SNAPSHOT="$ROOT/target/release/examples/snapshot_pair_cli"
 [[ -x "$SNAPSHOT" ]] || { echo "missing snapshot_pair_cli" >&2; exit 1; }
 "$ROOT/apps/macos/scripts/package-product-e2e-helper-app.sh" "$APP" "$SWIFT_BIN_DIR" "$IDENTITY"
 install -m 755 "$SNAPSHOT" "$APP/Contents/Resources/target/release/examples/snapshot_pair_cli"
-if [[ "$IDENTITY" == - ]]; then codesign --force --sign - "$SNAPSHOT" >/dev/null
-else codesign --force --sign "$IDENTITY" --options runtime --timestamp "$SNAPSHOT" >/dev/null
+if [[ "$IDENTITY" == - ]]; then codesign --force --sign - "$APP/Contents/Resources/target/release/examples/snapshot_pair_cli" >/dev/null
+else codesign --force --sign "$IDENTITY" --options runtime --timestamp "$APP/Contents/Resources/target/release/examples/snapshot_pair_cli" >/dev/null
 fi
