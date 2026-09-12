@@ -540,26 +540,4 @@ final class HvfEngineSession: ObservableObject {
 }
 
 #if canImport(AppKit)
-enum HvfDisplayCoordinates {
-    static func absolutePointer(
-        location: CGPoint,
-        viewSize: CGSize,
-        imageSize: CGSize
-    ) -> (x: UInt16, y: UInt16)? {
-        guard viewSize.width > 0, viewSize.height > 0,
-              imageSize.width > 0, imageSize.height > 0 else { return nil }
-        let scale = min(viewSize.width / imageSize.width, viewSize.height / imageSize.height)
-        let displayed = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
-        let origin = CGPoint(
-            x: (viewSize.width - displayed.width) / 2,
-            y: (viewSize.height - displayed.height) / 2
-        )
-        guard location.x >= origin.x, location.y >= origin.y,
-              location.x <= origin.x + displayed.width,
-              location.y <= origin.y + displayed.height else { return nil }
-        let x = ((location.x - origin.x) / displayed.width * 32_767).rounded()
-        let y = ((location.y - origin.y) / displayed.height * 32_767).rounded()
-        return (UInt16(clamping: Int(x)), UInt16(clamping: Int(y)))
-    }
-}
 #endif
