@@ -22,12 +22,12 @@ struct HvfClipboardPaste {
     mutating func consume(lines: [String], now: Date) -> Bool? {
         guard !finished else { return nil }
         guard now < deadline else { return finish(false) }
+        if lines.contains(where: { $0.hasPrefix("BVAGENT re-READY ") || $0.hasPrefix("BVAGENT READY ")
+            || $0.hasPrefix("PSCI SYSTEM_RESET:") || $0.hasPrefix("BVAGENT SERVICE start") }) {
+            return finish(false)
+        }
         for raw in lines {
             let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
-            if line.hasPrefix("BVAGENT re-READY ") || line.hasPrefix("BVAGENT READY ")
-                || line.hasPrefix("PSCI SYSTEM_RESET:") || line.hasPrefix("BVAGENT SERVICE start") {
-                return finish(false)
-            }
             let header = "BVAGENT CMD \(command) exit="
             if line.hasPrefix(header) {
                 guard !began, line == header + "0" else { return finish(false) }

@@ -35,7 +35,7 @@ final class HvfClipboardPasteSessionTests: XCTestCase {
 
     @MainActor
     func testFailedCommandAndRestartNeverTriggerPaste() throws {
-        for restart in [false, true] {
+        for restart in ["none", "before", "after"] {
             try withSession { session, root, control in
                 session.sendText("\u{d55c}\u{ae00}")
                 let command = try String(contentsOf: control, encoding: .utf8)
@@ -43,10 +43,10 @@ final class HvfClipboardPasteSessionTests: XCTestCase {
                 let markerRange = try XCTUnwrap(command.range(
                     of: "BVPASTE_READY [0-9A-Fa-f-]{36}", options: .regularExpression
                 ))
-                let prefix = restart ? "BVAGENT READY host=test t=3\n" : ""
-                let exit = restart ? 0 : 1
+                let prefix = restart == "before" ? "BVAGENT READY host=test t=3\n" : ""
+                let exit = restart == "none" ? 1 : 0; let suffix = restart == "after" ? "BVAGENT READY host=test t=3\n" : ""
                 try append(prefix + "BVAGENT CMD \(command) exit=\(exit)\n"
-                    + String(command[markerRange]) + "\nBVAGENT END \(command)\n", to: root)
+                    + String(command[markerRange]) + "\nBVAGENT END \(command)\n" + suffix, to: root)
                 session.poll()
                 XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("input.ctl").path))
             }

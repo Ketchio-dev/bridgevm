@@ -1997,6 +1997,7 @@ tests/integration/clipboard-set-ack-contract.ps1	50	0
 .github/workflows/clipboard-set-ack-contract.yml	12	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfClipboardPaste.swift	48	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteTests.swift	43	0
+apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteBoundaryTests.swift	33	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfAttachedLivenessSchedule.swift	10	0
 tests/integration/clipboard-paste-command-fixture.swift	15	0
 tests/integration/clipboard-paste-command-contract.ps1	44	0
