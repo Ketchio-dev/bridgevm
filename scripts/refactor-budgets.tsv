@@ -2213,3 +2213,7 @@ scripts/live-gates/guest_input_queue.py	96
 scripts/live-gates/guest_input_queue_receipt.py	88
 tests/integration/guest-input-queue-test.py	99
 .github/workflows/guest-input-queue.yml	13
+scripts/live-gates/production-input-driver.swift	139
+scripts/build-production-input-driver.sh	13
+tests/integration/production-input-driver-test.py	79
+.github/workflows/production-input-driver.yml	12

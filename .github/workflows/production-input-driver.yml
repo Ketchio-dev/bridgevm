@@ -1,0 +1,12 @@
+name: Production Swift input driver transport contracts
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  driver:
+    runs-on: macos-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/build-production-input-driver.sh "$RUNNER_TEMP/production-input-driver"
+      - run: python3 tests/integration/production-input-driver-test.py "$RUNNER_TEMP/production-input-driver"
