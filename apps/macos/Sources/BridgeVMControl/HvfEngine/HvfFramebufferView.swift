@@ -378,7 +378,7 @@ final class FBLayerView: NSView {
             return false
         }
 
-        let descriptor = Darwin.open(framebufferPath, O_RDONLY)
+        let descriptor = HvfFramebufferFileIdentity.open(framebufferPath)
         guard descriptor >= 0 else {
             return false
         }
@@ -422,18 +422,7 @@ final class FBLayerView: NSView {
     }
 
     private func fileLength(_ descriptor: Int32) -> Int? {
-        var fileInfo = stat()
-        guard Darwin.fstat(descriptor, &fileInfo) == 0,
-              fileInfo.st_size >= 0 else {
-            return nil
-        }
-
-        let length = UInt64(fileInfo.st_size)
-        guard length <= UInt64(Int.max) else {
-            return nil
-        }
-
-        return Int(length)
+        HvfFramebufferFileIdentity.length(descriptor, matching: framebufferPath)
     }
 
     private func readUInt32(
