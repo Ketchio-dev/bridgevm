@@ -21,7 +21,7 @@ Known open defects:
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-09-10 at commit `27bea3b6b09e8e0822f149a987f92f768fb69d8f`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-09-10 at commit `72943fd74eb81c3cc0ea9f6895c2b3963fe55cda`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 ## How to read the generated status
