@@ -52,11 +52,9 @@ extension VMLibrary {
                 )
             return moved
         } catch {
-            do {
-                try fm.moveItem(at: destination, to: source)
-                _ = save(config, rootURL: rootURL)
-            } catch {
-                _ = save(moved, rootURL: rootURL)
+            try? fm.moveItem(at: destination, to: source)
+            if let observed = VMRelocationRecovery.configuration(original: config, moved: moved, fileManager: fm) {
+                _ = save(observed, rootURL: rootURL)
             }
             return nil
         }
