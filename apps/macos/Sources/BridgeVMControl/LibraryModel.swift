@@ -127,7 +127,7 @@ final class LibraryModel: ObservableObject {
         cloningSlugs.insert(cfg.slug)
         let libraryRoot = self.libraryRoot
         Task.detached {
-            let clone = VMLibrary.cloneWindowsHVF(
+            let clone = HvfProtectedTransfers.clone(
                 name: name,
                 template: cfg,
                 libraryRoot: libraryRoot
@@ -138,7 +138,7 @@ final class LibraryModel: ObservableObject {
                     self.reload()
                     self.selectedID = clone.slug
                 } else {
-                    self.cloneError = "Windows HVF 번들을 복제하지 못했습니다. 원본 데이터는 변경하지 않았습니다."
+                    self.cloneError = "Windows HVF 복제 완료를 확인하지 못했습니다. 원본 사용 여부와 대상 번들 상태를 확인하세요."
                 }
             }
         }
@@ -154,8 +154,7 @@ final class LibraryModel: ObservableObject {
         movingSlugs.insert(cfg.slug)
         let libraryRoot = self.libraryRoot
         Task.detached {
-            let moved = VMLibrary.moveWindowsHVFBundle(
-                cfg,
+            let moved = HvfProtectedTransfers.move(cfg,
                 to: destinationParent,
                 rootURL: libraryRoot
             )
@@ -166,7 +165,7 @@ final class LibraryModel: ObservableObject {
                     self.reload()
                     self.selectedID = moved.slug
                 } else {
-                    self.moveError = "VM 번들을 이동하지 못했습니다. 원래 위치와 등록 정보를 복구했습니다. 대상 위치가 비어 있고 같은 Mac에서 쓸 수 있는지 확인하세요."
+                    self.moveError = "VM 이동 완료를 확인하지 못했습니다. 원본과 대상 위치의 번들 및 등록 상태를 확인하세요."
                 }
             }
         }
