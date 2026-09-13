@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/live-gates"))
 from winpe_companion_mount_cases import WinPEMountSafetyTests
 from winpe_companion_process_cases import WinPEProcessSafetyTests
+from winpe_companion_native_mount_cases import WinPENativeMountSafetyTests
 import winpe_companion_inputs as inputs
 import winpe_companion_receipt as receipts
 from winpe_companion_inspect import compare
@@ -98,6 +99,5 @@ class DiagnosticTests(unittest.TestCase):
         self.assertNotIn("--virtio-gpu-3d", command)
         self.assertNotIn("--enable-xhci", command)
         assert_wrapper_policy(self, command)
-
 
 if __name__ == "__main__": unittest.main()

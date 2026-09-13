@@ -2270,3 +2270,6 @@ apps/macos/Sources/BridgeVMProductE2E/T17ActivationProbe.swift	61
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserKeyDiagnostic.swift	75
 apps/macos/Tests/BridgeVMProductE2ETests/T17ActivationProbeTests.swift	56
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserKeyDiagnosticTests.swift	99
+runners/bridgevm-tools-linux/src/tests_split/temp_fixtures.rs	40
+tests/integration/winpe_companion_native_mount_cases.py	92
+runners/bridgevm-tools-linux/src/tests_split/temp_fixtures_tests.rs	163

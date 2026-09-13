@@ -227,8 +227,8 @@ fn unique_temp_dir_names_cannot_collide_within_a_process() {
 
 #[test]
 fn real_window_input_uses_wmctrl_focus_and_xdotool() {
-    let root = unique_temp_dir("bridgevm-tools-window-input");
-    fs::create_dir_all(&root).unwrap();
+    let root = fresh_temp_dir("bridgevm-tools-window-input");
+    assert!(root.read_dir().unwrap().next().is_none());
     let wmctrl_path = root.join("wmctrl");
     let xdotool_path = root.join("xdotool");
     let action_path = root.join("actions.txt");
