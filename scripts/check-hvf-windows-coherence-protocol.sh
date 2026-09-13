@@ -18,7 +18,7 @@ for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE; do
 done
 grep -q '\$W = \[BridgeVM.BvWindow\]' "$AGENT" || fail "WINLIST window P/Invoke type is not isolated from the channel type"
 # PowerShell callbacks hung PS5.1/ARM64 (20260820-043633); the compiled-C# candidate is separately live-proven.
-! rg -q '::EnumWindows|EnumWindows\(' "$AGENT" && rg -Fq 'Get-BvWindowInventoryLines' "$AGENT" && rg -Fq 'Get-BvWindowInventoryLines' "$INVENTORY" || fail "WINLIST must delegate to compiled-C# inventory, not a PowerShell native callback"
+! grep -Eq '::EnumWindows|EnumWindows\(' "$AGENT" && grep -Fq 'Get-BvWindowInventoryLines' "$AGENT" && grep -Fq 'Get-BvWindowInventoryLines' "$INVENTORY" || fail "WINLIST must delegate to compiled-C# inventory, not a PowerShell native callback"
 python3 -c 'import pathlib,sys; p=pathlib.Path(sys.argv[1]).read_bytes(); sys.exit(0 if p.count(b"\n") == p.count(b"\r\n") and b"\n" in p else 1)' "$AGENT" || fail "agent asset must use CRLF line endings"
 core_end=$(grep -n '^\$K = Add-Type -MemberDefinition' "$AGENT" | cut -d: -f1 || true); window_decl=$(grep -n 'public static class BvWindow' "$AGENT" | cut -d: -f1 || true); [[ -n "$core_end" && -n "$window_decl" && "$window_decl" -gt "$core_end" ]] || fail "window declarations leaked back into the live-proven channel P/Invoke type"
 for verb in WINBOUNDS WINFOCUS WINCLOSE; do
@@ -28,7 +28,7 @@ for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE; do
   grep -q "\"$verb\"" "$CHANNEL/protocol.rs" || fail "$verb is not raw on the agent channel"
 done
 # The list grammar: WIN lines then a WINEND terminator; tests pin field order.
-rg -q 'WIN ' "$INVENTORY" && rg -Fq 'test-bvagent-window-inventory-native-schema.ps1' .github/workflows/coherence-inventory-wire.yml || fail "inventory grammar lost its real-native-row wire contract"
+grep -q 'WIN ' "$INVENTORY" && grep -Fq 'test-bvagent-window-inventory-native-schema.ps1' .github/workflows/coherence-inventory-wire.yml || fail "inventory grammar lost its real-native-row wire contract"
 # Lowercase $w aliases the case-insensitive $W window-API type variable.
 grep -Eq '\$w = ' "$AGENT" && fail "a bare \$w assignment clobbers the \$W window-API type"
 grep -q "Write-Line \$h 'WINEND' 'WINEND'" "$AGENT" || fail "agent no longer terminates with WINEND"
