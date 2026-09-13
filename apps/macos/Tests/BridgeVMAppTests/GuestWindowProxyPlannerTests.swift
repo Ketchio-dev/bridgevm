@@ -86,28 +86,17 @@ final class GuestWindowProxyPlannerTests: XCTestCase {
         backingScale: 2
       ),
       [
-        "--framebuffer-width",
-        "1440",
-        "--framebuffer-height",
-        "900",
-        "--scale",
-        "2",
-        "--window-id",
-        "0x01200007",
-        "--window-title",
-        "Real Terminal",
-        "--window-x",
-        "30",
-        "--window-y",
-        "40",
-        "--window-width",
-        "800",
-        "--window-height",
-        "600",
-        "--window-host-width",
-        "400",
-        "--window-host-height",
-        "300",
+        "--framebuffer-width", "1440",
+        "--framebuffer-height", "900",
+        "--scale", "2",
+        "--window-id", "0x01200007",
+        "--window-title", "Real Terminal",
+        "--window-x", "30",
+        "--window-y", "40",
+        "--window-width", "800",
+        "--window-height", "600",
+        "--window-host-width", "400",
+        "--window-host-height", "300",
       ]
     )
   }
@@ -133,32 +122,19 @@ final class GuestWindowProxyPlannerTests: XCTestCase {
         windowCropRGBAFile: "/tmp/window-crop.rgba"
       ),
       [
-        "--framebuffer-width",
-        "1440",
-        "--framebuffer-height",
-        "900",
-        "--scale",
-        "2",
-        "--window-id",
-        "0x01200007",
-        "--window-title",
-        "Real Terminal",
-        "--window-x",
-        "30",
-        "--window-y",
-        "40",
-        "--window-width",
-        "800",
-        "--window-height",
-        "600",
-        "--window-host-width",
-        "400",
-        "--window-host-height",
-        "300",
-        "--framebuffer-rgba-file",
-        "/tmp/framebuffer.rgba",
-        "--window-crop-rgba-file",
-        "/tmp/window-crop.rgba",
+        "--framebuffer-width", "1440",
+        "--framebuffer-height", "900",
+        "--scale", "2",
+        "--window-id", "0x01200007",
+        "--window-title", "Real Terminal",
+        "--window-x", "30",
+        "--window-y", "40",
+        "--window-width", "800",
+        "--window-height", "600",
+        "--window-host-width", "400",
+        "--window-host-height", "300",
+        "--framebuffer-rgba-file", "/tmp/framebuffer.rgba",
+        "--window-crop-rgba-file", "/tmp/window-crop.rgba",
       ]
     )
   }
@@ -190,26 +166,16 @@ final class GuestWindowProxyPlannerTests: XCTestCase {
     XCTAssertEqual(
       plan.displaydWindowRegionArguments(backingScale: 0),
       [
-        "--framebuffer-width",
-        "100",
-        "--framebuffer-height",
-        "950",
-        "--scale",
-        "1",
-        "--window-id",
-        "0x02000010",
-        "--window-x",
-        "-20",
-        "--window-y",
-        "850",
-        "--window-width",
-        "100",
-        "--window-height",
-        "100",
-        "--window-host-width",
-        "100",
-        "--window-host-height",
-        "100",
+        "--framebuffer-width", "100",
+        "--framebuffer-height", "950",
+        "--scale", "1",
+        "--window-id", "0x02000010",
+        "--window-x", "-20",
+        "--window-y", "850",
+        "--window-width", "100",
+        "--window-height", "100",
+        "--window-host-width", "100",
+        "--window-host-height", "100",
       ]
     )
   }
@@ -256,79 +222,89 @@ final class GuestWindowProxyPlannerTests: XCTestCase {
     )
   }
 
-  func testGuestBoundsMapHostMoveAndResizeAtNativeScale() throws {
-    let window = GuestToolsWindowAction(
-      id: "0x01200007",
-      title: "Terminal",
-      source: "wmctrl",
-      bounds: GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600)
-    )
-    let plan = try GuestWindowProxyPlanner.plan(vmName: "Dev VM", window: window)
-
-    let bounds = plan.guestBounds(
-      forHostContentFrame: GuestWindowProxyPlan.HostFrame(
-        x: 200,
-        y: 50,
-        width: 1024,
-        height: 768
-      ),
-      relativeTo: GuestWindowProxyPlan.HostFrame(
-        x: 100,
-        y: 100,
-        width: 800,
-        height: 600
+  func testGuestBoundsMapHostMoveResizeAndTinyFrames() throws {
+    typealias Frame = GuestWindowProxyPlan.HostFrame
+    typealias Bounds = GuestToolsWindowBounds
+    let native = Bounds(x: 30, y: 40, width: 800, height: 600)
+    let scaled = Bounds(x: 100, y: 200, width: 3000, height: 2000)
+    let cases: [(name: String, guest: Bounds, baseline: Frame, current: Frame, expected: Bounds)] = [
+      ("native move and resize", native,
+       Frame(x: 100, y: 100, width: 800, height: 600),
+       Frame(x: 200, y: 50, width: 1024, height: 768),
+       Bounds(x: 130, y: -78, width: 1024, height: 768)),
+      ("scaled move and resize", scaled,
+       Frame(x: 10, y: 500, width: 1500, height: 1000),
+       Frame(x: 260, y: 400, width: 1200, height: 900),
+       Bounds(x: 600, y: 600, width: 2400, height: 1800)),
+      ("zero size stays positive", native,
+       Frame(x: 100, y: 100, width: 800, height: 600),
+       Frame(x: 100, y: 100, width: 0, height: 0),
+       Bounds(x: 30, y: 640, width: 1, height: 1)),
+    ]
+    for testCase in cases {
+      let plan = try GuestWindowProxyPlanner.plan(
+        vmName: "Dev VM",
+        window: GuestToolsWindowAction(id: testCase.name, title: "Window", bounds: testCase.guest),
+        maximumHostSize: GuestWindowProxyPlan.HostSize(
+          width: Int(testCase.baseline.width), height: Int(testCase.baseline.height)
+        )
       )
-    )
-
-    XCTAssertEqual(bounds, GuestToolsWindowBounds(x: 130, y: 90, width: 1024, height: 768))
+      XCTAssertEqual(
+        plan.guestBounds(forHostContentFrame: testCase.current, relativeTo: testCase.baseline),
+        testCase.expected, testCase.name
+      )
+    }
   }
 
-  func testGuestBoundsMapHostMoveAndResizeThroughScaledProxy() throws {
-    let window = GuestToolsWindowAction(
-      id: "0x02000010",
-      title: "Large Window",
-      source: "wmctrl",
-      bounds: GuestToolsWindowBounds(x: 100, y: 200, width: 3000, height: 2000)
-    )
-    let plan = try GuestWindowProxyPlanner.plan(
-      vmName: "Dev VM",
-      window: window,
-      maximumHostSize: GuestWindowProxyPlan.HostSize(width: 1500, height: 1000)
-    )
-
-    let bounds = plan.guestBounds(
-      forHostContentFrame: GuestWindowProxyPlan.HostFrame(
-        x: 260,
-        y: 400,
-        width: 1200,
-        height: 900
-      ),
-      relativeTo: GuestWindowProxyPlan.HostFrame(
-        x: 10,
-        y: 500,
-        width: 1500,
-        height: 1000
+  func testGuestBoundsResizeAroundFixedEdgesRoundTripsAtNativeAndScaledSizes() throws {
+    typealias Frame = GuestWindowProxyPlan.HostFrame
+    typealias Bounds = GuestToolsWindowBounds
+    typealias Size = GuestWindowProxyPlan.HostSize
+    let screen = Frame(x: 0, y: 0, width: 4000, height: 3000)
+    let fixtures: [(name: String, guest: Bounds, host: Size, fixedTop: Bounds, fixedBottom: Bounds)] = [
+      ("native", Bounds(x: 30, y: 40, width: 800, height: 600),
+       Size(width: 800, height: 600),
+       Bounds(x: 30, y: 40, width: 800, height: 500),
+       Bounds(x: 30, y: 140, width: 800, height: 500)),
+      ("scaled", Bounds(x: 100, y: 200, width: 3000, height: 2000),
+       Size(width: 1500, height: 1000),
+       Bounds(x: 100, y: 200, width: 3000, height: 1800),
+       Bounds(x: 100, y: 400, width: 3000, height: 1800)),
+    ]
+    for fixture in fixtures {
+      let plan = try GuestWindowProxyPlanner.plan(
+        vmName: "Dev VM",
+        window: GuestToolsWindowAction(id: fixture.name, title: "Window", bounds: fixture.guest),
+        maximumHostSize: fixture.host
       )
-    )
-
-    XCTAssertEqual(bounds, GuestToolsWindowBounds(x: 600, y: 400, width: 2400, height: 1800))
-  }
-
-  func testGuestBoundsKeepPositiveSizeForTinyHostContentFrame() throws {
-    let window = GuestToolsWindowAction(
-      id: "0x01200007",
-      title: "Terminal",
-      source: "wmctrl",
-      bounds: GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600)
-    )
-    let plan = try GuestWindowProxyPlanner.plan(vmName: "Dev VM", window: window)
-
-    let bounds = plan.guestBounds(
-      forHostContentFrame: GuestWindowProxyPlan.HostFrame(x: 100, y: 100, width: 0, height: 0),
-      relativeTo: GuestWindowProxyPlan.HostFrame(x: 100, y: 100, width: 800, height: 600)
-    )
-
-    XCTAssertEqual(bounds, GuestToolsWindowBounds(x: 30, y: 40, width: 1, height: 1))
+      let origin = plan.hostOrigin(inVisibleFrame: screen)
+      let baseline = Frame(
+        x: origin.x, y: origin.y,
+        width: Double(plan.hostSize.width), height: Double(plan.hostSize.height)
+      )
+      // Shrinking with unchanged width keeps the planner's scale constant.
+      for (edge, bottomDelta, expected) in [
+        ("fixed top", 100.0, fixture.fixedTop), ("fixed bottom", 0.0, fixture.fixedBottom),
+      ] {
+        let label = "\(fixture.name), \(edge)"
+        let resized = Frame(
+          x: baseline.x, y: baseline.y + bottomDelta,
+          width: baseline.width, height: baseline.height - 100
+        )
+        let reported = plan.guestBounds(forHostContentFrame: resized, relativeTo: baseline)
+        XCTAssertEqual(reported, expected, label)
+        let rebuilt = try GuestWindowProxyPlanner.plan(
+          vmName: "Dev VM",
+          window: GuestToolsWindowAction(id: fixture.name, title: "Window", bounds: reported),
+          maximumHostSize: fixture.host
+        )
+        XCTAssertEqual(rebuilt.scale, plan.scale, accuracy: 0.001, label)
+        XCTAssertEqual(rebuilt.hostSize, Size(width: Int(resized.width), height: Int(resized.height)), label)
+        let settled = rebuilt.hostOrigin(inVisibleFrame: screen)
+        XCTAssertEqual(settled.x, resized.x, accuracy: 0.001, label)
+        XCTAssertEqual(settled.y, resized.y, accuracy: 0.001, label)
+      }
+    }
   }
 
   func testPlanRequiresWindowBounds() {

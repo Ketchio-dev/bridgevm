@@ -159,7 +159,7 @@ struct GuestWindowProxyPlan: Equatable {
     relativeTo baselineHostFrame: HostFrame
   ) -> GuestToolsWindowBounds {
     let deltaX = hostFrame.x - baselineHostFrame.x
-    let deltaY = hostFrame.y - baselineHostFrame.y
+    let deltaY = hostFrame.y + hostFrame.height - baselineHostFrame.y - baselineHostFrame.height
     return GuestToolsWindowBounds(
       x: guestBounds.x + Int((deltaX * inputScaleX).rounded()),
       y: guestBounds.y - Int((deltaY * inputScaleY).rounded()),
