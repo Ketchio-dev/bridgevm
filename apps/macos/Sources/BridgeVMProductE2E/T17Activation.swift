@@ -12,19 +12,10 @@ import Foundation
 /// attempt, and the caller retains the AX errors if that attempt fails.
 enum T17Activation {
     static func bringToFront(pid: pid_t, timeout: TimeInterval = 5) -> Bool {
-        let app = AXUIElementCreateApplication(pid)
-        let running = NSRunningApplication(processIdentifier: pid)
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            if running?.isActive == true { return true }
-            running?.activate(options: [.activateIgnoringOtherApps])
-            // LaunchServices may not know a Process-launched pid; AX can still raise it.
-            AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-            var value: CFTypeRef?
-            if AXUIElementCopyAttributeValue(app, kAXFrontmostAttribute as CFString, &value) == .success,
-               (value as? Bool) == true { return true }
-        } while Date() < deadline
-        return running?.isActive == true
+        observe(pid: pid, timeout: timeout).succeeded
+    }
+
+    static func observe(pid: pid_t, timeout: TimeInterval = 5) -> T17ActivationRecord {
+        T17ActivationProbe.capture(pid: pid, timeout: timeout)
     }
 }

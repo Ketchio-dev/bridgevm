@@ -11,13 +11,14 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/live-gates"))
+from winpe_companion_mount_cases import WinPEMountSafetyTests
+from winpe_companion_process_cases import WinPEProcessSafetyTests
 import winpe_companion_inputs as inputs
 import winpe_companion_receipt as receipts
 from winpe_companion_inspect import compare
 spec = importlib.util.spec_from_file_location("winpe_runner", ROOT / "scripts/live-gates/run-winpe-companions.py")
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
-
 
 class DiagnosticTests(unittest.TestCase):
     def setUp(self):
@@ -34,12 +35,12 @@ class DiagnosticTests(unittest.TestCase):
             bad = dict(value, **{key: True})
             with self.assertRaises(ValueError): receipts.validate(bad, self.job)
         for change in ({"sample_count": True}, {"passes": 1}, {"outcome": "diagnostic-complete"},
-                       {"commit": "c" * 40}, {"tier": "t17-windows-hvf-product-e2e"}):
+                       {"commit": "c" * 40}, {"tier": "t17-windows-hvf-product-e2e"}, {"cleanup_complete": 1}, {"mount_cleanup_complete": None}):
             with self.assertRaises(ValueError): receipts.validate(dict(value, **change), self.job)
 
     def test_complete_nonzero_process_and_matching_files_are_not_boot_proof(self):
         value = dict(receipts.initial(self.job), outcome="diagnostic-complete", sample_count=1,
-                     execution_exit_code=42, source_integrity_verified=True, post_files_match=True)
+                     execution_exit_code=42, source_integrity_verified=True, post_files_match=True, cleanup_complete=True, mount_cleanup_complete=True)
         receipts.validate(value, self.job)
         self.assertTrue(all(value[key] is False for key in receipts.FLAGS))
         known = {"available": True, "files": {"a": "digest"}}
@@ -99,5 +100,4 @@ class DiagnosticTests(unittest.TestCase):
         assert_wrapper_policy(self, command)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

@@ -2261,3 +2261,12 @@ scripts/test-bvagent-window-inventory-native-schema.ps1	27
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsAgentAssets.swift	13
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsAgentAssetsTests.swift	109
 scripts/test-bvagent-window-inventory-dispatch.ps1	80
+scripts/live-gates/winpe_companion_mounts.py	148
+scripts/live-gates/winpe_companion_process.py	105
+tests/integration/winpe_companion_mount_cases.py	188
+tests/integration/winpe_companion_process_cases.py	258
+apps/macos/Sources/BridgeVMProductE2E/T17ActivationRecord.swift	12
+apps/macos/Sources/BridgeVMProductE2E/T17ActivationProbe.swift	61
+apps/macos/Sources/BridgeVMProductE2E/T17FileChooserKeyDiagnostic.swift	75
+apps/macos/Tests/BridgeVMProductE2ETests/T17ActivationProbeTests.swift	56
+apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserKeyDiagnosticTests.swift	99

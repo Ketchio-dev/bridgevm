@@ -6,7 +6,7 @@ import sys
 
 TIER = "d4-winpe-companions"
 FLAGS = ("pass", "claim_eligible", "criterion_pass", "capability_promotion", "winpe_boot_proven")
-
+SAFETY = ("cleanup_complete", "mount_cleanup_complete")
 
 def job_fields(directory):
     fields = {}
@@ -20,7 +20,7 @@ def job_fields(directory):
 
 def initial(job):
     return {"tier": TIER, **{key: job[key] for key in ("job_id", "commit", "input_manifest_sha256")},
-            **{key: False for key in FLAGS}, "outcome": "diagnostic-incomplete",
+            **{key: False for key in FLAGS + SAFETY}, "outcome": "diagnostic-incomplete",
             "sample_count": 0, "required_run_count": 1, "passes": 0,
             "source_integrity_verified": False, "post_files_match": False,
             "files_changed": False, "pre_post_available": False}
@@ -38,13 +38,13 @@ def validate(data, job):
     for key, allowed in (("passes", (0,)), ("sample_count", (0, 1)), ("required_run_count", (1,))):
         if type(data.get(key)) is not int or data[key] not in allowed:
             raise ValueError("invalid diagnostic count")
-    for key in ("source_integrity_verified", "post_files_match", "files_changed", "pre_post_available"):
+    for key in ("source_integrity_verified", "post_files_match", "files_changed", "pre_post_available") + SAFETY:
         if type(data.get(key)) is not bool:
             raise ValueError("invalid observation flag")
     if data.get("outcome") not in ("diagnostic-incomplete", "diagnostic-complete", "canceled"):
         raise ValueError("invalid diagnostic outcome")
     if data["outcome"] == "diagnostic-complete":
-        if data["sample_count"] != 1 or not data["source_integrity_verified"]:
+        if data["sample_count"] != 1 or not data["source_integrity_verified"] or not all(data[key] for key in SAFETY):
             raise ValueError("incomplete collection")
         if type(data.get("execution_exit_code")) is not int or not -255 <= data["execution_exit_code"] <= 255:
             raise ValueError("invalid process result")

@@ -10,6 +10,8 @@ import sys
 
 from winpe_companion_inputs import COMPANIONS, clone, file_hash, load, verify
 from winpe_companion_inspect import compare, inspect
+from winpe_companion_mounts import MountSafetyError
+from winpe_companion_process import OwnedProcessError, run_owned
 from winpe_companion_receipt import initial, job_fields, validate, write
 
 REPO = Path(__file__).resolve().parents[2]
@@ -30,8 +32,7 @@ def run(args):
     out = args.out
     if not out.is_absolute() or not out.is_dir() or out.is_symlink():
         raise ValueError("existing absolute job output required")
-    job = job_fields(out)
-    data = initial(job)
+    job = job_fields(out); data = initial(job)
     validate(data, job)
     commit = subprocess.check_output(["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True).strip()
     if job["commit"] != commit or args.job_id != job["job_id"]:
@@ -47,8 +48,7 @@ def run(args):
         records = load(args.input_manifest, REPO, args.sealed_binary)
         if records["binary"][1] != job.get("sealed_binary_sha256"):
             raise ValueError("binary job seal mismatch")
-        private = out / "private"
-        private.mkdir(mode=0o700, exist_ok=False)
+        private = out / "private"; private.mkdir(mode=0o700, exist_ok=False)
         work = Path.home() / "BridgeVM/work" / ("winpe-companions-" + args.job_id)
         stage = "clone"
         clones = clone(records, work)
@@ -61,11 +61,12 @@ def run(args):
         environment["BRIDGEVM_PREBUILT_PROBE"] = str(args.sealed_binary)
         data["sample_count"] = 1
         with (private / "wrapper.log").open("x") as log:
-            result = subprocess.run(command(REPO, records, clones, private / "boot"),
-                                    env=environment, stdout=log, stderr=subprocess.STDOUT, timeout=360)
-        data["execution_exit_code"] = result.returncode
+            result = run_owned(command(REPO, records, clones, private / "boot"),
+                               env=environment, stdout=log, stderr=subprocess.STDOUT, timeout=360)
+        data.update(execution_exit_code=result.returncode, cleanup_complete=True)
         stage = "inspect-after"
         after = inspect(clones["image"], private / "mount-after")
+        data["mount_cleanup_complete"] = True
         write(private / "after.json", after)
         data.update(compare(before, after, expected))
         stage = "source-integrity"
@@ -74,10 +75,11 @@ def run(args):
         write(private / "inputs.json", {key: digest for key, (_, digest) in records.items()})
         write(private / "clones.json", {key: {"path": str(path), "sha256": file_hash(path)}
                                          for key, path in clones.items()})
-        for path in clones.values():
-            path.chmod(0o400)
+        for path in clones.values(): path.chmod(0o400)
         data["outcome"] = "diagnostic-complete"
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, subprocess.SubprocessError, OwnedProcessError, MountSafetyError) as error:
+        if isinstance(error, OwnedProcessError): data["cleanup_complete"] = error.cleanup_complete
+        if isinstance(error, MountSafetyError): data["mount_cleanup_complete"] = error.cleanup_complete
         data["failure_stage"] = stage
         print("WinPE diagnostic stopped at " + stage + ": " + type(error).__name__, file=sys.stderr)
     finally:
@@ -88,8 +90,6 @@ def run(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--job-id", required=True)
-    parser.add_argument("--input-manifest", type=Path, required=True)
-    parser.add_argument("--sealed-binary", type=Path, required=True)
+    for name in ("out", "job-id", "input-manifest", "sealed-binary"):
+        parser.add_argument("--" + name, type=str if name == "job-id" else Path, required=True)
     sys.exit(run(parser.parse_args()))
