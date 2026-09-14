@@ -99,9 +99,9 @@ enum FirstRunImport {
     }
 
     /// Materialize the bundle for `slug` under `libraryRoot` and place the
-    /// selected inputs into it. The disk is hard-linked when possible (same
-    /// volume) to avoid copying tens of GiB, falling back to a copy across
-    /// volumes. Returns the persisted VMConfig.
+    /// selected inputs into it. Disk and vars are independent copies so guest
+    /// writes cannot modify the source or another imported VM.
+    /// Returns the persisted VMConfig.
     static func register(
         _ inputs: Inputs,
         slug: String,
@@ -118,11 +118,8 @@ enum FirstRunImport {
             at: layout.varsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fileManager.createDirectory(at: layout.vtpmURL, withIntermediateDirectories: true)
 
-        try placeLarge(from: inputs.diskPath, to: layout.diskURL, fileManager: fileManager)
-        if fileManager.fileExists(atPath: layout.varsURL.path) {
-            try fileManager.removeItem(at: layout.varsURL)
-        }
-        try fileManager.copyItem(atPath: inputs.varsPath, toPath: layout.varsURL.path)
+        try placeIndependent(from: inputs.diskPath, to: layout.diskURL, fileManager: fileManager)
+        try placeIndependent(from: inputs.varsPath, to: layout.varsURL, fileManager: fileManager)
         if let vtpm = inputs.vtpmStateDir, !vtpm.isEmpty {
             let contents = (try? fileManager.contentsOfDirectory(atPath: vtpm)) ?? []
             for entry in contents where entry != ".lock" {
@@ -157,9 +154,8 @@ enum FirstRunImport {
         return config
     }
 
-    /// Hard-link a large file when on the same volume; copy otherwise. Any
-    /// existing destination is replaced.
-    private static func placeLarge(
+    /// Copy resolved file bytes independently, replacing any existing destination.
+    private static func placeIndependent(
         from sourcePath: String,
         to destURL: URL,
         fileManager: FileManager
@@ -167,10 +163,7 @@ enum FirstRunImport {
         if fileManager.fileExists(atPath: destURL.path) {
             try fileManager.removeItem(at: destURL)
         }
-        do {
-            try fileManager.linkItem(atPath: sourcePath, toPath: destURL.path)
-        } catch {
-            try fileManager.copyItem(atPath: sourcePath, toPath: destURL.path)
-        }
+        let source = URL(fileURLWithPath: sourcePath).resolvingSymlinksInPath()
+        try fileManager.copyItem(atPath: source.path, toPath: destURL.path)
     }
 }

@@ -1215,7 +1215,7 @@ apps/macos/Sources/BridgeVMControl/CommandPalette.swift	64	0
 apps/macos/Sources/BridgeVMControl/ContentView.swift	551	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	314	0
 apps/macos/Sources/BridgeVMControl/CreateVM.swift	910	0
-apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	176	0
+apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	169	0
 apps/macos/Sources/BridgeVMControl/FirstRunView.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
@@ -2273,9 +2273,10 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserKeyDiagnosticTests.swift	
 runners/bridgevm-tools-linux/src/tests_split/temp_fixtures.rs	40
 tests/integration/winpe_companion_native_mount_cases.py	92
 runners/bridgevm-tools-linux/src/tests_split/temp_fixtures_tests.rs	163
-crates/bridgevm-hvf/src/nvme/doorbell.rs	35	0
-crates/bridgevm-hvf/src/nvme/tests/doorbell_indices.rs	117	0
+apps/macos/Tests/BridgeVMControlTests/FirstRunImportIsolationTests.swift	131	0
 crates/bridgevm-api/src/test_support_env.rs	99	0
 crates/bridgevm-hvf/src/managed_pair_restore.rs	57	0
+crates/bridgevm-hvf/src/nvme/doorbell.rs	35	0
+crates/bridgevm-hvf/src/nvme/tests/doorbell_indices.rs	117	0
 crates/bridgevm-hvf/src/snapshot_verification.rs	28	0
 crates/bridgevm-hvf/src/snapshot_verification_tests.rs	125	0
