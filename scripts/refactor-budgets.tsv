@@ -2103,10 +2103,10 @@ crates/bridgevm-hvf/src/net_nat/tests/tcp_readiness.rs	80	0
 crates/bridgevm-hvf/src/net_nat/tcp_connection_state.rs	17	0
 crates/bridgevm-hvf/src/net_nat/tests/tcp_fixture.rs	26	3
 crates/bridgevm-media/src/lib.rs	1	0
-crates/bridgevm-media/src/media_lease.rs	93	0
+crates/bridgevm-media/src/media_lease.rs	68	0
 crates/bridgevm-media/src/media_lease_os.rs	38	2
 crates/bridgevm-media/src/media_lease_tests.rs	138	1
-crates/bridgevm-media/src/media_lease_lifecycle_tests.rs	57	2
+crates/bridgevm-media/src/media_lease_lifecycle_tests.rs	43	2
 crates/bridgevm-storage/src/bundle_ownership.rs	48	0
 crates/bridgevm-storage/src/bundle_ownership_tests.rs	58	0
 crates/bridgevm-hvf/src/media_lease_session.rs	46	0
@@ -2275,10 +2275,14 @@ tests/integration/winpe_companion_native_mount_cases.py	92
 runners/bridgevm-tools-linux/src/tests_split/temp_fixtures_tests.rs	163
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportIsolationTests.swift	131	0
 crates/bridgevm-api/src/test_support_env.rs	99	0
-crates/bridgevm-hvf/src/managed_pair_restore.rs	57	0
+crates/bridgevm-hvf/src/managed_pair_restore.rs	42	0
 crates/bridgevm-hvf/src/nvme/doorbell.rs	35	0
 crates/bridgevm-hvf/src/nvme/tests/doorbell_indices.rs	117	0
 crates/bridgevm-hvf/src/snapshot_verification.rs	28	0
 crates/bridgevm-hvf/src/snapshot_verification_tests.rs	125	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportDestination.swift	44	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportDestinationTests.swift	122	0
+crates/bridgevm-hvf/src/managed_pair_ownership_tests.rs	112	0
+crates/bridgevm-hvf/src/managed_pair_staging.rs	28	0
+crates/bridgevm-media/src/media_lease_update.rs	73	0
+crates/bridgevm-media/src/media_lease_update_tests.rs	122	0

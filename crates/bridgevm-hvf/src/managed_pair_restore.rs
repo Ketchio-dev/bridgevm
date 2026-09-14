@@ -1,12 +1,8 @@
 //! Stage a verified pair, then publish its complete managed generation.
 
-use super::{layout, private_directory, LockedPair};
-use crate::snapshot_pair::{copy_and_sync, verify_snapshot, SnapshotError, SnapshotManifest};
-use std::{
-    fs::{self, File},
-    io,
-    path::Path,
-};
+use super::{layout, LockedPair};
+use crate::snapshot_pair::{verify_snapshot, SnapshotError, SnapshotManifest};
+use std::{fs, io, path::Path};
 
 impl LockedPair {
     pub(super) fn restore_using(
@@ -38,22 +34,13 @@ impl LockedPair {
             }
         }
         layout::initialize(&self.root)?;
-        let staged = self.root.join("staging");
-        if private_directory(&staged, false)? {
-            fs::remove_dir_all(&staged)?;
-        }
-        private_directory(&staged, true)?;
-        for name in ["disk.raw", "vars.fd", "manifest.json"] {
-            copy_and_sync(&snapshot.join(name), &staged.join(name))?;
-        }
-        let copied = verify_snapshot(&staged)?;
-        if copied != manifest {
-            return Err(io::Error::other("snapshot changed while staging restore").into());
-        }
-        File::open(&staged)?.sync_all()?;
+        let (staged, copied) = self.stage_restore(&snapshot, &manifest)?;
         publish(&staged, &self.root.join("current"))?;
         self.own_selected()?;
         layout::acknowledge(&self.root)?;
         Ok(copied)
     }
 }
+
+#[path = "managed_pair_staging.rs"]
+mod staging;

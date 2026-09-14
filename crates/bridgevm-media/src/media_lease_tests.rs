@@ -4,10 +4,10 @@ use std::path::PathBuf;
 #[path = "media_lease_lifecycle_tests.rs"]
 mod lifecycle;
 
-struct Scratch(PathBuf);
+pub(super) struct Scratch(PathBuf);
 
 impl Scratch {
-    fn new(tag: &str) -> Self {
+    pub(super) fn new(tag: &str) -> Self {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         loop {
             let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -21,11 +21,11 @@ impl Scratch {
         }
     }
 
-    fn path(&self, name: &str) -> PathBuf {
+    pub(super) fn path(&self, name: &str) -> PathBuf {
         self.0.join(name)
     }
 
-    fn write(&self, name: &str, bytes: &[u8]) -> PathBuf {
+    pub(super) fn write(&self, name: &str, bytes: &[u8]) -> PathBuf {
         let path = self.path(name);
         fs::write(&path, bytes).unwrap();
         path
@@ -95,7 +95,7 @@ fn lock_descriptors_do_not_survive_exec() {
     let s = Scratch::new("lease-cloexec");
     let disk = s.write("disk", b"d");
     let lease = MediaLease::acquire([disk.as_path()]).unwrap();
-    for file in &lease.files {
+    for file in lease.files.values() {
         // SAFETY: the lease owns this descriptor; F_GETFD takes no extra argument.
         let flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFD) };
         assert_ne!(flags & libc::FD_CLOEXEC, 0);

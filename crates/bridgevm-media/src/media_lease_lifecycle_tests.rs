@@ -3,20 +3,6 @@ use std::io::Write;
 use std::os::unix::net::UnixStream;
 
 #[test]
-fn duplicate_descriptions_do_not_delay_owner_unlock() {
-    let s = Scratch::new("lease-duplicate-lifetime");
-    let disk = s.write("disk", b"disk");
-    let lease = MediaLease::acquire([disk.as_path()]).unwrap();
-    let inherited: Vec<_> = lease.files.iter().map(|f| f.try_clone().unwrap()).collect();
-    drop(lease);
-    let next = MediaLease::acquire([disk.as_path()]).unwrap();
-    drop(inherited);
-    assert!(MediaLease::acquire([disk.as_path()]).is_err());
-    drop(next);
-    MediaLease::acquire([disk.as_path()]).unwrap();
-}
-
-#[test]
 fn forked_child_before_exec_does_not_delay_owner_unlock() {
     let s = Scratch::new("lease-fork-lifetime");
     let disk = s.write("disk", b"disk");

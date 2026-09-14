@@ -14,7 +14,6 @@ pub struct LockedPair {
     vars: PathBuf,
     root: PathBuf,
     _lease: MediaLease,
-    _selected: Option<MediaLease>,
 }
 
 impl LockedPair {
@@ -33,7 +32,6 @@ impl LockedPair {
             vars,
             root,
             _lease: lease,
-            _selected: None,
         };
         pair.own_selected()?;
         Ok(pair)
@@ -41,10 +39,12 @@ impl LockedPair {
 
     fn own_selected(&mut self) -> io::Result<()> {
         let (disk, vars) = self.paths()?;
-        if self._selected.is_none() && (disk != self.disk || vars != self.vars) {
-            self._selected = Some(MediaLease::acquire([disk.as_path(), vars.as_path()])?);
-        }
-        Ok(())
+        self._lease.replace([
+            self.disk.as_path(),
+            self.vars.as_path(),
+            disk.as_path(),
+            vars.as_path(),
+        ])
     }
 
     /// These paths are valid only while this owner remains alive. Writable
