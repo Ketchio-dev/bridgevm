@@ -24,7 +24,6 @@ an explicitly experimental graphics path.
 | PPSSPP on experimental Vulkan | **58.82 FPS p50 in 3 / 3 runs** | One real title, not a claim about every Vulkan workload |
 | PPSSPP on the experimental D3D11-compatible subset | **3 / 3 runs above 30 FPS** | One real title; p50 was 250.0 / 62.5 / 62.5 FPS |
 | CoreAudio playback and shutdown | **10 / 10 passed** | 2,504,031 frames; zero drops and zero unexpected callback errors |
-| Defined release-blocking criteria | **18 / 19 proven** | A9 production 3D driver signing and installation remains open |
 
 These are retained campaign results on the measured hardware and exact sealed
 inputs, not estimates or promises for every application or Mac. The fixed
@@ -39,7 +38,7 @@ thresholds and receipts are linked from the
 - keyboard, absolute pointer, dynamic resize, network, host audio, clipboard,
   folder transfer, and guest-agent control;
 - TPM 2.0, Secure Boot and measured-boot workflows, encrypted vTPM state,
-  recovery/migration, and powered-off snapshots;
+  recovery/migration;
 - experimental Vulkan and D3D11-compatible paths in the separate engineering
   evidence track;
 - deterministic hosted CI plus sealed real-hardware receipts for behavior that

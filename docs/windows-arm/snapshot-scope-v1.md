@@ -4,7 +4,7 @@ Status: **owner-approved for V1** (2026-07-30).
 
 ## Decision
 
-BridgeVM V1 ships **cold snapshots only**:
+The approved V1 scope is **cold snapshots only**:
 
 - the VM must be powered off before create or restore;
 - a snapshot contains the Windows NVMe disk image and its matching UEFI variable
@@ -49,7 +49,26 @@ A future V1 implementation is complete only when it proves all of:
 6. interrupted create/restore leaves either the old complete pair or the new
    complete pair, never one file from each.
 
-## Implementation status (2026-08-04)
+## Current evidence boundary (2026-09-14)
+
+A19 remains OPEN. Use its generated entry in [current status](../../STATUS.md)
+for capability wording and known defects.
+
+The previous claim that interrupted restore satisfied item 6 was retracted
+following an [eight-byte mixed-pair counterexample](evidence/a19-restore-atomicity-defect-20260912.md).
+The current implementation selects a complete managed generation, so consumers
+must resolve the current disk and vars through the managed-pair API.
+
+Item 5 now has [two separate single-run observations](evidence/a19-managed-pair-20260912.md):
+a normal managed restore boot and a restore/relocation boot on different code
+revisions. Each has sample count 1; they are not pooled and do not close A19.
+Full interrupted-operation safety, raw export and product lifecycle coverage
+remain unproven. The historical assessment below is retained to show what was
+previously claimed and later corrected.
+
+## Historical assessment (2026-08-04; superseded)
+
+The following is the earlier assessment, not current acceptance status.
 
 Items 1, 2, 3, 4 and 6 are implemented in
 `crates/bridgevm-hvf/src/snapshot_pair.rs` and covered by 35 tests, including

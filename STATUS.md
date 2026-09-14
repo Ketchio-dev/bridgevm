@@ -2,7 +2,7 @@
 
 Document status: **Current**
 
-Last revised: 2026-08-20
+Last revised: 2026-09-14
 
 This file is the concise evidence boundary for BridgeVM. Detailed measurements
 live in the [capability matrix](docs/windows-arm/capability-matrix.md) and dated
@@ -63,9 +63,9 @@ criteria.
 
 - persistent NVMe-backed Windows disk;
 - persistent UEFI variables;
-- powered-off snapshot create/verify/restore as an atomic disk + vars pair;
-- restored snapshot boot evidence proving that the restored guest state actually
-  returned.
+
+Snapshot evidence and outstanding storage-safety limits are recorded in the
+generated A19 entry above and the [snapshot scope](docs/windows-arm/snapshot-scope-v1.md).
 
 ### Display, input, and integration
 
