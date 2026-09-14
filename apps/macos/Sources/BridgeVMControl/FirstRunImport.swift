@@ -101,16 +101,18 @@ enum FirstRunImport {
     /// Materialize the bundle for `slug` under `libraryRoot` and place the
     /// selected inputs into it. Disk and vars are independent copies so guest
     /// writes cannot modify the source or another imported VM.
-    /// Returns the persisted VMConfig.
+    /// Returns the configuration for the caller to persist.
     static func register(
         _ inputs: Inputs,
         slug: String,
         libraryRoot: URL,
         fileManager: FileManager = .default
     ) throws -> VMConfig {
-        let bundleURL = libraryRoot
-            .appendingPathComponent(slug, isDirectory: true)
-            .appendingPathComponent("bundle", isDirectory: true)
+        let destination = try FirstRunImportDestination(
+            slug: slug, libraryRoot: libraryRoot, fileManager: fileManager)
+        var completed = false
+        defer { if !completed { destination.removeIfOwned() } }
+        let bundleURL = destination.root.appendingPathComponent("bundle", isDirectory: true)
         let layout = BundleLayout(bundleURL: bundleURL)
         try fileManager.createDirectory(
             at: layout.diskURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -118,16 +120,13 @@ enum FirstRunImport {
             at: layout.varsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fileManager.createDirectory(at: layout.vtpmURL, withIntermediateDirectories: true)
 
-        try placeIndependent(from: inputs.diskPath, to: layout.diskURL, fileManager: fileManager)
-        try placeIndependent(from: inputs.varsPath, to: layout.varsURL, fileManager: fileManager)
+        try destination.copyIndependent(from: inputs.diskPath, to: layout.diskURL)
+        try destination.copyIndependent(from: inputs.varsPath, to: layout.varsURL)
         if let vtpm = inputs.vtpmStateDir, !vtpm.isEmpty {
             let contents = (try? fileManager.contentsOfDirectory(atPath: vtpm)) ?? []
             for entry in contents where entry != ".lock" {
                 let src = (vtpm as NSString).appendingPathComponent(entry)
                 let dst = layout.vtpmURL.appendingPathComponent(entry)
-                if fileManager.fileExists(atPath: dst.path) {
-                    try fileManager.removeItem(at: dst)
-                }
                 try fileManager.copyItem(atPath: src, toPath: dst.path)
             }
         }
@@ -151,19 +150,7 @@ enum FirstRunImport {
         config.diskPath = layout.diskURL.path
         config.memMiB = inputs.memMiB
         config.cpuCount = inputs.cpuCount
+        completed = true
         return config
-    }
-
-    /// Copy resolved file bytes independently, replacing any existing destination.
-    private static func placeIndependent(
-        from sourcePath: String,
-        to destURL: URL,
-        fileManager: FileManager
-    ) throws {
-        if fileManager.fileExists(atPath: destURL.path) {
-            try fileManager.removeItem(at: destURL)
-        }
-        let source = URL(fileURLWithPath: sourcePath).resolvingSymlinksInPath()
-        try fileManager.copyItem(atPath: source.path, toPath: destURL.path)
     }
 }

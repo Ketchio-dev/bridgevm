@@ -1215,7 +1215,7 @@ apps/macos/Sources/BridgeVMControl/CommandPalette.swift	64	0
 apps/macos/Sources/BridgeVMControl/ContentView.swift	551	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	314	0
 apps/macos/Sources/BridgeVMControl/CreateVM.swift	910	0
-apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	169	0
+apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	156	0
 apps/macos/Sources/BridgeVMControl/FirstRunView.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
@@ -2280,3 +2280,5 @@ crates/bridgevm-hvf/src/nvme/doorbell.rs	35	0
 crates/bridgevm-hvf/src/nvme/tests/doorbell_indices.rs	117	0
 crates/bridgevm-hvf/src/snapshot_verification.rs	28	0
 crates/bridgevm-hvf/src/snapshot_verification_tests.rs	125	0
+apps/macos/Sources/BridgeVMControl/FirstRunImportDestination.swift	44	0
+apps/macos/Tests/BridgeVMControlTests/FirstRunImportDestinationTests.swift	122	0
