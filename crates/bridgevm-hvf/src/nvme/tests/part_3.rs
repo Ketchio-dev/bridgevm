@@ -1,5 +1,7 @@
 //! Split test module.
 
+#[path = "doorbell_indices.rs"]
+mod doorbell_indices;
 use super::super::*;
 use super::helpers::*;
 use crate::fwcfg::GuestMemoryMut;
