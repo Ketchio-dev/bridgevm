@@ -18,32 +18,6 @@ fn fixture(tag: &str) -> (Scratch, VirtBootMediaConfig, PathBuf) {
 }
 
 #[test]
-fn runtime_selects_restored_pair_and_persists_vars_there() {
-    let (_s, mut media, snapshot) = fixture("managed-runtime-selected");
-    let disk = media.nvme_disk.as_ref().unwrap().path.clone();
-    let vars = media.flash_vars.path.clone();
-    LockedPair::open(&disk, &vars)
-        .unwrap()
-        .restore(&snapshot)
-        .unwrap();
-    let guard = acquire(&mut media).unwrap();
-    assert_eq!(
-        fs::read(&media.nvme_disk.as_ref().unwrap().path).unwrap(),
-        b"new-disk"
-    );
-    assert_eq!(media.flash_vars.read_bounded(128).unwrap(), b"new-vars");
-    media.flash_vars.persist(b"guest-vars").unwrap();
-    assert_eq!(fs::read(&vars).unwrap(), b"old-vars");
-    assert!(LockedPair::open(&disk, &vars).is_err());
-    assert!(MediaLease::acquire([media.nvme_disk.as_ref().unwrap().path.as_path()]).is_err());
-    drop(guard);
-    assert_eq!(
-        fs::read(LockedPair::open(&disk, &vars).unwrap().paths().unwrap().1).unwrap(),
-        b"guest-vars"
-    );
-}
-
-#[test]
 fn second_namespace_alone_uses_the_same_pair_selection() {
     let (_s, mut media, snapshot) = fixture("managed-runtime-second");
     media.nvme_target = media.nvme_disk.take();
@@ -110,3 +84,5 @@ fn firmware_only_probe_does_not_require_default_vars_file() {
     media.flash_vars.path = PathBuf::from("/no-such-vars-fixture");
     acquire(&mut media).unwrap();
 }
+#[path = "managed_pair_runtime_persist_tests.rs"]
+mod persistence;

@@ -20,7 +20,7 @@ pub(crate) fn run() -> ExitCode {
     let mut fatal_vcpu_run_error = false;
     let mut fatal_reset_error = false;
     let mut exit_for_recreate = false;
-    let Some((config, _media_lease)) = media_lease::prepare() else {
+    let Some((config, mut media_lease)) = media_lease::prepare() else {
         return ExitCode::FAILURE;
     };
     let ProbeConfig {
@@ -981,7 +981,7 @@ pub(crate) fn run() -> ExitCode {
             boot_progress.disarm();
             persist_and_report_stop!(
                 platform,
-                media,
+                (media, media_lease),
                 vcpu,
                 guest_ram,
                 last_pc,

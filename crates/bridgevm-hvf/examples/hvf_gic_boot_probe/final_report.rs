@@ -1,15 +1,10 @@
 include!("present_health.rs");
 macro_rules! persist_and_report_stop {
-    ($platform:ident, $media:ident, $vcpu:ident, $guest_ram:ident, $last_pc:ident, $last_pre_run_pc:ident, $last_watch_pc:ident, $last_watch_lr:ident, $stop_reason:ident, $stop_reason_code:ident, $exits:ident, $vtimer_exits:ident, $psci_calls:ident, $surplus_canceled_exits:ident, $wake_coordinator:ident, $wake_cancel_claims:ident, $boot_timer:ident, $boot_timer_elapsed:ident, $diagnostic_generation:ident, $secondary_stop:ident, $drain_stats:ident, $unimpl:ident, $mmio_traces:ident, $recent_pcie_ecam:ident, $recent_pcie_mmio:ident, $recent_pcie_pio:ident, $recent_xhci:ident, $uart_triggers:ident, $xhci_hid_boot_key_triggers:ident, $xhci_setup_input_triggers:ident, $xhci_pointer_input_triggers:ident, $redist_lo:ident, $redist_hi:ident, $smp_trace:ident $(,)?) => {{
+    ($platform:ident, ($media:ident, $media_lease:ident), $vcpu:ident, $guest_ram:ident, $last_pc:ident, $last_pre_run_pc:ident, $last_watch_pc:ident, $last_watch_lr:ident, $stop_reason:ident, $stop_reason_code:ident, $exits:ident, $vtimer_exits:ident, $psci_calls:ident, $surplus_canceled_exits:ident, $wake_coordinator:ident, $wake_cancel_claims:ident, $boot_timer:ident, $boot_timer_elapsed:ident, $diagnostic_generation:ident, $secondary_stop:ident, $drain_stats:ident, $unimpl:ident, $mmio_traces:ident, $recent_pcie_ecam:ident, $recent_pcie_mmio:ident, $recent_pcie_pio:ident, $recent_xhci:ident, $uart_triggers:ident, $xhci_hid_boot_key_triggers:ident, $xhci_setup_input_triggers:ident, $xhci_pointer_input_triggers:ident, $redist_lo:ident, $redist_hi:ident, $smp_trace:ident $(,)?) => {{
         let mut platform_guard = $platform.lock().expect("platform mutex");
         let $platform = &mut *platform_guard;
         let serial = $platform.uart_output().to_vec();
-        let vars_writes = $media
-            .flash_vars
-            .persist($platform.flash_vars_image())
-            .unwrap_or_else(|e| panic!("persist UEFI vars: {e}"));
-        print_media_writes("UEFI vars", &vars_writes);
-        persist_both_nvme_namespaces($platform, &$media);
+        persist_stop_media($platform, &$media, &mut $media_lease);
         storage_effect_receipt::maybe_write_probe_storage_effect_receipt(
             $media.nvme_disk.as_ref(),
             $platform,
