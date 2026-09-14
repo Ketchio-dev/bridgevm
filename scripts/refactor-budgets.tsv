@@ -1214,7 +1214,7 @@ apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	44	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	64	0
 apps/macos/Sources/BridgeVMControl/ContentView.swift	551	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	314	0
-apps/macos/Sources/BridgeVMControl/CreateVM.swift	910	0
+apps/macos/Sources/BridgeVMControl/CreateVM.swift	828	0
 apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	156	0
 apps/macos/Sources/BridgeVMControl/FirstRunView.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
@@ -2280,7 +2280,7 @@ crates/bridgevm-hvf/src/nvme/doorbell.rs	35	0
 crates/bridgevm-hvf/src/nvme/tests/doorbell_indices.rs	117	0
 crates/bridgevm-hvf/src/snapshot_verification.rs	28	0
 crates/bridgevm-hvf/src/snapshot_verification_tests.rs	125	0
-apps/macos/Sources/BridgeVMControl/FirstRunImportDestination.swift	44	0
+apps/macos/Sources/BridgeVMControl/FirstRunImportDestination.swift	39	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportDestinationTests.swift	122	0
 crates/bridgevm-hvf/src/managed_pair_ownership_tests.rs	112	0
 crates/bridgevm-hvf/src/managed_pair_staging.rs	28	0
@@ -2288,6 +2288,13 @@ crates/bridgevm-media/src/media_lease_update.rs	73	0
 crates/bridgevm-media/src/media_lease_update_tests.rs	122	0
 crates/bridgevm-hvf/src/snapshot_create.rs	82	0
 crates/bridgevm-hvf/src/snapshot_create_overlap_tests.rs	95	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMediaImport.swift	27	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMediaImportHelper.swift	41	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsImport.swift	78	0
+apps/macos/Tests/BridgeVMControlTests/HvfCurrentGenerationImportTests.swift	115	0
+apps/macos/Tests/BridgeVMControlTests/HvfMediaImportTestSupport.swift	15	0
+apps/macos/Tests/BridgeVMControlTests/HvfMediaImportTests.swift	71	0
+scripts/prepare-hvf-import-test-helper.sh	9	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/storage_persistence.rs	110	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/storage_persistence_tests.rs	53	0
 crates/bridgevm-hvf/src/managed_pair_runtime_acquire.rs	69	0

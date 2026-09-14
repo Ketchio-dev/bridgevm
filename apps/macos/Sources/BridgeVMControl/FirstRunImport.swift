@@ -106,7 +106,7 @@ enum FirstRunImport {
         _ inputs: Inputs,
         slug: String,
         libraryRoot: URL,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default, snapshotHelper: URL = HvfMediaImportHelper.bundled
     ) throws -> VMConfig {
         let destination = try FirstRunImportDestination(
             slug: slug, libraryRoot: libraryRoot, fileManager: fileManager)
@@ -120,8 +120,8 @@ enum FirstRunImport {
             at: layout.varsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fileManager.createDirectory(at: layout.vtpmURL, withIntermediateDirectories: true)
 
-        try destination.copyIndependent(from: inputs.diskPath, to: layout.diskURL)
-        try destination.copyIndependent(from: inputs.varsPath, to: layout.varsURL)
+        try HvfMediaImport.copy(disk: inputs.diskPath, vars: inputs.varsPath,
+            toDisk: layout.diskURL, toVars: layout.varsURL, helper: snapshotHelper, fileManager: fileManager)
         if let vtpm = inputs.vtpmStateDir, !vtpm.isEmpty {
             let contents = (try? fileManager.contentsOfDirectory(atPath: vtpm)) ?? []
             for entry in contents where entry != ".lock" {

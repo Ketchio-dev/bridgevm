@@ -36,9 +36,4 @@ struct FirstRunImportDestination {
               metadata.st_dev == device, metadata.st_ino == inode else { return }
         try? fileManager.removeItem(at: root)
     }
-
-    func copyIndependent(from sourcePath: String, to destination: URL) throws {
-        let source = URL(fileURLWithPath: sourcePath).resolvingSymlinksInPath()
-        try fileManager.copyItem(atPath: source.path, toPath: destination.path)
-    }
 }

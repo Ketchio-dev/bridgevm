@@ -21,7 +21,7 @@ final class FirstRunImportDestinationTests: XCTestCase {
                 .init(displayName: slug, diskPath: (sourceDisk ?? disk).path,
                       varsPath: (sourceVars ?? vars).path,
                       vtpmStateDir: nil, memMiB: 4096, cpuCount: 2),
-                slug: slug, libraryRoot: library, fileManager: fileManager)
+                slug: slug, libraryRoot: library, fileManager: fileManager, snapshotHelper: HvfMediaImportTestSupport.helper)
             return FirstRunImport.BundleLayout(bundleURL: URL(fileURLWithPath: config.bundlePath))
         }
 
@@ -91,12 +91,12 @@ final class FirstRunImportDestinationTests: XCTestCase {
                        fixture.library.appendingPathComponent("real").path)
     }
 
-    func testCopyFailureDoesNotRemoveReplacementDirectory() throws {
+    func testMoveFailureDoesNotRemoveReplacementDirectory() throws {
         final class ReplacingFileManager: FileManager, @unchecked Sendable {
-            var beforeCopy: ((String, String) throws -> Void)?
-            override func copyItem(atPath source: String, toPath destination: String) throws {
-                try beforeCopy?(source, destination)
-                try super.copyItem(atPath: source, toPath: destination)
+            var beforeMove: ((String, String) throws -> Void)?
+            override func moveItem(atPath source: String, toPath destination: String) throws {
+                try beforeMove?(source, destination)
+                try super.moveItem(atPath: source, toPath: destination)
             }
         }
         let fixture = try Fixture()
@@ -105,8 +105,8 @@ final class FirstRunImportDestinationTests: XCTestCase {
         let moved = fixture.root.appendingPathComponent("moved-reservation")
         let replacement = owned.appendingPathComponent("unrelated.txt")
         let manager = ReplacingFileManager()
-        manager.beforeCopy = { source, _ in
-            guard source == fixture.vars.resolvingSymlinksInPath().path else { return }
+        manager.beforeMove = { source, _ in
+            guard URL(fileURLWithPath: source).lastPathComponent == "vars.fd" else { return }
             try FileManager.default.moveItem(at: owned, to: moved)
             try FileManager.default.createDirectory(at: owned, withIntermediateDirectories: false)
             try Data([9]).write(to: replacement)

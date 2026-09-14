@@ -26,7 +26,7 @@ final class HvfWindowsImportTests: XCTestCase {
             storageDir: storage,
             width: 1920,
             height: 1080,
-            persist: false
+            persist: false, snapshotHelper: HvfMediaImportTestSupport.helper
         ))
 
         XCTAssertEqual(config.backendKind, "hvf-engine")

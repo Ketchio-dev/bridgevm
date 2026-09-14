@@ -26,7 +26,7 @@ final class FirstRunImportIsolationTests: XCTestCase {
                 .init(displayName: slug, diskPath: (sourceDisk ?? disk).path,
                       varsPath: (sourceVars ?? vars).path,
                       vtpmStateDir: nil, memMiB: 4096, cpuCount: 2),
-                slug: slug, libraryRoot: root.appendingPathComponent("library"))
+                slug: slug, libraryRoot: root.appendingPathComponent("library"), snapshotHelper: HvfMediaImportTestSupport.helper)
             return FirstRunImport.BundleLayout(bundleURL: URL(fileURLWithPath: config.bundlePath))
         }
 
