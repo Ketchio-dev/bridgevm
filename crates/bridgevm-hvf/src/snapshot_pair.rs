@@ -3,8 +3,8 @@
 //! The two files are a unit: vars records which boot entry and which firmware
 //! state the disk was left in, so a disk from one moment paired with vars from
 //! another can boot into a state that never existed. Creation publishes a
-//! complete snapshot directory atomically. Restore still publishes two files
-//! separately; its mixed-pair failure defect keeps A19 open.
+//! complete snapshot directory atomically. Restore selects a complete managed
+//! generation; interruption and product-lifecycle evidence still keep A19 open.
 //!
 //! The technique is a staging directory that is filled, fsynced, and only then
 //! renamed into place. `rename(2)` within a directory is atomic, so a crash
@@ -28,9 +28,16 @@ mod manifest_json;
 #[path = "snapshot_hash.rs"]
 mod snapshot_hash;
 use manifest_json::{escape_json, json_str, json_u64};
-use snapshot_hash::sha256_file;
+use snapshot_hash::sha256_file_and_size;
 #[path = "snapshot_publish.rs"]
 mod snapshot_publish;
+#[path = "snapshot_verification.rs"]
+mod snapshot_verification;
+pub use snapshot_verification::verify_snapshot;
+
+fn sha256_file(path: &Path) -> io::Result<String> {
+    sha256_file_and_size(path).map(|(hash, _)| hash)
+}
 
 /// Bytes copied per read/write when streaming a large disk image.
 const COPY_CHUNK: usize = 4 * 1024 * 1024;
@@ -127,14 +134,14 @@ impl SnapshotManifest {
     }
 
     pub fn from_json(text: &str) -> Result<Self, SnapshotError> {
-        let format_version = json_u64(text, "format_version")? as u32;
-        if format_version != SNAPSHOT_FORMAT_VERSION {
+        let format_version = json_u64(text, "format_version")?;
+        if format_version != u64::from(SNAPSHOT_FORMAT_VERSION) {
             return Err(SnapshotError::BadManifest(format!(
                 "format version {format_version}, this build reads {SNAPSHOT_FORMAT_VERSION}"
             )));
         }
         Ok(Self {
-            format_version,
+            format_version: SNAPSHOT_FORMAT_VERSION,
             vm_id: json_str(text, "vm_id")?,
             disk_bytes: json_u64(text, "disk_bytes")?,
             disk_sha256: json_str(text, "disk_sha256")?,
@@ -266,24 +273,6 @@ fn staging_path(dest: &Path) -> PathBuf {
         ".{}.staging",
         dest.file_name().unwrap_or_default().to_string_lossy()
     ))
-}
-
-/// Read and verify a snapshot without restoring it.
-pub fn verify_snapshot(dir: &Path) -> Result<SnapshotManifest, SnapshotError> {
-    let text = fs::read_to_string(dir.join(MANIFEST_NAME))
-        .map_err(|e| SnapshotError::BadManifest(format!("cannot read manifest: {e}")))?;
-    let manifest = SnapshotManifest::from_json(&text)?;
-    for (name, want) in [
-        (DISK_NAME, &manifest.disk_sha256),
-        (VARS_NAME, &manifest.vars_sha256),
-    ] {
-        if &sha256_file(&dir.join(name))? != want {
-            return Err(SnapshotError::HashMismatch {
-                file: name.to_string(),
-            });
-        }
-    }
-    Ok(manifest)
 }
 
 /// Restore by atomically selecting a complete managed generation.

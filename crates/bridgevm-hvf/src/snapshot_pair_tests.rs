@@ -257,3 +257,5 @@ mod restore_space_tests;
 
 #[path = "snapshot_manifest_json_tests.rs"]
 mod manifest_json_tests;
+#[path = "snapshot_verification_tests.rs"]
+mod verification_tests;

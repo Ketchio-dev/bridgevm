@@ -1,10 +1,10 @@
 //! A cooperating reader selects a complete pair while holding its logical lease.
 //! Original paths remain unchanged; callers must use paths(), not the originals.
 
-use super::{copy_and_sync, verify_snapshot, SnapshotError, SnapshotManifest};
+use super::{SnapshotError, SnapshotManifest};
 use crate::media_lease::MediaLease;
 use layout::private_directory;
-use std::fs::{self, File};
+use std::fs;
 use std::io;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -72,46 +72,10 @@ impl LockedPair {
     pub fn restore(&mut self, snapshot: &Path) -> Result<SnapshotManifest, SnapshotError> {
         self.restore_using(snapshot, super::snapshot_publish::publish)
     }
-
-    fn restore_using(
-        &mut self,
-        snapshot: &Path,
-        publish: impl FnOnce(&Path, &Path) -> io::Result<()>,
-    ) -> Result<SnapshotManifest, SnapshotError> {
-        let snapshot = fs::canonicalize(snapshot)?;
-        if snapshot.starts_with(&self.root) {
-            return Err(io::Error::other("restore source must be outside managed storage").into());
-        }
-        let manifest = verify_snapshot(&snapshot)?;
-        let needed = manifest
-            .disk_bytes
-            .checked_add(manifest.vars_bytes)
-            .ok_or_else(|| io::Error::other("snapshot size overflow"))?;
-        if let Some(available) = super::free_space::available_bytes(self.root.parent().unwrap()) {
-            if needed > available {
-                return Err(SnapshotError::InsufficientSpace { needed, available });
-            }
-        }
-        layout::initialize(&self.root)?;
-        let staged = self.root.join("staging");
-        if private_directory(&staged, false)? {
-            fs::remove_dir_all(&staged)?;
-        }
-        private_directory(&staged, true)?;
-        for name in ["disk.raw", "vars.fd", "manifest.json"] {
-            copy_and_sync(&snapshot.join(name), &staged.join(name))?;
-        }
-        let copied = verify_snapshot(&staged)?;
-        if copied != manifest {
-            return Err(io::Error::other("snapshot changed while staging restore").into());
-        }
-        File::open(&staged)?.sync_all()?;
-        publish(&staged, &self.root.join("current"))?;
-        self.own_selected()?;
-        layout::acknowledge(&self.root)?;
-        Ok(copied)
-    }
 }
+
+#[path = "managed_pair_restore.rs"]
+mod restore;
 
 #[path = "managed_pair_layout.rs"]
 mod layout;

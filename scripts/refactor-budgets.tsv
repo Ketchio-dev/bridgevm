@@ -1005,7 +1005,7 @@ fuzz/src/lib.rs	55	0
 fuzz/src/bin/smoke.rs	78	0
 crates/bridgevm-hvf/tests/loom_psci.rs	94	0
 crates/bridgevm-hvf/tests/loom_reset_generation.rs	131	0
-crates/bridgevm-hvf/src/snapshot_pair.rs	323	0
+crates/bridgevm-hvf/src/snapshot_pair.rs	263	0
 crates/bridgevm-hvf/src/snapshot_pair_tests.rs	254	0
 crates/bridgevm-hvf/src/bounded_read.rs	47	0
 crates/bridgevm-hvf/src/snapshot_manifest_json.rs	61	0
@@ -1014,7 +1014,7 @@ crates/bridgevm-hvf/src/nvme/disk_export.rs	44	0
 crates/bridgevm-hvf/src/nvme/overlay_quota_tests.rs	123	0
 crates/bridgevm-hvf/examples/snapshot_pair_cli.rs	61	0
 crates/bridgevm-hvf/src/snapshot_free_space.rs	43	2
-crates/bridgevm-hvf/src/snapshot_restore_space_tests.rs	77	0
+crates/bridgevm-hvf/src/snapshot_restore_space_tests.rs	47	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_kill_tests.rs	43	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator/cancel_stop.rs	57	2
 apps/macos/XCTestShim/Runner.swift	46	0
@@ -2081,7 +2081,7 @@ crates/bridgevm-hvf/src/snapshot_publish.rs	70	2
 crates/bridgevm-hvf/src/snapshot_publish_tests.rs	81	0
 crates/bridgevm-hvf/src/media_lease.rs	107	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_media_lease.rs	21	0
-crates/bridgevm-hvf/src/managed_pair.rs	125	1
+crates/bridgevm-hvf/src/managed_pair.rs	72	0
 crates/bridgevm-hvf/src/managed_pair_tests.rs	128	0
 crates/bridgevm-hvf/src/managed_pair_layout.rs	81	1
 crates/bridgevm-hvf/src/managed_pair_runtime.rs	62	0
@@ -2276,3 +2276,6 @@ runners/bridgevm-tools-linux/src/tests_split/temp_fixtures_tests.rs	163
 crates/bridgevm-hvf/src/nvme/doorbell.rs	35	0
 crates/bridgevm-hvf/src/nvme/tests/doorbell_indices.rs	117	0
 crates/bridgevm-api/src/test_support_env.rs	99	0
+crates/bridgevm-hvf/src/managed_pair_restore.rs	57	0
+crates/bridgevm-hvf/src/snapshot_verification.rs	28	0
+crates/bridgevm-hvf/src/snapshot_verification_tests.rs	125	0
