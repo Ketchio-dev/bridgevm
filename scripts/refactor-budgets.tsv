@@ -70,7 +70,7 @@ crates/bridgevm-api/src/response_tests/part_4.rs	776	0
 crates/bridgevm-api/src/response_tests/part_5.rs	705	0
 crates/bridgevm-api/src/shares.rs	125	0
 crates/bridgevm-api/src/ssh_ports.rs	156	0
-crates/bridgevm-api/src/test_support.rs	238	0
+crates/bridgevm-api/src/test_support.rs	211	0
 crates/bridgevm-api/src/test_support_wait.rs	52	0
 crates/bridgevm-apple-vz/src/boot_spec.rs	166	0
 crates/bridgevm-apple-vz/src/bundle_paths.rs	9	0
@@ -2275,3 +2275,4 @@ tests/integration/winpe_companion_native_mount_cases.py	92
 runners/bridgevm-tools-linux/src/tests_split/temp_fixtures_tests.rs	163
 crates/bridgevm-hvf/src/nvme/doorbell.rs	35	0
 crates/bridgevm-hvf/src/nvme/tests/doorbell_indices.rs	117	0
+crates/bridgevm-api/src/test_support_env.rs	99	0

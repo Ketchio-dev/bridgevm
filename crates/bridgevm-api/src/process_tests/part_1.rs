@@ -32,7 +32,7 @@ fn runtime_control_reader_accepts_fragmented_response() {
 
 #[test]
 fn display_runtime_policy_uses_foreground_visibility() {
-    let _battery = EnvVarGuard::set("BRIDGEVM_FORCE_ON_BATTERY", "0");
+    let _battery = PowerStateGuard::set(false);
     let mut manifest = VmManifest::new(
         "fast-display",
         VmMode::Fast,

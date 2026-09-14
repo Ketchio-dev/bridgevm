@@ -15,34 +15,9 @@ pub(crate) use wait::*;
 
 pub(crate) static APPLE_VZ_RUNNER_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-pub(crate) struct EnvVarGuard {
-    key: &'static str,
-    previous: Option<std::ffi::OsString>,
-}
-
-impl EnvVarGuard {
-    pub(crate) fn capture(key: &'static str) -> Self {
-        Self {
-            key,
-            previous: std::env::var_os(key),
-        }
-    }
-
-    pub(crate) fn set(key: &'static str, value: &str) -> Self {
-        let guard = Self::capture(key);
-        std::env::set_var(key, value);
-        guard
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        match &self.previous {
-            Some(value) => std::env::set_var(self.key, value),
-            None => std::env::remove_var(self.key),
-        }
-    }
-}
+#[path = "test_support_env.rs"]
+mod env;
+pub(crate) use env::{EnvVarGuard, PowerStateGuard};
 
 pub(crate) fn unique_runtime_control_test_socket(label: &str) -> PathBuf {
     let mut path = PathBuf::from("/tmp");

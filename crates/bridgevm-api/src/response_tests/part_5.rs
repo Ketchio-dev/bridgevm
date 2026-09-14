@@ -435,7 +435,7 @@ fn handler_clones_vm_bundle_with_new_manifest_identity() {
 
 #[test]
 fn handler_reapplies_runtime_resources_for_background_fast_vm() {
-    let _battery = EnvVarGuard::set("BRIDGEVM_FORCE_ON_BATTERY", "0");
+    let _battery = PowerStateGuard::set(false);
     let (store, name) = fast_test_store("runtime-resource-policy");
     store
         .transition_state(&name, VmRuntimeState::Running)
@@ -497,7 +497,7 @@ fn handler_reapplies_runtime_resources_for_background_fast_vm() {
 
 #[test]
 fn handler_acknowledges_runtime_policy_when_display_control_reads_it() {
-    let _battery = EnvVarGuard::set("BRIDGEVM_FORCE_ON_BATTERY", "0");
+    let _battery = PowerStateGuard::set(false);
     let (store, name) = fast_test_store("runtime-resource-policy-ack");
     let socket_path = {
         let mut path = PathBuf::from("/tmp");
