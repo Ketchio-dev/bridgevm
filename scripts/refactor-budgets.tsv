@@ -1005,7 +1005,7 @@ fuzz/src/lib.rs	55	0
 fuzz/src/bin/smoke.rs	78	0
 crates/bridgevm-hvf/tests/loom_psci.rs	94	0
 crates/bridgevm-hvf/tests/loom_reset_generation.rs	131	0
-crates/bridgevm-hvf/src/snapshot_pair.rs	263	0
+crates/bridgevm-hvf/src/snapshot_pair.rs	207	0
 crates/bridgevm-hvf/src/snapshot_pair_tests.rs	254	0
 crates/bridgevm-hvf/src/bounded_read.rs	47	0
 crates/bridgevm-hvf/src/snapshot_manifest_json.rs	61	0
@@ -2286,3 +2286,5 @@ crates/bridgevm-hvf/src/managed_pair_ownership_tests.rs	112	0
 crates/bridgevm-hvf/src/managed_pair_staging.rs	28	0
 crates/bridgevm-media/src/media_lease_update.rs	73	0
 crates/bridgevm-media/src/media_lease_update_tests.rs	122	0
+crates/bridgevm-hvf/src/snapshot_create.rs	82	0
+crates/bridgevm-hvf/src/snapshot_create_overlap_tests.rs	95	0
