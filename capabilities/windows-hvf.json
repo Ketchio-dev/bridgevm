@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-14",
-  "tested_commit": "947d16832d70d7d6984734a436fb00a40ec197bd",
+  "tested_commit": "8e5b975dbadddd25ffccb94f4f1051b14fe80ac9",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: source 947d1683 retains runtime sessions in the library, preserves accepted settings and active observations across detail reconstruction, and gives stopped replacements a new view identity. Expanded native product-flow suites plus LineAccumulator passed 139 tests, including 14 new runtime routing/ownership/admission cases. Independent review found no introduced blocker; existing process and window lifecycle bodies are unchanged. Full local and exact hosted checks for this source are pending at this observation point. Preceding f2080e25 passed the full local check in 150.03 seconds and all 78 hosted runs succeeded (CI 34924509321, Security 34924509072). A11 still requires the final release regression seal. New deterministic tests do not prove rendered window behavior, guest survival, removed-row visibility or relaunch recovery. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
+      "measured": "OPEN: source 8e5b975d extracts the HVF backend into its own module, preserves its specified library root, and derives displayed RAM/CPU from its launch configuration. Native product-flow and backend suites passed 161 tests after the retained 5-test baseline produced 8 failed assertions across 4 cases; tests were unchanged after the fixes. Independent review and byte comparisons preserve unrelated backend behavior. Full local and exact hosted checks for this source remain pending at this observation point. Preceding 15c52a4f passed its full local check in 163.77 seconds; its latest retained hosted observation has 77 successful runs, Security 34925953861 green, and CI 34925954083 still running. A11 requires the final release regression seal. Generic factory root selection, resource-edit limits, and live guest behavior remain outside this packet. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -170,7 +170,8 @@
         "docs/windows-arm/evidence/a9-b6-resume-fixes-20260910.md",
         "docs/history/windows-hvf/a11-observations-through-20260915.md",
         "docs/history/windows-hvf/install-continuity-deterministic-20260915.md",
-        "docs/history/windows-hvf/runtime-continuity-deterministic-20260915.md"
+        "docs/history/windows-hvf/runtime-continuity-deterministic-20260915.md",
+        "docs/history/windows-hvf/backend-configuration-deterministic-20260915.md"
       ]
     },
     {
