@@ -8,7 +8,7 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         #if DEBUG && BRIDGEVM_APP_UI_HOST
-        AppUIHost.prepared?.applicationDidFinishLaunching()
+        AppUIHost.prepared?.applicationDidFinishLaunching(notification)
         #endif
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -21,14 +21,13 @@ struct BridgeVMControlApp: App {
     @StateObject var library: LibraryModel
     init() { _library = BridgeVMControlAppModel.libraryState() }
     var body: some Scene {
-        WindowGroup("BridgeVM Control") {
+        #if DEBUG && BRIDGEVM_APP_UI_HOST
+        AppUIHost.prepared?.lifecycle.record(.appBodyEvaluated)
+        #endif
+        return WindowGroup("BridgeVM Control") {
             ContentView(library: library)
                 .frame(minWidth: 1100, minHeight: 720)
-                .background {
-                    #if DEBUG && BRIDGEVM_APP_UI_HOST
-                    AppUIHostWindow().frame(width: 0, height: 0).allowsHitTesting(false).accessibilityHidden(true)
-                    #endif
-                }
+                .appUIHostSceneObservation()
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1320, height: 860)

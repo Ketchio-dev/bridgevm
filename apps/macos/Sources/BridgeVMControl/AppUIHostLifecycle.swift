@@ -7,6 +7,8 @@ import SwiftUI
 final class AppUIHostLifecycle {
     enum Event: String, CaseIterable {
         case appInitialization = "app_initialization"
+        case appBodyEvaluated = "app_body_evaluated"
+        case rootContentAppeared = "root_content_appeared"
         case libraryFactory = "library_factory"
         case delegateDidFinishLaunching = "delegate_did_finish_launching"
         case representableMake = "representable_make"
@@ -17,6 +19,7 @@ final class AppUIHostLifecycle {
     private let capture: AppUIHostCapture
     private let began = ProcessInfo.processInfo.systemUptime
     private var deadline: Double?
+    private var defaultLaunch: Bool?
     private var counts = Dictionary(uniqueKeysWithValues: Event.allCases.map { ($0.rawValue, 0) })
     private var firstEvents: [String: Double] = [:]
     private var firstFlags: [String: Double] = [:]
@@ -31,18 +34,10 @@ final class AppUIHostLifecycle {
         observed = began
         try save()
     }
-    static func libraryState() -> StateObject<LibraryModel> {
-        AppUIHost.prepared?.lifecycle.record(.appInitialization)
-        return StateObject(wrappedValue: libraryModel())
-    }
-    private static func libraryModel() -> LibraryModel {
-        guard let host = AppUIHost.prepared else { fatalError("Diagnostic host was not prepared") }
-        host.lifecycle.record(.libraryFactory)
-        return host.libraryForApplication()
-    }
-    static func makeAttachmentView() -> NSView {
-        AppUIHost.prepared?.lifecycle.record(.representableMake)
-        return AppUIHostWindow.AttachmentView(frame: .zero)
+    func recordDelegate(_ notification: Notification) {
+        guard !terminal else { return }
+        defaultLaunch = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool
+        record(.delegateDidFinishLaunching)
     }
     func setStartupDeadline(_ deadline: Double) {
         guard self.deadline == nil, !terminal else { return }
@@ -72,6 +67,7 @@ final class AppUIHostLifecycle {
         }
         self.terminal = terminal
         if terminal || firstTransition { persist() }
+        if terminal { AppUIHostSceneObservation.saveWindows(capture) }
     }
     private func persist() {
         do { try save() }
@@ -86,6 +82,7 @@ final class AppUIHostLifecycle {
         })
         try capture.write(["schema_version": 1, "kind": "native-app-ui-host-lifecycle", "pid": Int(getpid()),
             "began_uptime": began, "startup_deadline_uptime": deadline.map { $0 as Any } ?? NSNull(),
+            "default_launch": defaultLaunch.map { $0 as Any } ?? NSNull(),
             "event_counts": counts, "event_first_uptime": events, "counts_saturated": saturated,
             "coordinator": flags, "coordinator_first_true_uptime": transitions,
             "coordinator_observed_uptime": observed, "terminal": terminal], name: "host-lifecycle.json")

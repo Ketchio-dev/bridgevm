@@ -81,8 +81,8 @@ final class AppUIHost {
             }
         }
     }
-    func applicationDidFinishLaunching() {
-        lifecycle.record(.delegateDidFinishLaunching)
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        lifecycle.recordDelegate(notification)
         guard !finished else { return }
         launchFinished = true
         startWhenReady()
