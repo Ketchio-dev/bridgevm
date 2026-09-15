@@ -827,3 +827,30 @@ sealed and unchanged across checks. Failed control code, flags, binary and recei
 remain private and in history; no temporary instrumentation remains in final source.
 Current complete project and exact-source hosted checks are required. There is no
 reason to repeat the unchanged baseline; actual UI validation remains unfinished.
+
+
+## Diagnostic request envelope and preparation boundary (2026-09-15)
+
+Source abe1bbcf498f069a2ed7c311bc1b2b8de0c353f8 changes the opt-in diagnostic launcher request
+from custom argv to two namespaced environment values. Admission retains the same
+canonical private-directory checks and rejects mixed or malformed requests. Before/
+after preparation observations read only existing NSApp state and six fixed test/
+preview-key presence booleans; no environment values or new application objects are
+recorded or created. The product scene, activation, five-second startup, seven actions,
+eight captures, domain-work tripwires and ownership/cleanup requirements are unchanged.
+
+The exact seven Apple XCTest host contracts passed20.69seconds, log SHA
+`457bafaae1ce605346a6ce74339af455197b00663bc9cb14511face548241f35`.
+Compile-only release boundary passed22.60seconds; all four checked diagnostic keys/
+markers are present in the host and absent from ordinary release. Rebuilt launcher
+and pure ownership contracts passed5.82seconds. Inputs remained unchanged, and the
+host/launcher pair is sealed privately. These checks launched no app or guest.
+
+The preceding restored full check passed165.80seconds, sealed as a23d0f92. The saved
+PR157 snapshot records84of85workflow runs successful; final CI35026414196 remains
+pending in that snapshot. Coherence run35026411053 succeeded on unchanged attempt2;
+the original failure remains retained and its cause is unproven. Seven normal-App
+pilots and the separate minimal-content control remain failed. Current full-project,
+exact-source hosted verification and one sealed actual-product UI pilot are pending.
+This request-envelope comparison is a hypothesis, not an established startup repair.
+All criterion states, thresholds and product wording remain unchanged.
