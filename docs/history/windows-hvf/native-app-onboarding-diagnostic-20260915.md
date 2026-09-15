@@ -518,3 +518,59 @@ no limit or fixture changed and no result has been observed. A retry cannot
 prove the underlying delay cause or erase the failure. Current full/hosted
 validation and the next sealed native pilot follow this checkpoint; every
 criterion, threshold and product state remains unchanged.
+
+
+## Native CLI and activation checkpoint (2026-09-15)
+
+Source1aa9352a connects the native vm.json library to `bridgevm app list`,
+`inspect` and `readiness`. The ordinary app handles --cli before SwiftUI app
+initialization. Native Unicode directory IDs are authoritative; bounded reads
+refuse symlinks/special files and never invoke installation recovery. Versioned
+JSON reports saved values and unobserved runtime state. Readiness preserves
+existing launch checks and separate release blockers. No native start/stop
+command is claimed. See [the CLI reference](../../app-cli.md).
+
+The paired Rust CLI uses fixed installed/co-packaged locations, a bounded
+regular-file protocol-marker compatibility check, and direct process replacement.
+The marker prevents launching an old app that ignores CLI arguments; it is not
+a signature check or inode-bound execution guarantee. All149CLI tests passed,
+including harmless fixture process forwarding with exact PID/arguments/streams/
+exit23, and local/daemon doctor output. Doctor distinguishes store status from
+client environment findings; missing QEMU is not an own-HVF readiness verdict.
+
+The previous core descriptor's PROVEN claim was wrong. An actual-registry
+regression failed before correction, then all11core tests passed with the exact
+ENGINEERING_PREVIEW state/summary. Native parser/reader/readiness18tests passed.
+Eight ordinary native CLI processes passed on owned fixture inputs with stable
+JSON and unchanged input trees. Three additional paired Rust-to-native calls
+confirmed exit0/1/2 forwarding and no library creation. No GUI or VM was requested;
+these are query/entrypoint checks, not guest or rendered-UI evidence.
+
+Original legacy-help baseline, native URL-fixture mismatch, CLI canonical-path
+fixture mismatch and parallel temporary-name collision failures are retained.
+The first complete project check at1aa9352a failed in169.60seconds only on two
+new resolver-test cloned-reference lints; all other steps passed. The correction
+uses borrowed one-element slices, with no lint suppression or threshold change.
+Its later complete rerun is still required.
+
+Normal-App pilot app-ui-host-20260915-03 at09d2846d failed the unchanged five-second
+startup/window wait. It observed initialization/factory/body/delegate and default
+launch, but no root appearance, attachment or own windows at the terminal sample.
+Actions0/7, captures0/8, all four domain-work counts0; authoritative exit/fixture
+cleanup verified. No cause or successful UI action is inferred. The next host
+records policy before/result/after around the existing activation call. Its
+exact7host contracts passed18.79seconds and release boundary passed21.25seconds.
+The earlier activation-boundary invocation's mistyped binary path was refused
+before compilation; its corrected run passed20.69seconds. No criteria promoted.
+
+A later-turn hosted observation found CI35005133935 and Security35005133799 for
+09d2846d successful. The one unchanged retry of35003387352 also succeeded; the
+original10second Coherence child timeout remains recorded and its cause is
+unproven. Those results do not substitute for this new source's hosted checks.
+
+The next full rerun at3c230091 passed every step except rustfmt in157.16seconds.
+The borrowed-slice assertion needed standard formatting. Importing the reused
+from_ref helper preserves the same assertion and135-line budget; pinned format
+and clippy checks and all7resolver tests then passed. Both failed full logs are
+retained. The subsequent complete check is a new observation, not a rewrite of
+either failure.
