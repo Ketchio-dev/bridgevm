@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-14",
-  "tested_commit": "bbd65548309a5d5776b821ad9336b95c14d42dd2",
+  "tested_commit": "bca8eea7e7919946fe7b7c703c38fd2523e33746",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: source bbd65548 routes own-engine palette selections to their existing controls, including retained active sessions after metadata changes and cached accepted HVF models after becoming idle. Native 175 tests passed; six byte-identical palette tests retained a baseline with 29 assertion failures in five cases. Own-engine command construction avoids creating generic control models, and navigation preserves captured selection and accepted session state. Independent review verifies unchanged compatibility and global command bytes. Full local and exact hosted checks for this source remain pending at this observation point. Preceding e8d676f0 passed its full local check in 163.84 seconds; the latest retained hosted observation has 77 successes, Security 34930626656 green, and CI 34930626763 still running. A11 requires the final release regression seal. Rendered navigation, missing-registration control reachability, file-action coordination and live guest behavior remain outside this packet. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
+      "measured": "OPEN: source bca8eea7 refuses library file-action requests for changed registrations, mismatched cached controls, existing file reservations, active install/runtime sessions or accepted generic work. Pure observed running alone does not own an operation. Native 201 tests passed, including nine new entrypoint regressions and existing ControlModel suites; the original eight-test baseline retained 236 failed assertions, and a separate cache-coherence baseline retained 18. Each test source stayed byte-identical to its retained failure. File-action jobs were captured without execution; operation bodies and helper extractions remain unchanged. Full local and exact hosted checks for this source remain pending at this observation point. Preceding 4b8e28dd passed its full local check in 164.72 seconds; its initial hosted observation had 77 successes and one PowerShell child-deadline failure in run 34931591285. The same job passed one unchanged retry, and the latest snapshot has all 78 runs green, including main CI 34931591298 and Security 34931591064. The original failure remains retained; its internal delay cause is unproven. A11 requires the final release regression seal. This packet provides one-way app-owned admission, not reciprocal Start exclusion, external coordination, rendered alerts, file completion or live guest evidence. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -174,7 +174,8 @@
         "docs/history/windows-hvf/backend-configuration-deterministic-20260915.md",
         "docs/history/windows-hvf/install-validation-deterministic-20260915.md",
         "docs/history/windows-hvf/backend-root-deterministic-20260915.md",
-        "docs/history/windows-hvf/palette-routing-deterministic-20260915.md"
+        "docs/history/windows-hvf/palette-routing-deterministic-20260915.md",
+        "docs/history/windows-hvf/library-action-admission-deterministic-20260915.md"
       ]
     },
     {
