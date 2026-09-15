@@ -294,3 +294,113 @@ public accessibility controls is being developed as a separately sealed
 hypothesis; unlike a cross-process driver, it does not require a trust grant.
 This checkpoint's full project and hosted results are recorded by the later
 exact-tree seal; no product state, criterion or threshold is promoted.
+
+### Normal-app host and packaged resources — 2026-09-15 17:04 UTC
+
+Source `279deaf8` keeps creation inputs in a bounded scrolling viewport while
+its title, resource summary, errors and actions remain visible. The library
+warning preview now opens the complete existing issue array with selectable
+messages and full paths. Source `31985afc` retains the creation sheet during
+existing non-cancellable file materialization: inputs and Cancel are disabled,
+interactive dismissal is blocked and preparation progress is visible. The
+creation/publication/completion functions are unchanged. Actual busy-sheet
+Escape and disabled-control behavior remains a native UI observation to make.
+
+Source `774232cf` corrects a confirmed packaging-path mismatch. The generated
+SwiftPM accessor searched the app root or a build path, while the packager put
+resources in Contents/Resources and deleted its build scratch. The shared
+resolver uses the standard packaged location, preserves lazy SwiftPM discovery
+only outside an app, and leaves both existing typed missing-resource errors and
+trusted-byte validation intact. The actual relocated Foundation-only callers
+first reached the forbidden build-fallback tripwire (exit133, 2.309seconds,
+log SHA `0ad2c4ae8a2a661cde5acbbbe2997a3306d7fb4a1112a47f9127dd7d77e97497`).
+The same six present/missing/root-decoy/corrupt-policy cases then passed in
+2.773seconds, log SHA
+`5a0a0ac5de02d46381901e5a5ed2987b30a80821b021bf2b99a30b50338b6b48`.
+The existing provisioning contract also passed in 15.430seconds. Only owned
+copies of the two public resources were used; no app lifecycle or VM executed.
+
+Source `77c9836d781ee42b39a94c9e5301adfd0063bda1` adds a distinct debug-only normal SwiftUI App/WindowGroup
+host, using its actual did-finish-launching notification and attached visible
+window. Public same-process accessibility must invoke all seven original UI
+actions and produce all eight original owned-content captures. A separate
+sealed NSWorkspace launcher retains and revalidates the exact app identity;
+host completion alone is insufficient without independently observed exit.
+The original d6 v1 adapter and observation requirements remain unchanged.
+
+Independent review found that the adapter's six-second termination allowance
+could interrupt late ownership plus TERM/exit handling. The worker's existing
+five-second group escalation could also move the job folder before external-app
+cleanup, invalidating its exact paths. The failed virtual-time regression is
+retained, log SHA
+`e0546d2fe1b0f87991788c07bd6cf4aec6a19fc8449296d87dc901da38cef903`.
+The new tier keeps the launcher in its process group, allows12seconds in the
+adapter and15seconds for worker TERM handling in both cancellation and residual
+group paths; all original tiers retain their five-second TERM allowance. The
+90second execution limit and launcher's five/three/two-second ownership/signal
+bounds are unchanged. Unresolved external-app exit fences the worker and retains
+the running directory; failed UI with verified app exit remains failed and may
+archive. The installed worker must be refreshed while idle to the sealed revision
+before the first new-tier pilot.
+
+The final native selection passed215 with two mandatory live-only skips
+(217selected, 30.46seconds including build; log SHA
+`904bf74373fc6049b33091c1985e4c59dbf4a225a74564ce06791508784eba5e`).
+Those skips require WindowServer and an explicitly staged real disk respectively.
+Seven isolated host-input contracts passed in7.28seconds. Compile-only release
+boundary verification passed in21.23seconds: a positive debug marker, no marker
+in the ordinary release binary, and the exact release-flag compiler refusal.
+The expanded pure launcher ownership clock contract passed, including owner
+arrival at4.9seconds and observed exit at9.9seconds after cancellation. New-tier
+contracts passed19, original d6 contracts11 and worker-venue contracts two.
+The final staged19-case run passed in2.58seconds with stable index/source,
+log SHA `3b7974176232faffc0d992d3f3911e724edb4a4127c4530a75e86763b6773f4b`.
+
+The launcher first failed compilation because its private stored properties
+made the synthesized initializer inaccessible; the exact failed log is retained
+(SHA `90bfca2f637e8d634e80380f998003e4c5725a9a3186dbdf7f0467a2b7caa93c`).
+An explicit initializer repaired it. One wrapper failed before any test ran on
+an index-lock collision; another launcher-build invocation was refused for a
+missing required option. Corrected invocations passed and neither failure was
+rewritten. A staged whitespace check removed one terminal blank line before
+the final19-case run. Private records are in `hvf-app-autonomy-20260915` and
+`hvf-app-ui-diagnostic-20260915`; source hashes and all failed logs remain.
+
+The preceding `df2e880d` checkpoint sealed a157.88second full-project pass.
+Its bounded hosted snapshot observed75of81 workflows successful, six pending
+and no failures; this is not an all-green claim. This new checkpoint's required
+full project and exact pushed-SHA hosted results follow in its seal records.
+No native-host pilot has run yet, the five preceding UI pilots remain failed,
+and ENGINEERING_PREVIEW, all criterion states and thresholds are unchanged.
+
+### Full-check integration correction — 2026-09-15 17:18 UTC
+
+The first normal-host full project check failed in131.62seconds solely at the
+ordinary XCTest shim compilation, log SHA
+`f0233511e42b8a1e522b78e3baa30fad2169834c3ffee8aeafdf8463f1f7c1d6`.
+Its textual manifest listed the seven AppUIHostContractTests methods, while
+the class was excluded without BRIDGEVM_APP_UI_HOST. Individual Apple XCTest
+host success did not override that integration failure.
+
+Source `d1c94b5d970ae383e2fa95a6f2d9da2d88c01d04` moves the unchanged112-line file to the dedicated
+BridgeVMAppUIHostTests SwiftPM test target. Its SHA remains
+`e060a6cb82100d5230c5c75a53cf9ba1d79f2cbf00a363f6c874eb9556869c11`.
+All10 existing target paths/dependencies/types are identical in before/after
+package descriptions; only the host target is added. The ordinary shim and
+its app configuration are unchanged. A dedicated helper verifies the exact
+seven qualified test names before executing Apple XCTest; all seven passed
+in19.762seconds including compilation. The separate Swift Testing runner's
+zero-test message is not an XCTest result. Workflow and package line ceilings
+are preserved by using the helper and an equivalent conventional test path.
+
+Source `63b9e2eb` adds only a synchronous already-working refusal at the first
+line of create(), before resetting errors or dispatching a task. Every later
+snapshot, mode branch and completion call is unchanged. The existing creation
+and policy selection passed14 tests in7.70seconds including build, log SHA
+`33787cb9080fff551f583a58be074c0d0ab8471c0c7ce53ab15ef02398f72ca1`.
+Rapid native gesture delivery was not reproduced and is not claimed proven.
+The earlier compiled host was never queued and is retained as superseded.
+The rebuilt final source/manifest identity passed in0.59seconds, log SHA
+`31e3c94b4d5252e8d9ebfcfa6c2e221c2d5520566a682123850c4e4f0f2e72d4`.
+A complete corrected project check, new release boundary, source seal and hosted
+checks are still required. No prior failure or open criterion is erased.
