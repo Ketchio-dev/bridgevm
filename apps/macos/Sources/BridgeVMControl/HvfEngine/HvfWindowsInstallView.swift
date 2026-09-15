@@ -104,8 +104,8 @@ struct HvfWindowsInstallView: View {
                     }
                 }
                 .frame(height: 220)
-                .onChange(of: session.logLines.count) { _, count in
-                    if count > 0 { proxy.scrollTo(count - 1, anchor: .bottom) }
+                .onChange(of: session.logLines) { _, lines in
+                    if !lines.isEmpty { proxy.scrollTo(lines.count - 1, anchor: .bottom) }
                 }
             }
         }
