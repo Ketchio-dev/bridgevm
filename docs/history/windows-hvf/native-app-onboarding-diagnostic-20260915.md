@@ -854,3 +854,33 @@ pilots and the separate minimal-content control remain failed. Current full-proj
 exact-source hosted verification and one sealed actual-product UI pilot are pending.
 This request-envelope comparison is a hypothesis, not an established startup repair.
 All criterion states, thresholds and product wording remain unchanged.
+
+
+## Actual window admission and presentation observation (2026-09-15)
+
+Packet35's complete project check passed169.87seconds, sealed240db0be; the22:10UTC
+snapshot recorded all40push workflows successful. Normal-App pilot
+app-ui-host-20260915-09 reached one visible product window, root/body/attachment/
+appearance callbacks and scenario start, then failed the first light/default
+compound presentation guard at about483ms. Actions remained0of7 and captures0of8;
+all domain-work counters were zero and identity, observed exit and all cleanup
+passed. Preparation recorded NSApp absent before and after, environment transport
+with zero custom arguments and all six fixed test/preview-key presence flags false.
+This measured startup improvement is not a full UI pass or proof of an argv cause.
+
+Source f5a46ef7ee5037bdc7118bd6fcfeecf98acafb7f extracts the existing presentation method and
+records bounded geometry, appearance and content identity only when its unchanged
+compound guard fails. The sizes,200ms sleep, appearance assignment, layout pass,
+guard operands/tolerances and original thrown error are preserved, including when
+the private receipt cannot be written. Coordinate spaces are named separately;
+no presentation repair or cause is inferred before actual values are measured.
+
+All seven Apple XCTest host contracts passed19.94seconds, log SHA
+`3428d82495a65da5a2f709d31801d04a3bede4740640e2e0dd317b82187484da`.
+Compile-only release boundary passed22.24seconds. All466Swift/package inputs
+remained unchanged; the Packet35 launcher is unchanged. Independent review passed.
+PR157 completed85of85successful workflows and merged as36ff324d with the a23d0f92
+tree unchanged. New main CI35029792177 was pending in its22:13UTC initial snapshot.
+The preceding timeout and successful unchanged retry remain recorded; cause is
+unproven. Current full-project and exact-source hosted checks plus one sealed
+pilot10 remain pending. All29criteria, thresholds and product wording are unchanged.
