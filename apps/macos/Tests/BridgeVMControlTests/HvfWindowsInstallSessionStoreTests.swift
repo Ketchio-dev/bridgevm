@@ -3,54 +3,9 @@ import XCTest
 
 @MainActor
 final class HvfWindowsInstallSessionStoreTests: XCTestCase {
-    @MainActor
-    private final class Fixture {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("install-store-" + UUID().uuidString)
-        var jobs: [@MainActor () async -> Void] = []
-        var validationError: String?
-        var made = 0
+    private typealias Fixture = HvfWindowsInstallStoreFixture
 
-        func library() -> LibraryModel {
-            LibraryModel(rootURL: root, migrateLegacy: false, installSessionFactory: { plan in
-                self.made += 1
-                return HvfWindowsInstallSession(plan: plan, validate: { _ in self.validationError },
-                    schedule: { self.jobs.append($0) })
-            })
-        }
-
-        func save(_ config: VMConfig, diskGiB: Int = 64) throws {
-            let request = HvfWindowsInstallRequest(isoPath: root.appendingPathComponent("absent.iso").path,
-                isoSHA256: String(repeating: "a", count: 64), diskGiB: diskGiB, injectViogpu3d: false)
-            XCTAssertTrue(request.save(bundlePath: config.bundlePath))
-            XCTAssertTrue(VMLibrary.save(config, rootURL: root))
-        }
-
-        func config(_ slug: String = "windows") -> VMConfig {
-            VMConfig(id: slug, name: slug, displayName: slug, backendKind: "hvf-engine",
-                bootMode: "windows-hvf", bundlePath: root.appendingPathComponent(slug + "/bundle").path,
-                runnerPath: "", launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
-                leasesPath: "", guestName: slug, displayWidth: 1280, displayHeight: 720, installPending: true)
-        }
-
-        func removeRegistration(_ config: VMConfig) throws {
-            try FileManager.default.removeItem(at: root.appendingPathComponent(config.slug + "/vm.json"))
-        }
-
-        func finishCancelled(_ session: HvfWindowsInstallSession) async {
-            session.cancel()
-            let job = jobs.removeFirst()
-            await job() // The pre-dispatch cancellation guard returns before the install pipeline.
-            XCTAssertFalse(session.isRunning)
-        }
-
-        func clean() {
-            jobs.removeAll() // Unexecuted work cannot enter the pipeline during teardown.
-            try? FileManager.default.removeItem(at: root)
-        }
-    }
-
-    func testRecreatedViewsKeepSessionAcrossSelectionAndReload() throws {
+    func testRecreatedViewsKeepSessionAcrossSelectionAndReload() async throws {
         let fixture = Fixture()
         defer { fixture.clean() }
         let first = fixture.config("first"), second = fixture.config("second")
@@ -59,8 +14,9 @@ final class HvfWindowsInstallSessionStoreTests: XCTestCase {
         let library = fixture.library()
         library.selectedID = first.slug
         let original = HvfWindowsInstallView(config: first, library: library).session
-        original.start()
+        let acknowledgment = try XCTUnwrap(original.start())
         XCTAssertTrue(original.isRunning)
+        XCTAssertEqual(original.stage, .validating)
         library.selectedID = second.slug
         let other = HvfWindowsInstallView(config: second, library: library).session
         library.reload()
@@ -70,7 +26,10 @@ final class HvfWindowsInstallSessionStoreTests: XCTestCase {
         XCTAssertFalse(other === original)
         XCTAssertEqual(restored.startedAt, original.startedAt)
         XCTAssertEqual(restored.logLines, original.logLines)
-        restored.start()
+        let duplicate = restored.start()
+        XCTAssertNil(duplicate)
+        await acknowledgment.value
+        await duplicate?.value
         XCTAssertEqual(fixture.jobs.count, 1)
         XCTAssertEqual(fixture.made, 2)
     }
@@ -82,18 +41,26 @@ final class HvfWindowsInstallSessionStoreTests: XCTestCase {
         try fixture.save(originalConfig)
         let library = fixture.library()
         let session = library.windowsInstallSession(for: originalConfig)
-        session.start()
+        let acknowledgment = try XCTUnwrap(session.start())
         var changed = originalConfig
         changed.bundlePath = fixture.root.appendingPathComponent("replacement-bundle").path
         changed.installPending = false
         changed.backendKind = "fast-vz"
-        try fixture.save(changed, diskGiB: 96)
-        library.reload()
-        let loaded = try XCTUnwrap(library.vms.first)
+        let loaded: VMConfig
+        do {
+            try fixture.save(changed, diskGiB: 96)
+            library.reload()
+            loaded = try XCTUnwrap(library.vms.first)
+        } catch {
+            await acknowledgment.value
+            throw error
+        }
+        XCTAssertEqual(session.stage, .validating)
         XCTAssertTrue(library.shouldShowWindowsInstall(for: loaded))
         XCTAssertTrue(HvfWindowsInstallView(config: loaded, library: library).session === session)
         XCTAssertEqual(session.plan.bundlePath, originalConfig.bundlePath)
         XCTAssertEqual(session.plan.request.diskGiB, 64)
+        await acknowledgment.value
         await fixture.finishCancelled(session)
         library.reload()
         XCTAssertFalse(library.shouldShowWindowsInstall(for: loaded))
@@ -160,12 +127,17 @@ final class HvfWindowsInstallSessionStoreTests: XCTestCase {
         try fixture.save(config)
         let library = fixture.library()
         let session = library.windowsInstallSession(for: config)
-        session.start()
-        try fixture.removeRegistration(config)
+        let acknowledgment = try XCTUnwrap(session.start())
+        do { try fixture.removeRegistration(config) } catch {
+            await acknowledgment.value
+            throw error
+        }
         library.reload()
         XCTAssertTrue(library.vms.isEmpty)
         // Preservation does not make an externally removed registration visible in the sidebar.
         XCTAssertTrue(library.windowsInstallSession(for: config) === session)
+        XCTAssertEqual(session.stage, .validating)
+        await acknowledgment.value
         await fixture.finishCancelled(session)
         library.reload()
         try fixture.save(config)
@@ -173,22 +145,24 @@ final class HvfWindowsInstallSessionStoreTests: XCTestCase {
         XCTAssertFalse(library.windowsInstallSession(for: config) === session)
     }
 
-    func testFailedSessionSurvivesUnchangedReloadAndCanRetry() throws {
+    func testFailedSessionSurvivesUnchangedReloadAndCanRetry() async throws {
         let fixture = Fixture()
         defer { fixture.clean() }
         let config = fixture.config()
         try fixture.save(config)
-        fixture.validationError = "synthetic validation failure"
+        fixture.validator.setError("synthetic validation failure")
         let library = fixture.library()
         let session = library.windowsInstallSession(for: config)
-        session.start()
+        let acknowledgment = try XCTUnwrap(session.start())
+        await acknowledgment.value
         XCTAssertEqual(session.stage, .failed("synthetic validation failure"))
         library.reload()
         let restored = HvfWindowsInstallView(config: config, library: library).session
         XCTAssertTrue(restored === session)
         XCTAssertEqual(restored.logLines, session.logLines)
-        fixture.validationError = nil
-        restored.start()
+        fixture.validator.setError(nil)
+        let retry = try XCTUnwrap(restored.start())
+        await retry.value
         XCTAssertTrue(restored.isRunning)
         XCTAssertEqual(fixture.jobs.count, 1)
     }

@@ -5,7 +5,7 @@ import Foundation
 /// A pending Windows HVF install described at VM-creation time and executed
 /// later from the VM detail panel. Persisted as metadata/hvf-install.json so
 /// an interrupted install can be retried after an app relaunch.
-struct HvfWindowsInstallRequest: Codable, Equatable {
+struct HvfWindowsInstallRequest: Codable, Equatable, Sendable {
     var isoPath: String
     var isoSHA256: String? = nil
     var diskGiB: Int
@@ -45,7 +45,7 @@ struct HvfWindowsInstallRequest: Codable, Equatable {
 
 // MARK: - Install plan (pure path/argument computation, unit-testable)
 
-struct HvfWindowsInstallPlan: Equatable {
+struct HvfWindowsInstallPlan: Equatable, Sendable {
     let repoRoot: URL
     let libraryRoot: URL
     let bundlePath: String
@@ -224,28 +224,6 @@ struct HvfWindowsInstallPlan: Equatable {
             return "앱에 서명·봉인된 Windows catalog verifier가 없습니다. 앱을 다시 설치하세요."
         }
         return nil
-    }
-}
-
-// MARK: - Install session (stage machine + Process orchestration)
-
-enum HvfWindowsInstallStage: Equatable {
-    case idle
-    case preparingSource
-    case installing
-    case finalizing
-    case done
-    case failed(String)
-
-    var label: String {
-        switch self {
-        case .idle: return "대기"
-        case .preparingSource: return "설치 소스 준비"
-        case .installing: return "Windows 무인 설치"
-        case .finalizing: return "VM에 반영"
-        case .done: return "완료"
-        case .failed: return "실패"
-        }
     }
 }
 

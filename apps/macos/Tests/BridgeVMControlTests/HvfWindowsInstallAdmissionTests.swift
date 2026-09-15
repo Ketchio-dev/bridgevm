@@ -3,67 +3,53 @@ import XCTest
 
 @MainActor
 final class HvfWindowsInstallAdmissionTests: XCTestCase {
-    private final class ScheduledWork {
-        var jobs: [@MainActor () async -> Void] = []
-        func enqueue(_ work: @escaping @MainActor () async -> Void) { jobs.append(work) }
-        func runNext() async { await jobs.removeFirst()() }
-    }
+    func testStartReservesBusyBeforeDispatchAndRefusesRepeatedAdmission() async throws {
+        let queue = HvfWindowsInstallPipelineQueue()
+        defer { queue.discard() }
+        let probe = HvfWindowsInstallValidationProbe()
+        let session = HvfWindowsInstallSession(plan: HvfWindowsInstallTestSupport.plan(),
+            validate: { probe.validate($0) }, schedule: queue.enqueue)
 
-    private func plan() -> HvfWindowsInstallPlan {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("install-admission-" + UUID().uuidString)
-        let request = HvfWindowsInstallRequest(isoPath: root.appendingPathComponent("absent.iso").path,
-            isoSHA256: String(repeating: "a", count: 64), diskGiB: 64, injectViogpu3d: false)
-        return HvfWindowsInstallPlan(repoRoot: root, libraryRoot: root.appendingPathComponent("library"),
-            bundlePath: root.appendingPathComponent("bundle").path, slug: "admission-" + UUID().uuidString,
-            request: request)
-    }
-
-    func testStartReservesBusyBeforeDispatchAndRefusesRepeatedAdmission() {
-        let queue = ScheduledWork()
-        defer { queue.jobs.removeAll() }
-        var validationCount = 0
-        let session = HvfWindowsInstallSession(plan: plan(), validate: { _ in
-            validationCount += 1
-            return nil
-        }, schedule: queue.enqueue)
-
-        session.start()
+        let acknowledgment = try XCTUnwrap(session.start())
         let started = session.startedAt
         XCTAssertTrue(session.isRunning)
-        session.start()
+        XCTAssertEqual(session.stage, .validating)
+        let duplicate = session.start()
+        XCTAssertNil(duplicate)
+        await acknowledgment.value
+        await duplicate?.value
 
-        XCTAssertEqual(validationCount, 1)
+        XCTAssertEqual(probe.snapshot.calls, 1)
         XCTAssertEqual(queue.jobs.count, 1)
         XCTAssertEqual(session.startedAt, started)
         // Scheduled closures are deliberately never run: no install pipeline.
     }
 
-    func testValidationRefusalSchedulesNothingAndAllowsRetry() {
-        let queue = ScheduledWork()
-        defer { queue.jobs.removeAll() }
-        var refusal: String? = "입력을 확인하세요."
-        var validationCount = 0
-        let session = HvfWindowsInstallSession(plan: plan(), validate: { _ in
-            validationCount += 1
-            return refusal
-        }, schedule: queue.enqueue)
+    func testValidationRefusalSchedulesNothingAndAllowsRetry() async throws {
+        let queue = HvfWindowsInstallPipelineQueue()
+        defer { queue.discard() }
+        let probe = HvfWindowsInstallValidationProbe(error: "입력을 확인하세요.")
+        let session = HvfWindowsInstallSession(plan: HvfWindowsInstallTestSupport.plan(),
+            validate: { probe.validate($0) }, schedule: queue.enqueue)
 
-        session.start()
+        let acknowledgment = try XCTUnwrap(session.start())
+        await acknowledgment.value
 
         XCTAssertEqual(session.stage, .failed("입력을 확인하세요."))
         XCTAssertFalse(session.isRunning)
-        XCTAssertNil(session.startedAt)
+        XCTAssertNotNil(session.startedAt)
         XCTAssertTrue(queue.jobs.isEmpty)
-        refusal = nil
-        session.start()
+        probe.setError(nil)
+        let retry = try XCTUnwrap(session.start())
+        await retry.value
         XCTAssertTrue(session.isRunning)
         XCTAssertNotNil(session.startedAt)
-        XCTAssertEqual(validationCount, 2)
+        XCTAssertEqual(probe.snapshot.calls, 2)
         XCTAssertEqual(queue.jobs.count, 1)
     }
 
     private func blockedPlan() throws -> HvfWindowsInstallPlan {
-        let plan = plan()
+        let plan = HvfWindowsInstallTestSupport.plan()
         try FileManager.default.createDirectory(at: plan.repoRoot, withIntermediateDirectories: false)
         addTeardownBlock { try? FileManager.default.removeItem(at: plan.repoRoot) }
         // If the cancellation guard regresses, the first pipeline operation
@@ -74,8 +60,8 @@ final class HvfWindowsInstallAdmissionTests: XCTestCase {
 
     func testCancellationBeforeDispatchExitsWithoutPipelineOrTemporaryCleanup() async throws {
         let plan = try blockedPlan()
-        let queue = ScheduledWork()
-        defer { queue.jobs.removeAll() }
+        let queue = HvfWindowsInstallPipelineQueue()
+        defer { queue.discard() }
         let target = URL(fileURLWithPath: plan.tmpTargetPath)
         let vars = URL(fileURLWithPath: plan.tmpVarsPath)
         for path in [target, vars] {
@@ -85,13 +71,16 @@ final class HvfWindowsInstallAdmissionTests: XCTestCase {
         let session = HvfWindowsInstallSession(plan: plan, validate: { _ in nil }, schedule: queue.enqueue)
         var completed = false
         session.onCompleted = { completed = true }
-        session.start()
+        let acknowledgment = try XCTUnwrap(session.start())
+        await acknowledgment.value
         session.cancel()
-        session.start()
+        let duplicate = session.start()
+        XCTAssertNil(duplicate)
         XCTAssertTrue(session.isRunning)
         XCTAssertEqual(queue.jobs.count, 1)
 
         await queue.runNext()
+        await duplicate?.value
 
         XCTAssertEqual(session.stage, .failed("설치가 취소되었습니다."))
         XCTAssertFalse(session.isRunning)
@@ -104,21 +93,23 @@ final class HvfWindowsInstallAdmissionTests: XCTestCase {
 
     func testCancelledAdmissionAllowsRetryOnlyAfterItsScheduledExit() async throws {
         let plan = try blockedPlan()
-        let queue = ScheduledWork()
-        defer { queue.jobs.removeAll() }
-        var validationCount = 0
-        let session = HvfWindowsInstallSession(plan: plan, validate: { _ in
-            validationCount += 1
-            return nil
-        }, schedule: queue.enqueue)
-        session.start()
+        let queue = HvfWindowsInstallPipelineQueue()
+        defer { queue.discard() }
+        let probe = HvfWindowsInstallValidationProbe()
+        let session = HvfWindowsInstallSession(plan: plan,
+            validate: { probe.validate($0) }, schedule: queue.enqueue)
+        let acknowledgment = try XCTUnwrap(session.start())
+        await acknowledgment.value
         session.cancel()
-        session.start()
-        XCTAssertEqual(validationCount, 1)
+        let duplicate = session.start()
+        XCTAssertNil(duplicate)
+        XCTAssertEqual(probe.snapshot.calls, 1)
         await queue.runNext()
-        session.start()
+        await duplicate?.value
+        let retry = try XCTUnwrap(session.start())
+        await retry.value
         XCTAssertTrue(session.isRunning)
-        XCTAssertEqual(validationCount, 2)
+        XCTAssertEqual(probe.snapshot.calls, 2)
         XCTAssertEqual(queue.jobs.count, 1)
         session.cancel()
         await queue.runNext()

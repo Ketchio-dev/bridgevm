@@ -15,12 +15,12 @@ final class HvfWindowsInstallSession: ObservableObject {
     private var logTimer: Timer?
     private var evidenceTail = TailOffsetReader()
     private var cancelled = false
-    private let validate: (HvfWindowsInstallPlan) -> String?
+    private let validate: HvfWindowsInstallValidationWorker.Validator
     private let schedule: (@escaping @MainActor () async -> Void) -> Void
 
     init(
         plan: HvfWindowsInstallPlan,
-        validate: @escaping (HvfWindowsInstallPlan) -> String? = { $0.validationError() },
+        validate: @escaping HvfWindowsInstallValidationWorker.Validator = { $0.validationError() },
         schedule: @escaping (@escaping @MainActor () async -> Void) -> Void = { work in Task { await work() } }
     ) {
         self.plan = plan
@@ -28,25 +28,32 @@ final class HvfWindowsInstallSession: ObservableObject {
         self.schedule = schedule
     }
 
-    var isRunning: Bool {
-        switch stage {
-        case .preparingSource, .installing, .finalizing: return true
-        default: return false
-        }
-    }
+    var isRunning: Bool { stage.isRunning }
 
-    func start() {
-        guard !isRunning else { return }
-        if let error = validate(plan) {
-            stage = .failed(error)
-            return
-        }
+    /// Acknowledges validation and pipeline scheduling, not installation completion.
+    /// Use cancel(); cancelling this task handle does not cancel the install.
+    @discardableResult
+    func start() -> Task<Void, Never>? {
+        guard !isRunning else { return nil }
         cancelled = false
-        stage = .preparingSource
+        stage = .validating
         startedAt = Date()
         logLines = []
         evidenceTail = TailOffsetReader()
-        schedule { await self.run() }
+        return Task {
+            guard !cancelled else {
+                stage = .failed("설치가 취소되었습니다.")
+                return
+            }
+            let error = await HvfWindowsInstallValidationWorker.validate(plan, using: validate)
+            guard !cancelled else {
+                stage = .failed("설치가 취소되었습니다.")
+                return
+            }
+            if let error { stage = .failed(error); return }
+            stage = .preparingSource
+            schedule { await self.run() }
+        }
     }
 
     func cancel() {
@@ -203,14 +210,6 @@ final class HvfWindowsInstallSession: ObservableObject {
     private func stopProgressTimer() {
         logTimer?.invalidate()
         logTimer = nil
-    }
-
-    /// Keep only load-bearing boot lines out of the very chatty run.log.
-    nonisolated static func isProgressLine(_ line: String) -> Bool {
-        line.contains("BOOT_TIMER ramfb source=") && line.contains("state=captured")
-            || line.hasPrefix("BVAGENT ")
-            || line.contains("NVMe disk written back")
-            || line.contains("stop: PSCI")
     }
 
     private func appendLog(_ line: String) {

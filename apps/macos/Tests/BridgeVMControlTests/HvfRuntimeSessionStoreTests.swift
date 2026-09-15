@@ -262,7 +262,7 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
         XCTAssertTrue(library.selectedDetail?.model === model)
     }
 
-    func testActiveInstallStillOwnsActualDetailAfterReadyMetadataAppears() throws {
+    func testActiveInstallStillOwnsActualDetailAfterReadyMetadataAppears() async throws {
         let fixture = Fixture()
         defer { fixture.clean() }
         var config = fixture.config()
@@ -271,7 +271,7 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
         let library = fixture.library()
         let body = LibraryDetailView(library: library).body
         let install = try XCTUnwrap(values(HvfWindowsInstallView.self, in: body).first).session
-        install.start() // Injected scheduler retains the work without executing it.
+        await install.start()?.value // Injected scheduler retains the work without executing it.
         config.installPending = false
         fixture.save(config)
         library.reload()

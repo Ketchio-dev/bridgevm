@@ -37,7 +37,7 @@ struct HvfWindowsInstallView: View {
             row("3D 드라이버", session.plan.request.injectViogpu3d
                 ? "차단됨 — 서명 provenance 검증기 없음" : "주입 안 함")
             if session.plan.sourceImageCacheCandidateExists {
-                row("설치 소스", "캐시 재사용")
+                row("설치 소스", "저장된 소스 있음 · 시작 시 확인")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -79,7 +79,7 @@ struct HvfWindowsInstallView: View {
 
     private var controlRow: some View {
         HStack {
-            Button(session.isRunning ? "설치 진행 중…" : "설치 시작") { session.start() }
+            Button(session.isRunning ? "설치 진행 중…" : "설치 시작") { _ = session.start() }
                 .disabled(session.isRunning || session.stage == .done).accessibilityIdentifier("bridgevm.install.start")
             if session.isRunning {
                 Button("취소") { session.cancel() }
