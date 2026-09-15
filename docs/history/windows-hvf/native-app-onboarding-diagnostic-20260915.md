@@ -574,3 +574,53 @@ from_ref helper preserves the same assertion and135-line budget; pinned format
 and clippy checks and all7resolver tests then passed. Both failed full logs are
 retained. The subsequent complete check is a new observation, not a rewrite of
 either failure.
+
+
+## Owned runtime and installed-name checkpoint (2026-09-15)
+
+The final native CLI full check passed at sourcef522c7a7 in164.60seconds and was
+sealed as8575ddf6. Log SHA
+`816c3a517e799328005414993ce033bb740a10306d2afbdc0d2eb6283ecadcae`.
+Both prior lint/format failures remain failed records. Initial exact8575 hosted
+snapshot:85executions/45definitions,62success and23pending; this is not all-green.
+The preceding09d2846d later snapshot finished85of85executions successfully,
+with120successful checks and1advisory skipped. Those results do not validate a
+newer source. The preceding3a unchanged Coherence retry passed while its original
+10second timeout and unexplained cause remain recorded.
+
+Source453f218e adds typed runtime launch admission and owned-only stop results,
+retains the actual Process until exit is observed, records its actual termination
+reason/status, and prevents repeated stop requests extending the180second deadline.
+Default GUI attachment remains. Key-delivery failure keeps the process busy until
+observed exit. An opaque token identifies only the session's retained child; it
+is not authentication, a cross-process media lease or a guest-shutdown receipt.
+No new CLI start/stop command is exposed; cross-process preparation races remain.
+Independent review passed, followed by122Apple XCTest tests in disjoint89/33
+selections. The eight new cases use harmless real children for exit17, SIGTERM,
+closed key-pipe failure, duplicate stop and owner-refusal observations. No real
+vTPM or guest state was opened. Existing engine/key and native query tests passed.
+
+Sourceb00c0e59 corrects native CLI discovery for the installer's BridgeVM.app name
+while preserving BridgeVMControl.app and the canonical co-packaged preference.
+The first existing incompatible copy is still refused. All149CLI tests passed
+in1.74seconds; pinned clippy passed6.47seconds. No helper override was added.
+
+Normal-App pilot app-ui-host-20260915-04 at8575ddf6 failed the unchanged five-second
+startup wait. Policy was regular before/after the existing setter, which returned
+false. Initialization/factory/body/delegate and default launch were observed;
+root/attachment remained absent and terminal own-window count was0. Actions0of7,
+captures0of8; all four domain-work counters0. Exact process identity, observed exit,
+fixture and independent worker cleanup passed; no TERM/KILL was required. These
+facts do not prove the window-creation cause or validate any rendered layout.
+
+The proposed explicit scene-presentation experiment was invalid: SceneBuilder
+rejected the availability if/else in2.62seconds, log SHA
+`5c948ed6d59b98e83fd867ce4567831767eea379d81503973ed863f20591d637`.
+A separately authorized private two-clause availability typecheck also failed
+in2.18seconds, log SHA
+`d4da08556d73642785307797d4a94dd5dc290ab77217473e2db33d9659e22634`.
+Both failed sources/logs are retained privately. The uncommitted scene helper was
+removed and the app source restored exactly; deployment support and all startup
+criteria remain unchanged. No new native pilot was submitted for invalid code.
+The new full/release checks and exact pushed-SHA hosted observations follow this
+checkpoint. ENGINEERING_PREVIEW, all criteria and thresholds remain unchanged.
