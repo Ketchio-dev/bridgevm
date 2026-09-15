@@ -4,12 +4,7 @@ import Foundation
 @MainActor
 final class HvfWindowsInstallSessionStore {
     typealias Factory = @MainActor (HvfWindowsInstallPlan) -> HvfWindowsInstallSession
-    private struct Entry {
-        let sourceConfig: VMConfig
-        let request: HvfWindowsInstallRequest
-        let session: HvfWindowsInstallSession
-    }
-    private var entries: [String: Entry] = [:]
+    private var entries: [String: HvfWindowsInstallSessionRecord] = [:]
     private let makeSession: Factory
 
     init(makeSession: @escaping Factory) { self.makeSession = makeSession }
@@ -28,13 +23,17 @@ final class HvfWindowsInstallSessionStore {
         let plan = HvfWindowsInstallPlan(repoRoot: repoRoot, libraryRoot: libraryRoot,
             bundlePath: config.bundlePath, slug: config.slug, request: request)
         let session = makeSession(plan)
-        entries[config.slug] = Entry(sourceConfig: config, request: request, session: session)
+        entries[config.slug] = HvfWindowsInstallSessionRecord(sourceConfig: config, request: request, session: session)
         return session
     }
 
     func owns(_ session: HvfWindowsInstallSession, for config: VMConfig) -> Bool {
         guard let entry = entries[config.slug] else { return false }
         return entry.session === session && entry.sourceConfig == config
+    }
+
+    func retainedControls(excludingSlugs: Set<String>) -> [LibraryRetainedControlDescriptor] {
+        entries.values.compactMap { $0.retainedControl(excludingSlugs: excludingSlugs) }
     }
 
     func reconcile(with configs: [VMConfig]) {

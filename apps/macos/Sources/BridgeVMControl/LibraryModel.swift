@@ -28,6 +28,7 @@ final class LibraryModel: ObservableObject {
     private let actionScheduler: LibraryActionScheduler
     let windowsInstallSessions: HvfWindowsInstallSessionStore
     let hvfRuntimeSessions: HvfRuntimeSessionStore
+    let retainedControlStore = LibraryRetainedControlStore()
     func runningModels() -> [ControlModel] { vms.compactMap { modelCache[$0.slug] }.filter { $0.running } }
     var rootURL: URL { libraryRoot }
     func hasAcceptedControlOperation(for slug: String) -> Bool { modelCache[slug]?.hasAcceptedOperation == true }
@@ -61,13 +62,14 @@ final class LibraryModel: ObservableObject {
             VMLibrary.migrateLegacyIfNeeded(rootURL: rootURL, legacy: VMConfig.loadLegacy())
         }
         reload()
-        if selectedID == nil { selectedID = vms.first?.slug }
+        configureLibraryNavigation()
     }
 
     func reload() {
         let scan = VMLibrary.scan(rootURL: libraryRoot)
         vms = scan.configs
         libraryIssues = scan.issues
+        captureRetainedControls()
         windowsInstallSessions.reconcile(with: vms)
         hvfRuntimeSessions.reconcile(with: vms)
         let configsBySlug = Dictionary(vms.map { ($0.slug, $0) }, uniquingKeysWith: { first, _ in first })
@@ -78,9 +80,7 @@ final class LibraryModel: ObservableObject {
             // or operation. Replacing it now could make that VM impossible to stop.
             return model.running || model.lifecycleBusy || model.busy
         }
-        if let sel = selectedID, ![Self.hvfEngineSelectionID, Self.firstRunImportSelectionID].contains(sel), configsBySlug[sel] == nil {
-            selectedID = vms.first?.slug
-        }
+        reconcileLibrarySelection(configsBySlug: configsBySlug)
     }
 
     func model(for cfg: VMConfig) -> ControlModel {

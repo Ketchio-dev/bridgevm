@@ -6,6 +6,8 @@ struct LibraryDetailView: View {
     var body: some View {
         if library.selectedID == LibraryModel.firstRunImportSelectionID {
             FirstRunView(library: library)
+        } else if let record = library.selectedRetainedControl {
+            RetainedControlDetailView(library: library, record: record)
         } else if library.proMode {
             FleetTableView(library: library)
         } else if library.selectedID == LibraryModel.hvfEngineSelectionID {
@@ -24,17 +26,8 @@ struct LibraryDetailView: View {
         } else if library.vms.isEmpty {
             FirstRunView(library: library)
         } else {
-            emptyState
+            LibraryEmptyState(library: library)
         }
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "desktopcomputer").font(.system(size: 48)).foregroundColor(.secondary)
-            Text("VM을 선택하거나 새로 만드세요").foregroundColor(.secondary)
-            Button { library.showingCreate = true } label: { Label("새 VM", systemImage: "plus") }
-                .accessibilityIdentifier("bridgevm.library.empty.create")
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
 }

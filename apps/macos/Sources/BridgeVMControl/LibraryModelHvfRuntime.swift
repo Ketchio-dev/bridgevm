@@ -4,11 +4,7 @@ import Foundation
 final class HvfRuntimeSessionStore {
     typealias Factory = @MainActor (HvfEngineConfig) -> HvfEngineSession
     private enum Key: Hashable { case experimental, libraryVM(String) }
-    private struct Entry {
-        let sourceConfig: VMConfig?
-        let session: HvfEngineSession
-    }
-    private var entries: [Key: Entry] = [:]
+    private var entries: [Key: HvfRuntimeSessionRecord] = [:]
     private let makeSession: Factory
 
     init(makeSession: @escaping Factory) { self.makeSession = makeSession }
@@ -21,7 +17,7 @@ final class HvfRuntimeSessionStore {
     func experimentalSession() -> HvfEngineSession {
         if let entry = entries[.experimental] { return entry.session }
         let session = makeSession(HvfEngineView.defaultConfig())
-        entries[.experimental] = Entry(sourceConfig: nil, session: session)
+        entries[.experimental] = HvfRuntimeSessionRecord(sourceConfig: nil, session: session)
         return session
     }
 
@@ -32,13 +28,17 @@ final class HvfRuntimeSessionStore {
         // Compare the saved input, not the session's accepted launch options.
         if let entry = entries[key], entry.sourceConfig == config { return entry.session }
         let session = makeSession(launch)
-        entries[key] = Entry(sourceConfig: config, session: session)
+        entries[key] = HvfRuntimeSessionRecord(sourceConfig: config, session: session)
         return session
     }
 
     func owns(_ session: HvfEngineSession, for config: VMConfig) -> Bool {
         guard let entry = entries[.libraryVM(config.slug)] else { return false }
         return entry.session === session && entry.sourceConfig == config
+    }
+
+    func retainedControls(excludingSlugs: Set<String>) -> [LibraryRetainedControlDescriptor] {
+        entries.values.compactMap { $0.retainedControl(excludingSlugs: excludingSlugs) }
     }
 
     func reconcile(with configs: [VMConfig]) {
