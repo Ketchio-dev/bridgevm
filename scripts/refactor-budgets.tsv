@@ -2333,5 +2333,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBackend.swift	311	0
 apps/macos/Tests/BridgeVMControlTests/HvfProductBackendConfigurationTests.swift	144	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallValidationWorker.swift	9	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallProgress.swift	40	0
-apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallTestSupport.swift	125	0
-apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallValidationWorkerTests.swift	137	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallTestSupport.swift	82	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallValidationWorkerTests.swift	111	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStoreFixture.swift	51	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallValidationAcknowledgmentTests.swift	34	0
