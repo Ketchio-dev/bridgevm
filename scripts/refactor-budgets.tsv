@@ -1333,7 +1333,7 @@ scripts/check-hvf-windows-p3-gpu-readiness.sh	335	0
 scripts/check-hvf-windows-viogpu3d-package.sh	1464	0
 scripts/check-install-bootstrap.sh	21	0
 scripts/check-loom.sh	30	0
-scripts/check-project.sh	101	0
+scripts/check-project.sh	91	0
 scripts/check-refactor-budgets.sh	72	1
 scripts/check-release-overrides.sh	74	0
 scripts/check-shell-scripts.sh	61	0
@@ -2496,3 +2496,5 @@ crates/bridgevm-cli/tests/cli_app.rs	172	0
 crates/bridgevm-cli/src/doctor_summary.rs	74	0
 crates/bridgevm-cli/src/doctor_summary_tests.rs	50	0
 crates/bridgevm-cli/tests/cli_doctor.rs	132	0
+tests/integration/native-app-cli-contract.py	101	0
+scripts/check-project-macos.sh	14	0
