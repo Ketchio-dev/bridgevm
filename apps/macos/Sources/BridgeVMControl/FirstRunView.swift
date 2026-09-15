@@ -1,12 +1,6 @@
 import SwiftUI
-#if canImport(AppKit)
-import AppKit
-#endif
-
-/// D2 first-run import wizard: shown when the library has no VMs. Lets the user
-/// register an existing installed Windows HVF bundle (disk + 64 MiB UEFI vars +
-/// optional vTPM state dir) and select it. Import-only — ISO install and
-/// from-scratch creation stay in their own flows.
+/// First launch offers existing creation/import flows; accepted imports keep
+/// their progress and recovery controls visible across navigation.
 struct FirstRunView: View {
     @ObservedObject var library: LibraryModel
 
@@ -17,53 +11,39 @@ struct FirstRunView: View {
     @State private var memGiB = 6
     @State private var cpuCount = 4
 
+    private var showsImport: Bool {
+        library.selectedID == LibraryModel.firstRunImportSelectionID
+            || library.firstRunImportBusy || library.firstRunImportError != nil
+            || library.firstRunImport.publishedConfig != nil
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("BridgeVM에 오신 것을 환영합니다")
-                .font(.largeTitle).bold()
-            Text("기존 Windows VM을 가져오세요. 가져온 뒤 VM 화면의 ‘시작’을 누르세요.")
-                .foregroundStyle(.secondary)
-
-            if !library.firstRunImportBusy && library.firstRunImport.publishedConfig == nil {
-                Form {
-                    TextField("이름", text: $displayName)
-                    pathRow("디스크 이미지 (.raw)", $diskPath, chooseDirectory: false)
-                    pathRow("UEFI vars 파일 (64 MiB)", $varsPath, chooseDirectory: false)
-                    pathRow("vTPM 상태 폴더 (선택)", $vtpmPath, chooseDirectory: true)
-                    Stepper("RAM: \(memGiB) GiB", value: $memGiB, in: 2...64)
-                    Stepper("CPU: \(cpuCount)", value: $cpuCount, in: 1...16)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                if showsImport {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("기존 Windows VM 가져오기").font(.system(size: 28, weight: .bold))
+                        Text("파일을 선택해 등록한 뒤 VM 상세 화면에서 시작하세요.").foregroundStyle(.secondary)
+                    }
+                    if !library.firstRunImportBusy && library.firstRunImport.publishedConfig == nil {
+                        FirstRunImportFields(displayName: $displayName, diskPath: $diskPath, varsPath: $varsPath,
+                            vtpmPath: $vtpmPath, memGiB: $memGiB, cpuCount: $cpuCount)
+                    }
+                    FirstRunImportStatusView(library: library,
+                        canImport: !diskPath.isEmpty && !varsPath.isEmpty, importAction: runImport)
+                } else {
+                    FirstRunWelcomeView(createAction: { library.showingCreate = true }, importAction: {
+                        library.proMode = false
+                        library.selectedID = LibraryModel.firstRunImportSelectionID
+                    })
                 }
-                .frame(maxWidth: 620)
             }
-
-            FirstRunImportStatusView(library: library,
-                canImport: !diskPath.isEmpty && !varsPath.isEmpty, importAction: runImport)
-            Spacer()
+            .padding(28)
+            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
-        .padding(32)
-        .frame(minWidth: 700, minHeight: 520)
-    }
-
-    @ViewBuilder
-    private func pathRow(_ label: String, _ binding: Binding<String>, chooseDirectory: Bool)
-        -> some View
-    {
-        HStack {
-            TextField(label, text: binding)
-            Button("선택…") { pick(binding, chooseDirectory: chooseDirectory) }
-        }
-    }
-
-    private func pick(_ binding: Binding<String>, chooseDirectory: Bool) {
-        #if canImport(AppKit)
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = !chooseDirectory
-        panel.canChooseDirectories = chooseDirectory
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            binding.wrappedValue = url.path
-        }
-        #endif
+        .background(LibraryAppearance.canvas)
+        .navigationTitle(showsImport ? "VM 가져오기" : "시작하기")
     }
 
     private func runImport() {
