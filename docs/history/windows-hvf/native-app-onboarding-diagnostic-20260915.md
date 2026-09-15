@@ -404,3 +404,60 @@ The rebuilt final source/manifest identity passed in0.59seconds, log SHA
 `31e3c94b4d5252e8d9ebfcfa6c2e221c2d5520566a682123850c4e4f0f2e72d4`.
 A complete corrected project check, new release boundary, source seal and hosted
 checks are still required. No prior failure or open criterion is erased.
+
+### First normal-App pilot and bounded lifecycle evidence — 2026-09-15 17:42 UTC
+
+The corrected full checkpoint-two project check passed in161.04seconds at
+source `d1c94b5d970ae383e2fa95a6f2d9da2d88c01d04`, sealed as
+`1541311a8529c450ac47d830e128f9bfe6edfd13`; the stable exact-tree log SHA is
+`14c28a3d6b0a6c1b355655e8d1ac60ecfd53722685aa04a4bcb8197e7fcc1a31`.
+The initial131.62second full-check failure remains recorded above. The saved
+hosted snapshot contains125 distinct executions across45 workflow definitions:
+97successful,28pending and zero failures. Forty definitions have two push runs
+and one PR run; five have PR runs only. The snapshot does not explain the second
+push cohort or prove all-green CI. Pending [CI35000913392](https://github.com/Ketchio-dev/bridgevm/actions/runs/35000913392)
+and [Security35000913603](https://github.com/Ketchio-dev/bridgevm/actions/runs/35000913603)
+remain unverified in that bounded observation.
+
+The installed worker was updated from97589c0f to1541311a while its clean checkout
+and queue were idle under the existing worker lock. The first checkout attempt
+refused because that commit was absent from the separate clone; fetching the
+exact published revision repaired availability without changing the LaunchAgent.
+Normal-App pilot `app-ui-host-20260915-01` ran17:26:22–17:26:37UTC and failed the
+unchanged five-second app-launch/window rendezvous. It completed zero of seven
+actions and zero of eight captures; all four domain-work tripwires remained zero.
+The exact owned app identity and observed exit were verified by the launcher;
+fixture and independent worker cleanup also passed. Those cleanup observations
+do not make the UI result successful. The failed UI-report SHA is
+`5347a6439001fd4c8c6044d133fdb410f80c4bf51cb56e846fdcfccaa0f7276a`.
+Original measured running paths remain unchanged in archived receipts.
+
+The generic startup failure did not distinguish the delegate notification,
+representable attachment, visibility or content prerequisites. A bounded read
+of only that app PID's launch-time framework logs showed window-order activity
+but did not establish any missing coordinator flag. No permission denial or
+zero-size-view omission is inferred. The previous app already used the same
+App.main/delegate lifecycle, so a new custom-main regression is not established.
+
+Source `94ae0a7123c84953456a6764d06b5224e472f22a` adds a permanent private diagnostic-host
+lifecycle receipt: seven fixed capped counters, monotonic first-event times and
+six current/first-true coordinator flags. It makes at most16 bounded atomic
+writes and collects no titles, view content, environment or other applications.
+Admission methods were extracted byte-identically except internal access for
+the companion file. StateObject factory evaluation remains lazy. Independent
+review confirms unchanged callbacks, window attachment and +5second/50ms monitor
+bounds; scenario, accessibility and capture files are unchanged. A terminal
+coordinator snapshot marks finish begun, while actual cleanup and process exit
+remain separate authoritative receipts.
+
+The exact seven host contracts passed under Apple XCTest in19.326seconds, log
+SHA `af42a0b5869367d7de1cd3493d6ac76404163d51babc1c2b45c5939f68f6235c`.
+An initial boundary-helper invocation refused its missing required arguments
+before compilation (0.19seconds, log SHA
+`155addde0d45939da48998c9cafcf591d93eb3dc76f11e7ff1fb6f37d20276da`).
+The corrected compile-only ordinary/release boundary passed in20.57seconds.
+No app launched in these deterministic checks. Private source/binary records
+are retained under `hvf-app-autonomy-20260915` and
+`hvf-app-ui-diagnostic-20260915/normal-app-host`. Current full-project/hosted
+validation and the next sealed pilot follow this source conclusion. All earlier
+failures, ENGINEERING_PREVIEW and every criterion/threshold remain unchanged.
