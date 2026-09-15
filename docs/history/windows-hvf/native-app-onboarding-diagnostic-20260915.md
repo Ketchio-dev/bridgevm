@@ -943,3 +943,34 @@ Coherence35029792045 failed its unchanged10000ms native_failure deadline; exactl
 one unchanged retry requested22:46:24UTC is pending. Original failure logs remain
 retained and cause is unproven. Current full-project, exact-source hosted checks and
 sealed pilot12 are pending. All29criteria, thresholds and product wording remain.
+
+
+## Independent presentation observations with retained failure (2026-09-15)
+
+Packet38's full project check passed164.42seconds, sealed106addcf. The22:59UTC
+snapshot records its40of40push workflows and mergedmain36ff324d45of45workflows
+successful. Coherence35029792045 passed its single unchanged retry attempt2;
+the original10000ms timeout remains preserved and cause is unknown.
+
+Pilot app-ui-host-20260915-12 remained FAIL: actions0of7/captures1of8, zero domain
+work and verified sealed identity, exit and cleanup. Its published window/content
+minimum height772 exceeds requested720; recorded frame/content conversions retain
+dimensions. This establishes an incompatible requested minimum, not the layer that
+sets it. Neither product layout nor the diagnostic minimum criterion is changed.
+
+Source 3ddf1191cf1a172f2dd81142307e1670209b9256 observes the same four variants once in their
+original order. Only the dedicated presentation mismatch can continue, after task/
+marker cancellation and exact visible owned-content readmission. Failure is latched
+and explicitly saved before continuation, failed captures are skipped, and an atomic
+private matrix preserves at most four rows. Matrix/report persistence, capture,
+ownership and other errors abort. Existing first-failure sidecar behavior remains
+best-effort and no-overwrite. The fresh light/default guard and entire seven-action
+suffix are byte-identical; success still requires all7actions/8captures without failure.
+
+Exact seven Apple XCTest host contracts passed21.28seconds, log SHA
+`95520ca4abd9b14817f02e4b985a52689998bd329a604edd26763f87ecba907d`.
+Release boundary passed23.73seconds; both receipts contain474stableSwift/package
+inputs. Independent control-flow/inverse-diff review passed. Pure callback contracts
+prove neither rendered UI nor a repaired minimum. Current full-project, exact-source
+hosted checks and sealed pilot13 remain pending. All29criteria, product wording and
+thresholds are unchanged; earlier failures remain recorded.
