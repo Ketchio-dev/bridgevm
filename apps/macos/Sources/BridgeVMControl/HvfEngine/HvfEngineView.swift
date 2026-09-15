@@ -4,7 +4,7 @@ import AppKit
 import UniformTypeIdentifiers
 #endif
 struct HvfEngineView: View {
-    @StateObject private var session: HvfEngineSession
+    @ObservedObject private(set) var session: HvfEngineSession
     @State private var targetDiskPath = ""
     @State private var uefiVarsPath = ""
     @State private var evidenceDir = ""
@@ -29,8 +29,8 @@ struct HvfEngineView: View {
     @State private var vtpmLifecycleError: String?
     @State private var confirmVTPMRestore = false
     @State private var confirmVTPMReset = false
-    init(config: HvfEngineConfig = HvfEngineView.defaultConfig()) {
-        _session = StateObject(wrappedValue: HvfEngineSession(config: config))
+    init(session: HvfEngineSession) {
+        _session = ObservedObject(wrappedValue: session)
     }
     var body: some View {
         ScrollView {
@@ -50,7 +50,7 @@ struct HvfEngineView: View {
         .accessibilityIdentifier("bridgevm.windows.runtime.view")
         .onAppear {
             loadStateFromSession()
-            session.attachToRunningVM()
+            session.attachIfStopped()
         }
         .confirmationDialog(
             "이 상태에 복구 키를 연결하시겠습니까?",
@@ -253,7 +253,7 @@ struct HvfEngineView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Button(action: start) { Label("시작", systemImage: "play.fill") }
-                        .disabled(!bootConfigReady)
+                        .disabled(session.connectionState != .stopped || !bootConfigReady)
                         .accessibilityIdentifier("bridgevm.windows.runtime.start")
                     Button(action: session.stop) { Label("중지", systemImage: "stop.fill") }
                         .accessibilityIdentifier("bridgevm.windows.runtime.stop")
@@ -403,7 +403,7 @@ struct HvfEngineView: View {
     }
 
     private func start() {
-        session.config = currentConfig()
+        guard session.acceptStartConfiguration(currentConfig()) else { return }
         session.start()
         #if canImport(AppKit)
         HvfDisplayWindowController.present(session: session, title: displayWindowTitle)

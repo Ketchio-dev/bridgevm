@@ -59,6 +59,19 @@ final class HvfEngineSession: ObservableObject {
         try? liveInputHandle?.close()
     }
 
+    @discardableResult
+    func acceptStartConfiguration(_ config: HvfEngineConfig) -> Bool {
+        guard connectionState == .stopped else { return false }
+        self.config = config
+        return true
+    }
+
+    @discardableResult
+    func attachIfStopped() -> Bool {
+        guard connectionState == .stopped else { return false }
+        return attachToRunningVM()
+    }
+
     func start() {
         guard process?.isRunning != true else {
             append(.unknown("launch ignored: HVF engine is already running"))

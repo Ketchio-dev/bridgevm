@@ -25,6 +25,7 @@ final class LibraryModel: ObservableObject {
     let e2eUnattendedPath: String?
     private let modelFactory: @MainActor (VMConfig) -> ControlModel
     let windowsInstallSessions: HvfWindowsInstallSessionStore
+    let hvfRuntimeSessions: HvfRuntimeSessionStore
     func runningModels() -> [ControlModel] { vms.compactMap { modelCache[$0.slug] }.filter { $0.running } }
     var rootURL: URL { libraryRoot }
 
@@ -37,12 +38,14 @@ final class LibraryModel: ObservableObject {
         e2eUnattendedPath: String? = nil,
         migrateLegacy: Bool = true,
         installSessionFactory: @escaping HvfWindowsInstallSessionStore.Factory = { HvfWindowsInstallSession(plan: $0) },
+        runtimeSessionFactory: @escaping HvfRuntimeSessionStore.Factory = { HvfEngineSession(config: $0) },
         modelFactory: @escaping @MainActor (VMConfig) -> ControlModel = { ControlModel(config: $0) }
     ) {
         libraryRoot = rootURL
         self.e2eUnattendedPath = e2eUnattendedPath
         self.modelFactory = modelFactory
         windowsInstallSessions = HvfWindowsInstallSessionStore(makeSession: installSessionFactory)
+        hvfRuntimeSessions = HvfRuntimeSessionStore(makeSession: runtimeSessionFactory)
         if migrateLegacy {
             VMLibrary.migrateLegacyIfNeeded(rootURL: rootURL, legacy: VMConfig.loadLegacy())
         }
@@ -55,6 +58,7 @@ final class LibraryModel: ObservableObject {
         vms = scan.configs
         libraryIssues = scan.issues
         windowsInstallSessions.reconcile(with: vms)
+        hvfRuntimeSessions.reconcile(with: vms)
         let configsBySlug = Dictionary(vms.map { ($0.slug, $0) }, uniquingKeysWith: { first, _ in first })
         modelCache = modelCache.filter { slug, model in
             guard let current = configsBySlug[slug] else { return false }
@@ -73,11 +77,6 @@ final class LibraryModel: ObservableObject {
         let m = modelFactory(cfg)
         modelCache[cfg.slug] = m
         return m
-    }
-
-    var selectedModel: ControlModel? {
-        guard let id = selectedID, let cfg = vms.first(where: { $0.slug == id }) else { return nil }
-        return model(for: cfg)
     }
 
     func requestDeletion(_ cfg: VMConfig) {

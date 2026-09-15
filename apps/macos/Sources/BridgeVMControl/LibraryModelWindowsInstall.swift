@@ -43,11 +43,6 @@ final class HvfWindowsInstallSessionStore {
 }
 
 extension LibraryModel {
-    func shouldShowWindowsInstall(for config: VMConfig) -> Bool {
-        windowsInstallSessions.isActive(slug: config.slug)
-            || (config.engineKind == .hvfEngine && config.installPending == true)
-    }
-
     func windowsInstallSession(for config: VMConfig) -> HvfWindowsInstallSession {
         let session = windowsInstallSessions.session(for: config, libraryRoot: rootURL,
             repoRoot: HvfEngineSession.defaultRepoRoot())

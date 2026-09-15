@@ -9,17 +9,17 @@ struct LibraryDetailView: View {
         } else if library.proMode {
             FleetTableView(library: library)
         } else if library.selectedID == LibraryModel.hvfEngineSelectionID {
-            HvfEngineView()
-        } else if let model = library.selectedModel {
-            if library.shouldShowWindowsInstall(for: model.config) {
-                HvfWindowsInstallView(config: model.config, library: library)
-                    .id(model.config.slug)
-            } else if let hvfConfig = HvfEngineConfig.libraryVM(model.config) {
-                HvfEngineView(config: hvfConfig)
-                    .id(model.config.slug)
+            HvfEngineView(session: library.experimentalHvfRuntimeSession())
+        } else if let detail = library.selectedDetail {
+            if library.shouldShowWindowsInstall(for: detail.config) {
+                HvfWindowsInstallView(config: detail.config, library: library)
+                    .id(detail.config.slug)
+            } else if let session = library.hvfRuntimeSession(for: detail.config) {
+                HvfEngineView(session: session)
+                    .id(ObjectIdentifier(session))
             } else {
-                VMDetailPanel(model: model, library: library)
-                    .id(model.config.slug)
+                VMDetailPanel(model: detail.model, library: library)
+                    .id(detail.config.slug)
             }
         } else if library.vms.isEmpty {
             FirstRunView(library: library)
