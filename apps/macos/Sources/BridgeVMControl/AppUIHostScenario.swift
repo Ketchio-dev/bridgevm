@@ -5,12 +5,7 @@ import AppKit
 enum AppUIHostScenario {
     static func run(_ host: AppUIHost, window: NSWindow, content: NSView) async throws {
         let capture = host.capture
-        for dark in [false, true] {
-            for minimum in [false, true] {
-                try await AppUIHostWindow.setPresentation(window, dark: dark, minimum: minimum)
-                try capture.capture(content, name: "welcome-\(dark ? "dark" : "light")-\(minimum ? "minimum" : "default")")
-            }
-        }
+        try await AppUIHostWelcomeMatrix.run(host, window: window, content: content)
         try await AppUIHostWindow.setPresentation(window, dark: false, minimum: false)
         try await AppUIHostAccessibility.wait("welcome controls") {
             try AppUIHostAccessibility.find("bridgevm.first-run.create", in: content) != nil

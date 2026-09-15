@@ -78,16 +78,13 @@ final class AppUIHostContractTests: XCTestCase {
         XCTAssertEqual(report["tripwires"] as? [String: Int], ["model_creations": 0, "runtime_creations": 0,
             "install_creations": 0, "file_jobs": 0])
     }
-    func testIncompleteObservationCannotBecomeSuccessfulCompletion() throws {
-        let fixture = try fixture()
-        let capture = try AppUIHostCapture(output: fixture.output)
-        try capture.writeCompletion(cleanupVerified: true)
-        let completion = try object(fixture.output, "host-completion.json")
-        XCTAssertEqual(completion["success"] as? Bool, false)
-        XCTAssertNotNil(completion["failure"] as? String)
-        XCTAssertEqual(completion["report_sha256"] as? String,
-                       try AppUIHostCapture.digest(fixture.output.appendingPathComponent("ui-observations.json")))
-        XCTAssertThrowsError(try capture.writeCompletion(cleanupVerified: true))
+    func testIncompleteObservationCannotBecomeSuccessfulCompletion() async throws {
+        try assertIncompleteObservationCompletion()
+        try await assertPresentationMatrixOrderAndMismatchLatch()
+        try await assertPresentationMatrixFatalBoundaries()
+        try await assertPresentationMatrixCancellation()
+        try await assertPresentationMatrixPersistenceFailures()
+        try await assertPresentationMatrixTypedCallbackFailures()
     }
     func testUnpackagedTestProcessRefusesBeforeAppOrFixtureCreation() throws {
         let fixture = try fixture()

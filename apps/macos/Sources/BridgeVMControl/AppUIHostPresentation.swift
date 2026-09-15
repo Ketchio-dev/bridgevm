@@ -20,7 +20,7 @@ extension AppUIHostWindow {
               content.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == (dark ? .darkAqua : .aqua)
         else {
             AppUIHostPresentationObservation.observePresentationFailure(window, content: content, dark: dark, minimum: minimum)
-            throw AppUIHostError.refused("Actual content did not adopt requested dimensions and appearance")
+            throw AppUIHostPresentationMismatch()
         }
     }
 }

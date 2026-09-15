@@ -2434,14 +2434,14 @@ tests/integration/hvf-control-app-branding-smoke.sh	58	0
 apps/macos/Sources/BridgeVMControl/AppUIHost.swift	152	0
 apps/macos/Sources/BridgeVMControl/AppUIHostAccessibility.swift	69	0
 apps/macos/Sources/BridgeVMControl/AppUIHostCapture.swift	97	0
-apps/macos/Sources/BridgeVMControl/AppUIHostScenario.swift	75	0
+apps/macos/Sources/BridgeVMControl/AppUIHostScenario.swift	70	0
 apps/macos/Sources/BridgeVMControl/AppUIHostWindow.swift	17	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlAppModel.swift	11	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlMain.swift	27	0
 apps/macos/Sources/BridgeVMControl/CreateVMResourceSummary.swift	19	0
 apps/macos/Sources/BridgeVMControl/CreateWindowsInstallFields.swift	49	0
 apps/macos/Sources/BridgeVMControl/LibraryIssuesSection.swift	53	0
-apps/macos/Tests/BridgeVMAppUIHostTests/AppUIHostContractTests.swift	104	0
+apps/macos/Tests/BridgeVMAppUIHostTests/AppUIHostContractTests.swift	101	0
 apps/macos/scripts/AppUIHostLaunchOwnership.swift	135	0
 apps/macos/scripts/LaunchAppUIHost.swift	231	0
 apps/macos/scripts/build-app-ui-launcher.sh	24	0
@@ -2519,3 +2519,9 @@ apps/macos/Tests/BridgeVMAppUIHostTests/AppUIHostContractFixtures.swift	66	0
 apps/macos/Sources/BridgeVMControl/AppUIHostPresentation.swift	27	0
 apps/macos/Sources/BridgeVMControl/AppUIHostPresentationObservation.swift	55	0
 apps/macos/Sources/BridgeVMControl/AppUIHostGeometryObservation.swift	67	0
+apps/macos/Sources/BridgeVMControl/AppUIHostPresentationMismatch.swift	7	0
+apps/macos/Sources/BridgeVMControl/AppUIHostPresentationMatrix.swift	46	0
+apps/macos/Sources/BridgeVMControl/AppUIHostWelcomeMatrix.swift	60	0
+apps/macos/Tests/BridgeVMAppUIHostTests/AppUIHostMatrixFixture.swift	97	0
+apps/macos/Tests/BridgeVMAppUIHostTests/AppUIHostMatrixProgressContracts.swift	105	0
+apps/macos/Tests/BridgeVMAppUIHostTests/AppUIHostMatrixAbortContracts.swift	105	0
