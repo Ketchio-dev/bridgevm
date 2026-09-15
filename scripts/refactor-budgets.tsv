@@ -1222,7 +1222,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	337	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	537	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	564	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	563	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryRequest.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowInventoryRequestTests.swift	70	0
 apps/macos/Tests/BridgeVMControlTests/HvfPasteKeyOrderingTests.swift	49	0
@@ -2386,3 +2386,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallPlanPreparationIdentityTe
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallPlanPreparationLifetimeTests.swift	133	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallPlanPreparationProbe.swift	72	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallPlanPreparationRoutingTests.swift	138	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfConnectionState.swift	7	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfKeyboardDraft.swift	17	0
+apps/macos/Tests/BridgeVMControlTests/HvfRuntimeKeyboardDraftFixture.swift	122	0
+apps/macos/Tests/BridgeVMControlTests/HvfRuntimeKeyboardDraftTests.swift	179	0

@@ -7,14 +7,6 @@ import Darwin
 import AppKit
 #endif
 
-enum HvfConnectionState: Equatable {
-    case stopped
-    case booting
-    case connected(host: String)
-    case stopping
-    case timedOut
-}
-
 @MainActor
 final class HvfEngineSession: ObservableObject {
     @Published var config: HvfEngineConfig
@@ -235,25 +227,33 @@ final class HvfEngineSession: ObservableObject {
 
     func sendKey(_ action: String) {
         guard pendingPaste == nil else { append(.unknown("key input refused: clipboard paste pending")); return }
-        if inputDriver.route(.key(action), binding: inputBinding) { return }
+        if inputDriver.route(.key(action), binding: inputBinding) != .legacy { return }
         appendLiveInput("KEY \(action)")
     }
 
-    func sendText(_ value: String) {
-        guard pendingPaste == nil else { append(.unknown("text input refused: clipboard paste pending")); return }
-        guard !value.isEmpty else { return }
-        if inputDriver.route(.text(value), binding: inputBinding) { return }
+    @discardableResult
+    func sendText(_ value: String) -> HvfTextInputSubmission {
+        guard pendingPaste == nil else { append(.unknown("text input refused: clipboard paste pending")); return .refused }
+        guard !value.isEmpty else { return .refused }
+        switch inputDriver.route(.text(value), binding: inputBinding) {
+        case .queued: return .acceptedForProcessing
+        case .refused: return .refused
+        case .legacy: break
+        }
         let plan = HvfTextInputPlan.make(for: value)
         for chunk in plan.hidChunks {
             appendLiveInput("KEY text-hex:\(chunk)")
         }
         if let base64 = plan.clipboardBase64 {
             guard serviceStarted, case .connected = connectionState else {
-                append(.unknown("clipboard paste refused: guest service is not connected")); return
+                append(.unknown("clipboard paste refused: guest service is not connected")); return .refused
             }
             let request = HvfClipboardPaste(base64: base64, now: Date())
-            if sendCtl(request.command) { pendingPaste = request }
+            guard sendCtl(request.command) else { return .refused }
+            pendingPaste = request
+            return .acceptedForProcessing
         }
+        return .legacyAttempted
     }
 
     #if canImport(AppKit)
@@ -283,14 +283,14 @@ final class HvfEngineSession: ObservableObject {
 
     func sendPointerScroll(_ delta: Int8, location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
         guard delta != 0, let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return }
-        if inputDriver.route(.pointer("scroll:\(delta)@\(point.x)x\(point.y)"), binding: inputBinding) { return }
+        if inputDriver.route(.pointer("scroll:\(delta)@\(point.x)x\(point.y)"), binding: inputBinding) != .legacy { return }
         appendLiveInput("POINTER scroll:\(delta)@\(point.x)x\(point.y)")
     }
 
     private func sendPointerAction(_ action: String, location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
         guard let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return }
         let verb = action == "release" ? "releaseall" : action.replacingOccurrences(of: "-", with: "")
-        if inputDriver.route(.pointer("\(verb):\(point.x)x\(point.y)"), binding: inputBinding) { return }
+        if inputDriver.route(.pointer("\(verb):\(point.x)x\(point.y)"), binding: inputBinding) != .legacy { return }
         appendLiveInput("POINTER \(action):\(point.x)x\(point.y)")
     }
 

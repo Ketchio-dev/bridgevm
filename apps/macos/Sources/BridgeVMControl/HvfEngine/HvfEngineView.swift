@@ -417,8 +417,7 @@ struct HvfEngineView: View {
     }
 
     private func sendKeyboardText() {
-        session.sendText(keyboardInput)
-        keyboardInput = ""
+        HvfKeyboardDraft.submit(&keyboardInput, to: session)
     }
     private func currentConfig() -> HvfEngineConfig {
         var config = session.config
