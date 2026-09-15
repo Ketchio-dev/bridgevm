@@ -682,3 +682,35 @@ minimum remains15.0. Subsequent changes affect only Rust fixture sources and
 metadata; the tested Swift inputs are unchanged. A new complete project pass,
 seal/push and actual pilot are still required. The four-hour work period has
 ended; only this validation and its evidence handoff continue.
+
+
+## Final pilot outcome and cleanup (2026-09-15)
+
+The corrected full project check passed171.98seconds at75e9b313, sealed/pushed as
+ea92823f. Log SHA
+`8211a6545b0a623fb64a3fd70e096f071068090f242a66f344c8f1407486a8a2`.
+The first exact hosted snapshot had85runs/45definitions:58success,6running and
+21queued, with no failed run observed. It was not an all-green result.
+
+Sealed pilot app-ui-host-20260915-05 still failed initial-window readiness under
+the same5second/7action/8capture criteria. Its exact diagnostic binary and bundle
+minimum were15.0. Initialization/factory/body/delegate counts were1, default
+launch wastrue, activation policy wasregular before/after setterfalse, and root/
+representable/attachment counts remained0. Terminal own-window count0; actions0of7,
+captures0of8; all four domain-work counters0. Exact identity, observed exit and
+fixture/launcher/worker cleanup passed, with no TERM/KILL. There are no images to
+visually review. Independent analysis SHA
+`ac6984db5539964d36ca3d255beb97f7007d11a43972cd8fbc6cb56620c2ab5b`.
+This does not establish the missing-window cause; explicit presentation did not
+establish any improvement in this run.
+
+The unsuccessful temporary explicit-presentation and target15 settings were
+removed. Original host compilation commands and diagnostic bundle minimum14
+were restored; actual rebuilt Mach-O minimum14 was inspected. The simple style
+and PNG fixture extractions remain so that no existing structural ceiling needs
+to rise. Proven native CLI, runtime ownership and equal-timestamp fixture fixes
+remain intact. All original failed sources, binaries and receipts are preserved
+privately. Restored7host contracts passed18.23seconds and19adapter contracts
+passed2.76seconds. No additional unchanged-baseline pilot is submitted. Final
+full/release checks and hosted observation follow; UI/VoiceOver/guest/release
+capabilities remain unproven, and every criterion/threshold remains unchanged.
