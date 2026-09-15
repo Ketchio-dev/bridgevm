@@ -2472,7 +2472,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeKeyboardInput.swift	36	0
 apps/macos/Sources/BridgeVMControl/AppUIHostSceneObservation.swift	56	0
 apps/macos/Sources/BridgeVMControl/ControlAppActivation.swift	30	0
 crates/bridgevm-cli/src/args/hvf_args.rs	222	0
-crates/bridgevm-cli/tests/cli_help.rs	121	0
+crates/bridgevm-cli/tests/cli_help.rs	71	0
 apps/macos/Sources/BridgeVMControl/ControlCommandDispatch.swift	18	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLIOptions.swift	56	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLI.swift	36	0
@@ -2495,7 +2495,7 @@ crates/bridgevm-cli/src/app_cli_resolver_tests.rs	135	1
 crates/bridgevm-cli/tests/cli_app.rs	172	0
 crates/bridgevm-cli/src/doctor_summary.rs	74	0
 crates/bridgevm-cli/src/doctor_summary_tests.rs	50	0
-crates/bridgevm-cli/tests/cli_doctor.rs	132	0
+crates/bridgevm-cli/tests/cli_doctor.rs	103	0
 tests/integration/native-app-cli-contract.py	101	0
 scripts/check-project-macos.sh	14	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimePreparation.swift	50	0
@@ -2505,3 +2505,5 @@ apps/macos/Tests/BridgeVMControlTests/HvfOwnedRuntimeTestSupport.swift	115	0
 crates/bridgevm-cli/src/app_cli_candidates.rs	21	0
 apps/macos/Sources/BridgeVMControl/ControlWindowPresentation.swift	14	0
 tests/integration/app_ui_host_bundle_fixtures.py	10	0
+crates/bridgevm-cli/tests/support/doctor_fixture.rs	52	0
+crates/bridgevm-cli/tests/support/help_fixture.rs	55	0

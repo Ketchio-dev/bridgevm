@@ -1,37 +1,11 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
-use std::path::PathBuf;
-use std::process::{Command, Output};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::process::Output;
+use std::time::{Duration, Instant};
 
-struct Fixture(PathBuf);
-
-impl Fixture {
-    fn new() -> Self {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = PathBuf::from(format!("/tmp/bv-doctor-{}-{suffix}", std::process::id()));
-        std::fs::create_dir(&root).unwrap();
-        Self(root)
-    }
-
-    fn invoke(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_bridgevm"))
-            .env_clear()
-            .env("PATH", self.0.join("empty-path"))
-            .args(args)
-            .output()
-            .unwrap()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
+#[path = "support/doctor_fixture.rs"]
+mod doctor_fixture;
+use doctor_fixture::Fixture;
 
 fn output_text(output: Output) -> String {
     assert!(
