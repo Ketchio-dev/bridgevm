@@ -1259,7 +1259,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfBoundedLogReadTests.swift	41	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMIdentityLifecycle.swift	451	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMLifecycleCommand.swift	368	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMStateSecurity.swift	337	0
-apps/macos/Sources/BridgeVMControl/LibraryModel.swift	187	0
+apps/macos/Sources/BridgeVMControl/LibraryModel.swift	179	0
 apps/macos/Sources/BridgeVMControl/VMLibrary.swift	178	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzDisplayRuntimeControlServerTests.swift	538	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzRunnerCommandTests.swift	692	0
@@ -2337,3 +2337,5 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallTestSupport.swift	82	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallValidationWorkerTests.swift	111	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStoreFixture.swift	51	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallValidationAcknowledgmentTests.swift	34	0
+apps/macos/Sources/BridgeVMControl/LibraryModelActionRequests.swift	13	0
+apps/macos/Tests/BridgeVMControlTests/HvfProductBackendConfigurationRootTests.swift	119	0

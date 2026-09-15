@@ -92,11 +92,11 @@ enum BackendKind: String {
 
 extension VMConfig {
     /// Resolve the concrete backend for this VM (the engine seam).
-    func makeBackend() -> VMBackend {
+    func makeBackend(libraryRoot: URL = VMLibrary.root) -> VMBackend {
         switch engineKind {
         case .fastVZ: return FastVZBackend(self)
         case .qemuCompat: return QemuCompatBackend(self)
-        case .hvfEngine: return HvfWindowsBackend(self)
+        case .hvfEngine: return HvfWindowsBackend(self, libraryRoot: libraryRoot)
         }
     }
 }

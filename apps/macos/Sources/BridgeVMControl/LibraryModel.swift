@@ -39,11 +39,15 @@ final class LibraryModel: ObservableObject {
         migrateLegacy: Bool = true,
         installSessionFactory: @escaping HvfWindowsInstallSessionStore.Factory = { HvfWindowsInstallSession(plan: $0) },
         runtimeSessionFactory: @escaping HvfRuntimeSessionStore.Factory = { HvfEngineSession(config: $0) },
-        modelFactory: @escaping @MainActor (VMConfig) -> ControlModel = { ControlModel(config: $0) }
+        startsModelsAutomatically: Bool = true,
+        modelFactory: (@MainActor (VMConfig) -> ControlModel)? = nil
     ) {
         libraryRoot = rootURL
         self.e2eUnattendedPath = e2eUnattendedPath
-        self.modelFactory = modelFactory
+        self.modelFactory = modelFactory ?? {
+            ControlModel(config: $0, backend: $0.makeBackend(libraryRoot: rootURL),
+                startsAutomatically: startsModelsAutomatically)
+        }
         windowsInstallSessions = HvfWindowsInstallSessionStore(makeSession: installSessionFactory)
         hvfRuntimeSessions = HvfRuntimeSessionStore(makeSession: runtimeSessionFactory)
         if migrateLegacy {
@@ -79,17 +83,12 @@ final class LibraryModel: ObservableObject {
         return m
     }
 
-    func requestDeletion(_ cfg: VMConfig) {
-        guard !deletingSlugs.contains(cfg.slug) else { return }
-        pendingDeletion = cfg
-    }
-
     func confirmDeletion(_ cfg: VMConfig) {
         pendingDeletion = nil
         let slug = cfg.slug
         guard !deletingSlugs.contains(slug) else { return }
         deletingSlugs.insert(slug)
-        let backend = modelCache[slug]?.backend ?? cfg.makeBackend()
+        let backend = modelCache[slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         let libraryRoot = self.libraryRoot
         Task.detached {
             backend.stop()
@@ -109,17 +108,10 @@ final class LibraryModel: ObservableObject {
         }
     }
 
-    func requestWindowsClone(_ cfg: VMConfig) {
-        guard cfg.engineKind == .hvfEngine,
-              cfg.installPending != true,
-              !cloningSlugs.contains(cfg.slug) else { return }
-        pendingWindowsClone = cfg
-    }
-
     func cloneWindowsHVF(_ cfg: VMConfig, name: String) {
         pendingWindowsClone = nil
         guard !cloningSlugs.contains(cfg.slug) else { return }
-        let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend()
+        let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         guard !backend.isRunning() else {
             cloneError = "실행 중인 VM은 복제할 수 없습니다. 먼저 완전히 정지하세요."
             return
@@ -146,7 +138,7 @@ final class LibraryModel: ObservableObject {
 
     func moveWindowsHVFBundle(_ cfg: VMConfig, to destinationParent: URL) {
         guard !movingSlugs.contains(cfg.slug) else { return }
-        let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend()
+        let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         guard !backend.isRunning() else {
             moveError = "실행 중인 VM은 이동할 수 없습니다. 먼저 완전히 정지하세요."
             return
