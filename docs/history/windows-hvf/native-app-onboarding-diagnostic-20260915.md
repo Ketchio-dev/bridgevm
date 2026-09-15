@@ -126,3 +126,22 @@ changes compile with the required opt-in skip in 2.45 seconds, with stable
 sources; the live result remains pending. The five-second wait, seven actions
 and eight required captures remain unchanged. Current full/hosted checks
 remain pending; no criterion or product-state promotion follows.
+
+### Guarded startup observation — 14:31 UTC
+
+Pilot `app-ui-20260915-04` at `928ec177` failed the unchanged welcome-control
+wait, retaining four images and zero domain-work counters. Public own-process
+AX returned `-25208` (NotImplemented), not `-25211` (APIDisabled); permission
+denial is not established. The effective drawing appearance wrapper alone
+did not resolve native dark list text. Failed results remain in `pilot-04`.
+
+Source `b2595f26d9292d459b68df319cbc8f313f83ff59` adds a test-only, strongly retained delegate and
+public `finishLaunching()` observation. Resolved NSOpen defaults cause refusal;
+all document/URL/untitled requests are refused and counted without recording
+paths or changing defaults. Public lifecycle states are recorded privately and
+the previous delegate is restored. The stable compile with mandatory opt-in
+skip passed in 2.55 seconds (log SHA
+`c2ffc9ecb1fcaf6b7380cdd47860b8626e423833728a41a774fc4cb5d2fba36f`).
+No lifecycle cause or AX correction is claimed before the next sealed pilot.
+Seven actions, eight captures, five-second waits and all tripwires are unchanged.
+Current full project and pushed-SHA hosted results remain pending.
