@@ -1,7 +1,4 @@
 import SwiftUI
-#if os(macOS)
-import Darwin
-#endif
 #if canImport(AppKit)
 import AppKit
 /// Ensure the window appears and takes focus when launched as a SwiftPM
@@ -10,31 +7,28 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        #if DEBUG && BRIDGEVM_APP_UI_HOST
+        AppUIHost.prepared?.applicationDidFinishLaunching()
+        #endif
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }
 #endif
-@main
-enum BridgeVMControlMain {
-    static func main() {
-        let arguments = Array(CommandLine.arguments.dropFirst())
-        if arguments.first == "--vtpm-lifecycle" {
-            exit(VTPMLifecycleCommand.run(arguments: Array(arguments.dropFirst())))
-        }
-        BridgeVMControlLaunchOptions.validateOrExit(arguments: arguments)
-        BridgeVMControlApp.main()
-    }
-}
 struct BridgeVMControlApp: App {
 #if canImport(AppKit)
     @NSApplicationDelegateAdaptor(ControlAppDelegate.self) private var appDelegate
 #endif
     @StateObject var library: LibraryModel
-    init() { _library = StateObject(wrappedValue: BridgeVMControlAppLaunch.libraryModel()) }
+    init() { _library = StateObject(wrappedValue: BridgeVMControlAppModel.libraryModel()) }
     var body: some Scene {
         WindowGroup("BridgeVM Control") {
             ContentView(library: library)
                 .frame(minWidth: 1100, minHeight: 720)
+                .background {
+                    #if DEBUG && BRIDGEVM_APP_UI_HOST
+                    AppUIHostWindow().frame(width: 0, height: 0).allowsHitTesting(false).accessibilityHidden(true)
+                    #endif
+                }
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1320, height: 860)

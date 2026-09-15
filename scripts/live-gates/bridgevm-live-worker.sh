@@ -11,6 +11,7 @@ WORK_ROOT="${BRIDGEVM_LIVE_WORK:-$HOME/BridgeVM/live-work}"
 CLI="$REPO/scripts/live-gates/bridgevm-live"
 RECOVER="$REPO/scripts/live-gates/recover-stale-jobs.sh"
 source "$REPO/scripts/live-gates/live-process-cleanup.sh"
+source "$REPO/scripts/live-gates/app-ui-host-worker-cleanup.sh"
 
 # Refuse low space rather than delete canonical Windows media.
 MIN_FREE_GIB="${BRIDGEVM_LIVE_MIN_FREE_GIB:-100}"
@@ -123,7 +124,7 @@ run_job() {
     ) >>"$dir/run.log" 2>&1 &
     local tier_pid=$!
 
-    if bridgevm_wait_for_tier_group "$tier_pid" "$dir/cancel.requested" "$job_id"; then
+    if bridgevm_wait_for_app_ui_host_group "$tier_pid" "$dir/cancel.requested" "$job_id" "$tier" "$dir" "$worktree" "$commit"; then
         status="$BRIDGEVM_TIER_STATUS"
     else
         printf 'cleanup for tier process group %s was not confirmed\n' "$tier_pid" > "$QUEUE_ROOT/worker-cleanup-required"

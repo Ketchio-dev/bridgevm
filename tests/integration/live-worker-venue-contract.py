@@ -2,7 +2,6 @@
 """Refuse deterministic tiers before resolving any sealed revision."""
 import os
 import pathlib
-import shutil
 import subprocess
 import tempfile
 import unittest
@@ -23,9 +22,10 @@ class WorkerVenueContracts(unittest.TestCase):
             job = queue / "queued/fixture"
             job.mkdir()
             (job / "job.env").write_text("job_id=fixture\ntier=" + tier + "\ncommit=" + sha + "\n")
-            shutil.copyfile(ROOT / "scripts/live-gates/bridgevm-live-worker.sh", helpers / "worker.sh")
+            (helpers / "worker.sh").write_bytes((ROOT / "scripts/live-gates/bridgevm-live-worker.sh").read_bytes())
             scripts = {
                 helpers / "live-process-cleanup.sh": "bridgevm_wait_for_tier_group() { return 126; }\n",
+                helpers / "app-ui-host-worker-cleanup.sh": (ROOT / "scripts/live-gates/app-ui-host-worker-cleanup.sh").read_text(),
                 helpers / "recover-stale-jobs.sh": "#!/bin/sh\nexit 0\n",
                 helpers / "bridgevm-live": """#!/bin/sh
 set -eu
