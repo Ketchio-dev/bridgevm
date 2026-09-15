@@ -240,3 +240,57 @@ as a commit reference. The checker is unchanged. App build and the other
 steps passed; the complete failed log SHA is
 `7b03a633d5cede20d447560545f9f3c27077235115ffec844893710c252578f4`.
 A complete check on the corrected documentation is required before sealing.
+
+### Autonomous app checkpoint — 2026-09-15 16:16 UTC
+
+The user authorized a four-hour native-app improvement block. Cancellation
+source `27a0060f` now stays busy in cancelling until its owned validation,
+queued pipeline, source-cache verification or child-process wait acknowledges
+exit. Acknowledged cancellation is a neutral terminal state; repeated/idle
+requests do not dispatch or append misleading cancellation logs. Guards after
+awaited boundaries prevent later source/install dispatch, media preparation
+and finalization. Existing source-lock and owned cleanup boundaries remain.
+A child that has not exited remains cancelling; no timeout/kill policy changed.
+
+The new bounded, no-guest regressions first failed: five tests, 41 assertions,
+including actual late-operation counters (red run 7.83 seconds, log SHA
+`e9c3d0f21c7b01d0ac7ea009382f4cdcc520318ef44cdd8b62ec0785d3f9ce83`).
+The first green candidate's 153-test selection exposed two remaining old
+post-cancel state expectations; both still expected preparingSource while the
+queue retained work. That failed log is retained, SHA
+`f1f0300b6fe99bdd4f4830758206e280255846cfe4a0de9e1d0b3ad5cf3009c5`.
+Only those state expectations were corrected; their ownership, job-count,
+dismissal/admission refusal and unchanged-file assertions remain. The final
+153 selected installation/runtime/readiness contracts passed in 3.46 seconds,
+with unchanged sources, log SHA
+`ee76a7170451c1db9ba7bd98863936ac1bea53db1dee6ec8bb3d592376127e10`.
+
+Source `400af559` presents all launch blockers, separately all release blockers,
+and all product limitations verbatim. Evidence/CTL paths, watchdog, buffered
+NVMe and raw command entry move into a default-collapsed advanced diagnostics
+component. The original bindings, picker/command functions and accessibility
+identifiers remain; the event feed stays visible because it carries failures.
+Independent transformation receipts retain exact unchanged action boundaries.
+
+Source `6bc2308b` packages BridgeVM.icns from the exact production BridgeVMMark
+CGPath. Pure CoreGraphics/ImageIO produces all ten standard/high-resolution
+icon representations; iconutil packages them before existing bundle signing.
+[Apple's iconset packaging guidance](https://developer.apple.com/library/archive/documentation/GraphicsAnimation/Conceptual/HighResolutionOSX/Optimizing/Optimizing.html)
+informs this macOS 14+ bundle path. The actual metadata helper passed version,
+identifier, icon resolution, ten PNG decode/dimension checks and invalid-input,
+existing-file and dangling-link refusal in 0.83 seconds. The 32/512 px generated
+assets were inspected. This supersedes the earlier missing-icon packaging
+note; actual Dock/Finder appearance remains unverified.
+
+Private records are under `hvf-app-autonomy-20260915`; source identities and
+failed/passing logs are retained. No VM, private media or NSApplication launch
+occurred in these checks. The prior `9762d9a3` seal completed all 80 hosted
+workflows ([CI](https://github.com/Ketchio-dev/bridgevm/actions/runs/34985388961),
+[Security](https://github.com/Ketchio-dev/bridgevm/actions/runs/34985388740)).
+The unchanged `d68bbc60` failed CI job passed on attempt 2; this does not prove
+its earlier scheduling hypothesis or erase the failure. All five native UI
+pilots remain incomplete. A normal SwiftUI App/WindowGroup host with its own
+public accessibility controls is being developed as a separately sealed
+hypothesis; unlike a cross-process driver, it does not require a trust grant.
+This checkpoint's full project and hosted results are recorded by the later
+exact-tree seal; no product state, criterion or threshold is promoted.
