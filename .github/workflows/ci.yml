@@ -205,8 +205,8 @@ jobs:
       - run: BV_XCTEST_SANITIZER=thread BV_XCTEST_TRACE=1 bash scripts/run-xctest-shim-suites.sh
       - name: Product helper XCTest contracts (no live VM)
         run: swift test --package-path apps/macos --filter BridgeVMProductE2ETests
-      - name: Current-generation import XCTest contracts (no live VM)
-        run: BRIDGEVM_TEST_SNAPSHOT_HELPER="$(bash scripts/prepare-hvf-import-test-helper.sh)" swift test --package-path apps/macos --filter 'FirstRunImport|HvfCurrentGenerationImport|HvfMediaImport|HvfWindowsImport'
+      - name: HVF product flow XCTest contracts (no live VM)
+        run: BRIDGEVM_TEST_SNAPSHOT_HELPER="$(bash scripts/prepare-hvf-import-test-helper.sh)" swift test --package-path apps/macos --filter 'FirstRunImport|HvfCurrentGenerationImport|HvfMediaImport|HvfWindowsImport|HvfWindowsInstall|HvfProductCPUValidation|LibraryModelPersistence'
       - name: Native-to-Swift input receipt contract (no live VM)
         run: bash scripts/check-input-receipt-transcript.sh
       # A release build is what ships, and it is the only thing that can prove

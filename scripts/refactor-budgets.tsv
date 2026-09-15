@@ -1251,15 +1251,15 @@ apps/macos/Tests/BridgeVMControlTests/HvfPointerCaptureTests.swift	52	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift	380	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	50	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift	407	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	492	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	279	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsDriverPreflight.swift	45	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallView.swift	141	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallView.swift	126	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/TailOffsetReader.swift	47	0
 apps/macos/Tests/BridgeVMControlTests/HvfBoundedLogReadTests.swift	41	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMIdentityLifecycle.swift	451	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMLifecycleCommand.swift	368	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMStateSecurity.swift	337	0
-apps/macos/Sources/BridgeVMControl/LibraryModel.swift	189	0
+apps/macos/Sources/BridgeVMControl/LibraryModel.swift	188	0
 apps/macos/Sources/BridgeVMControl/VMLibrary.swift	178	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzDisplayRuntimeControlServerTests.swift	538	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzRunnerCommandTests.swift	692	0
@@ -2320,3 +2320,8 @@ apps/macos/Sources/BridgeVMControl/LibraryModelFirstRunRecovery.swift	63	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportNavigationTests.swift	40	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportProgressTests.swift	98	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportRecoveryTests.swift	170	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallSession.swift	222	0
+apps/macos/Sources/BridgeVMControl/LibraryModelCapacity.swift	9	0
+apps/macos/Sources/BridgeVMControl/LibraryModelWindowsInstall.swift	57	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallAdmissionTests.swift	129	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallSessionStoreTests.swift	226	0

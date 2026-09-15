@@ -6,21 +6,12 @@ import SwiftUI
 struct HvfWindowsInstallView: View {
     let config: VMConfig
     @ObservedObject var library: LibraryModel
-    @StateObject private var session: HvfWindowsInstallSession
+    @ObservedObject private(set) var session: HvfWindowsInstallSession
 
     init(config: VMConfig, library: LibraryModel) {
         self.config = config
         self.library = library
-        let request = HvfWindowsInstallRequest.load(bundlePath: config.bundlePath)
-            ?? HvfWindowsInstallRequest(isoPath: "", diskGiB: 64,
-                                        injectViogpu3d: false, driverPackageDir: nil)
-        let plan = HvfWindowsInstallPlan(
-            repoRoot: HvfEngineSession.defaultRepoRoot(), libraryRoot: library.rootURL,
-            bundlePath: config.bundlePath,
-            slug: config.slug,
-            request: request
-        )
-        _session = StateObject(wrappedValue: HvfWindowsInstallSession(plan: plan))
+        _session = ObservedObject(wrappedValue: library.windowsInstallSession(for: config))
     }
 
     var body: some View {
@@ -35,7 +26,6 @@ struct HvfWindowsInstallView: View {
             }
             .padding(20)
         }
-        .onAppear { wireCompletion() }
         .accessibilityIdentifier("bridgevm.windows.install.view")
     }
 
@@ -133,9 +123,4 @@ struct HvfWindowsInstallView: View {
         .font(.callout)
     }
 
-    private func wireCompletion() {
-        session.onCompleted = { [weak library] in
-            library?.reload()
-        }
-    }
 }

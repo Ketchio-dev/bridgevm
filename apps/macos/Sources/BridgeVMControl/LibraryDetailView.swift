@@ -11,7 +11,7 @@ struct LibraryDetailView: View {
         } else if library.selectedID == LibraryModel.hvfEngineSelectionID {
             HvfEngineView()
         } else if let model = library.selectedModel {
-            if model.config.engineKind == .hvfEngine, model.config.installPending == true {
+            if library.shouldShowWindowsInstall(for: model.config) {
                 HvfWindowsInstallView(config: model.config, library: library)
                     .id(model.config.slug)
             } else if let hvfConfig = HvfEngineConfig.libraryVM(model.config) {

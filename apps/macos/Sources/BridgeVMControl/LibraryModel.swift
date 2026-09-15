@@ -24,12 +24,8 @@ final class LibraryModel: ObservableObject {
     private let libraryRoot: URL
     let e2eUnattendedPath: String?
     private let modelFactory: @MainActor (VMConfig) -> ControlModel
-    // Host-capacity accounting (sum of RUNNING VMs vs host totals) to warn on oversubscription.
-    var hostMemGiB: Double { Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824.0 }
-    var hostCPU: Int { ProcessInfo.processInfo.activeProcessorCount }
+    let windowsInstallSessions: HvfWindowsInstallSessionStore
     func runningModels() -> [ControlModel] { vms.compactMap { modelCache[$0.slug] }.filter { $0.running } }
-    var usedMemGiB: Double { runningModels().reduce(0.0) { $0 + $1.memGiB } }
-    var usedCPU: Int { runningModels().reduce(0) { $0 + $1.cpu } }
     var rootURL: URL { libraryRoot }
 
     func deletionImpact(for cfg: VMConfig) -> VMLibraryDeletionImpact {
@@ -40,11 +36,13 @@ final class LibraryModel: ObservableObject {
         rootURL: URL = VMLibrary.root,
         e2eUnattendedPath: String? = nil,
         migrateLegacy: Bool = true,
+        installSessionFactory: @escaping HvfWindowsInstallSessionStore.Factory = { HvfWindowsInstallSession(plan: $0) },
         modelFactory: @escaping @MainActor (VMConfig) -> ControlModel = { ControlModel(config: $0) }
     ) {
         libraryRoot = rootURL
         self.e2eUnattendedPath = e2eUnattendedPath
         self.modelFactory = modelFactory
+        windowsInstallSessions = HvfWindowsInstallSessionStore(makeSession: installSessionFactory)
         if migrateLegacy {
             VMLibrary.migrateLegacyIfNeeded(rootURL: rootURL, legacy: VMConfig.loadLegacy())
         }
@@ -56,6 +54,7 @@ final class LibraryModel: ObservableObject {
         let scan = VMLibrary.scan(rootURL: libraryRoot)
         vms = scan.configs
         libraryIssues = scan.issues
+        windowsInstallSessions.reconcile(with: vms)
         let configsBySlug = Dictionary(vms.map { ($0.slug, $0) }, uniquingKeysWith: { first, _ in first })
         modelCache = modelCache.filter { slug, model in
             guard let current = configsBySlug[slug] else { return false }
