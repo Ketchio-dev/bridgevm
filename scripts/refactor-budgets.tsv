@@ -1221,7 +1221,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	337	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	537	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	530	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	501	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryRequest.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowInventoryRequestTests.swift	70	0
@@ -2498,3 +2498,7 @@ crates/bridgevm-cli/src/doctor_summary_tests.rs	50	0
 crates/bridgevm-cli/tests/cli_doctor.rs	132	0
 tests/integration/native-app-cli-contract.py	101	0
 scripts/check-project-macos.sh	14	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimePreparation.swift	50	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeOutcome.swift	43	0
+apps/macos/Tests/BridgeVMControlTests/HvfOwnedRuntimeOutcomeTests.swift	157	0
+apps/macos/Tests/BridgeVMControlTests/HvfOwnedRuntimeTestSupport.swift	115	0

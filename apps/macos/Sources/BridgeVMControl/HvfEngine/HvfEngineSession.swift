@@ -29,7 +29,10 @@ final class HvfEngineSession: ObservableObject {
     private var liveInputHandle: FileHandle?
     private var liveInputPath: URL?
     private var liveInputWriteFailureReported = false
+    private var processLaunch: (Process) throws -> Void = { try $0.run() }
     private let processIsRunning: (String) -> Bool
+    private(set) var ownedProcessIdentity: HvfOwnedRuntimeIdentity?
+    private(set) var lastOwnedExit: HvfOwnedRuntimeExit?
     private let vtpmKeyProvider: VTPMStateKeyProviding
 
     init(
@@ -46,21 +49,36 @@ final class HvfEngineSession: ObservableObject {
         inputDriver.onDiagnostic = { [weak self] in self?.append(.unknown($0)) }
     }
 
+    // The injected launcher must run the supplied Process or throw before spawning it.
+    convenience init(config: HvfEngineConfig, repoRoot: URL,
+                     processLaunch: @escaping (Process) throws -> Void,
+                     processIsRunning: @escaping (String) -> Bool,
+                     vtpmKeyProvider: VTPMStateKeyProviding) {
+        self.init(config: config, repoRoot: repoRoot,
+                  processIsRunning: processIsRunning, vtpmKeyProvider: vtpmKeyProvider)
+        self.processLaunch = processLaunch
+    }
+
     deinit {
         timer?.invalidate()
         process?.terminate()
         try? liveInputHandle?.close()
     }
 
-    func start() {
-        guard workAdmission?(true) == nil else { return }
+    @discardableResult
+    func start(policy: HvfRuntimeStartPolicy = .attachOrStart) -> HvfRuntimeStartOutcome {
+        if let refusal = workAdmission?(true) { return .refused(refusal) }
         guard process?.isRunning != true else {
             append(.unknown("launch ignored: HVF engine is already running"))
-            return
+            return .refused("The owned runtime is still running")
         }
-        if attachToRunningVM() {
+        if process != nil { markStopped() }
+        if policy == .requireNew, attachedToExistingProcess || processIsRunning(config.targetDiskPath) {
+            return .refused("An existing runtime cannot be adopted by a require-new launch")
+        }
+        if policy == .attachOrStart, attachToRunningVM() {
             append(.unknown("attached to the already running HVF engine; duplicate launch prevented"))
-            return
+            return .observedAttachment
         }
         let readiness = config.readiness(repoRoot: repoRoot)
         guard readiness.launchReady else {
@@ -68,18 +86,18 @@ final class HvfEngineSession: ObservableObject {
                 append(.unknown("launch readiness blocked [\(blocker.code)]: \(blocker.summary)"))
             }
             connectionState = .stopped
-            return
+            return .failed(.readiness, readiness.launchBlockers.map(\.code).joined(separator: ","))
         }
         timer?.invalidate()
         timer = nil
         process = nil
         closeLiveInput()
         do {
-            try prepareRuntimeFiles()
+            try HvfRuntimePreparation.prepare(config: config)
         } catch {
             append(.unknown("launch failed: unable to prepare HVF runtime files: \(error.localizedDescription)"))
             connectionState = .stopped
-            return
+            return .failed(.preparation, error.localizedDescription)
         }
         // R1 product path: the typed runtime (hvf-runner --launch-spec)
         // whenever the packaged runner exists. The wrapper remains the
@@ -92,7 +110,7 @@ final class HvfEngineSession: ObservableObject {
             guard FileManager.default.isExecutableFile(atPath: wrapper.path) else {
                 append(.unknown("launch failed: installed-boot wrapper not found at \(wrapper.path)"))
                 connectionState = .stopped
-                return
+                return .failed(.helper, "The installed-boot wrapper is unavailable")
             }
         }
         tailReader = TailOffsetReader()
@@ -131,44 +149,60 @@ final class HvfEngineSession: ObservableObject {
         } catch {
             append(.unknown("launch failed: unable to unlock encrypted vTPM state: \(error.localizedDescription)"))
             connectionState = .stopped
-            return
+            return .failed(.keyAccess, error.localizedDescription)
         }
         process = proc
         attachedToExistingProcess = false
         connectionState = .booting
         do {
-            try proc.run()
+            try processLaunch(proc)
+            let identity = HvfOwnedRuntimeIdentity(token: UUID(), processID: proc.processIdentifier)
+            ownedProcessIdentity = identity
+            lastOwnedExit = nil
             do {
                 try vtpmKeyInput?.deliverAfterLaunch()
             } catch {
                 proc.terminate()
                 append(.unknown("launch failed: unable to deliver the vTPM state key: \(error.localizedDescription)"))
-                connectionState = .stopped
-                process = nil
-                return
+                connectionState = .stopping
+                startPolling()
+                return .failed(.keyDelivery, error.localizedDescription)
             }
             beginOwnedInputBoot()
             startPolling()
+            return .ownedLaunchAccepted(identity)
         } catch {
             vtpmKeyInput?.discard()
             append(.unknown("launch failed: \(error.localizedDescription)"))
             connectionState = .stopped
             process = nil
+            return .failed(.processLaunch, error.localizedDescription)
         }
     }
 
-    func stop() {
+    @discardableResult
+    func stopOwned(expectedToken: UUID) -> HvfRuntimeStopOutcome {
+        if ownedProcessIdentity == nil, lastOwnedExit?.identity.token == expectedToken { return .alreadyStopped }
+        guard ownedProcessIdentity?.token == expectedToken, process != nil else { return .notOwned }
+        return requestStop()
+    }
+
+    func stop() { _ = requestStop() }
+
+    private func requestStop() -> HvfRuntimeStopOutcome {
+        if connectionState == .stopping { return .alreadyStopping(deadline: stopDeadline) }
         let ownsRunningProcess = process?.isRunning == true
         let attachedProcessIsRunning = attachedToExistingProcess && processIsRunning(config.targetDiskPath)
         guard ownsRunningProcess || attachedProcessIsRunning else {
             markStopped()
-            return
+            return .alreadyStopped
         }
         connectionState = .stopping
         cancelOrderedInputTarget()
         stopDeadline = Date().addingTimeInterval(180)
         sendGracefulStopIfReady()
         if timer == nil { startPolling() }
+        return .requested(deadline: stopDeadline)
     }
 
     @discardableResult
@@ -176,6 +210,7 @@ final class HvfEngineSession: ObservableObject {
         guard workAdmission?(reportRefusal) == nil else { return false }
         guard process?.isRunning != true else { return false }
         guard processIsRunning(config.targetDiskPath) else { return false }
+        if process != nil { markStopped() }
         timer?.invalidate()
         timer = nil
         process = nil
@@ -354,52 +389,6 @@ final class HvfEngineSession: ObservableObject {
         poll()
     }
 
-    private func prepareRuntimeFiles() throws {
-        let fileManager = FileManager.default
-        let evidenceDirectory = URL(fileURLWithPath: config.evidenceDir, isDirectory: true)
-        try fileManager.createDirectory(
-            at: evidenceDirectory,
-            withIntermediateDirectories: true
-        )
-        // run.log is removed too: the wrapper recreates it, and a stale log
-        // would otherwise replay old BVAGENT/BOOT_TIMER lines into this
-        // session (false attach, false 3D-injection confirmation).
-        for name in [
-            "display.ppm", "display.ppm.tmp", "display.fb", "display.fb.tmp",
-            "display.fb.iosurface", "input.ctl", "run.log"
-        ] {
-            let url = evidenceDirectory.appendingPathComponent(name)
-            if fileManager.fileExists(atPath: url.path) {
-                try fileManager.removeItem(at: url)
-            }
-        }
-        try Data().write(to: evidenceDirectory.appendingPathComponent("input.ctl"))
-        // The versioned manifest this launch means, written where the run's
-        // evidence lives. The wrapper does not read it yet; materializing it
-        // per launch makes every session auditable against the runtime
-        // contract (`hvf-runner --launch-spec launch-manifest.json` must
-        // accept it) before the runtime owns the launch itself.
-        try Data(config.launchManifestJSON().utf8)
-            .write(to: evidenceDirectory.appendingPathComponent("launch-manifest.json"))
-
-        let controlURL = URL(fileURLWithPath: config.ctlFilePath)
-        try fileManager.createDirectory(
-            at: controlURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        if fileManager.fileExists(atPath: controlURL.path) {
-            let attributes = try fileManager.attributesOfItem(atPath: controlURL.path)
-            guard attributes[.type] as? FileAttributeType == .typeRegular else {
-                throw NSError(
-                    domain: "BridgeVM.HvfEngineSession",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "control path is not a regular file: \(controlURL.path)"]
-                )
-            }
-        } else {
-            try Data().write(to: controlURL)
-        }
-    }
 
     func poll() {
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
@@ -485,6 +474,10 @@ final class HvfEngineSession: ObservableObject {
     }
 
     private func markStopped() {
+        if let process, let identity = ownedProcessIdentity, !process.isRunning {
+            lastOwnedExit = HvfOwnedRuntimeExit(identity: identity, process: process)
+        }
+        ownedProcessIdentity = nil
         pendingPaste = nil
         inputDriver.attachUnknown(binding: inputBinding)
         timer?.invalidate()
