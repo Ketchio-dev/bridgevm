@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-14",
-  "tested_commit": "1fb301f0c191cc26e2ad6c3c9d0ed0979fef3f5a",
+  "tested_commit": "8c149333418eb9c7e35c0e73dc2511b0e4f808f1",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: source 1fb301f0 adds native first-run create/import choices and grouped inputs, fixes returning a published import to editable fields, and prepares a sealed app-only window diagnostic. The old navigation produced three assertion failures; the corrected native selection has 55 passes, one required UI opt-in skip and zero failures in 24.83 seconds. All 172 preceding native test files are unchanged. App build passes in 0.56 seconds and queue/report policies pass 11/11, including invalid PNG-data refusal. No actual UI window or screenshot has yet been checked. Full local and exact pushed-SHA verification for this packet are pending at this frozen pre-pilot observation. Preceding checkpoint 05ebab4f sealed its full project check in 161.17 seconds and all 78 hosted workflows succeeded (CI 34970421159, Security 34970421424). Its unchanged Windows fixture timeout on attempt 1 remains recorded separately from the successful unchanged retry; cause is undetermined. This work proves no guest behavior or release readiness. A11 still requires the final release regression seal. Earlier observations remain in dated evidence records and the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md).",
+      "measured": "OPEN: source 8c149333 keeps the native onboarding/import recovery changes and adds Command-F search routing, a larger clear target and full-name card help. The stable native selection has 55 passes, one mandatory UI opt-in skip and zero failures in 24.23 seconds. App-only pilots app-ui-20260915-01 (4aca5518) and app-ui-20260915-02 (002fcbe4) both failed the unchanged five-second welcome-control wait with zero domain-work tripwires; pilot 2 retained four actual welcome images and an empty AX root beside 103 rendered native subviews. These images reveal clipping/dark-list capture artifacts but do not establish a product cause or any successful UI action. The next controlled fixture uses NSHostingController; its live result is pending. Checkpoint 4aca5518 sealed a full project check in 163.54 seconds. Later source 002fcbe4 failed hosted freshness (CI 34978934986, job 104414099000) because its added probe source was newer than tested_commit; the failed log is retained and this observation corrects the source pointer without weakening the check. Current full and exact pushed-SHA hosted checks remain pending; no app pilot is release evidence. ENGINEERING_PREVIEW and all criteria remain unchanged. A11 still requires the final release regression seal. Earlier observations remain in dated evidence records and the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md).",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
