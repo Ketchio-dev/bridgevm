@@ -36,10 +36,10 @@ struct HvfEngineView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                statusCard
                 readinessCard
                 if session.config.vtpmStateDir != nil { vtpmLifecycleCard }
                 configCard
-                statusCard
                 HvfWindowsSnapshotCard(config: currentConfig(), repoRoot: session.repoRoot, vmStopped: vtpmLifecycleAvailable)
                 screenshotCard
                 eventFeedCard
@@ -252,10 +252,10 @@ struct HvfEngineView: View {
         GroupBox {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
-                    Button(action: start) { Label("Start", systemImage: "play.fill") }
+                    Button(action: start) { Label("시작", systemImage: "play.fill") }
                         .disabled(!bootConfigReady)
                         .accessibilityIdentifier("bridgevm.windows.runtime.start")
-                    Button(action: session.stop) { Label("Stop", systemImage: "stop.fill") }
+                    Button(action: session.stop) { Label("중지", systemImage: "stop.fill") }
                         .accessibilityIdentifier("bridgevm.windows.runtime.stop")
                     Button(action: sendCtl) { Label("Send", systemImage: "paperplane.fill") }
                         .disabled(ctlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("bridgevm.runtime.ctl.send")
@@ -270,7 +270,7 @@ struct HvfEngineView: View {
             }
             .padding(6)
         } label: {
-            Label("Control Channel", systemImage: "terminal")
+            Label("실행 및 상태", systemImage: "play.circle")
         }
     }
 

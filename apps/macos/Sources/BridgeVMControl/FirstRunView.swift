@@ -5,7 +5,7 @@ import AppKit
 
 /// D2 first-run import wizard: shown when the library has no VMs. Lets the user
 /// register an existing installed Windows HVF bundle (disk + 64 MiB UEFI vars +
-/// optional vTPM state dir) and boot it. Import-only — ISO install and
+/// optional vTPM state dir) and select it. Import-only — ISO install and
 /// from-scratch creation stay in their own flows.
 struct FirstRunView: View {
     @ObservedObject var library: LibraryModel
@@ -21,31 +21,23 @@ struct FirstRunView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("BridgeVM에 오신 것을 환영합니다")
                 .font(.largeTitle).bold()
-            Text("기존에 설치된 Windows VM을 가져와 부팅하세요.")
+            Text("기존 Windows VM을 가져오세요. 가져온 뒤 VM 화면의 ‘시작’을 누르세요.")
                 .foregroundStyle(.secondary)
 
-            Form {
-                TextField("이름", text: $displayName)
-                pathRow("디스크 이미지 (.raw)", $diskPath, chooseDirectory: false)
-                pathRow("UEFI vars 파일 (64 MiB)", $varsPath, chooseDirectory: false)
-                pathRow("vTPM 상태 폴더 (선택)", $vtpmPath, chooseDirectory: true)
-                Stepper("RAM: \(memGiB) GiB", value: $memGiB, in: 2...64)
-                Stepper("CPU: \(cpuCount)", value: $cpuCount, in: 1...16)
-            }
-            .frame(maxWidth: 620)
-            .disabled(library.firstRunImportBusy)
-
-            if let error = library.firstRunImportError {
-                Text(error).foregroundStyle(.red).font(.callout)
+            if !library.firstRunImportBusy && library.firstRunImport.publishedConfig == nil {
+                Form {
+                    TextField("이름", text: $displayName)
+                    pathRow("디스크 이미지 (.raw)", $diskPath, chooseDirectory: false)
+                    pathRow("UEFI vars 파일 (64 MiB)", $varsPath, chooseDirectory: false)
+                    pathRow("vTPM 상태 폴더 (선택)", $vtpmPath, chooseDirectory: true)
+                    Stepper("RAM: \(memGiB) GiB", value: $memGiB, in: 2...64)
+                    Stepper("CPU: \(cpuCount)", value: $cpuCount, in: 1...16)
+                }
+                .frame(maxWidth: 620)
             }
 
-            HStack {
-                Spacer()
-                Button(library.firstRunImportBusy ? "가져오는 중…" : "가져오기 및 부팅") { runImport() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(library.firstRunImportBusy || diskPath.isEmpty || varsPath.isEmpty)
-            }
-            .frame(maxWidth: 620)
+            FirstRunImportStatusView(library: library,
+                canImport: !diskPath.isEmpty && !varsPath.isEmpty, importAction: runImport)
             Spacer()
         }
         .padding(32)

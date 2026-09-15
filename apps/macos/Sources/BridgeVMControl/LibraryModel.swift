@@ -4,6 +4,7 @@ import Combine
 /// each (cached), so every VM polls and is controlled independently.
 @MainActor
 final class LibraryModel: ObservableObject {
+    static let firstRunImportSelectionID = "__bridgevm_first_run_import__"
     static let hvfEngineSelectionID = "__bridgevm_hvf_engine_experimental__"
     @Published var vms: [VMConfig] = []
     @Published var selectedID: String?
@@ -14,8 +15,7 @@ final class LibraryModel: ObservableObject {
     @Published var deletionError: String?
     @Published var cloneError: String?
     @Published var moveError: String?
-    @Published var firstRunImportBusy = false
-    @Published var firstRunImportError: String?
+    @Published var firstRunImport = FirstRunImportProgress()
     @Published private(set) var deletingSlugs: Set<String> = []
     @Published private(set) var cloningSlugs: Set<String> = []
     @Published private(set) var movingSlugs: Set<String> = []
@@ -64,7 +64,7 @@ final class LibraryModel: ObservableObject {
             // or operation. Replacing it now could make that VM impossible to stop.
             return model.running || model.lifecycleBusy || model.busy
         }
-        if let sel = selectedID, sel != Self.hvfEngineSelectionID, configsBySlug[sel] == nil {
+        if let sel = selectedID, ![Self.hvfEngineSelectionID, Self.firstRunImportSelectionID].contains(sel), configsBySlug[sel] == nil {
             selectedID = vms.first?.slug
         }
     }

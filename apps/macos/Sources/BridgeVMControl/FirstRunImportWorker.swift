@@ -1,23 +1,21 @@
 import Foundation
 
-enum FirstRunImportResult: Sendable {
-    case committed(VMConfig)
-    case failed(String)
-    case publishedButUnsynced(VMConfig, String)
-}
-
 enum FirstRunImportWorker {
     /// Runs entirely on the worker. Ownership is relinquished only after the
     /// configuration is published, including an uncertain parent-directory sync.
     static func run(
         _ inputs: FirstRunImport.Inputs, libraryRoot: URL,
         snapshotHelper: URL = HvfMediaImportHelper.bundled,
+        progress: @Sendable (FirstRunImportStage) -> Void = { _ in },
         publish: (VMConfig, URL) -> VMRegistrationCommitOutcome = { VMLibrary.saveOutcome($0, rootURL: $1) }
     ) -> FirstRunImportResult {
+        progress(.validating)
         if let error = FirstRunImport.validate(inputs) { return .failed(error.description) }
         do {
+            progress(.copying)
             let prepared = try FirstRunImport.prepare(inputs, slug: VMConfig.slugify(inputs.displayName),
                 libraryRoot: libraryRoot, snapshotHelper: snapshotHelper)
+            progress(.saving)
             switch publish(prepared.config, libraryRoot) {
             case .committed:
                 prepared.preserve()

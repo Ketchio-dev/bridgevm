@@ -26,7 +26,7 @@ final class LibraryModelFirstRunImportTests: XCTestCase {
         let gate = WorkerGate()
         let task = Task {
             await model.importExistingHvfVM(fixture.inputs(), snapshotHelper: HvfMediaImportTestSupport.helper,
-                worker: { inputs, root, helper in
+                worker: { inputs, root, helper, _ in
                     guard gate.enter() else { return .failed("worker did not run off main thread") }
                     return FirstRunImportWorker.run(inputs, libraryRoot: root, snapshotHelper: helper)
                 })
@@ -34,7 +34,7 @@ final class LibraryModelFirstRunImportTests: XCTestCase {
         let began = await Task.detached { gate.started.wait(timeout: .now() + 5) == .success }.value
         XCTAssertTrue(began)
         XCTAssertTrue(model.firstRunImportBusy)
-        let duplicate = await model.importExistingHvfVM(fixture.inputs(), worker: { _, _, _ in
+        let duplicate = await model.importExistingHvfVM(fixture.inputs(), worker: { _, _, _, _ in
             XCTFail("busy model must not start another worker")
             return .failed("duplicate")
         })
@@ -55,7 +55,7 @@ final class LibraryModelFirstRunImportTests: XCTestCase {
         defer { fixture.remove() }
         let model = LibraryModel(rootURL: fixture.library, migrateLegacy: false)
         let task = Task {
-            await model.importExistingHvfVM(fixture.inputs(), worker: { _, _, _ in
+            await model.importExistingHvfVM(fixture.inputs(), worker: { _, _, _, _ in
                 XCTFail("already cancelled request must not invoke worker")
                 return .failed("unexpected")
             })
@@ -84,7 +84,7 @@ final class LibraryModelFirstRunImportTests: XCTestCase {
         defer { fixture.remove() }
         let model = LibraryModel(rootURL: fixture.library, migrateLegacy: false)
         let error = await model.importExistingHvfVM(fixture.inputs(),
-            snapshotHelper: HvfMediaImportTestSupport.helper, worker: { inputs, root, helper in
+            snapshotHelper: HvfMediaImportTestSupport.helper, worker: { inputs, root, helper, _ in
                 FirstRunImportWorker.run(inputs, libraryRoot: root, snapshotHelper: helper) { config, root in
                     VMLibrary.saveOutcome(config, rootURL: root) { data, url in
                         VMRegistrationWriter.commit(data, to: url, syncParent: { _ in throw CocoaError(.fileWriteUnknown) })
