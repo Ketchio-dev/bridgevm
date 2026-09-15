@@ -746,3 +746,32 @@ Original log SHA
 is retained. This checkpoint corrects those records; no validator, threshold,
 product wording or criterion state changes. A corrected complete project check,
 new exact-source hosted evidence and one sealed physical-Mac pilot remain pending.
+
+
+## Content-construction boundary observation (2026-09-15)
+
+The preceding corrected full check passed166.19seconds and was sealed as45f469cf.
+Pilot app-ui-host-20260915-06 confirmed NSPrincipalClass=NSApplication in the
+actual reconstructed bundle but still failed initial-window readiness in5.03seconds:
+zero owned windows, zero of seven actions, zero of eight captures, and zero domain
+work. Exact identity, observed exit, fixture and launcher/worker cleanup passed.
+The metadata parity change did not resolve the failure. Its failed receipts remain
+retained; the latest hosted snapshot had66success and19pending of85runs, not a pass.
+
+Source 11d446af084fe14aab1153c3d306133f14852432 adds two passive debug-only observations:
+root_content_constructed at the existing scene modifier and content_body_evaluated
+at ContentView.body. No view wrapper or launch behavior changes. Three exact
+extractions retain their bodies while keeping every structural ceiling; the clone
+sheet changes only from file-private to internal for its existing cross-file use.
+Independent byte comparisons and source review passed. All seven Apple XCTest
+host contracts passed20.21seconds, log SHA
+`fbe599c9def42ab7f31e9ebedacdb779ee53a1dd5f77d1535f5dc3522b07062f`.
+The release boundary passed22.79seconds: positive diagnostic marker, absent ordinary
+release marker, and exact forbidden-release compiler refusal. No app was launched.
+The rebuilt host and all460 Swift/package inputs are sealed privately.
+
+These counters distinguish construction from body evaluation; neither proves
+window admission. The startup limit, seven actions, eight captures, cleanup and
+zero-domain-work requirements are unchanged. The new complete project check,
+exact-source hosted result and one physical-Mac pilot remain required. Native
+rendering/VoiceOver and all existing OPEN criteria remain unproven.
