@@ -714,3 +714,35 @@ privately. Restored7host contracts passed18.23seconds and19adapter contracts
 passed2.76seconds. No additional unchanged-baseline pilot is submitted. Final
 full/release checks and hosted observation follow; UI/VoiceOver/guest/release
 capabilities remain unproven, and every criterion/threshold remains unchanged.
+
+
+## Completion audit and diagnostic packaging parity (2026-09-15)
+
+The final independent audit found that a functioning native UI validation host
+remains required. The earlier assertion that only final hosted CI remained was
+too narrow and is retracted. All five normal-App pilots remain failed, with zero
+of seven actions and zero of eight captures; no rendered UI or VoiceOver pass
+is claimed. The previous source was independently reviewed and merged in PR156
+only after all85 exact-head hosted workflow runs passed; this did not close the
+unfinished UI-validation requirement.
+
+Source `ca1ff9f74dde9889c48d2090dddf522987656b7f` adds only `NSPrincipalClass=NSApplication` to the diagnostic
+bundle metadata, matching the ordinary application's declaration. A small module
+extraction keeps every existing structural ceiling intact. The existing actual
+reconstruction test first failed with `KeyError: NSPrincipalClass` (log SHA
+`4a04020698fdc0fcbbf8a76e4bf5464bab0129c8000392c276268212bad4d33a`).
+All19 adapter tests then passed in2.72seconds (log SHA
+`3f5558f607486d6e305ac7164b008e41553ff27967684e0ae2ff1ad45b3e8ca9`).
+All457 Swift/package source hashes still match the sealed diagnostic executable;
+its hash and the launcher's hash are unchanged. Every other metadata value,
+resource, argument, five-second startup limit, action/capture requirement and
+ownership/cleanup guard is unchanged. The missing key is an observed packaging
+difference, not an established cause of the window failure.
+
+The first complete project check failed in168.92seconds only on capability
+freshness and three operator-document Git-tree identifiers parsed as commits.
+Original log SHA
+`262e64055fa82661f8145d10eb28affdac3fd16c1b5397e723aee34276d41ece`
+is retained. This checkpoint corrects those records; no validator, threshold,
+product wording or criterion state changes. A corrected complete project check,
+new exact-source hosted evidence and one sealed physical-Mac pilot remain pending.
