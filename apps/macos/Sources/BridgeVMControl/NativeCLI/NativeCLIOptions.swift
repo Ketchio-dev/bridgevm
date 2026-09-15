@@ -1,7 +1,7 @@
 import Foundation
 
 struct NativeCLIOptions: Equatable {
-    enum Command: Equatable { case list, inspect(String) }
+    enum Command: Equatable { case list, inspect(String), readiness(String) }
     let command: Command
     let libraryRoot: URL
     let json: Bool
@@ -41,22 +41,16 @@ struct NativeCLIOptions: Equatable {
         let command: Command
         switch positionals {
         case [], ["list"]: command = .list
-        case ["inspect"] where help: command = .inspect("")
-        case let values where values.count == 2 && values[0] == "inspect":
+        case let values where help && values.count == 1 && ["inspect", "readiness"].contains(values[0]):
+            command = values[0] == "inspect" ? .inspect("") : .readiness("")
+        case let values where values.count == 2 && ["inspect", "readiness"].contains(values[0]):
             guard NativeLibraryReader.isCanonicalID(values[1]) else {
                 throw NativeCLIError.invalid("Use the exact VM ID from 'list'; paths and noncanonical IDs are refused.")
             }
-            command = .inspect(values[1])
-        default: throw NativeCLIError.invalid("Expected 'list' or 'inspect ID'. Use --cli --help.")
+            command = values[0] == "inspect" ? .inspect(values[1]) : .readiness(values[1])
+        default: throw NativeCLIError.invalid("Expected 'list', 'inspect ID' or 'readiness ID'. Use --cli --help.")
         }
         return Self(command: command, libraryRoot: library ?? defaultLibrary,
                     json: json, showHelp: help || arguments.isEmpty)
-    }
-}
-
-enum NativeCLIError: LocalizedError {
-    case invalid(String), unavailable(String)
-    var errorDescription: String? {
-        switch self { case .invalid(let text), .unavailable(let text): return text }
     }
 }
