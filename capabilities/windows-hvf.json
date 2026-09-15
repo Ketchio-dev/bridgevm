@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-14",
-  "tested_commit": "070c30298543e3c8101ee41b0ea52572a958defc",
+  "tested_commit": "bbd65548309a5d5776b821ad9336b95c14d42dd2",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: source 070c3029 forwards the owning library root through the HVF factory, the default library control model, and three uncached action fallbacks. Native 169 tests passed after the retained 3-test baseline had 2 root assertion failures; tests stayed byte-identical. Actual default-factory tests confirm only the selected library registration changes and a stopped replacement retains its root. Independent review preserves other backends and operation bodies except root arguments. Full local and exact hosted checks for this source remain pending at this observation point. Preceding 5c3bcad9 passed its full local check in 162.93 seconds; the latest retained hosted observation has 77 successes, Security 34929273352 green, and CI 34929273250 still running. A11 requires the final release regression seal. Standalone ControlModel defaults, file-action coordination, and live guest behavior remain outside this packet. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
+      "measured": "OPEN: source bbd65548 routes own-engine palette selections to their existing controls, including retained active sessions after metadata changes and cached accepted HVF models after becoming idle. Native 175 tests passed; six byte-identical palette tests retained a baseline with 29 assertion failures in five cases. Own-engine command construction avoids creating generic control models, and navigation preserves captured selection and accepted session state. Independent review verifies unchanged compatibility and global command bytes. Full local and exact hosted checks for this source remain pending at this observation point. Preceding e8d676f0 passed its full local check in 163.84 seconds; the latest retained hosted observation has 77 successes, Security 34930626656 green, and CI 34930626763 still running. A11 requires the final release regression seal. Rendered navigation, missing-registration control reachability, file-action coordination and live guest behavior remain outside this packet. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -173,7 +173,8 @@
         "docs/history/windows-hvf/runtime-continuity-deterministic-20260915.md",
         "docs/history/windows-hvf/backend-configuration-deterministic-20260915.md",
         "docs/history/windows-hvf/install-validation-deterministic-20260915.md",
-        "docs/history/windows-hvf/backend-root-deterministic-20260915.md"
+        "docs/history/windows-hvf/backend-root-deterministic-20260915.md",
+        "docs/history/windows-hvf/palette-routing-deterministic-20260915.md"
       ]
     },
     {
