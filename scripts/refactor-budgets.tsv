@@ -1214,7 +1214,7 @@ apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	44	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	56	0
 apps/macos/Sources/BridgeVMControl/ContentView.swift	366	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	254	0
-apps/macos/Sources/BridgeVMControl/CreateVM.swift	828	0
+apps/macos/Sources/BridgeVMControl/CreateVM.swift	497	0
 apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	116	0
 apps/macos/Sources/BridgeVMControl/FirstRunView.swift	80	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
@@ -2390,3 +2390,4 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfConnectionState.swift	7	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfKeyboardDraft.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeKeyboardDraftFixture.swift	122	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeKeyboardDraftTests.swift	179	0
+apps/macos/Sources/BridgeVMControl/CreateVMSheet.swift	336	0
