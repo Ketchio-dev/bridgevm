@@ -6,38 +6,22 @@ use std::ffi::{CStr, OsStr};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::OpenOptionsExt;
 
+#[path = "app_cli_candidates.rs"]
+mod candidate_paths;
+use candidate_paths::candidates;
+
 const PROTOCOL_MARKER: &[u8] = b"bridgevm-native-cli-v1";
 const MAX_EXECUTABLE_BYTES: u64 = 256 * 1024 * 1024;
 
 pub(crate) fn resolve() -> Result<PathBuf> {
     if !cfg!(target_os = "macos") {
-        bail!("native app commands require macOS and a compatible BridgeVMControl.app");
+        bail!("native app commands require macOS and a compatible BridgeVM app");
     }
     let executable = env::current_exe()
         .context("could not locate the current bridgevm executable")?
         .canonicalize()
         .context("could not resolve the current bridgevm executable")?;
     resolve_candidates(&candidates(&executable, account_home().as_deref()))
-}
-
-fn candidates(executable: &Path, home: Option<&Path>) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    if let Some(contents) = executable.ancestors().nth(4) {
-        if contents.file_name() == Some(OsStr::new("Contents"))
-            && executable == contents.join("Resources/target/release/bridgevm")
-            && contents.parent().and_then(Path::extension) == Some(OsStr::new("app"))
-        {
-            paths.push(contents.join("MacOS/BridgeVMControl"));
-        }
-    }
-    paths.push(PathBuf::from(
-        "/Applications/BridgeVMControl.app/Contents/MacOS/BridgeVMControl",
-    ));
-    if let Some(home) = home {
-        paths.push(home.join("Applications/BridgeVMControl.app/Contents/MacOS/BridgeVMControl"));
-    }
-    paths.dedup();
-    paths
 }
 
 fn resolve_candidates(paths: &[PathBuf]) -> Result<PathBuf> {
@@ -51,7 +35,7 @@ fn resolve_candidates(paths: &[PathBuf]) -> Result<PathBuf> {
                     );
                 }
                 validate_marker(path).with_context(|| format!(
-                    "incompatible native app at {}; install a current BridgeVMControl.app or use its paired CLI",
+                    "incompatible native app at {}; install a current BridgeVM app or use its paired CLI",
                     path.display()
                 ))?;
                 return Ok(path.clone());
@@ -64,7 +48,7 @@ fn resolve_candidates(paths: &[PathBuf]) -> Result<PathBuf> {
             }
         }
     }
-    bail!("compatible BridgeVMControl.app was not found; install it in /Applications or ~/Applications, or use the CLI bundled in its Contents/Resources/target/release directory")
+    bail!("compatible BridgeVM.app or BridgeVMControl.app was not found; install it in /Applications or ~/Applications, or use the CLI bundled in its Contents/Resources/target/release directory")
 }
 
 fn validate_marker(path: &Path) -> Result<()> {

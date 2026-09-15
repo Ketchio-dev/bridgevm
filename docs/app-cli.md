@@ -27,13 +27,13 @@ replace native library inventory commands.
 
 ## Installing the command
 
-Use a current `BridgeVMControl.app` package containing the native CLI protocol
+Use a current `BridgeVM.app` or `BridgeVMControl.app` package containing the native CLI protocol
 `bridgevm-native-cli-v1`. The package includes the Rust command at
 `Contents/Resources/target/release/bridgevm`, paired with
 `Contents/MacOS/BridgeVMControl`. A package can be queried directly:
 
 ```sh
-/Applications/BridgeVMControl.app/Contents/Resources/target/release/bridgevm app list
+/Applications/BridgeVM.app/Contents/Resources/target/release/bridgevm app list
 ```
 
 If you want a short shell command, create a link in a directory already on your
@@ -41,15 +41,15 @@ PATH. These commands are optional; BridgeVM does not change shell configuration:
 
 ```sh
 mkdir -p "$HOME/.local/bin"
-ln -s /Applications/BridgeVMControl.app/Contents/Resources/target/release/bridgevm \
+ln -s /Applications/BridgeVM.app/Contents/Resources/target/release/bridgevm \
   "$HOME/.local/bin/bridgevm"
 ```
 
 `ln -s` refuses an existing destination. Ensure the chosen directory is on your
 PATH yourself, or use the full path. The executable's canonical location is used
 to find its paired app even when invoked through a link. Otherwise discovery
-checks `/Applications/BridgeVMControl.app`, then the current account's
-`~/Applications/BridgeVMControl.app`. It does not use repository, PATH, or helper
+checks `BridgeVM.app`, then `BridgeVMControl.app` in `/Applications`, followed by
+those names in the current account's `~/Applications`. It does not use repository, PATH, or helper
 environment overrides. The first existing candidate must be compatible;
 BridgeVM reports an incompatible installation instead of silently choosing a
 different copy.

@@ -46,24 +46,24 @@ fn paired_canonical_cli_precedes_fixed_installed_locations() {
     );
     let alias = fixture.0.join("bridgevm-link");
     symlink(&cli, &alias).unwrap();
-    let canonical = alias.canonicalize().unwrap();
     let home = fixture.0.join("owned-home");
-    let paths = candidates(&canonical, Some(&home));
+    let paths = candidates(&alias.canonicalize().unwrap(), Some(&home));
     assert_eq!(
         paths[0],
         fixture.0.join("Owned.app/Contents/MacOS/BridgeVMControl")
     );
+    let release = "BridgeVM.app/Contents/MacOS/BridgeVMControl";
+    let control = "BridgeVMControl.app/Contents/MacOS/BridgeVMControl";
+    let expected = [
+        Path::new("/Applications").join(release),
+        Path::new("/Applications").join(control),
+        home.join("Applications").join(release),
+        home.join("Applications").join(control),
+    ];
+    assert_eq!(&paths[1..], expected);
     assert_eq!(
-        paths[1],
-        PathBuf::from("/Applications/BridgeVMControl.app/Contents/MacOS/BridgeVMControl")
-    );
-    assert_eq!(
-        paths[2],
-        home.join("Applications/BridgeVMControl.app/Contents/MacOS/BridgeVMControl")
-    );
-    assert_eq!(
-        candidates(&fixture.0.join("target/release/bridgevm"), None).len(),
-        1
+        candidates(&fixture.0.join("target/release/bridgevm"), None),
+        expected[..2]
     );
 }
 
