@@ -110,3 +110,19 @@ Two earlier compilations overlapped final source cleanup and are retained as
 non-frozen receipts, never substituted for this stable run. Current full
 project and pushed-SHA hosted checks remain pending. No product state,
 criterion threshold, required action or release claim changed.
+
+### Own-process AX and drawing-context observation — 14:20 UTC
+
+Pilot `app-ui-20260915-03` at `d0432679` did not resolve the welcome-control
+wait: zero root AX children, 121 native subviews, four captures and zero
+domain-work counters. The failed receipt and images are preserved privately
+under `pilot-03`. No UI action passed.
+
+Source `d7fd76bef7518138115caa0e84a2843ef9206e07` adds a bounded public Accessibility API reader for this
+process PID only, preserving numeric return codes and structural counts
+without reading labels/values, changing permissions or issuing UI actions.
+Owned bitmap drawing now explicitly uses its effective appearance. These
+changes compile with the required opt-in skip in 2.45 seconds, with stable
+sources; the live result remains pending. The five-second wait, seven actions
+and eight required captures remain unchanged. Current full/hosted checks
+remain pending; no criterion or product-state promotion follows.
