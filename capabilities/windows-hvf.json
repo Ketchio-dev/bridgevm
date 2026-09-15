@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-14",
-  "tested_commit": "2eb1302dd4cfb3c5891c1d31c526d0a15e713a8f",
+  "tested_commit": "748d6d676ac97b28e1f7bd2d131c4f03d39d2bb2",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: source 0cd933b7 preserves keyboard drafts when the actual HVF session explicitly refuses input. Typed results distinguish host admission, refusal and legacy ASCII attempts; existing transport algorithms and legacy clearing are preserved. Native 299 tests passed in 41.23 seconds, including eight new draft methods. The compiled baseline ran all eight methods with exactly eight draft-retention assertion failures in 6.77 seconds; prerequisites, owned-file checks, lifetime checks and acceptance/legacy behavior passed. Both new test/support files match that baseline, and all 170 prior test files remain unchanged. Follow-up e5475430 removes an installation-duration estimate unsupported by the reviewed public records; its actual app build passed in 1.46 seconds. Source 2eb1302d observes changed retained installation log content instead of its capped count; its app build passed in 1.57 seconds. The combined full local and exact hosted checks remain pending at this observation point. Preceding 54acf909 passed its full local check in 159.73 seconds and all 78 hosted workflows, including CI 34944680108 and Security 34944680196. A11 requires the final release regression seal. These deterministic results do not establish rendered input or scrolling, guest delivery or consumption, durable drafts, automatic retry, arbitrary write atomicity or successful legacy writes. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
+      "measured": "OPEN: source 9222b159 separates the unchanged VM creation screen from library logic; the original bytes reconstruct exactly with the retained separator. Existing focused checks and the actual app build passed in 2.39 seconds, with all 172 prior test files unchanged. The initial prebuild whitespace check failed and is retained; no app build ran in that trial. Keyboard checkpoint 92f8be3c passed its full local check in 161.03 seconds, but both hosted production-input-driver builds failed because one standalone caller still expected a Boolean result; integration steps were skipped. Those failures remain recorded. Source 748d6d67 adapts that caller to the existing typed legacy result, preserving refusal diagnostics and all transport assertions. Its standalone build passed in 4.63 seconds and two unchanged fake-peer integration test methods passed in 1.87 seconds. The preceding keyboard source passed 299 native tests in 41.23 seconds; no test result is counted as a guest sample. The combined creation-screen and harness full local check and exact-SHA hosted verification remain pending at this pre-check observation. A11 requires the final release regression seal. These deterministic results do not prove rendered UI, guest delivery or application consumption, live disk safety or release readiness. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -179,7 +179,8 @@
         "docs/history/windows-hvf/library-work-admission-deterministic-20260915.md",
         "docs/history/windows-hvf/retained-controls-deterministic-20260915.md",
         "docs/history/windows-hvf/install-plan-preparation-deterministic-20260915.md",
-        "docs/history/windows-hvf/keyboard-draft-and-install-display-deterministic-20260915.md"
+        "docs/history/windows-hvf/keyboard-draft-and-install-display-deterministic-20260915.md",
+        "docs/history/windows-hvf/create-sheet-and-harness-deterministic-20260915.md"
       ]
     },
     {
