@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-14",
-  "tested_commit": "14fe6140d800812a03a1d7bc7de08135232c47e7",
+  "tested_commit": "16dc2bf927692d818da8a5907428bdef158626e1",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: current source 14fe6140 contains the first-run progress/recovery/navigation and CPU-input alignment changes. Related native suites passed 90 tests; the final completion-routing change passed all 17 affected tests. The full local project check passed in 180.87 seconds and identical checked contents were sealed as dae0ef96; its exact hosted checks are pending. Preceding checkpoint 2d8ce4ee passed all 78 hosted runs successfully or skipped, including CI 34920983342 and Security 34920983282. A11 still requires the final release regression seal, and deterministic checks do not close live criteria. Earlier failures, superseded checkpoints and their original qualifications are preserved in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md).",
+      "measured": "OPEN: current source 16dc2bf9 adds library-owned Windows install sessions, immediate Start acceptance and cancellation before dispatch. Expanded native product-flow suites passed 125 tests, including 12 new admission/store cases; the original duplicate-acceptance failure and initial test compile error are retained. Existing install process/media execution is unchanged. Independent review found no introduced blocker. This source still needs its full local and exact hosted checks. Preceding dae0ef96 passed its full local check in 180.87 seconds and all 78 hosted runs finished successfully or skipped (CI 34922274882, Security 34922274734). A11 requires the final release regression seal; live install, mid-pipeline cancellation, external deletion/movement and interruption recovery remain unproven. Earlier observations and failures are preserved in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and repository history.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -168,7 +168,8 @@
         "docs/windows-arm/evidence/b6-active-frame-time-collection-20260910.md",
         "docs/windows-arm/evidence/b6-sealed-cell-observation-contract-20260910.md",
         "docs/windows-arm/evidence/a9-b6-resume-fixes-20260910.md",
-        "docs/history/windows-hvf/a11-observations-through-20260915.md"
+        "docs/history/windows-hvf/a11-observations-through-20260915.md",
+        "docs/history/windows-hvf/install-continuity-deterministic-20260915.md"
       ]
     },
     {
