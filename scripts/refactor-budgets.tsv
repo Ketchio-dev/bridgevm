@@ -1222,7 +1222,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	337	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	537	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	548	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	511	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryRequest.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowInventoryRequestTests.swift	70	0
 apps/macos/Tests/BridgeVMControlTests/HvfPasteKeyOrderingTests.swift	49	0
@@ -2424,3 +2424,5 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallExecution.swift	32
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallControls.swift	18	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallCancellationTests.swift	100	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallCancellationFixture.swift	149	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsReadinessCard.swift	56	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeDiagnosticsSettings.swift	42	0

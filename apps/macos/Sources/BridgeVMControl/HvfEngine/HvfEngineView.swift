@@ -41,6 +41,13 @@ struct HvfEngineView: View {
                 readinessCard
                 if session.config.vtpmStateDir != nil { vtpmLifecycleCard }
                 configCard
+                HvfRuntimeDiagnosticsSettings(
+                    evidenceDir: $evidenceDir, ctlFilePath: $ctlFilePath,
+                    watchdogEnabled: $watchdogEnabled, watchdogMs: $watchdogMs,
+                    nvmeBufferedIO: $nvmeBufferedIO, ctlInput: $ctlInput, sendCtl: sendCtl
+                ) { label, text, chooseDirectory in
+                    pathRow(label, text: text, chooseDirectory: chooseDirectory)
+                }
                 HvfWindowsSnapshotCard(config: currentConfig(), repoRoot: session.repoRoot, vmStopped: vtpmLifecycleAvailable)
                 eventFeedCard
             }
@@ -95,17 +102,6 @@ struct HvfEngineView: View {
             VStack(alignment: .leading, spacing: 12) {
                 pathRow("Target disk", text: $targetDiskPath, chooseDirectory: false)
                 pathRow("UEFI vars", text: $uefiVarsPath, chooseDirectory: false)
-                pathRow("Evidence dir", text: $evidenceDir, chooseDirectory: true)
-                pathRow("CTL file", text: $ctlFilePath, chooseDirectory: false)
-                HStack {
-                    Text("Watchdog").frame(width: 92, alignment: .leading)
-                    Toggle("Enabled", isOn: $watchdogEnabled)
-                        .toggleStyle(.checkbox)
-                    Stepper("\(watchdogMs) ms", value: $watchdogMs, in: 60_000...86_400_000, step: 30_000)
-                        .font(.body.monospaced())
-                        .disabled(!watchdogEnabled)
-                    Spacer()
-                }
                 HStack(spacing: 24) {
                     Stepper("RAM \(ramMiB) MiB", value: $ramMiB, in: 1024...65_536, step: 1024)
                         .font(.body.monospaced())
@@ -118,7 +114,6 @@ struct HvfEngineView: View {
                     Toggle("Virtio net", isOn: $virtioNet).accessibilityIdentifier("bridgevm.runtime.network")
                     Toggle("VirGL 3D", isOn: $virtioGpu3d)
                         .disabled(!session.config.allowsExperimental3D)
-                    Toggle("Buffered NVMe (diagnostic)", isOn: $nvmeBufferedIO)
                     Toggle("Shared folder", isOn: $shareEnabled).accessibilityIdentifier("bridgevm.runtime.share.enabled")
                     Spacer()
                 }
@@ -161,35 +156,7 @@ struct HvfEngineView: View {
     }
 
     private var readinessCard: some View {
-        let report = currentConfig().readiness(repoRoot: session.repoRoot)
-        return GroupBox {
-            VStack(alignment: .leading, spacing: 6) {
-                Label(
-                    report.launchReady ? "부팅 준비 완료" : "부팅 차단 \(report.launchBlockers.count)건",
-                    systemImage: report.launchReady ? "checkmark.circle.fill" : "xmark.octagon.fill"
-                )
-                .foregroundColor(report.launchReady ? .green : .red)
-                Text(report.releaseReady
-                     ? "제품 출시 게이트도 통과했습니다."
-                     : "제품 출시 차단 \(report.releaseBlockers.count)건 — 개발 VM 부팅 가능 여부와 별도입니다.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                ForEach(report.issues.prefix(5)) { issue in
-                    Text("[\(issue.scope.rawValue)] \(issue.summary)")
-                        .font(.caption)
-                        .foregroundColor(issue.scope == .launch ? .red : .orange)
-                }
-                ForEach(report.productLimitations, id: \.self) { limitation in
-                    Text("[v1 limitation] \(limitation)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(6)
-        } label: {
-            Label("Windows HVF Readiness", systemImage: "checklist")
-        }
+        HvfWindowsReadinessCard(report: currentConfig().readiness(repoRoot: session.repoRoot))
     }
 
     private var vtpmLifecycleCard: some View {
@@ -252,10 +219,6 @@ struct HvfEngineView: View {
                         .accessibilityIdentifier("bridgevm.windows.runtime.start")
                     Button(action: session.stop) { Label("중지", systemImage: "stop.fill") }
                         .controlSize(.large).accessibilityIdentifier("bridgevm.windows.runtime.stop")
-                    Button(action: sendCtl) { Label("Send", systemImage: "paperplane.fill") }
-                        .disabled(ctlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("bridgevm.runtime.ctl.send")
-                    TextField("CLIPGET, CLIPSET ..., or guest shell command", text: $ctlInput, onCommit: sendCtl)
-                        .textFieldStyle(.roundedBorder).font(.body.monospaced()).accessibilityIdentifier("bridgevm.runtime.ctl.input")
                 }
                 HStack(spacing: 24) {
                     infoItem("State", stateText)
