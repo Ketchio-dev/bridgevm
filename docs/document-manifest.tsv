@@ -159,3 +159,4 @@ docs/windows-arm/evidence/a19-relocation-containment-20260912.md	current	windows
 docs/windows-arm/evidence/boot-seed-fixture-20260912.md	current	windows-storage	-
 docs/history/windows-hvf/a11-observations-through-20260915.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/install-continuity-deterministic-20260915.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/runtime-continuity-deterministic-20260915.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
