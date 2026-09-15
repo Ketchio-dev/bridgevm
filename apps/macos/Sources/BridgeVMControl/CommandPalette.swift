@@ -15,15 +15,7 @@ struct CommandPaletteView: View {
     @State private var query = ""
 
     private var commands: [PaletteCommand] {
-        var c: [PaletteCommand] = []
-        if let m = library.selectedModel {
-            if !m.running && !m.lifecycleBusy {
-                c.append(.init(title: "시작: \(m.config.name)", subtitle: "VM 시작 / 창 열기", systemImage: "play.fill") { m.start(); dismiss() })
-            } else if m.running && !m.lifecycleBusy {
-                c.append(.init(title: "정지: \(m.config.name)", subtitle: "VM 정지", systemImage: "stop.fill") { m.stop(); dismiss() })
-            }
-            c.append(.init(title: "새로고침: \(m.config.name)", subtitle: "상태 갱신", systemImage: "arrow.clockwise") { m.refresh(); dismiss() })
-        }
+        var c = library.selectedPaletteCommands { dismiss() }
         c.append(.init(title: "새 VM 만들기", subtitle: "Ubuntu / Linux ISO / Windows 11", systemImage: "plus") { library.showingCreate = true; dismiss() })
         c.append(.init(title: library.proMode ? "Pro 모드 끄기" : "Pro 모드 켜기", subtitle: "전체 VM 테이블", systemImage: "tablecells") { library.proMode.toggle(); dismiss() })
         for vm in library.vms {

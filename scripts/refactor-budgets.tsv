@@ -1211,7 +1211,7 @@ apps/macos/Sources/BridgeVMApp/Views/VMDetailView.swift	6392	0
 apps/macos/Sources/BridgeVMControl/Backends.swift	493	0
 apps/macos/Sources/BridgeVMControl/QemuCompatBackend.swift	130	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	44	0
-apps/macos/Sources/BridgeVMControl/CommandPalette.swift	64	0
+apps/macos/Sources/BridgeVMControl/CommandPalette.swift	56	0
 apps/macos/Sources/BridgeVMControl/ContentView.swift	523	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	314	0
 apps/macos/Sources/BridgeVMControl/CreateVM.swift	828	0
@@ -2339,3 +2339,5 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStoreFixture.swift	51	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallValidationAcknowledgmentTests.swift	34	0
 apps/macos/Sources/BridgeVMControl/LibraryModelActionRequests.swift	13	0
 apps/macos/Tests/BridgeVMControlTests/HvfProductBackendConfigurationRootTests.swift	119	0
+apps/macos/Sources/BridgeVMControl/LibraryModelPaletteCommands.swift	33	0
+apps/macos/Tests/BridgeVMControlTests/HvfRuntimePaletteTests.swift	246	0
