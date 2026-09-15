@@ -177,7 +177,7 @@ class AppUIHostContracts(unittest.TestCase):
         bundle, _, _ = self.prepared()
         self.assertEqual((bundle / "Contents/MacOS/BridgeVMControl").read_bytes(), self.binary.read_bytes())
         info = host.plistlib.loads((bundle / "Contents/Info.plist").read_bytes())
-        self.assertEqual(info["LSMinimumSystemVersion"], "15.0")
+        self.assertEqual(info["LSMinimumSystemVersion"], "14.0")
         resources = bundle / "Contents/Resources/BridgeVMApp_BridgeVMControl.bundle"
         self.assertEqual({path.name for path in resources.iterdir()}, set(host.RESOURCES))
         for name in host.RESOURCES:

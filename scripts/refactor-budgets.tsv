@@ -2503,7 +2503,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeOutcome.swift	43	0
 apps/macos/Tests/BridgeVMControlTests/HvfOwnedRuntimeOutcomeTests.swift	157	0
 apps/macos/Tests/BridgeVMControlTests/HvfOwnedRuntimeTestSupport.swift	115	0
 crates/bridgevm-cli/src/app_cli_candidates.rs	21	0
-apps/macos/Sources/BridgeVMControl/ControlWindowPresentation.swift	14	0
+apps/macos/Sources/BridgeVMControl/ControlWindowPresentation.swift	9	0
 tests/integration/app_ui_host_bundle_fixtures.py	10	0
 crates/bridgevm-cli/tests/support/doctor_fixture.rs	52	0
 crates/bridgevm-cli/tests/support/help_fixture.rs	55	0
