@@ -5,8 +5,7 @@ import AppKit
 /// executable (no .app bundle), rather than starting as a background agent.
 final class ControlAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
+        ControlAppActivation.activate()
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         AppUIHost.prepared?.applicationDidFinishLaunching(notification)
         #endif
