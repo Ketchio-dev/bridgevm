@@ -3,19 +3,10 @@ import SwiftUI
 struct LibraryBrand: View {
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(Color.blue, lineWidth: 3)
-                    .frame(width: 25, height: 28).offset(x: -6, y: -5)
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(LibraryAppearance.surface)
-                    .frame(width: 25, height: 28).offset(x: 6, y: 5)
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(Color.purple, lineWidth: 3)
-                    .frame(width: 25, height: 28).offset(x: 6, y: 5)
-            }
-            .frame(width: 42, height: 42)
-            .accessibilityHidden(true)
+            BridgeVMMark()
+                .fill(LibraryAppearance.accent)
+                .frame(width: 42, height: 42)
+                .accessibilityHidden(true)
             Text("BridgeVM").font(.system(size: 23, weight: .bold))
             Spacer(minLength: 0)
         }
