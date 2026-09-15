@@ -36,6 +36,11 @@ final class HvfRuntimeSessionStore {
         return session
     }
 
+    func owns(_ session: HvfEngineSession, for config: VMConfig) -> Bool {
+        guard let entry = entries[.libraryVM(config.slug)] else { return false }
+        return entry.session === session && entry.sourceConfig == config
+    }
+
     func reconcile(with configs: [VMConfig]) {
         let runtimeSlugs = Set(configs.filter {
             $0.engineKind == .hvfEngine && $0.installPending != true
@@ -45,21 +50,5 @@ final class HvfRuntimeSessionStore {
             guard case let .libraryVM(slug) = key else { return false }
             return entry.session.connectionState != .stopped || runtimeSlugs.contains(slug)
         }
-    }
-}
-
-extension LibraryModel {
-    func shouldShowWindowsInstall(for config: VMConfig) -> Bool {
-        if windowsInstallSessions.isActive(slug: config.slug) { return true }
-        if hvfRuntimeSessions.isActive(slug: config.slug) { return false }
-        return config.engineKind == .hvfEngine && config.installPending == true
-    }
-
-    func hvfRuntimeSession(for config: VMConfig) -> HvfEngineSession? {
-        hvfRuntimeSessions.session(for: config, libraryRoot: rootURL)
-    }
-
-    func experimentalHvfRuntimeSession() -> HvfEngineSession {
-        hvfRuntimeSessions.experimentalSession()
     }
 }

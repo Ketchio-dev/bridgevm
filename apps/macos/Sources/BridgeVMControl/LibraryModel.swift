@@ -15,6 +15,7 @@ final class LibraryModel: ObservableObject {
     @Published var deletionError: String?
     @Published var cloneError: String?
     @Published var moveError: String?
+    @Published var operationError: String?
     @Published var firstRunImport = FirstRunImportProgress()
     @Published private(set) var deletingSlugs: Set<String> = []
     @Published private(set) var cloningSlugs: Set<String> = []
@@ -33,9 +34,8 @@ final class LibraryModel: ObservableObject {
     func hasMismatchedCachedControlConfiguration(for cfg: VMConfig) -> Bool {
         modelCache[cfg.slug].map { $0.config != cfg } ?? false
     }
-
-    func deletionImpact(for cfg: VMConfig) -> VMLibraryDeletionImpact {
-        VMLibrary.deletionImpact(for: cfg, rootURL: libraryRoot)
+    func ownsControlModel(_ model: ControlModel, for config: VMConfig) -> Bool {
+        modelCache[config.slug] === model && model.config == config
     }
 
     init(
@@ -85,7 +85,7 @@ final class LibraryModel: ObservableObject {
 
     func model(for cfg: VMConfig) -> ControlModel {
         if let m = modelCache[cfg.slug] { return m }
-        let m = modelFactory(cfg)
+        let m = bindControlModel(modelFactory(latestConfiguration(for: cfg)))
         modelCache[cfg.slug] = m
         return m
     }

@@ -14,7 +14,7 @@ struct LibraryDetailView: View {
             if library.shouldShowWindowsInstall(for: detail.config) {
                 HvfWindowsInstallView(config: detail.config, library: library)
                     .id(detail.config.slug)
-            } else if let session = library.hvfRuntimeSession(for: detail.config) {
+            } else if let session = library.hvfRuntimeDetailSession(for: detail.config) {
                 HvfEngineView(session: session)
                     .id(ObjectIdentifier(session))
             } else {

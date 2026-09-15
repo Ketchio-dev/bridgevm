@@ -5,7 +5,7 @@ import Foundation
 final class HvfWindowsInstallSessionStore {
     typealias Factory = @MainActor (HvfWindowsInstallPlan) -> HvfWindowsInstallSession
     private struct Entry {
-        let bundlePath: String
+        let sourceConfig: VMConfig
         let request: HvfWindowsInstallRequest
         let session: HvfWindowsInstallSession
     }
@@ -23,13 +23,18 @@ final class HvfWindowsInstallSessionStore {
         let request = HvfWindowsInstallRequest.load(bundlePath: config.bundlePath)
             ?? HvfWindowsInstallRequest(isoPath: "", diskGiB: 64,
                                        injectViogpu3d: false, driverPackageDir: nil)
-        if let entry = entries[config.slug], entry.bundlePath == config.bundlePath,
+        if let entry = entries[config.slug], entry.sourceConfig == config,
            entry.request == request { return entry.session }
         let plan = HvfWindowsInstallPlan(repoRoot: repoRoot, libraryRoot: libraryRoot,
             bundlePath: config.bundlePath, slug: config.slug, request: request)
         let session = makeSession(plan)
-        entries[config.slug] = Entry(bundlePath: config.bundlePath, request: request, session: session)
+        entries[config.slug] = Entry(sourceConfig: config, request: request, session: session)
         return session
+    }
+
+    func owns(_ session: HvfWindowsInstallSession, for config: VMConfig) -> Bool {
+        guard let entry = entries[config.slug] else { return false }
+        return entry.session === session && entry.sourceConfig == config
     }
 
     func reconcile(with configs: [VMConfig]) {
@@ -39,14 +44,5 @@ final class HvfWindowsInstallSessionStore {
         entries = entries.filter { slug, entry in
             entry.session.isRunning || pendingSlugs.contains(slug)
         }
-    }
-}
-
-extension LibraryModel {
-    func windowsInstallSession(for config: VMConfig) -> HvfWindowsInstallSession {
-        let session = windowsInstallSessions.session(for: config, libraryRoot: rootURL,
-            repoRoot: HvfEngineSession.defaultRepoRoot())
-        session.onCompleted = { [weak self] in self?.reload() }
-        return session
     }
 }

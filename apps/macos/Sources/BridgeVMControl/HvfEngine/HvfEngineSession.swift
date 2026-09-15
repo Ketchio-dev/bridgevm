@@ -22,6 +22,7 @@ final class HvfEngineSession: ObservableObject {
     @Published var lastHeartbeatAge: TimeInterval?
     @Published var events: [BvAgentEvent] = []
     var repoRoot: URL
+    var workAdmission: LibraryWorkAdmission?
     private var process: Process?
     private var timer: Timer?
     private var tailReader = TailOffsetReader()
@@ -59,20 +60,8 @@ final class HvfEngineSession: ObservableObject {
         try? liveInputHandle?.close()
     }
 
-    @discardableResult
-    func acceptStartConfiguration(_ config: HvfEngineConfig) -> Bool {
-        guard connectionState == .stopped else { return false }
-        self.config = config
-        return true
-    }
-
-    @discardableResult
-    func attachIfStopped() -> Bool {
-        guard connectionState == .stopped else { return false }
-        return attachToRunningVM()
-    }
-
     func start() {
+        guard workAdmission?(true) == nil else { return }
         guard process?.isRunning != true else {
             append(.unknown("launch ignored: HVF engine is already running"))
             return
@@ -191,7 +180,8 @@ final class HvfEngineSession: ObservableObject {
     }
 
     @discardableResult
-    func attachToRunningVM() -> Bool {
+    func attachToRunningVM(reportRefusal: Bool = true) -> Bool {
+        guard workAdmission?(reportRefusal) == nil else { return false }
         guard process?.isRunning != true else { return false }
         guard processIsRunning(config.targetDiskPath) else { return false }
         timer?.invalidate()

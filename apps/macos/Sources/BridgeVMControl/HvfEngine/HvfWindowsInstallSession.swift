@@ -8,8 +8,7 @@ final class HvfWindowsInstallSession: ObservableObject {
     @Published private(set) var startedAt: Date?
 
     let plan: HvfWindowsInstallPlan
-    /// Called after the transaction has durably published the completed config.
-    var onCompleted: (() -> Void)?
+    var lifecycle = HvfWindowsInstallLifecycle()
 
     private var currentProcess: Process?
     private var logTimer: Timer?
@@ -35,6 +34,7 @@ final class HvfWindowsInstallSession: ObservableObject {
     @discardableResult
     func start() -> Task<Void, Never>? {
         guard !isRunning else { return nil }
+        guard workAdmission?(true) == nil else { return nil }
         cancelled = false
         stage = .validating
         startedAt = Date()
