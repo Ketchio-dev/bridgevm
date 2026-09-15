@@ -2390,7 +2390,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfConnectionState.swift	7	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfKeyboardDraft.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeKeyboardDraftFixture.swift	122	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeKeyboardDraftTests.swift	179	0
-apps/macos/Sources/BridgeVMControl/CreateVMSheet.swift	326	0
+apps/macos/Sources/BridgeVMControl/CreateVMSheet.swift	314	0
 apps/macos/Sources/BridgeVMControl/LibraryAppearance.swift	54	0
 apps/macos/Sources/BridgeVMControl/LibrarySidebarChrome.swift	56	0
 apps/macos/Sources/BridgeVMControl/LibraryVMCard.swift	86	0
@@ -2433,3 +2433,4 @@ tests/integration/hvf-control-app-branding-smoke.sh	58	0
 apps/macos/Sources/BridgeVMControl/CreateVMResourceSummary.swift	19	0
 apps/macos/Sources/BridgeVMControl/CreateWindowsInstallFields.swift	49	0
 apps/macos/Sources/BridgeVMControl/LibraryIssuesSection.swift	53	0
+apps/macos/Sources/BridgeVMControl/CreateVMCreationFooter.swift	37	0

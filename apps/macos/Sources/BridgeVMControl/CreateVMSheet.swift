@@ -67,28 +67,16 @@ struct CreateVMSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("새 VM 만들기").font(.title2.bold()).padding(20)
             Divider()
-            ScrollView { fields.padding(20) }
+            ScrollView { fields.padding(20).disabled(working) }
             Divider()
             CreateVMResourceSummary(cpuCount: cpuCount, ramMiB: ramMiB,
                                     diskGiB: createsFreshDisk ? diskGiB : nil)
                 .padding(.horizontal, 20).padding(.top, 12)
-            if !error.isEmpty {
-                Text(error).font(.caption).foregroundColor(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("bridgevm.create.error").accessibilityValue(creationFailureCode)
-                    .padding(.horizontal, 20).padding(.top, 10)
-            }
-            HStack {
-                Spacer()
-                Button("취소") { dismiss() }
-                Button(working ? "생성 중…" : "생성") { create() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canCreate)
-                    .accessibilityIdentifier("bridgevm.create.commit")
-            }
-            .padding(20)
+            CreateVMCreationFooter(working: working, error: error, failureCode: creationFailureCode,
+                                   canCreate: canCreate, cancel: { dismiss() }, create: create)
         }
         .frame(width: 480, height: 640)
+        .interactiveDismissDisabled(working)
     }
 
     private var fields: some View {
