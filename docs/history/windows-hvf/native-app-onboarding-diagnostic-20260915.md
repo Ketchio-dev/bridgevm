@@ -974,3 +974,39 @@ inputs. Independent control-flow/inverse-diff review passed. Pure callback contr
 prove neither rendered UI nor a repaired minimum. Current full-project, exact-source
 hosted checks and sealed pilot13 remain pending. All29criteria, product wording and
 thresholds are unchanged; earlier failures remain recorded.
+
+
+## Sidebar contrast candidate and owned accessibility observation (2026-09-15)
+
+Packet39's full project check passed192.45seconds, sealed77da5b86; all40push workflows
+passed. Physical pilot app-ui-host-20260915-13 at that seal remained FAIL, with
+0of7actions/2of8captures. Both default presentations produced verified images; both
+minimum variants recorded height772 for requested720. The actual dark image shows
+near-black native-sidebar labels with poor contrast, followed later by a welcome-
+controls AX timeout. Neither geometry nor AX cause is proved. Zero domain work and
+verified identity, observed exit and cleanup remain recorded with all prior failures.
+
+Source 8cd6365a5faa8d5596d866cd22bed0585a0fa344 extracts the existing sidebar List and applies semantic
+Color.secondary to its two same-copy section headers and Color.primary to the HVF
+label. Selection, tags, menus, order and actions are preserved. Actual visual repair,
+selected-row contrast and high-contrast behavior remain unproved before new captures.
+
+Only after the existing welcome timeout, a diagnostic observer checks cancellation
+and exact visible content ownership, then records bounded full-protocol and separately
+labelled public-selector trees. Each tree is limited to256nodes, depth32 and128children
+per node; only fixed allowed IDs/roles and bounded type/structure fields are retained.
+No labels, values or alternate action route are introduced. Recording failure preserves
+the original timeout. The5second/50ms wait, action walker, minimum dimensions,7actions/
+8captures and report/completion policy are unchanged. Framework getter duration remains
+subject to the unchanged outer launcher bound; the receipt is non-atomic.
+
+The first compile failed after7.10seconds on an incorrect public-protocol type name;
+its log SHA `dafdb36bd2a1b2880de9237e894ba5060fcc75e2220477358c7f4daee38e49c4`
+is retained. Only two type references were corrected before all seven Apple XCTest
+host contracts passed20.66seconds, log SHA
+`4628df69881c0fbec60a2646d286cea0bdf5274fca85ef16a14e7b9911cbaaf5`.
+Release exclusion/refusal passed28.59seconds. Both receipts contain480stableSwift/
+package inputs; independent inverse/privacy/bounds review passed. These deterministic
+results prove no rendered correction or AX cause. Current full-project, exact-source
+hosted checks and sealed pilot14 are pending. All29criterion states, product wording
+and thresholds remain unchanged; the minimum and complete UI criteria remain open.
