@@ -2410,4 +2410,6 @@ tests/integration/app-ui-tier-smoke.py	261	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIFixture.swift	68	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIAccessibility.swift	67	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUICapture.swift	72	0
-apps/macos/Tests/BridgeVMControlTests/HvfAppUIRenderTests.swift	99	0
+apps/macos/Tests/BridgeVMControlTests/HvfAppUIRenderTests.swift	30	0
+apps/macos/Tests/BridgeVMControlTests/HvfAppUIScenario.swift	81	0
+apps/macos/Tests/BridgeVMControlTests/HvfAppUIProbe.swift	73	0
