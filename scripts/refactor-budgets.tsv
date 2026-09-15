@@ -1816,7 +1816,7 @@ scripts/win-assets/bv-product-e2e.ps1	147	0
 scripts/win-assets/bv-product-e2e-launch.ps1	28	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlAppLaunch.swift	11	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlLaunchOptions.swift	133	0
-apps/macos/Sources/BridgeVMControl/CreateVMSheetCreation.swift	83	0
+apps/macos/Sources/BridgeVMControl/CreateVMSheetCreation.swift	81	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsGuestPayloadIdentity.swift	95	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallSourceLock.swift	47	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsSnapshotCard.swift	54	0
