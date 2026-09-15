@@ -115,7 +115,7 @@ struct HvfEngineView: View {
                 HStack(spacing: 24) {
                     Stepper("RAM \(ramMiB) MiB", value: $ramMiB, in: 1024...65_536, step: 1024)
                         .font(.body.monospaced())
-                    Stepper("CPU \(smpCpus)", value: $smpCpus, in: 1...123)
+                    Stepper("CPU \(smpCpus)", value: $smpCpus, in: HvfEngineConfig.supportedCPURange)
                         .font(.body.monospaced())
                     Spacer()
                 }

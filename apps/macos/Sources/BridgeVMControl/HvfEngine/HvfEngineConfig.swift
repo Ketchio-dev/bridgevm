@@ -6,6 +6,9 @@ enum HvfPerformanceRisk: String, Equatable {
 }
 
 struct HvfEngineConfig: Equatable {
+    /// Matches the typed product runtime's launch-manifest CPU contract.
+    static let supportedCPURange = 1...64
+
     var targetDiskPath: String
     var uefiVarsPath: String
     var evidenceDir: String
@@ -255,8 +258,8 @@ extension HvfEngineConfig {
         if !(1024...65_536).contains(ramMiB) {
             launch("ram-range", "RAM은 1024~65536 MiB 범위여야 합니다.")
         }
-        if !(1...123).contains(smpCpus) {
-            launch("cpu-range", "vCPU 수는 1~123 범위여야 합니다.")
+        if !Self.supportedCPURange.contains(smpCpus) {
+            launch("cpu-range", "vCPU 수는 1~64 범위여야 합니다 (현재 \(smpCpus)).")
         }
         if let watchdogMs, watchdogMs <= 0 {
             launch("watchdog-range", "진단 watchdog은 양수여야 합니다.")

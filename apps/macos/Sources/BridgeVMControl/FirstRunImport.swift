@@ -38,7 +38,7 @@ enum FirstRunImport {
                 return "UEFI vars 파일은 정확히 64 MiB여야 합니다 (\(p): \(b) bytes)."
             case .vtpmNotADirectory(let p): return "vTPM 상태 경로가 디렉터리가 아닙니다: \(p)"
             case .badResources(let mem, let cpu):
-                return "RAM/CPU 값이 유효하지 않습니다 (RAM \(mem) MiB, CPU \(cpu))."
+                return "RAM은 2048 MiB 이상, CPU는 1~64개여야 합니다 (RAM \(mem) MiB, CPU \(cpu))."
             }
         }
     }
@@ -54,7 +54,7 @@ enum FirstRunImport {
         if inputs.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return .emptyName
         }
-        if inputs.memMiB < 2048 || inputs.cpuCount < 1 || inputs.cpuCount > 123 {
+        if inputs.memMiB < 2048 || !HvfEngineConfig.supportedCPURange.contains(inputs.cpuCount) {
             return .badResources(memMiB: inputs.memMiB, cpuCount: inputs.cpuCount)
         }
 

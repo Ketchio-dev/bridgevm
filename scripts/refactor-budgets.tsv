@@ -1220,9 +1220,9 @@ apps/macos/Sources/BridgeVMControl/FirstRunView.swift	88	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	358	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	337	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	572	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	614	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	564	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryRequest.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowInventoryRequestTests.swift	70	0
 apps/macos/Tests/BridgeVMControlTests/HvfPasteKeyOrderingTests.swift	49	0
@@ -2311,3 +2311,4 @@ apps/macos/Sources/BridgeVMControl/VMRegistrationPublication.swift	47	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportTransactionTests.swift	125	0
 apps/macos/Tests/BridgeVMControlTests/LibraryModelFirstRunImportTests.swift	117	0
 apps/macos/Tests/BridgeVMControlTests/VMRegistrationCommitTests.swift	53	0
+apps/macos/Tests/BridgeVMControlTests/HvfProductCPUValidationTests.swift	79	0
