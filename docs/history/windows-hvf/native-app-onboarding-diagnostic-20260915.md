@@ -145,3 +145,52 @@ skip passed in 2.55 seconds (log SHA
 No lifecycle cause or AX correction is claimed before the next sealed pilot.
 Seven actions, eight captures, five-second waits and all tripwires are unchanged.
 Current full project and pushed-SHA hosted results remain pending.
+
+### Final source and retained native limitations — 14:36 UTC
+
+Source `58d724c3157bcc23eca82918a36fee7290fc7ae9` adds immediate required-name feedback to the
+import form using the existing validator's whitespace/newline rule and exact
+message. Import stays disabled until a name is present. Bindings, media
+selection, worker validation and recovery actions are preserved. The name
+component is extracted at 28 lines; the import fields ceiling falls from
+46 to 40. No existing structural ceiling rises.
+
+The frozen selected native run passed 51 tests, skipped the opt-in window
+diagnostic, and failed none (52 selected; 28.12 seconds including compilation;
+log SHA `5182463393c7f239fb0266dc8922ef76143b45e6e31b8eec81d0f4bd9ccbba05`).
+The initial budget check saw the deleted bootstrap still in the index and
+failed for its absent entry; staging that deletion made the unchanged check
+pass. Both receipts remain private.
+
+Pilot `app-ui-20260915-05` at `a9803ab7` refused one document request before
+fixture creation. Its public running/finished flags stayed false; will-finish
+was received and did-finish was absent. It produced no screenshots or actions.
+The request origin is unproven. This failed bootstrap is removed from active
+code, preserving its sealed source, binary and complete failed receipt under
+`pilot-05`. The preceding gated test entry is restored exactly; the seven
+actual actions, eight required captures and five-second waits remain required.
+
+| Pilot | Result | Owned screenshots | Completed UI actions |
+| --- | --- | --- | --- |
+| app-ui-20260915-01 | Welcome controls unavailable | 0 | 0 |
+| app-ui-20260915-02 | Welcome controls unavailable | 4 | 0 |
+| app-ui-20260915-03 | Controller hosting did not resolve controls | 4 | 0 |
+| app-ui-20260915-04 | Own-process AX returned NotImplemented | 4 | 0 |
+| app-ui-20260915-05 | Startup refused a document request | 0 | 0 |
+
+All pilots recorded zero guest boots and zero domain-work tripwires. Images
+show actual owned ContentView rendering with synthetic/empty data. Resizing
+exposes a top overlay, and dark native sidebar text remains dark in this
+host. Their cause and production-app impact are not established. No full
+light/dark layout, actual create/import/search dispatch or Command-F success
+is claimed. Future UI verification needs a production-style test app lifecycle
+and XCUIAutomation or an already-trusted driver; T17's guest-installing runner
+is outside this app-only scope. No permissions or private AX flags were changed.
+
+Preceding `928ec177` passed all 80 hosted workflows at 14:33:04 UTC:
+[CI 34980910392](https://github.com/Ketchio-dev/bridgevm/actions/runs/34980910392)
+and [Security 34980911027](https://github.com/Ketchio-dev/bridgevm/actions/runs/34980911027).
+Snapshot SHA `29aed768178cccd4965ff42c829c9cc9c59aef5cc94d318864033ef725db024f`.
+Current final full-check and hosted results are pending at this frozen record;
+the subsequent exact-tree seal and PR report them separately. No engine
+capability, release state, criterion or threshold changes.
