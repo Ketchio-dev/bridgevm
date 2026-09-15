@@ -2517,4 +2517,5 @@ apps/macos/Sources/BridgeVMControl/AppUIHostPreparationObservation.swift	36	0
 apps/macos/Sources/BridgeVMControl/AppUIHostFixture.swift	21	0
 apps/macos/Tests/BridgeVMAppUIHostTests/AppUIHostContractFixtures.swift	66	0
 apps/macos/Sources/BridgeVMControl/AppUIHostPresentation.swift	27	0
-apps/macos/Sources/BridgeVMControl/AppUIHostPresentationObservation.swift	59	0
+apps/macos/Sources/BridgeVMControl/AppUIHostPresentationObservation.swift	55	0
+apps/macos/Sources/BridgeVMControl/AppUIHostGeometryObservation.swift	67	0

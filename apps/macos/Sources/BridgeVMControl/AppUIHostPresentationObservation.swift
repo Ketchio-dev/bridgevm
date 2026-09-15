@@ -22,10 +22,11 @@ enum AppUIHostPresentationObservation {
                 "original_content": presentationContent(content, window: window),
                 "current_content": presentationContent(current, window: window),
                 "window_visible": window.isVisible,
-                "window_frame_screen_points": presentationRect(window.frame),
-                "window_content_layout_rect_window_points": presentationRect(window.contentLayoutRect),
+                "window_frame_screen_points": AppUIHostGeometryObservation.presentationRect(window.frame),
+                "window_content_layout_rect_window_points": AppUIHostGeometryObservation.presentationRect(window.contentLayoutRect),
                 "window_style_mask": window.styleMask.rawValue,
                 "window_backing_scale_factor": Double(window.backingScaleFactor),
+                "geometry_constraints": AppUIHostGeometryObservation.snapshot(window, content: content, minimum: minimum),
                 "window_explicit_appearance": presentationName(window.appearance?.name),
                 "window_effective_appearance": presentationName(window.effectiveAppearance.name),
                 "window_best_match": presentationName(window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua])),
@@ -40,16 +41,11 @@ enum AppUIHostPresentationObservation {
 
     private static func presentationContent(_ view: NSView?, window: NSWindow) -> [String: Any] {
         ["exists": view != nil, "attached_to_requested_window": view?.window === window,
-         "bounds_local_points": view.map { presentationRect($0.bounds) as Any } ?? NSNull(),
-         "frame_superview_points": view.map { presentationRect($0.frame) as Any } ?? NSNull(),
+         "bounds_local_points": view.map { AppUIHostGeometryObservation.presentationRect($0.bounds) as Any } ?? NSNull(),
+         "frame_superview_points": view.map { AppUIHostGeometryObservation.presentationRect($0.frame) as Any } ?? NSNull(),
          "explicit_appearance": presentationName(view?.appearance?.name),
          "effective_appearance": presentationName(view?.effectiveAppearance.name),
          "best_match": presentationName(view?.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]))]
-    }
-
-    private static func presentationRect(_ rect: NSRect) -> [String: Double] {
-        ["x": Double(rect.origin.x), "y": Double(rect.origin.y),
-         "width": Double(rect.width), "height": Double(rect.height)]
     }
 
     private static func presentationName(_ name: NSAppearance.Name?) -> Any {
