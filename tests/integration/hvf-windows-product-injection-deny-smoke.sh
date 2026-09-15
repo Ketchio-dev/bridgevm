@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 CREATE="$ROOT/apps/macos/Sources/BridgeVMControl/CreateVM.swift"
 CREATE_FLOW="$ROOT/apps/macos/Sources/BridgeVMControl/CreateVMSheetCreation.swift" VIEW="$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallView.swift"
-PRODUCT=("$CREATE" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsImport.swift" "$CREATE_FLOW" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallSession.swift")
+PRODUCT=("$CREATE" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsImport.swift" "$CREATE_FLOW" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallSession.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBackend.swift")
 TESTS="$ROOT/apps/macos/Tests/BridgeVMControlTests"
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 grep -Fq '3D 드라이버 주입은 서명 provenance 검증기가 없어 사용할 수 없습니다.' "$CREATE" || fail 'unavailable UI message missing'
