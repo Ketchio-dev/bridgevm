@@ -1,17 +1,6 @@
 import SwiftUI
 #if canImport(AppKit)
 import AppKit
-/// Ensure the window appears and takes focus when launched as a SwiftPM
-/// executable (no .app bundle), rather than starting as a background agent.
-final class ControlAppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        ControlAppActivation.activate()
-        #if DEBUG && BRIDGEVM_APP_UI_HOST
-        AppUIHost.prepared?.applicationDidFinishLaunching(notification)
-        #endif
-    }
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
-}
 #endif
 struct BridgeVMControlApp: App {
 #if canImport(AppKit)
@@ -21,12 +10,18 @@ struct BridgeVMControlApp: App {
     init() { _library = BridgeVMControlAppModel.libraryState() }
     var body: some Scene {
         #if DEBUG && BRIDGEVM_APP_UI_HOST
-        AppUIHost.prepared?.lifecycle.record(.appBodyEvaluated)
+        AppUIHostLaunchControl.recordBody()
         #endif
         return WindowGroup("BridgeVM Control") {
+            #if DEBUG && BRIDGEVM_APP_UI_HOST && BRIDGEVM_APP_UI_LAUNCH_CONTROL
+            Text("BridgeVM launch control")
+                .frame(minWidth: 1100, minHeight: 720)
+                .appUIHostSceneObservation()
+            #else
             ContentView(library: library)
                 .frame(minWidth: 1100, minHeight: 720)
                 .appUIHostSceneObservation()
+            #endif
         }
         .controlWindowPresentation()
     }

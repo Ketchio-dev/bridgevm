@@ -1210,7 +1210,7 @@ apps/macos/Sources/BridgeVMApp/Views/SettingsView.swift	227	0
 apps/macos/Sources/BridgeVMApp/Views/VMDetailView.swift	6392	0
 apps/macos/Sources/BridgeVMControl/Backends.swift	493	0
 apps/macos/Sources/BridgeVMControl/QemuCompatBackend.swift	130	0
-apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	33	0
+apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	28	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	56	0
 apps/macos/Sources/BridgeVMControl/ContentView.swift	289	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	254	0
@@ -2511,3 +2511,5 @@ scripts/live-gates/app_ui_host_bundle.py	15	0
 apps/macos/Sources/BridgeVMControl/CloneWindowsHVFSheet.swift	31	0
 apps/macos/Sources/BridgeVMControl/AppUIHostViewLifecycle.swift	21	0
 apps/macos/Sources/BridgeVMControl/AppUIHostLifecycleEvent.swift	17	0
+apps/macos/Sources/BridgeVMControl/ControlAppDelegate.swift	14	0
+apps/macos/Sources/BridgeVMControl/AppUIHostLaunchControl.swift	39	0
