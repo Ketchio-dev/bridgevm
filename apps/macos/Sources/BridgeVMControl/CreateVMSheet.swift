@@ -64,9 +64,35 @@ struct CreateVMSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("새 VM 만들기").font(.title2.bold())
+        VStack(alignment: .leading, spacing: 0) {
+            Text("새 VM 만들기").font(.title2.bold()).padding(20)
+            Divider()
+            ScrollView { fields.padding(20) }
+            Divider()
+            CreateVMResourceSummary(cpuCount: cpuCount, ramMiB: ramMiB,
+                                    diskGiB: createsFreshDisk ? diskGiB : nil)
+                .padding(.horizontal, 20).padding(.top, 12)
+            if !error.isEmpty {
+                Text(error).font(.caption).foregroundColor(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("bridgevm.create.error").accessibilityValue(creationFailureCode)
+                    .padding(.horizontal, 20).padding(.top, 10)
+            }
+            HStack {
+                Spacer()
+                Button("취소") { dismiss() }
+                Button(working ? "생성 중…" : "생성") { create() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canCreate)
+                    .accessibilityIdentifier("bridgevm.create.commit")
+            }
+            .padding(20)
+        }
+        .frame(width: 480, height: 640)
+    }
 
+    private var fields: some View {
+        VStack(alignment: .leading, spacing: 16) {
             // 1단계: 운영체제 선택 (Windows / Linux)
             HStack(spacing: 12) {
                 tile("Windows", "pc", selected: osFamily == .windows) { selectFamily(.windows) }
@@ -112,33 +138,9 @@ struct CreateVMSheet: View {
                 Text("3D 드라이버 주입은 서명 provenance 검증기가 없어 사용할 수 없습니다. 3D 주입 없이 가져옵니다.")
                     .font(.caption).foregroundColor(.secondary)
             } else if mode == .windowsHVFInstall {
-                Text("Windows 11 ARM64 ISO에서 자체 HVF 엔진으로 무인 설치합니다. WinPE 스크립트 설치(디스크 파티션 + WIM 적용 + 무인 OOBE)가 자동으로 진행됩니다.")
-                    .font(.callout).foregroundColor(.secondary)
-                HStack {
-                    Button("ISO 선택…") { pickISO() }
-                        .accessibilityIdentifier("bridgevm.create.windows.iso")
-                    Text(isoPath.isEmpty ? "선택된 ISO 없음" : (isoPath as NSString).lastPathComponent)
-                        .font(.caption).foregroundColor(.secondary).lineLimit(1)
-                        .accessibilityIdentifier("bridgevm.create.windows.iso.selection").accessibilityValue(isoPath)
-                }
-                HStack {
-                    Button("ARM64 드라이버 폴더…") { pickGuestPayload() }
-                        .accessibilityIdentifier("bridgevm.create.windows.guest-payload")
-                    Text(guestPayloadPath.isEmpty ? "선택된 payload 없음" : (guestPayloadPath as NSString).lastPathComponent)
-                        .font(.caption).foregroundColor(.secondary).lineLimit(1)
-                        .accessibilityIdentifier("bridgevm.create.windows.guest-payload.selection").accessibilityValue(guestPayloadPath)
-                }
-                HStack {
-                    Button("Payload manifest…") { pickGuestPayloadManifest() }
-                        .accessibilityIdentifier("bridgevm.create.windows.guest-manifest")
-                    Text(guestPayloadManifestPath.isEmpty ? "선택된 manifest 없음" : (guestPayloadManifestPath as NSString).lastPathComponent)
-                        .font(.caption).foregroundColor(.secondary).lineLimit(1)
-                        .accessibilityIdentifier("bridgevm.create.windows.guest-manifest.selection").accessibilityValue(guestPayloadManifestPath)
-                }
-                Text("저장장치·직렬·네트워크용 서명된 ARM64 드라이버와 SHA-256 manifest가 필요합니다. 선택한 원본은 VM 번들에 복사·봉인됩니다.")
-                    .font(.caption).foregroundColor(.secondary)
-                Text("3D 드라이버 주입은 서명 provenance 검증기가 없어 사용할 수 없습니다. Windows는 3D 주입 없이 설치합니다.")
-                    .font(.caption).foregroundColor(.secondary)
+                CreateWindowsInstallFields(isoPath: isoPath, guestPayloadPath: guestPayloadPath,
+                    guestPayloadManifestPath: guestPayloadManifestPath, pickISO: pickISO,
+                    pickGuestPayload: pickGuestPayload, pickGuestPayloadManifest: pickGuestPayloadManifest)
             } else {
                 Text(mode == .windows
                      ? "Windows 11 ARM ISO를 선택하면 QEMU + TPM 2.0으로 설치 마법사를 부팅합니다."
@@ -221,20 +223,8 @@ struct CreateVMSheet: View {
             }
             .font(.callout)
 
-            if !error.isEmpty { Text(error).font(.caption).foregroundColor(.red)
-                .accessibilityIdentifier("bridgevm.create.error").accessibilityValue(creationFailureCode) }
 
-            HStack {
-                Spacer()
-                Button("취소") { dismiss() }
-                Button(working ? "생성 중…" : "생성") { create() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canCreate)
-                    .accessibilityIdentifier("bridgevm.create.commit")
-            }
         }
-        .padding(20)
-        .frame(width: 480)
     }
 
     private func tile(_ title: String, _ icon: String, selected: Bool, _ action: @escaping () -> Void) -> some View {

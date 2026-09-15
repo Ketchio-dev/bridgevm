@@ -2364,7 +2364,7 @@ apps/macos/Sources/BridgeVMControl/LibraryEmptyState.swift	9	0
 apps/macos/Sources/BridgeVMControl/LibraryModelRetainedControls.swift	47	0
 apps/macos/Sources/BridgeVMControl/LibraryRetainedControlDescriptor.swift	76	0
 apps/macos/Sources/BridgeVMControl/LibraryRetainedControlStore.swift	34	0
-apps/macos/Sources/BridgeVMControl/LibrarySidebar.swift	82	0
+apps/macos/Sources/BridgeVMControl/LibrarySidebar.swift	71	0
 apps/macos/Sources/BridgeVMControl/RetainedControlDetailView.swift	19	0
 apps/macos/Sources/BridgeVMControl/RetainedControlsSidebarEntry.swift	21	0
 apps/macos/Sources/BridgeVMControl/RetainedInstallControlView.swift	31	0
@@ -2390,7 +2390,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfConnectionState.swift	7	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfKeyboardDraft.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeKeyboardDraftFixture.swift	122	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeKeyboardDraftTests.swift	179	0
-apps/macos/Sources/BridgeVMControl/CreateVMSheet.swift	336	0
+apps/macos/Sources/BridgeVMControl/CreateVMSheet.swift	326	0
 apps/macos/Sources/BridgeVMControl/LibraryAppearance.swift	54	0
 apps/macos/Sources/BridgeVMControl/LibrarySidebarChrome.swift	56	0
 apps/macos/Sources/BridgeVMControl/LibraryVMCard.swift	86	0
@@ -2430,3 +2430,6 @@ apps/macos/scripts/bundle-control-app-metadata.sh	27	0
 apps/macos/scripts/GenerateControlAppIcon.swift	57	0
 tests/integration/hvf-control-app-branding-smoke.sh	58	0
 .github/workflows/hvf-control-app-branding.yml	14	0
+apps/macos/Sources/BridgeVMControl/CreateVMResourceSummary.swift	19	0
+apps/macos/Sources/BridgeVMControl/CreateWindowsInstallFields.swift	49	0
+apps/macos/Sources/BridgeVMControl/LibraryIssuesSection.swift	53	0
