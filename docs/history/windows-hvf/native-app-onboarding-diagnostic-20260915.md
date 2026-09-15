@@ -461,3 +461,60 @@ are retained under `hvf-app-autonomy-20260915` and
 `hvf-app-ui-diagnostic-20260915/normal-app-host`. Current full-project/hosted
 validation and the next sealed pilot follow this source conclusion. All earlier
 failures, ENGINEERING_PREVIEW and every criterion/threshold remain unchanged.
+
+### Usability and scene observation checkpoint — 2026-09-15 18:00 UTC
+
+Source18f5ccd4 gives the existing creation resource Pickers actual accessible
+names and selected OS/method buttons semantic selection plus checkmarks. Their
+options/bindings/actions/identifiers remain unchanged. Source96683e4c moves
+installation failure detail below the status row with multiline selectable text
+and makes existing log lines selectable. The joint existing creation/install
+selection passed82tests in8.57seconds with stable sources, log SHA
+`139f71d6ca1740b0107a8e96035f506a00376e833f6ef842a0f6692e71185939`.
+
+Source04ade4c6 returns the existing keyboard submission outcome to the view and
+shows an adjacent generic refusal while retaining the draft. Editing or a later
+non-refused submission clears the notice. Exactly-empty UI submission is disabled;
+whitespace remains valid input. The parent draft binding, existing key actions
+and input/send identifiers remain; session/router/protocol behavior is unchanged.
+The legacyAttempted path still clears after its unacknowledged write attempt,
+including the existing explicit failed-write case. No universal failure-recovery
+or guest-delivery claim is made. The existing8draft tests retain all assertions
+and now verify all11typed outcomes;21relatedtests passed in7.51seconds, stable
+log SHA `a75355cef2f89e5b6919b45e651ecdc058f96cab92d5ee1e3d28a666b99c847d`.
+
+The preceding3a4b7f6a seal passed the full project check in158.87seconds, log SHA
+`91a0807505906281999592c9938b02a89e97be86a250e2c31be5070cdcc264e8`.
+Normal-App pilot `app-ui-host-20260915-02` at that seal again failed the unchanged
+five-second startup bound: App init1, library factory1 and delegate didFinish1;
+representable make/update/attachment were all zero. The terminal snapshot came
+18.9ms after the five-second deadline. This proves the missing hook observation,
+not that no application window existed. All7actions remained false,0captures,
+all4domain-work counts zero; fixture/launcher-exit/worker cleanup passed. Its
+unaltered lifecycle SHA is
+`3ec8bcee643fa1861612f0267d0e3535e2de581027e47f336be6c698620a9db5`.
+
+Source `e8bf70a34c9b5a786137350b13875b2767bd8d8c` adds passive App-body/root-appearance
+events, public default-launch Bool/null from the existing delegate notification,
+and one terminal snapshot of at most32 own NSApp windows' four boolean flags.
+[Apple's launch classification](https://developer.apple.com/documentation/appkit/nsapplication/launchisdefaultuserinfokey)
+distinguishes default from other launch reasons; false alone does not identify
+a document cause. No new handlers, argv/default mutation, alternate window
+selection or0→1frame-size change is made. Original UI factories are extracted
+verbatim, ordinary empty background and the diagnostic zero-size hook remain.
+Nine fixed capped event counters permit at most18 lifecycle writes, plus one
+private window snapshot; no titles/IDs/classes/paths/text or other apps are read.
+The same7actions/8captures/5second waits remain required. Seven dedicated host
+contracts passed19.316seconds with442Swift files stable; release boundary passed
+20.97seconds. Native rendering, VoiceOver and button interaction remain unproven.
+
+The saved3a4b7f6a hosted snapshot has a known failed Coherence inventory check:
+[run35003387352 job104497027531](https://github.com/Ketchio-dev/bridgevm/actions/runs/35003387352/job/104497027531)
+hit the existing10second native_failure child wait. Earlier PS5.1 and PS7-format
+checks passed; later schema/dispatch steps did not run. Full failed log SHA
+`aa851b0f5d627043bae355523379a6da9a838f58f23b36f3ee5404b58dd4f0fe`
+is retained. Exactly one unchanged job rerun was accepted HTTP201 at17:53:40UTC;
+no limit or fixture changed and no result has been observed. A retry cannot
+prove the underlying delay cause or erase the failure. Current full/hosted
+validation and the next sealed native pilot follow this checkpoint; every
+criterion, threshold and product state remains unchanged.
