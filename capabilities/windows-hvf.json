@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-14",
-  "tested_commit": "408ab3c32da1bcf7a07f9a1f442d53b015256ddf",
+  "tested_commit": "6b318e8090cea18aacbe818f143c5d9c807c2543",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: source 408ab3c3 adds reciprocal admission for bound runtime launch configuration, Start and attachment, install Start, and generic Start/resource Apply. These named entrypoints refuse conflicting file reservations, owned work and obsolete same-library objects before operation mutation. Native 216 tests passed in 39.53 seconds, including 15 new work-admission tests. The invalid initial fixture trial (15 tests, 312 failures), corrected API-only baseline (15 tests, 343 failed assertions) and first expanded routing regression (216 tests, four failures) remain separately retained. The routing repair preserves the existing busy generic panel while direct stale getters resolve current metadata; canonical tests remained unchanged. Full local and exact hosted checks for this source remain pending at this observation point. Preceding 0aa79085 passed its full local check in 159.77 seconds and all 78 hosted runs, including CI 34933886306 and Security 34933886231. A11 requires the final release regression seal. This packet establishes named in-memory entrypoint admission and UI-value routing, not other-instance coordination, physical-path isolation, missing-registration control navigation, rendered alerts, real operation completion or live guest evidence. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
+      "measured": "OPEN: source 6b318e80 retains exact own-HVF runtime/install controls when their registration disappears. Stable object tokens keep accepted metadata, terminal state and logs reachable until explicit finished-record dismissal; narrow state/stage notifications preserve selection and are disconnected on dismissal. Native 227 tests passed in 39.82 seconds, including 11 new retention tests and the preceding 216 cases. The retained primary baseline executed one method across 16 table cases with 32 failed assertions in 6.48 seconds: no retained detail, Pro/ordinary fallback, and four extra model/runtime creations. Fixture identity/access and owned file-byte checks passed. All four new test files and 160 prior test files remained unchanged. New tests use simulated runtime observations and acknowledged finite installer validation; no runtime Start/attachment/Stop or installer-pipeline execution is claimed by this packet. Full local and exact hosted checks for this source remain pending at this observation point. Preceding 3ea26b8e passed its full local check in 159.95 seconds and all 78 hosted workflows, including CI 34937196001 and Security 34937196070. A11 requires the final release regression seal. This establishes in-memory ownership, UI-value routing, notification and dismissal, not rendered interaction, actual guest stop/install completion, guest survival, registration repair, durable history or external coordination. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -176,7 +176,8 @@
         "docs/history/windows-hvf/backend-root-deterministic-20260915.md",
         "docs/history/windows-hvf/palette-routing-deterministic-20260915.md",
         "docs/history/windows-hvf/library-action-admission-deterministic-20260915.md",
-        "docs/history/windows-hvf/library-work-admission-deterministic-20260915.md"
+        "docs/history/windows-hvf/library-work-admission-deterministic-20260915.md",
+        "docs/history/windows-hvf/retained-controls-deterministic-20260915.md"
       ]
     },
     {
