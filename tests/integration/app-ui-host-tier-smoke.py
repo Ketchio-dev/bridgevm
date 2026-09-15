@@ -10,7 +10,6 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
-import zlib
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/live-gates"))
@@ -18,16 +17,10 @@ import app_ui_diagnostic as original
 import app_ui_host_diagnostic as host
 import app_ui_host_manifest as manifest
 from app_ui_host_cleanup_cases import AppUIHostCleanupContracts
+from app_ui_host_bundle_fixtures import png
 
 COMMIT = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
 CLI = ROOT / "scripts/live-gates/bridgevm-live"
-
-
-def png():
-    def chunk(kind, body):
-        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0))
-            + chunk(b"IDAT", zlib.compress(b"\0\x10\x20\x30\xff")) + chunk(b"IEND", b""))
 
 
 class AppUIHostContracts(unittest.TestCase):
@@ -183,6 +176,8 @@ class AppUIHostContracts(unittest.TestCase):
     def test_bundle_reconstruction_uses_exact_git_resources_and_unmodified_binary(self):
         bundle, _, _ = self.prepared()
         self.assertEqual((bundle / "Contents/MacOS/BridgeVMControl").read_bytes(), self.binary.read_bytes())
+        info = host.plistlib.loads((bundle / "Contents/Info.plist").read_bytes())
+        self.assertEqual(info["LSMinimumSystemVersion"], "15.0")
         resources = bundle / "Contents/Resources/BridgeVMApp_BridgeVMControl.bundle"
         self.assertEqual({path.name for path in resources.iterdir()}, set(host.RESOURCES))
         for name in host.RESOURCES:

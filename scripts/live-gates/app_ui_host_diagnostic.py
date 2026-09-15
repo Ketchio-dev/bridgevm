@@ -31,7 +31,7 @@ def reconstruct_bundle(private, repo, commit, binary, expected):
         plistlib.dump({"CFBundleExecutable": "BridgeVMControl", "CFBundlePackageType": "APPL",
                       "CFBundleIdentifier": BUNDLE_ID, "CFBundleName": "BridgeVM UI Diagnostic",
                       "CFBundleVersion": "1", "CFBundleShortVersionString": "1.0",
-                      "LSMinimumSystemVersion": "14.0", "NSHighResolutionCapable": True}, info)
+                      "LSMinimumSystemVersion": "15.0", "NSHighResolutionCapable": True}, info)
     resources = bundle / "Contents/Resources/BridgeVMApp_BridgeVMControl.bundle"
     resources.mkdir(parents=True)
     for name in RESOURCES:

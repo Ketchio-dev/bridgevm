@@ -11,10 +11,13 @@ scratch_path=$2
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 mkdir -p "$scratch_path"
 record=$(mktemp -d "$scratch_path/host-contract-evidence.XXXXXX")
-swift build --package-path "$repo_root/apps/macos" --scratch-path "$scratch_path" \
-  --product BridgeVMControl -Xswiftc -DBRIDGEVM_APP_UI_HOST 2>&1 | tee "$record/build.log"
-if ! swift test --package-path "$repo_root/apps/macos" --scratch-path "$scratch_path" \
-    -Xswiftc -DBRIDGEVM_APP_UI_HOST --list-tests > "$record/discovery.txt" 2> "$record/discovery.log"; then
+arch=$(uname -m)
+[[ "$arch" == arm64 || "$arch" == x86_64 ]] || { echo "unsupported host architecture: $arch" >&2; exit 2; }
+# This isolated diagnostic requires macOS 15; ordinary/release builds retain macOS 14.
+swift_args=(--package-path "$repo_root/apps/macos" --scratch-path "$scratch_path"
+            -Xswiftc -DBRIDGEVM_APP_UI_HOST -Xswiftc -target -Xswiftc "$arch-apple-macosx15.0")
+swift build "${swift_args[@]}" --product BridgeVMControl 2>&1 | tee "$record/build.log"
+if ! swift test "${swift_args[@]}" --list-tests > "$record/discovery.txt" 2> "$record/discovery.log"; then
   cat "$record/discovery.log" >&2
   exit 1
 fi
@@ -39,11 +42,8 @@ if len(actual) != 7 or set(actual) != expected:
     raise SystemExit(f"diagnostic host discovery differs: expected {sorted(expected)!r}; got {actual!r}")
 print("diagnostic host discovery: exactly seven qualified Apple XCTest methods")
 PY
-swift test --package-path "$repo_root/apps/macos" --scratch-path "$scratch_path" \
-  -Xswiftc -DBRIDGEVM_APP_UI_HOST --skip-build \
+swift test "${swift_args[@]}" --skip-build \
   --filter 'BridgeVMAppUIHostTests[.]AppUIHostContractTests' 2>&1 | tee "$record/tests.log"
-swift build --package-path "$repo_root/apps/macos" --scratch-path "$scratch_path" \
-  -Xswiftc -DBRIDGEVM_APP_UI_HOST --show-bin-path > "$record/bin-path.txt"
-host_binary="$(cat "$record/bin-path.txt")/BridgeVMControl"
+host_binary="$(swift build "${swift_args[@]}" --show-bin-path | tee "$record/bin-path.txt")/BridgeVMControl"
 shasum -a 256 "$host_binary" > "$record/host-binary.sha256"
 echo "native app host contracts: PASS (seven discovered tests; no app launched); evidence: $record"

@@ -28,7 +28,6 @@ struct BridgeVMControlApp: App {
                 .frame(minWidth: 1100, minHeight: 720)
                 .appUIHostSceneObservation()
         }
-        .windowStyle(.titleBar)
-        .defaultSize(width: 1320, height: 860)
+        .controlWindowPresentation()
     }
 }
