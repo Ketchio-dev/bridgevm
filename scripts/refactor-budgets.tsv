@@ -1253,7 +1253,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	50	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift	407	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	257	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsDriverPreflight.swift	45	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallView.swift	115	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallView.swift	84	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/TailOffsetReader.swift	47	0
 apps/macos/Tests/BridgeVMControlTests/HvfBoundedLogReadTests.swift	41	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMIdentityLifecycle.swift	451	0
@@ -2466,3 +2466,4 @@ scripts/check-app-ui-host-contracts.sh	49	0
 apps/macos/Sources/BridgeVMControl/AppUIHostAdmission.swift	49	0
 apps/macos/Sources/BridgeVMControl/AppUIHostLifecycle.swift	94	0
 apps/macos/Sources/BridgeVMControl/CreateVMChoiceTile.swift	57	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallStatusCard.swift	40	0
