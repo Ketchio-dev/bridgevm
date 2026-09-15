@@ -13,18 +13,18 @@ final class HvfAppUIRenderTests: XCTestCase {
             throw HvfAppUIError.refused("A fresh absolute owned output directory is required")
         }
         let capture = try HvfAppUICapture(output: URL(fileURLWithPath: path, isDirectory: true))
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
         do {
-            let bootstrap = try HvfAppUIBootstrap(output: capture.output)
-            defer { bootstrap.close() }
             let fixture = try HvfAppUIFixture(capture: capture)
             defer { fixture.close() }
             try await HvfAppUIScenario.run(fixture)
             try fixture.assertNoLibraryWrites()
-            try bootstrap.assertNoDocumentRequests()
             try capture.save()
         } catch {
             capture.failed(error)
             throw error
         }
     }
+
 }

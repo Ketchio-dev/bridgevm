@@ -2398,7 +2398,7 @@ apps/macos/Sources/BridgeVMControl/LibraryOverviewView.swift	80	0
 apps/macos/Sources/BridgeVMControl/LibraryVMContextMenu.swift	37	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeHeader.swift	43	0
 apps/macos/Sources/BridgeVMControl/FirstRunWelcomeView.swift	74	0
-apps/macos/Sources/BridgeVMControl/FirstRunImportFields.swift	46	0
+apps/macos/Sources/BridgeVMControl/FirstRunImportFields.swift	40	0
 apps/macos/Sources/BridgeVMControl/LibraryFileField.swift	33	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunPresentationTests.swift	115	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportNavigation.swift	12	0
@@ -2416,4 +2416,4 @@ apps/macos/Tests/BridgeVMControlTests/HvfAppUIProbe.swift	73	0
 apps/macos/Sources/BridgeVMControl/LibrarySearchField.swift	36	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIWindow.swift	34	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIClient.swift	57	0
-apps/macos/Tests/BridgeVMControlTests/HvfAppUIBootstrap.swift	104	0
+apps/macos/Sources/BridgeVMControl/FirstRunImportNameField.swift	28	0

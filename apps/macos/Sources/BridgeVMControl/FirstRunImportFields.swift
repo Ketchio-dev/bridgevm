@@ -10,13 +10,7 @@ struct FirstRunImportFields: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            GroupBox {
-                TextField("VM 이름", text: $displayName)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("bridgevm.first-run.name")
-            } label: {
-                Label("라이브러리에 표시할 이름", systemImage: "tag")
-            }
+            FirstRunImportNameField(displayName: $displayName)
             GroupBox {
                 VStack(alignment: .leading, spacing: 20) {
                     LibraryFileField(title: "Windows 디스크", detail: "이미 설치된 Windows ARM64 RAW 디스크를 선택하세요.", path: $diskPath)

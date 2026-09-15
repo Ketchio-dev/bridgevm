@@ -30,7 +30,7 @@ struct FirstRunView: View {
                             vtpmPath: $vtpmPath, memGiB: $memGiB, cpuCount: $cpuCount)
                     }
                     FirstRunImportStatusView(library: library,
-                        canImport: !diskPath.isEmpty && !varsPath.isEmpty, importAction: runImport)
+                        canImport: FirstRunImportNameField.hasName(displayName) && !diskPath.isEmpty && !varsPath.isEmpty, importAction: runImport)
                 } else {
                     FirstRunWelcomeView(createAction: { library.showingCreate = true }, importAction: {
                         library.proMode = false
