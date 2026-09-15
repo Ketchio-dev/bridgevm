@@ -53,11 +53,4 @@ extension LibraryModel {
         firstRunImport.finish(error: nil)
         return nil
     }
-
-    @discardableResult
-    func returnToFirstRunInputs() -> Bool {
-        guard !firstRunImportBusy, firstRunImport.publishedConfig != nil else { return false }
-        firstRunImport.returnToInputs()
-        return true
-    }
 }

@@ -2316,7 +2316,7 @@ apps/macos/Sources/BridgeVMControl/FirstRunImportProgress.swift	66	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportSidebarEntry.swift	18	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportStatusView.swift	41	0
 apps/macos/Sources/BridgeVMControl/LibraryDetailView.swift	33	0
-apps/macos/Sources/BridgeVMControl/LibraryModelFirstRunRecovery.swift	63	0
+apps/macos/Sources/BridgeVMControl/LibraryModelFirstRunRecovery.swift	56	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportNavigationTests.swift	40	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportProgressTests.swift	98	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportRecoveryTests.swift	170	0
@@ -2401,3 +2401,5 @@ apps/macos/Sources/BridgeVMControl/FirstRunWelcomeView.swift	74	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportFields.swift	46	0
 apps/macos/Sources/BridgeVMControl/LibraryFileField.swift	33	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunPresentationTests.swift	115	0
+apps/macos/Sources/BridgeVMControl/FirstRunImportNavigation.swift	12	0
+apps/macos/Tests/BridgeVMControlTests/FirstRunImportNavigationActionsTests.swift	79	0
