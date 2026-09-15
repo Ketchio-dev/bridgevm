@@ -52,19 +52,7 @@ struct LibraryOverviewView: View {
                     Spacer(minLength: 0)
                 }
                 .padding(20).modifier(LibraryCardSurface())
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
-                    TextField("VM 이름 또는 엔진 검색", text: $query)
-                        .textFieldStyle(.plain)
-                        .accessibilityIdentifier("bridgevm.library.search")
-                    if !query.isEmpty {
-                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
-                            .buttonStyle(.plain).foregroundStyle(.secondary)
-                            .accessibilityLabel("검색 지우기")
-                    }
-                }
-                .padding(12)
-                .background(LibraryAppearance.inset, in: RoundedRectangle(cornerRadius: 10))
+                LibrarySearchField(query: $query)
                 if matchingVMs.isEmpty {
                     ContentUnavailableView {
                         Label(query.isEmpty ? "등록된 VM이 없습니다" : "검색 결과가 없습니다", systemImage: "desktopcomputer")

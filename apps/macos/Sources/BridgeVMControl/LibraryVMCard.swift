@@ -71,7 +71,7 @@ struct LibraryVMCard: View {
                 .padding(20)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain).help(config.name)
             .accessibilityLabel("\(config.name), \(config.engineShortLabel), \(resourceDescription)")
             .accessibilityHint("VM 상세 화면 열기")
             Divider().padding(.horizontal, 20)

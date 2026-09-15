@@ -2394,7 +2394,7 @@ apps/macos/Sources/BridgeVMControl/CreateVMSheet.swift	336	0
 apps/macos/Sources/BridgeVMControl/LibraryAppearance.swift	54	0
 apps/macos/Sources/BridgeVMControl/LibrarySidebarChrome.swift	65	0
 apps/macos/Sources/BridgeVMControl/LibraryVMCard.swift	106	0
-apps/macos/Sources/BridgeVMControl/LibraryOverviewView.swift	92	0
+apps/macos/Sources/BridgeVMControl/LibraryOverviewView.swift	80	0
 apps/macos/Sources/BridgeVMControl/LibraryVMContextMenu.swift	37	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeHeader.swift	43	0
 apps/macos/Sources/BridgeVMControl/FirstRunWelcomeView.swift	74	0
@@ -2413,3 +2413,4 @@ apps/macos/Tests/BridgeVMControlTests/HvfAppUICapture.swift	72	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIRenderTests.swift	30	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIScenario.swift	81	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIProbe.swift	73	0
+apps/macos/Sources/BridgeVMControl/LibrarySearchField.swift	36	0
