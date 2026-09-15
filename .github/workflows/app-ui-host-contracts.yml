@@ -19,14 +19,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - name: Compile opt-in normal-app host without launching it
-        run: >-
-          swift build --package-path apps/macos --scratch-path "$RUNNER_TEMP/app-ui-host-swift"
-          --product BridgeVMControl -Xswiftc -DBRIDGEVM_APP_UI_HOST
-      - name: Owned host input contracts (no NSApplication)
-        run: >-
-          swift test --package-path apps/macos --scratch-path "$RUNNER_TEMP/app-ui-host-swift"
-          -Xswiftc -DBRIDGEVM_APP_UI_HOST --filter AppUIHostContractTests
+      - name: Compile and verify all seven owned host contracts (no NSApplication)
+        run: bash scripts/check-app-ui-host-contracts.sh --scratch-path "$RUNNER_TEMP/app-ui-host-swift"
       - name: Verify diagnostic host is excluded from release builds (no app launch)
         run: |
           host_bin_dir=$(swift build --package-path apps/macos --scratch-path "$RUNNER_TEMP/app-ui-host-swift" --show-bin-path -Xswiftc -DBRIDGEVM_APP_UI_HOST)

@@ -35,8 +35,7 @@ let package = Package(
         ),
         .testTarget(
             name: "BridgeVMAppTests",
-            dependencies: ["BridgeVMApp"],
-            path: "Tests/BridgeVMAppTests"
+            dependencies: ["BridgeVMApp"]
         ),
         .testTarget(
             name: "AppleVzRunnerTests",
@@ -48,6 +47,7 @@ let package = Package(
             dependencies: ["BridgeVMControl", "BridgeVMWindowProtocol"],
             path: "Tests/BridgeVMControlTests"
         ),
+        .testTarget(name: "BridgeVMAppUIHostTests", dependencies: ["BridgeVMControl"]),
         .testTarget(name: "BridgeVMProductE2ETests", dependencies: ["BridgeVMProductE2E"], path: "Tests/BridgeVMProductE2ETests")
     ]
 )
