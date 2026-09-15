@@ -83,27 +83,27 @@ struct CreateVMSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             // 1단계: 운영체제 선택 (Windows / Linux)
             HStack(spacing: 12) {
-                tile("Windows", "pc", selected: osFamily == .windows) { selectFamily(.windows) }
+                CreateVMChoiceTile(title: "Windows", icon: "pc", selected: osFamily == .windows) { selectFamily(.windows) }
                     .accessibilityIdentifier("bridgevm.create.os.windows")
-                tile("Linux", "terminal", selected: osFamily == .linux) { selectFamily(.linux) }
+                CreateVMChoiceTile(title: "Linux", icon: "terminal", selected: osFamily == .linux) { selectFamily(.linux) }
             }
 
             // 2단계: 세부 설치 방식
             HStack(spacing: 8) {
                 if osFamily == .windows {
-                    subTile("ISO에서 설치", selected: mode == .windowsHVFInstall) {
+                    CreateVMMethodChoiceTile(title: "ISO에서 설치", selected: mode == .windowsHVFInstall) {
                         mode = .windowsHVFInstall; autofillWin11()
                     }
                     .accessibilityIdentifier("bridgevm.create.windows.install")
-                    subTile("설치된 디스크 가져오기", selected: mode == .windowsHVF) {
+                    CreateVMMethodChoiceTile(title: "설치된 디스크 가져오기", selected: mode == .windowsHVF) {
                         mode = .windowsHVF; isoPath = ""
                     }
-                    subTile("QEMU 호환", selected: mode == .windows) {
+                    CreateVMMethodChoiceTile(title: "QEMU 호환", selected: mode == .windows) {
                         mode = .windows; autofillWin11()
                     }
                 } else {
-                    subTile("Ubuntu 즉시 복제", selected: mode == .ubuntu) { mode = .ubuntu }
-                    subTile("Linux ISO 설치", selected: mode == .iso) { mode = .iso }
+                    CreateVMMethodChoiceTile(title: "Ubuntu 즉시 복제", selected: mode == .ubuntu) { mode = .ubuntu }
+                    CreateVMMethodChoiceTile(title: "Linux ISO 설치", selected: mode == .iso) { mode = .iso }
                 }
             }
 
@@ -158,12 +158,16 @@ struct CreateVMSheet: View {
                 Button("폴더 선택…") { pickStorage() }
                 Text(storageDir?.path ?? "기본 (라이브러리)")
                     .font(.caption).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
-                if storageDir != nil { Button { storageDir = nil } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain) }
+                if storageDir != nil {
+                    Button { storageDir = nil } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("저장 위치를 기본 라이브러리로 재설정")
+                }
             }
 
             HStack {
                 Text("해상도").frame(width: 64, alignment: .leading)
-                Picker("", selection: $resIndex) {
+                Picker("해상도", selection: $resIndex) {
                     ForEach(0..<resolutions.count, id: \.self) { i in
                         Text("\(resolutions[i].0)×\(resolutions[i].1)").tag(i)
                     }
@@ -175,7 +179,7 @@ struct CreateVMSheet: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Text("메모리").frame(width: 64, alignment: .leading)
-                        Picker("", selection: $ramMiB) {
+                        Picker("메모리", selection: $ramMiB) {
                             ForEach(ramOptions, id: \.self) { Text("\($0 / 1024) GiB").tag($0) }
                         }.labelsHidden().frame(width: 150)
                         Spacer()
@@ -189,7 +193,7 @@ struct CreateVMSheet: View {
                     if createsFreshDisk {
                         HStack {
                             Text("디스크").frame(width: 64, alignment: .leading)
-                            Picker("", selection: $diskGiB) {
+                            Picker("디스크", selection: $diskGiB) {
                                 ForEach(diskOptions, id: \.self) { Text("\($0) GiB").tag($0) }
                             }.labelsHidden().frame(width: 150)
                             Spacer()
@@ -213,31 +217,6 @@ struct CreateVMSheet: View {
 
 
         }
-    }
-
-    private func tile(_ title: String, _ icon: String, selected: Bool, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: icon).font(.system(size: 28))
-                Text(title).font(.callout)
-            }
-            .frame(maxWidth: .infinity).padding(.vertical, 16)
-            .background(selected ? Color.accentColor.opacity(0.18) : Color.gray.opacity(0.1))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected ? Color.accentColor : .clear, lineWidth: 2))
-            .cornerRadius(10)
-        }.buttonStyle(.plain)
-    }
-
-    private func subTile(_ title: String, selected: Bool, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.caption)
-                .padding(.horizontal, 12).padding(.vertical, 7)
-                .frame(maxWidth: .infinity)
-                .background(selected ? Color.accentColor.opacity(0.18) : Color.gray.opacity(0.08))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? Color.accentColor : .clear, lineWidth: 1.5))
-                .cornerRadius(8)
-        }.buttonStyle(.plain)
     }
 
     /// Switch OS family and reset to that family's default install method.
