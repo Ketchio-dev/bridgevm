@@ -89,17 +89,19 @@ fn engine_descriptors_keep_windows_no_qemu_target_separate() {
 
 #[test]
 fn engine_product_state_matches_the_capability_registry() {
-    // A stale claim that Windows could not boot survived here for a long time
-    // because no test asserted these two fields. They are the descriptor's only
-    // user-facing claim about product maturity, so they are pinned here and
-    // cross-checked against capabilities/windows-hvf.json by
-    // scripts/render-capability-status.py.
+    // Read the registry itself; hard-coded expectations preserved a false Proven claim.
+    let registry: serde_json::Value =
+        serde_json::from_str(include_str!("../../../capabilities/windows-hvf.json"))
+            .expect("valid capability registry JSON");
     let windows = windows_11_arm_no_qemu_engine_descriptor();
-    assert_eq!(windows.product_state, EngineProductState::Proven);
-    assert_eq!(windows.product_state.as_str(), "PROVEN");
-    assert!(windows
-        .product_state_detail
-        .contains("boots an installed Windows 11 Arm desktop"));
+    assert_eq!(
+        Some(windows.product_state.as_str()),
+        registry["product_state"].as_str()
+    );
+    assert_eq!(
+        Some(windows.product_state_detail),
+        registry["wording"]["engine_summary"].as_str()
+    );
     assert!(
         !windows.product_state_detail.contains("not bootable"),
         "retracted claim must not return"

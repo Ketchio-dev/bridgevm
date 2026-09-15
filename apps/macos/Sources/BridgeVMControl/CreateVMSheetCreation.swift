@@ -2,6 +2,7 @@ import SwiftUI
 
 extension CreateVMSheet {
     func create() {
+        guard !working else { return }
         creationFailureCode = ""
         let selectedTemplate = template
         if WindowsHVFProductPolicy.requiresTemplate(mode) && selectedTemplate == nil {

@@ -19,18 +19,18 @@ final class HvfSessionInputDriver {
         router.attachUnknown(binding: binding)
     }
 
-    /// True means handled or explicitly refused; false alone allows legacy input.
-    func route(_ event: HvfOrderedInputQueue.Event, binding: [String]) -> Bool {
-        switch router.route(event, binding: binding, now: Date()) {
-        case .legacy: return false
+    /// Only legacy admission allows the caller to use the legacy input path.
+    func route(_ event: HvfOrderedInputQueue.Event, binding: [String]) -> HvfNegotiatedInputStream.Admission {
+        let admission = router.route(event, binding: binding, now: Date())
+        switch admission {
+        case .legacy: break
         case .refused:
             onDiagnostic?("ordered input refused: unavailable, full or changed ownership")
-            return true
         case .queued:
             startPumpIfNeeded()
             onPoll?()
-            return true
         }
+        return admission
     }
 
     func allowLegacyWrite(binding: [String]) -> Bool { router.allowLegacyWrite(binding: binding) }

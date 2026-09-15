@@ -127,3 +127,5 @@ fn disk_vars_alias_is_rejected() {
     fs::hard_link(&disk, &alias).unwrap();
     assert!(LockedPair::open(&disk, &alias).is_err());
 }
+#[path = "managed_pair_ownership_tests.rs"]
+mod ownership;

@@ -131,30 +131,6 @@ enum VMLibrary {
     }
 
     @discardableResult
-    static func save(_ config: VMConfig, rootURL: URL = root) -> Bool {
-        var cfg = config
-        cfg.id = cfg.slug
-        let dir = rootURL.appendingPathComponent(cfg.slug, isDirectory: true)
-        let configURL = dir.appendingPathComponent("vm.json")
-        do {
-            if (try? dir.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
-                return false
-            }
-            if (try? configURL.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
-                return false
-            }
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try enc.encode(cfg)
-            guard data.count <= maximumConfigBytes else { return false }
-            try VMRegistrationWriter.write(data, to: configURL)
-            return true
-        } catch {
-            return false
-        }
-    }
-
-    @discardableResult
     static func delete(_ slug: String, rootURL: URL = root) -> Bool {
         let dir = rootURL.appendingPathComponent(VMConfig.slugify(slug), isDirectory: true)
         do {

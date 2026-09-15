@@ -1,0 +1,13 @@
+name: App-only native UI diagnostic contracts
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Sealed app-only queue and observation contracts
+        run: python3 tests/integration/app-ui-tier-smoke.py

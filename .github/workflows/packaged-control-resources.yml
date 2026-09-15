@@ -1,0 +1,16 @@
+name: Packaged control resource contracts
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  relocated-resources:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Real resource callers in relocated owned app layouts (no app lifecycle or guest)
+        run: bash tests/integration/packaged-control-resources-smoke.sh
+      - name: Existing Secure Boot policy and provisioning contracts
+        run: bash tests/integration/hvf-secure-boot-provisioning-smoke.sh

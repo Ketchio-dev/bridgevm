@@ -4,7 +4,7 @@ import AppKit
 import UniformTypeIdentifiers
 #endif
 struct HvfEngineView: View {
-    @StateObject private var session: HvfEngineSession
+    @ObservedObject private(set) var session: HvfEngineSession
     @State private var targetDiskPath = ""
     @State private var uefiVarsPath = ""
     @State private var evidenceDir = ""
@@ -29,19 +29,26 @@ struct HvfEngineView: View {
     @State private var vtpmLifecycleError: String?
     @State private var confirmVTPMRestore = false
     @State private var confirmVTPMReset = false
-    init(config: HvfEngineConfig = HvfEngineView.defaultConfig()) {
-        _session = StateObject(wrappedValue: HvfEngineSession(config: config))
+    init(session: HvfEngineSession) {
+        _session = ObservedObject(wrappedValue: session)
     }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                statusCard
+                screenshotCard
                 readinessCard
                 if session.config.vtpmStateDir != nil { vtpmLifecycleCard }
                 configCard
-                statusCard
+                HvfRuntimeDiagnosticsSettings(
+                    evidenceDir: $evidenceDir, ctlFilePath: $ctlFilePath,
+                    watchdogEnabled: $watchdogEnabled, watchdogMs: $watchdogMs,
+                    nvmeBufferedIO: $nvmeBufferedIO, ctlInput: $ctlInput, sendCtl: sendCtl
+                ) { label, text, chooseDirectory in
+                    pathRow(label, text: text, chooseDirectory: chooseDirectory)
+                }
                 HvfWindowsSnapshotCard(config: currentConfig(), repoRoot: session.repoRoot, vmStopped: vtpmLifecycleAvailable)
-                screenshotCard
                 eventFeedCard
             }
             .padding(20)
@@ -50,7 +57,7 @@ struct HvfEngineView: View {
         .accessibilityIdentifier("bridgevm.windows.runtime.view")
         .onAppear {
             loadStateFromSession()
-            session.attachToRunningVM()
+            session.attachIfStopped()
         }
         .confirmationDialog(
             "이 상태에 복구 키를 연결하시겠습니까?",
@@ -86,14 +93,8 @@ struct HvfEngineView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("HVF Engine (Experimental)").font(.largeTitle.bold())
-                Text("Windows 11 ARM64 from-scratch HVF backend").foregroundColor(.secondary)
-            }
-            Spacer()
-            statusPill
-        }
+        HvfRuntimeHeader(title: session.config.libraryContext?.config.name ?? displayWindowTitle, state: stateText, stateColor: stateColor,
+                         ramMiB: session.config.ramMiB, cpus: session.config.smpCpus)
     }
 
     private var configCard: some View {
@@ -101,21 +102,10 @@ struct HvfEngineView: View {
             VStack(alignment: .leading, spacing: 12) {
                 pathRow("Target disk", text: $targetDiskPath, chooseDirectory: false)
                 pathRow("UEFI vars", text: $uefiVarsPath, chooseDirectory: false)
-                pathRow("Evidence dir", text: $evidenceDir, chooseDirectory: true)
-                pathRow("CTL file", text: $ctlFilePath, chooseDirectory: false)
-                HStack {
-                    Text("Watchdog").frame(width: 92, alignment: .leading)
-                    Toggle("Enabled", isOn: $watchdogEnabled)
-                        .toggleStyle(.checkbox)
-                    Stepper("\(watchdogMs) ms", value: $watchdogMs, in: 60_000...86_400_000, step: 30_000)
-                        .font(.body.monospaced())
-                        .disabled(!watchdogEnabled)
-                    Spacer()
-                }
                 HStack(spacing: 24) {
                     Stepper("RAM \(ramMiB) MiB", value: $ramMiB, in: 1024...65_536, step: 1024)
                         .font(.body.monospaced())
-                    Stepper("CPU \(smpCpus)", value: $smpCpus, in: 1...123)
+                    Stepper("CPU \(smpCpus)", value: $smpCpus, in: HvfEngineConfig.supportedCPURange)
                         .font(.body.monospaced())
                     Spacer()
                 }
@@ -124,7 +114,6 @@ struct HvfEngineView: View {
                     Toggle("Virtio net", isOn: $virtioNet).accessibilityIdentifier("bridgevm.runtime.network")
                     Toggle("VirGL 3D", isOn: $virtioGpu3d)
                         .disabled(!session.config.allowsExperimental3D)
-                    Toggle("Buffered NVMe (diagnostic)", isOn: $nvmeBufferedIO)
                     Toggle("Shared folder", isOn: $shareEnabled).accessibilityIdentifier("bridgevm.runtime.share.enabled")
                     Spacer()
                 }
@@ -137,14 +126,7 @@ struct HvfEngineView: View {
                             .font(.body.monospaced()).accessibilityIdentifier("bridgevm.runtime.share.guest")
                     }
                 }
-                HStack(spacing: 8) {
-                    TextField("Type text into Windows", text: $keyboardInput, onCommit: sendKeyboardText)
-                        .textFieldStyle(.roundedBorder).accessibilityIdentifier("bridgevm.runtime.keyboard.input")
-                    Button("Type", action: sendKeyboardText).accessibilityIdentifier("bridgevm.runtime.keyboard.send")
-                    Button("Tab") { session.sendKey("tab") }
-                    Button("Enter") { session.sendKey("enter") }
-                    Button("Space") { session.sendKey("space") }
-                }
+                HvfRuntimeKeyboardInput(session: session, draft: $keyboardInput)
                 HStack(spacing: 8) {
                     Button("Esc") { session.sendKey("esc") }
                     Button("⌫") { session.sendKey("backspace") }.help("Backspace")
@@ -167,35 +149,7 @@ struct HvfEngineView: View {
     }
 
     private var readinessCard: some View {
-        let report = currentConfig().readiness(repoRoot: session.repoRoot)
-        return GroupBox {
-            VStack(alignment: .leading, spacing: 6) {
-                Label(
-                    report.launchReady ? "부팅 준비 완료" : "부팅 차단 \(report.launchBlockers.count)건",
-                    systemImage: report.launchReady ? "checkmark.circle.fill" : "xmark.octagon.fill"
-                )
-                .foregroundColor(report.launchReady ? .green : .red)
-                Text(report.releaseReady
-                     ? "제품 출시 게이트도 통과했습니다."
-                     : "제품 출시 차단 \(report.releaseBlockers.count)건 — 개발 VM 부팅 가능 여부와 별도입니다.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                ForEach(report.issues.prefix(5)) { issue in
-                    Text("[\(issue.scope.rawValue)] \(issue.summary)")
-                        .font(.caption)
-                        .foregroundColor(issue.scope == .launch ? .red : .orange)
-                }
-                ForEach(report.productLimitations, id: \.self) { limitation in
-                    Text("[v1 limitation] \(limitation)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(6)
-        } label: {
-            Label("Windows HVF Readiness", systemImage: "checklist")
-        }
+        HvfWindowsReadinessCard(report: currentConfig().readiness(repoRoot: session.repoRoot))
     }
 
     private var vtpmLifecycleCard: some View {
@@ -252,15 +206,12 @@ struct HvfEngineView: View {
         GroupBox {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
-                    Button(action: start) { Label("Start", systemImage: "play.fill") }
-                        .disabled(!bootConfigReady)
+                    Button(action: start) { Label("시작", systemImage: "play.fill") }
+                        .buttonStyle(.borderedProminent).controlSize(.large)
+                        .disabled(session.connectionState != .stopped || !bootConfigReady)
                         .accessibilityIdentifier("bridgevm.windows.runtime.start")
-                    Button(action: session.stop) { Label("Stop", systemImage: "stop.fill") }
-                        .accessibilityIdentifier("bridgevm.windows.runtime.stop")
-                    Button(action: sendCtl) { Label("Send", systemImage: "paperplane.fill") }
-                        .disabled(ctlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("bridgevm.runtime.ctl.send")
-                    TextField("CLIPGET, CLIPSET ..., or guest shell command", text: $ctlInput, onCommit: sendCtl)
-                        .textFieldStyle(.roundedBorder).font(.body.monospaced()).accessibilityIdentifier("bridgevm.runtime.ctl.input")
+                    Button(action: session.stop) { Label("중지", systemImage: "stop.fill") }
+                        .controlSize(.large).accessibilityIdentifier("bridgevm.windows.runtime.stop")
                 }
                 HStack(spacing: 24) {
                     infoItem("State", stateText)
@@ -270,7 +221,7 @@ struct HvfEngineView: View {
             }
             .padding(6)
         } label: {
-            Label("Control Channel", systemImage: "terminal")
+            Label("실행 및 상태", systemImage: "play.circle")
         }
     }
 
@@ -320,16 +271,6 @@ struct HvfEngineView: View {
         } label: {
             Label("BVAGENT Event Feed", systemImage: "list.bullet.rectangle")
         }
-    }
-
-    private var statusPill: some View {
-        Text(stateText)
-            .font(.callout)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(stateColor.opacity(0.18))
-            .foregroundColor(stateColor)
-            .cornerRadius(8)
     }
 
     private var stateText: String {
@@ -403,7 +344,7 @@ struct HvfEngineView: View {
     }
 
     private func start() {
-        session.config = currentConfig()
+        guard session.acceptStartConfiguration(currentConfig()) else { return }
         session.start()
         #if canImport(AppKit)
         HvfDisplayWindowController.present(session: session, title: displayWindowTitle)
@@ -416,10 +357,6 @@ struct HvfEngineView: View {
         }
     }
 
-    private func sendKeyboardText() {
-        session.sendText(keyboardInput)
-        keyboardInput = ""
-    }
     private func currentConfig() -> HvfEngineConfig {
         var config = session.config
         config.targetDiskPath = targetDiskPath

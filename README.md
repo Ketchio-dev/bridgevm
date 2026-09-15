@@ -24,7 +24,6 @@ an explicitly experimental graphics path.
 | PPSSPP on experimental Vulkan | **58.82 FPS p50 in 3 / 3 runs** | One real title, not a claim about every Vulkan workload |
 | PPSSPP on the experimental D3D11-compatible subset | **3 / 3 runs above 30 FPS** | One real title; p50 was 250.0 / 62.5 / 62.5 FPS |
 | CoreAudio playback and shutdown | **10 / 10 passed** | 2,504,031 frames; zero drops and zero unexpected callback errors |
-| Defined release-blocking criteria | **18 / 19 proven** | A9 production 3D driver signing and installation remains open |
 
 These are retained campaign results on the measured hardware and exact sealed
 inputs, not estimates or promises for every application or Mac. The fixed
@@ -39,7 +38,7 @@ thresholds and receipts are linked from the
 - keyboard, absolute pointer, dynamic resize, network, host audio, clipboard,
   folder transfer, and guest-agent control;
 - TPM 2.0, Secure Boot and measured-boot workflows, encrypted vTPM state,
-  recovery/migration, and powered-off snapshots;
+  recovery/migration;
 - experimental Vulkan and D3D11-compatible paths in the separate engineering
   evidence track;
 - deterministic hosted CI plus sealed real-hardware receipts for behavior that
@@ -56,13 +55,13 @@ Release-blocking criteria proven: **16 / 19**. Open: A9, A11, A19.
 
 Known open defects:
 - **A9**: Windows-HVF 3D driver injection is unavailable for install and import: signed kernel-policy provenance and a clean-machine installation flow have not been proven. The product exposes only 3D-off install/import.
-- **A19**: Copying only the logical disk/vars originals after restore loses current managed state. Legacy managed storage relocated before identity migration is refused. Full interrupted-restore and product lifecycle gates remain unproven.
+- **A19**: External copies of only logical disk/vars originals after restore lose current managed state. Legacy managed storage relocated before identity migration is refused. Full interrupted-restore, raw export and product lifecycle gates remain unproven.
 - **B6**: Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-09-10 at commit `2cb2b549189f015d5ed711c40ccb7af77e9d447d`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-09-14 at commit `05e5c676c8f7f8e38107b60af4ef7253fc0ce65a`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 See the [current status](STATUS.md) and

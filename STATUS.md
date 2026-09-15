@@ -2,7 +2,7 @@
 
 Document status: **Current**
 
-Last revised: 2026-08-20
+Last revised: 2026-09-14
 
 This file is the concise evidence boundary for BridgeVM. Detailed measurements
 live in the [capability matrix](docs/windows-arm/capability-matrix.md) and dated
@@ -15,13 +15,13 @@ Release-blocking criteria proven: **16 / 19**. Open: A9, A11, A19.
 
 Known open defects:
 - **A9**: Windows-HVF 3D driver injection is unavailable for install and import: signed kernel-policy provenance and a clean-machine installation flow have not been proven. The product exposes only 3D-off install/import.
-- **A19**: Copying only the logical disk/vars originals after restore loses current managed state. Legacy managed storage relocated before identity migration is refused. Full interrupted-restore and product lifecycle gates remain unproven.
+- **A19**: External copies of only logical disk/vars originals after restore lose current managed state. Legacy managed storage relocated before identity migration is refused. Full interrupted-restore, raw export and product lifecycle gates remain unproven.
 - **B6**: Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-09-10 at commit `2cb2b549189f015d5ed711c40ccb7af77e9d447d`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-09-14 at commit `05e5c676c8f7f8e38107b60af4ef7253fc0ce65a`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 ## How to read the generated status
@@ -63,9 +63,9 @@ criteria.
 
 - persistent NVMe-backed Windows disk;
 - persistent UEFI variables;
-- powered-off snapshot create/verify/restore as an atomic disk + vars pair;
-- restored snapshot boot evidence proving that the restored guest state actually
-  returned.
+
+Snapshot evidence and outstanding storage-safety limits are recorded in the
+generated A19 entry above and the [snapshot scope](docs/windows-arm/snapshot-scope-v1.md).
 
 ### Display, input, and integration
 

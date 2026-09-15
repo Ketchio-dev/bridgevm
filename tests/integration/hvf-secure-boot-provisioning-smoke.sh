@@ -31,13 +31,8 @@ if [[ -z "$sdkroot" ]]; then
   sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
 fi
 
-CLANG_MODULE_CACHE_PATH="$WORKDIR/clang-module-cache" \
-  SWIFTPM_MODULECACHE_OVERRIDE="$WORKDIR/swift-module-cache" \
-  SDKROOT="$sdkroot" \
-  swiftc -parse-as-library \
-    "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift" \
-    "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift" \
-    "$ROOT/tests/integration/HvfSecureBootProvisioningSmoke.swift" \
-    -o "$WORKDIR/hvf-secure-boot-provisioning-smoke"
+BRIDGEVM_SWIFT_SDKROOT="$sdkroot" \
+  "$ROOT/tests/integration/compile-control-resources-smoke.sh" \
+  "$ROOT/tests/integration/HvfSecureBootProvisioningSmoke.swift" "$WORKDIR/hvf-secure-boot-provisioning-smoke"
 
 "$WORKDIR/hvf-secure-boot-provisioning-smoke" "$POLICY"

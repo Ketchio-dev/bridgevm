@@ -12,6 +12,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BRIDGEVM_TEST_SNAPSHOT_HELPER="$(bash "$ROOT/scripts/prepare-hvf-import-test-helper.sh")"
+export BRIDGEVM_TEST_SNAPSHOT_HELPER
 SHIM="$ROOT/apps/macos/XCTestShim"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -37,14 +39,12 @@ extension Bundle {
 EOF
 
 
-# Oversubscribed on purpose: the three suites do not compile in lockstep, so
-# -j ncpu each measured 19.2 s end to end against 35.1 s with swiftc batching.
+# Suites compile independently using the available cores.
 SWIFTC_JOBS="${SWIFTC_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
 
 # shellcheck source=scripts/run-xctest-shim-suite.sh
 source "$ROOT/scripts/run-xctest-shim-suite.sh"
 
-# Compile the shared window contract before either app suite uses it.
 bash "$ROOT/scripts/xctest-swiftc.sh" -emit-module -emit-library -static -module-name BridgeVMWindowProtocol -target "$TARGET" \
     -o "$WORK/libBridgeVMWindowProtocol.a" "$ROOT/apps/macos/Sources/BridgeVMWindowProtocol/"*.swift
 logged() { local n="$1"; shift; suite "$n" "$@" > "$WORK/log-$n" 2>&1; }

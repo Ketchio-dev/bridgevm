@@ -231,7 +231,7 @@ enum HvfWindowsBootSeed {
 
     /// Locate and gunzip the bundled proven seed varstore.
     static func bundledSeed() throws -> Data {
-        guard let url = Bundle.module.url(
+        guard let url = BridgeVMControlResources.url(
             forResource: "windows-boot-seed-vars", withExtension: "fd.gz") else {
             throw SeedError.varstoreUnreadable
         }

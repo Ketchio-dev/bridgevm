@@ -35,7 +35,8 @@ mean deleting useful observations.
 [`AGENTS.md`](../AGENTS.md) holds the binding working rules: the evidence
 hierarchy, the ban on relaxing a criterion to pass it, claim discipline,
 fail-closed security, canonical-image safety, structural budgets, commit and CI
-discipline, and the 120-second foreground wait limit for long gates.
+discipline, and the execution-venue rules for deterministic checks and live work
+in [§9](../AGENTS.md#9-long-tests-use-the-correct-execution-venue).
 
 One command is the gate for all of it:
 

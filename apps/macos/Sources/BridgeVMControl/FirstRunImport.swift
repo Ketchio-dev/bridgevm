@@ -8,7 +8,7 @@ import Foundation
 enum FirstRunImport {
     /// The three inputs a user selects. Only the disk and vars are required; a
     /// vTPM state dir is optional (a fresh TPM is initialized when absent).
-    struct Inputs: Equatable {
+    struct Inputs: Equatable, Sendable {
         var displayName: String
         var diskPath: String
         var varsPath: String
@@ -38,7 +38,7 @@ enum FirstRunImport {
                 return "UEFI vars 파일은 정확히 64 MiB여야 합니다 (\(p): \(b) bytes)."
             case .vtpmNotADirectory(let p): return "vTPM 상태 경로가 디렉터리가 아닙니다: \(p)"
             case .badResources(let mem, let cpu):
-                return "RAM/CPU 값이 유효하지 않습니다 (RAM \(mem) MiB, CPU \(cpu))."
+                return "RAM은 2048 MiB 이상, CPU는 1~64개여야 합니다 (RAM \(mem) MiB, CPU \(cpu))."
             }
         }
     }
@@ -54,7 +54,7 @@ enum FirstRunImport {
         if inputs.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return .emptyName
         }
-        if inputs.memMiB < 2048 || inputs.cpuCount < 1 || inputs.cpuCount > 123 {
+        if inputs.memMiB < 2048 || !HvfEngineConfig.supportedCPURange.contains(inputs.cpuCount) {
             return .badResources(memMiB: inputs.memMiB, cpuCount: inputs.cpuCount)
         }
 
@@ -99,78 +99,18 @@ enum FirstRunImport {
     }
 
     /// Materialize the bundle for `slug` under `libraryRoot` and place the
-    /// selected inputs into it. The disk is hard-linked when possible (same
-    /// volume) to avoid copying tens of GiB, falling back to a copy across
-    /// volumes. Returns the persisted VMConfig.
+    /// selected inputs into it. Disk and vars are independent copies so guest
+    /// writes cannot modify the source or another imported VM.
+    /// Returns the configuration for the caller to persist.
     static func register(
         _ inputs: Inputs,
         slug: String,
         libraryRoot: URL,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default, snapshotHelper: URL = HvfMediaImportHelper.bundled
     ) throws -> VMConfig {
-        let bundleURL = libraryRoot
-            .appendingPathComponent(slug, isDirectory: true)
-            .appendingPathComponent("bundle", isDirectory: true)
-        let layout = BundleLayout(bundleURL: bundleURL)
-        try fileManager.createDirectory(
-            at: layout.diskURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try fileManager.createDirectory(
-            at: layout.varsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: layout.vtpmURL, withIntermediateDirectories: true)
-
-        try placeLarge(from: inputs.diskPath, to: layout.diskURL, fileManager: fileManager)
-        if fileManager.fileExists(atPath: layout.varsURL.path) {
-            try fileManager.removeItem(at: layout.varsURL)
-        }
-        try fileManager.copyItem(atPath: inputs.varsPath, toPath: layout.varsURL.path)
-        if let vtpm = inputs.vtpmStateDir, !vtpm.isEmpty {
-            let contents = (try? fileManager.contentsOfDirectory(atPath: vtpm)) ?? []
-            for entry in contents where entry != ".lock" {
-                let src = (vtpm as NSString).appendingPathComponent(entry)
-                let dst = layout.vtpmURL.appendingPathComponent(entry)
-                if fileManager.fileExists(atPath: dst.path) {
-                    try fileManager.removeItem(at: dst)
-                }
-                try fileManager.copyItem(atPath: src, toPath: dst.path)
-            }
-        }
-
-        var config = VMConfig(
-            id: slug,
-            name: inputs.displayName,
-            displayName: inputs.displayName,
-            backendKind: BackendKind.hvfEngine.rawValue,
-            bundlePath: bundleURL.path,
-            runnerPath: "",
-            launchSpecPath: "",
-            handoffPath: "",
-            sshKeyPath: "",
-            sshUser: "bridge",
-            leasesPath: "",
-            guestName: inputs.displayName,
-            displayWidth: 1280,
-            displayHeight: 720
-        )
-        config.diskPath = layout.diskURL.path
-        config.memMiB = inputs.memMiB
-        config.cpuCount = inputs.cpuCount
-        return config
-    }
-
-    /// Hard-link a large file when on the same volume; copy otherwise. Any
-    /// existing destination is replaced.
-    private static func placeLarge(
-        from sourcePath: String,
-        to destURL: URL,
-        fileManager: FileManager
-    ) throws {
-        if fileManager.fileExists(atPath: destURL.path) {
-            try fileManager.removeItem(at: destURL)
-        }
-        do {
-            try fileManager.linkItem(atPath: sourcePath, toPath: destURL.path)
-        } catch {
-            try fileManager.copyItem(atPath: sourcePath, toPath: destURL.path)
-        }
+        let prepared = try prepare(inputs, slug: slug, libraryRoot: libraryRoot,
+            fileManager: fileManager, snapshotHelper: snapshotHelper)
+        prepared.preserve()
+        return prepared.config
     }
 }

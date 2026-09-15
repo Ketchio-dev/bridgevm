@@ -1,6 +1,9 @@
 //! args, split by responsibility.
 
+mod app_args;
+mod cli;
 mod core;
+mod hvf_args;
 mod probe_args;
 mod store_args;
 mod tool_args;

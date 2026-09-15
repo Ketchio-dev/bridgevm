@@ -68,7 +68,7 @@ Properties the queue must hold:
 
 | Tier | Scope | Purpose |
 | --- | --- | --- |
-| T0 | Deterministic project check | Rejects broken changes in minutes |
+| T0 | Deterministic project check — GitHub-hosted CI or a bounded local developer check; not a physical-Mac queue tier | Rejects broken changes in minutes |
 | T1 | 60-second bare-metal vtimer/PSCI microprobe | Tests the timer/cancellation contract without booting Windows |
 | T2 | One prepared-cache pilot boot | Confirms the image and injector pipeline |
 | T3 | 3-boot candidate gate | Filters functional changes before a full campaign |
@@ -188,10 +188,20 @@ BAR operation, DMA, interrupts, Block I/O, GOP, BDS or Windows boot.
 
 ## Foreground wait policy
 
-An interactive turn must not wait on a long gate. Commands expected to exceed
-120 seconds are submitted to the queue, and the turn continues or ends with the
-job id recorded. `sleep 6000`, long `while ps; sleep` loops and multi-hour
-synchronous tool calls are prohibited.
+Local deterministic developer checks, including `scripts/check-project.sh`,
+may run in the foreground for up to 300 seconds. This local result does not
+replace the required GitHub-hosted CI result for a pushed SHA. If a deterministic
+check is expected to exceed 300 seconds, run it on GitHub-hosted Actions and
+record the run id.
+
+The physical-Mac live queue is reserved for work that requires a physical
+Apple-silicon Mac, bare-metal Hypervisor.framework, WindowServer/CGL, private
+Windows media or a real GPU. Submit that live work asynchronously and record
+its job id. Slow deterministic checks do not belong in this queue.
+
+These are the execution-venue rules in [AGENTS.md §9](../../AGENTS.md#9-long-tests-use-the-correct-execution-venue).
+`sleep 6000`, long `while ps; sleep` loops and multi-hour synchronous tool calls
+remain prohibited.
 
 Hosted CI is polled for at most 180 seconds; after that the run id is recorded
 and read on a later turn.

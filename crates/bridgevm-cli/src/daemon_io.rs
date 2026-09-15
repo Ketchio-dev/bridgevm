@@ -42,14 +42,7 @@ pub(crate) fn print_daemon_response(response: BridgeVmResponse) -> Result<()> {
             store_root,
             vms_dir,
             status,
-        } => {
-            println!("BridgeVM store: {}", store_root.display());
-            println!("VM bundles: {}", vms_dir.display());
-            print_doctor_audit(&doctor_audit_for_paths(&store_root, &vms_dir));
-            print_engine_catalog(available_engine_descriptors());
-            print_parallels_class_progress(&parallels_class_progress());
-            println!("Status: {}", status);
-        }
+        } => print_daemon_doctor(&store_root, &vms_dir, &status),
         BridgeVmResponse::VmList { vms } => {
             if vms.is_empty() {
                 println!("No VMs found");

@@ -54,7 +54,7 @@ final class WindowsHVFProductPolicyTests: XCTestCase {
         let imported = try XCTUnwrap(VMLibrary.createWindowsHVF(
             name: "Imported 3D Off \(UUID().uuidString.prefix(8))",
             targetDiskPath: disk.path, varsPath: vars.path,
-            storageDir: storage, persist: false))
+            storageDir: storage, persist: false, snapshotHelper: HvfMediaImportTestSupport.helper))
         XCTAssertEqual(imported.experimental3DAllowed, false)
         try assertThreeDOff(try XCTUnwrap(HvfEngineConfig.libraryVM(imported)))
     }

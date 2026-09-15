@@ -10,6 +10,8 @@ mod bounded_read;
 #[path = "media_lock.rs"] // exclusive writer leases for the media declared here
 pub mod lock;
 pub use bounded_read::read_bounded_file;
+#[path = "media_persist.rs"]
+mod persistence;
 use std::{
     env,
     io::{self},
@@ -87,31 +89,6 @@ impl WritableMedia {
 
     pub fn read_bounded(&self, max_bytes: usize) -> io::Result<Vec<u8>> {
         read_bounded_file(&self.path, max_bytes)
-    }
-
-    /// Persist through a temp file and rename, never a truncating write.
-    ///
-    /// These bytes are UEFI variables: boot order, Secure Boot state, and the
-    /// firmware's own bookkeeping. A `fs::write` interrupted by a crash leaves
-    /// a truncated vars file, and the guest no longer knows how to boot.
-    pub fn persist(&self, bytes: &[u8]) -> io::Result<Vec<MediaWrite>> {
-        let mut writes = Vec::new();
-        let mut put = |path: &PathBuf, kind| -> io::Result<()> {
-            crate::snapshot_pair::write_file_atomically(path, bytes)?;
-            writes.push(MediaWrite {
-                kind,
-                path: path.clone(),
-                bytes: bytes.len(),
-            });
-            Ok(())
-        };
-        if let Some(path) = self.snapshot_path.as_ref() {
-            put(path, MediaWriteKind::Snapshot)?;
-        }
-        if self.write_back {
-            put(&self.path, MediaWriteKind::WriteBack)?;
-        }
-        Ok(writes)
     }
 }
 

@@ -124,7 +124,7 @@ final class FirstRunImportTests: XCTestCase {
             vtpmStateDir: vtpm.path, memMiB: 8192, cpuCount: 6)
 
         let config = try FirstRunImport.register(
-            inputs, slug: "my-windows", libraryRoot: library)
+            inputs, slug: "my-windows", libraryRoot: library, snapshotHelper: HvfMediaImportTestSupport.helper)
 
         XCTAssertEqual(config.backendKind, BackendKind.hvfEngine.rawValue)
         XCTAssertEqual(config.memMiB, 8192)

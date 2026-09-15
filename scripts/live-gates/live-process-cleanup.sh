@@ -79,7 +79,7 @@ bridgevm_wait_for_tier_group() {
   while bridgevm_process_alive "$tier_pid"; do
     if [[ -f "$cancel_path" ]]; then
       bridgevm_cleanup_log "job $job_id canceled; stopping its process group"
-      bridgevm_terminate_process_group_bounded "$tier_pid" || return 1
+      bridgevm_terminate_process_group_bounded "$tier_pid" "${4:-50}" || return 1
       break
     fi
     sleep 2
@@ -89,7 +89,7 @@ bridgevm_wait_for_tier_group() {
   if bridgevm_process_group_alive "$tier_pid"; then
     residue=1
     bridgevm_cleanup_log "job $job_id left a live process in tier group $tier_pid"
-    bridgevm_terminate_process_group_bounded "$tier_pid" || { BRIDGEVM_TIER_STATUS=126; return 1; }
+    bridgevm_terminate_process_group_bounded "$tier_pid" "${4:-50}" || { BRIDGEVM_TIER_STATUS=126; return 1; }
   fi
   [[ "$residue" == 0 || "$status" != 0 ]] || status=125
   BRIDGEVM_TIER_STATUS="$status"

@@ -1,0 +1,33 @@
+name: Normal-app native UI host contracts
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  queue-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Original and versioned diagnostic queue contracts (no app launch)
+        run: |
+          python3 tests/integration/app-ui-tier-smoke.py
+          python3 tests/integration/app-ui-host-tier-smoke.py
+  native-contracts:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Compile and verify all seven owned host contracts (no NSApplication)
+        run: bash scripts/check-app-ui-host-contracts.sh --scratch-path "$RUNNER_TEMP/app-ui-host-swift"
+      - name: Verify diagnostic host is excluded from release builds (no app launch)
+        run: |
+          host_bin_dir=$(swift build --package-path apps/macos --scratch-path "$RUNNER_TEMP/app-ui-host-swift" --show-bin-path -Xswiftc -DBRIDGEVM_APP_UI_HOST)
+          bash scripts/check-app-ui-host-build-boundary.sh --diagnostic-binary "$host_bin_dir/BridgeVMControl" --output "$RUNNER_TEMP/app-ui-host-build-boundary"
+      - name: Compile launcher and run only its pure ownership contracts
+        run: |
+          mkdir "$RUNNER_TEMP/app-ui-launcher-contracts"
+          bash apps/macos/scripts/build-app-ui-launcher.sh --output "$RUNNER_TEMP/app-ui-launcher-contracts/AppUIHostLauncher"
+          xcrun swiftc -parse-as-library -swift-version 5 apps/macos/scripts/AppUIHostLaunchOwnership.swift tests/integration/AppUIHostLateOwnershipContracts.swift tests/integration/app-ui-launcher-ownership.swift -o "$RUNNER_TEMP/app-ui-launcher-contracts/ownership-tests"
+          "$RUNNER_TEMP/app-ui-launcher-contracts/ownership-tests"

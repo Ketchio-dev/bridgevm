@@ -4,6 +4,7 @@ import Combine
 /// each (cached), so every VM polls and is controlled independently.
 @MainActor
 final class LibraryModel: ObservableObject {
+    static let firstRunImportSelectionID = "__bridgevm_first_run_import__"
     static let hvfEngineSelectionID = "__bridgevm_hvf_engine_experimental__"
     @Published var vms: [VMConfig] = []
     @Published var selectedID: String?
@@ -14,6 +15,8 @@ final class LibraryModel: ObservableObject {
     @Published var deletionError: String?
     @Published var cloneError: String?
     @Published var moveError: String?
+    @Published var operationError: String?
+    @Published var firstRunImport = FirstRunImportProgress()
     @Published private(set) var deletingSlugs: Set<String> = []
     @Published private(set) var cloningSlugs: Set<String> = []
     @Published private(set) var movingSlugs: Set<String> = []
@@ -22,38 +25,53 @@ final class LibraryModel: ObservableObject {
     private let libraryRoot: URL
     let e2eUnattendedPath: String?
     private let modelFactory: @MainActor (VMConfig) -> ControlModel
-    // Host-capacity accounting (sum of RUNNING VMs vs host totals) to warn on oversubscription.
-    var hostMemGiB: Double { Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824.0 }
-    var hostCPU: Int { ProcessInfo.processInfo.activeProcessorCount }
+    private let actionScheduler: LibraryActionScheduler
+    let windowsInstallSessions: HvfWindowsInstallSessionStore
+    let hvfRuntimeSessions: HvfRuntimeSessionStore
+    let retainedControlStore = LibraryRetainedControlStore()
     func runningModels() -> [ControlModel] { vms.compactMap { modelCache[$0.slug] }.filter { $0.running } }
-    var usedMemGiB: Double { runningModels().reduce(0.0) { $0 + $1.memGiB } }
-    var usedCPU: Int { runningModels().reduce(0) { $0 + $1.cpu } }
     var rootURL: URL { libraryRoot }
-
-    func deletionImpact(for cfg: VMConfig) -> VMLibraryDeletionImpact {
-        VMLibrary.deletionImpact(for: cfg, rootURL: libraryRoot)
+    func hasAcceptedControlOperation(for slug: String) -> Bool { modelCache[slug]?.hasAcceptedOperation == true }
+    func hasMismatchedCachedControlConfiguration(for cfg: VMConfig) -> Bool {
+        modelCache[cfg.slug].map { $0.config != cfg } ?? false
+    }
+    func ownsControlModel(_ model: ControlModel, for config: VMConfig) -> Bool {
+        modelCache[config.slug] === model && model.config == config
     }
 
     init(
         rootURL: URL = VMLibrary.root,
         e2eUnattendedPath: String? = nil,
         migrateLegacy: Bool = true,
-        modelFactory: @escaping @MainActor (VMConfig) -> ControlModel = { ControlModel(config: $0) }
+        installSessionFactory: @escaping HvfWindowsInstallSessionStore.Factory = { HvfWindowsInstallSession(plan: $0) },
+        runtimeSessionFactory: @escaping HvfRuntimeSessionStore.Factory = { HvfEngineSession(config: $0) },
+        installPreparation: HvfWindowsInstallPreparationOptions = .init(),
+        actionScheduler: @escaping LibraryActionScheduler = { job in _ = Task.detached(operation: job) },
+        startsModelsAutomatically: Bool = true,
+        modelFactory: (@MainActor (VMConfig) -> ControlModel)? = nil
     ) {
         libraryRoot = rootURL
         self.e2eUnattendedPath = e2eUnattendedPath
-        self.modelFactory = modelFactory
+        self.actionScheduler = actionScheduler
+        self.modelFactory = modelFactory ?? LibraryControlModelFactory.make(
+            rootURL: rootURL, startsAutomatically: startsModelsAutomatically)
+        windowsInstallSessions = HvfWindowsInstallSessionStore(
+            makeSession: installSessionFactory, preparation: installPreparation)
+        hvfRuntimeSessions = HvfRuntimeSessionStore(makeSession: runtimeSessionFactory)
         if migrateLegacy {
             VMLibrary.migrateLegacyIfNeeded(rootURL: rootURL, legacy: VMConfig.loadLegacy())
         }
         reload()
-        if selectedID == nil { selectedID = vms.first?.slug }
+        configureLibraryNavigation()
     }
 
     func reload() {
         let scan = VMLibrary.scan(rootURL: libraryRoot)
         vms = scan.configs
         libraryIssues = scan.issues
+        captureRetainedControls()
+        windowsInstallSessions.reconcile(with: vms)
+        hvfRuntimeSessions.reconcile(with: vms)
         let configsBySlug = Dictionary(vms.map { ($0.slug, $0) }, uniquingKeysWith: { first, _ in first })
         modelCache = modelCache.filter { slug, model in
             guard let current = configsBySlug[slug] else { return false }
@@ -62,36 +80,25 @@ final class LibraryModel: ObservableObject {
             // or operation. Replacing it now could make that VM impossible to stop.
             return model.running || model.lifecycleBusy || model.busy
         }
-        if let sel = selectedID, sel != Self.hvfEngineSelectionID, configsBySlug[sel] == nil {
-            selectedID = vms.first?.slug
-        }
+        reconcileLibrarySelection(configsBySlug: configsBySlug)
     }
 
     func model(for cfg: VMConfig) -> ControlModel {
         if let m = modelCache[cfg.slug] { return m }
-        let m = modelFactory(cfg)
+        let m = bindControlModel(modelFactory(latestConfiguration(for: cfg)))
         modelCache[cfg.slug] = m
         return m
-    }
-
-    var selectedModel: ControlModel? {
-        guard let id = selectedID, let cfg = vms.first(where: { $0.slug == id }) else { return nil }
-        return model(for: cfg)
-    }
-
-    func requestDeletion(_ cfg: VMConfig) {
-        guard !deletingSlugs.contains(cfg.slug) else { return }
-        pendingDeletion = cfg
     }
 
     func confirmDeletion(_ cfg: VMConfig) {
         pendingDeletion = nil
         let slug = cfg.slug
+        guard admitLibraryAction(cfg, action: .deletion) else { return }
         guard !deletingSlugs.contains(slug) else { return }
         deletingSlugs.insert(slug)
-        let backend = modelCache[slug]?.backend ?? cfg.makeBackend()
+        let backend = modelCache[slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         let libraryRoot = self.libraryRoot
-        Task.detached {
+        actionScheduler {
             backend.stop()
             let stillRunning = backend.isRunning()
             let deleted = !stillRunning && VMLibrary.delete(slug, rootURL: libraryRoot)
@@ -109,24 +116,18 @@ final class LibraryModel: ObservableObject {
         }
     }
 
-    func requestWindowsClone(_ cfg: VMConfig) {
-        guard cfg.engineKind == .hvfEngine,
-              cfg.installPending != true,
-              !cloningSlugs.contains(cfg.slug) else { return }
-        pendingWindowsClone = cfg
-    }
-
     func cloneWindowsHVF(_ cfg: VMConfig, name: String) {
         pendingWindowsClone = nil
+        guard admitLibraryAction(cfg, action: .clone) else { return }
         guard !cloningSlugs.contains(cfg.slug) else { return }
-        let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend()
+        let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         guard !backend.isRunning() else {
             cloneError = "실행 중인 VM은 복제할 수 없습니다. 먼저 완전히 정지하세요."
             return
         }
         cloningSlugs.insert(cfg.slug)
         let libraryRoot = self.libraryRoot
-        Task.detached {
+        actionScheduler {
             let clone = HvfProtectedTransfers.clone(
                 name: name,
                 template: cfg,
@@ -145,15 +146,16 @@ final class LibraryModel: ObservableObject {
     }
 
     func moveWindowsHVFBundle(_ cfg: VMConfig, to destinationParent: URL) {
+        guard admitLibraryAction(cfg, action: .move) else { return }
         guard !movingSlugs.contains(cfg.slug) else { return }
-        let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend()
+        let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         guard !backend.isRunning() else {
             moveError = "실행 중인 VM은 이동할 수 없습니다. 먼저 완전히 정지하세요."
             return
         }
         movingSlugs.insert(cfg.slug)
         let libraryRoot = self.libraryRoot
-        Task.detached {
+        actionScheduler {
             let moved = HvfProtectedTransfers.move(cfg,
                 to: destinationParent,
                 rootURL: libraryRoot
@@ -171,41 +173,5 @@ final class LibraryModel: ObservableObject {
         }
     }
 
-    /// Publish a VMConfig that the create transaction has already persisted.
-    /// Re-saving here would move persistence outside that transaction's rollback
-    /// boundary and could report a false failure after a successful creation.
-    @discardableResult
-    func add(_ cfg: VMConfig) -> Bool {
-        reload()
-        guard vms.contains(where: { $0.slug == cfg.slug && $0.bundlePath == cfg.bundlePath }) else {
-            return false
-        }
-        selectedID = cfg.slug
-        return true
-    }
 
-    /// D2 first-run import: validate user-picked paths, materialize the HVF
-    /// bundle, persist the config, and select it. Returns an error string on
-    /// any validation or filesystem failure (fail-closed, nothing registered).
-    @discardableResult
-    func importExistingHvfVM(_ inputs: FirstRunImport.Inputs) -> String? {
-        if let error = FirstRunImport.validate(inputs) {
-            return error.description
-        }
-        let slug = VMConfig.slugify(inputs.displayName)
-        let config: VMConfig
-        do {
-            config = try FirstRunImport.register(
-                inputs, slug: slug, libraryRoot: libraryRoot)
-        } catch {
-            return "VM 번들을 만들지 못했습니다: \(error.localizedDescription)"
-        }
-        guard VMLibrary.save(config, rootURL: libraryRoot) else {
-            return "VM 등록 정보를 저장하지 못했습니다."
-        }
-        guard add(config) else {
-            return "등록된 VM을 라이브러리에서 찾지 못했습니다."
-        }
-        return nil
-    }
 }

@@ -6,21 +6,12 @@ import SwiftUI
 struct HvfWindowsInstallView: View {
     let config: VMConfig
     @ObservedObject var library: LibraryModel
-    @StateObject private var session: HvfWindowsInstallSession
+    @ObservedObject private(set) var session: HvfWindowsInstallSession
 
-    init(config: VMConfig, library: LibraryModel) {
+    init(config: VMConfig, library: LibraryModel, session: HvfWindowsInstallSession) {
         self.config = config
         self.library = library
-        let request = HvfWindowsInstallRequest.load(bundlePath: config.bundlePath)
-            ?? HvfWindowsInstallRequest(isoPath: "", diskGiB: 64,
-                                        injectViogpu3d: false, driverPackageDir: nil)
-        let plan = HvfWindowsInstallPlan(
-            repoRoot: HvfEngineSession.defaultRepoRoot(), libraryRoot: library.rootURL,
-            bundlePath: config.bundlePath,
-            slug: config.slug,
-            request: request
-        )
-        _session = StateObject(wrappedValue: HvfWindowsInstallSession(plan: plan))
+        _session = ObservedObject(wrappedValue: session)
     }
 
     var body: some View {
@@ -29,13 +20,12 @@ struct HvfWindowsInstallView: View {
                 Text("\(config.displayName) — Windows 설치")
                     .font(.title2.bold())
                 requestCard
-                stageCard
-                controlRow
+                HvfWindowsInstallStatusCard(session: session)
+                HvfWindowsInstallControls(session: session)
                 logCard
             }
             .padding(20)
         }
-        .onAppear { wireCompletion() }
         .accessibilityIdentifier("bridgevm.windows.install.view")
     }
 
@@ -47,56 +37,13 @@ struct HvfWindowsInstallView: View {
             row("3D 드라이버", session.plan.request.injectViogpu3d
                 ? "차단됨 — 서명 provenance 검증기 없음" : "주입 안 함")
             if session.plan.sourceImageCacheCandidateExists {
-                row("설치 소스", "캐시 재사용")
+                row("설치 소스", "저장된 소스 있음 · 시작 시 확인")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(Color.gray.opacity(0.08))
         .cornerRadius(10)
-    }
-
-    private var stageCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("진행 상태").font(.headline)
-            HStack(spacing: 8) {
-                if session.isRunning { ProgressView().controlSize(.small) }
-                Text(session.stage.label)
-                    .foregroundColor(stageColor)
-                    .accessibilityIdentifier("bridgevm.windows.install.stage")
-                if case let .failed(message) = session.stage {
-                    Text(message).font(.caption).foregroundColor(.red)
-                }
-            }
-            if let startedAt = session.startedAt, session.isRunning {
-                Text("경과: \(Int(Date().timeIntervalSince(startedAt) / 60))분 — 무인 설치는 보통 10~20분 걸립니다.")
-                    .font(.caption).foregroundColor(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color.gray.opacity(0.08))
-        .cornerRadius(10)
-    }
-
-    private var stageColor: Color {
-        switch session.stage {
-        case .done: return .green
-        case .failed: return .red
-        default: return .primary
-        }
-    }
-
-    private var controlRow: some View {
-        HStack {
-            Button(session.isRunning ? "설치 진행 중…" : "설치 시작") { session.start() }
-                .disabled(session.isRunning || session.stage == .done).accessibilityIdentifier("bridgevm.install.start")
-            if session.isRunning {
-                Button("취소") { session.cancel() }
-                    .accessibilityIdentifier("bridgevm.windows.install.cancel")
-            }
-            Spacer()
-        }
     }
 
     private var logCard: some View {
@@ -109,13 +56,14 @@ struct HvfWindowsInstallView: View {
                             Text(line)
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundColor(.secondary)
+                                .textSelection(.enabled)
                                 .id(index)
                         }
                     }
                 }
                 .frame(height: 220)
-                .onChange(of: session.logLines.count) { _, count in
-                    if count > 0 { proxy.scrollTo(count - 1, anchor: .bottom) }
+                .onChange(of: session.logLines) { _, lines in
+                    if !lines.isEmpty { proxy.scrollTo(lines.count - 1, anchor: .bottom) }
                 }
             }
         }
@@ -133,9 +81,4 @@ struct HvfWindowsInstallView: View {
         .font(.callout)
     }
 
-    private func wireCompletion() {
-        session.onCompleted = { [weak library] in
-            library?.reload()
-        }
-    }
 }

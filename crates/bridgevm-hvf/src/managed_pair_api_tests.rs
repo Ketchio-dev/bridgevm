@@ -1,50 +1,5 @@
 use super::*;
-use crate::media::{VirtBootMediaConfig, WritableMedia};
 use crate::snapshot_pair::{create_snapshot, restore_snapshot, snapshot_pair_tests::Scratch};
-
-#[test]
-fn public_api_and_native_runtime_share_the_selected_pair() {
-    let s = Scratch::new("managed-api-runtime");
-    let disk = s.write("disk", b"original disk");
-    let vars = s.write("vars", b"original vars");
-    let original = create_snapshot(&disk, &vars, &s.path("snap"), "vm", false, 1024).unwrap();
-    fs::write(&disk, b"clobbered disk").unwrap();
-    fs::write(&vars, b"clobbered vars").unwrap();
-    assert_eq!(
-        restore_snapshot(&s.path("snap"), &disk, &vars, false).unwrap(),
-        original
-    );
-    let mut media = VirtBootMediaConfig::qemu_defaults();
-    media.nvme_disk = Some(WritableMedia::new(&disk).with_write_back(true));
-    media.flash_vars = WritableMedia::new(&vars).with_write_back(true);
-    let runtime = runtime::acquire(&mut media).unwrap();
-    assert_eq!(
-        fs::read(&media.nvme_disk.as_ref().unwrap().path).unwrap(),
-        b"original disk"
-    );
-    assert_eq!(
-        media.flash_vars.read_bounded(128).unwrap(),
-        b"original vars"
-    );
-    assert!(create_snapshot(&disk, &vars, &s.path("busy"), "vm", false, 1024).is_err());
-    fs::write(&media.nvme_disk.as_ref().unwrap().path, b"guest disk").unwrap();
-    media.flash_vars.persist(b"guest vars").unwrap();
-    drop(runtime);
-    let changed = create_snapshot(&disk, &vars, &s.path("changed"), "vm", false, 1024).unwrap();
-    assert_eq!(fs::read(s.path("changed/disk.raw")).unwrap(), b"guest disk");
-    assert_eq!(fs::read(s.path("changed/vars.fd")).unwrap(), b"guest vars");
-    assert_ne!(changed.disk_sha256, original.disk_sha256);
-    assert_eq!(
-        restore_snapshot(&s.path("snap"), &disk, &vars, false).unwrap(),
-        original
-    );
-    assert_eq!(
-        create_snapshot(&disk, &vars, &s.path("again"), "vm", false, 1024).unwrap(),
-        original
-    );
-    assert_eq!(fs::read(disk).unwrap(), b"clobbered disk");
-    assert_eq!(fs::read(vars).unwrap(), b"clobbered vars");
-}
 
 #[test]
 fn separate_disk_and_metadata_directories_use_one_selected_generation() {

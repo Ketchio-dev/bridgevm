@@ -129,6 +129,13 @@ Four classes, each now mechanically checked or corrected:
 
 ## Sealing rule for this branch
 
+Execution-venue update (2026-09-15): the `t0-check` queue sequence below describes
+this audit's historical workflow. Current work follows
+[AGENTS.md §9](../../../AGENTS.md#9-long-tests-use-the-correct-execution-venue):
+local deterministic checks may run for up to 300 seconds; longer deterministic
+checks run on GitHub-hosted Actions. The physical-Mac queue is reserved for
+hardware-dependent live work. The recorded jobs and outcomes remain unchanged.
+
 Each code commit legitimately leaves the registry stale
 (`code_changed_since`). The branch is sealed by: final code head → t0-check
 exact-SHA queue job → docs-only commit updating `tested_commit` and the A11

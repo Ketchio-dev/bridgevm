@@ -27,6 +27,7 @@ final class ControlModel: ObservableObject {
 
     let config: VMConfig
     let backend: VMBackend
+    var workAdmission: LibraryWorkAdmission?
     private var timer: Timer?
     private var startConfirmationDeadline: Date?
     private var refreshGeneration: UInt64 = 0
@@ -43,6 +44,7 @@ final class ControlModel: ObservableObject {
     deinit { timer?.invalidate() }
 
     var displayName: String { backend.displayName }
+    var hasAcceptedOperation: Bool { lifecycleBusy || busy || startConfirmationDeadline != nil }
 
     func startPolling() {
         timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
@@ -95,6 +97,7 @@ final class ControlModel: ObservableObject {
 
     func start() {
         guard !lifecycleBusy, !running else { return }
+        guard workAdmission?(true) == nil else { return }
         invalidateRefreshes()
         lifecycleBusy = true
         statusNote = "VM 시작 중…"
@@ -145,6 +148,7 @@ final class ControlModel: ObservableObject {
 
     func applyResources() {
         guard !busy, !lifecycleBusy else { return }
+        guard workAdmission?(true) == nil else { return }
         guard backend.supportsResourceChanges else {
             statusNote = "이 엔진은 리소스 변경을 지원하지 않습니다."
             return
@@ -208,70 +212,6 @@ final class ControlModel: ObservableObject {
                 self.scheduleRefreshBurst()
             }
         }
-    }
-
-    func runTerminalCommand() {
-        guard !busy, !lifecycleBusy, running, backend.supportsGuestCommands else { return }
-        let cmd = terminalInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cmd.isEmpty else { return }
-        terminalLog = Self.boundedLog(terminalLog + "dev@guest$ \(cmd)\n", limit: Self.terminalLogCharacterLimit)
-        terminalInput = ""
-        busy = true
-        let backend = self.backend
-        Task.detached {
-            let r = backend.runInGuest(cmd)
-            await MainActor.run {
-                var addition = r.output
-                if !r.output.hasSuffix("\n") { addition += "\n" }
-                if r.code != 0 { addition += "[exit \(r.code)]\n" }
-                addition += "\n"
-                self.terminalLog = Self.boundedLog(
-                    self.terminalLog + addition,
-                    limit: Self.terminalLogCharacterLimit
-                )
-                self.busy = false
-            }
-        }
-    }
-
-    func installPackages(_ packages: [String], label: String) {
-        guard !busy, !lifecycleBusy, running, backend.supportsPackageInstall else { return }
-        guard let command = Self.packageInstallCommand(packages) else {
-            softwareLog = "설치 요청이 올바르지 않습니다. 패키지 이름을 확인해 주세요.\n"
-            return
-        }
-        busy = true
-        softwareLog = "\(label) 설치 중… (apt, 잠시 걸립니다)\n"
-        let backend = self.backend
-        Task.detached {
-            let r = backend.runInGuest(command)
-            await MainActor.run {
-                let result = r.output + ((r.code == 0) ? "\n✅ 설치 완료: \(label)\n" : "\n❌ 실패 (exit \(r.code))\n")
-                self.softwareLog = Self.boundedLog(
-                    self.softwareLog + result,
-                    limit: Self.softwareLogCharacterLimit
-                )
-                self.busy = false
-            }
-        }
-    }
-
-    static func packageInstallCommand(_ packages: [String]) -> String? {
-        let names = packages.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        guard !names.isEmpty,
-              names.allSatisfy({
-                  !$0.isEmpty && $0.range(
-                      of: #"^[a-z0-9][a-z0-9+.-]*(?::[a-z0-9][a-z0-9-]*)?$"#,
-                      options: .regularExpression
-                  ) != nil
-              }) else { return nil }
-        let arguments = names.map(Shell.shQuote).joined(separator: " ")
-        return "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \(arguments) 2>&1 | tail -25"
-    }
-
-    static func boundedLog(_ value: String, limit: Int) -> String {
-        guard limit > 0, value.count > limit else { return value }
-        return "… 이전 로그 생략 …\n" + String(value.suffix(limit))
     }
 
     private func scheduleRefreshBurst() {
