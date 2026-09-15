@@ -2,6 +2,10 @@
 
 use crate::*;
 
+#[path = "doctor_summary.rs"]
+mod summary;
+pub(crate) use summary::{doctor, print_daemon_doctor};
+
 pub(crate) fn doctor_audit_for_paths(store_root: &Path, vms_dir: &Path) -> Vec<DoctorCheck> {
     let path_dirs = env::var_os("PATH")
         .map(|path| env::split_paths(&path).collect())
@@ -216,18 +220,6 @@ pub(crate) fn is_executable_file(path: &Path) -> bool {
             .metadata()
             .map(|m| m.permissions().mode() & 0o111 != 0)
             .unwrap_or(false)
-}
-
-pub(crate) fn print_doctor_audit(checks: &[DoctorCheck]) {
-    println!("Host capability audit:");
-    for check in checks {
-        println!(
-            "[{}] {}: {}",
-            check.status.as_str(),
-            check.name,
-            check.detail
-        );
-    }
 }
 
 pub(crate) fn print_engine_catalog(descriptors: &[VmEngineDescriptor]) {

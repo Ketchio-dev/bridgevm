@@ -102,15 +102,15 @@ crates/bridgevm-cli/src/args_tests/part_3.rs	533	0
 crates/bridgevm-cli/src/args_tests/part_3_2.rs	38	0
 crates/bridgevm-cli/src/boot_media.rs	336	0
 crates/bridgevm-cli/src/clone_migrate.rs	900	0
-crates/bridgevm-cli/src/daemon_io.rs	302	0
+crates/bridgevm-cli/src/daemon_io.rs	295	0
 crates/bridgevm-cli/src/disk.rs	158	0
-crates/bridgevm-cli/src/doctor.rs	303	0
+crates/bridgevm-cli/src/doctor.rs	293	0
 crates/bridgevm-cli/src/entry.rs	26	0
 crates/bridgevm-cli/src/json_util.rs	667	0
 crates/bridgevm-cli/src/json_util/trace_metrics.rs	79	0
 crates/bridgevm-cli/src/json_util/trace_report_print.rs	184	0
 crates/bridgevm-cli/src/main.rs	102	0
-crates/bridgevm-cli/src/report.rs	357	0
+crates/bridgevm-cli/src/report.rs	346	0
 crates/bridgevm-cli/src/request.rs	466	0
 crates/bridgevm-cli/src/request_tests/mod.rs	0	0
 crates/bridgevm-cli/src/request_tests/part_1.rs	695	0
@@ -2493,3 +2493,6 @@ crates/bridgevm-cli/src/app_cli.rs	79	0
 crates/bridgevm-cli/src/app_cli_resolver.rs	129	3
 crates/bridgevm-cli/src/app_cli_resolver_tests.rs	135	1
 crates/bridgevm-cli/tests/cli_app.rs	172	0
+crates/bridgevm-cli/src/doctor_summary.rs	74	0
+crates/bridgevm-cli/src/doctor_summary_tests.rs	50	0
+crates/bridgevm-cli/tests/cli_doctor.rs	132	0

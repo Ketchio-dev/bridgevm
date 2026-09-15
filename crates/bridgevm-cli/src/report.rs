@@ -125,17 +125,6 @@ pub(crate) fn print_boot_templates(templates: &[BootTemplate]) {
     }
 }
 
-pub(crate) fn doctor(store: &VmStore) -> Result<()> {
-    store.ensure().context("failed to prepare BridgeVM store")?;
-    println!("BridgeVM store: {}", store.root().display());
-    println!("VM bundles: {}", store.vms_dir().display());
-    print_doctor_audit(&doctor_audit_for_current_host(store));
-    print_engine_catalog(available_engine_descriptors());
-    print_parallels_class_progress(&parallels_class_progress());
-    println!("Status: OK");
-    Ok(())
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum DoctorCheckStatus {
     Ok,
