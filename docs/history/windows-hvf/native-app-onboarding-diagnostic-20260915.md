@@ -801,3 +801,29 @@ No GUI was launched in these checks. Current full/hosted checks and one physical
 control observation remain pending. The temporary flag/helper/routing must then
 be removed, retaining at most the unchanged delegate extraction for the ratchet.
 Actual native UI validation and every existing OPEN criterion remain unfinished.
+
+
+## Minimal-content result and removal (2026-09-15)
+
+The control-source complete project check passed165.66seconds atb1ca0b5d, sealed
+as6abf97e6. Physical pilot app-ui-host-20260915-08 explicitly recorded minimal-text,
+control_only=true and product_ui_scenario=false, but failed initial-window startup
+before reaching the control's intentional scenario refusal. App/body/delegate were
+observed; root construction and owned windows remained0. All7actions stayedfalse,
+all8captures absent, all4domain-work counters0. Identity/observedexit/fixture/launcher/
+worker cleanup passed. This observation does not support ContentView complexity
+alone as a cause; the actual cause remains unproven. This was a control measurement,
+not an eighth normal-product UI attempt and never release evidence.
+
+Source 9f9ee4bd998085527e0ef60977a95d05e25cd3df removes the temporary comparison flag, helper and
+routing. The product App is byte-identical to74807177 except the unchanged delegate
+extraction; scenario content is byte-identical, and the two passive boundary counters
+remain. App22lines respects the lowered28line ceiling; no ceiling is raised.
+Restored7host contracts passed20.75seconds, log SHA
+`50d19aeb95bd5d27998be60675e18ae9ed5ae64b116f5a726314de1f7af929db`.
+Release boundary passed22.41seconds. The actual rebuilt host contains the normal
+identity marker and no temporary control markers. All461Swift/package inputs are
+sealed and unchanged across checks. Failed control code, flags, binary and receipts
+remain private and in history; no temporary instrumentation remains in final source.
+Current complete project and exact-source hosted checks are required. There is no
+reason to repeat the unchanged baseline; actual UI validation remains unfinished.
