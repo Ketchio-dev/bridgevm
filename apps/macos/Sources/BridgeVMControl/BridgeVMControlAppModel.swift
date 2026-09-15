@@ -1,12 +1,11 @@
-import Foundation
+import SwiftUI
 
 enum BridgeVMControlAppModel {
-    @MainActor static func libraryModel() -> LibraryModel {
+    @MainActor static func libraryState() -> StateObject<LibraryModel> {
         #if DEBUG && BRIDGEVM_APP_UI_HOST
-        guard let host = AppUIHost.prepared else { fatalError("Diagnostic host was not prepared") }
-        return host.libraryForApplication()
+        return AppUIHostLifecycle.libraryState()
         #else
-        return BridgeVMControlAppLaunch.libraryModel()
+        return StateObject(wrappedValue: BridgeVMControlAppLaunch.libraryModel())
         #endif
     }
 }

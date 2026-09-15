@@ -9,6 +9,7 @@ final class AppUIHost {
     let root: URL
     let library: LibraryModel
     let capture: AppUIHostCapture
+    let lifecycle: AppUIHostLifecycle
     private weak var window: NSWindow?
     private var launchFinished = false
     private var started = false
@@ -16,32 +17,6 @@ final class AppUIHost {
     private var monitor: Task<Void, Never>?
     private var scenario: Task<Void, Never>?
 
-    static func outputDirectory(arguments: [String], fileManager: FileManager = .default) throws -> URL {
-        guard arguments.count == 3, arguments[0] == "--app-ui-host", arguments[1] == "--output" else {
-            throw AppUIHostError.refused("Expected exactly --app-ui-host --output ABSOLUTE_DIRECTORY")
-        }
-        let path = arguments[2]
-        let components = (path as NSString).pathComponents
-        let output = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
-        guard path.hasPrefix("/"), path.utf8.count <= 4096, !path.contains("\0"),
-              !components.contains(".."), !components.contains("."), output.path == path,
-              output.resolvingSymlinksInPath().path == path, output.lastPathComponent == "host-observations",
-              output.deletingLastPathComponent().lastPathComponent == "app-ui-private" else {
-            throw AppUIHostError.refused("Output must be a canonical app-ui-private/host-observations directory")
-        }
-        for directory in [output.deletingLastPathComponent(), output] {
-            let attributes = try fileManager.attributesOfItem(atPath: directory.path)
-            guard attributes[.type] as? FileAttributeType == .typeDirectory,
-                  (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == geteuid(),
-                  (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700 else {
-                throw AppUIHostError.refused("Output and parent require owned 0700 directories")
-            }
-        }
-        guard try fileManager.contentsOfDirectory(atPath: path).isEmpty else {
-            throw AppUIHostError.refused("Output directory must be empty")
-        }
-        return output
-    }
     static func prepare(arguments: [String]) throws {
         guard prepared == nil else { throw AppUIHostError.refused("Host already prepared") }
         let output = try outputDirectory(arguments: arguments)
@@ -58,23 +33,9 @@ final class AppUIHost {
             throw error
         }
     }
-    private static func writeIdentity(_ capture: AppUIHostCapture) throws {
-        let bundle = Bundle.main.bundleURL.standardizedFileURL
-        guard Bundle.main.bundleIdentifier == "dev.bridgevm.app-ui-host",
-              bundle.lastPathComponent == "BridgeVMAppUIHost.app", bundle.resolvingSymlinksInPath() == bundle,
-              let executable = Bundle.main.executableURL?.standardizedFileURL,
-              executable == bundle.appendingPathComponent("Contents/MacOS/BridgeVMControl"),
-              executable.resolvingSymlinksInPath() == executable,
-              (try executable.resourceValues(forKeys: [.isRegularFileKey])).isRegularFile == true else {
-            throw AppUIHostError.refused("Host bundle/executable identity differs from the fixed diagnostic contract")
-        }
-        try capture.write(["schema_version": 1, "kind": "native-app-ui-host-identity", "pid": Int(getpid()),
-            "bundle_identifier": "dev.bridgevm.app-ui-host", "bundle_path": bundle.path,
-            "executable_path": executable.path, "executable_sha256": try AppUIHostCapture.digest(executable),
-            "started_uptime": ProcessInfo.processInfo.systemUptime], name: "host-identity.json", final: true)
-    }
     private init(capture: AppUIHostCapture) throws {
         self.capture = capture
+        lifecycle = try AppUIHostLifecycle(capture: capture)
         root = capture.output.appendingPathComponent("fixture-library", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
                                                attributes: [.posixPermissions: 0o700])
@@ -103,10 +64,12 @@ final class AppUIHost {
     }
     private func armMonitor() {
         let deadline = ProcessInfo.processInfo.systemUptime + 5
+        lifecycle.setStartupDeadline(deadline)
         monitor = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self, !self.finished else { return }
                 do {
+                    self.observeLifecycle()
                     try Self.checkCancellation(output: self.capture.output)
                     if !self.started && ProcessInfo.processInfo.systemUptime >= deadline {
                         throw AppUIHostError.refused("Timed out waiting for actual app launch and window")
@@ -119,11 +82,16 @@ final class AppUIHost {
         }
     }
     func applicationDidFinishLaunching() {
+        lifecycle.record(.delegateDidFinishLaunching)
         guard !finished else { return }
         launchFinished = true
         startWhenReady()
     }
-    func attach(window: NSWindow) {
+    func attachmentChanged(window: NSWindow?) {
+        lifecycle.record(window == nil ? .attachmentNil : .attachmentNonnull)
+        if let window { attach(window: window) }
+    }
+    private func attach(window: NSWindow) {
         guard !finished else { return }
         guard self.window == nil || self.window === window else {
             finish(error: AppUIHostError.refused("A second app content window appeared")); return
@@ -132,9 +100,11 @@ final class AppUIHost {
         startWhenReady()
     }
     private func startWhenReady() {
+        observeLifecycle()
         guard launchFinished, !started, !finished, let window, window.isVisible,
               let content = window.contentView else { return }
         started = true
+        observeLifecycle()
         scenario = Task { [weak self] in
             guard let self else { return }
             do {
@@ -155,9 +125,14 @@ final class AppUIHost {
                 memMiB: memory, cpuCount: 4)
         }
     }
+    private func observeLifecycle(terminal: Bool = false) {
+        lifecycle.observe(launchFinished: launchFinished, started: started, finished: finished,
+                          window: window, terminal: terminal)
+    }
     private func finish(error: Error?, terminateApplication: Bool = true) {
         guard !finished else { return }
         finished = true
+        observeLifecycle(terminal: true)
         monitor?.cancel()
         scenario?.cancel()
         if let error { capture.failed(error) }

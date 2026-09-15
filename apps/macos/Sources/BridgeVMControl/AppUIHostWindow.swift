@@ -7,11 +7,11 @@ struct AppUIHostWindow: NSViewRepresentable {
     final class AttachmentView: NSView {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            if let window { AppUIHost.prepared?.attach(window: window) }
+            AppUIHost.prepared?.attachmentChanged(window: window)
         }
     }
-    func makeNSView(context: Context) -> NSView { AttachmentView(frame: .zero) }
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func makeNSView(context: Context) -> NSView { AppUIHostLifecycle.makeAttachmentView() }
+    func updateNSView(_ nsView: NSView, context: Context) { AppUIHost.prepared?.lifecycle.record(.representableUpdate) }
 
     @MainActor static func setPresentation(_ window: NSWindow, dark: Bool, minimum: Bool) async throws {
         guard let content = window.contentView, window.isVisible else {

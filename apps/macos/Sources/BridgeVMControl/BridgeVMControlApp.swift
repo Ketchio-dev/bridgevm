@@ -19,7 +19,7 @@ struct BridgeVMControlApp: App {
     @NSApplicationDelegateAdaptor(ControlAppDelegate.self) private var appDelegate
 #endif
     @StateObject var library: LibraryModel
-    init() { _library = StateObject(wrappedValue: BridgeVMControlAppModel.libraryModel()) }
+    init() { _library = BridgeVMControlAppModel.libraryState() }
     var body: some Scene {
         WindowGroup("BridgeVM Control") {
             ContentView(library: library)
