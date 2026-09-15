@@ -2407,10 +2407,11 @@ scripts/live-gates/bridgevm-live	236	0
 scripts/live-gates/app_ui_diagnostic.py	339	0
 tests/integration/app-ui-tier-smoke.py	261	0
 .github/workflows/app-ui-contracts.yml	13	0
-apps/macos/Tests/BridgeVMControlTests/HvfAppUIFixture.swift	68	0
+apps/macos/Tests/BridgeVMControlTests/HvfAppUIFixture.swift	53	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIAccessibility.swift	67	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUICapture.swift	72	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIRenderTests.swift	30	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIScenario.swift	81	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIProbe.swift	73	0
 apps/macos/Sources/BridgeVMControl/LibrarySearchField.swift	36	0
+apps/macos/Tests/BridgeVMControlTests/HvfAppUIWindow.swift	34	0

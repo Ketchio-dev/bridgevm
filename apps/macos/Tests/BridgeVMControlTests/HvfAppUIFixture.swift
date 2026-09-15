@@ -1,13 +1,13 @@
 import AppKit
-import SwiftUI
 @testable import BridgeVMControl
 
 @MainActor
 final class HvfAppUIFixture {
     let root: URL
     let library: LibraryModel
-    let window: NSWindow
-    let content: NSHostingView<ContentView>
+    private let presentation: HvfAppUIWindow
+    var window: NSWindow { presentation.window }
+    var content: NSView { presentation.content }
     let capture: HvfAppUICapture
 
     init(capture: HvfAppUICapture) throws {
@@ -19,26 +19,11 @@ final class HvfAppUIFixture {
             runtimeSessionFactory: { _ in capture.tripwire("runtime_creations") },
             actionScheduler: { _ in capture.tripwire("file_jobs") }, startsModelsAutomatically: false,
             modelFactory: { _ in capture.tripwire("model_creations") })
-        content = NSHostingView(rootView: ContentView(library: library))
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1320, height: 860),
-            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.title = "BridgeVM — owned UI diagnostic"
-        window.isReleasedWhenClosed = false
-        window.contentMinSize = NSSize(width: 1100, height: 720)
-        window.contentView = content
-        window.appearance = NSAppearance(named: .aqua)
-        window.makeKeyAndOrderFront(nil)
+        presentation = HvfAppUIWindow(rootView: ContentView(library: library))
     }
 
     func setPresentation(dark: Bool, minimum: Bool) async throws {
-        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        window.setContentSize(NSSize(width: minimum ? 1100 : 1320, height: minimum ? 720 : 860))
-        try await Task.sleep(nanoseconds: 200_000_000)
-        content.layoutSubtreeIfNeeded()
-        guard abs(content.bounds.width - (minimum ? 1100 : 1320)) < 1,
-              abs(content.bounds.height - (minimum ? 720 : 860)) < 1,
-              content.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == (dark ? .darkAqua : .aqua)
-        else { throw HvfAppUIError.refused("Owned content did not adopt the requested dimensions and appearance") }
+        try await presentation.setPresentation(dark: dark, minimum: minimum)
     }
 
     func seedOverviewMetadata() {
@@ -61,7 +46,7 @@ final class HvfAppUIFixture {
 
     func close() {
         for sheet in window.sheets { window.endSheet(sheet); sheet.close() }
-        window.contentView = nil
+        window.contentViewController = nil
         window.close()
         try? FileManager.default.removeItem(at: root)
     }
