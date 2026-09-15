@@ -86,7 +86,7 @@ final class ProductionInputDiagnostic {
                 queued = true
                 // Admit the whole burst; only the production driver schedules writes.
                 for event in events {
-                    if !driver.route(event, binding: binding) { failure = "legacy-fallback"; break }
+                    if driver.route(event, binding: binding) == .legacy { failure = "legacy-fallback"; break }
                 }
             }
         } catch { failure = "transport-read-failed" }
