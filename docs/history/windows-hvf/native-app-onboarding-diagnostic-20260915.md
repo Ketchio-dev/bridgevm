@@ -912,3 +912,34 @@ not establish the candidate's effect. Current full-project and exact-source host
 checks plus sealed pilot11 remain pending. Merged main36ff324d CI35029792177 remains
 pending in the last recorded snapshot; no new poll was taken for this checkpoint.
 All29criterion states, thresholds and product wording are preserved.
+
+
+## Minimum-size constraints observation (2026-09-15)
+
+Packet37's full project check passed163.25seconds, sealedadd08e00; all40push workflows
+passed in the saved22:37UTC snapshot. Pilot app-ui-host-20260915-11 produced one
+validated light/default PNG, visually reviewed by the owning agent, then failed
+minimum presentation: requested1100x720, original/current bounds1100x772 and
+layoutRect1100x720, with identity and requested Aqua appearance matching at record
+time. The underlying geometry mechanism remains unknown. Actions0of7/captures1of8,
+zero domain work and verified identity/exit/cleanup remain preserved. One reviewed
+image does not establish complete UI operation or minimum/dark presentation.
+
+Source dc8694ca63133ff2b1b1212ed8a3d386fd322568 adds failure-only size-limit, fitting/intrinsic,
+instance-conversion and original-content layout-constraint observations. Each axis
+records at most16numeric constraints; no hierarchy, descriptions or text is captured.
+New nonfinite numeric observations encode asnull while finite intrinsic sentinel-1
+is preserved. The extracted rectangle helper is unchanged. Setter, sizes,200ms wait,
+guard/tolerance, app/window appearance, product scene and7/8requirements are unchanged.
+
+All seven Apple XCTest host contracts passed19.84seconds, log SHA
+`a3b62b3420196a9e8085ebcb8100e5dcb262ef63aa11b3f0799bbb3716104115`.
+Compile-only release boundary passed22.09seconds. Both receipts contain468stable
+Swift/package inputs; independent diff/API review passed. This observation code has
+no measured geometry result yet and is not a presentation repair.
+
+Merged main36ff324d records44of45successful workflows, including CI35029792177.
+Coherence35029792045 failed its unchanged10000ms native_failure deadline; exactly
+one unchanged retry requested22:46:24UTC is pending. Original failure logs remain
+retained and cause is unproven. Current full-project, exact-source hosted checks and
+sealed pilot12 are pending. All29criteria, thresholds and product wording remain.
