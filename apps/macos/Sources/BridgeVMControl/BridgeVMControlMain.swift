@@ -12,7 +12,7 @@ enum BridgeVMControlMain {
         let arguments = Array(CommandLine.arguments.dropFirst())
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         do {
-            try AppUIHost.prepare(arguments: arguments)
+            try AppUIHost.prepare(arguments: arguments, environment: ProcessInfo.processInfo.environment)
             try AppUIHost.prepared?.checkBeforeApplication()
         }
         catch {
