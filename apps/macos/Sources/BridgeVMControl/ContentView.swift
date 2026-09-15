@@ -10,10 +10,13 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             LibrarySidebar(library: library)
-                .frame(minWidth: 240)
+                .navigationSplitViewColumnWidth(min: 260, ideal: 290, max: 350)
         } detail: {
             LibraryDetailView(library: library)
         }
+        .tint(LibraryAppearance.accent)
+        .groupBoxStyle(LibraryGroupBoxStyle())
+        .background(LibraryAppearance.canvas)
         .sheet(isPresented: $library.showingCreate) {
             CreateVMSheet(library: library)
         }
@@ -84,59 +87,6 @@ private struct CloneWindowsHVFSheet: View {
         .frame(width: 480)
         .onAppear { name = "\(config.name) Copy" }
     }
-}
-
-struct VMRow: View {
-    @ObservedObject var model: ControlModel
-    var body: some View {
-        HStack(spacing: 8) {
-            Circle().fill(model.running ? Color.green : Color.gray.opacity(0.5)).frame(width: 9, height: 9)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(model.config.name).font(.body)
-                Text(model.config.engineShortLabel + " · " + (model.running ? "실행 중" : "정지"))
-                    .font(.caption).foregroundColor(.secondary)
-            }
-            Spacer()
-        }
-        .padding(.vertical, 2)
-    }
-}
-
-// MARK: - Pro Mode fleet table (VMware-style overview)
-
-struct FleetTableView: View {
-    @ObservedObject var library: LibraryModel
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("전체 VM (Pro)").font(.title2.bold()).padding()
-            Table(library.vms) {
-                TableColumn("이름") { cfg in Text(cfg.name) }
-                TableColumn("엔진") { cfg in Text(cfg.engineShortLabel) }
-                TableColumn("상태") { cfg in FleetStatusCell(model: library.model(for: cfg)) }
-                TableColumn("부팅") { cfg in Text(cfg.effectiveBootMode) }
-                TableColumn("RAM/CPU") { cfg in FleetResCell(model: library.model(for: cfg)) }
-                TableColumn("IP") { cfg in FleetIPCell(model: library.model(for: cfg)) }
-            }
-        }
-    }
-}
-
-struct FleetStatusCell: View {
-    @ObservedObject var model: ControlModel
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle().fill(model.running ? Color.green : Color.gray).frame(width: 8, height: 8)
-            Text(model.running ? "실행 중" : "정지")
-        }
-    }
-}
-struct FleetResCell: View {
-    @ObservedObject var model: ControlModel
-    var body: some View { Text("\(Int(model.memGiB))GB · \(model.cpu)C").font(.callout.monospaced()) }
-}
-struct FleetIPCell: View {
-    @ObservedObject var model: ControlModel
-    var body: some View { Text(model.ip).font(.callout.monospaced()) }
 }
 
 // MARK: - Per-VM detail panel

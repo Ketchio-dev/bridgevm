@@ -37,11 +37,11 @@ struct HvfEngineView: View {
             VStack(alignment: .leading, spacing: 16) {
                 header
                 statusCard
+                screenshotCard
                 readinessCard
                 if session.config.vtpmStateDir != nil { vtpmLifecycleCard }
                 configCard
                 HvfWindowsSnapshotCard(config: currentConfig(), repoRoot: session.repoRoot, vmStopped: vtpmLifecycleAvailable)
-                screenshotCard
                 eventFeedCard
             }
             .padding(20)
@@ -86,14 +86,8 @@ struct HvfEngineView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("HVF Engine (Experimental)").font(.largeTitle.bold())
-                Text("Windows 11 ARM64 from-scratch HVF backend").foregroundColor(.secondary)
-            }
-            Spacer()
-            statusPill
-        }
+        HvfRuntimeHeader(title: session.config.libraryContext?.config.name ?? displayWindowTitle, state: stateText, stateColor: stateColor,
+                         ramMiB: session.config.ramMiB, cpus: session.config.smpCpus)
     }
 
     private var configCard: some View {
@@ -253,10 +247,11 @@ struct HvfEngineView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Button(action: start) { Label("시작", systemImage: "play.fill") }
+                        .buttonStyle(.borderedProminent).controlSize(.large)
                         .disabled(session.connectionState != .stopped || !bootConfigReady)
                         .accessibilityIdentifier("bridgevm.windows.runtime.start")
                     Button(action: session.stop) { Label("중지", systemImage: "stop.fill") }
-                        .accessibilityIdentifier("bridgevm.windows.runtime.stop")
+                        .controlSize(.large).accessibilityIdentifier("bridgevm.windows.runtime.stop")
                     Button(action: sendCtl) { Label("Send", systemImage: "paperplane.fill") }
                         .disabled(ctlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("bridgevm.runtime.ctl.send")
                     TextField("CLIPGET, CLIPSET ..., or guest shell command", text: $ctlInput, onCommit: sendCtl)
@@ -320,16 +315,6 @@ struct HvfEngineView: View {
         } label: {
             Label("BVAGENT Event Feed", systemImage: "list.bullet.rectangle")
         }
-    }
-
-    private var statusPill: some View {
-        Text(stateText)
-            .font(.callout)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(stateColor.opacity(0.18))
-            .foregroundColor(stateColor)
-            .cornerRadius(8)
     }
 
     private var stateText: String {
