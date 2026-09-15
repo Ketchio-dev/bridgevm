@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-14",
-  "tested_commit": "6b318e8090cea18aacbe818f143c5d9c807c2543",
+  "tested_commit": "010c4709845196f8644029563a1d40a03eaed2e3",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: source 6b318e80 retains exact own-HVF runtime/install controls when their registration disappears. Stable object tokens keep accepted metadata, terminal state and logs reachable until explicit finished-record dismissal; narrow state/stage notifications preserve selection and are disconnected on dismissal. Native 227 tests passed in 39.82 seconds, including 11 new retention tests and the preceding 216 cases. The retained primary baseline executed one method across 16 table cases with 32 failed assertions in 6.48 seconds: no retained detail, Pro/ordinary fallback, and four extra model/runtime creations. Fixture identity/access and owned file-byte checks passed. All four new test files and 160 prior test files remained unchanged. New tests use simulated runtime observations and acknowledged finite installer validation; no runtime Start/attachment/Stop or installer-pipeline execution is claimed by this packet. Full local and exact hosted checks for this source remain pending at this observation point. Preceding 3ea26b8e passed its full local check in 159.95 seconds and all 78 hosted workflows, including CI 34937196001 and Security 34937196070. A11 requires the final release regression seal. This establishes in-memory ownership, UI-value routing, notification and dismissal, not rendered interaction, actual guest stop/install completion, guest survival, registration repair, durable history or external coordination. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
+      "measured": "OPEN: source b941ae18 prepares new own-HVF installation plans off the UI actor through the actual pending-detail route. Existing active or compatible idle sessions remain authoritative; immutable inputs, attempt identity and current registration/request/cache checks reject stale completion. Ordinary lookup changes initialize fresh handles without publishing through previously observed handles. Native 237 tests passed in 40.27 seconds, including 10 new preparation methods. A compiled primary baseline ran one method with sealed/unsealed cases and two main-thread assertion failures in 2.78 seconds; all other prerequisites and owned-byte checks passed. The earlier 5.92-second compiler failure executed no tests and remains recorded; one optional-memory fixture expression was corrected explicitly. All nine test/support files match the compiled baseline, 161 prior tests remain unchanged, and three existing adapters preserve their substantive assertions. Follow-up 010c4709 uses standard SwiftUI timer text for the installation elapsed label; its actual app build passed in 1.51 seconds. The combined full local and exact hosted checks remain pending at this observation point. Preceding b22abaa7 passed its full local check in 159.68 seconds and all 78 hosted workflows, including CI 34939361791 and Security 34939361784. A11 requires the final release regression seal. These deterministic results do not establish rendered interaction/clock refresh, real-media latency, guest installation or survival, interrupted file reads or external coordination. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -177,7 +177,8 @@
         "docs/history/windows-hvf/palette-routing-deterministic-20260915.md",
         "docs/history/windows-hvf/library-action-admission-deterministic-20260915.md",
         "docs/history/windows-hvf/library-work-admission-deterministic-20260915.md",
-        "docs/history/windows-hvf/retained-controls-deterministic-20260915.md"
+        "docs/history/windows-hvf/retained-controls-deterministic-20260915.md",
+        "docs/history/windows-hvf/install-plan-preparation-deterministic-20260915.md"
       ]
     },
     {
