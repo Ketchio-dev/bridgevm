@@ -2447,7 +2447,7 @@ apps/macos/scripts/LaunchAppUIHost.swift	231	0
 apps/macos/scripts/build-app-ui-launcher.sh	24	0
 scripts/check-app-ui-host-build-boundary.sh	53	0
 scripts/live-gates/app-ui-manifest-dispatch.sh	15	0
-scripts/live-gates/app_ui_host_diagnostic.py	153	0
+scripts/live-gates/app_ui_host_diagnostic.py	151	0
 scripts/live-gates/app_ui_host_manifest.py	95	0
 tests/integration/app-ui-host-tier-smoke.py	254	0
 tests/integration/app-ui-launcher-ownership.swift	87	0
@@ -2507,3 +2507,4 @@ apps/macos/Sources/BridgeVMControl/ControlWindowPresentation.swift	9	0
 tests/integration/app_ui_host_bundle_fixtures.py	10	0
 crates/bridgevm-cli/tests/support/doctor_fixture.rs	52	0
 crates/bridgevm-cli/tests/support/help_fixture.rs	55	0
+scripts/live-gates/app_ui_host_bundle.py	15	0
