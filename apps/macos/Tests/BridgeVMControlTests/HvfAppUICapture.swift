@@ -46,7 +46,7 @@ final class HvfAppUICapture {
         view.displayIfNeeded()
         guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)
         else { throw HvfAppUIError.refused("Owned content view has no bitmap representation") }
-        view.cacheDisplay(in: view.bounds, to: bitmap)
+        view.effectiveAppearance.performAsCurrentDrawingAppearance { view.cacheDisplay(in: view.bounds, to: bitmap) }
         guard bitmap.pixelsWide > 0, bitmap.pixelsHigh > 0,
               let data = bitmap.representation(using: .png, properties: [:]), !data.isEmpty
         else { throw HvfAppUIError.refused("Owned content view produced an empty image") }

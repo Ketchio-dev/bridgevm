@@ -14,7 +14,7 @@ enum HvfAppUIScenario {
                 }
             }
             try await fixture.setPresentation(dark: false, minimum: false)
-            try HvfAppUIProbe.save(content, to: capture.output, name: "ui-probe-before-welcome.json")
+            try await HvfAppUIClient.saveBeforeWelcome(content, to: capture.output)
             try await HvfAppUIAccessibility.wait("welcome controls") {
                 try HvfAppUIAccessibility.find("bridgevm.first-run.create", in: content) != nil
                     && HvfAppUIAccessibility.find("bridgevm.first-run.import", in: content) != nil

@@ -2415,3 +2415,4 @@ apps/macos/Tests/BridgeVMControlTests/HvfAppUIScenario.swift	81	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIProbe.swift	73	0
 apps/macos/Sources/BridgeVMControl/LibrarySearchField.swift	36	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIWindow.swift	34	0
+apps/macos/Tests/BridgeVMControlTests/HvfAppUIClient.swift	57	0
