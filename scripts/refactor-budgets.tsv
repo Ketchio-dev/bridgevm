@@ -1502,7 +1502,7 @@ tests/integration/hvf-mmio-write-emulation-probe-cli-smoke.sh	94	0
 tests/integration/hvf-mmio-write-emulation-probe-live-opt-in-smoke.sh	53	0
 tests/integration/hvf-mmio-write-emulation-probe-runner-smoke.sh	94	0
 tests/integration/hvf-runner-installed-boot-launch-policy-smoke.sh	341	0
-tests/integration/hvf-secure-boot-provisioning-smoke.sh	43	0
+tests/integration/hvf-secure-boot-provisioning-smoke.sh	38	0
 tests/integration/hvf-uart-live-opt-in-smoke.sh	39	0
 tests/integration/hvf-vcpu-probe-cli-smoke.sh	86	0
 tests/integration/hvf-vcpu-probe-live-opt-in-smoke.sh	48	0
@@ -2434,3 +2434,8 @@ apps/macos/Sources/BridgeVMControl/CreateVMResourceSummary.swift	19	0
 apps/macos/Sources/BridgeVMControl/CreateWindowsInstallFields.swift	49	0
 apps/macos/Sources/BridgeVMControl/LibraryIssuesSection.swift	53	0
 apps/macos/Sources/BridgeVMControl/CreateVMCreationFooter.swift	37	0
+apps/macos/Sources/BridgeVMControl/BridgeVMControlResources.swift	16	0
+tests/integration/PackagedControlResourcesSmoke.swift	62	0
+tests/integration/compile-control-resources-smoke.sh	22	0
+tests/integration/packaged-control-resources-smoke.sh	52	0
+.github/workflows/packaged-control-resources.yml	16	0

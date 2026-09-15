@@ -97,7 +97,7 @@ enum HvfSecureBootProvisioner {
     ]
 
     static func bundledPolicy() throws -> HvfSecureBootPolicy {
-        guard let url = Bundle.module.url(
+        guard let url = BridgeVMControlResources.url(
             forResource: "secureboot-microsoft-windows-transition-aarch64-v1.6.5",
             withExtension: "json") else {
             throw HvfWindowsBootSeed.SeedError.secureBootManifestMissing
