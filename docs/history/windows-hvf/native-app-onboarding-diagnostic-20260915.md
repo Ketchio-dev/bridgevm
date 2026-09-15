@@ -194,3 +194,49 @@ Snapshot SHA `29aed768178cccd4965ff42c829c9cc9c59aef5cc94d318864033ef725db024f`.
 Current final full-check and hosted results are pending at this frozen record;
 the subsequent exact-tree seal and PR report them separately. No engine
 capability, release state, criterion or threshold changes.
+
+### User-directed brand correction — 2026-09-15 14:52 UTC
+
+The user identified the overlapping blue/purple window logo as visually too
+close to VMware. Source `da385b25c89447bdad2d185001f43364be02c794` replaces it with a shared
+native bridge silhouette: one rising span between two abutments, drawn as a
+single solid path. The sidebar and own-HVF emblems use this mark; other engine
+emblems use an ordinary single-desktop symbol. Functional Clone/window icons,
+VM actions, accessible names and route identity are unchanged. This records
+a design response, not a trademark-clearance claim.
+
+`BridgeVMMark.cgPath` is the common geometry for the actual SwiftUI Shape and
+the owned vector preview. Pure CoreGraphics rendered the shape at 24, 42 and
+64 px on light/dark backgrounds, with no NSApplication or WindowServer. The
+preview and SVG are in private `hvf-brand-mark-20260915`, with source/output
+hashes in `vector-preview.json`. These are design assets, not app screenshots.
+No Dock/Finder icon packaging is claimed; that surface has no current tracked
+icon asset or own-HVF icon installation step.
+
+The frozen `BridgeVMControl` build passed in 2.06 seconds, log SHA
+`74200c75ad8fd8ebfe4f3fdc9a0ce330e8c53c1faf5d67d66ea5866f25661872`.
+New Shape/emblem modules register at 38/26 lines; sidebar chrome and VM card
+ceilings fall from 65/106 to 56/86. The unchanged structural check passes.
+Current final full-check and pushed-SHA hosted results remain pending in this
+frozen record; all previous native UI pilot failures and limitations remain.
+
+The preceding seal `d68bbc60` later failed [macOS CI job104428879101](https://github.com/Ketchio-dev/bridgevm/actions/runs/34983133477/job/104428879101):
+`daemon_sends_guest_tools_command_and_tracks_result` observed one pending
+command where zero was expected (`part_4_2.rs:193`; 72 passed, one failed).
+The actual hosted merge's Rust tree, dependencies and workflows are identical
+to preceding green `928ec177`. An unsynchronized response thread and a 25 ms
+read window suggest scheduling sensitivity; the failed log does not prove the
+cause. Raw/sanitized logs and hashes are preserved with the read-only diagnosis
+in `hvf-app-design-20260915/hosted-d68bbc60-failure-readonly-diagnosis.md`.
+One unchanged failed-job rerun was requested at 14:51:09 UTC and remains
+pending here. No fixture, timeout or criterion was relaxed, and no production
+fix is claimed.
+
+The first brand full check failed only the documentation-reference step in
+163.21 seconds: an operator HANDOFF line presented a Git tree-object ID where
+the prose checker expected a commit. The actual identity remains in the
+private seal receipt; HANDOFF now points there instead of presenting a tree
+as a commit reference. The checker is unchanged. App build and the other
+steps passed; the complete failed log SHA is
+`7b03a633d5cede20d447560545f9f3c27077235115ffec844893710c252578f4`.
+A complete check on the corrected documentation is required before sealing.
