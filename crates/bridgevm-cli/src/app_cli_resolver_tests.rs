@@ -87,7 +87,7 @@ fn marker_can_cross_a_read_boundary() {
     bytes.extend_from_slice(PROTOCOL_MARKER);
     bytes.extend_from_slice(b"suffix");
     let path = fixture.executable("current", &bytes);
-    assert_eq!(resolve_candidates(&[path.clone()]).unwrap(), path);
+    assert_eq!(resolve_candidates(std::slice::from_ref(&path)).unwrap(), path);
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn symlinks_directories_and_non_executable_files_are_refused() {
     let link = fixture.0.join("link");
     symlink(&target, &link).unwrap();
     assert!(resolve_candidates(&[link]).is_err());
-    assert!(resolve_candidates(&[fixture.0.clone()]).is_err());
+    assert!(resolve_candidates(std::slice::from_ref(&fixture.0)).is_err());
     fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
     assert!(resolve_candidates(&[target]).is_err());
 }
