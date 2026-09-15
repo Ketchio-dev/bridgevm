@@ -59,7 +59,7 @@ struct HvfWindowsInstallView: View {
                 }
             }
             if let startedAt = session.startedAt, session.isRunning {
-                Text("경과: \(startedAt, style: .timer) — 무인 설치는 보통 10~20분 걸립니다.")
+                Text("경과: \(startedAt, style: .timer)")
                     .font(.caption).foregroundColor(.secondary)
             }
         }
