@@ -884,3 +884,31 @@ tree unchanged. New main CI35029792177 was pending in its22:13UTC initial snapsh
 The preceding timeout and successful unchanged retry remain recorded; cause is
 unproven. Current full-project and exact-source hosted checks plus one sealed
 pilot10 remain pending. All29criteria, thresholds and product wording are unchanged.
+
+
+## Diagnostic application appearance source (2026-09-15)
+
+The preceding complete project check passed164.17seconds, sealed654a8050. Pilot
+app-ui-host-20260915-10 admitted the actual product window and scenario, then failed
+first light/default presentation. Its private record shows content identitytrue and
+exact1320x860 bounds, with explicit window/content appearancesnil and effective/
+best-matchDarkAqua for requested light. Only the appearance predicate is false at
+record time. Guard and observation are not atomic; the underlying mechanism remains
+unproven. Actions0of7/captures0of8, zero domain work and verified identity/exit/cleanup
+remain preserved with the failed source, binary and receipts.
+
+Source b00d38c8d30e5c3ffbd82549b0edfedeac22385b requires an existing NSApp and nonnil named
+appearance, then assigns that appearance to the owned diagnostic app and window.
+The process-local override remains through subsequent captures; ordinary/release
+behavior and persistent settings are unchanged. The extracted failure observer adds
+only bounded app appearance fields. Requested sizes,200ms wait, layout, all original
+guard predicates/tolerances and mismatch error remain intact, as do the7/8requirements.
+
+All seven Apple XCTest host contracts passed20.03seconds, log SHA
+`e282fc968e49d16c3aed430a4531e61a6a3f66530b40ee682ef41ec6a9b6e7b4`.
+Compile-only release boundary passed22.04seconds with all467Swift/package inputs
+stable. Independent inverse-diff/API review passed. These deterministic results do
+not establish the candidate's effect. Current full-project and exact-source hosted
+checks plus sealed pilot11 remain pending. Merged main36ff324d CI35029792177 remains
+pending in the last recorded snapshot; no new poll was taken for this checkpoint.
+All29criterion states, thresholds and product wording are preserved.
