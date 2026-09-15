@@ -775,3 +775,29 @@ window admission. The startup limit, seven actions, eight captures, cleanup and
 zero-domain-work requirements are unchanged. The new complete project check,
 exact-source hosted result and one physical-Mac pilot remain required. Native
 rendering/VoiceOver and all existing OPEN criteria remain unproven.
+
+
+## Minimal-content comparison, never product UI evidence (2026-09-15)
+
+Source b1ca0b5dd3969630f3b1097c5bff5ddaf3431644 introduces a temporary, explicitly compiled launch
+control that replaces only the content with minimal Text, preserving WindowGroup,
+frame, scene observation, presentation, entry point, library, launcher and deadlines.
+It records control_only=true before content construction and intentionally throws
+before any product scenario action/capture. This control cannot pass the7/8gate.
+The unchanged delegate is extracted to preserve the33line ceiling, now28.
+
+Prior full check passed166.46seconds at11d446af, sealed74807177. Pilot07 failed: both
+content-construction and ContentView body counts0 despite App.body/launch completion,
+ownedwindows0/actions0/captures0, all4domain-work counts0 and verifiedexit/cleanup.
+The exact owned process log reports no persistent state to restore; no root cause
+is established. Raw receipts and logs remain private and unchanged.
+
+Normal diagnostic7contracts passed20.13seconds; minimal-control build/exact7contracts/
+CONTROL-without-HOST compiler refusal passed26.95seconds, log SHA
+`dc3d54ed1bd6ff660e4ba042344f87b2c6ff5f9ed32f2845ab0b9ad1ec7d632b`.
+Ordinary release exclusion/exact refusal passed27.34seconds. Source hashes are
+unchanged across checks; the control binary/build flags are sealed separately.
+No GUI was launched in these checks. Current full/hosted checks and one physical
+control observation remain pending. The temporary flag/helper/routing must then
+be removed, retaining at most the unchanged delegate extraction for the ratchet.
+Actual native UI validation and every existing OPEN criterion remain unfinished.
