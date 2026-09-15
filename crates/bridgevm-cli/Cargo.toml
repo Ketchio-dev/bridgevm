@@ -22,5 +22,6 @@ bridgevm-qemu = { path = "../bridgevm-qemu" }
 bridgevm-storage = { path = "../bridgevm-storage" }
 clap.workspace = true
 hex.workspace = true
+libc.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

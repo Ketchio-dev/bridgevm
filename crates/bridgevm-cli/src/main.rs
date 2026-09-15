@@ -1,8 +1,7 @@
 //! The `bridgevm` command-line front-end.
 //!
-//! Parses commands and renders results. All behaviour lives behind
-//! `bridgevm-api`, so the CLI stays a presentation layer over the same contract
-//! the daemon and macOS app use.
+//! Routes legacy store/daemon commands through `bridgevm-api`, runs local HVF
+//! tools, and forwards native app inventory queries to the packaged app CLI.
 
 use anyhow::{bail, Context, Result};
 use bridgevm_agent_protocol::{AgentEnvelope, AgentMessage, WindowInputEvent};
@@ -82,6 +81,8 @@ const DAEMON_IO_TIMEOUT: Duration = Duration::from_secs(30);
 #[cfg(test)]
 mod test_support;
 
+mod app_cli;
+mod app_cli_resolver;
 mod args;
 mod boot_media;
 mod clone_migrate;
@@ -90,8 +91,10 @@ mod disk;
 mod doctor;
 mod entry;
 mod json_util;
+mod local_dispatch;
 mod report;
 mod request;
+mod request_create;
 mod runtime_print;
 mod snapshot;
 mod ssh_runtime;
@@ -107,6 +110,7 @@ use doctor::*;
 use json_util::*;
 use report::*;
 use request::*;
+use request_create::*;
 use runtime_print::*;
 use snapshot::*;
 use ssh_runtime::*;

@@ -145,6 +145,7 @@ dependencies = [
  "bridgevm-storage",
  "clap",
  "hex",
+ "libc",
  "serde_json",
  "sha2",
 ]

@@ -1,37 +1,14 @@
 //! Split out of args.rs by responsibility.
 
+pub(crate) use super::app_args::*;
+pub(crate) use super::cli::*;
 pub(crate) use super::hvf_args::*;
 use crate::*;
 
-#[derive(Debug, Parser)]
-#[command(
-    name = "bridgevm",
-    about = "BridgeVM developer CLI for legacy stores and local HVF tools",
-    after_help = "Legacy VM commands use manifest.yaml bundles. Native macOS app registrations use vm.json; these formats are not interchangeable.
-
-Own-HVF queries (no guest launch):
-  bridgevm hvf host-capabilities
-  bridgevm hvf windows-plan
-  bridgevm hvf machine-plan --memory-gib 6 --vcpus 4
-
-Legacy store inspection:
-  bridgevm --store PATH list
-
-Use COMMAND --help for effects and explicit probe opt-ins."
-)]
-pub(crate) struct Cli {
-    #[command(subcommand)]
-    pub(crate) command: Command,
-    /// Local legacy VmStore root (manifest.yaml bundles); ignored with --socket.
-    #[arg(long, global = true, value_name = "PATH")]
-    pub(crate) store: Option<PathBuf>,
-    /// Use bridgevmd for supported legacy commands; not supported by hvf.
-    #[arg(long, global = true, value_name = "SOCKET")]
-    pub(crate) socket: Option<PathBuf>,
-}
-
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
+    /// Query the native macOS app library without opening its UI or starting a VM.
+    App(AppArgs),
     /// List VM bundles in the legacy store.
     List,
     /// List legacy-store boot templates.
