@@ -21,7 +21,7 @@ struct HvfWindowsInstallView: View {
                     .font(.title2.bold())
                 requestCard
                 stageCard
-                controlRow
+                HvfWindowsInstallControls(session: session)
                 logCard
             }
             .padding(20)
@@ -73,19 +73,8 @@ struct HvfWindowsInstallView: View {
         switch session.stage {
         case .done: return .green
         case .failed: return .red
+        case .cancelled: return .secondary
         default: return .primary
-        }
-    }
-
-    private var controlRow: some View {
-        HStack {
-            Button(session.isRunning ? "설치 진행 중…" : "설치 시작") { _ = session.start() }
-                .disabled(session.isRunning || session.stage == .done).accessibilityIdentifier("bridgevm.install.start")
-            if session.isRunning {
-                Button("취소") { session.cancel() }
-                    .accessibilityIdentifier("bridgevm.windows.install.cancel")
-            }
-            Spacer()
         }
     }
 

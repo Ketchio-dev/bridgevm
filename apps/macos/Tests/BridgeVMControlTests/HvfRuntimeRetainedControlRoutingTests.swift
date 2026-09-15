@@ -69,7 +69,7 @@ final class HvfRuntimeRetainedControlRoutingTests: XCTestCase {
                 XCTAssertEqual(f.assertInstallRoute(session, config: config, in: library), token)
                 XCTAssertEqual(try f.work.snapshot(), bytes)
             }
-            XCTAssertEqual(session.stage, .failed("설치가 취소되었습니다."))
+            XCTAssertEqual(session.stage, .cancelled)
             XCTAssertEqual(f.work.installJobCount, 0)
             guard let token else { return XCTFail("The captured install must have an exact selection token") }
             XCTAssertEqual(library.selectedID, token)
@@ -96,7 +96,7 @@ final class HvfRuntimeRetainedControlRoutingTests: XCTestCase {
             library.reload()
             guard let token = f.assertInstallRoute(session, config: config, in: library) else { return }
             session.cancel()
-            XCTAssertEqual(session.stage, .preparingSource)
+            XCTAssertEqual(session.stage, .cancelling)
             XCTAssertTrue(session.isRunning)
             XCTAssertFalse(library.dismissRetainedControl(token))
             XCTAssertEqual(f.assertInstallRoute(session, config: config, in: library), token)

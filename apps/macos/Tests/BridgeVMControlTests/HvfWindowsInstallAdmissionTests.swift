@@ -82,7 +82,7 @@ final class HvfWindowsInstallAdmissionTests: XCTestCase {
         await queue.runNext()
         await duplicate?.value
 
-        XCTAssertEqual(session.stage, .failed("설치가 취소되었습니다."))
+        XCTAssertEqual(session.stage, .cancelled)
         XCTAssertFalse(session.isRunning)
         XCTAssertFalse(completed)
         XCTAssertEqual(try Data(contentsOf: target), Data([1, 2, 3, 4]))
@@ -113,7 +113,7 @@ final class HvfWindowsInstallAdmissionTests: XCTestCase {
         XCTAssertEqual(queue.jobs.count, 1)
         session.cancel()
         await queue.runNext()
-        XCTAssertEqual(session.stage, .failed("설치가 취소되었습니다."))
+        XCTAssertEqual(session.stage, .cancelled)
         XCTAssertFalse(session.isRunning)
     }
 

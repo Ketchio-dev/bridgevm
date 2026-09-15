@@ -6,6 +6,8 @@ enum HvfWindowsInstallStage: Equatable {
     case preparingSource
     case installing
     case finalizing
+    case cancelling
+    case cancelled
     case done
     case failed(String)
 
@@ -16,6 +18,8 @@ enum HvfWindowsInstallStage: Equatable {
         case .preparingSource: return "설치 소스 준비"
         case .installing: return "Windows 무인 설치"
         case .finalizing: return "VM에 반영"
+        case .cancelling: return "취소 중…"
+        case .cancelled: return "취소됨"
         case .done: return "완료"
         case .failed: return "실패"
         }
@@ -23,18 +27,8 @@ enum HvfWindowsInstallStage: Equatable {
 
     var isRunning: Bool {
         switch self {
-        case .validating, .preparingSource, .installing, .finalizing: return true
+        case .validating, .preparingSource, .installing, .finalizing, .cancelling: return true
         default: return false
         }
-    }
-}
-
-extension HvfWindowsInstallSession {
-    /// Keep only load-bearing boot lines out of the very chatty run.log.
-    nonisolated static func isProgressLine(_ line: String) -> Bool {
-        line.contains("BOOT_TIMER ramfb source=") && line.contains("state=captured")
-            || line.hasPrefix("BVAGENT ")
-            || line.contains("NVMe disk written back")
-            || line.contains("stop: PSCI")
     }
 }

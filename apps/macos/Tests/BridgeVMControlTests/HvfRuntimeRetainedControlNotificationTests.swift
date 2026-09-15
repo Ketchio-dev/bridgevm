@@ -90,7 +90,7 @@ final class HvfRuntimeRetainedControlNotificationTests: XCTestCase {
         XCTAssertEqual(try f.work.snapshot(), bytes)
     }
 
-    func testInstallerCancelLogStaysLocalAndAcknowledgedFailureRelaysWithoutReload() async throws {
+    func testInstallerCancellationStagesRelayWithoutReloadAndLogStaysLocal() async throws {
         let f = try HvfRuntimeRetainedControlFixture()
         defer { f.clean() }
         let config = f.work.config(pending: true)
@@ -122,13 +122,13 @@ final class HvfRuntimeRetainedControlNotificationTests: XCTestCase {
             }
             session.cancel()
             XCTAssertTrue(session.logLines.contains("사용자가 설치를 취소했습니다."))
-            XCTAssertEqual(session.stage, .validating)
-            XCTAssertTrue(observedStages.isEmpty, "Cancel's log alone must not relay to the parent")
+            XCTAssertEqual(session.stage, .cancelling)
+            XCTAssertEqual(observedStages, [.validating], "Cancellation stage must relay while its log stays local")
             XCTAssertEqual(f.effects, capturedEffects)
         }
         // The helper has released the gate and awaited its accepted validation handle.
-        XCTAssertEqual(session.stage, .failed("설치가 취소되었습니다."))
-        XCTAssertEqual(observedStages, [.validating], "The stage relay must preserve willSet membership")
+        XCTAssertEqual(session.stage, .cancelled)
+        XCTAssertEqual(observedStages, [.validating, .cancelling], "The stage relay must preserve willSet membership")
         let selectedToken = try XCTUnwrap(token)
         XCTAssertEqual(library.selectedID, selectedToken)
         XCTAssertEqual(f.assertInstallRoute(session, config: config, in: library), selectedToken)

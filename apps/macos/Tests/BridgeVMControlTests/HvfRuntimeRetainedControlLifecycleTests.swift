@@ -47,7 +47,7 @@ final class HvfRuntimeRetainedControlLifecycleTests: XCTestCase {
             XCTAssertNotNil(token)
             XCTAssertEqual(library.selectedID, token)
             XCTAssertEqual(f.assertInstallRoute(try XCTUnwrap(observed), config: config, in: library), token)
-            XCTAssertEqual(observed?.stage, .failed("설치가 취소되었습니다."))
+            XCTAssertEqual(observed?.stage, .cancelled)
             XCTAssertTrue(observed?.logLines.contains("사용자가 설치를 취소했습니다.") == true)
         }
     }

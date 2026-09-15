@@ -62,7 +62,7 @@ final class HvfWindowsInstallValidationWorkerTests: XCTestCase {
             validate: { probe.validate($0) }, schedule: queue.enqueue)
         let acknowledgment = try XCTUnwrap(session.start())
         session.cancel()
-        XCTAssertEqual(session.stage, .validating)
+        XCTAssertEqual(session.stage, .cancelling)
         XCTAssertTrue(session.isRunning)
         let duplicate = session.start()
         XCTAssertNil(duplicate)
@@ -70,7 +70,7 @@ final class HvfWindowsInstallValidationWorkerTests: XCTestCase {
         await duplicate?.value
 
         XCTAssertEqual(probe.snapshot.calls, 0)
-        XCTAssertEqual(session.stage, .failed("설치가 취소되었습니다."))
+        XCTAssertEqual(session.stage, .cancelled)
         XCTAssertFalse(session.isRunning)
         XCTAssertTrue(queue.jobs.isEmpty)
     }
@@ -86,7 +86,7 @@ final class HvfWindowsInstallValidationWorkerTests: XCTestCase {
         XCTAssertTrue(entered, "injected validation must enter before the bounded wait expires")
         session.cancel()
         XCTAssertTrue(session.isRunning)
-        XCTAssertEqual(session.stage, .validating)
+        XCTAssertEqual(session.stage, .cancelling)
         XCTAssertEqual(probe.snapshot.finished, 0)
         let prematureRetry = session.start()
         XCTAssertNil(prematureRetry)
@@ -96,7 +96,7 @@ final class HvfWindowsInstallValidationWorkerTests: XCTestCase {
 
         XCTAssertFalse(probe.snapshot.gateTimedOut)
         XCTAssertEqual(probe.snapshot.calls, 1)
-        XCTAssertEqual(session.stage, .failed("설치가 취소되었습니다."))
+        XCTAssertEqual(session.stage, .cancelled)
         XCTAssertFalse(session.isRunning)
         XCTAssertTrue(queue.jobs.isEmpty)
         probe.setError(nil)

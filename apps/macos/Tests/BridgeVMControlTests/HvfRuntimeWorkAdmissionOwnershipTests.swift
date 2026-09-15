@@ -75,7 +75,7 @@ final class HvfRuntimeWorkAdmissionOwnershipTests: XCTestCase {
         probe.release()
         await handle.value
         if let duplicate { await duplicate.value }
-        XCTAssertEqual(installer.stage, .failed("설치가 취소되었습니다."))
+        XCTAssertEqual(installer.stage, .cancelled)
         XCTAssertFalse(probe.snapshot.gateTimedOut)
         XCTAssertEqual(f.installJobCount, 0)
 
@@ -115,7 +115,7 @@ final class HvfRuntimeWorkAdmissionOwnershipTests: XCTestCase {
             reason: HvfRuntimeWorkAdmissionFixture.installReason)
         installer.cancel()
         XCTAssertTrue(installer.isRunning)
-        XCTAssertEqual(installer.stage, .preparingSource)
+        XCTAssertEqual(installer.stage, .cancelling)
         XCTAssertTrue(installer.logLines.contains("사용자가 설치를 취소했습니다."))
         f.assertRuntimeRefused(runtime, library: library, reason: HvfRuntimeWorkAdmissionFixture.installReason,
             entries: [.automaticAttach, .silentAttach])
