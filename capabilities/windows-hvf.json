@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-14",
-  "tested_commit": "748d6d676ac97b28e1f7bd2d131c4f03d39d2bb2",
+  "tested_commit": "39c4437ed4afb3529f5cac098129d6deacde7dda",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: source 9222b159 separates the unchanged VM creation screen from library logic; the original bytes reconstruct exactly with the retained separator. Existing focused checks and the actual app build passed in 2.39 seconds, with all 172 prior test files unchanged. The initial prebuild whitespace check failed and is retained; no app build ran in that trial. Keyboard checkpoint 92f8be3c passed its full local check in 161.03 seconds, but both hosted production-input-driver builds failed because one standalone caller still expected a Boolean result; integration steps were skipped. Those failures remain recorded. Source 748d6d67 adapts that caller to the existing typed legacy result, preserving refusal diagnostics and all transport assertions. Its standalone build passed in 4.63 seconds and two unchanged fake-peer integration test methods passed in 1.87 seconds. The preceding keyboard source passed 299 native tests in 41.23 seconds; no test result is counted as a guest sample. The combined creation-screen and harness full local check and exact-SHA hosted verification remain pending at this pre-check observation. A11 requires the final release regression seal. These deterministic results do not prove rendered UI, guest delivery or application consumption, live disk safety or release readiness. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
+      "measured": "OPEN: source 39c4437e introduces native VM library cards, search, import/create entry points, shared presentation styles and an accepted-configuration HVF header. The final native app build passed in 1.54 seconds and 43 existing native tests passed in 2.57 seconds, with all 172 prior test files and the existing detail route unchanged. Existing configuration/recovery content, display-open action, root sheets and confirmations remain byte-identical. These checks do not establish actual rendered UI, card/search interaction, button dispatch or live guest behavior. The preceding checkpoint 4eb8a02b sealed a full project check in 162.82 seconds and all 78 hosted checks succeeded (CI 34949195210, Security 34949195377); previous failed experiments and hosted failures remain recorded. The new app packet full local check and exact-SHA hosted verification are pending at this frozen pre-check observation. A11 still requires the final release regression seal. Earlier observations remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -180,7 +180,8 @@
         "docs/history/windows-hvf/retained-controls-deterministic-20260915.md",
         "docs/history/windows-hvf/install-plan-preparation-deterministic-20260915.md",
         "docs/history/windows-hvf/keyboard-draft-and-install-display-deterministic-20260915.md",
-        "docs/history/windows-hvf/create-sheet-and-harness-deterministic-20260915.md"
+        "docs/history/windows-hvf/create-sheet-and-harness-deterministic-20260915.md",
+        "docs/history/windows-hvf/native-library-design-deterministic-20260915.md"
       ]
     },
     {
