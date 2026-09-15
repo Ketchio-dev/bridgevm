@@ -13,7 +13,7 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
                 var draft = "다시 입력할 문장 🙂"
                 let original = draft
 
-                HvfKeyboardDraft.submit(&draft, to: session)
+                XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .refused)
 
                 XCTAssertEqual(draft, original, "Refused text must remain editable: \(state)")
                 XCTAssertEqual(session.connectionState, state)
@@ -31,7 +31,7 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
             try fixture.connect(session)
             var first = "첫 번째 문장"
             let encoded = Data(first.utf8).base64EncodedString()
-            HvfKeyboardDraft.submit(&first, to: session)
+            XCTAssertEqual(HvfKeyboardDraft.submit(&first, to: session), .acceptedForProcessing)
             XCTAssertEqual(first, "")
             let commands = try fixture.commands()
             XCTAssertEqual(commands.count, 1)
@@ -44,7 +44,7 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
 
             for text in ["다음 문장", "later ASCII"] {
                 var draft = text
-                HvfKeyboardDraft.submit(&draft, to: session)
+                XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .refused)
                 XCTAssertEqual(draft, text)
                 XCTAssertEqual(session.events.last, .unknown("text input refused: clipboard paste pending"))
                 XCTAssertEqual(try fixture.bytes(fixture.control), controlBefore)
@@ -63,7 +63,7 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
             var draft = "소유권 변경 뒤 남길 문장"
             let original = draft
 
-            HvfKeyboardDraft.submit(&draft, to: session)
+            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .refused)
 
             XCTAssertEqual(draft, original)
             XCTAssertEqual(session.events.last, .unknown("ordered input refused: unavailable, full or changed ownership"))
@@ -80,7 +80,7 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
             try fixture.negotiateOrderedInput(session)
             for _ in 0..<HvfOrderedInputQueue.maximumEvents {
                 var accepted = "a"
-                HvfKeyboardDraft.submit(&accepted, to: session)
+                XCTAssertEqual(HvfKeyboardDraft.submit(&accepted, to: session), .acceptedForProcessing)
                 XCTAssertEqual(accepted, "")
             }
             let commands = try fixture.commands()
@@ -90,7 +90,7 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
             var draft = "대기열이 가득 차도 남길 문장"
             let original = draft
 
-            HvfKeyboardDraft.submit(&draft, to: session)
+            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .refused)
 
             XCTAssertEqual(draft, original)
             XCTAssertEqual(session.events.last, .unknown("ordered input refused: unavailable, full or changed ownership"))
@@ -107,7 +107,7 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
             var draft = "순서대로 입력 🙂"
             let encoded = Data(draft.utf8).base64EncodedString()
 
-            HvfKeyboardDraft.submit(&draft, to: session)
+            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .acceptedForProcessing)
 
             XCTAssertEqual(draft, "")
             let commands = try fixture.commands()
@@ -126,14 +126,14 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
         defer { fixture.remove() }
         try fixture.withSession { session in
             var draft = ""
-            HvfKeyboardDraft.submit(&draft, to: session)
+            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .refused)
             XCTAssertEqual(draft, "")
             XCTAssertTrue(session.events.isEmpty)
             XCTAssertNil(try fixture.bytes(fixture.control))
             XCTAssertNil(try fixture.bytes(fixture.input))
 
             draft = "hello"
-            HvfKeyboardDraft.submit(&draft, to: session)
+            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .legacyAttempted)
             XCTAssertEqual(draft, "")
             XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY text-hex:68656c6c6f\n".utf8))
             XCTAssertNil(try fixture.bytes(fixture.control))
@@ -150,7 +150,7 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
             var draft = "기록하지 못한 문장"
             let original = draft
 
-            HvfKeyboardDraft.submit(&draft, to: session)
+            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .refused)
 
             XCTAssertEqual(draft, original)
             XCTAssertTrue(session.events.last?.displayText.contains("control command write failed:") == true)
@@ -167,7 +167,7 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
             try FileManager.default.createDirectory(at: fixture.input, withIntermediateDirectories: false)
             var draft = "legacy ASCII"
 
-            HvfKeyboardDraft.submit(&draft, to: session)
+            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .legacyAttempted)
 
             XCTAssertEqual(draft, "", "Legacy clearing does not guarantee a successful write")
             XCTAssertTrue(session.events.last?.displayText.contains("live input write failed:") == true)

@@ -126,14 +126,7 @@ struct HvfEngineView: View {
                             .font(.body.monospaced()).accessibilityIdentifier("bridgevm.runtime.share.guest")
                     }
                 }
-                HStack(spacing: 8) {
-                    TextField("Type text into Windows", text: $keyboardInput, onCommit: sendKeyboardText)
-                        .textFieldStyle(.roundedBorder).accessibilityIdentifier("bridgevm.runtime.keyboard.input")
-                    Button("Type", action: sendKeyboardText).accessibilityIdentifier("bridgevm.runtime.keyboard.send")
-                    Button("Tab") { session.sendKey("tab") }
-                    Button("Enter") { session.sendKey("enter") }
-                    Button("Space") { session.sendKey("space") }
-                }
+                HvfRuntimeKeyboardInput(session: session, draft: $keyboardInput)
                 HStack(spacing: 8) {
                     Button("Esc") { session.sendKey("esc") }
                     Button("⌫") { session.sendKey("backspace") }.help("Backspace")
@@ -364,9 +357,6 @@ struct HvfEngineView: View {
         }
     }
 
-    private func sendKeyboardText() {
-        HvfKeyboardDraft.submit(&keyboardInput, to: session)
-    }
     private func currentConfig() -> HvfEngineConfig {
         var config = session.config
         config.targetDiskPath = targetDiskPath
