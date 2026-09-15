@@ -624,3 +624,61 @@ removed and the app source restored exactly; deployment support and all startup
 criteria remain unchanged. No new native pilot was submitted for invalid code.
 The new full/release checks and exact pushed-SHA hosted observations follow this
 checkpoint. ENGINEERING_PREVIEW, all criteria and thresholds remain unchanged.
+
+
+## Isolated macOS 15 scene experiment (2026-09-15)
+
+A new public-API configuration typechecked with separate compiler targets: the
+isolated diagnostic uses macOS15 and the ordinary product retains macOS14. This
+is a new experiment after the two rejected availability-branch attempts, whose
+failures remain unchanged. The diagnostic helper can now use the public explicit
+initial-scene modifier in its compile-time branch. The ordinary branch preserves
+the existing titleBar/defaultSize pair, and Package.swift/product metadata stay14.
+The diagnostic bundle declares15.0 and its actual linked Mach-O minimum was
+verified as15.0. Current physical test host reports macOS27.0; no macOS14 live
+behavior is claimed from this experiment.
+
+All7native diagnostic Apple XCTest contracts passed in20.17seconds, log SHA
+`c4daca768be2bad789d939a5cbbaad4b5711b22151446b691b78b00383c05485`.
+All19adapter contracts passed; the existing fixture body was extracted unchanged
+and the bundle minimum check added. A pre-commit whitespace check rejected an
+extra blank line in that new fixture module; removing the terminal blank line
+did not change its executable body. Required5second startup,7actions,8captures,
+ownership/cleanup and zero-domain-work counters remain unchanged.
+
+The preceding ownership sourceb00c0e59 full check passed165.61seconds, log SHA
+`bfb0543f97c228dffcaab9f0503e569a0739825cb3774fea9334ad3336a58d9c`,
+sealedcb24990a. Its release boundary passed27.88seconds. Initialcb24990a hosted
+snapshot:85runs/45definitions,60successful,21queued,4running; no failures observed,
+not all-green. The new experiment still requires full/release checks, a sealed
+push and one physical-Mac pilot before any window-behavior conclusion.
+
+
+### Final integration fixture correction
+
+Fullcheck5555ac6b failed in168.33seconds only at doctor integration fixture
+creation with AlreadyExists; every other project step passed. Failed log SHA
+`f06eb2514c5f2c052153ec0617f6390fca03b8fde53f8527c66f79d5c09e64d7`.
+The old timestamp-only allocator failed a controlled equal-timestamp test in
+0.57seconds (SHA `4b0a79ee5936b46a6383c1ee53c0a0e4ac3919d5e45ed6b05870a173e92433e6`).
+Adding a process-local atomic suffix preserves distinct directories at equal
+PID/time. The real-filesystem test also checks no shared file visibility and
+that dropping the first fixture leaves the second directory intact.
+
+The related help fixture had the same timestamp-only shape and received the
+same repair; no previous help failure is claimed. Both fixtures were extracted
+to private test modules to preserve existing structural ceilings. A first help
+module compile failed on omitted parent visibility for its path field; only
+that visibility was corrected. Log SHA
+`418e60e8f89bccf09d5b83165428991d23d43a7fc7c165b1a1686a753f90aa9b`
+remains retained. Final150CLI tests passed in0.78seconds, log SHA
+`672992bf5c38c288a9b1045245329b29e05ebe2d0e7c819af0da9a79294a4f54`;
+pinned format/clippy and independent review passed. No production doctor/help
+behavior, process environment, output assertions or timeout changed.
+
+The target15 diagnostic release boundary passed26.82seconds. Direct inspection
+of the ordinary release executable confirmed minimum macOS14.0, while the host
+minimum remains15.0. Subsequent changes affect only Rust fixture sources and
+metadata; the tested Swift inputs are unchanged. A new complete project pass,
+seal/push and actual pilot are still required. The four-hour work period has
+ended; only this validation and its evidence handoff continue.
