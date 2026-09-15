@@ -1305,7 +1305,7 @@ apps/macos/scripts/build-sign-apple-vz-runner.sh	148	0
 apps/macos/scripts/build-sign-hvf-runner.sh	143	0
 apps/macos/scripts/build-sign-hvf-windows-probe.sh	206	0
 apps/macos/scripts/bundle-swtpm-runtime.sh	330	0
-apps/macos/scripts/package-hvf-control-app.sh	182	0
+apps/macos/scripts/package-hvf-control-app.sh	179	0
 scripts/verify-app-hvf-entitlements.sh	66	0
 packaging/macos/app-name.sh	25	0
 packaging/macos/build-debug-app-bundle.sh	485	0
@@ -2426,3 +2426,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallCancellationTests.swift	1
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallCancellationFixture.swift	149	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsReadinessCard.swift	56	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeDiagnosticsSettings.swift	42	0
+apps/macos/scripts/bundle-control-app-metadata.sh	27	0
+apps/macos/scripts/GenerateControlAppIcon.swift	57	0
+tests/integration/hvf-control-app-branding-smoke.sh	58	0
+.github/workflows/hvf-control-app-branding.yml	14	0

@@ -8,6 +8,8 @@
     <string>BridgeVMControl</string>
     <key>CFBundleIdentifier</key>
     <string>dev.bridgevm.control</string>
+    <key>CFBundleIconFile</key>
+    <string>BridgeVM.icns</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>

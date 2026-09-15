@@ -78,9 +78,7 @@ python3 "$ROOT/scripts/generate-rust-dependency-inventory.py" \
   --output "$stage_app/Contents/Resources/licenses/rust-dependencies.tsv" >/dev/null
 python3 "$ROOT/scripts/generate-rust-license-bundle.py" \
   --output "$stage_app/Contents/Resources/licenses/rust-license-texts.txt" >/dev/null
-install -m 644 "$MACOS_DIR/BridgeVMControl-Info.plist" "$stage_app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $SHORT_VERSION" "$stage_app/Contents/Info.plist"
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$stage_app/Contents/Info.plist")" == "$SHORT_VERSION" ]] || { echo "bundle short version did not persist" >&2; exit 1; }
+"$MACOS_DIR/scripts/bundle-control-app-metadata.sh" "$stage_app" "$SHORT_VERSION"
 install -m 755 "$swift_bin_dir/BridgeVMControl" "$stage_app/Contents/MacOS/BridgeVMControl"
 install -m 755 "$ROOT/target/release/bridgevm" "$stage_app/Contents/Resources/target/release/bridgevm"
 BRIDGEVM_CODESIGN_IDENTITY="$IDENTITY" "$MACOS_DIR/scripts/build-sign-hvf-runner.sh" --release \
