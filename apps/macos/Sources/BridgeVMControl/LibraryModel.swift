@@ -45,6 +45,7 @@ final class LibraryModel: ObservableObject {
         migrateLegacy: Bool = true,
         installSessionFactory: @escaping HvfWindowsInstallSessionStore.Factory = { HvfWindowsInstallSession(plan: $0) },
         runtimeSessionFactory: @escaping HvfRuntimeSessionStore.Factory = { HvfEngineSession(config: $0) },
+        installPreparation: HvfWindowsInstallPreparationOptions = .init(),
         actionScheduler: @escaping LibraryActionScheduler = { job in _ = Task.detached(operation: job) },
         startsModelsAutomatically: Bool = true,
         modelFactory: (@MainActor (VMConfig) -> ControlModel)? = nil
@@ -52,11 +53,10 @@ final class LibraryModel: ObservableObject {
         libraryRoot = rootURL
         self.e2eUnattendedPath = e2eUnattendedPath
         self.actionScheduler = actionScheduler
-        self.modelFactory = modelFactory ?? {
-            ControlModel(config: $0, backend: $0.makeBackend(libraryRoot: rootURL),
-                startsAutomatically: startsModelsAutomatically)
-        }
-        windowsInstallSessions = HvfWindowsInstallSessionStore(makeSession: installSessionFactory)
+        self.modelFactory = modelFactory ?? LibraryControlModelFactory.make(
+            rootURL: rootURL, startsAutomatically: startsModelsAutomatically)
+        windowsInstallSessions = HvfWindowsInstallSessionStore(
+            makeSession: installSessionFactory, preparation: installPreparation)
         hvfRuntimeSessions = HvfRuntimeSessionStore(makeSession: runtimeSessionFactory)
         if migrateLegacy {
             VMLibrary.migrateLegacyIfNeeded(rootURL: rootURL, legacy: VMConfig.loadLegacy())

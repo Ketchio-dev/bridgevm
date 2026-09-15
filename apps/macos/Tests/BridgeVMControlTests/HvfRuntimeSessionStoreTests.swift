@@ -3,54 +3,10 @@ import XCTest
 
 @MainActor
 final class HvfRuntimeSessionStoreTests: XCTestCase {
-    @MainActor
-    private final class Fixture {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("runtime-store-" + UUID().uuidString)
-        var runtimeConfigs: [HvfEngineConfig] = []
-        var installCount = 0
-        var processLookups = 0
-        var installJobs: [@MainActor () async -> Void] = []
+    private typealias Fixture = HvfRuntimeSessionStoreFixture
 
-        func library() -> LibraryModel {
-            LibraryModel(rootURL: root, migrateLegacy: false, installSessionFactory: { plan in
-                self.installCount += 1
-                return HvfWindowsInstallSession(plan: plan, validate: { _ in nil },
-                    schedule: { self.installJobs.append($0) })
-            }, runtimeSessionFactory: { config in
-                self.runtimeConfigs.append(config)
-                return HvfEngineSession(config: config, repoRoot: self.root,
-                    processIsRunning: { _ in self.processLookups += 1; return false })
-            }, modelFactory: { ControlModel(config: $0, startsAutomatically: false) })
-        }
-
-        func config(_ slug: String = "windows") -> VMConfig {
-            VMConfig(id: slug, name: slug, displayName: slug, backendKind: "hvf-engine",
-                bootMode: "windows-hvf", bundlePath: root.appendingPathComponent(slug + "/bundle").path,
-                runnerPath: "", launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
-                leasesPath: "", guestName: slug, displayWidth: 1280, displayHeight: 720, installPending: false)
-        }
-
-        func save(_ config: VMConfig) {
-            XCTAssertTrue(VMLibrary.save(config, rootURL: root))
-            let request = HvfWindowsInstallRequest(isoPath: root.appendingPathComponent("absent.iso").path,
-                isoSHA256: String(repeating: "a", count: 64), diskGiB: 64, injectViogpu3d: false)
-            XCTAssertTrue(request.save(bundlePath: config.bundlePath))
-        }
-
-        func removeRegistration(_ config: VMConfig) throws {
-            try FileManager.default.removeItem(at: root.appendingPathComponent(config.slug + "/vm.json"))
-        }
-
-        func clean() {
-            XCTAssertEqual(processLookups, 0, "Constructing detail values must not attach or launch")
-            installJobs.removeAll() // No queued install work is ever executed.
-            try? FileManager.default.removeItem(at: root)
-        }
-    }
-
-    // Inspect only the constructed view values; never render or evaluate child bodies.
-    // No private SwiftUI type or field names are assumed, and class graphs are excluded.
+    // Inspect constructed values; only the named preparation host body is explicitly evaluated.
+    // Never render, assume private SwiftUI field names, or descend class graphs.
     private func values<T>(_ type: T.Type, in value: Any) -> [T] {
         if let result = value as? T { return [result] }
         let mirror = Mirror(reflecting: value)
@@ -58,29 +14,33 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
         return mirror.children.flatMap { values(type, in: $0.value) }
     }
 
-    private func runtime(in library: LibraryModel) throws -> HvfEngineView {
+    private func runtime(in library: LibraryModel, fixture: Fixture) throws -> HvfEngineView {
         let body = LibraryDetailView(library: library).body
+        if !values(HvfWindowsInstallPreparationView.self, in: body).isEmpty {
+            fixture.preserveForUnsettledPreparation = true
+        }
         let view = try XCTUnwrap(values(HvfEngineView.self, in: body).first)
         XCTAssertTrue(values(ObjectIdentifier.self, in: body).contains(ObjectIdentifier(view.session)))
         XCTAssertTrue(values(HvfWindowsInstallView.self, in: body).isEmpty)
+        XCTAssertTrue(values(HvfWindowsInstallPreparationView.self, in: body).isEmpty)
         return view
     }
 
     func testActualDetailKeepsActiveSessionAcrossNavigationAndReload() throws {
-        let fixture = Fixture()
+        let fixture = try Fixture()
         defer { fixture.clean() }
         let first = fixture.config("first"), second = fixture.config("second")
         fixture.save(first); fixture.save(second)
         let library = fixture.library()
         library.selectedID = first.slug
-        let original = try runtime(in: library).session
+        let original = try runtime(in: library, fixture: fixture).session
         original.connectionState = .connected(host: "fixture")
         original.events = [.unknown("retained event")]
         library.selectedID = second.slug
-        XCTAssertFalse(try runtime(in: library).session === original)
+        XCTAssertFalse(try runtime(in: library, fixture: fixture).session === original)
         library.reload()
         library.selectedID = first.slug
-        let restored = try runtime(in: library).session
+        let restored = try runtime(in: library, fixture: fixture).session
         XCTAssertTrue(restored === original)
         XCTAssertEqual(restored.events, [.unknown("retained event")])
         XCTAssertEqual(fixture.runtimeConfigs.count, 2)
@@ -89,12 +49,12 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
 
     func testAllNonstoppedStatesKeepRuntimeRouteAfterMetadataChanges() throws {
         for state in [HvfConnectionState.booting, .connected(host: "fixture"), .stopping, .timedOut] {
-            let fixture = Fixture()
+            let fixture = try Fixture()
             defer { fixture.clean() }
             let original = fixture.config()
             fixture.save(original)
             let library = fixture.library()
-            let session = try runtime(in: library).session
+            let session = try runtime(in: library, fixture: fixture).session
             session.connectionState = state
             var changed = original
             changed.installPending = true
@@ -103,7 +63,7 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
                 changed.backendKind = backend
                 fixture.save(changed)
                 library.reload()
-                XCTAssertTrue(try runtime(in: library).session === session, "\(state) / \(backend)")
+                XCTAssertTrue(try runtime(in: library, fixture: fixture).session === session, "\(state) / \(backend)")
                 XCTAssertEqual(session.connectionState, state)
                 XCTAssertEqual(session.config.libraryContext?.config, original)
                 XCTAssertEqual(fixture.runtimeConfigs.count, 1)
@@ -113,18 +73,18 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
     }
 
     func testStoppedReplacementChangesActualChildIdentityAndUsesLibraryRoot() throws {
-        let fixture = Fixture()
+        let fixture = try Fixture()
         defer { fixture.clean() }
         var config = fixture.config()
         fixture.save(config)
         let library = fixture.library()
-        let original = try runtime(in: library).session
+        let original = try runtime(in: library, fixture: fixture).session
         config.bundlePath = fixture.root.appendingPathComponent("replacement").path
         config.cpuCount = 8
         fixture.save(config)
         library.reload()
         XCTAssertEqual(fixture.runtimeConfigs.count, 1, "Replacement is lazy")
-        let replacement = try runtime(in: library).session
+        let replacement = try runtime(in: library, fixture: fixture).session
         XCTAssertFalse(replacement === original)
         XCTAssertEqual(replacement.config.smpCpus, 8)
         XCTAssertEqual(replacement.config.uefiVarsPath, config.bundlePath + "/metadata/hvf-vars.fd")
@@ -133,18 +93,18 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
     }
 
     func testUnchangedRegistrationPreservesAcceptedOptionsAndEvents() throws {
-        let fixture = Fixture()
+        let fixture = try Fixture()
         defer { fixture.clean() }
         fixture.save(fixture.config())
         let library = fixture.library()
-        let session = try runtime(in: library).session
+        let session = try runtime(in: library, fixture: fixture).session
         var accepted = session.config
         accepted.ramMiB = 8192
         accepted.clipboardSync = false
         XCTAssertTrue(session.acceptStartConfiguration(accepted))
         session.events = [.unknown("stopped event")]
         library.reload()
-        XCTAssertTrue(try runtime(in: library).session === session)
+        XCTAssertTrue(try runtime(in: library, fixture: fixture).session === session)
         XCTAssertEqual(session.config, accepted)
         XCTAssertEqual(session.events, [.unknown("stopped event")])
         XCTAssertEqual(fixture.runtimeConfigs.count, 1)
@@ -152,12 +112,12 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
 
     func testRemovedStoppedEntryIsPrunedAndRemovedActiveEntryIsRetained() throws {
         for state in [HvfConnectionState.stopped, .timedOut] {
-            let fixture = Fixture()
+            let fixture = try Fixture()
             defer { fixture.clean() }
             let config = fixture.config()
             fixture.save(config)
             let library = fixture.library()
-            let session = try runtime(in: library).session
+            let session = try runtime(in: library, fixture: fixture).session
             session.connectionState = state
             try fixture.removeRegistration(config)
             library.reload()
@@ -170,41 +130,47 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
             fixture.save(config)
             library.reload()
             library.selectedID = config.slug
-            XCTAssertFalse(try runtime(in: library).session === session)
+            XCTAssertFalse(try runtime(in: library, fixture: fixture).session === session)
         }
     }
 
-    func testStoppedPendingOrOtherBackendEntriesArePruned() throws {
+    func testStoppedPendingOrOtherBackendEntriesArePruned() async throws {
         for becomesPending in [true, false] {
-            let fixture = Fixture()
+            let fixture = try Fixture()
             defer { fixture.clean() }
             var config = fixture.config()
             fixture.save(config)
             let library = fixture.library()
-            let session = try runtime(in: library).session
+            let session = try runtime(in: library, fixture: fixture).session
             config.installPending = becomesPending
             config.backendKind = becomesPending ? "hvf-engine" : "fast-vz"
             fixture.save(config)
             library.reload()
             let body = LibraryDetailView(library: library).body
             XCTAssertTrue(values(HvfEngineView.self, in: body).isEmpty)
-            XCTAssertEqual(values(HvfWindowsInstallView.self, in: body).count, becomesPending ? 1 : 0)
+            let hosts = values(HvfWindowsInstallPreparationView.self, in: body)
+            if becomesPending && hosts.count != 1 { fixture.preserveForUnsettledPreparation = true }
+            for host in hosts { await host.preparation.preparationTask?.value }
+            XCTAssertEqual(hosts.count, becomesPending ? 1 : 0)
+            if let host = hosts.first {
+                XCTAssertEqual(values(HvfWindowsInstallView.self, in: host.body).count, 1)
+            }
             config.installPending = false
             config.backendKind = "hvf-engine"
             fixture.save(config)
             library.reload()
-            XCTAssertFalse(try runtime(in: library).session === session)
+            XCTAssertFalse(try runtime(in: library, fixture: fixture).session === session)
         }
     }
 
     func testExperimentalVMAndLibraryInstancesOwnIndependentSessions() throws {
-        let first = Fixture(), second = Fixture()
+        let first = try Fixture(), second = try Fixture()
         defer { first.clean(); second.clean() }
         first.save(first.config("experimental")); second.save(second.config("experimental"))
         let library = first.library(), sameRoot = first.library(), otherRoot = second.library()
-        let vm = try runtime(in: library).session
-        XCTAssertFalse(try runtime(in: sameRoot).session === vm)
-        let other = try runtime(in: otherRoot).session
+        let vm = try runtime(in: library, fixture: first).session
+        XCTAssertFalse(try runtime(in: sameRoot, fixture: first).session === vm)
+        let other = try runtime(in: otherRoot, fixture: second).session
         XCTAssertFalse(other === vm)
         XCTAssertEqual(other.config.libraryContext?.rootURL, second.root)
         library.selectedID = LibraryModel.hvfEngineSelectionID
@@ -219,11 +185,11 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
     }
 
     func testLibraryRetainsSessionAfterDetailAndDisplaySurfaceValuesAreReleased() throws {
-        let fixture = Fixture()
+        let fixture = try Fixture()
         defer { fixture.clean() }
         fixture.save(fixture.config())
         var library: LibraryModel? = fixture.library()
-        var view: HvfEngineView? = try runtime(in: XCTUnwrap(library))
+        var view: HvfEngineView? = try runtime(in: XCTUnwrap(library), fixture: fixture)
         weak var observed = view?.session
         observed?.connectionState = .booting
         view = nil
@@ -237,7 +203,7 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
     }
 
     func testBusyGenericModelDefersMetadataThenNextDetailUsesLatestWithoutReload() throws {
-        let fixture = Fixture()
+        let fixture = try Fixture()
         defer { fixture.clean() }
         var original = fixture.config()
         original.backendKind = "fast-vz"
@@ -257,26 +223,39 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
         XCTAssertEqual(fixture.runtimeConfigs.count, 0)
         model.busy = false
         XCTAssertEqual(library.selectedModel?.config, original, "The control cache is still stale")
-        XCTAssertEqual(try runtime(in: library).session.config.libraryContext?.config, changed)
+        XCTAssertEqual(try runtime(in: library, fixture: fixture).session.config.libraryContext?.config, changed)
         XCTAssertEqual(library.selectedDetail?.config, changed)
         XCTAssertTrue(library.selectedDetail?.model === model)
     }
 
     func testActiveInstallStillOwnsActualDetailAfterReadyMetadataAppears() async throws {
-        let fixture = Fixture()
+        let fixture = try Fixture()
         defer { fixture.clean() }
         var config = fixture.config()
         config.installPending = true
         fixture.save(config)
         let library = fixture.library()
         let body = LibraryDetailView(library: library).body
-        let install = try XCTUnwrap(values(HvfWindowsInstallView.self, in: body).first).session
+        let hosts = values(HvfWindowsInstallPreparationView.self, in: body)
+        if hosts.count != 1 { fixture.preserveForUnsettledPreparation = true }
+        for host in hosts { await host.preparation.preparationTask?.value }
+        let host = try XCTUnwrap(hosts.first)
+        let install = try XCTUnwrap(values(HvfWindowsInstallView.self, in: host.body).first).session
         await install.start()?.value // Injected scheduler retains the work without executing it.
         config.installPending = false
         fixture.save(config)
         library.reload()
         let recreated = LibraryDetailView(library: library).body
-        XCTAssertTrue(try XCTUnwrap(values(HvfWindowsInstallView.self, in: recreated).first).session === install)
+        let restoredHosts = values(HvfWindowsInstallPreparationView.self, in: recreated)
+        if restoredHosts.count != 1 { fixture.preserveForUnsettledPreparation = true }
+        let restored = try XCTUnwrap(restoredHosts.first)
+        guard case let .ready(current) = restored.preparation.state else {
+            XCTFail("An active install must be immediately ready without a second preparation await")
+            for host in restoredHosts { await host.preparation.preparationTask?.value }
+            return // Drain only after recording the failure, never to turn it into a pass.
+        }
+        XCTAssertTrue(current === install)
+        XCTAssertTrue(try XCTUnwrap(values(HvfWindowsInstallView.self, in: restored.body).first).session === install)
         XCTAssertTrue(values(HvfEngineView.self, in: recreated).isEmpty)
         XCTAssertEqual(fixture.runtimeConfigs.count, 0)
         XCTAssertEqual(fixture.installCount, 1)

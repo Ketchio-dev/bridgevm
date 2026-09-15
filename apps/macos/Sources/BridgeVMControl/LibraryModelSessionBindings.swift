@@ -1,22 +1,6 @@
 import Foundation
 
 extension LibraryModel {
-    func windowsInstallSession(for config: VMConfig,
-        repoRoot: URL = HvfEngineSession.defaultRepoRoot()) -> HvfWindowsInstallSession {
-        let latest = latestConfiguration(for: config)
-        let session = windowsInstallSessions.session(for: latest, libraryRoot: rootURL,
-            repoRoot: repoRoot)
-        session.workAdmission = boundWorkAdmission(slug: latest.slug) { [weak session] owner, current in
-            guard let session else { return false }
-            return current.engineKind == .hvfEngine && current.installPending == true
-                && owner.windowsInstallSessions.owns(session, for: current)
-        }
-        session.onCompleted = { [weak self] in self?.reload() }
-        return session
-    }
-}
-
-extension LibraryModel {
     func shouldShowWindowsInstall(for config: VMConfig) -> Bool {
         if windowsInstallSessions.isActive(slug: config.slug) { return true }
         if hvfRuntimeSessions.isActive(slug: config.slug) { return false }

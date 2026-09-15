@@ -46,7 +46,7 @@ final class HvfRuntimeRetainedControlFixture {
         let found = values(RetainedControlDetailView.self, in: body)
         XCTAssertEqual(found.count, 1, "Actual library detail must route to an existing retained control")
         XCTAssertTrue(values(HvfEngineView.self, in: body).isEmpty)
-        XCTAssertTrue(values(HvfWindowsInstallView.self, in: body).isEmpty)
+        XCTAssertTrue(values(HvfWindowsInstallView.self, in: body).isEmpty && values(HvfWindowsInstallPreparationView.self, in: body).isEmpty)
         XCTAssertTrue(values(VMDetailPanel.self, in: body).isEmpty)
         XCTAssertTrue(values(FleetTableView.self, in: body).isEmpty)
         return found.first

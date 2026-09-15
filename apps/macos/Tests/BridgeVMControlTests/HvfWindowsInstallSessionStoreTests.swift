@@ -13,15 +13,15 @@ final class HvfWindowsInstallSessionStoreTests: XCTestCase {
         try fixture.save(second)
         let library = fixture.library()
         library.selectedID = first.slug
-        let original = HvfWindowsInstallView(config: first, library: library).session
+        let original = HvfWindowsInstallView(config: first, library: library, session: library.windowsInstallSession(for: first)).session
         let acknowledgment = try XCTUnwrap(original.start())
         XCTAssertTrue(original.isRunning)
         XCTAssertEqual(original.stage, .validating)
         library.selectedID = second.slug
-        let other = HvfWindowsInstallView(config: second, library: library).session
+        let other = HvfWindowsInstallView(config: second, library: library, session: library.windowsInstallSession(for: second)).session
         library.reload()
         library.selectedID = first.slug
-        let restored = HvfWindowsInstallView(config: first, library: library).session
+        let restored = HvfWindowsInstallView(config: first, library: library, session: library.windowsInstallSession(for: first)).session
         XCTAssertTrue(restored === original)
         XCTAssertFalse(other === original)
         XCTAssertEqual(restored.startedAt, original.startedAt)
@@ -57,7 +57,7 @@ final class HvfWindowsInstallSessionStoreTests: XCTestCase {
         }
         XCTAssertEqual(session.stage, .validating)
         XCTAssertTrue(library.shouldShowWindowsInstall(for: loaded))
-        XCTAssertTrue(HvfWindowsInstallView(config: loaded, library: library).session === session)
+        XCTAssertTrue(HvfWindowsInstallView(config: loaded, library: library, session: library.windowsInstallSession(for: loaded)).session === session)
         XCTAssertEqual(session.plan.bundlePath, originalConfig.bundlePath)
         XCTAssertEqual(session.plan.request.diskGiB, 64)
         await acknowledgment.value
@@ -157,7 +157,7 @@ final class HvfWindowsInstallSessionStoreTests: XCTestCase {
         await acknowledgment.value
         XCTAssertEqual(session.stage, .failed("synthetic validation failure"))
         library.reload()
-        let restored = HvfWindowsInstallView(config: config, library: library).session
+        let restored = HvfWindowsInstallView(config: config, library: library, session: library.windowsInstallSession(for: config)).session
         XCTAssertTrue(restored === session)
         XCTAssertEqual(restored.logLines, session.logLines)
         fixture.validator.setError(nil)

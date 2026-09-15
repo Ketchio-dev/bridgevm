@@ -8,10 +8,10 @@ struct HvfWindowsInstallView: View {
     @ObservedObject var library: LibraryModel
     @ObservedObject private(set) var session: HvfWindowsInstallSession
 
-    init(config: VMConfig, library: LibraryModel) {
+    init(config: VMConfig, library: LibraryModel, session: HvfWindowsInstallSession) {
         self.config = config
         self.library = library
-        _session = ObservedObject(wrappedValue: library.windowsInstallSession(for: config))
+        _session = ObservedObject(wrappedValue: session)
     }
 
     var body: some View {
