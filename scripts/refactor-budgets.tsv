@@ -1210,9 +1210,9 @@ apps/macos/Sources/BridgeVMApp/Views/SettingsView.swift	227	0
 apps/macos/Sources/BridgeVMApp/Views/VMDetailView.swift	6392	0
 apps/macos/Sources/BridgeVMControl/Backends.swift	493	0
 apps/macos/Sources/BridgeVMControl/QemuCompatBackend.swift	130	0
-apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	33	0
+apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	22	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	56	0
-apps/macos/Sources/BridgeVMControl/ContentView.swift	316	0
+apps/macos/Sources/BridgeVMControl/ContentView.swift	289	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	254	0
 apps/macos/Sources/BridgeVMControl/CreateVM.swift	497	0
 apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	116	0
@@ -2447,7 +2447,7 @@ apps/macos/scripts/LaunchAppUIHost.swift	231	0
 apps/macos/scripts/build-app-ui-launcher.sh	24	0
 scripts/check-app-ui-host-build-boundary.sh	53	0
 scripts/live-gates/app-ui-manifest-dispatch.sh	15	0
-scripts/live-gates/app_ui_host_diagnostic.py	153	0
+scripts/live-gates/app_ui_host_diagnostic.py	151	0
 scripts/live-gates/app_ui_host_manifest.py	95	0
 tests/integration/app-ui-host-tier-smoke.py	254	0
 tests/integration/app-ui-launcher-ownership.swift	87	0
@@ -2464,12 +2464,12 @@ scripts/live-gates/app_ui_host_process.py	44	0
 tests/integration/app_ui_host_cleanup_cases.py	191	0
 scripts/check-app-ui-host-contracts.sh	49	0
 apps/macos/Sources/BridgeVMControl/AppUIHostAdmission.swift	49	0
-apps/macos/Sources/BridgeVMControl/AppUIHostLifecycle.swift	91	0
+apps/macos/Sources/BridgeVMControl/AppUIHostLifecycle.swift	80	0
 apps/macos/Sources/BridgeVMControl/CreateVMChoiceTile.swift	57	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallStatusCard.swift	40	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputSubmission.swift	7	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeKeyboardInput.swift	36	0
-apps/macos/Sources/BridgeVMControl/AppUIHostSceneObservation.swift	56	0
+apps/macos/Sources/BridgeVMControl/AppUIHostSceneObservation.swift	40	0
 apps/macos/Sources/BridgeVMControl/ControlAppActivation.swift	30	0
 crates/bridgevm-cli/src/args/hvf_args.rs	222	0
 crates/bridgevm-cli/tests/cli_help.rs	71	0
@@ -2507,3 +2507,8 @@ apps/macos/Sources/BridgeVMControl/ControlWindowPresentation.swift	9	0
 tests/integration/app_ui_host_bundle_fixtures.py	10	0
 crates/bridgevm-cli/tests/support/doctor_fixture.rs	52	0
 crates/bridgevm-cli/tests/support/help_fixture.rs	55	0
+scripts/live-gates/app_ui_host_bundle.py	15	0
+apps/macos/Sources/BridgeVMControl/CloneWindowsHVFSheet.swift	31	0
+apps/macos/Sources/BridgeVMControl/AppUIHostViewLifecycle.swift	21	0
+apps/macos/Sources/BridgeVMControl/AppUIHostLifecycleEvent.swift	17	0
+apps/macos/Sources/BridgeVMControl/ControlAppDelegate.swift	14	0

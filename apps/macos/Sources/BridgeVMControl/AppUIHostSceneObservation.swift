@@ -4,6 +4,7 @@ extension View {
     @MainActor @ViewBuilder
     func appUIHostSceneObservation() -> some View {
         #if DEBUG && BRIDGEVM_APP_UI_HOST
+        let _ = AppUIHost.prepared?.lifecycle.record(.rootContentConstructed)
         background {
             AppUIHostWindow().frame(width: 0, height: 0).allowsHitTesting(false).accessibilityHidden(true)
         }
@@ -17,23 +18,6 @@ extension View {
 #if DEBUG && BRIDGEVM_APP_UI_HOST
 import AppKit
 import Darwin
-
-@MainActor
-extension AppUIHostLifecycle {
-    static func libraryState() -> StateObject<LibraryModel> {
-        AppUIHost.prepared?.lifecycle.record(.appInitialization)
-        return StateObject(wrappedValue: libraryModel())
-    }
-    private static func libraryModel() -> LibraryModel {
-        guard let host = AppUIHost.prepared else { fatalError("Diagnostic host was not prepared") }
-        host.lifecycle.record(.libraryFactory)
-        return host.libraryForApplication()
-    }
-    static func makeAttachmentView() -> NSView {
-        AppUIHost.prepared?.lifecycle.record(.representableMake)
-        return AppUIHostWindow.AttachmentView(frame: .zero)
-    }
-}
 
 @MainActor
 enum AppUIHostSceneObservation {

@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 from app_ui_diagnostic import digest, verify_observations
+from app_ui_host_bundle import bundle_metadata
 from app_ui_host_manifest import LAUNCHER, TIER, parse_manifest, verify_executable
 from app_ui_host_cleanup import BUNDLE_ID, finite_number, load_job, read_object, verify_launcher_exit
 from app_ui_host_process import request_cancel, run_launcher
@@ -28,10 +29,7 @@ def reconstruct_bundle(private, repo, commit, binary, expected):
     executable.chmod(0o500)
     verify_executable(executable, expected)
     with (bundle / "Contents/Info.plist").open("xb") as info:
-        plistlib.dump({"CFBundleExecutable": "BridgeVMControl", "CFBundlePackageType": "APPL",
-                      "CFBundleIdentifier": BUNDLE_ID, "CFBundleName": "BridgeVM UI Diagnostic",
-                      "CFBundleVersion": "1", "CFBundleShortVersionString": "1.0",
-                      "LSMinimumSystemVersion": "14.0", "NSHighResolutionCapable": True}, info)
+        plistlib.dump(bundle_metadata(BUNDLE_ID), info)
     resources = bundle / "Contents/Resources/BridgeVMApp_BridgeVMControl.bundle"
     resources.mkdir(parents=True)
     for name in RESOURCES:

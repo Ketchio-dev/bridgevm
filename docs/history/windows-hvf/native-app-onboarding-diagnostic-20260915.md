@@ -714,3 +714,116 @@ privately. Restored7host contracts passed18.23seconds and19adapter contracts
 passed2.76seconds. No additional unchanged-baseline pilot is submitted. Final
 full/release checks and hosted observation follow; UI/VoiceOver/guest/release
 capabilities remain unproven, and every criterion/threshold remains unchanged.
+
+
+## Completion audit and diagnostic packaging parity (2026-09-15)
+
+The final independent audit found that a functioning native UI validation host
+remains required. The earlier assertion that only final hosted CI remained was
+too narrow and is retracted. All five normal-App pilots remain failed, with zero
+of seven actions and zero of eight captures; no rendered UI or VoiceOver pass
+is claimed. The previous source was independently reviewed and merged in PR156
+only after all85 exact-head hosted workflow runs passed; this did not close the
+unfinished UI-validation requirement.
+
+Source `ca1ff9f74dde9889c48d2090dddf522987656b7f` adds only `NSPrincipalClass=NSApplication` to the diagnostic
+bundle metadata, matching the ordinary application's declaration. A small module
+extraction keeps every existing structural ceiling intact. The existing actual
+reconstruction test first failed with `KeyError: NSPrincipalClass` (log SHA
+`4a04020698fdc0fcbbf8a76e4bf5464bab0129c8000392c276268212bad4d33a`).
+All19 adapter tests then passed in2.72seconds (log SHA
+`3f5558f607486d6e305ac7164b008e41553ff27967684e0ae2ff1ad45b3e8ca9`).
+All457 Swift/package source hashes still match the sealed diagnostic executable;
+its hash and the launcher's hash are unchanged. Every other metadata value,
+resource, argument, five-second startup limit, action/capture requirement and
+ownership/cleanup guard is unchanged. The missing key is an observed packaging
+difference, not an established cause of the window failure.
+
+The first complete project check failed in168.92seconds only on capability
+freshness and three operator-document Git-tree identifiers parsed as commits.
+Original log SHA
+`262e64055fa82661f8145d10eb28affdac3fd16c1b5397e723aee34276d41ece`
+is retained. This checkpoint corrects those records; no validator, threshold,
+product wording or criterion state changes. A corrected complete project check,
+new exact-source hosted evidence and one sealed physical-Mac pilot remain pending.
+
+
+## Content-construction boundary observation (2026-09-15)
+
+The preceding corrected full check passed166.19seconds and was sealed as45f469cf.
+Pilot app-ui-host-20260915-06 confirmed NSPrincipalClass=NSApplication in the
+actual reconstructed bundle but still failed initial-window readiness in5.03seconds:
+zero owned windows, zero of seven actions, zero of eight captures, and zero domain
+work. Exact identity, observed exit, fixture and launcher/worker cleanup passed.
+The metadata parity change did not resolve the failure. Its failed receipts remain
+retained; the latest hosted snapshot had66success and19pending of85runs, not a pass.
+
+Source 11d446af084fe14aab1153c3d306133f14852432 adds two passive debug-only observations:
+root_content_constructed at the existing scene modifier and content_body_evaluated
+at ContentView.body. No view wrapper or launch behavior changes. Three exact
+extractions retain their bodies while keeping every structural ceiling; the clone
+sheet changes only from file-private to internal for its existing cross-file use.
+Independent byte comparisons and source review passed. All seven Apple XCTest
+host contracts passed20.21seconds, log SHA
+`fbe599c9def42ab7f31e9ebedacdb779ee53a1dd5f77d1535f5dc3522b07062f`.
+The release boundary passed22.79seconds: positive diagnostic marker, absent ordinary
+release marker, and exact forbidden-release compiler refusal. No app was launched.
+The rebuilt host and all460 Swift/package inputs are sealed privately.
+
+These counters distinguish construction from body evaluation; neither proves
+window admission. The startup limit, seven actions, eight captures, cleanup and
+zero-domain-work requirements are unchanged. The new complete project check,
+exact-source hosted result and one physical-Mac pilot remain required. Native
+rendering/VoiceOver and all existing OPEN criteria remain unproven.
+
+
+## Minimal-content comparison, never product UI evidence (2026-09-15)
+
+Source b1ca0b5dd3969630f3b1097c5bff5ddaf3431644 introduces a temporary, explicitly compiled launch
+control that replaces only the content with minimal Text, preserving WindowGroup,
+frame, scene observation, presentation, entry point, library, launcher and deadlines.
+It records control_only=true before content construction and intentionally throws
+before any product scenario action/capture. This control cannot pass the7/8gate.
+The unchanged delegate is extracted to preserve the33line ceiling, now28.
+
+Prior full check passed166.46seconds at11d446af, sealed74807177. Pilot07 failed: both
+content-construction and ContentView body counts0 despite App.body/launch completion,
+ownedwindows0/actions0/captures0, all4domain-work counts0 and verifiedexit/cleanup.
+The exact owned process log reports no persistent state to restore; no root cause
+is established. Raw receipts and logs remain private and unchanged.
+
+Normal diagnostic7contracts passed20.13seconds; minimal-control build/exact7contracts/
+CONTROL-without-HOST compiler refusal passed26.95seconds, log SHA
+`dc3d54ed1bd6ff660e4ba042344f87b2c6ff5f9ed32f2845ab0b9ad1ec7d632b`.
+Ordinary release exclusion/exact refusal passed27.34seconds. Source hashes are
+unchanged across checks; the control binary/build flags are sealed separately.
+No GUI was launched in these checks. Current full/hosted checks and one physical
+control observation remain pending. The temporary flag/helper/routing must then
+be removed, retaining at most the unchanged delegate extraction for the ratchet.
+Actual native UI validation and every existing OPEN criterion remain unfinished.
+
+
+## Minimal-content result and removal (2026-09-15)
+
+The control-source complete project check passed165.66seconds atb1ca0b5d, sealed
+as6abf97e6. Physical pilot app-ui-host-20260915-08 explicitly recorded minimal-text,
+control_only=true and product_ui_scenario=false, but failed initial-window startup
+before reaching the control's intentional scenario refusal. App/body/delegate were
+observed; root construction and owned windows remained0. All7actions stayedfalse,
+all8captures absent, all4domain-work counters0. Identity/observedexit/fixture/launcher/
+worker cleanup passed. This observation does not support ContentView complexity
+alone as a cause; the actual cause remains unproven. This was a control measurement,
+not an eighth normal-product UI attempt and never release evidence.
+
+Source 9f9ee4bd998085527e0ef60977a95d05e25cd3df removes the temporary comparison flag, helper and
+routing. The product App is byte-identical to74807177 except the unchanged delegate
+extraction; scenario content is byte-identical, and the two passive boundary counters
+remain. App22lines respects the lowered28line ceiling; no ceiling is raised.
+Restored7host contracts passed20.75seconds, log SHA
+`50d19aeb95bd5d27998be60675e18ae9ed5ae64b116f5a726314de1f7af929db`.
+Release boundary passed22.41seconds. The actual rebuilt host contains the normal
+identity marker and no temporary control markers. All461Swift/package inputs are
+sealed and unchanged across checks. Failed control code, flags, binary and receipts
+remain private and in history; no temporary instrumentation remains in final source.
+Current complete project and exact-source hosted checks are required. There is no
+reason to repeat the unchanged baseline; actual UI validation remains unfinished.
