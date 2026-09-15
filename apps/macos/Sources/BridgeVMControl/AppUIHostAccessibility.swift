@@ -56,14 +56,5 @@ enum AppUIHostAccessibility {
                     .contains { $0.hasPrefix(name + ", HVF,") })
         }
     }
-
-    static func wait(_ reason: String, until condition: () throws -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(5)
-        repeat {
-            if try condition() { return }
-            try await Task.sleep(nanoseconds: 50_000_000)
-        } while Date() < deadline
-        throw AppUIHostError.refused("Timed out waiting for actual UI: \(reason)")
-    }
 }
 #endif

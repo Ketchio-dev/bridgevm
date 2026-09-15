@@ -23,29 +23,7 @@ struct LibrarySidebar: View {
             .accessibilityIdentifier("bridgevm.library.overview")
             .accessibilityAddTraits(library.proMode && library.selectedID == nil ? .isSelected : [])
             .padding(.horizontal, 12).padding(.bottom, 8)
-            List(selection: $library.selectedID) {
-                FirstRunImportSidebarEntry(library: library)
-                RetainedControlsSidebarEntry(library: library)
-                Section("VM 라이브러리") {
-                    ForEach(library.vms) { config in
-                        VMRow(config: config)
-                            .tag(config.slug)
-                            .contextMenu { LibraryVMContextMenu(library: library, config: config) }
-                    }
-                }
-                if !library.libraryIssues.isEmpty {
-                    LibraryIssuesSection(issues: library.libraryIssues)
-                }
-                Section("실험") {
-                    Label("HVF Engine", systemImage: "cpu")
-                        .tag(LibraryModel.hvfEngineSelectionID)
-                }
-            }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-            .onChange(of: library.selectedID) { _, selection in
-                if selection != nil { library.proMode = false }
-            }
+            LibrarySidebarList(library: library)
             VStack(spacing: 16) {
                 LibraryHostSummary(library: library)
                 LibraryEngineLegend()

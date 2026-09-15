@@ -79,12 +79,7 @@ final class AppUIHostContractTests: XCTestCase {
             "install_creations": 0, "file_jobs": 0])
     }
     func testIncompleteObservationCannotBecomeSuccessfulCompletion() async throws {
-        try assertIncompleteObservationCompletion()
-        try await assertPresentationMatrixOrderAndMismatchLatch()
-        try await assertPresentationMatrixFatalBoundaries()
-        try await assertPresentationMatrixCancellation()
-        try await assertPresentationMatrixPersistenceFailures()
-        try await assertPresentationMatrixTypedCallbackFailures()
+        try await assertAllIncompleteHostObservationContracts()
     }
     func testUnpackagedTestProcessRefusesBeforeAppOrFixtureCreation() throws {
         let fixture = try fixture()
