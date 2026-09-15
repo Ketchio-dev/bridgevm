@@ -1,6 +1,7 @@
 //! args, split by responsibility.
 
 mod core;
+mod hvf_args;
 mod probe_args;
 mod store_args;
 mod tool_args;

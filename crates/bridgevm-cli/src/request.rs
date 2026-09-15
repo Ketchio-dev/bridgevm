@@ -458,7 +458,7 @@ pub(crate) fn request_for(command: Command) -> Result<BridgeVmRequest> {
             },
         }),
         Command::Hvf(_) => {
-            bail!("hvf commands are local metadata-only commands; omit --socket")
+            bail!("hvf commands are local-only queries and probes; omit --socket")
         }
         Command::Store(StoreCommand::Doctor) => Ok(BridgeVmRequest::Doctor),
         Command::Doctor => Ok(BridgeVmRequest::Doctor),

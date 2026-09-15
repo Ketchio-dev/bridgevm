@@ -90,7 +90,7 @@ crates/bridgevm-apple-vz/src/tests_split/helpers.rs	125	0
 crates/bridgevm-apple-vz/src/tests_split/mod.rs	0	0
 crates/bridgevm-apple-vz/src/tests_split/part_1.rs	521	0
 crates/bridgevm-apple-vz/src/tests_split/part_2.rs	386	0
-crates/bridgevm-cli/src/args/core.rs	287	0
+crates/bridgevm-cli/src/args/core.rs	132	0
 crates/bridgevm-cli/src/args/mod.rs	5	0
 crates/bridgevm-cli/src/args/probe_args.rs	121	0
 crates/bridgevm-cli/src/args/store_args.rs	215	0
@@ -2471,3 +2471,5 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputSubmission.swift	7	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeKeyboardInput.swift	36	0
 apps/macos/Sources/BridgeVMControl/AppUIHostSceneObservation.swift	56	0
 apps/macos/Sources/BridgeVMControl/ControlAppActivation.swift	30	0
+crates/bridgevm-cli/src/args/hvf_args.rs	222	0
+crates/bridgevm-cli/tests/cli_help.rs	121	0
