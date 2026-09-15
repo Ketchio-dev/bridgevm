@@ -24,10 +24,15 @@ final class LibraryModel: ObservableObject {
     private let libraryRoot: URL
     let e2eUnattendedPath: String?
     private let modelFactory: @MainActor (VMConfig) -> ControlModel
+    private let actionScheduler: LibraryActionScheduler
     let windowsInstallSessions: HvfWindowsInstallSessionStore
     let hvfRuntimeSessions: HvfRuntimeSessionStore
     func runningModels() -> [ControlModel] { vms.compactMap { modelCache[$0.slug] }.filter { $0.running } }
     var rootURL: URL { libraryRoot }
+    func hasAcceptedControlOperation(for slug: String) -> Bool { modelCache[slug]?.hasAcceptedOperation == true }
+    func hasMismatchedCachedControlConfiguration(for cfg: VMConfig) -> Bool {
+        modelCache[cfg.slug].map { $0.config != cfg } ?? false
+    }
 
     func deletionImpact(for cfg: VMConfig) -> VMLibraryDeletionImpact {
         VMLibrary.deletionImpact(for: cfg, rootURL: libraryRoot)
@@ -39,11 +44,13 @@ final class LibraryModel: ObservableObject {
         migrateLegacy: Bool = true,
         installSessionFactory: @escaping HvfWindowsInstallSessionStore.Factory = { HvfWindowsInstallSession(plan: $0) },
         runtimeSessionFactory: @escaping HvfRuntimeSessionStore.Factory = { HvfEngineSession(config: $0) },
+        actionScheduler: @escaping LibraryActionScheduler = { job in _ = Task.detached(operation: job) },
         startsModelsAutomatically: Bool = true,
         modelFactory: (@MainActor (VMConfig) -> ControlModel)? = nil
     ) {
         libraryRoot = rootURL
         self.e2eUnattendedPath = e2eUnattendedPath
+        self.actionScheduler = actionScheduler
         self.modelFactory = modelFactory ?? {
             ControlModel(config: $0, backend: $0.makeBackend(libraryRoot: rootURL),
                 startsAutomatically: startsModelsAutomatically)
@@ -86,11 +93,12 @@ final class LibraryModel: ObservableObject {
     func confirmDeletion(_ cfg: VMConfig) {
         pendingDeletion = nil
         let slug = cfg.slug
+        guard admitLibraryAction(cfg, action: .deletion) else { return }
         guard !deletingSlugs.contains(slug) else { return }
         deletingSlugs.insert(slug)
         let backend = modelCache[slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         let libraryRoot = self.libraryRoot
-        Task.detached {
+        actionScheduler {
             backend.stop()
             let stillRunning = backend.isRunning()
             let deleted = !stillRunning && VMLibrary.delete(slug, rootURL: libraryRoot)
@@ -110,6 +118,7 @@ final class LibraryModel: ObservableObject {
 
     func cloneWindowsHVF(_ cfg: VMConfig, name: String) {
         pendingWindowsClone = nil
+        guard admitLibraryAction(cfg, action: .clone) else { return }
         guard !cloningSlugs.contains(cfg.slug) else { return }
         let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         guard !backend.isRunning() else {
@@ -118,7 +127,7 @@ final class LibraryModel: ObservableObject {
         }
         cloningSlugs.insert(cfg.slug)
         let libraryRoot = self.libraryRoot
-        Task.detached {
+        actionScheduler {
             let clone = HvfProtectedTransfers.clone(
                 name: name,
                 template: cfg,
@@ -137,6 +146,7 @@ final class LibraryModel: ObservableObject {
     }
 
     func moveWindowsHVFBundle(_ cfg: VMConfig, to destinationParent: URL) {
+        guard admitLibraryAction(cfg, action: .move) else { return }
         guard !movingSlugs.contains(cfg.slug) else { return }
         let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         guard !backend.isRunning() else {
@@ -145,7 +155,7 @@ final class LibraryModel: ObservableObject {
         }
         movingSlugs.insert(cfg.slug)
         let libraryRoot = self.libraryRoot
-        Task.detached {
+        actionScheduler {
             let moved = HvfProtectedTransfers.move(cfg,
                 to: destinationParent,
                 rootURL: libraryRoot
@@ -163,17 +173,5 @@ final class LibraryModel: ObservableObject {
         }
     }
 
-    /// Publish a VMConfig that the create transaction has already persisted.
-    /// Re-saving here would move persistence outside that transaction's rollback
-    /// boundary and could report a false failure after a successful creation.
-    @discardableResult
-    func add(_ cfg: VMConfig) -> Bool {
-        reload()
-        guard vms.contains(where: { $0.slug == cfg.slug && $0.bundlePath == cfg.bundlePath }) else {
-            return false
-        }
-        selectedID = cfg.slug
-        return true
-    }
 
 }
