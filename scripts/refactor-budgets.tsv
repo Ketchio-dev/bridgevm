@@ -2437,7 +2437,7 @@ apps/macos/Sources/BridgeVMControl/AppUIHostCapture.swift	97	0
 apps/macos/Sources/BridgeVMControl/AppUIHostScenario.swift	75	0
 apps/macos/Sources/BridgeVMControl/AppUIHostWindow.swift	31	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlAppModel.swift	11	0
-apps/macos/Sources/BridgeVMControl/BridgeVMControlMain.swift	34	0
+apps/macos/Sources/BridgeVMControl/BridgeVMControlMain.swift	27	0
 apps/macos/Sources/BridgeVMControl/CreateVMResourceSummary.swift	19	0
 apps/macos/Sources/BridgeVMControl/CreateWindowsInstallFields.swift	49	0
 apps/macos/Sources/BridgeVMControl/LibraryIssuesSection.swift	53	0
@@ -2473,3 +2473,10 @@ apps/macos/Sources/BridgeVMControl/AppUIHostSceneObservation.swift	56	0
 apps/macos/Sources/BridgeVMControl/ControlAppActivation.swift	30	0
 crates/bridgevm-cli/src/args/hvf_args.rs	222	0
 crates/bridgevm-cli/tests/cli_help.rs	121	0
+apps/macos/Sources/BridgeVMControl/ControlCommandDispatch.swift	18	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLIOptions.swift	62	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLI.swift	72	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeLibraryReader.swift	91	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeLibraryRecord.swift	60	0
+apps/macos/Tests/BridgeVMControlTests/NativeCLIOptionsTests.swift	55	0
+apps/macos/Tests/BridgeVMControlTests/NativeLibraryReaderTests.swift	178	0

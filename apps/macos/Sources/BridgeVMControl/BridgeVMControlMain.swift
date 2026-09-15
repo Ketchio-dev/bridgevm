@@ -20,14 +20,7 @@ enum BridgeVMControlMain {
             exit(2)
         }
         #else
-        guard !arguments.contains("--app-ui-host") else {
-            FileHandle.standardError.write(Data("This executable is not the diagnostic host.\n".utf8))
-            exit(2)
-        }
-        if arguments.first == "--vtpm-lifecycle" {
-            exit(VTPMLifecycleCommand.run(arguments: Array(arguments.dropFirst())))
-        }
-        BridgeVMControlLaunchOptions.validateOrExit(arguments: arguments)
+        ControlCommandDispatch.validateOrExit(arguments: arguments)
         #endif
         BridgeVMControlApp.main()
     }
