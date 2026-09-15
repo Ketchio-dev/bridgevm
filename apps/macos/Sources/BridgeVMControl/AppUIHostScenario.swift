@@ -4,7 +4,7 @@ import AppKit
 @MainActor
 enum AppUIHostScenario {
     static func run(_ host: AppUIHost, window: NSWindow, content: NSView) async throws {
-        let capture = try AppUIHostLaunchControl.capture(host)
+        let capture = host.capture
         for dark in [false, true] {
             for minimum in [false, true] {
                 try await AppUIHostWindow.setPresentation(window, dark: dark, minimum: minimum)
