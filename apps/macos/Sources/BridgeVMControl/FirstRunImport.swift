@@ -8,7 +8,7 @@ import Foundation
 enum FirstRunImport {
     /// The three inputs a user selects. Only the disk and vars are required; a
     /// vTPM state dir is optional (a fresh TPM is initialized when absent).
-    struct Inputs: Equatable {
+    struct Inputs: Equatable, Sendable {
         var displayName: String
         var diskPath: String
         var varsPath: String
@@ -108,49 +108,9 @@ enum FirstRunImport {
         libraryRoot: URL,
         fileManager: FileManager = .default, snapshotHelper: URL = HvfMediaImportHelper.bundled
     ) throws -> VMConfig {
-        let destination = try FirstRunImportDestination(
-            slug: slug, libraryRoot: libraryRoot, fileManager: fileManager)
-        var completed = false
-        defer { if !completed { destination.removeIfOwned() } }
-        let bundleURL = destination.root.appendingPathComponent("bundle", isDirectory: true)
-        let layout = BundleLayout(bundleURL: bundleURL)
-        try fileManager.createDirectory(
-            at: layout.diskURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try fileManager.createDirectory(
-            at: layout.varsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: layout.vtpmURL, withIntermediateDirectories: true)
-
-        try HvfMediaImport.copy(disk: inputs.diskPath, vars: inputs.varsPath,
-            toDisk: layout.diskURL, toVars: layout.varsURL, helper: snapshotHelper, fileManager: fileManager)
-        if let vtpm = inputs.vtpmStateDir, !vtpm.isEmpty {
-            let contents = (try? fileManager.contentsOfDirectory(atPath: vtpm)) ?? []
-            for entry in contents where entry != ".lock" {
-                let src = (vtpm as NSString).appendingPathComponent(entry)
-                let dst = layout.vtpmURL.appendingPathComponent(entry)
-                try fileManager.copyItem(atPath: src, toPath: dst.path)
-            }
-        }
-
-        var config = VMConfig(
-            id: slug,
-            name: inputs.displayName,
-            displayName: inputs.displayName,
-            backendKind: BackendKind.hvfEngine.rawValue,
-            bundlePath: bundleURL.path,
-            runnerPath: "",
-            launchSpecPath: "",
-            handoffPath: "",
-            sshKeyPath: "",
-            sshUser: "bridge",
-            leasesPath: "",
-            guestName: inputs.displayName,
-            displayWidth: 1280,
-            displayHeight: 720
-        )
-        config.diskPath = layout.diskURL.path
-        config.memMiB = inputs.memMiB
-        config.cpuCount = inputs.cpuCount
-        completed = true
-        return config
+        let prepared = try prepare(inputs, slug: slug, libraryRoot: libraryRoot,
+            fileManager: fileManager, snapshotHelper: snapshotHelper)
+        prepared.preserve()
+        return prepared.config
     }
 }

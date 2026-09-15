@@ -1208,15 +1208,15 @@ apps/macos/Sources/BridgeVMApp/ViewModels/DashboardViewModel.swift	4310	0
 apps/macos/Sources/BridgeVMApp/Views/DashboardView.swift	991	0
 apps/macos/Sources/BridgeVMApp/Views/SettingsView.swift	227	0
 apps/macos/Sources/BridgeVMApp/Views/VMDetailView.swift	6392	0
-apps/macos/Sources/BridgeVMControl/Backends.swift	804
+apps/macos/Sources/BridgeVMControl/Backends.swift	804	0
 apps/macos/Sources/BridgeVMControl/QemuCompatBackend.swift	130	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	44	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	64	0
 apps/macos/Sources/BridgeVMControl/ContentView.swift	551	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	314	0
 apps/macos/Sources/BridgeVMControl/CreateVM.swift	828	0
-apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	156	0
-apps/macos/Sources/BridgeVMControl/FirstRunView.swift	94	0
+apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	116	0
+apps/macos/Sources/BridgeVMControl/FirstRunView.swift	88	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
@@ -1259,8 +1259,8 @@ apps/macos/Tests/BridgeVMControlTests/HvfBoundedLogReadTests.swift	41	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMIdentityLifecycle.swift	451	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMLifecycleCommand.swift	368	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMStateSecurity.swift	337	0
-apps/macos/Sources/BridgeVMControl/LibraryModel.swift	212	0
-apps/macos/Sources/BridgeVMControl/VMLibrary.swift	252	0
+apps/macos/Sources/BridgeVMControl/LibraryModel.swift	189	0
+apps/macos/Sources/BridgeVMControl/VMLibrary.swift	178	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzDisplayRuntimeControlServerTests.swift	538	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzRunnerCommandTests.swift	692	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzRunnerCoreTests.swift	439	0
@@ -2138,7 +2138,7 @@ apps/macos/Tests/BridgeVMControlTests/VMRelocationSetupFailureTests.swift	41	0
 apps/macos/Sources/BridgeVMControl/VMRelocationRecordWriter.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/VMRelocationRecordWriterTests.swift	35	0
 apps/macos/Tests/BridgeVMControlTests/VMRelocationConcurrentWriterTests.swift	48	0
-apps/macos/Sources/BridgeVMControl/VMRegistrationWriter.swift	22	0
+apps/macos/Sources/BridgeVMControl/VMRegistrationWriter.swift	11	0
 apps/macos/Tests/BridgeVMControlTests/VMRegistrationWriterTests.swift	34	0
 apps/macos/Sources/BridgeVMControl/PrivateStateFileDescriptor.swift	15	0
 apps/macos/Tests/BridgeVMControlTests/PrivateStateFileDescriptorTests.swift	25	0
@@ -2303,3 +2303,11 @@ crates/bridgevm-hvf/src/managed_pair_runtime_atomic_tests.rs	91	0
 crates/bridgevm-hvf/src/managed_pair_runtime_persist.rs	33	0
 crates/bridgevm-hvf/src/managed_pair_runtime_persist_tests.rs	247	0
 crates/bridgevm-hvf/src/media_persist.rs	37	0
+apps/macos/Sources/BridgeVMControl/FirstRunImportPreparation.swift	69	0
+apps/macos/Sources/BridgeVMControl/FirstRunImportWorker.swift	36	0
+apps/macos/Sources/BridgeVMControl/LibraryModelFirstRunImport.swift	35	0
+apps/macos/Sources/BridgeVMControl/VMLibraryPersistence.swift	35	0
+apps/macos/Sources/BridgeVMControl/VMRegistrationPublication.swift	47	0
+apps/macos/Tests/BridgeVMControlTests/FirstRunImportTransactionTests.swift	125	0
+apps/macos/Tests/BridgeVMControlTests/LibraryModelFirstRunImportTests.swift	117	0
+apps/macos/Tests/BridgeVMControlTests/VMRegistrationCommitTests.swift	53	0

@@ -16,8 +16,6 @@ struct FirstRunView: View {
     @State private var vtpmPath = ""
     @State private var memGiB = 6
     @State private var cpuCount = 4
-    @State private var error: String?
-    @State private var importing = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -35,16 +33,17 @@ struct FirstRunView: View {
                 Stepper("CPU: \(cpuCount)", value: $cpuCount, in: 1...16)
             }
             .frame(maxWidth: 620)
+            .disabled(library.firstRunImportBusy)
 
-            if let error {
+            if let error = library.firstRunImportError {
                 Text(error).foregroundStyle(.red).font(.callout)
             }
 
             HStack {
                 Spacer()
-                Button(importing ? "가져오는 중…" : "가져오기 및 부팅") { runImport() }
+                Button(library.firstRunImportBusy ? "가져오는 중…" : "가져오기 및 부팅") { runImport() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(importing || diskPath.isEmpty || varsPath.isEmpty)
+                    .disabled(library.firstRunImportBusy || diskPath.isEmpty || varsPath.isEmpty)
             }
             .frame(maxWidth: 620)
             Spacer()
@@ -76,8 +75,7 @@ struct FirstRunView: View {
     }
 
     private func runImport() {
-        error = nil
-        importing = true
+        guard !library.firstRunImportBusy else { return }
         let inputs = FirstRunImport.Inputs(
             displayName: displayName,
             diskPath: diskPath,
@@ -85,10 +83,6 @@ struct FirstRunView: View {
             vtpmStateDir: vtpmPath.isEmpty ? nil : vtpmPath,
             memMiB: memGiB * 1024,
             cpuCount: cpuCount)
-        let result = library.importExistingHvfVM(inputs)
-        importing = false
-        if let result {
-            error = result
-        }
+        Task { await library.importExistingHvfVM(inputs) }
     }
 }
