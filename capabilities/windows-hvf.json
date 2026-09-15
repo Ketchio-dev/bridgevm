@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-14",
-  "tested_commit": "010c4709845196f8644029563a1d40a03eaed2e3",
+  "tested_commit": "2eb1302dd4cfb3c5891c1d31c526d0a15e713a8f",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: source b941ae18 prepares new own-HVF installation plans off the UI actor through the actual pending-detail route. Existing active or compatible idle sessions remain authoritative; immutable inputs, attempt identity and current registration/request/cache checks reject stale completion. Ordinary lookup changes initialize fresh handles without publishing through previously observed handles. Native 237 tests passed in 40.27 seconds, including 10 new preparation methods. A compiled primary baseline ran one method with sealed/unsealed cases and two main-thread assertion failures in 2.78 seconds; all other prerequisites and owned-byte checks passed. The earlier 5.92-second compiler failure executed no tests and remains recorded; one optional-memory fixture expression was corrected explicitly. All nine test/support files match the compiled baseline, 161 prior test files remain unchanged, and three existing adapters preserve their substantive assertions. Follow-up 010c4709 uses standard SwiftUI timer text for the installation elapsed label; its actual app build passed in 1.51 seconds. The combined full local and exact hosted checks remain pending at this observation point. Preceding b22abaa7 passed its full local check in 159.68 seconds and all 78 hosted workflows, including CI 34939361791 and Security 34939361784. A11 requires the final release regression seal. These deterministic results do not establish rendered interaction/clock refresh, real-media latency, guest installation or survival, interrupted file reads or external coordination. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
+      "measured": "OPEN: source 0cd933b7 preserves keyboard drafts when the actual HVF session explicitly refuses input. Typed results distinguish host admission, refusal and legacy ASCII attempts; existing transport algorithms and legacy clearing are preserved. Native 299 tests passed in 41.23 seconds, including eight new draft methods. The compiled baseline ran all eight methods with exactly eight draft-retention assertion failures in 6.77 seconds; prerequisites, owned-file checks, lifetime checks and acceptance/legacy behavior passed. Both new test/support files match that baseline, and all 170 prior test files remain unchanged. Follow-up e5475430 removes an installation-duration estimate unsupported by the reviewed public records; its actual app build passed in 1.46 seconds. Source 2eb1302d observes changed retained installation log content instead of its capped count; its app build passed in 1.57 seconds. The combined full local and exact hosted checks remain pending at this observation point. Preceding 54acf909 passed its full local check in 159.73 seconds and all 78 hosted workflows, including CI 34944680108 and Security 34944680196. A11 requires the final release regression seal. These deterministic results do not establish rendered input or scrolling, guest delivery or consumption, durable drafts, automatic retry, arbitrary write atomicity or successful legacy writes. Earlier observations and failures remain in the [A11 observation history](../history/windows-hvf/a11-observations-through-20260915.md) and dated evidence records.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -178,7 +178,8 @@
         "docs/history/windows-hvf/library-action-admission-deterministic-20260915.md",
         "docs/history/windows-hvf/library-work-admission-deterministic-20260915.md",
         "docs/history/windows-hvf/retained-controls-deterministic-20260915.md",
-        "docs/history/windows-hvf/install-plan-preparation-deterministic-20260915.md"
+        "docs/history/windows-hvf/install-plan-preparation-deterministic-20260915.md",
+        "docs/history/windows-hvf/keyboard-draft-and-install-display-deterministic-20260915.md"
       ]
     },
     {
