@@ -2,19 +2,19 @@
 
 `bridgevm app` reads native `vm.json`, [creates a pending Windows VM](app-cli-create.md),
 and requests [installation](app-cli-install.md), [start](app-cli-start.md) or [stop](app-cli-stop.md).
-Start uses an exact saved installed HVF entry; no command opens an app window,
-repairs registrations, or changes saved CPU/memory settings. Inventory commands report runtime state as `unobserved`;
-saved CPU and memory values are not utilization measurements.
+Start uses an exact saved installed HVF entry; no command opens an app window, repairs registrations,
+or changes saved CPU/memory settings. Inventory reports `unobserved` runtime state; saved CPU and memory values are not utilization measurements. This is the canonical lifecycle:
 
 ```sh
 bridgevm app list
-bridgevm app list --json
-bridgevm app inspect 개발-vm --json
+bridgevm app create-windows "개발 VM" --iso "/absolute/path/Windows 11 ARM.iso"
+bridgevm app install 개발-vm
+bridgevm app install-status 개발-vm --json
+bridgevm app install 개발-vm # only after a terminal failed/cancelled result
 bridgevm app readiness 개발-vm --json
 bridgevm app start 개발-vm --json
 bridgevm app status 개발-vm --json
 bridgevm app stop 개발-vm --json
-bridgevm app list --library "/absolute/path/to/native-library"
 ```
 
 Use the exact ID returned by `list`, including Korean IDs. `--library` accepts an
@@ -108,10 +108,10 @@ environment override. When the native command runs, an unavailable owner produce
 structured runtime-unobserved output with exit 1. It does not create a library or
 launch an app to obtain a response.
 
-| Exit | Inventory (`list` / `inspect`) | `readiness` | `status` | `create-windows` / `start` / `stop` |
+| Exit | Inventory (`list` / `inspect`) | `readiness` | `status` | Create / install / start / stop |
 | --- | --- | --- | --- | --- |
-| 0 | Complete query | Launch prerequisites ready | Complete owner observation, including `not-observed` | Registration committed / initial helper startup / owned cleanup confirmed |
-| 1 | Unavailable or incomplete inventory; discovery/exec failure | Blocked, unavailable configuration, or unsupported backend | Owner query unavailable; discovery/exec failure | Creation unavailable, unsupported, refused, timed out, or unconfirmed startup or cleanup |
+| 0 | Complete query | Launch prerequisites ready | Complete owner observation, including `not-observed` | Requested host control accepted or its command-specific proof confirmed |
+| 1 | Unavailable or incomplete inventory; discovery/exec failure | Blocked, unavailable configuration, or unsupported backend | Owner query unavailable; discovery/exec failure | Unavailable, refused, terminal failure, timeout, or missing required proof |
 | 2 | Invalid command, option, path or ID | Invalid usage | Invalid usage | Invalid usage |
 
 An existing but empty library returns an empty complete inventory. A missing

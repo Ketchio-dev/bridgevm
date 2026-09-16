@@ -2912,3 +2912,7 @@ apps/macos/Tests/BridgeVMControlTests/NativeCLICreateWindowsTests.swift	63	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLICreateWindowsFailureTests.swift	32	0
 docs/history/windows-hvf/native-app-create-cli-deterministic-20260916.md	68	0
 docs/app-cli-create.md	53	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLIInstallGuidance.swift	15	0
+apps/macos/Tests/BridgeVMControlTests/NativeCLIInstallGuidanceTests.swift	39	0
+apps/macos/Tests/BridgeVMControlTests/NativeAppLifecycleJourneyTests.swift	69	0
+docs/history/windows-hvf/native-app-lifecycle-guidance-deterministic-20260916.md	57	0
