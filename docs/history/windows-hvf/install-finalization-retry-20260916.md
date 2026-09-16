@@ -50,7 +50,7 @@ The existing finalization resume body was extracted unchanged for shared use.
   all 3,218 tracked inputs, HEAD and index unchanged. Shim suites passed
   425 / 760 (two required live-only skips) / 62 tests; native CLI/socket and release
   checks passed. Log SHA256 `1d0d0201d7f8095cf269a71850d9be3fa6b7aa06fb07369c29a32a1f988bf3c7`.
-- New final-head hosted checks remain pending; no release evidence is promoted.
+- Postcommit freshness initially refused changed budget metadata. Integration 18453ab0878bb11c9cf3f75ca3c6efb40d7cd529 was resealed: full check PASS in 223.015 seconds, all 3,218 inputs/HEAD/index unchanged; log SHA256 `34ee0f3b4d7980789ddcbe556bd44ef526f9bcdc4c27d5e5a496fbaee4bf8782`. New-head hosted checks remain pending.
 
 ## Integration and remaining work
 
