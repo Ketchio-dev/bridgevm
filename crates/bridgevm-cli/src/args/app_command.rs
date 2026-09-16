@@ -5,10 +5,6 @@ use crate::*;
 mod query;
 pub(crate) use query::AppQueryCommand;
 
-#[derive(Debug, Subcommand)]
-pub(crate) enum AppCommand {
-    #[command(flatten)]
-    Query(AppQueryCommand),
-    /// Stop an app-owned runtime and wait for confirmed owned-process cleanup.
-    Stop { id: String },
-}
+#[path = "app_command_variants.rs"]
+mod variants;
+pub(crate) use variants::AppCommand;

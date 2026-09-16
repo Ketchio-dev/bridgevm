@@ -51,11 +51,11 @@ final class HvfOwnedRunController {
         channel.start(helloFrame: helloFrame)
     }
 
-    func requestStop(target: HvfOwnedRuntimeIdentity, operationID: UUID) -> HvfOwnedStopAdmission {
+    func requestStop(target: HvfOwnedRuntimeIdentity, operationID: UUID, allowGuestGrace: Bool = true) -> HvfOwnedStopAdmission {
         guard target == identity else { return .refused(.targetMismatch) }
         if let operation { return .existing(operation) }
         let time = now()
-        let useGrace = ledger.ready && ledger.complete == nil && failure == nil && runnerExit == nil
+        let useGrace = allowGuestGrace && ledger.ready && ledger.complete == nil && failure == nil && runnerExit == nil
         let phase: HvfOwnedStopPhase = useGrace ? .guestGrace : .cancelling
         let ticket = HvfOwnedStopOperation(operationID: operationID, target: identity, now: time,
             deadline: time + (useGrace ? Self.guestGrace : 0) + Self.completionObservation, phase: phase)

@@ -10,11 +10,7 @@ extension LibraryModel {
     func hvfRuntimeSession(for config: VMConfig) -> HvfEngineSession? {
         let latest = latestConfiguration(for: config)
         guard let session = hvfRuntimeSessions.session(for: latest, libraryRoot: rootURL) else { return nil }
-        session.workAdmission = boundWorkAdmission(slug: latest.slug) { [weak session] owner, current in
-            guard let session else { return false }
-            return current.engineKind == .hvfEngine && current.installPending != true
-                && owner.hvfRuntimeSessions.owns(session, for: current)
-        }
+        bindRuntimeWorkAdmission(session, configuration: latest)
         return session
     }
 

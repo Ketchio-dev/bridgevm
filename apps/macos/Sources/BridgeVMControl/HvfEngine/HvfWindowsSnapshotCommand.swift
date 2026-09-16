@@ -69,14 +69,17 @@ enum HvfWindowsSnapshotCommand {
             vmID: vmID, quotaBytes: sum.partialValue)
     }
 
-    static func run(_ operation: Operation, plan: Plan) async throws -> String {
+    static func run(_ operation: Operation, plan: Plan, checkAdmission: @escaping @Sendable () async throws -> Void = {}) async throws -> String {
         try await Task.detached {
+            try await checkAdmission()
             if operation == .create {
                 try FileManager.default.createDirectory(
                     at: plan.snapshot.deletingLastPathComponent(), withIntermediateDirectories: true)
             }
+            try await checkAdmission()
             let output = try invoke(plan.executable, plan.arguments(for: operation))
             if operation == .create {
+                try await checkAdmission()
                 _ = try invoke(plan.executable, ["verify", plan.snapshot.path])
             }
             return output
@@ -100,28 +103,4 @@ enum HvfWindowsSnapshotCommand {
         return output
     }
 
-    private static func regularFile(_ url: URL) -> Bool {
-        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else { return false }
-        return values.isRegularFile == true && values.isSymbolicLink != true
-    }
-
-    private static func regularDirectory(_ url: URL) -> Bool {
-        guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { return false }
-        return values.isDirectory == true && values.isSymbolicLink != true
-    }
-
-    private static func canonical(_ url: URL) -> Bool {
-        url.standardizedFileURL.path == url.resolvingSymlinksInPath().standardizedFileURL.path
-    }
-
-    private static func fileSize(_ url: URL) throws -> UInt64 {
-        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-        guard let size = attributes[.size] as? NSNumber else { throw failure("media size is unavailable") }
-        return size.uint64Value
-    }
-
-    private static func failure(_ message: String) -> NSError {
-        NSError(domain: "BridgeVM.HvfWindowsSnapshot", code: 1,
-                userInfo: [NSLocalizedDescriptionKey: message.isEmpty ? "snapshot operation failed" : message])
-    }
 }

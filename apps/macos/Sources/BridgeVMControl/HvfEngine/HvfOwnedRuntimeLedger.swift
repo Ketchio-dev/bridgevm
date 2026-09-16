@@ -5,37 +5,16 @@ struct HvfOwnedRuntimeLedger {
     let identity: HvfOwnedRuntimeIdentity
     let manifestSHA256: String
     private(set) var ready = false
+    private(set) var initialHelper: HvfOwnedRuntimeChild?
     private(set) var complete: HvfOwnedRuntimeComplete?
     private(set) var stopOperationID: UUID?
     private(set) var stopAcknowledged = false
     private var sequence: UInt64 = 0
-    private var helper = Role()
-    private var swtpm = Role()
+    private var helper = HvfOwnedRuntimeRole()
+    private var swtpm = HvfOwnedRuntimeRole()
 
     init(identity: HvfOwnedRuntimeIdentity, manifestSHA256: String) {
         self.identity = identity; self.manifestSHA256 = manifestSHA256
-    }
-
-    private struct Role {
-        var live: HvfOwnedRuntimeChild?
-        var spawned: UInt64 = 0
-        var reaped: UInt64 = 0
-        var last: HvfOwnedRuntimeChild?
-        var summary: HvfOwnedRuntimeRoleSummary {
-            HvfOwnedRuntimeRoleSummary(spawnedCount: spawned, reapedCount: reaped, last: last)
-        }
-        mutating func start(_ child: HvfOwnedRuntimeChild) throws {
-            guard live == nil, spawned < UInt64.max else { throw HvfOwnedRuntimeProtocolError.invalidLifecycle }
-            if child.role == "helper" {
-                guard child.generation == spawned else { throw HvfOwnedRuntimeProtocolError.invalidLifecycle }
-            } else if spawned != 0 { throw HvfOwnedRuntimeProtocolError.invalidLifecycle }
-            live = child; spawned += 1
-        }
-        mutating func reap(_ child: HvfOwnedRuntimeChild) throws {
-            guard let live, live.pid == child.pid, live.generation == child.generation,
-                  reaped < spawned else { throw HvfOwnedRuntimeProtocolError.invalidLifecycle }
-            self.live = nil; reaped += 1; last = child
-        }
     }
 
     mutating func admitStop(operationID: UUID) throws {
@@ -71,7 +50,12 @@ struct HvfOwnedRuntimeLedger {
             guard ready, let child = event.child, child.pid != identity.processID else { throw invalid }
             let other = child.role == "helper" ? swtpm.live : helper.live
             guard other?.pid != child.pid else { throw invalid }
-            if child.role == "helper" { try helper.start(child) } else { try swtpm.start(child) }
+            if child.role == "helper" {
+                try helper.start(child)
+                if child.generation == 0 { initialHelper = child }
+            } else {
+                try swtpm.start(child)
+            }
         case "childReaped":
             guard ready, let child = event.child else { throw invalid }
             if child.role == "helper" { try helper.reap(child) } else { try swtpm.reap(child) }

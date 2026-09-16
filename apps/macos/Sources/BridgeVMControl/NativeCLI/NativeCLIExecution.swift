@@ -3,10 +3,7 @@ import Foundation
 extension NativeCLI {
     static func execute(_ options: NativeCLIOptions) throws -> Int32 {
         switch options.command {
-        case .stop(let id):
-            let result = NativeCLIRuntimeStop.run(rootURL: options.libraryRoot, id: id)
-            try output(result, json: options.json, text: result.text)
-            return result.complete ? 0 : 1
+        case .start, .stop: return try executeRuntime(options)
         case .status(let id):
             let snapshot = NativeCLIRuntimeStatus.snapshot(rootURL: options.libraryRoot, id: id)
             try output(snapshot, json: options.json, text: snapshot.text)

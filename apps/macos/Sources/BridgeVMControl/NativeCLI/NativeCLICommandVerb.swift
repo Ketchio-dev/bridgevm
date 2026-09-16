@@ -3,7 +3,7 @@ extension NativeCLIOptions.Command {
         switch verb {
         case "inspect": return .inspect(id)
         case "readiness": return .readiness(id)
-        case "stop": return .stop(id)
+        case "start", "stop": return runtime(verb: verb, id: id)
         default: return .status(id)
         }
     }

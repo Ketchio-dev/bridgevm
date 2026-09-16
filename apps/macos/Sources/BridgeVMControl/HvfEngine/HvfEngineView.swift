@@ -22,13 +22,14 @@ struct HvfEngineView: View {
     @State private var ctlFilePath = ""
     @State private var ctlInput = ""
     @State private var keyboardInput = ""
-    @State private var vtpmRecoveryCode = ""
-    @State private var vtpmRecoveryPackagePath = ""
-    @State private var vtpmRecoveryCodeInput = ""
-    @State private var vtpmLifecycleMessage: String?
-    @State private var vtpmLifecycleError: String?
-    @State private var confirmVTPMRestore = false
-    @State private var confirmVTPMReset = false
+    @State var vtpmRecoveryCode = ""
+    @State var vtpmRecoveryPackagePath = ""
+    @State var vtpmRecoveryCodeInput = ""
+    @State var vtpmLifecycleMessage: String?
+    @State var vtpmLifecycleError: String?
+    @State var confirmVTPMRestore = false
+    @State var confirmVTPMReset = false
+    @State var vtpmMutationReservation: HvfRuntimeMutationReservation?
     init(session: HvfEngineSession) {
         _session = ObservedObject(wrappedValue: session)
     }
@@ -48,13 +49,16 @@ struct HvfEngineView: View {
                 ) { label, text, chooseDirectory in
                     pathRow(label, text: text, chooseDirectory: chooseDirectory)
                 }
-                HvfWindowsSnapshotCard(config: currentConfig(), repoRoot: session.repoRoot, vmStopped: vtpmLifecycleAvailable)
+                HvfWindowsSnapshotCard(config: currentConfig(), repoRoot: session.repoRoot, session: session)
                 eventFeedCard
             }
             .padding(20)
         }
         .navigationTitle("HVF Engine")
         .accessibilityIdentifier("bridgevm.windows.runtime.view")
+        .onChange(of: confirmVTPMRestore) { _, shown in if !shown { releaseVTPMReservation() } }
+        .onChange(of: confirmVTPMReset) { _, shown in if !shown { releaseVTPMReservation() } }
+        .onDisappear { releaseVTPMReservation() }
         .onAppear {
             loadStateFromSession()
             session.attachIfStopped()
@@ -65,7 +69,7 @@ struct HvfEngineView: View {
             titleVisibility: .visible
         ) {
             Button("검증 후 복원") { restoreVTPMRecovery() }
-            Button("취소", role: .cancel) {}
+            Button("취소", role: .cancel) { releaseVTPMReservation() }
         } message: {
             Text("패키지의 VM ID와 현재 암호화 상태 지문이 정확히 일치할 때만 Keychain 키를 교체합니다.")
         }
@@ -75,7 +79,7 @@ struct HvfEngineView: View {
             titleVisibility: .visible
         ) {
             Button("기존 상태를 보관하고 재설정", role: .destructive) { resetVTPMIdentity() }
-            Button("취소", role: .cancel) {}
+            Button("취소", role: .cancel) { releaseVTPMReservation() }
         } message: {
             Text("Windows의 BitLocker 및 PCR 봉인 비밀에는 복구 키가 필요할 수 있습니다. BridgeVM은 기존 암호화 상태와 장치 로컬 키를 보관한 뒤 새 TPM으로 시작합니다.")
         }
@@ -161,10 +165,10 @@ struct HvfEngineView: View {
                 HStack(spacing: 8) {
                     Button("복구 패키지 내보내기", action: exportVTPMRecovery)
                     Button("복구 패키지 선택", action: chooseVTPMRecoveryPackage)
-                    Button("검증 후 복원") { confirmVTPMRestore = true }
+                    Button("검증 후 복원") { beginVTPMConfirmation(.vtpmRecoveryRestore) }
                         .disabled(vtpmRecoveryPackagePath.isEmpty || vtpmRecoveryCodeInput.isEmpty)
                     Spacer()
-                    Button("TPM ID 재설정", role: .destructive) { confirmVTPMReset = true }
+                    Button("TPM ID 재설정", role: .destructive) { beginVTPMConfirmation(.vtpmReset) }
                 }
                 .disabled(!vtpmLifecycleAvailable)
                 if !vtpmRecoveryPackagePath.isEmpty {
@@ -208,9 +212,10 @@ struct HvfEngineView: View {
                 HStack(spacing: 10) {
                     Button(action: start) { Label("시작", systemImage: "play.fill") }
                         .buttonStyle(.borderedProminent).controlSize(.large)
-                        .disabled(session.connectionState != .stopped || !bootConfigReady)
+                        .disabled(session.hasActiveRuntimeWork || !bootConfigReady)
                         .accessibilityIdentifier("bridgevm.windows.runtime.start")
                     Button(action: session.stop) { Label("중지", systemImage: "stop.fill") }
+                        .disabled(session.ownedStartOperation?.workerPending == true)
                         .controlSize(.large).accessibilityIdentifier("bridgevm.windows.runtime.stop")
                 }
                 HStack(spacing: 24) {
@@ -273,7 +278,16 @@ struct HvfEngineView: View {
         }
     }
 
+    private var pendingWorkText: String? {
+        if session.hasPendingRuntimeMutation { return "작업 중" }
+        if let start = session.ownedStartOperation, start.workerPending {
+            return start.observation.failure == nil ? "시작 준비 중" : "작업 정리 확인 중"
+        }
+        return nil
+    }
+
     private var stateText: String {
+        if let pendingWorkText { return pendingWorkText }
         switch session.connectionState {
         case .stopped: return "Stopped"
         case .booting: return "Booting"
@@ -284,6 +298,7 @@ struct HvfEngineView: View {
     }
 
     private var stateColor: Color {
+        if pendingWorkText != nil { return .orange }
         switch session.connectionState {
         case .stopped: return .secondary
         case .booting: return .orange
@@ -306,6 +321,7 @@ struct HvfEngineView: View {
     }
 
     private var displayConnectionStateText: String {
+        if let pendingWorkText { return pendingWorkText }
         switch session.connectionState {
         case .stopped: return "중지됨"
         case .booting: return "부팅 중"
@@ -319,9 +335,7 @@ struct HvfEngineView: View {
         currentConfig().readiness(repoRoot: session.repoRoot).launchReady
     }
 
-    private var vtpmLifecycleAvailable: Bool {
-        session.connectionState == .stopped
-    }
+    var vtpmLifecycleAvailable: Bool { !session.hasActiveRuntimeWork }
 
     private func pathRow(_ label: String, text: Binding<String>, chooseDirectory: Bool) -> some View {
         HStack {
@@ -404,81 +418,6 @@ struct HvfEngineView: View {
             text.wrappedValue = url.path
         }
         #endif
-    }
-
-    private func exportVTPMRecovery() {
-        #if canImport(AppKit)
-        guard vtpmLifecycleAvailable,
-              let keyID = session.config.vtpmKeyID,
-              let statePath = session.config.vtpmStateDir else { return }
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "\(keyID).bridgevm-vtpm-recovery.json"
-        panel.allowedContentTypes = [.json]
-        guard panel.runModal() == .OK, let destination = panel.url else { return }
-        do {
-            let lifecycle = VTPMIdentityLifecycle(keyStore: KeychainVTPMStateKeyStore())
-            let result = try lifecycle.exportRecovery(
-                stableVMID: keyID,
-                stateDirectory: URL(fileURLWithPath: statePath, isDirectory: true),
-                destination: destination
-            )
-            vtpmRecoveryCode = result.recoveryCode
-            vtpmLifecycleMessage = "복구 패키지를 저장했습니다. 상태 지문: \(result.stateFingerprint)"
-        } catch {
-            vtpmLifecycleError = error.localizedDescription
-        }
-        #endif
-    }
-
-    private func chooseVTPMRecoveryPackage() {
-        #if canImport(AppKit)
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.json]
-        if panel.runModal() == .OK, let url = panel.url {
-            vtpmRecoveryPackagePath = url.path
-            vtpmLifecycleMessage = nil
-        }
-        #endif
-    }
-
-    private func restoreVTPMRecovery() {
-        guard vtpmLifecycleAvailable,
-              let keyID = session.config.vtpmKeyID,
-              let statePath = session.config.vtpmStateDir else { return }
-        do {
-            let lifecycle = VTPMIdentityLifecycle(keyStore: KeychainVTPMStateKeyStore())
-            try lifecycle.restoreRecovery(
-                stableVMID: keyID,
-                stateDirectory: URL(fileURLWithPath: statePath, isDirectory: true),
-                packageURL: URL(fileURLWithPath: vtpmRecoveryPackagePath),
-                recoveryCode: vtpmRecoveryCodeInput
-            )
-            vtpmRecoveryCodeInput = ""
-            vtpmLifecycleMessage = "VM ID와 상태 지문을 검증하고 vTPM 키를 Keychain에 복원했습니다."
-        } catch {
-            vtpmLifecycleError = error.localizedDescription
-        }
-    }
-
-    private func resetVTPMIdentity() {
-        guard vtpmLifecycleAvailable,
-              let keyID = session.config.vtpmKeyID,
-              let statePath = session.config.vtpmStateDir else { return }
-        do {
-            let lifecycle = VTPMIdentityLifecycle(keyStore: KeychainVTPMStateKeyStore())
-            let result = try lifecycle.resetIdentity(
-                stableVMID: keyID,
-                stateDirectory: URL(fileURLWithPath: statePath, isDirectory: true)
-            )
-            vtpmLifecycleMessage = result.archivedStatePath.map {
-                "새 TPM ID로 전환했습니다. 이전 상태: \($0) · 영수증: \(result.receiptPath)"
-            } ?? "새 TPM ID로 전환했습니다. 영수증: \(result.receiptPath)"
-        } catch {
-            vtpmLifecycleError = error.localizedDescription
-        }
     }
 
     static func defaultConfig() -> HvfEngineConfig {

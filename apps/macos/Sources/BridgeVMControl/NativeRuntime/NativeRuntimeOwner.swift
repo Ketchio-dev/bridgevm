@@ -34,7 +34,7 @@ final class NativeRuntimeOwner: @unchecked Sendable {
         } catch { Darwin.close(fd); throw error }
     }
 
-    func start(controlHandler: NativeRuntimeRequestRouter.ControlHandler? = nil,
+    func start(controlHandler: NativeRuntimeRequestRouter.ControlHandler? = nil, startHandler: NativeRuntimeRequestRouter.StartHandler? = nil,
                handler: @escaping NativeRuntimeServer.Handler) throws {
         mutex.lock(); defer { mutex.unlock() }
         guard !closed, server == nil else { throw NativeRuntimeError.ownerBusy }
@@ -43,7 +43,7 @@ final class NativeRuntimeOwner: @unchecked Sendable {
             validateOwner: { [weak self] in
                 guard let self else { throw NativeRuntimeError.ownerUnavailable }
                 try self.validateCurrentOwnership()
-            }, controlHandler: controlHandler, handler: handler)
+            }, controlHandler: controlHandler, startHandler: startHandler, handler: handler)
     }
 
     func validateCurrentOwnership() throws {
