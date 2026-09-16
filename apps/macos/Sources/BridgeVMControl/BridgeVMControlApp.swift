@@ -14,7 +14,7 @@ struct BridgeVMControlApp: App {
         #endif
         return WindowGroup("BridgeVM Control") {
             ContentView(library: library)
-                .frame(minWidth: 1100, minHeight: 720)
+                .frame(minWidth: 1100)
                 .appUIHostSceneObservation()
         }
         .controlWindowPresentation()
