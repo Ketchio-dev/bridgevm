@@ -188,3 +188,4 @@ docs/history/windows-hvf/native-gui-start-worker-20260916.md	historical-evidence
 docs/history/windows-hvf/install-finalization-retry-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/early-child-exit-observation-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/native-app-install-cli-deterministic-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/native-app-create-cli-deterministic-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
