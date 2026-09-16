@@ -6,6 +6,6 @@ jobs:
   contract:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Require acknowledged bounded observation-only collection
         run: python3 tests/integration/b6-reference-collection-contract.py && python3 tests/integration/b6-pre-readiness-inventory-contract.py

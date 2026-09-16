@@ -7,7 +7,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check Unicode input with Windows PowerShell 5.1
         shell: powershell
         run: scripts/test-bvagent-unicode-input.ps1

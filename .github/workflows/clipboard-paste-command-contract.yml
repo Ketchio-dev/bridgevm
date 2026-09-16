@@ -6,7 +6,7 @@ jobs:
   produce:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Compile the actual Swift command producer
         run: |
           swiftc apps/macos/Sources/BridgeVMControl/HvfEngine/HvfClipboardPaste.swift tests/integration/clipboard-paste-command-fixture.swift -o "$RUNNER_TEMP/paste-fixture"
@@ -20,7 +20,7 @@ jobs:
     needs: produce
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           name: synthetic-paste-commands
