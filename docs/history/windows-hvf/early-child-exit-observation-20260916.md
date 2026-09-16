@@ -34,4 +34,4 @@ exit code alone is not a pass. The retained RED log explicitly reports two failu
 No scheduling delay or diagnostic print was added to repository source.
 
 Full-project validation passed in 221.405s at source 4e7adf1bc9b1a6ea5695867ba09328eaa865e8ab with 3,221 inputs stable; exact-source hosted validation remains pending.
-PR150 is consolidated with its exact-pin self-test corrected to attest v4.2.2; the retained packet55 minimal-tree experiment fails with the old pin and passes with the matching new pin. This dependency integration requires fresh full-project and hosted checks. Private diagnostic logs and prior failures remain retained.
+PR150 is consolidated with its exact-pin self-test corrected to attest v4.2.2; the retained packet55 minimal-tree experiment fails with the old pin and passes with the matching new pin. The corrected integrated full-project run passed in 220.078s with all 3,221 inputs stable; hosted checks remain pending. Private diagnostic logs and prior failures remain retained.
