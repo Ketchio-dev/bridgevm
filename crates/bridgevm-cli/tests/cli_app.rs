@@ -19,7 +19,7 @@ fn actual_help_exposes_native_commands_without_discovery() {
         assert!(help.contains("--library") && help.contains("--json"));
     }
     let help = String::from_utf8(fixture.invoke(&["app", "--help"]).stdout).unwrap();
-    assert!(help.contains("vm.json") && help.contains("Inventory runtime remains unobserved"));
+    assert!(help.contains("vm.json") && help.contains("pending request"));
     assert!(help.contains("readiness") && help.contains("  start "));
     assert!(help.contains("status") && help.contains("already-running app"));
 }

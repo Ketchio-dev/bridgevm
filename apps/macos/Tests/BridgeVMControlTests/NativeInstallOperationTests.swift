@@ -38,8 +38,8 @@ final class NativeInstallOperationTests: XCTestCase {
         value.adopt(late)
         let observed = try value.observation()
         XCTAssertEqual(observed.phase, .failed)
-        XCTAssertLessThanOrEqual(try XCTUnwrap(observed.failure).utf8.count,
-                                 NativeInstallControlCodec.maximumFailureBytes)
+        XCTAssertTrue(try XCTUnwrap(observed.failure).utf8.count <=
+            NativeInstallControlCodec.maximumFailureBytes)
         XCTAssertFalse(value.reservesWork)
     }
 
@@ -54,8 +54,8 @@ final class NativeInstallOperationTests: XCTestCase {
         XCTAssertTrue(active.sessionRunning)
         XCTAssertEqual(active.logTail.count, 8)
         XCTAssertTrue(active.logTail.last?.hasPrefix("79-") == true)
-        XCTAssertLessThanOrEqual(active.logTail.reduce(0) { $0 + $1.utf8.count },
-                                 NativeInstallControlCodec.maximumLogBytes)
+        XCTAssertTrue(active.logTail.reduce(0) { $0 + $1.utf8.count } <=
+            NativeInstallControlCodec.maximumLogBytes)
         session.finish(.done)
         XCTAssertEqual(try value.observation().phase, .done)
         XCTAssertFalse(value.reservesWork)
