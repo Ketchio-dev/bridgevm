@@ -18,17 +18,17 @@ final class HvfEngineSession: ObservableObject {
     var reservedWorkAdmission: (@MainActor (UUID, Bool) -> String?)?
     var ownedStartOperation: HvfOwnedStartOperation?
     var ownedStartExecution: HvfOwnedStartExecution?
+    var guiStartOperation: HvfGUIStartOperation?
+    var guiStartExecution: HvfGUIStartExecution?
+    var guiStartCleanupOnly = false
+    var guiStartWorker: HvfGUIStartExecution.Worker = HvfGUIStartWorker.run
     var mutationReservation: HvfRuntimeMutationReservation?
     var ownedStartNow: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     var ownedStartWorker: HvfOwnedStartExecution.Worker = HvfOwnedStartExecution.run
-    var hasPendingRuntimeMutation: Bool { mutationReservation != nil }
-    var hasPendingOwnedStart: Bool { ownedStartOperation?.reservesSession == true }
     let workAdmissionGate = HvfRuntimeWorkAdmissionGate()
     var process: Process?
     var ownedController: HvfOwnedRunController?
     var runtimeTransitionInProgress = false
-    var mayHaveOwnedWork: Bool { ownedController?.mayHaveOwnedWork == true }
-    var hasActiveRuntimeWork: Bool { runtimeTransitionInProgress || hasPendingOwnedStart || hasPendingRuntimeMutation || mayHaveOwnedWork || connectionState != .stopped }
     var timer: Timer?
     var tailReader = TailOffsetReader()
     var lastHeartbeatDate: Date?
@@ -38,8 +38,7 @@ final class HvfEngineSession: ObservableObject {
     var stopCommandSent = false
     var stopDeadline: Date?
     var attachedToExistingProcess = false
-    var hasRetainedAttachment: Bool { attachedToExistingProcess }
-    private var nextAttachedLivenessCheck = Date.distantPast
+    var nextAttachedLivenessCheck = Date.distantPast
     private var liveInputHandle: FileHandle?
     private var liveInputPath: URL?
     var liveInputWriteFailureReported = false
@@ -111,6 +110,7 @@ final class HvfEngineSession: ObservableObject {
     func stop() { _ = requestStop() }
 
     private func requestStop() -> HvfRuntimeStopOutcome {
+        guard !runtimeStartupWorkerPending else { return .notOwned }
         if let controller = ownedController {
             let existing = controller.operation != nil
             _ = requestOwnedStop(target: controller.identity, operationID: UUID())
@@ -133,27 +133,14 @@ final class HvfEngineSession: ObservableObject {
 
     @discardableResult
     func attachToRunningVM(reportRefusal: Bool = true, reportDuplicateLaunch: Bool = false) -> Bool {
-        guard !runtimeTransitionInProgress, !hasPendingOwnedStart, !hasPendingRuntimeMutation, !mayHaveOwnedWork else { return false }
+        guard !runtimeTransitionInProgress, !hasPendingRuntimeStart, !hasPendingRuntimeMutation, !mayHaveOwnedWork else { return false }
         guard workAdmissionGate.check(workAdmission, reportRefusal: reportRefusal) == nil else { return false }
         guard process?.isRunning != true else { return false }
         guard processIsRunning(config.targetDiskPath) else { return false }
         if process != nil { markStopped() }
         runtimeTransitionInProgress = true
         defer { runtimeTransitionInProgress = false }
-        timer?.invalidate()
-        timer = nil
-        process = nil
-        closeLiveInput()
-        ownedController = nil
-        attachedToExistingProcess = true
-        // The guard above just paid for a pgrep; don't repeat it on the first poll.
-        nextAttachedLivenessCheck = HvfAttachedLivenessSchedule.next(after: Date())
-        resetObservedRuntimeState(clearEvents: true)
-        connectionState = .booting
-        startPolling()
-        if reportDuplicateLaunch {
-            append(.unknown("attached to the already running HVF engine; duplicate launch prevented"))
-        }
+        adoptObservedAttachment(reportDuplicateLaunch: reportDuplicateLaunch)
         return true
     }
 
@@ -171,6 +158,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     private func appendControlCommand(_ cleaned: String) -> Bool {
+        guard !guiStartCleanupOnly else { return false }
         guard serviceStarted else {
             append(.unknown("control command refused: guest service has not started"))
             return false
@@ -201,6 +189,7 @@ final class HvfEngineSession: ObservableObject {
 
     @discardableResult
     func sendText(_ value: String) -> HvfTextInputSubmission {
+        guard !guiStartCleanupOnly else { return .refused }
         guard pendingPaste == nil else { append(.unknown("text input refused: clipboard paste pending")); return .refused }
         guard !value.isEmpty else { return .refused }
         switch inputDriver.route(.text(value), binding: inputBinding) {
@@ -273,6 +262,7 @@ final class HvfEngineSession: ObservableObject {
     #endif
 
     private func appendLiveInput(_ line: String) {
+        guard !guiStartCleanupOnly else { return }
         guard inputDriver.allowLegacyWrite(binding: inputBinding) else { return }
         let path = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("input.ctl")
         guard let data = "\(line)\n".data(using: .utf8) else { return }
@@ -323,6 +313,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func poll() {
+        if guiStartCleanupOnly { pollGUIStartCleanup(); return }
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
         let lines = tailReader.readNewLines(from: logURL)
         if let ready = pendingPaste?.consume(lines: lines, now: Date()) {
@@ -428,10 +419,12 @@ final class HvfEngineSession: ObservableObject {
         serviceStarted = false
         stopCommandSent = false
         stopDeadline = nil
+        guiStartCleanupOnly = false
         connectionState = .stopped
     }
 
     func resetObservedRuntimeState(clearEvents: Bool) {
+        if !hasPendingGUIStart { guiStartOperation = nil }
         pendingPaste = nil
         inputDriver.attachUnknown(binding: inputBinding)
         tailReader = TailOffsetReader()

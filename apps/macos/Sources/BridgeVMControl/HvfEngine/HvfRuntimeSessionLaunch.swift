@@ -3,7 +3,7 @@ import Foundation
 extension HvfEngineSession {
     @discardableResult
     func start(policy: HvfRuntimeStartPolicy = .attachOrStart) -> HvfRuntimeStartOutcome {
-        guard !runtimeTransitionInProgress, ownedStartOperation?.reservesSession != true, mutationReservation == nil else { return .refused("Runtime state transition in progress") }
+        guard !runtimeTransitionInProgress, !hasPendingRuntimeStart, mutationReservation == nil else { return .refused("Runtime state transition in progress") }
         if let refusal = workAdmissionGate.check(workAdmission, reportRefusal: true) { return .refused(refusal) }
         guard !mayHaveOwnedWork, process?.isRunning != true else {
             return .refused("The owned runtime has not confirmed complete cleanup")
@@ -36,9 +36,7 @@ extension HvfEngineSession {
             connectionState = .stopped
             return .failed(.helper, "The installed-boot wrapper is unavailable")
         }
-        tailReader = TailOffsetReader(); lastHeartbeatDate = nil; lastHeartbeatAge = nil
-        serviceStarted = false; stopCommandSent = false; stopDeadline = nil
-        events = []; liveInputWriteFailureReported = false
+        resetObservedRuntimeState(clearEvents: true)
         do {
             var deliveryFailure: String?
             if typed {

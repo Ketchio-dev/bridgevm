@@ -47,7 +47,7 @@ final class HvfRuntimePaletteTests: XCTestCase {
                 self.installCreations += 1
                 return HvfWindowsInstallSession(plan: plan, validate: { [probe = self.validator] in
                     probe.validate($0)
-                }, schedule: self.queue.enqueue)
+                }, schedule: self.queue.enqueue, recovery: .init(inspect: { _ in .fresh }))
             }, runtimeSessionFactory: { config in
                 self.runtimeCreations += 1
                 return HvfEngineSession(config: config, repoRoot: self.root,

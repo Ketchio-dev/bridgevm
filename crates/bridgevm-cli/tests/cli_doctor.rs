@@ -77,12 +77,11 @@ fn daemon_doctor_distinguishes_server_status_from_client_environment() {
                 Err(error) => panic!("fixture accept failed: {error}"),
             }
         };
-        stream
-            .set_read_timeout(Some(Duration::from_secs(2)))
-            .unwrap();
-        stream
-            .set_write_timeout(Some(Duration::from_secs(2)))
-            .unwrap();
+        // macOS accept inherits the listener's nonblocking mode.
+        stream.set_nonblocking(false).unwrap();
+        let io_timeout = Some(Duration::from_secs(2));
+        stream.set_read_timeout(io_timeout).unwrap();
+        stream.set_write_timeout(io_timeout).unwrap();
         let mut request = String::new();
         BufReader::new(stream.try_clone().unwrap())
             .read_line(&mut request)

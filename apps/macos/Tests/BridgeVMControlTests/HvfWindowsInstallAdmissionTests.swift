@@ -54,7 +54,8 @@ final class HvfWindowsInstallAdmissionTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: plan.repoRoot) }
         // If the cancellation guard regresses, the first pipeline operation
         // cannot create a source directory, so no subprocess can be reached.
-        try Data("not a directory".utf8).write(to: plan.libraryRoot, options: .withoutOverwriting)
+        try FileManager.default.createDirectory(at: plan.libraryRoot, withIntermediateDirectories: false)
+        try Data("not a directory".utf8).write(to: plan.libraryRoot.appendingPathComponent("Derived"), options: .withoutOverwriting)
         return plan
     }
 
@@ -87,7 +88,7 @@ final class HvfWindowsInstallAdmissionTests: XCTestCase {
         XCTAssertFalse(completed)
         XCTAssertEqual(try Data(contentsOf: target), Data([1, 2, 3, 4]))
         XCTAssertEqual(try Data(contentsOf: vars), Data([1, 2, 3, 4]))
-        XCTAssertEqual(try Data(contentsOf: plan.libraryRoot), Data("not a directory".utf8))
+        XCTAssertEqual(try Data(contentsOf: plan.libraryRoot.appendingPathComponent("Derived")), Data("not a directory".utf8))
         XCTAssertFalse(FileManager.default.fileExists(atPath: plan.sourceImagePath + ".lock"))
     }
 
@@ -116,5 +117,4 @@ final class HvfWindowsInstallAdmissionTests: XCTestCase {
         XCTAssertEqual(session.stage, .cancelled)
         XCTAssertFalse(session.isRunning)
     }
-
 }
