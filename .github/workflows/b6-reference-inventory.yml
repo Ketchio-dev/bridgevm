@@ -6,6 +6,6 @@ jobs:
   contract:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - shell: powershell
         run: tests/integration/b6-reference-inventory-contract.ps1; tests/integration/firstboot-readiness-diagnostic-contract.ps1; tests/integration/firstboot-policy-contract.ps1

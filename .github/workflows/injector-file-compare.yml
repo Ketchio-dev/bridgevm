@@ -10,7 +10,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Compare complete binary streams and fail closed
         env:
           CC: clang -D_CRT_SECURE_NO_WARNINGS
