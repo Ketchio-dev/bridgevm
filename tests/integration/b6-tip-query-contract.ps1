@@ -9,32 +9,7 @@ function Expect-B6Failure([scriptblock]$Action, [string]$Pattern) {
     try { & $Action | Out-Null } catch { $message = $_.Exception.Message }
     Assert-B6 ($message -and $message -match $Pattern) "Expected failure /$Pattern/, observed [$message]"
 }
-function New-B6FakeState {
-    return @{ Time = 0.0; ExitAt = 0.0; Code = 0; ForcedExit = $false; Kills = 0
-        KillFinishes = $true; KillThrows = $false; WaitThrows = $false; WaitMilliseconds = 0; Disposed = 0
-        OutBytes = [Text.Encoding]::UTF8.GetBytes('fixture-out'); MissingOut = $false; AdmissionFails = $false; MetadataFails = $false; LockOutput = $false }
-}
-function New-B6FakeFactory($State) {
-    return {
-        param($arguments, $stdout, $stderr)
-        $State.Arguments = $arguments
-        if (!$State.MissingOut) { [IO.File]::WriteAllBytes($stdout, $State.OutBytes) }
-        [IO.File]::WriteAllText($stderr, 'fixture-err', [Text.UTF8Encoding]::new($false))
-        if ($State.LockOutput) { $State.OutputLock = [IO.File]::Open($stdout, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
-        $ops = @{
-            Elapsed = { $State.Time }.GetNewClosure()
-            Observe = { @{ Exited = ($State.ForcedExit -or $State.Time -ge $State.ExitAt); Code = $State.Code } }.GetNewClosure()
-            Pause = { $State.Time += 10 }.GetNewClosure()
-            Kill = { $State.Kills++; if ($State.KillFinishes) { $State.ForcedExit = $true }; if ($State.KillThrows) { throw 'kill/exit race' } }.GetNewClosure()
-            WaitExit = { param($milliseconds) $State.WaitMilliseconds = $milliseconds; if ($State.WaitThrows) { throw 'wait fixture failure' }; $State.ForcedExit -or $State.Time -ge $State.ExitAt }.GetNewClosure()
-        }
-        $admission = $null
-        if ($State.AdmissionFails) { $admission = 'fixture admission failure' }
-        if ($State.MetadataFails) { $admission = 'owned child metadata fixture failure' }
-        return @{ Owned = !$State.AdmissionFails; AdmissionError = $admission; Owner = @{ PID = 17; Started = 'fixture' }
-            Operations = $ops; Dispose = { $State.Disposed++ }.GetNewClosure() }
-    }.GetNewClosure()
-}
+. (Join-Path $PSScriptRoot 'b6-tip-query-fixtures.ps1')
 $sandbox = Join-Path ([IO.Path]::GetTempPath()) ('b6-tip-headless-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $sandbox | Out-Null
 $runs = [Collections.Generic.List[object]]::new()
@@ -43,6 +18,26 @@ function New-TestRun([switch]$Real) {
     $runs.Add($value); return $value
 }
 try {
+    $firstState = New-B6FakeState; $firstState.ExitAt = 20; $firstState.Code = 17
+    $secondState = New-B6FakeState; $secondState.ExitAt = 30; $secondState.Code = 29
+    $firstFactory = New-B6FakeFactory $firstState; $secondFactory = New-B6FakeFactory $secondState
+    $FixtureState = @{ Disposed = 0 }; $state = @{ Exited = $true; Code = -1 }
+    $operations = @{ Elapsed = { -1 } }; $dispose = { throw 'caller disposal sentinel' }
+    $first = & $firstFactory 'first' (Join-Path $sandbox 'first.out') (Join-Path $sandbox 'first.err')
+    $second = & $secondFactory 'second' (Join-Path $sandbox 'second.out') (Join-Path $sandbox 'second.err')
+    Assert-B6 ($firstState.Arguments -eq 'first' -and $secondState.Arguments -eq 'second') 'Factories lost their original state'
+    $firstState.Code = 19; & $first.Operations.Pause
+    Assert-B6 ((& $first.Operations.Elapsed) -eq 10 -and (& $second.Operations.Elapsed) -eq 0) 'Clock mutation crossed adapters'
+    $firstObservation = & $first.Operations.Observe; $secondObservation = & $second.Operations.Observe
+    Assert-B6 (!$firstObservation.Exited -and $firstObservation.Code -eq 19 -and !$secondObservation.Exited -and $secondObservation.Code -eq 29) 'Observation lost live fixture identity'
+    & $second.Operations.Kill
+    Assert-B6 ($firstState.Kills -eq 0 -and $secondState.Kills -eq 1 -and !$firstState.ForcedExit -and $secondState.ForcedExit) 'Kill mutation crossed adapters'
+    $firstWait = & $first.Operations.WaitExit 5000; $secondWait = & $second.Operations.WaitExit 123
+    Assert-B6 (!$firstWait -and $secondWait -and $firstState.WaitMilliseconds -eq 5000 -and $secondState.WaitMilliseconds -eq 123) 'Wait mutation crossed adapters'
+    & $first.Dispose
+    Assert-B6 ($firstState.Disposed -eq 1 -and $secondState.Disposed -eq 0) 'First disposal lost fixture identity'
+    & $second.Dispose
+    Assert-B6 ($firstState.Disposed -eq 1 -and $secondState.Disposed -eq 1 -and $FixtureState.Disposed -eq 0) 'Second disposal touched another fixture or caller'
     foreach ($code in @(0,7)) {
         $run = New-TestRun; $state = New-B6FakeState; $state.Code = $code
         $result = Invoke-B6TipQuery $run 'fixture.ps1' 42 'visible-owned' -Factory (New-B6FakeFactory $state)

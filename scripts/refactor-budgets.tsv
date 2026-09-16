@@ -2652,3 +2652,4 @@ runners/hvf-runner/src/launch_spec_owned.rs	140	0
 runners/hvf-runner/src/cancellation_signals.rs	62	2
 runners/hvf-runner/tests/owned_cancellation.rs	37	0
 runners/hvf-runner/tests/owned_cancellation_fixture.py	274	0
+tests/integration/b6-tip-query-fixtures.ps1	29	0
