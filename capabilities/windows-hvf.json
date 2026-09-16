@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-16",
-  "tested_commit": "9b0b3d2e7c6ce082d78ed249d8482082ab1f4405",
+  "tested_commit": "0d1fcbf6bf373404ed1454663d26ce590d7495b1",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: source 9b0b3d2e7c6ce082d78ed249d8482082ab1f4405 retains read-only app-owned CLI status and typed-runner cancellation with disk/vars ownership through helper and swtpm teardown. CLI start/stop and the app-to-runner completion channel remain unimplemented; supervisor crash and guest flush are unproven. The latest frozen full project check passed in 219.54 seconds. Preceding source passed its 196.67-second local check but two hosted Windows workflows failed in the first fake-child disposal closure, before real process or UI queries. The fixture now binds operations directly to their original state; 73 headless PowerShell checks pass locally, while revised Windows PowerShell 5.1 validation remains pending. Earlier 87-test Rust suites, 66 PowerShell checks, independent mock-child lease checks and every failed attempt remain in the linked record; they are deterministic evidence only. PR159 is merged after all 85 exact-head workflows passed. PR160 passed at its prior head, then required a source-identical main integration whose new checks remain pending. Native UI pilot18 still has 0/7 actions and 4/8 captures with Accessibility untrusted; a live app-owned CLI query is unverified. See the [deterministic record](../history/windows-hvf/native-owned-cancellation-deterministic-20260916.md) and [earlier history](../history/windows-hvf/native-runtime-observations-through-20260916.md). No capability promotion is claimed.",
+      "measured": "OPEN: source 0d1fcbf6bf373404ed1454663d26ce590d7495b1 connects ordinary typed app launch and CLI stop to retained runner cleanup evidence. Success requires matching completion, runner exit, clean output EOF and drained guest effects; late cleanup cannot rewrite a missed operation deadline. The final frozen project check passed in 219.13 seconds, including 657 control shim tests with two explicit live-only skips. Independent actual app/runner and paired Rust/native CLI fixtures passed three cases using synthetic media and fake children. Focused runtime/runner families passed 105 tests and private socket contracts passed 17; these deterministic results do not prove guest shutdown, application flush or a release gate. Earlier full/shim failures and all reviewed corrections remain recorded. CLI start and supervisor crash recovery remain unimplemented or unproven. New-head hosted checks, revised Windows PowerShell 5.1 checks and live app/guest stop remain pending. PR159 is merged; PR160 awaits new-head hosted verification. Native UI pilot18 remains 0/7 actions and 4/8 captures with Accessibility untrusted. See the [owned stop record](../history/windows-hvf/native-owned-stop-deterministic-20260916.md) and [preceding cancellation record](../history/windows-hvf/native-owned-cancellation-deterministic-20260916.md). No capability promotion is claimed.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -184,7 +184,8 @@
         "docs/history/windows-hvf/native-library-design-deterministic-20260915.md",
         "docs/history/windows-hvf/native-app-onboarding-diagnostic-20260915.md",
         "docs/history/windows-hvf/native-runtime-observations-through-20260916.md",
-        "docs/history/windows-hvf/native-owned-cancellation-deterministic-20260916.md"
+        "docs/history/windows-hvf/native-owned-cancellation-deterministic-20260916.md",
+        "docs/history/windows-hvf/native-owned-stop-deterministic-20260916.md"
       ]
     },
     {
