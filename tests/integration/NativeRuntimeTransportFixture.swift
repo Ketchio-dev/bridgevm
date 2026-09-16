@@ -41,7 +41,7 @@ enum NativeRuntimeTransportFixture {
         let library = try NativeRuntimeLibraryHandle.open(rootURL: root, create: true)
         let owner = try NativeRuntimeOwner(library: library)
         defer { owner.close() }
-        try owner.start { request in
+        try owner.start(controlHandler: NativeRuntimeControlContracts.handler(control: control, mode: mode)) { request in
             if mode == "slow" {
                 try Data().write(to: control.appendingPathComponent("started-" + request.requestID), options: .withoutOverwriting)
                 try await Task.sleep(nanoseconds: 5_000_000_000)

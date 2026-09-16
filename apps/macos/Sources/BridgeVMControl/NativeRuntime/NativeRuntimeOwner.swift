@@ -34,7 +34,8 @@ final class NativeRuntimeOwner: @unchecked Sendable {
         } catch { Darwin.close(fd); throw error }
     }
 
-    func start(handler: @escaping NativeRuntimeServer.Handler) throws {
+    func start(controlHandler: NativeRuntimeRequestRouter.ControlHandler? = nil,
+               handler: @escaping NativeRuntimeServer.Handler) throws {
         mutex.lock(); defer { mutex.unlock() }
         guard !closed, server == nil else { throw NativeRuntimeError.ownerBusy }
         try validateLease()
@@ -42,7 +43,7 @@ final class NativeRuntimeOwner: @unchecked Sendable {
             validateOwner: { [weak self] in
                 guard let self else { throw NativeRuntimeError.ownerUnavailable }
                 try self.validateCurrentOwnership()
-            }, handler: handler)
+            }, controlHandler: controlHandler, handler: handler)
     }
 
     func validateCurrentOwnership() throws {
@@ -52,14 +53,8 @@ final class NativeRuntimeOwner: @unchecked Sendable {
     }
 
     private func validateLease() throws {
-        try library.validateCurrentIdentity()
-        try endpoint.validate()
-        var held = stat(), path = stat()
-        guard fstat(descriptor, &held) == 0, lstat(endpoint.lockPath, &path) == 0,
-              path.st_mode & S_IFMT == S_IFREG, path.st_mode & 0o777 == 0o600,
-              path.st_uid == geteuid(), path.st_nlink == 1,
-              NativeRuntimeFileIdentity(held) == lockIdentity,
-              NativeRuntimeFileIdentity(path) == lockIdentity else { throw NativeRuntimeError.invalidEndpoint }
+        try NativeRuntimeOwnerLease.validate(library: library, endpoint: endpoint,
+                                             descriptor: descriptor, identity: lockIdentity)
     }
 
     func close() {

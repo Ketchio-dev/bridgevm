@@ -104,7 +104,7 @@ fn paired_fixture_preserves_unicode_streams_exit_status_and_process_identity() {
     std::fs::write(&helper, script).unwrap();
     std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
     let library = fixture.0.join("library with 'quotes'");
-    for verb in ["inspect", "status"] {
+    for verb in ["inspect", "status", "stop"] {
         let mut child = Command::new(&cli)
             .env_clear()
             .env("PATH", &fixture.0)

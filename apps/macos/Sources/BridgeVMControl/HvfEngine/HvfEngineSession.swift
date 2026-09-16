@@ -15,7 +15,12 @@ final class HvfEngineSession: ObservableObject {
     @Published var events: [BvAgentEvent] = []
     var repoRoot: URL
     var workAdmission: LibraryWorkAdmission?
+    let workAdmissionGate = HvfRuntimeWorkAdmissionGate()
     private var process: Process?
+    private var ownedController: HvfOwnedRunController?
+    private var runtimeTransitionInProgress = false
+    var mayHaveOwnedWork: Bool { ownedController?.mayHaveOwnedWork == true }
+    var hasActiveRuntimeWork: Bool { runtimeTransitionInProgress || mayHaveOwnedWork || connectionState != .stopped }
     private var timer: Timer?
     private var tailReader = TailOffsetReader()
     private var lastHeartbeatDate: Date?
@@ -62,123 +67,102 @@ final class HvfEngineSession: ObservableObject {
 
     deinit {
         timer?.invalidate()
-        process?.terminate()
+        if ownedController == nil { process?.terminate() }
         try? liveInputHandle?.close()
     }
 
     @discardableResult
     func start(policy: HvfRuntimeStartPolicy = .attachOrStart) -> HvfRuntimeStartOutcome {
-        if let refusal = workAdmission?(true) { return .refused(refusal) }
-        guard process?.isRunning != true else {
-            append(.unknown("launch ignored: HVF engine is already running"))
-            return .refused("The owned runtime is still running")
+        guard !runtimeTransitionInProgress else { return .refused("Runtime state transition in progress") }
+        if let refusal = workAdmissionGate.check(workAdmission, reportRefusal: true) { return .refused(refusal) }
+        guard !mayHaveOwnedWork, process?.isRunning != true else {
+            return .refused("The owned runtime has not confirmed complete cleanup")
         }
         if process != nil { markStopped() }
         if policy == .requireNew, attachedToExistingProcess || processIsRunning(config.targetDiskPath) {
             return .refused("An existing runtime cannot be adopted by a require-new launch")
         }
-        if policy == .attachOrStart, attachToRunningVM() {
-            append(.unknown("attached to the already running HVF engine; duplicate launch prevented"))
-            return .observedAttachment
-        }
-        let readiness = config.readiness(repoRoot: repoRoot)
-        guard readiness.launchReady else {
-            for blocker in readiness.launchBlockers {
-                append(.unknown("launch readiness blocked [\(blocker.code)]: \(blocker.summary)"))
-            }
+        if policy == .attachOrStart, attachToRunningVM(reportDuplicateLaunch: true) { return .observedAttachment }
+        runtimeTransitionInProgress = true
+        defer { runtimeTransitionInProgress = false }
+        let frozen = config
+        if let failure = HvfRuntimeLaunchReadiness.failure(config: frozen, repoRoot: repoRoot,
+            diagnostic: { append(.unknown($0)) }) {
             connectionState = .stopped
-            return .failed(.readiness, readiness.launchBlockers.map(\.code).joined(separator: ","))
+            return failure
         }
-        timer?.invalidate()
-        timer = nil
-        process = nil
+        timer?.invalidate(); timer = nil; process = nil; ownedController = nil
         closeLiveInput()
-        do {
-            try HvfRuntimePreparation.prepare(config: config)
-        } catch {
-            append(.unknown("launch failed: unable to prepare HVF runtime files: \(error.localizedDescription)"))
+        let manifest: Data
+        do { manifest = try HvfRuntimePreparation.prepare(config: frozen) }
+        catch {
             connectionState = .stopped
             return .failed(.preparation, error.localizedDescription)
         }
-        // R1 product path: the typed runtime (hvf-runner --launch-spec)
-        // whenever the packaged runner exists. The wrapper remains the
-        // evidence-harness fallback so a source checkout without a release
-        // runner build keeps working.
         let runner = repoRoot.appendingPathComponent("target/release/hvf-runner")
-        let useTypedRuntime = FileManager.default.isExecutableFile(atPath: runner.path)
-        let wrapper = repoRoot.appendingPathComponent("scripts/run-hvf-windows-installed-boot.sh")
-        if !useTypedRuntime {
-            guard FileManager.default.isExecutableFile(atPath: wrapper.path) else {
-                append(.unknown("launch failed: installed-boot wrapper not found at \(wrapper.path)"))
-                connectionState = .stopped
-                return .failed(.helper, "The installed-boot wrapper is unavailable")
-            }
-        }
-        tailReader = TailOffsetReader()
-        lastHeartbeatDate = nil
-        lastHeartbeatAge = nil
-        serviceStarted = false
-        stopCommandSent = false
-        stopDeadline = nil
-        events = []
-        liveInputWriteFailureReported = false
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        if useTypedRuntime {
-            let firmware = repoRoot.appendingPathComponent("firmware/edk2-aarch64-secure-code.fd")
-            let fallbackFirmware = repoRoot.appendingPathComponent("crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd")
-            let firmwarePath = FileManager.default.fileExists(atPath: firmware.path)
-                ? firmware.path : fallbackFirmware.path
-            proc.arguments = config.runnerArguments(
-                manifestPath: config.evidenceDir + "/launch-manifest.json",
-                runnerPath: runner.path,
-                firmwareCodePath: firmwarePath,
-                probePath: repoRoot.appendingPathComponent("target/release/examples/hvf_gic_boot_probe").path)
-            append(.unknown("launching through the typed runtime (hvf-runner --launch-spec)"))
-        } else {
-            proc.arguments = config.wrapperArguments()
-        }
-        proc.currentDirectoryURL = repoRoot
-        proc.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("BRIDGEVM_") }
-        let vtpmKeyInput: VTPMProcessKeyInput?
-        do {
-            vtpmKeyInput = try VTPMStateSecurity.processInput(
-                for: config,
-                provider: vtpmKeyProvider
-            )
-            vtpmKeyInput?.attach(to: proc)
-        } catch {
-            append(.unknown("launch failed: unable to unlock encrypted vTPM state: \(error.localizedDescription)"))
+        let typed = FileManager.default.isExecutableFile(atPath: runner.path)
+        guard typed || FileManager.default.isExecutableFile(atPath:
+            repoRoot.appendingPathComponent("scripts/run-hvf-windows-installed-boot.sh").path) else {
             connectionState = .stopped
-            return .failed(.keyAccess, error.localizedDescription)
+            return .failed(.helper, "The installed-boot wrapper is unavailable")
         }
-        process = proc
-        attachedToExistingProcess = false
-        connectionState = .booting
+        tailReader = TailOffsetReader(); lastHeartbeatDate = nil; lastHeartbeatAge = nil
+        serviceStarted = false; stopCommandSent = false; stopDeadline = nil
+        events = []; liveInputWriteFailureReported = false
         do {
-            try processLaunch(proc)
-            let identity = HvfOwnedRuntimeIdentity(token: UUID(), processID: proc.processIdentifier)
-            ownedProcessIdentity = identity
-            lastOwnedExit = nil
-            do {
-                try vtpmKeyInput?.deliverAfterLaunch()
-            } catch {
-                proc.terminate()
-                append(.unknown("launch failed: unable to deliver the vTPM state key: \(error.localizedDescription)"))
-                connectionState = .stopping
-                startPolling()
-                return .failed(.keyDelivery, error.localizedDescription)
+            var deliveryFailure: String?
+            if typed {
+                let launched = try HvfOwnedRuntimeLaunch.start(config: frozen, repoRoot: repoRoot,
+                    runner: runner, manifest: manifest, keyProvider: vtpmKeyProvider, launch: processLaunch)
+                let controller = launched.controller
+                ownedController = controller; process = controller.process
+                ownedProcessIdentity = controller.identity
+                let token = controller.identity.token
+                controller.onChange = { [weak self] in self?.ownedRuntimeChanged(token: token) }
+                controller.onDiagnostic = { [weak self] message in
+                    guard self?.ownedController?.identity.token == token else { return }
+                    self?.append(.unknown(message))
+                }
+                controller.activate(helloFrame: launched.helloFrame)
+            } else {
+                let launched = try HvfRuntimeLegacyLaunch.start(config: frozen, repoRoot: repoRoot,
+                    keyProvider: vtpmKeyProvider, launch: processLaunch)
+                process = launched.process; deliveryFailure = launched.keyDeliveryFailure
+                ownedProcessIdentity = HvfOwnedRuntimeIdentity(token: UUID(), processID: launched.process.processIdentifier)
             }
-            beginOwnedInputBoot()
-            startPolling()
+            lastOwnedExit = nil; attachedToExistingProcess = false
+            connectionState = deliveryFailure == nil ? .booting : .stopping
+            guard let identity = ownedProcessIdentity else { return .failed(.processLaunch, "Missing retained runtime") }
+            beginOwnedInputBoot(); startPolling()
+            if let deliveryFailure { return .failed(.keyDelivery, deliveryFailure) }
             return .ownedLaunchAccepted(identity)
         } catch {
-            vtpmKeyInput?.discard()
+            connectionState = .stopped; process = nil
             append(.unknown("launch failed: \(error.localizedDescription)"))
-            connectionState = .stopped
-            process = nil
+            if let failure = error as? HvfRuntimeLaunchFailure { return .failed(failure.stage, failure.detail) }
             return .failed(.processLaunch, error.localizedDescription)
         }
+    }
+
+    func requestOwnedStop(target: HvfOwnedRuntimeIdentity, operationID: UUID) -> HvfOwnedStopAdmission {
+        guard let ownedController else { return .refused(.supervisionUnavailable) }
+        let result = ownedController.requestStop(target: target, operationID: operationID)
+        if case .refused = result { return result }
+        cancelOrderedInputTarget()
+        ownedRuntimeChanged(token: ownedController.identity.token)
+        return result
+    }
+
+    func ownedStopObservation(target: HvfOwnedRuntimeIdentity, operationID: UUID) -> HvfOwnedStopObservation? {
+        ownedController?.observation(target: target, operationID: operationID)
+    }
+
+    private func ownedRuntimeChanged(token: UUID) {
+        guard let controller = ownedController, controller.identity.token == token else { return }
+        lastOwnedExit = controller.runnerExit
+        if controller.teardownConfirmed { markStopped() }
+        else if controller.failure != nil { connectionState = .timedOut }
+        else if controller.operation != nil { connectionState = .stopping }
     }
 
     @discardableResult
@@ -191,6 +175,11 @@ final class HvfEngineSession: ObservableObject {
     func stop() { _ = requestStop() }
 
     private func requestStop() -> HvfRuntimeStopOutcome {
+        if let controller = ownedController {
+            let existing = controller.operation != nil
+            _ = requestOwnedStop(target: controller.identity, operationID: UUID())
+            return existing ? .alreadyStopping(deadline: nil) : .requested(deadline: nil)
+        }
         if connectionState == .stopping { return .alreadyStopping(deadline: stopDeadline) }
         let ownsRunningProcess = process?.isRunning == true
         let attachedProcessIsRunning = attachedToExistingProcess && processIsRunning(config.targetDiskPath)
@@ -207,21 +196,28 @@ final class HvfEngineSession: ObservableObject {
     }
 
     @discardableResult
-    func attachToRunningVM(reportRefusal: Bool = true) -> Bool {
-        guard workAdmission?(reportRefusal) == nil else { return false }
+    func attachToRunningVM(reportRefusal: Bool = true, reportDuplicateLaunch: Bool = false) -> Bool {
+        guard !runtimeTransitionInProgress, !mayHaveOwnedWork else { return false }
+        guard workAdmissionGate.check(workAdmission, reportRefusal: reportRefusal) == nil else { return false }
         guard process?.isRunning != true else { return false }
         guard processIsRunning(config.targetDiskPath) else { return false }
         if process != nil { markStopped() }
+        runtimeTransitionInProgress = true
+        defer { runtimeTransitionInProgress = false }
         timer?.invalidate()
         timer = nil
         process = nil
         closeLiveInput()
+        ownedController = nil
         attachedToExistingProcess = true
         // The guard above just paid for a pgrep; don't repeat it on the first poll.
         nextAttachedLivenessCheck = HvfAttachedLivenessSchedule.next(after: Date())
         resetObservedRuntimeState(clearEvents: true)
         connectionState = .booting
         startPolling()
+        if reportDuplicateLaunch {
+            append(.unknown("attached to the already running HVF engine; duplicate launch prevented"))
+        }
         return true
     }
 
@@ -406,9 +402,11 @@ final class HvfEngineSession: ObservableObject {
         if let lastHeartbeatDate {
             lastHeartbeatAge = Date().timeIntervalSince(lastHeartbeatDate)
         }
-        if let process, !process.isRunning {
-            markStopped()
-            return
+        if let controller = ownedController {
+            controller.tick()
+            if controller.teardownConfirmed { return }
+        } else if let process, !process.isRunning {
+            markStopped(); return
         }
         if attachedToExistingProcess,
            HvfAttachedLivenessSchedule.isDue(now: Date(), next: nextAttachedLivenessCheck) {
@@ -425,7 +423,7 @@ final class HvfEngineSession: ObservableObject {
                   !command.contains("\r"), !command.contains("\0") else { return false }
             return appendControlCommand(command)
         }
-        if case .stopping = connectionState {
+        if ownedController == nil, case .stopping = connectionState {
             sendGracefulStopIfReady()
             if let stopDeadline, Date() >= stopDeadline {
                 append(.unknown("graceful shutdown timed out; terminating the wrapper"))
@@ -443,12 +441,13 @@ final class HvfEngineSession: ObservableObject {
         append(event)
         switch event {
         case let .ready(host, _):
-            if connectionState != .stopping {
+            if connectionState != .stopping, ownedController?.failure == nil {
                 connectionState = .connected(host: host)
             }
         case .serviceStart:
             serviceStarted = true
-            sendGracefulStopIfReady()
+            if let ownedController { ownedController.guestServiceReady() }
+            else { sendGracefulStopIfReady() }
         case .aliveHeartbeat:
             lastHeartbeatDate = Date()
             lastHeartbeatAge = 0
@@ -474,6 +473,9 @@ final class HvfEngineSession: ObservableObject {
     }
 
     private func markStopped() {
+        guard !runtimeTransitionInProgress, !mayHaveOwnedWork else { return }
+        runtimeTransitionInProgress = true
+        defer { runtimeTransitionInProgress = false }
         if let process, let identity = ownedProcessIdentity, !process.isRunning {
             lastOwnedExit = HvfOwnedRuntimeExit(identity: identity, process: process)
         }
@@ -485,12 +487,12 @@ final class HvfEngineSession: ObservableObject {
         process = nil
         closeLiveInput()
         attachedToExistingProcess = false
-        connectionState = .stopped
         lastHeartbeatDate = nil
         lastHeartbeatAge = nil
         serviceStarted = false
         stopCommandSent = false
         stopDeadline = nil
+        connectionState = .stopped
     }
 
     private func resetObservedRuntimeState(clearEvents: Bool) {
@@ -525,6 +527,3 @@ final class HvfEngineSession: ObservableObject {
     func cancelOrderedInputTarget() { inputDriver.cancelTarget() }
 
 }
-
-#if canImport(AppKit)
-#endif

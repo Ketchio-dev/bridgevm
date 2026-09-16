@@ -13,10 +13,12 @@ import time
 import unittest
 import uuid
 from native_runtime_alias_cases import NativeRuntimeAliasCases
+from native_runtime_control_cases import NativeRuntimeControlCases
+from native_runtime_transport_build import build_transport_fixture
 ROOT = Path(__file__).resolve().parents[2]
 
 
-class Contracts(NativeRuntimeAliasCases, unittest.TestCase):
+class Contracts(NativeRuntimeAliasCases, NativeRuntimeControlCases, unittest.TestCase):
     executable = None
     output = None
 
@@ -186,21 +188,9 @@ def main():
     if not output.is_absolute() or output.exists() or output.resolve() != output:
         parser.error("output must be a new absolute canonical directory")
     output.mkdir(mode=0o700)
-    names = ["Protocol", "SessionObservation", "SessionValidation", "Codec", "LibraryIdentity",
-             "Endpoint", "Owner", "Transport", "TransportConnection", "Server", "Client"]
-    sources = [ROOT / "apps/macos/Sources/BridgeVMControl/NativeRuntime" / f"NativeRuntime{name}.swift"
-               for name in names]
-    sources += [ROOT / "tests/integration" / name for name in ["NativeRuntimeTransportFixture.swift",
-        "NativeRuntimeTransportPureContracts.swift", "NativeRuntimeTransportOwnershipContracts.swift",
-        "native-runtime-transport-fixture.swift"]]
-    executable = output / "transport-fixture"
-    with (output / "compile.log").open("xb") as log:
-        built = subprocess.run(["xcrun", "swiftc", "-parse-as-library", "-swift-version", "5",
-            "-module-cache-path", str(output / "module-cache"), *map(str, sources), "-o", str(executable)],
-            stdout=log, stderr=subprocess.STDOUT, timeout=90)
-    if built.returncode:
-        print((output / "compile.log").read_text())
-        return built.returncode
+    executable, status = build_transport_fixture(ROOT, output)
+    if status:
+        return status
     Contracts.executable, Contracts.output = executable, output
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(Contracts)
     return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1

@@ -1,11 +1,10 @@
 # Native app CLI
 
-`bridgevm app` reads native `vm.json` registrations and queries runtime observations
-retained by the already-running macOS app.
-It does not open an app window, start or stop a VM, repair registrations, or
+`bridgevm app` reads native `vm.json` registrations, queries runtime observations,
+and requests [supervised VM stop](app-cli-stop.md) through the already-running macOS app.
+It does not open an app window, start a VM, repair registrations, or
 change saved resources. Inventory commands report runtime state as `unobserved`;
-saved CPU and memory values are not utilization measurements. `status` does not
-automatically launch the app.
+saved CPU and memory values are not utilization measurements.
 
 ```sh
 bridgevm app list
@@ -13,12 +12,13 @@ bridgevm app list --json
 bridgevm app inspect 개발-vm --json
 bridgevm app readiness 개발-vm --json
 bridgevm app status 개발-vm --json
+bridgevm app stop 개발-vm --json
 bridgevm app list --library "/absolute/path/to/native-library"
 ```
 
 Use the exact ID returned by `list`, including Korean IDs. `--library` accepts an
 absolute path without `..`; omitting it uses the native app's default library.
-`status` also accepts the exact ID of a removed registration whose session the
+`status` and `stop` also accept the exact ID of a removed registration whose session the
 running app still retains.
 `--json` and `--library` can follow the command or appear before it within the
 `app` namespace. `bridgevm app --help` and each subcommand's `--help` work without
@@ -102,17 +102,17 @@ exit does not prove guest shutdown, guest health, or descendant cleanup.
 `not-observed` does not mean the VM is globally stopped. Likewise, a connected
 session is not a guest-health result.
 
-The status endpoint belongs to the same macOS account and the selected native
+The runtime endpoint belongs to the same macOS account and the selected native
 library. It uses a fixed private namespace; there is no release socket or
 environment override. When the native command runs, an unavailable owner produces
 structured runtime-unobserved output with exit 1. It does not create a library or
 launch an app to obtain a response.
 
-| Exit | Inventory (`list` / `inspect`) | `readiness` | `status` |
-| --- | --- | --- | --- |
-| 0 | Complete query | Launch prerequisites ready | Complete owner observation, including `not-observed` |
-| 1 | Unavailable or incomplete inventory; discovery/exec failure | Blocked, unavailable configuration, or unsupported backend | Owner query unavailable; discovery/exec failure |
-| 2 | Invalid command, option, path or ID | Invalid usage | Invalid usage |
+| Exit | Inventory (`list` / `inspect`) | `readiness` | `status` | `stop` |
+| --- | --- | --- | --- | --- |
+| 0 | Complete query | Launch prerequisites ready | Complete owner observation, including `not-observed` | Owned cleanup and retained runner exit confirmed |
+| 1 | Unavailable or incomplete inventory; discovery/exec failure | Blocked, unavailable configuration, or unsupported backend | Owner query unavailable; discovery/exec failure | Unavailable, unsupported, refused, timed out, or unconfirmed cleanup |
+| 2 | Invalid command, option, path or ID | Invalid usage | Invalid usage | Invalid usage |
 
 An existing but empty library returns an empty complete inventory. A missing
 library also returns an empty `list` result without creating a directory;

@@ -268,15 +268,9 @@ enum VTPMStateSecurity {
         provider: VTPMStateKeyProviding,
         fileManager: FileManager = .default
     ) throws -> VTPMProcessKeyInput? {
-        guard let stateDir = config.vtpmStateDir else { return nil }
-        guard let keyID = config.vtpmKeyID else {
-            throw VTPMStateSecurityError.invalidVMIdentifier
+        try VTPMRuntimeKey.withKey(for: config, provider: provider, fileManager: fileManager) { key in
+            try key.map { try VTPMProcessKeyInput(key: $0) }
         }
-        let existingState = try stateDirectoryContainsData(at: stateDir, fileManager: fileManager)
-        return try VTPMProcessKeyInput(key: provider.stateKey(
-            for: keyID,
-            allowCreation: !existingState
-        ))
     }
 
     static func defaultSwtpmCommand(

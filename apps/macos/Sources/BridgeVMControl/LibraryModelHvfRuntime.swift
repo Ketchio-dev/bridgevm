@@ -11,7 +11,7 @@ final class HvfRuntimeSessionStore {
     func existingRecord(slug: String) -> HvfRuntimeSessionRecord? { entries[.libraryVM(slug)] }
     func isActive(slug: String) -> Bool {
         guard let entry = entries[.libraryVM(slug)] else { return false }
-        return entry.session.connectionState != .stopped
+        return entry.session.hasActiveRuntimeWork
     }
 
     func experimentalSession() -> HvfEngineSession {
@@ -23,7 +23,7 @@ final class HvfRuntimeSessionStore {
 
     func session(for config: VMConfig, libraryRoot: URL) -> HvfEngineSession? {
         let key = Key.libraryVM(config.slug)
-        if let entry = entries[key], entry.session.connectionState != .stopped { return entry.session }
+        if let entry = entries[key], entry.session.hasActiveRuntimeWork { return entry.session }
         guard let launch = HvfEngineConfig.libraryVM(config, rootURL: libraryRoot) else { return nil }
         // Compare the saved input, not the session's accepted launch options.
         if let entry = entries[key], entry.sourceConfig == config { return entry.session }
@@ -48,7 +48,7 @@ final class HvfRuntimeSessionStore {
         entries = entries.filter { key, entry in
             if case .experimental = key { return true }
             guard case let .libraryVM(slug) = key else { return false }
-            return entry.session.connectionState != .stopped || runtimeSlugs.contains(slug)
+            return entry.session.hasActiveRuntimeWork || runtimeSlugs.contains(slug)
         }
     }
 }

@@ -261,45 +261,8 @@ pub(crate) struct Args {
     pub(crate) wire_interrupt_timer: bool,
     #[arg(long)]
     pub(crate) launch: bool,
-    /// Path to a versioned typed launch manifest, or `-` for stdin. Validated
-    /// by bridgevm-hvf-runtime before anything runs; in a release build the
-    /// manifest may not point into a source repository.
-    #[arg(long, value_name = "PATH|-")]
-    pub(crate) launch_spec: Option<String>,
-    /// Helper binary for --launch-spec. When present the manifest is not
-    /// just validated and leased but RUN: helper generations under the
-    /// reset-cycle supervisor, env_clear allowlist, no shell.
-    #[arg(long, value_name = "PATH", requires = "launch_spec")]
-    pub(crate) helper: Option<PathBuf>,
-    /// Firmware code image for --launch-spec --helper.
-    #[arg(long, value_name = "PATH", requires = "helper")]
-    pub(crate) helper_firmware: Option<PathBuf>,
-    /// Agent console control file for --launch-spec --helper: the guest
-    /// runs the resident agent service and the supervisor appends commands
-    /// here (this is how a guest reset is requested through the typed path).
-    #[arg(long, value_name = "PATH", requires = "helper")]
-    pub(crate) helper_agent_control: Option<PathBuf>,
-    /// Evidence directory for --launch-spec --helper: enables the app-facing
-    /// device surfaces (ramfb, display export, xHCI input, GPU trace) with
-    /// the same env contract as the wrapper script.
-    #[arg(long, value_name = "DIR", requires = "helper")]
-    pub(crate) helper_evidence_dir: Option<PathBuf>,
-    /// vTPM state directory for --launch-spec --helper: the supervisor runs
-    /// one swtpm across every helper generation (state survives resets).
-    #[arg(long, value_name = "DIR", requires = "helper")]
-    pub(crate) helper_vtpm_state: Option<PathBuf>,
-    /// Read the vTPM state key (raw AES-256 bytes) from stdin before the
-    /// first generation. The key goes to swtpm over its fd 0 and nowhere
-    /// else -- matching the wrapper's --swtpm-key-stdin contract.
-    #[arg(long, requires = "helper_vtpm_state")]
-    pub(crate) helper_vtpm_key_stdin: bool,
-    /// Intel HDA audio through CoreAudio for --launch-spec --helper.
-    #[arg(long, requires = "helper")]
-    pub(crate) helper_hda: bool,
-    /// swtpm binary for --helper-vtpm-state (the app passes its
-    /// signature-validated choice; default is the homebrew install).
-    #[arg(long, value_name = "PATH", requires = "helper_vtpm_state")]
-    pub(crate) helper_swtpm_bin: Option<PathBuf>,
+    #[command(flatten)]
+    pub(crate) typed: crate::launch_spec::LaunchSpecArgs,
     /// Run CMD (argv, no shell) under the reset-cycle supervisor: exit 42
     /// means the guest requested SYSTEM_RESET and a fresh process follows
     /// after the flush receipt; any other success ends the loop.
@@ -316,7 +279,7 @@ pub(crate) struct Args {
 pub(crate) fn run() -> Result<()> {
     let args = Args::parse();
 
-    if let Some(spec) = &args.launch_spec {
+    if let Some(spec) = &args.typed.launch_spec {
         return crate::launch_spec::run_launch_spec(spec, &args);
     }
 

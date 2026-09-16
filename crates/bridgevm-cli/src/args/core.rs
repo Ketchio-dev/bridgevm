@@ -7,7 +7,7 @@ use crate::*;
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
-    /// Query the native macOS app library without opening its UI or starting a VM.
+    /// Query the native macOS app library or stop an app-owned runtime.
     App(AppArgs),
     /// List VM bundles in the legacy store.
     List,

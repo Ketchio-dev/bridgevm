@@ -109,7 +109,7 @@ fn helper_mode_runs_generations_and_reports_them() {
         ),
     );
     let mut args = spec_args();
-    args.helper = Some(script.clone());
+    args.typed.helper = Some(script.clone());
     args.supervise_receipt = Some(receipt.to_string_lossy().into_owned());
     run_launch_spec(&path, &args).expect("helper mode runs");
     // The receipt proves the generation-0 reset's flush.

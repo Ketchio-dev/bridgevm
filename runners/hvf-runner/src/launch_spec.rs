@@ -6,28 +6,29 @@
 //! script; here nothing is executed through a shell and release builds
 //! refuse manifests that point into a source repository.
 
-use anyhow::{bail, Context, Result};
-use bridgevm_hvf_runtime::{
-    prepare, run_vm, start_swtpm, DeviceSurfaces, GpuSurface, HelperLaunch, LaunchManifest,
-    ShareSurface, VtpmConfig,
-};
-use std::io::Read;
+use anyhow::{bail, Result};
+use bridgevm_hvf_runtime::{prepare, LaunchManifest};
 use std::path::Path;
 
 /// Release builds enforce product policy; debug builds are evidence
 /// harnesses and may run from a repository checkout.
 const PRODUCT_POLICY: bool = !cfg!(debug_assertions);
 
+#[path = "launch_spec_args.rs"]
+mod options;
+#[path = "launch_spec_owned.rs"]
+mod owned;
+pub(crate) use options::LaunchSpecArgs;
+#[path = "launch_spec_manifest.rs"]
+mod manifest_input;
+#[path = "owned_protocol_run.rs"]
+mod protocol;
+
 pub(crate) fn run_launch_spec(spec: &str, args: &crate::Args) -> Result<()> {
-    let text = if spec == "-" {
-        let mut text = String::new();
-        std::io::stdin()
-            .read_to_string(&mut text)
-            .context("read launch manifest from stdin")?;
-        text
-    } else {
-        std::fs::read_to_string(spec).with_context(|| format!("read launch manifest {spec}"))?
-    };
+    if args.typed.owned_runtime_stdio {
+        return protocol::run(spec, args);
+    }
+    let text = manifest_input::read_text(spec)?;
     let manifest = match LaunchManifest::parse(&text, PRODUCT_POLICY) {
         Ok(manifest) => manifest,
         Err(error) => bail!("launch manifest rejected: {error}"),
@@ -39,102 +40,8 @@ pub(crate) fn run_launch_spec(spec: &str, args: &crate::Args) -> Result<()> {
         manifest.ram_mib(),
         manifest.vcpus()
     );
-    if let Some(helper) = &args.helper {
-        // The full composed lifecycle: leases, helper generations under the
-        // reset-cycle supervisor, flush + receipt between generations.
-        let mut launch = HelperLaunch {
-            helper: helper.clone(),
-            firmware_code: args
-                .helper_firmware
-                .clone()
-                .unwrap_or_else(default_firmware_code),
-            watchdog_ms: args.watchdog_ms,
-            agent_control: args.helper_agent_control.clone(),
-            surfaces: args.helper_evidence_dir.as_ref().map(|dir| DeviceSurfaces {
-                evidence_dir: dir.clone(),
-                display_export_ms: 100,
-                input_control: Some(dir.join("input.ctl")),
-                virtio_gpu_3d: args.virtio_gpu_3d.then(|| GpuSurface {
-                    virgl: args.gpu_trace_protocol.as_deref() == Some("virgl"),
-                    device_id: args.virtio_gpu_device_id.clone(),
-                }),
-                aggressive_performance: args.virtio_gpu_3d,
-                nvme_buffered_io: args.nvme_buffered_io,
-                clipboard_sync: args.agent_clipboard_sync,
-                share: args
-                    .agent_share_host
-                    .as_ref()
-                    .zip(args.agent_share_guest.as_ref())
-                    .map(|(host, guest)| ShareSurface {
-                        host_dir: host.clone(),
-                        guest_dir: guest.clone(),
-                        interval_ms: args.agent_share_ms.unwrap_or(2000),
-                        max_kb: args.agent_share_max_kb.unwrap_or(65536),
-                    }),
-                virtio_net: args.virtio_net,
-                hda_audio: args.helper_hda,
-            }),
-            swtpm_sockets: None,
-        };
-        let _swtpm = match &args.helper_vtpm_state {
-            Some(state_dir) => {
-                let state_key = if args.helper_vtpm_key_stdin {
-                    let mut key = Vec::new();
-                    std::io::stdin()
-                        .read_to_end(&mut key)
-                        .context("read vTPM state key from stdin")?;
-                    if key.len() != 32 {
-                        bail!(
-                            "vTPM state key must be exactly 32 bytes (got {})",
-                            key.len()
-                        );
-                    }
-                    Some(key)
-                } else {
-                    None
-                };
-                let process = start_swtpm(&VtpmConfig {
-                    state_dir: state_dir.clone(),
-                    swtpm_bin: args
-                        .helper_swtpm_bin
-                        .clone()
-                        .unwrap_or_else(|| "/opt/homebrew/bin/swtpm".into()),
-                    state_key,
-                })
-                .map_err(|error| anyhow::anyhow!("vTPM start failed: {error}"))?;
-                launch.swtpm_sockets = Some((
-                    process.data_socket().to_path_buf(),
-                    process.control_socket().to_path_buf(),
-                ));
-                println!("vtpm: swtpm serving {}", process.data_socket().display());
-                Some(process)
-            }
-            None => None,
-        };
-        if let Some(surfaces) = &launch.surfaces {
-            std::fs::create_dir_all(surfaces.evidence_dir.join("ramfb"))
-                .context("create evidence dir")?;
-        }
-        let receipt = args
-            .supervise_receipt
-            .clone()
-            .unwrap_or_else(default_receipt_path);
-        let cycles = run_vm(
-            manifest,
-            &launch,
-            Path::new(&receipt),
-            args.supervise_max_cycles,
-            "hvf-runner --launch-spec",
-        )
-        .map_err(|error| anyhow::anyhow!("vm run failed: {error}"))?;
-        for cycle in &cycles {
-            println!(
-                "vm cycle: generation={} helper_pid={}",
-                cycle.generation, cycle.pid
-            );
-        }
-        println!("vm run complete: {} generation(s)", cycles.len());
-        return Ok(());
+    if let Some(helper) = &args.typed.helper {
+        return owned::run(manifest, args, helper);
     }
     // Validation-only mode: take the exclusive writer leases now, before any
     // VM could exist: a second writer must fail here, not corrupt the guest

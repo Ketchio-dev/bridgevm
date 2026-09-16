@@ -3,7 +3,7 @@ import Foundation
 enum HvfRuntimeStartPolicy: Equatable { case attachOrStart, requireNew }
 
 /// A correlation token for an actual Process retained by this session, not a credential.
-struct HvfOwnedRuntimeIdentity: Equatable {
+struct HvfOwnedRuntimeIdentity: Equatable, Sendable {
     let token: UUID
     let processID: Int32
 }
@@ -25,8 +25,8 @@ enum HvfRuntimeStopOutcome: Equatable {
 }
 
 /// Observed exit of the retained child; this does not establish a guest shutdown result.
-struct HvfOwnedRuntimeExit: Equatable {
-    enum Reason: Equatable { case exit, uncaughtSignal, unknown }
+struct HvfOwnedRuntimeExit: Equatable, Sendable {
+    enum Reason: Equatable, Sendable { case exit, uncaughtSignal, unknown }
     let identity: HvfOwnedRuntimeIdentity
     let reason: Reason
     let status: Int32

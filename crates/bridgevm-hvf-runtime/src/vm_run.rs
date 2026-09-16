@@ -9,9 +9,9 @@
 //! clean exit ends the run; a crash refuses restart by construction.
 
 use crate::manifest::LaunchManifest;
-use crate::reset_cycles::{supervise_reset_cycles, HelperExit, ResetCycle};
+use crate::reset_cycles::ResetCycle;
 use crate::vm_builder::prepare;
-use crate::vm_process::{spawn_helper, HelperLaunch};
+use crate::vm_process::HelperLaunch;
 use crate::RuntimeError;
 use std::path::Path;
 
@@ -29,39 +29,14 @@ pub fn run_vm(
     holder: &str,
 ) -> Result<Vec<ResetCycle>, RuntimeError> {
     let prepared = prepare(manifest, holder)?;
-    let disk = prepared.manifest().disk().to_string();
-    let vars = prepared.manifest().uefi_vars().to_string();
-    let cycles = supervise_reset_cycles(
-        |generation| {
-            let mut child =
-                spawn_helper(prepared.manifest(), launch, generation).map_err(|source| {
-                    RuntimeError::Io {
-                        context: "spawn VM helper",
-                        source,
-                    }
-                })?;
-            let pid = child.id();
-            let status = child.wait().map_err(|source| RuntimeError::Io {
-                context: "wait for VM helper",
-                source,
-            })?;
-            let reset_requested = status.code() == Some(RESET_EXIT_CODE);
-            if !reset_requested && !status.success() {
-                return Err(RuntimeError::Io {
-                    context: "VM helper failed",
-                    source: std::io::Error::other(format!("exit status {status}")),
-                });
-            }
-            Ok(HelperExit {
-                pid,
-                reset_requested,
-            })
-        },
-        &[Path::new(&disk), Path::new(&vars)],
+    Ok(crate::run_prepared_vm(
+        &prepared,
+        launch,
         receipt,
         max_cycles,
-    )?;
-    Ok(cycles)
+        &crate::RuntimeControl::default(),
+    )?
+    .cycles)
 }
 
 #[cfg(test)]
