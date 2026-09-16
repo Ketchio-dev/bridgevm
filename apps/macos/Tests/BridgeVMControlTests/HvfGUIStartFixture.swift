@@ -157,8 +157,8 @@ final class HvfGUIStartFixture {
     var childrenExited: Bool { childrenObserved && witnesses.values.allSatisfy { $0.observe() } }
     private var confirmedChildrenExited: Bool {
         guard let complete = session.ownedController?.ledger.complete else { return false }
-        let expected = [("helper", complete.helper.spawnedCount), ("swtpm", complete.swtpm.spawnedCount)]
-        return expected.allSatisfy { role, count in count == 0 || witnesses[role]?.observe() == true }
+        let expected = [("helper", complete.helper), ("swtpm", complete.swtpm)]
+        return expected.allSatisfy { role, summary in HvfOwnedRunnerReapedEvidence.confirmed(summary, role: role, witness: witnesses[role]) }
     }
     func observeRuntime() {
         if session.guiStartOperation?.invalidationReason != nil {

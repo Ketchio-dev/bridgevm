@@ -2861,3 +2861,6 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallRecoveryFixture.swift	137
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallRecoveryProbe.swift	53	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallRecoveryTests.swift	131	0
 docs/history/windows-hvf/install-finalization-retry-20260916.md	72	0
+apps/macos/Tests/BridgeVMControlTests/HvfOwnedRunnerReapedEvidence.swift	22	0
+apps/macos/Tests/BridgeVMControlTests/HvfOwnedRunnerReapedEvidenceTests.swift	38	0
+docs/history/windows-hvf/early-child-exit-observation-20260916.md	37	0
