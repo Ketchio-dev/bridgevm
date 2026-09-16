@@ -15,7 +15,7 @@ final class HvfWindowsInstallStoreFixture {
             self.made += 1
             return HvfWindowsInstallSession(plan: plan, validate: { [probe = self.validator] in
                 probe.validate($0)
-            }, schedule: { self.jobs.append($0) })
+            }, schedule: { self.jobs.append($0) }, recovery: .init(inspect: { _ in .fresh }))
         })
     }
 
