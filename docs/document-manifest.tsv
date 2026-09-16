@@ -174,3 +174,4 @@ docs/history/windows-hvf/native-library-design-deterministic-20260915.md	histori
 docs/history/windows-hvf/native-app-onboarding-diagnostic-20260915.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/app-cli.md	current	native-app-cli	-
 docs/history/windows-hvf/native-runtime-observations-through-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/native-owned-cancellation-deterministic-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md

@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "capability_id": "windows-hvf",
-  "reviewed": "2026-09-14",
-  "tested_commit": "9e77d1d6751cb02529da131b5b8f046147329e2c",
+  "reviewed": "2026-09-16",
+  "tested_commit": "0a91061270031c5ca96fa2e2d70f266a49e64597",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: source 9e77d1d6751cb02529da131b5b8f046147329e2c implements read-only app-owned CLI runtime status. Its frozen full project check passed in 193.30 seconds; this is deterministic evidence, not a live GUI or guest result. The earlier complete check failed in 202.30 seconds on stale evidence linkage, operator-document references and a real temporary-directory alias mismatch; those failures and the corrected alias regressions remain in the linked history. Native UI pilot app-ui-host-20260915-18 failed because Accessibility permission was absent: 0 of 7 actions and 4 of 8 required captures, despite all four welcome geometry observations passing. Actual UI actions and a live app-owned CLI query remain unproven. CLI start/stop are not implemented. PR159 hosted run 35048963776 failed a managed synthetic-window query timeout; the stage and cause are unknown, and one unchanged failed-job retry is pending. Remaining exact-head checks for PR159 and PR160 also require verification before integration. No final release regression seal or capability promotion is claimed. Complete observations, including every earlier failed experiment and retraction, are retained in the [native app/runtime history](../history/windows-hvf/native-runtime-observations-through-20260916.md).",
+      "measured": "OPEN: source 0a91061270031c5ca96fa2e2d70f266a49e64597 includes read-only app-owned CLI status and typed-runner cancellation that retains disk/vars ownership through helper and swtpm teardown. CLI start/stop and the app-to-runner completion channel are still unimplemented; supervisor SIGKILL/crash and guest flush are not proven. The corrected frozen full project check passed in 196.67 seconds. Its earlier 194.16-second failure (lint and legacy diagnostic mismatch), initial compile/fixture failures and B6 exit-code failure remain recorded. Focused Rust suites passed 87 tests; headless PowerShell passed 66 checks after fixing actual exit-code forwarding. Two independent mock-child fixtures verified both writer leases through the separate child teardown stages. These are deterministic observations, not guest, rendered-UI or release evidence. Native UI pilot app-ui-host-20260915-18 still failed Accessibility admission: 0 of 7 actions and 4 of 8 required captures despite four passing welcome geometry observations. A live app-owned CLI query and Windows PowerShell/UI validation remain unverified. Preceding hosted run 35048963776 failed an unexplained B6 query timeout; its one unchanged retry and the other pending PR159/PR160 results require follow-up. Exact hosted checks for this source remain pending. See the [current deterministic record](../history/windows-hvf/native-owned-cancellation-deterministic-20260916.md) and the [complete earlier history](../history/windows-hvf/native-runtime-observations-through-20260916.md). No capability promotion is claimed.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -183,7 +183,8 @@
         "docs/history/windows-hvf/create-sheet-and-harness-deterministic-20260915.md",
         "docs/history/windows-hvf/native-library-design-deterministic-20260915.md",
         "docs/history/windows-hvf/native-app-onboarding-diagnostic-20260915.md",
-        "docs/history/windows-hvf/native-runtime-observations-through-20260916.md"
+        "docs/history/windows-hvf/native-runtime-observations-through-20260916.md",
+        "docs/history/windows-hvf/native-owned-cancellation-deterministic-20260916.md"
       ]
     },
     {
