@@ -59,7 +59,7 @@ No guest, Accessibility interaction or actual native Windows UI ran locally.
 | Corrected B6 File and dot-source modes | PASS, 155 checks each | All eight inputs stable; portable PowerShell 7.6.6 only |
 | Resident focused entry | PASS, 48 lifecycle assertions plus three original cases | All seven inputs stable; unchanged predicates and deadlines |
 | Independent final review | No actionable blocker found | Retained full call graph, real scope regression and exact twelve source hashes |
-| Frozen full project check | Pending | Source, new registrations and operator references included |
+| Frozen full project check | PASS, 211.526 seconds | All 3,132 tracked inputs, HEAD and index unchanged; operator references included |
 
 | Private retained record | SHA256 |
 | --- | --- |
@@ -67,7 +67,7 @@ No guest, Accessibility interaction or actual native Windows UI ran locally.
 | Corrected B6 File log | `9879877753204dea1b551089ed9ca8da408101abb42b5ec4aa686392da057b76` |
 | Corrected B6 dot-source log | `5d4d28c474cb0ef6881aab8ab458154dd4ef24124fe0862492c8927214e34942` |
 | Resident focused log | `f53f8a0a39dbde1611ecc6649e241ac5d1dba218850d8633202a809746fddc8c` |
-| Frozen full project log | Pending |
+| Frozen full project log | `2c7ac987bd98cbca76ddeae5d727f4331681bf18a43ce123c373d073dfc8d5f5` |
 
 The private checkpoint holds exact source, log and input hashes. Failures remain
 in the record and do not become passes when a later correction succeeds.

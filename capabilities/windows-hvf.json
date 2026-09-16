@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-16",
-  "tested_commit": "e157d523cd183ab6bfb8fde1671eed891131cea4",
+  "tested_commit": "8900413d22b24e6f339a5b876aeaad9fb5022d89",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: source e157d523cd183ab6bfb8fde1671eed891131cea4 retains owned diagnostic processes and both output streams through confirmed completion. B6 passed 147 portable PowerShell 7.6.6 checks in each of two execution modes; resident inventory passed 48 lifecycle assertions plus its three original provider cases, and chooser families passed 32 XCTest plus 19 Swift Testing cases. All focused source hashes remained unchanged. These checks do not establish Windows PowerShell 5.1, native UI or guest behavior. The first frozen project check failed only an operator HANDOFF tree reference after 212.345 seconds; all code checks passed and all 3,129 recorded non-operator inputs stayed unchanged. The reference was corrected without weakening its checker; the second full check passed in 210.505 seconds with all 3,130 tracked inputs unchanged, now including the operator HANDOFF consumed by the checker. HEAD and index also remained unchanged. The preceding native-stop checkpoint passed its full local project check in 210.805 seconds with 3,121 inputs unchanged, 657 control shim tests and two explicit live-only skips; actual app-session/runner and paired CLI fixtures passed three synthetic cases. PR160 merged after all 85 exact-head workflows succeeded; its main post-merge checks remain partly pending. PR159 passed all 50 recorded main workflows and its obsolete branch was removed. Earlier Windows output-sharing failures, the unresolved historical inventory timeout, chooser expectation failure and all previous full/shim/freshness failures remain retained. CLI start and supervisor crash recovery remain unimplemented or unproven. New-head hosted checks and live app/guest stop remain pending; native UI pilot18 still reports 0/7 actions and 4/8 captures with Accessibility untrusted. See the [diagnostic ownership record](../history/windows-hvf/native-diagnostic-ownership-20260916.md) and [owned stop record](../history/windows-hvf/native-owned-stop-deterministic-20260916.md). No capability promotion is claimed.",
+      "measured": "OPEN: source 8900413d22b24e6f339a5b876aeaad9fb5022d89 retains the complete diagnostic callback dependency graph across creator-scope exit. The preceding PR161 head failed six Windows PowerShell 5.1 push/PR jobs because callbacks could not resolve script-local observation and wait helpers; those failures were early, not deadline exhaustion. The original UI cases were skipped. A new local scope regression failed before correction and is retained. Corrected B6 checks passed 155 cases in each of two portable PowerShell 7.6.6 execution modes with all eight source hashes unchanged; the unchanged resident entry passed 48 lifecycle assertions plus three original cases with seven inputs stable. Independent review found no remaining static blocker. The current frozen full project check passed in 211.526 seconds with all 3,132 tracked inputs unchanged, including operator references; HEAD and index also stayed unchanged. The preceding full check passed in 210.505 seconds with all 3,130 recorded tracked inputs stable; its earlier operator-document reference failure and all earlier failed experiments remain retained. PR160 main passed all 50 recorded post-merge workflows and its merged branch was removed after ancestry/worktree audit; PR159 cleanup was already verified. PR161 remains unmerged until new-head hosted checks pass. Windows PowerShell 5.1/native UIA success, live app/guest stop, guest application flush and supervisor crash recovery remain unproven. CLI start remains unimplemented; native UI pilot18 remains Accessibility-untrusted with 0/7 actions and 4/8 captures. See the [callback scope record](../history/windows-hvf/native-callback-scope-20260916.md), [owned output record](../history/windows-hvf/native-diagnostic-ownership-20260916.md) and [owned stop record](../history/windows-hvf/native-owned-stop-deterministic-20260916.md). No capability promotion is claimed.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -186,7 +186,8 @@
         "docs/history/windows-hvf/native-runtime-observations-through-20260916.md",
         "docs/history/windows-hvf/native-owned-cancellation-deterministic-20260916.md",
         "docs/history/windows-hvf/native-owned-stop-deterministic-20260916.md",
-        "docs/history/windows-hvf/native-diagnostic-ownership-20260916.md"
+        "docs/history/windows-hvf/native-diagnostic-ownership-20260916.md",
+        "docs/history/windows-hvf/native-callback-scope-20260916.md"
       ]
     },
     {
