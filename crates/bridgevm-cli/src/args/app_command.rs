@@ -7,4 +7,4 @@ pub(crate) use query::AppQueryCommand;
 
 #[path = "app_command_variants.rs"]
 mod variants;
-pub(crate) use variants::AppCommand;
+pub(crate) use variants::{AppCommand, AppCreateWindowsArgs};

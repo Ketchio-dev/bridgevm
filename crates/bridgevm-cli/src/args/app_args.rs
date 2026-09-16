@@ -3,16 +3,16 @@
 use crate::*;
 #[path = "app_command.rs"]
 mod app_command;
-pub(crate) use app_command::AppCommand;
 #[cfg(test)]
 pub(crate) use app_command::AppQueryCommand;
+pub(crate) use app_command::{AppCommand, AppCreateWindowsArgs};
 #[path = "app_library.rs"]
 mod library;
 use library::absolute_library;
 
 #[derive(Debug, Parser)]
 #[command(
-    after_help = "Uses native vm.json registrations, not the legacy --store. Requires a compatible installed BridgeVMControl.app; no app window is opened. Install commands use only the pending request already saved with the VM; ISO paths, passwords and recovery keys are not accepted on argv. Start confirms initial helper startup, not guest boot. Status asks the app for retained observations, not guest health. Stop waits for confirmed owned-process cleanup."
+    after_help = "Uses native vm.json registrations, not the legacy --store. Requires a compatible installed BridgeVMControl.app; no app window is opened. Create accepts one non-secret absolute ISO path and copies it into the owned VM bundle; passwords and recovery keys are never accepted. Install uses only the pending request already saved with the VM. Start confirms initial helper startup, not guest boot. Status asks the app for retained observations, not guest health. Stop waits for confirmed owned-process cleanup."
 )]
 pub(crate) struct AppArgs {
     #[command(subcommand)]
