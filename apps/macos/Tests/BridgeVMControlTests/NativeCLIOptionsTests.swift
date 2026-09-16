@@ -41,7 +41,7 @@ final class NativeCLIOptionsTests: XCTestCase {
 
     func testRejectsUnknownDuplicateRelativeAndIncompleteArguments() {
         let invalid = [
-            ["start", "vm"], ["list", "extra"], ["inspect"], ["inspect", "a", "b"],
+            ["unsupported", "vm"], ["list", "extra"], ["inspect"], ["inspect", "a", "b"],
             ["list", "--unknown"], ["list", "--json", "--json"],
             ["list", "--library"], ["list", "--library", "relative/library"],
             ["list", "--library", ""],

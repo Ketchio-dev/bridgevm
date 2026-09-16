@@ -1,7 +1,7 @@
 import Foundation
 
 struct NativeCLIOptions: Equatable {
-    enum Command: Equatable { case list, inspect(String), readiness(String), status(String), stop(String) }
+    enum Command: Equatable { case list, inspect(String), readiness(String), status(String), start(String), stop(String) }
     let command: Command
     let libraryRoot: URL
     let json: Bool

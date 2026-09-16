@@ -3,7 +3,7 @@ mod app_fixture;
 use app_fixture::Fixture;
 
 #[test]
-fn actual_help_exposes_native_read_only_commands_without_discovery() {
+fn actual_help_exposes_native_commands_without_discovery() {
     let fixture = Fixture::new();
     for args in [
         &["app", "--help"][..],
@@ -20,7 +20,7 @@ fn actual_help_exposes_native_read_only_commands_without_discovery() {
     }
     let help = String::from_utf8(fixture.invoke(&["app", "--help"]).stdout).unwrap();
     assert!(help.contains("vm.json") && help.contains("Inventory runtime remains unobserved"));
-    assert!(help.contains("readiness") && !help.contains("  start "));
+    assert!(help.contains("readiness") && help.contains("  start "));
     assert!(help.contains("status") && help.contains("already-running app"));
 }
 
@@ -64,7 +64,7 @@ fn invalid_app_arguments_fail_in_the_real_parser() {
     let fixture = Fixture::new();
     for args in [
         &["app"][..],
-        &["app", "start", "vm"],
+        &["app", "unsupported", "vm"],
         &["app", "inspect"],
         &["app", "list", "--library", "relative"],
         &["app", "list", "--library", "/tmp/../x"],

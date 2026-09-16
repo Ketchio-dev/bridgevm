@@ -1,9 +1,9 @@
 # Native app CLI
 
 `bridgevm app` reads native `vm.json` registrations, queries runtime observations,
-and requests [supervised VM stop](app-cli-stop.md) through the already-running macOS app.
-It does not open an app window, start a VM, repair registrations, or
-change saved resources. Inventory commands report runtime state as `unobserved`;
+and requests [VM start](app-cli-start.md) or [supervised stop](app-cli-stop.md) through the running app.
+Start uses an exact saved installed HVF entry; no command opens an app window,
+repairs registrations, or changes saved CPU/memory settings. Inventory commands report runtime state as `unobserved`;
 saved CPU and memory values are not utilization measurements.
 
 ```sh
@@ -11,6 +11,7 @@ bridgevm app list
 bridgevm app list --json
 bridgevm app inspect 개발-vm --json
 bridgevm app readiness 개발-vm --json
+bridgevm app start 개발-vm --json
 bridgevm app status 개발-vm --json
 bridgevm app stop 개발-vm --json
 bridgevm app list --library "/absolute/path/to/native-library"
@@ -31,7 +32,6 @@ continues to expose local queries and explicitly enabled probes; it does not
 replace native library inventory commands.
 
 ## Installing the command
-
 Use a current `BridgeVM.app` or `BridgeVMControl.app` package containing the native CLI protocol
 `bridgevm-native-cli-v1`. The package includes the Rust command at
 `Contents/Resources/target/release/bridgevm`, paired with
@@ -108,10 +108,10 @@ environment override. When the native command runs, an unavailable owner produce
 structured runtime-unobserved output with exit 1. It does not create a library or
 launch an app to obtain a response.
 
-| Exit | Inventory (`list` / `inspect`) | `readiness` | `status` | `stop` |
+| Exit | Inventory (`list` / `inspect`) | `readiness` | `status` | `start` / `stop` |
 | --- | --- | --- | --- | --- |
-| 0 | Complete query | Launch prerequisites ready | Complete owner observation, including `not-observed` | Owned cleanup and retained runner exit confirmed |
-| 1 | Unavailable or incomplete inventory; discovery/exec failure | Blocked, unavailable configuration, or unsupported backend | Owner query unavailable; discovery/exec failure | Unavailable, unsupported, refused, timed out, or unconfirmed cleanup |
+| 0 | Complete query | Launch prerequisites ready | Complete owner observation, including `not-observed` | Initial helper startup / owned cleanup and retained runner exit confirmed |
+| 1 | Unavailable or incomplete inventory; discovery/exec failure | Blocked, unavailable configuration, or unsupported backend | Owner query unavailable; discovery/exec failure | Unavailable, unsupported, refused, timed out, or unconfirmed startup or cleanup |
 | 2 | Invalid command, option, path or ID | Invalid usage | Invalid usage | Invalid usage |
 
 An existing but empty library returns an empty complete inventory. A missing

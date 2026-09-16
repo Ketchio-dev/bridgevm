@@ -13,24 +13,9 @@ pub(crate) fn run(args: AppArgs) -> Result<()> {
         .with_context(|| format!("could not execute native app CLI: {}", executable.display()))
 }
 
-fn native_arguments(args: AppArgs) -> Vec<OsString> {
-    let (verb, id) = match args.command {
-        AppCommand::Query(query) => query.into_parts(),
-        AppCommand::Stop { id } => ("stop", Some(id)),
-    };
-    let mut arguments = vec![OsString::from("--cli"), verb.into()];
-    if let Some(id) = id {
-        arguments.push(id.into());
-    }
-    if let Some(library) = args.library {
-        arguments.push("--library".into());
-        arguments.push(library.into_os_string());
-    }
-    if args.json {
-        arguments.push("--json".into());
-    }
-    arguments
-}
+#[path = "app_cli_arguments.rs"]
+mod arguments;
+use arguments::native_arguments;
 
 #[cfg(test)]
 #[path = "app_cli_tests.rs"]
@@ -39,3 +24,7 @@ mod tests;
 #[cfg(test)]
 #[path = "app_cli_stop_tests.rs"]
 mod stop_tests;
+
+#[cfg(test)]
+#[path = "app_cli_start_tests.rs"]
+mod start_tests;

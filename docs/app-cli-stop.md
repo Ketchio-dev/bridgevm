@@ -47,7 +47,7 @@ failure. The existing status protocol remains version 1; stop control uses a
 separate strict version 2 message on the same private endpoint.
 
 Exit codes are 0 for confirmed cleanup, 1 for unavailable/refused/unconfirmed
-results, and 2 for invalid usage. CLI start is not implemented.
+results, and 2 for invalid usage. See [CLI start](app-cli-start.md) for startup.
 
 The [native runtime contract](reference/native-owned-runtime.md) describes the
 engineering wire formats and retained ownership rules.

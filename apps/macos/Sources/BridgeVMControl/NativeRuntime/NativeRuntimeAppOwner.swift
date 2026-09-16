@@ -10,7 +10,7 @@ final class NativeRuntimeAppOwner {
     private let options: BridgeVMControlLaunchOptions
     private let appInstanceID = UUID().uuidString
     private let cache: NativeRuntimeModelCache<LibraryModel>
-    private lazy var control = NativeRuntimeAppControlRouter(appInstanceID: appInstanceID, library: library.identity,
+    private lazy var requests = NativeRuntimeAppRequestHandlers(appInstanceID: appInstanceID, library: library.identity,
         validateOwner: { [weak self] in
             guard let self else { throw NativeRuntimeError.ownerUnavailable }
             try self.owner.validateCurrentOwnership()
@@ -27,10 +27,7 @@ final class NativeRuntimeAppOwner {
         ControlCommandDispatch.validateOrExit(arguments: arguments)
         do {
             let instance = try NativeRuntimeAppOwner(options: BridgeVMControlLaunchOptions.parse(arguments: arguments))
-            try instance.owner.start(controlHandler: { [weak instance] request, context in
-                guard let instance else { throw NativeRuntimeError.ownerUnavailable }
-                return try await instance.control.handle(request, context: context)
-            }) { [weak instance] request in
+            try instance.requests.serve(owner: instance.owner) { [weak instance] request in
                 guard let instance else { throw NativeRuntimeError.ownerUnavailable }
                 return try await NativeRuntimeAppObservation.response(request, library: instance.library.identity,
                     appInstanceID: instance.appInstanceID, retainedModel: instance.cache.retainedValue)

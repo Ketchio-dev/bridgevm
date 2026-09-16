@@ -15,10 +15,10 @@ import uuid
 from native_runtime_alias_cases import NativeRuntimeAliasCases
 from native_runtime_control_cases import NativeRuntimeControlCases
 from native_runtime_transport_build import build_transport_fixture
+from native_runtime_start_cases import NativeRuntimeStartCases
 ROOT = Path(__file__).resolve().parents[2]
 
-
-class Contracts(NativeRuntimeAliasCases, NativeRuntimeControlCases, unittest.TestCase):
+class Contracts(NativeRuntimeAliasCases, NativeRuntimeControlCases, NativeRuntimeStartCases, unittest.TestCase):
     executable = None
     output = None
 

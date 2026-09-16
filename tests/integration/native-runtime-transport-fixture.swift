@@ -15,7 +15,7 @@ enum NativeRuntimeTransportContractMain {
             case "churn":
                 try NativeRuntimeTransportOwnershipContracts.run(root: root)
                 print("64 owner close/descriptor reuse cycles PASS")
-            case "owner", "slow", "control", "control-slow":
+            case "owner", "slow", "control", "control-slow", "start", "start-slow":
                 guard args.count == 3 else { throw NativeRuntimeError.invalidMessage }
                 try NativeRuntimeTransportFixture.runOwner(root: root,
                     control: URL(fileURLWithPath: args[2], isDirectory: true), mode: args[0])

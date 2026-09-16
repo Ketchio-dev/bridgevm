@@ -19,7 +19,8 @@ final class NativeRuntimeServer: @unchecked Sendable {
 
     init(library: NativeRuntimeLibraryHandle, endpoint: NativeRuntimeEndpoint,
          validateOwner: @escaping @Sendable () throws -> Void,
-         controlHandler: NativeRuntimeRequestRouter.ControlHandler? = nil, handler: @escaping Handler) throws {
+         controlHandler: NativeRuntimeRequestRouter.ControlHandler? = nil,
+         startHandler: NativeRuntimeRequestRouter.StartHandler? = nil, handler: @escaping Handler) throws {
         try library.validateCurrentIdentity()
         try endpoint.validate()
         if let stale = try endpoint.socketIdentity() { try endpoint.removeSocket(ifIdentity: stale) }
@@ -31,7 +32,7 @@ final class NativeRuntimeServer: @unchecked Sendable {
             bound = try endpoint.socketIdentity()
             guard let identity = bound, listen(fd, 4) == 0 else { throw NativeRuntimeError.invalidEndpoint }
             self.library = library; self.endpoint = endpoint; self.validateOwner = validateOwner
-            router = .init(library: library.identity, status: handler, control: controlHandler)
+            router = .init(library: library.identity, status: handler, control: controlHandler, start: startHandler)
             descriptor = fd; socketIdentity = identity
         } catch {
             Darwin.close(fd)
@@ -45,7 +46,6 @@ final class NativeRuntimeServer: @unchecked Sendable {
         self.source = source
         source.resume()
     }
-
     private func acceptReady() {
         guard !closed else { return }
         // Bound this callback as well as the number of live requests.
