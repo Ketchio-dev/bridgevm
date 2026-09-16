@@ -7,6 +7,6 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: python3 tests/integration/guest-input-driver-variant-test.py
       - run: python3 tests/integration/guest-input-queue-test.py && python3 tests/integration/guest-input-controller-test.py

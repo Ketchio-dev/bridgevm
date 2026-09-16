@@ -6,7 +6,7 @@ jobs:
   clipboard-set:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Exercise the guest CLIPSET implementation
         shell: powershell
         run: tests/integration/clipboard-set-ack-contract.ps1
