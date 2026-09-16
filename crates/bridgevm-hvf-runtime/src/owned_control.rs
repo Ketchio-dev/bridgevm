@@ -8,23 +8,15 @@ use std::cell::Cell;
 #[path = "owned_process_test_support.rs"]
 pub(crate) mod test_support;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ChildRole {
-    Helper,
-    Swtpm,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct CleanupUnconfirmed {
-    pub role: ChildRole,
-    pub pid: u32,
-    pub reason: &'static str,
-}
+#[path = "owned_lifecycle.rs"]
+mod lifecycle;
+pub use lifecycle::*;
 
 pub struct RuntimeControl<'a> {
     requested: &'a dyn Fn() -> bool,
     unconfirmed: &'a dyn Fn(CleanupUnconfirmed),
     latched: Cell<bool>,
+    observer: Option<&'a dyn Fn(RuntimeLifecycleEvent)>,
 }
 
 impl<'a> RuntimeControl<'a> {
@@ -37,6 +29,22 @@ impl<'a> RuntimeControl<'a> {
             requested,
             unconfirmed,
             latched: Cell::new(false),
+            observer: None,
+        }
+    }
+    pub fn with_observer(
+        requested: &'a dyn Fn() -> bool,
+        unconfirmed: &'a dyn Fn(CleanupUnconfirmed),
+        observer: &'a dyn Fn(RuntimeLifecycleEvent),
+    ) -> Self {
+        Self {
+            observer: Some(observer),
+            ..Self::new(requested, unconfirmed)
+        }
+    }
+    pub(crate) fn observe(&self, event: RuntimeLifecycleEvent) {
+        if let Some(observer) = self.observer {
+            observer(event);
         }
     }
     pub fn is_cancelled(&self) -> bool {
@@ -47,16 +55,5 @@ impl<'a> RuntimeControl<'a> {
     }
     pub(crate) fn report(&self, value: CleanupUnconfirmed) {
         (self.unconfirmed)(value)
-    }
-}
-
-impl Default for RuntimeControl<'static> {
-    fn default() -> Self {
-        Self::new(&|| false, &|value| {
-            eprintln!(
-                "owned cleanup unconfirmed: {:?} pid={} {}; retaining ownership",
-                value.role, value.pid, value.reason
-            );
-        })
     }
 }

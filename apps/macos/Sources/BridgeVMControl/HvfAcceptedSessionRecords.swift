@@ -5,7 +5,7 @@ struct HvfRuntimeSessionRecord {
 
     func retainedControl(excludingSlugs: Set<String>) -> LibraryRetainedControlDescriptor? {
         guard let sourceConfig, !excludingSlugs.contains(sourceConfig.slug),
-              session.connectionState != .stopped else { return nil }
+              session.hasActiveRuntimeWork else { return nil }
         return .runtime(config: sourceConfig, session: session)
     }
 }

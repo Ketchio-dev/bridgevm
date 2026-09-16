@@ -2,9 +2,10 @@
 
 use super::{unique_runtime_dir_name, vtpm_wait, SwtpmProcess, VtpmConfig};
 use crate::owned_child::OwnedChild;
-use crate::{ChildRole, RuntimeControl, RuntimeError};
+use crate::{ChildRole, DirectoryDisposition, RuntimeControl, RuntimeError, RuntimeLifecycleEvent};
 use std::os::unix::fs::DirBuilderExt;
-use std::process::{Command, Stdio};
+#[path = "controlled_swtpm_command.rs"]
+mod command;
 use std::time::{Duration, Instant};
 #[path = "controlled_swtpm_io.rs"]
 pub(super) mod io;
@@ -31,37 +32,17 @@ pub fn start_swtpm_controlled(
         .mode(0o700)
         .create(&runtime_dir)
         .map_err(|source| failure("create swtpm runtime dir", source))?;
+    control.observe(RuntimeLifecycleEvent::SwtpmDirectory(
+        DirectoryDisposition::Created,
+    ));
     let data_socket = runtime_dir.join("data.sock");
     let control_socket = runtime_dir.join("control.sock");
-    let mut command = Command::new(&config.swtpm_bin);
-    command
-        .args(["socket", "--tpm2", "--tpmstate"])
-        .arg(format!("dir={}", config.state_dir.display()))
-        .arg("--server")
-        .arg(format!(
-            "type=unixio,path={},mode=0600",
-            data_socket.display()
-        ))
-        .arg("--ctrl")
-        .arg(format!(
-            "type=unixio,path={},mode=0600",
-            control_socket.display()
-        ))
-        .args(["--flags", "not-need-init,startup-clear"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    if config.state_key.is_some() {
-        command
-            .args(["--key", "fd=0,format=binary,mode=aes-256-cbc"])
-            .stdin(Stdio::piped());
-    } else {
-        command.stdin(Stdio::null());
-    }
+    let mut command = command::build(config, &data_socket, &control_socket);
     let spawned = io::check(deadline, control).and_then(|()| command.spawn());
     let child = match spawned {
-        Ok(child) => OwnedChild::new(child, ChildRole::Swtpm),
+        Ok(child) => OwnedChild::adopt(child, ChildRole::Swtpm, None, control),
         Err(source) => {
-            let _ = std::fs::remove_dir_all(&runtime_dir);
+            super::remove_runtime_dir(&runtime_dir, control).ok();
             return Err(failure("spawn swtpm", source));
         }
     };
@@ -103,8 +84,9 @@ fn failure(context: &'static str, source: std::io::Error) -> RuntimeError {
 pub(super) fn require_live(
     process: &mut SwtpmProcess,
     context: &'static str,
+    control: &RuntimeControl<'_>,
 ) -> Result<(), RuntimeError> {
-    match process.child.try_wait() {
+    match process.child.try_wait_observed(control) {
         Ok(None) => Ok(()),
         Ok(Some(status)) => Err(failure(
             context,

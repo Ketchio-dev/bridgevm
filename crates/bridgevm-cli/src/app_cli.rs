@@ -1,4 +1,4 @@
-//! Forward read-only native queries without a shell or a second process lifecycle.
+//! Forward native commands without a shell or a second VM lifecycle.
 
 use crate::*;
 use std::ffi::OsString;
@@ -14,21 +14,13 @@ pub(crate) fn run(args: AppArgs) -> Result<()> {
 }
 
 fn native_arguments(args: AppArgs) -> Vec<OsString> {
-    let mut arguments = vec![OsString::from("--cli")];
-    match args.command {
-        AppCommand::List => arguments.push("list".into()),
-        AppCommand::Inspect { id } => {
-            arguments.push("inspect".into());
-            arguments.push(id.into());
-        }
-        AppCommand::Readiness { id } => {
-            arguments.push("readiness".into());
-            arguments.push(id.into());
-        }
-        AppCommand::Status { id } => {
-            arguments.push("status".into());
-            arguments.push(id.into());
-        }
+    let (verb, id) = match args.command {
+        AppCommand::Query(query) => query.into_parts(),
+        AppCommand::Stop { id } => ("stop", Some(id)),
+    };
+    let mut arguments = vec![OsString::from("--cli"), verb.into()];
+    if let Some(id) = id {
+        arguments.push(id.into());
     }
     if let Some(library) = args.library {
         arguments.push("--library".into());
@@ -43,3 +35,7 @@ fn native_arguments(args: AppArgs) -> Vec<OsString> {
 #[cfg(test)]
 #[path = "app_cli_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "app_cli_stop_tests.rs"]
+mod stop_tests;

@@ -8,7 +8,7 @@ final class NativeRuntimeTransportConnection: @unchecked Sendable {
     let deadline: TimeInterval
     private let mutex = NSLock()
     private let ready = DispatchSemaphore(value: 0)
-    private var result: Result<NativeRuntimeResponse, Error>?
+    private var result: Result<Data, Error>?
     private var task: Task<Void, Never>?
     private var stopped = false
     private var closed = false
@@ -18,23 +18,23 @@ final class NativeRuntimeTransportConnection: @unchecked Sendable {
         deadline = NativeRuntimeTransport.now + NativeRuntimeTransport.timeout
     }
 
-    func begin(request: NativeRuntimeRequest, handler: @escaping NativeRuntimeServer.Handler,
+    func begin(work: @escaping @Sendable () async throws -> Data,
                finished: @escaping @Sendable () -> Void) {
         mutex.lock(); defer { mutex.unlock() }
         guard !stopped else { ready.signal(); finished(); return }
         task = Task.detached { [self] in
-            let value: Result<NativeRuntimeResponse, Error>
+            let value: Result<Data, Error>
             do {
                 try Task.checkCancellation()
                 try NativeRuntimeTransport.checkDeadline(deadline)
-                value = .success(try await handler(request))
+                value = .success(try await work())
             } catch { value = .failure(error) }
             complete(value)
             finished()
         }
     }
 
-    private func complete(_ value: Result<NativeRuntimeResponse, Error>) {
+    private func complete(_ value: Result<Data, Error>) {
         mutex.lock()
         if !stopped { result = value }
         task = nil
@@ -42,7 +42,7 @@ final class NativeRuntimeTransportConnection: @unchecked Sendable {
         ready.signal()
     }
 
-    func response() throws -> NativeRuntimeResponse {
+    func responseData() throws -> Data {
         let remaining = deadline - NativeRuntimeTransport.now
         guard remaining > 0, ready.wait(timeout: .now() + remaining) == .success,
               NativeRuntimeTransport.now < deadline else { throw NativeRuntimeError.timedOut }

@@ -19,6 +19,9 @@ mod vtpm_wait;
 use crate::owned_child::OwnedChild;
 
 use crate::{RuntimeControl, RuntimeError};
+#[path = "owned_swtpm_directory.rs"]
+mod directory;
+use directory::remove_runtime_dir;
 
 /// The durable vTPM state, executable and optional key delivered over the
 /// owned child's stdin. Key bytes never enter argv, environment or files.
@@ -49,16 +52,7 @@ impl SwtpmProcess {
     }
     pub fn shutdown(&mut self, control: &RuntimeControl<'_>) -> Result<ExitStatus, RuntimeError> {
         let status = self.child.shutdown(control);
-        match std::fs::remove_dir_all(&self.runtime_dir) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(source) => {
-                return Err(RuntimeError::Io {
-                    context: "remove owned swtpm runtime dir",
-                    source,
-                })
-            }
-        }
+        remove_runtime_dir(&self.runtime_dir, control)?;
         Ok(status)
     }
 }

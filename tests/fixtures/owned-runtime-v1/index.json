@@ -1,0 +1,77 @@
+{
+  "description": "Synthetic v1 canonical JSON payloads, no newline. Prefix each with four-byte big-endian payload size. Synthetic key bytes00..1f are test data only.",
+  "fixtures": [
+    {
+      "file": "hello-no-key.json",
+      "sha256": "b5e2fe486af4ad7e86bdadfaa10b65a76e3974186165738343c7181f65e3b520",
+      "payloadBytes": 195,
+      "kind": "hello"
+    },
+    {
+      "file": "hello-synthetic-key.json",
+      "sha256": "802f1ddb07d2941b133090b7bddf74faf235fd900da3ff438d744df21eb62181",
+      "payloadBytes": 257,
+      "kind": "hello"
+    },
+    {
+      "file": "stop.json",
+      "sha256": "95b100ed7ec47a9701c4cc6076e2dc3996446835d4ac59139abd26574411966b",
+      "payloadBytes": 149,
+      "kind": "stop"
+    },
+    {
+      "file": "ready.json",
+      "sha256": "07b94bb44a005b07ce5646594a7eb654ddb5a9b2841ffe16d3d922a28a9bf668",
+      "payloadBytes": 326,
+      "kind": "ready"
+    },
+    {
+      "file": "stop-ack.json",
+      "sha256": "cea4d2e5d682e4e3be18c42fb772418acf024fea8a47ac14da9a780b521f1d29",
+      "payloadBytes": 267,
+      "kind": "stopAck"
+    },
+    {
+      "file": "swtpm-started.json",
+      "sha256": "143511102a4f9c688ee81a065625ce388d2aa3f834bb73ba4ce3ef72ab09a7d1",
+      "payloadBytes": 266,
+      "kind": "childStarted"
+    },
+    {
+      "file": "helper-started.json",
+      "sha256": "0a33db881fb712c07667e4bd11f4aa2d9c76944d75e159997bad27cab65a4bbe",
+      "payloadBytes": 264,
+      "kind": "childStarted"
+    },
+    {
+      "file": "helper-reaped.json",
+      "sha256": "e5a52bf2ddef99ee7a9a10cc14eb926697ca235869a1d6e30e276241ff7139f1",
+      "payloadBytes": 265,
+      "kind": "childReaped"
+    },
+    {
+      "file": "swtpm-reaped.json",
+      "sha256": "1b9c8a0e7cdea5cbc2b69ddc2013961477e7133e84b4805db9dc55930bc6ccf5",
+      "payloadBytes": 264,
+      "kind": "childReaped"
+    },
+    {
+      "file": "cleanup-unconfirmed.json",
+      "sha256": "fa7fda60b38732bb383d0b6ea6c78ec506f11fb97f624fe80bf4d164388ea2ad",
+      "payloadBytes": 299,
+      "kind": "cleanupUnconfirmed"
+    },
+    {
+      "file": "complete.json",
+      "sha256": "4a1a4b4235c02b502cf90aeb1a405559af5fe58c804d9c1965cb7b6365a33f11",
+      "payloadBytes": 640,
+      "kind": "complete"
+    },
+    {
+      "file": "complete-not-admitted.json",
+      "sha256": "ac1ff86c6f713be0b1c08a5619db8618cff945974b6935b48d7c29e6c2dad17b",
+      "payloadBytes": 481,
+      "kind": "complete"
+    }
+  ]
+}

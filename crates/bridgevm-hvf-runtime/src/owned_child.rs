@@ -1,21 +1,23 @@
 //! Keep every spawned child owned until an actual wait result observes its exit.
 
-use crate::{ChildRole, CleanupUnconfirmed, RuntimeControl};
+use crate::{ChildRole, CleanupUnconfirmed, RuntimeControl, RuntimeLifecycleEvent};
 use std::io;
 use std::process::{Child, ChildStdin, ExitStatus};
+#[cfg(test)]
 use std::time::{Duration, Instant};
 #[path = "owned_child_signals.rs"]
 mod signals;
 
-const TERM_GRACE: Duration = Duration::from_secs(2);
-const KILL_REAP: Duration = Duration::from_secs(2);
-const POLL_INTERVAL: Duration = Duration::from_millis(10);
+#[path = "owned_child_wait.rs"]
+mod wait;
 
 pub(crate) struct OwnedChild {
     child: Child,
     role: ChildRole,
     reaped: Option<ExitStatus>,
     wait_uncertain: bool,
+    generation: Option<u64>,
+    reap_emitted: bool,
 }
 
 pub(crate) struct ChildExit {
@@ -30,7 +32,42 @@ impl OwnedChild {
             role,
             reaped: None,
             wait_uncertain: false,
+            generation: None,
+            reap_emitted: false,
         }
+    }
+    pub(crate) fn adopt(
+        child: Child,
+        role: ChildRole,
+        generation: Option<u64>,
+        control: &RuntimeControl<'_>,
+    ) -> Self {
+        let mut owned = Self::new(child, role);
+        owned.generation = generation;
+        control.observe(RuntimeLifecycleEvent::ChildStarted {
+            role,
+            pid: owned.id(),
+            generation,
+        });
+        owned
+    }
+    pub(crate) fn try_wait_observed(
+        &mut self,
+        control: &RuntimeControl<'_>,
+    ) -> io::Result<Option<ExitStatus>> {
+        let result = self.try_wait()?;
+        if let Some(status) = result {
+            if !self.reap_emitted {
+                self.reap_emitted = true;
+                control.observe(RuntimeLifecycleEvent::ChildReaped {
+                    role: self.role,
+                    pid: self.id(),
+                    generation: self.generation,
+                    status,
+                });
+            }
+        }
+        Ok(result)
     }
     pub(crate) fn id(&self) -> u32 {
         self.child.id()
@@ -65,67 +102,19 @@ impl OwnedChild {
             }
         }
     }
-    fn observe(&mut self, control: &RuntimeControl<'_>, force_stop: bool) -> io::Result<ChildExit> {
-        let mut stop_started = None;
-        let mut kill_sent = false;
-        let mut reported = false;
-        let mut wait_error = None;
-        loop {
-            match self.try_wait() {
-                Ok(Some(status)) => {
-                    return match wait_error {
-                        Some(error) => Err(error),
-                        None => Ok(ChildExit {
-                            status,
-                            cancelled: stop_started.is_some() || control.is_cancelled(),
-                        }),
-                    }
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    if wait_error.is_none() {
-                        wait_error = Some(error);
-                    }
-                    self.report_once(control, &mut reported, "child wait failed");
-                }
-            }
-            let now = Instant::now();
-            if stop_started.is_none()
-                && (force_stop || control.is_cancelled() || self.wait_uncertain)
-            {
-                stop_started = Some(now);
-                if !self.wait_uncertain {
-                    if let Err(error) = signals::terminate(self.id()) {
-                        if error.raw_os_error() != Some(libc::ESRCH) {
-                            self.report_once(control, &mut reported, "TERM failed");
-                        }
-                    }
-                }
-            }
-            if let Some(started) = stop_started {
-                if !kill_sent && now.duration_since(started) >= TERM_GRACE {
-                    kill_sent = true;
-                    if !self.wait_uncertain && self.child.kill().is_err() {
-                        self.report_once(control, &mut reported, "KILL failed");
-                    }
-                }
-                if now.duration_since(started) >= TERM_GRACE + KILL_REAP {
-                    self.report_once(control, &mut reported, "reap deadline expired");
-                }
-            }
-            // Deadline exhaustion is an unconfirmed observation, not permission
-            // to drop the child or the caller's leases. Continue owning/reaping.
-            std::thread::sleep(POLL_INTERVAL);
-        }
-    }
     fn report_once(&self, control: &RuntimeControl<'_>, reported: &mut bool, reason: &'static str) {
         if !*reported {
             *reported = true;
-            control.report(CleanupUnconfirmed {
+            let value = CleanupUnconfirmed {
                 role: self.role,
                 pid: self.id(),
                 reason,
+            };
+            control.observe(RuntimeLifecycleEvent::CleanupUnconfirmed {
+                value,
+                generation: self.generation,
             });
+            control.report(value);
         }
     }
 }
@@ -145,3 +134,7 @@ mod tests;
 #[cfg(test)]
 #[path = "owned_wait_uncertain_tests.rs"]
 mod uncertain_tests;
+
+#[cfg(test)]
+#[path = "owned_test_publication.rs"]
+mod publication;

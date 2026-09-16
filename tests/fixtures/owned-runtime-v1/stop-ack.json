@@ -1,0 +1,1 @@
+{"child":null,"complete":null,"kind":"stopAck","ready":null,"runToken":"12345678-1234-4234-8234-123456789abc","runnerPID":1234,"schemaVersion":1,"sequence":4,"stopAck":{"disposition":"accepted","operationID":"abcdefab-1234-4234-8234-123456789abc"},"unconfirmed":null}

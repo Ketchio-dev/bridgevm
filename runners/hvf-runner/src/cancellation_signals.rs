@@ -9,17 +9,17 @@ static INSTALLED: AtomicBool = AtomicBool::new(false);
 extern "C" fn request(_: libc::c_int) {
     CANCELLED.store(true, Ordering::Relaxed);
 }
-pub(super) fn requested() -> bool {
+pub(crate) fn requested() -> bool {
     CANCELLED.load(Ordering::Relaxed)
 }
 
-pub(super) struct CancellationSignals {
+pub(crate) struct CancellationSignals {
     term: libc::sigaction,
     interrupt: libc::sigaction,
 }
 
 impl CancellationSignals {
-    pub(super) fn install() -> io::Result<Self> {
+    pub(crate) fn install() -> io::Result<Self> {
         if INSTALLED.swap(true, Ordering::SeqCst) {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,

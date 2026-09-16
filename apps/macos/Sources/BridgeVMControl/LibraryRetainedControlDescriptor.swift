@@ -25,7 +25,7 @@ enum LibraryRetainedControlDescriptor {
 
     var isActive: Bool {
         switch self {
-        case let .runtime(_, session): return session.connectionState != .stopped
+        case let .runtime(_, session): return session.hasActiveRuntimeWork
         case let .install(_, session): return session.isRunning
         }
     }

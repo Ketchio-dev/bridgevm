@@ -1,9 +1,10 @@
 //! Prepared media remains borrowed through every helper's observed teardown.
 
-use crate::owned_child::OwnedChild;
+#[path = "controlled_generation.rs"]
+mod generation;
 use crate::{
-    decide_restart, flush_and_write_receipt, spawn_helper, ChildRole, HelperLaunch, PreparedVm,
-    ResetCycle, RestartDecision, RuntimeControl, RuntimeError, RESET_EXIT_CODE,
+    decide_restart, flush_and_write_receipt, HelperLaunch, PreparedVm, ResetCycle, RestartDecision,
+    RuntimeControl, RuntimeError, RESET_EXIT_CODE,
 };
 use std::path::Path;
 
@@ -36,19 +37,7 @@ pub fn run_prepared_vm(
             return Ok(cancelled(cycles));
         }
         let tag = prepared.generation().stamp();
-        let child = spawn_helper(prepared.manifest(), launch, tag.value()).map_err(|source| {
-            RuntimeError::Io {
-                context: "spawn VM helper",
-                source,
-            }
-        })?;
-        // No fallible work may separate spawn from ownership transfer.
-        let mut child = OwnedChild::new(child, ChildRole::Helper);
-        let pid = child.id();
-        let exit = child.wait(control).map_err(|source| RuntimeError::Io {
-            context: "wait for VM helper",
-            source,
-        })?;
+        let (pid, exit) = generation::run(prepared, launch, tag.value(), control)?;
         if exit.cancelled || control.is_cancelled() {
             return Ok(cancelled(cycles));
         }

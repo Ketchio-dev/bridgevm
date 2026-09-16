@@ -12,8 +12,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BRIDGEVM_TEST_SNAPSHOT_HELPER="$(bash "$ROOT/scripts/prepare-hvf-import-test-helper.sh")"
-export BRIDGEVM_TEST_SNAPSHOT_HELPER
+source "$ROOT/scripts/prepare-native-test-helpers.sh"
 SHIM="$ROOT/apps/macos/XCTestShim"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

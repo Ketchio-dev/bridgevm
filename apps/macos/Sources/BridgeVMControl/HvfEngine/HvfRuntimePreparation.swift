@@ -1,7 +1,8 @@
 import Foundation
 
 enum HvfRuntimePreparation {
-    static func prepare(config: HvfEngineConfig) throws {
+    @discardableResult
+    static func prepare(config: HvfEngineConfig) throws -> Data {
         let fileManager = FileManager.default
         let evidenceDirectory = URL(fileURLWithPath: config.evidenceDir, isDirectory: true)
         try fileManager.createDirectory(
@@ -21,13 +22,9 @@ enum HvfRuntimePreparation {
             }
         }
         try Data().write(to: evidenceDirectory.appendingPathComponent("input.ctl"))
-        // The versioned manifest this launch means, written where the run's
-        // evidence lives. The wrapper does not read it yet; materializing it
-        // per launch makes every session auditable against the runtime
-        // contract (`hvf-runner --launch-spec launch-manifest.json` must
-        // accept it) before the runtime owns the launch itself.
-        try Data(config.launchManifestJSON().utf8)
-            .write(to: evidenceDirectory.appendingPathComponent("launch-manifest.json"))
+        // Hash the same bytes sent to the runner, not a later regeneration of mutable config.
+        let manifest = Data(config.launchManifestJSON().utf8)
+        try manifest.write(to: evidenceDirectory.appendingPathComponent("launch-manifest.json"))
 
         let controlURL = URL(fileURLWithPath: config.ctlFilePath)
         try fileManager.createDirectory(
@@ -46,5 +43,6 @@ enum HvfRuntimePreparation {
         } else {
             try Data().write(to: controlURL)
         }
+        return manifest
     }
 }

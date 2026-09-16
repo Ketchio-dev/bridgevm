@@ -10,6 +10,11 @@ final class NativeRuntimeAppOwner {
     private let options: BridgeVMControlLaunchOptions
     private let appInstanceID = UUID().uuidString
     private let cache: NativeRuntimeModelCache<LibraryModel>
+    private lazy var control = NativeRuntimeAppControlRouter(appInstanceID: appInstanceID, library: library.identity,
+        validateOwner: { [weak self] in
+            guard let self else { throw NativeRuntimeError.ownerUnavailable }
+            try self.owner.validateCurrentOwnership()
+        }, retainedModel: { [weak self] in self?.cache.retainedValue })
 
     private init(options: BridgeVMControlLaunchOptions) throws {
         self.options = options
@@ -22,9 +27,13 @@ final class NativeRuntimeAppOwner {
         ControlCommandDispatch.validateOrExit(arguments: arguments)
         do {
             let instance = try NativeRuntimeAppOwner(options: BridgeVMControlLaunchOptions.parse(arguments: arguments))
-            try instance.owner.start { [weak instance] request in
+            try instance.owner.start(controlHandler: { [weak instance] request, context in
                 guard let instance else { throw NativeRuntimeError.ownerUnavailable }
-                return try await instance.observation(request)
+                return try await instance.control.handle(request, context: context)
+            }) { [weak instance] request in
+                guard let instance else { throw NativeRuntimeError.ownerUnavailable }
+                return try await NativeRuntimeAppObservation.response(request, library: instance.library.identity,
+                    appInstanceID: instance.appInstanceID, retainedModel: instance.cache.retainedValue)
             }
             prepared = instance
         } catch {
@@ -47,18 +56,6 @@ final class NativeRuntimeAppOwner {
             FileHandle.standardError.write(Data("BridgeVM: \(error.localizedDescription)\n".utf8))
             exit(1)
         }
-    }
-
-    private func observation(_ request: NativeRuntimeRequest) throws -> NativeRuntimeResponse {
-        try Task.checkCancellation()
-        try NativeRuntimeCodec.validate(request)
-        guard request.library == library.identity, NativeLibraryReader.isCanonicalID(request.vmID),
-              let retainedModel = cache.retainedValue else { throw NativeRuntimeError.snapshotUnavailable }
-        let sessions = try retainedModel.runtimeObservations(slug: request.vmID,
-            requestedConfigurationIdentity: request.savedConfiguration.digest)
-        return NativeRuntimeResponse(schema: NativeRuntimeCodec.responseSchema, requestID: request.requestID,
-            library: library.identity, vmID: request.vmID, appInstanceID: appInstanceID,
-            observedAt: Date().timeIntervalSince1970, scope: NativeRuntimeCodec.scope, sessions: sessions)
     }
 
     static func shutdown() {

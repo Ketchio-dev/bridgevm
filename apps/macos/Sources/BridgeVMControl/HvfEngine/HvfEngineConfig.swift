@@ -62,13 +62,8 @@ struct HvfEngineConfig: Equatable {
         """
     }
 
-    /// The typed-runtime invocation of the same launch: hvf-runner
-    /// --launch-spec consuming launchManifestJSON() plus per-surface flags.
-    /// This is the R1 product path; wrapperArguments() remains the
-    /// evidence-harness path until every session runs through this and the
-    /// wrapper is retired. Argument names are hvf-runner's clap contract;
-    /// drift fails its parser, and HvfEngineTests pins the exact vector.
-    func runnerArguments(manifestPath: String, runnerPath: String, firmwareCodePath: String, probePath: String) -> [String] {
+    /// The default vector remains the legacy launch contract; owned mode frames stdin/stdout.
+    func runnerArguments(manifestPath: String, runnerPath: String, firmwareCodePath: String, probePath: String, ownedRuntime: Bool = false) -> [String] {
         var args = [
             runnerPath,
             "--launch-spec", manifestPath,
@@ -102,10 +97,11 @@ struct HvfEngineConfig: Equatable {
         if let vtpmStateDir {
             args.append(contentsOf: [
                 "--helper-vtpm-state", vtpmStateDir,
-                "--helper-swtpm-bin", swtpmBin,
-                "--helper-vtpm-key-stdin"
+                "--helper-swtpm-bin", swtpmBin
             ])
+            if !ownedRuntime { args.append("--helper-vtpm-key-stdin") }
         }
+        if ownedRuntime { args.append("--owned-runtime-stdio") }
         return args
     }
 

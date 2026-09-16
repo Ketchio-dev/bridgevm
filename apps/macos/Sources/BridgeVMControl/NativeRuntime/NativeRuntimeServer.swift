@@ -5,7 +5,7 @@ final class NativeRuntimeServer: @unchecked Sendable {
     typealias Handler = @Sendable (NativeRuntimeRequest) async throws -> NativeRuntimeResponse
     private let library: NativeRuntimeLibraryHandle
     private let endpoint: NativeRuntimeEndpoint
-    private let handler: Handler
+    private let router: NativeRuntimeRequestRouter
     private let validateOwner: @Sendable () throws -> Void
     private let descriptor: Int32
     private let socketIdentity: NativeRuntimeFileIdentity
@@ -18,7 +18,8 @@ final class NativeRuntimeServer: @unchecked Sendable {
     private var closed = false
 
     init(library: NativeRuntimeLibraryHandle, endpoint: NativeRuntimeEndpoint,
-         validateOwner: @escaping @Sendable () throws -> Void, handler: @escaping Handler) throws {
+         validateOwner: @escaping @Sendable () throws -> Void,
+         controlHandler: NativeRuntimeRequestRouter.ControlHandler? = nil, handler: @escaping Handler) throws {
         try library.validateCurrentIdentity()
         try endpoint.validate()
         if let stale = try endpoint.socketIdentity() { try endpoint.removeSocket(ifIdentity: stale) }
@@ -30,7 +31,8 @@ final class NativeRuntimeServer: @unchecked Sendable {
             bound = try endpoint.socketIdentity()
             guard let identity = bound, listen(fd, 4) == 0 else { throw NativeRuntimeError.invalidEndpoint }
             self.library = library; self.endpoint = endpoint; self.validateOwner = validateOwner
-            self.handler = handler; descriptor = fd; socketIdentity = identity
+            router = .init(library: library.identity, status: handler, control: controlHandler)
+            descriptor = fd; socketIdentity = identity
         } catch {
             Darwin.close(fd)
             if let bound { try? endpoint.removeSocket(ifIdentity: bound) }
@@ -74,24 +76,20 @@ final class NativeRuntimeServer: @unchecked Sendable {
             try validateOwner()
             let bytes = try NativeRuntimeTransport.readFrame(connection.descriptor,
                 limit: NativeRuntimeCodec.maximumRequestBytes, deadline: connection.deadline)
-            let request = try NativeRuntimeCodec.decode(NativeRuntimeRequest.self, from: bytes,
-                                                        limit: NativeRuntimeCodec.maximumRequestBytes)
-            try NativeRuntimeCodec.validate(request)
-            guard request.library == library.identity else { throw NativeRuntimeError.libraryChanged }
             try NativeRuntimeTransport.checkDeadline(connection.deadline)
             startedHandler = true
-            connection.begin(request: request, handler: handler) { [weak self] in
+            connection.begin(work: { [router] in
+                try await router.reply(to: bytes, context: .init(deadline: connection.deadline))
+            }) { [weak self] in
                 self?.queue.async { [weak self] in
                     self?.handlerFinished.insert(id); self?.releaseIfFinished(id)
                 }
             }
-            let response = try connection.response()
+            let data = try connection.responseData()
             try validateOwner()
-            try NativeRuntimeCodec.validate(response, for: request)
-            let data = try NativeRuntimeCodec.encode(response)
             try NativeRuntimeTransport.writeFrame(data, to: connection.descriptor,
                 limit: NativeRuntimeCodec.maximumResponseBytes, deadline: connection.deadline)
-        } catch { /* A failed observation never becomes a successful or partial wire response. */ }
+        } catch { /* Failed exchanges never become successful or partial wire responses. */ }
     }
 
     private func releaseIfFinished(_ id: UUID) {

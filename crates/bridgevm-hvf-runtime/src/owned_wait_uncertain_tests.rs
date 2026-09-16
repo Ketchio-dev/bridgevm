@@ -73,7 +73,7 @@ fn uncertain_child_process() {
         child.id() as i32
     );
     let report = |value: CleanupUnconfirmed| {
-        std::fs::write(root.join("unconfirmed"), value.reason).unwrap();
+        publication::write(&root.join("unconfirmed"), value.reason).unwrap();
     };
     let control = RuntimeControl::new(&|| true, &report);
     let _ = child.wait(&control);

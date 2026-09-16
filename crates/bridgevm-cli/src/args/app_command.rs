@@ -1,15 +1,14 @@
-//! Read-only native command selection.
+//! Native query and owned-runtime command selection.
 
 use crate::*;
+#[path = "app_query_command.rs"]
+mod query;
+pub(crate) use query::AppQueryCommand;
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum AppCommand {
-    /// List saved native app VM configurations, including inventory issues.
-    List,
-    /// Inspect one exact VM ID returned by list, including Korean IDs.
-    Inspect { id: String },
-    /// Report native launch-input readiness without starting a VM.
-    Readiness { id: String },
-    /// Query retained runtime observations from the already-running app.
-    Status { id: String },
+    #[command(flatten)]
+    Query(AppQueryCommand),
+    /// Stop an app-owned runtime and wait for confirmed owned-process cleanup.
+    Stop { id: String },
 }
