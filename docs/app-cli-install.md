@@ -3,26 +3,28 @@
 ```sh
 bridgevm app install 개발-vm
 bridgevm app install-status 개발-vm --json
+bridgevm app install 개발-vm # only after failed/cancelled becomes terminal
+bridgevm app readiness 개발-vm
+bridgevm app start 개발-vm
+bridgevm app status 개발-vm
+bridgevm app stop 개발-vm
 bridgevm app install-cancel 개발-vm
 ```
 
-Use the exact ID from `bridgevm app list`. A compatible app must already be
-running and own the selected native library. These commands do not open a window
-or launch another VM lifecycle.
+Use the exact ID from `bridgevm app list`; retry only after terminal failure or cancellation.
+A compatible app must already own the library. These commands open no window or other lifecycle.
 
 `install` starts or reuses the pending installation request saved when the VM was
 created. It never accepts an ISO path, password, recovery key, unattended secret,
 or driver path on the command line. Those inputs remain in the app-owned VM
 bundle and its existing recovery flow.
 
-The app binds the operation to its current instance, the canonical library, the
-exact VM ID, and the normalized saved-configuration digest. It admits only a
+The app binds the operation to its current instance, canonical library, exact VM ID, and normalized saved-configuration digest. It admits only a
 saved own-HVF Windows VM whose `installPending` value is true. A changed or
 ambiguous registration, running VM, UI-started installation, storage mutation,
 or other reserved work refuses admission.
 
-Plan construction runs outside the main actor because older saved requests may
-need to hash their ISO. The app reserves the operation first and retains that
+Plan construction runs outside the main actor because older requests may need ISO hashing. The app reserves the operation first and retains that
 reservation if the CLI disconnects. Before creating a session it checks the app
 owner, library identity, saved configuration, request metadata, and plan again.
 A changed input produces a terminal failure and no installation session.
@@ -34,15 +36,13 @@ plan preparation prevents session creation. Once finalization or recovery owns
 installation media, the existing recovery rules decide what must be preserved;
 the CLI cannot force-delete media or journals.
 
-The initial `install` command returns after the running app accepts or finds the
-operation. It does not wait for Windows installation to finish. Repeating the
-same internal operation ID is idempotent, and concurrent requests for the same
-VM observe the one retained operation. A later explicit invocation can create a
-new retry only after the previous operation is terminal and the exact pending
-configuration still matches.
+The initial `install` command returns after the running app accepts or finds the operation;
+`Control exchange: complete` never means Windows installation finished. Repeating the same
+internal operation ID is idempotent, and concurrent clients observe the retained operation.
+A later explicit invocation creates a retry only after the previous operation is terminal
+and the exact pending configuration still matches.
 
-Text and JSON report app-owned host installation state. They do not prove guest
-boot, display readiness, driver behavior, or any release criterion. Automated
+Text and JSON report app-owned host installation state, not guest boot, display readiness, driver behavior or a release criterion. Automated
 protocol and model tests likewise do not replace live hardware evidence.
 
 JSON uses `schema: "bridgevm.app-install-command.v1"` and

@@ -15,7 +15,7 @@ struct NativeCLIInstallResult: Encodable {
 
     var text: String {
         var lines = ["Native Windows install: \(vmID)", "Command: \(command)",
-                     "Observation scope: \(scope)", "Request: \(complete ? "completed" : "unavailable")"]
+                     "Observation scope: \(scope)", "Control exchange: \(complete ? "complete" : "unavailable")"]
         if let requestedOperationID { lines.append("Requested operation: \(requestedOperationID)") }
         if let disposition { lines.append("Disposition: \(disposition.rawValue)") }
         if let observation {
@@ -24,9 +24,9 @@ struct NativeCLIInstallResult: Encodable {
             lines.append("Cancellation available: \(observation.canCancel ? "yes" : "no")")
             if let failure = observation.failure { lines.append("Install failure: \(failure)") }
             if !observation.logTail.isEmpty { lines.append("Recent log:\n" + observation.logTail.joined(separator: "\n")) }
+            lines.append(observation.cliNextAction(vmID: vmID))
         }
         if let unavailableReason { lines.append("Install control unavailable: \(unavailableReason)") }
         lines.append("This reports app-owned host installation state; it does not prove guest boot or display readiness.")
-        return lines.joined(separator: "\n") + "\n"
-    }
+        return lines.joined(separator: "\n") + "\n" }
 }
