@@ -12,8 +12,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Original and versioned diagnostic queue contracts (no app launch)
         run: |
-          python3 tests/integration/app-ui-tier-smoke.py
-          python3 tests/integration/app-ui-host-tier-smoke.py
+          for contract in app-ui-tier-smoke app-ui-host-tier-smoke app-ui-host-v2-tier-smoke; do python3 "tests/integration/$contract.py" || exit $?; done
   native-contracts:
     runs-on: macos-15
     timeout-minutes: 30
@@ -31,3 +30,4 @@ jobs:
           bash apps/macos/scripts/build-app-ui-launcher.sh --output "$RUNNER_TEMP/app-ui-launcher-contracts/AppUIHostLauncher"
           xcrun swiftc -parse-as-library -swift-version 5 apps/macos/scripts/AppUIHostLaunchOwnership.swift tests/integration/AppUIHostLateOwnershipContracts.swift tests/integration/app-ui-launcher-ownership.swift -o "$RUNNER_TEMP/app-ui-launcher-contracts/ownership-tests"
           "$RUNNER_TEMP/app-ui-launcher-contracts/ownership-tests"
+      - run: bash scripts/check-app-ui-driver-contracts.sh --output "$RUNNER_TEMP/app-ui-driver-contracts"

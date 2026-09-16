@@ -17,7 +17,7 @@ trap 'rm -rf "$scratch"' EXIT
 xcrun swiftc -parse-as-library -swift-version 5 -O \
   -target arm64-apple-macosx14.0 -module-cache-path "$scratch/module-cache" \
   -framework AppKit -framework CryptoKit \
-  "$script_dir/AppUIHostLaunchOwnership.swift" "$script_dir/LaunchAppUIHost.swift" \
+  "$script_dir/AppUIHostLaunchOwnership.swift" "$script_dir/LaunchAppUIHost.swift" "$script_dir/AppUIHostLauncherMain.swift" \
   -o "$scratch/AppUIHostLauncher"
 chmod 0500 "$scratch/AppUIHostLauncher"
 # A hard-link publish refuses a concurrently created destination as well.

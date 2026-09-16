@@ -214,18 +214,3 @@ final class AppUIHostLauncher {
         }
     }
 }
-
-@main
-enum LaunchAppUIHost {
-    @MainActor static func main() {
-        umask(0o077)
-        let startedAt = ProcessInfo.processInfo.systemUptime
-        do {
-            let paths = try AppUIHostLaunchPaths(arguments: Array(CommandLine.arguments.dropFirst()))
-            exit(AppUIHostLauncher(paths: paths, startedAt: startedAt).run())
-        } catch {
-            FileHandle.standardError.write(Data("Native app launcher refused: \(error)\n".utf8))
-            exit(2)
-        }
-    }
-}
