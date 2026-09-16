@@ -123,7 +123,7 @@ struct CreateVMSheet: View {
                     Text(hvfVarsPath.isEmpty ? "선택된 vars 없음" : (hvfVarsPath as NSString).lastPathComponent)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
-                Text("3D 드라이버 주입은 서명 provenance 검증기가 없어 사용할 수 없습니다. 3D 주입 없이 가져옵니다.")
+                Text("3D 가속은 Future Path이며 이번 출시 범위에 포함되지 않습니다. 기본 디스플레이 구성으로 가져옵니다.")
                     .font(.caption).foregroundColor(.secondary)
             } else if mode == .windowsHVFInstall {
                 CreateWindowsInstallFields(isoPath: isoPath, guestPayloadPath: guestPayloadPath,

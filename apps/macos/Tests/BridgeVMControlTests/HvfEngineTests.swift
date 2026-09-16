@@ -79,7 +79,7 @@ final class HvfEngineConfigTests: XCTestCase {
         XCTAssertEqual(config?.ramMiB, 8192)
         XCTAssertEqual(config?.smpCpus, 8)
         XCTAssertEqual(config?.virtioNet, true)
-        XCTAssertTrue(config?.virtioGpu3d == true && config?.nvmeBufferedIO == false)
+        XCTAssertTrue(config?.virtioGpu3d == false && config?.nvmeBufferedIO == false)
         XCTAssertEqual(config?.performanceRisk, .aggressive)
         XCTAssertEqual(config?.vtpmStateDir, "/library/win11/bundle.vmbridge/metadata/vtpm")
         XCTAssertEqual(config?.vtpmKeyID, "win11")

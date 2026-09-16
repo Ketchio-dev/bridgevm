@@ -2,7 +2,7 @@
 
 Document status: **Current**
 
-Last reviewed: 2026-08-29
+Last reviewed: 2026-09-16
 
 BridgeVM separates the app that ordinary technical users can try from the
 Windows driver work that still requires a development security posture. The two
@@ -59,7 +59,7 @@ Its contract is:
 The retained B4 campaign passed its fixed 20-lane pointer gate at 20/20 with
 p95 243 ms and no rendering/package regression lanes. That supports the exact
 experimental package tested in the receipt. It does not establish Microsoft
-kernel-policy signing provenance and therefore does not close A9. See the
+kernel-policy signing provenance or change the General Preview scope. See the
 [B4 receipt](windows-arm/evidence/b4-pointer-reliability-proven-20260830.md) and
 [capability matrix](windows-arm/capability-matrix.md).
 
@@ -69,21 +69,26 @@ Windows. See Microsoft's
 [kernel-mode signing requirements](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/kernel-mode-code-signing-requirements--windows-vista-and-later-)
 and [test-signing documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/the-testsigning-boot-configuration-option).
 
-## Promotion rule
+## Future-path promotion rule
 
-Graphics Lab does not become General Preview merely because a workload passes.
-Promotion requires all of the following:
+On 2026-09-16 the product owner removed 3D acceleration from the General
+Preview and v1 launch scope. A2 and A3 remain proven historical research but
+are non-blocking. A9 now measures the supported 3D-off install and import
+journeys, and remains OPEN until both have retained clean-machine app evidence.
+
+Graphics Lab does not become a product feature merely because a workload
+passes. Any future scope change requires all of the following:
 
 1. a Microsoft kernel-policy-signed ARM64 package with retained provenance;
 2. the same verified package identity consumed by both ISO install and disk
    import before either VM is mutated;
 3. a retained clean-machine product-flow receipt;
-4. A9 promoted from the machine-readable capability registry without changing
-   its criterion;
+4. a new product criterion and explicit capability-registry scope change;
 5. exact-head hosted CI, Security and quality, packaging, attribution, and final
    project checks.
 
-Until then, the general artifact stays 3D-off and A9 stays OPEN.
+Until then, the general artifact stays 3D-off and graphics evidence remains a
+future-path record rather than release evidence.
 
 ## Release operator checklist
 

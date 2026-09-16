@@ -9,16 +9,16 @@ live in the [capability matrix](docs/windows-arm/capability-matrix.md) and dated
 receipts under `docs/windows-arm/evidence/`.
 
 <!-- BEGIN GENERATED: capability-summary -->
-**Product state: Engineering Preview.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Release-blocking evidence remains open; known defects are disclosed below.
+**Product state: Engineering Preview.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots and window Coherence verbs. 3D acceleration is excluded from General Preview and v1; release-blocking evidence remains open and known defects are disclosed below.
 
-Release-blocking criteria proven: **16 / 19**. Open: A9, A11, A19.
+Release-blocking criteria proven: **14 / 17**. Open: A9, A11, A19.
 
 Known open defects:
-- **A9**: Windows-HVF 3D driver injection is unavailable for install and import: signed kernel-policy provenance and a clean-machine installation flow have not been proven. The product exposes only 3D-off install/import.
+- **A9**: No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off.
 - **A19**: External copies of only logical disk/vars originals after restore lose current managed state. Legacy managed storage relocated before identity migration is refused. Full interrupted-restore, raw export and product lifecycle gates remain unproven.
 - **B6**: Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness.
 
-- Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
+- Graphics future path: Vulkan is a Graphics Lab future path, excluded from General Preview and v1; D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
 State reviewed 2026-09-16 at commit `72bcb5e1d1a046927c00e409547527767dc2b9cb`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
@@ -39,7 +39,7 @@ newer.
 
 | Engine | Current boundary |
 | --- | --- |
-| **Windows HVF** | Custom Hypervisor.framework VMM; installed Windows 11 Arm desktop, persistent storage, SMP, display/input, network, audio, guest integration, security lifecycle, snapshots, and experimental 3D |
+| **Windows HVF** | Custom Hypervisor.framework VMM; installed Windows 11 Arm desktop, persistent storage, SMP, display/input, network, audio, guest integration, security lifecycle, and snapshots |
 | **Apple VZ** | Working narrow Linux/macOS Arm path through Virtualization.framework |
 | **Compatibility** | Supervised QEMU path for broad guest support and emulation |
 
@@ -91,7 +91,7 @@ generated A19 entry above and the [snapshot scope](docs/windows-arm/snapshot-sco
 - authenticated recovery/migration lifecycle;
 - fail-closed handling for missing security-state provenance.
 
-### Experimental graphics
+### Graphics Lab future path
 
 - live Vulkan workload evidence above the configured frame-rate threshold;
 - live D3D11 workload evidence above the configured threshold across the required
@@ -99,8 +99,9 @@ generated A19 entry above and the [snapshot scope](docs/windows-arm/snapshot-sco
 - guest driver/ICD identity checks as part of the graphics evidence;
 - host-side renderer and virtio-gpu 3D command traces.
 
-These are intentionally **experimental graphics capabilities**. A passing title
-or smoke does not imply universal game/API compatibility.
+These are retained **Graphics Lab research results**. They are excluded from
+General Preview and v1, and a passing title or smoke does not imply universal
+game/API compatibility.
 
 ## Distribution
 
@@ -141,7 +142,6 @@ separate concerns.
 The Engineering Preview boundary is the proven evidence set, not universal
 compatibility:
 
-- GPU compatibility is much narrower than "all Vulkan/D3D11 software";
 - driver setup and recovery remain developer-oriented;
 - ad-hoc Mac distribution requires a user trust override for downloaded builds;
 - clean-machine coverage is smaller than a mature VM product needs, and the
@@ -170,11 +170,9 @@ The highest-value work from this point is:
 3. keep README/status/documentation consistent with the capability registry;
 4. simplify user-supplied Windows ISO installation while keeping it 3D-off;
 5. keep test-signing/Secure Boot conflicts isolated to Graphics Lab;
-6. broaden real application compatibility and collect frame-time rather than
-   average-FPS-only data;
-7. run longer graphics/reset/resize/recovery soak coverage;
-8. improve clean-machine install, diagnostics export, and recovery UX;
-9. re-run the final no-regression gate at each preview tag/head.
+6. improve clean-machine install, diagnostics export, and recovery UX;
+7. run longer reset, resize, and recovery soak coverage;
+8. re-run the final no-regression gate at each preview tag/head.
 
 Developer ID/notarization, production Windows driver signing, and stronger
 artifact provenance can be added later without blocking technical users from

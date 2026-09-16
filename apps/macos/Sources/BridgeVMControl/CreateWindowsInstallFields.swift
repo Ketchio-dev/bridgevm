@@ -42,7 +42,7 @@ struct CreateWindowsInstallFields: View {
             } label: {
                 Label("설치 파일", systemImage: "opticaldisc")
             }
-            Text("3D 드라이버 주입은 서명 provenance 검증기가 없어 사용할 수 없습니다. Windows는 3D 주입 없이 설치합니다.")
+            Text("3D 가속은 Future Path이며 이번 출시 범위에 포함되지 않습니다. Windows는 기본 디스플레이로 설치합니다.")
                 .font(.caption).foregroundColor(.secondary)
         }
     }

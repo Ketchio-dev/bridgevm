@@ -11,12 +11,10 @@ import pathlib
 import re
 import sys
 import tempfile
-
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 REGISTRY = ROOT / "capabilities/windows-hvf.json"
 VERSION = re.compile(r"^v[0-9]+(?:\.[0-9]+){2}(?:[.-][0-9A-Za-z]+)*$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
-
 
 def build_manifest(registry: dict, version: str, commit: str) -> dict:
     if not VERSION.fullmatch(version):
@@ -27,10 +25,10 @@ def build_manifest(registry: dict, version: str, commit: str) -> dict:
         raise ValueError("general-preview policy expects ENGINEERING_PREVIEW")
     criteria = {item.get("id"): item for item in registry.get("criteria", [])}
     a9 = criteria.get("A9", {})
-    if a9.get("state") != "OPEN" or a9.get("release_blocking") is not True:
-        raise ValueError("A9 must remain release-blocking and OPEN for this policy")
-    if "3D-off install/import" not in a9.get("known_defect", ""):
-        raise ValueError("A9 must disclose that product install/import is 3D-off")
+    if a9.get("state") not in {"OPEN", "PROVEN"} or a9.get("release_blocking") is not True:
+        raise ValueError("A9 must remain a release-blocking install/import criterion")
+    if "3D-off" not in a9.get("statement", ""):
+        raise ValueError("A9 must define the supported install/import journey as 3D-off")
 
     registry_bytes = json.dumps(
         registry, ensure_ascii=False, separators=(",", ":"), sort_keys=True
@@ -64,13 +62,17 @@ def self_test(registry: dict) -> None:
     assert manifest["windows_graphics"]["kernel_driver_included"] is False
     assert manifest["windows_graphics"]["product_injection_available"] is False
     changed = copy.deepcopy(registry)
-    next(item for item in changed["criteria"] if item["id"] == "A9")["state"] = "PROVEN"
+    promoted = next(item for item in changed["criteria"] if item["id"] == "A9")
+    promoted["state"] = "PROVEN"; promoted.pop("known_defect", None)
+    build_manifest(changed, "v1.2.3", "b" * 40)
+    changed = copy.deepcopy(registry); a9 = next(item for item in changed["criteria"] if item["id"] == "A9")
+    a9["statement"] = "install works"
     try:
-        build_manifest(changed, "v1.2.3", "b" * 40)
+        build_manifest(changed, "v1.2.3", "c" * 40)
     except ValueError:
         pass
     else:
-        raise AssertionError("a promoted A9 must require an intentional policy update")
+        raise AssertionError("A9 must retain the 3D-off release boundary")
     workflow = (ROOT / ".github/workflows/release.yml").read_text()
     for required in (
         "generate-general-preview-manifest.py",
@@ -102,9 +104,7 @@ def main() -> int:
         print(f"general preview manifest: FAIL ({error})", file=sys.stderr)
         return 1
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", dir=args.output.parent, delete=False
-    ) as handle:
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=args.output.parent, delete=False) as handle:
         json.dump(manifest, handle, indent=2, sort_keys=True)
         handle.write("\n")
         temporary = pathlib.Path(handle.name)

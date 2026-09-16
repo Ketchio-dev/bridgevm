@@ -34,8 +34,8 @@ struct HvfWindowsInstallView: View {
             Text("설치 구성").font(.headline)
             row("ISO", (session.plan.request.isoPath as NSString).lastPathComponent)
             row("디스크", "\(session.plan.request.diskGiB) GiB")
-            row("3D 드라이버", session.plan.request.injectViogpu3d
-                ? "차단됨 — 서명 provenance 검증기 없음" : "주입 안 함")
+            row("그래픽", session.plan.request.injectViogpu3d
+                ? "차단됨 — Future Path" : "기본 디스플레이 · 3D 제외")
             if session.plan.sourceImageCacheCandidateExists {
                 row("설치 소스", "저장된 소스 있음 · 시작 시 확인")
             }
