@@ -20,9 +20,9 @@ enum AppUIHostOwnedViewFields {
 
     static func accessibility(_ view: NSView, owner: NSWindow, budget: inout AppUIHostOwnedAXEntries) -> [String: Any] {
         let ordinary = budget.project(view.accessibilityChildren() ?? []) { entry($0, owner: owner) }
-        let navigation = budget.project(view.accessibilityChildrenInNavigationOrder() ?? []) { entry($0, owner: owner) }
-        return ["is_accessibility_element": view.isAccessibilityElement(),
-                "ordinary_children": ordinary, "navigation_children": navigation]
+        return ["is_accessibility_element": view.isAccessibilityElement(), "ordinary_children": ordinary,
+                "navigation_children_observed": false,
+                "navigation_children_unobserved_reason": "disabled-after-pilot15-navigation-array-trap"]
     }
 
     static func entry(_ value: Any, owner: NSWindow? = nil) -> [String: Any] {

@@ -30,7 +30,7 @@ enum AppUIHostOwnedViewObservation {
                 AppUIHostOwnedViewFields.accessibility(view, owner: window, budget: &budget)
             })
         try admit()
-        try write(["schema_version": 1, "kind": "native-app-ui-host-owned-views", "stage": stage.rawValue,
+        try write(["schema_version": 2, "kind": "native-app-ui-host-owned-views", "stage": stage.rawValue,
             "pid": Int(ProcessInfo.processInfo.processIdentifier),
             "observed_uptime": ProcessInfo.processInfo.systemUptime,
             "scope": "exact-owned-content-descendants", "record_time_nonatomic": true,
