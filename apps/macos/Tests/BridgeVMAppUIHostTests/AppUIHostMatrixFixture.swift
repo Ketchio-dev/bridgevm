@@ -19,7 +19,7 @@ final class AppUIHostMatrixFixture {
     var latchCount = 0
     var admission: (() throws -> Void)?
     var present: ((Matrix.Variant) async throws -> Void)?
-    var capture: ((Matrix.Variant) throws -> Void)?
+    var capture: ((Matrix.Variant) async throws -> Void)?
     var afterLatch: (() throws -> Void)?
     var beforePersist: (([Matrix.Row]) throws -> Void)?
 
@@ -43,7 +43,7 @@ final class AppUIHostMatrixFixture {
             try await self.present?(variant)
         }, capture: { variant in
             self.captureAttempts.append(variant.name)
-            try self.capture?(variant)
+            try await self.capture?(variant)
             self.captures.append(variant.name)
         }, mismatch: { error in
             self.latchCount += 1

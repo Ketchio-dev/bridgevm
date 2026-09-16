@@ -18,7 +18,7 @@ enum AppUIHostPresentationMatrix {
     static func run(
         admission: () throws -> Void,
         present: (Variant) async throws -> Void,
-        capture: (Variant) throws -> Void,
+        capture: (Variant) async throws -> Void,
         mismatch: (AppUIHostPresentationMismatch) throws -> Void,
         observe: () -> [String: Any],
         persist: ([Row]) throws -> Void
@@ -35,7 +35,7 @@ enum AppUIHostPresentationMatrix {
             try Task.checkCancellation()
             try admission()
             if let error = presentationMismatch { try mismatch(error) }
-            else { try capture(variant) }
+            else { try await capture(variant) }
             try Task.checkCancellation()
             rows.append(Row(variant: variant, outcome: presentationMismatch == nil ? .passed : .mismatch,
                             observation: observe()))

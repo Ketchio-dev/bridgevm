@@ -16,7 +16,7 @@ enum AppUIHostWelcomeMatrix {
             present: { variant in
                 try await AppUIHostWindow.setPresentation(window, dark: variant.dark, minimum: variant.minimum)
             },
-            capture: { variant in try capture.capture(content, name: variant.name) },
+            capture: { variant in try await AppUIHostWelcomeCapture.capture(variant, host: host, window: window, content: content) },
             mismatch: { error in
                 capture.failed(error)
                 try capture.save()

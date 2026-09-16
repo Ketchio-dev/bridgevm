@@ -7,26 +7,19 @@ struct LibrarySidebarList: View {
         List(selection: $library.selectedID) {
             FirstRunImportSidebarEntry(library: library)
             RetainedControlsSidebarEntry(library: library)
-            Section {
+            Section("VM 라이브러리") {
                 ForEach(library.vms) { config in
                     VMRow(config: config)
                         .tag(config.slug)
                         .contextMenu { LibraryVMContextMenu(library: library, config: config) }
                 }
-            } header: {
-                Text("VM 라이브러리")
-                    .foregroundStyle(Color.secondary)
             }
             if !library.libraryIssues.isEmpty {
                 LibraryIssuesSection(issues: library.libraryIssues)
             }
-            Section {
+            Section("실험") {
                 Label("HVF Engine", systemImage: "cpu")
-                    .foregroundStyle(Color.primary)
                     .tag(LibraryModel.hvfEngineSelectionID)
-            } header: {
-                Text("실험")
-                    .foregroundStyle(Color.secondary)
             }
         }
         .listStyle(.sidebar)

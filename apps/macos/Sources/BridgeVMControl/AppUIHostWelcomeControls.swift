@@ -5,7 +5,7 @@ import AppKit
 enum AppUIHostWelcomeControls {
     static func wait(_ host: AppUIHost, window: NSWindow, content: NSView) async throws {
         try await AppUIHostAccessibility.wait("welcome controls", onTimeout: {
-            try AppUIHostAXObservation.save(host, window: window, content: content)
+            try AppUIHostOwnedViewObservation.saveTimeout(host, window: window, content: content)
         }) {
             try AppUIHostAccessibility.find("bridgevm.first-run.create", in: content) != nil
                 && AppUIHostAccessibility.find("bridgevm.first-run.import", in: content) != nil
