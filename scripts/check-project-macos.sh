@@ -5,8 +5,7 @@
     step "swift build" swift build --package-path apps/macos
     step "native app CLI" python3 tests/integration/native-app-cli-contract.py "$(swift build --package-path apps/macos --show-bin-path)/BridgeVMControl"
     step "swift tests" scripts/run-swift-tests.sh
-    # run-swift-tests.sh only covers apps/macos/Tests/*SwiftTests; the shim
-    # suites are a separate, much larger body that once went ungated.
+    step "native UI driver contracts" scripts/check-app-ui-driver-contracts.sh --output "$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-ui-driver.XXXXXX")/contracts"
     step "xctest shim suites" scripts/run-xctest-shim-suites.sh
     step "release overrides" scripts/check-release-overrides.sh
   else

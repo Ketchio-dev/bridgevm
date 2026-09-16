@@ -1,7 +1,6 @@
 import Foundation
 import SwiftUI
 import Darwin
-
 #if BRIDGEVM_APP_UI_HOST && !DEBUG
 #error("BRIDGEVM_APP_UI_HOST requires a separate DEBUG diagnostic build")
 #endif
@@ -12,6 +11,7 @@ enum BridgeVMControlMain {
         let arguments = Array(CommandLine.arguments.dropFirst())
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         do {
+            try AppUIHostDriverBuildBoundary.prepare()
             try AppUIHost.prepare(arguments: arguments, environment: ProcessInfo.processInfo.environment)
             try AppUIHost.prepared?.checkBeforeApplication()
         }
