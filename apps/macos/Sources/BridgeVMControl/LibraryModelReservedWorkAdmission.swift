@@ -29,7 +29,7 @@ extension LibraryModel {
     }
 
     func libraryWorkRefusal(
-        slug: String, excluding reservation: (HvfEngineSession, UUID)? = nil,
+        slug: String, excluding reservation: (HvfEngineSession, UUID)? = nil, excludingInstall: NativeInstallOperation? = nil,
         owns: @MainActor (LibraryModel, VMConfig) -> Bool
     ) -> String? {
         guard let config = vms.first(where: { $0.slug == slug }) else {
@@ -41,7 +41,7 @@ extension LibraryModel {
         if deletingSlugs.contains(slug) || cloningSlugs.contains(slug) || movingSlugs.contains(slug) {
             return "이 VM의 삭제·복제·이동 작업이 진행 중입니다. 완료 후 다시 시도하세요."
         }
-        if windowsInstallSessions.isActive(slug: slug) || windowsInstallSessions.cliOperations.isActive(vmID: slug) || retainedControlStore.records.contains(where: {
+        if windowsInstallSessions.isActive(slug: slug) || windowsInstallSessions.cliOperations.isActive(vmID: slug, excluding: excludingInstall) || retainedControlStore.records.contains(where: {
             if case let .install(config, session) = $0.descriptor { return config.slug == slug && session.isRunning }
             return false
         }) {
