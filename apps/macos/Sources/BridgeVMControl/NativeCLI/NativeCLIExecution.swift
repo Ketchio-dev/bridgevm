@@ -12,12 +12,12 @@ extension NativeCLI {
             let snapshot = try NativeCLIReadiness.snapshot(rootURL: options.libraryRoot, id: id)
             try output(snapshot, json: options.json, text: render(snapshot))
             return snapshot.launchReady ? 0 : 1
-        case .list, .inspect:
+        case .list, .inspect, .createWindows:
+            if case .createWindows = options.command { return try executeCreateWindows(options) }
             let id: String?
             if case .inspect(let value) = options.command { id = value } else { id = nil }
             let snapshot = try NativeLibraryReader.snapshot(rootURL: options.libraryRoot, id: id)
-            try output(snapshot, json: options.json, text: render(snapshot))
-            return snapshot.complete ? 0 : 1
+            try output(snapshot, json: options.json, text: render(snapshot)); return snapshot.complete ? 0 : 1
         }
     }
 }
