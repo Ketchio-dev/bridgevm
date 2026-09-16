@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-16",
-  "tested_commit": "553ec2a93e070c1e8dfb925bf6cd287edd191b55",
+  "tested_commit": "e157d523cd183ab6bfb8fde1671eed891131cea4",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -142,7 +142,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "OPEN: source 0d1fcbf6bf373404ed1454663d26ce590d7495b1 connects ordinary typed app launch and CLI stop to retained runner cleanup evidence. Success requires matching completion, runner exit, clean output EOF and drained guest effects; late cleanup cannot rewrite a missed operation deadline. The registration-inclusive frozen R4 project check at checkpoint 553ec2a93e070c1e8dfb925bf6cd287edd191b55 passed in 210.805 seconds with all 3,121 inputs unchanged, including 657 control shim tests and two explicit live-only skips. Independent actual app/runner and paired Rust/native CLI fixtures passed three cases using synthetic media and fake children. Focused runtime/runner families passed 105 tests and private socket contracts passed 17; these deterministic results do not prove guest shutdown, application flush or a release gate. The prior post-commit freshness failure, R3 document-reference failure, earlier full/shim failures and reviewed corrections remain recorded. CLI start and supervisor crash recovery remain unimplemented or unproven. New-head hosted checks, revised Windows PowerShell 5.1 checks and live app/guest stop remain pending. PR159 is merged; PR160 awaits new-head hosted verification. Native UI pilot18 remains 0/7 actions and 4/8 captures with Accessibility untrusted. See the [owned stop record](../history/windows-hvf/native-owned-stop-deterministic-20260916.md) and [preceding cancellation record](../history/windows-hvf/native-owned-cancellation-deterministic-20260916.md). No capability promotion is claimed.",
+      "measured": "OPEN: source e157d523cd183ab6bfb8fde1671eed891131cea4 retains owned diagnostic processes and both output streams through confirmed completion. B6 passed 147 portable PowerShell 7.6.6 checks in each of two execution modes; resident inventory passed 48 lifecycle assertions plus its three original provider cases, and chooser families passed 32 XCTest plus 19 Swift Testing cases. All focused source hashes remained unchanged. These checks do not establish Windows PowerShell 5.1, native UI or guest behavior. The first frozen project check failed only an operator HANDOFF tree reference after 212.345 seconds; all code checks passed and all 3,129 recorded non-operator inputs stayed unchanged. The reference was corrected without weakening its checker; the second full check passed in 210.505 seconds with all 3,130 tracked inputs unchanged, now including the operator HANDOFF consumed by the checker. HEAD and index also remained unchanged. The preceding native-stop checkpoint passed its full local project check in 210.805 seconds with 3,121 inputs unchanged, 657 control shim tests and two explicit live-only skips; actual app-session/runner and paired CLI fixtures passed three synthetic cases. PR160 merged after all 85 exact-head workflows succeeded; its main post-merge checks remain partly pending. PR159 passed all 50 recorded main workflows and its obsolete branch was removed. Earlier Windows output-sharing failures, the unresolved historical inventory timeout, chooser expectation failure and all previous full/shim/freshness failures remain retained. CLI start and supervisor crash recovery remain unimplemented or unproven. New-head hosted checks and live app/guest stop remain pending; native UI pilot18 still reports 0/7 actions and 4/8 captures with Accessibility untrusted. See the [diagnostic ownership record](../history/windows-hvf/native-diagnostic-ownership-20260916.md) and [owned stop record](../history/windows-hvf/native-owned-stop-deterministic-20260916.md). No capability promotion is claimed.",
       "evidence_paths": [
         "STATUS.md",
         "docs/windows-arm/evidence/a11-regression-seal-20260901.md",
@@ -185,7 +185,8 @@
         "docs/history/windows-hvf/native-app-onboarding-diagnostic-20260915.md",
         "docs/history/windows-hvf/native-runtime-observations-through-20260916.md",
         "docs/history/windows-hvf/native-owned-cancellation-deterministic-20260916.md",
-        "docs/history/windows-hvf/native-owned-stop-deterministic-20260916.md"
+        "docs/history/windows-hvf/native-owned-stop-deterministic-20260916.md",
+        "docs/history/windows-hvf/native-diagnostic-ownership-20260916.md"
       ]
     },
     {

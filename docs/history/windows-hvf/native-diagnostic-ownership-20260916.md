@@ -94,10 +94,10 @@ No Accessibility query, actual chooser interaction or VM was launched for this w
 | --- | --- | --- |
 | Original chooser predicate tests | FAIL, one of eight tests | Original failed expectation retained |
 | Corrected chooser families | PASS, 32 XCTest plus 19 Swift Testing cases | 45 source/test inputs unchanged; synthetic graph only |
-| Owned-output focused R2 | PASS, 127 checks on PowerShell 7.6.6 | Intermediate reviewed source; no Windows 5.1 claim |
+| Frozen full project R1 | FAIL, 212.345 seconds | Only operator HANDOFF tree reference misread as a commit; all code checks passed |
 | Final owned-output R4 | PASS, 147 checks in each of File and dot-source modes | All seven inputs stable; PowerShell 7.6.6 only |
 | Resident owned-child R4 | PASS, 48 lifecycle assertions plus three original cases | All seven loaded inputs stable; original ten-second bound |
-| Frozen full project check | Pending | Final source, documentation and budgets must all be included |
+| Frozen full project R2 | PASS, 210.505 seconds | All 3,130 tracked inputs unchanged, including operator HANDOFF; HEAD and index unchanged |
 
 Private evidence is under the development checkpoint directory. Prior failed
 logs and snapshots remain intact; new results do not replace them.
@@ -107,11 +107,11 @@ logs and snapshots remain intact; new results do not replace them.
 | Hosted B6 synthetic failure archive | `0779a714e8a663e942ec1da21d64659523c0ad4a41d7316915767851997e53c2` |
 | T17 original-tests-r1.log | `baa612a724d75177dd3a697a0a26238407532f0fe592aef9237ad1b1b4d52398` |
 | T17 corrected-tests-r2.log | `1a843fe0f039166526bf8292545475962e8600d92c9a485f745c64bafdb56ac1` |
-| B6 headless-r2.log | `fe4394decd679446ecc16db9f58c0af5cae34e8cb67b4def26f3ab4fbb187734` |
+| Frozen project-r1.log | `fb74b9775f85feef2706c5f68702389f80e6d0ae4477c3402f5934e7799c65e1` |
 | B6 file-r4.log | `2173366821f3dbb3f24e0a2b2cb6a5be95ba6b75698df35d8aeefa117832af3b` |
 | B6 dot-source-r4.log | `9f632a143d451b4dead4febe891a746a91f76901b05178bc8c133c5b1b23acff` |
 | Resident focused-r4.log | `95598bb9b0674cf6505ca2a1579eb158f00b36a7f62ab80ca1656652fe23633e` |
-| Final frozen project log | Pending |
+| Frozen project-r2.log | `5ea4eca4583935fbcb8dd0df73eb9887f1972a1e7ec1610d0698952b96c2f4b5` |
 
 The hosted inspection interval was 05:17:41–05:20:41 UTC. Pending run IDs and exact
 snapshots are retained for the next turn. No later hosted status/log query was made.
