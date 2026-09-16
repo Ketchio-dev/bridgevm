@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 #endif
 struct HvfEngineView: View {
     @ObservedObject private(set) var session: HvfEngineSession
+    @StateObject private var readiness = HvfRuntimeReadinessModel()
+    @State private var startRefusal: String?
     @State private var targetDiskPath = ""
     @State private var uefiVarsPath = ""
     @State private var evidenceDir = ""
@@ -61,7 +63,17 @@ struct HvfEngineView: View {
         .onDisappear { releaseVTPMReservation() }
         .onAppear {
             loadStateFromSession()
+            readiness.request(configuration: currentConfig(), repoRoot: session.repoRoot)
             session.attachIfStopped()
+        }
+        .onChange(of: session.hasActiveRuntimeWork) { _, active in
+            if active { startRefusal = nil }
+        }
+        .onChange(of: currentConfig()) { _, configuration in
+            readiness.request(configuration: configuration, repoRoot: session.repoRoot)
+        }
+        .onChange(of: session.repoRoot) { _, repoRoot in
+            readiness.request(configuration: currentConfig(), repoRoot: repoRoot)
         }
         .confirmationDialog(
             "이 상태에 복구 키를 연결하시겠습니까?",
@@ -153,7 +165,7 @@ struct HvfEngineView: View {
     }
 
     private var readinessCard: some View {
-        HvfWindowsReadinessCard(report: currentConfig().readiness(repoRoot: session.repoRoot))
+        HvfRuntimeReadinessView(model: readiness, configuration: currentConfig(), repoRoot: session.repoRoot)
     }
 
     private var vtpmLifecycleCard: some View {
@@ -207,27 +219,8 @@ struct HvfEngineView: View {
     }
 
     private var statusCard: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Button(action: start) { Label("시작", systemImage: "play.fill") }
-                        .buttonStyle(.borderedProminent).controlSize(.large)
-                        .disabled(session.hasActiveRuntimeWork || !bootConfigReady)
-                        .accessibilityIdentifier("bridgevm.windows.runtime.start")
-                    Button(action: session.stop) { Label("중지", systemImage: "stop.fill") }
-                        .disabled(session.ownedStartOperation?.workerPending == true)
-                        .controlSize(.large).accessibilityIdentifier("bridgevm.windows.runtime.stop")
-                }
-                HStack(spacing: 24) {
-                    infoItem("State", stateText)
-                    infoItem("Heartbeat", heartbeatText)
-                    infoItem("Events", "\(session.events.count)")
-                }
-            }
-            .padding(6)
-        } label: {
-            Label("실행 및 상태", systemImage: "play.circle")
-        }
+        HvfRuntimeStatusCard(session: session, ready: bootConfigReady, stateText: stateText,
+            heartbeatText: heartbeatText, refusal: startRefusal, start: start)
     }
 
     private var screenshotCard: some View {
@@ -278,14 +271,7 @@ struct HvfEngineView: View {
         }
     }
 
-    private var pendingWorkText: String? {
-        if session.hasPendingRuntimeMutation { return "작업 중" }
-        if let start = session.ownedStartOperation, start.workerPending {
-            return start.observation.failure == nil ? "시작 준비 중" : "작업 정리 확인 중"
-        }
-        return nil
-    }
-
+    private var pendingWorkText: String? { session.runtimePendingWorkText }
     private var stateText: String {
         if let pendingWorkText { return pendingWorkText }
         switch session.connectionState {
@@ -332,7 +318,7 @@ struct HvfEngineView: View {
     }
 
     private var bootConfigReady: Bool {
-        currentConfig().readiness(repoRoot: session.repoRoot).launchReady
+        readiness.report(configuration: currentConfig(), repoRoot: session.repoRoot)?.launchReady == true
     }
 
     var vtpmLifecycleAvailable: Bool { !session.hasActiveRuntimeWork }
@@ -350,16 +336,11 @@ struct HvfEngineView: View {
         }
     }
 
-    private func infoItem(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption).foregroundColor(.secondary)
-            Text(value).font(.body.monospaced())
-        }
-    }
-
     private func start() {
-        guard session.acceptStartConfiguration(currentConfig()) else { return }
-        session.start()
+        startRefusal = nil
+        if case let .refused(reason) = session.requestGUIStart(configuration: currentConfig()) {
+            startRefusal = reason; return
+        }
         #if canImport(AppKit)
         HvfDisplayWindowController.present(session: session, title: displayWindowTitle)
         #endif

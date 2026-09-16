@@ -13,7 +13,7 @@ extension HvfEngineSession {
         }
         guard !runtimeTransitionInProgress, !workAdmissionGate.isChecking else { return .refused(.busy) }
         guard mutationReservation == nil else { return .refused(.mutationActive) }
-        guard !hasPendingOwnedStart, !mayHaveOwnedWork, process?.isRunning != true,
+        guard !hasPendingRuntimeStart, !mayHaveOwnedWork, process?.isRunning != true,
               !hasRetainedAttachment, connectionState == .stopped else { return .refused(.runtimeActive) }
         guard config == configuration, expectedSavedConfigurationDigest.utf8.count == 64,
               expectedSavedConfigurationDigest.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else {

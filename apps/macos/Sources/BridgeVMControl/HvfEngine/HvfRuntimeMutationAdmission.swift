@@ -24,14 +24,6 @@ final class HvfRuntimeMutationReservation: @unchecked Sendable {
 }
 
 extension HvfEngineSession {
-    func runtimeConfigurationChanged() {
-        if let reservation = mutationReservation, config != reservation.configuration { reservation.invalidate() }
-        if let ticket = ownedStartOperation, config != ticket.configuration { ticket.fail(.configurationChanged) }
-    }
-    func matchesRuntimeReservation(_ id: UUID) -> Bool {
-        if let mutationReservation, mutationReservation.id == id { return mutationReservation.isActive }
-        return ownedStartOperation?.operationID == id && ownedStartOperation?.reservesSession == true
-    }
     func checkReservedWork(_ id: UUID) -> Bool {
         guard matchesRuntimeReservation(id), !workAdmissionGate.isChecking else { return false }
         let check: LibraryWorkAdmission? = reservedWorkAdmission.map { admission in
@@ -54,7 +46,7 @@ extension HvfEngineSession {
     func validateRuntimeMutation(_ reservation: HvfRuntimeMutationReservation) -> Bool {
         guard mutationReservation === reservation, reservation.isActive,
               config == reservation.configuration, !runtimeTransitionInProgress,
-              !mayHaveOwnedWork, !hasPendingOwnedStart, connectionState == .stopped else { return false }
+              !mayHaveOwnedWork, !hasPendingRuntimeStart, connectionState == .stopped else { return false }
         return checkReservedWork(reservation.id)
     }
     func finishRuntimeMutation(_ reservation: HvfRuntimeMutationReservation) {
