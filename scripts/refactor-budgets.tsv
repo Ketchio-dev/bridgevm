@@ -1925,12 +1925,12 @@ scripts/win-assets/bv-b6-caption-point.ps1	53
 scripts/b6-caption-focus.sh	14
 tests/integration/b6-caption-focus-contract.py	56
 tests/integration/b6-caption-point-contract.ps1	37
-.github/workflows/b6-caption-focus-contracts.yml	21
+.github/workflows/b6-caption-focus-contracts.yml	21	0
 scripts/win-assets/bv-b6-tip-point.ps1	49
 scripts/b6-tip-dismiss.sh	32
 tests/integration/b6-tip-dismiss-contract.py	59
-tests/integration/b6-tip-point-contract.ps1	56
-tests/integration/b6-tip-tree.ps1	16
+tests/integration/b6-tip-point-contract.ps1	44	0
+tests/integration/b6-tip-tree.ps1	11	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserDiagnostics.swift	62	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserDiagnosticTests.swift	56	0
 scripts/live-gates/b6_renderer_trace.py	59
@@ -2632,3 +2632,8 @@ tests/integration/native-runtime-transport-fixture.swift	34	0
 tests/integration/native_app_status_contract.py	40	0
 tests/integration/native_app_status_fixture.py	85	0
 tests/integration/native_runtime_alias_cases.py	44	0
+tests/integration/b6-tip-query-process.ps1	103	0
+tests/integration/b6-tip-query-evidence.ps1	98	0
+tests/integration/b6-tip-query-contract.ps1	151	0
+.github/actions/b6-tip-contracts/action.yml	32	0
+tests/integration/b6-tip-provider-tree.ps1	11	0

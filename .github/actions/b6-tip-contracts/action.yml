@@ -1,0 +1,32 @@
+name: B6 tip contracts and bounded failure evidence
+description: Run unchanged synthetic UI contracts with headless process checks
+inputs:
+  mode:
+    description: caption or native
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Headless owned-child and evidence contracts
+      shell: powershell
+      run: tests/integration/b6-tip-query-contract.ps1
+    - name: Original synthetic UI contracts
+      shell: powershell
+      env:
+        B6_CONTRACT_MODE: ${{ inputs.mode }}
+        B6_TIP_EVIDENCE_ROOT: ${{ runner.temp }}/bridgevm-b6-tip-evidence/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        switch ($env:B6_CONTRACT_MODE) {
+          'caption' { tests/integration/b6-caption-point-contract.ps1; tests/integration/b6-tip-point-contract.ps1 }
+          'native' { tests/integration/b6-physical-uia-contract.ps1; tests/integration/b6-tip-point-contract.ps1 -Query scripts/win-assets/bv-b6-native-tip-point.ps1 }
+          default { throw 'Invalid B6 contract mode' }
+        }
+    - name: Preserve bounded synthetic failure evidence
+      if: ${{ failure() }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: b6-tip-${{ inputs.mode }}-${{ github.job }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/bridgevm-b6-tip-evidence/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        if-no-files-found: warn
+        retention-days: 7
