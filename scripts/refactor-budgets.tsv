@@ -2864,3 +2864,7 @@ docs/history/windows-hvf/install-finalization-retry-20260916.md	72	0
 apps/macos/Tests/BridgeVMControlTests/HvfOwnedRunnerReapedEvidence.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfOwnedRunnerReapedEvidenceTests.swift	38	0
 docs/history/windows-hvf/early-child-exit-observation-20260916.md	37	0
+apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeInstallControlProtocol.swift	50	0
+apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeInstallControlCodec.swift	61	0
+apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeInstallObservation.swift	44	0
+apps/macos/Tests/BridgeVMControlTests/NativeInstallControlCodecTests.swift	89	0
