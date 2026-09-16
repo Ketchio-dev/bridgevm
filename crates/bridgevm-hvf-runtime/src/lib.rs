@@ -7,13 +7,15 @@
 //! disk writers before any VM exists; and a reset generation so an event from
 //! the previous boot can never be mistaken for one from the current boot.
 //!
-//! Device models stay in `bridgevm-hvf`. This crate owns lifecycle and
-//! policy, and deliberately has no shell or process-launch dependency: a
-//! supervisor that recreates the helper process lives with the process it
-//! recreates, not here.
+//! Device models stay in `bridgevm-hvf`. This crate owns the typed process
+//! lifecycle, child reaping, reset policy and media leases without a shell.
+//! The ordinary runner owns signal policy and supplies cancellation requests.
 
+mod controlled_run;
 mod error;
 mod manifest;
+mod owned_child;
+mod owned_control;
 mod reset_cycles;
 mod reset_generation;
 mod reset_receipt;
@@ -26,6 +28,7 @@ mod vtpm;
 
 pub use error::RuntimeError;
 pub use manifest::{LaunchManifest, MANIFEST_VERSION};
+pub use owned_control::*;
 pub use reset_cycles::{supervise_reset_cycles, HelperExit, ResetCycle};
 pub use reset_generation::{GenerationTag, ResetGeneration};
 pub use reset_receipt::{flush_and_write_receipt, receipt_proves_flush};

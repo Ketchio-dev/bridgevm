@@ -7,19 +7,21 @@
 //! the first generation and stops when the run ends (Drop kills it).
 
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::ExitStatus;
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(test)]
+use std::time::Duration;
 
+#[path = "controlled_swtpm.rs"]
+mod controlled;
 #[path = "vtpm_wait.rs"]
 mod vtpm_wait;
-use std::time::{Duration, Instant};
-use vtpm_wait::wait_for_sockets;
+use crate::owned_child::OwnedChild;
 
-use crate::RuntimeError;
+use crate::{RuntimeControl, RuntimeError};
 
-/// What a launch says about the vTPM: where durable state lives and which
-/// swtpm binary to run. No key support here yet -- the app's encrypted
-/// state path still goes through the wrapper (key-over-fd is its own slice).
+/// The durable vTPM state, executable and optional key delivered over the
+/// owned child's stdin. Key bytes never enter argv, environment or files.
 pub struct VtpmConfig {
     pub state_dir: PathBuf,
     pub swtpm_bin: PathBuf,
@@ -32,7 +34,7 @@ pub struct VtpmConfig {
 /// A running swtpm bound to two Unix sockets. Dropping it terminates the
 /// process and removes the runtime directory.
 pub struct SwtpmProcess {
-    child: Child,
+    child: OwnedChild,
     runtime_dir: PathBuf,
     data_socket: PathBuf,
     control_socket: PathBuf,
@@ -45,13 +47,25 @@ impl SwtpmProcess {
     pub fn control_socket(&self) -> &Path {
         &self.control_socket
     }
+    pub fn shutdown(&mut self, control: &RuntimeControl<'_>) -> Result<ExitStatus, RuntimeError> {
+        let status = self.child.shutdown(control);
+        match std::fs::remove_dir_all(&self.runtime_dir) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(RuntimeError::Io {
+                    context: "remove owned swtpm runtime dir",
+                    source,
+                })
+            }
+        }
+        Ok(status)
+    }
 }
 
 impl Drop for SwtpmProcess {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        let _ = std::fs::remove_dir_all(&self.runtime_dir);
+        let _ = self.shutdown(&RuntimeControl::default());
     }
 }
 
@@ -81,63 +95,10 @@ pub(crate) fn unique_runtime_dir_name() -> String {
 /// the state directory is created if missing, like the wrapper's
 /// `install -d -m 700`.
 pub fn start_swtpm(config: &VtpmConfig) -> Result<SwtpmProcess, RuntimeError> {
-    let io =
-        |context: &'static str| move |source: std::io::Error| RuntimeError::Io { context, source };
-    std::fs::create_dir_all(&config.state_dir).map_err(io("create vTPM state dir"))?;
-    let runtime_dir = std::env::temp_dir().join(unique_runtime_dir_name());
-    std::fs::create_dir_all(&runtime_dir).map_err(io("create swtpm runtime dir"))?;
-    let data_socket = runtime_dir.join("data.sock");
-    let control_socket = runtime_dir.join("control.sock");
-    let mut command = Command::new(&config.swtpm_bin);
-    command
-        .arg("socket")
-        .arg("--tpm2")
-        .arg("--tpmstate")
-        .arg(format!("dir={}", config.state_dir.display()))
-        .arg("--server")
-        .arg(format!(
-            "type=unixio,path={},mode=0600",
-            data_socket.display()
-        ))
-        .arg("--ctrl")
-        .arg(format!(
-            "type=unixio,path={},mode=0600",
-            control_socket.display()
-        ))
-        .arg("--flags")
-        .arg("not-need-init,startup-clear")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    if config.state_key.is_some() {
-        command
-            .arg("--key")
-            .arg("fd=0,format=binary,mode=aes-256-cbc")
-            .stdin(Stdio::piped());
-    } else {
-        command.stdin(Stdio::null());
-    }
-    let mut child = command.spawn().map_err(io("spawn swtpm"))?;
-    if let Some(key) = &config.state_key {
-        // Write the key and close the pipe: swtpm reads fd 0 to EOF. The
-        // handle drops at the end of this block, so the key exists only in
-        // swtpm's memory afterwards.
-        use std::io::Write;
-        let mut stdin = child.stdin.take().ok_or_else(|| RuntimeError::Io {
-            context: "open swtpm key pipe",
-            source: std::io::Error::other("stdin not piped"),
-        })?;
-        stdin
-            .write_all(key)
-            .map_err(io("deliver swtpm state key"))?;
-    }
-    let process = SwtpmProcess {
-        child,
-        runtime_dir,
-        data_socket,
-        control_socket,
-    };
-    wait_for_sockets(process)
+    start_swtpm_controlled(config, &RuntimeControl::default())
 }
+
+pub use controlled::start_swtpm_controlled;
 
 #[cfg(test)]
 #[path = "vtpm_tests.rs"]

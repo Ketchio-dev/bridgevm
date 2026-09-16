@@ -207,6 +207,7 @@ name = "bridgevm-hvf-runtime"
 version = "0.1.0"
 dependencies = [
  "bridgevm-hvf",
+ "libc",
 ]
 
 [[package]]
@@ -467,6 +468,7 @@ dependencies = [
  "bridgevm-hvf",
  "bridgevm-hvf-runtime",
  "clap",
+ "libc",
  "serde",
  "serde_json",
  "sha2",
