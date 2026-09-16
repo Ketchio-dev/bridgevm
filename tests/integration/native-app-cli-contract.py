@@ -81,7 +81,7 @@ def main():
         assert not readiness["launchReady"] and readiness["launchBlockers"]
         assert all(issue["scope"] == "launch" for issue in readiness["launchBlockers"])
         assert all(issue["scope"] == "release" for issue in readiness["releaseBlockers"])
-        output, error = run(binary, ["start", "개발-vm", "--library", str(library)], 2)
+        output, error = run(binary, ["unsupported", "개발-vm", "--library", str(library)], 2)
         assert not output and error
         run(binary, ["inspect", "missing", "--library", str(library), "--json"], 1)
         assert tree(root) == before, "Native queries changed input files or created runtime state"

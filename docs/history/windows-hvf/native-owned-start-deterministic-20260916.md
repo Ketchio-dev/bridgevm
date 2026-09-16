@@ -58,7 +58,7 @@ present actions that preparation cannot accept. See the [start contract](../../a
 | R2 single failure | Old parser test still classified newly supported start as unknown; changed only that verb to an actually unsupported one |
 | Focused corrected parser and start CLI | 9/9 PASS, 1.173 seconds; same compiled R2 product module, corrected test inputs stable |
 | Independent model, key, wire and runtime reviews | No remaining bounded static blocker; exact reviewed hashes retained privately |
-| Frozen full project check | PENDING; focused results do not substitute for the whole project gate |
+| Frozen full project check | R1 FAIL in 184.132 seconds: two steps retained obsolete start-as-unknown/help expectations; all 3,187 inputs stable and all three shim suites passed (425, 719 plus two skips, 62); final corrected full check pending |
 
 Both R2 actual CLI cases passed: paired Rust start/native stop and native
 start/paired Rust stop, each with v1 status, duplicate-start refusal, one launch,
@@ -69,7 +69,7 @@ Independent kernel exit witnesses confirm both child exits. No App.main,
 WindowServer or Windows guest is exercised by these deterministic fixtures.
 
 The new source and final full-project seal are recorded in the registry/private
-checkpoint. R1/R2 failures remain failures; later checks do not rewrite them.
+checkpoint. Failed combined/project/package runs remain failures; later checks do not rewrite them.
 Full-project log SHA256: pending.
 
 ## Predecessor hosted evidence and remaining scope
