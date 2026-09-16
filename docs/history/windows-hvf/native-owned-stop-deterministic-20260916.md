@@ -7,11 +7,12 @@ the product remains ENGINEERING_PREVIEW. This record follows the
 
 ## Tested source
 
-Source commit: `0d1fcbf6bf373404ed1454663d26ce590d7495b1`.
-Tested tree: `004b97535df6e0c998fbc1de23bd0ba039f3ff7d`. The full project check ran against
-3,120 frozen tracked inputs while HEAD was `3fe423b08fea40f2968c02dc876f60b42fcf9612`.
-Its source hashes, index and HEAD remained unchanged. The source commit has
-exactly that tested tree; no new test run at the committed SHA is implied.
+Runtime source commit: `0d1fcbf6bf373404ed1454663d26ce590d7495b1`.
+R2 tested index tree equals that commit's `^{tree}`; its full identity is in the receipt.
+R2 checked 3,120 frozen inputs at HEAD `3fe423b08fea40f2968c02dc876f60b42fcf9612`.
+Hashes, index and HEAD stayed fixed; no additional run at the source commit is implied.
+Registration checkpoint: `553ec2a93e070c1e8dfb925bf6cd287edd191b55`.
+R4 passed with 3,121 frozen inputs; hashes, index and HEAD stayed fixed.
 
 The ordinary typed app launch now retains a framed runner channel and exact
 process identity. The runner reports each helper generation and TPM child from
@@ -36,8 +37,11 @@ The [user guide](../../app-cli-stop.md) and
 | --- | --- | --- |
 | First frozen full project check | FAIL, 174.61 seconds | New tests used XCTest APIs absent from the required shim |
 | Corrected shim run | FAIL, 64.653 seconds; control suite 654 passed, 1 failed | Existing duplicate-launch diagnostic was accidentally omitted |
-| Final frozen full project check | PASS, 219.13 seconds | All required deterministic project steps; no live guest gate |
-| Final shim control suite | 657 passed, 0 failed, 2 skipped | Explicit WindowServer and private live-disk checks remain skipped |
+| Frozen full project R2 | PASS, 219.13 seconds | Before later document budget registration; no live guest gate |
+| Post-commit freshness | FAIL at `553ec2a9` | Budget TSV changed since tested_commit; re-proof required |
+| Frozen full project R3 | FAIL, 211.033 seconds | Only document reference failed; 3,121 inputs stayed fixed |
+| Corrected full project R4 | PASS, 210.805 seconds | Includes registration and corrected document reference |
+| R4 shim control suite | 657 passed, 0 failed, 2 skipped | Explicit WindowServer and private live-disk checks remain skipped |
 | Focused runtime/runner families | 105 passed | One ignored test-only ECHILD entry is invoked by its parent test |
 | Focused app/CLI tests before final corrections | 74 passed | Golden payloads, deadlines, retention, validation and reentrancy |
 | Focused channel correction | 20 passed | Same assertions and three-second fixture bounds under compatible waiting |
@@ -50,42 +54,38 @@ the session's later control path, atomic replacement of the original control
 file, and actual paired Rust CLI stop followed by native CLI retry of the same
 operation. The replacement stays untouched; cancellation reports runner exit one
 with confirmed cleanup. Each fixture registers kernel exit witnesses while its
-nonce-identified children are alive and removes its files only after observing
-the retained runner and both children exit. These cases also run in the final
-required shim suite. They do not exercise real Windows shutdown.
+nonce-identified children are alive and removes files after runner and child exits.
+These cases also run in the required shim suite; they do not exercise real Windows shutdown.
 
-The runtime family also includes existing tests using an installed real swtpm
-with newly generated synthetic state and keys. Those are not fake-child tests,
-but they use no private VM media or operational TPM state. No guest disk, vars,
+The runtime family also tests an installed real swtpm with fresh synthetic state
+and keys, without private VM media or operational TPM state. No guest disk, vars,
 TPM state, key, or title content is included in this record or its hashes.
 
 ## Failures and review corrections retained
 
-Rust setup failures, a marker publication race and a stale flattened argument
-test remain in the runtime lane logs. A closed reader initially went unnoticed
-by the idle Darwin output poll; an independent pipe probe established the
-POLLOUT reporting difference. The corrected reactor detects the broken owner
-without abandoning its children. Clippy rejected a redundant non-Drop drop;
-removing it changed no lifetime behavior, and the corrected lane passed Clippy.
+Rust logs retain setup failures, a marker publication race and a stale argument test.
+An independent pipe probe exposed idle Darwin polling missing a closed reader;
+the corrected reactor detects it without abandoning children. Removing the
+redundant non-Drop drop preserved lifetimes and resolved the Clippy rejection.
 
-Swift failures include an inaccessible synthesized initializer, test fixture
-canonical-order mistakes, a deliberately required runner environment missing
-from one broad filtered run, and a blocked test-peer Foundation read. The last
-was interrupted and replaced by bounded nonblocking test-peer reads. All logs
-remain; these failed attempts are not counted as passing validation.
+Swift logs retain initializer access, canonical-order and missing runner-environment
+failures. A blocked test-peer Foundation read was interrupted and replaced with
+bounded nonblocking reads. Failed attempts remain excluded from passing validation.
 
-Independent review found and corrected final-proof deadline bypass, queued guest
-effect release, STOP EPIPE discarding buffered completion, missing post-I/O/drain
-deadline checks, ACK/COMPLETE identity mismatch, pending-response rejection after
-runner exit, failed-cleanup response acceptance, and synchronous state/admission
-reentrancy. The full check then exposed shim compatibility and the lost original
-diagnostic; both were fixed without relaxing existing assertions or ceilings.
+Review fixes cover final-proof deadlines, queued guest effects, STOP EPIPE drain,
+post-I/O deadlines, ACK/COMPLETE identity, pending exit responses, failed-cleanup
+acceptance and synchronous reentrancy. Shim and diagnostic failures were fixed
+without relaxing assertions or ceilings.
+
+Post-commit freshness failed because the new budget registration was absent from R2.
+The prior `code_changes_after_full_check:false` statement was too broad: runtime
+bytes stayed fixed, but a code-classified input changed. R3 then rejected a tree
+object as a commit reference; the record now uses the explicit source-tree expression.
 
 ## Receipt identities
 
-Private development records retain the following files. The first independent
-coupling receipt mislabeled its end-time field as started_utc; the adjacent
-correction records that label error without changing results or source hashes.
+Private records retain these files. The first coupling receipt's started_utc was
+an end time; its correction preserves results and source hashes.
 
 | Record | SHA256 |
 | --- | --- |
@@ -93,6 +93,9 @@ correction records that label error without changing results or source hashes.
 | packet47b-full-project-r1.log | `b01eb306b6ccf809a0a2c2ebbd31e3997a9b6c5ad7d3e07e8137c9f09aa24b72` |
 | packet47b-shim-r2.log | `0cdf0cbf07c040cb3ee0e9e6beaddd860be3f924af505208ddb9a272b5167b8e` |
 | packet47b-full-project-r2.log | `3166180a2dabb205331b9c2c0da5cdb965cd1bc290c951d09ffdebdec5f9cebc` |
+| packet47b-postcommit-freshness-failure.json | `db4efdb8aa0891a29a2637df4c228ca37ef5a5ca39c3d4c285ae07dfd0164d0b` |
+| packet47b-full-project-r3.log | `8cfa5a811c7e28a0a649ee0b3a0d05e4edf6c2840cf915cf88cae37f3581b8fd` |
+| packet47b-full-project-r4.log | `05d1798a1b7807e4b6db647f83573098b8bf1c7c880c006e2d1ad3c7a2005447` |
 | packet47-owned-runtime/source-ready-r2.json | `1ad1be19a89ea6eba794a67411c5f78b7c39fce3327d5e0797039e3d4afddb26` |
 | packet47-swift-owned-stop/source-ready-r1.json | `c1c7b33e7f196647b518a8358baa481b2df12257ac6b1c9e4df5d2fabac72a15` |
 | packet47-swift-owned-stop/shim-compat-source-r1.json | `77a334ecc19bac2242c78052debc5b65c5b06f1642408a7bcfdb7581c6597f7c` |
@@ -102,10 +105,8 @@ correction records that label error without changing results or source hashes.
 | packet47-root-owned-coupling/r1.log | `a16ea2565c0d665a0e725d1a2723a7ab00e65ad0c810f71284e51dd6abd63deb` |
 | packet47-root-owned-coupling/r1-timestamp-correction.json | `1c7547d7996c43fd4d52ede4ed0008ad6f4ac89dfe147190642694ecbb3fe690` |
 
-The independent coupling artifacts were the actual host debug runner, paired Rust
-CLI and native executable. Their hashes are retained in its receipt; later full
-checks rebuild native artifacts as needed, so those earlier binary hashes are
-not substituted for the final source seal.
+The coupling receipt hashes its actual debug runner, paired Rust CLI and native
+executable; these hashes do not substitute for later rebuilt binaries or seals.
 
 ## Hosted and live boundaries
 
@@ -118,6 +119,5 @@ has no claimed post-push hosted result in this record.
 
 Native UI pilot18 remains 0/7 actions and 4/8 captures with Accessibility
 untrusted. No permission query, UI launch or physical live job was retried.
-Live app/guest stop, Windows application flush, supervisor crash/SIGKILL recovery,
-CLI start and release gate sample counts remain unproven. All 29 criterion
-policy definitions, states and thresholds are unchanged.
+Live app/guest stop, guest flush, supervisor crash/SIGKILL recovery, CLI start and
+release gate counts remain unproven. All 29 criterion policies remain unchanged.
