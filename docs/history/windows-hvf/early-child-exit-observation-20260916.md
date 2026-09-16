@@ -33,5 +33,5 @@ The experiment runner continues after failure to collect both cases; its shell
 exit code alone is not a pass. The retained RED log explicitly reports two failures.
 No scheduling delay or diagnostic print was added to repository source.
 
-Full-project and exact-source hosted validation are pending for this change.
+Full-project validation passed in 221.405s at source 4e7adf1bc9b1a6ea5695867ba09328eaa865e8ab with 3,221 inputs stable; exact-source hosted validation remains pending.
 Private diagnostic logs, input hashes and prior failures remain in packet54 evidence.
