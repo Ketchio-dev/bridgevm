@@ -1,5 +1,4 @@
 import Foundation
-
 extension NativeRuntimeRequestRouter {
     func reply(to bytes: Data, context: NativeRuntimeRequestContext) async throws -> Data {
         try context.validateAdmission()
@@ -20,6 +19,7 @@ extension NativeRuntimeRequestRouter {
             try NativeRuntimeControlCodec.validate(response, for: request)
             return try NativeRuntimeCodec.encode(response)
         }
+        if let response = try await installReplyIfPresent(bytes, context: context) { return response }
         let request = try NativeRuntimeCodec.decode(NativeRuntimeStartRequest.self, from: bytes,
                                                     limit: NativeRuntimeCodec.maximumRequestBytes)
         try NativeRuntimeStartCodec.validate(request)

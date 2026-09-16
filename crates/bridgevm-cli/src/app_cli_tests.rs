@@ -44,6 +44,9 @@ fn forwards_unicode_and_spaces_as_single_arguments() {
 
 #[test]
 fn default_library_and_text_queries_forward_no_extra_arguments() {
+    let removed = AppQueryCommand::Status {
+        id: "removed-vm".into(),
+    };
     for (command, expected) in [
         (AppQueryCommand::List, vec!["--cli", "list"]),
         (
@@ -54,12 +57,7 @@ fn default_library_and_text_queries_forward_no_extra_arguments() {
             AppQueryCommand::Readiness { id: "vm".into() },
             vec!["--cli", "readiness", "vm"],
         ),
-        (
-            AppQueryCommand::Status {
-                id: "removed-vm".into(),
-            },
-            vec!["--cli", "status", "removed-vm"],
-        ),
+        (removed, vec!["--cli", "status", "removed-vm"]),
     ] {
         assert_eq!(
             native_arguments(AppArgs {
@@ -71,3 +69,5 @@ fn default_library_and_text_queries_forward_no_extra_arguments() {
         );
     }
 }
+
+include!("app_cli_install_tests.rs");

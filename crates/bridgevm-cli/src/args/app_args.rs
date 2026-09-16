@@ -12,7 +12,7 @@ use library::absolute_library;
 
 #[derive(Debug, Parser)]
 #[command(
-    after_help = "Uses native vm.json registrations, not the legacy --store. Requires a compatible installed BridgeVMControl.app; no app window is opened. Start launches an installed own-HVF VM through the already-running app and confirms initial helper startup, not guest boot. Inventory runtime remains unobserved. Status asks the already-running app for retained observations, not guest health. Stop waits for confirmed cleanup of the exact app-owned runtime; unavailable or incomplete cleanup returns nonzero."
+    after_help = "Uses native vm.json registrations, not the legacy --store. Requires a compatible installed BridgeVMControl.app; no app window is opened. Install commands use only the pending request already saved with the VM; ISO paths, passwords and recovery keys are not accepted on argv. Start confirms initial helper startup, not guest boot. Status asks the app for retained observations, not guest health. Stop waits for confirmed owned-process cleanup."
 )]
 pub(crate) struct AppArgs {
     #[command(subcommand)]

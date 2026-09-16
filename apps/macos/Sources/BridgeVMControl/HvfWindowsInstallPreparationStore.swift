@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class HvfWindowsInstallPreparationStore {
     private typealias Handle = HvfWindowsInstallPreparation
-    private let options: HvfWindowsInstallPreparationOptions
+    let options: HvfWindowsInstallPreparationOptions
     private var handles: [String: Handle] = [:]
 
     init(options: HvfWindowsInstallPreparationOptions) { self.options = options }

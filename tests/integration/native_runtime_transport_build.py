@@ -1,7 +1,6 @@
 """Compile only Foundation/socket protocol fixtures; no application entry point."""
 import subprocess
 
-
 def build_transport_fixture(root, output):
     names = ["Protocol", "SessionObservation", "SessionValidation", "Codec", "LibraryIdentity",
              "Endpoint", "Owner", "OwnerLease", "Transport", "TransportConnection",
@@ -10,6 +9,7 @@ def build_transport_fixture(root, output):
              "RequestContext", "RequestRouter", "RequestRouting", "StartProtocol", "StartCodec", "StartValidation", "StartClient"]
     sources = [root / "apps/macos/Sources/BridgeVMControl/NativeRuntime" / f"NativeRuntime{name}.swift"
                for name in names]
+    sources += [root / "apps/macos/Sources/BridgeVMControl/NativeRuntime" / name for name in ["NativeInstallControlProtocol.swift", "NativeInstallControlCodec.swift", "NativeInstallObservation.swift", "NativeInstallRequestRouting.swift"]]
     sources += [root / "tests/integration" / name for name in ["NativeRuntimeTransportFixture.swift",
         "NativeRuntimeTransportPureContracts.swift", "NativeRuntimeTransportOwnershipContracts.swift",
         "NativeRuntimeControlContracts.swift", "NativeRuntimeStartContracts.swift", "native-runtime-transport-fixture.swift"]]

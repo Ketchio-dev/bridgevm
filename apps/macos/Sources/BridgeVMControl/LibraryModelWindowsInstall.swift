@@ -7,16 +7,15 @@ final class HvfWindowsInstallSessionStore {
     private var entries: [String: HvfWindowsInstallSessionRecord] = [:]
     private let makeSession: Factory
     let preparation: HvfWindowsInstallPreparationStore
+    let cliOperations = NativeInstallOperationStore()
 
     init(makeSession: @escaping Factory, preparation: HvfWindowsInstallPreparationOptions = .init()) {
-        self.makeSession = makeSession
-        self.preparation = HvfWindowsInstallPreparationStore(options: preparation)
+        self.makeSession = makeSession; self.preparation = HvfWindowsInstallPreparationStore(options: preparation)
     }
 
     func record(for slug: String) -> HvfWindowsInstallSessionRecord? { entries[slug] }
 
-    func session(for config: VMConfig, request: HvfWindowsInstallRequest,
-                 makePlan: () -> HvfWindowsInstallPlan) -> HvfWindowsInstallSession {
+    func session(for config: VMConfig, request: HvfWindowsInstallRequest, makePlan: () -> HvfWindowsInstallPlan) -> HvfWindowsInstallSession {
         if let entry = entries[config.slug], entry.session.isRunning { return entry.session }
         if let entry = entries[config.slug], entry.sourceConfig == config,
            entry.request == request { return entry.session }
@@ -36,6 +35,7 @@ final class HvfWindowsInstallSessionStore {
 
     func reconcile(with configs: [VMConfig]) {
         preparation.reconcile(with: configs)
+        cliOperations.reconcile(with: configs)
         let pendingSlugs = Set(configs.filter {
             $0.engineKind == .hvfEngine && $0.installPending == true
         }.map(\.slug))

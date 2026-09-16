@@ -33,8 +33,8 @@ final class NativeRuntimeOwner: @unchecked Sendable {
             lockIdentity = NativeRuntimeFileIdentity(info)
         } catch { Darwin.close(fd); throw error }
     }
-
-    func start(controlHandler: NativeRuntimeRequestRouter.ControlHandler? = nil, startHandler: NativeRuntimeRequestRouter.StartHandler? = nil,
+    func start(controlHandler: NativeRuntimeRequestRouter.ControlHandler? = nil,
+               startHandler: NativeRuntimeRequestRouter.StartHandler? = nil, installHandler: NativeRuntimeRequestRouter.InstallHandler? = nil,
                handler: @escaping NativeRuntimeServer.Handler) throws {
         mutex.lock(); defer { mutex.unlock() }
         guard !closed, server == nil else { throw NativeRuntimeError.ownerBusy }
@@ -43,7 +43,7 @@ final class NativeRuntimeOwner: @unchecked Sendable {
             validateOwner: { [weak self] in
                 guard let self else { throw NativeRuntimeError.ownerUnavailable }
                 try self.validateCurrentOwnership()
-            }, controlHandler: controlHandler, startHandler: startHandler, handler: handler)
+            }, controlHandler: controlHandler, startHandler: startHandler, installHandler: installHandler, handler: handler)
     }
 
     func validateCurrentOwnership() throws {
