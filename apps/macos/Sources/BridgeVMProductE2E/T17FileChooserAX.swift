@@ -9,9 +9,10 @@ final class T17FileChooserAX: T17FileChooserDriving {
     private var panel: AXUIElement?
     private var keyContext = "key not sent"
     private var activationSucceeded: Bool?
+    private let predicates = T17FileChooserPredicateDiagnostics()
 
     var failureContext: String {
-        "tree{\(T17FileChooserTreeDiagnostics.snapshot(application))}; timeout{\(T17FileChooserDiagnostics.snapshot(pid: pid))}; activation=\(activationSucceeded?.description ?? "unknown"); \(keyContext)"
+        predicates.context(activation: activationSucceeded, key: keyContext, timeout: T17FileChooserDiagnostics.snapshot(pid: pid), tree: T17FileChooserTreeDiagnostics.snapshot(application))
     }
 
     init(pid: pid_t, identifier: String, openControl: @escaping () throws -> Void) {
@@ -77,17 +78,16 @@ final class T17FileChooserAX: T17FileChooserDriving {
     }
 
     private func locationSheet() throws -> AXUIElement? {
+        predicates.beginOwner(panelCached: panel != nil)
         guard panel != nil else { return nil }
         return try identified(in: application, id: "GoToWindow", roles: [kAXSheetRole])
     }
-
     private func locationField() throws -> AXUIElement? {
         guard let sheet = try locationSheet() else { return nil }
         return try identified(in: sheet, id: "PathTextField", roles: [kAXTextFieldRole, kAXComboBoxRole])
     }
-
     private func identified(in root: AXUIElement, id: String, roles: Set<String>) throws -> AXUIElement? {
-        try T17FileChooserIdentity.find(in: nodes(root), id: id, roles: roles, metadata: {
+        try predicates.find(in: { try self.nodes(root) }, id: id, roles: roles, metadata: {
             (try self.attribute($0, kAXIdentifierAttribute) as? String,
              try self.attribute($0, kAXRoleAttribute) as? String)
         }, same: { CFEqual($0, $1) })

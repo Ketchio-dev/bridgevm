@@ -2765,3 +2765,5 @@ tests/integration/native_runtime_transport_build.py	23	0
 apps/macos/Tests/BridgeVMControlTests/HvfOwnedRuntimeChannelTestWait.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfOwnedRuntimeAttachmentReentrancyTests.swift	42	0
 docs/history/windows-hvf/native-owned-stop-deterministic-20260916.md	123	0
+apps/macos/Sources/BridgeVMProductE2E/T17FileChooserPredicateDiagnostics.swift	92	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserPredicateDiagnosticsTests.swift	156	0
