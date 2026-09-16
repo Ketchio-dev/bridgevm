@@ -2395,6 +2395,8 @@ apps/macos/Sources/BridgeVMControl/LibraryAppearance.swift	54	0
 apps/macos/Sources/BridgeVMControl/LibrarySidebarChrome.swift	56	0
 apps/macos/Sources/BridgeVMControl/LibraryVMCard.swift	86	0
 apps/macos/Sources/BridgeVMControl/LibraryOverviewView.swift	80	0
+apps/macos/Sources/BridgeVMControl/LibraryWorkspaceList.swift	161	0
+apps/macos/Sources/BridgeVMControl/LibraryDashboardDetail.swift	244	0
 apps/macos/Sources/BridgeVMControl/LibraryVMContextMenu.swift	37	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeHeader.swift	43	0
 apps/macos/Sources/BridgeVMControl/FirstRunWelcomeView.swift	74	0
