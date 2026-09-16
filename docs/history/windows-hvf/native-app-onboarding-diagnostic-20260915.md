@@ -1058,3 +1058,52 @@ and tolerance, seven actions, eight captures and completion policy are unchanged
 These checks prove no rendered repair, AX cause or supplemental capture success.
 Current full-project and exact-source hosted checks, plus sealed pilot15, are
 pending. All 29 criterion states, product wording and thresholds are preserved.
+
+
+## Navigation-observation trap and bounded recovery (2026-09-16 UTC)
+
+Packet41's full project check passed in 178.03 seconds, sealed as e7a3d57c.
+Physical pilot app-ui-host-20260915-15 remained FAIL, with 0 of 7 actions and 2 of
+8 required captures. All four matrix rows persisted; both minimum variants remained
+772 points high for the required 720. The two default PNGs and supplemental owned-
+window PNG passed integrity checks. Final completion and own-window records were
+missing, however, and the empty fixture directory remained. The original failed
+checks are retained: verified launcher exit and process cleanup do not establish
+host completion or fixture cleanup. All four domain-work counters stayed zero.
+
+The retained crash binds PID 32450 and binary UUID
+`a23cdf37-4169-31d1-bceb-d64429d76955` to the exact sealed host. It records a
+main-thread SIGTRAP through Swift array type checking and Collection.prefix,
+AppUIHostOwnedAXEntries.project at line 12, and the navigation-order projection in
+AppUIHostOwnedViewFields at line 23. The concrete offending element and assertion
+reason are unknown. Crash log SHA
+`7832c89846e1188b75de63c30496de819c142dd96168b400e8d0059d532d503a`
+and all partial artifacts remain preserved; the complete-fixture verifier still
+rejects this run.
+
+The owning reviewer compared the original dark bitmap with the supplemental
+WindowServer image. The composed window shows a light HVF label and blue icon,
+while cacheDisplay shows that row near-black. This sequential, non-atomic comparison
+does not support another product foreground workaround or establish all contrast
+correct. Both default PNGs and the supplement are 2640 by 1720 pixels for default
+content of 1320 by 860 points, agreeing with the observed scale of 2. The previous
+run used scale 1; its change remains unexplained. The first light bitmap preceded
+the supplemental API phase. The lifecycle record is explicitly nonterminal:
+0.2607 seconds measures startup, not the mislabeled fallback terminal duration.
+The original analysis and a separate timing correction are both retained.
+
+Source c298474318512cd166826453756141d85f889a7e removes only the navigation-order
+getter and projection from the diagnostic timeout observer. Private owned-view
+schema 2 explicitly marks navigation unobserved with a fixed reason; no empty array
+or alternate selector pretends to observe it. Ordinary bounded metadata, ownership,
+privacy, cancellation, all waits, dimensions and tolerance, seven actions, eight
+captures and completion policy are unchanged. This removes the identified trap
+route without claiming a framework cause, complete AX repair or actual UI recovery.
+
+All seven Apple XCTest host contracts passed in 21.89 seconds, with log SHA
+`010abb72178b990e19a7f66515cb9eb30bb9f55a06f2562e18018fd291af9b71`.
+Release exclusion/refusal passed in 23.48 seconds. Both receipts contain 491 stable
+Swift/package inputs; independent two-file inverse review passed. Current full-
+project and exact-source hosted checks, plus sealed pilot16, remain pending.
+All 29 criterion states, thresholds and product wording are unchanged. Earlier
+failed experiments and incomplete completion evidence remain preserved.
