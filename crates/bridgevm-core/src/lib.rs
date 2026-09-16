@@ -93,7 +93,7 @@ static ENGINE_DESCRIPTORS: [VmEngineDescriptor; 3] = [
         windows_11_arm_role: "primary Parallels-like Windows 11 Arm target",
         qemu_usage: "not used",
         product_state: EngineProductState::EngineeringPreview,
-        product_state_detail: "Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Release-blocking evidence remains open; known defects are disclosed below.",
+        product_state_detail: "Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots and window Coherence verbs. 3D acceleration is excluded from General Preview and v1; release-blocking evidence remains open and known defects are disclosed below.",
     },
     VmEngineDescriptor {
         lane: EngineLane::QemuCompatibility,
