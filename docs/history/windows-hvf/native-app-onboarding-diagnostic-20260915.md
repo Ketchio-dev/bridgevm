@@ -1107,3 +1107,33 @@ Swift/package inputs; independent two-file inverse review passed. Current full-
 project and exact-source hosted checks, plus sealed pilot16, remain pending.
 All 29 criterion states, thresholds and product wording are unchanged. Earlier
 failed experiments and incomplete completion evidence remain preserved.
+
+
+## Product vertical sizing within the unchanged minimum gate (2026-09-16 UTC)
+
+Packet42's complete project check passed in 166.94 seconds, sealed as 26b2af3f.
+Physical pilot app-ui-host-20260915-16 remained FAIL: 0 of 7 actions and 2 of 8
+required captures. Its four rows were pass/mismatch/pass/mismatch; both minimum
+variants remained 1100 by 772 points for the required 1100 by 720. The original
+welcome-control wait still timed out. Host completion and fixture cleanup recovered
+in this one observation, with launcher and worker cleanup verified. These results
+do not establish a full UI pass or a general accessibility repair.
+
+Actual image review again found a light HVF label in the supplemental composed
+window and near-black text in the cacheDisplay bitmap. That discrepancy does not
+justify another product color fix; the supplement is outside the eight required
+captures. Earlier failed runs and their original completion failures are retained.
+
+Source 3a76095182319e722215950cfda1bdae5ab366cb removes only minHeight720 from
+the product root frame. Minimum width1100, default1320x860, native titlebar/toolbars
+and all controls remain. Existing scrollable content determines vertical sizing;
+the product may resize below720, and usability at arbitrary smaller sizes is
+unverified. The full1100x720 light/dark gate and default gate, original seven
+actions/eight captures, waits, tolerance and completion guards are unchanged.
+
+All seven Apple XCTest host contracts passed in 21.86 seconds; release exclusion
+and refusal passed in 23.34 seconds. Both checks contain 491 stable Swift/package
+inputs, and independent source review is clear. Current full-project and exact-
+source hosted checks, plus sealed physical pilot17 and actual image review, remain
+pending. No rendered sizing repair is claimed before that observation. All29
+criterion states, thresholds, product wording and earlier evidence remain intact.
