@@ -1010,3 +1010,51 @@ package inputs; independent inverse/privacy/bounds review passed. These determin
 results prove no rendered correction or AX cause. Current full-project, exact-source
 hosted checks and sealed pilot14 are pending. All29criterion states, product wording
 and thresholds remain unchanged; the minimum and complete UI criteria remain open.
+
+
+## Owned descendants and supplemental window observation (2026-09-16 UTC)
+
+Packet40's full project check passed in 187.65 seconds, sealed as 7a5d6431. Physical
+pilot app-ui-host-20260915-14 remained FAIL, with 0 of 7 actions and 2 of 8 captures.
+Both default PNGs are byte-identical to pilot13: the explicit semantic styles did
+not repair the observed dark-sidebar contrast. Both minimum variants remain 772
+points high for the required 720. The strict and public-selector timeout trees each
+contain one full-protocol AXGroup root with empty children, no rejection or
+truncation, and no allowed IDs. This does not establish why the root exposes no
+controls or whether accessibility exists elsewhere. Identity, exit and cleanup
+passed with zero domain work; all failures remain recorded.
+
+The private timing labels were corrected: actual scenario start was 0.7768 seconds
+after host begin, within the 5-second startup deadline. The 7.0606-second duration
+from host begin to termination includes scenario work; it is not startup duration
+or evidence of a startup overrun. This correction does not change the failed
+minimum-size or welcome-controls result.
+
+Source 8621d37a288741776360693829de845f6512abfb removes the three ineffective foreground styles
+and restores the original List source while retaining its extraction. After the
+existing root AX timeout record, diagnostic-only observations traverse owned
+subviews, bounded to 256 nodes, depth 32 and 128 children per node. One shared budget
+limits AX metadata to 128 entries. Ordinary and navigation counts remain separate;
+no discovered entry becomes an action route. Immediately after the existing
+dark/default bitmap, the same bounded view projection records appearance only,
+without AX queries or extra layout/display calls.
+
+One supplemental window image follows through ScreenCaptureKit currentProcess,
+restricted to macOS 14.4 or later in the diagnostic build. Exact unique window ID
+and nonnull own PID, finite pixel bounds, explicit child-window/shadow/cursor/audio
+exclusions, ownership and cancellation checks around awaits, and exclusive output
+in a private 0700 directory are required. No global fetch, permission prompt, picker
+or fallback is added. This image stays outside the eight required captures and
+cannot supply missing actions or minimum-size images. API activity may affect
+framework state and timing; the records are non-atomic and the existing owned
+launcher bound remains authoritative.
+
+All seven Apple XCTest host contracts passed in 25.06 seconds, with log SHA
+`0522927c99b981e260b2d93c8049abbe2bf6f4e24ffac18a2e72bad7846b83c1`.
+Release exclusion/refusal passed in 23.50 seconds. Both receipts contain 491 stable
+Swift/package inputs; independent review of all 17 source/test files passed.
+Original 5-second waits at 50 ms intervals, 200 ms presentation timing, dimensions
+and tolerance, seven actions, eight captures and completion policy are unchanged.
+These checks prove no rendered repair, AX cause or supplemental capture success.
+Current full-project and exact-source hosted checks, plus sealed pilot15, are
+pending. All 29 criterion states, product wording and thresholds are preserved.
