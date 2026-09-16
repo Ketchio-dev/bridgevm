@@ -79,7 +79,7 @@ try {
         $stream.Reader = [IO.MemoryStream]::new(); $completion = [Threading.Tasks.TaskCompletionSource[int]]::new()
         $stream.Pending = $completion.Task; $pendingStreams += $stream; $completions += $completion
     }
-    $owned = @{ Process = [pscustomobject]@{ HasExited = $true; ExitCode = 0 }; Streams = $pendingStreams }
+    $owned = @{ Process = [pscustomobject]@{ HasExited = $true; ExitCode = 0 }; Streams = $pendingStreams; Receive = ${function:Receive-B6TipOutput}; Observe = ${function:Get-B6TipProcessObservation} }
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $finished = Wait-B6TipProcessCompletion $owned 50
     Assert-B6 (!$finished -and $clock.Elapsed.TotalSeconds -lt 1) 'Two unresolved streams exceeded one bounded cleanup wait'

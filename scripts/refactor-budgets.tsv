@@ -2773,3 +2773,5 @@ tests/integration/b6-tip-query-streams.ps1	94	0
 tests/integration/window-inventory-error-child.ps1	86	0
 tests/integration/window-inventory-owned-child-contract.ps1	143	0
 docs/history/windows-hvf/native-diagnostic-ownership-20260916.md	121	0
+tests/integration/b6-tip-query-scope-contract.ps1	46	0
+docs/history/windows-hvf/native-callback-scope-20260916.md	78	0

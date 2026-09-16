@@ -136,6 +136,7 @@ try {
         Assert-B6 (!(Test-Path $run.PublishRoot) -and !(Test-Path $run.RawRoot)) 'Passing suite retained failure output'
     }
     . (Join-Path $PSScriptRoot 'b6-tip-query-drain-contract.ps1')
+    . (Join-Path $PSScriptRoot 'b6-tip-query-scope-contract.ps1')
 } finally {
     $actualUnconfirmed = $false
     foreach ($run in $runs) {

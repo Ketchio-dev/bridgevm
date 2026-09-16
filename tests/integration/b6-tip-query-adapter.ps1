@@ -24,16 +24,16 @@ function New-B6TipOwnedProcess {
         }
         $admission = "Owned output admission failed: $($_.Exception.Message)"
     }
-    $state = @{ Process = $child; Streams = $streams; Clock = $clock }
+    $state = @{ Process = $child; Streams = $streams; Clock = $clock; Receive = ${function:Receive-B6TipOutput}; Observe = ${function:Get-B6TipProcessObservation}; Wait = ${function:Wait-B6TipProcessCompletion} }
     $operations = @{
         Elapsed = { $state.Clock.Elapsed.TotalSeconds }.GetNewClosure()
-        Observe = { Get-B6TipProcessObservation $state }.GetNewClosure()
+        Observe = { & $state.Observe $state }.GetNewClosure()
         Pause = { Start-Sleep -Milliseconds 50 }
         Kill = { $state.Process.Kill() }.GetNewClosure()
-        WaitExit = { param($milliseconds) Wait-B6TipProcessCompletion $state ([int]$milliseconds) }.GetNewClosure()
+        WaitExit = { param($milliseconds) & $state.Wait $state ([int]$milliseconds) }.GetNewClosure()
     }
     $dispose = {
-        $observed = Get-B6TipProcessObservation $state
+        $observed = & $state.Observe $state
         if (!$observed.Exited -or !$observed.StreamsDrained) { throw 'Cannot dispose unconfirmed child/output owner' }
         $state.Process.Dispose()
     }.GetNewClosure()

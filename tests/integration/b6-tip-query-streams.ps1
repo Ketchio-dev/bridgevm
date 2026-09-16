@@ -29,7 +29,7 @@ function Receive-B6TipOutput($Stream) {
 }
 
 function Get-B6TipProcessObservation($State) {
-    foreach ($stream in $State.Streams) { Receive-B6TipOutput $stream }
+    foreach ($stream in $State.Streams) { & $State.Receive $stream }
     $exited = $State.Process.HasExited; $code = $null
     if ($exited) { $code = $State.Process.ExitCode }
     $errors = @($State.Streams | Where-Object { $_.Error } | ForEach-Object { $_.Error })
@@ -41,7 +41,7 @@ function Get-B6TipProcessObservation($State) {
 function Wait-B6TipProcessCompletion($State, [int]$Milliseconds) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     while ($clock.Elapsed.TotalMilliseconds -lt $Milliseconds) {
-        $observation = Get-B6TipProcessObservation $State
+        $observation = & $State.Observe $State
         if ($observation.Exited -and $observation.StreamsDrained) { return $clock.Elapsed.TotalMilliseconds -lt $Milliseconds }
         $remaining = [int][Math]::Max(0, $Milliseconds - $clock.Elapsed.TotalMilliseconds)
         if (!$remaining) { break }
