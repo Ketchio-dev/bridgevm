@@ -17,9 +17,11 @@ final class AppUIHost {
     private var monitor: Task<Void, Never>?
     private var scenario: Task<Void, Never>?
 
-    static func prepare(arguments: [String]) throws {
+    static func prepare(arguments: [String], environment: [String: String] = [:]) throws {
         guard prepared == nil else { throw AppUIHostError.refused("Host already prepared") }
-        let output = try outputDirectory(arguments: arguments)
+        let before = AppUIHostPreparationObservation.snapshot()
+        let request = try AppUIHostRequest.resolve(arguments: arguments, environment: environment)
+        let output = request.output
         let capture = try AppUIHostCapture(output: output)
         do {
             try writeIdentity(capture)
@@ -27,9 +29,14 @@ final class AppUIHost {
             let host = try AppUIHost(capture: capture)
             prepared = host
             host.armMonitor()
+            try AppUIHostPreparationObservation.write(capture, request: request,
+                environment: environment, before: before)
         } catch {
-            capture.failed(error)
-            try? capture.writeCompletion(cleanupVerified: false)
+            if let host = prepared { host.finish(error: error, terminateApplication: false) }
+            else {
+                capture.failed(error)
+                try? capture.writeCompletion(cleanupVerified: false)
+            }
             throw error
         }
     }
@@ -40,19 +47,6 @@ final class AppUIHost {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
                                                attributes: [.posixPermissions: 0o700])
         library = Self.makeLibrary(root: root, capture: capture)
-    }
-    static func makeLibrary(root: URL, capture: AppUIHostCapture) -> LibraryModel {
-        LibraryModel(rootURL: root, migrateLegacy: false,
-            installSessionFactory: { _ in capture.tripwire("install_creations") },
-            runtimeSessionFactory: { _ in capture.tripwire("runtime_creations") },
-            actionScheduler: { _ in capture.tripwire("file_jobs") }, startsModelsAutomatically: false,
-            modelFactory: { _ in capture.tripwire("model_creations") })
-    }
-    static func checkCancellation(output: URL) throws {
-        let marker = output.deletingLastPathComponent().appendingPathComponent("cancel.requested").path
-        var status = stat()
-        if lstat(marker, &status) == 0 { throw AppUIHostError.refused("Host canceled by owning launcher") }
-        guard errno == ENOENT else { throw AppUIHostError.refused("Cancellation marker could not be inspected") }
     }
     func checkBeforeApplication() throws {
         do { try Self.checkCancellation(output: capture.output) }

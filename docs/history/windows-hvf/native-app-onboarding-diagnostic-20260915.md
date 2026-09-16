@@ -827,3 +827,313 @@ sealed and unchanged across checks. Failed control code, flags, binary and recei
 remain private and in history; no temporary instrumentation remains in final source.
 Current complete project and exact-source hosted checks are required. There is no
 reason to repeat the unchanged baseline; actual UI validation remains unfinished.
+
+
+## Diagnostic request envelope and preparation boundary (2026-09-15)
+
+Source abe1bbcf498f069a2ed7c311bc1b2b8de0c353f8 changes the opt-in diagnostic launcher request
+from custom argv to two namespaced environment values. Admission retains the same
+canonical private-directory checks and rejects mixed or malformed requests. Before/
+after preparation observations read only existing NSApp state and six fixed test/
+preview-key presence booleans; no environment values or new application objects are
+recorded or created. The product scene, activation, five-second startup, seven actions,
+eight captures, domain-work tripwires and ownership/cleanup requirements are unchanged.
+
+The exact seven Apple XCTest host contracts passed20.69seconds, log SHA
+`457bafaae1ce605346a6ce74339af455197b00663bc9cb14511face548241f35`.
+Compile-only release boundary passed22.60seconds; all four checked diagnostic keys/
+markers are present in the host and absent from ordinary release. Rebuilt launcher
+and pure ownership contracts passed5.82seconds. Inputs remained unchanged, and the
+host/launcher pair is sealed privately. These checks launched no app or guest.
+
+The preceding restored full check passed165.80seconds, sealed as a23d0f92. The saved
+PR157 snapshot records84of85workflow runs successful; final CI35026414196 remains
+pending in that snapshot. Coherence run35026411053 succeeded on unchanged attempt2;
+the original failure remains retained and its cause is unproven. Seven normal-App
+pilots and the separate minimal-content control remain failed. Current full-project,
+exact-source hosted verification and one sealed actual-product UI pilot are pending.
+This request-envelope comparison is a hypothesis, not an established startup repair.
+All criterion states, thresholds and product wording remain unchanged.
+
+
+## Actual window admission and presentation observation (2026-09-15)
+
+Packet35's complete project check passed169.87seconds, sealed240db0be; the22:10UTC
+snapshot recorded all40push workflows successful. Normal-App pilot
+app-ui-host-20260915-09 reached one visible product window, root/body/attachment/
+appearance callbacks and scenario start, then failed the first light/default
+compound presentation guard at about483ms. Actions remained0of7 and captures0of8;
+all domain-work counters were zero and identity, observed exit and all cleanup
+passed. Preparation recorded NSApp absent before and after, environment transport
+with zero custom arguments and all six fixed test/preview-key presence flags false.
+This measured startup improvement is not a full UI pass or proof of an argv cause.
+
+Source f5a46ef7ee5037bdc7118bd6fcfeecf98acafb7f extracts the existing presentation method and
+records bounded geometry, appearance and content identity only when its unchanged
+compound guard fails. The sizes,200ms sleep, appearance assignment, layout pass,
+guard operands/tolerances and original thrown error are preserved, including when
+the private receipt cannot be written. Coordinate spaces are named separately;
+no presentation repair or cause is inferred before actual values are measured.
+
+All seven Apple XCTest host contracts passed19.94seconds, log SHA
+`3428d82495a65da5a2f709d31801d04a3bede4740640e2e0dd317b82187484da`.
+Compile-only release boundary passed22.24seconds. All466Swift/package inputs
+remained unchanged; the Packet35 launcher is unchanged. Independent review passed.
+PR157 completed85of85successful workflows and merged as36ff324d with the a23d0f92
+tree unchanged. New main CI35029792177 was pending in its22:13UTC initial snapshot.
+The preceding timeout and successful unchanged retry remain recorded; cause is
+unproven. Current full-project and exact-source hosted checks plus one sealed
+pilot10 remain pending. All29criteria, thresholds and product wording are unchanged.
+
+
+## Diagnostic application appearance source (2026-09-15)
+
+The preceding complete project check passed164.17seconds, sealed654a8050. Pilot
+app-ui-host-20260915-10 admitted the actual product window and scenario, then failed
+first light/default presentation. Its private record shows content identitytrue and
+exact1320x860 bounds, with explicit window/content appearancesnil and effective/
+best-matchDarkAqua for requested light. Only the appearance predicate is false at
+record time. Guard and observation are not atomic; the underlying mechanism remains
+unproven. Actions0of7/captures0of8, zero domain work and verified identity/exit/cleanup
+remain preserved with the failed source, binary and receipts.
+
+Source b00d38c8d30e5c3ffbd82549b0edfedeac22385b requires an existing NSApp and nonnil named
+appearance, then assigns that appearance to the owned diagnostic app and window.
+The process-local override remains through subsequent captures; ordinary/release
+behavior and persistent settings are unchanged. The extracted failure observer adds
+only bounded app appearance fields. Requested sizes,200ms wait, layout, all original
+guard predicates/tolerances and mismatch error remain intact, as do the7/8requirements.
+
+All seven Apple XCTest host contracts passed20.03seconds, log SHA
+`e282fc968e49d16c3aed430a4531e61a6a3f66530b40ee682ef41ec6a9b6e7b4`.
+Compile-only release boundary passed22.04seconds with all467Swift/package inputs
+stable. Independent inverse-diff/API review passed. These deterministic results do
+not establish the candidate's effect. Current full-project and exact-source hosted
+checks plus sealed pilot11 remain pending. Merged main36ff324d CI35029792177 remains
+pending in the last recorded snapshot; no new poll was taken for this checkpoint.
+All29criterion states, thresholds and product wording are preserved.
+
+
+## Minimum-size constraints observation (2026-09-15)
+
+Packet37's full project check passed163.25seconds, sealedadd08e00; all40push workflows
+passed in the saved22:37UTC snapshot. Pilot app-ui-host-20260915-11 produced one
+validated light/default PNG, visually reviewed by the owning agent, then failed
+minimum presentation: requested1100x720, original/current bounds1100x772 and
+layoutRect1100x720, with identity and requested Aqua appearance matching at record
+time. The underlying geometry mechanism remains unknown. Actions0of7/captures1of8,
+zero domain work and verified identity/exit/cleanup remain preserved. One reviewed
+image does not establish complete UI operation or minimum/dark presentation.
+
+Source dc8694ca63133ff2b1b1212ed8a3d386fd322568 adds failure-only size-limit, fitting/intrinsic,
+instance-conversion and original-content layout-constraint observations. Each axis
+records at most16numeric constraints; no hierarchy, descriptions or text is captured.
+New nonfinite numeric observations encode asnull while finite intrinsic sentinel-1
+is preserved. The extracted rectangle helper is unchanged. Setter, sizes,200ms wait,
+guard/tolerance, app/window appearance, product scene and7/8requirements are unchanged.
+
+All seven Apple XCTest host contracts passed19.84seconds, log SHA
+`a3b62b3420196a9e8085ebcb8100e5dcb262ef63aa11b3f0799bbb3716104115`.
+Compile-only release boundary passed22.09seconds. Both receipts contain468stable
+Swift/package inputs; independent diff/API review passed. This observation code has
+no measured geometry result yet and is not a presentation repair.
+
+Merged main36ff324d records44of45successful workflows, including CI35029792177.
+Coherence35029792045 failed its unchanged10000ms native_failure deadline; exactly
+one unchanged retry requested22:46:24UTC is pending. Original failure logs remain
+retained and cause is unproven. Current full-project, exact-source hosted checks and
+sealed pilot12 are pending. All29criteria, thresholds and product wording remain.
+
+
+## Independent presentation observations with retained failure (2026-09-15)
+
+Packet38's full project check passed164.42seconds, sealed106addcf. The22:59UTC
+snapshot records its40of40push workflows and mergedmain36ff324d45of45workflows
+successful. Coherence35029792045 passed its single unchanged retry attempt2;
+the original10000ms timeout remains preserved and cause is unknown.
+
+Pilot app-ui-host-20260915-12 remained FAIL: actions0of7/captures1of8, zero domain
+work and verified sealed identity, exit and cleanup. Its published window/content
+minimum height772 exceeds requested720; recorded frame/content conversions retain
+dimensions. This establishes an incompatible requested minimum, not the layer that
+sets it. Neither product layout nor the diagnostic minimum criterion is changed.
+
+Source 3ddf1191cf1a172f2dd81142307e1670209b9256 observes the same four variants once in their
+original order. Only the dedicated presentation mismatch can continue, after task/
+marker cancellation and exact visible owned-content readmission. Failure is latched
+and explicitly saved before continuation, failed captures are skipped, and an atomic
+private matrix preserves at most four rows. Matrix/report persistence, capture,
+ownership and other errors abort. Existing first-failure sidecar behavior remains
+best-effort and no-overwrite. The fresh light/default guard and entire seven-action
+suffix are byte-identical; success still requires all7actions/8captures without failure.
+
+Exact seven Apple XCTest host contracts passed21.28seconds, log SHA
+`95520ca4abd9b14817f02e4b985a52689998bd329a604edd26763f87ecba907d`.
+Release boundary passed23.73seconds; both receipts contain474stableSwift/package
+inputs. Independent control-flow/inverse-diff review passed. Pure callback contracts
+prove neither rendered UI nor a repaired minimum. Current full-project, exact-source
+hosted checks and sealed pilot13 remain pending. All29criteria, product wording and
+thresholds are unchanged; earlier failures remain recorded.
+
+
+## Sidebar contrast candidate and owned accessibility observation (2026-09-15)
+
+Packet39's full project check passed192.45seconds, sealed77da5b86; all40push workflows
+passed. Physical pilot app-ui-host-20260915-13 at that seal remained FAIL, with
+0of7actions/2of8captures. Both default presentations produced verified images; both
+minimum variants recorded height772 for requested720. The actual dark image shows
+near-black native-sidebar labels with poor contrast, followed later by a welcome-
+controls AX timeout. Neither geometry nor AX cause is proved. Zero domain work and
+verified identity, observed exit and cleanup remain recorded with all prior failures.
+
+Source 8cd6365a5faa8d5596d866cd22bed0585a0fa344 extracts the existing sidebar List and applies semantic
+Color.secondary to its two same-copy section headers and Color.primary to the HVF
+label. Selection, tags, menus, order and actions are preserved. Actual visual repair,
+selected-row contrast and high-contrast behavior remain unproved before new captures.
+
+Only after the existing welcome timeout, a diagnostic observer checks cancellation
+and exact visible content ownership, then records bounded full-protocol and separately
+labelled public-selector trees. Each tree is limited to256nodes, depth32 and128children
+per node; only fixed allowed IDs/roles and bounded type/structure fields are retained.
+No labels, values or alternate action route are introduced. Recording failure preserves
+the original timeout. The5second/50ms wait, action walker, minimum dimensions,7actions/
+8captures and report/completion policy are unchanged. Framework getter duration remains
+subject to the unchanged outer launcher bound; the receipt is non-atomic.
+
+The first compile failed after7.10seconds on an incorrect public-protocol type name;
+its log SHA `dafdb36bd2a1b2880de9237e894ba5060fcc75e2220477358c7f4daee38e49c4`
+is retained. Only two type references were corrected before all seven Apple XCTest
+host contracts passed20.66seconds, log SHA
+`4628df69881c0fbec60a2646d286cea0bdf5274fca85ef16a14e7b9911cbaaf5`.
+Release exclusion/refusal passed28.59seconds. Both receipts contain480stableSwift/
+package inputs; independent inverse/privacy/bounds review passed. These deterministic
+results prove no rendered correction or AX cause. Current full-project, exact-source
+hosted checks and sealed pilot14 are pending. All29criterion states, product wording
+and thresholds remain unchanged; the minimum and complete UI criteria remain open.
+
+
+## Owned descendants and supplemental window observation (2026-09-16 UTC)
+
+Packet40's full project check passed in 187.65 seconds, sealed as 7a5d6431. Physical
+pilot app-ui-host-20260915-14 remained FAIL, with 0 of 7 actions and 2 of 8 captures.
+Both default PNGs are byte-identical to pilot13: the explicit semantic styles did
+not repair the observed dark-sidebar contrast. Both minimum variants remain 772
+points high for the required 720. The strict and public-selector timeout trees each
+contain one full-protocol AXGroup root with empty children, no rejection or
+truncation, and no allowed IDs. This does not establish why the root exposes no
+controls or whether accessibility exists elsewhere. Identity, exit and cleanup
+passed with zero domain work; all failures remain recorded.
+
+The private timing labels were corrected: actual scenario start was 0.7768 seconds
+after host begin, within the 5-second startup deadline. The 7.0606-second duration
+from host begin to termination includes scenario work; it is not startup duration
+or evidence of a startup overrun. This correction does not change the failed
+minimum-size or welcome-controls result.
+
+Source 8621d37a288741776360693829de845f6512abfb removes the three ineffective foreground styles
+and restores the original List source while retaining its extraction. After the
+existing root AX timeout record, diagnostic-only observations traverse owned
+subviews, bounded to 256 nodes, depth 32 and 128 children per node. One shared budget
+limits AX metadata to 128 entries. Ordinary and navigation counts remain separate;
+no discovered entry becomes an action route. Immediately after the existing
+dark/default bitmap, the same bounded view projection records appearance only,
+without AX queries or extra layout/display calls.
+
+One supplemental window image follows through ScreenCaptureKit currentProcess,
+restricted to macOS 14.4 or later in the diagnostic build. Exact unique window ID
+and nonnull own PID, finite pixel bounds, explicit child-window/shadow/cursor/audio
+exclusions, ownership and cancellation checks around awaits, and exclusive output
+in a private 0700 directory are required. No global fetch, permission prompt, picker
+or fallback is added. This image stays outside the eight required captures and
+cannot supply missing actions or minimum-size images. API activity may affect
+framework state and timing; the records are non-atomic and the existing owned
+launcher bound remains authoritative.
+
+All seven Apple XCTest host contracts passed in 25.06 seconds, with log SHA
+`0522927c99b981e260b2d93c8049abbe2bf6f4e24ffac18a2e72bad7846b83c1`.
+Release exclusion/refusal passed in 23.50 seconds. Both receipts contain 491 stable
+Swift/package inputs; independent review of all 17 source/test files passed.
+Original 5-second waits at 50 ms intervals, 200 ms presentation timing, dimensions
+and tolerance, seven actions, eight captures and completion policy are unchanged.
+These checks prove no rendered repair, AX cause or supplemental capture success.
+Current full-project and exact-source hosted checks, plus sealed pilot15, are
+pending. All 29 criterion states, product wording and thresholds are preserved.
+
+
+## Navigation-observation trap and bounded recovery (2026-09-16 UTC)
+
+Packet41's full project check passed in 178.03 seconds, sealed as e7a3d57c.
+Physical pilot app-ui-host-20260915-15 remained FAIL, with 0 of 7 actions and 2 of
+8 required captures. All four matrix rows persisted; both minimum variants remained
+772 points high for the required 720. The two default PNGs and supplemental owned-
+window PNG passed integrity checks. Final completion and own-window records were
+missing, however, and the empty fixture directory remained. The original failed
+checks are retained: verified launcher exit and process cleanup do not establish
+host completion or fixture cleanup. All four domain-work counters stayed zero.
+
+The retained crash binds PID 32450 and binary UUID
+`a23cdf37-4169-31d1-bceb-d64429d76955` to the exact sealed host. It records a
+main-thread SIGTRAP through Swift array type checking and Collection.prefix,
+AppUIHostOwnedAXEntries.project at line 12, and the navigation-order projection in
+AppUIHostOwnedViewFields at line 23. The concrete offending element and assertion
+reason are unknown. Crash log SHA
+`7832c89846e1188b75de63c30496de819c142dd96168b400e8d0059d532d503a`
+and all partial artifacts remain preserved; the complete-fixture verifier still
+rejects this run.
+
+The owning reviewer compared the original dark bitmap with the supplemental
+WindowServer image. The composed window shows a light HVF label and blue icon,
+while cacheDisplay shows that row near-black. This sequential, non-atomic comparison
+does not support another product foreground workaround or establish all contrast
+correct. Both default PNGs and the supplement are 2640 by 1720 pixels for default
+content of 1320 by 860 points, agreeing with the observed scale of 2. The previous
+run used scale 1; its change remains unexplained. The first light bitmap preceded
+the supplemental API phase. The lifecycle record is explicitly nonterminal:
+0.2607 seconds measures startup, not the mislabeled fallback terminal duration.
+The original analysis and a separate timing correction are both retained.
+
+Source c298474318512cd166826453756141d85f889a7e removes only the navigation-order
+getter and projection from the diagnostic timeout observer. Private owned-view
+schema 2 explicitly marks navigation unobserved with a fixed reason; no empty array
+or alternate selector pretends to observe it. Ordinary bounded metadata, ownership,
+privacy, cancellation, all waits, dimensions and tolerance, seven actions, eight
+captures and completion policy are unchanged. This removes the identified trap
+route without claiming a framework cause, complete AX repair or actual UI recovery.
+
+All seven Apple XCTest host contracts passed in 21.89 seconds, with log SHA
+`010abb72178b990e19a7f66515cb9eb30bb9f55a06f2562e18018fd291af9b71`.
+Release exclusion/refusal passed in 23.48 seconds. Both receipts contain 491 stable
+Swift/package inputs; independent two-file inverse review passed. Current full-
+project and exact-source hosted checks, plus sealed pilot16, remain pending.
+All 29 criterion states, thresholds and product wording are unchanged. Earlier
+failed experiments and incomplete completion evidence remain preserved.
+
+
+## Product vertical sizing within the unchanged minimum gate (2026-09-16 UTC)
+
+Packet42's complete project check passed in 166.94 seconds, sealed as 26b2af3f.
+Physical pilot app-ui-host-20260915-16 remained FAIL: 0 of 7 actions and 2 of 8
+required captures. Its four rows were pass/mismatch/pass/mismatch; both minimum
+variants remained 1100 by 772 points for the required 1100 by 720. The original
+welcome-control wait still timed out. Host completion and fixture cleanup recovered
+in this one observation, with launcher and worker cleanup verified. These results
+do not establish a full UI pass or a general accessibility repair.
+
+Actual image review again found a light HVF label in the supplemental composed
+window and near-black text in the cacheDisplay bitmap. That discrepancy does not
+justify another product color fix; the supplement is outside the eight required
+captures. Earlier failed runs and their original completion failures are retained.
+
+Source 3a76095182319e722215950cfda1bdae5ab366cb removes only minHeight720 from
+the product root frame. Minimum width1100, default1320x860, native titlebar/toolbars
+and all controls remain. Existing scrollable content determines vertical sizing;
+the product may resize below720, and usability at arbitrary smaller sizes is
+unverified. The full1100x720 light/dark gate and default gate, original seven
+actions/eight captures, waits, tolerance and completion guards are unchanged.
+
+All seven Apple XCTest host contracts passed in 21.86 seconds; release exclusion
+and refusal passed in 23.34 seconds. Both checks contain 491 stable Swift/package
+inputs, and independent source review is clear. Current full-project and exact-
+source hosted checks, plus sealed physical pilot17 and actual image review, remain
+pending. No rendered sizing repair is claimed before that observation. All29
+criterion states, thresholds, product wording and earlier evidence remain intact.

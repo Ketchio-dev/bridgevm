@@ -113,7 +113,7 @@ final class AppUIHostLauncher {
             configuration.allowsRunningApplicationSubstitution = false
             configuration.addsToRecentItems = false
             configuration.promptsUserIfNeeded = false
-            configuration.arguments = ["--app-ui-host", "--output", paths.output.path]
+            configuration.environment = ["BRIDGEVM_APP_UI_HOST_MODE": "1", "BRIDGEVM_APP_UI_HOST_OUTPUT": paths.output.path]
             NSWorkspace.shared.openApplication(at: paths.app, configuration: configuration) { [weak self] app, error in
                 DispatchQueue.main.async {
                     guard let self else { return }

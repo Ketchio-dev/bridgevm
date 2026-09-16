@@ -1,0 +1,55 @@
+#if DEBUG && BRIDGEVM_APP_UI_HOST
+import AppKit
+
+@MainActor
+enum AppUIHostPresentationObservation {
+    static func observePresentationFailure(_ window: NSWindow, content: NSView,
+                                                   dark: Bool, minimum: Bool) {
+        do {
+            guard let capture = AppUIHost.prepared?.capture else {
+                throw AppUIHostError.refused("Presentation observation has no prepared host")
+            }
+            let current = window.contentView
+            let application = NSApp
+            try capture.write([
+                "schema_version": 1, "kind": "native-app-ui-host-presentation-failure",
+                "pid": Int(ProcessInfo.processInfo.processIdentifier),
+                "observed_uptime": ProcessInfo.processInfo.systemUptime,
+                "requested_dark": dark, "requested_minimum": minimum,
+                "requested_content_size_points": ["width": minimum ? 1100 : 1320,
+                                                  "height": minimum ? 720 : 860],
+                "current_content_is_original": current === content,
+                "original_content": presentationContent(content, window: window),
+                "current_content": presentationContent(current, window: window),
+                "window_visible": window.isVisible,
+                "window_frame_screen_points": AppUIHostGeometryObservation.presentationRect(window.frame),
+                "window_content_layout_rect_window_points": AppUIHostGeometryObservation.presentationRect(window.contentLayoutRect),
+                "window_style_mask": window.styleMask.rawValue,
+                "window_backing_scale_factor": Double(window.backingScaleFactor),
+                "geometry_constraints": AppUIHostGeometryObservation.snapshot(window, content: content, minimum: minimum),
+                "window_explicit_appearance": presentationName(window.appearance?.name),
+                "window_effective_appearance": presentationName(window.effectiveAppearance.name),
+                "window_best_match": presentationName(window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua])),
+                "application_explicit_appearance": presentationName(application?.appearance?.name),
+                "application_effective_appearance": presentationName(application?.effectiveAppearance.name),
+                "application_best_match": presentationName(application?.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]))
+            ], name: "host-presentation-failure.json", final: true)
+        } catch {
+            FileHandle.standardError.write(Data("App UI presentation observation could not be saved.\n".utf8))
+        }
+    }
+
+    private static func presentationContent(_ view: NSView?, window: NSWindow) -> [String: Any] {
+        ["exists": view != nil, "attached_to_requested_window": view?.window === window,
+         "bounds_local_points": view.map { AppUIHostGeometryObservation.presentationRect($0.bounds) as Any } ?? NSNull(),
+         "frame_superview_points": view.map { AppUIHostGeometryObservation.presentationRect($0.frame) as Any } ?? NSNull(),
+         "explicit_appearance": presentationName(view?.appearance?.name),
+         "effective_appearance": presentationName(view?.effectiveAppearance.name),
+         "best_match": presentationName(view?.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]))]
+    }
+
+    private static func presentationName(_ name: NSAppearance.Name?) -> Any {
+        name.map { String($0.rawValue.prefix(128)) as Any } ?? NSNull()
+    }
+}
+#endif

@@ -5,31 +5,18 @@ import XCTest
 
 @MainActor
 final class AppUIHostContractTests: XCTestCase {
-    private func fixture() throws -> (root: URL, output: URL) {
-        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
-            .appendingPathComponent("bridgevm-ui-host-contract-" + UUID().uuidString, isDirectory: true)
-        let parent = root.appendingPathComponent("app-ui-private", isDirectory: true)
-        let output = parent.appendingPathComponent("host-observations", isDirectory: true)
-        for directory in [root, parent, output] {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
-                                                   attributes: [.posixPermissions: 0o700])
-        }
-        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        return (root, output)
-    }
-    private func arguments(_ output: URL) -> [String] { ["--app-ui-host", "--output", output.path] }
-    private func object(_ output: URL, _ name: String) throws -> [String: Any] {
-        try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: output.appendingPathComponent(name))) as? [String: Any])
-    }
     func testAcceptsOnlyExactRequestWithoutWritingToOutput() throws {
         let fixture = try fixture()
         XCTAssertEqual(try AppUIHost.outputDirectory(arguments: arguments(fixture.output)), fixture.output)
+        try assertRequestTransports(output: fixture.output)
         for invalid in [[], ["--app-ui-host"], ["--output", fixture.output.path, "--app-ui-host"],
                         arguments(fixture.output) + ["--vtpm-lifecycle"],
                         ["--app-ui-host", "--output", "app-ui-private/host-observations"],
                         ["--app-ui-host", "--output", fixture.output.path + "/../host-observations"]] {
             XCTAssertThrowsError(try AppUIHost.outputDirectory(arguments: invalid))
+            XCTAssertThrowsError(try AppUIHostRequest.resolve(arguments: invalid, environment: [:]))
         }
+        try assertMalformedRequestEnvelopes(output: fixture.output)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.output.path), [])
     }
     func testRejectsNonemptyOrNonprivateOutputWithoutRemovingEvidence() throws {
@@ -37,13 +24,16 @@ final class AppUIHostContractTests: XCTestCase {
         let evidence = fixture.output.appendingPathComponent("retained.txt")
         try Data("retained failure".utf8).write(to: evidence)
         XCTAssertThrowsError(try AppUIHost.outputDirectory(arguments: arguments(fixture.output)))
+        assertEnvironmentRefuses(output: fixture.output)
         XCTAssertEqual(try String(contentsOf: evidence, encoding: .utf8), "retained failure")
         try FileManager.default.removeItem(at: evidence)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fixture.output.path)
         XCTAssertThrowsError(try AppUIHost.outputDirectory(arguments: arguments(fixture.output)))
+        assertEnvironmentRefuses(output: fixture.output)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.output.path)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fixture.output.deletingLastPathComponent().path)
         XCTAssertThrowsError(try AppUIHost.outputDirectory(arguments: arguments(fixture.output)))
+        assertEnvironmentRefuses(output: fixture.output)
     }
     func testRejectsSymlinkedParentAndOutput() throws {
         let fixture = try fixture()
@@ -52,10 +42,12 @@ final class AppUIHostContractTests: XCTestCase {
         let aliasParent = aliasRoot.appendingPathComponent("app-ui-private", isDirectory: true)
         try FileManager.default.createSymbolicLink(at: aliasParent, withDestinationURL: fixture.output.deletingLastPathComponent())
         XCTAssertThrowsError(try AppUIHost.outputDirectory(arguments: arguments(aliasParent.appendingPathComponent("host-observations"))))
+        assertEnvironmentRefuses(output: aliasParent.appendingPathComponent("host-observations"))
         let actual = fixture.output.deletingLastPathComponent().appendingPathComponent("real-output", isDirectory: true)
         try FileManager.default.moveItem(at: fixture.output, to: actual)
         try FileManager.default.createSymbolicLink(at: fixture.output, withDestinationURL: actual)
         XCTAssertThrowsError(try AppUIHost.outputDirectory(arguments: arguments(fixture.output)))
+        assertEnvironmentRefuses(output: fixture.output)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: actual.path), [])
     }
     func testCancellationMarkerRefusesWithoutChangingOutputAdmission() throws {
@@ -86,16 +78,8 @@ final class AppUIHostContractTests: XCTestCase {
         XCTAssertEqual(report["tripwires"] as? [String: Int], ["model_creations": 0, "runtime_creations": 0,
             "install_creations": 0, "file_jobs": 0])
     }
-    func testIncompleteObservationCannotBecomeSuccessfulCompletion() throws {
-        let fixture = try fixture()
-        let capture = try AppUIHostCapture(output: fixture.output)
-        try capture.writeCompletion(cleanupVerified: true)
-        let completion = try object(fixture.output, "host-completion.json")
-        XCTAssertEqual(completion["success"] as? Bool, false)
-        XCTAssertNotNil(completion["failure"] as? String)
-        XCTAssertEqual(completion["report_sha256"] as? String,
-                       try AppUIHostCapture.digest(fixture.output.appendingPathComponent("ui-observations.json")))
-        XCTAssertThrowsError(try capture.writeCompletion(cleanupVerified: true))
+    func testIncompleteObservationCannotBecomeSuccessfulCompletion() async throws {
+        try await assertExpandedHostObservationContracts()
     }
     func testUnpackagedTestProcessRefusesBeforeAppOrFixtureCreation() throws {
         let fixture = try fixture()
