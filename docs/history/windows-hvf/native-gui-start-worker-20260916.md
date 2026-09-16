@@ -19,7 +19,7 @@ interactive-prompt timeout. The separate CLI path retains its exact saved-config
 binding, existing-key-only lookup, typed runner requirement and 30-second bound.
 A pending GUI worker keeps the session active and blocks competing GUI/CLI starts,
 TPM recovery/reset, snapshots and library/storage actions. Removed library entries
-remain retained while work is active. Every effect rechecks current admission.
+remain retained while active. The worker rechecks admission before preparation/key/launch.
 
 A spawned result is always adopted, even if admission changed while launch was
 finishing. Invalidated typed processes use the owned supervisor stop protocol;
@@ -51,7 +51,7 @@ these were corrected with asynchronous reports and explicit supersession.
 | Initial combined control shim | FAIL at test compilation in 14.339 seconds; fixture referenced record.isActive instead of the existing descriptor.isActive; source inputs remained unchanged |
 | Corrected combined control shim R2 | PASS: 740 passed, zero failed, two required live-only skips in 72.907 seconds; all inputs unchanged; all 21 new GUI/readiness tests executed |
 | Focused readiness notification regression | PASS: refreshed product module and all five model tests in 13.637 seconds, stable inputs; synthesized observation removes the new isolation warning while preserving reentry behavior |
-| Full deterministic project check | Pending; no final validation claim yet |
+| Frozen full deterministic project check | PASS in 218.684 seconds at source bcb6708a235f41bd8a2cef7ebe8cd3fb5e795a89; all 3,206 tracked inputs, HEAD and index unchanged; log SHA256 `219d0bc56a60958be1cd93a0a454d44f84411558aa2940a07329cd7766b3e7f3` |
 | Exact new-head hosted checks | Pending; no release evidence promoted |
 
 The new regression cases cover editor configuration, publication reentry,
