@@ -87,3 +87,34 @@ of seven actions and four of eight captures because Accessibility was untrusted.
 All criterion states, thresholds, known-defect wording and product wording remain
 unchanged. Earlier observations are preserved in the
 [native runtime history](native-runtime-observations-through-20260916.md).
+
+## Windows fixture follow-up — 2026-09-16
+
+Source `9b0b3d2e7c6ce082d78ed249d8482082ab1f4405` retains the preceding runtime behavior and corrects
+the headless B6 fixture closure binding. Hosted runs 35053123614 and 35053123616
+at earlier head `9d3241ab8c4c6f9ec8cbe71779a3f885920fa70e` both failed in
+the first fake-child disposal operation because `Disposed` was absent. They had
+not reached actual child processes or UI queries. The exact Windows PowerShell
+5.1 variable-resolution mechanism is not established by those logs.
+
+Fake operations now capture a directly scoped typed state parameter before the
+factory closure returns. Seven new checks exercise two independent adapters
+after caller variables change, including observation, clocks, kill, wait and
+disposal. All preceding assertions and production query/process/evidence bytes
+remain unchanged. Both local invocation styles passed 73 checks on PowerShell
+7.6.6; this is not Windows PowerShell 5.1 validation. Revised hosted results are
+still required. No timeout, threshold or failure was relaxed or rewritten.
+
+The complete project check passed in 219.54 seconds on three frozen staged
+inputs while HEAD was `dabcb995eb70d75d70b194766d60f27c97285a58`; source above
+has the exact tested tree. The private receipt is `packet47a-full-project-r1.json`,
+and its log SHA256 is `6988bdeb592d5a1b455ffbe3a6fbac9fc92774085894871e7dc26d3b8f2c545e`.
+The focused source receipt is `packet47a-b6-fixture-isolation/source-ready-r1.json`.
+This is deterministic evidence and does not close A11 or the remaining UI/guest
+requirements.
+
+PR159 was merged after all 85 exact-head workflows passed. PR160 likewise passed
+at its preceding head, but branch protection required updating it with main;
+the source-identical integrated head requires fresh hosted verification. No
+protection was bypassed. CLI start/stop and the framed app/runtime completion
+connection remain unfinished at this checkpoint.
