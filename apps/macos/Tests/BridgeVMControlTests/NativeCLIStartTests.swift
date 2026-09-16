@@ -16,6 +16,8 @@ final class NativeCLIStartTests: XCTestCase {
         XCTAssertFalse(result.started)
         XCTAssertEqual(result.unavailableReason, "ownerUnavailable")
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+        let keyFailure = NativeCLIRuntimeStart(vmID: "vm", libraryPath: root.path, appInstanceID: nil, operationID: "op", expectedSavedConfigurationDigest: nil, started: false, observation: nil, unavailableReason: "keyUnavailable")
+        XCTAssertTrue(keyFailure.text.contains("Start this VM once in BridgeVMControl"))
     }
 
     func testAdmissionAndReadyAloneDoNotFinishStartup() {
@@ -26,16 +28,14 @@ final class NativeCLIStartTests: XCTestCase {
             let observation: NativeRuntimeStartObservation
             switch requests.count {
             case 1: observation = Fixture.observation(request)
-            case 2: observation = Fixture.observation(request, phase: .awaitingStartup,
-                target: Fixture.target, worker: false, owned: true)
+            case 2: observation = Fixture.observation(request, phase: .awaitingStartup, target: Fixture.target, worker: false, owned: true)
             default: observation = Self.started(request)
             }
             return Fixture.response(request, observation: observation)
         }
         XCTAssertTrue(result.started)
         XCTAssertEqual(requests.map(\.operation), [.start, .startStatus, .startStatus])
-        XCTAssertTrue(requests.allSatisfy { $0.operationID == initial.operationID && $0.appInstanceID == initial.appInstanceID
-            && $0.expectedSavedConfigurationDigest == initial.expectedSavedConfigurationDigest && $0.library == initial.library })
+        XCTAssertTrue(requests.allSatisfy { $0.operationID == initial.operationID && $0.appInstanceID == initial.appInstanceID && $0.expectedSavedConfigurationDigest == initial.expectedSavedConfigurationDigest && $0.library == initial.library })
         XCTAssertEqual(Set(requests.map(\.requestID)).count, 3)
     }
 
