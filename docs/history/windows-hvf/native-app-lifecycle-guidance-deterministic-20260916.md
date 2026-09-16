@@ -28,8 +28,8 @@ installation observation, terminal retry, readiness, start, status and stop.
 | Existing create, install, start and stop CLI selections | 14 PASS |
 | Existing repository Swift harness | 16 PASS |
 | Structural budgets | PASS without raising an existing ceiling |
-| Documentation system | PASS; 190 classified documents and 412 links |
-| First integrated project check | FAIL only expected capability freshness; every other gate completed |
+| Documentation system | PASS; 191 classified documents and 413 links |
+| Final integrated project check | PASS at metadata head `6e55630c` |
 | XCTest shim suites in that run | 425, 801 with two required live-only skips, and 62 PASS |
 
 The first journey expectation assumed the installed registration would reach the
@@ -40,10 +40,10 @@ retained. The corrected contract requires that exact later refusal and one runti
 session creation, proving it crossed the earlier install-pending boundary without
 starting a process or reading a key.
 
-The first full project check correctly rejected stale capability identity because
-the new native source followed the previous tested commit. All executable,
-documentation, budget and shim steps still completed successfully. The registry
-is resealed to the exact source commit before the corrected final project run.
+The first full project check correctly rejected stale capability identity; all
+other steps passed. The corrected run passed at `6e55630c`. PR167 exact head
+`8ec0124e` passed 120 checks plus one intentional advisory skip and merged as
+`72bcb5e1`; all 45 exact-main push workflows then passed.
 
 ## Evidence limit
 
@@ -52,6 +52,6 @@ state. It proves deterministic identity binding, terminal retry admission,
 install-pending refusal, installed-state routing and existing stop target-binding
 contracts. It does not install Windows, launch App.main, render a WindowServer UI,
 access Keychain, boot a guest, observe guest shutdown or prove physical-hardware
-behavior. No live queue job was submitted. Exact-head hosted CI and post-main
-verification remain required before integration. No capability state, threshold,
+behavior. No live queue job was submitted. Hosted and post-main results prove
+deterministic integration only. No capability state, threshold,
 known defect, product wording or machine-contract deviation is promoted.
