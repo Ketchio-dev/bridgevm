@@ -41,7 +41,7 @@ self_test() {
   grep -Fq 'workflow_dispatch:' "$workflow"; ! grep -Eq '^  (push|pull_request):' "$workflow"
   grep -Fq 'runs-on: macos-15' "$workflow"; ! grep -Fq 'self-hosted' "$workflow"
   grep -Fq 'id-token: write' "$workflow"; grep -Fq 'attestations: write' "$workflow"
-  grep -Fq 'actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d' "$workflow"
+  grep -Fq 'actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6' "$workflow"
   grep -Fq '/Users/user/BridgeVM/3d/prefix/lib/libvirglrenderer.1.dylib' "$workflow"
   rewrite_line="$(grep -n 'install_name_tool -change' "$workflow" | cut -d: -f1)"
   sign_line="$(grep -n 'codesign --force --sign -' "$workflow" | cut -d: -f1)"
