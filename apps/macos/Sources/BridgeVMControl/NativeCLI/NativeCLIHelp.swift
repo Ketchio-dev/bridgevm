@@ -13,7 +13,7 @@ extension NativeCLI {
       BridgeVMControl --cli readiness 개발-vm --json
 
     Uses the same vm.json configuration as the native app. Reads never repair,
-    migrate, create or start a VM. Runtime state is unobserved. Recovery records
+    migrate, create or start a VM. Inventory runtime is unobserved. Recovery records
     are reported without interpreting or modifying them. CPU/memory are saved
     values, not measured usage. Inventory JSON schema: bridgevm.app-library.v1.
     Inventory exit codes: 0 complete, 1 unavailable/incomplete, 2 invalid usage.
@@ -26,5 +26,5 @@ extension NativeCLI {
     Readiness exit codes: 0 launch prerequisites ready, 1 blocked/unavailable,
     2 invalid usage. Unsupported engines and pending installation are blocked.
     Legacy Rust CLI --store/--socket commands use a separate manifest.yaml store.
-    """
+    """ + "\n\n" + statusHelp
 }

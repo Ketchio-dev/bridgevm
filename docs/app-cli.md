@@ -1,20 +1,25 @@
 # Native app CLI
 
-`bridgevm app` queries the same `vm.json` registrations as the native macOS app.
+`bridgevm app` reads native `vm.json` registrations and queries runtime observations
+retained by the already-running macOS app.
 It does not open an app window, start or stop a VM, repair registrations, or
-change saved resources. Runtime state is reported as `unobserved`; saved CPU and
-memory values are not utilization measurements.
+change saved resources. Inventory commands report runtime state as `unobserved`;
+saved CPU and memory values are not utilization measurements. `status` does not
+automatically launch the app.
 
 ```sh
 bridgevm app list
 bridgevm app list --json
 bridgevm app inspect 개발-vm --json
 bridgevm app readiness 개발-vm --json
+bridgevm app status 개발-vm --json
 bridgevm app list --library "/absolute/path/to/native-library"
 ```
 
 Use the exact ID returned by `list`, including Korean IDs. `--library` accepts an
 absolute path without `..`; omitting it uses the native app's default library.
+`status` also accepts the exact ID of a removed registration whose session the
+running app still retains.
 `--json` and `--library` can follow the command or appear before it within the
 `app` namespace. `bridgevm app --help` and each subcommand's `--help` work without
 finding or opening the installed app.
@@ -78,11 +83,36 @@ Its JSON separates `launchBlockers`, `releaseBlockers`, and `productLimitations`
 `engineChecksPerformed: false` means those engine checks were not evaluated;
 an empty release-blocker list in that case is not evidence of release readiness.
 
-| Exit | Inventory (`list` / `inspect`) | `readiness` |
-| --- | --- | --- |
-| 0 | Complete query | Launch prerequisites ready |
-| 1 | Unavailable or incomplete inventory; discovery/exec failure | Blocked, unavailable configuration, or unsupported backend |
-| 2 | Invalid command, option, path or ID | Invalid usage |
+`status` uses `bridgevm.app-runtime.v1` and reports `app-observation` scope. It asks
+the running app for retained HVF session information without refreshing a process,
+attaching to a session, or checking guest health. A result can contain multiple
+retained sessions for the ID; each observation is reported separately.
+
+Saved configuration is reported as `present`, `missing`, or `unreadable`. Its
+comparison with a session's accepted configuration is `same`, `different`, or
+`unknown`. The accepted digest identifies the source registration captured when
+that session was created; it is not a measurement of the guest's resources or a
+digest of later edits to runtime launch options. Missing or unreadable saved configuration yields an unknown comparison
+but does not prevent an otherwise complete owner query. This keeps observations
+for removed registrations accessible.
+
+Ownership distinguishes `owned`, `attached-observation`, `owned-exit-observed`, and
+`not-observed`. These describe the app's retained evidence: an observed owned child
+exit does not prove guest shutdown, guest health, or descendant cleanup.
+`not-observed` does not mean the VM is globally stopped. Likewise, a connected
+session is not a guest-health result.
+
+The status endpoint belongs to the same macOS account and the selected native
+library. It uses a fixed private namespace; there is no release socket or
+environment override. When the native command runs, an unavailable owner produces
+structured runtime-unobserved output with exit 1. It does not create a library or
+launch an app to obtain a response.
+
+| Exit | Inventory (`list` / `inspect`) | `readiness` | `status` |
+| --- | --- | --- | --- |
+| 0 | Complete query | Launch prerequisites ready | Complete owner observation, including `not-observed` |
+| 1 | Unavailable or incomplete inventory; discovery/exec failure | Blocked, unavailable configuration, or unsupported backend | Owner query unavailable; discovery/exec failure |
+| 2 | Invalid command, option, path or ID | Invalid usage | Invalid usage |
 
 An existing but empty library returns an empty complete inventory. A missing
 library also returns an empty `list` result without creating a directory;

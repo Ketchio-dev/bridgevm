@@ -8,7 +8,7 @@ final class HvfRuntimeSessionStore {
     private let makeSession: Factory
 
     init(makeSession: @escaping Factory) { self.makeSession = makeSession }
-
+    func existingRecord(slug: String) -> HvfRuntimeSessionRecord? { entries[.libraryVM(slug)] }
     func isActive(slug: String) -> Bool {
         guard let entry = entries[.libraryVM(slug)] else { return false }
         return entry.session.connectionState != .stopped

@@ -9,6 +9,10 @@ enum NativeCLI {
                 return 0
             }
             switch options.command {
+            case .status(let id):
+                let snapshot = NativeCLIRuntimeStatus.snapshot(rootURL: options.libraryRoot, id: id)
+                try output(snapshot, json: options.json, text: snapshot.text)
+                return snapshot.complete ? 0 : 1
             case .readiness(let id):
                 let snapshot = try NativeCLIReadiness.snapshot(rootURL: options.libraryRoot, id: id)
                 try output(snapshot, json: options.json, text: render(snapshot))
@@ -25,12 +29,5 @@ enum NativeCLI {
             if case NativeCLIError.invalid = error { return 2 }
             return 1
         }
-    }
-}
-
-enum NativeCLIError: LocalizedError {
-    case invalid(String), unavailable(String)
-    var errorDescription: String? {
-        switch self { case .invalid(let text), .unavailable(let text): return text }
     }
 }
