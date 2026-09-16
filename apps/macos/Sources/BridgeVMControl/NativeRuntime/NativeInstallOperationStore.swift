@@ -8,12 +8,12 @@ final class NativeInstallOperationStore {
         case refused(NativeInstallControlRefusal)
     }
 
-    private struct Record {
+    struct Record {
         let digest: String
         let operation: NativeInstallOperation
     }
     private let capacity: Int
-    private var records: [String: Record] = [:]
+    var records: [String: Record] = [:]
 
     init(capacity: Int = 256) { self.capacity = capacity }
 
