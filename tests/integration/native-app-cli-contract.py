@@ -9,7 +9,7 @@ import stat
 import subprocess
 import sys
 import tempfile
-
+from native_app_status_contract import check_status
 
 def run(binary, arguments, expected):
     process = subprocess.Popen(
@@ -85,6 +85,7 @@ def main():
         assert not output and error
         run(binary, ["inspect", "missing", "--library", str(library), "--json"], 1)
         assert tree(root) == before, "Native queries changed input files or created runtime state"
+        check_status(binary, library, run, tree)
         corrupt = library / "corrupt"
         corrupt.mkdir()
         (corrupt / "vm.json").write_text("broken configuration", encoding="utf-8")
@@ -94,8 +95,7 @@ def main():
         assert not snapshot["complete"] and len(snapshot["records"]) == 1
         assert len(snapshot["issues"]) == 1 and not error
         assert tree(root) == before
-    print("native app CLI: PASS (8 real CLI processes, owned fixtures unchanged; no GUI or VM requested)")
-
+    print("native app CLI: PASS (real CLI processes, synthetic status owner, fixtures unchanged; no GUI or VM requested)")
 
 if __name__ == "__main__":
     main()

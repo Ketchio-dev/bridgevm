@@ -25,6 +25,7 @@ final class HvfEngineSession: ObservableObject {
     private var stopCommandSent = false
     private var stopDeadline: Date?
     private var attachedToExistingProcess = false
+    var hasRetainedAttachment: Bool { attachedToExistingProcess }
     private var nextAttachedLivenessCheck = Date.distantPast
     private var liveInputHandle: FileHandle?
     private var liveInputPath: URL?
@@ -388,7 +389,6 @@ final class HvfEngineSession: ObservableObject {
         }
         poll()
     }
-
 
     func poll() {
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")

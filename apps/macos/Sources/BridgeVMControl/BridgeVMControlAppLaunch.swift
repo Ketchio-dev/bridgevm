@@ -2,10 +2,9 @@ import Foundation
 
 enum BridgeVMControlAppLaunch {
     @MainActor static func libraryModel() -> LibraryModel {
-        let arguments = Array(CommandLine.arguments.dropFirst())
-        let options = try? BridgeVMControlLaunchOptions.parse(arguments: arguments)
-        return LibraryModel(
-            rootURL: options?.e2eLibraryRoot ?? VMLibrary.root,
-            e2eUnattendedPath: options?.e2eUnattendedPath?.path, migrateLegacy: BridgeVMControlLaunchPolicy.shouldMigrateLegacy(options: options))
+        guard let owner = NativeRuntimeAppOwner.prepared else {
+            preconditionFailure("Native library owner must be admitted before model creation")
+        }
+        return owner.model()
     }
 }

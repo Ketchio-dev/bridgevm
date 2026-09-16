@@ -1,7 +1,5 @@
 #if canImport(AppKit)
 import AppKit
-/// Ensure the window appears and takes focus when launched as a SwiftPM
-/// executable (no .app bundle), rather than starting as a background agent.
 final class ControlAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         ControlAppActivation.activate()
@@ -10,5 +8,6 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationWillTerminate(_ notification: Notification) { NativeRuntimeAppOwner.shutdown() }
 }
 #endif

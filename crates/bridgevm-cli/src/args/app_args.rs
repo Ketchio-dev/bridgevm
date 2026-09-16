@@ -1,10 +1,13 @@
-//! Read-only native app inventory arguments.
+//! Read-only native app query arguments.
 
 use crate::*;
+#[path = "app_command.rs"]
+mod app_command;
+pub(crate) use app_command::AppCommand;
 
 #[derive(Debug, Parser)]
 #[command(
-    after_help = "Reads native vm.json registrations, not the legacy --store. Requires a compatible installed BridgeVMControl.app; no window or VM is started. Runtime state remains unobserved."
+    after_help = "Reads native vm.json registrations, not the legacy --store. Requires a compatible installed BridgeVMControl.app; no window or VM is started. Inventory runtime remains unobserved. Status asks the already-running app for retained observations, not guest health."
 )]
 pub(crate) struct AppArgs {
     #[command(subcommand)]
@@ -15,16 +18,6 @@ pub(crate) struct AppArgs {
     /// Print versioned native JSON for the selected query.
     #[arg(long, global = true)]
     pub(crate) json: bool,
-}
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum AppCommand {
-    /// List saved native app VM configurations, including inventory issues.
-    List,
-    /// Inspect one exact VM ID returned by list, including Korean IDs.
-    Inspect { id: String },
-    /// Report native launch-input readiness without starting a VM.
-    Readiness { id: String },
 }
 
 fn absolute_library(value: &str) -> std::result::Result<PathBuf, String> {

@@ -1,4 +1,4 @@
-//! Forward native inventory without a shell or a second process lifecycle.
+//! Forward read-only native queries without a shell or a second process lifecycle.
 
 use crate::*;
 use std::ffi::OsString;
@@ -25,6 +25,10 @@ fn native_arguments(args: AppArgs) -> Vec<OsString> {
             arguments.push("readiness".into());
             arguments.push(id.into());
         }
+        AppCommand::Status { id } => {
+            arguments.push("status".into());
+            arguments.push(id.into());
+        }
     }
     if let Some(library) = args.library {
         arguments.push("--library".into());
@@ -37,49 +41,5 @@ fn native_arguments(args: AppArgs) -> Vec<OsString> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn forwards_unicode_and_spaces_as_single_arguments() {
-        let args = AppArgs {
-            command: AppCommand::Inspect {
-                id: "개발-vm".into(),
-            },
-            library: Some(PathBuf::from("/owned library/with 'quotes'")),
-            json: true,
-        };
-        assert_eq!(
-            native_arguments(args),
-            [
-                "--cli",
-                "inspect",
-                "개발-vm",
-                "--library",
-                "/owned library/with 'quotes'",
-                "--json"
-            ]
-            .map(OsString::from)
-        );
-        let list = AppArgs {
-            command: AppCommand::List,
-            library: None,
-            json: false,
-        };
-        assert_eq!(
-            native_arguments(list),
-            ["--cli", "list"].map(OsString::from)
-        );
-        let readiness = AppArgs {
-            command: AppCommand::Readiness {
-                id: "개발-vm".into(),
-            },
-            library: None,
-            json: true,
-        };
-        assert_eq!(
-            native_arguments(readiness),
-            ["--cli", "readiness", "개발-vm", "--json"].map(OsString::from)
-        );
-    }
-}
+#[path = "app_cli_tests.rs"]
+mod tests;

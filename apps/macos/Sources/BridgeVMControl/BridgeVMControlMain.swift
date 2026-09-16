@@ -20,7 +20,7 @@ enum BridgeVMControlMain {
             exit(2)
         }
         #else
-        ControlCommandDispatch.validateOrExit(arguments: arguments)
+        NativeRuntimeAppOwner.prepareOrExit(arguments: arguments)
         #endif
         BridgeVMControlApp.main()
     }
