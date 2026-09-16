@@ -22,7 +22,7 @@ Driver provenance is keyed by DriverStore hash, because a rebuilt package with t
 
 ## Conformance
 
-**Experimental D3D11-compatible subset.** Five Vulkan features DXVK requests for feature level 11_0 are disabled. Advertising full FL11_0 conformance while those are relaxed would be false.
+**D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.** Five Vulkan features DXVK requests for feature level 11_0 are disabled. Advertising full FL11_0 conformance while those are relaxed would be false.
 
 ## Relaxed features
 

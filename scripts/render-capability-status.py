@@ -154,7 +154,7 @@ def render_summary(registry: dict) -> str:
         lines.extend(f"- **{cid}**: {text}" for cid, text in defects)
         lines.append("")
     lines += [
-        f"- Graphics: {wording['graphics_vulkan']} and "
+        f"- Graphics future path: {wording['graphics_vulkan']}; "
         f"{wording['graphics_d3d11']}.",
         f"- Guest platform: {wording['machine_contract']}.",
         "",

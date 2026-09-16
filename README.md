@@ -13,16 +13,15 @@ Hypervisor.framework VMM.**
 
 BridgeVM is built for people who want to use, inspect, and improve a native
 virtualization stack. It includes persistent storage, display and input,
-networking, audio, guest integration, TPM/Secure Boot workflows, snapshots, and
-an explicitly experimental graphics path.
+networking, audio, guest integration, TPM/Secure Boot workflows, and snapshots.
+Experimental graphics research continues separately in Graphics Lab and is not
+part of the General Preview or v1 release scope.
 
 ## Measured on real hardware
 
 | Retained campaign | Result | Evidence boundary |
 | --- | ---: | --- |
 | Fresh Windows first boot | **10 / 10 passed** | Product-default campaign; fixed gate required at least 9/10 |
-| PPSSPP on experimental Vulkan | **58.82 FPS p50 in 3 / 3 runs** | One real title, not a claim about every Vulkan workload |
-| PPSSPP on the experimental D3D11-compatible subset | **3 / 3 runs above 30 FPS** | One real title; p50 was 250.0 / 62.5 / 62.5 FPS |
 | CoreAudio playback and shutdown | **10 / 10 passed** | 2,504,031 frames; zero drops and zero unexpected callback errors |
 
 These are retained campaign results on the measured hardware and exact sealed
@@ -39,8 +38,6 @@ thresholds and receipts are linked from the
   folder transfer, and guest-agent control;
 - TPM 2.0, Secure Boot and measured-boot workflows, encrypted vTPM state,
   recovery/migration;
-- experimental Vulkan and D3D11-compatible paths in the separate engineering
-  evidence track;
 - deterministic hosted CI plus sealed real-hardware receipts for behavior that
   CI cannot prove.
 
@@ -49,19 +46,19 @@ observed in a real guest. The snapshot below is generated from the capability
 registry; it is the product wording source of truth.
 
 <!-- BEGIN GENERATED: capability-summary -->
-**Product state: Engineering Preview.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Release-blocking evidence remains open; known defects are disclosed below.
+**Product state: Engineering Preview.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots and window Coherence verbs. 3D acceleration is excluded from General Preview and v1; release-blocking evidence remains open and known defects are disclosed below.
 
-Release-blocking criteria proven: **16 / 19**. Open: A9, A11, A19.
+Release-blocking criteria proven: **14 / 17**. Open: A9, A11, A19.
 
 Known open defects:
-- **A9**: Windows-HVF 3D driver injection is unavailable for install and import: signed kernel-policy provenance and a clean-machine installation flow have not been proven. The product exposes only 3D-off install/import.
+- **A9**: No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off.
 - **A19**: External copies of only logical disk/vars originals after restore lose current managed state. Legacy managed storage relocated before identity migration is refused. Full interrupted-restore, raw export and product lifecycle gates remain unproven.
 - **B6**: Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness.
 
-- Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
+- Graphics future path: Vulkan is a Graphics Lab future path, excluded from General Preview and v1; D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-09-16 at commit `72bcb5e1d1a046927c00e409547527767dc2b9cb`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-09-16 at commit `42dd75c9b70134de1fb14791b46ee2fc39940f66`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 See the [current status](STATUS.md) and
@@ -72,7 +69,7 @@ fixed thresholds and retained receipts.
 > BridgeVM is an **Engineering Preview**, not a production VM product. Bring
 > your own licensed Windows 11 Arm ISO. The general download does not contain a
 > Windows test driver, does not enable TESTSIGNING, and installs Windows with 3D
-> injection disabled.
+> acceleration excluded from this release scope.
 
 ## Install status
 
@@ -109,7 +106,7 @@ Prefer a DMG or want to inspect every verification step? Read the
 
 | Channel | Intended for | Windows graphics policy | Security boundary |
 | --- | --- | --- | --- |
-| **General Preview** | Users and contributors | 3D driver injection is unavailable | No Windows test driver; TESTSIGNING is not enabled; Secure Boot policy is not weakened |
+| **General Preview** | Users and contributors | Basic display; 3D acceleration is outside the release scope | No Windows test driver; TESTSIGNING is not enabled; Secure Boot policy is not weakened |
 | **Graphics Lab** | Driver developers on disposable test VMs | Opt-in test-signed experimental package | Separate tooling and evidence only; may require TESTSIGNING and a different Secure Boot posture |
 
 The Graphics Lab package is not a production-signing substitute and is not
@@ -124,27 +121,21 @@ before using it.
   Browser-downloaded DMGs therefore need the documented one-time **Open
   Anyway** step. The terminal installer states its narrower trust model and
   verifies every artifact before replacement.
-- Windows-HVF install and import are deliberately 3D-off while A9 remains
-  open. A user-provided ISO does not change Windows kernel-driver trust rules.
-- Experimental graphics compatibility is much narrower than “all Vulkan or
-  D3D11 software works.”
-- On the accelerated path, body text renders but some window titles, tabs, and
-  menus can be blank. The retained investigation is
-  [documented here](docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md).
+- Windows-HVF install and import use the supported 3D-off configuration. A9
+  remains open until both clean-machine app journeys have retained evidence.
 - Running-state suspend is outside the v1 scope; powered-off snapshots are the
   supported persistence boundary.
 
 ## Future direction
 
-Production Windows 3D driver injection is a future opportunity, not an active
-release commitment. Work can resume when BridgeVM has an organization or
-partner able to provide a Microsoft kernel-policy-signed ARM64 package. Both
-ISO install and installed-disk import must then verify that same package before
-changing a VM, followed by a retained clean-machine product-flow receipt.
-
-Until those external prerequisites exist, A9 remains OPEN, the General Preview
-stays 3D-off, and Graphics Lab results are not treated as production-signing
-evidence.
+3D acceleration is a Graphics Lab future path, not an active release
+commitment. The retained Vulkan and D3D11 title campaigns remain valid research
+evidence, including the
+[known glyph defects](docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md),
+but they are non-blocking and do not describe General Preview or v1 behavior.
+Product work may resume after a
+Microsoft kernel-policy-signed ARM64 package exists and both product flows can
+verify it without weakening Secure Boot.
 
 ## Build from source
 

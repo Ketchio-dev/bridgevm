@@ -210,9 +210,9 @@ final class HvfWindowsBackend: VMBackend {
             shareHostDir: nil,
             shareGuestDir: nil,
             virtioNet: config.networkEnabled ?? true,
-            virtioGpu3d: config.experimental3DAllowed ?? true,
+            virtioGpu3d: config.experimental3DAllowed ?? false,
             nvmeBufferedIO: false,
-            ctlFilePath: ctlFilePath, allowsExperimental3D: config.experimental3DAllowed ?? true
+            ctlFilePath: ctlFilePath, allowsExperimental3D: config.experimental3DAllowed ?? false
         )
     }
 

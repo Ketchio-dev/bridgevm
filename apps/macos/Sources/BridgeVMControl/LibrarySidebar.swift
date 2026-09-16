@@ -8,22 +8,22 @@ struct LibrarySidebar: View {
             LibraryBrand()
             Button(action: showOverview) {
                 HStack(spacing: 12) {
-                    Image(systemName: "square.grid.2x2").font(.title3)
-                    Text("모든 가상 머신").font(.body.weight(.medium))
+                    Image(systemName: "desktopcomputer").font(.title3)
+                    Text("가상 머신").font(.body.weight(.medium))
                     Spacer(minLength: 0)
                     Text("\(library.vms.count)").font(.caption.monospacedDigit())
                 }
                 .padding(12)
-                .foregroundStyle(library.proMode && library.selectedID == nil ? Color.blue : Color.primary)
-                .background(library.proMode && library.selectedID == nil ? Color.blue.opacity(0.12) : Color.clear,
+                .foregroundStyle(Color.blue)
+                .background(Color.blue.opacity(0.12),
                             in: RoundedRectangle(cornerRadius: 10))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("bridgevm.library.overview")
-            .accessibilityAddTraits(library.proMode && library.selectedID == nil ? .isSelected : [])
+            .accessibilityAddTraits(.isSelected)
             .padding(.horizontal, 12).padding(.bottom, 8)
-            LibrarySidebarList(library: library)
+            Spacer(minLength: 12)
             VStack(spacing: 16) {
                 LibraryHostSummary(library: library)
                 LibraryEngineLegend()
@@ -43,7 +43,7 @@ struct LibrarySidebar: View {
     }
 
     private func showOverview() {
-        library.selectedID = nil
-        library.proMode = true
+        library.proMode = false
+        if library.selectedID == nil { library.selectedID = library.vms.first?.slug }
     }
 }

@@ -2,24 +2,26 @@ import SwiftUI
 #if canImport(AppKit)
 import AppKit
 #endif
-// MARK: - Root (library + detail)
 struct ContentView: View {
     @ObservedObject var library: LibraryModel
     @State private var showPalette = false
-
     var body: some View {
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         let _ = AppUIHost.prepared?.lifecycle.record(.contentBodyEvaluated)
         #endif
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: .constant(.all)) {
             LibrarySidebar(library: library)
-                .navigationSplitViewColumnWidth(min: 260, ideal: 290, max: 350)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 270)
+        } content: {
+            LibraryOverviewView(library: library)
+                .navigationSplitViewColumnWidth(min: 390, ideal: 480, max: 580)
         } detail: {
-            LibraryDetailView(library: library)
+            LibraryDashboardRoute(library: library)
         }
         .tint(LibraryAppearance.accent)
         .groupBoxStyle(LibraryGroupBoxStyle())
         .background(LibraryAppearance.canvas)
+        .preferredColorScheme(.light)
         .sheet(isPresented: $library.showingCreate) {
             CreateVMSheet(library: library)
         }
@@ -61,8 +63,6 @@ struct ContentView: View {
         )
     }
 }
-
-// MARK: - Per-VM detail panel
 
 struct VMDetailPanel: View {
     @ObservedObject var model: ControlModel

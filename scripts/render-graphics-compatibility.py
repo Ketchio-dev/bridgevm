@@ -28,9 +28,9 @@ def validate(registry: dict, capabilities: dict | None = None) -> None:
             f"relaxed: {names}"
         )
     claim = conformance.get("claim", "")
-    if unprovided and "experimental" not in claim.lower():
+    if unprovided and not any(term in claim.lower() for term in ("experimental", "future path")):
         raise ClaimError(
-            f"claim {claim!r} does not say the subset is experimental, but "
+            f"claim {claim!r} does not identify the subset as experimental or a future path, but "
             f"{len(unprovided)} feature(s) are relaxed"
         )
     for title in registry.get("titles", []):
@@ -161,7 +161,7 @@ def _self_test() -> int:
     expect_error(
         {"relaxed_features": relaxed,
          "conformance": {"claim": "D3D11 compatible", "full_fl11_0": False}},
-        "does not say the subset is experimental",
+        "does not identify the subset as experimental or a future path",
         "a confident claim with a relaxed feature must be refused",
     )
     expect_error(
@@ -181,7 +181,7 @@ def _self_test() -> int:
     checks += 1
     validate({
         "relaxed_features": relaxed,
-        "conformance": {"claim": "Experimental D3D11-compatible subset",
+        "conformance": {"claim": "D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1",
                         "full_fl11_0": False},
         "titles": [{"title": "T", "meets_gate": False, "samples": 0,
                     "fps_p50": None, "fps_gate": 30.0}],

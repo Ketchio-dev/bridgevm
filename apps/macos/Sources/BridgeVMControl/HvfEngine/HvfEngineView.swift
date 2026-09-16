@@ -112,7 +112,6 @@ struct HvfEngineView: View {
         HvfRuntimeHeader(title: session.config.libraryContext?.config.name ?? displayWindowTitle, state: stateText, stateColor: stateColor,
                          ramMiB: session.config.ramMiB, cpus: session.config.smpCpus)
     }
-
     private var configCard: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 12) {
@@ -128,8 +127,9 @@ struct HvfEngineView: View {
                 HStack(spacing: 18) {
                     Toggle("Clipboard sync", isOn: $clipboardSync).accessibilityIdentifier("bridgevm.runtime.clipboard")
                     Toggle("Virtio net", isOn: $virtioNet).accessibilityIdentifier("bridgevm.runtime.network")
-                    Toggle("VirGL 3D", isOn: $virtioGpu3d)
-                        .disabled(!session.config.allowsExperimental3D)
+                    if session.config.allowsExperimental3D {
+                        Toggle("Graphics Lab 3D", isOn: $virtioGpu3d)
+                    }
                     Toggle("Shared folder", isOn: $shareEnabled).accessibilityIdentifier("bridgevm.runtime.share.enabled")
                     Spacer()
                 }

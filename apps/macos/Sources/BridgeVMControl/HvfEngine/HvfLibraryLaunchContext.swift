@@ -29,12 +29,12 @@ extension HvfEngineConfig {
             shareHostDir: nil,
             shareGuestDir: nil,
             virtioNet: config.networkEnabled ?? true,
-            virtioGpu3d: config.experimental3DAllowed ?? true,
+            virtioGpu3d: config.experimental3DAllowed ?? false,
             nvmeBufferedIO: false,
             ctlFilePath: config.bundlePath + "/metadata/hvf.ctl",
             vtpmStateDir: config.bundlePath + "/metadata/vtpm",
             swtpmBin: VTPMStateSecurity.defaultSwtpmCommand(),
-            vtpmKeyID: config.slug, allowsExperimental3D: config.experimental3DAllowed ?? true,
+            vtpmKeyID: config.slug, allowsExperimental3D: config.experimental3DAllowed ?? false,
             libraryContext: HvfLibraryLaunchContext(config: config, rootURL: rootURL)
         )
     }
