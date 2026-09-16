@@ -1,7 +1,10 @@
 $ErrorActionPreference = 'Stop'
+$integration = Join-Path $PSScriptRoot '../tests/integration'
+. (Join-Path $integration 'window-inventory-error-child.ps1')
+& (Join-Path $integration 'window-inventory-owned-child-contract.ps1')
 $root = Join-Path ([IO.Path]::GetTempPath()) ('BridgeVM inventory errors ' + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $root | Out-Null
-$engine = (Get-Process -Id $PID).Path
+$run = New-B6TipEvidenceRun; $failed = $true
 $module = Join-Path $root 'bvagent-window-inventory.ps1'
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'win-assets/bvagent-window-inventory.ps1') -Destination $module
 $prefix = '$ErrorActionPreference = ''Continue''' + "`n. '" + $module.Replace("'", "''") + "'`n"
@@ -20,21 +23,8 @@ try {
     foreach ($name in $cases.Keys) {
         $script = Join-Path $root ($name + '.ps1')
         [IO.File]::WriteAllText($script, $prefix + $cases[$name] + "`nWrite-Output 'UNREACHED'`n", [Text.Encoding]::UTF8)
-        $start = [Diagnostics.ProcessStartInfo]::new()
-        $start.FileName = $engine
-        $start.Arguments = '-NoLogo -NoProfile -File "' + $script + '"'
-        $start.UseShellExecute = $false
-        $start.RedirectStandardOutput = $true
-        $start.RedirectStandardError = $true
-        $child = [Diagnostics.Process]::Start($start)
-        try {
-            if (-not $child.WaitForExit(10000)) { $child.Kill(); throw ($name + ' child deadline') }
-            $stdout = $child.StandardOutput.ReadToEnd()
-            $stderr = $child.StandardError.ReadToEnd()
-            if ($child.ExitCode -eq 0 -or $stdout.Length -ne 0 -or $stderr.Length -eq 0) {
-                throw ($name + ' did not fail closed under unguarded Continue')
-            }
-        } finally { $child.Dispose() }
+        $null = Invoke-BvInventoryErrorChild -Run $run -Name $name -Script $script
     }
-} finally { Remove-Item -LiteralPath $root -Recurse -Force }
+    $failed = $false
+} finally { Complete-BvInventoryErrorRun $run $root $failed }
 Write-Output 'PASS: unguarded Continue cannot leak inventory rows or hide provider failures'

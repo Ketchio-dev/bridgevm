@@ -55,7 +55,7 @@ try {
         Expect-B6Failure { Invoke-B6TipQuery $run 'fixture.ps1' 42 'visible-owned' -Factory (New-B6FakeFactory $state) } $pattern
         Assert-B6 ($state.Time -eq 20 -and $run.Cases[0].timed_out) 'Twenty-second query deadline changed'
         Assert-B6 ($state.Kills -le 1 -and $state.WaitMilliseconds -le 5000) 'Cleanup exceeded its mutation or wait bound'
-        Assert-B6 ($state.Disposed -eq 1) 'Owned process was not disposed'
+        Assert-B6 ($state.Disposed -eq [int]($kind -ne 'unconfirmed')) 'Owned process disposal ignored unresolved ownership'
         if ($kind -eq 'unconfirmed') {
             Assert-B6 (!$run.RawCleanupSafe -and $run.Cases[0].streams.Count -eq 0) 'Unconfirmed child output was captured'
             Expect-B6Failure { Read-B6TipSnapshot $run $run.Cases[0] (Join-Path $run.RawRoot '1-visible-owned.stdout.raw') 'stdout' } 'before owned child exit'
@@ -135,10 +135,13 @@ try {
         Complete-B6TipEvidenceRun $run $false
         Assert-B6 (!(Test-Path $run.PublishRoot) -and !(Test-Path $run.RawRoot)) 'Passing suite retained failure output'
     }
+    . (Join-Path $PSScriptRoot 'b6-tip-query-drain-contract.ps1')
 } finally {
     $actualUnconfirmed = $false
     foreach ($run in $runs) {
+        if ((Test-Path $run.RawRoot) -and !(Test-Path $run.PublishRoot) -and @($run.Cases | Where-Object { $_.failure }).Count) { Complete-B6TipEvidenceRun $run $true }
         if (!$run.TestFakeOnly -and !$run.RawCleanupSafe) { $actualUnconfirmed = $true; continue }
+        if ($run.TestFakeOnly -and $global:BridgeVMB6RetainedOutputRuns) { $null = $global:BridgeVMB6RetainedOutputRuns.Remove($run) }
         if (Test-Path $run.RawRoot) { Remove-Item -Recurse -Force $run.RawRoot }
     }
     if (!$actualUnconfirmed) { Remove-Item -Recurse -Force $sandbox }

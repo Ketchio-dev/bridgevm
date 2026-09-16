@@ -178,3 +178,4 @@ docs/history/windows-hvf/native-owned-cancellation-deterministic-20260916.md	his
 docs/reference/native-owned-runtime.md	reference	native-owned-runtime	-
 docs/app-cli-stop.md	current	native-app-cli	-
 docs/history/windows-hvf/native-owned-stop-deterministic-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/native-diagnostic-ownership-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md

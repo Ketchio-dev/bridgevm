@@ -2767,3 +2767,9 @@ apps/macos/Tests/BridgeVMControlTests/HvfOwnedRuntimeAttachmentReentrancyTests.s
 docs/history/windows-hvf/native-owned-stop-deterministic-20260916.md	123	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserPredicateDiagnostics.swift	92	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserPredicateDiagnosticsTests.swift	156	0
+tests/integration/b6-tip-query-adapter.ps1	48	0
+tests/integration/b6-tip-query-drain-contract.ps1	200	0
+tests/integration/b6-tip-query-streams.ps1	94	0
+tests/integration/window-inventory-error-child.ps1	86	0
+tests/integration/window-inventory-owned-child-contract.ps1	143	0
+docs/history/windows-hvf/native-diagnostic-ownership-20260916.md	121	0

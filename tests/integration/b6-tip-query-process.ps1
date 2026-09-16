@@ -1,59 +1,48 @@
 . (Join-Path $PSScriptRoot 'b6-tip-query-evidence.ps1')
+. (Join-Path $PSScriptRoot 'b6-tip-query-adapter.ps1')
 
 function Wait-B6TipOwnedChild {
-    param([hashtable]$Operations, [scriptblock]$Pump = {}, [string]$InitialFailure)
-    $expired = $false; $exited = $false; $code = $null; $elapsed = 0.0
+    param([hashtable]$Operations, [scriptblock]$Pump = {}, [string]$InitialFailure, [ValidateRange(1,20)][double]$QueryLimitSeconds = 20)
+    $expired = $false; $exited = $false; $drained = $false; $code = $null; $elapsed = 0.0
     $primary = $InitialFailure; $cleanup = [Collections.Generic.List[string]]::new(); $killed = $false
     try {
         while (!$primary) {
             $elapsed = & $Operations.Elapsed
-            if ($elapsed -ge 20) { $expired = $true; break }
+            if ($elapsed -ge $QueryLimitSeconds) { $expired = $true; break }
             $state = & $Operations.Observe
             $elapsed = & $Operations.Elapsed
-            if ($elapsed -ge 20) { $expired = $true; break }
-            if ($state.Exited) { $exited = $true; $code = $state.Code; break }
+            if ($elapsed -ge $QueryLimitSeconds) { $expired = $true; break }
+            $drained = $state.StreamsDrained
+            if ($state.Exited) { $exited = $true; $code = $state.Code }
+            if ($state.StreamError) { throw $state.StreamError }
+            if ($exited -and $drained) { break }
             & $Pump
             & $Operations.Pause
         }
     } catch { $primary = $_.Exception.Message }
-    if (!$exited) {
+    if (!$exited -or !$drained) {
+        $cleanupStarted = $null
         try {
+            $cleanupStarted = & $Operations.Elapsed
             $state = & $Operations.Observe
+            $inBudget = ((& $Operations.Elapsed) - $cleanupStarted) -lt 5; $drained = $inBudget -and $state.StreamsDrained
             if ($state.Exited) { $exited = $true; $code = $state.Code }
-            else { $killed = $true; & $Operations.Kill }
+            elseif ($inBudget) { $killed = $true; & $Operations.Kill }
         } catch { $message = $_.Exception.Message; $cleanup.Add($message.Substring(0, [Math]::Min(240, $message.Length))) }
-        if (!$exited) {
+        if ((!$exited -or !$drained) -and $null -ne $cleanupStarted) {
             try {
-                if (& $Operations.WaitExit 5000) {
-                    $state = & $Operations.Observe
+                $remaining = [int][Math]::Max(0, [Math]::Floor((5 - ((& $Operations.Elapsed) - $cleanupStarted)) * 1000))
+                if ($remaining -gt 0 -and (& $Operations.WaitExit $remaining) -and ((& $Operations.Elapsed) - $cleanupStarted) -lt 5) {
+                    $state = & $Operations.Observe; $drained = ((& $Operations.Elapsed) - $cleanupStarted) -lt 5 -and $state.StreamsDrained
                     if ($state.Exited) { $exited = $true; $code = $state.Code }
+                    if ($state.StreamError) { throw $state.StreamError }
                 }
             } catch { $message = $_.Exception.Message; $cleanup.Add($message.Substring(0, [Math]::Min(240, $message.Length))) }
         }
+        if ((!$exited -or !$drained) -and $null -ne $cleanupStarted -and ((& $Operations.Elapsed) - $cleanupStarted) -ge 5) { $cleanup.Add('Owned cleanup deadline expired') }
     }
-    return @{ TimedOut = $expired; ExitObserved = $exited; Code = $code
+    return @{ TimedOut = $expired; ExitObserved = $exited; OutputDrained = $drained; Code = $code
         Elapsed = $elapsed; PrimaryError = $primary; CleanupError = [string]::Join(' | ', $cleanup); KillAttempted = $killed }
-}
-
-function New-B6TipOwnedProcess {
-    param([string]$Arguments, [string]$Stdout, [string]$Stderr)
-    $child = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList $Arguments -PassThru -RedirectStandardOutput $Stdout -RedirectStandardError $Stderr
-    $dispose = { $child.Dispose() }.GetNewClosure()
-    $clock = [Diagnostics.Stopwatch]::StartNew()
-    $operations = @{
-        Elapsed = { $clock.Elapsed.TotalSeconds }.GetNewClosure()
-        Observe = { $done = $child.HasExited; $value = $null; if ($done) { $value = $child.ExitCode }; @{ Exited = $done; Code = $value } }.GetNewClosure()
-        Pause = { Start-Sleep -Milliseconds 50 }
-        Kill = { $child.Kill() }.GetNewClosure()
-        WaitExit = { param($milliseconds) $child.WaitForExit([int]$milliseconds) }.GetNewClosure()
-    }
-    $adapter = @{ Owned = $true; Operations = $operations; Dispose = $dispose; Owner = @{} }
-    try {
-        $null = $child.Handle
-        $adapter.Owner.PID = $child.Id
-        $adapter.Owner.Started = $child.StartTime.ToUniversalTime().ToString('o')
-    } catch { $adapter.AdmissionError = "Owned child metadata failed: $($_.Exception.Message)" }
-    return $adapter
 }
 
 function Invoke-B6TipQuery {
@@ -68,7 +57,7 @@ function Invoke-B6TipQuery {
     $prefix = "$ordinal-$Case"
     $stdout = Join-Path $Run.RawRoot "$prefix.stdout.raw"; $stderr = Join-Path $Run.RawRoot "$prefix.stderr.raw"
     $record = [ordered]@{ case = $Case; ordinal = $ordinal; query = [IO.Path]::GetFileName($Query)
-        exit_observed = $false; timed_out = $false; kill_attempted = $false; streams = @{} }
+        exit_observed = $false; output_drained = $false; timed_out = $false; kill_attempted = $false; streams = @{} }
     $Run.Cases.Add($record); $Run.RawCleanupSafe = $false; $adapter = $null
     Write-Host "B6 case-start: $Case"
     try {
@@ -78,12 +67,15 @@ function Invoke-B6TipQuery {
         $adapter = & $Factory $arguments $stdout $stderr
         if (!$adapter.Owned) { throw "Owned handle admission failed: $($adapter.AdmissionError)" }
         $record.owner = $adapter.Owner
-        $wait = Wait-B6TipOwnedChild -Operations $adapter.Operations -Pump $Pump -InitialFailure $adapter.AdmissionError
+        $wait = Wait-B6TipOwnedChild -Operations $adapter.Operations -Pump $Pump -InitialFailure $adapter.AdmissionError -QueryLimitSeconds 20
         $record.exit_observed = $wait.ExitObserved; $record.timed_out = $wait.TimedOut
         $record.kill_attempted = $wait.KillAttempted; $record.elapsed_seconds = $wait.Elapsed
         $record.cleanup_error = $wait.CleanupError; $record.primary_error = $wait.PrimaryError
+        $record.output_drained = $wait.OutputDrained; if ($wait.ExitObserved) { $record.exit_code = $wait.Code }
+        if ($adapter.Streams) { $record.output = @{ stdout = Get-B6TipOutputMetadata $adapter.Streams[0]; stderr = Get-B6TipOutputMetadata $adapter.Streams[1] } }
         if (!$wait.ExitObserved) { throw "Owned child cleanup unconfirmed (case=$Case)" }
-        $Run.RawCleanupSafe = $true; $record.exit_code = $wait.Code
+        if (!$wait.OutputDrained) { throw "Owned output cleanup unconfirmed (case=$Case)" }
+        $Run.RawCleanupSafe = $true
         $out = Read-B6TipSnapshot $Run $record $stdout 'stdout'
         $err = Read-B6TipSnapshot $Run $record $stderr 'stderr'
         if ($wait.TimedOut) { throw "Native UIA query timed out (case=$Case, limit=20s)" }
@@ -95,8 +87,13 @@ function Invoke-B6TipQuery {
         throw
     } finally {
         $disposeFailure = $null
-        try { if ($adapter -and $adapter.Dispose) { & $adapter.Dispose } }
-        catch { $disposeFailure = $_.Exception.Message; $record.dispose_error = $disposeFailure }
+        try {
+            if ($adapter -and $adapter.Dispose) {
+                if ($Run.RawCleanupSafe -or !$adapter.Owned) { & $adapter.Dispose }
+                else { $Run.RetainedOwners.Add($adapter) }
+            }
+        }
+        catch { $disposeFailure = $_.Exception.Message; $record.dispose_error = $disposeFailure; $Run.RawCleanupSafe = $false; $Run.RetainedOwners.Add($adapter) }
         Save-B6TipCaseMetadata $Run $record
         if ($disposeFailure -and !$record.failure) { throw "Owned process disposal failed: $disposeFailure" }
     }

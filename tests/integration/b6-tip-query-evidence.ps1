@@ -1,27 +1,16 @@
-function New-B6TipEvidenceRun {
-    param([string]$EvidenceRoot = $env:B6_TIP_EVIDENCE_ROOT)
-    $id = [Guid]::NewGuid().ToString('N')
-    $raw = Join-Path ([IO.Path]::GetTempPath()) "b6-tip-$id"
-    $snapshots = Join-Path $raw 'bounded'
-    New-Item -ItemType Directory $snapshots | Out-Null
-    if (!$EvidenceRoot) { $EvidenceRoot = Join-Path ([IO.Path]::GetTempPath()) 'bridgevm-b6-tip-evidence' }
-    return @{ RawRoot = $raw; Snapshots = $snapshots; PublishRoot = (Join-Path $EvidenceRoot $id)
-        RawCleanupSafe = $true; Cases = [Collections.Generic.List[object]]::new() }
-}
-
 function Read-B6TipSnapshot {
     param($Run, $Record, [string]$Path, [ValidateSet('stdout','stderr')][string]$Stream)
-    if (!$Record.exit_observed) { throw 'Cannot read output before owned child exit is confirmed' }
+    if (!$Record.exit_observed -or !$Record.output_drained) { throw 'Cannot read output before owned child exit and stream drain are confirmed' }
     $metadata = [ordered]@{ captured_bytes = 0; source_bytes = $null; truncated = $false; error = $null }
     $result = @{ Text = ''; Error = $null }; $file = $null
     try {
         if (([IO.File]::GetAttributes($Path) -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Output is a reparse point' }
         $file = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-        $length = $file.Length; $metadata.source_bytes = $length
+        $length = $file.Length; $metadata.source_bytes = $length; if ($Record.output) { $metadata.source_bytes = $Record.output[$Stream].source_bytes }
         $count = [int][Math]::Min(65536, $length); $bytes = New-Object byte[] $count; $read = 0
         while ($read -lt $count) { $part = $file.Read($bytes, $read, $count - $read); if (!$part) { throw 'Output ended during capture' }; $read += $part }
         if ($file.Length -ne $length) { throw 'Output changed during capture' }
-        $metadata.captured_bytes = $read; $metadata.truncated = $length -gt 65536
+        $metadata.captured_bytes = $read; $metadata.truncated = $metadata.source_bytes -gt 65536
         $name = "$($Record.ordinal)-$($Record.case).$Stream.txt"
         [IO.File]::WriteAllBytes((Join-Path $Run.Snapshots $name), $bytes)
         $metadata.file = $name
@@ -76,7 +65,7 @@ function Complete-B6TipEvidenceRun {
                 $name = "$($record.ordinal)-$($record.case).json"
                 $null = Copy-B6TipBoundedSnapshot (Join-Path $Run.Snapshots $name) (Join-Path $Run.PublishRoot $name) 4096
                 Write-Host ('B6 case-result: ' + ($record | ConvertTo-Json -Depth 6 -Compress))
-                if (!$record.exit_observed) { continue }
+                if (!$record.exit_observed -or !$record.output_drained) { continue }
                 foreach ($stream in @('stdout','stderr')) {
                     $metadata = $record.streams[$stream]
                     if (!$metadata -or !$metadata.file) { continue }
@@ -91,8 +80,8 @@ function Complete-B6TipEvidenceRun {
             $summary = @{ failed = $true; case_count = $Run.Cases.Count; owned_cleanup_confirmed = $Run.RawCleanupSafe }
             [IO.File]::WriteAllText((Join-Path $Run.PublishRoot 'run.json'), ($summary | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
         }
-    } finally {
+    } finally { Set-B6TipOutputRetention $Run
         if ($Run.RawCleanupSafe) { Remove-Item -Recurse -Force $Run.RawRoot }
-        else { Write-Host 'B6 cleanup unconfirmed: raw stream files retained and excluded from artifact capture' }
+        else { Write-Host 'B6 child/output cleanup unconfirmed: raw stream files retained and excluded from artifact capture' }
     }
 }
