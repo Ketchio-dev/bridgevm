@@ -2880,3 +2880,7 @@ apps/macos/Sources/BridgeVMControl/LibraryModelOwnedInstallValidation.swift	26	0
 apps/macos/Sources/BridgeVMControl/LibraryModelOwnedInstall.swift	49	0
 apps/macos/Sources/BridgeVMControl/LibraryModelOwnedInstallExecution.swift	64	0
 apps/macos/Tests/BridgeVMControlTests/NativeInstallOwnedModelTests.swift	113	0
+apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeRuntimeAppInstallRouter.swift	47	0
+apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeInstallRequestRouting.swift	15	0
+apps/macos/Tests/BridgeVMControlTests/NativeRuntimeInstallAdmissionTests.swift	56	0
+apps/macos/Tests/BridgeVMControlTests/NativeInstallRequestRoutingTests.swift	46	0
