@@ -1,7 +1,7 @@
 # Native app CLI
 
 `bridgevm app` reads native `vm.json` registrations, queries runtime observations,
-and requests [VM start](app-cli-start.md) or [supervised stop](app-cli-stop.md) through the running app.
+and requests [Windows installation](app-cli-install.md), [VM start](app-cli-start.md) or [supervised stop](app-cli-stop.md) through the running app.
 Start uses an exact saved installed HVF entry; no command opens an app window,
 repairs registrations, or changes saved CPU/memory settings. Inventory commands report runtime state as `unobserved`;
 saved CPU and memory values are not utilization measurements.

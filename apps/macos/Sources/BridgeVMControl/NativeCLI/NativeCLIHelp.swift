@@ -26,5 +26,5 @@ extension NativeCLI {
     Readiness exit codes: 0 launch prerequisites ready, 1 blocked/unavailable,
     2 invalid usage. Unsupported engines and pending installation are blocked.
     Legacy Rust CLI --store/--socket commands use a separate manifest.yaml store.
-    """ + "\n\n" + statusHelp + "\n\n" + stopHelp + "\n\n" + startHelp
+    """ + "\n\n" + statusHelp + "\n\n" + installHelp + "\n\n" + stopHelp + "\n\n" + startHelp
 }
