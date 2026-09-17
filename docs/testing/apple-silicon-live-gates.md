@@ -78,7 +78,7 @@ Properties the queue must hold:
 | T7 | Fixed Windows closure campaign | Combined installed-guest acceptance evidence |
 | T8 | Fixed 20-lane pointer campaign | B4 pointer reliability evidence |
 | T9 | Fixed 20-lane BridgeVM PC firmware campaign | Experimental-board standard UEFI PCI development evidence |
-| T15 | One sealed 4-vCPU release boot | Interleavable diagnostic sample for A/A noise and A/B performance comparisons |
+| T15 | One sealed 4-vCPU 3D-off release boot | Interleavable diagnostic sample for A/A noise and A/B performance comparisons |
 | T16 | Fixed sealed Windows NVMe workload | Preserved v1 STOP plus preregistered v2 A/A calibration; no live v2 result yet |
 | T17 | Packaged Windows-HVF 3D-off product E2E | One-lane diagnostic pilot or fixed three-lane release campaign |
 | T18 | Fixed CoreAudio playback and shutdown | B7 typed callback teardown evidence; exactly ten isolated lanes |
@@ -111,6 +111,14 @@ previous tree. Submit copies the signed release `binary` into the
 job directory, and the worker runs those exact sealed bytes rather than
 rebuilding after submission. Receipts preserve separate PPSSPP payload and
 embedded-executable hashes.
+
+T15's current `shipping-core-3d-off-boot-v2` profile keeps four vCPUs, 6144
+MiB, network, xHCI, CoreAudio and the display/input export fixed while omitting
+the 3D device and using the balanced release policy. Historical
+`shipping-core-3d-boot-v1` receipts remain auditable, but new campaign
+submission accepts only the 3D-off v2 base manifest. Run unchanged-binary A/A
+before any A/B candidate. Every campaign report remains exploratory with
+`claim_eligible=false` and cannot replace a release criterion.
 
 T16 v1 remains a STOP: its 20/20-valid, ten-pair A/A used identical binary
 bytes but produced a 25.526% primary noise bound, above the predeclared 2.94%

@@ -1359,6 +1359,7 @@ scripts/live-gates/bridgevm-live-worker.sh	177	0
 scripts/live-gates/recover-stale-jobs.sh	33	0
 scripts/live-gates/install-studio-queue.sh	84	0
 scripts/live-gates/hvf-boot-performance-manifest.sh	64	0
+scripts/live-gates/hvf-boot-performance-profile.sh	19	0
 scripts/live-gates/hvf-nvme-performance-manifest.sh	158	0
 scripts/live-gates/hvf-nvme-performance-runtime.sh	62	0
 scripts/live-gates/hvf-nvme-performance-runtime-self-test.sh	59	0
@@ -1460,6 +1461,7 @@ tests/integration/guest-tools-shared-folder-cli-smoke.sh	192	0
 tests/integration/guest-tools-time-sync-cli-smoke.sh	387	0
 tests/integration/hvf-boot-timer-matrix-smoke.sh	298	0
 tests/integration/hvf-boot-performance-tier-smoke.sh	36	0
+tests/integration/hvf-boot-performance-profile-smoke.sh	14	0
 tests/integration/hvf-nvme-performance-tier-smoke.sh	74	0
 tests/integration/hvf-boot-timer-report-smoke.sh	180	0
 tests/integration/hvf-edk2-boot-live-opt-in-smoke.sh	46	0
