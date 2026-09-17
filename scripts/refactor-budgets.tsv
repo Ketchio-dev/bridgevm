@@ -248,6 +248,7 @@ crates/bridgevm-hvf/src/nvme/tests/part_1.rs	774	0
 crates/bridgevm-hvf/src/nvme/tests/part_2.rs	560	0
 crates/bridgevm-hvf/src/nvme/tests/part_2_flush.rs	386	0
 crates/bridgevm-hvf/src/nvme/tests/part_3.rs	744	0
+crates/bridgevm-hvf/src/nvme/tests/prp_prefix.rs	155	0
 crates/bridgevm-hvf/src/nvme/trace.rs	77	0
 crates/bridgevm-hvf/src/pcie/bar.rs	215	0
 crates/bridgevm-hvf/src/pcie/bar_routing.rs	80	0
