@@ -2937,3 +2937,5 @@ tests/integration/windows-import-product-e2e-contract-smoke.sh	57	0
 scripts/verify-windows-import-product-e2e-receipt.py	120	0
 scripts/live-gates/launch-import-product-e2e-helper.sh	8	0
 tests/integration/windows-import-product-e2e-receipt.py	40	0
+scripts/live-gates/write-windows-import-product-e2e-receipt.py	194	0
+scripts/live-gates/run-windows-import-product-e2e-tier.sh	71	0
