@@ -10,6 +10,7 @@ mod bytes;
 mod command;
 mod compositor;
 mod compositor_2d;
+mod compositor_bgr;
 mod config_space;
 mod descriptor_chain_trace;
 mod device;

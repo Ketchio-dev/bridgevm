@@ -30,12 +30,10 @@ pub(crate) fn composite_resource_to_scanout(
         for y in rect.y..y_end {
             let src = ((y as usize) * (resource.width as usize) + (rect.x as usize)) * 4;
             let dst = ((y as usize) * (scanout_width as usize) + (rect.x as usize)) * 4;
-            for (source, target) in resource.host_pixels[src..src + row_bytes]
-                .chunks_exact(4)
-                .zip(scanout[dst..dst + row_bytes].chunks_exact_mut(4))
-            {
-                target.copy_from_slice(&[source[0], source[1], source[2], 0]);
-            }
+            compositor_bgr::convert_bgr_row_to_xrgb(
+                &resource.host_pixels[src..src + row_bytes],
+                &mut scanout[dst..dst + row_bytes],
+            );
         }
         return;
     }
