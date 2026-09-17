@@ -1229,7 +1229,7 @@ allocation-heavy ordered set used only to count exact 24-bit colors in RAMFB
 diagnostic summaries with a fixed-size bitset. The summary contract is
 unchanged: a full 1920x1080 deterministic frame produced byte-identical
 baseline and candidate summaries, with SHA-256
-`2d369507504380805366733d8e375b5b984d7f8b4a32163650d3366e3437d470`.
+`2d3695777248016bb7c8accebb5db45ad30013f8641f0fc93ea8616fe24ee0f6`.
 The preregistered warmed microfilter retained two unchanged-binary baselines
 and one candidate series. Candidate median time was 10.331187 ms versus
 271.233438 ms for the adjacent baseline, a -96.1910% change with paired
