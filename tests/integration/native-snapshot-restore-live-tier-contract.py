@@ -9,25 +9,20 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
-
 ROOT = Path(__file__).resolve().parents[2]
-
-
+sys.path.insert(0, str(ROOT / "scripts/live-gates"))
 def module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
     value = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(value)
     return value
-
-
 INPUTS = module("native_inputs", ROOT / "scripts/live-gates/native_snapshot_restore_inputs.py")
 RECEIPT = module("native_receipt", ROOT / "scripts/live-gates/native_snapshot_restore_receipt.py")
 REDACTOR = module("receipt_redactor", ROOT / "scripts/live-gates/redact-receipt.py")
 COMMIT = "a" * 40
-
-
 class NativeSnapshotRestoreTierContract(unittest.TestCase):
     def fixture(self, root: Path, commit: str = COMMIT) -> tuple[Path, Path]:
         app = root / "BridgeVM.app"
@@ -35,16 +30,15 @@ class NativeSnapshotRestoreTierContract(unittest.TestCase):
             "app_cli": app / "Contents/Resources/target/release/bridgevm",
             "app_executable": app / "Contents/MacOS/BridgeVMControl",
             "snapshot_helper": app / "Contents/Resources/target/release/examples/snapshot_pair_cli",
+            "binary": app / "Contents/Resources/target/release/examples/hvf_gic_boot_probe",
         }
         for key, path in files.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(key.encode())
             path.chmod(0o700)
-        artifacts = {
-            "app_bundle": app, **files,
-            "image": root / "image.raw", "vars": root / "vars.fd", "binary": root / "probe",
-        }
-        for key in ("image", "vars", "binary"):
+        artifacts = {"app_bundle": app, **files,
+                     "image": root / "image.raw", "vars": root / "vars.fd"}
+        for key in ("image", "vars"):
             artifacts[key].write_bytes(key.encode())
         manifest = root / "manifest.tsv"
         rows = []
@@ -62,11 +56,16 @@ class NativeSnapshotRestoreTierContract(unittest.TestCase):
             root = Path(temporary)
             manifest, binary = self.fixture(root)
             public, private = INPUTS.prepare(
-                manifest, binary, COMMIT, root / "prepared", shutil.copyfile)
+                manifest, binary, COMMIT, root / "prepared", shutil.copyfile, shutil.copytree)
             self.assertEqual(public["image_sha256"], hashlib.sha256(b"image").hexdigest())
             self.assertEqual((root / "prepared/disk.raw").read_bytes(), b"image")
-            self.assertTrue(private["app_cli"].endswith("/Contents/Resources/target/release/bridgevm"))
-            INPUTS.authenticate(private["rows"], binary)
+            self.assertEqual(Path(private["app_cli"]), root / "prepared/BridgeVM.app/Contents/Resources/target/release/bridgevm")
+            self.assertEqual(Path(private["binary"]), root / "prepared/BridgeVM.app/Contents/Resources/target/release/examples/hvf_gic_boot_probe")
+            INPUTS.authenticate(private["source_rows"], binary)
+            INPUTS.authenticate_app(private["source_rows"], Path(private["sealed_app"]))
+            Path(private["binary"]).write_bytes(b"changed")
+            with self.assertRaises(ValueError):
+                INPUTS.authenticate_app(private["source_rows"], Path(private["sealed_app"]))
 
     def test_mutation_and_relation_alias_fail_closed(self):
         with tempfile.TemporaryDirectory() as temporary:

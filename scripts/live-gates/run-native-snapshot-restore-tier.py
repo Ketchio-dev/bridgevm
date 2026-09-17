@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 
-from native_snapshot_restore_inputs import authenticate, digest, prepare
+from native_snapshot_restore_inputs import digest, prepare, reauthenticate
 from native_snapshot_restore_receipt import initial, write_new
 
 
@@ -59,7 +59,7 @@ def main() -> int:
             OUT=str(output),
             DISK=str(prepared / "disk.raw"),
             VARS=str(prepared / "vars.fd"),
-            BRIDGEVM_PREBUILT_PROBE=str(sealed_binary),
+            BRIDGEVM_PREBUILT_PROBE=private["binary"],
             NATIVE_SNAPSHOT_CLI=private["app_cli"],
             NATIVE_SNAPSHOT_VM_ID="a19-native-cli-live",
         )
@@ -72,7 +72,7 @@ def main() -> int:
             "phase1-original", "phase3-clobber", "phase5-restored"))
         receipt["natural_shutdown_count"] = shutdown_count(output)
         receipt["boots_passed"] = receipt["natural_shutdown_count"]
-        authenticate(private["rows"], sealed_binary)
+        reauthenticate(private, sealed_binary)
         if completed.returncode != 0:
             raise RuntimeError(f"marker lifecycle exited {completed.returncode}")
         receipt.update({

@@ -2,19 +2,21 @@
 
 ## Result
 
-Source `0463bfb625e5f6166a51e0198152ffae4af3c307` adds the physical-Mac tier
-`t20-a19-native-snapshot-restore`. It turns the native app snapshot CLI into a
-live, guest-visible restore experiment without changing A19's acceptance
-criteria. No physical-Mac job has run at this checkpoint, so A19 remains open.
+Pilot `t20-e6481e5b-native-snapshot-r1` failed before VM execution. The queue
+had copied the Venus probe Mach-O without its app-relative Frameworks, so dyld
+could not load `libvirglrenderer.1.dylib`. Source
+`f9a035730dcdaccfa3aa9baa92479d3724e5bdcf` retains that failure and seals the
+whole authenticated app runtime for the next pilot. A19 remains open.
 
 ## Sealed path
 
 The submission manifest authenticates the exact release app tree, its paired
 `bridgevm` CLI, `BridgeVMControl` executable, bundled `snapshot_pair_cli`,
 release `hvf_gic_boot_probe`, installed Windows disk, and matching UEFI variable
-store. The worker reauthenticates those inputs before and after the experiment.
-Disk and variables are APFS-cloned into a new private native library; the source
-pair is never launched or modified.
+store. The worker APFS-clones the app and executes its CLI and probe from that
+sealed tree, preserving relative Frameworks. It reauthenticates source and
+staged trees before cleanup. Disk and variables are separately APFS-cloned into
+a private native library; the source pair is never launched or modified.
 
 The generated native registration sets `experimental3DAllowed` to false and
 turns networking off. The experiment then:
@@ -37,13 +39,11 @@ cleanup, and strict public-redaction revalidation. It fixes
 
 ## Deterministic evidence
 
-The new contract suite passed five tests covering input relationships, source
-mutation refusal, APFS-clone identity, strict receipt accounting, public
-redaction, queue sealing, paired CLI routing, and the 3D-off registration. The
-retained snapshot seal, cleanup, and clone-permission suites passed 5, 3, and 2
-tests. The receipt redactor passed 27 checks, and the Windows product E2E
-contract suite also passed. Shell syntax, formatting, structural budgets, and
-diff checks passed.
+The contract suite passed five tests covering fixed app relationships, staged
+mutation refusal, clone identity, strict receipt accounting, redaction, queue
+sealing, paired CLI routing, and 3D-off registration. The exact-main app clone's
+probe passed dyld loading from its staged relative Frameworks. The 44-check
+Windows product live-tier contract, syntax and structural budgets passed.
 
 These results prove deterministic wiring and fail-closed accounting only. They
 do not prove a Windows boot after restore, interrupted-operation safety, raw
