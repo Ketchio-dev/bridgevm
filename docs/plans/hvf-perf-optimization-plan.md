@@ -47,9 +47,10 @@ bridgevm-hvf` must stay green at every stage boundary.
 - Use `scripts/report-hvf-boot-timer-metrics.sh <evidence-dir>...` after the
   three-run matrix; it reads each `run.log` plus `preflight.txt` and emits
   per-run BOOT_TIMER rows and config-group medians.
-- For a source change comparison, first create an eight-row base manifest:
+- For a source change comparison, first create a nine-row base manifest:
   `image`, `vars`, `binary`, `renderer`, `binary_source_commit`, `binary_profile`,
-  `binary_features`, and `rust_toolchain`. Submit a predeclared alternating
+  `binary_features`, `rust_toolchain`, and `workload_profile`. The current
+  profile must be `shipping-core-3d-off-boot-v2`. Submit a predeclared alternating
   counterbalanced AB/BA campaign with `scripts/submit-hvf-boot-performance-campaign.sh --mode AA
   --pairs 4 --baseline-manifest BASE.tsv`, then use `--mode AB` with both
   baseline and candidate manifests. The submitter seals one campaign ID,
@@ -58,9 +59,9 @@ bridgevm-hvf` must stay green at every stage boundary.
   Pin `--harness-sha` to the A/A harness for later A/B campaigns so a candidate
   source commit changes the measured binary, not the measurement machinery.
   Each job APFS-clones its own disk and vars, hashes the actual clones before
-  boot, verifies the linked VirGL renderer, and boots one 4-vCPU release sample
-  with the app's VirGL device `1050`, aggressive IOSurface lane, 100 ms display
-  export, xHCI, network and CoreAudio configuration. It requires agent READY
+  boot, verifies the linked renderer identity, and boots one 4-vCPU, 6144 MiB
+  release sample with 3D disabled, balanced performance policy, 100 ms display
+  export, xHCI, network and CoreAudio. It requires agent READY
   plus clean shutdown; the receipt states that vTPM, clipboard/share, and the
   long-lived app session are omitted. Report with `scripts/report-hvf-boot-performance-ab.py
   --queue-root ~/BridgeVM/live-queue --aa-campaign ID [--ab-campaign ID]`.
