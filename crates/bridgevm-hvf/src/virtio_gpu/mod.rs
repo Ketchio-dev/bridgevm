@@ -5,6 +5,7 @@ mod tests;
 
 mod async_present;
 mod backing_copy;
+mod backing_copy_cursor;
 mod bytes;
 mod command;
 mod compositor;

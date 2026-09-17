@@ -1,6 +1,7 @@
 //! 2D resource lifecycle: create, unref, backing attach/detach, TRANSFER_TO_HOST_2D.
 
 use super::backing_copy::read_from_backing_into;
+use super::backing_copy_cursor::{read_from_backing_into_from, BackingReadCursor};
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 use crate::virtio_gpu_3d::BlobMemEntry;
@@ -33,6 +34,7 @@ pub(crate) fn copy_backing_to_resource(
     }
     let stride = u64::from(resource.width) * 4;
     let row_bytes = ((x_end - rect.x) as usize) * 4;
+    let mut cursor = BackingReadCursor::default();
     // Per the OASIS virtio-gpu contract, `offset` locates the box's top-left
     // (rect.x, rect.y) in the backing; source rows advance by `stride` from
     // there. So the backing offset for absolute pixel (x, y) is
@@ -42,11 +44,12 @@ pub(crate) fn copy_backing_to_resource(
     for y in rect.y..y_end {
         let guest_row_off = offset + u64::from(y - rect.y) * stride;
         let dst_row = ((y as usize) * (resource.width as usize) + (rect.x as usize)) * 4;
-        if read_from_backing_into(
+        if read_from_backing_into_from(
             mem,
             &resource.backing,
             guest_row_off,
             &mut resource.host_pixels[dst_row..dst_row + row_bytes],
+            &mut cursor,
         ) {
             continue;
         }

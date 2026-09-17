@@ -476,6 +476,8 @@ crates/bridgevm-hvf/src/virtio_console/tx_gather.rs	26	0
 crates/bridgevm-hvf/src/virtio_console/virtqueue.rs	250	0
 crates/bridgevm-hvf/src/virtio_gpu/async_present.rs	276	0
 crates/bridgevm-hvf/src/virtio_gpu/backing_copy.rs	63	0
+crates/bridgevm-hvf/src/virtio_gpu/backing_copy_cursor.rs	84	0
+crates/bridgevm-hvf/src/virtio_gpu/backing_copy_cursor_tests.rs	82	0
 crates/bridgevm-hvf/src/virtio_gpu/backing_copy_tests.rs	118	0
 crates/bridgevm-hvf/src/virtio_gpu/bytes.rs	29	0
 crates/bridgevm-hvf/src/virtio_gpu/command.rs	82	0
