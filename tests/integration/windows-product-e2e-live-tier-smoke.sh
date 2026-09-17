@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-t17.XXXXXX")"
-trap 'if [[ -d "$TMP/BridgeVMControl.app/Contents/Helpers/BridgeVMProductE2E.app" ]]; then /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$TMP/BridgeVMControl.app/Contents/Helpers/BridgeVMProductE2E.app" || { echo "FAIL: fixture registration cleanup failed; temporary app retained" >&2; exit 1; }; fi; rm -rf "$TMP"' EXIT
+trap 'if [[ -d "$TMP/BridgeVMControl.app/Contents/Helpers/BridgeVMProductE2E.app" ]]; then /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$TMP/BridgeVMControl.app/Contents/Helpers/BridgeVMProductE2E.app" || { echo "FAIL: fixture registration cleanup failed; temporary app retained" >&2; exit 1; }; fi; chmod -R u+w "$TMP" 2>/dev/null || true; rm -rf "$TMP"' EXIT
 TIER="$ROOT/scripts/live-gates/run-windows-product-e2e-tier.sh"
 MANIFEST_TOOL="$ROOT/scripts/live-gates/windows-product-e2e-manifest.py"
 VERIFY="$ROOT/scripts/verify-windows-product-e2e-receipt.py"
@@ -42,7 +42,7 @@ check "missing app blocks rather than inventing a run" bash -c '! "$1" --out "$2
 check "missing app leaves a valid explicit blocker" bash -c '"$1" "$2" --expected-commit "$3" >/dev/null && grep -q '"'"'"failure_code": "missing-app-artifact"'"'"' "$2" && grep -q '"'"'"run_count": 0'"'"' "$2"' _ "$VERIFY" "$missing_out/receipt.json" "$COMMIT"
 APP="$TMP/BridgeVMControl.app"; RES="$APP/Contents/Resources"; MACOS="$APP/Contents/MacOS"; HELPER_APP="$APP/Contents/Helpers/BridgeVMProductE2E.app"; HELPER="$HELPER_APP/Contents/MacOS/BridgeVMProductE2E"
 mkdir -p "$MACOS" "$HELPER_APP/Contents/MacOS" "$RES/target/release" "$RES/firmware" "$RES/BridgeVMControl_BridgeVMControl.bundle"
-printf '#!/bin/sh\nexit 0\n' > "$MACOS/BridgeVMControl"
+printf '%s\n' '#!/bin/sh' 'if [ "${1:-}" = --vtpm-lifecycle ] && [ "${2:-}" = export ]; then shift 2; package=; code=; while [ "$#" -gt 0 ]; do case "$1" in --package) package="$2"; shift 2;; --recovery-code-file) code="$2"; shift 2;; *) shift 2;; esac; done; printf '\''{"fixture":"recovery"}\n'\'' > "$package"; printf '\''fixture-recovery-code\n'\'' > "$code"; chmod 600 "$code"; fi; exit 0' > "$MACOS/BridgeVMControl"
 printf '#!/bin/sh\nexec /usr/bin/python3 "$(dirname "$0")/../../../../Resources/fake-product-helper.py" "$@"\n' > "$HELPER"
 printf '#!/bin/sh\nexit 0\n' > "$RES/target/release/hvf-runner"
 chmod 755 "$MACOS/BridgeVMControl" "$HELPER" "$RES/target/release/hvf-runner"
@@ -93,6 +93,9 @@ check "pilot is bounded pass evidence but never claim eligible" bash -c '"$1" "$
 import json,sys
 r=json.load(open(sys.argv[1])); assert r["pass"] is True and r["run_count"]==1 and r["guest_evidence_sha256"]!="absent" and r["claim_eligible"] is False and r["criterion_pass"] is False and r["capability_promotion"] is False
 PY' _ "$VERIFY" "$pilot_out/receipt.json" "$COMMIT"
+handoff_out="$TMP/handoff-out"; handoff_source="$TMP/retained/t17-source"; check "authenticated T17 output becomes a private verified T19 source" "$TIER" --out "$handoff_out" --input-manifest "$pilot_manifest" --job-id handoff-fixture --retain-import-source "$handoff_source"
+check "retained source is immutable and its absolute T19 manifest re-verifies" bash -c 'test -f "$1/private/t19-source-handoff.json" && test ! -e "$1/private/t19-source-handoff-failed" && test "$(stat -f %Lp "$2")" = 500 && test "$(stat -f %Lp "$2/vtpm-recovery-code.txt")" = 400 && python3 "$3" --manifest "$2/t19-input-manifest.tsv" --out "$4" >/dev/null' _ "$handoff_out" "$handoff_source" "$ROOT/scripts/live-gates/windows-import-product-e2e-manifest.py" "$TMP/handoff-reverified.json"
+handoff_repeat="$TMP/handoff-repeat"; check "an existing retained source is never overwritten" bash -c '"$1" --out "$2" --input-manifest "$3" --job-id handoff-repeat --retain-import-source "$4" >/dev/null && test -f "$2/private/t19-source-handoff-failed" && test ! -e "$2/private/t19-source-handoff.json"' _ "$TIER" "$handoff_repeat" "$pilot_manifest" "$handoff_source"
 check "dedicated publisher validates before and after exact redaction" "$PUBLISH" t17-windows-hvf-product-e2e "$pilot_out" "$ROOT" "$COMMIT"
 check "public pilot contains no private path and equals the safe private receipt" bash -c 'cmp -s "$1/receipt.json" "$1/receipt.public.json" && ! grep -Fq "$2" "$1/receipt.public.json"' _ "$pilot_out" "$TMP"
 release_manifest="$TMP/release.tsv"; write_manifest "$TMP/windows.iso" release "$release_manifest"
@@ -129,16 +132,13 @@ import json,sys
 p=sys.argv[1]; value=json.load(open(p)); value["private_iso_path"]="C:\\Users\\private\\Windows.iso"; open(p,"w").write(json.dumps(value)+"\n")
 PY
 check "schema-invalid private receipt is withheld" bash -c '! "$1" t17-windows-hvf-product-e2e "$2" "$3" "$4" >/dev/null 2>&1 && test ! -e "$2/receipt.public.json"' _ "$PUBLISH" "$bad_publish" "$ROOT" "$COMMIT"
-
 missing_receipt="$TMP/missing-receipt"; mkdir "$missing_receipt"; cp "$noresult_manifest" "$missing_receipt/input-manifest.tsv"
 printf 'job_id=missing-receipt\ntier=t17-windows-hvf-product-e2e\ncommit=%s\nsubmitted_at=%s\n' "$COMMIT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$missing_receipt/job.env"
 check "worker-side missing receipt fallback is schema valid" "$ROOT/scripts/live-gates/write-windows-product-e2e-missing-receipt.sh" "$missing_receipt" "$ROOT" missing-receipt "$COMMIT"
 check "missing fallback cannot claim success" bash -c '"$1" "$2" --expected-commit "$3" >/dev/null && grep -q '"'"'"failure_code": "missing-tier-receipt"'"'"' "$2"' _ "$VERIFY" "$missing_receipt/receipt.json" "$COMMIT"
-
 stale_root="$TMP/stale-queue"; stale="$stale_root/running/stale-t17"; mkdir -p "$stale" "$stale_root/done" "$TMP/stale-work"; cp "$pilot_out/receipt.json" "$stale/receipt.json"; printf 'job_id=stale-t17\ntier=t17-windows-hvf-product-e2e\ncommit=%s\n' "$COMMIT" > "$stale/job.env"
 check "stale T17 without its sealed worktree never gets publicly redacted" "$ROOT/scripts/live-gates/recover-stale-jobs.sh" "$ROOT" "$stale_root" "$TMP/stale-work"
 check "stale T17 is retained as interrupted with its receipt withheld" bash -c 'test -f "$1/done/stale-t17/receipt.json" && test ! -e "$1/done/stale-t17/receipt.public.json" && grep -q '"'"'^receipt=withheld-no-sealed-worktree$'"'"' "$1/done/stale-t17/result.env"' _ "$stale_root"
-
 queue_root="$TMP/queue"; queued_id="t17-worker-fixture"; worker="$ROOT/scripts/live-gates/bridgevm-live-worker.sh"
 check "queue accepts T17 only as a sealed-manifest tier without a fake binary" bash -c 'test "$(BRIDGEVM_LIVE_ROOT="$1" "$2" submit t17-windows-hvf-product-e2e --sha "$3" --input-manifest "$4" --job-id "$5")" = "$5" && test -f "$1/queued/$5/input-manifest.tsv" && test ! -e "$1/queued/$5/hvf_gic_boot_probe" && grep -Eq '"'"'^input_manifest_sha256=[0-9a-f]{64}$'"'"' "$1/queued/$5/job.env"' _ "$queue_root" "$ROOT/scripts/live-gates/bridgevm-live" "$COMMIT" "$missing_manifest" "$queued_id"
 check "resident worker derives manifest handoff from the sealed job envelope" env BRIDGEVM_REPO="$ROOT" BRIDGEVM_LIVE_ROOT="$queue_root" BRIDGEVM_LIVE_WORK="$TMP/worker-work" BRIDGEVM_LIVE_MIN_FREE_GIB=0 "$worker"

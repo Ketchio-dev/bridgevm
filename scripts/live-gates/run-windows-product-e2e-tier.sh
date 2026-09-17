@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Sealed packaged-product T17 scaffold. It never substitutes harness or synthetic guest success.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-OUT=""; INPUT_MANIFEST=""; JOB_ID=""
+OUT=""; INPUT_MANIFEST=""; JOB_ID=""; RETAIN_IMPORT_SOURCE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --out) OUT="$2"; shift 2 ;;
     --input-manifest) INPUT_MANIFEST="$2"; shift 2 ;;
     --job-id) JOB_ID="$2"; shift 2 ;;
+    --retain-import-source) RETAIN_IMPORT_SOURCE="$2"; shift 2 ;;
     *) echo "unknown T17 option: $1" >&2; exit 2 ;;
   esac
 done
@@ -23,7 +23,6 @@ VERIFIED="$PRIVATE/verified-inputs.json"
 COMMIT="$(git -C "$REPO" rev-parse HEAD)"
 STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 WORK=""; WORK_ID=""; EMITTED=0; MODE=pilot; ATTEMPTS=0; VALID=false; SIGNING=unverified
-
 json_value() {
   python3 - "$1" "$2" <<'PY'
 import json, sys
@@ -114,6 +113,7 @@ for (( lane=1; lane<=EXPECTED; lane++ )); do
   next_verified="$PRIVATE/verified-after-lane-$lane.json"
   if ! python3 "$MANIFEST_TOOL" --manifest "$INPUT_MANIFEST" --out "$next_verified" >/dev/null 2>&1 || ! cmp -s "$VERIFIED" "$next_verified"; then emit failed hash-mismatch "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
 done
+if [[ -n "$RETAIN_IMPORT_SOURCE" ]]; then python3 "$REPO/scripts/live-gates/retain-windows-import-source.py" --request "$request" --result "$result" --stamp "$PRIVATE/lane-$EXPECTED-authenticated.json" --verified "$VERIFIED" --destination "$RETAIN_IMPORT_SOURCE" --status "$PRIVATE/t19-source-handoff.json" || printf '%s\n' 'retained T19 source was not created' > "$PRIVATE/t19-source-handoff-failed"; fi
 emit completed none "$ATTEMPTS" true "$SIGNING" || exit 1
 python3 - "$OUT/receipt.json" <<'PY'
 import json, sys
