@@ -71,7 +71,7 @@ struct T17Evidence {
 }
 
 enum T17ResultWriter {
-    static func write(_ result: T17LaneResult, to output: URL) throws {
+    static func write<Result: Encodable>(_ result: Result, to output: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(result)

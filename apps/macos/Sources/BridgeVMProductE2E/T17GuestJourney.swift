@@ -205,7 +205,7 @@ struct T17GuestJourney {
     }
 
     private var prefix: String { String(request.nonce.prefix(12)) }
-    private var bundle: URL { URL(fileURLWithPath: request.libraryRootPath).appendingPathComponent(request.vmSlug).appendingPathComponent("bundle.vmbridge") }
+    private var bundle: URL { URL(fileURLWithPath: request.bundlePath, isDirectory: true) }
     private var runLog: URL { bundle.appendingPathComponent("logs/hvf/run.log") }
     private var evidenceRoot: URL { bundle.appendingPathComponent("metadata/product-e2e", isDirectory: true) }
     private func currentLogText() -> String { (try? String(contentsOf: runLog, encoding: .utf8)) ?? "" }

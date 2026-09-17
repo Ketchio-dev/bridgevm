@@ -70,7 +70,7 @@ struct A9ImportRequest: Decodable, Equatable, T17JourneyRequest {
         let inputs = root.appendingPathComponent("inputs", isDirectory: true)
         let library = root.appendingPathComponent("library", isDirectory: true)
         let bundle = library.appendingPathComponent(vmSlug, isDirectory: true)
-            .appendingPathComponent("bundle.vmbridge", isDirectory: true)
+            .appendingPathComponent("bundle", isDirectory: true)
         let fixed: [(String, URL)] = [
             (sourceDiskPath, inputs.appendingPathComponent("windows.raw")),
             (sourceVarsPath, inputs.appendingPathComponent("vars.fd")),

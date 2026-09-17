@@ -33,7 +33,7 @@ final class A9ImportRequestTests: XCTestCase {
             let nonce = String(repeating: "a", count: 64)
             let slug = "bridgevm-a9-import-lane-1-\(nonce.prefix(12))"
             let library = root.appendingPathComponent("library")
-            let bundle = library.appendingPathComponent(slug).appendingPathComponent("bundle.vmbridge")
+            let bundle = library.appendingPathComponent(slug).appendingPathComponent("bundle")
             body = [
                 "schema_version": "bridgevm.windows-hvf-import-product-e2e-request.v1",
                 "job_id": "import-pilot", "commit": String(repeating: "b", count: 40),
