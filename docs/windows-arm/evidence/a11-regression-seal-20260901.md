@@ -1221,3 +1221,33 @@ error responses. Local project checks and the GitHub-hosted capability job now
 invoke the same test-and-registry wrapper. Existing structural ceilings remain
 unchanged. A11 stays OPEN until its full current-head regression/hosted seal is
 retained; no product or live criterion is promoted by this verifier repair.
+
+## RAMFB exact-color summary reseal, 2026-09-17
+
+Tested code head `1862d06e4f5f6cd6affe7eb3ad3efe5a8148d480` replaces the
+allocation-heavy ordered set used only to count exact 24-bit colors in RAMFB
+diagnostic summaries with a fixed-size bitset. The summary contract is
+unchanged: a full 1920x1080 deterministic frame produced byte-identical
+baseline and candidate summaries, with SHA-256
+`2d369507504380805366733d8e375b5b984d7f8b4a32163650d3366e3437d470`.
+The preregistered warmed microfilter retained two unchanged-binary baselines
+and one candidate series. Candidate median time was 10.331187 ms versus
+271.233438 ms for the adjacent baseline, a -96.1910% change with paired
+bootstrap 95% interval -96.2522% to -96.1565%; the unchanged-binary A/A
+change was -0.6116%. The development report SHA-256 is
+`794763af1af3ccede362f322af7983b20ad0079c5b22d6ab97885cbf1492f734`.
+
+The exact code head passed `scripts/check-project.sh`; retained log SHA-256 is
+`482d07d018bbd6abc6c1dac01adfdc40972f8f78ec45699bdddcb60b698c171e`.
+All 40 push-triggered GitHub-hosted workflows for that SHA completed
+successfully. The first pull-request CI run correctly rejected the previous
+registry identity, while its resident-inventory workflow also retained an
+unrelated 10-second child-deadline failure; the same resident-inventory
+workflow passed on the exact code-head push as run 35233549357. This
+registry-only follow-up reseals the deterministic tree and must itself pass
+hosted checks.
+
+This mechanism measurement is diagnostic only. It does not measure a Windows
+boot, guest frame rate or interactive latency, and it does not close A9, A11
+or A19. The product remains Engineering Preview and 3D remains outside the
+release path.
