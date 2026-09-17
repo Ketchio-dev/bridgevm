@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INVOCATION_DIR="$(pwd -P)"
+source "$ROOT/scripts/live-gates/hvf_boot_matrix_media.sh"
 
 usage() {
   cat >&2 <<'EOF'
@@ -35,6 +36,10 @@ Options:
                           This can be slow and space-heavy for Windows raw disks.
   --no-clone-media        Reuse --target/--vars/--placeholder-nsid1 directly.
                           Faster, but run state is shared across matrix runs.
+  --expected-target-sha256 HEX
+  --expected-vars-sha256 HEX
+                          Hash each isolated clone before its run and fail if
+                          it differs from the sealed canonical input.
   -h, --help              Show this help.
 
 Arguments after -- are passed through to the installed-boot wrapper, for example
@@ -91,6 +96,8 @@ reject_matrix_owned_passthrough_args() {
       --target|--target=*|--disk|--disk=*|--writable-disk|--writable-disk=*|\
       --placeholder-nsid1|--placeholder-nsid1=*|--vars|--vars=*|\
       --evidence-dir|--evidence-dir=*|--smp-cpus|--smp-cpus=*|\
+      --expected-target-sha256|--expected-target-sha256=*|\
+      --expected-vars-sha256|--expected-vars-sha256=*|\
       --boot-timer|--boot-timer-ramfb-ms|--boot-timer-ramfb-ms=*|\
       --boot-timer-desktop-agent|\
       --boot-timer-desktop-checksum64|--boot-timer-desktop-checksum64=*|\
@@ -126,21 +133,6 @@ shell_quote_command() {
     printf ' %q' "$arg"
   done
   printf '\n'
-}
-
-prepare_media_file() {
-  local src="$1"
-  local dst="$2"
-  mkdir -p "$(dirname "$dst")"
-  rm -f "$dst"
-  if cp -c "$src" "$dst" 2>/dev/null; then
-    :
-  elif [[ "$COPY_MEDIA" == "1" ]]; then
-    cp "$src" "$dst"
-  else
-    fail "failed to clone media with 'cp -c': $src -> $dst; use --copy-media for a full copy or --no-clone-media to reuse media"
-  fi
-  chmod u+rw "$dst" 2>/dev/null || true
 }
 
 ensure_run_report_artifacts() {
@@ -202,6 +194,8 @@ RELEASE="0"
 SKIP_BUILD="0"
 CLONE_MEDIA="1"
 COPY_MEDIA="0"
+EXPECTED_TARGET_SHA256=""
+EXPECTED_VARS_SHA256=""
 PASSTHROUGH_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -236,6 +230,8 @@ while [[ $# -gt 0 ]]; do
     --skip-build) SKIP_BUILD="1"; shift ;;
     --copy-media) COPY_MEDIA="1"; shift ;;
     --no-clone-media) CLONE_MEDIA="0"; shift ;;
+    --expected-target-sha256) EXPECTED_TARGET_SHA256="$2"; shift 2 ;;
+    --expected-vars-sha256) EXPECTED_VARS_SHA256="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     --)
       shift
@@ -247,6 +243,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$TARGET" && -n "$VARS" && -n "$EVIDENCE_DIR" ]] || { usage; exit 2; }
+[[ -z "$EXPECTED_TARGET_SHA256" || "$EXPECTED_TARGET_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail "expected target hash must be lowercase SHA-256"
+[[ -z "$EXPECTED_VARS_SHA256" || "$EXPECTED_VARS_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail "expected vars hash must be lowercase SHA-256"
+{ [[ -z "$EXPECTED_TARGET_SHA256" && -z "$EXPECTED_VARS_SHA256" ]] || [[ -n "$EXPECTED_TARGET_SHA256" && -n "$EXPECTED_VARS_SHA256" ]]; } || fail "expected target and vars hashes must be supplied together"
 TARGET="$(absolute_path_from_invocation "$TARGET")"
 VARS="$(absolute_path_from_invocation "$VARS")"
 EVIDENCE_DIR="$(absolute_path_from_invocation "$EVIDENCE_DIR")"
@@ -296,6 +295,7 @@ for (( run = 1; run <= RUNS; run++ )); do
         prepare_media_file "$PLACEHOLDER_NSID1" "$run_placeholder"
       fi
     fi
+    verify_matrix_media "$run_dir" "$run_target" "$run_vars" "$run" "$smp" "$EXPECTED_TARGET_SHA256" "$EXPECTED_VARS_SHA256"
 
     args=(
       --target "$run_target"
