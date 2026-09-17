@@ -33,7 +33,7 @@ json_valid() {
   for path in "$@"; do python3 -m json.tool "$path" >/dev/null || return 1; done
 }
 step "capability registry" bash scripts/check-capability-registry.sh
-step "contract and schema json" json_valid docs/machine-contract/qemu-virt-deviations.json schemas/bridgevm-capability-v1.json schemas/windows-hvf-3d-off-product-e2e-receipt-v1.json
+step "contract and schema json" json_valid docs/machine-contract/qemu-virt-deviations.json schemas/bridgevm-capability-v1.json schemas/windows-hvf-3d-off-product-e2e-receipt-v1.json schemas/windows-hvf-import-product-e2e-receipt-v1.json
 step "capability evidence" python3 scripts/check-capability-evidence.py
 step "capability test counts" python3 scripts/check-capability-test-counts.py
 step "general preview manifest" python3 scripts/generate-general-preview-manifest.py --self-test

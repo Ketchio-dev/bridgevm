@@ -51,8 +51,8 @@ final class T17ProductRunner {
             try evidence.prove(.secureBootProvisioned)
             let readyLine = try bootToFirstReady(control)
             try evidence.prove(.firstReady)
-            evidence = try T17GuestJourney(request: request, ui: control, fileManager: fileManager)
-                .run(evidence: evidence, firstReady: readyLine)
+            try T17GuestJourney(request: request, ui: control, fileManager: fileManager)
+                .run(firstReady: readyLine) { try evidence.prove($0.installStage) }
             try evidence.authenticate("final_disk_sha256", file: URL(fileURLWithPath: request.diskPath))
             try evidence.authenticate("final_vars_sha256", file: URL(fileURLWithPath: request.varsPath))
             try evidence.authenticate("guest_evidence_sha256", file: URL(fileURLWithPath: request.guestEvidencePath))

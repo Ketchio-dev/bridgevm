@@ -3,8 +3,8 @@ import AppKit
 @MainActor
 enum HvfAppUIProbe {
     private static let identifiers: Set<String> = ["bridgevm.first-run.create", "bridgevm.first-run.import",
-        "bridgevm.first-run.name", "bridgevm.library.overview", "bridgevm.library.search",
-        "bridgevm.library.toolbar.create", "bridgevm.library.overview.create", "bridgevm.library.overview.import",
+        "bridgevm.first-run.name", "bridgevm.first-run.disk.path", "bridgevm.first-run.vars.path", "bridgevm.first-run.vtpm.path",
+        "bridgevm.first-run.import.commit", "bridgevm.library.overview", "bridgevm.library.search", "bridgevm.library.toolbar.create", "bridgevm.library.overview.create", "bridgevm.library.overview.import",
         "bridgevm.library.import.status", "bridgevm.create.commit"]
 
     static func save(_ root: NSView, to output: URL, name: String) throws {

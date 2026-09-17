@@ -44,7 +44,7 @@ struct T17Evidence {
             jobID: request.jobID, commit: request.commit, campaignMode: request.campaignMode,
             lane: request.lane, nonce: request.nonce,
             uiFrontendAutomated: uiFrontendAutomated,
-            failureCode: complete && cleanupVerified ? "none" : failureCode, failureDetail: complete && cleanupVerified ? "" : failureDetail,
+            failureCode: complete && cleanupVerified ? "none" : (!cleanupVerified && failureCode == "none" ? "cleanup-failed" : failureCode), failureDetail: complete && cleanupVerified ? "" : failureDetail,
             cleanupVerified: cleanupVerified, installerSourcePath: installerSourcePath,
             stages: stages, hashes: hashes
         )
@@ -71,7 +71,7 @@ struct T17Evidence {
 }
 
 enum T17ResultWriter {
-    static func write(_ result: T17LaneResult, to output: URL) throws {
+    static func write<Result: Encodable>(_ result: Result, to output: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(result)

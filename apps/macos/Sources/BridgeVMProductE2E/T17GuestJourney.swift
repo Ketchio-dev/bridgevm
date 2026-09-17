@@ -1,26 +1,25 @@
 import Foundation
 
 struct T17GuestJourney {
-    let request: T17Request
+    let request: any T17JourneyRequest
     let ui: T17UIControlling
     let fileManager: FileManager
 
-    func run(evidence initial: T17Evidence, firstReady: String) throws -> T17Evidence {
+    func run(firstReady: String, prove: (T17GuestStage) throws -> Void) throws {
         guard currentLogText().contains(firstReady) else {
             throw T17Blocker(code: "guest-evidence-missing", detail: "first READY record changed before the product journey")
         }
-        var evidence = initial
-        try keyboardAndPointer(); try evidence.prove(.keyboardPointer)
-        try clipboard(); try evidence.prove(.clipboard)
-        try workload("Share", output: "t17-guest-\(prefix).txt"); try evidence.prove(.folderShare)
-        try workload("Network", output: "t17-network-\(prefix).txt"); try evidence.prove(.network)
+        try keyboardAndPointer(); try prove(.keyboardPointer)
+        try clipboard(); try prove(.clipboard)
+        try workload("Share", output: "t17-guest-\(prefix).txt"); try prove(.folderShare)
+        try workload("Network", output: "t17-network-\(prefix).txt"); try prove(.network)
         try workload("Audio", output: "t17-audio-\(prefix).txt")
         try workload("MarkerA", output: "t17-snapshot-a-\(prefix).txt")
         try shutdown()
         guard T17RunLogProof.audioPassed(runLog) else {
             throw T17Blocker(code: "guest-evidence-missing", detail: "guest audio lacked successful host CoreAudio counters")
         }
-        try evidence.prove(.audio); try evidence.prove(.firstShutdown)
+        try prove(.audio); try prove(.firstShutdown)
         let first = try archiveLog(named: "first-run.log", ready: "first-ready", shutdown: "first-shutdown")
         try createSnapshot()
         _ = try bootReady()
@@ -32,13 +31,12 @@ struct T17GuestJourney {
         try workload("MarkerRestoredA", output: "t17-snapshot-restored-a-\(prefix).txt")
         try workload("AgentResult", output: "t17-agent-result-\(prefix).json", includeIdentity: true)
         let artifacts = try T17GuestArtifacts.collect(request: request, fileManager: fileManager)
-        try evidence.prove(.snapshotRestore); try evidence.prove(.secondReady)
-        try shutdown(); try evidence.prove(.secondShutdown)
+        try prove(.snapshotRestore); try prove(.secondReady)
+        try shutdown(); try prove(.secondShutdown)
         let final = try T17RunLogProof.capture(runLog, nonce: request.nonce,
                                                readyTag: "final-ready", shutdownTag: "second-shutdown")
         try artifacts.write(request: request, first: first, mutation: mutation, final: final)
         try restoreSnapshot()
-        return evidence
     }
 
     private func keyboardAndPointer() throws {
@@ -207,7 +205,7 @@ struct T17GuestJourney {
     }
 
     private var prefix: String { String(request.nonce.prefix(12)) }
-    private var bundle: URL { URL(fileURLWithPath: request.libraryRootPath).appendingPathComponent(request.vmSlug).appendingPathComponent("bundle.vmbridge") }
+    private var bundle: URL { URL(fileURLWithPath: request.bundlePath, isDirectory: true) }
     private var runLog: URL { bundle.appendingPathComponent("logs/hvf/run.log") }
     private var evidenceRoot: URL { bundle.appendingPathComponent("metadata/product-e2e", isDirectory: true) }
     private func currentLogText() -> String { (try? String(contentsOf: runLog, encoding: .utf8)) ?? "" }

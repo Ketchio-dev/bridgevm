@@ -10,7 +10,7 @@ struct FirstRunImportStatusView: View {
             if library.firstRunImportBusy, let stage = library.firstRunImport.stage {
                 HStack {
                     ProgressView().controlSize(.small)
-                    Text(stage.label).font(.callout)
+                    Text(stage.label).font(.callout).accessibilityIdentifier("bridgevm.first-run.import.stage")
                 }
             }
             if let error = library.firstRunImportError {
@@ -27,7 +27,7 @@ struct FirstRunImportStatusView: View {
                     .disabled(library.firstRunImportBusy)
                 } else {
                     Button(library.firstRunImportBusy ? "가져오는 중…" : "가져오기", action: importAction)
-                        .keyboardShortcut(.defaultAction)
+                        .keyboardShortcut(.defaultAction).accessibilityIdentifier("bridgevm.first-run.import.commit")
                         .disabled(library.firstRunImportBusy || !canImport)
                 }
             }

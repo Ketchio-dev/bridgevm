@@ -190,3 +190,4 @@ docs/history/windows-hvf/early-child-exit-observation-20260916.md	historical-evi
 docs/history/windows-hvf/native-app-install-cli-deterministic-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/native-app-create-cli-deterministic-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/native-app-lifecycle-guidance-deterministic-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/installed-disk-import-tier-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
