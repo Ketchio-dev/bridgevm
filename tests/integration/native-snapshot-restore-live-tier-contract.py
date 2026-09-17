@@ -127,6 +127,7 @@ class NativeSnapshotRestoreTierContract(unittest.TestCase):
         self.assertIn('"$NATIVE_SNAPSHOT_CLI" app snapshot-restore', source)
         self.assertIn('"experimental3DAllowed": False', source)
         self.assertIn('cp -c "$VARS"', source)
+        self.assertIn("set -euo pipefail", source); self.assertNotIn('"unavailableReason":None', source)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,5 @@
 """Strict evidence validation and statistics for sealed HVF boot campaigns."""
-
 from __future__ import annotations
-
 import json
 import hashlib
 import math
@@ -13,12 +11,12 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
-
 RESOURCE_KEYS = {"image", "vars", "binary", "renderer"}
 META_KEYS = {
     "binary_source_commit", "binary_profile", "binary_features", "rust_toolchain",
     "campaign_id", "campaign_mode", "campaign_role", "campaign_ordinal",
     "campaign_expected_runs",
+    "workload_profile",
 }
 HASH_FIELDS = ("image_sha256", "vars_sha256", "binary_hash", "config_sha256", "firmware_sha256", "renderer_sha256")
 COMMON_FIELDS = (
@@ -29,8 +27,6 @@ COMMON_FIELDS = (
 )
 AA_FIXTURE_ID = "0" * 32
 AB_FIXTURE_ID = "1" * 32
-
-
 class EvidenceError(Exception):
     """An evidence failure with the attempts needed to audit it."""
 
@@ -89,8 +85,10 @@ def _manifest(path: Path) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
             metadata[key] = row[1]
         else:
             raise ValueError(f"invalid manifest row for {key!r}")
-    if len(rows) != 13 or set(resources) != RESOURCE_KEYS or set(metadata) != META_KEYS:
-        raise ValueError("manifest must contain exactly 13 unique resource/metadata rows")
+    if "workload_profile" not in metadata and len(rows) == 13:
+        metadata["workload_profile"] = "shipping-core-3d-boot-v1"
+    if len(rows) not in {13, 14} or set(resources) != RESOURCE_KEYS or set(metadata) != META_KEYS:
+        raise ValueError("manifest must contain the historical 13 rows or current 14 rows")
     if metadata["campaign_mode"] not in ("AA", "AB"):
         raise ValueError("campaign_mode must be AA or AB")
     if metadata["campaign_role"] not in ("baseline", "candidate"):
@@ -99,8 +97,8 @@ def _manifest(path: Path) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
         raise ValueError("binary_source_commit must be 40 lowercase hex characters")
     if not _hex(metadata["campaign_id"], 32):
         raise ValueError("campaign_id must be 32 lowercase hex characters")
-    if metadata["binary_profile"] != "release":
-        raise ValueError("binary_profile must be release")
+    if metadata["binary_profile"] != "release" or metadata["workload_profile"] not in {"shipping-core-3d-boot-v1", "shipping-core-3d-off-boot-v2"}:
+        raise ValueError("binary profile or workload profile is invalid")
     if not re.fullmatch(r"[a-z0-9,+_-]+", metadata["binary_features"]):
         raise ValueError("binary_features is not canonical")
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", metadata["rust_toolchain"]):
@@ -141,6 +139,7 @@ def _validate_receipt(job: dict[str, Any], metadata: dict[str, str], resources: 
         "binary_source_commit": metadata["binary_source_commit"],
         "binary_profile": metadata["binary_profile"], "binary_features": metadata["binary_features"],
         "rust_toolchain": metadata["rust_toolchain"], "image_sha256": resources["image"][1],
+        "workload_profile": metadata["workload_profile"],
         "vars_sha256": resources["vars"][1], "binary_hash": resources["binary"][1], "renderer_sha256": resources["renderer"][1],
     }
     for field, value in expected.items():
@@ -148,7 +147,7 @@ def _validate_receipt(job: dict[str, Any], metadata: dict[str, str], resources: 
         if actual != value or (isinstance(value, int) and type(actual) is not int):
             raise ValueError(f"receipt {field} does not match its sealed manifest")
     fixed = {
-        "schema_version": 2, "tier": "t15-hvf-boot-performance", "gate_id": "hvf-boot-performance-diagnostic", "workload_profile": "shipping-core-3d-boot-v1",
+        "schema_version": 2, "tier": "t15-hvf-boot-performance", "gate_id": "hvf-boot-performance-diagnostic",
         "sample_count": 1, "run_count": 1, "required_run_count": 1,
         "passes": 1, "failures": 0, "outcome": "completed",
     }
@@ -407,7 +406,7 @@ def _fixture(root: Path) -> None:
                 "binary_source_commit": selected_source, "binary_profile": "release",
                 "binary_features": "venus", "rust_toolchain": "1.97.0",
                 "campaign_id": identifier, "campaign_mode": mode, "campaign_role": role,
-                "campaign_ordinal": str(ordinal), "campaign_expected_runs": "6",
+                "campaign_ordinal": str(ordinal), "campaign_expected_runs": "6", "workload_profile": "shipping-core-3d-off-boot-v2",
             }
             rows = [
                 f"image\t/sealed/image.raw\t{'a' * 64}", f"vars\t/sealed/vars.fd\t{'b' * 64}", f"renderer\t/sealed/libvirglrenderer.dylib\t{'9' * 64}",
@@ -431,7 +430,7 @@ def _fixture(root: Path) -> None:
                 "tested_commit": selected_source, "image_sha256": "a" * 64,
                 "vars_sha256": "b" * 64, "binary_hash": selected_binary,
                 "input_manifest_sha256": manifest_hash,
-                "config_sha256": "c" * 64, "firmware_sha256": "f" * 64, "renderer_sha256": "9" * 64, "workload_profile": "shipping-core-3d-boot-v1",
+                "config_sha256": "c" * 64, "firmware_sha256": "f" * 64, "renderer_sha256": "9" * 64, "workload_profile": "shipping-core-3d-off-boot-v2",
                 "host_model": "MacTest", "macos_version": "26.0",
                 "power_source_start": "AC Power", "power_source_end": "AC Power",
                 "smp_cpus": 4, "ram_mib": 6144, "known_confounders": ["full clone integrity hash immediately precedes boot (warm cache)", "boot harness omits product vTPM, clipboard/share, and long-lived app session"],

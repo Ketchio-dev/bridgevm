@@ -2,11 +2,14 @@
 
 ## Result
 
-Pilot `t20-e6481e5b-native-snapshot-r1` failed before VM execution. The queue
-had copied the Venus probe Mach-O without its app-relative Frameworks, so dyld
-could not load `libvirglrenderer.1.dylib`. Source
-`f9a035730dcdaccfa3aa9baa92479d3724e5bdcf` retains that failure and seals the
-whole authenticated app runtime for the next pilot. A19 remains open.
+The first exact-main pilot failed before VM execution because its Venus probe
+lacked app-relative Frameworks. The second stopped at an expired-password
+screen. Both remain retained. Exact-main job
+`t20-b9fe29fa-native-snapshot-r3` passed with the canonical agent pair: three
+Windows boots, three natural shutdowns, and original/clobbered/restored marker
+proof. Receipt SHA-256 is
+`3326e5a7d19219aefd43e446aa5e6c9cfebf6d24b001447f9b2ca1b6fdc06a3b`.
+A19 remains open because interrupted restore and raw export are still unproven.
 
 ## Sealed path
 
@@ -34,19 +37,16 @@ turns networking off. The experiment then:
 A passing receipt requires every sealed and produced artifact hash, exactly
 three attempted/passed boots, exactly three natural shutdowns, private clone
 cleanup, and strict public-redaction revalidation. It fixes
-`claim_eligible`, `criterion_pass`, `capability_promotion`, and
-`three_d_injection` to false. One pilot therefore cannot promote A19.
+`claim_eligible`, `criterion_pass`, `capability_promotion`, and `three_d_injection`
+to false. One pilot therefore cannot promote A19.
 
 ## Deterministic evidence
 
-The contract suite passed five tests covering fixed app relationships, staged
-mutation refusal, clone identity, strict receipt accounting, redaction, queue
-sealing, paired CLI routing, and 3D-off registration. The exact-main app clone's
-probe passed dyld loading from its staged relative Frameworks. The 44-check
-Windows product live-tier contract, syntax and structural budgets passed.
+Five contract tests cover app relationships, mutation refusal, clone identity,
+receipt accounting, queue sealing, CLI routing, and 3D-off registration. Hosted
+CI passed before r3. Source `be3c45d0786d1c1cec4915fa34c2c14de068a920`
+makes inline app-JSON validation fail closed against the packaged CLI output.
 
-These results prove deterministic wiring and fail-closed accounting only. They
-do not prove a Windows boot after restore, interrupted-operation safety, raw
-export, application consistency, a live sample, or A19 completion. A live pilot
-may be submitted only after this exact source has passed local and hosted
-verification and the packaged exact-main artifacts have been sealed.
+The r3 receipt proves one packaged native app restore journey at exact main
+`b9fe29fae274aceacdd9a7b33df81810ca7fb675`. It does not prove interruption,
+raw export, application consistency, or A19 completion.

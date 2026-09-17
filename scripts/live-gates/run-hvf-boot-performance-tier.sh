@@ -3,6 +3,7 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$REPO/scripts/live-gates/hvf-boot-performance-manifest.sh"
+source "$REPO/scripts/live-gates/hvf-boot-performance-profile.sh"
 WRITER="$REPO/scripts/live-gates/write-hvf-boot-performance-receipt.py"
 OUT=""; INPUT_MANIFEST=""; SEALED_BINARY=""; JOB_ID="local-perf"; VALIDATE_ONLY=0
 while [[ $# -gt 0 ]]; do
@@ -22,7 +23,7 @@ power_source() { command -v pmset >/dev/null && pmset -g batt | sed -n "s/^Now d
 export PERF_JOB_ID="$JOB_ID" PERF_HARNESS_COMMIT="$(git -C "$REPO" rev-parse HEAD)"
 export PERF_BINARY_SOURCE_COMMIT="unknown" PERF_BINARY_PROFILE="unknown" PERF_BINARY_FEATURES="unknown"
 export PERF_RUST_TOOLCHAIN="unknown" PERF_BINARY_HASH="absent" PERF_MANIFEST_HASH="absent"
-export PERF_IMAGE_HASH="absent" PERF_VARS_HASH="absent" PERF_FIRMWARE_HASH="absent" PERF_RENDERER_HASH="absent" PERF_CONFIG_HASH="absent" PERF_WORKLOAD_PROFILE="shipping-core-3d-boot-v1"
+export PERF_IMAGE_HASH="absent" PERF_VARS_HASH="absent" PERF_FIRMWARE_HASH="absent" PERF_RENDERER_HASH="absent" PERF_CONFIG_HASH="absent" PERF_WORKLOAD_PROFILE="unknown"
 export PERF_CAMPAIGN_ID="unknown" PERF_CAMPAIGN_MODE="unknown" PERF_CAMPAIGN_ROLE="unknown"
 export PERF_CAMPAIGN_ORDINAL=0 PERF_CAMPAIGN_EXPECTED_RUNS=0
 export PERF_HOST_MODEL="$(sysctl -n hw.model 2>/dev/null || uname -m)" PERF_MACOS_VERSION="$(sw_vers -productVersion 2>/dev/null || uname -sr)"
@@ -59,6 +60,7 @@ export PERF_MANIFEST_HASH
 perf_manifest_validate "$REPO" "$INPUT_MANIFEST" "$SEALED_BINARY" || exit 1
 export PERF_BINARY_SOURCE_COMMIT PERF_BINARY_PROFILE PERF_BINARY_FEATURES PERF_RUST_TOOLCHAIN PERF_BINARY_HASH
 export PERF_CAMPAIGN_ID PERF_CAMPAIGN_MODE PERF_CAMPAIGN_ROLE PERF_CAMPAIGN_ORDINAL PERF_CAMPAIGN_EXPECTED_RUNS
+export PERF_WORKLOAD_PROFILE
 if [[ "$VALIDATE_ONLY" == 1 ]]; then
   perf_manifest_verify_source_hashes "$INPUT_MANIFEST" || exit 1
   RECEIPT_WRITTEN=1; echo "HVF boot performance manifest: PASS"; exit 0
@@ -83,7 +85,8 @@ PERF_IMAGE_HASH="$(perf_seal "$OUT/media/target.raw")"; PERF_VARS_HASH="$(perf_s
 export PERF_IMAGE_HASH PERF_VARS_HASH
 [[ "$PERF_IMAGE_HASH" == "$(perf_manifest_hash image "$INPUT_MANIFEST")" \
   && "$PERF_VARS_HASH" == "$(perf_manifest_hash vars "$INPUT_MANIFEST")" ]] || exit 1
-PERF_CONFIG_HASH="$(printf '%s' "shipping-core-3d-boot-v1;release;skip-build;daily;smp=4;ram=6144;virtio-net;xhci;hda-coreaudio;virgl;device=1050;aggressive;display-fb=100ms;input-control;agent-ready;shutdown;watchdog=120000;firmware=$PERF_FIRMWARE_HASH;renderer=$PERF_RENDERER_HASH;warm-cache=clone-integrity-scan" | shasum -a 256 | cut -d' ' -f1)"
+perf_boot_profile "$PERF_WORKLOAD_PROFILE" "$PERF_FIRMWARE_HASH" "$PERF_RENDERER_HASH" || exit 1
+PERF_CONFIG_HASH="$(printf '%s' "$PERF_CONFIG_MATERIAL" | shasum -a 256 | cut -d' ' -f1)"
 export PERF_CONFIG_HASH
 printf 'harness_commit=%s\nbinary_source_commit=%s\nbinary_sha256=%s\nimage_sha256=%s\nvars_sha256=%s\nfirmware_sha256=%s\nrenderer_sha256=%s\nconfig_sha256=%s\nworkload_profile=%s\npower_source_start=%s\n' \
   "$PERF_HARNESS_COMMIT" "$PERF_BINARY_SOURCE_COMMIT" "$PERF_BINARY_HASH" "$PERF_IMAGE_HASH" "$PERF_VARS_HASH" "$PERF_FIRMWARE_HASH" "$PERF_RENDERER_HASH" "$PERF_CONFIG_HASH" "$PERF_WORKLOAD_PROFILE" "$PERF_POWER_SOURCE_START" > "$OUT/measurement-identity.txt"
@@ -92,8 +95,7 @@ INVALID_REASON="boot-wrapper-failed"; status=0
 BRIDGEVM_PREBUILT_PROBE="$SEALED_BINARY" "$REPO/scripts/run-hvf-windows-installed-boot.sh" \
   --target "$OUT/media/target.raw" --vars "$OUT/media/vars.fd" --firmware-code "$FIRMWARE" \
   --evidence-dir "$OUT/boot" --release --skip-build --daily --smp-cpus 4 --ram-mib 6144 \
-  --watchdog-ms 120000 --boot-timer --boot-timer-desktop-agent --virtio-net --enable-xhci --hda-coreaudio \
-  --virtio-gpu-3d --virtio-gpu-device-id 1050 --gpu-trace-protocol virgl --performance-risk aggressive \
+  --watchdog-ms 120000 --boot-timer --boot-timer-desktop-agent "${PERF_PROFILE_ARGS[@]}" \
   --display-export-ms 100 --display-export-fb "$OUT/boot/display.fb" --input-control "$OUT/boot/input.ctl" \
   --shutdown-after-agent-ready > "$OUT/boot-wrapper.stdout" 2> "$OUT/boot-wrapper.stderr" || status=$?
 report_status=0

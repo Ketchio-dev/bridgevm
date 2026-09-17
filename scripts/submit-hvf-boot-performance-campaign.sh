@@ -32,15 +32,15 @@ validate_base() {
       if (NF != 3 || $2 !~ /^\// || $3 !~ /^[0-9a-f]{64}$/) exit 1; seen[$1]++; next
     }
     $1 == "binary_source_commit" || $1 == "binary_profile" ||
-    $1 == "binary_features" || $1 == "rust_toolchain" {
+    $1 == "binary_features" || $1 == "rust_toolchain" || $1 == "workload_profile" {
       if (NF != 2 || $2 == "") exit 1; seen[$1]++; next
     }
     { exit 1 }
     END {
-      split("image vars binary renderer binary_source_commit binary_profile binary_features rust_toolchain", keys, " ")
-      if (NR != 8) exit 1
+      split("image vars binary renderer binary_source_commit binary_profile binary_features rust_toolchain workload_profile", keys, " ")
+      if (NR != 9) exit 1
       for (i in keys) if (seen[keys[i]] != 1) exit 1
-    }' "$1"
+    }' "$1" && awk -F '\t' '$1=="workload_profile" {n++; if ($2!="shipping-core-3d-off-boot-v2") exit 1} END {exit n!=1}' "$1"
 }
 validate_base "$BASELINE" || { echo "invalid baseline manifest" >&2; exit 2; }
 [[ "$MODE" == AA ]] || validate_base "$CANDIDATE" || { echo "invalid candidate manifest" >&2; exit 2; }
