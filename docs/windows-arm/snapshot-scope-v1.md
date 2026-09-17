@@ -49,7 +49,7 @@ A future V1 implementation is complete only when it proves all of:
 6. interrupted create/restore leaves either the old complete pair or the new
    complete pair, never one file from each.
 
-## Current evidence boundary (2026-09-14)
+## Current evidence boundary (2026-09-17)
 
 A19 remains OPEN. Use its generated entry in [current status](../../STATUS.md)
 for capability wording and known defects.
@@ -65,6 +65,12 @@ revisions. Each has sample count 1; they are not pooled and do not close A19.
 Full interrupted-operation safety, raw export and product lifecycle coverage
 remain unproven. The historical assessment below is retained to show what was
 previously claimed and later corrected.
+
+The native app CLI now exposes the existing managed-pair create, verify and
+restore path for one exact saved VM ID. Its deterministic checkpoint is recorded
+in the [native app snapshot CLI evidence](../history/windows-hvf/native-app-snapshot-cli-deterministic-20260917.md).
+This closes a command-surface gap only: no Windows boot, guest marker,
+interrupted-operation sample or raw export was added, so A19 remains OPEN.
 
 ## Historical assessment (2026-08-04; superseded)
 

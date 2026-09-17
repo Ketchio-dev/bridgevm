@@ -2970,3 +2970,11 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMImportCleanupCommand.swift	57	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportedKeyCleanup.swift	29	0
 apps/macos/Tests/BridgeVMControlTests/VTPMImportedRecoveryCleanupTests.swift	36	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportedKeyCleanupTests.swift	44	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICommandLifecycle.swift	11	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshot.swift	106	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshotHelp.swift	13	0
+apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotTests.swift	161	0
+crates/bridgevm-cli/src/app_cli_snapshot_tests.rs	65	0
+crates/bridgevm-cli/tests/cli_app_snapshot.rs	31	0
+docs/app-cli-snapshot.md	36	0
+docs/history/windows-hvf/native-app-snapshot-cli-deterministic-20260917.md	45	0

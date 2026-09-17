@@ -1,9 +1,9 @@
-import Foundation
 extension NativeCLI {
     static func execute(_ options: NativeCLIOptions) throws -> Int32 {
         switch options.command {
         case .start, .stop: return try executeRuntime(options)
         case .install, .installStatus, .installCancel: return try executeInstall(options)
+        case .snapshotCreate, .snapshotRestore: return try executeSnapshot(options)
         case .status(let id):
             let snapshot = NativeCLIRuntimeStatus.snapshot(rootURL: options.libraryRoot, id: id)
             try output(snapshot, json: options.json, text: snapshot.text)

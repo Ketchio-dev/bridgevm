@@ -183,6 +183,7 @@ docs/history/windows-hvf/native-diagnostic-ownership-20260916.md	historical-evid
 docs/history/windows-hvf/native-callback-scope-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/app-cli-start.md	current	native-app-cli	-
 docs/app-cli-install.md	current	native-app-cli	-
+docs/app-cli-snapshot.md	current	native-app-cli	-
 docs/history/windows-hvf/native-owned-start-deterministic-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/native-gui-start-worker-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/install-finalization-retry-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
@@ -193,3 +194,4 @@ docs/history/windows-hvf/native-app-lifecycle-guidance-deterministic-20260916.md
 docs/history/windows-hvf/installed-disk-import-tier-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/t17-t19-private-source-handoff-20260917.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/t17-launchservices-preflight-20260917.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/native-app-snapshot-cli-deterministic-20260917.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
