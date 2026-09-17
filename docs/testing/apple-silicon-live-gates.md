@@ -82,7 +82,7 @@ Properties the queue must hold:
 | T16 | Fixed sealed Windows NVMe workload | Preserved v1 STOP plus preregistered v2 A/A calibration; no live v2 result yet |
 | T17 | Packaged Windows-HVF 3D-off product E2E | One-lane diagnostic pilot or fixed three-lane release campaign |
 | T18 | Fixed CoreAudio playback and shutdown | B7 typed callback teardown evidence; exactly ten isolated lanes |
-
+| T19 | Packaged installed-disk import product E2E | One-lane diagnostic pilot or fixed three-lane release campaign |
 The deterministic QMP close-race negative control and exactly 60 loaded
 full-workspace rounds run as the GitHub-hosted macOS `qmp-stress` CI job. They
 are not a physical-Mac live tier and make no guest-behaviour claim.
@@ -177,7 +177,7 @@ command, whose fixed bundle identifier is `dev.bridgevm.product-e2e`, and accept
 command is a preflight blocker, not an invitation to invoke a harness. Private
 paths, ISO, media, vars, vTPM, guest payload and helper logs never enter the
 public receipt; the dedicated verifier is run both before and after redaction.
-
+T19 seals a packaged app, fixed-identity helper, runner, installed disk, exact 64 MiB vars and symlink-free vTPM tree; each lane imports independent read-only clones through `--windows-import-product-e2e`, runs the full guest journey, reauthenticates canonical inputs, and retains `claim_eligible=false` because A9 also requires T17.
 T9 is deliberately not assigned a product capability criterion. It rebuilds
 the experimental BridgeVM Virtual ARM PC firmware and HVF runner from the
 sealed commit, then requires 20 independent lanes. Every lane owns a fresh

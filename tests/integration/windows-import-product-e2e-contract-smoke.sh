@@ -57,4 +57,4 @@ printf changed >> "$TMP/windows.raw"
 if python3 "$MANIFEST" --manifest "$INPUT" --out "$TMP/changed.json" >/dev/null 2>&1; then
   echo "mutated canonical source was accepted" >&2; exit 1
 fi
-python3 "$ROOT/tests/integration/windows-import-product-e2e-receipt.py"; echo "PASS: installed-disk import product E2E manifest and request contracts"
+python3 "$ROOT/tests/integration/windows-import-product-e2e-receipt.py"; "$ROOT/tests/integration/windows-import-product-e2e-live-tier-smoke.sh"; echo "PASS: installed-disk import product E2E manifest and request contracts"
