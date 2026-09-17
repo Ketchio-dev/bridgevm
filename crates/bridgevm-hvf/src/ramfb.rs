@@ -1,3 +1,4 @@
+mod exact_color_set;
 mod snapshot;
 #[cfg(test)]
 mod snapshot_tests;
