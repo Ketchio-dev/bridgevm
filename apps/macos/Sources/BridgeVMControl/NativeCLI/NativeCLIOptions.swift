@@ -1,7 +1,7 @@
 import Foundation
 
 struct NativeCLIOptions: Equatable {
-    enum Command: Equatable { case list, inspect(String), readiness(String), status(String), start(String), stop(String), install(String), installStatus(String), installCancel(String), createWindows(NativeCLICreateWindowsOptions) }
+    enum Command: Equatable { case list, inspect(String), readiness(String), status(String), start(String), stop(String), install(String), installStatus(String), installCancel(String), snapshotCreate(String), snapshotRestore(String), createWindows(NativeCLICreateWindowsOptions) }
     let command: Command
     let libraryRoot: URL
     let json: Bool

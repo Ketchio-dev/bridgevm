@@ -86,7 +86,7 @@ enum HvfWindowsSnapshotCommand {
         }.value
     }
 
-    private static func invoke(_ executable: URL, _ arguments: [String]) throws -> String {
+    static func invoke(_ executable: URL, _ arguments: [String]) throws -> String {
         let process = Process()
         let pipe = Pipe()
         process.executableURL = executable
