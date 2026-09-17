@@ -484,6 +484,7 @@ crates/bridgevm-hvf/src/virtio_gpu/command.rs	82	0
 crates/bridgevm-hvf/src/virtio_gpu/compositor.rs	212	0
 crates/bridgevm-hvf/src/virtio_gpu/compositor_2d.rs	49	0
 crates/bridgevm-hvf/src/virtio_gpu/compositor_2d_tests.rs	117	0
+crates/bridgevm-hvf/src/virtio_gpu/compositor_bgr.rs	38	0
 crates/bridgevm-hvf/src/virtio_gpu/config_space.rs	448	0
 crates/bridgevm-hvf/src/virtio_gpu/descriptor_chain_trace.rs	96	0
 crates/bridgevm-hvf/src/virtio_gpu/device.rs	247	0
