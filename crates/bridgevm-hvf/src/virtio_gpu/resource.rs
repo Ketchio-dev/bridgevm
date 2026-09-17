@@ -1,5 +1,6 @@
 //! 2D resource lifecycle: create, unref, backing attach/detach, TRANSFER_TO_HOST_2D.
 
+use super::backing_copy::read_from_backing_into;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 use crate::virtio_gpu_3d::BlobMemEntry;
@@ -59,33 +60,6 @@ pub(crate) fn copy_backing_to_resource(
             resource.host_pixels[dst..dst + 4].copy_from_slice(&pixel);
         }
     }
-}
-
-pub(crate) fn read_from_backing_into(
-    mem: &dyn GuestMemoryMut,
-    backing: &[BackingEntry],
-    offset: u64,
-    dst: &mut [u8],
-) -> bool {
-    let mut base = 0u64;
-    let Ok(len_u64) = u64::try_from(dst.len()) else {
-        return false;
-    };
-    for entry in backing {
-        let Some(entry_end) = base.checked_add(u64::from(entry.len)) else {
-            return false;
-        };
-        if offset >= base
-            && offset
-                .checked_add(len_u64)
-                .is_some_and(|range_end| range_end <= entry_end)
-        {
-            let rel = offset - base;
-            return mem.read_into(entry.addr + rel, dst);
-        }
-        base = entry_end;
-    }
-    false
 }
 
 impl VirtioGpu {
