@@ -105,7 +105,7 @@ impl NvmeController {
             volatile_write_cache_enabled: true,
             msix: MsixTable::new(NVME_MSIX_VECTOR_COUNT),
             command_trace: VecDeque::with_capacity(COMMAND_TRACE_CAPACITY),
-            io_scratch: Vec::new(),
+            io_scratch: vec![0; PAGE_SIZE],
             direct_dma_enabled: true,
             prp_spans_scratch: Vec::new(),
             io_segments_scratch: Vec::new(),

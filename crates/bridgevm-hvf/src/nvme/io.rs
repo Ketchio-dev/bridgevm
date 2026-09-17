@@ -66,7 +66,7 @@ impl NvmeController {
         };
         let mut spans = std::mem::take(&mut self.prp_spans_scratch);
         spans.clear();
-        if !prp_spans_into(cmd, len, mem, &mut spans) {
+        if !prp_spans_into(cmd, len, mem, &mut spans, &mut self.io_scratch) {
             self.prp_spans_scratch = spans;
             return SC_INVALID_FIELD;
         }
@@ -183,7 +183,7 @@ impl NvmeController {
         };
         let mut spans = std::mem::take(&mut self.prp_spans_scratch);
         spans.clear();
-        if !prp_spans_into(cmd, len, mem, &mut spans) {
+        if !prp_spans_into(cmd, len, mem, &mut spans, &mut self.io_scratch) {
             self.prp_spans_scratch = spans;
             return SC_INVALID_FIELD;
         }

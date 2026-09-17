@@ -14,6 +14,7 @@ pub(crate) fn prp_spans_into(
     len: usize,
     mem: &dyn GuestMemoryMut,
     out: &mut Vec<(u64, usize)>,
+    list_scratch: &mut [u8],
 ) -> bool {
     let start = out.len();
     if len == 0 {
@@ -22,13 +23,11 @@ pub(crate) fn prp_spans_into(
     if cmd.prp1 == 0 {
         return false;
     }
-
     let mut remaining = len;
     let first_page_left = (PAGE_SIZE_U64 - (cmd.prp1 % PAGE_SIZE_U64)) as usize;
     let first_len = remaining.min(first_page_left);
     out.push((cmd.prp1, first_len));
     remaining -= first_len;
-
     if remaining == 0 {
         return true;
     }
@@ -36,7 +35,6 @@ pub(crate) fn prp_spans_into(
         out.truncate(start);
         return false;
     }
-
     if remaining <= PAGE_SIZE {
         if cmd.prp2 % PAGE_SIZE_U64 != 0 {
             out.truncate(start);
@@ -48,7 +46,6 @@ pub(crate) fn prp_spans_into(
 
     let mut list_gpa = cmd.prp2;
     let mut list_pages_seen = 0usize;
-
     while remaining > 0 {
         let list_offset = (list_gpa % PAGE_SIZE_U64) as usize;
         if list_offset % 8 != 0 {
@@ -60,16 +57,19 @@ pub(crate) fn prp_spans_into(
             out.truncate(start);
             return false;
         }
-
         let list_len = PAGE_SIZE - list_offset;
-        let mut list_buf = [0u8; PAGE_SIZE];
-        if !mem.read_into(list_gpa, &mut list_buf[..list_len]) {
+        let entries_in_page = list_len / 8;
+        let read_len = remaining.div_ceil(PAGE_SIZE).min(entries_in_page) * 8;
+        let Some(list_buf) = list_scratch.get_mut(..read_len) else {
+            out.truncate(start);
+            return false;
+        };
+        if !mem.read_into(list_gpa, list_buf) {
             out.truncate(start);
             return false;
         }
-        let raw = &list_buf[..list_len];
+        let raw = &*list_buf;
         let mut followed_chain = false;
-        let entries_in_page = raw.len() / 8;
         for (idx, chunk) in raw.chunks_exact(8).enumerate() {
             let entry = u64::from_le_bytes(chunk.try_into().unwrap());
             if entry == 0 {
