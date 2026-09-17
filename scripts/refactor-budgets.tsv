@@ -2924,3 +2924,4 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserSemanticIdentityTests.swi
 apps/macos/Sources/BridgeVMProductE2E/T17JourneyRequest.swift	15	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportRequest.swift	167	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportRequestTests.swift	121	0
+apps/macos/Sources/BridgeVMProductE2E/T17GuestStage.swift	18	0
