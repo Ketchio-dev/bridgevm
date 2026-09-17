@@ -30,6 +30,9 @@ with output.open("x") as out:
         out.write(f"{key}\t{path}\t{digest}\n")
 PY
 python3 "$MANIFEST" --manifest "$INPUT" --out "$TMP/verified.json"
+QUEUE="$TMP/queue"; COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
+[[ "$(BRIDGEVM_LIVE_ROOT="$QUEUE" "$ROOT/scripts/live-gates/bridgevm-live" submit t19-windows-hvf-import-product-e2e --sha "$COMMIT" --input-manifest "$INPUT" --job-id t19-contract)" == t19-contract ]]
+[[ -f "$QUEUE/queued/t19-contract/input-manifest.tsv" && ! -e "$QUEUE/queued/t19-contract/hvf_gic_boot_probe" ]]
 LANE="/tmp/bridgevm-import-e2e-contract-$$"; rm -rf "$LANE"; mkdir -p "$LANE/inputs/vtpm"
 trap 'chmod -R u+w "$TMP" "$LANE" 2>/dev/null || true; rm -rf "$TMP" "$LANE"' EXIT
 cp "$TMP/windows.raw" "$LANE/inputs/windows.raw"; cp "$TMP/vars.fd" "$LANE/inputs/vars.fd"

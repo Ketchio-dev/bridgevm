@@ -15,5 +15,5 @@ case "$TIER" in
       --out "$DIR" --job-id "$JOB_ID" --commit "$COMMIT" \
       --input-manifest-hash "$manifest_hash" --reason "$reason" || true
     ;;
-  t17-windows-hvf-product-e2e|t18-audio-teardown) helper=write-windows-product-e2e-missing-receipt.sh; [[ "$TIER" == t17-* ]] || helper=write-audio-teardown-missing-receipt.sh; "$WORKTREE/scripts/live-gates/$helper" "$DIR" "$WORKTREE" "$JOB_ID" "$COMMIT" || true ;;
+  t17-windows-hvf-product-e2e|t18-audio-teardown|t19-windows-hvf-import-product-e2e) helper=write-windows-product-e2e-missing-receipt.sh; [[ "$TIER" != t18-* ]] || helper=write-audio-teardown-missing-receipt.sh; [[ "$TIER" != t19-* ]] || helper=write-windows-import-product-e2e-missing-receipt.sh; "$WORKTREE/scripts/live-gates/$helper" "$DIR" "$WORKTREE" "$JOB_ID" "$COMMIT" || true ;;
 esac

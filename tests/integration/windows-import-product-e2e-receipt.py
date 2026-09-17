@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic semantic checks for the installed-disk import receipt."""
 from __future__ import annotations
-import importlib.util, json, pathlib, tempfile
+import importlib.util, json, pathlib, subprocess, tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("verifier", ROOT / "scripts/verify-windows-import-product-e2e-receipt.py")
@@ -38,3 +38,11 @@ try: VERIFIER.validate(bad)
 except VERIFIER.ReceiptError: pass
 else: raise AssertionError("out-of-order stages were accepted")
 print("PASS: installed-disk import receipt semantics")
+with tempfile.TemporaryDirectory() as temporary:
+    directory = pathlib.Path(temporary); (directory / "input-manifest.tsv").write_text("missing\n")
+    (directory / "job.env").write_text("submitted_at=2026-09-16T00:00:00Z\n")
+    subprocess.run([ROOT / "scripts/live-gates/write-windows-import-product-e2e-missing-receipt.sh",
+        directory, ROOT, "missing-import", "b" * 40], check=True)
+    missing = json.loads((directory / "receipt.json").read_text())
+    VERIFIER.validate(missing, expected_commit="b" * 40)
+    assert missing["outcome"] == "missing-receipt" and missing["pass"] is False

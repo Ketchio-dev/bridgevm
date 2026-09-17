@@ -2933,9 +2933,10 @@ apps/macos/Tests/BridgeVMProductE2ETests/A9ImportRequestTests.swift	121	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestStage.swift	18	0
 scripts/live-gates/windows-import-product-e2e-manifest.py	108	0
 scripts/live-gates/make-windows-import-product-e2e-request.py	76	0
-tests/integration/windows-import-product-e2e-contract-smoke.sh	57	0
+tests/integration/windows-import-product-e2e-contract-smoke.sh	60	0
 scripts/verify-windows-import-product-e2e-receipt.py	120	0
 scripts/live-gates/launch-import-product-e2e-helper.sh	8	0
-tests/integration/windows-import-product-e2e-receipt.py	40	0
+tests/integration/windows-import-product-e2e-receipt.py	48	0
 scripts/live-gates/write-windows-import-product-e2e-receipt.py	194	0
 scripts/live-gates/run-windows-import-product-e2e-tier.sh	71	0
+scripts/live-gates/write-windows-import-product-e2e-missing-receipt.sh	8	0
