@@ -2958,6 +2958,7 @@ tests/integration/windows-import-product-e2e-live-tier-smoke.sh	39	0
 schemas/windows-hvf-import-product-e2e-receipt-v1.json	70	0
 docs/history/windows-hvf/installed-disk-import-tier-20260916.md	20	0
 docs/history/windows-hvf/t17-t19-private-source-handoff-20260917.md	40	0
+docs/history/windows-hvf/t17-launchservices-preflight-20260917.md	34	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportVTPMRecovery.swift	52	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportVTPMValidation.swift	27	0
 apps/macos/Sources/BridgeVMControl/FirstRunVTPMImportFields.swift	19	0

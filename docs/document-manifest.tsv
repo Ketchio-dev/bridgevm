@@ -192,3 +192,4 @@ docs/history/windows-hvf/native-app-create-cli-deterministic-20260916.md	histori
 docs/history/windows-hvf/native-app-lifecycle-guidance-deterministic-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/installed-disk-import-tier-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/t17-t19-private-source-handoff-20260917.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/t17-launchservices-preflight-20260917.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
