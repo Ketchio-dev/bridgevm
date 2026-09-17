@@ -2943,3 +2943,4 @@ scripts/live-gates/write-windows-import-product-e2e-missing-receipt.sh	8	0
 tests/fixtures/fake-windows-import-product-e2e-helper.py	34	0
 tests/integration/windows-import-product-e2e-live-tier-smoke.sh	39	0
 schemas/windows-hvf-import-product-e2e-receipt-v1.json	70	0
+docs/history/windows-hvf/installed-disk-import-tier-20260916.md	20	0
