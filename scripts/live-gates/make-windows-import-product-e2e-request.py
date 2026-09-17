@@ -3,12 +3,10 @@
 from __future__ import annotations
 import argparse, hashlib, importlib.util, json, os, stat
 from pathlib import Path
-
 HERE = Path(__file__).resolve().parent
 SPEC = importlib.util.spec_from_file_location("import_manifest", HERE / "windows-import-product-e2e-manifest.py")
 MANIFEST = importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(MANIFEST)
 APP_ASSETS = ("app_bundle", "app_executable", "runner")
-
 def unique(pairs):
     value = {}
     for key, item in pairs:
@@ -43,13 +41,15 @@ def main() -> int:
     root = args.lane_root; raw_root = str(root)
     if not raw_root.startswith("/tmp/bridgevm-import-e2e-") or raw_root != os.path.normpath(raw_root):
         raise ValueError("lane root is outside /tmp/bridgevm-import-e2e-*")
-    inputs = root / "inputs"; disk = inputs / "windows.raw"; variables = inputs / "vars.fd"; vtpm = inputs / "vtpm"
+    inputs = root / "inputs"; disk = inputs / "windows.raw"; variables = inputs / "vars.fd"; vtpm = inputs / "vtpm"; package = inputs / "vtpm-recovery.json"; code = inputs / "vtpm-recovery-code.txt"
     if not root.is_dir() or root.is_symlink() or set(item.name for item in root.iterdir()) != {"inputs"}:
         raise ValueError("lane root must contain only its prepared inputs")
     if not disk.is_file() or disk.is_symlink() or not readonly(disk) or MANIFEST.file_hash(disk) != assets["source_disk"]["sha256"]:
         raise ValueError("lane disk clone is missing, mutable, or unauthenticated")
     if not variables.is_file() or variables.is_symlink() or not readonly(variables) or variables.stat().st_size != 64 * 1024 * 1024 or MANIFEST.file_hash(variables) != assets["source_vars"]["sha256"]:
         raise ValueError("lane vars clone is missing, mutable, malformed, or unauthenticated")
+    for key, candidate in (("source_vtpm_package", package), ("source_vtpm_code", code)):
+        if not candidate.is_file() or candidate.is_symlink() or not readonly(candidate) or MANIFEST.file_hash(candidate) != assets[key]["sha256"]: raise ValueError(f"lane {key} is missing, mutable, or unauthenticated")
     validate_tree(vtpm)
     if MANIFEST.tree_hash(vtpm, allow_symlinks=False) != assets["source_vtpm"]["sha256"]:
         raise ValueError("lane vTPM clone is unauthenticated")
@@ -62,7 +62,7 @@ def main() -> int:
         "lane": args.lane, "nonce": args.nonce, "vm_name": vm_name, "vm_slug": vm_slug,
         "three_d_injection": False,
         **{f"{key}_path": assets[key]["path"] for key in APP_ASSETS},
-        "source_disk_path": str(disk), "source_vars_path": str(variables), "source_vtpm_path": str(vtpm),
+        "source_disk_path": str(disk), "source_vars_path": str(variables), "source_vtpm_path": str(vtpm), "source_vtpm_package_path": str(package), "source_vtpm_code_path": str(code),
         "lane_root": raw_root, "library_root_path": str(library), "share_path": str(root / "share"),
         "disk_path": str(bundle / "disks/hvf-target.raw"), "vars_path": str(bundle / "metadata/hvf-vars.fd"),
         "vtpm_state_path": str(bundle / "metadata/vtpm"),

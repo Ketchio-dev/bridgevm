@@ -9,8 +9,8 @@ APP="$TMP/BridgeVM.app"; HELPER="$APP/Contents/Helpers/BridgeVMProductE2E.app/Co
 mkdir -p "$APP/Contents/MacOS" "$(dirname "$HELPER")" "$APP/Contents/Resources/target/release"
 printf app > "$APP/Contents/MacOS/BridgeVMControl"; printf helper > "$HELPER"
 printf runner > "$APP/Contents/Resources/target/release/hvf-runner"
-printf disk > "$TMP/windows.raw"; truncate -s 67108864 "$TMP/vars.fd"
-mkdir "$TMP/vtpm"; printf state > "$TMP/vtpm/tpm2-00.permall"; printf lock > "$TMP/vtpm/.lock"
+printf disk > "$TMP/windows.raw"; truncate -s 67108864 "$TMP/vars.fd"; mkdir "$TMP/vtpm"
+printf state > "$TMP/vtpm/tpm2-00.permall"; printf lock > "$TMP/vtpm/.lock"; printf package > "$TMP/vtpm-recovery.json"; printf code > "$TMP/vtpm-recovery-code.txt"
 INPUT="$TMP/input.tsv"
 python3 - "$ROOT" "$APP" "$TMP" "$INPUT" <<'PY'
 import importlib.util, pathlib, sys
@@ -21,7 +21,7 @@ assets = {
     "app_bundle": app, "app_executable": app / "Contents/MacOS/BridgeVMControl",
     "product_helper": app / "Contents/Helpers/BridgeVMProductE2E.app/Contents/MacOS/BridgeVMProductE2E",
     "runner": app / "Contents/Resources/target/release/hvf-runner", "source_disk": temp / "windows.raw",
-    "source_vars": temp / "vars.fd", "source_vtpm": temp / "vtpm",
+    "source_vars": temp / "vars.fd", "source_vtpm": temp / "vtpm", "source_vtpm_package": temp / "vtpm-recovery.json", "source_vtpm_code": temp / "vtpm-recovery-code.txt",
 }
 with output.open("x") as out:
     out.write("campaign_mode\tpilot\n")
@@ -35,7 +35,7 @@ QUEUE="$TMP/queue"; COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 [[ -f "$QUEUE/queued/t19-contract/input-manifest.tsv" && ! -e "$QUEUE/queued/t19-contract/hvf_gic_boot_probe" ]]
 LANE="/tmp/bridgevm-import-e2e-contract-$$"; rm -rf "$LANE"; mkdir -p "$LANE/inputs/vtpm"
 trap 'chmod -R u+w "$TMP" "$LANE" 2>/dev/null || true; rm -rf "$TMP" "$LANE"' EXIT
-cp "$TMP/windows.raw" "$LANE/inputs/windows.raw"; cp "$TMP/vars.fd" "$LANE/inputs/vars.fd"
+cp "$TMP/windows.raw" "$LANE/inputs/windows.raw"; cp "$TMP/vars.fd" "$LANE/inputs/vars.fd"; cp "$TMP/vtpm-recovery.json" "$LANE/inputs/vtpm-recovery.json"; cp "$TMP/vtpm-recovery-code.txt" "$LANE/inputs/vtpm-recovery-code.txt"
 cp -R "$TMP/vtpm/." "$LANE/inputs/vtpm/"; chmod -R a-w "$LANE/inputs"
 nonce="$(printf 'a%.0s' {1..64})"; request="$LANE/request.json"
 python3 "$REQUEST" --out "$request" --verified "$TMP/verified.json" --job-id import-contract \
@@ -46,7 +46,7 @@ value = json.load(open(sys.argv[1])); root = pathlib.Path(sys.argv[2]); prefix =
 assert value["schema_version"] == "bridgevm.windows-hvf-import-product-e2e-request.v1"
 assert value["three_d_injection"] is False and value["source_disk_path"] == str(root / "inputs/windows.raw")
 assert value["disk_path"] == str(root / "library" / f"bridgevm-a9-import-lane-1-{prefix}" / "bundle/disks/hvf-target.raw")
-assert len(value) == 23
+assert len(value) == 25
 PY
 rm "$request"; chmod u+w "$LANE/inputs/vars.fd"
 if python3 "$REQUEST" --out "$request" --verified "$TMP/verified.json" --job-id import-contract \

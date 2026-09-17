@@ -1,6 +1,5 @@
 import Foundation
 import Security
-
 /// Headless lifecycle surface carried by the packaged BridgeVMControl binary.
 /// The default no-argument path remains the SwiftUI app. Every command here is
 /// explicit, closed-set, and keeps the device-local vTPM state key off argv,
@@ -23,7 +22,6 @@ enum VTPMLifecycleCommand {
             }
         }
     }
-
     private struct Options {
         var values: [String: String] = [:]
         var flags: Set<String> = []
@@ -34,6 +32,7 @@ enum VTPMLifecycleCommand {
 
       export      --stable-vm-id ID --state-dir DIR --package FILE --recovery-code-file FILE
       restore     --stable-vm-id ID --state-dir DIR --package FILE --recovery-code-file FILE
+      forget-import --stable-vm-id ID --state-dir DIR --package FILE --recovery-code-file FILE
       clone-reset --new-stable-vm-id ID --state-dir DIR
       run         --stable-vm-id ID --state-dir DIR --target FILE --vars FILE --evidence-dir DIR
                   [--ram-mib N] [--smp-cpus N] [--max-exits N] [--firmware-code FILE] [--no-network]
@@ -53,6 +52,7 @@ enum VTPMLifecycleCommand {
                 print(usage)
                 return 0
             }
+            if command == "forget-import" { return VTPMImportCleanupCommand.run(arguments: Array(arguments.dropFirst())) }
             let options = try parse(Array(arguments.dropFirst()))
             switch command {
             case "export": try exportRecovery(options)

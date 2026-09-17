@@ -1,20 +1,20 @@
 # Installed-disk import tier checkpoint — 2026-09-16
 
-Source checkpoint: `b2a60b9f4d17c77352a003d8ac0edaecf0bdf6c6`.
+The original T19 checkpoint added a strict 3D-off packaged-app journey,
+immutable per-lane disk, vars and vTPM clones, authenticated receipts, and
+fail-closed synthetic normal and tamper cases.
 
-This checkpoint adds the strict 3D-off installed-disk import request, the
-packaged-app import runner, immutable lane-media authentication, the dedicated
-T19 physical-Mac queue and receipt contract, and fail-closed synthetic normal
-and tampered-lane tests.
+Review before the first live run found that copying encrypted swtpm state was
+insufficient: its device-local key remained bound to the source VM's Keychain
+identity. Such an import would register successfully and then fail closed at
+boot because a new VM ID could not open the copied state.
 
-The complete local project check executed every remaining gate successfully,
-including shim suites of 425 tests, 802 tests with two required live-only
-skips, and 62 tests. It then correctly failed only the capability-registry
-freshness check because `tested_commit` still named the earlier source
-checkpoint. This record binds that deterministic result to the source above;
-the metadata-only follow-up must pass the same complete project check.
+The corrected flow requires the source vTPM state, BridgeVM recovery package
+and private recovery-code file together. It authenticates the package against
+the copied state, refuses to overwrite an existing destination identity, and
+installs the recovered key under the imported VM ID. Failed publication rolls
+the new key back. T19 also proves that its temporary key matches the same
+package and state before removing it during cleanup.
 
-This is deterministic integration evidence only. No real Windows media was
-imported or booted, no guest behavior was observed, and exact-head hosted
-checks plus a physical T19 pilot remain required. The synthetic T19 smoke does
-not satisfy A9.
+This remains deterministic integration evidence. A9 stays OPEN until exact
+hosted checks and the required physical-Mac T17 and T19 campaigns pass.

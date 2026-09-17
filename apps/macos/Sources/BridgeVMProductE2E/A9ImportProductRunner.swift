@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-
 struct A9ImportRunOutcome {
     var evidence: A9ImportEvidence
     var failureCode: String
@@ -130,6 +129,7 @@ final class A9ImportProductRunner {
         try ui.choose(path: request.sourceDiskPath, from: "bridgevm.first-run.disk.choose", timeout: 20)
         try ui.choose(path: request.sourceVarsPath, from: "bridgevm.first-run.vars.choose", timeout: 20)
         try ui.choose(path: request.sourceVtpmPath, from: "bridgevm.first-run.vtpm.choose", timeout: 20)
+        try ui.choose(path: request.sourceVtpmPackagePath, from: "bridgevm.first-run.vtpm-package.choose", timeout: 20); try ui.choose(path: request.sourceVtpmCodePath, from: "bridgevm.first-run.vtpm-code.choose", timeout: 20)
         try ui.press("bridgevm.first-run.import.commit", timeout: 15)
         try ui.waitFor("bridgevm.windows.runtime.view", timeout: 1_200)
     }
@@ -174,7 +174,7 @@ final class A9ImportProductRunner {
         _ = wait(timeout: 10) { !application.isRunning }
         if application.isRunning { application.interrupt() }
         _ = wait(timeout: 5) { !application.isRunning }
-        return !application.isRunning
+        return !application.isRunning && A9ImportedKeyCleanup.run(request: request, fileManager: fileManager)
     }
 
     private func regularFile(_ url: URL) -> Bool {

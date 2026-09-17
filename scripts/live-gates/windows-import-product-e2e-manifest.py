@@ -5,7 +5,7 @@ import argparse, hashlib, json, os, re, stat, sys
 from pathlib import Path
 
 ASSETS = ("app_bundle", "app_executable", "product_helper", "runner",
-          "source_disk", "source_vars", "source_vtpm")
+          "source_disk", "source_vars", "source_vtpm", "source_vtpm_package", "source_vtpm_code")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 RELATIONS = {
     "app_executable": "Contents/MacOS/BridgeVMControl",
@@ -74,7 +74,7 @@ def verify(path: Path) -> dict:
         present = candidate.is_dir() if directory else candidate.is_file()
         if not present or candidate.is_symlink():
             code = {"source_disk": "missing-installed-disk", "source_vars": "missing-vars",
-                    "source_vtpm": "missing-vtpm"}.get(key, "missing-app-artifact")
+                    "source_vtpm": "missing-vtpm", "source_vtpm_package": "missing-vtpm", "source_vtpm_code": "missing-vtpm"}.get(key, "missing-app-artifact")
             return {"valid": True, "verified": False, "campaign_mode": mode,
                     "failure_code": code, "detail": key, "assets": public}
         if key == "source_vars" and candidate.stat().st_size != 64 * 1024 * 1024:

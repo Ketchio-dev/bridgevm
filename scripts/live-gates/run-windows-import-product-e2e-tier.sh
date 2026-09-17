@@ -46,15 +46,15 @@ APP="$(json_value "$VERIFIED" assets.app_bundle.path)"; HELPER="$(json_value "$V
 if ! codesign --verify --deep --strict "$APP" >/dev/null 2>&1 || ! "$REPO/scripts/verify-product-e2e-helper-app.sh" "$APP" >/dev/null 2>&1; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
 if ! SIGNING="$(bash "$REPO/scripts/live-gates/classify-product-e2e-signing.sh" "$APP")"; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
 WORK="$(mktemp -d "/tmp/bridgevm-import-e2e-$JOB_ID.XXXXXX")"; WORK_ID="$(stat -f '%d:%i' "$WORK")"; chmod 700 "$WORK"
-SOURCE_DISK="$(json_value "$VERIFIED" assets.source_disk.path)"; SOURCE_VARS="$(json_value "$VERIFIED" assets.source_vars.path)"; SOURCE_VTPM="$(json_value "$VERIFIED" assets.source_vtpm.path)"
+SOURCE_DISK="$(json_value "$VERIFIED" assets.source_disk.path)"; SOURCE_VARS="$(json_value "$VERIFIED" assets.source_vars.path)"; SOURCE_VTPM="$(json_value "$VERIFIED" assets.source_vtpm.path)"; SOURCE_VTPM_PACKAGE="$(json_value "$VERIFIED" assets.source_vtpm_package.path)"; SOURCE_VTPM_CODE="$(json_value "$VERIFIED" assets.source_vtpm_code.path)"
 work_device="$(stat -f '%d' "$WORK")"
-for source in "$SOURCE_DISK" "$SOURCE_VARS" "$SOURCE_VTPM"; do [[ "$(stat -f '%d' "$source")" == "$work_device" ]] || { emit preflight-blocked internal-error 0 true "$SIGNING" || exit 1; exit 1; }; done
+for source in "$SOURCE_DISK" "$SOURCE_VARS" "$SOURCE_VTPM" "$SOURCE_VTPM_PACKAGE" "$SOURCE_VTPM_CODE"; do [[ "$(stat -f '%d' "$source")" == "$work_device" ]] || { emit preflight-blocked internal-error 0 true "$SIGNING" || exit 1; exit 1; }; done
 EXPECTED=1; [[ "$MODE" != release ]] || EXPECTED=3; previous_inode=""
 for (( lane=1; lane<=EXPECTED; lane++ )); do
   [[ ! -f "$OUT/cancel.requested" ]] || { emit canceled canceled "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; }
   lane_root="$WORK/lane-$lane"; mkdir -m 700 -p "$lane_root/inputs/vtpm"; inode="$(stat -f '%i' "$lane_root")"
   [[ -z "$previous_inode" || "$inode" != "$previous_inode" ]] || { emit failed internal-error "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; }; previous_inode="$inode"
-  cp -c "$SOURCE_DISK" "$lane_root/inputs/windows.raw"; cp -c "$SOURCE_VARS" "$lane_root/inputs/vars.fd"; cp -cR "$SOURCE_VTPM/." "$lane_root/inputs/vtpm/"; chmod -R a-w "$lane_root/inputs"
+  cp -c "$SOURCE_DISK" "$lane_root/inputs/windows.raw"; cp -c "$SOURCE_VARS" "$lane_root/inputs/vars.fd"; cp -cR "$SOURCE_VTPM/." "$lane_root/inputs/vtpm/"; cp -c "$SOURCE_VTPM_PACKAGE" "$lane_root/inputs/vtpm-recovery.json"; cp -c "$SOURCE_VTPM_CODE" "$lane_root/inputs/vtpm-recovery-code.txt"; chmod -R a-w "$lane_root/inputs"
   nonce="$(openssl rand -hex 32)"; request="$lane_root/request.json"; result="$PRIVATE/lane-$lane-result.json"
   python3 "$REQUEST" --out "$request" --verified "$VERIFIED" --job-id "$JOB_ID" --commit "$COMMIT" --mode "$MODE" --lane "$lane" --nonce "$nonce" --lane-root "$lane_root"
   ATTEMPTS=$lane; set +e; "$REPO/scripts/live-gates/launch-import-product-e2e-helper.sh" "$HELPER" "$PRIVATE/lane-$lane-helper.log" "$request" "$result"; helper_status=$?; set -e

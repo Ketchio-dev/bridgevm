@@ -16,11 +16,11 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <plist version="1.0"><dict><key>CFBundleExecutable</key><string>BridgeVMControl</string><key>CFBundleIdentifier</key><string>dev.bridgevm.t19-fixture</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>
 PLIST
 codesign --force --sign - "$HELPER_APP" >/dev/null; codesign --force --sign - "$APP" >/dev/null
-printf installed > "$TMP/windows.raw"; truncate -s 67108864 "$TMP/vars.fd"; mkdir "$TMP/vtpm"; printf state > "$TMP/vtpm/tpm2-00.permall"; printf lock > "$TMP/vtpm/.lock"
+printf installed > "$TMP/windows.raw"; truncate -s 67108864 "$TMP/vars.fd"; mkdir "$TMP/vtpm"; printf state > "$TMP/vtpm/tpm2-00.permall"; printf lock > "$TMP/vtpm/.lock"; printf package > "$TMP/vtpm-recovery.json"; printf code > "$TMP/vtpm-recovery-code.txt"
 write_manifest() { python3 - "$ROOT" "$APP" "$TMP" "$1" "$2" <<'PY'
 import importlib.util,pathlib,sys
 root,app,temp,output,mode=map(pathlib.Path,sys.argv[1:]); spec=importlib.util.spec_from_file_location("m",root/"scripts/live-gates/windows-import-product-e2e-manifest.py"); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-assets={"app_bundle":app,"app_executable":app/"Contents/MacOS/BridgeVMControl","product_helper":app/"Contents/Helpers/BridgeVMProductE2E.app/Contents/MacOS/BridgeVMProductE2E","runner":app/"Contents/Resources/target/release/hvf-runner","source_disk":temp/"windows.raw","source_vars":temp/"vars.fd","source_vtpm":temp/"vtpm"}
+assets={"app_bundle":app,"app_executable":app/"Contents/MacOS/BridgeVMControl","product_helper":app/"Contents/Helpers/BridgeVMProductE2E.app/Contents/MacOS/BridgeVMProductE2E","runner":app/"Contents/Resources/target/release/hvf-runner","source_disk":temp/"windows.raw","source_vars":temp/"vars.fd","source_vtpm":temp/"vtpm","source_vtpm_package":temp/"vtpm-recovery.json","source_vtpm_code":temp/"vtpm-recovery-code.txt"}
 with output.open("x") as out:
  out.write(f"campaign_mode\t{mode}\n")
  for key,path in assets.items(): out.write(f"{key}\t{path}\t{m.tree_hash(path,allow_symlinks=key=='app_bundle') if path.is_dir() else m.file_hash(path)}\n")
