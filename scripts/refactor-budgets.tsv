@@ -2934,3 +2934,6 @@ apps/macos/Sources/BridgeVMProductE2E/T17GuestStage.swift	18	0
 scripts/live-gates/windows-import-product-e2e-manifest.py	108	0
 scripts/live-gates/make-windows-import-product-e2e-request.py	76	0
 tests/integration/windows-import-product-e2e-contract-smoke.sh	57	0
+scripts/verify-windows-import-product-e2e-receipt.py	120	0
+scripts/live-gates/launch-import-product-e2e-helper.sh	8	0
+tests/integration/windows-import-product-e2e-receipt.py	40	0

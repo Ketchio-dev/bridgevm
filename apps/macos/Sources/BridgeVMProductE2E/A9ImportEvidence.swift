@@ -73,7 +73,7 @@ struct A9ImportEvidence {
                 cleanupVerified: Bool, uiFrontendAutomated: Bool) -> A9ImportLaneResult {
         let complete = A9ImportStage.allCases.allSatisfy { stages[$0] == true }
         return A9ImportLaneResult(request: request, uiFrontendAutomated: uiFrontendAutomated,
-            failureCode: complete && cleanupVerified ? "none" : failureCode,
+            failureCode: complete && cleanupVerified ? "none" : (!cleanupVerified && failureCode == "none" ? "cleanup-failed" : failureCode),
             failureDetail: complete && cleanupVerified ? "" : failureDetail,
             cleanupVerified: cleanupVerified, stages: stages, hashes: hashes)
     }
