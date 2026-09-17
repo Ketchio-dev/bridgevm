@@ -6,10 +6,10 @@ TIER="$1"; DIR="$2"; WORKTREE="$3"; COMMIT="$4"; [[ "$TIER" != d5-guest-input ]]
 PRIVATE="$DIR/receipt.json"; PUBLIC="$DIR/receipt.public.json"
 [[ -f "$PRIVATE" && ! -L "$PRIVATE" && ! -e "$PUBLIC" ]] || exit 1
 [[ "$TIER" != t18-audio-teardown ]] || exec "$WORKTREE/scripts/live-gates/publish-audio-teardown-receipt.sh" "$DIR" "$WORKTREE" "$COMMIT"
-VERIFY="$WORKTREE/scripts/verify-windows-product-e2e-receipt.py"; [[ "$TIER" != t19-windows-hvf-import-product-e2e ]] || VERIFY="$WORKTREE/scripts/verify-windows-import-product-e2e-receipt.py"; if [[ "$TIER" == t17-windows-hvf-product-e2e || "$TIER" == t19-windows-hvf-import-product-e2e ]]; then python3 "$VERIFY" "$PRIVATE" --expected-commit "$COMMIT" >/dev/null; fi
+VERIFY="$WORKTREE/scripts/verify-windows-product-e2e-receipt.py"; [[ "$TIER" != t19-windows-hvf-import-product-e2e ]] || VERIFY="$WORKTREE/scripts/verify-windows-import-product-e2e-receipt.py"; if [[ "$TIER" == t17-windows-hvf-product-e2e || "$TIER" == t19-windows-hvf-import-product-e2e ]]; then python3 "$VERIFY" "$PRIVATE" --expected-commit "$COMMIT" >/dev/null; fi; [[ "$TIER" != t20-a19-native-snapshot-restore ]] || python3 "$WORKTREE/scripts/live-gates/native_snapshot_restore_receipt.py" verify "$PRIVATE" --expected-commit "$COMMIT"
 STAGE="$DIR/.receipt.public.$$.json"; trap 'rm -f "$STAGE"' EXIT
 python3 "$WORKTREE/scripts/live-gates/redact-receipt.py" --in "$PRIVATE" --out "$STAGE"
-if [[ "$TIER" == t17-windows-hvf-product-e2e || "$TIER" == t19-windows-hvf-import-product-e2e ]]; then python3 "$VERIFY" "$STAGE" --expected-commit "$COMMIT" >/dev/null; fi
+if [[ "$TIER" == t17-windows-hvf-product-e2e || "$TIER" == t19-windows-hvf-import-product-e2e ]]; then python3 "$VERIFY" "$STAGE" --expected-commit "$COMMIT" >/dev/null; fi; [[ "$TIER" != t20-a19-native-snapshot-restore ]] || python3 "$WORKTREE/scripts/live-gates/native_snapshot_restore_receipt.py" verify "$STAGE" --expected-commit "$COMMIT"
 python3 - "$STAGE" "$PUBLIC" <<'PY'
 import os, pathlib, sys
 source, destination = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])

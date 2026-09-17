@@ -57,7 +57,7 @@ step "HVF boot performance tier" tests/integration/hvf-boot-performance-tier-smo
 step "HVF NVMe performance tier" tests/integration/hvf-nvme-performance-tier-smoke.sh
 step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
-step "Windows product E2E contracts" tests/integration/windows-product-e2e-contract-smoke.sh
+step "Windows product and A19 live-tier contracts" bash -c 'tests/integration/windows-product-e2e-contract-smoke.sh && python3 tests/integration/native-snapshot-restore-live-tier-contract.py'
 step "BridgeVM PC firmware boundary" scripts/check-bridgevm-pc-firmware-boundary.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 step "packaged HVF entitlements" scripts/verify-app-hvf-entitlements.sh --self-test
