@@ -412,7 +412,8 @@ crates/bridgevm-hvf/src/probes/mmio/write_emulation.rs	276	0
 crates/bridgevm-hvf/src/probes/mod.rs	1	0
 crates/bridgevm-hvf/src/probes/virtio_block.rs	567	0
 crates/bridgevm-hvf/src/ramfb.rs	127	0
-crates/bridgevm-hvf/src/ramfb/snapshot.rs	221	0
+crates/bridgevm-hvf/src/ramfb/exact_color_set.rs	28	0
+crates/bridgevm-hvf/src/ramfb/snapshot.rs	220	0
 crates/bridgevm-hvf/src/ramfb/snapshot_tests.rs	270	0
 crates/bridgevm-hvf/src/psci.rs	119	0
 crates/bridgevm-hvf/src/psci_tests.rs	173	0

@@ -1,7 +1,6 @@
-use std::collections::BTreeSet;
-
 use crate::fwcfg::GuestMemoryMut;
 
+use super::exact_color_set::ExactColorSet;
 use super::RamfbConfig;
 
 const XRGB8888_BYTES_PER_PIXEL: u64 = 4;
@@ -193,7 +192,7 @@ fn summarize_xrgb8888(
         checksum64 = checksum64.wrapping_mul(FNV64_PRIME);
     }
 
-    let mut unique_colors = BTreeSet::new();
+    let mut unique_colors = ExactColorSet::new();
     let mut nonzero_pixels = 0u64;
     let mut first_nonzero_pixel = None;
     for row in 0..geometry.height {
@@ -207,7 +206,7 @@ fn summarize_xrgb8888(
                 nonzero_pixels += 1;
                 first_nonzero_pixel.get_or_insert(pixel_index);
             }
-            unique_colors.insert((pixel[2], pixel[1], pixel[0]));
+            unique_colors.insert_bgr(pixel);
         }
     }
     let pixel_count = u64::from(config.width) * u64::from(config.height);

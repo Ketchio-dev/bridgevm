@@ -74,11 +74,11 @@ fn borrowed_summary_matches_owned_snapshot_without_requiring_snapshot_bytes() {
         addr: 0x4008_0000,
         fourcc: DRM_FORMAT_XRGB8888,
         flags: 0,
-        width: 2,
+        width: 3,
         height: 1,
-        stride: 8,
+        stride: 12,
     };
-    let bytes = [0x03, 0x02, 0x01, 0x00, 0x06, 0x05, 0x04, 0x00];
+    let bytes = [3, 2, 1, 0, 6, 5, 4, 0, 3, 2, 1, 0];
 
     let borrowed = RamfbSnapshot::summarize_xrgb8888_bytes(config, &bytes).unwrap();
     let owned = RamfbSnapshot::from_xrgb8888_bytes(config, bytes.to_vec())
@@ -86,7 +86,7 @@ fn borrowed_summary_matches_owned_snapshot_without_requiring_snapshot_bytes() {
         .summary;
 
     assert_eq!(borrowed, owned);
-    assert_eq!(borrowed.nonzero_pixels, 2);
+    assert_eq!(borrowed.nonzero_pixels, 3);
     assert_eq!(borrowed.unique_colors, 2);
 }
 
