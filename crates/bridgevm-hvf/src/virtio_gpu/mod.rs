@@ -4,6 +4,7 @@
 mod tests;
 
 mod async_present;
+mod backing_copy;
 mod bytes;
 mod command;
 mod compositor;
