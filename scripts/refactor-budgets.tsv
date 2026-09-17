@@ -488,7 +488,9 @@ crates/bridgevm-hvf/src/virtio_gpu/device.rs	247	0
 crates/bridgevm-hvf/src/virtio_gpu/device_stats.rs	82	0
 crates/bridgevm-hvf/src/virtio_gpu/display.rs	71	0
 crates/bridgevm-hvf/src/virtio_gpu/display/edid.rs	172	0
-crates/bridgevm-hvf/src/virtio_gpu/fb_sink.rs	164	7
+crates/bridgevm-hvf/src/virtio_gpu/fb_sink.rs	54	2
+crates/bridgevm-hvf/src/virtio_gpu/fb_sink_write.rs	201	10
+crates/bridgevm-hvf/src/virtio_gpu/fb_sink_write_tests.rs	83	4
 crates/bridgevm-hvf/src/virtio_gpu/fence.rs	80	0
 crates/bridgevm-hvf/src/virtio_gpu/interrupt.rs	164	0
 crates/bridgevm-hvf/src/virtio_gpu/mod.rs	18	0
@@ -497,7 +499,8 @@ crates/bridgevm-hvf/src/virtio_gpu/protocol.rs	226	0
 crates/bridgevm-hvf/src/virtio_gpu/queue_pending.rs	3	0
 crates/bridgevm-hvf/src/virtio_gpu/registers.rs	213	0
 crates/bridgevm-hvf/src/virtio_gpu/resource.rs	239	0
-crates/bridgevm-hvf/src/virtio_gpu/scanout.rs	411	2
+crates/bridgevm-hvf/src/virtio_gpu/scanout.rs	388	2
+crates/bridgevm-hvf/src/virtio_gpu/scanout_publish.rs	37	0
 crates/bridgevm-hvf/src/virtio_gpu/scanout/resize.rs	23	0
 crates/bridgevm-hvf/src/virtio_gpu/scanout_3d.rs	264	0
 crates/bridgevm-hvf/src/virtio_gpu/scanout_async.rs	138	0
