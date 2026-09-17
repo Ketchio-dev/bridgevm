@@ -1,5 +1,6 @@
 //! Scanout binding and flush: SET_SCANOUT, blob scanout, RESOURCE_FLUSH, framebuffer publish.
 
+use super::compositor_2d::composite_resource_to_scanout;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 use crate::ramfb::DRM_FORMAT_XRGB8888;

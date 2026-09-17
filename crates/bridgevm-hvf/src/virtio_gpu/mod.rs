@@ -8,6 +8,7 @@ mod backing_copy;
 mod bytes;
 mod command;
 mod compositor;
+mod compositor_2d;
 mod config_space;
 mod descriptor_chain_trace;
 mod device;
