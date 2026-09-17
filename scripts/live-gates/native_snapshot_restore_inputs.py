@@ -5,54 +5,15 @@ import hashlib
 import argparse
 import os
 import re
-import stat
 import subprocess
 from pathlib import Path
 
+from native_snapshot_restore_artifacts import (
+    RELATIONS, SHA256, authenticate_app, clone_app, digest, regular, tree_hash,
+)
+
 FILES = {"app_bundle", "app_cli", "app_executable", "snapshot_helper", "image", "vars", "binary"}
 METADATA = {"source_commit", "app_profile", "binary_profile", "binary_features", "rust_toolchain"}
-RELATIONS = {
-    "app_cli": "Contents/Resources/target/release/bridgevm",
-    "app_executable": "Contents/MacOS/BridgeVMControl",
-    "snapshot_helper": "Contents/Resources/target/release/examples/snapshot_pair_cli",
-}
-SHA256 = re.compile(r"^[0-9a-f]{64}$")
-
-
-def regular(path: Path) -> None:
-    if not stat.S_ISREG(path.lstat().st_mode):
-        raise ValueError("artifact must be a non-symlink regular file")
-
-
-def digest(path: Path) -> str:
-    regular(path)
-    output = subprocess.check_output(["openssl", "dgst", "-sha256", "-r", str(path)], text=True)
-    value = output.split()[0]
-    if not SHA256.fullmatch(value):
-        raise ValueError("invalid artifact hash")
-    return value
-
-
-def tree_hash(root: Path) -> str:
-    if not root.is_dir() or root.is_symlink():
-        raise ValueError("app bundle must be a non-symlink directory")
-    records: list[bytes] = []
-    for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
-        relative = path.relative_to(root).as_posix()
-        mode = path.lstat().st_mode
-        if stat.S_ISLNK(mode):
-            target = os.readlink(path)
-            if os.path.isabs(target) or root.resolve() not in path.resolve().parents:
-                raise ValueError("app bundle symlink escapes its root")
-            records.append(f"L\t{relative}\t{target}\n".encode())
-        elif stat.S_ISREG(mode):
-            executable = "1" if mode & 0o111 else "0"
-            records.append(f"F\t{relative}\t{executable}\t{digest(path)}\n".encode())
-        elif stat.S_ISDIR(mode):
-            records.append(f"D\t{relative}\n".encode())
-        else:
-            raise ValueError("app bundle contains an unsupported entry")
-    return hashlib.sha256(b"".join(records)).hexdigest()
 
 
 def parse_manifest(data: bytes, commit: str) -> dict[str, list[str]]:
@@ -96,21 +57,30 @@ def clone(source: Path, destination: Path) -> None:
 
 def authenticate(rows: dict[str, list[str]], sealed_binary: Path) -> None:
     app = Path(rows["app_bundle"][0])
-    if tree_hash(app) != rows["app_bundle"][1]:
-        raise ValueError("app bundle hash mismatch")
-    for key in FILES - {"app_bundle", "binary"}:
+    authenticate_app(rows, app)
+    for key in FILES - {"app_bundle", "app_cli", "app_executable", "snapshot_helper", "binary"}:
         if digest(Path(rows[key][0])) != rows[key][1]:
             raise ValueError(f"{key} hash mismatch")
     if digest(sealed_binary) != rows["binary"][1]:
         raise ValueError("sealed binary hash mismatch")
 
 
-def prepare(manifest: Path, sealed_binary: Path, commit: str, directory: Path, clone_file=clone) -> tuple[dict, dict]:
+def prepare(
+    manifest: Path,
+    sealed_binary: Path,
+    commit: str,
+    directory: Path,
+    clone_file=clone,
+    clone_tree=clone_app,
+) -> tuple[dict, dict]:
     regular(manifest)
     data = manifest.read_bytes()
     rows = parse_manifest(data, commit)
     authenticate(rows, sealed_binary)
     directory.mkdir(mode=0o700)
+    sealed_app = directory / "BridgeVM.app"
+    clone_tree(Path(rows["app_bundle"][0]), sealed_app)
+    authenticate_app(rows, sealed_app)
     for key, filename in (("image", "disk.raw"), ("vars", "vars.fd")):
         destination = directory / filename
         clone_file(Path(rows[key][0]), destination)
@@ -131,8 +101,18 @@ def prepare(manifest: Path, sealed_binary: Path, commit: str, directory: Path, c
         "binary_features": "venus",
         "rust_toolchain": "1.97.0",
     }
-    private = {"rows": rows, "app_cli": rows["app_cli"][0]}
+    private = {
+        "source_rows": rows,
+        "sealed_app": str(sealed_app),
+        "app_cli": str(sealed_app / RELATIONS["app_cli"]),
+        "binary": str(sealed_app / RELATIONS["binary"]),
+    }
     return public, private
+
+
+def reauthenticate(private: dict, sealed_binary: Path) -> None:
+    authenticate(private["source_rows"], sealed_binary)
+    authenticate_app(private["source_rows"], Path(private["sealed_app"]))
 
 
 def main() -> int:
