@@ -2983,3 +2983,4 @@ scripts/live-gates/native_snapshot_restore_receipt.py	109	0
 scripts/live-gates/run-native-snapshot-restore-tier.py	108	0
 scripts/verify-native-snapshot-restore-boots.sh	184	0
 tests/integration/native-snapshot-restore-live-tier-contract.py	134	0
+docs/history/windows-hvf/native-snapshot-restore-live-tier-20260917.md	52	0
