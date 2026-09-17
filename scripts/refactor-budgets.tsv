@@ -2462,6 +2462,7 @@ apps/macos/scripts/LaunchAppUIHost.swift	216	0
 apps/macos/scripts/build-app-ui-launcher.sh	24	0
 scripts/check-app-ui-host-build-boundary.sh	53	0
 scripts/live-gates/app-ui-manifest-dispatch.sh	15	0
+scripts/live-gates/windows-product-e2e-launchservices-preflight.py	190	0
 scripts/live-gates/app_ui_host_diagnostic.py	151	0
 scripts/live-gates/app_ui_host_manifest.py	95	0
 tests/integration/app-ui-host-tier-smoke.py	254	0
