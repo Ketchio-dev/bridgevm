@@ -1,13 +1,11 @@
 import SwiftUI
-/// First launch offers existing creation/import flows; accepted imports keep
-/// their progress and recovery controls visible across navigation.
+/// First launch offers creation/import and keeps accepted import recovery controls visible.
 struct FirstRunView: View {
     @ObservedObject var library: LibraryModel
 
     @State private var displayName = "Windows 11"
-    @State private var diskPath = ""
-    @State private var varsPath = ""
-    @State private var vtpmPath = ""
+    @State private var diskPath = ""; @State private var varsPath = ""; @State private var vtpmPath = ""
+    @State private var vtpmPackagePath = ""; @State private var vtpmCodePath = ""
     @State private var memGiB = 6
     @State private var cpuCount = 4
 
@@ -27,7 +25,8 @@ struct FirstRunView: View {
                     }
                     if !library.firstRunImportBusy && library.firstRunImport.publishedConfig == nil {
                         FirstRunImportFields(displayName: $displayName, diskPath: $diskPath, varsPath: $varsPath,
-                            vtpmPath: $vtpmPath, memGiB: $memGiB, cpuCount: $cpuCount)
+                            vtpmPath: $vtpmPath, vtpmPackagePath: $vtpmPackagePath, vtpmCodePath: $vtpmCodePath,
+                            memGiB: $memGiB, cpuCount: $cpuCount)
                     }
                     FirstRunImportStatusView(library: library,
                         canImport: FirstRunImportNameField.hasName(displayName) && !diskPath.isEmpty && !varsPath.isEmpty, importAction: runImport)
@@ -49,10 +48,10 @@ struct FirstRunView: View {
     private func runImport() {
         guard !library.firstRunImportBusy else { return }
         let inputs = FirstRunImport.Inputs(
-            displayName: displayName,
-            diskPath: diskPath,
-            varsPath: varsPath,
+            displayName: displayName, diskPath: diskPath, varsPath: varsPath,
             vtpmStateDir: vtpmPath.isEmpty ? nil : vtpmPath,
+            vtpmRecoveryPackagePath: vtpmPackagePath.isEmpty ? nil : vtpmPackagePath,
+            vtpmRecoveryCodePath: vtpmCodePath.isEmpty ? nil : vtpmCodePath,
             memMiB: memGiB * 1024,
             cpuCount: cpuCount)
         Task { await library.importExistingHvfVM(inputs) }

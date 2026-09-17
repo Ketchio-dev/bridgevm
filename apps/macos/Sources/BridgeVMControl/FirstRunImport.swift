@@ -12,7 +12,8 @@ enum FirstRunImport {
         var displayName: String
         var diskPath: String
         var varsPath: String
-        var vtpmStateDir: String?
+        var vtpmStateDir: String?; var vtpmRecoveryPackagePath: String? = nil
+        var vtpmRecoveryCodePath: String? = nil
         var memMiB: Int
         var cpuCount: Int
     }
@@ -24,7 +25,7 @@ enum FirstRunImport {
         case diskEmpty(String)
         case varsMissing(String)
         case varsWrongSize(path: String, bytes: UInt64)
-        case vtpmNotADirectory(String)
+        case vtpmNotADirectory(String); case vtpmRecoveryMissing(String); case vtpmRecoveryWithoutState
         case badResources(memMiB: Int, cpuCount: Int)
 
         var description: String {
@@ -37,6 +38,8 @@ enum FirstRunImport {
             case .varsWrongSize(let p, let b):
                 return "UEFI vars 파일은 정확히 64 MiB여야 합니다 (\(p): \(b) bytes)."
             case .vtpmNotADirectory(let p): return "vTPM 상태 경로가 디렉터리가 아닙니다: \(p)"
+            case .vtpmRecoveryMissing(let p): return "vTPM 복구 파일을 찾을 수 없습니다: \(p)"
+            case .vtpmRecoveryWithoutState: return "vTPM 복구 파일을 사용하려면 상태 폴더도 선택하세요."
             case .badResources(let mem, let cpu):
                 return "RAM은 2048 MiB 이상, CPU는 1~64개여야 합니다 (RAM \(mem) MiB, CPU \(cpu))."
             }
@@ -79,14 +82,7 @@ enum FirstRunImport {
             return .varsWrongSize(path: inputs.varsPath, bytes: varsBytes)
         }
 
-        if let vtpm = inputs.vtpmStateDir, !vtpm.isEmpty {
-            var vtpmIsDir: ObjCBool = false
-            guard fileManager.fileExists(atPath: vtpm, isDirectory: &vtpmIsDir),
-                vtpmIsDir.boolValue
-            else {
-                return .vtpmNotADirectory(vtpm)
-            }
-        }
+        if let error = FirstRunImportVTPMValidation.validate(inputs, fileManager: fileManager) { return error }
         return nil
     }
 

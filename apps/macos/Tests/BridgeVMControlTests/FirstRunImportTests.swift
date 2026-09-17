@@ -112,16 +112,12 @@ final class FirstRunImportTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let disk = root.appendingPathComponent("win.raw")
         let vars = root.appendingPathComponent("vars.fd")
-        let vtpm = root.appendingPathComponent("vtpm")
         try makeDisk(disk, bytes: 8192)
         try makeVars(vars)
-        try FileManager.default.createDirectory(at: vtpm, withIntermediateDirectories: true)
-        try Data([9]).write(to: vtpm.appendingPathComponent("tpm2-00.permall"))
-        try Data().write(to: vtpm.appendingPathComponent(".lock"))
         let library = root.appendingPathComponent("library")
         let inputs = FirstRunImport.Inputs(
             displayName: "My Windows", diskPath: disk.path, varsPath: vars.path,
-            vtpmStateDir: vtpm.path, memMiB: 8192, cpuCount: 6)
+            vtpmStateDir: nil, memMiB: 8192, cpuCount: 6)
 
         let config = try FirstRunImport.register(
             inputs, slug: "my-windows", libraryRoot: library, snapshotHelper: HvfMediaImportTestSupport.helper)
@@ -133,13 +129,7 @@ final class FirstRunImportTests: XCTestCase {
             bundleURL: URL(fileURLWithPath: config.bundlePath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: layout.diskURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: layout.varsURL.path))
-        XCTAssertTrue(
-            FileManager.default.fileExists(
-                atPath: layout.vtpmURL.appendingPathComponent("tpm2-00.permall").path))
-        // The .lock is never copied into the imported bundle.
-        XCTAssertFalse(
-            FileManager.default.fileExists(
-                atPath: layout.vtpmURL.appendingPathComponent(".lock").path))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: layout.vtpmURL.path), [])
         XCTAssertEqual(config.diskPath, layout.diskURL.path)
     }
 }

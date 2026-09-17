@@ -2944,3 +2944,14 @@ tests/fixtures/fake-windows-import-product-e2e-helper.py	34	0
 tests/integration/windows-import-product-e2e-live-tier-smoke.sh	39	0
 schemas/windows-hvf-import-product-e2e-receipt-v1.json	70	0
 docs/history/windows-hvf/installed-disk-import-tier-20260916.md	20	0
+apps/macos/Sources/BridgeVMControl/FirstRunImportVTPMRecovery.swift	52	0
+apps/macos/Sources/BridgeVMControl/FirstRunImportVTPMValidation.swift	27	0
+apps/macos/Sources/BridgeVMControl/FirstRunVTPMImportFields.swift	19	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMImportedRecovery.swift	28	0
+apps/macos/Tests/BridgeVMControlTests/VTPMImportedRecoveryTests.swift	57	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMRecoveryPackageOpening.swift	30	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMImportedRecoveryCleanup.swift	22	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMImportCleanupCommand.swift	57	0
+apps/macos/Sources/BridgeVMProductE2E/A9ImportedKeyCleanup.swift	29	0
+apps/macos/Tests/BridgeVMControlTests/VTPMImportedRecoveryCleanupTests.swift	36	0
+apps/macos/Tests/BridgeVMProductE2ETests/A9ImportedKeyCleanupTests.swift	44	0

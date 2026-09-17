@@ -1,5 +1,4 @@
 import Foundation
-
 struct A9ImportRequest: Decodable, Equatable, T17JourneyRequest {
     let schemaVersion: String
     let jobID: String
@@ -15,7 +14,7 @@ struct A9ImportRequest: Decodable, Equatable, T17JourneyRequest {
     let runnerPath: String
     let sourceDiskPath: String
     let sourceVarsPath: String
-    let sourceVtpmPath: String
+    let sourceVtpmPath: String; let sourceVtpmPackagePath: String; let sourceVtpmCodePath: String
     let laneRoot: String
     let libraryRootPath: String
     let sharePath: String
@@ -32,11 +31,11 @@ struct A9ImportRequest: Decodable, Equatable, T17JourneyRequest {
         case appBundlePath = "app_bundle_path", appExecutablePath = "app_executable_path"
         case runnerPath = "runner_path", sourceDiskPath = "source_disk_path"
         case sourceVarsPath = "source_vars_path", sourceVtpmPath = "source_vtpm_path"
+        case sourceVtpmPackagePath = "source_vtpm_package_path", sourceVtpmCodePath = "source_vtpm_code_path"
         case laneRoot = "lane_root", libraryRootPath = "library_root_path", sharePath = "share_path"
         case diskPath = "disk_path", varsPath = "vars_path", vtpmStatePath = "vtpm_state_path"
         case snapshotPath = "snapshot_path", guestEvidencePath = "guest_evidence_path"
     }
-
     static func load(_ url: URL) throws -> Self {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
         guard values.isRegularFile == true, values.isSymbolicLink != true,
@@ -49,7 +48,6 @@ struct A9ImportRequest: Decodable, Equatable, T17JourneyRequest {
         try request.validate()
         return request
     }
-
     func validate(fileManager: FileManager = .default) throws {
         guard schemaVersion == "bridgevm.windows-hvf-import-product-e2e-request.v1",
               Self.matches(jobID, #"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"#),
@@ -75,6 +73,7 @@ struct A9ImportRequest: Decodable, Equatable, T17JourneyRequest {
             (sourceDiskPath, inputs.appendingPathComponent("windows.raw")),
             (sourceVarsPath, inputs.appendingPathComponent("vars.fd")),
             (sourceVtpmPath, inputs.appendingPathComponent("vtpm", isDirectory: true)),
+            (sourceVtpmPackagePath, inputs.appendingPathComponent("vtpm-recovery.json")), (sourceVtpmCodePath, inputs.appendingPathComponent("vtpm-recovery-code.txt")),
             (libraryRootPath, library), (sharePath, root.appendingPathComponent("share", isDirectory: true)),
             (diskPath, bundle.appendingPathComponent("disks/hvf-target.raw")),
             (varsPath, bundle.appendingPathComponent("metadata/hvf-vars.fd")),
@@ -90,6 +89,7 @@ struct A9ImportRequest: Decodable, Equatable, T17JourneyRequest {
         try Self.requireDirectory(inputs, fileManager: fileManager)
         try Self.requireDirectory(URL(fileURLWithPath: appBundlePath), fileManager: fileManager)
         try Self.requireReadOnlyTree(URL(fileURLWithPath: sourceVtpmPath), fileManager: fileManager)
+        try Self.requireFile(URL(fileURLWithPath: sourceVtpmPackagePath), readOnly: true, fileManager: fileManager); try Self.requireFile(URL(fileURLWithPath: sourceVtpmCodePath), readOnly: true, fileManager: fileManager)
         try Self.requireFile(URL(fileURLWithPath: appExecutablePath), fileManager: fileManager)
         try Self.requireFile(URL(fileURLWithPath: runnerPath), fileManager: fileManager)
         try Self.requireFile(URL(fileURLWithPath: sourceDiskPath), readOnly: true, fileManager: fileManager)

@@ -38,7 +38,7 @@ struct VTPMResetResult {
     let receiptPath: String
 }
 
-private struct VTPMRecoveryPackage: Codable {
+struct VTPMRecoveryPackage: Codable {
     let format: String
     let stableVMID: String
     let createdAt: String
@@ -393,7 +393,7 @@ struct VTPMIdentityLifecycle {
             guard values.isSymbolicLink != true else {
                 throw VTPMIdentityLifecycleError.unsafeStateEntry(url.path)
             }
-            if values.isRegularFile == true { files.append(url) }
+            if values.isRegularFile == true { if url.lastPathComponent != ".lock" { files.append(url) } }
             else if values.isDirectory != true {
                 throw VTPMIdentityLifecycleError.unsafeStateEntry(url.path)
             }
@@ -416,7 +416,7 @@ struct VTPMIdentityLifecycle {
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func associatedData(
+    static func associatedData(
         stableVMID: String,
         createdAt: String,
         stateFingerprint: String
@@ -437,7 +437,7 @@ struct VTPMIdentityLifecycle {
             .replacingOccurrences(of: "=", with: "")
     }
 
-    private static func decodeRecoveryCode(_ code: String) throws -> Data {
+    static func decodeRecoveryCode(_ code: String) throws -> Data {
         var normalized = code.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")

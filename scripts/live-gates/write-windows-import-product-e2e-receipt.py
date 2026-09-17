@@ -19,7 +19,7 @@ LANE_KEYS = frozenset({"schema_version", "job_id", "commit", "campaign_mode", "l
     "three_d_injection", "ui_frontend_automated", "failure_code", "failure_detail", "cleanup_verified",
     *LANE_STAGES, *LANE_HASHES})
 REQUEST_PATHS = ("app_bundle_path", "app_executable_path", "runner_path", "source_disk_path",
-    "source_vars_path", "source_vtpm_path", "lane_root", "library_root_path", "share_path", "disk_path",
+    "source_vars_path", "source_vtpm_path", "source_vtpm_package_path", "source_vtpm_code_path", "lane_root", "library_root_path", "share_path", "disk_path",
     "vars_path", "vtpm_state_path", "snapshot_path", "guest_evidence_path")
 REQUEST_KEYS = frozenset({"schema_version", "job_id", "commit", "campaign_mode", "lane", "nonce",
     "vm_name", "vm_slug", "three_d_injection", *REQUEST_PATHS})

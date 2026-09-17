@@ -5,14 +5,16 @@ import Foundation
 final class FirstRunImportPreparation {
     let config: VMConfig
     private let destination: FirstRunImportDestination
+    private let importedVTPMKey: ImportedVTPMKeyCustody?
     private var preserved = false
 
-    init(config: VMConfig, destination: FirstRunImportDestination) {
+    init(config: VMConfig, destination: FirstRunImportDestination, importedVTPMKey: ImportedVTPMKeyCustody?) {
         self.config = config
         self.destination = destination
+        self.importedVTPMKey = importedVTPMKey
     }
 
-    func preserve() { preserved = true }
+    func preserve() { preserved = true; importedVTPMKey?.preserve() }
     deinit { if !preserved { destination.removeIfOwned() } }
 }
 
@@ -35,14 +37,8 @@ extension FirstRunImport {
 
         try HvfMediaImport.copy(disk: inputs.diskPath, vars: inputs.varsPath,
             toDisk: layout.diskURL, toVars: layout.varsURL, helper: snapshotHelper, fileManager: fileManager)
-        if let vtpm = inputs.vtpmStateDir, !vtpm.isEmpty {
-            let contents = (try? fileManager.contentsOfDirectory(atPath: vtpm)) ?? []
-            for entry in contents where entry != ".lock" {
-                let src = (vtpm as NSString).appendingPathComponent(entry)
-                let dst = layout.vtpmURL.appendingPathComponent(entry)
-                try fileManager.copyItem(atPath: src, toPath: dst.path)
-            }
-        }
+        let keyCustody = try FirstRunImportVTPMRecovery.materialize(inputs, destinationStableVMID: slug,
+            destination: layout.vtpmURL, fileManager: fileManager)
 
         var config = VMConfig(
             id: slug,
@@ -64,6 +60,6 @@ extension FirstRunImport {
         config.memMiB = inputs.memMiB
         config.cpuCount = inputs.cpuCount
         completed = true
-        return FirstRunImportPreparation(config: config, destination: destination)
+        return FirstRunImportPreparation(config: config, destination: destination, importedVTPMKey: keyCustody)
     }
 }

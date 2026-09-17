@@ -1,13 +1,11 @@
 import Foundation
 import XCTest
 @testable import BridgeVMProductE2E
-
 final class A9ImportRequestTests: XCTestCase {
     private final class Fixture {
         let root: URL
         let requestURL: URL
         var body: [String: Any]
-
         init() throws {
             let fm = FileManager.default
             root = URL(fileURLWithPath: "/tmp/bridgevm-import-e2e-test-\(UUID().uuidString)")
@@ -23,12 +21,15 @@ final class A9ImportRequestTests: XCTestCase {
             try Data([2]).write(to: runner)
             let disk = inputs.appendingPathComponent("windows.raw")
             let vars = inputs.appendingPathComponent("vars.fd")
+            let package = inputs.appendingPathComponent("vtpm-recovery.json"), code = inputs.appendingPathComponent("vtpm-recovery-code.txt")
             try Data([3]).write(to: disk)
+            try Data("package".utf8).write(to: package); try Data("code".utf8).write(to: code)
             fm.createFile(atPath: vars.path, contents: nil)
             let handle = try FileHandle(forWritingTo: vars)
             try handle.truncate(atOffset: 64 * 1024 * 1024); try handle.close()
             try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: disk.path)
             try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: vars.path)
+            try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: package.path); try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: code.path)
             try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: vtpm.path)
             let nonce = String(repeating: "a", count: 64)
             let slug = "bridgevm-a9-import-lane-1-\(nonce.prefix(12))"
@@ -42,7 +43,8 @@ final class A9ImportRequestTests: XCTestCase {
                 "three_d_injection": false, "app_bundle_path": app.path,
                 "app_executable_path": executable.path, "runner_path": runner.path,
                 "source_disk_path": disk.path, "source_vars_path": vars.path,
-                "source_vtpm_path": vtpm.path, "lane_root": root.path,
+                "source_vtpm_path": vtpm.path, "source_vtpm_package_path": package.path,
+                "source_vtpm_code_path": code.path, "lane_root": root.path,
                 "library_root_path": library.path, "share_path": root.appendingPathComponent("share").path,
                 "disk_path": bundle.appendingPathComponent("disks/hvf-target.raw").path,
                 "vars_path": bundle.appendingPathComponent("metadata/hvf-vars.fd").path,
@@ -53,9 +55,7 @@ final class A9ImportRequestTests: XCTestCase {
             requestURL = root.appendingPathComponent("request.json")
             try write()
         }
-
         deinit { try? FileManager.default.removeItem(at: root) }
-
         func write() throws {
             let data = try JSONSerialization.data(withJSONObject: body, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: requestURL, options: .atomic)
