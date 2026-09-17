@@ -14,7 +14,7 @@
 # The marker lives on C: rather than in the shared folder on purpose: the share
 # is host-side storage and is not part of the snapshot, so a marker there would
 # survive a restore that did nothing.
-set -uo pipefail
+set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO" || exit 1
@@ -140,7 +140,7 @@ import json, pathlib, sys
 value=json.load(open(sys.argv[1], encoding="utf-8"))
 assert value == {"schema":"bridgevm.app-snapshot.v1","command":"create","vmID":sys.argv[3],
                  "libraryPath":str(pathlib.Path(sys.argv[2]).parents[4]),
-                 "snapshotPath":sys.argv[2],"complete":True,"unavailableReason":None}
+                 "snapshotPath":sys.argv[2],"complete":True}
 PY
 
 echo "=== phase 3: overwrite it, so a no-op restore cannot pass ==="
@@ -160,7 +160,7 @@ import json, pathlib, sys
 value=json.load(open(sys.argv[1], encoding="utf-8"))
 assert value == {"schema":"bridgevm.app-snapshot.v1","command":"restore","vmID":sys.argv[3],
                  "libraryPath":str(pathlib.Path(sys.argv[2]).parents[4]),
-                 "snapshotPath":sys.argv[2],"complete":True,"unavailableReason":None}
+                 "snapshotPath":sys.argv[2],"complete":True}
 PY
 
 echo "=== phase 5: boot the restored pair and read the marker ==="
