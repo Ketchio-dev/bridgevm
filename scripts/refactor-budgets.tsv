@@ -1801,6 +1801,7 @@ scripts/live-gates/windows_product_e2e_artifacts.py	105	0
 scripts/live-gates/windows_product_e2e_guest_evidence.py	120	0
 scripts/live-gates/write-windows-product-e2e-receipt.py	229	0
 scripts/live-gates/run-windows-product-e2e-tier.sh	121	0
+scripts/live-gates/retain-windows-import-source.py	201	0
 scripts/live-gates/classify-product-e2e-signing.sh	16	0
 tests/integration/windows-product-e2e-signing-class.py	57	0
 scripts/live-gates/publish-receipt.sh	17	0
@@ -2955,6 +2956,7 @@ tests/fixtures/fake-windows-import-product-e2e-helper.py	34	0
 tests/integration/windows-import-product-e2e-live-tier-smoke.sh	39	0
 schemas/windows-hvf-import-product-e2e-receipt-v1.json	70	0
 docs/history/windows-hvf/installed-disk-import-tier-20260916.md	20	0
+docs/history/windows-hvf/t17-t19-private-source-handoff-20260917.md	40	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportVTPMRecovery.swift	52	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportVTPMValidation.swift	27	0
 apps/macos/Sources/BridgeVMControl/FirstRunVTPMImportFields.swift	19	0

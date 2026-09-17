@@ -13,7 +13,7 @@ pathlib.Path(r["library_root_path"]).mkdir(); share=pathlib.Path(r["share_path"]
 vmroot=pathlib.Path(r["library_root_path"])/r["vm_slug"]; vmroot.mkdir()
 (vmroot/"vm.json").write_text(json.dumps({"id":r["vm_slug"],"name":r["vm_name"],"bundlePath":str(vmroot/"bundle.vmbridge"),"installPending":False,"experimental3DAllowed":False})+"\n")
 for field,data in {"disk_path":b"disk", "vars_path":b"vars"}.items():
-    path=pathlib.Path(r[field]); path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(data+str(r["lane"]).encode())
+    path=pathlib.Path(r[field]); path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(data+str(r["lane"]).encode()); "handoff" in r["job_id"] and field == "vars_path" and path.open("r+b").truncate(64 * 1024 * 1024)
 if "alias" in r["job_id"] or ("crosslane" in r["job_id"] and r["lane"] > 1): target=pathlib.Path(r["vars_path"] if "alias" in r["job_id"] else r["disk_path"]); source=pathlib.Path(r["disk_path"]) if "alias" in r["job_id"] else next((pathlib.Path(r["lane_root"]).parent/"lane-1/library").glob("*/bundle.vmbridge/disks/hvf-target.raw")); target.unlink(); os.link(source,target)
 if "guest-alias" in r["job_id"]: pathlib.Path(r["disk_path"]).unlink(); os.link(pathlib.Path(r["guest_payload_path"])/"agent.bin",r["disk_path"])
 vtpm=pathlib.Path(r["vtpm_state_path"]); vtpm.mkdir(); (vtpm/"state.bin").write_bytes(b"vtpm")
