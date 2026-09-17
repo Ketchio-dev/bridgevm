@@ -25,13 +25,17 @@ final class T17FileChooserAX: T17FileChooserDriving {
     func open() throws { try openControl() }
 
     func panelIsPresent() throws -> Bool {
+        try currentPanel() != nil
+    }
+
+    private func currentPanel() throws -> AXUIElement? {
         guard let windows = try attribute(application, kAXWindowsAttribute) as? [AXUIElement] else {
             throw T17FileChooser.failure("file chooser window inventory was unavailable")
         }
         let panels = try windows.filter { try attribute($0, kAXIdentifierAttribute) as? String == "open-panel" }
         guard panels.count <= 1 else { throw T17FileChooser.failure("multiple file choosers were open") }
         panel = panels.first
-        return panel != nil
+        return panel
     }
 
     func showLocationField() throws {
@@ -78,24 +82,30 @@ final class T17FileChooserAX: T17FileChooserDriving {
     }
 
     private func locationSheet() throws -> AXUIElement? {
-        predicates.beginOwner(panelCached: panel != nil)
-        guard panel != nil else { return nil }
-        return try identified(in: application, id: "GoToWindow", roles: [kAXSheetRole])
+        let current = try currentPanel()
+        predicates.beginOwner(panelCached: current != nil)
+        guard let current else { return nil }
+        return try semantic(in: current, id: "GoToWindow", roles: [kAXSheetRole])
     }
     private func locationField() throws -> AXUIElement? {
         guard let sheet = try locationSheet() else { return nil }
-        return try identified(in: sheet, id: "PathTextField", roles: [kAXTextFieldRole, kAXComboBoxRole])
+        return try semantic(in: sheet, id: "PathTextField", roles: [kAXTextFieldRole, kAXComboBoxRole])
     }
-    private func identified(in root: AXUIElement, id: String, roles: Set<String>) throws -> AXUIElement? {
-        try predicates.find(in: { try self.nodes(root) }, id: id, roles: roles, metadata: {
+    private func semantic(in root: AXUIElement, id: String, roles: Set<String>) throws -> AXUIElement? {
+        let candidates = try nodes(root)
+        if let identified = try predicates.find(in: { candidates }, id: id, roles: roles, metadata: {
+            (try self.attribute($0, kAXIdentifierAttribute) as? String,
+             try self.attribute($0, kAXRoleAttribute) as? String)
+        }, same: { CFEqual($0, $1) }) { return identified }
+        return try T17FileChooserSemanticIdentity.find(in: candidates, id: id, roles: roles, metadata: {
             (try self.attribute($0, kAXIdentifierAttribute) as? String,
              try self.attribute($0, kAXRoleAttribute) as? String)
         }, same: { CFEqual($0, $1) })
     }
 
     private func openButton() throws -> AXUIElement? {
-        guard let panel else { return nil }
-        return try nodes(panel).first { try attribute($0, kAXIdentifierAttribute) as? String == "OKButton" }
+        guard let current = try currentPanel() else { return nil }
+        return try nodes(current).first { try attribute($0, kAXIdentifierAttribute) as? String == "OKButton" }
     }
 
     private func key(_ code: CGKeyCode, flags: CGEventFlags = []) throws {
