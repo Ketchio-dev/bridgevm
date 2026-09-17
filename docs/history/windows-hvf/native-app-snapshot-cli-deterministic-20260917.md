@@ -31,6 +31,10 @@ prove a Windows boot or guest-visible restore.
   Venus Rust suites, 381 probe tests, and macOS shim suites 425, 808 with two
   required live-only skips, and 62. It correctly failed only capability-registry
   freshness before this checkpoint was recorded.
+- the corrected metadata head `9f8c0f8d5f4be727d0d8626d658706791551f3b6`
+  passed the complete project check with identical pre/post HEAD and index tree.
+  The 7,519-line log SHA-256 is
+  `4ecd0cf167adf8178519a29effe6241284dff71a3483c365ef7e9916759639af`.
 
 ## Evidence limit
 
