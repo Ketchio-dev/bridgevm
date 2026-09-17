@@ -14,7 +14,6 @@ import sys
 import uuid
 from pathlib import Path
 HERE = Path(__file__).resolve().parent
-
 def load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
@@ -22,18 +21,13 @@ def load_module(name: str, path: Path):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
 T17 = load_module("t17_receipt", HERE / "write-windows-product-e2e-receipt.py")
 T19 = load_module("t19_manifest", HERE / "windows-import-product-e2e-manifest.py")
-
-
 def load_json(path: Path) -> dict:
     value = T17.load_json(path)
     if not isinstance(value, dict):
         raise ValueError(f"{path.name} is not a JSON object")
     return value
-
 
 def safe_tree(root: Path) -> list[Path]:
     if not root.is_dir() or root.is_symlink():
@@ -48,7 +42,6 @@ def safe_tree(root: Path) -> list[Path]:
         if stat.S_ISREG(mode) and entry.stat().st_nlink != 1:
             raise ValueError("vTPM state contains a linked file")
     return entries
-
 
 def make_private_parent(path: Path) -> None:
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -110,6 +103,7 @@ def retain(args: argparse.Namespace) -> None:
             or T19.file_hash(variables) != result["final_vars_sha256"]):
         raise ValueError("UEFI variables differ from authenticated T17 output")
     safe_tree(state)
+    state_hash = T19.tree_hash(state, allow_symlinks=False)
     destination = args.destination.absolute()
     if os.path.normpath(str(destination)) != str(destination):
         raise ValueError("retained-source destination is not normalized")
@@ -137,14 +131,20 @@ def retain(args: argparse.Namespace) -> None:
         retained_state.mkdir(mode=0o700)
         subprocess.run(["/bin/cp", "-cR", f"{state}/.", str(retained_state)], check=True)
         safe_tree(retained_state)
+        disk_hash = T19.file_hash(retained_disk); vars_hash = T19.file_hash(retained_vars)
+        retained_state_hash = T19.tree_hash(retained_state, allow_symlinks=False)
+        if disk_hash != result["final_disk_sha256"] or vars_hash != result["final_vars_sha256"]:
+            raise ValueError("retained media differs from authenticated T17 output")
+        if retained_state_hash != state_hash or T19.tree_hash(state, allow_symlinks=False) != state_hash:
+            raise ValueError("vTPM state changed while it was retained")
         app_assets = {
             key: (path, assets[key]["sha256"])
             for key, path in expected_app_paths.items()
         }
         source_assets = {
-            "source_disk": (destination / retained_disk.name, T19.file_hash(retained_disk)),
-            "source_vars": (destination / retained_vars.name, T19.file_hash(retained_vars)),
-            "source_vtpm": (destination / retained_state.name, T19.tree_hash(retained_state, allow_symlinks=False)),
+            "source_disk": (destination / retained_disk.name, disk_hash),
+            "source_vars": (destination / retained_vars.name, vars_hash),
+            "source_vtpm": (destination / retained_state.name, retained_state_hash),
             "source_vtpm_package": (destination / package.name, T19.file_hash(package)),
             "source_vtpm_code": (destination / code.name, T19.file_hash(code)),
         }
