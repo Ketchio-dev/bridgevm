@@ -2978,3 +2978,9 @@ crates/bridgevm-cli/src/app_cli_snapshot_tests.rs	65	0
 crates/bridgevm-cli/tests/cli_app_snapshot.rs	31	0
 docs/app-cli-snapshot.md	36	0
 docs/history/windows-hvf/native-app-snapshot-cli-deterministic-20260917.md	45	0
+scripts/live-gates/native_snapshot_restore_inputs.py	150	0
+scripts/live-gates/native_snapshot_restore_receipt.py	109	0
+scripts/live-gates/run-native-snapshot-restore-tier.py	108	0
+scripts/verify-native-snapshot-restore-boots.sh	184	0
+tests/integration/native-snapshot-restore-live-tier-contract.py	134	0
+docs/history/windows-hvf/native-snapshot-restore-live-tier-20260917.md	52	0

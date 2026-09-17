@@ -4,7 +4,6 @@
 # Tiers are declared in PLAN.md. Only T5 produces A1 shipping evidence; no
 # lower tier may weaken A1. T6 requires every independent title run to pass.
 set -euo pipefail
-
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 TIER="${1:?run-tier.sh needs a tier}"
 [[ "$TIER" != t0-check ]] || { echo "deterministic checks belong on GitHub-hosted Actions, not the physical-Mac live queue" >&2; exit 2; }
@@ -77,8 +76,9 @@ case "$TIER" in
             exit 1
         fi
         ;;
-    t1-restore-boot)
-        python3 "$REPO/scripts/live-gates/run-snapshot-restore-tier.py" \
+    t1-restore-boot|t20-a19-native-snapshot-restore)
+        runner=run-snapshot-restore-tier.py; [[ "$TIER" != t20-* ]] || runner=run-native-snapshot-restore-tier.py
+        python3 "$REPO/scripts/live-gates/$runner" \
             "$OUT" "$JOB_ID" "$INPUT_MANIFEST" "$SEALED_BINARY"
         ;;
     d2-b6-cell-observation|d3-b6-renderer-trace)
