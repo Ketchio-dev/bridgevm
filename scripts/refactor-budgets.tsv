@@ -2921,3 +2921,6 @@ apps/macos/Tests/BridgeVMControlTests/NativeAppLifecycleJourneyTests.swift	69	0
 docs/history/windows-hvf/native-app-lifecycle-guidance-deterministic-20260916.md	57	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserSemanticIdentity.swift	24	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserSemanticIdentityTests.swift	69	0
+apps/macos/Sources/BridgeVMProductE2E/T17JourneyRequest.swift	15	0
+apps/macos/Sources/BridgeVMProductE2E/A9ImportRequest.swift	167	0
+apps/macos/Tests/BridgeVMProductE2ETests/A9ImportRequestTests.swift	121	0

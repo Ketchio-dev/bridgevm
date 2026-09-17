@@ -1,7 +1,7 @@
 import Foundation
 
 struct T17GuestJourney {
-    let request: T17Request
+    let request: any T17JourneyRequest
     let ui: T17UIControlling
     let fileManager: FileManager
 

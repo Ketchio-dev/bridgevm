@@ -72,7 +72,7 @@ struct T17GuestArtifacts {
     let audioErrorCount: Int
     let agentResultSHA256: String
 
-    static func collect(request: T17Request, fileManager: FileManager) throws -> Self {
+    static func collect(request: any T17JourneyRequest, fileManager: FileManager) throws -> Self {
         let prefix = String(request.nonce.prefix(12))
         let share = URL(fileURLWithPath: request.sharePath, isDirectory: true)
         let bodies = [
@@ -124,7 +124,7 @@ struct T17GuestArtifacts {
                     agentResultSHA256: try T17Evidence.sha256(destination))
     }
 
-    func write(request: T17Request, first: T17RunLogProof,
+    func write(request: any T17JourneyRequest, first: T17RunLogProof,
                mutation: T17RunLogProof, final: T17RunLogProof) throws {
         var body: [String: Any] = [
             "schema_version": "bridgevm.windows-product-e2e-guest-evidence.v2",

@@ -13,11 +13,11 @@ struct FirstRunImportFields: View {
             FirstRunImportNameField(displayName: $displayName)
             GroupBox {
                 VStack(alignment: .leading, spacing: 20) {
-                    LibraryFileField(title: "Windows 디스크", detail: "이미 설치된 Windows ARM64 RAW 디스크를 선택하세요.", path: $diskPath)
+                    LibraryFileField(title: "Windows 디스크", detail: "이미 설치된 Windows ARM64 RAW 디스크를 선택하세요.", accessibilityIdentifier: "bridgevm.first-run.disk", path: $diskPath)
                     LibraryFileField(title: "부팅 설정 파일 (UEFI vars)",
-                        detail: "이 디스크를 부팅할 때 사용한 64 MiB UEFI vars 파일이 필요합니다.", path: $varsPath)
+                        detail: "이 디스크를 부팅할 때 사용한 64 MiB UEFI vars 파일이 필요합니다.", accessibilityIdentifier: "bridgevm.first-run.vars", path: $varsPath)
                     LibraryFileField(title: "vTPM 상태 폴더 (선택)",
-                        detail: "기존 VM에 연결된 vTPM 상태가 있다면 해당 폴더를 선택하세요.", path: $vtpmPath, chooseDirectory: true)
+                        detail: "기존 VM에 연결된 vTPM 상태가 있다면 해당 폴더를 선택하세요.", accessibilityIdentifier: "bridgevm.first-run.vtpm", path: $vtpmPath, chooseDirectory: true)
                 }
             } label: {
                 Label("가져올 파일", systemImage: "square.and.arrow.down")
