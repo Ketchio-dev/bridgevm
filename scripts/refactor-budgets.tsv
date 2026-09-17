@@ -2931,3 +2931,6 @@ apps/macos/Tests/BridgeVMProductE2ETests/A9ImportEvidenceTests.swift	42	0
 apps/macos/Tests/BridgeVMProductE2ETests/ProductE2ECLITests.swift	28	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportRequestTests.swift	121	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestStage.swift	18	0
+scripts/live-gates/windows-import-product-e2e-manifest.py	108	0
+scripts/live-gates/make-windows-import-product-e2e-request.py	76	0
+tests/integration/windows-import-product-e2e-contract-smoke.sh	57	0
