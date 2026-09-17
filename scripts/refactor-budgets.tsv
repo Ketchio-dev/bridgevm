@@ -2462,6 +2462,7 @@ apps/macos/scripts/LaunchAppUIHost.swift	216	0
 apps/macos/scripts/build-app-ui-launcher.sh	24	0
 scripts/check-app-ui-host-build-boundary.sh	53	0
 scripts/live-gates/app-ui-manifest-dispatch.sh	15	0
+scripts/live-gates/windows-product-e2e-launchservices-preflight.py	190	0
 scripts/live-gates/app_ui_host_diagnostic.py	151	0
 scripts/live-gates/app_ui_host_manifest.py	95	0
 tests/integration/app-ui-host-tier-smoke.py	254	0
@@ -2957,6 +2958,7 @@ tests/integration/windows-import-product-e2e-live-tier-smoke.sh	39	0
 schemas/windows-hvf-import-product-e2e-receipt-v1.json	70	0
 docs/history/windows-hvf/installed-disk-import-tier-20260916.md	20	0
 docs/history/windows-hvf/t17-t19-private-source-handoff-20260917.md	40	0
+docs/history/windows-hvf/t17-launchservices-preflight-20260917.md	34	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportVTPMRecovery.swift	52	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportVTPMValidation.swift	27	0
 apps/macos/Sources/BridgeVMControl/FirstRunVTPMImportFields.swift	19	0
