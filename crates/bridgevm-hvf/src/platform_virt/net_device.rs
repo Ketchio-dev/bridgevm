@@ -27,7 +27,7 @@ impl VirtPlatform {
         let Some(dev) = self.virtio_net.as_mut() else {
             return false;
         };
-        dev.poll_host_sockets();
+        dev.poll_host_sockets(self.host_now);
         // Every poll may enqueue an unbounded batch of frames from drained
         // host sockets, so delivering a single frame per poll lets the shared
         // reply queue grow without bound under bulk host->guest traffic and

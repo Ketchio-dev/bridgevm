@@ -84,9 +84,7 @@ impl<B: NetBackend> VirtioPciNet<B> {
         } else {
             None
         };
-        self.net.descriptor_scratch.clear();
-        self.net.tx_packet_scratch.clear();
-        self.net.rx_frame_scratch.clear();
+        self.reset_after_restore();
 
         self.msix.restore_state(&input.read_blob());
         input.finish();

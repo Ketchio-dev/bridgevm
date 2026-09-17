@@ -1,31 +1,18 @@
 //! VirtioPciNet BAR region decode and forwarding to the core device.
 
+use super::host_poll_pacing::HostPollPacer;
+use super::register_decode::{common_cfg_offset, device_cfg_offset, notify_queue_index};
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 use crate::msix::MsixTable;
 use crate::pcie::VIRTIO_NET_MSIX_VECTOR_COUNT;
+use std::time::Instant;
 
 #[derive(Debug)]
 pub struct VirtioPciNet<B: NetBackend = LoopbackTestBackend> {
     pub(crate) net: VirtioNet<B>,
     pub(crate) msix: MsixTable,
-}
-
-pub(crate) fn common_cfg_offset(offset: u64) -> Option<u64> {
-    (PCI_COMMON_CFG_OFFSET..PCI_COMMON_CFG_OFFSET + PCI_CFG_REGION_SIZE)
-        .contains(&offset)
-        .then_some(offset - PCI_COMMON_CFG_OFFSET)
-}
-
-pub(crate) fn device_cfg_offset(offset: u64) -> Option<u64> {
-    (PCI_DEVICE_CFG_OFFSET..PCI_DEVICE_CFG_OFFSET + PCI_CFG_REGION_SIZE)
-        .contains(&offset)
-        .then_some(offset - PCI_DEVICE_CFG_OFFSET)
-}
-
-pub(crate) fn notify_queue_index(offset: u64) -> Option<u16> {
-    let rel = offset.checked_sub(PCI_NOTIFY_CFG_OFFSET)?;
-    (rel < PCI_CFG_REGION_SIZE).then_some((rel / 4) as u16)
+    pub(crate) host_poll_pacer: HostPollPacer,
 }
 
 impl VirtioPciNet<LoopbackTestBackend> {
@@ -39,6 +26,7 @@ impl<B: NetBackend> VirtioPciNet<B> {
         Self {
             net: VirtioNet::new(backend),
             msix: MsixTable::new(VIRTIO_NET_MSIX_VECTOR_COUNT),
+            host_poll_pacer: HostPollPacer::default(),
         }
     }
 
@@ -61,14 +49,19 @@ impl<B: NetBackend> VirtioPciNet<B> {
     pub fn reset_runtime_state(&mut self) {
         self.net.reset_runtime_state();
         self.msix = MsixTable::new(VIRTIO_NET_MSIX_VECTOR_COUNT);
+        self.host_poll_pacer.reset();
     }
 
     pub fn pump_receive(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
         self.net.pump_receive(mem)
     }
 
-    pub fn poll_host_sockets(&mut self) {
-        self.net.backend_mut().poll_host_sockets();
+    pub fn poll_host_sockets(&mut self, now: Option<Instant>) -> bool {
+        let poll = self.host_poll_pacer.should_poll(now);
+        if poll {
+            self.net.backend_mut().poll_host_sockets();
+        }
+        poll
     }
 
     pub fn access(

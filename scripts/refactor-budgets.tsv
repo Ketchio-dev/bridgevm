@@ -574,11 +574,13 @@ crates/bridgevm-hvf/src/virtio_gpu_trace.rs	227	0
 crates/bridgevm-hvf/src/virtio_net/backend.rs	87	0
 crates/bridgevm-hvf/src/virtio_net/datapath.rs	103	0
 crates/bridgevm-hvf/src/virtio_net/device_state.rs	158	0
+crates/bridgevm-hvf/src/virtio_net/host_poll_pacing.rs	106	0
 crates/bridgevm-hvf/src/virtio_net/mod.rs	7	0
 crates/bridgevm-hvf/src/virtio_net/msix_bridge.rs	114	0
 crates/bridgevm-hvf/src/virtio_net/pci_transport.rs	125	0
 crates/bridgevm-hvf/src/virtio_net/protocol.rs	133	0
 crates/bridgevm-hvf/src/virtio_net/queue_pending.rs	3	0
+crates/bridgevm-hvf/src/virtio_net/register_decode.rs	17	0
 crates/bridgevm-hvf/src/virtio_net/register_codec.rs	101	0
 crates/bridgevm-hvf/src/virtio_net/snapshot.rs	91	0
 crates/bridgevm-hvf/src/virtio_net/tests/helpers.rs	200	0
