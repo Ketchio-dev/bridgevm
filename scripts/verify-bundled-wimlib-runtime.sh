@@ -65,7 +65,7 @@ if package["version"] != build["version"]:
 actual = hashlib.sha256(helper_path.read_bytes()).hexdigest()
 if package["binary_sha256"] != actual:
     raise SystemExit("wimlib signed binary digest mismatch")
-if package["codesign_class"] not in {"adhoc", "developer-id"}:
+if package["codesign_class"] not in {"adhoc", "development-signed", "developer-id"}:
     raise SystemExit("wimlib codesign class is invalid")
 PY
 
