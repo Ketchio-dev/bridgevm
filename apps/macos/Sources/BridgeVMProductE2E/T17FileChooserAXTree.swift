@@ -2,6 +2,11 @@ import ApplicationServices
 
 enum T17FileChooserAXTree {
     static let relationships = [kAXChildrenAttribute, kAXWindowsAttribute]
+    static func applicationNodes(pid: pid_t) throws -> [AXUIElement] {
+        try T17RetryingSnapshot.read(attempts: 3, root: { AXUIElementCreateApplication(pid) }, retryable: {
+                ($0 as? T17Blocker)?.detail.contains(" read failed; ax_error=\(AXError.invalidUIElement.rawValue)") == true
+            }, snapshot: nodes)
+    }
     static func attribute(_ element: AXUIElement, _ name: String) throws -> AnyObject? {
         var value: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(element, name as CFString, &value)

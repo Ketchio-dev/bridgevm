@@ -27,7 +27,7 @@ final class T17FileChooserAX: T17FileChooserDriving {
     func panelIsPresent() throws -> Bool { try currentPanel() != nil }
 
     private func currentPanel() throws -> AXUIElement? {
-        let candidates = try nodes(application)
+        let candidates = try T17FileChooserAXTree.applicationNodes(pid: pid)
         panel = try T17FileChooserIdentity.find(
             in: candidates,
             id: "open-panel",
