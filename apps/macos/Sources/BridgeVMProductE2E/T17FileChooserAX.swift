@@ -29,12 +29,17 @@ final class T17FileChooserAX: T17FileChooserDriving {
     }
 
     private func currentPanel() throws -> AXUIElement? {
-        guard let windows = try attribute(application, kAXWindowsAttribute) as? [AXUIElement] else {
-            throw T17FileChooser.failure("file chooser window inventory was unavailable")
-        }
-        let panels = try windows.filter { try attribute($0, kAXIdentifierAttribute) as? String == "open-panel" }
-        guard panels.count <= 1 else { throw T17FileChooser.failure("multiple file choosers were open") }
-        panel = panels.first
+        let candidates = try nodes(application)
+        panel = try T17FileChooserIdentity.find(
+            in: candidates,
+            id: "open-panel",
+            roles: [kAXWindowRole, kAXSheetRole, kAXDialogRole],
+            metadata: {
+                (try self.attribute($0, kAXIdentifierAttribute) as? String,
+                 try self.attribute($0, kAXRoleAttribute) as? String)
+            },
+            same: { CFEqual($0, $1) }
+        )
         return panel
     }
 
