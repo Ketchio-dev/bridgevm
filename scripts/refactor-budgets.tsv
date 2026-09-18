@@ -2992,3 +2992,6 @@ scripts/hvf_smp_scaling.py	417	0
 scripts/live-gates/hvf_boot_matrix_media.sh	26	0
 scripts/live-gates/run-hvf-smp-scaling-tier.sh	93	0
 tests/integration/hvf-smp-scaling-contract.sh	50	0
+scripts/hvf_smp_confirmation.py	399	0
+scripts/live-gates/run-hvf-smp-confirmation-tier.sh	96	0
+tests/integration/hvf-smp-confirmation-contract.sh	41	0
