@@ -24,16 +24,14 @@ final class T17FileChooserAX: T17FileChooserDriving {
 
     func open() throws { try openControl() }
 
-    func panelIsPresent() throws -> Bool {
-        try currentPanel() != nil
-    }
+    func panelIsPresent() throws -> Bool { try currentPanel() != nil }
 
     private func currentPanel() throws -> AXUIElement? {
         let candidates = try nodes(application)
         panel = try T17FileChooserIdentity.find(
             in: candidates,
             id: "open-panel",
-            roles: [kAXWindowRole, kAXSheetRole, kAXDialogRole],
+            roles: [kAXWindowRole, kAXSheetRole, "AXDialog"],
             metadata: {
                 (try self.attribute($0, kAXIdentifierAttribute) as? String,
                  try self.attribute($0, kAXRoleAttribute) as? String)
