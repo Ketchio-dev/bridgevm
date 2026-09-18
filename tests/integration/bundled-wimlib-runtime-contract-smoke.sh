@@ -15,6 +15,8 @@ grep -qF '84221a3abd5b91228f15f8e6065c335a336237b5738197b75bf419eea561a194' "$BU
 grep -qF -- '--without-ntfs-3g --without-fuse --disable-shared --enable-static' "$BUILD"
 grep -qF 'source/wimlib-1.14.5.tar.gz' "$BUNDLE"
 grep -qF 'codesign --force --sign' "$BUNDLE"
+grep -qF '^Authority=Developer ID Application:' "$BUNDLE"
+grep -qF 'codesign_class="development-signed"' "$BUNDLE"
 grep -qF 'bundle-wimlib-runtime.sh" --runtime "$WIMLIB_RUNTIME"' "$PACKAGE"
 grep -qF -- '--wimlib-runtime "$RUNNER_TEMP/wimlib-runtime"' "$RELEASE"
 grep -qF 'scripts/build-pinned-wimlib-runtime.sh' "$RELEASE"
@@ -23,7 +25,6 @@ grep -qF '#if DEBUG' "$SWIFT"
 grep -qF '/opt/homebrew/bin/wimlib-imagex' "$SWIFT"
 grep -qF 'wimlib-imagex 1.14.5' "$ROOT/THIRD-PARTY-NOTICES.md"
 grep -qF 'GPL-3.0-or-later' "$ROOT/THIRD-PARTY-NOTICES.md"
-
 python3 - "$SWIFT" <<'PY'
 import pathlib
 import sys
@@ -36,5 +37,4 @@ for forbidden in ("/opt/homebrew/bin/wimlib-imagex", "/usr/local/bin/wimlib-imag
     if not debug_start < position < debug_end:
         raise SystemExit(f"ambient runtime candidate escaped the DEBUG-only block: {forbidden}")
 PY
-
 echo "bundled wimlib runtime contract: PASS"

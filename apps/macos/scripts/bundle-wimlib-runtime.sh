@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 usage() {
   echo "usage: $0 --runtime DIR --app APP [--identity IDENTITY]" >&2
 }
-
 RUNTIME=""
 APP=""
 IDENTITY="-"
@@ -24,7 +22,6 @@ done
   echo "--app must name the package staging app" >&2
   exit 2
 }
-
 required=(
   helpers/wimlib-imagex
   licenses/wimlib/COPYING
@@ -39,7 +36,6 @@ for path in "${required[@]}"; do
     exit 1
   }
 done
-
 license_dir="$APP/Contents/Resources/licenses/wimlib"
 install -d "$APP/Contents/Resources/helpers" "$license_dir/source"
 install -m 755 "$RUNTIME/helpers/wimlib-imagex" "$APP/Contents/Resources/helpers/wimlib-imagex"
@@ -54,10 +50,14 @@ install -m 644 "$RUNTIME/source/wimlib-1.14.5.tar.gz" "$license_dir/source/wimli
 helper="$APP/Contents/Resources/helpers/wimlib-imagex"
 if [[ "$IDENTITY" == "-" ]]; then
   codesign --force --sign - "$helper" >/dev/null
-  codesign_class="adhoc"
 else
   codesign --force --sign "$IDENTITY" --options runtime --timestamp "$helper" >/dev/null
-  codesign_class="developer-id"
+fi
+metadata="$(codesign -dv --verbose=4 "$helper" 2>&1)" || { echo "cannot read signed wimlib identity" >&2; exit 1; }
+if grep -q '^Signature=adhoc$' <<<"$metadata"; then codesign_class="adhoc"
+elif grep -q '^Authority=Developer ID Application:' <<<"$metadata"; then codesign_class="developer-id"
+elif grep -q '^Authority=' <<<"$metadata"; then codesign_class="development-signed"
+else echo "wimlib signature has no recognized identity" >&2; exit 1
 fi
 binary_sha="$(shasum -a 256 "$helper" | awk '{print $1}')"
 source_sha="$(shasum -a 256 "$license_dir/source/wimlib-1.14.5.tar.gz" | awk '{print $1}')"
