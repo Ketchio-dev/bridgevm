@@ -53,7 +53,7 @@ step "swift force casts" python3 scripts/check-swift-force-casts.py
 step "tests are reachable" python3 scripts/check-tests-are-reachable.py
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
 step "virtio queue narrowing" scripts/check-virtio-queue-narrowing.sh
-step "HVF boot performance and SMP scaling" bash -c 'tests/integration/hvf-boot-performance-tier-smoke.sh && tests/integration/hvf-smp-scaling-contract.sh'
+step "HVF boot performance and SMP scaling" bash -c 'tests/integration/hvf-boot-performance-tier-smoke.sh && tests/integration/hvf-smp-scaling-contract.sh && tests/integration/hvf-smp-confirmation-contract.sh'
 step "HVF NVMe performance tier" tests/integration/hvf-nvme-performance-tier-smoke.sh
 step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
