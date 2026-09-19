@@ -2,8 +2,8 @@ import XCTest
 @testable import BridgeVMProductE2E
 
 final class T17ProductEntryTests: XCTestCase {
-    func testFreshLibraryUsesVisibleToolbarCreateEntry() {
+    func testFreshLibraryUsesPrimaryFirstRunCreateEntry() {
         XCTAssertEqual(T17UIContract.initialCreateControlIdentifier,
-                       "bridgevm.library.toolbar.create")
+                       "bridgevm.first-run.create")
     }
 }
