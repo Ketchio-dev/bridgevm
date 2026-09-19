@@ -1834,6 +1834,7 @@ apps/macos/Sources/BridgeVMControl/BridgeVMControlAppLaunch.swift	10	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlLaunchOptions.swift	133	0
 apps/macos/Sources/BridgeVMControl/CreateVMSheetCreation.swift	81	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsGuestPayloadIdentity.swift	95	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsGuestPayloadTree.swift	75
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallSourceLock.swift	47	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsSnapshotCard.swift	33	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsSnapshotCommand.swift	106	0
@@ -1844,6 +1845,7 @@ apps/macos/Sources/BridgeVMControl/WindowsHVFUnattendPolicy.swift	21	0
 apps/macos/Tests/BridgeVMControlTests/BridgeVMControlLaunchOptionsTests.swift	65	0
 apps/macos/Tests/BridgeVMControlTests/HvfEngineReleasePathTests.swift	36	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsGuestPayloadIdentityTests.swift	116	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsGuestPayloadTreeTests.swift	47
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallPathTests.swift	26	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallSourceLockTests.swift	30	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotCommandTests.swift	78	0
