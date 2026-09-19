@@ -4,7 +4,7 @@
 set -euo pipefail
 # Put each tier in its own process group so cancellation kills its whole tree.
 set -m
-
+[[ "$(uname -s)" != Darwin || -n "${DEVELOPER_DIR:-}" ]] || export DEVELOPER_DIR=/Library/Developer/CommandLineTools
 REPO="${BRIDGEVM_REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
 QUEUE_ROOT="${BRIDGEVM_LIVE_ROOT:-$HOME/BridgeVM/live-queue}"
 WORK_ROOT="${BRIDGEVM_LIVE_WORK:-$HOME/BridgeVM/live-work}"
@@ -117,7 +117,7 @@ run_job() {
     (
         cd "$worktree"
         /usr/bin/env -i HOME="$HOME" USER="$clean_user" LOGNAME="$clean_user" SHELL=/bin/bash \
-            PATH="$clean_path" CARGO_TARGET_DIR="$WORK_ROOT/$job_id/target" \
+            PATH="$clean_path" DEVELOPER_DIR="${DEVELOPER_DIR:-}" CARGO_TARGET_DIR="$WORK_ROOT/$job_id/target" \
             /usr/sbin/taskpolicy -a /usr/bin/caffeinate -dimsu "$worktree/scripts/live-gates/run-tier.sh" \
             "$tier" --out "$dir" --job-id "$job_id" \
             ${tier_args[@]+"${tier_args[@]}"}

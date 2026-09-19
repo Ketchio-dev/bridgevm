@@ -18,7 +18,6 @@ A3_PAYLOAD_VALIDATOR="$REPO/scripts/live-gates/a3-title-payload.py"
 A3_STAGE="$REPO/scripts/live-gates/a3-title-payload-stage.sh"
 BOOT_RUNNER="$REPO/scripts/run-hvf-windows-installed-boot-runner.sh"
 POSTMORTEM_HARVEST="$REPO/scripts/harvest-hvf-windows-postmortem.sh"
-
 WORK="$(mktemp -d)"
 POSTMORTEM_MOUNT=""
 cleanup() {
@@ -61,6 +60,7 @@ check "the A3 payload staging policy is executable" '[ -x "$A3_STAGE" ]'
 check "the plist is well formed" 'plutil -lint "$PLIST" >/dev/null'
 check "the queue stays background while each requested gate gets app scheduling policy" \
     'grep -A1 -q "<key>ProcessType</key>" "$PLIST" && grep -Fq '"'"'/usr/sbin/taskpolicy -a /usr/bin/caffeinate'"'"' "$WORKER"'
+check "the clean worker uses Command Line Tools without accepting an Xcode license" 'grep -Fq '"'"'export DEVELOPER_DIR=/Library/Developer/CommandLineTools'"'"' "$WORKER" && grep -Fq '"'"'DEVELOPER_DIR="${DEVELOPER_DIR:-}"'"'"' "$WORKER"'
 check "the worker resolves only pushed exact commits and refuses unresolved worktrees" \
     'grep -Fq '"'"'fetch --no-tags origin "$commit"'"'"' "$WORKER" && grep -Fq '"'"'[[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]'"'"' "$WORKER" && grep -Fq '"'"'cat-file -e "$commit^{commit}"'"'"' "$WORKER" && grep -q '"'"'refused-unknown-commit\|refused-worktree'"'"' "$WORKER"'
 check "the Windows post-mortem harvester is executable" '[ -x "$POSTMORTEM_HARVEST" ]'
