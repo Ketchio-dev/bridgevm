@@ -114,9 +114,9 @@ final class T17Accessibility: T17UIControlling {
                     nodes: { try self.descendants(of: $0, limit: 12_000) },
                     project: { nodes in
                         try T17CreationProbe.find(identifier, in: nodes, identifier: {
-                            try T17AccessibilityTree.attribute($0, kAXIdentifierAttribute) as? String
+                            try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String
                         }, value: {
-                            try T17AccessibilityTree.attribute($0, kAXValueAttribute) as? String
+                            try T17SupportedAttribute.read($0, kAXValueAttribute) as? String
                         })
                     })
             } catch {
