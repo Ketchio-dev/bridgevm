@@ -14,7 +14,6 @@ protocol T17UIControlling {
 }
 
 final class T17Accessibility: T17UIControlling {
-    private let application: AXUIElement
     private let pid: pid_t
 
     init(pid: pid_t) throws {
@@ -22,7 +21,6 @@ final class T17Accessibility: T17UIControlling {
             throw T17Blocker(code: "accessibility-untrusted", detail: T17TrustDiagnostic.detail())
         }
         self.pid = pid
-        application = AXUIElementCreateApplication(pid)
     }
 
     func waitFor(_ identifier: String, timeout: TimeInterval) throws {
@@ -74,7 +72,7 @@ final class T17Accessibility: T17UIControlling {
     }
 
     func textSnapshot() -> [String] {
-        ((try? descendants(of: application, limit: 12_000)) ?? []).compactMap { item in
+        ((try? descendants(of: AXUIElementCreateApplication(pid), limit: 12_000)) ?? []).compactMap { item in
             for name in [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
                 if let value = attribute(item, name as CFString) as? String, !value.isEmpty { return value }
             }
@@ -85,6 +83,7 @@ final class T17Accessibility: T17UIControlling {
     func clickSecondaryWindow(timeout: TimeInterval = 10) throws {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
+            let application = AXUIElementCreateApplication(pid)
             let windows = attribute(application, kAXWindowsAttribute as CFString) as? [AXUIElement] ?? []
             for window in windows {
                 let title = attribute(window, kAXTitleAttribute as CFString) as? String ?? ""
@@ -108,14 +107,20 @@ final class T17Accessibility: T17UIControlling {
     private func element(_ identifier: String, timeout: TimeInterval) throws -> AXUIElement {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
-            let nodes = try descendants(of: application, limit: 12_000)
-            if let match = try T17CreationProbe.find(identifier, in: nodes, identifier: {
-                try T17AccessibilityTree.attribute($0, kAXIdentifierAttribute) as? String
-            }, value: {
-                try T17AccessibilityTree.attribute($0, kAXValueAttribute) as? String
-            }) { return match }
+            let match: AXUIElement? = try T17ApplicationSnapshot.read(
+                root: { AXUIElementCreateApplication(self.pid) },
+                nodes: { try self.descendants(of: $0, limit: 12_000) },
+                project: { nodes in
+                    try T17CreationProbe.find(identifier, in: nodes, identifier: {
+                        try T17AccessibilityTree.attribute($0, kAXIdentifierAttribute) as? String
+                    }, value: {
+                        try T17AccessibilityTree.attribute($0, kAXValueAttribute) as? String
+                    })
+                })
+            if let match { return match }
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         } while Date() < deadline
+        let application = AXUIElementCreateApplication(pid)
         throw T17Blocker(code: "ui-element-missing", detail: "required accessibility identifier was not found: \(identifier); windows=\((attribute(application, kAXWindowsAttribute as CFString) as? [AXUIElement]).map { String($0.count) } ?? "unanswered") timeout_s=\(timeout)")
     }
 
