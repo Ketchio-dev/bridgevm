@@ -16,16 +16,16 @@ final class T17FileChooserDiagnosticTests: XCTestCase {
     func testTimeoutRetainsDiagnosticContextWithoutAdvancing() {
         let failure = timeout("activation=false; key=5; windows=open-panel")
         XCTAssertEqual(failure?.code, "input-selection-failed")
-        XCTAssertEqual(failure?.detail, "timed out waiting for Go To location field; activation=false; key=5; windows=open-panel")
+        XCTAssertEqual(failure?.detail, "stage=location-field-ready; timed out waiting for Go To location field; activation=false; key=5; windows=open-panel")
     }
 
     func testEmptyContextPreservesOriginalFailureText() {
-        XCTAssertEqual(timeout("")?.detail, "timed out waiting for Go To location field")
+        XCTAssertEqual(timeout("")?.detail, "stage=location-field-ready; timed out waiting for Go To location field")
     }
 
     func testDiagnosticContextIsBounded() {
         let failure = timeout(String(repeating: "x", count: 2_000))
-        XCTAssertEqual(failure?.detail.count, "timed out waiting for Go To location field; ".count + 900)
+        XCTAssertEqual(failure?.detail.count, "stage=location-field-ready; timed out waiting for Go To location field; ".count + 900)
     }
 
     func testOnlyKnownRolesAndIdentifiersAreDisclosed() {

@@ -1,11 +1,11 @@
+import Foundation
 import ApplicationServices
-
 enum T17FileChooserSnapshot {
     static func read<Node, Snapshot>(
-        attempts: Int = 3, root: () -> Node,
+        attempts: Int = 3, pause: () -> Void = { Thread.sleep(forTimeInterval: 0.2) }, root: () -> Node,
         nodes: (Node) throws -> [Node], project: ([Node]) throws -> Snapshot
     ) throws -> Snapshot {
-        try T17RetryingSnapshot.read(attempts: attempts, root: root, retryable: isInvalidElement) {
+        try T17RetryingSnapshot.read(attempts: attempts, root: root, retryable: isInvalidElement, beforeRetry: pause) {
             try project(nodes($0))
         }
     }
