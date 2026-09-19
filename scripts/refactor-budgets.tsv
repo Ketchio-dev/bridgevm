@@ -3007,3 +3007,5 @@ apps/macos/Sources/BridgeVMProductE2E/T17FileChooserOwnedSnapshot.swift	7	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserOwnedSnapshotTests.swift	21	0
 apps/macos/Sources/BridgeVMProductE2E/T17ApplicationSnapshot.swift	19	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ApplicationSnapshotTests.swift	58	0
+apps/macos/Sources/BridgeVMProductE2E/T17ApplicationSnapshotFailure.swift	18	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17ApplicationSnapshotFailureTests.swift	43	0
