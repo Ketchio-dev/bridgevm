@@ -75,7 +75,6 @@ final class T17FileChooserAX: T17FileChooserDriving {
         }
         try action(button, kAXPressAction)
     }
-
     func selectedPath() throws -> String? {
         let expected = identifier + ".selection"
         guard let node = try nodes(application).first(where: {
@@ -85,7 +84,7 @@ final class T17FileChooserAX: T17FileChooserDriving {
     }
 
     private func locationSheet() throws -> AXUIElement? {
-        let current = try currentPanel()
+        let current = panel
         predicates.beginOwner(panelCached: current != nil)
         guard let current else { return nil }
         return try semantic(in: current, id: "GoToWindow", roles: [kAXSheetRole])
@@ -95,15 +94,16 @@ final class T17FileChooserAX: T17FileChooserDriving {
         return try semantic(in: sheet, id: "PathTextField", roles: [kAXTextFieldRole, kAXComboBoxRole])
     }
     private func semantic(in root: AXUIElement, id: String, roles: Set<String>) throws -> AXUIElement? {
-        let candidates = try nodes(root)
-        if let identified = try predicates.find(in: { candidates }, id: id, roles: roles, metadata: {
-            (try self.attribute($0, kAXIdentifierAttribute) as? String,
-             try self.attribute($0, kAXRoleAttribute) as? String)
-        }, same: { CFEqual($0, $1) }) { return identified }
-        return try T17FileChooserSemanticIdentity.find(in: candidates, id: id, roles: roles, metadata: {
-            (try self.attribute($0, kAXIdentifierAttribute) as? String,
-             try self.attribute($0, kAXRoleAttribute) as? String)
-        }, same: { CFEqual($0, $1) })
+        try T17FileChooserOwnedSnapshot.read(owner: root, nodes: nodes) { candidates in
+            if let identified = try predicates.find(in: { candidates }, id: id, roles: roles, metadata: {
+                (try self.attribute($0, kAXIdentifierAttribute) as? String,
+                 try self.attribute($0, kAXRoleAttribute) as? String)
+            }, same: { CFEqual($0, $1) }) { return identified }
+            return try T17FileChooserSemanticIdentity.find(in: candidates, id: id, roles: roles, metadata: {
+                (try self.attribute($0, kAXIdentifierAttribute) as? String,
+                 try self.attribute($0, kAXRoleAttribute) as? String)
+            }, same: { CFEqual($0, $1) })
+        }
     }
 
     private func openButton() throws -> AXUIElement? {
