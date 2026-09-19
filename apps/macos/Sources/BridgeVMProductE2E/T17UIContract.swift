@@ -1,3 +1,3 @@
 enum T17UIContract {
-    static let initialCreateControlIdentifier = "bridgevm.library.toolbar.create"
+    static let initialCreateControlIdentifier = "bridgevm.first-run.create"
 }
