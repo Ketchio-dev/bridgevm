@@ -14,7 +14,16 @@ $row = [pscustomobject]@{Handle='42';ProcessId=7;X=0;Y=0;Width=10;Height=10;Titl
 ConvertTo-BvWindowInventoryLines -Rows @($row)
 '@
     native_failure = @'
-Add-Type -TypeDefinition 'namespace BridgeVM { public static class NativeWindowInventory { public static object[] Enumerate() { throw new System.InvalidOperationException("fixture provider failure"); } } }'
+$assembly = [Reflection.Emit.AssemblyBuilder]::DefineDynamicAssembly(
+    [Reflection.AssemblyName]::new('BridgeVM.InventoryFailureFixture'), [Reflection.Emit.AssemblyBuilderAccess]::Run)
+$type = $assembly.DefineDynamicModule('main').DefineType('BridgeVM.NativeWindowInventory',
+    [Reflection.TypeAttributes]'Public, Abstract, Sealed')
+$method = $type.DefineMethod('Enumerate', [Reflection.MethodAttributes]'Public, Static', [object[]], [Type[]]@())
+$il = $method.GetILGenerator()
+$il.Emit([Reflection.Emit.OpCodes]::Ldstr, 'fixture provider failure')
+$il.Emit([Reflection.Emit.OpCodes]::Newobj, [InvalidOperationException].GetConstructor([Type[]]@([string])))
+$il.Emit([Reflection.Emit.OpCodes]::Throw)
+$null = $type.CreateType()
 Get-BvWindowInventoryLines
 '@
     missing_provider = 'Get-BvWindowInventoryLines'
@@ -23,7 +32,8 @@ try {
     foreach ($name in $cases.Keys) {
         $script = Join-Path $root ($name + '.ps1')
         [IO.File]::WriteAllText($script, $prefix + $cases[$name] + "`nWrite-Output 'UNREACHED'`n", [Text.Encoding]::UTF8)
-        $null = Invoke-BvInventoryErrorChild -Run $run -Name $name -Script $script
+        $result = Invoke-BvInventoryErrorChild -Run $run -Name $name -Script $script
+        if ($name -eq 'native_failure' -and $result.Error -notmatch 'fixture provider failure') { throw 'Native failure fixture did not reach the emitted provider' }
     }
     $failed = $false
 } finally { Complete-BvInventoryErrorRun $run $root $failed }
