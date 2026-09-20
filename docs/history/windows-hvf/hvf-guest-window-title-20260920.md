@@ -12,7 +12,7 @@ distinguish and exposed an implementation directory in the user interface.
 
 ## Correction
 
-Source `bf7110cb8945c35682e8a7c37e5ffabe8ed63ae6` moves title selection into a
+Source `446d90aa7ec84b101db33bc731e6d78409da955a` moves title selection into a
 pure resolver with three bounded outcomes:
 
 - a current library session uses its exact saved VM display name;
@@ -30,7 +30,7 @@ a whitespace-only saved name, arbitrary and relative paths, and a deceptive
 `disks-extra` near-match. Structural budgets pass with both new files registered
 at their actual 19 and 36 lines.
 
-The complete source-head project check ran all executable, documentation and
+Before the main rebase, the complete source-head project check ran all executable, documentation and
 structural suites. BridgeVMControl reported 848 shim passes with two required
 live-only skips; the only failing step was the expected stale capability
 identity before this record. The retained 7,851-line log SHA-256 is
