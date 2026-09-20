@@ -8,8 +8,9 @@ target disk path and can eventually kill them. Deletion could therefore cross
 the exact runtime-ownership boundary even after the visible Stop controls had
 been restricted to an app-owned identity.
 
-Source `f3ee12430581dd978f776307146c7a6ec589b47f` makes deletion fail closed:
-
+Source `f3ee12430581dd978f776307146c7a6ec589b47f` makes deletion fail closed; source
+`574f812c11c681a2bce014ff3bb81761d9478cbf` disables the visible action while
+running and makes its confirmation copy describe refusal instead of auto-stop:
 - the final worker probes liveness once and refuses a running VM without a
   stop call, guest-control write or delete attempt;
 - an own-HVF deletion acquires the native disk-and-vars media lease before
@@ -39,8 +40,7 @@ documentation and structural steps. Rust reported 1,018 own-HVF tests passing
 with one existing intentional ignore and 381 probe tests passing. Its only
 failed step was the expected capability-freshness gate because `tested_commit`
 still named the preceding checkpoint before this record. The retained
-7,706-line log SHA-256 is
-`2947c3270b8cbe3cab8c81b0d123e28deea86cdf23ad378d6d0ae0b349930b94`.
+7,706-line log SHA-256 is `2947c3270b8cbe3cab8c81b0d123e28deea86cdf23ad378d6d0ae0b349930b94`.
 
 This checkpoint proves deterministic host-side deletion admission and native
 media ownership. It does not prove live Windows deletion, shutdown, guest
