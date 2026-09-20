@@ -4,6 +4,7 @@ struct HvfRuntimeStatusCard: View {
     @ObservedObject var session: HvfEngineSession
     let ready: Bool
     let stateText: String
+    let stateCode: String
     let heartbeatText: String
     let refusal: String?
     let start: () -> Void
@@ -29,9 +30,9 @@ struct HvfRuntimeStatusCard: View {
                         .accessibilityIdentifier("bridgevm.windows.runtime.start.failure")
                 }
                 HStack(spacing: 24) {
-                    infoItem("State", stateText)
-                    infoItem("Heartbeat", heartbeatText)
-                    infoItem("Events", "\(session.events.count)")
+                    infoItem("State", stateText, "bridgevm.windows.runtime.state")
+                    infoItem("Heartbeat", heartbeatText, "bridgevm.windows.runtime.heartbeat")
+                    infoItem("Events", "\(session.events.count)", "bridgevm.windows.runtime.events")
                 }
             }
             .padding(6)
@@ -40,10 +41,11 @@ struct HvfRuntimeStatusCard: View {
         }
     }
 
-    private func infoItem(_ label: String, _ value: String) -> some View {
+    private func infoItem(_ label: String, _ value: String, _ identifier: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.caption).foregroundColor(.secondary)
-            Text(value).font(.body.monospaced())
+            Text(value).font(.body.monospaced()).accessibilityIdentifier(identifier)
+                .accessibilityValue(label == "State" ? stateCode : value)
         }
     }
 }

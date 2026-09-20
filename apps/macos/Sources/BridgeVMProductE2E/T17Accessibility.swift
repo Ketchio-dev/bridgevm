@@ -9,6 +9,7 @@ protocol T17UIControlling {
     func choose(path: String, from identifier: String, timeout: TimeInterval) throws
     func waitFor(_ identifier: String, timeout: TimeInterval) throws
     func text(_ identifier: String, timeout: TimeInterval) throws -> String
+    func optionalText(_ identifier: String) throws -> String?
     func clickSecondaryWindow(timeout: TimeInterval) throws
     func textSnapshot() -> [String]
 }
@@ -29,8 +30,17 @@ final class T17Accessibility: T17UIControlling {
 
     func text(_ identifier: String, timeout: TimeInterval = 10) throws -> String {
         let target = try element(identifier, timeout: timeout)
+        return try textValue(target)
+    }
+
+    func optionalText(_ identifier: String) throws -> String? {
+        let match = try snapshotElement(identifier)
+        return try match.map(textValue)
+    }
+
+    private func textValue(_ target: AXUIElement) throws -> String {
         for name in [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
-            if let value = attribute(target, name as CFString) as? String { return value }
+            if let value = try T17SupportedAttribute.read(target, name) as? String { return value }
         }
         throw T17Blocker(code: "ui-element-missing", detail: "identified UI element has no text")
     }
@@ -107,26 +117,23 @@ final class T17Accessibility: T17UIControlling {
     private func element(_ identifier: String, timeout: TimeInterval) throws -> AXUIElement {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
-            let match: AXUIElement?
-            do {
-                match = try T17ApplicationSnapshot.read(
-                    root: { AXUIElementCreateApplication(self.pid) },
-                    nodes: { try self.descendants(of: $0, limit: 12_000) },
-                    project: { nodes in
-                        try T17CreationProbe.find(identifier, in: nodes, identifier: {
-                            try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String
-                        }, value: {
-                            try T17SupportedAttribute.read($0, kAXValueAttribute) as? String
-                        })
-                    })
-            } catch {
-                throw T17ApplicationSnapshotFailure.attributed(error, identifier: identifier)
-            }
+            let match = try snapshotElement(identifier)
             if let match { return match }
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         } while Date() < deadline
         let application = AXUIElementCreateApplication(pid)
         throw T17Blocker(code: "ui-element-missing", detail: "required accessibility identifier was not found: \(identifier); windows=\((attribute(application, kAXWindowsAttribute as CFString) as? [AXUIElement]).map { String($0.count) } ?? "unanswered") timeout_s=\(timeout)")
+    }
+
+    private func snapshotElement(_ identifier: String) throws -> AXUIElement? {
+        do {
+            return try T17ApplicationSnapshot.read(
+                root: { AXUIElementCreateApplication(self.pid) },
+                nodes: { try self.descendants(of: $0, limit: 12_000) },
+                project: { nodes in try T17CreationProbe.find(identifier, in: nodes, identifier: {
+                    try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String
+                }, value: { try T17SupportedAttribute.read($0, kAXValueAttribute) as? String }) })
+        } catch { throw T17ApplicationSnapshotFailure.attributed(error, identifier: identifier) }
     }
 
     private func firstDescendant(of root: AXUIElement, role expected: String) throws -> AXUIElement? {
