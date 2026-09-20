@@ -122,6 +122,9 @@ final class T17ProductRunner {
         try ui.press("bridgevm.install.start", timeout: 20)
         try T17InstallMonitor.wait(
             applicationIsRunning: { self.application?.isRunning == true },
+            installedRuntimeVisible: {
+                (try? ui.waitFor("bridgevm.windows.runtime.view", timeout: 1)) != nil
+            },
             stage: { try? ui.text(T17InstallMonitor.stageIdentifier, timeout: 1) },
             failure: { try? ui.text(T17InstallMonitor.failureIdentifier, timeout: 1) })
     }

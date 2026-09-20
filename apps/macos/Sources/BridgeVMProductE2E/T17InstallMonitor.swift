@@ -8,7 +8,7 @@ enum T17InstallMonitor {
         timeout: TimeInterval = 1_800,
         clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         pause: (TimeInterval) -> Void = { RunLoop.current.run(until: Date().addingTimeInterval($0)) },
-        applicationIsRunning: () -> Bool,
+        applicationIsRunning: () -> Bool, installedRuntimeVisible: () -> Bool,
         stage: () -> String?,
         failure: () -> String?
     ) throws {
@@ -23,7 +23,7 @@ enum T17InstallMonitor {
                 let observed = failure()?.trimmingCharacters(in: .whitespacesAndNewlines)
                 let message = observed.flatMap { $0.isEmpty ? nil : $0 } ?? "product install reported a failed UI stage"
                 throw T17Blocker(code: "installer-failed", detail: String(message.prefix(512)))
-            default: pause(0.2)
+            default: if installedRuntimeVisible() { return }; pause(0.2)
             }
         } while clock() < deadline
         throw T17Blocker(code: "installer-failed", detail: "product install did not reach a terminal UI stage")

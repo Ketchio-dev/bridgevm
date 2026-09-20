@@ -1,65 +1,60 @@
-# A9 WinPE receipt-comparison failure
+# A9 WinPE installation checkpoints
 
 ## Scope
 
-This record preserves physical T17 job
-`t17-cdb6940c-source-lock-pilot-r13`. It does not promote A9, A11, the
-product state, or any graphics claim. The job used the supported 3D-off path.
+This record preserves physical T17 jobs `t17-cdb6940c-source-lock-pilot-r13`
+and `t17-87b2db1b-winpe-comparator-pilot-r14`. Neither job promotes A9, A11,
+the product state, or any graphics claim. Both used the supported 3D-off path.
 
-## Sealed run
+## R13: missing WinPE comparator
 
-- Exact main commit: `cdb6940ce0f8a87565127baa0ed0dfb20046ad79`.
-- Hosted verification: all 45 exact-main push workflows passed; core CI run
-  `35488319044` passed.
-- App signing class: Apple Development, Team ID `CP9SP67S98`, CDHash
-  `fd8bb984ad69171f840a45eb380a9c16eec81c43`.
-- T17 input manifest SHA-256:
-  `738ad9b27efe81345a512b68811d3034ccef2c80cdc9d1f7251a7b29ace8be08`.
-- Verified input record SHA-256:
-  `ea5d26c7616039e6f7fcf42d790aedd2b43282d67b4bf93f4812bd956436b500`.
-- Strict public and private receipt SHA-256:
-  `5790e48f2d51d5c63bdd70c7916fefdc99dc693d5c987d349286d3f26118ef52`.
-- Authenticated private lane result SHA-256:
-  `f2e8fb67a660f565f024f3a9e85a102c4c32cb11eb10dd3149f694d273675ea7`.
+R13 ran exact main `cdb6940ce0f8a87565127baa0ed0dfb20046ad79`, whose 45 hosted push
+workflows passed, including CI `35488319044`. The Apple Development app used
+Team ID `CP9SP67S98`, CDHash `fd8bb984ad69171f840a45eb380a9c16eec81c43`,
+and input manifest SHA-256 `738ad9b27efe81345a512b68811d3034ccef2c80cdc9d1f7251a7b29ace8be08`.
+Strict receipts verified at SHA-256 `5790e48f2d51d5c63bdd70c7916fefdc99dc693d5c987d349286d3f26118ef52`.
 
-The receipt remains failed with `failure_code=installer-failed`, one artifact
-preflight pass, one exact VM-creation pass, zero source-prepared passes, zero
-Windows-installed passes, verified worker cleanup, and no claim or promotion.
-The source cache was physically built and WinPE executed, but the official
-source-prepared stage is false, so this record does not relabel that stage.
+The failed receipt records `installer-failed`, one artifact-preflight pass, one
+exact VM-creation pass, zero later passes, and verified cleanup. The framebuffer
+showed DISM at 100% and all three driver packages installed, followed by `fc`
+not found and a receipt-copy mismatch before `bcdboot`. Read-only target
+inspection found neither the Microsoft boot file nor BridgeVM success marker.
+The host recorded 233 completed writes and 13 flushes with no pending
+completion; this proves target I/O only, not installation.
 
-## Direct failure evidence
+Source `0caef866610399ef13836c3dee7b9821004697ef` replaced `fc` with a
+fail-closed app-owned ARM64 Windows comparator injected into boot.wim image 2.
+Its complete project check passed at log SHA-256
+`1069d530161254243a4200cdd3286a7ad2fe18ee8a31d6669ab67fc0ab7c7995`.
 
-The final framebuffer shows DISM completing the Windows image apply at 100%,
-then all three signed driver packages installing successfully. The next
-command reports that `fc` is not recognized and the script emits
-`BVINSTALL ERROR: guest provisioning receipt copy mismatch`. Therefore the
-script exits before its `BVINSTALL BCDBOOT` line.
+## R14: transient completion UI
 
-Read-only attachment of the retained 64 GiB target found the expected GPT,
-260 MiB FAT32 ESP, 16 MiB MSR, and NTFS Windows partition. The ESP contained
-neither `EFI/Microsoft/Boot/bootmgfw.efi` nor
-`EFI/BridgeVM/install-success.txt`. This agrees with the displayed control
-flow. The subsequent UEFI `bootmgfw.efi: Not Found` message is a consequence
-of skipping `bcdboot`, not evidence of an NVMe or firmware-read defect.
+R14 ran exact main `87b2db1b0257b1690d2fd133e3eb101c356cf970`, whose 45 hosted push
+workflows passed. The signed artifact had Team ID `CP9SP67S98`, CDHash
+`875c62de3be26c554aab292288abb8025e70e55e`, and input manifest SHA-256
+`26350c6217e447bfdd49d2f6079c4f142d84febef6c5e9c432f3dfe43d95ada8`.
+Strict public/private receipts both verified at SHA-256
+`d8d81aa4d4fa3483f811ad30ba5726007840f22bfc3be004333596b68fbfd18e`;
+the authenticated lane result SHA-256 is
+`05058d63d4c8274b688e7b48aeeb9f604c8aef4ffc5b8df28e1b8ccd681630c7`.
 
-The host log recorded 233 completed target writes and 13 completed flushes,
-with no pending completion at the boundary. Its SHA-256 is
-`bef477adf3794b5149d38d33271f7dbe80314f2d656bc4bce77ddc182e8b248c`.
-That supports successful target I/O only; it does not prove installation.
+The direct install marker recorded payload roles storage, serial and network
+plus `bcdboot=complete`; the app published `installPending=false`, a 64 GiB
+target, UEFI vars and `hvf-install-done.json`, then displayed the stopped
+installed VM runtime view. The helper nevertheless remained in
+`installWindows` until its 1,800-second bound because the transient installer
+`완료` node had already left the AX graph. The strict failed receipt therefore
+records `installer-failed`, one artifact-preflight pass, one VM-creation pass,
+zero official later passes, failure detail `product install did not reach a
+terminal UI stage`, and verified cleanup. It does not claim installed boot or
+any guest journey stage.
 
-## Repair and limits
-
-Source `0caef866610399ef13836c3dee7b9821004697ef` replaces the unavailable
-WinPE `fc` invocation with the fail-closed native byte comparator. App
-packaging cross-compiles it as ARM64 Windows PE and bundles the result as an
-exact install input. The release workflow installs that build-time compiler;
-the runtime source builder injects the exact app-owned input into boot.wim
-image 2 without requiring Zig, and comparison failure still stops
-before `bcdboot`.
-
-The focused wiring, security, source-builder and product-E2E contracts, all
-four Swift shim suites, structural budgets, and the complete project check passed; log SHA-256 is `1069d530161254243a4200cdd3286a7ad2fe18ee8a31d6669ab67fc0ab7c7995`.
-These deterministic results do not prove that the comparator executes in
-WinPE or that the install reaches `bcdboot`; a new sealed physical pilot is
-required. A9 and A11 remain OPEN.
+Source `f500ba6d372020c485e7273f33f635277bd4679e` accepts the exact
+`bridgevm.windows.runtime.view` transition as a terminal UI observation; the
+unchanged next step still requires `installPending=false`, disk, vars and
+`hvf-install-done.json` before proving installation. Source head
+`c5b41a98f363af7e2dc9d595477f0cac84fc6b14` also makes the release-override
+gate inspect Xcode 27 Swift-build objects. Focused tests and the complete local
+project check passed; log SHA-256 is
+`211b56690c3a3a9573ca636ec7cfa60c5d572a841fb6a9f5093add89a3756530`.
+A new exact-source signed physical pilot remains required. A9 and A11 remain OPEN.

@@ -1,20 +1,20 @@
 import XCTest
 @testable import BridgeVMProductE2E
-
 final class T17InstallMonitorTests: XCTestCase {
     private func run(
         timeout: TimeInterval = 1, running: @escaping () -> Bool = { true },
-        stage: @escaping () -> String?, failure: @escaping () -> String? = { nil }
+        installed: @escaping () -> Bool = { false }, stage: @escaping () -> String?,
+        failure: @escaping () -> String? = { nil }
     ) throws {
         var now = 0.0
         try T17InstallMonitor.wait(timeout: timeout, clock: { now }, pause: { now += $0 },
-                                   applicationIsRunning: running, stage: stage, failure: failure)
+                                   applicationIsRunning: running, installedRuntimeVisible: installed,
+                                   stage: stage, failure: failure)
     }
-
-    func testCompletedStageReturns() {
+    func testCompletedStageOrRuntimeTransitionReturns() {
         XCTAssertNoThrow(try run(stage: { "완료" }))
+        XCTAssertNoThrow(try run(installed: { true }, stage: { nil }))
     }
-
     func testFailedStageRetainsBoundedMessage() {
         XCTAssertThrowsError(try run(stage: { "실패" }, failure: { " measured failure " })) { error in
             XCTAssertEqual(error as? T17Blocker,
