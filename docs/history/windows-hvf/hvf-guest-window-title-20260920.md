@@ -12,7 +12,7 @@ distinguish and exposed an implementation directory in the user interface.
 
 ## Correction
 
-Source `446d90aa7ec84b101db33bc731e6d78409da955a` moves title selection into a
+Source `446d90aa04abd7d5a06314984f815b62c6632d7f` moves title selection into a
 pure resolver with three bounded outcomes:
 
 - a current library session uses its exact saved VM display name;
