@@ -159,11 +159,7 @@ struct LibraryDashboardDetail: View {
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
             Divider()
-            if let session = library.hvfRuntimeDetailSession(for: config) {
-                HvfEngineView(session: session)
-            } else {
-                VMDetailPanel(model: model, library: library)
-            }
+            LibraryRuntimeDetailContent(config: config, model: model, library: library)
         }
     }
 

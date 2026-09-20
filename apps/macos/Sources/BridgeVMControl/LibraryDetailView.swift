@@ -1,5 +1,4 @@
 import SwiftUI
-
 struct LibraryDetailView: View {
     @ObservedObject var library: LibraryModel
 
@@ -17,11 +16,11 @@ struct LibraryDetailView: View {
                 HvfWindowsInstallPreparationView(config: detail.config, library: library)
                     .id(detail.config.slug)
             } else if let session = library.hvfRuntimeDetailSession(for: detail.config) {
-                HvfEngineView(session: session)
-                    .id(ObjectIdentifier(session))
+                HvfEngineView(session: session).id(ObjectIdentifier(session))
+            } else if detail.config.engineKind == .hvfEngine {
+                LibraryUnavailableRuntimeDetail(config: detail.config, library: library)
             } else {
-                VMDetailPanel(model: detail.model, library: library)
-                    .id(detail.config.slug)
+                VMDetailPanel(model: detail.model, library: library).id(detail.config.slug)
             }
         } else if library.vms.isEmpty {
             FirstRunView(library: library)
@@ -29,5 +28,4 @@ struct LibraryDetailView: View {
             LibraryEmptyState(library: library)
         }
     }
-
 }
