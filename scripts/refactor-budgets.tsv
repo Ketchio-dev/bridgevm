@@ -3056,3 +3056,6 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGraphicsRuntimePresentation.swif
 apps/macos/Tests/BridgeVMControlTests/HvfGraphicsRuntimePresentationTests.swift	34	0
 docs/history/windows-hvf/truthful-graphics-mode-presentation-20260920.md	48	0
 docs/history/windows-hvf/dashboard-owned-runtime-20260920.md	56	0
+apps/macos/Sources/BridgeVMControl/HvfRuntimeStopAction.swift	30	0
+apps/macos/Sources/BridgeVMControl/RetainedRuntimeStopControl.swift	22	0
+apps/macos/Tests/BridgeVMControlTests/HvfRuntimeStopActionTests.swift	85	0
