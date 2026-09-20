@@ -3064,3 +3064,6 @@ apps/macos/Sources/BridgeVMControl/LibraryDashboardRuntimeStopControl.swift	23	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeStopPresentationTests.swift	28	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeStatusStopControl.swift	26	0
 docs/history/windows-hvf/retained-runtime-owned-stop-20260920.md	50	0
+apps/macos/Sources/BridgeVMControl/LibraryDeletionAction.swift	12	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfProtectedDeletion.swift	9	0
+apps/macos/Tests/BridgeVMControlTests/LibraryDeletionActionTests.swift	33	0
