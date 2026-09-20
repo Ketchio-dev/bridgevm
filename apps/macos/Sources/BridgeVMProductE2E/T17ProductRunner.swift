@@ -199,7 +199,7 @@ final class T17ProductRunner {
             return ready != nil
         }
         guard observed, let ready else {
-            throw T17Blocker(code: "guest-evidence-missing", detail: "first boot has no BVAGENT READY evidence")
+            throw T17Blocker(code: "guest-evidence-missing", detail: "first boot has no BVAGENT READY evidence; \(T17FirstBootDiagnostic.capture(log))")
         }
         return ready
     }
