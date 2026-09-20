@@ -5,14 +5,16 @@
 # write and easy to get wrong. A string absent from the release object cannot be
 # read there. Debug is a control: missing from both would prove nothing.
 set -uo pipefail
-
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO" || exit 1
-
-BUILD=apps/macos/.build/arm64-apple-macosx
+BUILD=apps/macos/.build
 # Every object, not a named list, which covers only today's readers.
-objects_in() { find "$BUILD/$1" -name '*.o' 2>/dev/null; }
-
+objects_in() {
+  local legacy="$BUILD/arm64-apple-macosx/$1" modern="$BUILD/out/Intermediates.noindex" title="Release"
+  [[ "$1" == debug ]] && title="Debug"
+  find "$legacy" -name '*.o' 2>/dev/null
+  find "$modern" -path "*/$title/*" -name '*.o' 2>/dev/null
+}
 # Each of these lets something outside the signed bundle decide what the app
 # runs, or where it reads the repository from.
 FORBIDDEN_IN_RELEASE=(
@@ -27,16 +29,22 @@ FORBIDDEN_IN_RELEASE=(
 # listed here is a violation this gate has agreed to tolerate; the loop below
 # fails when one gets fixed, so the list cannot quietly outlive its reason.
 KNOWN_UNFIXED=()
-
 status=0
-missing_build=0
 
 count_in() {
   local objects
   objects="$(objects_in "$1")"
-  [[ -n "$objects" ]] || { missing_build=1; printf '0'; return; }
+  [[ -n "$objects" ]] || { printf '0'; return; }
   xargs strings <<< "$objects" 2>/dev/null | grep -c -- "$2" || true
 }
+
+if [[ -z "$(objects_in debug)" || -z "$(objects_in release)" ]]; then
+  echo "SKIP: build both configurations first:" >&2
+  echo "  swift build --package-path apps/macos" >&2
+  echo "  swift build -c release --package-path apps/macos" >&2
+  echo "release overrides: SKIP (artifacts absent)"
+  exit 0
+fi
 
 for needle in ${KNOWN_UNFIXED[@]+"${KNOWN_UNFIXED[@]}"}; do
   [[ "$(count_in release "$needle")" != 0 ]] ||
@@ -45,14 +53,6 @@ done
 for needle in "${FORBIDDEN_IN_RELEASE[@]}"; do
   release_hits=$(count_in release "$needle")
   debug_hits=$(count_in debug "$needle")
-
-  if [[ "$missing_build" == 1 ]]; then
-    echo "SKIP: build both configurations first:" >&2
-    echo "  swift build --package-path apps/macos" >&2
-    echo "  swift build -c release --package-path apps/macos" >&2
-    echo "release overrides: SKIP (artifacts absent)"
-    exit 0
-  fi
 
   if [[ "$release_hits" != 0 ]]; then
     echo "FAIL: $needle is reachable in the release build ($release_hits refs)" >&2
