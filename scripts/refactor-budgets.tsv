@@ -3062,3 +3062,4 @@ apps/macos/Tests/BridgeVMControlTests/HvfRuntimeStopActionTests.swift	85	0
 apps/macos/Sources/BridgeVMControl/HvfRuntimeStopPresentation.swift	19	0
 apps/macos/Sources/BridgeVMControl/LibraryDashboardRuntimeStopControl.swift	23	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeStopPresentationTests.swift	28	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeStatusStopControl.swift	26	0
