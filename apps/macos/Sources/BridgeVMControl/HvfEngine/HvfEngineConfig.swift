@@ -38,7 +38,7 @@ struct HvfEngineConfig: Equatable {
     var vtpmStateDir: String? = nil
     var swtpmBin: String = VTPMStateSecurity.defaultSwtpmCommand()
     var vtpmKeyID: String? = nil
-    var allowsExperimental3D: Bool = true
+    var allowsExperimental3D: Bool = false
     var libraryContext: HvfLibraryLaunchContext? = nil
 
     /// The versioned launch manifest this configuration means, as consumed by

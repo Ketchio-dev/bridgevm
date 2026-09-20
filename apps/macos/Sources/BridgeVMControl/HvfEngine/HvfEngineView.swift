@@ -19,7 +19,7 @@ struct HvfEngineView: View {
     @State private var shareHostDir = ""
     @State private var shareGuestDir = "C:\\bridgevm-share"
     @State private var virtioNet = false
-    @State private var virtioGpu3d = true
+    @State private var virtioGpu3d = false
     @State private var nvmeBufferedIO = false
     @State private var ctlFilePath = ""
     @State private var ctlInput = ""
@@ -414,8 +414,8 @@ struct HvfEngineView: View {
                                shareHostDir: nil,
                                shareGuestDir: nil,
                                virtioNet: false,
-                               virtioGpu3d: true,
+                               virtioGpu3d: false,
                                nvmeBufferedIO: false,
-                               ctlFilePath: "\(evidence)/bvagent.ctl")
+                               ctlFilePath: "\(evidence)/bvagent.ctl", allowsExperimental3D: true)
     }
 }
