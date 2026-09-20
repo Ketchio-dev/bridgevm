@@ -35,12 +35,12 @@ required live-only skips, 62 AppleVzRunnerCore tests and 109
 BridgeVMProductE2E tests. Structural budgets pass; `LibraryModel.swift` falls
 from 177 to 172 lines and every new file is registered at its actual size.
 
-The complete source-tree project check ran all executable, app, security,
-documentation and structural steps. Rust reported 1,018 own-HVF tests passing
-with one existing intentional ignore and 381 probe tests passing. Its only
-failed step was the expected capability-freshness gate because `tested_commit`
-still named the preceding checkpoint before this record. The retained
-7,706-line log SHA-256 is `2947c3270b8cbe3cab8c81b0d123e28deea86cdf23ad378d6d0ae0b349930b94`.
+The complete source-tree project check passed on exact metadata checkpoint
+`1d90de261a0850290fc3f02fcddeb04f0b9460fb`. Rust reported 1,018 own-HVF
+tests with one intentional ignore and 381 probe tests; the four Swift suites
+reported 425, 839 with two live-only skips, 62 and 109 passing tests. The
+retained 7,690-line log SHA-256 is
+`90b1fb8abb14a61fc87963615f510ce8629a36ffed5a2e5c2bf3f258806f637c`.
 
 This checkpoint proves deterministic host-side deletion admission and native
 media ownership. It does not prove live Windows deletion, shutdown, guest
