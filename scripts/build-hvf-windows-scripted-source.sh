@@ -6,15 +6,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/hvf-disk-image-utils.sh"
 ISO="${ISO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/ISO/Win11_25H2_English_Arm64_v2.iso}"
 ASSETS="${ASSETS:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/win-assets}"; WIMLIB="${WIMLIB:-}"
+FILE_COMPARE="${WINDOWS_FILE_COMPARE:-}"
 OUT="${OUT:-$HOME/BridgeVM/win-nvme-src.raw}"
 SIZE_BYTES="${SIZE_BYTES:-17179869184}" # 16 GiB
 SWM_SPLIT_MB="${SWM_SPLIT_MB:-3800}"     # keep each .swm < FAT32 4 GiB limit
 log() { printf '[build-src] %s\n' "$*"; }
 [[ -f "$ISO" ]] || { echo "FAIL: ISO not found: $ISO" >&2; exit 1; }
-for f in winpeshl.ini bvinstall.cmd bvdiskpart.txt bv-file-compare.c bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-pointer-input.cs bvagent-window-inventory.ps1 bv-window-inventory.cs bvagent-task.ps1; do
+for f in winpeshl.ini bvinstall.cmd bvdiskpart.txt bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-pointer-input.cs bvagent-window-inventory.ps1 bv-window-inventory.cs bvagent-task.ps1; do
   [[ -f "$ASSETS/$f" ]] || { echo "FAIL: missing asset $ASSETS/$f" >&2; exit 1; }
 done
 [[ "$WIMLIB" == /* && -x "$WIMLIB" ]] || { echo "FAIL: WIMLIB must name an absolute executable" >&2; exit 1; }
+[[ "$FILE_COMPARE" == /* && -f "$FILE_COMPARE" && ! -L "$FILE_COMPARE" ]] || { echo "FAIL: WINDOWS_FILE_COMPARE must name an absolute regular non-symlink file" >&2; exit 1; }
 cleanup() {
   [[ -n "${ISO_DEV:-}" ]] && bridgevm_detach_image "$ISO_DEV" 2>/dev/null || true
   [[ -n "${DST_DEV:-}" ]] && bridgevm_detach_image "$DST_DEV" 2>/dev/null || true
@@ -31,7 +33,6 @@ PROVISION_STAGE="$MOUNT_ROOT/provisioning"
   --payload-dir "${WINDOWS_GUEST_PAYLOAD_DIR:-}" --manifest "${WINDOWS_GUEST_PAYLOAD_MANIFEST:-}" \
   --assets "$ASSETS" --output "$PROVISION_STAGE" \
   --catalog-verifier "${WINDOWS_GUEST_PAYLOAD_CATALOG_VERIFIER:-}"
-command -v zig >/dev/null 2>&1 || { echo "FAIL: zig is required to build the ARM64 WinPE comparator" >&2; exit 1; }; COMPARE_EXE="$MOUNT_ROOT/bv-file-compare.exe"; zig cc -target aarch64-windows-gnu -Os -s -std=c11 -Wall -Wextra -Werror "$ASSETS/bv-file-compare.c" -o "$COMPARE_EXE"
 UNATTEND_PATH="${WINDOWS_UNATTEND_PATH:-$ASSETS/unattend.xml}"
 [[ "$UNATTEND_PATH" == /* && -f "$UNATTEND_PATH" && ! -L "$UNATTEND_PATH" ]] || { echo "FAIL: unattend answer file must be an absolute regular non-symlink file" >&2; exit 1; }
 log "attaching ISO"
@@ -67,7 +68,7 @@ log "injecting bvinstall payload and native comparator into boot.wim image 2"
 add "$ASSETS/winpeshl.ini" /Windows/System32/winpeshl.ini
 add "$ASSETS/bvinstall.cmd" /Windows/System32/bvinstall.cmd
 add "$ASSETS/bvdiskpart.txt" /Windows/System32/bvdiskpart.txt
-add "$COMPARE_EXE" /Windows/System32/bv-file-compare.exe
+add "$FILE_COMPARE" /Windows/System32/bv-file-compare.exe
 UPDATE
 
 log "verifying payload + boot files"

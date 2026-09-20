@@ -5,7 +5,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-product-e2e.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 FAKE="$TMP/bin"; mkdir -p "$FAKE" "$TMP/assets"
 CATALOG_VERIFIER="$("$ROOT/tests/integration/build-windows-catalog-verifier-test-helper.sh" "$TMP")"
-cp "$ROOT/scripts/win-assets/"{winpeshl.ini,bvinstall.cmd,bvdiskpart.txt,bv-file-compare.c,unattend.xml,bvagent.ps1,bvagent-firstboot.ps1,bvagent-input.ps1,bvagent-unicode-input.cs,bvagent-key-input.cs,bvagent-pointer-input.cs,bvagent-window-inventory.ps1,bv-window-inventory.cs,bvagent-task.ps1} "$TMP/assets/"
+cp "$ROOT/scripts/win-assets/"{winpeshl.ini,bvinstall.cmd,bvdiskpart.txt,unattend.xml,bvagent.ps1,bvagent-firstboot.ps1,bvagent-input.ps1,bvagent-unicode-input.cs,bvagent-key-input.cs,bvagent-pointer-input.cs,bvagent-window-inventory.ps1,bv-window-inventory.cs,bvagent-task.ps1} "$TMP/assets/"
 printf 'fake ISO\n' > "$TMP/windows.iso"
 python3 "$ROOT/tests/fixtures/make-synthetic-windows-guest-payload.py" "$TMP/payload" "$TMP/payload.tsv"
 cat > "$FAKE/hdiutil" <<'MOCK'
@@ -45,7 +45,6 @@ cat > "$FAKE/mkfile" <<'MOCK'
 for argument in "$@"; do output="$argument"; done
 : > "$output"
 MOCK
-printf '#!/usr/bin/env bash\nfor argument in "$@"; do output="$argument"; done\n: > "$output"\n' > "$FAKE/zig"
 cat > "$FAKE/rsync" <<'MOCK'
 #!/usr/bin/env bash
 source_path="${@: -2:1}"; destination="${@: -1}"
@@ -61,10 +60,11 @@ case "$1" in
   *) exit 2 ;;
 esac
 MOCK
-chmod 755 "$FAKE/"*
+chmod 755 "$FAKE/"*; : > "$TMP/bv-file-compare.exe"
 BRIDGEVM_HDIUTIL_LOG="$TMP/hdiutil.log" \
 ISO="$TMP/windows.iso" ASSETS="$TMP/assets" OUT="$TMP/source.raw" \
 WIMLIB="$FAKE/wimlib-imagex" \
+WINDOWS_FILE_COMPARE="$TMP/bv-file-compare.exe" \
 WINDOWS_GUEST_PAYLOAD_DIR="$TMP/payload" WINDOWS_GUEST_PAYLOAD_MANIFEST="$TMP/payload.tsv" WINDOWS_GUEST_PAYLOAD_CATALOG_VERIFIER="$CATALOG_VERIFIER" \
 TMPDIR="$TMP" PATH="$FAKE:/usr/bin:/bin:/usr/sbin:/sbin" \
   "$ROOT/scripts/build-hvf-windows-scripted-source.sh" >/dev/null
