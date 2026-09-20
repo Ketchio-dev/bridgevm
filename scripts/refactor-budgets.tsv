@@ -3029,5 +3029,6 @@ apps/macos/Tests/BridgeVMControlTests/NativeTestPythonTests.swift	26	0
 apps/macos/Sources/BridgeVMControl/LibraryDashboardPrimaryAction.swift	27	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDashboardPrimaryActionTests.swift	47	0
 docs/history/windows-hvf/dashboard-running-window-action-20260920.md	37	0
+docs/history/windows-hvf/a19-restore-crash-boundaries-20260920.md	46	0
 apps/macos/Sources/BridgeVMProductE2E/T17FirstBootDiagnostic.swift	47	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FirstBootDiagnosticTests.swift	44	0
