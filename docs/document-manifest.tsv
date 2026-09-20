@@ -207,3 +207,4 @@ docs/history/windows-hvf/retained-runtime-owned-stop-20260920.md	historical-evid
 docs/history/windows-hvf/running-vm-deletion-admission-20260920.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/legacy-graphics-opt-in-20260920.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/hvf-unavailable-detail-fail-closed-20260920.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/native-cli-runtime-graphics-truth-20260920.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
