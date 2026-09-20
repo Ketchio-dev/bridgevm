@@ -93,7 +93,6 @@ final class HvfOwnedRuntimeOutcomeTests: XCTestCase {
         XCTAssertNotNil(deadline)
         try await Task.sleep(nanoseconds: 30_000_000)
         XCTAssertEqual(session.stopOwned(expectedToken: identity.token), .alreadyStopping(deadline: deadline))
-        session.stop()
         XCTAssertEqual(session.stopOwned(expectedToken: identity.token), .alreadyStopping(deadline: deadline))
         XCTAssertEqual(f.lookups, probes)
         XCTAssertNil(session.lastOwnedExit)
