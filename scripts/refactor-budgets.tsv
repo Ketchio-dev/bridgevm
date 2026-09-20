@@ -2104,6 +2104,7 @@ crates/bridgevm-hvf/src/media_lease.rs	107	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_media_lease.rs	21	0
 crates/bridgevm-hvf/src/managed_pair.rs	72	0
 crates/bridgevm-hvf/src/managed_pair_tests.rs	128	0
+crates/bridgevm-hvf/src/managed_pair_interruption_tests.rs	109	0
 crates/bridgevm-hvf/src/managed_pair_layout.rs	81	1
 crates/bridgevm-hvf/src/managed_pair_runtime.rs	20	0
 crates/bridgevm-hvf/src/managed_pair_runtime_tests.rs	83	0
@@ -3028,5 +3029,6 @@ apps/macos/Tests/BridgeVMControlTests/NativeTestPythonTests.swift	26	0
 apps/macos/Sources/BridgeVMControl/LibraryDashboardPrimaryAction.swift	27	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDashboardPrimaryActionTests.swift	47	0
 docs/history/windows-hvf/dashboard-running-window-action-20260920.md	37	0
+docs/history/windows-hvf/a19-restore-crash-boundaries-20260920.md	46	0
 apps/macos/Sources/BridgeVMProductE2E/T17FirstBootDiagnostic.swift	47	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FirstBootDiagnosticTests.swift	44	0
