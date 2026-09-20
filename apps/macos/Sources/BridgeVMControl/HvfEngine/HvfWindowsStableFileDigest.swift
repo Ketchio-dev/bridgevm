@@ -17,7 +17,7 @@ enum HvfWindowsStableFileDigest {
         var hasher = SHA256()
         var bytes: Int64 = 0
         while true {
-            let chunk = try readChunk(handle)
+            let chunk = try autoreleasepool { try readChunk(handle) }
             if chunk.isEmpty { break }
             let (total, overflow) = bytes.addingReportingOverflow(Int64(chunk.count))
             guard !overflow, total <= before.st_size else { throw CocoaError(.fileReadCorruptFile) }
