@@ -3091,3 +3091,4 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17FirstReadyWaiterTests.swift	64	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeAccessibilityState.swift	12	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeAccessibilityStateTests.swift	17	0
 docs/history/windows-hvf/a9-first-ready-terminal-observation-20260920.md	46	0
+docs/history/windows-hvf/native-app-cli-doctor-20260920.md	24	0
