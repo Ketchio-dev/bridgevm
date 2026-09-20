@@ -1,13 +1,14 @@
 import Foundation
 
 struct NativeCLIOptions: Equatable {
-    enum Command: Equatable { case list, inspect(String), readiness(String), status(String), start(String), stop(String), install(String), installStatus(String), installCancel(String), snapshotCreate(String), snapshotRestore(String), createWindows(NativeCLICreateWindowsOptions) }
+    enum Command: Equatable { case list, inspect(String), readiness(String), status(String), start(String), stop(String), install(String), installStatus(String), installCancel(String), snapshotCreate(String), snapshotRestore(String), snapshotExport(NativeCLISnapshotExportOptions), createWindows(NativeCLICreateWindowsOptions) }
     let command: Command
     let libraryRoot: URL
     let json: Bool
     let showHelp: Bool
 
     static func parse(arguments: [String], defaultLibrary: URL = VMLibrary.root) throws -> Self {
+        if NativeCLISnapshotExportParser.selectsCommand(arguments) { return try NativeCLISnapshotExportParser.parse(arguments: arguments, defaultLibrary: defaultLibrary) }
         if NativeCLICreateWindowsParser.selectsCommand(arguments) { return try NativeCLICreateWindowsParser.parse(arguments: arguments, defaultLibrary: defaultLibrary) }
         var positionals: [String] = []
         var library: URL?
@@ -39,7 +40,6 @@ struct NativeCLIOptions: Equatable {
             }
             index += 1
         }
-        let command = try Command.parse(positionals: positionals, help: help)
-        return Self(command: command, libraryRoot: library ?? defaultLibrary, json: json, showHelp: help || arguments.isEmpty)
+        return Self(command: try Command.parse(positionals: positionals, help: help), libraryRoot: library ?? defaultLibrary, json: json, showHelp: help || arguments.isEmpty)
     }
 }

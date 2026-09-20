@@ -1,9 +1,9 @@
-# Create and restore a powered-off snapshot from the CLI
+# Create, restore and export a powered-off snapshot from the CLI
 
 ```sh
 bridgevm app snapshot-create 개발-vm
 bridgevm app snapshot-restore 개발-vm
-bridgevm app snapshot-create 개발-vm --json
+bridgevm app snapshot-export 개발-vm /Volumes/Backup/개발-vm.snapshot --json
 ```
 
 Use the exact ID from `bridgevm app list`. These commands operate only on a
@@ -11,15 +11,16 @@ saved, installed own-HVF Windows VM. Installation-pending and unsupported VM
 entries are refused.
 
 The snapshot contains the VM's current NVMe disk and matching UEFI variable
-store as one managed pair. `snapshot-create` verifies the completed pair before
-returning success. `snapshot-restore` verifies the saved manifest and hashes
-before selecting the restored pair. The helper's media leases refuse an active
-runtime rather than waiting for it.
+store as one managed pair. Create and export both resolve the selected managed
+generation, so an export after restore cannot silently copy stale logical
+originals. Export atomically publishes `disk.raw`, `vars.fd`, and
+`manifest.json`, then verifies both hashes. Restore verifies before selecting
+the pair. The media lease refuses an active runtime rather than waiting.
 
-Disk paths, UEFI variable paths, snapshot destinations, passwords and recovery
-keys are not accepted on the command line. They are resolved from the exact
-saved app-library entry. The bundled helper is required to be a canonical,
-regular executable inside the selected BridgeVM installation.
+The export destination is the only media path accepted on the command line. It
+must be absolute and outside the managed VM bundle. Disk and vars paths come
+from the exact saved app-library entry; secrets remain off argv. The bundled
+helper must be a canonical regular executable in the BridgeVM installation.
 
 Text output describes the host operation and names its limitation. JSON uses
 `schema: "bridgevm.app-snapshot.v1"` and includes the operation, exact VM ID,
@@ -32,5 +33,4 @@ live sample and interruption evidence defined by the
 [V1 snapshot scope](windows-arm/snapshot-scope-v1.md).
 
 This command controls the native app library. The older `bridgevm snapshot`
-commands address the separate manifest-based compatibility store described in
-[CLI setup](app-cli.md).
+commands address the separate compatibility store in [CLI setup](app-cli.md).
