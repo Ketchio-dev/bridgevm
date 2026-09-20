@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs every XCTest function under the shim, per suite.
 #
-# Three per-suite runners rather than one merged binary: merging app and test
+# Four per-suite runners rather than one merged binary: merging app and test
 # sources into one module produced 58 redeclaration errors (fileprivate
 # symbols coexist as separate files and collide once merged). Per suite, the
 # app sources compile into a static library with -enable-testing and the test
@@ -52,10 +52,10 @@ logged BridgeVMApp apps/macos/Sources/BridgeVMApp apps/macos/Tests/BridgeVMAppTe
 logged BridgeVMControl apps/macos/Sources/BridgeVMControl apps/macos/Tests/BridgeVMControlTests -I "$WORK" -L "$WORK" -lBridgeVMWindowProtocol & pids+=($!)
 logged AppleVzRunnerCore apps/macos/Sources/AppleVzRunnerCore apps/macos/Tests/AppleVzRunnerTests \
     -framework Virtualization & pids+=($!)
-
+logged BridgeVMProductE2E apps/macos/Sources/BridgeVMProductE2E apps/macos/Tests/BridgeVMProductE2ETests -framework AppKit -framework ApplicationServices -F /Library/Developer/CommandLineTools/Library/Developer/Frameworks -framework Testing -load-plugin-library /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/Frameworks -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/usr/lib & pids+=($!)
 failed=0
 for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
-for name in BridgeVMApp BridgeVMControl AppleVzRunnerCore; do cat "$WORK/log-$name"; grep -Eq '^shim XCTest: [1-9][0-9]* passed, 0 failed, [0-9]+ skipped$' "$WORK/log-$name" || failed=1; done
+for name in BridgeVMApp BridgeVMControl AppleVzRunnerCore BridgeVMProductE2E; do cat "$WORK/log-$name"; grep -Eq '^shim XCTest: [1-9][0-9]* passed, 0 failed, [0-9]+ skipped$' "$WORK/log-$name" || failed=1; done
 (( failed == 0 )) || { echo "FAIL: at least one shim suite failed" >&2; exit 1; }
 
-echo "PASS: all three shim suites"
+echo "PASS: all four shim suites"

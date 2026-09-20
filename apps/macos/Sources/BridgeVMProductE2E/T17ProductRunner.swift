@@ -132,12 +132,8 @@ final class T17ProductRunner {
     private func verifyCreatedVM() throws {
         let config = vmRoot.appendingPathComponent("vm.json")
         let object = try jsonObject(config)
-        guard object["name"] as? String == request.vmName,
-              object["id"] as? String == request.vmSlug,
-              object["installPending"] as? Bool == true,
-              object["bundlePath"] as? String == bundle.path else {
-            throw T17Blocker(code: "vm-creation-failed", detail: "UI-created VM config does not match the sealed identity")
-        }
+        try T17CreatedVMIdentity.verify(
+            object, name: request.vmName, id: request.vmSlug, bundlePath: bundle.path)
         let managedISO = bundle.appendingPathComponent("disks/installer.iso")
         let managedPayload = bundle.appendingPathComponent("metadata/windows-guest-payload", isDirectory: true)
         let managedManifest = bundle.appendingPathComponent("metadata/windows-guest-payload.tsv")

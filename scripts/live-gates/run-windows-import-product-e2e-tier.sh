@@ -22,7 +22,7 @@ PY
 }
 cleanup_work() {
   [[ -z "$WORK" ]] && return 0
-  case "$WORK" in "/tmp/bridgevm-import-e2e-$JOB_ID."??????) ;; *) return 1;; esac
+  case "$WORK" in "/tmp/bridgevm-import-e2e-$JOB_ID."??????|"/private/tmp/bridgevm-import-e2e-$JOB_ID."??????) ;; *) return 1;; esac
   mount | grep -F "$WORK" >/dev/null 2>&1 && return 1; pgrep -f "$WORK" >/dev/null 2>&1 && return 1
   python3 "$REPO/scripts/live-gates/t17_owned_tree_cleanup.py" --root "$WORK" --job-id "$JOB_ID" --identity "$WORK_ID" || return 1
   [[ ! -e "$WORK" ]]
@@ -45,7 +45,7 @@ VALID=true; [[ ! -f "$OUT/cancel.requested" ]] || { emit canceled canceled 0 tru
 APP="$(json_value "$VERIFIED" assets.app_bundle.path)"; HELPER="$(json_value "$VERIFIED" assets.product_helper.path)"
 if ! codesign --verify --deep --strict "$APP" >/dev/null 2>&1 || ! "$REPO/scripts/verify-product-e2e-helper-app.sh" "$APP" >/dev/null 2>&1; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
 if ! SIGNING="$(bash "$REPO/scripts/live-gates/classify-product-e2e-signing.sh" "$APP")"; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
-WORK="$(mktemp -d "/tmp/bridgevm-import-e2e-$JOB_ID.XXXXXX")"; WORK_ID="$(stat -f '%d:%i' "$WORK")"; chmod 700 "$WORK"
+WORK="$(mktemp -d "/tmp/bridgevm-import-e2e-$JOB_ID.XXXXXX")"; WORK="$(cd "$WORK" && pwd -P)"; WORK_ID="$(stat -f '%d:%i' "$WORK")"; chmod 700 "$WORK"
 SOURCE_DISK="$(json_value "$VERIFIED" assets.source_disk.path)"; SOURCE_VARS="$(json_value "$VERIFIED" assets.source_vars.path)"; SOURCE_VTPM="$(json_value "$VERIFIED" assets.source_vtpm.path)"; SOURCE_VTPM_PACKAGE="$(json_value "$VERIFIED" assets.source_vtpm_package.path)"; SOURCE_VTPM_CODE="$(json_value "$VERIFIED" assets.source_vtpm_code.path)"
 work_device="$(stat -f '%d' "$WORK")"
 for source in "$SOURCE_DISK" "$SOURCE_VARS" "$SOURCE_VTPM" "$SOURCE_VTPM_PACKAGE" "$SOURCE_VTPM_CODE"; do [[ "$(stat -f '%d' "$source")" == "$work_device" ]] || { emit preflight-blocked internal-error 0 true "$SIGNING" || exit 1; exit 1; }; done

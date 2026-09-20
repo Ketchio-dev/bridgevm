@@ -42,7 +42,7 @@ def main() -> int:
         raise ValueError("T17 verified inputs are incomplete")
     root = args.lane_root
     raw_root = str(root)
-    if not raw_root.startswith("/tmp/bridgevm-e2e-") or raw_root != os.path.normpath(raw_root):
+    if not raw_root.startswith(("/tmp/bridgevm-e2e-", "/private/tmp/bridgevm-e2e-")) or raw_root != os.path.normpath(raw_root):
         raise ValueError("lane root is outside the fixed /tmp/bridgevm-e2e-* boundary")
     if not root.is_dir() or root.is_symlink() or any(root.iterdir()):
         raise ValueError("lane root must be an existing empty non-symlink directory")

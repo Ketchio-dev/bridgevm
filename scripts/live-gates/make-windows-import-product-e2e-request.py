@@ -39,7 +39,7 @@ def main() -> int:
     if verified.get("verified") is not True or not isinstance(assets, dict) or verified.get("campaign_mode") != args.mode:
         raise ValueError("import inputs were not verified for this campaign")
     root = args.lane_root; raw_root = str(root)
-    if not raw_root.startswith("/tmp/bridgevm-import-e2e-") or raw_root != os.path.normpath(raw_root):
+    if not raw_root.startswith(("/tmp/bridgevm-import-e2e-", "/private/tmp/bridgevm-import-e2e-")) or raw_root != os.path.normpath(raw_root):
         raise ValueError("lane root is outside /tmp/bridgevm-import-e2e-*")
     inputs = root / "inputs"; disk = inputs / "windows.raw"; variables = inputs / "vars.fd"; vtpm = inputs / "vtpm"; package = inputs / "vtpm-recovery.json"; code = inputs / "vtpm-recovery-code.txt"
     if not root.is_dir() or root.is_symlink() or set(item.name for item in root.iterdir()) != {"inputs"}:
