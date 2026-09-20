@@ -17,7 +17,7 @@ the shader or composition mechanism and does not close B6.
 ## Product correction
 
 Current library launch construction already interprets a missing graphics policy
-as 3D-off. Source `e0fa8f1c688a8a9054b58570154726b4ed1d77ea`
+as 3D-off. Source `bfbbeb3c9aed703e7124c5a8cafb66e00a735897`
 closes the remaining default-on surfaces:
 
 - a raw `HvfEngineConfig` no longer allows experimental 3D unless its caller
