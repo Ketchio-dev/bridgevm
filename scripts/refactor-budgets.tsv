@@ -3074,3 +3074,4 @@ docs/history/windows-hvf/running-vm-deletion-admission-20260920.md	50	0
 docs/history/windows-hvf/legacy-graphics-opt-in-20260920.md	45	0
 apps/macos/Sources/BridgeVMControl/LibraryRuntimeDetailContent.swift	36	0
 apps/macos/Tests/BridgeVMControlTests/LibraryRuntimeDetailContentTests.swift	46	0
+docs/history/windows-hvf/hvf-unavailable-detail-fail-closed-20260920.md	45	0
