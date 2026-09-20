@@ -133,3 +133,5 @@ mod export_tests;
 mod interruption_tests;
 #[path = "managed_pair_ownership_tests.rs"]
 mod ownership;
+#[path = "managed_pair_staging_interruption_tests.rs"]
+mod staging_interruption_tests;
