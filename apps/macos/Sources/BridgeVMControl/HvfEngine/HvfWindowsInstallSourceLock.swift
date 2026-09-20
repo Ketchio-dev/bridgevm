@@ -5,9 +5,7 @@ import Darwin
 
 final class HvfWindowsInstallSourceLock {
     enum LockError: LocalizedError, Equatable {
-        case unsafePath
-        case busy
-        case unavailable
+        case unsafePath, busy, unavailable
 
         var errorDescription: String? {
             switch self {
@@ -24,7 +22,8 @@ final class HvfWindowsInstallSourceLock {
         let source = URL(fileURLWithPath: sourceImagePath).standardizedFileURL
         let parent = source.deletingLastPathComponent()
         try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
-        guard parent.path == parent.resolvingSymlinksInPath().standardizedFileURL.path else {
+        let canonical: (String) -> String = { $0.replacingOccurrences(of: "/private/tmp/", with: "/tmp/", options: .anchored) }
+        guard canonical(parent.path) == canonical(parent.resolvingSymlinksInPath().standardizedFileURL.path) else {
             throw LockError.unsafePath
         }
         let lock = URL(fileURLWithPath: source.path + ".lock")
