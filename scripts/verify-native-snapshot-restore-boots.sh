@@ -15,7 +15,6 @@
 # is host-side storage and is not part of the snapshot, so a marker there would
 # survive a restore that did nothing.
 set -euo pipefail
-
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO" || exit 1
 
@@ -32,10 +31,8 @@ STEP_TIMEOUT=${STEP_TIMEOUT:-240}
 GUEST_MARKER='C:\bv-snapshot-marker.txt'
 NATIVE_SNAPSHOT_CLI=${NATIVE_SNAPSHOT_CLI:-}
 NATIVE_SNAPSHOT_VM_ID=${NATIVE_SNAPSHOT_VM_ID:-a19-native-cli-live}
-
 mkdir -p "$OUT"
 fail() { echo "FAIL: $*" >&2; exit 1; }
-
 [[ "$NATIVE_SNAPSHOT_CLI" == /* && -x "$NATIVE_SNAPSHOT_CLI" && ! -L "$NATIVE_SNAPSHOT_CLI" ]] \
   || fail "NATIVE_SNAPSHOT_CLI must be an absolute non-symlink executable"
 [[ "$NATIVE_SNAPSHOT_VM_ID" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] \
@@ -43,6 +40,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 WORK=$OUT/live
 mkdir "$WORK" || fail "work directory must be new"
 source "$REPO/scripts/snapshot-restore-lifecycle.sh"
+source "$REPO/scripts/native-snapshot-export-live.sh"
 trap snapshot_cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -73,9 +71,7 @@ chmod u+w "$WORK_DISK" "$WORK_VARS" || fail "make private clones writable"
 send_wait() { # ctl, log, command, isolated response path
   python3 "$REPO/scripts/snapshot-restore-channel.py" "$1" "$2" "$3" "$STEP_TIMEOUT" "$4"
 }
-
 # Boot once: report the marker already on C:, write a new one, power off.
-# Writes "<phase>/marker-before.txt" with whatever the guest had on entry.
 boot_and_mark() { # $1 = new marker text, $2 = phase name
   local marker=$1 phase=$2
   local pdir=$OUT/$phase
@@ -163,7 +159,11 @@ assert value == {"schema":"bridgevm.app-snapshot.v1","command":"restore","vmID":
                  "snapshotPath":sys.argv[2],"complete":True}
 PY
 
-echo "=== phase 5: boot the restored pair and read the marker ==="
+echo "=== phase 4b: export the selected restored pair ==="
+native_snapshot_export_and_select "$NATIVE_SNAPSHOT_CLI" "$NATIVE_SNAPSHOT_VM_ID" \
+  "$LIBRARY" "$WORK" "$OUT" || fail "selected-generation export failed"
+
+echo "=== phase 5: boot the exported restored pair and read the marker ==="
 boot_and_mark "BV-FINAL-$(date +%s)" phase5-restored \
   || fail "restored pair never reached agent service state -- the snapshot does not boot"
 
