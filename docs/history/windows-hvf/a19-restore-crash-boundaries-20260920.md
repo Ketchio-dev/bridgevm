@@ -40,7 +40,7 @@ no fault-injection environment switch.
 ## Evidence limit
 
 This proves deterministic process-death behavior around the publication call. The first metadata head failed only because this record was unclassified.
-Correction `b99e771d72c7669364f3766d7fce86291ad01cf9` fixed that, passed
-every other step, then correctly failed stale `tested_commit`; its log
-SHA-256 is `ee4858707b7da36c73c4f47f1b6f13d53488db863b0aaceecd3f565d0c4d2b03`.
-It does not prove power loss, all fsync points, raw export or Windows boot. A19 remains OPEN; exact final metadata-head local and hosted verification remain.
+Correction `b99e771d72c7669364f3766d7fce86291ad01cf9` fixed that, passed every other step, then correctly failed stale `tested_commit`; log SHA-256 is `ee4858707b7da36c73c4f47f1b6f13d53488db863b0aaceecd3f565d0c4d2b03`.
+Final metadata head `01686593013ff8827bad78e7794e6bc12e7dc933` passed the complete project check; log SHA-256 is `bc8dfa35097b29400610960773c135584163c2c63eeeb05fa8aad7a7a8139532`.
+It does not prove power loss, all fsync points, raw export or Windows boot. A19 remains OPEN.
+Exact-head hosted verification remains required.
