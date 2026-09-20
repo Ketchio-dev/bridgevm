@@ -3,25 +3,22 @@ import AppKit
 @MainActor
 enum LibraryDashboardPrimaryAction {
     static func perform(config: VMConfig, model: ControlModel, library: LibraryModel) {
-        perform(running: model.running, start: model.start,
-            resolve: { library.hvfRuntimeDetailSession(for: config) },
-            present: { HvfDisplayWindowController.present(session: $0, title: config.name) },
+        let saved = library.latestConfiguration(for: config)
+        let launch = HvfEngineConfig.libraryVM(saved, rootURL: library.rootURL)
+        perform(observedRunning: model.running,
+            session: library.hvfRuntimeDetailSession(for: saved),
+            requestStart: { session in
+                guard let launch else { return .refused("저장된 VM 실행 구성을 읽지 못했습니다.") }
+                return session.requestGUIStart(configuration: launch)
+            },
+            attach: { $0.attachIfStopped() },
+            present: { HvfDisplayWindowController.present(session: $0, title: saved.name) },
             report: { model.statusNote = $0 })
     }
 
-    static func perform(running: Bool, start: () -> Void,
-                        resolve: () -> HvfEngineSession?,
-                        present: (HvfEngineSession) -> Void,
-                        report: (String) -> Void) {
-        guard running else { start(); return }
-        guard let session = resolve() else {
-            report("실행 중인 VM의 화면 세션을 찾지 못했습니다."); return
-        }
-        let attached = session.attachIfStopped()
-        guard attached || session.hasRetainedAttachment || session.process?.isRunning == true
-                || session.hasPendingRuntimeStart || session.mayHaveOwnedWork else {
-            report("실행 중인 VM 화면에 연결하지 못했습니다."); return
-        }
-        present(session)
+    static func stop(config: VMConfig, model: ControlModel, library: LibraryModel) {
+        stop(session: library.hvfRuntimeDetailSession(for: config),
+            requestStop: { $0.stopOwned(expectedToken: $1.token) },
+            report: { model.statusNote = $0 }, refresh: model.refreshStatus)
     }
 }

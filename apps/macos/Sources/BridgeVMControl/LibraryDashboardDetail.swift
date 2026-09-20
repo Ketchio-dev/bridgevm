@@ -75,26 +75,19 @@ struct LibraryDashboardDetail: View {
     }
 
     private var actionStrip: some View {
-        HStack(spacing: 12) {
-            DashboardActionButton(
-                title: model.running ? "창 열기" : "시작",
-                symbol: "play.fill", prominent: true,
-                disabled: model.lifecycleBusy,
-                action: { LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library) }
-            )
-            DashboardActionButton(
-                title: "정지", symbol: "stop.fill",
-                disabled: !model.running || model.lifecycleBusy,
-                action: model.stop
-            )
-            DashboardActionButton(title: "새로고침", symbol: "arrow.clockwise", action: model.refresh)
+        Group {
             if config.engineKind == .hvfEngine {
-                DashboardActionButton(
-                    title: "복제", symbol: "plus.square.on.square",
-                    disabled: model.running || library.cloningSlugs.contains(config.slug)
-                ) { library.requestWindowsClone(config) }
+                if let session = library.hvfRuntimeDetailSession(for: config) {
+                    LibraryDashboardRuntimeControls(config: config, model: model,
+                        library: library, session: session,
+                        showAdvanced: { showingAdvanced = true })
+                } else {
+                    LibraryDashboardUnavailableRuntimeControls(config: config, model: model,
+                        library: library, showAdvanced: { showingAdvanced = true })
+                }
+            } else {
+                LibraryDashboardLegacyControls(model: model, showAdvanced: { showingAdvanced = true })
             }
-            DashboardActionButton(title: "고급", symbol: "gearshape") { showingAdvanced = true }.accessibilityIdentifier("bridgevm.dashboard.advanced")
         }
     }
 
@@ -217,7 +210,7 @@ struct LibraryDashboardDetail: View {
     }
 }
 
-private struct DashboardActionButton: View {
+struct DashboardActionButton: View {
     let title: String
     let symbol: String
     var prominent = false
