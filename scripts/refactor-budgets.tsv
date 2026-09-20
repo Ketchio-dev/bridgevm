@@ -3025,3 +3025,4 @@ apps/macos/Tests/BridgeVMControlTests/NativeTestPython.swift	20	0
 apps/macos/Tests/BridgeVMControlTests/NativeTestPythonTests.swift	26	0
 apps/macos/Sources/BridgeVMControl/LibraryDashboardPrimaryAction.swift	27	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDashboardPrimaryActionTests.swift	47	0
+docs/history/windows-hvf/dashboard-running-window-action-20260920.md	37	0
