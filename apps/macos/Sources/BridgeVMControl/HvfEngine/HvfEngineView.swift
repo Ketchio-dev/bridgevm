@@ -300,10 +300,8 @@ struct HvfEngineView: View {
     }
 
     private var displayWindowTitle: String {
-        let path = session.config.targetDiskPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !path.isEmpty else { return session.config.libraryContext?.config.name ?? "Windows HVF" }
-        let directoryName = URL(fileURLWithPath: path).deletingLastPathComponent().lastPathComponent
-        return session.config.libraryContext?.config.name ?? (directoryName.isEmpty ? "Windows HVF" : directoryName)
+        HvfDisplayWindowTitle.resolve(libraryName: session.config.libraryContext?.config.name,
+                                      targetDiskPath: session.config.targetDiskPath)
     }
 
     private var displayConnectionStateText: String {
