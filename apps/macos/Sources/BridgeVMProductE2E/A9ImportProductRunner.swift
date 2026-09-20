@@ -156,14 +156,11 @@ final class A9ImportProductRunner {
         try ui.setText(request.sharePath, identifier: "bridgevm.runtime.share.host", timeout: 10)
         try ui.setText("C:\\bridgevm-share", identifier: "bridgevm.runtime.share.guest", timeout: 10)
         try ui.press("bridgevm.windows.runtime.start", timeout: 20)
-        var ready: String?
-        guard wait(timeout: 600, predicate: {
-            ready = self.boundedLines(self.runLog).first { $0.hasPrefix("BVAGENT READY") }
-            return ready != nil
-        }), let ready else {
-            throw T17Blocker(code: "guest-evidence-missing", detail: "imported VM first boot has no BVAGENT READY evidence")
-        }
-        return ready
+        return try T17FirstReadyWaiter.wait(observe: {
+            let ready = self.boundedLines(self.runLog).first { $0.hasPrefix("BVAGENT READY") }
+            return try T17FirstReadyObservation.capture(
+                readyLine: ready, applicationRunning: self.application?.isRunning == true, ui: ui)
+        }, diagnostic: { T17FirstBootDiagnostic.capture(self.runLog) })
     }
 
     private func stopOwnedApplication() -> Bool {

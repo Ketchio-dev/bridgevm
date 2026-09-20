@@ -3083,3 +3083,8 @@ docs/history/windows-hvf/native-cli-runtime-graphics-truth-20260920.md	48	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfDisplayWindowTitle.swift	19	0
 apps/macos/Tests/BridgeVMControlTests/HvfDisplayWindowTitleTests.swift	36	0
 docs/history/windows-hvf/hvf-guest-window-title-20260920.md	42	0
+apps/macos/Sources/BridgeVMProductE2E/T17FirstReadyWaiter.swift	82	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17FirstReadyWaiterTests.swift	64	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeAccessibilityState.swift	12	0
+apps/macos/Tests/BridgeVMControlTests/HvfRuntimeAccessibilityStateTests.swift	17	0
+docs/history/windows-hvf/a9-first-ready-terminal-observation-20260920.md	46	0

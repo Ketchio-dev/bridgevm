@@ -220,6 +220,7 @@ struct HvfEngineView: View {
 
     private var statusCard: some View {
         HvfRuntimeStatusCard(session: session, ready: bootConfigReady, stateText: stateText,
+            stateCode: HvfRuntimeAccessibilityState.code(pending: pendingWorkText != nil, connection: session.connectionState),
             heartbeatText: heartbeatText, refusal: startRefusal, start: start)
     }
 
