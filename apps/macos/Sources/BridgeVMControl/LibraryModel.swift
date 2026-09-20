@@ -93,25 +93,20 @@ final class LibraryModel: ObservableObject {
     func confirmDeletion(_ cfg: VMConfig) {
         pendingDeletion = nil
         let slug = cfg.slug
-        guard admitLibraryAction(cfg, action: .deletion) else { return }
-        guard !deletingSlugs.contains(slug) else { return }
+        guard admitLibraryAction(cfg, action: .deletion), !deletingSlugs.contains(slug) else { return }
         deletingSlugs.insert(slug)
-        let backend = modelCache[slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
-        let libraryRoot = self.libraryRoot
+        let backend = modelCache[slug]?.backend ?? cfg.makeBackend(libraryRoot: libraryRoot)
+        let root = libraryRoot
         actionScheduler {
-            backend.stop()
-            let stillRunning = backend.isRunning()
-            let deleted = !stillRunning && VMLibrary.delete(slug, rootURL: libraryRoot)
+            let outcome = LibraryDeletionAction.perform(isRunning: backend.isRunning) {
+                LibraryDeletionProtection.delete(cfg, rootURL: root)
+            }
             await MainActor.run {
                 self.deletingSlugs.remove(slug)
-                if deleted {
-                    self.modelCache[slug] = nil
-                    self.reload()
-                } else {
-                    self.deletionError = stillRunning
-                        ? "\(cfg.name)을(를) 정지하지 못해 삭제하지 않았습니다."
-                        : "\(cfg.name)의 라이브러리 항목을 디스크에서 삭제하지 못했습니다."
-                }
+                if outcome == .deleted { self.modelCache[slug] = nil; self.reload(); return }
+                self.deletionError = outcome == .running
+                    ? "\(cfg.name)은(는) 실행 중이므로 삭제하지 않았습니다. 제어 화면에서 완전히 중지한 뒤 다시 시도하세요."
+                    : "\(cfg.name)의 라이브러리 항목을 디스크에서 삭제하지 못했습니다."
             }
         }
     }

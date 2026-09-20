@@ -49,9 +49,9 @@ struct ContentView: View {
         } message: {
             if let cfg = library.pendingDeletion {
                 if library.deletionImpact(for: cfg) == .managedBundleDeleted {
-                    Text("실행 중이면 먼저 안전하게 정지합니다. VM 설정과 \(cfg.bundlePath)에 있는 가상 디스크 데이터가 모두 영구 삭제되며 되돌릴 수 없습니다.")
+                    Text("실행 중인 VM은 삭제할 수 없습니다. 제어 화면에서 완전히 중지한 뒤 진행하세요. VM 설정과 \(cfg.bundlePath)에 있는 가상 디스크 데이터가 모두 영구 삭제되며 되돌릴 수 없습니다.")
                 } else {
-                    Text("실행 중이면 먼저 안전하게 정지합니다. BridgeVM 라이브러리 등록만 제거합니다. 외부 번들 \(cfg.bundlePath)의 가상 디스크 데이터는 유지됩니다.")
+                    Text("실행 중인 VM은 삭제할 수 없습니다. 제어 화면에서 완전히 중지한 뒤 진행하세요. BridgeVM 라이브러리 등록만 제거하며 외부 번들 \(cfg.bundlePath)의 가상 디스크 데이터는 유지됩니다.")
                 }
             }
         }
@@ -152,7 +152,7 @@ struct VMDetailPanel: View {
                 Button(role: .destructive) { library.requestDeletion(model.config) } label: {
                     Label("이 VM 삭제", systemImage: "trash")
                 }
-                .disabled(library.deletingSlugs.contains(model.config.slug))
+                .disabled(model.running || library.deletingSlugs.contains(model.config.slug))
             }.padding(6)
         } label: { Label("상세 / 관리", systemImage: "gearshape") }
     }
