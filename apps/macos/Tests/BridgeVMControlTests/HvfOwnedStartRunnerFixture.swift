@@ -90,9 +90,7 @@ final class HvfOwnedStartRunnerFixture {
         let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let template = try String(contentsOf: source.appendingPathComponent("tests/integration/native-owned-runner-child.py"), encoding: .utf8)
-        let python = try XCTUnwrap((ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":")
-            .map { URL(fileURLWithPath: String($0)).appendingPathComponent("python3") }
-            .first { FileManager.default.isExecutableFile(atPath: $0.path) })
+        let python = try NativeTestPython.executable()
         let settings = ["root": root.path, "role": role, "nonce": nonce, "control": mapped.ctlFilePath]
         let json = String(decoding: try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys, .withoutEscapingSlashes]), as: UTF8.self)
         let literal = String(decoding: try JSONSerialization.data(withJSONObject: json, options: [.fragmentsAllowed, .withoutEscapingSlashes]), as: UTF8.self)

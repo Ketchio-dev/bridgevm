@@ -6,18 +6,17 @@ enum T17CreationProbe {
 
     static func find<Node>(_ requested: String, in nodes: [Node],
                            identifier: (Node) throws -> String?, value: (Node) throws -> String?) throws -> Node? {
-        var match: Node?
-        var failure: Node?
-        for node in nodes {
-            let id = try identifier(node)
-            if id == requested, match == nil { match = node }
-            if id == errorIdentifier, failure == nil { failure = node }
-        }
+        let projection = T17IdentifierProjection.collect(
+            [requested, errorIdentifier], in: nodes, identifier: identifier)
+        let match = projection.matches[requested]
+        let failure = projection.matches[errorIdentifier]
         if requested == installIdentifier, let failure {
             let code = try value(failure) ?? ""
             let safe = failureCodes.contains(code) ? code : "creation-error-unclassified"
             throw T17Blocker(code: "vm-creation-failed", detail: "stage=create;reason=\(safe)")
         }
-        return match
+        if let match { return match }
+        if let readFailure = projection.readFailure { throw readFailure }
+        return nil
     }
 }
