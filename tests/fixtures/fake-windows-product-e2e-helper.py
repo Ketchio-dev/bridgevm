@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 import argparse, hashlib, json, os, pathlib, shutil, subprocess, sys
 p=argparse.ArgumentParser(); p.add_argument("--windows-product-e2e", action="store_true"); p.add_argument("--request", required=True); p.add_argument("--result", required=True); a=p.parse_args()
-r=json.load(open(a.request)); print("lane_root="+r["lane_root"])
-assert r["schema_version"] == "bridgevm.windows-hvf-3d-off-product-e2e-request.v2"
+r=json.load(open(a.request)); print("lane_root="+r["lane_root"]); assert r["schema_version"] == "bridgevm.windows-hvf-3d-off-product-e2e-request.v2"
 assert r["vm_slug"] == f"bridgevm-t17-lane-{r['lane']}-{r['nonce'][:12]}"
 if "noresult" in r["job_id"]: raise SystemExit(0)
 if "survivor" in r["job_id"]:
@@ -58,4 +57,5 @@ for output,path_field in (("final_disk_sha256","disk_path"),("final_vars_sha256"
 if "malformed" in r["job_id"]: result["future_unverified_field"]=True
 if "bad-hash" in r["job_id"]: result["final_disk_sha256"]="0"*64
 if "partial" in r["job_id"]: result["second_shutdown"]=False; result["failure_code"]="internal-error"
+elif "request-tamper" in r["job_id"]: open(a.request,"a").write(" ")
 with open(a.result,"x") as out: json.dump(result,out,sort_keys=True); out.write("\n")

@@ -76,7 +76,8 @@ def lane(path: Path, *, job_id: str, commit: str, mode: str, ordinal: int, stamp
         if not isinstance(current, bool) or (current and not previous):
             raise ValueError(f"lane {ordinal} stage sequence is invalid at {stage}")
         previous = current
-    if value["failure_code"] not in LANE_FAILURE_CODES or (value["failure_code"] == "none") != all(value[stage] for stage in LANE_STAGES):
+    complete = all(value[stage] for stage in LANE_STAGES) and value["cleanup_verified"] is True
+    if value["failure_code"] not in LANE_FAILURE_CODES or (value["failure_code"] == "none") != complete:
         raise ValueError(f"lane {ordinal} failure code contradicts its stages")
     if not isinstance(value["cleanup_verified"], bool) or not isinstance(value["ui_frontend_automated"], bool) or (all(value[stage] for stage in LANE_STAGES) and value["ui_frontend_automated"] is not True):
         raise ValueError(f"lane {ordinal} cleanup result is invalid")
@@ -92,8 +93,6 @@ def lane(path: Path, *, job_id: str, commit: str, mode: str, ordinal: int, stamp
 
 def authenticate(request_path: Path, result_path: Path, stamp_path: Path, *, job_id: str, commit: str, mode: str, ordinal: int) -> None:
     result = lane(result_path, job_id=job_id, commit=commit, mode=mode, ordinal=ordinal)
-    if not all(result[stage] for stage in LANE_STAGES) or not result["cleanup_verified"]:
-        raise ValueError(f"lane {ordinal} did not prove every fixed product stage and cleanup")
     request = load_json(request_path)
     nonce_prefix = result["nonce"][:12]
     vm_name = f"BridgeVM T17 Lane {ordinal} {nonce_prefix}"
@@ -104,7 +103,8 @@ def authenticate(request_path: Path, result_path: Path, stamp_path: Path, *, job
     for field in REQUEST_PATHS:
         if not isinstance(request[field], str) or not request[field].startswith("/"):
             raise ValueError(f"lane {ordinal} request path {field} is invalid")
-    ARTIFACTS.authenticate(request, result, ordinal)
+    if result["failure_code"] == "none":
+        ARTIFACTS.authenticate(request, result, ordinal)
     stamp = {"schema_version": "bridgevm.windows-hvf-3d-off-product-e2e-host-stamp.v1", "job_id": job_id, "commit": commit, "lane": ordinal, "nonce": result["nonce"], "request_sha256": digest(request_path), "result_sha256": digest(result_path)}
     with stamp_path.open("x", encoding="utf-8") as output:
         json.dump(stamp, output, indent=2, sort_keys=True); output.write("\n")
@@ -156,7 +156,7 @@ def build(args: argparse.Namespace) -> dict:
     }
     completed = args.outcome == "completed"
     product_model = len(results) == run_count and run_count > 0
-    ui_frontend = len(successful) == run_count and run_count > 0 and all(result["ui_frontend_automated"] for result in successful)
+    ui_frontend = len(results) == run_count and run_count > 0 and all(result["ui_frontend_automated"] for result in results)
     preliminary = args.valid and completed and run_count == expected and passes == expected and stages[VERIFIER.STAGE_FIELDS[-1]] == expected and product_model and ui_frontend and args.cleanup and all(value != "absent" for value in hashes.values())
     receipt = {
         "schema_version": VERIFIER.SCHEMA, "gate_id": VERIFIER.GATE_ID, "criterion": "A9", "tier": VERIFIER.TIER,

@@ -89,8 +89,7 @@ if ! SIGNING="$(bash "$REPO/scripts/live-gates/classify-product-e2e-signing.sh" 
 
 WORK="$(mktemp -d "/tmp/bridgevm-e2e-$JOB_ID.XXXXXX")"
 WORK_ID="$(stat -f '%d:%i' "$WORK")"; chmod 700 "$WORK"
-EXPECTED=1; [[ "$MODE" == release ]] && EXPECTED=3
-previous_inode=""
+EXPECTED=1; [[ "$MODE" == release ]] && EXPECTED=3; previous_inode=""
 for (( lane=1; lane<=EXPECTED; lane++ )); do
   if [[ -f "$OUT/cancel.requested" ]]; then emit canceled canceled "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   lane_root="$WORK/lane-$lane"; mkdir -m 700 "$lane_root"
@@ -100,18 +99,19 @@ for (( lane=1; lane<=EXPECTED; lane++ )); do
   nonce="$(openssl rand -hex 32)"
   request="$lane_root/request.json"; result="$PRIVATE/lane-$lane-result.json"
   python3 "$REQUEST_WRITER" --out "$request" --verified "$VERIFIED" --job-id "$JOB_ID" \
-    --commit "$COMMIT" --mode "$MODE" --lane "$lane" --nonce "$nonce" --lane-root "$lane_root"
+    --commit "$COMMIT" --mode "$MODE" --lane "$lane" --nonce "$nonce" --lane-root "$lane_root"; request_sha="$(shasum -a 256 "$request" | awk '{print $1}')"
   ATTEMPTS=$lane
-  set +e
-  "$REPO/scripts/live-gates/launch-product-e2e-helper.sh" "$HELPER" "$PRIVATE/lane-$lane-helper.log" "$request" "$result"
+  set +e; "$REPO/scripts/live-gates/launch-product-e2e-helper.sh" "$HELPER" "$PRIVATE/lane-$lane-helper.log" "$request" "$result"
   helper_status=$?
   set -e
   if (( helper_status != 0 )) || [[ ! -f "$result" || -L "$result" ]]; then emit failed product-model-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
+  if [[ "$(shasum -a 256 "$request" | awk '{print $1}')" != "$request_sha" ]]; then emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if find "$WORK" \( \( ! -type d ! -type f \) -o \( -type f -links +1 \) \) -print -quit | grep -q .; then printf '%s\n' "$lane" > "$PRIVATE/lane-isolation-failed"; emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if mount | grep -F "$lane_root" >/dev/null 2>&1 || pgrep -f "$lane_root" >/dev/null 2>&1; then emit cleanup-failed cleanup-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if ! python3 "$WRITER" --check-lane "$result" --request "$request" --stamp "$PRIVATE/lane-$lane-authenticated.json" --job-id "$JOB_ID" --commit "$COMMIT" --mode "$MODE" --ordinal "$lane"; then emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   next_verified="$PRIVATE/verified-after-lane-$lane.json"
   if ! python3 "$MANIFEST_TOOL" --manifest "$INPUT_MANIFEST" --out "$next_verified" >/dev/null 2>&1 || ! cmp -s "$VERIFIED" "$next_verified"; then emit failed hash-mismatch "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
+  lane_failure="$(json_value "$result" failure_code)"; if [[ "$lane_failure" != none ]]; then emit failed "$lane_failure" "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
 done
 if [[ -n "$RETAIN_IMPORT_SOURCE" ]]; then python3 "$REPO/scripts/live-gates/retain-windows-import-source.py" --request "$request" --result "$result" --stamp "$PRIVATE/lane-$EXPECTED-authenticated.json" --verified "$VERIFIED" --destination "$RETAIN_IMPORT_SOURCE" --status "$PRIVATE/t19-source-handoff.json" || printf '%s\n' 'retained T19 source was not created' > "$PRIVATE/t19-source-handoff-failed"; fi
 emit completed none "$ATTEMPTS" true "$SIGNING" || exit 1
