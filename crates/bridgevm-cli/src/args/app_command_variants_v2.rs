@@ -3,7 +3,7 @@ include!("app_command_support.rs");
 #[derive(Debug, Subcommand)]
 pub(crate) enum AppCommand {
     #[command(flatten)]
-    Query(AppQueryCommand),
+    Query(AppQueryCommand), #[command(about = "Diagnose native app discovery and CLI protocol compatibility without opening the app.")] Doctor,
     #[command(about = "Create a saved installation-pending own-HVF Windows VM; does not install or boot it.")] CreateWindows(AppCreateWindowsArgs),
     #[command(about = "Start a saved own-HVF VM and wait for confirmed initial helper startup.")] Start { id: String },
     #[command(about = "Stop an app-owned runtime and wait for confirmed owned-process cleanup.")] Stop { id: String },

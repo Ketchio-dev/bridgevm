@@ -1,9 +1,7 @@
 # Native app CLI
 
-`bridgevm app` reads native `vm.json`, [creates a pending Windows VM](app-cli-create.md),
-and requests [installation](app-cli-install.md), [start](app-cli-start.md) or [stop](app-cli-stop.md).
-Start uses an exact saved installed HVF entry; no command opens an app window, repairs registrations,
-or changes saved CPU/memory settings. Inventory reports `unobserved` runtime state; saved CPU and memory values are not utilization measurements. This is the canonical lifecycle:
+`bridgevm app` reads native `vm.json`, [creates a pending Windows VM](app-cli-create.md), and requests [installation](app-cli-install.md), [start](app-cli-start.md) or [stop](app-cli-stop.md).
+Start uses an exact saved installed HVF entry; no command opens an app window, repairs registrations, or changes saved CPU/memory settings. Inventory reports `unobserved` runtime state; saved CPU and memory values are not utilization measurements. This is the canonical lifecycle:
 
 ```sh
 bridgevm app list
@@ -30,6 +28,7 @@ The older root commands, such as `bridgevm --store PATH list`, use a separate
 before a store is opened or a daemon connection is attempted. `bridgevm hvf`
 continues to expose local queries and explicitly enabled probes; it does not
 replace native library inventory commands.
+See [native app diagnostics](app-cli-doctor.md) for read-only executable discovery checks.
 
 ## Installing the command
 Use a current `BridgeVM.app` or `BridgeVMControl.app` package containing the native CLI protocol

@@ -5,10 +5,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static NEXT_FIXTURE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-struct Fixture(PathBuf);
+pub(super) struct Fixture(PathBuf);
 
 impl Fixture {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let sequence = NEXT_FIXTURE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -22,7 +22,7 @@ impl Fixture {
         Self(path.canonicalize().unwrap())
     }
 
-    fn executable(&self, name: &str, bytes: &[u8]) -> PathBuf {
+    pub(super) fn executable(&self, name: &str, bytes: &[u8]) -> PathBuf {
         let path = self.0.join(name);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, bytes).unwrap();
