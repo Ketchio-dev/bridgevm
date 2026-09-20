@@ -3040,6 +3040,12 @@ apps/macos/Tests/BridgeVMControlTests/NativeTestPython.swift	20	0
 apps/macos/Tests/BridgeVMControlTests/NativeTestPythonTests.swift	26	0
 apps/macos/Sources/BridgeVMControl/LibraryDashboardPrimaryAction.swift	27	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDashboardPrimaryActionTests.swift	47	0
+apps/macos/Sources/BridgeVMControl/LibraryDashboardLegacyControls.swift	19	0
+apps/macos/Sources/BridgeVMControl/LibraryDashboardRuntimeControls.swift	47	0
+apps/macos/Sources/BridgeVMControl/LibraryDashboardRuntimeStart.swift	25	0
+apps/macos/Sources/BridgeVMControl/LibraryDashboardRuntimeStop.swift	26	0
+apps/macos/Sources/BridgeVMControl/LibraryDashboardUnavailableRuntimeControls.swift	24	0
+apps/macos/Tests/BridgeVMControlTests/LibraryDashboardRuntimeOwnershipTests.swift	57	0
 docs/history/windows-hvf/dashboard-running-window-action-20260920.md	37	0
 docs/history/windows-hvf/a19-restore-crash-boundaries-20260920.md	46	0
 docs/history/windows-hvf/a19-managed-pair-export-20260920.md	49	0

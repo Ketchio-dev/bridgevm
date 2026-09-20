@@ -3,41 +3,34 @@ import XCTest
 
 @MainActor
 final class LibraryDashboardPrimaryActionTests: XCTestCase {
-    func testStoppedVMRoutesToStartOnly() {
-        var started = 0, presented = 0
-        LibraryDashboardPrimaryAction.perform(running: false, start: { started += 1 },
-            resolve: { XCTFail("resolved running session"); return nil },
-            present: { _ in presented += 1 }, report: { XCTFail($0) })
-        XCTAssertEqual(started, 1); XCTAssertEqual(presented, 0)
+    func testStoppedVMRequestsTypedStartAndPresentsAcceptedSession() throws {
+        let session = try fixture(running: false)
+        var starts = 0, presentations = 0, messages: [String] = []
+        LibraryDashboardPrimaryAction.perform(observedRunning: false, session: session,
+            requestStart: { value in
+                XCTAssertTrue(value === session); starts += 1
+                return .accepted(HvfGUIStartOperation(configuration: value.config))
+            }, attach: { _ in XCTFail("attached stopped VM"); return false },
+            present: { _ in presentations += 1 }, report: { messages.append($0) })
+        XCTAssertEqual(starts, 1); XCTAssertEqual(presentations, 1)
+        XCTAssertEqual(messages, ["VM 시작 중…"])
+    }
+
+    func testStoppedVMReportsTypedStartRefusalWithoutPresenting() throws {
+        let session = try fixture(running: false); var messages: [String] = []
+        LibraryDashboardPrimaryAction.perform(observedRunning: false, session: session,
+            requestStart: { _ in .refused("saved configuration changed") },
+            attach: { _ in XCTFail("attached stopped VM"); return false },
+            present: { _ in XCTFail("presented refused start") }, report: { messages.append($0) })
+        XCTAssertEqual(messages, ["saved configuration changed"])
     }
 
     func testRunningVMAdoptsProcessBeforePresenting() throws {
-        let session = try fixture(running: true)
-        var presented: HvfEngineSession?
-        LibraryDashboardPrimaryAction.perform(running: true, start: { XCTFail("started duplicate") },
-            resolve: { session }, present: { presented = $0 }, report: { XCTFail($0) })
+        let session = try fixture(running: true); var presented: HvfEngineSession?
+        LibraryDashboardPrimaryAction.perform(observedRunning: true, session: session,
+            requestStart: { _ in XCTFail("started duplicate"); return .refused("duplicate") },
+            attach: { $0.attachIfStopped() }, present: { presented = $0 }, report: { XCTFail($0) })
         XCTAssertTrue(presented === session); XCTAssertTrue(session.hasRetainedAttachment)
-    }
-
-    func testRetainedSessionPresentsWithoutNewAttachment() throws {
-        let session = try fixture(running: true)
-        XCTAssertTrue(session.attachIfStopped())
-        var presentations = 0
-        LibraryDashboardPrimaryAction.perform(running: true, start: { XCTFail("started duplicate") },
-            resolve: { session }, present: { _ in presentations += 1 }, report: { XCTFail($0) })
-        XCTAssertEqual(presentations, 1)
-    }
-
-    func testMissingOrUnattachableSessionReportsInsteadOfPretendingToOpen() throws {
-        var messages: [String] = []
-        LibraryDashboardPrimaryAction.perform(running: true, start: { XCTFail("started duplicate") },
-            resolve: { nil }, present: { _ in XCTFail("presented") }, report: { messages.append($0) })
-        let session = try fixture(running: false)
-        LibraryDashboardPrimaryAction.perform(running: true, start: { XCTFail("started duplicate") },
-            resolve: { session }, present: { _ in XCTFail("presented") },
-            report: { messages.append($0) })
-        XCTAssertEqual(messages, ["실행 중인 VM의 화면 세션을 찾지 못했습니다.",
-                                  "실행 중인 VM 화면에 연결하지 못했습니다."])
     }
 
     private func fixture(running: Bool) throws -> HvfEngineSession {
