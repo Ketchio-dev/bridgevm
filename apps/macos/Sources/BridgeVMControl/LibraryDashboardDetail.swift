@@ -68,7 +68,7 @@ struct LibraryDashboardDetail: View {
                 }
                 .font(.headline)
                 Text(config.displayName).foregroundStyle(.secondary).lineLimit(2)
-                Text(config.engineDetailLabel).font(.callout).foregroundStyle(.secondary)
+                Text([config.engineDetailLabel, model.graphicsPresentation?.label].compactMap { $0 }.joined(separator: " · ")).font(.callout).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

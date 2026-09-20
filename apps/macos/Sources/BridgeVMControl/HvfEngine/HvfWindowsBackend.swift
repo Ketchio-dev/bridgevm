@@ -5,7 +5,7 @@ final class HvfWindowsBackend: VMBackend {
     private let processIsRunning: (String) -> Bool
     private let libraryRoot: URL
     private let vtpmKeyProvider: VTPMStateKeyProviding
-    private var launchedProcess: Process?
+    private(set) var launchedProcess: Process?
     init(
         _ config: VMConfig,
         processIsRunning: @escaping (String) -> Bool = { Shell.isProcessRunning(matching: $0) },
