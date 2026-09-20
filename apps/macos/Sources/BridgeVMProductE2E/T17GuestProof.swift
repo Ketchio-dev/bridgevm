@@ -16,10 +16,10 @@ struct T17RunLogProof {
         }
         let data = try Data(contentsOf: url, options: [.mappedIfSafe])
         let lines = records(data)
-        guard let ready = lines.first(where: { $0.line.hasPrefix("BVAGENT READY") }),
+        guard let ready = lines.first(where: { $0.line.hasPrefix("BVAGENT READY") || $0.line.hasPrefix("BVAGENT PONG (proactive)") }),
               let shutdown = lines.last(where: { $0.line.hasPrefix("stop: PSCI SYSTEM_OFF") }),
               ready.offset < shutdown.offset else {
-            throw T17Blocker(code: "guest-evidence-missing", detail: "run log lacks ordered READY and SYSTEM_OFF records")
+            throw T17Blocker(code: "guest-evidence-missing", detail: "run log lacks ordered READY/PONG and SYSTEM_OFF records")
         }
         return Self(
             sha256: digest(data), readyOffset: ready.offset,
