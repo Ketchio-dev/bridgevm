@@ -8,7 +8,7 @@ previously reached an unqualified `stop()` method. That method could fall back
 to a disk-path liveness lookup for an attached process, so those surfaces did
 not express the same exact-ownership rule already used by the dashboard.
 
-Source `9454bbf4b3a90693cf3ddab3faaad9b893b10fff` removes that unqualified API and
+Source `213f3ac29b1d0748402fef49632373b72d13ee36` removes that unqualified API and
 makes all three user-facing stop surfaces share one admission action:
 
 - a stop is enabled only while the session retains an exact
