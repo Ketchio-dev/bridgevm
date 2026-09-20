@@ -3069,3 +3069,4 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfProtectedDeletion.swift	9	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDeletionActionTests.swift	33	0
 apps/macos/Sources/BridgeVMControl/LibraryDeletionProtection.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDeletionProtectionTests.swift	16	0
+docs/history/windows-hvf/running-vm-deletion-admission-20260920.md	50	0
