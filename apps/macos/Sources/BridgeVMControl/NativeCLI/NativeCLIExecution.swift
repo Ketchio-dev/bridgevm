@@ -4,10 +4,10 @@ extension NativeCLI {
         case .start, .stop: return try executeRuntime(options)
         case .install, .installStatus, .installCancel: return try executeInstall(options)
         case .snapshotCreate, .snapshotRestore: return try executeSnapshot(options)
+        case .snapshotExport: return try executeSnapshotExport(options)
         case .status(let id):
             let snapshot = NativeCLIRuntimeStatus.snapshot(rootURL: options.libraryRoot, id: id)
-            try output(snapshot, json: options.json, text: snapshot.text)
-            return snapshot.complete ? 0 : 1
+            try output(snapshot, json: options.json, text: snapshot.text); return snapshot.complete ? 0 : 1
         case .readiness(let id):
             let snapshot = try NativeCLIReadiness.snapshot(rootURL: options.libraryRoot, id: id)
             try output(snapshot, json: options.json, text: render(snapshot))

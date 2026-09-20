@@ -2105,6 +2105,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_media_lease.rs	21	0
 crates/bridgevm-hvf/src/managed_pair.rs	72	0
 crates/bridgevm-hvf/src/managed_pair_tests.rs	128	0
 crates/bridgevm-hvf/src/managed_pair_interruption_tests.rs	109	0
+crates/bridgevm-hvf/src/managed_pair_export_tests.rs	43	0
 crates/bridgevm-hvf/src/managed_pair_layout.rs	81	1
 crates/bridgevm-hvf/src/managed_pair_runtime.rs	20	0
 crates/bridgevm-hvf/src/managed_pair_runtime_tests.rs	83	0
@@ -2921,6 +2922,8 @@ apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICommandSelection.swift	13	
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLIInstallHelp.swift	16	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLIInstallTests.swift	44	0
 crates/bridgevm-cli/src/app_cli_command_parts.rs	13	0
+crates/bridgevm-cli/src/app_cli_snapshot_test_modules.rs	2	0
+crates/bridgevm-cli/src/app_cli_snapshot_export_tests.rs	21	0
 crates/bridgevm-cli/src/app_cli_install_tests.rs	26	0
 crates/bridgevm-cli/tests/cli_app_install.rs	35	0
 docs/app-cli-install.md	59	0
@@ -2928,6 +2931,8 @@ apps/macos/Tests/BridgeVMControlTests/NativeCLIInstallTransportTests.swift	48	0
 docs/history/windows-hvf/native-app-install-cli-deterministic-20260916.md	59	0
 crates/bridgevm-cli/src/args/app_create_windows_args.rs	48	0
 crates/bridgevm-cli/src/args/app_command_variants_v2.rs	11	0
+crates/bridgevm-cli/src/args/app_command_support.rs	2	0
+crates/bridgevm-cli/src/args/app_snapshot_export_args.rs	34	0
 crates/bridgevm-cli/src/app_cli_create_arguments.rs	34	0
 crates/bridgevm-cli/src/app_cli_create_tests.rs	60	0
 crates/bridgevm-cli/tests/cli_app_create.rs	62	0
@@ -2986,9 +2991,13 @@ apps/macos/Tests/BridgeVMProductE2ETests/A9ImportedKeyCleanupTests.swift	44	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICommandLifecycle.swift	11	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshot.swift	106	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshotHelp.swift	13	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshotExportParser.swift	56	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshotExport.swift	59	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotTests.swift	161	0
+apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotExportTests.swift	147	0
 crates/bridgevm-cli/src/app_cli_snapshot_tests.rs	65	0
 crates/bridgevm-cli/tests/cli_app_snapshot.rs	31	0
+crates/bridgevm-cli/tests/cli_app_snapshot_export.rs	29	0
 docs/app-cli-snapshot.md	36	0
 docs/history/windows-hvf/native-app-snapshot-cli-deterministic-20260917.md	45	0
 scripts/live-gates/native_snapshot_restore_inputs.py	150	0
@@ -3030,5 +3039,6 @@ apps/macos/Sources/BridgeVMControl/LibraryDashboardPrimaryAction.swift	27	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDashboardPrimaryActionTests.swift	47	0
 docs/history/windows-hvf/dashboard-running-window-action-20260920.md	37	0
 docs/history/windows-hvf/a19-restore-crash-boundaries-20260920.md	46	0
+docs/history/windows-hvf/a19-managed-pair-export-20260920.md	49	0
 apps/macos/Sources/BridgeVMProductE2E/T17FirstBootDiagnostic.swift	47	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FirstBootDiagnosticTests.swift	44	0

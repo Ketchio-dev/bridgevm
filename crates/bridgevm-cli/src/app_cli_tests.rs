@@ -70,4 +70,4 @@ fn default_library_and_text_queries_forward_no_extra_arguments() {
 }
 
 include!("app_cli_install_tests.rs");
-include!("app_cli_snapshot_tests.rs");
+include!("app_cli_snapshot_test_modules.rs");
