@@ -173,6 +173,7 @@ docs/history/windows-hvf/create-sheet-and-harness-deterministic-20260915.md	hist
 docs/history/windows-hvf/native-library-design-deterministic-20260915.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/native-app-onboarding-diagnostic-20260915.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/app-cli.md	current	native-app-cli	-
+docs/app-cli-doctor.md	current	native-app-cli	docs/app-cli.md
 docs/app-cli-create.md	current	native-app-cli	-
 docs/history/windows-hvf/native-runtime-observations-through-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/native-owned-cancellation-deterministic-20260916.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
@@ -211,3 +212,4 @@ docs/history/windows-hvf/hvf-unavailable-detail-fail-closed-20260920.md	historic
 docs/history/windows-hvf/native-cli-runtime-graphics-truth-20260920.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/hvf-guest-window-title-20260920.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/a9-first-ready-terminal-observation-20260920.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/native-app-cli-doctor-20260920.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md

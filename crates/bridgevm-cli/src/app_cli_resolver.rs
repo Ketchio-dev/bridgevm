@@ -12,7 +12,9 @@ use candidate_paths::candidates;
 
 const PROTOCOL_MARKER: &[u8] = b"bridgevm-native-cli-v1";
 const MAX_EXECUTABLE_BYTES: u64 = 256 * 1024 * 1024;
-
+#[path = "app_cli_resolver_diagnostics.rs"]
+pub mod diagnostics;
+pub(crate) use diagnostics::{diagnose, DiscoveryDiagnosis};
 pub(crate) fn resolve() -> Result<PathBuf> {
     if !cfg!(target_os = "macos") {
         bail!("native app commands require macOS and a compatible BridgeVM app");

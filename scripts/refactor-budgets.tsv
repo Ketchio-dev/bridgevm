@@ -2522,6 +2522,8 @@ crates/bridgevm-cli/src/args/app_args.rs	18	0
 crates/bridgevm-cli/src/local_dispatch.rs	57	0
 crates/bridgevm-cli/src/request_create.rs	28	0
 crates/bridgevm-cli/src/app_cli.rs	16	0
+crates/bridgevm-cli/src/app_cli_doctor.rs	135	0
+crates/bridgevm-cli/src/app_cli_resolver_diagnostics.rs	98	0
 crates/bridgevm-cli/src/app_cli_resolver.rs	110	3
 crates/bridgevm-cli/src/app_cli_resolver_tests.rs	135	1
 crates/bridgevm-cli/tests/cli_app.rs	147	0
@@ -2655,6 +2657,7 @@ crates/bridgevm-cli/src/app_cli_tests.rs	72	0
 crates/bridgevm-cli/src/args/app_command.rs	3	0
 crates/bridgevm-cli/tests/support/app_cli.rs	39	0
 docs/app-cli.md	120	0
+docs/app-cli-doctor.md	25	0
 scripts/check-native-runtime.sh	11	0
 tests/integration/NativeRuntimeTransportFixture.swift	60	0
 tests/integration/NativeRuntimeTransportOwnershipContracts.swift	37	0
@@ -3088,3 +3091,4 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17FirstReadyWaiterTests.swift	64	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeAccessibilityState.swift	12	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeAccessibilityStateTests.swift	17	0
 docs/history/windows-hvf/a9-first-ready-terminal-observation-20260920.md	46	0
+docs/history/windows-hvf/native-app-cli-doctor-20260920.md	24	0
