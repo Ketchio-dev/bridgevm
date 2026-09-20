@@ -57,7 +57,7 @@ jobs:
 
       - name: Install packaging dependencies
         run: |
-          brew install meson ninja pkgconf libepoxy molten-vk vulkan-loader vulkan-headers openssl@3
+          brew install meson ninja pkgconf libepoxy molten-vk vulkan-loader vulkan-headers openssl@3 zig
           python3 -m pip install --break-system-packages pyyaml
 
       - name: Install the pinned TPM packaging runtime

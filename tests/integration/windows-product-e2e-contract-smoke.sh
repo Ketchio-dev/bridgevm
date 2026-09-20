@@ -3,8 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-product-e2e.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
-FAKE="$TMP/bin"
-mkdir -p "$FAKE" "$TMP/assets"
+FAKE="$TMP/bin"; mkdir -p "$FAKE" "$TMP/assets"
 CATALOG_VERIFIER="$("$ROOT/tests/integration/build-windows-catalog-verifier-test-helper.sh" "$TMP")"
 cp "$ROOT/scripts/win-assets/"{winpeshl.ini,bvinstall.cmd,bvdiskpart.txt,unattend.xml,bvagent.ps1,bvagent-firstboot.ps1,bvagent-input.ps1,bvagent-unicode-input.cs,bvagent-key-input.cs,bvagent-pointer-input.cs,bvagent-window-inventory.ps1,bv-window-inventory.cs,bvagent-task.ps1} "$TMP/assets/"
 printf 'fake ISO\n' > "$TMP/windows.iso"
@@ -57,14 +56,15 @@ cat > "$FAKE/wimlib-imagex" <<'MOCK'
 case "$1" in
   split) : > "$3" ;;
   update) cat >/dev/null ;;
-  dir) printf '%s\n' winpeshl.ini bvinstall.cmd bvdiskpart.txt ;;
+  dir) printf '%s\n' winpeshl.ini bvinstall.cmd bvdiskpart.txt bv-file-compare.exe ;;
   *) exit 2 ;;
 esac
 MOCK
-chmod 755 "$FAKE/"*
+chmod 755 "$FAKE/"*; : > "$TMP/bv-file-compare.exe"
 BRIDGEVM_HDIUTIL_LOG="$TMP/hdiutil.log" \
 ISO="$TMP/windows.iso" ASSETS="$TMP/assets" OUT="$TMP/source.raw" \
 WIMLIB="$FAKE/wimlib-imagex" \
+WINDOWS_FILE_COMPARE="$TMP/bv-file-compare.exe" \
 WINDOWS_GUEST_PAYLOAD_DIR="$TMP/payload" WINDOWS_GUEST_PAYLOAD_MANIFEST="$TMP/payload.tsv" WINDOWS_GUEST_PAYLOAD_CATALOG_VERIFIER="$CATALOG_VERIFIER" \
 TMPDIR="$TMP" PATH="$FAKE:/usr/bin:/bin:/usr/sbin:/sbin" \
   "$ROOT/scripts/build-hvf-windows-scripted-source.sh" >/dev/null
@@ -74,6 +74,6 @@ TMPDIR="$TMP" PATH="$FAKE:/usr/bin:/bin:/usr/sbin:/sbin" \
 [[ "$(grep -c '^detach ' "$TMP/hdiutil.log")" == 3 ]]
 grep -q -- '-mountpoint .*/bridgevm-win-source\..*/iso' "$TMP/hdiutil.log"
 grep -q -- '-mountpoint .*/bridgevm-win-source\..*/dst' "$TMP/hdiutil.log"
-python3 "$ROOT/tests/integration/windows-guest-payload-verifier-smoke.py"; python3 "$ROOT/tests/integration/windows-install-security-contract-smoke.py"
+python3 "$ROOT/tests/integration/windows-guest-payload-verifier-smoke.py"; python3 "$ROOT/tests/integration/windows-install-security-contract-smoke.py"; python3 "$ROOT/tests/integration/scripted-installer-file-compare-wiring-contract.py"
 python3 "$ROOT/scripts/verify-windows-product-e2e-receipt.py" --self-test; python3 "$ROOT/scripts/live-gates/windows-product-e2e-launchservices-preflight.py" --self-test; "$ROOT/scripts/verify-product-e2e-helper-app.sh" --self-test; "$ROOT/tests/integration/windows-product-e2e-live-tier-smoke.sh"; python3 "$ROOT/tests/integration/windows-product-e2e-request-mode.py"; python3 "$ROOT/tests/integration/windows-product-e2e-signing-class.py"
 "$ROOT/tests/integration/windows-import-product-e2e-contract-smoke.sh"; echo "PASS: Windows product E2E deterministic contracts"

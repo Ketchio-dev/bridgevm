@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 MACOS_DIR="$ROOT/apps/macos"
 IDENTITY="${BRIDGEVM_CODESIGN_IDENTITY:--}"
@@ -65,7 +64,8 @@ install -d \
   "$stage_app/Contents/Resources/firmware" \
   "$stage_app/Contents/Resources/licenses" \
   "$stage_app/Contents/Resources/target/release/examples" \
-  "$stage_app/Contents/Frameworks"
+  "$stage_app/Contents/Frameworks" "$stage_app/Contents/Resources/helpers"
+"$ROOT/scripts/build-winpe-file-compare.sh" "$stage_app/Contents/Resources/helpers/bv-file-compare.exe"
 install -m 644 "$ROOT/LICENSE" \
   "$stage_app/Contents/Resources/LICENSE"
 install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" "$ROOT/THIRD-PARTY-PATCHES.tsv" \

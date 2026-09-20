@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Build the WinPE-scripted Windows 11 ARM64 installer source disk, including a
 # sealed user-supplied signed virtio payload and BridgeVM-owned guest agent.
-# Host-side only; run run-hvf-windows-scripted-install.sh afterwards.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/hvf-disk-image-utils.sh"
 ISO="${ISO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/ISO/Win11_25H2_English_Arm64_v2.iso}"
 ASSETS="${ASSETS:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/win-assets}"; WIMLIB="${WIMLIB:-}"
+FILE_COMPARE="${WINDOWS_FILE_COMPARE:-}"
 OUT="${OUT:-$HOME/BridgeVM/win-nvme-src.raw}"
 SIZE_BYTES="${SIZE_BYTES:-17179869184}" # 16 GiB
 SWM_SPLIT_MB="${SWM_SPLIT_MB:-3800}"     # keep each .swm < FAT32 4 GiB limit
@@ -16,6 +16,7 @@ for f in winpeshl.ini bvinstall.cmd bvdiskpart.txt bvagent.ps1 bvagent-firstboot
   [[ -f "$ASSETS/$f" ]] || { echo "FAIL: missing asset $ASSETS/$f" >&2; exit 1; }
 done
 [[ "$WIMLIB" == /* && -x "$WIMLIB" ]] || { echo "FAIL: WIMLIB must name an absolute executable" >&2; exit 1; }
+[[ "$FILE_COMPARE" == /* && -f "$FILE_COMPARE" && ! -L "$FILE_COMPARE" ]] || { echo "FAIL: WINDOWS_FILE_COMPARE must name an absolute regular non-symlink file" >&2; exit 1; }
 cleanup() {
   [[ -n "${ISO_DEV:-}" ]] && bridgevm_detach_image "$ISO_DEV" 2>/dev/null || true
   [[ -n "${DST_DEV:-}" ]] && bridgevm_detach_image "$DST_DEV" 2>/dev/null || true
@@ -42,7 +43,6 @@ log "ISO mounted at $ISO_MNT"
 log "creating destination raw $OUT ($SIZE_BYTES bytes)"
 mkdir -p "$(dirname "$OUT")"
 rm -f "$OUT"
-# qemu-img-less: make a sparse file then partition via hdiutil.
 mkfile -n "$SIZE_BYTES" "$OUT" 2>/dev/null || dd if=/dev/zero of="$OUT" bs=1 count=0 seek="$SIZE_BYTES"
 DST_DEV="$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -nomount "$OUT" | awk 'NR==1{print $1}')"
 log "destination attached at $DST_DEV"
@@ -63,16 +63,16 @@ cp "$UNATTEND_PATH" "$DST_VOL/unattend.xml"
 log "splitting install.wim -> install.swm/install*.swm (<${SWM_SPLIT_MB}MB each)"
 "$WIMLIB" split "$ISO_MNT/sources/install.wim" "$DST_VOL/sources/install.swm" "$SWM_SPLIT_MB"
 
-log "injecting bvinstall payload into boot.wim image 2"
+log "injecting bvinstall payload and native comparator into boot.wim image 2"
 "$WIMLIB" update "$DST_VOL/sources/boot.wim" 2 <<UPDATE
 add "$ASSETS/winpeshl.ini" /Windows/System32/winpeshl.ini
 add "$ASSETS/bvinstall.cmd" /Windows/System32/bvinstall.cmd
 add "$ASSETS/bvdiskpart.txt" /Windows/System32/bvdiskpart.txt
+add "$FILE_COMPARE" /Windows/System32/bv-file-compare.exe
 UPDATE
 
 log "verifying payload + boot files"
-"$WIMLIB" dir "$DST_VOL/sources/boot.wim" 2 | grep -E 'bvinstall.cmd|bvdiskpart.txt|winpeshl.ini' || {
-  echo "FAIL: payload not present in boot.wim" >&2; exit 1; }
+BOOT_FILES="$("$WIMLIB" dir "$DST_VOL/sources/boot.wim" 2)"; for f in winpeshl.ini bvinstall.cmd bvdiskpart.txt bv-file-compare.exe; do grep -Fq "$f" <<<"$BOOT_FILES" || { echo "FAIL: $f not present in boot.wim" >&2; exit 1; }; done
 [[ -f "$DST_VOL/efi/boot/bootaa64.efi" ]] || { echo "FAIL: bootaa64.efi missing" >&2; exit 1; }
 [[ -f "$DST_VOL/sources/install.swm" ]] || { echo "FAIL: install.swm missing" >&2; exit 1; }
 [[ -f "$DST_VOL/bridgevm/provisioning/payload-receipt.tsv" ]] || { echo "FAIL: sealed guest payload missing" >&2; exit 1; }

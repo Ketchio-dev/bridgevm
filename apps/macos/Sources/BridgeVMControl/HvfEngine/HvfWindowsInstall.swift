@@ -25,7 +25,6 @@ struct HvfWindowsInstallRequest: Codable, Equatable, Sendable {
         guard let data = FileManager.default.contents(atPath: url.path) else { return nil }
         return try? JSONDecoder().decode(HvfWindowsInstallRequest.self, from: data)
     }
-
     @discardableResult
     func save(bundlePath: String) -> Bool {
         let url = URL(fileURLWithPath: bundlePath).appendingPathComponent(Self.fileName)
@@ -73,7 +72,6 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
             unattendedIdentity: sealedUnattendedIdentity,
             repoRoot: repoRoot)
     }
-
     static let minimumDiskGiB = 64
     static let installResourcePaths = [
         "scripts/build-hvf-windows-scripted-source.sh",
@@ -85,6 +83,7 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
         "scripts/win-assets/winpeshl.ini",
         "scripts/win-assets/bvinstall.cmd",
         "scripts/win-assets/bvdiskpart.txt",
+        "helpers/bv-file-compare.exe",
         "scripts/win-assets/unattend.xml",
         "helpers/bridgevm-catalog-verify",
     ] + HvfWindowsAgentAssets.requiredPaths
@@ -97,7 +96,7 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
     var catalogVerifierPath: String? {
         HvfWindowsCatalogVerifier.resolve(repoRoot: repoRoot)
     }
-
+    var fileComparePath: String { repoRoot.appendingPathComponent("helpers/bv-file-compare.exe").path }
     var tmpTargetPath: String { "/tmp/bridgevm-appinstall-\(slug)-target.raw" }
     var tmpVarsPath: String { "/tmp/bridgevm-appinstall-\(slug)-vars.fd" }
     var tmpEvidenceDir: String { "/tmp/bridgevm-appinstall-\(slug)-evidence" }
@@ -120,6 +119,7 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
                 "WINDOWS_GUEST_PAYLOAD_DIR": request.guestPayloadDirectory ?? "",
                 "WINDOWS_GUEST_PAYLOAD_MANIFEST": request.guestPayloadManifest ?? "",
                 "WINDOWS_GUEST_PAYLOAD_CATALOG_VERIFIER": catalogVerifierPath ?? "",
+                "WINDOWS_FILE_COMPARE": fileComparePath,
                 "WINDOWS_UNATTEND_PATH": request.unattendedPath ?? "",
             ],
             arguments: ["/bin/bash", "scripts/build-hvf-windows-scripted-source.sh"]

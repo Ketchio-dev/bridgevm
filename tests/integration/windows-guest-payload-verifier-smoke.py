@@ -11,8 +11,6 @@ from pathlib import Path
 
 from windows_catalog_test_support import build_catalog_verifier, invoke_stage
 from windows_input_payload_contract import verify_input_assets
-
-
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "tests/fixtures/make-synthetic-windows-guest-payload.py"
 ASSETS = ROOT / "scripts/win-assets"
@@ -106,12 +104,13 @@ def main() -> int:
         missing = invoke(root / "absent", manifest, root / "missing", verifier)
         require_block(missing, "guest-payload-missing")
 
-        iso = root / "windows.iso"
-        iso.write_bytes(b"synthetic ISO")
+        iso = root / "windows.iso"; iso.write_bytes(b"synthetic ISO")
+        comparator = root / "bv-file-compare.exe"; comparator.write_bytes(b"synthetic PE")
         source_output = root / "must-not-exist.raw"
         build_environment = {
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "ISO": str(iso),
             "ASSETS": str(ASSETS), "OUT": str(source_output), "WIMLIB": "/usr/bin/true",
+            "WINDOWS_FILE_COMPARE": str(comparator),
             "WINDOWS_GUEST_PAYLOAD_CATALOG_VERIFIER": str(verifier),
         }
         source = subprocess.run(
