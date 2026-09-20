@@ -3023,3 +3023,6 @@ apps/macos/Sources/BridgeVMProductE2E/T17CreatedVMIdentity.swift	25	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17CreatedVMIdentityTests.swift	46	0
 apps/macos/Tests/BridgeVMControlTests/NativeTestPython.swift	20	0
 apps/macos/Tests/BridgeVMControlTests/NativeTestPythonTests.swift	26	0
+apps/macos/Sources/BridgeVMControl/LibraryDashboardPrimaryAction.swift	27	0
+apps/macos/Tests/BridgeVMControlTests/LibraryDashboardPrimaryActionTests.swift	47	0
+docs/history/windows-hvf/dashboard-running-window-action-20260920.md	37	0

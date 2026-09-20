@@ -80,7 +80,7 @@ struct LibraryDashboardDetail: View {
                 title: model.running ? "창 열기" : "시작",
                 symbol: "play.fill", prominent: true,
                 disabled: model.lifecycleBusy,
-                action: model.start
+                action: { LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library) }
             )
             DashboardActionButton(
                 title: "정지", symbol: "stop.fill",
