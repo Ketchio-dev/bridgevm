@@ -1848,6 +1848,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsGuestPayloadIdentityTests.swift	
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsGuestPayloadTreeTests.swift	47
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallPathTests.swift	26	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallSourceLockTests.swift	30	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallSourceLockTemporaryAliasTests.swift	15	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotCommandTests.swift	78	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsWimlibTests.swift	32	0
 apps/macos/Tests/BridgeVMControlTests/WindowsHVFUnattendPolicyTests.swift	41	0
