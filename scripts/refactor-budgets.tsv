@@ -3094,3 +3094,4 @@ docs/history/windows-hvf/a9-first-ready-terminal-observation-20260920.md	46	0
 docs/history/windows-hvf/native-app-cli-doctor-20260920.md	24	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFinalizationWorker.swift	21	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallFinalizationWorkerTests.swift	73	0
+docs/history/windows-hvf/install-finalization-worker-20260920.md	49	0
