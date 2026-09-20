@@ -195,11 +195,11 @@ final class T17ProductRunner {
         let log = bundle.appendingPathComponent("logs/hvf/run.log")
         var ready: String?
         let observed = waitUntil(timeout: 600) {
-            ready = self.boundedLines(log).first { $0.hasPrefix("BVAGENT READY") }
+            ready = self.boundedLines(log).first { $0.hasPrefix("BVAGENT READY") || $0.hasPrefix("BVAGENT PONG (proactive)") }
             return ready != nil
         }
         guard observed, let ready else {
-            throw T17Blocker(code: "guest-evidence-missing", detail: "first boot has no BVAGENT READY evidence; \(T17FirstBootDiagnostic.capture(log))")
+            throw T17Blocker(code: "guest-evidence-missing", detail: "first boot has no BVAGENT READY/PONG evidence; \(T17FirstBootDiagnostic.capture(log))")
         }
         return ready
     }

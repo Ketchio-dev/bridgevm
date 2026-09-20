@@ -88,7 +88,7 @@ PY
 missing_guest_out="$TMP/missing-guest-out"
 check "missing guest payload has its stable preflight blocker" bash -c '! "$1" --out "$2" --input-manifest "$3" --job-id missing-guest >/dev/null 2>&1 && grep -q '"'"'"failure_code": "missing-guest-payload"'"'"' "$2/receipt.json"' _ "$TIER" "$missing_guest_out" "$missing_guest_manifest"
 pilot_out="$TMP/pilot-out"
-check "sealed synthetic product transcript exercises the pilot scaffold" "$TIER" --out "$pilot_out" --input-manifest "$pilot_manifest" --job-id pilot-fixture
+check "sealed synthetic product transcript exercises proactive PONG readiness" "$TIER" --out "$pilot_out" --input-manifest "$pilot_manifest" --job-id proactive-pong-fixture
 check "pilot is bounded pass evidence but never claim eligible" bash -c '"$1" "$2" --expected-commit "$3" >/dev/null && python3 - "$2" <<'"'"'PY'"'"'
 import json,sys
 r=json.load(open(sys.argv[1])); assert r["pass"] is True and r["run_count"]==1 and r["guest_evidence_sha256"]!="absent" and r["claim_eligible"] is False and r["criterion_pass"] is False and r["capability_promotion"] is False

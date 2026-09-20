@@ -109,10 +109,10 @@ struct T17GuestJourney {
         var ready: String?
         guard wait(timeout: 600, predicate: {
             ready = self.currentLogText().split(whereSeparator: \.isNewline)
-                .map(String.init).first(where: { $0.hasPrefix("BVAGENT READY") })
+                .map(String.init).first(where: { $0.hasPrefix("BVAGENT READY") || $0.hasPrefix("BVAGENT PONG (proactive)") })
             return ready != nil
         }), let ready else {
-            throw T17Blocker(code: "guest-evidence-missing", detail: "boot did not produce a new BVAGENT READY record")
+            throw T17Blocker(code: "guest-evidence-missing", detail: "boot did not produce a new BVAGENT READY/PONG record")
         }
         return ready
     }

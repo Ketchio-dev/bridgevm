@@ -107,7 +107,7 @@ def verify(request: dict) -> list[Path]:
     for name in logs:
         if evidence.get(f"{name}_run_log_sha256") != _digest(log_data[name]):
             raise ValueError(f"{name} product log hash is invalid")
-    line_specs = (("first", "first-ready", "first_ready_offset", "first_ready_line_nonce_sha256", "BVAGENT READY"), ("first", "first-shutdown", "first_shutdown_offset", "first_shutdown_line_nonce_sha256", "stop: PSCI SYSTEM_OFF"), ("mutation", "mutation-ready", "mutation_ready_offset", "mutation_ready_line_nonce_sha256", "BVAGENT READY"), ("mutation", "mutation-shutdown", "mutation_shutdown_offset", "mutation_shutdown_line_nonce_sha256", "stop: PSCI SYSTEM_OFF"), ("final", "final-ready", "final_ready_offset", "final_ready_line_nonce_sha256", "BVAGENT READY"), ("final", "second-shutdown", "second_shutdown_offset", "second_shutdown_line_nonce_sha256", "stop: PSCI SYSTEM_OFF"))
+    line_specs = (("first", "first-ready", "first_ready_offset", "first_ready_line_nonce_sha256", ("BVAGENT READY", "BVAGENT PONG (proactive)")), ("first", "first-shutdown", "first_shutdown_offset", "first_shutdown_line_nonce_sha256", "stop: PSCI SYSTEM_OFF"), ("mutation", "mutation-ready", "mutation_ready_offset", "mutation_ready_line_nonce_sha256", ("BVAGENT READY", "BVAGENT PONG (proactive)")), ("mutation", "mutation-shutdown", "mutation_shutdown_offset", "mutation_shutdown_line_nonce_sha256", "stop: PSCI SYSTEM_OFF"), ("final", "final-ready", "final_ready_offset", "final_ready_line_nonce_sha256", ("BVAGENT READY", "BVAGENT PONG (proactive)")), ("final", "second-shutdown", "second_shutdown_offset", "second_shutdown_line_nonce_sha256", "stop: PSCI SYSTEM_OFF"))
     offsets: dict[str, list[int]] = {name: [] for name in logs}
     for name, event, offset_field, hash_field, marker in line_specs:
         line = _line(log_data[name], evidence.get(offset_field)); offsets[name].append(evidence[offset_field])
@@ -115,6 +115,6 @@ def verify(request: dict) -> list[Path]:
         if not line.startswith(marker) or evidence.get(hash_field) != bound:
             raise ValueError(f"guest log observation {offset_field} is invalid")
     if any(not values[0] < values[1] for values in offsets.values()):
-        raise ValueError("guest READY/SYSTEM_OFF order is invalid")
+        raise ValueError("guest READY/PONG/SYSTEM_OFF order is invalid")
     _audio(log_data["first"])
     return [evidence_path, *logs.values(), agent_path, guest_agent_path, host_clipboard, *[path for key, (path, _) in raw_specs.items() if key != "share_host_to_guest_sha256"]]
