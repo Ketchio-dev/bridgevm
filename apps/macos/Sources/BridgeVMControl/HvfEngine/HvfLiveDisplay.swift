@@ -23,8 +23,7 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
 
         if let controller = controllers[identifier], let window = controller.window {
             window.title = title
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
+            reveal(window)
             return
         }
 
@@ -56,8 +55,18 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
         )
         controllers[identifier] = controller
 
+        reveal(window)
+    }
+
+    /// `makeKeyAndOrderFront` can leave an already-open auxiliary window behind
+    /// the SwiftUI dashboard when the action originates in that dashboard.  The
+    /// display is explicitly user-requested, so restore it and raise it even when
+    /// it was minimized or belongs to another app-window ordering group.
+    private static func reveal(_ window: NSWindow) {
+        if window.isMiniaturized { window.deminiaturize(nil) }
         NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+        window.makeKey()
     }
 
     func windowWillClose(_ notification: Notification) {
