@@ -99,7 +99,7 @@ final class LibraryModel: ObservableObject {
         let root = libraryRoot
         actionScheduler {
             let outcome = LibraryDeletionAction.perform(isRunning: backend.isRunning) {
-                HvfProtectedTransfers.delete(cfg, rootURL: root)
+                LibraryDeletionProtection.delete(cfg, rootURL: root)
             }
             await MainActor.run {
                 self.deletingSlugs.remove(slug)
