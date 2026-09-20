@@ -196,3 +196,4 @@ docs/history/windows-hvf/t17-t19-private-source-handoff-20260917.md	historical-e
 docs/history/windows-hvf/t17-launchservices-preflight-20260917.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/native-app-snapshot-cli-deterministic-20260917.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/native-snapshot-restore-live-tier-20260917.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/a9-winpe-receipt-comparison-20260920.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
