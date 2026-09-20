@@ -51,7 +51,7 @@ extension HvfWindowsInstallSession {
         commitStarted = true
         transition(to: .finalizing)
         do {
-            try execution.finalize(plan)
+            try await execution.finalize(plan)
             appendLog("UEFI 부팅 항목과 Microsoft-only Secure Boot 키를 검증·시드했습니다.")
         } catch {
             finish(.failed("설치 결과 반영 실패: \(error.localizedDescription)"))
