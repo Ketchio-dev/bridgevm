@@ -17,7 +17,7 @@ already used `HvfDisplayWindowController` and remained a manual workaround.
 
 ## Repair and limits
 
-Source `4b26371f23c25fdafe2168fc3366bdf8dbe03d58` gives the dashboard action a
+Source `395932530e234a143f86972679ff8680dc47dc30` gives the dashboard action a
 separate running path. It resolves the retained HVF session, adopts the exact
 running process when needed, and presents the existing display controller only
 after attachment is established. Missing or unattachable sessions now publish
@@ -28,7 +28,7 @@ Four deterministic contracts cover stopped start routing, adoption before
 presentation, retained-session presentation, and fail-closed errors. All four
 Swift shim suites passed: 425 BridgeVMApp, 818 BridgeVMControl with the two
 existing intentional skips, 62 AppleVzRunnerCore, and 105 BridgeVMProductE2E.
-Structural budgets passed without raising an existing ceiling.
+Structural budgets passed without raising an existing ceiling; the complete project check passed, and its log SHA-256 is `58a88af2096e1970a657be75da65d73cea582433e03539df43def59154142a80`.
 
 These checks prove the action routing and attachment boundary. They do not
 prove a WindowServer-visible display for a real guest. The installed app must
