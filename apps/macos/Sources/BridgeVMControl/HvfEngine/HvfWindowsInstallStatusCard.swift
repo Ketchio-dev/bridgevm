@@ -14,9 +14,9 @@ struct HvfWindowsInstallStatusCard: View {
             }
             if case let .failed(message) = session.stage {
                 Text(message).font(.caption).foregroundColor(.red)
+                    .accessibilityIdentifier("bridgevm.windows.install.failure")
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
             }
             if let startedAt = session.startedAt, session.isRunning {
                 Text("경과: \(startedAt, style: .timer)")

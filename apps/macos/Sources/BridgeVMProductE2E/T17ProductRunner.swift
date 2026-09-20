@@ -120,13 +120,10 @@ final class T17ProductRunner {
 
     private func installWindows(_ ui: T17UIControlling) throws {
         try ui.press("bridgevm.install.start", timeout: 20)
-        let completed = waitUntil(timeout: 1_800) {
-            guard self.application?.isRunning == true else { return false }
-            return (try? ui.text("bridgevm.windows.install.stage", timeout: 1)) == "완료"
-        }
-        guard completed else {
-            throw T17Blocker(code: "installer-failed", detail: "product install did not reach the completed UI stage")
-        }
+        try T17InstallMonitor.wait(
+            applicationIsRunning: { self.application?.isRunning == true },
+            stage: { try? ui.text(T17InstallMonitor.stageIdentifier, timeout: 1) },
+            failure: { try? ui.text(T17InstallMonitor.failureIdentifier, timeout: 1) })
     }
 
     private func verifyCreatedVM() throws {
