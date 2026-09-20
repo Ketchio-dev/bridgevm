@@ -3097,3 +3097,4 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallFinalizationWorkerTests.s
 docs/history/windows-hvf/install-finalization-worker-20260920.md	49	0
 apps/macos/Sources/BridgeVMProductE2E/T17OptionalTextSnapshot.swift	31	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17OptionalTextSnapshotTests.swift	85	0
+docs/history/windows-hvf/a9-first-ready-coherent-snapshot-20260920.md	51	0
