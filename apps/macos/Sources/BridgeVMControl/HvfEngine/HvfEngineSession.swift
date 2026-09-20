@@ -107,8 +107,6 @@ final class HvfEngineSession: ObservableObject {
         return requestStop()
     }
 
-    func stop() { _ = requestStop() }
-
     private func requestStop() -> HvfRuntimeStopOutcome {
         guard !runtimeStartupWorkerPending else { return .notOwned }
         if let controller = ownedController {

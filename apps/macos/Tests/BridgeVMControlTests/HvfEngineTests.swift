@@ -563,7 +563,7 @@ final class HvfEngineSessionPathTests: XCTestCase {
     }
 
     @MainActor
-    func testAttachesToRunningVMAndUsesItsGracefulControlChannel() throws {
+    func testAttachedRuntimeCannotUseOwnedStopOrWriteItsControlChannel() throws {
         let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: temp) }
         let evidence = temp.appendingPathComponent("evidence", isDirectory: true)
@@ -594,11 +594,10 @@ final class HvfEngineSessionPathTests: XCTestCase {
         XCTAssertTrue(session.attachToRunningVM())
         XCTAssertEqual(session.connectionState, .connected(host: "WIN11"))
 
-        session.stop()
-
-        XCTAssertEqual(session.connectionState, .stopping)
-        XCTAssertEqual(try String(contentsOf: ctl, encoding: .utf8), "shutdown.exe /p /f\n")
-        XCTAssertTrue(session.events.contains(.unknown("graceful guest shutdown requested")))
+        XCTAssertEqual(session.stopOwned(expectedToken: UUID()), .notOwned)
+        XCTAssertEqual(session.connectionState, .connected(host: "WIN11"))
+        XCTAssertEqual(try String(contentsOf: ctl, encoding: .utf8), "")
+        XCTAssertFalse(session.events.contains(.unknown("graceful guest shutdown requested")))
     }
 
     /// An attached session has no Process handle, so liveness costs a pgrep
@@ -643,9 +642,10 @@ final class HvfEngineSessionPathTests: XCTestCase {
         XCTAssertTrue(session.attachToRunningVM())
         XCTAssertEqual(probes, 1)
 
-        // stop() asks again deliberately, so the count moves by exactly one.
-        session.stop()
-        XCTAssertEqual(probes, 2)
+        // An arbitrary token is rejected from retained ownership state alone;
+        // refusing an attached runtime must not perform another process probe.
+        XCTAssertEqual(session.stopOwned(expectedToken: UUID()), .notOwned)
+        XCTAssertEqual(probes, 1)
     }
 
     @MainActor

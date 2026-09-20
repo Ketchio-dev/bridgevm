@@ -14,10 +14,8 @@ struct LibraryDashboardRuntimeControls: View {
                     symbol: "play.fill", prominent: true, disabled: lifecycleBusy) {
                     LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library)
                 }
-                DashboardActionButton(title: "정지", symbol: "stop.fill",
-                    disabled: !runtimeActive || lifecycleBusy) {
-                    LibraryDashboardPrimaryAction.stop(config: config, model: model, library: library)
-                }
+                LibraryDashboardRuntimeStopControl(config: config, model: model, library: library,
+                    session: session, runtimeActive: runtimeActive, lifecycleBusy: lifecycleBusy)
                 DashboardActionButton(title: "새로고침", symbol: "arrow.clockwise", action: model.refresh)
                 DashboardActionButton(title: "복제", symbol: "plus.square.on.square",
                     disabled: runtimeActive || library.cloningSlugs.contains(config.slug)) {

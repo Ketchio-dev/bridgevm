@@ -16,8 +16,7 @@ struct RetainedRuntimeControlView: View {
                     Text("최근 응답: \(age, specifier: "%.1f")초 전").font(.caption)
                 }
                 if session.connectionState != .stopped {
-                    Button("중지") { session.stop() }
-                        .accessibilityIdentifier("bridgevm.retained.runtime.stop")
+                    RetainedRuntimeStopControl(session: session)
                 } else {
                     Button("목록에서 닫기", action: dismiss)
                         .accessibilityIdentifier("bridgevm.retained.runtime.dismiss")
