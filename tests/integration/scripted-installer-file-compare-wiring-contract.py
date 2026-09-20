@@ -9,6 +9,7 @@ package = read("apps/macos/scripts/package-hvf-control-app.sh")
 plan = read("apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift")
 cache = read("apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallCacheIdentity.swift")
 compiler = read("scripts/build-winpe-file-compare.sh")
+release = read(".github/workflows/release.yml")
 assert "fc /b" not in guest.lower()
 call = "bv-file-compare.exe %PROVISION%\\payload-receipt.tsv W:\\BridgeVM\\provisioning\\payload-receipt.tsv >nul"
 assert guest.count(call) == 1
@@ -24,4 +25,5 @@ assert 'build-winpe-file-compare.sh" "$stage_app/Contents/Resources/helpers/bv-f
 assert '"helpers/bv-file-compare.exe"' in plan and '"WINDOWS_FILE_COMPARE": fileComparePath' in plan
 assert cache.count('"helpers/bv-file-compare.exe"') == 1
 assert "zig cc -target aarch64-windows-gnu" in compiler
+assert "openssl@3 zig" in release
 print("PASS: packaged installer owns a fail-closed ARM64 byte comparator")
