@@ -39,8 +39,8 @@ no fault-injection environment switch.
 
 ## Evidence limit
 
-This proves deterministic process-death behavior around the publication call.
-It does not cut host power, enumerate every filesystem/fsync interruption
-point, export a real raw Windows image, add a product-lifecycle sample, or boot
-Windows. A19 therefore remains OPEN. Exact metadata-head local and hosted
-verification are still required.
+This proves deterministic process-death behavior around the publication call. The first metadata head failed only because this record was unclassified.
+Correction `b99e771d72c7669364f3766d7fce86291ad01cf9` fixed that, passed
+every other step, then correctly failed stale `tested_commit`; its log
+SHA-256 is `ee4858707b7da36c73c4f47f1b6f13d53488db863b0aaceecd3f565d0c4d2b03`.
+It does not prove power loss, all fsync points, raw export or Windows boot. A19 remains OPEN; exact final metadata-head local and hosted verification remain.
