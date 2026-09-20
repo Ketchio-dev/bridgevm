@@ -102,8 +102,9 @@ struct T17Request: Decodable, Equatable {
             throw T17Blocker(code: "invalid-request", detail: "request identity or 3D policy is invalid")
         }
         let root = URL(fileURLWithPath: laneRoot, isDirectory: true).standardizedFileURL
-        guard !(laneRoot as NSString).pathComponents.contains(".."), laneRoot == root.path,
-              laneRoot.hasPrefix("/tmp/bridgevm-e2e-") || laneRoot.hasPrefix("/private/tmp/bridgevm-e2e-") else {
+        let normalizedLaneRoot = laneRoot.replacingOccurrences(of: "/private/tmp/", with: "/tmp/", options: .anchored)
+        guard !(laneRoot as NSString).pathComponents.contains(".."), normalizedLaneRoot == root.path,
+              normalizedLaneRoot.hasPrefix("/tmp/bridgevm-e2e-") else {
             throw T17Blocker(code: "invalid-request", detail: "lane root is outside the fixed temporary boundary")
         }
         let library = root.appendingPathComponent("library", isDirectory: true)
@@ -118,8 +119,7 @@ struct T17Request: Decodable, Equatable {
             (secureBootReceiptPath, bundle.appendingPathComponent("metadata/secure-boot-provisioning.json")),
             (guestEvidencePath, bundle.appendingPathComponent("metadata/product-e2e-guest-evidence.json")),
         ]
-        guard fixed.allSatisfy({ URL(fileURLWithPath: $0.0).standardizedFileURL.path == $0.1.standardizedFileURL.path }),
-              !fixed.isEmpty else {
+        guard fixed.allSatisfy({ URL(fileURLWithPath: $0.0.replacingOccurrences(of: "/private/tmp/", with: "/tmp/", options: .anchored)).standardizedFileURL.path == $0.1.standardizedFileURL.path }) else {
             throw T17Blocker(code: "invalid-request", detail: "a writable path escapes its fixed lane name")
         }
         try requireDirectory(root, code: "invalid-request", fileManager: fileManager)
