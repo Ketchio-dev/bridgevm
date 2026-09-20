@@ -3011,3 +3011,5 @@ apps/macos/Sources/BridgeVMProductE2E/T17ApplicationSnapshotFailure.swift	18	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ApplicationSnapshotFailureTests.swift	43	0
 apps/macos/Sources/BridgeVMProductE2E/T17SupportedAttribute.swift	25	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17SupportedAttributeTests.swift	47	0
+apps/macos/Tests/BridgeVMControlTests/NativeTestPython.swift	20	0
+apps/macos/Tests/BridgeVMControlTests/NativeTestPythonTests.swift	26	0

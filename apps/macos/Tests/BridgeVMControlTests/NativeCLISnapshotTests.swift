@@ -116,7 +116,7 @@ final class NativeCLISnapshotTests: XCTestCase {
             try Data(count: 4).write(to: vars)
             let script = """
             #!/bin/sh
-            printf '%s\\n' "$@" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().splitlines()))' >> "\(log.path)"
+            printf '%s\\n' "$@" | "\(try NativeTestPython.executable().path)" -c 'import json,sys; print(json.dumps(sys.stdin.read().splitlines()))' >> "\(log.path)"
             if [ "$1" = create ]; then mkdir -p "$4"; fi
             """
             try Data(script.utf8).write(to: helper)
