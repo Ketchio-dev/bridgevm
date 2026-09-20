@@ -2,7 +2,7 @@
 import subprocess
 
 def build_transport_fixture(root, output):
-    names = ["Protocol", "SessionObservation", "SessionValidation", "Codec", "LibraryIdentity",
+    names = ["Protocol", "SessionObservation", "SessionValidation", "GraphicsValidation", "Codec", "LibraryIdentity",
              "Endpoint", "Owner", "OwnerLease", "Transport", "TransportConnection",
              "TransportConnectionCompatibility", "Server", "Client", "ClientExchange",
              "ControlProtocol", "ControlCodec", "ControlValidation", "ControlClient",

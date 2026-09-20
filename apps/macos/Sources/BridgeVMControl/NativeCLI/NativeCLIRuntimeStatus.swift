@@ -1,5 +1,4 @@
 import Foundation
-
 struct NativeCLIRuntimeStatus: Encodable {
     let schema = NativeRuntimeCodec.responseSchema
     let scope = NativeRuntimeCodec.scope
@@ -42,6 +41,7 @@ struct NativeCLIRuntimeStatus: Encodable {
         for session in sessions {
             lines.append("Session: \(session.ownership.rawValue), connection: \(session.connectionState ?? "unobserved")")
             lines.append("  Accepted configuration: \(session.configurationMatch.rawValue)")
+            lines.append("  Graphics mode: \(session.graphicsMode?.rawValue ?? "not-reported")")
             if let process = session.ownedProcess { lines.append("  Owned child PID: \(process.processID)") }
             if let exit = session.lastOwnedExit {
                 lines.append("  Last owned child exit: PID \(exit.process.processID), \(exit.reason), status \(exit.status)")
