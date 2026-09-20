@@ -50,16 +50,16 @@ That supports successful target I/O only; it does not prove installation.
 
 ## Repair and limits
 
-Source `30788e3a` replaces the unavailable WinPE `fc` invocation with the
-existing fail-closed native byte comparator. The scripted-source builder now
-cross-compiles that comparator as ARM64 Windows PE, injects it into boot.wim
-image 2, and requires every injected file to appear in the WIM inventory.
-The install script still stops before `bcdboot` when byte comparison fails.
+Source `b036babdd7daa44d32c2efe57449ccb2e3610ec6` replaces the unavailable
+WinPE `fc` invocation with the fail-closed native byte comparator. App
+packaging cross-compiles it as ARM64 Windows PE and bundles the result as an
+exact install input. The runtime source builder injects that input into
+boot.wim image 2 without requiring Zig, and comparison failure still stops
+before `bcdboot`.
 
-The focused wiring, security, source-builder, product-E2E and structural
-budget contracts passed. The source-head complete project check passed every
-section except the intentionally stale capability registry; its log SHA-256
-is `222b895e52ee84afb10309c19ecc48e55ff978399a6dc6844b0b2e070e1926cb`.
+The focused wiring, security, source-builder and product-E2E contracts, all
+four Swift shim suites, structural budgets, and the complete project check
+passed; full-check log SHA-256 is `f9a7f59eec0a5cf94c4e997a7a51711d7695e632f25a277a15377f5a67188fc2`.
 These deterministic results do not prove that the comparator executes in
 WinPE or that the install reaches `bcdboot`; a new sealed physical pilot is
 required. A9 and A11 remain OPEN.
