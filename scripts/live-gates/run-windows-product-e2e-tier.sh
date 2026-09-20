@@ -37,7 +37,7 @@ PY
 
 cleanup_work() {
   [[ -z "$WORK" ]] && return 0
-  case "$WORK" in "/tmp/bridgevm-e2e-$JOB_ID."??????) ;; *) return 1 ;; esac
+  case "$WORK" in "/tmp/bridgevm-e2e-$JOB_ID."??????|"/private/tmp/bridgevm-e2e-$JOB_ID."??????) ;; *) return 1 ;; esac
   mount | grep -F "$WORK" >/dev/null 2>&1 && return 1
   pgrep -f "$WORK" >/dev/null 2>&1 && return 1
   python3 "$REPO/scripts/live-gates/t17_owned_tree_cleanup.py" --root "$WORK" --job-id "$JOB_ID" --identity "$WORK_ID" || return 1
@@ -87,7 +87,7 @@ HELPER="$(json_value "$VERIFIED" assets.product_helper.path)"
 if ! codesign --verify --deep --strict "$APP" >/dev/null 2>&1 || ! "$REPO/scripts/verify-product-e2e-helper-app.sh" "$APP" >/dev/null 2>&1; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
 if ! SIGNING="$(bash "$REPO/scripts/live-gates/classify-product-e2e-signing.sh" "$APP")"; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
 
-WORK="$(mktemp -d "/tmp/bridgevm-e2e-$JOB_ID.XXXXXX")"
+WORK="$(mktemp -d "/tmp/bridgevm-e2e-$JOB_ID.XXXXXX")"; WORK="$(cd "$WORK" && pwd -P)"
 WORK_ID="$(stat -f '%d:%i' "$WORK")"; chmod 700 "$WORK"
 EXPECTED=1; [[ "$MODE" == release ]] && EXPECTED=3; previous_inode=""
 for (( lane=1; lane<=EXPECTED; lane++ )); do

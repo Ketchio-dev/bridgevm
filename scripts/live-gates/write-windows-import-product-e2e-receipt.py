@@ -109,7 +109,7 @@ def authenticate(request_path: Path, result_path: Path, stamp: Path, job: str, c
         "disk_path": bundle/"disks/hvf-target.raw", "vars_path": bundle/"metadata/hvf-vars.fd",
         "vtpm_state_path": bundle/"metadata/vtpm", "snapshot_path": bundle/"metadata/snapshots/latest.snapshot",
         "guest_evidence_path": bundle/"metadata/product-e2e-guest-evidence.json"}
-    if not str(root).startswith("/tmp/bridgevm-import-e2e-") or any(Path(request[k]) != v for k, v in expected.items()):
+    if not str(root).startswith(("/tmp/bridgevm-import-e2e-", "/private/tmp/bridgevm-import-e2e-")) or any(Path(request[k]) != v for k, v in expected.items()):
         raise ValueError(f"lane {ordinal} paths escape their fixed root")
     observed = {"source_disk_sha256": digest(expected["source_disk_path"]), "source_vars_sha256": digest(expected["source_vars_path"]),
         "source_vtpm_tree_sha256": tree_digest(expected["source_vtpm_path"]), "final_disk_sha256": digest(expected["disk_path"]),

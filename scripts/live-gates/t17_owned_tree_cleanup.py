@@ -82,16 +82,16 @@ def remove_contents(descriptor, expected, children, device, owner):
 def cleanup(root, job_id, captured_identity):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", job_id):
         raise ValueError("invalid cleanup job identity")
-    pattern = r"/tmp/bridgevm-(?:e2e|import-e2e)-" + re.escape(job_id) + r"\.[A-Za-z0-9]{6}"
+    pattern = r"/(?:private/)?tmp/bridgevm-(?:e2e|import-e2e)-" + re.escape(job_id) + r"\.[A-Za-z0-9]{6}"
     if not re.fullmatch(pattern, root):
         raise ValueError("cleanup root is outside the exact job boundary")
     if not re.fullmatch(r"[0-9]+:[0-9]+", captured_identity):
         raise ValueError("cleanup root lacks a captured device/inode identity")
     device, inode = map(int, captured_identity.split(":"))
     owner = os.geteuid()
-    # /tmp itself is the platform-owned alias on macOS. Do not resolve or
-    # follow any link inside it, including the caller-supplied root entry.
-    parent = os.open("/tmp", os.O_RDONLY | os.O_DIRECTORY)
+    # Open the already validated parent spelling and never follow a link
+    # inside it, including the caller-supplied root entry.
+    parent = os.open(os.path.dirname(root), os.O_RDONLY | os.O_DIRECTORY)
     try:
         name = os.path.basename(root)
         info = os.stat(name, dir_fd=parent, follow_symlinks=False)
