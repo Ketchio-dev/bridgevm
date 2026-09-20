@@ -7,15 +7,15 @@ final class T17ContractTests: XCTestCase {
 
     override func tearDown() {
         for root in roots { try? FileManager.default.removeItem(at: root) }
-        roots = []
-        super.tearDown()
+        roots = []; super.tearDown()
     }
 
     func testStrictRequestAcceptsFixedProductPaths() throws {
-        let fixture = try makeFixture()
-        let request = try T17Request.load(fixture.request)
-        XCTAssertEqual(request.vmSlug, fixture.slug)
-        XCTAssertEqual(request.diskPath, fixture.bundle.appendingPathComponent("disks/hvf-target.raw").path)
+        for prefix in ["/tmp", "/private/tmp"] {
+            let fixture = try makeFixture(prefix: prefix), request = try T17Request.load(fixture.request)
+            XCTAssertEqual(request.vmSlug, fixture.slug)
+            XCTAssertEqual(request.diskPath, fixture.bundle.appendingPathComponent("disks/hvf-target.raw").path)
+        }
     }
 
     func testRequestRejectsUnknownAndDuplicateFields() throws {
@@ -140,8 +140,8 @@ final class T17ContractTests: XCTestCase {
         XCTAssertThrowsError(try T17SecureBootReceipt.verify(receipt: receiptURL, policy: policyURL))
     }
 
-    func makeFixture() throws -> (root: URL, request: URL, bundle: URL, slug: String) {
-        let root = URL(fileURLWithPath: "/tmp/bridgevm-e2e-swift-\(UUID().uuidString)", isDirectory: true)
+    func makeFixture(prefix: String = "/tmp") throws -> (root: URL, request: URL, bundle: URL, slug: String) {
+        let root = URL(fileURLWithPath: "\(prefix)/bridgevm-e2e-swift-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         roots.append(root)
         let app = root.appendingPathComponent("BridgeVMControl.app", isDirectory: true)
