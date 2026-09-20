@@ -3003,8 +3003,11 @@ docs/history/windows-hvf/native-app-snapshot-cli-deterministic-20260917.md	45	0
 scripts/live-gates/native_snapshot_restore_inputs.py	150	0
 scripts/live-gates/native_snapshot_restore_receipt.py	109	0
 scripts/live-gates/run-native-snapshot-restore-tier.py	108	0
+scripts/live-gates/native_snapshot_export_evidence.py	114	0
+scripts/native-snapshot-export-live.sh	13	0
 scripts/verify-native-snapshot-restore-boots.sh	184	0
 tests/integration/native-snapshot-restore-live-tier-contract.py	134	0
+tests/integration/native-snapshot-export-evidence-contract.py	123	0
 docs/history/windows-hvf/native-snapshot-restore-live-tier-20260917.md	52	0
 scripts/live-gates/native_snapshot_restore_artifacts.py	63	0
 scripts/hvf_smp_scaling.py	417	0

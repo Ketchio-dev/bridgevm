@@ -13,8 +13,8 @@ HASHES = (
     "app_executable_sha256", "snapshot_helper_sha256", "image_sha256",
     "vars_sha256", "binary_hash", "prepared_image_sha256", "prepared_vars_sha256",
     "final_disk_sha256", "final_vars_sha256", "snapshot_create_result_sha256",
-    "snapshot_restore_result_sha256", "original_marker_sha256",
-    "clobber_marker_sha256", "restored_marker_sha256",
+    "snapshot_restore_result_sha256", "snapshot_export_result_sha256", "snapshot_export_manifest_sha256",
+    "exported_disk_sha256", "exported_vars_sha256", "original_marker_sha256", "clobber_marker_sha256", "restored_marker_sha256",
 )
 REQUIRED = {
     "schema_version", "tier", "job_id", "commit", *HASHES,

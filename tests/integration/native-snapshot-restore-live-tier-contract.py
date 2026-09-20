@@ -95,7 +95,7 @@ class NativeSnapshotRestoreTierContract(unittest.TestCase):
         self.assertEqual(RECEIPT.validate(public, COMMIT), value)
         for mutation in ({**value, "natural_shutdown_count": 2},
                          {**value, "three_d_injection": True},
-                         {**value, "snapshot_restore_result_sha256": "absent"}):
+                         {**value, "snapshot_restore_result_sha256": "absent"}, {**value, "snapshot_export_result_sha256": "absent"}):
             with self.assertRaises(ValueError):
                 RECEIPT.validate(mutation, COMMIT)
 
@@ -124,7 +124,7 @@ class NativeSnapshotRestoreTierContract(unittest.TestCase):
     def test_marker_gate_routes_both_native_operations_through_app_cli(self):
         source = (ROOT / "scripts/verify-native-snapshot-restore-boots.sh").read_text()
         self.assertIn('"$NATIVE_SNAPSHOT_CLI" app snapshot-create', source)
-        self.assertIn('"$NATIVE_SNAPSHOT_CLI" app snapshot-restore', source)
+        self.assertIn('"$NATIVE_SNAPSHOT_CLI" app snapshot-restore', source); self.assertIn("native_snapshot_export_and_select", source)
         self.assertIn('"experimental3DAllowed": False', source)
         self.assertIn('cp -c "$VARS"', source)
         self.assertIn("set -euo pipefail", source); self.assertNotIn('"unavailableReason":None', source)

@@ -12,6 +12,7 @@ import subprocess
 import sys
 
 from native_snapshot_restore_inputs import digest, prepare, reauthenticate
+from native_snapshot_export_evidence import load_evidence, receipt_fields
 from native_snapshot_restore_receipt import initial, write_new
 
 
@@ -75,13 +76,12 @@ def main() -> int:
         reauthenticate(private, sealed_binary)
         if completed.returncode != 0:
             raise RuntimeError(f"marker lifecycle exited {completed.returncode}")
+        export = load_evidence(output / "export-evidence.json", "a19-native-cli-live")
+        receipt.update(receipt_fields(export))
         receipt.update({
-            "final_disk_sha256": line_hash(output / "final-disk.sha256"),
-            "final_vars_sha256": line_hash(output / "final-vars.sha256"),
-            "snapshot_create_result_sha256": file_digest(output / "create.json"),
-            "snapshot_restore_result_sha256": file_digest(output / "restore.json"),
-            "original_marker_sha256": file_digest(output / "phase1-original/marker-after.txt"),
-            "clobber_marker_sha256": file_digest(output / "phase3-clobber/marker-after.txt"),
+            "final_disk_sha256": line_hash(output / "final-disk.sha256"), "final_vars_sha256": line_hash(output / "final-vars.sha256"),
+            "snapshot_create_result_sha256": file_digest(output / "create.json"), "snapshot_restore_result_sha256": file_digest(output / "restore.json"),
+            "original_marker_sha256": file_digest(output / "phase1-original/marker-after.txt"), "clobber_marker_sha256": file_digest(output / "phase3-clobber/marker-after.txt"),
             "restored_marker_sha256": file_digest(output / "phase5-restored/marker-before.txt"),
         })
         if receipt["original_marker_sha256"] != receipt["restored_marker_sha256"]:
