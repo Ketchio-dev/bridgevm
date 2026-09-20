@@ -94,7 +94,7 @@ struct LibraryDashboardDetail: View {
                     disabled: model.running || library.cloningSlugs.contains(config.slug)
                 ) { library.requestWindowsClone(config) }
             }
-            DashboardActionButton(title: "고급", symbol: "gearshape") { showingAdvanced = true }
+            DashboardActionButton(title: "고급", symbol: "gearshape") { showingAdvanced = true }.accessibilityIdentifier("bridgevm.dashboard.advanced")
         }
     }
 

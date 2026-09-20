@@ -123,7 +123,9 @@ final class T17ProductRunner {
         try T17InstallMonitor.wait(
             applicationIsRunning: { self.application?.isRunning == true },
             installedRuntimeVisible: {
-                (try? ui.waitFor("bridgevm.windows.runtime.view", timeout: 1)) != nil
+                ["bridgevm.windows.runtime.view", "bridgevm.dashboard.advanced"].contains {
+                    (try? ui.waitFor($0, timeout: 1)) != nil
+                }
             },
             stage: { try? ui.text(T17InstallMonitor.stageIdentifier, timeout: 1) },
             failure: { try? ui.text(T17InstallMonitor.failureIdentifier, timeout: 1) })
@@ -182,6 +184,7 @@ final class T17ProductRunner {
     }
 
     private func bootToFirstReady(_ ui: T17UIControlling) throws -> String {
+        if (try? ui.waitFor("bridgevm.windows.runtime.view", timeout: 1)) == nil { try ui.press("bridgevm.dashboard.advanced", timeout: 60) }
         try ui.waitFor("bridgevm.windows.runtime.view", timeout: 60)
         try ui.setToggle(true, identifier: "bridgevm.runtime.clipboard", timeout: 10)
         try ui.setToggle(true, identifier: "bridgevm.runtime.network", timeout: 10)
