@@ -3002,6 +3002,7 @@ tests/integration/hvf-smp-scaling-contract.sh	50	0
 scripts/hvf_smp_confirmation.py	399	0
 scripts/live-gates/run-hvf-smp-confirmation-tier.sh	96	0
 tests/integration/hvf-smp-confirmation-contract.sh	41	0
+tests/integration/scripted-installer-file-compare-wiring-contract.py	30	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserStage.swift	8	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserRecoveryTests.swift	31	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserOwnedSnapshot.swift	7	0

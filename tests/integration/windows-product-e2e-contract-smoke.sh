@@ -3,10 +3,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-product-e2e.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
-FAKE="$TMP/bin"
-mkdir -p "$FAKE" "$TMP/assets"
+FAKE="$TMP/bin"; mkdir -p "$FAKE" "$TMP/assets"
 CATALOG_VERIFIER="$("$ROOT/tests/integration/build-windows-catalog-verifier-test-helper.sh" "$TMP")"
-cp "$ROOT/scripts/win-assets/"{winpeshl.ini,bvinstall.cmd,bvdiskpart.txt,unattend.xml,bvagent.ps1,bvagent-firstboot.ps1,bvagent-input.ps1,bvagent-unicode-input.cs,bvagent-key-input.cs,bvagent-pointer-input.cs,bvagent-window-inventory.ps1,bv-window-inventory.cs,bvagent-task.ps1} "$TMP/assets/"
+cp "$ROOT/scripts/win-assets/"{winpeshl.ini,bvinstall.cmd,bvdiskpart.txt,bv-file-compare.c,unattend.xml,bvagent.ps1,bvagent-firstboot.ps1,bvagent-input.ps1,bvagent-unicode-input.cs,bvagent-key-input.cs,bvagent-pointer-input.cs,bvagent-window-inventory.ps1,bv-window-inventory.cs,bvagent-task.ps1} "$TMP/assets/"
 printf 'fake ISO\n' > "$TMP/windows.iso"
 python3 "$ROOT/tests/fixtures/make-synthetic-windows-guest-payload.py" "$TMP/payload" "$TMP/payload.tsv"
 cat > "$FAKE/hdiutil" <<'MOCK'
@@ -46,6 +45,7 @@ cat > "$FAKE/mkfile" <<'MOCK'
 for argument in "$@"; do output="$argument"; done
 : > "$output"
 MOCK
+printf '#!/usr/bin/env bash\nfor argument in "$@"; do output="$argument"; done\n: > "$output"\n' > "$FAKE/zig"
 cat > "$FAKE/rsync" <<'MOCK'
 #!/usr/bin/env bash
 source_path="${@: -2:1}"; destination="${@: -1}"
@@ -57,7 +57,7 @@ cat > "$FAKE/wimlib-imagex" <<'MOCK'
 case "$1" in
   split) : > "$3" ;;
   update) cat >/dev/null ;;
-  dir) printf '%s\n' winpeshl.ini bvinstall.cmd bvdiskpart.txt ;;
+  dir) printf '%s\n' winpeshl.ini bvinstall.cmd bvdiskpart.txt bv-file-compare.exe ;;
   *) exit 2 ;;
 esac
 MOCK
@@ -74,6 +74,6 @@ TMPDIR="$TMP" PATH="$FAKE:/usr/bin:/bin:/usr/sbin:/sbin" \
 [[ "$(grep -c '^detach ' "$TMP/hdiutil.log")" == 3 ]]
 grep -q -- '-mountpoint .*/bridgevm-win-source\..*/iso' "$TMP/hdiutil.log"
 grep -q -- '-mountpoint .*/bridgevm-win-source\..*/dst' "$TMP/hdiutil.log"
-python3 "$ROOT/tests/integration/windows-guest-payload-verifier-smoke.py"; python3 "$ROOT/tests/integration/windows-install-security-contract-smoke.py"
+python3 "$ROOT/tests/integration/windows-guest-payload-verifier-smoke.py"; python3 "$ROOT/tests/integration/windows-install-security-contract-smoke.py"; python3 "$ROOT/tests/integration/scripted-installer-file-compare-wiring-contract.py"
 python3 "$ROOT/scripts/verify-windows-product-e2e-receipt.py" --self-test; python3 "$ROOT/scripts/live-gates/windows-product-e2e-launchservices-preflight.py" --self-test; "$ROOT/scripts/verify-product-e2e-helper-app.sh" --self-test; "$ROOT/tests/integration/windows-product-e2e-live-tier-smoke.sh"; python3 "$ROOT/tests/integration/windows-product-e2e-request-mode.py"; python3 "$ROOT/tests/integration/windows-product-e2e-signing-class.py"
 "$ROOT/tests/integration/windows-import-product-e2e-contract-smoke.sh"; echo "PASS: Windows product E2E deterministic contracts"

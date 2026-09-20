@@ -67,7 +67,7 @@ if errorlevel 1 (
   echo BVINSTALL ERROR: guest provisioning payload copy failed
   goto :end
 )
-fc /b %PROVISION%\payload-receipt.tsv W:\BridgeVM\provisioning\payload-receipt.tsv >nul
+bv-file-compare.exe %PROVISION%\payload-receipt.tsv W:\BridgeVM\provisioning\payload-receipt.tsv >nul
 if errorlevel 1 (
   echo BVINSTALL ERROR: guest provisioning receipt copy mismatch
   goto :end
