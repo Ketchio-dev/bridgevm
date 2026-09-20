@@ -12,7 +12,7 @@ through to `VMDetailPanel` when that session lookup returned nil. That generic
 panel owns historical backend Start and Stop actions, so a transient metadata
 mismatch could bypass the exact native-session ownership boundary.
 
-Source `b9c4355f0b6e9e9812e22ebde86441593f855624` removes that fallback:
+Source `b9c4355f557fc5620e9fb2157ff96f1c3c458284` removes that fallback:
 
 - dashboard advanced detail uses one engine-aware content router;
 - own-HVF with an exact session presents `HvfEngineView`;
