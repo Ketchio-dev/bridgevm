@@ -3078,3 +3078,5 @@ docs/history/windows-hvf/hvf-unavailable-detail-fail-closed-20260920.md	45	0
 apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeRuntimeGraphicsValidation.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/NativeRuntimeGraphicsStatusTests.swift	50	0
 docs/history/windows-hvf/native-cli-runtime-graphics-truth-20260920.md	48	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfDisplayWindowTitle.swift	19	0
+apps/macos/Tests/BridgeVMControlTests/HvfDisplayWindowTitleTests.swift	36	0
