@@ -3059,3 +3059,6 @@ docs/history/windows-hvf/dashboard-owned-runtime-20260920.md	56	0
 apps/macos/Sources/BridgeVMControl/HvfRuntimeStopAction.swift	30	0
 apps/macos/Sources/BridgeVMControl/RetainedRuntimeStopControl.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeStopActionTests.swift	85	0
+apps/macos/Sources/BridgeVMControl/HvfRuntimeStopPresentation.swift	19	0
+apps/macos/Sources/BridgeVMControl/LibraryDashboardRuntimeStopControl.swift	23	0
+apps/macos/Tests/BridgeVMControlTests/HvfRuntimeStopPresentationTests.swift	28	0
