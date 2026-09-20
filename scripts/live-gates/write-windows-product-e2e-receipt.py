@@ -5,6 +5,7 @@ import argparse, hashlib, importlib.util, json, platform, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
 import windows_product_e2e_artifacts as ARTIFACTS
+import windows_product_e2e_failure as FAILURE
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("product_receipt_verifier", ROOT / "scripts/verify-windows-product-e2e-receipt.py")
@@ -138,6 +139,7 @@ def build(args: argparse.Namespace) -> dict:
     if finished < started:
         finished = started
     run_count, passes = args.attempts, len(successful)
+    public_failure = FAILURE.public_code(args.failure_code, results, VERIFIER.FAILURE_CODES)
     hashes = {
         "input_manifest_sha256": digest(args.input_manifest),
         "app_artifact_sha256": asset("app_bundle"),
@@ -166,7 +168,7 @@ def build(args: argparse.Namespace) -> dict:
         "three_d_injection": False, "worker_cleanup_verified": args.cleanup,
         "hosted_ci_green": False, "security_ci_green": False, "valid": args.valid,
         "expected_runs": expected, "run_count": run_count, "passes": passes, "failures": run_count - passes,
-        "elapsed_ms": int((finished - started).total_seconds() * 1000), "failure_code": args.failure_code,
+        "elapsed_ms": int((finished - started).total_seconds() * 1000), "failure_code": public_failure,
         "outcome": args.outcome, "pass": preliminary, "claim_eligible": False,
         "criterion_pass": False, "capability_promotion": False,
         "host_model": host_value(["sysctl", "-n", "hw.model"], platform.machine() or "unknown-host"),
@@ -205,7 +207,7 @@ def main() -> int:
     parser.add_argument("--attempts", type=int, default=0)
     parser.add_argument("--started-at", required=True)
     parser.add_argument("--outcome", choices=tuple(VERIFIER.OUTCOMES), required=True)
-    parser.add_argument("--failure-code", choices=tuple(VERIFIER.FAILURE_CODES), required=True)
+    parser.add_argument("--failure-code", choices=tuple(VERIFIER.FAILURE_CODES | LANE_FAILURE_CODES), required=True)
     parser.add_argument("--signing-class", choices=("unverified", "development-ad-hoc", "development-signed", "developer-id-notarized"), default="unverified")
     parser.add_argument("--cleanup", action="store_true")
     parser.add_argument("--valid", action="store_true")
