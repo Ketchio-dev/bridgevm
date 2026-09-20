@@ -1,5 +1,4 @@
 import Foundation
-
 extension NativeRuntimeCodec {
     static func validate(_ session: NativeRuntimeSessionObservation, saved: NativeRuntimeSavedConfiguration) throws {
         if let digest = session.acceptedConfigurationDigest, !validDigest(digest) {
@@ -15,6 +14,7 @@ extension NativeRuntimeCodec {
             try validate(exit.process)
             guard ["exit", "uncaughtSignal", "unknown"].contains(exit.reason) else { throw NativeRuntimeError.invalidMessage }
         }
+        try validateGraphicsMode(session)
         switch session.ownership {
         case .owned:
             guard session.ownedProcess != nil else { throw NativeRuntimeError.invalidMessage }

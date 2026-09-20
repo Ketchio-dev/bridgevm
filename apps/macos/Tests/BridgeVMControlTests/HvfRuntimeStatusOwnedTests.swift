@@ -24,7 +24,7 @@ final class HvfRuntimeStatusOwnedTests: XCTestCase {
             XCTAssertEqual(value.connectionState, name)
             XCTAssertEqual(value.ownedProcess?.token, identity.token.uuidString)
             XCTAssertEqual(value.ownedProcess?.processID, identity.processID)
-            XCTAssertNil(value.lastOwnedExit)
+            XCTAssertNil(value.lastOwnedExit); XCTAssertEqual(value.graphicsMode, .basic3DOff)
             XCTAssertFalse(String(decoding: try NativeRuntimeCodec.encode(value), as: UTF8.self).contains("private-fixture-host"))
         }
         XCTAssertEqual(f.effects, effects)
@@ -61,7 +61,7 @@ final class HvfRuntimeStatusOwnedTests: XCTestCase {
         XCTAssertEqual(terminal.lastOwnedExit?.process.token, identity.token.uuidString)
         XCTAssertEqual(terminal.lastOwnedExit?.process.processID, identity.processID)
         XCTAssertEqual(terminal.lastOwnedExit?.reason, "exit")
-        XCTAssertEqual(terminal.lastOwnedExit?.status, 23)
+        XCTAssertEqual(terminal.lastOwnedExit?.status, 23); XCTAssertNil(terminal.graphicsMode)
         XCTAssertEqual(f.effects, effects)
     }
 
@@ -75,7 +75,7 @@ final class HvfRuntimeStatusOwnedTests: XCTestCase {
         XCTAssertEqual(value.ownership, .attachedObservation)
         XCTAssertEqual(value.connectionState, "booting")
         XCTAssertNil(value.ownedProcess)
-        XCTAssertNil(value.lastOwnedExit)
+        XCTAssertNil(value.lastOwnedExit); XCTAssertEqual(value.graphicsMode, .unverified)
         XCTAssertEqual(f.effects, effects)
         XCTAssertEqual(f.session.runtimeObservation(), before)
         XCTAssertEqual(f.owned.launches, 0)
@@ -104,7 +104,7 @@ final class HvfRuntimeStatusOwnedTests: XCTestCase {
         XCTAssertEqual(attached.ownership, .attachedObservation)
         XCTAssertNil(attached.ownedProcess)
         XCTAssertEqual(attached.lastOwnedExit, exited.lastOwnedExit)
-        XCTAssertEqual(attached.lastOwnedExit?.process.token, identity.token.uuidString)
+        XCTAssertEqual(attached.lastOwnedExit?.process.token, identity.token.uuidString); XCTAssertEqual(attached.graphicsMode, .unverified)
         XCTAssertEqual(f.effects, effects)
     }
 }

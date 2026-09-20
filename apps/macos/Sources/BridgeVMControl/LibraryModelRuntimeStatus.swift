@@ -1,5 +1,4 @@
 import Foundation
-
 extension LibraryModel {
     /// Reads existing handles only, including removed registrations retained for control.
     func runtimeObservations(slug: String, requestedConfigurationIdentity: String?) throws
@@ -7,17 +6,17 @@ extension LibraryModel {
         let records = try runtimeRecords(slug: slug)
         return try records.map { record in
             let accepted = try record.sourceConfig.map { try NativeRuntimeConfigurationIdentity.digest(config: $0) }
+            let graphics = record.sourceConfig.map { $0.experimental3DAllowed == true ? NativeRuntimeSessionObservation.GraphicsMode.experimental3D : .basic3DOff }
             let match: NativeRuntimeSessionObservation.ConfigurationMatch
             if let accepted, let requestedConfigurationIdentity {
                 match = accepted == requestedConfigurationIdentity ? .same : .different
             } else { match = .unknown }
-            return record.session.runtimeObservation().nativeStatus(acceptedDigest: accepted, match: match)
+            return record.session.runtimeObservation().nativeStatus(acceptedDigest: accepted, match: match, acceptedGraphics: graphics)
         }
     }
 }
-
 private extension HvfRuntimeObservation {
-    func nativeStatus(acceptedDigest: String?, match: NativeRuntimeSessionObservation.ConfigurationMatch)
+    func nativeStatus(acceptedDigest: String?, match: NativeRuntimeSessionObservation.ConfigurationMatch, acceptedGraphics: NativeRuntimeSessionObservation.GraphicsMode?)
         -> NativeRuntimeSessionObservation {
         let ownership: NativeRuntimeSessionObservation.Ownership
         if ownedProcessIdentity != nil { ownership = .owned }
@@ -41,10 +40,11 @@ private extension HvfRuntimeObservation {
             }
             return NativeRuntimeExitObservation(process: value.identity.nativeStatus, reason: reason, status: value.status)
         }
+        let graphics: NativeRuntimeSessionObservation.GraphicsMode? = ownership == .owned ? acceptedGraphics : (ownership == .attachedObservation ? .unverified : nil)
         return NativeRuntimeSessionObservation(ownership: ownership,
             connectionState: ownership == .notObserved ? nil : state,
             acceptedConfigurationDigest: acceptedDigest, configurationMatch: match,
-            ownedProcess: ownedProcessIdentity?.nativeStatus, lastOwnedExit: exit)
+            ownedProcess: ownedProcessIdentity?.nativeStatus, lastOwnedExit: exit, graphicsMode: graphics)
     }
 }
 

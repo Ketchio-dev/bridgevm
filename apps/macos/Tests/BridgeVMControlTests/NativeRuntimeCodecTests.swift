@@ -43,11 +43,11 @@ final class NativeRuntimeCodecTests: XCTestCase {
         XCTAssertThrowsError(try NativeRuntimeCodec.validate(response, for: request()))
         let badClaims: [NativeRuntimeSessionObservation] = [
             .init(ownership: .owned, connectionState: "booting", acceptedConfigurationDigest: nil,
-                  configurationMatch: .unknown, ownedProcess: nil, lastOwnedExit: nil),
+                  configurationMatch: .unknown, ownedProcess: nil, lastOwnedExit: nil, graphicsMode: nil),
             .init(ownership: .notObserved, connectionState: "stopped", acceptedConfigurationDigest: nil,
-                  configurationMatch: .unknown, ownedProcess: nil, lastOwnedExit: nil),
+                  configurationMatch: .unknown, ownedProcess: nil, lastOwnedExit: nil, graphicsMode: nil),
             .init(ownership: .notObserved, connectionState: nil, acceptedConfigurationDigest: nil,
-                  configurationMatch: .same, ownedProcess: nil, lastOwnedExit: nil)
+                  configurationMatch: .same, ownedProcess: nil, lastOwnedExit: nil, graphicsMode: nil)
         ]
         for claim in badClaims {
             XCTAssertThrowsError(try NativeRuntimeCodec.validate(claim, saved: input.savedConfiguration))

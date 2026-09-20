@@ -97,7 +97,7 @@ but does not prevent an otherwise complete owner query. This keeps observations
 for removed registrations accessible.
 
 Ownership distinguishes `owned`, `attached-observation`, `owned-exit-observed`, and
-`not-observed`. These describe the app's retained evidence: an observed owned child
+`not-observed`. Current-app owned sessions may add `graphicsMode` as `basic-3d-off` or `experimental-3d`; attached sessions report `unverified`, while older app responses omit it. An observed owned child
 exit does not prove guest shutdown, guest health, or descendant cleanup.
 `not-observed` does not mean the VM is globally stopped. Likewise, a connected
 session is not a guest-health result.
