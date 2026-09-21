@@ -1,23 +1,16 @@
 # A9 modal chooser handoff — 2026-09-21
 
-Status: deterministic correction after one failed physical pilot. A9 and A11
-remain OPEN, product state remains Engineering Preview, and 3D remains outside
-the release path.
+Status: deterministic correction after one failed physical pilot. A9 and A11 remain
+OPEN, product state remains Engineering Preview, and 3D remains outside the release path.
 
 ## Measured pilot
 
-Exact-main commit `84e468fa8bbffdffb365707ef8fe9d24e2367939`
-completed all 45 hosted push workflows, including core CI run `35591475932`.
-Its exact-source Apple Development app passed strict signing, entitlement,
-nested-helper, firmware and LaunchServices Accessibility preflight. The sealed
-input manifest SHA-256 was
+Exact-main `84e468fa8bbffdffb365707ef8fe9d24e2367939` completed all 45 hosted push
+workflows, including core CI run `35591475932`. Its exact-source Apple Development app passed strict signing, entitlement, nested-helper, firmware and LaunchServices Accessibility preflight. The sealed input manifest SHA-256 was
 `7022853f8d97f1411af9efedb9e76f9a04d2972a0a6450d01843eb18447d5cbc`.
 
-Physical job `t17-84e468fa-runtime-press-r27` passed artifact preflight,
-automated the product UI, created the VM, prepared the installer source,
-installed Windows and provisioned Secure Boot with 3D disabled. It retained
-authenticated final disk, variables and Secure Boot hashes. It then failed
-before first READY while selecting the runtime host share:
+Physical job `t17-84e468fa-runtime-press-r27` passed artifact preflight, automated the
+product UI, created the VM, prepared the source, installed Windows and provisioned Secure Boot with 3D disabled. It retained authenticated final disk, variables and Secure Boot hashes, then failed before first READY while selecting the runtime host share:
 
 ```text
 failure_code=ui-element-missing
@@ -26,12 +19,9 @@ first_ax_error=-25204; retry_ax_error=-25204;
 activation_succeeded=true; frontmost=true; attempts=11
 ```
 
-Cleanup was verified. Both strict receipt verifiers passed. Public and private
-receipt SHA-256 are
+Cleanup was verified. Both strict receipt verifiers passed. Public and private receipt SHA-256 are
 `a40303f737283e07541a59d17b4691982eadc385a310e1804af881f9352dbbd0`;
-the authenticated private lane result SHA-256 is
-`f32b356675ccd1cd1fac6c666c93c7848ec34d5e003a576b5d2be39870f60f8f`.
-The job did not complete T17, so no T19 source was retained.
+the authenticated private lane result SHA-256 is `f32b356675ccd1cd1fac6c666c93c7848ec34d5e003a576b5d2be39870f60f8f`. The job did not complete T17, so no T19 source was retained.
 
 ## Corrected boundary
 
@@ -57,3 +47,11 @@ without raising an existing ceiling. The local `swift test` invocation is not
 claimed because Command Line Tools do not ship XCTest; the repository shim is
 the supported deterministic local venue. Exact-head hosted CI, integration and
 a replacement physical T17 pilot remain required.
+
+The first complete-project attempt on metadata head `26e87bec` was stopped at the
+repository's 300-second local limit while the shim suites rebuilt. Every completed
+executable gate passed. Its two earlier failures were the expected stale
+`tested_commit` after the structural-budget row and the initially missing document
+classification; both are retained and corrected next. The interrupted shim step is
+not reported as a pass or failure. The independent complete shim result above applies;
+the complete deterministic project result must come from GitHub-hosted CI.
