@@ -5,47 +5,47 @@ struct T17RoleQualifiedIdentityTests {
     private struct ReadFailure: Error {}
     private struct Node: Equatable {
         let id: String?; let role: String?; let idFails: Bool; let roleFails: Bool
-        init(id: String?, role: String?, idFails: Bool = false, roleFails: Bool = false) {
-            self.id = id; self.role = role; self.idFails = idFails; self.roleFails = roleFails
-        }
+        init(id: String?, role: String?, idFails: Bool = false, roleFails: Bool = false) { self.id = id; self.role = role; self.idFails = idFails; self.roleFails = roleFails }
     }
-
     @Test func exactIdentifierAndRoleSelectOnlyTheEditableField() throws {
         let field = Node(id: "host", role: "AXTextField")
         let nodes = [Node(id: "host", role: "AXStaticText"), field,
                      Node(id: "host", role: "AXButton")]
         #expect(try find(nodes) == field)
     }
-
     @Test func missingExactRoleReturnsNil() throws {
         #expect(try find([Node(id: "host", role: "AXStaticText")]) == nil)
     }
-
     @Test func duplicateExactRolesFailClosed() {
         #expect(throws: T17Blocker.self) {
             try find([Node(id: "host", role: "AXTextField"),
                       Node(id: "host", role: "AXTextField")])
         }
     }
-
     @Test func metadataFailurePropagatesWhenNoMatchExists() {
         #expect(throws: ReadFailure.self) {
             try find([Node(id: nil, role: nil, idFails: true)])
         }
     }
-
     @Test func exactReadableMatchSurvivesUnrelatedMetadataFailure() throws {
         let field = Node(id: "host", role: "AXTextField")
         #expect(try find([Node(id: nil, role: nil, idFails: true), field]) == field)
     }
-
     @Test func roleFailureOnExactIdentifierPropagatesEvenWithAnotherMatch() {
         #expect(throws: ReadFailure.self) {
-            try find([Node(id: "host", role: nil, roleFails: true),
-                      Node(id: "host", role: "AXTextField")])
+            try find([Node(id: "host", role: nil, roleFails: true), Node(id: "host", role: "AXTextField")])
         }
     }
-
+    @Test func textEntryCommitsBeforeVerifyingExactValue() throws {
+        var stored = ""; var events: [String] = []
+        try T17TextEntry.commit("C:\\bridgevm-share", set: { stored = $0; events.append("set"); return true },
+            confirm: { events.append("confirm"); return true }, read: { events.append("read"); return stored })
+        #expect(events == ["set", "confirm", "read"])
+    }
+    @Test func uncommittedOrChangedTextFailsClosed() {
+        #expect(throws: T17Blocker.self) { try T17TextEntry.commit("expected", set: { _ in true }, confirm: { false }, read: { "expected" }) }
+        #expect(throws: T17Blocker.self) { try T17TextEntry.commit("expected", set: { _ in true }, confirm: { true }, read: { "changed" }) }
+    }
     private func find(_ nodes: [Node]) throws -> Node? {
         try T17RoleQualifiedIdentity.find("host", role: "AXTextField", in: nodes, identifier: {
             if $0.idFails { throw ReadFailure() }; return $0.id
