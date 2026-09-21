@@ -1923,6 +1923,7 @@ scripts/b6-scene-contract.sh	46	0
 tests/integration/b6-scene-contract-smoke.py	81	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooser.swift	54	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserAX.swift	132	0
+apps/macos/Sources/BridgeVMProductE2E/T17RoleFirstIdentity.swift	18	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserTests.swift	102	0
 scripts/check-capability-registry.sh	4	0
 tests/integration/capability-freshness-smoke.py	99	0
@@ -2173,6 +2174,8 @@ apps/macos/Tests/BridgeVMControlTests/HvfBootSeedLiveFixtureTests.swift	50	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserDeadlineTests.swift	50	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserIdentity.swift	20	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserIdentityTests.swift	36	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17RoleFirstIdentityTests.swift	60	0
+docs/history/windows-hvf/a9-role-first-chooser-identity-20260921.md	54	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserAXTree.swift	25	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserSnapshot.swift	17	0
 apps/macos/Sources/BridgeVMProductE2E/T17RetryingSnapshot.swift	20	0
