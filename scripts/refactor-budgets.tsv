@@ -2175,6 +2175,7 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserDeadlineTests.swift	50	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserIdentity.swift	20	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserIdentityTests.swift	36	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17RoleFirstIdentityTests.swift	61	0
+docs/history/windows-hvf/a9-role-first-chooser-identity-20260921.md	54	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserAXTree.swift	25	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserSnapshot.swift	17	0
 apps/macos/Sources/BridgeVMProductE2E/T17RetryingSnapshot.swift	20	0
