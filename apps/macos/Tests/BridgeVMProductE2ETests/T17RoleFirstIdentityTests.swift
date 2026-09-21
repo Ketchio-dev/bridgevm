@@ -6,19 +6,19 @@ final class T17RoleFirstIdentityTests: XCTestCase {
 
     func testDisallowedRoleSkipsIdentifierRead() throws {
         var reads = 0
+        let role: (Int) throws -> String? = { $0 == 0 ? "AXButton" : "AXSheet" }
+        let identifier: (Int) throws -> String? = { node in
+            reads += 1
+            if node == 0 { throw T17FileChooser.failure("irrelevant read") }
+            return "open-panel"
+        }
         let result = try T17RoleFirstIdentity.find(
             in: [0, 1], id: "open-panel", roles: allowed,
-            role: { $0 == 0 ? "AXButton" : "AXSheet" },
-            identifier: { node in
-                reads += 1
-                if node == 0 { throw T17FileChooser.failure("irrelevant read") }
-                return "open-panel"
-            }, same: ==
+            role: role, identifier: identifier, same: ==
         )
         XCTAssertEqual(result, 1)
         XCTAssertEqual(reads, 1)
     }
-
     func testEligibleRoleRequiresExactIdentifier() throws {
         let result = try T17RoleFirstIdentity.find(
             in: [0, 1, 2], id: "open-panel", roles: allowed,
@@ -27,7 +27,6 @@ final class T17RoleFirstIdentityTests: XCTestCase {
         )
         XCTAssertEqual(result, 2)
     }
-
     func testDuplicateReferenceIsAccepted() throws {
         let result = try T17RoleFirstIdentity.find(
             in: [1, 1], id: "open-panel", roles: allowed,
