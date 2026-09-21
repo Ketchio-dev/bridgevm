@@ -31,7 +31,7 @@ Private paths, media and guest state remain outside git.
 
 ## Bounded correction
 
-Source `0896365c08244cae1494de1426ea8e95170a1b76` projects the AX
+Source `d7e95111221e252c929bd680b2bfe986a2a6386d` projects the AX
 role before reading AXIdentifier during open-panel discovery. Nodes outside
 `AXWindow`, `AXSheet` and `AXDialog` are ineligible and therefore never incur
 an identifier read. Eligible nodes still require the exact `open-panel`
