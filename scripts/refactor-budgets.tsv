@@ -3059,6 +3059,7 @@ docs/history/windows-hvf/a19-restore-crash-boundaries-20260920.md	46	0
 docs/history/windows-hvf/a19-managed-pair-export-20260920.md	49	0
 docs/history/windows-hvf/a19-live-selected-export-contract-20260920.md	55	0
 docs/history/windows-hvf/a19-partial-staging-interruption-20260920.md	63	0
+docs/history/windows-hvf/a19-snapshot-create-interruption-20260921.md	46	0
 apps/macos/Sources/BridgeVMProductE2E/T17FirstBootDiagnostic.swift	47	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FirstBootDiagnosticTests.swift	44	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGraphicsRuntimePresentation.swift	41	0
