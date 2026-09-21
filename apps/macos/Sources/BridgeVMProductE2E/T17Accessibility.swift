@@ -54,9 +54,9 @@ final class T17Accessibility: T17UIControlling {
 
     func press(_ identifier: String, timeout: TimeInterval = 10) throws {
         let target = try element(identifier, timeout: timeout)
-        let first = AXUIElementPerformAction(target, kAXPressAction as CFString); if first == .success { return }
-        let activated = T17Activation.bringToFront(pid: pid); let retry = activated ? AXUIElementPerformAction(target, kAXPressAction as CFString) : nil
-        guard retry == .success else { throw T17Blocker(code: "ui-element-missing", detail: "AXPress failed: \(identifier); first_ax_error=\(first.rawValue); retry_ax_error=\(retry.map { String($0.rawValue) } ?? "not-attempted"); activation_succeeded=\(activated); frontmost=\(NSRunningApplication(processIdentifier: pid)?.isActive == true)") }
+        try T17PressAction.perform(identifier: identifier, timeout: timeout, enabled: { (try T17SupportedAttribute.read(target, kAXEnabledAttribute) as? NSNumber)?.boolValue },
+            press: { AXUIElementPerformAction(target, kAXPressAction as CFString) }, activate: { T17Activation.bringToFront(pid: self.pid) },
+            retry: { AXUIElementPerformAction(target, kAXPressAction as CFString) }, frontmost: { NSRunningApplication(processIdentifier: self.pid)?.isActive == true })
     }
 
     func setText(_ value: String, identifier: String, timeout: TimeInterval = 10) throws {
