@@ -23,7 +23,6 @@ final class T17FileChooserAX: T17FileChooserDriving {
     }
 
     func open() throws { try openControl() }
-
     func panelIsPresent() throws -> Bool { try currentPanel() != nil }
     private func currentPanel() throws -> AXUIElement? {
         panel = try T17FileChooserAXTree.applicationSnapshot(pid: pid) { candidates in
@@ -40,7 +39,6 @@ final class T17FileChooserAX: T17FileChooserDriving {
         }
         return panel
     }
-
     func showLocationField() throws {
         guard let panel else { throw T17FileChooser.failure("file chooser was absent") }
         // Activation is recovery, not proof that the chooser can accept input.
@@ -48,9 +46,7 @@ final class T17FileChooserAX: T17FileChooserDriving {
         try action(panel, kAXRaiseAction)
         try key(5, flags: [.maskCommand, .maskShift])
     }
-
     func locationFieldIsReady() throws -> Bool { try locationField() != nil }
-
     func setLocation(_ path: String) throws {
         guard let field = try locationField() else { throw T17FileChooser.failure("Go To field disappeared") }
         let result = AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, path as CFString)
@@ -59,7 +55,6 @@ final class T17FileChooserAX: T17FileChooserDriving {
             throw T17FileChooser.failure("Go To field rejected the exact path; ax_error=\(result.rawValue)")
         }
     }
-
     func acceptLocation() throws { try key(36) }
     func locationFieldIsAbsent() throws -> Bool { try locationSheet() == nil }
 
@@ -67,7 +62,6 @@ final class T17FileChooserAX: T17FileChooserDriving {
         guard let button = try openButton() else { return false }
         return try (attribute(button, kAXEnabledAttribute) as? NSNumber)?.boolValue == true
     }
-
     func acceptSelection() throws {
         guard let button = try openButton(),
               try (attribute(button, kAXEnabledAttribute) as? NSNumber)?.boolValue == true else {
@@ -123,9 +117,15 @@ final class T17FileChooserAX: T17FileChooserDriving {
     }
 
     private func attribute(_ element: AXUIElement, _ name: String) throws -> AnyObject? {
-        try T17FileChooserAXTree.attribute(element, name)
+        var rawNames: CFArray?
+        let result = AXUIElementCopyAttributeNames(element, &rawNames)
+        guard result == .success else {
+            throw T17FileChooser.failure("file chooser AXAttributeNames read failed; ax_error=\(result.rawValue)")
+        }
+        guard let names = rawNames as? [String] else { throw T17FileChooser.failure("file chooser AXAttributeNames was invalid") }
+        return try T17SupportedAttribute.read(name, advertised: { names },
+                                              value: { try T17FileChooserAXTree.attribute(element, name) })
     }
-
     private func nodes(_ root: AXUIElement) throws -> [AXUIElement] {
         try T17FileChooserAXTree.nodes(root)
     }
