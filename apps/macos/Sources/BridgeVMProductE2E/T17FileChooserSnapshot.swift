@@ -8,7 +8,7 @@ enum T17FileChooserSnapshot {
         try T17RetryingSnapshot.read(attempts: attempts, root: root,
             retryable: isTransientReadFailure, beforeRetry: pause) { try project(nodes($0)) }
     }
-    private static func isTransientReadFailure(_ error: Error) -> Bool {
+    static func isTransientReadFailure(_ error: Error) -> Bool {
         guard let detail = (error as? T17Blocker)?.detail else { return false }
         return [AXError.failure, .invalidUIElement, .cannotComplete]
             .contains { detail.hasSuffix(" read failed; ax_error=\($0.rawValue)") }
