@@ -3117,3 +3117,4 @@ apps/macos/Sources/BridgeVMProductE2E/T17RuntimeIntegrationSetup.swift	16	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17RuntimeIntegrationSetupTests.swift	50	0
 docs/history/windows-hvf/a9-runtime-share-chooser-20260921.md	63	0
 docs/history/windows-hvf/a9-transient-chooser-ax-read-20260921.md	57	0
+docs/history/windows-hvf/a9-runtime-share-press-recovery-20260921.md	76	0
