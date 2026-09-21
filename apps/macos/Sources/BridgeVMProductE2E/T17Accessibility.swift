@@ -9,7 +9,7 @@ protocol T17UIControlling {
     func choose(path: String, from identifier: String, timeout: TimeInterval) throws
     func waitFor(_ identifier: String, timeout: TimeInterval) throws
     func text(_ identifier: String, timeout: TimeInterval) throws -> String
-    func optionalText(_ identifier: String) throws -> String?
+    func optionalTexts(_ identifiers: Set<String>) throws -> [String: String]
     func clickSecondaryWindow(timeout: TimeInterval) throws
     func textSnapshot() -> [String]
 }
@@ -33,9 +33,16 @@ final class T17Accessibility: T17UIControlling {
         return try textValue(target)
     }
 
-    func optionalText(_ identifier: String) throws -> String? {
-        let match = try snapshotElement(identifier)
-        return try match.map(textValue)
+    func optionalTexts(_ identifiers: Set<String>) throws -> [String: String] {
+        do {
+            return try T17OptionalTextSnapshot.read(pause: {
+                Thread.sleep(forTimeInterval: 0.5)
+            }, root: { AXUIElementCreateApplication(self.pid) }, nodes: {
+                try self.descendants(of: $0, limit: 12_000)
+            }, expected: identifiers, identifier: {
+                try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String
+            }, text: self.textValue)
+        } catch { throw T17OptionalTextSnapshot.attributed(error, identifiers: identifiers) }
     }
 
     private func textValue(_ target: AXUIElement) throws -> String {
