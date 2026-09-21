@@ -134,7 +134,7 @@ struct HvfEngineView: View {
                     Spacer()
                 }
                 if shareEnabled {
-                    pathRow("Host share", text: $shareHostDir, chooseDirectory: true).accessibilityIdentifier("bridgevm.runtime.share.host")
+                    pathRow("Host share", text: $shareHostDir, chooseDirectory: true, identifier: "bridgevm.runtime.share.host")
                     HStack {
                         Text("Guest share").frame(width: 92, alignment: .leading)
                         TextField("C:\\bridgevm-share", text: $shareGuestDir)
@@ -322,12 +322,13 @@ struct HvfEngineView: View {
 
     var vtpmLifecycleAvailable: Bool { !session.hasActiveRuntimeWork }
 
-    private func pathRow(_ label: String, text: Binding<String>, chooseDirectory: Bool) -> some View {
+    private func pathRow(_ label: String, text: Binding<String>, chooseDirectory: Bool, identifier: String = "") -> some View {
         HStack {
             Text(label).frame(width: 92, alignment: .leading)
             TextField(label, text: text)
                 .textFieldStyle(.roundedBorder)
                 .font(.body.monospaced())
+                .accessibilityIdentifier(identifier)
             Button { choosePath(text: text, directory: chooseDirectory) } label: {
                 Image(systemName: "folder")
             }
