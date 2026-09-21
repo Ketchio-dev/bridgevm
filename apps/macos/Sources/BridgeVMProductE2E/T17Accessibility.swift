@@ -16,14 +16,12 @@ protocol T17UIControlling {
 
 final class T17Accessibility: T17UIControlling {
     private let pid: pid_t
-
     init(pid: pid_t) throws {
         guard AXIsProcessTrusted() else {
             throw T17Blocker(code: "accessibility-untrusted", detail: T17TrustDiagnostic.detail())
         }
         self.pid = pid
     }
-
     func waitFor(_ identifier: String, timeout: TimeInterval) throws {
         _ = try element(identifier, timeout: timeout)
     }
@@ -82,9 +80,11 @@ final class T17Accessibility: T17UIControlling {
     }
 
     func choose(path: String, from identifier: String, timeout: TimeInterval = 15) throws {
-        let driver = T17FileChooserAX(pid: pid, identifier: identifier) {
-            try self.press(identifier, timeout: timeout)
-        }
+        let target = try element(identifier, role: T17ChooserOpenAction.targetRole, timeout: timeout)
+        let driver = T17FileChooserAX(pid: pid, identifier: identifier) { try T17ChooserOpenAction.perform(
+            identifier: identifier, timeout: timeout,
+            enabled: { (try T17SupportedAttribute.read(target, kAXEnabledAttribute) as? NSNumber)?.boolValue },
+            press: { AXUIElementPerformAction(target, kAXPressAction as CFString) }) }
         try T17FileChooser.choose(path: path, timeout: timeout, driver: driver)
     }
 
