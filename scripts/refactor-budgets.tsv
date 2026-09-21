@@ -3099,3 +3099,6 @@ apps/macos/Sources/BridgeVMProductE2E/T17OptionalTextSnapshot.swift	31	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17OptionalTextSnapshotTests.swift	85	0
 docs/history/windows-hvf/a9-first-ready-coherent-snapshot-20260920.md	51	0
 docs/history/windows-hvf/a9-stable-runtime-outcome-20260920.md	53	0
+apps/macos/Sources/BridgeVMProductE2E/T17RoleQualifiedIdentity.swift	28	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17RoleQualifiedIdentityTests.swift	54	0
+docs/history/windows-hvf/a9-role-qualified-text-entry-20260920.md	60	0

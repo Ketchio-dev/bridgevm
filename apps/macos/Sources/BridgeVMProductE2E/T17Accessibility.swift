@@ -60,9 +60,7 @@ final class T17Accessibility: T17UIControlling {
     }
 
     func setText(_ value: String, identifier: String, timeout: TimeInterval = 10) throws {
-        let identified = try element(identifier, timeout: timeout)
-        let target = role(of: identified) == (kAXTextFieldRole as String)
-            ? identified : (try firstDescendant(of: identified, role: kAXTextFieldRole as String) ?? identified)
+        let target = try element(identifier, role: kAXTextFieldRole as String, timeout: timeout)
         guard AXUIElementSetAttributeValue(target, kAXValueAttribute as CFString, value as CFTypeRef) == .success else {
             throw T17Blocker(code: "ui-element-missing", detail: "identified UI element does not accept text")
         }
@@ -121,10 +119,11 @@ final class T17Accessibility: T17UIControlling {
         throw T17Blocker(code: "ui-element-missing", detail: "guest display window was not available for pointer input")
     }
 
-    private func element(_ identifier: String, timeout: TimeInterval) throws -> AXUIElement {
+    private func element(_ identifier: String, role expectedRole: String? = nil,
+                         timeout: TimeInterval) throws -> AXUIElement {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
-            let match = try snapshotElement(identifier)
+            let match = try snapshotElement(identifier, role: expectedRole)
             if let match { return match }
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         } while Date() < deadline
@@ -132,19 +131,22 @@ final class T17Accessibility: T17UIControlling {
         throw T17Blocker(code: "ui-element-missing", detail: "required accessibility identifier was not found: \(identifier); windows=\((attribute(application, kAXWindowsAttribute as CFString) as? [AXUIElement]).map { String($0.count) } ?? "unanswered") timeout_s=\(timeout)")
     }
 
-    private func snapshotElement(_ identifier: String) throws -> AXUIElement? {
+    private func snapshotElement(_ identifier: String, role expectedRole: String?) throws -> AXUIElement? {
         do {
             return try T17ApplicationSnapshot.read(
                 root: { AXUIElementCreateApplication(self.pid) },
                 nodes: { try self.descendants(of: $0, limit: 12_000) },
-                project: { nodes in try T17CreationProbe.find(identifier, in: nodes, identifier: {
-                    try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String
-                }, value: { try T17SupportedAttribute.read($0, kAXValueAttribute) as? String }) })
+                project: { nodes in
+                    if let expectedRole {
+                        return try T17RoleQualifiedIdentity.find(identifier, role: expectedRole, in: nodes,
+                            identifier: { try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String },
+                            role: { try T17SupportedAttribute.read($0, kAXRoleAttribute) as? String })
+                    }
+                    return try T17CreationProbe.find(identifier, in: nodes, identifier: {
+                        try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String
+                    }, value: { try T17SupportedAttribute.read($0, kAXValueAttribute) as? String })
+                })
         } catch { throw T17ApplicationSnapshotFailure.attributed(error, identifier: identifier) }
-    }
-
-    private func firstDescendant(of root: AXUIElement, role expected: String) throws -> AXUIElement? {
-        try descendants(of: root, limit: 128).first { role(of: $0) == expected }
     }
 
     private func descendants(of root: AXUIElement, limit: Int) throws -> [AXUIElement] {
