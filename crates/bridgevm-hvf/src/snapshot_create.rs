@@ -2,6 +2,13 @@
 
 use super::*;
 
+#[path = "snapshot_create_destination.rs"]
+mod destination;
+use destination::prepare_destination;
+#[path = "snapshot_create_stage.rs"]
+mod stage;
+use stage::CreateStage;
+
 /// Capture `disk` and `vars` into `dest` as one atomic pair.
 ///
 /// `vm_running` is passed in rather than probed here: only the caller knows
@@ -14,6 +21,18 @@ pub fn create_snapshot(
     vm_id: &str,
     vm_running: bool,
     quota_bytes: u64,
+) -> Result<SnapshotManifest, SnapshotError> {
+    create_snapshot_using(disk, vars, dest, vm_id, vm_running, quota_bytes, |_| {})
+}
+
+fn create_snapshot_using(
+    disk: &Path,
+    vars: &Path,
+    dest: &Path,
+    vm_id: &str,
+    vm_running: bool,
+    quota_bytes: u64,
+    mut observe: impl FnMut(CreateStage),
 ) -> Result<SnapshotManifest, SnapshotError> {
     if vm_running {
         return Err(SnapshotError::VmRunning);
@@ -40,7 +59,9 @@ pub fn create_snapshot(
     fs::create_dir_all(&staging)?;
 
     let disk_bytes = copy_and_sync(disk, &staging.join(DISK_NAME))?;
+    observe(CreateStage::DiskSynced);
     let vars_bytes = copy_and_sync(vars, &staging.join(VARS_NAME))?;
+    observe(CreateStage::VarsSynced);
 
     let manifest = SnapshotManifest {
         format_version: SNAPSHOT_FORMAT_VERSION,
@@ -52,34 +73,16 @@ pub fn create_snapshot(
     };
     // The manifest is written last and is what makes the directory valid.
     write_file_atomically(&staging.join(MANIFEST_NAME), manifest.to_json().as_bytes())?;
+    observe(CreateStage::ManifestPublished);
     sync_dir(&staging)?;
+    observe(CreateStage::StagingDirectorySynced);
 
     // Never remove the previous snapshot before its replacement is published.
     snapshot_publish::publish(&staging, &dest)?;
+    observe(CreateStage::SnapshotPublished);
     Ok(manifest)
 }
 
-fn prepare_destination(dest: &Path, sources: [&Path; 4]) -> io::Result<PathBuf> {
-    let name = dest
-        .file_name()
-        .ok_or_else(|| io::Error::other("snapshot destination needs a directory name"))?;
-    let parent = dest
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    fs::create_dir_all(parent)?;
-    // Resolve parent aliases while retaining the final entry: publication must
-    // still refuse a destination symlink rather than replace its target.
-    let destination = fs::canonicalize(parent)?.join(name);
-    for output in [&destination, &staging_path(&destination)] {
-        let resolved = match fs::canonicalize(output) {
-            Ok(path) => path,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => output.to_path_buf(),
-            Err(error) => return Err(error),
-        };
-        if sources.iter().any(|source| source.starts_with(&resolved)) {
-            return Err(io::Error::other("snapshot output overlaps source media"));
-        }
-    }
-    Ok(destination)
-}
+#[cfg(test)]
+#[path = "snapshot_create_interruption_tests.rs"]
+mod interruption_tests;
