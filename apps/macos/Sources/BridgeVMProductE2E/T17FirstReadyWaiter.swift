@@ -2,10 +2,10 @@ import CryptoKit
 import Foundation
 
 struct T17FirstReadyObservation {
-    let readyLine: String?
-    let runtimeState: String?
-    let startFailure: String?
+    let readyLine, runtimeState, startFailure: String?
     let applicationRunning: Bool
+
+    static func normalizedFailure(_ value: String?) -> String? { value == "none" ? nil : value }
 
     static func capture(readyLine: String?, applicationRunning: Bool,
                         ui: T17UIControlling) throws -> Self {
@@ -15,7 +15,7 @@ struct T17FirstReadyObservation {
         }
         let values = try ui.optionalTexts(["bridgevm.windows.runtime.state", "bridgevm.windows.runtime.start.failure"])
         return Self(readyLine: nil, runtimeState: values["bridgevm.windows.runtime.state"],
-                    startFailure: values["bridgevm.windows.runtime.start.failure"],
+                    startFailure: normalizedFailure(values["bridgevm.windows.runtime.start.failure"]),
                     applicationRunning: true)
     }
 }

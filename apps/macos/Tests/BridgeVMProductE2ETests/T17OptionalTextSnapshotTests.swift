@@ -26,11 +26,11 @@ final class T17OptionalTextSnapshotTests: XCTestCase {
         XCTAssertThrowsError(try project(nodes)) { XCTAssertTrue($0 is ReadFailure) }
     }
 
-    func testUnrelatedReadFailureDoesNotOverrideTwoExactReadableValues() throws {
+    func testUnrelatedReadFailureDoesNotOverrideStableExactValues() throws {
         let nodes = [Node(id: nil, value: "", fails: true),
                      Node(id: state, value: "booting", fails: false),
-                     Node(id: failure, value: "private", fails: false)]
-        XCTAssertEqual(try project(nodes), [state: "booting", failure: "private"])
+                     Node(id: failure, value: "none", fails: false)]
+        XCTAssertEqual(try project(nodes), [state: "booting", failure: "none"])
     }
 
     func testGenericAXFailureReacquiresFiveCompleteSnapshots() throws {
