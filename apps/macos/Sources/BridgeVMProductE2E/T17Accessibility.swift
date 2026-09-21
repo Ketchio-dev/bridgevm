@@ -9,7 +9,7 @@ protocol T17UIControlling {
     func choose(path: String, from identifier: String, timeout: TimeInterval) throws
     func waitFor(_ identifier: String, timeout: TimeInterval) throws
     func text(_ identifier: String, timeout: TimeInterval) throws -> String
-    func optionalText(_ identifier: String) throws -> String?
+    func optionalTexts(_ identifiers: Set<String>) throws -> [String: String]
     func clickSecondaryWindow(timeout: TimeInterval) throws
     func textSnapshot() -> [String]
 }
@@ -33,9 +33,16 @@ final class T17Accessibility: T17UIControlling {
         return try textValue(target)
     }
 
-    func optionalText(_ identifier: String) throws -> String? {
-        let match = try snapshotElement(identifier)
-        return try match.map(textValue)
+    func optionalTexts(_ identifiers: Set<String>) throws -> [String: String] {
+        do {
+            return try T17OptionalTextSnapshot.read(pause: {
+                Thread.sleep(forTimeInterval: 0.5)
+            }, root: { AXUIElementCreateApplication(self.pid) }, nodes: {
+                try self.descendants(of: $0, limit: 12_000)
+            }, expected: identifiers, identifier: {
+                try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String
+            }, text: self.textValue)
+        } catch { throw T17OptionalTextSnapshot.attributed(error, identifiers: identifiers) }
     }
 
     private func textValue(_ target: AXUIElement) throws -> String {
@@ -47,18 +54,18 @@ final class T17Accessibility: T17UIControlling {
 
     func press(_ identifier: String, timeout: TimeInterval = 10) throws {
         let target = try element(identifier, timeout: timeout)
-        let first = AXUIElementPerformAction(target, kAXPressAction as CFString); if first == .success { return }
-        let activated = T17Activation.bringToFront(pid: pid); let retry = activated ? AXUIElementPerformAction(target, kAXPressAction as CFString) : nil
-        guard retry == .success else { throw T17Blocker(code: "ui-element-missing", detail: "AXPress failed: \(identifier); first_ax_error=\(first.rawValue); retry_ax_error=\(retry.map { String($0.rawValue) } ?? "not-attempted"); activation_succeeded=\(activated); frontmost=\(NSRunningApplication(processIdentifier: pid)?.isActive == true)") }
+        try T17PressAction.perform(identifier: identifier, timeout: timeout, enabled: { (try T17SupportedAttribute.read(target, kAXEnabledAttribute) as? NSNumber)?.boolValue },
+            press: { AXUIElementPerformAction(target, kAXPressAction as CFString) }, activate: { T17Activation.bringToFront(pid: self.pid) },
+            retry: { AXUIElementPerformAction(target, kAXPressAction as CFString) }, frontmost: { NSRunningApplication(processIdentifier: self.pid)?.isActive == true })
     }
 
     func setText(_ value: String, identifier: String, timeout: TimeInterval = 10) throws {
-        let identified = try element(identifier, timeout: timeout)
-        let target = role(of: identified) == (kAXTextFieldRole as String)
-            ? identified : (try firstDescendant(of: identified, role: kAXTextFieldRole as String) ?? identified)
-        guard AXUIElementSetAttributeValue(target, kAXValueAttribute as CFString, value as CFTypeRef) == .success else {
-            throw T17Blocker(code: "ui-element-missing", detail: "identified UI element does not accept text")
-        }
+        let target = try element(identifier, role: kAXTextFieldRole as String, timeout: timeout)
+        try T17TextEntry.commit(value, set: {
+            AXUIElementSetAttributeValue(target, kAXValueAttribute as CFString, $0 as CFTypeRef) == .success
+        }, confirm: { AXUIElementPerformAction(target, kAXConfirmAction as CFString) == .success }, read: {
+            try T17SupportedAttribute.read(target, kAXValueAttribute) as? String
+        })
     }
 
     func setToggle(_ enabled: Bool, identifier: String, timeout: TimeInterval = 10) throws {
@@ -114,10 +121,11 @@ final class T17Accessibility: T17UIControlling {
         throw T17Blocker(code: "ui-element-missing", detail: "guest display window was not available for pointer input")
     }
 
-    private func element(_ identifier: String, timeout: TimeInterval) throws -> AXUIElement {
+    private func element(_ identifier: String, role expectedRole: String? = nil,
+                         timeout: TimeInterval) throws -> AXUIElement {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
-            let match = try snapshotElement(identifier)
+            let match = try snapshotElement(identifier, role: expectedRole)
             if let match { return match }
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         } while Date() < deadline
@@ -125,19 +133,22 @@ final class T17Accessibility: T17UIControlling {
         throw T17Blocker(code: "ui-element-missing", detail: "required accessibility identifier was not found: \(identifier); windows=\((attribute(application, kAXWindowsAttribute as CFString) as? [AXUIElement]).map { String($0.count) } ?? "unanswered") timeout_s=\(timeout)")
     }
 
-    private func snapshotElement(_ identifier: String) throws -> AXUIElement? {
+    private func snapshotElement(_ identifier: String, role expectedRole: String?) throws -> AXUIElement? {
         do {
             return try T17ApplicationSnapshot.read(
                 root: { AXUIElementCreateApplication(self.pid) },
                 nodes: { try self.descendants(of: $0, limit: 12_000) },
-                project: { nodes in try T17CreationProbe.find(identifier, in: nodes, identifier: {
-                    try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String
-                }, value: { try T17SupportedAttribute.read($0, kAXValueAttribute) as? String }) })
+                project: { nodes in
+                    if let expectedRole {
+                        return try T17RoleQualifiedIdentity.find(identifier, role: expectedRole, in: nodes,
+                            identifier: { try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String },
+                            role: { try T17SupportedAttribute.read($0, kAXRoleAttribute) as? String })
+                    }
+                    return try T17CreationProbe.find(identifier, in: nodes, identifier: {
+                        try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String
+                    }, value: { try T17SupportedAttribute.read($0, kAXValueAttribute) as? String })
+                })
         } catch { throw T17ApplicationSnapshotFailure.attributed(error, identifier: identifier) }
-    }
-
-    private func firstDescendant(of root: AXUIElement, role expected: String) throws -> AXUIElement? {
-        try descendants(of: root, limit: 128).first { role(of: $0) == expected }
     }
 
     private func descendants(of root: AXUIElement, limit: Int) throws -> [AXUIElement] {
@@ -170,4 +181,11 @@ final class T17Accessibility: T17UIControlling {
         return AXValueGetValue(axValue, .cgSize, &size) ? size : nil
     }
 
+}
+enum T17TextEntry {
+    static func commit(_ value: String, set: (String) -> Bool, confirm: () -> Bool, read: () throws -> String?) throws {
+        guard set(value) else { throw T17Blocker(code: "ui-element-missing", detail: "identified UI element does not accept text") }
+        guard confirm() else { throw T17Blocker(code: "ui-element-missing", detail: "identified UI element did not commit text") }
+        guard try read() == value else { throw T17Blocker(code: "ui-element-missing", detail: "identified UI element did not retain exact text") }
+    }
 }

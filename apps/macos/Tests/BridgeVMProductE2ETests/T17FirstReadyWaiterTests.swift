@@ -41,7 +41,7 @@ final class T17FirstReadyWaiterTests: XCTestCase {
     }
 
     func testStartFailureIsHashedAndNeverCopiedIntoDetail() {
-        var monitor = T17FirstReadyMonitor()
+        XCTAssertNil(T17FirstReadyObservation.normalizedFailure("none")); var monitor = T17FirstReadyMonitor()
         let decision = monitor.evaluate(.init(readyLine: nil, runtimeState: "stopped",
             startFailure: "secret path /private/source.iso", applicationRunning: true))
         guard case let .failed(code, reason) = decision else { return XCTFail("expected failure") }
