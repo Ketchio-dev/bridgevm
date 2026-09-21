@@ -150,11 +150,7 @@ final class A9ImportProductRunner {
     }
 
     private func bootToFirstReady(_ ui: T17UIControlling) throws -> String {
-        try ui.setToggle(true, identifier: "bridgevm.runtime.clipboard", timeout: 10)
-        try ui.setToggle(true, identifier: "bridgevm.runtime.network", timeout: 10)
-        try ui.setToggle(true, identifier: "bridgevm.runtime.share.enabled", timeout: 10)
-        try ui.setText(request.sharePath, identifier: "bridgevm.runtime.share.host", timeout: 10)
-        try ui.setText("C:\\bridgevm-share", identifier: "bridgevm.runtime.share.guest", timeout: 10)
+        try T17RuntimeIntegrationSetup.apply(sharePath: request.sharePath, ui: ui)
         try ui.press("bridgevm.windows.runtime.start", timeout: 20)
         return try T17FirstReadyWaiter.wait(observe: {
             let ready = self.boundedLines(self.runLog).first { $0.hasPrefix("BVAGENT READY") }

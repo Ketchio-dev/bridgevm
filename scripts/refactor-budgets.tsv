@@ -3106,3 +3106,6 @@ docs/history/windows-hvf/a9-committed-text-entry-20260920.md	56	0
 apps/macos/Sources/BridgeVMProductE2E/T17PressAction.swift	37	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17PressActionTests.swift	78	0
 docs/history/windows-hvf/a9-runtime-start-admission-20260921.md	64	0
+apps/macos/Sources/BridgeVMProductE2E/T17RuntimeIntegrationSetup.swift	16	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17RuntimeIntegrationSetupTests.swift	50	0
+docs/history/windows-hvf/a9-runtime-share-chooser-20260921.md	63	0
