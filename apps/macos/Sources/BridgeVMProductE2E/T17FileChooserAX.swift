@@ -5,24 +5,25 @@ final class T17FileChooserAX: T17FileChooserDriving {
     private let pid: pid_t
     private let application: AXUIElement
     private let identifier: String
-    private let openControl: () throws -> Void
+    private let openControl: () throws -> AXError
+    private var openResult: AXError?
     private var panel: AXUIElement?
     private var keyContext = "key not sent"
     private var activationSucceeded: Bool?
     private let predicates = T17FileChooserPredicateDiagnostics()
 
     var failureContext: String {
-        predicates.context(activation: activationSucceeded, key: keyContext, timeout: T17FileChooserDiagnostics.snapshot(pid: pid), tree: T17FileChooserTreeDiagnostics.snapshot(application))
+        "open_ax_result=\(openResult.map { String($0.rawValue) } ?? "not-attempted"); " + predicates.context(activation: activationSucceeded, key: keyContext, timeout: T17FileChooserDiagnostics.snapshot(pid: pid), tree: T17FileChooserTreeDiagnostics.snapshot(application))
     }
 
-    init(pid: pid_t, identifier: String, openControl: @escaping () throws -> Void) {
+    init(pid: pid_t, identifier: String, openControl: @escaping () throws -> AXError) {
         self.pid = pid
         self.application = AXUIElementCreateApplication(pid)
         self.identifier = identifier
         self.openControl = openControl
     }
 
-    func open() throws { try openControl() }
+    func open() throws { openResult = try openControl() }
     func panelIsPresent() throws -> Bool { try currentPanel() != nil }
     private func currentPanel() throws -> AXUIElement? {
         panel = try T17FileChooserAXTree.applicationSnapshot(pid: pid) { candidates in
