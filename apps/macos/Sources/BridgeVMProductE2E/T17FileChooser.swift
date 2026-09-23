@@ -26,12 +26,8 @@ enum T17FileChooser {
         }
         let deadline = now() + timeout
         func wait(_ stage: String, until ready: () throws -> Bool) throws {
-            repeat {
-                let isReady = try ready()
-                if now() >= deadline { throw failure("timed out waiting for \(stage)" + diagnosticSuffix(driver)) }
-                if isReady { return }
-                pause()
-            } while true
+            try T17FileChooserWait.until(stage: stage, deadline: deadline,
+                failureContext: { diagnosticSuffix(driver) }, now: now, pause: pause, ready: ready)
         }
         try T17FileChooserStage.run("initial-panel-check") { guard try !driver.panelIsPresent() else { throw failure("a file chooser was already open") } }
         try T17FileChooserStage.run("open-control") { try driver.open() }
