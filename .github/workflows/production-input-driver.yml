@@ -7,6 +7,6 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash scripts/build-production-input-driver.sh "$RUNNER_TEMP/production-input-driver"
       - run: python3 tests/integration/production-input-driver-test.py "$RUNNER_TEMP/production-input-driver"
