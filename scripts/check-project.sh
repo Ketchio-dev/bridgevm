@@ -61,7 +61,7 @@ step "Windows product and A19 live-tier contracts" bash -c 'tests/integration/wi
 step "BridgeVM PC firmware boundary" scripts/check-bridgevm-pc-firmware-boundary.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 step "packaged HVF entitlements" scripts/verify-app-hvf-entitlements.sh --self-test
-step "install verify" bash -c 'bash tests/integration/install-verify-smoke.sh && python3 tests/integration/b8-clean-install-tier-contract.py'
+step "install verify" bash -c 'bash tests/integration/install-verify-smoke.sh && python3 tests/integration/b8-clean-install-tier-contract.py && python3 tests/integration/b8-clean-install-adversarial-contract.py'
 step "rustfmt" cargo "$TOOLCHAIN" fmt --all --check
 if [[ $FAST -eq 1 ]]; then
   printf '\n--- fast subset complete ---\n'

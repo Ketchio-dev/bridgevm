@@ -60,14 +60,10 @@
       "const": "M5"
     },
     "host_model": {
-      "enum": [
-        "absent",
-        "Mac17,9"
-      ]
+      "const": "absent"
     },
     "macos_build": {
-      "type": "string",
-      "maxLength": 40
+      "const": "absent"
     },
     "job_id": {
       "type": "string",
@@ -86,21 +82,13 @@
       "pattern": "^v[0-9]+(?:\\.[0-9]+){2}(?:[.-][0-9A-Za-z]+)*$"
     },
     "signing_class": {
-      "enum": [
-        "unverified",
-        "ad-hoc",
-        "development-signed",
-        "developer-id"
-      ]
+      "const": "unverified"
     },
     "bundle_id": {
       "const": "dev.bridgevm.control"
     },
     "outcome": {
-      "enum": [
-        "not-run",
-        "failed"
-      ]
+      "const": "not-run"
     },
     "started_at": {
       "type": "string",
@@ -131,12 +119,10 @@
       "pattern": "^(?:[0-9a-f]{64}|absent)$"
     },
     "installer_bootstrap_sha256": {
-      "type": "string",
-      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+      "const": "absent"
     },
     "installer_source_sha256": {
-      "type": "string",
-      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+      "const": "absent"
     },
     "expected_app_tree_sha256": {
       "type": "string",
@@ -147,27 +133,25 @@
       "pattern": "^(?:[0-9a-f]{64}|absent)$"
     },
     "installed_app_tree_sha256": {
-      "type": "string",
-      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+      "const": "absent"
     },
     "installed_executable_sha256": {
-      "type": "string",
-      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+      "const": "absent"
     },
     "clean_machine": {
       "const": false
     },
     "app_absent_before": {
-      "type": "boolean"
+      "const": false
     },
     "app_present_after": {
-      "type": "boolean"
+      "const": false
     },
     "codesign_verified": {
-      "type": "boolean"
+      "const": false
     },
     "worker_cleanup_verified": {
-      "type": "boolean"
+      "const": false
     },
     "cell_pass": {
       "const": false
@@ -185,9 +169,7 @@
       "const": 0
     },
     "installer_exit_code": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 9223372036854775000
+      "const": 0
     },
     "private_attestation_path": {
       "type": "string",

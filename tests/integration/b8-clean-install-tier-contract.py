@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / "scripts/live-gates"))
 import b8_clean_install_inputs as inputs
 import b8_clean_install_receipt as receipt
 
-COMMIT = "a" * 40
+COMMIT = subprocess.check_output(["/usr/bin/git", "-C", str(ROOT), "rev-parse", "HEAD"]).decode().strip()
 TAG = "v1.2.3"
 
 
@@ -48,6 +48,10 @@ class OfflineB8(unittest.TestCase):
         self.tar_name = "BridgeVM-" + TAG + ".tar.gz"
         with tarfile.open(self.assets / self.tar_name, "w:gz") as archive:
             archive.add(self.app, arcname="BridgeVM.app")
+        registry = json.loads(subprocess.check_output(["/usr/bin/git", "-C", str(ROOT), "show",
+                                                       f"{COMMIT}:capabilities/windows-hvf.json"]))
+        registry_sha = hashlib.sha256(json.dumps(registry, ensure_ascii=False, separators=(",", ":"),
+                                                  sort_keys=True).encode()).hexdigest()
         self.contract = {"schema_version": 1, "project": "BridgeVM", "version": TAG,
                          "source_commit": COMMIT, "channel": "general-preview",
                          "product_state": "ENGINEERING_PREVIEW",
@@ -56,7 +60,10 @@ class OfflineB8(unittest.TestCase):
                                              "kernel_driver_included": False,
                                              "test_signing_required": False,
                                              "product_injection_available": False},
-                         "capability_registry": {"path": "capabilities/windows-hvf.json"}}
+                         "capability_registry": {"path": "capabilities/windows-hvf.json",
+                                                 "reviewed": registry["reviewed"],
+                                                 "tested_commit": registry["tested_commit"],
+                                                 "canonical_json_sha256": registry_sha}}
         write_json(self.assets / "BridgeVM-release.json", self.contract)
         write_json(self.assets / "github-release.json", {"tag_name": TAG, "draft": False,
                                                        "prerelease": False, "assets": [
@@ -228,31 +235,6 @@ class OfflineB8(unittest.TestCase):
         forged("BridgeVM.app/x", b"x", {"LIBARCHIVE.xattr.com.apple.provenance": "AQI"})
         forged("BridgeVM.app/x", b"x", {"LIBARCHIVE.xattr.com.apple.provenance": "AQI",
                                         "SCHILY.xattr.com.apple.provenance": "wrong"})
-
-    def test_archive_expansion_and_tarball_bounds(self):
-        buffer = io.BytesIO()
-        with tarfile.open(fileobj=buffer, mode="w:") as archive:
-            root = tarfile.TarInfo("BridgeVM.app")
-            root.type = tarfile.DIRTYPE
-            archive.addfile(root)
-            item = tarfile.TarInfo("BridgeVM.app/payload")
-            item.size = 2
-            archive.addfile(item, io.BytesIO(b"xx"))
-        original_expanded = inputs.MAX_EXPANDED
-        inputs.MAX_EXPANDED = 1
-        try:
-            with tarfile.open(fileobj=io.BytesIO(buffer.getvalue()), mode="r:") as archive:
-                with self.assertRaises(ValueError):
-                    inputs._members(archive)
-        finally:
-            inputs.MAX_EXPANDED = original_expanded
-        original_tarball = inputs.MAX_TARBALL
-        inputs.MAX_TARBALL = 1
-        try:
-            with self.assertRaises(ValueError):
-                inputs.verify_release(self.manifest_value, self.assets)
-        finally:
-            inputs.MAX_TARBALL = original_tarball
 
     def test_public_private_ledger_and_type_refusal(self):
         private, public = self.envelopes()

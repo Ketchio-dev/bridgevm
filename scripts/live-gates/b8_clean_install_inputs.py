@@ -13,6 +13,9 @@ import tarfile
 import tempfile
 import unicodedata
 
+from b8_clean_install_files import (_appledouble, _canonical, _copy_tar, _hash,
+                                    read_committed_blob, read_regular)
+
 SHA = re.compile(r"[0-9a-f]{64}\Z")
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 TAG = re.compile(r"v[0-9]+(?:\.[0-9]+){2}(?:[.-][0-9A-Za-z]+)*\Z")
@@ -23,6 +26,7 @@ SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 MAX_TARBALL = 2_000_000_000
 MAX_EXPANDED = 4_000_000_000
 MAX_MEMBERS = 20_000
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _unique(pairs):
@@ -38,30 +42,6 @@ def _constant(_):
     raise ValueError("B8 JSON has a nonfinite constant")
 
 
-def _canonical(path: Path) -> None:
-    if not path.is_absolute() or str(path) != os.path.normpath(str(path)):
-        raise ValueError("B8 path must be absolute and normalized")
-    for parent in (path, *path.parents):
-        if stat.S_ISLNK(os.lstat(parent).st_mode):
-            raise ValueError("B8 path has a symlink ancestor")
-
-
-def read_regular(path: Path, limit: int) -> bytes:
-    _canonical(path)
-    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
-    with os.fdopen(os.open(path, flags), "rb") as stream:
-        before = os.fstat(stream.fileno())
-        if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= limit or before.st_nlink != 1:
-            raise ValueError("B8 input is not a bounded regular file")
-        raw = stream.read(limit + 1)
-        after = os.fstat(stream.fileno())
-    identity = lambda item: (item.st_dev, item.st_ino, item.st_mode, item.st_nlink,
-                             item.st_size, item.st_mtime_ns, item.st_ctime_ns)
-    if len(raw) != before.st_size or identity(before) != identity(after) or identity(after) != identity(os.lstat(path)):
-        raise ValueError("B8 input changed during read")
-    return raw
-
-
 def _parse_json(raw: bytes) -> dict:
     try:
         value = json.loads(raw.decode("utf-8"),
@@ -75,43 +55,6 @@ def _parse_json(raw: bytes) -> dict:
 
 def _json(path: Path, limit: int = 65_536) -> dict:
     return _parse_json(read_regular(path, limit))
-
-
-def _hash(path: Path, limit: int) -> str:
-    _canonical(path)
-    digest = hashlib.sha256()
-    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
-    with os.fdopen(os.open(path, flags), "rb") as stream:
-        before = os.fstat(stream.fileno())
-        if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= limit or before.st_nlink != 1:
-            raise ValueError("B8 asset is not a bounded regular file")
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-        after = os.fstat(stream.fileno())
-    identity = lambda item: (item.st_dev, item.st_ino, item.st_mode, item.st_nlink,
-                             item.st_size, item.st_mtime_ns, item.st_ctime_ns)
-    if identity(before) != identity(after) or identity(after) != identity(os.lstat(path)):
-        raise ValueError("B8 asset changed while hashing")
-    return digest.hexdigest()
-
-
-def _copy_tar(path: Path, destination: Path, expected: str) -> None:
-    _canonical(path)
-    digest = hashlib.sha256()
-    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
-    with os.fdopen(os.open(path, flags), "rb") as source:
-        before = os.fstat(source.fileno())
-        if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= MAX_TARBALL or before.st_nlink != 1:
-            raise ValueError("B8 release tarball exceeds bound")
-        with destination.open("xb") as output:
-            for block in iter(lambda: source.read(1024 * 1024), b""):
-                output.write(block); digest.update(block)
-        after = os.fstat(source.fileno())
-    identity = lambda item: (item.st_dev, item.st_ino, item.st_mode, item.st_nlink,
-                             item.st_size, item.st_mtime_ns, item.st_ctime_ns)
-    if (identity(before) != identity(after) or identity(after) != identity(os.lstat(path))
-            or destination.stat().st_size != before.st_size or digest.hexdigest() != expected):
-        raise ValueError("B8 release tarball differs from sealed bytes")
 
 
 def load_manifest(path: Path, expected_commit: str) -> dict:
@@ -191,7 +134,7 @@ def _link_target(parts: tuple[str, ...], target: str) -> None:
 
 
 def _members(archive: tarfile.TarFile) -> list[tarfile.TarInfo]:
-    members, exact, folded, kinds, metadata = [], set(), set(), {}, {}
+    members, exact, folded, kinds, metadata, provenance = [], set(), set(), {}, {}, {}
     expanded = entries = 0
     for member in archive:
         entries += 1
@@ -216,6 +159,7 @@ def _members(archive: tarfile.TarFile) -> list[tarfile.TarInfo]:
             if (not 0 < len(raw) <= 64 or base64.b64encode(raw).decode().rstrip("=") != encoded
                     or raw != equivalent):
                 raise ValueError("B8 archive provenance PAX values differ")
+            provenance[member.name] = raw
         for clock in ("mtime", "atime", "ctime"):
             if clock in pax_keys and not re.fullmatch(r"-?[0-9]{1,20}(?:\.[0-9]{1,20})?", member.pax_headers[clock]):
                 raise ValueError("B8 archive timestamp PAX value differs")
@@ -231,10 +175,16 @@ def _members(archive: tarfile.TarFile) -> list[tarfile.TarInfo]:
             raise ValueError("B8 archive has a duplicate or aliased path")
         exact.add(name); folded.add(alias)
         if apple_target is not None:
-            source = archive.extractfile(member) if member.isfile() and 8 <= member.size <= 8_000_000 else None
-            if source is None or source.read(8) != b"\x00\x05\x16\x07\x00\x02\x00\x00":
+            if pax_keys & provenance_keys:
+                raise ValueError("B8 AppleDouble sidecar carries unexpected PAX")
+            source = archive.extractfile(member) if member.isfile() and 50 <= member.size <= 8_000_000 else None
+            if source is None:
                 raise ValueError("B8 AppleDouble metadata differs")
-            metadata[name] = apple_target
+            with source:
+                raw = source.read(member.size + 1)
+            if len(raw) != member.size:
+                raise ValueError("B8 AppleDouble metadata size differs")
+            metadata[name] = (apple_target, raw)
             expanded += member.size
             if expanded > MAX_EXPANDED:
                 raise ValueError("B8 archive metadata exceeds bound")
@@ -253,8 +203,10 @@ def _members(archive: tarfile.TarFile) -> list[tarfile.TarInfo]:
         members.append(member)
     if kinds.get("BridgeVM.app") != "dir" or not members:
         raise ValueError("B8 archive lacks one app root")
-    if any(target not in kinds for target in metadata.values()):
-        raise ValueError("B8 AppleDouble metadata lacks its app entry")
+    for target, raw in metadata.values():
+        if target not in kinds or target not in provenance:
+            raise ValueError("B8 AppleDouble metadata lacks its app provenance")
+        _appledouble(raw, provenance[target])
     for name in kinds:
         parts = name.split("/")
         if any(kinds.get("/".join(parts[:index])) in ("link", "file")
@@ -344,6 +296,25 @@ def _app_identity(app: Path) -> tuple[str, str]:
 
 
 def verify_release(manifest: dict, assets: Path) -> dict:
+    commit_sha = manifest.get("source_commit")
+    tag = manifest.get("release_tag")
+    if (type(commit_sha) is not str or not COMMIT.fullmatch(commit_sha)
+            or type(tag) is not str or not TAG.fullmatch(tag)):
+        raise ValueError("B8 release source commit or tag malformed")
+    registry = _parse_json(read_committed_blob(ROOT, commit_sha, "capabilities/windows-hvf.json", 1_000_000))
+    criteria = {item.get("id"): item for item in registry.get("criteria", []) if isinstance(item, dict)}
+    a9 = criteria.get("A9", {})
+    if (registry.get("product_state") != "ENGINEERING_PREVIEW"
+            or a9.get("release_blocking") is not True or "3D-off" not in a9.get("statement", "")
+            or type(registry.get("reviewed")) is not str
+            or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", registry["reviewed"])
+            or type(registry.get("tested_commit")) is not str
+            or not COMMIT.fullmatch(registry["tested_commit"])):
+        raise ValueError("B8 exact-source registry lacks preview boundary")
+    canonical = json.dumps(registry, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+    expected_registry = {"path": "capabilities/windows-hvf.json", "reviewed": registry["reviewed"],
+                         "tested_commit": registry["tested_commit"],
+                         "canonical_json_sha256": hashlib.sha256(canonical).hexdigest()}
     _canonical(assets)
     if not stat.S_ISDIR(os.lstat(assets).st_mode):
         raise ValueError("B8 offline asset root is unsafe")
@@ -352,7 +323,6 @@ def verify_release(manifest: dict, assets: Path) -> dict:
     contract_raw = read_regular(assets / "BridgeVM-release.json", 65_536)
     sums_raw = read_regular(assets / "SHA256SUMS", 65_536)
     contract = _parse_json(contract_raw)
-    tag = manifest["release_tag"]
     tar_name = "BridgeVM-" + tag + ".tar.gz"
     listed = release.get("assets")
     names = [item.get("name") for item in listed] if isinstance(listed, list) and all(isinstance(item, dict) for item in listed) else []
@@ -370,6 +340,7 @@ def verify_release(manifest: dict, assets: Path) -> dict:
             or contract["source_commit"] != manifest["source_commit"]
             or contract["channel"] != "general-preview"
             or contract["product_state"] != "ENGINEERING_PREVIEW"
+            or contract["capability_registry"] != expected_registry
             or not isinstance(graphics, dict) or graphics.get("install_mode") != "3d-off"
             or graphics.get("kernel_driver_included") is not False
             or graphics.get("test_signing_required") is not False
@@ -386,7 +357,7 @@ def verify_release(manifest: dict, assets: Path) -> dict:
     with tempfile.TemporaryDirectory(prefix="b8-offline-release-") as temporary:
         root = Path(temporary).resolve()
         pinned_tar = root / tar_name
-        _copy_tar(tar_path, pinned_tar, manifest["tarball_sha256"])
+        _copy_tar(tar_path, pinned_tar, manifest["tarball_sha256"], MAX_TARBALL)
         with tarfile.open(pinned_tar, "r:gz") as archive:
             app = _extract(archive, _members(archive), root)
         name, executable_sha = _app_identity(app)

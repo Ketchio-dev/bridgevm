@@ -6,14 +6,13 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
-import stat
 import tarfile
 
 from b8_clean_install_inputs import (COMMIT, SHA, _canonical, _parse_json, load_manifest,
                                      read_regular, verify_release)
+from b8_clean_install_files import _env
 
 TIER = "t23-b8-clean-install"
 SCHEMA = "bridgevm.b8-clean-install-receipt.v1"
@@ -35,19 +34,6 @@ PRIVATE = PUBLIC | {"private_attestation_path", "private_artifacts"}
 
 def read_json(path: Path) -> dict:
     return _parse_json(read_regular(path, 65_536))
-
-
-def _env(path: Path, readonly: bool = False) -> dict[str, str]:
-    raw = read_regular(path, 8192)
-    if readonly and os.lstat(path).st_mode & 0o222:
-        raise ValueError("B8 ledger is writable")
-    fields: dict[str, str] = {}
-    for line in raw.decode("ascii").splitlines():
-        key, separator, item = line.partition("=")
-        if not separator or key in fields or not re.fullmatch(r"[a-z0-9_]+", key):
-            raise ValueError("B8 job seal has a malformed field")
-        fields[key] = item
-    return fields
 
 
 def job_fields(directory: Path) -> dict[str, str]:
@@ -120,6 +106,14 @@ def _plain(value: dict, job: dict, manifest: dict, expected: dict, private: bool
         raise ValueError("B8 outcome differs")
     if value["cell_pass"] or value["clean_machine"] or value["outcome"] == "completed":
         raise ValueError("offline B8 contract cannot verify a physical install")
+    observed = ("app_absent_before", "app_present_after", "codesign_verified",
+                "worker_cleanup_verified")
+    if (value["host_model"] != "absent" or build != "absent"
+            or value["signing_class"] != "unverified" or value["outcome"] != "not-run"
+            or any(value[key] for key in observed) or value["installer_exit_code"] != 0
+            or any(value[key] != "absent" for key in ("installer_bootstrap_sha256",
+                "installer_source_sha256", "installed_app_tree_sha256", "installed_executable_sha256"))):
+        raise ValueError("offline B8 receipt has unverified physical observations")
     if not private:
         for item in value.values():
             if isinstance(item, str) and any(char in item for char in ("/", "\\")):
