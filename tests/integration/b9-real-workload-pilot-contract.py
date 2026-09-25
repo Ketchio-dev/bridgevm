@@ -95,10 +95,10 @@ class B9PilotContract(unittest.TestCase):
         ready_sha = put(guest / "guest-ready.json", json.dumps(ready).encode())
         collector_sha = put(guest / "guest-collector.json", json.dumps(collector).encode())
         finished_sha = put(guest / "guest-finished.json", json.dumps(finished).encode())
-        run_log = (f"BVAGENT WINFOCUS {hwnd} -> OK WINFOCUS\r\n"
-                   f"B9-FOREGROUND-{hwnd}\r\n"
-                   "live input accepted: command=Key(<redacted>)\r\n"
-                   "stop: PSCI SYSTEM_OFF (system off)\r\n").encode()
+        command = "powershell.exe -NoProfile -EncodedCommand RgBnAA=="
+        focus = f"BVAGENT WINFOCUS {hwnd} -> OK WINFOCUS\r\nBVAGENT CMD {command} exit=0\r\nB9-FOREGROUND-{hwnd}\r\nBVAGENT END {command}\r\n"
+        run_log = (f"B9-WORKLOAD-LAUNCHED-{nonce}\r\n" + focus * 2 +
+                   "live input accepted: command=Key(<redacted>)\r\nstop: PSCI SYSTEM_OFF (system off)\r\n").encode()
         put(guest / "run.log", run_log)
         frames = []
         for index in range(3):

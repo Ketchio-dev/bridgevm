@@ -13,6 +13,7 @@ import re
 import sys
 
 from b9_real_workload_inputs import KEYS, stable_file
+from b9_raw_focus_order import verify_raw_focus_order
 from b9_real_workload_observation import (CLASSES, collector_identity,
                                           finished_identity, read_guest_json,
                                           ready_identity, scanout_hashes)
@@ -262,12 +263,7 @@ def verify_pid_capture_raw(value: dict, diagnostic: Path) -> None:
             or value.get("scanout_sample_count") != len(hashes)
             or value.get("distinct_scanout_count") != len(set(hashes))):
         raise ValueError("B9 live scanout distinction differs from retained captures")
-    run_log = (root / "run.log").read_bytes().decode("utf-8", errors="replace").replace("\r", "\n")
-    if (run_log.count("live input accepted: command=Key(") != 1
-            or f"BVAGENT WINFOCUS {hwnd} -> OK WINFOCUS" not in run_log
-            or f"B9-FOREGROUND-{hwnd}" not in run_log
-            or "stop: PSCI SYSTEM_OFF" not in run_log):
-        raise ValueError("B9 foreground input or clean shutdown absent from raw log")
+    verify_raw_focus_order((root / "run.log").read_bytes(), nonce, hwnd)
 
 
 def sha256(path: Path) -> str:
