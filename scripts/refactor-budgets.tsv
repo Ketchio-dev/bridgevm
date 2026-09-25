@@ -1812,6 +1812,8 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallFinalizationIntegrityTest
 scripts/hvf-disk-image-utils.sh	23	0
 scripts/verify-windows-product-e2e-receipt.py	389	0
 tests/integration/windows-product-e2e-contract-smoke.sh	79	0
+tests/integration/windows-product-e2e-launchservices-admission.py	124	0
+tests/integration/windows-product-e2e-launchservices-report-origin.py	74	0
 tests/integration/windows-product-e2e-request-mode.py	36	0
 tests/integration/windows-guest-payload-verifier-smoke.py	129	0
 scripts/live-gates/windows-product-e2e-manifest.py	124	0
