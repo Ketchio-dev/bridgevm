@@ -1171,12 +1171,13 @@ runners/displayd/src/tests_split/mod.rs	0	0
 runners/displayd/src/tests_split/part_1.rs	582	0
 runners/fullvm-runner/src/main.rs	331	0
 runners/hvf-runner/build.rs	7	0
-runners/hvf-runner/src/args.rs	740	0
+runners/hvf-runner/src/args.rs	721	0
 runners/hvf-runner/src/bin/task5af_live_row.rs	35	0
 runners/hvf-runner/src/legacy_launch.rs	213	0
 runners/hvf-runner/src/lib.rs	1	0
 runners/hvf-runner/src/main.rs	10	0
 runners/hvf-runner/src/profile_policy.rs	2	0
+runners/hvf-runner/src/release_exec_policy.rs	79	0
 runners/hvf-runner/src/resolve_launch_path.rs	51	0
 runners/hvf-runner/src/task5af.rs	246	0
 runners/hvf-runner/src/task5af_evidence.rs	105	0
@@ -1321,8 +1322,9 @@ apps/macos/Tests/BridgeVMControlTests/VMCreationSafetyTests.swift	190	0
 apps/macos/Tests/HelperCodeSignatureSwiftTests/HelperCodeSignatureTests.swift	125	0
 tests/integration/HvfSecureBootProvisioningSmoke.swift	86	0
 apps/macos/scripts/build-sign-apple-vz-runner.sh	148	0
-apps/macos/scripts/build-sign-hvf-runner.sh	143	0
-apps/macos/scripts/build-sign-hvf-windows-probe.sh	206	0
+apps/macos/scripts/build-sign-hvf-runner.sh	135	0
+apps/macos/scripts/build-sign-hvf-windows-probe.sh	203	0
+apps/macos/scripts/cargo-built-artifact.py	102	0
 apps/macos/scripts/bundle-swtpm-runtime.sh	330	0
 apps/macos/scripts/package-hvf-control-app.sh	179	0
 scripts/verify-app-hvf-entitlements.sh	66	0
@@ -1401,7 +1403,8 @@ scripts/run-hvf-boot-timer-matrix.sh	355	0
 scripts/run-hvf-linux-venus.sh	334	0
 scripts/run-hvf-vtimer-cancel-gate.sh	94	0
 scripts/run-hvf-windows-installed-boot-args.sh	643	0
-scripts/run-hvf-windows-installed-boot-runner.sh	1405	0
+scripts/run-hvf-windows-installed-boot-runner.sh	1379	0
+scripts/run-hvf-windows-installed-boot-package-policy.sh	75	0
 scripts/run-hvf-windows-installed-boot-usage.sh	209	0
 scripts/run-hvf-windows-installed-boot-validation.sh	345	0
 scripts/run-hvf-windows-installed-boot.sh	27	0
@@ -1585,6 +1588,9 @@ tests/integration/macos-debug-app-clean-build-smoke.sh	84	0
 tests/integration/macos-debug-dmg-custom-app-name-smoke.sh	217	0
 tests/integration/macos-metadata-overrides-smoke.sh	96	0
 tests/integration/macos-release-candidate-dry-run-smoke.sh	367	0
+tests/integration/macos-cargo-artifact-provenance-smoke.sh	183	0
+tests/integration/hvf-runner-packaged-helper-policy-smoke.sh	79	0
+tests/integration/hvf-packaged-wrapper-policy-smoke.sh	105	0
 tests/integration/macos-release-credentials-preflight-smoke.sh	115	0
 tests/integration/macos-release-verifier-custom-app-smoke.sh	216	0
 tests/integration/macos-settings-defaults-smoke.sh	18	0
@@ -1836,7 +1842,7 @@ apps/macos/Sources/BridgeVMProductE2E/T17UIContract.swift	3	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ContractTests.swift	188	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ProductEntryTests.swift	9	0
 apps/macos/BridgeVMProductE2E-Info.plist	24	0
-apps/macos/scripts/package-hvf-product-e2e.sh	16	0
+apps/macos/scripts/package-hvf-product-e2e.sh	14	0
 apps/macos/scripts/package-product-e2e-helper-app.sh	21	0
 scripts/verify-product-e2e-helper-app.sh	46	0
 scripts/win-assets/bv-product-e2e.ps1	147	0
@@ -2374,7 +2380,9 @@ apps/macos/Sources/BridgeVMControl/LibraryModelSelection.swift	15	0
 apps/macos/Sources/BridgeVMControl/LibraryModelHvfRuntime.swift	54	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeSessionStoreTests.swift	264	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeViewAdmissionTests.swift	118	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBackend.swift	311	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBackend.swift	310	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPackagedWrapperPolicy.swift	42	0
+apps/macos/Tests/BridgeVMControlTests/HvfPackagedWrapperPolicyTests.swift	60	0
 apps/macos/Tests/BridgeVMControlTests/HvfProductBackendConfigurationTests.swift	144	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallValidationWorker.swift	9	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallProgress.swift	21	0
@@ -2833,7 +2841,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedStartAdmission.swift	92	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedStartExecution.swift	128	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedStartOperation.swift	97	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeMutationAdmission.swift	57	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeSessionLaunch.swift	75	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeSessionLaunch.swift	74	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsSnapshotExecution.swift	35	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsSnapshotValidation.swift	28	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/KeychainVTPMStateKeyStore.swift	112	0
@@ -2886,7 +2894,8 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGUIStartAdmission.swift	41	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGUIStartCompletion.swift	127	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGUIStartExecution.swift	55	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGUIStartOperation.swift	32	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGUIStartWorker.swift	67	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGUIStartWorker.swift	66	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeLegacyFallback.swift	33	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeAttachmentAdoption.swift	18	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeLegacySpawn.swift	27	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeReadinessModel.swift	55	0
@@ -2899,6 +2908,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfGUIStartLibraryTests.swift	68	0
 apps/macos/Tests/BridgeVMControlTests/HvfGUIStartRunnerTests.swift	114	0
 apps/macos/Tests/BridgeVMControlTests/HvfGUIStartTests.swift	127	0
 apps/macos/Tests/BridgeVMControlTests/HvfGUIStartWorkerTests.swift	73	0
+apps/macos/Tests/BridgeVMControlTests/HvfReleaseLegacyFallbackTests.swift	28	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeReadinessModelTests.swift	141	0
 docs/history/windows-hvf/native-gui-start-worker-20260916.md	82	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFinalizationResume.swift	120	0
