@@ -41,8 +41,7 @@ struct HvfEngineConfig: Equatable {
     var allowsExperimental3D: Bool = false
     var libraryContext: HvfLibraryLaunchContext? = nil
 
-    /// The versioned launch manifest this configuration means, as consumed by
-    /// bridgevm-hvf-runtime (`hvf-runner --launch-spec`). Field names and the
+    /// Versioned launch manifest consumed by bridgevm-hvf-runtime (`hvf-runner --launch-spec`). Field names and the
     /// version constant are that crate's contract; drift fails its parser.
     /// Encoded alongside wrapperArguments() until the runtime owns the full
     /// lifecycle -- the manifest is the product path, the wrapper the
@@ -102,6 +101,7 @@ struct HvfEngineConfig: Equatable {
             if !ownedRuntime { args.append("--helper-vtpm-key-stdin") }
         }
         if ownedRuntime { args.append("--owned-runtime-stdio") }
+        if ownedRuntime && libraryContext?.e2eHostDiagnosticStopAdmitted == true { args.append("--helper-host-diagnostic-stop") }
         return args
     }
 

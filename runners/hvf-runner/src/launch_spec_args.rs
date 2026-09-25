@@ -20,11 +20,11 @@ pub(crate) struct LaunchSpecArgs {
     /// here (this is how a guest reset is requested through the typed path).
     #[arg(long, value_name = "PATH", requires = "helper")]
     pub(crate) helper_agent_control: Option<PathBuf>,
-    /// Evidence directory for --launch-spec --helper: enables the app-facing
-    /// device surfaces (ramfb, display export, xHCI input, GPU trace) with
-    /// the same env contract as the wrapper script.
+    /// Helper evidence directory for the app-facing ramfb, display, input, and GPU surfaces.
     #[arg(long, value_name = "DIR", requires = "helper")]
     pub(crate) helper_evidence_dir: Option<PathBuf>,
+    #[arg(long, requires_all = ["helper", "helper_evidence_dir"])]
+    pub(crate) helper_host_diagnostic_stop: bool,
     /// vTPM state directory for --launch-spec --helper: the supervisor runs
     /// one swtpm across every helper generation (state survives resets).
     #[arg(long, value_name = "DIR", requires = "helper")]
@@ -34,7 +34,6 @@ pub(crate) struct LaunchSpecArgs {
     /// else -- matching the wrapper's --swtpm-key-stdin contract.
     #[arg(long, requires = "helper_vtpm_state")]
     pub(crate) helper_vtpm_key_stdin: bool,
-    /// Intel HDA audio through CoreAudio for --launch-spec --helper.
     #[arg(long, requires = "helper")]
     pub(crate) helper_hda: bool,
     /// swtpm binary for --helper-vtpm-state (the app passes its

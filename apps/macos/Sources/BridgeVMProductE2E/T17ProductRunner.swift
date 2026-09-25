@@ -193,7 +193,12 @@ final class T17ProductRunner {
             }
             return try T17FirstReadyObservation.capture(
                 readyLine: ready, applicationRunning: self.application?.isRunning == true, ui: ui)
-        }, diagnostic: { T17FirstBootDiagnostic.capture(log) })
+        }, diagnostic: { T17FirstBootDiagnostic.capture(log) }, timeoutDiagnostic: {
+            T17FirstReadyStopCapture.capture(log: log, laneRoot: URL(fileURLWithPath: self.request.laneRoot),
+                applicationRunning: { self.application?.isRunning == true },
+                ownedRuntimeState: { try? ui.text("bridgevm.windows.runtime.state", timeout: 1) })
+                + "; " + T17FirstBootDiagnostic.capture(log)
+        })
     }
 
     private func stopOwnedApplication() -> Bool {

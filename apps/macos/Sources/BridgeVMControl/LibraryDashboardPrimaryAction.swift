@@ -4,7 +4,8 @@ import AppKit
 enum LibraryDashboardPrimaryAction {
     static func perform(config: VMConfig, model: ControlModel, library: LibraryModel) {
         let saved = library.latestConfiguration(for: config)
-        let launch = HvfEngineConfig.libraryVM(saved, rootURL: library.rootURL)
+        let launch = HvfEngineConfig.libraryVM(saved, rootURL: library.rootURL,
+            e2eHostDiagnosticStopAdmitted: library.e2eHostDiagnosticStopAdmitted)
         perform(observedRunning: model.running,
             session: library.hvfRuntimeDetailSession(for: saved),
             requestStart: { session in

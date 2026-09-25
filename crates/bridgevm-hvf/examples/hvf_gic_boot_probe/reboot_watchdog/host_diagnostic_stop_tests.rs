@@ -10,7 +10,6 @@ fn configuration_requires_an_absolute_path() {
         Some(PathBuf::from("/tmp/bridgevm-stop"))
     );
 }
-
 #[test]
 fn only_a_direct_regular_file_is_a_one_shot_request() {
     let dir = std::env::temp_dir().join(format!(
@@ -25,13 +24,14 @@ fn only_a_direct_regular_file_is_a_one_shot_request() {
         request_path: request.clone(),
         fired: Arc::new(AtomicBool::new(false)),
     };
-    assert!(!stop.claim_request());
+    assert_eq!(stop.claim_request(), None);
     std::fs::write(&request, b"stop\n").unwrap();
-    assert!(stop.claim_request());
+    assert_eq!(stop.claim_request(), Some(request::StopRequest::Legacy));
     assert!(stop.fired.load(Ordering::SeqCst));
-    assert!(!stop.claim_request());
-    std::fs::remove_file(&request).unwrap();
+    assert!(!request.exists());
+    assert_eq!(HostDiagnosticStop { fired: Arc::new(AtomicBool::new(false)), ..stop.clone() }.claim_request(), None);
+    assert_eq!(stop.claim_request(), None);
     std::fs::create_dir(&request).unwrap();
-    assert!(!request_is_regular_file(&request));
+    assert_eq!(request::consume(&request), None);
     std::fs::remove_dir_all(&dir).unwrap();
 }

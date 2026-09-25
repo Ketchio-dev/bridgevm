@@ -138,7 +138,7 @@ pub(crate) fn render(before: &GicSnapshot, after: &GicSnapshot) -> Vec<String> {
     let verdict = compare(before, after);
     vec![
         format!(
-            "GIC SNAPSHOT: MPIDR={:#x} generation={} verdict={} stall={}",
+            "GIC SNAPSHOT: MPIDR={:#x} generation={} advisory_status_blind=true verdict={} stall={}",
             after.mpidr,
             after.generation,
             verdict.as_str(),

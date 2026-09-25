@@ -3,7 +3,7 @@ import Foundation
 struct BridgeVMControlLaunchOptions: Equatable {
     let e2eLibraryRoot: URL?
     let e2eUnattendedPath: URL?
-
+    var admitsHostDiagnosticStop: Bool { e2eLibraryRoot != nil && e2eUnattendedPath != nil }
     enum ParseError: LocalizedError, Equatable {
         case missingLibraryRoot
         case duplicateLibraryRoot

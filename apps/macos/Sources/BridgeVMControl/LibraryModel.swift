@@ -24,6 +24,7 @@ final class LibraryModel: ObservableObject {
     private var modelCache: [String: ControlModel] = [:]
     private let libraryRoot: URL
     let e2eUnattendedPath: String?
+    let e2eHostDiagnosticStopAdmitted: Bool
     private let modelFactory: @MainActor (VMConfig) -> ControlModel
     private let actionScheduler: LibraryActionScheduler
     let windowsInstallSessions: HvfWindowsInstallSessionStore
@@ -42,6 +43,7 @@ final class LibraryModel: ObservableObject {
     init(
         rootURL: URL = VMLibrary.root,
         e2eUnattendedPath: String? = nil,
+        e2eHostDiagnosticStopAdmitted: Bool = false,
         migrateLegacy: Bool = true,
         installSessionFactory: @escaping HvfWindowsInstallSessionStore.Factory = { HvfWindowsInstallSession(plan: $0) },
         runtimeSessionFactory: @escaping HvfRuntimeSessionStore.Factory = { HvfEngineSession(config: $0) },
@@ -52,6 +54,7 @@ final class LibraryModel: ObservableObject {
     ) {
         libraryRoot = rootURL
         self.e2eUnattendedPath = e2eUnattendedPath
+        self.e2eHostDiagnosticStopAdmitted = e2eHostDiagnosticStopAdmitted && e2eUnattendedPath != nil
         self.actionScheduler = actionScheduler
         self.modelFactory = modelFactory ?? LibraryControlModelFactory.make(
             rootURL: rootURL, startsAutomatically: startsModelsAutomatically)

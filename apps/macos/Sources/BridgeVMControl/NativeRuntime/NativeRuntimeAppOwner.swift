@@ -46,7 +46,7 @@ final class NativeRuntimeAppOwner {
         do {
             return try cache.model {
                 LibraryModel(rootURL: URL(fileURLWithPath: library.identity.canonicalPath),
-                    e2eUnattendedPath: options.e2eUnattendedPath?.path,
+                    e2eUnattendedPath: options.e2eUnattendedPath?.path, e2eHostDiagnosticStopAdmitted: options.admitsHostDiagnosticStop,
                     migrateLegacy: BridgeVMControlLaunchPolicy.shouldMigrateLegacy(options: options))
             }
         } catch {
