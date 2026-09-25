@@ -277,7 +277,7 @@ enum VTPMLifecycleCommand {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = args
         process.currentDirectoryURL = resources
-        process.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("BRIDGEVM_") }
+        process.environment = HvfPackagedWrapperPolicy.environment(ProcessInfo.processInfo.environment)
         keyInput.attach(to: process)
         do {
             try process.run()
@@ -360,8 +360,8 @@ enum VTPMLifecycleCommand {
     }
 
     private static func packagedResourcesRoot() throws -> URL {
-        guard let resource = Bundle.main.resourceURL else {
-            throw CommandError.missingInput("packaged Resources directory")
+        guard let resource = Bundle.main.resourceURL, HvfPackagedWrapperPolicy.signatureVerified(repoRoot: resource) else {
+            throw CommandError.processLaunch("packaged Resources directory or app signature is invalid")
         }
         return resource
     }
