@@ -79,17 +79,19 @@ def read_report(path: Path) -> object:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise PreflightError("diagnostic output is not valid UTF-8 JSON") from error
-def verified_helper(manifest: Path) -> tuple[Path, Path, str] | None:
+def verified_helper(manifest: Path) -> tuple[Path, Path, str]:
     module = load_manifest_module()
     try:
         _, assets = module.parse(manifest)
-    except (OSError, UnicodeError, module.ManifestError):
-        return None
+    except (OSError, UnicodeError, module.ManifestError) as error:
+        raise PreflightError(f"T17 manifest is invalid: {error}") from error
     app, app_digest = assets["app_bundle"]
     helper, helper_digest = assets["product_helper"]
     helper_app = app / "Contents/Helpers/BridgeVMProductE2E.app"
-    if not app.is_dir() or app.is_symlink() or not helper.is_file() or helper.is_symlink():
-        return None
+    if not app.is_dir() or app.is_symlink():
+        raise PreflightError("T17 app bundle is missing or unsafe")
+    if not helper.is_file() or helper.is_symlink():
+        raise PreflightError("T17 helper executable is missing or unsafe")
     if not helper_app.is_dir() or helper_app.is_symlink():
         raise PreflightError("T17 helper app is not a real directory")
     try:
@@ -120,13 +122,10 @@ def launch_and_observe(helper_app: Path) -> None:
             raise PreflightError(f"LaunchServices diagnostic produced no report (open={completed.returncode}): {detail}")
         value = read_report(report)
         validate_report(value)
-def preflight(manifest: Path) -> bool:
+def preflight(manifest: Path) -> None:
     if sys.platform != "darwin":
-        return False
-    verified = verified_helper(manifest)
-    if verified is None:
-        return False
-    app, helper_app, app_digest = verified
+        raise PreflightError("T17 LaunchServices preflight requires macOS")
+    app, helper_app, app_digest = verified_helper(manifest)
     launch_and_observe(helper_app)
     module = load_manifest_module()
     try:
@@ -134,7 +133,6 @@ def preflight(manifest: Path) -> bool:
             raise PreflightError("T17 app bundle changed during the LaunchServices observation")
     except module.ManifestError as error:
         raise PreflightError(f"T17 app bundle became unsafe: {error}") from error
-    return True
 def self_test() -> None:
     identity = {
         "schema": "t17.caller-identity.v1", "pid": "42", "ppid": "1",
@@ -179,12 +177,11 @@ def main() -> int:
     if args.manifest is None:
         parser.error("--manifest is required")
     try:
-        observed = preflight(args.manifest)
+        preflight(args.manifest)
     except (OSError, PreflightError) as error:
         print(f"T17 submission preflight blocked: {error}", file=sys.stderr)
         return 1
-    message = "passed" if observed else "not applicable"
-    print(f"T17 LaunchServices Accessibility preflight {message}", file=sys.stderr)
+    print("T17 LaunchServices Accessibility preflight passed", file=sys.stderr)
     return 0
 if __name__ == "__main__":
     raise SystemExit(main())
