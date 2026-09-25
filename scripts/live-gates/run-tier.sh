@@ -76,7 +76,7 @@ case "$TIER" in
             exit 1
         fi
         ;;
-    t1-restore-boot|t20-a19-native-snapshot-restore|t21-a19-quota-refusal)
+    t1-restore-boot|t20-a19-native-snapshot-restore|t21-a19-quota-refusal|t22-a19-interrupted-restore)
         "$REPO/scripts/live-gates/run-a19-snapshot-tiers.sh" \
             "$TIER" "$OUT" "$JOB_ID" "$INPUT_MANIFEST" "$SEALED_BINARY"
         ;;

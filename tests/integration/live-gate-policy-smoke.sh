@@ -236,7 +236,7 @@ unsafe_out="$WORK/unsafe-a3"
 check "the A3 tier refuses an unsafe sealed payload after manifest verification" \
     '! "$A3_TIER" --out "$unsafe_out" --input-manifest "$complete_manifest" --sealed-binary "$WORK/probe" --job-id unsafe-policy >/dev/null 2>&1 && grep -q "refused-ppsspp-payload" "$unsafe_out/receipt.json"'
 check "the installed-boot runner honors a sealed prebuilt binary" \
-    'grep -Fq '"'"'BRIDGEVM_PREBUILT_PROBE requires an absolute regular release binary with --skip-build'"'"' "$BOOT_RUNNER"'
+    '[[ "$(head -n 1 "$BOOT_RUNNER")" == "source \"\$ROOT/scripts/run-hvf-windows-installed-boot-package-policy.sh\"" ]] && grep -Fq "BRIDGEVM_PREBUILT_PROBE requires an absolute regular release binary with --skip-build" "$REPO/scripts/run-hvf-windows-installed-boot-package-policy.sh"'
 rm -rf "$BRIDGEVM_LIVE_ROOT/queued/$a3_job"
 claimed="$("$CLI" next)"
 check "next claims the job" '[ -n "$claimed" ]'

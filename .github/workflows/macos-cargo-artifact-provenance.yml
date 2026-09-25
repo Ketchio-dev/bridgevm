@@ -1,0 +1,21 @@
+name: macOS Cargo artifact provenance
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  artifact-provenance:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install focused check dependency
+        run: brew install ripgrep
+      - name: Verify Cargo artifact provenance without VM
+        run: bash tests/integration/macos-cargo-artifact-provenance-smoke.sh

@@ -49,24 +49,16 @@ enum T17FirstReadyStopCapture {
         var observedAck = false
         var observedReport = false
         repeat {
-            guard let suffix = readSuffix(log, identity: identity) else {
+            guard let rawSuffix = readSuffix(log, identity: identity) else {
                 return "host_stop=status=incomplete,reason=run-log-changed"
             }
+            let suffix = String(decoding: rawSuffix, as: UTF8.self)
             if let match = ackPattern?.firstMatch(in: suffix, range: NSRange(suffix.startIndex..., in: suffix)),
-               let ack = Range(match.range, in: suffix),
+               Range(match.range, in: suffix) != nil,
                let generationRange = Range(match.range(at: 1), in: suffix),
                let generation = UInt64(suffix[generationRange]) {
                 observedAck = true
-                let afterAck = suffix[ack.upperBound...]
-                if let serial = afterAck.range(of: "\n--- serial (tail) ---\n"),
-                   let banner = afterAck.range(of: "\n=== EDK2 boot probe (with Apple hv_gic) ===\n"),
-                   banner.lowerBound < serial.lowerBound,
-                   let stop = afterAck[banner.lowerBound..<serial.lowerBound]
-                    .range(of: "\nstop: host diagnostic stop requested"),
-                   stop.upperBound <= serial.lowerBound,
-                   afterAck[stop.upperBound] == "\n",
-                   afterAck[serial.upperBound...].contains("\n--- end ---\n"),
-                   suffix.trimmingCharacters(in: .newlines).hasSuffix("\n--- end ---") {
+                if T17TerminalReportTail.isComplete(rawSuffix: rawSuffix, nonce: nonce, generation: generation) {
                     observedReport = true
                     if ownedRuntimeState() == "stopped" {
                         guard requestConsumed(request) else {
@@ -108,7 +100,7 @@ enum T17FirstReadyStopCapture {
         return LogIdentity(device: state.st_dev, inode: state.st_ino, offset: UInt64(state.st_size))
     }
 
-    private static func readSuffix(_ url: URL, identity: LogIdentity) -> String? {
+    private static func readSuffix(_ url: URL, identity: LogIdentity) -> Data? {
         let fd = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW)
         guard fd >= 0 else { return nil }
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
@@ -124,7 +116,7 @@ enum T17FirstReadyStopCapture {
             let expected = Int(UInt64(state.st_size) - identity.offset)
             let data = try handle.read(upToCount: expected) ?? Data()
             guard data.count == expected else { return nil }
-            return String(decoding: data, as: UTF8.self)
+            return data
         } catch { return nil }
     }
 }

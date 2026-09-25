@@ -56,7 +56,7 @@ swift_bin_dir="$(
     swift build --disable-sandbox --package-path "$MACOS_DIR" --scratch-path "$swift_scratch" \
     --configuration release --show-bin-path
 )"
-cargo build --locked --release -p bridgevm-cli
+bridgevm_cli_bin="$(python3 "$MACOS_DIR/scripts/cargo-built-artifact.py" --root "$ROOT" --target bridgevm --kind bin -- build --locked --release -p bridgevm-cli)"
 install -d \
   "$stage_app/Contents/MacOS" \
   "$stage_app/Contents/Resources/scripts/win-assets" \
@@ -80,7 +80,7 @@ python3 "$ROOT/scripts/generate-rust-license-bundle.py" \
   --output "$stage_app/Contents/Resources/licenses/rust-license-texts.txt" >/dev/null
 "$MACOS_DIR/scripts/bundle-control-app-metadata.sh" "$stage_app" "$SHORT_VERSION"
 install -m 755 "$swift_bin_dir/BridgeVMControl" "$stage_app/Contents/MacOS/BridgeVMControl"
-install -m 755 "$ROOT/target/release/bridgevm" "$stage_app/Contents/Resources/target/release/bridgevm"
+install -m 755 "$bridgevm_cli_bin" "$stage_app/Contents/Resources/target/release/bridgevm"
 BRIDGEVM_CODESIGN_IDENTITY="$IDENTITY" "$MACOS_DIR/scripts/build-sign-hvf-runner.sh" --release \
   --output "$stage_app/Contents/Resources/target/release/hvf-runner" >/dev/null
 install -m 644 "$FIRMWARE_CODE" "$stage_app/Contents/Resources/firmware/edk2-aarch64-secure-code.fd"
@@ -106,7 +106,7 @@ for script in \
   run-hvf-windows-installed-boot-usage.sh \
   run-hvf-windows-installed-boot-validation.sh \
   run-hvf-windows-installed-boot-args.sh \
-  run-hvf-windows-installed-boot-runner.sh \
+  run-hvf-windows-installed-boot-runner.sh run-hvf-windows-installed-boot-package-policy.sh \
   build-hvf-windows-scripted-source.sh \
   stage-hvf-windows-guest-payload.sh \
   hvf-disk-image-utils.sh \

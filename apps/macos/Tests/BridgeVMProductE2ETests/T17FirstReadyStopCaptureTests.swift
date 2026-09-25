@@ -31,7 +31,7 @@ final class T17FirstReadyStopCaptureTests: XCTestCase {
     func testDeadlineStopRequiresNewAcknowledgementReportAndTerminalOwnedRuntime() throws {
         let (lane, log) = try fixture()
         defer { try? FileManager.default.removeItem(at: lane) }
-        try append("HOST-DIAGNOSTIC-STOP: generation=6 request consumed; ending run through final report\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: host diagnostic stop requested\n\n--- serial (tail) ---\nprior\n--- end ---\n", to: log)
+        try append("HOST-DIAGNOSTIC-STOP: generation=6 request consumed; ending run through final report\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: host diagnostic stop requested\nserial bytes: 5\n--- serial (tail) ---\nprior\n--- end ---\n", to: log)
         var appended = false
         var observedNonce = ""
         let detail = T17FirstReadyStopCapture.capture(log: log, laneRoot: lane,
@@ -40,12 +40,12 @@ final class T17FirstReadyStopCaptureTests: XCTestCase {
                 if !appended {
                     appended = true
                     observedNonce = self.requestNonce(log)
-                    try! self.append("HOST-DIAGNOSTIC-STOP: generation=7 nonce=\(observedNonce) request consumed; ending run through final report\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: host diagnostic stop requested\n\n--- serial (tail) ---\ncurrent\n--- end ---\n", to: log)
+                    try! self.append("HOST-DIAGNOSTIC-STOP: generation=7 nonce=\(observedNonce) request consumed; ending run through final report\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: host diagnostic stop requested\nserial bytes: 7\n--- serial (tail) ---\ncurrent\n--- end ---\n", to: log)
                     try! FileManager.default.removeItem(at: log.deletingLastPathComponent()
                         .appendingPathComponent(T17FirstReadyStopCapture.requestName))
                 }
             })
-        XCTAssertEqual(detail, "host_stop=status=complete,generation=7,nonce=\(observedNonce),report=complete,helper=terminal,log_offset=207")
+        XCTAssertEqual(detail, "host_stop=status=complete,generation=7,nonce=\(observedNonce),report=complete,helper=terminal,log_offset=222")
         let request = log.deletingLastPathComponent().appendingPathComponent(T17FirstReadyStopCapture.requestName)
         XCTAssertFalse(FileManager.default.fileExists(atPath: request.path))
     }
@@ -60,7 +60,7 @@ final class T17FirstReadyStopCaptureTests: XCTestCase {
                 if !appended {
                     appended = true
                     let nonce = self.requestNonce(log)
-                    try! self.append("HOST-DIAGNOSTIC-STOP: generation=7 nonce=\(nonce) request consumed; ending run through final report\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: host diagnostic stop requested\n\n--- serial (tail) ---\nspoofed guest text\n--- end ---\n", to: log)
+                    try! self.append("HOST-DIAGNOSTIC-STOP: generation=7 nonce=\(nonce) request consumed; ending run through final report\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: host diagnostic stop requested\nserial bytes: 18\n--- serial (tail) ---\nspoofed guest text\n--- end ---\n", to: log)
                 }
             })
         XCTAssertEqual(detail, "host_stop=status=incomplete,reason=request-not-consumed")
@@ -82,7 +82,7 @@ final class T17FirstReadyStopCaptureTests: XCTestCase {
                     appended = true
                     observedNonce = self.requestNonce(log)
                     let wrong = (observedNonce.first == "a" ? "b" : "a") + observedNonce.dropFirst()
-                    try! self.append("=== EDK2 boot probe (with Apple hv_gic) ===\nstop: unrelated\n--- serial (tail) ---\nHOST-DIAGNOSTIC-STOP: generation=7 nonce=\(wrong) request consumed; ending run through final report\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: host diagnostic stop requested\n--- serial (tail) ---\n--- end ---\n--- end ---\nHOST-DIAGNOSTIC-STOP: generation=8 nonce=\(observedNonce) request consumed; ending run through final report\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: host diagnostic stop requested\n--- serial (tail) ---\ncurrent\n--- end ---\n", to: log)
+                    try! self.append("=== EDK2 boot probe (with Apple hv_gic) ===\nstop: unrelated\n--- serial (tail) ---\nHOST-DIAGNOSTIC-STOP: generation=7 nonce=\(wrong) request consumed; ending run through final report\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: host diagnostic stop requested\n--- serial (tail) ---\n--- end ---\n--- end ---\nHOST-DIAGNOSTIC-STOP: generation=8 nonce=\(observedNonce) request consumed; ending run through final report\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: host diagnostic stop requested\nserial bytes: 7\n--- serial (tail) ---\ncurrent\n--- end ---\n", to: log)
                     try! FileManager.default.removeItem(at: log.deletingLastPathComponent()
                         .appendingPathComponent(T17FirstReadyStopCapture.requestName))
                 }
@@ -121,7 +121,7 @@ final class T17FirstReadyStopCaptureTests: XCTestCase {
         let cases = [
             ("HOST-DIAGNOSTIC-STOP: generation=2 nonce=<nonce> request consumed; ending run through final report\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: host diagnostic stop requested\n",
              "stopped", "host_stop=status=incomplete,reason=final-report-missing"),
-            ("HOST-DIAGNOSTIC-STOP: generation=2 nonce=<nonce> request consumed; ending run through final report\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: host diagnostic stop requested\n\n--- serial (tail) ---\ncurrent\n--- end ---\n",
+            ("HOST-DIAGNOSTIC-STOP: generation=2 nonce=<nonce> request consumed; ending run through final report\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: host diagnostic stop requested\nserial bytes: 7\n--- serial (tail) ---\ncurrent\n--- end ---\n",
              "booting", "host_stop=status=incomplete,reason=helper-not-terminal")
         ]
         for (tail, runtimeState, expected) in cases {

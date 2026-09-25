@@ -1,6 +1,5 @@
 //! Split out of main.rs to keep files under 800 lines.
 
-use std::env;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -52,15 +51,5 @@ pub(crate) fn push_num_arg<T: ToString>(out: &mut Vec<String>, flag: &str, value
 pub(crate) fn push_flag(out: &mut Vec<String>, enabled: bool, flag: &str) {
     if enabled {
         out.push(flag.to_string());
-    }
-}
-
-pub(crate) fn env_truthy(name: &str) -> bool {
-    match env::var(name) {
-        Ok(value) => matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        ),
-        Err(_) => false,
     }
 }

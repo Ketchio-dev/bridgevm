@@ -13,6 +13,9 @@ import stat
 import struct
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from t17_terminal_report_tail import terminal_report  # noqa: E402
+
 SCHEMA = "bridgevm.t17-private-diagnostic-packet.v1"
 STAMP_SCHEMA = "bridgevm.windows-hvf-3d-off-product-e2e-host-stamp.v1"
 LANE_SCHEMA = "bridgevm.windows-hvf-3d-off-product-e2e-lane.v2"
@@ -33,8 +36,6 @@ HEX = re.compile(r"[0-9a-f]{64}\Z")
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 JOB = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 FRAME = re.compile(r"(ramfb|virtio-gpu)-[0-9]+x[0-9]+-[0-9a-f]+-[0-9a-f]{16}\Z")
-ACK = re.compile(r"^HOST-DIAGNOSTIC-STOP: generation=([0-9]+) nonce=([0-9a-f]{32}) request consumed; ending run through final report$", re.M)
-COMPLETE_DETAIL = re.compile(r"host_stop=status=complete,generation=([0-9]+),nonce=([0-9a-f]{32}),report=complete,helper=terminal,log_offset=([0-9]+)(?:;|\Z)")
 HOST_STATUS = re.compile(r"host_stop=status=(complete|missing|incomplete)(?:,|;|\Z)")
 FIRST_READY_DETAIL = "first boot has no BVAGENT READY/PONG evidence;"
 
@@ -224,22 +225,6 @@ def entry(role: str, source: str, status: str = "missing", *, reason: str = "abs
 def retained(item: dict, name: str, count: int, offset: int, checksum: str) -> None:
     item.update(status="retained", reason="none", file=name, bytes=count, offset=offset,
                 truncated=(offset != 0 or count != item["original_size"]), sha256=checksum)
-
-
-def terminal_report(tail: bytes, detail: str, tail_offset: int) -> tuple[int, str] | None:
-    claim = COMPLETE_DETAIL.search(detail)
-    if claim is None or int(claim[3]) < tail_offset or int(claim[3]) > tail_offset + len(tail):
-        return None
-    text = tail[int(claim[3]) - tail_offset:].decode("utf-8", errors="replace")
-    ack = next((match for match in ACK.finditer(text) if match[2] == claim[2]), None)
-    if ack is None or ack[1] != claim[1]:
-        return None
-    serial = text.find("\n--- serial (tail) ---\n", ack.end())
-    banner = text.find("\n=== EDK2 boot probe (with Apple hv_gic) ===\n", ack.end(), serial)
-    stop = text.find("\nstop: host diagnostic stop requested\n", banner, serial)
-    if serial < 0 or banner < 0 or stop < 0 or not text.rstrip("\n").endswith("\n--- end ---"):
-        return None
-    return int(claim[1]), text[stop:serial]
 
 
 def final_frame_names(tail: bytes, frame_dir: str, detail: str, tail_offset: int) -> tuple[str, str] | None:

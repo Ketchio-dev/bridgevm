@@ -33,7 +33,7 @@ json_valid() {
   for path in "$@"; do python3 -m json.tool "$path" >/dev/null || return 1; done
 }
 step "capability registry" bash scripts/check-capability-registry.sh
-step "contract and schema json" json_valid docs/machine-contract/qemu-virt-deviations.json schemas/bridgevm-capability-v1.json schemas/windows-hvf-3d-off-product-e2e-receipt-v1.json schemas/windows-hvf-import-product-e2e-receipt-v1.json
+step "contract and schema json" json_valid docs/machine-contract/qemu-virt-deviations.json schemas/bridgevm-capability-v1.json schemas/windows-hvf-3d-off-product-e2e-receipt-v1.json schemas/windows-hvf-import-product-e2e-receipt-v1.json schemas/b8-clean-install-receipt-v1.json
 step "capability evidence" python3 scripts/check-capability-evidence.py
 step "capability test counts" python3 scripts/check-capability-test-counts.py
 step "general preview manifest" python3 scripts/generate-general-preview-manifest.py --self-test
@@ -57,11 +57,11 @@ step "HVF boot performance and SMP scaling" bash -c 'tests/integration/hvf-boot-
 step "HVF NVMe performance tier" tests/integration/hvf-nvme-performance-tier-smoke.sh
 step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
-step "Windows product and A19 live-tier contracts" bash -c 'tests/integration/windows-product-e2e-contract-smoke.sh && python3 tests/integration/native-snapshot-restore-live-tier-contract.py && python3 tests/integration/native-snapshot-export-evidence-contract.py && python3 tests/integration/a19-quota-refusal-live-tier-contract.py'
+step "Windows product and A19 live-tier contracts" bash -c 'tests/integration/windows-product-e2e-contract-smoke.sh && python3 tests/integration/native-snapshot-restore-live-tier-contract.py && python3 tests/integration/native-snapshot-export-evidence-contract.py && python3 tests/integration/a19-quota-refusal-live-tier-contract.py && python3 tests/integration/a19-interrupted-restore-live-tier-contract.py && python3 tests/integration/a19-interrupted-restore-public-contract.py && python3 tests/integration/a19-interrupted-restore-guest-share-contract.py'
 step "BridgeVM PC firmware boundary" scripts/check-bridgevm-pc-firmware-boundary.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 step "packaged HVF entitlements" scripts/verify-app-hvf-entitlements.sh --self-test
-step "install verify" bash tests/integration/install-verify-smoke.sh
+step "install verify" bash -c 'bash tests/integration/install-verify-smoke.sh && python3 tests/integration/b8-clean-install-tier-contract.py && python3 tests/integration/b8-clean-install-adversarial-contract.py && python3 tests/integration/b8-clean-install-fifo-contract.py'
 step "rustfmt" cargo "$TOOLCHAIN" fmt --all --check
 if [[ $FAST -eq 1 ]]; then
   printf '\n--- fast subset complete ---\n'

@@ -111,20 +111,12 @@ fi
   exit 1
 }
 
-case "$BUILD_PROFILE" in
-  debug)
-    cargo build -p hvf-runner --locked --quiet
-    BIN="$ROOT/target/debug/hvf-runner"
-    ;;
-  release)
-    cargo build -p hvf-runner --release --locked --quiet
-    BIN="$ROOT/target/release/hvf-runner"
-    ;;
-  *)
-    echo "invalid build profile: $BUILD_PROFILE" >&2
-    exit 2
-    ;;
-esac
+cargo_args=(build -p hvf-runner --locked --quiet)
+if [[ "$BUILD_PROFILE" == "release" ]]; then
+  cargo_args+=(--release)
+fi
+BIN="$(python3 "$MACOS_DIR/scripts/cargo-built-artifact.py" --root "$ROOT" \
+  --target hvf-runner --kind bin -- "${cargo_args[@]}")"
 
 codesign --force --sign "$IDENTITY" --entitlements "$ENTITLEMENTS" "$BIN" >/dev/null
 
