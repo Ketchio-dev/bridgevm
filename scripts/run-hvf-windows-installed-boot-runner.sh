@@ -1,3 +1,5 @@
+source "$ROOT/scripts/run-hvf-windows-installed-boot-package-policy.sh"
+
 terminate_owned_probe() {
   [[ -n "$PROBE_PID" ]] || return 0
   kill -0 "$PROBE_PID" 2>/dev/null || return 0
@@ -103,15 +105,6 @@ start_owned_swtpm() {
   } > "$EVIDENCE_DIR/swtpm-lifecycle.txt"
   echo "FAIL: swtpm did not create both Unix sockets; see $EVIDENCE_DIR/swtpm-launch.log" >&2
   return 1
-}
-
-run_bridgevm_cli() {
-  local packaged_cli="$ROOT/target/release/bridgevm"
-  if [[ -x "$packaged_cli" ]]; then
-    "$packaged_cli" "$@"
-  else
-    cargo run -q -p bridgevm-cli -- "$@"
-  fi
 }
 
 cleanup() {
@@ -767,7 +760,7 @@ prepare_virtio_gpu_trace() {
 
 run_probe_process() {
   local name
-  local -a env_command=(env)
+  local -a env_command=(/usr/bin/env)
   # An installed-boot run is a closed, auditable configuration boundary.
   # Remove every inherited BridgeVM probe knob, then apply only ENV_ARGS built
   # from this wrapper's validated CLI. This prevents an old developer shell
@@ -1061,27 +1054,9 @@ run_installed_boot_probe() {
   SWTPM_RUNTIME_DIR=""
   SWTPM_DATA_SOCKET=""
   SWTPM_CONTROL_SOCKET=""
-  local cargo_target_dir="${CARGO_TARGET_DIR:-}"
-  if [[ -n "${BRIDGEVM_PREBUILT_PROBE:-}" ]]; then
-    if [[ "$BUILD_PROFILE" != release || "$SKIP_BUILD" != 1 \
-      || "$BRIDGEVM_PREBUILT_PROBE" != /* || ! -f "$BRIDGEVM_PREBUILT_PROBE" \
-      || -L "$BRIDGEVM_PREBUILT_PROBE" ]]; then
-      echo "FAIL: BRIDGEVM_PREBUILT_PROBE requires an absolute regular release binary with --skip-build" >&2
-      RUN_STATUS=1
-      return 0
-    fi
-    BIN="$BRIDGEVM_PREBUILT_PROBE"
-  else
-    if [[ -n "$cargo_target_dir" && "$cargo_target_dir" != /* ]]; then
-      cargo_target_dir="$ROOT/$cargo_target_dir"
-    fi
-    if [[ "$BUILD_PROFILE" == release ]]; then
-      BIN="${cargo_target_dir:+$cargo_target_dir/}release/examples/hvf_gic_boot_probe"
-      [[ -n "$cargo_target_dir" ]] || BIN="target/release/examples/hvf_gic_boot_probe"
-    else
-      BIN="${cargo_target_dir:+$cargo_target_dir/}debug/examples/hvf_gic_boot_probe"
-      [[ -n "$cargo_target_dir" ]] || BIN="target/debug/examples/hvf_gic_boot_probe"
-    fi
+  if ! select_installed_boot_probe; then
+    RUN_STATUS=1
+    return 0
   fi
   trap cleanup EXIT
   write_installed_boot_preflight

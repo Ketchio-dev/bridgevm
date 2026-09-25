@@ -69,8 +69,7 @@ final class HvfWindowsBackend: VMBackend {
         guard !isRunning() else { return true }
         guard ensureDirectories() else { return false }
         guard ensureControlFile() else { return false }
-        let wrapper = repoRoot.appendingPathComponent(wrapperName)
-        guard FileManager.default.isExecutableFile(atPath: wrapper.path) else { return false }
+        guard HvfPackagedWrapperPolicy.wrapperAvailable(repoRoot: repoRoot) && HvfPackagedWrapperPolicy.signatureVerified(repoRoot: repoRoot) else { return false }
         // The wrapper replaces run.log on every launch. Remove it first so a
         // pending first-boot action cannot mistake the previous SERVICE marker
         // for the new guest generation and append a command before tailing starts.
@@ -88,7 +87,7 @@ final class HvfWindowsBackend: VMBackend {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = engineConfig.wrapperArguments()
         process.currentDirectoryURL = repoRoot
-        process.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("BRIDGEVM_") }
+        process.environment = HvfPackagedWrapperPolicy.environment(ProcessInfo.processInfo.environment)
         var keyInput: VTPMProcessKeyInput? = nil
         do {
             keyInput = try VTPMStateSecurity.processInput(

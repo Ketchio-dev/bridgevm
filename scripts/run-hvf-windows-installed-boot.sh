@@ -1,7 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "$(/bin/realpath "${BASH_SOURCE[0]}")")/.." && pwd -P)"
 INVOCATION_DIR="$(pwd -P)"
 
 source "$ROOT/scripts/run-hvf-windows-installed-boot-usage.sh"

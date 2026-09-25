@@ -31,8 +31,7 @@ extension HvfEngineSession {
         }
         let runner = repoRoot.appendingPathComponent("target/release/hvf-runner")
         let typed = FileManager.default.isExecutableFile(atPath: runner.path)
-        guard typed || FileManager.default.isExecutableFile(atPath:
-            repoRoot.appendingPathComponent("scripts/run-hvf-windows-installed-boot.sh").path) else {
+        guard typed || HvfRuntimeLegacyFallback.available(repoRoot: repoRoot) else {
             connectionState = .stopped
             return .failed(.helper, "The installed-boot wrapper is unavailable")
         }
@@ -53,7 +52,7 @@ extension HvfEngineSession {
                 }
                 controller.activate(helloFrame: launched.helloFrame)
             } else {
-                let launched = try HvfRuntimeLegacyLaunch.start(config: frozen, repoRoot: repoRoot,
+                let launched = try HvfRuntimeLegacyFallback.start(config: frozen, repoRoot: repoRoot,
                     keyProvider: vtpmKeyProvider, launch: processLaunch)
                 process = launched.process; deliveryFailure = launched.keyDeliveryFailure
                 ownedProcessIdentity = HvfOwnedRuntimeIdentity(token: UUID(), processID: launched.process.processIdentifier)

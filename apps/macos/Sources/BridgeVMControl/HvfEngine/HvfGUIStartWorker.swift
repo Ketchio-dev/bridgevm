@@ -27,8 +27,7 @@ enum HvfGUIStartWorker {
             catch { return .init(result: .failed(.preparation, error.localizedDescription)) }
             let runner = input.repoRoot.appendingPathComponent("target/release/hvf-runner")
             let typed = FileManager.default.isExecutableFile(atPath: runner.path)
-            guard typed || FileManager.default.isExecutableFile(atPath:
-                input.repoRoot.appendingPathComponent("scripts/run-hvf-windows-installed-boot.sh").path) else {
+            guard typed || HvfRuntimeLegacyFallback.available(repoRoot: input.repoRoot) else {
                 return .init(result: .failed(.helper, "The installed-boot wrapper is unavailable"))
             }
             try await checkAdmission(input)
@@ -44,7 +43,7 @@ enum HvfGUIStartWorker {
                     runner: runner, manifest: manifest, key: key, launch: launch)
                 return .init(result: .owned(spawn))
             }
-            let spawn = try HvfRuntimeLegacySpawn.start(config: input.config, repoRoot: input.repoRoot,
+            let spawn = try HvfRuntimeLegacyFallback.spawn(config: input.config, repoRoot: input.repoRoot,
                 key: key, launch: launch)
             return .init(result: .legacy(spawn))
         } catch is AdmissionChanged {

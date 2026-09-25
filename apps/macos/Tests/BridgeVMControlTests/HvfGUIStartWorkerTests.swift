@@ -12,7 +12,7 @@ final class HvfGUIStartWorkerTests: XCTestCase {
             effectAdmission: HvfRuntimeEffectAdmission(), permit: { true })
     }
     func testTypedAndLegacyRoutesReadInteractiveKeyOnceWithExistingStatePolicy() async throws {
-        for typed in [false, true] {
+        for typed in (_isDebugAssertConfiguration() ? [false, true] : [true]) {
             for populated in [false, true] {
                 let f = try HvfGUIStartFixture(encrypted: true, typed: typed, rejectLaunch: true)
                 do {
