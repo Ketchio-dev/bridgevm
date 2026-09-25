@@ -30,10 +30,10 @@ cli="$resources/target/release/bridgevm"
 swtpm="$contents/Helpers/swtpm"
 policy="$resources/scripts/run-hvf-windows-installed-boot-package-policy.sh"
 mkdir -p "$contents/MacOS" "$(dirname "$probe")" "$(dirname "$swtpm")" "$(dirname "$policy")"
-cp /usr/bin/true "$contents/MacOS/BridgeVMControl"
-cp /usr/bin/true "$probe"
-cp /usr/bin/true "$cli"
-cp /usr/bin/true "$swtpm"
+printf 'int main(void){return 0;}\n' | /usr/bin/cc -x c -o "$contents/MacOS/BridgeVMControl" -
+cp "$contents/MacOS/BridgeVMControl" "$probe"
+cp "$contents/MacOS/BridgeVMControl" "$cli"
+cp "$contents/MacOS/BridgeVMControl" "$swtpm"
 for script in run-hvf-windows-installed-boot{,-usage,-validation,-args,-runner,-package-policy}.sh; do
   cp "$ROOT_REPO/scripts/$script" "$resources/scripts/$script"
 done
