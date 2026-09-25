@@ -5,6 +5,9 @@ use super::*;
 #[path = "snapshot_create_destination.rs"]
 mod destination;
 use destination::prepare_destination;
+#[path = "snapshot_create_destination_lease.rs"]
+mod destination_lease;
+use destination_lease::claim_staging;
 #[path = "snapshot_create_stage.rs"]
 mod stage;
 use stage::CreateStage;
@@ -53,10 +56,7 @@ fn create_snapshot_using(
     }
 
     let dest = prepare_destination(dest, [&logical_disk, &logical_vars, disk, vars])?;
-    let staging = staging_path(&dest);
-    // Refuse source overlap before cleaning debris from an interrupted attempt.
-    let _ = fs::remove_dir_all(&staging);
-    fs::create_dir_all(&staging)?;
+    let (_destination_lease, staging) = claim_staging(&dest)?;
 
     let disk_bytes = copy_and_sync(disk, &staging.join(DISK_NAME))?;
     observe(CreateStage::DiskSynced);
@@ -83,6 +83,9 @@ fn create_snapshot_using(
     Ok(manifest)
 }
 
+#[cfg(test)]
+#[path = "snapshot_create_concurrency_tests.rs"]
+mod concurrency_tests;
 #[cfg(test)]
 #[path = "snapshot_create_interruption_tests.rs"]
 mod interruption_tests;

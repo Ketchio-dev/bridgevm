@@ -2318,8 +2318,10 @@ crates/bridgevm-hvf/src/managed_pair_ownership_tests.rs	112	0
 crates/bridgevm-hvf/src/managed_pair_staging.rs	28	0
 crates/bridgevm-media/src/media_lease_update.rs	73	0
 crates/bridgevm-media/src/media_lease_update_tests.rs	122	0
-crates/bridgevm-hvf/src/snapshot_create.rs	77	0
+crates/bridgevm-hvf/src/snapshot_create.rs	75	0
+crates/bridgevm-hvf/src/snapshot_create_concurrency_tests.rs	139	0
 crates/bridgevm-hvf/src/snapshot_create_destination.rs	27	0
+crates/bridgevm-hvf/src/snapshot_create_destination_lease.rs	24	0
 crates/bridgevm-hvf/src/snapshot_create_stage.rs	8	0
 crates/bridgevm-hvf/src/snapshot_create_interruption_tests.rs	87	0
 crates/bridgevm-hvf/src/snapshot_create_overlap_tests.rs	95	0
