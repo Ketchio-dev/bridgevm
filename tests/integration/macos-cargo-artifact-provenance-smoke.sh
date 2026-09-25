@@ -28,13 +28,14 @@ set -euo pipefail
 [[ -d "$1/Contents/MacOS" && -x "$2/BridgeVMProductE2E" ]]
 SH
 chmod +x "$fixture/apps/macos/scripts/package-product-e2e-helper-app.sh"
+printf '%s\n' 'int main(void) { return 0; }' | /usr/bin/cc -arch arm64 -x c - -o "$store/arm64-fixture"
+printf '%s\n' 'int main(void) { return 0; }' | /usr/bin/cc -arch x86_64 -x c - -o "$store/x86-fixture"
 
 cat > "$fake_bin/cargo" <<'PY'
 #!/usr/bin/env python3
 import json
 import os
 from pathlib import Path
-import struct
 import sys
 
 args = sys.argv[1:]
@@ -73,8 +74,7 @@ if not target_dir.is_absolute():
 profile = 'release' if '--release' in args else 'debug'
 path = target_dir / profile / ('examples' if kind == 'example' else '') / name
 path.parent.mkdir(parents=True, exist_ok=True)
-cpu = 0x01000007 if os.environ.get('FAKE_CARGO_X86') else 0x0100000c
-path.write_bytes(struct.pack('<IIIIIIII', 0xfeedfacf, cpu, 0, 2, 0, 0, 0, 0) + name.encode())
+path.write_bytes(Path(os.environ['X86_FIXTURE' if os.environ.get('FAKE_CARGO_X86') else 'ARM64_FIXTURE']).read_bytes())
 path.chmod(0o755)
 message = {'reason': 'compiler-artifact', 'target': {'name': name, 'kind': [kind]},
            'package_id': 'fake-id-' + ('wrong-package' if os.environ.get('FAKE_CARGO_WRONG_PACKAGE') else package),
@@ -94,7 +94,7 @@ case "$1" in
 esac
 SH
 chmod +x "$fake_bin/cargo" "$fake_bin/codesign"
-export PATH="$fake_bin:$PATH" EXPECTED_ROOT="$fixture"
+export PATH="$fake_bin:$PATH" EXPECTED_ROOT="$fixture" ARM64_FIXTURE="$store/arm64-fixture" X86_FIXTURE="$store/x86-fixture"
 export FAKE_CARGO_LOG="$store/cargo.log" CODESIGN_LOG="$store/codesign.log"
 runner_script="$fixture/apps/macos/scripts/build-sign-hvf-runner.sh"
 probe_script="$fixture/apps/macos/scripts/build-sign-hvf-windows-probe.sh"
