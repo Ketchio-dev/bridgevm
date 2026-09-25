@@ -3131,3 +3131,5 @@ docs/history/windows-hvf/a9-selection-confirmation-read-20260921.md	61	0
 scripts/live-gates/t17-worker-cleanup-fence.sh	57	0
 tests/integration/t17-worker-cleanup-fence-contract.py	261	0
 docs/history/windows-hvf/a9-r29-t17-receipt.public.json	66	0
+apps/macos/Sources/BridgeVMProductE2E/T17ChooserSelectionTarget.swift	43	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserSelectionTargetTests.swift	82	0
