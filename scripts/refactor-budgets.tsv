@@ -3169,3 +3169,5 @@ scripts/live-gates/b9_real_workload_receipt.py	347	0
 scripts/live-gates/run-b9-real-workload-pilot.py	391	0
 scripts/win-assets/bv-b9-vlc-playback.ps1	220	0
 tests/integration/b9-real-workload-pilot-contract.py	254	0
+docs/windows-arm/evidence/a19-t21-r1-20260925.md	68	0
+docs/windows-arm/evidence/a19-t21-r1-20260925-receipt.json	49	0
