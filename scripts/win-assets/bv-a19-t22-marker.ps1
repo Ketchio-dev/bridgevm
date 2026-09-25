@@ -16,16 +16,16 @@ $Share = 'C:\bridgevm-share'
 $MarkerPath = 'C:\bv-snapshot-marker.txt'
 $MarkerPattern = '^BV-(ORIGINAL|CLOBBERED|POSTKILL|FINAL)-[0-9a-f]{32}$'
 
+if ($ExpectedSha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'invalid script digest' }
+if ((Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ExpectedSha256) {
+    throw 'guest script digest mismatch'
+}
 if ($Action -eq 'Launch') {
     if ($WorkAction -cne 'Read' -and $WorkAction -cne 'Write') { throw 'invalid workload action' }
-    if ($ExpectedSha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'invalid script digest' }
-    if ((Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ExpectedSha256) {
-        throw 'guest script digest mismatch'
-    }
     if ($WorkAction -eq 'Write') {
         if ($Marker -cnotmatch $MarkerPattern) { throw 'invalid marker' }
     } elseif ($Marker -cne '') { throw 'read action cannot write a marker' }
-    $CommandLine = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\bridgevm-share\bv-a19-t22-marker.ps1 -Action $WorkAction -Nonce $Nonce"
+    $CommandLine = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\bridgevm-share\bv-a19-t22-marker.ps1 -Action $WorkAction -Nonce $Nonce -ExpectedSha256 $ExpectedSha256"
     if ($WorkAction -eq 'Write') { $CommandLine += " -Marker $Marker" }
     $Created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $CommandLine }
     if ($Created.ReturnValue -ne 0 -or $Created.ProcessId -le 0) { throw 'marker workload did not launch' }
