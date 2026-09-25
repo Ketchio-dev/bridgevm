@@ -3133,3 +3133,5 @@ scripts/live-gates/t17-worker-cleanup-fence.sh	57	0
 tests/integration/t17-worker-cleanup-fence-contract.py	261	0
 docs/history/windows-hvf/a9-r29-t17-receipt.public.json	66	0
 scripts/glyph_latency_fake_clock.py	12	0
+scripts/live-gates/b6_cell_evidence.py	62	0
+tests/integration/b6-untraced-startup-contract.py	128	0
