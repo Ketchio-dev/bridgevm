@@ -3207,3 +3207,4 @@ tests/integration/b8-clean-install-fifo-contract.py	73	0
 tests/integration/b8-clean-install-tier-contract.py	349	0
 apps/macos/Sources/BridgeVMProductE2E/T17MissingIdentifierDiagnostic.swift	151	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17MissingIdentifierDiagnosticTests.swift	90	0
+docs/history/windows-hvf/a9-r34-dashboard-ax-timeout-20260925.md	60	0
