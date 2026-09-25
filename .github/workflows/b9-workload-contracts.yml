@@ -1,0 +1,19 @@
+name: B9 candidate CSV diagnostic contracts
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  csv-contracts:
+    name: Host-only PresentMon v2 CSV contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reject invalid app-only CSV and unproven workload claims
+        run: python3 tests/integration/b9-workload-diagnostic-contract.py
