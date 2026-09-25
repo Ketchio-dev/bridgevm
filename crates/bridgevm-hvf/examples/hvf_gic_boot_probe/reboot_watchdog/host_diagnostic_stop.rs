@@ -6,40 +6,36 @@
 
 use super::boot_progress::{BootProgressWatchdog, PROGRESS_SAMPLE_INTERVAL};
 use crate::{hv_vcpus_exit, HvVcpuT};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
+#[path = "host_diagnostic_stop_request.rs"]
+mod request;
 #[derive(Clone)]
 pub(crate) struct HostDiagnosticStop {
     vcpu: HvVcpuT,
     request_path: PathBuf,
     pub(crate) fired: Arc<AtomicBool>,
 }
-
 impl HostDiagnosticStop {
-    fn claim_request(&self) -> bool {
-        request_is_regular_file(&self.request_path)
-            && !self.fired.swap(true, Ordering::SeqCst)
+    fn claim_request(&self) -> Option<request::StopRequest> {
+        if self.fired.load(Ordering::SeqCst) { return None; }
+        let consumed = request::consume(&self.request_path)?;
+        (!self.fired.swap(true, Ordering::SeqCst)).then_some(consumed)
     }
 
     fn fire_if_requested(&self) -> bool {
-        if !self.claim_request() {
-            return false;
-        }
-        println!(
-            "HOST-DIAGNOSTIC-STOP: request observed; ending run through final report"
-        );
+        let Some(consumed) = self.claim_request() else { return false; };
+        let generation = std::env::var("BRIDGEVM_RESET_GENERATION").ok().and_then(|s| s.parse::<u64>().ok())
+            .map(|n| n.to_string()).unwrap_or_else(|| "unavailable".into());
+        let nonce = consumed.nonce().map_or_else(String::new, |value| format!(" nonce={value}"));
+        println!("HOST-DIAGNOSTIC-STOP: generation={generation}{nonce} request consumed; ending run through final report");
         let vcpu = self.vcpu;
         // SAFETY: Category 8 - `vcpu` remains a live probe-owned HVF handle;
         // this call only asks its owning run thread to leave `hv_vcpu_run`.
         unsafe { hv_vcpus_exit(&vcpu, 1) };
         true
     }
-}
-
-fn request_is_regular_file(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
 }
 
 fn configured_path(value: Option<std::ffi::OsString>) -> Option<PathBuf> {

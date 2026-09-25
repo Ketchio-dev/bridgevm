@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Sourced by check-project.sh so step failures accumulate in the parent.
-  # --- macOS app -------------------------------------------------------------
   if command -v swift >/dev/null 2>&1; then
     step "swift build" swift build --package-path apps/macos
     step "native app CLI and runtime" bash scripts/check-native-runtime.sh "$(swift build --package-path apps/macos --show-bin-path)/BridgeVMControl"
     step "swift tests" scripts/run-swift-tests.sh
+    step "A9 diagnostic XCTest" swift test --package-path apps/macos --filter 'T17FirstReadyStopCaptureTests|HvfRuntimeDiagnosticStopAdmissionTests'
     step "native UI driver contracts" scripts/check-app-ui-driver-contracts.sh --output "$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-ui-driver.XXXXXX")/contracts"
     step "xctest shim suites" scripts/run-xctest-shim-suites.sh
     step "release overrides" scripts/check-release-overrides.sh

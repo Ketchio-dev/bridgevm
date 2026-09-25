@@ -60,11 +60,9 @@ pub(crate) struct GicIrqState {
     pub(crate) ich_misr: Option<u64>,
     pub(crate) ich_elrsr: Option<u64>,
     pub(crate) ich_vmcr: Option<u64>,
-    /// Non-empty list registers only, as (index, raw value). An empty vec
-    /// with `ich_elrsr` readable means every LR is free.
-    pub(crate) ich_lrs: Vec<(u16, u64)>,
+    /// Each LR has its own read result. `None` is unreadable, not an empty LR.
+    pub(crate) ich_lrs: [Option<u64>; ICH_LR_COUNT as usize],
 }
-
 
 fn reg(status: i32, value: u64) -> Option<u64> {
     (status == 0).then_some(value)
@@ -98,13 +96,9 @@ pub(crate) unsafe fn capture(vcpu: HvVcpuT) -> GicIrqState {
         let mut v = 0u64;
         reg(hv_gic_get_ich_reg(vcpu, sysreg, &mut v), v)
     };
-    let mut ich_lrs = Vec::new();
+    let mut ich_lrs = [None; ICH_LR_COUNT as usize];
     for index in 0..ICH_LR_COUNT {
-        if let Some(value) = read_h(ICH_LR0_EL2 + index) {
-            if value != 0 {
-                ich_lrs.push((index, value));
-            }
-        }
+        ich_lrs[index as usize] = read_h(ICH_LR0_EL2 + index);
     }
     GicIrqState {
         igroupr0,
@@ -148,16 +142,17 @@ pub(crate) fn render(state: &GicIrqState) -> Vec<String> {
             state.vtimer_verdict().unwrap_or("unavailable (a read failed)")
         ),
         {
-            let lrs = if state.ich_lrs.is_empty() {
-                "none".to_string()
-            } else {
-                state
-                    .ich_lrs
-                    .iter()
-                    .map(|(i, v)| format!("LR{i}={v:#x}"))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            };
+            let lrs = state
+                .ich_lrs
+                .iter()
+                .enumerate()
+                .filter_map(|(i, v)| match v {
+                    Some(0) => None,
+                    Some(v) => Some(format!("LR{i}={v:#x}")),
+                    None => Some(format!("LR{i}=?")),
+                })
+                .collect::<Vec<_>>();
+            let lrs = if lrs.is_empty() { "none".into() } else { lrs.join(" ") };
             format!(
                 "GIC IRQ STATE: ICH HCR={} MISR={} ELRSR={} VMCR={} lrs=[{}]",
                 fmt(state.ich_hcr),

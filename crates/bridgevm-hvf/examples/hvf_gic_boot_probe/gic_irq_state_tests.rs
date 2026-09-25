@@ -17,7 +17,7 @@ fn all_open() -> GicIrqState {
         ich_misr: Some(0),
         ich_elrsr: Some(0xffff),
         ich_vmcr: Some(0),
-        ich_lrs: Vec::new(),
+        ich_lrs: [Some(0); ICH_LR_COUNT as usize],
     }
 }
 
@@ -128,11 +128,10 @@ fn render_is_bounded_and_prints_hex_for_real_values() {
 
 #[test]
 fn occupied_list_registers_render_with_their_index() {
-    let state = GicIrqState {
-        ich_lrs: vec![(2, 0xa000_0000_0000_001b)],
-        ..all_open()
-    };
-    assert!(render(&state)[2].contains("lrs=[LR2=0xa00000000000001b]"));
+    let mut state = all_open();
+    state.ich_lrs[2] = Some(0xa000_0000_0000_001b);
+    state.ich_lrs[5] = None;
+    assert!(render(&state)[2].contains("lrs=[LR2=0xa00000000000001b LR5=?]"));
 }
 
 #[test]
@@ -165,7 +164,7 @@ fn a_busy_rpr_with_a_real_banked_active_interrupt_is_not_a_wedge() {
 
 #[test]
 fn a_failed_rpr_read_fails_the_verdict_rather_than_guessing() {
-    let state = GicIrqState { rpr: None, ..all_open() };
+    let mut state = all_open();
+    state.rpr = None;
     assert_eq!(state.vtimer_verdict(), None);
 }
-

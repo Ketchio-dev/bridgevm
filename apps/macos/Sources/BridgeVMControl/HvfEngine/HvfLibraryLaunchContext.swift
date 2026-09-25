@@ -3,6 +3,7 @@ import Foundation
 struct HvfLibraryLaunchContext: Equatable {
     let config: VMConfig
     let rootURL: URL
+    var e2eHostDiagnosticStopAdmitted: Bool = false
 
     var readinessIssues: [HvfWindowsReadinessIssue] {
         guard VMRelocationJournal.isPending(config, rootURL: rootURL) else { return [] }
@@ -10,9 +11,8 @@ struct HvfLibraryLaunchContext: Equatable {
                       summary: "VM relocation recovery is unresolved. Check both bundles and registration before starting.")]
     }
 }
-
 extension HvfEngineConfig {
-    static func libraryVM(_ config: VMConfig, rootURL: URL = VMLibrary.root) -> HvfEngineConfig? {
+    static func libraryVM(_ config: VMConfig, rootURL: URL = VMLibrary.root, e2eHostDiagnosticStopAdmitted: Bool = false) -> HvfEngineConfig? {
         guard config.engineKind == .hvfEngine else { return nil }
         // A VM whose unattended install has not completed has no bootable disk
         // yet; the detail view routes it to the install panel instead.
@@ -35,7 +35,7 @@ extension HvfEngineConfig {
             vtpmStateDir: config.bundlePath + "/metadata/vtpm",
             swtpmBin: VTPMStateSecurity.defaultSwtpmCommand(),
             vtpmKeyID: config.slug, allowsExperimental3D: config.experimental3DAllowed ?? false,
-            libraryContext: HvfLibraryLaunchContext(config: config, rootURL: rootURL)
+            libraryContext: HvfLibraryLaunchContext(config: config, rootURL: rootURL, e2eHostDiagnosticStopAdmitted: e2eHostDiagnosticStopAdmitted)
         )
     }
 }

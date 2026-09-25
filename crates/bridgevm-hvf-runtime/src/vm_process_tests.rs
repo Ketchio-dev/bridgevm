@@ -161,6 +161,7 @@ fn the_app_surfaces_reproduce_the_wrapper_device_shape() {
             }),
             virtio_net: true,
             hda_audio: true,
+            host_diagnostic_stop: false,
         }),
         swtpm_sockets: None,
     };
@@ -240,6 +241,7 @@ fn surfaced_spawns_append_to_the_run_log_across_generations() {
             share: None,
             virtio_net: false,
             hda_audio: false,
+            host_diagnostic_stop: false,
         }),
         swtpm_sockets: None,
     };
@@ -310,6 +312,7 @@ fn the_app_ships_virgl_1050_and_the_env_says_so() {
             share: None,
             virtio_net: false,
             hda_audio: false,
+            host_diagnostic_stop: false,
         }),
         swtpm_sockets: None,
     };
