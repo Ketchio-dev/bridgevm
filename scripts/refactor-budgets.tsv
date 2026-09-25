@@ -3139,3 +3139,5 @@ tests/integration/b9-workload-diagnostic-contract.py	171	0
 apps/macos/Sources/BridgeVMProductE2E/T17ChooserSelectionTarget.swift	43	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserSelectionTargetTests.swift	82	0
 scripts/glyph_latency_fake_clock.py	12	0
+docs/windows-arm/evidence/a19-t20-r6-20260925.md	68	0
+docs/windows-arm/evidence/a19-t20-r6-20260925-receipt.json	47	0
