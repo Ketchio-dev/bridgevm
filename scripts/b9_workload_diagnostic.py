@@ -89,7 +89,7 @@ def load_declaration(path: Path = DECLARATION) -> tuple[dict, str]:
         value = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_pairs)
     except (UnicodeError, json.JSONDecodeError) as error:
         raise DiagnosticError("candidate declaration is malformed") from error
-    if value != EXPECTED_DECLARATION:
+    if json.dumps(value, sort_keys=True) != json.dumps(EXPECTED_DECLARATION, sort_keys=True):
         raise DiagnosticError("candidate declaration differs from the fixed candidate")
     return value, hashlib.sha256(raw).hexdigest()
 

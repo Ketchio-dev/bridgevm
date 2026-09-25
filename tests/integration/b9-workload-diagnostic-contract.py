@@ -62,10 +62,10 @@ class CandidateCsvContracts(unittest.TestCase):
 
     def test_declaration_drift_duplicates_and_symlink_are_rejected(self):
         altered = self.root / "candidate.json"
-        changed = json.loads(DECLARATION.read_text())
-        changed["required_workloads"] = 1
-        altered.write_text(json.dumps(changed))
-        with self.assertRaises(DiagnosticError): load_declaration(altered)
+        for key, replacement in (("required_workloads", 1), ("required_workloads", 20.0), ("candidate_only", 1)):
+            changed = json.loads(DECLARATION.read_text()); changed[key] = replacement
+            altered.write_text(json.dumps(changed))
+            with self.assertRaises(DiagnosticError): load_declaration(altered)
         altered.write_text('{"candidate_only":true,"candidate_only":false}')
         with self.assertRaisesRegex(DiagnosticError, "duplicate"): load_declaration(altered)
         altered.unlink()
