@@ -6,6 +6,7 @@ set -euo pipefail
 REPO="${1:?recover-stale-jobs needs repo}"
 QUEUE_ROOT="${2:?recover-stale-jobs needs queue root}"
 WORK_ROOT="${3:?recover-stale-jobs needs work root}"
+source "$REPO/scripts/live-gates/t17-worker-cleanup-fence.sh"
 mkdir -p "$QUEUE_ROOT/done"
 
 for dir in "$QUEUE_ROOT"/running/*; do
@@ -21,13 +22,8 @@ for dir in "$QUEUE_ROOT"/running/*; do
     echo "refusing stale job with existing done entry: $job_id" >&2
     continue
   }
-  if [[ ! -f "$dir/result.env" ]]; then
-    printf 'result=interrupted-worker-exit\nexit_code=unknown\n' > "$dir/result.env"
-  fi
-  grep -q '^finished_at=' "$dir/job.env" || \
-    printf 'finished_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$dir/job.env"
-  "$REPO/scripts/live-gates/recover-stale-receipt.sh" \
-    "$REPO" "$WORK_ROOT" "$dir" "$job_id" "$tier" "$commit"
+  bridgevm_recover_stale_receipt "$REPO" "$QUEUE_ROOT" "$WORK_ROOT" \
+    "$dir" "$job_id" "$tier" "$commit"
   mv "$dir" "$QUEUE_ROOT/done/$job_id"
   echo "recovered stale job as interrupted: $job_id" >&2
 done
