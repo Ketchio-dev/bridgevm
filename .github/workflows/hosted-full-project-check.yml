@@ -57,9 +57,9 @@ jobs:
           key: virgl-macos-15-arm64-2a173ee-${{ hashFiles('scripts/build-venus-host-deps.sh', 'scripts/patches/virglrenderer-macos-venus.patch') }}
       - name: Install deterministic check dependencies
         run: |
-          brew install meson ninja pkgconf libepoxy molten-vk vulkan-loader vulkan-headers shellcheck
+          brew install meson ninja pkgconf libepoxy molten-vk vulkan-loader vulkan-headers shellcheck ripgrep
           python3 -m pip install --break-system-packages pyyaml
-          command -v shellcheck
+          command -v shellcheck rg
           python3 -c 'import yaml'
       - name: Build patched virglrenderer
         if: steps.virgl-cache.outputs.cache-hit != 'true'
