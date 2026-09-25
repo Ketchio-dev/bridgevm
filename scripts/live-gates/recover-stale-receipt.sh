@@ -12,8 +12,8 @@ if [[ -d "$WORKTREE" ]]; then
   fi
   git -C "$WORKTREE" worktree remove --force "$WORKTREE" || true
 fi
-if [[ "$SEALED" == false && "$TIER" != t17-windows-hvf-product-e2e && "$TIER" != t18-audio-teardown && "$TIER" != t19-windows-hvf-import-product-e2e && "$TIER" != t20-a19-native-snapshot-restore && "$TIER" != t21-a19-quota-refusal && -f "$DIR/receipt.json" && ! -e "$DIR/receipt.public.json" ]]; then
+if [[ "$SEALED" == false && "$TIER" != t17-windows-hvf-product-e2e && "$TIER" != t18-audio-teardown && "$TIER" != t19-windows-hvf-import-product-e2e && "$TIER" != t20-a19-native-snapshot-restore && "$TIER" != t21-a19-quota-refusal && "$TIER" != t22-a19-interrupted-restore && -f "$DIR/receipt.json" && ! -e "$DIR/receipt.public.json" ]]; then
   python3 "$REPO/scripts/live-gates/redact-receipt.py" --in "$DIR/receipt.json" --out "$DIR/receipt.public.json" || true
-elif [[ "$SEALED" == false && ( "$TIER" == t17-windows-hvf-product-e2e || "$TIER" == t18-audio-teardown || "$TIER" == t19-windows-hvf-import-product-e2e || "$TIER" == t20-a19-native-snapshot-restore || "$TIER" == t21-a19-quota-refusal ) ]]; then
+elif [[ "$SEALED" == false && ( "$TIER" == t17-windows-hvf-product-e2e || "$TIER" == t18-audio-teardown || "$TIER" == t19-windows-hvf-import-product-e2e || "$TIER" == t20-a19-native-snapshot-restore || "$TIER" == t21-a19-quota-refusal || "$TIER" == t22-a19-interrupted-restore ) ]]; then
   printf 'receipt=withheld-no-sealed-worktree\n' >> "$DIR/result.env"
 fi

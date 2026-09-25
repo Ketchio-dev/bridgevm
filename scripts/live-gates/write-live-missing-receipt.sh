@@ -11,7 +11,7 @@ case "$TIER" in
     exec "$WORKTREE/scripts/live-gates/write-windows-import-product-e2e-missing-receipt.sh" "$DIR" "$WORKTREE" "$JOB_ID" "$COMMIT" ;;
   t20-a19-native-snapshot-restore)
     exec python3 "$WORKTREE/scripts/live-gates/native_snapshot_restore_receipt.py" missing "$DIR/receipt.json" --job-id "$JOB_ID" --expected-commit "$COMMIT" ;;
-  t21-a19-quota-refusal)
-    exec python3 "$WORKTREE/scripts/live-gates/a19_quota_refusal_receipt.py" missing "$DIR/receipt.json" --job-id "$JOB_ID" --expected-commit "$COMMIT" ;;
+  t21-a19-quota-refusal) exec python3 "$WORKTREE/scripts/live-gates/a19_quota_refusal_receipt.py" missing "$DIR/receipt.json" --job-id "$JOB_ID" --expected-commit "$COMMIT" ;;
+  t22-a19-interrupted-restore) exec python3 "$WORKTREE/scripts/live-gates/a19_interrupted_restore_receipt.py" missing "$DIR/receipt.json" --job-id "$JOB_ID" --expected-commit "$COMMIT" ;;
 esac
 exit 2
