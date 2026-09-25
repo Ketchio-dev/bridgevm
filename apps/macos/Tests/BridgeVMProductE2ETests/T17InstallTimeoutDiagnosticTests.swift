@@ -53,7 +53,7 @@ final class T17InstallTimeoutDiagnosticTests: XCTestCase {
                 XCTAssertTrue(detail.contains(token), token)
             }
             XCTAssertFalse(detail.contains("/private/guest.iso"))
-            XCTAssertLessThanOrEqual(detail.utf8.count, 512)
+            XCTAssertTrue(detail.utf8.count <= 512)
         }
         XCTAssertEqual(samples, 3)
     }
@@ -127,7 +127,7 @@ final class T17InstallTimeoutDiagnosticTests: XCTestCase {
             XCTAssertTrue(detail.contains("phase=unknown"))
             XCTAssertFalse(detail.contains("secret"))
             XCTAssertFalse(detail.contains("/private/"))
-            XCTAssertLessThanOrEqual(detail.utf8.count, 512)
+            XCTAssertTrue(detail.utf8.count <= 512)
         }
         XCTAssertEqual(samples, 32)
     }
@@ -168,7 +168,7 @@ final class T17InstallTimeoutDiagnosticTests: XCTestCase {
             XCTAssertTrue(detail.hasPrefix(T17InstallTimeoutDiagnostic.timeoutDetail))
             XCTAssertTrue(detail.contains("boot=9999,dism=0,shutdown=9999,watchdog=9999"))
             XCTAssertTrue(detail.contains("host_idle_min_pct=100"))
-            XCTAssertLessThanOrEqual(detail.utf8.count, 512)
+            XCTAssertTrue(detail.utf8.count <= 512)
         }
     }
 
