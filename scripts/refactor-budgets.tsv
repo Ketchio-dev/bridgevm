@@ -2908,7 +2908,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfGUIStartLibraryTests.swift	68	0
 apps/macos/Tests/BridgeVMControlTests/HvfGUIStartRunnerTests.swift	114	0
 apps/macos/Tests/BridgeVMControlTests/HvfGUIStartTests.swift	127	0
 apps/macos/Tests/BridgeVMControlTests/HvfGUIStartWorkerTests.swift	73	0
-apps/macos/Tests/BridgeVMControlTests/HvfReleaseLegacyFallbackTests.swift	28	0
+apps/macos/Tests/BridgeVMControlTests/HvfReleaseLegacyFallbackTests.swift	27	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeReadinessModelTests.swift	141	0
 docs/history/windows-hvf/native-gui-start-worker-20260916.md	82	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFinalizationResume.swift	120	0
