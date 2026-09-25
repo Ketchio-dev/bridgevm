@@ -13,6 +13,7 @@ import subprocess
 import sys
 
 from a19_quota_refusal_receipt import initial, quota_error, write_new
+from a19_quota_seal import merge_prepared, present, sealed_hashes
 from native_snapshot_restore_artifacts import RELATIONS, digest, regular
 from native_snapshot_restore_inputs import prepare, reauthenticate
 
@@ -20,10 +21,6 @@ MAX_U64 = (1 << 64) - 1
 OWNED = ("prepared-inputs", "quota-refusal.snapshot", ".quota-refusal.snapshot.staging",
          "quota-boundary.snapshot", ".quota-boundary.snapshot.staging",
          ".bridgevm-snapshot-parent-lease")
-
-
-def present(path: Path) -> bool:
-    return os.path.lexists(path)
 
 
 def invoke(helper: Path, *args: str, timeout: int) -> subprocess.CompletedProcess[bytes]:
@@ -124,9 +121,10 @@ def main() -> int:
     receipt["macos_version"] = platform.mac_ver()[0]
     status = 1
     try:
+        receipt.update(sealed_hashes(output, sys.argv[2], commit))
         prepared = output / "prepared-inputs"
         public, private = prepare(manifest, sealed_binary, commit, prepared)
-        receipt.update(public)
+        merge_prepared(receipt, public)
         receipt["outcome"] = "failed"
         exercise(output, prepared, private, receipt)
         reauthenticate(private, sealed_binary)

@@ -56,13 +56,11 @@ else:
     sys.exit(2)
 '''
 
-
 class QuotaTierContract(unittest.TestCase):
     def fixture(self, root: Path, mode: str = "normal") -> tuple[Path, Path, Path]:
         app = root / "BridgeVM.app"
         files = {
-            "app_cli": app / "Contents/Resources/target/release/bridgevm",
-            "app_executable": app / "Contents/MacOS/BridgeVMControl",
+            "app_cli": app / "Contents/Resources/target/release/bridgevm", "app_executable": app / "Contents/MacOS/BridgeVMControl",
             "snapshot_helper": app / "Contents/Resources/target/release/examples/snapshot_pair_cli",
             "binary": app / "Contents/Resources/target/release/examples/hvf_gic_boot_probe",
         }
@@ -78,9 +76,8 @@ class QuotaTierContract(unittest.TestCase):
         for key, path in artifacts.items():
             digest = inputs.tree_hash(path) if key == "app_bundle" else inputs.digest(path)
             rows.append(f"{key}\t{path}\t{digest}")
-        rows.extend((f"source_commit\t{COMMIT}", "app_profile\trelease",
-                     "binary_profile\trelease", "binary_features\tvenus",
-                     "rust_toolchain\t1.97.0"))
+        rows.extend((f"source_commit\t{COMMIT}", "app_profile\trelease", "binary_profile\trelease",
+                     "binary_features\tvenus", "rust_toolchain\t1.97.0"))
         manifest.write_text("\n".join(rows) + "\n")
         return manifest, files["binary"], app
 
@@ -89,8 +86,7 @@ class QuotaTierContract(unittest.TestCase):
         result = subprocess.run(
             ["bash", str(ROOT / "scripts/live-gates/bridgevm-live"), "submit", receipt.TIER,
              "--sha", COMMIT, "--input-manifest", str(manifest), "--job-id", "quota-fixture"],
-            capture_output=True, text=True,
-            env=dict(os.environ, BRIDGEVM_LIVE_ROOT=str(queue)), timeout=30,
+            capture_output=True, text=True, env=dict(os.environ, BRIDGEVM_LIVE_ROOT=str(queue)), timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         job = queue / "queued/quota-fixture"
@@ -100,8 +96,8 @@ class QuotaTierContract(unittest.TestCase):
 
     def run_tier(self, job: Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, str(ROOT / "scripts/live-gates/run-a19-quota-refusal-tier.py"),
-             str(job), "quota-fixture", str(job / "input-manifest.tsv"),
+            [sys.executable, str(ROOT / "scripts/live-gates/run-a19-quota-refusal-tier.py"), str(job),
+             "quota-fixture", str(job / "input-manifest.tsv"),
              str(job / "hvf_gic_boot_probe")], capture_output=True, text=True, timeout=120,
         )
 
@@ -138,16 +134,21 @@ class QuotaTierContract(unittest.TestCase):
             self.assertTrue((job.parent.parent / "worker-cleanup-required").is_file())
 
     def test_wrong_error_and_modified_media_cannot_pass(self):
-        for mode in ("wrong-message", "mutate-input"):
+        for mode in ("wrong-message", "mutate-input", "mutate-sealed"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 manifest, _, _ = self.fixture(root, mode)
                 job = self.submit(root, manifest)
+                if mode == "mutate-sealed":
+                    (root / "image.raw").write_bytes(b"changed-before-prepare")
                 self.assertEqual(self.run_tier(job).returncode, 1)
                 value = receipt.validate(json.loads((job / "receipt.json").read_text()), COMMIT)
                 self.assertFalse(value["pass"])
-                self.assertEqual(value["quota_case_count"], 0)
+                self.assertEqual((value["quota_case_count"], value["claim_eligible"]), (0, False))
                 self.assertTrue(value["worker_cleanup_verified"])
+                receipt.validate_seal(value, job)
+                self.assertFalse(any(os.path.lexists(job / name) for name in
+                                     ("prepared-inputs", "quota-refusal.snapshot", "quota-boundary.snapshot")))
                 self.assertEqual(self.fence(job).returncode, 0)
 
     def test_receipt_arithmetic_seal_and_missing_cleanup_fail_closed(self):
@@ -204,8 +205,7 @@ class QuotaTierContract(unittest.TestCase):
             result = subprocess.run(
                 ["bash", str(ROOT / "scripts/live-gates/bridgevm-live"), "submit", receipt.TIER,
                  "--sha", COMMIT, "--input-manifest", str(manifest), "--job-id", "bad-source"],
-                capture_output=True, text=True,
-                env=dict(os.environ, BRIDGEVM_LIVE_ROOT=str(root / "queue")), timeout=30,
+                capture_output=True, text=True, env=dict(os.environ, BRIDGEVM_LIVE_ROOT=str(root / "queue")), timeout=30,
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse((root / "queue/queued/bad-source").exists())
@@ -261,7 +261,7 @@ class QuotaTierContract(unittest.TestCase):
                     os.replace(replacement, source)
                     replaced = True
                 return data
-            with patch.object(receipt.os, "read", side_effect=swap_after_open):
+            with patch.object(os, "read", side_effect=swap_after_open):
                 with self.assertRaises(ValueError):
                     receipt.read_bounded_regular(source, 4096)
 

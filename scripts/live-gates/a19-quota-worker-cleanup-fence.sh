@@ -14,9 +14,9 @@ import importlib.util
 import os
 from pathlib import Path
 import sys
-
 verifier, directory, commit, job_id = sys.argv[1:]
 root = Path(directory)
+sys.path.insert(0, str(Path(verifier).parent))
 spec = importlib.util.spec_from_file_location("a19_quota_receipt", verifier)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)

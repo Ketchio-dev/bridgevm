@@ -6,9 +6,9 @@ import hashlib
 import json
 import os
 import re
-import stat
 from datetime import datetime, timezone
 from pathlib import Path
+from a19_quota_seal import read_bounded_regular, sealed_hashes
 
 TIER = "t21-a19-quota-refusal"
 HASHES = (
@@ -121,60 +121,17 @@ def validate(value: object, expected_commit: str | None = None) -> dict:
     return value
 
 
-def read_bounded_regular(path: Path, limit: int) -> bytes:
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
-    try:
-        before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= limit:
-            raise ValueError("sealed file is not a bounded regular file")
-        chunks: list[bytes] = []
-        length = 0
-        while length <= limit:
-            chunk = os.read(descriptor, min(8192, limit + 1 - length))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            length += len(chunk)
-        after = os.fstat(descriptor)
-    finally:
-        os.close(descriptor)
-    current = os.stat(path, follow_symlinks=False)
-    def identity(value: os.stat_result) -> tuple[int, ...]:
-        return (value.st_dev, value.st_ino, value.st_mode, value.st_nlink,
-                value.st_size, value.st_mtime_ns, value.st_ctime_ns)
-    if length != before.st_size or length > limit or identity(before) != identity(after) or identity(after) != identity(current):
-        raise ValueError("sealed file changed while it was read")
-    return b"".join(chunks)
-
-
 def load_receipt(path: Path) -> dict:
     return json.loads(read_bounded_regular(path, 65_536).decode("utf-8"))
-
-
-def _env(path: Path) -> dict[str, str]:
-    rows: dict[str, str] = {}
-    for line in read_bounded_regular(path, 4096).decode("utf-8").splitlines():
-        key, separator, item = line.partition("=")
-        if not separator or key in rows:
-            raise ValueError("queue seal has a malformed or repeated field")
-        rows[key] = item
-    return rows
 
 
 def validate_seal(value: dict, job_dir: Path) -> None:
     if value["worker_cleanup_verified"] is not True:
         raise ValueError("quota receipt cannot publish before private-media cleanup")
-    if job_dir.is_symlink() or job_dir.name != value["job_id"]:
-        raise ValueError("quota receipt job directory differs from job id")
-    job = _env(job_dir / "job.env")
-    ledger = _env(job_dir.parent.parent / "job-ledger" / value["job_id"] / "entry.env")
-    for rows in (job, ledger):
-        for field, expected in (("job_id", value["job_id"]), ("tier", TIER),
-                                ("commit", value["commit"]),
-                                ("input_manifest_sha256", value["input_manifest_sha256"]),
-                                ("sealed_binary_sha256", value["binary_hash"])):
-            if rows.get(field) != expected:
-                raise ValueError(f"quota receipt differs from sealed {field}")
+    sealed = sealed_hashes(job_dir, value["job_id"], value["commit"])
+    for field, expected in sealed.items():
+        if value[field] != expected:
+            raise ValueError(f"quota receipt differs from sealed {field}")
 
 
 def write_new(path: Path, value: dict) -> None:

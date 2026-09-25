@@ -3145,9 +3145,10 @@ scripts/live-gates/run-a19-snapshot-tiers.sh	11	0
 scripts/live-gates/verify-live-receipt.sh	14	0
 scripts/live-gates/write-live-missing-receipt.sh	17	0
 scripts/live-gates/a19-quota-worker-cleanup-fence.sh	36	0
-scripts/live-gates/run-a19-quota-refusal-tier.py	152	0
-scripts/live-gates/a19_quota_refusal_receipt.py	210	0
+scripts/live-gates/run-a19-quota-refusal-tier.py	150	0
+scripts/live-gates/a19_quota_refusal_receipt.py	167	0
 tests/integration/a19-quota-refusal-live-tier-contract.py	270	0
 docs/history/windows-hvf/a19-real-media-quota-tier-20260925.md	36	0
 scripts/live-gates/b6_cell_evidence.py	62	0
 tests/integration/b6-untraced-startup-contract.py	128	0
+scripts/live-gates/a19_quota_seal.py	84	0
