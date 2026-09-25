@@ -15,5 +15,5 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Reject invalid app-only CSV and unproven workload claims
-        run: python3 tests/integration/b9-workload-diagnostic-contract.py
+      - name: Reject invalid CSV, forged playback metrics, and unproven workload claims
+        run: python3 tests/integration/b9-workload-diagnostic-contract.py && python3 tests/integration/b9-real-workload-pilot-contract.py

@@ -10,5 +10,5 @@ case "$TIER" in
   t20-a19-native-snapshot-restore)
     exec python3 "$WORKTREE/scripts/live-gates/native_snapshot_restore_receipt.py" verify "$RECEIPT" --expected-commit "$COMMIT" ;;
   t21-a19-quota-refusal)
-    exec python3 "$WORKTREE/scripts/live-gates/a19_quota_refusal_receipt.py" verify "$RECEIPT" --expected-commit "$COMMIT" --job-dir "$(dirname "$RECEIPT")" ;;
+    exec python3 "$WORKTREE/scripts/live-gates/a19_quota_refusal_receipt.py" verify "$RECEIPT" --expected-commit "$COMMIT" --job-dir "$(dirname "$RECEIPT")" ;; d9-b9-real-workload) mode=verify-private; [[ "$RECEIPT" != *.public.json ]] || mode=verify-public; exec python3 "$WORKTREE/scripts/live-gates/b9_real_workload_receipt.py" "$mode" "$(dirname "$RECEIPT")" "$COMMIT" ;;
 esac

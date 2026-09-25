@@ -12,6 +12,6 @@ case "$TIER" in
   t20-a19-native-snapshot-restore)
     exec python3 "$WORKTREE/scripts/live-gates/native_snapshot_restore_receipt.py" missing "$DIR/receipt.json" --job-id "$JOB_ID" --expected-commit "$COMMIT" ;;
   t21-a19-quota-refusal)
-    exec python3 "$WORKTREE/scripts/live-gates/a19_quota_refusal_receipt.py" missing "$DIR/receipt.json" --job-id "$JOB_ID" --expected-commit "$COMMIT" ;;
+    exec python3 "$WORKTREE/scripts/live-gates/a19_quota_refusal_receipt.py" missing "$DIR/receipt.json" --job-id "$JOB_ID" --expected-commit "$COMMIT" ;; d9-b9-real-workload) exec python3 "$WORKTREE/scripts/live-gates/b9_real_workload_queue.py" finalize "$DIR" "$WORKTREE" "$COMMIT" ;;
 esac
 exit 2
