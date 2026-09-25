@@ -3178,3 +3178,4 @@ tests/integration/b6-untraced-startup-contract.py	128	0
 scripts/live-gates/a19_quota_seal.py	84	0
 docs/windows-arm/evidence/a19-t21-r1-20260925.md	68	0
 docs/windows-arm/evidence/a19-t21-r1-20260925-receipt.json	49	0
+.github/workflows/macos-cargo-artifact-provenance.yml	21	0

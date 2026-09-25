@@ -28,8 +28,8 @@ set -euo pipefail
 [[ -d "$1/Contents/MacOS" && -x "$2/BridgeVMProductE2E" ]]
 SH
 chmod +x "$fixture/apps/macos/scripts/package-product-e2e-helper-app.sh"
-printf '%s\n' 'int main(void) { return 0; }' | /usr/bin/cc -arch arm64 -x c - -o "$store/arm64-fixture"
-printf '%s\n' 'int main(void) { return 0; }' | /usr/bin/cc -arch x86_64 -x c - -o "$store/x86-fixture"
+printf '%s\n' 'int main(void) { return 0; }' | /usr/bin/cc -arch arm64 -x c - -o "$store/arm64-fixture"; /usr/bin/file -b "$store/arm64-fixture"; /usr/bin/lipo -info "$store/arm64-fixture"
+printf '%s\n' 'int main(void) { return 0; }' | /usr/bin/cc -arch x86_64 -x c - -o "$store/x86-fixture"; /usr/bin/file -b "$store/x86-fixture"; /usr/bin/lipo -info "$store/x86-fixture"
 
 cat > "$fake_bin/cargo" <<'PY'
 #!/usr/bin/env python3
@@ -103,7 +103,7 @@ fail() { echo "macOS Cargo artifact provenance: FAIL ($*)" >&2; exit 1; }
 
 runner_output="$store/output/hvf-runner"
 (cd "$store/elsewhere" && CARGO_TARGET_DIR="$store/isolated-runner" \
-  "$runner_script" --release --output "$runner_output") > "$store/runner.stdout" || fail 'runner signer failed'
+  "$runner_script" --release --output "$runner_output") > "$store/runner.stdout" || { /usr/bin/file -b "$store/isolated-runner/release/hvf-runner"; /usr/bin/lipo -info "$store/isolated-runner/release/hvf-runner"; fail 'runner signer failed'; }
 cmp -s "$runner_output" "$store/isolated-runner/release/hvf-runner" || fail 'runner installed stale executable'
 [[ "$(cat "$store/runner.stdout")" == "$runner_output" ]] || fail 'runner reported wrong output'
 rg -Fxq "$store/isolated-runner/release/hvf-runner" "$CODESIGN_LOG" || fail 'built runner was not signed'
