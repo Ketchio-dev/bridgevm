@@ -120,15 +120,13 @@ final class T17ProductRunner {
 
     private func installWindows(_ ui: T17UIControlling) throws {
         try ui.press("bridgevm.install.start", timeout: 20)
-        try T17InstallMonitor.wait(
+        let sampler = T17InstallEnvironmentSampler(vmSlug: request.vmSlug)
+        try T17InstallTimeoutDiagnostic.wait(
             applicationIsRunning: { self.application?.isRunning == true },
-            installedRuntimeVisible: {
-                ["bridgevm.windows.runtime.view", "bridgevm.dashboard.advanced"].contains {
-                    (try? ui.waitFor($0, timeout: 1)) != nil
-                }
-            },
-            stage: { try? ui.text(T17InstallMonitor.stageIdentifier, timeout: 1) },
-            failure: { try? ui.text(T17InstallMonitor.failureIdentifier, timeout: 1) })
+            runtimeView: { try ui.waitFor($0, timeout: 1) },
+            stage: { try ui.text(T17InstallMonitor.stageIdentifier, timeout: 1) },
+            failure: { try ui.text(T17InstallMonitor.failureIdentifier, timeout: 1) },
+            sample: { sampler.capture() }, markers: { sampler.markers() })
     }
 
     private func verifyCreatedVM() throws {
