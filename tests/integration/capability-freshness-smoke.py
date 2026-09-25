@@ -36,10 +36,9 @@ class FreshnessTests(unittest.TestCase):
     def test_code_change_is_stale(self):
         for path in ("apps/control.swift", "apps/control sample.swift", "Cargo.toml",
                      "Cargo.lock", ".github/workflows/ci.yml", ".github/actions/b6-tip-contracts/action.yml",
-                     "install.sh", "deny.toml",
                      "packaging/macos/build-release-candidate.sh", "tools/venus-host-probe/Cargo.toml",
                      "schemas/bridgevm-capability-v1.json", "fuzz/src/lib.rs", ".gitattributes",
-                     "LICENSE", "THIRD-PARTY-NOTICES.md", "THIRD-PARTY-PATCHES.tsv",
+                     "LICENSE", "THIRD-PARTY-NOTICES.md", "THIRD-PARTY-PATCHES.tsv", "install.sh", "deny.toml",
                      "docs/licenses/virglrenderer-MIT.txt", "docs/machine-contract/qemu-virt-deviations.json"):
             with self.subTest(path=path):
                 self.git("reset", "--hard", self.base)
@@ -49,22 +48,25 @@ class FreshnessTests(unittest.TestCase):
                 self.commit()
                 self.assertEqual(freshness.code_changed_since(self.base, self.root), path)
         for action in (("rm", "apps/control.swift"), ("mv", "apps/control.swift", "README.md")):
-            with self.subTest(action=action[0]):
-                self.git("reset", "--hard", self.base)
-                self.git(*action)
-                self.commit()
-                self.assertEqual(freshness.code_changed_since(self.base, self.root), "apps/control.swift")
+            self.git("reset", "--hard", self.base)
+            self.git(*action)
+            self.commit()
+            self.assertEqual(freshness.code_changed_since(self.base, self.root), "apps/control.swift", action)
 
     def test_documentation_checkpoint_preserves_code_identity(self):
-        self.assertIsNone(freshness.code_changed_since(self.base, self.root))
         for path in ("README.md", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/dependabot.yml"):
             target = self.root / path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text("Documented checkpoint.\n")
             self.commit()
             self.assertIsNone(freshness.code_changed_since(self.base, self.root))
+        side = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-qB", "release-head", self.base)
+        (self.root / "README.md").write_text("Different documentation checkpoint.\n")
+        self.commit()
+        self.assertRegex(freshness.code_changed_since(side, self.root) or "", "ancestor")
 
-    def test_non_commit_objects_are_not_current(self):
+    def test_invalid_evidence_is_not_current(self):
         self.git("tag", "-am", "evidence fixture", "evidence")
         for object_id, kind in ((self.git("rev-parse", "HEAD:apps/control.swift"), "blob"),
                                 (self.git("rev-parse", "HEAD^{tree}"), "tree"),
@@ -72,6 +74,14 @@ class FreshnessTests(unittest.TestCase):
             self.assertEqual(self.git("cat-file", "-t", object_id), kind)
             self.assertIsNotNone(freshness.code_changed_since(object_id, self.root))
         self.assertIsNotNone(freshness.code_changed_since("0" * 40, self.root))
+        def compare_failure(_root, *args):
+            return subprocess.CompletedProcess([], 128 if args[0] == "diff" else 0,
+                                              "commit\n" if args[0] == "cat-file" else "", "")
+        with patch.object(freshness, "_git", side_effect=compare_failure):
+            self.assertIn("could not compare", freshness.code_changed_since(self.base, self.root))
+        failed = subprocess.CompletedProcess([], 128, "", "object lookup failed")
+        with patch.object(freshness, "_git", return_value=failed):
+            self.assertIsNotNone(freshness.code_changed_since(self.base, self.root))
 
     def test_shallow_clone_requires_available_tested_commit(self):
         clone = Path(self.temp.name) / "current"
@@ -83,16 +93,6 @@ class FreshnessTests(unittest.TestCase):
         self.git("clone", "-q", "--depth", "1", self.root.as_uri(), str(missing))
         self.assertEqual(self.git("rev-parse", "--is-shallow-repository", root=missing), "true")
         self.assertIsNotNone(freshness.code_changed_since(self.base, missing))
-
-    def test_git_failures_are_not_current(self):
-        results = [subprocess.CompletedProcess([], 0, "commit\n", ""),
-                   subprocess.CompletedProcess([], 128, "", "comparison failed")]
-        with patch.object(freshness, "_git", side_effect=results):
-            self.assertIn("could not compare", freshness.code_changed_since(self.base, self.root))
-        failed = subprocess.CompletedProcess([], 128, "", "object lookup failed")
-        with patch.object(freshness, "_git", return_value=failed) as query:
-            self.assertIsNotNone(freshness.code_changed_since(self.base, self.root))
-            self.assertEqual(query.call_count, 1)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,8 @@ def code_changed_since(tested_commit: str, root: str) -> str | None:
     if kind.returncode != 0 or kind.stdout.strip() != "commit":
         # Missing history is missing evidence, even in a shallow checkout.
         return f"tested_commit {tested_commit[:12]} is not an available commit; fetch its history"
+    if _git(root, "merge-base", "--is-ancestor", tested_commit, "HEAD").returncode != 0:
+        return f"tested_commit {tested_commit[:12]} is not a verified ancestor of HEAD"
     changed = _git(root, "diff", "--name-only", f"{tested_commit}..HEAD", "--", *CODE_PATHS)
     if changed.returncode != 0:
         return f"could not compare tested_commit {tested_commit[:12]} with HEAD"
@@ -31,9 +33,7 @@ def code_changed_since(tested_commit: str, root: str) -> str | None:
 
 
 def measured_head_mismatch(registry: dict) -> tuple[str, str] | None:
-    """Return (criterion id, cited head) when a measured entry names another
-    head: it was copied forward, which lets a stale log hash survive a re-proof.
-    """
+    """Reject a final-head measurement cited against another tested commit."""
     for criterion in registry["criteria"]:
         cited = re.search(r"final head ([0-9a-f]{40})", criterion.get("measured", ""))
         if cited and cited.group(1) != registry["tested_commit"]:
