@@ -50,6 +50,9 @@ use std::path::PathBuf;
 mod legacy_launch;
 #[cfg(debug_assertions)]
 pub(crate) use legacy_launch::*;
+#[cfg(not(debug_assertions))]
+#[path = "release_exec_policy.rs"]
+mod release_exec_policy;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -282,27 +285,7 @@ pub(crate) fn run() -> Result<()> {
     let args = Args::parse();
 
     #[cfg(not(debug_assertions))]
-    {
-        if args.launch || args.repo_root.is_some() || args.supervise.is_some() {
-            bail!("--launch, --repo-root, and --supervise are unavailable in release builds");
-        }
-        if args
-            .typed
-            .helper
-            .as_ref()
-            .is_some_and(|path| !path.is_absolute())
-        {
-            bail!("release helper executable path must be absolute: --helper");
-        }
-        if args
-            .typed
-            .helper_swtpm_bin
-            .as_ref()
-            .is_some_and(|path| !path.is_absolute())
-        {
-            bail!("release helper executable path must be absolute: --helper-swtpm-bin");
-        }
-    }
+    release_exec_policy::validate(&args)?;
 
     if let Some(spec) = &args.typed.launch_spec {
         return crate::launch_spec::run_launch_spec(spec, &args);

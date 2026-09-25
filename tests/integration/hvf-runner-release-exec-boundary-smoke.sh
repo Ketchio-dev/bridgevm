@@ -71,7 +71,7 @@ expect_refused 'PATH swtpm' 'release helper executable path must be absolute: --
   env EXEC_MARKER="$marker" PATH="$fake_bin:$PATH" "$runner" \
     --launch-spec "$manifest" --helper /usr/bin/true \
     --helper-vtpm-state "$store/tpm" --helper-swtpm-bin bridgevm-fake-helper
-expect_refused 'typed route with absolute helper' 'read launch manifest' \
+expect_refused 'unbundled absolute helper' 'requires packaged app topology' \
   "$runner" --launch-spec "$store/absent.json" --helper /usr/bin/true
 
 echo 'release runner execution boundary: PASS (actual release binary; no VM)'
