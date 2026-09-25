@@ -3192,3 +3192,7 @@ docs/history/windows-hvf/a19-interrupted-restore-tier-20260925.md	41	0
 docs/windows-arm/evidence/a19-t21-r1-20260925.md	68	0
 docs/windows-arm/evidence/a19-t21-r1-20260925-receipt.json	49	0
 .github/workflows/macos-cargo-artifact-provenance.yml	21	0
+scripts/live-gates/b8_clean_install_inputs.py	402	0
+scripts/live-gates/b8_clean_install_receipt.py	207	0
+schemas/b8-clean-install-receipt-v1.json	250	0
+tests/integration/b8-clean-install-tier-contract.py	367	0

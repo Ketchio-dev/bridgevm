@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridgevm.dev/schemas/b8-clean-install-receipt-v1.json",
+  "title": "B8 M5 install cell offline contract; no live publisher",
+  "type": "object",
+  "required": [
+    "schema",
+    "tier",
+    "criterion",
+    "cell",
+    "host_generation",
+    "host_model",
+    "macos_build",
+    "job_id",
+    "commit",
+    "release_commit",
+    "release_tag",
+    "signing_class",
+    "bundle_id",
+    "outcome",
+    "started_at",
+    "finished_at",
+    "input_manifest_sha256",
+    "release_contract_sha256",
+    "sha256s_sha256",
+    "tarball_sha256",
+    "clean_host_attestation_sha256",
+    "installer_bootstrap_sha256",
+    "installer_source_sha256",
+    "expected_app_tree_sha256",
+    "expected_executable_sha256",
+    "installed_app_tree_sha256",
+    "installed_executable_sha256",
+    "clean_machine",
+    "app_absent_before",
+    "app_present_after",
+    "codesign_verified",
+    "worker_cleanup_verified",
+    "cell_pass",
+    "criterion_pass",
+    "capability_promotion",
+    "sample_count",
+    "guest_boot_count",
+    "installer_exit_code"
+  ],
+  "properties": {
+    "schema": {
+      "const": "bridgevm.b8-clean-install-receipt.v1"
+    },
+    "tier": {
+      "const": "t23-b8-clean-install"
+    },
+    "criterion": {
+      "const": "B8"
+    },
+    "cell": {
+      "const": "install"
+    },
+    "host_generation": {
+      "const": "M5"
+    },
+    "host_model": {
+      "enum": [
+        "absent",
+        "Mac17,9"
+      ]
+    },
+    "macos_build": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "job_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "release_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "release_tag": {
+      "type": "string",
+      "pattern": "^v[0-9]+(?:\\.[0-9]+){2}(?:[.-][0-9A-Za-z]+)*$"
+    },
+    "signing_class": {
+      "enum": [
+        "unverified",
+        "ad-hoc",
+        "development-signed",
+        "developer-id"
+      ]
+    },
+    "bundle_id": {
+      "const": "dev.bridgevm.control"
+    },
+    "outcome": {
+      "enum": [
+        "not-run",
+        "failed"
+      ]
+    },
+    "started_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "finished_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "input_manifest_sha256": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+    },
+    "release_contract_sha256": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+    },
+    "sha256s_sha256": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+    },
+    "tarball_sha256": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+    },
+    "clean_host_attestation_sha256": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+    },
+    "installer_bootstrap_sha256": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+    },
+    "installer_source_sha256": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+    },
+    "expected_app_tree_sha256": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+    },
+    "expected_executable_sha256": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+    },
+    "installed_app_tree_sha256": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+    },
+    "installed_executable_sha256": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{64}|absent)$"
+    },
+    "clean_machine": {
+      "const": false
+    },
+    "app_absent_before": {
+      "type": "boolean"
+    },
+    "app_present_after": {
+      "type": "boolean"
+    },
+    "codesign_verified": {
+      "type": "boolean"
+    },
+    "worker_cleanup_verified": {
+      "type": "boolean"
+    },
+    "cell_pass": {
+      "const": false
+    },
+    "criterion_pass": {
+      "const": false
+    },
+    "capability_promotion": {
+      "const": false
+    },
+    "sample_count": {
+      "const": 0
+    },
+    "guest_boot_count": {
+      "const": 0
+    },
+    "installer_exit_code": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775000
+    },
+    "private_attestation_path": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "private_artifacts": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "installer.log",
+          "release.json"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "bytes",
+          "sha256"
+        ],
+        "properties": {
+          "bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8000000
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "private_attestation_path"
+            ]
+          },
+          {
+            "required": [
+              "private_artifacts"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "required": [
+        "private_attestation_path",
+        "private_artifacts"
+      ]
+    }
+  ]
+}
