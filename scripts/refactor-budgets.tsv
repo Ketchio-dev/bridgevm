@@ -1376,7 +1376,7 @@ scripts/live-gates/run-hvf-nvme-performance-tier.sh	24	0
 scripts/live-gates/write-hvf-boot-performance-receipt.py	83	0
 scripts/write-hvf-nvme-performance-receipt.py	598	0
 scripts/live-gates/run-special-tier.sh	19	0
-scripts/live-gates/run-tier.sh	143	0
+scripts/live-gates/run-tier.sh	142	0
 scripts/measure-pointer-latency.sh	60	0
 scripts/notarize-submit.sh	51	0
 scripts/p1-boot-gate.sh	312	0
@@ -3141,3 +3141,11 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserSelectionTargetTests.swift	82
 scripts/glyph_latency_fake_clock.py	12	0
 docs/windows-arm/evidence/a19-t20-r6-20260925.md	68	0
 docs/windows-arm/evidence/a19-t20-r6-20260925-receipt.json	47	0
+scripts/live-gates/run-a19-snapshot-tiers.sh	11	0
+scripts/live-gates/verify-live-receipt.sh	14	0
+scripts/live-gates/write-live-missing-receipt.sh	17	0
+scripts/live-gates/a19-quota-worker-cleanup-fence.sh	36	0
+scripts/live-gates/run-a19-quota-refusal-tier.py	152	0
+scripts/live-gates/a19_quota_refusal_receipt.py	210	0
+tests/integration/a19-quota-refusal-live-tier-contract.py	270	0
+docs/history/windows-hvf/a19-real-media-quota-tier-20260925.md	36	0

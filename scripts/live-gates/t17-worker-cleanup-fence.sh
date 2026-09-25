@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Do not release a T17 worktree while its ownership cleanup is unproven.
-
 bridgevm_t17_cleanup_proved() {
     local tier="$1" dir="$2" worktree="$3" commit="$4" job_id="$5" verifier
     [[ "$tier" == t17-windows-hvf-product-e2e ]] || return 0
@@ -22,14 +21,16 @@ value = module.validate(module.load_receipt(Path(receipt).read_text(encoding="ut
 raise SystemExit(0 if value["job_id"] == job_id and value["worker_cleanup_verified"] is True else 1)
 PY
 }
-
 bridgevm_t17_guard_or_fence() {
     local tier="$1" dir="$2" worktree="$3" commit="$4" job_id="$5" queue_root="$6"
+    if [[ "$tier" == t21-a19-quota-refusal ]]; then
+        source "$(dirname "${BASH_SOURCE[0]}")/a19-quota-worker-cleanup-fence.sh" || { printf 'T21 cleanup verifier unavailable\n' > "$queue_root/worker-cleanup-required"; return 126; }
+        bridgevm_t21_guard_or_fence "$@"; return $?
+    fi
     bridgevm_t17_cleanup_proved "$tier" "$dir" "$worktree" "$commit" "$job_id" && return 0
     printf 'T17 job %s has unverified cleanup\n' "$job_id" > "$queue_root/worker-cleanup-required"
     return 126
 }
-
 bridgevm_worker_publish_receipt() {
     local tier="$1" dir="$2" worktree="$3" commit="$4" job_id="$5" queue_root="$6" status="$7"
     "$worktree/scripts/live-gates/write-missing-receipt.sh" \
@@ -43,7 +44,6 @@ bridgevm_worker_publish_receipt() {
     bridgevm_t17_guard_or_fence "$tier" "$dir" "$worktree" "$commit" "$job_id" "$queue_root" || return 126
     BRIDGEVM_RECEIPT_STATUS="$status"
 }
-
 bridgevm_recover_stale_receipt() {
     local repo="$1" queue_root="$2" work_root="$3" dir="$4" job_id="$5" tier="$6" commit="$7"
     bridgevm_t17_guard_or_fence "$tier" "$dir" "$work_root/$job_id" "$commit" "$job_id" "$queue_root" || return 126
