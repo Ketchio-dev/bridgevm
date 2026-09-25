@@ -63,9 +63,12 @@ def read_json(path: Path, limit: int = 65536) -> dict:
 
 def job_fields(directory: Path) -> dict:
     path = directory / "job.env"
-    size, _ = stable_file(path, maximum=8192)
+    size, digest = stable_file(path, maximum=8192)
+    raw = path.read_bytes()
+    if len(raw) != size or hashlib.sha256(raw).hexdigest() != digest:
+        raise ValueError("B9 job seal changed during read")
     fields = {}
-    for line in path.read_text(encoding="ascii").splitlines():
+    for line in raw.decode("ascii").splitlines():
         key, separator, value = line.partition("=")
         if not separator or key in fields or not re.fullmatch(r"[a-z0-9_]+", key):
             raise ValueError("malformed or duplicate B9 job field")
@@ -78,6 +81,23 @@ def job_fields(directory: Path) -> dict:
                 *("asset_" + name + "_sha256" for name in KEYS)):
         if not SHA.fullmatch(fields.get(key, "")):
             raise ValueError("B9 job asset seal absent: " + key)
+    ledger_path = directory.parent.parent / "job-ledger" / fields["job_id"] / "entry.env"
+    ledger_size, ledger_digest = stable_file(ledger_path, maximum=8192)
+    if ledger_path.stat().st_mode & 0o222:
+        raise ValueError("B9 ledger seal is writable")
+    ledger_raw = ledger_path.read_bytes()
+    if len(ledger_raw) != ledger_size or hashlib.sha256(ledger_raw).hexdigest() != ledger_digest:
+        raise ValueError("B9 ledger seal changed during read")
+    ledger = {}
+    for line in ledger_raw.decode("ascii").splitlines():
+        key, separator, value = line.partition("=")
+        if not separator or key in ledger or not re.fullmatch(r"[a-z0-9_]+", key):
+            raise ValueError("malformed or duplicate B9 ledger field")
+        ledger[key] = value
+    sealed = {"job_id", "tier", "commit", "input_manifest_sha256",
+              "sealed_binary_sha256", *("asset_" + name + "_sha256" for name in KEYS)}
+    if set(ledger) != sealed or any(fields.get(key) != ledger[key] for key in sealed):
+        raise ValueError("B9 job differs from immutable queue ledger")
     return fields
 
 

@@ -40,10 +40,10 @@ class B9PilotContract(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(dir=str(Path(tempfile.gettempdir()).resolve()))
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.job_dir = self.root / "job"
-        self.job_dir.mkdir()
         self.commit = "a" * 40
         self.job_id = "b9-contract-r1"
+        self.job_dir = self.root / "queued" / self.job_id
+        self.job_dir.mkdir(parents=True)
         self.asset_hashes = {key: digest(key.encode()) for key in inputs.KEYS}
         fields = {"job_id": self.job_id, "tier": "d9-b9-real-workload",
                   "commit": self.commit, "input_manifest_sha256": "b" * 64,
@@ -52,6 +52,11 @@ class B9PilotContract(unittest.TestCase):
                        for key, value in self.asset_hashes.items()})
         (self.job_dir / "job.env").write_text(
             "".join(f"{key}={value}\n" for key, value in fields.items()), encoding="ascii")
+        ledger = self.root / "job-ledger" / self.job_id / "entry.env"
+        ledger.parent.mkdir(parents=True)
+        ledger.write_text("".join(f"{key}={value}\n" for key, value in fields.items()),
+                          encoding="ascii")
+        ledger.chmod(0o400)
         self.job = job_fields(self.job_dir)
 
     def fixture(self):
@@ -183,6 +188,14 @@ class B9PilotContract(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("needs --input-manifest", result.stderr)
         self.assertFalse(queue.exists())
+
+    def test_queue_job_asset_tamper_cannot_override_immutable_ledger(self):
+        path = self.job_dir / "job.env"
+        changed = path.read_text().replace("asset_media_sha256=" + self.asset_hashes["media"],
+                                           "asset_media_sha256=" + "f" * 64)
+        path.write_text(changed)
+        with self.assertRaisesRegex(ValueError, "immutable queue ledger"):
+            job_fields(self.job_dir)
 
     def test_no_guest_ready_cannot_be_called_visible_playback(self):
         result = observe(self.root, "f" * 32,
