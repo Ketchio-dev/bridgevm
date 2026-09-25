@@ -45,7 +45,7 @@ step "python scripts" python3 scripts/check-python-scripts.py
 step "audio result classifier" python3 scripts/audio-playback-result.py --self-test
 step "glyph pixel mask" bash -c 'python3 scripts/verify-glyph-pixel-mask.py --self-test && python3 tests/integration/glyph-ppm-contract.py'
 step "glyph pixel mask builder" python3 scripts/build-glyph-pixel-mask.py --self-test
-step "b6 cell verification" python3 scripts/verify-b6-cell.py --self-test
+step "b6 cell verification" bash -c 'python3 scripts/verify-b6-cell.py --self-test && python3 tests/integration/b6-untraced-startup-contract.py'
 step "glyph present latency" python3 scripts/measure-glyph-present-latency.py --self-test
 step "workflow yaml" python3 scripts/check-workflow-yaml.py
 step "daemon DTO decoders" python3 scripts/check-daemon-dto-decoders.py
