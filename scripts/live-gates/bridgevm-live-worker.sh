@@ -12,6 +12,7 @@ CLI="$REPO/scripts/live-gates/bridgevm-live"
 RECOVER="$REPO/scripts/live-gates/recover-stale-jobs.sh"
 source "$REPO/scripts/live-gates/live-process-cleanup.sh"
 source "$REPO/scripts/live-gates/app-ui-host-worker-cleanup.sh"
+source "$REPO/scripts/live-gates/t17-worker-cleanup-fence.sh"
 
 # Refuse low space rather than delete canonical Windows media.
 MIN_FREE_GIB="${BRIDGEVM_LIVE_MIN_FREE_GIB:-100}"
@@ -139,15 +140,8 @@ run_job() {
             "$([ "$status" -eq 0 ] && echo pass || echo fail)" "$status" > "$dir/result.env"
     fi
     printf 'finished_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$dir/job.env"
-    "$worktree/scripts/live-gates/write-missing-receipt.sh" \
-        "$tier" "$dir" "$worktree" "$job_id" "$commit"
-
-    # Publish only through the tier-aware redaction/schema boundary.
-    if [ ! -f "$dir/receipt.json" ] || ! "$worktree/scripts/live-gates/publish-receipt.sh" "$tier" "$dir" "$worktree" "$commit"; then
-        log "receipt for $job_id was refused by validation/redaction; failing job"
-        status=1
-        printf 'result=fail\nexit_code=1\nreceipt=withheld\n' > "$dir/result.env"
-    fi
+    bridgevm_worker_publish_receipt "$tier" "$dir" "$worktree" "$commit" "$job_id" "$QUEUE_ROOT" "$status" || return 126
+    status="$BRIDGEVM_RECEIPT_STATUS"
 
     git -C "$REPO" worktree remove --force "$worktree" >>"$dir/run.log" 2>&1 || true
     # Per-job target output is reproducible and can be discarded after receipt.
@@ -160,7 +154,7 @@ main() {
         log "another worker holds the lock; exiting"
         exit 0
     fi
-    [[ ! -f "$QUEUE_ROOT/worker-cleanup-required" ]] || { log "worker is fenced: process-group cleanup needs operator review"; exit 126; }
+    [[ ! -f "$QUEUE_ROOT/worker-cleanup-required" ]] || { log "worker is fenced: cleanup needs operator review"; exit 126; }
     "$RECOVER" "$REPO" "$QUEUE_ROOT" "$WORK_ROOT"
 
     local claimed

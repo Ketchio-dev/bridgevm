@@ -26,6 +26,7 @@ class WorkerVenueContracts(unittest.TestCase):
             scripts = {
                 helpers / "live-process-cleanup.sh": "bridgevm_wait_for_tier_group() { return 126; }\n",
                 helpers / "app-ui-host-worker-cleanup.sh": (ROOT / "scripts/live-gates/app-ui-host-worker-cleanup.sh").read_text(),
+                helpers / "t17-worker-cleanup-fence.sh": (ROOT / "scripts/live-gates/t17-worker-cleanup-fence.sh").read_text(),
                 helpers / "recover-stale-jobs.sh": "#!/bin/sh\nexit 0\n",
                 helpers / "bridgevm-live": """#!/bin/sh
 set -eu
@@ -56,7 +57,6 @@ printf '%s\\n' "$target"
             return outcome, marker.exists()
 
     def test_t0_is_refused_without_resolving_either_revision(self):
-        # These are deliberately unresolved SHA fixtures: policy must run first.
         for sha in ("1" * 40, "2" * 40):
             with self.subTest(sha=sha):
                 outcome, git_called = self.exercise("t0-check", sha)
