@@ -1170,11 +1170,12 @@ runners/displayd/src/tests_split/helpers.rs	30	0
 runners/displayd/src/tests_split/mod.rs	0	0
 runners/displayd/src/tests_split/part_1.rs	582	0
 runners/fullvm-runner/src/main.rs	331	0
-runners/hvf-runner/src/args.rs	911	0
+runners/hvf-runner/src/args.rs	740	0
 runners/hvf-runner/src/bin/task5af_live_row.rs	35	0
+runners/hvf-runner/src/legacy_launch.rs	213	0
 runners/hvf-runner/src/lib.rs	1	0
 runners/hvf-runner/src/main.rs	10	0
-runners/hvf-runner/src/resolve_launch_path.rs	61	0
+runners/hvf-runner/src/resolve_launch_path.rs	51	0
 runners/hvf-runner/src/task5af.rs	246	0
 runners/hvf-runner/src/task5af_evidence.rs	105	0
 runners/hvf-runner/src/tests_split/helpers.rs	0	0
@@ -1520,6 +1521,7 @@ tests/integration/hvf-mmio-write-emulation-probe-cli-smoke.sh	94	0
 tests/integration/hvf-mmio-write-emulation-probe-live-opt-in-smoke.sh	53	0
 tests/integration/hvf-mmio-write-emulation-probe-runner-smoke.sh	94	0
 tests/integration/hvf-runner-installed-boot-launch-policy-smoke.sh	341	0
+tests/integration/hvf-runner-release-exec-boundary-smoke.sh	77	0
 tests/integration/hvf-secure-boot-provisioning-smoke.sh	38	0
 tests/integration/hvf-uart-live-opt-in-smoke.sh	39	0
 tests/integration/hvf-vcpu-probe-cli-smoke.sh	86	0
