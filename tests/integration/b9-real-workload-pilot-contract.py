@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -23,6 +25,11 @@ from b9_real_workload_queue import finalize
 from b9_real_workload_receipt import (FLAGS, cleanup_guard, job_fields,
                                       public_view, validate_private)
 from b9_workload_diagnostic import summarize_csv
+
+RUNNER_SPEC = importlib.util.spec_from_file_location(
+    "b9_real_playback_runner", ROOT / "scripts/live-gates/run-b9-real-workload-pilot.py")
+RUNNER = importlib.util.module_from_spec(RUNNER_SPEC)
+RUNNER_SPEC.loader.exec_module(RUNNER)
 
 
 def digest(raw: bytes) -> str:
@@ -196,6 +203,31 @@ class B9PilotContract(unittest.TestCase):
         path.write_text(changed)
         with self.assertRaisesRegex(ValueError, "immutable queue ledger"):
             job_fields(self.job_dir)
+
+    def test_guest_share_waits_for_completed_transfer_and_exact_byte_count(self):
+        share = self.root / "share"
+        share.mkdir()
+        name = "ready-" + "f" * 32 + ".json"
+        target = share / name
+        log = self.root / "run.log"
+        target.write_bytes(b'{"schema":')  # visible destination while std::fs::write is incomplete
+        log.write_text("")
+        raw = b'{"schema":"complete"}'
+        def finish():
+            target.write_bytes(raw)
+            log.write_text(f"BVAGENT SHARE guest->host {name} bytes={len(raw)} t=1\n")
+        timer = threading.Timer(0.3, finish)
+        timer.start()
+        try:
+            process = type("UnfinishedProcess", (), {"poll": lambda self: None})()
+            value, digest_value = RUNNER.await_guest_file(share, name, log, process, 2)
+        finally:
+            timer.join()
+        self.assertEqual(value, {"schema": "complete"})
+        self.assertEqual(digest_value, digest(raw))
+        log.write_text(f"BVAGENT SHARE guest->host {name} bytes={len(raw) + 1} t=2\n")
+        with self.assertRaisesRegex(ValueError, "byte count"):
+            RUNNER.await_guest_file(share, name, log, process, 1)
 
     def test_no_guest_ready_cannot_be_called_visible_playback(self):
         result = observe(self.root, "f" * 32,

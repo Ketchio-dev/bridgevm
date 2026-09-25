@@ -74,10 +74,28 @@ def marker(share: Path, name: str, nonce: str) -> tuple[int, str]:
     return stable_file(target, maximum=128)
 
 
-def await_guest_file(share: Path, name: str, process: subprocess.Popen, seconds: int) -> tuple[dict, str]:
+def guest_share_bytes(log: Path, name: str) -> int | None:
+    prefix = f"BVAGENT SHARE guest->host {name} bytes="
+    matches = [line[len(prefix):] for line in lines(log) if line.startswith(prefix)]
+    if not matches:
+        return None
+    if len(matches) != 1 or not re.fullmatch(r"[0-9]+ t=[0-9]+", matches[0]):
+        raise ValueError("ambiguous or malformed guest share completion")
+    return int(matches[0].split(" ", 1)[0])
+
+
+def await_guest_file(share: Path, name: str, log: Path, process: subprocess.Popen,
+                     seconds: int) -> tuple[dict, str]:
     target = share / name
-    return wait_for(lambda: read_guest_json(target) if target.is_file() else None,
-                    process, seconds, name)
+    def complete():
+        logged = guest_share_bytes(log, name)
+        if logged is None:
+            return None
+        size, _ = stable_file(target, maximum=8192)
+        if size != logged:
+            raise ValueError("guest JSON differs from completed share byte count")
+        return read_guest_json(target)
+    return wait_for(complete, process, seconds, name)
 
 
 def await_share_sync(log: Path, staged: dict, process: subprocess.Popen) -> None:
@@ -282,7 +300,7 @@ def run(args) -> int:
             controller.deadline = time.monotonic() + 60
             controller.send(launch, launch, "B9-WORKLOAD-LAUNCHED-" + nonce)
             ready, receipt["ready_sha256"] = await_guest_file(
-                share, "ready-" + nonce + ".json", process, 300)
+                share, "ready-" + nonce + ".json", boot / "run.log", process, 300)
             pins = {"media_sha256": records["media"][1],
                     "vlc_zip_sha256": records["vlc_zip"][1],
                     "presentmon_sha256": records["presentmon"][1],
@@ -294,7 +312,7 @@ def run(args) -> int:
                 f"BVAGENT SHARE host->guest collector-go-{nonce}.txt bytes={size} ")
                 for line in lines(boot / "run.log")), process, 60, "collector start marker")
             collector, receipt["collector_sha256"] = await_guest_file(
-                share, "collector-" + nonce + ".json", process, 60)
+                share, "collector-" + nonce + ".json", boot / "run.log", process, 60)
             collector_identity(collector, nonce, pid)
             focus_window(controller, boot / "run.log", hwnd, process)
             before = sum(line.startswith("live input accepted: command=Key(")
@@ -308,9 +326,18 @@ def run(args) -> int:
             stage = "playback"
             raw.mkdir(mode=0o700, exist_ok=False)
             frames = capture_frames(boot, raw, process)
-            await_guest_file(share, "finished-" + nonce + ".json", process, 90)
-            wait_for(lambda: (share / ("b9-" + nonce + ".csv")).is_file(),
-                     process, 90, "PresentMon CSV share")
+            await_guest_file(share, "finished-" + nonce + ".json",
+                             boot / "run.log", process, 90)
+            csv_name = "b9-" + nonce + ".csv"
+            def csv_complete():
+                logged = guest_share_bytes(boot / "run.log", csv_name)
+                if logged is None:
+                    return None
+                size, digest = stable_file(share / csv_name, maximum=7_500_000)
+                if size != logged:
+                    raise ValueError("PresentMon CSV differs from completed share byte count")
+                return digest
+            wait_for(csv_complete, process, 90, "PresentMon CSV share")
             observed = observe(share, nonce, pins, frames)
             receipt.update(observed)
             receipt["scanout_files"] = [frame.relative_to(raw).as_posix() for frame in frames]
