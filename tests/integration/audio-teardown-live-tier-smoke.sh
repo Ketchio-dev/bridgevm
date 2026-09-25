@@ -9,7 +9,7 @@ VERIFY="$ROOT/scripts/verify-audio-teardown-receipt.py"
 TIER="$ROOT/scripts/live-gates/run-audio-teardown-tier.sh"
 PUBLISH="$ROOT/scripts/live-gates/publish-audio-teardown-receipt.sh"
 CLI="$ROOT/scripts/live-gates/bridgevm-live"; SPECIAL="$ROOT/scripts/live-gates/run-special-tier.sh"
-GENERIC_PUBLISH="$ROOT/scripts/live-gates/publish-receipt.sh"; MISSING="$ROOT/scripts/live-gates/write-missing-receipt.sh"; RECOVER="$ROOT/scripts/live-gates/recover-stale-receipt.sh"
+GENERIC_PUBLISH="$ROOT/scripts/live-gates/publish-receipt.sh"; MISSING="$ROOT/scripts/live-gates/write-missing-receipt.sh"; MISSING_DELEGATE="$ROOT/scripts/live-gates/write-live-missing-receipt.sh"; RECOVER="$ROOT/scripts/live-gates/recover-stale-receipt.sh"
 HEAD="$(git -C "$ROOT" rev-parse HEAD)"; STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 seal() { shasum -a 256 "$1" | cut -d' ' -f1; }
 for key in image vars binary firmware; do printf 'sealed-%s\n' "$key" > "$TMP/$key"; done
@@ -102,7 +102,7 @@ python3 "$VERIFY" "$preflight_out/receipt.json" --expected-commit "$HEAD" >/dev/
 grep -q '"outcome": "preflight-blocked"' "$preflight_out/receipt.json"
 missing="$TMP/missing"; mkdir -p "$missing/private"; cp "$MANIFEST" "$missing/input-manifest.tsv"; cp "$TMP/binary" "$missing/hvf_gic_boot_probe"
 printf 'started_at=%s\n' "$STARTED" > "$missing/job.env"
-"$ROOT/scripts/live-gates/write-audio-teardown-missing-receipt.sh" "$missing" "$ROOT" b7-missing "$HEAD"
+"$MISSING" t18-audio-teardown "$missing" "$ROOT" b7-missing "$HEAD"
 python3 "$VERIFY" "$missing/receipt.json" --expected-commit "$HEAD" >/dev/null
 grep -q '"failure_code": "missing-tier-receipt"' "$missing/receipt.json"
 python3 - "$SCRIPT" <<'PY'
@@ -111,7 +111,7 @@ b=open(sys.argv[1],"rb").read(); assert b and b.count(b"\n") == b.count(b"\r\n")
 PY
 grep -Fq 't18-audio-teardown' "$CLI" "$ROOT/scripts/live-gates/run-tier.sh" "$SPECIAL"
 grep -Fq 'publish-audio-teardown-receipt.sh' "$GENERIC_PUBLISH"
-grep -Fq 'write-audio-teardown-missing-receipt.sh' "$MISSING"
+grep -Fq 'write-live-missing-receipt.sh' "$MISSING"; grep -Fq 'write-audio-teardown-missing-receipt.sh' "$MISSING_DELEGATE"
 grep -Fq 't18-audio-teardown' "$RECOVER"
 ! grep -Eq 'nc +-l|socat|LISTEN|bind\(|sudo|actions-runner' "$TIER" "$ROOT/scripts/live-gates/run-audio-teardown-lane.sh" "$PUBLISH"
 grep -Fq 'Invoke-CimMethod -ClassName Win32_Process -MethodName Create' "$ROOT/scripts/live-gates/run-audio-teardown-lane.sh"; grep -Fq 'result_name="b7-audio-result-' "$ROOT/scripts/live-gates/run-audio-teardown-lane.sh"

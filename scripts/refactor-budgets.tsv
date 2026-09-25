@@ -1379,7 +1379,7 @@ scripts/live-gates/run-hvf-nvme-performance-tier.sh	24	0
 scripts/live-gates/write-hvf-boot-performance-receipt.py	83	0
 scripts/write-hvf-nvme-performance-receipt.py	598	0
 scripts/live-gates/run-special-tier.sh	19	0
-scripts/live-gates/run-tier.sh	143	0
+scripts/live-gates/run-tier.sh	142	0
 scripts/measure-pointer-latency.sh	60	0
 scripts/notarize-submit.sh	51	0
 scripts/p1-boot-gate.sh	312	0
@@ -3150,3 +3150,14 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17FirstReadyStopCaptureTests.swift	170
 crates/bridgevm-hvf-runtime/src/vm_process_surfaces.rs	126	0
 scripts/live-gates/t17_private_diagnostic_packet.py	616	0
 tests/integration/t17-private-diagnostic-packet-test.py	459	0
+scripts/live-gates/run-a19-snapshot-tiers.sh	11	0
+scripts/live-gates/verify-live-receipt.sh	14	0
+scripts/live-gates/write-live-missing-receipt.sh	17	0
+scripts/live-gates/a19-quota-worker-cleanup-fence.sh	36	0
+scripts/live-gates/run-a19-quota-refusal-tier.py	150	0
+scripts/live-gates/a19_quota_refusal_receipt.py	167	0
+tests/integration/a19-quota-refusal-live-tier-contract.py	270	0
+docs/history/windows-hvf/a19-real-media-quota-tier-20260925.md	36	0
+scripts/live-gates/b6_cell_evidence.py	62	0
+tests/integration/b6-untraced-startup-contract.py	128	0
+scripts/live-gates/a19_quota_seal.py	84	0

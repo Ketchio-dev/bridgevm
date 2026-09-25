@@ -45,7 +45,7 @@ step "python scripts" python3 scripts/check-python-scripts.py
 step "audio result classifier" python3 scripts/audio-playback-result.py --self-test
 step "glyph pixel mask" bash -c 'python3 scripts/verify-glyph-pixel-mask.py --self-test && python3 tests/integration/glyph-ppm-contract.py'
 step "glyph pixel mask builder" python3 scripts/build-glyph-pixel-mask.py --self-test
-step "b6 cell verification" python3 scripts/verify-b6-cell.py --self-test
+step "b6 cell verification" bash -c 'python3 scripts/verify-b6-cell.py --self-test && python3 tests/integration/b6-untraced-startup-contract.py'
 step "glyph present latency" python3 scripts/measure-glyph-present-latency.py --self-test
 step "workflow yaml" python3 scripts/check-workflow-yaml.py
 step "daemon DTO decoders" python3 scripts/check-daemon-dto-decoders.py
@@ -57,7 +57,7 @@ step "HVF boot performance and SMP scaling" bash -c 'tests/integration/hvf-boot-
 step "HVF NVMe performance tier" tests/integration/hvf-nvme-performance-tier-smoke.sh
 step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
-step "Windows product and A19 live-tier contracts" bash -c 'tests/integration/windows-product-e2e-contract-smoke.sh && python3 tests/integration/native-snapshot-restore-live-tier-contract.py && python3 tests/integration/native-snapshot-export-evidence-contract.py'
+step "Windows product and A19 live-tier contracts" bash -c 'tests/integration/windows-product-e2e-contract-smoke.sh && python3 tests/integration/native-snapshot-restore-live-tier-contract.py && python3 tests/integration/native-snapshot-export-evidence-contract.py && python3 tests/integration/a19-quota-refusal-live-tier-contract.py'
 step "BridgeVM PC firmware boundary" scripts/check-bridgevm-pc-firmware-boundary.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 step "packaged HVF entitlements" scripts/verify-app-hvf-entitlements.sh --self-test
