@@ -2633,6 +2633,7 @@ tests/integration/app-ui-driver-protocol.swift	18	0
 tests/integration/app-ui-host-v2-tier-smoke.py	220	0
 tests/integration/app_ui_host_v2_fixtures.py	98	0
 .github/workflows/ci.yml	296	0
+.github/workflows/hosted-full-project-check.yml	70	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeObservation.swift	15	0
 apps/macos/Sources/BridgeVMControl/LibraryModelRuntimeStatus.swift	55	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICommand.swift	14	0
