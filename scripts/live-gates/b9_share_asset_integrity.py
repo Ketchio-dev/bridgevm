@@ -29,7 +29,7 @@ def parent_chain(path: Path) -> None:
 
 def stable_file(path: Path, *, maximum: int | None = None) -> tuple[int, str]:
     parent_chain(path)
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
     with os.fdopen(os.open(path, flags), "rb") as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) or before.st_size <= 0:
@@ -52,7 +52,7 @@ def stable_file(path: Path, *, maximum: int | None = None) -> tuple[int, str]:
 
 def bounded_bytes(path: Path, limit: int) -> bytes:
     parent_chain(path)
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
     with os.fdopen(os.open(path, flags), "rb") as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= limit:

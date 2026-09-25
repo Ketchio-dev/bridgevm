@@ -13,8 +13,10 @@ import re
 import sys
 
 from b9_real_workload_inputs import KEYS, stable_file
+from b9_ledger_bytes import read_immutable_ledger
 from b9_public_receipt_contract import check_exported_types, check_staged_hashes, verify_public
 from b9_raw_focus_order import verify_raw_focus_order
+from b9_share_asset_integrity import bounded_bytes
 from b9_real_workload_observation import (CLASSES, collector_identity,
                                           finished_identity, read_guest_json,
                                           ready_identity, scanout_hashes)
@@ -46,11 +48,7 @@ def _unique(pairs):
     return result
 
 def read_json(path: Path, limit: int = 65536) -> dict:
-    size, _ = stable_file(path, maximum=limit)
-    with path.open("rb") as stream:
-        raw = stream.read(limit + 1)
-    if len(raw) != size:
-        raise ValueError("B9 receipt changed during read")
+    raw = bounded_bytes(path, limit)
     try:
         value = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique,
                            parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite JSON")))
@@ -61,19 +59,24 @@ def read_json(path: Path, limit: int = 65536) -> dict:
     return value
 
 
+def read_raw_run_log(path: Path, seal: dict) -> bytes:
+    raw = bounded_bytes(path, 512 * 1024 * 1024)
+    if (type(seal.get("bytes")) is not int or len(raw) != seal["bytes"]
+            or hashlib.sha256(raw).hexdigest() != seal.get("sha256")):
+        raise ValueError("B9 retained run log differs from private artifact seal")
+    return raw
+
+
 def job_fields(directory: Path) -> dict:
     path = directory / "job.env"
-    size, digest = stable_file(path, maximum=8192)
-    raw = path.read_bytes()
-    if len(raw) != size or hashlib.sha256(raw).hexdigest() != digest:
-        raise ValueError("B9 job seal changed during read")
+    raw = bounded_bytes(path, 8192)
     fields = {}
     for line in raw.decode("ascii").splitlines():
         key, separator, value = line.partition("=")
         if not separator or key in fields or not re.fullmatch(r"[a-z0-9_]+", key):
             raise ValueError("malformed or duplicate B9 job field")
         fields[key] = value
-    if size == 0 or fields.get("tier") != TIER or not JOB.fullmatch(fields.get("job_id", "")):
+    if fields.get("tier") != TIER or not JOB.fullmatch(fields.get("job_id", "")):
         raise ValueError("B9 job identity differs")
     if not SOURCE.fullmatch(fields.get("commit", "")):
         raise ValueError("B9 job source must be exact SHA")
@@ -82,12 +85,7 @@ def job_fields(directory: Path) -> dict:
         if not SHA.fullmatch(fields.get(key, "")):
             raise ValueError("B9 job asset seal absent: " + key)
     ledger_path = directory.parent.parent / "job-ledger" / fields["job_id"] / "entry.env"
-    ledger_size, ledger_digest = stable_file(ledger_path, maximum=8192)
-    if ledger_path.stat().st_mode & 0o222:
-        raise ValueError("B9 ledger seal is writable")
-    ledger_raw = ledger_path.read_bytes()
-    if len(ledger_raw) != ledger_size or hashlib.sha256(ledger_raw).hexdigest() != ledger_digest:
-        raise ValueError("B9 ledger seal changed during read")
+    ledger_raw = read_immutable_ledger(ledger_path, 8192)
     ledger = {}
     for line in ledger_raw.decode("ascii").splitlines():
         key, separator, value = line.partition("=")
@@ -264,7 +262,7 @@ def verify_pid_capture_raw(value: dict, diagnostic: Path) -> None:
             or value.get("scanout_sample_count") != len(hashes)
             or value.get("distinct_scanout_count") != len(set(hashes))):
         raise ValueError("B9 live scanout distinction differs from retained captures")
-    verify_raw_focus_order((root / "run.log").read_bytes(), nonce, hwnd,
+    verify_raw_focus_order(read_raw_run_log(root / "run.log", value["private_artifacts"]["run.log"]), nonce, hwnd,
                            value["asset_hashes"]["control_script"],
                            value["asset_hashes"]["guest_script"], value["driver_umd_sha256"])
 

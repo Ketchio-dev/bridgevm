@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 
 from b9_real_workload_inputs import stable_file
+from b9_share_asset_integrity import bounded_bytes
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from b9_workload_diagnostic import DiagnosticError, summarize_csv, unique_pairs
@@ -20,11 +21,8 @@ CLASSES = frozenset(("VLC_PID_PRESENTS_CAPTURED", "PLAYBACK_INCOMPLETE",
 
 
 def read_guest_json(path: Path, limit: int = 8192) -> tuple[dict, str]:
-    size, digest = stable_file(path, maximum=limit)
-    with path.open("rb") as stream:
-        raw = stream.read(limit + 1)
-    if len(raw) != size or hashlib.sha256(raw).hexdigest() != digest:
-        raise ValueError("guest observation changed during read")
+    raw = bounded_bytes(path, limit)
+    digest = hashlib.sha256(raw).hexdigest()
     try:
         value = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_pairs)
     except (UnicodeError, json.JSONDecodeError, DiagnosticError) as error:
@@ -96,15 +94,13 @@ def scanout_hashes(frames: list[Path]) -> tuple[list[str], list[str]]:
     for path in frames:
         if path.suffix != ".ppm":
             raise ValueError("scanout sample must be PPM")
-        size, digest = stable_file(path, maximum=32_000_000)
+        ppm = bounded_bytes(path, 32_000_000)
+        size, digest = len(ppm), hashlib.sha256(ppm).hexdigest()
         if size < 1024:
             raise ValueError("empty scanout sample")
         capture = path.with_name("capture.env")
-        capture_size, capture_digest = stable_file(capture, maximum=2048)
-        with capture.open("rb") as stream:
-            raw = stream.read(2049)
-        if len(raw) != capture_size:
-            raise ValueError("scanout capture metadata changed")
+        raw = bounded_bytes(capture, 2048)
+        capture_digest = hashlib.sha256(raw).hexdigest()
         fields = {}
         for line in raw.decode("ascii").splitlines():
             key, sep, value = line.partition("=")
@@ -129,15 +125,14 @@ def scanout_hashes(frames: list[Path]) -> tuple[list[str], list[str]]:
         header = f"P6\n{width} {height}\n255\n".encode()
         if size != len(header) + width * height * 3:
             raise ValueError("scanout PPM payload length differs")
-        with path.open("rb") as stream:
-            if stream.read(len(header)) != header:
-                raise ValueError("scanout PPM header differs")
-            rgb = stream.read()
+        if ppm[:len(header)] != header:
+            raise ValueError("scanout PPM header differs")
+        rgb = ppm[len(header):]
         bgra_path = path.with_name("presented.bgra")
-        bgra_size, bgra_hash = stable_file(bgra_path, maximum=36_000_000)
+        bgra = bounded_bytes(bgra_path, 36_000_000)
+        bgra_size, bgra_hash = len(bgra), hashlib.sha256(bgra).hexdigest()
         if bgra_size != width * height * 4 or bgra_hash != fields["bgra_sha256"]:
             raise ValueError("scanout BGRA frame differs from capture metadata")
-        bgra = bgra_path.read_bytes()
         converted = bytearray(width * height * 3)
         converted[0::3], converted[1::3], converted[2::3] = (
             bgra[2::4], bgra[1::4], bgra[0::4])

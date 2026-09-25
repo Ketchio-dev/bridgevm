@@ -23,6 +23,9 @@ from b9_real_workload_inputs import (KEYS, REPO, clone_pair, driver_umd_hash, lo
 from b9_real_workload_observation import (collector_identity, observe,
                                           read_guest_json, ready_identity)
 from b9_real_workload_receipt import job_fields
+from b9_asset_error import AssetIntegrityError
+from b9_failure_classification import classify_failure
+from b9_raw_capture import copy_raw
 from b9_share_asset_integrity import check_shared_assets
 from b6_renderer_runtime import verify_renderer_runtime
 from guest_input_controller import Controller
@@ -107,8 +110,12 @@ def await_share_sync(log: Path, staged: dict, process: subprocess.Popen) -> None
 
 
 def control_command(share: Path, digest: str, action: str, **arguments: str) -> str:
-    if stable_file(share / "bv-b9-control.ps1", maximum=7_500_000)[1] != digest:
-        raise ValueError("B9 shared control bytes differ from sealed source")
+    try:
+        observed = stable_file(share / "bv-b9-control.ps1", maximum=7_500_000)[1]
+    except (OSError, ValueError) as error:
+        raise AssetIntegrityError("B9 shared control bytes cannot be verified") from error
+    if observed != digest:
+        raise AssetIntegrityError("B9 shared control bytes differ from sealed source")
     command = (r"powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMB9\bv-b9-control.ps1"
                + f" -Action {action} -ExpectedControlSha256 {digest}")
     return command + "".join(f" -{key} {value}" for key, value in arguments.items())
@@ -160,26 +167,6 @@ def capture_frames(boot: Path, raw: Path, process: subprocess.Popen) -> list[Pat
         if attempt.returncode == 0 and frame.is_file():
             frames.append(frame)
     return frames
-
-
-def copy_raw(work: Path, raw: Path, share: Path, boot: Path, nonce: str) -> dict:
-    raw.mkdir(mode=0o700, exist_ok=False)
-    selected = ((boot / "run.log", "run.log"), (work / "launcher.log", "launcher.log"),
-                (boot / "virtio-gpu.jsonl", "virtio-gpu.jsonl"),
-                (share / ("ready-" + nonce + ".json"), "guest-ready.json"),
-                (share / ("collector-" + nonce + ".json"), "guest-collector.json"),
-                (share / ("finished-" + nonce + ".json"), "guest-finished.json"),
-                (share / ("b9-" + nonce + ".csv"), "presentmon.csv"))
-    result = {}
-    for source, name in selected:
-        if not source.is_file() or source.is_symlink() or source.stat().st_size == 0:
-            continue
-        target = raw / name
-        with source.open("rb") as incoming, target.open("xb") as outgoing:
-            shutil.copyfileobj(incoming, outgoing)
-        target.chmod(0o600)
-        result[name] = {"bytes": target.stat().st_size, "sha256": sha(target)}
-    return result
 
 
 def diagnostic_stop(request: Path, process: subprocess.Popen) -> None:
@@ -288,6 +275,7 @@ def run(args) -> int:
             await_share_sync(boot / "run.log", staged_files, process)
             control_sha = records["control_script"][1]
             await_firstboot(controller, process, share, control_sha)
+            stage = "asset-prelaunch"
             check_shared_assets(records, staged_files, share)
             stage = "vlc"
             launch = control_command(share, control_sha, "Launch", Nonce=nonce,
@@ -351,16 +339,7 @@ def run(args) -> int:
     except (OSError, ValueError, TimeoutError, subprocess.SubprocessError) as error:
         receipt["failure_stage"] = stage
         receipt["failure_type"] = type(error).__name__
-        if isinstance(error, ValueError) and stage in ("vlc", "playback", "asset-final"):
-            receipt["result_class"] = "INVALID_EVIDENCE"
-        elif stage == "vlc":
-            receipt["result_class"] = ("COLLECTOR_FAILED" if receipt.get("ready_sha256")
-                                       and not receipt.get("collector_sha256") else
-                                       "PLAYBACK_INCOMPLETE" if receipt.get("collector_sha256")
-                                       else "GUEST_NOT_READY")
-        elif stage == "playback" or (stage == "shutdown" and
-                                     receipt["result_class"] == "VLC_PID_PRESENTS_CAPTURED"):
-            receipt["result_class"] = "PLAYBACK_INCOMPLETE"
+        receipt["result_class"] = classify_failure(stage, error, receipt)
     finally:
         if process is not None:
             try:

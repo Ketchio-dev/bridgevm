@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -195,10 +196,27 @@ def clone_pair(records: dict, work: Path) -> tuple[Path, Path]:
     return tuple(targets)
 
 
+@contextmanager
+def _source_reader(path: Path):
+    parent_chain(path)
+    before = os.lstat(path)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        opened = os.fstat(stream.fileno())
+        identity = lambda item: (item.st_dev, item.st_ino, item.st_size,
+                                 item.st_mtime_ns, item.st_ctime_ns)
+        if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
+                or opened.st_size <= 0 or identity(before) != identity(opened)):
+            raise ValueError("B9 source must be a stable nonempty regular file")
+        yield stream
+        if identity(opened) != identity(os.fstat(stream.fileno())) or identity(opened) != identity(os.lstat(path)):
+            raise ValueError("B9 source changed while staging")
+
+
 def _exclusive_copy(source: Path, target: Path) -> tuple[int, str]:
     created = False
     try:
-        with source.open("rb") as incoming:
+        with _source_reader(source) as incoming:
             fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
             created = True
             with os.fdopen(fd, "wb") as outgoing:
@@ -231,7 +249,7 @@ def stage_share(records: dict, share: Path) -> dict:
     source, archive_hash = records["vlc_zip"]
     lines = []
     archive = hashlib.sha256()
-    with source.open("rb") as stream:
+    with _source_reader(source) as stream:
         for index in range(10):
             data = stream.read(CHUNK_BYTES)
             if not data or len(data) > CHUNK_BYTES:
