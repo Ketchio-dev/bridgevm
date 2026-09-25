@@ -3,7 +3,7 @@
 import contextlib
 import importlib.util
 import io
-import json
+import hashlib, json
 import subprocess
 import sys
 import tempfile
@@ -99,7 +99,7 @@ class AdmissionContract(unittest.TestCase):
             "scope": "calling-process-only-not-product-e2e-or-tcc-database-attribution",
             "caller_identity": {
                 "schema": "t17.caller-identity.v1", "pid": "42", "ppid": "1",
-                "bundle_id": "dev.bridgevm.product-e2e", "bundle_path_sha256": "a" * 64,
+                "bundle_id": "dev.bridgevm.product-e2e", "bundle_path_sha256": hashlib.sha256(str(self.helper_app.resolve()).encode("utf-8")).hexdigest(),
                 "executable_name": "BridgeVMProductE2E",
                 "scope": "on-disk-code-metadata-not-signature-validation-or-tcc-attribution",
                 "caller_status": "0", "static_code_status": "0", "signing_status": "0",

@@ -2,6 +2,7 @@
 """Observe the exact T17 helper's Accessibility trust through LaunchServices."""
 from __future__ import annotations
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -33,7 +34,7 @@ def load_manifest_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-def validate_report(value: object) -> None:
+def validate_report(value: object, helper_app: Path) -> None:
     if not isinstance(value, dict) or set(value) != REPORT_KEYS:
         raise PreflightError("diagnostic report has an unexpected field set")
     expected = {
@@ -51,6 +52,7 @@ def validate_report(value: object) -> None:
     identity_expected = {
         "schema": "t17.caller-identity.v1",
         "bundle_id": "dev.bridgevm.product-e2e",
+        "bundle_path_sha256": hashlib.sha256(str(helper_app.resolve()).encode("utf-8")).hexdigest(),
         "executable_name": "BridgeVMProductE2E",
         "scope": "on-disk-code-metadata-not-signature-validation-or-tcc-attribution",
         "caller_status": "0",
@@ -63,10 +65,9 @@ def validate_report(value: object) -> None:
             raise PreflightError(f"diagnostic caller identity has invalid {key}")
     if not identity["pid"].isdigit() or not identity["ppid"].isdigit():
         raise PreflightError("diagnostic caller process identity is malformed")
-    for key, size in (("bundle_path_sha256", 64), ("code_cdhash", 40)):
-        field = identity[key]
-        if not isinstance(field, str) or len(field) != size or not HEX.fullmatch(field):
-            raise PreflightError(f"diagnostic caller identity has invalid {key}")
+    cdhash = identity["code_cdhash"]
+    if not isinstance(cdhash, str) or len(cdhash) != 40 or not HEX.fullmatch(cdhash):
+        raise PreflightError("diagnostic caller identity has invalid code_cdhash")
     if value["accessibility_trusted"] is not True:
         raise PreflightError("LaunchServices helper is not Accessibility-trusted")
 def read_report(path: Path) -> object:
@@ -114,6 +115,8 @@ def launch_and_observe(helper_app: Path) -> None:
             completed = subprocess.run(command, stdin=subprocess.DEVNULL, timeout=15, check=False)
         except subprocess.TimeoutExpired as error:
             raise PreflightError("LaunchServices diagnostic launch timed out") from error
+        if completed.returncode != 0:
+            raise PreflightError(f"LaunchServices open exited {completed.returncode}")
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline and (not report.exists() or report.stat().st_size == 0):
             time.sleep(0.05)
@@ -121,7 +124,7 @@ def launch_and_observe(helper_app: Path) -> None:
             detail = errors.read_text(encoding="utf-8", errors="replace")[:512] if errors.exists() else ""
             raise PreflightError(f"LaunchServices diagnostic produced no report (open={completed.returncode}): {detail}")
         value = read_report(report)
-        validate_report(value)
+        validate_report(value, helper_app)
 def preflight(manifest: Path) -> None:
     if sys.platform != "darwin":
         raise PreflightError("T17 LaunchServices preflight requires macOS")
@@ -136,7 +139,7 @@ def preflight(manifest: Path) -> None:
 def self_test() -> None:
     identity = {
         "schema": "t17.caller-identity.v1", "pid": "42", "ppid": "1",
-        "bundle_id": "dev.bridgevm.product-e2e", "bundle_path_sha256": "a" * 64,
+        "bundle_id": "dev.bridgevm.product-e2e", "bundle_path_sha256": hashlib.sha256(str(HERE.resolve()).encode("utf-8")).hexdigest(),
         "executable_name": "BridgeVMProductE2E",
         "scope": "on-disk-code-metadata-not-signature-validation-or-tcc-attribution",
         "caller_status": "0", "static_code_status": "0", "signing_status": "0",
@@ -148,7 +151,7 @@ def self_test() -> None:
         "caller_identity": identity,
         "scope": "calling-process-only-not-product-e2e-or-tcc-database-attribution",
     }
-    validate_report(report)
+    validate_report(report, HERE)
     mutations = [
         {**report, "accessibility_trusted": False},
         {**report, "criterion_pass": True},
@@ -157,7 +160,7 @@ def self_test() -> None:
     ]
     for mutation in mutations:
         try:
-            validate_report(mutation)
+            validate_report(mutation, HERE)
         except PreflightError:
             continue
         raise AssertionError("invalid diagnostic report was accepted")
