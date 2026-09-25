@@ -265,8 +265,7 @@ class B9PilotContract(unittest.TestCase):
             staged = inputs.stage_share(records, self.root / "share")
         parts = [self.root / "share" / f"b9-vlc-part-{i:02d}.bin" for i in range(10)]
         self.assertEqual(b"".join(path.read_bytes() for path in parts), bytes(range(95)))
-        self.assertTrue(all(0 < size <= 10 for name, (size, _) in staged.items()
-                            if name != "b9-vlc-parts.tsv"))
+        self.assertTrue(all(0 < size <= 10 for name, (size, _) in staged.items() if name != "b9-vlc-parts.tsv"))
         self.assertLess(staged["b9-vlc-parts.tsv"][0], 8000000)
         self.assertEqual(len(staged), 14)
     def test_guest_asset_is_crlf_and_launch_is_real_window_path(self):
@@ -279,8 +278,9 @@ class B9PilotContract(unittest.TestCase):
                        "[IO.File]::WriteAllText($temp", "[IO.File]::Move($temp, $Path)",
                        "--output_file \"' + $captureCsvPath", "[IO.File]::Copy($captureCsvPath, $csvTempPath)",
                        "[IO.File]::Move($csvTempPath, $csvPath)",
-                       "GetForegroundWindow() -eq $hwnd", "TotalMilliseconds -ge 7000"):
+                       "GetForegroundWindow() -eq $hwnd", "TotalMilliseconds -ge 7000", "if ($raw -ceq $Nonce) { return }"):
             self.assertIn(marker, text)
+        self.assertNotIn("B9 host marker nonce differs", text)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -59,14 +59,14 @@ function Wait-HostMarker([string]$Name, [int]$Seconds) {
     $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
     while ([DateTime]::UtcNow -lt $deadline) {
         if (Test-Path -LiteralPath $path -PathType Leaf) {
-            $raw = [IO.File]::ReadAllText($path, $utf8).Trim()
-            if ($raw -cne $Nonce) { throw 'B9 host marker nonce differs' }
-            return
+            try { $raw = [IO.File]::ReadAllText($path, $utf8).Trim() }
+            catch [IO.IOException] { $raw = '' }
+            if ($raw -ceq $Nonce) { return }
         }
         if ($null -ne $vlc) { $vlc.Refresh(); if ($vlc.HasExited) { throw 'VLC exited before playback was released' } }
         Start-Sleep -Milliseconds 200
     }
-    throw 'B9 host marker timeout'
+    throw 'B9 host marker timeout or nonce mismatch'
 }
 try {
     try { $owned = $mutex.WaitOne(0) }
