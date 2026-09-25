@@ -14,6 +14,6 @@ case "$TIER" in
       --out "$DIR" --job-id "$JOB_ID" --commit "$COMMIT" \
       --input-manifest-hash "$manifest_hash" --reason "$reason" || true
     ;;
-  t17-windows-hvf-product-e2e|t18-audio-teardown|t19-windows-hvf-import-product-e2e|t20-a19-native-snapshot-restore|t21-a19-quota-refusal)
+  t17-windows-hvf-product-e2e|t18-audio-teardown|t19-windows-hvf-import-product-e2e|t20-a19-native-snapshot-restore|t21-a19-quota-refusal|t22-a19-interrupted-restore)
     "$WORKTREE/scripts/live-gates/write-live-missing-receipt.sh" "$TIER" "$DIR" "$WORKTREE" "$JOB_ID" "$COMMIT" || true ;;
 esac
