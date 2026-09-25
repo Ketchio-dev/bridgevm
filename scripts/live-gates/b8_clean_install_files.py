@@ -25,7 +25,7 @@ def _identity(item) -> tuple[int, ...]:
 
 def _source(path: Path, limit: int):
     _canonical(path)
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0))
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0))
     stream = os.fdopen(descriptor, "rb")
     before = os.fstat(descriptor)
     if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= limit or before.st_nlink != 1:

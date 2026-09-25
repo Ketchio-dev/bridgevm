@@ -3198,3 +3198,4 @@ schemas/b8-clean-install-receipt-v1.json	232	0
 tests/integration/b8-clean-install-tier-contract.py	349	0
 scripts/live-gates/b8_clean_install_files.py	145	0
 tests/integration/b8-clean-install-adversarial-contract.py	170	0
+tests/integration/b8-clean-install-fifo-contract.py	73	0
