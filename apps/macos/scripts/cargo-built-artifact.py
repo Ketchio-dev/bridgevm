@@ -90,7 +90,7 @@ def main() -> int:
     if not path.is_file() or not os.access(path, os.X_OK):
         return fail(f"Cargo-reported executable is missing or not executable: {path}")
     architecture = subprocess.run(
-        ["/usr/bin/lipo", "-verify_arch", "arm64", str(path)],
+        ["/usr/bin/lipo", str(path), "-verify_arch", "arm64"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     if architecture.returncode:
         return fail(f"Cargo-reported executable requires an arm64 Mach-O slice: {path}")
