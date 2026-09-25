@@ -1,6 +1,7 @@
 use anyhow::Result;
 mod args;
 mod launch_spec;
+mod profile_policy;
 #[cfg(debug_assertions)]
 mod resolve_launch_path;
 #[cfg(debug_assertions)]

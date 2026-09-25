@@ -7,7 +7,7 @@
     step "A9 diagnostic XCTest" swift test --package-path apps/macos --filter 'T17FirstReadyStopCaptureTests|HvfRuntimeDiagnosticStopAdmissionTests'
     step "native UI driver contracts" scripts/check-app-ui-driver-contracts.sh --output "$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-ui-driver.XXXXXX")/contracts"
     step "xctest shim suites" scripts/run-xctest-shim-suites.sh
-    step "release executable boundaries" bash -c 'scripts/check-release-overrides.sh && tests/integration/hvf-runner-release-exec-boundary-smoke.sh'
+    step "release executable boundaries" bash -c 'scripts/check-release-overrides.sh && tests/integration/hvf-runner-release-exec-boundary-smoke.sh && tests/integration/hvf-runner-release-profile-override-smoke.sh'
   else
     printf '\nswift toolchain absent: skipping macOS app checks\n' >&2
   fi
