@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import hashlib
 import json
 import os
@@ -106,16 +105,21 @@ def await_share_sync(log: Path, staged: dict, process: subprocess.Popen) -> None
     wait_for(complete, process, 900, "guest file share")
 
 
-def await_firstboot(controller: Controller, process: subprocess.Popen) -> None:
-    script = (r"$stage=Test-Path C:\BridgeVM\stage3.flag; "
-              r"schtasks.exe /Query /TN BridgeVM-VioGpu3DFirstBoot *> $null; "
-              r"if($stage -and $LASTEXITCODE -ne 0){Write-Output B9-FIRSTBOOT-READY}"
-              r"else{Write-Output B9-FIRSTBOOT-PENDING}")
-    command = 'powershell.exe -NoProfile -Command "' + script + '"'
+def control_command(share: Path, digest: str, action: str, **arguments: str) -> str:
+    if stable_file(share / "bv-b9-control.ps1", maximum=7_500_000)[1] != digest:
+        raise ValueError("B9 shared control bytes differ from sealed source")
+    command = (r"powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMB9\bv-b9-control.ps1"
+               + f" -Action {action} -ExpectedControlSha256 {digest}")
+    return command + "".join(f" -{key} {value}" for key, value in arguments.items())
+
+
+def await_firstboot(controller: Controller, process: subprocess.Popen,
+                    share: Path, control_sha: str) -> None:
     deadline = time.monotonic() + 1500
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise ValueError("VM exited before 3D firstboot readiness")
+        command = control_command(share, control_sha, "Firstboot")
         controller.deadline = time.monotonic() + 30
         response = controller.send(command, command,
                                    ("B9-FIRSTBOOT-READY", "B9-FIRSTBOOT-PENDING"))
@@ -125,17 +129,14 @@ def await_firstboot(controller: Controller, process: subprocess.Popen) -> None:
     raise TimeoutError("3D firstboot readiness not observed")
 
 
-def focus_window(controller: Controller, log: Path, hwnd: int, process: subprocess.Popen) -> None:
+def focus_window(controller: Controller, log: Path, hwnd: int, process: subprocess.Popen,
+                 share: Path, control_sha: str) -> None:
     command = f"WINFOCUS {hwnd}"
     before = len(lines(log))
     controller.write_command(command)
     wait_for(lambda: any(line == f"BVAGENT WINFOCUS {hwnd} -> OK WINFOCUS"
                          for line in lines(log)[before:]), process, 30, "VLC focus")
-    script = ("Add-Type -Name Fg -Namespace B9 -MemberDefinition "
-              "'[DllImport(\"user32.dll\")] public static extern System.IntPtr GetForegroundWindow();'; "
-              "Write-Output ('B9-FOREGROUND-' + [B9.Fg]::GetForegroundWindow().ToInt64())")
-    query = ('powershell.exe -NoProfile -EncodedCommand '
-             + base64.b64encode(script.encode("utf-16le")).decode("ascii"))
+    query = control_command(share, control_sha, "Foreground", Hwnd=str(hwnd))
     controller.deadline = time.monotonic() + 30
     controller.send(query, query, f"B9-FOREGROUND-{hwnd}")
 
@@ -284,19 +285,12 @@ def run(args) -> int:
             wait_for(lambda: any(line.startswith("BVAGENT SERVICE start")
                                  for line in lines(boot / "run.log")), process, 1800, "guest service")
             await_share_sync(boot / "run.log", staged_files, process)
-            await_firstboot(controller, process)
+            control_sha = records["control_script"][1]
+            await_firstboot(controller, process, share, control_sha)
             stage = "vlc"
-            guest_script = r"C:\BridgeVMB9\bv-b9-vlc-playback.ps1"
-            script = ("$p='" + guest_script + "'; "
-                      "if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() "
-                      "-cne '" + records["guest_script"][1] + "'){exit 42}; "
-                      "$r=Invoke-CimMethod -ClassName Win32_Process -MethodName Create "
-                      "-Arguments @{CommandLine='powershell.exe -NoProfile -ExecutionPolicy Bypass "
-                      "-File " + guest_script + " -Nonce " + nonce
-                      + " -ExpectedD3D11UmdSha " + umd_hash + "'}; "
-                      "if($r.ReturnValue -ne 0 -or $r.ProcessId -le 0){exit 41}; "
-                      "Write-Output 'B9-WORKLOAD-LAUNCHED-" + nonce + "'")
-            launch = 'powershell.exe -NoProfile -Command "' + script + '"'
+            launch = control_command(share, control_sha, "Launch", Nonce=nonce,
+                                     ExpectedGuestScriptSha256=records["guest_script"][1],
+                                     ExpectedD3D11UmdSha=umd_hash)
             controller.deadline = time.monotonic() + 60
             controller.send(launch, launch, "B9-WORKLOAD-LAUNCHED-" + nonce)
             ready, receipt["ready_sha256"] = await_guest_file(
@@ -306,7 +300,7 @@ def run(args) -> int:
                     "presentmon_sha256": records["presentmon"][1],
                     "expected_driver_umd_sha256": umd_hash}
             pid, hwnd = ready_identity(ready, nonce, pins)
-            focus_window(controller, boot / "run.log", hwnd, process)
+            focus_window(controller, boot / "run.log", hwnd, process, share, control_sha)
             size, _ = marker(share, "collector-go-" + nonce + ".txt", nonce)
             wait_for(lambda: any(line.startswith(
                 f"BVAGENT SHARE host->guest collector-go-{nonce}.txt bytes={size} ")
@@ -314,7 +308,7 @@ def run(args) -> int:
             collector, receipt["collector_sha256"] = await_guest_file(
                 share, "collector-" + nonce + ".json", boot / "run.log", process, 60)
             collector_identity(collector, nonce, pid)
-            focus_window(controller, boot / "run.log", hwnd, process)
+            focus_window(controller, boot / "run.log", hwnd, process, share, control_sha)
             before = sum(line.startswith("live input accepted: command=Key(")
                          for line in lines(boot / "run.log"))
             with input_control.open("ab", buffering=0) as input_stream:
@@ -343,7 +337,7 @@ def run(args) -> int:
             receipt["scanout_files"] = [frame.relative_to(raw).as_posix() for frame in frames]
             receipt["pilot_count"] = 1
             stage = "shutdown"
-            controller.write_command("shutdown /s /f /t 0")
+            controller.write_command(control_command(share, control_sha, "Shutdown"))
             receipt["guest_shutdown_exit"] = process.wait(timeout=120)
             receipt["guest_shutdown_observed"] = receipt["guest_shutdown_exit"] == 0 and any(
                 line.startswith("stop: PSCI SYSTEM_OFF") for line in lines(boot / "run.log"))

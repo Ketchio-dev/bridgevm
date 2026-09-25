@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/live-gates"))
 sys.path.insert(0, str(ROOT / "scripts"))
 import b9_real_workload_inputs as inputs
+from b9_public_receipt_contract import DIRECT
 from b9_real_workload_observation import observe, scanout_hashes
 from b9_real_workload_queue import finalize
 from b9_real_workload_receipt import (FLAGS, cleanup_guard, job_fields,
@@ -30,18 +31,12 @@ RUNNER_SPEC = importlib.util.spec_from_file_location(
     "b9_real_playback_runner", ROOT / "scripts/live-gates/run-b9-real-workload-pilot.py")
 RUNNER = importlib.util.module_from_spec(RUNNER_SPEC)
 RUNNER_SPEC.loader.exec_module(RUNNER)
-
-
 def digest(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
-
-
 def put(path: Path, raw: bytes) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(raw)
     return digest(raw)
-
-
 class B9PilotContract(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=str(Path(tempfile.gettempdir()).resolve()))
@@ -65,7 +60,6 @@ class B9PilotContract(unittest.TestCase):
                           encoding="ascii")
         ledger.chmod(0o400)
         self.job = job_fields(self.job_dir)
-
     def fixture(self):
         diagnostic = self.job_dir / "diagnostic"
         guest = diagnostic / "raw/guest"
@@ -95,9 +89,12 @@ class B9PilotContract(unittest.TestCase):
         ready_sha = put(guest / "guest-ready.json", json.dumps(ready).encode())
         collector_sha = put(guest / "guest-collector.json", json.dumps(collector).encode())
         finished_sha = put(guest / "guest-finished.json", json.dumps(finished).encode())
-        command = "powershell.exe -NoProfile -EncodedCommand RgBnAA=="
-        focus = f"BVAGENT WINFOCUS {hwnd} -> OK WINFOCUS\r\nBVAGENT CMD {command} exit=0\r\nB9-FOREGROUND-{hwnd}\r\nBVAGENT END {command}\r\n"
-        run_log = (f"B9-WORKLOAD-LAUNCHED-{nonce}\r\n" + focus * 2 +
+        base = (r"powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMB9\bv-b9-control.ps1"
+                + f" -Action {{}} -ExpectedControlSha256 {self.asset_hashes['control_script']}")
+        launch = base.format("Launch") + f" -Nonce {nonce} -ExpectedGuestScriptSha256 {self.asset_hashes['guest_script']} -ExpectedD3D11UmdSha {umd}"
+        query = base.format("Foreground") + f" -Hwnd {hwnd}"
+        focus = f"BVAGENT WINFOCUS {hwnd} -> OK WINFOCUS\r\nBVAGENT CMD {query} exit=0\r\nB9-FOREGROUND-{hwnd}\r\nBVAGENT END {query}\r\n"
+        run_log = (f"BVAGENT CMD {launch} exit=0\r\nB9-WORKLOAD-LAUNCHED-{nonce}\r\nBVAGENT END {launch}\r\n" + focus * 2 +
                    "live input accepted: command=Key(<redacted>)\r\nstop: PSCI SYSTEM_OFF (system off)\r\n").encode()
         put(guest / "run.log", run_log)
         frames = []
@@ -121,6 +118,9 @@ class B9PilotContract(unittest.TestCase):
                             "sha256": inputs.stable_file(guest / name)[1]}
                      for name in ("guest-ready.json", "guest-collector.json",
                                   "guest-finished.json", "presentmon.csv", "run.log")}
+        staged = {name: self.asset_hashes[key] for name, key in DIRECT.items()}
+        staged.update({f"b9-vlc-part-{i:02d}.bin": digest(str(i).encode()) for i in range(10)})
+        staged["b9-vlc-parts.tsv"] = digest(b"parts")
         value = {"schema": "bridgevm.b9-real-workload-pilot.v1",
                  "tier": "d9-b9-real-workload", "criterion": "B9",
                  "candidate_id": "vlc-3.0.23-arm64-kodi-bbb-1080p-av1-10s-v1",
@@ -128,6 +128,7 @@ class B9PilotContract(unittest.TestCase):
                  "input_manifest_sha256": self.job["input_manifest_sha256"],
                  "sealed_binary_sha256": self.job["sealed_binary_sha256"],
                  "asset_hashes": self.asset_hashes, "driver_umd_sha256": umd,
+                 "staged_file_hashes": staged,
                  "outcome": "diagnostic-complete", "result_class": "VLC_PID_PRESENTS_CAPTURED",
                  "pilot_count": 1, "required_workload_count": 20,
                  "cleanup_complete": True, "source_integrity": True,
@@ -165,7 +166,6 @@ class B9PilotContract(unittest.TestCase):
             tampered[name] = 1001.0
         with self.assertRaisesRegex(ValueError, "raw data"):
             validate_private(tampered, self.job, diagnostic)
-
     def test_changed_scanout_and_claim_flag_are_rejected(self):
         diagnostic, value = self.fixture()
         frame = diagnostic / "raw/scanout-0/presented.bgra"
@@ -175,7 +175,6 @@ class B9PilotContract(unittest.TestCase):
         value["criterion_pass"] = True
         with self.assertRaisesRegex(ValueError, "claims"):
             validate_private(value, self.job, diagnostic)
-
     def test_missing_runner_receipt_remains_incomplete_and_fenced(self):
         finalize(self.job_dir, self.commit)
         missing = json.loads((self.job_dir / "receipt.json").read_text())
@@ -258,6 +257,7 @@ class B9PilotContract(unittest.TestCase):
         for key, name, data in (("media", "media.webm", b"abc"),
                                 ("presentmon", "presentmon.exe", b"xyz"),
                                 ("guest_script", "guest.ps1", b"script"),
+                                ("control_script", "control.ps1", b"control"),
                                 ("vlc_zip", "vlc.zip", bytes(range(95)))):
             path = source / name
             records[key] = (path, put(path, data))
@@ -267,7 +267,7 @@ class B9PilotContract(unittest.TestCase):
         self.assertEqual(b"".join(path.read_bytes() for path in parts), bytes(range(95)))
         self.assertTrue(all(0 < size <= 10 for name, (size, _) in staged.items() if name != "b9-vlc-parts.tsv"))
         self.assertLess(staged["b9-vlc-parts.tsv"][0], 8000000)
-        self.assertEqual(len(staged), 14)
+        self.assertEqual(len(staged), 15)
     def test_guest_asset_is_crlf_and_launch_is_real_window_path(self):
         raw = (ROOT / "scripts/win-assets/bv-b9-vlc-playback.ps1").read_bytes()
         self.assertEqual(raw.count(b"\n"), raw.count(b"\r\n"))

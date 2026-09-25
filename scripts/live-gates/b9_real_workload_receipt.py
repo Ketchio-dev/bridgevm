@@ -13,6 +13,7 @@ import re
 import sys
 
 from b9_real_workload_inputs import KEYS, stable_file
+from b9_public_receipt_contract import check_exported_types, check_staged_hashes, verify_public
 from b9_raw_focus_order import verify_raw_focus_order
 from b9_real_workload_observation import (CLASSES, collector_identity,
                                           finished_identity, read_guest_json,
@@ -36,7 +37,6 @@ PUBLIC_KEYS = frozenset(("schema", "tier", "criterion", "candidate_id", "job_id"
                          "nonce_sha256", "ready_sha256",
                          "collector_sha256", "finished_sha256", *FLAGS))
 
-
 def _unique(pairs):
     result = {}
     for key, value in pairs:
@@ -44,7 +44,6 @@ def _unique(pairs):
             raise ValueError("duplicate B9 receipt key")
         result[key] = value
     return result
-
 
 def read_json(path: Path, limit: int = 65536) -> dict:
     size, _ = stable_file(path, maximum=limit)
@@ -103,6 +102,7 @@ def job_fields(directory: Path) -> dict:
 
 
 def _plain(value: dict, job: dict, public: bool) -> None:
+    check_exported_types(value)
     if public and set(value) != PUBLIC_KEYS:
         raise ValueError("public B9 receipt has missing or additional fields")
     if (value.get("schema") != "bridgevm.b9-real-workload-pilot.v1"
@@ -165,6 +165,7 @@ def _plain(value: dict, job: dict, public: bool) -> None:
 
 def validate_private(value: dict, job: dict, diagnostic: Path | None = None) -> None:
     _plain(value, job, public=False)
+    check_staged_hashes(value)
     if (type(value.get("owned_vm_pgid")) is not int or value["owned_vm_pgid"] < 0
             or value.get("owned_process_group_stopped") is not True
             or value.get("cleanup_complete") is not True):
@@ -263,7 +264,9 @@ def verify_pid_capture_raw(value: dict, diagnostic: Path) -> None:
             or value.get("scanout_sample_count") != len(hashes)
             or value.get("distinct_scanout_count") != len(set(hashes))):
         raise ValueError("B9 live scanout distinction differs from retained captures")
-    verify_raw_focus_order((root / "run.log").read_bytes(), nonce, hwnd)
+    verify_raw_focus_order((root / "run.log").read_bytes(), nonce, hwnd,
+                           value["asset_hashes"]["control_script"],
+                           value["asset_hashes"]["guest_script"], value["driver_umd_sha256"])
 
 
 def sha256(path: Path) -> str:
@@ -332,6 +335,7 @@ def main() -> int:
                 validate_private(value, job, args.job_dir / "diagnostic")
             else:
                 _plain(value, job, public=True)
+                verify_public(value, job, args.job_dir, read_json, validate_private, public_view)
     except (OSError, ValueError) as error:
         print("B9 receipt refused: " + str(error), file=sys.stderr)
         return 2

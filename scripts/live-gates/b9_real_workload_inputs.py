@@ -21,14 +21,13 @@ from b9_workload_diagnostic import load_declaration
 
 KEYS = frozenset(("image", "vars", "binary", "firmware", "virglrenderer",
                   "moltenvk", "viogpu_dir", "render_server", "presentmon",
-                  "vlc_zip", "media", "guest_script", "profile"))
+                  "vlc_zip", "media", "guest_script", "control_script", "profile"))
 MANIFEST_LIMIT = 32_768
 PROFILE_LIMIT = 4_096
 VARS_SIZE = 64 * 1024 * 1024
 CHUNK_BYTES = 7_500_000
 SHA = re.compile(r"[0-9a-f]{64}\Z")
 SOURCE = re.compile(r"[0-9a-f]{40}\Z")
-
 
 def parent_chain(path: Path) -> None:
     """Refuse aliases in every existing ancestor, not only the leaf."""
@@ -37,7 +36,6 @@ def parent_chain(path: Path) -> None:
     for parent in (path, *path.parents):
         if stat.S_ISLNK(os.lstat(parent).st_mode):
             raise ValueError("symlink in input path")
-
 
 def stable_file(path: Path, *, maximum: int | None = None) -> tuple[int, str]:
     parent_chain(path)
@@ -57,7 +55,6 @@ def stable_file(path: Path, *, maximum: int | None = None) -> tuple[int, str]:
         raise ValueError("input changed while hashing")
     return before.st_size, digest.hexdigest()
 
-
 def bounded_bytes(path: Path, limit: int) -> bytes:
     size, _ = stable_file(path, maximum=limit)
     with path.open("rb") as stream:
@@ -66,6 +63,10 @@ def bounded_bytes(path: Path, limit: int) -> bytes:
         raise ValueError("metadata changed while reading")
     return raw
 
+def committed_blob_sha256(path: Path) -> str:
+    raw = subprocess.check_output(["/usr/bin/git", "-C", str(REPO), "show",
+                                   "HEAD:" + path.relative_to(REPO).as_posix()])
+    return hashlib.sha256(raw).hexdigest()
 
 def profile_at(path: Path, source_commit: str) -> dict:
     raw = bounded_bytes(path, PROFILE_LIMIT)
@@ -85,7 +86,6 @@ def profile_at(path: Path, source_commit: str) -> dict:
         raise ValueError("B9 profile or exact source differs")
     return value
 
-
 def _unique(pairs: list[tuple[str, object]]) -> dict:
     value = {}
     for key, item in pairs:
@@ -94,12 +94,11 @@ def _unique(pairs: list[tuple[str, object]]) -> dict:
         value[key] = item
     return value
 
-
 def load_inputs(manifest: Path, source_commit: str, sealed_binary: Path | None = None) -> dict:
     if not SOURCE.fullmatch(source_commit):
         raise ValueError("exact source commit required")
     observed_commit = subprocess.check_output(
-        ["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True).strip()
+        ["/usr/bin/git", "-C", str(REPO), "rev-parse", "HEAD"], text=True).strip()
     if observed_commit != source_commit:
         raise ValueError("B9 input source differs from exact checkout")
     raw = bounded_bytes(manifest, MANIFEST_LIMIT)
@@ -150,17 +149,20 @@ def load_inputs(manifest: Path, source_commit: str, sealed_binary: Path | None =
     if any(path.stat().st_mode & 0o222 for path in (image, variables)):
         raise ValueError("canonical disk and vars must be immutable")
     pinned = {"firmware": REPO / "crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd",
-              "guest_script": REPO / "scripts/win-assets/bv-b9-vlc-playback.ps1"}
+              "guest_script": REPO / "scripts/win-assets/bv-b9-vlc-playback.ps1",
+              "control_script": REPO / "scripts/win-assets/bv-b9-control.ps1"}
     for key, checkout_path in pinned.items():
-        if stable_file(checkout_path)[1] != records[key][1]:
+        if ((key != "firmware" and records[key][0].name != checkout_path.name)
+                or stable_file(checkout_path)[1] != records[key][1]
+                or (key != "firmware" and committed_blob_sha256(checkout_path) != records[key][1])):
             raise ValueError("B9 source asset differs from exact checkout: " + key)
-    if records["guest_script"][0].stat().st_size >= 8_000_000:
+    if any(records[key][0].stat().st_size >= 8_000_000
+           for key in ("guest_script", "control_script")):
         raise ValueError("guest script exceeds share file limit")
     profile_at(records["profile"][0], source_commit)
     if sealed_binary is not None and stable_file(sealed_binary)[1] != records["binary"][1]:
         raise ValueError("queue-sealed binary differs from manifest")
     return records
-
 
 def verify_inputs(records: dict, sealed_binary: Path | None = None) -> None:
     for key, (path, expected) in records.items():
@@ -169,7 +171,6 @@ def verify_inputs(records: dict, sealed_binary: Path | None = None) -> None:
             raise ValueError("B9 input changed after manifest validation: " + key)
     if sealed_binary is not None and stable_file(sealed_binary)[1] != records["binary"][1]:
         raise ValueError("queue-sealed B9 binary changed")
-
 
 def driver_umd_hash(records: dict) -> str:
     root = records["viogpu_dir"][0]
@@ -236,7 +237,7 @@ def stage_share(records: dict, share: Path) -> dict:
     """Every synchronized file is below 8 MB; no whole VLC archive is shared."""
     share.mkdir(mode=0o700, parents=False, exist_ok=False)
     staged: dict[str, tuple[int, str]] = {}
-    for key in ("media", "presentmon", "guest_script"):
+    for key in ("media", "presentmon", "guest_script", "control_script"):
         source, expected = records[key]
         if source.stat().st_size > CHUNK_BYTES:
             raise ValueError("B9 share asset exceeds per-file bound: " + key)
@@ -277,7 +278,6 @@ def stage_share(records: dict, share: Path) -> dict:
 
 def asset_seal(records: dict) -> str:
     return "".join(f"asset_{key}_sha256={records[key][1]}\n" for key in sorted(KEYS))
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)

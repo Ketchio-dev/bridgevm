@@ -66,7 +66,7 @@ class RawFocusOrderContract(unittest.TestCase):
 
     def test_missing_completed_command_end_is_rejected_after_rehash(self):
         self.rewrite(lambda lines: lines.remove(next(
-            line for line in lines if line.startswith("BVAGENT END powershell.exe -NoProfile -EncodedCommand "))))
+            line for line in lines if "-Action Foreground" in line and line.startswith("BVAGENT END powershell.exe"))))
         with self.assertRaisesRegex(ValueError, "envelope differs"):
             validate_private(self.receipt, self.job, self.diagnostic)
 
