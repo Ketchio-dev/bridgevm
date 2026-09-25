@@ -3136,4 +3136,6 @@ docs/windows-arm/b9-first-workload-v1.json	26	0
 scripts/b9_workload_diagnostic.py	223	0
 tests/integration/b9-workload-diagnostic-contract.py	171	0
 .github/workflows/b9-workload-contracts.yml	19	0
+apps/macos/Sources/BridgeVMProductE2E/T17ChooserSelectionTarget.swift	43	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserSelectionTargetTests.swift	82	0
 scripts/glyph_latency_fake_clock.py	12	0

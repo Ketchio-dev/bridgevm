@@ -81,7 +81,7 @@ final class T17Accessibility: T17UIControlling {
 
     func choose(path: String, from identifier: String, timeout: TimeInterval = 15) throws {
         let target = try element(identifier, role: T17ChooserOpenAction.targetRole, timeout: timeout)
-        let driver = T17FileChooserAX(pid: pid, identifier: identifier) { try T17ChooserOpenAction.perform(
+        let driver = T17FileChooserAX(pid: pid, selection: try T17ChooserSelectionTarget.resolve(button: identifier)) { try T17ChooserOpenAction.perform(
             identifier: identifier, timeout: timeout,
             enabled: { (try T17SupportedAttribute.read(target, kAXEnabledAttribute) as? NSNumber)?.boolValue },
             press: { AXUIElementPerformAction(target, kAXPressAction as CFString) }) }

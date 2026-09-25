@@ -4,7 +4,7 @@ import ApplicationServices
 final class T17FileChooserAX: T17FileChooserDriving {
     private let pid: pid_t
     private let application: AXUIElement
-    private let identifier: String
+    private let selection: T17ChooserSelectionTarget
     private let openControl: () throws -> AXError
     private var openResult: AXError?
     private var panel: AXUIElement?
@@ -16,10 +16,10 @@ final class T17FileChooserAX: T17FileChooserDriving {
         "open_ax_result=\(openResult.map { String($0.rawValue) } ?? "not-attempted"); " + predicates.context(activation: activationSucceeded, key: keyContext, timeout: T17FileChooserDiagnostics.snapshot(pid: pid), tree: T17FileChooserTreeDiagnostics.snapshot(application))
     }
 
-    init(pid: pid_t, identifier: String, openControl: @escaping () throws -> AXError) {
+    init(pid: pid_t, selection: T17ChooserSelectionTarget, openControl: @escaping () throws -> AXError) {
         self.pid = pid
         self.application = AXUIElementCreateApplication(pid)
-        self.identifier = identifier
+        self.selection = selection
         self.openControl = openControl
     }
 
@@ -69,11 +69,11 @@ final class T17FileChooserAX: T17FileChooserDriving {
         try action(button, kAXPressAction)
     }
     func selectedPath() throws -> String? {
-        let expected = identifier + ".selection"
-        guard let node = try nodes(application).first(where: {
-            try attribute($0, kAXIdentifierAttribute) as? String == expected
-        }) else { return nil }
-        return try attribute(node, kAXValueAttribute) as? String
+        try selection.read(in: nodes(application),
+            role: { try attribute($0, kAXRoleAttribute) as? String },
+            identifier: { try attribute($0, kAXIdentifierAttribute) as? String },
+            value: { try attribute($0, kAXValueAttribute) as? String },
+            same: { CFEqual($0, $1) })
     }
 
     private func locationSheet() throws -> AXUIElement? {
