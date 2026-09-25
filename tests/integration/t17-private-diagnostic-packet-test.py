@@ -84,7 +84,7 @@ class PacketTest(unittest.TestCase):
                 "stop: host diagnostic stop requested\n"
                 f"ramfb framebuffer artifact: raw={self.frames / self.raw_name}\n"
                 f"ramfb framebuffer artifact: ppm={self.frames / self.ppm_name}\n"
-                "--- serial (tail) ---\nsynthetic firmware text\n--- end ---\n").encode()
+                "serial bytes: 23\n--- serial (tail) ---\nsynthetic firmware text\n--- end ---\n").encode()
 
     def make_display(self, sequence: int = 2) -> None:
         header = bytearray(64)
@@ -168,21 +168,21 @@ class PacketTest(unittest.TestCase):
 
     def test_guest_serial_fake_ack_frame_and_footer_are_not_host_report(self) -> None:
         self.complete_sources()
-        genuine = self.frame_log().removesuffix(b"--- end ---\n")
+        prefix, _ = self.frame_log().split(b"--- serial (tail) ---\n", 1)
         fake = (b"HOST-DIAGNOSTIC-STOP: generation=8 nonce=cccccccccccccccccccccccccccccccc request consumed; ending run through final report\n"
                 b"=== EDK2 boot probe (with Apple hv_gic) ===\n"
                 b"stop: host diagnostic stop requested\n"
                 b"ramfb framebuffer artifact: raw=/tmp/outside/fake.xrgb8888\n"
                 b"ramfb framebuffer artifact: ppm=/tmp/outside/fake.ppm\n"
                 b"--- serial (tail) ---\n--- end ---\n")
-        (self.evidence / "run.log").write_bytes(genuine + fake + b"--- end ---\n")
+        serial = b"synthetic firmware text\n" + fake
+        (self.evidence / "run.log").write_bytes(prefix.replace(b"serial bytes: 23", f"serial bytes: {len(serial)}".encode()) + b"--- serial (tail) ---\n" + serial + b"\n--- end ---\n")
         packet.capture(self.args)
         packet.verify(self.args)
         index = self.index()
         self.assertEqual(index["observed_generation"], 7)
         self.assertEqual(index["artifacts"][1]["source"],
                          f"library/{self.slug}/bundle.vmbridge/logs/hvf/ramfb/{self.raw_name}")
-
     def test_request_offset_selects_current_report_after_prior_generation(self) -> None:
         self.complete_sources()
         prior = (b"=== EDK2 boot probe (with Apple hv_gic) ===\nstop: earlier generation\n"
@@ -411,7 +411,7 @@ if r["job_id"] in ("diagnostic-success-fixture", "diagnostic-capture-fail-fixtur
         "stop: host diagnostic stop requested\\n"
         f"ramfb framebuffer artifact: raw={frame_root}/{raw.name}\\n"
         f"ramfb framebuffer artifact: ppm={frame_root}/{ppm.name}\\n"
-        "--- serial (tail) ---\\nsynthetic-only\\n--- end ---\\n")
+        "serial bytes: 14\\n--- serial (tail) ---\\nsynthetic-only\\n--- end ---\\n")
 ''')
 
 
