@@ -8,9 +8,11 @@ from __future__ import annotations
 import re
 import subprocess
 
-# Directories a capability claim is about; the registry and its generated
-# blocks are excluded (naming the commit that changes the file cannot converge).
-CODE_PATHS = ["crates/", "runners/", "apps/", "scripts/", "tests/"]
+# Reproof inputs exclude the registry and its generated documentation.
+CODE_PATHS = [
+    "crates/", "runners/", "apps/", "scripts/", "tests/", "Cargo.toml", "Cargo.lock",
+    ".github/", "install.sh", "deny.toml", "packaging/", "tools/", "schemas/", ".gitattributes",
+]
 
 
 def _git(root: str, *args: str) -> subprocess.CompletedProcess:

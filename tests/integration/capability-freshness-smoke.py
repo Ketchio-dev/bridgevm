@@ -37,23 +37,28 @@ class FreshnessTests(unittest.TestCase):
         self.assertIsNone(freshness.code_changed_since(self.base, self.root))
 
     def test_code_change_is_stale(self):
-        (self.root / "apps/control.swift").write_text("// changed\n")
-        self.commit()
-        self.assertEqual(freshness.code_changed_since(self.base, self.root), "apps/control.swift")
+        for path in ("apps/control.swift", "apps/control sample.swift", "Cargo.toml",
+                     "Cargo.lock", ".github/workflows/ci.yml", "install.sh", "deny.toml",
+                     "packaging/macos/build-release-candidate.sh", "tools/venus-host-probe/Cargo.toml",
+                     "schemas/bridgevm-capability-v1.json", ".gitattributes"):
+            with self.subTest(path=path):
+                self.git("reset", "--hard", self.base)
+                target = self.root / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("// changed\n")
+                self.commit()
+                self.assertEqual(freshness.code_changed_since(self.base, self.root), path)
 
     def test_documentation_checkpoint_preserves_code_identity(self):
         (self.root / "README.md").write_text("Documented checkpoint.\n")
         self.commit()
         self.assertIsNone(freshness.code_changed_since(self.base, self.root))
 
-    def test_blob_is_not_a_commit(self):
-        blob = self.git("rev-parse", "HEAD:apps/control.swift")
-        self.assertEqual(self.git("cat-file", "-t", blob), "blob")
-        self.assertIsNotNone(freshness.code_changed_since(blob, self.root))
-
-    def test_tree_is_not_a_commit(self):
-        tree = self.git("rev-parse", "HEAD^{tree}")
-        self.assertIsNotNone(freshness.code_changed_since(tree, self.root))
+    def test_blob_and_tree_are_not_commits(self):
+        for object_id, kind in ((self.git("rev-parse", "HEAD:apps/control.swift"), "blob"),
+                                (self.git("rev-parse", "HEAD^{tree}"), "tree")):
+            self.assertEqual(self.git("cat-file", "-t", object_id), kind)
+            self.assertIsNotNone(freshness.code_changed_since(object_id, self.root))
 
     def test_tag_object_is_not_a_commit(self):
         self.git("tag", "-am", "evidence fixture", "evidence")
@@ -88,11 +93,6 @@ class FreshnessTests(unittest.TestCase):
         with patch.object(freshness, "_git", return_value=failed) as query:
             self.assertIsNotNone(freshness.code_changed_since(self.base, self.root))
             self.assertEqual(query.call_count, 1)
-
-    def test_changed_path_with_spaces_is_not_truncated(self):
-        (self.root / "apps/control sample.swift").write_text("// changed\n")
-        self.commit()
-        self.assertEqual(freshness.code_changed_since(self.base, self.root), "apps/control sample.swift")
 
 
 if __name__ == "__main__":
