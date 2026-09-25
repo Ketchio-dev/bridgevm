@@ -14,14 +14,11 @@ done
 [[ -n "$OUT" && -n "$INPUT_MANIFEST" && -n "$JOB_ID" ]] || exit 2
 [[ "$JOB_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || exit 2
 mkdir -p "$OUT"
-PRIVATE="$OUT/private"; mkdir -m 700 "$PRIVATE"
+PRIVATE="$OUT/private"; mkdir -m 700 "$PRIVATE"; PRIVATE="$(cd "$PRIVATE" && pwd -P)"
 [[ -z "$(find "$PRIVATE" -mindepth 1 -maxdepth 1 -print -quit)" ]] || { echo "T17 private result directory is not empty" >&2; exit 1; }
-MANIFEST_TOOL="$REPO/scripts/live-gates/windows-product-e2e-manifest.py"
-WRITER="$REPO/scripts/live-gates/write-windows-product-e2e-receipt.py"
-REQUEST_WRITER="$REPO/scripts/live-gates/make-windows-product-e2e-request.py"
-VERIFIED="$PRIVATE/verified-inputs.json"
-COMMIT="$(git -C "$REPO" rev-parse HEAD)"
-STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+MANIFEST_TOOL="$REPO/scripts/live-gates/windows-product-e2e-manifest.py"; WRITER="$REPO/scripts/live-gates/write-windows-product-e2e-receipt.py"
+REQUEST_WRITER="$REPO/scripts/live-gates/make-windows-product-e2e-request.py"; VERIFIED="$PRIVATE/verified-inputs.json"
+COMMIT="$(git -C "$REPO" rev-parse HEAD)"; STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 WORK=""; WORK_ID=""; EMITTED=0; MODE=pilot; ATTEMPTS=0; VALID=false; SIGNING=unverified
 json_value() {
   python3 - "$1" "$2" <<'PY'
@@ -33,6 +30,9 @@ if not isinstance(value, (str, int, bool)):
     raise SystemExit(2)
 print(str(value).lower() if isinstance(value, bool) else value)
 PY
+}
+collect_first_ready_packet() {
+  python3 "$REPO/scripts/live-gates/t17_private_diagnostic_packet.py" capture --private "$PRIVATE" --lane-root "$lane_root" --job-id "$JOB_ID" --commit "$COMMIT" --campaign-mode "$MODE" --lane "$lane" || { : > "$PRIVATE/lane-$lane-diagnostic-capture-failed" || true; }
 }
 
 cleanup_work() {
@@ -82,8 +82,7 @@ fi
 VALID=true
 
 if [[ -f "$OUT/cancel.requested" ]]; then emit canceled canceled 0 true || exit 1; exit 1; fi
-APP="$(json_value "$VERIFIED" assets.app_bundle.path)"
-HELPER="$(json_value "$VERIFIED" assets.product_helper.path)"
+APP="$(json_value "$VERIFIED" assets.app_bundle.path)"; HELPER="$(json_value "$VERIFIED" assets.product_helper.path)"
 if ! codesign --verify --deep --strict "$APP" >/dev/null 2>&1 || ! "$REPO/scripts/verify-product-e2e-helper-app.sh" "$APP" >/dev/null 2>&1; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
 if ! SIGNING="$(bash "$REPO/scripts/live-gates/classify-product-e2e-signing.sh" "$APP")"; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
 
@@ -109,9 +108,10 @@ for (( lane=1; lane<=EXPECTED; lane++ )); do
   if find "$WORK" \( \( ! -type d ! -type f \) -o \( -type f -links +1 \) \) -print -quit | grep -q .; then printf '%s\n' "$lane" > "$PRIVATE/lane-isolation-failed"; emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if mount | grep -F "$lane_root" >/dev/null 2>&1 || pgrep -f "$lane_root" >/dev/null 2>&1; then emit cleanup-failed cleanup-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if ! python3 "$WRITER" --check-lane "$result" --request "$request" --stamp "$PRIVATE/lane-$lane-authenticated.json" --job-id "$JOB_ID" --commit "$COMMIT" --mode "$MODE" --ordinal "$lane"; then emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
+  lane_failure="$(json_value "$result" failure_code)"; if [[ "$lane_failure" == guest-evidence-missing && "$(json_value "$result" first_ready)" == false && "$(json_value "$result" failure_detail)" == "first boot has no BVAGENT READY/PONG evidence;"* ]]; then collect_first_ready_packet; fi
   next_verified="$PRIVATE/verified-after-lane-$lane.json"
   if ! python3 "$MANIFEST_TOOL" --manifest "$INPUT_MANIFEST" --out "$next_verified" >/dev/null 2>&1 || ! cmp -s "$VERIFIED" "$next_verified"; then emit failed hash-mismatch "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
-  lane_failure="$(json_value "$result" failure_code)"; if [[ "$lane_failure" != none ]]; then emit failed "$lane_failure" "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
+  if [[ "$lane_failure" != none ]]; then emit failed "$lane_failure" "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
 done
 if [[ -n "$RETAIN_IMPORT_SOURCE" ]]; then python3 "$REPO/scripts/live-gates/retain-windows-import-source.py" --request "$request" --result "$result" --stamp "$PRIVATE/lane-$EXPECTED-authenticated.json" --verified "$VERIFIED" --destination "$RETAIN_IMPORT_SOURCE" --status "$PRIVATE/t19-source-handoff.json" || printf '%s\n' 'retained T19 source was not created' > "$PRIVATE/t19-source-handoff-failed"; fi
 emit completed none "$ATTEMPTS" true "$SIGNING" || exit 1

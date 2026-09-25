@@ -59,11 +59,11 @@ struct T17FirstReadyMonitor {
         return "ui_failure_bytes=\(all.count),captured=\(captured.count),truncated=\(captured.count < all.count ? 1 : 0),sha256=\(hash)"
     }
 }
-
 enum T17FirstReadyWaiter {
     static func wait(timeout: TimeInterval = 600,
                      observe: () throws -> T17FirstReadyObservation,
                      diagnostic: () -> String,
+                     timeoutDiagnostic: (() -> String)? = nil,
                      now: () -> Date = Date.init,
                      pause: () -> Void = { RunLoop.current.run(until: Date().addingTimeInterval(0.5)) }) throws -> String {
         let deadline = now().addingTimeInterval(timeout)
@@ -77,6 +77,6 @@ enum T17FirstReadyWaiter {
             }
         } while now() < deadline
         throw T17Blocker(code: "guest-evidence-missing",
-                         detail: "first boot has no BVAGENT READY/PONG evidence; \(diagnostic())")
+                         detail: "first boot has no BVAGENT READY/PONG evidence; \(timeoutDiagnostic?() ?? diagnostic())")
     }
 }

@@ -21,10 +21,10 @@ final class HvfRuntimeSessionStore {
         return session
     }
 
-    func session(for config: VMConfig, libraryRoot: URL) -> HvfEngineSession? {
+    func session(for config: VMConfig, libraryRoot: URL, e2eHostDiagnosticStopAdmitted: Bool = false) -> HvfEngineSession? {
         let key = Key.libraryVM(config.slug)
         if let entry = entries[key], entry.session.hasActiveRuntimeWork { return entry.session }
-        guard let launch = HvfEngineConfig.libraryVM(config, rootURL: libraryRoot) else { return nil }
+        guard let launch = HvfEngineConfig.libraryVM(config, rootURL: libraryRoot, e2eHostDiagnosticStopAdmitted: e2eHostDiagnosticStopAdmitted) else { return nil }
         // Compare the saved input, not the session's accepted launch options.
         if let entry = entries[key], entry.sourceConfig == config { return entry.session }
         let session = makeSession(launch)

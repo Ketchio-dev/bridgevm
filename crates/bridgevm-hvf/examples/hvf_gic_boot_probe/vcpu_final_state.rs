@@ -9,39 +9,10 @@ use crate::*;
 
 const HV_SUCCESS: HvReturn = 0;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct CapturedRegister {
-    pub(crate) status: HvReturn,
-    pub(crate) value: u64,
-}
-
-impl CapturedRegister {
-    const NOT_READ: Self = Self {
-        status: -1,
-        value: 0,
-    };
-
-    pub(super) fn value(self) -> Option<u64> {
-        (self.status == HV_SUCCESS).then_some(self.value)
-    }
-
-    fn general(vcpu: HvVcpuT, reg: u32) -> Self {
-        let mut value = 0;
-        // SAFETY: the caller is the owning vCPU thread (or CPU0's primary
-        // thread), `vcpu` is stopped, `reg` is an HVF register ID, and the
-        // output pointer remains valid for the call.
-        let status = unsafe { hv_vcpu_get_reg(vcpu, reg, &mut value) };
-        Self { status, value }
-    }
-
-    fn system(vcpu: HvVcpuT, reg: u16) -> Self {
-        let mut value = 0;
-        // SAFETY: same owner-thread/stopped-vCPU contract as `general`; `reg`
-        // is an HVF system-register ID and `value` is a live stack output.
-        let status = unsafe { hv_vcpu_get_sys_reg(vcpu, reg, &mut value) };
-        Self { status, value }
-    }
-}
+#[path = "vcpu_final_state/owner_interrupt.rs"]
+mod owner_interrupt;
+pub(crate) use owner_interrupt::CapturedRegister;
+use owner_interrupt::OwnerInterruptState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VcpuFinalState {
@@ -61,6 +32,7 @@ pub(crate) struct VcpuFinalState {
     pub(crate) ttbr0_el1: CapturedRegister,
     pub(crate) ttbr1_el1: CapturedRegister,
     pub(crate) mair_el1: CapturedRegister,
+    pub(crate) owner_interrupt: OwnerInterruptState,
 }
 
 #[derive(Debug, Default)]
@@ -189,6 +161,7 @@ impl VcpuFinalState {
             ttbr0_el1: CapturedRegister::system(vcpu, HV_SYS_REG_TTBR0_EL1),
             ttbr1_el1: CapturedRegister::system(vcpu, HV_SYS_REG_TTBR1_EL1),
             mair_el1: CapturedRegister::system(vcpu, HV_SYS_REG_MAIR_EL1),
+            owner_interrupt: OwnerInterruptState::capture_on_owner_thread(vcpu),
         }
     }
 
@@ -242,6 +215,7 @@ impl VcpuFinalState {
             ttbr0_el1: ok,
             ttbr1_el1: ok,
             mair_el1: ok,
+            owner_interrupt: OwnerInterruptState::default(),
         }
     }
 }
@@ -270,6 +244,10 @@ pub(crate) fn report_vcpu_final_states(
     } else {
         println!("VCPU-FINAL-STATUS: incomplete; created secondary snapshots are missing");
     }
+    println!(
+        "VCPU-IRQ-CAPTURE: captured={} expected={expected} missing={missing_secondaries:?}",
+        1 + secondaries.len()
+    );
     report_vcpu_final_state(mem, primary);
     for state in secondaries {
         report_vcpu_final_state(mem, state);
@@ -287,6 +265,15 @@ fn report_vcpu_final_state(mem: &dyn GuestMemoryMut, state: &VcpuFinalState) {
     print_register("sp_el0", state.sp_el0);
     print_register("sp_el1", state.sp_el1);
     println!();
+    for line in state.owner_interrupt.render(
+        state.index,
+        state.generation,
+        state.expected_mpidr,
+        state.mpidr_el1,
+        state.cpsr,
+    ) {
+        println!("{line}");
+    }
     for (start, end) in [(0usize, 8usize), (8, 16), (16, 24), (24, 31)] {
         print!("VCPU-FINAL[{}]-GPRS[x{start}..x{}]:", state.index, end - 1);
         for index in start..end {
@@ -329,11 +316,20 @@ fn report_vcpu_final_state(mem: &dyn GuestMemoryMut, state: &VcpuFinalState) {
         };
         let label = format!("vcpu{}-{name}", state.index);
         let ipa = print_stage1_translation(mem, &context, &label, va);
+        if ipa.is_none() {
+            println!(
+                "VCPU-FINAL[{}]-{name}-INSN: unavailable: translation failed",
+                state.index
+            );
+        }
         print_translated_pe_owner(mem, &label, ipa);
         dump_translated_guest_bytes(mem, &format!("VCPU-CODE[{label}]"), ipa, before, 0x80);
         print_translated_instruction_words(mem, &label, va, ipa, before, 0x80);
     }
-    if let Some(fp) = state.x[HV_REG_FP as usize].value().filter(|value| *value != 0) {
+    if let Some(fp) = state.x[HV_REG_FP as usize]
+        .value()
+        .filter(|value| *value != 0)
+    {
         let label = format!("vcpu{}-fp", state.index);
         let fp_ipa = print_stage1_translation(mem, &context, &label, fp);
         dump_translated_guest_bytes(mem, &format!("VCPU-FRAME[{label}]"), fp_ipa, 0, 0x80);
