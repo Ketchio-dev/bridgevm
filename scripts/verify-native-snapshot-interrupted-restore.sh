@@ -26,7 +26,6 @@ VARS=${VARS:-$HOME/BridgeVM/work/rethink-fresh-12041-agent-vioserial-vars.fd}
 OUT=${OUT:-$HOME/BridgeVM/runs/snapshot-restore-boot-$(date +%Y%m%d-%H%M%S)}
 BOOT_TIMEOUT=${BOOT_TIMEOUT:-1500}
 STEP_TIMEOUT=${STEP_TIMEOUT:-240}
-GUEST_MARKER='C:\bv-snapshot-marker.txt'
 NATIVE_SNAPSHOT_CLI=${NATIVE_SNAPSHOT_CLI:-}
 NATIVE_SNAPSHOT_VM_ID=${NATIVE_SNAPSHOT_VM_ID:-a19-native-cli-live}
 A19_SNAPSHOT_HELPER=${A19_SNAPSHOT_HELPER:-}
@@ -80,60 +79,9 @@ PY
 WORK_DISK=$BUNDLE/disks/hvf-target.raw
 WORK_VARS=$BUNDLE/metadata/hvf-vars.fd
 chmod u+w "$WORK_DISK" "$WORK_VARS" || fail "make private clones writable"
-send_wait() { # ctl, log, command, isolated response path
-  python3 "$REPO/scripts/snapshot-restore-channel.py" "$1" "$2" "$3" "$STEP_TIMEOUT" "$4"
-}
-# Boot once: report the marker already on C:, write a new one, power off.
-boot_and_mark() { # $1 = new marker text, $2 = phase name
-  local marker=$1 phase=$2
-  local pdir=$OUT/$phase
-  mkdir "$pdir" || return 1
-  local ctl=$pdir/agent.ctl log=$pdir/run.log
-  local probe_args=(); [[ -z "${BRIDGEVM_PREBUILT_PROBE:-}" ]] || probe_args+=(--release --skip-build)
-  : > "$ctl"
-
-  scripts/run-hvf-windows-installed-boot.sh \
-    --target "$WORK_DISK" --vars "$WORK_VARS" \
-    --evidence-dir "$pdir" --watchdog-ms $((BOOT_TIMEOUT * 1000)) \
-    --ram-mib 6144 --smp-cpus 4 \
-    --agent-service-control "$ctl" ${probe_args[@]+"${probe_args[@]}"} \
-    > "$pdir/launcher.out" 2>&1 &
-  local launcher=$!
-  SNAPSHOT_LAUNCHER=$launcher
-
-  local deadline=$((SECONDS + BOOT_TIMEOUT))
-  while (( SECONDS < deadline )); do
-    grep -qE '^BVAGENT SERVICE start' "$log" 2>/dev/null && break
-    kill -0 $launcher 2>/dev/null || break
-    sleep 1
-  done
-  if ! grep -qE '^BVAGENT SERVICE start' "$log" 2>/dev/null; then
-    # Distinguish "the guest did not boot" from "the guest booted but has no
-    # agent". They look identical from the control file and need different
-    # fixes; the second one is an image problem, not a VMM problem.
-    if grep -qE 'ramfb checkpoint' "$log" 2>/dev/null; then
-      echo "  the guest produced framebuffer output but no BVAGENT line:" >&2
-      echo "  this image most likely has no virtio-serial driver or no agent" >&2
-    fi
-    snapshot_stop_launcher
-    return 1
-  fi
-
-  # Read what is there before writing. This readback is the observation the
-  # whole gate turns on, so it happens first and is kept verbatim.
-  send_wait "$ctl" "$log" \
-    "powershell -NoProfile -Command \"\$ErrorActionPreference='Stop'; if (Test-Path '$GUEST_MARKER') { Get-Content '$GUEST_MARKER' } else { 'BV-NO-MARKER' }\"" \
-    "$pdir/marker-before.txt" || { snapshot_stop_launcher; return 1; }
-
-  send_wait "$ctl" "$log" \
-    "powershell -NoProfile -Command \"\$ErrorActionPreference='Stop'; Set-Content -NoNewline -Encoding ascii -Path '$GUEST_MARKER' -Value '$marker'; if ((Get-Content -Raw '$GUEST_MARKER') -cne '$marker') { exit 1 }; Write-Output '$marker'\"" \
-    "$pdir/marker-after.txt" || { snapshot_stop_launcher; return 1; }
-  [[ $(cat "$pdir/marker-after.txt") == "$marker" ]] || { snapshot_stop_launcher; return 1; }
-  snapshot_shutdown "$ctl" "$log"
-}
-
+source "$REPO/scripts/a19-t22-marker-share.sh"
 echo "=== phase 1: write the marker that must survive ==="
-ORIGINAL="BV-ORIGINAL-$(date +%s)"
+ORIGINAL=$(t22_random_marker ORIGINAL) || fail "make original marker"
 boot_and_mark "$ORIGINAL" phase1-original \
   || fail "guest never reached agent service state in phase 1"
 echo "original marker: $ORIGINAL"
@@ -154,7 +102,7 @@ cp "$SNAP/manifest.json" "$OUT/snapshot-created-manifest.json" \
   || fail "retain authenticated snapshot manifest"
 
 echo "=== phase 3: overwrite it, so a no-op restore cannot pass ==="
-CLOBBER="BV-CLOBBERED-$(date +%s)"
+CLOBBER=$(t22_random_marker CLOBBERED) || fail "make clobber marker"
 boot_and_mark "$CLOBBER" phase3-clobber \
   || fail "guest never reached agent service state in phase 3"
 [[ $(cat "$OUT/phase3-clobber/marker-before.txt") == "$ORIGINAL" ]] \
@@ -186,11 +134,11 @@ cmp "$OUT/pre-interrupt-vars.sha256" "$OUT/postkill-vars.sha256" \
   || fail "postkill selected vars differ from the old pair"
 
 echo "=== phase 5: boot the still-selected clobbered pair ==="
-boot_and_mark "BV-POSTKILL-$(date +%s)" phase5-postkill \
+POSTKILL=$(t22_random_marker POSTKILL) || fail "make postkill marker"
+boot_and_mark "$POSTKILL" phase5-postkill \
   || fail "postkill selected pair did not boot"
 [[ $(cat "$OUT/phase5-postkill/marker-before.txt") == "$CLOBBER" ]] \
   || fail "postkill boot did not preserve the exact clobber marker"
-
 echo "=== phase 6: normal product CLI restore retry ==="
 "$NATIVE_SNAPSHOT_CLI" app snapshot-restore "$NATIVE_SNAPSHOT_VM_ID" \
   --library "$LIBRARY" --json > "$OUT/restore-retry.json" 2> "$OUT/restore-retry.stderr" \
@@ -210,7 +158,8 @@ native_snapshot_export_and_select "$NATIVE_SNAPSHOT_CLI" "$NATIVE_SNAPSHOT_VM_ID
   || fail "postretry selected-generation export failed"
 
 echo "=== phase 7: boot the restored original pair and read the marker ==="
-boot_and_mark "BV-FINAL-$(date +%s)" phase7-restored \
+FINAL=$(t22_random_marker FINAL) || fail "make final marker"
+boot_and_mark "$FINAL" phase7-restored \
   || fail "restored pair never reached agent service state -- the snapshot does not boot"
 
 READBACK=$OUT/phase7-restored/marker-before.txt

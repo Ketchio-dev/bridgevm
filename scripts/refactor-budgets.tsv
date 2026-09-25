@@ -3182,9 +3182,12 @@ scripts/live-gates/a19_interrupted_restore_receipt.py	171	0
 scripts/live-gates/a19_interrupted_restore_public.py	53	0
 scripts/live-gates/a19_interrupted_restore_seal.py	84	0
 scripts/live-gates/run-a19-interrupted-restore-tier.py	207	0
-scripts/verify-native-snapshot-interrupted-restore.sh	230	0
+scripts/verify-native-snapshot-interrupted-restore.sh	179	0
+scripts/a19-t22-marker-share.sh	120	0
+scripts/win-assets/bv-a19-t22-marker.ps1	59	0
 tests/integration/a19-interrupted-restore-live-tier-contract.py	224	0
 tests/integration/a19-interrupted-restore-public-contract.py	77	0
+tests/integration/a19-interrupted-restore-guest-share-contract.py	106	0
 docs/history/windows-hvf/a19-interrupted-restore-tier-20260925.md	41	0
 docs/windows-arm/evidence/a19-t21-r1-20260925.md	68	0
 docs/windows-arm/evidence/a19-t21-r1-20260925-receipt.json	49	0
