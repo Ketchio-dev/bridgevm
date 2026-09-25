@@ -128,7 +128,7 @@ class B9PilotContract(unittest.TestCase):
                  "input_manifest_sha256": self.job["input_manifest_sha256"],
                  "sealed_binary_sha256": self.job["sealed_binary_sha256"],
                  "asset_hashes": self.asset_hashes, "driver_umd_sha256": umd,
-                 "outcome": "diagnostic-complete", "result_class": "VISIBLE_PLAYBACK_COMPLETE",
+                 "outcome": "diagnostic-complete", "result_class": "VLC_PID_PRESENTS_CAPTURED",
                  "pilot_count": 1, "required_workload_count": 20,
                  "cleanup_complete": True, "source_integrity": True,
                  "owned_process_group_stopped": True, "owned_vm_pgid": 999999,
@@ -150,16 +150,14 @@ class B9PilotContract(unittest.TestCase):
                  "p99_nearest_rank_ms": metrics["p99_nearest_rank_ms"],
                  **{flag: False for flag in FLAGS}}
         return diagnostic, value
-
-    def test_raw_visible_receipt_and_public_no_claim(self):
+    def test_raw_pid_capture_receipt_and_public_no_claim(self):
         diagnostic, value = self.fixture()
         validate_private(value, self.job, diagnostic)
         public = public_view(value, self.job)
-        self.assertEqual(public["result_class"], "VISIBLE_PLAYBACK_COMPLETE")
+        self.assertEqual(public["result_class"], "VLC_PID_PRESENTS_CAPTURED")
         self.assertTrue(all(public[flag] is False for flag in FLAGS))
         self.assertNotIn("private_artifacts", public)
         self.assertEqual(public["required_workload_count"], 20)
-
     def test_self_consistent_metric_shape_cannot_override_raw_csv(self):
         diagnostic, value = self.fixture()
         tampered = copy.deepcopy(value)
@@ -203,7 +201,6 @@ class B9PilotContract(unittest.TestCase):
         path.write_text(changed)
         with self.assertRaisesRegex(ValueError, "immutable queue ledger"):
             job_fields(self.job_dir)
-
     def test_guest_share_waits_for_completed_transfer_and_exact_byte_count(self):
         share = self.root / "share"
         share.mkdir()
@@ -211,6 +208,10 @@ class B9PilotContract(unittest.TestCase):
         target = share / name
         log = self.root / "run.log"
         target.write_bytes(b'{"schema":')  # visible destination while std::fs::write is incomplete
+        process = type("UnfinishedProcess", (), {"poll": lambda self: None})()
+        log.write_text(f"BVAGENT SHARE guest->host {name} bytes={target.stat().st_size} t=0\n")
+        with self.assertRaisesRegex(ValueError, "malformed guest observation"):
+            RUNNER.await_guest_file(share, name, log, process, 1)
         log.write_text("")
         raw = b'{"schema":"complete"}'
         def finish():
@@ -219,7 +220,6 @@ class B9PilotContract(unittest.TestCase):
         timer = threading.Timer(0.3, finish)
         timer.start()
         try:
-            process = type("UnfinishedProcess", (), {"poll": lambda self: None})()
             value, digest_value = RUNNER.await_guest_file(share, name, log, process, 2)
         finally:
             timer.join()
@@ -228,8 +228,7 @@ class B9PilotContract(unittest.TestCase):
         log.write_text(f"BVAGENT SHARE guest->host {name} bytes={len(raw) + 1} t=2\n")
         with self.assertRaisesRegex(ValueError, "byte count"):
             RUNNER.await_guest_file(share, name, log, process, 1)
-
-    def test_no_guest_ready_cannot_be_called_visible_playback(self):
+    def test_no_guest_ready_cannot_be_called_pid_capture(self):
         result = observe(self.root, "f" * 32,
                          {"media_sha256": "a" * 64, "vlc_zip_sha256": "b" * 64,
                           "presentmon_sha256": "c" * 64,
@@ -252,7 +251,6 @@ class B9PilotContract(unittest.TestCase):
             (self.job_dir / "receipt.json").write_text(json.dumps(value))
             with self.assertRaisesRegex(ValueError, "remain after runner"):
                 cleanup_guard(self.job_dir, self.commit, self.job_id)
-
     def test_chunked_share_reconstructs_exact_archive(self):
         source = self.root / "assets"
         source.mkdir()
@@ -271,16 +269,18 @@ class B9PilotContract(unittest.TestCase):
                             if name != "b9-vlc-parts.tsv"))
         self.assertLess(staged["b9-vlc-parts.tsv"][0], 8000000)
         self.assertEqual(len(staged), 14)
-
     def test_guest_asset_is_crlf_and_launch_is_real_window_path(self):
         raw = (ROOT / "scripts/win-assets/bv-b9-vlc-playback.ps1").read_bytes()
         self.assertEqual(raw.count(b"\n"), raw.count(b"\r\n"))
         text = raw.decode("ascii")
         for marker in ("Invoke-CimMethod -ClassName Win32_Process", "--start-paused",
                        "--vout=direct3d11", "--process_id ", "viogpu_d3d10.dll",
-                       "libdav1d_plugin.dll", "$ExpectedD3D11UmdSha"):
+                       "libdav1d_plugin.dll", "$ExpectedD3D11UmdSha",
+                       "[IO.File]::WriteAllText($temp", "[IO.File]::Move($temp, $Path)",
+                       "--output_file \"' + $captureCsvPath", "[IO.File]::Copy($captureCsvPath, $csvTempPath)",
+                       "[IO.File]::Move($csvTempPath, $csvPath)",
+                       "GetForegroundWindow() -eq $hwnd", "TotalMilliseconds -ge 7000"):
             self.assertIn(marker, text)
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

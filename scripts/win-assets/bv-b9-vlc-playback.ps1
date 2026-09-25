@@ -3,7 +3,6 @@ param(
     [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-f]{32}$')][string]$Nonce,
     [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedD3D11UmdSha
 )
-
 # One real, visible VLC/AV1 playback. This script reports observations only;
 # the host independently checks the bound CSV and changing GPU scanout.
 Set-StrictMode -Version Latest
@@ -16,49 +15,45 @@ $finishedPath = Join-Path $share ('finished-' + $Nonce + '.json')
 $mediaPath = Join-Path $share 'bbb_1080p_10s_5MB_av1.webm'
 $presentMonPath = Join-Path $share 'PresentMon-2.5.1-x64.exe'
 $csvPath = Join-Path $share ('b9-' + $Nonce + '.csv')
+$csvTempPath = $csvPath + '.partial'
+$captureCsvPath = Join-Path $work ('presentmon-' + $Nonce + '.csv')
 $utf8 = New-Object Text.UTF8Encoding($false)
 $zipHash = '9c0917dc521ffc8ce30e70bca7f6c9dc8fec80909d763e75cd976351dee8db0b'
 $mediaHash = '5e43740e2916afc1b17de09f4948f038b83065a5d42f0fcb16643d7faeb00ad7'
 $presentMonHash = '9bec3083069f58f911e6a512f4806db51a27bd096103087bc1d05ef54c80a191'
 $state = [ordered]@{
-    schema = 'bridgevm.b9-vlc-finished.v1'; nonce = $Nonce; pid = 0; hwnd = 0
-    window_visible = $false
-    vlc_exit_observed = $false; vlc_exit_code = -1; playback_elapsed_ms = 0
-    collector_started = $false; collector_exit_code = -1
-    csv_sha256 = ''; csv_bytes = 0; direct3d11_module_loaded = $false
-    av1_decoder_module_loaded = $false; driver_umd_sha256 = ''
+    schema = 'bridgevm.b9-vlc-finished.v1'; nonce = $Nonce; pid = 0; hwnd = 0; window_visible = $false
+    vlc_exit_observed = $false; vlc_exit_code = -1; playback_elapsed_ms = 0; collector_started = $false; collector_exit_code = -1
+    csv_sha256 = ''; csv_bytes = 0; direct3d11_module_loaded = $false; av1_decoder_module_loaded = $false; driver_umd_sha256 = ''
     failure_code = 'PREPARATION_FAILED'; failure_detail = ''
 }
-$vlc = $null
-$collector = $null
-$mutex = New-Object Threading.Mutex($false, 'Global\BridgeVMB9VlcPlayback')
-$owned = $false
+$vlc = $null; $collector = $null
+$mutex = New-Object Threading.Mutex($false, 'Global\BridgeVMB9VlcPlayback'); $owned = $false
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class BridgeVMB9Window {
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
 }
 '@
-
 function Write-Observation([string]$Path, [object]$Value) {
     if (Test-Path -LiteralPath $Path) { throw 'B9 observation already exists' }
     $raw = (ConvertTo-Json -InputObject $Value -Depth 4 -Compress) + "`r`n"
     if ($raw.Length -gt 8192) { throw 'B9 observation exceeds private bound' }
-    [IO.File]::WriteAllText($Path, $raw, $utf8)
+    $temp = $Path + '.partial'
+    if (Test-Path -LiteralPath $temp) { throw 'B9 observation temp already exists' }
+    [IO.File]::WriteAllText($temp, $raw, $utf8)
+    [IO.File]::Move($temp, $Path)
 }
-
 function Assert-Hash([string]$Path, [string]$Expected) {
     $item = Get-Item -LiteralPath $Path -ErrorAction Stop
     if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
         throw 'B9 source must be a regular file'
     }
-    if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Expected) {
-        throw 'B9 source hash mismatch'
-    }
+    if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Expected) { throw 'B9 source hash mismatch' }
 }
-
 function Wait-HostMarker([string]$Name, [int]$Seconds) {
     $path = Join-Path $share $Name
     $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
@@ -73,12 +68,11 @@ function Wait-HostMarker([string]$Name, [int]$Seconds) {
     }
     throw 'B9 host marker timeout'
 }
-
 try {
     try { $owned = $mutex.WaitOne(0) }
     catch [Threading.AbandonedMutexException] { $owned = $true }
     if (-not $owned) { throw 'another B9 playback owns the guest mutex' }
-    foreach ($path in @($readyPath, $collectorPath, $finishedPath, $csvPath, $work)) {
+    foreach ($path in @($readyPath, $collectorPath, $finishedPath, $csvPath, $csvTempPath, $work)) {
         if (Test-Path -LiteralPath $path) { throw 'B9 run artifact already exists' }
     }
     Assert-Hash $mediaPath $mediaHash
@@ -98,9 +92,7 @@ try {
                 $columns[2] -cnotmatch '^[0-9a-f]{64}$') { throw 'invalid VLC chunk manifest' }
             $partPath = Join-Path $share $name
             $part = Get-Item -LiteralPath $partPath -ErrorAction Stop
-            if ($part.Length -ne [int]$columns[1] -or $part.Length -gt 7500000) {
-                throw 'VLC chunk size differs'
-            }
+            if ($part.Length -ne [int]$columns[1] -or $part.Length -gt 7500000) { throw 'VLC chunk size differs' }
             Assert-Hash $partPath $columns[2]
             $input = [IO.File]::OpenRead($partPath)
             try { $input.CopyTo($output) } finally { $input.Dispose() }
@@ -135,8 +127,7 @@ try {
     [uint32]$windowPid = 0
     [void][BridgeVMB9Window]::GetWindowThreadProcessId($hwnd, [ref]$windowPid)
     if ($windowPid -ne [uint32]$state.pid) { throw 'VLC visible window is not owned by launched PID' }
-    $state.hwnd = $hwnd.ToInt64()
-    $state.window_visible = $true
+    $state.hwnd = $hwnd.ToInt64(); $state.window_visible = $true
     Write-Observation $readyPath ([ordered]@{
         schema = 'bridgevm.b9-vlc-ready.v1'; nonce = $Nonce; pid = $state.pid
         hwnd = $state.hwnd; title = $vlc.MainWindowTitle; media_sha256 = $mediaHash
@@ -147,7 +138,7 @@ try {
     Wait-HostMarker ('collector-go-' + $Nonce + '.txt') 60
     $session = 'BridgeVM-B9-' + $Nonce
     $arguments = '--process_id ' + $state.pid + ' --timed 25 --terminate_after_timed ' +
-        '--v2_metrics --session_name "' + $session + '" --output_file "' + $csvPath + '"'
+        '--v2_metrics --session_name "' + $session + '" --output_file "' + $captureCsvPath + '"'
     $collector = Start-Process -FilePath $presentMonPath -ArgumentList $arguments -PassThru -WindowStyle Hidden
     Start-Sleep -Seconds 2
     $collector.Refresh()
@@ -160,15 +151,19 @@ try {
     $state.failure_code = 'PLAYBACK_INCOMPLETE'
     Wait-HostMarker ('play-start-' + $Nonce + '.txt') 60
     $playStart = [DateTime]::UtcNow
+    $state.window_visible = $false
     $playDeadline = $playStart.AddSeconds(60)
     while ([DateTime]::UtcNow -lt $playDeadline) {
         if ($vlc.WaitForExit(250)) { break }
         $named = @(Get-Process -Name vlc -ErrorAction SilentlyContinue | Where-Object { $_.Id -eq $state.pid })
         if ($named.Count -ne 1) { throw 'VLC filename/PID disappeared before completion' }
+        if (([DateTime]::UtcNow - $playStart).TotalMilliseconds -ge 7000) {
+            [uint32]$playingPid = 0; [void][BridgeVMB9Window]::GetWindowThreadProcessId($hwnd, [ref]$playingPid)
+            $state.window_visible = ($playingPid -eq [uint32]$state.pid -and [BridgeVMB9Window]::IsWindowVisible($hwnd) -and
+                [BridgeVMB9Window]::GetForegroundWindow() -eq $hwnd)
+        }
         try {
-            if (@($vlc.Modules | Where-Object { $_.ModuleName -ieq 'libdirect3d11_plugin.dll' }).Count -eq 1) {
-                $state.direct3d11_module_loaded = $true
-            }
+            if (@($vlc.Modules | Where-Object { $_.ModuleName -ieq 'libdirect3d11_plugin.dll' }).Count -eq 1) { $state.direct3d11_module_loaded = $true }
             if (@($vlc.Modules | Where-Object {
                 $_.ModuleName -ieq 'libdav1d_plugin.dll' -or $_.ModuleName -ieq 'libaom_plugin.dll'
             }).Count -ge 1) { $state.av1_decoder_module_loaded = $true }
@@ -180,16 +175,20 @@ try {
     }
     $vlc.Refresh()
     if (-not $vlc.HasExited) { throw 'VLC did not exit after the bounded playback window' }
-    $state.vlc_exit_observed = $true
-    $state.vlc_exit_code = $vlc.ExitCode
+    $state.vlc_exit_observed = $true; $state.vlc_exit_code = $vlc.ExitCode
     $state.playback_elapsed_ms = [int]([DateTime]::UtcNow - $playStart).TotalMilliseconds
     if (-not $collector.WaitForExit(40000)) { throw 'PresentMon did not exit after its timed capture' }
     $state.collector_exit_code = $collector.ExitCode
     if ($collector.ExitCode -ne 0) { throw 'PresentMon exited nonzero' }
-    $csv = Get-Item -LiteralPath $csvPath -ErrorAction Stop
-    if ($csv.PSIsContainer -or $csv.Length -le 0 -or $csv.Length -gt 7500000) {
-        throw 'PresentMon CSV is missing or exceeds share limit'
-    }
+    $csv = Get-Item -LiteralPath $captureCsvPath -ErrorAction Stop
+    if ($csv.PSIsContainer -or $csv.Length -le 0 -or $csv.Length -gt 7500000) { throw 'PresentMon CSV is missing or exceeds share limit' }
+    [IO.File]::Copy($captureCsvPath, $csvTempPath)
+    $flush = [IO.File]::Open($csvTempPath, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    try { $flush.Flush($true) } finally { $flush.Dispose() }
+    if ((Get-Item -LiteralPath $csvTempPath).Length -ne $csv.Length -or
+        (Get-FileHash -LiteralPath $csvTempPath -Algorithm SHA256).Hash -cne
+        (Get-FileHash -LiteralPath $captureCsvPath -Algorithm SHA256).Hash) { throw 'shared CSV copy differs' }
+    [IO.File]::Move($csvTempPath, $csvPath)
     $state.csv_bytes = [int]$csv.Length
     $state.csv_sha256 = (Get-FileHash -LiteralPath $csvPath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($state.vlc_exit_code -ne 0 -or $state.playback_elapsed_ms -lt 8000 -or
@@ -200,8 +199,7 @@ try {
     $state.failure_code = 'none'
 } catch {
     $state.failure_code = [string]$state.failure_code
-    $state.failure_detail = ([string]$_.Exception.Message).Substring(0,
-        [Math]::Min(160, ([string]$_.Exception.Message).Length))
+    $state.failure_detail = ([string]$_.Exception.Message).Substring(0, [Math]::Min(160, ([string]$_.Exception.Message).Length))
 } finally {
     if ($null -ne $collector) {
         $collector.Refresh()

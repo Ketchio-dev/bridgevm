@@ -321,7 +321,7 @@ def run(args) -> int:
                 input_stream.write(b"KEY space\n")
             wait_for(lambda: sum(line.startswith("live input accepted: command=Key(")
                                  for line in lines(boot / "run.log")) > before,
-                     process, 30, "visible VLC play input")
+                     process, 30, "VLC play input")
             marker(share, "play-start-" + nonce + ".txt", nonce)
             stage = "playback"
             raw.mkdir(mode=0o700, exist_ok=False)
@@ -361,7 +361,7 @@ def run(args) -> int:
                                        "PLAYBACK_INCOMPLETE" if receipt.get("collector_sha256")
                                        else "GUEST_NOT_READY")
         elif stage == "playback" or (stage == "shutdown" and
-                                     receipt["result_class"] == "VISIBLE_PLAYBACK_COMPLETE"):
+                                     receipt["result_class"] == "VLC_PID_PRESENTS_CAPTURED"):
             receipt["result_class"] = "PLAYBACK_INCOMPLETE"
     finally:
         if process is not None:

@@ -134,7 +134,7 @@ def _plain(value: dict, job: dict, public: bool) -> None:
         digest = value.get(key, "")
         if not isinstance(digest, str) or (digest and not SHA.fullmatch(digest)):
             raise ValueError("B9 observation hash malformed")
-    if value["result_class"] == "VISIBLE_PLAYBACK_COMPLETE":
+    if value["result_class"] == "VLC_PID_PRESENTS_CAPTURED":
         if (value["outcome"] != "diagnostic-complete" or value["pilot_count"] != 1
                 or value["cleanup_complete"] is not True
                 or value["source_integrity"] is not True
@@ -172,9 +172,9 @@ def validate_private(value: dict, job: dict, diagnostic: Path | None = None) -> 
     if work is not None and (not isinstance(work, str) or not work.endswith(
             "/b9-pilot-" + job["job_id"])):
         raise ValueError("B9 owned work path differs")
-    if value["result_class"] == "VISIBLE_PLAYBACK_COMPLETE" and (
+    if value["result_class"] == "VLC_PID_PRESENTS_CAPTURED" and (
             work is None or value["owned_vm_pgid"] <= 1):
-        raise ValueError("B9 visible label lacks owned work and VM process identity")
+        raise ValueError("B9 PID capture label lacks owned work and VM process identity")
     if diagnostic is not None:
         root = value.get("private_artifact_dir", "raw")
         if root not in ("raw", "raw/guest"):
@@ -200,17 +200,17 @@ def validate_private(value: dict, job: dict, diagnostic: Path | None = None) -> 
                 raise ValueError("unsafe B9 scanout artifact name")
             if sha256(diagnostic / "raw" / name) != digest:
                 raise ValueError("B9 scanout artifact changed")
-        if value["result_class"] == "VISIBLE_PLAYBACK_COMPLETE":
-            verify_visible_raw(value, diagnostic)
+        if value["result_class"] == "VLC_PID_PRESENTS_CAPTURED":
+            verify_pid_capture_raw(value, diagnostic)
 
 
-def verify_visible_raw(value: dict, diagnostic: Path) -> None:
-    """Recompute the successful label from retained bytes, not receipt numbers."""
+def verify_pid_capture_raw(value: dict, diagnostic: Path) -> None:
+    """Recompute the PID capture label from retained bytes, not receipt numbers."""
     root = diagnostic / value["private_artifact_dir"]
     required = ("guest-ready.json", "guest-collector.json", "guest-finished.json",
                 "presentmon.csv", "run.log")
     if any(name not in value["private_artifacts"] for name in required):
-        raise ValueError("B9 visible label lacks retained guest/CSV/run evidence")
+        raise ValueError("B9 PID capture label lacks retained guest/CSV/run evidence")
     ready, ready_hash = read_guest_json(root / "guest-ready.json")
     nonce = ready.get("nonce")
     if (not isinstance(nonce, str) or not re.fullmatch(r"[0-9a-f]{32}", nonce)

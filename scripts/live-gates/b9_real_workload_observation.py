@@ -14,8 +14,8 @@ from b9_workload_diagnostic import DiagnosticError, summarize_csv, unique_pairs
 
 NONCE = re.compile(r"[0-9a-f]{32}\Z")
 SHA = re.compile(r"[0-9a-f]{64}\Z")
-CLASSES = frozenset(("VISIBLE_PLAYBACK_COMPLETE", "PLAYBACK_INCOMPLETE",
-                     "NO_VISIBLE_PRESENTATION", "COLLECTOR_FAILED",
+CLASSES = frozenset(("VLC_PID_PRESENTS_CAPTURED", "PLAYBACK_INCOMPLETE",
+                     "PRESENTATION_UNPROVEN", "COLLECTOR_FAILED",
                      "GUEST_NOT_READY", "INVALID_EVIDENCE"))
 
 
@@ -208,7 +208,7 @@ def observe(share: Path, nonce: str, pins: dict[str, str], frames: list[Path]) -
             or finished["av1_decoder_module_loaded"] is not True
             or finished["driver_umd_sha256"] != pins["expected_driver_umd_sha256"]
             or result["distinct_scanout_count"] < 3):
-        result["result_class"] = "NO_VISIBLE_PRESENTATION"
+        result["result_class"] = "PRESENTATION_UNPROVEN"
         return result
-    result["result_class"] = "VISIBLE_PLAYBACK_COMPLETE"
+    result["result_class"] = "VLC_PID_PRESENTS_CAPTURED"
     return result
