@@ -12,9 +12,9 @@ METRICS = ("cpu_start_span_ms", "p50_nearest_rank_ms",
            "p95_nearest_rank_ms", "p99_nearest_rank_ms")
 BOOLEANS = ("cleanup_complete", "source_integrity", "guest_shutdown_observed",
             "pass", "claim_eligible", "criterion_pass", "capability_promotion")
-DIRECT = {"bbb_1080p_10s_5MB_av1.webm": "media",
-          "PresentMon-2.5.1-x64.exe": "presentmon",
-          "bv-b9-vlc-playback.ps1": "guest_script", "bv-b9-control.ps1": "control_script"}
+DIRECT = {"bbb_1080p_10s_5MB_av1.webm": "media", "PresentMon-2.5.1-x64.exe": "presentmon",
+          "bv-b9-vlc-playback.ps1": "guest_script", "bv-b9-private-inputs.ps1": "guest_helper_script",
+          "bv-b9-control.ps1": "control_script"}
 STAGED = set(DIRECT) | {f"b9-vlc-part-{index:02d}.bin" for index in range(10)} | {"b9-vlc-parts.tsv"}
 
 

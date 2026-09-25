@@ -36,7 +36,7 @@ if ($Action -eq 'Launch') {
     if ((Get-FileHash -LiteralPath $guest -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ExpectedGuestScriptSha256) {
         throw 'B9 guest script differs from the sealed source'
     }
-    $command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File $guest -Nonce $Nonce -ExpectedD3D11UmdSha $ExpectedD3D11UmdSha"
+    $command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File $guest -Nonce $Nonce -ExpectedD3D11UmdSha $ExpectedD3D11UmdSha -ExpectedGuestScriptSha256 $ExpectedGuestScriptSha256"
     $created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $command }
     if ($created.ReturnValue -ne 0 -or $created.ProcessId -le 0) { throw 'B9 workload did not launch' }
     Write-Output "B9-WORKLOAD-LAUNCHED-$Nonce"

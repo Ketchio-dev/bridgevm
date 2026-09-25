@@ -256,7 +256,7 @@ class B9PilotContract(unittest.TestCase):
         records = {}
         for key, name, data in (("media", "media.webm", b"abc"),
                                 ("presentmon", "presentmon.exe", b"xyz"),
-                                ("guest_script", "guest.ps1", b"script"),
+                                ("guest_script", "guest.ps1", b"script"), ("guest_helper_script", "helper.ps1", b"helper"),
                                 ("control_script", "control.ps1", b"control"),
                                 ("vlc_zip", "vlc.zip", bytes(range(95)))):
             path = source / name
@@ -267,9 +267,9 @@ class B9PilotContract(unittest.TestCase):
         self.assertEqual(b"".join(path.read_bytes() for path in parts), bytes(range(95)))
         self.assertTrue(all(0 < size <= 10 for name, (size, _) in staged.items() if name != "b9-vlc-parts.tsv"))
         self.assertLess(staged["b9-vlc-parts.tsv"][0], 8000000)
-        self.assertEqual(len(staged), 15)
+        self.assertEqual(len(staged), 16)
     def test_guest_asset_is_crlf_and_launch_is_real_window_path(self):
-        raw = (ROOT / "scripts/win-assets/bv-b9-vlc-playback.ps1").read_bytes()
+        raw = b"".join((ROOT / "scripts/win-assets" / name).read_bytes() for name in ("bv-b9-vlc-playback.ps1", "bv-b9-private-inputs.ps1"))
         self.assertEqual(raw.count(b"\n"), raw.count(b"\r\n"))
         text = raw.decode("ascii")
         for marker in ("Invoke-CimMethod -ClassName Win32_Process", "--start-paused",

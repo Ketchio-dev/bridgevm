@@ -1,8 +1,12 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-f]{32}$')][string]$Nonce,
-    [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedD3D11UmdSha
+    [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedD3D11UmdSha,
+    [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedGuestScriptSha256
 )
+$self = Get-Item -LiteralPath $PSCommandPath -ErrorAction Stop
+if ($self.PSIsContainer -or ($self.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'unsafe B9 playback script' }
+if ((Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ExpectedGuestScriptSha256) { throw 'B9 playback script differs from sealed source' }
 # One real, visible VLC/AV1 playback. This script reports observations only;
 # the host independently checks the bound CSV and changing GPU scanout.
 Set-StrictMode -Version Latest
@@ -12,8 +16,10 @@ $work = Join-Path 'C:\BridgeVM' ('b9-work-' + $Nonce)
 $readyPath = Join-Path $share ('ready-' + $Nonce + '.json')
 $collectorPath = Join-Path $share ('collector-' + $Nonce + '.json')
 $finishedPath = Join-Path $share ('finished-' + $Nonce + '.json')
-$mediaPath = Join-Path $share 'bbb_1080p_10s_5MB_av1.webm'
-$presentMonPath = Join-Path $share 'PresentMon-2.5.1-x64.exe'
+$shareMediaPath = Join-Path $share 'bbb_1080p_10s_5MB_av1.webm'
+$sharePresentMonPath = Join-Path $share 'PresentMon-2.5.1-x64.exe'
+$mediaPath = Join-Path $work 'bbb_1080p_10s_5MB_av1.webm'
+$presentMonPath = Join-Path $work 'PresentMon-2.5.1-x64.exe'
 $csvPath = Join-Path $share ('b9-' + $Nonce + '.csv')
 $csvTempPath = $csvPath + '.partial'
 $captureCsvPath = Join-Path $work ('presentmon-' + $Nonce + '.csv')
@@ -21,6 +27,7 @@ $utf8 = New-Object Text.UTF8Encoding($false)
 $zipHash = '9c0917dc521ffc8ce30e70bca7f6c9dc8fec80909d763e75cd976351dee8db0b'
 $mediaHash = '5e43740e2916afc1b17de09f4948f038b83065a5d42f0fcb16643d7faeb00ad7'
 $presentMonHash = '9bec3083069f58f911e6a512f4806db51a27bd096103087bc1d05ef54c80a191'
+$helperHash = 'b4f92bc317d11938afa117e0416cf4a7d399a75be84771bf5478c97d69782ea7'
 $state = [ordered]@{
     schema = 'bridgevm.b9-vlc-finished.v1'; nonce = $Nonce; pid = 0; hwnd = 0; window_visible = $false
     vlc_exit_observed = $false; vlc_exit_code = -1; playback_elapsed_ms = 0; collector_started = $false; collector_exit_code = -1
@@ -47,27 +54,6 @@ function Write-Observation([string]$Path, [object]$Value) {
     [IO.File]::WriteAllText($temp, $raw, $utf8)
     [IO.File]::Move($temp, $Path)
 }
-function Assert-Hash([string]$Path, [string]$Expected) {
-    $item = Get-Item -LiteralPath $Path -ErrorAction Stop
-    if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-        throw 'B9 source must be a regular file'
-    }
-    if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Expected) { throw 'B9 source hash mismatch' }
-}
-function Wait-HostMarker([string]$Name, [int]$Seconds) {
-    $path = Join-Path $share $Name
-    $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
-    while ([DateTime]::UtcNow -lt $deadline) {
-        if (Test-Path -LiteralPath $path -PathType Leaf) {
-            try { $raw = [IO.File]::ReadAllText($path, $utf8).Trim() }
-            catch [IO.IOException] { $raw = '' }
-            if ($raw -ceq $Nonce) { return }
-        }
-        if ($null -ne $vlc) { $vlc.Refresh(); if ($vlc.HasExited) { throw 'VLC exited before playback was released' } }
-        Start-Sleep -Milliseconds 200
-    }
-    throw 'B9 host marker timeout or nonce mismatch'
-}
 try {
     try { $owned = $mutex.WaitOne(0) }
     catch [Threading.AbandonedMutexException] { $owned = $true }
@@ -75,12 +61,23 @@ try {
     foreach ($path in @($readyPath, $collectorPath, $finishedPath, $csvPath, $csvTempPath, $work)) {
         if (Test-Path -LiteralPath $path) { throw 'B9 run artifact already exists' }
     }
-    Assert-Hash $mediaPath $mediaHash
-    Assert-Hash $presentMonPath $presentMonHash
+    New-Item -ItemType Directory -Path $work -ErrorAction Stop | Out-Null
+    $helperSource = Join-Path $share 'bv-b9-private-inputs.ps1'
+    $helperPrivate = Join-Path $work 'bv-b9-private-inputs.ps1'
+    $helperItem = Get-Item -LiteralPath $helperSource -ErrorAction Stop
+    if ($helperItem.PSIsContainer -or ($helperItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        $helperItem.Length -le 0 -or $helperItem.Length -gt 7500000) { throw 'unsafe B9 helper script' }
+    [IO.File]::Copy($helperSource, $helperPrivate)
+    $helperCopy = Get-Item -LiteralPath $helperPrivate -ErrorAction Stop
+    if ($helperCopy.PSIsContainer -or ($helperCopy.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        $helperCopy.Length -ne $helperItem.Length -or
+        (Get-FileHash -LiteralPath $helperPrivate -Algorithm SHA256).Hash.ToLowerInvariant() -cne $helperHash) { throw 'B9 helper script differs from sealed source' }
+    . $helperPrivate
+    $observedMediaHash = Copy-B9PrivateInput $shareMediaPath $mediaPath $mediaHash
+    $observedPresentMonHash = Copy-B9PrivateInput $sharePresentMonPath $presentMonPath $presentMonHash
     $partsPath = Join-Path $share 'b9-vlc-parts.tsv'
     $parts = @([IO.File]::ReadAllLines($partsPath, $utf8))
     if ($parts.Count -ne 10) { throw 'B9 VLC chunk count differs' }
-    New-Item -ItemType Directory -Path $work -ErrorAction Stop | Out-Null
     $archive = Join-Path $work 'vlc.zip'
     $output = [IO.File]::Open($archive, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
     try {
@@ -130,8 +127,8 @@ try {
     $state.hwnd = $hwnd.ToInt64(); $state.window_visible = $true
     Write-Observation $readyPath ([ordered]@{
         schema = 'bridgevm.b9-vlc-ready.v1'; nonce = $Nonce; pid = $state.pid
-        hwnd = $state.hwnd; title = $vlc.MainWindowTitle; media_sha256 = $mediaHash
-        vlc_zip_sha256 = $zipHash; presentmon_sha256 = $presentMonHash
+        hwnd = $state.hwnd; title = $vlc.MainWindowTitle; media_sha256 = $observedMediaHash
+        vlc_zip_sha256 = $zipHash; presentmon_sha256 = $observedPresentMonHash
         expected_driver_umd_sha256 = $ExpectedD3D11UmdSha
     })
     $state.failure_code = 'COLLECTOR_FAILED'

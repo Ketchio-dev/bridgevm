@@ -23,6 +23,7 @@ from b9_real_workload_inputs import (KEYS, REPO, clone_pair, driver_umd_hash, lo
 from b9_real_workload_observation import (collector_identity, observe,
                                           read_guest_json, ready_identity)
 from b9_real_workload_receipt import job_fields
+from b9_share_asset_integrity import check_shared_assets
 from b6_renderer_runtime import verify_renderer_runtime
 from guest_input_controller import Controller
 from guest_input_live_cleanup import stop
@@ -196,7 +197,7 @@ def diagnostic_stop(request: Path, process: subprocess.Popen) -> None:
 def run(args) -> int:
     if not JOB.fullmatch(args.job_id) or not args.out.is_absolute() or not args.out.is_dir():
         raise ValueError("B9 job identity or output directory is invalid")
-    commit = subprocess.check_output(["git", "-C", str(REPO), "rev-parse", "HEAD"],
+    commit = subprocess.check_output(["/usr/bin/git", "-C", str(REPO), "rev-parse", "HEAD"],
                                      text=True).strip()
     job = job_fields(args.out.parent.resolve())
     if job["commit"] != commit or job["job_id"] != args.job_id:
@@ -221,11 +222,11 @@ def run(args) -> int:
     nonce = secrets.token_hex(16)
     receipt["nonce_sha256"] = hashlib.sha256(nonce.encode()).hexdigest()
     raw = args.out / "raw"
-    share = boot = None
+    share = boot = staged_files = None
     try:
         if platform.system() != "Darwin" or platform.machine() != "arm64":
             raise ValueError("physical Apple-silicon Mac required")
-        records = load_inputs(args.input_manifest.resolve(), commit, args.sealed_binary.resolve())
+        records = load_inputs(args.input_manifest.resolve(), commit, args.sealed_binary.resolve(), job["input_manifest_sha256"])
         receipt["asset_hashes"] = {key: digest for key, (_, digest) in records.items()}
         umd_hash = driver_umd_hash(records)
         receipt["driver_umd_sha256"] = umd_hash
@@ -233,7 +234,7 @@ def run(args) -> int:
         subprocess.run([str(REPO / "scripts/live-gates/verify-windows-closure-binary.sh"),
                         str(args.sealed_binary), str(records["virglrenderer"][0])],
                        check=True, timeout=60)
-        subprocess.run(["codesign", "--verify", "--strict", str(args.sealed_binary)],
+        subprocess.run(["/usr/bin/codesign", "--verify", "--strict", str(args.sealed_binary)],
                        check=True, timeout=30)
         stage = "clone"
         parent = (Path.home() / "BridgeVM/work").resolve(strict=True)
@@ -252,7 +253,7 @@ def run(args) -> int:
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
             os.close(fd)
         stop_request = work / "diagnostic-stop.request"
-        command = ["bash", str(REPO / "scripts/run-hvf-windows-installed-boot.sh"),
+        command = ["/bin/bash", str(REPO / "scripts/run-hvf-windows-installed-boot.sh"),
                    "--target", str(disk), "--vars", str(variables),
                    "--firmware-code", str(records["firmware"][0]),
                    "--evidence-dir", str(boot), "--release", "--skip-build",
@@ -287,6 +288,7 @@ def run(args) -> int:
             await_share_sync(boot / "run.log", staged_files, process)
             control_sha = records["control_script"][1]
             await_firstboot(controller, process, share, control_sha)
+            check_shared_assets(records, staged_files, share)
             stage = "vlc"
             launch = control_command(share, control_sha, "Launch", Nonce=nonce,
                                      ExpectedGuestScriptSha256=records["guest_script"][1],
@@ -343,11 +345,13 @@ def run(args) -> int:
                 line.startswith("stop: PSCI SYSTEM_OFF") for line in lines(boot / "run.log"))
             if not receipt["guest_shutdown_observed"]:
                 raise ValueError("clean guest shutdown not observed")
+            stage = "asset-final"
+            check_shared_assets(records, staged_files, share)
             receipt["outcome"] = "diagnostic-complete"
     except (OSError, ValueError, TimeoutError, subprocess.SubprocessError) as error:
         receipt["failure_stage"] = stage
         receipt["failure_type"] = type(error).__name__
-        if isinstance(error, ValueError) and stage in ("vlc", "playback"):
+        if isinstance(error, ValueError) and stage in ("vlc", "playback", "asset-final"):
             receipt["result_class"] = "INVALID_EVIDENCE"
         elif stage == "vlc":
             receipt["result_class"] = ("COLLECTOR_FAILED" if receipt.get("ready_sha256")
@@ -376,12 +380,14 @@ def run(args) -> int:
                     receipt["private_artifact_dir"] = "raw/guest"
                 if records is not None:
                     verify_inputs(records, args.sealed_binary.resolve())
+                    if staged_files is not None: check_shared_assets(records, staged_files, share)
                     receipt["source_integrity"] = True
                 if clones is not None:
                     receipt["clone_final_sha256"] = {key: sha(path) for key, path in clones.items()}
                 shutil.rmtree(work)
                 receipt["cleanup_complete"] = not work.exists()
             except (OSError, ValueError, subprocess.SubprocessError):
+                receipt["result_class"] = "INVALID_EVIDENCE"
                 receipt["cleanup_complete"] = False
         elif work is None:
             receipt["cleanup_complete"] = receipt["owned_process_group_stopped"]
