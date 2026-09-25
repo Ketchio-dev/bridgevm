@@ -41,7 +41,6 @@ from pathlib import Path
 sys.path.insert(0, os.environ.get("BRIDGEVM_SCRIPTS_DIR", str(Path(__file__).resolve().parent)))
 from iosurface_capture import lookup, seed  # noqa: E402
 
-
 def ambient(ref, window_ms):
     """Count seed changes over window_ms and estimate their period."""
     deadline = time.monotonic_ns() + window_ms * 1_000_000
@@ -57,7 +56,6 @@ def ambient(ref, window_ms):
         period = round((stamps[-1] - stamps[0]) / (len(stamps) - 1) / 1e6, 1)
     return changes, period
 
-
 def settle(ref, settle_ms, timeout_ms):
     """Wait until the surface has held one seed for settle_ms."""
     deadline = time.monotonic_ns() + timeout_ms * 1_000_000
@@ -70,7 +68,6 @@ def settle(ref, settle_ms, timeout_ms):
             return current
         time.sleep(0.002)
     return None
-
 
 def measure(iosurface, input_control, key_hex, settle_ms, timeout_ms, ambient_ms, after_ms=600):
     ref, ident, width, height = lookup(iosurface)
@@ -116,15 +113,14 @@ def measure(iosurface, input_control, key_hex, settle_ms, timeout_ms, ambient_ms
     record.update({"result": "no-present", "settled_seed": settled, "timeout_ms": timeout_ms})
     return record
 
-
 def write_env(out, record):
     out.mkdir(parents=True, exist_ok=True)
     (out / "present-latency.env").write_text(
         "".join(f"{k}={v}\n" for k, v in record.items()), encoding="ascii")
 
-
 def self_test():
     import tempfile
+    from glyph_latency_fake_clock import FakeTime
 
     class FakeSurface:
         def __init__(self, flips):
@@ -136,10 +132,10 @@ def self_test():
                 self.value += 1
             return self.value
 
-    global lookup, seed
-    real_lookup, real_seed = lookup, seed
+    global lookup, seed, time
+    real_lookup, real_seed, real_time = lookup, seed, time
     try:
-        # ambient window ~5ms at 2ms sleeps = ~3 reads; settle ~5ms; then keys.
+        # Seed flips and observation windows use the same synthetic clock.
         cases = (
             (set(range(1, 400)), "ambient-repaint"),   # never quiet
             ({2}, "ambient-repaint"),                   # one blink during ambient
@@ -149,6 +145,7 @@ def self_test():
         )
         for flips, expected in cases:
             surface = FakeSurface(flips)
+            time = FakeTime()
             lookup = lambda path: (surface, 7, 1600, 900)  # noqa: E731
             seed = lambda ref: ref.read()  # noqa: E731
             with tempfile.TemporaryDirectory() as root:
@@ -167,7 +164,7 @@ def self_test():
                 write_env(Path(root) / "out", record)
                 assert (Path(root) / "out" / "present-latency.env").exists()
     finally:
-        lookup, seed = real_lookup, real_seed
+        lookup, seed, time = real_lookup, real_seed, real_time
     print("glyph present latency self-test: PASS")
     return 0
 

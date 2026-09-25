@@ -2633,6 +2633,7 @@ tests/integration/app-ui-driver-protocol.swift	18	0
 tests/integration/app-ui-host-v2-tier-smoke.py	220	0
 tests/integration/app_ui_host_v2_fixtures.py	98	0
 .github/workflows/ci.yml	296	0
+.github/workflows/hosted-full-project-check.yml	70	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeObservation.swift	15	0
 apps/macos/Sources/BridgeVMControl/LibraryModelRuntimeStatus.swift	55	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICommand.swift	14	0
@@ -3133,3 +3134,4 @@ tests/integration/t17-worker-cleanup-fence-contract.py	261	0
 docs/history/windows-hvf/a9-r29-t17-receipt.public.json	66	0
 apps/macos/Sources/BridgeVMProductE2E/T17ChooserSelectionTarget.swift	43	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserSelectionTargetTests.swift	82	0
+scripts/glyph_latency_fake_clock.py	12	0

@@ -1,0 +1,70 @@
+name: Hosted full project check
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact repository commit to check (40 lowercase hex digits)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check-project:
+    name: scripts/check-project.sh
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Validate requested source SHA
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'source_sha must be a full lowercase commit SHA' >&2
+            exit 1
+          }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Assert the checked source is exact
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          printf 'checked_source_sha=%s\n' "$ACTUAL_SHA"
+          test "$ACTUAL_SHA" = "$SOURCE_SHA"
+          test "$(git rev-parse --is-shallow-repository)" = false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: 1.97.0
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.1
+        with:
+          key: hosted-full-project-check
+      - name: Configure Venus paths
+        run: |
+          echo "BRIDGEVM_3D_DIR=$RUNNER_TEMP/bridgevm-3d" >> "$GITHUB_ENV"
+          echo "BRIDGEVM_VENUS_PREFIX=$RUNNER_TEMP/bridgevm-3d/prefix" >> "$GITHUB_ENV"
+      - name: Cache patched virglrenderer
+        id: virgl-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/bridgevm-3d
+          key: virgl-macos-15-arm64-2a173ee-${{ hashFiles('scripts/build-venus-host-deps.sh', 'scripts/patches/virglrenderer-macos-venus.patch') }}
+      - name: Install deterministic check dependencies
+        run: |
+          brew install meson ninja pkgconf libepoxy molten-vk vulkan-loader vulkan-headers shellcheck ripgrep
+          python3 -m pip install --break-system-packages pyyaml
+          command -v shellcheck rg
+          python3 -c 'import yaml'
+      - name: Build patched virglrenderer
+        if: steps.virgl-cache.outputs.cache-hit != 'true'
+        run: scripts/build-venus-host-deps.sh
+      - name: Verify native Venus artifacts
+        run: scripts/verify-venus-native-artifacts.sh
+      - name: Run exact deterministic project check
+        run: scripts/check-project.sh
