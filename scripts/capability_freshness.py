@@ -1,7 +1,4 @@
-"""Checks that a capability claim still describes the tree it is read against.
-All failures here are silent by nature: the registry stays valid JSON and every
-criterion still says PROVEN; only the commit it was proven at has moved on.
-"""
+"""Fail closed when capability claims outlive checked build and release inputs."""
 
 from __future__ import annotations
 
@@ -11,7 +8,9 @@ import subprocess
 # Reproof inputs exclude the registry and its generated documentation.
 CODE_PATHS = [
     "crates/", "runners/", "apps/", "scripts/", "tests/", "Cargo.toml", "Cargo.lock",
-    ".github/", "install.sh", "deny.toml", "packaging/", "tools/", "schemas/", ".gitattributes",
+    ".github/workflows/", ".github/actions/", "install.sh", "deny.toml", "packaging/",
+    "tools/", "schemas/", "fuzz/", ".gitattributes", "LICENSE", "THIRD-PARTY-NOTICES.md",
+    "THIRD-PARTY-PATCHES.tsv", "docs/licenses/", "docs/machine-contract/qemu-virt-deviations.json",
 ]
 
 

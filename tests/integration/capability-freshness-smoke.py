@@ -33,14 +33,14 @@ class FreshnessTests(unittest.TestCase):
         self.git("commit", "-qm", "fixture checkpoint")
         return self.git("rev-parse", "HEAD")
 
-    def test_unchanged_commit_is_current(self):
-        self.assertIsNone(freshness.code_changed_since(self.base, self.root))
-
     def test_code_change_is_stale(self):
         for path in ("apps/control.swift", "apps/control sample.swift", "Cargo.toml",
-                     "Cargo.lock", ".github/workflows/ci.yml", "install.sh", "deny.toml",
+                     "Cargo.lock", ".github/workflows/ci.yml", ".github/actions/b6-tip-contracts/action.yml",
+                     "install.sh", "deny.toml",
                      "packaging/macos/build-release-candidate.sh", "tools/venus-host-probe/Cargo.toml",
-                     "schemas/bridgevm-capability-v1.json", ".gitattributes"):
+                     "schemas/bridgevm-capability-v1.json", "fuzz/src/lib.rs", ".gitattributes",
+                     "LICENSE", "THIRD-PARTY-NOTICES.md", "THIRD-PARTY-PATCHES.tsv",
+                     "docs/licenses/virglrenderer-MIT.txt", "docs/machine-contract/qemu-virt-deviations.json"):
             with self.subTest(path=path):
                 self.git("reset", "--hard", self.base)
                 target = self.root / path
@@ -48,47 +48,47 @@ class FreshnessTests(unittest.TestCase):
                 target.write_text("// changed\n")
                 self.commit()
                 self.assertEqual(freshness.code_changed_since(self.base, self.root), path)
+        for action in (("rm", "apps/control.swift"), ("mv", "apps/control.swift", "README.md")):
+            with self.subTest(action=action[0]):
+                self.git("reset", "--hard", self.base)
+                self.git(*action)
+                self.commit()
+                self.assertEqual(freshness.code_changed_since(self.base, self.root), "apps/control.swift")
 
     def test_documentation_checkpoint_preserves_code_identity(self):
-        (self.root / "README.md").write_text("Documented checkpoint.\n")
-        self.commit()
         self.assertIsNone(freshness.code_changed_since(self.base, self.root))
+        for path in ("README.md", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/dependabot.yml"):
+            target = self.root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("Documented checkpoint.\n")
+            self.commit()
+            self.assertIsNone(freshness.code_changed_since(self.base, self.root))
 
-    def test_blob_and_tree_are_not_commits(self):
+    def test_non_commit_objects_are_not_current(self):
+        self.git("tag", "-am", "evidence fixture", "evidence")
         for object_id, kind in ((self.git("rev-parse", "HEAD:apps/control.swift"), "blob"),
-                                (self.git("rev-parse", "HEAD^{tree}"), "tree")):
+                                (self.git("rev-parse", "HEAD^{tree}"), "tree"),
+                                (self.git("rev-parse", "evidence"), "tag")):
             self.assertEqual(self.git("cat-file", "-t", object_id), kind)
             self.assertIsNotNone(freshness.code_changed_since(object_id, self.root))
-
-    def test_tag_object_is_not_a_commit(self):
-        self.git("tag", "-am", "evidence fixture", "evidence")
-        tag = self.git("rev-parse", "evidence")
-        self.assertEqual(self.git("cat-file", "-t", tag), "tag")
-        self.assertIsNotNone(freshness.code_changed_since(tag, self.root))
-
-    def test_unknown_commit_is_not_current(self):
         self.assertIsNotNone(freshness.code_changed_since("0" * 40, self.root))
 
-    def test_missing_history_in_shallow_clone_is_not_current(self):
-        (self.root / "README.md").write_text("Second checkpoint.\n")
-        self.commit()
-        clone = Path(self.temp.name) / "shallow"
-        self.git("clone", "-q", "--depth", "1", self.root.as_uri(), str(clone))
-        self.assertEqual(self.git("rev-parse", "--is-shallow-repository", root=clone), "true")
-        self.assertIsNotNone(freshness.code_changed_since(self.base, clone))
-
-    def test_available_commit_in_shallow_clone_can_be_compared(self):
-        clone = Path(self.temp.name) / "shallow"
+    def test_shallow_clone_requires_available_tested_commit(self):
+        clone = Path(self.temp.name) / "current"
         self.git("clone", "-q", "--depth", "1", self.root.as_uri(), str(clone))
         self.assertIsNone(freshness.code_changed_since(self.base, clone))
+        (self.root / "README.md").write_text("Second checkpoint.\n")
+        self.commit()
+        missing = Path(self.temp.name) / "missing"
+        self.git("clone", "-q", "--depth", "1", self.root.as_uri(), str(missing))
+        self.assertEqual(self.git("rev-parse", "--is-shallow-repository", root=missing), "true")
+        self.assertIsNotNone(freshness.code_changed_since(self.base, missing))
 
-    def test_diff_failure_is_not_no_changes(self):
+    def test_git_failures_are_not_current(self):
         results = [subprocess.CompletedProcess([], 0, "commit\n", ""),
                    subprocess.CompletedProcess([], 128, "", "comparison failed")]
         with patch.object(freshness, "_git", side_effect=results):
             self.assertIn("could not compare", freshness.code_changed_since(self.base, self.root))
-
-    def test_object_lookup_failure_is_not_no_changes(self):
         failed = subprocess.CompletedProcess([], 128, "", "object lookup failed")
         with patch.object(freshness, "_git", return_value=failed) as query:
             self.assertIsNotNone(freshness.code_changed_since(self.base, self.root))
