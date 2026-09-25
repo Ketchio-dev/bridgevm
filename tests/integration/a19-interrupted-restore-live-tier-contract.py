@@ -37,7 +37,7 @@ def write(path: Path, data: bytes) -> None:
 
 def passing(job_id: str = "interrupt-fixture") -> dict:
     value = receipt.initial(job_id, COMMIT)
-    value.update({field: SHA_A for field in receipt.HASHES})
+    value.update(dict.fromkeys(receipt.HASHES, SHA_A), host_model="Mac17,9", macos_version="27.0", finished_at=value["started_at"])
     value.update({field: True for field in receipt.FLAGS[:8]})
     value.update({"pass": True, "outcome": "completed", "interruption_stage": "staged-disk-verify-read",
                   "boots_attempted": 4, "boots_passed": 4, "natural_shutdown_count": 4,
@@ -122,7 +122,7 @@ class InterruptedRestoreContract(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 receipt.validate({**value, field: wrong}, COMMIT)
         failed = receipt.initial("interrupt-fixture", COMMIT)
-        failed["finished_at"] = "2026-09-25T00:00:00Z"
+        failed["finished_at"] = failed["started_at"]
         self.assertFalse(receipt.validate(failed, COMMIT)["pass"])
         with self.assertRaises(ValueError):
             receipt.validate({**failed, "sample_count": 1}, COMMIT)

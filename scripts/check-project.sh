@@ -57,7 +57,7 @@ step "HVF boot performance and SMP scaling" bash -c 'tests/integration/hvf-boot-
 step "HVF NVMe performance tier" tests/integration/hvf-nvme-performance-tier-smoke.sh
 step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
-step "Windows product and A19 live-tier contracts" bash -c 'tests/integration/windows-product-e2e-contract-smoke.sh && python3 tests/integration/native-snapshot-restore-live-tier-contract.py && python3 tests/integration/native-snapshot-export-evidence-contract.py && python3 tests/integration/a19-quota-refusal-live-tier-contract.py && python3 tests/integration/a19-interrupted-restore-live-tier-contract.py'
+step "Windows product and A19 live-tier contracts" bash -c 'tests/integration/windows-product-e2e-contract-smoke.sh && python3 tests/integration/native-snapshot-restore-live-tier-contract.py && python3 tests/integration/native-snapshot-export-evidence-contract.py && python3 tests/integration/a19-quota-refusal-live-tier-contract.py && python3 tests/integration/a19-interrupted-restore-live-tier-contract.py && python3 tests/integration/a19-interrupted-restore-public-contract.py'
 step "BridgeVM PC firmware boundary" scripts/check-bridgevm-pc-firmware-boundary.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 step "packaged HVF entitlements" scripts/verify-app-hvf-entitlements.sh --self-test

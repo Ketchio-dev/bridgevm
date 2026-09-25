@@ -9,7 +9,8 @@ import os
 from pathlib import Path
 import re
 
-from a19_interrupted_restore_seal import read_bounded_regular, sealed_hashes
+from a19_interrupted_restore_public import load_receipt, validate_public_fields
+from a19_interrupted_restore_seal import sealed_hashes
 
 TIER = "t22-a19-interrupted-restore"
 HASHES = (
@@ -84,6 +85,7 @@ def validate(value: object, expected_commit: str | None = None) -> dict:
     for field in FLAGS:
         if type(value[field]) is not bool:
             raise ValueError(f"T22 receipt {field} must be boolean")
+    validate_public_fields(value)
     if any(value[field] for field in ("claim_eligible", "criterion_pass", "capability_promotion", "three_d_injection")):
         raise ValueError("one T22 observation cannot promote A19 or enable 3D")
     for field in COUNTS:
@@ -125,10 +127,6 @@ def validate(value: object, expected_commit: str | None = None) -> dict:
               ("interruption_case_count", "sample_count", "run_count"))):
         raise ValueError("failed T22 receipt claims a completed case")
     return value
-
-
-def load_receipt(path: Path) -> dict:
-    return json.loads(read_bounded_regular(path, 65_536).decode("utf-8"))
 
 
 def validate_seal(value: dict, job_dir: Path) -> None:
