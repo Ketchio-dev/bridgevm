@@ -369,11 +369,9 @@ macro_rules! persist_and_report_stop {
                 machine::GIC_REDIST.base + 0x20000
             );
         }
-        println!("serial bytes: {}", serial.len());
-        println!(
-            "--- serial (tail) ---\n{}\n--- end ---",
-            String::from_utf8_lossy(&serial)
-        );
+        let rendered = String::from_utf8_lossy(&serial);
+        println!("serial raw bytes: {} output bytes: {}", serial.len(), rendered.len());
+        println!("--- serial (tail) ---\n{rendered}\n--- end ---");
     }};
 }
 

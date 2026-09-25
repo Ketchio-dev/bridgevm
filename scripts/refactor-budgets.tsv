@@ -3179,3 +3179,7 @@ scripts/live-gates/a19_quota_seal.py	84	0
 docs/windows-arm/evidence/a19-t21-r1-20260925.md	68	0
 docs/windows-arm/evidence/a19-t21-r1-20260925-receipt.json	49	0
 .github/workflows/macos-cargo-artifact-provenance.yml	21	0
+apps/macos/Sources/BridgeVMProductE2E/T17TerminalReportTail.swift	72	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17TerminalReportTailTests.swift	106	0
+scripts/live-gates/t17_terminal_report_tail.py	69	0
+tests/integration/t17-terminal-report-tail-test.py	109	0
