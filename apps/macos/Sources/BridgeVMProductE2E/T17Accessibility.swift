@@ -130,7 +130,7 @@ final class T17Accessibility: T17UIControlling {
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         } while Date() < deadline
         let application = AXUIElementCreateApplication(pid)
-        throw T17Blocker(code: "ui-element-missing", detail: "required accessibility identifier was not found: \(identifier); windows=\((attribute(application, kAXWindowsAttribute as CFString) as? [AXUIElement]).map { String($0.count) } ?? "unanswered") timeout_s=\(timeout)")
+        throw T17MissingIdentifierDiagnostic.capture(application: application, pid: pid, identifier: identifier, timeout: timeout)
     }
 
     private func snapshotElement(_ identifier: String, role expectedRole: String?) throws -> AXUIElement? {
