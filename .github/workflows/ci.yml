@@ -189,11 +189,13 @@ jobs:
       - run: scripts/check-refactor-budgets.sh
 
   swift:
-    # The macOS app's suites are the largest body of tests in the repository and
-    # were verified only by running check-project.sh by hand, so a regression in
-    # them could reach main. They need Swift, hence a macOS runner.
-    name: macOS app suites
-    runs-on: macos-15
+    # Host the app's largest Swift suites on macOS to catch local-only test gaps.
+    name: macOS app suites (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -211,10 +213,8 @@ jobs:
         run: bash scripts/run-control-xctest.sh
       - name: Native-to-Swift input receipt contract (no live VM)
         run: bash scripts/check-input-receipt-transcript.sh
-      # A release build is what ships, and it is the only thing that can prove
-      # the development overrides are absent from it. check-project.sh skips
-      # this check unless a release build already exists, which on a runner it
-      # never does.
+      # Build release before checking overrides: check-project.sh skips the gate
+      # until a release artifact exists, and development overrides must be absent.
       - run: swift build --package-path apps/macos -c release
       - run: bash scripts/check-release-overrides.sh
       # The installer's malicious-input and rollback gate needs codesign, so it
