@@ -171,14 +171,11 @@ fi
 }
 
 cargo_args=(build --locked --quiet -p bridgevm-hvf --example hvf_gic_boot_probe --features venus)
-profile_dir="debug"
 if [[ "$RELEASE" == "1" ]]; then
   cargo_args+=(--release)
-  profile_dir="release"
 fi
-cargo "${cargo_args[@]}"
-
-BIN="$ROOT/target/$profile_dir/examples/hvf_gic_boot_probe"
+BIN="$(python3 "$MACOS_DIR/scripts/cargo-built-artifact.py" --root "$ROOT" \
+  --target hvf_gic_boot_probe --kind example -- "${cargo_args[@]}")"
 codesign_args=(--force --sign "$IDENTITY" --entitlements "$ENTITLEMENTS")
 if [[ -n "$CODESIGN_OPTIONS" ]]; then
   codesign_args+=(--options "$CODESIGN_OPTIONS")
