@@ -76,10 +76,9 @@ case "$TIER" in
             exit 1
         fi
         ;;
-    t1-restore-boot|t20-a19-native-snapshot-restore)
-        runner=run-snapshot-restore-tier.py; [[ "$TIER" != t20-* ]] || runner=run-native-snapshot-restore-tier.py
-        python3 "$REPO/scripts/live-gates/$runner" \
-            "$OUT" "$JOB_ID" "$INPUT_MANIFEST" "$SEALED_BINARY"
+    t1-restore-boot|t20-a19-native-snapshot-restore|t21-a19-quota-refusal)
+        "$REPO/scripts/live-gates/run-a19-snapshot-tiers.sh" \
+            "$TIER" "$OUT" "$JOB_ID" "$INPUT_MANIFEST" "$SEALED_BINARY"
         ;;
     d2-b6-cell-observation|d3-b6-renderer-trace)
         python3 "$REPO/scripts/live-gates/run-b6-${TIER#d?-b6-}.py" --out "$OUT" --job-id "$JOB_ID" \

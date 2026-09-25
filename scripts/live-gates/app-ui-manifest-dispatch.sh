@@ -9,7 +9,7 @@ case "$MODE:$TIER" in
         exec python3 "$HERE/app_ui_host_manifest.py" seal-launcher "$@" ;;
     validate:d6-app-ui-host-v2) exec python3 "$HERE/app_ui_host_v2_manifest.py" validate-manifest "$@" ;;
     seal:d6-app-ui-host-v2) exec python3 "$HERE/app_ui_host_v2_manifest.py" seal-inputs "$@" ;;
-    validate:t17-windows-hvf-product-e2e) exec python3 "$HERE/windows-product-e2e-launchservices-preflight.py" --manifest "$1" ;; validate:t20-a19-native-snapshot-restore) exec python3 "$HERE/native_snapshot_restore_inputs.py" "$1" "$2" ;;
+    validate:t17-windows-hvf-product-e2e) exec python3 "$HERE/windows-product-e2e-launchservices-preflight.py" --manifest "$1" ;; validate:t20-a19-native-snapshot-restore|validate:t21-a19-quota-refusal) exec python3 "$HERE/native_snapshot_restore_inputs.py" "$1" "$2" ;;
     validate:*|seal:*) exit 0 ;;
     *) echo "unknown diagnostic manifest operation" >&2; exit 2 ;;
 esac
