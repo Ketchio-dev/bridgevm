@@ -1,4 +1,3 @@
-#if !DEBUG
 import Foundation
 import XCTest
 @testable import BridgeVMControl
@@ -6,6 +5,7 @@ import XCTest
 @MainActor
 final class HvfReleaseLegacyFallbackTests: XCTestCase {
     func testMissingRunnerRefusesExecutableWrapperBeforeKeyOrLaunch() async throws {
+        try XCTSkipIf(_isDebugAssertConfiguration(), "Release-only fallback boundary")
         let fixture = try HvfGUIStartFixture()
         let effects = fixture.effects
         let input = HvfGUIStartExecution.Input(
@@ -25,4 +25,3 @@ final class HvfReleaseLegacyFallbackTests: XCTestCase {
         await fixture.clean()
     }
 }
-#endif
