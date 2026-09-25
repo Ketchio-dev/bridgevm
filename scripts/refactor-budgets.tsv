@@ -1812,6 +1812,8 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallFinalizationIntegrityTest
 scripts/hvf-disk-image-utils.sh	23	0
 scripts/verify-windows-product-e2e-receipt.py	389	0
 tests/integration/windows-product-e2e-contract-smoke.sh	79	0
+tests/integration/windows-product-e2e-launchservices-admission.py	124	0
+tests/integration/windows-product-e2e-launchservices-report-origin.py	74	0
 tests/integration/windows-product-e2e-request-mode.py	36	0
 tests/integration/windows-guest-payload-verifier-smoke.py	129	0
 scripts/live-gates/windows-product-e2e-manifest.py	124	0
@@ -3192,10 +3194,14 @@ docs/history/windows-hvf/a19-interrupted-restore-tier-20260925.md	41	0
 docs/windows-arm/evidence/a19-t21-r1-20260925.md	68	0
 docs/windows-arm/evidence/a19-t21-r1-20260925-receipt.json	49	0
 .github/workflows/macos-cargo-artifact-provenance.yml	21	0
+apps/macos/Sources/BridgeVMProductE2E/T17TerminalReportTail.swift	72	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17TerminalReportTailTests.swift	106	0
+scripts/live-gates/t17_terminal_report_tail.py	69	0
+tests/integration/t17-terminal-report-tail-test.py	109	0
+schemas/b8-clean-install-receipt-v1.json	232	0
+scripts/live-gates/b8_clean_install_files.py	145	0
 scripts/live-gates/b8_clean_install_inputs.py	373	0
 scripts/live-gates/b8_clean_install_receipt.py	201	0
-schemas/b8-clean-install-receipt-v1.json	232	0
-tests/integration/b8-clean-install-tier-contract.py	349	0
-scripts/live-gates/b8_clean_install_files.py	145	0
 tests/integration/b8-clean-install-adversarial-contract.py	170	0
 tests/integration/b8-clean-install-fifo-contract.py	73	0
+tests/integration/b8-clean-install-tier-contract.py	349	0
