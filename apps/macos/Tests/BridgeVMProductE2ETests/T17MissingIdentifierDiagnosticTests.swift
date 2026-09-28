@@ -19,7 +19,7 @@ final class T17MissingIdentifierDiagnosticTests: XCTestCase {
         XCTAssertTrue(blocker.detail.contains("pid_probe=present,ns_app=true,active=false,front=false"))
         XCTAssertTrue(blocker.detail.contains("ax_windows=0/0"))
         XCTAssertTrue(blocker.detail.contains("bridgevm.dashboard.advanced:AXButton"))
-        XCTAssertLessThanOrEqual(blocker.detail.utf8.count, 512)
+        XCTAssertTrue(blocker.detail.utf8.count <= 512)
     }
 
     func testAXWindowsErrorIsUnansweredRatherThanFalseZero() {
@@ -72,7 +72,7 @@ final class T17MissingIdentifierDiagnosticTests: XCTestCase {
         XCTAssertTrue(blocker.detail.contains("errors=2"))
         XCTAssertFalse(blocker.detail.contains("/private/"))
         XCTAssertFalse(blocker.detail.contains("window-title"))
-        XCTAssertLessThanOrEqual(blocker.detail.utf8.count, 512)
+        XCTAssertTrue(blocker.detail.utf8.count <= 512)
         XCTAssertTrue(blocker.detail.utf8.allSatisfy { $0 < 128 })
     }
 
