@@ -213,10 +213,10 @@ jobs:
         run: bash scripts/run-control-xctest.sh
       - name: Native-to-Swift input receipt contract (no live VM)
         run: bash scripts/check-input-receipt-transcript.sh
-      # Build release before checking overrides: check-project.sh skips the gate
-      # until a release artifact exists, and development overrides must be absent.
+      # Build release objects for the strict override scan; missing artifacts
+      # or declared production targets must fail CI.
       - run: swift build --package-path apps/macos -c release
-      - run: bash scripts/check-release-overrides.sh
+      - run: python3 tests/integration/release-override-object-selection-contract.py && bash scripts/check-release-overrides.sh --require-artifacts
       # The installer's malicious-input and rollback gate needs codesign, so it
       # runs here rather than in the Linux truth job.
       - run: bash tests/integration/install-verify-smoke.sh
