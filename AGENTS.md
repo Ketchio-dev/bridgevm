@@ -4,6 +4,15 @@ These are binding rules for anyone, human or agent, changing this repository.
 They exist because this project's failure mode is not bad code; it is
 **believing something works when the evidence does not support it**.
 
+Carry a requested change through implementation, relevant checks, failure
+analysis and repair, and a reviewable result. Decide routine, reversible
+repository steps without stopping for approval; request operator input when a
+missing fact or product decision materially changes the outcome. Publishing a
+release or changing live user assets requires separate authorization unless
+the request already provides it. An elapsed timer is a checkpoint for judgment,
+not a reason by itself to abandon unfinished work. The evidence, security and
+data boundaries below still apply.
+
 ## 1. Evidence hierarchy
 
 Claims are ranked. A lower-ranked result never overrides a higher-ranked one.
@@ -81,7 +90,9 @@ New files are registered at their actual size.
 
 ## 8. Planning and commits
 
-- A change spanning three or more files needs an approved `PLAN.md` first.
+- Make a concise plan when a change crosses subsystems or affects a release,
+  security, or guest-contract boundary. Identify any product decision that
+  genuinely needs operator input; file count alone does not require approval.
 - Commit per proven conclusion, not per experiment. A commit message states
   what is now known, not what was attempted.
 - After pushing, confirm hosted CI is green for that SHA. Red CI blocks
@@ -92,20 +103,24 @@ New files are registered at their actual size.
 ## 9. Long tests use the correct execution venue
 
 - Local deterministic developer checks, including `scripts/check-project.sh`,
-  may run in the foreground for up to **300 seconds**. This local result does
-  not replace the required GitHub-hosted CI result for a pushed SHA.
-- If a deterministic check is expected to exceed 300 seconds, run it on
-  GitHub-hosted Actions and record the run id. **Never submit an ordinary
-  deterministic check to the physical-Mac live queue merely because it is
-  slow.**
+  may run past **300 seconds** when they are making useful progress. At 300
+  seconds, inspect progress and machine load, then choose a finite next
+  checkpoint. Continue, move the check to GitHub-hosted Actions, or stop with
+  the reason recorded. A local result does not replace the required
+  GitHub-hosted CI result for a pushed SHA.
+- Run required deterministic CI for a pushed SHA on GitHub-hosted Actions and
+  record the run id; local checks provide development feedback. **Never submit
+  an ordinary deterministic check to the physical-Mac live queue merely
+  because it is slow.**
 - The physical-Mac live queue (historically called the Studio queue) is
   reserved for live work that genuinely requires a physical Apple-silicon
   Mac, bare-metal Hypervisor.framework, WindowServer/CGL, private Windows
   media or a real GPU. Record its job id.
 - `sleep 6000`, long `while ps; sleep` loops and multi-hour synchronous tool
   calls are prohibited.
-- Poll hosted CI for at most 180 seconds, then record the run id and read it on
-  a later turn.
+- Poll hosted CI in bounded intervals. After 180 seconds, reassess whether to
+  keep following that run in this turn or record its id and return later; the
+  elapsed time alone does not decide when the task ends.
 - A submitted live-hardware job seals its commit, binary, image and vars
   hashes, so later edits cannot change what it measured.
 - Fast tiers filter candidates. Only the release tier produces shipping
