@@ -7,14 +7,8 @@
 set -uo pipefail
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO" || exit 1
-BUILD=apps/macos/.build
-# Scan all product objects; SwiftPM XCTest target objects do not ship.
-objects_in() {
-  local legacy="$BUILD/arm64-apple-macosx/$1" modern="$BUILD/out/Intermediates.noindex" title="Release"
-  [[ "$1" == debug ]] && title="Debug"
-  find "$legacy" -name '*.o' ! -path "*/$1/*Tests.build/*" ! -path "*/$1/*Tests-p.build/*" 2>/dev/null
-  find "$modern" -path "*/$title/*" -name '*.o' ! -path "*/$title/*Tests.build/*" ! -path "*/$title/*Tests-p.build/*" 2>/dev/null
-}
+# Only targets declared as XCTest targets by SwiftPM are excluded.
+objects_in() { python3 scripts/release_override_object_paths.py "$1"; }
 # Each of these lets something outside the signed bundle decide what the app
 # runs, or where it reads the repository from.
 FORBIDDEN_IN_RELEASE=(
@@ -30,15 +24,16 @@ FORBIDDEN_IN_RELEASE=(
 # fails when one gets fixed, so the list cannot quietly outlive its reason.
 KNOWN_UNFIXED=()
 status=0
+debug_objects="$(objects_in debug)" || exit 1
+release_objects="$(objects_in release)" || exit 1
 
 count_in() {
-  local objects
-  objects="$(objects_in "$1")"
+  local objects="$1"
   [[ -n "$objects" ]] || { printf '0'; return; }
   xargs strings <<< "$objects" 2>/dev/null | grep -c -- "$2" || true
 }
 
-if [[ -z "$(objects_in debug)" || -z "$(objects_in release)" ]]; then
+if [[ -z "$debug_objects" || -z "$release_objects" ]]; then
   echo "SKIP: build both configurations first:" >&2
   echo "  swift build --package-path apps/macos" >&2
   echo "  swift build -c release --package-path apps/macos" >&2
@@ -47,12 +42,12 @@ if [[ -z "$(objects_in debug)" || -z "$(objects_in release)" ]]; then
 fi
 
 for needle in ${KNOWN_UNFIXED[@]+"${KNOWN_UNFIXED[@]}"}; do
-  [[ "$(count_in release "$needle")" != 0 ]] ||
+  [[ "$(count_in "$release_objects" "$needle")" != 0 ]] ||
     { echo "FAIL: $needle is fixed; remove it from KNOWN_UNFIXED" >&2; status=1; }
 done
 for needle in "${FORBIDDEN_IN_RELEASE[@]}"; do
-  release_hits=$(count_in release "$needle")
-  debug_hits=$(count_in debug "$needle")
+  release_hits=$(count_in "$release_objects" "$needle")
+  debug_hits=$(count_in "$debug_objects" "$needle")
 
   if [[ "$release_hits" != 0 ]]; then
     echo "FAIL: $needle is reachable in the release build ($release_hits refs)" >&2

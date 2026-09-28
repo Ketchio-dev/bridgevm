@@ -216,7 +216,7 @@ jobs:
       # this check unless a release build already exists, which on a runner it
       # never does.
       - run: swift build --package-path apps/macos -c release
-      - run: bash scripts/check-release-overrides.sh
+      - run: python3 tests/integration/release-override-object-selection-contract.py && bash scripts/check-release-overrides.sh
       # The installer's malicious-input and rollback gate needs codesign, so it
       # runs here rather than in the Linux truth job.
       - run: bash tests/integration/install-verify-smoke.sh
