@@ -3233,3 +3233,4 @@ tests/integration/b9-real-workload-pilot-contract.py	286	0
 tests/integration/b9-receipt-read-contract.py	135	0
 tests/integration/b9-scanout-byte-contract.py	127	0
 tests/integration/b9-source-reopen-contract.py	116	0
+tests/integration/b9-workload-diagnostic-path-contract.py	102	0
