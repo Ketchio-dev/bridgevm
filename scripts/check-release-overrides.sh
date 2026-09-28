@@ -32,7 +32,7 @@ release_objects="$(objects_in release)" || exit 1
 count_in() {
   local objects="$1"
   [[ -n "$objects" ]] || { printf '0'; return; }
-  xargs strings <<< "$objects" 2>/dev/null | grep -c -- "$2" || true
+  xargs strings <<< "$objects" | { grep -c -- "$2" || [[ $? == 1 ]]; }
 }
 
 if [[ -z "$debug_objects" || -z "$release_objects" ]]; then
@@ -45,12 +45,13 @@ if [[ -z "$debug_objects" || -z "$release_objects" ]]; then
 fi
 
 for needle in ${KNOWN_UNFIXED[@]+"${KNOWN_UNFIXED[@]}"}; do
-  [[ "$(count_in "$release_objects" "$needle")" != 0 ]] ||
+  release_hits=$(count_in "$release_objects" "$needle") || exit 1
+  [[ "$release_hits" != 0 ]] ||
     { echo "FAIL: $needle is fixed; remove it from KNOWN_UNFIXED" >&2; status=1; }
 done
 for needle in "${FORBIDDEN_IN_RELEASE[@]}"; do
-  release_hits=$(count_in "$release_objects" "$needle")
-  debug_hits=$(count_in "$debug_objects" "$needle")
+  release_hits=$(count_in "$release_objects" "$needle") || exit 1
+  debug_hits=$(count_in "$debug_objects" "$needle") || exit 1
 
   if [[ "$release_hits" != 0 ]]; then
     echo "FAIL: $needle is reachable in the release build ($release_hits refs)" >&2
