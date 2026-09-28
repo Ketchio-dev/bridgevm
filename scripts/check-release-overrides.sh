@@ -8,12 +8,12 @@ set -uo pipefail
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO" || exit 1
 BUILD=apps/macos/.build
-# Every object, not a named list, which covers only today's readers.
+# Scan all product objects; SwiftPM XCTest target objects do not ship.
 objects_in() {
   local legacy="$BUILD/arm64-apple-macosx/$1" modern="$BUILD/out/Intermediates.noindex" title="Release"
   [[ "$1" == debug ]] && title="Debug"
-  find "$legacy" -name '*.o' 2>/dev/null
-  find "$modern" -path "*/$title/*" -name '*.o' 2>/dev/null
+  find "$legacy" -name '*.o' ! -path "*/$1/*Tests.build/*" ! -path "*/$1/*Tests-p.build/*" 2>/dev/null
+  find "$modern" -path "*/$title/*" -name '*.o' ! -path "*/$title/*Tests.build/*" ! -path "*/$title/*Tests-p.build/*" 2>/dev/null
 }
 # Each of these lets something outside the signed bundle decide what the app
 # runs, or where it reads the repository from.
