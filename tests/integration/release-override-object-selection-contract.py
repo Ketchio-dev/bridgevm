@@ -19,12 +19,12 @@ TARGETS = [
 PRODUCTS = [{"name": name, "type": {"executable": None}, "targets": [name]}
             for name in ("BridgeVMControl", "ShippingTests")]
 
-def run_gate(root: Path, manifest: Path) -> subprocess.CompletedProcess[str]:
+def run_gate(root: Path, manifest: Path, strict: bool = False) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PATH"] = f"{root / 'bin'}{os.pathsep}{env['PATH']}"
     env["BRIDGEVM_TEST_PACKAGE"] = str(manifest)
     return subprocess.run(
-        ["bash", str(root / "scripts/check-release-overrides.sh")],
+        ["bash", str(root / "scripts/check-release-overrides.sh")] + (["--require-artifacts"] if strict else []),
         cwd=root, env=env, capture_output=True, text=True, check=False,
     )
 
@@ -89,7 +89,7 @@ def check_layout(layout: str) -> None:
         require(run_gate(root, manifest), False, "no product objects")
         objects["release", "BridgeVMControlTests"].unlink()
         require(run_gate(root, manifest), True, "release overrides: SKIP (artifacts absent)")
-
+        require(run_gate(root, manifest, True), False, "release overrides: FAIL (artifacts absent)")
 
 for layout_name in ("modern", "legacy"):
     check_layout(layout_name)

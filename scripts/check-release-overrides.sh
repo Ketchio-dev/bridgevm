@@ -7,6 +7,8 @@
 set -uo pipefail
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO" || exit 1
+[[ $# -eq 0 || ( $# -eq 1 && ${1:-} == --require-artifacts ) ]] || { echo "FAIL: expected --require-artifacts" >&2; exit 2; }
+require_artifacts=$#
 # Only targets declared as XCTest targets by SwiftPM are excluded.
 objects_in() { python3 scripts/release_override_object_paths.py "$1"; }
 # Each of these lets something outside the signed bundle decide what the app
@@ -34,6 +36,7 @@ count_in() {
 }
 
 if [[ -z "$debug_objects" || -z "$release_objects" ]]; then
+  if (( require_artifacts )); then echo "release overrides: FAIL (artifacts absent)" >&2; exit 1; fi
   echo "SKIP: build both configurations first:" >&2
   echo "  swift build --package-path apps/macos" >&2
   echo "  swift build -c release --package-path apps/macos" >&2
