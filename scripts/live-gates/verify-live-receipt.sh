@@ -8,7 +8,7 @@ case "$TIER" in
   t19-windows-hvf-import-product-e2e)
     exec python3 "$WORKTREE/scripts/verify-windows-import-product-e2e-receipt.py" "$RECEIPT" --expected-commit "$COMMIT" ;;
   t20-a19-native-snapshot-restore)
-    exec python3 "$WORKTREE/scripts/live-gates/native_snapshot_restore_receipt.py" verify "$RECEIPT" --expected-commit "$COMMIT" ;;
+    exec python3 "$WORKTREE/scripts/live-gates/native_snapshot_restore_receipt.py" verify "$RECEIPT" --expected-commit "$COMMIT" --job-dir "$(dirname "$RECEIPT")" ;;
   t21-a19-quota-refusal) exec python3 "$WORKTREE/scripts/live-gates/a19_quota_refusal_receipt.py" verify "$RECEIPT" --expected-commit "$COMMIT" --job-dir "$(dirname "$RECEIPT")" ;;
   t22-a19-interrupted-restore) exec python3 "$WORKTREE/scripts/live-gates/a19_interrupted_restore_receipt.py" verify "$RECEIPT" --expected-commit "$COMMIT" --job-dir "$(dirname "$RECEIPT")" ;;
 esac

@@ -1,11 +1,12 @@
 """Schema and fallback writer for the native app snapshot restore live tier."""
 from __future__ import annotations
 
-import argparse
 import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+
+from native_snapshot_restore_public import validate_public_fields
 
 TIER = "t20-a19-native-snapshot-restore"
 HASHES = (
@@ -37,7 +38,7 @@ def initial(job_id: str, commit: str) -> dict:
         "started_at": datetime.now(timezone.utc).isoformat(), "finished_at": "absent",
         "host_model": "absent", "macos_version": "absent", "outcome": "failed-before-receipt",
         "pass": False, "boots_attempted": 0, "boots_passed": 0,
-        "natural_shutdown_count": 0, "sample_count": 1, "run_count": 0,
+        "natural_shutdown_count": 0, "sample_count": 0, "run_count": 0,
         "claim_eligible": False, "criterion_pass": False, "capability_promotion": False,
         "three_d_injection": False, "worker_cleanup_verified": False,
     })
@@ -47,7 +48,7 @@ def initial(job_id: str, commit: str) -> dict:
 def validate(value: object, expected_commit: str | None = None) -> dict:
     if not isinstance(value, dict) or set(value) != REQUIRED:
         raise ValueError("receipt has an unexpected field set")
-    if value["schema_version"] != 1 or value["tier"] != TIER:
+    if type(value["schema_version"]) is not int or value["schema_version"] != 1 or value["tier"] != TIER:
         raise ValueError("receipt schema or tier is invalid")
     if not isinstance(value["job_id"], str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", value["job_id"]):
         raise ValueError("receipt job id is invalid")
@@ -57,18 +58,25 @@ def validate(value: object, expected_commit: str | None = None) -> dict:
         raise ValueError("receipt commit does not match the sealed worktree")
     if value["binary_source_commit"] != value["commit"]:
         raise ValueError("binary source identity differs from the tier commit")
+    for field, expected in (("binary_profile", "release"), ("binary_features", "venus"),
+                            ("rust_toolchain", "1.97.0")):
+        if value[field] != expected:
+            raise ValueError(f"receipt {field} is invalid")
     for field in HASHES:
         if value[field] != "absent" and (not isinstance(value[field], str) or not SHA256.fullmatch(value[field])):
             raise ValueError(f"receipt {field} is invalid")
     for field in ("pass", "claim_eligible", "criterion_pass", "capability_promotion", "three_d_injection", "worker_cleanup_verified"):
-        if not isinstance(value[field], bool):
+        if type(value[field]) is not bool:
             raise ValueError(f"receipt {field} must be boolean")
+    validate_public_fields(value)
     if any(value[field] is not False for field in ("claim_eligible", "criterion_pass", "capability_promotion", "three_d_injection")):
         raise ValueError("a pilot receipt cannot promote a criterion or enable 3D")
     for field in ("boots_attempted", "boots_passed", "natural_shutdown_count", "sample_count", "run_count"):
-        if not isinstance(value[field], int) or value[field] < 0:
+        if type(value[field]) is not int or value[field] < 0:
             raise ValueError(f"receipt {field} is invalid")
-    if value["sample_count"] != 1 or value["run_count"] not in (0, 1):
+    if not 0 <= value["boots_passed"] <= value["boots_attempted"] <= 3 or not 0 <= value["natural_shutdown_count"] <= value["boots_passed"]:
+        raise ValueError("receipt boot and shutdown accounting is invalid")
+    if (value["sample_count"], value["run_count"]) != ((1, 1) if value["pass"] else (0, 0)):
         raise ValueError("receipt sample accounting is invalid")
     if value["pass"]:
         if value["outcome"] != "completed" or value["run_count"] != 1:
@@ -77,6 +85,11 @@ def validate(value: object, expected_commit: str | None = None) -> dict:
             raise ValueError("passing receipt lacks all three natural shutdowns")
         if not value["worker_cleanup_verified"] or any(value[field] == "absent" for field in HASHES):
             raise ValueError("passing receipt lacks cleanup or an authenticated artifact")
+        if (value["original_marker_sha256"] != value["restored_marker_sha256"] or
+                value["clobber_marker_sha256"] == value["original_marker_sha256"]):
+            raise ValueError("passing receipt lacks a distinct clobber and restored original marker")
+    elif value["outcome"] not in ("failed", "failed-before-receipt"):
+        raise ValueError("failed receipt claims a completed outcome")
     return value
 
 
@@ -87,23 +100,6 @@ def write_new(path: Path, value: dict) -> None:
         output.write("\n")
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("verify", "missing"))
-    parser.add_argument("path", type=Path)
-    parser.add_argument("--expected-commit")
-    parser.add_argument("--job-id")
-    args = parser.parse_args()
-    if args.mode == "verify":
-        validate(json.loads(args.path.read_text(encoding="utf-8")), args.expected_commit)
-        return 0
-    if not args.job_id or not args.expected_commit:
-        parser.error("missing mode requires --job-id and --expected-commit")
-    value = initial(args.job_id, args.expected_commit)
-    value["finished_at"] = datetime.now(timezone.utc).isoformat()
-    write_new(args.path, value)
-    return 0
-
-
 if __name__ == "__main__":
+    from native_snapshot_restore_receipt_cli import main
     raise SystemExit(main())
