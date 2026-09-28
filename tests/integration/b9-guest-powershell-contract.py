@@ -90,10 +90,11 @@ class GuestPowerShellContract(unittest.TestCase):
         self.nonce = secrets.token_hex(16)
 
     def powershell(self, script: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        env = {k: v for k, v in os.environ.items() if k.upper() != "PSMODULEPATH"}
         return subprocess.run(
             ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
              "-ExecutionPolicy", "Bypass", "-File", str(script), *map(str, args)],
-            capture_output=True, text=True, timeout=20, check=False)
+            capture_output=True, text=True, timeout=20, check=False, env=env)
 
     def child(self, *args: str) -> subprocess.CompletedProcess[str]:
         return self.powershell(CHILD, "-Nonce", self.nonce,
@@ -112,8 +113,7 @@ class GuestPowerShellContract(unittest.TestCase):
         for supplied in ((), ("-ExpectedGuestScriptSha256", ZERO_SHA)):
             with self.subTest(supplied=supplied):
                 result = self.child(*supplied)
-                self.refused(result, "ExpectedGuestScriptSha256" if not supplied
-                             else "B9 playback script differs from sealed source")
+                self.refused(result, "ExpectedGuestScriptSha256" if not supplied else "B9 playback script differs from sealed source")
                 self.assertFalse((GUEST_WORK / ("b9-work-" + self.nonce)).exists())
                 for name in ("ready-", "collector-", "finished-"):
                     self.assertFalse((GUEST_SHARE / (name + self.nonce + ".json")).exists())
@@ -125,8 +125,7 @@ class GuestPowerShellContract(unittest.TestCase):
         expected = hashlib.sha256(raw).hexdigest()
         result = self.helper(source, target, expected)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.strip(), expected)
-        self.assertEqual(target.read_bytes(), raw)
+        self.assertEqual((result.stdout.strip(), target.read_bytes()), (expected, raw))
 
     def test_private_copy_refuses_changed_empty_and_oversized_source(self) -> None:
         raw = b"B9 synthetic private input\r\n"
@@ -176,33 +175,34 @@ class GuestPowerShellContract(unittest.TestCase):
         self.assertFalse(target.exists())
 
     def test_child_refuses_tampered_shared_helper_before_dot_source(self) -> None:
-        owned = []
-        try:
-            for path in (GUEST_WORK, GUEST_SHARE):
-                self.assertFalse(path.exists() or path.is_symlink(),
-                                 f"hosted fixture path already exists: {path}")
+        for path in (GUEST_WORK, GUEST_SHARE):
+            if path.exists():
+                self.assertTrue(path.is_dir() and not path.is_symlink(), path)
+            else:
                 path.mkdir()
-                owned.append(path)
-            sentinel = GUEST_SHARE / ("helper-executed-" + self.nonce + ".txt")
-            helper_source = GUEST_SHARE / HELPER.name
-            attack = f"[IO.File]::WriteAllText('{sentinel}', 'executed')\r\n".encode()
-            helper_source.write_bytes(attack + HELPER.read_bytes())
-            result = self.child("-ExpectedGuestScriptSha256", self.child_sha)
-            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            finished = GUEST_SHARE / ("finished-" + self.nonce + ".json")
-            self.assertTrue(finished.is_file(), result.stdout + result.stderr)
-            observation = json.loads(finished.read_text(encoding="utf-8"))
-            self.assertEqual(observation["failure_code"], "PREPARATION_FAILED")
-            self.assertIn("B9 helper script differs from sealed source",
-                          observation["failure_detail"])
-            self.assertEqual(observation["pid"], 0)
-            self.assertFalse(observation["collector_started"])
-            self.assertFalse(sentinel.exists())
-            self.assertFalse((GUEST_SHARE / ("ready-" + self.nonce + ".json")).exists())
-            self.assertFalse((GUEST_SHARE / ("collector-" + self.nonce + ".json")).exists())
-        finally:
-            for path in reversed(owned):
-                shutil.rmtree(path)
+                self.addCleanup(path.rmdir)
+        work = GUEST_WORK / ("b9-work-" + self.nonce)
+        self.assertFalse(work.exists() or work.is_symlink())
+        self.addCleanup(lambda: shutil.rmtree(work) if work.exists() else None)
+        sentinel, finished, ready, collector = [GUEST_SHARE / (stem + self.nonce + ext)
+            for stem, ext in (("helper-executed-", ".txt"), ("finished-", ".json"), ("ready-", ".json"), ("collector-", ".json"))]
+        for path in (sentinel, finished, ready, collector):
+            self.assertFalse(path.exists() or path.is_symlink())
+            self.addCleanup(path.unlink, missing_ok=True)
+        helper_source = GUEST_SHARE / HELPER.name
+        self.assertFalse(helper_source.exists() or helper_source.is_symlink())
+        attack = f"[IO.File]::WriteAllText('{sentinel}', 'executed')\r\n".encode()
+        with helper_source.open("xb") as output:
+            self.addCleanup(helper_source.unlink)
+            output.write(attack + HELPER.read_bytes())
+        result = self.child("-ExpectedGuestScriptSha256", self.child_sha)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertTrue(finished.is_file(), result.stdout + result.stderr)
+        observation = json.loads(finished.read_text(encoding="utf-8"))
+        self.assertEqual(observation["failure_code"], "PREPARATION_FAILED")
+        self.assertIn("B9 helper script differs from sealed source", observation["failure_detail"])
+        self.assertEqual((observation["pid"], observation["collector_started"]), (0, False))
+        self.assertFalse(any(path.exists() for path in (sentinel, ready, collector)))
 
 
 if __name__ == "__main__":
