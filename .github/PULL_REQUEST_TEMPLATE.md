@@ -16,7 +16,7 @@ and rollback impact. Write “none” only after checking each category.
 ## Checklist
 
 - [ ] I read `AGENTS.md` and did not weaken an existing criterion.
-- [ ] A user-approved `PLAN.md` covers this change if it spans three or more files.
+- [ ] Cross-subsystem or release/security/guest-contract changes have a concise plan; unresolved product decisions are identified for operator input.
 - [ ] Focused tests pass, and `scripts/check-project.sh` passes before merge.
 - [ ] Capability wording comes from `capabilities/windows-hvf.json` where applicable.
 - [ ] New or revised documentation is classified and its links resolve.
