@@ -9,6 +9,8 @@ use destination::prepare_destination;
 mod admission;
 #[path = "snapshot_create_destination_lease.rs"]
 mod destination_lease;
+#[path = "snapshot_create_staging_debris.rs"]
+mod staging_debris;
 use destination_lease::claim_staging;
 #[path = "snapshot_create_stage.rs"]
 mod stage;

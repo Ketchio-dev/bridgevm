@@ -26,7 +26,7 @@ impl Drop for Scratch {
     }
 }
 
-const QUOTA: u64 = 1024 * 1024;
+pub(super) const QUOTA: u64 = 1024 * 1024;
 
 #[test]
 fn a_snapshot_records_the_hash_of_both_files() {
@@ -255,8 +255,6 @@ fn a_large_file_hashes_the_same_as_its_bytes() {
 #[path = "snapshot_restore_space_tests.rs"]
 mod restore_space_tests;
 
-#[path = "snapshot_create_admission_tests.rs"]
-mod create_admission_tests;
 #[path = "snapshot_create_overlap_tests.rs"]
 mod create_overlap_tests;
 #[path = "snapshot_manifest_json_tests.rs"]

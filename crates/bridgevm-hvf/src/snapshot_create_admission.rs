@@ -1,19 +1,18 @@
-//! Admit only snapshot outputs that creation may replace or clear.
+//! Admit only snapshot destinations that creation may replace.
 //!
 //! Publication exchanges the destination with staging and then deletes what
 //! was swapped out, so anything admitted here is eventually removed. Only an
-//! absent path, an empty directory or a previous snapshot qualifies, and an
-//! earlier attempt's staging is cleared only when it holds nothing but files
-//! creation itself writes there.
+//! absent path, an empty directory or a previous snapshot qualifies.
 
+use super::staging_debris::clear_staging;
 use super::{snapshot_publish, SnapshotManifest, DISK_NAME, MANIFEST_NAME, VARS_NAME};
+use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
-/// write_file_atomically's temporary name for MANIFEST_NAME.
-const MANIFEST_TEMPORARY: &str = ".manifest.json.tmp";
 /// Far above any manifest this build writes.
 const MANIFEST_LIMIT: u64 = 64 * 1024;
 
@@ -23,7 +22,8 @@ pub(super) fn admit_destination(destination: &Path) -> io::Result<()> {
     if !present_directory(destination).map_err(refuse)? {
         return Ok(());
     }
-    let names = listed(destination, &[DISK_NAME, VARS_NAME, MANIFEST_NAME]).map_err(refuse)?;
+    let members = [DISK_NAME, VARS_NAME, MANIFEST_NAME];
+    let names = listed(destination, &members, false).map_err(refuse)?;
     match names.len() {
         0 => return Ok(()),
         3 => {}
@@ -46,19 +46,6 @@ pub(super) fn admit_destination(destination: &Path) -> io::Result<()> {
     Ok(())
 }
 
-pub(super) fn clear_staging(staging: &Path) -> io::Result<()> {
-    let refuse = |why: String| refusal("staging directory", staging, why);
-    if !present_directory(staging).map_err(refuse)? {
-        return Ok(());
-    }
-    let allowed = [DISK_NAME, VARS_NAME, MANIFEST_NAME, MANIFEST_TEMPORARY];
-    for name in listed(staging, &allowed).map_err(refuse)? {
-        fs::remove_file(staging.join(name))?;
-    }
-    // Not remove_dir_all: an entry that arrived after listing is kept.
-    fs::remove_dir(staging)
-}
-
 /// Re-admit after staging, so a destination that changed meanwhile is kept.
 pub(super) fn publish(staging: &Path, destination: &Path) -> io::Result<()> {
     if let Err(error) = admit_destination(destination) {
@@ -69,7 +56,7 @@ pub(super) fn publish(staging: &Path, destination: &Path) -> io::Result<()> {
     snapshot_publish::publish(staging, destination)
 }
 
-fn present_directory(path: &Path) -> Result<bool, String> {
+pub(super) fn present_directory(path: &Path) -> Result<bool, String> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_dir() => Ok(true),
         Ok(_) => Err("is not a directory".into()),
@@ -78,20 +65,29 @@ fn present_directory(path: &Path) -> Result<bool, String> {
     }
 }
 
-/// Every entry must be a regular file whose name is in `allowed`.
-fn listed(dir: &Path, allowed: &[&'static str]) -> Result<Vec<&'static str>, String> {
+/// Every entry must be a regular file named in `allowed` or, with `companions`,
+/// the "._" AppleDouble file in which exFAT keeps such a file's attributes.
+pub(super) fn listed(
+    dir: &Path,
+    allowed: &[&str],
+    companions: bool,
+) -> Result<Vec<OsString>, String> {
     let unreadable = |error: io::Error| format!("cannot be listed: {error}");
     let mut names = Vec::new();
     for entry in fs::read_dir(dir).map_err(unreadable)? {
         let entry = entry.map_err(unreadable)?;
-        let Some(name) = allowed.iter().find(|name| entry.file_name() == **name) else {
-            let found = entry.file_name();
-            return Err(format!("contains {found:?}, which BridgeVM did not write"));
+        let name = entry.file_name();
+        let owner = match name.as_bytes().strip_prefix(b"._") {
+            Some(owner) if companions => owner,
+            _ => name.as_bytes(),
         };
-        if !entry.file_type().map_err(unreadable)?.is_file() {
-            return Err(format!("contains {name}, which is not a regular file"));
+        if !allowed.iter().any(|allowed| allowed.as_bytes() == owner) {
+            return Err(format!("contains {name:?}, which is not a snapshot file"));
         }
-        names.push(*name);
+        if !entry.file_type().map_err(unreadable)?.is_file() {
+            return Err(format!("contains {name:?}, which is not a regular file"));
+        }
+        names.push(name);
     }
     Ok(names)
 }
@@ -112,7 +108,7 @@ fn read_manifest(path: &Path) -> Result<SnapshotManifest, String> {
 }
 
 /// The managed in-app path has no output choice, so removal is offered too.
-fn refusal(what: &str, path: &Path, why: String) -> io::Error {
+pub(super) fn refusal(what: &str, path: &Path, why: String) -> io::Error {
     io::Error::new(
         io::ErrorKind::AlreadyExists,
         format!(
@@ -122,3 +118,7 @@ fn refusal(what: &str, path: &Path, why: String) -> io::Error {
         ),
     )
 }
+
+#[cfg(test)]
+#[path = "snapshot_create_admission_tests.rs"]
+mod tests;

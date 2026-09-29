@@ -1,11 +1,13 @@
-use crate::snapshot_pair::creation::{create_snapshot_using, stage::CreateStage};
+use crate::snapshot_pair::creation::create_snapshot_using;
+use crate::snapshot_pair::creation::stage::CreateStage;
+use crate::snapshot_pair::staging_path;
 use crate::snapshot_pair::{
     create_snapshot, snapshot_pair_tests::Scratch, verify_snapshot, SnapshotError, SnapshotManifest,
 };
 use std::fs;
 use std::path::Path;
 
-fn assert_refused(result: Result<SnapshotManifest, SnapshotError>) {
+fn assert_refused(result: Result<SnapshotManifest, SnapshotError>, dest: &Path) {
     match result {
         Err(SnapshotError::Io(error)) => assert!(
             error.to_string().contains("left intact"),
@@ -13,6 +15,7 @@ fn assert_refused(result: Result<SnapshotManifest, SnapshotError>) {
         ),
         other => panic!("expected an intact-output refusal, got {other:?}"),
     }
+    assert!(!staging_path(dest).exists(), "refusal stranded staging");
 }
 
 fn arrive_after_staging(dest: &Path, make_directory: bool) -> impl FnMut(CreateStage) + '_ {
@@ -48,7 +51,7 @@ fn a_previous_snapshot_that_gains_an_entry_during_copy_is_not_swapped() {
         Some(&b"arrived during copy"[..]),
         "publication deleted data that arrived after admission"
     );
-    assert_refused(result);
+    assert_refused(result, &dest);
     assert_eq!(verify_snapshot(&dest).unwrap(), old);
 }
 
@@ -73,5 +76,5 @@ fn an_unrelated_directory_created_during_copy_is_not_swapped() {
         "publication deleted a directory that appeared after admission"
     );
     assert_eq!(fs::read_dir(&dest).unwrap().count(), 1);
-    assert_refused(result);
+    assert_refused(result, &dest);
 }

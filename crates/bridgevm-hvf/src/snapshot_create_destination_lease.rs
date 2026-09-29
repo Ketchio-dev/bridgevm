@@ -1,6 +1,7 @@
 //! Own one snapshot parent before admitting its output and clearing staging.
 
-use super::admission::{admit_destination, clear_staging};
+use super::admission::admit_destination;
+use super::staging_debris::clear_staging;
 use super::{staging_path, Path};
 use crate::media_lease::MediaLease;
 use std::fs;
