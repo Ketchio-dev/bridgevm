@@ -58,3 +58,22 @@ fn host_socket_tcp_connect_to_closed_port_returns_rst() {
     assert_eq!(tcp.ack, 0x2000_0001);
     drop(reserved);
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn tcp_connect_to_silent_port_returns_in_progress() {
+    // Darwin drops SYNs to a bound, non-listening socket, so a connect that
+    // blocks here stalls the NAT packet path for the whole handshake timeout.
+    let silent = reserved_nonlistening_socket();
+    let port = silent.local_addr().unwrap().port();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(nonblocking_tcp_connect(Ipv4Addr::LOCALHOST, port));
+    });
+    let stream = receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("TCP connect blocked its caller")
+        .expect("TCP connect to a silent port failed");
+    assert_eq!(tcp_connect_error(&stream).unwrap(), None);
+    drop(silent);
+}
