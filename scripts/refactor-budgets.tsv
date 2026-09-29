@@ -3252,6 +3252,7 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17MissingIdentifierDiagnosticTests.swi
 docs/history/windows-hvf/a9-r34-dashboard-ax-timeout-20260925.md	60	0
 docs/history/windows-hvf/a9-r35-first-boot-oobe-20260929.md	92	0
 docs/history/windows-hvf/a9-firstboot-provisioner-and-shutdown-gate-20260929.md	97	0
+docs/history/windows-hvf/a9-r36-locked-console-20260929.md	57	0
 .github/workflows/b9-guest-powershell-contracts.yml	22	0
 scripts/live-gates/b9-worker-cleanup-fence.sh	16	0
 scripts/live-gates/b9_asset_error.py	12	0
