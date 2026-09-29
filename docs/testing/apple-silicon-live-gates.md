@@ -185,6 +185,20 @@ command, whose fixed bundle identifier is `dev.bridgevm.product-e2e`, and accept
 command is a preflight blocker, not an invitation to invoke a harness. Private
 paths, ISO, media, vars, vTPM, guest payload and helper logs never enter the
 public receipt; the dedicated verifier is run both before and after redaction.
+A first-READY failure keeps a private diagnostic packet. Its guest-setup
+harvest clones the lane disk, attaches the clone read-only and mounts the
+Windows NTFS volume read-only below `<lane>/guest-setup-harvest`. The harvest's
+120-second deadline is checked only between tool calls, allowlist items and
+1 MiB chunks, so it does not bound a blocked open or read on the guest volume.
+The tier reports `cleanup-failed` and keeps its job tree when `mount` or
+`hdiutil info` cannot be read within 20 seconds or still lists the tree, or
+when the harvest did not prove its release. A queue cancel sends SIGTERM to the
+tier's process group and SIGKILL about 5 seconds later, which can stop the
+harvest before it detaches. The job then has no tier receipt and the worker
+fences the queue. Before clearing that fence, look in `hdiutil info` and
+`mount` for an attached `disk.raw` clone and a mounted guest volume under
+`/private/tmp/bridgevm-e2e-<job>.*/lane-N/guest-setup-harvest`, and unmount
+and detach them before removing the tree.
 T19 seals a packaged app, fixed-identity helper, runner, installed disk, exact 64 MiB vars and symlink-free vTPM tree; each lane imports independent read-only clones through `--windows-import-product-e2e`, runs the full guest journey, reauthenticates canonical inputs, and retains `claim_eligible=false` because A9 also requires T17.
 T9 is deliberately not assigned a product capability criterion. It rebuilds
 the experimental BridgeVM Virtual ARM PC firmware and HVF runner from the

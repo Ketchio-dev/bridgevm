@@ -15,8 +15,9 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from t17_terminal_report_tail import terminal_report  # noqa: E402
+import t17_guest_setup_harvest as HARVEST  # noqa: E402
 
-SCHEMA = "bridgevm.t17-private-diagnostic-packet.v1"
+SCHEMA = "bridgevm.t17-private-diagnostic-packet.v2"
 STAMP_SCHEMA = "bridgevm.windows-hvf-3d-off-product-e2e-host-stamp.v1"
 LANE_SCHEMA = "bridgevm.windows-hvf-3d-off-product-e2e-lane.v2"
 REQUEST_SCHEMA = "bridgevm.windows-hvf-3d-off-product-e2e-request.v2"
@@ -384,6 +385,7 @@ def capture(args: argparse.Namespace) -> None:
                         item.update(status="unavailable", reason="short-header")
             if total > TOTAL_CAP:
                 raise CaptureError("packet exceeds 256-MiB total cap")
+            guest_setup = HARVEST.Harvest(lane_root, lane, slug, private, args.lane, TOTAL_CAP - total, created).run()
             index = {"schema_version": SCHEMA, "job_id": args.job_id, "commit": args.commit,
                      "campaign_mode": args.mode, "lane": args.lane, "lane_root": lane_root,
                      "lane_identity": f"{lane_info.st_dev}:{lane_info.st_ino}", "nonce": nonce,
@@ -392,7 +394,7 @@ def capture(args: argparse.Namespace) -> None:
                      "observed_generation": observed_generation(detail, tail, tail_offset),
                      "display_generation": "unattributed",
                      "windows_function_symbols": "unavailable: exact-build mapping unverified",
-                     "total_bytes": total, "artifacts": [items[role] for role in ROLES]}
+                     "total_bytes": total, "guest_setup": guest_setup, "artifacts": [items[role] for role in ROLES]}
             body = (json.dumps(index, sort_keys=True, indent=2) + "\n").encode("utf-8")
             if len(body) > INDEX_CAP:
                 raise CaptureError("private index exceeds its cap")
@@ -416,7 +418,7 @@ def verify(args: argparse.Namespace) -> None:
         expected_keys = {"schema_version", "job_id", "commit", "campaign_mode", "lane", "lane_root",
                      "lane_identity", "nonce", "request_sha256", "result_sha256", "stamp_sha256",
                      "host_stop_status", "observed_generation", "display_generation",
-                     "windows_function_symbols", "total_bytes", "artifacts"}
+                     "windows_function_symbols", "total_bytes", "guest_setup", "artifacts"}
         detail = result.get("failure_detail")
         statuses = HOST_STATUS.findall(detail) if isinstance(detail, str) else []
         expected_stamp_keys = {"schema_version", "job_id", "commit", "lane", "nonce", "request_sha256", "result_sha256"}
@@ -521,7 +523,7 @@ def verify(args: argparse.Namespace) -> None:
                 raise CaptureError("missing artifact reason differs")
             elif item["status"] == "unavailable" and item["reason"] not in {"invalid-or-odd-frame", "sequence-changed", "short-header"}:
                 raise CaptureError("unavailable artifact reason differs")
-        if total != index["total_bytes"] or total > TOTAL_CAP:
+        if total != index["total_bytes"] or total + HARVEST.verify(private, info.st_dev, index["guest_setup"], args.lane) > TOTAL_CAP:
             raise CaptureError("private packet total differs")
         if (artifacts[1]["status"] == "retained") != (artifacts[2]["status"] == "retained"):
             raise CaptureError("final framebuffer pair is incomplete")
@@ -591,7 +593,7 @@ def main() -> int:
             capture(args)
         else:
             verify(args)
-    except (CaptureError, OSError) as error:
+    except (ValueError, OSError) as error:
         print(f"T17 private diagnostic packet refused: {type(error).__name__}: {error}", file=sys.stderr)
         return 1
     return 0
