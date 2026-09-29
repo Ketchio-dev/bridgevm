@@ -193,14 +193,7 @@ cmd_logs() {
 cmd_receipt() {
     local dir
     dir="$(job_dir "${1:?receipt needs a job id}")" || { echo "no such job: $1" >&2; exit 1; }
-    # Only ever hand back the redacted copy. The raw receipt can name private
-    # image and vars paths.
-    if [ -f "$dir/receipt.public.json" ]; then
-        cat "$dir/receipt.public.json"
-    else
-        echo "no published receipt for $1" >&2
-        exit 1
-    fi
+    exec python3 "$(dirname "$0")/bridgevm_live_receipt.py" "$dir" "$1"
 }
 
 cmd_cancel() {
