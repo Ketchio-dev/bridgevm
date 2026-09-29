@@ -1856,7 +1856,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsGuestPayloadIdentity.swif
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsGuestPayloadTree.swift	75
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallSourceLock.swift	47	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsSnapshotCard.swift	33	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsSnapshotCommand.swift	106	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsSnapshotCommand.swift	95	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsWimlib.swift	30	0
 apps/macos/Sources/BridgeVMControl/WindowsHVFGuestPayloadPolicy.swift	43	0
 apps/macos/Sources/BridgeVMControl/WindowsHVFInstallInputPolicy.swift	31	0
@@ -3256,3 +3256,5 @@ tests/integration/b9-receipt-read-contract.py	135	0
 tests/integration/b9-scanout-byte-contract.py	127	0
 tests/integration/b9-source-reopen-contract.py	116	0
 tests/integration/b9-workload-diagnostic-path-contract.py	102	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHelperProcess.swift	63	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTests.swift	93	0

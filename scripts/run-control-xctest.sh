@@ -4,4 +4,4 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
 source "$ROOT/scripts/prepare-native-test-helpers.sh"
-swift test --package-path apps/macos --filter 'FirstRun|HvfAppUI|HvfCurrentGenerationImport|HvfMediaImport|HvfWindowsImport|HvfWindowsInstall|HvfProductCPUValidation|LibraryModelPersistence|HvfRuntime|HvfOwnedRuntime|HvfProductBackendConfiguration|NativeCLI|NativeLibraryReader|NativeRuntime'
+swift test --package-path apps/macos --filter 'FirstRun|HvfAppUI|HvfCurrentGenerationImport|HvfMediaImport|HvfWindowsSnapshotInvoke|HvfWindowsImport|HvfWindowsInstall|HvfProductCPUValidation|LibraryModelPersistence|HvfRuntime|HvfOwnedRuntime|HvfProductBackendConfiguration|NativeCLI|NativeLibraryReader|NativeRuntime'
