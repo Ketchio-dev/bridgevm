@@ -129,23 +129,5 @@ fn hard_exit_during_store_initialization_keeps_pair_usable() {
     }
 }
 
-/// Setup debris is removed only while it holds what setup writes; anything
-/// else placed there fails restore closed and is kept.
-#[test]
-fn foreign_content_in_setup_debris_is_kept() {
-    let (scratch, disk, vars, snapshot) = fixture("init-crash-foreign");
-    crash_initialize("directory-created", 95, &disk, &vars);
-    let [debris] = managed_entries(&scratch)
-        .try_into()
-        .expect("one setup entry");
-    let foreign = scratch.0.join(debris).join("foreign");
-    fs::write(&foreign, b"keep").expect("plant foreign file");
-    let mut pair = LockedPair::open(&disk, &vars)
-        .unwrap_or_else(|error| panic!("setup debris left the pair refused: {error}"));
-    assert!(pair.restore(&snapshot).is_err(), "foreign debris removed");
-    assert_eq!(fs::read(&foreign).expect("foreign file kept"), b"keep");
-    assert_eq!(
-        contents(&pair),
-        (b"old-disk".to_vec(), b"old-vars".to_vec())
-    );
-}
+#[path = "managed_pair_init_debris_tests.rs"]
+mod debris_tests;

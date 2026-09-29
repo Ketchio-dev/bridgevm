@@ -20,18 +20,12 @@ pub(super) enum InitStage {
 /// An existing root is never repaired here: without `current` or the marker
 /// it is indistinguishable from lost media and must keep failing closed.
 pub(super) fn initialize(root: &Path, mut observe: impl FnMut(InitStage)) -> io::Result<()> {
+    // Before the root check: an older binary or another actor can create the
+    // root beside debris, and the pair lease makes any debris stale.
+    let building = building_path(root);
+    debris::clear(&building)?;
     if private_directory(root, false)? {
         return Ok(());
-    }
-    let building = building_path(root);
-    if private_directory(&building, false)? {
-        // An interrupted setup of this pair leaves it empty or holding only
-        // the empty marker; remove_dir refuses anything else.
-        let marker = building.join("original");
-        if fs::symlink_metadata(&marker).is_ok_and(|m| m.is_file() && m.len() == 0) {
-            fs::remove_file(&marker)?;
-        }
-        fs::remove_dir(&building)?;
     }
     private_directory(&building, true)?;
     observe(InitStage::DirectoryCreated);
@@ -56,3 +50,6 @@ fn building_path(root: &Path) -> PathBuf {
     name.push(root.file_name().unwrap());
     root.with_file_name(name)
 }
+
+#[path = "managed_pair_init_debris.rs"]
+mod debris;
