@@ -1,12 +1,11 @@
 """Strict T20 receipt command with a required queue seal for verification."""
-from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
 
-from native_snapshot_restore_receipt import initial, validate, write_new
-from native_snapshot_restore_public import load_receipt
+from native_snapshot_restore_receipt import initial, write_new
+from native_snapshot_restore_receipt_path import verified_receipt
 from native_snapshot_restore_seal import validate_seal
 
 
@@ -21,7 +20,7 @@ def main() -> int:
     if args.mode == "verify":
         if args.job_dir is None:
             parser.error("verify requires --job-dir")
-        value = validate(load_receipt(args.path), args.expected_commit)
+        value = verified_receipt(args.path, args.job_dir, args.expected_commit)
         validate_seal(value, args.job_dir)
         return 0
     if not args.job_id or not args.expected_commit:
