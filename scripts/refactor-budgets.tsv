@@ -3174,6 +3174,8 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserSelectionTargetTests.swift	82
 scripts/glyph_latency_fake_clock.py	12	0
 docs/windows-arm/evidence/a19-t20-r6-20260925.md	68	0
 docs/windows-arm/evidence/a19-t20-r6-20260925-receipt.json	47	0
+docs/windows-arm/evidence/a19-t20-r7-20260929.md	71	0
+docs/windows-arm/evidence/a19-t20-r7-20260929-receipt.json	47	0
 apps/macos/Sources/BridgeVMProductE2E/T17FirstReadyStopCapture.swift	130	0
 apps/macos/Tests/BridgeVMControlTests/HvfDiagnosticStopAdmissionTests.swift	69	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FirstReadyStopCaptureTests.swift	170	0
