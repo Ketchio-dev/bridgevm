@@ -77,6 +77,8 @@ impl LockedPair {
 #[path = "managed_pair_restore.rs"]
 mod restore;
 
+#[path = "managed_pair_init.rs"]
+mod init;
 #[path = "managed_pair_layout.rs"]
 mod layout;
 #[path = "managed_pair_runtime.rs"]

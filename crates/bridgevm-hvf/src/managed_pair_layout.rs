@@ -1,6 +1,6 @@
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 #[cfg(test)]
@@ -13,22 +13,6 @@ pub(super) fn resolve_root(disk: &Path, vars: &Path) -> io::Result<PathBuf> {
 }
 #[path = "managed_pair_identity.rs"]
 mod identity;
-
-pub(super) fn initialize(root: &Path) -> io::Result<()> {
-    if !private_directory(root, false)? {
-        private_directory(root, true)?;
-        let marker = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-            .open(root.join("original"))?;
-        marker.sync_all()?;
-        File::open(root)?.sync_all()?;
-        File::open(root.parent().unwrap())?.sync_all()?;
-    }
-    Ok(())
-}
 
 pub(super) fn original_paths(
     root: &Path,

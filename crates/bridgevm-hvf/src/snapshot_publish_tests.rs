@@ -81,3 +81,5 @@ fn refuses_a_symlink_destination_without_mutating_its_target() {
     assert_pair(&s.path("target"), b"old");
     assert_pair(&s.path("stage"), b"new");
 }
+#[path = "snapshot_publish_interruption_tests.rs"]
+mod interruption_tests;
