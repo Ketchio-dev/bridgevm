@@ -85,16 +85,16 @@ class NativeSnapshotRestoreTierContract(unittest.TestCase):
         value = RECEIPT.initial("native-fixture", COMMIT)
         for field in RECEIPT.HASHES:
             value[field] = "b" * 64
-        value.update({"finished_at": "done", "host_model": "Mac17,9",
-                      "macos_version": "26.0", "outcome": "completed", "pass": True,
-                      "boots_attempted": 3, "boots_passed": 3,
-                      "natural_shutdown_count": 3, "run_count": 1,
-                      "worker_cleanup_verified": True})
+        value.update({"started_at": "2026-09-28T00:00:00+00:00", "finished_at": "2026-09-28T00:00:01+00:00",
+                      "host_model": "Mac17,9", "macos_version": "26.0", "outcome": "completed", "pass": True,
+                      "boots_attempted": 3, "boots_passed": 3, "natural_shutdown_count": 3,
+                      "run_count": 1, "sample_count": 1, "clobber_marker_sha256": "c" * 64, "worker_cleanup_verified": True})
         self.assertTrue(RECEIPT.validate(value, COMMIT)["pass"])
         public = REDACTOR.redact(value)
         self.assertEqual(RECEIPT.validate(public, COMMIT), value)
         for mutation in ({**value, "natural_shutdown_count": 2},
                          {**value, "three_d_injection": True},
+                         {**value, "clobber_marker_sha256": value["original_marker_sha256"]}, {**value, "restored_marker_sha256": "c" * 64},
                          {**value, "snapshot_restore_result_sha256": "absent"}, {**value, "snapshot_export_result_sha256": "absent"}):
             with self.assertRaises(ValueError):
                 RECEIPT.validate(mutation, COMMIT)

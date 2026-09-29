@@ -1,0 +1,17 @@
+name: T20 receipt and cleanup contracts
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  receipt-seal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 tests/integration/native-snapshot-restore-receipt-seal-contract.py && python3 tests/integration/native-snapshot-restore-cli-path-contract.py && python3 tests/integration/native-snapshot-restore-cli-read-contract.py && python3 tests/integration/native-snapshot-restore-cleanup-contract.py

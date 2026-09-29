@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import hashlib
 import os
 from pathlib import Path
 import platform
@@ -14,26 +13,8 @@ import sys
 from native_snapshot_restore_inputs import digest, prepare, reauthenticate
 from native_snapshot_export_evidence import load_evidence, receipt_fields
 from native_snapshot_restore_receipt import initial, write_new
-
-
-def file_digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def line_hash(path: Path) -> str:
-    value = path.read_text(encoding="utf-8").strip()
-    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
-        raise ValueError("invalid retained hash")
-    return value
-
-
-def shutdown_count(output: Path) -> int:
-    count = 0
-    for phase in ("phase1-original", "phase3-clobber", "phase5-restored"):
-        log = output / phase / "run.log"
-        if log.is_file() and "stop: PSCI " in log.read_text(encoding="utf-8", errors="replace"):
-            count += 1
-    return count
+from native_snapshot_restore_results import file_digest, line_hash, shutdown_count
+from native_snapshot_restore_seal import merge_prepared, sealed_hashes
 
 
 def main() -> int:
@@ -48,11 +29,11 @@ def main() -> int:
     receipt["host_model"] = subprocess.check_output(["sysctl", "-n", "hw.model"], text=True).strip()
     receipt["macos_version"] = platform.mac_ver()[0]
     status = 1
-    private = None
+    prepared = output / "prepared-inputs"
     try:
-        prepared = output / "prepared-inputs"
+        receipt.update(sealed_hashes(output, job_id, commit))
         public, private = prepare(manifest, sealed_binary, commit, prepared)
-        receipt.update(public)
+        merge_prepared(receipt, public)
         receipt["prepared_image_sha256"] = digest(prepared / "disk.raw")
         receipt["prepared_vars_sha256"] = digest(prepared / "vars.fd")
         environment = dict(
@@ -84,21 +65,27 @@ def main() -> int:
             "original_marker_sha256": file_digest(output / "phase1-original/marker-after.txt"), "clobber_marker_sha256": file_digest(output / "phase3-clobber/marker-after.txt"),
             "restored_marker_sha256": file_digest(output / "phase5-restored/marker-before.txt"),
         })
-        if receipt["original_marker_sha256"] != receipt["restored_marker_sha256"]:
-            raise ValueError("restored marker hash differs from the original")
-        if receipt["boots_passed"] != 3 or (output / "live").exists():
+        if (receipt["original_marker_sha256"] != receipt["restored_marker_sha256"] or
+                receipt["clobber_marker_sha256"] == receipt["original_marker_sha256"]):
+            raise ValueError("marker clobber and restore identity was not verified")
+        if receipt["boots_passed"] != 3 or os.path.lexists(output / "live"):
             raise ValueError("natural shutdown or live-library cleanup was not verified")
-        shutil.rmtree(prepared)
-        if prepared.exists() or prepared.is_symlink():
-            raise ValueError("prepared media cleanup was not verified")
-        receipt.update({"outcome": "completed", "pass": True, "run_count": 1,
-                        "worker_cleanup_verified": True})
         status = 0
     except (OSError, UnicodeError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print("FAIL: native snapshot restore tier: " + str(error), file=sys.stderr)
     finally:
-        if (output / "prepared-inputs").is_dir():
-            shutil.rmtree(output / "prepared-inputs", ignore_errors=True)
+        try:
+            if prepared.is_dir() and not prepared.is_symlink():
+                shutil.rmtree(prepared)
+            receipt["worker_cleanup_verified"] = not any(
+                os.path.lexists(output / name) for name in ("prepared-inputs", "live"))
+        except OSError:
+            receipt["worker_cleanup_verified"] = False
+        if status == 0 and receipt["worker_cleanup_verified"]:
+            receipt.update({"outcome": "completed", "pass": True,
+                            "run_count": 1, "sample_count": 1})
+        else:
+            status = 1
         receipt["finished_at"] = datetime.now(timezone.utc).isoformat()
         write_new(output / "receipt.json", receipt)
     return status
