@@ -2144,6 +2144,7 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserTreeDiagnosticTests.swift
 crates/bridgevm-hvf/src/net_nat/tests/tcp_readiness.rs	80	0
 crates/bridgevm-hvf/src/net_nat/tcp_connection_state.rs	17	0
 crates/bridgevm-hvf/src/net_nat/tests/tcp_fixture.rs	26	3
+crates/bridgevm-hvf/src/net_nat/tests/tcp_refusal_fixture.rs	44	2
 crates/bridgevm-media/src/lib.rs	1	0
 crates/bridgevm-media/src/media_lease.rs	68	0
 crates/bridgevm-media/src/media_lease_os.rs	38	2

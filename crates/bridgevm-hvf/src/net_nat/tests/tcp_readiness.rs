@@ -6,6 +6,7 @@ use fixture::reserved_nonlistening_socket;
 
 use super::super::*;
 use super::helpers::*;
+use super::tcp_refusal_fixture::reserved_refusing_endpoint;
 use crate::virtio_net::NetBackend;
 use std::net::{Ipv4Addr, TcpStream};
 use std::time::{Duration, Instant};
@@ -27,7 +28,7 @@ fn connected_idle_socket_is_established_without_application_data() {
 
 #[test]
 fn host_socket_tcp_connect_to_closed_port_returns_rst() {
-    let reserved = reserved_nonlistening_socket();
+    let (reserved, _peer) = reserved_refusing_endpoint();
     let port = reserved.local_addr().unwrap().port();
     let mut backend = NatBackend::<HostSocketOutboundIpv4Handler>::new_host_socket();
     backend.transmit(&tcp_guest_frame(
