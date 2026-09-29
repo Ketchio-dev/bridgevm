@@ -440,7 +440,7 @@ def run_tier_fixtures(tier: Path, manifest: Path, temporary: Path, commit: str) 
             subprocess.run([sys.executable, str(SCRIPT), "verify", "--private", str(private.resolve()),
                             "--job-id", name, "--commit", commit, "--campaign-mode", "pilot",
                             "--lane", "1"], check=True)
-            assert json.loads(index.read_text())["observed_generation"] == 7
+            value = json.loads(index.read_text()); assert value["observed_generation"] == 7 and (value["guest_setup"]["outcome"], value["guest_setup"]["reason"], value["guest_setup"]["cleanup"]) == ("gpt-invalid", "disk-too-small", "verified"), value["guest_setup"]
         else:
             assert not index.exists() and marker.exists()
         subprocess.run([str(publisher), "t17-windows-hvf-product-e2e", str(out),
