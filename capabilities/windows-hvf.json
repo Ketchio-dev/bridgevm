@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-09-28",
-  "tested_commit": "3fdc98276c42b44c54f784accb7e21e0d68ebadc",
+  "tested_commit": "77bac502b997adf2f6e39c557d3c1288eca01508",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -462,7 +462,7 @@
       "state": "OPEN",
       "release_blocking": false,
       "statement": "Twenty declared real workloads retain frame-time p50, p95 and p99 plus an exact result class for each workload.",
-      "measured": "OPEN: one real title across two API configurations has retained gate evidence. The declared 20-workload compatibility matrix has not run, so unmeasured titles are not inferred compatible. 2026-09-28 source checkpoint 740cf94d5d0745273be8c07f9c99c80157f2dca8: nonpromoting pilot source and host-side synthetic contracts were integrated. Local host-focused checks and B9 guest-script CRLF validation passed. At that source checkpoint, Windows-hosted PowerShell refusal contracts and the live 20-workload matrix had not run. B9 remains OPEN at 0/20; no compatibility or release claim follows from these contracts. 2026-09-28 Windows-hosted refusal workflows at metadata head 59ee7678 failed in both push and PR runs before establishing guest-script behavior. Source 3fdc9827 changes only the hosted test harness; the corrected exact-head Windows result is pending. No physical playback was submitted; B9 remains OPEN at 0/20.",
+      "measured": "OPEN: one real title across two API configurations has retained gate evidence. The declared 20-workload compatibility matrix has not run, so unmeasured titles are not inferred compatible. 2026-09-28 source checkpoint 740cf94d5d0745273be8c07f9c99c80157f2dca8: nonpromoting pilot source and host-side synthetic contracts were integrated. Local host-focused checks and B9 guest-script CRLF validation passed. At that source checkpoint, Windows-hosted PowerShell refusal contracts and the live 20-workload matrix had not run. B9 remains OPEN at 0/20; no compatibility or release claim follows from these contracts. 2026-09-28 Windows-hosted refusal workflows at metadata head 59ee7678 failed in both push and PR runs before establishing guest-script behavior. Source 3fdc9827 changes only the hosted test harness. The corrected head 0b6c75dec5971ff88ee3ff88b93656002fb5bdee passed Windows-hosted PowerShell refusal contracts in push run 36499510869 and PR run 36499514140, and hosted full check 36499595317 passed. These deterministic checks do not prove guest playback or any of the 20 live workload cells. No physical playback was submitted; B9 remains OPEN at 0/20.",
       "evidence_paths": [
         "docs/windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md",
         "docs/windows-arm/evidence/a3-d3d11-title-fps-3of3-20260812.md",
