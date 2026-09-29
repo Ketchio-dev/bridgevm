@@ -95,7 +95,7 @@ class B9PilotContract(unittest.TestCase):
         query = base.format("Foreground") + f" -Hwnd {hwnd}"
         focus = f"BVAGENT WINFOCUS {hwnd} -> OK WINFOCUS\r\nBVAGENT CMD {query} exit=0\r\nB9-FOREGROUND-{hwnd}\r\nBVAGENT END {query}\r\n"
         run_log = (f"BVAGENT CMD {launch} exit=0\r\nB9-WORKLOAD-LAUNCHED-{nonce}\r\nBVAGENT END {launch}\r\n" + focus * 2 +
-                   "live input accepted: command=Key(<redacted>)\r\nstop: PSCI SYSTEM_OFF (system off)\r\n").encode()
+                   "live input accepted: command=Key(<redacted>)\r\nstop: PSCI 0x84000008 (system off)\r\n").encode()
         put(guest / "run.log", run_log)
         frames = []
         for index in range(3):

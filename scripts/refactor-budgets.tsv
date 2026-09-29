@@ -3113,6 +3113,12 @@ docs/history/windows-hvf/a19-partial-staging-interruption-20260920.md	63	0
 docs/history/windows-hvf/a19-snapshot-create-interruption-20260921.md	46	0
 apps/macos/Sources/BridgeVMProductE2E/T17FirstBootDiagnostic.swift	47	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FirstBootDiagnosticTests.swift	44	0
+apps/macos/Sources/BridgeVMProductE2E/HvfStopLine.swift	14	0
+apps/macos/Tests/BridgeVMProductE2ETests/HvfStopLineTests.swift	52	0
+scripts/live-gates/hvf_stop_line.py	8	0
+tests/integration/hvf-stop-line-contract.py	103	0
+scripts/live-gates/hvf_guest_shutdown.py	14	0
+tests/integration/b9-guest-shutdown-contract.py	75	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGraphicsRuntimePresentation.swift	41	0
 apps/macos/Tests/BridgeVMControlTests/HvfGraphicsRuntimePresentationTests.swift	34	0
 docs/history/windows-hvf/truthful-graphics-mode-presentation-20260920.md	48	0
@@ -3246,7 +3252,7 @@ scripts/live-gates/b9_failure_classification.py	15	0
 scripts/live-gates/b9_ledger_bytes.py	32	0
 scripts/live-gates/b9_public_receipt_contract.py	50	0
 scripts/live-gates/b9_raw_capture.py	78	0
-scripts/live-gates/b9_raw_focus_order.py	36	0
+scripts/live-gates/b9_raw_focus_order.py	34	0
 scripts/live-gates/b9_real_workload_inputs.py	308	0
 scripts/live-gates/b9_real_workload_observation.py	209	0
 scripts/live-gates/b9_real_workload_queue.py	109	0

@@ -204,7 +204,7 @@ final class T17ProductRunner {
     private func stopOwnedApplication() -> Bool {
         if let ui { try? ui.press("bridgevm.windows.runtime.stop", timeout: 2) }
         _ = waitUntil(timeout: 30) { self.boundedLines(self.bundle.appendingPathComponent("logs/hvf/run.log"))
-            .contains(where: { $0.contains("stop: PSCI SYSTEM_OFF") }) }
+            .contains(HvfStopLine.systemOff) }
         guard let application else { return true }
         if application.isRunning { application.terminate() }
         _ = waitUntil(timeout: 10) { !application.isRunning }

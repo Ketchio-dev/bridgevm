@@ -95,7 +95,7 @@ struct T17GuestJourney {
         try ui.press("bridgevm.runtime.ctl.send", timeout: 10)
         guard wait(timeout: 180, predicate: {
             guard let data = try? Data(contentsOf: self.runLog), data.count > before else { return false }
-            return String(decoding: data.suffix(from: before), as: UTF8.self).contains("stop: PSCI SYSTEM_OFF")
+            return HvfStopLine.systemOffObserved(in: String(decoding: data.suffix(from: before), as: UTF8.self))
         }), waitForStableLog() else {
             throw T17Blocker(code: "guest-evidence-missing", detail: "guest did not reach clean SYSTEM_OFF")
         }

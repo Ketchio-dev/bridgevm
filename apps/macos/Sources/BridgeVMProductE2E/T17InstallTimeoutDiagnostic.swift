@@ -213,7 +213,7 @@ final class T17InstallEnvironmentSampler {
         let markers = T17InstallMarkerCounts(
             boot: lines.filter { $0.hasPrefix("BOOT_TIMER ramfb source=") }.count,
             dism: lines.filter { $0 == "BVINSTALL DISM APPLY" }.count,
-            shutdown: lines.filter { $0.hasPrefix("stop: PSCI ") && $0.hasSuffix("(system off)") }.count,
+            shutdown: lines.filter { $0 == HvfStopLine.systemOff }.count,
             watchdog: lines.filter { $0 == "stop: watchdog (CANCELED)" }.count)
         return (.present, bytes, markers)
     }
