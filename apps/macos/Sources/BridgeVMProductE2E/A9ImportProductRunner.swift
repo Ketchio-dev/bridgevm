@@ -161,7 +161,7 @@ final class A9ImportProductRunner {
 
     private func stopOwnedApplication() -> Bool {
         if let ui { try? ui.press("bridgevm.windows.runtime.stop", timeout: 2) }
-        _ = wait(timeout: 30) { self.boundedLines(self.runLog).contains { $0.contains("stop: PSCI SYSTEM_OFF") } }
+        _ = wait(timeout: 30) { self.boundedLines(self.runLog).contains(HvfStopLine.systemOff) }
         guard let application else { return true }
         if application.isRunning { application.terminate() }
         _ = wait(timeout: 10) { !application.isRunning }

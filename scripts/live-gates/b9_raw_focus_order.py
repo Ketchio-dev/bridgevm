@@ -1,6 +1,7 @@
 """Recheck retained B9 guest focus and input order from exact log lines."""
 from __future__ import annotations
 import re
+from hvf_stop_line import SYSTEM_OFF
 def verify_raw_focus_order(raw: bytes, nonce: str, hwnd: int,
                            control_sha: str, guest_sha: str, umd_sha: str) -> None:
     if (not re.fullmatch(r"[0-9a-f]{32}", nonce)
@@ -16,11 +17,8 @@ def verify_raw_focus_order(raw: bytes, nonce: str, hwnd: int,
     key = "live input accepted: command=Key(<redacted>)"
     events = [(index, line) for index, line in enumerate(lines) if line.startswith((
         "B9-WORKLOAD-LAUNCHED-", "BVAGENT WINFOCUS ",
-        "B9-FOREGROUND-", "live input accepted: command=Key(",
-        "stop: PSCI SYSTEM_OFF"))]
-    if (len(events) != 7 or [line for _, line in events[:6]] != [
-            launch, focus, foreground, focus, foreground, key]
-            or not events[6][1].startswith("stop: PSCI SYSTEM_OFF")):
+        "B9-FOREGROUND-", "live input accepted: command=Key(", "stop: "))]
+    if [line for _, line in events] != [launch, focus, foreground, focus, foreground, key, SYSTEM_OFF]:
         raise ValueError("B9 launch, focus, foreground, input or shutdown order differs")
     base = (r"powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMB9\bv-b9-control.ps1"
             + f" -Action {{}} -ExpectedControlSha256 {control_sha}")
