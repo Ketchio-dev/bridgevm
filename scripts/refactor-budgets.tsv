@@ -1856,7 +1856,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsGuestPayloadIdentity.swif
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsGuestPayloadTree.swift	75
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallSourceLock.swift	47	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsSnapshotCard.swift	33	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsSnapshotCommand.swift	106	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsSnapshotCommand.swift	95	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsWimlib.swift	30	0
 apps/macos/Sources/BridgeVMControl/WindowsHVFGuestPayloadPolicy.swift	43	0
 apps/macos/Sources/BridgeVMControl/WindowsHVFInstallInputPolicy.swift	31	0
@@ -3268,3 +3268,6 @@ apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotExportAdmissionTests.swif
 crates/bridgevm-hvf/src/snapshot_create_staging_debris.rs	29	0
 crates/bridgevm-hvf/src/snapshot_create_admission_shape_tests.rs	99	0
 crates/bridgevm-hvf/src/snapshot_create_staging_debris_tests.rs	84	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHelperProcess.swift	63	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTests.swift	88	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTestSupport.swift	34	0
