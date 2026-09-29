@@ -5,6 +5,8 @@ use super::*;
 #[path = "snapshot_create_destination.rs"]
 mod destination;
 use destination::prepare_destination;
+#[path = "snapshot_create_admission.rs"]
+mod admission;
 #[path = "snapshot_create_destination_lease.rs"]
 mod destination_lease;
 use destination_lease::claim_staging;
@@ -78,7 +80,7 @@ fn create_snapshot_using(
     observe(CreateStage::StagingDirectorySynced);
 
     // Never remove the previous snapshot before its replacement is published.
-    snapshot_publish::publish(&staging, &dest)?;
+    admission::publish(&staging, &dest)?;
     observe(CreateStage::SnapshotPublished);
     Ok(manifest)
 }

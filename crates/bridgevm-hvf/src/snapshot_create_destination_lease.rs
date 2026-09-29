@@ -1,5 +1,6 @@
-//! Own one snapshot parent before clearing a staging directory.
+//! Own one snapshot parent before admitting its output and clearing staging.
 
+use super::admission::{admit_destination, clear_staging};
 use super::{staging_path, Path};
 use crate::media_lease::MediaLease;
 use std::fs;
@@ -19,12 +20,10 @@ pub(super) fn claim_staging(destination: &Path) -> io::Result<(MediaLease, PathB
         Err(error) => return Err(error),
     }
     let lease = MediaLease::acquire([key.as_path()])?;
+    // Both admissions run under the lease and before any staging mutation.
+    admit_destination(destination)?;
     let staged = staging_path(destination);
-    match fs::remove_dir_all(&staged) {
-        Ok(()) => {}
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
-    }
+    clear_staging(&staged)?;
     fs::create_dir(&staged)?;
     Ok((lease, staged))
 }
