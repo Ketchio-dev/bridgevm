@@ -3216,6 +3216,7 @@ tests/integration/a19-interrupted-restore-live-tier-contract.py	224	0
 tests/integration/a19-interrupted-restore-public-contract.py	77	0
 tests/integration/a19-interrupted-restore-guest-share-contract.py	106	0
 docs/history/windows-hvf/a19-interrupted-restore-tier-20260925.md	41	0
+docs/history/windows-hvf/a19-output-admission-and-setup-interruption-20260929.md	74	0
 docs/windows-arm/evidence/a19-t21-r1-20260925.md	68	0
 docs/windows-arm/evidence/a19-t21-r1-20260925-receipt.json	49	0
 docs/windows-arm/evidence/a19-t22-r1-20260925.md	75	0
