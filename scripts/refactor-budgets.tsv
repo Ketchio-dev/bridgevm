@@ -1814,6 +1814,7 @@ scripts/verify-windows-product-e2e-receipt.py	389	0
 tests/integration/windows-product-e2e-contract-smoke.sh	79	0
 tests/integration/windows-product-e2e-launchservices-admission.py	124	0
 tests/integration/windows-product-e2e-launchservices-report-origin.py	74	0
+tests/integration/host-console-session-contract.py	69	0
 tests/integration/windows-product-e2e-request-mode.py	36	0
 tests/integration/windows-guest-payload-verifier-smoke.py	129	0
 scripts/live-gates/windows-product-e2e-manifest.py	124	0
@@ -2515,6 +2516,7 @@ apps/macos/scripts/build-app-ui-launcher.sh	24	0
 scripts/check-app-ui-host-build-boundary.sh	53	0
 scripts/live-gates/app-ui-manifest-dispatch.sh	15	0
 scripts/live-gates/windows-product-e2e-launchservices-preflight.py	190	0
+scripts/live-gates/host_console_session.py	62	0
 scripts/live-gates/app_ui_host_diagnostic.py	151	0
 scripts/live-gates/app_ui_host_manifest.py	95	0
 tests/integration/app-ui-host-tier-smoke.py	254	0
@@ -3250,6 +3252,7 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17MissingIdentifierDiagnosticTests.swi
 docs/history/windows-hvf/a9-r34-dashboard-ax-timeout-20260925.md	60	0
 docs/history/windows-hvf/a9-r35-first-boot-oobe-20260929.md	92	0
 docs/history/windows-hvf/a9-firstboot-provisioner-and-shutdown-gate-20260929.md	97	0
+docs/history/windows-hvf/a9-r36-locked-console-20260929.md	57	0
 .github/workflows/b9-guest-powershell-contracts.yml	22	0
 scripts/live-gates/b9-worker-cleanup-fence.sh	16	0
 scripts/live-gates/b9_asset_error.py	12	0
