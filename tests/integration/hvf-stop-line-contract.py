@@ -78,7 +78,7 @@ class HvfStopLineContract(unittest.TestCase):
             self.assertIn("HvfStopLine.systemOff", swift[name], name)
         self.assertIn("HvfStopLine.systemResetPrefix", swift["T17FirstBootDiagnostic.swift"])
         for name in ("windows_product_e2e_guest_evidence.py", "b9_raw_focus_order.py",
-                     "run-b9-real-workload-pilot.py"):
+                     "hvf_guest_shutdown.py"):
             self.assertIn("hvf_stop_line", python[name], name)
 
     def test_b9_raw_order_requires_the_exact_stop_record(self):

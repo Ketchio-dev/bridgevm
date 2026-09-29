@@ -30,7 +30,7 @@ from b9_share_asset_integrity import check_shared_assets
 from b6_renderer_runtime import verify_renderer_runtime
 from guest_input_controller import Controller
 from guest_input_live_cleanup import stop
-from hvf_stop_line import SYSTEM_OFF
+from hvf_guest_shutdown import guest_shutdown_observed
 
 TIER = "d9-b9-real-workload"
 JOB = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
@@ -330,7 +330,7 @@ def run(args) -> int:
             stage = "shutdown"
             controller.write_command(control_command(share, control_sha, "Shutdown"))
             receipt["guest_shutdown_exit"] = process.wait(timeout=120)
-            receipt["guest_shutdown_observed"] = receipt["guest_shutdown_exit"] == 0 and SYSTEM_OFF in lines(boot / "run.log")
+            receipt["guest_shutdown_observed"] = guest_shutdown_observed(receipt["guest_shutdown_exit"], lines(boot / "run.log"))
             if not receipt["guest_shutdown_observed"]:
                 raise ValueError("clean guest shutdown not observed")
             stage = "asset-final"
