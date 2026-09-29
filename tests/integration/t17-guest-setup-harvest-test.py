@@ -292,7 +292,7 @@ class ReleaseTest(LaneFixture):
         self.assertIn((harvest.HDIUTIL, "detach", "-force", "/dev/disk99"), tools.calls)
         self.assertTrue((self.lane / harvest.WORK_NAME / harvest.CLONE_NAME).is_file())
         runner = (GATES / "run-windows-product-e2e-tier.sh").read_text()
-        self.assertIn('{ mount; /usr/bin/hdiutil info || :; } 2>/dev/null | grep -F "$WORK"', runner)
+        self.assertIn('t17_host_residue.py" --work "$WORK" --private "$PRIVATE" || return 1', runner)
 
     def test_unverifiable_attachment_state_fails_closed(self) -> None:
         tools = FakeTools()

@@ -38,7 +38,7 @@ collect_first_ready_packet() {
 cleanup_work() {
   [[ -z "$WORK" ]] && return 0
   case "$WORK" in "/tmp/bridgevm-e2e-$JOB_ID."??????|"/private/tmp/bridgevm-e2e-$JOB_ID."??????) ;; *) return 1 ;; esac
-  { mount; /usr/bin/hdiutil info || :; } 2>/dev/null | grep -F "$WORK" >/dev/null && return 1
+  python3 "$REPO/scripts/live-gates/t17_host_residue.py" --work "$WORK" --private "$PRIVATE" || return 1
   pgrep -f "$WORK" >/dev/null 2>&1 && return 1
   python3 "$REPO/scripts/live-gates/t17_owned_tree_cleanup.py" --root "$WORK" --job-id "$JOB_ID" --identity "$WORK_ID" || return 1
   [[ ! -e "$WORK" ]]

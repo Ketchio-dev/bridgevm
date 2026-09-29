@@ -3184,6 +3184,8 @@ scripts/live-gates/t17_private_diagnostic_packet.py	616	0
 tests/integration/t17-private-diagnostic-packet-test.py	459	0
 scripts/live-gates/t17_guest_setup_harvest.py	550	0
 tests/integration/t17-guest-setup-harvest-test.py	474	0
+scripts/live-gates/t17_host_residue.py	107	0
+tests/integration/t17-host-residue-test.py	151	0
 scripts/live-gates/run-a19-snapshot-tiers.sh	11	0
 scripts/live-gates/verify-live-receipt.sh	14	0
 scripts/live-gates/write-live-missing-receipt.sh	17	0

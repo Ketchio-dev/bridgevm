@@ -395,7 +395,7 @@ class PacketTest(unittest.TestCase):
 
 def augment_synthetic_helper(path: Path) -> None:
     path.write_text(path.read_text() + '''
-if r["job_id"] in ("diagnostic-success-fixture", "diagnostic-capture-fail-fixture"):
+if r["job_id"] in ("diagnostic-success-fixture", "diagnostic-capture-fail-fixture", "diagnostic-harvest-leftover-fixture"):
     stop_nonce = "b" * 32
     for stage in stages[5:]: result[stage] = False
     result["failure_code"] = "guest-evidence-missing"
