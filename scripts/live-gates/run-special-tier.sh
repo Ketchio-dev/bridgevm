@@ -3,7 +3,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 TIER="${1:?run-special-tier.sh needs a tier}"; OUT="${2:?run-special-tier.sh needs an output directory}"
 JOB_ID="${3:?run-special-tier.sh needs a job id}"; args=(--out "$OUT" --job-id "$JOB_ID")
-case "$TIER" in d5-guest-input) exec python3 "$REPO/scripts/live-gates/guest_input_queue.py" run "$OUT" "$REPO" "$(git -C "$REPO" rev-parse HEAD)" "${4:-}" "${5:-}" ;; d4-winpe-companions) exec python3 "$REPO/scripts/live-gates/run-winpe-companions.py" "${args[@]}" --input-manifest "${4:-}" --sealed-binary "${5:-}" ;;
+case "$TIER" in d9-b9-real-workload) exec python3 "$REPO/scripts/live-gates/b9_real_workload_queue.py" run "$OUT" "$REPO" "$(git -C "$REPO" rev-parse HEAD)" "${4:-}" "${5:-}" ;; d5-guest-input) exec python3 "$REPO/scripts/live-gates/guest_input_queue.py" run "$OUT" "$REPO" "$(git -C "$REPO" rev-parse HEAD)" "${4:-}" "${5:-}" ;; d4-winpe-companions) exec python3 "$REPO/scripts/live-gates/run-winpe-companions.py" "${args[@]}" --input-manifest "${4:-}" --sealed-binary "${5:-}" ;;
   d1-windows-media-comparison|d6-app-ui|d6-app-ui-host-v1|d6-app-ui-host-v2) adapter=windows-media-comparison-queue.py; [[ "$TIER" != d6-app-ui ]] || adapter=app_ui_diagnostic.py; [[ "$TIER" != d6-app-ui-host-v1 ]] || adapter=app_ui_host_diagnostic.py; [[ "$TIER" != d6-app-ui-host-v2 ]] || adapter=app_ui_host_v2_diagnostic.py; exec python3 "$REPO/scripts/live-gates/$adapter" run "$OUT" "$REPO" "$(git -C "$REPO" rev-parse HEAD)" "${4:-}" "${5:-}" ;;
   t8-pointer-reliability)
     helper=run-pointer-reliability-tier.sh

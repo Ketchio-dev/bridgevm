@@ -1,0 +1,22 @@
+name: B9 guest PowerShell refusal contracts
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guest-powershell:
+    name: Actual B9 guest input refusals
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Execute sealed guest child and private-copy refusals
+        shell: pwsh
+        run: |
+          python tests/integration/b9-guest-powershell-contract.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

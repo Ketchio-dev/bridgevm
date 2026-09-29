@@ -56,20 +56,20 @@ class DiagnosticError(ValueError):
 
 def bounded_regular_bytes(path: Path, maximum: int) -> bytes:
     """Read one stable regular file without following a symlink."""
-    if path.is_symlink():
-        raise DiagnosticError("symlink input is refused")
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
         with os.fdopen(os.open(path, flags), "rb") as stream:
             before = os.fstat(stream.fileno())
             if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= maximum:
                 raise DiagnosticError("input must be a bounded nonempty regular file")
             raw = stream.read(maximum + 1)
             after = os.fstat(stream.fileno())
-    except OSError as error:
+        current = os.lstat(path)
+    except (OSError, AttributeError) as error:
         raise DiagnosticError("input cannot be read as a regular file") from error
-    identity = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
-    if len(raw) != before.st_size or len(raw) > maximum or identity(before) != identity(after):
+    identity = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_mode)
+    if (len(raw) != before.st_size or len(raw) > maximum or identity(before) != identity(after)
+            or identity(after) != identity(current)):
         raise DiagnosticError("input changed during its bounded read")
     return raw
 

@@ -22,7 +22,7 @@ raise SystemExit(0 if value["job_id"] == job_id and value["worker_cleanup_verifi
 PY
 }
 bridgevm_t17_guard_or_fence() {
-    local tier="$1" dir="$2" worktree="$3" commit="$4" job_id="$5" queue_root="$6"
+    local tier="$1" dir="$2" worktree="$3" commit="$4" job_id="$5" queue_root="$6"; if [[ "$tier" == d9-b9-real-workload ]]; then source "$(dirname "${BASH_SOURCE[0]}")/b9-worker-cleanup-fence.sh" || { printf 'B9 cleanup verifier unavailable\n' > "$queue_root/worker-cleanup-required"; return 126; }; bridgevm_b9_guard_or_fence "$@"; return $?; fi
     if [[ "$tier" == t21-a19-quota-refusal || "$tier" == t22-a19-interrupted-restore ]]; then
         if [[ "$tier" == t21* ]]; then local guard=a19-quota-worker-cleanup-fence.sh verify=bridgevm_t21_guard_or_fence; else local guard=a19-interrupted-restore-cleanup-fence.sh verify=bridgevm_t22_guard_or_fence; fi; source "$(dirname "${BASH_SOURCE[0]}")/$guard" || { printf '%s cleanup verifier unavailable\n' "$tier" > "$queue_root/worker-cleanup-required"; return 126; }
         "$verify" "$@"; return $?
