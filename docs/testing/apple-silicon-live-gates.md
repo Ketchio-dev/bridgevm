@@ -174,6 +174,8 @@ manifest plus disk/vars pair and the actual lane-local installer-source cache
 receipt before cleanup. A pilot is one diagnostic run. Release is
 fixed at three of three, but even a passing receipt keeps `criterion_pass` and
 `capability_promotion` false: the 3D-off gate cannot close A9.
+Submission also refuses unless this user's console session is on screen and
+unlocked; a lock after submission is not detected.
 The TSV contains exactly `campaign_mode` (`pilot` or `release`) plus
 `app_bundle`, `app_executable`, `product_helper`, `runner`, `firmware`,
 `secure_boot_policy`, `iso`, `bundled_vars_seed`, `guest_payload` and
