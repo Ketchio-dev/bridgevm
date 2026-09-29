@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Harvest a fixed Windows setup allowlist from a clone of a failed T17 lane disk.
 
-The lane disk is never attached or written. It is cloned with fclonefileat(2),
-which has no copy fallback, the clone is attached read-only without automount,
-and only the largest NTFS basic-data partition is mounted read-only. Any
-harvest failure is recorded in the private summary; it never raises into the
-caller or changes the lane result.
+The lane disk is never attached or written: its fclonefileat(2) clone (no copy
+fallback) is attached read-only without automount, and only the largest NTFS
+basic-data partition is mounted read-only. A harvest failure is recorded in the
+private summary and never changes the lane result; an unproven release leaves
+the work directory, which the tier's cleanup fence reports as cleanup-failed.
 """
 from __future__ import annotations
 
@@ -31,11 +31,11 @@ TOOL_ENV = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C"}
 WORK_NAME = "guest-setup-harvest"
 CLONE_NAME = "disk.raw"
 MOUNT_NAME = "volume"
-# Acquisition and copying stop at SECONDS; release then gets its own bound so
-# a slow guest volume can never skip the detach.
+# SECONDS is checked only between tool calls, items and 1 MiB chunks; a blocked
+# open or read on the raw slice or mounted guest volume is not bounded by it.
 SECONDS = 120
 TOOL_SECONDS = 60
-RELEASE_SECONDS = 20
+RELEASE_SECONDS = 20  # each release call; SECONDS never cuts release short
 ITEM_CAP = 32 * 1024 * 1024
 SECTOR = 512
 MAX_ENTRIES = 256
@@ -185,7 +185,7 @@ class Harvest:
                       for identifier, path in ALLOWLIST]}
 
     def interrupt(self, number: int, _frame: object) -> None:
-        # Record only; check() stops at the next safe point so release always runs.
+        # Record only, so release can run; a queue cancel SIGKILLs the group 5 s later.
         self.signal = signal.Signals(number).name.lower()
 
     def check(self) -> None:
