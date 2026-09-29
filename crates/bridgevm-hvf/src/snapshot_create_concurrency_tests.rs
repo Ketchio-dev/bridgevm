@@ -140,3 +140,5 @@ fn parent_case_alias_refuses_a_contending_export_on_case_insensitive_volumes() {
 fn different_names_in_one_parent_refuse_a_contending_export() {
     assert_contention("create-shared-parent", "other-snapshot", false, false);
 }
+#[path = "snapshot_create_publication_recheck_tests.rs"]
+mod publication_recheck_tests;

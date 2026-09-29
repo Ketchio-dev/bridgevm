@@ -2337,7 +2337,7 @@ crates/bridgevm-media/src/media_lease_update_tests.rs	122	0
 crates/bridgevm-hvf/src/snapshot_create.rs	75	0
 crates/bridgevm-hvf/src/snapshot_create_concurrency_tests.rs	139	0
 crates/bridgevm-hvf/src/snapshot_create_destination.rs	27	0
-crates/bridgevm-hvf/src/snapshot_create_destination_lease.rs	24	0
+crates/bridgevm-hvf/src/snapshot_create_destination_lease.rs	22	0
 crates/bridgevm-hvf/src/snapshot_create_stage.rs	8	0
 crates/bridgevm-hvf/src/snapshot_create_interruption_tests.rs	87	0
 crates/bridgevm-hvf/src/snapshot_create_overlap_tests.rs	95	0
@@ -3257,3 +3257,11 @@ tests/integration/b9-receipt-read-contract.py	135	0
 tests/integration/b9-scanout-byte-contract.py	127	0
 tests/integration/b9-source-reopen-contract.py	116	0
 tests/integration/b9-workload-diagnostic-path-contract.py	102	0
+crates/bridgevm-hvf/src/snapshot_create_admission.rs	111	0
+crates/bridgevm-hvf/src/snapshot_create_admission_tests.rs	172	0
+crates/bridgevm-hvf/src/snapshot_create_staging_admission_tests.rs	69	0
+crates/bridgevm-hvf/src/snapshot_create_publication_recheck_tests.rs	75	0
+apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotExportAdmissionTests.swift	79	0
+crates/bridgevm-hvf/src/snapshot_create_staging_debris.rs	29	0
+crates/bridgevm-hvf/src/snapshot_create_admission_shape_tests.rs	99	0
+crates/bridgevm-hvf/src/snapshot_create_staging_debris_tests.rs	84	0
