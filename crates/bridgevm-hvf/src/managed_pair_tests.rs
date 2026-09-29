@@ -129,6 +129,8 @@ fn disk_vars_alias_is_rejected() {
 }
 #[path = "managed_pair_export_tests.rs"]
 mod export_tests;
+#[path = "managed_pair_init_interruption_tests.rs"]
+mod init_interruption_tests;
 #[path = "managed_pair_interruption_tests.rs"]
 mod interruption_tests;
 #[path = "managed_pair_ownership_tests.rs"]

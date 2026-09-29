@@ -87,20 +87,9 @@ enum HvfWindowsSnapshotCommand {
     }
 
     static func invoke(_ executable: URL, _ arguments: [String]) throws -> String {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = executable
-        process.arguments = arguments
-        process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C"]
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try process.run()
-        process.waitUntilExit()
-        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        guard process.terminationReason == .exit, process.terminationStatus == 0 else {
-            throw failure(output.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        return output
+        let completion = try HvfHelperProcess.run(executable, arguments)
+        guard completion.succeeded else { throw failure(completion.diagnostic) }
+        return completion.text
     }
 
 }

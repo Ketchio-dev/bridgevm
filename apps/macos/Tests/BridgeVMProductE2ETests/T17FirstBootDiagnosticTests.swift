@@ -26,7 +26,7 @@ final class T17FirstBootDiagnosticTests: XCTestCase {
     }
 
     func testOnlyAllowListedMarkerCountsEnterTheSummary() {
-        let data = Data("private guest output\nBVAGENT SERVICE start\nBVAGENT READY host=secret\nPSCI SYSTEM_RESET\nstop: PSCI SYSTEM_OFF\nvirtio-console stats rx=1\n".utf8)
+        let data = Data("private guest output\nBVAGENT SERVICE start\nBVAGENT READY host=secret\nPSCI SYSTEM_RESET max reboots: 8\nstop: PSCI 0x84000009 exiting for process recreation (exit 42)\nstop: PSCI 0x84000008 (system off)\nvirtio-console stats rx=1\n".utf8)
         let detail = T17FirstBootDiagnostic.summarize(data, totalBytes: UInt64(data.count))
         XCTAssertFalse(detail.contains("private guest output"))
         XCTAssertFalse(detail.contains("host=secret"))

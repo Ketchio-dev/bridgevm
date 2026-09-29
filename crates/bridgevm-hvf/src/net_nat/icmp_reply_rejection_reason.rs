@@ -247,14 +247,14 @@ pub(crate) fn raw_icmp_nonblocking_flags(flags: i32) -> i32 {
 
 #[cfg(target_os = "macos")]
 pub(crate) fn set_raw_icmp_socket_nonblocking(fd: RawFd) -> io::Result<()> {
-    // SAFETY: this ICMP-only fcntl binding is declared with C's variadic ABI,
-    // which is required for F_SETFL on arm64 macOS.
-    let flags = unsafe { fcntl_icmp(fd, F_GETFL) };
+    // SAFETY: fcntl is declared with C's variadic ABI, which is required for
+    // F_SETFL on arm64 macOS.
+    let flags = unsafe { fcntl(fd, F_GETFL) };
     if flags < 0 {
         return Err(io::Error::last_os_error());
     }
     // SAFETY: fcntl operates on the socket fd created above.
-    if unsafe { fcntl_icmp(fd, F_SETFL, raw_icmp_nonblocking_flags(flags)) } < 0 {
+    if unsafe { fcntl(fd, F_SETFL, raw_icmp_nonblocking_flags(flags)) } < 0 {
         return Err(io::Error::last_os_error());
     }
     Ok(())
@@ -326,7 +326,7 @@ pub(crate) fn raw_nonblocking_tcp_socket() -> io::Result<RawFd> {
         return Err(io::Error::last_os_error());
     }
     // SAFETY: fcntl operates on the socket fd created above.
-    let flags = unsafe { fcntl(fd, F_GETFL, 0) };
+    let flags = unsafe { fcntl(fd, F_GETFL) };
     if flags < 0 || unsafe { fcntl(fd, F_SETFL, flags | O_NONBLOCK) } < 0 {
         let err = io::Error::last_os_error();
         let _ = raw_close(fd);
@@ -466,11 +466,8 @@ pub(crate) const ERRNO_EWOULDBLOCK: i32 = 11;
 unsafe extern "C" {
     fn socket(domain: i32, ty: i32, protocol: i32) -> RawFd;
     fn connect(fd: RawFd, addr: *const RawSockAddr, len: RawSockLen) -> i32;
-    fn fcntl(fd: RawFd, cmd: i32, arg: i32) -> i32;
-    #[cfg(target_os = "macos")]
-    #[allow(clashing_extern_declarations)]
-    #[link_name = "fcntl"]
-    fn fcntl_icmp(fd: RawFd, cmd: i32, ...) -> i32;
+    // C fcntl is variadic; Apple arm64 passes variadic arguments on the stack.
+    fn fcntl(fd: RawFd, cmd: i32, ...) -> i32;
     fn close(fd: RawFd) -> i32;
     #[cfg(target_os = "macos")]
     fn sendto(

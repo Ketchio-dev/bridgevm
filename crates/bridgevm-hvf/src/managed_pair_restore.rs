@@ -1,6 +1,6 @@
 //! Stage a verified pair, then publish its complete managed generation.
 
-use super::{layout, LockedPair};
+use super::{init, layout, LockedPair};
 use crate::snapshot_pair::{verify_snapshot, SnapshotError, SnapshotManifest};
 use std::{fs, io, path::Path};
 
@@ -33,7 +33,7 @@ impl LockedPair {
                 return Err(SnapshotError::InsufficientSpace { needed, available });
             }
         }
-        layout::initialize(&self.root)?;
+        init::initialize(&self.root, |_| {})?;
         let (staged, copied) = self.stage_restore(&snapshot, &manifest)?;
         publish(&staged, &self.root.join("current"))?;
         self.own_selected()?;

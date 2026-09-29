@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Host-authenticate nonce-bound T17 guest observations and product logs."""
 from __future__ import annotations
-import hashlib, json, re
+import hashlib, hvf_stop_line, json, re
 from pathlib import Path
 
 OBSERVATIONS = ("keyboard_pointer_challenge_sha256", "clipboard_roundtrip_sha256", "share_host_to_guest_sha256", "share_guest_to_host_sha256", "network_result_sha256", "audio_result_sha256", "audio_playback_count", "audio_error_count", "snapshot_marker_a_sha256", "snapshot_marker_b_sha256", "snapshot_marker_restored_a_sha256")
@@ -107,12 +107,12 @@ def verify(request: dict) -> list[Path]:
     for name in logs:
         if evidence.get(f"{name}_run_log_sha256") != _digest(log_data[name]):
             raise ValueError(f"{name} product log hash is invalid")
-    line_specs = (("first", "first-ready", "first_ready_offset", "first_ready_line_nonce_sha256", ("BVAGENT READY", "BVAGENT PONG (proactive)")), ("first", "first-shutdown", "first_shutdown_offset", "first_shutdown_line_nonce_sha256", "stop: PSCI SYSTEM_OFF"), ("mutation", "mutation-ready", "mutation_ready_offset", "mutation_ready_line_nonce_sha256", ("BVAGENT READY", "BVAGENT PONG (proactive)")), ("mutation", "mutation-shutdown", "mutation_shutdown_offset", "mutation_shutdown_line_nonce_sha256", "stop: PSCI SYSTEM_OFF"), ("final", "final-ready", "final_ready_offset", "final_ready_line_nonce_sha256", ("BVAGENT READY", "BVAGENT PONG (proactive)")), ("final", "second-shutdown", "second_shutdown_offset", "second_shutdown_line_nonce_sha256", "stop: PSCI SYSTEM_OFF"))
+    line_specs = (("first", "first-ready", "first_ready_offset", "first_ready_line_nonce_sha256", ("BVAGENT READY", "BVAGENT PONG (proactive)")), ("first", "first-shutdown", "first_shutdown_offset", "first_shutdown_line_nonce_sha256", hvf_stop_line.SYSTEM_OFF), ("mutation", "mutation-ready", "mutation_ready_offset", "mutation_ready_line_nonce_sha256", ("BVAGENT READY", "BVAGENT PONG (proactive)")), ("mutation", "mutation-shutdown", "mutation_shutdown_offset", "mutation_shutdown_line_nonce_sha256", hvf_stop_line.SYSTEM_OFF), ("final", "final-ready", "final_ready_offset", "final_ready_line_nonce_sha256", ("BVAGENT READY", "BVAGENT PONG (proactive)")), ("final", "second-shutdown", "second_shutdown_offset", "second_shutdown_line_nonce_sha256", hvf_stop_line.SYSTEM_OFF))
     offsets: dict[str, list[int]] = {name: [] for name in logs}
     for name, event, offset_field, hash_field, marker in line_specs:
         line = _line(log_data[name], evidence.get(offset_field)); offsets[name].append(evidence[offset_field])
         bound = _digest(f"bridgevm-t17-{event}-v1\n{nonce}\n{line}\n".encode())
-        if not line.startswith(marker) or evidence.get(hash_field) != bound:
+        if not (line == marker if marker == hvf_stop_line.SYSTEM_OFF else line.startswith(marker)) or evidence.get(hash_field) != bound:
             raise ValueError(f"guest log observation {offset_field} is invalid")
     if any(not values[0] < values[1] for values in offsets.values()):
         raise ValueError("guest READY/PONG/SYSTEM_OFF order is invalid")

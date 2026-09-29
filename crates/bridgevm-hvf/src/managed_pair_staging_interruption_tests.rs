@@ -22,7 +22,7 @@ fn restore_partial_staging_crash_child() {
     let vars = required_path(VARS_ENV);
     let snapshot = required_path(SNAPSHOT_ENV);
     let pair = LockedPair::open(&disk, &vars).expect("child owns pair");
-    layout::initialize(&pair.root).expect("initialize managed root");
+    init::initialize(&pair.root, |_| {}).expect("initialize managed root");
     let staged = pair.root.join("staging");
     private_directory(&staged, true).expect("create private staging directory");
     copy_and_sync(&snapshot.join("disk.raw"), &staged.join("disk.raw")).expect("stage disk");

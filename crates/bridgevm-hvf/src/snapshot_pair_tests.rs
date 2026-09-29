@@ -26,7 +26,7 @@ impl Drop for Scratch {
     }
 }
 
-const QUOTA: u64 = 1024 * 1024;
+pub(super) const QUOTA: u64 = 1024 * 1024;
 
 #[test]
 fn a_snapshot_records_the_hash_of_both_files() {

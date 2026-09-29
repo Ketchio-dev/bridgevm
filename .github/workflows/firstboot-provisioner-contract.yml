@@ -1,0 +1,20 @@
+name: Firstboot provisioner contract
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  firstboot-provisioner:
+    name: Committed first-logon provisioner against a staged receipt
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run the provisioner under Windows PowerShell 5.1 and PowerShell 7
+        shell: powershell
+        run: scripts/test-bvagent-firstboot-receipt.ps1

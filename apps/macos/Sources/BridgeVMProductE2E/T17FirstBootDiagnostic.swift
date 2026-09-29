@@ -3,12 +3,12 @@ import Foundation
 
 enum T17FirstBootDiagnostic {
     static let captureLimit = 8 * 1024 * 1024
-    private static let markers = [
-        ("ready", "BVAGENT READY"),
-        ("service_start", "BVAGENT SERVICE start"),
-        ("system_reset", "PSCI SYSTEM_RESET"),
-        ("system_off", "stop: PSCI SYSTEM_OFF"),
-        ("console_stats", "virtio-console stats"),
+    private static let markers: [(String, (Substring) -> Bool)] = [
+        ("ready", { $0.contains("BVAGENT READY") }),
+        ("service_start", { $0.contains("BVAGENT SERVICE start") }),
+        ("system_reset", { $0.hasPrefix(HvfStopLine.systemResetPrefix) }),
+        ("system_off", { $0 == HvfStopLine.systemOff }),
+        ("console_stats", { $0.contains("virtio-console stats") }),
     ]
 
     static func capture(_ url: URL, maxBytes: Int = captureLimit) -> String {
@@ -38,8 +38,8 @@ enum T17FirstBootDiagnostic {
         let state = totalBytes == 0 ? "empty" : "present"
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let lines = String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline)
-        let counts = markers.map { name, marker in
-            "\(name)=\(lines.filter { $0.contains(marker) }.count)"
+        let counts = markers.map { name, matches in
+            "\(name)=\(lines.filter(matches).count)"
         }.joined(separator: ",")
         let truncated = UInt64(data.count) < totalBytes ? 1 : 0
         return "run_log=status=\(state),bytes=\(totalBytes),captured=\(data.count),truncated=\(truncated),sha256=\(digest),\(counts)"
