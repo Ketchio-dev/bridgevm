@@ -1945,6 +1945,7 @@ scripts/check-capability-registry.sh	4	0
 tests/integration/capability-freshness-smoke.py	99	0
 scripts/win-assets/bv-b6-presentmon-capture.ps1	58	0
 tests/integration/b6-presentmon-capture-contract.ps1	82	0
+.github/workflows/firstboot-provisioner-contract.yml	20	0
 .github/workflows/b6-collector-contracts.yml	20	0
 scripts/b6_frame_times.py	106	0
 scripts/analyze-b6-frame-times.py	24	0
@@ -2072,6 +2073,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfUnicodeInputRequest.swift	56	0
 apps/macos/Tests/BridgeVMControlTests/HvfUnicodeInputRequestTests.swift	70	0
 scripts/win-assets/bvagent-input.ps1	28	0
 scripts/test-bvagent-input-assets.ps1	45	0
+scripts/test-bvagent-firstboot-receipt.ps1	99	0
 tests/integration/windows_input_payload_contract.py	12	0
 scripts/win-assets/bvagent-task.ps1	15	0
 scripts/win-assets/bvagent-key-input.cs	73	0

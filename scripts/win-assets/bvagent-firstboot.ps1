@@ -37,11 +37,11 @@ try {
     }
 
     $records = Get-Content -LiteralPath $ReceiptPath | ForEach-Object { ,$_.Split([char]9) }
-    $schema = $records | Where-Object { $_.Count -eq 2 -and $_[0] -eq 'schema' }
+    $schema = @($records | Where-Object { $_.Count -eq 2 -and $_[0] -eq 'schema' })
     if ($schema.Count -ne 1 -or $schema[0][1] -ne 'bridgevm-windows-guest-payload-receipt-v1') {
         throw 'guest-payload receipt schema is invalid'
     }
-    $architecture = $records | Where-Object { $_.Count -eq 2 -and $_[0] -eq 'architecture' }
+    $architecture = @($records | Where-Object { $_.Count -eq 2 -and $_[0] -eq 'architecture' })
     if ($architecture.Count -ne 1 -or $architecture[0][1] -ne 'arm64') {
         throw 'guest-payload receipt architecture is not arm64'
     }
