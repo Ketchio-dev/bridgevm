@@ -88,7 +88,7 @@ try {
             throw ($shell + ': mutated agent was not refused: ' + $result.Log.Trim())
         }
     }
-    Write-Output ('Firstboot receipt provisioning: PASS (' + ($shells -join ', ') + '; stub task only)')
+    Write-Output ('Firstboot receipt provisioning: PASS (' + ($shells -join ', ') + '; stub task only)'); exit 0
 } finally {
     foreach ($path in @($root, $log, $marker)) {
         if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
