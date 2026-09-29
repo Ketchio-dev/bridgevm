@@ -3257,4 +3257,5 @@ tests/integration/b9-scanout-byte-contract.py	127	0
 tests/integration/b9-source-reopen-contract.py	116	0
 tests/integration/b9-workload-diagnostic-path-contract.py	102	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHelperProcess.swift	63	0
-apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTests.swift	93	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTests.swift	88	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTestSupport.swift	34	0

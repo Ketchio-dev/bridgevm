@@ -1,8 +1,9 @@
 import XCTest
 @testable import BridgeVMControl
 
-/// Pipe-capacity contracts for the snapshot helper call. Each call runs behind a
-/// watchdog, so a helper blocked on a full pipe fails a test instead of the suite.
+/// Pipe-capacity, output-limit and stdin contracts for the snapshot helper call. Each
+/// call runs behind a watchdog, so a helper blocked on a full pipe fails a test instead
+/// of the suite.
 final class HvfWindowsSnapshotInvokeTests: XCTestCase {
     func testOutputBeyondPipeCapacityIsDrainedAndReturned() throws {
         let output = try XCTUnwrap(invokeShell("head -c 200000 /dev/zero | tr '\\0' x"), Self.blocked).get()
@@ -61,33 +62,27 @@ final class HvfWindowsSnapshotInvokeTests: XCTestCase {
         XCTAssertEqual(try success.get(), "format_version 1\n")
     }
 
-    private static let blocked = "invoke did not return: the helper is blocked on a full pipe"
-
-    /// nil when invoke is still blocked at the deadline. The blocked child is left
-    /// behind and dies of a broken pipe when this test process exits.
-    private func invokeShell(_ script: String, seconds: Int = 15) -> Result<String, Error>? {
-        let outcome = Outcome()
-        let done = DispatchSemaphore(value: 0)
-        Thread.detachNewThread {
-            outcome.set(Result { try HvfWindowsSnapshotCommand.invoke(URL(fileURLWithPath: "/bin/sh"), ["-c", script]) })
-            done.signal()
-        }
-        guard done.wait(timeout: .now() + .seconds(seconds)) == .success else { return nil }
-        return outcome.get()
+    func testOutputExactlyAtTheCapIsStillAnExactSuccess() throws {
+        let result = try XCTUnwrap(invokeShell("head -c 1048576 /dev/zero | tr '\\0' x; exit 0"), Self.blocked)
+        XCTAssertEqual(try result.get().utf8.count, 1_048_576)
     }
 
-    private final class Outcome: @unchecked Sendable {
-        private let lock = NSLock()
-        private var value: Result<String, Error>?
-
-        func set(_ result: Result<String, Error>) {
-            lock.lock(); defer { lock.unlock() }
-            value = result
+    func testOneByteOverTheCapFailsClosed() throws {
+        let result = try XCTUnwrap(invokeShell("head -c 1048577 /dev/zero | tr '\\0' x; exit 0"), Self.blocked)
+        XCTAssertThrowsError(try result.get()) { error in
+            let message = error.localizedDescription
+            XCTAssertTrue(message.hasPrefix("helper output exceeded 1048576 bytes (1048577 read); "),
+                          String(message.prefix(200)))
         }
+    }
 
-        func get() -> Result<String, Error>? {
-            lock.lock(); defer { lock.unlock() }
-            return value
-        }
+    func testHelperStdinIsTheNullDeviceNotTheCallers() throws {
+        // With a pipe on this process's fd 0, an inherited stdin cannot pass for /dev/null.
+        let callerStdin = Pipe(), saved = dup(0)
+        defer { if saved >= 0 { dup2(saved, 0); close(saved) } else { close(0) } }
+        XCTAssertEqual(dup2(callerStdin.fileHandleForReading.fileDescriptor, 0), 0)
+        let result = try XCTUnwrap(invokeShell(
+            "test /dev/fd/0 -ef /dev/null || { printf 'stdin inherited'; exit 1; }"), Self.blocked)
+        XCTAssertNoThrow(try result.get())
     }
 }
