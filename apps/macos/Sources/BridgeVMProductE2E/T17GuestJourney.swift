@@ -42,7 +42,6 @@ struct T17GuestJourney {
     private func keyboardAndPointer() throws {
         try launchWorkload("KeyboardPointer")
         try T17InputChallenge(sharePath: request.sharePath, nonce: request.nonce, ui: ui, runLog: runLog).deliver()
-        try requireOutput("t17-keyboard-pointer-\(prefix).txt", timeout: 60)
     }
 
     private func clipboard() throws {

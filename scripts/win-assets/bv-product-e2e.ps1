@@ -37,37 +37,37 @@ function Hash([string]$Name) {
 
 switch ($Action) {
     'KeyboardPointer' {
-        Add-Type -AssemblyName System.Windows.Forms
-        Add-Type -AssemblyName System.Drawing
-        $ExpectedText = 't17kbd' + $Prefix
-        $script:Typed = ''
-        $script:Clicked = $false
-        $Form = New-Object System.Windows.Forms.Form
-        $Form.Text = 'BridgeVM T17 Input Challenge'
-        $Form.WindowState = [System.Windows.Forms.FormWindowState]::Maximized
-        $Form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
-        $Form.BackColor = [Drawing.Color]::FromArgb(20, 70, 150)
-        $Form.KeyPreview = $true
-        $Label = New-Object System.Windows.Forms.Label
-        $Label.AutoSize = $false
-        $Label.Dock = [System.Windows.Forms.DockStyle]::Fill
-        $Label.TextAlign = [Drawing.ContentAlignment]::MiddleCenter
-        $Label.Font = New-Object Drawing.Font('Segoe UI', 28, [Drawing.FontStyle]::Bold)
-        $Label.ForeColor = [Drawing.Color]::White
-        $Label.Text = 'CLICK AND TYPE THE SEALED CHALLENGE'
-        $Form.Controls.Add($Label)
-        $Form.Add_MouseDown({ $script:Clicked = $true })
-        $Label.Add_MouseDown({ $script:Clicked = $true })
+        Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+        Add-Type -Namespace BridgeVM -Name InputDesktop -MemberDefinition @'
+public struct POINT { public int X; public int Y; }
+[DllImport("user32.dll")] public static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
+[DllImport("user32.dll")] public static extern bool CloseDesktop(IntPtr desktop);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern bool GetUserObjectInformation(IntPtr handle, int index, System.Text.StringBuilder info, int length, out int needed);
+[DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
+[DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr window, uint flags);
+[DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+public static bool Accepts(IntPtr form) {
+    IntPtr desktop = OpenInputDesktop(0, false, 1); if (desktop == IntPtr.Zero) { return false; }
+    var name = new System.Text.StringBuilder(256); int needed;
+    bool active = GetUserObjectInformation(desktop, 2, name, 512, out needed) && name.ToString() == "Default"; CloseDesktop(desktop);
+    POINT center; center.X = GetSystemMetrics(0) / 2; center.Y = GetSystemMetrics(1) / 2;
+    return active && GetAncestor(WindowFromPoint(center), 2) == form;
+}
+'@
+        $ExpectedText = 't17kbd' + $Prefix; $script:Typed = ''; $script:Clicked = $false; $script:Progress = ''
+        $Form = New-Object System.Windows.Forms.Form -Property @{ Text = 'BridgeVM T17 Input Challenge'; WindowState = 'Maximized'; FormBorderStyle = 'None'; BackColor = [Drawing.Color]::FromArgb(20, 70, 150); KeyPreview = $true; TopMost = $true }
+        $Label = New-Object System.Windows.Forms.Label -Property @{ AutoSize = $false; Dock = 'Fill'; TextAlign = 'MiddleCenter'; Font = (New-Object Drawing.Font('Segoe UI', 28, [Drawing.FontStyle]::Bold)); ForeColor = [Drawing.Color]::White; Text = 'CLICK AND TYPE THE SEALED CHALLENGE' }; $Form.Controls.Add($Label)
+        foreach ($Target in @($Form, $Label)) { $Target.Add_MouseDown({ $script:Clicked = $true }) }
         $Form.Add_KeyPress({ param($Sender, $Event) $script:Typed += $Event.KeyChar })
-        $Timer = New-Object System.Windows.Forms.Timer
-        $Timer.Interval = 100
+        $Timer = New-Object System.Windows.Forms.Timer -Property @{ Interval = 100 }
         $Timer.Add_Tick({
-            if ($script:Clicked -and $script:Typed.EndsWith($ExpectedText)) {
-                $Timer.Stop()
-                $Form.Close()
-            }
+            if (($State = "clicked=$([int]$script:Clicked) typed=$([Math]::Min($script:Typed.Length, 999))`n") -ne $script:Progress) { $script:Progress = $State; Write-Exact "t17-keyboard-pointer-progress-$Prefix.txt" $State }
+            if ($script:Clicked -and $script:Typed.EndsWith($ExpectedText)) { $Timer.Stop(); $Form.Close() }
         })
-        $Form.Add_Shown({ $Form.Activate(); $Form.Focus(); $Timer.Start(); Write-Exact "t17-keyboard-pointer-ready-$Prefix.txt" "bridgevm-t17-keyboard-pointer-ready-v1`n$Nonce`n" })
+        $ReadyTimer = New-Object System.Windows.Forms.Timer -Property @{ Interval = 250 }
+        # Ready only once a user could act: the user's desktop takes input and the form is under the screen centre.
+        $ReadyTimer.Add_Tick({ if ([BridgeVM.InputDesktop]::Accepts($Form.Handle)) { $ReadyTimer.Stop(); Write-Exact "t17-keyboard-pointer-ready-$Prefix.txt" "bridgevm-t17-keyboard-pointer-ready-v1`n$Nonce`n" } })
+        $Form.Add_Shown({ $Form.Activate(); $Form.Focus(); $Timer.Start(); $ReadyTimer.Start() })
         [void]$Form.ShowDialog()
         if (-not $script:Clicked -or -not $script:Typed.EndsWith($ExpectedText)) { throw 'input challenge incomplete' }
         Write-Exact "t17-keyboard-pointer-$Prefix.txt" "bridgevm-t17-keyboard-pointer-v1`n$Nonce`n"
