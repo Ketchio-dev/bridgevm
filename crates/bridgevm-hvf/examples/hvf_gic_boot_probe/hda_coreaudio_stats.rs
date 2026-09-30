@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
+use super::hda_coreaudio_continuity::ContinuityCounters;
 use super::hda_coreaudio_teardown::CallbackFailureCounters;
 
 pub(super) struct Shared {
@@ -17,6 +18,7 @@ pub(super) struct Shared {
     format_drops: AtomicU64,
     ring_full_drops: AtomicU64,
     pub(super) callback_failures: CallbackFailureCounters,
+    pub(super) continuity: ContinuityCounters,
 }
 
 impl Shared {
@@ -29,6 +31,7 @@ impl Shared {
             format_drops: AtomicU64::new(0),
             ring_full_drops: AtomicU64::new(0),
             callback_failures: CallbackFailureCounters::new(),
+            continuity: ContinuityCounters::default(),
         }
     }
 
@@ -49,13 +52,11 @@ impl Shared {
     }
 
     pub(super) fn print_stats(&self, lifecycle: [i32; 2]) {
-        self.callback_failures.print_stats(
-            self.frames_rendered.load(Ordering::Relaxed),
-            self.dropped_writes.load(Ordering::Relaxed),
-            self.dropped_bytes.load(Ordering::Relaxed),
-            self.format_drops.load(Ordering::Relaxed),
-            self.ring_full_drops.load(Ordering::Relaxed),
-            lifecycle,
-        );
+        let load = |counter: &AtomicU64| counter.load(Ordering::Relaxed);
+        let (frames, drops) = (load(&self.frames_rendered), load(&self.dropped_writes));
+        let (bytes, format) = (load(&self.dropped_bytes), load(&self.format_drops));
+        let ring_full = load(&self.ring_full_drops);
+        self.callback_failures
+            .print_stats(frames, drops, bytes, format, ring_full, lifecycle);
     }
 }

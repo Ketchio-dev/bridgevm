@@ -2,33 +2,16 @@
 from __future__ import annotations
 
 import re
+from hvf_host_tail import bounded_host_shutdown_tail
 
 ACK = re.compile(rb"^HOST-DIAGNOSTIC-STOP: generation=([0-9]+) nonce=([0-9a-f]{32}) request consumed; ending run through final report$", re.M)
 COMPLETE_DETAIL = re.compile(r"host_stop=status=complete,generation=([0-9]+),nonce=([0-9a-f]{32}),report=complete,helper=terminal,log_offset=([0-9]+)(?:;|\Z)")
-MAX_AUDIO_TAIL_BYTES = 4 * 1024
-MAX_AUDIO_TAIL_LINES = 16
 FOOTER = b"\n--- end ---\n"
 SERIAL = b"\n--- serial (tail) ---\n"
 BANNER = b"\n=== EDK2 boot probe (with Apple hv_gic) ===\n"
 STOP = b"\nstop: host diagnostic stop requested\n"
 COUNT_NEW = re.compile(rb"(?:^|\n)serial raw bytes: ([0-9]{1,8}) output bytes: ([0-9]{1,8})\Z")
 COUNT_LEGACY = re.compile(rb"(?:^|\n)serial bytes: ([0-9]{1,8})\Z")
-AUDIO_LINES = (
-    re.compile(r"hda CoreAudio callback enqueue: state=stopping reason=[a-z-]+ osstatus=-?[0-9]+ expected=(true|false)"),
-    re.compile(r"hda CoreAudio lifecycle: operation=(stop|dispose) osstatus=-?[0-9]+ success=(true|false)"),
-    re.compile(r"hda CoreAudio stats: [a-z][a-z0-9_]*=[0-9]+( [a-z][a-z0-9_]*=[0-9]+)*"),
-)
-
-
-def bounded_host_shutdown_tail(tail: str) -> bool:
-    if not tail:
-        return True
-    if len(tail.encode("utf-8")) > MAX_AUDIO_TAIL_BYTES or not tail.endswith("\n"):
-        return False
-    lines = tail[:-1].split("\n")
-    return 1 <= len(lines) <= MAX_AUDIO_TAIL_LINES and all(
-        any(pattern.fullmatch(line) for pattern in AUDIO_LINES) for line in lines
-    )
 
 
 def terminal_report(tail: bytes, detail: str, tail_offset: int) -> tuple[int, str] | None:
