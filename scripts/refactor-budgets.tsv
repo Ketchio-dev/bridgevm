@@ -3277,6 +3277,7 @@ docs/history/windows-hvf/a9-r37-first-ready-20260930.md	59	0
 docs/history/windows-hvf/a9-r38-collapsed-control-input-20260930.md	60	0
 docs/history/windows-hvf/a9-r39-r40-diagnostics-opener-20260930.md	60	0
 docs/history/windows-hvf/a9-r41-send-field-binding-20260930.md	56	0
+docs/history/windows-hvf/a9-r42-keyboard-pointer-workload-20260930.md	52	0
 .github/workflows/b9-guest-powershell-contracts.yml	22	0
 scripts/live-gates/b9-worker-cleanup-fence.sh	16	0
 scripts/live-gates/b9_asset_error.py	12	0

@@ -237,6 +237,7 @@ docs/history/windows-hvf/a9-r37-first-ready-20260930.md	historical-evidence	wind
 docs/history/windows-hvf/a9-r38-collapsed-control-input-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/a9-r39-r40-diagnostics-opener-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/a9-r41-send-field-binding-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/a9-r42-keyboard-pointer-workload-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/app-guest-reset-records-20260929.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/install-staging-and-host-bound-stop-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/windows-arm/evidence/a19-t20-r6-20260925.md	current	windows-storage	-
