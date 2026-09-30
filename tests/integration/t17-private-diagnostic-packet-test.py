@@ -63,7 +63,7 @@ class PacketTest(unittest.TestCase):
                        "failure_detail": f"first boot has no BVAGENT READY/PONG evidence; host_stop=status=complete,generation=7,nonce={STOP_NONCE},report=complete,helper=terminal,log_offset=0"}
         self.refresh_seal()
         self.args = argparse.Namespace(private=self.private, lane_root=self.lane,
-                                       job_id=JOB, commit=COMMIT, mode="pilot", lane=1)
+                                       job_id=JOB, commit=COMMIT, mode="pilot", lane=1, kind="first-ready")
 
     def tearDown(self) -> None:
         shutil.rmtree(self.work)
@@ -437,7 +437,7 @@ def run_tier_fixtures(tier: Path, manifest: Path, temporary: Path, commit: str) 
         marker = private / "lane-1-diagnostic-capture-failed"
         if capture_ok:
             assert index.exists() and not marker.exists(), f"diagnostic capture refused: {completed.stderr[-1200:]}"
-            subprocess.run([sys.executable, str(SCRIPT), "verify", "--private", str(private.resolve()),
+            subprocess.run([sys.executable, str(SCRIPT), "verify", "--kind", "first-ready", "--private", str(private.resolve()),
                             "--job-id", name, "--commit", commit, "--campaign-mode", "pilot",
                             "--lane", "1"], check=True)
             value = json.loads(index.read_text()); assert value["observed_generation"] == 7 and (value["guest_setup"]["outcome"], value["guest_setup"]["reason"], value["guest_setup"]["cleanup"]) == ("gpt-invalid", "disk-too-small", "verified"), value["guest_setup"]

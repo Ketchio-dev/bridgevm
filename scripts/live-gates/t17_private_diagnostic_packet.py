@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retain and independently verify a bounded, private T17 first-READY packet."""
+"""Retain and independently verify a bounded, private T17 first-READY or post-READY packet."""
 from __future__ import annotations
 
 import argparse
@@ -16,8 +16,9 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from t17_terminal_report_tail import terminal_report  # noqa: E402
 import t17_guest_setup_harvest as HARVEST  # noqa: E402
+import t17_packet_kind as KIND  # noqa: E402
 
-SCHEMA = "bridgevm.t17-private-diagnostic-packet.v2"
+SCHEMA = "bridgevm.t17-private-diagnostic-packet.v3"
 STAMP_SCHEMA = "bridgevm.windows-hvf-3d-off-product-e2e-host-stamp.v1"
 LANE_SCHEMA = "bridgevm.windows-hvf-3d-off-product-e2e-lane.v2"
 REQUEST_SCHEMA = "bridgevm.windows-hvf-3d-off-product-e2e-request.v2"
@@ -38,7 +39,6 @@ COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 JOB = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 FRAME = re.compile(r"(ramfb|virtio-gpu)-[0-9]+x[0-9]+-[0-9a-f]+-[0-9a-f]{16}\Z")
 HOST_STATUS = re.compile(r"host_stop=status=(complete|missing|incomplete)(?:,|;|\Z)")
-FIRST_READY_DETAIL = "first boot has no BVAGENT READY/PONG evidence;"
 
 
 class CaptureError(ValueError):
@@ -295,13 +295,12 @@ def capture(args: argparse.Namespace) -> None:
                 or request.get("schema_version") != REQUEST_SCHEMA or result.get("schema_version") != LANE_SCHEMA
                 or request.get("lane_root") != lane_root or request.get("vm_slug") != slug
                 or request.get("campaign_mode") != args.mode or result.get("campaign_mode") != args.mode
-                or result.get("failure_code") != "guest-evidence-missing" or result.get("first_ready") is not False
-                or not isinstance(detail, str) or not detail.startswith(FIRST_READY_DETAIL)
-                or len(statuses) != 1
+                or not KIND.matches(args.kind, result, detail, statuses)
                 or stamp.get("schema_version") != STAMP_SCHEMA
                 or stamp.get("request_sha256") != request_sha or stamp.get("result_sha256") != result_sha
                 or set(stamp) != {"schema_version", "job_id", "commit", "lane", "nonce", "request_sha256", "result_sha256"}):
-            raise CaptureError("packet source does not match authenticated first-READY failure")
+            raise CaptureError(f"packet source does not match authenticated {args.kind} failure")
+        stop = KIND.host_stop(statuses)
         evidence_rel = f"library/{slug}/bundle.vmbridge/logs/hvf"
         evidence_path = f"{lane_root}/{evidence_rel}"
         frame_path = f"{evidence_path}/ramfb"
@@ -318,7 +317,7 @@ def capture(args: argparse.Namespace) -> None:
             tail = b""
             tail_offset = 0
             if evidence is not None:
-                if statuses[0] == "complete" and not request_consumed(evidence):
+                if stop == "complete" and not request_consumed(evidence):
                     raise CaptureError("claimed host stop request was not consumed")
                 log = source_file(evidence, "run.log", lane_info.st_dev, stack)
                 if log is not None:
@@ -385,12 +384,19 @@ def capture(args: argparse.Namespace) -> None:
                         item.update(status="unavailable", reason="short-header")
             if total > TOTAL_CAP:
                 raise CaptureError("packet exceeds 256-MiB total cap")
+            share = None
+            if args.kind == "post-ready":
+                body = KIND.encode(KIND.listing(lane, lane_info.st_dev))
+                output = destination(private, KIND.listing_name(args.lane), stack, created)
+                write_all(output, body)
+                os.fsync(output)
+                share = {"file": KIND.listing_name(args.lane), "sha256": digest(body)}
             guest_setup = HARVEST.Harvest(lane_root, lane, slug, private, args.lane, TOTAL_CAP - total, created).run()
-            index = {"schema_version": SCHEMA, "job_id": args.job_id, "commit": args.commit,
-                     "campaign_mode": args.mode, "lane": args.lane, "lane_root": lane_root,
+            index = {"schema_version": SCHEMA, "packet_kind": args.kind, "job_id": args.job_id, "commit": args.commit,
+                     "campaign_mode": args.mode, "lane": args.lane, "lane_root": lane_root, "share_listing": share,
                      "lane_identity": f"{lane_info.st_dev}:{lane_info.st_ino}", "nonce": nonce,
                      "request_sha256": request_sha, "result_sha256": result_sha,
-                     "stamp_sha256": stamp_sha, "host_stop_status": statuses[0],
+                     "stamp_sha256": stamp_sha, "host_stop_status": stop,
                      "observed_generation": observed_generation(detail, tail, tail_offset),
                      "display_generation": "unattributed",
                      "windows_function_symbols": "unavailable: exact-build mapping unverified",
@@ -415,22 +421,20 @@ def verify(args: argparse.Namespace) -> None:
         index, _ = read_json(private, f"t17-diagnostic-lane-{args.lane}-index.json", info.st_dev, stack, cap=INDEX_CAP)
         result, result_sha = read_json(private, f"lane-{args.lane}-result.json", info.st_dev, stack)
         stamp, stamp_sha = read_json(private, f"lane-{args.lane}-authenticated.json", info.st_dev, stack)
-        expected_keys = {"schema_version", "job_id", "commit", "campaign_mode", "lane", "lane_root",
+        expected_keys = {"schema_version", "packet_kind", "share_listing", "job_id", "commit", "campaign_mode", "lane", "lane_root",
                      "lane_identity", "nonce", "request_sha256", "result_sha256", "stamp_sha256",
                      "host_stop_status", "observed_generation", "display_generation",
                      "windows_function_symbols", "total_bytes", "guest_setup", "artifacts"}
         detail = result.get("failure_detail")
         statuses = HOST_STATUS.findall(detail) if isinstance(detail, str) else []
         expected_stamp_keys = {"schema_version", "job_id", "commit", "lane", "nonce", "request_sha256", "result_sha256"}
-        if (set(index) != expected_keys or index["schema_version"] != SCHEMA
+        if (set(index) != expected_keys or index["schema_version"] != SCHEMA or index["packet_kind"] != args.kind
                 or index["job_id"] != args.job_id or index["commit"] != args.commit
                 or index["campaign_mode"] != args.mode or index["lane"] != args.lane
                 or result.get("schema_version") != LANE_SCHEMA
                 or result.get("job_id") != args.job_id or result.get("commit") != args.commit
                 or result.get("campaign_mode") != args.mode or result.get("lane") != args.lane
-                or result.get("failure_code") != "guest-evidence-missing" or result.get("first_ready") is not False
-                or not isinstance(detail, str) or not detail.startswith(FIRST_READY_DETAIL)
-                or len(statuses) != 1 or index["host_stop_status"] != statuses[0]
+                or not KIND.matches(args.kind, result, detail, statuses) or index["host_stop_status"] != KIND.host_stop(statuses)
                 or set(stamp) != expected_stamp_keys or stamp.get("schema_version") != STAMP_SCHEMA
                 or stamp.get("job_id") != args.job_id or stamp.get("commit") != args.commit
                 or stamp.get("lane") != args.lane or stamp.get("nonce") != result.get("nonce")
@@ -448,6 +452,14 @@ def verify(args: argparse.Namespace) -> None:
                 or not (index["observed_generation"] is None or type(index["observed_generation"]) is int and index["observed_generation"] >= 0)
                 or type(index["total_bytes"]) is not int):
             raise CaptureError("private index identity or schema differs")
+        name = KIND.listing_name(args.lane)
+        listing = None if index["share_listing"] is None else read_json(private, name, info.st_dev, stack)
+        if ((listing is None) != (args.kind == "first-ready")
+                or index["share_listing"] != (listing and {"file": name, "sha256": listing[1]})
+                or listing and stat.S_IMODE(os.stat(name, dir_fd=private, follow_symlinks=False).st_mode) != 0o600):
+            raise CaptureError("private share listing reference differs")
+        if listing is not None:
+            KIND.verify(listing[0])
         expected_role_names = {
             "run_log": f"t17-diagnostic-lane-{args.lane}-run-log.bin",
             "final_raw": f"t17-diagnostic-lane-{args.lane}-final_raw.xrgb8888",
@@ -576,6 +588,7 @@ def verify(args: argparse.Namespace) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("capture", "verify"))
+    parser.add_argument("--kind", choices=KIND.KINDS, required=True)
     parser.add_argument("--private", type=Path, required=True)
     parser.add_argument("--lane-root", type=Path)
     parser.add_argument("--job-id", required=True)
