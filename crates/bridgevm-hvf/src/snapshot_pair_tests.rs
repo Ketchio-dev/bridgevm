@@ -1,3 +1,4 @@
+use super::copy::COPY_CHUNK;
 use super::*;
 
 /// A scratch directory that removes itself.

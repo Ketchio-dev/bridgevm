@@ -1023,7 +1023,7 @@ fuzz/src/lib.rs	55	0
 fuzz/src/bin/smoke.rs	78	0
 crates/bridgevm-hvf/tests/loom_psci.rs	94	0
 crates/bridgevm-hvf/tests/loom_reset_generation.rs	131	0
-crates/bridgevm-hvf/src/snapshot_pair.rs	207	0
+crates/bridgevm-hvf/src/snapshot_pair.rs	171	0
 crates/bridgevm-hvf/src/snapshot_pair_tests.rs	254	0
 crates/bridgevm-hvf/src/bounded_read.rs	47	0
 crates/bridgevm-hvf/src/snapshot_manifest_json.rs	61	0
@@ -2340,7 +2340,7 @@ tests/integration/winpe_companion_native_mount_cases.py	92
 runners/bridgevm-tools-linux/src/tests_split/temp_fixtures_tests.rs	163
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportIsolationTests.swift	131	0
 crates/bridgevm-api/src/test_support_env.rs	99	0
-crates/bridgevm-hvf/src/managed_pair_restore.rs	42	0
+crates/bridgevm-hvf/src/managed_pair_restore.rs	40	0
 crates/bridgevm-hvf/src/nvme/doorbell.rs	35	0
 crates/bridgevm-hvf/src/nvme/tests/doorbell_indices.rs	117	0
 crates/bridgevm-hvf/src/snapshot_verification.rs	28	0
@@ -2348,10 +2348,10 @@ crates/bridgevm-hvf/src/snapshot_verification_tests.rs	125	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportDestination.swift	39	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportDestinationTests.swift	122	0
 crates/bridgevm-hvf/src/managed_pair_ownership_tests.rs	112	0
-crates/bridgevm-hvf/src/managed_pair_staging.rs	28	0
+crates/bridgevm-hvf/src/managed_pair_staging.rs	21	0
 crates/bridgevm-media/src/media_lease_update.rs	73	0
 crates/bridgevm-media/src/media_lease_update_tests.rs	122	0
-crates/bridgevm-hvf/src/snapshot_create.rs	75	0
+crates/bridgevm-hvf/src/snapshot_create.rs	71	0
 crates/bridgevm-hvf/src/snapshot_create_concurrency_tests.rs	139	0
 crates/bridgevm-hvf/src/snapshot_create_destination.rs	27	0
 crates/bridgevm-hvf/src/snapshot_create_destination_lease.rs	22	0
@@ -3234,8 +3234,8 @@ scripts/live-gates/b6_cell_evidence.py	62	0
 tests/integration/b6-untraced-startup-contract.py	128	0
 scripts/live-gates/a19_quota_seal.py	84	0
 scripts/live-gates/a19-interrupted-restore-cleanup-fence.sh	34	0
-scripts/live-gates/a19_interrupt_restore_child.py	177	0
-scripts/live-gates/a19_interrupted_restore_receipt.py	171	0
+scripts/live-gates/a19_interrupt_restore_child.py	166	0
+scripts/live-gates/a19_interrupted_restore_receipt.py	169	0
 scripts/live-gates/a19_interrupted_restore_public.py	53	0
 scripts/live-gates/a19_interrupted_restore_seal.py	84	0
 scripts/live-gates/run-a19-interrupted-restore-tier.py	207	0
@@ -3245,6 +3245,12 @@ scripts/win-assets/bv-a19-t22-marker.ps1	59	0
 tests/integration/a19-interrupted-restore-live-tier-contract.py	224	0
 tests/integration/a19-interrupted-restore-public-contract.py	77	0
 tests/integration/a19-interrupted-restore-guest-share-contract.py	106	0
+scripts/live-gates/a19_interrupt_stop_points.py	97	0
+scripts/live-gates/a19_interrupt_cases.py	64	0
+tests/integration/a19-interrupted-restore-cases-contract.py	199	0
+scripts/live-gates/a19_interrupt_case_hashes.py	59	0
+tests/integration/a19_interrupt_case_fixtures.py	50	0
+tests/integration/a19-interrupted-restore-case-hashes-contract.py	69	0
 docs/history/windows-hvf/a19-interrupted-restore-tier-20260925.md	41	0
 docs/history/windows-hvf/a19-output-admission-and-setup-interruption-20260929.md	74	0
 docs/windows-arm/evidence/a19-t21-r1-20260925.md	68	0
@@ -3310,6 +3316,14 @@ apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotExportAdmissionTests.swif
 crates/bridgevm-hvf/src/snapshot_create_staging_debris.rs	29	0
 crates/bridgevm-hvf/src/snapshot_create_admission_shape_tests.rs	99	0
 crates/bridgevm-hvf/src/snapshot_create_staging_debris_tests.rs	84	0
+crates/bridgevm-hvf/src/snapshot_copy.rs	49	0
+crates/bridgevm-hvf/src/snapshot_create_fill.rs	46	0
+crates/bridgevm-hvf/src/snapshot_create_failure_tests.rs	89	0
+crates/bridgevm-hvf/src/managed_pair_restore_admission.rs	27	0
+crates/bridgevm-hvf/src/managed_pair_staging_fill.rs	18	0
+crates/bridgevm-hvf/src/managed_pair_streaming_interruption_tests.rs	124	0
+crates/bridgevm-hvf/src/managed_pair_staging_debris.rs	9	0
+crates/bridgevm-hvf/src/managed_pair_staging_failure_tests.rs	30	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHelperProcess.swift	63	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTests.swift	88	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTestSupport.swift	34	0

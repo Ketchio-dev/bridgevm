@@ -1,28 +1,20 @@
 //! Finish and own the staged inodes before they can become current media.
 
 use super::*;
-use crate::snapshot_pair::copy_and_sync;
-use std::{fs::File, path::PathBuf};
+use std::path::PathBuf;
 
 impl LockedPair {
     pub(super) fn stage_restore(
         &mut self,
         snapshot: &Path,
         manifest: &SnapshotManifest,
+        copy: impl FnMut(&Path, &Path) -> io::Result<u64>,
     ) -> Result<(PathBuf, SnapshotManifest), SnapshotError> {
         let staged = self.root.join("staging");
-        if super::super::private_directory(&staged, false)? {
-            fs::remove_dir_all(&staged)?;
-        }
+        debris::clear(&staged)?;
         super::super::private_directory(&staged, true)?;
-        for name in ["disk.raw", "vars.fd", "manifest.json"] {
-            copy_and_sync(&snapshot.join(name), &staged.join(name))?;
-        }
-        let copied = verify_snapshot(&staged)?;
-        if &copied != manifest {
-            return Err(io::Error::other("snapshot changed while staging restore").into());
-        }
-        File::open(&staged)?.sync_all()?;
+        let copied = fill::fill(snapshot, manifest, &staged, copy)
+            .inspect_err(|_| drop(debris::clear(&staged)))?;
         self._lease.extend([
             staged.join("disk.raw").as_path(),
             staged.join("vars.fd").as_path(),
@@ -30,3 +22,8 @@ impl LockedPair {
         Ok((staged, copied))
     }
 }
+
+#[path = "managed_pair_staging_debris.rs"]
+mod debris;
+#[path = "managed_pair_staging_fill.rs"]
+mod fill;
