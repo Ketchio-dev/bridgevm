@@ -36,7 +36,7 @@ class InputChallengeDesktop(unittest.TestCase):
 
     def test_host_reports_only_an_exact_progress_line(self) -> None:
         share = SHARE.read_text(encoding="utf-8")
-        for needle in ('cursor=[0-9]{1,4}x[0-9]{1,4} dismissed=[0-9]{1,2}$"#', "data.count <= 128", '" (guest form saw \\($0))"'):
+        for needle in ('cursor=[0-9]{1,4}x[0-9]{1,4} dismissed=[0-9]{1,2}$"#', "data.count <= 128", '.map { "guest form saw \\($0)" }'):
             self.assertIn(needle, share)
 
     def test_windows_runner_compiles_the_bindings_and_builds_the_form(self) -> None:

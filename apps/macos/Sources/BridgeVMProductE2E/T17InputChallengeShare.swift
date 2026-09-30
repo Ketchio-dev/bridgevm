@@ -17,20 +17,8 @@ enum T17InputChallengeShare {
     }
 
     static func awaitOutput(share: URL, nonce: String, timeout: TimeInterval) throws {
-        let name = "t17-keyboard-pointer-\(prefix(nonce)).txt", output = share.appendingPathComponent(name)
-        let deadline = Date().addingTimeInterval(timeout)
-        while !FileManager.default.fileExists(atPath: output.path) {
-            guard Date() < deadline else {
-                let seen = progress(share.appendingPathComponent("t17-keyboard-pointer-progress-\(prefix(nonce)).txt"))
-                throw T17Blocker(code: "guest-evidence-missing", detail: "guest workload did not produce \(name)"
-                    + (seen.map { " (guest form saw \($0))" } ?? ""))
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        }
-        let values = try output.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
-        guard values.isRegularFile == true, values.isSymbolicLink != true,
-              let size = values.fileSize, size > 0, size < 8 * 1024 * 1024 else {
-            throw T17Blocker(code: "guest-evidence-missing", detail: "guest output is unsafe or oversized")
+        try T17GuestWorkloadOutput.await(share: share, name: "t17-keyboard-pointer-\(prefix(nonce)).txt", prefix: prefix(nonce), timeout: timeout) {
+            progress(share.appendingPathComponent("t17-keyboard-pointer-progress-\(prefix(nonce)).txt")).map { "guest form saw \($0)" }
         }
     }
 

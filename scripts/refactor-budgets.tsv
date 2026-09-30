@@ -1849,7 +1849,7 @@ apps/macos/Sources/BridgeVMProductE2E/T17UIControlling.swift	15	0
 apps/macos/Sources/BridgeVMProductE2E/T17TextEntry.swift	17	0
 apps/macos/Sources/BridgeVMProductE2E/T17Contract.swift	220	0
 apps/macos/Sources/BridgeVMProductE2E/T17Evidence.swift	80	0
-apps/macos/Sources/BridgeVMProductE2E/T17GuestJourney.swift	214	0
+apps/macos/Sources/BridgeVMProductE2E/T17GuestJourney.swift	206	0
 apps/macos/Sources/BridgeVMProductE2E/T17InputChallenge.swift	26	0
 apps/macos/Sources/BridgeVMProductE2E/T17RuntimeControlInput.swift	18	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestProof.swift	156	0
@@ -1864,7 +1864,7 @@ apps/macos/BridgeVMProductE2E-Info.plist	24	0
 apps/macos/scripts/package-hvf-product-e2e.sh	14	0
 apps/macos/scripts/package-product-e2e-helper-app.sh	21	0
 scripts/verify-product-e2e-helper-app.sh	46	0
-scripts/win-assets/bv-product-e2e.ps1	147	0
+scripts/win-assets/bv-product-e2e.ps1	144	0
 scripts/win-assets/bv-product-e2e-launch.ps1	28	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlAppLaunch.swift	10	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlLaunchOptions.swift	133	0
@@ -3395,7 +3395,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/stop_media_tests.rs	114	0
 scripts/live-gates/hvf_host_media.py	44	0
 tests/integration/hvf-host-media-readers-contract.py	253	0
 docs/history/windows-hvf/host-framed-writeback-20260930.md	68	0
-apps/macos/Sources/BridgeVMProductE2E/T17InputChallengeShare.swift	47	0
+apps/macos/Sources/BridgeVMProductE2E/T17InputChallengeShare.swift	35	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17InputChallengeShareTests.swift	54	0
 tests/integration/t17-input-challenge-desktop-contract.py	51	0
 scripts/test-bv-product-e2e-challenge.ps1	23	0
@@ -3408,3 +3408,7 @@ docs/history/windows-hvf/a9-r47-start-menu-20260930.md	62	0
 apps/macos/Sources/BridgeVMProductE2E/T17DisplayImageRect.swift	22	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17DisplayImageRectTests.swift	29	0
 docs/history/windows-hvf/a9-r48-start-menu-not-foreground-20260930.md	56	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17GuestWorkloadOutputTests.swift	36	0
+tests/integration/t17-guest-workload-errors-contract.py	36	0
+apps/macos/Sources/BridgeVMProductE2E/T17GuestWorkloadOutput.swift	30	0
+docs/history/windows-hvf/a9-r49-input-passes-audio-directory-20260930.md	57	0

@@ -179,15 +179,7 @@ struct T17GuestJourney {
     }
 
     private func requireOutput(_ name: String, timeout: TimeInterval) throws {
-        let url = URL(fileURLWithPath: request.sharePath).appendingPathComponent(name)
-        guard wait(timeout: timeout, predicate: { self.fileManager.fileExists(atPath: url.path) }) else {
-            throw T17Blocker(code: "guest-evidence-missing", detail: "guest workload did not produce \(name)")
-        }
-        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
-        guard values.isRegularFile == true, values.isSymbolicLink != true,
-              let size = values.fileSize, size > 0, size < 8 * 1024 * 1024 else {
-            throw T17Blocker(code: "guest-evidence-missing", detail: "guest output is unsafe or oversized")
-        }
+        try T17GuestWorkloadOutput.await(share: URL(fileURLWithPath: request.sharePath), name: name, prefix: prefix, timeout: timeout)
     }
 
     private func fileSize(_ url: URL) throws -> Int {

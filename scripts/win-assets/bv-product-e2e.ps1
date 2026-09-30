@@ -34,8 +34,9 @@ function Require-Exact([string]$Path, [string]$Body) {
 function Hash([string]$Name) {
     return (Get-FileHash -LiteralPath (Join-Path $Share $Name) -Algorithm SHA256).Hash.ToLowerInvariant()
 }
-
-switch ($Action) {
+New-Item -ItemType Directory -Force -Path 'C:\ProgramData\BridgeVM' | Out-Null
+# A failed action names itself and its exception type for the host, then still fails.
+try { switch ($Action) {
     'KeyboardPointer' {
         Add-Type -AssemblyName System.Windows.Forms, System.Drawing
         Add-Type -Namespace BridgeVM -Name InputDesktop -MemberDefinition @'
@@ -101,16 +102,12 @@ public static bool Accepts(IntPtr form) {
     }
     'Audio' {
         $Wave = 'C:\ProgramData\BridgeVM\t17-tone.wav'
-        $Rate = 48000; $Samples = $Rate; $Stream = New-Object IO.MemoryStream
-        $Writer = New-Object IO.BinaryWriter($Stream); $Bytes = $Samples * 4
+        $Rate = 48000; $Samples = $Rate; $Stream = New-Object IO.MemoryStream; $Writer = New-Object IO.BinaryWriter($Stream); $Bytes = $Samples * 4
         $Writer.Write([char[]]'RIFF'); $Writer.Write([int](36 + $Bytes)); $Writer.Write([char[]]'WAVE')
         $Writer.Write([char[]]'fmt '); $Writer.Write([int]16); $Writer.Write([int16]1); $Writer.Write([int16]2)
         $Writer.Write([int]$Rate); $Writer.Write([int]($Rate * 4)); $Writer.Write([int16]4); $Writer.Write([int16]16)
         $Writer.Write([char[]]'data'); $Writer.Write([int]$Bytes)
-        for ($Index = 0; $Index -lt $Samples; $Index++) {
-            $Value = [int16](12000 * [Math]::Sin(2 * [Math]::PI * 440 * $Index / $Rate))
-            $Writer.Write($Value); $Writer.Write($Value)
-        }
+        for ($Index = 0; $Index -lt $Samples; $Index++) { $Value = [int16](12000 * [Math]::Sin(2 * [Math]::PI * 440 * $Index / $Rate)); $Writer.Write($Value); $Writer.Write($Value) }
         [IO.File]::WriteAllBytes($Wave, $Stream.ToArray())
         (New-Object Media.SoundPlayer $Wave).PlaySync()
         Write-Exact "t17-audio-$Prefix.txt" "bridgevm-t17-audio-ok-v1`n$Nonce`n"
@@ -141,7 +138,7 @@ public static bool Accepts(IntPtr form) {
         }
         Write-Exact "t17-agent-result-$Prefix.json" (($Result | ConvertTo-Json -Compress) + "`n")
     }
-}
+} } catch { Write-Exact "t17-error-$Prefix.txt" ("action=$Action error=" + $_.Exception.GetType().FullName + "`n"); throw }
 
 Write-Output ("T17 action=$Action nonce=$Nonce status=PASS")
 exit 0
