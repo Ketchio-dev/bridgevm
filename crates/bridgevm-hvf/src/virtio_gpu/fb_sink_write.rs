@@ -85,13 +85,17 @@ impl FbSink {
         {
             std::fs::create_dir_all(parent)?;
         }
+        // Never truncate or shrink: a reader mapping the old length faults past EOF.
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .truncate(true)
+            .truncate(false)
             .open(&self.path)?;
-        file.set_len(needed as u64)?;
+        let existing = file.metadata()?.len();
+        if existing < needed as u64 {
+            file.set_len(needed as u64)?;
+        }
         let map = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
@@ -109,6 +113,13 @@ impl FbSink {
         self.map = map.cast();
         self.map_len = needed;
         self.capacity = needed;
+        // Continue an earlier writer's sequence so the reader never skips our first frame.
+        if self.seq == 0
+            && existing >= HEADER_LEN as u64
+            && unsafe { read_u32(self.map, 0) } == 0x4256_4642
+        {
+            self.seq = self.sequence().load(Ordering::Acquire) & !1;
+        }
         Ok(true)
     }
 

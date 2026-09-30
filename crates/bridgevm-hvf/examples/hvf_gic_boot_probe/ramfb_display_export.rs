@@ -31,8 +31,8 @@ fn interval_from(value: Option<&str>) -> Duration {
 
 /// One per process, outside the reboot loop: the display file has a single
 /// writer whose sequence keeps advancing across in-process guest resets. A
-/// recreated process starts a new writer, which truncates the file in place
-/// on its first frame exactly as the virtio-gpu sink does.
+/// recreated process starts a new writer, which reopens the file in place on
+/// its first frame, never shrinking it, exactly as the virtio-gpu sink does.
 pub struct RamfbDisplayExporter {
     target: Option<DisplayFramebuffer>,
     interval: Duration,

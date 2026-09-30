@@ -248,7 +248,7 @@ fn a_recreated_process_republishes_into_the_same_file() {
     let mut second = exporter(&path);
     second.export_frame_due(false, Some(config()), &changed, t0 + 2 * TICK);
     assert_eq!(std::fs::metadata(&path).unwrap().ino(), inode);
-    assert_eq!(read_fb(&path).1, 2, "a fresh writer restarts its sequence");
+    assert_eq!(read_fb(&path).1, 6, "a fresh writer continues the sequence");
     assert_eq!(read_fb(&path).2, frame(4));
     cleanup(&path);
 }

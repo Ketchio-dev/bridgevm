@@ -45,8 +45,8 @@ impl DisplayFramebuffer {
     }
 
     /// Publish one complete frame. The first publish by a writer, exactly like
-    /// the virtio-gpu sink's first write in a process, opens the path with
-    /// truncation and sizes it to the frame (an existing file keeps its inode);
+    /// the virtio-gpu sink's first write in a process, opens the path in place,
+    /// grows it to fit the frame but never shrinks it, and continues its sequence;
     /// a later frame that needs more room does the same. `InvalidInput` means
     /// the geometry overflows or `bytes` is shorter than `height * stride`, and
     /// nothing was written.

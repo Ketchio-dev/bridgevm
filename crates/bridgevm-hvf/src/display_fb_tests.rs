@@ -97,7 +97,28 @@ fn a_later_writer_restarts_the_same_file_in_place() {
     let file = std::fs::read(&path).unwrap();
     assert_eq!(std::fs::metadata(&path).unwrap().ino(), inode);
     assert_eq!(file.len(), 64 + 8);
-    assert_eq!(le_u64(&file, 24), 2);
+    assert_eq!(le_u64(&file, 24), 6);
     assert_eq!(&file[64..], &[7; 8]);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_later_writer_never_shrinks_a_file_a_reader_may_map() {
+    let dir = test_dir();
+    let path = dir.join("display.fb");
+    let mut first = DisplayFramebuffer::at_path(&path);
+    first
+        .publish(2, 2, 8, DRM_FORMAT_XRGB8888, &[1; 16])
+        .unwrap();
+    drop(first);
+    let mut second = DisplayFramebuffer::at_path(&path);
+    second
+        .publish(2, 1, 8, DRM_FORMAT_XRGB8888, &[3; 8])
+        .unwrap();
+    let file = std::fs::read(&path).unwrap();
+    assert_eq!(file.len(), 64 + 16);
+    assert_eq!(le_u32(&file, 12), 1);
+    assert_eq!(le_u64(&file, 24), 4);
+    assert_eq!(&file[64..72], &[3; 8]);
     std::fs::remove_dir_all(dir).unwrap();
 }

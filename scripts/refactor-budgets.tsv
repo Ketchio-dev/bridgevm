@@ -209,7 +209,7 @@ crates/bridgevm-hvf/src/bridgevm_pc.rs	192	0
 crates/bridgevm-hvf/src/bridgevm_pc_boot_info.rs	139	0
 crates/bridgevm-hvf/src/bridgevm_pc_boot_info_tests.rs	121	0
 crates/bridgevm-hvf/src/display_fb.rs	63	0
-crates/bridgevm-hvf/src/display_fb_tests.rs	99	0
+crates/bridgevm-hvf/src/display_fb_tests.rs	120	0
 crates/bridgevm-hvf/src/machine.rs	350	0
 crates/bridgevm-hvf/src/machine_plan.rs	367	0
 crates/bridgevm-hvf/src/media.rs	580	0
@@ -497,7 +497,7 @@ crates/bridgevm-hvf/src/virtio_gpu/device_stats.rs	82	0
 crates/bridgevm-hvf/src/virtio_gpu/display.rs	71	0
 crates/bridgevm-hvf/src/virtio_gpu/display/edid.rs	172	0
 crates/bridgevm-hvf/src/virtio_gpu/fb_sink.rs	48	1
-crates/bridgevm-hvf/src/virtio_gpu/fb_sink_write.rs	190	10
+crates/bridgevm-hvf/src/virtio_gpu/fb_sink_write.rs	201	10
 crates/bridgevm-hvf/src/virtio_gpu/fb_sink_write_tests.rs	76	4
 crates/bridgevm-hvf/src/virtio_gpu/fence.rs	80	0
 crates/bridgevm-hvf/src/virtio_gpu/interrupt.rs	164	0
