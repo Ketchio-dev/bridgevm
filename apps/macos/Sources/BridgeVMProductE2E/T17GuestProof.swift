@@ -17,7 +17,7 @@ struct T17RunLogProof {
         let data = try Data(contentsOf: url, options: [.mappedIfSafe])
         let lines = records(data)
         guard let ready = lines.first(where: { $0.line.hasPrefix("BVAGENT READY") || $0.line.hasPrefix("BVAGENT PONG (proactive)") }),
-              let shutdown = lines.last(where: { $0.line == HvfStopLine.systemOff }),
+              let shutdown = HvfTerminalReport.stop(in: data), shutdown.line == HvfStopLine.systemOff,
               ready.offset < shutdown.offset else {
             throw T17Blocker(code: "guest-evidence-missing", detail: "run log lacks ordered READY/PONG and SYSTEM_OFF records")
         }

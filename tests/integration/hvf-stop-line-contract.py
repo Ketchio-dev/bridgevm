@@ -88,7 +88,7 @@ class HvfStopLineContract(unittest.TestCase):
         diagnostic, receipt = case.fixture()
         log = diagnostic / "raw/guest/run.log"
         original = log.read_bytes()
-        self.assertIn(f"\r\n{self.off}\r\n".encode(), original)
+        self.assertIn(f"===\n{self.off}\n".encode(), original)
         validate_private(receipt, case.job, diagnostic)
         for stop in (*RETIRED, self.off + " extra", "guest " + self.off):
             raw = original.replace(self.off.encode(), stop.encode())

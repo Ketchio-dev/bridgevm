@@ -28,10 +28,7 @@ enum HvfWindowsInstallFinalization {
                 journal = try begin(plan: plan, paths: paths)
                 try faultInjector(.prepared)
             }
-            try resume(journal, paths: paths, faultInjector: faultInjector,
-                       secureBootSeeder: secureBootSeeder, installLog: URL(
-                        fileURLWithPath: plan.tmpEvidenceDir).appendingPathComponent("run.log"),
-                       finalLog: URL(fileURLWithPath: plan.bundleInstallLogPath))
+            try resume(journal, paths: paths, faultInjector: faultInjector, secureBootSeeder: secureBootSeeder)
         }
     }
 
@@ -54,9 +51,7 @@ enum HvfWindowsInstallFinalization {
                 url: paths.lock, nonBlocking: true)
             try withExtendedLifetime(lock) {
                 let journal = try loadJournal(paths.journal)
-                try resume(journal, paths: paths, faultInjector: { _ in },
-                           secureBootSeeder: secureBootSeeder,
-                           installLog: nil, finalLog: nil)
+                try resume(journal, paths: paths, faultInjector: { _ in }, secureBootSeeder: secureBootSeeder)
             }
             config = try loadConfig(paths.config)
             return ReconcileResult(config: config, issue: nil)
@@ -89,8 +84,8 @@ enum HvfWindowsInstallFinalization {
         guard requestSnapshot.request == plan.request else {
             throw HvfWindowsInstallFinalizationError.invalidState("저장된 설치 요청이 실행 계획과 다릅니다.")
         }
-        let sourceDisk = URL(fileURLWithPath: plan.tmpTargetPath)
-        let sourceVars = URL(fileURLWithPath: plan.tmpVarsPath)
+        let sourceDisk = paths.stagingDisk
+        let sourceVars = paths.stagingVars
         let diskIdentity = try HvfWindowsInstallFinalizationIdentity.seal(sourceDisk)
         let varsIdentity = try HvfWindowsInstallFinalizationIdentity.seal(sourceVars)
         let journal = HvfWindowsInstallFinalizationJournal(

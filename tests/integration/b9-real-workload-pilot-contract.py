@@ -95,7 +95,7 @@ class B9PilotContract(unittest.TestCase):
         query = base.format("Foreground") + f" -Hwnd {hwnd}"
         focus = f"BVAGENT WINFOCUS {hwnd} -> OK WINFOCUS\r\nBVAGENT CMD {query} exit=0\r\nB9-FOREGROUND-{hwnd}\r\nBVAGENT END {query}\r\n"
         run_log = (f"BVAGENT CMD {launch} exit=0\r\nB9-WORKLOAD-LAUNCHED-{nonce}\r\nBVAGENT END {launch}\r\n" + focus * 2 +
-                   "live input accepted: command=Key(<redacted>)\r\nstop: PSCI 0x84000008 (system off)\r\n").encode()
+                   "live input accepted: command=Key(<redacted>)\r\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: PSCI 0x84000008 (system off)\nserial raw bytes: 0 output bytes: 0\n--- serial (tail) ---\n\n--- end ---\n").encode()
         put(guest / "run.log", run_log)
         frames = []
         for index in range(3):

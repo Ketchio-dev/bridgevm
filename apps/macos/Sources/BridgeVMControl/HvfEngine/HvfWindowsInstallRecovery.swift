@@ -38,9 +38,7 @@ enum HvfWindowsInstallRecovery {
                 throw HvfWindowsInstallFinalizationError.invalidState("복구를 기다리는 동안 설치 기록이 변경되었습니다.")
             }
             try HvfWindowsInstallFinalization.resume(journal, paths: paths, faultInjector: { _ in },
-                secureBootSeeder: secureBootSeeder,
-                installLog: URL(fileURLWithPath: plan.tmpEvidenceDir).appendingPathComponent("run.log"),
-                finalLog: URL(fileURLWithPath: plan.bundleInstallLogPath))
+                                                     secureBootSeeder: secureBootSeeder)
             let config = try HvfWindowsInstallFinalization.loadConfig(paths.config)
             try HvfWindowsInstallFinalization.validateConfig(config, pending: false, paths: paths)
             return config

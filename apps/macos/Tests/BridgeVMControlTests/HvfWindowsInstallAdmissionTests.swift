@@ -63,8 +63,8 @@ final class HvfWindowsInstallAdmissionTests: XCTestCase {
         let plan = try blockedPlan()
         let queue = HvfWindowsInstallPipelineQueue()
         defer { queue.discard() }
-        let target = URL(fileURLWithPath: plan.tmpTargetPath)
-        let vars = URL(fileURLWithPath: plan.tmpVarsPath)
+        let (target, vars) = (URL(fileURLWithPath: plan.stagingTargetPath), URL(fileURLWithPath: plan.stagingVarsPath))
+        try FileManager.default.createDirectory(atPath: plan.stagingDirectory, withIntermediateDirectories: true)
         for path in [target, vars] {
             try Data([1, 2, 3, 4]).write(to: path, options: .withoutOverwriting)
             addTeardownBlock { try? FileManager.default.removeItem(at: path) }
