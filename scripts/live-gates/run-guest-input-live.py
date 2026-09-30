@@ -17,6 +17,7 @@ from guest_input_protocol import regular_bytes
 from guest_input_live_cleanup import finalize
 from guest_input_profile_dispatch import make_controller, sink_filename, observation_succeeded
 from guest_input_fixture_staging import stage
+from hvf_guest_shutdown import guest_shutdown_observed
 
 
 def interrupted(signum, frame):
@@ -87,8 +88,7 @@ def execute(args):
                 stream.write(b"shutdown /s /t 0\n")
             status = process.wait(timeout=60)
             receipt["process_exit"] = status
-            receipt["clean_shutdown"] = status == 0 and any(
-                line.startswith("stop: PSCI ") and "(system off)" in line for line in driver.lines())
+            receipt["clean_shutdown"] = guest_shutdown_observed(status, boot / "run.log")
             if not receipt["clean_shutdown"]:
                 raise ValueError("clean guest shutdown not observed")
     except (OSError, ValueError, TimeoutError, subprocess.SubprocessError) as error:

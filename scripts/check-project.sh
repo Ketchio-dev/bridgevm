@@ -42,7 +42,7 @@ step "documentation references" python3 scripts/check-doc-references.py
 step "structural budgets" scripts/check-refactor-budgets.sh
 step "shell scripts" bash scripts/check-shell-scripts.sh
 step "python scripts" python3 scripts/check-python-scripts.py
-step "audio result classifier" python3 scripts/audio-playback-result.py --self-test
+step "audio result classifiers" bash -c 'python3 scripts/audio-playback-result.py --self-test && python3 tests/integration/audio-playback-host-stats-contract.py && python3 tests/integration/audio-teardown-result-test.py'
 step "glyph pixel mask" bash -c 'python3 scripts/verify-glyph-pixel-mask.py --self-test && python3 tests/integration/glyph-ppm-contract.py'
 step "glyph pixel mask builder" python3 scripts/build-glyph-pixel-mask.py --self-test
 step "b6 cell and b9 real workload contracts" bash -c 'python3 scripts/verify-b6-cell.py --self-test && python3 tests/integration/b6-untraced-startup-contract.py && python3 tests/integration/b9-workload-diagnostic-contract.py && python3 tests/integration/b9-workload-diagnostic-path-contract.py && python3 tests/integration/b9-real-workload-pilot-contract.py && python3 tests/integration/b9-guest-shutdown-contract.py && python3 tests/integration/b9-raw-focus-order-contract.py && python3 tests/integration/b9-public-receipt-contract.py && python3 tests/integration/b9-guest-input-attribution-contract.py && python3 tests/integration/b9-host-input-boundary-contract.py && python3 tests/integration/b9-source-reopen-contract.py && python3 tests/integration/b9-guest-share-reopen-contract.py && python3 tests/integration/b9-control-share-class-contract.py && python3 tests/integration/b9-receipt-read-contract.py && python3 tests/integration/b9-scanout-byte-contract.py'

@@ -45,12 +45,12 @@ for ordinal in {1..10}; do
   nonce="$(printf 'b7-fixture:%s' "$ordinal" | shasum -a 256 | cut -c1-64)"
   printf '%s\n' "$nonce" > "$lane/nonce"; printf '0\n' > "$lane/launcher.exit"
   printf 'B7 PLAYBACK PASS nonce=%s wav_bytes=384044\n' "$nonce" > "$lane/share/b7-audio-result-${nonce:0:12}.txt"
+  printf '%s\n' 'NVMe disk written back: fixture' '=== EDK2 boot probe (with Apple hv_gic) ===' 'stop: PSCI 0x84000008 (system off)' 'serial raw bytes: 0 output bytes: 0' '--- serial (tail) ---' '' '--- end ---' >> "$lane/run.log"
+  printf '%s\n' 'hda CoreAudio lifecycle: operation=stop osstatus=0 success=true' 'hda CoreAudio lifecycle: operation=dispose osstatus=0 success=true' >> "$lane/run.log"
   if [[ "$ordinal" == 1 ]]; then
     printf '%s\n' 'hda CoreAudio callback enqueue: state=stopping reason=stopping-enqueue-during-reset osstatus=-66632 expected=true' >> "$lane/run.log"
     printf '%s\n' "$expected_stats" >> "$lane/run.log"
   else printf '%s\n' "$zero_stats" >> "$lane/run.log"; fi
-  printf '%s\n' 'hda CoreAudio lifecycle: operation=stop osstatus=0 success=true' 'hda CoreAudio lifecycle: operation=dispose osstatus=0 success=true' >> "$lane/run.log"
-  printf '%s\n' 'stop: PSCI SYSTEM_OFF (system off)' 'NVMe disk written back: fixture' >> "$lane/run.log"
 done
 OUT="$TMP/out"; mkdir "$OUT"
 python3 "$WRITER" --out "$OUT/receipt.json" --private "$PRIVATE" --manifest "$MANIFEST" \

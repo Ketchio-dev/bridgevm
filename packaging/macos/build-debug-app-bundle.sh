@@ -209,7 +209,7 @@ verify_bundle() {
     run-hvf-windows-installed-boot-usage.sh \
     run-hvf-windows-installed-boot-validation.sh \
     run-hvf-windows-installed-boot-args.sh \
-    run-hvf-windows-installed-boot-runner.sh; do
+    run-hvf-windows-installed-boot-runner.sh hvf-terminal-report.sh; do
     [[ -x "$hvf_lab_resources/scripts/$hvf_script" && ! -L "$hvf_lab_resources/scripts/$hvf_script" ]] || {
       echo "BridgeVM Windows HVF runtime script is missing, non-executable, or a symlink: $hvf_script" >&2
       exit 1
@@ -436,7 +436,7 @@ for hvf_script in \
   run-hvf-windows-installed-boot-usage.sh \
   run-hvf-windows-installed-boot-validation.sh \
   run-hvf-windows-installed-boot-args.sh \
-  run-hvf-windows-installed-boot-runner.sh; do
+  run-hvf-windows-installed-boot-runner.sh hvf-terminal-report.sh; do
   install -m 755 "$ROOT/scripts/$hvf_script" "$HVF_LAB_RESOURCES/scripts/$hvf_script"
 done
 install -d "$HVF_LAB_RESOURCES/scripts/win-assets"

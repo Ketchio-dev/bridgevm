@@ -122,7 +122,7 @@ LAUNCHER_EXIT=$?
 set -e
 LAUNCHER=""
 
-STATS=$(grep -E '^hda CoreAudio stats:' "$RUN_LOG" | tail -1 || true)
+STATS=$(python3 scripts/live-gates/hvf_terminal_evidence.py --host-stats "$RUN_LOG" || true)
 FRAMES=""; DROPS=""; CALLBACK_ERRORS=""
 set +e
 COUNTERS=$(python3 scripts/audio-playback-result.py \

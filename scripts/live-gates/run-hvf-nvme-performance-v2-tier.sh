@@ -287,7 +287,7 @@ printf '%s\n' 'shutdown.exe /p /f' >> "$CONTROL"
 status=0; wait "$VM_PID" || status=$?; VM_PID=""
 [[ "$status" == 0 ]] || { INVALID_REASON=worker-interrupted; exit 1; }
 grep -Fxq 'status=0' "$BOOT/agent-service-gate.txt" || { INVALID_REASON=guest-unreachable; exit 1; }
-grep -Eq '^stop: PSCI .*\(system off\)' "$BOOT/run.log" || { INVALID_REASON=worker-interrupted; exit 1; }
+python3 "$REPO/scripts/live-gates/hvf_terminal_evidence.py" --require-system-off "$BOOT/run.log" || { INVALID_REASON=worker-interrupted; exit 1; }
 grep -Eq '^NVMe (second namespace )?disk written back:' "$BOOT/run.log" || { INVALID_REASON=workload-failed; exit 1; }
 summary="$(grep '^storage target effect summary:' "$BOOT/run.log" | tail -1 || true)"
 [[ "$summary" =~ io_write_success_count=([1-9][0-9]*) \

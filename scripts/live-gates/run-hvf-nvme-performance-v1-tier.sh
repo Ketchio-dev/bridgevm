@@ -155,7 +155,7 @@ kill -0 "$POWER_MONITOR_PID" 2>/dev/null || { INVALID_REASON=power-monitor-ended
 stop_power_monitor || { INVALID_REASON=power-monitor-stop-failed; exit 1; }
 awk '$0 ~ /^Now drawing from / { seen++; if ($0 != "Now drawing from '\''AC Power'\''") bad=1 } END { exit !(seen >= 1 && !bad) }' "$POWER_LOG" \
   || { INVALID_REASON=power-source-changed-or-unknown; exit 1; }
-grep -Eq '^stop: PSCI .*\(system off\)' "$BOOT/run.log" || { INVALID_REASON=guest-shutdown-missing; exit 1; }
+python3 "$REPO/scripts/live-gates/hvf_terminal_evidence.py" --require-system-off "$BOOT/run.log" || { INVALID_REASON=guest-shutdown-missing; exit 1; }
 grep -Eq '^NVMe (second namespace )?disk written back:' "$BOOT/run.log" || { INVALID_REASON=nvme-writeback-missing; exit 1; }
 summary="$(grep '^storage target effect summary:' "$BOOT/run.log" | tail -1 || true)"
 [[ "$summary" =~ io_write_success_count=([1-9][0-9]*) && "$summary" =~ io_flush_success_count=([1-9][0-9]*) ]] \
