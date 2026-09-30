@@ -24,7 +24,7 @@ struct HvfInputCapabilitiesRequest {
         let lines = lines.map { $0.hasSuffix("\r") ? String($0.dropLast()) : $0 }
         if lines.contains(where: {
             $0.hasPrefix("BVAGENT READY") || $0.hasPrefix("BVAGENT re-READY") ||
-            $0.hasPrefix("BVAGENT SERVICE start") || $0.hasPrefix("PSCI_SYSTEM_RESET")
+            $0.hasPrefix("BVAGENT SERVICE start") || HvfGuestResetRecord.matches($0)
         }) { return finish(.failed(.restarted)) }
         let header = "BVAGENT CMD \(command) exit="
         let end = "BVAGENT END \(command)"

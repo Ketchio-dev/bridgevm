@@ -66,8 +66,8 @@ final class HvfWindowsInstallRecoveryBoundaryTests: XCTestCase {
         XCTAssertFalse(session.isRunning)
         XCTAssertEqual(f.process.requests, 0)
         XCTAssertEqual(try Data(contentsOf: f.paths.journal), try XCTUnwrap(journalBytes))
-        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: f.plan.tmpTargetPath)), f.originalDisk)
-        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: f.plan.tmpVarsPath)), f.originalVars)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: f.plan.stagingTargetPath)), f.originalDisk)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: f.plan.stagingVarsPath)), f.originalVars)
     }
 
     func testAdmissionCallbackCannotReenterOrSeeItsOwnRunningConflict() async throws {

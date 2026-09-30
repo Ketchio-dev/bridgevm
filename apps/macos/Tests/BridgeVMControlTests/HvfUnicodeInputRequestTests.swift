@@ -51,7 +51,7 @@ final class HvfUnicodeInputRequestTests: XCTestCase {
     }
 
     func testRestartInCompletionBatchAndTimeoutCancelInsteadOfAdvancingInput() throws {
-        for reset in ["BVAGENT READY guest", "BVAGENT re-READY guest", "BVAGENT SERVICE start", "PSCI_SYSTEM_RESET"] {
+        for reset in ["BVAGENT READY guest", "BVAGENT re-READY guest", "BVAGENT SERVICE start", "PSCI SYSTEM_RESET: reboot 1/8"] {
             var request = try makeRequest()
             XCTAssertEqual(request.consume(lines: receipt(request) + [reset], now: now), .failed(.restarted))
         }

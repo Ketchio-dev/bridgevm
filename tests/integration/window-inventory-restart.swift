@@ -5,8 +5,8 @@ import BridgeVMWindowProtocol
 struct InventoryRestartRegression {
     static func main() throws {
         let now = Date(timeIntervalSince1970: 1000)
-        let markers = ["BVAGENT READY host=test", "BVAGENT re-READY t=2",
-                       "BVAGENT SERVICE start t=2", "PSCI SYSTEM_RESET: requested", "PSCI_SYSTEM_RESET"]
+        let markers = ["BVAGENT READY host=test", "BVAGENT re-READY t=2", "BVAGENT SERVICE start t=2",
+                       "PSCI SYSTEM_RESET: reboot 1/8", "stop: PSCI 0x84000009 exiting for process recreation (exit 42)"]
         var checked = 0
         for marker in markers {
             for position in 0...2 {

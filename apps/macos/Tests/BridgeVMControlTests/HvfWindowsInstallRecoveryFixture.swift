@@ -15,7 +15,7 @@ final class HvfWindowsInstallRecoveryProcess: HvfWindowsInstallProcessRunning {
         requests += 1
         // A second installer run visibly replaces, rather than accidentally matching, the sealed source.
         let bytes = requests == 1 ? originalDisk : Data(repeating: 0x52, count: originalDisk.count)
-        do { try bytes.write(to: URL(fileURLWithPath: plan.tmpTargetPath)); return true }
+        do { try bytes.write(to: URL(fileURLWithPath: plan.stagingTargetPath)); return true }
         catch { XCTFail("Synthetic installer write failed: \(error)"); return false }
     }
 }
@@ -42,7 +42,7 @@ final class HvfWindowsInstallRecoveryFixture {
                 guard let self else { throw CocoaError(.fileWriteUnknown) }
                 self.prepares += 1
                 let bytes = self.prepares == 1 ? self.originalVars : Data(repeating: 0x62, count: self.originalVars.count)
-                try bytes.write(to: URL(fileURLWithPath: plan.tmpVarsPath))
+                try bytes.write(to: URL(fileURLWithPath: plan.stagingVarsPath))
             }, finalize: { [weak self] plan in
                 guard let self else { throw CocoaError(.fileWriteUnknown) }
                 self.finalizations += 1
@@ -72,7 +72,7 @@ final class HvfWindowsInstallRecoveryFixture {
             diskGiB: 64, injectViogpu3d: false, driverPackageDir: nil)
         plan = HvfWindowsInstallPlan(repoRoot: root, libraryRoot: library,
             bundlePath: bundle.path, slug: slug, request: request)
-        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(atPath: plan.stagingDirectory, withIntermediateDirectories: true)
         XCTAssertTrue(VMLibrary.save(config, rootURL: library)); XCTAssertTrue(request.save(bundlePath: bundle.path))
         try FileManager.default.createDirectory(at: URL(fileURLWithPath: plan.sourceImagePath).deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("synthetic verified source marker".utf8).write(to: URL(fileURLWithPath: plan.sourceImagePath))
@@ -88,8 +88,8 @@ final class HvfWindowsInstallRecoveryFixture {
         }, secureBootSeeder: Self.syntheticSeeder)
     }
     func createInterruptedTransaction() throws {
-        try originalDisk.write(to: URL(fileURLWithPath: plan.tmpTargetPath))
-        try originalVars.write(to: URL(fileURLWithPath: plan.tmpVarsPath))
+        try originalDisk.write(to: URL(fileURLWithPath: plan.stagingTargetPath))
+        try originalVars.write(to: URL(fileURLWithPath: plan.stagingVarsPath))
         XCTAssertThrowsError(try interruptFinalization(plan))
         XCTAssertTrue(FileManager.default.fileExists(atPath: paths.journal.path))
     }
@@ -112,7 +112,7 @@ final class HvfWindowsInstallRecoveryFixture {
         let journal = try JSONDecoder().decode(HvfWindowsInstallFinalizationJournal.self, from: Data(contentsOf: paths.journal))
         XCTAssertEqual(journal.phase, boundary == .prepared ? .prepared : .diskStaged)
         XCTAssertEqual(journal.diskSHA256, Self.digest(originalDisk)); XCTAssertEqual(journal.varsSHA256, Self.digest(originalVars))
-        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: plan.tmpVarsPath)), originalVars)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: plan.stagingVarsPath)), originalVars)
         XCTAssertEqual(validator.snapshot.calls, 1); XCTAssertEqual(cacheChecks, 1)
         XCTAssertEqual(prepares, 1); XCTAssertEqual(process.requests, 1); XCTAssertEqual(completions, 0)
         return journal
@@ -130,8 +130,5 @@ final class HvfWindowsInstallRecoveryFixture {
     func clean() {
         validator.release(); recoveryProbe.release(); queue.discard()
         try? FileManager.default.removeItem(at: root)
-        for path in [plan.tmpTargetPath, plan.tmpVarsPath, plan.tmpEvidenceDir] {
-            try? FileManager.default.removeItem(atPath: path)
-        }
     }
 }

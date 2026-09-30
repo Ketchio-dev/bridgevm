@@ -115,13 +115,13 @@ final class HvfWindowsInstallFinalizationIntegrityTests: XCTestCase {
         let plan = HvfWindowsInstallPlan(
             repoRoot: root, libraryRoot: library, bundlePath: bundle.path,
             slug: slug, request: request)
-        try sparse(URL(fileURLWithPath: plan.tmpTargetPath), bytes: 4096)
-        try sparse(URL(fileURLWithPath: plan.tmpVarsPath), bytes: 8192)
+        try sparse(URL(fileURLWithPath: plan.stagingTargetPath), bytes: 4096)
+        try sparse(URL(fileURLWithPath: plan.stagingVarsPath), bytes: 8192)
         return IntegrityFixture(root: root, libraryRoot: library, bundle: bundle, plan: plan)
     }
 
     private func sparse(_ url: URL, bytes: UInt64) throws {
-        try? FileManager.default.removeItem(at: url)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         XCTAssertTrue(FileManager.default.createFile(atPath: url.path, contents: nil))
         let handle = try FileHandle(forWritingTo: url)
         try handle.truncate(atOffset: bytes)
@@ -170,8 +170,8 @@ private struct IntegrityFixture {
     let bundle: URL
     let plan: HvfWindowsInstallPlan
     var configURL: URL { libraryRoot.appendingPathComponent(plan.slug).appendingPathComponent("vm.json") }
-    var sourceDisk: URL { URL(fileURLWithPath: plan.tmpTargetPath) }
-    var sourceVars: URL { URL(fileURLWithPath: plan.tmpVarsPath) }
+    var sourceDisk: URL { URL(fileURLWithPath: plan.stagingTargetPath) }
+    var sourceVars: URL { URL(fileURLWithPath: plan.stagingVarsPath) }
     var transaction: URL { bundle.appendingPathComponent("metadata/hvf-install-finalization") }
     var journal: URL { transaction.appendingPathComponent("journal.json") }
     var stagedDisk: URL { transaction.appendingPathComponent("disk.raw") }
@@ -181,7 +181,5 @@ private struct IntegrityFixture {
     var finalVars: URL { bundle.appendingPathComponent("metadata/hvf-vars.fd") }
     func remove() {
         try? FileManager.default.removeItem(at: root)
-        try? FileManager.default.removeItem(at: sourceDisk)
-        try? FileManager.default.removeItem(at: sourceVars)
     }
 }

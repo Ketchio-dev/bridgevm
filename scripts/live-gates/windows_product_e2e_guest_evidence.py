@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Host-authenticate nonce-bound T17 guest observations and product logs."""
 from __future__ import annotations
-import hashlib, hvf_stop_line, json, re
+import hashlib, hvf_stop_line, hvf_terminal_report, json, re
 from pathlib import Path
 
 OBSERVATIONS = ("keyboard_pointer_challenge_sha256", "clipboard_roundtrip_sha256", "share_host_to_guest_sha256", "share_guest_to_host_sha256", "network_result_sha256", "audio_result_sha256", "audio_playback_count", "audio_error_count", "snapshot_marker_a_sha256", "snapshot_marker_b_sha256", "snapshot_marker_restored_a_sha256")
@@ -112,7 +112,7 @@ def verify(request: dict) -> list[Path]:
     for name, event, offset_field, hash_field, marker in line_specs:
         line = _line(log_data[name], evidence.get(offset_field)); offsets[name].append(evidence[offset_field])
         bound = _digest(f"bridgevm-t17-{event}-v1\n{nonce}\n{line}\n".encode())
-        if not (line == marker if marker == hvf_stop_line.SYSTEM_OFF else line.startswith(marker)) or evidence.get(hash_field) != bound:
+        if not (hvf_terminal_report.system_off_offset(log_data[name]) == evidence[offset_field] if marker == hvf_stop_line.SYSTEM_OFF else line.startswith(marker)) or evidence.get(hash_field) != bound:
             raise ValueError(f"guest log observation {offset_field} is invalid")
     if any(not values[0] < values[1] for values in offsets.values()):
         raise ValueError("guest READY/PONG/SYSTEM_OFF order is invalid")

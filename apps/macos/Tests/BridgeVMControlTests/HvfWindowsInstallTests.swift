@@ -18,11 +18,12 @@ final class HvfWindowsInstallTests: XCTestCase {
 
     // MARK: plan paths and commands
 
-    func testPlanConfinesDestructiveMediaToBridgevmTmpNamespace() throws {
+    func testPlanConfinesInstallMediaToThePrivateBundleStagingDirectory() throws {
         let plan = try makePlan(slug: "win-a")
-        XCTAssertTrue(plan.tmpTargetPath.hasPrefix("/tmp/bridgevm-appinstall-win-a"))
-        XCTAssertTrue(plan.tmpVarsPath.hasPrefix("/tmp/bridgevm-appinstall-win-a"))
-        XCTAssertTrue(plan.tmpEvidenceDir.hasPrefix("/tmp/bridgevm-appinstall-win-a"))
+        XCTAssertEqual(plan.stagingDirectory, plan.bundlePath + "/metadata/hvf-install-staging")
+        for path in [plan.stagingTargetPath, plan.stagingVarsPath, plan.stagingEvidenceDir] {
+            XCTAssertTrue(path.hasPrefix(plan.stagingDirectory + "/"), path)
+        }
     }
 
     func testPlanSourceCacheKeyTracksIsoFileIdentity() throws {
@@ -64,16 +65,17 @@ final class HvfWindowsInstallTests: XCTestCase {
         XCTAssertNotEqual(regrown.sourceImagePath, replacementPath)
     }
 
-    func testInstallCommandCarriesFreshTargetSizeAndRelease() throws {
+    // The app creates the sized target itself; the runner's recreate path only admits /tmp/bridgevm-*.
+    func testInstallCommandUsesTheAppCreatedTargetAndRelease() throws {
         let plan = try makePlan(slug: "big", diskGiB: 128)
         let command = plan.installCommand()
         XCTAssertEqual(command.first, "/bin/bash")
         XCTAssertTrue(command.contains("scripts/run-hvf-windows-scripted-install.sh"))
-        let sizeIndex = try XCTUnwrap(command.firstIndex(of: "--fresh-target-size"))
-        XCTAssertEqual(command[sizeIndex + 1], String(UInt64(128) * 1024 * 1024 * 1024))
+        XCTAssertFalse(command.contains("--fresh-target-size"))
+        XCTAssertEqual(plan.freshTargetSizeBytes, UInt64(128) * 1024 * 1024 * 1024)
         XCTAssertTrue(command.contains("--release"))
         XCTAssertTrue(command.contains("--skip-build"))
-        XCTAssertTrue(command.contains(plan.tmpTargetPath))
+        XCTAssertTrue(command.contains(plan.stagingTargetPath))
     }
 
     func testSourceBuildPassesEnvironmentNotShellStrings() throws {

@@ -12,6 +12,6 @@ fi
 sources=apps/macos/Sources/BridgeVMControl/HvfEngine
 swiftc -parse-as-library \
     "$sources/HvfOrderedInputQueue.swift" "$sources/HvfGuestInputEncoding.swift" "$sources/HvfPointerInputEncoding.swift" "$sources/HvfPointerScrollEncoding.swift" \
-    "$sources/HvfInputReceiptEnvelope.swift" "$sources/HvfUnicodeInputRequest.swift" \
+    "$sources/HvfInputReceiptEnvelope.swift" "$sources/HvfUnicodeInputRequest.swift" "$sources/HvfGuestResetRecord.swift" \
     tests/integration/input-receipt-transcript.swift -o "$work/receipt-contract"
 "$work/receipt-contract" "$work/transcript"

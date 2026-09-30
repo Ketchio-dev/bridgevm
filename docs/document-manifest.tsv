@@ -235,6 +235,8 @@ docs/history/windows-hvf/a9-firstboot-provisioner-and-shutdown-gate-20260929.md	
 docs/history/windows-hvf/a9-r36-locked-console-20260929.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/a9-r37-first-ready-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/a9-r38-collapsed-control-input-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/app-guest-reset-records-20260929.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/install-staging-and-host-bound-stop-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/windows-arm/evidence/a19-t20-r6-20260925.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-t21-r1-20260925.md	historical-evidence	windows-storage	STATUS.md
 docs/windows-arm/evidence/a19-t22-r1-20260925.md	historical-evidence	windows-storage	STATUS.md

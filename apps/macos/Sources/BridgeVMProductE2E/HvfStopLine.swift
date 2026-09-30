@@ -7,8 +7,8 @@ enum HvfStopLine {
     /// Every SYSTEM_RESET stop, including process recreation (exit 42).
     static let systemResetPrefix = "stop: PSCI 0x84000009 "
 
-    /// Swift splits on LF, CRLF and bare CR alike, as `tr '\r' '\n'` would.
+    /// Only the final report's host-framed stop record counts (HvfTerminalReport).
     static func systemOffObserved(in text: String) -> Bool {
-        text.split(whereSeparator: \.isNewline).contains { $0 == systemOff }
+        HvfTerminalReport.stop(in: text)?.line == systemOff
     }
 }

@@ -167,8 +167,8 @@ private final class T17InstallTimeoutProbe {
 final class T17InstallEnvironmentSampler {
     private let evidenceDirectory: String
 
-    init(vmSlug: String) {
-        evidenceDirectory = "/tmp/bridgevm-appinstall-\(vmSlug)-evidence"
+    init(bundlePath: String) {
+        evidenceDirectory = bundlePath + "/metadata/hvf-install-staging/evidence"
     }
 
     init(evidenceDirectory: URL) {

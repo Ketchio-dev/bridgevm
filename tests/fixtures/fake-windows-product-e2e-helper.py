@@ -35,8 +35,8 @@ raw={"keyboard_pointer_challenge_sha256":(f"t17-keyboard-pointer-{prefix}.txt",f
 frames=0 if "bad-audio" in r["job_id"] else 480; live="BVAGENT PONG (proactive)" if "proactive-pong" in r["job_id"] else "BVAGENT READY"; stop="stop: PSCI SYSTEM_OFF" if "retired-stop" in r["job_id"] else "stop: PSCI 0x84000008 (system off)"; first_lines=[f"{live} FIRST",f"hda CoreAudio stats: frames_rendered={frames} drops=0 callback_errors=0",stop]; mutation_lines=[f"{live} MUTATION",stop]; final_lines=[f"{live} RESTORED",stop]
 def log_body(lines):
     offsets=[]; body=b""
-    for line in lines: offsets.append(len(body)); body+=(line+"\n").encode()
-    return offsets,body
+    for line in lines: body+=b"=== EDK2 boot probe (with Apple hv_gic) ===\n" if line.startswith("stop: ") else b""; offsets.append(len(body)); body+=(line+"\n").encode()
+    return offsets,body+b"serial raw bytes: 0 output bytes: 0\n--- serial (tail) ---\n\n--- end ---\n"
 first_offsets,first_body=log_body(first_lines); mutation_offsets,mutation_body=log_body(mutation_lines); final_offsets,final_body=log_body(final_lines)
 first_log=vmroot/"bundle.vmbridge/metadata/product-e2e/first-run.log"; first_log.parent.mkdir(parents=True,exist_ok=True); first_log.write_bytes(first_body); mutation_log=vmroot/"bundle.vmbridge/metadata/product-e2e/mutation-run.log"; mutation_log.write_bytes(mutation_body)
 final_log=vmroot/"bundle.vmbridge/logs/hvf/run.log"; final_log.parent.mkdir(parents=True,exist_ok=True); final_log.write_bytes(final_body)

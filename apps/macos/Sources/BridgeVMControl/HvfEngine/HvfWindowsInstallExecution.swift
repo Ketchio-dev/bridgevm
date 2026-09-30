@@ -23,10 +23,7 @@ struct HvfWindowsInstallExecution {
         finalize: ((HvfWindowsInstallPlan) async throws -> Void)? = nil) {
         self.process = process ?? HvfWindowsInstallProcess()
         self.verifySource = verifySource ?? { await $0.sourceImageCacheIsVerified() }
-        self.prepareMedia = prepareMedia ?? { plan in
-            try HvfWindowsBootSeed.writeBundledSeed(to: plan.tmpVarsPath)
-            try? FileManager.default.createDirectory(atPath: plan.tmpEvidenceDir, withIntermediateDirectories: true)
-        }
+        self.prepareMedia = prepareMedia ?? { try HvfWindowsInstallStaging.prepare($0) }
         let worker = HvfWindowsInstallFinalizationWorker(); self.finalize = finalize ?? { try await worker.run($0) }
     }
 }

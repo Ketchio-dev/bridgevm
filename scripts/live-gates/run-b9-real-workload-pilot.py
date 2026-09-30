@@ -330,7 +330,7 @@ def run(args) -> int:
             stage = "shutdown"
             controller.write_command(control_command(share, control_sha, "Shutdown"))
             receipt["guest_shutdown_exit"] = process.wait(timeout=120)
-            receipt["guest_shutdown_observed"] = guest_shutdown_observed(receipt["guest_shutdown_exit"], lines(boot / "run.log"))
+            receipt["guest_shutdown_observed"] = guest_shutdown_observed(receipt["guest_shutdown_exit"], boot / "run.log")
             if not receipt["guest_shutdown_observed"]:
                 raise ValueError("clean guest shutdown not observed")
             stage = "asset-final"
