@@ -52,7 +52,7 @@ Release-blocking criteria proven: **14 / 17**. Open: A9, A11, A19.
 
 Known open defects:
 - **A9**: No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window was choppy in the latest hardware runs, and guest audio stuttered audibly; a smoother display export and audio gap counters are built but not yet measured on hardware.
-- **A19**: Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage is unproven. The ten-lane product lifecycle campaign has passed 10/10 once, at a source that is not a designated release head. Physical power loss during a snapshot operation is outside this criterion and is not tested.
+- **A19**: Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage is unproven. The ten-lane product lifecycle campaign passed 10/10 once, at 949f4c26, which the operator accepted before a release head was designated. Physical power loss during a snapshot operation is outside this criterion and is not tested.
 - **B6**: Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness.
 
 - Graphics future path: Vulkan is a Graphics Lab future path, excluded from General Preview and v1; D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.
