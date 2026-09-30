@@ -95,7 +95,7 @@ class PostReadyPacketTest(unittest.TestCase):
         for field, value in (("failure_code", "snapshot-unavailable"), ("failure_code", "internal-error"),
                              ("first_ready", False), ("failure_detail", None),
                              ("failure_detail", f"{DETAIL}; host_stop=status=missing,reason=a; host_stop=status=missing,reason=b"),
-                             ("failure_detail", f"first boot has no BVAGENT READY/PONG evidence; {STOP}")):
+                             ("failure_detail", "first boot has no BVAGENT READY/PONG evidence; host_stop=status=missing,reason=a")):
             with self.subTest(field=field, value=value):
                 original = dict(self.case.result)
                 self.case.result[field] = value
