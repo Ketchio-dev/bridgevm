@@ -15,13 +15,13 @@ Release-blocking criteria proven: **14 / 17**. Open: A9, A11, A19.
 
 Known open defects:
 - **A9**: No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window was choppy in the latest hardware runs, and guest audio stuttered audibly; a smoother display export and audio gap counters are built but not yet measured on hardware.
-- **A19**: Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage and the ten-lane product lifecycle campaign are unproven. Physical power loss during a snapshot operation is outside this criterion and is not tested.
+- **A19**: Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage is unproven. The ten-lane product lifecycle campaign has passed 10/10 once, at a source that is not a designated release head. Physical power loss during a snapshot operation is outside this criterion and is not tested.
 - **B6**: Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness.
 
 - Graphics future path: Vulkan is a Graphics Lab future path, excluded from General Preview and v1; D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-09-30 at commit `bf0377c24fb83bffa0d079fb33efbba557d60827`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-09-30 at commit `10d54c95ef8b2e169eb82bbddd3461d2db3badff`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 ## How to read the generated status
