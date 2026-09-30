@@ -42,22 +42,22 @@ Behaviour that changes:
 - Each of the three records now cancels pending input, capability, WINLIST and
   paste requests on the poll that reads it. Before, only the in-process reboot
   line cancelled, and only WINLIST and paste.
-- A router whose ordered input was activated fails at once and refuses routed
-  input until a new owned boot. This was already the case once the next READY
-  arrived; it now starts at the record.
-- The limit record now ends the coherence gate with "guest restarted during
-  inventory" rather than at the controller's 120 s deadline.
+- An activated router now fails at the record, not the next READY, and refuses
+  routed input until a new owned boot. Its own record check is defence in depth:
+  the negotiated stream's check already fails it, and only the contract pins it.
+- A limit record read while the coherence gate waits for its WINLIST reply now
+  ends it with "guest restarted during inventory" rather than at the deadline
+  120 s after `BVAGENT SERVICE start`. The gate's earlier phases have no reset
+  check, so a reset there still ends in a TimeoutError.
 - Lines that only start with `PSCI SYSTEM_RESET:` no longer cancel anything.
 
 ## Evidence and limits
 
-On the unmodified detectors the new and corrected tests failed: 7 BridgeVMControl
-shim tests, 5 of the 6 contract tests, the coherence observation test and the
-window-inventory restart check. With the change, the four shim suites passed
-under ThreadSanitizer, and the SwiftPM XCTest run of the affected suites, the
-contracts and the four standalone builds also passed.
+On the unmodified detectors 7 BridgeVMControl shim tests, 5 of the 6 contract
+tests, the coherence observation test and the window-inventory restart check
+failed. With the change the four shim suites passed under ThreadSanitizer, as
+did SwiftPM XCTest on the affected suites, the contracts and standalone builds.
 
-Open: guest serial output reaches run.log, so a guest can still print an exact
-record, and that only cancels. The session still reports a connection through
-the reboot window. There is no retained multi-generation app run.log, so no
-end-to-end evidence exists yet.
+Open: guest serial output reaches run.log, so a guest can print an exact record,
+which only cancels. The session still reports a connection through the reboot
+window. No end-to-end evidence exists: no multi-generation app run.log is retained.
