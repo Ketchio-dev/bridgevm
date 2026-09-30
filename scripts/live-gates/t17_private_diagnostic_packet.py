@@ -58,13 +58,14 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def fingerprint(info: os.stat_result) -> tuple[int, ...]:
-    return (info.st_dev, info.st_ino, info.st_uid, info.st_mode, info.st_nlink,
-            info.st_size, info.st_mtime_ns, info.st_ctime_ns)
-
-
 def node_identity(info: os.stat_result) -> tuple[int, ...]:
     return (info.st_dev, info.st_ino, info.st_uid, info.st_mode, info.st_nlink, info.st_size)
+
+
+def fingerprint(info: os.stat_result) -> tuple[int, ...]:
+    if stat.S_ISDIR(info.st_mode):  # entries appearing inside move its links, size and times, not its identity
+        return node_identity(info)[:4]
+    return (*node_identity(info), info.st_mtime_ns, info.st_ctime_ns)
 
 
 def owned_directory(fd: int, *, device: int | None = None, private: bool = False) -> os.stat_result:
@@ -84,9 +85,8 @@ def open_absolute_directory(path: Path, stack: ExitStack) -> int:
     fd = os.open("/", DIR_FLAGS)
     stack.callback(os.close, fd)
     for component in path.parts[1:]:
-        parent = fd
-        before = os.stat(component, dir_fd=parent, follow_symlinks=False)
-        fd = os.open(component, DIR_FLAGS, dir_fd=parent)
+        before = os.stat(component, dir_fd=fd, follow_symlinks=False)
+        fd = os.open(component, DIR_FLAGS, dir_fd=fd)
         stack.callback(os.close, fd)
         if fingerprint(before) != fingerprint(os.fstat(fd)):
             raise CaptureError("directory changed while opening")
@@ -314,8 +314,7 @@ def capture(args: argparse.Namespace) -> None:
             evidence = lane
             for component in ("library", slug, "bundle.vmbridge", "logs", "hvf"):
                 evidence = child_directory(evidence, component, lane_info.st_dev, stack) if evidence is not None else None
-            tail = b""
-            tail_offset = 0
+            tail, tail_offset = b"", 0
             if evidence is not None:
                 if stop == "complete" and not request_consumed(evidence):
                     raise CaptureError("claimed host stop request was not consumed")
