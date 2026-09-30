@@ -3220,8 +3220,8 @@ scripts/live-gates/b6_cell_evidence.py	62	0
 tests/integration/b6-untraced-startup-contract.py	128	0
 scripts/live-gates/a19_quota_seal.py	84	0
 scripts/live-gates/a19-interrupted-restore-cleanup-fence.sh	34	0
-scripts/live-gates/a19_interrupt_restore_child.py	177	0
-scripts/live-gates/a19_interrupted_restore_receipt.py	171	0
+scripts/live-gates/a19_interrupt_restore_child.py	166	0
+scripts/live-gates/a19_interrupted_restore_receipt.py	169	0
 scripts/live-gates/a19_interrupted_restore_public.py	53	0
 scripts/live-gates/a19_interrupted_restore_seal.py	84	0
 scripts/live-gates/run-a19-interrupted-restore-tier.py	207	0
@@ -3231,6 +3231,9 @@ scripts/win-assets/bv-a19-t22-marker.ps1	59	0
 tests/integration/a19-interrupted-restore-live-tier-contract.py	224	0
 tests/integration/a19-interrupted-restore-public-contract.py	77	0
 tests/integration/a19-interrupted-restore-guest-share-contract.py	106	0
+scripts/live-gates/a19_interrupt_stop_points.py	97	0
+scripts/live-gates/a19_interrupt_cases.py	65	0
+tests/integration/a19-interrupted-restore-cases-contract.py	219	0
 docs/history/windows-hvf/a19-interrupted-restore-tier-20260925.md	41	0
 docs/history/windows-hvf/a19-output-admission-and-setup-interruption-20260929.md	74	0
 docs/windows-arm/evidence/a19-t21-r1-20260925.md	68	0

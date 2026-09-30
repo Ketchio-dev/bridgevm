@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 
+from a19_interrupt_cases import case_count, case_fields, validate_cases
 from a19_interrupted_restore_public import load_receipt, validate_public_fields
 from a19_interrupted_restore_seal import sealed_hashes
 
@@ -64,9 +65,9 @@ def initial(job_id: str, commit: str) -> dict:
 
 
 def validate(value: object, expected_commit: str | None = None) -> dict:
-    if not isinstance(value, dict) or set(value) != REQUIRED:
+    if not isinstance(value, dict) or set(value) != REQUIRED | case_fields(value):
         raise ValueError("T22 receipt has an unexpected field set")
-    if type(value["schema_version"]) is not int or value["schema_version"] != 1 or value["tier"] != TIER:
+    if type(value["schema_version"]) is not int or value["schema_version"] not in (1, 2) or value["tier"] != TIER:
         raise ValueError("T22 receipt schema or tier is invalid")
     if not isinstance(value["job_id"], str) or not JOB_ID.fullmatch(value["job_id"]):
         raise ValueError("T22 receipt job id is invalid")
@@ -93,20 +94,17 @@ def validate(value: object, expected_commit: str | None = None) -> dict:
             raise ValueError(f"T22 receipt {field} is invalid")
     if value["outcome"] not in ("failed-before-receipt", "failed", "completed"):
         raise ValueError("T22 receipt outcome is invalid")
-    if value["interruption_stage"] not in ("absent", "staged-disk-verify-read"):
-        raise ValueError("T22 receipt stage is invalid")
+    validate_cases(value)
     if not 0 <= value["boots_passed"] <= value["boots_attempted"] <= 4:
         raise ValueError("T22 receipt boot accounting is invalid")
     if not 0 <= value["natural_shutdown_count"] <= value["boots_passed"]:
         raise ValueError("T22 receipt shutdown accounting is invalid")
     if value["pass"]:
         if (value["outcome"], value["run_count"], value["interruption_case_count"],
-            value["sample_count"]) != ("completed", 1, 1, 1):
+            value["sample_count"]) != ("completed", 1, case_count(value), 1):
             raise ValueError("passing T22 receipt lacks one complete case")
         if (value["boots_attempted"], value["boots_passed"], value["natural_shutdown_count"]) != (4, 4, 4):
             raise ValueError("passing T22 receipt lacks four natural shutdowns")
-        if value["interruption_stage"] != "staged-disk-verify-read":
-            raise ValueError("passing T22 receipt lacks authenticated stop stage")
         if any(value[field] == "absent" for field in HASHES) or not all(value[field] for field in FLAGS[:8]):
             raise ValueError("passing T22 receipt lacks hashes, stop proof or cleanup")
         for field, source in (("prepared_image_sha256", "image_sha256"),
