@@ -46,7 +46,7 @@ TEARDOWN = ("hda CoreAudio lifecycle: operation=stop osstatus=0 success=true\n"
 
 def report(stop: str, serial: str = "UEFI firmware\r\n", tail: str = TEARDOWN) -> str:
     size = len(serial.encode())
-    return (f"{WRITEBACK}REGS: pc=0x0 lr=0x0\n{BANNER}\n{stop}\n"
+    return (f"{WRITEBACK}REGS: pc=0x0 lr=0x0\n{BANNER}\n{stop}\nhost media: {WRITEBACK}"
             f"exits: 1 (vtimer 0, psci 1, surplus-canceled 0), last PC: 0x0\nsymbol lines: 0\n"
             f"serial raw bytes: {size} output bytes: {size}\n--- serial (tail) ---\n{serial}\n--- end ---\n{tail}")
 
@@ -206,10 +206,10 @@ class StopReadersContract(unittest.TestCase):
     def test_nvme_performance_tiers(self):
         for name in ("run-hvf-nvme-performance-v1-tier.sh", "run-hvf-nvme-performance-v2-tier.sh"):
             lines = (LIVE_GATES / name).read_text(encoding="utf-8").splitlines()
-            writeback = [index for index, line in enumerate(lines)
-                         if line.startswith("grep -Eq '^NVMe (second namespace )?disk written back:' \"$BOOT/run.log\"")]
-            self.assertEqual(len(writeback), 1, name)
-            check = lines[writeback[0] - 1]
+            checks = [line for line in lines
+                      if line.startswith('python3 "$REPO/scripts/live-gates/hvf_terminal_evidence.py" --require-system-off ')]
+            self.assertEqual(len(checks), 1, name)
+            check = checks[0]
             self.assertIn('"$BOOT/run.log" || { INVALID_REASON=', check, name)
 
             def reader(directory: Path, check: str = check) -> bool:

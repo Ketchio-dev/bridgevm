@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "live-gates"))
+from hvf_host_media import nvme_write_back_offset  # noqa: E402
 from hvf_terminal_evidence import host_tail  # noqa: E402
 from hvf_terminal_report import system_off_offset  # noqa: E402
 
@@ -86,8 +87,7 @@ def parse_events(lines: list[str], stats: dict[str, int]) -> None:
         "callback_stopping_unclassified",
     )
     counts = {key: 0 for key in reason_fields}
-    active = 0
-    events = 0
+    active = events = 0
     lifecycle: dict[str, int] = {}
     for line in lines:
         if line.startswith("hda CoreAudio lifecycle:"):
@@ -159,8 +159,8 @@ def validate(run_log: Path, result_file: Path, launcher_exit: int, nonce: str, o
     if (sum(bool(re.fullmatch(r"stop: PSCI .*\(system off\)", line)) for line in lines) != 1
             or system_off_offset(raw) is None):
         raise AudioTeardownError("exactly one clean guest SYSTEM_OFF is required, as the final report's stop")
-    if sum(line.startswith("NVMe disk written back:") for line in lines) != 1:
-        raise AudioTeardownError("exactly one NVMe writeback record is required")
+    if sum(line.startswith("NVMe disk written back:") for line in lines) != 1 or nvme_write_back_offset(raw) is None:
+        raise AudioTeardownError("exactly one NVMe writeback record is required, framed by the final report")
     if (stats["frames_rendered"] <= 0 or stats["drops"] != 0
             or stats["queue_stop_errors"] != 0 or stats["queue_dispose_errors"] != 0
             or stats["callback_unexpected_errors"] != 0):
