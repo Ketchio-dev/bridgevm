@@ -42,6 +42,6 @@ enum T17InputChallengeShare {
         return line.range(of: pattern, options: .regularExpression) == nil ? nil : line
     }
 
-    static let pattern = #"^clicked=[01] typed=[0-9]{1,3} session=[0-9]{1,2} integrity=(system|high|medium|low|unknown) foreground=(self|other) cursor=[0-9]{1,4}x[0-9]{1,4}$"#
+    static let pattern = #"^clicked=[01] typed=[0-9]{1,3} session=[0-9]{1,2} integrity=(system|high|medium|low|unknown) foreground=(self|other) cursor=[0-9]{1,4}x[0-9]{1,4} dismissed=[0-9]{1,2}$"#
     private static func prefix(_ nonce: String) -> String { String(nonce.prefix(12)) }
 }

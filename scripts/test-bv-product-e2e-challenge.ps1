@@ -10,8 +10,8 @@ $Text = [IO.File]::ReadAllText($Path)
 $Match = [regex]::Match($Text, "-MemberDefinition @'\r?\n(?<body>.*?)\r?\n'@", 'Singleline')
 if (-not $Match.Success) { throw 'input desktop member definition not found' }
 Add-Type -Namespace BridgeVM -Name InputDesktop -MemberDefinition $Match.Groups['body'].Value
-$Accepted = [BridgeVM.InputDesktop]::Accepts([IntPtr]::Zero)
-if ($Accepted -isnot [bool] -or $Accepted) { throw 'a null window must never be accepted as the input target' }
+if (($Accepted = [BridgeVM.InputDesktop]::Accepts([IntPtr]::Zero)) -isnot [bool] -or $Accepted) { throw 'a null window must never be accepted as the input target' }
+if ([BridgeVM.InputDesktop]::ShellFlyout() -isnot [bool]) { throw 'shell flyout detection must answer' }
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 $Assignments = $Ast.FindAll({ param($Node) $Node -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true) |
     Where-Object { $_.Left.Extent.Text -in @('$Form', '$Label', '$Timer', '$ReadyTimer') }
