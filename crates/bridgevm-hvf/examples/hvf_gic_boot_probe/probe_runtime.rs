@@ -119,7 +119,7 @@ pub(crate) fn run() -> ExitCode {
         // destructive guest actions such as a TPM-clear reboot request.
         let mut live_input = LiveInputController::from_env();
         // Off vCPU0; joined on drop, before the guest RAM backing is unmapped.
-        let _ramfb_display = RamfbDisplayThread::start(&platform, ram, ram_size);
+        let ramfb_display = RamfbDisplayThread::start(&platform, ram, ram_size);
 
         'reboot: loop {
             // Secondary vCPUs are intentionally scoped to one boot generation in
@@ -975,9 +975,9 @@ pub(crate) fn run() -> ExitCode {
                 }
             }
 
-            // SYSTEM_RESET may continue above; only a genuinely terminal run
-            // disarms probe-lifetime host supervision.
+            // Terminal runs only; the export's stop record must precede the report footer.
             boot_progress.disarm();
+            drop(ramfb_display);
             persist_and_report_stop!(
                 platform,
                 (media, media_lease),
