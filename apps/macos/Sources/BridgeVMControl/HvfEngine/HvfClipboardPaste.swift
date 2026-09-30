@@ -23,7 +23,7 @@ struct HvfClipboardPaste {
         guard !finished else { return nil }
         guard now < deadline else { return finish(false) }
         if lines.contains(where: { $0.hasPrefix("BVAGENT re-READY ") || $0.hasPrefix("BVAGENT READY ")
-            || $0.hasPrefix("PSCI SYSTEM_RESET:") || $0.hasPrefix("BVAGENT SERVICE start") }) {
+            || HvfGuestResetRecord.matches($0) || $0.hasPrefix("BVAGENT SERVICE start") }) {
             return finish(false)
         }
         for raw in lines {

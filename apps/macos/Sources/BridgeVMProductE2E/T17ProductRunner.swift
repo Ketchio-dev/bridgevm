@@ -120,7 +120,7 @@ final class T17ProductRunner {
 
     private func installWindows(_ ui: T17UIControlling) throws {
         try ui.press("bridgevm.install.start", timeout: 20)
-        let sampler = T17InstallEnvironmentSampler(vmSlug: request.vmSlug)
+        let sampler = T17InstallEnvironmentSampler(bundlePath: request.bundlePath)
         try T17InstallTimeoutDiagnostic.wait(
             applicationIsRunning: { self.application?.isRunning == true },
             runtimeView: { try ui.waitFor($0, timeout: 1) },
@@ -153,6 +153,10 @@ final class T17ProductRunner {
               regularFile(URL(fileURLWithPath: request.varsPath)),
               fileManager.fileExists(atPath: bundle.appendingPathComponent("metadata/hvf-install-done.json").path) else {
             throw T17Blocker(code: "installer-failed", detail: "completed UI stage lacks durable installed media")
+        }
+        // Any entry, including a dangling link, means staging outlived the commit.
+        guard (try? fileManager.attributesOfItem(atPath: bundle.appendingPathComponent("metadata/hvf-install-staging").path)) == nil else {
+            throw T17Blocker(code: "installer-failed", detail: "completed install left private staging media in the bundle")
         }
     }
 
@@ -188,7 +192,7 @@ final class T17ProductRunner {
         try ui.press("bridgevm.windows.runtime.start", timeout: 20)
         let log = bundle.appendingPathComponent("logs/hvf/run.log")
         return try T17FirstReadyWaiter.wait(observe: {
-            let ready = self.boundedLines(log).first {
+            let ready = T17BoundedLog.lines(log).first {
                 $0.hasPrefix("BVAGENT READY") || $0.hasPrefix("BVAGENT PONG (proactive)")
             }
             return try T17FirstReadyObservation.capture(
@@ -203,8 +207,8 @@ final class T17ProductRunner {
 
     private func stopOwnedApplication() -> Bool {
         if let ui { try? ui.press("bridgevm.windows.runtime.stop", timeout: 2) }
-        _ = waitUntil(timeout: 30) { self.boundedLines(self.bundle.appendingPathComponent("logs/hvf/run.log"))
-            .contains(HvfStopLine.systemOff) }
+        let log = bundle.appendingPathComponent("logs/hvf/run.log")
+        _ = waitUntil(timeout: 30) { HvfStopLine.systemOffObserved(in: T17BoundedLog.text(log, whole: true)) }
         guard let application else { return true }
         if application.isRunning { application.terminate() }
         _ = waitUntil(timeout: 10) { !application.isRunning }
@@ -226,25 +230,13 @@ final class T17ProductRunner {
         return predicate()
     }
 
-    private func regularFile(_ url: URL) -> Bool {
-        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]) else { return false }
-        return values.isRegularFile == true && values.isSymbolicLink != true && (values.fileSize ?? 0) > 0
-    }
+    private func regularFile(_ url: URL) -> Bool { T17BoundedLog.regularFile(url) }
 
     private func jsonObject(_ url: URL) throws -> [String: Any] {
         guard regularFile(url), let value = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] else {
             throw T17Blocker(code: "guest-evidence-missing", detail: "required product JSON is missing or malformed")
         }
         return value
-    }
-
-    private func boundedLines(_ url: URL) -> [String] {
-        guard regularFile(url), let handle = FileHandle(forReadingAtPath: url.path) else { return [] }
-        defer { try? handle.close() }
-        let size = (try? handle.seekToEnd()) ?? 0
-        try? handle.seek(toOffset: size > 8 * 1024 * 1024 ? size - 8 * 1024 * 1024 : 0)
-        let data = (try? handle.readToEnd()) ?? Data()
-        return String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline).map(String.init)
     }
 
     private func treeDigest(_ root: URL) throws -> String {

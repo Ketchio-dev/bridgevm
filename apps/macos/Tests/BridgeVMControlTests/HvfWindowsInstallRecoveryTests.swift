@@ -45,7 +45,7 @@ final class HvfWindowsInstallRecoveryTests: XCTestCase {
         try await f.attempt()
         assertFailed(f); f.assertNoSecondPipeline()
         XCTAssertEqual(try Data(contentsOf: f.paths.journal), bytes)
-        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: f.plan.tmpVarsPath)), f.originalVars)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: f.plan.stagingVarsPath)), f.originalVars)
         XCTAssertEqual(f.completions, 0)
     }
     func testIndependentReconciliationCannotRestartRetainedFailedSession() async throws {
@@ -92,8 +92,8 @@ final class HvfWindowsInstallRecoveryTests: XCTestCase {
         try await f.attempt()
         assertFailed(f); f.assertNoSecondPipeline()
         XCTAssertEqual(f.completions, 0)
-        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: f.plan.tmpTargetPath)), f.originalDisk)
-        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: f.plan.tmpVarsPath)), f.originalVars)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: f.plan.stagingTargetPath)), f.originalDisk)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: f.plan.stagingVarsPath)), f.originalVars)
     }
     private func assertFailed(_ f: HvfWindowsInstallRecoveryFixture) {
         guard case .failed = f.session.stage else { XCTFail("Expected refusal, got \(f.session.stage)"); return }
@@ -114,7 +114,7 @@ final class HvfWindowsInstallRecoveryTests: XCTestCase {
         XCTAssertEqual(f.completions, 1)
         if session.stage != .done {
             // Preserve an explicit digest-level counterexample when the old pipeline overwrites inputs.
-            let bytes = try Data(contentsOf: URL(fileURLWithPath: f.plan.tmpVarsPath))
+            let bytes = try Data(contentsOf: URL(fileURLWithPath: f.plan.stagingVarsPath))
             XCTAssertEqual(HvfWindowsInstallRecoveryFixture.digest(bytes), sealed.varsSHA256,
                 "Same-session retry replaced original vars before the old journal rejected its digest")
             XCTAssertEqual(try Data(contentsOf: f.paths.journal), journalBytes,

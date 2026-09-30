@@ -30,9 +30,9 @@ class RawFocusOrderContract(unittest.TestCase):
         self.log = self.diagnostic / "raw/guest/run.log"
 
     def rewrite(self, change):
-        lines = self.log.read_text(encoding="utf-8").splitlines()
-        change(lines)
-        raw = ("\r\n".join(lines) + "\r\n").encode()
+        head, banner, report = self.log.read_bytes().partition(b"\n=== EDK2 boot probe")
+        change(lines := head.decode("utf-8").splitlines())
+        raw = "\r\n".join(lines).encode() + banner + report
         self.log.write_bytes(raw)
         self.receipt["private_artifacts"]["run.log"] = {
             "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}

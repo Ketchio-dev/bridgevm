@@ -83,7 +83,7 @@ final class T17ContractTests: XCTestCase {
     func testRunLogProofBindsByteOffsetsLinesNonceAndAudioCounters() throws {
         let fixture = try makeFixture()
         let log = fixture.root.appendingPathComponent("run.log")
-        let body = "prefix\nBVAGENT PONG (proactive) t=1\nhda CoreAudio stats: frames_rendered=48000 drops=0 callback_errors=0\nstop: PSCI 0x84000008 (system off)\n"
+        let body = "prefix\nBVAGENT PONG (proactive) t=1\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: PSCI 0x84000008 (system off)\nserial raw bytes: 0 output bytes: 0\n--- serial (tail) ---\n\n--- end ---\nhda CoreAudio stats: frames_rendered=48000 drops=0 callback_errors=0\n"
         try Data(body.utf8).write(to: log)
         let proof = try T17RunLogProof.capture(
             log, nonce: String(repeating: "a", count: 64),

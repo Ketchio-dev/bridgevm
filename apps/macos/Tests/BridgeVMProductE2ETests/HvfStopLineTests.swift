@@ -17,7 +17,7 @@ final class HvfStopLineTests: XCTestCase {
 
     func testRunLogProofBindsTheExactRuntimeSystemOffRecord() throws {
         let head = "BVAGENT READY host=x t=1\r\n=== EDK2 boot probe (with Apple hv_gic) ===\n"
-        let proof = try capture(head + off + "\r\n" + off + " extra\nexits: 1\n")
+        let proof = try capture(head + off + "\n" + off + " extra\nserial raw bytes: 0 output bytes: 0\n--- serial (tail) ---\n\n--- end ---\n")
         XCTAssertEqual(proof.shutdownOffset, head.utf8.count)
         let bound = Data("bridgevm-t17-first-shutdown-v1\n\(nonce)\n\(off)\n".utf8)
         XCTAssertEqual(proof.shutdownLineHash, SHA256.hash(data: bound).map { String(format: "%02x", $0) }.joined())
@@ -40,12 +40,12 @@ final class HvfStopLineTests: XCTestCase {
         XCTAssertTrue(detail.hasSuffix("system_reset=1,system_off=1,console_stats=0"), detail)
     }
 
-    func testSystemOffObservedOnlyForTheExactRecordUnderAnyLineSeparator() {
+    func testSystemOffObservedOnlyAsTheFramedFinalReportRecord() {
         XCTAssertEqual(HvfStopLine.systemOff, off)
-        for separator in ["\n", "\r\n", "\r"] {
-            XCTAssertTrue(HvfStopLine.systemOffObserved(in: "exits: 1" + separator + off + separator), separator)
-        }
-        for text in ["stop: PSCI SYSTEM_OFF\n", "\(off) extra\n", "guest \(off)\n", "stop: PSCI SYSTEM_OFF (system off)\n"] {
+        let frame = "\nserial raw bytes: 0 output bytes: 0\n--- serial (tail) ---\n\n--- end ---\n"
+        XCTAssertTrue(HvfStopLine.systemOffObserved(in: "exits: 0\n=== EDK2 boot probe (with Apple hv_gic) ===\n" + off + frame))
+        for text in ["exits: 1\n\(off)\n", "exits: 1\r\n\(off)\r\n", "exits: 1\r\(off)\r", "stop: PSCI SYSTEM_OFF\n",
+                     "\(off) extra\n", "guest \(off)\n", "stop: PSCI SYSTEM_OFF (system off)\n"] {
             XCTAssertFalse(HvfStopLine.systemOffObserved(in: text), text)
         }
     }

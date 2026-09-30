@@ -92,8 +92,8 @@ struct T17GuestJourney {
         let before = (try? Data(contentsOf: runLog).count) ?? 0
         try T17RuntimeControlInput.enter("shutdown.exe /s /t 0 /f", ui: ui)
         guard wait(timeout: 180, predicate: {
-            guard let data = try? Data(contentsOf: self.runLog), data.count > before else { return false }
-            return HvfStopLine.systemOffObserved(in: String(decoding: data.suffix(from: before), as: UTF8.self))
+            guard let data = try? Data(contentsOf: self.runLog), data.count > before, let stop = HvfTerminalReport.stop(in: data) else { return false }
+            return stop.offset >= before && stop.line == HvfStopLine.systemOff
         }), waitForStableLog() else {
             throw T17Blocker(code: "guest-evidence-missing", detail: "guest did not reach clean SYSTEM_OFF")
         }

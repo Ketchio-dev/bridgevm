@@ -209,8 +209,8 @@ final class HvfWindowsInstallFinalizationTests: XCTestCase {
         let plan = HvfWindowsInstallPlan(
             repoRoot: root, libraryRoot: library, bundlePath: bundle.path,
             slug: slug, request: request)
-        try createSparseFile(URL(fileURLWithPath: plan.tmpTargetPath), bytes: 4096)
-        try createSparseFile(URL(fileURLWithPath: plan.tmpVarsPath), bytes: 8192)
+        try createSparseFile(URL(fileURLWithPath: plan.stagingTargetPath), bytes: 4096)
+        try createSparseFile(URL(fileURLWithPath: plan.stagingVarsPath), bytes: 8192)
         return Fixture(root: root, libraryRoot: library, bundle: bundle, plan: plan)
     }
 
@@ -227,7 +227,7 @@ final class HvfWindowsInstallFinalizationTests: XCTestCase {
     }
 
     private func createSparseFile(_ url: URL, bytes: UInt64) throws {
-        try? FileManager.default.removeItem(at: url)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         XCTAssertTrue(FileManager.default.createFile(atPath: url.path, contents: nil))
         let handle = try FileHandle(forWritingTo: url)
         try handle.truncate(atOffset: bytes)
@@ -274,8 +274,8 @@ private struct Fixture {
     let plan: HvfWindowsInstallPlan
 
     var configURL: URL { libraryRoot.appendingPathComponent(plan.slug).appendingPathComponent("vm.json") }
-    var sourceDisk: URL { URL(fileURLWithPath: plan.tmpTargetPath) }
-    var sourceVars: URL { URL(fileURLWithPath: plan.tmpVarsPath) }
+    var sourceDisk: URL { URL(fileURLWithPath: plan.stagingTargetPath) }
+    var sourceVars: URL { URL(fileURLWithPath: plan.stagingVarsPath) }
     var journal: URL { bundle.appendingPathComponent("metadata/hvf-install-finalization/journal.json") }
     var lock: URL { journal.deletingLastPathComponent().appendingPathComponent("lock") }
     var finalDisk: URL { bundle.appendingPathComponent("disks/hvf-target.raw") }
@@ -287,7 +287,5 @@ private struct Fixture {
 
     func remove() {
         try? FileManager.default.removeItem(at: root)
-        try? FileManager.default.removeItem(at: sourceDisk)
-        try? FileManager.default.removeItem(at: sourceVars)
     }
 }

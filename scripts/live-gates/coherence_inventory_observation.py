@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import json
+from hvf_reset_record import require_same_session
 
 
 def fixture(value, nonce):
@@ -26,8 +27,7 @@ def fixture(value, nonce):
 
 
 def inventory(lines, command):
-    if any(line.startswith(("BVAGENT READY", "BVAGENT re-READY", "BVAGENT SERVICE start", "PSCI_SYSTEM_RESET", "PSCI SYSTEM_RESET:")) for line in lines):
-        raise ValueError("guest restarted during inventory")
+    require_same_session(lines, "inventory")
     prefix = "BVAGENT " + command + " "
     rows, handles, size = [], set(), 0
     for line in lines:

@@ -8,6 +8,6 @@ swiftc -emit-module -emit-library -module-name BridgeVMWindowProtocol \
   -emit-module-path "$TEMP/BridgeVMWindowProtocol.swiftmodule" -o "$TEMP/libBridgeVMWindowProtocol.dylib"
 swiftc -parse-as-library -I "$TEMP" -L "$TEMP" -lBridgeVMWindowProtocol \
   -Xlinker -rpath -Xlinker "$TEMP" \
-  "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryRequest.swift" \
+  "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryRequest.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestResetRecord.swift" \
   "$ROOT/tests/integration/window-inventory-restart.swift" -o "$TEMP/check"
 "$TEMP/check"

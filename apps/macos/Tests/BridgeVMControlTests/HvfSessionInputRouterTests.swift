@@ -62,7 +62,7 @@ final class HvfSessionInputRouterTests: XCTestCase {
             negotiate(&router)
             XCTAssertEqual(router.route(.text("pending"), binding: binding, now: now), .queued)
             _ = router.poll(binding: changedBinding ? ["other"] : binding, serviceReady: true,
-                            lines: changedBinding ? [] : ["PSCI_SYSTEM_RESET"], now: now) {
+                            lines: changedBinding ? [] : ["PSCI SYSTEM_RESET: reboot 1/8"], now: now) {
                 _ in XCTFail("sent across changed ownership"); return true
             }
             XCTAssertTrue(router.failed)
