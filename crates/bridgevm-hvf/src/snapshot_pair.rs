@@ -18,13 +18,16 @@
 //! had.
 
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+#[path = "snapshot_copy.rs"]
+mod copy;
 #[path = "snapshot_free_space.rs"]
 mod free_space;
 #[path = "snapshot_manifest_json.rs"]
 mod manifest_json;
+use copy::copy_and_sync;
 #[path = "snapshot_hash.rs"]
 mod snapshot_hash;
 use manifest_json::{escape_json, json_str, json_u64};
@@ -38,9 +41,6 @@ pub use snapshot_verification::verify_snapshot;
 fn sha256_file(path: &Path) -> io::Result<String> {
     sha256_file_and_size(path).map(|(hash, _)| hash)
 }
-
-/// Bytes copied per read/write when streaming a large disk image.
-const COPY_CHUNK: usize = 4 * 1024 * 1024;
 
 /// Manifest format version. A restore refuses anything it does not know.
 pub const SNAPSHOT_FORMAT_VERSION: u32 = 1;
@@ -155,39 +155,6 @@ impl SnapshotManifest {
 pub const DISK_NAME: &str = "disk.raw";
 pub const VARS_NAME: &str = "vars.fd";
 pub const MANIFEST_NAME: &str = "manifest.json";
-
-/// Copy `src` to `dst` and fsync the result, returning bytes written.
-///
-/// Streamed rather than read wholesale: a disk image is tens of gigabytes and
-/// must not be brought into memory to be copied.
-fn copy_and_sync(src: &Path, dst: &Path) -> io::Result<u64> {
-    // Clone first where the filesystem allows it. On APFS this is a
-    // copy-on-write reference: the 64 GiB image clones in 2ms and adds no used
-    // bytes, where copying it needs minutes and room for a second full copy.
-    // That difference is the whole reason a restore could not run on a volume
-    // with 59 GiB free.
-    if free_space::clone_file(src, dst).is_some() {
-        let cloned = File::open(dst)?;
-        // Still fsync: the clone is metadata, and the manifest is about to
-        // claim these bytes are durable.
-        cloned.sync_all()?;
-        return Ok(cloned.metadata()?.len());
-    }
-    let mut input = File::open(src)?;
-    let mut output = File::create(dst)?;
-    let mut buf = vec![0u8; COPY_CHUNK];
-    let mut total = 0u64;
-    loop {
-        let n = input.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        output.write_all(&buf[..n])?;
-        total += n as u64;
-    }
-    output.sync_all()?;
-    Ok(total)
-}
 
 /// fsync a directory, so a rename inside it survives a crash.
 fn sync_dir(dir: &Path) -> io::Result<()> {
