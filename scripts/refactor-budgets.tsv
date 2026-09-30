@@ -3322,6 +3322,7 @@ tests/integration/hvf-reset-record-contract.py	126	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestResetRecord.swift	31	0
 scripts/live-gates/hvf_reset_record.py	26	0
 docs/history/windows-hvf/app-guest-reset-records-20260929.md	63	0
+docs/history/windows-hvf/install-staging-and-host-bound-stop-20260930.md	60	0
 apps/macos/Tests/BridgeVMProductE2ETests/HvfTerminalStopTests.swift	96	0
 tests/integration/hvf-terminal-stop-contract.py	220	0
 apps/macos/Sources/BridgeVMProductE2E/HvfTerminalReport.swift	56	0
