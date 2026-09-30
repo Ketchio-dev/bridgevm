@@ -35,8 +35,8 @@ BANNER = "=== EDK2 boot probe (with Apple hv_gic) ==="
 DIAGNOSTIC = "stop: host diagnostic stop requested"
 RECREATE = "stop: PSCI 0x84000009 exiting for process recreation (exit 42)"
 READY = "BVAGENT READY host=BRIDGEVM t=20075\n"
-TEARDOWN = ("hda CoreAudio lifecycle: operation=stop osstatus=0 success=true\n"
-            "hda CoreAudio stats: frames_rendered=48000 drops=0 callback_errors=0\n")
+TEARDOWN = "hda CoreAudio lifecycle: operation=stop osstatus=0 success=true\nhda CoreAudio stats: " + " ".join(  # B7 fields, three typed shutdown statuses
+    f"{k}={48000 if k == 'frames_rendered' else 3 if k.startswith(('callback_errors', 'callback_stopping_errors', 'callback_expected', 'callback_stopping_enqueue')) else 0}" for k in guest_evidence.t17_audio_counters._B7.STAT_FIELDS) + "\n"
 VIRGL = "Sep  1 12:57:02  virgl_render_server[43160] <Debug>: socket disconnected\n"
 NESTED = f"boot\r\n{BANNER}\n{SYSTEM_OFF}\nserial raw bytes: 0 output bytes: 0\n--- serial (tail) ---\n"
 

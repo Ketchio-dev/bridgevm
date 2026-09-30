@@ -5,8 +5,8 @@ import XCTest
 // footer. A guest can print the same text in agent output or its counted serial
 // tail, so counters there prove nothing when the host printed none.
 final class T17AudioProofTests: XCTestCase {
-    private let stats = "hda CoreAudio stats: frames_rendered=48000 drops=0 callback_errors=0\n"
-    private let dropped = "hda CoreAudio stats: frames_rendered=48000 drops=3 callback_errors=0\n"
+    private let stats = T17AudioCountersTests.line() + "\n"
+    private let dropped = T17AudioCountersTests.line(drops: 3) + "\n"
 
     private func report(serial: String = "UEFI firmware\r\n", tail: String) -> String {
         "BVAGENT READY host=BRIDGEVM t=1\nREGS: pc=0x0 lr=0x0\n=== EDK2 boot probe (with Apple hv_gic) ===\n"

@@ -1831,7 +1831,7 @@ tests/integration/windows-guest-payload-verifier-smoke.py	129	0
 scripts/live-gates/windows-product-e2e-manifest.py	124	0
 scripts/live-gates/make-windows-product-e2e-request.py	76	0
 scripts/live-gates/windows_product_e2e_artifacts.py	105	0
-scripts/live-gates/windows_product_e2e_guest_evidence.py	120	0
+scripts/live-gates/windows_product_e2e_guest_evidence.py	114	0
 scripts/live-gates/write-windows-product-e2e-receipt.py	229	0
 scripts/live-gates/windows_product_e2e_failure.py	22	0
 scripts/live-gates/run-windows-product-e2e-tier.sh	121	0
@@ -1852,7 +1852,7 @@ apps/macos/Sources/BridgeVMProductE2E/T17Evidence.swift	80	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestJourney.swift	206	0
 apps/macos/Sources/BridgeVMProductE2E/T17InputChallenge.swift	26	0
 apps/macos/Sources/BridgeVMProductE2E/T17RuntimeControlInput.swift	18	0
-apps/macos/Sources/BridgeVMProductE2E/T17GuestProof.swift	156	0
+apps/macos/Sources/BridgeVMProductE2E/T17GuestProof.swift	152	0
 apps/macos/Sources/BridgeVMProductE2E/T17PrivateUnattend.swift	33	0
 apps/macos/Sources/BridgeVMProductE2E/T17ProductRunner.swift	239	0
 apps/macos/Sources/BridgeVMProductE2E/T17BoundedLog.swift	23	0
@@ -3413,3 +3413,8 @@ tests/integration/t17-guest-workload-errors-contract.py	36	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestWorkloadOutput.swift	30	0
 docs/history/windows-hvf/a9-r49-input-passes-audio-directory-20260930.md	57	0
 docs/history/windows-hvf/a9-r50-audio-counter-gate-20260930.md	59	0
+apps/macos/Sources/BridgeVMProductE2E/T17AudioCounters.swift	46	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17AudioCountersTests.swift	40	0
+scripts/live-gates/t17_audio_counters.py	26	0
+tests/integration/t17-audio-counters-test.py	33	0
+docs/history/windows-hvf/t17-audio-check-b7-alignment-20260930.md	48	0

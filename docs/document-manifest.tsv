@@ -246,6 +246,7 @@ docs/history/windows-hvf/a9-r47-start-menu-20260930.md	historical-evidence	windo
 docs/history/windows-hvf/a9-r48-start-menu-not-foreground-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/a9-r49-input-passes-audio-directory-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/a9-r50-audio-counter-gate-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/t17-audio-check-b7-alignment-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/app-guest-reset-records-20260929.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/install-staging-and-host-bound-stop-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/host-report-integrity-and-a19-fill-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
