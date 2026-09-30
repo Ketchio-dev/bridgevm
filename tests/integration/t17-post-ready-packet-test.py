@@ -11,7 +11,6 @@ import stat
 import subprocess
 import sys
 import unittest
-from unittest import mock
 
 FIXTURE = Path(__file__).with_name("t17-private-diagnostic-packet-test.py")
 SPEC = importlib.util.spec_from_file_location("t17_packet_fixture_post_ready", FIXTURE)
@@ -27,7 +26,7 @@ LISTING = "t17-diagnostic-lane-1-share-listing.json"
 SHARE_SECRET = b"synthetic-private-share-bytes"
 
 
-class PostReadyPacketTest(unittest.TestCase):
+class PostReadyCase(unittest.TestCase):
     def setUp(self) -> None:
         self.case = fixture.PacketTest(methodName="test_complete_packet_binds_identity_and_keeps_private_bytes_out_of_index")
         self.case.setUp()
@@ -52,6 +51,8 @@ class PostReadyPacketTest(unittest.TestCase):
         self.assertFalse((self.case.private / "t17-diagnostic-lane-1-index.json").exists())
         self.assertFalse((self.case.private / LISTING).exists())
 
+
+class PostReadyPacketTest(PostReadyCase):
     def test_post_ready_failure_retains_a_verified_packet_with_share_listing(self) -> None:
         packet.capture(self.args)
         packet.verify(self.args)
@@ -159,59 +160,6 @@ class PostReadyPacketTest(unittest.TestCase):
         fixture.json_file(self.case.private / "lane-1-authenticated.json", {**stamp, "result_sha256": result_sha})
         with self.assertRaises(packet.CaptureError):
             packet.verify(self.args)
-
-    def test_share_listing_never_follows_links_or_hashes_beyond_caps(self) -> None:
-        outside = self.case.output / "outside-secret.txt"
-        outside.write_bytes(SHARE_SECRET)
-        (self.share / "link.txt").symlink_to(outside)
-        (self.share / "nested").mkdir()
-        (self.share / "nested" / "inner.txt").write_bytes(SHARE_SECRET)
-        os.mkfifo(self.share / "pipe")
-        big = self.share / "big.bin"
-        with big.open("wb") as output:
-            output.truncate(packet.KIND.FILE_HASH_CAP + 1)
-        os.link(self.share / "bv-product-e2e.ps1", self.case.lane / "second-name")
-        packet.capture(self.args)
-        packet.verify(self.args)
-        entries = {entry["name"]: entry for entry in self.listing()["entries"]}
-        self.assertEqual(set(entries), {"big.bin", "bv-product-e2e.ps1", "link.txt", "nested", "pipe", f"t17-{PREFIX}.txt"})
-        self.assertEqual((entries["big.bin"]["type"], entries["big.bin"]["reason"], entries["big.bin"]["sha256"]),
-                         ("file", "over-cap", None))
-        self.assertEqual((entries["bv-product-e2e.ps1"]["reason"], entries["bv-product-e2e.ps1"]["sha256"]), ("unsafe", None))
-        for name, kind in (("link.txt", "symlink"), ("nested", "directory"), ("pipe", "other")):
-            self.assertEqual((entries[name]["type"], entries[name]["bytes"], entries[name]["sha256"], entries[name]["reason"]),
-                             (kind, None, None, "not-regular"))
-        self.assertNotIn(SHARE_SECRET, (self.case.private / LISTING).read_bytes())
-
-    def test_entry_and_total_hash_caps_truncate_without_refusing(self) -> None:
-        for number in range(4):
-            (self.share / f"extra-{number}.txt").write_bytes(b"x" * 10)
-        with mock.patch.object(packet.KIND, "ENTRY_CAP", 3), mock.patch.object(packet.KIND, "TOTAL_HASH_CAP", 25):
-            packet.capture(self.args)
-            packet.verify(self.args)
-        listing = self.listing()
-        self.assertEqual((listing["entry_count"], listing["truncated"], len(listing["entries"])), (6, True, 3))
-        self.assertEqual([entry["reason"] for entry in listing["entries"]], ["over-cap", "none", "none"])
-        self.assertEqual(listing["hashed_bytes"], 20)
-
-    def test_absent_share_is_recorded_and_verified(self) -> None:
-        for path in self.share.iterdir():
-            path.unlink()
-        self.share.rmdir()
-        packet.capture(self.args)
-        packet.verify(self.args)
-        listing = self.listing()
-        self.assertEqual((listing["status"], listing["reason"], listing["entries"], listing["entry_count"]), ("absent", "none", [], 0))
-
-    def test_linked_share_is_recorded_unsafe_and_never_followed(self) -> None:
-        outside = self.case.output / "outside-share"
-        self.share.rename(outside)
-        self.share.symlink_to(outside)
-        packet.capture(self.args)
-        packet.verify(self.args)
-        listing = self.listing()
-        self.assertEqual((listing["status"], listing["reason"], listing["entries"]), ("unsafe", "share-directory", []))
-        self.assertNotIn(b"bv-product-e2e.ps1", (self.case.private / LISTING).read_bytes())
 
     def test_post_ready_host_stop_claim_uses_the_nonce_bound_report(self) -> None:
         self.case.result["failure_detail"] = f"{DETAIL}; {STOP}"

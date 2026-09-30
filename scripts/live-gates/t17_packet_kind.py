@@ -6,7 +6,7 @@ claim. A post-READY packet needs a lane that proved first READY and then failed
 guest-evidence-missing, with at most one claim. Its share listing records names,
 types, sizes and SHA-256 only; links are never followed and no share bytes are
 retained. A share problem is recorded in the listing rather than raised, so the
-share cannot discard the packet.
+share cannot discard the packet, and an error on one entry is that entry's reason.
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ CHUNK = 1024 * 1024
 DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 READ_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
 STATUSES = ("listed", "absent", "unsafe", "error")
-FILE_REASONS = ("none", "over-cap", "unsafe", "changed")
+FILE_REASONS = ("none", "over-cap", "unsafe", "changed", "error")
 LISTING_KEYS = {"schema_version", "status", "reason", "entry_count", "truncated", "hashed_bytes", "entries"}
 ENTRY_KEYS = {"name", "type", "bytes", "sha256", "reason"}
 HEX = re.compile(r"[0-9a-f]{64}\Z")
@@ -53,11 +53,8 @@ def listing_name(ordinal: int) -> str:
 
 
 def entry_type(mode: int) -> str:
-    if stat.S_ISREG(mode):
-        return "file"
-    if stat.S_ISDIR(mode):
-        return "directory"
-    return "symlink" if stat.S_ISLNK(mode) else "other"
+    kinds = ((stat.S_ISREG, "file"), (stat.S_ISDIR, "directory"), (stat.S_ISLNK, "symlink"))
+    return next((name for test, name in kinds if test(mode)), "other")
 
 
 def identity(info: os.stat_result) -> tuple[int, ...]:
@@ -103,14 +100,17 @@ def listing(lane: int, device: int) -> dict:
                 return {**value, "status": "unsafe", "reason": "changed"}
             names = sorted(os.listdir(share))
             for name in names[:ENTRY_CAP]:
-                info = os.stat(name, dir_fd=share, follow_symlinks=False)
-                kind = entry_type(info.st_mode)
-                entry = {"name": name, "type": kind, "bytes": info.st_size if kind == "file" else None,
-                         "sha256": None, "reason": "over-cap" if kind == "file" else "not-regular"}
-                if kind == "file" and info.st_size <= FILE_HASH_CAP and value["hashed_bytes"] + info.st_size <= TOTAL_HASH_CAP:
-                    entry["sha256"], entry["reason"] = file_digest(share, name, info, device)
-                    value["hashed_bytes"] += info.st_size if entry["sha256"] else 0
+                entry = {"name": name, "type": "unknown", "bytes": None, "sha256": None, "reason": "error"}
                 value["entries"].append(entry)
+                try:
+                    info = os.stat(name, dir_fd=share, follow_symlinks=False)
+                    kind = entry["type"] = entry_type(info.st_mode)
+                    entry.update(bytes=info.st_size if kind == "file" else None, reason="over-cap" if kind == "file" else "not-regular")
+                    if kind == "file" and info.st_size <= FILE_HASH_CAP and value["hashed_bytes"] + info.st_size <= TOTAL_HASH_CAP:
+                        entry["sha256"], entry["reason"] = file_digest(share, name, info, device)
+                        value["hashed_bytes"] += info.st_size if entry["sha256"] else 0
+                except OSError:
+                    entry["reason"] = "error"
         finally:
             os.close(share)
     except OSError as error:
@@ -146,10 +146,10 @@ def verify(value: object) -> None:
         if (not isinstance(entry, dict) or set(entry) != ENTRY_KEYS or not isinstance(entry["name"], str)
                 or not 1 <= len(entry["name"].encode("utf-8", "surrogateescape")) <= 255
                 or "/" in entry["name"] or "\0" in entry["name"] or entry["name"] in (".", "..")
-                or entry["type"] not in ("file", "directory", "symlink", "other")):
+                or entry["type"] not in ("file", "directory", "symlink", "other", "unknown")):
             raise ValueError("share listing entry differs")
         if entry["type"] != "file":
-            if (entry["bytes"], entry["sha256"], entry["reason"]) != (None, None, "not-regular"):
+            if (entry["bytes"], entry["sha256"], entry["reason"]) != (None, None, "error" if entry["type"] == "unknown" else "not-regular"):
                 raise ValueError("share listing non-file entry claims bytes")
         elif (not natural(entry["bytes"]) or entry["reason"] not in FILE_REASONS
               or (entry["reason"] == "none") != (isinstance(entry["sha256"], str) and bool(HEX.fullmatch(entry["sha256"])))
