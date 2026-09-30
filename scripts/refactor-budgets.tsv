@@ -2310,7 +2310,7 @@ scripts/test-bvagent-window-inventory.ps1	48
 .github/workflows/coherence-inventory-wire.yml	17
 scripts/test-bvagent-window-inventory-errors.ps1	40
 apps/macos/Sources/BridgeVMControl/CreateVMSheetCreationResult.swift	15
-apps/macos/Sources/BridgeVMProductE2E/T17AccessibilityTree.swift	34
+apps/macos/Sources/BridgeVMProductE2E/T17AccessibilityTree.swift	31
 apps/macos/Sources/BridgeVMProductE2E/T17CreationProbe.swift	23
 apps/macos/Tests/BridgeVMProductE2ETests/T17CreationProbeTests.swift	65
 scripts/live-gates/t17_owned_tree_cleanup.py	136
@@ -3294,4 +3294,6 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHelperProcess.swift	63	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTests.swift	88	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTestSupport.swift	34	0
 apps/macos/Sources/BridgeVMProductE2E/T17IdentifierLookup.swift	28	0
+apps/macos/Sources/BridgeVMProductE2E/T17AXReadFailure.swift	25	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17IdentifierLookupTests.swift	125	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17AXReadFailureTests.swift	37	0
