@@ -18,14 +18,7 @@ unsafe impl Send for FbSink {}
 
 impl Drop for FbSink {
     fn drop(&mut self) {
-        if !self.map.is_null() {
-            unsafe {
-                libc::munmap(self.map.cast(), self.map_len);
-            }
-            self.map = std::ptr::null_mut();
-            self.map_len = 0;
-            self.capacity = 0;
-        }
+        self.reset_mapping();
     }
 }
 
@@ -42,17 +35,18 @@ impl std::fmt::Debug for FbSink {
 impl FbSink {
     pub(crate) fn from_env() -> Option<FbSink> {
         let path = std::env::var_os("BRIDGEVM_DISPLAY_EXPORT_FB")?;
-        if path.is_empty() {
-            return None;
-        }
+        (!path.is_empty()).then(|| FbSink::at_path(PathBuf::from(path)))
+    }
 
-        Some(FbSink {
-            path: PathBuf::from(path),
+    /// A sink for `path`. Nothing is created or mapped until the first write.
+    pub(crate) fn at_path(path: PathBuf) -> FbSink {
+        FbSink {
+            path,
             file: None,
             map: std::ptr::null_mut(),
             map_len: 0,
             capacity: 0,
             seq: 0,
-        })
+        }
     }
 }

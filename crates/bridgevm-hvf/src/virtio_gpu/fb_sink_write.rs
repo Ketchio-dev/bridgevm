@@ -17,7 +17,9 @@ impl FbSink {
         fourcc: u32,
         bytes: &[u8],
     ) {
-        self.write_inner(width, height, stride, fourcc, bytes, None);
+        if let Err(err) = self.write_inner(width, height, stride, fourcc, bytes, None) {
+            eprintln!("virtio-gpu fb export failed: {err}");
+        }
     }
 
     pub(crate) fn write_damage(
@@ -29,10 +31,15 @@ impl FbSink {
         bytes: &[u8],
         damage: Rect,
     ) {
-        self.write_inner(width, height, stride, fourcc, bytes, Some(damage));
+        if let Err(err) = self.write_inner(width, height, stride, fourcc, bytes, Some(damage)) {
+            eprintln!("virtio-gpu fb export failed: {err}");
+        }
     }
 
-    fn write_inner(
+    /// Publish one frame. `Ok(false)`: the geometry overflows or `bytes` is
+    /// shorter than `height * stride`, so nothing changed. `Err`: the file
+    /// could not be created, sized or mapped. Logging is the caller's choice.
+    pub(crate) fn write_inner(
         &mut self,
         width: u32,
         height: u32,
@@ -40,19 +47,17 @@ impl FbSink {
         fourcc: u32,
         bytes: &[u8],
         damage: Option<Rect>,
-    ) {
+    ) -> std::io::Result<bool> {
         let Some(frame_len) = (height as usize).checked_mul(stride as usize) else {
-            return;
+            return Ok(false);
         };
         let Some(needed) = HEADER_LEN.checked_add(frame_len) else {
-            return;
+            return Ok(false);
         };
         if bytes.len() < frame_len {
-            return;
+            return Ok(false);
         }
-        let Some(new_mapping) = self.ensure_mapping(needed) else {
-            return;
-        };
+        let new_mapping = self.ensure_mapping(needed)?;
         let same_layout = !new_mapping && self.layout_matches(width, height, stride, fourcc);
         self.begin_frame(width, height, stride, fourcc);
         if same_layout {
@@ -65,11 +70,12 @@ impl FbSink {
             self.copy_full(bytes, frame_len);
         }
         self.finish_frame();
+        Ok(true)
     }
 
-    fn ensure_mapping(&mut self, needed: usize) -> Option<bool> {
+    fn ensure_mapping(&mut self, needed: usize) -> std::io::Result<bool> {
         if !self.map.is_null() && self.capacity >= needed {
-            return Some(false);
+            return Ok(false);
         }
         self.reset_mapping();
         if let Some(parent) = self
@@ -77,28 +83,15 @@ impl FbSink {
             .parent()
             .filter(|path| !path.as_os_str().is_empty())
         {
-            if let Err(err) = std::fs::create_dir_all(parent) {
-                eprintln!("virtio-gpu fb export failed: {err}");
-                return None;
-            }
+            std::fs::create_dir_all(parent)?;
         }
-        let file = match OpenOptions::new()
+        let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&self.path)
-        {
-            Ok(file) => file,
-            Err(err) => {
-                eprintln!("virtio-gpu fb export failed: {err}");
-                return None;
-            }
-        };
-        if let Err(err) = file.set_len(needed as u64) {
-            eprintln!("virtio-gpu fb export failed: {err}");
-            return None;
-        }
+            .open(&self.path)?;
+        file.set_len(needed as u64)?;
         let map = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
@@ -110,20 +103,16 @@ impl FbSink {
             )
         };
         if map == libc::MAP_FAILED {
-            eprintln!(
-                "virtio-gpu fb export failed: {}",
-                std::io::Error::last_os_error()
-            );
-            return None;
+            return Err(std::io::Error::last_os_error());
         }
         self.file = Some(file);
         self.map = map.cast();
         self.map_len = needed;
         self.capacity = needed;
-        Some(true)
+        Ok(true)
     }
 
-    fn reset_mapping(&mut self) {
+    pub(super) fn reset_mapping(&mut self) {
         if !self.map.is_null() {
             unsafe { libc::munmap(self.map.cast(), self.map_len) };
         }

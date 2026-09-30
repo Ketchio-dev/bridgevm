@@ -136,6 +136,7 @@ probe_modules!(
 use agent_console::AgentConsoleHarness;
 use arm64_trace::print_translated_instruction_words;
 use live_display_export::LiveDisplayExporter;
+use live_display_export::RamfbDisplayExporter;
 use mmio_trace::{print_mmio_traces, record_mmio_trace, MmioTrace};
 use nvme_trace::print_nvme_command_trace;
 use pcie_ecam_trace::{PcieEcamAccess, RecentPcieEcam};

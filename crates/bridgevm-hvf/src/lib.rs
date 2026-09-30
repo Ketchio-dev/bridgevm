@@ -20,6 +20,7 @@ pub mod acpi;
 pub mod bridgevm_pc_boot_info;
 pub mod bridgevm_pc_gic;
 pub mod checkpoint;
+pub mod display_fb;
 pub mod dtb;
 pub mod fwcfg;
 mod guest_memory;
