@@ -2,18 +2,6 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-protocol T17UIControlling {
-    func press(_ identifier: String, timeout: TimeInterval) throws
-    func setText(_ value: String, identifier: String, timeout: TimeInterval) throws
-    func setToggle(_ enabled: Bool, identifier: String, timeout: TimeInterval) throws
-    func choose(path: String, from identifier: String, timeout: TimeInterval) throws
-    func waitFor(_ identifier: String, timeout: TimeInterval) throws
-    func text(_ identifier: String, timeout: TimeInterval) throws -> String
-    func optionalTexts(_ identifiers: Set<String>) throws -> [String: String]
-    func clickSecondaryWindow(timeout: TimeInterval) throws
-    func textSnapshot() -> [String]
-}
-
 final class T17Accessibility: T17UIControlling {
     private let pid: pid_t
     init(pid: pid_t) throws {
@@ -51,7 +39,15 @@ final class T17Accessibility: T17UIControlling {
     }
 
     func press(_ identifier: String, timeout: TimeInterval = 10) throws {
-        let target = try element(identifier, role: T17PressAction.targetRole, timeout: timeout)
+        try perform(element(identifier, role: T17PressAction.targetRole, timeout: timeout), identifier, timeout)
+    }
+
+    /// SwiftUI exposes a disclosure group's label as an AXDisclosureTriangle, not an AXButton.
+    func expand(_ identifier: String, timeout: TimeInterval = 10) throws {
+        try perform(element(identifier, role: kAXDisclosureTriangleRole as String, timeout: timeout), identifier, timeout)
+    }
+
+    private func perform(_ target: AXUIElement, _ identifier: String, _ timeout: TimeInterval) throws {
         try T17PressAction.perform(identifier: identifier, timeout: timeout, enabled: { (try T17SupportedAttribute.read(target, kAXEnabledAttribute) as? NSNumber)?.boolValue },
             press: { AXUIElementPerformAction(target, kAXPressAction as CFString) }, activate: { T17Activation.bringToFront(pid: self.pid) },
             retry: { AXUIElementPerformAction(target, kAXPressAction as CFString) }, frontmost: { NSRunningApplication(processIdentifier: self.pid)?.isActive == true })

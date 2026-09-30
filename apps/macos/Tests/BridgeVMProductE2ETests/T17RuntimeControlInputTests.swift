@@ -6,7 +6,7 @@ final class T17RuntimeControlInputTests: XCTestCase {
         let ui = ControlUI(inputVisible: false)
         try T17RuntimeControlInput.enter("CLIPGET", ui: ui)
         XCTAssertEqual(ui.events, [
-            "wait bridgevm.runtime.ctl.input 1.0", "press bridgevm.runtime.diagnostics.toggle 10.0",
+            "wait bridgevm.runtime.ctl.input 1.0", "expand bridgevm.runtime.diagnostics.toggle 10.0",
             "set bridgevm.runtime.ctl.input CLIPGET", "press bridgevm.runtime.ctl.send 10.0",
         ])
     }
@@ -21,7 +21,7 @@ final class T17RuntimeControlInputTests: XCTestCase {
     }
 
     func testMissingOpenerFailsBeforeAnyCommandIsEntered() {
-        let ui = ControlUI(inputVisible: false); ui.pressError = T17Blocker(code: "ui-element-missing", detail: "opener")
+        let ui = ControlUI(inputVisible: false); ui.expandError = T17Blocker(code: "ui-element-missing", detail: "opener")
         XCTAssertThrowsError(try T17RuntimeControlInput.enter("CLIPGET", ui: ui)) {
             XCTAssertEqual(($0 as? T17Blocker)?.detail, "opener")
         }
@@ -30,15 +30,15 @@ final class T17RuntimeControlInputTests: XCTestCase {
 }
 
 private final class ControlUI: T17UIControlling {
-    var events: [String] = []; var inputVisible: Bool; var pressError: Error?
+    var events: [String] = []; var inputVisible: Bool; var expandError: Error?
     init(inputVisible: Bool) { self.inputVisible = inputVisible }
     func waitFor(_ identifier: String, timeout: TimeInterval) throws {
         events.append("wait \(identifier) \(timeout)")
         if !inputVisible { throw T17Blocker(code: "ui-element-missing", detail: "absent") }
     }
-    func press(_ identifier: String, timeout: TimeInterval) throws {
-        events.append("press \(identifier) \(timeout)")
-        if let pressError { throw pressError }
+    func press(_ identifier: String, timeout: TimeInterval) throws { events.append("press \(identifier) \(timeout)") }
+    func expand(_ identifier: String, timeout: TimeInterval) throws {
+        events.append("expand \(identifier) \(timeout)"); if let expandError { throw expandError }
     }
     func setText(_ value: String, identifier: String, timeout: TimeInterval) throws {
         events.append("set \(identifier) \(value)")
