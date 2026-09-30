@@ -947,9 +947,9 @@ BVAGENT CMD whoami exit=0
 bridgevm\user
 BVAGENT END whoami
 BVAGENT SERVICE start t=1300
-NVMe disk written back: /tmp/windows.raw
+NVMe disk written back: /tmp/windows.raw (4096 bytes)
 EOF
-printf '=== EDK2 boot probe (with Apple hv_gic) ===\nstop: PSCI 0x84000008 (system off)\nserial raw bytes: 0 output bytes: 0\n--- serial (tail) ---\n\n--- end ---\n' >> "$SERVICE_GATE_OK/run.log"
+printf '=== EDK2 boot probe (with Apple hv_gic) ===\nstop: PSCI 0x84000008 (system off)\nhost media: NVMe disk written back: /tmp/windows.raw (4096 bytes)\nserial raw bytes: 0 output bytes: 0\n--- serial (tail) ---\n\n--- end ---\n' >> "$SERVICE_GATE_OK/run.log"
 service_gate_ok_output="$(
   bash -c '
     set -euo pipefail

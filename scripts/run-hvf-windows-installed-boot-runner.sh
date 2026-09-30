@@ -813,7 +813,7 @@ write_host_pause_resume_gate() {
   [[ -f "$observation" ]] && grep -Eq '^continue_signal_sent=true$' "$observation" && continued="true"
   [[ -f "$observation" ]] && grep -Eq '^post_resume_command_ok=true$' "$observation" && agent_round_trip="true"
   /bin/bash "$ROOT/scripts/hvf-terminal-report.sh" --require-system-off "$EVIDENCE_DIR/run.log" && guest_system_off="true"
-  grep -Eq '^NVMe (second namespace )?disk written back:' "$EVIDENCE_DIR/run.log" && nvme_writeback="true"
+  /bin/bash "$ROOT/scripts/hvf-terminal-report.sh" --require-nvme-write-back "$EVIDENCE_DIR/run.log" && nvme_writeback="true"
 
   if [[ "${HOST_PAUSE_RESUME_CONTROL_STATUS:-1}" != "0" || "$probe_status" != "0" || \
         "$service_ready" != "true" || "$stopped" != "true" || "$stable" != "true" || \
@@ -886,7 +886,7 @@ write_agent_service_gate() {
   grep -Fq "BVAGENT END $AGENT_SERVICE_COMMAND" "$EVIDENCE_DIR/run.log" && initial_command_complete="true"
   grep -Eq '^BVAGENT SERVICE start' "$EVIDENCE_DIR/run.log" && service_started="true"
   /bin/bash "$ROOT/scripts/hvf-terminal-report.sh" --require-system-off "$EVIDENCE_DIR/run.log" && guest_system_off="true"
-  grep -Eq '^NVMe (second namespace )?disk written back:' "$EVIDENCE_DIR/run.log" && nvme_writeback="true"
+  /bin/bash "$ROOT/scripts/hvf-terminal-report.sh" --require-nvme-write-back "$EVIDENCE_DIR/run.log" && nvme_writeback="true"
 
   if [[ "$probe_status" != "0" || "$ready" != "true" || \
         "$initial_command_exit_zero" != "true" || "$initial_command_complete" != "true" || \

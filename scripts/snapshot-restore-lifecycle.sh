@@ -27,5 +27,5 @@ snapshot_shutdown() {
   if bridgevm_process_group_alive "$SNAPSHOT_LAUNCHER"; then snapshot_stop_launcher; return 1; fi
   SNAPSHOT_LAUNCHER=""
   (( status == 0 )) && python3 "$(dirname "${BASH_SOURCE[0]}")/live-gates/hvf_terminal_evidence.py" --require-system-off "$log" || return 1
-  tr '\r' '\n' < "$log" | grep -E '^NVMe (second namespace )?disk written back:' > /dev/null
+  python3 "$(dirname "${BASH_SOURCE[0]}")/live-gates/hvf_terminal_evidence.py" --require-nvme-write-back "$log"
 }

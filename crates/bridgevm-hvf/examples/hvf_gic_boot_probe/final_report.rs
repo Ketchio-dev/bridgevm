@@ -4,7 +4,7 @@ macro_rules! persist_and_report_stop {
         let mut platform_guard = $platform.lock().expect("platform mutex");
         let $platform = &mut *platform_guard;
         let serial = $platform.uart_output().to_vec();
-        persist_stop_media($platform, &$media, &mut $media_lease);
+        let host_media = persist_stop_media($platform, &$media, &mut $media_lease);
         storage_effect_receipt::maybe_write_probe_storage_effect_receipt(
             $media.nvme_disk.as_ref(),
             $platform,
@@ -183,6 +183,7 @@ macro_rules! persist_and_report_stop {
 
         println!("=== EDK2 boot probe (with Apple hv_gic) ===");
         println!("stop: {}", $stop_reason);
+        for record in &host_media { println!("{record}"); }
         println!(
             "exits: {} (vtimer {}, psci {}, surplus-canceled {}), last PC: {:#x}", $exits, $vtimer_exits, $psci_calls, $surplus_canceled_exits, $last_pc
         );
