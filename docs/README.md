@@ -93,6 +93,9 @@ capability registry and dated receipts to decide what is proven.
 - [Apple-silicon live gates](testing/apple-silicon-live-gates.md) — trusted-host
   queue, sealed inputs, receipts, and the boundary between hosted CI and real
   virtualization evidence.
+- [A19 ten-lane lifecycle campaign](testing/a19-lifecycle-campaign.md) — how
+  to build inputs for, submit and read the fixed T23 campaign, and what a pass
+  means.
 
 Hosted CI proves deterministic properties. It does not prove a real Windows
 boot, Hypervisor.framework behavior on a physical Apple-silicon host, or a

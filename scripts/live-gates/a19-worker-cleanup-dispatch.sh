@@ -13,7 +13,7 @@ bridgevm_a19_guard_or_fence() {
         t22-a19-interrupted-restore)
             guard=a19-interrupted-restore-cleanup-fence.sh
             verify=bridgevm_t22_guard_or_fence ;;
-        *) return 2 ;;
+        t23-a19-lifecycle-campaign) guard=a19-lifecycle-campaign-cleanup-fence.sh; verify=bridgevm_t23_guard_or_fence ;; *) return 2 ;;
     esac
     source "$(dirname "${BASH_SOURCE[0]}")/$guard" || {
         printf '%s cleanup verifier unavailable\n' "$tier" > "$queue_root/worker-cleanup-required"
