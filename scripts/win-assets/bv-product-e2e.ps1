@@ -67,7 +67,7 @@ switch ($Action) {
                 $Form.Close()
             }
         })
-        $Form.Add_Shown({ $Form.Activate(); $Form.Focus(); $Timer.Start() })
+        $Form.Add_Shown({ $Form.Activate(); $Form.Focus(); $Timer.Start(); Write-Exact "t17-keyboard-pointer-ready-$Prefix.txt" "bridgevm-t17-keyboard-pointer-ready-v1`n$Nonce`n" })
         [void]$Form.ShowDialog()
         if (-not $script:Clicked -or -not $script:Typed.EndsWith($ExpectedText)) { throw 'input challenge incomplete' }
         Write-Exact "t17-keyboard-pointer-$Prefix.txt" "bridgevm-t17-keyboard-pointer-v1`n$Nonce`n"

@@ -11,7 +11,7 @@ CONTROL = ROOT / "apps/macos/Sources/BridgeVMControl/HvfEngine"
 E2E = ROOT / "apps/macos/Sources/BridgeVMProductE2E"
 FIELDS = {
     "bridgevm.runtime.ctl.input": ("HvfRuntimeDiagnosticsSettings.swift", "onCommit: sendCtl", "T17RuntimeControlInput.swift", "ui.fill(command, identifier: input"),
-    "bridgevm.runtime.keyboard.input": ("HvfRuntimeKeyboardInput.swift", "onCommit: submit", "T17GuestJourney.swift", 'ui.fill("t17kbd\\(prefix)", identifier: "bridgevm.runtime.keyboard.input"'),
+    "bridgevm.runtime.keyboard.input": ("HvfRuntimeKeyboardInput.swift", "onCommit: submit", "T17InputChallenge.swift", 'ui.fill("t17kbd\\(prefix)", identifier: "bridgevm.runtime.keyboard.input"'),
 }
 
 

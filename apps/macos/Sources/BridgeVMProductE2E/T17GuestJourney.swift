@@ -41,10 +41,7 @@ struct T17GuestJourney {
 
     private func keyboardAndPointer() throws {
         try launchWorkload("KeyboardPointer")
-        try ui.press("bridgevm.runtime.display.open", timeout: 10)
-        try ui.clickSecondaryWindow(timeout: 15)
-        try ui.fill("t17kbd\(prefix)", identifier: "bridgevm.runtime.keyboard.input", timeout: 10)
-        try ui.press("bridgevm.runtime.keyboard.send", timeout: 10)
+        try T17InputChallenge(sharePath: request.sharePath, nonce: request.nonce, ui: ui).deliver()
         try requireOutput("t17-keyboard-pointer-\(prefix).txt", timeout: 60)
     }
 
