@@ -24,10 +24,10 @@ class SendFieldEntry(unittest.TestCase):
 
     def test_t17_fills_them_instead_of_confirming(self) -> None:
         for identifier, (_, _, harness, call) in FIELDS.items():
-            source = (E2E / harness).read_text(encoding="utf-8")
-            self.assertIn(call, source, identifier)
-            self.assertNotIn(f'ui.setText("t17kbd', source)
-            self.assertNotIn("ui.setText(command", source)
+            self.assertIn(call, (E2E / harness).read_text(encoding="utf-8"), identifier)
+        for path in E2E.glob("*.swift"):
+            for call in ('ui.setText("t17kbd', "ui.setText(command"):
+                self.assertFalse(call in path.read_text(encoding="utf-8"), f"{path.name}: {call}")
         entry = (E2E / "T17TextEntry.swift").read_text(encoding="utf-8")
         fill = entry.split("static func fill(", 1)[1]
         self.assertLess(fill.index("focus()"), fill.index("set(value)"))
