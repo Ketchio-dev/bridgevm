@@ -31,8 +31,8 @@ if not isinstance(value, (str, int, bool)):
 print(str(value).lower() if isinstance(value, bool) else value)
 PY
 }
-collect_first_ready_packet() {
-  python3 "$REPO/scripts/live-gates/t17_private_diagnostic_packet.py" capture --private "$PRIVATE" --lane-root "$lane_root" --job-id "$JOB_ID" --commit "$COMMIT" --campaign-mode "$MODE" --lane "$lane" || { : > "$PRIVATE/lane-$lane-diagnostic-capture-failed" || true; }
+collect_diagnostic_packet() {
+  python3 "$REPO/scripts/live-gates/t17_private_diagnostic_packet.py" capture --kind "$1" --private "$PRIVATE" --lane-root "$lane_root" --job-id "$JOB_ID" --commit "$COMMIT" --campaign-mode "$MODE" --lane "$lane" || { : > "$PRIVATE/lane-$lane-diagnostic-capture-failed" || true; }
 }
 
 cleanup_work() {
@@ -108,7 +108,7 @@ for (( lane=1; lane<=EXPECTED; lane++ )); do
   if find "$WORK" \( \( ! -type d ! -type f \) -o \( -type f -links +1 \) \) -print -quit | grep -q .; then printf '%s\n' "$lane" > "$PRIVATE/lane-isolation-failed"; emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if mount | grep -F "$lane_root" >/dev/null 2>&1 || pgrep -f "$lane_root" >/dev/null 2>&1; then emit cleanup-failed cleanup-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if ! python3 "$WRITER" --check-lane "$result" --request "$request" --stamp "$PRIVATE/lane-$lane-authenticated.json" --job-id "$JOB_ID" --commit "$COMMIT" --mode "$MODE" --ordinal "$lane"; then emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
-  lane_failure="$(json_value "$result" failure_code)"; if [[ "$lane_failure" == guest-evidence-missing && "$(json_value "$result" first_ready)" == false && "$(json_value "$result" failure_detail)" == "first boot has no BVAGENT READY/PONG evidence;"* ]]; then collect_first_ready_packet; fi
+  lane_failure="$(json_value "$result" failure_code)"; lane_ready="$(json_value "$result" first_ready)"; if [[ "$lane_failure" == guest-evidence-missing && "$lane_ready" == true ]]; then collect_diagnostic_packet post-ready; elif [[ "$lane_failure" == guest-evidence-missing && "$lane_ready" == false && "$(json_value "$result" failure_detail)" == "first boot has no BVAGENT READY/PONG evidence;"* ]]; then collect_diagnostic_packet first-ready; fi
   next_verified="$PRIVATE/verified-after-lane-$lane.json"
   if ! python3 "$MANIFEST_TOOL" --manifest "$INPUT_MANIFEST" --out "$next_verified" >/dev/null 2>&1 || ! cmp -s "$VERIFIED" "$next_verified"; then emit failed hash-mismatch "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if [[ "$lane_failure" != none ]]; then emit failed "$lane_failure" "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi

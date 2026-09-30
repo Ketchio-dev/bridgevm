@@ -187,9 +187,19 @@ command, whose fixed bundle identifier is `dev.bridgevm.product-e2e`, and accept
 command is a preflight blocker, not an invitation to invoke a harness. Private
 paths, ISO, media, vars, vTPM, guest payload and helper logs never enter the
 public receipt; the dedicated verifier is run both before and after redaction.
-A first-READY failure keeps a private diagnostic packet. Its guest-setup
-harvest clones the lane disk, attaches the clone read-only and mounts the
-Windows NTFS volume read-only below `<lane>/guest-setup-harvest`. The harvest's
+A first-READY failure keeps a private diagnostic packet, and so does an
+authenticated lane that reached first READY and then failed
+`guest-evidence-missing` (`packet_kind` `post-ready`), which adds a private
+share listing of names, types, sizes and SHA-256 only. A post-READY packet
+keeps the run-log tail, that listing and the guest-setup harvest but no guest
+screen. The 3D-off runtime disables virtio-gpu, so `display.fb` is absent, as
+the r35 packet recorded. The helper takes no nonce-bound host stop after READY,
+so no final ramfb pair is attributed. Keeping the failure screen needs the
+helper to take that host diagnostic stop before its graceful stop. Each
+packet's guest-setup
+harvest, whose allowlist includes `C:\bvagent.log`, clones the lane disk,
+attaches the clone read-only and mounts the Windows NTFS volume read-only below
+`<lane>/guest-setup-harvest`. The harvest's
 120-second deadline is checked only between tool calls, allowlist items and
 1 MiB chunks, so it does not bound a blocked open or read on the guest volume.
 The tier reports `cleanup-failed` and keeps its job tree when `mount` or
