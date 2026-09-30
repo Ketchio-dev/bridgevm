@@ -1833,7 +1833,7 @@ scripts/live-gates/recover-stale-receipt.sh	19	0
 tests/integration/windows-product-e2e-live-tier-smoke.sh	149	0
 tests/fixtures/fake-windows-product-e2e-helper.py	61	0
 apps/macos/Sources/BridgeVMProductE2E/BridgeVMProductE2EMain.swift	70	0
-apps/macos/Sources/BridgeVMProductE2E/T17Accessibility.swift	191	0
+apps/macos/Sources/BridgeVMProductE2E/T17Accessibility.swift	171	0
 apps/macos/Sources/BridgeVMProductE2E/T17Contract.swift	220	0
 apps/macos/Sources/BridgeVMProductE2E/T17Evidence.swift	80	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestJourney.swift	222	0
@@ -2310,7 +2310,7 @@ scripts/test-bvagent-window-inventory.ps1	48
 .github/workflows/coherence-inventory-wire.yml	17
 scripts/test-bvagent-window-inventory-errors.ps1	40
 apps/macos/Sources/BridgeVMControl/CreateVMSheetCreationResult.swift	15
-apps/macos/Sources/BridgeVMProductE2E/T17AccessibilityTree.swift	34
+apps/macos/Sources/BridgeVMProductE2E/T17AccessibilityTree.swift	31
 apps/macos/Sources/BridgeVMProductE2E/T17CreationProbe.swift	23
 apps/macos/Tests/BridgeVMProductE2ETests/T17CreationProbeTests.swift	65
 scripts/live-gates/t17_owned_tree_cleanup.py	136
@@ -3294,3 +3294,10 @@ crates/bridgevm-hvf/src/snapshot_create_staging_debris_tests.rs	84	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHelperProcess.swift	63	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTests.swift	88	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTestSupport.swift	34	0
+apps/macos/Sources/BridgeVMProductE2E/T17IdentifierLookup.swift	27	0
+apps/macos/Sources/BridgeVMProductE2E/T17AXReadFailure.swift	25	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17IdentifierLookupTests.swift	125	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17AXReadFailureTests.swift	37	0
+apps/macos/Sources/BridgeVMProductE2E/T17IdentifierSearch.swift	29	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17IdentifierSearchTests.swift	98	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17AccessibilityTreeReadFailureTests.swift	47	0
