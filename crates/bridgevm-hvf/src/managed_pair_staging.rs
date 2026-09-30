@@ -1,7 +1,6 @@
 //! Finish and own the staged inodes before they can become current media.
 
 use super::*;
-use std::fs;
 use std::path::PathBuf;
 
 impl LockedPair {
@@ -12,11 +11,10 @@ impl LockedPair {
         copy: impl FnMut(&Path, &Path) -> io::Result<u64>,
     ) -> Result<(PathBuf, SnapshotManifest), SnapshotError> {
         let staged = self.root.join("staging");
-        if super::super::private_directory(&staged, false)? {
-            fs::remove_dir_all(&staged)?;
-        }
+        debris::clear(&staged)?;
         super::super::private_directory(&staged, true)?;
-        let copied = fill::fill(snapshot, manifest, &staged, copy)?;
+        let copied = fill::fill(snapshot, manifest, &staged, copy)
+            .inspect_err(|_| drop(debris::clear(&staged)))?;
         self._lease.extend([
             staged.join("disk.raw").as_path(),
             staged.join("vars.fd").as_path(),
@@ -25,5 +23,7 @@ impl LockedPair {
     }
 }
 
+#[path = "managed_pair_staging_debris.rs"]
+mod debris;
 #[path = "managed_pair_staging_fill.rs"]
 mod fill;

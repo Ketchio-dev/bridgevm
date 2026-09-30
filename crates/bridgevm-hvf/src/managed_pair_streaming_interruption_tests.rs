@@ -124,3 +124,5 @@ fn hard_exit_mid_streaming_restore_keeps_selected_pair_and_allows_retry() {
         assert_eq!(contents(&pair), new, "retry did not select the snapshot");
     }
 }
+#[path = "managed_pair_staging_failure_tests.rs"]
+mod staging_failure_tests;

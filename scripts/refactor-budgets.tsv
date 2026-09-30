@@ -2344,7 +2344,7 @@ crates/bridgevm-hvf/src/snapshot_verification_tests.rs	125	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportDestination.swift	39	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportDestinationTests.swift	122	0
 crates/bridgevm-hvf/src/managed_pair_ownership_tests.rs	112	0
-crates/bridgevm-hvf/src/managed_pair_staging.rs	22	0
+crates/bridgevm-hvf/src/managed_pair_staging.rs	21	0
 crates/bridgevm-media/src/media_lease_update.rs	73	0
 crates/bridgevm-media/src/media_lease_update_tests.rs	122	0
 crates/bridgevm-hvf/src/snapshot_create.rs	71	0
@@ -3302,6 +3302,8 @@ crates/bridgevm-hvf/src/snapshot_create_failure_tests.rs	89	0
 crates/bridgevm-hvf/src/managed_pair_restore_admission.rs	27	0
 crates/bridgevm-hvf/src/managed_pair_staging_fill.rs	18	0
 crates/bridgevm-hvf/src/managed_pair_streaming_interruption_tests.rs	124	0
+crates/bridgevm-hvf/src/managed_pair_staging_debris.rs	9	0
+crates/bridgevm-hvf/src/managed_pair_staging_failure_tests.rs	30	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHelperProcess.swift	63	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTests.swift	88	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTestSupport.swift	34	0
