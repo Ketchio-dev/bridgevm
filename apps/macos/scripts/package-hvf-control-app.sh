@@ -106,7 +106,7 @@ for script in \
   run-hvf-windows-installed-boot-usage.sh \
   run-hvf-windows-installed-boot-validation.sh \
   run-hvf-windows-installed-boot-args.sh \
-  run-hvf-windows-installed-boot-runner.sh run-hvf-windows-installed-boot-package-policy.sh \
+  run-hvf-windows-installed-boot-runner.sh run-hvf-windows-installed-boot-package-policy.sh hvf-terminal-report.sh \
   build-hvf-windows-scripted-source.sh \
   stage-hvf-windows-guest-payload.sh \
   hvf-disk-image-utils.sh \

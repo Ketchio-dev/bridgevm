@@ -137,3 +137,5 @@ mod interruption_tests;
 mod ownership;
 #[path = "managed_pair_staging_interruption_tests.rs"]
 mod staging_interruption_tests;
+#[path = "managed_pair_streaming_interruption_tests.rs"]
+mod streaming_interruption_tests;

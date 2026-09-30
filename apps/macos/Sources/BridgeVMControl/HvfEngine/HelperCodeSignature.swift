@@ -40,7 +40,7 @@ enum HelperCodeSignature {
         helperPath: String,
         appTeam: String?,
         fileManager: FileManager = .default,
-        teamReader: TeamReader = readTeamIdentifier
+        teamReader: TeamReader = { readTeamIdentifier(ofBinaryAt: $0) }
     ) -> Rejection? {
         guard fileManager.isExecutableFile(atPath: helperPath) else {
             return .notAFile(helperPath)
@@ -59,19 +59,19 @@ enum HelperCodeSignature {
         return nil
     }
 
-    static func readTeamIdentifier(ofBinaryAt path: String) -> String? {
+    /// `codesign` is replaced only by tests; the app always runs /usr/bin/codesign.
+    static func readTeamIdentifier(
+        ofBinaryAt path: String, codesign: URL = URL(fileURLWithPath: "/usr/bin/codesign")
+    ) -> String? {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        process.executableURL = codesign
         process.arguments = ["-dv", "--verbose=4", path]
         let pipe = Pipe()
-        // codesign writes its description to stderr.
+        // codesign writes its description to stderr. Unread stdout must not be a
+        // pipe: once full it blocks codesign, and stderr then never reaches EOF.
         process.standardError = pipe
-        process.standardOutput = Pipe()
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
+        process.standardOutput = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return nil }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { return nil }

@@ -12,6 +12,8 @@ mod destination_lease;
 #[path = "snapshot_create_staging_debris.rs"]
 mod staging_debris;
 use destination_lease::claim_staging;
+#[path = "snapshot_create_fill.rs"]
+mod fill;
 #[path = "snapshot_create_stage.rs"]
 mod stage;
 use stage::CreateStage;
@@ -39,12 +41,24 @@ fn create_snapshot_using(
     vm_id: &str,
     vm_running: bool,
     quota_bytes: u64,
-    mut observe: impl FnMut(CreateStage),
+    observe: impl FnMut(CreateStage),
 ) -> Result<SnapshotManifest, SnapshotError> {
     if vm_running {
         return Err(SnapshotError::VmRunning);
     }
+    create_stopped(disk, vars, dest, vm_id, quota_bytes, copy_and_sync, observe)
+}
 
+/// `copy` stages one file; tests substitute a streaming copy that fails.
+fn create_stopped(
+    disk: &Path,
+    vars: &Path,
+    dest: &Path,
+    vm_id: &str,
+    quota_bytes: u64,
+    copy: impl FnMut(&Path, &Path) -> io::Result<u64>,
+    mut observe: impl FnMut(CreateStage),
+) -> Result<SnapshotManifest, SnapshotError> {
     // Refuse before writing anything, not after filling the disk.
     let owner = managed::LockedPair::open(disk, vars)?;
     let (selected_disk, selected_vars) = owner.paths()?;
@@ -62,24 +76,7 @@ fn create_snapshot_using(
     let dest = prepare_destination(dest, [&logical_disk, &logical_vars, disk, vars])?;
     let (_destination_lease, staging) = claim_staging(&dest)?;
 
-    let disk_bytes = copy_and_sync(disk, &staging.join(DISK_NAME))?;
-    observe(CreateStage::DiskSynced);
-    let vars_bytes = copy_and_sync(vars, &staging.join(VARS_NAME))?;
-    observe(CreateStage::VarsSynced);
-
-    let manifest = SnapshotManifest {
-        format_version: SNAPSHOT_FORMAT_VERSION,
-        vm_id: vm_id.to_string(),
-        disk_bytes,
-        disk_sha256: sha256_file(&staging.join(DISK_NAME))?,
-        vars_bytes,
-        vars_sha256: sha256_file(&staging.join(VARS_NAME))?,
-    };
-    // The manifest is written last and is what makes the directory valid.
-    write_file_atomically(&staging.join(MANIFEST_NAME), manifest.to_json().as_bytes())?;
-    observe(CreateStage::ManifestPublished);
-    sync_dir(&staging)?;
-    observe(CreateStage::StagingDirectorySynced);
+    let manifest = fill::fill_staging([disk, vars], &staging, vm_id, copy, &mut observe)?;
 
     // Never remove the previous snapshot before its replacement is published.
     admission::publish(&staging, &dest)?;
@@ -90,6 +87,9 @@ fn create_snapshot_using(
 #[cfg(test)]
 #[path = "snapshot_create_concurrency_tests.rs"]
 mod concurrency_tests;
+#[cfg(test)]
+#[path = "snapshot_create_failure_tests.rs"]
+mod failure_tests;
 #[cfg(test)]
 #[path = "snapshot_create_interruption_tests.rs"]
 mod interruption_tests;

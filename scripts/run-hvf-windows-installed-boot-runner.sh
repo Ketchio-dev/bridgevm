@@ -812,7 +812,7 @@ write_host_pause_resume_gate() {
   [[ -f "$observation" ]] && grep -Eq '^log_stable_while_stopped=true$' "$observation" && stable="true"
   [[ -f "$observation" ]] && grep -Eq '^continue_signal_sent=true$' "$observation" && continued="true"
   [[ -f "$observation" ]] && grep -Eq '^post_resume_command_ok=true$' "$observation" && agent_round_trip="true"
-  grep -Eq '^stop: PSCI .*\(system off\)' "$EVIDENCE_DIR/run.log" && guest_system_off="true"
+  /bin/bash "$ROOT/scripts/hvf-terminal-report.sh" --require-system-off "$EVIDENCE_DIR/run.log" && guest_system_off="true"
   grep -Eq '^NVMe (second namespace )?disk written back:' "$EVIDENCE_DIR/run.log" && nvme_writeback="true"
 
   if [[ "${HOST_PAUSE_RESUME_CONTROL_STATUS:-1}" != "0" || "$probe_status" != "0" || \
@@ -851,7 +851,7 @@ write_agent_shutdown_gate() {
   if grep -Eq '^BVAGENT (READY|PONG \(proactive\))' "$EVIDENCE_DIR/run.log"; then
     ready="true"
   fi
-  if grep -Eq 'stop: PSCI .*\(system off\)' "$EVIDENCE_DIR/run.log"; then
+  if /bin/bash "$ROOT/scripts/hvf-terminal-report.sh" --require-system-off "$EVIDENCE_DIR/run.log"; then
     system_off="true"
   fi
   if [[ "$ready" != "true" || "$system_off" != "true" ]]; then
@@ -885,7 +885,7 @@ write_agent_service_gate() {
   grep -Fq "BVAGENT CMD $AGENT_SERVICE_COMMAND exit=0" "$EVIDENCE_DIR/run.log" && initial_command_exit_zero="true"
   grep -Fq "BVAGENT END $AGENT_SERVICE_COMMAND" "$EVIDENCE_DIR/run.log" && initial_command_complete="true"
   grep -Eq '^BVAGENT SERVICE start' "$EVIDENCE_DIR/run.log" && service_started="true"
-  grep -Eq '^stop: PSCI .*\(system off\)' "$EVIDENCE_DIR/run.log" && guest_system_off="true"
+  /bin/bash "$ROOT/scripts/hvf-terminal-report.sh" --require-system-off "$EVIDENCE_DIR/run.log" && guest_system_off="true"
   grep -Eq '^NVMe (second namespace )?disk written back:' "$EVIDENCE_DIR/run.log" && nvme_writeback="true"
 
   if [[ "$probe_status" != "0" || "$ready" != "true" || \
