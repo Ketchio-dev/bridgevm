@@ -1,12 +1,8 @@
 """Synthetic A19 T23 campaign fixtures: queue seals, lane records and receipts."""
 from __future__ import annotations
 
-import hashlib
-import json
-import os
+import atexit, hashlib, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
-import subprocess
-import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/live-gates"))
@@ -16,6 +12,9 @@ import a19_lifecycle_campaign_record as record  # noqa: E402
 COMMIT = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
 MANIFEST, BINARY, IMAGE, VARS = "b" * 64, "c" * 64, "d" * 64, "e" * 64
 TIER = receipt.TIER
+# Hosted macOS runners report hw.model VirtualMac2,1, which receipts refuse; fixture runs see a physical model.
+FAKE_BIN = Path(tempfile.mkdtemp(prefix="t23-fake-sysctl-")); atexit.register(shutil.rmtree, FAKE_BIN, True)
+(FAKE_BIN / "sysctl").write_text('#!/bin/sh\n[ "$*" = "-n hw.model" ] && { echo Mac17,9; exit 0; }\nexec /usr/sbin/sysctl "$@"\n'); (FAKE_BIN / "sysctl").chmod(0o755)
 
 
 def sha(label: str) -> str:
@@ -93,7 +92,8 @@ def write_receipt(job: Path, value: dict, name: str = "receipt.json") -> Path:
 
 
 def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
-    return subprocess.run(command, capture_output=True, text=True, timeout=60, **kwargs)
+    env = kwargs.pop("env", None) or dict(os.environ); env = {**env, "PATH": f"{FAKE_BIN}{os.pathsep}{env.get('PATH', os.defpath)}"}
+    return subprocess.run(command, capture_output=True, text=True, timeout=60, env=env, **kwargs)
 
 
 def verify(path: Path, commit: str = COMMIT) -> subprocess.CompletedProcess:
