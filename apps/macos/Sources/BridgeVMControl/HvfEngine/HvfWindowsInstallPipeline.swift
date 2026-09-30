@@ -35,13 +35,13 @@ extension HvfWindowsInstallSession {
         do {
             try execution.prepareMedia(plan)
         } catch {
-            failUnlessCancelled("번들된 UEFI vars 시드를 준비하지 못했습니다.")
+            failUnlessCancelled("설치 작업 파일을 준비하지 못했습니다: \(error.localizedDescription)")
             return
         }
-        let installLog = URL(fileURLWithPath: plan.tmpEvidenceDir).appendingPathComponent("run.log")
+        let installLog = URL(fileURLWithPath: plan.stagingEvidenceDir).appendingPathComponent("run.log")
         guard await runProcess(arguments: plan.installCommand(), extraEnvironment: [:],
                                progressLog: installLog) else {
-            failUnlessCancelled("Windows 무인 설치가 실패했습니다. 로그: \(plan.tmpEvidenceDir)/run.log")
+            failUnlessCancelled("Windows 무인 설치가 실패했습니다. 로그: \(plan.stagingEvidenceDir)/run.log")
             return
         }
         guard !acknowledgeCancellation(cleanup: true) else { return }
