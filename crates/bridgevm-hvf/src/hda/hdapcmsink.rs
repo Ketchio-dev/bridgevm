@@ -2,9 +2,14 @@
 
 use super::*;
 
+#[path = "file_pcm_sink.rs"]
+mod file_pcm_sink;
 #[path = "pcm_sink.rs"]
 mod pcm_sink;
-pub use pcm_sink::{FilePcmSink, HdaPcmSink};
+#[path = "stream_control.rs"]
+mod stream_control;
+pub use file_pcm_sink::FilePcmSink;
+pub use pcm_sink::HdaPcmSink;
 
 use std::{
     path::Path,
@@ -541,55 +546,6 @@ impl HdaController {
             }
         }
         self.gctl = (self.gctl & GCTL_CRST) | (next & 0x0000_0102);
-    }
-
-    pub(crate) fn controller_reset(&mut self) {
-        let pcm_sink = self.pcm_sink.take();
-        let pcm_sink_overridden = self.pcm_sink_overridden;
-        *self = Self::with_pcm_output_path::<&Path>(None);
-        self.pcm_sink = pcm_sink;
-        self.pcm_sink_overridden = pcm_sink_overridden;
-    }
-
-    pub(crate) fn write_stream_ctl(&mut self, next: u32) {
-        let was_running = self.stream.ctl & SDCTL_RUN != 0;
-        if next & SDCTL_SRST != 0 {
-            let format = self.stream.fmt;
-            let bdl = self.stream.bdl;
-            let cbl = self.stream.cbl;
-            let lvi = self.stream.lvi;
-            self.stream = StreamDescriptor {
-                ctl: SDCTL_SRST,
-                fmt: format,
-                bdl,
-                cbl,
-                lvi,
-                ..StreamDescriptor::default()
-            };
-            self.last_poll = None;
-            self.byte_time_remainder = 0;
-            return;
-        }
-        self.stream.ctl = next & !SDCTL_SRST;
-        let running = self.stream.ctl & SDCTL_RUN != 0;
-        if running && !was_running {
-            self.stream.reset_runtime();
-            self.last_poll = None;
-            self.byte_time_remainder = 0;
-            if hda_trace_enabled() {
-                println!(
-                    "hda: stream run fmt={:#06x} rate={}Hz frame={} BDL={:#x} CBL={} LVI={}",
-                    self.stream.fmt,
-                    stream_sample_rate(self.stream.fmt).unwrap_or(0),
-                    stream_frame_bytes(self.stream.fmt).unwrap_or(0),
-                    self.stream.bdl,
-                    self.stream.cbl,
-                    self.stream.lvi
-                );
-            }
-        } else if !running {
-            self.last_poll = None;
-        }
     }
 
     pub(crate) fn process_corb(&mut self, mem: &mut dyn GuestMemoryMut) {

@@ -12,21 +12,19 @@ for the whole run.log, read after the helper exited: a window can drop the count
 
 from __future__ import annotations
 
-import re
+from hvf_host_tail import HOST_TAIL, MAX_AUDIO_TAIL_BYTES, MAX_AUDIO_TAIL_LINES, continuity_placed
 from hvf_stop_line import SYSTEM_OFF
-from t17_terminal_report_tail import (AUDIO_LINES, BANNER, COUNT_NEW, FOOTER, MAX_AUDIO_TAIL_BYTES,
-                                      MAX_AUDIO_TAIL_LINES, SERIAL)
+from t17_terminal_report_tail import BANNER, COUNT_NEW, FOOTER, SERIAL
 
 LOG_LIMIT = 10**8
-HOST_TAIL = (*AUDIO_LINES, re.compile(r"[A-Z][a-z]{2} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2}  "
-                                      r"virgl_render_server\[[0-9]+\] <Debug>: socket disconnected"))
 
 
 def _tail_end(raw: bytes) -> int | None:
     end = len(raw)
     for _ in range(MAX_AUDIO_TAIL_LINES + 1):
         if raw.endswith(FOOTER, 0, end):
-            return end - len(FOOTER) if len(raw) - end <= MAX_AUDIO_TAIL_BYTES else None
+            records = raw[end:].decode("ascii", "replace").split("\n")[:-1]
+            return end - len(FOOTER) if len(raw) - end <= MAX_AUDIO_TAIL_BYTES and continuity_placed(records) else None
         if not raw.endswith(b"\n", 0, end):
             return None
         start = raw.rfind(b"\n", 0, end - 1) + 1

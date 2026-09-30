@@ -2,14 +2,7 @@ import Foundation
 
 /// Recognizes the final host report and only the bounded audio shutdown tail.
 enum T17TerminalReportTail {
-    static let maxTailBytes = 4 * 1024
-    static let maxTailLines = 16
     private static let footer = Data("\n--- end ---\n".utf8)
-    static let hostLines = [
-        #"^hda CoreAudio callback enqueue: state=stopping reason=[a-z-]+ osstatus=-?[0-9]+ expected=(true|false)$"#,
-        #"^hda CoreAudio lifecycle: operation=(stop|dispose) osstatus=-?[0-9]+ success=(true|false)$"#,
-        #"^hda CoreAudio stats: [a-z][a-z0-9_]*=[0-9]+( [a-z][a-z0-9_]*=[0-9]+)*$"#,
-    ]
 
     static func isComplete(rawSuffix: Data, nonce: String, generation: UInt64) -> Bool {
         let ack = Data("HOST-DIAGNOSTIC-STOP: generation=\(generation) nonce=\(nonce) request consumed; ending run through final report".utf8)
@@ -36,7 +29,7 @@ enum T17TerminalReportTail {
               (!count.legacy || !displayed.contains("\u{FFFD}")) else { return false }
         let tail = rawSuffix[footerStart + footer.count..<rawSuffix.count]
         guard let text = String(data: tail, encoding: .utf8) else { return false }
-        return isBoundedHostShutdownTail(text)
+        return HvfHostTail.isBoundedShutdownTail(text)
     }
 
     static func serialCount(_ line: String) -> (output: Int, legacy: Bool)? {
@@ -57,16 +50,5 @@ enum T17TerminalReportTail {
         guard !bytes.isEmpty, bytes.count <= 8,
               bytes.allSatisfy({ (48...57).contains($0) }) else { return nil }
         return Int(value)
-    }
-
-    private static func isBoundedHostShutdownTail(_ tail: String) -> Bool {
-        if tail.isEmpty { return true }
-        guard tail.utf8.count <= maxTailBytes, tail.hasSuffix("\n") else { return false }
-        let lines = tail.split(separator: "\n", omittingEmptySubsequences: false)
-        guard lines.count <= maxTailLines + 1, lines.last?.isEmpty == true else { return false }
-        return lines.dropLast().allSatisfy { line in
-            let value = String(line)
-            return hostLines.contains { value.range(of: $0, options: .regularExpression) != nil }
-        }
     }
 }
