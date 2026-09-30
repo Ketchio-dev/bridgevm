@@ -13,7 +13,7 @@ struct HvfRuntimeDiagnosticsSettings<PathRow: View>: View {
 
     var body: some View {
         GroupBox {
-            DisclosureGroup("고급 진단", isExpanded: $expanded) {
+            DisclosureGroup(isExpanded: $expanded) {
                 VStack(alignment: .leading, spacing: 12) {
                     pathRow("Evidence dir", $evidenceDir, true)
                     pathRow("CTL file", $ctlFilePath, false)
@@ -35,7 +35,7 @@ struct HvfRuntimeDiagnosticsSettings<PathRow: View>: View {
                     }
                 }
                 .padding(.top, 12)
-            }
+            } label: { HvfRuntimeDiagnosticsToggle(expanded: $expanded) }
             .padding(6)
         }
     }

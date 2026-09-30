@@ -77,8 +77,7 @@ struct T17GuestJourney {
 
     private func control(_ command: String, requires marker: String) throws {
         let before = (try? Data(contentsOf: runLog).count) ?? 0
-        try ui.setText(command, identifier: "bridgevm.runtime.ctl.input", timeout: 10)
-        try ui.press("bridgevm.runtime.ctl.send", timeout: 10)
+        try T17RuntimeControlInput.enter(command, ui: ui)
         guard wait(timeout: 120, predicate: {
             guard let data = try? Data(contentsOf: self.runLog), data.count > before else { return false }
             let tail = String(decoding: data.suffix(from: before), as: UTF8.self)
@@ -91,8 +90,7 @@ struct T17GuestJourney {
 
     private func shutdown() throws {
         let before = (try? Data(contentsOf: runLog).count) ?? 0
-        try ui.setText("shutdown.exe /s /t 0 /f", identifier: "bridgevm.runtime.ctl.input", timeout: 10)
-        try ui.press("bridgevm.runtime.ctl.send", timeout: 10)
+        try T17RuntimeControlInput.enter("shutdown.exe /s /t 0 /f", ui: ui)
         guard wait(timeout: 180, predicate: {
             guard let data = try? Data(contentsOf: self.runLog), data.count > before else { return false }
             return HvfStopLine.systemOffObserved(in: String(decoding: data.suffix(from: before), as: UTF8.self))
