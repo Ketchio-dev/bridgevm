@@ -23,14 +23,14 @@ extension HvfWindowsInstallFinalization {
                       sha256: diskSHA256)
             try advance(&journal, to: .diskStaged, boundary: .diskStaged,
                         paths: paths, faultInjector: faultInjector)
-            try? HvfWindowsInstallDurability.durableRemove(sourceDisk)
+            try? HvfWindowsInstallStaging.consume(sourceDisk, paths: paths)
         } else { try verify(paths.stagedDisk, bytes: journal.diskBytes, sha256: diskSHA256) }
         if journal.phase < .varsStaged {
             try stage(sourceVars, to: paths.stagedVars, bytes: journal.varsBytes,
                       sha256: varsSHA256)
             try advance(&journal, to: .varsStaged, boundary: .varsStaged,
                         paths: paths, faultInjector: faultInjector)
-            try? HvfWindowsInstallDurability.durableRemove(sourceVars)
+            try? HvfWindowsInstallStaging.consume(sourceVars, paths: paths)
         } else { try verify(paths.stagedVars, bytes: journal.varsBytes, sha256: varsSHA256) }
         if journal.phase < .secureBootStaged {
             try HvfWindowsInstallDurability.durableCloneOrCopy(
@@ -112,9 +112,9 @@ extension HvfWindowsInstallFinalization {
             try HvfWindowsInstallDurability.durableRemove(paths.pendingRequest)
         }
         if journal.phase < .committed {
-            try advance(&journal, to: .committed, boundary: .committed,
-                        paths: paths, faultInjector: faultInjector)
+            try advance(&journal, to: .committed, boundary: .committed, paths: paths, faultInjector: faultInjector)
         }
+        try? HvfWindowsInstallStaging.discard(paths) // evidence survives only as logs/install-run.log
         try HvfWindowsInstallDurability.durableRemove(paths.transaction)
     }
 }

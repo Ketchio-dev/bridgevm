@@ -29,8 +29,7 @@ enum HvfWindowsInstallFinalization {
                 try faultInjector(.prepared)
             }
             try resume(journal, paths: paths, faultInjector: faultInjector,
-                       secureBootSeeder: secureBootSeeder, installLog: URL(
-                        fileURLWithPath: plan.tmpEvidenceDir).appendingPathComponent("run.log"),
+                       secureBootSeeder: secureBootSeeder, installLog: paths.stagingLog,
                        finalLog: URL(fileURLWithPath: plan.bundleInstallLogPath))
         }
     }
@@ -89,8 +88,8 @@ enum HvfWindowsInstallFinalization {
         guard requestSnapshot.request == plan.request else {
             throw HvfWindowsInstallFinalizationError.invalidState("저장된 설치 요청이 실행 계획과 다릅니다.")
         }
-        let sourceDisk = URL(fileURLWithPath: plan.tmpTargetPath)
-        let sourceVars = URL(fileURLWithPath: plan.tmpVarsPath)
+        let sourceDisk = paths.stagingDisk
+        let sourceVars = paths.stagingVars
         let diskIdentity = try HvfWindowsInstallFinalizationIdentity.seal(sourceDisk)
         let varsIdentity = try HvfWindowsInstallFinalizationIdentity.seal(sourceVars)
         let journal = HvfWindowsInstallFinalizationJournal(

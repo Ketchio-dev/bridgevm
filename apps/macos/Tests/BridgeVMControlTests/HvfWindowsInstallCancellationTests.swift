@@ -16,7 +16,7 @@ final class HvfWindowsInstallCancellationTests: XCTestCase {
             fixture.assertCancelled()
             XCTAssertEqual(fixture.prepares, 0, "Cancellation must not write vars after cache verification returns")
             XCTAssertEqual(fixture.process.requests, 0, "Cancellation must not dispatch source or install work")
-            for path in [fixture.plan.sourceImagePath, fixture.plan.tmpTargetPath, fixture.plan.tmpVarsPath] {
+            for path in [fixture.plan.sourceImagePath, fixture.plan.stagingTargetPath, fixture.plan.stagingVarsPath] {
                 XCTAssertEqual(try? Data(contentsOf: URL(fileURLWithPath: path)), fixture.sentinel)
             }
             _ = try HvfWindowsInstallSourceLock(sourceImagePath: fixture.plan.sourceImagePath)
@@ -35,8 +35,8 @@ final class HvfWindowsInstallCancellationTests: XCTestCase {
         XCTAssertEqual(fixture.prepares, 0)
         XCTAssertEqual(fixture.process.requests, 1)
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: fixture.plan.sourceImagePath)), fixture.sentinel)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.plan.tmpTargetPath))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.plan.tmpVarsPath))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.plan.stagingTargetPath))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.plan.stagingVarsPath))
     }
 
     func testSuccessfulInstallProcessAcknowledgmentCannotFinalizeCancelledMedia() async throws {
@@ -48,8 +48,8 @@ final class HvfWindowsInstallCancellationTests: XCTestCase {
         }
         fixture.assertCancelled()
         XCTAssertEqual(fixture.process.requests, 1)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.plan.tmpTargetPath))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.plan.tmpVarsPath))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.plan.stagingTargetPath))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.plan.stagingVarsPath))
         let retry = try XCTUnwrap(fixture.session.start())
         await retry.value
         XCTAssertEqual(fixture.session.stage, .preparingSource)

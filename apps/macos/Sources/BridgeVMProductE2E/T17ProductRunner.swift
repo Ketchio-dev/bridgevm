@@ -120,7 +120,7 @@ final class T17ProductRunner {
 
     private func installWindows(_ ui: T17UIControlling) throws {
         try ui.press("bridgevm.install.start", timeout: 20)
-        let sampler = T17InstallEnvironmentSampler(vmSlug: request.vmSlug)
+        let sampler = T17InstallEnvironmentSampler(bundlePath: request.bundlePath)
         try T17InstallTimeoutDiagnostic.wait(
             applicationIsRunning: { self.application?.isRunning == true },
             runtimeView: { try ui.waitFor($0, timeout: 1) },
@@ -153,6 +153,10 @@ final class T17ProductRunner {
               regularFile(URL(fileURLWithPath: request.varsPath)),
               fileManager.fileExists(atPath: bundle.appendingPathComponent("metadata/hvf-install-done.json").path) else {
             throw T17Blocker(code: "installer-failed", detail: "completed UI stage lacks durable installed media")
+        }
+        // Any entry, including a dangling link, means staging outlived the commit.
+        guard (try? fileManager.attributesOfItem(atPath: bundle.appendingPathComponent("metadata/hvf-install-staging").path)) == nil else {
+            throw T17Blocker(code: "installer-failed", detail: "completed install left private staging media in the bundle")
         }
     }
 

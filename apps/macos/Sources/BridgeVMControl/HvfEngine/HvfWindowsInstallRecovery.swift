@@ -39,7 +39,7 @@ enum HvfWindowsInstallRecovery {
             }
             try HvfWindowsInstallFinalization.resume(journal, paths: paths, faultInjector: { _ in },
                 secureBootSeeder: secureBootSeeder,
-                installLog: URL(fileURLWithPath: plan.tmpEvidenceDir).appendingPathComponent("run.log"),
+                installLog: paths.stagingLog,
                 finalLog: URL(fileURLWithPath: plan.bundleInstallLogPath))
             let config = try HvfWindowsInstallFinalization.loadConfig(paths.config)
             try HvfWindowsInstallFinalization.validateConfig(config, pending: false, paths: paths)

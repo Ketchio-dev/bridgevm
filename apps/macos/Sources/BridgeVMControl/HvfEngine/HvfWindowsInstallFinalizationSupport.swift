@@ -19,8 +19,7 @@ extension HvfWindowsInstallFinalization {
               journal.slug == paths.slug,
               journal.libraryRoot == HvfWindowsInstallDurability.canonical(paths.libraryRoot),
               journal.bundlePath == HvfWindowsInstallDurability.canonical(paths.bundle),
-              journal.sourceDiskPath == "/tmp/bridgevm-appinstall-\(paths.slug)-target.raw",
-              journal.sourceVarsPath == "/tmp/bridgevm-appinstall-\(paths.slug)-vars.fd",
+              HvfWindowsInstallStaging.admitsJournalSources(journal, paths: paths),
               journal.diskBytes > 0, journal.varsBytes > 0,
               journal.requestSHA256.count == 64,
               journal.diskSHA256?.count == 64,
@@ -41,7 +40,7 @@ extension HvfWindowsInstallFinalization {
         }
         for url in [paths.libraryRoot, paths.config.deletingLastPathComponent(), paths.bundle,
                     paths.metadata, paths.transaction, paths.config, paths.finalDisk,
-                    paths.finalVars, paths.finalReceipt, paths.pendingRequest, paths.doneRequest] {
+                    paths.finalVars, paths.finalReceipt, paths.pendingRequest, paths.doneRequest, paths.staging] {
             try HvfWindowsInstallDurability.refuseSymlink(url)
         }
     }
@@ -61,6 +60,7 @@ extension HvfWindowsInstallFinalization {
     static func stage(
         _ source: URL, to destination: URL, bytes: UInt64, sha256: String
     ) throws {
+        try HvfWindowsInstallStaging.requireOwnedSource(source)
         try verify(source, bytes: bytes, sha256: sha256)
         try HvfWindowsInstallDurability.durableCloneOrCopy(from: source, to: destination)
         try verify(destination, bytes: bytes, sha256: sha256)

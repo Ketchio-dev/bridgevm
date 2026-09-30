@@ -97,9 +97,6 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
         HvfWindowsCatalogVerifier.resolve(repoRoot: repoRoot)
     }
     var fileComparePath: String { repoRoot.appendingPathComponent("helpers/bv-file-compare.exe").path }
-    var tmpTargetPath: String { "/tmp/bridgevm-appinstall-\(slug)-target.raw" }
-    var tmpVarsPath: String { "/tmp/bridgevm-appinstall-\(slug)-vars.fd" }
-    var tmpEvidenceDir: String { "/tmp/bridgevm-appinstall-\(slug)-evidence" }
 
     var bundleDiskPath: String { "\(bundlePath)/disks/hvf-target.raw" }
     var bundleVarsPath: String { "\(bundlePath)/metadata/hvf-vars.fd" }
@@ -132,10 +129,9 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
         let arguments = [
             "/bin/bash", "scripts/run-hvf-windows-scripted-install.sh",
             "--source", sourceImagePath,
-            "--target", tmpTargetPath,
-            "--fresh-target-size", String(freshTargetSizeBytes),
-            "--vars", tmpVarsPath,
-            "--evidence-dir", tmpEvidenceDir,
+            "--target", stagingTargetPath,
+            "--vars", stagingVarsPath,
+            "--evidence-dir", stagingEvidenceDir,
             "--release",
             "--skip-build",
             "--watchdog-ms", "1500000",

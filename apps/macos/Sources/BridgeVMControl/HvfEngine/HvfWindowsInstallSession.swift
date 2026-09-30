@@ -68,7 +68,7 @@ final class HvfWindowsInstallSession: ObservableObject {
     }
 
     func failUnlessCancelled(_ message: String) {
-        if !acknowledgeCancellation(cleanup: true) { finish(.failed(message)) }
+        if !acknowledgeCancellation(cleanup: true) { cleanupTemporaryMedia(); finish(.failed(message)) }
     }
 
     func acknowledgeCancellation(cleanup: Bool = false) -> Bool {
@@ -84,9 +84,7 @@ final class HvfWindowsInstallSession: ObservableObject {
             appendLog("중단된 설치 복구에 필요한 임시 파일을 보존했습니다.")
             return
         }
-        for path in [plan.tmpTargetPath, plan.tmpVarsPath] {
-            try? FileManager.default.removeItem(atPath: path)
-        }
+        try? HvfWindowsInstallStaging.discardMedia(plan)
     }
 
     func runProcess(arguments: [String], extraEnvironment: [String: String], progressLog: URL?) async -> Bool {

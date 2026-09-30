@@ -85,7 +85,7 @@ final class HvfWindowsInstallCancellationFixture {
             }, prepareMedia: { [weak self] plan in
                 guard let self else { throw CocoaError(.fileWriteUnknown) }
                 self.prepares += 1
-                try Data("owned-prepared-vars".utf8).write(to: URL(fileURLWithPath: plan.tmpVarsPath))
+                try Data("owned-prepared-vars".utf8).write(to: URL(fileURLWithPath: plan.stagingVarsPath))
             }, finalize: { [weak self] _ in self?.finalizations += 1 })
         let session = HvfWindowsInstallSession(plan: plan, validate: { _ in nil },
             schedule: queue.enqueue, execution: execution)
@@ -98,7 +98,8 @@ final class HvfWindowsInstallCancellationFixture {
         self.cacheVerified = cacheVerified
         let source = URL(fileURLWithPath: plan.sourceImagePath)
         try FileManager.default.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
-        for path in [plan.sourceImagePath, plan.tmpTargetPath, plan.tmpVarsPath] {
+        try FileManager.default.createDirectory(atPath: plan.stagingDirectory, withIntermediateDirectories: true)
+        for path in [plan.sourceImagePath, plan.stagingTargetPath, plan.stagingVarsPath] {
             try sentinel.write(to: URL(fileURLWithPath: path), options: .withoutOverwriting)
         }
     }
@@ -142,8 +143,5 @@ final class HvfWindowsInstallCancellationFixture {
         gate.release()
         queue.discard()
         try? FileManager.default.removeItem(at: plan.repoRoot)
-        for path in [plan.tmpTargetPath, plan.tmpVarsPath, plan.tmpEvidenceDir] {
-            try? FileManager.default.removeItem(atPath: path)
-        }
     }
 }
