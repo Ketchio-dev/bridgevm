@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""B9 guest_shutdown_observed needs exit 0 and the exact HVF SYSTEM_OFF record.
+"""B9 guest_shutdown_observed needs exit 0 and SYSTEM_OFF as the final report's stop.
 
 The runner's receipt field must be the shared helper applied to the runner's own
-run.log split; lookalike, retired and non-final records are rejected.
+run.log path; lookalike, retired, unframed and guest-tail records are rejected.
 """
 
 from __future__ import annotations
@@ -24,29 +24,29 @@ SPEC = importlib.util.spec_from_file_location("b9_shutdown_runner", RUNNER_PATH)
 assert SPEC is not None and SPEC.loader is not None
 RUNNER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RUNNER)
-LOOKALIKES = ("stop: PSCI SYSTEM_OFF", "stop: PSCI SYSTEM_OFF (system off)",
-              "guest " + SYSTEM_OFF, SYSTEM_OFF + " extra", SYSTEM_OFF + " ", "(system off)",
-              "stop: PSCI 0x84000009 exiting for process recreation (exit 42)")
+LOOKALIKES = ("stop: PSCI SYSTEM_OFF", "stop: PSCI SYSTEM_OFF (system off)", "guest " + SYSTEM_OFF, SYSTEM_OFF + " extra",
+              SYSTEM_OFF + " ", "(system off)", "stop: PSCI 0x84000009 exiting for process recreation (exit 42)")
 
 
 class B9GuestShutdownContract(unittest.TestCase):
-    def run_log(self, text: str) -> list[str]:
+    def observed(self, exit_code: object, stop: str | None, serial: str = "boot\r\n") -> bool:
+        text = serial if stop is None else (
+            f"REGS: pc=0x0\n=== EDK2 boot probe (with Apple hv_gic) ===\n{stop}\nexits: 1\nserial raw bytes: "
+            f"{len(serial)} output bytes: {len(serial)}\n--- serial (tail) ---\n{serial}\n--- end ---\n")
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "run.log"
             path.write_bytes(text.encode())
-            return RUNNER.lines(path)
+            return guest_shutdown_observed(exit_code, path)
 
-    def test_zero_exit_and_exact_record_is_observed(self):
-        for text in (f"boot\n{SYSTEM_OFF}\n", f"boot\r\n{SYSTEM_OFF}\r\nserial tail\r\n", SYSTEM_OFF):
-            self.assertTrue(guest_shutdown_observed(0, self.run_log(text)), repr(text))
-
-    def test_lookalike_records_nonzero_exit_and_unsplit_text_are_rejected(self):
-        for stop in LOOKALIKES:
-            self.assertFalse(guest_shutdown_observed(0, self.run_log(f"boot\r\n{stop}\r\n")), stop)
+    def test_only_zero_exit_with_the_final_report_system_off_is_observed(self):
+        for serial in ("boot\r\n", f"serial\r\n{SYSTEM_OFF}\r\n"):
+            self.assertTrue(self.observed(0, SYSTEM_OFF, serial), repr(serial))
+        for stop, serial in ((None, f"boot\n{SYSTEM_OFF}\n"), ("stop: host diagnostic stop requested", f"{SYSTEM_OFF}\r\n"),
+                             *((lookalike, "boot\r\n") for lookalike in LOOKALIKES)):
+            self.assertFalse(self.observed(0, stop, serial), repr((stop, serial)))
         for exit_code in (1, -15, 42, None, False, 0.0, "0"):
-            self.assertFalse(guest_shutdown_observed(exit_code, [SYSTEM_OFF]), repr(exit_code))
-        self.assertFalse(guest_shutdown_observed(0, []))
-        self.assertFalse(guest_shutdown_observed(0, f"boot\n{SYSTEM_OFF}\n"))
+            self.assertFalse(self.observed(exit_code, SYSTEM_OFF), repr(exit_code))
+        self.assertFalse(guest_shutdown_observed(0, ROOT / "missing-run.log"))
 
     def test_runner_receipt_field_is_the_helper_over_the_run_log(self):
         self.assertIs(RUNNER.guest_shutdown_observed, guest_shutdown_observed)
@@ -56,7 +56,7 @@ class B9GuestShutdownContract(unittest.TestCase):
                           and target.slice.value == "guest_shutdown_observed"
                           for target in node.targets)]
         self.assertEqual(writes, ["receipt['guest_shutdown_observed'] = guest_shutdown_observed("
-                                  "receipt['guest_shutdown_exit'], lines(boot / 'run.log'))"])
+                                  "receipt['guest_shutdown_exit'], boot / 'run.log')"])
         keys = [node for node in ast.walk(tree)
                 if isinstance(node, ast.Constant) and node.value == "guest_shutdown_observed"]
         guards = [node for node in ast.walk(tree) if isinstance(node, ast.If)

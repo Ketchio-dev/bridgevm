@@ -3293,3 +3293,7 @@ crates/bridgevm-hvf/src/snapshot_create_staging_debris_tests.rs	84	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHelperProcess.swift	63	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTests.swift	88	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotInvokeTestSupport.swift	34	0
+apps/macos/Tests/BridgeVMProductE2ETests/HvfTerminalStopTests.swift	96	0
+tests/integration/hvf-terminal-stop-contract.py	220	0
+apps/macos/Sources/BridgeVMProductE2E/HvfTerminalReport.swift	56	0
+scripts/live-gates/hvf_terminal_report.py	65	0

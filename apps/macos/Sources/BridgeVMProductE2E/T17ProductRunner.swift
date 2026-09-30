@@ -203,8 +203,8 @@ final class T17ProductRunner {
 
     private func stopOwnedApplication() -> Bool {
         if let ui { try? ui.press("bridgevm.windows.runtime.stop", timeout: 2) }
-        _ = waitUntil(timeout: 30) { self.boundedLines(self.bundle.appendingPathComponent("logs/hvf/run.log"))
-            .contains(HvfStopLine.systemOff) }
+        let log = bundle.appendingPathComponent("logs/hvf/run.log")
+        _ = waitUntil(timeout: 30) { HvfStopLine.systemOffObserved(in: self.boundedText(log)) }
         guard let application else { return true }
         if application.isRunning { application.terminate() }
         _ = waitUntil(timeout: 10) { !application.isRunning }
@@ -239,12 +239,15 @@ final class T17ProductRunner {
     }
 
     private func boundedLines(_ url: URL) -> [String] {
-        guard regularFile(url), let handle = FileHandle(forReadingAtPath: url.path) else { return [] }
+        boundedText(url).split(whereSeparator: \.isNewline).map(String.init)
+    }
+
+    private func boundedText(_ url: URL) -> String {
+        guard regularFile(url), let handle = FileHandle(forReadingAtPath: url.path) else { return "" }
         defer { try? handle.close() }
         let size = (try? handle.seekToEnd()) ?? 0
         try? handle.seek(toOffset: size > 8 * 1024 * 1024 ? size - 8 * 1024 * 1024 : 0)
-        let data = (try? handle.readToEnd()) ?? Data()
-        return String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline).map(String.init)
+        return String(decoding: (try? handle.readToEnd()) ?? Data(), as: UTF8.self)
     }
 
     private func treeDigest(_ root: URL) throws -> String {
