@@ -192,7 +192,7 @@ final class T17ProductRunner {
         try ui.press("bridgevm.windows.runtime.start", timeout: 20)
         let log = bundle.appendingPathComponent("logs/hvf/run.log")
         return try T17FirstReadyWaiter.wait(observe: {
-            let ready = self.boundedLines(log).first {
+            let ready = T17BoundedLog.lines(log).first {
                 $0.hasPrefix("BVAGENT READY") || $0.hasPrefix("BVAGENT PONG (proactive)")
             }
             return try T17FirstReadyObservation.capture(
@@ -208,7 +208,7 @@ final class T17ProductRunner {
     private func stopOwnedApplication() -> Bool {
         if let ui { try? ui.press("bridgevm.windows.runtime.stop", timeout: 2) }
         let log = bundle.appendingPathComponent("logs/hvf/run.log")
-        _ = waitUntil(timeout: 30) { HvfStopLine.systemOffObserved(in: self.boundedText(log, whole: true)) }
+        _ = waitUntil(timeout: 30) { HvfStopLine.systemOffObserved(in: T17BoundedLog.text(log, whole: true)) }
         guard let application else { return true }
         if application.isRunning { application.terminate() }
         _ = waitUntil(timeout: 10) { !application.isRunning }
@@ -230,29 +230,13 @@ final class T17ProductRunner {
         return predicate()
     }
 
-    private func regularFile(_ url: URL) -> Bool {
-        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]) else { return false }
-        return values.isRegularFile == true && values.isSymbolicLink != true && (values.fileSize ?? 0) > 0
-    }
+    private func regularFile(_ url: URL) -> Bool { T17BoundedLog.regularFile(url) }
 
     private func jsonObject(_ url: URL) throws -> [String: Any] {
         guard regularFile(url), let value = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] else {
             throw T17Blocker(code: "guest-evidence-missing", detail: "required product JSON is missing or malformed")
         }
         return value
-    }
-
-    private func boundedLines(_ url: URL) -> [String] {
-        boundedText(url).split(whereSeparator: \.isNewline).map(String.init)
-    }
-
-    private func boundedText(_ url: URL, whole: Bool = false) -> String {
-        guard regularFile(url), let handle = FileHandle(forReadingAtPath: url.path) else { return "" }
-        defer { try? handle.close() }
-        let size = (try? handle.seekToEnd()) ?? 0
-        guard !whole || size <= 64 * 1024 * 1024 else { return "" }
-        try? handle.seek(toOffset: !whole && size > 8 * 1024 * 1024 ? size - 8 * 1024 * 1024 : 0)
-        return String(decoding: (try? handle.readToEnd()) ?? Data(), as: UTF8.self)
     }
 
     private func treeDigest(_ root: URL) throws -> String {
