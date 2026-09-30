@@ -3165,6 +3165,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingTests.swift	176	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingJournalTests.swift	137	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingRunnerTests.swift	104	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingReconcileTests.swift	76	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingFailureTests.swift	75	0
 tests/integration/hvf-install-staging-contract.py	48	0
 docs/history/windows-hvf/install-finalization-worker-20260920.md	49	0
 apps/macos/Sources/BridgeVMProductE2E/T17OptionalTextSnapshot.swift	31	0
