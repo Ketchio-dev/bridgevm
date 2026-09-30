@@ -3,18 +3,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 fn sink() -> FbSink {
     static NEXT: AtomicU64 = AtomicU64::new(0);
-    FbSink {
-        path: std::env::temp_dir().join(format!(
-            "bridgevm-fb-sink-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        )),
-        file: None,
-        map: std::ptr::null_mut(),
-        map_len: 0,
-        capacity: 0,
-        seq: 0,
-    }
+    FbSink::at_path(std::env::temp_dir().join(format!(
+        "bridgevm-fb-sink-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    )))
 }
 
 fn pixels(sink: &FbSink, len: usize) -> &[u8] {
