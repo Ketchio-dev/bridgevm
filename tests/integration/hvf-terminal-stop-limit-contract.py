@@ -66,21 +66,20 @@ class TerminalStopLimitContract(unittest.TestCase):
 
     def test_stop_waits_pass_the_whole_run_log(self):
         swift = {name: (SWIFT / name).read_text(encoding="utf-8")
-                 for name in ("T17ProductRunner.swift", "A9ImportProductRunner.swift", "T17GuestJourney.swift")}
+                 for name in ("T17ProductRunner.swift", "A9ImportProductRunner.swift", "T17GuestJourney.swift", "T17BoundedLog.swift")}
         journey = swift["T17GuestJourney.swift"]
-        for line in ("guard let data = try? Data(contentsOf: self.runLog), data.count > before,\n"
-                     "                  let stop = HvfTerminalReport.stop(in: data) else { return false }\n"
+        for line in ("guard let data = try? Data(contentsOf: self.runLog), data.count > before, let stop = HvfTerminalReport.stop(in: data) else { return false }\n"
                      "            return stop.offset >= before && stop.line == HvfStopLine.systemOff\n",
                      "}), waitForStableLog() else {\n"):
             self.assertEqual(journey.count(line), 1, line)
         self.assertFalse("systemOffObserved" in journey or "contains(HvfStopLine.systemOff)" in journey)
-        for name, log in (("T17ProductRunner.swift", "self.boundedText(log, whole: true)"),
-                          ("A9ImportProductRunner.swift", "self.boundedText(self.runLog, whole: true)")):
+        for name, log, reader in (("T17ProductRunner.swift", "T17BoundedLog.text(log, whole: true)", "T17BoundedLog.swift"),
+                                  ("A9ImportProductRunner.swift", "self.boundedText(self.runLog, whole: true)", "A9ImportProductRunner.swift")):
             self.assertEqual(swift[name].count("HvfStopLine.systemOffObserved(in:"), 1, name)
             self.assertTrue(f"HvfStopLine.systemOffObserved(in: {log})" in swift[name], name)
             for line in ('guard !whole || size <= 64 * 1024 * 1024 else { return "" }',
                          "seek(toOffset: !whole && size > 8 * 1024 * 1024 ? size - 8 * 1024 * 1024 : 0)"):
-                self.assertTrue(line in swift[name], f"{name}: {line}")
+                self.assertTrue(line in swift[reader], f"{reader}: {line}")
 
 
 if __name__ == "__main__":
