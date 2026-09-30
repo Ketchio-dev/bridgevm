@@ -3299,3 +3299,4 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17IdentifierLookupTests.swift	125	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17AXReadFailureTests.swift	37	0
 apps/macos/Sources/BridgeVMProductE2E/T17IdentifierSearch.swift	29	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17IdentifierSearchTests.swift	98	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17AccessibilityTreeReadFailureTests.swift	47	0

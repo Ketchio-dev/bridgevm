@@ -1,19 +1,19 @@
 import ApplicationServices
 
-/// Failure-only detail for one failed AX attribute read. The failing node's role
-/// is reduced to a bounded AX role token; titles, values and paths are never read.
-/// The role precedes ax_error because retry classification matches that suffix.
+/// Failure-only detail for one failed AX attribute read: the failing node's role as a bounded
+/// AX token, never titles, values or paths, and not re-read when AXRole itself failed. The role
+/// precedes ax_error because retry classification matches that suffix.
 enum T17AXReadFailure {
     static func blocker(_ node: AXUIElement, attribute: String, status: AXError) -> T17Blocker {
-        var role: CFTypeRef?
-        let read = attribute != kAXRoleAttribute
-            && AXUIElementCopyAttributeValue(node, kAXRoleAttribute as CFString, &role) == .success
-        return T17Blocker(code: "ui-element-missing",
-                          detail: detail(attribute: attribute, role: read ? role as? String : nil, status: status))
+        T17Blocker(code: "ui-element-missing", detail: detail(attribute: attribute, status: status) {
+            var role: CFTypeRef?
+            return AXUIElementCopyAttributeValue(node, kAXRoleAttribute as CFString, &role) == .success ? role as? String : nil
+        })
     }
 
-    static func detail(attribute: String, role: String?, status: AXError) -> String {
-        "ax_tree_read_failed;attribute=\(attribute);role=\(token(role));ax_error=\(status.rawValue)"
+    static func detail(attribute: String, status: AXError, role: () -> String?) -> String {
+        let observed = attribute == kAXRoleAttribute ? nil : role()
+        return "ax_tree_read_failed;attribute=\(attribute);role=\(token(observed));ax_error=\(status.rawValue)"
     }
 
     static func token(_ role: String?) -> String {
