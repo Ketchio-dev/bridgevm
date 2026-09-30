@@ -2356,7 +2356,7 @@ crates/bridgevm-hvf/src/snapshot_create_stage.rs	8	0
 crates/bridgevm-hvf/src/snapshot_create_interruption_tests.rs	87	0
 crates/bridgevm-hvf/src/snapshot_create_overlap_tests.rs	95	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMediaImport.swift	27	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMediaImportHelper.swift	41	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMediaImportHelper.swift	31	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsImport.swift	78	0
 apps/macos/Tests/BridgeVMControlTests/HvfCurrentGenerationImportTests.swift	115	0
 apps/macos/Tests/BridgeVMControlTests/HvfMediaImportTestSupport.swift	15	0
@@ -3329,3 +3329,5 @@ apps/macos/Sources/BridgeVMProductE2E/HvfTerminalReport.swift	56	0
 scripts/live-gates/hvf_terminal_report.py	65	0
 tests/integration/hvf-terminal-stop-limit-contract.py	86	0
 apps/macos/Tests/BridgeVMProductE2ETests/HvfTerminalReportLimitTests.swift	31	0
+apps/macos/Tests/HelperCodeSignatureSwiftTests/HelperCodeSignatureProcessTests.swift	67	0
+apps/macos/Tests/BridgeVMControlTests/HvfMediaImportHelperTests.swift	82	0
