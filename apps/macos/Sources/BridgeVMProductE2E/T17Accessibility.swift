@@ -100,28 +100,18 @@ final class T17Accessibility: T17UIControlling {
         }
     }
 
-    func clickSecondaryWindow(timeout: TimeInterval = 10) throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            let application = AXUIElementCreateApplication(pid)
-            let windows = attribute(application, kAXWindowsAttribute as CFString) as? [AXUIElement] ?? []
-            for window in windows {
-                let title = attribute(window, kAXTitleAttribute as CFString) as? String ?? ""
-                guard title != "BridgeVM Control", let point = point(window), let size = size(window),
-                      size.width > 320, size.height > 240 else { continue }
-                let center = CGPoint(x: point.x + size.width / 2, y: point.y + size.height / 2)
-                guard let move = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved,
-                                         mouseCursorPosition: center, mouseButton: .left),
-                      let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown,
-                                         mouseCursorPosition: center, mouseButton: .left),
-                      let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp,
-                                       mouseCursorPosition: center, mouseButton: .left) else { continue }
-                move.post(tap: .cghidEventTap); down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
-                return
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        } while Date() < deadline
-        throw T17Blocker(code: "ui-element-missing", detail: "guest display window was not available for pointer input")
+    func clickDisplaySurface(timeout: TimeInterval = 15) throws {
+        let application = AXUIElementCreateApplication(pid)
+        try T17DisplayClick.click(timeout: timeout, read: {
+            guard let surface = try? descendants(of: application, limit: 12_000).first(where: {
+                attribute($0, kAXIdentifierAttribute as CFString) as? String == T17DisplayClick.surface
+            }) else { return nil }
+            let window = attribute(surface, kAXWindowAttribute as CFString)
+            let focused = attribute(application, kAXFocusedWindowAttribute as CFString)
+            let frame = point(surface).flatMap { origin in size(surface).map { CGRect(origin: origin, size: $0) } }
+            return T17DisplayClick.Target(value: attribute(surface, kAXValueAttribute as CFString) as? String,
+                                          focused: window.flatMap { w in focused.map { CFEqual(w, $0) } } ?? false, frame: frame)
+        }, post: T17DisplayClick.post)
     }
 
     private func element(_ identifier: String, role expectedRole: String? = nil,

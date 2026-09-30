@@ -46,6 +46,6 @@ private final class ControlUI: T17UIControlling {
     func choose(path: String, from identifier: String, timeout: TimeInterval) throws {}
     func text(_ identifier: String, timeout: TimeInterval) throws -> String { "" }
     func optionalTexts(_ identifiers: Set<String>) throws -> [String: String] { [:] }
-    func clickSecondaryWindow(timeout: TimeInterval) throws {}
+    func clickDisplaySurface(timeout: TimeInterval) throws {}
     func textSnapshot() -> [String] { [] }
 }

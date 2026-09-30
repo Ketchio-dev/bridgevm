@@ -45,6 +45,6 @@ private final class RecordingUI: T17UIControlling {
         events.append(.text(identifier, timeout)); return textValue
     }
     func optionalTexts(_ identifiers: Set<String>) throws -> [String: String] { [:] }
-    func clickSecondaryWindow(timeout: TimeInterval) throws {}
+    func clickDisplaySurface(timeout: TimeInterval) throws {}
     func textSnapshot() -> [String] { [] }
 }

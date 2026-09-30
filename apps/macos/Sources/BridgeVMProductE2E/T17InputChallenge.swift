@@ -7,12 +7,13 @@ struct T17InputChallenge {
     let sharePath: String
     let nonce: String
     let ui: T17UIControlling
+    let runLog: URL
     var readyTimeout: TimeInterval = 60
 
     func deliver() throws {
         try waitUntilShown()
         try ui.press("bridgevm.runtime.display.open", timeout: 10)
-        try ui.clickSecondaryWindow(timeout: 15)
+        try T17PointerReceipt.require(runLog, timeout: 15) { try ui.clickDisplaySurface(timeout: 15) }
         try ui.fill("t17kbd\(prefix)", identifier: "bridgevm.runtime.keyboard.input", timeout: 10)
         try ui.press("bridgevm.runtime.keyboard.send", timeout: 10)
     }
@@ -32,9 +33,7 @@ struct T17InputChallenge {
     }
 
     private static func holds(_ url: URL, exactly body: Data) -> Bool {
-        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
-              values.isRegularFile == true, values.isSymbolicLink != true else { return false }
-        return (try? Data(contentsOf: url)) == body
+        T17BoundedLog.regularFile(url) && (try? Data(contentsOf: url)) == body
     }
 
     private var prefix: String { String(nonce.prefix(12)) }

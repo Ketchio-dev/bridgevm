@@ -1841,13 +1841,13 @@ scripts/live-gates/recover-stale-receipt.sh	19	0
 tests/integration/windows-product-e2e-live-tier-smoke.sh	149	0
 tests/fixtures/fake-windows-product-e2e-helper.py	61	0
 apps/macos/Sources/BridgeVMProductE2E/BridgeVMProductE2EMain.swift	70	0
-apps/macos/Sources/BridgeVMProductE2E/T17Accessibility.swift	167	0
+apps/macos/Sources/BridgeVMProductE2E/T17Accessibility.swift	157	0
 apps/macos/Sources/BridgeVMProductE2E/T17UIControlling.swift	15	0
 apps/macos/Sources/BridgeVMProductE2E/T17TextEntry.swift	17	0
 apps/macos/Sources/BridgeVMProductE2E/T17Contract.swift	220	0
 apps/macos/Sources/BridgeVMProductE2E/T17Evidence.swift	80	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestJourney.swift	215	0
-apps/macos/Sources/BridgeVMProductE2E/T17InputChallenge.swift	41	0
+apps/macos/Sources/BridgeVMProductE2E/T17InputChallenge.swift	40	0
 apps/macos/Sources/BridgeVMProductE2E/T17RuntimeControlInput.swift	18	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestProof.swift	156	0
 apps/macos/Sources/BridgeVMProductE2E/T17PrivateUnattend.swift	33	0
@@ -3377,3 +3377,11 @@ tests/integration/audio-teardown-result-test.py	93	0
 scripts/live-gates/hvf_run_log.py	22	0
 tests/integration/audio-playback-host-stats-contract.py	67	0
 docs/windows-arm/evidence/b6-trace-nine-cell-collection-20260911.md	114	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfDisplaySurfaceAccessibility.swift	26	0
+apps/macos/Sources/BridgeVMProductE2E/T17DisplayClick.swift	43	0
+apps/macos/Sources/BridgeVMProductE2E/T17PointerReceipt.swift	38	0
+apps/macos/Tests/BridgeVMControlTests/HvfDisplaySurfaceAccessibilityTests.swift	29	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17DisplayClickTests.swift	44	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17PointerReceiptTests.swift	50	0
+tests/integration/t17-display-click-contract.py	54	0
+docs/history/windows-hvf/a9-r43-display-click-20260930.md	62	0

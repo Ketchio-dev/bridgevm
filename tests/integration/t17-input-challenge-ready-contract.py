@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 E2E = ROOT / "apps/macos/Sources/BridgeVMProductE2E"
 GUEST = ROOT / "scripts/win-assets/bv-product-e2e.ps1"
 READY_WRITE = 'Write-Exact "t17-keyboard-pointer-ready-$Prefix.txt" "bridgevm-t17-keyboard-pointer-ready-v1`n$Nonce`n"'
-INPUTS = ('ui.press("bridgevm.runtime.display.open"', "ui.clickSecondaryWindow(",
+INPUTS = ('ui.press("bridgevm.runtime.display.open"', "ui.clickDisplaySurface(",
           'ui.fill("t17kbd\\(prefix)", identifier: "bridgevm.runtime.keyboard.input"',
           'ui.press("bridgevm.runtime.keyboard.send"')
 
@@ -35,7 +35,7 @@ class InputChallengeReady(unittest.TestCase):
     def test_host_waits_for_the_exact_marker_before_any_input(self) -> None:
         journey = body((E2E / "T17GuestJourney.swift").read_text(encoding="utf-8"), "private func keyboardAndPointer() throws {")
         steps = ['try launchWorkload("KeyboardPointer")',
-                 "try T17InputChallenge(sharePath: request.sharePath, nonce: request.nonce, ui: ui).deliver()",
+                 "try T17InputChallenge(sharePath: request.sharePath, nonce: request.nonce, ui: ui, runLog: runLog).deliver()",
                  'try requireOutput("t17-keyboard-pointer-\\(prefix).txt", timeout: 60)']
         self.assertEqual([line.strip() for line in journey.strip().splitlines()], steps)
         source = (E2E / "T17InputChallenge.swift").read_text(encoding="utf-8")
