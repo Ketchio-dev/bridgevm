@@ -5,7 +5,7 @@ enum T17TerminalReportTail {
     static let maxTailBytes = 4 * 1024
     static let maxTailLines = 16
     private static let footer = Data("\n--- end ---\n".utf8)
-    private static let hostLines = [
+    static let hostLines = [
         #"^hda CoreAudio callback enqueue: state=stopping reason=[a-z-]+ osstatus=-?[0-9]+ expected=(true|false)$"#,
         #"^hda CoreAudio lifecycle: operation=(stop|dispose) osstatus=-?[0-9]+ success=(true|false)$"#,
         #"^hda CoreAudio stats: [a-z][a-z0-9_]*=[0-9]+( [a-z][a-z0-9_]*=[0-9]+)*$"#,
@@ -39,7 +39,7 @@ enum T17TerminalReportTail {
         return isBoundedHostShutdownTail(text)
     }
 
-    private static func serialCount(_ line: String) -> (output: Int, legacy: Bool)? {
+    static func serialCount(_ line: String) -> (output: Int, legacy: Bool)? {
         let modern = "serial raw bytes: "
         if line.hasPrefix(modern) {
             let fields = String(line.dropFirst(modern.count)).components(separatedBy: " output bytes: ")
