@@ -900,8 +900,8 @@ SHUTDOWN_GATE_OK="$STORE/shutdown-gate-ok"
 mkdir -p "$SHUTDOWN_GATE_OK"
 cat > "$SHUTDOWN_GATE_OK/run.log" <<'EOF'
 BVAGENT READY host=BRIDGEVM v3-share2 t=1234
-stop: PSCI 0x84000008 (system off)
 EOF
+printf '=== EDK2 boot probe (with Apple hv_gic) ===\nstop: PSCI 0x84000008 (system off)\nserial raw bytes: 0 output bytes: 0\n--- serial (tail) ---\n\n--- end ---\n' >> "$SHUTDOWN_GATE_OK/run.log"
 shutdown_gate_ok_output="$(
   bash -c '
     set -euo pipefail
@@ -947,9 +947,9 @@ BVAGENT CMD whoami exit=0
 bridgevm\user
 BVAGENT END whoami
 BVAGENT SERVICE start t=1300
-stop: PSCI 0x84000008 (system off)
 NVMe disk written back: /tmp/windows.raw
 EOF
+printf '=== EDK2 boot probe (with Apple hv_gic) ===\nstop: PSCI 0x84000008 (system off)\nserial raw bytes: 0 output bytes: 0\n--- serial (tail) ---\n\n--- end ---\n' >> "$SERVICE_GATE_OK/run.log"
 service_gate_ok_output="$(
   bash -c '
     set -euo pipefail

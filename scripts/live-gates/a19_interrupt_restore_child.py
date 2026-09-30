@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Kill only one owned snapshot helper during staged real-media verification."""
+"""Kill only one owned snapshot helper at a declared staged-read stop point."""
 from __future__ import annotations
 
 import argparse
@@ -13,22 +13,11 @@ import subprocess
 import sys
 import time
 
+from a19_interrupt_stop_points import (STAGED_RESTORE, STOP_POINTS, StopPoint, helper_command,
+                                       regular, selection, stable_root, staged_ready, staging)
+
 LSOF = "/usr/sbin/lsof"
 FD = re.compile(r"f[0-9]+\Z")
-
-
-def stable_root(disk: Path, vars: Path) -> Path:
-    relative_vars = Path(os.path.relpath(vars, disk.parent))
-    digest = hashlib.sha256()
-    for value in (disk.name, str(relative_vars)):
-        data = os.fsencode(value)
-        digest.update(len(data).to_bytes(8, "little"))
-        digest.update(data)
-    return disk.parent / (".bridgevm-pair-v2-" + digest.hexdigest())
-
-
-def regular(path: Path) -> bool:
-    return path.is_file() and not path.is_symlink()
 
 
 def private_new(path: Path, mode: str):
@@ -56,25 +45,13 @@ def read_fd_observed(data: str, pid: int, staged_disk: Path) -> bool:
     return False
 
 
-def selected_old(root: Path) -> bool:
-    current = root / "current"
-    return not current.exists() and not current.is_symlink()
-
-
-def stage_regular(root: Path) -> bool:
-    stage = root / "staging"
-    if not stage.is_dir() or stage.is_symlink():
-        return False
-    return all(regular(stage / name) for name in ("disk.raw", "vars.fd", "manifest.json"))
-
-
-def stop_at_verified_stage(child: subprocess.Popen, root: Path, deadline: float,
-                           record: Path) -> dict:
-    stage_disk = root / "staging/disk.raw"
+def stop_at_verified_stage(child: subprocess.Popen, point: StopPoint, stage: Path,
+                           still_selected, deadline: float, record: Path) -> dict:
+    stage_disk = stage / "disk.raw"
     while time.monotonic() < deadline:
         if child.poll() is not None:
-            raise RuntimeError("restore helper exited before staged read")
-        if stage_regular(root) and selected_old(root):
+            raise RuntimeError("snapshot helper exited before staged read")
+        if staged_ready(point, stage) and still_selected():
             observed = subprocess.run(
                 [LSOF, "-n", "-P", "-p", str(child.pid), "-F", "pfan"],
                 capture_output=True, text=True, timeout=3, check=False,
@@ -89,18 +66,18 @@ def stop_at_verified_stage(child: subprocess.Popen, root: Path, deadline: float,
                         time.sleep(0.02)
                         stopped = os.waitpid(signal_pid, os.WUNTRACED | os.WNOHANG)
                     if stopped[0] != signal_pid or not os.WIFSTOPPED(stopped[1]):
-                        raise RuntimeError("restore helper stop was not observed")
+                        raise RuntimeError("snapshot helper stop was not observed")
                     confirmed = subprocess.run(
                         [LSOF, "-n", "-P", "-p", str(signal_pid), "-F", "pfan"],
                         capture_output=True, text=True, timeout=3, check=False,
                     )
                     if (confirmed.returncode != 0 or
                         not read_fd_observed(confirmed.stdout, signal_pid, stage_disk) or
-                        not stage_regular(root) or not selected_old(root)):
+                        not staged_ready(point, stage) or not still_selected()):
                         raise RuntimeError("staged read or old selection changed at stop")
                     with private_new(record, "w") as out:
                         out.write(confirmed.stdout)
-                    return {"interruption_stage": "staged-disk-verify-read",
+                    return {"interruption_stage": point.name,
                             "helper_stop_verified": True,
                             "staged_file_sync_order_verified": True,
                             "old_selection_before_kill": True,
@@ -111,39 +88,50 @@ def stop_at_verified_stage(child: subprocess.Popen, root: Path, deadline: float,
     raise TimeoutError("no authenticated staged read before deadline")
 
 
-def run(helper: Path, snapshot: Path, disk: Path, vars: Path,
-        output: Path, timeout_seconds: int) -> dict:
-    if any(not regular(path) for path in (helper, disk, vars)) or not snapshot.is_dir():
-        raise ValueError("restore inputs are not regular private files")
+def run(helper: Path, snapshot: Path, disk: Path, vars: Path, output: Path,
+        timeout_seconds: int, stop_point: str = STAGED_RESTORE.name) -> dict:
+    """For a create point, `snapshot` is the destination being written."""
+    point = STOP_POINTS.get(stop_point)
+    if point is None:
+        raise ValueError("stop point is not declared")
+    creating = point.operation == "create"
+    if any(not regular(path) for path in (helper, disk, vars)) or not (creating or snapshot.is_dir()):
+        raise ValueError("snapshot inputs are not regular private files")
     disk = disk.resolve(strict=True)
     vars = vars.resolve(strict=True)
-    snapshot = snapshot.resolve(strict=True)
+    snapshot = snapshot.resolve(strict=not creating)
     helper = helper.resolve(strict=True)
     root = stable_root(disk, vars)
-    if root.joinpath("staging").exists() or root.joinpath("staging").is_symlink():
+    stage = staging(point, root, snapshot)
+    if os.path.lexists(stage):
         raise ValueError("staging existed before helper launch")
-    if not selected_old(root):
-        raise ValueError("restore did not begin with old selected pair")
+    before = selection(point, root, snapshot)
+    if before is None:
+        raise ValueError("helper did not begin with its declared old selection")
+
+    def still_selected() -> bool:
+        return selection(point, root, snapshot) == before
+
     stdout = output / "interrupt-helper.stdout"
     stderr = output / "interrupt-helper.stderr"
     with private_new(stdout, "wb") as out, private_new(stderr, "wb") as err:
         child = subprocess.Popen(
-            [str(helper), "restore", str(snapshot), str(disk), str(vars)],
+            helper_command(point, helper, snapshot, disk, vars, root),
             cwd=helper.parent, env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C"},
             stdout=out, stderr=err,
         )
         stopped = None
         try:
             stopped = stop_at_verified_stage(
-                child, root, time.monotonic() + timeout_seconds,
+                child, point, stage, still_selected, time.monotonic() + timeout_seconds,
                 output / "interrupt-helper-fd.private.log",
             )
         finally:
             if child.poll() is None:
                 child.kill()
             code = child.wait(timeout=5)
-    if stopped is None or code != -signal.SIGKILL or not selected_old(root):
-        raise RuntimeError("restore helper was not killed before publication")
+    if stopped is None or code != -signal.SIGKILL or not still_selected():
+        raise RuntimeError("snapshot helper was not killed before publication")
     stopped["helper_killed_and_reaped"] = True
     return stopped
 
@@ -156,11 +144,12 @@ def main() -> int:
     parser.add_argument("vars", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--deadline", type=int, default=300)
+    parser.add_argument("--stop-point", choices=sorted(STOP_POINTS), default=STAGED_RESTORE.name)
     args = parser.parse_args()
     if not 1 <= args.deadline <= 300:
         parser.error("deadline must be 1..300 seconds")
     result = run(args.helper, args.snapshot, args.disk, args.vars,
-                 args.output, args.deadline)
+                 args.output, args.deadline, args.stop_point)
     result_path = args.output / "interrupt-observation.json"
     with private_new(result_path, "w") as out:
         json.dump(result, out, sort_keys=True)

@@ -15,21 +15,11 @@ enum HvfMediaImportHelper {
               FileManager.default.isExecutableFile(atPath: executable.path) else {
             throw failure("가져오기에 필요한 엔진 도구가 없거나 안전하지 않습니다.")
         }
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = executable
-        process.arguments = arguments
-        process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C"]
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = output
-        process.standardError = output
-        try process.run()
-        // Drain while the child runs; even an error must not fill its pipe.
-        let bytes = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationReason == .exit, process.terminationStatus == 0 else {
-            let message = String(decoding: bytes, as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+        // The helper prints a six-line manifest; output past the shared limit
+        // is not retained and fails the import instead of passing unread.
+        let completion = try HvfHelperProcess.run(executable, arguments)
+        guard completion.succeeded else {
+            let message = completion.diagnostic
             throw failure(message.isEmpty ? "디스크와 부팅 설정을 가져오지 못했습니다." : message)
         }
     }
