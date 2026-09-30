@@ -3356,3 +3356,4 @@ tests/integration/hvf-stop-readers-contract.py	259	0
 tests/integration/audio-teardown-result-test.py	93	0
 scripts/live-gates/hvf_run_log.py	22	0
 tests/integration/audio-playback-host-stats-contract.py	67	0
+docs/windows-arm/evidence/b6-trace-nine-cell-collection-20260911.md	114	0
