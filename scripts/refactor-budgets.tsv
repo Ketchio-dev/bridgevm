@@ -3412,3 +3412,4 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17GuestWorkloadOutputTests.swift	36	0
 tests/integration/t17-guest-workload-errors-contract.py	36	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestWorkloadOutput.swift	30	0
 docs/history/windows-hvf/a9-r49-input-passes-audio-directory-20260930.md	57	0
+docs/history/windows-hvf/a9-r50-audio-counter-gate-20260930.md	59	0
