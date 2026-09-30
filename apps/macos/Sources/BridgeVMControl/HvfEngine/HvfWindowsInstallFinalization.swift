@@ -28,9 +28,7 @@ enum HvfWindowsInstallFinalization {
                 journal = try begin(plan: plan, paths: paths)
                 try faultInjector(.prepared)
             }
-            try resume(journal, paths: paths, faultInjector: faultInjector,
-                       secureBootSeeder: secureBootSeeder, installLog: paths.stagingLog,
-                       finalLog: URL(fileURLWithPath: plan.bundleInstallLogPath))
+            try resume(journal, paths: paths, faultInjector: faultInjector, secureBootSeeder: secureBootSeeder)
         }
     }
 
@@ -53,9 +51,7 @@ enum HvfWindowsInstallFinalization {
                 url: paths.lock, nonBlocking: true)
             try withExtendedLifetime(lock) {
                 let journal = try loadJournal(paths.journal)
-                try resume(journal, paths: paths, faultInjector: { _ in },
-                           secureBootSeeder: secureBootSeeder,
-                           installLog: nil, finalLog: nil)
+                try resume(journal, paths: paths, faultInjector: { _ in }, secureBootSeeder: secureBootSeeder)
             }
             config = try loadConfig(paths.config)
             return ReconcileResult(config: config, issue: nil)

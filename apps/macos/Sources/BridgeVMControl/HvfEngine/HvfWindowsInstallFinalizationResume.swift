@@ -5,9 +5,7 @@ extension HvfWindowsInstallFinalization {
         _ stored: HvfWindowsInstallFinalizationJournal,
         paths: HvfWindowsInstallFinalizationPaths,
         faultInjector: FaultInjector,
-        secureBootSeeder: SecureBootSeeder,
-        installLog: URL?,
-        finalLog: URL?
+        secureBootSeeder: SecureBootSeeder
     ) throws {
         var journal = stored
         try validate(journal: journal, paths: paths)
@@ -65,12 +63,12 @@ extension HvfWindowsInstallFinalization {
             try validateConfig(config, pending: true, paths: paths)
             config.installPending = false
             try persistConfig(config, to: paths.stagedConfig)
-            try ensureAuxiliaryFiles(paths: paths, installLog: installLog, finalLog: finalLog)
+            try ensureAuxiliaryFiles(paths: paths)
             try advance(&journal, to: .configStaged, boundary: .configStaged,
                         paths: paths, faultInjector: faultInjector)
         } else {
             try validateConfig(try loadConfig(paths.stagedConfig), pending: false, paths: paths)
-            try ensureAuxiliaryFiles(paths: paths, installLog: installLog, finalLog: finalLog)
+            try ensureAuxiliaryFiles(paths: paths)
         }
 
         try publish(paths.stagedDisk, to: paths.finalDisk, bytes: journal.diskBytes,

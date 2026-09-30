@@ -18,7 +18,7 @@ final class HvfWindowsInstallStagingJournalTests: XCTestCase {
 
         try HvfWindowsInstallFinalization.finalize(plan: f.plan, secureBootSeeder: Fixture.seeder)
 
-        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: f.plan.bundleInstallLogPath)), log)
+        XCTAssertEqual(try Data(contentsOf: f.bundle.appendingPathComponent("logs/install-run.log")), log)
         for url in [media.target, media.vars, media.evidence] {
             XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "\(url.path) outlived the committed install")
         }

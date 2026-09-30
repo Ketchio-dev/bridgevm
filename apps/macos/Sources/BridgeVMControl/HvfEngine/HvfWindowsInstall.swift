@@ -100,7 +100,6 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
 
     var bundleDiskPath: String { "\(bundlePath)/disks/hvf-target.raw" }
     var bundleVarsPath: String { "\(bundlePath)/metadata/hvf-vars.fd" }
-    var bundleInstallLogPath: String { "\(bundlePath)/logs/install-run.log" }
 
     var freshTargetSizeBytes: UInt64 { UInt64(request.diskGiB) * 1024 * 1024 * 1024 }
 

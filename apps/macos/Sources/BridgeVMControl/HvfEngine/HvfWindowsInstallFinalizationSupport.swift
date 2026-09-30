@@ -103,15 +103,13 @@ extension HvfWindowsInstallFinalization {
         }
     }
 
-    static func ensureAuxiliaryFiles(
-        paths: HvfWindowsInstallFinalizationPaths, installLog: URL?, finalLog: URL?
-    ) throws {
+    /// Every resume, whoever drives it, carries the staged log into the bundle before staging is discarded.
+    static func ensureAuxiliaryFiles(paths: HvfWindowsInstallFinalizationPaths) throws {
         if !FileManager.default.fileExists(atPath: paths.control.path) {
             try HvfWindowsInstallDurability.durableWrite(Data(), to: paths.control)
         } else { try HvfWindowsInstallDurability.refuseSymlink(paths.control) }
-        if let installLog, let finalLog,
-           FileManager.default.fileExists(atPath: installLog.path) {
-            try? HvfWindowsInstallDurability.durableCloneOrCopy(from: installLog, to: finalLog)
+        if FileManager.default.fileExists(atPath: paths.stagingLog.path) {
+            try? HvfWindowsInstallDurability.durableCloneOrCopy(from: paths.stagingLog, to: paths.bundleInstallLog)
         }
     }
 

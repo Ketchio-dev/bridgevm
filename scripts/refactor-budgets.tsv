@@ -1271,7 +1271,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfPointerCaptureTests.swift	52	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift	380	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	50	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift	407	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	253	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	252	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsDriverPreflight.swift	45	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallView.swift	84	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/TailOffsetReader.swift	47	0
@@ -1799,10 +1799,10 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallCacheIdentity.swif
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFileDigest.swift	22	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallCache.swift	26	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallDurability.swift	131	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFinalization.swift	110	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFinalization.swift	106	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFinalizationIdentity.swift	27	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFinalizationJournal.swift	70	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFinalizationSupport.swift	215	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFinalizationSupport.swift	207	0
 apps/macos/Tests/BridgeVMControlTests/WindowsHVFProductPolicyTests.swift	126	0
 apps/macos/Tests/BridgeVMControlTests/LegacyWindowsGraphicsPolicyTests.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/GraphicsLabOptInPolicyTests.swift	27	0
@@ -2925,9 +2925,9 @@ apps/macos/Tests/BridgeVMControlTests/HvfGUIStartWorkerTests.swift	73	0
 apps/macos/Tests/BridgeVMControlTests/HvfReleaseLegacyFallbackTests.swift	27	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeReadinessModelTests.swift	141	0
 docs/history/windows-hvf/native-gui-start-worker-20260916.md	82	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFinalizationResume.swift	120	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFinalizationResume.swift	118	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallPipeline.swift	62	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallRecovery.swift	136	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallRecovery.swift	134	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallRecoveryWorker.swift	24	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallStagePresentation.swift	25	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallStart.swift	75	0
@@ -3164,6 +3164,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingFixture.swift	142	
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingTests.swift	176	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingJournalTests.swift	137	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingRunnerTests.swift	104	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingReconcileTests.swift	76	0
 tests/integration/hvf-install-staging-contract.py	48	0
 docs/history/windows-hvf/install-finalization-worker-20260920.md	49	0
 apps/macos/Sources/BridgeVMProductE2E/T17OptionalTextSnapshot.swift	31	0

@@ -9,8 +9,7 @@ enum HvfWindowsInstallStaging {
     static let targetName = "target.raw", varsName = "vars.fd", evidenceName = "evidence"
 
     static func root(bundle: URL) -> URL {
-        bundle.appendingPathComponent("metadata", isDirectory: true)
-            .appendingPathComponent(directoryName, isDirectory: true)
+        bundle.appendingPathComponent("metadata/\(directoryName)", isDirectory: true)
     }
 
     /// Fresh attempts only: the pipeline has just proven no finalization journal owns these inputs.
@@ -78,6 +77,7 @@ extension HvfWindowsInstallFinalizationPaths {
     var stagingVars: URL { staging.appendingPathComponent(HvfWindowsInstallStaging.varsName, isDirectory: false) }
     var stagingEvidence: URL { staging.appendingPathComponent(HvfWindowsInstallStaging.evidenceName, isDirectory: true) }
     var stagingLog: URL { stagingEvidence.appendingPathComponent("run.log", isDirectory: false) }
+    var bundleInstallLog: URL { bundle.appendingPathComponent("logs/install-run.log", isDirectory: false) }
 }
 
 extension HvfWindowsInstallPlan {
