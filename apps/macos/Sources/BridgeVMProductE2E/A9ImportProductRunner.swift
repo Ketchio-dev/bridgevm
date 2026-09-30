@@ -161,7 +161,7 @@ final class A9ImportProductRunner {
 
     private func stopOwnedApplication() -> Bool {
         if let ui { try? ui.press("bridgevm.windows.runtime.stop", timeout: 2) }
-        _ = wait(timeout: 30) { HvfStopLine.systemOffObserved(in: self.boundedText(self.runLog)) }
+        _ = wait(timeout: 30) { HvfStopLine.systemOffObserved(in: self.boundedText(self.runLog, whole: true)) }
         guard let application else { return true }
         if application.isRunning { application.terminate() }
         _ = wait(timeout: 10) { !application.isRunning }
@@ -179,11 +179,12 @@ final class A9ImportProductRunner {
         boundedText(url).split(whereSeparator: \.isNewline).map(String.init)
     }
 
-    private func boundedText(_ url: URL) -> String {
+    private func boundedText(_ url: URL, whole: Bool = false) -> String {
         guard regularFile(url), let handle = FileHandle(forReadingAtPath: url.path) else { return "" }
         defer { try? handle.close() }
         let size = (try? handle.seekToEnd()) ?? 0
-        try? handle.seek(toOffset: size > 8 * 1024 * 1024 ? size - 8 * 1024 * 1024 : 0)
+        guard !whole || size <= 64 * 1024 * 1024 else { return "" }
+        try? handle.seek(toOffset: !whole && size > 8 * 1024 * 1024 ? size - 8 * 1024 * 1024 : 0)
         return String(decoding: (try? handle.readToEnd()) ?? Data(), as: UTF8.self)
     }
 

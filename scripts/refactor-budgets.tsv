@@ -3297,3 +3297,5 @@ apps/macos/Tests/BridgeVMProductE2ETests/HvfTerminalStopTests.swift	96	0
 tests/integration/hvf-terminal-stop-contract.py	220	0
 apps/macos/Sources/BridgeVMProductE2E/HvfTerminalReport.swift	56	0
 scripts/live-gates/hvf_terminal_report.py	65	0
+tests/integration/hvf-terminal-stop-limit-contract.py	87	0
+apps/macos/Tests/BridgeVMProductE2ETests/HvfTerminalReportLimitTests.swift	31	0

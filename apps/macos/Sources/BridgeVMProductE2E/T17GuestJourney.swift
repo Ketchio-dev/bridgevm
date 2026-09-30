@@ -94,8 +94,9 @@ struct T17GuestJourney {
         try ui.setText("shutdown.exe /s /t 0 /f", identifier: "bridgevm.runtime.ctl.input", timeout: 10)
         try ui.press("bridgevm.runtime.ctl.send", timeout: 10)
         guard wait(timeout: 180, predicate: {
-            guard let data = try? Data(contentsOf: self.runLog), data.count > before else { return false }
-            return HvfStopLine.systemOffObserved(in: String(decoding: data.suffix(from: before), as: UTF8.self))
+            guard let data = try? Data(contentsOf: self.runLog), data.count > before,
+                  let stop = HvfTerminalReport.stop(in: data) else { return false }
+            return stop.offset >= before && stop.line == HvfStopLine.systemOff
         }), waitForStableLog() else {
             throw T17Blocker(code: "guest-evidence-missing", detail: "guest did not reach clean SYSTEM_OFF")
         }

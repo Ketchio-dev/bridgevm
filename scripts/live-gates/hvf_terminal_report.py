@@ -3,21 +3,21 @@
 final_report.rs prints the banner, `stop: {reason}`, host records, the count
 `serial raw bytes: R output bytes: M`, `--- serial (tail) ---`, exactly M bytes
 of rendered guest serial and the `--- end ---` footer; only host teardown
-records follow. Guest bytes can precede the report (agent command output, PE
-debug paths) or sit inside the counted tail, so the stop record is the one
-after the last banner before the only count whose tail ends at the final
-footer. A second such count, as a guest could nest in its tail, rejects the
-log. Callers read run.log after the helper exited.
+records follow. Guest bytes can precede the report and fill the counted tail,
+so the stop record follows the last banner before the only count whose tail
+ends at the final footer; a second one, which a guest can nest, rejects the log.
+COUNT_NEW's 8-digit fields make that hold only below LOG_LIMIT bytes and only
+for the whole run.log, read after the helper exited: a window can drop the count.
 """
 
 from __future__ import annotations
 
 import re
-
 from hvf_stop_line import SYSTEM_OFF
 from t17_terminal_report_tail import (AUDIO_LINES, BANNER, COUNT_NEW, FOOTER, MAX_AUDIO_TAIL_BYTES,
                                       MAX_AUDIO_TAIL_LINES, SERIAL)
 
+LOG_LIMIT = 10**8
 HOST_TAIL = (*AUDIO_LINES, re.compile(r"[A-Z][a-z]{2} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2}  "
                                       r"virgl_render_server\[[0-9]+\] <Debug>: socket disconnected"))
 
@@ -38,7 +38,7 @@ def _tail_end(raw: bytes) -> int | None:
 
 def terminal_stop(raw: bytes) -> tuple[int, str] | None:
     """Offset and text of the final report's stop record, or None."""
-    tail_end = _tail_end(raw)
+    tail_end = _tail_end(raw) if len(raw) < LOG_LIMIT else None
     if tail_end is None:
         return None
     counts, marker = [], raw.find(SERIAL, 0, tail_end)

@@ -121,7 +121,7 @@ class TerminalStopContract(unittest.TestCase):
         self.assertNotIn("lines.last(where: { $0.line == HvfStopLine.systemOff })", swift["T17GuestProof.swift"])
         self.assertIn("HvfTerminalReport.stop(in:", swift["HvfStopLine.swift"])
         self.assertNotIn("isNewline", swift["HvfStopLine.swift"])
-        for name in ("T17ProductRunner.swift", "A9ImportProductRunner.swift", "T17GuestJourney.swift"):
+        for name in ("T17ProductRunner.swift", "A9ImportProductRunner.swift"):
             self.assertIn("HvfStopLine.systemOffObserved(in:", swift[name], name)
             self.assertNotIn("contains(HvfStopLine.systemOff)", swift[name], name)
         for name in ("windows_product_e2e_guest_evidence.py", "b9_raw_focus_order.py", "hvf_guest_shutdown.py"):

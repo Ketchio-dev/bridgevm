@@ -4,25 +4,25 @@ import Foundation
 /// final_report.rs prints the banner, `stop: {reason}`, host records, the count
 /// `serial raw bytes: R output bytes: M`, `--- serial (tail) ---`, exactly M
 /// bytes of rendered guest serial and the `--- end ---` footer; only host
-/// teardown records follow. Guest bytes can precede the report (agent command
-/// output, PE debug paths) or sit inside the counted tail, so the stop record is
-/// the one after the last banner before the only count whose tail ends at the
-/// final footer. A second such count, as a guest could nest in its tail, rejects
-/// the log. scripts/live-gates/hvf_terminal_report.py applies the same grammar.
+/// teardown records follow. Guest bytes can precede the report and fill the
+/// counted tail, so the stop record follows the last banner before the only
+/// count whose tail ends at the final footer; a second one rejects the log. With
+/// 8-digit count fields that holds only below `logLimit` bytes and only over the
+/// whole run.log. scripts/live-gates/hvf_terminal_report.py applies the grammar.
 enum HvfTerminalReport {
     private static let banner = Data("\n=== EDK2 boot probe (with Apple hv_gic) ===\n".utf8)
     private static let serial = Data("\n--- serial (tail) ---\n".utf8)
     private static let footer = Data("\n--- end ---\n".utf8)
     private static let newline = Data([10])
+    static let logLimit = 100_000_000
     private static let hostTail = T17TerminalReportTail.hostLines + [
         #"^[A-Z][a-z]{2} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2}  virgl_render_server\[[0-9]+\] <Debug>: socket disconnected$"#,
     ]
 
     static func stop(in text: String) -> (offset: Int, line: String)? { stop(in: Data(text.utf8)) }
-
     static func stop(in data: Data) -> (offset: Int, line: String)? {
         let log = Data(data)
-        guard let tailEnd = tailEnd(log) else { return nil }
+        guard log.count < logLimit, let tailEnd = tailEnd(log) else { return nil }
         var counts: [Int] = [], from = 0
         while let marker = log.range(of: serial, in: from..<tailEnd) {
             let start = log.range(of: newline, options: .backwards, in: 0..<marker.lowerBound)?.upperBound ?? 0
