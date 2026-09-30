@@ -25,6 +25,7 @@ CLI = LIVE_GATES / "hvf_terminal_evidence.py"
 SHELL = ROOT / "scripts/hvf-terminal-report.sh"
 sys.path.insert(0, str(LIVE_GATES))
 import windows_product_e2e_guest_evidence as guest_evidence  # noqa: E402
+from hvf_guest_shutdown import guest_shutdown_observed  # noqa: E402
 from hvf_stop_line import SYSTEM_OFF  # noqa: E402
 from hvf_terminal_report import LOG_LIMIT, system_off_offset  # noqa: E402
 
@@ -103,10 +104,6 @@ def load(name: str, path: Path):
     return module
 
 
-def lane_module():
-    return load("bridgevm_b7_lane_contract", ROOT / "scripts/audio-teardown-result.py")
-
-
 class StopReadersContract(unittest.TestCase):
     def accepted(self, reader, logs: dict[str, str]) -> list[str]:
         with tempfile.TemporaryDirectory() as temp:
@@ -121,6 +118,10 @@ class StopReadersContract(unittest.TestCase):
     def assert_binds(self, reader, audio: bool = False) -> None:
         self.assertEqual(self.accepted(reader, {"genuine": GENUINE}), ["genuine"])
         self.assertEqual(self.accepted(reader, {**FORGED_STOP, **(FORGED_AUDIO if audio else {})}), [])
+        with tempfile.TemporaryDirectory() as temp:
+            (Path(temp) / "genuine.log").write_bytes(GENUINE.encode())
+            (Path(temp) / "run.log").symlink_to(Path(temp) / "genuine.log")
+            self.assertFalse(reader(Path(temp)), "run.log linked to a genuine log")
 
     def test_shell_and_python_bindings_decide_as_the_grammar(self):
         """The packaged runner has no Python, so its shell binding is checked against system_off_offset."""
@@ -175,11 +176,7 @@ class StopReadersContract(unittest.TestCase):
             self.assertIn(result.returncode, (0, 1), result.stderr)
             return result.returncode == 0
         self.assert_binds(reader)
-        with tempfile.TemporaryDirectory() as temp:
-            (Path(temp) / "genuine.log").write_bytes(GENUINE.encode())
-            (Path(temp) / "run.log").symlink_to(Path(temp) / "genuine.log")
-            self.assertFalse(reader(Path(temp)))
-            self.assertFalse(reader(Path(temp) / "missing"))
+        self.assertFalse(reader(ROOT / "missing-run-log-directory"))
         self.assertNotEqual(subprocess.run([sys.executable, str(CLI)], capture_output=True, timeout=30).returncode, 0)
 
     def runner_gate(self, setup: str, output: str) -> None:
@@ -230,7 +227,7 @@ class StopReadersContract(unittest.TestCase):
         self.assert_binds(reader)
 
     def test_b7_lane_binds_stop_and_counters(self):
-        lane, nonce = lane_module(), "a" * 64
+        lane, nonce = load("bridgevm_b7_lane", ROOT / "scripts/audio-teardown-result.py"), "a" * 64
 
         def reader(directory: Path) -> bool:
             result = directory / "playback-result.txt"
@@ -255,6 +252,7 @@ class StopReadersContract(unittest.TestCase):
         source = (LIVE_GATES / "run-guest-input-live.py").read_text(encoding="utf-8")
         self.assertIn('receipt["clean_shutdown"] = guest_shutdown_observed(status, boot / "run.log")', source)
         self.assertNotIn("(system off)", source)
+        self.assert_binds(lambda directory: guest_shutdown_observed(0, directory / "run.log"))
 
 
 if __name__ == "__main__":
