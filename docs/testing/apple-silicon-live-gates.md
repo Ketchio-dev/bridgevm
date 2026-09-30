@@ -190,10 +190,13 @@ public receipt; the dedicated verifier is run both before and after redaction.
 A first-READY failure keeps a private diagnostic packet, and so does an
 authenticated lane that reached first READY and then failed
 `guest-evidence-missing` (`packet_kind` `post-ready`), which adds a private
-share listing of names, types, sizes and SHA-256 only. Without a nonce-bound
-host stop its final frame pair stays unattributed, and its live display can
-show the guest's graceful shutdown rather than the failure, because the helper
-stops the guest before the tier collects the packet. Each packet's guest-setup
+share listing of names, types, sizes and SHA-256 only. A post-READY packet
+keeps the run-log tail, that listing and the guest-setup harvest but no guest
+screen. The 3D-off runtime disables virtio-gpu, so `display.fb` is absent, as
+the r35 packet recorded. The helper takes no nonce-bound host stop after READY,
+so no final ramfb pair is attributed. Keeping the failure screen needs the
+helper to take that host diagnostic stop before its graceful stop. Each
+packet's guest-setup
 harvest, whose allowlist includes `C:\bvagent.log`, clones the lane disk,
 attaches the clone read-only and mounts the Windows NTFS volume read-only below
 `<lane>/guest-setup-harvest`. The harvest's

@@ -38,7 +38,6 @@ class PostReadyPacketTest(unittest.TestCase):
         self.args.kind = "post-ready"
         (self.case.evidence / "run.log").write_bytes(
             b"BVAGENT READY FIRST\nT17-LAUNCHED-KeyboardPointer-" + PREFIX.encode() + b" pid=7\nsynthetic-private-guest-bytes\n")
-        self.case.make_display()
         self.share = self.case.lane / "share"
         self.share.mkdir()
         (self.share / f"t17-{PREFIX}.txt").write_bytes(f"bridgevm-t17-share-v1\n{fixture.NONCE}\n".encode())
@@ -59,7 +58,7 @@ class PostReadyPacketTest(unittest.TestCase):
         index = self.case.index()
         self.assertEqual((index["packet_kind"], index["host_stop_status"]), ("post-ready", "not-requested"))
         self.assertIsNone(index["observed_generation"])
-        self.assertEqual([item["status"] for item in index["artifacts"]], ["retained", "missing", "missing", "retained"])
+        self.assertEqual([item["status"] for item in index["artifacts"]], ["retained", "missing", "missing", "missing"])
         self.assertEqual(index["guest_setup"]["outcome"], "disk-absent")
         body = (self.case.private / LISTING).read_bytes()
         self.assertEqual(index["share_listing"], {"file": LISTING, "sha256": hashlib.sha256(body).hexdigest()})
@@ -218,11 +217,12 @@ class PostReadyPacketTest(unittest.TestCase):
         self.case.result["failure_detail"] = f"{DETAIL}; {STOP}"
         self.case.refresh_seal()
         self.case.complete_sources()
+        (self.case.evidence / "display.fb").unlink()
         packet.capture(self.args)
         packet.verify(self.args)
         index = self.case.index()
         self.assertEqual((index["host_stop_status"], index["observed_generation"]), ("complete", 7))
-        self.assertEqual([item["status"] for item in index["artifacts"]], ["retained"] * 4)
+        self.assertEqual([item["status"] for item in index["artifacts"]], ["retained", "retained", "retained", "missing"])
 
     def test_listing_destination_collision_discards_the_whole_packet(self) -> None:
         (self.case.private / LISTING).write_bytes(b"{}")
@@ -235,14 +235,11 @@ class PostReadyPacketTest(unittest.TestCase):
 def augment_synthetic_helper(path: Path) -> None:
     path.write_text(path.read_text() + '''
 if r["job_id"].startswith("post-ready-"):
-    import struct
     for stage in stages[6:]: result[stage] = False
     result["failure_code"] = "snapshot-unavailable" if "other-failure" in r["job_id"] else "guest-evidence-missing"
     result["failure_detail"] = f"guest workload did not produce t17-keyboard-pointer-{prefix}.txt"
     pathlib.Path(a.result).write_text(json.dumps(result, sort_keys=True) + "\\n")
     (share/f"t17-keyboard-pointer-{prefix}.txt").unlink()
-    header = bytearray(64); struct.pack_into("<6I", header, 0, 0x42564642, 1, 1, 1, 4, 0x34325258); struct.pack_into("<Q", header, 24, 2)
-    (final_log.parent/"display.fb").write_bytes(bytes(header) + b"ABCD")
     if "capture-fail" in r["job_id"]: final_log.unlink(); final_log.mkdir()
 ''')
 
@@ -275,7 +272,7 @@ def run_tier_fixtures(tier: Path, manifest: Path, temporary: Path, commit: str) 
                             "--campaign-mode", "pilot", "--lane", "1"], check=True)
             value = json.loads(index.read_text())
             assert (value["packet_kind"], value["host_stop_status"]) == ("post-ready", "not-requested"), value
-            assert [item["status"] for item in value["artifacts"]] == ["retained", "missing", "missing", "retained"], value
+            assert [item["status"] for item in value["artifacts"]] == ["retained", "missing", "missing", "missing"], value
             names = [entry["name"] for entry in json.loads((private / LISTING).read_text())["entries"]]
             prefix = result["nonce"][:12]
             assert {f"t17-{prefix}.txt", f"t17-network-{prefix}.txt"} <= set(names), names
