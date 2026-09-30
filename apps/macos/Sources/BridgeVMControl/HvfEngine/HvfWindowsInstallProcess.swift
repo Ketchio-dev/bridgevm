@@ -84,7 +84,7 @@ extension HvfWindowsInstallSession {
     nonisolated static func isProgressLine(_ line: String) -> Bool {
         line.contains("BOOT_TIMER ramfb source=") && line.contains("state=captured")
             || line.hasPrefix("BVAGENT ")
-            || line.contains("NVMe disk written back")
+            || line.hasPrefix("NVMe disk written back")
             || line.contains("stop: PSCI")
     }
 }
