@@ -3335,3 +3335,5 @@ apps/macos/Sources/BridgeVMProductE2E/HvfTerminalHostTail.swift	13	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17AudioProofTests.swift	36	0
 tests/integration/hvf-stop-readers-contract.py	261	0
 tests/integration/audio-teardown-result-test.py	93	0
+scripts/live-gates/hvf_run_log.py	22	0
+tests/integration/audio-playback-host-stats-contract.py	67	0

@@ -7,26 +7,20 @@ occur in them, so they are the host's CoreAudio lifecycle, callback and stats
 lines. Guest copies before the report or inside its tail are not among them.
 
     hvf_terminal_evidence.py --require-system-off RUN_LOG
+    hvf_terminal_evidence.py --host-stats RUN_LOG
 
-exits 0 only when the whole RUN_LOG, read after the helper exited, binds a
-SYSTEM_OFF stop; 1 otherwise, including for a missing, linked or oversized log.
+read the whole RUN_LOG after the helper exited; a missing, linked, irregular or
+oversized log reads as empty. The first exits 0 only when RUN_LOG binds a
+SYSTEM_OFF stop. The second prints the host tail's last CoreAudio stats record
+and exits 0 only when there is one. Both exit 1 otherwise.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 import sys
+from hvf_run_log import read_run_log
 from hvf_terminal_report import FOOTER, LOG_LIMIT, system_off_offset, terminal_stop
-
-
-def read_run_log(path: Path) -> bytes:
-    """The whole regular, unlinked run.log below LOG_LIMIT bytes, else b""."""
-    try:
-        if path.is_symlink() or not path.is_file() or path.stat().st_size >= LOG_LIMIT:
-            return b""
-        return path.read_bytes()
-    except OSError:
-        return b""
 
 
 def host_tail(raw: bytes) -> list[str] | None:
@@ -37,10 +31,16 @@ def host_tail(raw: bytes) -> list[str] | None:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2 or argv[0] != "--require-system-off":
-        print("usage: hvf_terminal_evidence.py --require-system-off RUN_LOG", file=sys.stderr)
+    if len(argv) != 2 or argv[0] not in ("--require-system-off", "--host-stats"):
+        print("usage: hvf_terminal_evidence.py --require-system-off|--host-stats RUN_LOG", file=sys.stderr)
         return 2
-    return 0 if system_off_offset(read_run_log(Path(argv[1]))) is not None else 1
+    raw = read_run_log(Path(argv[1]), LOG_LIMIT - 1)
+    if argv[0] == "--require-system-off":
+        return 0 if system_off_offset(raw) is not None else 1
+    stats = [line for line in host_tail(raw) or () if line.startswith("hda CoreAudio stats:")]
+    if stats:
+        print(stats[-1])
+    return 0 if stats else 1
 
 
 if __name__ == "__main__":
