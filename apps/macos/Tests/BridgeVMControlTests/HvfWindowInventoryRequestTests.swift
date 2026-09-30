@@ -45,7 +45,7 @@ final class HvfWindowInventoryRequestTests: XCTestCase {
 
     func testTimeoutAndRestartInvalidatePendingInventory() {
         for marker in ["BVAGENT READY host=test", "BVAGENT re-READY t=2",
-                       "BVAGENT SERVICE start t=2", "PSCI SYSTEM_RESET: requested"] {
+                       "BVAGENT SERVICE start t=2", "PSCI SYSTEM_RESET: reboot 1/8"] {
             var request = HvfWindowInventoryRequest(now: now)
             if case .failure(.restarted) = request.consume(lines: [marker], now: now) {}
             else { XCTFail("restart did not invalidate inventory") }

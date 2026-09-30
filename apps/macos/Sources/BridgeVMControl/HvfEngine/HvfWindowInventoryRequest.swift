@@ -28,8 +28,8 @@ struct HvfWindowInventoryRequest {
         guard !finished else { return nil }
         guard now < deadline else { return finish(.failure(.expired)) }
         if lines.contains(where: { $0.hasPrefix("BVAGENT READY ") || $0.hasPrefix("BVAGENT re-READY ")
-            || $0.hasPrefix("BVAGENT SERVICE start") || $0.hasPrefix("PSCI SYSTEM_RESET:")
-            || $0.hasPrefix("PSCI_SYSTEM_RESET") }) { return finish(.failure(.restarted)) }
+            || $0.hasPrefix("BVAGENT SERVICE start")
+            || HvfGuestResetRecord.matches($0) }) { return finish(.failure(.restarted)) }
         for raw in lines {
             let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
             guard line.hasPrefix(prefix) else { continue }

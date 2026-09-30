@@ -57,7 +57,7 @@ final class HvfWindowInventoryController: ObservableObject {
         let lines = reader.readNewLines(from: logURL)
         if lines.contains(where: {
             $0.hasPrefix("BVAGENT READY ") || $0.hasPrefix("BVAGENT re-READY ")
-                || $0.hasPrefix("BVAGENT SERVICE start") || $0.hasPrefix("PSCI SYSTEM_RESET:")
+                || $0.hasPrefix("BVAGENT SERVICE start") || HvfGuestResetRecord.matches($0)
         }) {
             invalidate("Guest restarted")
             return

@@ -46,7 +46,7 @@ struct HvfSessionInputRouter {
         guard matches(binding), !failed, eligible else { return nil }
         let restarted = lines.contains {
             $0.hasPrefix("BVAGENT READY") || $0.hasPrefix("BVAGENT re-READY") ||
-            $0.hasPrefix("BVAGENT SERVICE start") || $0.hasPrefix("PSCI_SYSTEM_RESET")
+            $0.hasPrefix("BVAGENT SERVICE start") || HvfGuestResetRecord.matches($0)
         }
         if activated && (!serviceReady || restarted) { return fail(.sessionChanged) }
         let update = stream.poll(serviceReady: serviceReady, legacyQuiescent: true,

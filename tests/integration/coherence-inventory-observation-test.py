@@ -56,10 +56,10 @@ class Observation(unittest.TestCase):
         for lines in ([row(0), row(0)], [PREFIX + "ERR unavailable"],
                       [row(0).rsplit(" ", 1)[0] + " !!!!"], [PREFIX + "WIN 1 2 0 0 0 1 QQ=="]):
             with self.assertRaises(ValueError): inventory(lines + [PREFIX + "WINEND"], COMMAND)
-        for marker in ("BVAGENT READY", "BVAGENT re-READY", "BVAGENT SERVICE start", "PSCI_SYSTEM_RESET", "PSCI SYSTEM_RESET:"):
+        for marker in ("BVAGENT READY", "BVAGENT re-READY", "BVAGENT SERVICE start", "PSCI SYSTEM_RESET: reboot 1/8",
+                       "stop: PSCI 0x84000009 exiting for process recreation (exit 42)"):
             for position in range(3):
-                lines = [row(0), PREFIX + "WINEND"]
-                lines.insert(position, marker)
+                lines = [row(0), PREFIX + "WINEND"]; lines.insert(position, marker)
                 with self.assertRaises(ValueError): inventory(lines, COMMAND)
 
     def test_profile_dispatch(self):
