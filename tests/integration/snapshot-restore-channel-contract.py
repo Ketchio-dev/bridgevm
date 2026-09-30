@@ -71,10 +71,10 @@ class RestoreReceiptContract(unittest.TestCase):
                 self.assertEqual(ctl.read_text(), "marker\n")
 
     def test_shutdown_requires_natural_success_and_both_receipts(self):
-        for log, status, expected in (("stop: PSCI x (system off)\nNVMe disk written back: x\n", 0, 0),
-                                      ("stop: PSCI x (system off)\n", 0, 1),
-                                      ("NVMe disk written back: x\n", 0, 1),
-                                      ("stop: PSCI x (system off)\nNVMe disk written back: x\n", 2, 1)):
+        report = ("REGS: pc=0x0\n=== EDK2 boot probe (with Apple hv_gic) ===\nstop: PSCI 0x84000008 (system off)\n"
+                  "serial raw bytes: 0 output bytes: 0\n--- serial (tail) ---\n\n--- end ---\n")
+        for log, status, expected in (("NVMe disk written back: x\n" + report, 0, 0), (report, 0, 1),
+                                      ("NVMe disk written back: x\n", 0, 1), ("NVMe disk written back: x\n" + report, 2, 1)):
             with tempfile.TemporaryDirectory() as directory:
                 path = Path(directory)
                 (path / "log").write_text(log)

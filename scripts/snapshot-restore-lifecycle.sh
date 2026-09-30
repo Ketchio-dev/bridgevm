@@ -26,6 +26,6 @@ snapshot_shutdown() {
   wait "$SNAPSHOT_LAUNCHER" || status=$?
   if bridgevm_process_group_alive "$SNAPSHOT_LAUNCHER"; then snapshot_stop_launcher; return 1; fi
   SNAPSHOT_LAUNCHER=""
-  (( status == 0 )) && tr '\r' '\n' < "$log" | grep -E '^stop: PSCI .*\(system off\)' > /dev/null || return 1
+  (( status == 0 )) && python3 "$(dirname "${BASH_SOURCE[0]}")/live-gates/hvf_terminal_evidence.py" --require-system-off "$log" || return 1
   tr '\r' '\n' < "$log" | grep -E '^NVMe (second namespace )?disk written back:' > /dev/null
 }

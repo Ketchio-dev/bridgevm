@@ -29,8 +29,8 @@ struct T17RunLogProof {
     }
 
     static func audioPassed(_ url: URL) -> Bool {
-        guard let data = try? Data(contentsOf: url, options: [.mappedIfSafe]),
-              let line = records(data).last(where: { $0.line.hasPrefix("hda CoreAudio stats:") })?.line else { return false }
+        guard let data = try? Data(contentsOf: url, options: [.mappedIfSafe]), let tail = HvfTerminalReport.hostTail(in: data),
+              let line = records(tail).last(where: { $0.line.hasPrefix("hda CoreAudio stats:") })?.line else { return false }
         func value(_ key: String) -> Int? {
             guard let range = line.range(of: "\(key)=") else { return nil }
             return Int(line[range.upperBound...].prefix(while: \.isNumber))

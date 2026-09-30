@@ -1681,7 +1681,7 @@ scripts/live-gates/qmp-close-race-baseline.rs	27	0
 scripts/live-gates/qmp_stress_contract.py	521	0
 scripts/live-gates/run-qmp-stress-tier.sh	43	0
 scripts/live-gates/verify-qmp-stress.py	34	0
-scripts/audio-teardown-result.py	260	0
+scripts/audio-teardown-result.py	204	0
 scripts/verify-audio-teardown-receipt.py	234	0
 scripts/live-gates/audio-teardown-manifest.py	152	0
 scripts/live-gates/run-audio-teardown-lane.sh	85	0
@@ -3329,3 +3329,9 @@ apps/macos/Sources/BridgeVMProductE2E/HvfTerminalReport.swift	56	0
 scripts/live-gates/hvf_terminal_report.py	65	0
 tests/integration/hvf-terminal-stop-limit-contract.py	87	0
 apps/macos/Tests/BridgeVMProductE2ETests/HvfTerminalReportLimitTests.swift	31	0
+scripts/live-gates/hvf_terminal_evidence.py	47	0
+scripts/hvf-terminal-report.sh	41	0
+apps/macos/Sources/BridgeVMProductE2E/HvfTerminalHostTail.swift	13	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17AudioProofTests.swift	36	0
+tests/integration/hvf-stop-readers-contract.py	261	0
+tests/integration/audio-teardown-result-test.py	93	0

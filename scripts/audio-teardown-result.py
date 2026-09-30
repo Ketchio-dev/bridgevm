@@ -9,6 +9,10 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "live-gates"))
+from hvf_terminal_evidence import host_tail  # noqa: E402
+from hvf_terminal_report import system_off_offset  # noqa: E402
+
 SCHEMA = "bridgevm.b7-audio-teardown-lane.v1"
 PREFIX = "hda CoreAudio stats:"
 STAT_FIELDS = (
@@ -132,13 +136,17 @@ def validate(run_log: Path, result_file: Path, launcher_exit: int, nonce: str, o
         raise AudioTeardownError(f"launcher exited with status {launcher_exit}")
     if not result_file.is_file() or result_file.is_symlink() or not 1 <= result_file.stat().st_size <= 4096:
         raise AudioTeardownError("playback result file is missing, unsafe, empty, or over 4 KiB")
+    raw = run_log.read_bytes()
     try:
-        lines = run_log.read_text(encoding="utf-8").replace("\r\n", "\n").splitlines()
+        lines = raw.decode("utf-8").replace("\r\n", "\n").splitlines()
     except UnicodeError as error:
         raise AudioTeardownError("run log is not UTF-8") from error
+    # Only the records after the final report's footer are the host's own teardown.
+    tail = host_tail(raw) or []
     stats_lines = [line for line in lines if line.startswith(PREFIX)]
-    if len(stats_lines) != 1:
-        raise AudioTeardownError("run log must contain exactly one final CoreAudio stats line")
+    if (len(stats_lines) != 1 or stats_lines[0] not in tail
+            or sum(line.startswith("hda CoreAudio lifecycle:") for line in tail) != 2):
+        raise AudioTeardownError("the final report's host tail must carry the only CoreAudio stats and lifecycle lines")
     stats = parse_stats(stats_lines[0])
     parse_events(lines, stats)
     marker = f"B7 PLAYBACK PASS nonce={nonce} wav_bytes=384044"
@@ -148,8 +156,9 @@ def validate(run_log: Path, result_file: Path, launcher_exit: int, nonce: str, o
         raise AudioTeardownError("playback result file is not UTF-8") from error
     if result_lines != [marker]:
         raise AudioTeardownError("nonce-bound playback result is not the exact marker")
-    if sum(bool(re.fullmatch(r"stop: PSCI .*\(system off\)", line)) for line in lines) != 1:
-        raise AudioTeardownError("exactly one clean guest SYSTEM_OFF is required")
+    if (sum(bool(re.fullmatch(r"stop: PSCI .*\(system off\)", line)) for line in lines) != 1
+            or system_off_offset(raw) is None):
+        raise AudioTeardownError("exactly one clean guest SYSTEM_OFF is required, as the final report's stop")
     if sum(line.startswith("NVMe disk written back:") for line in lines) != 1:
         raise AudioTeardownError("exactly one NVMe writeback record is required")
     if (stats["frames_rendered"] <= 0 or stats["drops"] != 0
@@ -169,68 +178,6 @@ def validate(run_log: Path, result_file: Path, launcher_exit: int, nonce: str, o
     }
 
 
-def self_test() -> int:
-    import tempfile
-
-    nonce = "a" * 64
-    base = "hda CoreAudio lifecycle: operation=stop osstatus=0 success=true\n" \
-        "hda CoreAudio lifecycle: operation=dispose osstatus=0 success=true\n" \
-        "stop: PSCI SYSTEM_OFF (system off)\nNVMe disk written back: fixture\n"
-    zero = (
-        f"{PREFIX} frames_rendered=96000 drops=0 dropped_bytes=0 format_drops=0 "
-        "ring_full_drops=0 queue_stop_errors=0 queue_dispose_errors=0 "
-        "callback_errors=0 callback_active_errors=0 "
-        "callback_stopping_errors=0 callback_expected_stopping_errors=0 "
-        "callback_unexpected_errors=0 callback_stopping_invalid_run_state=0 "
-        "callback_stopping_queue_invalidated=0 callback_stopping_enqueue_during_reset=0 "
-        "callback_stopping_disposal_pending=0 callback_stopping_unclassified=0\n"
-    )
-    expected_event = "hda CoreAudio callback enqueue: state=stopping reason=stopping-enqueue-during-reset osstatus=-66632 expected=true\n"
-    expected = zero.replace("callback_errors=0", "callback_errors=1").replace(
-        "callback_stopping_errors=0", "callback_stopping_errors=1").replace(
-        "callback_expected_stopping_errors=0", "callback_expected_stopping_errors=1").replace(
-        "callback_stopping_enqueue_during_reset=0", "callback_stopping_enqueue_during_reset=1")
-    with tempfile.TemporaryDirectory(prefix="bridgevm-b7-result-") as temporary:
-        log = Path(temporary) / "run.log"
-        result = Path(temporary) / "playback-result.txt"
-        result.write_text(f"B7 PLAYBACK PASS nonce={nonce} wav_bytes=384044\n", encoding="utf-8")
-        log.write_text(base + zero, encoding="utf-8")
-        assert validate(log, result, 0, nonce, 1)["pass"] is True
-        log.write_text(base + expected_event + expected, encoding="utf-8")
-        assert validate(log, result, 0, nonce, 1)["callback_expected_stopping_errors"] == 1
-        rejected = [
-            base + expected,
-            base + zero.replace("callback_active_errors=0", "callback_active_errors=1"),
-            base.replace("stop: PSCI SYSTEM_OFF (system off)\n", "") + zero,
-            base + zero + zero,
-            base + expected_event.replace("expected=true", "expected=false") + expected,
-            base.replace("operation=stop osstatus=0 success=true", "operation=stop osstatus=-50 success=false")
-            + zero.replace("queue_stop_errors=0", "queue_stop_errors=1"),
-        ]
-        invalidated_event = (
-            "hda CoreAudio callback enqueue: state=stopping "
-            "reason=stopping-queue-invalidated osstatus=-66671 expected=false\n"
-        )
-        invalidated = zero.replace("callback_errors=0", "callback_errors=1").replace(
-            "callback_stopping_errors=0", "callback_stopping_errors=1").replace(
-            "callback_unexpected_errors=0", "callback_unexpected_errors=1").replace(
-            "callback_stopping_queue_invalidated=0", "callback_stopping_queue_invalidated=1")
-        rejected.append(base + invalidated_event + invalidated)
-        for body in rejected:
-            log.write_text(body, encoding="utf-8")
-            try:
-                validate(log, result, 0, nonce, 1)
-            except AudioTeardownError:
-                continue
-            raise AssertionError("invalid B7 lane log accepted")
-        result.write_text("wrong\n", encoding="utf-8")
-        try: validate(log, result, 0, nonce, 1)
-        except AudioTeardownError: pass
-        else: raise AssertionError("invalid B7 playback result accepted")
-    print(f"PASS: B7 audio teardown lane classifier ({len(rejected) + 3} cases)")
-    return 0
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-log", type=Path)
@@ -239,10 +186,7 @@ def main() -> int:
     parser.add_argument("--nonce")
     parser.add_argument("--ordinal", type=int)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
-    if args.self_test:
-        return self_test()
     if None in (args.run_log, args.result_file, args.launcher_exit, args.nonce, args.ordinal, args.output):
         parser.error("all lane arguments are required")
     try:
