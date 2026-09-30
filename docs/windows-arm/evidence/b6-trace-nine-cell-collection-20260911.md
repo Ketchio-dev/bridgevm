@@ -32,10 +32,11 @@ corresponding submissions. At c389c9b4 these include CI 34588479878, Security
 
 ## Sealed inputs
 
-All ten input manifests carry the same hash for each shared input below. Each
-receipt's identity fields match its manifest. Only the per-cell configuration
-differs; both 1920x1080 100-percent jobs used configuration `3fd4d47f` and
-the same manifest `bdfaeefe`.
+Each hash below is the same in all ten jobs. The input manifests carry all but
+the trace policy, which is each receipt's environment_policy_sha256 and the
+hash of its `renderer-trace-policy.json`. Receipt identity fields match their
+manifests. Only the per-cell configuration differs; both 1920x1080 100-percent
+jobs share configuration `3fd4d47f` and manifest `bdfaeefe`.
 
 | Input | SHA-256 |
 | --- | --- |
@@ -49,10 +50,9 @@ the same manifest `bdfaeefe`.
 | Render server | `f63b98ad6f74d2fa86a040ad8746c2193ecd1fb6aa72d654f010ee1eceedf108` |
 | Trace policy | `0f221af88e87895e3f5261bba36b4f78c9748a295715a8a931b3d670a346435c` |
 
-Each preflight log names a disk and vars clone in a job-named work
-directory. The ten final disk hashes are distinct. Final
-vars hashes take one of two values, `0167bddd` in seven jobs and `9ecd7878`
-in three; this is recorded, not diagnosed.
+Each preflight log names a disk and vars clone in a job-named work directory.
+All ten final disk hashes differ. Final vars hashes take two values, `0167bddd`
+in seven jobs and `9ecd7878` in three; this is recorded, not diagnosed.
 
 ## Per-job results
 
