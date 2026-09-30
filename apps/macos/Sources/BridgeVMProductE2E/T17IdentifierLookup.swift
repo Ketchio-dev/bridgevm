@@ -5,8 +5,7 @@ import Foundation
 /// final attempt ended that way, its attributed blocker replaces the missing capture.
 enum T17IdentifierLookup {
     static func poll<Element>(
-        _ identifier: String, timeout: TimeInterval, now: () -> Date = Date.init,
-        pause: () -> Void = { RunLoop.current.run(until: Date().addingTimeInterval(0.1)) },
+        _ identifier: String, timeout: TimeInterval, now: () -> Date, pause: () -> Void,
         snapshot: () throws -> Element?, missing: () -> Error
     ) throws -> Element {
         let deadline = now().addingTimeInterval(timeout)
