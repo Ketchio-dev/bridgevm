@@ -3071,7 +3071,7 @@ scripts/live-gates/bridgevm_live_receipt.py	62	0
 scripts/live-gates/native-snapshot-restore-cleanup-fence.sh	36	0
 scripts/live-gates/a19-worker-cleanup-dispatch.sh	23	0
 .github/workflows/t20-receipt-seal.yml	17	0
-scripts/live-gates/run-native-snapshot-restore-tier.py	95	0
+scripts/live-gates/run-native-snapshot-restore-tier.py	94	0
 scripts/live-gates/native_snapshot_export_evidence.py	114	0
 scripts/native-snapshot-export-live.sh	13	0
 scripts/verify-native-snapshot-restore-boots.sh	184	0
@@ -3254,7 +3254,7 @@ scripts/live-gates/a19_interrupt_restore_child.py	166	0
 scripts/live-gates/a19_interrupted_restore_receipt.py	169	0
 scripts/live-gates/a19_interrupted_restore_public.py	53	0
 scripts/live-gates/a19_interrupted_restore_seal.py	84	0
-scripts/live-gates/run-a19-interrupted-restore-tier.py	207	0
+scripts/live-gates/run-a19-interrupted-restore-tier.py	199	0
 scripts/verify-native-snapshot-interrupted-restore.sh	179	0
 scripts/a19-t22-marker-share.sh	120	0
 scripts/win-assets/bv-a19-t22-marker.ps1	59	0
@@ -3385,3 +3385,4 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17DisplayClickTests.swift	44	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17PointerReceiptTests.swift	50	0
 tests/integration/t17-display-click-contract.py	54	0
 docs/history/windows-hvf/a9-r43-display-click-20260930.md	62	0
+tests/integration/a19-shutdown-count-contract.py	116	0

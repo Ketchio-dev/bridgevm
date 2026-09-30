@@ -17,6 +17,7 @@ from a19_interrupted_restore_receipt import initial, write_new
 from a19_interrupted_restore_seal import merge_prepared, sealed_hashes
 from native_snapshot_restore_artifacts import RELATIONS, digest, regular
 from native_snapshot_restore_inputs import prepare, reauthenticate
+from native_snapshot_restore_results import shutdown_count
 from native_snapshot_export_evidence import load_evidence
 
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -67,15 +68,6 @@ def snapshot_hashes(path: Path) -> tuple[str, str]:
         not SHA256.fullmatch(value[key]) for key in ("disk_sha256", "vars_sha256"))):
         raise ValueError("created snapshot manifest is invalid")
     return value["disk_sha256"], value["vars_sha256"]
-
-
-def shutdown_count(output: Path) -> int:
-    count = 0
-    for phase in PHASES:
-        log = output / phase / "run.log"
-        if log.is_file() and "stop: PSCI " in log.read_text(encoding="utf-8", errors="replace"):
-            count += 1
-    return count
 
 
 def run_lifecycle(repo: Path, environment: dict) -> int:
@@ -169,7 +161,7 @@ def main() -> int:
         receipt["outcome"] = "failed"
         completed = run_lifecycle(repo, environment)
         receipt["boots_attempted"] = sum((output / phase).is_dir() for phase in PHASES)
-        receipt["natural_shutdown_count"] = shutdown_count(output)
+        receipt["natural_shutdown_count"] = shutdown_count(output, PHASES)
         receipt["boots_passed"] = receipt["natural_shutdown_count"]
         reauthenticate(private, sealed_binary)
         if completed != 0:

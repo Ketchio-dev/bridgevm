@@ -1,8 +1,12 @@
-"""Summarize the T20 marker lifecycle's retained public evidence."""
+"""Summarize the A19 marker lifecycles' retained public evidence."""
 from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from hvf_run_log import read_run_log
+from hvf_terminal_report import LOG_LIMIT, system_off_offset
+
+T20_PHASES = ("phase1-original", "phase3-clobber", "phase5-restored")
 
 
 def file_digest(path: Path) -> str:
@@ -16,10 +20,6 @@ def line_hash(path: Path) -> str:
     return value
 
 
-def shutdown_count(output: Path) -> int:
-    count = 0
-    for phase in ("phase1-original", "phase3-clobber", "phase5-restored"):
-        log = output / phase / "run.log"
-        if log.is_file() and "stop: PSCI " in log.read_text(encoding="utf-8", errors="replace"):
-            count += 1
-    return count
+def shutdown_count(output: Path, phases: tuple[str, ...]) -> int:
+    """Phases whose whole run.log binds the final host report's SYSTEM_OFF stop."""
+    return sum(system_off_offset(read_run_log(output / phase / "run.log", LOG_LIMIT - 1)) is not None for phase in phases)
