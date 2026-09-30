@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Host-authenticate nonce-bound T17 guest observations and product logs."""
 from __future__ import annotations
-import hashlib, hvf_stop_line, hvf_terminal_evidence, hvf_terminal_report, json, re
+import hashlib, hvf_stop_line, hvf_terminal_evidence, hvf_terminal_report, json, t17_audio_counters
 from pathlib import Path
 
 OBSERVATIONS = ("keyboard_pointer_challenge_sha256", "clipboard_roundtrip_sha256", "share_host_to_guest_sha256", "share_guest_to_host_sha256", "network_result_sha256", "audio_result_sha256", "audio_playback_count", "audio_error_count", "snapshot_marker_a_sha256", "snapshot_marker_b_sha256", "snapshot_marker_restored_a_sha256")
@@ -53,13 +53,7 @@ def _audio(data: bytes) -> None:
     tail = hvf_terminal_evidence.host_tail(data) if data.decode("utf-8") else None
     if not (lines := [line for line in tail or () if line.startswith("hda CoreAudio stats:")]):
         raise ValueError("first product log has no CoreAudio counters after its final report")
-    values: dict[str, int] = {}
-    for key in ("frames_rendered", "drops", "callback_errors"):
-        matches = re.findall(rf"(?:^|\s){key}=(\d+)(?=\s|$)", lines[-1])
-        if len(matches) != 1:
-            raise ValueError(f"CoreAudio counter {key} is missing or ambiguous")
-        values[key] = int(matches[0])
-    if values["frames_rendered"] <= 0 or values["drops"] != 0 or values["callback_errors"] != 0:
+    if not t17_audio_counters.passed(lines[-1]):
         raise ValueError("CoreAudio counters do not prove clean playback")
 
 def verify(request: dict) -> list[Path]:

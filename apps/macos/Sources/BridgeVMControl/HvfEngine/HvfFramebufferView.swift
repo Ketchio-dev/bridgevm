@@ -23,7 +23,9 @@ final class FBLayerView: NSView {
     private var fileDescriptor: Int32 = -1
     private var mappedPointer: UnsafeMutableRawPointer?
     private var mappedLength = 0
-    private var guestSize: CGSize = .zero
+    private var guestSize: CGSize = .zero {
+        didSet { if guestSize != oldValue { HvfDisplaySurfaceAccessibility.update(self, guestSize: guestSize) } }
+    }
     private var lastProcessedSeq: UInt64 = .max
     private var iosurfacePresenter = HvfIOSurfacePresenter()
     private var pointerMoves = HvfPointerMoveMailbox()
@@ -49,6 +51,7 @@ final class FBLayerView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
         layer?.contentsGravity = .resizeAspect
+        HvfDisplaySurfaceAccessibility.configure(self)
     }
 
     required init?(coder: NSCoder) {

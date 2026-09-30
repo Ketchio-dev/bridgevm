@@ -98,18 +98,6 @@ pub(crate) fn persist_nvme_media(
     writes
 }
 
-
-pub(crate) fn persist_stop_media(
-    platform: &mut VirtPlatform,
-    media: &VirtBootMediaConfig,
-    owner: &mut RuntimeLease,
-) {
-    let vars = owner.persist(RuntimeMediaSlot::Vars, platform.flash_vars_image())
-        .unwrap_or_else(|e| panic!("persist UEFI vars: {e}"));
-    print_media_writes("UEFI vars", &vars);
-    persist_both_nvme_namespaces(platform, media, owner);
-}
-
 #[cfg(test)]
 #[path = "storage_persistence_tests.rs"]
 mod tests;

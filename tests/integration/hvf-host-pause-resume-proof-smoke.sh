@@ -54,7 +54,7 @@ for _ in $(seq 1 200); do
       'shutdown.exe /p /f')
         printf 'BVAGENT CMD shutdown.exe /p /f exit=0\nBVAGENT END shutdown.exe /p /f\n'
         printf 'NVMe disk written back: /tmp/fake.raw (4096 bytes)\n'
-        printf '=== EDK2 boot probe (with Apple hv_gic) ===\nstop: PSCI 0x84000008 (system off)\nserial raw bytes: 0 output bytes: 0\n--- serial (tail) ---\n\n--- end ---\n'
+        printf '=== EDK2 boot probe (with Apple hv_gic) ===\nstop: PSCI 0x84000008 (system off)\nhost media: NVMe disk written back: /tmp/fake.raw (4096 bytes)\nserial raw bytes: 0 output bytes: 0\n--- serial (tail) ---\n\n--- end ---\n'
         exit 0
         ;;
       *)

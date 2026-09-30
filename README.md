@@ -51,14 +51,14 @@ registry; it is the product wording source of truth.
 Release-blocking criteria proven: **14 / 17**. Open: A9, A11, A19.
 
 Known open defects:
-- **A9**: No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off.
+- **A9**: No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window shows no guest screen and does not forward pointer clicks.
 - **A19**: Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage, physical power-loss coverage and the remaining product lifecycle sample count are unproven.
 - **B6**: Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness.
 
 - Graphics future path: Vulkan is a Graphics Lab future path, excluded from General Preview and v1; D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-09-30 at commit `d7bab1fa3c5a332fdaa5a3eef5198502408d33e6`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-09-30 at commit `d0fde113cdc4f5431f9094edf5f355dead269032`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 See the [current status](STATUS.md) and

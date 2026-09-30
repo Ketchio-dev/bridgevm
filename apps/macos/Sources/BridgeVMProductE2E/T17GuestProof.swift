@@ -31,11 +31,7 @@ struct T17RunLogProof {
     static func audioPassed(_ url: URL) -> Bool {
         guard let data = try? Data(contentsOf: url, options: [.mappedIfSafe]), let tail = HvfTerminalReport.hostTail(in: data),
               let line = records(tail).last(where: { $0.line.hasPrefix("hda CoreAudio stats:") })?.line else { return false }
-        func value(_ key: String) -> Int? {
-            guard let range = line.range(of: "\(key)=") else { return nil }
-            return Int(line[range.upperBound...].prefix(while: \.isNumber))
-        }
-        return (value("frames_rendered") ?? 0) > 0 && value("drops") == 0 && value("callback_errors") == 0
+        return T17AudioCounters.passed(line)
     }
 
     private static func records(_ data: Data) -> [(offset: Int, line: String)] {

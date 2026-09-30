@@ -148,6 +148,7 @@ final class HvfEngineConfigTests: XCTestCase {
             "--agent-service-control", "/tmp/evidence/ctl",
             "--agent-service-command", "whoami",
             "--display-export-ms", "100",
+            "--ramfb-display-export-ms", "33",
             "--display-export-fb", "/tmp/evidence/display.fb",
             "--enable-xhci",
             "--input-control", "/tmp/evidence/input.ctl",

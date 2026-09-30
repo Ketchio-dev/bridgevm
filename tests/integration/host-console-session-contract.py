@@ -57,11 +57,11 @@ class ConsoleSessionTests(unittest.TestCase):
         self.refuses(b"not a plist", "unreadable")
         self.refuses(plistlib.dumps([{"IOProviderClass": "IOResources"}]), "no IOConsoleUsers")
 
-    def test_t17_submission_requires_the_session_after_its_manifest_preflight(self) -> None:
+    def test_accessibility_driven_submissions_require_the_session(self) -> None:
         dispatch = (ROOT / "scripts/live-gates/app-ui-manifest-dispatch.sh").read_text()
-        arm = dispatch.split("validate:t17-windows-hvf-product-e2e)", 1)[1].split(";;", 1)[0].strip()
-        preflight = 'python3 "$HERE/windows-product-e2e-launchservices-preflight.py" --manifest "$1"'
-        self.assertEqual(arm, preflight + ' && exec python3 "$HERE/host_console_session.py" --require-unlocked')
+        arm = lambda tier: dispatch.split(f"validate:{tier})", 1)[1].split(";;", 1)[0].strip()
+        guard, preflight = 'exec python3 "$HERE/host_console_session.py" --require-unlocked', 'python3 "$HERE/windows-product-e2e-launchservices-preflight.py" --manifest "$1"'
+        self.assertEqual([arm("t17-windows-hvf-product-e2e"), arm("t19-windows-hvf-import-product-e2e")], [f"{preflight} && {guard}", guard])
 
 
 if __name__ == "__main__":

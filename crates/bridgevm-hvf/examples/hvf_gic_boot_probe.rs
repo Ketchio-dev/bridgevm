@@ -111,7 +111,7 @@ probe_modules!(
     "hvf_gic_boot_probe/host_support.rs" => host_support,
     "hvf_gic_boot_probe/hvf_abi.rs" => hvf_abi,
     "hvf_gic_boot_probe/interrupt_delivery.rs" => interrupt_delivery,
-    "hvf_gic_boot_probe/nvme_persist.rs" => nvme_persist,
+    "hvf_gic_boot_probe/stop_media.rs" => stop_media,
     "hvf_gic_boot_probe/probe_env.rs" => probe_env,
     "hvf_gic_boot_probe/psci_adapter.rs" => psci_adapter,
     "hvf_gic_boot_probe/reboot_watchdog.rs" => reboot_watchdog,
@@ -136,6 +136,7 @@ probe_modules!(
 use agent_console::AgentConsoleHarness;
 use arm64_trace::print_translated_instruction_words;
 use live_display_export::LiveDisplayExporter;
+use live_display_export::RamfbDisplayThread;
 use mmio_trace::{print_mmio_traces, record_mmio_trace, MmioTrace};
 use nvme_trace::print_nvme_command_trace;
 use pcie_ecam_trace::{PcieEcamAccess, RecentPcieEcam};
@@ -161,12 +162,12 @@ pub(crate) use guest_memory::*;
 pub(crate) use host_support::*;
 pub(crate) use hvf_abi::*;
 pub(crate) use interrupt_delivery::*;
-pub(crate) use nvme_persist::*;
 pub(crate) use probe_env::*;
 pub(crate) use psci_adapter::*;
 pub(crate) use reboot_watchdog::*;
 pub(crate) use secondary_vcpu::*;
 pub(crate) use smp_trace::*;
+pub(crate) use stop_media::*;
 pub(crate) use storage_reporting::*;
 pub(crate) use vcpu_coordination::*;
 pub(crate) use vcpu_debug::*;

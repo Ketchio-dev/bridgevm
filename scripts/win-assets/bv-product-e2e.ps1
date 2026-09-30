@@ -34,40 +34,50 @@ function Require-Exact([string]$Path, [string]$Body) {
 function Hash([string]$Name) {
     return (Get-FileHash -LiteralPath (Join-Path $Share $Name) -Algorithm SHA256).Hash.ToLowerInvariant()
 }
-
-switch ($Action) {
+New-Item -ItemType Directory -Force -Path 'C:\ProgramData\BridgeVM' | Out-Null
+# A failed action names itself and its exception type for the host, then still fails.
+try { switch ($Action) {
     'KeyboardPointer' {
-        Add-Type -AssemblyName System.Windows.Forms
-        Add-Type -AssemblyName System.Drawing
-        $ExpectedText = 't17kbd' + $Prefix
-        $script:Typed = ''
-        $script:Clicked = $false
-        $Form = New-Object System.Windows.Forms.Form
-        $Form.Text = 'BridgeVM T17 Input Challenge'
-        $Form.WindowState = [System.Windows.Forms.FormWindowState]::Maximized
-        $Form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
-        $Form.BackColor = [Drawing.Color]::FromArgb(20, 70, 150)
-        $Form.KeyPreview = $true
-        $Label = New-Object System.Windows.Forms.Label
-        $Label.AutoSize = $false
-        $Label.Dock = [System.Windows.Forms.DockStyle]::Fill
-        $Label.TextAlign = [Drawing.ContentAlignment]::MiddleCenter
-        $Label.Font = New-Object Drawing.Font('Segoe UI', 28, [Drawing.FontStyle]::Bold)
-        $Label.ForeColor = [Drawing.Color]::White
-        $Label.Text = 'CLICK AND TYPE THE SEALED CHALLENGE'
-        $Form.Controls.Add($Label)
-        $Form.Add_MouseDown({ $script:Clicked = $true })
-        $Label.Add_MouseDown({ $script:Clicked = $true })
+        Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+        Add-Type -Namespace BridgeVM -Name InputDesktop -MemberDefinition @'
+public struct POINT { public int X; public int Y; }
+[DllImport("user32.dll")] public static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
+[DllImport("user32.dll")] public static extern bool CloseDesktop(IntPtr desktop);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern bool GetUserObjectInformation(IntPtr handle, int index, System.Text.StringBuilder info, int length, out int needed);
+[DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
+[DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr window, uint flags);
+[DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+public static bool ShellFlyout() { uint id; GetWindowThreadProcessId(GetForegroundWindow(), out id); try { string name = System.Diagnostics.Process.GetProcessById((int)id).ProcessName; return name == "StartMenuExperienceHost" || name == "SearchHost" || name == "ShellExperienceHost"; } catch (ArgumentException) { return false; } }
+public static bool Accepts(IntPtr form) {
+    IntPtr desktop = OpenInputDesktop(0, false, 1); if (desktop == IntPtr.Zero) { return false; }
+    var name = new System.Text.StringBuilder(256); int needed;
+    bool active = GetUserObjectInformation(desktop, 2, name, 512, out needed) && name.ToString() == "Default"; CloseDesktop(desktop);
+    POINT center; center.X = GetSystemMetrics(0) / 2; center.Y = GetSystemMetrics(1) / 2;
+    return active && GetAncestor(WindowFromPoint(center), 2) == form;
+}
+'@
+        $ExpectedText = 't17kbd' + $Prefix; $script:Typed = ''; $script:Clicked = $false; $script:Progress = ''; $script:Dismissed = 0
+        $Session = [Diagnostics.Process]::GetCurrentProcess().SessionId; $Integrity = switch -Regex ((whoami /groups) -join ' ') { 'S-1-16-16384' { 'system'; break } 'S-1-16-12288' { 'high'; break } 'S-1-16-8192' { 'medium'; break } 'S-1-16-4096' { 'low'; break } default { 'unknown' } }
+        $Form = New-Object System.Windows.Forms.Form -Property @{ Text = 'BridgeVM T17 Input Challenge'; WindowState = 'Maximized'; FormBorderStyle = 'None'; BackColor = [Drawing.Color]::FromArgb(20, 70, 150); KeyPreview = $true; TopMost = $true }
+        $Label = New-Object System.Windows.Forms.Label -Property @{ AutoSize = $false; Dock = 'Fill'; TextAlign = 'MiddleCenter'; Font = (New-Object Drawing.Font('Segoe UI', 28, [Drawing.FontStyle]::Bold)); ForeColor = [Drawing.Color]::White; Text = 'CLICK AND TYPE THE SEALED CHALLENGE' }; $Form.Controls.Add($Label)
+        foreach ($Target in @($Form, $Label)) { $Target.Add_MouseDown({ $script:Clicked = $true }) }
         $Form.Add_KeyPress({ param($Sender, $Event) $script:Typed += $Event.KeyChar })
-        $Timer = New-Object System.Windows.Forms.Timer
-        $Timer.Interval = 100
+        $Timer = New-Object System.Windows.Forms.Timer -Property @{ Interval = 100 }
         $Timer.Add_Tick({
-            if ($script:Clicked -and $script:Typed.EndsWith($ExpectedText)) {
-                $Timer.Stop()
-                $Form.Close()
-            }
+            $Cursor = [Windows.Forms.Cursor]::Position; $Foreground = if ([BridgeVM.InputDesktop]::GetAncestor([BridgeVM.InputDesktop]::GetForegroundWindow(), 2) -eq $Form.Handle) { 'self' } else { 'other' }
+            if (($State = "clicked=$([int]$script:Clicked) typed=$([Math]::Min($script:Typed.Length, 999)) session=$Session integrity=$Integrity foreground=$Foreground cursor=$([Math]::Max(0, [Math]::Min(9999, $Cursor.X)))x$([Math]::Max(0, [Math]::Min(9999, $Cursor.Y))) dismissed=$([Math]::Min($script:Dismissed, 99))`n") -ne $script:Progress) { $script:Progress = $State; Write-Exact "t17-keyboard-pointer-progress-$Prefix.txt" $State }
+            if ($script:Clicked -and $script:Typed.EndsWith($ExpectedText)) { $Timer.Stop(); $Form.Close() }
         })
-        $Form.Add_Shown({ $Form.Activate(); $Form.Focus(); $Timer.Start() })
+        $ReadyTimer = New-Object System.Windows.Forms.Timer -Property @{ Interval = 250 }
+        # Ready only once a user could act: the user's desktop takes input and the form is under the screen centre.
+        # First logon opens the Start menu above every window; close it, as a user would, before inviting input.
+        $ReadyTimer.Add_Tick({
+            if ([BridgeVM.InputDesktop]::ShellFlyout()) { $script:Dismissed++; [Windows.Forms.SendKeys]::SendWait('{ESC}') }
+            elseif ([BridgeVM.InputDesktop]::Accepts($Form.Handle)) { $ReadyTimer.Stop(); Write-Exact "t17-keyboard-pointer-ready-$Prefix.txt" "bridgevm-t17-keyboard-pointer-ready-v1`n$Nonce`n" }
+        })
+        $Form.Add_Shown({ $Form.Activate(); $Form.Focus(); $Timer.Start(); $ReadyTimer.Start() })
         [void]$Form.ShowDialog()
         if (-not $script:Clicked -or -not $script:Typed.EndsWith($ExpectedText)) { throw 'input challenge incomplete' }
         Write-Exact "t17-keyboard-pointer-$Prefix.txt" "bridgevm-t17-keyboard-pointer-v1`n$Nonce`n"
@@ -92,34 +102,27 @@ switch ($Action) {
     }
     'Audio' {
         $Wave = 'C:\ProgramData\BridgeVM\t17-tone.wav'
-        $Rate = 48000; $Samples = $Rate; $Stream = New-Object IO.MemoryStream
-        $Writer = New-Object IO.BinaryWriter($Stream); $Bytes = $Samples * 4
+        $Rate = 48000; $Samples = $Rate; $Stream = New-Object IO.MemoryStream; $Writer = New-Object IO.BinaryWriter($Stream); $Bytes = $Samples * 4
         $Writer.Write([char[]]'RIFF'); $Writer.Write([int](36 + $Bytes)); $Writer.Write([char[]]'WAVE')
         $Writer.Write([char[]]'fmt '); $Writer.Write([int]16); $Writer.Write([int16]1); $Writer.Write([int16]2)
         $Writer.Write([int]$Rate); $Writer.Write([int]($Rate * 4)); $Writer.Write([int16]4); $Writer.Write([int16]16)
         $Writer.Write([char[]]'data'); $Writer.Write([int]$Bytes)
-        for ($Index = 0; $Index -lt $Samples; $Index++) {
-            $Value = [int16](12000 * [Math]::Sin(2 * [Math]::PI * 440 * $Index / $Rate))
-            $Writer.Write($Value); $Writer.Write($Value)
-        }
+        for ($Index = 0; $Index -lt $Samples; $Index++) { $Value = [int16](12000 * [Math]::Sin(2 * [Math]::PI * 440 * $Index / $Rate)); $Writer.Write($Value); $Writer.Write($Value) }
         [IO.File]::WriteAllBytes($Wave, $Stream.ToArray())
         (New-Object Media.SoundPlayer $Wave).PlaySync()
         Write-Exact "t17-audio-$Prefix.txt" "bridgevm-t17-audio-ok-v1`n$Nonce`n"
     }
     'MarkerA' {
         $Body = "bridgevm-t17-snapshot-a-v1`n$Nonce`n"
-        Write-Exact "t17-snapshot-a-$Prefix.txt" $Body
-        [IO.File]::WriteAllBytes('C:\ProgramData\BridgeVM\t17-snapshot-marker.txt', $Utf8.GetBytes($Body))
+        Write-Exact "t17-snapshot-a-$Prefix.txt" $Body; [IO.File]::WriteAllBytes('C:\ProgramData\BridgeVM\t17-snapshot-marker.txt', $Utf8.GetBytes($Body))
     }
     'MarkerB' {
         $Body = "bridgevm-t17-snapshot-b-v1`n$Nonce`n"
-        Write-Exact "t17-snapshot-b-$Prefix.txt" $Body
-        [IO.File]::WriteAllBytes('C:\ProgramData\BridgeVM\t17-snapshot-marker.txt', $Utf8.GetBytes($Body))
+        Write-Exact "t17-snapshot-b-$Prefix.txt" $Body; [IO.File]::WriteAllBytes('C:\ProgramData\BridgeVM\t17-snapshot-marker.txt', $Utf8.GetBytes($Body))
     }
     'MarkerRestoredA' {
         $Body = "bridgevm-t17-snapshot-a-v1`n$Nonce`n"
-        Require-Exact 'C:\ProgramData\BridgeVM\t17-snapshot-marker.txt' $Body
-        Write-Exact "t17-snapshot-restored-a-$Prefix.txt" $Body
+        Require-Exact 'C:\ProgramData\BridgeVM\t17-snapshot-marker.txt' $Body; Write-Exact "t17-snapshot-restored-a-$Prefix.txt" $Body
     }
     'AgentResult' {
         if ($JobID -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' -or
@@ -128,20 +131,14 @@ switch ($Action) {
         $Result = [ordered]@{
             schema_version = 'bridgevm.windows-product-e2e-agent-result.v2'
             job_id = $JobID; commit = $Commit; lane = $Lane; nonce = $Nonce; vm_slug = $VMSlug
-            keyboard_pointer_challenge_sha256 = Hash "t17-keyboard-pointer-$Prefix.txt"
-            clipboard_roundtrip_sha256 = Hash "t17-clipboard-guest-$Prefix.txt"
-            share_host_to_guest_sha256 = Hash "t17-$Prefix.txt"
-            share_guest_to_host_sha256 = Hash "t17-guest-$Prefix.txt"
-            network_result_sha256 = Hash "t17-network-$Prefix.txt"
-            audio_result_sha256 = Hash "t17-audio-$Prefix.txt"
-            audio_playback_count = 1; audio_error_count = 0
-            snapshot_marker_a_sha256 = Hash "t17-snapshot-a-$Prefix.txt"
-            snapshot_marker_b_sha256 = Hash "t17-snapshot-b-$Prefix.txt"
-            snapshot_marker_restored_a_sha256 = Hash "t17-snapshot-restored-a-$Prefix.txt"
+            keyboard_pointer_challenge_sha256 = Hash "t17-keyboard-pointer-$Prefix.txt"; clipboard_roundtrip_sha256 = Hash "t17-clipboard-guest-$Prefix.txt"
+            share_host_to_guest_sha256 = Hash "t17-$Prefix.txt"; share_guest_to_host_sha256 = Hash "t17-guest-$Prefix.txt"
+            network_result_sha256 = Hash "t17-network-$Prefix.txt"; audio_result_sha256 = Hash "t17-audio-$Prefix.txt"; audio_playback_count = 1; audio_error_count = 0
+            snapshot_marker_a_sha256 = Hash "t17-snapshot-a-$Prefix.txt"; snapshot_marker_b_sha256 = Hash "t17-snapshot-b-$Prefix.txt"; snapshot_marker_restored_a_sha256 = Hash "t17-snapshot-restored-a-$Prefix.txt"
         }
         Write-Exact "t17-agent-result-$Prefix.json" (($Result | ConvertTo-Json -Compress) + "`n")
     }
-}
+} } catch { Write-Exact "t17-error-$Prefix.txt" ("action=$Action error=" + $_.Exception.GetType().FullName + "`n"); throw }
 
 Write-Output ("T17 action=$Action nonce=$Nonce status=PASS")
 exit 0

@@ -505,12 +505,12 @@ build_installed_boot_env_args() {
     )
   fi
   if [[ -n "${DISPLAY_EXPORT_FB:-}" ]]; then
-    # Shared-framebuffer export is an evidence/fallback feed. Do not force
-    # readback pacing to zero here: an IOSurface-backed live window does not
-    # consume these CPU copies, and --display-export-ms (when present) should
-    # remain the evidence cadence. A caller can still request uncapped readback
-    # explicitly with BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=0.
+    # Never force virtio-gpu readback pacing to zero here: an IOSurface window
+    # does not consume those CPU copies, --display-export-ms stays their
+    # cadence, and BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=0 still uncaps them.
+    # Without virtio-gpu, a ramfb thread fills the file at its own period.
     ENV_ARGS+=("BRIDGEVM_DISPLAY_EXPORT_FB=$DISPLAY_EXPORT_FB")
+    [[ -z "${RAMFB_DISPLAY_EXPORT_MS:-}" ]] || ENV_ARGS+=("BRIDGEVM_RAMFB_DISPLAY_EXPORT_MS=$RAMFB_DISPLAY_EXPORT_MS")
   fi
   if [[ -n "${BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS:-}" ]]; then
     # Caller-supplied readback pacing wins (A/B knob); the launcher strips
@@ -813,7 +813,7 @@ write_host_pause_resume_gate() {
   [[ -f "$observation" ]] && grep -Eq '^continue_signal_sent=true$' "$observation" && continued="true"
   [[ -f "$observation" ]] && grep -Eq '^post_resume_command_ok=true$' "$observation" && agent_round_trip="true"
   /bin/bash "$ROOT/scripts/hvf-terminal-report.sh" --require-system-off "$EVIDENCE_DIR/run.log" && guest_system_off="true"
-  grep -Eq '^NVMe (second namespace )?disk written back:' "$EVIDENCE_DIR/run.log" && nvme_writeback="true"
+  /bin/bash "$ROOT/scripts/hvf-terminal-report.sh" --require-nvme-write-back "$EVIDENCE_DIR/run.log" && nvme_writeback="true"
 
   if [[ "${HOST_PAUSE_RESUME_CONTROL_STATUS:-1}" != "0" || "$probe_status" != "0" || \
         "$service_ready" != "true" || "$stopped" != "true" || "$stable" != "true" || \
@@ -886,7 +886,7 @@ write_agent_service_gate() {
   grep -Fq "BVAGENT END $AGENT_SERVICE_COMMAND" "$EVIDENCE_DIR/run.log" && initial_command_complete="true"
   grep -Eq '^BVAGENT SERVICE start' "$EVIDENCE_DIR/run.log" && service_started="true"
   /bin/bash "$ROOT/scripts/hvf-terminal-report.sh" --require-system-off "$EVIDENCE_DIR/run.log" && guest_system_off="true"
-  grep -Eq '^NVMe (second namespace )?disk written back:' "$EVIDENCE_DIR/run.log" && nvme_writeback="true"
+  /bin/bash "$ROOT/scripts/hvf-terminal-report.sh" --require-nvme-write-back "$EVIDENCE_DIR/run.log" && nvme_writeback="true"
 
   if [[ "$probe_status" != "0" || "$ready" != "true" || \
         "$initial_command_exit_zero" != "true" || "$initial_command_complete" != "true" || \

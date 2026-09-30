@@ -149,7 +149,7 @@ class LaneFixture(unittest.TestCase):
             "schema_version": packet.STAMP_SCHEMA, "job_id": JOB, "commit": COMMIT, "lane": 1,
             "nonce": NONCE, "request_sha256": request_sha, "result_sha256": result_sha})
         self.args = argparse.Namespace(private=self.private, lane_root=self.lane, job_id=JOB,
-                                       commit=COMMIT, mode="pilot", lane=1)
+                                       commit=COMMIT, mode="pilot", lane=1, kind="first-ready")
 
     def tearDown(self) -> None:
         shutil.rmtree(self.work)

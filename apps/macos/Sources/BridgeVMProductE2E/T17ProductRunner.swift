@@ -11,10 +11,10 @@ struct T17RunOutcome {
 }
 
 final class T17ProductRunner {
-    private let request: T17Request
+    let request: T17Request
     private let fileManager: FileManager
-    private var application: Process?
-    private var ui: T17UIControlling?
+    private(set) var application: Process?
+    private(set) var ui: T17UIControlling?
 
     init(request: T17Request, fileManager: FileManager = .default) {
         self.request = request
@@ -25,7 +25,7 @@ final class T17ProductRunner {
         var evidence = T17Evidence(nonce: request.nonce)
         var failure = "internal-error"; var detail = ""
         var sourcePath = "absent"
-        var uiFrontendAutomated = false
+        var uiFrontendAutomated = false, afterReady = false
         do {
             try evidence.prove(.artifactPreflight)
             try prepareLane()
@@ -50,7 +50,7 @@ final class T17ProductRunner {
             try evidence.authenticate("secure_boot_receipt_sha256", file: URL(fileURLWithPath: request.secureBootReceiptPath))
             try evidence.prove(.secureBootProvisioned)
             let readyLine = try bootToFirstReady(control)
-            try evidence.prove(.firstReady)
+            try evidence.prove(.firstReady); afterReady = true
             try T17GuestJourney(request: request, ui: control, fileManager: fileManager)
                 .run(firstReady: readyLine) { try evidence.prove($0.installStage) }
             try evidence.authenticate("final_disk_sha256", file: URL(fileURLWithPath: request.diskPath))
@@ -58,7 +58,7 @@ final class T17ProductRunner {
             try evidence.authenticate("guest_evidence_sha256", file: URL(fileURLWithPath: request.guestEvidencePath))
             failure = "none"
         } catch let blocker as T17Blocker {
-            failure = blocker.code; detail = blocker.detail  // the code alone said nothing; keep the detail
+            failure = blocker.code; detail = blocker.detail + (afterReady ? "; " + freezeAfterFirstReady() : "")  // keep the detail
         } catch {
             failure = "internal-error"; detail = String(describing: error)
         }
@@ -185,26 +185,6 @@ final class T17ProductRunner {
         return source
     }
 
-    private func bootToFirstReady(_ ui: T17UIControlling) throws -> String {
-        if (try? ui.waitFor("bridgevm.windows.runtime.view", timeout: 1)) == nil { try ui.press("bridgevm.dashboard.advanced", timeout: 60) }
-        try ui.waitFor("bridgevm.windows.runtime.view", timeout: 60)
-        try T17RuntimeIntegrationSetup.apply(sharePath: request.sharePath, ui: ui)
-        try ui.press("bridgevm.windows.runtime.start", timeout: 20)
-        let log = bundle.appendingPathComponent("logs/hvf/run.log")
-        return try T17FirstReadyWaiter.wait(observe: {
-            let ready = T17BoundedLog.lines(log).first {
-                $0.hasPrefix("BVAGENT READY") || $0.hasPrefix("BVAGENT PONG (proactive)")
-            }
-            return try T17FirstReadyObservation.capture(
-                readyLine: ready, applicationRunning: self.application?.isRunning == true, ui: ui)
-        }, diagnostic: { T17FirstBootDiagnostic.capture(log) }, timeoutDiagnostic: {
-            T17FirstReadyStopCapture.capture(log: log, laneRoot: URL(fileURLWithPath: self.request.laneRoot),
-                applicationRunning: { self.application?.isRunning == true },
-                ownedRuntimeState: { try? ui.text("bridgevm.windows.runtime.state", timeout: 1) })
-                + "; " + T17FirstBootDiagnostic.capture(log)
-        })
-    }
-
     private func stopOwnedApplication() -> Bool {
         if let ui { try? ui.press("bridgevm.windows.runtime.stop", timeout: 2) }
         let log = bundle.appendingPathComponent("logs/hvf/run.log")
@@ -218,7 +198,7 @@ final class T17ProductRunner {
     }
 
     private var vmRoot: URL { URL(fileURLWithPath: request.libraryRootPath).appendingPathComponent(request.vmSlug) }
-    private var bundle: URL { vmRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true) }
+    var bundle: URL { vmRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true) }
     private var privateUnattend: URL { URL(fileURLWithPath: request.laneRoot).appendingPathComponent("e2e-unattend.xml") }
 
     private func waitUntil(timeout: TimeInterval, _ predicate: () -> Bool) -> Bool {

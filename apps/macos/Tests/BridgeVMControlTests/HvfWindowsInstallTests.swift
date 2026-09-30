@@ -270,6 +270,7 @@ final class HvfWindowsInstallTests: XCTestCase {
         XCTAssertTrue(HvfWindowsInstallSession.isProgressLine("BVAGENT READY host=X"))
         XCTAssertTrue(HvfWindowsInstallSession.isProgressLine(
             "NVMe disk written back: /tmp/x.raw"))
+        XCTAssertFalse(HvfWindowsInstallSession.isProgressLine("host media: NVMe disk written back: /tmp/x.raw (1 bytes)"))
         XCTAssertFalse(HvfWindowsInstallSession.isProgressLine(
             "hv_vm_create(ipa=40) = 0x0"))
     }

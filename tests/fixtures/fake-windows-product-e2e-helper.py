@@ -37,7 +37,7 @@ def log_body(lines,tail=""):
     offsets=[]; body=b""
     for line in lines: body+=b"=== EDK2 boot probe (with Apple hv_gic) ===\n" if line.startswith("stop: ") else b""; offsets.append(len(body)); body+=(line+"\n").encode()
     return offsets,body+b"serial raw bytes: 0 output bytes: 0\n--- serial (tail) ---\n\n--- end ---\n"+tail.encode()
-first_offsets,first_body=log_body(first_lines,f"hda CoreAudio stats: frames_rendered={frames} drops=0 callback_errors=0\n"); mutation_offsets,mutation_body=log_body(mutation_lines); final_offsets,final_body=log_body(final_lines)
+first_offsets,first_body=log_body(first_lines,f"hda CoreAudio stats: frames_rendered={frames} drops=0 dropped_bytes=0 format_drops=0 ring_full_drops=0 queue_stop_errors=0 queue_dispose_errors=0 callback_errors=3 callback_active_errors=0 callback_stopping_errors=3 callback_expected_stopping_errors=3 callback_unexpected_errors=0 callback_stopping_invalid_run_state=0 callback_stopping_queue_invalidated=0 callback_stopping_enqueue_during_reset=3 callback_stopping_disposal_pending=0 callback_stopping_unclassified=0\n"); mutation_offsets,mutation_body=log_body(mutation_lines); final_offsets,final_body=log_body(final_lines)
 first_log=vmroot/"bundle.vmbridge/metadata/product-e2e/first-run.log"; first_log.parent.mkdir(parents=True,exist_ok=True); first_log.write_bytes(first_body); mutation_log=vmroot/"bundle.vmbridge/metadata/product-e2e/mutation-run.log"; mutation_log.write_bytes(mutation_body)
 final_log=vmroot/"bundle.vmbridge/logs/hvf/run.log"; final_log.parent.mkdir(parents=True,exist_ok=True); final_log.write_bytes(final_body)
 observations={key:hashlib.sha256(body).hexdigest() for key,(_,body) in raw.items()}; observations.update(audio_playback_count=1,audio_error_count=0)

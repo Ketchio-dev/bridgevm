@@ -38,13 +38,13 @@ private final class RecordingUI: T17UIControlling {
     func choose(path: String, from identifier: String, timeout: TimeInterval) throws {
         events.append(.choose(path, identifier, timeout)); if let chooseError { throw chooseError }
     }
-    func press(_ identifier: String, timeout: TimeInterval) throws {}
-    func setText(_ value: String, identifier: String, timeout: TimeInterval) throws {}
+    func press(_ identifier: String, timeout: TimeInterval) throws {}; func expand(_ identifier: String, timeout: TimeInterval) throws {}
+    func setText(_ value: String, identifier: String, timeout: TimeInterval) throws {}; func fill(_ value: String, identifier: String, timeout: TimeInterval) throws {}
     func waitFor(_ identifier: String, timeout: TimeInterval) throws {}
     func text(_ identifier: String, timeout: TimeInterval) throws -> String {
         events.append(.text(identifier, timeout)); return textValue
     }
     func optionalTexts(_ identifiers: Set<String>) throws -> [String: String] { [:] }
-    func clickSecondaryWindow(timeout: TimeInterval) throws {}
+    func clickDisplaySurface(at spot: CGPoint, timeout: TimeInterval) throws {}
     func textSnapshot() -> [String] { [] }
 }

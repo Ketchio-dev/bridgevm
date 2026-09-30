@@ -13,7 +13,7 @@ import sys
 from native_snapshot_restore_inputs import digest, prepare, reauthenticate
 from native_snapshot_export_evidence import load_evidence, receipt_fields
 from native_snapshot_restore_receipt import initial, write_new
-from native_snapshot_restore_results import file_digest, line_hash, shutdown_count
+from native_snapshot_restore_results import T20_PHASES, file_digest, line_hash, shutdown_count
 from native_snapshot_restore_seal import merge_prepared, sealed_hashes
 
 
@@ -50,9 +50,8 @@ def main() -> int:
             [str(repo / "scripts/verify-native-snapshot-restore-boots.sh")],
             cwd=repo, env=environment, check=False,
         )
-        receipt["boots_attempted"] = sum((output / phase).is_dir() for phase in (
-            "phase1-original", "phase3-clobber", "phase5-restored"))
-        receipt["natural_shutdown_count"] = shutdown_count(output)
+        receipt["boots_attempted"] = sum((output / phase).is_dir() for phase in T20_PHASES)
+        receipt["natural_shutdown_count"] = shutdown_count(output, T20_PHASES)
         receipt["boots_passed"] = receipt["natural_shutdown_count"]
         reauthenticate(private, sealed_binary)
         if completed.returncode != 0:

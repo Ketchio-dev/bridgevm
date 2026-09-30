@@ -4,6 +4,11 @@ use std::time::{Duration, Instant};
 use crate::VirtPlatform;
 use bridgevm_hvf::ramfb::{RamfbConfig, RamfbSnapshot};
 
+#[path = "ramfb_display_export.rs"]
+mod ramfb_display_export;
+use ramfb_display_export::display_export_interval;
+pub use ramfb_display_export::RamfbDisplayThread;
+
 pub struct LiveDisplayExporter {
     path: Option<PathBuf>,
     interval: Duration,
@@ -25,14 +30,9 @@ impl LiveDisplayExporter {
         let path = std::env::var_os("BRIDGEVM_DISPLAY_EXPORT_PPM")
             .filter(|value| !value.is_empty())
             .map(PathBuf::from);
-        let interval_ms = std::env::var("BRIDGEVM_DISPLAY_EXPORT_MS")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .filter(|value| (100..=60_000).contains(value))
-            .unwrap_or(500);
         Self {
             path,
-            interval: Duration::from_millis(interval_ms),
+            interval: display_export_interval(),
             next_due: Instant::now(),
             last_frame: None,
         }

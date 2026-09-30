@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """B7 lane classifier cases, formerly audio-teardown-result.py --self-test.
 
-Logs use the runtime's current layout: the NVMe write-back record, the final
-report whose stop the host frames, then the CoreAudio teardown records after
-its footer. hvf-stop-readers-contract.py covers guest-written copies.
+Logs use the runtime's current layout: the NVMe write-back line, the report
+whose stop and media records the host frames, then CoreAudio teardown records
+after its footer. hvf-{stop,host-media}-readers-contract.py cover guest copies.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ WATCHDOG = "stop: watchdog (CANCELED)"
 
 
 def frame(stop: str = SYSTEM_OFF, serial: str = "") -> str:
-    size = len(serial.encode())
-    return (f"NVMe disk written back: fixture\n=== EDK2 boot probe (with Apple hv_gic) ===\n{stop}\n"
+    size, record = len(serial.encode()), "NVMe disk written back: fixture (1 bytes)\n"
+    return (f"{record}=== EDK2 boot probe (with Apple hv_gic) ===\n{stop}\nhost media: {record}"
             f"serial raw bytes: {size} output bytes: {size}\n--- serial (tail) ---\n{serial}\n--- end ---\n"
             "hda CoreAudio lifecycle: operation=stop osstatus=0 success=true\n"
             "hda CoreAudio lifecycle: operation=dispose osstatus=0 success=true\n")

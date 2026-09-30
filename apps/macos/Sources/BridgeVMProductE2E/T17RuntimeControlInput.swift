@@ -8,11 +8,11 @@ enum T17RuntimeControlInput {
     static let opener = "bridgevm.runtime.diagnostics.toggle"
 
     static func enter(_ command: String, ui: T17UIControlling) throws {
-        // The opener toggles, so press it only when the input is not already present.
+        // The opener toggles, so expand only when the input is not already present.
         if (try? ui.waitFor(input, timeout: 1)) == nil {
-            try ui.press(opener, timeout: 10)
+            try ui.expand(opener, timeout: 10)
         }
-        try ui.setText(command, identifier: input, timeout: 10)
+        try ui.fill(command, identifier: input, timeout: 10)
         try ui.press(send, timeout: 10)
     }
 }

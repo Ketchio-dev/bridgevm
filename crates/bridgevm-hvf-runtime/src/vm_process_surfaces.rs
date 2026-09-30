@@ -1,6 +1,11 @@
 //! Explicit device-surface environment for a typed helper generation.
 use super::DeviceSurfaces;
 
+/// The ramfb export thread's period, the app's `--ramfb-display-export-ms`:
+/// without virtio-gpu it fills display.fb at ~30 fps. `display_export_ms`
+/// still paces the virtio-gpu readback and is unchanged by it.
+const RAMFB_DISPLAY_EXPORT_MS: u64 = 33;
+
 pub(super) fn env(surfaces: &DeviceSurfaces) -> Vec<(&'static str, String)> {
     let mut env = Vec::new();
     let evidence = |name: &str| surfaces.evidence_dir.join(name).display().to_string();
@@ -9,14 +14,11 @@ pub(super) fn env(surfaces: &DeviceSurfaces) -> Vec<(&'static str, String)> {
     // No PPM feed: the app reads display.fb, and the PPM path costs a full
     // frame checksum and file rewrite per interval for a file nobody opens.
     env.push(("BRIDGEVM_DISPLAY_EXPORT_FB", evidence("display.fb")));
-    env.push((
-        "BRIDGEVM_DISPLAY_EXPORT_MS",
-        surfaces.display_export_ms.to_string(),
-    ));
-    env.push((
-        "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS",
-        surfaces.display_export_ms.to_string(),
-    ));
+    let export_ms = surfaces.display_export_ms.to_string();
+    env.push(("BRIDGEVM_DISPLAY_EXPORT_MS", export_ms.clone()));
+    env.push(("BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS", export_ms));
+    let ramfb_ms = RAMFB_DISPLAY_EXPORT_MS.to_string();
+    env.push(("BRIDGEVM_RAMFB_DISPLAY_EXPORT_MS", ramfb_ms));
     match &surfaces.input_control {
         Some(control) => {
             env.push(("BRIDGEVM_INPUT_CONTROL", control.display().to_string()));
@@ -95,35 +97,5 @@ pub(super) fn env(surfaces: &DeviceSurfaces) -> Vec<(&'static str, String)> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn host_stop_request_is_fixed_and_opt_in() {
-        let mut surfaces = DeviceSurfaces {
-            evidence_dir: "/ev".into(),
-            display_export_ms: 100,
-            input_control: None,
-            virtio_gpu_3d: None,
-            aggressive_performance: false,
-            nvme_buffered_io: false,
-            clipboard_sync: false,
-            share: None,
-            virtio_net: false,
-            hda_audio: false,
-            host_diagnostic_stop: false,
-        };
-        let stop = |items: &[(&str, String)]| {
-            items
-                .iter()
-                .find(|(key, _)| *key == "BRIDGEVM_HOST_DIAGNOSTIC_STOP_REQUEST")
-                .map(|(_, value)| value.clone())
-        };
-        assert_eq!(stop(&env(&surfaces)), None);
-        surfaces.host_diagnostic_stop = true;
-        assert_eq!(
-            stop(&env(&surfaces)),
-            Some("/ev/diagnostic-stop.request".to_string())
-        );
-    }
-}
+#[path = "vm_process_surfaces_tests.rs"]
+mod tests;

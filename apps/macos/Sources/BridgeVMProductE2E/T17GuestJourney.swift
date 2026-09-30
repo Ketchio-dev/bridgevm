@@ -41,11 +41,7 @@ struct T17GuestJourney {
 
     private func keyboardAndPointer() throws {
         try launchWorkload("KeyboardPointer")
-        try ui.press("bridgevm.runtime.display.open", timeout: 10)
-        try ui.clickSecondaryWindow(timeout: 15)
-        try ui.setText("t17kbd\(prefix)", identifier: "bridgevm.runtime.keyboard.input", timeout: 10)
-        try ui.press("bridgevm.runtime.keyboard.send", timeout: 10)
-        try requireOutput("t17-keyboard-pointer-\(prefix).txt", timeout: 60)
+        try T17InputChallenge(sharePath: request.sharePath, nonce: request.nonce, ui: ui, runLog: runLog).deliver()
     }
 
     private func clipboard() throws {
@@ -183,15 +179,7 @@ struct T17GuestJourney {
     }
 
     private func requireOutput(_ name: String, timeout: TimeInterval) throws {
-        let url = URL(fileURLWithPath: request.sharePath).appendingPathComponent(name)
-        guard wait(timeout: timeout, predicate: { self.fileManager.fileExists(atPath: url.path) }) else {
-            throw T17Blocker(code: "guest-evidence-missing", detail: "guest workload did not produce \(name)")
-        }
-        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
-        guard values.isRegularFile == true, values.isSymbolicLink != true,
-              let size = values.fileSize, size > 0, size < 8 * 1024 * 1024 else {
-            throw T17Blocker(code: "guest-evidence-missing", detail: "guest output is unsafe or oversized")
-        }
+        try T17GuestWorkloadOutput.await(share: URL(fileURLWithPath: request.sharePath), name: name, prefix: prefix, timeout: timeout)
     }
 
     private func fileSize(_ url: URL) throws -> Int {

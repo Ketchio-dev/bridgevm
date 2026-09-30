@@ -118,6 +118,8 @@ pub(crate) fn run() -> ExitCode {
         // already consumed from an append-only control file, which can repeat
         // destructive guest actions such as a TPM-clear reboot request.
         let mut live_input = LiveInputController::from_env();
+        // Off vCPU0; joined on drop, before the guest RAM backing is unmapped.
+        let _ramfb_display = RamfbDisplayThread::start(&platform, ram, ram_size);
 
         'reboot: loop {
             // Secondary vCPUs are intentionally scoped to one boot generation in
@@ -765,15 +767,12 @@ pub(crate) fn run() -> ExitCode {
                     stop_reason = format!("exit cap {max_exits}");
                     break;
                 }
-                let ramfb_checkpoint_due =
-                    ramfb_sample_loop.checkpoint_due_at(std::time::Instant::now());
-                let live_display_due = live_display_exporter.due(std::time::Instant::now());
-                let live_input_due = live_input.poll_due(std::time::Instant::now());
+                let tick = Instant::now();
                 let automation_stop_reason = if automation_gate.should_check(
                     automation_tick_canceled
-                        || ramfb_checkpoint_due
-                        || live_display_due
-                        || live_input_due,
+                        || ramfb_sample_loop.checkpoint_due_at(tick)
+                        || live_display_exporter.due(tick)
+                        || live_input.poll_due(tick),
                 ) {
                     let mut platform_guard = lock_platform(
                         &platform,
