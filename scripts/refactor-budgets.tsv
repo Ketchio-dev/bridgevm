@@ -3216,6 +3216,9 @@ docs/windows-arm/evidence/a19-t20-r7-20260929.md	71	0
 docs/windows-arm/evidence/a19-t20-r7-20260929-receipt.json	47	0
 docs/windows-arm/evidence/a19-t20-r8-20260930.md	64	0
 docs/windows-arm/evidence/a19-t20-r8-20260930-receipt.json	47	0
+docs/windows-arm/evidence/a19-t21-t22-r2-20260930.md	61	0
+docs/windows-arm/evidence/a19-t21-r2-20260930-receipt.json	49	0
+docs/windows-arm/evidence/a19-t22-r2-20260930-receipt.json	66	0
 apps/macos/Sources/BridgeVMProductE2E/T17FirstReadyStopCapture.swift	130	0
 apps/macos/Tests/BridgeVMControlTests/HvfDiagnosticStopAdmissionTests.swift	69	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FirstReadyStopCaptureTests.swift	170	0
