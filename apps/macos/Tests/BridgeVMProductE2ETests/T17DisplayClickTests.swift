@@ -16,7 +16,7 @@ final class T17DisplayClickTests: XCTestCase {
 
     func testClickWaitsForTheFirstFrameAndPostsOnce() throws {
         var reads = 0, posted: [CGPoint] = []
-        try T17DisplayClick.click(timeout: 5, read: {
+        try T17DisplayClick.click(at: CGPoint(x: 0.5, y: 0.5), timeout: 5, read: {
             reads += 1
             return .init(value: reads < 3 ? "no-frame" : "frame 1920x1080", focused: true, frame: frame)
         }, post: { posted.append($0); return true })
@@ -26,7 +26,7 @@ final class T17DisplayClickTests: XCTestCase {
 
     func testClickWithoutAFrameFailsWithoutPosting() {
         var posted = 0
-        XCTAssertThrowsError(try T17DisplayClick.click(timeout: 0.3, read: {
+        XCTAssertThrowsError(try T17DisplayClick.click(at: CGPoint(x: 0.5, y: 0.5), timeout: 0.3, read: {
             .init(value: "no-frame", focused: true, frame: frame)
         }, post: { _ in posted += 1; return true })) {
             XCTAssertEqual(($0 as? T17Blocker)?.detail, "guest display surface did not present a frame in the focused window")
@@ -35,7 +35,7 @@ final class T17DisplayClickTests: XCTestCase {
     }
 
     func testUnpostableClickFails() {
-        XCTAssertThrowsError(try T17DisplayClick.click(timeout: 1, read: {
+        XCTAssertThrowsError(try T17DisplayClick.click(at: CGPoint(x: 0.5, y: 0.5), timeout: 1, read: {
             .init(value: "frame 1920x1080", focused: true, frame: frame)
         }, post: { _ in false })) {
             XCTAssertEqual(($0 as? T17Blocker)?.detail, "display click events could not be created")

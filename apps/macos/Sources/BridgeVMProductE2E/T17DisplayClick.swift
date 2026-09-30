@@ -12,16 +12,15 @@ enum T17DisplayClick {
         let frame: CGRect?
     }
 
-    static func point(for target: Target) -> CGPoint? {
-        guard target.value?.hasPrefix("frame ") == true, target.focused,
-              let frame = target.frame, frame.width > 0, frame.height > 0 else { return nil }
-        return CGPoint(x: frame.midX, y: frame.midY)
+    static func point(for target: Target, at spot: CGPoint = CGPoint(x: 0.5, y: 0.5)) -> CGPoint? {
+        guard target.focused, let guest = T17DisplayImageRect.guestSize(target.value), let frame = target.frame else { return nil }
+        return T17DisplayImageRect.point(spot, guest: guest, in: frame)
     }
 
-    static func click(timeout: TimeInterval, read: () -> Target?, post: (CGPoint) -> Bool) throws {
+    static func click(at spot: CGPoint, timeout: TimeInterval, read: () -> Target?, post: (CGPoint) -> Bool) throws {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
-            if let point = read().flatMap(point(for:)) {
+            if let point = read().flatMap({ point(for: $0, at: spot) }) {
                 guard post(point) else {
                     throw T17Blocker(code: "ui-element-missing", detail: "display click events could not be created")
                 }

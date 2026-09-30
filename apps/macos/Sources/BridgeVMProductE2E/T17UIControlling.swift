@@ -10,6 +10,6 @@ protocol T17UIControlling {
     func waitFor(_ identifier: String, timeout: TimeInterval) throws
     func text(_ identifier: String, timeout: TimeInterval) throws -> String
     func optionalTexts(_ identifiers: Set<String>) throws -> [String: String]
-    func clickDisplaySurface(timeout: TimeInterval) throws
+    func clickDisplaySurface(at spot: CGPoint, timeout: TimeInterval) throws
     func textSnapshot() -> [String]
 }

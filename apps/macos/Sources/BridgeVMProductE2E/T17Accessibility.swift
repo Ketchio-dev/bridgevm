@@ -100,9 +100,9 @@ final class T17Accessibility: T17UIControlling {
         }
     }
 
-    func clickDisplaySurface(timeout: TimeInterval = 15) throws {
+    func clickDisplaySurface(at spot: CGPoint, timeout: TimeInterval = 15) throws {
         let application = AXUIElementCreateApplication(pid)
-        try T17DisplayClick.click(timeout: timeout, read: {
+        try T17DisplayClick.click(at: spot, timeout: timeout, read: {
             guard let surface = try? descendants(of: application, limit: 12_000).first(where: {
                 attribute($0, kAXIdentifierAttribute as CFString) as? String == T17DisplayClick.surface
             }) else { return nil }

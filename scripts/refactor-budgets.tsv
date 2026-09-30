@@ -3381,7 +3381,7 @@ scripts/live-gates/hvf_run_log.py	22	0
 tests/integration/audio-playback-host-stats-contract.py	67	0
 docs/windows-arm/evidence/b6-trace-nine-cell-collection-20260911.md	114	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfDisplaySurfaceAccessibility.swift	26	0
-apps/macos/Sources/BridgeVMProductE2E/T17DisplayClick.swift	43	0
+apps/macos/Sources/BridgeVMProductE2E/T17DisplayClick.swift	42	0
 apps/macos/Sources/BridgeVMProductE2E/T17PointerReceipt.swift	38	0
 apps/macos/Tests/BridgeVMControlTests/HvfDisplaySurfaceAccessibilityTests.swift	29	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17DisplayClickTests.swift	44	0
@@ -3405,3 +3405,6 @@ apps/macos/Sources/BridgeVMProductE2E/T17ProductRunnerFirstReady.swift	32	0
 tests/integration/t17-post-ready-freeze-contract.py	31	0
 docs/history/windows-hvf/a9-r46-desktop-ready-input-20260930.md	69	0
 docs/history/windows-hvf/a9-r47-start-menu-20260930.md	62	0
+apps/macos/Sources/BridgeVMProductE2E/T17DisplayImageRect.swift	22	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17DisplayImageRectTests.swift	29	0
+docs/history/windows-hvf/a9-r48-start-menu-not-foreground-20260930.md	56	0

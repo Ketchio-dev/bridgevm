@@ -27,7 +27,7 @@ final class T17InputChallengeTests: XCTestCase {
             XCTAssertEqual($0 as? Stop, .after(.keyboardPointer))
         }
         XCTAssertEqual(ui.events, [
-            "launch KeyboardPointer", "press bridgevm.runtime.display.open shown=true", "click shown=true",
+            "launch KeyboardPointer", "press bridgevm.runtime.display.open shown=true", "click 0.04,0.5 shown=true", "click 0.5,0.5 shown=true",
             "fill bridgevm.runtime.keyboard.input t17kbd5c5c5c5c5c5c", "press bridgevm.runtime.keyboard.send shown=true",
         ])
     }
@@ -65,7 +65,7 @@ final class T17InputChallengeTests: XCTestCase {
         let ui = challengeUI()
         try challenge(ui).deliver()
         XCTAssertEqual(ui.events, [
-            "press bridgevm.runtime.display.open shown=true", "click shown=true",
+            "press bridgevm.runtime.display.open shown=true", "click 0.04,0.5 shown=true", "click 0.5,0.5 shown=true",
             "fill bridgevm.runtime.keyboard.input t17kbd5c5c5c5c5c5c", "press bridgevm.runtime.keyboard.send shown=true",
         ])
     }
@@ -126,7 +126,7 @@ private final class GuestUI: T17UIControlling {
             DispatchQueue.global().asyncAfter(deadline: .now() + readyDelay) { try? body.write(to: ready) }
         }
     }
-    func clickDisplaySurface(timeout: TimeInterval) throws { events.append("click shown=\(shown)"); try T17PointerReceiptFixture.click(runLog) }
+    func clickDisplaySurface(at spot: CGPoint, timeout: TimeInterval) throws { events.append("click \(spot.x),\(spot.y) shown=\(shown)"); try T17PointerReceiptFixture.click(runLog) }
     func expand(_ identifier: String, timeout: TimeInterval) throws {}
     func setText(_ value: String, identifier: String, timeout: TimeInterval) throws {}
     func setToggle(_ enabled: Bool, identifier: String, timeout: TimeInterval) throws {}
