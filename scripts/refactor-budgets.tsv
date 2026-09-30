@@ -3244,6 +3244,7 @@ crates/bridgevm-hvf-runtime/src/vm_process_surfaces.rs	97	0
 crates/bridgevm-hvf-runtime/src/vm_process_surfaces_tests.rs	51	0
 scripts/live-gates/t17_private_diagnostic_packet.py	616	0
 tests/integration/t17-private-diagnostic-packet-test.py	459	0
+tests/integration/t17-packet-directory-race-test.py	80	0
 scripts/live-gates/t17_guest_setup_harvest.py	550	0
 tests/integration/t17-guest-setup-harvest-test.py	474	0
 scripts/live-gates/t17_host_residue.py	107	0
