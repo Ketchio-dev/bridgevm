@@ -63,7 +63,7 @@ final class HvfAcknowledgedInputStreamTests: XCTestCase {
         XCTAssertEqual(stream.advance(lines: receipt(command, count: 2) + ["BVAGENT READY"], now: now) { _ in false },
                        .cancelled(.sessionChanged, discarded: 1))
         XCTAssertTrue(stream.enqueue(.key("enter"), now: now))
-        XCTAssertEqual(stream.advance(lines: ["PSCI_SYSTEM_RESET"], now: now) {
+        XCTAssertEqual(stream.advance(lines: ["stop: PSCI 0x84000009 exiting for process recreation (exit 42)"], now: now) {
             _ in XCTFail("sent across restart"); return true
         }, .cancelled(.sessionChanged, discarded: 1))
     }

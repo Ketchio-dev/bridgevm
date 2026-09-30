@@ -31,7 +31,7 @@ struct HvfUnicodeInputRequest {
         // Inspect the entire batch before accepting an earlier completion in it.
         if lines.contains(where: {
             $0.hasPrefix("BVAGENT READY") || $0.hasPrefix("BVAGENT re-READY") ||
-            $0.hasPrefix("BVAGENT SERVICE start") || $0.hasPrefix("PSCI_SYSTEM_RESET")
+            $0.hasPrefix("BVAGENT SERVICE start") || HvfGuestResetRecord.matches($0)
         }) { return finish(.failed(.restarted)) }
         for line in lines {
             if let accepted = envelope.header(line) {

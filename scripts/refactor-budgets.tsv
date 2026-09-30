@@ -3306,3 +3306,8 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17AXReadFailureTests.swift	37	0
 apps/macos/Sources/BridgeVMProductE2E/T17IdentifierSearch.swift	29	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17IdentifierSearchTests.swift	98	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17AccessibilityTreeReadFailureTests.swift	47	0
+apps/macos/Tests/BridgeVMControlTests/HvfGuestResetRecordTests.swift	152	0
+tests/integration/hvf-reset-record-contract.py	126	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestResetRecord.swift	31	0
+scripts/live-gates/hvf_reset_record.py	26	0
+docs/history/windows-hvf/app-guest-reset-records-20260929.md	63	0
