@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-cd "$ROOT"
+export ROOT; cd "$ROOT"  # the runner sources its helpers through $ROOT in each bash -c below
 
 STORE="$(mktemp -d "/tmp/bridgevm-installed-p3-gpu-policy.XXXXXX")"
 TARGET="$STORE/windows-target.raw"
