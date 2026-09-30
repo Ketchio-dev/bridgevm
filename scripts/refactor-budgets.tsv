@@ -1818,6 +1818,7 @@ tests/integration/host-console-session-contract.py	69	0
 tests/integration/runtime-diagnostics-disclosure-contract.py	44	0
 tests/integration/runtime-diagnostics-expand-contract.py	29	0
 tests/integration/t17-send-field-entry-contract.py	39	0
+tests/integration/t17-input-challenge-ready-contract.py	62	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17TextEntryFillTests.swift	25	0
 tests/integration/windows-product-e2e-request-mode.py	36	0
 tests/integration/windows-guest-payload-verifier-smoke.py	129	0
@@ -1842,7 +1843,8 @@ apps/macos/Sources/BridgeVMProductE2E/T17UIControlling.swift	15	0
 apps/macos/Sources/BridgeVMProductE2E/T17TextEntry.swift	17	0
 apps/macos/Sources/BridgeVMProductE2E/T17Contract.swift	220	0
 apps/macos/Sources/BridgeVMProductE2E/T17Evidence.swift	80	0
-apps/macos/Sources/BridgeVMProductE2E/T17GuestJourney.swift	218	0
+apps/macos/Sources/BridgeVMProductE2E/T17GuestJourney.swift	215	0
+apps/macos/Sources/BridgeVMProductE2E/T17InputChallenge.swift	41	0
 apps/macos/Sources/BridgeVMProductE2E/T17RuntimeControlInput.swift	18	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestProof.swift	156	0
 apps/macos/Sources/BridgeVMProductE2E/T17PrivateUnattend.swift	33	0
@@ -3191,6 +3193,7 @@ docs/history/windows-hvf/a9-runtime-start-admission-20260921.md	64	0
 apps/macos/Sources/BridgeVMProductE2E/T17RuntimeIntegrationSetup.swift	16	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17RuntimeIntegrationSetupTests.swift	50	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17RuntimeControlInputTests.swift	51	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17InputChallengeTests.swift	137	0
 docs/history/windows-hvf/a9-runtime-share-chooser-20260921.md	63	0
 docs/history/windows-hvf/a9-transient-chooser-ax-read-20260921.md	57	0
 docs/history/windows-hvf/a9-runtime-share-press-recovery-20260921.md	76	0
