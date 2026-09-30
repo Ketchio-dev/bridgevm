@@ -123,32 +123,28 @@ final class T17Accessibility: T17UIControlling {
 
     private func element(_ identifier: String, role expectedRole: String? = nil,
                          timeout: TimeInterval) throws -> AXUIElement {
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            let match = try snapshotElement(identifier, role: expectedRole)
-            if let match { return match }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        } while Date() < deadline
-        let application = AXUIElementCreateApplication(pid)
-        throw T17MissingIdentifierDiagnostic.capture(application: application, pid: pid, identifier: identifier, timeout: timeout)
+        try T17IdentifierLookup.poll(identifier, timeout: timeout, snapshot: {
+            try snapshotElement(identifier, role: expectedRole)
+        }, missing: {
+            T17MissingIdentifierDiagnostic.capture(application: AXUIElementCreateApplication(pid), pid: pid,
+                                                   identifier: identifier, timeout: timeout)
+        })
     }
 
     private func snapshotElement(_ identifier: String, role expectedRole: String?) throws -> AXUIElement? {
-        do {
-            return try T17ApplicationSnapshot.read(
-                root: { AXUIElementCreateApplication(self.pid) },
-                nodes: { try self.descendants(of: $0, limit: 12_000) },
-                project: { nodes in
-                    if let expectedRole {
-                        return try T17RoleQualifiedIdentity.find(identifier, role: expectedRole, in: nodes,
-                            identifier: { try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String },
-                            role: { try T17SupportedAttribute.read($0, kAXRoleAttribute) as? String })
-                    }
-                    return try T17CreationProbe.find(identifier, in: nodes, identifier: {
-                        try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String
-                    }, value: { try T17SupportedAttribute.read($0, kAXValueAttribute) as? String })
-                })
-        } catch { throw T17ApplicationSnapshotFailure.attributed(error, identifier: identifier) }
+        try T17ApplicationSnapshot.read(
+            root: { AXUIElementCreateApplication(self.pid) },
+            nodes: { try self.descendants(of: $0, limit: 12_000) },
+            project: { nodes in
+                if let expectedRole {
+                    return try T17RoleQualifiedIdentity.find(identifier, role: expectedRole, in: nodes,
+                        identifier: { try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String },
+                        role: { try T17SupportedAttribute.read($0, kAXRoleAttribute) as? String })
+                }
+                return try T17CreationProbe.find(identifier, in: nodes, identifier: {
+                    try T17SupportedAttribute.read($0, kAXIdentifierAttribute) as? String
+                }, value: { try T17SupportedAttribute.read($0, kAXValueAttribute) as? String })
+            })
     }
 
     private func descendants(of root: AXUIElement, limit: Int) throws -> [AXUIElement] {
