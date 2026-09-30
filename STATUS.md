@@ -14,7 +14,7 @@ receipts under `docs/windows-arm/evidence/`.
 Release-blocking criteria proven: **14 / 17**. Open: A9, A11, A19.
 
 Known open defects:
-- **A9**: No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window shows no guest screen and does not forward pointer clicks.
+- **A9**: No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window was choppy in the latest hardware runs, and guest audio stuttered audibly; a smoother display export and audio gap counters are built but not yet measured on hardware.
 - **A19**: Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage, physical power-loss coverage and the remaining product lifecycle sample count are unproven.
 - **B6**: Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness.
 
