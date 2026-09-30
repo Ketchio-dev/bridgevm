@@ -7,10 +7,7 @@ enum T17AccessibilityTree {
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(node, name as CFString, &value)
         if status == .noValue || status == .attributeUnsupported { return nil }
-        guard status == .success else {
-            throw T17Blocker(code: "ui-element-missing",
-                             detail: "ax_tree_read_failed;attribute=\(name);ax_error=\(status.rawValue)")
-        }
+        guard status == .success else { throw T17AXReadFailure.blocker(node, attribute: name, status: status) }
         return value
     }
 
