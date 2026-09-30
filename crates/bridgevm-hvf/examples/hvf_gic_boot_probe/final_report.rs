@@ -357,7 +357,7 @@ macro_rules! persist_and_report_stop {
             &$guest_ram,
         );
         println!("symbol lines: {}", symbols.len());
-        for line in symbols.iter().rev().take(8).rev() {
+        for line in crate::guest_text::symbol_report_lines(&symbols, 8) {
             println!("{line}");
         }
         if $redist_hi != 0 {

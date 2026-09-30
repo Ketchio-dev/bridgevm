@@ -174,6 +174,8 @@ pub(crate) use vcpu_final_state::*;
 pub(crate) use wake_coordinator::*;
 #[path = "hvf_gic_boot_probe/wake_coordinator/cancel_stop.rs"]
 mod cancel_stop;
+#[path = "hvf_gic_boot_probe/guest_text.rs"]
+mod guest_text;
 pub(crate) use cancel_stop::{cancel_stop_reason, stall_gic_report};
 #[path = "hvf_gic_boot_probe/wake_coordinator/stall_report.rs"]
 mod stall_report;

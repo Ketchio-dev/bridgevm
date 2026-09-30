@@ -832,6 +832,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/exception_trace.rs	173	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_diagnostics.rs	259	3
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_memory.rs	217	8
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_ram_backing.rs	80	5
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_text.rs	66	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs	250	15
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_ring.rs	66	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_stats.rs	56	0
@@ -868,7 +869,9 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pcie_mmio_trace.rs	273	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pcie_mmio_trace/context.rs	255	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pcie_mmio_trace/registers.rs	223	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/present_health.rs	19	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pe_trace.rs	263	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pe_trace.rs	123	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pe_trace/pe_image.rs	151	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pe_trace/tests.rs	91	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_env.rs	102	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_dump.rs	455	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_dump_tests.rs	75	0
