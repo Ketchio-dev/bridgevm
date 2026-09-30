@@ -3435,3 +3435,13 @@ tests/integration/t17-audio-counters-test.py	33	0
 docs/history/windows-hvf/t17-audio-check-b7-alignment-20260930.md	48	0
 docs/history/windows-hvf/a9-r51-host-focus-lost-20260930.md	40	0
 .github/workflows/installed-boot-display-cadence.yml	12	0
+scripts/live-gates/a19_lifecycle_campaign_record.py	128	0
+scripts/live-gates/a19_lifecycle_campaign_receipt.py	159	0
+scripts/live-gates/a19_lifecycle_campaign_read.py	131	0
+scripts/live-gates/a19_lifecycle_campaign_lane.py	123	0
+scripts/live-gates/run-a19-lifecycle-campaign-tier.py	101	0
+scripts/live-gates/a19-lifecycle-campaign-cleanup-fence.sh	18	0
+tests/integration/a19_lifecycle_campaign_fixtures.py	116	0
+tests/integration/a19-lifecycle-campaign-receipt-contract.py	319	0
+tests/integration/a19-lifecycle-campaign-runner-contract.py	243	0
+docs/testing/a19-lifecycle-campaign.md	138	0

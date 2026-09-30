@@ -1,4 +1,4 @@
-"""Serve a T20 receipt only after checking its current queue and content seal."""
+"""Serve T20 and T23 receipts only after checking their current queue and content seals."""
 from __future__ import annotations
 
 import json
@@ -8,9 +8,9 @@ import re
 import shutil
 import sys
 
+from a19_lifecycle_campaign_read import strict_reader
 from native_snapshot_restore_public import load_receipt
-from native_snapshot_restore_receipt_path import verified_receipt
-from native_snapshot_restore_seal import JOB_ID, TIER, _env, validate_seal
+from native_snapshot_restore_seal import JOB_ID, _env
 
 LEGACY_COMMIT = re.compile(r"[0-9a-f]{7,40}\Z")
 
@@ -40,11 +40,11 @@ def serve(directory: Path, job_id: str) -> None:
         if any(ledger.get(field) != job[field] for field in ("job_id", "tier", "commit")):
             raise ValueError("receipt job identity differs from its ledger")
     tiers = (job["tier"], ledger["tier"] if ledger else None, public_tier(public))
-    if TIER in tiers:
+    reader = strict_reader(tiers)
+    if reader is not None:
         if directory.parent.name != "done" or directory.parent.is_symlink():
-            raise ValueError("T20 receipt is not in the done queue")
-        value = verified_receipt(public, directory, None)
-        validate_seal(value, directory)
+            raise ValueError("strict T20/T23 receipt is not in the done queue")
+        value = reader(public, directory)
         json.dump(value, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
         return
