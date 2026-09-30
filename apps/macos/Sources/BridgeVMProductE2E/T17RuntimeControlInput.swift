@@ -12,7 +12,7 @@ enum T17RuntimeControlInput {
         if (try? ui.waitFor(input, timeout: 1)) == nil {
             try ui.expand(opener, timeout: 10)
         }
-        try ui.setText(command, identifier: input, timeout: 10)
+        try ui.fill(command, identifier: input, timeout: 10)
         try ui.press(send, timeout: 10)
     }
 }

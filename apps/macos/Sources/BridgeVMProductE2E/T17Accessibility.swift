@@ -62,6 +62,13 @@ final class T17Accessibility: T17UIControlling {
         })
     }
 
+    func fill(_ value: String, identifier: String, timeout: TimeInterval = 10) throws {
+        let target = try element(identifier, role: kAXTextFieldRole as String, timeout: timeout)
+        try T17TextEntry.fill(value, focus: { AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success },
+            set: { AXUIElementSetAttributeValue(target, kAXValueAttribute as CFString, $0 as CFTypeRef) == .success },
+            read: { try T17SupportedAttribute.read(target, kAXValueAttribute) as? String })
+    }
+
     func setToggle(_ enabled: Bool, identifier: String, timeout: TimeInterval = 10) throws {
         let target = try element(identifier, timeout: timeout)
         if let current = attribute(target, kAXValueAttribute as CFString) as? NSNumber,
@@ -157,11 +164,4 @@ final class T17Accessibility: T17UIControlling {
         return AXValueGetValue(axValue, .cgSize, &size) ? size : nil
     }
 
-}
-enum T17TextEntry {
-    static func commit(_ value: String, set: (String) -> Bool, confirm: () -> Bool, read: () throws -> String?) throws {
-        guard set(value) else { throw T17Blocker(code: "ui-element-missing", detail: "identified UI element does not accept text") }
-        guard confirm() else { throw T17Blocker(code: "ui-element-missing", detail: "identified UI element did not commit text") }
-        guard try read() == value else { throw T17Blocker(code: "ui-element-missing", detail: "identified UI element did not retain exact text") }
-    }
 }
