@@ -46,6 +46,7 @@ public struct POINT { public int X; public int Y; }
 [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
 [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr window, uint flags);
 [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
 public static bool Accepts(IntPtr form) {
     IntPtr desktop = OpenInputDesktop(0, false, 1); if (desktop == IntPtr.Zero) { return false; }
     var name = new System.Text.StringBuilder(256); int needed;
@@ -55,13 +56,15 @@ public static bool Accepts(IntPtr form) {
 }
 '@
         $ExpectedText = 't17kbd' + $Prefix; $script:Typed = ''; $script:Clicked = $false; $script:Progress = ''
+        $Session = [Diagnostics.Process]::GetCurrentProcess().SessionId; $Integrity = switch -Regex ((whoami /groups) -join ' ') { 'S-1-16-16384' { 'system'; break } 'S-1-16-12288' { 'high'; break } 'S-1-16-8192' { 'medium'; break } 'S-1-16-4096' { 'low'; break } default { 'unknown' } }
         $Form = New-Object System.Windows.Forms.Form -Property @{ Text = 'BridgeVM T17 Input Challenge'; WindowState = 'Maximized'; FormBorderStyle = 'None'; BackColor = [Drawing.Color]::FromArgb(20, 70, 150); KeyPreview = $true; TopMost = $true }
         $Label = New-Object System.Windows.Forms.Label -Property @{ AutoSize = $false; Dock = 'Fill'; TextAlign = 'MiddleCenter'; Font = (New-Object Drawing.Font('Segoe UI', 28, [Drawing.FontStyle]::Bold)); ForeColor = [Drawing.Color]::White; Text = 'CLICK AND TYPE THE SEALED CHALLENGE' }; $Form.Controls.Add($Label)
         foreach ($Target in @($Form, $Label)) { $Target.Add_MouseDown({ $script:Clicked = $true }) }
         $Form.Add_KeyPress({ param($Sender, $Event) $script:Typed += $Event.KeyChar })
         $Timer = New-Object System.Windows.Forms.Timer -Property @{ Interval = 100 }
         $Timer.Add_Tick({
-            if (($State = "clicked=$([int]$script:Clicked) typed=$([Math]::Min($script:Typed.Length, 999))`n") -ne $script:Progress) { $script:Progress = $State; Write-Exact "t17-keyboard-pointer-progress-$Prefix.txt" $State }
+            $Cursor = [Windows.Forms.Cursor]::Position; $Foreground = if ([BridgeVM.InputDesktop]::GetAncestor([BridgeVM.InputDesktop]::GetForegroundWindow(), 2) -eq $Form.Handle) { 'self' } else { 'other' }
+            if (($State = "clicked=$([int]$script:Clicked) typed=$([Math]::Min($script:Typed.Length, 999)) session=$Session integrity=$Integrity foreground=$Foreground cursor=$([Math]::Max(0, [Math]::Min(9999, $Cursor.X)))x$([Math]::Max(0, [Math]::Min(9999, $Cursor.Y)))`n") -ne $script:Progress) { $script:Progress = $State; Write-Exact "t17-keyboard-pointer-progress-$Prefix.txt" $State }
             if ($script:Clicked -and $script:Typed.EndsWith($ExpectedText)) { $Timer.Stop(); $Form.Close() }
         })
         $ReadyTimer = New-Object System.Windows.Forms.Timer -Property @{ Interval = 250 }
@@ -130,13 +133,10 @@ public static bool Accepts(IntPtr form) {
             job_id = $JobID; commit = $Commit; lane = $Lane; nonce = $Nonce; vm_slug = $VMSlug
             keyboard_pointer_challenge_sha256 = Hash "t17-keyboard-pointer-$Prefix.txt"
             clipboard_roundtrip_sha256 = Hash "t17-clipboard-guest-$Prefix.txt"
-            share_host_to_guest_sha256 = Hash "t17-$Prefix.txt"
-            share_guest_to_host_sha256 = Hash "t17-guest-$Prefix.txt"
-            network_result_sha256 = Hash "t17-network-$Prefix.txt"
-            audio_result_sha256 = Hash "t17-audio-$Prefix.txt"
+            share_host_to_guest_sha256 = Hash "t17-$Prefix.txt"; share_guest_to_host_sha256 = Hash "t17-guest-$Prefix.txt"
+            network_result_sha256 = Hash "t17-network-$Prefix.txt"; audio_result_sha256 = Hash "t17-audio-$Prefix.txt"
             audio_playback_count = 1; audio_error_count = 0
-            snapshot_marker_a_sha256 = Hash "t17-snapshot-a-$Prefix.txt"
-            snapshot_marker_b_sha256 = Hash "t17-snapshot-b-$Prefix.txt"
+            snapshot_marker_a_sha256 = Hash "t17-snapshot-a-$Prefix.txt"; snapshot_marker_b_sha256 = Hash "t17-snapshot-b-$Prefix.txt"
             snapshot_marker_restored_a_sha256 = Hash "t17-snapshot-restored-a-$Prefix.txt"
         }
         Write-Exact "t17-agent-result-$Prefix.json" (($Result | ConvertTo-Json -Compress) + "`n")

@@ -30,13 +30,13 @@ class InputChallengeDesktop(unittest.TestCase):
         self.assertEqual(raw.count(b"\n"), raw.count(b"\r\n"))
         self.assertIn("TopMost = $true", body)
         self.assertIn('Write-Exact "t17-keyboard-pointer-progress-$Prefix.txt" $State', body)
-        self.assertIn('"clicked=$([int]$script:Clicked) typed=$([Math]::Min($script:Typed.Length, 999))`n"', body)
+        self.assertIn('"clicked=$([int]$script:Clicked) typed=$([Math]::Min($script:Typed.Length, 999)) session=$Session integrity=$Integrity foreground=$Foreground cursor=', body)
         self.assertLess(body.index("$Form.Add_Shown({"), body.index("$Form.ShowDialog()"))
 
     def test_host_reports_only_an_exact_progress_line(self) -> None:
         share = SHARE.read_text(encoding="utf-8")
-        self.assertIn('#"^clicked=[01] typed=[0-9]{1,3}$"#', share)
-        self.assertIn("data.count <= 32", share)
+        self.assertIn('#"^clicked=[01] typed=[0-9]{1,3} session=[0-9]{1,2} integrity=(system|high|medium|low|unknown) foreground=(self|other) cursor=[0-9]{1,4}x[0-9]{1,4}$"#', share)
+        self.assertIn("data.count <= 128", share)
         self.assertIn('" (guest form saw \\($0))"', share)
 
     def test_windows_runner_compiles_the_bindings_and_builds_the_form(self) -> None:

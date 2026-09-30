@@ -1854,7 +1854,7 @@ apps/macos/Sources/BridgeVMProductE2E/T17InputChallenge.swift	26	0
 apps/macos/Sources/BridgeVMProductE2E/T17RuntimeControlInput.swift	18	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestProof.swift	156	0
 apps/macos/Sources/BridgeVMProductE2E/T17PrivateUnattend.swift	33	0
-apps/macos/Sources/BridgeVMProductE2E/T17ProductRunner.swift	259	0
+apps/macos/Sources/BridgeVMProductE2E/T17ProductRunner.swift	239	0
 apps/macos/Sources/BridgeVMProductE2E/T17BoundedLog.swift	23	0
 apps/macos/Sources/BridgeVMProductE2E/T17SecureBootReceipt.swift	61	0
 apps/macos/Sources/BridgeVMProductE2E/T17UIContract.swift	3	0
@@ -3401,3 +3401,6 @@ tests/integration/t17-input-challenge-desktop-contract.py	51	0
 scripts/test-bv-product-e2e-challenge.ps1	23	0
 .github/workflows/t17-guest-challenge-contract.yml	20	0
 docs/history/windows-hvf/a9-r45-first-logon-desktop-20260930.md	65	0
+apps/macos/Sources/BridgeVMProductE2E/T17ProductRunnerFirstReady.swift	32	0
+tests/integration/t17-post-ready-freeze-contract.py	31	0
+docs/history/windows-hvf/a9-r46-desktop-ready-input-20260930.md	69	0

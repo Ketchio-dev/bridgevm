@@ -4,8 +4,7 @@ import Foundation
 /// the progress line that says what the form saw when no output arrives.
 enum T17InputChallengeShare {
     static func waitUntilShown(share: URL, nonce: String, timeout: TimeInterval) throws {
-        let marker = share.appendingPathComponent("t17-keyboard-pointer-ready-\(prefix(nonce)).txt")
-        let body = Data("bridgevm-t17-keyboard-pointer-ready-v1\n\(nonce)\n".utf8)
+        let marker = share.appendingPathComponent("t17-keyboard-pointer-ready-\(prefix(nonce)).txt"), body = Data("bridgevm-t17-keyboard-pointer-ready-v1\n\(nonce)\n".utf8)
         let deadline = Date().addingTimeInterval(timeout)
         while !(T17BoundedLog.regularFile(marker) && (try? Data(contentsOf: marker)) == body) {
             guard Date() < deadline else {
@@ -35,13 +34,14 @@ enum T17InputChallengeShare {
         }
     }
 
-    /// Guest-written, so only an exact `clicked=<0|1> typed=<0-999>` line is reported.
+    /// Guest-written, so only an exact line of known fields and bounded values is reported.
     static func progress(_ url: URL) -> String? {
-        guard T17BoundedLog.regularFile(url), let data = try? Data(contentsOf: url), data.count <= 32,
+        guard T17BoundedLog.regularFile(url), let data = try? Data(contentsOf: url), data.count <= 128,
               let text = String(data: data, encoding: .utf8), text.hasSuffix("\n") else { return nil }
         let line = String(text.dropLast())
-        return line.range(of: #"^clicked=[01] typed=[0-9]{1,3}$"#, options: .regularExpression) == nil ? nil : line
+        return line.range(of: pattern, options: .regularExpression) == nil ? nil : line
     }
 
+    static let pattern = #"^clicked=[01] typed=[0-9]{1,3} session=[0-9]{1,2} integrity=(system|high|medium|low|unknown) foreground=(self|other) cursor=[0-9]{1,4}x[0-9]{1,4}$"#
     private static func prefix(_ nonce: String) -> String { String(nonce.prefix(12)) }
 }

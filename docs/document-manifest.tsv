@@ -241,6 +241,7 @@ docs/history/windows-hvf/a9-r42-keyboard-pointer-workload-20260930.md	historical
 docs/history/windows-hvf/a9-r43-display-click-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/a9-r44-3d-off-display-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/a9-r45-first-logon-desktop-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/a9-r46-desktop-ready-input-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/app-guest-reset-records-20260929.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/install-staging-and-host-bound-stop-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/host-report-integrity-and-a19-fill-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
