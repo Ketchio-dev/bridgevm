@@ -809,7 +809,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_bar2.rs	37	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_setup.rs	12	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_setup.rs	88	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_config.rs	83	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	1004	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	1003	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/vtimer_recovery.rs	8	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_setup.rs	89	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/watchpoint_setup.rs	14	0
@@ -847,8 +847,10 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_abi.rs	247	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/interrupt_delivery.rs	276	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/kd_serial_bridge.rs	234	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_display_export.rs	144	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_export.rs	130	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_export_tests.rs	261	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_export.rs	116	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_export_tests.rs	231	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_thread.rs	198	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_thread_tests.rs	331	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file.rs	49	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input.rs	414	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/line_frames.rs	89	0
@@ -1559,6 +1561,7 @@ tests/integration/hvf-vtimer-exit-probe-cli-smoke.sh	110	0
 tests/integration/hvf-vtimer-exit-probe-live-opt-in-smoke.sh	79	0
 tests/integration/hvf-vtimer-exit-probe-runner-smoke.sh	98	0
 tests/integration/hvf-windows-installed-boot-p3-gpu-policy-smoke.sh	1132	0
+tests/integration/hvf-windows-installed-boot-ramfb-display-cadence-smoke.sh	77	0
 tests/integration/hvf-windows-installed-boot-p3-gpu-trace-report-smoke.sh	142	0
 tests/integration/hvf-windows-installed-boot-p3-readiness-smoke.sh	173	0
 tests/integration/hvf-windows-installed-boot-vtpm-lifecycle-smoke.sh	56	0
@@ -3231,7 +3234,8 @@ docs/windows-arm/evidence/a19-t22-r2-20260930-receipt.json	66	0
 apps/macos/Sources/BridgeVMProductE2E/T17FirstReadyStopCapture.swift	130	0
 apps/macos/Tests/BridgeVMControlTests/HvfDiagnosticStopAdmissionTests.swift	69	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FirstReadyStopCaptureTests.swift	170	0
-crates/bridgevm-hvf-runtime/src/vm_process_surfaces.rs	126	0
+crates/bridgevm-hvf-runtime/src/vm_process_surfaces.rs	97	0
+crates/bridgevm-hvf-runtime/src/vm_process_surfaces_tests.rs	51	0
 scripts/live-gates/t17_private_diagnostic_packet.py	616	0
 tests/integration/t17-private-diagnostic-packet-test.py	459	0
 scripts/live-gates/t17_guest_setup_harvest.py	550	0
@@ -3419,3 +3423,4 @@ scripts/live-gates/t17_audio_counters.py	26	0
 tests/integration/t17-audio-counters-test.py	33	0
 docs/history/windows-hvf/t17-audio-check-b7-alignment-20260930.md	48	0
 docs/history/windows-hvf/a9-r51-host-focus-lost-20260930.md	40	0
+.github/workflows/installed-boot-display-cadence.yml	12	0

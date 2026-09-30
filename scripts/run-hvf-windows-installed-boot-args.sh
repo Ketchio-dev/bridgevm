@@ -25,7 +25,7 @@ init_installed_boot_defaults() {
   VIRTIO_GPU_PCI_DEVICE_ID=""
   VIRTIO_GPU_TRACE_JSONL=""
   DISPLAY_EXPORT_PPM=""
-  DISPLAY_EXPORT_MS="500"
+  DISPLAY_EXPORT_MS="500"; RAMFB_DISPLAY_EXPORT_MS=""
   DISPLAY_EXPORT_FB=""
   INPUT_CONTROL=""
   FIRMWARE_CODE=""
@@ -230,10 +230,10 @@ parse_installed_boot_args() {
         [[ $# -ge 2 && -n "$2" ]] || { echo "FAIL: --display-export-ppm requires a non-empty path" >&2; exit 2; }
         DISPLAY_EXPORT_PPM="$2"; shift 2
         ;;
-      --display-export-ms)
-        [[ $# -ge 2 ]] || { usage; exit 2; }
-        [[ "$2" =~ ^[0-9]+$ ]] && (( 10#$2 >= 100 && 10#$2 <= 60000 )) || { echo "FAIL: --display-export-ms requires an integer from 100 to 60000" >&2; exit 2; }
-        DISPLAY_EXPORT_MS="$2"; shift 2
+      --display-export-ms|--ramfb-display-export-ms)
+        local floor=100; [[ "$1" == --display-export-ms ]] || floor=16
+        [[ $# -ge 2 && "$2" =~ ^[0-9]+$ ]] && (( 10#$2 >= floor && 10#$2 <= 60000 )) || { echo "FAIL: $1 requires an integer from $floor to 60000" >&2; exit 2; }
+        if [[ "$1" == --display-export-ms ]]; then DISPLAY_EXPORT_MS="$2"; else RAMFB_DISPLAY_EXPORT_MS="$2"; fi; shift 2
         ;;
       --display-export-fb)
         [[ $# -ge 2 && -n "$2" ]] || { echo "FAIL: --display-export-fb requires a non-empty path" >&2; exit 2; }

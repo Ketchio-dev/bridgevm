@@ -134,6 +134,7 @@ tests/integration/macos-artifact-manifest-apple-vz-runner-smoke.sh
 tests/integration/macos-debug-app-clean-build-smoke.sh
 tests/integration/macos-debug-dmg-custom-app-name-smoke.sh
 tests/integration/hvf-windows-installed-boot-p3-gpu-policy-smoke.sh
+tests/integration/hvf-windows-installed-boot-ramfb-display-cadence-smoke.sh
 tests/integration/hvf-runner-installed-boot-launch-policy-smoke.sh
 ```
 

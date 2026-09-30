@@ -124,11 +124,11 @@ struct HvfEngineConfig: Equatable {
             "--skip-build",
             "--agent-service-control", ctlFilePath,
             "--agent-service-command", "whoami",
-            // Only the framebuffer export is consumed, by the IOSurface display
-            // window. Asking for the PPM export as well made the probe checksum
-            // every byte of every frame on its interval and re-encode the whole
-            // screen whenever it changed, for a file the app never read.
+            // The display window reads only display.fb; the PPM export was a
+            // per-interval checksum and re-encode nobody read. Without 3D a ramfb
+            // thread fills display.fb at ~30 fps; 100 ms still paces readback.
             "--display-export-ms", "100",
+            "--ramfb-display-export-ms", "33",
             "--display-export-fb", "\(evidenceDir)/display.fb",
             "--enable-xhci",
             "--input-control", "\(evidenceDir)/input.ctl"

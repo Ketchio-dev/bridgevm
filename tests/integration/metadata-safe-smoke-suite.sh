@@ -139,6 +139,7 @@ SMOKES=(
   "tests/integration/hvf-windows-installed-boot-p3-readiness-smoke.sh"
   "tests/integration/hvf-windows-installed-boot-p3-gpu-trace-report-smoke.sh"
   "tests/integration/hvf-windows-installed-boot-p3-gpu-policy-smoke.sh"
+  "tests/integration/hvf-windows-installed-boot-ramfb-display-cadence-smoke.sh"
   "tests/integration/product-gates-report-smoke.sh"
   "tests/sleep-wake/metadata-baseline-smoke.sh"
   "tests/integration/apple-vz-live-evidence-verifier-smoke.sh"

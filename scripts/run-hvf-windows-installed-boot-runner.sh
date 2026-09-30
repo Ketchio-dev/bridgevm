@@ -505,12 +505,12 @@ build_installed_boot_env_args() {
     )
   fi
   if [[ -n "${DISPLAY_EXPORT_FB:-}" ]]; then
-    # Shared-framebuffer export is an evidence/fallback feed. Do not force
-    # readback pacing to zero here: an IOSurface-backed live window does not
-    # consume these CPU copies, and --display-export-ms (when present) should
-    # remain the evidence cadence. A caller can still request uncapped readback
-    # explicitly with BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=0.
+    # Never force virtio-gpu readback pacing to zero here: an IOSurface window
+    # does not consume those CPU copies, --display-export-ms stays their
+    # cadence, and BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=0 still uncaps them.
+    # Without virtio-gpu, a ramfb thread fills the file at its own period.
     ENV_ARGS+=("BRIDGEVM_DISPLAY_EXPORT_FB=$DISPLAY_EXPORT_FB")
+    [[ -z "${RAMFB_DISPLAY_EXPORT_MS:-}" ]] || ENV_ARGS+=("BRIDGEVM_RAMFB_DISPLAY_EXPORT_MS=$RAMFB_DISPLAY_EXPORT_MS")
   fi
   if [[ -n "${BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS:-}" ]]; then
     # Caller-supplied readback pacing wins (A/B knob); the launcher strips

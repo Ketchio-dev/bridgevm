@@ -2,13 +2,19 @@
 //! (`BRIDGEVM_DISPLAY_EXPORT_FB`) when the machine has no virtio-gpu device,
 //! which is the supported 3D-off configuration: Windows then draws into the
 //! GOP framebuffer that ramfb describes, and nothing else writes the file.
+//! A dedicated host thread (`ramfb_display_thread.rs`) takes the frames; no
+//! vCPU copies them, and the platform lock is never held across the copy.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::VirtPlatform;
 use bridgevm_hvf::display_fb::DisplayFramebuffer;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::ramfb::RamfbConfig;
+
+#[path = "ramfb_display_thread.rs"]
+mod thread;
+pub use thread::RamfbDisplayThread;
 
 /// Guest-programmed geometry above this is not exported, because the copy
 /// buffer is allocated before guest RAM backs the range. 64 MiB is 4096x4096
@@ -22,94 +28,77 @@ pub fn display_export_interval() -> Duration {
 }
 
 fn interval_from(value: Option<&str>) -> Duration {
-    let ms = value
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| (100..=60_000).contains(value))
-        .unwrap_or(500);
-    Duration::from_millis(ms)
+    bounded_ms(value, 100).unwrap_or(Duration::from_millis(500))
 }
 
-/// One per process, outside the reboot loop: the display file has a single
-/// writer whose sequence keeps advancing across in-process guest resets. A
-/// recreated process starts a new writer, which reopens the file in place on
-/// its first frame, never shrinking it, exactly as the virtio-gpu sink does.
-pub struct RamfbDisplayExporter {
-    target: Option<DisplayFramebuffer>,
-    interval: Duration,
-    next_due: Instant,
+/// The ramfb thread's own period, `BRIDGEVM_RAMFB_DISPLAY_EXPORT_MS`, 16 ms to
+/// 60 s, so the app can ask for ~30 fps without also speeding up the PPM
+/// exporter or the virtio-gpu readback that `BRIDGEVM_DISPLAY_EXPORT_MS`
+/// paces. Unset or out of range, the thread keeps that shared cadence.
+fn ramfb_export_interval() -> Duration {
+    let var = |name| std::env::var(name).ok();
+    ramfb_interval_from(
+        var("BRIDGEVM_RAMFB_DISPLAY_EXPORT_MS").as_deref(),
+        var("BRIDGEVM_DISPLAY_EXPORT_MS").as_deref(),
+    )
+}
+
+fn ramfb_interval_from(own: Option<&str>, shared: Option<&str>) -> Duration {
+    bounded_ms(own, 16).unwrap_or_else(|| interval_from(shared))
+}
+
+fn bounded_ms(value: Option<&str>, min_ms: u64) -> Option<Duration> {
+    let ms = value?.parse::<u64>().ok()?;
+    (min_ms..=60_000)
+        .contains(&ms)
+        .then(|| Duration::from_millis(ms))
+}
+
+/// The display file's single writer, owned by the export thread for the
+/// whole process: its sequence keeps advancing across in-process guest
+/// resets. A recreated process starts a new writer, which reopens the file in
+/// place on its first frame, never shrinking it, as the virtio-gpu sink does.
+struct FramePublisher {
+    target: DisplayFramebuffer,
     published: Option<(RamfbConfig, Vec<u8>)>,
     scratch: Vec<u8>,
     failure_logged: bool,
 }
 
-impl RamfbDisplayExporter {
-    pub fn from_env() -> Self {
-        Self::new(DisplayFramebuffer::from_env(), display_export_interval())
-    }
-
-    fn new(target: Option<DisplayFramebuffer>, interval: Duration) -> Self {
+impl FramePublisher {
+    fn new(target: DisplayFramebuffer) -> Self {
         Self {
             target,
-            interval,
-            next_due: Instant::now(),
             published: None,
             scratch: Vec::new(),
             failure_logged: false,
         }
     }
 
-    pub fn due(&self, now: Instant) -> bool {
-        self.target.is_some() && now >= self.next_due
-    }
-
-    pub fn export_due(&mut self, platform: &VirtPlatform, mem: &dyn GuestMemoryMut, now: Instant) {
-        let virtio_gpu = has_virtio_gpu(platform);
-        self.export_frame_due(virtio_gpu, platform.ramfb_config(), mem, now);
-    }
-
-    fn export_frame_due(
-        &mut self,
-        virtio_gpu: bool,
-        config: Option<RamfbConfig>,
-        mem: &dyn GuestMemoryMut,
-        now: Instant,
-    ) {
-        if !self.due(now) {
-            return;
-        }
-        self.next_due = now + self.interval;
-        if virtio_gpu {
-            // The device's own sink owns the file for the whole process; a
-            // second writer with its own sequence counter would corrupt it.
-            if let Some(target) = self.target.take() {
-                println!(
-                    "ramfb display export: off, virtio-gpu owns {}",
-                    target.path().display()
-                );
-            }
-            return;
-        }
+    /// Publish the guest's current frame if its bytes or geometry changed
+    /// since the last published one; true when a frame was published.
+    fn publish_changed(&mut self, config: Option<RamfbConfig>, mem: &dyn GuestMemoryMut) -> bool {
         // Inactive, not XRGB8888, stride below the row, or oversized: skip.
         let Some((config, len)) = config
             .and_then(|config| Some((config, config.framebuffer_len().ok()?)))
             .filter(|(_, len)| *len <= MAX_FRAME_BYTES)
         else {
-            return;
+            return false;
         };
         self.scratch.resize(len, 0);
         if !mem.read_into(config.addr, &mut self.scratch) {
-            return;
+            return false;
         }
         if let Some((published, bytes)) = &self.published {
             if *published == config && *bytes == self.scratch {
-                return;
+                return false;
             }
         }
-        let Some(target) = self.target.as_mut() else {
-            return;
-        };
         let (width, height, stride) = (config.width, config.height, config.stride);
-        match target.publish(width, height, stride, config.fourcc, &self.scratch) {
+        match self
+            .target
+            .publish(width, height, stride, config.fourcc, &self.scratch)
+        {
             Ok(()) => {
                 if self.published.is_none() {
                     println!("ramfb display export: first frame {width}x{height} published");
@@ -117,15 +106,18 @@ impl RamfbDisplayExporter {
                 let previous = self.published.take().map(|(_, bytes)| bytes);
                 let frame = std::mem::replace(&mut self.scratch, previous.unwrap_or_default());
                 self.published = Some((config, frame));
+                true
             }
-            Err(error) if !self.failure_logged => {
-                self.failure_logged = true;
-                eprintln!(
-                    "ramfb display export failed: path={} error={error}",
-                    target.path().display()
-                );
+            Err(error) => {
+                if !self.failure_logged {
+                    self.failure_logged = true;
+                    eprintln!(
+                        "ramfb display export failed: path={} error={error}",
+                        self.target.path().display()
+                    );
+                }
+                false
             }
-            Err(_) => {}
         }
     }
 }

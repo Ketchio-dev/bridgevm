@@ -7,7 +7,7 @@ use bridgevm_hvf::ramfb::{RamfbConfig, RamfbSnapshot};
 #[path = "ramfb_display_export.rs"]
 mod ramfb_display_export;
 use ramfb_display_export::display_export_interval;
-pub use ramfb_display_export::RamfbDisplayExporter;
+pub use ramfb_display_export::RamfbDisplayThread;
 
 pub struct LiveDisplayExporter {
     path: Option<PathBuf>,

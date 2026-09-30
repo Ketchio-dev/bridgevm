@@ -25,12 +25,12 @@ Options:
   --max-reboots N         Maximum PSCI SYSTEM_RESET reboots. Default: 8.
   --max-exits N           Per-vCPU HVF exit cap. Default: 50000000.
   --ram-mib N             Guest RAM in MiB. Default: 4096.
-  --smp-cpus N            Guest vCPU count, 1..123. Default: unset, so the
-                          probe uses its smp=1 fallback.
+  --smp-cpus N            Guest vCPU count, 1..123. Default: the probe's smp=1.
   --ramfb-samples LIST    Comma-separated RAMFB sample ms values. Default:
                           1000,5000,15000,30000,60000,90000,120000.
   --display-export-ppm P  Atomically replace P with the current display frame.
   --display-export-ms N   Live display export interval, 100-60000 ms (default 500).
+  --ramfb-display-export-ms N  3D-off (ramfb) --display-export-fb period, 16-60000 ms (default: as above).
   --input-control P       Read live KEY/POINTER/RESIZE/SNAPSHOT commands
                           appended to P. `SNAPSHOT label` writes a bounded
                           RAMFB/virtio-gpu checkpoint into the evidence dir.

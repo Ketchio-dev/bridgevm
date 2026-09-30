@@ -118,7 +118,8 @@ pub(crate) fn run() -> ExitCode {
         // already consumed from an append-only control file, which can repeat
         // destructive guest actions such as a TPM-clear reboot request.
         let mut live_input = LiveInputController::from_env();
-        let mut ramfb_display = RamfbDisplayExporter::from_env();
+        // Off vCPU0; joined on drop, before the guest RAM backing is unmapped.
+        let _ramfb_display = RamfbDisplayThread::start(&platform, ram, ram_size);
 
         'reboot: loop {
             // Secondary vCPUs are intentionally scoped to one boot generation in
@@ -771,7 +772,6 @@ pub(crate) fn run() -> ExitCode {
                     automation_tick_canceled
                         || ramfb_sample_loop.checkpoint_due_at(tick)
                         || live_display_exporter.due(tick)
-                        || ramfb_display.due(tick)
                         || live_input.poll_due(tick),
                 ) {
                     let mut platform_guard = lock_platform(
@@ -857,7 +857,6 @@ pub(crate) fn run() -> ExitCode {
                             ramfb_dump::print_checkpoint_for_platform(label, platform, &guest_ram);
                         });
                         live_display_exporter.export_due(platform, std::time::Instant::now());
-                        ramfb_display.export_due(platform, &guest_ram, std::time::Instant::now());
                         boot_timer.tick(platform, &guest_ram, exits, last_pc);
                         if checkpoint_committed {
                             Some("VM checkpoint committed; suspended process exiting".into())
