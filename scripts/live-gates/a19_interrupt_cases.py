@@ -2,21 +2,19 @@
 
 The top-level stop fields hold the first-restore case, which every pass needs.
 Schema 2 adds flat fields for each other declared point, because the public
-redaction allowlist is flat; a present case counts once and needs its own proof.
+redaction allowlist is flat; a present case counts once with its own flags and hashes.
 """
 from __future__ import annotations
 
-import re
-
+import a19_interrupt_case_hashes as hashes
 from a19_interrupt_stop_points import CREATE_EXPORT, STAGED_RESTORE, SWAP_RESTORE
 
-SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 ADDED_POINTS = {"swap_": SWAP_RESTORE, "create_": CREATE_EXPORT}
 CASE_FLAGS = ("helper_stop_verified", "staged_file_sync_order_verified",
               "old_selection_before_kill", "helper_killed_and_reaped",
               "selection_unchanged_after_kill", "retry_succeeded")
 ADDED_FIELDS = frozenset(prefix + field for prefix in ADDED_POINTS
-                         for field in ("interruption_stage", "stop_fd_log_sha256", *CASE_FLAGS))
+                         for field in ("interruption_stage", *CASE_FLAGS)) | hashes.PROOF_FIELDS
 
 
 def case_fields(value: dict) -> frozenset[str]:
@@ -49,15 +47,16 @@ def validate_cases(value: dict) -> None:
         raise ValueError("passing T22 receipt lacks authenticated stop stage")
     added = ADDED_POINTS.items() if value["schema_version"] == 2 else ()
     for prefix, point in added:
-        stage, log = value[prefix + "interruption_stage"], value[prefix + "stop_fd_log_sha256"]
-        flags = [value[prefix + flag] for flag in CASE_FLAGS]
+        stage, flags = value[prefix + "interruption_stage"], [value[prefix + flag] for flag in CASE_FLAGS]
         if (stage not in ("absent", point.name) or any(type(flag) is not bool for flag in flags) or
-                not isinstance(log, str) or (log != "absent" and not SHA256.fullmatch(log))):
+                hashes.malformed(value, prefix)):
             raise ValueError(f"T22 receipt {prefix}case is malformed")
-        if stage == "absent" and (log != "absent" or any(flags)):
+        if stage == "absent" and (any(flags) or hashes.claimed(value, prefix)):
             raise ValueError(f"T22 receipt {prefix}case claims proof without a stop")
-        if value["pass"] and stage != "absent" and (log == "absent" or not all(flags)):
+        if value["pass"] and stage != "absent" and not all(flags):
             raise ValueError(f"passing T22 receipt has an unproven {prefix}case")
+        if value["pass"] and stage != "absent":
+            hashes.validate_passing(value, prefix)
     if value["pass"]:
         logs = [value["stop_fd_log_sha256"]]
         logs += [value[prefix + "stop_fd_log_sha256"] for prefix in added_cases(value)]

@@ -15,12 +15,11 @@ import a19_interrupt_cases as cases
 import a19_interrupt_restore_child as observer
 import a19_interrupt_stop_points as points
 import a19_interrupted_restore_receipt as receipt
+from a19_interrupt_case_fixtures import COMMIT, SHA_A, SHA_B, SHA_C, SHA_D, passing, proven
 
 spec = spec_from_file_location("redact_receipt", ROOT / "scripts/live-gates/redact-receipt.py")
 redaction = module_from_spec(spec)
 spec.loader.exec_module(redaction)
-COMMIT = "c" * 40
-SHA_A, SHA_B, SHA_C, SHA_D = ("a" * 64, "b" * 64, "c" * 64, "d" * 64)
 FROZEN_V1 = ROOT / "docs/windows-arm/evidence/a19-t22-r1-20260925-receipt.json"
 # The marker shows a refused helper did reach the state it holds for the stop.
 HOLD_READ = ("with (stage/'disk.raw').open('rb') as staged:\n"
@@ -51,25 +50,6 @@ def fixture(root: Path, generation: bool = False) -> tuple[Path, Path, Path, Pat
         for name in ("disk.raw", "vars.fd"):
             (managed / "current" / name).write_bytes(b"generation")
     return disk, vars, snapshot, output, managed
-
-
-def passing(**changes) -> dict:
-    value = receipt.initial("cases-fixture", COMMIT)
-    value.update(dict.fromkeys(receipt.HASHES, SHA_A), host_model="Mac17,9", macos_version="27.0",
-                 finished_at=value["started_at"])
-    value.update({field: True for field in receipt.FLAGS[:8]})
-    value.update({"pass": True, "outcome": "completed", "interruption_stage": points.STAGED_RESTORE.name,
-                  "boots_attempted": 4, "boots_passed": 4, "natural_shutdown_count": 4,
-                  "interruption_case_count": 1, "sample_count": 1, "run_count": 1,
-                  "clobber_marker_sha256": SHA_B, "postkill_marker_sha256": SHA_B,
-                  "schema_version": 2, **cases.absent_cases()})
-    value.update(changes)
-    return value
-
-
-def proven(prefix: str, log: str) -> dict:
-    return {prefix + "interruption_stage": cases.ADDED_POINTS[prefix].name,
-            prefix + "stop_fd_log_sha256": log, **{prefix + flag: True for flag in cases.CASE_FLAGS}}
 
 
 class StopPointContract(unittest.TestCase):

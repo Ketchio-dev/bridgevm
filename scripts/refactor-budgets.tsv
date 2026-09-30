@@ -3232,8 +3232,11 @@ tests/integration/a19-interrupted-restore-live-tier-contract.py	224	0
 tests/integration/a19-interrupted-restore-public-contract.py	77	0
 tests/integration/a19-interrupted-restore-guest-share-contract.py	106	0
 scripts/live-gates/a19_interrupt_stop_points.py	97	0
-scripts/live-gates/a19_interrupt_cases.py	65	0
-tests/integration/a19-interrupted-restore-cases-contract.py	219	0
+scripts/live-gates/a19_interrupt_cases.py	64	0
+tests/integration/a19-interrupted-restore-cases-contract.py	199	0
+scripts/live-gates/a19_interrupt_case_hashes.py	59	0
+tests/integration/a19_interrupt_case_fixtures.py	50	0
+tests/integration/a19-interrupted-restore-case-hashes-contract.py	69	0
 docs/history/windows-hvf/a19-interrupted-restore-tier-20260925.md	41	0
 docs/history/windows-hvf/a19-output-admission-and-setup-interruption-20260929.md	74	0
 docs/windows-arm/evidence/a19-t21-r1-20260925.md	68	0
