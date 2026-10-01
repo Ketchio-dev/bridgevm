@@ -19,7 +19,7 @@ enum T17FileChooserAXTree {
 
     static func nodes(_ root: AXUIElement) throws -> [AXUIElement] {
         try T17FileChooserGraph.walk(root: root, limit: 12_000, related: { node in
-            try T17FileChooserNodeLabel.naming(node, describe: T17FileChooserNodeLabel.chain) { try relationships.flatMap { try attribute(node, $0) as? [AXUIElement] ?? [] } }
+            try T17FileChooserNodeLabel.naming(node, describe: T17FileChooserNodeLabel.chain) { try T17FileChooserScope.relationships(of: node, root: root).flatMap { try attribute(node, $0) as? [AXUIElement] ?? [] } }
         }, hash: { CFHash($0) }, same: { CFEqual($0, $1) })
     }
 }
