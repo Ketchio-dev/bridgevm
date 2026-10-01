@@ -48,9 +48,9 @@ final class HvfPointerRecoveryTests: XCTestCase {
         _ = router.poll(binding: binding, serviceReady: true, lines: receipt(cleanup, count: 1), now: now) {
             _ in XCTFail("negotiated before cleanup completed"); return true
         }
-        var next = ""
-        _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { next = $0; return true }
-        XCTAssertTrue(next.hasPrefix("INPUTCAPS "))
+        XCTAssertEqual(router.route(.key("enter"), binding: binding, now: now), .queued)
+        var next = ""; _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { next = $0; return true }
+        XCTAssertTrue(next.hasPrefix("KEYINPUT "), "input resumes after cleanup without renegotiation")
     }
 
     func testCleanupFailureRefusesFurtherInputAndLegacyFallback() {
