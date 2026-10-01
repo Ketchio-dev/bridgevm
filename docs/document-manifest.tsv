@@ -252,6 +252,7 @@ docs/history/windows-hvf/t17-audio-check-b7-alignment-20260930.md	historical-evi
 docs/history/windows-hvf/a9-r51-host-focus-lost-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/a9-r52-display-export-tail-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/a9-r53-restore-helper-lost-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
+docs/history/windows-hvf/a9-r54-focus-click-refused-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/app-guest-reset-records-20260929.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/install-staging-and-host-bound-stop-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
 docs/history/windows-hvf/host-report-integrity-and-a19-fill-20260930.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
