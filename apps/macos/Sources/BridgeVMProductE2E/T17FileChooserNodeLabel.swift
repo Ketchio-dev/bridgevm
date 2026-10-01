@@ -39,6 +39,6 @@ enum T17FileChooserNodeLabel {
     private static func text(_ element: AXUIElement, _ name: String) -> String? { value(element, name) as? String }
     private static func parent(_ element: AXUIElement) -> AXUIElement? {
         guard let raw = value(element, kAXParentAttribute), CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
-        return (raw as! AXUIElement)
+        return unsafeBitCast(raw, to: AXUIElement.self)  // type ID checked above
     }
 }
