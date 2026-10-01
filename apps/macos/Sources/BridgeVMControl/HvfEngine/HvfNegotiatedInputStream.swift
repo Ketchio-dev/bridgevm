@@ -35,8 +35,7 @@ struct HvfNegotiatedInputStream {
             if send(request.command) {
                 state = .negotiating
             } else {
-                capability = nil
-                state = .unavailable
+                capability = nil; state = .unavailable
             }
         case .negotiating:
             guard var request = capability else { state = .failed; return nil }
@@ -65,11 +64,12 @@ struct HvfNegotiatedInputStream {
         return nil
     }
 
-    /// Cancels host-side ownership; cannot undo input already inserted in Windows.
+    /// Cancels host-side ownership; cannot undo input already inserted in Windows. A host
+    /// target change keeps the negotiated encodings, which describe the guest agent (T17 r54).
     @discardableResult
     mutating func reset(_ reason: HvfOrderedInputQueue.Failure) -> HvfAcknowledgedInputStream.Update {
-        capability = nil
-        state = .disconnected
+        if reason == .targetChanged, state == .ready { return stream.cancel(reason) }
+        capability = nil; state = .disconnected
         return stream.cancel(reason)
     }
 }

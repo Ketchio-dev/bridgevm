@@ -43,16 +43,16 @@ final class HvfSessionInputRouterTests: XCTestCase {
         }
     }
 
-    func testTargetChangeRequiresRenegotiationAndNeverFallsBackToHID() {
+    func testTargetChangeCancelsPendingInputKeepsNegotiationAndNeverFallsBackToHID() {
         var router = HvfSessionInputRouter()
         router.beginOwnedBoot(binding: binding)
         negotiate(&router)
         XCTAssertEqual(router.route(.text("old target"), binding: binding, now: now), .queued)
         XCTAssertEqual(router.cancelTarget(), .cancelled(.targetChanged, discarded: 1))
-        XCTAssertEqual(router.route(.text("too early"), binding: binding, now: now), .refused)
         XCTAssertFalse(router.allowLegacyWrite(binding: binding))
-        negotiate(&router)
-        XCTAssertEqual(router.route(.text("new target"), binding: binding, now: now), .queued)
+        XCTAssertEqual(router.route(.pointer("click:1x2"), binding: binding, now: now), .queued, "the focusing click")
+        var sent = ""; _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { sent = $0; return true }
+        XCTAssertTrue(sent.hasPrefix("POINTERINPUT "), "no renegotiation for a host target change")
     }
 
     func testRestartAndBindingChangeCancelAndRefuseUntilFreshOwnedBoot() {

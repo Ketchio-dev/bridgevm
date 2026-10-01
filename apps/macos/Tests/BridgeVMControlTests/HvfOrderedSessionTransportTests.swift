@@ -82,7 +82,7 @@ final class HvfOrderedSessionTransportTests: XCTestCase {
             session.sendKey("enter")
             let sent = try commands(control)
             XCTAssertEqual(sent.filter { $0.hasPrefix("TEXTINPUT ") }.count, 1)
-            XCTAssertFalse(sent.contains { $0.hasPrefix("KEYINPUT ") })
+            XCTAssertEqual(sent.filter { $0.hasPrefix("KEYINPUT ") }.count, 1, "the new target keeps the negotiated stream")
             XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("input.ctl").path))
         }
     }
