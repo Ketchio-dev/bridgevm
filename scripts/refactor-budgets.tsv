@@ -3442,6 +3442,7 @@ tests/integration/t17-audio-counters-test.py	33	0
 docs/history/windows-hvf/t17-audio-check-b7-alignment-20260930.md	48	0
 docs/history/windows-hvf/a9-r51-host-focus-lost-20260930.md	40	0
 docs/history/windows-hvf/a9-r52-display-export-tail-20260930.md	70	0
+docs/history/windows-hvf/a9-r53-restore-helper-lost-20260930.md	87	0
 docs/history/windows-hvf/experiment-storage-retention-drift-20260930.md	58	0
 .github/workflows/installed-boot-display-cadence.yml	12	0
 scripts/live-gates/a19_lifecycle_campaign_record.py	128	0
