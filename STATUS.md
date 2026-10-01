@@ -14,14 +14,14 @@ receipts under `docs/windows-arm/evidence/`.
 Release-blocking criteria proven: **14 / 17**. Open: A9, A11, A19.
 
 Known open defects:
-- **A9**: No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window was choppy in the latest hardware runs, and guest audio stuttered audibly; a smoother display export and audio gap counters are built but not yet measured on hardware.
+- **A9**: No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window was choppy in recent hardware runs, and guest audio stuttered audibly. In r52 the display export held its 33 ms cadence, but the app window's smoothness was not measured, and audio still underran in up to 3% of callbacks.
 - **A19**: Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage is unproven. The ten-lane product lifecycle campaign passed 10/10 once, at 949f4c26, which the operator accepted before a release head was designated. Physical power loss during a snapshot operation is outside this criterion and is not tested.
 - **B6**: Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness.
 
 - Graphics future path: Vulkan is a Graphics Lab future path, excluded from General Preview and v1; D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-09-30 at commit `10d54c95ef8b2e169eb82bbddd3461d2db3badff`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-09-30 at commit `fec5f01bd9b10aa0b8a9485f76996fb8692274f9`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 ## How to read the generated status

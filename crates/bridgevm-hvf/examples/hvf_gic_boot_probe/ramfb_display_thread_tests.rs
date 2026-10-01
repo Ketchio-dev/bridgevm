@@ -330,7 +330,7 @@ fn the_vcpu0_run_loop_no_longer_exports_ramfb_frames() {
     for gone in ["RamfbDisplayExporter", "ramfb_display.due", "ramfb_display.export"] {
         assert!(!run.contains(gone), "vCPU0 still references {gone}");
     }
-    let start = "let _ramfb_display = RamfbDisplayThread::start(";
+    let start = "let ramfb_display = RamfbDisplayThread::start(";
     assert_eq!(run.matches("RamfbDisplayThread::start(").count(), 1);
     let at = |needle: &str| run.find(needle).unwrap_or_else(|| panic!("{needle}"));
     assert!(at("GuestRamBacking::allocate_and_map") < at(start));

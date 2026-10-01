@@ -3247,6 +3247,7 @@ crates/bridgevm-hvf-runtime/src/vm_process_surfaces_tests.rs	51	0
 scripts/live-gates/t17_private_diagnostic_packet.py	616	0
 tests/integration/t17-private-diagnostic-packet-test.py	459	0
 tests/integration/t17-packet-directory-race-test.py	80	0
+tests/integration/hvf-display-export-stop-order-contract.py	64	0
 scripts/live-gates/t17_guest_setup_harvest.py	550	0
 tests/integration/t17-guest-setup-harvest-test.py	474	0
 scripts/live-gates/t17_host_residue.py	107	0
@@ -3437,6 +3438,7 @@ scripts/live-gates/t17_audio_counters.py	26	0
 tests/integration/t17-audio-counters-test.py	33	0
 docs/history/windows-hvf/t17-audio-check-b7-alignment-20260930.md	48	0
 docs/history/windows-hvf/a9-r51-host-focus-lost-20260930.md	40	0
+docs/history/windows-hvf/a9-r52-display-export-tail-20260930.md	70	0
 docs/history/windows-hvf/experiment-storage-retention-drift-20260930.md	58	0
 .github/workflows/installed-boot-display-cadence.yml	12	0
 scripts/live-gates/a19_lifecycle_campaign_record.py	128	0
