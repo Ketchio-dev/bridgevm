@@ -6,9 +6,9 @@ import Foundation
 /// identifiers are kept: titles, values and descriptions can carry file or volume names.
 enum T17FileChooserNodeLabel {
     static func naming<Node, Result>(_ node: Node, describe: (Node) -> String, _ read: () throws -> Result) throws -> Result {
+        // Prefixed: T17FileChooserSnapshot classifies transient reads by the detail's suffix.
         do { return try read() } catch let blocker as T17Blocker {
-            throw T17Blocker(code: blocker.code, detail: blocker.detail + "; node=" + describe(node))
-        }
+            throw T17Blocker(code: blocker.code, detail: "node=" + describe(node) + "; " + blocker.detail) }
     }
 
     /// The failing node first, then up to five ancestors, joined by `<`.
