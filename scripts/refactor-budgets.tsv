@@ -3461,3 +3461,5 @@ tests/integration/a19_lifecycle_campaign_fixtures.py	116	0
 tests/integration/a19-lifecycle-campaign-receipt-contract.py	319	0
 tests/integration/a19-lifecycle-campaign-runner-contract.py	243	0
 docs/testing/a19-lifecycle-campaign.md	138	0
+apps/macos/Sources/BridgeVMProductE2E/T17FileChooserNodeLabel.swift	44	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserNodeLabelTests.swift	30	0
