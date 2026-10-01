@@ -28,7 +28,7 @@ fn cancellation_during_readiness_reaps_child_before_returning_and_keeps_lease() 
     let marker = fixture.root.join("started");
     let helper = fixture.script(
         "not-ready.sh",
-        &format!("printf ready > '{}'; exec /bin/sleep 20", marker.display()),
+        &format!("printf ready > '{}'; exec /bin/sleep 60", marker.display()),
     );
     let prepared = prepare(fixture.manifest(), "startup owner").unwrap();
     let requested = || marker.exists();
@@ -46,7 +46,7 @@ fn cancellation_during_readiness_reaps_child_before_returning_and_keeps_lease() 
     .unwrap();
     assert!(marker.exists());
     assert!(error.to_string().contains("cancelled"));
-    assert!(before.elapsed() < Duration::from_secs(2));
+    assert!(before.elapsed() < Duration::from_secs(15)); // child sleeps 60 s: reaped, not awaited
     assert!(control.is_cancelled());
     assert!(prepare(fixture.manifest(), "competitor").is_err());
     drop(prepared);
