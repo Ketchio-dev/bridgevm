@@ -16,7 +16,7 @@ struct T17InputChallenge {
         try ui.press("bridgevm.runtime.display.open", timeout: 10)
         // First logon can leave the Start menu over the form: click the form beside it, then its centre.
         for spot in [CGPoint(x: 0.04, y: 0.5), CGPoint(x: 0.5, y: 0.5)] {
-            try T17PointerReceipt.require(runLog, timeout: 15) { try ui.clickDisplaySurface(at: spot, timeout: 15) }
+            try T17PointerReceipt.require(runLog, timeout: 15, diagnostic: ui.displayInputDiagnostic) { try ui.clickDisplaySurface(at: spot, timeout: 15) }
         }
         try ui.fill("t17kbd\(prefix)", identifier: "bridgevm.runtime.keyboard.input", timeout: 10)
         try ui.press("bridgevm.runtime.keyboard.send", timeout: 10)

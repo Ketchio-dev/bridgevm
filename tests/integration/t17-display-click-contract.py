@@ -36,7 +36,7 @@ class DisplayClick(unittest.TestCase):
     def test_keyboard_waits_for_inserted_pointer_receipts(self) -> None:
         deliver = text(E2E / "T17InputChallenge.swift").split("func deliver() throws {", 1)[1].split("\n    }\n", 1)[0]
         spots = "for spot in [CGPoint(x: 0.04, y: 0.5), CGPoint(x: 0.5, y: 0.5)] {"
-        click = "try T17PointerReceipt.require(runLog, timeout: 15) { try ui.clickDisplaySurface(at: spot, timeout: 15) }"
+        click = "try T17PointerReceipt.require(runLog, timeout: 15, diagnostic: ui.displayInputDiagnostic) { try ui.clickDisplaySurface(at: spot, timeout: 15) }"
         self.assertEqual((deliver.count(spots), deliver.count(click)), (1, 1))
         self.assertLess(deliver.index("bridgevm.runtime.display.open"), deliver.index(spots))
         self.assertLess(deliver.index(click), deliver.index("bridgevm.runtime.keyboard.input"))

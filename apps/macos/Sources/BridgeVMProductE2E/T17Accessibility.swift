@@ -3,7 +3,7 @@ import ApplicationServices
 import Foundation
 
 final class T17Accessibility: T17UIControlling {
-    private let pid: pid_t
+    let pid: pid_t
     init(pid: pid_t) throws {
         guard AXIsProcessTrusted() else {
             throw T17Blocker(code: "accessibility-untrusted", detail: T17TrustDiagnostic.detail())
