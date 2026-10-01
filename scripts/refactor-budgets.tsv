@@ -3463,5 +3463,5 @@ tests/integration/a19-lifecycle-campaign-runner-contract.py	243	0
 docs/testing/a19-lifecycle-campaign.md	138	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserNodeLabel.swift	44	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserNodeLabelTests.swift	30	0
-apps/macos/Sources/BridgeVMProductE2E/T17FileChooserScope.swift	17	0
-apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserScopeTests.swift	18	0
+apps/macos/Sources/BridgeVMProductE2E/T17ApplicationWalkScope.swift	17	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17ApplicationWalkScopeTests.swift	18	0

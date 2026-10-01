@@ -14,7 +14,7 @@ enum T17AccessibilityTree {
     static func nodes(_ root: AXUIElement, limit: Int) throws -> [AXUIElement] {
         do {
             return try T17FileChooserGraph.walk(root: root, limit: limit, related: { node in
-                try relationships.flatMap { name -> [AXUIElement] in
+                try T17ApplicationWalkScope.relationships(of: node, root: root).flatMap { name -> [AXUIElement] in
                     guard let value = try attribute(node, name) else { return [] }
                     guard let nodes = value as? [AXUIElement] else {
                         throw T17Blocker(code: "ui-element-missing", detail: "ax_tree_invalid_relationship;attribute=\(name)")
