@@ -2255,6 +2255,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfPointerReleaseEncodingTests.swift	26	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerHeldState.swift	30	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRecoverableInputStream.swift	67	0
 apps/macos/Tests/BridgeVMControlTests/HvfPointerRecoveryTests.swift	85	0
+apps/macos/Tests/BridgeVMControlTests/HvfPointerPressOutcomeTests.swift	52	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineRepositoryRoot.swift	49	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferScalarReads.swift	17	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSessionInputDriver.swift	66	0
@@ -3403,6 +3404,7 @@ tests/integration/audio-playback-host-stats-contract.py	67	0
 docs/windows-arm/evidence/b6-trace-nine-cell-collection-20260911.md	114	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfDisplaySurfaceAccessibility.swift	26	0
 apps/macos/Sources/BridgeVMProductE2E/T17DisplayClick.swift	42	0
+apps/macos/Sources/BridgeVMProductE2E/T17DisplayInputDiagnostic.swift	30	0
 apps/macos/Sources/BridgeVMProductE2E/T17PointerReceipt.swift	38	0
 apps/macos/Tests/BridgeVMControlTests/HvfDisplaySurfaceAccessibilityTests.swift	29	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17DisplayClickTests.swift	44	0
@@ -3437,6 +3439,7 @@ docs/history/windows-hvf/a9-r50-audio-counter-gate-20260930.md	59	0
 apps/macos/Sources/BridgeVMProductE2E/T17AudioCounters.swift	46	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17AudioCountersTests.swift	40	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17EvidenceDigestMemoryTests.swift	25	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17DisplayInputDiagnosticTests.swift	20	0
 scripts/live-gates/t17_audio_counters.py	26	0
 tests/integration/t17-audio-counters-test.py	33	0
 docs/history/windows-hvf/t17-audio-check-b7-alignment-20260930.md	48	0
@@ -3445,6 +3448,7 @@ docs/history/windows-hvf/a9-r52-display-export-tail-20260930.md	70	0
 docs/history/windows-hvf/a9-r53-restore-helper-lost-20260930.md	87	0
 docs/history/windows-hvf/a9-r54-focus-click-refused-20260930.md	73	0
 docs/history/windows-hvf/a9-r55-click-still-lost-20260930.md	62	0
+docs/history/windows-hvf/a9-r56-studio-first-pilot-20261001.md	49	0
 docs/history/windows-hvf/experiment-storage-retention-drift-20260930.md	58	0
 .github/workflows/installed-boot-display-cadence.yml	12	0
 scripts/live-gates/a19_lifecycle_campaign_record.py	128	0
