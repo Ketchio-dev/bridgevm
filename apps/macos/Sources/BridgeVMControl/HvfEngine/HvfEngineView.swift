@@ -255,8 +255,8 @@ struct HvfEngineView: View {
         GroupBox {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(session.events.enumerated()), id: \.offset) { _, event in
-                        Text(event.displayText)
+                    ForEach(session.eventFeed) { row in
+                        Text(row.event.displayText)
                             .font(.system(size: 11, design: .monospaced))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
