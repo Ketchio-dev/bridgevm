@@ -4,6 +4,18 @@ import XCTest
 
 @MainActor
 final class AppSettingsTests: XCTestCase {
+    /// One stable suite per test, emptied before use. A UUID suite per run left one empty
+    /// plist behind each time, because removePersistentDomain keeps the file.
+    nonisolated private static func suite(_ function: String) -> String {
+        let name = "BridgeVMAppTests-" + function.filter { $0.isLetter || $0.isNumber }
+        UserDefaults(suiteName: name)?.removePersistentDomain(forName: name)
+        return name
+    }
+
+    nonisolated private static func discard(_ defaults: UserDefaults, _ suiteName: String) {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
     func testDaemonEndpointDefaultSocketMatchesCliStoreConvention() {
         XCTAssertEqual(
             DaemonEndpoint.defaultSocketPath(environment: [
@@ -23,11 +35,9 @@ final class AppSettingsTests: XCTestCase {
     }
 
     func testSettingsPersistDaemonSocketPathMockToggleAndAppleVzLiveStartToggle() {
-        let suiteName = "BridgeVMAppTests-\(UUID().uuidString)"
+        let suiteName = Self.suite(#function)
         let defaults = UserDefaults(suiteName: suiteName)!
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
+        defer { Self.discard(defaults, suiteName) }
 
         let settings = AppSettings(defaults: defaults)
         XCTAssertFalse(settings.hasPendingChanges)
@@ -46,11 +56,9 @@ final class AppSettingsTests: XCTestCase {
     }
 
     func testPersistedDefaultsDriveBundledDaemonSupervisorLaunchEnvironment() throws {
-        let suiteName = "BridgeVMAppTests-\(UUID().uuidString)"
+        let suiteName = Self.suite(#function)
         let defaults = UserDefaults(suiteName: suiteName)!
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
+        defer { Self.discard(defaults, suiteName) }
         defaults.set("", forKey: "bridgevm.daemonSocketPath")
         defaults.set(false, forKey: "bridgevm.useMockInventory")
         defaults.set(true, forKey: "bridgevm.allowAppleVzRealStart")
@@ -95,11 +103,9 @@ final class AppSettingsTests: XCTestCase {
     }
 
     func testSettingsTrackPendingChangesAgainstAppliedSnapshot() {
-        let suiteName = "BridgeVMAppTests-\(UUID().uuidString)"
+        let suiteName = Self.suite(#function)
         let defaults = UserDefaults(suiteName: suiteName)!
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
+        defer { Self.discard(defaults, suiteName) }
 
         let settings = AppSettings(defaults: defaults)
         settings.daemonSocketPath = "/tmp/bridgevmd.sock"
@@ -118,11 +124,9 @@ final class AppSettingsTests: XCTestCase {
     }
 
     func testSettingsValidateDaemonSocketPathUnlessMockInventoryIsEnabled() {
-        let suiteName = "BridgeVMAppTests-\(UUID().uuidString)"
+        let suiteName = Self.suite(#function)
         let defaults = UserDefaults(suiteName: suiteName)!
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
+        defer { Self.discard(defaults, suiteName) }
 
         let settings = AppSettings(defaults: defaults)
         settings.daemonSocketPath = "   "
@@ -662,11 +666,9 @@ final class AppSettingsTests: XCTestCase {
     }
 
     func testAppModelApplySettingsSwapsDashboardClientAndReloads() async throws {
-        let suiteName = "BridgeVMAppTests-\(UUID().uuidString)"
+        let suiteName = Self.suite(#function)
         let defaults = UserDefaults(suiteName: suiteName)!
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
+        defer { Self.discard(defaults, suiteName) }
         let settings = AppSettings(defaults: defaults)
         settings.useMockInventory = true
         let model = BridgeVMAppModel(settings: settings)
@@ -680,11 +682,9 @@ final class AppSettingsTests: XCTestCase {
     func testAppModelDaemonModeDoesNotFallbackToMockInventoryWhenSocketIsUnavailable()
         async throws
     {
-        let suiteName = "BridgeVMAppTests-\(UUID().uuidString)"
+        let suiteName = Self.suite(#function)
         let defaults = UserDefaults(suiteName: suiteName)!
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
+        defer { Self.discard(defaults, suiteName) }
         let settings = AppSettings(defaults: defaults)
         settings.useMockInventory = false
         settings.daemonSocketPath =
@@ -700,11 +700,9 @@ final class AppSettingsTests: XCTestCase {
     }
 
     func testAppModelStoreDoctorUsesMockModeWithoutLoadingInventory() async throws {
-        let suiteName = "BridgeVMAppTests-\(UUID().uuidString)"
+        let suiteName = Self.suite(#function)
         let defaults = UserDefaults(suiteName: suiteName)!
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
+        defer { Self.discard(defaults, suiteName) }
         let settings = AppSettings(defaults: defaults)
         settings.useMockInventory = true
         let model = BridgeVMAppModel(settings: settings)
@@ -723,11 +721,9 @@ final class AppSettingsTests: XCTestCase {
     }
 
     func testAppModelApplySettingsIgnoresStaleStoreDoctorResult() async throws {
-        let suiteName = "BridgeVMAppTests-\(UUID().uuidString)"
+        let suiteName = Self.suite(#function)
         let defaults = UserDefaults(suiteName: suiteName)!
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
+        defer { Self.discard(defaults, suiteName) }
         let settings = AppSettings(defaults: defaults)
         settings.useMockInventory = true
         let doctorClient = DelayedStoreDoctorClient()
@@ -753,11 +749,9 @@ final class AppSettingsTests: XCTestCase {
     }
 
     func testAppModelApplySettingsIgnoresStaleInFlightDashboardLoad() async throws {
-        let suiteName = "BridgeVMAppTests-\(UUID().uuidString)"
+        let suiteName = Self.suite(#function)
         let defaults = UserDefaults(suiteName: suiteName)!
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
+        defer { Self.discard(defaults, suiteName) }
         let settings = AppSettings(defaults: defaults)
         settings.useMockInventory = true
         let oldVirtualMachine = testVirtualMachine(name: "Old VM")
@@ -801,12 +795,10 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(settings.hasPendingChanges)
     }
 
-    private func isolatedDefaults() -> UserDefaults {
-        let suiteName = "BridgeVMAppTests-\(UUID().uuidString)"
+    private func isolatedDefaults(function: String = #function) -> UserDefaults {
+        let suiteName = Self.suite(function)
         let defaults = UserDefaults(suiteName: suiteName)!
-        addTeardownBlock {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
+        addTeardownBlock { Self.discard(defaults, suiteName) }
         return defaults
     }
 
