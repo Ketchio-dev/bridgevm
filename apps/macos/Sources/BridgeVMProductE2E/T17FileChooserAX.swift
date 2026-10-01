@@ -80,14 +80,14 @@ final class T17FileChooserAX: T17FileChooserDriving {
         let current = panel
         predicates.beginOwner(panelCached: current != nil)
         guard let current else { return nil }
-        return try semantic(in: current, id: "GoToWindow", roles: [kAXSheetRole])
+        return try semantic(in: current, id: "GoToWindow", roles: [kAXSheetRole], walk: T17FileChooserSheetScope.candidates)
     }
     private func locationField() throws -> AXUIElement? {
         guard let sheet = try locationSheet() else { return nil }
         return try semantic(in: sheet, id: "PathTextField", roles: [kAXTextFieldRole, kAXComboBoxRole])
     }
-    private func semantic(in root: AXUIElement, id: String, roles: Set<String>) throws -> AXUIElement? {
-        try T17FileChooserOwnedSnapshot.read(owner: root, nodes: nodes) { candidates in
+    private func semantic(in root: AXUIElement, id: String, roles: Set<String>, walk: ((AXUIElement) throws -> [AXUIElement])? = nil) throws -> AXUIElement? {
+        try T17FileChooserOwnedSnapshot.read(owner: root, nodes: walk ?? { try self.nodes($0) }) { candidates in
             if let identified = try predicates.find(in: { candidates }, id: id, roles: roles, metadata: {
                 (try self.attribute($0, kAXIdentifierAttribute) as? String,
                  try self.attribute($0, kAXRoleAttribute) as? String)
