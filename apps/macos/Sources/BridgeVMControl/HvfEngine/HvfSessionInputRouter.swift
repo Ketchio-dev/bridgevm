@@ -3,8 +3,8 @@ import Foundation
 /// Owns one UI input channel; file emptiness is never used as drain evidence.
 struct HvfSessionInputRouter {
     private var binding: [String]?
-    private var eligible = false
-    private var activated = false
+    private(set) var eligible = false
+    private(set) var activated = false
     private(set) var failed = false
     private var stream = HvfRecoverableInputStream()
     var state: HvfNegotiatedInputStream.State { stream.state }

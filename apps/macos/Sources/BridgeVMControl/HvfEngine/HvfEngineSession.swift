@@ -247,8 +247,8 @@ final class HvfEngineSession: ObservableObject {
         guard let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return "unmapped" }
         let verb = action == "release" ? "releaseall" : action.replacingOccurrences(of: "-", with: "")
         let admission = inputDriver.route(.pointer("\(verb):\(point.x)x\(point.y)"), binding: inputBinding)
-        if admission != .legacy { return "\(admission)" }
-        appendLiveInput("POINTER \(action):\(point.x)x\(point.y)"); return "legacy"
+        if admission != .legacy { return admission == .queued ? "queued" : "refused-" + inputDriver.routeDiagnostic(attached: attachedToExistingProcess) }
+        appendLiveInput("POINTER \(action):\(point.x)x\(point.y)"); return "legacy-" + inputDriver.routeDiagnostic(attached: attachedToExistingProcess)
     }
 
     private func mappedPointer(_ location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> (x: UInt16, y: UInt16)? {
