@@ -845,6 +845,8 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_teardown.rs	264	4
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_callback.rs	44	3
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_continuity.rs	232	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_continuity_tests.rs	283	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_prefill.rs	34	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_prefill_tests.rs	70	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard.rs	424	21
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_support.rs	41	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_snapshot.rs	176	1
@@ -3434,11 +3436,13 @@ docs/history/windows-hvf/a9-r49-input-passes-audio-directory-20260930.md	57	0
 docs/history/windows-hvf/a9-r50-audio-counter-gate-20260930.md	59	0
 apps/macos/Sources/BridgeVMProductE2E/T17AudioCounters.swift	46	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17AudioCountersTests.swift	40	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17EvidenceDigestMemoryTests.swift	25	0
 scripts/live-gates/t17_audio_counters.py	26	0
 tests/integration/t17-audio-counters-test.py	33	0
 docs/history/windows-hvf/t17-audio-check-b7-alignment-20260930.md	48	0
 docs/history/windows-hvf/a9-r51-host-focus-lost-20260930.md	40	0
 docs/history/windows-hvf/a9-r52-display-export-tail-20260930.md	70	0
+docs/history/windows-hvf/a9-r53-restore-helper-lost-20260930.md	87	0
 docs/history/windows-hvf/experiment-storage-retention-drift-20260930.md	58	0
 .github/workflows/installed-boot-display-cadence.yml	12	0
 scripts/live-gates/a19_lifecycle_campaign_record.py	128	0

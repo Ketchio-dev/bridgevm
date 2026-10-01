@@ -45,7 +45,7 @@ enum HvfWindowsInstallCacheIdentity {
         defer { try? handle.close() }
         do {
             while true {
-                let chunk = try handle.read(upToCount: 1024 * 1024) ?? Data()
+                let chunk = try autoreleasepool { try handle.read(upToCount: 1024 * 1024) ?? Data() }
                 if chunk.isEmpty { break }
                 hasher.update(data: chunk)
             }

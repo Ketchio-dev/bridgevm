@@ -20,6 +20,8 @@ use bridgevm_hvf::hda::HdaPcmSink;
 mod hda_coreaudio_callback;
 #[path = "hda_coreaudio_continuity.rs"]
 mod hda_coreaudio_continuity;
+#[path = "hda_coreaudio_prefill.rs"]
+mod hda_coreaudio_prefill;
 #[path = "hda_coreaudio_ring.rs"]
 mod hda_coreaudio_ring;
 #[path = "hda_coreaudio_stats.rs"]
@@ -27,6 +29,7 @@ mod hda_coreaudio_stats;
 #[path = "hda_coreaudio_teardown.rs"]
 mod hda_coreaudio_teardown;
 use hda_coreaudio_callback::{fill_with_silence, output_callback};
+use hda_coreaudio_prefill::PREFILL_BYTES;
 use hda_coreaudio_stats::Shared;
 use hda_coreaudio_teardown::dispose_failed_queue;
 
@@ -97,7 +100,7 @@ impl CoreAudioPcmSink {
             bits_per_channel: u32::from(BITS_PER_CHANNEL),
             reserved: 0,
         };
-        let shared = Arc::new(Shared::new(RING_CAPACITY_BYTES));
+        let shared = Arc::new(Shared::new(RING_CAPACITY_BYTES, PREFILL_BYTES));
         let callback_context = Box::into_raw(Box::new(CallbackContext {
             shared: Arc::clone(&shared),
         }));

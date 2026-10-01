@@ -57,7 +57,7 @@ struct T17Evidence {
         defer { try? handle.close() }
         var digest = SHA256()
         while true {
-            let chunk = try handle.read(upToCount: 1024 * 1024) ?? Data()
+            let chunk = try autoreleasepool { try handle.read(upToCount: 1024 * 1024) ?? Data() }
             if chunk.isEmpty { break }
             digest.update(data: chunk)
         }
