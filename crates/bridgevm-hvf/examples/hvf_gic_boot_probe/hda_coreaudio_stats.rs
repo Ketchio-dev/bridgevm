@@ -5,13 +5,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use super::hda_coreaudio_continuity::ContinuityCounters;
+use super::hda_coreaudio_prefill::Prefill;
 use super::hda_coreaudio_teardown::CallbackFailureCounters;
 
 pub(super) struct Shared {
     pub(super) ring: Mutex<VecDeque<u8>>,
-    /// Guest PCM frames successfully copied into the host CoreAudio ring.
-    /// This distinguishes real audio flow from an idle device, for which every
-    /// error counter would also remain zero.
+    /// Guest PCM frames copied into the ring; nonzero tells real audio from an idle device.
     pub(super) frames_rendered: AtomicU64,
     dropped_writes: AtomicU64,
     dropped_bytes: AtomicU64,
@@ -19,10 +18,11 @@ pub(super) struct Shared {
     ring_full_drops: AtomicU64,
     pub(super) callback_failures: CallbackFailureCounters,
     pub(super) continuity: ContinuityCounters,
+    pub(super) prefill: Prefill,
 }
 
 impl Shared {
-    pub(super) fn new(ring_capacity_bytes: usize) -> Self {
+    pub(super) fn new(ring_capacity_bytes: usize, prefill_bytes: usize) -> Self {
         Self {
             ring: Mutex::new(VecDeque::with_capacity(ring_capacity_bytes)),
             frames_rendered: AtomicU64::new(0),
@@ -32,6 +32,7 @@ impl Shared {
             ring_full_drops: AtomicU64::new(0),
             callback_failures: CallbackFailureCounters::new(),
             continuity: ContinuityCounters::default(),
+            prefill: Prefill::new(prefill_bytes),
         }
     }
 

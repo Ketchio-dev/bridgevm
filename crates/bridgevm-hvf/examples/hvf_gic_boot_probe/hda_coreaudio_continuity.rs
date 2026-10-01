@@ -12,7 +12,8 @@
 //! in the same span proves it was a gap rather than the end of playback:
 //!
 //! - a span opens at the first callback that delivers guest PCM, so warm-up
-//!   silence before the guest streams is never counted;
+//!   silence before the guest streams, and the start-threshold silence before
+//!   playback is primed (`hda_coreaudio_prefill.rs`), is never counted;
 //! - a span closes when a callback leaves the ring short after the guest
 //!   stopped its stream (`HdaPcmSink::stream_stopped`) and wrote no PCM since,
 //!   and at teardown; silence after a span's last PCM is never counted.
@@ -38,7 +39,6 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 use std::sync::TryLockError;
 
-use super::hda_coreaudio_ring::drain_ring_into;
 use super::hda_coreaudio_stats::Shared;
 use super::{AUDIO_QUEUE_BUFFER_BYTES, BYTES_PER_FRAME};
 
@@ -72,8 +72,8 @@ pub(super) fn fill_and_record(destination: &mut [u8], shared: &Shared) {
                 .record(CallbackFill::Contended { capacity_bytes });
         }
     };
-    let pcm_bytes = drain_ring_into(&mut ring, destination);
     let stream_idle = shared.continuity.stream_idle();
+    let pcm_bytes = shared.prefill.drain(&mut ring, destination, stream_idle);
     drop(ring);
     let fill = CallbackFill::Drained {
         pcm_bytes,

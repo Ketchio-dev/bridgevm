@@ -845,6 +845,8 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_teardown.rs	264	4
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_callback.rs	44	3
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_continuity.rs	232	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_continuity_tests.rs	283	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_prefill.rs	34	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_prefill_tests.rs	70	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard.rs	424	21
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_support.rs	41	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_snapshot.rs	176	1

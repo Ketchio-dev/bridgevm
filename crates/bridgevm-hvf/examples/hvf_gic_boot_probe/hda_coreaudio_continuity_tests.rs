@@ -202,7 +202,7 @@ fn record_prints_every_field_in_the_documented_order() {
 
 #[test]
 fn fill_reads_the_ring_and_records_what_the_buffer_received() {
-    let shared = Shared::new(4 * FULL);
+    let shared = Shared::new(4 * FULL, 0);
     let mut buffer = vec![0u8; FULL];
     fill_and_record(&mut buffer, &shared);
     assert_eq!(
@@ -234,7 +234,7 @@ fn fill_reads_the_ring_and_records_what_the_buffer_received() {
 
 #[test]
 fn fill_never_waits_for_the_producer_and_counts_the_contention() {
-    let shared = Shared::new(4 * FULL);
+    let shared = Shared::new(4 * FULL, 0);
     shared
         .ring
         .lock()
@@ -259,7 +259,7 @@ fn fill_never_waits_for_the_producer_and_counts_the_contention() {
 
 #[test]
 fn fill_reads_a_guest_stop_under_the_ring_lock() {
-    let shared = Shared::new(4 * FULL);
+    let shared = Shared::new(4 * FULL, 0);
     shared
         .ring
         .lock()
