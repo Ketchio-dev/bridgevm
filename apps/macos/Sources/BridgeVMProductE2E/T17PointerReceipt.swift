@@ -24,7 +24,7 @@ enum T17PointerReceipt {
     }
 
     /// Runs the click, then requires its insertions in the run log written after it began.
-    static func require(_ runLog: URL, timeout: TimeInterval, click: () throws -> Void) throws {
+    static func require(_ runLog: URL, timeout: TimeInterval, diagnostic: () -> String = { "" }, click: () throws -> Void) throws {
         let offset = (try? Data(contentsOf: runLog).count) ?? 0
         try click()
         let deadline = Date().addingTimeInterval(timeout)
@@ -33,6 +33,6 @@ enum T17PointerReceipt {
                inserted(in: String(decoding: data.suffix(from: offset), as: UTF8.self)) >= clickInsertions { return }
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         } while Date() < deadline
-        throw T17Blocker(code: "guest-evidence-missing", detail: "display click was not inserted as guest pointer input")
+        throw T17Blocker(code: "guest-evidence-missing", detail: "display click was not inserted as guest pointer input" + diagnostic())
     }
 }

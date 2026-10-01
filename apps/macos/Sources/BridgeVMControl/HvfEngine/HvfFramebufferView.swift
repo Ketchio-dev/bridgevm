@@ -36,6 +36,7 @@ final class FBLayerView: NSView {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    private var pointerPresses = 0
 
     func updateSession(_ next: HvfEngineSession) {
         guard session !== next else { return }
@@ -230,15 +231,22 @@ final class FBLayerView: NSView {
         pointerMoves.reset()
 
         guard let session, hasGuestSize else {
-            return
+            return notePress(session == nil ? "no-session" : "no-guest-size")
         }
 
-        session.sendPointerPress(
+        notePress(session.sendPointerPress(
             location: point(event),
             viewSize: bounds.size,
             imageSize: guestSize
-        )
+        ))
         if let release = pointerRelease(at: point(event)) { pointerCapture.arm(window: window, release: release) }
+    }
+
+    /// Accessibility help counts the presses the view received and where the last one went,
+    /// so an automated click that never reaches the guest says why (T17 r54/r55).
+    private func notePress(_ outcome: String) {
+        pointerPresses += 1
+        setAccessibilityHelp("presses=\(pointerPresses) last=\(outcome)")
     }
 
     override func mouseUp(with event: NSEvent) {

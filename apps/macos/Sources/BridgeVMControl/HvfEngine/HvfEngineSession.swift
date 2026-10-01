@@ -216,7 +216,7 @@ final class HvfEngineSession: ObservableObject {
         sendPointerAction("click", location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
-    func sendPointerPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
+    @discardableResult func sendPointerPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> String {
         sendPointerAction("press", location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
@@ -242,11 +242,13 @@ final class HvfEngineSession: ObservableObject {
         appendLiveInput("POINTER scroll:\(delta)@\(point.x)x\(point.y)")
     }
 
-    private func sendPointerAction(_ action: String, location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        guard let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return }
+    /// Returns where the event went (queued, legacy, refused or unmapped) for the display's diagnostic.
+    @discardableResult private func sendPointerAction(_ action: String, location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> String {
+        guard let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return "unmapped" }
         let verb = action == "release" ? "releaseall" : action.replacingOccurrences(of: "-", with: "")
-        if inputDriver.route(.pointer("\(verb):\(point.x)x\(point.y)"), binding: inputBinding) != .legacy { return }
-        appendLiveInput("POINTER \(action):\(point.x)x\(point.y)")
+        let admission = inputDriver.route(.pointer("\(verb):\(point.x)x\(point.y)"), binding: inputBinding)
+        if admission != .legacy { return "\(admission)" }
+        appendLiveInput("POINTER \(action):\(point.x)x\(point.y)"); return "legacy"
     }
 
     private func mappedPointer(_ location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> (x: UInt16, y: UInt16)? {
