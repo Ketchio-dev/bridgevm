@@ -88,7 +88,6 @@ fn ordinary_used_ring_still_publishes_element_and_index() {
     assert_eq!(mem.writes, 3);
     assert_eq!(mem.reads.get(), 1);
 }
-
 #[test]
 fn queue_size_clamps_before_narrowing() {
     let max = 256;
@@ -102,3 +101,6 @@ fn queue_size_clamps_before_narrowing() {
         assert_eq!(super::clamp_u16(value, max), expected);
     }
 }
+
+#[path = "virtio_queue_publication_tests.rs"]
+mod publication_tests;
