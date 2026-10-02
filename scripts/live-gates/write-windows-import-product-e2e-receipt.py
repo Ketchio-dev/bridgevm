@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse, hashlib, importlib.util, json, os, platform, stat, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
+from product_e2e_identity import fixed_fields_match, is_sha256, sealed_request, unique
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("import_receipt_verifier", ROOT / "scripts/verify-windows-import-product-e2e-receipt.py")
@@ -24,13 +25,6 @@ REQUEST_PATHS = ("app_bundle_path", "app_executable_path", "runner_path", "sourc
 REQUEST_KEYS = frozenset({"schema_version", "job_id", "commit", "campaign_mode", "lane", "nonce",
     "vm_name", "vm_slug", "three_d_injection", *REQUEST_PATHS})
 STAMP_KEYS = frozenset({"schema_version", "job_id", "commit", "lane", "nonce", "request_sha256", "result_sha256"})
-
-def unique(pairs):
-    value = {}
-    for key, item in pairs:
-        if key in value: raise ValueError(f"duplicate field: {key}")
-        value[key] = item
-    return value
 
 def load(path: Path):
     if not path.is_file() or path.is_symlink() or not 0 < path.stat().st_size <= 1024 * 1024:
@@ -67,7 +61,7 @@ def lane(path: Path, job: str, commit: str, mode: str, ordinal: int, stamp: Path
     value = load(path)
     fixed = {"schema_version": LANE_SCHEMA, "job_id": job, "commit": commit, "campaign_mode": mode,
              "lane": ordinal, "three_d_injection": False}
-    if not isinstance(value, dict) or frozenset(value) != LANE_KEYS or any(value.get(k) != v for k, v in fixed.items()):
+    if not isinstance(value, dict) or frozenset(value) != LANE_KEYS or not fixed_fields_match(value, fixed):
         raise ValueError(f"lane {ordinal} identity differs")
     if not isinstance(value["nonce"], str) or not VERIFIER.SHA256.fullmatch(value["nonce"]):
         raise ValueError(f"lane {ordinal} nonce is invalid")
@@ -89,23 +83,26 @@ def lane(path: Path, job: str, commit: str, mode: str, ordinal: int, stamp: Path
     if stamp is not None:
         seal = load(stamp); expected = {"schema_version": "bridgevm.windows-hvf-import-product-e2e-host-stamp.v1",
             "job_id": job, "commit": commit, "lane": ordinal, "nonce": value["nonce"], "result_sha256": digest(path)}
-        if not isinstance(seal, dict) or frozenset(seal) != STAMP_KEYS or any(seal.get(k) != v for k, v in expected.items()) or not VERIFIER.SHA256.fullmatch(str(seal.get("request_sha256", ""))):
+        if not isinstance(seal, dict) or frozenset(seal) != STAMP_KEYS or not fixed_fields_match(seal, expected) or not is_sha256(seal.get("request_sha256")):
             raise ValueError(f"lane {ordinal} stamp is invalid")
     return value
 
-def authenticate(request_path: Path, result_path: Path, stamp: Path, job: str, commit: str, mode: str, ordinal: int):
+def authenticate(request_path: Path, result_path: Path, stamp: Path, job: str, commit: str, mode: str, ordinal: int, expected_request_sha256: str):
     result = lane(result_path, job, commit, mode, ordinal)
     if result["failure_code"] != "none": raise ValueError(f"lane {ordinal} is incomplete")
-    request = load(request_path); prefix = result["nonce"][:12]
+    request = sealed_request(request_path, expected_request_sha256); prefix = result["nonce"][:12]
     fixed = {"schema_version": "bridgevm.windows-hvf-import-product-e2e-request.v1", "job_id": job,
         "commit": commit, "campaign_mode": mode, "lane": ordinal, "nonce": result["nonce"],
         "three_d_injection": False, "vm_name": f"BridgeVM A9 Import Lane {ordinal} {prefix}",
         "vm_slug": f"bridgevm-a9-import-lane-{ordinal}-{prefix}"}
-    if not isinstance(request, dict) or frozenset(request) != REQUEST_KEYS or any(request.get(k) != v for k, v in fixed.items()):
+    if not isinstance(request, dict) or frozenset(request) != REQUEST_KEYS or not fixed_fields_match(request, fixed):
         raise ValueError(f"lane {ordinal} request is malformed")
+    if any(type(request[field]) is not str or not request[field].startswith("/") for field in REQUEST_PATHS):
+        raise ValueError(f"lane {ordinal} request paths are invalid")
     root = Path(request["lane_root"]); bundle = root / "library" / fixed["vm_slug"] / "bundle"
     expected = {"source_disk_path": root/"inputs/windows.raw", "source_vars_path": root/"inputs/vars.fd",
-        "source_vtpm_path": root/"inputs/vtpm", "library_root_path": root/"library", "share_path": root/"share",
+        "source_vtpm_path": root/"inputs/vtpm", "source_vtpm_package_path": root/"inputs/vtpm-recovery.json",
+        "source_vtpm_code_path": root/"inputs/vtpm-recovery-code.txt", "library_root_path": root/"library", "share_path": root/"share",
         "disk_path": bundle/"disks/hvf-target.raw", "vars_path": bundle/"metadata/hvf-vars.fd",
         "vtpm_state_path": bundle/"metadata/vtpm", "snapshot_path": bundle/"metadata/snapshots/latest.snapshot",
         "guest_evidence_path": bundle/"metadata/product-e2e-guest-evidence.json"}
@@ -119,7 +116,7 @@ def authenticate(request_path: Path, result_path: Path, stamp: Path, job: str, c
     if result["source_disk_sha256"] != result["imported_initial_disk_sha256"] or result["source_vars_sha256"] != result["imported_initial_vars_sha256"] or result["source_vtpm_tree_sha256"] != result["imported_initial_vtpm_tree_sha256"]:
         raise ValueError(f"lane {ordinal} imported media differs from source")
     seal = {"schema_version": "bridgevm.windows-hvf-import-product-e2e-host-stamp.v1", "job_id": job,
-        "commit": commit, "lane": ordinal, "nonce": result["nonce"], "request_sha256": digest(request_path),
+        "commit": commit, "lane": ordinal, "nonce": result["nonce"], "request_sha256": expected_request_sha256,
         "result_sha256": digest(result_path)}
     with stamp.open("x", encoding="utf-8") as output: json.dump(seal, output, indent=2, sort_keys=True); output.write("\n")
 
@@ -169,10 +166,11 @@ def main():
     if sys.argv[1:2] == ["--check-lane"]:
         parser = argparse.ArgumentParser(); parser.add_argument("--check-lane", type=Path, required=True)
         parser.add_argument("--request", type=Path, required=True); parser.add_argument("--stamp", type=Path, required=True)
+        parser.add_argument("--expected-request-sha256", required=True)
         parser.add_argument("--job-id", required=True); parser.add_argument("--commit", required=True)
         parser.add_argument("--mode", choices=("pilot", "release"), required=True); parser.add_argument("--ordinal", type=int, required=True)
         args = parser.parse_args()
-        try: authenticate(args.request, args.check_lane, args.stamp, args.job_id, args.commit, args.mode, args.ordinal)
+        try: authenticate(args.request, args.check_lane, args.stamp, args.job_id, args.commit, args.mode, args.ordinal, args.expected_request_sha256)
         except (OSError, ValueError, json.JSONDecodeError) as error: print(f"invalid T19 lane: {error}", file=sys.stderr); return 1
         return 0
     parser = argparse.ArgumentParser(description=__doc__)

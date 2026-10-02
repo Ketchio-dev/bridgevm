@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, hashlib, json, pathlib, shutil, stat
+import argparse, hashlib, json, pathlib, shutil, stat, sys
 
 parser=argparse.ArgumentParser(); parser.add_argument("--windows-import-product-e2e",action="store_true")
 parser.add_argument("--request",required=True); parser.add_argument("--result",required=True); args=parser.parse_args()
@@ -30,5 +30,5 @@ stages=("artifact_preflight","source_authenticated","ui_imported","imported_medi
 source_disk=file_hash(request["source_disk_path"]); source_vars=file_hash(request["source_vars_path"]); source_vtpm=tree_hash(request["source_vtpm_path"])
 result={"schema_version":"bridgevm.windows-hvf-import-product-e2e-lane.v1","job_id":request["job_id"],"commit":request["commit"],"campaign_mode":request["campaign_mode"],"lane":request["lane"],"nonce":request["nonce"],"three_d_injection":False,"ui_frontend_automated":True,"failure_code":"none","failure_detail":"","cleanup_verified":True}
 result.update({stage:True for stage in stages}); result.update({"source_disk_sha256":source_disk,"source_vars_sha256":source_vars,"source_vtpm_tree_sha256":source_vtpm,"imported_initial_disk_sha256":source_disk,"imported_initial_vars_sha256":source_vars,"imported_initial_vtpm_tree_sha256":source_vtpm,"final_disk_sha256":file_hash(request["disk_path"]),"final_vars_sha256":file_hash(request["vars_path"]),"final_vtpm_tree_sha256":tree_hash(request["vtpm_state_path"]),"guest_evidence_sha256":file_hash(guest)})
-if "bad-hash" in request["job_id"]: result["final_disk_sha256"]="0"*64
+sys.dont_write_bytecode=True; from fake_import_mutations import mutate; mutate(request,result,args.request)
 with open(args.result,"x") as output: json.dump(result,output,sort_keys=True); output.write("\n")

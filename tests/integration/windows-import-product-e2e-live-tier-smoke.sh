@@ -8,7 +8,7 @@ mkdir -p "$APP/Contents/MacOS" "$HELPER_APP/Contents/MacOS" "$RES/target/release
 printf '#!/bin/sh\nexit 0\n' > "$APP/Contents/MacOS/BridgeVMControl"; printf '#!/bin/sh\nexit 0\n' > "$RES/target/release/hvf-runner"
 printf '#!/bin/sh\nexec /usr/bin/python3 "$(dirname "$0")/../../../../Resources/fake-import-helper.py" "$@"\n' > "$HELPER"
 chmod 755 "$APP/Contents/MacOS/BridgeVMControl" "$RES/target/release/hvf-runner" "$HELPER"
-cp "$ROOT/tests/fixtures/fake-windows-import-product-e2e-helper.py" "$RES/fake-import-helper.py"
+cp "$ROOT/tests/fixtures/fake-windows-import-product-e2e-helper.py" "$RES/fake-import-helper.py"; cp "$ROOT/tests/fixtures/fake_import_mutations.py" "$RES/"
 cp "$ROOT/apps/macos/BridgeVMProductE2E-Info.plist" "$HELPER_APP/Contents/Info.plist"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -33,7 +33,7 @@ python3 - "$OUT/receipt.json" <<'PY'
 import json,sys
 r=json.load(open(sys.argv[1])); assert r["pass"] is True and r["run_count"]==1 and r["claim_eligible"] is False and r["three_d_injection"] is False
 PY
-BAD="$TMP/bad-out"
-if "$TIER" --out "$BAD" --input-manifest "$PILOT" --job-id bad-hash-fixture >/dev/null 2>&1; then echo "bad lane passed" >&2; exit 1; fi
-grep -q '"failure_code": "integration-failed"' "$BAD/receipt.json"
+for adversary in bad-hash request-tamper request-append; do BAD="$TMP/$adversary-out"
+  if "$TIER" --out "$BAD" --input-manifest "$PILOT" --job-id "$adversary-fixture" >/dev/null 2>&1; then echo "bad lane passed" >&2; exit 1; fi
+  python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["failure_code"]=="integration-failed" and r["pass"] is False and r["worker_cleanup_verified"] is True and (r["run_count"],r["passes"],r["failures"])==(1,0,1)' "$BAD/receipt.json"; test ! -e "$BAD/private/lane-1-authenticated.json"; done
 echo "PASS: installed-disk import live tier contracts"

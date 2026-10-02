@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse, hashlib, importlib.util, json, platform, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
+from product_e2e_identity import fixed_fields_match, is_sha256, unique as unique_object
 import windows_product_e2e_artifacts as ARTIFACTS
 import windows_product_e2e_failure as FAILURE
 
@@ -21,14 +22,6 @@ LANE_KEYS = frozenset({"schema_version", "job_id", "commit", "campaign_mode", "l
 REQUEST_PATHS = ("app_bundle_path", "app_executable_path", "runner_path", "firmware_path", "secure_boot_policy_path", "iso_path", "bundled_vars_seed_path", "guest_payload_path", "guest_payload_manifest_path", "lane_root", "library_root_path", "share_path", "disk_path", "vars_path", "vtpm_state_path", "snapshot_path", "secure_boot_receipt_path", "guest_evidence_path")
 REQUEST_KEYS = frozenset({"schema_version", "job_id", "commit", "campaign_mode", "lane", "nonce", "three_d_injection", "vm_name", "vm_slug", *REQUEST_PATHS})
 STAMP_KEYS = frozenset({"schema_version", "job_id", "commit", "lane", "nonce", "request_sha256", "result_sha256"})
-
-def unique_object(pairs: list[tuple[str, object]]) -> dict:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"duplicate field: {key}")
-        result[key] = value
-    return result
 
 def load_json(path: Path) -> object:
     if not path.is_file() or path.is_symlink() or path.stat().st_size == 0 or path.stat().st_size > 1024 * 1024:
@@ -64,7 +57,7 @@ def lane(path: Path, *, job_id: str, commit: str, mode: str, ordinal: int, stamp
     if not isinstance(value, dict) or frozenset(value) != LANE_KEYS:
         raise ValueError(f"lane {ordinal} has missing or unknown fields")
     fixed = {"schema_version": LANE_SCHEMA, "job_id": job_id, "commit": commit, "campaign_mode": mode, "lane": ordinal, "three_d_injection": False}
-    if any(value.get(key) != expected for key, expected in fixed.items()):
+    if not fixed_fields_match(value, fixed):
         raise ValueError(f"lane {ordinal} identity or 3D policy differs")
     if not isinstance(value["nonce"], str) or not VERIFIER.SHA256.fullmatch(value["nonce"]):
         raise ValueError(f"lane {ordinal} nonce is invalid")
@@ -88,7 +81,7 @@ def lane(path: Path, *, job_id: str, commit: str, mode: str, ordinal: int, stamp
     if stamp is not None:
         seal = load_json(stamp)
         fixed_stamp = {"schema_version": "bridgevm.windows-hvf-3d-off-product-e2e-host-stamp.v1", "job_id": job_id, "commit": commit, "lane": ordinal, "nonce": value["nonce"], "result_sha256": digest(path)}
-        if not isinstance(seal, dict) or frozenset(seal) != STAMP_KEYS or any(seal.get(key) != expected for key, expected in fixed_stamp.items()) or not VERIFIER.SHA256.fullmatch(str(seal.get("request_sha256", ""))):
+        if not isinstance(seal, dict) or frozenset(seal) != STAMP_KEYS or not fixed_fields_match(seal, fixed_stamp) or not is_sha256(seal.get("request_sha256")):
             raise ValueError(f"lane {ordinal} authentication stamp is invalid")
     return value
 
@@ -99,7 +92,7 @@ def authenticate(request_path: Path, result_path: Path, stamp_path: Path, *, job
     vm_name = f"BridgeVM T17 Lane {ordinal} {nonce_prefix}"
     vm_slug = f"bridgevm-t17-lane-{ordinal}-{nonce_prefix}"
     fixed = {"schema_version": "bridgevm.windows-hvf-3d-off-product-e2e-request.v2", "job_id": job_id, "commit": commit, "campaign_mode": mode, "lane": ordinal, "nonce": result["nonce"], "three_d_injection": False, "vm_name": vm_name, "vm_slug": vm_slug}
-    if not isinstance(request, dict) or frozenset(request) != REQUEST_KEYS or any(request.get(key) != expected for key, expected in fixed.items()):
+    if not isinstance(request, dict) or frozenset(request) != REQUEST_KEYS or not fixed_fields_match(request, fixed):
         raise ValueError(f"lane {ordinal} request is malformed or unbound")
     for field in REQUEST_PATHS:
         if not isinstance(request[field], str) or not request[field].startswith("/"):
