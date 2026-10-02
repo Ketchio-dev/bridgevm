@@ -13,12 +13,11 @@ enum T17ChooserOpenAction {
             guard let isEnabled = try enabled() else {
                 throw T17FileChooser.failure("chooser control has no AXEnabled value: \(identifier)")
             }
-            if !isEnabled {
-                if now() >= deadline {
-                    throw T17FileChooser.failure("chooser control remained disabled: \(identifier); timeout_s=\(timeout)")
-                }
-                pause(); continue
+            if now() >= deadline {
+                let state = isEnabled ? "readiness timed out" : "remained disabled"
+                throw T17FileChooser.failure("chooser control \(state): \(identifier); timeout_s=\(timeout)")
             }
+            if !isEnabled { pause(); continue }
             let result = press()
             guard result == .success || result == .cannotComplete else {
                 throw T17FileChooser.failure("chooser control AXPress failed: \(identifier); ax_error=\(result.rawValue)")

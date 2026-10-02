@@ -3215,7 +3215,7 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17InputChallengeTests.swift	137	0
 docs/history/windows-hvf/a9-runtime-share-chooser-20260921.md	63	0
 docs/history/windows-hvf/a9-transient-chooser-ax-read-20260921.md	57	0
 docs/history/windows-hvf/a9-runtime-share-press-recovery-20260921.md	76	0
-apps/macos/Sources/BridgeVMProductE2E/T17ChooserOpenAction.swift	31	0
+apps/macos/Sources/BridgeVMProductE2E/T17ChooserOpenAction.swift	30	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserOpenActionTests.swift	85	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserWait.swift	30	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserWaitTests.swift	47	0
@@ -3480,3 +3480,7 @@ tests/fixtures/fake-snapshot-pair-cli.py	9	0
 apps/macos/Sources/BridgeVMProductE2E/T17SelectedEvidence.swift	12	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17SelectedEvidenceTests.swift	15	0
 docs/history/windows-hvf/a9-r57-r81-studio-to-first-pilot-pass-20261001.md	82	0
+apps/macos/Sources/BridgeVMProductE2E/T17FileChooserDeadline.swift	16	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserOpenActionDeadlineTests.swift	26	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserActionDeadlineTests.swift	60	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17PressActionDeadlineTests.swift	59	0
