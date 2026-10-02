@@ -12,7 +12,7 @@ final class HvfEngineSession: ObservableObject {
     @Published var config: HvfEngineConfig { didSet { runtimeConfigurationChanged() } }
     @Published var connectionState: HvfConnectionState = .stopped
     @Published var lastHeartbeatAge: TimeInterval?
-    @Published var events: [BvAgentEvent] = []; private(set) var eventBase = 0
+    @Published var events: [BvAgentEvent] = []
     var repoRoot: URL
     var workAdmission: LibraryWorkAdmission?
     var reservedWorkAdmission: (@MainActor (UUID, Bool) -> String?)?
@@ -434,13 +434,13 @@ final class HvfEngineSession: ObservableObject {
         stopCommandSent = false
         stopDeadline = nil
         liveInputWriteFailureReported = false
-        if clearEvents { eventBase += events.count; events = [] }
+        if clearEvents { events = [] }
     }
 
     func append(_ event: BvAgentEvent) {
         events.append(event)
         if events.count > 500 {
-            eventBase += events.count - 500; events.removeFirst(events.count - 500)
+            events.removeFirst(events.count - 500)
         }
     }
 

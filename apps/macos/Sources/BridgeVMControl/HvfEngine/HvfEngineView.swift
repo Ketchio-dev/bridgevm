@@ -254,14 +254,13 @@ struct HvfEngineView: View {
     private var eventFeedCard: some View {
         GroupBox {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(session.eventFeed) { row in
-                        Text(row.event.displayText)
-                            .font(.system(size: 11, design: .monospaced))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                    }
-                }
+                // One selectable text, not a responder per event: with an AX client attached, SwiftUI's
+                // focus update walked every row's responder for each node (Studio T17 r76: 37 s at 100% CPU).
+                Text(session.events.map(\.displayText).joined(separator: "\n"))
+                    .font(.system(size: 11, design: .monospaced))
+                    .lineSpacing(4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
                 .padding(8)
             }
             .frame(minHeight: 220)
