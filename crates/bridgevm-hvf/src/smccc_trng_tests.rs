@@ -92,7 +92,7 @@ fn features_reports_only_implemented_functions() {
 }
 
 #[test]
-fn get_uuid_returns_the_specified_service_uuid() {
+fn get_uuid_returns_the_selected_backend_uuid() {
     let ret = call(func::GET_UUID, 0);
     assert_eq!([ret.x0, ret.x1, ret.x2, ret.x3], UUID_WORDS);
 }
@@ -224,3 +224,5 @@ fn output_is_not_a_function_of_a_call_counter() {
     let b = handle_call(func::RND64, 192, &mut second).expect("known function");
     assert_ne!((a.x1, a.x2, a.x3), (b.x1, b.x2, b.x3));
 }
+#[path = "smccc_trng_width_tests.rs"]
+mod width_tests;
