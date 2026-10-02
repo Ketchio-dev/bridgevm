@@ -6,9 +6,9 @@ use anyhow::Result;
 use bridgevm_agent_protocol::AgentEnvelope;
 use bridgevm_agentd::accept_guest_hello;
 use bridgevm_agentd::decode_envelope_line;
-use bridgevm_agentd::read_envelope_line;
 use bridgevm_agentd::write_envelope_line;
 use bridgevm_agentd::AgentSessionIoError;
+use bridgevm_agentd::EnvelopeLineReader;
 use bridgevm_api::guest_tools_agent_policy;
 use bridgevm_api::BridgeVmResponse;
 use bridgevm_api::GuestToolsCommandRecord;
@@ -160,7 +160,7 @@ pub(crate) fn reconcile_guest_tools_session(
             // Bytes the agent sent right after the hello (its initial Heartbeat +
             // status burst) are still in the kernel socket buffer; the drain
             // reader picks them up.
-            backend.guest_tools_stream = Some(BufReader::new(stream));
+            backend.guest_tools_stream = Some(EnvelopeLineReader::new(BufReader::new(stream)));
         }
         // The first frame was not a valid GuestHello -> reset and reconnect.
         Err(error) => {
@@ -184,7 +184,7 @@ pub(crate) fn drain_guest_tools_messages(
             let Some(reader) = backend.guest_tools_stream.as_mut() else {
                 return Ok(());
             };
-            match read_envelope_line(reader) {
+            match reader.read_envelope() {
                 Ok(Some(envelope)) => envelope,
                 Ok(None) => {
                     backend.guest_tools = None;
@@ -243,7 +243,7 @@ impl DaemonState {
             .guest_tools_commands
             .begin_host_command(session, &envelope)
             .map_err(|error| anyhow::anyhow!("guest tools command rejected: {error:?}"))?;
-        write_envelope_line(stream.get_mut(), &envelope)
+        write_envelope_line(stream.get_mut().get_mut(), &envelope)
             .map_err(|error| anyhow::anyhow!("failed to write guest tools command: {error:?}"))?;
 
         Ok(GuestToolsCommandRecord {
@@ -273,7 +273,7 @@ impl DaemonState {
                 anyhow::bail!("guest tools stream is not connected for '{name}'");
             };
 
-            let envelope = match read_envelope_line(reader) {
+            let envelope = match reader.read_envelope() {
                 Ok(Some(envelope)) => envelope,
                 Ok(None) => {
                     backend.guest_tools = None;

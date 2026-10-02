@@ -2,6 +2,7 @@
 
 mod fast_restore_supervision;
 mod fast_resume_opt_in;
+mod guest_tools_framing;
 mod helpers;
 mod owned_cleanup;
 mod part_1;
