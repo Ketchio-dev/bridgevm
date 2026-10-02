@@ -3506,3 +3506,5 @@ crates/bridgevm-hvf/src/snapshot_create_manifest_admission.rs	40	0
 crates/bridgevm-hvf/src/snapshot_create_manifest_tests.rs	94	0
 crates/bridgevm-hvf/src/managed_pair_staging_ownership.rs	41	0
 crates/bridgevm-hvf/src/managed_pair_staging_ownership_tests.rs	101	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEventFeedLines.swift	28	0
+apps/macos/Tests/BridgeVMControlTests/HvfEventFeedMultilineTests.swift	53	0
