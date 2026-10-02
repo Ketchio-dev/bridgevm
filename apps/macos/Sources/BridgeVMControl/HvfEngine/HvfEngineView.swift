@@ -254,16 +254,16 @@ struct HvfEngineView: View {
     private var eventFeedCard: some View {
         GroupBox {
             ScrollView {
-                // One selectable text, not a responder per event: with an AX client attached, SwiftUI's
-                // focus update walked every row's responder for each node (Studio T17 r76: 37 s at 100% CPU).
-                Text(session.events.map(\.displayText).joined(separator: "\n"))
+                // One bounded selectable text in a fixed-height pane: per-event responders (r76) and an
+                // ideally-sized pane measuring the whole feed (r78) each stalled the main thread for seconds.
+                Text(HvfEventFeedText.render(session.events))
                     .font(.system(size: 11, design: .monospaced))
                     .lineSpacing(4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
                 .padding(8)
             }
-            .frame(minHeight: 220)
+            .frame(height: 220)
             .background(Color(white: 0.1))
             .foregroundColor(Color(white: 0.9))
             .cornerRadius(6)
