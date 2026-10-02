@@ -3479,3 +3479,4 @@ scripts/live-gates/windows_product_e2e_selected.py	28	0
 tests/fixtures/fake-snapshot-pair-cli.py	9	0
 apps/macos/Sources/BridgeVMProductE2E/T17SelectedEvidence.swift	12	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17SelectedEvidenceTests.swift	15	0
+docs/history/windows-hvf/a9-r57-r81-studio-to-first-pilot-pass-20261001.md	82	0
