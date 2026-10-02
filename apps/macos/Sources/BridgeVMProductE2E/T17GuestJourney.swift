@@ -153,9 +153,9 @@ struct T17GuestJourney {
             throw T17Blocker(code: "snapshot-unavailable", detail: "snapshot manifest does not authenticate its pair")
         }
         if restored {
-            guard try T17Evidence.sha256(URL(fileURLWithPath: request.diskPath)) == T17Evidence.sha256(disk),
-                  try T17Evidence.sha256(URL(fileURLWithPath: request.varsPath)) == T17Evidence.sha256(vars) else {
-                throw T17Blocker(code: "snapshot-unavailable", detail: "restored media differs from the snapshot pair")
+            let selected = try T17SelectedMedia.digest(disk: request.diskPath, vars: request.varsPath)
+            if let difference = T17SelectedMedia.difference(selected, manifest: manifest) {
+                throw T17Blocker(code: "snapshot-unavailable", detail: difference)
             }
         }
     }

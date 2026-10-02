@@ -207,6 +207,8 @@ pub fn restore_snapshot(
 
 #[path = "managed_pair.rs"]
 pub mod managed;
+#[path = "snapshot_pair_selected.rs"]
+pub mod selected;
 #[cfg(test)]
 #[path = "snapshot_pair_tests.rs"]
 mod snapshot_pair_tests;

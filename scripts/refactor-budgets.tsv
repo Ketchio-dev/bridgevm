@@ -3471,3 +3471,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfInputRouteDiagnostic.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfInputRouteDiagnosticTests.swift	20	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEventFeedText.swift	15	0
 apps/macos/Tests/BridgeVMControlTests/HvfEventFeedTextTests.swift	18	0
+crates/bridgevm-hvf/src/snapshot_pair_selected.rs	50	0
+crates/bridgevm-hvf/src/snapshot_pair_selected_tests.rs	39	0
+apps/macos/Sources/BridgeVMProductE2E/T17SelectedMedia.swift	60	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17SelectedMediaTests.swift	30	0
