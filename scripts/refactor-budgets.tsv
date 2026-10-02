@@ -3500,3 +3500,4 @@ crates/bridgevm-hvf/src/snapshot_manifest_read.rs	33	0
 crates/bridgevm-hvf/src/snapshot_manifest_read_tests.rs	136	1
 crates/bridgevm-hvf/src/snapshot_manifest_admission_tests.rs	64	0
 crates/bridgevm-hvf/src/snapshot_manifest_json_adversarial_tests.rs	152	0
+.github/workflows/snapshot-evidence-contracts.yml	21	0
