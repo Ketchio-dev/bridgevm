@@ -9,19 +9,6 @@ use std::path::Path;
 use std::process::Output;
 
 impl VmStore {
-    pub fn snapshot_disk_metadata(
-        &self,
-        vm_name: &str,
-        snapshot_name: &str,
-    ) -> Result<Option<SnapshotDiskMetadata>, StorageError> {
-        let (bundle, _) = self.get_vm(vm_name)?;
-        let path = snapshot_disk_metadata_path(&bundle, snapshot_name);
-        if !path.exists() {
-            return Ok(None);
-        }
-        Ok(Some(read_json_required(&path)?))
-    }
-
     pub fn create_snapshot_disk(
         &self,
         vm_name: &str,

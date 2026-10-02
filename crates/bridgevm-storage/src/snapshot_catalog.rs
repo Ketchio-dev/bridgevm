@@ -11,19 +11,13 @@ impl VmStore {
         snapshot_name: &str,
         kind: SnapshotKind,
     ) -> Result<SnapshotMetadata, StorageError> {
+        let normalized_name = name_admission::validate(snapshot_name)?;
         let (bundle, manifest) = self.get_vm(vm_name)?;
         let _lock = MetadataLock::acquire(&bundle, "snapshots.lock")?;
         let state = self.state_at(&bundle)?.state;
         let mut snapshots = self.snapshots(vm_name)?;
-        if snapshots
-            .iter()
-            .any(|snapshot| snapshot.name == snapshot_name)
-        {
-            return Err(StorageError::SnapshotAlreadyExists {
-                vm: vm_name.to_string(),
-                snapshot: snapshot_name.to_string(),
-            });
-        }
+        name_admission::admit(vm_name, snapshot_name, &normalized_name, &snapshots)?;
+        name_admission::admit_metadata_path(&bundle, snapshot_name, kind)?;
         let snapshot = SnapshotMetadata {
             name: snapshot_name.to_string(),
             kind,
@@ -144,3 +138,6 @@ impl VmStore {
         Ok(())
     }
 }
+
+#[path = "snapshot_name_admission.rs"]
+pub(crate) mod name_admission;

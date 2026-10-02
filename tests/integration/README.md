@@ -1167,7 +1167,7 @@ Snapshot list/restore integration coverage should exercise:
 - Creating the explicit qcow2 snapshot overlay through the
   `qemu-img create -f qcow2 -F <format> -b <backing> <overlay>` execution
   boundary without launching a VM backend
-- Recording `metadata/snapshot-disks/<snapshot>-create.json` and switching
+- Recording `metadata/snapshot-disks/creates/<snapshot>.json` and switching
   `metadata/active-disk.json` to the snapshot overlay
 - Keeping metadata-only snapshot create/list paths from executing `qemu-img`,
   launching QEMU, launching Apple VZ, writing disk-create execution metadata, or
