@@ -1364,7 +1364,7 @@ scripts/build-linux-tools.sh	27	0
 scripts/build-venus-host-deps.sh	124	0
 scripts/check-attribution-honesty.sh	100	0
 scripts/check-attribution-product-names.sh	12	0
-scripts/check-documentation-system.sh	168	0
+scripts/check-documentation-system.sh	166	0
 scripts/check-fuzz-smoke.sh	11	0
 scripts/check-hvf-windows-p3-gpu-readiness.sh	335	0
 scripts/check-hvf-windows-viogpu3d-package.sh	1464	0
@@ -3553,7 +3553,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfTailLineAccumulatorTests.swift	54	0
 crates/bridgevm-hvf/src/virtio_queue_address.rs	19	0
 crates/bridgevm-hvf/src/virtio_queue_overflow_tests.rs	104	0
 docs/history/windows-hvf/parallel-existing-code-audit-20261002.md	115	0
-docs/document-manifest.tsv	275	0
+docs/document-manifest.tsv	159	0
 docs/machine-contract/qemu-virt-deviations.json	80	0
 docs/machine-contract/qemu-virt.md	59	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTailFileCursor.swift	40	0
@@ -3575,3 +3575,6 @@ crates/bridgevm-storage/src/snapshot_named_metadata.rs	42	0
 crates/bridgevm-storage/src/snapshot_disk_records.rs	52	0
 crates/bridgevm-storage/src/tests_split/snapshot_names.rs	215	0
 crates/bridgevm-storage/src/tests_split/snapshot_receipts.rs	175	0
+docs/document-manifests/history.tsv	119	0
+scripts/document_manifest.py	81	0
+tests/integration/document-manifest-contract.py	109	0

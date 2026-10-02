@@ -4,10 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$ROOT/docs/document-manifest.tsv"
 
-[[ -f "$MANIFEST" ]] || {
-  echo "documentation manifest is missing: $MANIFEST" >&2
-  exit 1
-}
+python3 "$ROOT/tests/integration/document-manifest-contract.py"
+manifest_rows=$(python3 "$ROOT/scripts/document_manifest.py" "$MANIFEST")
 
 # Bash 3.2 treats an empty-array expansion as unbound under `set -u`; retain a
 # sentinel so the checker runs on the macOS system Bash without weakening nounset.
@@ -64,7 +62,7 @@ while IFS=$'\t' read -r path class topic superseded_by extra; do
     echo "superseding document does not exist: $path -> $superseded_by" >&2
     errors=$((errors + 1))
   fi
-done < "$MANIFEST"
+done <<< "$manifest_rows"
 
 # Tracked root documents are classified too. HANDOFF.md is a dated operator
 # record, so leaving it unclassified let its point-in-time numbers read as
