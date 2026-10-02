@@ -6,7 +6,7 @@ pub fn acquire(media: &mut VirtBootMediaConfig) -> io::Result<RuntimeLease> {
     let mut lease = RuntimeLease {
         _pair: None,
         _logical: MediaLease::acquire([])?,
-        slots: [None, None, None],
+        policies: Policies::capture(media),
         retained: BTreeSet::new(),
     };
     let disks: Vec<_> = [&media.nvme_disk, &media.nvme_target]
@@ -14,7 +14,7 @@ pub fn acquire(media: &mut VirtBootMediaConfig) -> io::Result<RuntimeLease> {
         .flatten()
         .collect();
     if disks.is_empty() {
-        return capture(lease, media);
+        return super::policy::capture(lease, media);
     }
     if disks.len() == 2 {
         lease._logical = MediaLease::acquire([
@@ -35,7 +35,7 @@ pub fn acquire(media: &mut VirtBootMediaConfig) -> io::Result<RuntimeLease> {
                 }
             }
         }
-        return capture(lease, media);
+        return super::policy::capture(lease, media);
     }
     let original_disk = fs::canonicalize(&disks[0].path)?;
     let original_vars = fs::canonicalize(&media.flash_vars.path)?;
@@ -49,24 +49,5 @@ pub fn acquire(media: &mut VirtBootMediaConfig) -> io::Result<RuntimeLease> {
     slot.path = disk;
     media.flash_vars.path = vars;
     lease._pair = Some(pair);
-    capture(lease, media)
-}
-
-fn capture(mut lease: RuntimeLease, media: &VirtBootMediaConfig) -> io::Result<RuntimeLease> {
-    lease.slots = [
-        Some(media.flash_vars.clone()),
-        media.nvme_disk.clone(),
-        media.nvme_target.clone(),
-    ];
-    if media.nvme_disk.is_some() || media.nvme_target.is_some() {
-        for slot in lease.slots.iter().flatten() {
-            lease.retained.insert(fs::canonicalize(&slot.path)?);
-        }
-    }
-    if let Some(pair) = &lease._pair {
-        lease
-            .retained
-            .extend([pair.disk.clone(), pair.vars.clone()]);
-    }
-    Ok(lease)
+    super::policy::capture(lease, media)
 }

@@ -20,9 +20,7 @@ impl RuntimeLease {
         bytes: &[u8],
         mut publish: impl FnMut(&Path, &Path) -> io::Result<()>,
     ) -> io::Result<Vec<MediaWrite>> {
-        let policy = self.slots[slot as usize].clone().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidInput, "runtime media slot absent")
-        })?;
+        let policy = self.policies.slot(slot)?;
         policy.persist_with(bytes, |path, bytes| {
             self.write_owned(path, bytes, &mut publish)
         })
