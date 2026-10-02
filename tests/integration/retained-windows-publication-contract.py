@@ -44,7 +44,7 @@ class RetainedWindowsPublicationContract(unittest.TestCase):
         self.assertEqual((self.destination / "own-file").read_bytes(), b"owned bytes")
         (self.destination / "own-file").chmod(0o400)
         self.destination.chmod(0o500)
-        self.assertTrue(self.owned.cleanup())
+        self.assertTrue(self.owned.cleanup(), self.owned.last_cleanup_error)
         self.assertFalse(self.destination.exists())
 
     def test_every_existing_destination_refuses_publication_and_is_preserved(self):

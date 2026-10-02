@@ -3516,3 +3516,4 @@ crates/bridgevm-hvf/src/snapshot_hash_stream.rs	21	0
 crates/bridgevm-hvf/src/snapshot_regular_file.rs	15	0
 crates/bridgevm-hvf/src/snapshot_verified_member.rs	29	0
 crates/bridgevm-hvf/src/snapshot_verified_member_tests.rs	151	1
+scripts/live-gates/retained_windows_identity.py	15	0

@@ -5,10 +5,10 @@ import ctypes
 import errno
 import os
 from pathlib import Path
-import stat
 import sys
 import uuid
 from retained_windows_cleanup import clear_directory
+from retained_windows_identity import directory_identity
 
 
 def rename_exclusive(source: Path, destination: Path) -> None:
@@ -33,19 +33,10 @@ def rename_exclusive(source: Path, destination: Path) -> None:
         raise OSError(code, os.strerror(code), str(destination))
 
 
-def directory_identity(path: Path) -> tuple[int, int] | None:
-    try:
-        metadata = path.lstat()
-    except FileNotFoundError:
-        return None
-    if not stat.S_ISDIR(metadata.st_mode):
-        return None
-    return metadata.st_dev, metadata.st_ino
-
-
 class OwnedRetention:
     def __init__(self, staging: Path):
         self.path = staging
+        self.last_cleanup_error = None
         self.identity = directory_identity(staging)
         if self.identity is None:
             raise ValueError("retention staging is not an owned directory")
@@ -60,29 +51,37 @@ class OwnedRetention:
 
     def cleanup(self) -> bool:
         descriptor = None
+        self.last_cleanup_error = None
         original = self.path
+        step = "admit owned directory"
         try:
             if directory_identity(original) != self.identity:
                 return False
             quarantine = original.with_name(f".{original.name}.cleanup-{uuid.uuid4().hex}")
+            step = "quarantine owned directory"
             rename_exclusive(original, quarantine)
             self.path = quarantine
             if directory_identity(quarantine) != self.identity:
                 # A name changed after admission. Restore it only when its old
                 # name is still absent; otherwise preserve both entries.
+                step = "restore replaced quarantine"
                 rename_exclusive(quarantine, original)
                 self.path = original
                 return False
+            step = "open owned directory"
             descriptor = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             metadata = os.fstat(descriptor)
             if (metadata.st_dev, metadata.st_ino) != self.identity:
                 return False
+            step = "clear owned directory"
             clear_directory(descriptor)
             if directory_identity(self.path) != self.identity:
                 return False
+            step = "remove owned directory"
             os.rmdir(self.path)
             return True
-        except OSError:
+        except OSError as error:
+            self.last_cleanup_error = f"{step}: {type(error).__name__}: {error}"
             return False
         finally:
             if descriptor is not None:
