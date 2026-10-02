@@ -113,3 +113,35 @@ The failed full log SHA-256 is
 The earlier progress statement that documentation had passed was wrong. The
 missing historical-evidence classification is corrected; complete verification
 of the corrected head must run again. This failed run is not a project PASS.
+
+The next clean exact `2a8c11a235aef259b69270059382a91832672e15` full local
+check ran from 20:02:48 to 20:10:37 UTC and also exited 1. Its only failed
+step was `structural budgets`: adding the required classification made
+`docs/document-manifest.tsv` 276 lines against its existing ceiling of 275.
+All other steps passed. Failed log SHA-256:
+`a65e74d144cdc72394aa4c824a3b4a44604ee16be2788918c136bc2f9bb8130a`.
+The ceiling stays unchanged. Manifest records must be extracted into a checked
+module with all classifications and refusal behavior retained before complete
+verification runs again. Neither failed full run is passing evidence.
+
+## Checked manifest extraction
+
+Historical classifications now live in an explicitly included TSV module.
+The original catalog's 275 four-column records are preserved exactly.
+The root drops to 159 lines; the new history module is 119 lines including
+its header. Additional headers are real extraction overhead, not an aggregate
+line-count reduction. Both modules are budgeted at actual size and no ceiling
+is raised.
+
+A loader validates all headers, columns, inclusion paths and global duplicate
+records before emitting the expanded catalog. The shell checks its result
+under `set -e`, retaining existing class/path/link/completeness validation.
+Missing, malformed, duplicate, nested and escaping includes fail explicitly.
+Eight contracts passed; an independent actual Bash-checker fixture also
+refused missing/bad-header/duplicate/nested modules without a PASS message.
+Document-reference checking and project-step count remain unchanged.
+
+The structural, Python, shell, test-reachability and document gates passed on
+the corrected source. Complete exact-source local and hosted verification must
+still be established; earlier complete failures are not replaced by these
+focused passes.
