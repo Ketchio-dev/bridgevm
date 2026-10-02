@@ -2373,7 +2373,7 @@ crates/bridgevm-hvf/src/managed_pair_ownership_tests.rs	112	0
 crates/bridgevm-hvf/src/managed_pair_staging.rs	19	0
 crates/bridgevm-media/src/media_lease_update.rs	73	0
 crates/bridgevm-media/src/media_lease_update_tests.rs	122	0
-crates/bridgevm-hvf/src/snapshot_create.rs	65	0
+crates/bridgevm-hvf/src/snapshot_create.rs	36	0
 crates/bridgevm-hvf/src/snapshot_create_concurrency_tests.rs	139	0
 crates/bridgevm-hvf/src/snapshot_create_destination.rs	27	0
 crates/bridgevm-hvf/src/snapshot_create_destination_lease.rs	22	0
@@ -3356,7 +3356,7 @@ crates/bridgevm-hvf/src/snapshot_create_staging_debris.rs	29	0
 crates/bridgevm-hvf/src/snapshot_create_admission_shape_tests.rs	99	0
 crates/bridgevm-hvf/src/snapshot_create_staging_debris_tests.rs	84	0
 crates/bridgevm-hvf/src/snapshot_copy.rs	49	0
-crates/bridgevm-hvf/src/snapshot_create_fill.rs	46	0
+crates/bridgevm-hvf/src/snapshot_create_fill.rs	19	0
 crates/bridgevm-hvf/src/snapshot_create_failure_tests.rs	89	0
 crates/bridgevm-hvf/src/managed_pair_restore_admission.rs	27	0
 crates/bridgevm-hvf/src/managed_pair_staging_fill.rs	18	0
@@ -3502,7 +3502,7 @@ tests/integration/t17-selected-retention-mutation-contract.py	99	0
 crates/bridgevm-hvf/src/snapshot_manifest_read.rs	27	0
 crates/bridgevm-hvf/src/snapshot_manifest_read_tests.rs	136	1
 docs/history/windows-hvf/snapshot-retention-evidence-and-input-deadlines-20261002.md	71	0
-crates/bridgevm-hvf/src/snapshot_create_manifest_admission.rs	40	0
+crates/bridgevm-hvf/src/snapshot_create_manifest_admission.rs	37	0
 crates/bridgevm-hvf/src/snapshot_create_manifest_tests.rs	94	0
 crates/bridgevm-hvf/src/managed_pair_staging_ownership.rs	41	0
 crates/bridgevm-hvf/src/managed_pair_staging_ownership_tests.rs	101	0
@@ -3525,3 +3525,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEventFeedLineBreak.swift	17	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEventFeedLinePrefix.swift	25	0
 apps/macos/Tests/BridgeVMControlTests/HvfEventFeedLineBreakTests.swift	33	0
 apps/macos/Tests/BridgeVMControlTests/HvfEventFeedUnicodeTests.swift	73	0
+crates/bridgevm-hvf/src/snapshot_create_contents.rs	36	0
+crates/bridgevm-hvf/src/snapshot_create_quota.rs	12	0
+crates/bridgevm-hvf/src/snapshot_create_quota_tests.rs	97	0
+crates/bridgevm-hvf/src/snapshot_create_stopped.rs	34	0

@@ -11,10 +11,7 @@ pub(super) fn admit(
 ) -> Result<(), SnapshotError> {
     let disk_bytes = fs::metadata(disk)?.len();
     let vars_bytes = fs::metadata(vars)?.len();
-    let bytes = disk_bytes + vars_bytes;
-    if bytes > quota {
-        return Err(SnapshotError::QuotaExceeded { bytes, quota });
-    }
+    super::quota::admit(disk_bytes, vars_bytes, quota)?;
     // Creation always writes two 64-character SHA-256 digests. Their contents
     // cannot change the encoded size, so no file copy or hash is needed here.
     encode(&SnapshotManifest {
