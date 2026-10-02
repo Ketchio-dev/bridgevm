@@ -3087,7 +3087,7 @@ scripts/live-gates/native-snapshot-restore-cleanup-fence.sh	36	0
 scripts/live-gates/a19-worker-cleanup-dispatch.sh	23	0
 .github/workflows/t20-receipt-seal.yml	17	0
 scripts/live-gates/run-native-snapshot-restore-tier.py	94	0
-scripts/live-gates/native_snapshot_export_evidence.py	114	0
+scripts/live-gates/native_snapshot_export_evidence.py	113	0
 scripts/native-snapshot-export-live.sh	13	0
 scripts/verify-native-snapshot-restore-boots.sh	184	0
 tests/integration/native-snapshot-restore-live-tier-contract.py	134	0
@@ -3484,3 +3484,5 @@ apps/macos/Sources/BridgeVMProductE2E/T17FileChooserDeadline.swift	16	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserOpenActionDeadlineTests.swift	26	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserActionDeadlineTests.swift	60	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17PressActionDeadlineTests.swift	59	0
+scripts/live-gates/native_snapshot_export_json.py	22	0
+tests/integration/native-snapshot-export-json-contract.py	113	0
