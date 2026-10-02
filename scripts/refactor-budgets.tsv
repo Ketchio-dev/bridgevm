@@ -3535,3 +3535,4 @@ apps/macos/Tests/BridgeVMProductE2ETests/A9ImportSelectedEvidenceTests.swift	24	
 tests/integration/product_e2e_selected_fixtures.py	12	0
 tests/integration/t19-selected-final-media-contract.py	89	0
 scripts/check-selected-windows-media-contracts.sh	6	0
+docs/history/windows-hvf/t19-selected-final-media-correction-20261002.md	54	0
