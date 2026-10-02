@@ -15,7 +15,4 @@ jobs:
         with:
           toolchain: 1.97.0
       - name: Selected generation retention and strict snapshot evidence
-        run: |
-          python3 tests/integration/t17-selected-retention-contract.py && python3 tests/integration/t17-selected-retention-mutation-contract.py
-          python3 tests/integration/native-snapshot-export-json-contract.py && python3 tests/integration/retained-windows-publication-contract.py && python3 tests/integration/retained-windows-cleanup-races-contract.py
-          python3 tests/integration/a19-lifecycle-campaign-progress-contract.py && python3 tests/integration/product-e2e-identity-contract.py
+        run: scripts/check-snapshot-evidence-contracts.sh
