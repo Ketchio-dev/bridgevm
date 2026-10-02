@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import re
 
-from a19_interrupt_cases import case_count, case_fields, validate_cases
+from a19_interrupt_cases import absent_cases, case_count, case_fields, validate_cases
 from a19_interrupted_restore_public import load_receipt, validate_public_fields
 from a19_interrupted_restore_seal import sealed_hashes
 
@@ -53,13 +53,13 @@ JOB_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 def initial(job_id: str, commit: str) -> dict:
     value = {key: "absent" for key in HASHES}
     value.update({
-        "schema_version": 1, "tier": TIER, "job_id": job_id, "commit": commit,
+        "schema_version": 2, "tier": TIER, "job_id": job_id, "commit": commit,
         "binary_source_commit": commit, "binary_profile": "release",
         "binary_features": "venus", "rust_toolchain": "1.97.0",
         "app_profile": "release", "started_at": datetime.now(timezone.utc).isoformat(),
         "finished_at": "absent", "host_model": "absent", "macos_version": "absent",
         "outcome": "failed-before-receipt", "interruption_stage": "absent",
-        **{key: False for key in FLAGS}, **{key: 0 for key in COUNTS},
+        **{key: False for key in FLAGS}, **{key: 0 for key in COUNTS}, **absent_cases(),
     })
     return value
 

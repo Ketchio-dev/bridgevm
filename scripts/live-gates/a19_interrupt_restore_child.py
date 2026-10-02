@@ -7,7 +7,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
 import signal
 import subprocess
 import sys
@@ -16,33 +15,9 @@ import time
 from a19_interrupt_stop_points import (STAGED_RESTORE, STOP_POINTS, StopPoint, helper_command,
                                        regular, selection, stable_root, staged_ready, staging)
 
+from a19_interrupt_observation import private_new, read_fd_observed
+
 LSOF = "/usr/sbin/lsof"
-FD = re.compile(r"f[0-9]+\Z")
-
-
-def private_new(path: Path, mode: str):
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    return os.fdopen(descriptor, mode)
-
-
-def read_fd_observed(data: str, pid: int, staged_disk: Path) -> bool:
-    owner = False
-    current_fd = ""
-    access = ""
-    for line in data.splitlines():
-        if line.startswith("p"):
-            owner = line == f"p{pid}"
-            current_fd = ""
-            access = ""
-        elif line.startswith("f"):
-            current_fd = line
-            access = ""
-        elif line.startswith("a"):
-            access = line
-        elif line.startswith("n") and owner and FD.fullmatch(current_fd) and access == "ar":
-            if line[1:] == str(staged_disk):
-                return True
-    return False
 
 
 def stop_at_verified_stage(child: subprocess.Popen, point: StopPoint, stage: Path,
@@ -65,6 +40,9 @@ def stop_at_verified_stage(child: subprocess.Popen, point: StopPoint, stage: Pat
                     while stopped == (0, 0) and time.monotonic() < until:
                         time.sleep(0.02)
                         stopped = os.waitpid(signal_pid, os.WUNTRACED | os.WNOHANG)
+                    if stopped[0] == signal_pid and (os.WIFEXITED(stopped[1]) or os.WIFSIGNALED(stopped[1])):
+                        child.returncode = os.waitstatus_to_exitcode(stopped[1])
+                        child._a19_reaped = True
                     if stopped[0] != signal_pid or not os.WIFSTOPPED(stopped[1]):
                         raise RuntimeError("snapshot helper stop was not observed")
                     confirmed = subprocess.run(
@@ -82,8 +60,12 @@ def stop_at_verified_stage(child: subprocess.Popen, point: StopPoint, stage: Pat
                             "staged_file_sync_order_verified": True,
                             "old_selection_before_kill": True,
                             "stop_fd_log_sha256": hashlib.sha256(confirmed.stdout.encode()).hexdigest()}
+                except ChildProcessError:
+                    child._a19_reaped = True
+                    raise RuntimeError("snapshot helper ownership was lost before stop") from None
                 finally:
-                    os.kill(signal_pid, signal.SIGKILL)
+                    if not getattr(child, "_a19_reaped", False):
+                        os.kill(signal_pid, signal.SIGKILL)
         time.sleep(0.05)
     raise TimeoutError("no authenticated staged read before deadline")
 
@@ -127,11 +109,19 @@ def run(helper: Path, snapshot: Path, disk: Path, vars: Path, output: Path,
                 output / "interrupt-helper-fd.private.log",
             )
         finally:
-            if child.poll() is None:
-                child.kill()
-            code = child.wait(timeout=5)
-    if stopped is None or code != -signal.SIGKILL or not still_selected():
+            if getattr(child, "_a19_reaped", False):
+                code = child.returncode
+            else:
+                if child.poll() is None:
+                    child.kill()
+                code = child.wait(timeout=5)
+    after = selection(point, root, snapshot)
+    if stopped is None or code != -signal.SIGKILL or after != before:
         raise RuntimeError("snapshot helper was not killed before publication")
+    with private_new(output / "interrupt-helper-context.private.json", "w") as context:
+        json.dump({"helper_pid": child.pid, "staged_disk_path": str(stage / "disk.raw"),
+                   "selection_before": before, "selection_after": after}, context)
+        context.write("\n")
     stopped["helper_killed_and_reaped"] = True
     return stopped
 
