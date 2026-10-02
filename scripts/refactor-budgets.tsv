@@ -3592,3 +3592,5 @@ tests/integration/a19-interrupted-restore-auxiliary-orchestration-contract.py	32
 tests/integration/a19-interrupted-restore-process-cleanup-contract.py	174	0
 tests/integration/a19-interrupted-restore-production-collection-contract.py	238	0
 tests/integration/a19_collection_fixtures.py	96	0
+docs/document-manifests/a19-interruption.tsv	3	0
+docs/history/windows-hvf/a19-three-interruption-cases-20261002.md	114	0
