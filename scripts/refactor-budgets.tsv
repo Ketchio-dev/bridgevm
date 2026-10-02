@@ -3486,3 +3486,4 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserActionDeadlineTests.swift
 apps/macos/Tests/BridgeVMProductE2ETests/T17PressActionDeadlineTests.swift	59	0
 scripts/live-gates/native_snapshot_export_json.py	22	0
 tests/integration/native-snapshot-export-json-contract.py	113	0
+tests/integration/a19-lifecycle-campaign-progress-contract.py	96	0
