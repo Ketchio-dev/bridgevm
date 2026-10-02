@@ -1,7 +1,7 @@
 use super::*;
 use crate::snapshot_pair::{create_snapshot, managed::LockedPair, snapshot_pair_tests::Scratch};
 use std::os::unix::fs::symlink;
-fn fixture(tag: &str) -> (Scratch, VirtBootMediaConfig) {
+pub(super) fn fixture(tag: &str) -> (Scratch, VirtBootMediaConfig) {
     let scratch = Scratch::new(tag);
     let mut media = VirtBootMediaConfig::qemu_defaults();
     media.flash_vars = WritableMedia::new(scratch.write("vars", b"vars"));
@@ -85,7 +85,6 @@ fn same_slot_snapshot_and_writeback_remain_supported() {
     );
     assert_eq!(fs::read(vars).unwrap(), b"new vars");
 }
-
 #[test]
 fn absent_outputs_through_parent_alias_are_refused() {
     let (scratch, mut media) = fixture("parent-alias-output");
