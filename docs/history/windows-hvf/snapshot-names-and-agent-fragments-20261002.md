@@ -100,3 +100,16 @@ Complete exact-source local and hosted checks are pending at this source
 checkpoint. Previous green checks apply only to their own commits. No
 threshold or existing structural ceiling is increased. New modules are
 registered at their actual counted size; extracted-file ceilings decrease.
+
+## Preserved full-check failure
+
+The clean exact `78d02c440ed24fcdd8ef4616b3d592421556881c` full local project
+check ran from 19:51:58 to 20:00:33 UTC and exited 1. Its only failed step was
+`documentation system`: this new history document had not been registered in
+`docs/document-manifest.tsv`. All other steps, including workspace/Venus/probe
+tests, Clippy, Swift/UI suites and release executable boundaries, passed.
+The failed full log SHA-256 is
+`d5da138830d08b5c9b08fa6721acda611468a45a9035f077d1fef6cc34bf2286`.
+The earlier progress statement that documentation had passed was wrong. The
+missing historical-evidence classification is corrected; complete verification
+of the corrected head must run again. This failed run is not a project PASS.
