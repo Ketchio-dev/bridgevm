@@ -146,3 +146,17 @@ scripts/check-project.sh
 ```
 
 Nothing is "done" while that check fails.
+
+## 12. Operator dev wiki
+
+The operator may keep a private BridgeVM dev wiki at `../../wiki`, relative to
+this checkout. It is for BridgeVM work only. When it exists:
+
+- pull it and read its `index.md` before starting;
+- search it before guessing a past run, decision or machine fact;
+- after a run or decision, update it under the rules in its own `AGENTS.md`.
+
+The wiki ranks below this repository. Product truth stays in
+`capabilities/windows-hvf.json`, and nothing private is copied from the wiki
+into this repository. When `../../env.sh` exists, source it before building;
+it puts that machine's toolchain on PATH.
