@@ -2,6 +2,7 @@
 """Authenticate import lanes and derive the exact public T19 receipt."""
 from __future__ import annotations
 import argparse, hashlib, importlib.util, json, os, platform, stat, subprocess, sys
+import windows_product_e2e_guest_evidence as GUEST
 from datetime import datetime, timezone
 from pathlib import Path
 from product_e2e_identity import fixed_fields_match, is_sha256, sealed_request, unique
@@ -57,7 +58,6 @@ def aggregate(values):
     if not values: return "absent"
     if len(values) == 1: return values[0]
     return hashlib.sha256("".join(f"{i+1}\t{value}\n" for i, value in enumerate(values)).encode()).hexdigest()
-
 def lane(path: Path, job: str, commit: str, mode: str, ordinal: int, stamp: Path | None = None):
     value = load(path)
     fixed = {"schema_version": LANE_SCHEMA, "job_id": job, "commit": commit, "campaign_mode": mode,
@@ -87,7 +87,6 @@ def lane(path: Path, job: str, commit: str, mode: str, ordinal: int, stamp: Path
         if not isinstance(seal, dict) or frozenset(seal) != STAMP_KEYS or not fixed_fields_match(seal, expected) or not is_sha256(seal.get("request_sha256")):
             raise ValueError(f"lane {ordinal} stamp is invalid")
     return value
-
 def authenticate(request_path: Path, result_path: Path, stamp: Path, job: str, commit: str, mode: str, ordinal: int, expected_request_sha256: str):
     result = lane(result_path, job, commit, mode, ordinal)
     if result["failure_code"] != "none": raise ValueError(f"lane {ordinal} is incomplete")
@@ -116,6 +115,7 @@ def authenticate(request_path: Path, result_path: Path, stamp: Path, job: str, c
     if any(result[k] != v for k, v in observed.items()): raise ValueError(f"lane {ordinal} artifacts differ")
     if result["source_disk_sha256"] != result["imported_initial_disk_sha256"] or result["source_vars_sha256"] != result["imported_initial_vars_sha256"] or result["source_vtpm_tree_sha256"] != result["imported_initial_vtpm_tree_sha256"]:
         raise ValueError(f"lane {ordinal} imported media differs from source")
+    GUEST.verify(request)
     seal = {"schema_version": "bridgevm.windows-hvf-import-product-e2e-host-stamp.v1", "job_id": job,
         "commit": commit, "lane": ordinal, "nonce": result["nonce"], "request_sha256": expected_request_sha256,
         "result_sha256": digest(result_path)}

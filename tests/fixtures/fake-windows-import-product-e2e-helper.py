@@ -25,7 +25,7 @@ shutil.copyfile(request["source_disk_path"],request["disk_path"]); shutil.copyfi
 for source in pathlib.Path(request["source_vtpm_path"]).iterdir():
     if source.name != ".lock": shutil.copy2(source,pathlib.Path(request["vtpm_state_path"])/source.name)
 vmroot=library/request["vm_slug"]; (vmroot/"vm.json").write_text(json.dumps({"id":request["vm_slug"],"name":request["vm_name"],"backendKind":"hvf-engine","bundlePath":str(bundle),"diskPath":request["disk_path"]})+"\n")
-guest=pathlib.Path(request["guest_evidence_path"]); guest.write_text(json.dumps({"nonce":request["nonce"],"status":"fixture"})+"\n")
+sys.dont_write_bytecode=True; from fake_import_guest_evidence import write_guest_evidence; write_guest_evidence(request); guest=pathlib.Path(request["guest_evidence_path"])
 stages=("artifact_preflight","source_authenticated","ui_imported","imported_media_authenticated","first_ready","keyboard_pointer","clipboard","folder_share","network","audio","first_shutdown","snapshot_restore","second_ready","second_shutdown")
 source_disk=file_hash(request["source_disk_path"]); source_vars=file_hash(request["source_vars_path"]); source_vtpm=tree_hash(request["source_vtpm_path"])
 result={"schema_version":"bridgevm.windows-hvf-import-product-e2e-lane.v1","job_id":request["job_id"],"commit":request["commit"],"campaign_mode":request["campaign_mode"],"lane":request["lane"],"nonce":request["nonce"],"three_d_injection":False,"ui_frontend_automated":True,"failure_code":"none","failure_detail":"","cleanup_verified":True}

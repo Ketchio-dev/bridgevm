@@ -3,10 +3,10 @@
 from __future__ import annotations
 import hashlib, hvf_stop_line, hvf_terminal_evidence, hvf_terminal_report, json, t17_audio_counters
 from pathlib import Path
+from product_e2e_identity import fixed_fields_match
 
 OBSERVATIONS = ("keyboard_pointer_challenge_sha256", "clipboard_roundtrip_sha256", "share_host_to_guest_sha256", "share_guest_to_host_sha256", "network_result_sha256", "audio_result_sha256", "audio_playback_count", "audio_error_count", "snapshot_marker_a_sha256", "snapshot_marker_b_sha256", "snapshot_marker_restored_a_sha256")
 LOG_FIELDS = ("first_run_log_sha256", "mutation_run_log_sha256", "final_run_log_sha256", "agent_result_sha256", "first_ready_offset", "first_ready_line_nonce_sha256", "first_shutdown_offset", "first_shutdown_line_nonce_sha256", "mutation_ready_offset", "mutation_ready_line_nonce_sha256", "mutation_shutdown_offset", "mutation_shutdown_line_nonce_sha256", "final_ready_offset", "final_ready_line_nonce_sha256", "second_shutdown_offset", "second_shutdown_line_nonce_sha256")
-
 def _unique(pairs: list[tuple[str, object]]) -> dict:
     result: dict[str, object] = {}
     for key, value in pairs:
@@ -64,7 +64,7 @@ def verify(request: dict) -> list[Path]:
     evidence_path = Path(request["guest_evidence_path"])
     evidence = _json(evidence_path, bundle)
     identity = {"schema_version": "bridgevm.windows-product-e2e-guest-evidence.v2", "job_id": request["job_id"], "commit": request["commit"], "lane": request["lane"], "nonce": nonce, "vm_slug": request["vm_slug"]}
-    if set(evidence) != set(identity) | set(OBSERVATIONS) | set(LOG_FIELDS) or any(evidence.get(key) != value for key, value in identity.items()):
+    if set(evidence) != set(identity) | set(OBSERVATIONS) | set(LOG_FIELDS) or not fixed_fields_match(evidence, identity):
         raise ValueError("guest evidence identity or exact fields are invalid")
     clipboard = f"브리지VM T17 클립보드 왕복 v1\n{nonce}\n".encode()
     raw_specs = {
@@ -85,7 +85,7 @@ def verify(request: dict) -> list[Path]:
         actual = _bytes(path, share, 8192)
         if actual != expected or evidence.get(key) != _digest(actual):
             raise ValueError(f"raw guest observation is invalid: {path.name}")
-    if type(evidence.get("audio_playback_count")) is not int or evidence["audio_playback_count"] < 1 or evidence.get("audio_error_count") != 0:
+    if type(evidence.get("audio_playback_count")) is not int or evidence["audio_playback_count"] < 1 or type(evidence.get("audio_error_count")) is not int or evidence["audio_error_count"] != 0:
         raise ValueError("guest audio counters are invalid")
     agent_path = evidence_root / "agent-result.json"
     guest_agent_path = share / f"t17-agent-result-{prefix}.json"
@@ -94,7 +94,7 @@ def verify(request: dict) -> list[Path]:
         raise ValueError("managed and shared guest agent results differ")
     agent = _json(agent_path, bundle)
     agent_identity = {"schema_version": "bridgevm.windows-product-e2e-agent-result.v2", **{key: value for key, value in identity.items() if key != "schema_version"}}
-    if set(agent) != set(agent_identity) | set(OBSERVATIONS) or any(agent.get(key) != value for key, value in agent_identity.items()) or any(agent.get(key) != evidence.get(key) for key in OBSERVATIONS):
+    if set(agent) != set(agent_identity) | set(OBSERVATIONS) or not fixed_fields_match(agent, agent_identity) or not fixed_fields_match(agent, {key: evidence[key] for key in OBSERVATIONS}):
         raise ValueError("guest agent result is unbound or disagrees with raw evidence")
     logs = {"first": evidence_root / "first-run.log", "mutation": evidence_root / "mutation-run.log", "final": bundle / "logs/hvf/run.log"}
     log_data = {name: _bytes(path, bundle, 64 * 1024 * 1024) for name, path in logs.items()}
