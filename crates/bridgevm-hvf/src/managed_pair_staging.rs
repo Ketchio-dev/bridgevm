@@ -13,12 +13,10 @@ impl LockedPair {
         let staged = self.root.join("staging");
         debris::clear(&staged)?;
         super::super::private_directory(&staged, true)?;
-        let copied = fill::fill(snapshot, manifest, &staged, copy)
-            .inspect_err(|_| drop(debris::clear(&staged)))?;
-        self._lease.extend([
-            staged.join("disk.raw").as_path(),
-            staged.join("vars.fd").as_path(),
-        ])?;
+        let owned = ownership::StageOwner::capture(&staged)?;
+        let copied =
+            fill::fill(snapshot, manifest, &staged, copy).inspect_err(|_| owned.clear())?;
+        owned.claim_media(&mut self._lease)?;
         Ok((staged, copied))
     }
 }
@@ -27,3 +25,5 @@ impl LockedPair {
 mod debris;
 #[path = "managed_pair_staging_fill.rs"]
 mod fill;
+#[path = "managed_pair_staging_ownership.rs"]
+mod ownership;
