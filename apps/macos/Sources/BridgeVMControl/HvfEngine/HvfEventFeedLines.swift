@@ -6,23 +6,20 @@ enum HvfEventFeedLines {
         guard count > 0, length > 0 else { return "" }
         var lines: [String] = []
         for text in newestFirst {
-            var end = text.endIndex
+            let scalars = text.unicodeScalars
+            var end = scalars.endIndex
             while lines.count < count {
-                let rest = text[..<end]
-                guard let separator = rest.lastIndex(of: "\n") else {
-                    lines.append(truncate(rest, length: length))
+                let rest = scalars[..<end]
+                guard let separator = rest.lastIndex(where: HvfEventFeedLineBreak.matches) else {
+                    lines.append(HvfEventFeedLinePrefix.render(rest, length: length))
                     break
                 }
-                lines.append(truncate(text[text.index(after: separator)..<end], length: length))
-                end = separator
+                lines.append(HvfEventFeedLinePrefix.render(scalars[scalars.index(after: separator)..<end], length: length))
+                end = HvfEventFeedLineBreak.start(of: separator, in: scalars)
             }
             if lines.count == count { break }
         }
         return lines.reversed().joined(separator: "\n")
     }
 
-    private static func truncate(_ line: Substring, length: Int) -> String {
-        let prefix = line.prefix(length + 1)
-        return prefix.count > length ? prefix.prefix(length) + "…" : String(prefix)
-    }
 }

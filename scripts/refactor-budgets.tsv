@@ -3506,7 +3506,7 @@ crates/bridgevm-hvf/src/snapshot_create_manifest_admission.rs	40	0
 crates/bridgevm-hvf/src/snapshot_create_manifest_tests.rs	94	0
 crates/bridgevm-hvf/src/managed_pair_staging_ownership.rs	41	0
 crates/bridgevm-hvf/src/managed_pair_staging_ownership_tests.rs	101	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEventFeedLines.swift	28	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEventFeedLines.swift	25	0
 apps/macos/Tests/BridgeVMControlTests/HvfEventFeedMultilineTests.swift	53	0
 scripts/live-gates/product_e2e_identity.py	38	0
 tests/fixtures/fake_import_mutations.py	14	0
@@ -3521,3 +3521,7 @@ scripts/check-snapshot-evidence-contracts.sh	12	0
 scripts/check-retained-windows-contracts.sh	5	0
 scripts/live-gates/retained_windows_mutation.py	44	0
 tests/integration/retained-windows-permissions-contract.py	95	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEventFeedLineBreak.swift	17	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEventFeedLinePrefix.swift	25	0
+apps/macos/Tests/BridgeVMControlTests/HvfEventFeedLineBreakTests.swift	33	0
+apps/macos/Tests/BridgeVMControlTests/HvfEventFeedUnicodeTests.swift	73	0
