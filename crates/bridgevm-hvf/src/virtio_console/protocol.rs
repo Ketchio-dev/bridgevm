@@ -118,8 +118,6 @@ pub(crate) const QUEUE_COUNT: usize = 6;
 
 pub(crate) const QUEUE_MAX: u16 = 64;
 
-pub(crate) const DESC_SIZE: u64 = 16;
-
 pub(crate) const DESC_F_NEXT: u16 = 1;
 
 pub(crate) const DESC_F_WRITE: u16 = 2;

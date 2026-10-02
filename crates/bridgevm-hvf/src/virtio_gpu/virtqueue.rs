@@ -124,13 +124,13 @@ impl VirtioGpu {
         // never drained: firmware submitted GET_DISPLAY_INFO, polled the used ring
         // forever, and the guest hung before reaching the boot manager.
         let queue_size = queue.effective_size();
-        let Some(avail_idx) = read_u16(mem, queue.driver + 2) else {
+        let Some(avail_idx) = read_u16(mem, queue.driver, 2) else {
             return;
         };
         for _ in 0..pending_entries(queue.last_avail_idx, avail_idx, queue_size) {
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
             let ring_off = 4 + u64::from(last_avail_idx % queue_size) * 2;
-            let Some(head) = read_u16(mem, queue.driver + ring_off) else {
+            let Some(head) = read_u16(mem, queue.driver, ring_off) else {
                 return;
             };
             let completion = self.process_chain(mem, &queue, queue_index, head, control);
@@ -403,12 +403,6 @@ impl VirtioGpu {
             return;
         }
         let queue_size = queue.effective_size();
-        let Some(used_idx) = read_u16(mem, queue.device + 2) else {
-            return;
-        };
-        let elem = queue.device + 4 + u64::from(used_idx % queue_size) * 8;
-        let _ = mem.write_bytes(elem, &u32::from(id).to_le_bytes());
-        let _ = mem.write_bytes(elem + 4, &len.to_le_bytes());
-        let _ = mem.write_bytes(queue.device + 2, &used_idx.wrapping_add(1).to_le_bytes());
+        write_used(mem, queue.device, queue_size, id, len);
     }
 }

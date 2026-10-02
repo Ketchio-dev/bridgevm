@@ -38,7 +38,7 @@ impl<B: NetBackend> VirtioNet<B> {
         if !queue.ready || queue.size == 0 || queue.desc == 0 {
             return;
         }
-        let Some(avail_idx) = read_u16(mem, queue.driver + 2) else {
+        let Some(avail_idx) = read_u16(mem, queue.driver, 2) else {
             return;
         };
         let mut descs = std::mem::take(&mut self.descriptor_scratch);
@@ -46,7 +46,7 @@ impl<B: NetBackend> VirtioNet<B> {
         for _ in 0..pending_entries(queue.last_avail_idx, avail_idx, queue.size) {
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
             let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
-            let Some(head) = read_u16(mem, queue.driver + ring_off) else {
+            let Some(head) = read_u16(mem, queue.driver, ring_off) else {
                 break;
             };
             if Self::tx_frame_from_chain_into(mem, &queue, head, &mut descs, &mut packet) {
@@ -71,7 +71,7 @@ impl<B: NetBackend> VirtioNet<B> {
         if !queue.ready || queue.size == 0 || queue.desc == 0 {
             return false;
         }
-        let Some(avail_idx) = read_u16(mem, queue.driver + 2) else {
+        let Some(avail_idx) = read_u16(mem, queue.driver, 2) else {
             return false;
         };
         if self.queues[queue_index].last_avail_idx == avail_idx {
@@ -79,7 +79,7 @@ impl<B: NetBackend> VirtioNet<B> {
         }
         let last_avail_idx = self.queues[queue_index].last_avail_idx;
         let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
-        let Some(head) = read_u16(mem, queue.driver + ring_off) else {
+        let Some(head) = read_u16(mem, queue.driver, ring_off) else {
             return false;
         };
         let mut descs = std::mem::take(&mut self.descriptor_scratch);

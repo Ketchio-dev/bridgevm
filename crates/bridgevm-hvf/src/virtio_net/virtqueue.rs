@@ -11,14 +11,6 @@ pub(crate) struct Descriptor {
     pub(crate) next: u16,
 }
 
-pub(crate) fn read_u16(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u16> {
-    let mut bytes = [0u8; 2];
-    if !mem.read_into(gpa, &mut bytes) {
-        return None;
-    }
-    Some(u16::from_le_bytes(bytes))
-}
-
 impl<B: NetBackend> VirtioNet<B> {
     pub(crate) fn scatter_write_slices(
         mem: &mut dyn GuestMemoryMut,
@@ -92,8 +84,7 @@ impl<B: NetBackend> VirtioNet<B> {
         }
         let mut index = head;
         for _ in 0..queue.size {
-            let Some(desc) = Descriptor::read(mem, queue.desc + u64::from(index) * DESC_SIZE)
-            else {
+            let Some(desc) = read_descriptor(mem, queue.desc, index, Descriptor::read) else {
                 out.clear();
                 return false;
             };
@@ -121,19 +112,13 @@ impl<B: NetBackend> VirtioNet<B> {
         if queue.size == 0 || queue.device == 0 {
             return;
         }
-        let Some(used_idx) = read_u16(mem, queue.device + 2) else {
-            return;
-        };
-        let elem = queue.device + 4 + u64::from(used_idx % queue.size) * 8;
-        let _ = mem.write_bytes(elem, &u32::from(id).to_le_bytes());
-        let _ = mem.write_bytes(elem + 4, &len.to_le_bytes());
-        let _ = mem.write_bytes(queue.device + 2, &used_idx.wrapping_add(1).to_le_bytes());
+        write_used(mem, queue.device, queue.size, id, len);
     }
 }
 
 impl Descriptor {
     pub(crate) fn read(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<Self> {
-        let mut bytes = [0u8; 16];
+        let mut bytes = [0u8; DESC_SIZE as usize];
         if !mem.read_into(gpa, &mut bytes) {
             return None;
         }
