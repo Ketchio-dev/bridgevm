@@ -1037,10 +1037,10 @@ fuzz/src/lib.rs	55	0
 fuzz/src/bin/smoke.rs	78	0
 crates/bridgevm-hvf/tests/loom_psci.rs	94	0
 crates/bridgevm-hvf/tests/loom_reset_generation.rs	131	0
-crates/bridgevm-hvf/src/snapshot_pair.rs	171	0
+crates/bridgevm-hvf/src/snapshot_pair.rs	155	0
 crates/bridgevm-hvf/src/snapshot_pair_tests.rs	254	0
 crates/bridgevm-hvf/src/bounded_read.rs	47	0
-crates/bridgevm-hvf/src/snapshot_manifest_json.rs	61	0
+crates/bridgevm-hvf/src/snapshot_manifest_json.rs	51	0
 crates/bridgevm-hvf/src/snapshot_manifest_json_tests.rs	26	0
 crates/bridgevm-hvf/src/nvme/disk_export.rs	44	0
 crates/bridgevm-hvf/src/nvme/overlay_quota_tests.rs	123	0
@@ -2365,7 +2365,7 @@ crates/bridgevm-api/src/test_support_env.rs	99	0
 crates/bridgevm-hvf/src/managed_pair_restore.rs	40	0
 crates/bridgevm-hvf/src/nvme/doorbell.rs	35	0
 crates/bridgevm-hvf/src/nvme/tests/doorbell_indices.rs	117	0
-crates/bridgevm-hvf/src/snapshot_verification.rs	28	0
+crates/bridgevm-hvf/src/snapshot_verification.rs	25	0
 crates/bridgevm-hvf/src/snapshot_verification_tests.rs	125	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportDestination.swift	39	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportDestinationTests.swift	122	0
@@ -3347,7 +3347,7 @@ tests/integration/b9-receipt-read-contract.py	135	0
 tests/integration/b9-scanout-byte-contract.py	127	0
 tests/integration/b9-source-reopen-contract.py	116	0
 tests/integration/b9-workload-diagnostic-path-contract.py	102	0
-crates/bridgevm-hvf/src/snapshot_create_admission.rs	111	0
+crates/bridgevm-hvf/src/snapshot_create_admission.rs	96	0
 crates/bridgevm-hvf/src/snapshot_create_admission_tests.rs	172	0
 crates/bridgevm-hvf/src/snapshot_create_staging_admission_tests.rs	69	0
 crates/bridgevm-hvf/src/snapshot_create_publication_recheck_tests.rs	75	0
@@ -3496,3 +3496,7 @@ tests/integration/t17-selected-retention-contract.py	115	0
 tests/integration/t17-selected-retention-mutation-contract.py	99	0
 tests/integration/retained-windows-publication-contract.py	145	0
 tests/integration/retained-windows-cleanup-races-contract.py	97	0
+crates/bridgevm-hvf/src/snapshot_manifest_read.rs	33	0
+crates/bridgevm-hvf/src/snapshot_manifest_read_tests.rs	136	1
+crates/bridgevm-hvf/src/snapshot_manifest_admission_tests.rs	64	0
+crates/bridgevm-hvf/src/snapshot_manifest_json_adversarial_tests.rs	152	0

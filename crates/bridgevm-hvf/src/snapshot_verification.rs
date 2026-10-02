@@ -3,13 +3,11 @@
 use super::{
     sha256_file_and_size, SnapshotError, SnapshotManifest, DISK_NAME, MANIFEST_NAME, VARS_NAME,
 };
-use std::{fs, path::Path};
+use std::path::Path;
 
 /// Read and verify a snapshot without restoring it.
 pub fn verify_snapshot(dir: &Path) -> Result<SnapshotManifest, SnapshotError> {
-    let text = fs::read_to_string(dir.join(MANIFEST_NAME))
-        .map_err(|e| SnapshotError::BadManifest(format!("cannot read manifest: {e}")))?;
-    let manifest = SnapshotManifest::from_json(&text)?;
+    let manifest = super::manifest_read::read(&dir.join(MANIFEST_NAME))?;
     for (name, want_hash, want_bytes) in [
         (DISK_NAME, &manifest.disk_sha256, manifest.disk_bytes),
         (VARS_NAME, &manifest.vars_sha256, manifest.vars_bytes),

@@ -199,6 +199,8 @@ dependencies = [
  "bridgevm-media",
  "libc",
  "loom",
+ "serde",
+ "serde_json",
  "sha2",
 ]
 
