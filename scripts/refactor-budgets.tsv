@@ -1865,7 +1865,7 @@ apps/macos/Sources/BridgeVMProductE2E/T17InputChallenge.swift	26	0
 apps/macos/Sources/BridgeVMProductE2E/T17RuntimeControlInput.swift	18	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestProof.swift	152	0
 apps/macos/Sources/BridgeVMProductE2E/T17PrivateUnattend.swift	33	0
-apps/macos/Sources/BridgeVMProductE2E/T17ProductRunner.swift	239	0
+apps/macos/Sources/BridgeVMProductE2E/T17ProductRunner.swift	237	0
 apps/macos/Sources/BridgeVMProductE2E/T17BoundedLog.swift	23	0
 apps/macos/Sources/BridgeVMProductE2E/T17SecureBootReceipt.swift	61	0
 apps/macos/Sources/BridgeVMProductE2E/T17UIContract.swift	3	0
@@ -3475,3 +3475,7 @@ crates/bridgevm-hvf/src/snapshot_pair_selected.rs	50	0
 crates/bridgevm-hvf/src/snapshot_pair_selected_tests.rs	39	0
 apps/macos/Sources/BridgeVMProductE2E/T17SelectedMedia.swift	60	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17SelectedMediaTests.swift	30	0
+scripts/live-gates/windows_product_e2e_selected.py	28	0
+tests/fixtures/fake-snapshot-pair-cli.py	9	0
+apps/macos/Sources/BridgeVMProductE2E/T17SelectedEvidence.swift	12	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17SelectedEvidenceTests.swift	15	0

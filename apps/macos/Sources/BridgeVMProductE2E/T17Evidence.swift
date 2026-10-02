@@ -8,7 +8,7 @@ struct T17Evidence {
     ]
 
     private(set) var stages = Dictionary(uniqueKeysWithValues: T17Stage.allCases.map { ($0, false) })
-    private(set) var hashes: [String: String]
+    var hashes: [String: String]
     let nonce: String
 
     init(nonce: String) {

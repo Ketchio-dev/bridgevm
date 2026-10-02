@@ -43,8 +43,7 @@ final class T17ProductRunner {
             try evidence.authenticate("installer_source_sha256", file: source)
             try evidence.prove(.sourcePrepared)
             try verifyInstalledVM()
-            try evidence.authenticate("final_disk_sha256", file: URL(fileURLWithPath: request.diskPath))
-            try evidence.authenticate("final_vars_sha256", file: URL(fileURLWithPath: request.varsPath))
+            try evidence.authenticateSelectedMedia(disk: request.diskPath, vars: request.varsPath)
             try evidence.prove(.windowsInstalled)
             try verifySecureBootReceipt()
             try evidence.authenticate("secure_boot_receipt_sha256", file: URL(fileURLWithPath: request.secureBootReceiptPath))
@@ -53,8 +52,7 @@ final class T17ProductRunner {
             try evidence.prove(.firstReady); afterReady = true
             try T17GuestJourney(request: request, ui: control, fileManager: fileManager)
                 .run(firstReady: readyLine) { try evidence.prove($0.installStage) }
-            try evidence.authenticate("final_disk_sha256", file: URL(fileURLWithPath: request.diskPath))
-            try evidence.authenticate("final_vars_sha256", file: URL(fileURLWithPath: request.varsPath))
+            try evidence.authenticateSelectedMedia(disk: request.diskPath, vars: request.varsPath)
             try evidence.authenticate("guest_evidence_sha256", file: URL(fileURLWithPath: request.guestEvidencePath))
             failure = "none"
         } catch let blocker as T17Blocker {
