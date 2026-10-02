@@ -1,8 +1,7 @@
 # A19 three interruption cases — 2026-10-02
 
-Evidence level: deterministic contracts and static review. This continuation
-adds no live guest sample, release evidence or criterion promotion. Product
-truth remains in `capabilities/windows-hvf.json`; A19 stays OPEN.
+Evidence level: deterministic contracts/static review; no live guest sample,
+release evidence or promotion. Product truth stays in `capabilities/windows-hvf.json`; A19 stays OPEN.
 
 ## Plan and boundaries
 
@@ -36,8 +35,8 @@ The private FD log and observation context contain paths and never enter git
 or public receipts. Stop observations bind the actual owned helper PID and
 staged read; result JSON alone cannot establish byte identity.
 
-Commands have finite deadlines and bounded cleanup. A lifecycle timeout whose
-job-control descendants cannot be proven stopped preserves private media,
+Commands have finite deadlines/cleanup. A lifecycle timeout with unproven
+job-control descendant cleanup preserves private media,
 records cleanup failure and fences subsequent queue work rather than reporting
 successful cleanup.
 
@@ -73,7 +72,7 @@ returned ESRCH. Independent probe log SHA-256:
 This establishes those fixture states only. Generic EPERM is never accepted
 as proof of absence: teardown must reap its owned leader and subsequently
 observe an absent group, or retain media and refuse verified cleanup.
-The [pinned Apple XNU signal code](https://github.com/apple-oss-distributions/xnu/blob/f6217f891ac0bb64f3d375211650a4c1ff8ca1ea/bsd/kern/kern_sig.c#L1581)
+The [pinned upstream Apple XNU signal code](https://github.com/apple-oss-distributions/xnu/blob/f6217f891ac0bb64f3d375211650a4c1ff8ca1ea/bsd/kern/kern_sig.c#L1581)
 filters zombie targets before its EPERM decision; that source revision is not
 claimed to be the installed kernel. The owned fixtures supply the local test
 evidence.
@@ -84,31 +83,32 @@ Historical schema-1 receipts remain valid; the new producer's three-case
 requirement is separate. Failed log SHA-256:
 `fbe28a57be643d1aad3a7b5564267de58aa63dca76a4df57adecf81f00633189`.
 
-Two final ownership checks exposed interruption during process construction
-or waiting before cleanup was protected. A mocked auxiliary baseline marked
-cleanup verified and deleted disposable work after constructor ownership was
-lost (log SHA-256
+Constructor/wait interruptions initially admitted cleanup without ownership;
+a mocked auxiliary baseline deleted disposable work (failed log SHA-256
 `a72d85a9b75dcab6f314b12bba0994bdc1976989fa1944ff3e25d543107c808d`).
-A regression with an actual disposable child also failed before correction;
-only the test retained and reaped its original child handle (failed log
-SHA-256
+An actual disposable-child regression also failed; only the test retained and
+reaped its original handle (failed log SHA-256
 `591e7448c02ac16b64ab97b33c691b58c356e1f544ebea60c91f4c988b439258`).
 The lifecycle counterpart initially failed three constructor/wait interruption
 subcases (log SHA-256
 `f4ae75ef11ea29092bfe8fdfb56d8b4cbb33991e164c25558df13b1f5bac7b9f`).
-Both protected spawn paths now retain media and refuse verified cleanup when
-ownership is unknown; they never guess an unreturned child PID. These are
-failed deterministic fixtures, not Windows observations.
+Both protected spawn paths retain media and refuse unknown cleanup without
+guessing a PID. These failures are deterministic fixtures, not Windows runs.
 
 ## Verification checkpoint
 
-The new orchestration contract passed 14 tests, collection passed 13, and
-process cleanup passed four. Existing observer, first-case,
-publication and hash contracts passed with historical receipt compatibility.
-All 31 new tests are deterministic fixtures, including actual owned process
-interruptions; they execute no guest workload. The combined A19 contract gate passed 91 tests at source
-`5621ebbb42a0b20d6bd2be4b01c6efb72b71c045`, with log SHA-256
+The A19 gate passed 91 tests (60 existing, 31 new: 14 orchestration,
+13 collection, four cleanup), with historical compatibility. Log SHA-256:
 `1fc67973f20e5f06516eba7591f5eff6926fdc90a5f8430d94bccdf2d630e5ea`.
-The full exact-source checks and their receipts are recorded in the change's PR after this source checkpoint.
-The earlier T22 single-run and accepted T23 campaign remain separate evidence
-at their original sources and counts.
+Initial head `6f69bd59` failed required T20 push/PR jobs 37077528089/37077583226:
+the Linux job could not run Mac-dependent quota fixtures (`sysctl hw.model`),
+with three failures/three errors. Failed log SHA-256s:
+`ba2d43f1797161235cc811aa8d6a164782c71f300adf22f26f04995297f751fa` and
+`e9da9f0fe22c1d652c268b88d73b87828204002748721e1a80d7b948a7c4db11`.
+The job now uses GitHub-hosted macos-15 with every check. Hosted full
+37077580552 was cancelled before its project check; it is no PASS.
+Initial exact local full at 6f69bd59 also failed: stale structural-budget
+identity and external-commit classification. Failed log SHA-256:
+`5af33082827545f187298aa93f358a1f0d114e77b9660a006fb6e26f0ee762fc`.
+Corrected exact-source local/hosted receipts are recorded in the PR.
+Earlier live T22 and accepted T23 records retain their original sources/counts.
