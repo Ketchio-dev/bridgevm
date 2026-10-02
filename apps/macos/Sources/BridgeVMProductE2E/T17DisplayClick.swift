@@ -17,18 +17,10 @@ enum T17DisplayClick {
         return T17DisplayImageRect.point(spot, guest: guest, in: frame)
     }
 
-    static func click(at spot: CGPoint, timeout: TimeInterval, read: () -> Target?, post: (CGPoint) -> Bool) throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            if let point = read().flatMap({ point(for: $0, at: spot) }) {
-                guard post(point) else {
-                    throw T17Blocker(code: "ui-element-missing", detail: "display click events could not be created")
-                }
-                return
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        } while Date() < deadline
-        throw T17Blocker(code: "ui-element-missing", detail: "guest display surface did not present a frame in the focused window")
+    static func click(at spot: CGPoint, timeout: TimeInterval, read: () -> Target?, post: (CGPoint) -> Bool,
+                      now: () -> Date = Date.init,
+                      pause: () -> Void = { RunLoop.current.run(until: Date().addingTimeInterval(0.1)) }) throws {
+        try T17DisplayClickWait.perform(spot: spot, timeout: timeout, read: read, post: post, now: now, pause: pause)
     }
 
     static func post(_ point: CGPoint) -> Bool {

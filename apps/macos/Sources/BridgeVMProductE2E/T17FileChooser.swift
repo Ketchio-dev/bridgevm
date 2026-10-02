@@ -29,17 +29,21 @@ enum T17FileChooser {
             try T17FileChooserWait.until(stage: stage, deadline: deadline,
                 failureContext: { diagnosticSuffix(driver) }, now: now, pause: pause, ready: ready)
         }
-        try T17FileChooserStage.run("initial-panel-check") { guard try !driver.panelIsPresent() else { throw failure("a file chooser was already open") } }
-        try T17FileChooserStage.run("open-control") { try driver.open() }
-        try T17FileChooserStage.run("panel-appearance") { try wait("file chooser") { try driver.panelIsPresent() } }
-        try T17FileChooserStage.run("show-location-field") { try driver.showLocationField() }
-        try T17FileChooserStage.run("location-field-ready") { try wait("Go To location field") { try driver.locationFieldIsReady() } }
-        try T17FileChooserStage.run("set-location") { try driver.setLocation(path) }
-        try T17FileChooserStage.run("accept-location") { try driver.acceptLocation() }
-        try T17FileChooserStage.run("location-sheet-dismissal") { try wait("Go To sheet dismissal") { try driver.locationFieldIsAbsent() } }
-        try T17FileChooserStage.run("selection-ready") { try wait("enabled Open button") { try driver.selectionIsReady() } }
-        try T17FileChooserStage.run("accept-selection") { try driver.acceptSelection() }
-        try T17FileChooserStage.run("selection-confirmation") { try wait("chooser dismissal and exact selected path") {
+        func run(_ stage: String, _ action: () throws -> Void) throws {
+            try T17FileChooserDeadline.run(stage: stage, deadline: deadline,
+                failureContext: { diagnosticSuffix(driver) }, now: now, action: action)
+        }
+        try run("initial-panel-check") { guard try !driver.panelIsPresent() else { throw failure("a file chooser was already open") } }
+        try run("open-control") { try driver.open() }
+        try run("panel-appearance") { try wait("file chooser") { try driver.panelIsPresent() } }
+        try run("show-location-field") { try driver.showLocationField() }
+        try run("location-field-ready") { try wait("Go To location field") { try driver.locationFieldIsReady() } }
+        try run("set-location") { try driver.setLocation(path) }
+        try run("accept-location") { try driver.acceptLocation() }
+        try run("location-sheet-dismissal") { try wait("Go To sheet dismissal") { try driver.locationFieldIsAbsent() } }
+        try run("selection-ready") { try wait("enabled Open button") { try driver.selectionIsReady() } }
+        try run("accept-selection") { try driver.acceptSelection() }
+        try run("selection-confirmation") { try wait("chooser dismissal and exact selected path") {
             guard try !driver.panelIsPresent() else { return false }
             return try driver.selectedPath() == path
         } }

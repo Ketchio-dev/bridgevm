@@ -27,10 +27,14 @@ mod copy;
 mod free_space;
 #[path = "snapshot_manifest_json.rs"]
 mod manifest_json;
+#[path = "snapshot_manifest_read.rs"]
+mod manifest_read;
+#[path = "snapshot_regular_file.rs"]
+mod regular_file;
 use copy::copy_and_sync;
 #[path = "snapshot_hash.rs"]
 mod snapshot_hash;
-use manifest_json::{escape_json, json_str, json_u64};
+use manifest_json::escape_json;
 use snapshot_hash::sha256_file_and_size;
 #[path = "snapshot_publish.rs"]
 mod snapshot_publish;
@@ -114,9 +118,7 @@ pub struct SnapshotManifest {
 }
 
 impl SnapshotManifest {
-    /// Serialize as JSON. Hand-rolled rather than pulling serde into this
-    /// crate for six fields; the values are integers and hex/identifier
-    /// strings, and `vm_id` is escaped.
+    /// Serialize with stable formatting; strings are escaped as JSON.
     pub fn to_json(&self) -> String {
         format!(
             concat!(
@@ -134,20 +136,7 @@ impl SnapshotManifest {
     }
 
     pub fn from_json(text: &str) -> Result<Self, SnapshotError> {
-        let format_version = json_u64(text, "format_version")?;
-        if format_version != u64::from(SNAPSHOT_FORMAT_VERSION) {
-            return Err(SnapshotError::BadManifest(format!(
-                "format version {format_version}, this build reads {SNAPSHOT_FORMAT_VERSION}"
-            )));
-        }
-        Ok(Self {
-            format_version: SNAPSHOT_FORMAT_VERSION,
-            vm_id: json_str(text, "vm_id")?,
-            disk_bytes: json_u64(text, "disk_bytes")?,
-            disk_sha256: json_str(text, "disk_sha256")?,
-            vars_bytes: json_u64(text, "vars_bytes")?,
-            vars_sha256: json_str(text, "vars_sha256")?,
-        })
+        manifest_json::parse(text)
     }
 }
 

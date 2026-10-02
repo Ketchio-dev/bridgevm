@@ -50,8 +50,8 @@ final class T17PressActionTests: XCTestCase {
     }
 
     func testCannotCompleteExhaustionStopsAtDeadline() {
-        var times = [Date(timeIntervalSince1970: 0), Date(timeIntervalSince1970: 1)].makeIterator(), retries = 0
-        XCTAssertThrowsError(try T17PressAction.perform(identifier: "start", timeout: 0.5, enabled: { true }, press: { .cannotComplete }, activate: { true }, retry: { retries += 1; return .cannotComplete }, frontmost: { true }, now: { times.next()! }, pause: {}))
+        var time = Date(timeIntervalSince1970: 0), retries = 0
+        XCTAssertThrowsError(try T17PressAction.perform(identifier: "start", timeout: 0.5, enabled: { true }, press: { .cannotComplete }, activate: { true }, retry: { retries += 1; time = Date(timeIntervalSince1970: 1); return .cannotComplete }, frontmost: { true }, now: { time }, pause: {}))
         XCTAssertEqual(retries, 1)
     }
 

@@ -45,6 +45,7 @@ def run_lanes(output: Path, identity: dict, manifest: Path, sealed_binary: Path,
         record, public = run_lane(lanes, ordinal, identity, manifest, sealed_binary, repo)
         write_record(lanes / lane_name(ordinal) / RECORD, record, identity, ordinal)
         written = ordinal
+        aggregate(receipt, read_records(lanes, identity, written))
         if public:
             inputs = inputs or public
             if public != inputs:
@@ -67,7 +68,7 @@ def main() -> int:
     commit = source_commit(repo)
     receipt = initial(job_id, commit)
     receipt.update(host_identity())
-    identity, written = None, 0
+    identity = None
     try:
         try:
             identity = {"job_id": job_id, "commit": commit, **sealed_hashes(output, job_id, commit)}
@@ -77,17 +78,16 @@ def main() -> int:
         except ERRORS:
             receipt.update(outcome="preflight-blocked", failure_code="invalid-input")
             raise
-        written = run_lanes(output, identity, manifest, sealed_binary, repo, receipt)
+        run_lanes(output, identity, manifest, sealed_binary, repo, receipt)
     except ERRORS as error:
         print(f"FAIL: A19 lifecycle campaign: {error}", file=sys.stderr)
     finally:
-        collected: list = []
         try:
-            collected = read_records(output / "lanes", identity, written) if identity else []
+            collected = read_records(output / "lanes", identity, receipt["run_count"]) if identity else []
+            aggregate(receipt, collected)
         except ERRORS as error:
             print(f"FAIL: A19 lifecycle campaign records: {error}", file=sys.stderr)
             receipt.update(outcome="failed", failure_code="internal-error")
-        aggregate(receipt, collected)
         receipt["worker_cleanup_verified"] = lanes_clean(output)
         if receipt["outcome"] == "completed" and not receipt["worker_cleanup_verified"]:
             receipt.update(outcome="failed", failure_code="cleanup-failed")

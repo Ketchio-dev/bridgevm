@@ -80,19 +80,12 @@ acquire_sign_lock() {
 
 verify_entitlement() {
   local bin="$1"
-  local entitlements_output
   codesign --verify --strict "$bin" >/dev/null 2>&1 || {
     echo "hvf-runner signature verification failed: $bin" >&2
     exit 1
   }
-  entitlements_output="$(codesign -d --entitlements :- "$bin" 2>/dev/null || true)"
-  case "$entitlements_output" in
-    *"<key>com.apple.security.hypervisor</key>"*"<true/>"*) ;;
-    *)
-      echo "hvf-runner is missing com.apple.security.hypervisor entitlement: $bin" >&2
-      exit 1
-      ;;
-  esac
+  codesign -d --entitlements :- "$bin" 2>/dev/null |
+    python3 "$ROOT/scripts/verify-signing-entitlements.py" com.apple.security.hypervisor --profile "$BUILD_PROFILE"
 }
 acquire_sign_lock
 

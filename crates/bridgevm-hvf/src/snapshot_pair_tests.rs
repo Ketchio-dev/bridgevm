@@ -102,7 +102,7 @@ fn verify_rejects_a_snapshot_whose_disk_was_altered() {
     let vars = s.write("vars-src", b"beta");
     create_snapshot(&disk, &vars, &s.path("snap"), "vm", false, QUOTA).unwrap();
 
-    fs::write(s.path("snap").join(DISK_NAME), b"tampered").unwrap();
+    fs::write(s.path("snap").join(DISK_NAME), b"ALTER").unwrap();
     match verify_snapshot(&s.path("snap")) {
         Err(SnapshotError::HashMismatch { file }) => assert_eq!(file, DISK_NAME),
         other => panic!("a tampered disk must not verify, got {other:?}"),
@@ -116,7 +116,7 @@ fn verify_rejects_a_snapshot_whose_vars_were_altered() {
     let vars = s.write("vars-src", b"beta");
     create_snapshot(&disk, &vars, &s.path("snap"), "vm", false, QUOTA).unwrap();
 
-    fs::write(s.path("snap").join(VARS_NAME), b"tampered").unwrap();
+    fs::write(s.path("snap").join(VARS_NAME), b"EDIT").unwrap();
     match verify_snapshot(&s.path("snap")) {
         Err(SnapshotError::HashMismatch { file }) => assert_eq!(file, VARS_NAME),
         other => panic!("tampered vars must not verify, got {other:?}"),

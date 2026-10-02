@@ -13,9 +13,9 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 PATH = ROOT / "scripts/live-gates/native_snapshot_export_evidence.py"
+sys.path.insert(0, str(PATH.parent))
 SPEC = importlib.util.spec_from_file_location("native_export_evidence", PATH)
 EVIDENCE = importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(EVIDENCE)
-
 
 class NativeSnapshotExportEvidenceContract(unittest.TestCase):
     def fixture(self, root: Path) -> tuple[Path, Path, Path, str]:

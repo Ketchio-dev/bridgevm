@@ -39,7 +39,7 @@ pub(crate) unsafe fn handle_trng_hvc(vcpu: u64, function_id: u64) -> bool {
 /// Whether a function ID belongs to the TRNG service.
 pub(crate) fn is_trng_function(function_id: u64) -> bool {
     matches!(
-        function_id,
+        u64::from(function_id as u32),
         smccc_trng::func::VERSION
             | smccc_trng::func::FEATURES
             | smccc_trng::func::GET_UUID
@@ -72,7 +72,7 @@ mod tests {
             smccc_trng::func::RND32,
             smccc_trng::func::RND64,
         ] {
-            assert!(is_trng_function(id), "{id:#x} is a TRNG function");
+            assert_eq!([id, id | (1 << 32)].map(is_trng_function), [true; 2]);
         }
         for id in [0x8400_0000u64, 0x8400_0003, 0xc400_0003, 0x8400_000A] {
             assert!(!is_trng_function(id), "{id:#x} must stay with PSCI");

@@ -56,16 +56,14 @@ for (( lane=1; lane<=EXPECTED; lane++ )); do
   [[ -z "$previous_inode" || "$inode" != "$previous_inode" ]] || { emit failed internal-error "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; }; previous_inode="$inode"
   cp -c "$SOURCE_DISK" "$lane_root/inputs/windows.raw"; cp -c "$SOURCE_VARS" "$lane_root/inputs/vars.fd"; cp -cR "$SOURCE_VTPM/." "$lane_root/inputs/vtpm/"; cp -c "$SOURCE_VTPM_PACKAGE" "$lane_root/inputs/vtpm-recovery.json"; cp -c "$SOURCE_VTPM_CODE" "$lane_root/inputs/vtpm-recovery-code.txt"; chmod -R a-w "$lane_root/inputs"
   nonce="$(openssl rand -hex 32)"; request="$lane_root/request.json"; result="$PRIVATE/lane-$lane-result.json"
-  python3 "$REQUEST" --out "$request" --verified "$VERIFIED" --job-id "$JOB_ID" --commit "$COMMIT" --mode "$MODE" --lane "$lane" --nonce "$nonce" --lane-root "$lane_root"
+  python3 "$REQUEST" --out "$request" --verified "$VERIFIED" --job-id "$JOB_ID" --commit "$COMMIT" --mode "$MODE" --lane "$lane" --nonce "$nonce" --lane-root "$lane_root"; request_sha="$(shasum -a 256 "$request" | awk '{print $1}')"
   ATTEMPTS=$lane; set +e; "$REPO/scripts/live-gates/launch-import-product-e2e-helper.sh" "$HELPER" "$PRIVATE/lane-$lane-helper.log" "$request" "$result"; helper_status=$?; set -e
   if (( helper_status != 0 )) || [[ ! -f "$result" || -L "$result" ]]; then emit failed product-model-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
+  if [[ "$(shasum -a 256 "$request" | awk '{print $1}')" != "$request_sha" ]]; then emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if find "$WORK" \( \( ! -type d ! -type f \) -o \( -type f -links +1 \) \) -print -quit | grep -q .; then printf '%s\n' "$lane" > "$PRIVATE/lane-isolation-failed"; emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if mount | grep -F "$lane_root" >/dev/null 2>&1 || pgrep -f "$lane_root" >/dev/null 2>&1; then emit cleanup-failed cleanup-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
-  python3 "$WRITER" --check-lane "$result" --request "$request" --stamp "$PRIVATE/lane-$lane-authenticated.json" --job-id "$JOB_ID" --commit "$COMMIT" --mode "$MODE" --ordinal "$lane" || { emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; }
+  python3 "$WRITER" --check-lane "$result" --request "$request" --expected-request-sha256 "$request_sha" --stamp "$PRIVATE/lane-$lane-authenticated.json" --job-id "$JOB_ID" --commit "$COMMIT" --mode "$MODE" --ordinal "$lane" || { emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; }
   after="$PRIVATE/verified-after-lane-$lane.json"; python3 "$MANIFEST" --manifest "$INPUT_MANIFEST" --out "$after" >/dev/null 2>&1 && cmp -s "$VERIFIED" "$after" || { emit failed hash-mismatch "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; }
 done
 emit completed none "$ATTEMPTS" true "$SIGNING" || exit 1
-python3 - "$OUT/receipt.json" <<'PY'
-import json,sys
-raise SystemExit(0 if json.load(open(sys.argv[1]))["pass"] is True else 1)
-PY
+python3 -c 'import json,sys; raise SystemExit(0 if json.load(open(sys.argv[1]))["pass"] is True else 1)' "$OUT/receipt.json"
