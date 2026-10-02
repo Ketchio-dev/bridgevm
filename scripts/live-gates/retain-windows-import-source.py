@@ -7,12 +7,13 @@ import hashlib
 import importlib.util
 import json
 import os
-import shutil
 import stat
 import subprocess
 import sys
 import uuid
 from pathlib import Path
+from retained_windows_media import export_selected
+from retained_windows_publication import OwnedRetention
 HERE = Path(__file__).resolve().parent
 def load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -48,10 +49,6 @@ def make_private_parent(path: Path) -> None:
     if path.is_symlink() or path.stat().st_uid != os.geteuid():
         raise ValueError("retained-source parent is unsafe")
     path.chmod(0o700)
-
-
-def clone_file(source: Path, destination: Path) -> None:
-    subprocess.run(["/bin/cp", "-c", str(source), str(destination)], check=True)
 
 
 def lock_tree(root: Path) -> None:
@@ -93,15 +90,7 @@ def retain(args: argparse.Namespace) -> None:
     }
     if any(Path(assets[key]["path"]) != value for key, value in expected_app_paths.items()):
         raise ValueError("T17 request app paths differ from its verified inputs")
-    disk = Path(request["disk_path"])
-    variables = Path(request["vars_path"])
     state = Path(request["vtpm_state_path"])
-    if not disk.is_file() or disk.is_symlink() or T19.file_hash(disk) != result["final_disk_sha256"]:
-        raise ValueError("installed disk differs from authenticated T17 output")
-    if (not variables.is_file() or variables.is_symlink()
-            or variables.stat().st_size != 64 * 1024 * 1024
-            or T19.file_hash(variables) != result["final_vars_sha256"]):
-        raise ValueError("UEFI variables differ from authenticated T17 output")
     safe_tree(state)
     state_hash = T19.tree_hash(state, allow_symlinks=False)
     destination = args.destination.absolute()
@@ -112,7 +101,9 @@ def retain(args: argparse.Namespace) -> None:
     make_private_parent(destination.parent)
     staging = destination.parent / f".{destination.name}.stage-{uuid.uuid4().hex}"
     staging.mkdir(mode=0o700)
+    owned = OwnedRetention(staging)
     try:
+        retained_disk, retained_vars = export_selected(request, result, staging)
         package = staging / "vtpm-recovery.json"
         code = staging / "vtpm-recovery-code.txt"
         subprocess.run([
@@ -123,11 +114,7 @@ def retain(args: argparse.Namespace) -> None:
         if (not package.is_file() or package.is_symlink() or not code.is_file()
                 or code.is_symlink() or code.stat().st_mode & 0o077):
             raise ValueError("packaged vTPM export did not create private regular files")
-        retained_disk = staging / "windows.raw"
-        retained_vars = staging / "vars.fd"
         retained_state = staging / "vtpm"
-        clone_file(disk, retained_disk)
-        clone_file(variables, retained_vars)
         retained_state.mkdir(mode=0o700)
         subprocess.run(["/bin/cp", "-cR", f"{state}/.", str(retained_state)], check=True)
         safe_tree(retained_state)
@@ -142,15 +129,15 @@ def retain(args: argparse.Namespace) -> None:
             for key, path in expected_app_paths.items()
         }
         source_assets = {
-            "source_disk": (destination / retained_disk.name, disk_hash),
-            "source_vars": (destination / retained_vars.name, vars_hash),
+            "source_disk": (destination / retained_disk.relative_to(staging), disk_hash),
+            "source_vars": (destination / retained_vars.relative_to(staging), vars_hash),
             "source_vtpm": (destination / retained_state.name, retained_state_hash),
             "source_vtpm_package": (destination / package.name, T19.file_hash(package)),
             "source_vtpm_code": (destination / code.name, T19.file_hash(code)),
         }
         manifest = staging / "t19-input-manifest.tsv"
         write_manifest(manifest, request["campaign_mode"], {**app_assets, **source_assets})
-        staging.rename(destination)
+        owned.publish(destination)
         manifest = destination / manifest.name
         verified_output = destination / "t19-verified.json"
         check = T19.verify(manifest)
@@ -161,15 +148,7 @@ def retain(args: argparse.Namespace) -> None:
             output.write("\n")
         lock_tree(destination)
     except BaseException:
-        cleanup = destination if destination.exists() else staging
-        if cleanup.exists():
-            for entry in cleanup.rglob("*"):
-                try:
-                    entry.chmod(0o700 if entry.is_dir() else 0o600)
-                except OSError:
-                    pass
-            cleanup.chmod(0o700)
-            shutil.rmtree(cleanup, ignore_errors=True)
+        owned.cleanup()
         raise
     status = {
         "schema_version": "bridgevm.t17-t19-private-handoff.v1",
@@ -191,7 +170,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         retain(args)
-    except (OSError, ValueError, KeyError, json.JSONDecodeError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, KeyError, json.JSONDecodeError, subprocess.SubprocessError) as error:
         print(f"T17-to-T19 handoff refused: {error}", file=sys.stderr)
         return 1
     return 0

@@ -1846,7 +1846,7 @@ scripts/live-gates/windows_product_e2e_guest_evidence.py	114	0
 scripts/live-gates/write-windows-product-e2e-receipt.py	229	0
 scripts/live-gates/windows_product_e2e_failure.py	22	0
 scripts/live-gates/run-windows-product-e2e-tier.sh	121	0
-scripts/live-gates/retain-windows-import-source.py	201	0
+scripts/live-gates/retain-windows-import-source.py	180	0
 scripts/live-gates/classify-product-e2e-signing.sh	16	0
 tests/integration/windows-product-e2e-signing-class.py	57	0
 scripts/live-gates/publish-receipt.sh	17	0
@@ -3475,8 +3475,8 @@ crates/bridgevm-hvf/src/snapshot_pair_selected.rs	50	0
 crates/bridgevm-hvf/src/snapshot_pair_selected_tests.rs	39	0
 apps/macos/Sources/BridgeVMProductE2E/T17SelectedMedia.swift	60	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17SelectedMediaTests.swift	30	0
-scripts/live-gates/windows_product_e2e_selected.py	28	0
-tests/fixtures/fake-snapshot-pair-cli.py	9	0
+scripts/live-gates/windows_product_e2e_selected.py	14	0
+tests/fixtures/fake-snapshot-pair-cli.py	7	0
 apps/macos/Sources/BridgeVMProductE2E/T17SelectedEvidence.swift	12	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17SelectedEvidenceTests.swift	15	0
 docs/history/windows-hvf/a9-r57-r81-studio-to-first-pilot-pass-20261001.md	82	0
@@ -3487,3 +3487,12 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17PressActionDeadlineTests.swift	59	0
 scripts/live-gates/native_snapshot_export_json.py	22	0
 tests/integration/native-snapshot-export-json-contract.py	113	0
 tests/integration/a19-lifecycle-campaign-progress-contract.py	96	0
+scripts/live-gates/windows_selected_media_cli.py	38	0
+scripts/live-gates/retained_windows_media.py	23	0
+scripts/live-gates/retained_windows_publication.py	89	0
+scripts/live-gates/retained_windows_cleanup.py	30	0
+tests/fixtures/fake_snapshot_pair_commands.py	30	0
+tests/integration/t17-selected-retention-contract.py	115	0
+tests/integration/t17-selected-retention-mutation-contract.py	99	0
+tests/integration/retained-windows-publication-contract.py	145	0
+tests/integration/retained-windows-cleanup-races-contract.py	97	0
