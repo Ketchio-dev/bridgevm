@@ -1,36 +1,12 @@
 """Publish without replacement and clean only this attempt's owned directory."""
 from __future__ import annotations
 
-import ctypes
-import errno
 import os
 from pathlib import Path
-import sys
 import uuid
 from retained_windows_cleanup import clear_directory
 from retained_windows_identity import directory_identity
-
-
-def rename_exclusive(source: Path, destination: Path) -> None:
-    native = ctypes.CDLL(None, use_errno=True)
-    try:
-        if sys.platform == "darwin":
-            move = native.renamex_np
-            move.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
-            arguments = (os.fsencode(source), os.fsencode(destination), 0x4)  # RENAME_EXCL
-        elif sys.platform.startswith("linux"):
-            move = native.renameat2
-            move.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
-                             ctypes.c_char_p, ctypes.c_uint]
-            arguments = (-100, os.fsencode(source), -100, os.fsencode(destination), 1)
-        else:
-            raise AttributeError("exclusive rename is unavailable")
-    except AttributeError as error:
-        raise OSError(errno.ENOTSUP, "exclusive retention publication is unavailable") from error
-    move.restype = ctypes.c_int
-    if move(*arguments) != 0:
-        code = ctypes.get_errno()
-        raise OSError(code, os.strerror(code), str(destination))
+from retained_windows_mutation import open_owned_directory_for_cleanup, rename_exclusive
 
 
 class OwnedRetention:
@@ -57,6 +33,8 @@ class OwnedRetention:
         try:
             if directory_identity(original) != self.identity:
                 return False
+            step = "unlock owned directory"
+            descriptor = open_owned_directory_for_cleanup(original, self.identity)
             quarantine = original.with_name(f".{original.name}.cleanup-{uuid.uuid4().hex}")
             step = "quarantine owned directory"
             rename_exclusive(original, quarantine)
@@ -67,11 +45,6 @@ class OwnedRetention:
                 step = "restore replaced quarantine"
                 rename_exclusive(quarantine, original)
                 self.path = original
-                return False
-            step = "open owned directory"
-            descriptor = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-            metadata = os.fstat(descriptor)
-            if (metadata.st_dev, metadata.st_ino) != self.identity:
                 return False
             step = "clear owned directory"
             clear_directory(descriptor)

@@ -30,22 +30,20 @@ class RetainedWindowsCleanupRacesContract(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_cleanup_descriptor_stays_on_owned_inode_after_name_replacement(self):
-        real_open = os.open
+        real_clear = clear_directory
         moved = self.root / "moved-owned-staging"
         replacements = []
 
-        def open_then_replace(path, *arguments, **options):
-            descriptor = real_open(path, *arguments, **options)
-            opened = Path(path)
-            if ".cleanup-" in opened.name:
-                opened.rename(moved)
-                opened.mkdir()
-                replacement = opened / "personal"
-                replacement.write_bytes(b"keep replacement data")
-                replacements.append(replacement)
-            return descriptor
+        def clear_after_replacement(descriptor):
+            opened = self.owned.path
+            opened.rename(moved)
+            opened.mkdir()
+            replacement = opened / "personal"
+            replacement.write_bytes(b"keep replacement data")
+            replacements.append(replacement)
+            return real_clear(descriptor)
 
-        with mock.patch("retained_windows_publication.os.open", side_effect=open_then_replace):
+        with mock.patch.object(PUBLICATION, "clear_directory", side_effect=clear_after_replacement):
             self.assertFalse(self.owned.cleanup())
         self.assertEqual(replacements[0].read_bytes(), b"keep replacement data")
         self.assertTrue(moved.is_dir())
