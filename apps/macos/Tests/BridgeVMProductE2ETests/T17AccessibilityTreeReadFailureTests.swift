@@ -30,7 +30,7 @@ final class T17AccessibilityTreeReadFailureTests: XCTestCase {
         for name in [kAXIdentifierAttribute, kAXRoleAttribute] {
             assertReadFailure(name) { try T17AccessibilityTree.attribute(absent, name) }
         }
-        assertReadFailure(kAXChildrenAttribute) { try T17AccessibilityTree.nodes(absent, limit: 12_000) }
+        assertReadFailure(kAXWindowsAttribute) { try T17AccessibilityTree.nodes(absent, limit: 12_000) }  // app roots: AXWindows only
     }
 
     func testAFailedRoleReadIsNotRepeatedAndOtherFailuresReadTheRoleOnce() {

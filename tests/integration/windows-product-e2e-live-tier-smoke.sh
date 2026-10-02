@@ -53,7 +53,7 @@ policy={"schemaVersion":1,"policy":"fixture-policy","source":{"tag":"v1","commit
 open(sys.argv[2],"w").write(json.dumps(policy)+"\n")
 PY
 printf seed > "$RES/BridgeVMControl_BridgeVMControl.bundle/windows-boot-seed-vars.fd.gz"
-cp "$ROOT/tests/fixtures/fake-windows-product-e2e-helper.py" "$RES/fake-product-helper.py"; cp "$ROOT/tests/fixtures/fake-windows-product-e2e-survivor.py" "$RES/"; cp "$ROOT/apps/macos/BridgeVMProductE2E-Info.plist" "$HELPER_APP/Contents/Info.plist"; python3 "$ROOT/tests/integration/t17-private-diagnostic-packet-test.py" --augment-helper "$RES/fake-product-helper.py"; python3 "$ROOT/tests/integration/t17-host-residue-test.py" --augment-helper "$RES/fake-product-helper.py"; python3 "$ROOT/tests/integration/t17-post-ready-packet-test.py" --augment-helper "$RES/fake-product-helper.py"
+cp "$ROOT/tests/fixtures/fake-windows-product-e2e-helper.py" "$RES/fake-product-helper.py"; mkdir -p "$RES/target/release/examples" && cp "$ROOT/tests/fixtures/fake-snapshot-pair-cli.py" "$RES/target/release/examples/snapshot_pair_cli"; cp "$ROOT/tests/fixtures/fake-windows-product-e2e-survivor.py" "$RES/"; cp "$ROOT/apps/macos/BridgeVMProductE2E-Info.plist" "$HELPER_APP/Contents/Info.plist"; python3 "$ROOT/tests/integration/t17-private-diagnostic-packet-test.py" --augment-helper "$RES/fake-product-helper.py"; python3 "$ROOT/tests/integration/t17-host-residue-test.py" --augment-helper "$RES/fake-product-helper.py"; python3 "$ROOT/tests/integration/t17-post-ready-packet-test.py" --augment-helper "$RES/fake-product-helper.py"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

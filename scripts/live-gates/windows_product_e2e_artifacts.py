@@ -3,7 +3,7 @@
 from __future__ import annotations
 import hashlib, json, re
 from pathlib import Path
-import windows_product_e2e_guest_evidence as GUEST
+import windows_product_e2e_guest_evidence as GUEST, windows_product_e2e_selected as SELECTED
 
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 STAGES = ("artifact_preflight", "vm_created", "source_prepared", "windows_installed", "secure_boot_provisioned", "first_ready", "keyboard_pointer", "clipboard", "folder_share", "network", "audio", "first_shutdown", "snapshot_restore", "second_ready", "second_shutdown")
@@ -87,9 +87,9 @@ def authenticate(request: dict, result: dict, ordinal: int) -> None:
     source_receipt = Path(str(source) + ".sha256"); source_hash = digest(source)
     if not source_receipt.is_file() or source_receipt.is_symlink() or source_receipt.read_text(encoding="ascii") != source_hash + "\n" or result["installer_source_sha256"] != source_hash or source_hash == digest(Path(request["iso_path"])):
         raise ValueError(f"lane {ordinal} installer source cache receipt is invalid")
-    files = {"final_disk_sha256": "disk_path", "final_vars_sha256": "vars_path", "secure_boot_receipt_sha256": "secure_boot_receipt_path", "guest_evidence_sha256": "guest_evidence_path"}
-    for hash_field, path_field in files.items():
-        if digest(Path(request[path_field])) != result[hash_field]:
+    actual = {**dict(zip(("final_disk_sha256", "final_vars_sha256"), SELECTED.selected_digests(request))), **{field: digest(Path(request[path])) for field, path in (("secure_boot_receipt_sha256", "secure_boot_receipt_path"), ("guest_evidence_sha256", "guest_evidence_path"))}}  # final media: the pair the product boots next
+    for hash_field, value in actual.items():
+        if value != result[hash_field]:
             raise ValueError(f"lane {ordinal} {hash_field} does not authenticate its file")
     snapshot_disk, snapshot_vars, snapshot_receipt = snapshot_files(Path(request["snapshot_path"]), vm_slug)
     if digest(snapshot_disk) != result["final_disk_sha256"] or digest(snapshot_vars) != result["final_vars_sha256"]:
@@ -98,7 +98,7 @@ def authenticate(request: dict, result: dict, ordinal: int) -> None:
     vtpm_entries = list(Path(request["vtpm_state_path"]).rglob("*"))
     if not vtpm_entries or any(item.is_symlink() or (not item.is_file() and not item.is_dir()) for item in vtpm_entries):
         raise ValueError(f"lane {ordinal} vTPM state is missing or unsafe")
-    state_files = [source, source_receipt, probe, library / vm_slug / "vm.json", *[Path(request[field]) for field in files.values() if field != "guest_evidence_path"], snapshot_disk, snapshot_vars, snapshot_receipt, *private_observations, *[item for item in vtpm_entries if item.is_file()]]
+    state_files = [source, source_receipt, probe, library / vm_slug / "vm.json", *[Path(request[field]) for field in ("disk_path", "vars_path", "secure_boot_receipt_path")], snapshot_disk, snapshot_vars, snapshot_receipt, *private_observations, *[item for item in vtpm_entries if item.is_file()]]
     input_files = [Path(request[field]) for field in ("runner_path", "firmware_path", "secure_boot_policy_path", "iso_path", "bundled_vars_seed_path", "guest_payload_manifest_path")]
     input_files.extend(item for root_path in (Path(request["app_bundle_path"]), Path(request["guest_payload_path"])) for item in root_path.rglob("*") if item.is_file())
     if len({(item.stat().st_dev, item.stat().st_ino) for item in state_files}) != len(state_files) or any(output.samefile(source_file) for output in state_files for source_file in input_files):

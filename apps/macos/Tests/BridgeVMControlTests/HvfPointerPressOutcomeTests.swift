@@ -46,7 +46,7 @@ final class HvfPointerPressOutcomeTests: XCTestCase {
     func testAnUnknownAttachmentPressGoesToTheLegacyPath() throws {
         try withSession(negotiated: false) { session in
             let size = CGSize(width: 800, height: 600)
-            XCTAssertEqual(session.sendPointerPress(location: CGPoint(x: 400, y: 300), viewSize: size, imageSize: size), "legacy")
+            XCTAssertEqual(session.sendPointerPress(location: CGPoint(x: 400, y: 300), viewSize: size, imageSize: size), "legacy-unowned-disconnected-inactive-attached")
         }
     }
 }

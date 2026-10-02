@@ -4,7 +4,7 @@ import Foundation
 final class HvfSessionInputDriver {
     var onPoll: (() -> Void)?
     var onDiagnostic: ((String) -> Void)?
-    private var router = HvfSessionInputRouter()
+    private(set) var router = HvfSessionInputRouter()
     private var timer: Timer?
 
     deinit { timer?.invalidate() }
