@@ -3,6 +3,7 @@
 use crate::*;
 use bridgevm_agentd::AgentCommandTracker;
 use bridgevm_agentd::AgentSession;
+use bridgevm_agentd::EnvelopeLineReader;
 use bridgevm_api::guest_tools_mount_approved_share_envelope;
 use bridgevm_api::handle_request;
 use bridgevm_api::BridgeVmRequest;
@@ -23,7 +24,7 @@ pub(crate) struct SupervisedBackend {
     pub(crate) child: Child,
     pub(crate) qmp: Option<QmpClient>,
     pub(crate) guest_tools: Option<AgentSession>,
-    pub(crate) guest_tools_stream: Option<BufReader<UnixStream>>,
+    pub(crate) guest_tools_stream: Option<EnvelopeLineReader<BufReader<UnixStream>>>,
     /// A guest-tools socket connection established host-first (right after the
     /// backend is spawned, before the guest agent boots) and HELD open across
     /// reconcile ticks. The guest agent writes its `GuestHello` exactly once,

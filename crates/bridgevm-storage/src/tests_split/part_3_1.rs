@@ -569,12 +569,9 @@ fn creates_snapshot_overlay_with_injected_qemu_img_runner() {
     assert!(create.disk.overlay_exists);
     assert!(create.disk.backing_exists);
     assert_eq!(create.stdout, "overlay created\n");
-    assert!(store
-        .bundle_path("dev")
-        .join("metadata")
-        .join("snapshot-disks")
-        .join("before-upgrade-create.json")
-        .exists());
+    assert!(
+        snapshot_disk_create_metadata_path(&store.bundle_path("dev"), "before-upgrade").exists()
+    );
     let active = store.active_disk("dev").unwrap();
     assert_eq!(active.source, ActiveDiskSource::SnapshotOverlay);
     assert_eq!(active.snapshot.as_deref(), Some("before-upgrade"));

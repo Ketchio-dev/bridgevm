@@ -1,5 +1,6 @@
 //! Where each metadata file lives inside a bundle.
 
+pub(crate) use crate::snapshot_catalog::name_admission::snapshot_disk_create_metadata_path;
 use bridgevm_config::slug;
 use std::path::Path;
 use std::path::PathBuf;
@@ -9,13 +10,6 @@ pub(crate) fn snapshot_disk_metadata_path(bundle: &Path, snapshot_name: &str) ->
         .join("metadata")
         .join("snapshot-disks")
         .join(format!("{}.json", slug(snapshot_name)))
-}
-
-pub(crate) fn snapshot_disk_create_metadata_path(bundle: &Path, snapshot_name: &str) -> PathBuf {
-    bundle
-        .join("metadata")
-        .join("snapshot-disks")
-        .join(format!("{}-create.json", slug(snapshot_name)))
 }
 
 pub(crate) fn snapshot_suspend_image_metadata_path(bundle: &Path, snapshot_name: &str) -> PathBuf {

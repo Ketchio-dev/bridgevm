@@ -122,7 +122,7 @@ assert_disk_create_contract() {
   local primary_disk="$bundle/disks/root.qcow2"
   local overlay="$bundle/disks/snapshots/$SNAPSHOT_NAME.qcow2"
   local snapshot_metadata="$bundle/metadata/snapshot-disks/$SNAPSHOT_NAME.json"
-  local create_metadata="$bundle/metadata/snapshot-disks/$SNAPSHOT_NAME-create.json"
+  local create_metadata="$bundle/metadata/snapshot-disks/creates/$SNAPSHOT_NAME.json"
   local active_disk_metadata="$bundle/metadata/active-disk.json"
 
   "$runner" create "$vm" --os ubuntu --arch x86_64 --mode compatibility >/dev/null
