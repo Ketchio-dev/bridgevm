@@ -1148,7 +1148,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace/lock_tracing.rs	75	0
 crates/bridgevm-hvf/examples/hvf_gic_irq_live.rs	156	1
 crates/bridgevm-hvf/examples/hvf_uart_live.rs	135	1
 crates/bridgevm-hvf/examples/venus_device_smoke.rs	425	1
-crates/bridgevm-hvf/src/snapshot_hash.rs	22	0
+crates/bridgevm-hvf/src/snapshot_hash.rs	6	0
 fuzz/fuzz_targets/nat_packet.rs	5	0
 fuzz/fuzz_targets/nvme_prp.rs	5	0
 fuzz/fuzz_targets/virtqueue_chain.rs	5	0
@@ -2365,7 +2365,7 @@ crates/bridgevm-api/src/test_support_env.rs	99	0
 crates/bridgevm-hvf/src/managed_pair_restore.rs	40	0
 crates/bridgevm-hvf/src/nvme/doorbell.rs	35	0
 crates/bridgevm-hvf/src/nvme/tests/doorbell_indices.rs	117	0
-crates/bridgevm-hvf/src/snapshot_verification.rs	25	0
+crates/bridgevm-hvf/src/snapshot_verification.rs	14	0
 crates/bridgevm-hvf/src/snapshot_verification_tests.rs	125	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportDestination.swift	39	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportDestinationTests.swift	122	0
@@ -3499,7 +3499,7 @@ tests/integration/t17-selected-retention-contract.py	115	0
 scripts/live-gates/retained_windows_cleanup.py	30	0
 tests/integration/retained-windows-cleanup-races-contract.py	97	0
 tests/integration/t17-selected-retention-mutation-contract.py	99	0
-crates/bridgevm-hvf/src/snapshot_manifest_read.rs	33	0
+crates/bridgevm-hvf/src/snapshot_manifest_read.rs	27	0
 crates/bridgevm-hvf/src/snapshot_manifest_read_tests.rs	136	1
 docs/history/windows-hvf/snapshot-retention-evidence-and-input-deadlines-20261002.md	71	0
 crates/bridgevm-hvf/src/snapshot_create_manifest_admission.rs	40	0
@@ -3512,3 +3512,7 @@ scripts/live-gates/product_e2e_identity.py	38	0
 tests/fixtures/fake_import_mutations.py	14	0
 tests/integration/product-e2e-identity-contract.py	173	0
 tests/integration/product_e2e_identity_fixtures.py	72	0
+crates/bridgevm-hvf/src/snapshot_hash_stream.rs	21	0
+crates/bridgevm-hvf/src/snapshot_regular_file.rs	15	0
+crates/bridgevm-hvf/src/snapshot_verified_member.rs	29	0
+crates/bridgevm-hvf/src/snapshot_verified_member_tests.rs	151	1

@@ -1,9 +1,7 @@
 //! Read bounded snapshot metadata without following a link or blocking on a FIFO.
 
 use super::{SnapshotError, SnapshotManifest};
-use std::fs::OpenOptions;
 use std::io::{self, Read};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 /// Shared by restore verification and destructive replacement admission.
@@ -16,14 +14,8 @@ pub(super) fn read(path: &Path) -> Result<SnapshotManifest, SnapshotError> {
 }
 
 fn read_text(path: &Path) -> io::Result<String> {
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)?;
+    let file = super::regular_file::open(path)?;
     let metadata = file.metadata()?;
-    if !metadata.is_file() {
-        return Err(io::Error::other("manifest must be a regular file"));
-    }
     if metadata.len() > MANIFEST_LIMIT {
         return Err(io::Error::other("manifest exceeds the 64 KiB size limit"));
     }

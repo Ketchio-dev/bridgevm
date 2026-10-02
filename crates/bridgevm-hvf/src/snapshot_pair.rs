@@ -29,6 +29,8 @@ mod free_space;
 mod manifest_json;
 #[path = "snapshot_manifest_read.rs"]
 mod manifest_read;
+#[path = "snapshot_regular_file.rs"]
+mod regular_file;
 use copy::copy_and_sync;
 #[path = "snapshot_hash.rs"]
 mod snapshot_hash;
