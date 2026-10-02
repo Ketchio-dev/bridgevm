@@ -42,6 +42,7 @@ final class FBLayerView: NSView {
         guard session !== next else { return }
         teardown()
         session = next
+        inputFocusMonitor.watch(window: window) { [weak session = next] in session?.cancelOrderedInputTarget() }
         if window != nil { startDisplayLink() }
     }
 
