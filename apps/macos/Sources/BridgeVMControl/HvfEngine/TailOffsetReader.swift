@@ -1,24 +1,19 @@
 import Foundation
 
 final class TailOffsetReader {
-    private var offset: UInt64 = 0
+    private var cursor: HvfTailFileCursor
     private var accumulator = HvfTailLineAccumulator()
-    init(startingAt offset: UInt64 = 0) { self.offset = offset }
+    init(startingAt offset: UInt64 = 0) { cursor = HvfTailFileCursor(startingAt: offset) }
     func readNewLines(from url: URL) -> [String] {
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let size = attrs[.size] as? NSNumber else { return [] }
-        let fileSize = size.uint64Value
-        if fileSize < offset {
-            offset = 0
-            accumulator.reset()
-        }
-        guard fileSize != offset else { return [] }
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
+        guard let handle = HvfTailFileCursor.openFile(url) else { return [] }
         defer { try? handle.close() }
+        guard let state = cursor.admit(handle, path: url.standardizedFileURL.path) else { return [] }
+        if state.reset { accumulator.reset() }
+        guard state.size != cursor.offset else { return [] }
         do {
-            try handle.seek(toOffset: offset)
+            try handle.seek(toOffset: cursor.offset)
             let data = try handle.read(upToCount: 1_048_576) ?? Data()
-            offset += UInt64(data.count)
+            cursor.advance(data.count)
             return accumulator.consume(data)
         } catch {
             return []
