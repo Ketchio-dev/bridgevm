@@ -81,19 +81,12 @@ fi
 
 verify_entitlement() {
   local bin="$1"
-  local entitlements_output
   codesign --verify --strict "$bin" >/dev/null 2>&1 || {
     echo "AppleVzRunner signature verification failed: $bin" >&2
     exit 1
   }
-  entitlements_output="$(codesign -d --entitlements :- "$bin" 2>/dev/null || true)"
-  case "$entitlements_output" in
-    *"<key>com.apple.security.virtualization</key>"*"<true/>"*) ;;
-    *)
-      echo "AppleVzRunner is missing com.apple.security.virtualization entitlement: $bin" >&2
-      exit 1
-      ;;
-  esac
+  codesign -d --entitlements :- "$bin" 2>/dev/null |
+    python3 "$ROOT/scripts/verify-signing-entitlements.py" com.apple.security.virtualization --profile "$RELEASE"
 }
 
 if [[ -n "$VERIFY_ONLY" ]]; then
