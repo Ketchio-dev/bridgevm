@@ -8,7 +8,7 @@ final class HvfTailLineAccumulatorTests: XCTestCase {
         let chunk = Data(repeating: 120, count: 1_048_576)
         for _ in 0..<16 {
             XCTAssertEqual(reader.consume(chunk), [])
-            XCTAssertLessThanOrEqual(reader.pending.count, HvfTailLineAccumulator.maximumLineBytes)
+            XCTAssertTrue(reader.pending.count <= HvfTailLineAccumulator.maximumLineBytes)
         }
         XCTAssertEqual(reader.pending.count, 0)
     }
