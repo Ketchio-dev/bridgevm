@@ -14,6 +14,8 @@ mod staging_debris;
 use destination_lease::claim_staging;
 #[path = "snapshot_create_fill.rs"]
 mod fill;
+#[path = "snapshot_create_manifest_admission.rs"]
+mod manifest_admission;
 #[path = "snapshot_create_stage.rs"]
 mod stage;
 use stage::CreateStage;
@@ -65,13 +67,7 @@ fn create_stopped(
     let logical_disk = fs::canonicalize(disk)?;
     let logical_vars = fs::canonicalize(vars)?;
     let (disk, vars) = (selected_disk.as_path(), selected_vars.as_path());
-    let projected = fs::metadata(disk)?.len() + fs::metadata(vars)?.len();
-    if projected > quota_bytes {
-        return Err(SnapshotError::QuotaExceeded {
-            bytes: projected,
-            quota: quota_bytes,
-        });
-    }
+    manifest_admission::admit([disk, vars], vm_id, quota_bytes)?;
 
     let dest = prepare_destination(dest, [&logical_disk, &logical_vars, disk, vars])?;
     let (_destination_lease, staging) = claim_staging(&dest)?;

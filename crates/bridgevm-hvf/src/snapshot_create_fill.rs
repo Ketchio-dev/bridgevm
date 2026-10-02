@@ -1,5 +1,6 @@
 //! Fill claimed staging, and clear it again when filling fails.
 
+use super::manifest_admission::encode;
 use super::stage::CreateStage;
 use super::staging_debris::clear_staging;
 use super::{sha256_file, sync_dir, write_file_atomically, SnapshotError, SnapshotManifest};
@@ -44,7 +45,7 @@ fn fill(
         vars_sha256: sha256_file(&staging.join(VARS_NAME))?,
     };
     // The manifest is written last and is what makes the directory valid.
-    write_file_atomically(&staging.join(MANIFEST_NAME), manifest.to_json().as_bytes())?;
+    write_file_atomically(&staging.join(MANIFEST_NAME), encode(&manifest)?.as_bytes())?;
     observe(CreateStage::ManifestPublished);
     sync_dir(staging)?;
     observe(CreateStage::StagingDirectorySynced);
