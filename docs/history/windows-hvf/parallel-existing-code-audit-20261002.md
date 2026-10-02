@@ -87,8 +87,8 @@ occurred during that run; it is not clean exact-head evidence. The complete
 broad-audit local and hosted checks had not yet started. No earlier full
 result is substituted for the complete latest source.
 Hosted drift 37031757241 refused stale TRNG count 14 versus actual 16; corrected.
-The tail-test comparison needed a shim-supported equivalent; final results stay in the PR.
-No ceiling or threshold was raised; the
+Tail assertion needed a shim equivalent; full 30f6 then failed an isolated signing fixture.
+The fixture now copies the parser and emits a full plist. No ceiling was raised; the
 capability registry's open criteria and product state remain unchanged.
 
 ## Bounded log tail follow-up
