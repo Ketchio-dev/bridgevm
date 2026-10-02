@@ -1,7 +1,7 @@
 # The QEMU `virt`-compatible guest contract
 
 Document status: **Current**
-Last reviewed: **2026-08-04**
+Last reviewed: **2026-10-02**
 
 BridgeVM's Windows HVF engine presents a **QEMU `virt`-compatible guest
 contract with documented deviations**. That phrasing is deliberate and replaces
@@ -34,7 +34,7 @@ bit-identity would hide both. The machine-readable list is
 QEMU behaviour, the BridgeVM behaviour, whether a guest can observe it, the
 impact, and an evidence path.
 
-Deviations fall into three kinds:
+Deviations fall into four kinds:
 
 - **Substrate deviations** that will not go away, such as Apple's in-kernel GIC.
   Timer interrupts are delivered without a guest exit, which is why exit-count
@@ -42,13 +42,14 @@ Deviations fall into three kinds:
 - **Scope deviations** that describe what the product deliberately supports
   today, such as the experimental Vulkan path and the experimental
   D3D11-compatible subset.
-- **Defect deviations** that are open release blockers and must be removed:
-  the deterministic SMCCC TRNG (A12) and the nonconformant PSCI state
-  table (A13).
+- **Historical defect deviations** whose corrections remain recorded: the
+  former deterministic SMCCC TRNG (A12) and incorrect PSCI state table (A13).
+  Their current criterion states and evidence come from the capability registry.
+- **Recovery deviations** for malformed split queues: BridgeVM refuses invalid
+  addresses but does not reproduce QEMU's broken-device/NEEDS_RESET transition.
 
 A defect deviation is never an excuse. It is recorded here so the contract stays
-honest until the defect is fixed, and its removal is tracked as a release
-blocker in [`capabilities/windows-hvf.json`](../../capabilities/windows-hvf.json).
+honest through correction, with criterion states and evidence tracked in [`capabilities/windows-hvf.json`](../../capabilities/windows-hvf.json).
 
 ## Changing the contract
 

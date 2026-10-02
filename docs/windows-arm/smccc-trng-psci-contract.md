@@ -53,7 +53,7 @@ These are TRNG-specific and deliberately separate from the PSCI namespace.
   `NOT_SUPPORTED` otherwise.
 - `RND32` accepts at most 96 bits, `RND64` at most 192. A larger request is
   `INVALID_PARAMETER`.
-- A zero-bit request succeeds and draws no entropy.
+- BridgeVM extends the one-bit minimum domain: zero bits succeed without entropy.
 - Entropy fills **X3 first**, then X2, then X1. Bits above the requested count
   and any unused register read as zero.
 - Entropy comes only from `SecRandomCopyBytes(kSecRandomDefault, ...)`. A
