@@ -3,6 +3,9 @@
 use super::queue_pending::pending_entries;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
+use crate::virtio_queue::address::read_descriptor;
+use crate::virtio_queue::address::read_u16_at;
+use crate::virtio_queue::address::write_used;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Descriptor {
@@ -12,6 +15,7 @@ pub(crate) struct Descriptor {
     pub(crate) next: u16,
 }
 
+#[cfg(test)]
 pub(crate) fn read_u16(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u16> {
     let mut bytes = [0u8; 2];
     if !mem.read_into(gpa, &mut bytes) {
@@ -25,14 +29,14 @@ impl VirtioMmioBlock {
         if !self.queue_ready || self.queue_num == 0 || self.queue_desc == 0 {
             return;
         }
-        let Some(avail_idx) = read_u16(mem, self.queue_driver + 2) else {
+        let Some(avail_idx) = read_u16_at(mem, self.queue_driver, 2) else {
             return;
         };
         let mut descs = std::mem::take(&mut self.descriptor_scratch);
         let mut read_buf = std::mem::take(&mut self.read_scratch);
         for _ in 0..pending_entries(self.last_avail_idx, avail_idx, self.queue_num) {
             let ring_off = 4 + u64::from(self.last_avail_idx % self.queue_num) * 2;
-            let Some(head) = read_u16(mem, self.queue_driver + ring_off) else {
+            let Some(head) = read_u16_at(mem, self.queue_driver, ring_off) else {
                 break;
             };
             let completion = self.process_descriptor_chain(mem, head, &mut descs, &mut read_buf);
@@ -59,8 +63,7 @@ impl VirtioMmioBlock {
         }
         let mut index = head;
         for _ in 0..queue_num {
-            let Some(desc) = Descriptor::read(mem, queue_desc + u64::from(index) * DESC_SIZE)
-            else {
+            let Some(desc) = read_descriptor(mem, queue_desc, index, Descriptor::read) else {
                 out.clear();
                 return false;
             };
@@ -80,16 +83,7 @@ impl VirtioMmioBlock {
     }
 
     pub(crate) fn write_used(&self, mem: &mut dyn GuestMemoryMut, id: u16, len: u32) {
-        let Some(used_idx) = read_u16(mem, self.queue_device + 2) else {
-            return;
-        };
-        let elem = self.queue_device + 4 + u64::from(used_idx % self.queue_num) * 8;
-        let _ = mem.write_bytes(elem, &u32::from(id).to_le_bytes());
-        let _ = mem.write_bytes(elem + 4, &len.to_le_bytes());
-        let _ = mem.write_bytes(
-            self.queue_device + 2,
-            &used_idx.wrapping_add(1).to_le_bytes(),
-        );
+        write_used(mem, self.queue_device, self.queue_num, id, len);
     }
 }
 
@@ -107,3 +101,7 @@ impl Descriptor {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "queue_overflow_tests.rs"]
+mod queue_overflow_tests;
