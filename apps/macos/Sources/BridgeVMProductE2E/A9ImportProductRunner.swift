@@ -66,8 +66,7 @@ final class A9ImportProductRunner {
     }
 
     private func authenticateFinal(_ evidence: inout A9ImportEvidence) throws {
-        try evidence.authenticate("final_disk_sha256", file: URL(fileURLWithPath: request.diskPath))
-        try evidence.authenticate("final_vars_sha256", file: URL(fileURLWithPath: request.varsPath))
+        try evidence.authenticateSelectedMedia(disk: request.diskPath, vars: request.varsPath)
         try evidence.authenticateTree("final_vtpm_tree_sha256", root: URL(fileURLWithPath: request.vtpmStatePath), fileManager: fileManager)
         try evidence.authenticate("guest_evidence_sha256", file: URL(fileURLWithPath: request.guestEvidencePath))
     }

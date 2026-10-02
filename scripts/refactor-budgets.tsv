@@ -3030,8 +3030,8 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserSemanticIdentityTests.swi
 apps/macos/Sources/BridgeVMProductE2E/T17JourneyRequest.swift	24	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportRequest.swift	167	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportTreeDigest.swift	40	0
-apps/macos/Sources/BridgeVMProductE2E/A9ImportEvidence.swift	109	0
-apps/macos/Sources/BridgeVMProductE2E/A9ImportProductRunner.swift	205	0
+apps/macos/Sources/BridgeVMProductE2E/A9ImportEvidence.swift	93	0
+apps/macos/Sources/BridgeVMProductE2E/A9ImportProductRunner.swift	201	0
 apps/macos/Sources/BridgeVMProductE2E/ProductE2ECLI.swift	54	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportEvidenceTests.swift	42	0
 apps/macos/Tests/BridgeVMProductE2ETests/ProductE2ECLITests.swift	28	0
@@ -3520,7 +3520,7 @@ crates/bridgevm-hvf/src/snapshot_regular_file.rs	15	0
 crates/bridgevm-hvf/src/snapshot_hash_stream.rs	21	0
 crates/bridgevm-hvf/src/snapshot_verified_member.rs	29	0
 crates/bridgevm-hvf/src/snapshot_verified_member_tests.rs	151	1
-scripts/check-snapshot-evidence-contracts.sh	12	0
+scripts/check-snapshot-evidence-contracts.sh	10	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEventFeedLinePrefix.swift	25	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEventFeedLineBreak.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/HvfEventFeedUnicodeTests.swift	73	0
@@ -3530,3 +3530,8 @@ crates/bridgevm-hvf/src/snapshot_create_contents.rs	36	0
 crates/bridgevm-hvf/src/snapshot_create_quota.rs	12	0
 crates/bridgevm-hvf/src/snapshot_create_quota_tests.rs	97	0
 docs/history/windows-hvf/snapshot-media-and-evidence-followup-20261002.md	106	0
+apps/macos/Sources/BridgeVMProductE2E/A9ImportLaneResult.swift	25	0
+apps/macos/Tests/BridgeVMProductE2ETests/A9ImportSelectedEvidenceTests.swift	24	0
+tests/integration/product_e2e_selected_fixtures.py	12	0
+tests/integration/t19-selected-final-media-contract.py	89	0
+scripts/check-selected-windows-media-contracts.sh	6	0

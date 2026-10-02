@@ -5,6 +5,7 @@ import argparse, hashlib, importlib.util, json, os, platform, stat, subprocess, 
 from datetime import datetime, timezone
 from pathlib import Path
 from product_e2e_identity import fixed_fields_match, is_sha256, sealed_request, unique
+from windows_product_e2e_selected import selected_digests
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("import_receipt_verifier", ROOT / "scripts/verify-windows-import-product-e2e-receipt.py")
@@ -108,9 +109,9 @@ def authenticate(request_path: Path, result_path: Path, stamp: Path, job: str, c
         "guest_evidence_path": bundle/"metadata/product-e2e-guest-evidence.json"}
     if not str(root).startswith(("/tmp/bridgevm-import-e2e-", "/private/tmp/bridgevm-import-e2e-")) or any(Path(request[k]) != v for k, v in expected.items()):
         raise ValueError(f"lane {ordinal} paths escape their fixed root")
+    final_disk, final_vars = selected_digests(request)
     observed = {"source_disk_sha256": digest(expected["source_disk_path"]), "source_vars_sha256": digest(expected["source_vars_path"]),
-        "source_vtpm_tree_sha256": tree_digest(expected["source_vtpm_path"]), "final_disk_sha256": digest(expected["disk_path"]),
-        "final_vars_sha256": digest(expected["vars_path"]), "final_vtpm_tree_sha256": tree_digest(expected["vtpm_state_path"]),
+        "source_vtpm_tree_sha256": tree_digest(expected["source_vtpm_path"]), "final_disk_sha256": final_disk, "final_vars_sha256": final_vars, "final_vtpm_tree_sha256": tree_digest(expected["vtpm_state_path"]),
         "guest_evidence_sha256": digest(expected["guest_evidence_path"])}
     if any(result[k] != v for k, v in observed.items()): raise ValueError(f"lane {ordinal} artifacts differ")
     if result["source_disk_sha256"] != result["imported_initial_disk_sha256"] or result["source_vars_sha256"] != result["imported_initial_vars_sha256"] or result["source_vtpm_tree_sha256"] != result["imported_initial_vtpm_tree_sha256"]:
@@ -119,7 +120,6 @@ def authenticate(request_path: Path, result_path: Path, stamp: Path, job: str, c
         "commit": commit, "lane": ordinal, "nonce": result["nonce"], "request_sha256": expected_request_sha256,
         "result_sha256": digest(result_path)}
     with stamp.open("x", encoding="utf-8") as output: json.dump(seal, output, indent=2, sort_keys=True); output.write("\n")
-
 def host(command, fallback):
     try: value = subprocess.check_output(command, text=True, stderr=subprocess.DEVNULL).strip()
     except (OSError, subprocess.CalledProcessError): value = ""

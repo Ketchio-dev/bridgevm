@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from product_e2e_selected_fixtures import package_pair_helper
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/live-gates"))
@@ -40,7 +41,6 @@ def stamp(writer, result: Path) -> dict:
     return {"schema_version": schema, "job_id": JOB, "commit": COMMIT, "lane": 1,
             "nonce": NONCE, "request_sha256": "d" * 64, "result_sha256": writer.digest(result)}
 
-
 def import_request(root: Path) -> tuple[Path, Path]:
     inputs = root / "inputs"
     inputs.mkdir(parents=True)
@@ -65,7 +65,7 @@ def import_request(root: Path) -> tuple[Path, Path]:
                "vm_name": f"BridgeVM A9 Import Lane 1 {NONCE[:12]}", "vm_slug": slug,
                "three_d_injection": False, **{key: str(value) for key, value in paths.items()}}
     request_path, result_path = root / "request.json", root.parent / "result.json"
-    request_path.write_text(json.dumps(request))
+    request_path.write_text(json.dumps(request)); package_pair_helper(paths["app_bundle_path"], ROOT)
     subprocess.run([sys.executable, str(ROOT / "tests/fixtures/fake-windows-import-product-e2e-helper.py"),
                     "--windows-import-product-e2e", "--request", str(request_path), "--result", str(result_path)],
                    check=True, capture_output=True)

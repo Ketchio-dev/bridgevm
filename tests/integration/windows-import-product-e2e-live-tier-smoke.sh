@@ -4,11 +4,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"; TMP="$(mktemp -d "${
 trap 'chmod -R u+w "$TMP" 2>/dev/null || true; rm -rf "$TMP"' EXIT
 TIER="$ROOT/scripts/live-gates/run-windows-import-product-e2e-tier.sh"; VERIFY="$ROOT/scripts/verify-windows-import-product-e2e-receipt.py"
 APP="$TMP/BridgeVM.app"; RES="$APP/Contents/Resources"; HELPER_APP="$APP/Contents/Helpers/BridgeVMProductE2E.app"; HELPER="$HELPER_APP/Contents/MacOS/BridgeVMProductE2E"
-mkdir -p "$APP/Contents/MacOS" "$HELPER_APP/Contents/MacOS" "$RES/target/release"
+mkdir -p "$APP/Contents/MacOS" "$HELPER_APP/Contents/MacOS" "$RES/target/release/examples"
 printf '#!/bin/sh\nexit 0\n' > "$APP/Contents/MacOS/BridgeVMControl"; printf '#!/bin/sh\nexit 0\n' > "$RES/target/release/hvf-runner"
 printf '#!/bin/sh\nexec /usr/bin/python3 "$(dirname "$0")/../../../../Resources/fake-import-helper.py" "$@"\n' > "$HELPER"
 chmod 755 "$APP/Contents/MacOS/BridgeVMControl" "$RES/target/release/hvf-runner" "$HELPER"
-cp "$ROOT/tests/fixtures/fake-windows-import-product-e2e-helper.py" "$RES/fake-import-helper.py"; cp "$ROOT/tests/fixtures/fake_import_mutations.py" "$RES/"
+cp "$ROOT/tests/fixtures/fake-windows-import-product-e2e-helper.py" "$RES/fake-import-helper.py"; cp "$ROOT/tests/fixtures/fake_import_mutations.py" "$RES/"; cp "$ROOT/tests/fixtures/fake-snapshot-pair-cli.py" "$RES/target/release/examples/snapshot_pair_cli"; cp "$ROOT/tests/fixtures/fake_snapshot_pair_commands.py" "$RES/target/release/examples/"; chmod 755 "$RES/target/release/examples/snapshot_pair_cli"
 cp "$ROOT/apps/macos/BridgeVMProductE2E-Info.plist" "$HELPER_APP/Contents/Info.plist"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
