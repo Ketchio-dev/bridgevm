@@ -87,8 +87,8 @@ experiments remain in this record and prior history. Hosted full-check run `3702
 occurred during that run; it is not clean exact-head evidence. The complete
 broad-audit local and hosted checks had not yet started. No earlier full
 result is substituted for the complete latest source.
-Their final SHA, run identifiers and results belong in the PR checkpoint.
-No existing structural ceiling or acceptance threshold was raised, and the
+Hosted drift 37031757241 refused stale TRNG count 14 versus actual 16; corrected.
+Final results belong in the PR checkpoint. No ceiling or threshold was raised; the
 capability registry's open criteria and product state remain unchanged.
 
 ## Bounded log tail follow-up
