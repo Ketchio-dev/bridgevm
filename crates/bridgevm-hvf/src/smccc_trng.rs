@@ -141,20 +141,20 @@ fn rnd<S: EntropySource>(requested: u64, register_bits: u32, entropy: &mut S) ->
             EntropyError::Unavailable => status::NO_ENTROPY,
             EntropyError::Unsupported => status::NOT_SUPPORTED,
         };
-        // Deliberately return no data alongside the error.
         return SmcccReturn::status(code);
     }
 
     let mut words = [0u64; 3];
+    let register_bytes = (register_bits / 8) as usize;
     for (index, word) in words.iter_mut().enumerate() {
-        let start = index * 8;
-        let mut raw = [0u8; 8];
-        raw.copy_from_slice(&bytes[start..start + 8]);
-        *word = u64::from_le_bytes(raw);
+        let start = index * register_bytes;
+        for (offset, byte) in bytes[start..start + register_bytes].iter().enumerate() {
+            *word |= u64::from(*byte) << (offset * 8);
+        }
     }
 
     // Clear every bit above the request so the guest never receives entropy it
-    // did not ask for, and so unused registers read as zero.
+    // did not ask for; unused registers stay zero.
     mask_to_requested_bits(&mut words, requested, register_bits);
 
     if register_bits == 32 {

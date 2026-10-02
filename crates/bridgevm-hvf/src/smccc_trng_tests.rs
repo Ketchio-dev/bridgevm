@@ -2,6 +2,8 @@
 //!
 //! These prove the request/response rules and, most importantly, that no
 //! failure path can hand the guest a predictable value.
+#[path = "smccc_trng_rnd32_tests.rs"]
+mod rnd32_tests;
 
 use super::*;
 
@@ -80,8 +82,6 @@ fn features_reports_only_implemented_functions() {
         );
     }
 
-    // The previous implementation answered SUCCESS unconditionally, which told
-    // the guest that unimplemented calls existed.
     for id in [0x8400_0054u64, 0x8400_0000, 0xc400_0054, 0] {
         assert_eq!(
             call(func::FEATURES, id).x0,
@@ -104,7 +104,6 @@ fn unknown_function_is_not_handled_here() {
 
 #[test]
 fn rnd64_fills_x3_first() {
-    // Bytes 1..=8 are the first word and must land in X3.
     let ret = call(func::RND64, 64);
     assert_eq!(ret.x0, status::SUCCESS);
     assert_eq!(ret.x3, u64::from_le_bytes([1, 2, 3, 4, 5, 6, 7, 8]));
@@ -133,6 +132,8 @@ fn rnd32_packs_into_the_low_half_of_each_register() {
         );
     }
     assert_eq!(ret.x3, u32::from_le_bytes([1, 2, 3, 4]) as u64);
+    assert_eq!(ret.x2, u32::from_le_bytes([5, 6, 7, 8]) as u64);
+    assert_eq!(ret.x1, u32::from_le_bytes([9, 10, 11, 12]) as u64);
 }
 
 #[test]
@@ -206,7 +207,6 @@ fn unsupported_provider_returns_not_supported() {
 
 #[test]
 fn status_codes_match_the_specification() {
-    // Written out rather than derived, so a sign or width mistake is visible.
     assert_eq!(status::SUCCESS, 0);
     assert_eq!(status::NOT_SUPPORTED, 0xffff_ffff_ffff_ffff);
     assert_eq!(status::INVALID_PARAMETER, 0xffff_ffff_ffff_fffe);
