@@ -3678,3 +3678,5 @@ docs/history/windows-hvf/empty-snapshot-and-runtime-chooser-contracts-20261003.m
 docs/document-manifests/windows-install-and-snapshot-lifecycle.tsv	5	0
 tests/integration/a19_interrupt_stop_fixtures.py	34	0
 tests/integration/a19_interrupt_stop_transitions.py	116	0
+docs/history/windows-hvf/a19-stop-point-fixture-transition-20261003.md	77	0
+docs/document-manifests/a19-stop-observation.tsv	3	0
