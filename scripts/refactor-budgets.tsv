@@ -1693,7 +1693,7 @@ scripts/venus_feature.py	41	0
 scripts/drop-injector-boot-entry.py	44	0
 scripts/fb-rate.py	113	0
 scripts/generate-xctest-manifest.py	107	0
-scripts/live-gates/redact-receipt.py	247	0
+scripts/live-gates/redact-receipt.py	185	0
 scripts/live-gates/qmp-close-race-baseline.rs	27	0
 scripts/live-gates/qmp_stress_contract.py	521	0
 scripts/live-gates/run-qmp-stress-tier.sh	43	0
@@ -3040,9 +3040,9 @@ apps/macos/Sources/BridgeVMProductE2E/T17GuestStage.swift	18	0
 scripts/live-gates/windows-import-product-e2e-manifest.py	108	0
 scripts/live-gates/make-windows-import-product-e2e-request.py	76	0
 tests/integration/windows-import-product-e2e-contract-smoke.sh	60	0
-scripts/verify-windows-import-product-e2e-receipt.py	120	0
+scripts/verify-windows-import-product-e2e-receipt.py	103	0
 scripts/live-gates/launch-import-product-e2e-helper.sh	8	0
-tests/integration/windows-import-product-e2e-receipt.py	48	0
+tests/integration/windows-import-product-e2e-receipt.py	30	0
 scripts/live-gates/write-windows-import-product-e2e-receipt.py	192	0
 scripts/live-gates/run-windows-import-product-e2e-tier.sh	69	0
 scripts/live-gates/write-windows-import-product-e2e-missing-receipt.sh	8	0
@@ -3596,3 +3596,7 @@ docs/document-manifests/a19-interruption.tsv	3	0
 docs/history/windows-hvf/a19-three-interruption-cases-20261002.md	114	0
 tests/integration/live_installer_fixture.py	88	0
 tests/integration/live-installer-dry-run-contract.py	102	0
+scripts/live-gates/receipt_public_fields.py	71	0
+scripts/import_product_receipt_types.py	31	0
+tests/integration/windows_import_receipt_fixtures.py	39	0
+tests/integration/windows-import-product-e2e-publication-contract.py	211	0

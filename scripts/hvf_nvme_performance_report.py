@@ -90,7 +90,7 @@ ROOT = Path(__file__).resolve().parent.parent
 ANALYZER_FILES = (
     "scripts/hvf_nvme_performance_report.py",
     "scripts/write-hvf-nvme-performance-receipt.py",
-    "scripts/live-gates/redact-receipt.py",
+    "scripts/live-gates/redact-receipt.py", "scripts/live-gates/receipt_public_fields.py",
 )
 
 

@@ -2,8 +2,10 @@
 """Validate a public installed-disk import product E2E receipt."""
 from __future__ import annotations
 import argparse, json, re, sys
-from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from import_product_receipt_types import ReceiptError, TIMESTAMP, integer, timestamp, unique, validate_signing_class
 
 SCHEMA = "bridgevm.windows-hvf-import-product-e2e.v1"
 GATE_ID = "windows-hvf-installed-disk-import-e2e"
@@ -30,30 +32,10 @@ FAILURE_CODES = {"none", "missing-app-artifact", "missing-installed-disk", "miss
 OUTCOMES = {"completed", "preflight-blocked", "failed", "canceled", "cleanup-failed", "missing-receipt"}
 SHA256 = re.compile(r"^[0-9a-f]{64}$"); COMMIT = re.compile(r"^[0-9a-f]{40}$")
 IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 REQUIRED = frozenset({"schema_version", "gate_id", "criterion", "tier", "tested_commit", "commit",
     "hosted_ci_commit", "campaign_mode", "artifact_signing_class", "expected_runs", "run_count",
     "passes", "failures", "elapsed_ms", "failure_code", "outcome", *HASH_FIELDS, *STAGE_FIELDS,
     *BOOLEAN_FIELDS, *TEXT_FIELDS})
-
-class ReceiptError(ValueError): pass
-
-def unique(pairs):
-    value = {}
-    for key, item in pairs:
-        if key in value: raise ReceiptError(f"duplicate field: {key}")
-        value[key] = item
-    return value
-
-def integer(value, name, minimum=0):
-    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-        raise ReceiptError(f"{name} must be an integer >= {minimum}")
-    return value
-
-def timestamp(value, name):
-    if not isinstance(value, str) or not TIMESTAMP.fullmatch(value):
-        raise ReceiptError(f"{name} is not a UTC timestamp")
-    return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
 def validate(receipt, *, expected_commit=None, require_claim_eligible=False):
     if not isinstance(receipt, dict) or frozenset(receipt) != REQUIRED:
@@ -61,6 +43,7 @@ def validate(receipt, *, expected_commit=None, require_claim_eligible=False):
     fixed = {"schema_version": SCHEMA, "gate_id": GATE_ID, "criterion": "A9", "tier": TIER,
              "three_d_injection": False, "criterion_pass": False, "capability_promotion": False}
     if any(receipt.get(key) != value for key, value in fixed.items()): raise ReceiptError("fixed receipt identity differs")
+    validate_signing_class(receipt["artifact_signing_class"])
     if not isinstance(receipt["job_id"], str) or not IDENTIFIER.fullmatch(receipt["job_id"]):
         raise ReceiptError("job_id is not canonical")
     for field in ("commit", "tested_commit", "hosted_ci_commit"):
