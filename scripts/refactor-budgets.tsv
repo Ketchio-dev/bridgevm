@@ -3362,7 +3362,7 @@ crates/bridgevm-hvf/src/snapshot_create_staging_debris_tests.rs	84	0
 crates/bridgevm-hvf/src/snapshot_copy.rs	49	0
 crates/bridgevm-hvf/src/snapshot_create_fill.rs	19	0
 crates/bridgevm-hvf/src/snapshot_create_failure_tests.rs	89	0
-crates/bridgevm-hvf/src/managed_pair_restore_admission.rs	27	0
+crates/bridgevm-hvf/src/managed_pair_restore_admission.rs	20	0
 crates/bridgevm-hvf/src/managed_pair_staging_fill.rs	18	0
 crates/bridgevm-hvf/src/managed_pair_streaming_interruption_tests.rs	124	0
 crates/bridgevm-hvf/src/managed_pair_staging_debris.rs	9	0
@@ -3651,3 +3651,7 @@ tests/integration/hvf-diagnostic-output-contract.py	219	0
 tests/integration/winpe_companion_bounds_cases.py	200	0
 docs/history/windows-hvf/bounded-winpe-diagnostics-20261003.md	75	0
 docs/history/windows-hvf/t17-observation-read-boundaries-20261003.md	58	0
+crates/bridgevm-hvf/src/managed_pair_restore_capacity.rs	20	0
+crates/bridgevm-hvf/src/managed_pair_staging_reclaim.rs	10	0
+crates/bridgevm-hvf/src/managed_pair_retry_capacity_tests.rs	65	0
+crates/bridgevm-hvf/src/managed_pair_retry_capacity_refusal_tests.rs	214	0
