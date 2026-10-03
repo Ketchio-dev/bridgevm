@@ -13,9 +13,9 @@ its 32 KiB bound. These prove parser/file-read defects in controlled fixtures;
 they do not demonstrate a foreign-UID or live LaunchServices attack.
 
 Other baseline assertions accepted nonfinite JSON constants and integer
-boolean flags. Changing the manifest during a mocked observation selected a
-different valid app for the final check. The frozen helper/report therefore
-could disagree with the later selector in this controlled model.
+boolean flags. Manifest changes during a mocked observation were accepted;
+a subsequent parse selected a different valid app. The original helper/report
+could disagree with that later selector in this controlled model.
 Baseline ten methods produced nine failed subcases and two AttributeErrors
 for integer/bool PID fields. These errors were not controlled refusals.
 Raw log SHA-256:
@@ -27,12 +27,12 @@ not relabeled as ten baseline methods or as live report-origin evidence.
 ## Resulting observation behavior
 
 Report reads open nofollow/nonblock and validate owned regular-file metadata
-on the descriptor. A limit-plus-one read enforces 32 KiB and detects growth;
-metadata stability checks reject substitution/mutation. Strict UTF-8 JSON
-rejects duplicate keys and nonfinite values; booleans and identity strings
-must have their declared types. PID fields require ASCII digit strings.
-The preflight captures one manifest into an owned read-only snapshot and
-checks original bytes before and after observing that selected helper.
+on the descriptor. A limit-plus-one read enforces 32 KiB and detects growth.
+Descriptor binding preserves the opened bytes across pathname replacement;
+metadata checks reject detected in-place changes. Strict UTF-8 JSON rejects
+duplicates/nonfinite values and wrong boolean/string types. PIDs use ASCII digits.
+Preflight captures one manifest into an owned read-only snapshot and checks
+its original bytes before and after observing the selected helper.
 
 Existing exact app/helper hashes, fixed LaunchServices app path and observation
 scopes remain. PID/CDHash shape is not independent OS-process, signature or

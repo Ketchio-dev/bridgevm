@@ -3655,3 +3655,5 @@ crates/bridgevm-hvf/src/managed_pair_restore_capacity.rs	20	0
 crates/bridgevm-hvf/src/managed_pair_staging_reclaim.rs	10	0
 crates/bridgevm-hvf/src/managed_pair_retry_capacity_tests.rs	65	0
 crates/bridgevm-hvf/src/managed_pair_retry_capacity_refusal_tests.rs	214	0
+docs/history/windows-hvf/interrupted-restore-capacity-20261003.md	62	0
+docs/document-manifests/diagnostic-observation-recovery.tsv	4	0

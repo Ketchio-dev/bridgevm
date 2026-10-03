@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/history/windows-hvf/bounded-winpe-diagnostics-20261003.md	historical-evidence	live-diagnostic-cleanup	-
+docs/history/windows-hvf/t17-observation-read-boundaries-20261003.md	historical-evidence	live-observation-boundary	-
+docs/history/windows-hvf/interrupted-restore-capacity-20261003.md	historical-evidence	disk-safety	-
