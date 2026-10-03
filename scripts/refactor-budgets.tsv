@@ -1289,7 +1289,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfPointerCaptureTests.swift	52	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift	380	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	50	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift	407	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	252	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	237	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsDriverPreflight.swift	45	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallView.swift	84	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/TailOffsetReader.swift	22	0
@@ -1426,7 +1426,7 @@ scripts/run-hvf-windows-installed-boot-package-policy.sh	75	0
 scripts/run-hvf-windows-installed-boot-usage.sh	124	0
 scripts/run-hvf-windows-installed-boot-validation.sh	345	0
 scripts/run-hvf-windows-installed-boot.sh	27	0
-scripts/run-hvf-windows-scripted-install.sh	375	0
+scripts/run-hvf-windows-scripted-install.sh	338	0
 scripts/run-swift-tests.sh	75	0
 scripts/run-venus-device-smoke.sh	56	0
 scripts/run-venus-host-probe.sh	53	0
@@ -3196,7 +3196,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallPrivateDirectory.s
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingFixture.swift	142	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingTests.swift	176	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingJournalTests.swift	137	0
-apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingRunnerTests.swift	104	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingRunnerTests.swift	72	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingReconcileTests.swift	76	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingFailureTests.swift	75	0
 tests/integration/hvf-install-staging-contract.py	48	0
@@ -3660,3 +3660,7 @@ docs/document-manifests/diagnostic-observation-recovery.tsv	4	0
 apps/macos/Sources/BridgeVMProductE2E/T17OwnedApplicationCleanup.swift	42	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17OwnedApplicationCleanupTests.swift	67	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17OwnedInstallCleanupFixture.swift	50	0
+scripts/run-hvf-windows-scripted-install-policy.sh	75	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallResources.swift	17	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingRunnerFixture.swift	66	0
+tests/integration/hvf-scripted-install-firmware-contract.py	188	0

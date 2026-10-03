@@ -110,7 +110,7 @@ for script in \
   build-hvf-windows-viogpu3d-injector.sh \
   build-hvf-windows-driver-injector.sh \
   check-hvf-windows-viogpu3d-package.sh \
-  run-hvf-windows-scripted-install.sh \
+  run-hvf-windows-scripted-install.sh run-hvf-windows-scripted-install-policy.sh \
   verify-hvf-windows-install-target.sh
 do
   install -m 755 "$ROOT/scripts/$script" "$stage_app/Contents/Resources/scripts/$script"

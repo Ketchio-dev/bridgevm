@@ -5,8 +5,8 @@ import XCTest
 
 /// The real scripted-install runner, handed the exact installer argv, against
 /// prepared bundle staging whose every path contains spaces (as a library under
-/// "Application Support" does). Only the hypervisor probe, codesign and the
-/// disk-attaching target verifier are replaced.
+/// "Application Support" does). The probe, codesign, process inventory and target
+/// verifier are replaced; copied firmware policy authenticates synthetic bytes.
 @MainActor
 final class HvfWindowsInstallStagingRunnerTests: XCTestCase {
     func testRunnerUsesTheAppCreatedMediaAtStagingPathsWithSpaces() throws {
@@ -23,7 +23,7 @@ final class HvfWindowsInstallStagingRunnerTests: XCTestCase {
             libraryRoot: library, bundlePath: bundle.path, slug: slug,
             request: HvfWindowsInstallRequest(isoPath: root.appendingPathComponent("w.iso").path,
                                               diskGiB: 1, injectViogpu3d: false, driverPackageDir: nil))
-        let tools = try installRunner(repo: plan.repoRoot, scratch: root)
+        let tools = try HvfWindowsInstallStagingRunnerFixture.installRunner(repo: plan.repoRoot, scratch: root)
         let source = URL(fileURLWithPath: plan.sourceImagePath)
         try FileManager.default.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("synthetic source".utf8).write(to: source)
@@ -51,6 +51,7 @@ final class HvfWindowsInstallStagingRunnerTests: XCTestCase {
         XCTAssertEqual(log.split(separator: "\n").map(String.init), [
             "BRIDGEVM_NVME_DISK=\(plan.sourceImagePath)",
             "BRIDGEVM_NVME_DISK2=\(plan.stagingTargetPath)",
+            try HvfWindowsInstallStagingRunnerFixture.firmwareLogLine(log, runtime: plan.repoRoot),
             "BRIDGEVM_AARCH64_UEFI_VARS=\(plan.stagingVarsPath)",
             "BRIDGEVM_RAMFB_DUMP_DIR=\(plan.stagingEvidenceDir)/ramfb",
         ])
@@ -68,37 +69,4 @@ final class HvfWindowsInstallStagingRunnerTests: XCTestCase {
                        "verified \(plan.stagingTargetPath)\n")
     }
 
-    /// Copies the real runner beside stand-ins; returns the directory to put first on PATH.
-    private func installRunner(repo: URL, scratch: URL) throws -> URL {
-        let checkout = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let scripts = repo.appendingPathComponent("scripts", isDirectory: true)
-        let probe = repo.appendingPathComponent("target/release/examples/hvf_gic_boot_probe")
-        let tools = scratch.appendingPathComponent("fake tools", isDirectory: true)
-        for directory in [scripts, probe.deletingLastPathComponent(), tools] {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        }
-        try FileManager.default.copyItem(
-            at: checkout.appendingPathComponent("scripts/run-hvf-windows-scripted-install.sh"),
-            to: scripts.appendingPathComponent("run-hvf-windows-scripted-install.sh"))
-        try executable(probe, """
-            for name in BRIDGEVM_NVME_DISK BRIDGEVM_NVME_DISK2 BRIDGEVM_AARCH64_UEFI_VARS BRIDGEVM_RAMFB_DUMP_DIR; do
-              printf '%s=%s\\n' "$name" "${!name}"
-            done
-            [[ -f "$BRIDGEVM_NVME_DISK2" && ! -L "$BRIDGEVM_NVME_DISK2" && -f "$BRIDGEVM_AARCH64_UEFI_VARS" ]]
-            printf W | dd of="$BRIDGEVM_NVME_DISK2" bs=1 count=1 conv=notrunc 2>/dev/null
-            printf P3 > "$BRIDGEVM_RAMFB_DUMP_DIR/frame 1.ppm"
-            """)
-        try executable(scripts.appendingPathComponent("verify-hvf-windows-install-target.sh"), """
-            [[ $# == 2 && "$1" == --target && -f "$2" && ! -L "$2" ]] || exit 1
-            printf 'verified %s\\n' "$2"
-            """)
-        try executable(tools.appendingPathComponent("codesign"), "echo '<key>com.apple.security.hypervisor</key>'")
-        return tools
-    }
-
-    private func executable(_ url: URL, _ body: String) throws {
-        try Data(("#!/bin/bash\nset -euo pipefail\n" + body + "\n").utf8).write(to: url)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
-    }
 }
