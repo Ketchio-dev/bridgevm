@@ -147,7 +147,9 @@ crates/bridgevm-daemon/src/guest_tools_session.rs	289	1
 crates/bridgevm-daemon/src/helper_preflight.rs	192	0
 crates/bridgevm-daemon/src/ipc_listener.rs	163	0
 crates/bridgevm-daemon/src/peer_credentials_tests.rs	126	0
-crates/bridgevm-daemon/src/peer_credentials.rs	91	2
+crates/bridgevm-daemon/src/peer_credentials.rs	83	1
+crates/bridgevm-daemon/src/peer_credentials_kernel.rs	57	2
+crates/bridgevm-daemon/src/peer_credentials_kernel_tests.rs	23	0
 crates/bridgevm-daemon/src/main.rs	23	0
 crates/bridgevm-daemon/src/performance_sample.rs	188	0
 crates/bridgevm-daemon/src/proxy_window_crop_artifacts.rs	241	0

@@ -7,16 +7,14 @@
 //! applied. Since the daemon starts and stops VMs and touches guest media, it
 //! should not act on a request whose sender it never verified.
 //!
-//! `getpeereid` asks the kernel who is on the other end of *this* connection,
-//! which is the question that actually matters. It is checked before the
-//! request is decoded, so a foreign peer's bytes never reach the parser.
+//! Native connection credentials come from `SO_PEERCRED` on Linux and
+//! `getpeereid` on Darwin. They are checked before the request is decoded,
+//! so a foreign peer's bytes never reach the parser.
 
-use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
 
-extern "C" {
-    fn getpeereid(fd: i32, euid: *mut u32, egid: *mut u32) -> i32;
-}
+#[path = "peer_credentials_kernel.rs"]
+mod kernel;
 
 /// Who is on the other end of a connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,12 +49,7 @@ impl std::fmt::Display for PeerRejection {
 
 /// Read the peer's credentials from an accepted stream.
 pub(crate) fn peer_credentials(stream: &UnixStream) -> Option<PeerCredentials> {
-    let mut uid = 0u32;
-    let mut gid = 0u32;
-    // SAFETY: `stream` owns a valid descriptor for the duration of the call,
-    // and both out-parameters are live locals.
-    let status = unsafe { getpeereid(stream.as_raw_fd(), &mut uid, &mut gid) };
-    (status == 0).then_some(PeerCredentials { uid, gid })
+    kernel::read(stream)
 }
 
 /// Decide whether to serve a peer. Pure, so the policy is testable without a

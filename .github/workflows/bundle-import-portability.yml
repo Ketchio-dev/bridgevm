@@ -35,4 +35,4 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install qemu
       - name: Require real copied chains through CLI and daemon APIs
-        run: scripts/check-bundle-import-contracts.sh
+        run: cargo test -p bridgevm-daemon --locked peer_credentials && scripts/check-bundle-import-contracts.sh
