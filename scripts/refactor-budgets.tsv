@@ -3557,7 +3557,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfTailLineAccumulatorTests.swift	54	0
 crates/bridgevm-hvf/src/virtio_queue_address.rs	19	0
 crates/bridgevm-hvf/src/virtio_queue_overflow_tests.rs	104	0
 docs/history/windows-hvf/parallel-existing-code-audit-20261002.md	115	0
-docs/document-manifest.tsv	159	0
+docs/document-manifest.tsv	158	0
 docs/machine-contract/qemu-virt-deviations.json	80	0
 docs/machine-contract/qemu-virt.md	59	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTailFileCursor.swift	40	0
@@ -3672,3 +3672,7 @@ crates/bridgevm-hvf/src/snapshot_publish_empty_destination_tests.rs	41	0
 crates/bridgevm-hvf/src/snapshot_publish_empty_race_tests.rs	85	0
 crates/bridgevm-hvf/src/snapshot_publish_empty_interruption_tests.rs	59	0
 apps/macos/Tests/BridgeVMControlTests/FileSelectionPanelFixture.swift	25	0
+docs/history/windows-hvf/t17-firmware-cleanup-pilot-failure-20261003.md	71	0
+docs/windows-arm/evidence/t17-035a889b-firmware-cleanup-pilot-failure-20261003.json	66	0
+docs/history/windows-hvf/empty-snapshot-and-runtime-chooser-contracts-20261003.md	72	0
+docs/document-manifests/windows-install-and-snapshot-lifecycle.tsv	5	0

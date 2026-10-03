@@ -1,0 +1,5 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/imported-disk-growth-20260712.md	historical-evidence	windows-storage	-
+docs/windows-arm/evidence/installed-app-service-20260712.md	historical-evidence	windows-app	-
+docs/history/windows-hvf/t17-firmware-cleanup-pilot-failure-20261003.md	historical-evidence	windows-product-e2e	-
+docs/history/windows-hvf/empty-snapshot-and-runtime-chooser-contracts-20261003.md	historical-evidence	windows-install-and-snapshot-lifecycle	-
