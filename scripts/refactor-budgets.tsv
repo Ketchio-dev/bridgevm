@@ -3647,3 +3647,4 @@ scripts/run-hvf-windows-installed-boot-usage-core.sh	94	0
 tests/integration/d4-bounded-output-contract.py	315	0
 tests/integration/hvf-diagnostic-output-contract.py	219	0
 tests/integration/winpe_companion_bounds_cases.py	200	0
+docs/history/windows-hvf/bounded-winpe-diagnostics-20261003.md	75	0

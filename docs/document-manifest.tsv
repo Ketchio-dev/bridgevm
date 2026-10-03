@@ -155,3 +155,4 @@ docs/windows-arm/evidence/a19-t20-r8-20260930.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-t23-r1-20260930.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-t21-t22-r2-20260930.md	current	windows-storage	-
 docs/windows-arm/evidence/b6-trace-nine-cell-collection-20260911.md	historical-evidence	b6-renderer-trace-collection	-
+docs/history/windows-hvf/bounded-winpe-diagnostics-20261003.md	historical-evidence	live-diagnostic-cleanup	-
