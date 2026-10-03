@@ -3680,3 +3680,6 @@ tests/integration/a19_interrupt_stop_fixtures.py	34	0
 tests/integration/a19_interrupt_stop_transitions.py	116	0
 docs/history/windows-hvf/a19-stop-point-fixture-transition-20261003.md	77	0
 docs/document-manifests/a19-stop-observation.tsv	3	0
+docs/history/windows-hvf/t17-runtime-chooser-pilot-failure-20261003.md	82	0
+docs/document-manifests/t17-install-and-chooser-boundaries.tsv	3	0
+docs/windows-arm/evidence/t17-8a4a390d-runtime-chooser-pilot-failure-20261003.json	66	0
