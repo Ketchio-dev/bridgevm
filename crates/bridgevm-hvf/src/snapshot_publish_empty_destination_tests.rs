@@ -1,7 +1,7 @@
 //! Empty destinations need atomic rename, not directory exchange support.
 
 use super::*;
-use crate::snapshot_pair::{SnapshotManifest, create_snapshot, verify_snapshot};
+use crate::snapshot_pair::{create_snapshot, verify_snapshot, SnapshotManifest};
 
 fn snapshot(scratch: &Scratch, name: &str, bytes: &[u8]) -> SnapshotManifest {
     let disk = scratch.write(&format!("{name}-disk"), bytes);
