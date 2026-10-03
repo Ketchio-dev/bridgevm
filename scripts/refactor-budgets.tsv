@@ -1260,7 +1260,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	333	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	458	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	420	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	416	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryRequest.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowInventoryRequestTests.swift	70	0
 apps/macos/Tests/BridgeVMControlTests/HvfPasteKeyOrderingTests.swift	49	0
@@ -1964,7 +1964,7 @@ apps/macos/Tests/BridgeVMControlTests/BridgeVMControlLaunchPolicyTests.swift	16	
 apps/macos/Tests/BridgeVMProductE2ETests/T17LaneDetailTests.swift	28	0
 apps/macos/Sources/BridgeVMProductE2E/T17Activation.swift	30	0
 apps/macos/Sources/BridgeVMControl/FileSelection.swift	39	0
-apps/macos/Tests/BridgeVMControlTests/FileSelectionTests.swift	74	0
+apps/macos/Tests/BridgeVMControlTests/FileSelectionTests.swift	63	0
 scripts/b6-scene-contract.sh	46	0
 tests/integration/b6-scene-contract-smoke.py	81	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooser.swift	54	0
@@ -3671,3 +3671,4 @@ crates/bridgevm-hvf/src/snapshot_publish_exchange.rs	34	2
 crates/bridgevm-hvf/src/snapshot_publish_empty_destination_tests.rs	41	0
 crates/bridgevm-hvf/src/snapshot_publish_empty_race_tests.rs	85	0
 crates/bridgevm-hvf/src/snapshot_publish_empty_interruption_tests.rs	59	0
+apps/macos/Tests/BridgeVMControlTests/FileSelectionPanelFixture.swift	25	0
