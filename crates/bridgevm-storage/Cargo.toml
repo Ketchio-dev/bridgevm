@@ -10,6 +10,7 @@ rust-version.workspace = true
 bridgevm-media = { path = "../bridgevm-media" }
 bridgevm-config = { path = "../bridgevm-config" }
 bridgevm-qemu = { path = "../bridgevm-qemu" }
+libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true

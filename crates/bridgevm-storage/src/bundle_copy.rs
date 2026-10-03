@@ -60,10 +60,15 @@ pub(crate) fn collect_regular_files(
 
 pub(crate) fn copy_dir_all(from: &Path, to: &Path) -> Result<BundleCopySummary, StorageError> {
     let _ownership = crate::bundle_ownership::acquire(from)?;
+    let summary = copy_dir_owned(from, to)?;
+    crate::bundle_directory_permissions::copy_mode(from, to)?;
+    Ok(summary)
+}
+
+pub(crate) fn copy_dir_owned(from: &Path, to: &Path) -> Result<BundleCopySummary, StorageError> {
     crate::bundle_directory_permissions::create(to)?;
     let mut copied_files = Vec::new();
     copy_dir_all_inner(from, from, to, &mut copied_files)?;
-    crate::bundle_directory_permissions::copy_mode(from, to)?;
     copied_files.sort();
     Ok(BundleCopySummary {
         file_count: copied_files.len() as u64,

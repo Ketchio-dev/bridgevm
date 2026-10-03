@@ -13,7 +13,7 @@ pub(crate) fn run_command(program: &str, args: &[String]) -> Result<Output, std:
     const COMMAND_TIMEOUT: Duration = Duration::from_secs(6 * 60 * 60);
     const COMMAND_OUTPUT_LIMIT: usize = 1024 * 1024;
 
-    let mut child = Command::new(program)
+    let mut child = Command::new(crate::qemu_image_helper::resolve(program)?)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

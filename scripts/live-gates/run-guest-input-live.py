@@ -65,11 +65,13 @@ def execute(args):
     env = {key: value for key, value in os.environ.items() if not key.startswith("BRIDGEVM")}
     env["BRIDGEVM_PREBUILT_PROBE"] = str(paths["binary"])
     process = None
+    spawn_attempted = False
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, interrupted)
     try:
         subprocess.run(["codesign", "--verify", "--strict", str(paths["binary"])], check=True, timeout=30)
         with (work / "launcher.log").open("xb") as log:
+            spawn_attempted = True
             process = subprocess.Popen(command, cwd=root, env=env, stdout=log,
                                        stderr=subprocess.STDOUT, start_new_session=True)
             driver = make_controller(control, boot / "run.log", share, paths, profile)
@@ -96,7 +98,7 @@ def execute(args):
     finally:
         for sig in (signal.SIGTERM, signal.SIGINT):
             signal.signal(sig, signal.SIG_IGN)
-        finalize(receipt, process, paths, hashes, clones, work)
+        finalize(receipt, process, paths, hashes, clones, work, spawn_attempted=spawn_attempted)
     print(json.dumps(receipt, sort_keys=True))
     return 0 if all(receipt[key] for key in ("complete", "cleanup_complete", "source_integrity", "clean_shutdown")) and observation_succeeded(profile, receipt) else 1
 

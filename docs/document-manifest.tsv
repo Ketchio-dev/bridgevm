@@ -3,8 +3,8 @@ path	class	topic	superseded_by
 docs/windows-first-coherence-integration-gap-20260911.md	active-plan	windows-coherence	-
 docs/README.md	current	documentation-index	-
 @include	docs/document-manifests/development-boundaries.tsv	-	-
+@include	docs/document-manifests/storage-portability.tsv	-	-
 docs/architecture/phase-0.md	reference	architecture-history	docs/plans/hvf-windows-install-completion-plan.md
-docs/compatibility-mode/README.md	current	qemu-engine	-
 docs/contributing/README.md	current	contributing	-
 docs/fast-mode/README.md	current	apple-vz-engine	-
 docs/guest-tools/protocol.md	current	guest-tools	-

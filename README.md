@@ -58,7 +58,7 @@ Known open defects:
 - Graphics future path: Vulkan is a Graphics Lab future path, excluded from General Preview and v1; D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-10-03 at commit `1136b55098651c632d5ba63fb2a1b42acfcdac42`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-10-03 at commit `700133e9f15b08d476819cf879b3fe0b2b0ecc80`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 See the [current status](STATUS.md) and
@@ -150,8 +150,9 @@ packaging/macos/build-debug-app-bundle.sh
 open target/macos/BridgeVMApp.app
 ```
 
-QEMU is needed only for the Compatibility Engine. The self-contained Windows
-HVF bundle has additional host dependencies checked by its packaging scripts.
+QEMU runs Compatibility Engine guests; `qemu-img` also supports qcow2 storage
+and bundle imports. Raw-only imports need no QEMU helper. The self-contained
+Windows HVF bundle has host dependencies checked by its packaging scripts.
 See [Contributing](CONTRIBUTING.md) for focused setup and verification paths.
 
 ## Three engines, three jobs

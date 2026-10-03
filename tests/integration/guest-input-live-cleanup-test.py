@@ -13,30 +13,11 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/live-gates"))
 import guest_input_live_cleanup as cleanup
 from guest_input_cleanup_permission_tests import PermissionCleanup
+from guest_input_cleanup_ownership_tests import OwnershipCleanup
+from guest_input_launch_ownership_tests import LaunchOwnershipCleanup
 
 
 class Cleanup(unittest.TestCase):
-    def test_exited_leader_with_term_ignoring_child(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            ready = Path(tmp) / "ready"
-            child = ("import os,signal,time;from pathlib import Path;"
-                     "signal.signal(signal.SIGTERM,signal.SIG_IGN);"
-                     "Path(" + repr(str(ready)) + ").write_text(str(os.getpid()));time.sleep(15)")
-            parent = ("import subprocess,sys,time;from pathlib import Path;"
-                      "subprocess.Popen([sys.executable,'-c'," + repr(child) + "]);"
-                      "deadline=time.monotonic()+3\nwhile not Path(" + repr(str(ready))
-                      + ").exists() and time.monotonic()<deadline:time.sleep(.01)")
-            process = subprocess.Popen([sys.executable, "-c", parent], start_new_session=True)
-            try:
-                process.wait(timeout=5)
-                self.assertTrue(ready.is_file())
-                self.assertTrue(cleanup.group_alive(process.pid))
-                self.assertTrue(cleanup.stop(process, grace=2))
-                self.assertFalse(cleanup.group_alive(process.pid))
-            finally:
-                self.assertTrue(cleanup.stop(process, grace=2))
-                process.wait(timeout=5)
-
     def test_refuses_current_group(self):
         class Unowned:
             pid = os.getpgrp()

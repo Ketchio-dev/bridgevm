@@ -45,7 +45,7 @@ step "python scripts" python3 scripts/check-python-scripts.py
 step "audio result classifiers" bash -c 'python3 scripts/audio-playback-result.py --self-test && python3 tests/integration/audio-playback-host-stats-contract.py && python3 tests/integration/audio-teardown-result-test.py'
 step "glyph pixel mask" bash -c 'python3 scripts/verify-glyph-pixel-mask.py --self-test && python3 tests/integration/glyph-ppm-contract.py'
 step "glyph pixel mask builder" python3 scripts/build-glyph-pixel-mask.py --self-test
-step "b6 cell and b9 real workload contracts" bash -c 'python3 scripts/verify-b6-cell.py --self-test && python3 tests/integration/b6-untraced-startup-contract.py && python3 tests/integration/b9-workload-diagnostic-contract.py && python3 tests/integration/b9-workload-diagnostic-path-contract.py && python3 tests/integration/b9-real-workload-pilot-contract.py && python3 tests/integration/b9-guest-shutdown-contract.py && python3 tests/integration/b9-raw-focus-order-contract.py && python3 tests/integration/b9-public-receipt-contract.py && python3 tests/integration/b9-guest-input-attribution-contract.py && python3 tests/integration/b9-host-input-boundary-contract.py && python3 tests/integration/b9-source-reopen-contract.py && python3 tests/integration/b9-guest-share-reopen-contract.py && python3 tests/integration/b9-control-share-class-contract.py && python3 tests/integration/b9-receipt-read-contract.py && python3 tests/integration/b9-scanout-byte-contract.py'
+step "b6 cell and b9 real workload contracts" bash -c 'python3 tests/integration/guest-input-live-cleanup-test.py && python3 tests/integration/winpe-companion-diagnostic-test.py && python3 scripts/verify-b6-cell.py --self-test && python3 tests/integration/b6-untraced-startup-contract.py && python3 tests/integration/b9-workload-diagnostic-contract.py && python3 tests/integration/b9-workload-diagnostic-path-contract.py && python3 tests/integration/b9-real-workload-pilot-contract.py && python3 tests/integration/b9-guest-shutdown-contract.py && python3 tests/integration/b9-raw-focus-order-contract.py && python3 tests/integration/b9-public-receipt-contract.py && python3 tests/integration/b9-guest-input-attribution-contract.py && python3 tests/integration/b9-host-input-boundary-contract.py && python3 tests/integration/b9-source-reopen-contract.py && python3 tests/integration/b9-guest-share-reopen-contract.py && python3 tests/integration/b9-control-share-class-contract.py && python3 tests/integration/b9-receipt-read-contract.py && python3 tests/integration/b9-scanout-byte-contract.py'
 step "glyph present latency" python3 scripts/measure-glyph-present-latency.py --self-test
 step "workflow yaml" python3 scripts/check-workflow-yaml.py
 step "daemon DTO decoders" python3 scripts/check-daemon-dto-decoders.py
@@ -68,7 +68,7 @@ if [[ $FAST -eq 1 ]]; then
 else
   step "clippy (workspace)" cargo "$TOOLCHAIN" clippy --workspace --all-targets --locked -- -D warnings
   step "clippy (venus)" cargo "$TOOLCHAIN" clippy -p bridgevm-hvf --all-targets --features venus --locked -- -D warnings
-  step "tests (workspace)" cargo "$TOOLCHAIN" test --workspace --locked
+  step "tests (workspace and portable imports)" bash scripts/check-project-storage.sh "$TOOLCHAIN"
   step "tests (venus lib)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --lib --features venus --locked
   step "tests (probe example)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --features venus --example hvf_gic_boot_probe --locked
   if rustup target list --installed --toolchain "${TOOLCHAIN#+}" 2>/dev/null \
