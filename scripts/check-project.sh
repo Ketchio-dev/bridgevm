@@ -68,7 +68,7 @@ if [[ $FAST -eq 1 ]]; then
 else
   step "clippy (workspace)" cargo "$TOOLCHAIN" clippy --workspace --all-targets --locked -- -D warnings
   step "clippy (venus)" cargo "$TOOLCHAIN" clippy -p bridgevm-hvf --all-targets --features venus --locked -- -D warnings
-  step "tests (workspace)" cargo "$TOOLCHAIN" test --workspace --locked
+  step "tests (workspace and portable imports)" bash scripts/check-project-storage.sh "$TOOLCHAIN"
   step "tests (venus lib)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --lib --features venus --locked
   step "tests (probe example)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --features venus --example hvf_gic_boot_probe --locked
   if rustup target list --installed --toolchain "${TOOLCHAIN#+}" 2>/dev/null \

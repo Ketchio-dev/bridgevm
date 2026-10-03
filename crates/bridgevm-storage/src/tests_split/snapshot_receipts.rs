@@ -1,27 +1,21 @@
-//! Clone rebasing and exact receipt preservation by metadata-only import.
+//! Clone and import relocation preserve receipt identity and execution evidence.
 
 use super::helpers::{manifest, temp_store};
+use super::import_images::create_overlay;
 use super::snapshot_names::files_under;
 use crate::*;
 use std::fs;
 use std::os::unix::process::ExitStatusExt;
 use std::process::Output;
 
-fn create_present_overlay(store: &VmStore, name: &str) {
-    let disk = store.snapshot_disk_metadata("dev", name).unwrap().unwrap();
-    fs::write(&disk.overlay_path, b"synthetic overlay").unwrap();
-    store.create_snapshot_disk("dev", name).unwrap();
-}
-
 fn store_with_receipt() -> VmStore {
     let store = temp_store();
     store.create_vm(&manifest("dev")).unwrap();
-    let primary = store.prepare_primary_disk("dev").unwrap();
-    fs::write(&primary.path, b"synthetic backing").unwrap();
+    super::import_images::create_primary(&store, "dev");
     store
         .create_snapshot("dev", "base", SnapshotKind::Disk)
         .unwrap();
-    create_present_overlay(&store, "base");
+    create_overlay(&store, "dev", "base");
     store
 }
 
@@ -53,13 +47,12 @@ fn current_receipts_preserve_suffix_names_in_both_creation_orders() {
     for names in [["base", "base-create"], ["base-create", "base"]] {
         let store = temp_store();
         let bundle = store.create_vm(&manifest("dev")).unwrap();
-        let primary = store.prepare_primary_disk("dev").unwrap();
-        fs::write(&primary.path, b"backing").unwrap();
+        super::import_images::create_primary(&store, "dev");
         for name in names {
             store
                 .create_snapshot("dev", name, SnapshotKind::Disk)
                 .unwrap();
-            create_present_overlay(&store, name);
+            create_overlay(&store, "dev", name);
         }
         for name in names {
             let other = if name == "base" {
@@ -85,10 +78,13 @@ fn current_receipts_preserve_suffix_names_in_both_creation_orders() {
         let exported = store.root().join("export.vmbridge");
         store.export_vm("dev", &exported).unwrap();
         let target = temp_store();
-        let imported = target
-            .import_vm(&exported, Some("imported"))
-            .unwrap()
-            .output;
+        let imported = fs::canonicalize(
+            target
+                .import_vm(&exported, Some("imported"))
+                .unwrap()
+                .output,
+        )
+        .unwrap();
         assert_eq!(target.snapshot_chain("imported").unwrap().disks.len(), 2);
         for name in names {
             let source_receipt = snapshot_disk_create_metadata_path(&bundle, name);
@@ -96,10 +92,11 @@ fn current_receipts_preserve_suffix_names_in_both_creation_orders() {
             let receipt: SnapshotDiskCreateMetadata =
                 read_json_required(&imported_receipt).unwrap();
             assert_eq!(receipt.snapshot, name);
-            assert_eq!(
-                fs::read(imported_receipt).unwrap(),
-                fs::read(source_receipt).unwrap()
-            );
+            let original: SnapshotDiskCreateMetadata = read_json_required(&source_receipt).unwrap();
+            assert_eq!(receipt.command, original.command);
+            assert_eq!(receipt.stdout, original.stdout);
+            assert!(receipt.disk.overlay_path.starts_with(&imported));
+            assert!(receipt.disk.backing_path.starts_with(&imported));
             assert_eq!(
                 target
                     .snapshot_disk_metadata("imported", name)
@@ -113,7 +110,7 @@ fn current_receipts_preserve_suffix_names_in_both_creation_orders() {
 }
 
 #[test]
-fn legacy_receipts_rebase_in_clone_and_import_preserves_original_metadata() {
+fn legacy_receipts_relocate_in_clone_and_import_preserves_execution_evidence() {
     let store = store_with_receipt();
     let legacy = make_legacy_receipt(&store);
     let original = fs::read(&legacy).unwrap();
@@ -126,18 +123,21 @@ fn legacy_receipts_rebase_in_clone_and_import_preserves_original_metadata() {
     let exported = store.root().join("export.vmbridge");
     store.export_vm("dev", &exported).unwrap();
     let target = temp_store();
-    let imported = target
-        .import_vm(&exported, Some("imported"))
-        .unwrap()
-        .output;
+    let imported = fs::canonicalize(
+        target
+            .import_vm(&exported, Some("imported"))
+            .unwrap()
+            .output,
+    )
+    .unwrap();
     let imported_receipt = imported.join("metadata/snapshot-disks/base-create.json");
     let receipt: SnapshotDiskCreateMetadata = read_json_required(&imported_receipt).unwrap();
     assert_eq!(receipt.snapshot, "base");
-    assert_eq!(fs::read(imported_receipt).unwrap(), original);
-    assert_eq!(
-        target.snapshot_disk_metadata("imported", "base").unwrap(),
-        store.snapshot_disk_metadata("dev", "base").unwrap()
-    );
+    let source_receipt: SnapshotDiskCreateMetadata = serde_json::from_slice(&original).unwrap();
+    assert_eq!(receipt.command, source_receipt.command);
+    assert_eq!(receipt.stdout, source_receipt.stdout);
+    assert!(receipt.disk.overlay_path.starts_with(&imported));
+    assert!(receipt.disk.backing_path.starts_with(&imported));
     assert_eq!(fs::read(legacy).unwrap(), original);
 }
 
