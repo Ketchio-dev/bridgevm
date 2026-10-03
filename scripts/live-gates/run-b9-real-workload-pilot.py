@@ -30,6 +30,7 @@ from b9_share_asset_integrity import check_shared_assets
 from b6_renderer_runtime import verify_renderer_runtime
 from guest_input_controller import Controller
 from guest_input_live_cleanup import stop
+from b9_diagnostic_stop import diagnostic_stop
 from hvf_guest_shutdown import guest_shutdown_observed
 
 TIER = "d9-b9-real-workload"
@@ -170,18 +171,6 @@ def capture_frames(boot: Path, raw: Path, process: subprocess.Popen) -> list[Pat
     return frames
 
 
-def diagnostic_stop(request: Path, process: subprocess.Popen) -> None:
-    if process.poll() is not None or request.exists():
-        return
-    fd = os.open(request, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(fd, "wb") as output:
-        output.write(b"")  # The host parser's supported legacy D3 request is empty.
-    try:
-        process.wait(timeout=35)
-    except subprocess.TimeoutExpired:
-        pass
-
-
 def run(args) -> int:
     if not JOB.fullmatch(args.job_id) or not args.out.is_absolute() or not args.out.is_dir():
         raise ValueError("B9 job identity or output directory is invalid")
@@ -206,7 +195,8 @@ def run(args) -> int:
     if (receipt["input_manifest_sha256"] != job["input_manifest_sha256"]
             or receipt["sealed_binary_sha256"] != job["sealed_binary_sha256"]):
         raise ValueError("queue-sealed B9 manifest or binary changed")
-    stage, process, work, records, clones = "inputs", None, None, None, None
+    stage, process, work, records, clones, spawn_attempted = "inputs", None, None, None, None, False
+    work_acquired = False
     nonce = secrets.token_hex(16)
     receipt["nonce_sha256"] = hashlib.sha256(nonce.encode()).hexdigest()
     raw = args.out / "raw"
@@ -229,6 +219,7 @@ def run(args) -> int:
         work = parent / ("b9-pilot-" + args.job_id)
         receipt["owned_work_path"] = str(work)
         work.mkdir(mode=0o700, exist_ok=False)
+        work_acquired = True
         staged = stage_external_pair(records, work / "staged-cache")
         disk, variables = clone_pair(staged, work / "lane")
         clones = {"image": disk, "vars": variables}
@@ -267,6 +258,7 @@ def run(args) -> int:
                    BRIDGEVM_BOOT_PROGRESS_KILL="1")
         stage = "boot"
         with (work / "launcher.log").open("xb") as launcher:
+            spawn_attempted = True
             process = subprocess.Popen(command, cwd=REPO, env=env, stdout=launcher,
                                        stderr=subprocess.STDOUT, start_new_session=True)
             receipt["owned_vm_pgid"] = process.pid
@@ -348,8 +340,8 @@ def run(args) -> int:
             except (OSError, ValueError, subprocess.SubprocessError):
                 receipt["owned_process_group_stopped"] = False
         else:
-            receipt["owned_process_group_stopped"] = True
-        if work is not None and work.exists() and receipt["owned_process_group_stopped"]:
+            receipt["owned_process_group_stopped"] = not spawn_attempted
+        if work_acquired and work.exists() and receipt["owned_process_group_stopped"]:
             try:
                 if not raw.exists():
                     receipt["private_artifacts"] = copy_raw(work, raw, share, boot, nonce) if share else {}

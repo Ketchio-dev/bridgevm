@@ -3602,3 +3602,8 @@ tests/integration/windows_import_receipt_fixtures.py	39	0
 tests/integration/windows-import-product-e2e-publication-contract.py	211	0
 docs/document-manifests/development-boundaries.tsv	5	0
 docs/history/windows-hvf/receipt-publication-and-installer-contracts-20261003.md	68	0
+scripts/live-gates/guest_input_owned_group.py	59	0
+tests/integration/guest_input_cleanup_ownership_tests.py	203	0
+scripts/live-gates/b9_diagnostic_stop.py	16	0
+tests/integration/guest_input_launch_fixture.py	120	0
+tests/integration/guest_input_launch_ownership_tests.py	52	0
