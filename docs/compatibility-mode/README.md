@@ -1,7 +1,7 @@
 # Compatibility Mode
 
 Document status: **Current engine guide**
-Last reviewed: **2026-07-22**
+Last reviewed: **2026-10-03**
 
 Compatibility Mode is the broad QEMU-backed engine path.
 
@@ -57,7 +57,7 @@ For the default `qcow2` disk format, disk preparation does not create or verify 
 qemu-img create -f qcow2 ~/.bridgevm/vms/legacy-linux.vmbridge/disks/root.qcow2 80GiB
 ```
 
-Run `bridgevm disk create legacy-linux` to explicitly execute the recorded `qemu-img create -f <format> <path> <size>` command for a missing non-raw primary disk. If `qemu-img` is not installed, is not on `PATH`, or exits unsuccessfully, `disk create` fails and leaves the caller with the same safe command information from preparation. `disk prepare` remains the lowest-risk way to refresh disk preparation state without running `qemu-img` or building a runner command; `runner-status` shows what BridgeVM last prepared, including the disk path, format, existence flag, sparse-file creation result, and suggested command. For `raw` primary disks, preparation can create the missing disk directly as a sparse file and records `created: true`, so `disk create` commonly reports that the disk is already ready.
+Run `bridgevm disk create legacy-linux` to explicitly execute the recorded `qemu-img create -f <format> <path> <size>` command for a missing non-raw primary disk. Release storage operations use an executable regular `qemu-img` file at `/opt/homebrew/bin/qemu-img` or `/usr/local/bin/qemu-img` on macOS, or `/usr/bin/qemu-img` on Linux; they reject recorded alternative helper paths and do not search `PATH`. Debug builds retain `PATH` lookup for developer fixtures. If the approved helper is unavailable or exits unsuccessfully, `disk create` fails and leaves the caller with the same safe command information from preparation. `disk prepare` remains the lowest-risk way to refresh disk preparation state without running `qemu-img` or building a runner command; `runner-status` shows what BridgeVM last prepared, including the disk path, format, existence flag, sparse-file creation result, and suggested command. For `raw` primary disks, preparation can create the missing disk directly as a sparse file and records `created: true`, so `disk create` commonly reports that the disk is already ready.
 
 Run `bridgevm disk inspect legacy-linux` after creation to verify and record the primary disk metadata. For an existing non-raw disk, BridgeVM runs `qemu-img info --output=json <path>`, prints the JSON metadata, and writes the latest result to `metadata/last-disk-inspect.json`. Inspection can fail safely when the primary disk is raw, the disk file is missing, `qemu-img` is not installed, or `qemu-img info` exits unsuccessfully; in those cases BridgeVM reports the boundary instead of treating the disk as verified.
 
@@ -364,7 +364,13 @@ than inventing a separate importer. Export/import must not start QEMU, connect
 to QMP, attach guest tools, copy live sockets, or claim live guest state
 migration. Any disk or installer/media inclusion must remain exactly whatever
 the existing Rust export/import behavior copies; the dashboard should not add
-extra storage artifacts on its own.
+extra storage artifacts on its own. Import relocates operative disk and saved-state
+metadata to the copied bundle and rewrites copied qcow2 backing references as
+relative paths after validating their complete owned chain. It refuses missing
+recorded media, external dependencies, unsupported qcow2 headers and occupied
+destinations. A materialized raw-only bundle does not require `qemu-img`; qcow2
+inspection and header-only rebasing use the storage helper policy above. Import
+publishes the complete staged bundle atomically without replacing an existing VM.
 
 `bridgevmd` can also run dry-run preparation, explicit disk creation, disk inspection, active-disk verification, disk compaction, metadata-only repair, spawn Compatibility Mode backends, stop dry-run backends, and report runner/QMP status through its socket API. The macOS dashboard Storage Maintenance panel uses those same `verify_disk` and `compact_disk` responses to show the active disk path, qemu-img command, check report or backup path, duration, and refreshed chain metadata without inventing a separate storage manager. The dashboard metadata repair panel/action invokes the daemon `repair_metadata` path and may show repaired/no-op status, actions, timestamp, and VM bundle path. That repair surface is metadata-only: it does not create disks or replace corrupt JSON. Daemon spawn follows the same disk rule as the CLI: missing `qcow2` disks are reported with the `qemu-img create` command and QEMU is not started. Spawned QEMU children started through the daemon are kept in an in-memory supervisor registry. The daemon polls that registry on a short interval, so exited child processes are reconciled even when no client request arrives. When a QMP socket is available, the daemon attaches a short-timeout QMP client to the supervised backend, drains a bounded batch of async events on each reconcile tick, consumes terminal events such as `SHUTDOWN`, and falls back to status polling when no event stream is attached or the stream has to be reset.
 

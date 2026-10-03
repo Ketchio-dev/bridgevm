@@ -150,8 +150,9 @@ packaging/macos/build-debug-app-bundle.sh
 open target/macos/BridgeVMApp.app
 ```
 
-QEMU is needed only for the Compatibility Engine. The self-contained Windows
-HVF bundle has additional host dependencies checked by its packaging scripts.
+QEMU runs Compatibility Engine guests; `qemu-img` also supports qcow2 storage
+and bundle imports. Raw-only imports need no QEMU helper. The self-contained
+Windows HVF bundle has host dependencies checked by its packaging scripts.
 See [Contributing](CONTRIBUTING.md) for focused setup and verification paths.
 
 ## Three engines, three jobs

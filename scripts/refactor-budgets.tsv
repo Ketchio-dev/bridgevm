@@ -3628,3 +3628,5 @@ crates/bridgevm-storage/src/import_image_info.rs	51	0
 crates/bridgevm-storage/src/tests_split/import_raw_backing.rs	80	0
 scripts/check-bundle-import-storage-cases.sh	7	0
 tests/integration/bundle-import-raw-cli-contract.py	159	0
+docs/history/windows-hvf/owned-bundle-import-contracts-20261003.md	95	0
+docs/history/windows-hvf/diagnostic-process-ownership-20261003.md	88	0
