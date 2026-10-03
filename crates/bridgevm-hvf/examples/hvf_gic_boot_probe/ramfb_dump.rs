@@ -1,14 +1,23 @@
 use std::{
-    fs,
-    io::{self, Write},
+    io,
     path::{Path, PathBuf},
 };
 
 use bridgevm_hvf::{
     fwcfg::GuestMemoryMut,
     platform_virt::VirtPlatform,
-    ramfb::{RamfbConfig, RamfbSnapshot, RamfbSnapshotError, RamfbSnapshotSummary},
+    ramfb::{RamfbConfig, RamfbSnapshot, RamfbSnapshotSummary},
     virtio_gpu::VirtioGpuScanout,
+};
+
+#[path = "ramfb_capture_bounds.rs"]
+mod capture_bounds;
+use capture_bounds::CaptureError;
+#[path = "ramfb_artifacts.rs"]
+mod artifacts;
+use artifacts::{
+    write_artifacts, write_artifacts_from_bytes, write_checkpoint_artifacts,
+    write_checkpoint_artifacts_from_bytes,
 };
 
 #[path = "ramfb_sample.rs"]
@@ -126,7 +135,7 @@ fn print_summary_parts(config: RamfbConfig, summary: RamfbSnapshotSummary) {
     );
 }
 
-fn print_error(config: RamfbConfig, error: RamfbSnapshotError) {
+fn print_error(config: RamfbConfig, error: CaptureError) {
     println!(
         "ramfb framebuffer unavailable: addr={:#x} fourcc={:#010x} {}x{} stride={} error={:?}",
         config.addr, config.fourcc, config.width, config.height, config.stride, error
@@ -142,7 +151,7 @@ enum FrameSnapshot {
     Captured(RamfbSnapshot),
     Unavailable {
         config: RamfbConfig,
-        error: RamfbSnapshotError,
+        error: CaptureError,
     },
     Inactive,
 }
@@ -152,7 +161,7 @@ impl FrameSnapshot {
         let Some(config) = config else {
             return Self::Inactive;
         };
-        match RamfbSnapshot::read_from(mem, config) {
+        match capture_bounds::read(mem, config) {
             Ok(snapshot) => Self::Captured(snapshot),
             Err(error) => Self::Unavailable { config, error },
         }
@@ -167,7 +176,7 @@ impl FrameSnapshot {
 
 fn print_and_dump_gpu(gpu: VirtioGpuScanout<'_>) {
     let config = gpu_config(gpu);
-    let summary = match RamfbSnapshot::summarize_xrgb8888_bytes(config, gpu.bytes) {
+    let summary = match capture_bounds::summary(config, gpu.bytes) {
         Ok(summary) => summary,
         Err(error) => {
             print_error(config, error);
@@ -220,7 +229,7 @@ impl<'a> RamfbCheckpoint<'a> {
         let Some(config) = self.config else {
             return Ok(self.record_without_artifacts("inactive", "none"));
         };
-        let snapshot = match RamfbSnapshot::read_from(self.mem, config) {
+        let snapshot = match capture_bounds::read(self.mem, config) {
             Ok(snapshot) => snapshot,
             Err(error) => {
                 return Ok(self.record_unavailable(error));
@@ -258,7 +267,7 @@ impl<'a> RamfbCheckpoint<'a> {
         }
     }
 
-    fn record_unavailable(&self, error: RamfbSnapshotError) -> CheckpointRecord {
+    fn record_unavailable(&self, error: CaptureError) -> CheckpointRecord {
         CheckpointRecord {
             line: format!(
                 "ramfb checkpoint: label={} state=unavailable checksum64=none raw=none ppm=none error={}",
@@ -306,7 +315,7 @@ impl<'a> DisplayCheckpoint<'a> {
         dir: Option<&Path>,
     ) -> io::Result<CheckpointRecord> {
         let config = gpu_config(gpu);
-        let summary = match RamfbSnapshot::summarize_xrgb8888_bytes(config, gpu.bytes) {
+        let summary = match capture_bounds::summary(config, gpu.bytes) {
             Ok(summary) => summary,
             Err(error) => {
                 return Ok(RamfbCheckpoint::new(self.label, self.config, self.mem)
@@ -340,93 +349,11 @@ impl<'a> DisplayCheckpoint<'a> {
     }
 }
 
-fn write_artifacts(
-    dir: &Path,
-    source: &str,
-    snapshot: &RamfbSnapshot,
-) -> io::Result<ArtifactPaths> {
-    write_artifacts_from_bytes(
-        dir,
-        source,
-        snapshot.config,
-        snapshot.summary,
-        &snapshot.bytes,
-    )
-}
-
-fn write_artifacts_from_bytes(
-    dir: &Path,
-    source: &str,
-    config: RamfbConfig,
-    summary: RamfbSnapshotSummary,
-    bytes: &[u8],
-) -> io::Result<ArtifactPaths> {
-    fs::create_dir_all(dir)?;
-    let stem = format!(
-        "{source}-{}x{}-{:x}-{:016x}",
-        config.width, config.height, config.addr, summary.checksum64
-    );
-    let raw = dir.join(format!("{stem}.xrgb8888"));
-    let ppm = dir.join(format!("{stem}.ppm"));
-    fs::write(&raw, bytes)?;
-    fs::write(
-        &ppm,
-        RamfbSnapshot::ppm_bytes_from_xrgb8888(config, bytes).map_err(snapshot_io_error)?,
-    )?;
-    Ok(ArtifactPaths { raw, ppm })
-}
-
-fn write_checkpoint_artifacts(
-    dir: &Path,
-    source: &str,
-    label: &str,
-    snapshot: &RamfbSnapshot,
-) -> io::Result<ArtifactPaths> {
-    write_checkpoint_artifacts_from_bytes(dir, source, label, snapshot.config, &snapshot.bytes)
-}
-
-fn write_checkpoint_artifacts_from_bytes(
-    dir: &Path,
-    source: &str,
-    label: &str,
-    config: RamfbConfig,
-    bytes: &[u8],
-) -> io::Result<ArtifactPaths> {
-    fs::create_dir_all(dir)?;
-    let label = sanitize_checkpoint_label(label);
-    for index in 0u32.. {
-        let stem = format!("{source}-checkpoint-{label}-{index:04}");
-        let raw = dir.join(format!("{stem}.xrgb8888"));
-        let ppm = dir.join(format!("{stem}.ppm"));
-        if raw.exists() || ppm.exists() {
-            continue;
-        }
-        write_new_file(&raw, bytes)?;
-        write_new_file(
-            &ppm,
-            &RamfbSnapshot::ppm_bytes_from_xrgb8888(config, bytes).map_err(snapshot_io_error)?,
-        )?;
-        return Ok(ArtifactPaths { raw, ppm });
-    }
-    Err(io::Error::new(
-        io::ErrorKind::AlreadyExists,
-        "no checkpoint artifact suffix available",
-    ))
-}
-
-fn write_new_file(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)?;
-    file.write_all(bytes)
-}
-
 fn sanitize_checkpoint_label(label: &str) -> String {
     sanitize_checkpoint_token(label, "checkpoint")
 }
 
-fn sanitize_checkpoint_error(error: RamfbSnapshotError) -> String {
+fn sanitize_checkpoint_error(error: CaptureError) -> String {
     sanitize_checkpoint_token(&format_snapshot_error(error), "error")
 }
 
@@ -446,11 +373,11 @@ fn sanitize_checkpoint_token(value: &str, fallback: &str) -> String {
     sanitized
 }
 
-fn format_snapshot_error(error: RamfbSnapshotError) -> String {
+fn format_snapshot_error(error: CaptureError) -> String {
     format!("{error:?}")
 }
 
-fn snapshot_io_error(error: RamfbSnapshotError) -> io::Error {
+fn snapshot_io_error(error: CaptureError) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, format!("{error:?}"))
 }
 

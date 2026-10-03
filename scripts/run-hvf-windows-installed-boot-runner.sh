@@ -1,4 +1,5 @@
 source "$ROOT/scripts/run-hvf-windows-installed-boot-package-policy.sh"
+source "$ROOT/scripts/run-hvf-windows-installed-boot-output.sh"
 
 terminate_owned_probe() {
   [[ -n "$PROBE_PID" ]] || return 0
@@ -108,21 +109,23 @@ start_owned_swtpm() {
 }
 
 cleanup() {
-  local status="$?"
+  local status="$?" prior_logger="${BOUNDED_LOGGER_PID:-}"
+  local prior_fifo="${BOUNDED_FIFO:-}" prior_fifo_created="${BOUNDED_FIFO_CREATED:-0}"
+  local prior_fifo_identity="${BOUNDED_FIFO_IDENTITY:-}"
   set +e
-  {
-    printf '\ncleanup_status=%s\n' "$status"
-    date -u
-    printf 'processes_before_cleanup:\n'
-    pgrep -fl '[h]vf_gic_boot_probe|qemu-system-aarch64' || true
-    terminate_owned_probe
-    terminate_owned_swtpm
-    cleanup_owned_swtpm_runtime
-    printf 'processes_after_cleanup:\n'
-    pgrep -fl '[h]vf_gic_boot_probe|qemu-system-aarch64' || true
-    printf 'tmux_sessions_after_cleanup:\n'
-    tmux ls 2>/dev/null || true
-  } >> "$EVIDENCE_DIR/cleanup.txt" 2>&1
+  if [[ "${BOUNDED_FD9_OPEN:-0}" == 1 ]]; then exec 9>&-; fi
+  local BOUNDED_FIFO="" BOUNDED_FIFO_CREATED=0 BOUNDED_FIFO_IDENTITY="" BOUNDED_FD9_OPEN=0 BOUNDED_LOGGER_PID=""
+  if [[ "${DIAGNOSTIC_OUTPUT_BOUNDS:-0}" == 1 ]]; then
+    if start_bounded_file "$EVIDENCE_DIR/cleanup.txt" "$EVIDENCE_DIR/cleanup-bound.json" 16777216; then
+      write_installed_boot_cleanup_body "$prior_fifo" "$prior_fifo_identity" >&9 2>&1 9>&-
+      finish_bounded_file || status=1
+    else
+      write_installed_boot_cleanup_body "$prior_fifo" "$prior_fifo_identity"
+      status=1
+    fi
+  else
+    write_installed_boot_cleanup_body "$prior_fifo" "$prior_fifo_identity" >> "$EVIDENCE_DIR/cleanup.txt" 2>&1
+  fi
   exit "$status"
 }
 
@@ -135,6 +138,7 @@ write_installed_boot_preflight() {
     printf 'firmware_code=%s\n' "$FIRMWARE_CODE"
     printf 'evidence_dir=%s\n' "$EVIDENCE_DIR"
     printf 'build_profile=%s\n' "$BUILD_PROFILE"
+    printf 'diagnostic_output_bounds=%s\n' "${DIAGNOSTIC_OUTPUT_BOUNDS:-0}"
     printf 'daily_preset=%s\n' "$DAILY"
     printf 'ram_mib=%s\n' "$RAM_MIB"
     printf 'watchdog_ms=%s\n' "$WATCHDOG_MS"
@@ -319,6 +323,7 @@ build_installed_boot_env_args() {
   # when setup-input deliberately starts an EFI application from the internal
   # shell; without it the probe treats the shell banner as a terminal result
   # before the queued input can fire.
+  [[ "${DIAGNOSTIC_OUTPUT_BOUNDS:-0}" != "1" ]] || ENV_ARGS+=("BRIDGEVM_DIAGNOSTIC_OUTPUT_BOUNDS=1")
   [[ -z "${BRIDGEVM_RAMFB_SAMPLE_UNTIL_COMPLETE:-}" ]] || ENV_ARGS+=("BRIDGEVM_RAMFB_SAMPLE_UNTIL_COMPLETE=$BRIDGEVM_RAMFB_SAMPLE_UNTIL_COMPLETE")
   # Forward host-vblank pacing (env-gated in virtio_gpu.rs; absent/0 = legacy).
   [[ -z "${BRIDGEVM_VBLANK_HZ:-}" ]] || ENV_ARGS+=("BRIDGEVM_VBLANK_HZ=$BRIDGEVM_VBLANK_HZ")
@@ -758,40 +763,6 @@ prepare_virtio_gpu_trace() {
   : > "$trace"
 }
 
-run_probe_process() {
-  local name
-  local -a env_command=(/usr/bin/env)
-  # An installed-boot run is a closed, auditable configuration boundary.
-  # Remove every inherited BridgeVM probe knob, then apply only ENV_ARGS built
-  # from this wrapper's validated CLI. This prevents an old developer shell
-  # from attaching a second writable disk, changing PCI topology, injecting
-  # guest input, or enabling agent share/clipboard commands behind the
-  # recorded policy.
-  while IFS= read -r name; do
-    case "$name" in
-      BRIDGEVM_*) env_command+=(-u "$name") ;;
-    esac
-  done < <(compgen -e)
-  HOST_PAUSE_RESUME_CONTROL_STATUS=0
-  if [[ -n "${HOST_PAUSE_RESUME_PROOF_MS:-}" ]]; then
-    : > "$(host_pause_resume_control_path)"
-  fi
-  prepare_virtio_gpu_trace
-  set +e
-  "${env_command[@]}" "${ENV_ARGS[@]}" "$BIN" > "$EVIDENCE_DIR/run.log" 2>&1 &
-  PROBE_PID="$!"
-  if [[ -n "${HOST_PAUSE_RESUME_PROOF_MS:-}" ]]; then
-    if ! drive_host_pause_resume_proof; then
-      HOST_PAUSE_RESUME_CONTROL_STATUS=1
-      terminate_owned_probe
-    fi
-  fi
-  wait "$PROBE_PID"
-  RUN_STATUS="$?"
-  PROBE_PID=""
-  set -e
-}
-
 write_host_pause_resume_gate() {
   [[ -n "$HOST_PAUSE_RESUME_PROOF_MS" ]] || return 0
 
@@ -996,46 +967,6 @@ PYUUID
   else
     printf 'false-booted-%s' "$booted"
   fi
-}
-
-write_installed_boot_target_stat() {
-  {
-    printf 'run_status=%s\n' "$RUN_STATUS"
-    date -u
-    if [[ "${VIRTIO_GPU_3D:-0}" == "1" ]]; then
-      printf 'virtio_gpu_trace=%s\n' "$(virtio_gpu_trace_path)"
-      printf 'probe_build_capabilities=%s\n' "$EVIDENCE_DIR/probe-build-capabilities.txt"
-      printf 'virtio_gpu_trace_report=%s\n' "$EVIDENCE_DIR/virtio-gpu-trace-report.txt"
-      printf 'virtio_gpu_trace_gate=%s\n' "$EVIDENCE_DIR/virtio-gpu-trace-gate.txt"
-      printf 'p3_gpu_readiness=%s\n' "$EVIDENCE_DIR/p3-gpu-readiness.txt"
-      printf 'viogpu3d_package_manifest=%s\n' "$EVIDENCE_DIR/viogpu3d-package-manifest.txt"
-      printf 'real_title_gate=%s\n' "$EVIDENCE_DIR/real-title-gate.txt"
-      if (( TITLE_MANIFEST_COUNT > 0 )); then
-        printf 'title_gate_report=%s\n' "$EVIDENCE_DIR/title-gates.txt"
-        printf 'title_gate_json=%s\n' "$EVIDENCE_DIR/title-gates.json"
-        printf 'title_gate_status=%s\n' "$EVIDENCE_DIR/title-gates-gate.txt"
-        printf 'title_pre_run_state=%s\n' "$EVIDENCE_DIR/title-pre-run-state.json"
-      fi
-    fi
-    if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
-      printf 'agent_shutdown_gate=%s\n' "$EVIDENCE_DIR/agent-shutdown-gate.txt"
-    fi
-    if [[ -n "$AGENT_SERVICE_CONTROL" ]]; then
-      printf 'agent_service_gate=%s\n' "$EVIDENCE_DIR/agent-service-gate.txt"
-    fi
-    if [[ -n "$HOST_PAUSE_RESUME_PROOF_MS" ]]; then
-      printf 'host_pause_resume_gate=%s\n' "$EVIDENCE_DIR/host-pause-resume-gate.txt"
-      printf 'host_pause_resume_observation=%s\n' "$(host_pause_resume_observation_path)"
-    fi
-    print_media_stat after_target_stat "$TARGET"
-    printf 'injector_boot_observed=%s\n' "$(injector_boot_observed)"
-    printf 'after_vars_stat:\n'
-    ls -lh "$VARS"
-    printf 'ramfb_files:\n'
-    find "$EVIDENCE_DIR/ramfb" -maxdepth 1 -type f -print | sort
-    printf 'run_log_summary_grep:\n'
-    grep -En 'Windows|Boot Manager|UEFI|EFI|Bds|Boot####|NVMe|xHCI|qemu-xhci|HID|USB|PNP|BVAGENT|INTERNAL_POWER_ERROR|DRIVER_PNP_WATCHDOG|0x1D5|bugcheck|panic|HV_DENIED|hv_vm_create|watchdog|SYSTEM_RESET|SYSTEM_OFF|PSCI|storage target effect|exact_target_storage_evidence|target_effect_class' "$EVIDENCE_DIR/run.log" || true
-  } > "$EVIDENCE_DIR/target-stat.txt" 2>&1
 }
 
 run_installed_boot_probe() {

@@ -160,12 +160,11 @@ class StopReadersContract(unittest.TestCase):
         self.assertNotIn("(system off)", runner)
         for gate in ("write_host_pause_resume_gate", "write_agent_shutdown_gate", "write_agent_service_gate"):
             self.assertNotIn("python3", re.search(rf"^{gate}\(\) {{\n.*?^}}\n", runner, re.M | re.S)[0], gate)
-        for package, line, count in (
-                ("apps/macos/scripts/package-hvf-control-app.sh", "  run-hvf-windows-installed-boot-runner.sh "
-                 "run-hvf-windows-installed-boot-package-policy.sh hvf-terminal-report.sh \\\n", 1),
-                ("packaging/macos/build-debug-app-bundle.sh", "run-hvf-windows-installed-boot-runner.sh "
-                 "hvf-terminal-report.sh; do\n", 2)):
-            self.assertEqual((ROOT / package).read_text(encoding="utf-8").count(line), count, package)
+        installer = ROOT / "apps/macos/scripts/install-installed-boot-modules.sh"
+        self.assertIn("hvf-terminal-report.sh; do", installer.read_text())
+        for package in ("apps/macos/scripts/package-hvf-control-app.sh",
+                        "packaging/macos/build-debug-app-bundle.sh"):
+            self.assertIn("install_installed_boot_modules", (ROOT / package).read_text())
         self.assertEqual(SHELL.read_text(encoding="utf-8").splitlines()[0], "#!/bin/bash")
         self.assertTrue(os.access(SHELL, os.X_OK))
 

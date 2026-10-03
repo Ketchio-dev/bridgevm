@@ -11,21 +11,11 @@ import sys
 from winpe_companion_inputs import COMPANIONS, clone, file_hash, load, verify
 from winpe_companion_inspect import compare, inspect
 from winpe_companion_mounts import MountSafetyError
-from winpe_companion_process import OwnedProcessError, run_owned
+from winpe_companion_process import OwnedProcessError
 from winpe_companion_receipt import initial, job_fields, validate, write
+from winpe_companion_bounds import command, execute, verify as verify_bounds
 
 REPO = Path(__file__).resolve().parents[2]
-
-
-def command(repo, records, clones, evidence):
-    return ["bash", str(repo / "scripts/run-hvf-windows-installed-boot.sh"),
-            "--target", str(clones["image"]), "--vars", str(clones["vars"]),
-            "--placeholder-nsid1", str(clones["injector"]),
-            "--firmware-code", str(records["firmware"][0]), "--evidence-dir", str(evidence),
-            "--release", "--skip-build", "--watchdog-ms", "300000", "--max-reboots", "0",
-            "--ram-mib", "4096", "--smp-cpus", "4", "--max-exits", "50000000",
-            "--ramfb-samples", "1000,15000,30000,60000,90000,110000,120000",
-            "--display-export-ppm", str(evidence / "latest.ppm"), "--no-guest-disk-harvest"]
 
 
 def run(args):
@@ -60,10 +50,10 @@ def run(args):
         environment = {key: value for key, value in os.environ.items() if not key.startswith("BRIDGEVM_")}
         environment["BRIDGEVM_PREBUILT_PROBE"] = str(args.sealed_binary)
         data["sample_count"] = 1
-        with (private / "wrapper.log").open("x") as log:
-            result = run_owned(command(REPO, records, clones, private / "boot"),
-                               env=environment, stdout=log, stderr=subprocess.STDOUT, timeout=360)
-        data.update(execution_exit_code=result.returncode, cleanup_complete=True)
+        execute(command(REPO, records, clones, private / "boot"), private, environment, data)
+        stage = "output-bounds"
+        verify_bounds(private)
+        data["output_bounds_verified"] = True
         stage = "inspect-after"
         after = inspect(clones["image"], private / "mount-after")
         data["mount_cleanup_complete"] = True
@@ -80,6 +70,7 @@ def run(args):
     except (OSError, ValueError, subprocess.SubprocessError, OwnedProcessError, MountSafetyError) as error:
         if isinstance(error, OwnedProcessError): data["cleanup_complete"] = error.cleanup_complete
         if isinstance(error, MountSafetyError): data["mount_cleanup_complete"] = error.cleanup_complete
+        if stage == "output-bounds": data["output_bounds_refused"] = True
         data["failure_stage"] = stage
         print("WinPE diagnostic stopped at " + stage + ": " + type(error).__name__, file=sys.stderr)
     finally:

@@ -889,7 +889,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pe_trace.rs	123	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pe_trace/pe_image.rs	151	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pe_trace/tests.rs	91	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_env.rs	102	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_dump.rs	455	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_dump.rs	377	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_dump_tests.rs	75	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_dump_tests/checkpoints.rs	221	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_dump_tests/sample_schedule.rs	126	0
@@ -1344,10 +1344,10 @@ apps/macos/scripts/build-sign-hvf-runner.sh	128	0
 apps/macos/scripts/build-sign-hvf-windows-probe.sh	196	0
 apps/macos/scripts/cargo-built-artifact.py	102	0
 apps/macos/scripts/bundle-swtpm-runtime.sh	330	0
-apps/macos/scripts/package-hvf-control-app.sh	179	0
+apps/macos/scripts/package-hvf-control-app.sh	176	0
 scripts/verify-app-hvf-entitlements.sh	33	0
 packaging/macos/app-name.sh	25	0
-packaging/macos/build-debug-app-bundle.sh	485	0
+packaging/macos/build-debug-app-bundle.sh	479	0
 packaging/macos/build-debug-dmg.sh	238	0
 packaging/macos/build-preview-dmg.sh	150	0
 packaging/macos/build-release-candidate.sh	338	0
@@ -1420,10 +1420,10 @@ scripts/submit-hvf-nvme-performance-campaign.sh	240	0
 scripts/run-hvf-boot-timer-matrix.sh	355	0
 scripts/run-hvf-linux-venus.sh	334	0
 scripts/run-hvf-vtimer-cancel-gate.sh	94	0
-scripts/run-hvf-windows-installed-boot-args.sh	643	0
-scripts/run-hvf-windows-installed-boot-runner.sh	1379	0
+scripts/run-hvf-windows-installed-boot-args.sh	529	0
+scripts/run-hvf-windows-installed-boot-runner.sh	1310	0
 scripts/run-hvf-windows-installed-boot-package-policy.sh	75	0
-scripts/run-hvf-windows-installed-boot-usage.sh	209	0
+scripts/run-hvf-windows-installed-boot-usage.sh	124	0
 scripts/run-hvf-windows-installed-boot-validation.sh	345	0
 scripts/run-hvf-windows-installed-boot.sh	27	0
 scripts/run-hvf-windows-scripted-install.sh	375	0
@@ -1609,7 +1609,7 @@ tests/integration/macos-metadata-overrides-smoke.sh	96	0
 tests/integration/macos-release-candidate-dry-run-smoke.sh	367	0
 tests/integration/macos-cargo-artifact-provenance-smoke.sh	183	0
 tests/integration/hvf-runner-packaged-helper-policy-smoke.sh	79	0
-tests/integration/hvf-packaged-wrapper-policy-smoke.sh	105	0
+tests/integration/hvf-packaged-wrapper-policy-smoke.sh	104	0
 tests/integration/macos-release-credentials-preflight-smoke.sh	115	0
 tests/integration/macos-release-verifier-custom-app-smoke.sh	216	0
 tests/integration/macos-settings-defaults-smoke.sh	18	0
@@ -2269,8 +2269,8 @@ tests/integration/winpe-invoked-commands.awk	20	0
 tests/integration/winpe-invoked-commands-test.sh	15	0
 scripts/live-gates/winpe_companion_inputs.py	74	0
 scripts/live-gates/winpe_companion_inspect.py	49	0
-scripts/live-gates/winpe_companion_receipt.py	87	0
-scripts/live-gates/run-winpe-companions.py	95	0
+scripts/live-gates/winpe_companion_receipt.py	53	0
+scripts/live-gates/run-winpe-companions.py	86	0
 tests/integration/winpe-companion-diagnostic-test.py	103	0
 .github/workflows/winpe-companion-diagnostic.yml	13	0
 tests/integration/winpe_companion_size_cases.py	19	0
@@ -2353,7 +2353,7 @@ scripts/test-bvagent-window-inventory-dispatch.ps1	80
 scripts/live-gates/winpe_companion_mounts.py	148
 scripts/live-gates/winpe_companion_process.py	105
 tests/integration/winpe_companion_mount_cases.py	188
-tests/integration/winpe_companion_process_cases.py	258
+tests/integration/winpe_companion_process_cases.py	241	0
 apps/macos/Sources/BridgeVMProductE2E/T17ActivationRecord.swift	12
 apps/macos/Sources/BridgeVMProductE2E/T17ActivationProbe.swift	61
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserKeyDiagnostic.swift	75
@@ -3399,7 +3399,7 @@ apps/macos/Sources/BridgeVMProductE2E/HvfTerminalHostTail.swift	13	0
 apps/macos/Sources/BridgeVMProductE2E/HvfHostTail.swift	52	0
 apps/macos/Tests/BridgeVMProductE2ETests/HvfHostTailTests.swift	91	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17AudioProofTests.swift	36	0
-tests/integration/hvf-stop-readers-contract.py	259	0
+tests/integration/hvf-stop-readers-contract.py	258	0
 tests/integration/audio-teardown-result-test.py	93	0
 scripts/live-gates/hvf_run_log.py	22	0
 tests/integration/audio-playback-host-stats-contract.py	67	0
@@ -3634,3 +3634,16 @@ docs/history/windows-hvf/owned-bundle-import-contracts-20261003.md	95	0
 docs/history/windows-hvf/diagnostic-process-ownership-20261003.md	88	0
 docs/history/windows-hvf/import-hosted-portability-repair-20261003.md	52	0
 docs/document-manifests/storage-portability.tsv	5	0
+apps/macos/scripts/install-installed-boot-modules.sh	15	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_artifacts.rs	85	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_capture_bounds.rs	207	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_capture_bounds_tests.rs	216	0
+scripts/live-gates/bounded_output.py	398	0
+scripts/live-gates/winpe_companion_bounds.py	112	0
+scripts/live-gates/winpe_companion_contract.py	42	0
+scripts/run-hvf-windows-installed-boot-output.sh	236	0
+scripts/run-hvf-windows-installed-boot-policy.sh	133	0
+scripts/run-hvf-windows-installed-boot-usage-core.sh	94	0
+tests/integration/d4-bounded-output-contract.py	315	0
+tests/integration/hvf-diagnostic-output-contract.py	219	0
+tests/integration/winpe_companion_bounds_cases.py	200	0

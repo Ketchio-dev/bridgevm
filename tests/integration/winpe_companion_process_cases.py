@@ -198,7 +198,7 @@ class WinPEProcessSafetyTests(unittest.TestCase):
                 with mock.patch.multiple(runner, job_fields=mock.Mock(return_value=job_fields()),
                                          clone=mock.Mock(return_value=clones), load=mock.Mock(return_value=records),
                                          inspect=inspect, verify=verify, compare=compare, file_hash=hashes,
-                                         run_owned=execute), \
+                                         execute=mock.Mock(side_effect=execute)), \
                      mock.patch.object(runner.subprocess, "check_output", return_value="a" * 40), \
                      mock.patch.object(runner.platform, "system", return_value="Darwin"), \
                      mock.patch.object(runner.platform, "machine", return_value="arm64"):
@@ -223,7 +223,7 @@ class WinPEProcessSafetyTests(unittest.TestCase):
         job = job_fields()
         complete = runner.initial(job)
         complete.update(sample_count=1, source_integrity_verified=True, execution_exit_code=0,
-                        outcome="diagnostic-complete", cleanup_complete=True, mount_cleanup_complete=True)
+                        outcome="diagnostic-complete", cleanup_complete=True, mount_cleanup_complete=True, output_bounds_verified=True)
         runner.validate(complete, job)
         for key in ("cleanup_complete", "mount_cleanup_complete"):
             for missing in (False, True):
