@@ -8,7 +8,8 @@ enum T17FileChooserKeyDiagnostic {
         case afterPair = "after_pair", complete
     }
 
-    static func post(pid: pid_t, code: CGKeyCode, flags: CGEventFlags) throws -> String {
+    static func post(pid: pid_t, code: CGKeyCode, flags: CGEventFlags,
+                     admission: () throws -> Void = {}, activation: (() -> T17ActivationRecord)? = nil) throws -> String {
         let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true)
         let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false)
         var pair: (() -> Void)?
@@ -17,21 +18,21 @@ enum T17FileChooserKeyDiagnostic {
             pair = { down.post(tap: .cgSessionEventTap); up.post(tap: .cgSessionEventTap) }
         }
         return try run(pid: pid, code: code, flags: flags,
-                       activate: { T17Activation.observe(pid: pid) }, foreground: {
+                       activate: activation ?? { T17Activation.observe(pid: pid) }, foreground: {
             NSWorkspace.shared.frontmostApplication?.processIdentifier
-        }, postPair: pair)
+        }, postPair: pair, admission: admission)
     }
 
     /// Observe the existing guarded delivery, without replay or extra retries.
     static func run(pid: pid_t, code: CGKeyCode, flags: CGEventFlags,
                     activate: () -> T17ActivationRecord, foreground: () -> pid_t?,
-                    postPair: (() -> Void)?) throws -> String {
+                    postPair: (() -> Void)?, admission: () throws -> Void = {}) throws -> String {
         var phase = Phase.eventCreation
         var activation = T17ActivationRecord()
         var front: pid_t?
         var pairPosted = false
         func context() -> String {
-            detail(phase: phase, pid: pid, code: code, flags: flags,
+            T17FileChooserKeyDiagnosticFormat.detail(phase: phase.rawValue, pid: pid, code: code, flags: flags,
                    activation: activation, front: front, pairPosted: pairPosted)
         }
         guard let postPair else { throw T17FileChooser.failure(context()) }
@@ -45,11 +46,13 @@ enum T17FileChooserKeyDiagnostic {
                 phase = pairPosted ? .afterPair : .beforePair
                 front = foreground()
                 return front
-            }, postPair: {
+            }, admission: admission, postPair: {
                 phase = .postingPair
                 postPair()
                 pairPosted = true
             })
+        } catch let blocker as T17Blocker where T17ChooserNativeBudget.isDeadlineFailure(blocker) {
+            throw T17FileChooser.failure(String(blocker.detail.prefix(320)) + "; " + context())
         } catch {
             throw T17FileChooser.failure(context())
         }
@@ -57,19 +60,4 @@ enum T17FileChooserKeyDiagnostic {
         return context()
     }
 
-    private static func detail(phase: Phase, pid: pid_t, code: CGKeyCode,
-                               flags: CGEventFlags, activation: T17ActivationRecord,
-                               front: pid_t?, pairPosted: Bool) -> String {
-        func value<T: CustomStringConvertible>(_ item: T?) -> String {
-            item?.description ?? "unknown"
-        }
-        let state = phase == .complete ? "delivered" : "failed"
-        let detail = "chooser session key \(state);phase=\(phase.rawValue);pid=\(pid);key=\(code);flags=\(flags.rawValue)"
-            + ";activated=\(activation.succeeded);attempts=\(activation.attempts);elapsed_ms=\(activation.elapsedMilliseconds)"
-            + ";native_activation_accepted=\(value(activation.nativeActivationAccepted))"
-            + ";ax_set=\(value(activation.axSetCode));ax_read=\(value(activation.axReadCode))"
-            + ";native_active=\(value(activation.nativeActive));ax_front=\(value(activation.axFront))"
-            + ";activation_front=\(value(activation.observedFrontPID));front=\(value(front));pair_posted=\(pairPosted)"
-        return String(detail.prefix(900))
-    }
 }

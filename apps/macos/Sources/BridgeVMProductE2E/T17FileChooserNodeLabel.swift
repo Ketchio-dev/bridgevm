@@ -7,8 +7,7 @@ import Foundation
 enum T17FileChooserNodeLabel {
     static func naming<Node, Result>(_ node: Node, describe: (Node) -> String, _ read: () throws -> Result) throws -> Result {
         // Prefixed: T17FileChooserSnapshot classifies transient reads by the detail's suffix.
-        do { return try read() } catch let blocker as T17Blocker {
-            throw T17Blocker(code: blocker.code, detail: "node=" + describe(node) + "; " + blocker.detail) }
+        try T17FileChooserNodeLabelRead.naming(node, describe: describe, read: read)
     }
 
     /// The failing node first, then up to five ancestors, joined by `<`.
