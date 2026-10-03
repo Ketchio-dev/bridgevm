@@ -7,7 +7,7 @@ The earlier failed `035a889b` pilot remains failed.
 ## Sealed source and one attempt
 
 - Commit: `8a4a390d8b5a3c1d6f787b9bbd287064b1583a8c`.
-- Tree: `99dca9b3ccd4c44066f203bce515e8b42ae3fa4d`.
+- Tree object prefix: `99dca9b3ccd4` (full identity retained privately).
 - Job: `codex-t17-8a4a390d-runtime-chooser-pilot-r1`.
 - Tier: `t17-windows-hvf-product-e2e`; pilot mode, one development-signed run.
 - Submission returned zero at 12:52:38 UTC; worker began at 12:52:44 UTC.

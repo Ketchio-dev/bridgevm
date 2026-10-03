@@ -3696,3 +3696,5 @@ apps/macos/Sources/BridgeVMProductE2E/T17ChooserClock.swift	14	0
 apps/macos/Sources/BridgeVMProductE2E/T17ChooserTimingFormat.swift	15	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserAdmissionFixture.swift	28	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserClockBoundaryTests.swift	43	0
+docs/history/windows-hvf/t17-shared-chooser-budget-and-return-timing-20261003.md	70	0
+docs/document-manifests/t17-chooser-budget-and-pilot-evidence.tsv	4	0
