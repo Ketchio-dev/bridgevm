@@ -63,7 +63,7 @@ COMMON_FIELDS = (
 ANALYZER_FILES = (
     "scripts/hvf_nvme_performance_v2_report.py", "scripts/write-hvf-nvme-performance-v2-receipt.py",
     "scripts/render-hvf-nvme-workload-v2.py", "scripts/verify-hvf-nvme-quiescence-v2.py",
-    "scripts/live-gates/hvf-nvme-performance-v2-environment.py", "scripts/live-gates/redact-receipt.py",
+    "scripts/live-gates/hvf-nvme-performance-v2-environment.py", "scripts/live-gates/redact-receipt.py", "scripts/live-gates/receipt_public_fields.py",
 )
 
 
