@@ -37,12 +37,12 @@ contracts. That useful result does not override the required Linux failure.
 
 ## Repair and required verification
 
-The Linux repair uses kernel `SO_PEERCRED` credentials rather than declaring
-the macOS `getpeereid` interface on Linux. Darwin behavior and UID authorization
-remain in scope; failed or malformed credential queries must refuse access.
-Hosted native credential tests and all nine actual import contracts remain
-required on the existing QEMU 8/11 matrix. No platform, method or tool is skipped
-to obtain a green result.
+Linux now queries kernel `SO_PEERCRED`, preserving Darwin queries and UID policy.
+Errors and inexact returned lengths refuse access. Focused macOS tests passed 13.
+Pinned Linux ARM64/x86_64 cross-checks passed; neither proves linking or runtime.
+An initial x86 tooling E0463 failure is retained at SHA-256 `fcf0f5613a8b53591a38f027c5df6d6efab69f81f09aa0f77bc72c8235915858`.
+Hosted native credential tests and all nine imports remain required on QEMU 8/11.
+No platform, method or tool is skipped to obtain a green result.
 
 Documentation attribution was corrected without increasing either history's
 structural ceiling. Local reference checking then passed. The source repair,
