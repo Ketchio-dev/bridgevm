@@ -2148,7 +2148,7 @@ tests/integration/snapshot-restore-cleanup-contract.py	60	0
 tests/integration/snapshot-restore-clone-permissions-contract.py	53	0
 docs/windows-arm/evidence/a19-restore-boot-20260912.md	66	0
 docs/windows-arm/evidence/a19-restore-atomicity-defect-20260912.md	49	0
-crates/bridgevm-hvf/src/snapshot_publish.rs	70	2
+crates/bridgevm-hvf/src/snapshot_publish.rs	68	0
 crates/bridgevm-hvf/src/snapshot_publish_tests.rs	81	0
 crates/bridgevm-hvf/src/snapshot_publish_interruption_tests.rs	157	0
 crates/bridgevm-hvf/src/media_lease.rs	107	2
@@ -3667,3 +3667,7 @@ tests/integration/hvf-scripted-install-firmware-contract.py	188	0
 docs/history/windows-hvf/t17-firmware-admission-and-install-cancellation-20261003.md	83	0
 docs/windows-arm/evidence/t17-8e64bd43-bounded-pilot-failure-20261003.json	66	0
 docs/document-manifests/t17-install-boundaries.tsv	2	0
+crates/bridgevm-hvf/src/snapshot_publish_exchange.rs	34	2
+crates/bridgevm-hvf/src/snapshot_publish_empty_destination_tests.rs	41	0
+crates/bridgevm-hvf/src/snapshot_publish_empty_race_tests.rs	85	0
+crates/bridgevm-hvf/src/snapshot_publish_empty_interruption_tests.rs	59	0
