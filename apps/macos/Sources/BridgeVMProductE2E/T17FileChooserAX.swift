@@ -13,7 +13,7 @@ final class T17FileChooserAX: T17FileChooserDriving {
     private let predicates = T17FileChooserPredicateDiagnostics()
 
     var failureContext: String {
-        "open_ax_result=\(openResult.map { String($0.rawValue) } ?? "not-attempted"); " + predicates.context(activation: activationSucceeded, key: keyContext, timeout: T17FileChooserDiagnostics.snapshot(pid: pid), tree: T17FileChooserTreeDiagnostics.snapshot(application))
+        "open_ax_result=\(openResult.map { String($0.rawValue) } ?? "not-recorded"); " + predicates.context(activation: activationSucceeded, key: keyContext, timeout: T17FileChooserDiagnostics.snapshot(pid: pid), tree: T17FileChooserTreeDiagnostics.snapshot(application))
     }
 
     init(pid: pid_t, selection: T17ChooserSelectionTarget, openControl: @escaping () throws -> AXError) {

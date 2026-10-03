@@ -2,34 +2,30 @@ import Foundation
 
 enum T17ChooserAdmission {
     static func deadline(timeout: TimeInterval, now: () -> TimeInterval) throws -> TimeInterval {
-        let start = now(), deadline = start + timeout
-        guard timeout.isFinite, timeout > 0, start.isFinite, deadline.isFinite else {
-            throw T17FileChooser.failure("invalid path or timeout")
-        }
-        return deadline
+        try T17ChooserBudget.deadline(timeout: timeout, now: now)
     }
 
     static func choose<Target>(
         path: String, timeout: TimeInterval,
-        now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         pause: () -> Void = { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) },
         lookup: (TimeInterval) throws -> Target,
-        driver: (Target, TimeInterval) throws -> T17FileChooserDriving
+        driver: (Target, TimeInterval, @escaping () -> TimeInterval) throws -> T17FileChooserDriving
     ) throws {
         guard path.hasPrefix("/"), !path.contains("\0") else {
             throw T17FileChooser.failure("invalid path or timeout")
         }
-        let deadline = try deadline(timeout: timeout, now: now)
-        func remaining() throws -> TimeInterval {
-            let time = now()
-            guard time.isFinite, time < deadline else {
-                throw T17FileChooser.failure("stage=chooser-admission; timed out before chooser stage")
+        let clock = try T17ChooserClock(timeout: timeout, now: now), deadline = clock.deadline
+        let timing = T17ChooserTiming(start: clock.start, deadline: deadline, now: now)
+        do {
+            let target = try timing.run("target-lookup") {
+                try lookup(T17ChooserBudget.remaining(deadline: deadline, now: timing.checkedNow))
             }
-            return deadline - time
+            _ = try T17ChooserBudget.remaining(deadline: deadline, now: timing.checkedNow)
+            try T17FileChooser.choose(path: path, deadline: deadline,
+                driver: driver(target, deadline, timing.checkedNow), timing: timing, now: timing.checkedNow, pause: pause)
+        } catch let blocker as T17Blocker {
+            throw timing.attributed(blocker)
         }
-        let target = try lookup(remaining())
-        _ = try remaining()
-        try T17FileChooser.choose(path: path, deadline: deadline,
-            driver: driver(target, deadline), now: now, pause: pause)
     }
 }

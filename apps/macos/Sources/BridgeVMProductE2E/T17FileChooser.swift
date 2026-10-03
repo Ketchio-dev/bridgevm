@@ -3,15 +3,7 @@ enum T17FileChooser {
     /// One deadline covers the whole interaction. An action returning success
     /// is not evidence that either the panel or the application accepted it.
     static func choose(
-        path: String, timeout: TimeInterval, driver: T17FileChooserDriving,
-        now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
-        pause: () -> Void = { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
-    ) throws {
-        try choose(path: path, deadline: T17ChooserAdmission.deadline(timeout: timeout, now: now),
-                   driver: driver, now: now, pause: pause)
-    }
-    static func choose(
-        path: String, deadline: TimeInterval, driver: T17FileChooserDriving,
+        path: String, deadline: TimeInterval, driver: T17FileChooserDriving, timing: T17ChooserTiming,
         now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         pause: () -> Void = { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
     ) throws {
@@ -23,7 +15,7 @@ enum T17FileChooser {
                 failureContext: { diagnosticSuffix(driver) }, now: now, pause: pause, ready: ready)
         }
         func run(_ stage: String, _ action: () throws -> Void) throws {
-            try T17FileChooserDeadline.run(stage: stage, deadline: deadline,
+            try T17ChooserStageRunner.run(stage: stage, deadline: deadline, timing: timing,
                 failureContext: { diagnosticSuffix(driver) }, now: now, action: action)
         }
         try run("initial-panel-check") { guard try !driver.panelIsPresent() else { throw failure("a file chooser was already open") } }

@@ -9,7 +9,7 @@ final class T17ChooserAdmissionTests: XCTestCase {
             XCTAssertThrowsError(try T17ChooserAdmission.choose(path: "/fixture/share", timeout: 20,
                 now: { clock }, pause: {}, lookup: { allowance in
                     XCTAssertEqual(allowance, 20); clock = end; return 1
-                }, driver: { _, _ in drivers += 1; return Driver() })) { error in
+                }, driver: { _, _, _ in drivers += 1; return Driver() })) { error in
                     XCTAssertTrue((error as? T17Blocker)?.detail.hasPrefix("stage=chooser-admission;") == true)
                 }
             XCTAssertEqual(drivers, 0)
@@ -21,9 +21,9 @@ final class T17ChooserAdmissionTests: XCTestCase {
         try T17ChooserAdmission.choose(path: "/fixture/share", timeout: 20,
             now: { driver.clock }, pause: {}, lookup: { allowance in
                 XCTAssertEqual(allowance, 20); driver.clock = 119; return 7
-            }, driver: { target, deadline in
+            }, driver: { target, deadline, now in
                 XCTAssertEqual(target, 7); XCTAssertEqual(deadline, 120)
-                driver.openDeadline = deadline; return driver
+                driver.openDeadline = deadline; driver.openClock = now; return driver
             })
         XCTAssertEqual(driver.actions, ["open", "location", "write", "accept-location", "accept-selection"])
         XCTAssertEqual(driver.selectedReads, 1)
@@ -63,7 +63,7 @@ final class T17ChooserAdmissionTests: XCTestCase {
         let driver = Driver(); driver.enabledDelay = 1
         XCTAssertThrowsError(try T17ChooserAdmission.choose(path: "/fixture/share", timeout: 20,
             now: { driver.clock }, pause: {}, lookup: { _ in driver.clock = 19; return 1 },
-            driver: { _, deadline in driver.openDeadline = deadline; return driver }))
+            driver: { _, deadline, now in driver.openDeadline = deadline; driver.openClock = now; return driver }))
         XCTAssertEqual(driver.presses, 0)
     }
 
@@ -71,14 +71,14 @@ final class T17ChooserAdmissionTests: XCTestCase {
         for (path, timeout) in [("relative", 20.0), ("/nul\0", 20), ("/fixture", 0), ("/fixture", .infinity)] {
             XCTAssertThrowsError(try T17ChooserAdmission.choose(path: path, timeout: timeout,
                 now: { 0 }, pause: {}, lookup: { _ in XCTFail(); return 1 },
-                driver: { _, _ in XCTFail(); return Driver() }))
+                driver: { _, _, _ in XCTFail(); return Driver() }))
         }
     }
 
     private func choose(_ driver: Driver) throws {
         try T17ChooserAdmission.choose(path: "/fixture/share", timeout: 20,
             now: { driver.clock }, pause: { driver.clock += 0.1 }, lookup: { _ in 1 },
-            driver: { _, deadline in driver.openDeadline = deadline; return driver })
+            driver: { _, deadline, now in driver.openDeadline = deadline; driver.openClock = now; return driver })
     }
 
     private func fails(_ driver: Driver, at stage: String) {
@@ -88,26 +88,5 @@ final class T17ChooserAdmissionTests: XCTestCase {
         }
     }
 
-    private final class Driver: T17FileChooserDriving {
-        var clock = 0.0, openDeadline = 0.0, enabledDelay = 0.0, pressDelay = 0.0, acceptDelay = 0.0
-        var panel = false, presses = 0, panelReads = 0, selectedReads = 0
-        var openResult = AXError.success
-        var actions: [String] = []
-        func open() throws {
-            actions.append("open")
-            _ = try T17ChooserOpenAction.perform(identifier: "fixture", deadline: openDeadline,
-                enabled: { self.clock += self.enabledDelay; return true },
-                press: { self.presses += 1; self.clock += self.pressDelay; self.panel = true; return self.openResult },
-                now: { self.clock }, pause: {})
-        }
-        func panelIsPresent() -> Bool { panelReads += 1; return panel }
-        func showLocationField() { actions.append("location") }
-        func locationFieldIsReady() -> Bool { true }
-        func setLocation(_ path: String) { actions.append("write") }
-        func acceptLocation() { actions.append("accept-location") }
-        func locationFieldIsAbsent() -> Bool { true }
-        func selectionIsReady() -> Bool { true }
-        func acceptSelection() { actions.append("accept-selection"); clock += acceptDelay; panel = false }
-        func selectedPath() -> String? { selectedReads += 1; return "/fixture/share" }
-    }
+    private typealias Driver = T17ChooserAdmissionFixture
 }

@@ -22,7 +22,7 @@ enum T17ChooserOpenAction {
             guard result == .success || result == .cannotComplete else {
                 throw T17FileChooser.failure("chooser control AXPress failed: \(identifier); ax_error=\(result.rawValue)")
             }
-            guard now() < deadline else { throw T17FileChooser.failure("chooser control AXPress returned after deadline: \(identifier)") }
+            guard now() < deadline else { throw T17FileChooser.failure("chooser control AXPress returned after deadline: \(identifier); ax_error=\(result.rawValue)") }
             // cannotComplete remains provisional until exact panel/path/dismissal proof.
             return result
         } while true

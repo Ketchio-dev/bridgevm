@@ -1967,7 +1967,7 @@ apps/macos/Sources/BridgeVMControl/FileSelection.swift	39	0
 apps/macos/Tests/BridgeVMControlTests/FileSelectionTests.swift	63	0
 scripts/b6-scene-contract.sh	46	0
 tests/integration/b6-scene-contract-smoke.py	81	0
-apps/macos/Sources/BridgeVMProductE2E/T17FileChooser.swift	47	0
+apps/macos/Sources/BridgeVMProductE2E/T17FileChooser.swift	39	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserAX.swift	131	0
 apps/macos/Sources/BridgeVMProductE2E/T17RoleFirstIdentity.swift	18	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserTests.swift	102	0
@@ -3683,7 +3683,16 @@ docs/document-manifests/a19-stop-observation.tsv	3	0
 docs/history/windows-hvf/t17-runtime-chooser-pilot-failure-20261003.md	82	0
 docs/document-manifests/t17-install-and-chooser-boundaries.tsv	3	0
 docs/windows-arm/evidence/t17-8a4a390d-runtime-chooser-pilot-failure-20261003.json	66	0
-apps/macos/Sources/BridgeVMProductE2E/T17ChooserAdmission.swift	35	0
+apps/macos/Sources/BridgeVMProductE2E/T17ChooserAdmission.swift	31	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserDriving.swift	13	0
 apps/macos/Sources/BridgeVMProductE2E/T17ChooserOpenActionTimeout.swift	12	0
-apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserAdmissionTests.swift	113	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserAdmissionTests.swift	92	0
+apps/macos/Sources/BridgeVMProductE2E/T17ChooserBudget.swift	15	0
+apps/macos/Sources/BridgeVMProductE2E/T17ChooserTiming.swift	65	0
+apps/macos/Sources/BridgeVMProductE2E/T17ChooserStageRunner.swift	12	0
+apps/macos/Sources/BridgeVMProductE2E/T17FileChooserTimeout.swift	17	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserTimingTests.swift	101	0
+apps/macos/Sources/BridgeVMProductE2E/T17ChooserClock.swift	14	0
+apps/macos/Sources/BridgeVMProductE2E/T17ChooserTimingFormat.swift	15	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserAdmissionFixture.swift	28	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserClockBoundaryTests.swift	43	0
