@@ -3778,3 +3778,7 @@ docs/history/windows-hvf/d10-owned-pair-queue-admission-20261003.md	79	0
 docs/document-manifests/t17-native-and-d10-preparation.tsv	8	0
 scripts/live-gates/t22-pair-source-environment.sh	11	0
 tests/integration/t22_pair_shell_environment.py	11	0
+docs/history/windows-hvf/t22-loader-admission-required-check-failure-20261003.md	72	0
+docs/document-manifests/t22-loader-admission-failure.tsv	9	0
+docs/history/windows-hvf/t22-loader-admission-hosted-full-failure-20261003.md	38	0
+docs/document-manifests/t22-loader-admission-terminal.tsv	10	0
