@@ -3773,3 +3773,6 @@ apps/macos/Sources/BridgeVMProductE2E/T17FileChooserNodeLabelRead.swift	11	0
 apps/macos/Sources/BridgeVMProductE2E/T17ChooserNativeRead.swift	33	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserNativeReadFailureTests.swift	74	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserNativeReadClippingTests.swift	24	0
+docs/history/windows-hvf/t17-native-chooser-admission-repair-20261003.md	69	0
+docs/history/windows-hvf/d10-owned-pair-queue-admission-20261003.md	79	0
+docs/document-manifests/t17-native-and-d10-preparation.tsv	8	0
