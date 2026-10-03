@@ -2,7 +2,7 @@
 
 Evidence rank: deterministic tests, disposable local children and modeled
 failure boundaries. No Windows boot, private media or live queue job was used.
-The focused conclusion is `b991aeb421c439871e631839b37a4f2b62e5d6a3`,
+The retained development source SHA is `b991aeb421c439871e631839b37a4f2b62e5d6a3`,
 integrated as `6cb0adde70a4fe24b93a6422162bd04cab130f4e`.
 Those commits have identical Git trees. Product truth remains in
 [`capabilities/windows-hvf.json`](../../../capabilities/windows-hvf.json).

@@ -3630,3 +3630,5 @@ scripts/check-bundle-import-storage-cases.sh	7	0
 tests/integration/bundle-import-raw-cli-contract.py	159	0
 docs/history/windows-hvf/owned-bundle-import-contracts-20261003.md	95	0
 docs/history/windows-hvf/diagnostic-process-ownership-20261003.md	88	0
+docs/history/windows-hvf/import-hosted-portability-repair-20261003.md	52	0
+docs/document-manifests/storage-portability.tsv	5	0

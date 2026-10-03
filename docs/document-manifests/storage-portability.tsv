@@ -1,0 +1,5 @@
+path	class	topic	superseded_by
+docs/compatibility-mode/README.md	current	qemu-engine	-
+docs/history/windows-hvf/owned-bundle-import-contracts-20261003.md	historical-evidence	storage-portability	-
+docs/history/windows-hvf/diagnostic-process-ownership-20261003.md	historical-evidence	live-diagnostic-cleanup	-
+docs/history/windows-hvf/import-hosted-portability-repair-20261003.md	historical-evidence	storage-portability	-

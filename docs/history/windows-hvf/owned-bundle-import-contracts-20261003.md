@@ -2,7 +2,7 @@
 
 Evidence rank: deterministic tests with generated raw/qcow2 files and actual
 CLI/socket commands. No private Windows media or live guest was used.
-The focused conclusion is `749976b4653822c2bb171f885364215202652cad`,
+The retained development source SHA is `749976b4653822c2bb171f885364215202652cad`,
 integrated as `3e24e6539441ca6311bd36732d57d98c1e164bc3`.
 Product truth remains in
 [`capabilities/windows-hvf.json`](../../../capabilities/windows-hvf.json).
@@ -17,14 +17,14 @@ These are six failed portability observations, not a live guest result.
 The initial actual release-helper experiment failed both PATH-poison and
 recorded-helper refusal cases. Its binary demonstrated invocation behavior,
 but the full compiled source inventory was unsealed. It cannot supply sealed
-source attribution. A separate replay built from tree
+source attribution. A separate replay used this retained source SHA (Git tree):
 `c53ae96fd9cda2200c428d511f096abdfe8ab4ac` reproduced both failures.
 That release binary SHA-256 is
 `648698511853a9f317642ac02648dc4f494b2c6502422ad94e6c610a1045b52b`;
 unchanged before/after source inventories both hash to
 `c3b4e6c8717ea0f02823284c488112fe539e39637b01697416ccee79071a014d`.
 
-The seven-contract PASS at intermediate tree
+The seven-contract PASS at intermediate retained source SHA (Git tree)
 `74e44ec13965f721f49eb24b9758edc721807dcb` preceded discovery that raw-only
 imports unnecessarily required QEMU. A separately sealed debug binary from
 that tree failed both directory and tar raw-only cases with QEMU absent.
@@ -73,7 +73,7 @@ boundary without claiming guest boot or memory restoration.
 
 The final tracked-source inventories before and after the focused checks both
 hash to `d185708b3f40a4f950b11c0c396fcc6b41428c9a72661a0ce1cfb1687121bc04`.
-They bind focused tree `685077a081a28af4760ed8cbc2422677ce03d1b9`.
+They bind retained checkout source SHA (Git tree) `685077a081a28af4760ed8cbc2422677ce03d1b9`.
 The actual debug CLI hashes to
 `8b318a7407a7e313d947e4147e5600871a66a315f8a6c39f1432123aeeb8e151`;
 the actual release CLI hashes to
