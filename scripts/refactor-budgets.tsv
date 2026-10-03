@@ -3594,3 +3594,5 @@ tests/integration/a19-interrupted-restore-production-collection-contract.py	238	
 tests/integration/a19_collection_fixtures.py	96	0
 docs/document-manifests/a19-interruption.tsv	3	0
 docs/history/windows-hvf/a19-three-interruption-cases-20261002.md	114	0
+tests/integration/live_installer_fixture.py	88	0
+tests/integration/live-installer-dry-run-contract.py	102	0
