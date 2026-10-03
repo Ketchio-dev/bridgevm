@@ -3600,3 +3600,5 @@ scripts/live-gates/receipt_public_fields.py	71	0
 scripts/import_product_receipt_types.py	31	0
 tests/integration/windows_import_receipt_fixtures.py	39	0
 tests/integration/windows-import-product-e2e-publication-contract.py	211	0
+docs/document-manifests/development-boundaries.tsv	5	0
+docs/history/windows-hvf/receipt-publication-and-installer-contracts-20261003.md	68	0
