@@ -2,10 +2,10 @@
 
 **Evidence rank: automated tests and static review.** These changes do not
 establish a new live result or repair the recorded failed T17 pilot by assertion.
-A19 source `c8973e3b0c285f815598e285b2927dfa0c51f9ac` is integrated as
-`cca109df9af5d92680f424906daf5c576bb694ab`; asynchronous chooser source
-`42e53b29c326595bd9653a49b9206884f061cff4` is integrated as
-`466ff86b4906f0c5b7e408b6c5c1ffc7c7fba5ad`.
+A19 implementation is integrated as `cca109df9af5d92680f424906daf5c576bb694ab`;
+asynchronous chooser as `466ff86b4906f0c5b7e408b6c5c1ffc7c7fba5ad`.
+Focused checks preceded integration on byte-identical production files;
+original private source identifiers remain in the hashed private handoffs.
 
 ## Empty snapshot destination
 
