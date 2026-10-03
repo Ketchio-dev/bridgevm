@@ -22,7 +22,7 @@ for required in ('FILE_COMPARE="${WINDOWS_FILE_COMPARE:-}"', 'add "$FILE_COMPARE
                  "for f in winpeshl.ini bvinstall.cmd bvdiskpart.txt bv-file-compare.exe"):
     assert required in builder
 assert 'build-winpe-file-compare.sh" "$stage_app/Contents/Resources/helpers/bv-file-compare.exe"' in package
-assert '"helpers/bv-file-compare.exe"' in plan and '"WINDOWS_FILE_COMPARE": fileComparePath' in plan
+assert '"helpers/bv-file-compare.exe"' in read("apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallResources.swift") and '"WINDOWS_FILE_COMPARE": fileComparePath' in plan
 assert cache.count('"helpers/bv-file-compare.exe"') == 1
 assert "zig cc -target aarch64-windows-gnu" in compiler
 assert "openssl@3 zig" in release

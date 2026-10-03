@@ -25,6 +25,7 @@ Options:
 
 Policy:
   The script always launches the probe with BRIDGEVM_DISABLE_XHCI=1.
+  Firmware is selected from this runtime and must match the pinned secure build.
 EOF
 }
 
@@ -36,56 +37,14 @@ nonnegative_integer() {
   [[ "$1" =~ ^[0-9]+$ ]]
 }
 
-absolute_media_path() {
-  local path="$1"
-  local dir
-  local base
-  case "$path" in
-    /*) ;;
-    *) path="$PWD/$path" ;;
-  esac
-  dir="$(dirname "$path")"
-  base="$(basename "$path")"
-  if [[ -d "$dir" ]]; then
-    (cd "$dir" && printf '%s/%s\n' "$(pwd -P)" "$base")
-  else
-    printf '%s\n' "$path"
-  fi
-}
-
-path_has_parent_component() {
-  case "$1" in
-    ..|../*|*/..|*/../*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-require_destructive_media_path() {
-  local label="$1"
-  local path
-  if path_has_parent_component "$2"; then
-    echo "FAIL: destructive $label path must not contain '..' components: $2" >&2
-    exit 2
-  fi
-  path="$(absolute_media_path "$2")"
-  case "$path" in
-    /tmp/bridgevm-*|/private/tmp/bridgevm-*) ;;
-    *)
-      echo "FAIL: destructive $label path must be under /tmp/bridgevm-*: $2" >&2
-      exit 2
-      ;;
-  esac
-  case "$path" in
-    /tmp/bridgevm-c3-unattend-target.raw|/private/tmp/bridgevm-c3-unattend-target.raw|\
-    /tmp/bridgevm-c3-unattend-vars.fd|/private/tmp/bridgevm-c3-unattend-vars.fd|\
-    /tmp/bridgevm-c3-placeholder-nsid1.raw|/private/tmp/bridgevm-c3-placeholder-nsid1.raw)
-      echo "FAIL: destructive $label path matches preserved source media: $2" >&2
-      exit 2
-      ;;
-  esac
-}
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+POLICY="$ROOT/scripts/run-hvf-windows-scripted-install-policy.sh"
+[[ -f "$POLICY" && ! -L "$POLICY" ]] || {
+  echo "FAIL: scripted install policy resource is missing or a symlink" >&2
+  exit 1
+}
+# shellcheck source=scripts/run-hvf-windows-scripted-install-policy.sh
+source "$POLICY"
 SOURCE=""
 TARGET=""
 VARS=""
@@ -199,6 +158,7 @@ if [[ "$CLEANUP_CREATED_MEDIA" == "1" ]]; then
   }
 fi
 
+select_scripted_install_firmware "$ROOT"
 cd "$ROOT"
 install -d "$EVIDENCE_DIR/ramfb"
 
@@ -278,6 +238,7 @@ fi
   printf 'vars=%s\n' "$VARS"
   printf 'evidence_dir=%s\n' "$EVIDENCE_DIR"
   printf 'build_profile=%s\n' "$BUILD_PROFILE"
+  printf 'firmware_code=%s\nfirmware_sha256=%s\n' "$FIRMWARE_CODE" "$FIRMWARE_SHA256"
   printf 'policy=BRIDGEVM_DISABLE_XHCI=1\n'
   printf 'source_stat:\n'
   ls -lh "$SOURCE"
@@ -320,6 +281,7 @@ fi
     "BRIDGEVM_NVME_DISK=$SOURCE" \
     "BRIDGEVM_NVME_DISK2=$TARGET" \
     'BRIDGEVM_NVME_DISK2_WRITABLE=1' \
+    "BRIDGEVM_AARCH64_UEFI_CODE=$FIRMWARE_CODE" \
     "BRIDGEVM_AARCH64_UEFI_VARS=$VARS" \
     'BRIDGEVM_AARCH64_UEFI_VARS_WRITABLE=1' \
     "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=$WATCHDOG_MS" \
@@ -341,6 +303,7 @@ env \
   BRIDGEVM_NVME_DISK="$SOURCE" \
   BRIDGEVM_NVME_DISK2="$TARGET" \
   BRIDGEVM_NVME_DISK2_WRITABLE=1 \
+  BRIDGEVM_AARCH64_UEFI_CODE="$FIRMWARE_CODE" \
   BRIDGEVM_AARCH64_UEFI_VARS="$VARS" \
   BRIDGEVM_AARCH64_UEFI_VARS_WRITABLE=1 \
   BRIDGEVM_BOOT_PROBE_WATCHDOG_MS="$WATCHDOG_MS" \
