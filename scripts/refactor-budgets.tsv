@@ -3702,3 +3702,6 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserDiagnosticFixture.swift	3
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserDiagnosticEnvelope.swift	26	0
 docs/history/windows-hvf/t17-diagnostic-timing-required-check-failure-20261003.md	66	0
 docs/document-manifests/t17-chooser-diagnostic-and-required-checks.tsv	5	0
+docs/windows-arm/evidence/t17-9ea516d3-shared-chooser-pilot-failure-20261003.json	66	0
+docs/history/windows-hvf/t17-native-chooser-timed-pilot-failure-20261003.md	83	0
+docs/document-manifests/t17-chooser-required-checks-and-native-timing.tsv	6	0
