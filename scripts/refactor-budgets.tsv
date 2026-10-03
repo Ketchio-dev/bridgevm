@@ -1867,7 +1867,7 @@ apps/macos/Sources/BridgeVMProductE2E/T17InputChallenge.swift	26	0
 apps/macos/Sources/BridgeVMProductE2E/T17RuntimeControlInput.swift	18	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestProof.swift	152	0
 apps/macos/Sources/BridgeVMProductE2E/T17PrivateUnattend.swift	33	0
-apps/macos/Sources/BridgeVMProductE2E/T17ProductRunner.swift	237	0
+apps/macos/Sources/BridgeVMProductE2E/T17ProductRunner.swift	229	0
 apps/macos/Sources/BridgeVMProductE2E/T17BoundedLog.swift	23	0
 apps/macos/Sources/BridgeVMProductE2E/T17SecureBootReceipt.swift	61	0
 apps/macos/Sources/BridgeVMProductE2E/T17UIContract.swift	3	0
@@ -3657,3 +3657,6 @@ crates/bridgevm-hvf/src/managed_pair_retry_capacity_tests.rs	65	0
 crates/bridgevm-hvf/src/managed_pair_retry_capacity_refusal_tests.rs	214	0
 docs/history/windows-hvf/interrupted-restore-capacity-20261003.md	62	0
 docs/document-manifests/diagnostic-observation-recovery.tsv	4	0
+apps/macos/Sources/BridgeVMProductE2E/T17OwnedApplicationCleanup.swift	42	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17OwnedApplicationCleanupTests.swift	67	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17OwnedInstallCleanupFixture.swift	50	0
