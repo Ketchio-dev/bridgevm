@@ -3650,3 +3650,4 @@ tests/integration/d4-bounded-output-contract.py	315	0
 tests/integration/hvf-diagnostic-output-contract.py	219	0
 tests/integration/winpe_companion_bounds_cases.py	200	0
 docs/history/windows-hvf/bounded-winpe-diagnostics-20261003.md	75	0
+docs/history/windows-hvf/t17-observation-read-boundaries-20261003.md	58	0
