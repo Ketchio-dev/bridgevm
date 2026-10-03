@@ -81,14 +81,14 @@ final class T17Accessibility: T17UIControlling {
             throw T17Blocker(code: "ui-element-missing", detail: "identified toggle did not reach the requested value")
         }
     }
-
     func choose(path: String, from identifier: String, timeout: TimeInterval = 15) throws {
-        let target = try element(identifier, role: T17ChooserOpenAction.targetRole, timeout: timeout)
-        let driver = T17FileChooserAX(pid: pid, selection: try T17ChooserSelectionTarget.resolve(button: identifier)) { try T17ChooserOpenAction.perform(
-            identifier: identifier, timeout: timeout,
-            enabled: { (try T17SupportedAttribute.read(target, kAXEnabledAttribute) as? NSNumber)?.boolValue },
-            press: { AXUIElementPerformAction(target, kAXPressAction as CFString) }) }
-        try T17FileChooser.choose(path: path, timeout: timeout, driver: driver)
+        try T17ChooserAdmission.choose(path: path, timeout: timeout, lookup: {
+            try self.element(identifier, role: T17ChooserOpenAction.targetRole, timeout: $0)
+        }) { target, deadline in
+            T17FileChooserAX(pid: self.pid, selection: try T17ChooserSelectionTarget.resolve(button: identifier)) { try T17ChooserOpenAction.perform(
+                identifier: identifier, deadline: deadline,
+                enabled: { (try T17SupportedAttribute.read(target, kAXEnabledAttribute) as? NSNumber)?.boolValue }, press: { AXUIElementPerformAction(target, kAXPressAction as CFString) }) }
+        }
     }
 
     func textSnapshot() -> [String] {

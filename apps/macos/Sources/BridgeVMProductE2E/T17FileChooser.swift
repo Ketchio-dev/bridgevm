@@ -1,18 +1,4 @@
 import Foundation
-protocol T17FileChooserDriving {
-    var failureContext: String { get }
-    func open() throws
-    func panelIsPresent() throws -> Bool
-    func showLocationField() throws
-    func locationFieldIsReady() throws -> Bool
-    func setLocation(_ path: String) throws
-    func acceptLocation() throws
-    func locationFieldIsAbsent() throws -> Bool
-    func selectionIsReady() throws -> Bool
-    func acceptSelection() throws
-    func selectedPath() throws -> String?
-}
-
 enum T17FileChooser {
     /// One deadline covers the whole interaction. An action returning success
     /// is not evidence that either the panel or the application accepted it.
@@ -21,10 +7,17 @@ enum T17FileChooser {
         now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         pause: () -> Void = { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
     ) throws {
-        guard path.hasPrefix("/"), !path.contains("\0"), timeout.isFinite, timeout > 0 else {
+        try choose(path: path, deadline: T17ChooserAdmission.deadline(timeout: timeout, now: now),
+                   driver: driver, now: now, pause: pause)
+    }
+    static func choose(
+        path: String, deadline: TimeInterval, driver: T17FileChooserDriving,
+        now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        pause: () -> Void = { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+    ) throws {
+        guard path.hasPrefix("/"), !path.contains("\0"), deadline.isFinite else {
             throw failure("invalid path or timeout")
         }
-        let deadline = now() + timeout
         func wait(_ stage: String, until ready: () throws -> Bool) throws {
             try T17FileChooserWait.until(stage: stage, deadline: deadline,
                 failureContext: { diagnosticSuffix(driver) }, now: now, pause: pause, ready: ready)
