@@ -109,3 +109,5 @@ fn hard_exit_around_publication_reopens_only_complete_generations() {
         (b"new-disk".to_vec(), b"new-vars".to_vec())
     );
 }
+#[path = "managed_pair_retry_capacity_tests.rs"]
+mod retry_capacity_tests;

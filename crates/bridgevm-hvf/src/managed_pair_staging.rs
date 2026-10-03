@@ -11,7 +11,7 @@ impl LockedPair {
         copy: impl FnMut(&Path, &Path) -> io::Result<u64>,
     ) -> Result<(PathBuf, SnapshotManifest), SnapshotError> {
         let staged = self.root.join("staging");
-        debris::clear(&staged)?;
+        self.reclaim_staging()?;
         super::super::private_directory(&staged, true)?;
         let owned = ownership::StageOwner::capture(&staged)?;
         let copied =
@@ -27,3 +27,5 @@ mod debris;
 mod fill;
 #[path = "managed_pair_staging_ownership.rs"]
 mod ownership;
+#[path = "managed_pair_staging_reclaim.rs"]
+mod reclaim;

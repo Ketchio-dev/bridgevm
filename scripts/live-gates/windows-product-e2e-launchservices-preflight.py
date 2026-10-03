@@ -5,15 +5,15 @@ import argparse
 import hashlib
 import importlib.util
 import json
-import os
 import re
-import stat
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from t17_preflight_observation import PreflightError, captured_manifest, read_report
 REPORT_KEYS = {
     "schema", "observation_only", "criterion_pass", "accessibility_trusted",
     "caller_identity", "scope",
@@ -24,8 +24,6 @@ IDENTITY_KEYS = {
     "signing_status", "code_identifier", "code_cdhash",
 }
 HEX = re.compile(r"^[0-9a-f]+$")
-class PreflightError(ValueError):
-    pass
 def load_manifest_module():
     source = HERE / "windows-product-e2e-manifest.py"
     spec = importlib.util.spec_from_file_location("t17_manifest", source)
@@ -37,6 +35,9 @@ def load_manifest_module():
 def validate_report(value: object, helper_app: Path) -> None:
     if not isinstance(value, dict) or set(value) != REPORT_KEYS:
         raise PreflightError("diagnostic report has an unexpected field set")
+    for key in ("observation_only", "criterion_pass", "accessibility_trusted"):
+        if type(value[key]) is not bool:
+            raise PreflightError(f"diagnostic report has invalid {key} type")
     expected = {
         "schema": "t17.accessibility-diagnostic.v1",
         "observation_only": True,
@@ -49,6 +50,8 @@ def validate_report(value: object, helper_app: Path) -> None:
     identity = value["caller_identity"]
     if not isinstance(identity, dict) or set(identity) != IDENTITY_KEYS:
         raise PreflightError("diagnostic caller identity has an unexpected field set")
+    if any(not isinstance(field, str) for field in identity.values()):
+        raise PreflightError("diagnostic caller identity has a non-string field")
     identity_expected = {
         "schema": "t17.caller-identity.v1",
         "bundle_id": "dev.bridgevm.product-e2e",
@@ -63,23 +66,13 @@ def validate_report(value: object, helper_app: Path) -> None:
     for key, wanted in identity_expected.items():
         if identity[key] != wanted:
             raise PreflightError(f"diagnostic caller identity has invalid {key}")
-    if not identity["pid"].isdigit() or not identity["ppid"].isdigit():
+    if any(not re.fullmatch(r"[0-9]+", identity[key]) for key in ("pid", "ppid")):
         raise PreflightError("diagnostic caller process identity is malformed")
     cdhash = identity["code_cdhash"]
     if not isinstance(cdhash, str) or len(cdhash) != 40 or not HEX.fullmatch(cdhash):
         raise PreflightError("diagnostic caller identity has invalid code_cdhash")
     if value["accessibility_trusted"] is not True:
         raise PreflightError("LaunchServices helper is not Accessibility-trusted")
-def read_report(path: Path) -> object:
-    info = path.lstat()
-    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
-        raise PreflightError("diagnostic output is not an owned regular file")
-    if info.st_size == 0 or info.st_size > 32 * 1024:
-        raise PreflightError("diagnostic output is outside the 32 KiB bound")
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise PreflightError("diagnostic output is not valid UTF-8 JSON") from error
 def verified_helper(manifest: Path) -> tuple[Path, Path, str]:
     module = load_manifest_module()
     try:
@@ -128,14 +121,18 @@ def launch_and_observe(helper_app: Path) -> None:
 def preflight(manifest: Path) -> None:
     if sys.platform != "darwin":
         raise PreflightError("T17 LaunchServices preflight requires macOS")
-    app, helper_app, app_digest = verified_helper(manifest)
-    launch_and_observe(helper_app)
-    module = load_manifest_module()
-    try:
-        if module.tree_hash(app, allow_symlinks=True) != app_digest:
-            raise PreflightError("T17 app bundle changed during the LaunchServices observation")
-    except module.ManifestError as error:
-        raise PreflightError(f"T17 app bundle became unsafe: {error}") from error
+    with captured_manifest(manifest) as (snapshot, unchanged):
+        app, helper_app, app_digest = verified_helper(snapshot)
+        unchanged()
+        launch_and_observe(helper_app)
+        unchanged()
+        module = load_manifest_module()
+        try:
+            if module.tree_hash(app, allow_symlinks=True) != app_digest:
+                raise PreflightError("T17 app bundle changed during the LaunchServices observation")
+        except module.ManifestError as error:
+            raise PreflightError(f"T17 app bundle became unsafe: {error}") from error
+        unchanged()
 def self_test() -> None:
     identity = {
         "schema": "t17.caller-identity.v1", "pid": "42", "ppid": "1",

@@ -1,4 +1,4 @@
-//! Refuse a restore before managed storage is touched.
+//! Verify an external source before reclaiming restore debris or admitting space.
 
 use super::LockedPair;
 use crate::snapshot_pair::{verify_snapshot, SnapshotError, SnapshotManifest};
@@ -18,15 +18,10 @@ impl LockedPair {
             return Err(io::Error::other("restore source must be outside managed storage").into());
         }
         let manifest = verify_snapshot(&snapshot)?;
-        let needed = manifest
-            .disk_bytes
-            .checked_add(manifest.vars_bytes)
-            .ok_or_else(|| io::Error::other("snapshot size overflow"))?;
-        if let Some(available) = available_bytes(self.root.parent().unwrap()) {
-            if needed > available {
-                return Err(SnapshotError::InsufficientSpace { needed, available });
-            }
-        }
+        self.admit_restore_capacity(&manifest, available_bytes)?;
         Ok((snapshot, manifest))
     }
 }
+
+#[path = "managed_pair_restore_capacity.rs"]
+mod capacity;

@@ -209,7 +209,7 @@ verify_bundle() {
     run-hvf-windows-installed-boot-usage.sh \
     run-hvf-windows-installed-boot-validation.sh \
     run-hvf-windows-installed-boot-args.sh \
-    run-hvf-windows-installed-boot-runner.sh hvf-terminal-report.sh; do
+    run-hvf-windows-installed-boot-runner.sh run-hvf-windows-installed-boot-output.sh run-hvf-windows-installed-boot-policy.sh run-hvf-windows-installed-boot-usage-core.sh run-hvf-windows-installed-boot-package-policy.sh hvf-terminal-report.sh; do
     [[ -x "$hvf_lab_resources/scripts/$hvf_script" && ! -L "$hvf_lab_resources/scripts/$hvf_script" ]] || {
       echo "BridgeVM Windows HVF runtime script is missing, non-executable, or a symlink: $hvf_script" >&2
       exit 1
@@ -431,14 +431,8 @@ PLIST
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $BUNDLE_SHORT_VERSION" "$HVF_LAB_CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUNDLE_VERSION" "$HVF_LAB_CONTENTS/Info.plist"
 
-for hvf_script in \
-  run-hvf-windows-installed-boot.sh \
-  run-hvf-windows-installed-boot-usage.sh \
-  run-hvf-windows-installed-boot-validation.sh \
-  run-hvf-windows-installed-boot-args.sh \
-  run-hvf-windows-installed-boot-runner.sh hvf-terminal-report.sh; do
-  install -m 755 "$ROOT/scripts/$hvf_script" "$HVF_LAB_RESOURCES/scripts/$hvf_script"
-done
+source "$ROOT/apps/macos/scripts/install-installed-boot-modules.sh"
+install_installed_boot_modules "$HVF_LAB_RESOURCES"
 install -d "$HVF_LAB_RESOURCES/scripts/win-assets"
 install -m 644 \
   "$ROOT/scripts/win-assets/bv-ppsspp-title.json" \

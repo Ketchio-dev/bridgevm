@@ -101,12 +101,9 @@ printf '%s\n' \
   'bytes=3145728' \
   "sha256=$SECURE_FIRMWARE_SHA256" \
   > "$stage_app/Contents/Resources/firmware/manifest.txt"
+source "$MACOS_DIR/scripts/install-installed-boot-modules.sh"
+install_installed_boot_modules "$stage_app/Contents/Resources"
 for script in \
-  run-hvf-windows-installed-boot.sh \
-  run-hvf-windows-installed-boot-usage.sh \
-  run-hvf-windows-installed-boot-validation.sh \
-  run-hvf-windows-installed-boot-args.sh \
-  run-hvf-windows-installed-boot-runner.sh run-hvf-windows-installed-boot-package-policy.sh hvf-terminal-report.sh \
   build-hvf-windows-scripted-source.sh \
   stage-hvf-windows-guest-payload.sh \
   hvf-disk-image-utils.sh \
