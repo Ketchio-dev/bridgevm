@@ -6,6 +6,7 @@ import subprocess
 import unittest
 
 from t22_pair_worker_fixtures import WorkerFixture, TIER
+from t22_pair_shell_environment import run_in_trusted_shell
 
 
 class SourceBoundary(unittest.TestCase):
@@ -25,8 +26,7 @@ class SourceBoundary(unittest.TestCase):
         command = ['source "$1"; bridgevm_t17_guard_or_fence "$2" "$3" "$4" "$5" a-fixture "$6"',
                    "_", str(self.fixture.repo / "scripts/live-gates/t17-worker-cleanup-fence.sh"),
                    TIER, str(self.directory), str(self.worktree), self.fixture.commit, str(self.fixture.queue)]
-        result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-p", "-c", *command],
-                                env=env or self.fixture.env(), capture_output=True, text=True, timeout=35)
+        result = run_in_trusted_shell(command, env or self.fixture.env())
         self.fixture.assert_fenced(result.returncode, result.stdout + result.stderr)
         self.assertFalse(self.marker.exists(), "dirty verifier/import ran before source admission")
 
@@ -68,9 +68,9 @@ class SourceBoundary(unittest.TestCase):
         startup.write_text(f"touch '{self.marker}'\nexit 0\n")
         env = dict(self.fixture.env(), GIT_DIR="/never", GIT_WORK_TREE="/never", BASH_ENV=str(startup),
                    ENV=str(startup), DYLD_INSERT_LIBRARIES="/never", LD_PRELOAD="/never")
-        result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-p", str(admission),
-                                 str(self.worktree), self.fixture.commit], env=env,
-                                 capture_output=True, text=True, timeout=35)
+        body = 'source "$1" "$2" "$3"; [[ -z ${DYLD_INSERT_LIBRARIES+x} && -z ${LD_PRELOAD+x} ]]'
+        command = [body, "_", str(admission), str(self.worktree), self.fixture.commit]
+        result = run_in_trusted_shell(command, env)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.marker.exists())
         self.dirty("t22_pair_queue.py")

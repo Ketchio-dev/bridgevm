@@ -3776,3 +3776,5 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserNativeReadClippingTests.swift
 docs/history/windows-hvf/t17-native-chooser-admission-repair-20261003.md	69	0
 docs/history/windows-hvf/d10-owned-pair-queue-admission-20261003.md	79	0
 docs/document-manifests/t17-native-and-d10-preparation.tsv	8	0
+scripts/live-gates/t22-pair-source-environment.sh	11	0
+tests/integration/t22_pair_shell_environment.py	11	0
