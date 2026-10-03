@@ -3664,3 +3664,6 @@ scripts/run-hvf-windows-scripted-install-policy.sh	75	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallResources.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingRunnerFixture.swift	66	0
 tests/integration/hvf-scripted-install-firmware-contract.py	188	0
+docs/history/windows-hvf/t17-firmware-admission-and-install-cancellation-20261003.md	83	0
+docs/windows-arm/evidence/t17-8e64bd43-bounded-pilot-failure-20261003.json	66	0
+docs/document-manifests/t17-install-boundaries.tsv	2	0
