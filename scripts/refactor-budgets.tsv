@@ -1968,7 +1968,7 @@ apps/macos/Tests/BridgeVMControlTests/FileSelectionTests.swift	63	0
 scripts/b6-scene-contract.sh	46	0
 tests/integration/b6-scene-contract-smoke.py	81	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooser.swift	39	0
-apps/macos/Sources/BridgeVMProductE2E/T17FileChooserAX.swift	122	0
+apps/macos/Sources/BridgeVMProductE2E/T17FileChooserAX.swift	121	0
 apps/macos/Sources/BridgeVMProductE2E/T17RoleFirstIdentity.swift	18	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserTests.swift	102	0
 scripts/check-capability-registry.sh	4	0
@@ -3557,7 +3557,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfTailLineAccumulatorTests.swift	54	0
 crates/bridgevm-hvf/src/virtio_queue_address.rs	19	0
 crates/bridgevm-hvf/src/virtio_queue_overflow_tests.rs	104	0
 docs/history/windows-hvf/parallel-existing-code-audit-20261002.md	115	0
-docs/document-manifest.tsv	158	0
+docs/document-manifest.tsv	157	0
 docs/machine-contract/qemu-virt-deviations.json	80	0
 docs/machine-contract/qemu-virt.md	59	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTailFileCursor.swift	40	0
@@ -3782,3 +3782,14 @@ docs/history/windows-hvf/t22-loader-admission-required-check-failure-20261003.md
 docs/document-manifests/t22-loader-admission-failure.tsv	9	0
 docs/history/windows-hvf/t22-loader-admission-hosted-full-failure-20261003.md	38	0
 docs/document-manifests/t22-loader-admission-terminal.tsv	10	0
+apps/macos/Sources/BridgeVMProductE2E/T17FileChooserCapturedGraph.swift	44	0
+apps/macos/Sources/BridgeVMProductE2E/T17FileChooserSelectionLookup.swift	23	0
+apps/macos/Sources/BridgeVMProductE2E/T17FileChooserSelectionAX.swift	18	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserCapturedGraphTests.swift	120	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserSelectionLookupTests.swift	165	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserSelectionLookupDeadlineTests.swift	135	0
+docs/history/windows-hvf/t17-fresh-selection-graph-20261003.md	73	0
+docs/document-manifests/t17-fresh-selection-graph.tsv	2	0
+docs/document-manifests/t17-selection-history.tsv	4	0
+apps/macos/Sources/BridgeVMProductE2E/T17FileChooserAXRelationships.swift	16	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserAXRelationshipsTests.swift	44	0

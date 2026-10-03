@@ -101,8 +101,7 @@ final class T17FileChooserAX: T17FileChooserDriving {
     }
 
     private func openButton() throws -> AXUIElement? {
-        guard let current = try currentPanel() else { return nil }
-        return try nodes(current).first { try attribute($0, kAXIdentifierAttribute) as? String == "OKButton" }
+        try T17FileChooserSelectionAX.read(pid: pid, io: io)
     }
 
     private func key(_ code: CGKeyCode, flags: CGEventFlags = []) throws {
