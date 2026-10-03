@@ -1,0 +1,5 @@
+path	class	topic	superseded_by
+docs/history/windows-hvf/t17-firmware-admission-and-install-cancellation-20261003.md	historical-evidence	windows-install-cleanup	-
+docs/history/windows-hvf/t17-runtime-chooser-pilot-failure-20261003.md	historical-evidence	windows-runtime-chooser	-
+docs/history/windows-hvf/t17-shared-chooser-budget-and-return-timing-20261003.md	historical-evidence	windows-runtime-chooser	-
+docs/history/windows-hvf/t17-diagnostic-timing-required-check-failure-20261003.md	historical-evidence	windows-runtime-chooser	-

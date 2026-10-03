@@ -3700,3 +3700,5 @@ docs/history/windows-hvf/t17-shared-chooser-budget-and-return-timing-20261003.md
 docs/document-manifests/t17-chooser-budget-and-pilot-evidence.tsv	4	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserDiagnosticFixture.swift	31	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserDiagnosticEnvelope.swift	26	0
+docs/history/windows-hvf/t17-diagnostic-timing-required-check-failure-20261003.md	66	0
+docs/document-manifests/t17-chooser-diagnostic-and-required-checks.tsv	5	0
