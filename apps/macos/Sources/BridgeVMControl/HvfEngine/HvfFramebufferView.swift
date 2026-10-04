@@ -27,6 +27,7 @@ final class FBLayerView: NSView {
         didSet { if guestSize != oldValue { HvfDisplaySurfaceAccessibility.update(self, guestSize: guestSize) } }
     }
     private var lastProcessedSeq: UInt64 = .max
+    private let imageFactory: HvfFramebufferImageFactory
     private var iosurfacePresenter = HvfIOSurfacePresenter()
     private var pointerMoves = HvfPointerMoveMailbox()
     private let pointerCapture = HvfPointerCapture()
@@ -46,8 +47,9 @@ final class FBLayerView: NSView {
         if window != nil { startDisplayLink() }
     }
 
-    init(session: HvfEngineSession) {
+    init(session: HvfEngineSession, imageFactory: HvfFramebufferImageFactory = HvfFramebufferImageFactory()) {
         self.session = session
+        self.imageFactory = imageFactory
         super.init(frame: .zero)
 
         wantsLayer = true
@@ -92,8 +94,12 @@ final class FBLayerView: NSView {
     }
 
     @objc private func step(_ link: CADisplayLink) {
+        refreshFrame(at: link.timestamp)
+    }
+
+    func refreshFrame(at timestamp: TimeInterval) {
         defer { flushPendingPointerMove() }
-        if presentIOSurfaceIfAvailable(at: link.timestamp) {
+        if presentIOSurfaceIfAvailable(at: timestamp) {
             return
         }
 
@@ -156,42 +162,13 @@ final class FBLayerView: NSView {
             free(buffer)
             return
         }
+        guard let image = imageFactory.make(buffer: buffer, byteCount: pixelByteCount,
+                                           width: width, height: height, stride: stride), let layer else {
+            return
+        }
+
+        layer.contents = image
         lastProcessedSeq = sequence1
-
-        guard let provider = CGDataProvider(
-            dataInfo: buffer,
-            data: buffer,
-            size: pixelByteCount,
-            releaseData: { info, _, _ in
-                if let info { free(info) }
-            }
-        ) else {
-            free(buffer)
-            return
-        }
-
-        let bitmapInfo = CGBitmapInfo(
-            rawValue: CGBitmapInfo.byteOrder32Little.rawValue
-                | CGImageAlphaInfo.noneSkipFirst.rawValue
-        )
-
-        guard let image = CGImage(
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bitsPerPixel: 32,
-            bytesPerRow: stride,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: bitmapInfo,
-            provider: provider,
-            decode: nil,
-            shouldInterpolate: false,
-            intent: .defaultIntent
-        ) else {
-            return
-        }
-
-        layer?.contents = image
         guestSize = CGSize(width: CGFloat(width), height: CGFloat(height))
     }
 
