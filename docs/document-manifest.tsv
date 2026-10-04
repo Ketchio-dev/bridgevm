@@ -26,7 +26,7 @@ docs/plans/refactor-handoff.md	active-plan	development-handoff	-
 docs/reference/hvf-windows-platform-contract-gap.md	reference	windows-platform	-
 docs/reference/hvf-kd-serial-bringup.md	reference	windows-debugging	-
 docs/windows-arm/evidence/agent-chunked-output-storage-20260712.md	historical-evidence	windows-agent	-
-docs/windows-arm/evidence/async-scanout-present-20260726.md	historical-evidence	windows-graphics	STATUS.md
+@include	docs/document-manifests/framebuffer-presentation-history.tsv	-	-
 docs/windows-arm/evidence/stage4-vkcreateinstance-stall-20260727.md	historical-evidence	windows-graphics	STATUS.md
 @include	docs/document-manifests/windows-install-and-snapshot-lifecycle.tsv	-	-
 docs/windows-arm/evidence/reboot-gic-reset-20260712.md	historical-evidence	windows-lifecycle	-
