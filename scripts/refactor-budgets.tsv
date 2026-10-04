@@ -2844,7 +2844,8 @@ runners/hvf-runner/src/owned_protocol_outcome.rs	25	0
 runners/hvf-runner/src/owned_protocol_run.rs	150	0
 runners/hvf-runner/src/owned_protocol_state.rs	44	0
 runners/hvf-runner/src/owned_protocol_state_tests.rs	38	0
-runners/hvf-runner/src/owned_protocol_transport_tests.rs	29	0
+runners/hvf-runner/src/owned_protocol_transport_tests.rs	21	0
+runners/hvf-runner/src/owned_protocol_deadline_test_support.rs	13	0
 runners/hvf-runner/src/owned_protocol_worker.rs	127	0
 runners/hvf-runner/tests/owned_protocol.rs	59	0
 runners/hvf-runner/tests/owned_protocol_fixture.py	153	0
