@@ -3807,3 +3807,5 @@ tests/integration/a19_exfat_fixture_mount.py	153	0
 tests/integration/a19_exfat_fixture_runner.py	260	0
 tests/integration/a19_exfat_fixture_selftest.py	101	0
 .github/workflows/a19-exfat-publication-reusable.yml	51	0
+docs/history/windows-hvf/a19-hosted-exfat-and-explicit-eof-fixture-20261004.md	79	0
+docs/document-manifests/a19-hosted-exfat-and-eof.tsv	3	0

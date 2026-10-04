@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/a19-restore-atomicity-defect-20260912.md	current	windows-storage	-
+docs/history/windows-hvf/a19-hosted-exfat-and-explicit-eof-fixture-20261004.md	historical-evidence	windows-storage	-
