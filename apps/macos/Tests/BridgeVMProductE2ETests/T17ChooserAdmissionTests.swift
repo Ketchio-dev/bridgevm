@@ -46,7 +46,7 @@ final class T17ChooserAdmissionTests: XCTestCase {
 
     func testAcceptSelectionOvershootNeverStartsConfirmation() {
         let driver = Driver(); driver.acceptDelay = 20
-        fails(driver, at: "selection-confirmation")
+        fails(driver, at: "accept-selection")
         XCTAssertTrue(driver.actions.contains("accept-selection"))
         XCTAssertEqual(driver.panelReads, 2)
         XCTAssertEqual(driver.selectedReads, 0)

@@ -24,8 +24,7 @@ enum T17FileChooserDiagnosticFixture {
         func setLocation(_ path: String) { XCTFail("Must not type without a field") }
         func acceptLocation() { XCTFail("Must not confirm without a field") }
         func locationFieldIsAbsent() -> Bool { false }
-        func selectionIsReady() -> Bool { false }
-        func acceptSelection() { XCTFail("Must not accept without a field") }
+        func acceptSelectionIfReady() -> Bool { XCTFail("Must not accept without a field"); return false }
         func selectedPath() -> String? { nil }
     }
 }

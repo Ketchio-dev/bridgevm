@@ -60,11 +60,7 @@ final class T17FileChooserAX: T17FileChooserDriving {
     func acceptLocation() throws { try key(36) }
     func locationFieldIsAbsent() throws -> Bool { try locationSheet() == nil }
 
-    func selectionIsReady() throws -> Bool {
-        guard let button = try openButton() else { return false }
-        return try (attribute(button, kAXEnabledAttribute) as? NSNumber)?.boolValue == true
-    }
-    func acceptSelection() throws {
+    func acceptSelectionIfReady() throws -> Bool {
         try T17ChooserSelectionAction.perform(budget: io.budget, lookup: openButton,
             enabled: { try (self.attribute($0, kAXEnabledAttribute) as? NSNumber)?.boolValue },
             press: { try self.action($0, kAXPressAction) })

@@ -78,8 +78,7 @@ final class T17ChooserOpenActionTests: XCTestCase {
         func setLocation(_ path: String) { touchedPath = true; XCTFail() }
         func acceptLocation() { XCTFail() }
         func locationFieldIsAbsent() -> Bool { XCTFail(); return false }
-        func selectionIsReady() -> Bool { XCTFail(); return false }
-        func acceptSelection() { XCTFail() }
+        func acceptSelectionIfReady() -> Bool { XCTFail(); return false }
         func selectedPath() -> String? { XCTFail(); return nil }
     }
 }

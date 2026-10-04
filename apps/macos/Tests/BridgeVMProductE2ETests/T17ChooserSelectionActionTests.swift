@@ -29,13 +29,11 @@ final class T17ChooserSelectionActionTests: XCTestCase {
             press: { buttons.append($0) })
         XCTAssertEqual(buttons, [7])
     }
-    func testMissingOrDisabledButtonKeepsRefusal() {
+    func testMissingOrDisabledButtonReturnsNotReadyWithoutPress() throws {
         for button in [nil, 7] as [Int?] {
-            XCTAssertThrowsError(try T17ChooserSelectionAction.perform(
+            XCTAssertFalse(try T17ChooserSelectionAction.perform(
                 budget: T17ChooserNativeBudget(deadline: 1, now: { 0 }), lookup: { button },
-                enabled: { _ in false }, press: { _ in XCTFail("disabled selection pressed") })) { error in
-                    XCTAssertEqual((error as? T17Blocker)?.detail, "Open button was not enabled at confirmation")
-                }
+                enabled: { _ in false }, press: { _ in XCTFail("disabled selection pressed") }))
         }
     }
     func testLateAdmittedPressRetainsRawResultAndDoesNotReplay() {

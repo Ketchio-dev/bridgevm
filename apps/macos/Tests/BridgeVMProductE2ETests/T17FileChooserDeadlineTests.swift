@@ -40,8 +40,7 @@ final class T17FileChooserDeadlineTests: XCTestCase {
         func setLocation(_ path: String) {}
         func acceptLocation() {}
         func locationFieldIsAbsent() -> Bool { true }
-        func selectionIsReady() -> Bool { true }
-        func acceptSelection() { selectionAccepted = true; panel = false }
+        func acceptSelectionIfReady() -> Bool { selectionAccepted = true; panel = false; return true }
         func selectedPath() -> String? {
             time = selectionReadTime
             return "/private/fixture.iso"

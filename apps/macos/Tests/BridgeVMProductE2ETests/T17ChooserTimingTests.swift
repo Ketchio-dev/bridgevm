@@ -6,20 +6,20 @@ final class T17ChooserTimingTests: XCTestCase {
     func testReturnedStageHasMonotonicEntryElapsedAndRemainingBudget() throws {
         var clock = 1.0
         let timing = T17ChooserTiming(start: 0, deadline: 20, now: { clock })
-        try timing.run("selection-ready") { clock = 4 }
-        XCTAssertEqual(timing.lastComplete, "selection-ready")
+        try timing.run("location-sheet-dismissal") { clock = 4 }
+        XCTAssertEqual(timing.lastComplete, "location-sheet-dismissal")
         XCTAssertTrue(timing.snapshot.contains("entry_ms=1000.000,elapsed_ms=3000.000,remaining_ms=16000.000,return=returned"))
     }
 
     func testThrownStagePreservesBlockerAndDoesNotClaimCompletion() throws {
         var clock = 0.0
         let timing = T17ChooserTiming(start: 0, deadline: 20, now: { clock })
-        try timing.run("selection-ready") { clock = 1 }
+        try timing.run("location-sheet-dismissal") { clock = 1 }
         let original = T17FileChooser.failure("stage=accept-selection; fixture refusal")
         XCTAssertThrowsError(try timing.run("accept-selection") { clock = 2; throw original }) { error in
             XCTAssertEqual(error as? T17Blocker, original)
         }
-        XCTAssertEqual(timing.lastComplete, "selection-ready")
+        XCTAssertEqual(timing.lastComplete, "location-sheet-dismissal")
         XCTAssertTrue(timing.snapshot.contains("return=threw"))
         XCTAssertTrue(timing.attributed(original).detail.hasPrefix(original.detail))
     }
@@ -70,8 +70,8 @@ final class T17ChooserTimingTests: XCTestCase {
         XCTAssertThrowsError(try T17FileChooser.choose(path: "/fixture/share", timeout: 20,
             driver: driver, now: { driver.clock }, pause: {})) { error in
                 let detail = (error as? T17Blocker)?.detail ?? ""
-                XCTAssertTrue(detail.hasPrefix("stage=selection-confirmation; timed out before chooser stage"))
-                XCTAssertTrue(detail.contains("last_complete=accept-selection"))
+                XCTAssertTrue(detail.hasPrefix("stage=accept-selection; timed out waiting"))
+                XCTAssertTrue(detail.contains("last_complete=location-sheet-dismissal"))
                 XCTAssertTrue(detail.contains("accept-selection:entry_ms=0.000,elapsed_ms=20000.000,remaining_ms=0.000"))
             }
         XCTAssertEqual(driver.selectedReads, 0)

@@ -97,11 +97,11 @@ final class T17FileChooserSelectionLookupTests: XCTestCase {
         XCTAssertEqual(try fixture.lookup(), 2)
         XCTAssertEqual(fixture.relationshipReads, [0, 1, 3, 2, 4])
     }
-    func testSharedButtonAndForeignOnlyButtonAreNeverPressed() {
+    func testSharedButtonAndForeignOnlyButtonAreNeverPressed() throws {
         for edges in [[0: [1, 3], 1: [2], 2: [], 3: [2]], [0: [1, 3], 1: [0], 3: [2], 2: []]] {
             let fixture = SelectionLookupFixture(); fixture.edges = edges; fixture.roles[3] = "AXWindow"
             var enabled = 0, presses = 0
-            XCTAssertThrowsError(try T17ChooserSelectionAction.perform(budget: fixture.budget,
+            XCTAssertFalse(try T17ChooserSelectionAction.perform(budget: fixture.budget,
                 lookup: fixture.lookup, enabled: { _ in enabled += 1; return true },
                 press: { _ in presses += 1 }))
             XCTAssertEqual(enabled, 0); XCTAssertEqual(presses, 0)
@@ -133,7 +133,7 @@ final class T17FileChooserSelectionLookupTests: XCTestCase {
         let fixture = SelectionLookupFixture(); XCTAssertEqual(try fixture.lookup(), 2)
         fixture.edges = [0: []]
         var enabledReads = 0, presses = 0
-        XCTAssertThrowsError(try T17ChooserSelectionAction.perform(budget: fixture.budget,
+        XCTAssertFalse(try T17ChooserSelectionAction.perform(budget: fixture.budget,
             lookup: fixture.lookup, enabled: { _ in enabledReads += 1; return true },
             press: { _ in presses += 1 }))
         XCTAssertEqual(enabledReads, 0); XCTAssertEqual(presses, 0); XCTAssertEqual(fixture.rootCount, 2)

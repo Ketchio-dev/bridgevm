@@ -4,7 +4,7 @@ import Foundation
 final class T17ChooserTiming {
     private static let stages: Set<String> = ["target-lookup", "initial-panel-check", "open-control",
         "panel-appearance", "show-location-field", "location-field-ready", "set-location",
-        "accept-location", "location-sheet-dismissal", "selection-ready", "accept-selection", "selection-confirmation"]
+        "accept-location", "location-sheet-dismissal", "accept-selection", "selection-confirmation"]
     private let deadline: TimeInterval
     private let now: () -> TimeInterval
     private var lastClock: TimeInterval

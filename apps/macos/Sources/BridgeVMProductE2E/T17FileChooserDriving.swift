@@ -7,7 +7,6 @@ protocol T17FileChooserDriving {
     func setLocation(_ path: String) throws
     func acceptLocation() throws
     func locationFieldIsAbsent() throws -> Bool
-    func selectionIsReady() throws -> Bool
-    func acceptSelection() throws
+    func acceptSelectionIfReady() throws -> Bool
     func selectedPath() throws -> String?
 }

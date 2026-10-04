@@ -26,8 +26,7 @@ enum T17FileChooser {
         try run("set-location") { try driver.setLocation(path) }
         try run("accept-location") { try driver.acceptLocation() }
         try run("location-sheet-dismissal") { try wait("Go To sheet dismissal") { try driver.locationFieldIsAbsent() } }
-        try run("selection-ready") { try wait("enabled Open button") { try driver.selectionIsReady() } }
-        try run("accept-selection") { try driver.acceptSelection() }
+        try run("accept-selection") { try wait("enabled Open button acceptance") { try driver.acceptSelectionIfReady() } }
         try run("selection-confirmation") { try wait("chooser dismissal and exact selected path") {
             guard try !driver.panelIsPresent() else { return false }
             return try driver.selectedPath() == path

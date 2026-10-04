@@ -22,7 +22,6 @@ final class T17ChooserAdmissionFixture: T17FileChooserDriving {
     func setLocation(_ path: String) { actions.append("write") }
     func acceptLocation() { actions.append("accept-location") }
     func locationFieldIsAbsent() -> Bool { true }
-    func selectionIsReady() -> Bool { true }
-    func acceptSelection() { actions.append("accept-selection"); clock += acceptDelay; panel = false }
+    func acceptSelectionIfReady() -> Bool { actions.append("accept-selection"); clock += acceptDelay; panel = false; return true }
     func selectedPath() -> String? { selectedReads += 1; return "/fixture/share" }
 }

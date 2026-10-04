@@ -2,7 +2,7 @@ import ApplicationServices
 
 enum T17FileChooserSelectionAX {
     static func read(pid: pid_t, io: T17FileChooserAXIO) throws -> AXUIElement? {
-        // Each readiness or acceptance lookup starts its own graph and retry sequence.
+        // Each acceptance poll starts its own graph and retry sequence.
         try T17FileChooserSelectionLookup.read(budget: io.budget,
             root: { AXUIElementCreateApplication(pid) }, related: { node in
                 let application = AXUIElementCreateApplication(pid)
