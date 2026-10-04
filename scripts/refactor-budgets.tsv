@@ -1267,7 +1267,9 @@ apps/macos/Tests/BridgeVMControlTests/HvfPasteKeyOrderingTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfHostKeyModifierTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteSessionTests.swift	84	0
 apps/macos/Tests/BridgeVMControlTests/HvfHostShortcutIsolationTests.swift	31	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	447	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	424	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferImageFactory.swift	28	0
+apps/macos/Tests/BridgeVMControlTests/HvfFramebufferRetryTests.swift	78	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFileIdentity.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFileIdentityTests.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferBindingTests.swift	48	0
