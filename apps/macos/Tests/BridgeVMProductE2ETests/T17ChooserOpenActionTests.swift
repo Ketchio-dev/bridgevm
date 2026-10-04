@@ -28,7 +28,7 @@ final class T17ChooserOpenActionTests: XCTestCase {
         var states = [false, false, true].makeIterator(), presses = 0, pauses = 0
         let result = try T17ChooserOpenAction.perform(identifier: "chooser", timeout: 1,
             enabled: { states.next()! }, press: { presses += 1; return .cannotComplete },
-            now: { Date(timeIntervalSince1970: 0) }, pause: { pauses += 1 })
+            now: { 0 }, pause: { pauses += 1 })
         XCTAssertEqual(result, .cannotComplete); XCTAssertEqual(presses, 1); XCTAssertEqual(pauses, 2)
     }
 
@@ -44,7 +44,7 @@ final class T17ChooserOpenActionTests: XCTestCase {
     }
 
     func testDisabledControlTimesOutWithoutPressing() {
-        var times = [Date(timeIntervalSince1970: 0), Date(timeIntervalSince1970: 1)].makeIterator(), presses = 0
+        var times = [0.0, 0.0, 1.0].makeIterator(), presses = 0
         XCTAssertThrowsError(try T17ChooserOpenAction.perform(identifier: "chooser", timeout: 0.5,
             enabled: { false }, press: { presses += 1; return .success }, now: { times.next()! }, pause: {})) {
                 XCTAssertTrue(($0 as? T17Blocker)?.detail.contains("remained disabled") == true)

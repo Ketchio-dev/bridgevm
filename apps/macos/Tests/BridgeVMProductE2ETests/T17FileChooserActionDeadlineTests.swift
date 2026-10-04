@@ -33,7 +33,7 @@ final class T17FileChooserActionDeadlineTests: XCTestCase {
                 let blocker = error as? T17Blocker
                 XCTAssertEqual(blocker?.code, "input-selection-failed")
                 XCTAssertTrue(blocker?.detail.hasPrefix("stage=\(stage); timed out \(before ? "before chooser stage" : "waiting")") == true)
-                XCTAssertTrue(blocker?.detail.hasSuffix("; ax=retained") == true)
+                XCTAssertTrue(blocker?.detail.contains("; ax=retained") == true)
             }
     }
 

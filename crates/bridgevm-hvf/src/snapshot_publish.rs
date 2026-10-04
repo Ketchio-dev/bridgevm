@@ -4,6 +4,10 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+#[path = "snapshot_publish_exchange.rs"]
+mod exchange;
+use exchange::exchange;
+
 pub(super) fn publish(staged: &Path, destination: &Path) -> io::Result<()> {
     publish_with(staged, destination, exchange)
 }
@@ -13,6 +17,22 @@ fn publish_with(
     destination: &Path,
     swap: impl FnOnce(&Path, &Path) -> io::Result<()>,
 ) -> io::Result<()> {
+    publish_using(
+        staged,
+        destination,
+        swap,
+        |a, b| fs::rename(a, b),
+        super::sync_dir,
+    )
+}
+
+fn publish_using(
+    staged: &Path,
+    destination: &Path,
+    swap: impl FnOnce(&Path, &Path) -> io::Result<()>,
+    rename: impl FnOnce(&Path, &Path) -> io::Result<()>,
+    sync: impl FnOnce(&Path) -> io::Result<()>,
+) -> io::Result<()> {
     if staged == destination || staged.parent() != destination.parent() {
         return Err(io::Error::other(
             "snapshot publication needs distinct siblings",
@@ -21,57 +41,36 @@ fn publish_with(
     if !fs::symlink_metadata(staged)?.file_type().is_dir() {
         return Err(io::Error::other("snapshot staging is not a directory"));
     }
-    match fs::symlink_metadata(destination) {
-        Ok(metadata) if metadata.file_type().is_dir() => swap(staged, destination)?,
+    let exchanged = match fs::symlink_metadata(destination) {
+        Ok(metadata) if metadata.file_type().is_dir() => {
+            if fs::read_dir(destination)?.next().transpose()?.is_none() {
+                // One rename replaces only an empty directory. A late entry
+                // makes the syscall refuse; never retry with exchange.
+                rename(staged, destination)?;
+                false
+            } else {
+                swap(staged, destination)?;
+                true
+            }
+        }
         Ok(_) => return Err(io::Error::other("snapshot destination is not a directory")),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => fs::rename(staged, destination)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            rename(staged, destination)?;
+            false
+        }
         Err(error) => return Err(error),
-    }
+    };
     let parent = destination
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
-    super::sync_dir(parent)?;
+    sync(parent)?;
     // After exchange, the old complete snapshot occupies the staging name.
     // Keep it if durability was uncertain; deletion failure only leaves debris.
-    let _ = fs::remove_dir_all(staged);
-    Ok(())
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn exchange(left: &Path, right: &Path) -> io::Result<()> {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
-    let left = CString::new(left.as_os_str().as_bytes())?;
-    let right = CString::new(right.as_os_str().as_bytes())?;
-    #[cfg(target_os = "macos")]
-    // SAFETY: both owned C strings remain valid throughout the syscall.
-    let result = unsafe { libc::renamex_np(left.as_ptr(), right.as_ptr(), libc::RENAME_SWAP) };
-    #[cfg(target_os = "linux")]
-    // SAFETY: renameat2 receives valid C strings and the documented exchange flag.
-    let result = unsafe {
-        libc::syscall(
-            libc::SYS_renameat2,
-            libc::AT_FDCWD,
-            left.as_ptr(),
-            libc::AT_FDCWD,
-            right.as_ptr(),
-            libc::RENAME_EXCHANGE,
-        )
-    };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
+    if exchanged {
+        let _ = fs::remove_dir_all(staged);
     }
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn exchange(_left: &Path, _right: &Path) -> io::Result<()> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "atomic directory exchange unavailable",
-    ))
+    Ok(())
 }
 
 #[cfg(test)]

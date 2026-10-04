@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import UniformTypeIdentifiers
 import XCTest
 @testable import BridgeVMControl
@@ -22,53 +23,41 @@ final class FileSelectionTests: XCTestCase {
 
     func testCancelPreservesThePreviousSelectionEvenIfThePanelHasAURL() {
         let panel = SelectionPanelStub()
-        let original = URL(fileURLWithPath: "/tmp/original.iso")
+        let original = "/tmp/original share"
         var selected = original
-        FileSelection.present(panel, directories: false) { selected = $0 }
-        panel.url = URL(fileURLWithPath: "/tmp/canceled.iso")
+        let text = Binding<String>(get: { selected }, set: { selected = $0 })
+        FileSelection.present(panel, directories: true) { text.wrappedValue = $0.path }
+        panel.url = URL(fileURLWithPath: "/tmp/canceled share", isDirectory: true)
         panel.complete(.cancel)
         XCTAssertEqual(selected, original)
     }
 
     func testAnOKResponseWithoutAURLDoesNotInventASelection() {
         let panel = SelectionPanelStub()
-        var called = false
-        FileSelection.present(panel, directories: false) { _ in called = true }
+        let original = "/tmp/original share"
+        var selected = original
+        let text = Binding<String>(get: { selected }, set: { selected = $0 })
+        FileSelection.present(panel, directories: true) { text.wrappedValue = $0.path }
         panel.complete(.OK)
-        XCTAssertFalse(called)
+        XCTAssertEqual(selected, original)
     }
 
     func testDirectorySelectionExcludesFilesAndAcceptsTheChosenDirectory() {
         let panel = SelectionPanelStub()
-        var selected: URL?
-        FileSelection.present(panel, directories: true) { selected = $0 }
+        let original = "/tmp/original share"
+        var selected = original
+        let text = Binding<String>(get: { selected }, set: { selected = $0 })
+        FileSelection.present(panel, directories: true) { text.wrappedValue = $0.path }
+        XCTAssertEqual(panel.beginCalls, 1)
+        XCTAssertEqual(text.wrappedValue, original)
         XCTAssertTrue(panel.canChooseDirectories)
         XCTAssertFalse(panel.canChooseFiles)
         XCTAssertFalse(panel.allowsMultipleSelection)
-        panel.url = URL(fileURLWithPath: "/tmp/payload", isDirectory: true)
+        XCTAssertTrue(panel.allowedContentTypes.isEmpty)
+        let chosen = "/tmp/선택한 shared folder"
+        panel.url = URL(fileURLWithPath: chosen, isDirectory: true)
+        XCTAssertEqual(text.wrappedValue, original)
         panel.complete(.OK)
-        XCTAssertEqual(selected, panel.url)
-    }
-}
-
-@MainActor
-private final class SelectionPanelStub: FileSelectionPanel {
-    var allowsMultipleSelection = true
-    var canChooseDirectories = false
-    var canChooseFiles = true
-    var allowedContentTypes: [UTType] = []
-    var url: URL?
-    var beginCalls = 0
-    private var handler: ((NSApplication.ModalResponse) -> Void)?
-
-    func begin(completionHandler handler: @escaping (NSApplication.ModalResponse) -> Void) {
-        beginCalls += 1
-        self.handler = handler
-    }
-
-    func complete(_ response: NSApplication.ModalResponse) {
-        let callback = handler
-        handler = nil
-        callback?(response)
+        XCTAssertEqual(text.wrappedValue, chosen)
     }
 }

@@ -28,8 +28,7 @@ docs/reference/hvf-kd-serial-bringup.md	reference	windows-debugging	-
 docs/windows-arm/evidence/agent-chunked-output-storage-20260712.md	historical-evidence	windows-agent	-
 docs/windows-arm/evidence/async-scanout-present-20260726.md	historical-evidence	windows-graphics	STATUS.md
 docs/windows-arm/evidence/stage4-vkcreateinstance-stall-20260727.md	historical-evidence	windows-graphics	STATUS.md
-docs/windows-arm/evidence/imported-disk-growth-20260712.md	historical-evidence	windows-storage	-
-docs/windows-arm/evidence/installed-app-service-20260712.md	historical-evidence	windows-app	-
+@include	docs/document-manifests/windows-install-and-snapshot-lifecycle.tsv	-	-
 docs/windows-arm/evidence/reboot-gic-reset-20260712.md	historical-evidence	windows-lifecycle	-
 docs/windows-arm/evidence/viogpu3d-virgl-live-20260712.md	historical-evidence	windows-graphics	-
 docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md	historical-evidence	windows-graphics	-
@@ -59,7 +58,7 @@ docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md	current	windows-p
 docs/windows-arm/evidence/a8-resize-secure-boot-wall-20260817.md	current	windows-graphics	-
 docs/windows-arm/evidence/coherence-windows-live-20260817.md	current	windows-graphics	-
 docs/windows-arm/evidence/a5-a6-a7-live-20260817.md	current	windows-guest-integration	-
-docs/windows-arm/evidence/a19-snapshot-restore-20260805.md	current	windows-storage	-
+@include	docs/document-manifests/a19-stop-observation.tsv	-	-
 docs/windows-arm/evidence/a17-live-queue-receipts-20260805.md	current	testing	-
 docs/install.md	current	user-installation	-
 docs/distribution-channels.md	current	distribution-policy	-
@@ -90,7 +89,6 @@ docs/windows-arm/evidence/bridgevm-pc-standard-uefi-pci-live-20260830.md	current
 docs/windows-arm/evidence/bridgevm-pc-nvme-bar-live-20260831.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-nvme-block-live-20260831.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-bds-exit-live-20260831.md	current	windows-architecture	-
-docs/windows-arm/evidence/a9-product-e2e-pilot-failures-20260901.md	current	windows-product	-
 docs/windows-arm/evidence/a11-regression-seal-20260901.md	current	testing	-
 docs/windows-arm/evidence/b7-audio-teardown-live-20260901.md	current	windows-guest-integration	-
 docs/windows-arm/evidence/b10-qmp-stress-hosted-20260902.md	current	testing	-
@@ -122,12 +120,10 @@ docs/windows-arm/evidence/b6-injector-firstboot-plant-failure-20260907.md	curren
 docs/windows-arm/evidence/b6-glyph-observation-active-iosurface-20260907.md	current	windows-graphics	-
 docs/windows-arm/evidence/b6-second-capture-focus-refusal-20260909.md	current	windows-graphics	-
 docs/windows-arm/evidence/b6-presentmon-live-and-focus-refusal-20260909.md	current	windows-graphics	-
-docs/windows-arm/evidence/a9-accessibility-attribution-and-e2e-library-20260909.md	current	windows-product	-
 docs/windows-arm/evidence/b6-presentmon-collector-contract-20260910.md	current	windows-graphics	-
 docs/windows-arm/evidence/live-queue-deterministic-venue-20260910.md	current	live-gates	-
 docs/windows-arm/evidence/b6-active-frame-time-collection-20260910.md	current	windows-graphics	-
 docs/windows-arm/evidence/b6-sealed-cell-observation-contract-20260910.md	current	windows-graphics	-
-docs/windows-arm/evidence/a9-b6-resume-fixes-20260910.md	historical-evidence	windows-product	-
 docs/windows-arm/evidence/b6-integer-negation-paired-observation-20260911.md	historical-evidence	windows-graphics	-
 docs/windows-arm/evidence/b6-physical-uia-observation-20260911.md	historical-evidence	b6-physical-uia	-
 docs/windows-arm/evidence/a9-readonly-launch-context-20260911.md	historical-evidence	a9-launch-context	-
@@ -156,4 +152,6 @@ docs/windows-arm/evidence/a19-t23-r1-20260930.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-t21-t22-r2-20260930.md	current	windows-storage	-
 docs/windows-arm/evidence/b6-trace-nine-cell-collection-20260911.md	historical-evidence	b6-renderer-trace-collection	-
 @include	docs/document-manifests/diagnostic-observation-recovery.tsv	-	-
-@include	docs/document-manifests/t17-install-boundaries.tsv	-	-
+@include	docs/document-manifests/t22-loader-admission-terminal.tsv	-	-
+@include	docs/document-manifests/t17-selection-history.tsv	-	-
+@include	docs/document-manifests/t17-fresh-selection-graph.tsv	-	-

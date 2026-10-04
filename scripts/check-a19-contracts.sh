@@ -13,4 +13,4 @@ python3 tests/integration/a19-lifecycle-campaign-runner-contract.py
 python3 tests/integration/a19-lifecycle-campaign-progress-contract.py
 python3 tests/integration/a19-interrupted-restore-auxiliary-orchestration-contract.py
 python3 tests/integration/a19-interrupted-restore-production-collection-contract.py
-python3 tests/integration/a19-interrupted-restore-process-cleanup-contract.py
+python3 tests/integration/a19-interrupted-restore-process-cleanup-contract.py && scripts/check-t22-pair-preparation.sh
