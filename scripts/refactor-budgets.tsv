@@ -3798,3 +3798,6 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17ChooserActionDeadlineDriver.swift	25
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserDriver.swift	31	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserSelectionAttemptTests.swift	104	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17SelectionAttemptDriver.swift	57	0
+docs/windows-arm/evidence/t17-5da403e7-fresh-selection-pilot-failure-20261004.json	66	0
+docs/history/windows-hvf/t17-selection-attempt-and-failed-pilot-20261004.md	88	0
+docs/document-manifests/t17-selection-attempt-and-failed-pilot.tsv	3	0
