@@ -67,7 +67,7 @@ legitimate native aliases might also be refused. Graph domination is a source
 ownership policy, not a proven native ownership contract. There is no global
 button fallback or readiness-button cache.
 
-The focused native check passed all 34 new XCTest cases; the full command
-passed 371 XCTest and 41 Swift Testing cases, zero failures. Complete project
-checks, exact-SHA hosted CI and a fresh pilot remain pending. New files are
-registered at actual size; ceilings stay fixed. Prepare capture startup before submission.
+Focused native34 and full helper371 XCTest/41 Swift Testing cases passed.
+Exact f5 full project check failed: 43 PASS/one capability freshness FAIL, exit1;
+all4148 source records unchanged. Required hosted job111319890446 failed the same
+freshness check. A metadata-only successor binds tested f5 code; new checks remain pending.
