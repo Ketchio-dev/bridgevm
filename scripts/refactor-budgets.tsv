@@ -3801,3 +3801,8 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17SelectionAttemptDriver.swift	57	0
 docs/windows-arm/evidence/t17-5da403e7-fresh-selection-pilot-failure-20261004.json	66	0
 docs/history/windows-hvf/t17-selection-attempt-and-failed-pilot-20261004.md	88	0
 docs/document-manifests/t17-selection-attempt-and-failed-pilot.tsv	3	0
+tests/integration/a19_exfat_fixture_io.py	162	0
+tests/integration/a19_exfat_fixture_mount.py	153	0
+tests/integration/a19_exfat_fixture_runner.py	260	0
+tests/integration/a19_exfat_fixture_selftest.py	101	0
+.github/workflows/a19-exfat-publication-reusable.yml	51	0
