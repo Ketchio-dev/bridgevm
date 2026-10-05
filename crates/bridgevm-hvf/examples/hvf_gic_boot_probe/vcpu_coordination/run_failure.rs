@@ -2,20 +2,9 @@
 
 use crate::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PrimaryRunError {
-    Hypervisor(HvReturn),
-    Secondary(u64),
-}
-
-impl std::fmt::Display for PrimaryRunError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Hypervisor(status) => write!(f, "hv_vcpu_run error {status:#x}"),
-            Self::Secondary(index) => write!(f, "secondary vCPU{index} fatal run error"),
-        }
-    }
-}
+#[path = "run_failure_error.rs"]
+mod error;
+pub(crate) use error::PrimaryRunError;
 
 impl VcpuControl {
     pub(crate) fn record_run_error(&self, primary_vcpu: HvVcpuT) {
@@ -31,7 +20,10 @@ impl VcpuControl {
         }
     }
 
-    fn record_run_error_with(&self, wake_primary: impl FnOnce() -> HvReturn) -> HvReturn {
+    pub(super) fn record_run_error_with(
+        &self,
+        wake_primary: impl FnOnce() -> HvReturn,
+    ) -> HvReturn {
         self.run_error.store(true, Ordering::SeqCst);
         wake_primary()
     }
@@ -60,7 +52,7 @@ pub(crate) fn run_hvf_vcpu_once(
     })
 }
 
-fn run_primary_with_secondary_check(
+pub(super) fn run_primary_with_secondary_check(
     secondaries: Option<&SecondaryVcpuSet>,
     run: impl FnOnce() -> Result<u32, HvReturn>,
 ) -> Result<u32, PrimaryRunError> {

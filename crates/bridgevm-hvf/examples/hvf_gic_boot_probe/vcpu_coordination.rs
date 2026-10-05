@@ -8,6 +8,9 @@ pub(crate) use drain_gate::PreRunDrainGate;
 #[path = "vcpu_coordination/run_failure.rs"]
 mod run_failure;
 pub(crate) use run_failure::run_hvf_vcpu_once;
+#[path = "vcpu_coordination/secondary_stop.rs"]
+mod secondary_stop;
+pub(crate) use secondary_stop::SecondaryUnexpectedStop;
 #[path = "vcpu_coordination/stop_outcome.rs"]
 mod stop_outcome;
 

@@ -332,11 +332,10 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             continue;
         }
         if reason != EXIT_EXCEPTION {
-            println!(
-                "secondary vCPU{} stopped on exit reason {reason}",
-                control.index
+            return control.stop_unexpected_secondary(
+                primary_vcpu,
+                SecondaryUnexpectedStop::ExitReason(reason),
             );
-            return true;
         }
         let esr = unsafe { (*exit).exception.syndrome };
         let ec = (esr >> 26) & 0x3f;
@@ -512,28 +511,27 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                         hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4);
                     }
                 } else {
-                    println!(
-                        "secondary vCPU{} unsupported system register trap {} ESR {esr:#x} @ PC {pc:#x}",
-                        control.index,
-                        trap.describe()
+                    return control.stop_unexpected_secondary(
+                        primary_vcpu,
+                        SecondaryUnexpectedStop::SysReg(trap, esr, pc),
                     );
-                    return true;
                 }
             }
             EC_WFX if crate::usgic_bridge::usgic().is_some() => {
                 crate::usgic_bridge::wfx_trap(control.index as usize, vcpu, esr, pc);
             }
             _ => {
-                println!(
-                    "secondary vCPU{} exception EC {ec:#x} ESR {esr:#x} @ PC {pc:#x}",
-                    control.index
+                return control.stop_unexpected_secondary(
+                    primary_vcpu,
+                    SecondaryUnexpectedStop::Exception(ec, esr, pc),
                 );
-                return true;
             }
         }
         if *exits >= max_exits {
-            println!("secondary vCPU{} exit cap {max_exits}", control.index);
-            return true;
+            return control.stop_unexpected_secondary(
+                primary_vcpu,
+                SecondaryUnexpectedStop::ExitCap(max_exits),
+            );
         }
     }
 }
