@@ -2,6 +2,12 @@
 
 use crate::*;
 
+#[path = "interrupt_delivery/prepare.rs"]
+mod prepare;
+#[path = "interrupt_delivery/spi.rs"]
+mod spi;
+pub(crate) use spi::*;
+
 impl DrainLocation {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
@@ -16,6 +22,23 @@ pub(crate) struct DrainContext {
     pub(crate) location: DrainLocation,
     pub(crate) exit: u64,
     pub(crate) pc: u64,
+}
+
+impl DrainContext {
+    pub(crate) const fn pre_run(exit: u64, pc: u64) -> Self {
+        Self {
+            location: DrainLocation::PreRun,
+            exit,
+            pc,
+        }
+    }
+    pub(crate) const fn data_abort(exit: u64, pc: u64) -> Self {
+        Self {
+            location: DrainLocation::DataAbort,
+            exit,
+            pc,
+        }
+    }
 }
 
 pub(crate) struct PendingDrainDelivery {
@@ -114,61 +137,6 @@ impl RunLoopDrainStats {
     pub(crate) fn record_pre_run_skip(&mut self) {
         self.pre_run_skips += 1;
     }
-    pub(crate) fn prepare_pending_delivery(
-        &mut self,
-        platform: &mut VirtPlatform,
-        mem: &mut dyn GuestMemoryMut,
-        trace: DrainTrace,
-        context: DrainContext,
-    ) -> PendingDrainDelivery {
-        self.prepare_pending_delivery_inner(platform, mem, trace, context, true)
-    }
-    pub(crate) fn prepare_pending_delivery_after_mmio(
-        &mut self,
-        platform: &mut VirtPlatform,
-        mem: &mut dyn GuestMemoryMut,
-        trace: DrainTrace,
-        context: DrainContext,
-        post_drain: MmioPostDrain,
-    ) -> PendingDrainDelivery {
-        self.prepare_pending_delivery_inner(
-            platform,
-            mem,
-            trace,
-            context,
-            !post_drain.xhci_setup_input_attempted(),
-        )
-    }
-    pub(crate) fn prepare_pending_delivery_inner(
-        &mut self,
-        platform: &mut VirtPlatform,
-        mem: &mut dyn GuestMemoryMut,
-        trace: DrainTrace,
-        context: DrainContext,
-        drain_xhci_setup_input: bool,
-    ) -> PendingDrainDelivery {
-        match context.location {
-            DrainLocation::PreRun => self.pre_run_attempts += 1,
-            DrainLocation::DataAbort => self.data_abort_attempts += 1,
-        }
-
-        // Feed host time to the platform's HID report pacing (the crate holds no
-        // clock of its own). Both PreRun and DataAbort drains route through here.
-        platform.set_host_now(std::time::Instant::now());
-        if drain_xhci_setup_input {
-            platform.drain_xhci_setup_input_reports(mem);
-        }
-        platform.drain_xhci_pointer_input_reports(mem);
-        platform.poll_virtio_net(mem);
-        platform.poll_virtio_console(mem);
-        platform.poll_virtio_gpu_fences(mem);
-        platform.poll_hda(mem);
-        let spi = deliver_pending_spis(platform, &mut self.pending_spi_scratch, trace.spi);
-        debug_assert!(self.pending_msix_scratch.is_empty());
-        self.pending_msix_scratch.clear();
-        platform.drain_pending_msix_into(&mut self.pending_msix_scratch);
-        PendingDrainDelivery { context, spi }
-    }
     pub(crate) fn complete_pending_delivery(
         &mut self,
         pending: PendingDrainDelivery,
@@ -205,6 +173,15 @@ impl RunLoopDrainStats {
                 );
             }
         }
+    }
+    pub(crate) fn finish_prepared_spi_delivery(
+        &mut self,
+        pending: Result<PendingDrainDelivery, SpiDeliveryError>,
+        trace: DrainTrace,
+    ) -> Result<(), SpiDeliveryError> {
+        complete_prepared_spi_delivery(pending, |pending| {
+            self.complete_pending_delivery(pending, trace)
+        })
     }
     pub(crate) fn print_summary(&self) {
         let last_drain_exit = self
@@ -261,19 +238,16 @@ pub(crate) fn deliver_pending_spis(
     platform: &mut VirtPlatform,
     scratch: &mut Vec<(u32, bool)>,
     trace: bool,
-) -> DeliveryCounts {
-    let mut counts = DeliveryCounts::default();
+) -> Result<DeliveryCounts, SpiDeliveryFailure> {
     let trace_msix = trace_msix_enabled();
     scratch.clear();
     platform.drain_pending_spi_levels_into(scratch);
-    for &(intid, level) in scratch.iter() {
+    deliver_spi_levels(scratch, |intid, level| {
         let status = crate::usgic_bridge::deliver_spi(intid, level)
             .unwrap_or_else(|| unsafe { hv_gic_set_spi(intid, level) });
-        counts.record_status(status);
         if trace || (status != 0 && trace_msix) {
             println!("SPI intid {intid} level={level} status {status:#x}");
         }
-    }
-    scratch.clear();
-    counts
+        status
+    })
 }

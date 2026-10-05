@@ -1,9 +1,9 @@
-#[path = "probe_runtime/vtimer_recovery.rs"]
-pub(crate) mod vtimer_recovery;
 #[path = "../hvf_gic_boot_probe/input_control_wake.rs"]
 mod input_control_wake;
 #[path = "../hvf_gic_boot_probe/pointer_deadline_trace.rs"]
 mod pointer_deadline_trace;
+#[path = "probe_runtime/vtimer_recovery.rs"]
+pub(crate) mod vtimer_recovery;
 use super::*;
 use crate::boot_media_setup::attach_boot_media;
 use crate::final_report::persist_and_report_stop;
@@ -76,7 +76,9 @@ pub(crate) fn run() -> ExitCode {
         reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
         // Read in the run loop: waking the vCPU is not the same as stopping it.
         let boot_progress_kill = boot_progress_kill_for(vcpu);
-        let stall_kill_fired = boot_progress_kill.as_ref().map(|kill| Arc::clone(&kill.fired));
+        let stall_kill_fired = boot_progress_kill
+            .as_ref()
+            .map(|kill| Arc::clone(&kill.fired));
         let (reboot_plan, watchdog_generation, boot_progress) =
             setup_boot_supervision(watchdog_enabled, boot_progress_kill);
         let diagnostic_stop_fired =
@@ -142,7 +144,8 @@ pub(crate) fn run() -> ExitCode {
                     drain_trace,
                     pre_run_drain_gate: Arc::clone(&pre_run_drain_gate),
                     smp_trace: smp_trace.clone(),
-                    max_exits, generation: diagnostic_generation,
+                    max_exits,
+                    generation: diagnostic_generation,
                 })
             });
             let boot_generation = begin_watchdog_generation(&watchdog_generation);
@@ -352,29 +355,18 @@ pub(crate) fn run() -> ExitCode {
                 // asynchronous present after the post-MMIO drain but before
                 // this pre-run site; treating the two drains as duplicates can
                 // strand the newest frame until the guest exits again.
-                let pending = {
-                    let mut platform_guard = lock_platform(
-                        &platform,
-                        smp_trace.as_deref(),
-                        0,
-                        "cpu0 pre-run platform mutex",
-                    );
-                    let platform = &mut *platform_guard;
-                    if let Some(bridge) = kd_serial_bridge.as_mut() {
-                        bridge.pump(platform);
-                    }
-                    drain_stats.prepare_pending_delivery(
-                        platform,
-                        &mut guest_ram,
-                        drain_trace,
-                        DrainContext {
-                            location: DrainLocation::PreRun,
-                            exit: exits,
-                            pc: drain_pc,
-                        },
-                    )
-                };
-                drain_stats.complete_pending_delivery(pending, drain_trace);
+                let pending = drain_stats.prepare_primary_pre_run(
+                    &platform,
+                    &mut guest_ram,
+                    smp_trace.as_deref(),
+                    kd_serial_bridge.as_mut(),
+                    drain_trace,
+                    DrainContext::pre_run(exits, drain_pc),
+                );
+                if let Err(error) = drain_stats.finish_prepared_spi_delivery(pending, drain_trace) {
+                    stop_reason = error.stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);
+                    break;
+                }
                 let reason = match run_hvf_vcpu_once(vcpu, exit, secondary_vcpus.as_ref()) {
                     Ok(reason) => reason,
                     Err(r) => {
@@ -418,7 +410,10 @@ pub(crate) fn run() -> ExitCode {
                         (setup_input_wake_canceled, WakeReason::SetupInput),
                         (service_wake_canceled, WakeReason::AgentConsole),
                         (vblank_wake_canceled, WakeReason::Vblank),
-                        (watchdog_fired.load(Ordering::SeqCst), WakeReason::RebootWatchdog),
+                        (
+                            watchdog_fired.load(Ordering::SeqCst),
+                            WakeReason::RebootWatchdog,
+                        ),
                     ]));
                 }
                 if reason == EXIT_CANCELED {
@@ -555,11 +550,7 @@ pub(crate) fn run() -> ExitCode {
                                     platform,
                                     &mut guest_ram,
                                     drain_trace,
-                                    DrainContext {
-                                        location: DrainLocation::DataAbort,
-                                        exit: exits,
-                                        pc: last_pc,
-                                    },
+                                    DrainContext::data_abort(exits, last_pc),
                                     post_drain,
                                 );
                                 (outcome, pending, device, pcie_target, pcie_context)
@@ -585,7 +576,13 @@ pub(crate) fn run() -> ExitCode {
                                 automation_gate.mark_serial_output_dirty();
                             }
                             record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
-                            drain_stats.complete_pending_delivery(pending, drain_trace);
+                            if let Err(error) =
+                                drain_stats.finish_prepared_spi_delivery(pending, drain_trace)
+                            {
+                                stop_reason =
+                                    error.stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);
+                                break;
+                            }
                             if trace_this_fwcfg {
                                 println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
                             }
@@ -775,7 +772,9 @@ pub(crate) fn run() -> ExitCode {
                     );
                     let platform = &mut *platform_guard;
                     automation_gate.note_checked();
-                    if let Some(d) = platform.xhci_pointer_report_deadline() { pointer_deadline_trace::report_overdue(d); }
+                    if let Some(d) = platform.xhci_pointer_report_deadline() {
+                        pointer_deadline_trace::report_overdue(d);
+                    }
                     let now = std::time::Instant::now();
                     live_input.tick(platform, &mut guest_ram, now, input_wake);
                     if serial_reached_linux_panic(platform.uart_output(), &mut serial_stop_scans) {
@@ -919,8 +918,7 @@ pub(crate) fn run() -> ExitCode {
                             "PSCI SYSTEM_RESET: reboot {reboot_count}/{}",
                             reboot_plan.max_reboots
                         );
-                        let gic_reset_status = if actions.reset_gic
-                            && crate::usgic_bridge::reset()
+                        let gic_reset_status = if actions.reset_gic && crate::usgic_bridge::reset()
                         {
                             println!("userspace GIC reset");
                             0
@@ -993,7 +991,9 @@ pub(crate) fn run() -> ExitCode {
                 wake_coordinator,
                 wake_cancel_claims,
                 boot_timer,
-                boot_timer_elapsed, diagnostic_generation, secondary_stop,
+                boot_timer_elapsed,
+                diagnostic_generation,
+                secondary_stop,
                 drain_stats,
                 unimpl,
                 mmio_traces,

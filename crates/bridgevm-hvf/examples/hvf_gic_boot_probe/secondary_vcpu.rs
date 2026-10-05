@@ -282,25 +282,18 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             if let Some(trace) = smp_trace {
                 trace.secondary_pre_run_drain(control.index, *exits, drain_pc);
             }
-            let pending = {
-                let mut platform_guard = lock_platform(
-                    platform,
-                    smp_trace,
-                    control.index,
-                    "secondary pre-run platform mutex",
-                );
-                drain_stats.prepare_pending_delivery(
-                    &mut platform_guard,
-                    guest_ram,
-                    drain_trace,
-                    DrainContext {
-                        location: DrainLocation::PreRun,
-                        exit: *exits,
-                        pc: drain_pc,
-                    },
-                )
-            };
-            drain_stats.complete_pending_delivery(pending, drain_trace);
+            let pending = drain_stats.prepare_secondary_pre_run(
+                platform,
+                guest_ram,
+                smp_trace,
+                control.index,
+                drain_trace,
+                DrainContext::pre_run(*exits, drain_pc),
+            );
+            if let Err(error) = drain_stats.finish_prepared_spi_delivery(pending, drain_trace) {
+                error.stop_secondary(|| control.record_run_error(primary_vcpu));
+                return true;
+            }
             if let Some(trace) = smp_trace {
                 trace.secondary_post_run_drain(control.index, *exits);
             }
@@ -402,16 +395,15 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                         &mut platform_guard,
                         guest_ram,
                         drain_trace,
-                        DrainContext {
-                            location: DrainLocation::DataAbort,
-                            exit: *exits,
-                            pc,
-                        },
+                        DrainContext::data_abort(*exits, pc),
                         post_drain,
                     );
                     (outcome, pending)
                 };
-                drain_stats.complete_pending_delivery(pending, drain_trace);
+                if let Err(error) = drain_stats.finish_prepared_spi_delivery(pending, drain_trace) {
+                    error.stop_secondary(|| control.record_run_error(primary_vcpu));
+                    return true;
+                }
                 pre_run_drain_gate.mark_secondary_pending();
                 match outcome {
                     MmioOutcome::ReadValue(v) if !is_write => {
