@@ -3465,7 +3465,7 @@ scripts/live-gates/a19_lifecycle_campaign_lane.py	123	0
 scripts/live-gates/run-a19-lifecycle-campaign-tier.py	101	0
 scripts/live-gates/a19-lifecycle-campaign-cleanup-fence.sh	18	0
 tests/integration/a19_lifecycle_campaign_fixtures.py	116	0
-tests/integration/a19-lifecycle-campaign-receipt-contract.py	319	0
+tests/integration/a19-lifecycle-campaign-receipt-contract.py	239	0
 tests/integration/a19-lifecycle-campaign-runner-contract.py	243	0
 docs/testing/a19-lifecycle-campaign.md	138	0
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserNodeLabel.swift	43	0
@@ -3929,3 +3929,5 @@ crates/bridgevm-hvf/src/nvme/queue_create.rs	71	0
 crates/bridgevm-hvf/src/nvme/tests/create_queue_identity.rs	166	0
 docs/document-manifests/native-vmm-queue-lifecycle.tsv	3	0
 docs/history/windows-hvf/native-vmm-queue-identity-and-gate-dispatch-20261005.md	58	0
+tests/integration/a19-lifecycle-campaign-dispatch-contract.py	106	0
+tests/integration/a19-contract-entrypoint-contract.py	60	0

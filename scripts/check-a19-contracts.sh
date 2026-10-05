@@ -8,7 +8,7 @@ python3 tests/integration/a19-interrupted-restore-public-contract.py
 python3 tests/integration/a19-interrupted-restore-guest-share-contract.py
 python3 tests/integration/a19-interrupted-restore-cases-contract.py
 python3 tests/integration/a19-interrupted-restore-case-hashes-contract.py
-python3 tests/integration/a19-lifecycle-campaign-receipt-contract.py
+python3 tests/integration/a19-lifecycle-campaign-receipt-contract.py; python3 tests/integration/a19-lifecycle-campaign-dispatch-contract.py; python3 tests/integration/a19-contract-entrypoint-contract.py
 python3 tests/integration/a19-lifecycle-campaign-runner-contract.py
 python3 tests/integration/a19-lifecycle-campaign-progress-contract.py
 python3 tests/integration/a19-interrupted-restore-auxiliary-orchestration-contract.py

@@ -68,7 +68,7 @@ class ArchiveAdmission(CacheFixture):
         self.refused()
 
     def test_unrelated_history_keeps_exact_bytes_and_ignores_unused_d10_cache(self):
-        self.tier(self.directory / "job.env", "t1-vtimer"); self.tier(self.ledger(), "t1-vtimer")
+        self.tier(self.directory / "job.env", "t8-pointer-reliability"); self.tier(self.ledger(), "t8-pointer-reliability")
         for path in (self.directory / "job.env", self.ledger()):
             path.chmod(0o600); path.write_text(path.read_text().replace(self.fixture.commit, "1234567")); path.chmod(0o400)
         public = self.directory / "receipt.public.json"; data = b'{"legacy": true}\n'; public.write_bytes(data)
