@@ -129,14 +129,7 @@ docs/windows-arm/evidence/a19-restore-boot-20260912.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-managed-pair-20260912.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-relocation-containment-20260912.md	current	windows-storage	-
 docs/windows-arm/evidence/boot-seed-fixture-20260912.md	current	windows-storage	-
-docs/app-cli.md	current	native-app-cli	-
-docs/app-cli-doctor.md	current	native-app-cli	docs/app-cli.md
-docs/app-cli-create.md	current	native-app-cli	-
-docs/reference/native-owned-runtime.md	reference	native-owned-runtime	-
-docs/app-cli-stop.md	current	native-app-cli	-
-docs/app-cli-start.md	current	native-app-cli	-
-docs/app-cli-install.md	current	native-app-cli	-
-docs/app-cli-snapshot.md	current	native-app-cli	-
+@include	docs/document-manifests/native-app-cli.tsv	-	-
 docs/windows-arm/evidence/a19-t20-r6-20260925.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-t21-r1-20260925.md	historical-evidence	windows-storage	STATUS.md
 docs/windows-arm/evidence/a19-t22-r1-20260925.md	historical-evidence	windows-storage	STATUS.md
@@ -149,3 +142,4 @@ docs/windows-arm/evidence/b6-trace-nine-cell-collection-20260911.md	historical-e
 @include	docs/document-manifests/t22-loader-admission-terminal.tsv	-	-
 @include	docs/document-manifests/t17-selection-history.tsv	-	-
 @include	docs/document-manifests/t17-fresh-selection-graph.tsv	-	-
+docs/history/windows-hvf/native-vmm-nvme-deletion-and-fixture-gates-20261005.md	historical-evidence	windows-native-vmm	-

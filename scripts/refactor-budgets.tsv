@@ -3560,7 +3560,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfTailLineAccumulatorTests.swift	54	0
 crates/bridgevm-hvf/src/virtio_queue_address.rs	19	0
 crates/bridgevm-hvf/src/virtio_queue_overflow_tests.rs	104	0
 docs/history/windows-hvf/parallel-existing-code-audit-20261002.md	115	0
-docs/document-manifest.tsv	151	0
+docs/document-manifest.tsv	145	0
 docs/machine-contract/qemu-virt-deviations.json	80	0
 docs/machine-contract/qemu-virt.md	59	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTailFileCursor.swift	40	0
@@ -3923,3 +3923,5 @@ docs/history/windows-hvf/native-vmm-timer-shell-context-20261005.md	20	0
 docs/document-manifests/native-vmm-timer-compatibility.tsv	5	0
 crates/bridgevm-hvf/src/nvme/queue_lifecycle.rs	40	0
 crates/bridgevm-hvf/src/nvme/tests/queue_lifecycle.rs	240	0
+docs/document-manifests/native-app-cli.tsv	9	0
+docs/history/windows-hvf/native-vmm-nvme-deletion-and-fixture-gates-20261005.md	62	0
