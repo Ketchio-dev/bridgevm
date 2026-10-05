@@ -302,9 +302,6 @@ impl UserspaceGic {
     }
 
     fn spi_candidate_for_cpu(&self, cpu: usize, threshold: u8) -> Option<PendingCandidate> {
-        if self.dist.ctlr & GICD_CTLR_ENABLE_G1NS == 0 {
-            return None;
-        }
         (SPI_BASE..GIC_INTID_COUNT)
             .filter_map(|intid| {
                 let (reg, bit) = Distributor::bit(intid);
@@ -348,6 +345,9 @@ impl UserspaceGic {
     }
 
     fn highest_candidate(&self, cpu: usize, threshold: u8) -> Option<PendingCandidate> {
+        if self.dist.ctlr & GICD_CTLR_ENABLE_G1NS == 0 {
+            return None;
+        }
         [
             self.local_candidate_for_cpu(cpu, threshold),
             self.spi_candidate_for_cpu(cpu, threshold),

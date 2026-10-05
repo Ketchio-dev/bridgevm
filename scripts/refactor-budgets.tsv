@@ -1123,7 +1123,9 @@ crates/bridgevm-hvf/src/userspace_gic/priority_mmio.rs	86	0
 crates/bridgevm-hvf/src/userspace_gic/priority_update_tests.rs	82	0
 crates/bridgevm-hvf/src/userspace_gic/deactivate_wake_tests.rs	125	0
 crates/bridgevm-hvf/src/userspace_gic/pending_readback_tests.rs	125	0
-crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	387	0
+crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	343	0
+crates/bridgevm-hvf/src/userspace_gic/test_support.rs	49	0
+crates/bridgevm-hvf/src/userspace_gic/group_enable_tests.rs	170	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	467	13
 scripts/install-bridgevm.sh	209	0
 scripts/generate-general-preview-manifest.py	117	0
