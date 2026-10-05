@@ -2,10 +2,7 @@
 #include "PciProbeInternal.h"
 #include <Protocol/PciIo.h>
 
-STATIC CONST UINT32 mExpectedIdentity[BRIDGE_VM_PC_PCIE_FUNCTION_COUNT] = {
-  0x00081B36U, 0x00101B36U, 0x000D1B36U, 0x10011AF4U,
-  0x10411AF4U, 0x10501AF4U, 0x10431AF4U, 0x26688086U
-};
+#include "PciIdentityContract.h"
 
 EFI_STATUS
 BridgeVmPcValidatePciIdentities (
@@ -36,9 +33,14 @@ BridgeVmPcValidatePciIdentities (
                            &Count,
                            &Handles
                            );
-  if (EFI_ERROR (Status) || (Count != BRIDGE_VM_PC_PCIE_FUNCTION_COUNT)) {
+  if (EFI_ERROR (Status)) {
     return EFI_COMPROMISED_DATA;
   }
+  if (Count != BRIDGE_VM_PC_PCIE_FUNCTION_COUNT) {
+    BootServices->FreePool (Handles);
+    return EFI_COMPROMISED_DATA;
+  }
+  BridgeVmPcClearIdentitySlots (Result);
   Seen = 0;
   for (Index = 0; Index < Count; ++Index) {
     PciIo = NULL;
@@ -51,9 +53,7 @@ BridgeVmPcValidatePciIdentities (
       break;
     }
     Status = PciIo->GetLocation (PciIo, &Segment, &Bus, &Device, &Function);
-    if (EFI_ERROR (Status) || (Segment != 0) || (Bus != 0) ||
-        (Device >= Count) || (Function != 0) || ((Seen & (1U << Device)) != 0))
-    {
+    if (EFI_ERROR (Status) || !BridgeVmPcIdentityLocationValid (Segment, Bus, Device, Function, Seen)) {
       break;
     }
     Identity = 0;
@@ -65,5 +65,5 @@ BridgeVmPcValidatePciIdentities (
     Seen |= 1U << Device;
   }
   BootServices->FreePool (Handles);
-  return (Seen == 0xFFU) ? EFI_SUCCESS : EFI_COMPROMISED_DATA;
+  return (Seen == ((1U << BRIDGE_VM_PC_PCIE_FUNCTION_COUNT) - 1U)) ? EFI_SUCCESS : EFI_COMPROMISED_DATA;
 }

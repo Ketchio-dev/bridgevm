@@ -791,14 +791,14 @@ crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract.rs	96	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/firmware.rs	42	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/firmware_guids.rs	9	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/hob.rs	99	0
-crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie.rs	62	0
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie.rs	49	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie_devices_display.rs	8	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie_display.rs	11	0
-crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie_identities.rs	14	0
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie_identities.rs	8	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie_nvme.rs	95	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie_nvme_block.rs	67	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie_test_fixture.rs	16	0
-crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie_tests.rs	36	0
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie_tests.rs	23	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/probe_failure.rs	31	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/result.rs	37	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/runtime_services.rs	185	0
@@ -1725,7 +1725,7 @@ scripts/measure-pointer-latency-batch.sh	36
 scripts/check-hvf-windows-coherence-protocol.sh	45
 scripts/build-bridgevm-pc-edk2-consumer.sh	153	0
 scripts/build-bridgevm-pc-dxe-core-fv.sh	165	0
-scripts/build-bridgevm-pc-dxe-entry-firmware.sh	151	0
+scripts/build-bridgevm-pc-dxe-entry-firmware.sh	139	0
 scripts/build-bridgevm-pc-dxe-fv.sh	44	0
 scripts/build-bridgevm-pc-pci-dxe.sh	112	0
 scripts/build-bridgevm-pc-runtime-dxe.sh	118	0
@@ -3827,3 +3827,18 @@ crates/bridgevm-hvf/src/virtio_blk/request_layout_tests.rs	213	0
 crates/bridgevm-hvf/src/virtio_blk/request_layout_test_fixture.rs	46	0
 docs/document-manifests/native-vmm-lifecycle.tsv	4	0
 docs/history/windows-hvf/native-vmm-lifecycle-and-block-framing-20261005.md	81	0
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/approved_firmware.rs	22	0
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/firmware_pin_tests.rs	35	0
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/modeled_pcie_tests.rs	85	0
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/contract/pcie_identity_validation.rs	23	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Include/Library/BridgeVmPcPciIdentityContract.h	6	0
+crates/bridgevm-hvf/firmware/BridgeVmPcPkg/Library/PciProbeLib/PciIdentityContract.h	21	0
+crates/bridgevm-hvf/firmware/bridgevm-pc-dxe-entry.sha256	1	0
+scripts/check-bridgevm-pc-probe-contracts.sh	7	0
+scripts/pack-bridgevm-pc-dxe-firmware.py	15	0
+scripts/read-bridgevm-pc-firmware-pin.py	19	0
+tests/integration/bridgevm-pc-firmware-pins-contract.py	64	0
+tests/integration/bridgevm-pc-pci-identities-contract.py	20	0
+tests/integration/bridgevm_pc_pci_identity_fixture/Protocol/PciIo.h	12	0
+tests/integration/bridgevm_pc_pci_identity_fixture/Uefi.h	28	0
+tests/integration/bridgevm_pc_pci_identity_fixture/main.c	82	0

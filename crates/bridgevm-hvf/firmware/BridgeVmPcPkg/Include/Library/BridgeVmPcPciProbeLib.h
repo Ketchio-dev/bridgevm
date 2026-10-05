@@ -2,9 +2,9 @@
 #ifndef BRIDGE_VM_PC_PCIE_PROBE_LIB_H_
 #define BRIDGE_VM_PC_PCIE_PROBE_LIB_H_
 #include <Uefi.h>
-#define BRIDGE_VM_PC_PCIE_FUNCTION_COUNT  8U
+#include <Library/BridgeVmPcPciIdentityContract.h>
 typedef struct {
-  UINT32 FunctionCount, Identity[BRIDGE_VM_PC_PCIE_FUNCTION_COUNT];
+  UINT32 FunctionCount, Identity[BRIDGE_VM_PC_PCIE_IDENTITY_CAPACITY];
   UINT32 RootBridgeCount, EnumerationComplete, DriverBindingCount, SupportedStatus, ConnectStatus;
   UINT32 NvmeBarReadCount, NvmeBarResourceType;
   UINT64 NvmeBarBase, NvmeBarLength, NvmeControllerCapabilities;

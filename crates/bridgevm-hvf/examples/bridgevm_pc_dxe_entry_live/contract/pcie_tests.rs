@@ -19,6 +19,6 @@ fn accepts_all_versioned_endpoint_identities() {
 #[test]
 fn rejects_one_mismatched_firmware_identity() {
     let mut result = test_fixture::fixture();
-    result[RESULT_OFFSET + 4 + 5 * 4] ^= 1;
+    result[RESULT_OFFSET + 8] ^= 1;
     assert!(validate(&result).unwrap_err().contains("PCIe identity"));
 }

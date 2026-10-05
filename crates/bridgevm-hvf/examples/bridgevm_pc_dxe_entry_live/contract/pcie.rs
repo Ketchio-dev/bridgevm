@@ -1,13 +1,15 @@
 use super::{expect, u32_at};
 #[path = "pcie_identities.rs"]
 mod identities;
+#[path = "pcie_identity_validation.rs"]
+mod identity_validation;
 #[path = "pcie_nvme.rs"]
 mod nvme;
 #[path = "pcie_nvme_block.rs"]
 mod nvme_block;
 pub use nvme::NvmeBarProof;
 pub use nvme_block::NvmeBlockIoProof;
-pub const FUNCTION_COUNT: usize = 8;
+pub const FUNCTION_COUNT: usize = 3;
 const RESULT_OFFSET: usize = 112;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -28,12 +30,7 @@ pub fn validate(result: &[u8]) -> Result<PcieProof, String> {
         u32_at(result, RESULT_OFFSET, "PCIe function count")?,
         FUNCTION_COUNT as u32,
     )?;
-    let expected = identities::expected();
-    let mut identities = [0; FUNCTION_COUNT];
-    for (index, identity) in identities.iter_mut().enumerate() {
-        *identity = u32_at(result, RESULT_OFFSET + 4 + index * 4, "PCIe identity")?;
-        expect("PCIe identity", *identity, expected[index])?;
-    }
+    let identities = identity_validation::validate(result)?;
     let root_bridge_count = u32_at(result, RESULT_OFFSET + 36, "PCI root bridge count")?;
     expect("PCI root bridge count", root_bridge_count, 1)?;
     let enumeration_complete = u32_at(result, RESULT_OFFSET + 40, "PCI enumeration state")?;
@@ -57,6 +54,9 @@ pub fn validate(result: &[u8]) -> Result<PcieProof, String> {
         nvme_block,
     })
 }
+#[cfg(test)]
+#[path = "modeled_pcie_tests.rs"]
+mod modeled_tests;
 #[cfg(test)]
 #[path = "pcie_test_fixture.rs"]
 mod test_fixture;
