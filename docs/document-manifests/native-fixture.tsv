@@ -1,0 +1,5 @@
+path	class	topic	superseded_by
+docs/plans/hvf-windows-install-completion-plan.md	active-plan	windows-release	-
+docs/testing/apple-silicon-live-gates.md	current	development-process	-
+docs/development/native-fixture-preparation.md	current	windows-native-vmm	-
+docs/history/windows-hvf/native-vmm-fixture-preparation-20261005.md	historical-evidence	windows-native-vmm	-

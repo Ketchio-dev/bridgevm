@@ -3558,7 +3558,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfTailLineAccumulatorTests.swift	54	0
 crates/bridgevm-hvf/src/virtio_queue_address.rs	19	0
 crates/bridgevm-hvf/src/virtio_queue_overflow_tests.rs	104	0
 docs/history/windows-hvf/parallel-existing-code-audit-20261002.md	115	0
-docs/document-manifest.tsv	152	0
+docs/document-manifest.tsv	151	0
 docs/machine-contract/qemu-virt-deviations.json	80	0
 docs/machine-contract/qemu-virt.md	59	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTailFileCursor.swift	40	0
@@ -3880,9 +3880,9 @@ scripts/live-gates/d11_fixture_guest.py	66	0
 scripts/live-gates/d11_fixture_inputs.py	85	0
 scripts/live-gates/d11_fixture_mounts.py	110	0
 scripts/live-gates/d11_fixture_process.py	94	0
-scripts/live-gates/d11_fixture_queue.py	60	0
+scripts/live-gates/d11_fixture_queue.py	40	0
 scripts/live-gates/d11_fixture_queue_inputs.py	75	0
-scripts/live-gates/d11_fixture_receipt.py	125	0
+scripts/live-gates/d11_fixture_receipt.py	92	0
 scripts/live-gates/d11_fixture_runtime.py	123	0
 scripts/win-assets/bv-d11-fixture-ready.ps1	62	0
 tests/integration/d11-fixture-cleanup-contract.py	125	0
@@ -3895,3 +3895,8 @@ tests/integration/d11-fixture-receipt-contract.py	106	0
 tests/integration/d11-fixture-runtime-contract.py	88	0
 tests/integration/d11-fixture-source-contract.py	50	0
 tests/integration/d11_fixture_test_support.py	36	0
+scripts/live-gates/d11_fixture_attempt.py	27	0
+scripts/live-gates/d11_fixture_receipt_validation.py	36	0
+tests/integration/d11-fixture-attempt-contract.py	55	0
+docs/document-manifests/native-fixture.tsv	5	0
+docs/history/windows-hvf/native-vmm-fixture-preparation-20261005.md	59	0

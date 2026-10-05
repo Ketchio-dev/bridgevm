@@ -3,45 +3,10 @@ import os
 from pathlib import Path
 
 from d11_fixture_files import canonical, digest, document, identity, record
-from d11_fixture_inputs import SHA
+from d11_fixture_receipt_validation import HASHES, STAGES, empty, checked
 from d11_fixture_mounts import Container, inventory
 from d11_fixture_queue_inputs import bound, output_path, job
 from guest_input_owned_group import state
-
-HASHES = {"preparation_sha256", "disk_sha256", "vars_sha256", "container_sha256", "guest_result_sha256", "source_sha256"}
-STAGES = {"installed", "ready_stopped", "sealed_fixture"}
-REASONS = {"prepared", "clean-refusal", "incomplete", "canceled", "cleanup-unproved"}
-
-
-def empty(binding, reason):
-    return {"schema": "bridgevm.d11-fixture-queue.v1", **binding, "classification": "DEVELOPMENT_ONLY",
-            "reason": reason, "pass": False, "claim_eligible": False, "criterion_pass": False,
-            "t15_ready": False, "worker_cleanup_verified": False,
-            **{k: False for k in STAGES}, **{k: "absent" for k in HASHES}}
-
-
-def checked(value, binding):
-    template = empty(binding, "incomplete")
-    if type(value) is not dict or set(value) != set(template): raise ValueError("unexpected fixture receipt fields")
-    for key, expected in template.items():
-        item = value[key]
-        if key in HASHES:
-            if type(item) is not str or (item != "absent" and not SHA.fullmatch(item)):
-                raise ValueError("invalid fixture proof hash")
-        elif key in STAGES | {"worker_cleanup_verified"}:
-            if type(item) is not bool: raise ValueError("fixture stage must be boolean")
-        elif key == "reason":
-            if item not in REASONS: raise ValueError("unknown fixture reason")
-        elif type(item) is not type(expected) or item != expected:
-            raise ValueError("fixture identity or claim differs")
-    if value["ready_stopped"] and not value["installed"]: raise ValueError("fixture stages out of order")
-    if value["sealed_fixture"] and (not value["ready_stopped"] or not value["worker_cleanup_verified"]
-            or value["reason"] != "prepared" or any(value[k] == "absent" for k in HASHES)):
-        raise ValueError("unproved sealed fixture")
-    if (value["reason"] == "prepared") != value["sealed_fixture"]:
-        raise ValueError("fixture completion differs")
-    return value
-
 
 def collect(directory, commit, current=True):
     binding, rows = bound(directory, commit)
@@ -49,6 +14,8 @@ def collect(directory, commit, current=True):
     if (directory / "d11-refusal.private.json").exists(): return empty(binding, "cleanup-unproved")
     output = output_path(binding["job_id"])
     if not os.path.lexists(output):
+        if os.path.lexists(directory / "d11-attempt.private.json"):
+            return empty(binding, "cleanup-unproved")
         value.update(reason="canceled" if (directory / "cancel.requested").exists() else "clean-refusal",
                      worker_cleanup_verified=True)
         return checked(value, binding)

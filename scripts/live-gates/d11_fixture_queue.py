@@ -8,30 +8,10 @@ import subprocess
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from d11_fixture_files import record
-from d11_fixture_inputs import Inputs
-from d11_fixture_queue_inputs import bound, create_output, validate, seal
-from d11_fixture_receipt import empty, collect, finalize, publish, guard, archived
-from d11_fixture_runtime import execute
+from d11_fixture_queue_inputs import validate, seal
+from d11_fixture_receipt import finalize, publish, guard, archived
+from d11_fixture_attempt import run
 from t22_pair_queue import require_source
-
-
-def run(directory, root, commit, manifest, binary):
-    if manifest != directory / "input-manifest.tsv" or binary != directory / "hvf_gic_boot_probe":
-        raise ValueError("fixture inputs are not queue-owned")
-    binding, _ = bound(directory, commit)
-    try:
-        with Inputs(manifest, commit, binary) as inputs:
-            output = create_output(binding["job_id"])
-            execute(directory, root, inputs, output, binary)
-            inputs.check()
-        require_source(root, commit)
-        value = collect(directory, commit)
-    except (OSError, ValueError, subprocess.SubprocessError):
-        record(directory / "d11-refusal.private.json", {"reason": "admission-or-integrity-refused"})
-        value = empty(binding, "cleanup-unproved")
-    record(directory / "receipt.json", value)
-    return 0 if value["sealed_fixture"] else 1
 
 
 def main():

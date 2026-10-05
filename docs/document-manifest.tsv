@@ -7,13 +7,13 @@ docs/README.md	current	documentation-index	-
 @include	docs/document-manifests/native-vmm-core.tsv	-	-
 @include	docs/document-manifests/native-vmm-lifecycle.tsv	-	-
 @include	docs/document-manifests/native-vmm-secondary-t12.tsv	-	-
+@include	docs/document-manifests/native-fixture.tsv	-	-
 docs/contributing/README.md	current	contributing	-
 docs/fast-mode/README.md	current	apple-vz-engine	-
 docs/guest-tools/protocol.md	current	guest-tools	-
 docs/security/model.md	current	security	-
 docs/licensing-and-attribution.md	current	licensing	-
 docs/windows-arm/README.md	current	windows-hvf-engine	-
-docs/plans/hvf-windows-install-completion-plan.md	active-plan	windows-release	-
 docs/plans/hvf-lib-refactor-extraction-plan.md	active-plan	hvf-refactor	-
 docs/plans/hvf-3d-engine-plan.md	active-plan	windows-graphics	-
 docs/plans/hvf-p3-windows-3d-plan.md	active-plan	windows-graphics	-
@@ -93,7 +93,6 @@ docs/windows-arm/evidence/b6-scale-mechanism-spike-20260908.md	current	windows-g
 docs/windows-arm/evidence/b6-single-scene-spike-20260908.md	current	windows-guest-integration	-
 docs/windows-arm/evidence/b6-dpi-and-capture-live-20260908.md	current	windows-guest-integration	-
 docs/reference/bridgevm-virt-platform.md	reference	windows-platform	-
-docs/testing/apple-silicon-live-gates.md	current	development-process	-
 @include	docs/document-manifests/a19-interruption.tsv	-	-
 docs/windows-arm/smccc-trng-psci-contract.md	current	windows-hvf-engine	-
 docs/windows-arm/evidence/a19-snapshot-pair-20260804.md	current	windows-graphics	GOAL.md
