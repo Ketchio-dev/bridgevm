@@ -70,9 +70,8 @@ docs/archive/README-before-20260722.md	historical-evidence	documentation-history
 docs/archive/STATUS-before-20260722.md	historical-evidence	documentation-history	STATUS.md
 docs/windows-arm/capability-matrix.md	current	windows-hvf-engine	-
 docs/windows-arm/graphics-compatibility.md	current	windows-graphics	GOAL.md
-docs/machine-contract/qemu-virt.md	current	windows-architecture	-
+@include	docs/document-manifests/native-vmm-msix.tsv	-	-
 @include	docs/document-manifests/native-vmm-interrupt-firmware.tsv	-	-
-docs/windows-arm/evidence/bridgevm-pc-gic-irq-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-boot-info-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-reset-vector-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-sec-live-20260830.md	current	windows-architecture	-

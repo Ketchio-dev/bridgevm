@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/machine-contract/qemu-virt.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-gic-irq-live-20260830.md	current	windows-architecture	-
+docs/history/windows-hvf/native-vmm-msix-failure-20261005.md	historical-evidence	windows-native-vmm	-
