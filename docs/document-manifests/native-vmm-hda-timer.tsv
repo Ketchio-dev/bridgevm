@@ -1,3 +1,0 @@
-path	class	topic	superseded_by
-@include	docs/document-manifests/native-vmm-timer-fixtures.tsv	-	-
-docs/history/windows-hvf/native-vmm-hda-and-timer-provenance-20261005.md	historical-evidence	windows-native-vmm	-
