@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Owned command stubs exercise T1 without launching Hypervisor.framework."""
 from t1_timer_fixture import *
+from t1_timer_publication_cases import TimerPublicationCases
 
 
-class TimerBoundary(TimerFixture):
+class TimerBoundary(TimerPublicationCases, TimerFixture):
     def test_resolves_per_job_cargo_target_directory(self):
         self.env['CARGO_TARGET_DIR'] = str(self.root / 'per-job-target')
         result = self.run_gate()
@@ -98,22 +99,6 @@ class TimerBoundary(TimerFixture):
                 self.assertNotEqual(self.verify().returncode, 0)
                 path.unlink();path.write_bytes(original)
         self.assertEqual(self.verify().returncode, 0)
-
-    def test_publication_and_reader_bind_retained_private_evidence(self):
-        self.good_receipt()
-        result = subprocess.run(['/bin/bash', str(self.root / 'scripts/live-gates/publish-receipt.sh'), 't1-vtimer', str(self.out), str(self.root), SHA], env=self.env, capture_output=True, text=True, timeout=10)
-        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-        private = json.loads((self.out / 'receipt.json').read_text())
-        public = json.loads((self.out / 'receipt.public.json').read_text())
-        self.assertEqual(public, private)
-        (self.out / 'job.env').write_text(f'job_id=owned-t1\ntier=t1-vtimer\ncommit={SHA}\n')
-        argv = [sys.executable, str(ROOT / 'scripts/live-gates/bridgevm_live_receipt_legacy.py'), str(self.out), 'owned-t1']
-        result = subprocess.run(argv, env=self.env, capture_output=True, text=True, timeout=10)
-        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-        self.assertEqual(json.loads(result.stdout), private)
-        path = self.out / 'receipt.public.json';path.chmod(0o600);public['cancel_interval_us'] = 37;path.write_text(json.dumps(public))
-        result = subprocess.run(argv, env=self.env, capture_output=True, text=True, timeout=10)
-        self.assertNotEqual(result.returncode, 0)
 
     def test_nondefault_experiment_is_diagnostic_not_default_gate_evidence(self):
         result = self.run_gate(tier=False, extra=['--job-id', 'owned-t1', '--iterations', '2000', '--cancel-interval-us', '9'])

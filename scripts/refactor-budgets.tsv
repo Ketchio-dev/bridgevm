@@ -1591,7 +1591,8 @@ tests/integration/lifecycle-suspend-resume-cli-smoke.sh	157	0
 tests/integration/install-verify-smoke.sh	180	0
 tests/integration/make-install-release-metadata.py	30	0
 tests/integration/b4-sealed-submit-smoke.sh	17	0
-tests/integration/live-gate-policy-smoke.sh	308	0
+tests/integration/live-gate-policy-smoke.sh	291	0
+tests/integration/live_gate_receipt_redaction_cases.sh	28	0
 tests/integration/qmp-stress-live-tier-smoke.sh	21	0
 tests/integration/audio-teardown-live-tier-smoke.sh	119	0
 tests/integration/windows-closure-live-tier-smoke.sh	65	0
@@ -3098,7 +3099,8 @@ scripts/verify-native-snapshot-restore-boots.sh	184	0
 tests/integration/native-snapshot-restore-live-tier-contract.py	134	0
 tests/integration/native-snapshot-restore-receipt-seal-contract.py	207	0
 tests/integration/native-snapshot-restore-cli-path-contract.py	53	0
-tests/integration/native-snapshot-restore-cli-read-contract.py	158	0
+tests/integration/native-snapshot-restore-cli-read-contract.py	110	0
+tests/integration/native_snapshot_restore_legacy_read_cases.py	90	0
 tests/integration/native-snapshot-restore-cleanup-contract.py	129	0
 tests/integration/native-snapshot-export-evidence-contract.py	123	0
 docs/history/windows-hvf/native-snapshot-restore-live-tier-20260917.md	52	0
@@ -3909,7 +3911,8 @@ scripts/live-gates/t1-probe-execute.sh	28	0
 scripts/live-gates/t1_probe_artifact.py	106	0
 scripts/live-gates/t1_probe_receipt.py	119	0
 scripts/live-gates/verify-live-receipt-legacy.sh	14	0
-tests/integration/t1-timer-provenance-contract.py	180	0
+tests/integration/t1-timer-provenance-contract.py	165	0
+tests/integration/t1_timer_publication_cases.py	46	0
 scripts/live-gates/t1_probe_build.py	32	0
 scripts/live-gates/t1_probe_read.py	11	0
 tests/integration/t1_timer_fixture.py	71	0
