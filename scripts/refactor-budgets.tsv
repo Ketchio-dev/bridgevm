@@ -199,7 +199,7 @@ crates/bridgevm-hvf/src/dtb.rs	660	0
 crates/bridgevm-hvf/src/host_entropy.rs	100	1
 crates/bridgevm-hvf/src/fwcfg.rs	771	0
 crates/bridgevm-hvf/src/hda/codec_parameter.rs	95	0
-crates/bridgevm-hvf/src/hda/hdapcmsink.rs	889	0
+crates/bridgevm-hvf/src/hda/hdapcmsink.rs	827	0
 crates/bridgevm-hvf/src/hda/pcm_sink.rs	13	0
 crates/bridgevm-hvf/src/hda/file_pcm_sink.rs	34	0
 crates/bridgevm-hvf/src/hda/stream_control.rs	61	0
@@ -3558,7 +3558,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfTailLineAccumulatorTests.swift	54	0
 crates/bridgevm-hvf/src/virtio_queue_address.rs	19	0
 crates/bridgevm-hvf/src/virtio_queue_overflow_tests.rs	104	0
 docs/history/windows-hvf/parallel-existing-code-audit-20261002.md	115	0
-docs/document-manifest.tsv	157	0
+docs/document-manifest.tsv	156	0
 docs/machine-contract/qemu-virt-deviations.json	80	0
 docs/machine-contract/qemu-virt.md	59	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTailFileCursor.swift	40	0
@@ -3816,3 +3816,5 @@ crates/bridgevm-hvf/src/nvme/completion_capacity.rs	10	0
 crates/bridgevm-hvf/src/nvme/tests/completion_backpressure.rs	207	0
 crates/bridgevm-hvf/src/hda/playback_dma.rs	62	0
 crates/bridgevm-hvf/src/hda/tests/dma_address.rs	58	0
+docs/history/windows-hvf/native-vmm-mmio-nvme-hda-20261005.md	80	0
+docs/document-manifests/native-vmm-core.tsv	4	0

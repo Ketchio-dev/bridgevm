@@ -4,7 +4,7 @@ docs/windows-first-coherence-integration-gap-20260911.md	active-plan	windows-coh
 docs/README.md	current	documentation-index	-
 @include	docs/document-manifests/development-boundaries.tsv	-	-
 @include	docs/document-manifests/storage-portability.tsv	-	-
-docs/architecture/phase-0.md	reference	architecture-history	docs/plans/hvf-windows-install-completion-plan.md
+@include	docs/document-manifests/native-vmm-core.tsv	-	-
 docs/contributing/README.md	current	contributing	-
 docs/fast-mode/README.md	current	apple-vz-engine	-
 docs/guest-tools/protocol.md	current	guest-tools	-
@@ -12,7 +12,6 @@ docs/security/model.md	current	security	-
 docs/licensing-and-attribution.md	current	licensing	-
 docs/windows-arm/README.md	current	windows-hvf-engine	-
 docs/decisions/hvf-competitive-architecture-and-risk-policy.md	decision	windows-architecture	-
-docs/decisions/hvf-windows-engine-strategy.md	decision	windows-architecture	-
 docs/decisions/hvf-windows-v1-suspend-decision.md	decision	windows-lifecycle	-
 docs/plans/hvf-windows-install-completion-plan.md	active-plan	windows-release	-
 docs/plans/hvf-lib-refactor-extraction-plan.md	active-plan	hvf-refactor	-
