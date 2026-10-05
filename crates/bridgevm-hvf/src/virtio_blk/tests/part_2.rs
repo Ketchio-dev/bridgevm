@@ -468,7 +468,7 @@ fn pci_write_request_is_rejected_for_read_only_iso() {
     );
 
     assert_ne!(mem.read(status, 1), [VIRTIO_BLK_S_OK]);
-    assert_eq!(mem.read(status, 1), [VIRTIO_BLK_S_UNSUPP]);
+    assert_eq!(mem.read(status, 1), [VIRTIO_BLK_S_IOERR]);
 
     fs::remove_file(path).ok();
 }

@@ -448,7 +448,7 @@ crates/bridgevm-hvf/src/venus_backend/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/venus_backend/tests/part_1.rs	31	0
 crates/bridgevm-hvf/src/venus_backend/venus_start_trace_capset_cou.rs	652	30
 crates/bridgevm-hvf/src/venus_backend/virgl_renderer_gl_context_mod.rs	709	2
-crates/bridgevm-hvf/src/virtio_blk/block_requests.rs	164	0
+crates/bridgevm-hvf/src/virtio_blk/block_requests.rs	105	0
 crates/bridgevm-hvf/src/virtio_blk/device_state.rs	165	0
 crates/bridgevm-hvf/src/virtio_blk/legacy_transport.rs	87	0
 crates/bridgevm-hvf/src/virtio_blk/media_backend.rs	40	0
@@ -3822,3 +3822,6 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/run_failure.rs
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/run_failure_tests.rs	125	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/stop_outcome.rs	35	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/stop_outcome_tests.rs	128	0
+crates/bridgevm-hvf/src/virtio_blk/request_layout.rs	85	0
+crates/bridgevm-hvf/src/virtio_blk/request_layout_tests.rs	213	0
+crates/bridgevm-hvf/src/virtio_blk/request_layout_test_fixture.rs	46	0
