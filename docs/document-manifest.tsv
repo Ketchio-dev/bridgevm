@@ -56,7 +56,7 @@ docs/windows-arm/evidence/b4-pointer-followup-session-variance-20260830.md	curre
 docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md	current	windows-product	-
 docs/windows-arm/evidence/a8-resize-secure-boot-wall-20260817.md	current	windows-graphics	-
 docs/windows-arm/evidence/coherence-windows-live-20260817.md	current	windows-graphics	-
-docs/windows-arm/evidence/a5-a6-a7-live-20260817.md	current	windows-guest-integration	-
+@include	docs/document-manifests/native-vmm-hda-corb-interrupt.tsv	-	-
 @include	docs/document-manifests/a19-stop-observation.tsv	-	-
 docs/windows-arm/evidence/a17-live-queue-receipts-20260805.md	current	testing	-
 docs/install.md	current	user-installation	-
@@ -124,7 +124,7 @@ docs/windows-arm/evidence/b6-physical-uia-observation-20260911.md	historical-evi
 docs/windows-arm/evidence/b6-renderer-runtime-reassessment-20260911.md	historical-evidence	b6-renderer-runtime-reassessment	-
 docs/winpe-file-comparison-20260911.md	historical-evidence	winpe-file-comparison	-
 docs/windows-arm/evidence/a9-stale-code-requirement-20260911.md	current	a9-code-requirement	-
-docs/windows-arm/evidence/a19-restore-boot-20260912.md	current	windows-storage	-
+@include	docs/document-manifests/native-vmm-nvme-write-completion.tsv	-	-
 @include	docs/document-manifests/a19-hosted-exfat-and-eof.tsv	-	-
 docs/windows-arm/evidence/a19-managed-pair-20260912.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-relocation-containment-20260912.md	current	windows-storage	-
