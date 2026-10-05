@@ -2,7 +2,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"; MODE="${1:?mode}"; TIER="${2:?tier}"; shift 2
 case "$MODE:$TIER" in
-    validate:d10-t22-owned-pair-preparation|seal:d10-t22-owned-pair-preparation) exec /bin/bash --noprofile --norc -p "$HERE/t22-pair-queue-dispatch.sh" "$MODE" "$@" ;;
+    validate:d10-t22-owned-pair-preparation|seal:d10-t22-owned-pair-preparation|validate:d11-native-fixture-preparation|seal:d11-native-fixture-preparation) HELPER=t22-pair; [[ "$TIER" != d11-native-fixture-preparation ]] || HELPER=d11-fixture; exec /bin/bash --noprofile --norc -p "$HERE/$HELPER-queue-dispatch.sh" "$MODE" "$@" ;;
     validate:d6-app-ui) exec python3 "$HERE/app_ui_diagnostic.py" validate-manifest "$@" ;;
     validate:d6-app-ui-host-v1) exec python3 "$HERE/app_ui_host_manifest.py" validate-manifest "$@" ;;
     seal:d6-app-ui-host-v1)

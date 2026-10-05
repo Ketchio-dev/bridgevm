@@ -40,7 +40,7 @@ def serve(directory: Path, job_id: str) -> None:
         if any(ledger.get(field) != job[field] for field in ("job_id", "tier", "commit")):
             raise ValueError("receipt job identity differs from its ledger")
     tiers = (job["tier"], ledger["tier"] if ledger else None, public_tier(public))
-    if "d10-t22-owned-pair-preparation" in tiers: raise ValueError("D10 receipt requires admitted routing")
+    if any(t in tiers for t in ("d10-t22-owned-pair-preparation", "d11-native-fixture-preparation")): raise ValueError("D10 receipt requires admitted routing")
     reader = strict_reader(tiers)
     if reader is not None:
         if directory.parent.name != "done" or directory.parent.is_symlink():
