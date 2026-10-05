@@ -3965,3 +3965,5 @@ scripts/check-contract-schema-json.py	68	0
 tests/integration/contract-schema-json-test.py	100	0
 docs/history/windows-hvf/native-vmm-nvme-shutdown-notification-20261005.md	67	0
 docs/document-manifests/native-vmm-nvme-shutdown.tsv	3	0
+docs/history/windows-hvf/native-vmm-gic-group-enable-20261005.md	68	0
+docs/document-manifests/native-vmm-gic-group-enable.tsv	3	0
