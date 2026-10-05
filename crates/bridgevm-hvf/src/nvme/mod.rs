@@ -2,6 +2,7 @@
 //! BAR registers, queues, admin command families, the I/O data path,
 //! namespaces and their backing store, and diagnostics.
 mod admin;
+mod completion_capacity;
 mod controller;
 mod disk;
 mod doorbell;

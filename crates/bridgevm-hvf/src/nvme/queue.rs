@@ -139,8 +139,8 @@ impl NvmeController {
                 Some(Some(sq)) => (sq.base, sq.size, sq.head, sq.tail_doorbell, sq.cqid),
                 _ => return,
             };
-            if head == tail {
-                return; // queue empty
+            if head == tail || !self.cq_has_space(cqid) {
+                return; // empty SQ or no completion slot available
             }
             let entry_gpa = base + u64::from(head) * SQ_ENTRY_SIZE;
             let mut buf = [0u8; SQ_ENTRY_SIZE as usize];
@@ -227,7 +227,7 @@ impl NvmeController {
         if qid == 0 || qid > usize::from(self.max_io_queues) {
             return SC_INVALID_FIELD; // QID 0 is admin; higher QIDs lack doorbells.
         }
-        if qsize_zero_based >= MAX_QUEUE_ENTRIES {
+        if qsize_zero_based == 0 || qsize_zero_based >= MAX_QUEUE_ENTRIES {
             return SC_INVALID_FIELD;
         }
         let qsize = qsize_zero_based + 1;

@@ -3812,3 +3812,5 @@ docs/document-manifests/a19-hosted-exfat-and-eof.tsv	3	0
 crates/bridgevm-hvf/src/mmio_data_abort.rs	42	0
 crates/bridgevm-hvf/src/mmio_data_abort_tests.rs	81	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/mmio_registers.rs	15	2
+crates/bridgevm-hvf/src/nvme/completion_capacity.rs	10	0
+crates/bridgevm-hvf/src/nvme/tests/completion_backpressure.rs	207	0
