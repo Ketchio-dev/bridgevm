@@ -85,7 +85,7 @@ docs/windows-arm/evidence/bridgevm-pc-pcie-ecam-live-20260830.md	current	windows
 docs/windows-arm/evidence/bridgevm-pc-standard-uefi-pci-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-bds-exit-live-20260831.md	current	windows-architecture	-
 docs/windows-arm/evidence/a11-regression-seal-20260901.md	current	testing	-
-docs/windows-arm/evidence/b7-audio-teardown-live-20260901.md	current	windows-guest-integration	-
+@include	docs/document-manifests/native-vmm-audio-lifecycle.tsv	-	-
 docs/windows-arm/evidence/b10-qmp-stress-hosted-20260902.md	current	testing	-
 docs/windows-arm/evidence/f3-postclose-save-prompt-confirmed-20260908.md	current	windows-guest-integration	-
 docs/windows-arm/evidence/b6-tab-scene-spike-20260908.md	current	windows-guest-integration	-
