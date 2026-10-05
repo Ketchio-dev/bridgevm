@@ -250,7 +250,7 @@ crates/bridgevm-hvf/src/nvme/namespace.rs	155	0
 crates/bridgevm-hvf/src/nvme/protocol.rs	166	0
 crates/bridgevm-hvf/src/nvme/prp.rs	152	0
 crates/bridgevm-hvf/src/nvme/queue.rs	278	0
-crates/bridgevm-hvf/src/nvme/registers.rs	208	0
+crates/bridgevm-hvf/src/nvme/registers.rs	166	0
 crates/bridgevm-hvf/src/nvme/snapshot.rs	132	0
 crates/bridgevm-hvf/src/nvme/tests/helpers.rs	377	0
 crates/bridgevm-hvf/src/nvme/tests/mod.rs	0	0
@@ -1382,7 +1382,7 @@ scripts/check-hvf-windows-p3-gpu-readiness.sh	335	0
 scripts/check-hvf-windows-viogpu3d-package.sh	1464	0
 scripts/check-install-bootstrap.sh	21	0
 scripts/check-loom.sh	30	0
-scripts/check-project.sh	91	0
+scripts/check-project.sh	88	0
 scripts/check-refactor-budgets.sh	72	1
 scripts/check-release-overrides.sh	74	0
 scripts/check-shell-scripts.sh	61	0
@@ -1699,7 +1699,7 @@ scripts/check-doc-references.py	139	0
 scripts/check-daemon-dto-decoders.py	91	0
 scripts/capability_forbidden.py	83	0
 scripts/capture-active-iosurface.py	17	0
-scripts/capability_freshness.py	42	0
+scripts/capability_freshness.py	41	0
 scripts/check-swift-force-casts.py	54	0
 scripts/check-tests-are-reachable.py	113	0
 scripts/venus_feature.py	41	0
@@ -2706,7 +2706,7 @@ tests/integration/app-ui-driver-packaging-contracts.py	124	0
 tests/integration/app-ui-driver-protocol.swift	18	0
 tests/integration/app-ui-host-v2-tier-smoke.py	220	0
 tests/integration/app_ui_host_v2_fixtures.py	98	0
-.github/workflows/ci.yml	296	0
+.github/workflows/ci.yml	295	0
 .github/workflows/hosted-full-project-check.yml	70	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeObservation.swift	15	0
 apps/macos/Sources/BridgeVMControl/LibraryModelRuntimeStatus.swift	55	0
@@ -3571,7 +3571,7 @@ crates/bridgevm-hvf/src/virtio_queue_address.rs	19	0
 crates/bridgevm-hvf/src/virtio_queue_overflow_tests.rs	104	0
 docs/history/windows-hvf/parallel-existing-code-audit-20261002.md	115	0
 docs/document-manifest.tsv	145	0
-docs/machine-contract/qemu-virt-deviations.json	80	0
+docs/machine-contract/qemu-virt-deviations.json	74	0
 docs/machine-contract/qemu-virt.md	59	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTailFileCursor.swift	40	0
 apps/macos/Tests/BridgeVMControlTests/HvfTailRotationTests.swift	80	0
@@ -3956,3 +3956,8 @@ docs/history/windows-hvf/native-vmm-pc-msix-replay-20261005.md	55	0
 docs/document-manifests/native-vmm-pc-msix-replay.tsv	3	0
 docs/history/windows-hvf/native-vmm-gic-pending-readback-20261005.md	57	0
 docs/document-manifests/native-vmm-gic-pending-readback.tsv	3	0
+crates/bridgevm-hvf/src/nvme/tests/shutdown.rs	305	0
+crates/bridgevm-hvf/src/nvme/configuration.rs	66	0
+docs/machine-contract/qemu-virt-deviations-device-recovery.json	24	0
+scripts/check-contract-schema-json.py	68	0
+tests/integration/contract-schema-json-test.py	100	0

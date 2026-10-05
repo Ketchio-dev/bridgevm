@@ -3,6 +3,7 @@
 //! namespaces and their backing store, and diagnostics.
 mod admin;
 mod completion_capacity;
+mod configuration;
 mod controller;
 mod disk;
 mod doorbell;

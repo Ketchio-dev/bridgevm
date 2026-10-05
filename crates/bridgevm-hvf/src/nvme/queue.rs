@@ -1,5 +1,6 @@
 //! SQ/CQ state model, queue lifecycle, pending-doorbell bookkeeping, and the fetch-execute-complete drain engine.
 
+use super::configuration::CSTS_SHST_MASK;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 
@@ -89,7 +90,7 @@ impl NvmeController {
         // advanced. The run loop calls this speculatively, so avoid scanning the
         // whole advertised queue space when no SQ has work.
         let mut word_idx = 0usize;
-        while word_idx < self.pending_sq_bits.len() {
+        while word_idx < self.pending_sq_bits.len() && self.csts & CSTS_SHST_MASK == 0 {
             let mut pending_word = self.pending_sq_bits[word_idx];
             while pending_word != 0 {
                 let bit = pending_word.trailing_zeros() as usize;

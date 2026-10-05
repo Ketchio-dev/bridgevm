@@ -30,9 +30,9 @@ addresses and interrupt numbers themselves.
 Some differences are unavoidable because the substrate is Apple's hypervisor
 rather than QEMU's userspace models, and others are current defects. Claiming
 bit-identity would hide both. The machine-readable list is
-[`qemu-virt-deviations.json`](qemu-virt-deviations.json); each entry records the
-QEMU behaviour, the BridgeVM behaviour, whether a guest can observe it, the
-impact, and an evidence path.
+[`qemu-virt-deviations.json`](qemu-virt-deviations.json), combining inline entries
+with flat `deviation_modules` named `qemu-virt-deviations-*.json`, recording behaviours,
+impact and evidence; referenced modules preserve the same schema and contract.
 
 Deviations fall into four kinds:
 
@@ -55,5 +55,5 @@ honest through correction, with criterion states and evidence tracked in [`capab
 
 Adding a device or changing guest-visible behavior requires preserving the
 declared compatibility contract or adding a deviation entry with evidence.
-`python3 -m json.tool` validity of the deviation manifest is part of the
-deterministic project check.
+`scripts/check-contract-schema-json.py` validates JSON and referenced modules,
+including metadata, visibility fields and unique IDs, in local and hosted checks.

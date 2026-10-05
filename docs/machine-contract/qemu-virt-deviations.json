@@ -66,15 +66,9 @@
       "guest_visible": true,
       "impact": "The linked historical measurement was approximately 20 FPS against the unchanged 30 FPS gate. Later A3 evidence and current state are recorded in capabilities/windows-hvf.json; composed presentation is not itself an open-criterion claim.",
       "evidence": "docs/windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md"
-    },
-    {
-      "id": "virtio-malformed-split-queue-recovery",
-      "area": "device-recovery",
-      "qemu_behavior": "QEMU v9.2 virtio_error marks the device broken and, with VIRTIO_F_VERSION_1 negotiated, sets NEEDS_RESET and notifies a configuration change for malformed queue state.",
-      "bridgevm_behavior": "Checked split-queue access refuses unreadable or overflowing ranges. Invalid descriptor chains may remain pending or be completed with zero used length depending on the device; no matching broken-device/NEEDS_RESET/configuration-change transition is implemented.",
-      "guest_visible": true,
-      "impact": "Recovery from malformed queue configuration differs. This static comparison does not claim a conforming-driver failure or a live guest observation.",
-      "evidence": "docs/history/windows-hvf/continuation-40min-boundaries-20261002.md"
     }
+  ],
+  "deviation_modules": [
+    "qemu-virt-deviations-device-recovery.json"
   ]
 }

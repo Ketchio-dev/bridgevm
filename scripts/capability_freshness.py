@@ -10,7 +10,7 @@ CODE_PATHS = [
     "crates/", "runners/", "apps/", "scripts/", "tests/", "Cargo.toml", "Cargo.lock",
     ".github/workflows/", ".github/actions/", "install.sh", "deny.toml", "packaging/",
     "tools/", "schemas/", "fuzz/", ".gitattributes", "LICENSE", "THIRD-PARTY-NOTICES.md",
-    "THIRD-PARTY-PATCHES.tsv", "docs/licenses/", "docs/machine-contract/qemu-virt-deviations.json",
+    "THIRD-PARTY-PATCHES.tsv", "docs/licenses/", "docs/machine-contract/qemu-virt-deviations*.json",
 ]
 
 
