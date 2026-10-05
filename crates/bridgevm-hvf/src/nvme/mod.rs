@@ -10,6 +10,7 @@ mod doorbell;
 mod features;
 mod features_get;
 mod identify;
+mod identify_command;
 mod interrupts;
 mod io;
 mod io_write;

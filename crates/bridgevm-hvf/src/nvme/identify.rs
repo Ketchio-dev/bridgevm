@@ -1,7 +1,6 @@
-//! IDENTIFY handling and construction of the Identify data structures.
+//! Construction of Identify data structures.
 
 use super::*;
-use crate::fwcfg::GuestMemoryMut;
 
 /// Copy `s` into `dst` as ASCII, space-padding the remainder (NVMe string
 /// fields are space- not NUL-padded).
@@ -54,58 +53,6 @@ pub(crate) const VWC_NSID_BROADCAST_SUPPORT: u8 = 3 << 1;
 pub(crate) const VWC_IDENTIFY_CAPABILITIES: u8 = VWC_PRESENT | VWC_NSID_BROADCAST_SUPPORT;
 
 impl NvmeController {
-    /// IDENTIFY (CNS in CDW10 bits 7:0). Writes a 4 KiB structure to PRP1.
-    pub(crate) fn admin_identify(
-        &self,
-        cmd: &SubmissionEntry,
-        mem: &mut dyn GuestMemoryMut,
-    ) -> u16 {
-        let cns = cmd.cdw10 & 0xff;
-        let data = match cns {
-            IDENTIFY_CNS_CONTROLLER => self.identify_controller(),
-            IDENTIFY_CNS_COMMAND_SET_CONTROLLER => {
-                let csi = ((cmd.cdw11 >> 24) & 0xff) as u8;
-                if csi != COMMAND_SET_NVM {
-                    return SC_INVALID_FIELD;
-                }
-                self.identify_command_set_controller()
-            }
-            IDENTIFY_CNS_ACTIVE_NAMESPACE_LIST => self.identify_active_namespace_list(cmd.nsid),
-            IDENTIFY_CNS_NAMESPACE_DESCRIPTOR_LIST => {
-                if self.backend_for_nsid(cmd.nsid).is_some() {
-                    self.identify_namespace_descriptor_list(cmd.nsid)
-                } else {
-                    return SC_INVALID_FIELD;
-                }
-            }
-            IDENTIFY_CNS_NAMESPACE => {
-                if self.backend_for_nsid(cmd.nsid).is_some() {
-                    self.identify_namespace(cmd.nsid)
-                } else {
-                    // Unallocated namespace ⇒ a zeroed structure (NVMe 1.4).
-                    [0u8; PAGE_SIZE]
-                }
-            }
-            _ => return SC_INVALID_FIELD,
-        };
-        if nvme_trace_enabled() {
-            let label = identify_cns_name(cns);
-            let preview_len = data.len().min(32);
-            println!(
-                "NVME identify {label} cns={cns:#x} nsid={} len={} first={} block_count={}",
-                cmd.nsid,
-                data.len(),
-                hex_preview(&data[..preview_len]),
-                self.block_count()
-            );
-        }
-        if mem.write_bytes(cmd.prp1, &data) {
-            SC_SUCCESS
-        } else {
-            SC_INVALID_FIELD
-        }
-    }
-
     /// Build a 4 KiB Identify Controller structure (NVMe 1.4 §5.15.2.2).
     pub(crate) fn identify_controller(&self) -> NvmePage {
         let mut d = [0u8; PAGE_SIZE];
