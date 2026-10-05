@@ -52,8 +52,6 @@ use bridgevm_hvf::machine;
 use bridgevm_hvf::mmio_data_abort::DataAbort;
 #[path = "hvf_gic_boot_probe/mmio_registers.rs"]
 mod mmio_registers;
-use mmio_registers::mmio_store_value;
-use mmio_registers::write_mmio_read;
 use bridgevm_hvf::media::{
     read_bounded_file, InstallerIsoTransport, MediaWrite, MediaWriteKind, VirtBootMediaConfig,
     WritableMedia,
@@ -68,6 +66,8 @@ use bridgevm_hvf::stage1::{self, Stage1Context, Stage1WalkStep};
 use bridgevm_hvf::tpm_tis::{SwtpmUnixBackend, Tpm2Backend};
 use bridgevm_hvf::virtio_blk::{VirtioBlockRequestTrace, VirtioMmioBlockStats, INSTALLER_ISO_SLOT};
 use bridgevm_hvf::virtio_gpu_3d::GpuShmMapPort;
+use mmio_registers::mmio_store_value;
+use mmio_registers::write_mmio_read;
 
 // Every module lives in the hvf_gic_boot_probe/ directory beside this
 // file. Cargo resolves example submodules relative to the examples/

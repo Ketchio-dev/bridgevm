@@ -41,8 +41,8 @@ IDs and unwanted disk writes. A separate one-entry-queue regression also
 failed before the repair. Afterwards the NVMe suite passes 89 tests, with one
 existing microbenchmark ignored; four tests cover the new boundary.
 All-target Clippy, formatting, budgets and independent review pass.
-Original source commit: `12ed631cdf76ff52ed9ba266caffb852717d0b1c`.
-Integrated commit: `91f7c5b9` (budget append conflict resolved by preserving both sets).
+Integrated source: `91f7c5b93dd2cdb4881b0921a590315e10302c3a`.
+The budget append conflict was resolved by preserving both sets of rows.
 Baseline raw SHA-256: `d7c957a8dfb1df67c174c765e4ac3530c47deb70d6646e9a78a9c70d244e2d3f`.
 Fixed suite raw SHA-256: `ec8183112a0777aeef732009bae891168af627ff96c711f15eaeddc34afdacab`.
 
@@ -59,8 +59,8 @@ to keep the structural ceiling from growing.
 The HDA suite passes 18 Debug tests, including scratch-buffer reuse; the exact
 new regression also passes in Release. Formatting, budgets and independent
 review pass. This does not prove a remedy for audible stutter.
-Original source commit: `d6e0fd1cf569a4c46ff10f0bf436ea3ef8f318ad`.
-Integrated commit: `e7e8b08a` (budget append conflict resolved by preserving both sets).
+Integrated source: `e7e8b08a9ebef96ea61eb0ab640b0747712f8a27`.
+The budget append conflict was resolved by preserving both sets of rows.
 Baseline receipt SHA-256: `75dc8a7444c7563f6535c33dd7a1458a0d663198ff57fa078a592af55753f87a`.
 Focused receipt SHA-256: `72763840d26cf105a5cab5cfcee805e521d5e229e2b2b10be1a9822a77d8636f`.
 
@@ -73,8 +73,8 @@ Existing structural ceilings never increase; new modules use actual counts.
 These repairs implement existing architectural/device contracts and add no
 intentional platform deviation.
 
-At this source checkpoint, the integrated mandatory project check, exact-SHA
-GitHub-hosted CI and physical-Mac validation are pending. Their results must
-be recorded separately. T12 firmware NVMe block reads would be an integration
-check, not direct evidence of signed loads or completion-queue saturation.
+Initial integrated checks were pending. CI at `fe2e1531` then failed rustfmt
+and documentation references: imports needed ordering, and two original local
+commits were not published. The successor sorts imports and cites integrated
+ancestors. Full successor checks and physical-Mac validation remain pending.
 A9, A11 and A19 remain OPEN; ENGINEERING_PREVIEW and known defects are unchanged.
