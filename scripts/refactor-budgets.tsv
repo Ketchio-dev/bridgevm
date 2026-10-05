@@ -3971,3 +3971,5 @@ docs/history/windows-hvf/native-vmm-nvme-shutdown-notification-20261005.md	67	0
 docs/document-manifests/native-vmm-nvme-shutdown.tsv	3	0
 docs/history/windows-hvf/native-vmm-gic-group-enable-20261005.md	68	0
 docs/document-manifests/native-vmm-gic-group-enable.tsv	3	0
+docs/history/windows-hvf/native-vmm-gic-preemption-hppir-20261005.md	88	0
+docs/document-manifests/native-vmm-gic-preemption-hppir.tsv	3	0

@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/bridgevm-pc-platform-tables-live-20260830.md	current	windows-architecture	-
+docs/history/windows-hvf/native-vmm-gic-preemption-hppir-20261005.md	historical-evidence	windows-native-vmm	-

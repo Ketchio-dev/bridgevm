@@ -78,7 +78,7 @@ docs/windows-arm/evidence/bridgevm-pc-reset-vector-live-20260830.md	current	wind
 docs/windows-arm/evidence/bridgevm-pc-sec-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-hob-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-dxe-dispatch-live-20260830.md	current	windows-architecture	-
-docs/windows-arm/evidence/bridgevm-pc-platform-tables-live-20260830.md	current	windows-architecture	-
+@include	docs/document-manifests/native-vmm-gic-preemption-hppir.tsv	-	-
 docs/windows-arm/evidence/bridgevm-pc-runtime-dxe-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md	current	windows-architecture	-
 @include	docs/document-manifests/native-vmm-pc-msix-replay.tsv	-	-
