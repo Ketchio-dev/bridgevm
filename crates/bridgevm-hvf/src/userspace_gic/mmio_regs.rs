@@ -42,38 +42,6 @@ impl UserspaceGic {
         }
     }
 
-    pub(super) fn read_u32_field(registers: &[u32], base: u64, offset: u64) -> Option<u64> {
-        let index = offset.checked_sub(base)? / 4;
-        let aligned = (offset - base) % 4 == 0;
-        (aligned && (index as usize) < registers.len())
-            .then(|| u64::from(registers[index as usize]))
-    }
-
-    pub(super) fn write_u32_field(
-        registers: &mut [u32],
-        base: u64,
-        offset: u64,
-        value: u32,
-        mode: WriteMode,
-    ) -> bool {
-        let Some(rel) = offset.checked_sub(base) else {
-            return false;
-        };
-        if rel % 4 != 0 {
-            return false;
-        }
-        let index = (rel / 4) as usize;
-        if index >= registers.len() {
-            return false;
-        }
-        match mode {
-            WriteMode::Store => registers[index] = value,
-            WriteMode::SetBits => registers[index] |= value,
-            WriteMode::ClearBits => registers[index] &= !value,
-        }
-        true
-    }
-
     pub(super) fn dist_mmio(
         &mut self,
         offset: u64,
@@ -181,6 +149,11 @@ impl UserspaceGic {
                     // ICENABLER/ICPENDR/ICACTIVER read the same underlying
                     // state as their set-side twins.
                     if let Some(value) = Self::read_u32_field(registers, base, offset) {
+                        if matches!(base, GICD_ISPENDR | GICD_ICPENDR) {
+                            // Pending includes an asserted level source even while active.
+                            let bank = ((offset - base) / 4) as usize;
+                            return Some(u64::from(self.dist.effective_pending(bank)));
+                        }
                         return Some(value);
                     }
                 }

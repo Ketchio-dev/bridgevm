@@ -731,6 +731,7 @@ impl UserspaceGic {
 mod deactivate;
 mod mmio_regs;
 mod priority_mmio;
+mod register_fields;
 mod routing;
 
 #[cfg(test)]

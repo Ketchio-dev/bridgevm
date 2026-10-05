@@ -388,5 +388,7 @@ fn unrouted_spi_falls_back_nowhere_and_irm_picks_cpu0() {
 }
 #[path = "deactivate_wake_tests.rs"]
 mod deactivate_wake_tests;
+#[path = "pending_readback_tests.rs"]
+mod pending_readback_tests;
 #[path = "priority_update_tests.rs"]
 mod priority_update_tests;
