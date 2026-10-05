@@ -1402,7 +1402,7 @@ scripts/live-gates/run-hvf-nvme-performance-tier.sh	24	0
 scripts/live-gates/write-hvf-boot-performance-receipt.py	83	0
 scripts/write-hvf-nvme-performance-receipt.py	598	0
 scripts/live-gates/run-special-tier.sh	19	0
-scripts/live-gates/run-tier.sh	142	0
+scripts/live-gates/run-tier.sh	136	0
 scripts/measure-pointer-latency.sh	60	0
 scripts/notarize-submit.sh	51	0
 scripts/p1-boot-gate.sh	312	0
@@ -1419,7 +1419,7 @@ scripts/render-hvf-nvme-workload.py	1092	0
 scripts/submit-hvf-nvme-performance-campaign.sh	240	0
 scripts/run-hvf-boot-timer-matrix.sh	355	0
 scripts/run-hvf-linux-venus.sh	334	0
-scripts/run-hvf-vtimer-cancel-gate.sh	94	0
+scripts/run-hvf-vtimer-cancel-gate.sh	73	0
 scripts/run-hvf-windows-installed-boot-args.sh	529	0
 scripts/run-hvf-windows-installed-boot-runner.sh	1310	0
 scripts/run-hvf-windows-installed-boot-package-policy.sh	75	0
@@ -3264,7 +3264,7 @@ scripts/live-gates/t17_packet_kind.py	162	0
 tests/integration/t17-post-ready-packet-test.py	244	0
 tests/integration/t17-share-listing-test.py	112	0
 scripts/live-gates/run-a19-snapshot-tiers.sh	11	0
-scripts/live-gates/verify-live-receipt.sh	14	0
+scripts/live-gates/verify-live-receipt.sh	7	0
 scripts/live-gates/write-live-missing-receipt.sh	17	0
 scripts/live-gates/a19-quota-worker-cleanup-fence.sh	36	0
 scripts/live-gates/run-a19-quota-refusal-tier.py	150	0
@@ -3601,7 +3601,7 @@ docs/document-manifests/a19-interruption.tsv	3	0
 docs/history/windows-hvf/a19-three-interruption-cases-20261002.md	114	0
 tests/integration/live_installer_fixture.py	88	0
 tests/integration/live-installer-dry-run-contract.py	102	0
-scripts/live-gates/receipt_public_fields.py	71	0
+scripts/live-gates/receipt_public_fields.py	67	0
 scripts/import_product_receipt_types.py	31	0
 tests/integration/windows_import_receipt_fixtures.py	39	0
 tests/integration/windows-import-product-e2e-publication-contract.py	211	0
@@ -3753,7 +3753,7 @@ tests/integration/t22_pair_cache_fixtures.py	49	0
 tests/integration/t22-pair-cache-alias-contract.py	31	0
 tests/integration/t22-pair-archive-cache-contract.py	43	0
 scripts/live-gates/bridgevm_live_receipt_route.py	76	0
-scripts/live-gates/bridgevm_live_receipt_legacy.py	61	0
+scripts/live-gates/bridgevm_live_receipt_legacy.py	56	0
 scripts/live-gates/t22-pair-archive-dispatch.sh	9	0
 scripts/live-gates/t22_pair_archive_entry.py	14	0
 tests/integration/t22-pair-archive-admission-contract.py	87	0
@@ -3902,3 +3902,14 @@ docs/document-manifests/native-fixture.tsv	5	0
 docs/history/windows-hvf/native-vmm-fixture-preparation-20261005.md	59	0
 crates/bridgevm-hvf/src/hda/command_dma.rs	70	0
 crates/bridgevm-hvf/src/hda/tests/command_dma.rs	74	0
+docs/windows-arm/evidence/t1-vtimer-cancel-microprobe-20260804.md	140	0
+scripts/live-gates/receipt_extended_fields.py	3	0
+scripts/live-gates/receipt_public_tier.py	12	0
+scripts/live-gates/t1-probe-execute.sh	28	0
+scripts/live-gates/t1_probe_artifact.py	106	0
+scripts/live-gates/t1_probe_receipt.py	119	0
+scripts/live-gates/verify-live-receipt-legacy.sh	14	0
+tests/integration/t1-timer-provenance-contract.py	180	0
+scripts/live-gates/t1_probe_build.py	32	0
+scripts/live-gates/t1_probe_read.py	11	0
+tests/integration/t1_timer_fixture.py	71	0

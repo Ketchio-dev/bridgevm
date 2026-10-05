@@ -55,13 +55,7 @@ EOF
 
 case "$TIER" in
     t1-vtimer)
-        # Seconds, not minutes: the bare-metal cancellation/vtimer probe.
-        if "$REPO/scripts/run-hvf-vtimer-cancel-gate.sh" --out "$OUT"; then
-            receipt completed true
-        else
-            receipt failed false
-            exit 1
-        fi
+        exec "$REPO/scripts/run-hvf-vtimer-cancel-gate.sh" --out "$OUT" --job-id "$JOB_ID"
         ;;
     t1-snapshot)
         # Needs only the internal-volume canonical pair, so it runs even where

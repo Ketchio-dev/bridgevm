@@ -9,18 +9,10 @@ import shutil
 import sys
 
 from a19_lifecycle_campaign_read import strict_reader
-from native_snapshot_restore_public import load_receipt
+from receipt_public_tier import public_tier
 from native_snapshot_restore_seal import JOB_ID, _env
 
 LEGACY_COMMIT = re.compile(r"[0-9a-f]{7,40}\Z")
-
-
-def public_tier(path: Path) -> str | None:
-    try:
-        value = load_receipt(path)
-        return value.get("tier") if isinstance(value, dict) else None
-    except (OSError, UnicodeError, ValueError, RecursionError):
-        return None
 
 
 def serve(directory: Path, job_id: str) -> None:
@@ -41,6 +33,9 @@ def serve(directory: Path, job_id: str) -> None:
             raise ValueError("receipt job identity differs from its ledger")
     tiers = (job["tier"], ledger["tier"] if ledger else None, public_tier(public))
     if any(t in tiers for t in ("d10-t22-owned-pair-preparation", "d11-native-fixture-preparation")): raise ValueError("D10 receipt requires admitted routing")
+    if 't1-vtimer' in tiers:
+        from t1_probe_read import serve_t1
+        serve_t1(directory, tiers, job['commit'], job_id);return
     reader = strict_reader(tiers)
     if reader is not None:
         if directory.parent.name != "done" or directory.parent.is_symlink():

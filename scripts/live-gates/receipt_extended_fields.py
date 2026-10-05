@@ -1,0 +1,3 @@
+"""Publishable T19 fields extracted unchanged, plus bounded T1 metadata."""
+T19_FIELDS = frozenset({'ui_imported_passes', 'imported_initial_vtpm_tree_sha256', 'source_authenticated_passes', 'source_vars_sha256', 'imported_initial_disk_sha256', 'final_vtpm_tree_sha256', 'imported_initial_vars_sha256', 'imported_media_authenticated_passes', 'source_vtpm_tree_sha256', 'source_disk_sha256'})
+T1_FIELDS = frozenset({'cancel_interval_us', 'recovery_enabled', 'source_tree', 'stall_timeout_ms', 'command_exit_code', 'probe_receipt_sha256', 'arm_ticks', 'quiesce_probe', 'run_log_sha256', 'build_seal_sha256'})
