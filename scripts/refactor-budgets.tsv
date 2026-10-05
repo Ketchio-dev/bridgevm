@@ -3941,3 +3941,5 @@ docs/history/windows-hvf/native-vmm-gic-priority-wake-20261005.md	55	0
 docs/document-manifests/native-vmm-gic-history.tsv	3	0
 docs/history/windows-hvf/native-vmm-hda-run-resume-20261005.md	60	0
 docs/document-manifests/native-vmm-audio-lifecycle.tsv	3	0
+docs/history/windows-hvf/native-vmm-gic-deactivate-wake-20261005.md	58	0
+docs/document-manifests/native-vmm-gic-deactivation.tsv	3	0
