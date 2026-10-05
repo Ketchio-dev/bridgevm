@@ -253,7 +253,7 @@ check "an abandoned running job is retained as interrupted" \
     'grep -q "^result=interrupted-worker-exit$" "$recovery_queue/done/stale-job/result.env"'
 check "the stale job no longer claims to be running" '[ ! -e "$stale" ]'
 
-source "$REPO/tests/integration/live_gate_receipt_redaction_cases.sh"
+source "$REPO/tests/integration/live_gate_receipt_redaction_cases.sh" "$claimed"
 
 check "cancelling a running job requests, not kills" \
     '"$CLI" cancel "$job_id" | grep -q "cancellation requested"'

@@ -1,4 +1,4 @@
-# Owned policy fixtures; source from live-gate-policy-smoke.sh.
+receipt_claimed=${1:?claimed T1 job directory required}
 receipt_queue="$WORK/redaction-queue"
 receipt_job=policy-a3-redaction
 receipt_dir="$receipt_queue/running/$receipt_job"
@@ -22,7 +22,7 @@ check "the published receipt keeps the result" 'a3_receipt | grep -q "\"pass\": 
 check "the published receipt keeps A3 provenance" 'a3_receipt | grep -q "\"criterion\": \"A3\""'
 check "the published receipt keeps FPS samples" 'a3_receipt | grep -q "\"sample_count\": 1200"'
 check "the published receipt keeps only relative evidence paths" 'a3_receipt | grep -q "run-1/summary.txt"'
-cp "$receipt_dir/receipt.json" "$claimed/receipt.json"
+cp "$receipt_dir/receipt.json" "$receipt_claimed/receipt.json"
 check "a raw receipt is never served for the claimed T1 job" '! "$CLI" receipt "$job_id" >/dev/null 2>&1'
-cp "$receipt_dir/receipt.public.json" "$claimed/receipt.public.json"
+cp "$receipt_dir/receipt.public.json" "$receipt_claimed/receipt.public.json"
 check "a valid A3 payload cannot be served under T1 identity" '! "$CLI" receipt "$job_id" > "$WORK/cross-tier.out" 2>/dev/null && [ ! -s "$WORK/cross-tier.out" ]'
