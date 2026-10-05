@@ -23,7 +23,7 @@ fn primary_boundary(location: DrainLocation) {
     let completed = Cell::new(0);
     let next_guest_stage = Cell::new(0);
     let (mut fatal, mut pc, mut reason) = (false, 0x9999, String::new());
-    match complete_prepared_spi_delivery(pending, |pending| {
+    match complete_prepared_interrupt_delivery(pending, |pending| {
         completed.set(completed.get() + 1);
         stats.complete_pending_delivery(
             pending,
@@ -31,7 +31,7 @@ fn primary_boundary(location: DrainLocation) {
                 msix: false,
                 spi: false,
             },
-        );
+        )
     }) {
         Ok(()) => next_guest_stage.set(next_guest_stage.get() + 1),
         Err(error) => reason = error.stop_primary(&mut fatal, &mut pc),
@@ -58,7 +58,7 @@ fn secondary_boundary(location: DrainLocation) {
     let pending = prepared(&mut stats, location);
     let (completed, next_guest_stage, fatal, wakes) =
         (Cell::new(0), Cell::new(0), Cell::new(false), Cell::new(0));
-    let result = complete_prepared_spi_delivery(pending, |pending| {
+    let result = complete_prepared_interrupt_delivery(pending, |pending| {
         completed.set(completed.get() + 1);
         stats.complete_pending_delivery(
             pending,
@@ -66,7 +66,7 @@ fn secondary_boundary(location: DrainLocation) {
                 msix: false,
                 spi: false,
             },
-        );
+        )
     });
     match result {
         Ok(()) => next_guest_stage.set(next_guest_stage.get() + 1),
@@ -159,7 +159,7 @@ fn successful_spi_batch_completes_once_and_counts_each_request_once() {
     let delivered = deliver_spi_levels(&mut pending, |_, _| 0);
     let ready = stats.pending_spi_delivery(context(DrainLocation::PreRun), delivered);
     let completed = Cell::new(0);
-    assert!(complete_prepared_spi_delivery(ready, |ready| {
+    assert!(complete_prepared_interrupt_delivery(ready, |ready| {
         completed.set(completed.get() + 1);
         stats.complete_pending_delivery(
             ready,
@@ -167,7 +167,7 @@ fn successful_spi_batch_completes_once_and_counts_each_request_once() {
                 msix: false,
                 spi: false,
             },
-        );
+        )
     })
     .is_ok());
     assert_eq!(completed.get(), 1);
@@ -187,38 +187,5 @@ fn empty_spi_batch_never_invokes_provider() {
     assert_eq!((counts.drained, counts.success, counts.failure), (0, 0, 0));
 }
 
-#[test]
-fn production_finish_adapter_propagates_all_caller_contexts_and_counts_failure_once() {
-    for location in [DrainLocation::PreRun, DrainLocation::DataAbort] {
-        for secondary in [false, true] {
-            let mut stats = RunLoopDrainStats::new(false);
-            let pending = prepared(&mut stats, location);
-            let result = stats.finish_prepared_spi_delivery(
-                pending,
-                DrainTrace {
-                    msix: false,
-                    spi: false,
-                },
-            );
-            assert!(
-                result.is_err(),
-                "finish adapter discarded SPI failure secondary={secondary} location={}",
-                location.as_str()
-            );
-            let error = result.err().unwrap();
-            assert_eq!(error.failure.status, FAILED);
-            if secondary {
-                error.stop_secondary(|| {});
-            } else {
-                let (mut fatal, mut pc) = (false, 0);
-                error.stop_primary(&mut fatal, &mut pc);
-                assert!(fatal);
-                assert_eq!(pc, 0x1234);
-            }
-            assert_eq!(
-                (stats.spi.drained, stats.spi.failure, stats.msix.drained),
-                (1, 1, 0)
-            );
-        }
-    }
-}
+#[path = "spi_finish_tests.rs"]
+mod finish;

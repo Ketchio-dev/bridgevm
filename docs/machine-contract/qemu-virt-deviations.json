@@ -17,10 +17,10 @@
       "id": "gic-msi-frame",
       "area": "interrupt-controller",
       "qemu_behavior": "GICv3 with ITS available for MSI translation.",
-      "bridgevm_behavior": "MSI support follows what the Apple GIC exposes; the ITS is not modelled identically to QEMU's.",
+      "bridgevm_behavior": "MSI support follows Apple's GIC frame rather than a QEMU-identical ITS. In the native backend a nonzero hv_gic_send_msi result triggers the existing fatal lifecycle stop; the linked entry specifies the advertised frame/range and retained failure fields. The optional userspace backend is unchanged.",
       "guest_visible": true,
-      "impact": "Devices must use the MSI path BridgeVM advertises. Guests that assume a QEMU-identical ITS layout are unsupported.",
-      "evidence": "crates/bridgevm-hvf/src/machine.rs"
+      "impact": "Devices must use the advertised MSI path; a QEMU-identical ITS layout is unsupported. Invalid guest-programmable MSI operands can also trigger fatal provider rejection. Raw status alone is not a cause diagnosis; the run does not automatically retry or ignore the failure. Evidence is deterministic injected-provider testing only, without live guest compatibility proof.",
+      "evidence": "docs/machine-contract/native-msi-provider-failure.json"
     },
     {
       "id": "virtio-gpu-3d",

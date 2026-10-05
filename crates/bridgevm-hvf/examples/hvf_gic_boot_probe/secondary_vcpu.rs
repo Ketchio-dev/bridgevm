@@ -290,7 +290,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                 drain_trace,
                 DrainContext::pre_run(*exits, drain_pc),
             );
-            if let Err(error) = drain_stats.finish_prepared_spi_delivery(pending, drain_trace) {
+            if let Err(error) = drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace) {
                 error.stop_secondary(|| control.record_run_error(primary_vcpu));
                 return true;
             }
@@ -400,7 +400,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                     );
                     (outcome, pending)
                 };
-                if let Err(error) = drain_stats.finish_prepared_spi_delivery(pending, drain_trace) {
+                if let Err(error) = drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace) {
                     error.stop_secondary(|| control.record_run_error(primary_vcpu));
                     return true;
                 }

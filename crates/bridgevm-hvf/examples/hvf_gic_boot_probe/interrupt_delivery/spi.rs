@@ -31,18 +31,6 @@ impl std::fmt::Display for SpiDeliveryError {
     }
 }
 
-impl SpiDeliveryError {
-    pub(crate) fn stop_primary(self, fatal: &mut bool, pc: &mut u64) -> String {
-        *fatal = true;
-        *pc = self.context.pc;
-        self.to_string()
-    }
-    pub(crate) fn stop_secondary(self, record_failure: impl FnOnce()) {
-        println!("{self}");
-        record_failure();
-    }
-}
-
 pub(crate) fn deliver_spi_levels(
     scratch: &mut Vec<(u32, bool)>,
     mut deliver: impl FnMut(u32, bool) -> HvReturn,
@@ -64,15 +52,6 @@ pub(crate) fn deliver_spi_levels(
     }
     scratch.clear();
     Ok(counts)
-}
-
-pub(crate) fn complete_prepared_spi_delivery(
-    pending: Result<PendingDrainDelivery, SpiDeliveryError>,
-    complete: impl FnOnce(PendingDrainDelivery),
-) -> Result<(), SpiDeliveryError> {
-    let pending = pending?;
-    complete(pending);
-    Ok(())
 }
 
 #[cfg(test)]

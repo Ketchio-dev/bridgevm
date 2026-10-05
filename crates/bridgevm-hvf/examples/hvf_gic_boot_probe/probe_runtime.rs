@@ -363,7 +363,7 @@ pub(crate) fn run() -> ExitCode {
                     drain_trace,
                     DrainContext::pre_run(exits, drain_pc),
                 );
-                if let Err(error) = drain_stats.finish_prepared_spi_delivery(pending, drain_trace) {
+                if let Err(error) = drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace) {
                     stop_reason = error.stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);
                     break;
                 }
@@ -577,7 +577,7 @@ pub(crate) fn run() -> ExitCode {
                             }
                             record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
                             if let Err(error) =
-                                drain_stats.finish_prepared_spi_delivery(pending, drain_trace)
+                                drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace)
                             {
                                 stop_reason =
                                     error.stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);

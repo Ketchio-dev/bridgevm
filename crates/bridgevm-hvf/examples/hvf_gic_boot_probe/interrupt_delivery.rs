@@ -7,6 +7,14 @@ mod prepare;
 #[path = "interrupt_delivery/spi.rs"]
 mod spi;
 pub(crate) use spi::*;
+#[path = "interrupt_delivery/msix.rs"]
+mod msix;
+pub(crate) use msix::*;
+#[path = "interrupt_delivery/error.rs"]
+mod error;
+pub(crate) use error::*;
+#[path = "interrupt_delivery/accounting.rs"]
+mod accounting;
 
 impl DrainLocation {
     pub(crate) const fn as_str(self) -> &'static str {
@@ -141,45 +149,36 @@ impl RunLoopDrainStats {
         &mut self,
         pending: PendingDrainDelivery,
         trace: DrainTrace,
-    ) {
-        let context = pending.context;
-        let spi = pending.spi;
-        let msix = deliver_pending_msix(&self.pending_msix_scratch, trace.msix);
-        self.pending_msix_scratch.clear();
-        self.last_drain_location = Some(context.location.as_str());
-        self.last_drain_exit = Some(context.exit);
-        self.last_drain_pc = Some(context.pc);
-        self.last_drain_msix = msix;
-        self.last_drain_spi = spi;
-        self.spi.add(spi);
-        self.msix.add(msix);
-
-        if spi.has_deliveries() || msix.has_deliveries() {
-            let location = context.location.as_str();
-            self.last_nonzero_location = Some(location);
-            self.last_nonzero_exit = Some(context.exit);
-            self.last_nonzero_pc = Some(context.pc);
-            if self.trace {
-                println!(
-                    "G004 IRQ drain: location={location} exit={} pc={:#x} msix drained={} success={} failure={} spi drained={} success={} failure={}",
-                    context.exit,
-                    context.pc,
-                    msix.drained,
-                    msix.success,
-                    msix.failure,
-                    spi.drained,
-                    spi.success,
-                    spi.failure
-                );
-            }
-        }
+    ) -> Result<(), InterruptDeliveryError> {
+        self.complete_pending_delivery_with(pending, |messages| {
+            deliver_pending_msix(messages, trace.msix)
+        })
     }
-    pub(crate) fn finish_prepared_spi_delivery(
+    pub(crate) fn complete_pending_delivery_with(
+        &mut self,
+        pending: PendingDrainDelivery,
+        deliver: impl FnOnce(&[MsixMessage]) -> Result<DeliveryCounts, MsixDeliveryFailure>,
+    ) -> Result<(), InterruptDeliveryError> {
+        let delivery = deliver(&self.pending_msix_scratch);
+        self.pending_msix_scratch.clear();
+        let msix = match &delivery {
+            Ok(counts) => *counts,
+            Err(failure) => failure.counts,
+        };
+        self.record_completed_delivery(pending.context, pending.spi, msix);
+        delivery
+            .map(|_| ())
+            .map_err(|failure| InterruptDeliveryError::Msix {
+                context: pending.context,
+                failure,
+            })
+    }
+    pub(crate) fn finish_prepared_interrupt_delivery(
         &mut self,
         pending: Result<PendingDrainDelivery, SpiDeliveryError>,
         trace: DrainTrace,
-    ) -> Result<(), SpiDeliveryError> {
-        complete_prepared_spi_delivery(pending, |pending| {
+    ) -> Result<(), InterruptDeliveryError> {
+        complete_prepared_interrupt_delivery(pending, |pending| {
             self.complete_pending_delivery(pending, trace)
         })
     }
@@ -217,21 +216,22 @@ impl RunLoopDrainStats {
     }
 }
 
-pub(crate) fn deliver_pending_msix(messages: &[MsixMessage], trace: bool) -> DeliveryCounts {
-    let mut counts = DeliveryCounts::default();
+pub(crate) fn deliver_pending_msix(
+    messages: &[MsixMessage],
+    trace: bool,
+) -> Result<DeliveryCounts, MsixDeliveryFailure> {
     let trace = trace || trace_msix_enabled();
-    for message in messages {
+    deliver_msix_messages(messages, |message| {
         let status = crate::usgic_bridge::deliver_msi(message.address, message.data)
             .unwrap_or_else(|| unsafe { hv_gic_send_msi(message.address, message.data) });
-        counts.record_status(status);
         if trace {
             println!(
                 "MSIX vector {} -> addr {:#x} intid {} status {status:#x}",
                 message.vector, message.address, message.data
             );
         }
-    }
-    counts
+        status
+    })
 }
 
 pub(crate) fn deliver_pending_spis(
