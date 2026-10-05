@@ -3927,3 +3927,5 @@ docs/document-manifests/native-app-cli.tsv	9	0
 docs/history/windows-hvf/native-vmm-nvme-deletion-and-fixture-gates-20261005.md	62	0
 crates/bridgevm-hvf/src/nvme/queue_create.rs	71	0
 crates/bridgevm-hvf/src/nvme/tests/create_queue_identity.rs	166	0
+docs/document-manifests/native-vmm-queue-lifecycle.tsv	3	0
+docs/history/windows-hvf/native-vmm-queue-identity-and-gate-dispatch-20261005.md	58	0

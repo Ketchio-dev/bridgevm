@@ -142,4 +142,4 @@ docs/windows-arm/evidence/b6-trace-nine-cell-collection-20260911.md	historical-e
 @include	docs/document-manifests/t22-loader-admission-terminal.tsv	-	-
 @include	docs/document-manifests/t17-selection-history.tsv	-	-
 @include	docs/document-manifests/t17-fresh-selection-graph.tsv	-	-
-docs/history/windows-hvf/native-vmm-nvme-deletion-and-fixture-gates-20261005.md	historical-evidence	windows-native-vmm	-
+@include	docs/document-manifests/native-vmm-queue-lifecycle.tsv	-	-
