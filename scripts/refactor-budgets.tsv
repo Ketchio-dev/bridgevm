@@ -199,7 +199,7 @@ crates/bridgevm-hvf/src/dtb.rs	660	0
 crates/bridgevm-hvf/src/host_entropy.rs	100	1
 crates/bridgevm-hvf/src/fwcfg.rs	771	0
 crates/bridgevm-hvf/src/hda/codec_parameter.rs	95	0
-crates/bridgevm-hvf/src/hda/hdapcmsink.rs	827	0
+crates/bridgevm-hvf/src/hda/hdapcmsink.rs	761	0
 crates/bridgevm-hvf/src/hda/pcm_sink.rs	13	0
 crates/bridgevm-hvf/src/hda/file_pcm_sink.rs	34	0
 crates/bridgevm-hvf/src/hda/stream_control.rs	61	0
@@ -3900,3 +3900,5 @@ scripts/live-gates/d11_fixture_receipt_validation.py	36	0
 tests/integration/d11-fixture-attempt-contract.py	55	0
 docs/document-manifests/native-fixture.tsv	5	0
 docs/history/windows-hvf/native-vmm-fixture-preparation-20261005.md	59	0
+crates/bridgevm-hvf/src/hda/command_dma.rs	70	0
+crates/bridgevm-hvf/src/hda/tests/command_dma.rs	74	0
