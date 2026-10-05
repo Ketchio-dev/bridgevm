@@ -746,6 +746,7 @@ impl UserspaceGic {
 }
 
 mod mmio_regs;
+mod priority_mmio;
 mod routing;
 
 #[cfg(test)]

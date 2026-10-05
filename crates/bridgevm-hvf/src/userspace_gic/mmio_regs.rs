@@ -74,36 +74,6 @@ impl UserspaceGic {
         true
     }
 
-    pub(super) fn priority_bytes_access(
-        priorities: &mut [u8],
-        base: u64,
-        offset: u64,
-        width: u8,
-        write: Option<u64>,
-    ) -> Option<u64> {
-        let rel = offset.checked_sub(base)?;
-        let start = rel as usize;
-        let width = usize::from(width).clamp(1, 8);
-        if start + width > priorities.len() {
-            return None;
-        }
-        match write {
-            Some(value) => {
-                for (i, slot) in priorities[start..start + width].iter_mut().enumerate() {
-                    *slot = ((value >> (i * 8)) & 0xff) as u8;
-                }
-                Some(0)
-            }
-            None => {
-                let mut value = 0u64;
-                for (i, slot) in priorities[start..start + width].iter().enumerate() {
-                    value |= u64::from(*slot) << (i * 8);
-                }
-                Some(value)
-            }
-        }
-    }
-
     pub(super) fn dist_mmio(
         &mut self,
         offset: u64,
@@ -170,13 +140,7 @@ impl UserspaceGic {
             }
         }
         if (GICD_IPRIORITYR..GICD_IPRIORITYR + GIC_INTID_COUNT as u64).contains(&offset) {
-            return Self::priority_bytes_access(
-                &mut self.dist.priority,
-                GICD_IPRIORITYR,
-                offset,
-                width,
-                write,
-            );
+            return self.dist_priority_access(offset, width, write, kick_mask);
         }
         let value32 = write.map(|v| v as u32);
         let table: [(u64, WriteMode, bool); 9] = [
@@ -340,14 +304,8 @@ impl UserspaceGic {
             }
             _ => {
                 if (GICR_IPRIORITYR..GICR_IPRIORITYR + 32).contains(&offset) {
-                    Self::priority_bytes_access(
-                        &mut self.redists[cpu].priority,
-                        GICR_IPRIORITYR,
-                        offset,
-                        width,
-                        write,
-                    )
-                    .unwrap_or(0)
+                    self.redist_priority_access(cpu, offset, width, write, &mut kick_mask)
+                        .unwrap_or(0)
                 } else {
                     0 // RAZ/WI.
                 }

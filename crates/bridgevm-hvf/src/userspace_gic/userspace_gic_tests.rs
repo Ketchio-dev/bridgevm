@@ -386,3 +386,5 @@ fn unrouted_spi_falls_back_nowhere_and_irm_picks_cpu0() {
     assert_eq!(gic.set_spi(70, true), 1);
     assert!(gic.line_asserted(0));
 }
+#[path = "priority_update_tests.rs"]
+mod priority_update_tests;
