@@ -28,7 +28,7 @@ docs/windows-arm/evidence/agent-chunked-output-storage-20260712.md	historical-ev
 docs/windows-arm/evidence/async-scanout-present-20260726.md	historical-evidence	windows-graphics	STATUS.md
 docs/windows-arm/evidence/stage4-vkcreateinstance-stall-20260727.md	historical-evidence	windows-graphics	STATUS.md
 @include	docs/document-manifests/windows-install-and-snapshot-lifecycle.tsv	-	-
-docs/windows-arm/evidence/reboot-gic-reset-20260712.md	historical-evidence	windows-lifecycle	-
+@include	docs/document-manifests/native-vmm-gic-history.tsv	-	-
 docs/windows-arm/evidence/viogpu3d-virgl-live-20260712.md	historical-evidence	windows-graphics	-
 docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md	historical-evidence	windows-graphics	-
 docs/windows-arm/evidence/wdk-sdk-buffered-storage-20260712.md	historical-evidence	windows-driver	-
