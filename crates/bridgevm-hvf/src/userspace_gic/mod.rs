@@ -509,23 +509,6 @@ impl UserspaceGic {
         }
     }
 
-    fn deactivate(&mut self, cpu: usize, intid: u32) {
-        if let Some(position) = self.ifaces[cpu]
-            .active
-            .iter()
-            .rposition(|a| a.intid == intid)
-        {
-            self.ifaces[cpu].active.remove(position);
-        }
-        let intid = intid as usize;
-        if intid < 32 {
-            self.redists[cpu].active0 &= !(1u32 << intid);
-        } else if intid < GIC_INTID_COUNT {
-            let (reg, bit) = Distributor::bit(intid);
-            self.dist.active[reg] &= !bit;
-        }
-    }
-
     fn sgi1r_targets(&self, value: u64) -> Vec<usize> {
         if value & (1 << 40) != 0 {
             // IRM: all but self — caller filters self out.
@@ -609,7 +592,7 @@ impl UserspaceGic {
                 if intid != SPURIOUS_INTID {
                     self.priority_drop(cpu, intid);
                     if !self.ifaces[cpu].eoi_mode() {
-                        self.deactivate(cpu, intid);
+                        kick_mask |= self.deactivate(cpu, intid);
                     }
                     kick_mask |= 1u64 << cpu;
                 }
@@ -619,7 +602,7 @@ impl UserspaceGic {
             (false, ICC_DIR_EL1) => {
                 let intid = (write_value & 0xff_ffff) as u32;
                 if intid != SPURIOUS_INTID {
-                    self.deactivate(cpu, intid);
+                    kick_mask |= self.deactivate(cpu, intid);
                     kick_mask |= 1u64 << cpu;
                 }
                 0
@@ -745,6 +728,7 @@ impl UserspaceGic {
     }
 }
 
+mod deactivate;
 mod mmio_regs;
 mod priority_mmio;
 mod routing;
