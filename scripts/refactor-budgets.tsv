@@ -3988,3 +3988,7 @@ crates/bridgevm-hvf/src/nvme/tests/identify_prp.rs	131	0
 crates/bridgevm-hvf/src/nvme/tests/identify_prp_support.rs	99	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/shutdown.rs	11	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/shutdown_tests.rs	127	0
+docs/document-manifests/native-vmm-nvme-identify-prp.tsv	3	0
+docs/history/windows-hvf/native-vmm-nvme-identify-prp-20261005.md	79	0
+docs/document-manifests/native-vmm-secondary-shutdown.tsv	3	0
+docs/history/windows-hvf/native-vmm-secondary-shutdown-20261005.md	85	0

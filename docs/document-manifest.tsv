@@ -73,8 +73,8 @@ docs/windows-arm/capability-matrix.md	current	windows-hvf-engine	-
 docs/windows-arm/graphics-compatibility.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/native-vmm-msix.tsv	-	-
 @include	docs/document-manifests/native-vmm-interrupt-firmware.tsv	-	-
-docs/windows-arm/evidence/bridgevm-pc-boot-info-live-20260830.md	current	windows-architecture	-
-docs/windows-arm/evidence/bridgevm-pc-reset-vector-live-20260830.md	current	windows-architecture	-
+@include	docs/document-manifests/native-vmm-nvme-identify-prp.tsv	-	-
+@include	docs/document-manifests/native-vmm-secondary-shutdown.tsv	-	-
 docs/windows-arm/evidence/bridgevm-pc-sec-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-hob-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-dxe-dispatch-live-20260830.md	current	windows-architecture	-

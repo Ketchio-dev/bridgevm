@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/bridgevm-pc-reset-vector-live-20260830.md	current	windows-architecture	-
+docs/history/windows-hvf/native-vmm-secondary-shutdown-20261005.md	historical-evidence	windows-native-vmm	-
