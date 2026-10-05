@@ -1,5 +1,6 @@
 //! Split test module.
 
+mod hda_corb_interrupt;
 mod helpers;
 mod part_1;
 mod part_2;
