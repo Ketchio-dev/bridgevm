@@ -3558,7 +3558,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfTailLineAccumulatorTests.swift	54	0
 crates/bridgevm-hvf/src/virtio_queue_address.rs	19	0
 crates/bridgevm-hvf/src/virtio_queue_overflow_tests.rs	104	0
 docs/history/windows-hvf/parallel-existing-code-audit-20261002.md	115	0
-docs/document-manifest.tsv	155	0
+docs/document-manifest.tsv	154	0
 docs/machine-contract/qemu-virt-deviations.json	80	0
 docs/machine-contract/qemu-virt.md	59	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTailFileCursor.swift	40	0
@@ -3846,3 +3846,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/interrupt_delivery/prepare.rs	11
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/interrupt_delivery/spi.rs	77	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/interrupt_delivery/spi_tests.rs	222	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/interrupt_delivery/spi_platform_tests.rs	81	0
+docs/history/windows-hvf/native-vmm-interrupt-and-board-contract-20261005.md	79	0
+docs/document-manifests/native-vmm-interrupt-firmware.tsv	4	0
