@@ -5,6 +5,11 @@ use crate::*;
 #[path = "vcpu_coordination/drain_gate.rs"]
 mod drain_gate;
 pub(crate) use drain_gate::PreRunDrainGate;
+#[path = "vcpu_coordination/run_failure.rs"]
+mod run_failure;
+pub(crate) use run_failure::run_hvf_vcpu_once;
+#[path = "vcpu_coordination/stop_outcome.rs"]
+mod stop_outcome;
 
 pub(crate) struct VcpuControl {
     pub(crate) state: Mutex<PsciState>,

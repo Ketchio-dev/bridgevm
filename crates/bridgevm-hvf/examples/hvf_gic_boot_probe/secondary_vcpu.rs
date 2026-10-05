@@ -218,14 +218,6 @@ pub(crate) fn apply_secondary_cpu_on_reset(vcpu: HvVcpuT, mpidr: u64, entry: u64
     }
 }
 
-pub(crate) fn run_hvf_vcpu_once(vcpu: HvVcpuT, exit: *mut HvVcpuExit) -> Result<u32, HvReturn> {
-    let r = unsafe { hv_vcpu_run(vcpu) };
-    if r != 0 {
-        return Err(r);
-    }
-    Ok(unsafe { (*exit).reason })
-}
-
 pub(crate) struct SecondaryRunLoopContext<'a> {
     pub(crate) vcpu: HvVcpuT,
     pub(crate) exit: *mut HvVcpuExit,
@@ -327,7 +319,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             {
                 let r = run_status;
                 println!("secondary vCPU{} hv_vcpu_run error {r:#x}", control.index);
-                control.run_error.store(true, Ordering::SeqCst);
+                control.record_run_error(primary_vcpu);
                 return true;
             }
         };
@@ -366,7 +358,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                 let access = match DataAbort::decode(esr) {
                     Ok(access) => access,
                     Err(error) => {
-                        control.run_error.store(true, Ordering::SeqCst);
+                        control.record_run_error(primary_vcpu);
                         println!("secondary vCPU{} {error} @ PC {pc:#x}", control.index);
                         return true;
                     }

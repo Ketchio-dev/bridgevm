@@ -375,12 +375,12 @@ pub(crate) fn run() -> ExitCode {
                     )
                 };
                 drain_stats.complete_pending_delivery(pending, drain_trace);
-                let reason = match run_hvf_vcpu_once(vcpu, exit) {
+                let reason = match run_hvf_vcpu_once(vcpu, exit, secondary_vcpus.as_ref()) {
                     Ok(reason) => reason,
                     Err(r) => {
                         hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                         fatal_vcpu_run_error = true;
-                        stop_reason = format!("hv_vcpu_run error {r:#x}");
+                        stop_reason = r.to_string();
                         break;
                     }
                 };
@@ -389,20 +389,13 @@ pub(crate) fn run() -> ExitCode {
                     trace.cpu0_progress(exits);
                 }
                 stop_reason_code = Some(reason);
-                if let Some(action) = secondary_vcpus
+                if let Some((reason, reset)) = secondary_vcpus
                     .as_ref()
-                    .and_then(SecondaryVcpuSet::terminal_action)
+                    .and_then(SecondaryVcpuSet::psci_stop_reason)
                 {
                     psci_calls += 1;
-                    match action {
-                        PsciTerminalAction::SystemOff => {
-                            stop_reason = format!("PSCI {PSCI_SYSTEM_OFF:#x} (system off)");
-                        }
-                        PsciTerminalAction::SystemReset => {
-                            requested_system_reset = true;
-                            stop_reason = format!("PSCI {PSCI_SYSTEM_RESET:#x} (system reset)");
-                        }
-                    }
+                    requested_system_reset = reset;
+                    stop_reason = reason;
                     break;
                 }
                 let sample_tick_canceled =
@@ -896,7 +889,11 @@ pub(crate) fn run() -> ExitCode {
             let secondary_stop = secondary_vcpus
                 .map(SecondaryVcpuSet::shutdown_and_join)
                 .unwrap_or_default();
-            fatal_vcpu_run_error |= secondary_stop.run_error;
+            secondary_stop.merge_run_error(
+                &mut fatal_vcpu_run_error,
+                &mut requested_system_reset,
+                &mut stop_reason,
+            );
             if requested_system_reset {
                 // Crash-survivable snapshot: capture regs + full RAM BEFORE the
                 // reboot arm below wipes guest RAM / resets the vCPU. Gated on
