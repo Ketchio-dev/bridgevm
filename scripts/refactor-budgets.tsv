@@ -1113,7 +1113,11 @@ crates/bridgevm-hvf-runtime/src/vtpm.rs	78	0
 crates/bridgevm-hvf-runtime/src/vtpm_wait.rs	1	0
 crates/bridgevm-hvf-runtime/src/vtpm_tests.rs	60	0
 crates/bridgevm-hvf-runtime/src/vtpm_tests_real.rs	145	0
-crates/bridgevm-hvf/src/userspace_gic/mod.rs	713	0
+crates/bridgevm-hvf/src/userspace_gic/mod.rs	673	0
+crates/bridgevm-hvf/src/userspace_gic/hppir.rs	11	0
+crates/bridgevm-hvf/src/userspace_gic/hppir_tests.rs	194	0
+crates/bridgevm-hvf/src/userspace_gic/cpu_interface.rs	40	0
+crates/bridgevm-hvf/src/userspace_gic/preemption_tests.rs	161	0
 crates/bridgevm-hvf/src/userspace_gic/routing.rs	30	0
 crates/bridgevm-hvf/src/userspace_gic/deactivate.rs	31	0
 crates/bridgevm-hvf/src/userspace_gic/routing_tests.rs	59	0

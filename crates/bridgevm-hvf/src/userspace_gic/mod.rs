@@ -147,39 +147,6 @@ struct CpuInterface {
     ap1r: [u64; 4],
 }
 
-impl CpuInterface {
-    fn new() -> Self {
-        Self {
-            ctlr: 0,
-            priority_mask: 0,
-            bpr0: 0,
-            bpr1: 0,
-            group0_enabled: false,
-            group1_enabled: false,
-            active: Vec::new(),
-            ap0r: [0; 4],
-            ap1r: [0; 4],
-        }
-    }
-
-    fn running_priority(&self) -> u8 {
-        self.active
-            .iter()
-            .filter(|a| !a.priority_dropped)
-            .map(|a| a.priority)
-            .min()
-            .unwrap_or(0xff)
-    }
-
-    fn threshold(&self) -> u8 {
-        self.priority_mask.min(self.running_priority())
-    }
-
-    fn eoi_mode(&self) -> bool {
-        self.ctlr & ICC_CTLR_EOIMODE != 0
-    }
-}
-
 /// Per-vCPU redistributor: SGIs 0-15 and PPIs 16-31.
 #[derive(Debug, Clone)]
 struct Redistributor {
@@ -579,14 +546,7 @@ impl UserspaceGic {
             }
             (true, ICC_IAR1_EL1) => u64::from(self.acknowledge(cpu)),
             (true, ICC_IAR0_EL1 | ICC_HPPIR0_EL1) => u64::from(SPURIOUS_INTID),
-            (true, ICC_HPPIR1_EL1) => {
-                let iface = &self.ifaces[cpu];
-                u64::from(
-                    self.highest_candidate(cpu, iface.threshold())
-                        .map(|c| c.intid)
-                        .unwrap_or(SPURIOUS_INTID),
-                )
-            }
+            (true, ICC_HPPIR1_EL1) => u64::from(self.highest_pending_intid(cpu)),
             (false, ICC_EOIR1_EL1) => {
                 let intid = (write_value & 0xff_ffff) as u32;
                 if intid != SPURIOUS_INTID {
@@ -728,7 +688,9 @@ impl UserspaceGic {
     }
 }
 
+mod cpu_interface;
 mod deactivate;
+mod hppir;
 mod mmio_regs;
 mod priority_mmio;
 mod register_fields;
