@@ -247,7 +247,7 @@ crates/bridgevm-hvf/src/nvme/mod.rs	6	0
 crates/bridgevm-hvf/src/nvme/namespace.rs	155	0
 crates/bridgevm-hvf/src/nvme/protocol.rs	166	0
 crates/bridgevm-hvf/src/nvme/prp.rs	152	0
-crates/bridgevm-hvf/src/nvme/queue.rs	341	0
+crates/bridgevm-hvf/src/nvme/queue.rs	278	0
 crates/bridgevm-hvf/src/nvme/registers.rs	208	0
 crates/bridgevm-hvf/src/nvme/snapshot.rs	132	0
 crates/bridgevm-hvf/src/nvme/tests/helpers.rs	377	0
@@ -3925,3 +3925,5 @@ crates/bridgevm-hvf/src/nvme/queue_lifecycle.rs	40	0
 crates/bridgevm-hvf/src/nvme/tests/queue_lifecycle.rs	240	0
 docs/document-manifests/native-app-cli.tsv	9	0
 docs/history/windows-hvf/native-vmm-nvme-deletion-and-fixture-gates-20261005.md	62	0
+crates/bridgevm-hvf/src/nvme/queue_create.rs	71	0
+crates/bridgevm-hvf/src/nvme/tests/create_queue_identity.rs	166	0

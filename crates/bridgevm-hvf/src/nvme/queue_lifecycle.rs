@@ -3,7 +3,7 @@
 use super::*;
 
 // NVMe 1.4 sections 5.5–5.6: command-specific status (SCT = 1).
-const SC_INVALID_QUEUE_IDENTIFIER: u16 = 0x0101;
+pub(super) const SC_INVALID_QUEUE_IDENTIFIER: u16 = 0x0101;
 const SC_INVALID_QUEUE_DELETION: u16 = 0x010c;
 
 impl NvmeController {

@@ -1,6 +1,7 @@
 //! Split test module.
 
 mod completion_backpressure;
+mod create_queue_identity;
 mod helpers;
 mod part_1;
 mod part_2;

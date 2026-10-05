@@ -16,6 +16,7 @@ mod namespace;
 mod protocol;
 mod prp;
 mod queue;
+mod queue_create;
 mod queue_lifecycle;
 mod registers;
 mod snapshot;
