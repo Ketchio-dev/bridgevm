@@ -468,22 +468,28 @@ pub(crate) fn run() -> ExitCode {
                     match ec {
                         EC_DATA_ABORT => {
                             let ipa = (*exit).exception.physical_address;
-                            let size = 1u8 << ((esr >> 22) & 0x3);
-                            let srt = ((esr >> 16) & 0x1f) as u32;
-                            let is_write = (esr >> 6) & 1 == 1;
                             trace_isv0_data_abort(esr, last_pc, ipa);
+                            let access = match DataAbort::decode(esr) {
+                                Ok(access) => access,
+                                Err(error) => {
+                                    fatal_vcpu_run_error = true;
+                                    stop_reason = error;
+                                    break;
+                                }
+                            };
+                            let (size, srt, is_write) =
+                                (access.size, access.register, access.write);
                             // srt=31 is WZR/XZR; never leak register-file slot 31 (PC) into MMIO.
                             let op = if is_write {
-                                let mut v = 0u64;
-                                if srt != 31 {
-                                    hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v);
+                                MmioOp::Write {
+                                    size,
+                                    value: mmio_store_value(vcpu, access),
                                 }
-                                MmioOp::Write { size, value: v }
                             } else {
                                 MmioOp::Read { size }
                             };
                             if crate::usgic_bridge::try_data_abort(
-                                0, vcpu, ipa, &op, srt, last_pc,
+                                0, vcpu, ipa, &op, access, last_pc,
                             ) {
                                 continue;
                             }
@@ -592,9 +598,7 @@ pub(crate) fn run() -> ExitCode {
                             }
                             match outcome {
                                 MmioOutcome::ReadValue(v) if !is_write => {
-                                    if srt != 31 {
-                                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
-                                    }
+                                    write_mmio_read(vcpu, access, v);
                                 }
                                 MmioOutcome::ReadValue(_) | MmioOutcome::WriteAck => {}
                                 MmioOutcome::KnownUnimplemented(name) => {
@@ -603,15 +607,11 @@ pub(crate) fn run() -> ExitCode {
                                         redist_lo = redist_lo.min(ipa);
                                         redist_hi = redist_hi.max(ipa);
                                     }
-                                    if !is_write && srt != 31 {
-                                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
-                                    }
+                                    write_mmio_read(vcpu, access, 0);
                                 }
                                 MmioOutcome::Unmapped => {
                                     *unimpl.entry("<unmapped>").or_insert(0) += 1;
-                                    if !is_write && srt != 31 {
-                                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
-                                    }
+                                    write_mmio_read(vcpu, access, 0);
                                 }
                             }
                             hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);

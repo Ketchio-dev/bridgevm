@@ -362,21 +362,26 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
         match ec {
             EC_DATA_ABORT => {
                 let ipa = unsafe { (*exit).exception.physical_address };
-                let size = 1u8 << ((esr >> 22) & 0x3);
-                let srt = ((esr >> 16) & 0x1f) as u32;
-                let is_write = (esr >> 6) & 1 == 1;
                 trace_isv0_data_abort(esr, pc, ipa);
-                // srt=31 is WZR/XZR: stores write zero, loads discard. It must
+                let access = match DataAbort::decode(esr) {
+                    Ok(access) => access,
+                    Err(error) => {
+                        control.run_error.store(true, Ordering::SeqCst);
+                        println!("secondary vCPU{} {error} @ PC {pc:#x}", control.index);
+                        return true;
+                    }
+                };
+                let (size, is_write) = (access.size, access.write);
+                // Register 31 is WZR/XZR: stores write zero, loads discard. It must
                 // never index the HV register file, where slot 31 is the PC —
                 // Linux emits `str wzr` for zero MMIO writes (e.g. virtio
                 // device_feature_select=0) and the store leaked the guest PC
                 // into the device register.
                 let op = if is_write {
-                    let mut v = 0u64;
-                    if srt != 31 {
-                        unsafe { hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v) };
+                    MmioOp::Write {
+                        size,
+                        value: unsafe { mmio_store_value(vcpu, access) },
                     }
-                    MmioOp::Write { size, value: v }
                 } else {
                     MmioOp::Read { size }
                 };
@@ -385,7 +390,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                     vcpu,
                     ipa,
                     &op,
-                    srt,
+                    access,
                     pc,
                 ) {
                     continue;
@@ -418,19 +423,11 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                 pre_run_drain_gate.mark_secondary_pending();
                 match outcome {
                     MmioOutcome::ReadValue(v) if !is_write => {
-                        if srt != 31 {
-                            unsafe {
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
-                            }
-                        }
+                        unsafe { write_mmio_read(vcpu, access, v) };
                     }
                     MmioOutcome::ReadValue(_) | MmioOutcome::WriteAck => {}
                     MmioOutcome::KnownUnimplemented(_) | MmioOutcome::Unmapped => {
-                        if !is_write && srt != 31 {
-                            unsafe {
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
-                            }
-                        }
+                        unsafe { write_mmio_read(vcpu, access, 0) };
                     }
                 }
                 unsafe {

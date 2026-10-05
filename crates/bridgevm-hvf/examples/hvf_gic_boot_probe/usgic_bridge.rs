@@ -143,7 +143,7 @@ pub(crate) fn try_data_abort(
     vcpu: HvVcpuT,
     ipa: u64,
     op: &MmioOp,
-    srt: u32,
+    access: DataAbort,
     pc: u64,
 ) -> bool {
     let Some(bridge) = usgic() else {
@@ -152,7 +152,7 @@ pub(crate) fn try_data_abort(
     if !UserspaceGic::owns(ipa) {
         return false;
     }
-    unsafe { bridge.mmio_abort(cpu, vcpu, ipa, op, srt, pc) };
+    unsafe { bridge.mmio_abort(cpu, vcpu, ipa, op, access, pc) };
     true
 }
 
@@ -460,7 +460,7 @@ impl UsGicBridge {
         vcpu: HvVcpuT,
         ipa: u64,
         op: &MmioOp,
-        srt: u32,
+        access: DataAbort,
         pc: u64,
     ) {
         let (width, write) = match *op {
@@ -479,14 +479,7 @@ impl UsGicBridge {
             "USGIC cpu{cpu} mmio ipa={ipa:#x} w={width} write={write:?} -> {:#x} pc={pc:#x}",
             result.value
         );
-        if write.is_none() && srt != 31 {
-            let mask = if width >= 8 {
-                u64::MAX
-            } else {
-                (1u64 << (u32::from(width) * 8)) - 1
-            };
-            hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, result.value & mask);
-        }
+        write_mmio_read(vcpu, access, result.value);
         self.kick(result.kick_mask, cpu);
         hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4);
     }

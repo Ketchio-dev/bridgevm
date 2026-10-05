@@ -781,7 +781,7 @@ crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/command.rs	61	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/guest_memory.rs	61	1
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/image_diagnostics.rs	94	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/in_memory.rs	63	1
-crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/mmio.rs	143	2
+crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/mmio.rs	103	2
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/mmio/interrupted.rs	36	1
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/mmio/range.rs	18	0
 crates/bridgevm-hvf/examples/bridgevm_pc_dxe_entry_live/apple/mmio/tests.rs	17	0
@@ -837,7 +837,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/checkpoint_glue.rs	124	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/device_shape.rs	278	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/exception_trace.rs	173	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_diagnostics.rs	259	3
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_memory.rs	217	8
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_memory.rs	216	8
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_ram_backing.rs	80	5
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_text.rs	66	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs	210	12
@@ -901,7 +901,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_ki
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_tests.rs	113	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/plan_tests.rs	73	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/psci_adapter.rs	255	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs	567	28
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs	563	28
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/serial_input.rs	158	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync.rs	738	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace.rs	124	2
@@ -1114,7 +1114,7 @@ crates/bridgevm-hvf/src/userspace_gic/routing.rs	30	0
 crates/bridgevm-hvf/src/userspace_gic/routing_tests.rs	59	0
 crates/bridgevm-hvf/src/userspace_gic/mmio_regs.rs	352	0
 crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	387	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	477	13
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	467	13
 scripts/install-bridgevm.sh	209	0
 scripts/generate-general-preview-manifest.py	117	0
 tests/integration/install-release-fixtures.sh	42	0
@@ -3809,3 +3809,6 @@ tests/integration/a19_exfat_fixture_selftest.py	101	0
 .github/workflows/a19-exfat-publication-reusable.yml	51	0
 docs/history/windows-hvf/a19-hosted-exfat-and-explicit-eof-fixture-20261004.md	79	0
 docs/document-manifests/a19-hosted-exfat-and-eof.tsv	3	0
+crates/bridgevm-hvf/src/mmio_data_abort.rs	42	0
+crates/bridgevm-hvf/src/mmio_data_abort_tests.rs	81	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/mmio_registers.rs	15	2

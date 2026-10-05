@@ -49,6 +49,11 @@ use std::{process::ExitCode, ptr::null_mut};
 use bridgevm_hvf::dtb::VirtFdtConfig;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::machine;
+use bridgevm_hvf::mmio_data_abort::DataAbort;
+#[path = "hvf_gic_boot_probe/mmio_registers.rs"]
+mod mmio_registers;
+use mmio_registers::mmio_store_value;
+use mmio_registers::write_mmio_read;
 use bridgevm_hvf::media::{
     read_bounded_file, InstallerIsoTransport, MediaWrite, MediaWriteKind, VirtBootMediaConfig,
     WritableMedia,
