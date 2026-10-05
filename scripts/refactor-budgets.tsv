@@ -3950,3 +3950,5 @@ tests/integration/d11-fixture-mount-contract.py	93	0
 tests/integration/d11_fixture_mount_test_support.py	78	0
 docs/history/windows-hvf/native-vmm-d11-apfs-identity-20261005.md	66	0
 docs/document-manifests/native-fixture-apfs-identity.tsv	3	0
+docs/history/windows-hvf/native-vmm-pc-msix-replay-20261005.md	55	0
+docs/document-manifests/native-vmm-pc-msix-replay.tsv	3	0
