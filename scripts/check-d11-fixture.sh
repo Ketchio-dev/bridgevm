@@ -2,7 +2,7 @@
 # Deterministic development fixture contracts; no VM, disk image or worker.
 set -euo pipefail
 cd "${BASH_SOURCE[0]%/*}/.."
-for test in input cleanup receipt runtime queue attempt; do
+for test in input cleanup receipt runtime queue attempt attempt-error; do
     python3 -B "tests/integration/d11-fixture-$test-contract.py"
 done
 python3 -B tests/integration/d11-fixture-source-contract.py

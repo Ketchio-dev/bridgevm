@@ -3915,3 +3915,4 @@ scripts/live-gates/t1_probe_read.py	11	0
 tests/integration/t1_timer_fixture.py	71	0
 docs/history/windows-hvf/native-vmm-hda-and-timer-provenance-20261005.md	69	0
 docs/document-manifests/native-vmm-hda-timer.tsv	3	0
+tests/integration/d11-fixture-attempt-error-contract.py	40	0
