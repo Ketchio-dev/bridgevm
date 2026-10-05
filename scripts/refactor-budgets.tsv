@@ -243,7 +243,7 @@ crates/bridgevm-hvf/src/nvme/features.rs	51	0
 crates/bridgevm-hvf/src/nvme/features_get.rs	56	0
 crates/bridgevm-hvf/src/nvme/identify.rs	202	0
 crates/bridgevm-hvf/src/nvme/interrupts.rs	48	0
-crates/bridgevm-hvf/src/nvme/io.rs	279	2
+crates/bridgevm-hvf/src/nvme/io.rs	168	1
 crates/bridgevm-hvf/src/nvme/log_page.rs	81	0
 crates/bridgevm-hvf/src/nvme/mod.rs	6	0
 crates/bridgevm-hvf/src/nvme/namespace.rs	155	0
@@ -3973,3 +3973,7 @@ docs/history/windows-hvf/native-vmm-gic-group-enable-20261005.md	68	0
 docs/document-manifests/native-vmm-gic-group-enable.tsv	3	0
 docs/history/windows-hvf/native-vmm-gic-preemption-hppir-20261005.md	88	0
 docs/document-manifests/native-vmm-gic-preemption-hppir.tsv	3	0
+crates/bridgevm-hvf/src/nvme/tests/write_completion.rs	174	0
+crates/bridgevm-hvf/src/nvme/tests/write_completion_support.rs	88	0
+crates/bridgevm-hvf/src/nvme/tests/write_completion_files.rs	32	0
+crates/bridgevm-hvf/src/nvme/io_write.rs	120	1

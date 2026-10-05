@@ -12,6 +12,7 @@ mod features_get;
 mod identify;
 mod interrupts;
 mod io;
+mod io_write;
 mod log_page;
 mod namespace;
 mod protocol;
