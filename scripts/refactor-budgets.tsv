@@ -3961,3 +3961,5 @@ crates/bridgevm-hvf/src/nvme/configuration.rs	66	0
 docs/machine-contract/qemu-virt-deviations-device-recovery.json	24	0
 scripts/check-contract-schema-json.py	68	0
 tests/integration/contract-schema-json-test.py	100	0
+docs/history/windows-hvf/native-vmm-nvme-shutdown-notification-20261005.md	67	0
+docs/document-manifests/native-vmm-nvme-shutdown.tsv	3	0
