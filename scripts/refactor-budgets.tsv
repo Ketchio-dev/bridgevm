@@ -291,8 +291,10 @@ crates/bridgevm-hvf/src/platform_pc_interrupts.rs	48	0
 crates/bridgevm-hvf/src/platform_pc_interrupts_tests.rs	19	0
 crates/bridgevm-hvf/src/platform_pc_inventory_tests.rs	39	0
 crates/bridgevm-hvf/src/platform_pc_layout.rs	19	0
-crates/bridgevm-hvf/src/platform_pc_nvme.rs	15	0
+crates/bridgevm-hvf/src/platform_pc_nvme.rs	12	0
+crates/bridgevm-hvf/src/platform_pc_nvme_process.rs	10	0
 crates/bridgevm-hvf/src/platform_pc_nvme_tests.rs	63	0
+crates/bridgevm-hvf/src/platform_pc_nvme_msix_tests.rs	152	0
 crates/bridgevm-hvf/src/platform_pc_pcie.rs	25	0
 crates/bridgevm-hvf/src/platform_pc_pcie_tests.rs	66	0
 crates/bridgevm-hvf/src/platform_pc_runtime.rs	13	0
