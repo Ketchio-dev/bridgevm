@@ -31,7 +31,7 @@ impl NvmeController {
             ADMIN_OP_ASYNC_EVENT_REQUEST => return self.admin_async_event_request(),
             ADMIN_OP_SECURITY_SEND => self.admin_security_send(cmd),
             ADMIN_OP_SECURITY_RECV => self.admin_security_receive(cmd, mem),
-            ADMIN_OP_DELETE_IO_SQ | ADMIN_OP_DELETE_IO_CQ => SC_SUCCESS,
+            ADMIN_OP_DELETE_IO_SQ | ADMIN_OP_DELETE_IO_CQ => self.admin_delete_io_queue(cmd),
             _ => SC_INVALID_OPCODE,
         };
         CommandResult::complete(status)

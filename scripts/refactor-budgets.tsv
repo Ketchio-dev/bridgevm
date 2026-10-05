@@ -3921,3 +3921,5 @@ tests/integration/d11-fixture-attempt-error-contract.py	40	0
 docs/history/windows-hvf/native-vmm-timer-fixture-failures-20261005.md	57	0
 docs/history/windows-hvf/native-vmm-timer-shell-context-20261005.md	20	0
 docs/document-manifests/native-vmm-timer-compatibility.tsv	5	0
+crates/bridgevm-hvf/src/nvme/queue_lifecycle.rs	40	0
+crates/bridgevm-hvf/src/nvme/tests/queue_lifecycle.rs	240	0
