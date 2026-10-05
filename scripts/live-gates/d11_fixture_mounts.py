@@ -2,11 +2,11 @@
 import os
 from pathlib import Path
 import plistlib
-import re
 import shutil
 import subprocess
 
-from d11_fixture_files import identity, read
+from d11_fixture_files import identity
+from d11_fixture_mount_identity import device, validate_owned_mount
 from d11_fixture_process import capacity
 from t22_pair_environment import controlled_env
 
@@ -18,17 +18,6 @@ def inventory():
     value = plistlib.loads(raw)
     if type(value.get("images")) is not list: raise ValueError("mount inventory unavailable")
     return value["images"]
-
-
-def device(image):
-    candidates = [row.get("dev-entry", "") for row in image.get("system-entities", [])
-                  if row.get("content-hint") == "GUID_partition_scheme"]
-    if not candidates:
-        candidates = [row.get("dev-entry", "") for row in image.get("system-entities", [])
-                      if re.fullmatch(r"/dev/disk[0-9]+", row.get("dev-entry", ""))]
-    if len(candidates) != 1 or not re.fullmatch(r"/dev/disk[0-9]+", candidates[0]):
-        raise ValueError("owned whole-disk identity unproved")
-    return candidates[0]
 
 
 class Container:
@@ -66,11 +55,9 @@ class Container:
             str(self.mount), str(self.backing)], self.output / "container-attach.private.plist", 60)
         mounted = [r for r in inventory() if r.get("image-path") == str(self.backing)]
         if len(mounted) != 1: raise ValueError("container mount identity missing")
-        device(mounted[0])
-        entries = [r for r in mounted[0].get("system-entities", [])
-                   if r.get("mount-point") == str(self.mount) and r.get("volume-kind") == "apfs"]
+        validate_owned_mount(self.output / "container-attach.private.plist", mounted[0], self.mount, self.backing)
         info = self.mount.stat()
-        if len(entries) != 1 or info.st_dev == self.output.stat().st_dev:
+        if info.st_dev == self.output.stat().st_dev:
             raise ValueError("container is not its owned APFS filesystem")
         sizes = os.statvfs(self.mount)
         if not 0 < sizes.f_blocks * sizes.f_frsize <= self.gib << 30:

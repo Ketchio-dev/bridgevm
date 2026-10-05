@@ -3886,7 +3886,7 @@ scripts/live-gates/d11_fixture_executables.py	35	0
 scripts/live-gates/d11_fixture_files.py	155	0
 scripts/live-gates/d11_fixture_guest.py	66	0
 scripts/live-gates/d11_fixture_inputs.py	85	0
-scripts/live-gates/d11_fixture_mounts.py	110	0
+scripts/live-gates/d11_fixture_mounts.py	97	0
 scripts/live-gates/d11_fixture_process.py	94	0
 scripts/live-gates/d11_fixture_queue.py	40	0
 scripts/live-gates/d11_fixture_queue_inputs.py	75	0
@@ -3943,3 +3943,6 @@ docs/history/windows-hvf/native-vmm-hda-run-resume-20261005.md	60	0
 docs/document-manifests/native-vmm-audio-lifecycle.tsv	3	0
 docs/history/windows-hvf/native-vmm-gic-deactivate-wake-20261005.md	58	0
 docs/document-manifests/native-vmm-gic-deactivation.tsv	3	0
+scripts/live-gates/d11_fixture_mount_identity.py	46	0
+tests/integration/d11-fixture-mount-contract.py	93	0
+tests/integration/d11_fixture_mount_test_support.py	78	0
