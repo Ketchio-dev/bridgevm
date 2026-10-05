@@ -11,6 +11,8 @@ pub(crate) use run_failure::run_hvf_vcpu_once;
 #[path = "vcpu_coordination/secondary_stop.rs"]
 mod secondary_stop;
 pub(crate) use secondary_stop::SecondaryUnexpectedStop;
+#[path = "vcpu_coordination/shutdown.rs"]
+mod shutdown;
 #[path = "vcpu_coordination/stop_outcome.rs"]
 mod stop_outcome;
 
@@ -48,9 +50,6 @@ impl VcpuControl {
             mpidr: 0x8000_0000 | machine::cpu_mpidr(index),
             index,
         }
-    }
-    pub(crate) fn notify_shutdown(&self) {
-        self.condvar.notify_all();
     }
     pub(crate) fn publish_vcpu(&self, vcpu: HvVcpuT) {
         let mut published = self.vcpu.lock().expect("secondary vCPU handle mutex");

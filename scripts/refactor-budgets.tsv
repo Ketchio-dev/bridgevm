@@ -921,7 +921,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vblank_wake.rs	38	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vblank_wake/waiter.rs	31	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator.rs	195	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator_tests.rs	144	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination.rs	278	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination.rs	275	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/drain_gate.rs	54	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination_tests.rs	118	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_debug.rs	107	4
@@ -3986,3 +3986,5 @@ docs/history/windows-hvf/native-vmm-hda-corb-interrupt-20261005.md	66	0
 crates/bridgevm-hvf/src/nvme/identify_command.rs	66	0
 crates/bridgevm-hvf/src/nvme/tests/identify_prp.rs	131	0
 crates/bridgevm-hvf/src/nvme/tests/identify_prp_support.rs	99	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/shutdown.rs	11	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/shutdown_tests.rs	127	0
