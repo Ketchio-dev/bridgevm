@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/t1-vtimer-cancel-microprobe-20260804.md	current	windows-graphics	GOAL.md
+docs/history/windows-hvf/native-vmm-hda-and-timer-provenance-20261005.md	historical-evidence	windows-native-vmm	-

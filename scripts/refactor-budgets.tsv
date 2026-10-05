@@ -3913,3 +3913,5 @@ tests/integration/t1-timer-provenance-contract.py	180	0
 scripts/live-gates/t1_probe_build.py	32	0
 scripts/live-gates/t1_probe_read.py	11	0
 tests/integration/t1_timer_fixture.py	71	0
+docs/history/windows-hvf/native-vmm-hda-and-timer-provenance-20261005.md	69	0
+docs/document-manifests/native-vmm-hda-timer.tsv	3	0
