@@ -1,0 +1,5 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/bridgevm-pc-nvme-bar-live-20260831.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-nvme-block-live-20260831.md	current	windows-architecture	-
+docs/history/windows-hvf/native-vmm-secondary-stop-20261005.md	historical-evidence	windows-native-vmm	-
+docs/history/windows-hvf/native-vmm-t12-nvme-20261005.md	historical-evidence	windows-native-vmm	-

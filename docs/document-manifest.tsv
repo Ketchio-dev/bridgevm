@@ -6,6 +6,7 @@ docs/README.md	current	documentation-index	-
 @include	docs/document-manifests/storage-portability.tsv	-	-
 @include	docs/document-manifests/native-vmm-core.tsv	-	-
 @include	docs/document-manifests/native-vmm-lifecycle.tsv	-	-
+@include	docs/document-manifests/native-vmm-secondary-t12.tsv	-	-
 docs/contributing/README.md	current	contributing	-
 docs/fast-mode/README.md	current	apple-vz-engine	-
 docs/guest-tools/protocol.md	current	guest-tools	-
@@ -82,8 +83,6 @@ docs/windows-arm/evidence/bridgevm-pc-runtime-dxe-live-20260830.md	current	windo
 docs/windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-pcie-ecam-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-standard-uefi-pci-live-20260830.md	current	windows-architecture	-
-docs/windows-arm/evidence/bridgevm-pc-nvme-bar-live-20260831.md	current	windows-architecture	-
-docs/windows-arm/evidence/bridgevm-pc-nvme-block-live-20260831.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-bds-exit-live-20260831.md	current	windows-architecture	-
 docs/windows-arm/evidence/a11-regression-seal-20260901.md	current	testing	-
 docs/windows-arm/evidence/b7-audio-teardown-live-20260901.md	current	windows-guest-integration	-

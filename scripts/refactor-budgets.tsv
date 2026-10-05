@@ -3558,7 +3558,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfTailLineAccumulatorTests.swift	54	0
 crates/bridgevm-hvf/src/virtio_queue_address.rs	19	0
 crates/bridgevm-hvf/src/virtio_queue_overflow_tests.rs	104	0
 docs/history/windows-hvf/parallel-existing-code-audit-20261002.md	115	0
-docs/document-manifest.tsv	153	0
+docs/document-manifest.tsv	152	0
 docs/machine-contract/qemu-virt-deviations.json	80	0
 docs/machine-contract/qemu-virt.md	59	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTailFileCursor.swift	40	0
@@ -3861,3 +3861,7 @@ docs/document-manifests/native-vmm-msix.tsv	4	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/run_failure_error.rs	15	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/secondary_stop.rs	44	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/secondary_stop_tests.rs	130	0
+docs/history/windows-hvf/native-vmm-secondary-stop-20261005.md	57	0
+docs/history/windows-hvf/native-vmm-t12-nvme-20261005.md	55	0
+docs/document-manifests/native-vmm-secondary-t12.tsv	5	0
+docs/windows-arm/evidence/native-vmm-t12-receipt-20261005.json	23	0
