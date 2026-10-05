@@ -35,7 +35,7 @@ impl HdaController {
         self.stream.ctl = next & !SDCTL_SRST;
         let running = self.stream.ctl & SDCTL_RUN != 0;
         if running && !was_running {
-            self.stream.reset_runtime();
+            // RUN resumes DMA without acknowledging status or resetting the cursor.
             self.last_poll = None;
             self.byte_time_remainder = 0;
             if hda_trace_enabled() {

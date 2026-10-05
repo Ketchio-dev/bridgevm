@@ -127,15 +127,6 @@ pub(crate) struct StreamDescriptor {
     pub(crate) bdl_offset: u32,
 }
 
-impl StreamDescriptor {
-    pub(crate) fn reset_runtime(&mut self) {
-        self.sts = 0;
-        self.lpib = 0;
-        self.bdl_index = 0;
-        self.bdl_offset = 0;
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct CodecState {
     pub(crate) converter_format: u16,
