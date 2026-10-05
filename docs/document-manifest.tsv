@@ -128,7 +128,7 @@ docs/windows-arm/evidence/a19-restore-boot-20260912.md	current	windows-storage	-
 @include	docs/document-manifests/a19-hosted-exfat-and-eof.tsv	-	-
 docs/windows-arm/evidence/a19-managed-pair-20260912.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-relocation-containment-20260912.md	current	windows-storage	-
-docs/windows-arm/evidence/boot-seed-fixture-20260912.md	current	windows-storage	-
+@include	docs/document-manifests/native-fixture-apfs-identity.tsv	-	-
 @include	docs/document-manifests/native-app-cli.tsv	-	-
 docs/windows-arm/evidence/a19-t20-r6-20260925.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-t21-r1-20260925.md	historical-evidence	windows-storage	STATUS.md
