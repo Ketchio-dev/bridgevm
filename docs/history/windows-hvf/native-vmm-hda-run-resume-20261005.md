@@ -1,7 +1,7 @@
 # HDA RUN resume preserves status and DMA position — 2026-10-05
 
-Source checkpoint `7075fc816d8b614a581bec5970f00c671f229e14`, integrated as
-`245daf7744ed919feb4190c3d1f20320741d217c`, repairs two RUN restart defects.
+Integrated source checkpoint
+`245daf7744ed919feb4190c3d1f20320741d217c` repairs two RUN restart defects.
 Public MMIO and DMA reproduce the original behavior on
 `15f97bce666c433742844e591c2965ad4d7429b5`: restarting playback clears an
 unacknowledged completion status and replays data from the first descriptor.
