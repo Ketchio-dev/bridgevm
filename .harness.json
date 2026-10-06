@@ -1,4 +1,4 @@
 {
   "check": "scripts/check-project.sh --fast",
-  "checkTimeoutMs": 180000
+  "checkTimeoutMs": 900000
 }

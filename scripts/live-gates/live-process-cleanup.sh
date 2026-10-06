@@ -65,7 +65,7 @@ bridgevm_cleanup_log() {
 # Sets BRIDGEVM_TIER_STATUS. A nonzero function return means group cleanup
 # could not be confirmed and the caller must fence the queue.
 bridgevm_wait_for_tier_group() {
-  local tier_pid="$1" cancel_path="$2" job_id="$3" observed_pgid own_pgid status=0 residue=0
+  local tier_pid="$1" cancel_path="$2" job_id="$3" observed_pgid own_pgid status=0 residue=0 poll=0 delays
   BRIDGEVM_TIER_STATUS=0
   bridgevm_canonical_pid "$tier_pid" || return 2
   own_pgid="$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ')"
@@ -82,7 +82,7 @@ bridgevm_wait_for_tier_group() {
       bridgevm_terminate_process_group_bounded "$tier_pid" "${4:-50}" || return 1
       break
     fi
-    sleep 2
+    delays=(0.05 0.1 0.2 0.5 1); sleep "${delays[poll]:-2}"; poll=$((poll + 1)) # quick tiers end promptly
   done
   if bridgevm_process_alive "$tier_pid"; then BRIDGEVM_TIER_STATUS=126; return 1; fi
   wait "$tier_pid" 2>/dev/null || status=$?
