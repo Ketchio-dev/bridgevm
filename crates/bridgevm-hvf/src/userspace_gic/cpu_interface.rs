@@ -14,8 +14,6 @@ impl CpuInterface {
             group0_enabled: false,
             group1_enabled: false,
             active: Vec::new(),
-            ap0r: [0; 4],
-            ap1r: [0; 4],
         }
     }
 

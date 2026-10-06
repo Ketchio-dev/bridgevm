@@ -143,8 +143,6 @@ struct CpuInterface {
     group0_enabled: bool,
     group1_enabled: bool,
     active: Vec<ActiveInterrupt>,
-    ap0r: [u64; 4],
-    ap1r: [u64; 4],
 }
 
 /// Per-vCPU redistributor: SGIs 0-15 and PPIs 16-31.
@@ -533,44 +531,15 @@ impl UserspaceGic {
                 0
             }
             (false, ICC_ASGI1R_EL1 | ICC_SGI0R_EL1) => 0,
-            (true, ICC_AP0R0_EL1) => self.ifaces[cpu].ap0r[0],
-            (true, ICC_AP0R1_EL1) => self.ifaces[cpu].ap0r[1],
-            (true, ICC_AP0R2_EL1) => self.ifaces[cpu].ap0r[2],
-            (true, ICC_AP0R3_EL1) => self.ifaces[cpu].ap0r[3],
-            (true, ICC_AP1R0_EL1) => self.ifaces[cpu].ap1r[0],
-            (true, ICC_AP1R1_EL1) => self.ifaces[cpu].ap1r[1],
-            (true, ICC_AP1R2_EL1) => self.ifaces[cpu].ap1r[2],
-            (true, ICC_AP1R3_EL1) => self.ifaces[cpu].ap1r[3],
-            (false, ICC_AP0R0_EL1) => {
-                self.ifaces[cpu].ap0r[0] = write_value;
-                0
+            (true, ICC_AP0R0_EL1..=ICC_AP1R3_EL1) => {
+                let (group1, n) = (sys_reg >= ICC_AP1R0_EL1, usize::from(sys_reg & 3));
+                self.ifaces[cpu].active_priorities(group1, n)
             }
-            (false, ICC_AP0R1_EL1) => {
-                self.ifaces[cpu].ap0r[1] = write_value;
-                0
-            }
-            (false, ICC_AP0R2_EL1) => {
-                self.ifaces[cpu].ap0r[2] = write_value;
-                0
-            }
-            (false, ICC_AP0R3_EL1) => {
-                self.ifaces[cpu].ap0r[3] = write_value;
-                0
-            }
-            (false, ICC_AP1R0_EL1) => {
-                self.ifaces[cpu].ap1r[0] = write_value;
-                0
-            }
-            (false, ICC_AP1R1_EL1) => {
-                self.ifaces[cpu].ap1r[1] = write_value;
-                0
-            }
-            (false, ICC_AP1R2_EL1) => {
-                self.ifaces[cpu].ap1r[2] = write_value;
-                0
-            }
-            (false, ICC_AP1R3_EL1) => {
-                self.ifaces[cpu].ap1r[3] = write_value;
+            (false, ICC_AP0R0_EL1..=ICC_AP1R3_EL1) => {
+                let (group1, n) = (sys_reg >= ICC_AP1R0_EL1, usize::from(sys_reg & 3));
+                if self.ifaces[cpu].write_active_priorities(group1, n, write_value) {
+                    kick_mask |= 1u64 << cpu;
+                }
                 0
             }
             _ => return None,
@@ -638,6 +607,7 @@ impl UserspaceGic {
     }
 }
 
+mod active_priority;
 mod cpu_interface;
 mod deactivate;
 mod hppir;

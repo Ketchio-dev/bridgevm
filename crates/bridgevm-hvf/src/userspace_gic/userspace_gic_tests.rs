@@ -344,6 +344,8 @@ fn unrouted_spi_falls_back_nowhere_and_irm_picks_cpu0() {
     assert_eq!(gic.set_spi(70, true), 1);
     assert!(gic.line_asserted(0));
 }
+#[path = "apr_coherence_tests.rs"]
+mod apr_coherence_tests;
 #[path = "deactivate_wake_tests.rs"]
 mod deactivate_wake_tests;
 #[path = "group_enable_tests.rs"]
