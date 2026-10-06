@@ -61,7 +61,7 @@ fn create_io_queues_reject_qids_beyond_doorbell_aperture() {
             0,
             IO_SQ_BASE,
             cdw10,
-            1u32 << 16,
+            (1u32 << 16) | 1,
             0,
         ),
     );
@@ -242,28 +242,7 @@ fn write_uses_prp_list_for_larger_transfer() {
 #[test]
 fn read_out_of_range_lba_fails() {
     let (mut ctrl, mut mem) = enabled_controller();
-    // Create I/O CQ + SQ (QID 1) as above.
-    let cdw10 = (u32::from(QDEPTH - 1) << 16) | 1;
-    submit_admin(
-        &mut ctrl,
-        &mut mem,
-        0,
-        &encode_sqe(
-            ADMIN_OP_CREATE_IO_CQ,
-            1,
-            0,
-            IO_CQ_BASE,
-            cdw10,
-            CREATE_IO_CQ_PC_BIT,
-            0,
-        ),
-    );
-    submit_admin(
-        &mut ctrl,
-        &mut mem,
-        1,
-        &encode_sqe(ADMIN_OP_CREATE_IO_SQ, 2, 0, IO_SQ_BASE, cdw10, 1 << 16, 0),
-    );
+    create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
     // Read a block far past the end of the 1 MiB disk.
     let bad_lba = 1u64 << 40;
     let read_cmd = encode_sqe(

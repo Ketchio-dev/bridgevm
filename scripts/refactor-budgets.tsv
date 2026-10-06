@@ -257,7 +257,7 @@ crates/bridgevm-hvf/src/nvme/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/nvme/tests/part_1.rs	774	0
 crates/bridgevm-hvf/src/nvme/tests/part_2.rs	560	0
 crates/bridgevm-hvf/src/nvme/tests/part_2_flush.rs	386	0
-crates/bridgevm-hvf/src/nvme/tests/part_3.rs	744	0
+crates/bridgevm-hvf/src/nvme/tests/part_3.rs	723	0
 crates/bridgevm-hvf/src/nvme/tests/prp_prefix.rs	155	0
 crates/bridgevm-hvf/src/nvme/trace.rs	77	0
 crates/bridgevm-hvf/src/pcie/bar.rs	215	0
@@ -3941,7 +3941,7 @@ crates/bridgevm-hvf/src/nvme/queue_lifecycle.rs	40	0
 crates/bridgevm-hvf/src/nvme/tests/queue_lifecycle.rs	240	0
 docs/document-manifests/native-app-cli.tsv	9	0
 docs/history/windows-hvf/native-vmm-nvme-deletion-and-fixture-gates-20261005.md	62	0
-crates/bridgevm-hvf/src/nvme/queue_create.rs	71	0
+crates/bridgevm-hvf/src/nvme/queue_create.rs	66	0
 crates/bridgevm-hvf/src/nvme/tests/create_queue_identity.rs	166	0
 docs/document-manifests/native-vmm-queue-lifecycle.tsv	3	0
 docs/history/windows-hvf/native-vmm-queue-identity-and-gate-dispatch-20261005.md	58	0
@@ -4007,3 +4007,5 @@ crates/bridgevm-hvf/src/nvme/tests/prp_limit.rs	132	0
 crates/bridgevm-hvf/src/nvme/tests/prp_limit_support.rs	188	0
 docs/history/windows-hvf/native-vmm-transfer-and-teardown-20261006.md	100	0
 docs/document-manifests/native-vmm-transfer-and-teardown.tsv	3	0
+crates/bridgevm-hvf/src/nvme/queue_geometry.rs	16	0
+crates/bridgevm-hvf/src/nvme/tests/queue_geometry.rs	182	0

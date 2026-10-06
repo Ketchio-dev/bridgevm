@@ -249,7 +249,7 @@ pub(super) fn create_io_queue_pair(
         0,
         IO_SQ_BASE,
         cdw10,
-        1u32 << 16,
+        (1u32 << 16) | 1,
         0,
     );
     submit_admin(ctrl, mem, first_admin_slot + 1, &sq_cmd);

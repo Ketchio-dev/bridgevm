@@ -41,7 +41,7 @@ fn create_sq(ctrl: &mut NvmeController, mem: &mut FakeMem, qid: u16, base: u64, 
             0,
             base,
             (u32::from(QDEPTH - 1) << 16) | u32::from(qid),
-            u32::from(cqid) << 16,
+            (u32::from(cqid) << 16) | 1,
             0,
         ),
     );
@@ -205,7 +205,7 @@ fn create_cq_rejects_one_entry_without_installing_or_replacing_a_queue() {
         );
         assert_eq!(
             ctrl.admin_create_io_cq(&SubmissionEntry::from_bytes(&entry)),
-            SC_INVALID_FIELD
+            0x0102 // Invalid Queue Size.
         );
         assert_eq!(ctrl.snapshot_state(), before);
     }

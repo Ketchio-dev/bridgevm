@@ -498,7 +498,7 @@ fn process_into_drains_only_pending_doorbelled_submission_queue() {
             0,
             high_io_sq,
             cdw10,
-            u32::from(qid) << 16,
+            (u32::from(qid) << 16) | 1,
             0,
         ),
     );
