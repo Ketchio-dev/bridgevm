@@ -356,3 +356,5 @@ mod pending_readback_tests;
 mod preemption_tests;
 #[path = "priority_update_tests.rs"]
 mod priority_update_tests;
+#[path = "spi_input_tests.rs"]
+mod spi_input_tests;
