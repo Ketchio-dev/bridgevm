@@ -64,44 +64,8 @@ impl VcpuControl {
     }
 }
 
-impl SecondaryVcpuSet {
-    pub(crate) fn shutdown_and_join(self) -> SecondaryVcpuStopResult {
-        self.shutdown.store(true, Ordering::SeqCst);
-        for control in &self.controls {
-            control.notify_shutdown();
-        }
-        for control in &self.controls {
-            control.request_exit_if_published();
-        }
-        for handle in self.handles {
-            handle.join().expect("join secondary vCPU thread");
-        }
-        let run_error = self
-            .controls
-            .iter()
-            .any(|control| control.run_error.load(Ordering::SeqCst));
-        let exit_counts = self
-            .controls
-            .iter()
-            .map(|control| (control.index, control.exits.load(Ordering::SeqCst)))
-            .collect();
-        let mut final_states = Vec::new();
-        let mut missing_final_states = Vec::new();
-        for control in &self.controls {
-            if let Some(state) = control.take_final_state() {
-                final_states.push(state);
-            } else if control.created.load(Ordering::Acquire) {
-                missing_final_states.push(control.index);
-            }
-        }
-        SecondaryVcpuStopResult {
-            exit_counts,
-            run_error,
-            final_states,
-            missing_final_states,
-        }
-    }
-}
+#[path = "vcpu_final_state/shutdown_join.rs"]
+mod shutdown_join;
 
 impl SecondaryVcpuStopResult {
     pub(crate) fn report_with_primary(

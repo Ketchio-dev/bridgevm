@@ -925,7 +925,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination.rs	275	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/drain_gate.rs	54	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination_tests.rs	118	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_debug.rs	107	4
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state.rs	334	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state.rs	296	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state/owner_interrupt.rs	157	5
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state/owner_interrupt_tests.rs	71	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state/viogpu.rs	336	0
@@ -4001,3 +4001,5 @@ crates/bridgevm-hvf/src/hda/playback_descriptor.rs	9	0
 crates/bridgevm-hvf/src/hda/tests/descriptor_rebase.rs	110	0
 crates/bridgevm-hvf/src/userspace_gic/spi_input.rs	41	0
 crates/bridgevm-hvf/src/userspace_gic/spi_input_tests.rs	151	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state/shutdown_join.rs	44	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state/shutdown_join_tests.rs	138	0
