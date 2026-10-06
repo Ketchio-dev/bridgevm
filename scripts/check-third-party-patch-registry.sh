@@ -121,7 +121,7 @@ while IFS=$'\t' read -r patch_file _ _ _ scope _ _ _ _; do
   [[ "$scope" == "internal-validation-only" ]] || continue
   patch_name="$(basename "$patch_file")"
   internal_hit="$(grep -rlF --exclude='check-third-party-patch-registry.sh' \
-    --exclude-dir=patches "$patch_name" .github apps packaging scripts 2>/dev/null || true)"
+    --exclude-dir=patches --exclude-dir=.build "$patch_name" .github apps packaging scripts 2>/dev/null || true)"
   [[ -z "$internal_hit" ]] ||
     fail "internal-only patch is referenced by a product/CI build path: $patch_file ($internal_hit)"
 done < <(tail -n +2 "$registry")
