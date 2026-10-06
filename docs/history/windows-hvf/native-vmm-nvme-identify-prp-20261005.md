@@ -72,8 +72,8 @@ registration union without raising any prior ceiling.
 
 Other admin transfers and controller-reset policy are outside this repair.
 No VM, Windows workload or physical-storage behavior was measured. The W16
-local project check remains FAILED at 37 PASS / 8 FAIL. Its first two hosted
-attempts failed during runner acquisition, leaving full hosted validation
-FAILED/INCOMPLETE. Successor full-project and exact-SHA hosted checks remain
+local project check remains FAILED at 37 PASS / 8 FAIL. Two hosted jobs failed
+during runner acquisition. By 2026-10-05 22:18 UTC, hosted full had 44 PASS and
+manual CI 14 PASS, but other failures keep validation INCOMPLETE. Successor checks remain
 pending. Canonical capability fields, criterion thresholds, known defects and
 product wording are unchanged; no live criterion or release promotion follows.
