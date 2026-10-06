@@ -1,4 +1,6 @@
 //! CPU interface state and Group 1 preemption priority boundary.
+//! With eight priority bits, RPR excludes bit0 (Arm IHI0069G 12.2.19).
+//! Mask active priorities before the idle fallback so idle remains0xff.
 
 use super::*;
 
@@ -21,7 +23,7 @@ impl CpuInterface {
         self.active
             .iter()
             .filter(|a| !a.priority_dropped)
-            .map(|a| a.priority)
+            .map(|a| a.priority & 0xfe)
             .min()
             .unwrap_or(0xff)
     }

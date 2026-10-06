@@ -4017,3 +4017,4 @@ docs/document-manifests/native-vmm-cancellation-and-io.tsv	3	0
 docs/history/windows-hvf/native-vmm-cancellation-and-io-20261006.md	91	0
 crates/bridgevm-hvf/src/pl031/tests.rs	37	0
 crates/bridgevm-hvf/src/pl031/load_register_tests.rs	66	0
+crates/bridgevm-hvf/src/userspace_gic/rpr_tests.rs	164	0
