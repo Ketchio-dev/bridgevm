@@ -95,7 +95,7 @@ fn pcie_nvme_reads_and_writes_preloaded_disk_media() {
     let cdw10 = (3u32 << 16) | 1;
     let create_cq = encode_nvme_sqe(0x05, 1, 0, IO_CQ, cdw10, 1, 0);
     submit_admin_sqe(&mut p, &mut mem, ASQ, 0, &create_cq);
-    let create_sq = encode_nvme_sqe(0x01, 2, 0, IO_SQ, cdw10, 1u32 << 16, 0);
+    let create_sq = encode_nvme_sqe(0x01, 2, 0, IO_SQ, cdw10, (1u32 << 16) | 1, 0);
     submit_admin_sqe(&mut p, &mut mem, ASQ, 1, &create_sq);
 
     let read = encode_nvme_sqe(
@@ -184,7 +184,7 @@ fn platform_reset_preserving_media_and_vars_clears_runtime_state() {
     let cdw10 = (3u32 << 16) | 1;
     let create_cq = encode_nvme_sqe(0x05, 1, 0, IO_CQ, cdw10, 1, 0);
     submit_admin_sqe(&mut p, &mut mem, ASQ, 0, &create_cq);
-    let create_sq = encode_nvme_sqe(0x01, 2, 0, IO_SQ, cdw10, 1u32 << 16, 0);
+    let create_sq = encode_nvme_sqe(0x01, 2, 0, IO_SQ, cdw10, (1u32 << 16) | 1, 0);
     submit_admin_sqe(&mut p, &mut mem, ASQ, 1, &create_sq);
 
     let ns1_pattern: Vec<u8> = (0..crate::nvme::LBA_SIZE)
@@ -377,7 +377,7 @@ fn platform_reset_preserving_media_and_vars_clears_runtime_state() {
     let cdw10 = (3u32 << 16) | 1;
     let create_cq = encode_nvme_sqe(0x05, 3, 0, IO_CQ, cdw10, 1, 0);
     submit_admin_sqe(&mut p, &mut mem, ASQ, 0, &create_cq);
-    let create_sq = encode_nvme_sqe(0x01, 4, 0, IO_SQ, cdw10, 1u32 << 16, 0);
+    let create_sq = encode_nvme_sqe(0x01, 4, 0, IO_SQ, cdw10, (1u32 << 16) | 1, 0);
     submit_admin_sqe(&mut p, &mut mem, ASQ, 1, &create_sq);
     assert!(mem.write_bytes(DATA, &[0u8; crate::nvme::LBA_SIZE]));
     let ns2_read = encode_nvme_sqe(0x02, 0x34, crate::nvme::NSID2, DATA, 0, 0, 0);
