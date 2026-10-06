@@ -5,6 +5,8 @@
 use super::*;
 use crate::*;
 
+mod watchdog;
+
 pub(crate) fn run_vcpu_once_with_watchdog(
     vcpu: HvVcpu,
     exit: *mut HvVcpuExit,
@@ -20,16 +22,11 @@ pub(crate) fn run_vcpu_once_with_watchdog_timeout(
     let done = Arc::new(AtomicBool::new(false));
     let watchdog_done = Arc::clone(&done);
     let vcpu_for_watchdog = vcpu;
-    let watchdog_timeout_ms = watchdog_timeout_ms.max(1);
     let watchdog = thread::spawn(move || {
-        for _ in 0..watchdog_timeout_ms {
-            if watchdog_done.load(Ordering::SeqCst) {
-                return None;
-            }
-            thread::sleep(Duration::from_millis(1));
-        }
-        let mut vcpu = vcpu_for_watchdog;
-        Some(unsafe { hv_vcpus_exit(&mut vcpu, 1) })
+        watchdog::cancel_after_timeout(&watchdog_done, watchdog_timeout_ms, thread::sleep, || {
+            let mut vcpu = vcpu_for_watchdog;
+            unsafe { hv_vcpus_exit(&mut vcpu, 1) }
+        })
     });
 
     let run_status = unsafe { hv_vcpu_run(vcpu) };

@@ -123,24 +123,10 @@ pub fn probe_hvf_guest_entry(allow_entry: bool, host: HvfHostCapabilities) -> Hv
 
     if vcpu_created && pc_set && cpsr_set {
         run_attempted = true;
-        let done = Arc::new(AtomicBool::new(false));
-        let watchdog_done = Arc::clone(&done);
-        let vcpu_for_watchdog = vcpu;
-        let watchdog = thread::spawn(move || {
-            for _ in 0..100 {
-                if watchdog_done.load(Ordering::SeqCst) {
-                    return None;
-                }
-                thread::sleep(Duration::from_millis(1));
-            }
-            let mut vcpu = vcpu_for_watchdog;
-            Some(unsafe { hv_vcpus_exit(&mut vcpu, 1) })
-        });
-
-        let status = unsafe { hv_vcpu_run(vcpu) };
+        let observation = run_vcpu_once_with_watchdog(vcpu, exit);
+        let status = observation.run_status;
         run_status = Some(status);
-        done.store(true, Ordering::SeqCst);
-        watchdog_cancel_status = watchdog.join().ok().flatten();
+        watchdog_cancel_status = observation.watchdog_cancel_status;
         watchdog_cancel_fired = watchdog_cancel_status.is_some();
 
         if status == HV_SUCCESS {
