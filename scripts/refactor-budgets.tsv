@@ -3832,7 +3832,7 @@ crates/bridgevm-hvf/src/mmio_data_abort_tests.rs	81	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/mmio_registers.rs	15	2
 crates/bridgevm-hvf/src/nvme/completion_capacity.rs	10	0
 crates/bridgevm-hvf/src/nvme/tests/completion_backpressure.rs	207	0
-crates/bridgevm-hvf/src/hda/playback_dma.rs	62	0
+crates/bridgevm-hvf/src/hda/playback_dma.rs	60	0
 crates/bridgevm-hvf/src/hda/tests/dma_address.rs	58	0
 docs/history/windows-hvf/native-vmm-mmio-nvme-hda-20261005.md	80	0
 docs/document-manifests/native-vmm-core.tsv	4	0
@@ -3997,3 +3997,5 @@ crates/bridgevm-hvf/src/nvme/tests/admin_prp.rs	168	0
 crates/bridgevm-hvf/src/nvme/tests/admin_prp_support.rs	153	0
 docs/history/windows-hvf/native-vmm-nvme-admin-prp-20261006.md	88	0
 docs/document-manifests/native-vmm-nvme-admin-prp.tsv	3	0
+crates/bridgevm-hvf/src/hda/playback_descriptor.rs	9	0
+crates/bridgevm-hvf/src/hda/tests/descriptor_rebase.rs	110	0
