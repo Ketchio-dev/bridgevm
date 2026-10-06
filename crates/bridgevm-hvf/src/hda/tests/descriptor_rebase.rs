@@ -97,7 +97,7 @@ fn assert_rebased_descriptor_failure(base: u64, expected_read: Option<u64>) {
 
 #[test]
 fn stopped_stream_rebase_overflow_fails_before_guest_read() {
-    assert_rebased_descriptor_failure(u64::MAX & !0x7f, None);
+    assert_rebased_descriptor_failure(!0x7fu64, None);
 }
 
 #[test]
@@ -108,6 +108,6 @@ fn stopped_stream_rebase_unmapped_address_uses_normal_dma_failure() {
 
 #[test]
 fn stopped_stream_rebase_last_aligned_address_does_not_overflow() {
-    let address = u64::MAX & !0x7f;
+    let address = !0x7fu64;
     assert_rebased_descriptor_failure(address - 8 * 16, Some(address));
 }
