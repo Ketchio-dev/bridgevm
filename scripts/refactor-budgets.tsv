@@ -235,7 +235,7 @@ crates/bridgevm-hvf/src/net_nat/tests/ingress_policy.rs	77	0
 crates/bridgevm-hvf/src/net_nat/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/net_nat/tests/part_1.rs	851	0
 crates/bridgevm-hvf/src/no_qemu_plan.rs	192	0
-crates/bridgevm-hvf/src/nvme/admin.rs	84	0
+crates/bridgevm-hvf/src/nvme/admin.rs	77	0
 crates/bridgevm-hvf/src/nvme/controller.rs	143	0
 crates/bridgevm-hvf/src/nvme/disk.rs	191	0
 crates/bridgevm-hvf/src/nvme/disk_overlay.rs	80	0
@@ -244,7 +244,7 @@ crates/bridgevm-hvf/src/nvme/features_get.rs	56	0
 crates/bridgevm-hvf/src/nvme/identify.rs	147	0
 crates/bridgevm-hvf/src/nvme/interrupts.rs	48	0
 crates/bridgevm-hvf/src/nvme/io.rs	168	1
-crates/bridgevm-hvf/src/nvme/log_page.rs	81	0
+crates/bridgevm-hvf/src/nvme/log_page.rs	77	0
 crates/bridgevm-hvf/src/nvme/mod.rs	6	0
 crates/bridgevm-hvf/src/nvme/namespace.rs	155	0
 crates/bridgevm-hvf/src/nvme/protocol.rs	166	0
@@ -3983,7 +3983,7 @@ docs/document-manifests/native-vmm-nvme-write-completion.tsv	3	0
 docs/history/windows-hvf/native-vmm-nvme-write-completion-20261005.md	84	0
 docs/document-manifests/native-vmm-hda-corb-interrupt.tsv	3	0
 docs/history/windows-hvf/native-vmm-hda-corb-interrupt-20261005.md	66	0
-crates/bridgevm-hvf/src/nvme/identify_command.rs	66	0
+crates/bridgevm-hvf/src/nvme/identify_command.rs	50	0
 crates/bridgevm-hvf/src/nvme/tests/identify_prp.rs	131	0
 crates/bridgevm-hvf/src/nvme/tests/identify_prp_support.rs	99	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination/shutdown.rs	11	0
@@ -3992,3 +3992,6 @@ docs/document-manifests/native-vmm-nvme-identify-prp.tsv	3	0
 docs/history/windows-hvf/native-vmm-nvme-identify-prp-20261005.md	79	0
 docs/document-manifests/native-vmm-secondary-shutdown.tsv	3	0
 docs/history/windows-hvf/native-vmm-secondary-shutdown-20261005.md	85	0
+crates/bridgevm-hvf/src/nvme/admin_data.rs	27	0
+crates/bridgevm-hvf/src/nvme/tests/admin_prp.rs	168	0
+crates/bridgevm-hvf/src/nvme/tests/admin_prp_support.rs	153	0

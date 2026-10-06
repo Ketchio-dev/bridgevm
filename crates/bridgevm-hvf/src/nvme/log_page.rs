@@ -7,7 +7,7 @@ impl NvmeController {
     /// GET LOG PAGE. Linux reads SMART / health information during probe, and
     /// Windows asks for the command-effects log while sizing the controller.
     pub(crate) fn admin_get_log_page(
-        &self,
+        &mut self,
         cmd: &SubmissionEntry,
         mem: &mut dyn GuestMemoryMut,
     ) -> u16 {
@@ -30,11 +30,7 @@ impl NvmeController {
         };
         let start = offset as usize;
         let data = &log[start..start + byte_count];
-        if mem.write_bytes(cmd.prp1, data) {
-            SC_SUCCESS
-        } else {
-            SC_INVALID_FIELD
-        }
+        self.write_admin_data(cmd, data, mem)
     }
 
     pub(crate) fn smart_health_log(&self) -> NvmePage {

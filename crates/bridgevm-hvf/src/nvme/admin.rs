@@ -54,7 +54,7 @@ impl NvmeController {
     /// SECURITY RECEIVE. SECP=0/SPSP=0 returns the supported-protocol list;
     /// SPDM and certificate paths remain unsupported and fail closed.
     pub(crate) fn admin_security_receive(
-        &self,
+        &mut self,
         cmd: &SubmissionEntry,
         mem: &mut dyn GuestMemoryMut,
     ) -> u16 {
@@ -72,11 +72,7 @@ impl NvmeController {
                 resp[7] = 2;
                 resp[8] = SECURITY_PROTOCOL_INFORMATION;
                 resp[9] = 0;
-                if mem.write_bytes(cmd.prp1, &resp) {
-                    SC_SUCCESS
-                } else {
-                    SC_INVALID_FIELD
-                }
+                self.write_admin_data(cmd, &resp, mem)
             }
             (SECURITY_PROTOCOL_DMTF_SPDM, _) => SC_INVALID_FIELD_DNR,
             _ => SC_INVALID_FIELD_DNR,

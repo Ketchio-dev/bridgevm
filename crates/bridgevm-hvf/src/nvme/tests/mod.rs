@@ -1,5 +1,7 @@
 //! Split test module.
 
+mod admin_prp;
+mod admin_prp_support;
 mod completion_backpressure;
 mod create_queue_identity;
 mod helpers;
