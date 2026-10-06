@@ -4005,3 +4005,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state/shutdown_join.r
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state/shutdown_join_tests.rs	138	0
 crates/bridgevm-hvf/src/nvme/tests/prp_limit.rs	132	0
 crates/bridgevm-hvf/src/nvme/tests/prp_limit_support.rs	188	0
+docs/history/windows-hvf/native-vmm-transfer-and-teardown-20261006.md	100	0
+docs/document-manifests/native-vmm-transfer-and-teardown.tsv	3	0
