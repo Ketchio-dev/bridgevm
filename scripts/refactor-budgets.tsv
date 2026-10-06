@@ -3995,3 +3995,5 @@ docs/history/windows-hvf/native-vmm-secondary-shutdown-20261005.md	85	0
 crates/bridgevm-hvf/src/nvme/admin_data.rs	27	0
 crates/bridgevm-hvf/src/nvme/tests/admin_prp.rs	168	0
 crates/bridgevm-hvf/src/nvme/tests/admin_prp_support.rs	153	0
+docs/history/windows-hvf/native-vmm-nvme-admin-prp-20261006.md	88	0
+docs/document-manifests/native-vmm-nvme-admin-prp.tsv	3	0

@@ -22,7 +22,7 @@ docs/plans/hvf-graphics-integration-gap-plan.md	active-plan	windows-graphics	-
 docs/plans/hvf-gpu-thread-design-20260721.md	active-plan	windows-performance	-
 docs/handoffs/claude-code-20260722.md	active-plan	development-handoff	-
 docs/plans/refactor-handoff.md	active-plan	development-handoff	-
-docs/reference/hvf-windows-platform-contract-gap.md	reference	windows-platform	-
+@include	docs/document-manifests/native-vmm-nvme-admin-prp.tsv	-	-
 docs/reference/hvf-kd-serial-bringup.md	reference	windows-debugging	-
 docs/windows-arm/evidence/agent-chunked-output-storage-20260712.md	historical-evidence	windows-agent	-
 docs/windows-arm/evidence/async-scanout-present-20260726.md	historical-evidence	windows-graphics	STATUS.md
