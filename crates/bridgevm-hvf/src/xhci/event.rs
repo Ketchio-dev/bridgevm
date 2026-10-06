@@ -258,7 +258,10 @@ impl XhciController {
             self.record_event_post_failure();
             return false;
         };
-        if segment_base == 0 || segment_trbs == 0 || interrupter.event_enqueue >= segment_trbs {
+        let enqueue_offset = u64::from(interrupter.event_enqueue) * TRB_SIZE_BYTES;
+        let Some(event_gpa) = segment_base.checked_add(enqueue_offset).filter(|_| {
+            segment_base != 0 && segment_trbs != 0 && interrupter.event_enqueue < segment_trbs
+        }) else {
             trace::event_post_reject_with_ring(
                 "invalid_event_segment",
                 EventRingTrace {
@@ -271,9 +274,7 @@ impl XhciController {
             );
             self.record_event_post_failure();
             return false;
-        }
-
-        let event_gpa = segment_base + u64::from(interrupter.event_enqueue) * TRB_SIZE_BYTES;
+        };
         let cycle = if interrupter.event_cycle {
             TRB_CYCLE
         } else {

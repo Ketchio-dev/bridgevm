@@ -4,6 +4,8 @@ use super::test_support::{
     TRB_SIZE, TRB_TYPE_ENABLE_SLOT,
 };
 use super::*;
+#[path = "event_address_tests.rs"]
+mod event_address_tests;
 
 #[test]
 fn iman_write_one_to_clear_preserves_interrupt_enable() {
