@@ -92,7 +92,7 @@ docs/windows-arm/evidence/b6-tab-scene-spike-20260908.md	current	windows-guest-i
 docs/windows-arm/evidence/b6-scale-mechanism-spike-20260908.md	current	windows-guest-integration	-
 docs/windows-arm/evidence/b6-single-scene-spike-20260908.md	current	windows-guest-integration	-
 docs/windows-arm/evidence/b6-dpi-and-capture-live-20260908.md	current	windows-guest-integration	-
-docs/reference/bridgevm-virt-platform.md	reference	windows-platform	-
+@include	docs/document-manifests/native-vmm-transfer-and-teardown.tsv	-	-
 @include	docs/document-manifests/a19-interruption.tsv	-	-
 docs/windows-arm/smccc-trng-psci-contract.md	current	windows-hvf-engine	-
 docs/windows-arm/evidence/a19-snapshot-pair-20260804.md	current	windows-graphics	GOAL.md

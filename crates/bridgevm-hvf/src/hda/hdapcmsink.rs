@@ -10,6 +10,8 @@ mod file_pcm_sink;
 mod interrupt_sources;
 #[path = "pcm_sink.rs"]
 mod pcm_sink;
+#[path = "playback_descriptor.rs"]
+mod playback_descriptor;
 #[path = "playback_dma.rs"]
 mod playback_dma;
 #[path = "stream_control.rs"]

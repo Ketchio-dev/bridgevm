@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/reference/bridgevm-virt-platform.md	reference	windows-platform	-
+docs/history/windows-hvf/native-vmm-transfer-and-teardown-20261006.md	historical-evidence	windows-native-vmm	-

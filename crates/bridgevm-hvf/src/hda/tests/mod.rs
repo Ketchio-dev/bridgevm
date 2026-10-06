@@ -1,6 +1,7 @@
 //! Split test module.
 
 mod command_dma;
+mod descriptor_rebase;
 mod dma_address;
 mod helpers;
 mod part_1;

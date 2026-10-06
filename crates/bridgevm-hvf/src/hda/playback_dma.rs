@@ -12,13 +12,11 @@ impl HdaController {
             return;
         };
         while budget > 0 && self.stream.ctl & SDCTL_RUN != 0 {
-            let descriptor_gpa = self.stream.bdl + u64::from(self.stream.bdl_index) * 16;
-            let mut raw = [0u8; 16];
-            if !mem.read_into(descriptor_gpa, &mut raw) {
+            let Some(raw) = self.read_playback_descriptor(mem) else {
                 self.stream.sts |= SDSTS_DESE;
                 self.stream.ctl &= !SDCTL_RUN;
                 break;
-            }
+            };
             let address = u64::from_le_bytes(raw[..8].try_into().unwrap());
             let length = u32::from_le_bytes(raw[8..12].try_into().unwrap());
             let flags = u32::from_le_bytes(raw[12..16].try_into().unwrap());

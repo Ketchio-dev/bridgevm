@@ -203,6 +203,8 @@ struct Distributor {
     active: [u32; GIC_INTID_COUNT / 32],
     /// Level-sensitive input lines (virtio INTx): pending while high.
     level: [u32; GIC_INTID_COUNT / 32],
+    /// Electrical input history, including edge-triggered SPIs held high.
+    input_level: [u32; GIC_INTID_COUNT / 32],
     priority: [u8; GIC_INTID_COUNT],
     icfgr: [u32; GIC_INTID_COUNT / 16],
     route: [u64; GIC_INTID_COUNT],
@@ -219,6 +221,7 @@ impl Distributor {
             pending: [0; GIC_INTID_COUNT / 32],
             active: [0; GIC_INTID_COUNT / 32],
             level: [0; GIC_INTID_COUNT / 32],
+            input_level: [0; GIC_INTID_COUNT / 32],
             priority: [0; GIC_INTID_COUNT],
             icfgr: [0; GIC_INTID_COUNT / 16],
             route: [0; GIC_INTID_COUNT],
@@ -347,42 +350,6 @@ impl UserspaceGic {
             self.kick_mask_for([cpu])
         } else {
             0
-        }
-    }
-
-    /// Device SPI level (virtio INTx and friends). `intid` is absolute.
-    pub fn set_spi(&mut self, intid: u32, level: bool) -> u64 {
-        let intid = intid as usize;
-        if !(SPI_BASE..GIC_INTID_COUNT).contains(&intid) {
-            return 0;
-        }
-        // Line state BEFORE mutation: the kick decision needs the edge.
-        let target = self.route_target(intid);
-        let was_line = target.map(|cpu| self.line_asserted(cpu));
-        let (reg, bit) = Distributor::bit(intid);
-        // Edge-configured SPIs latch into pending on a rising edge; level
-        // SPIs track the input. ICFGR bit (2*intid%32+1): 1 = edge.
-        let cfg_reg = intid / 16;
-        let edge = self.dist.icfgr[cfg_reg] >> ((intid % 16) * 2 + 1) & 1 != 0;
-        let was = self.dist.level[reg] & bit != 0;
-        if level {
-            self.dist.level[reg] |= bit;
-            if edge && !was {
-                self.dist.pending[reg] |= bit;
-            }
-        } else {
-            self.dist.level[reg] &= !bit;
-        }
-        if edge {
-            // Edge input drops do not clear latched pending.
-            self.dist.level[reg] &= !bit;
-            if !level {
-                return 0;
-            }
-        }
-        match (target, was_line) {
-            (Some(cpu), Some(was)) => self.kick_if_line_changed(cpu, was),
-            _ => 0,
         }
     }
 
@@ -695,6 +662,7 @@ mod mmio_regs;
 mod priority_mmio;
 mod register_fields;
 mod routing;
+mod spi_input;
 
 #[cfg(test)]
 #[path = "routing_tests.rs"]
