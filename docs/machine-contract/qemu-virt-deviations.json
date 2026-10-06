@@ -10,17 +10,17 @@
       "qemu_behavior": "Userspace-modelled GICv3 with fully observable distributor, redistributor and CPU interface state, and observable timer interrupt delivery.",
       "bridgevm_behavior": "Apple Hypervisor.framework in-kernel GIC. Redistributor and CPU interface state is only reachable from the owning vCPU thread, and virtual timer interrupts are delivered by the framework without producing a guest exit.",
       "guest_visible": false,
-      "impact": "Timer delivery cannot be observed through exit counters, so vtimer_exits is 0 on both passing and stalling boots. Cancellation can interact with the framework's timer masking; this is the mechanism behind the open A1 stall.",
+      "impact": "Timer delivery cannot be observed through exit counters, so vtimer_exits is 0 on both passing and stalling boots. Cancellation and timer masking were investigated in historical A1 stalls; current A1 state and later gate evidence are recorded in capabilities/windows-hvf.json.",
       "evidence": "docs/windows-arm/evidence/a1-boot-stall-20260802.md"
     },
     {
       "id": "gic-msi-frame",
       "area": "interrupt-controller",
       "qemu_behavior": "GICv3 with ITS available for MSI translation.",
-      "bridgevm_behavior": "MSI support follows what the Apple GIC exposes; the ITS is not modelled identically to QEMU's.",
+      "bridgevm_behavior": "MSI support follows Apple's GIC frame rather than a QEMU-identical ITS. In the native backend a nonzero hv_gic_send_msi result triggers the existing fatal lifecycle stop; the linked entry specifies the advertised frame/range and retained failure fields. The optional userspace backend is unchanged.",
       "guest_visible": true,
-      "impact": "Devices must use the MSI path BridgeVM advertises. Guests that assume a QEMU-identical ITS layout are unsupported.",
-      "evidence": "crates/bridgevm-hvf/src/machine.rs"
+      "impact": "Devices must use the advertised MSI path; a QEMU-identical ITS layout is unsupported. Invalid guest-programmable MSI operands can also trigger fatal provider rejection. Raw status alone is not a cause diagnosis; the run does not automatically retry or ignore the failure. Evidence is deterministic injected-provider testing only, without live guest compatibility proof.",
+      "evidence": "docs/machine-contract/native-msi-provider-failure.json"
     },
     {
       "id": "virtio-gpu-3d",
@@ -44,7 +44,7 @@
       "id": "smccc-trng",
       "area": "firmware",
       "qemu_behavior": "SMCCC TRNG backed by the host entropy source when advertised.",
-      "bridgevm_behavior": "Arm DEN 0098 v1.0 served from the macOS CSPRNG through SecRandomCopyBytes, with no fallback: provider failure returns NO_ENTROPY and a platform without a provider returns NOT_SUPPORTED.",
+      "bridgevm_behavior": "Arm DEN 0098 v1.0 served from the macOS CSPRNG through SecRandomCopyBytes, with no fallback: provider failure returns NO_ENTROPY and a platform without a provider returns NOT_SUPPORTED. BridgeVM additionally accepts a zero-bit request with SUCCESS, zero data and no provider call; DEN 0098 defines the request domain starting at one bit. GET_UUID identifies the implementation-chosen SecRandomCopyBytes backend association, not a universal service UUID.",
       "guest_visible": true,
       "impact": "Resolved. The earlier implementation derived output from the vCPU exit counter, which a guest can approximate, while advertising the service as supported. Images created before the fix remain classified pre-secure-trng-development-only.",
       "evidence": "docs/windows-arm/smccc-trng-psci-contract.md"
@@ -64,8 +64,11 @@
       "qemu_behavior": "Not applicable; QEMU does not define Windows composition behaviour.",
       "bridgevm_behavior": "Windows composes titles through DWM as Composed: Flip. No client has reached Hardware: Independent Flip on this driver.",
       "guest_visible": true,
-      "impact": "Real-title D3D11 frame rate is approximately 20 FPS against a 30 FPS gate, keeping A3 open.",
+      "impact": "The linked historical measurement was approximately 20 FPS against the unchanged 30 FPS gate. Later A3 evidence and current state are recorded in capabilities/windows-hvf.json; composed presentation is not itself an open-criterion claim.",
       "evidence": "docs/windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md"
     }
+  ],
+  "deviation_modules": [
+    "qemu-virt-deviations-device-recovery.json"
   ]
 }

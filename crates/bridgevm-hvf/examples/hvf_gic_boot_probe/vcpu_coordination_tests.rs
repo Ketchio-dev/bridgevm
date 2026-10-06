@@ -1,3 +1,5 @@
+#[path = "vcpu_coordination/shutdown_tests.rs"]
+mod shutdown_tests;
 use super::*;
 
 #[test]

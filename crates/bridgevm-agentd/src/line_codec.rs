@@ -3,7 +3,6 @@
 use crate::*;
 use bridgevm_agent_protocol::AgentEnvelope;
 use std::io::BufRead;
-use std::io::ErrorKind;
 use std::io::Write;
 
 /// Largest single newline-delimited frame the host will buffer from the agent
@@ -43,52 +42,12 @@ pub fn decode_envelope_line(line: &str) -> Result<AgentEnvelope, AgentCodecError
     Ok(envelope)
 }
 
+/// Read a frame from a blocking reader. Use `EnvelopeLineReader` when idle
+/// errors are retried, so consumed prefixes survive between calls.
 pub fn read_envelope_line(
     reader: &mut impl BufRead,
 ) -> Result<Option<AgentEnvelope>, AgentCodecError> {
-    // Bounded line read (vs `read_line`, which grows without limit): accumulate
-    // up to MAX_FRAME_BYTES looking for a newline, erroring out rather than
-    // letting a hostile guest exhaust host memory by never sending one.
-    let mut line: Vec<u8> = Vec::new();
-    loop {
-        let available = match reader.fill_buf() {
-            Ok(buffer) => buffer,
-            Err(error) => {
-                return Err(AgentCodecError::Io {
-                    kind: error.kind(),
-                    message: error.to_string(),
-                })
-            }
-        };
-        if available.is_empty() {
-            // EOF: nothing buffered -> end of stream; a partial line -> let
-            // decode_envelope_line report the missing terminator.
-            if line.is_empty() {
-                return Ok(None);
-            }
-            break;
-        }
-        if let Some(newline) = available.iter().position(|&byte| byte == b'\n') {
-            if line.len() + newline + 1 > MAX_FRAME_BYTES {
-                return Err(AgentCodecError::FrameTooLarge);
-            }
-            line.extend_from_slice(&available[..=newline]);
-            reader.consume(newline + 1);
-            break;
-        }
-        if line.len() + available.len() > MAX_FRAME_BYTES {
-            return Err(AgentCodecError::FrameTooLarge);
-        }
-        let consumed = available.len();
-        line.extend_from_slice(available);
-        reader.consume(consumed);
-    }
-
-    let line = String::from_utf8(line).map_err(|error| AgentCodecError::Io {
-        kind: ErrorKind::InvalidData,
-        message: error.to_string(),
-    })?;
-    decode_envelope_line(&line).map(Some)
+    EnvelopeLineReader::new(reader).read_envelope()
 }
 
 pub fn write_envelope_line(

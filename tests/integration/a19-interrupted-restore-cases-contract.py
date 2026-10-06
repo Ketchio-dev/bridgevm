@@ -16,40 +16,13 @@ import a19_interrupt_restore_child as observer
 import a19_interrupt_stop_points as points
 import a19_interrupted_restore_receipt as receipt
 from a19_interrupt_case_fixtures import COMMIT, SHA_A, SHA_B, SHA_C, SHA_D, passing, proven
+from a19_interrupt_stop_fixtures import HOLD_READ, helper, fixture
+from a19_interrupt_stop_transitions import StopTransitionContract
 
 spec = spec_from_file_location("redact_receipt", ROOT / "scripts/live-gates/redact-receipt.py")
 redaction = module_from_spec(spec)
 spec.loader.exec_module(redaction)
 FROZEN_V1 = ROOT / "docs/windows-arm/evidence/a19-t22-r1-20260925-receipt.json"
-# The marker shows a refused helper did reach the state it holds for the stop.
-HOLD_READ = ("with (stage/'disk.raw').open('rb') as staged:\n"
-             "    pathlib.Path(sys.argv[0] + '.held').touch()\n    time.sleep(30)\n")
-
-
-def helper(path: Path, prelude: str, names: tuple[str, ...], before: str = "",
-           hold: str = HOLD_READ) -> Path:
-    path.write_text("#!/usr/bin/env python3\nimport os, pathlib, sys, time\n" + prelude +
-                    "stage.mkdir(mode=0o700)\n"
-                    f"for name in {names!r}:\n"
-                    "    with (stage/name).open('wb') as output:\n"
-                    "        output.write(b'staged'); output.flush(); os.fsync(output.fileno())\n"
-                    + before + hold)
-    path.chmod(0o700)
-    return path
-
-
-def fixture(root: Path, generation: bool = False) -> tuple[Path, Path, Path, Path, Path]:
-    disk, vars, snapshot, output = (root / "disk.raw", root / "vars.fd", root / "snapshot", root / "output")
-    disk.write_bytes(b"old-disk")
-    vars.write_bytes(b"old-vars")
-    snapshot.mkdir()
-    output.mkdir()
-    managed = points.stable_root(disk.resolve(), vars.resolve())
-    if generation:
-        (managed / "current").mkdir(parents=True, mode=0o700)
-        for name in ("disk.raw", "vars.fd"):
-            (managed / "current" / name).write_bytes(b"generation")
-    return disk, vars, snapshot, output, managed
 
 
 class StopPointContract(unittest.TestCase):
@@ -119,7 +92,8 @@ class StopPointContract(unittest.TestCase):
                 self.assertEqual(points.selection(points.CREATE_EXPORT, managed, destination), before)
         replaced = ("dest.mkdir(exist_ok=True); (dest/'next').write_bytes(b'new')\n"
                     "os.replace(dest/'next', dest/'manifest.json')\n")
-        missed = ((("disk.raw", "vars.fd", "manifest.json"), "", HOLD_READ),
+        # A manifest-first control never transiently satisfies create readiness.
+        missed = ((("manifest.json", "disk.raw", "vars.fd"), "", HOLD_READ),
                   (("disk.raw", "vars.fd"), "", HOLD_READ.replace("'rb'", "'ab'")),
                   (("disk.raw", "vars.fd"), replaced, HOLD_READ))
         for names, before, hold in missed:

@@ -55,13 +55,7 @@ EOF
 
 case "$TIER" in
     t1-vtimer)
-        # Seconds, not minutes: the bare-metal cancellation/vtimer probe.
-        if "$REPO/scripts/run-hvf-vtimer-cancel-gate.sh" --out "$OUT"; then
-            receipt completed true
-        else
-            receipt failed false
-            exit 1
-        fi
+        exec "$REPO/scripts/run-hvf-vtimer-cancel-gate.sh" --out "$OUT" --job-id "$JOB_ID"
         ;;
     t1-snapshot)
         # Needs only the internal-volume canonical pair, so it runs even where
@@ -88,7 +82,7 @@ case "$TIER" in
         "$REPO/scripts/live-gates/$helper" --out "$OUT" --input-manifest "$INPUT_MANIFEST" \
             --sealed-binary "$SEALED_BINARY" --job-id "$JOB_ID"
         ;;
-    t8-pointer-reliability|t9-bridgevm-pc-pci|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start|t15-hvf-boot-performance|t16-hvf-nvme-performance|t17-windows-hvf-product-e2e|t18-audio-teardown|t19-windows-hvf-import-product-e2e|d1-windows-media-comparison|d4-winpe-companions|d5-guest-input|d6-app-ui|d6-app-ui-host-v1|d6-app-ui-host-v2|d7-hvf-smp-scaling|d8-hvf-smp-confirmation|d9-b9-real-workload)
+    t8-pointer-reliability|t9-bridgevm-pc-pci|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start|t15-hvf-boot-performance|t16-hvf-nvme-performance|t17-windows-hvf-product-e2e|t18-audio-teardown|t19-windows-hvf-import-product-e2e|d1-windows-media-comparison|d4-winpe-companions|d5-guest-input|d6-app-ui|d6-app-ui-host-v1|d6-app-ui-host-v2|d7-hvf-smp-scaling|d8-hvf-smp-confirmation|d9-b9-real-workload|d10-t22-owned-pair-preparation|d11-native-fixture-preparation)
         "$REPO/scripts/live-gates/run-special-tier.sh" \
           "$TIER" "$OUT" "$JOB_ID" "$INPUT_MANIFEST" "$SEALED_BINARY" ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)

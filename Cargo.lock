@@ -199,6 +199,8 @@ dependencies = [
  "bridgevm-media",
  "libc",
  "loom",
+ "serde",
+ "serde_json",
  "sha2",
 ]
 
@@ -258,6 +260,7 @@ dependencies = [
  "bridgevm-config",
  "bridgevm-media",
  "bridgevm-qemu",
+ "libc",
  "serde",
  "serde_json",
  "serde_yaml",

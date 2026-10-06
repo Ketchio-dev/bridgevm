@@ -2,10 +2,10 @@ import Foundation
 import ApplicationServices
 enum T17FileChooserSnapshot {
     static func read<Node, Snapshot>(
-        attempts: Int = 10, pause: () -> Void = { Thread.sleep(forTimeInterval: 0.2) }, root: () -> Node,
+        attempts: Int = 10, beforeRead: () throws -> Void = {}, pause: () throws -> Void = { Thread.sleep(forTimeInterval: 0.2) }, root: () -> Node,
         nodes: (Node) throws -> [Node], project: ([Node]) throws -> Snapshot
     ) throws -> Snapshot {
-        try T17RetryingSnapshot.read(attempts: attempts, root: root,
+        try T17RetryingSnapshot.read(attempts: attempts, root: root, beforeRead: beforeRead,
             retryable: isTransientReadFailure, beforeRetry: pause) { try project(nodes($0)) }
     }
     static func isTransientReadFailure(_ error: Error) -> Bool {

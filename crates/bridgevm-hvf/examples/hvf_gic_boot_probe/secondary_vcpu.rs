@@ -218,14 +218,6 @@ pub(crate) fn apply_secondary_cpu_on_reset(vcpu: HvVcpuT, mpidr: u64, entry: u64
     }
 }
 
-pub(crate) fn run_hvf_vcpu_once(vcpu: HvVcpuT, exit: *mut HvVcpuExit) -> Result<u32, HvReturn> {
-    let r = unsafe { hv_vcpu_run(vcpu) };
-    if r != 0 {
-        return Err(r);
-    }
-    Ok(unsafe { (*exit).reason })
-}
-
 pub(crate) struct SecondaryRunLoopContext<'a> {
     pub(crate) vcpu: HvVcpuT,
     pub(crate) exit: *mut HvVcpuExit,
@@ -290,25 +282,18 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             if let Some(trace) = smp_trace {
                 trace.secondary_pre_run_drain(control.index, *exits, drain_pc);
             }
-            let pending = {
-                let mut platform_guard = lock_platform(
-                    platform,
-                    smp_trace,
-                    control.index,
-                    "secondary pre-run platform mutex",
-                );
-                drain_stats.prepare_pending_delivery(
-                    &mut platform_guard,
-                    guest_ram,
-                    drain_trace,
-                    DrainContext {
-                        location: DrainLocation::PreRun,
-                        exit: *exits,
-                        pc: drain_pc,
-                    },
-                )
-            };
-            drain_stats.complete_pending_delivery(pending, drain_trace);
+            let pending = drain_stats.prepare_secondary_pre_run(
+                platform,
+                guest_ram,
+                smp_trace,
+                control.index,
+                drain_trace,
+                DrainContext::pre_run(*exits, drain_pc),
+            );
+            if let Err(error) = drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace) {
+                error.stop_secondary(|| control.record_run_error(primary_vcpu));
+                return true;
+            }
             if let Some(trace) = smp_trace {
                 trace.secondary_post_run_drain(control.index, *exits);
             }
@@ -327,7 +312,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             {
                 let r = run_status;
                 println!("secondary vCPU{} hv_vcpu_run error {r:#x}", control.index);
-                control.run_error.store(true, Ordering::SeqCst);
+                control.record_run_error(primary_vcpu);
                 return true;
             }
         };
@@ -347,11 +332,10 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             continue;
         }
         if reason != EXIT_EXCEPTION {
-            println!(
-                "secondary vCPU{} stopped on exit reason {reason}",
-                control.index
+            return control.stop_unexpected_secondary(
+                primary_vcpu,
+                SecondaryUnexpectedStop::ExitReason(reason),
             );
-            return true;
         }
         let esr = unsafe { (*exit).exception.syndrome };
         let ec = (esr >> 26) & 0x3f;
@@ -362,21 +346,26 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
         match ec {
             EC_DATA_ABORT => {
                 let ipa = unsafe { (*exit).exception.physical_address };
-                let size = 1u8 << ((esr >> 22) & 0x3);
-                let srt = ((esr >> 16) & 0x1f) as u32;
-                let is_write = (esr >> 6) & 1 == 1;
                 trace_isv0_data_abort(esr, pc, ipa);
-                // srt=31 is WZR/XZR: stores write zero, loads discard. It must
+                let access = match DataAbort::decode(esr) {
+                    Ok(access) => access,
+                    Err(error) => {
+                        control.record_run_error(primary_vcpu);
+                        println!("secondary vCPU{} {error} @ PC {pc:#x}", control.index);
+                        return true;
+                    }
+                };
+                let (size, is_write) = (access.size, access.write);
+                // Register 31 is WZR/XZR: stores write zero, loads discard. It must
                 // never index the HV register file, where slot 31 is the PC —
                 // Linux emits `str wzr` for zero MMIO writes (e.g. virtio
                 // device_feature_select=0) and the store leaked the guest PC
                 // into the device register.
                 let op = if is_write {
-                    let mut v = 0u64;
-                    if srt != 31 {
-                        unsafe { hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v) };
+                    MmioOp::Write {
+                        size,
+                        value: unsafe { mmio_store_value(vcpu, access) },
                     }
-                    MmioOp::Write { size, value: v }
                 } else {
                     MmioOp::Read { size }
                 };
@@ -385,7 +374,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                     vcpu,
                     ipa,
                     &op,
-                    srt,
+                    access,
                     pc,
                 ) {
                     continue;
@@ -405,32 +394,23 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                         &mut platform_guard,
                         guest_ram,
                         drain_trace,
-                        DrainContext {
-                            location: DrainLocation::DataAbort,
-                            exit: *exits,
-                            pc,
-                        },
+                        DrainContext::data_abort(*exits, pc),
                         post_drain,
                     );
                     (outcome, pending)
                 };
-                drain_stats.complete_pending_delivery(pending, drain_trace);
+                if let Err(error) = drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace) {
+                    error.stop_secondary(|| control.record_run_error(primary_vcpu));
+                    return true;
+                }
                 pre_run_drain_gate.mark_secondary_pending();
                 match outcome {
                     MmioOutcome::ReadValue(v) if !is_write => {
-                        if srt != 31 {
-                            unsafe {
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
-                            }
-                        }
+                        unsafe { write_mmio_read(vcpu, access, v) };
                     }
                     MmioOutcome::ReadValue(_) | MmioOutcome::WriteAck => {}
                     MmioOutcome::KnownUnimplemented(_) | MmioOutcome::Unmapped => {
-                        if !is_write && srt != 31 {
-                            unsafe {
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
-                            }
-                        }
+                        unsafe { write_mmio_read(vcpu, access, 0) };
                     }
                 }
                 unsafe {
@@ -531,28 +511,27 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                         hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4);
                     }
                 } else {
-                    println!(
-                        "secondary vCPU{} unsupported system register trap {} ESR {esr:#x} @ PC {pc:#x}",
-                        control.index,
-                        trap.describe()
+                    return control.stop_unexpected_secondary(
+                        primary_vcpu,
+                        SecondaryUnexpectedStop::SysReg(trap, esr, pc),
                     );
-                    return true;
                 }
             }
             EC_WFX if crate::usgic_bridge::usgic().is_some() => {
                 crate::usgic_bridge::wfx_trap(control.index as usize, vcpu, esr, pc);
             }
             _ => {
-                println!(
-                    "secondary vCPU{} exception EC {ec:#x} ESR {esr:#x} @ PC {pc:#x}",
-                    control.index
+                return control.stop_unexpected_secondary(
+                    primary_vcpu,
+                    SecondaryUnexpectedStop::Exception(ec, esr, pc),
                 );
-                return true;
             }
         }
         if *exits >= max_exits {
-            println!("secondary vCPU{} exit cap {max_exits}", control.index);
-            return true;
+            return control.stop_unexpected_secondary(
+                primary_vcpu,
+                SecondaryUnexpectedStop::ExitCap(max_exits),
+            );
         }
     }
 }

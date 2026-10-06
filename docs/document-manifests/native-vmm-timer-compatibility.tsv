@@ -1,0 +1,5 @@
+path	class	topic	superseded_by
+docs/history/windows-hvf/native-vmm-hda-and-timer-provenance-20261005.md	historical-evidence	windows-native-vmm	-
+docs/history/windows-hvf/native-vmm-timer-fixture-failures-20261005.md	historical-evidence	windows-native-vmm	-
+docs/windows-arm/evidence/t1-vtimer-cancel-microprobe-20260804.md	current	windows-graphics	GOAL.md
+docs/history/windows-hvf/native-vmm-timer-shell-context-20261005.md	historical-evidence	windows-native-vmm	-

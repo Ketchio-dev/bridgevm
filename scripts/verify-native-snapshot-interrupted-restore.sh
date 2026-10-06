@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A19 T22: one controlled helper death before restore publication on real media.
+# A19 T22: controlled helper deaths before restore/create publication on real media.
 #
 # The private guest is powered off before the helper is interrupted. A fresh
 # product CLI selection must still boot the clobbered pair; a normal retry must
@@ -49,36 +49,14 @@ t22_cleanup() {
     wait "$INTERRUPT_LAUNCHER" 2>/dev/null || true
     INTERRUPT_LAUNCHER=""
   fi
+  [[ ! -e "$WORK/auxiliary" && ! -L "$WORK/auxiliary" ]] || return 1
   snapshot_cleanup || return 1
   return "$status"
 }
 trap t22_cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-LIBRARY=$WORK/library
-BUNDLE=$LIBRARY/$NATIVE_SNAPSHOT_VM_ID/bundle.vmbridge
-mkdir -p "$BUNDLE/disks" "$BUNDLE/metadata" "$BUNDLE/logs/hvf" || fail "create isolated native library"
-cp -c "$DISK" "$BUNDLE/disks/hvf-target.raw" || fail "clone disk"
-cp -c "$VARS" "$BUNDLE/metadata/hvf-vars.fd" || fail "clone vars"
-python3 - "$LIBRARY/$NATIVE_SNAPSHOT_VM_ID/vm.json" "$BUNDLE" "$NATIVE_SNAPSHOT_VM_ID" <<'PY'
-import json, pathlib, sys
-path, bundle, vm_id = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3]
-value = {
-    "id": vm_id, "name": vm_id, "displayName": "A19 native CLI live (3D off)",
-    "backendKind": "hvf-engine", "bootMode": "windows-hvf",
-    "bundlePath": str(bundle), "runnerPath": "", "launchSpecPath": "",
-    "handoffPath": "", "sshKeyPath": "", "sshUser": "", "leasesPath": "",
-    "guestName": vm_id, "displayWidth": 1280, "displayHeight": 800,
-    "installPending": False, "diskPath": str(bundle / "disks/hvf-target.raw"),
-    "memMiB": 6144, "cpuCount": 4, "networkEnabled": False,
-    "experimental3DAllowed": False,
-}
-with path.open("x", encoding="utf-8") as output:
-    json.dump(value, output, sort_keys=True, separators=(",", ":")); output.write("\n")
-PY
-WORK_DISK=$BUNDLE/disks/hvf-target.raw
-WORK_VARS=$BUNDLE/metadata/hvf-vars.fd
-chmod u+w "$WORK_DISK" "$WORK_VARS" || fail "make private clones writable"
+source "$REPO/scripts/a19-t22-native-library.sh"
 source "$REPO/scripts/a19-t22-marker-share.sh"
 echo "=== phase 1: write the marker that must survive ==="
 ORIGINAL=$(t22_random_marker ORIGINAL) || fail "make original marker"
@@ -171,6 +149,13 @@ fi
 
 openssl dgst -sha256 -r "$WORK_DISK" | awk '{print $1}' > "$OUT/final-disk.sha256"
 openssl dgst -sha256 -r "$WORK_VARS" | awk '{print $1}' > "$OUT/final-vars.sha256"
+
+echo "=== phase 8: owned swap and fresh-create helper interruptions ==="
+python3 "$REPO/scripts/live-gates/a19_interrupt_auxiliary.py" "$A19_SNAPSHOT_HELPER" "$SNAP" \
+  "$LOGICAL_DISK" "$LOGICAL_VARS" "$OUT" &
+INTERRUPT_LAUNCHER=$!
+wait "$INTERRUPT_LAUNCHER" || fail "auxiliary helper interruption or retry was not proven"
+INTERRUPT_LAUNCHER=""
 
 echo
 echo "PASS: A19 T22 interrupted restore diagnostic"

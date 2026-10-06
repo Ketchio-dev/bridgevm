@@ -211,7 +211,7 @@ readonly HARNESS_FILES=(
   scripts/live-gates/hvf-nvme-performance-v2-manifest.sh
   scripts/live-gates/hvf-nvme-performance-v2-quiescence.json
   scripts/live-gates/live-process-cleanup.sh
-  scripts/live-gates/redact-receipt.py
+  scripts/live-gates/redact-receipt.py scripts/live-gates/receipt_public_fields.py
   scripts/live-gates/run-hvf-nvme-performance-v1-tier.sh
   scripts/live-gates/run-hvf-nvme-performance-v2-tier.sh
   scripts/live-gates/run-hvf-nvme-performance-tier.sh

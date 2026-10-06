@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/live-gates"))
 import winpe_companion_process as PROCESS
 from guest_input_group_liveness import group_alive
+from guest_input_cleanup_ownership_tests import reaped_group_fixture
 
 
 def runner_module():
@@ -165,36 +166,18 @@ class WinPEProcessSafetyTests(unittest.TestCase):
                 spawn.assert_not_called()
                 stop.assert_not_called()
 
-    def test_child_ignoring_term_is_removed_after_leader_exit(self):
-        original_spawn, original_stop = PROCESS.Popen, PROCESS.stop
-        spawned = []
-        def spawn(*args, **kwargs):
-            process = original_spawn(*args, **kwargs)
-            spawned.append(process)
-            return process
-        child = ("import os,pathlib,signal,sys,time; "
-                 "signal.signal(signal.SIGTERM,signal.SIG_IGN); "
-                 "pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)")
-        leader = ("import pathlib,subprocess,sys,time\n"
-                  "subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2]])\n"
-                  "deadline=time.monotonic()+5\n"
-                  "while not pathlib.Path(sys.argv[2]).exists() and time.monotonic()<deadline: time.sleep(0.01)\n"
-                  "sys.exit(0 if pathlib.Path(sys.argv[2]).exists() else 2)\n")
-        with tempfile.TemporaryDirectory(prefix="bridgevm-owned-process-") as directory:
-            marker = Path(directory) / "child-ready"
-            try:
-                with mock.patch.object(PROCESS, "Popen", side_effect=spawn), \
-                     mock.patch.object(PROCESS, "stop", side_effect=lambda p: original_stop(p, grace=0.1)):
-                    result = PROCESS.run_owned([sys.executable, "-c", leader, child, str(marker)],
-                                               timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                self.assertEqual(result.returncode, 0)
-                self.assertTrue(marker.is_file())
-                self.assertGreater(int(marker.read_text()), 1)
-                self.assertEqual(len(spawned), 1)
-                self.assertFalse(group_alive(spawned[0].pid))
-            finally:
-                for process in spawned:
-                    self.assertIs(original_stop(process, grace=0.1), True)
+    def test_actual_clean_exit_is_collected(self):
+        result = PROCESS.run_owned([sys.executable, "-c", "pass"], timeout=5)
+        self.assertEqual(result.returncode, 0)
+
+    def test_reaped_leader_with_owned_residual_refuses_collection(self):
+        with reaped_group_fixture() as (leader, child):
+            with mock.patch.object(PROCESS, "Popen", return_value=leader):
+                with self.assertRaises(PROCESS.OwnedProcessError) as raised:
+                    PROCESS.run_owned(["owned fixture"], timeout=5)
+            self.assertIs(raised.exception.cleanup_complete, False)
+            self.assertTrue(group_alive(leader.pid))
+            self.assertIsNone(child.poll())
 
     def test_actual_runner_skips_after_work_after_process_failure(self):
         runner = runner_module()
@@ -215,7 +198,7 @@ class WinPEProcessSafetyTests(unittest.TestCase):
                 with mock.patch.multiple(runner, job_fields=mock.Mock(return_value=job_fields()),
                                          clone=mock.Mock(return_value=clones), load=mock.Mock(return_value=records),
                                          inspect=inspect, verify=verify, compare=compare, file_hash=hashes,
-                                         run_owned=execute), \
+                                         execute=mock.Mock(side_effect=execute)), \
                      mock.patch.object(runner.subprocess, "check_output", return_value="a" * 40), \
                      mock.patch.object(runner.platform, "system", return_value="Darwin"), \
                      mock.patch.object(runner.platform, "machine", return_value="arm64"):
@@ -240,7 +223,7 @@ class WinPEProcessSafetyTests(unittest.TestCase):
         job = job_fields()
         complete = runner.initial(job)
         complete.update(sample_count=1, source_integrity_verified=True, execution_exit_code=0,
-                        outcome="diagnostic-complete", cleanup_complete=True, mount_cleanup_complete=True)
+                        outcome="diagnostic-complete", cleanup_complete=True, mount_cleanup_complete=True, output_bounds_verified=True)
         runner.validate(complete, job)
         for key in ("cleanup_complete", "mount_cleanup_complete"):
             for missing in (False, True):

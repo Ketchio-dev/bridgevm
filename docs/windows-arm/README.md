@@ -1,7 +1,26 @@
-# Windows 11 Arm Direction
+# Windows HVF guide and preserved history
 
-Document status: **Current engine guide with preserved history**
-Last reviewed: **2026-07-22**
+Document status: **Historical evidence with current navigation**
+Original guide last reviewed: **2026-07-22**
+
+## Current entry points
+
+BridgeVM's own Hypervisor.framework VMM is the main Windows engineering path.
+Use these documents for the current boundary and development setup:
+
+- [Current status](../../STATUS.md) and [capability matrix](capability-matrix.md).
+- [Build and install](../install.md) and [contributor setup](../../CONTRIBUTING.md).
+- [Guest machine contract](../machine-contract/qemu-virt.md) and
+  [documented deviations](../machine-contract/qemu-virt-deviations.json).
+- [Documentation index](../README.md) for current guides, plans and dated records.
+
+## Preserved July 2026 guide
+
+Everything below records the older bring-up state. Its uses of “now”, “current”,
+“remaining” and “authoritative” describe that period, including the gate table
+and local ISO path. They are not current setup instructions or release criteria.
+The original review date and observations remain preserved; use the links above
+for today's scope, including the General Preview's exclusion of 3D acceleration.
 
 The BridgeVM-owned HVF engine now boots an installed Windows 11 ARM64 desktop
 without QEMU, including SMP, persistent NVMe, display/input, networking, audio,
@@ -87,7 +106,7 @@ installer, the remaining PPI/Secure Boot lifecycle, distributable Windows
 3D/WDDM, durable disk-backed suspend, and polished single-surface product UX
 remain open.
 
-## Local Installer Baseline
+## Historical local installer baseline
 
 The local Windows installer currently available in this workspace is:
 
@@ -588,7 +607,7 @@ implementation source material for the BridgeVM HVF engine.
    - Move display presentation into the Metal/displayd path.
    - Treat WDDM/Direct3D-to-Metal as a later R&D track, not an MVP promise.
 
-## Current Gate Status
+## Historical gate status
 
 `Pass` below means the named boundary or live proof is implemented and tested.
 It does **not** mean the Windows 11 ARM path is product-complete: the proven

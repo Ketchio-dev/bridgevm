@@ -1,26 +1,17 @@
 #!/usr/bin/env python3
-"""T20 CLI reads must revalidate published bytes; legacy reads stay unchanged."""
+"""T20 seals and strict T1 reads coexist with generic non-T1 compatibility."""
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 import runpy
-import subprocess
 import tempfile
 import unittest
+from native_snapshot_restore_legacy_read_cases import LegacyReceiptReadCases, receipt
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = runpy.run_path(str(ROOT / "tests/integration/native-snapshot-restore-receipt-seal-contract.py"))
 TIER = "t20-a19-native-snapshot-restore"
-
-
-def receipt(root: Path, job_id: str) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        ["bash", str(ROOT / "scripts/live-gates/bridgevm-live"), "receipt", job_id],
-        capture_output=True, env=dict(os.environ, BRIDGEVM_LIVE_ROOT=str(root / "queue")),
-        timeout=10,
-    )
 
 
 def published(root: Path) -> Path:
@@ -31,8 +22,8 @@ def published(root: Path) -> Path:
     return job
 
 
-class NativeSnapshotRestoreCliReadContract(unittest.TestCase):
-    def test_valid_done_t20_and_legacy_running_without_ledger(self):
+class NativeSnapshotRestoreCliReadContract(LegacyReceiptReadCases, unittest.TestCase):
+    def test_valid_done_t20(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             job = published(root)
@@ -40,26 +31,6 @@ class NativeSnapshotRestoreCliReadContract(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout),
                              json.loads((job / "receipt.public.json").read_bytes()))
-            legacy = root / "queue/running/legacy-t1"
-            legacy.mkdir(parents=True)
-            (legacy / "job.env").write_text(
-                "job_id=legacy-t1\ntier=t1-vtimer\ncommit=" + "a" * 40 + "\n")
-            raw = b'{"tier":"t1-vtimer","pass":true}\n'
-            (legacy / "receipt.public.json").write_bytes(raw)
-            result = receipt(root, legacy.name)
-            self.assertEqual((result.returncode, result.stdout), (0, raw), result.stderr)
-            (root / "queue/job-ledger" / legacy.name).mkdir(parents=True)
-            result = receipt(root, legacy.name)
-            self.assertEqual((result.returncode, result.stdout), (0, raw), result.stderr)
-            done = root / "queue/done" / legacy.name
-            legacy.rename(done)
-            result = receipt(root, done.name)
-            self.assertEqual((result.returncode, result.stdout), (0, raw), result.stderr)
-            # Historical receipts may predate full-SHA queue identities.
-            (done / "job.env").write_text(
-                "job_id=legacy-t1\ntier=t1-vtimer\ncommit=" + "a" * 7 + "\n")
-            result = receipt(root, done.name)
-            self.assertEqual((result.returncode, result.stdout), (0, raw), result.stderr)
 
     def test_changed_public_or_private_is_never_served(self):
         for mutation in ("public", "public-tier", "private", "missing-private",
@@ -135,24 +106,5 @@ class NativeSnapshotRestoreCliReadContract(unittest.TestCase):
                 result = receipt(root, job.name)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(result.stdout, b"")
-
-    def test_legacy_with_present_mismatched_ledger_is_refused(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            job = root / "queue/running/legacy-t1"
-            job.mkdir(parents=True)
-            (job / "job.env").write_text(
-                "job_id=legacy-t1\ntier=t1-vtimer\ncommit=" + "a" * 40 + "\n")
-            (job / "receipt.public.json").write_bytes(b'{"tier":"t1-vtimer"}\n')
-            ledger = root / "queue/job-ledger/legacy-t1"
-            ledger.mkdir(parents=True)
-            (ledger / "entry.env").write_text(
-                "job_id=legacy-t1\ntier=t1-vtimer\ncommit=" + "b" * 40 + "\n")
-            (ledger / "entry.env").chmod(0o400)
-            result = receipt(root, job.name)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertEqual(result.stdout, b"")
-
-
 if __name__ == "__main__":
     unittest.main()

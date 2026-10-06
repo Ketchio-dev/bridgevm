@@ -20,7 +20,7 @@ verify_app() {
   [[ "$(plist_value "$plist" LSUIElement)" == true ]] || fail "LSUIElement must be true" || return 1
   codesign --verify --strict "$helper_app" >/dev/null 2>&1 || fail "nested app signature is invalid" || return 1
   signature="$(codesign -dvv "$helper_app" 2>&1)" || fail "nested app signing metadata is unreadable" || return 1
-  grep -Fq 'Identifier=dev.bridgevm.product-e2e' <<<"$signature" || fail "signed identifier is not stable" || return 1
+  grep -Fxq 'Identifier=dev.bridgevm.product-e2e' <<<"$signature" || fail "signed identifier is not stable" || return 1
 }
 self_test() (
   local temporary app helper
@@ -29,11 +29,11 @@ self_test() (
   install -d "$app/Contents/MacOS" "$helper/Contents/MacOS"
   install -m 644 "$ROOT/apps/macos/BridgeVMProductE2E-Info.plist" "$helper/Contents/Info.plist"
   install -m 755 /bin/echo "$helper/Contents/MacOS/BridgeVMProductE2E"
-  codesign --force --sign - "$helper" >/dev/null
-  verify_app "$app"
+  codesign --force --sign - "$helper" >/dev/null; verify_app "$app"
   : > "$app/Contents/MacOS/BridgeVMProductE2E"
   if verify_app "$app" >/dev/null 2>&1; then fail "legacy-layout fixture unexpectedly passed"; fi
-  rm "$app/Contents/MacOS/BridgeVMProductE2E"
+  rm "$app/Contents/MacOS/BridgeVMProductE2E"; codesign --force --sign - --identifier dev.bridgevm.product-e2e.mutable "$helper" >/dev/null
+  if verify_app "$app" >/dev/null 2>&1; then fail "signed-identifier suffix fixture unexpectedly passed"; fi
   /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier dev.bridgevm.mutable-helper' "$helper/Contents/Info.plist"
   codesign --force --sign - "$helper" >/dev/null
   if verify_app "$app" >/dev/null 2>&1; then fail "mutable-identifier fixture unexpectedly passed"; fi

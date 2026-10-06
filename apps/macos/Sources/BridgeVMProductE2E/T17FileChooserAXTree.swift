@@ -5,7 +5,7 @@ enum T17FileChooserAXTree {
     static func applicationSnapshot<Snapshot>(
         pid: pid_t, project: ([AXUIElement]) throws -> Snapshot
     ) throws -> Snapshot {
-        try T17FileChooserSnapshot.read(root: { AXUIElementCreateApplication(pid) }, nodes: nodes, project: project)
+        try T17FileChooserSnapshot.read(root: { AXUIElementCreateApplication(pid) }, nodes: { try nodes($0) }, project: project)
     }
     static func attribute(_ element: AXUIElement, _ name: String) throws -> AnyObject? {
         var value: CFTypeRef?
@@ -17,9 +17,9 @@ enum T17FileChooserAXTree {
         return value
     }
 
-    static func nodes(_ root: AXUIElement) throws -> [AXUIElement] {
+    static func nodes(_ root: AXUIElement, read: (AXUIElement, String) throws -> AnyObject? = attribute) throws -> [AXUIElement] {
         try T17FileChooserGraph.walk(root: root, limit: 12_000, related: { node in
-            try T17FileChooserNodeLabel.naming(node, describe: T17FileChooserNodeLabel.chain) { try T17ApplicationWalkScope.relationships(of: node, root: root).flatMap { try attribute(node, $0) as? [AXUIElement] ?? [] } }
+            try T17FileChooserNodeLabel.naming(node, describe: T17FileChooserNodeLabel.chain) { try T17ApplicationWalkScope.relationships(of: node, root: root).flatMap { try read(node, $0) as? [AXUIElement] ?? [] } }
         }, hash: { CFHash($0) }, same: { CFEqual($0, $1) })
     }
 }

@@ -1,51 +1,9 @@
 use super::*;
 
-fn enable_spi(gic: &mut UserspaceGic, intid: u32, cpu_route: u64) {
-    let intid = intid as usize;
-    // GICD_CTLR: enable group1.
-    gic.mmio(machine::GIC_DIST.base + GICD_CTLR, 4, Some(2));
-    // Group1, enabled, priority 0xa0, routed.
-    let (reg, _) = (intid / 32, intid % 32);
-    gic.mmio(
-        machine::GIC_DIST.base + GICD_IGROUPR + (reg as u64) * 4,
-        4,
-        Some(0xffff_ffff),
-    );
-    gic.mmio(
-        machine::GIC_DIST.base + GICD_ISENABLER + (reg as u64) * 4,
-        4,
-        Some(1 << (intid % 32)),
-    );
-    gic.mmio(
-        machine::GIC_DIST.base + GICD_IPRIORITYR + intid as u64,
-        1,
-        Some(0xa0),
-    );
-    gic.mmio(
-        machine::GIC_DIST.base + GICD_IROUTER + (intid as u64) * 8,
-        8,
-        Some(cpu_route),
-    );
-}
+use test_support::{enable_spi, enable_vtimer_ppi, wake_cpu};
 
-fn wake_cpu(gic: &mut UserspaceGic, cpu: usize) {
-    let base = machine::GIC_REDIST.base + machine::GICV3_REDIST_STRIDE * cpu as u64;
-    gic.mmio(base + GICR_WAKER, 4, Some(0));
-    // Unmask at the CPU interface.
-    gic.sysreg(cpu, ICC_PMR_EL1, false, 0xff);
-    gic.sysreg(cpu, ICC_IGRPEN1_EL1, false, 1);
-}
-
-fn enable_vtimer_ppi(gic: &mut UserspaceGic, cpu: usize) {
-    let base = machine::GIC_REDIST.base + machine::GICV3_REDIST_STRIDE * cpu as u64;
-    gic.mmio(base + GICR_IGROUPR0, 4, Some(0xffff_ffff));
-    gic.mmio(base + GICR_ISENABLER0, 4, Some(1 << VTIMER_INTID));
-    gic.mmio(
-        base + GICR_IPRIORITYR + u64::from(VTIMER_INTID),
-        1,
-        Some(0x80),
-    );
-}
+#[path = "test_support.rs"]
+mod test_support;
 
 #[test]
 fn spi_level_assert_ack_eoi_cycle() {
@@ -386,3 +344,15 @@ fn unrouted_spi_falls_back_nowhere_and_irm_picks_cpu0() {
     assert_eq!(gic.set_spi(70, true), 1);
     assert!(gic.line_asserted(0));
 }
+#[path = "deactivate_wake_tests.rs"]
+mod deactivate_wake_tests;
+#[path = "group_enable_tests.rs"]
+mod group_enable_tests;
+#[path = "hppir_tests.rs"]
+mod hppir_tests;
+#[path = "pending_readback_tests.rs"]
+mod pending_readback_tests;
+#[path = "preemption_tests.rs"]
+mod preemption_tests;
+#[path = "priority_update_tests.rs"]
+mod priority_update_tests;

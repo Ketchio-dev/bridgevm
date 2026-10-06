@@ -20,7 +20,7 @@ entry="$ROOT_REPO/scripts/run-hvf-windows-installed-boot.sh"
 /bin/bash -n "$entry" "$ROOT_REPO/scripts/run-hvf-windows-installed-boot-runner.sh" \
   "$ROOT_REPO/scripts/run-hvf-windows-installed-boot-package-policy.sh"
 rg -Fq 'run-hvf-windows-installed-boot-package-policy.sh' \
-  "$ROOT_REPO/apps/macos/scripts/package-hvf-control-app.sh" || fail 'package omits wrapper policy module'
+  "$ROOT_REPO/apps/macos/scripts/install-installed-boot-modules.sh" || fail 'package omits wrapper policy module'
 
 app="$store/BridgeVM.app"
 contents="$app/Contents"
@@ -34,9 +34,8 @@ printf 'int main(void){return 0;}\n' | /usr/bin/cc -x c -o "$contents/MacOS/Brid
 cp "$contents/MacOS/BridgeVMControl" "$probe"
 cp "$contents/MacOS/BridgeVMControl" "$cli"
 cp "$contents/MacOS/BridgeVMControl" "$swtpm"
-for script in run-hvf-windows-installed-boot{,-usage,-validation,-args,-runner,-package-policy}.sh; do
-  cp "$ROOT_REPO/scripts/$script" "$resources/scripts/$script"
-done
+ROOT="$ROOT_REPO"; source "$ROOT_REPO/apps/macos/scripts/install-installed-boot-modules.sh"
+install_installed_boot_modules "$resources"
 cat > "$contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

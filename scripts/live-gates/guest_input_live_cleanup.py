@@ -1,41 +1,15 @@
 """Bounded cleanup of a process group created and owned by this diagnostic."""
 import json
-import os
-import signal
-import time
 
 from guest_input_live_inputs import digest
 from guest_input_group_liveness import group_alive
+from guest_input_owned_group import stop
 
 
-def stop(process, grace=5):
-    if process is None:
-        return True
-    pgid = process.pid
-    if pgid <= 1 or pgid == os.getpgrp():
-        raise ValueError("refusing to signal unowned process group")
-    for sig in (signal.SIGTERM, signal.SIGKILL):
-        try:
-            os.killpg(pgid, sig)
-        except ProcessLookupError:
-            process.poll()
-            return True
-        except PermissionError:
-            pass  # Permission denial is not absence; keep bounded observation.
-        deadline = time.monotonic() + grace
-        while time.monotonic() < deadline:
-            process.poll()  # Reap the leader, but do not confuse it with the group.
-            if not group_alive(pgid):
-                return True
-            time.sleep(0.05)
-    process.poll()
-    return not group_alive(pgid)
-
-
-def finalize(receipt, process, paths, hashes, clones, work):
+def finalize(receipt, process, paths, hashes, clones, work, *, spawn_attempted=False):
     receipt["complete"] = False
     try:
-        receipt["cleanup_complete"] = stop(process)
+        receipt["cleanup_complete"] = False if spawn_attempted and process is None else stop(process)
     except (OSError, ValueError) as error:
         receipt["cleanup_complete"] = False
         receipt["cleanup_failure_type"] = type(error).__name__

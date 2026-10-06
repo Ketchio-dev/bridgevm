@@ -14,9 +14,16 @@ mod staging_debris;
 use destination_lease::claim_staging;
 #[path = "snapshot_create_fill.rs"]
 mod fill;
+#[path = "snapshot_create_manifest_admission.rs"]
+mod manifest_admission;
 #[path = "snapshot_create_stage.rs"]
 mod stage;
 use stage::CreateStage;
+#[path = "snapshot_create_stopped.rs"]
+mod stopped;
+use stopped::create_stopped;
+#[path = "snapshot_create_quota.rs"]
+mod quota;
 
 /// Capture `disk` and `vars` into `dest` as one atomic pair.
 ///
@@ -47,41 +54,6 @@ fn create_snapshot_using(
         return Err(SnapshotError::VmRunning);
     }
     create_stopped(disk, vars, dest, vm_id, quota_bytes, copy_and_sync, observe)
-}
-
-/// `copy` stages one file; tests substitute a streaming copy that fails.
-fn create_stopped(
-    disk: &Path,
-    vars: &Path,
-    dest: &Path,
-    vm_id: &str,
-    quota_bytes: u64,
-    copy: impl FnMut(&Path, &Path) -> io::Result<u64>,
-    mut observe: impl FnMut(CreateStage),
-) -> Result<SnapshotManifest, SnapshotError> {
-    // Refuse before writing anything, not after filling the disk.
-    let owner = managed::LockedPair::open(disk, vars)?;
-    let (selected_disk, selected_vars) = owner.paths()?;
-    let logical_disk = fs::canonicalize(disk)?;
-    let logical_vars = fs::canonicalize(vars)?;
-    let (disk, vars) = (selected_disk.as_path(), selected_vars.as_path());
-    let projected = fs::metadata(disk)?.len() + fs::metadata(vars)?.len();
-    if projected > quota_bytes {
-        return Err(SnapshotError::QuotaExceeded {
-            bytes: projected,
-            quota: quota_bytes,
-        });
-    }
-
-    let dest = prepare_destination(dest, [&logical_disk, &logical_vars, disk, vars])?;
-    let (_destination_lease, staging) = claim_staging(&dest)?;
-
-    let manifest = fill::fill_staging([disk, vars], &staging, vm_id, copy, &mut observe)?;
-
-    // Never remove the previous snapshot before its replacement is published.
-    admission::publish(&staging, &dest)?;
-    observe(CreateStage::SnapshotPublished);
-    Ok(manifest)
 }
 
 #[cfg(test)]

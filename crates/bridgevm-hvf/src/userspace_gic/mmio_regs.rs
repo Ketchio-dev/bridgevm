@@ -42,68 +42,6 @@ impl UserspaceGic {
         }
     }
 
-    pub(super) fn read_u32_field(registers: &[u32], base: u64, offset: u64) -> Option<u64> {
-        let index = offset.checked_sub(base)? / 4;
-        let aligned = (offset - base) % 4 == 0;
-        (aligned && (index as usize) < registers.len())
-            .then(|| u64::from(registers[index as usize]))
-    }
-
-    pub(super) fn write_u32_field(
-        registers: &mut [u32],
-        base: u64,
-        offset: u64,
-        value: u32,
-        mode: WriteMode,
-    ) -> bool {
-        let Some(rel) = offset.checked_sub(base) else {
-            return false;
-        };
-        if rel % 4 != 0 {
-            return false;
-        }
-        let index = (rel / 4) as usize;
-        if index >= registers.len() {
-            return false;
-        }
-        match mode {
-            WriteMode::Store => registers[index] = value,
-            WriteMode::SetBits => registers[index] |= value,
-            WriteMode::ClearBits => registers[index] &= !value,
-        }
-        true
-    }
-
-    pub(super) fn priority_bytes_access(
-        priorities: &mut [u8],
-        base: u64,
-        offset: u64,
-        width: u8,
-        write: Option<u64>,
-    ) -> Option<u64> {
-        let rel = offset.checked_sub(base)?;
-        let start = rel as usize;
-        let width = usize::from(width).clamp(1, 8);
-        if start + width > priorities.len() {
-            return None;
-        }
-        match write {
-            Some(value) => {
-                for (i, slot) in priorities[start..start + width].iter_mut().enumerate() {
-                    *slot = ((value >> (i * 8)) & 0xff) as u8;
-                }
-                Some(0)
-            }
-            None => {
-                let mut value = 0u64;
-                for (i, slot) in priorities[start..start + width].iter().enumerate() {
-                    value |= u64::from(*slot) << (i * 8);
-                }
-                Some(value)
-            }
-        }
-    }
-
     pub(super) fn dist_mmio(
         &mut self,
         offset: u64,
@@ -170,13 +108,7 @@ impl UserspaceGic {
             }
         }
         if (GICD_IPRIORITYR..GICD_IPRIORITYR + GIC_INTID_COUNT as u64).contains(&offset) {
-            return Self::priority_bytes_access(
-                &mut self.dist.priority,
-                GICD_IPRIORITYR,
-                offset,
-                width,
-                write,
-            );
+            return self.dist_priority_access(offset, width, write, kick_mask);
         }
         let value32 = write.map(|v| v as u32);
         let table: [(u64, WriteMode, bool); 9] = [
@@ -217,6 +149,11 @@ impl UserspaceGic {
                     // ICENABLER/ICPENDR/ICACTIVER read the same underlying
                     // state as their set-side twins.
                     if let Some(value) = Self::read_u32_field(registers, base, offset) {
+                        if matches!(base, GICD_ISPENDR | GICD_ICPENDR) {
+                            // Pending includes an asserted level source even while active.
+                            let bank = ((offset - base) / 4) as usize;
+                            return Some(u64::from(self.dist.effective_pending(bank)));
+                        }
                         return Some(value);
                     }
                 }
@@ -340,14 +277,8 @@ impl UserspaceGic {
             }
             _ => {
                 if (GICR_IPRIORITYR..GICR_IPRIORITYR + 32).contains(&offset) {
-                    Self::priority_bytes_access(
-                        &mut self.redists[cpu].priority,
-                        GICR_IPRIORITYR,
-                        offset,
-                        width,
-                        write,
-                    )
-                    .unwrap_or(0)
+                    self.redist_priority_access(cpu, offset, width, write, &mut kick_mask)
+                        .unwrap_or(0)
                 } else {
                     0 // RAZ/WI.
                 }

@@ -11,6 +11,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/live-gates"))
+from winpe_companion_bounds_cases import WinPEBoundsTests
 from winpe_companion_mount_cases import WinPEMountSafetyTests
 from winpe_companion_process_cases import WinPEProcessSafetyTests
 from winpe_companion_native_mount_cases import WinPENativeMountSafetyTests
@@ -20,7 +21,6 @@ from winpe_companion_inspect import compare
 spec = importlib.util.spec_from_file_location("winpe_runner", ROOT / "scripts/live-gates/run-winpe-companions.py")
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
-
 class DiagnosticTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -41,7 +41,7 @@ class DiagnosticTests(unittest.TestCase):
 
     def test_complete_nonzero_process_and_matching_files_are_not_boot_proof(self):
         value = dict(receipts.initial(self.job), outcome="diagnostic-complete", sample_count=1,
-                     execution_exit_code=42, source_integrity_verified=True, post_files_match=True, cleanup_complete=True, mount_cleanup_complete=True)
+                     execution_exit_code=42, source_integrity_verified=True, post_files_match=True, cleanup_complete=True, mount_cleanup_complete=True, output_bounds_verified=True)
         receipts.validate(value, self.job)
         self.assertTrue(all(value[key] is False for key in receipts.FLAGS))
         known = {"available": True, "files": {"a": "digest"}}

@@ -2,10 +2,16 @@
 
 use super::*;
 
+#[path = "command_dma.rs"]
+mod command_dma;
 #[path = "file_pcm_sink.rs"]
 mod file_pcm_sink;
+#[path = "interrupt_sources.rs"]
+mod interrupt_sources;
 #[path = "pcm_sink.rs"]
 mod pcm_sink;
+#[path = "playback_dma.rs"]
+mod playback_dma;
 #[path = "stream_control.rs"]
 mod stream_control;
 pub use file_pcm_sink::FilePcmSink;
@@ -121,15 +127,6 @@ pub(crate) struct StreamDescriptor {
     pub(crate) bdl: u64,
     pub(crate) bdl_index: u16,
     pub(crate) bdl_offset: u32,
-}
-
-impl StreamDescriptor {
-    pub(crate) fn reset_runtime(&mut self) {
-        self.sts = 0;
-        self.lpib = 0;
-        self.bdl_index = 0;
-        self.bdl_offset = 0;
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -548,134 +545,6 @@ impl HdaController {
         self.gctl = (self.gctl & GCTL_CRST) | (next & 0x0000_0102);
     }
 
-    pub(crate) fn process_corb(&mut self, mem: &mut dyn GuestMemoryMut) {
-        if self.gctl & GCTL_CRST == 0
-            || self.corb_ctl & CORBCTL_RUN == 0
-            || self.rirb_ctl & RIRBCTL_DMA == 0
-        {
-            return;
-        }
-        let mask = self.corb_pointer_mask();
-        let mut guard = 0usize;
-        let mut produced = false;
-        while self.corb_rp != self.corb_wp && guard < usize::from(mask) + 1 {
-            let next = self.corb_rp.wrapping_add(1) & mask;
-            let mut raw = [0u8; 4];
-            if !mem.read_into(self.corb_base + u64::from(next) * 4, &mut raw) {
-                self.corb_sts |= CORBSTS_CMEI;
-                break;
-            }
-            let verb = u32::from_le_bytes(raw);
-            let response = self.codec_verb(verb);
-            self.corb_rp = next;
-            if !self.push_rirb(mem, response, (verb >> 28) as u8) {
-                break;
-            }
-            produced = true;
-            guard += 1;
-        }
-        // Raise the RIRB interrupt once the CORB ring drains, even if fewer
-        // than RINTCNT responses accumulated. Windows' hdaudio.sys
-        // submits small verb batches (e.g. a lone GET_PARAMETER during codec
-        // enumeration) and waits for the RIRB interrupt; without this it would
-        // never be notified for a sub-threshold batch and times out — which is
-        // exactly why it read the AFG basics then stalled before descending to
-        // the DAC/pin widgets.
-        if produced && self.corb_rp == self.corb_wp && self.rirb_ctl & RIRBCTL_RINTCTL != 0 {
-            self.rirb_sts |= RIRBSTS_RINTFL;
-            self.responses_since_irq = 0;
-        }
-    }
-
-    pub(crate) fn push_rirb(
-        &mut self,
-        mem: &mut dyn GuestMemoryMut,
-        response: u32,
-        codec: u8,
-    ) -> bool {
-        let next = self.rirb_wp.wrapping_add(1) & self.rirb_pointer_mask();
-        let mut entry = [0u8; 8];
-        entry[..4].copy_from_slice(&response.to_le_bytes());
-        entry[4..].copy_from_slice(&u32::from(codec & 0x0f).to_le_bytes());
-        if !mem.write_bytes(self.rirb_base + u64::from(next) * 8, &entry) {
-            self.rirb_sts |= RIRBSTS_OIS;
-            return false;
-        }
-        self.rirb_wp = next;
-        self.responses_since_irq = self.responses_since_irq.wrapping_add(1);
-        let threshold = if self.rintcnt == 0 { 256 } else { self.rintcnt };
-        if self.responses_since_irq >= threshold {
-            self.rirb_sts |= RIRBSTS_RINTFL;
-            self.responses_since_irq = 0;
-        }
-        if hda_trace_enabled() {
-            println!("hda: verb response codec={codec} response={response:#010x} rirb_wp={next}");
-        }
-        true
-    }
-
-    pub(crate) fn consume_stream(&mut self, mem: &mut dyn GuestMemoryMut, mut budget: usize) {
-        if budget == 0 || self.stream.cbl == 0 || self.stream.bdl == 0 {
-            return;
-        }
-        let Some((rate, channels, bits)) = stream_pcm_format(self.stream.fmt) else {
-            self.stream.sts |= SDSTS_DESE;
-            return;
-        };
-        while budget > 0 && self.stream.ctl & SDCTL_RUN != 0 {
-            let descriptor_gpa = self.stream.bdl + u64::from(self.stream.bdl_index) * 16;
-            let mut raw = [0u8; 16];
-            if !mem.read_into(descriptor_gpa, &mut raw) {
-                self.stream.sts |= SDSTS_DESE;
-                self.stream.ctl &= !SDCTL_RUN;
-                break;
-            }
-            let address = u64::from_le_bytes(raw[..8].try_into().unwrap());
-            let length = u32::from_le_bytes(raw[8..12].try_into().unwrap());
-            let flags = u32::from_le_bytes(raw[12..16].try_into().unwrap());
-            if length == 0 {
-                self.stream.sts |= SDSTS_DESE;
-                self.stream.ctl &= !SDCTL_RUN;
-                break;
-            }
-            if self.stream.bdl_offset >= length {
-                self.complete_bdl_entry(flags);
-                continue;
-            }
-            let remaining_entry = (length - self.stream.bdl_offset) as usize;
-            let remaining_cbl = (self.stream.cbl - self.stream.lpib.min(self.stream.cbl)) as usize;
-            let chunk_len = budget.min(remaining_entry).min(remaining_cbl);
-            if chunk_len == 0 {
-                self.wrap_cyclic_buffer();
-                self.write_position_buffer(mem);
-                continue;
-            }
-            self.pcm_scratch.resize(chunk_len, 0);
-            if !mem.read_into(
-                address + u64::from(self.stream.bdl_offset),
-                &mut self.pcm_scratch,
-            ) {
-                self.stream.sts |= SDSTS_DESE;
-                self.stream.ctl &= !SDCTL_RUN;
-                break;
-            }
-            if let Some(output) = self.pcm_sink.as_mut() {
-                output.write_pcm(&self.pcm_scratch, rate, channels, bits);
-            }
-            self.stream.bdl_offset += chunk_len as u32;
-            self.stream.lpib += chunk_len as u32;
-            budget -= chunk_len;
-            self.write_position_buffer(mem);
-            if self.stream.bdl_offset == length {
-                self.complete_bdl_entry(flags);
-            }
-            if self.stream.lpib >= self.stream.cbl {
-                self.wrap_cyclic_buffer();
-                self.write_position_buffer(mem);
-            }
-        }
-    }
-
     pub(crate) fn complete_bdl_entry(&mut self, flags: u32) {
         if flags & BDL_IOC != 0 {
             self.stream.sts |= SDSTS_BCIS;
@@ -801,25 +670,6 @@ impl HdaController {
             println!("hda: verb={command:#010x} nid={nid} response={response:#010x}");
         }
         response
-    }
-
-    pub(crate) fn interrupt_sources(&self) -> u32 {
-        let mut sources = 0;
-        let controller_pending = (self.rirb_sts & RIRBSTS_RINTFL != 0
-            && self.rirb_ctl & RIRBCTL_RINTCTL != 0)
-            || (self.rirb_sts & RIRBSTS_OIS != 0 && self.rirb_ctl & RIRBCTL_OIC != 0)
-            || self.corb_sts & CORBSTS_CMEI != 0;
-        if controller_pending && self.intctl & INTCTL_CIE != 0 {
-            sources |= INTSTS_CIS;
-        }
-        let stream_pending = (self.stream.sts & SDSTS_BCIS != 0
-            && self.stream.ctl & SDCTL_IOCE != 0)
-            || (self.stream.sts & SDSTS_FIFOE != 0 && self.stream.ctl & SDCTL_FEIE != 0)
-            || (self.stream.sts & SDSTS_DESE != 0 && self.stream.ctl & SDCTL_DEIE != 0);
-        if stream_pending && self.intctl & INTCTL_STREAM0 != 0 {
-            sources |= INTCTL_STREAM0;
-        }
-        sources
     }
 
     pub(crate) fn intsts(&self) -> u32 {

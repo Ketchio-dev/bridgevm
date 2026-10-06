@@ -43,7 +43,7 @@ fn reports_declared_capability_and_extended_capability_registers() {
 fn operational_registers_are_benign_and_writable() {
     let mut xhci = XhciController::new();
 
-    assert_eq!(xhci.mmio_read(0x44, 4), USB_STS_HCH.into());
+    assert_eq!(xhci.mmio_read(0x44, 4), u64::from(USB_STS_HCH));
     assert_eq!(xhci.mmio_read(0x48, 4), 1);
 
     xhci.mmio_write(0x40, 4, u64::from(USB_CMD_RS | USB_CMD_HCRST));

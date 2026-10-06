@@ -1,7 +1,7 @@
 enum T17RetryingSnapshot {
     static func read<Node, Snapshot>(
-        attempts: Int, root: () -> Node,
-        retryable: (Error) -> Bool, beforeRetry: () -> Void = {},
+        attempts: Int, root: () -> Node, beforeRead: () throws -> Void = {},
+        retryable: (Error) -> Bool, beforeRetry: () throws -> Void = {},
         snapshot: (Node) throws -> Snapshot
     ) throws -> Snapshot {
         guard attempts > 0 else {
@@ -9,10 +9,10 @@ enum T17RetryingSnapshot {
         }
         var lastError: Error?
         for attempt in 0..<attempts {
-            do { return try snapshot(root()) }
+            do { try beforeRead(); return try snapshot(root()) }
             catch {
                 guard retryable(error) else { throw error }
-                lastError = error; if attempt + 1 < attempts { beforeRetry() }
+                lastError = error; if attempt + 1 < attempts { try beforeRetry() }
             }
         }
         throw lastError!

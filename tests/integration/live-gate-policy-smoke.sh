@@ -253,24 +253,7 @@ check "an abandoned running job is retained as interrupted" \
     'grep -q "^result=interrupted-worker-exit$" "$recovery_queue/done/stale-job/result.env"'
 check "the stale job no longer claims to be running" '[ ! -e "$stale" ]'
 
-cat > "$claimed/receipt.json" <<'JSON'
-{"gate_id":"a3-d3d11-real-title-3run","criterion":"A3","tested_commit":"0123456789abcdef0123456789abcdef01234567","tier":"t6-a3-title","pass":true,"passes":3,"sample_count":1200,"fps_p50":[58.82,58.82,58.82],"title_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","evidence_paths":["run-1/summary.txt"],"disk_path":"/Users/me/win11.qcow2","vars_path":"/tmp/VARS.fd"}
-JSON
-check "a raw receipt is never served" '! "$CLI" receipt "$job_id" >/dev/null 2>&1'
-python3 "$REDACT" --in "$claimed/receipt.json" --out "$claimed/receipt.public.json"
-check "the published receipt is served" '"$CLI" receipt "$job_id" >/dev/null'
-check "the published receipt drops the disk path" \
-    '! "$CLI" receipt "$job_id" | grep -q "qcow2"'
-check "the published receipt drops the vars path" \
-    '! "$CLI" receipt "$job_id" | grep -q "VARS.fd"'
-check "the published receipt keeps the result" \
-    '"$CLI" receipt "$job_id" | grep -q "\"pass\": true"'
-check "the published receipt keeps A3 provenance" \
-    '"$CLI" receipt "$job_id" | grep -q "\"criterion\": \"A3\""'
-check "the published receipt keeps FPS samples" \
-    '"$CLI" receipt "$job_id" | grep -q "\"sample_count\": 1200"'
-check "the published receipt keeps only relative evidence paths" \
-    '"$CLI" receipt "$job_id" | grep -q "run-1/summary.txt"'
+source "$REPO/tests/integration/live_gate_receipt_redaction_cases.sh" "$claimed"
 
 check "cancelling a running job requests, not kills" \
     '"$CLI" cancel "$job_id" | grep -q "cancellation requested"'
@@ -300,7 +283,7 @@ chmod 644 "$WORK/unreadable.raw"
 check "a present but unreadable input is refused too" \
     'printf "%s" "$unreadable_output" | grep -q "unreadable.raw"'
 
-check "the installer supports a dry run" '"$INSTALL" --dry-run >/dev/null 2>&1 || true'
+check "the installer supports a dry run" 'python3 "$REPO/tests/integration/live-installer-dry-run-contract.py"'
 check "the installer guards LaunchAgent privacy-protected source paths" 'grep -q "LaunchAgent privacy policy" "$INSTALL"'
 no_match "the installer stores no credentials" \
     'password|token=|api[_-]key' "$INSTALL"

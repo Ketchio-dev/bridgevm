@@ -24,7 +24,7 @@ impl VirtioConsole {
         if !queue.ready || queue.size == 0 || queue.desc == 0 {
             return false;
         }
-        let Some(avail_idx) = read_u16(mem, queue.driver + 2) else {
+        let Some(avail_idx) = read_u16(mem, queue.driver, 2) else {
             return false;
         };
         self.queues[queue_index].last_avail_seen = avail_idx;
@@ -34,7 +34,7 @@ impl VirtioConsole {
         for _ in 0..pending_entries(queue.last_avail_idx, avail_idx, queue.size) {
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
             let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
-            let Some(head) = read_u16(mem, queue.driver + ring_off) else {
+            let Some(head) = read_u16(mem, queue.driver, ring_off) else {
                 break;
             };
             if Self::read_chain_into(

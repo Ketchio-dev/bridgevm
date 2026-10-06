@@ -390,11 +390,7 @@ struct HvfEngineView: View {
 
     private func choosePath(text: Binding<String>, directory: Bool) {
         #if canImport(AppKit)
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = !directory
-        panel.canChooseDirectories = directory
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
+        FileSelection.choose(directories: directory) { url in
             text.wrappedValue = url.path
         }
         #endif

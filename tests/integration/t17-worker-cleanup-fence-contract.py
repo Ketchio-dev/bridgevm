@@ -121,8 +121,8 @@ class T17WorkerCleanupFence(unittest.TestCase):
         scripts = self.repo / "scripts/live-gates"
         scripts.mkdir(parents=True)
         for name in ("bridgevm-live-worker.sh", "live-process-cleanup.sh",
-                     "app-ui-host-worker-cleanup.sh", "publish-receipt.sh",
-                     "redact-receipt.py", "recover-stale-jobs.sh",
+                     "app-ui-host-worker-cleanup.sh", "publish-receipt.sh", "development-queue-receipt-dispatch.sh",
+                     "redact-receipt.py", "receipt_public_fields.py", "recover-stale-jobs.sh",
                      "recover-stale-receipt.sh"):
             shutil.copy2(LIVE / name, scripts / name)
         shutil.copy2(ROOT / "scripts/verify-windows-product-e2e-receipt.py",

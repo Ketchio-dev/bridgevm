@@ -147,39 +147,6 @@ struct CpuInterface {
     ap1r: [u64; 4],
 }
 
-impl CpuInterface {
-    fn new() -> Self {
-        Self {
-            ctlr: 0,
-            priority_mask: 0,
-            bpr0: 0,
-            bpr1: 0,
-            group0_enabled: false,
-            group1_enabled: false,
-            active: Vec::new(),
-            ap0r: [0; 4],
-            ap1r: [0; 4],
-        }
-    }
-
-    fn running_priority(&self) -> u8 {
-        self.active
-            .iter()
-            .filter(|a| !a.priority_dropped)
-            .map(|a| a.priority)
-            .min()
-            .unwrap_or(0xff)
-    }
-
-    fn threshold(&self) -> u8 {
-        self.priority_mask.min(self.running_priority())
-    }
-
-    fn eoi_mode(&self) -> bool {
-        self.ctlr & ICC_CTLR_EOIMODE != 0
-    }
-}
-
 /// Per-vCPU redistributor: SGIs 0-15 and PPIs 16-31.
 #[derive(Debug, Clone)]
 struct Redistributor {
@@ -302,9 +269,6 @@ impl UserspaceGic {
     }
 
     fn spi_candidate_for_cpu(&self, cpu: usize, threshold: u8) -> Option<PendingCandidate> {
-        if self.dist.ctlr & GICD_CTLR_ENABLE_G1NS == 0 {
-            return None;
-        }
         (SPI_BASE..GIC_INTID_COUNT)
             .filter_map(|intid| {
                 let (reg, bit) = Distributor::bit(intid);
@@ -348,6 +312,9 @@ impl UserspaceGic {
     }
 
     fn highest_candidate(&self, cpu: usize, threshold: u8) -> Option<PendingCandidate> {
+        if self.dist.ctlr & GICD_CTLR_ENABLE_G1NS == 0 {
+            return None;
+        }
         [
             self.local_candidate_for_cpu(cpu, threshold),
             self.spi_candidate_for_cpu(cpu, threshold),
@@ -509,23 +476,6 @@ impl UserspaceGic {
         }
     }
 
-    fn deactivate(&mut self, cpu: usize, intid: u32) {
-        if let Some(position) = self.ifaces[cpu]
-            .active
-            .iter()
-            .rposition(|a| a.intid == intid)
-        {
-            self.ifaces[cpu].active.remove(position);
-        }
-        let intid = intid as usize;
-        if intid < 32 {
-            self.redists[cpu].active0 &= !(1u32 << intid);
-        } else if intid < GIC_INTID_COUNT {
-            let (reg, bit) = Distributor::bit(intid);
-            self.dist.active[reg] &= !bit;
-        }
-    }
-
     fn sgi1r_targets(&self, value: u64) -> Vec<usize> {
         if value & (1 << 40) != 0 {
             // IRM: all but self — caller filters self out.
@@ -596,20 +546,13 @@ impl UserspaceGic {
             }
             (true, ICC_IAR1_EL1) => u64::from(self.acknowledge(cpu)),
             (true, ICC_IAR0_EL1 | ICC_HPPIR0_EL1) => u64::from(SPURIOUS_INTID),
-            (true, ICC_HPPIR1_EL1) => {
-                let iface = &self.ifaces[cpu];
-                u64::from(
-                    self.highest_candidate(cpu, iface.threshold())
-                        .map(|c| c.intid)
-                        .unwrap_or(SPURIOUS_INTID),
-                )
-            }
+            (true, ICC_HPPIR1_EL1) => u64::from(self.highest_pending_intid(cpu)),
             (false, ICC_EOIR1_EL1) => {
                 let intid = (write_value & 0xff_ffff) as u32;
                 if intid != SPURIOUS_INTID {
                     self.priority_drop(cpu, intid);
                     if !self.ifaces[cpu].eoi_mode() {
-                        self.deactivate(cpu, intid);
+                        kick_mask |= self.deactivate(cpu, intid);
                     }
                     kick_mask |= 1u64 << cpu;
                 }
@@ -619,7 +562,7 @@ impl UserspaceGic {
             (false, ICC_DIR_EL1) => {
                 let intid = (write_value & 0xff_ffff) as u32;
                 if intid != SPURIOUS_INTID {
-                    self.deactivate(cpu, intid);
+                    kick_mask |= self.deactivate(cpu, intid);
                     kick_mask |= 1u64 << cpu;
                 }
                 0
@@ -745,7 +688,12 @@ impl UserspaceGic {
     }
 }
 
+mod cpu_interface;
+mod deactivate;
+mod hppir;
 mod mmio_regs;
+mod priority_mmio;
+mod register_fields;
 mod routing;
 
 #[cfg(test)]

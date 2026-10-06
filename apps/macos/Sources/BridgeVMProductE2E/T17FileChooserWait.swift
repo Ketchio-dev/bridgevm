@@ -9,22 +9,22 @@ enum T17FileChooserWait {
         ready: () throws -> Bool
     ) throws {
         var lastTransient: Error?
+        func check() throws {
+            try T17FileChooserWaitAdmission.check(stage: stage, deadline: deadline,
+                lastTransient: lastTransient, failureContext: failureContext, now: now)
+        }
         repeat {
+            try check()
             var isReady = false
             do {
                 isReady = try ready()
             } catch where T17FileChooserSnapshot.isTransientReadFailure(error) {
                 lastTransient = error
             }
-            if now() >= deadline {
-                let detail = (lastTransient as? T17Blocker).map {
-                    "; last_transient=\($0.detail)"
-                } ?? ""
-                throw T17FileChooser.failure(
-                    "timed out waiting for \(stage)\(detail)" + failureContext())
-            }
+            try check()
             if isReady { return }
             pause()
+            try check()
         } while true
     }
 }

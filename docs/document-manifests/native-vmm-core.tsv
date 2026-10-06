@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/architecture/phase-0.md	reference	architecture-history	docs/plans/hvf-windows-install-completion-plan.md
+docs/decisions/hvf-windows-engine-strategy.md	decision	windows-architecture	-
+docs/history/windows-hvf/native-vmm-mmio-nvme-hda-20261005.md	historical-evidence	windows-native-vmm	-

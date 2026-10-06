@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "contract": "qemu-virt-compatible",
+  "deviations": [
+    {
+      "id": "virtio-malformed-split-queue-recovery",
+      "area": "device-recovery",
+      "qemu_behavior": "QEMU v9.2 virtio_error marks the device broken and, with VIRTIO_F_VERSION_1 negotiated, sets NEEDS_RESET and notifies a configuration change for malformed queue state.",
+      "bridgevm_behavior": "Checked split-queue access refuses unreadable or overflowing ranges. Invalid descriptor chains may remain pending or be completed with zero used length depending on the device; no matching broken-device/NEEDS_RESET/configuration-change transition is implemented.",
+      "guest_visible": true,
+      "impact": "Recovery from malformed queue configuration differs. This static comparison does not claim a conforming-driver failure or a live guest observation.",
+      "evidence": "docs/history/windows-hvf/continuation-40min-boundaries-20261002.md"
+    },
+    {
+      "id": "nvme-shutdown-error-and-reset-order",
+      "area": "device-recovery",
+      "qemu_behavior": "QEMU v9.2.0 flushes namespaces without checking the returned error before publishing shutdown complete. Clearing SHN clears SHST; a combined SHN plus EN-clear write ends with reset CSTS=0 (hw/nvme/ctrl.c and hw/nvme/ns.c).",
+      "bridgevm_behavior": "Native NVMe normal and abrupt shutdown flush both attached backends before SHST=10. A failed flush leaves SHST=01 and sets CFS=1; queue processing stops until reset. SHN=00 does not cancel shutdown. A combined SHN01/10 plus EN-clear resets first, then performs shutdown with RDY=0; a successful flush sets SHST=10, while failure leaves SHST=01/CFS=1. Plain reset/re-enable clears shutdown and fatal status.",
+      "guest_visible": true,
+      "impact": "These are conservative model failure and ordering policies permitted by NVMe 1.4 sections 3.1.5, 3.1.6, 7.6.2 and 10.5, not a claim that the specification mandates this exact ordering. Failed synchronization is never reported as successful shutdown. Deterministic tests cover the existing backend contract; memory and read-only overlays remain volatile, and no physical durability, live guest shutdown or Windows criterion is established.",
+      "evidence": "crates/bridgevm-hvf/src/nvme/tests/shutdown.rs"
+    }
+  ]
+}

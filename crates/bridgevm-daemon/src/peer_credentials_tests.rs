@@ -99,18 +99,18 @@ fn credentials_carry_the_group_as_well_as_the_user() {
     let (server, _) = listener.accept().expect("accept");
 
     let peer = peer_credentials(&server).expect("peer");
-    // Not asserting a specific gid: it varies by machine. Asserting only that
-    // the field is populated from the kernel rather than left at zero by
-    // accident would be untrue on a system where the gid really is 0, so
-    // assert the pair is self-consistent instead.
-    assert_eq!(
-        peer,
-        PeerCredentials {
-            uid: peer.uid,
-            gid: peer.gid
-        }
-    );
-
+    let group = std::process::Command::new("id")
+        .arg("-g")
+        .output()
+        .expect("id -g");
+    assert!(group.status.success());
+    let expected: u32 = String::from_utf8(group.stdout)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(peer.uid, current_uid());
+    assert_eq!(peer.gid, expected);
     drop(listener);
     let _ = std::fs::remove_file(&path);
 }

@@ -12,10 +12,9 @@ pub(crate) struct MappedRam {
 
 /// `BRIDGEVM_TRACE_VENUS_START=1`: flag EC=0x24 exits whose syndrome has
 /// ISV=0 (no valid instruction syndrome — stp/ldp, DC ZVA, NEON, atomics).
-/// The srt/size fields the MMIO decode uses below are meaningless for these,
-/// so a read writes back to a bogus register (typically X0) — silent guest
-/// state corruption. The venus KMD dies with no bugcheck before its first
-/// virtio access; an ISV=0 access into a device window is a prime suspect.
+/// SRT/size are meaningless for these exits. The run loops refuse them before
+/// device effects or register writeback; this trace retains the rejected exit.
+/// It does not establish the cause of a past guest failure.
 pub(crate) fn trace_isv0_data_abort(esr: u64, pc: u64, ipa: u64) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -31,7 +30,7 @@ pub(crate) fn trace_isv0_data_abort(esr: u64, pc: u64, ipa: u64) {
     let n = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
     if n <= 16 || n % 65536 == 0 {
         println!(
-            "venus-start: ISV=0 data abort n={n} pc={pc:#x} ipa={ipa:#x} esr={esr:#x} (decode below is garbage)"
+            "venus-start: ISV=0 data abort n={n} pc={pc:#x} ipa={ipa:#x} esr={esr:#x} (MMIO emulation refused)"
         );
     }
 }

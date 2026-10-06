@@ -160,20 +160,20 @@ class InterruptedRestoreContract(unittest.TestCase):
                     "stop_fd_log_sha256": digest(output / "interrupt-helper-fd.private.log")}
             write(output / "interrupt-observation.json", json.dumps(stop).encode())
             value = receipt.initial("interrupt-fixture", COMMIT)
-            runner.collect(output, value)
+            runner.collect_first(output, value)
             self.assertTrue(value["postkill_pair_unchanged"] and value["postretry_original_restored"])
             write(output / "postretry-export/export-evidence.json", json.dumps({**data, "vars_sha256": SHA_A}).encode())
             with self.assertRaises(ValueError):
-                runner.collect(output, receipt.initial("interrupt-fixture", COMMIT))
+                runner.collect_first(output, receipt.initial("interrupt-fixture", COMMIT))
             write(output / "postretry-export/export-evidence.json", json.dumps(data).encode())
             manifest = json.loads((output / "snapshot-created-manifest.json").read_text())
             write(output / "snapshot-created-manifest.json", json.dumps({**manifest, "vm_id": "wrong-vm"}).encode())
             with self.assertRaises(ValueError):
-                runner.collect(output, receipt.initial("interrupt-fixture", COMMIT))
+                runner.collect_first(output, receipt.initial("interrupt-fixture", COMMIT))
             write(output / "snapshot-created-manifest.json", json.dumps(manifest).encode())
             write(output / "phase5-postkill/marker-before.txt", original)
             with self.assertRaises(ValueError):
-                runner.collect(output, receipt.initial("interrupt-fixture", COMMIT))
+                runner.collect_first(output, receipt.initial("interrupt-fixture", COMMIT))
 
     def test_queue_seal_public_receipt_and_cleanup_fence(self):
         with tempfile.TemporaryDirectory() as temporary:

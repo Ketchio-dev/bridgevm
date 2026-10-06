@@ -7,14 +7,10 @@
 use super::staging_debris::clear_staging;
 use super::{snapshot_publish, SnapshotManifest, DISK_NAME, MANIFEST_NAME, VARS_NAME};
 use std::ffi::OsString;
-use std::fs::{self, OpenOptions};
-use std::io::{self, Read};
+use std::fs;
+use std::io;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
-
-/// Far above any manifest this build writes.
-const MANIFEST_LIMIT: u64 = 64 * 1024;
 
 /// Hashes are not checked: replacing a corrupt snapshot is intended.
 pub(super) fn admit_destination(destination: &Path) -> io::Result<()> {
@@ -93,17 +89,7 @@ pub(super) fn listed(
 }
 
 fn read_manifest(path: &Path) -> Result<SnapshotManifest, String> {
-    let mut text = String::new();
-    OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-        .and_then(|file| file.take(MANIFEST_LIMIT + 1).read_to_string(&mut text))
-        .map_err(|error| format!("has an unreadable manifest: {error}"))?;
-    if text.len() as u64 > MANIFEST_LIMIT {
-        return Err("has an oversized manifest".into());
-    }
-    SnapshotManifest::from_json(&text)
+    super::super::manifest_read::read(path)
         .map_err(|error| format!("has an unusable manifest ({error})"))
 }
 

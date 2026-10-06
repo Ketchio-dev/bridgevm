@@ -1,9 +1,11 @@
 # Installing BridgeVM
 
-BridgeVM runs Windows 11 Arm on Apple-silicon Macs (M1 or later). The General
-Preview is distributed without an Apple Developer ID and is not notarized. That
-changes how macOS establishes trust on first open; it does not authorize Windows
-test drivers. General Preview installs and imports Windows in 3D-off mode.
+BridgeVM targets Windows 11 Arm on Apple silicon. The declared host matrix is
+M4/M5; M1, M2 and M3 remain uncovered, and this is not a promise for every Mac.
+See [current status](../STATUS.md#known-limitations) for the evidence boundary.
+The General Preview is distributed without an Apple Developer ID and is not
+notarized. That changes how macOS establishes trust on first open; it does not
+authorize Windows test drivers. General Preview installs and imports Windows in 3D-off mode.
 
 > [!WARNING]
 > The published `v1.0.0` predates the current fail-closed driver policy and is
@@ -11,7 +13,29 @@ test drivers. General Preview installs and imports Windows in 3D-off mode.
 > installer below refuses it. Until a successor is published, use the
 > [current-source build](#build-the-current-source) instead.
 
-## Path 1 — terminal installer (waiting for a safe release)
+## Build the current source
+
+Use this path while the safe successor to `v1.0.0` is still being prepared, or
+whenever you want to inspect exactly what you run. Requirements are Apple silicon,
+macOS 14+, Xcode/Swift 5.9+, and Rust 1.85+. Follow the
+[development setup](../CONTRIBUTING.md#set-up-a-development-checkout) for toolchains
+and the packaging scripts for bundle dependencies.
+
+```sh
+git clone https://github.com/Ketchio-dev/bridgevm.git
+cd bridgevm
+cargo build --workspace --locked
+swift build --package-path apps/macos
+packaging/macos/build-debug-app-bundle.sh
+open target/macos/BridgeVMApp.app
+```
+
+This produces a local ad-hoc-signed development app. It does not turn the
+checkout into release evidence. Contributors should follow
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) and run the appropriate deterministic
+checks.
+
+## Terminal installer (waiting for a safe release)
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash -s -- --launch
@@ -19,7 +43,7 @@ curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.s
 
 Today this command exits without installing because no published release has
 the required General Preview contract. It is documented here for the safe
-successor; use the source-build path below in the meantime.
+successor; use the source-build path above in the meantime.
 
 The bootstrap fetches the full installer at a pinned SHA-256 and refuses to run
 anything else. The installer then fails closed at every step:
@@ -75,7 +99,7 @@ without the Gatekeeper dialog. That is a UX property, not a security property �
 the integrity guarantees come from the checks above, not from skipping
 quarantine.
 
-## Path 2 — DMG from the Releases page
+## DMG from the Releases page (waiting for a safe release)
 
 Download the `.dmg`, `BridgeVM-release.json`, and `SHA256SUMS` from a release
 identified as **General Preview**. Do not use the historical `v1.0.0`. Verify
@@ -116,25 +140,6 @@ the declared ARM64 PE identity and each catalog's embedded CMS integrity; it
 does not claim that Windows accepted or bound a driver. That remains live guest
 evidence, and a missing or rejected payload leaves installation blocked rather
 than falling back to unsigned drivers.
-
-## Build the current source
-
-Use this path while the safe successor to `v1.0.0` is still being prepared, or
-whenever you want to inspect exactly what you run:
-
-```sh
-git clone https://github.com/Ketchio-dev/bridgevm.git
-cd bridgevm
-cargo build --workspace --locked
-swift build --package-path apps/macos
-packaging/macos/build-debug-app-bundle.sh
-open target/macos/BridgeVMApp.app
-```
-
-This produces a local ad-hoc-signed development app. It does not turn the
-checkout into release evidence. Contributors should follow
-[`CONTRIBUTING.md`](../CONTRIBUTING.md) and run the appropriate deterministic
-checks.
 
 ## Updating, rolling back, uninstalling
 

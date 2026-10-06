@@ -62,9 +62,9 @@ jobs:
         with:
           toolchain: 1.97.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.1
-      - run: cargo test --workspace --locked
+      - run: brew install qemu && cargo test --workspace --locked
       - name: Deterministic runner example contracts (no live VM)
-        run: cargo test -p bridgevm-hvf --example hvf_gic_boot_probe --locked
+        run: cargo test -p bridgevm-hvf --example hvf_gic_boot_probe --example bridgevm_pc_dxe_entry_live --locked
       - name: every file containing a test contributes one to a binary
         run: python3 scripts/check-tests-are-reachable.py
 
@@ -244,9 +244,8 @@ jobs:
         run: python3 scripts/generate-general-preview-manifest.py --self-test
       - name: machine contract and schema are valid JSON
         run: |
-          python3 -m json.tool docs/machine-contract/qemu-virt-deviations.json >/dev/null
-          python3 -m json.tool schemas/bridgevm-capability-v1.json >/dev/null
-          python3 -m json.tool capabilities/windows-hvf.json >/dev/null
+          python3 scripts/check-contract-schema-json.py docs/machine-contract/qemu-virt-deviations.json schemas/bridgevm-capability-v1.json capabilities/windows-hvf.json
+          python3 tests/integration/contract-schema-json-test.py
       - name: cited capability evidence contains the figures it is cited for
         run: python3 scripts/check-capability-evidence.py
       - name: capability test-count claims match the tests that exist

@@ -83,19 +83,12 @@ fi
 
 verify_probe() {
   local bin="$1"
-  local entitlements_output
   codesign --verify --strict "$bin" >/dev/null 2>&1 || {
     echo "hvf_gic_boot_probe signature verification failed: $bin" >&2
     exit 1
   }
-  entitlements_output="$(codesign -d --entitlements :- "$bin" 2>/dev/null || true)"
-  case "$entitlements_output" in
-    *"<key>com.apple.security.hypervisor</key>"*"<true/>"*) ;;
-    *)
-      echo "hvf_gic_boot_probe is missing com.apple.security.hypervisor entitlement: $bin" >&2
-      exit 1
-      ;;
-  esac
+  codesign -d --entitlements :- "$bin" 2>/dev/null |
+    python3 "$ROOT/scripts/verify-signing-entitlements.py" com.apple.security.hypervisor --profile "$RELEASE"
   if [[ "$bin" == */Contents/Resources/target/release/examples/hvf_gic_boot_probe ]]; then
     local frameworks="${bin%/Contents/Resources/target/release/examples/hvf_gic_boot_probe}/Contents/Frameworks"
     local dependency

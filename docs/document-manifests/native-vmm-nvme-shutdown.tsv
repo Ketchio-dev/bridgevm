@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/bridgevm-pc-standard-uefi-pci-live-20260830.md	current	windows-architecture	-
+docs/history/windows-hvf/native-vmm-nvme-shutdown-notification-20261005.md	historical-evidence	windows-native-vmm	-

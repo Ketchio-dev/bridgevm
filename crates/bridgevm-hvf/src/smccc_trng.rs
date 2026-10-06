@@ -42,7 +42,7 @@ pub const VERSION_1_0: u64 = 0x1_0000;
 pub const MAX_BITS_RND64: u32 = 192;
 pub const MAX_BITS_RND32: u32 = 96;
 
-/// The service UUID from the specification, as four little-endian words.
+/// BridgeVM-selected UUID for its SecRandomCopyBytes entropy backend.
 pub const UUID_WORDS: [u64; 4] = [0x0d21_e000, 0x4384_11eb, 0x8070_5244, 0x554e_5a4c];
 
 /// A source of unpredictable bytes.
@@ -92,16 +92,16 @@ pub fn handle_call<S: EntropySource>(
     x1: u64,
     entropy: &mut S,
 ) -> Option<SmcccReturn> {
-    match function_id {
+    match u64::from(function_id as u32) {
         func::VERSION => Some(SmcccReturn::status(VERSION_1_0)),
-        func::FEATURES => Some(SmcccReturn::status(features(x1))),
+        func::FEATURES => Some(SmcccReturn::status(features(u64::from(x1 as u32)))),
         func::GET_UUID => Some(SmcccReturn {
             x0: UUID_WORDS[0],
             x1: UUID_WORDS[1],
             x2: UUID_WORDS[2],
             x3: UUID_WORDS[3],
         }),
-        func::RND32 => Some(rnd(x1, 32, entropy)),
+        func::RND32 => Some(rnd(u64::from(x1 as u32), 32, entropy)),
         func::RND64 => Some(rnd(x1, 64, entropy)),
         _ => None,
     }
@@ -122,9 +122,9 @@ fn features(queried: u64) -> u64 {
 fn rnd<S: EntropySource>(requested: u64, register_bits: u32, entropy: &mut S) -> SmcccReturn {
     let max_bits = 3 * register_bits;
 
-    // The specification takes the bit count from the low 32 bits of X1, and a
-    // request larger than three registers is invalid. Zero bits is a valid
-    // request that returns success with no entropy bits set.
+    // Call dispatch normalizes W1 for RND32; RND64 retains all of X1.
+    // A request larger than three registers is invalid. Zero bits succeeds
+    // without consulting the entropy provider.
     if requested > u64::from(max_bits) {
         return SmcccReturn::status(status::INVALID_PARAMETER);
     }
@@ -141,20 +141,20 @@ fn rnd<S: EntropySource>(requested: u64, register_bits: u32, entropy: &mut S) ->
             EntropyError::Unavailable => status::NO_ENTROPY,
             EntropyError::Unsupported => status::NOT_SUPPORTED,
         };
-        // Deliberately return no data alongside the error.
         return SmcccReturn::status(code);
     }
 
     let mut words = [0u64; 3];
+    let register_bytes = (register_bits / 8) as usize;
     for (index, word) in words.iter_mut().enumerate() {
-        let start = index * 8;
-        let mut raw = [0u8; 8];
-        raw.copy_from_slice(&bytes[start..start + 8]);
-        *word = u64::from_le_bytes(raw);
+        let start = index * register_bytes;
+        for (offset, byte) in bytes[start..start + register_bytes].iter().enumerate() {
+            *word |= u64::from(*byte) << (offset * 8);
+        }
     }
 
     // Clear every bit above the request so the guest never receives entropy it
-    // did not ask for, and so unused registers read as zero.
+    // did not ask for; unused registers stay zero.
     mask_to_requested_bits(&mut words, requested, register_bits);
 
     if register_bits == 32 {

@@ -5,17 +5,15 @@ use crate::media::{VirtBootMediaConfig, WritableMedia};
 use crate::media_lease::MediaLease;
 use std::{collections::BTreeSet, fs, io, path::PathBuf};
 
-#[derive(Clone, Copy, Debug)]
-pub enum RuntimeMediaSlot {
-    Vars,
-    Primary,
-    Target,
-}
+#[path = "managed_pair_runtime_policy.rs"]
+mod policy;
+use policy::Policies;
+pub use policy::RuntimeMediaSlot;
 
 pub struct RuntimeLease {
     _pair: Option<LockedPair>,
     _logical: MediaLease,
-    slots: [Option<WritableMedia>; 3],
+    policies: Policies,
     retained: BTreeSet<PathBuf>,
 }
 

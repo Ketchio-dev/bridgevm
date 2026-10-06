@@ -2,7 +2,7 @@
 
 Document status: **Experimental contract**
 
-Last reviewed: **2026-08-31**
+Last reviewed: **2026-10-05**
 
 This is the versioned guest contract for a future BridgeVM-owned virtual Arm
 PC. It is defined from public Arm system, UEFI, ACPI, SMBIOS, PSCI/SMCCC,
@@ -48,11 +48,24 @@ The normative values live in
 | PCIe 64-bit MMIO | `0x20_0000_0000` | `0x20_0000_0000` |
 
 The board has no legacy paravirtual MMIO array and no compatibility firmware
-configuration device. System storage, xHCI input, installer media, network,
-display, guest-agent transport and audio are PCIe functions at `00:01.0`
-through `00:07.0`, respectively.
+configuration device. The current runtime exposes the host bridge at
+`00:00.0`, NVMe system storage at `00:01.0` and xHCI at `00:02.0`.
+The reserved installer-media, network, display, guest-agent and audio slots
+`00:03.0` through `00:07.0` return an absent vendor ID until runtime models
+exist. The DXE probe requires those exact three identities. Its result retains
+eight identity storage slots, with five required zero slots, so the 128-byte
+PCI result layout and NVMe field offsets remain stable.
 The runtime must query Hypervisor.framework's GIC region sizes, alignments and
 supported SPI range and fail closed if this map cannot be configured.
+
+On 2026-10-05, T12 job `t12-native-c23d20ec-20261005-r1` at
+`c23d20ec6f47c071515ee7f1f9e95b05840486e3` failed before guest execution:
+the runner retained a firmware digest superseded by the builder in
+`180e56b6e76e9f82706e4158be910b38ffdd29ff`. The builder, runner and opt-in
+smoke now use one [approved digest](../../crates/bridgevm-hvf/firmware/bridgevm-pc-dxe-entry.sha256).
+The historical eight-function receipts below describe their stated commits.
+A current T12 pass still requires 20 independent lanes and 40 successful
+firmware Block I/O reads; deterministic contract tests do not supply that proof.
 
 The first 2026-08-30 live placement probe correctly failed because the draft
 reserved only 4 KiB for the MSI frame while this Mac's Hypervisor.framework

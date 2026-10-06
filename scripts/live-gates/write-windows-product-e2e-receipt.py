@@ -4,8 +4,10 @@ from __future__ import annotations
 import argparse, hashlib, importlib.util, json, platform, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
+from product_e2e_identity import fixed_fields_match, is_sha256
 import windows_product_e2e_artifacts as ARTIFACTS
 import windows_product_e2e_failure as FAILURE
+from product_e2e_json_snapshot import JsonSnapshot, unchanged
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("product_receipt_verifier", ROOT / "scripts/verify-windows-product-e2e-receipt.py")
@@ -21,19 +23,8 @@ LANE_KEYS = frozenset({"schema_version", "job_id", "commit", "campaign_mode", "l
 REQUEST_PATHS = ("app_bundle_path", "app_executable_path", "runner_path", "firmware_path", "secure_boot_policy_path", "iso_path", "bundled_vars_seed_path", "guest_payload_path", "guest_payload_manifest_path", "lane_root", "library_root_path", "share_path", "disk_path", "vars_path", "vtpm_state_path", "snapshot_path", "secure_boot_receipt_path", "guest_evidence_path")
 REQUEST_KEYS = frozenset({"schema_version", "job_id", "commit", "campaign_mode", "lane", "nonce", "three_d_injection", "vm_name", "vm_slug", *REQUEST_PATHS})
 STAMP_KEYS = frozenset({"schema_version", "job_id", "commit", "lane", "nonce", "request_sha256", "result_sha256"})
-
-def unique_object(pairs: list[tuple[str, object]]) -> dict:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"duplicate field: {key}")
-        result[key] = value
-    return result
-
 def load_json(path: Path) -> object:
-    if not path.is_file() or path.is_symlink() or path.stat().st_size == 0 or path.stat().st_size > 1024 * 1024:
-        raise ValueError(f"unsafe or oversized JSON input: {path.name}")
-    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    return JsonSnapshot.read(path).value
 
 def digest(path: Path) -> str:
     if not path.is_file() or path.is_symlink():
@@ -59,12 +50,12 @@ def host_value(command: list[str], fallback: str) -> str:
         value = ""
     return value or fallback
 
-def lane(path: Path, *, job_id: str, commit: str, mode: str, ordinal: int, stamp: Path | None = None) -> dict:
-    value = load_json(path)
+def lane(path: Path, *, job_id: str, commit: str, mode: str, ordinal: int, stamp: Path | None = None, _document: JsonSnapshot | None = None) -> dict:
+    document = _document or JsonSnapshot.read(path); value = document.value
     if not isinstance(value, dict) or frozenset(value) != LANE_KEYS:
         raise ValueError(f"lane {ordinal} has missing or unknown fields")
     fixed = {"schema_version": LANE_SCHEMA, "job_id": job_id, "commit": commit, "campaign_mode": mode, "lane": ordinal, "three_d_injection": False}
-    if any(value.get(key) != expected for key, expected in fixed.items()):
+    if not fixed_fields_match(value, fixed):
         raise ValueError(f"lane {ordinal} identity or 3D policy differs")
     if not isinstance(value["nonce"], str) or not VERIFIER.SHA256.fullmatch(value["nonce"]):
         raise ValueError(f"lane {ordinal} nonce is invalid")
@@ -87,26 +78,28 @@ def lane(path: Path, *, job_id: str, commit: str, mode: str, ordinal: int, stamp
             raise ValueError(f"lane {ordinal} {field} is not a SHA-256")
     if stamp is not None:
         seal = load_json(stamp)
-        fixed_stamp = {"schema_version": "bridgevm.windows-hvf-3d-off-product-e2e-host-stamp.v1", "job_id": job_id, "commit": commit, "lane": ordinal, "nonce": value["nonce"], "result_sha256": digest(path)}
-        if not isinstance(seal, dict) or frozenset(seal) != STAMP_KEYS or any(seal.get(key) != expected for key, expected in fixed_stamp.items()) or not VERIFIER.SHA256.fullmatch(str(seal.get("request_sha256", ""))):
+        fixed_stamp = {"schema_version": "bridgevm.windows-hvf-3d-off-product-e2e-host-stamp.v1", "job_id": job_id, "commit": commit, "lane": ordinal, "nonce": value["nonce"], "result_sha256": document.sha256}
+        if not isinstance(seal, dict) or frozenset(seal) != STAMP_KEYS or not fixed_fields_match(seal, fixed_stamp) or not is_sha256(seal.get("request_sha256")):
             raise ValueError(f"lane {ordinal} authentication stamp is invalid")
     return value
 
 def authenticate(request_path: Path, result_path: Path, stamp_path: Path, *, job_id: str, commit: str, mode: str, ordinal: int) -> None:
-    result = lane(result_path, job_id=job_id, commit=commit, mode=mode, ordinal=ordinal)
-    request = load_json(request_path)
+    result_document, request_document = JsonSnapshot.read(result_path), JsonSnapshot.read(request_path)
+    result = lane(result_path, job_id=job_id, commit=commit, mode=mode, ordinal=ordinal, _document=result_document)
+    request = request_document.value
     nonce_prefix = result["nonce"][:12]
     vm_name = f"BridgeVM T17 Lane {ordinal} {nonce_prefix}"
     vm_slug = f"bridgevm-t17-lane-{ordinal}-{nonce_prefix}"
     fixed = {"schema_version": "bridgevm.windows-hvf-3d-off-product-e2e-request.v2", "job_id": job_id, "commit": commit, "campaign_mode": mode, "lane": ordinal, "nonce": result["nonce"], "three_d_injection": False, "vm_name": vm_name, "vm_slug": vm_slug}
-    if not isinstance(request, dict) or frozenset(request) != REQUEST_KEYS or any(request.get(key) != expected for key, expected in fixed.items()):
+    if not isinstance(request, dict) or frozenset(request) != REQUEST_KEYS or not fixed_fields_match(request, fixed):
         raise ValueError(f"lane {ordinal} request is malformed or unbound")
     for field in REQUEST_PATHS:
         if not isinstance(request[field], str) or not request[field].startswith("/"):
             raise ValueError(f"lane {ordinal} request path {field} is invalid")
     if result["failure_code"] == "none":
         ARTIFACTS.authenticate(request, result, ordinal)
-    stamp = {"schema_version": "bridgevm.windows-hvf-3d-off-product-e2e-host-stamp.v1", "job_id": job_id, "commit": commit, "lane": ordinal, "nonce": result["nonce"], "request_sha256": digest(request_path), "result_sha256": digest(result_path)}
+    unchanged(request_document, result_document)
+    stamp = {"schema_version": "bridgevm.windows-hvf-3d-off-product-e2e-host-stamp.v1", "job_id": job_id, "commit": commit, "lane": ordinal, "nonce": result["nonce"], "request_sha256": request_document.sha256, "result_sha256": result_document.sha256}
     with stamp_path.open("x", encoding="utf-8") as output:
         json.dump(stamp, output, indent=2, sort_keys=True); output.write("\n")
 

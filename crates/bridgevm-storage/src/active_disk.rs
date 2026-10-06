@@ -1,8 +1,8 @@
 //! Which disk is active — primary, snapshot overlay or backing — and the chain view.
 
+use crate::vm_clone::snapshot_records::{read_records, SnapshotDiskRecord};
 use crate::*;
 use bridgevm_config::VmManifest;
-use std::fs;
 use std::path::Path;
 
 impl VmStore {
@@ -16,20 +16,8 @@ impl VmStore {
         let active_disk = self.active_disk_at(&bundle, &manifest)?;
         let mut disks = Vec::new();
         let dir = bundle.join("metadata").join("snapshot-disks");
-        if dir.exists() {
-            for entry in fs::read_dir(dir)? {
-                let path = entry?.path();
-                if path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.ends_with("-create.json"))
-                {
-                    continue;
-                }
-                if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                    continue;
-                }
-                let mut disk: SnapshotDiskMetadata = read_json_required(&path)?;
+        for (_, record) in read_records(&dir)? {
+            if let SnapshotDiskRecord::Disk(mut disk) = record {
                 disk.overlay_exists = disk.overlay_path.exists();
                 disk.backing_exists = disk.backing_path.exists();
                 disks.push(disk);

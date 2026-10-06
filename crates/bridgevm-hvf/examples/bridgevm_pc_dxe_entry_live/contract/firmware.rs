@@ -7,22 +7,26 @@ mod guids;
 mod variable_guid;
 use guids::{DXE_CORE, PLATFORM_TABLES, RUNTIME_DXE};
 use variable_guid::VARIABLE_RUNTIME_DXE;
-const EXPECTED_FD_SHA256: &str = "5d11384916f8a9a5ec33f849157f21b1440df52855a4fd0c272d99e3b5a705ef";
+#[path = "approved_firmware.rs"]
+mod approved_firmware;
+#[cfg(test)]
+#[path = "firmware_pin_tests.rs"]
+mod pin_tests;
 fn sha256(bytes: &[u8]) -> String {
-    let hash = Sha256::digest(bytes);
-    let mut digest = String::with_capacity(64);
-    for byte in hash {
-        const HEX: &[u8; 16] = b"0123456789abcdef";
-        digest.push(HEX[(byte >> 4) as usize] as char);
-        digest.push(HEX[(byte & 0xf) as usize] as char);
-    }
-    digest
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 pub fn validate(bytes: &[u8]) -> Result<String, String> {
     let expected_len = board::FLASH_CODE.size as usize;
     expect("DXE-entry FD size", bytes.len(), expected_len)?;
     let digest = sha256(bytes);
-    expect("DXE-entry FD digest", digest.as_str(), EXPECTED_FD_SHA256)?;
+    expect(
+        "DXE-entry FD digest",
+        digest.as_str(),
+        approved_firmware::expected()?,
+    )?;
     let fv = bytes
         .get(FV_OFFSET..FV_OFFSET + FV_SIZE)
         .ok_or_else(|| "DXE firmware volume is outside flash".to_string())?;

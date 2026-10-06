@@ -1,0 +1,27 @@
+name: T22 development pair preparation contracts
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  query-windows-powershell:
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Copied read-only query against owned mocked providers (PowerShell 5.1)
+        shell: powershell
+        run: tests/integration/t22-pair-admission-powershell-test.ps1 -Python python
+  query-powershell-seven:
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Copied read-only query against owned mocked providers (PowerShell 7)
+        shell: pwsh
+        run: tests/integration/t22-pair-admission-powershell-test.ps1 -Python python

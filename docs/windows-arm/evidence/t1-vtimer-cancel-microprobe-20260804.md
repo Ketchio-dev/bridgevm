@@ -124,3 +124,17 @@ scripts/run-hvf-vtimer-cancel-gate.sh --skip-build --iterations 2000 --no-recove
 scripts/run-hvf-vtimer-cancel-gate.sh --skip-build --iterations 1500 \
   --no-recover --quiesce-probe --cancel-interval-us 0
 ```
+
+## Dated scope correction, 2026-10-05
+
+The results above remain the August recovery experiment. Production removed
+that recovery on 2026-09-07; see the dated removal in
+[a11-regression-seal-20260901.md](a11-regression-seal-20260901.md).
+A current default T1 run still exercises the legacy recovery policy and
+cannot establish production-policy equivalence or Windows boot reliability.
+Its 10,000-wake, cancellation-interval-0 default and counter verdict remain
+unchanged. New receipts bind the actual signed Debug binary, source, explicit
+configuration, detailed counters and log. Cached `--skip-build` runs require
+the matching prior build seal; old receipts are retained as historical data,
+without retroactively adding missing provenance. No current-policy comparison
+or new live result is recorded here, and no product criterion is promoted.

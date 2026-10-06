@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/decisions/hvf-competitive-architecture-and-risk-policy.md	decision	windows-architecture	-
+docs/decisions/hvf-windows-v1-suspend-decision.md	decision	windows-lifecycle	-
+docs/history/windows-hvf/native-vmm-lifecycle-and-block-framing-20261005.md	historical-evidence	windows-native-vmm	-

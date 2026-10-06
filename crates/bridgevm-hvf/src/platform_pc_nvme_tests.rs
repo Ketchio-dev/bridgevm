@@ -6,6 +6,8 @@ use crate::platform_virt::FlatGuestRam;
 fn ecam(register: u16) -> u64 {
     board::PCIE_ECAM.base + (1 << 15) + u64::from(register)
 }
+#[path = "platform_pc_nvme_msix_tests.rs"]
+mod msix_tests;
 
 fn write(platform: &mut BridgeVmPcPlatform, mem: &mut FlatGuestRam, gpa: u64, value: u64) {
     assert_eq!(

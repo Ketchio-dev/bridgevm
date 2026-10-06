@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/a1-gic-irq-state-20260806.md	current	windows-graphics	GOAL.md
+docs/history/windows-hvf/native-vmm-gic-deactivate-wake-20261005.md	historical-evidence	windows-native-vmm	-

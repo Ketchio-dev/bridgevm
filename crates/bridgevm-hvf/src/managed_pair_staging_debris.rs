@@ -5,8 +5,8 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-/// Runs before each copy and after a failed one: the next restore measures
-/// free space before it clears staging, so a partial copy must not wait.
+/// Runs before capacity admission and each copy, and after a failed one.
+/// A crashed copy must not consume the space needed for its own retry.
 pub(super) fn clear(staged: &Path) -> io::Result<()> {
     if private_directory(staged, false)? {
         fs::remove_dir_all(staged)?;

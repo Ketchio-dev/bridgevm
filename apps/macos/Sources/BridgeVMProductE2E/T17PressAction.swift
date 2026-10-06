@@ -14,6 +14,7 @@ enum T17PressAction {
                 throw T17Blocker(code: "ui-element-missing", detail: "identified UI element has no AXEnabled value: \(identifier)")
             }
             guard isEnabled else { pause(); continue }
+            guard now() < deadline else { throw T17Blocker(code: "ui-element-missing", detail: "identified UI element readiness timed out: \(identifier); timeout_s=\(timeout)") }
             let first = press()
             if first == .success { return }
             guard first == .cannotComplete else { throw failure(identifier, first, nil, nil, 1, frontmost()) }
@@ -21,7 +22,8 @@ enum T17PressAction {
             guard activated else { throw failure(identifier, first, nil, false, 1, frontmost()) }
             var last: AXError?, attempts = 1
             repeat {
-                pause(); last = retry(); attempts += 1
+                pause(); if now() >= deadline { break }
+                last = retry(); attempts += 1
                 if last == .success { return }
             } while last == .cannotComplete && now() < deadline
             throw failure(identifier, first, last, true, attempts, frontmost())

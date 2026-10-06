@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/b7-audio-teardown-live-20260901.md	current	windows-guest-integration	-
+docs/history/windows-hvf/native-vmm-hda-run-resume-20261005.md	historical-evidence	windows-native-vmm	-

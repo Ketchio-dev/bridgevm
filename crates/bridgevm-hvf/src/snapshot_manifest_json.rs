@@ -1,10 +1,11 @@
 //! Reading and writing the snapshot manifest's six fields.
 //!
-//! Hand-rolled rather than pulling serde into this crate for one struct. Split
-//! from snapshot_pair so the manifest's escaping rules can be read and tested
-//! without the file-copy logic around them.
+//! Parse the complete document before its fields can authorize replacement or
+//! restore. Typed deserialization rejects ambiguous duplicate known fields and
+//! numeric suffixes while decoding every JSON string escape.
 
-use super::SnapshotError;
+use super::{SnapshotError, SnapshotManifest, SNAPSHOT_FORMAT_VERSION};
+use serde::Deserialize;
 
 pub(super) fn escape_json(s: &str) -> String {
     s.chars()
@@ -17,52 +18,41 @@ pub(super) fn escape_json(s: &str) -> String {
         .collect()
 }
 
-pub(super) fn json_field<'a>(text: &'a str, key: &str) -> Result<&'a str, SnapshotError> {
-    let needle = format!("\"{key}\"");
-    let start = text
-        .find(&needle)
-        .ok_or_else(|| SnapshotError::BadManifest(format!("missing field {key}")))?;
-    let after = &text[start + needle.len()..];
-    let colon = after
-        .find(':')
-        .ok_or_else(|| SnapshotError::BadManifest(format!("field {key} has no value")))?;
-    Ok(after[colon + 1..].trim_start())
+#[derive(Deserialize)]
+struct Fields {
+    format_version: u64,
+    vm_id: String,
+    disk_bytes: u64,
+    disk_sha256: String,
+    vars_bytes: u64,
+    vars_sha256: String,
 }
 
-pub(super) fn json_u64(text: &str, key: &str) -> Result<u64, SnapshotError> {
-    let rest = json_field(text, key)?;
-    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-    digits
-        .parse()
-        .map_err(|_| SnapshotError::BadManifest(format!("field {key} is not a number")))
+// Flatten forces an object at the document root. Deserializing Fields directly
+// also accepts a positional JSON array, which is not the manifest format.
+#[derive(Deserialize)]
+struct Document {
+    #[serde(flatten)]
+    fields: Fields,
 }
 
-pub(super) fn json_str(text: &str, key: &str) -> Result<String, SnapshotError> {
-    let rest = json_field(text, key)?;
-    let rest = rest
-        .strip_prefix('"')
-        .ok_or_else(|| SnapshotError::BadManifest(format!("field {key} is not a string")))?;
-    // Walk rather than `find`, so an escaped quote inside the value does not
-    // look like the end of it. escape_json emits \" and \\, so those are the
-    // two sequences that can appear.
-    let mut out = String::new();
-    let mut chars = rest.chars();
-    loop {
-        match chars.next() {
-            Some('"') => return Ok(out),
-            Some('\\') => match chars.next() {
-                Some(c @ ('"' | '\\')) => out.push(c),
-                Some(c) => {
-                    out.push('\\');
-                    out.push(c);
-                }
-                None => break,
-            },
-            Some(c) => out.push(c),
-            None => break,
-        }
+pub(super) fn parse(text: &str) -> Result<SnapshotManifest, SnapshotError> {
+    // Additional fields remain compatible with v1; all six known fields are
+    // required at the top level and duplicate known names are refused.
+    let Document { fields } = serde_json::from_str(text)
+        .map_err(|error| SnapshotError::BadManifest(error.to_string()))?;
+    if fields.format_version != u64::from(SNAPSHOT_FORMAT_VERSION) {
+        return Err(SnapshotError::BadManifest(format!(
+            "format version {}, this build reads {SNAPSHOT_FORMAT_VERSION}",
+            fields.format_version
+        )));
     }
-    Err(SnapshotError::BadManifest(format!(
-        "field {key} is unterminated"
-    )))
+    Ok(SnapshotManifest {
+        format_version: SNAPSHOT_FORMAT_VERSION,
+        vm_id: fields.vm_id,
+        disk_bytes: fields.disk_bytes,
+        disk_sha256: fields.disk_sha256,
+        vars_bytes: fields.vars_bytes,
+        vars_sha256: fields.vars_sha256,
+    })
 }

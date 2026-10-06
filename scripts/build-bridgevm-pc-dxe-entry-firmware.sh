@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build the development-only BridgeVM PC RuntimeDxe/platform-table probe.
 set -euo pipefail
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 readonly EXPECTED_EDK2_COMMIT="b03a21a63e3bd001f52c527e5a57feddb53a690b"
 readonly EXPECTED_GCC_VERSION="aarch64-elf-gcc (GCC) 16.1.0"
 readonly EXPECTED_LD_VERSION="GNU ld (GNU Binutils) 2.46.1"
@@ -8,10 +9,11 @@ readonly EXPECTED_REBASED_DXE_SHA256="cfe2ea1a7dc5573b4a5f6952e9177475ef91fb41da
 readonly EXPECTED_RUNTIME_SHA256="5b3a37c1403e77b51b8dafb16a796dcbc3080692617ff0eae8b759c979b4260d"
 readonly EXPECTED_VARIABLE_SHA256="3d6f0fbd9d155f76d6f1001ee67fce25e36bd5aef20bea088421a772a7500a90"
 readonly EXPECTED_PLATFORM_SHA256="217dcb7e3d0fae1ed5918c4ef848cd1aa3d2403fbc1b5659ed3b1dc2d40a1e2e"
-readonly EXPECTED_PROBE_SHA256="4c2f2901aaeb61f1dc69566d93fe7c18a06617ba6b95c7a7f94b0f606c31a88b"
+readonly EXPECTED_PROBE_SHA256="e363760b35eb2f24e436427ebef93199985ac70d415f6b8805d5d807d8de50bd"
 readonly EXPECTED_VECTOR_SHA256="d66494fbeb6dd6f253dbb915ecff26f4b342e514582fb53cfbeeaefec0c7d775"
-readonly EXPECTED_FV_SHA256="b15e86bd7522a7ba61cb6711da7d969769fd78a0241c941c6420fc69cc4bb3a3"
-readonly EXPECTED_FD_SHA256="110a0dfb84c79a87af8a7a15bb3f444a62e20616c9d5eff01fde4731d3c0a976"
+readonly EXPECTED_FV_SHA256="706f76fe0f888b01429829a6221c96ffea80fa75803b0dfe9a6b855d5e929243"
+EXPECTED_FD_SHA256="$(python3 "$repo_root/scripts/read-bridgevm-pc-firmware-pin.py" "$repo_root/crates/bridgevm-hvf/firmware/bridgevm-pc-dxe-entry.sha256")"
+readonly EXPECTED_FD_SHA256
 readonly FLASH_SIZE=$((0x04000000))
 readonly FV_OFFSET=$((0x00100000))
 readonly FV_SIZE=$((0x00100000))
@@ -22,7 +24,6 @@ if [[ $# -ne 2 ]]; then
 fi
 edk2_root="$(cd "$1" && pwd)"
 output_dir="$2"
-repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 source_root="$repo_root/crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector"
 tool_root="$edk2_root/BaseTools/Source/C/bin"
 gcc="/opt/homebrew/bin/aarch64-elf-gcc"
@@ -118,21 +119,8 @@ vector_sha256="$(shasum -a 256 "$vector" | awk '{print $1}')"
 }
 mkdir -p "$output_dir"
 artifact="$output_dir/BridgeVmPcDxeEntry.fd"
-python3 - "$artifact" "$vector" "$fv" "$FLASH_SIZE" "$FV_OFFSET" "$FV_SIZE" <<'PY'
-import pathlib
-import sys
-artifact = pathlib.Path(sys.argv[1])
-vector = pathlib.Path(sys.argv[2]).read_bytes()
-fv = pathlib.Path(sys.argv[3]).read_bytes()
-size, offset, fv_size = map(int, sys.argv[4:])
-assert len(fv) == fv_size and len(vector) <= offset
-with artifact.open("wb") as stream:
-    stream.write(b"\xff" * size)
-    stream.seek(0)
-    stream.write(vector)
-    stream.seek(offset)
-    stream.write(fv)
-PY
+python3 "$repo_root/scripts/pack-bridgevm-pc-dxe-firmware.py" \
+  "$artifact" "$vector" "$fv" "$FLASH_SIZE" "$FV_OFFSET" "$FV_SIZE"
 artifact_sha256="$(shasum -a 256 "$artifact" | awk '{print $1}')"
 [[ "$artifact_sha256" == "$EXPECTED_FD_SHA256" ]] || {
   echo "DXE entry FD digest ${artifact_sha256} does not match ${EXPECTED_FD_SHA256}" >&2

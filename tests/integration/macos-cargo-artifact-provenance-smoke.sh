@@ -2,15 +2,15 @@
 # Cargo's reported executable, not a stale default target, must be packaged.
 set -euo pipefail
 unset CARGO_BUILD_TARGET
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 store="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-cargo-provenance.XXXXXX")" && pwd -P)"
 trap 'rm -rf "$store"' EXIT
 fixture="$store/repo"
 fake_bin="$store/bin"
-mkdir -p "$fixture/apps/macos/scripts" "$fixture/target/release/examples" "$fake_bin" "$store/elsewhere" "$store/output"
+mkdir -p "$fixture/scripts" "$fixture/apps/macos/scripts" "$fixture/target/release/examples" "$fake_bin" "$store/elsewhere" "$store/output"
 cp "$ROOT/apps/macos/scripts/"{build-sign-hvf-runner.sh,build-sign-hvf-windows-probe.sh,cargo-built-artifact.py,package-hvf-product-e2e.sh} \
   "$fixture/apps/macos/scripts/"
+cp "$ROOT/scripts/verify-signing-entitlements.py" "$fixture/scripts/"
 printf '[workspace]\n' > "$fixture/Cargo.toml"
 printf 'entitlements\n' > "$fixture/apps/macos/HvfRunner.entitlements"
 printf 'entitlements\n' > "$fixture/apps/macos/HvfRunner.release.entitlements"
@@ -89,7 +89,7 @@ set -euo pipefail
 case "$1" in
   --force) bin="${*: -1}"; [[ -x "$bin" ]]; printf '%s\n' "$bin" >> "$CODESIGN_LOG" ;;
   --verify) bin="${*: -1}"; [[ -x "$bin" ]] ;;
-  -d) printf '<key>com.apple.security.hypervisor</key><true/>\n' ;;
+  -d) printf '<plist version="1.0"><dict><key>com.apple.security.hypervisor</key><true/></dict></plist>\n' ;;
   *) exit 1 ;;
 esac
 SH

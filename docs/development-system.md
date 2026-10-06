@@ -274,9 +274,11 @@ look identical from a single failed run.
 
 ## 10. Documentation maintenance
 
-`docs/document-manifest.tsv` classifies every Markdown document. The checker
-fails if a new document is unclassified, a manifest path is missing, a path is
-duplicated, or a superseding document does not exist.
+`docs/document-manifest.tsv` and its explicit `@include` shards classify every
+Markdown document. Historical records live in `docs/document-manifests/history.tsv`.
+Every shard uses the same four-column header. The checker rejects missing or
+malformed shards, nested includes, duplicate document paths, unclassified
+documents, missing paths and missing superseding documents.
 
 Long logs belong in a dated evidence document. Root README and STATUS stay
 short. When their detail is still useful, archive the exact old version before

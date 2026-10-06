@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# T1 gate: build, sign and run the bare-metal vtimer/cancellation microprobe.
-#
-# This reproduces the host-side condition behind the A1 boot stall -- a guest
+# T1 legacy gate: build, sign and run the vtimer/cancellation microprobe.
+# This historical experiment reproduces the timer race -- a guest
 # parked in WFI whose virtual-timer fire was swallowed by an hv_vcpus_exit
 # cancellation -- in seconds rather than the ~20 minutes a Windows boot costs.
 #
@@ -18,6 +17,7 @@ STALL_TIMEOUT_MS=5000
 ARM_TICKS=1000
 OUT=""
 SKIP_BUILD=0
+JOB_ID="local-t1"
 EXTRA=()
 
 usage() {
@@ -44,6 +44,7 @@ while [ $# -gt 0 ]; do
         --arm-ticks) ARM_TICKS="$2"; shift 2 ;;
         --stall-timeout-ms) STALL_TIMEOUT_MS="$2"; shift 2 ;;
         --out) OUT="$2"; shift 2 ;;
+        --job-id) JOB_ID="$2"; shift 2 ;;
         --skip-build) SKIP_BUILD=1; shift ;;
         --quiesce-probe|--no-recover) EXTRA+=("$1"); shift ;;
         -h|--help) usage; exit 0 ;;
@@ -51,26 +52,14 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-BIN=target/debug/examples/hvf_vtimer_cancel_probe
-
+ARTIFACT="$PWD/scripts/live-gates/t1_probe_artifact.py"
+SOURCE_BEFORE="$(python3 "$ARTIFACT" source)"
 if [ "$SKIP_BUILD" -eq 0 ]; then
-    cargo build -p bridgevm-hvf --example hvf_vtimer_cancel_probe
-    # The probe needs com.apple.security.hypervisor to create a VM at all.
-    codesign --sign - --entitlements apps/macos/HvfRunner.entitlements --force "$BIN"
+    BIN="$(python3 "$ARTIFACT" build)"
+else
+    BIN="$(python3 "$ARTIFACT" target)"
 fi
-
-if [ ! -x "$BIN" ]; then
-    echo "missing $BIN; run without --skip-build" >&2
-    exit 1
-fi
-
-# A later `cargo build` of any target rewrites this binary and drops the
-# signature, so --skip-build cannot assume the entitlement survived. Without it
-# hv_vm_create fails with -85377017 and the probe panics before doing anything.
-if ! codesign -d --entitlements - "$BIN" 2>&1 | grep -q 'com.apple.security.hypervisor'; then
-    echo "$BIN is not signed with com.apple.security.hypervisor; re-signing" >&2
-    codesign --sign - --entitlements apps/macos/HvfRunner.entitlements --force "$BIN"
-fi
+BUILD_SEAL="$(python3 "$ARTIFACT" prepare "$BIN" "$((1 - SKIP_BUILD))" "$SOURCE_BEFORE")"
 
 ARGS=(
     --iterations "$ITERATIONS"
@@ -80,15 +69,5 @@ ARGS=(
 )
 [ ${#EXTRA[@]} -gt 0 ] && ARGS+=("${EXTRA[@]}")
 
-if [ -n "$OUT" ]; then
-    mkdir -p "$OUT"
-    ARGS+=(--receipt "$OUT/vtimer-cancel-receipt.json")
-    set +e
-    "$BIN" "${ARGS[@]}" 2>&1 | tee "$OUT/run.log"
-    status=${PIPESTATUS[0]}
-    set -e
-    echo "receipt: $OUT/vtimer-cancel-receipt.json"
-    exit "$status"
-fi
-
-exec "$BIN" "${ARGS[@]}"
+source "$PWD/scripts/live-gates/t1-probe-execute.sh"
+run_t1_probe

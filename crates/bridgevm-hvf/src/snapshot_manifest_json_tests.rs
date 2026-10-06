@@ -25,3 +25,7 @@ fn a_vm_id_with_quotes_does_not_break_the_manifest() {
     };
     assert_eq!(SnapshotManifest::from_json(&m.to_json()).unwrap(), m);
 }
+#[path = "snapshot_manifest_admission_tests.rs"]
+mod admission;
+#[path = "snapshot_manifest_json_adversarial_tests.rs"]
+mod adversarial;

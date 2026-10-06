@@ -107,8 +107,8 @@ fn host_cntvct() -> u64 {
     value
 }
 
-/// The recovery under test, kept byte-for-byte equivalent in intent to
-/// `probe_runtime/vtimer_recovery.rs`. Returns true when it rewrote a deadline
+/// Historical recovery experiment; production removed this policy in September 2026.
+/// This does not establish production equivalence. Returns true when it rewrote a deadline
 /// that had already passed, which is the swallowed-fire case.
 ///
 /// # Safety

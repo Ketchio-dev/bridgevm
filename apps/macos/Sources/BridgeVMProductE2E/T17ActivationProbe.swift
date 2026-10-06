@@ -3,23 +3,8 @@ import ApplicationServices
 import Foundation
 
 enum T17ActivationProbe {
-    static func capture(pid: pid_t, timeout: TimeInterval) -> T17ActivationRecord {
-        let app = AXUIElementCreateApplication(pid)
-        let running = NSRunningApplication(processIdentifier: pid)
-        return measure(
-            timeout: timeout, clock: { ProcessInfo.processInfo.systemUptime },
-            isActive: { running?.isActive },
-            activate: { running?.activate(options: [.activateIgnoringOtherApps]) },
-            setFront: {
-                AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString,
-                                             kCFBooleanTrue).rawValue
-            }, readFront: {
-                var value: CFTypeRef?
-                let status = AXUIElementCopyAttributeValue(
-                    app, kAXFrontmostAttribute as CFString, &value)
-                return (status.rawValue, value as? Bool)
-            }, pause: { RunLoop.current.run(until: Date().addingTimeInterval($0)) },
-            foreground: { NSWorkspace.shared.frontmostApplication?.processIdentifier })
+    static func capture(pid: pid_t, timeout: TimeInterval, admitted: () -> Bool = { true }) -> T17ActivationRecord {
+        T17ActivationNative.capture(pid: pid, timeout: timeout, admitted: admitted)
     }
 
     /// Same activation-only retries and 200 ms cadence. The monotonic deadline
@@ -28,7 +13,7 @@ enum T17ActivationProbe {
         timeout: TimeInterval, clock: () -> TimeInterval,
         isActive: () -> Bool?, activate: () -> Bool?, setFront: () -> Int32,
         readFront: () -> (Int32, Bool?), pause: (TimeInterval) -> Void,
-        foreground: () -> pid_t?
+        foreground: () -> pid_t?, admitted: () -> Bool = { true }
     ) -> T17ActivationRecord {
         let started = clock()
         var record = T17ActivationRecord()
@@ -43,18 +28,25 @@ enum T17ActivationProbe {
         guard timeout.isFinite, timeout >= 0, started.isFinite else { return finish(false) }
         let deadline = started + timeout
         repeat {
+            guard admitted() else { return finish(false) }
             record.nativeActive = isActive()
             if record.nativeActive == true { return finish(true) }
+            guard admitted() else { return finish(false) }
             record.attempts += 1
             record.nativeActivationAccepted = activate()
+            guard admitted() else { return finish(false) }
             record.axSetCode = setFront()
+            guard admitted() else { return finish(false) }
             pause(0.2)
+            guard admitted() else { return finish(false) }
             let front = readFront()
             record.axReadCode = front.0
             record.axFront = front.1
+            guard admitted() else { return finish(false) }
             record.nativeActive = isActive()
             if front.0 == AXError.success.rawValue, front.1 == true { return finish(true) }
         } while clock() < deadline
+        guard admitted() else { return finish(false) }
         record.nativeActive = isActive()
         return finish(record.nativeActive == true)
     }

@@ -19,6 +19,10 @@ mod transport_regs;
 mod tx_gather;
 mod virtqueue;
 
+use crate::virtio_queue::address::read_descriptor;
+use crate::virtio_queue::address::read_u16_at as read_u16;
+use crate::virtio_queue::address::write_used;
+use crate::virtio_queue::address::DESC_SIZE;
 pub(crate) use control_plane::*;
 pub use device_state::*;
 pub(crate) use msix_bridge::*;

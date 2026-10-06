@@ -1,8 +1,8 @@
 //! SQ/CQ state model, queue lifecycle, pending-doorbell bookkeeping, and the fetch-execute-complete drain engine.
 
+use super::configuration::CSTS_SHST_MASK;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
-use crate::pcie::NVME_MSIX_VECTOR_COUNT;
 
 /// Grow `slots` so index `idx` is addressable, filling new slots with `None`.
 pub(crate) fn ensure_slot<T>(slots: &mut Vec<Option<T>>, idx: usize) {
@@ -90,7 +90,7 @@ impl NvmeController {
         // advanced. The run loop calls this speculatively, so avoid scanning the
         // whole advertised queue space when no SQ has work.
         let mut word_idx = 0usize;
-        while word_idx < self.pending_sq_bits.len() {
+        while word_idx < self.pending_sq_bits.len() && self.csts & CSTS_SHST_MASK == 0 {
             let mut pending_word = self.pending_sq_bits[word_idx];
             while pending_word != 0 {
                 let bit = pending_word.trailing_zeros() as usize;
@@ -139,8 +139,8 @@ impl NvmeController {
                 Some(Some(sq)) => (sq.base, sq.size, sq.head, sq.tail_doorbell, sq.cqid),
                 _ => return,
             };
-            if head == tail {
-                return; // queue empty
+            if head == tail || !self.cq_has_space(cqid) {
+                return; // empty SQ or no completion slot available
             }
             let entry_gpa = base + u64::from(head) * SQ_ENTRY_SIZE;
             let mut buf = [0u8; SQ_ENTRY_SIZE as usize];
@@ -214,69 +214,6 @@ impl NvmeController {
                 completions.push(completion);
             }
         }
-    }
-
-    /// CREATE I/O COMPLETION QUEUE (NVMe 1.4 §5.3). CDW10: QID bits 15:0,
-    /// QSIZE bits 31:16 (0-based). CDW11: PC bit 0, IEN bit 1, interrupt
-    /// vector bits 31:16. PRP1 is the queue base.
-    pub(crate) fn admin_create_io_cq(&mut self, cmd: &SubmissionEntry) -> u16 {
-        let qid = (cmd.cdw10 & 0xffff) as usize;
-        let qsize_zero_based = ((cmd.cdw10 >> 16) & 0xffff) as u16;
-        let interrupt_vector = ((cmd.cdw11 >> CREATE_IO_CQ_IV_SHIFT) & 0xffff) as u16;
-        let interrupts_enabled = cmd.cdw11 & CREATE_IO_CQ_IEN_BIT != 0;
-        if qid == 0 || qid > usize::from(self.max_io_queues) {
-            return SC_INVALID_FIELD; // QID 0 is admin; higher QIDs lack doorbells.
-        }
-        if qsize_zero_based >= MAX_QUEUE_ENTRIES {
-            return SC_INVALID_FIELD;
-        }
-        let qsize = qsize_zero_based + 1;
-        if cmd.cdw11 & CREATE_IO_CQ_PC_BIT == 0 {
-            return SC_INVALID_FIELD; // CAP.CQR requires physically contiguous queues.
-        }
-        if interrupts_enabled && interrupt_vector >= NVME_MSIX_VECTOR_COUNT {
-            return SC_INVALID_FIELD;
-        }
-        ensure_slot(&mut self.cqs, qid);
-        self.cqs[qid] = Some(CompletionQueue {
-            base: cmd.prp1,
-            size: qsize,
-            tail: 0,
-            phase: true,
-            head: 0,
-            interrupt_vector,
-            interrupts_enabled,
-        });
-        SC_SUCCESS
-    }
-
-    /// CREATE I/O SUBMISSION QUEUE (NVMe 1.4 §5.4). CDW10: QID / QSIZE as for
-    /// the CQ; CDW11 bits 31:16 carry the associated CQID. PRP1 is the base.
-    pub(crate) fn admin_create_io_sq(&mut self, cmd: &SubmissionEntry) -> u16 {
-        let qid = (cmd.cdw10 & 0xffff) as usize;
-        let qsize_zero_based = ((cmd.cdw10 >> 16) & 0xffff) as u16;
-        let cqid = ((cmd.cdw11 >> 16) & 0xffff) as u16;
-        if qid == 0 || qid > usize::from(self.max_io_queues) {
-            return SC_INVALID_FIELD;
-        }
-        if qsize_zero_based >= MAX_QUEUE_ENTRIES {
-            return SC_INVALID_FIELD;
-        }
-        let qsize = qsize_zero_based + 1;
-        // The completion queue this SQ targets must already exist.
-        if self.cqs.get(cqid as usize).map(Option::is_some) != Some(true) {
-            return SC_INVALID_FIELD;
-        }
-        ensure_slot(&mut self.sqs, qid);
-        self.sqs[qid] = Some(SubmissionQueue {
-            base: cmd.prp1,
-            size: qsize,
-            head: 0,
-            tail_doorbell: 0,
-            cqid,
-        });
-        self.clear_sq_pending(qid);
-        SC_SUCCESS
     }
 
     /// Post a 16-byte completion-queue entry for `cmd` into completion queue

@@ -2,6 +2,20 @@
 
 use crate::*;
 
+#[path = "interrupt_delivery/prepare.rs"]
+mod prepare;
+#[path = "interrupt_delivery/spi.rs"]
+mod spi;
+pub(crate) use spi::*;
+#[path = "interrupt_delivery/msix.rs"]
+mod msix;
+pub(crate) use msix::*;
+#[path = "interrupt_delivery/error.rs"]
+mod error;
+pub(crate) use error::*;
+#[path = "interrupt_delivery/accounting.rs"]
+mod accounting;
+
 impl DrainLocation {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
@@ -16,6 +30,23 @@ pub(crate) struct DrainContext {
     pub(crate) location: DrainLocation,
     pub(crate) exit: u64,
     pub(crate) pc: u64,
+}
+
+impl DrainContext {
+    pub(crate) const fn pre_run(exit: u64, pc: u64) -> Self {
+        Self {
+            location: DrainLocation::PreRun,
+            exit,
+            pc,
+        }
+    }
+    pub(crate) const fn data_abort(exit: u64, pc: u64) -> Self {
+        Self {
+            location: DrainLocation::DataAbort,
+            exit,
+            pc,
+        }
+    }
 }
 
 pub(crate) struct PendingDrainDelivery {
@@ -114,97 +145,42 @@ impl RunLoopDrainStats {
     pub(crate) fn record_pre_run_skip(&mut self) {
         self.pre_run_skips += 1;
     }
-    pub(crate) fn prepare_pending_delivery(
-        &mut self,
-        platform: &mut VirtPlatform,
-        mem: &mut dyn GuestMemoryMut,
-        trace: DrainTrace,
-        context: DrainContext,
-    ) -> PendingDrainDelivery {
-        self.prepare_pending_delivery_inner(platform, mem, trace, context, true)
-    }
-    pub(crate) fn prepare_pending_delivery_after_mmio(
-        &mut self,
-        platform: &mut VirtPlatform,
-        mem: &mut dyn GuestMemoryMut,
-        trace: DrainTrace,
-        context: DrainContext,
-        post_drain: MmioPostDrain,
-    ) -> PendingDrainDelivery {
-        self.prepare_pending_delivery_inner(
-            platform,
-            mem,
-            trace,
-            context,
-            !post_drain.xhci_setup_input_attempted(),
-        )
-    }
-    pub(crate) fn prepare_pending_delivery_inner(
-        &mut self,
-        platform: &mut VirtPlatform,
-        mem: &mut dyn GuestMemoryMut,
-        trace: DrainTrace,
-        context: DrainContext,
-        drain_xhci_setup_input: bool,
-    ) -> PendingDrainDelivery {
-        match context.location {
-            DrainLocation::PreRun => self.pre_run_attempts += 1,
-            DrainLocation::DataAbort => self.data_abort_attempts += 1,
-        }
-
-        // Feed host time to the platform's HID report pacing (the crate holds no
-        // clock of its own). Both PreRun and DataAbort drains route through here.
-        platform.set_host_now(std::time::Instant::now());
-        if drain_xhci_setup_input {
-            platform.drain_xhci_setup_input_reports(mem);
-        }
-        platform.drain_xhci_pointer_input_reports(mem);
-        platform.poll_virtio_net(mem);
-        platform.poll_virtio_console(mem);
-        platform.poll_virtio_gpu_fences(mem);
-        platform.poll_hda(mem);
-        let spi = deliver_pending_spis(platform, &mut self.pending_spi_scratch, trace.spi);
-        debug_assert!(self.pending_msix_scratch.is_empty());
-        self.pending_msix_scratch.clear();
-        platform.drain_pending_msix_into(&mut self.pending_msix_scratch);
-        PendingDrainDelivery { context, spi }
-    }
     pub(crate) fn complete_pending_delivery(
         &mut self,
         pending: PendingDrainDelivery,
         trace: DrainTrace,
-    ) {
-        let context = pending.context;
-        let spi = pending.spi;
-        let msix = deliver_pending_msix(&self.pending_msix_scratch, trace.msix);
+    ) -> Result<(), InterruptDeliveryError> {
+        self.complete_pending_delivery_with(pending, |messages| {
+            deliver_pending_msix(messages, trace.msix)
+        })
+    }
+    pub(crate) fn complete_pending_delivery_with(
+        &mut self,
+        pending: PendingDrainDelivery,
+        deliver: impl FnOnce(&[MsixMessage]) -> Result<DeliveryCounts, MsixDeliveryFailure>,
+    ) -> Result<(), InterruptDeliveryError> {
+        let delivery = deliver(&self.pending_msix_scratch);
         self.pending_msix_scratch.clear();
-        self.last_drain_location = Some(context.location.as_str());
-        self.last_drain_exit = Some(context.exit);
-        self.last_drain_pc = Some(context.pc);
-        self.last_drain_msix = msix;
-        self.last_drain_spi = spi;
-        self.spi.add(spi);
-        self.msix.add(msix);
-
-        if spi.has_deliveries() || msix.has_deliveries() {
-            let location = context.location.as_str();
-            self.last_nonzero_location = Some(location);
-            self.last_nonzero_exit = Some(context.exit);
-            self.last_nonzero_pc = Some(context.pc);
-            if self.trace {
-                println!(
-                    "G004 IRQ drain: location={location} exit={} pc={:#x} msix drained={} success={} failure={} spi drained={} success={} failure={}",
-                    context.exit,
-                    context.pc,
-                    msix.drained,
-                    msix.success,
-                    msix.failure,
-                    spi.drained,
-                    spi.success,
-                    spi.failure
-                );
-            }
-        }
+        let msix = match &delivery {
+            Ok(counts) => *counts,
+            Err(failure) => failure.counts,
+        };
+        self.record_completed_delivery(pending.context, pending.spi, msix);
+        delivery
+            .map(|_| ())
+            .map_err(|failure| InterruptDeliveryError::Msix {
+                context: pending.context,
+                failure,
+            })
+    }
+    pub(crate) fn finish_prepared_interrupt_delivery(
+        &mut self,
+        pending: Result<PendingDrainDelivery, SpiDeliveryError>,
+        trace: DrainTrace,
+    ) -> Result<(), InterruptDeliveryError> {
+        complete_prepared_interrupt_delivery(pending, |pending| {
+            self.complete_pending_delivery(pending, trace)
+        })
     }
     pub(crate) fn print_summary(&self) {
         let last_drain_exit = self
@@ -240,40 +216,38 @@ impl RunLoopDrainStats {
     }
 }
 
-pub(crate) fn deliver_pending_msix(messages: &[MsixMessage], trace: bool) -> DeliveryCounts {
-    let mut counts = DeliveryCounts::default();
+pub(crate) fn deliver_pending_msix(
+    messages: &[MsixMessage],
+    trace: bool,
+) -> Result<DeliveryCounts, MsixDeliveryFailure> {
     let trace = trace || trace_msix_enabled();
-    for message in messages {
+    deliver_msix_messages(messages, |message| {
         let status = crate::usgic_bridge::deliver_msi(message.address, message.data)
             .unwrap_or_else(|| unsafe { hv_gic_send_msi(message.address, message.data) });
-        counts.record_status(status);
         if trace {
             println!(
                 "MSIX vector {} -> addr {:#x} intid {} status {status:#x}",
                 message.vector, message.address, message.data
             );
         }
-    }
-    counts
+        status
+    })
 }
 
 pub(crate) fn deliver_pending_spis(
     platform: &mut VirtPlatform,
     scratch: &mut Vec<(u32, bool)>,
     trace: bool,
-) -> DeliveryCounts {
-    let mut counts = DeliveryCounts::default();
+) -> Result<DeliveryCounts, SpiDeliveryFailure> {
     let trace_msix = trace_msix_enabled();
     scratch.clear();
     platform.drain_pending_spi_levels_into(scratch);
-    for &(intid, level) in scratch.iter() {
+    deliver_spi_levels(scratch, |intid, level| {
         let status = crate::usgic_bridge::deliver_spi(intid, level)
             .unwrap_or_else(|| unsafe { hv_gic_set_spi(intid, level) });
-        counts.record_status(status);
         if trace || (status != 0 && trace_msix) {
             println!("SPI intid {intid} level={level} status {status:#x}");
         }
-    }
-    scratch.clear();
-    counts
+        status
+    })
 }

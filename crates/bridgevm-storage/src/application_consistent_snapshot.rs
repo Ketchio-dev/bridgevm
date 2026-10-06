@@ -14,19 +14,6 @@ pub(crate) fn application_consistent_snapshot_required_capabilities() -> Vec<Str
 }
 
 impl VmStore {
-    pub fn application_consistent_snapshot_preflight_metadata(
-        &self,
-        vm_name: &str,
-        snapshot_name: &str,
-    ) -> Result<Option<ApplicationConsistentSnapshotPreflightMetadata>, StorageError> {
-        let (bundle, _) = self.get_vm(vm_name)?;
-        let path = application_consistent_snapshot_preflight_path(&bundle, snapshot_name);
-        if !path.exists() {
-            return Ok(None);
-        }
-        Ok(Some(read_json_required(&path)?))
-    }
-
     pub(crate) fn prepare_application_consistent_snapshot_preflight_at(
         &self,
         bundle: &Path,

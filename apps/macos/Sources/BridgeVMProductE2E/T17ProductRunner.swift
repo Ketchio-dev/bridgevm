@@ -15,6 +15,7 @@ final class T17ProductRunner {
     private let fileManager: FileManager
     private(set) var application: Process?
     private(set) var ui: T17UIControlling?
+    private var installationPending = false
 
     init(request: T17Request, fileManager: FileManager = .default) {
         self.request = request
@@ -117,6 +118,7 @@ final class T17ProductRunner {
     }
 
     private func installWindows(_ ui: T17UIControlling) throws {
+        installationPending = true
         try ui.press("bridgevm.install.start", timeout: 20)
         let sampler = T17InstallEnvironmentSampler(bundlePath: request.bundlePath)
         try T17InstallTimeoutDiagnostic.wait(
@@ -125,6 +127,7 @@ final class T17ProductRunner {
             stage: { try ui.text(T17InstallMonitor.stageIdentifier, timeout: 1) },
             failure: { try ui.text(T17InstallMonitor.failureIdentifier, timeout: 1) },
             sample: { sampler.capture() }, markers: { sampler.markers() })
+        installationPending = false
     }
 
     private func verifyCreatedVM() throws {
@@ -184,29 +187,18 @@ final class T17ProductRunner {
     }
 
     private func stopOwnedApplication() -> Bool {
-        if let ui { try? ui.press("bridgevm.windows.runtime.stop", timeout: 2) }
         let log = bundle.appendingPathComponent("logs/hvf/run.log")
-        _ = waitUntil(timeout: 30) { HvfStopLine.systemOffObserved(in: T17BoundedLog.text(log, whole: true)) }
-        guard let application else { return true }
-        if application.isRunning { application.terminate() }
-        _ = waitUntil(timeout: 10) { !application.isRunning }
-        if application.isRunning { application.interrupt() }
-        _ = waitUntil(timeout: 5) { !application.isRunning }
-        return !application.isRunning
+        return T17OwnedApplicationCleanup.stop(installationPending: installationPending,
+            press: { try self.ui?.press($0, timeout: $1) },
+            installStage: { try self.ui?.text(T17InstallMonitor.stageIdentifier, timeout: 1) },
+            systemOffObserved: { HvfStopLine.systemOffObserved(in: T17BoundedLog.text(log, whole: true)) },
+            applicationIsRunning: { self.application?.isRunning == true },
+            terminate: { self.application?.terminate() }, interrupt: { self.application?.interrupt() })
     }
 
     private var vmRoot: URL { URL(fileURLWithPath: request.libraryRootPath).appendingPathComponent(request.vmSlug) }
     var bundle: URL { vmRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true) }
     private var privateUnattend: URL { URL(fileURLWithPath: request.laneRoot).appendingPathComponent("e2e-unattend.xml") }
-
-    private func waitUntil(timeout: TimeInterval, _ predicate: () -> Bool) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            if predicate() { return true }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        } while Date() < deadline
-        return predicate()
-    }
 
     private func regularFile(_ url: URL) -> Bool { T17BoundedLog.regularFile(url) }
 

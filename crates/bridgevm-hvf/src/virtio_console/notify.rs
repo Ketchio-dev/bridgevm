@@ -21,7 +21,7 @@ impl VirtioConsole {
             let avail = self
                 .queues
                 .get(usize::from(queue_index))
-                .and_then(|queue| read_u16(mem, queue.driver + 2));
+                .and_then(|queue| read_u16(mem, queue.driver, 2));
             let last = self
                 .queues
                 .get(usize::from(queue_index))

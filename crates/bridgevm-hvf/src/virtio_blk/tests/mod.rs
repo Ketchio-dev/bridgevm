@@ -191,7 +191,7 @@ pub(super) fn oversized_read_descriptor_is_rejected_before_growing_scratch() {
 
     let completion = dev.process_descriptor_chain(&mut mem, 0, &mut descs, &mut scratch);
 
-    assert_eq!(completion.written_len, 1);
+    assert_eq!(completion.written_len, 0);
     assert_eq!(mem.read(status, 1), [VIRTIO_BLK_S_IOERR]);
     assert!(scratch.is_empty());
     assert_eq!(scratch.capacity(), capacity);

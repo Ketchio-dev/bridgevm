@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/a1-userspace-gic-swap-20260808.md	current	windows-graphics	GOAL.md
+docs/history/windows-hvf/native-vmm-gic-pending-readback-20261005.md	historical-evidence	windows-native-vmm	-

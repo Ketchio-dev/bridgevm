@@ -15,7 +15,7 @@ enum T17Activation {
         observe(pid: pid, timeout: timeout).succeeded
     }
 
-    static func observe(pid: pid_t, timeout: TimeInterval = 5) -> T17ActivationRecord {
-        T17ActivationProbe.capture(pid: pid, timeout: timeout)
+    static func observe(pid: pid_t, timeout: TimeInterval = 5, admitted: () -> Bool = { true }) -> T17ActivationRecord {
+        T17ActivationProbe.capture(pid: pid, timeout: timeout, admitted: admitted)
     }
 }

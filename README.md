@@ -11,39 +11,19 @@ Hypervisor.framework VMM.**
   <img src="docs/media/windows-hvf-boot.gif" alt="Windows 11 Arm booting to the desktop on BridgeVM's Hypervisor.framework VMM" width="800">
 </p>
 
-BridgeVM is built for people who want to use, inspect, and improve a native
-virtualization stack. It includes persistent storage, display and input,
-networking, audio, guest integration, TPM/Secure Boot workflows, and snapshots.
-Experimental graphics research continues separately in Graphics Lab and is not
-part of the General Preview or v1 release scope.
+BridgeVM develops its own Windows 11 Arm VMM on Apple's Hypervisor.framework.
+The main engineering focus is CPU execution, interrupts and timers, device I/O,
+and VM lifecycle reliability. Apple VZ and QEMU compatibility backends remain
+separate engine paths.
 
-## Measured on real hardware
+**[Build and try the current source](docs/install.md#build-the-current-source)** ·
+**[Current status](STATUS.md)** · **[Contribute](CONTRIBUTING.md)** ·
+**[Documentation](docs/README.md)**
 
-| Retained campaign | Result | Evidence boundary |
-| --- | ---: | --- |
-| Fresh Windows first boot | **10 / 10 passed** | Product-default campaign; fixed gate required at least 9/10 |
-| CoreAudio playback and shutdown | **10 / 10 passed** | 2,504,031 frames; zero drops and zero unexpected callback errors |
+## Engineering Preview
 
-These are retained campaign results on the measured hardware and exact sealed
-inputs, not estimates or promises for every application or Mac. The fixed
-thresholds and receipts are linked from the
-[Windows capability matrix](docs/windows-arm/capability-matrix.md).
-
-## What works today
-
-- installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM;
-- persistent NVMe storage and UEFI variable state;
-- four-vCPU execution, reset/recreate lifecycle, and clean shutdown;
-- keyboard, absolute pointer, dynamic resize, network, host audio, clipboard,
-  folder transfer, and guest-agent control;
-- TPM 2.0, Secure Boot and measured-boot workflows, encrypted vTPM state,
-  recovery/migration;
-- deterministic hosted CI plus sealed real-hardware receipts for behavior that
-  CI cannot prove.
-
-BridgeVM distinguishes code that compiles, deterministic tests, and behavior
-observed in a real guest. The snapshot below is generated from the capability
-registry; it is the product wording source of truth.
+Product wording and known defects come from the capability registry. Its dated
+snapshot describes retained evidence, not a guarantee for every later commit:
 
 <!-- BEGIN GENERATED: capability-summary -->
 **Product state: Engineering Preview.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots and window Coherence verbs. 3D acceleration is excluded from General Preview and v1; release-blocking evidence remains open and known defects are disclosed below.
@@ -58,164 +38,85 @@ Known open defects:
 - Graphics future path: Vulkan is a Graphics Lab future path, excluded from General Preview and v1; D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-09-30 at commit `3574b1c6ed83274b15c4e62726fd7d3683af5ad9`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-10-06 at commit `828470e213da8411b43afc2aec8590dc80852974`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
-See the [current status](STATUS.md) and
-[Windows capability matrix](docs/windows-arm/capability-matrix.md) for the
-fixed thresholds and retained receipts.
+The [capability matrix](docs/windows-arm/capability-matrix.md) contains the fixed
+thresholds and exact receipts. Test results and live guest evidence are tracked
+separately; a documentation update does not renew either.
 
-> [!IMPORTANT]
-> BridgeVM is an **Engineering Preview**, not a production VM product. Bring
-> your own licensed Windows 11 Arm ISO. The general download does not contain a
-> Windows test driver, does not enable TESTSIGNING, and installs Windows with 3D
-> acceleration excluded from this release scope.
+## Try BridgeVM
 
-## Install status
-
-There is currently no safe downloadable General Preview. The only published
-release, `v1.0.0`, predates the fail-closed driver policy, so `install.sh`
-intentionally refuses it. Build the current source by following the
-[installation guide](docs/install.md); do not work around the refusal or treat
-the superseded release as the current product.
-
-After a safe successor is published, the installer will download the newest
-General Preview, verify its release contract, SHA-256 checksum, archive layout,
-app identity, architecture and ad-hoc code-signing seal, then install it in
-`/Applications`. It never touches VM data during an install or update.
-
-After the app opens:
-
-1. Choose **Windows → Install from ISO**.
-2. Select your Windows 11 Arm ISO, a signed ARM64 storage/serial/network
-   driver payload, its external SHA-256 manifest, and the VM size.
-3. Create the VM and let the unattended installation finish.
-
-An ISO alone is not sufficient for this Engineering Preview. The General
-Preview deliberately does not redistribute Windows kernel drivers; use
-[`windows-guest-payload-v1.example.tsv`](scripts/win-assets/windows-guest-payload-v1.example.tsv)
-to describe packages you are licensed to use. BridgeVM seals those exact
-inputs and refuses missing, changed, unsigned-CMS, non-ARM64, or incomplete
-payloads. This payload is for storage, serial integration, and networking; it
-does not enable the unavailable 3D injection path.
-
-Prefer a DMG or want to inspect every verification step? Read the
-[installation guide](docs/install.md).
-
-## Pick the right channel
-
-| Channel | Intended for | Windows graphics policy | Security boundary |
-| --- | --- | --- | --- |
-| **General Preview** | Users and contributors | Basic display; 3D acceleration is outside the release scope | No Windows test driver; TESTSIGNING is not enabled; Secure Boot policy is not weakened |
-| **Graphics Lab** | Driver developers on disposable test VMs | Opt-in test-signed experimental package | Separate tooling and evidence only; may require TESTSIGNING and a different Secure Boot posture |
-
-The Graphics Lab package is not a production-signing substitute and is not
-bundled into the General Preview. Its B4 result proves the exact test package's
-pointer behavior; it does not close the A9 Microsoft kernel-policy signing
-requirement. Read the full [distribution channel contract](docs/distribution-channels.md)
-before using it.
-
-## Known boundaries
-
-- The Mac app is ad-hoc signed, not Developer ID signed or Apple-notarized.
-  Browser-downloaded DMGs therefore need the documented one-time **Open
-  Anyway** step. The terminal installer states its narrower trust model and
-  verifies every artifact before replacement.
-- Windows-HVF install and import use the supported 3D-off configuration. A9
-  remains open until both clean-machine app journeys have retained evidence.
-- Running-state suspend is outside the v1 scope; powered-off snapshots are the
-  supported persistence boundary.
-
-## Future direction
-
-3D acceleration is a Graphics Lab future path, not an active release
-commitment. The retained Vulkan and D3D11 title campaigns remain valid research
-evidence, including the
-[known glyph defects](docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md),
-but they are non-blocking and do not describe General Preview or v1 behavior.
-Product work may resume after a
-Microsoft kernel-policy-signed ARM64 package exists and both product flows can
-verify it without weakening Secure Boot.
-
-## Build from source
+There is currently no safe downloadable General Preview. The published
+`v1.0.0` predates the fail-closed driver policy, so `install.sh` intentionally
+refuses it. Use the [source-build guide](docs/install.md#build-the-current-source)
+and [development setup](CONTRIBUTING.md#set-up-a-development-checkout).
 
 Requirements: Apple silicon, macOS 14+, Xcode/Swift 5.9+, and Rust 1.85+.
+Host coverage is limited; see [known limitations](STATUS.md#known-limitations).
 
-```sh
-git clone https://github.com/Ketchio-dev/bridgevm.git
-cd bridgevm
-cargo build --workspace --locked
-swift build --package-path apps/macos
-packaging/macos/build-debug-app-bundle.sh
-open target/macos/BridgeVMApp.app
-```
+Bring your own licensed Windows 11 Arm ISO and a signed ARM64
+storage/serial/network driver payload with an external SHA-256 manifest. An ISO
+alone is insufficient. The [installation guide](docs/install.md) explains the
+payload contract, bundle dependencies, and local ad-hoc-signed build. The
+General Preview contains no Windows test driver, does not enable TESTSIGNING,
+and keeps 3D acceleration outside the release scope.
 
-QEMU is needed only for the Compatibility Engine. The self-contained Windows
-HVF bundle has additional host dependencies checked by its packaging scripts.
-See [Contributing](CONTRIBUTING.md) for focused setup and verification paths.
+The Mac app is not Developer ID signed or Apple-notarized. Downloaded builds
+require the documented trust step. Running-state suspend is outside v1;
+see the [powered-off snapshot scope](docs/windows-arm/snapshot-scope-v1.md).
 
-## Three engines, three jobs
+## Develop the VMM
 
-| Engine | Backend | Use it for |
-| --- | --- | --- |
-| **Windows HVF** | Hypervisor.framework + BridgeVM device model | Windows 11 Arm on Apple silicon; main engineering focus |
-| **Apple VZ** | Virtualization.framework | Narrow, lightweight Linux/macOS Arm guests |
-| **Compatibility** | QEMU + HVF/TCG | Broad guest support and architecture emulation |
+Start with [CONTRIBUTING.md](CONTRIBUTING.md) for toolchains and focused checks,
+[AGENTS.md](AGENTS.md) for evidence and safety rules, and the
+[machine contract](docs/machine-contract/qemu-virt.md) for guest-visible behavior.
 
-The Windows guest contract is QEMU `virt`-compatible with
-[documented deviations](docs/machine-contract/qemu-virt-deviations.json); it is
-not described as a bit-for-bit QEMU implementation.
+| Area | Source |
+| --- | --- |
+| Own Hypervisor.framework VMM and devices | [`crates/bridgevm-hvf/`](crates/bridgevm-hvf/) |
+| Windows HVF runtime lifecycle | [`crates/bridgevm-hvf-runtime/`](crates/bridgevm-hvf-runtime/), [`runners/`](runners/) |
+| Mac app and helper boundaries | [`apps/macos/`](apps/macos/) |
+| App packaging and release verification | [`packaging/macos/`](packaging/macos/) |
+| Deterministic checks and sealed live gates | [`scripts/`](scripts/), [`tests/integration/`](tests/integration/) |
 
-## Contribute
-
-Bug reports, documentation fixes, tests, and focused code changes are welcome.
-Start with a
-[good first issue](https://github.com/Ketchio-dev/bridgevm/labels/good%20first%20issue)
-or run the fast deterministic gate:
-
-```sh
-scripts/check-project.sh --fast
-```
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before a larger change. It explains the
-repository map, evidence levels, private-media boundary, formatting, tests, and
-how to choose between hosted CI and a real-hardware gate. Security issues belong
-in the private process described in [SECURITY.md](SECURITY.md), not a public
-issue.
-
-## Project map
-
-```text
-apps/macos/                  SwiftUI apps and signed helper boundaries
-crates/bridgevm-hvf/         custom Hypervisor.framework VMM and devices
-crates/bridgevm-hvf-runtime/ typed Windows HVF runtime lifecycle
-crates/bridgevm-{cli,core}/  CLI and shared product model
-runners/                     supervised VM-engine processes
-packaging/macos/             app, DMG, and release verification
-scripts/                     deterministic tooling and sealed live gates
-tests/integration/           product-policy and integration checks
-docs/                        current guides, decisions, and dated evidence
-```
-
-## Documentation
-
-- [Install and update](docs/install.md)
-- [Distribution channels](docs/distribution-channels.md)
-- [Current status](STATUS.md)
-- [Windows 11 Arm guide](docs/windows-arm/README.md)
-- [Security model](docs/security/model.md)
-- [Documentation index](docs/README.md)
-
-Run the complete deterministic gate before treating a repository change as
-done:
+For quick deterministic feedback, run `scripts/check-project.sh --fast`.
+Run the complete gate before treating a repository change as done:
 
 ```sh
 scripts/check-project.sh
 ```
 
-Real Windows boots, graphics workloads, Hypervisor.framework behavior, and
-clean-machine distribution behavior require the corresponding sealed live gate;
-hosted CI is not a substitute.
+Deterministic checks run on GitHub-hosted CI. Real Windows boots,
+Hypervisor.framework behavior and clean-machine product journeys require the
+corresponding sealed [physical-Mac live gate](docs/testing/apple-silicon-live-gates.md).
+
+## Engine boundaries
+
+| Engine | Backend | Focus |
+| --- | --- | --- |
+| **Windows HVF** | Hypervisor.framework + BridgeVM device model | Main Windows 11 Arm engineering path |
+| **Apple VZ** | Virtualization.framework | Narrow Linux/macOS Arm path |
+| **Compatibility** | QEMU + HVF/TCG | Compatibility and architecture emulation |
+
+The Windows guest platform is a QEMU `virt`-compatible contract with
+[documented deviations](docs/machine-contract/qemu-virt-deviations.json).
+QEMU also provides `qemu-img` for offline image conversion and qcow2 disk
+operations. Raw-only Windows HVF import does not need that helper.
+
+Graphics Lab is a separate future research path, excluded from General Preview
+and v1. Its retained campaigns include
+[known glyph defects](docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md).
+Read the [distribution channel contract](docs/distribution-channels.md) before
+using its test-signed packages on disposable guests.
+
+## More information
+
+- [Documentation index](docs/README.md) — current guides, plans, and dated history.
+- [Current status](STATUS.md) — priorities, open criteria, and evidence limits.
+- [Security model](docs/security/model.md) and [private vulnerability reporting](SECURITY.md).
+- [Good first issues](https://github.com/Ketchio-dev/bridgevm/labels/good%20first%20issue)
+  and [contribution guide](CONTRIBUTING.md).
 
 ## License
 

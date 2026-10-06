@@ -13,6 +13,8 @@ mod interrupts;
 mod layout;
 #[path = "platform_pc_nvme.rs"]
 mod nvme;
+#[path = "platform_pc_nvme_process.rs"]
+mod nvme_process;
 #[path = "platform_pc_pcie.rs"]
 mod pcie;
 #[path = "platform_pc_runtime.rs"]

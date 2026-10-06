@@ -1,5 +1,4 @@
 name: Hosted full project check
-
 on:
   workflow_dispatch:
     inputs:
@@ -7,10 +6,8 @@ on:
         description: Exact repository commit to check (40 lowercase hex digits)
         required: true
         type: string
-
-permissions:
-  contents: read
-
+      run_a19_exfat: {description: Run the owned synthetic exFAT fixture, required: false, type: boolean, default: false}
+permissions: {contents: read}
 jobs:
   check-project:
     name: scripts/check-project.sh
@@ -39,9 +36,7 @@ jobs:
           test "$ACTUAL_SHA" = "$SOURCE_SHA"
           test "$(git rev-parse --is-shallow-repository)" = false
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
-        with:
-          toolchain: 1.97.0
-          components: clippy,rustfmt
+        with: {toolchain: 1.97.0, components: 'clippy,rustfmt'}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.1
         with:
           key: hosted-full-project-check
@@ -57,7 +52,7 @@ jobs:
           key: virgl-macos-15-arm64-2a173ee-${{ hashFiles('scripts/build-venus-host-deps.sh', 'scripts/patches/virglrenderer-macos-venus.patch') }}
       - name: Install deterministic check dependencies
         run: |
-          brew install meson ninja pkgconf libepoxy molten-vk vulkan-loader vulkan-headers shellcheck ripgrep
+          brew install meson ninja pkgconf libepoxy molten-vk vulkan-loader vulkan-headers shellcheck ripgrep qemu
           python3 -m pip install --break-system-packages pyyaml
           command -v shellcheck rg
           python3 -c 'import yaml'
@@ -68,3 +63,7 @@ jobs:
         run: scripts/verify-venus-native-artifacts.sh
       - name: Run exact deterministic project check
         run: scripts/check-project.sh
+  a19-exfat-publication:
+    if: ${{ inputs.run_a19_exfat }}
+    uses: ./.github/workflows/a19-exfat-publication-reusable.yml
+    with: {source_sha: '${{ inputs.source_sha }}'}

@@ -173,28 +173,7 @@ impl VmStore {
         active_disk.exists = active_disk.path.exists();
         self.write_active_disk_at(output, &active_disk)?;
 
-        let snapshot_disk_metadata_dir = output.join("metadata").join("snapshot-disks");
-        if snapshot_disk_metadata_dir.exists() {
-            for entry in fs::read_dir(&snapshot_disk_metadata_dir)? {
-                let path = entry?.path();
-                if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                    continue;
-                }
-                if path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.ends_with("-create.json"))
-                {
-                    let mut metadata: SnapshotDiskCreateMetadata = read_json_required(&path)?;
-                    rebase_snapshot_disk_metadata(&mut metadata.disk, source, output);
-                    write_json_pretty_atomic(&path, &metadata)?;
-                } else {
-                    let mut metadata: SnapshotDiskMetadata = read_json_required(&path)?;
-                    rebase_snapshot_disk_metadata(&mut metadata, source, output);
-                    write_json_pretty_atomic(&path, &metadata)?;
-                }
-            }
-        }
+        snapshot_records::rebase(source, output)?;
 
         let suspend_image_metadata_dir = output.join("metadata").join("suspend-images");
         if suspend_image_metadata_dir.exists() {
@@ -268,3 +247,6 @@ impl VmStore {
         Ok(())
     }
 }
+
+#[path = "snapshot_disk_records.rs"]
+pub(crate) mod snapshot_records;

@@ -1,9 +1,9 @@
-#[path = "probe_runtime/vtimer_recovery.rs"]
-pub(crate) mod vtimer_recovery;
 #[path = "../hvf_gic_boot_probe/input_control_wake.rs"]
 mod input_control_wake;
 #[path = "../hvf_gic_boot_probe/pointer_deadline_trace.rs"]
 mod pointer_deadline_trace;
+#[path = "probe_runtime/vtimer_recovery.rs"]
+pub(crate) mod vtimer_recovery;
 use super::*;
 use crate::boot_media_setup::attach_boot_media;
 use crate::final_report::persist_and_report_stop;
@@ -76,7 +76,9 @@ pub(crate) fn run() -> ExitCode {
         reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
         // Read in the run loop: waking the vCPU is not the same as stopping it.
         let boot_progress_kill = boot_progress_kill_for(vcpu);
-        let stall_kill_fired = boot_progress_kill.as_ref().map(|kill| Arc::clone(&kill.fired));
+        let stall_kill_fired = boot_progress_kill
+            .as_ref()
+            .map(|kill| Arc::clone(&kill.fired));
         let (reboot_plan, watchdog_generation, boot_progress) =
             setup_boot_supervision(watchdog_enabled, boot_progress_kill);
         let diagnostic_stop_fired =
@@ -142,7 +144,8 @@ pub(crate) fn run() -> ExitCode {
                     drain_trace,
                     pre_run_drain_gate: Arc::clone(&pre_run_drain_gate),
                     smp_trace: smp_trace.clone(),
-                    max_exits, generation: diagnostic_generation,
+                    max_exits,
+                    generation: diagnostic_generation,
                 })
             });
             let boot_generation = begin_watchdog_generation(&watchdog_generation);
@@ -352,35 +355,24 @@ pub(crate) fn run() -> ExitCode {
                 // asynchronous present after the post-MMIO drain but before
                 // this pre-run site; treating the two drains as duplicates can
                 // strand the newest frame until the guest exits again.
-                let pending = {
-                    let mut platform_guard = lock_platform(
-                        &platform,
-                        smp_trace.as_deref(),
-                        0,
-                        "cpu0 pre-run platform mutex",
-                    );
-                    let platform = &mut *platform_guard;
-                    if let Some(bridge) = kd_serial_bridge.as_mut() {
-                        bridge.pump(platform);
-                    }
-                    drain_stats.prepare_pending_delivery(
-                        platform,
-                        &mut guest_ram,
-                        drain_trace,
-                        DrainContext {
-                            location: DrainLocation::PreRun,
-                            exit: exits,
-                            pc: drain_pc,
-                        },
-                    )
-                };
-                drain_stats.complete_pending_delivery(pending, drain_trace);
-                let reason = match run_hvf_vcpu_once(vcpu, exit) {
+                let pending = drain_stats.prepare_primary_pre_run(
+                    &platform,
+                    &mut guest_ram,
+                    smp_trace.as_deref(),
+                    kd_serial_bridge.as_mut(),
+                    drain_trace,
+                    DrainContext::pre_run(exits, drain_pc),
+                );
+                if let Err(error) = drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace) {
+                    stop_reason = error.stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);
+                    break;
+                }
+                let reason = match run_hvf_vcpu_once(vcpu, exit, secondary_vcpus.as_ref()) {
                     Ok(reason) => reason,
                     Err(r) => {
                         hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                         fatal_vcpu_run_error = true;
-                        stop_reason = format!("hv_vcpu_run error {r:#x}");
+                        stop_reason = r.to_string();
                         break;
                     }
                 };
@@ -389,20 +381,13 @@ pub(crate) fn run() -> ExitCode {
                     trace.cpu0_progress(exits);
                 }
                 stop_reason_code = Some(reason);
-                if let Some(action) = secondary_vcpus
+                if let Some((reason, reset)) = secondary_vcpus
                     .as_ref()
-                    .and_then(SecondaryVcpuSet::terminal_action)
+                    .and_then(SecondaryVcpuSet::psci_stop_reason)
                 {
                     psci_calls += 1;
-                    match action {
-                        PsciTerminalAction::SystemOff => {
-                            stop_reason = format!("PSCI {PSCI_SYSTEM_OFF:#x} (system off)");
-                        }
-                        PsciTerminalAction::SystemReset => {
-                            requested_system_reset = true;
-                            stop_reason = format!("PSCI {PSCI_SYSTEM_RESET:#x} (system reset)");
-                        }
-                    }
+                    requested_system_reset = reset;
+                    stop_reason = reason;
                     break;
                 }
                 let sample_tick_canceled =
@@ -425,7 +410,10 @@ pub(crate) fn run() -> ExitCode {
                         (setup_input_wake_canceled, WakeReason::SetupInput),
                         (service_wake_canceled, WakeReason::AgentConsole),
                         (vblank_wake_canceled, WakeReason::Vblank),
-                        (watchdog_fired.load(Ordering::SeqCst), WakeReason::RebootWatchdog),
+                        (
+                            watchdog_fired.load(Ordering::SeqCst),
+                            WakeReason::RebootWatchdog,
+                        ),
                     ]));
                 }
                 if reason == EXIT_CANCELED {
@@ -468,22 +456,28 @@ pub(crate) fn run() -> ExitCode {
                     match ec {
                         EC_DATA_ABORT => {
                             let ipa = (*exit).exception.physical_address;
-                            let size = 1u8 << ((esr >> 22) & 0x3);
-                            let srt = ((esr >> 16) & 0x1f) as u32;
-                            let is_write = (esr >> 6) & 1 == 1;
                             trace_isv0_data_abort(esr, last_pc, ipa);
+                            let access = match DataAbort::decode(esr) {
+                                Ok(access) => access,
+                                Err(error) => {
+                                    fatal_vcpu_run_error = true;
+                                    stop_reason = error;
+                                    break;
+                                }
+                            };
+                            let (size, srt, is_write) =
+                                (access.size, access.register, access.write);
                             // srt=31 is WZR/XZR; never leak register-file slot 31 (PC) into MMIO.
                             let op = if is_write {
-                                let mut v = 0u64;
-                                if srt != 31 {
-                                    hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v);
+                                MmioOp::Write {
+                                    size,
+                                    value: mmio_store_value(vcpu, access),
                                 }
-                                MmioOp::Write { size, value: v }
                             } else {
                                 MmioOp::Read { size }
                             };
                             if crate::usgic_bridge::try_data_abort(
-                                0, vcpu, ipa, &op, srt, last_pc,
+                                0, vcpu, ipa, &op, access, last_pc,
                             ) {
                                 continue;
                             }
@@ -556,11 +550,7 @@ pub(crate) fn run() -> ExitCode {
                                     platform,
                                     &mut guest_ram,
                                     drain_trace,
-                                    DrainContext {
-                                        location: DrainLocation::DataAbort,
-                                        exit: exits,
-                                        pc: last_pc,
-                                    },
+                                    DrainContext::data_abort(exits, last_pc),
                                     post_drain,
                                 );
                                 (outcome, pending, device, pcie_target, pcie_context)
@@ -586,15 +576,19 @@ pub(crate) fn run() -> ExitCode {
                                 automation_gate.mark_serial_output_dirty();
                             }
                             record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
-                            drain_stats.complete_pending_delivery(pending, drain_trace);
+                            if let Err(error) =
+                                drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace)
+                            {
+                                stop_reason =
+                                    error.stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);
+                                break;
+                            }
                             if trace_this_fwcfg {
                                 println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
                             }
                             match outcome {
                                 MmioOutcome::ReadValue(v) if !is_write => {
-                                    if srt != 31 {
-                                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
-                                    }
+                                    write_mmio_read(vcpu, access, v);
                                 }
                                 MmioOutcome::ReadValue(_) | MmioOutcome::WriteAck => {}
                                 MmioOutcome::KnownUnimplemented(name) => {
@@ -603,15 +597,11 @@ pub(crate) fn run() -> ExitCode {
                                         redist_lo = redist_lo.min(ipa);
                                         redist_hi = redist_hi.max(ipa);
                                     }
-                                    if !is_write && srt != 31 {
-                                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
-                                    }
+                                    write_mmio_read(vcpu, access, 0);
                                 }
                                 MmioOutcome::Unmapped => {
                                     *unimpl.entry("<unmapped>").or_insert(0) += 1;
-                                    if !is_write && srt != 31 {
-                                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
-                                    }
+                                    write_mmio_read(vcpu, access, 0);
                                 }
                             }
                             hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
@@ -782,7 +772,9 @@ pub(crate) fn run() -> ExitCode {
                     );
                     let platform = &mut *platform_guard;
                     automation_gate.note_checked();
-                    if let Some(d) = platform.xhci_pointer_report_deadline() { pointer_deadline_trace::report_overdue(d); }
+                    if let Some(d) = platform.xhci_pointer_report_deadline() {
+                        pointer_deadline_trace::report_overdue(d);
+                    }
                     let now = std::time::Instant::now();
                     live_input.tick(platform, &mut guest_ram, now, input_wake);
                     if serial_reached_linux_panic(platform.uart_output(), &mut serial_stop_scans) {
@@ -896,7 +888,11 @@ pub(crate) fn run() -> ExitCode {
             let secondary_stop = secondary_vcpus
                 .map(SecondaryVcpuSet::shutdown_and_join)
                 .unwrap_or_default();
-            fatal_vcpu_run_error |= secondary_stop.run_error;
+            secondary_stop.merge_run_error(
+                &mut fatal_vcpu_run_error,
+                &mut requested_system_reset,
+                &mut stop_reason,
+            );
             if requested_system_reset {
                 // Crash-survivable snapshot: capture regs + full RAM BEFORE the
                 // reboot arm below wipes guest RAM / resets the vCPU. Gated on
@@ -922,8 +918,7 @@ pub(crate) fn run() -> ExitCode {
                             "PSCI SYSTEM_RESET: reboot {reboot_count}/{}",
                             reboot_plan.max_reboots
                         );
-                        let gic_reset_status = if actions.reset_gic
-                            && crate::usgic_bridge::reset()
+                        let gic_reset_status = if actions.reset_gic && crate::usgic_bridge::reset()
                         {
                             println!("userspace GIC reset");
                             0
@@ -996,7 +991,9 @@ pub(crate) fn run() -> ExitCode {
                 wake_coordinator,
                 wake_cancel_claims,
                 boot_timer,
-                boot_timer_elapsed, diagnostic_generation, secondary_stop,
+                boot_timer_elapsed,
+                diagnostic_generation,
+                secondary_stop,
                 drain_stats,
                 unimpl,
                 mmio_traces,

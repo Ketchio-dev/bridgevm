@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/machine-contract/bridgevm-virtual-arm-pc-v1.md	current	windows-architecture	-
+docs/windows-arm/evidence/bridgevm-pc-firmware-pcie-ecam-live-20260830.md	current	windows-architecture	-
+docs/history/windows-hvf/native-vmm-interrupt-and-board-contract-20261005.md	historical-evidence	windows-native-vmm	-

@@ -1,0 +1,9 @@
+{
+  "id": "native-msi-provider-failure",
+  "area": "interrupt-controller",
+  "qemu_behavior": "MSI delivery is handled by QEMU's software interrupt-controller model, without an Apple Hypervisor.framework provider result.",
+  "bridgevm_behavior": "The native Apple GIC backend advertises GICM_SET_SPI_NSR at 0x08080040 and MSI INTIDs 128 through 191. Any nonzero hv_gic_send_msi result stops the run through the existing fatal lifecycle path; the diagnostic retains the message vector, guest-programmable address and data, raw status, drain location, exit and PC. Attempted deliveries are counted and the unattempted batch tail is not sent or replayed.",
+  "guest_visible": true,
+  "impact": "Malformed guest MSI configuration can also produce a provider rejection and terminate the run. A raw status does not establish whether the cause was guest configuration or a provider failure; no ignore or retry guarantee is made. The optional userspace GIC backend's existing delivery behavior is unchanged. This policy is covered by deterministic injected-provider tests, not a live guest compatibility result.",
+  "evidence": "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/interrupt_delivery/msix.rs"
+}

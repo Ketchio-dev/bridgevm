@@ -1,0 +1,51 @@
+name: A19 genuine exFAT publication fixture
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Exact repository source commit (40 lowercase hex digits)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  exfat-publication:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Validate exact requested source
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: '[[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: 1.97.0
+      - name: One owned filesystem fixture (no guest or criterion pass)
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          printf 'checked_source_sha=%s\n' "$SOURCE_SHA"
+          python3 -B tests/integration/a19_exfat_fixture_selftest.py
+          python3 tests/integration/a19_exfat_fixture_runner.py --execute \
+            --source-sha "$SOURCE_SHA" --source-tree "$(git rev-parse 'HEAD^{tree}')" \
+            --output-root "$RUNNER_TEMP/a19-exfat-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+      - name: Retain only synthetic-fixture metadata and command logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: a19-exfat-publication-metadata
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/a19-exfat-${{ github.run_id }}-${{ github.run_attempt }}/exfat-fixture-execution-intent.private.json
+            ${{ runner.temp }}/a19-exfat-${{ github.run_id }}-${{ github.run_attempt }}/exfat-fixture-one-run-*/command-*.private.json
+            ${{ runner.temp }}/a19-exfat-${{ github.run_id }}-${{ github.run_attempt }}/exfat-fixture-one-run-*/command-*.log
+            ${{ runner.temp }}/a19-exfat-${{ github.run_id }}-${{ github.run_attempt }}/exfat-fixture-one-run-*/case-*.private.json
+            ${{ runner.temp }}/a19-exfat-${{ github.run_id }}-${{ github.run_attempt }}/exfat-fixture-one-run-*/mount-release.private.json
+            ${{ runner.temp }}/a19-exfat-${{ github.run_id }}-${{ github.run_attempt }}/exfat-fixture-one-run-*/result.private.json

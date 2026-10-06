@@ -106,7 +106,7 @@ assert_snapshot_metadata_create_list_contract() {
   local overlay="$bundle/disks/snapshots/$SNAPSHOT_NAME.qcow2"
   local snapshots_metadata="$bundle/metadata/snapshots.json"
   local snapshot_disk_metadata="$bundle/metadata/snapshot-disks/$SNAPSHOT_NAME.json"
-  local disk_create_metadata="$bundle/metadata/snapshot-disks/$SNAPSHOT_NAME-create.json"
+  local disk_create_metadata="$bundle/metadata/snapshot-disks/creates/$SNAPSHOT_NAME.json"
   local last_restore="$bundle/metadata/last-restore.json"
 
   "$runner" create "$vm" --os ubuntu --arch x86_64 --mode compatibility >/dev/null

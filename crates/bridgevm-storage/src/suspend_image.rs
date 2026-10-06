@@ -6,19 +6,6 @@ use std::fs;
 use std::path::Path;
 
 impl VmStore {
-    pub fn snapshot_suspend_image_metadata(
-        &self,
-        vm_name: &str,
-        snapshot_name: &str,
-    ) -> Result<Option<SnapshotSuspendImageMetadata>, StorageError> {
-        let (bundle, _) = self.get_vm(vm_name)?;
-        let path = snapshot_suspend_image_metadata_path(&bundle, snapshot_name);
-        if !path.exists() {
-            return Ok(None);
-        }
-        Ok(Some(read_json_required(&path)?))
-    }
-
     /// Record that a Fast Mode suspend image now exists at `image_path`,
     /// writing the VM-scoped suspend-image metadata. Used after a successful
     /// Fast Mode suspend.

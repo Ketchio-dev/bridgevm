@@ -2,19 +2,26 @@
 //! BAR registers, queues, admin command families, the I/O data path,
 //! namespaces and their backing store, and diagnostics.
 mod admin;
+mod admin_data;
+mod completion_capacity;
+mod configuration;
 mod controller;
 mod disk;
 mod doorbell;
 mod features;
 mod features_get;
 mod identify;
+mod identify_command;
 mod interrupts;
 mod io;
+mod io_write;
 mod log_page;
 mod namespace;
 mod protocol;
 mod prp;
 mod queue;
+mod queue_create;
+mod queue_lifecycle;
 mod registers;
 mod snapshot;
 mod trace;

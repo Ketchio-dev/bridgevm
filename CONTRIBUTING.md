@@ -30,10 +30,11 @@ swift build --package-path apps/macos
 scripts/check-project.sh --fast
 ```
 
-QEMU is optional unless you work on the Compatibility Engine. Native Venus,
-packaging, and live Windows work have additional dependencies documented beside
-their scripts; do not install them for an unrelated documentation or Rust-only
-change.
+QEMU is needed for the Compatibility Engine. It also provides `qemu-img` for
+offline image conversion and qcow2 disk operations. Raw-only Windows HVF import
+does not need that helper. Native Venus, packaging, and live Windows work have
+additional dependencies documented beside their scripts; do not install them
+for an unrelated documentation or Rust-only change.
 
 ## Choose the right area
 
@@ -45,7 +46,7 @@ change.
 | macOS UI | `apps/macos/` | `scripts/run-swift-tests.sh` |
 | Packaging | `packaging/macos/`, release scripts | relevant integration smoke plus full check |
 | Documentation | `README.md`, `STATUS.md`, `docs/` | `bash scripts/check-documentation-system.sh` |
-| Live evidence | `scripts/live-gates/` | policy smoke first; real runs use the Studio queue |
+| Live evidence | `scripts/live-gates/` | policy smoke first; real runs use the physical-Mac live queue |
 
 The [documentation index](docs/README.md) separates current product guides,
 plans, decisions, and historical evidence.
@@ -56,9 +57,10 @@ plans, decisions, and historical evidence.
 2. Reproduce the problem or state the expected behavior before editing.
 3. Read [AGENTS.md](AGENTS.md). It is the repository's binding evidence and
    safety policy.
-4. For a change spanning three or more files, make sure an approved `PLAN.md`
-   exists before implementation. `PLAN.md`, `GOAL.md`, and `HANDOFF.md` are
-   operator-owned and must not be staged.
+4. Make a concise plan when a change crosses subsystems or affects a release,
+   security, or guest-contract boundary. File count alone does not require
+   approval. `PLAN.md`, `GOAL.md`, and `HANDOFF.md` are operator-owned and must
+   not be staged.
 5. Add or update a test at the lowest layer that can catch the regression.
 6. Run focused checks while iterating, then `scripts/check-project.sh` before
    calling the change complete.
@@ -82,8 +84,8 @@ to close a multi-run gate. Capability wording comes from
 [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json).
 
 Most contributions need only deterministic tests. Real Windows media, a GPU,
-WindowServer, or bare-metal Hypervisor.framework work belongs in the local
-Studio queue; it never runs on a public pull-request runner. See the
+WindowServer, or bare-metal Hypervisor.framework work belongs in the
+physical-Mac live queue; it never runs on a public pull-request runner. See the
 [development system](docs/development-system.md) for the full workflow.
 
 ## Checks

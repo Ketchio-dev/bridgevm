@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/a5-a6-a7-live-20260817.md	current	windows-guest-integration	-
+docs/history/windows-hvf/native-vmm-hda-corb-interrupt-20261005.md	historical-evidence	windows-native-vmm	-
