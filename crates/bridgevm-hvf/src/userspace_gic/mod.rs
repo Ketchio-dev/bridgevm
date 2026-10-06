@@ -443,23 +443,6 @@ impl UserspaceGic {
         }
     }
 
-    fn sgi1r_targets(&self, value: u64) -> Vec<usize> {
-        if value & (1 << 40) != 0 {
-            // IRM: all but self — caller filters self out.
-            return (0..self.num_cpus).collect();
-        }
-        let target_list = value & 0xffff;
-        let aff1 = (value >> 16) & 0xff;
-        (0..self.num_cpus)
-            .filter(|&c| {
-                let mpidr = machine::cpu_mpidr(c as u64);
-                let cpu_aff1 = (mpidr >> 8) & 0xff;
-                let cpu_aff0 = mpidr & 0xff;
-                cpu_aff1 == aff1 && cpu_aff0 < 16 && target_list & (1 << cpu_aff0) != 0
-            })
-            .collect()
-    }
-
     /// Trapped ICC_* system-register access. Returns None if the register is
     /// not a GIC register (caller falls through to its other sysreg handling).
     pub fn sysreg(
@@ -662,6 +645,7 @@ mod mmio_regs;
 mod priority_mmio;
 mod register_fields;
 mod routing;
+mod sgi;
 mod spi_input;
 
 #[cfg(test)]

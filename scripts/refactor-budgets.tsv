@@ -1113,7 +1113,7 @@ crates/bridgevm-hvf-runtime/src/vtpm.rs	78	0
 crates/bridgevm-hvf-runtime/src/vtpm_wait.rs	1	0
 crates/bridgevm-hvf-runtime/src/vtpm_tests.rs	60	0
 crates/bridgevm-hvf-runtime/src/vtpm_tests_real.rs	145	0
-crates/bridgevm-hvf/src/userspace_gic/mod.rs	640	0
+crates/bridgevm-hvf/src/userspace_gic/mod.rs	623	0
 crates/bridgevm-hvf/src/userspace_gic/hppir.rs	11	0
 crates/bridgevm-hvf/src/userspace_gic/hppir_tests.rs	194	0
 crates/bridgevm-hvf/src/userspace_gic/cpu_interface.rs	40	0
@@ -4009,3 +4009,5 @@ docs/history/windows-hvf/native-vmm-transfer-and-teardown-20261006.md	100	0
 docs/document-manifests/native-vmm-transfer-and-teardown.tsv	3	0
 crates/bridgevm-hvf/src/nvme/queue_geometry.rs	16	0
 crates/bridgevm-hvf/src/nvme/tests/queue_geometry.rs	182	0
+crates/bridgevm-hvf/src/userspace_gic/sgi.rs	24	0
+crates/bridgevm-hvf/src/userspace_gic/sgi_affinity_tests.rs	140	0
