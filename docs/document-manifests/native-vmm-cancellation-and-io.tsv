@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/reference/hvf-kd-serial-bringup.md	reference	windows-debugging	-
+docs/history/windows-hvf/native-vmm-cancellation-and-io-20261006.md	historical-evidence	windows-native-vmm	-

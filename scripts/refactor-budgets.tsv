@@ -4013,3 +4013,5 @@ crates/bridgevm-hvf/src/userspace_gic/sgi.rs	24	0
 crates/bridgevm-hvf/src/userspace_gic/sgi_affinity_tests.rs	140	0
 crates/bridgevm-hvf/src/platform/apple/vcpu_run/watchdog.rs	22	0
 crates/bridgevm-hvf/src/platform/apple/vcpu_run/watchdog/tests.rs	88	0
+docs/document-manifests/native-vmm-cancellation-and-io.tsv	3	0
+docs/history/windows-hvf/native-vmm-cancellation-and-io-20261006.md	91	0
