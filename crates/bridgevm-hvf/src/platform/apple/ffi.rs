@@ -14,7 +14,6 @@ pub(crate) use std::{
         Arc,
     },
     thread,
-    time::Duration,
 };
 
 pub(crate) type HvReturn = i32;

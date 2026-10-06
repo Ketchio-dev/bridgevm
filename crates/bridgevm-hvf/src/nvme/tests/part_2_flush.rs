@@ -248,7 +248,7 @@ fn io_completion_queue_uses_interrupt_vector_from_cdw11_high_half() {
             0,
             IO_SQ_BASE,
             cdw10,
-            1u32 << 16,
+            (1u32 << 16) | 1,
             0,
         ),
     );
@@ -315,7 +315,7 @@ fn create_io_queues_reject_depth_beyond_advertised_mqes() {
     );
     assert_eq!(
         completion_status(&read_completion(&mem, ACQ_BASE, 0)),
-        SC_INVALID_FIELD
+        0x0102 // Invalid Queue Size (NVMe 1.4 §§5.3–5.4).
     );
 
     let valid_cdw10 = (u32::from(QDEPTH - 1) << 16) | 1;
@@ -348,13 +348,13 @@ fn create_io_queues_reject_depth_beyond_advertised_mqes() {
             0,
             IO_SQ_BASE,
             (u32::from(MAX_QUEUE_ENTRIES) << 16) | 2,
-            1u32 << 16,
+            (1u32 << 16) | 1,
             0,
         ),
     );
     assert_eq!(
         completion_status(&read_completion(&mem, ACQ_BASE, 2)),
-        SC_INVALID_FIELD
+        0x0102 // Invalid Queue Size (NVMe 1.4 §§5.3–5.4).
     );
 
     submit_admin(
@@ -373,7 +373,7 @@ fn create_io_queues_reject_depth_beyond_advertised_mqes() {
     );
     assert_eq!(
         completion_status(&read_completion(&mem, ACQ_BASE, 3)),
-        SC_INVALID_FIELD
+        0x0102 // Invalid Queue Size (NVMe 1.4 §§5.3–5.4).
     );
 
     submit_admin(
@@ -386,12 +386,12 @@ fn create_io_queues_reject_depth_beyond_advertised_mqes() {
             0,
             IO_SQ_BASE,
             (u32::from(u16::MAX) << 16) | 2,
-            1u32 << 16,
+            (1u32 << 16) | 1,
             0,
         ),
     );
     assert_eq!(
         completion_status(&read_completion(&mem, ACQ_BASE, 4)),
-        SC_INVALID_FIELD
+        0x0102 // Invalid Queue Size (NVMe 1.4 §§5.3–5.4).
     );
 }

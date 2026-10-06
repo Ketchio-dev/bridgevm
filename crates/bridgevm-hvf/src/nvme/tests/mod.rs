@@ -14,6 +14,7 @@ mod part_3;
 mod prp_limit;
 mod prp_limit_support;
 mod prp_prefix;
+mod queue_geometry;
 mod queue_lifecycle;
 mod shutdown;
 mod write_completion;

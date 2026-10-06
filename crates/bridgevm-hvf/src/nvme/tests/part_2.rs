@@ -490,7 +490,7 @@ fn create_io_queues_then_write_read_round_trips_one_lba() {
         0,
         IO_SQ_BASE,
         cdw10,
-        1u32 << 16, // CQID = 1 in bits 31:16
+        (1u32 << 16) | 1, // CQID = 1; physically contiguous
         0,
     );
     submit_admin(&mut ctrl, &mut mem, 1, &sq_cmd);
