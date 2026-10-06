@@ -2,8 +2,6 @@
 
 Document status: **Current**
 
-Last revised: 2026-09-14
-
 This file is the concise evidence boundary for BridgeVM. Detailed measurements
 live in the [capability matrix](docs/windows-arm/capability-matrix.md) and dated
 receipts under `docs/windows-arm/evidence/`.
@@ -35,107 +33,45 @@ at the preview/release cut before that new head is treated as equally sealed.
 Documentation-only history does not become live guest proof simply because it is
 newer.
 
-## Engine overview
+## Current development focus
 
-| Engine | Current boundary |
-| --- | --- |
-| **Windows HVF** | Custom Hypervisor.framework VMM; installed Windows 11 Arm desktop, persistent storage, SMP, display/input, network, audio, guest integration, security lifecycle, and snapshots |
-| **Apple VZ** | Working narrow Linux/macOS Arm path through Virtualization.framework |
-| **Compatibility** | Supervised QEMU path for broad guest support and emulation |
+Development centers on BridgeVM's own Hypervisor.framework VMM:
 
-The custom Windows engine is the main engineering focus.
+1. reproduce and repair CPU, interrupt/timer, device-I/O and shutdown/lifecycle
+   defects with deterministic regressions;
+2. keep the [guest machine contract](docs/machine-contract/qemu-virt.md) and its
+   [documented deviations](docs/machine-contract/qemu-virt-deviations.json) explicit;
+3. improve audio/display continuity and storage recovery while retaining the
+   open A9 and A19 evidence boundaries above;
+4. validate the exact source revision in hosted CI, then use sealed physical-Mac
+   campaigns for claims that require a real guest;
+5. complete clean-machine install/import evidence and re-establish the final
+   no-regression gate before a preview or release cut.
 
-## Windows HVF: proven product surfaces
-
-The capability registry currently contains evidence for the following release
-criteria.
-
-### Boot and runtime
-
-- fresh first-boot reliability meeting the fixed cold-boot threshold;
-- 4-vCPU Windows execution;
-- guest restart and process-recreate reset lifecycle;
-- 100 consecutive reset/recreate cycles on the proven configuration;
-- clean guest shutdown and storage writeback;
-- standalone packaged-app boot without relying on the source checkout.
-
-### Storage and firmware
-
-- persistent NVMe-backed Windows disk;
-- persistent UEFI variables;
-
-Snapshot evidence and outstanding storage-safety limits are recorded in the
-generated A19 entry above and the [snapshot scope](docs/windows-arm/snapshot-scope-v1.md).
-
-### Display, input, and integration
-
-- virtio-gpu display;
-- keyboard and absolute-pointer input, including a fixed 20/20 live
-  pointer-click reliability campaign;
-- non-ASCII text path;
-- dynamic resize;
-- network connectivity;
-- host audio playback from guest PCM;
-- clipboard round trip;
-- folder transfer;
-- guest-agent lifecycle/control path.
-
-### Security
-
-- host-CSPRNG-backed guest TRNG implementation;
-- TPM 2.0 TIS/PPI command path;
-- live PPI clear operation;
-- Secure Boot guest evidence;
-- measured-boot event retrieval;
-- encrypted vTPM state with Keychain-associated VM identity;
-- authenticated recovery/migration lifecycle;
-- fail-closed handling for missing security-state provenance.
-
-### Graphics Lab future path
-
-- live Vulkan workload evidence above the configured frame-rate threshold;
-- live D3D11 workload evidence above the configured threshold across the required
-  campaign;
-- guest driver/ICD identity checks as part of the graphics evidence;
-- host-side renderer and virtio-gpu 3D command traces.
-
-These are retained **Graphics Lab research results**. They are excluded from
-General Preview and v1, and a passing title or smoke does not imply universal
-game/API compatibility.
+The [contribution guide](CONTRIBUTING.md#choose-the-right-area) maps these areas
+to source and focused checks. [Dated engineering records](docs/history/windows-hvf/)
+preserve individual findings; they do not promote product capability. Apple VZ
+and the QEMU Compatibility Engine remain separate backends.
 
 ## Distribution
 
-BridgeVM now defines two non-overlapping distribution channels. The **General
-Preview** is the only user-facing artifact: it is 3D-off, contains no Windows
-kernel package, does not require TESTSIGNING, and does not weaken Secure Boot
-policy. **Graphics Lab** is a separate contributor workflow for hash-sealed,
-test-signed experiments on disposable guests; it is not a consumer edition and
-cannot satisfy A9.
+Use the [current-source build](docs/install.md#build-the-current-source) while
+a safe General Preview successor is pending. The published `v1.0.0` predates the
+fail-closed driver boundary and is not recommended. The terminal installer
+requires a `BridgeVM-release.json` contract and refuses releases without it,
+even when an archive checksum is valid.
 
-The published `v1.0.0` predates the current A9 fail-closed boundary and is not
-recommended. A safe successor must carry a machine-readable
-`BridgeVM-release.json` contract. The terminal installer refuses any release
-without that contract, even if its archive checksum is otherwise valid.
+General Preview is the user-facing channel: 3D-off, no bundled Windows kernel
+package, no TESTSIGNING requirement, and no weakening of Secure Boot policy.
+Users supply licensed Windows media and the required signed ARM64 driver
+payload. Graphics Lab is a separate test-signed workflow on disposable guests;
+it cannot satisfy A9. Windows rejection of test mode remains an explicit error.
+See the [distribution channel contract](docs/distribution-channels.md).
 
-BridgeVM does not need Developer ID signing or Apple notarization to remain
-technically usable. The repository has an ad-hoc-signing path, and the packaging
-path produces a DMG without paid Apple credentials.
-
-Users may need to explicitly trust/open the downloaded app in macOS.
-This is a distribution/trust UX limitation, not a VMM execution requirement.
-
-BridgeVM does not redistribute Windows. Users supply their own Windows 11 Arm
-media and license.
-
-Experimental Windows graphics packages have a separate signing constraint and
-remain confined to Graphics Lab. Windows may reject test mode when Secure Boot
-policy prevents the BCD change; that case remains an explicit error instead of
-silently weakening security.
-
-Production Windows driver signing remains a future usability/distribution
-milestone for users who should not need test mode. It is not made unnecessary by
-using a user-provided ISO, because ISO ownership and kernel-driver trust are
-separate concerns.
+The Mac app uses ad-hoc signing, without Developer ID signing or Apple
+notarization. Downloaded builds require an explicit trust step. Windows driver
+trust is a separate constraint; owning an ISO does not establish it. Packaging,
+update/rollback UX and stronger artifact provenance remain development work.
 
 ## Known limitations
 
@@ -160,23 +96,6 @@ compatibility:
   but it is still outside the signed bundle, which the HVF and Apple VZ paths
   are not. `scripts/check-release-overrides.sh` records all three as known
   violations and fails if any is fixed without the record being removed.
-
-## Current priorities
-
-The highest-value work from this point is:
-
-1. keep the ad-hoc DMG deterministic, license-complete, and easy to verify;
-2. publish a fail-closed General Preview successor to the historical `v1.0.0`;
-3. keep README/status/documentation consistent with the capability registry;
-4. simplify user-supplied Windows ISO installation while keeping it 3D-off;
-5. keep test-signing/Secure Boot conflicts isolated to Graphics Lab;
-6. improve clean-machine install, diagnostics export, and recovery UX;
-7. run longer reset, resize, and recovery soak coverage;
-8. re-run the final no-regression gate at each preview tag/head.
-
-Developer ID/notarization, production Windows driver signing, and stronger
-artifact provenance can be added later without blocking technical users from
-trying the preview now.
 
 ## Evidence discipline
 
