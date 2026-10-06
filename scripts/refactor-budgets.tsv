@@ -4003,3 +4003,5 @@ crates/bridgevm-hvf/src/userspace_gic/spi_input.rs	41	0
 crates/bridgevm-hvf/src/userspace_gic/spi_input_tests.rs	151	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state/shutdown_join.rs	44	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state/shutdown_join_tests.rs	138	0
+crates/bridgevm-hvf/src/nvme/tests/prp_limit.rs	132	0
+crates/bridgevm-hvf/src/nvme/tests/prp_limit_support.rs	188	0

@@ -1,4 +1,5 @@
 //! PRP pointer/list decoding, LBA-to-byte transfer-range validation, and span coalescing.
+//! List walks allow one chain-only first page, then require data-page progress.
 
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
@@ -45,18 +46,18 @@ pub(crate) fn prp_spans_into(
     }
 
     let mut list_gpa = cmd.prp2;
-    let mut list_pages_seen = 0usize;
+    let mut list_pages_left = remaining.div_ceil(PAGE_SIZE) + 1;
     while remaining > 0 {
         let list_offset = (list_gpa % PAGE_SIZE_U64) as usize;
         if list_offset % 8 != 0 {
             out.truncate(start);
             return false;
         }
-        list_pages_seen += 1;
-        if list_pages_seen > 16 {
+        if list_pages_left == 0 {
             out.truncate(start);
             return false;
         }
+        list_pages_left -= 1;
         let list_len = PAGE_SIZE - list_offset;
         let entries_in_page = list_len / 8;
         let read_len = remaining.div_ceil(PAGE_SIZE).min(entries_in_page) * 8;
