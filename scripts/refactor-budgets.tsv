@@ -4051,3 +4051,6 @@ crates/bridgevm-hvf/src/virtio_gpu/parked_chains.rs	23	0
 crates/bridgevm-hvf/src/virtio_gpu/tests/parked_chains.rs	40	0
 docs/history/windows-hvf/native-vmm-virtio-gpu-parked-chain-bound-20261007.md	58	0
 docs/document-manifests/native-vmm-virtio-gpu-parked-chain-bound.tsv	3	0
+crates/bridgevm-hvf/src/pl011_tx_bound_tests.rs	14	0
+docs/history/windows-hvf/native-vmm-pl011-tx-bound-20261007.md	43	0
+docs/document-manifests/native-vmm-pl011-tx-bound.tsv	3	0
