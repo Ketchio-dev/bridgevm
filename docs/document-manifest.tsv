@@ -137,7 +137,7 @@ docs/windows-arm/evidence/a19-t20-r7-20260929.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-t20-r8-20260930.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-t23-r1-20260930.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-t21-t22-r2-20260930.md	current	windows-storage	-
-docs/windows-arm/evidence/b6-trace-nine-cell-collection-20260911.md	historical-evidence	b6-renderer-trace-collection	-
+@include	docs/document-manifests/native-vmm-virtio-console-backlog-bound.tsv	-	-
 @include	docs/document-manifests/diagnostic-observation-recovery.tsv	-	-
 @include	docs/document-manifests/t22-loader-admission-terminal.tsv	-	-
 @include	docs/document-manifests/t17-selection-history.tsv	-	-

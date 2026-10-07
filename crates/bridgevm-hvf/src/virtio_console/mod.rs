@@ -6,6 +6,8 @@ mod tests;
 #[macro_use]
 mod trace;
 mod agent_data_path;
+mod agent_inbound;
+mod control_message;
 mod control_plane;
 mod device_state;
 mod msix_bridge;

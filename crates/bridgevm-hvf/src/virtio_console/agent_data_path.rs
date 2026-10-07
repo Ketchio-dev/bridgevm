@@ -15,14 +15,6 @@ impl VirtioConsole {
         self.maybe_reassert_host_open();
     }
 
-    pub fn take_inbound(&mut self) -> Vec<u8> {
-        std::mem::take(&mut self.host_inbound)
-    }
-
-    pub fn drain_inbound_into(&mut self, out: &mut Vec<u8>) {
-        out.append(&mut self.host_inbound);
-    }
-
     pub(crate) fn deliver_agent_rx(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
         // Deliver host->guest bytes whenever the guest has posted receive
         // buffers on the agent RX queue. We intentionally do NOT gate on
@@ -66,6 +58,9 @@ impl VirtioConsole {
         let mut descs = std::mem::take(&mut self.descriptor_scratch);
         let mut bytes = std::mem::take(&mut self.read_scratch);
         for _ in 0..pending_entries(queue.last_avail_idx, avail_idx, queue.size) {
+            if !self.host_inbound_has_room() {
+                break;
+            }
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
             let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
             let Some(head) = read_u16(mem, queue.driver, ring_off) else {
