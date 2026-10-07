@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/history/windows-hvf/native-vmm-gic-active-list-bound-20261007.md	historical-evidence	windows-native-vmm	-
+docs/windows-arm/evidence/sb-guest-proof-20260723.md	historical-evidence	windows-security	STATUS.md
