@@ -227,7 +227,7 @@ crates/bridgevm-hvf/src/msix.rs	395	0
 crates/bridgevm-hvf/src/net_nat/handle_outbound_ipv4.rs	869	0
 crates/bridgevm-hvf/src/net_nat/idle_eviction.rs	35	0
 crates/bridgevm-hvf/src/net_nat/icmp_reply_rejection_reason.rs	496	13
-crates/bridgevm-hvf/src/net_nat/macaddr.rs	902	0
+crates/bridgevm-hvf/src/net_nat/macaddr.rs	881	0
 crates/bridgevm-hvf/src/net_nat/nat_stats.rs	36	0
 crates/bridgevm-hvf/src/net_nat/mod.rs	4	0
 crates/bridgevm-hvf/src/net_nat/tests/helpers.rs	212	0
@@ -4042,3 +4042,8 @@ docs/history/windows-hvf/native-vmm-virtio-console-backlog-bound-20261007.md	72	
 crates/bridgevm-hvf/src/probe_mmio/gic_select_tests/block_offset.rs	19	0
 docs/document-manifests/native-vmm-firmware-block-offset.tsv	3	0
 docs/history/windows-hvf/native-vmm-firmware-block-offset-20261007.md	42	0
+crates/bridgevm-hvf/src/net_nat/queued_outbound.rs	30	0
+crates/bridgevm-hvf/src/net_nat/reply_queue.rs	23	0
+crates/bridgevm-hvf/src/net_nat/tests/reply_bounds.rs	70	0
+docs/history/windows-hvf/native-vmm-nat-reply-bound-20261007.md	70	0
+docs/document-manifests/native-vmm-nat-reply-bound.tsv	3	0

@@ -4,12 +4,15 @@ mod icmp_reply_rejection_reason;
 mod idle_eviction;
 mod macaddr;
 mod nat_stats;
+mod queued_outbound;
+mod reply_queue;
 mod tcp_connection_state;
 
 pub use handle_outbound_ipv4::*;
 pub(crate) use icmp_reply_rejection_reason::*;
 pub use macaddr::*;
 pub use nat_stats::*;
+pub use queued_outbound::*;
 
 #[cfg(test)]
 mod tests;
