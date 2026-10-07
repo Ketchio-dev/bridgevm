@@ -4025,3 +4025,6 @@ crates/bridgevm-hvf/src/userspace_gic/active_priority.rs	36	0
 crates/bridgevm-hvf/src/userspace_gic/apr_coherence_tests.rs	123	0
 docs/document-manifests/native-vmm-gic-active-priority.tsv	3	0
 docs/history/windows-hvf/native-vmm-gic-active-priority-20261007.md	63	0
+crates/bridgevm-hvf/src/platform_virt/tests/virtio_pci_isr.rs	64	0
+docs/document-manifests/native-vmm-virtio-pci-isr.tsv	3	0
+docs/history/windows-hvf/native-vmm-virtio-pci-isr-20261007.md	53	0
