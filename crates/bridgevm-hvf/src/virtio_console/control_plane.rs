@@ -1,5 +1,6 @@
 //! The virtio-console control protocol: encoding, control-TX handling, port open/name.
 
+pub(crate) use super::control_message::*;
 use super::queue_pending::pending_entries;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
@@ -9,12 +10,6 @@ pub(crate) struct Control {
     pub(crate) id: u32,
     pub(crate) event: u16,
     pub(crate) value: u16,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PendingControlMessage {
-    pub(crate) len: usize,
-    pub(crate) bytes: [u8; MAX_CONTROL_MESSAGE_LEN],
 }
 
 impl VirtioConsole {
@@ -106,22 +101,6 @@ impl VirtioConsole {
         }
     }
 
-    pub(crate) fn enqueue_control(&mut self, message: impl Into<PendingControlMessage>) {
-        let message = message.into();
-        if console_trace_enabled() {
-            if let Some(control) = Control::parse(message.as_slice()) {
-                eprintln!(
-                    "[vcon] ctrl->guest id={} event={} value={} bytes={}",
-                    control.id,
-                    control.event,
-                    control.value,
-                    message.len()
-                );
-            }
-        }
-        self.pending_control.push_back(message);
-    }
-
     /// Re-assert PORT_OPEN(host) toward the agent port while the connection is
     /// still unconfirmed. This replaces the old fixed-count resend budget: a
     /// one-shot burst permanently gives up if the guest's port only stabilizes
@@ -206,42 +185,5 @@ impl Control {
         out[4..6].copy_from_slice(&self.event.to_le_bytes());
         out[6..8].copy_from_slice(&self.value.to_le_bytes());
         out
-    }
-}
-
-impl PendingControlMessage {
-    pub(crate) fn from_slice(bytes: &[u8]) -> Self {
-        assert!(bytes.len() <= MAX_CONTROL_MESSAGE_LEN);
-        let mut out = [0u8; MAX_CONTROL_MESSAGE_LEN];
-        out[..bytes.len()].copy_from_slice(bytes);
-        Self {
-            len: bytes.len(),
-            bytes: out,
-        }
-    }
-
-    pub(crate) fn agent_port_name() -> Self {
-        let mut out = [0u8; MAX_CONTROL_MESSAGE_LEN];
-        out[..CONTROL_LEN]
-            .copy_from_slice(&Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_NAME, 0).bytes());
-        out[CONTROL_LEN..MAX_CONTROL_MESSAGE_LEN].copy_from_slice(AGENT_PORT_NAME);
-        Self {
-            len: MAX_CONTROL_MESSAGE_LEN,
-            bytes: out,
-        }
-    }
-
-    pub(crate) fn as_slice(&self) -> &[u8] {
-        &self.bytes[..self.len]
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        self.len
-    }
-}
-
-impl From<Control> for PendingControlMessage {
-    fn from(control: Control) -> Self {
-        Self::from_slice(&control.bytes())
     }
 }

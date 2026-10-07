@@ -467,8 +467,8 @@ crates/bridgevm-hvf/src/virtio_blk/tests/mod.rs	472	0
 crates/bridgevm-hvf/src/virtio_blk/tests/part_2.rs	476	0
 crates/bridgevm-hvf/src/virtio_blk/trace.rs	29	0
 crates/bridgevm-hvf/src/virtio_blk/virtqueue.rs	97	0
-crates/bridgevm-hvf/src/virtio_console/agent_data_path.rs	99	0
-crates/bridgevm-hvf/src/virtio_console/control_plane.rs	242	0
+crates/bridgevm-hvf/src/virtio_console/agent_data_path.rs	94	0
+crates/bridgevm-hvf/src/virtio_console/control_plane.rs	184	0
 crates/bridgevm-hvf/src/virtio_console/device_state.rs	240	0
 crates/bridgevm-hvf/src/virtio_console/mod.rs	11	0
 crates/bridgevm-hvf/src/virtio_console/msix_bridge.rs	104	0
@@ -4034,3 +4034,8 @@ docs/document-manifests/native-vmm-virtio-gpu-hostmem.tsv	3	0
 docs/history/windows-hvf/native-vmm-virtio-gpu-hostmem-20261007.md	57	0
 docs/document-manifests/native-vmm-fwcfg-dma-bound.tsv	3	0
 docs/history/windows-hvf/native-vmm-fwcfg-dma-bound-20261007.md	59	0
+crates/bridgevm-hvf/src/virtio_console/agent_inbound.rs	19	0
+crates/bridgevm-hvf/src/virtio_console/control_message.rs	72	0
+crates/bridgevm-hvf/src/virtio_console/tests/backlog_bounds.rs	82	0
+docs/document-manifests/native-vmm-virtio-console-backlog-bound.tsv	3	0
+docs/history/windows-hvf/native-vmm-virtio-console-backlog-bound-20261007.md	72	0
