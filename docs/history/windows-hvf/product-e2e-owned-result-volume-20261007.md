@@ -46,10 +46,10 @@ execution, failure taxonomy and cleanup, plus exact allocation and stale
 identity/symlink rejection. Actual Swift request/app admission is exercised
 separately because synthetic helpers do not prove Swift behavior.
 
-These are deterministic tests, not Windows installation receipts. External
-volumes with ownership disabled still cannot provide the same native
-mountroot/LaunchServices behavior as an ownership-enabled workspace. Local
-experiments used a disposable APFS image backed by the external SSD, without
-changing that SSD's global ownership setting or any user asset. Full-project
-and exact-SHA hosted validation remain pending. A9, A11 and A19 remain OPEN;
-no capability, product-state or release promotion is made.
+Exact `78616d3c` local full check FAILED its T22 provenance step: historical
+sealed T17/T19 requests lack the new fields. That persistent-data fixture is
+valid and unchanged. A narrowly offline validator now admits either exact
+historical keys or complete typed current allocation metadata, retaining
+request/stamp seals without reading deleted work. Nine original plus two new
+contracts pass; successor full/hosted checks remain pending. These are not
+Windows receipts. A9/A11/A19 and product state remain unchanged.

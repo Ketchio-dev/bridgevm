@@ -3732,7 +3732,7 @@ scripts/live-gates/t22_pair_admission.py	71	0
 scripts/live-gates/t22_pair_controller.py	32	0
 scripts/live-gates/t22_pair_environment.py	22	0
 scripts/live-gates/t22_pair_output_lock.py	62	0
-scripts/live-gates/t22_pair_provenance.py	160	0
+scripts/live-gates/t22_pair_provenance.py	158	0
 scripts/live-gates/t22_pair_publication.py	73	0
 scripts/live-gates/t22_pair_query.py	44	0
 scripts/live-gates/t22_pair_runtime.py	125	0
@@ -4093,3 +4093,5 @@ scripts/live-gates/t17_display_header.py	16	0
 scripts/live-gates/t17_packet_allocation.py	31	0
 tests/integration/product-e2e-process-absence-test.py	41	0
 tests/integration/t17-packet-allocation-test.py	49	0
+scripts/live-gates/t22_retained_request.py	27	0
+tests/integration/t22-retained-request-contract.py	67	0
