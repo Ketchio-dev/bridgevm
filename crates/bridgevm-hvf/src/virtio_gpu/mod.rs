@@ -19,6 +19,7 @@ mod fb_sink;
 mod fb_sink_write;
 mod fence;
 pub(crate) mod interrupt;
+mod parked_chains;
 mod pci_device;
 mod protocol;
 mod queue_pending;
