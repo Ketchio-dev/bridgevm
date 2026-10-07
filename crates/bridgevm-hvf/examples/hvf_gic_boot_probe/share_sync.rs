@@ -350,50 +350,11 @@ impl ShareSync {
     }
 }
 
-/// Internal share keys are relative paths with forward slashes. Host joins on
-/// macOS accept '/', while Windows guest paths are converted at the wire edge.
-pub fn normalize_rel(name: &str) -> String {
-    normalize_rel_with_sep(name, '/')
-}
-
+#[path = "share_rel_path.rs"]
+mod share_rel_path;
 #[cfg(test)]
-pub fn to_guest_rel(name: &str) -> String {
-    normalize_rel_with_sep(name, '\\')
-}
-
-pub fn append_guest_rel_into(name: &str, out: &mut String) {
-    append_rel_with_sep_into(name, '\\', out);
-}
-
-pub fn from_guest_rel(name: &str) -> String {
-    normalize_rel(name)
-}
-
-fn normalize_rel_with_sep(name: &str, sep: char) -> String {
-    let mut out = String::with_capacity(name.len());
-    normalize_rel_with_sep_into(name, sep, &mut out);
-    out
-}
-
-fn normalize_rel_with_sep_into(name: &str, sep: char, out: &mut String) {
-    out.clear();
-    append_rel_with_sep_into(name, sep, out);
-}
-
-fn append_rel_with_sep_into(name: &str, sep: char, out: &mut String) {
-    out.reserve(name.len());
-    let mut wrote_part = false;
-    for part in name.split(['/', '\\']) {
-        if part.is_empty() || part == "." {
-            continue;
-        }
-        if wrote_part {
-            out.push(sep);
-        }
-        out.push_str(part);
-        wrote_part = true;
-    }
-}
+pub use share_rel_path::to_guest_rel;
+pub use share_rel_path::{append_guest_rel_into, from_guest_rel, normalize_rel};
 
 /// Parse the guest LS/LSR format `relpath|size|isDir|mtime`. The split is from
 /// the right so a pathological file name containing `|` still round-trips; the
@@ -419,11 +380,11 @@ pub fn parse_ls_into(listing: &str, out: &mut Vec<LsEntry>) {
         let Some(size) = parts.next().and_then(|part| part.parse().ok()) else {
             continue;
         };
-        let Some(name) = parts.next() else {
+        let Some(name) = parts.next().and_then(from_guest_rel) else {
             continue;
         };
         out.push(LsEntry {
-            name: from_guest_rel(name),
+            name,
             size,
             is_dir: is_dir == "1",
             mtime: mtime.to_string(),
@@ -500,17 +461,38 @@ mod tests {
 
     #[test]
     fn rel_path_helpers_round_trip_guest_and_host_forms() {
-        assert_eq!(from_guest_rel("sub\\dir\\file.txt"), "sub/dir/file.txt");
+        assert_eq!(
+            from_guest_rel("sub\\dir\\file.txt").as_deref(),
+            Some("sub/dir/file.txt")
+        );
         assert_eq!(to_guest_rel("sub/dir/file.txt"), "sub\\dir\\file.txt");
         let mut prefixed = String::from("C:\\share\\");
         append_guest_rel_into("./sub//./dir\\file.txt", &mut prefixed);
         assert_eq!(prefixed, "C:\\share\\sub\\dir\\file.txt");
         assert_eq!(
-            from_guest_rel(&to_guest_rel("sub/dir/file.txt")),
-            "sub/dir/file.txt"
+            from_guest_rel(&to_guest_rel("sub/dir/file.txt")).as_deref(),
+            Some("sub/dir/file.txt")
         );
         assert_eq!(normalize_rel("./sub//./dir\\file.txt"), "sub/dir/file.txt");
         assert_eq!(to_guest_rel("./sub//./dir\\file.txt"), "sub\\dir\\file.txt");
+    }
+
+    #[test]
+    fn guest_listing_entries_cannot_name_paths_outside_the_share() {
+        let entries = parse_ls(
+            "..\\escaped.txt|3|0|2026-01-01T00:00:00.0000000Z\n\
+             sub\\..\\..\\x|3|0|2026-01-01T00:00:00.0000000Z\n\
+             ../up|0|1|2026-01-01T00:00:00.0000000Z\n\
+             \\\\abs\\..ok.txt|3|0|2026-01-01T00:00:00.0000000Z\n",
+        );
+        let names: Vec<&str> = entries.iter().map(|entry| entry.name.as_str()).collect();
+        assert_eq!(names, ["abs/..ok.txt"]);
+
+        let mut sync = ShareSync::new(1024);
+        let actions = sync.on_guest_listing_normalized(parse_ls(
+            "..\\escaped.txt|3|0|2026-01-01T00:00:00.0000000Z\n",
+        ));
+        assert!(actions.is_empty());
     }
 
     #[test]

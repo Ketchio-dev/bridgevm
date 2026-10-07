@@ -908,7 +908,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/plan_tests.rs	73
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/psci_adapter.rs	255	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs	545	26
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/serial_input.rs	158	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync.rs	738	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync.rs	717	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace.rs	124	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace/event_ring.rs	231	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace/event_ring_tests.rs	130	0
@@ -4057,3 +4057,6 @@ docs/document-manifests/native-vmm-pl011-tx-bound.tsv	3	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/get_bound_tests.rs	39	0
 docs/history/windows-hvf/native-vmm-agent-get-bound-20261007.md	64	0
 docs/document-manifests/native-vmm-agent-get-bound.tsv	3	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_rel_path.rs	51	0
+docs/history/windows-hvf/native-vmm-share-path-containment-20261007.md	54	0
+docs/document-manifests/native-vmm-share-path-containment.tsv	3	0
