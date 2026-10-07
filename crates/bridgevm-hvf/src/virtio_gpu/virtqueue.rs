@@ -128,6 +128,9 @@ impl VirtioGpu {
             return;
         };
         for _ in 0..pending_entries(queue.last_avail_idx, avail_idx, queue_size) {
+            if control && self.parked_chains_fill_queue(queue_size) {
+                break;
+            }
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
             let ring_off = 4 + u64::from(last_avail_idx % queue_size) * 2;
             let Some(head) = read_u16(mem, queue.driver, ring_off) else {
@@ -391,18 +394,5 @@ impl VirtioGpu {
             }
         }
         u32::try_from(offset).unwrap_or(u32::MAX)
-    }
-
-    pub(crate) fn write_used(
-        mem: &mut dyn GuestMemoryMut,
-        queue: &VirtioGpuQueue,
-        id: u16,
-        len: u32,
-    ) {
-        if queue.device == 0 {
-            return;
-        }
-        let queue_size = queue.effective_size();
-        write_used(mem, queue.device, queue_size, id, len);
     }
 }
