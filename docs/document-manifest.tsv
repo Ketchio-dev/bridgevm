@@ -30,7 +30,7 @@ docs/plans/refactor-handoff.md	active-plan	development-handoff	-
 @include	docs/document-manifests/windows-install-and-snapshot-lifecycle.tsv	-	-
 @include	docs/document-manifests/native-vmm-gic-history.tsv	-	-
 @include	docs/document-manifests/native-vmm-gic-active-priority.tsv	-	-
-docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md	historical-evidence	windows-graphics	-
+@include	docs/document-manifests/native-vmm-firmware-block-offset.tsv	-	-
 docs/windows-arm/evidence/wdk-sdk-buffered-storage-20260712.md	historical-evidence	windows-driver	-
 docs/windows-arm/evidence/vtpm-windows-command-path-20260722.md	historical-evidence	windows-security	-
 docs/windows-arm/evidence/vtpm-windows-ppi-clear-20260722.md	historical-evidence	windows-security	-

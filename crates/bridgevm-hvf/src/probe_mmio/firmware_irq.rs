@@ -96,8 +96,8 @@ pub(crate) fn windows_arm_firmware_block_device_mmio_offset(
     ipa: u64,
 ) -> Option<u64> {
     block_devices.iter().find_map(|device| {
-        let end = device.base_ipa.checked_add(device.bytes)?;
-        (ipa >= device.base_ipa && ipa < end).then_some(ipa - device.base_ipa)
+        ipa.checked_sub(device.base_ipa)
+            .filter(|offset| *offset < device.bytes)
     })
 }
 
