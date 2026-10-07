@@ -101,15 +101,15 @@ pub(crate) const COMMON_QUEUE_DEVICE: u64 = 0x30;
 pub(crate) const VIRTIO_MSI_NO_VECTOR: u16 = 0xffff;
 
 pub(crate) fn common_cfg_offset(offset: u64) -> Option<u64> {
-    (PCI_COMMON_CFG_OFFSET..PCI_COMMON_CFG_OFFSET + PCI_CFG_REGION_SIZE)
-        .contains(&offset)
-        .then_some(offset - PCI_COMMON_CFG_OFFSET)
+    offset
+        .checked_sub(PCI_COMMON_CFG_OFFSET)
+        .filter(|rel| *rel < PCI_CFG_REGION_SIZE)
 }
 
 pub(crate) fn device_cfg_offset(offset: u64) -> Option<u64> {
-    (PCI_DEVICE_CFG_OFFSET..PCI_DEVICE_CFG_OFFSET + PCI_CFG_REGION_SIZE)
-        .contains(&offset)
-        .then_some(offset - PCI_DEVICE_CFG_OFFSET)
+    offset
+        .checked_sub(PCI_DEVICE_CFG_OFFSET)
+        .filter(|rel| *rel < PCI_CFG_REGION_SIZE)
 }
 
 pub(crate) fn notify_queue_index(offset: u64) -> Option<u16> {
