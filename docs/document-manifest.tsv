@@ -34,7 +34,7 @@ docs/plans/refactor-handoff.md	active-plan	development-handoff	-
 docs/windows-arm/evidence/wdk-sdk-buffered-storage-20260712.md	historical-evidence	windows-driver	-
 docs/windows-arm/evidence/vtpm-windows-command-path-20260722.md	historical-evidence	windows-security	-
 @include	docs/document-manifests/native-vmm-nat-reply-bound.tsv	-	-
-docs/windows-arm/evidence/sb-guest-proof-20260723.md	historical-evidence	windows-security	STATUS.md
+@include	docs/document-manifests/native-vmm-gic-active-list-bound.tsv	-	-
 docs/windows-arm/evidence/second-mac-migration-20260723.md	historical-evidence	windows-security	STATUS.md
 @include	docs/document-manifests/native-vmm-share-path-containment.tsv	-	-
 docs/windows-arm/evidence/gpu-live-receipt-20260723.md	historical-evidence	windows-graphics	STATUS.md

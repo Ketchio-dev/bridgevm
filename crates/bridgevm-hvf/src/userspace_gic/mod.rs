@@ -404,33 +404,6 @@ impl UserspaceGic {
         redist.enabled0 & (1 << VTIMER_INTID) != 0
     }
 
-    fn acknowledge(&mut self, cpu: usize) -> u32 {
-        let iface = &self.ifaces[cpu];
-        if !iface.group1_enabled {
-            return SPURIOUS_INTID;
-        }
-        let Some(candidate) = self.highest_candidate(cpu, iface.threshold()) else {
-            return SPURIOUS_INTID;
-        };
-        let intid = candidate.intid as usize;
-        if intid < 32 {
-            let redist = &mut self.redists[cpu];
-            let bit = 1u32 << intid;
-            redist.pending0 &= !bit;
-            redist.active0 |= bit;
-        } else {
-            let (reg, bit) = Distributor::bit(intid);
-            self.dist.pending[reg] &= !bit;
-            self.dist.active[reg] |= bit;
-        }
-        self.ifaces[cpu].active.push(ActiveInterrupt {
-            intid: candidate.intid,
-            priority: candidate.priority,
-            priority_dropped: false,
-        });
-        candidate.intid
-    }
-
     fn priority_drop(&mut self, cpu: usize, intid: u32) {
         if let Some(active) = self.ifaces[cpu]
             .active
@@ -607,6 +580,7 @@ impl UserspaceGic {
     }
 }
 
+mod acknowledge;
 mod active_priority;
 mod cpu_interface;
 mod deactivate;
