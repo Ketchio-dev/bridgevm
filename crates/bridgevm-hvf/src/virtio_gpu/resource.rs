@@ -5,6 +5,11 @@ use super::backing_copy_cursor::{read_from_backing_into_from, BackingReadCursor}
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 use crate::virtio_gpu_3d::BlobMemEntry;
+use crate::virtio_gpu_3d::VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY;
+
+/// QEMU's default `max_hostmem`: 2D resource pixels must stay below it, and a
+/// create that would reach it fails with ERR_OUT_OF_MEMORY.
+pub(crate) const MAX_2D_HOSTMEM: usize = 256 << 20;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GpuResource {
@@ -87,8 +92,9 @@ impl VirtioGpu {
             .checked_mul(u64::from(height))
             .and_then(|pixels| pixels.checked_mul(4))
             .and_then(|bytes| usize::try_from(bytes).ok())
+            .filter(|len| self.hostmem_after_create(resource_id, *len) < MAX_2D_HOSTMEM)
         else {
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, hdr);
             return;
         };
         self.resources.insert(
@@ -103,6 +109,16 @@ impl VirtioGpu {
         );
         self.three_d.register_2d_resource(resource_id);
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
+    }
+
+    fn hostmem_after_create(&self, resource_id: u32, len: usize) -> usize {
+        let in_use = self
+            .resources
+            .iter()
+            .filter(|(id, _)| **id != resource_id)
+            .map(|(_, resource)| resource.host_pixels.len())
+            .sum::<usize>();
+        in_use.saturating_add(len)
     }
 
     pub(crate) fn resource_unref_into(

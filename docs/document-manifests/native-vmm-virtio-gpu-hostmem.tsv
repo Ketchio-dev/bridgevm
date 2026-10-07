@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/history/windows-hvf/native-vmm-virtio-gpu-hostmem-20261007.md	historical-evidence	windows-native-vmm	-
+docs/windows-arm/evidence/stage4-vkcreateinstance-stall-20260727.md	historical-evidence	windows-graphics	STATUS.md

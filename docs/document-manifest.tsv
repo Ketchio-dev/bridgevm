@@ -26,7 +26,7 @@ docs/plans/refactor-handoff.md	active-plan	development-handoff	-
 @include	docs/document-manifests/native-vmm-cancellation-and-io.tsv	-	-
 @include	docs/document-manifests/native-vmm-device-registers.tsv	-	-
 @include	docs/document-manifests/native-vmm-virtio-pci-isr.tsv	-	-
-docs/windows-arm/evidence/stage4-vkcreateinstance-stall-20260727.md	historical-evidence	windows-graphics	STATUS.md
+@include	docs/document-manifests/native-vmm-virtio-gpu-hostmem.tsv	-	-
 @include	docs/document-manifests/windows-install-and-snapshot-lifecycle.tsv	-	-
 @include	docs/document-manifests/native-vmm-gic-history.tsv	-	-
 @include	docs/document-manifests/native-vmm-gic-active-priority.tsv	-	-
