@@ -314,27 +314,9 @@ impl LineFramer {
             discarding_oversized_line: false,
         }
     }
+    #[cfg(test)]
     pub(super) fn push_into(&mut self, bytes: &[u8], lines: &mut Vec<String>) {
-        self.pending.extend_from_slice(bytes);
-
-        let mut consumed = 0usize;
-        while let Some(relative_newline) = self.pending[consumed..]
-            .iter()
-            .position(|byte| *byte == b'\n')
-        {
-            let newline = consumed + relative_newline;
-            let line_end = if newline > consumed && self.pending[newline - 1] == b'\r' {
-                newline - 1
-            } else {
-                newline
-            };
-            lines.push(String::from_utf8_lossy(&self.pending[consumed..line_end]).into_owned());
-            consumed = newline + 1;
-        }
-
-        if consumed > 0 {
-            self.pending.drain(..consumed);
-        }
+        self.push_bounded_into(bytes, lines, usize::MAX);
     }
     pub(super) fn push_bounded_into(
         &mut self,

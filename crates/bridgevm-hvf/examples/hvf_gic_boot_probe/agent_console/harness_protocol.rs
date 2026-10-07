@@ -5,6 +5,14 @@ use super::*;
 mod input_receipt_label;
 #[path = "output_finish.rs"]
 mod output_finish;
+#[cfg(test)]
+#[path = "get_bound_tests.rs"]
+mod get_bound_tests;
+
+/// Largest guest file a GET reassembles on the host.
+pub(super) const MAX_AGENT_GET_BYTES: usize = 64 * 1024 * 1024;
+/// Longest guest-agent reply line kept while waiting for its newline.
+pub(super) const MAX_AGENT_LINE_BYTES: usize = 32 * 1024 * 1024;
 
 impl AgentConsoleHarness {
     /// Milliseconds since boot for the BVAGENT evidence prints, so live-run
@@ -101,6 +109,20 @@ impl AgentConsoleHarness {
             share_old_agent_warned: false,
         })
     }
+    /// Frame drained agent bytes into `line_scratch`. An unterminated reply
+    /// longer than `MAX_AGENT_LINE_BYTES` is discarded up to its newline.
+    pub(super) fn frame_inbound_lines(&mut self) {
+        self.line_scratch.clear();
+        let oversized = self.framer.push_bounded_into(
+            &self.inbound_scratch,
+            &mut self.line_scratch,
+            MAX_AGENT_LINE_BYTES,
+        );
+        if oversized > 0 {
+            eprintln!("BVAGENT rejected reason=line_too_long count={oversized}");
+        }
+        self.inbound_scratch.clear();
+    }
     pub fn tick(
         &mut self,
         platform: &mut VirtPlatform,
@@ -116,10 +138,7 @@ impl AgentConsoleHarness {
 
         self.inbound_scratch.clear();
         platform.virtio_console_agent_drain_inbound_into(&mut self.inbound_scratch);
-        self.line_scratch.clear();
-        self.framer
-            .push_into(&self.inbound_scratch, &mut self.line_scratch);
-        self.inbound_scratch.clear();
+        self.frame_inbound_lines();
         let mut lines = std::mem::take(&mut self.line_scratch);
         for line in lines.drain(..) {
             self.handle_line(&line, platform, mem, now);
@@ -361,11 +380,13 @@ impl AgentConsoleHarness {
             .unwrap_or_default();
         let total = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
         let nchunks = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        // The guest declares `total`; never reserve or accept past the bound.
+        // An oversized GET accumulates nothing and ends as a short read.
         self.get_accum = Some(GetAccum {
             path,
             total,
             nchunks,
-            bytes: Vec::with_capacity(total),
+            bytes: Vec::with_capacity(if total <= MAX_AGENT_GET_BYTES { total } else { 0 }),
             chunks_seen: 0,
         });
     }
@@ -376,6 +397,10 @@ impl AgentConsoleHarness {
         };
         let payload = rest.split_once(' ').map_or(rest, |(_, b64)| b64);
         if let Ok(bytes) = base64_decode(payload) {
+            let limit = if accum.total <= MAX_AGENT_GET_BYTES { accum.total } else { 0 };
+            if accum.bytes.len().saturating_add(bytes.len()) > limit {
+                return;
+            }
             accum.bytes.extend_from_slice(&bytes);
             accum.chunks_seen += 1;
         }

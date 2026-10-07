@@ -3,10 +3,10 @@
 use super::*;
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     include!("agent_console/input_receipt_transcript_test.rs");
-    fn harness() -> AgentConsoleHarness {
+    pub(crate) fn harness() -> AgentConsoleHarness {
         AgentConsoleHarness {
             start: Instant::now(),
             timeout: Duration::from_secs(1),
