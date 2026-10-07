@@ -2,14 +2,15 @@
 
 use super::helpers::compatibility_manifest;
 use super::helpers::temp_store;
+use super::helpers::TestStoreRoot;
 use crate::*;
 use bridgevm_storage::RunnerMetadata;
 use bridgevm_storage::VmStore;
 use std::fs;
 use std::process::Command;
 
-fn live_backend(command: Vec<String>) -> (VmStore, DaemonState) {
-    let store = temp_store();
+fn live_backend(command: Vec<String>) -> (TestStoreRoot, VmStore, DaemonState) {
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     let child = Command::new("/bin/sleep").arg("5").spawn().unwrap();
     let pid = child.id();
@@ -37,7 +38,7 @@ fn live_backend(command: Vec<String>) -> (VmStore, DaemonState) {
     state
         .children
         .insert("legacy".to_string(), SupervisedBackend::new(child));
-    (store, state)
+    (_root, store, state)
 }
 
 fn cleanup(store: &VmStore, state: &mut DaemonState) {
@@ -50,7 +51,7 @@ fn cleanup(store: &VmStore, state: &mut DaemonState) {
 
 #[test]
 fn live_vnc_displays_reads_the_recorded_reservation() {
-    let (store, mut state) = live_backend(vec![
+    let (_root, store, mut state) = live_backend(vec![
         "qemu-system-x86_64".to_string(),
         "-display".to_string(),
         "vnc=:7".to_string(),
@@ -63,7 +64,7 @@ fn live_vnc_displays_reads_the_recorded_reservation() {
 
 #[test]
 fn live_non_vnc_backend_metadata_is_allowed() {
-    let (store, mut state) = live_backend(vec![
+    let (_root, store, mut state) = live_backend(vec![
         "AppleVzRunner".to_string(),
         "--launch-spec".to_string(),
         "vm.json".to_string(),
@@ -76,7 +77,7 @@ fn live_non_vnc_backend_metadata_is_allowed() {
 
 #[test]
 fn live_vnc_displays_rejects_missing_runner_metadata() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     let child = Command::new("/bin/sleep").arg("5").spawn().unwrap();
     let mut state = DaemonState::new(store.clone());
@@ -94,7 +95,7 @@ fn live_vnc_displays_rejects_missing_runner_metadata() {
 
 #[test]
 fn live_vnc_displays_rejects_corrupt_runner_metadata() {
-    let (store, mut state) = live_backend(vec![
+    let (_root, store, mut state) = live_backend(vec![
         "qemu-system-x86_64".to_string(),
         "-display".to_string(),
         "vnc=:3".to_string(),

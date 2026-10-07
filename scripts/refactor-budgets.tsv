@@ -159,11 +159,11 @@ crates/bridgevm-daemon/src/qmp_supervisor.rs	77	0
 crates/bridgevm-daemon/src/snapshot_orchestration.rs	151	0
 crates/bridgevm-daemon/src/spawn_config.rs	164	0
 crates/bridgevm-daemon/src/supervisor_loop.rs	170	1
-crates/bridgevm-daemon/src/tests_split/helpers.rs	178	0
-crates/bridgevm-daemon/src/tests_split/fast_resume_opt_in.rs	142	0
+crates/bridgevm-daemon/src/tests_split/helpers.rs	172	0
+crates/bridgevm-daemon/src/tests_split/fast_resume_opt_in.rs	97	0
 crates/bridgevm-daemon/src/tests_split/fast_restore_supervision.rs	76	0
 crates/bridgevm-daemon/src/tests_split/owned_cleanup.rs	108	0
-crates/bridgevm-daemon/src/tests_split/qmp_nonterminal.rs	94	0
+crates/bridgevm-daemon/src/tests_split/qmp_nonterminal.rs	86	0
 crates/bridgevm-daemon/src/tests_split/reconcile_exited.rs	101	0
 crates/bridgevm-daemon/src/tests_split/restart_owned.rs	76	0
 crates/bridgevm-daemon/src/tests_split/suspend_owned.rs	37	0
@@ -4114,3 +4114,7 @@ apps/macos/Tests/AppleVzRunnerTests/RuntimeControlSocketFixture.swift	24	0
 apps/macos/Tests/AppleVzRunnerTests/RuntimeControlSocketCleanupTests.swift	81	0
 docs/document-manifests/runtime-control-socket-cleanup.tsv	3	0
 docs/history/windows-hvf/runtime-control-socket-cleanup-20261007.md	33	0
+crates/bridgevm-daemon/src/tests_split/fast_opt_in_fixture.rs	49	0
+crates/bridgevm-daemon/src/tests_split/temp_store.rs	163	0
+docs/document-manifests/daemon-test-root-cleanup.tsv	3	0
+docs/history/windows-hvf/daemon-test-root-cleanup-20261007.md	41	0

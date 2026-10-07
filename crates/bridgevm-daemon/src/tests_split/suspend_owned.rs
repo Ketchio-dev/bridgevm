@@ -9,7 +9,7 @@ use std::process::Command;
 
 #[test]
 fn failed_owned_suspend_keeps_the_live_child_supervised() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     let manifest = compatibility_manifest("legacy");
     store.create_vm(&manifest).unwrap();
     store

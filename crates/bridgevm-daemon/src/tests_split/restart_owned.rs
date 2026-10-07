@@ -21,7 +21,7 @@ fn daemon_owned_restart_spawns_and_tracks_replacement_child() {
     let _env = EnvVarGuard::capture(&["PATH", "BRIDGEVM_COMPAT_EXTRA_QEMU_ARGS"]);
     env::remove_var("BRIDGEVM_COMPAT_EXTRA_QEMU_ARGS");
 
-    let store = temp_store();
+    let (_root, store) = temp_store();
     let manifest = compatibility_manifest("legacy");
     store.create_vm(&manifest).unwrap();
     let bundle = store.bundle_path("legacy");

@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/archive/README-before-20260722.md	historical-evidence	documentation-history	docs/README.md
+docs/history/windows-hvf/daemon-test-root-cleanup-20261007.md	historical-evidence	windows-native-vmm	-

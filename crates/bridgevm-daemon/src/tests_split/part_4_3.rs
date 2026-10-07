@@ -11,7 +11,7 @@ use std::time::Duration;
 fn shutdown_reaps_supervised_children_so_none_orphan() {
     // Regression guard: killing bridgevmd must not leave its spawned QEMU /
     // AppleVzRunner children orphaned (still running, still holding ports).
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     store
         .transition_state("legacy", VmRuntimeState::Running)

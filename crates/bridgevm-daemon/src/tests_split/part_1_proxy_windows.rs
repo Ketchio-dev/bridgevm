@@ -11,7 +11,7 @@ use std::time::Duration;
 
 #[test]
 fn proxy_window_crop_bounds_oversized_framebuffer_reads() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     fs::create_dir_all(store.root()).unwrap();
     let framebuffer = store.root().join("oversized-framebuffer.rgba");
     let file = fs::File::create(&framebuffer).unwrap();
@@ -59,7 +59,7 @@ fn proxy_window_crop_refreshes_cached_targets_when_framebuffer_changes() {
         "BRIDGEVM_PROXY_WINDOW_BACKING_SCALE",
         "BRIDGEVM_PROXY_WINDOW_ARTIFACT_DIR",
     ]);
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     let framebuffer = store.root().join("framebuffer.rgba");
     fs::write(&framebuffer, solid_rgba(4, 4, [0x10, 0x20, 0x30, 0xFF])).unwrap();
@@ -136,7 +136,7 @@ fn proxy_window_crop_reads_the_framebuffer_once_for_all_windows() {
         "BRIDGEVM_PROXY_WINDOW_BACKING_SCALE",
         "BRIDGEVM_PROXY_WINDOW_ARTIFACT_DIR",
     ]);
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     let framebuffer = store.root().join("framebuffer.rgba");
     fs::write(&framebuffer, solid_rgba(4, 4, [0x10, 0x20, 0x30, 0xFF])).unwrap();
@@ -235,7 +235,7 @@ fn proxy_window_crop_uses_apple_vz_display_runner_metadata_framebuffer_when_env_
         env::remove_var(key);
     }
 
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&fast_manifest("fast-display")).unwrap();
     let bundle = store.bundle_path("fast-display");
     let framebuffer = bundle

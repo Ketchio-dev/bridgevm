@@ -18,7 +18,7 @@ use std::time::Duration;
 
 #[test]
 fn reconcile_children_records_agent_update_notice_as_runtime_metadata() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     store
         .transition_state("legacy", VmRuntimeState::Running)

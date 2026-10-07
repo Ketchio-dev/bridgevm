@@ -12,7 +12,7 @@ use std::fs;
 
 #[test]
 fn supervised_fast_restore_spawns_and_tracks_restored_child_without_global_env() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     let manifest = ready_fast_manifest("fast-linux");
     store.create_vm(&manifest).unwrap();
     let bundle = store.bundle_path("fast-linux");

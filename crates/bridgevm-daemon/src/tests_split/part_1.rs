@@ -52,11 +52,11 @@ fn daemon_connection_workers_isolate_slow_clients() {
     serde_json::to_writer(&mut fast_client, &BridgeVmRequest::Doctor).unwrap();
     fast_client.write_all(b"\n").unwrap();
 
-    // Generous deadline: CI schedules the worker slowly under load.
     let pending = request_receiver
         .recv_timeout(Duration::from_secs(20))
         .expect("fast request should not wait for slow client timeout");
-    let mut state = DaemonState::new(temp_store());
+    let (_root, store) = temp_store();
+    let mut state = DaemonState::new(store);
     pending
         .response_sender
         .send(state.handle_request(pending.request))
@@ -85,7 +85,7 @@ fn daemon_request_reader_rejects_oversized_frame() {
 
 #[test]
 fn bind_daemon_listener_refuses_live_socket() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     let socket_path = store.root().join("run").join("bridgevmd.sock");
     fs::create_dir_all(socket_path.parent().unwrap()).unwrap();
     let _live_listener = UnixListener::bind(&socket_path).unwrap();
@@ -98,7 +98,7 @@ fn bind_daemon_listener_refuses_live_socket() {
 
 #[test]
 fn bind_daemon_listener_uses_owner_only_permissions() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     let run_dir = store.root().join("run");
     let socket_path = run_dir.join("bridgevmd.sock");
 
@@ -116,7 +116,7 @@ fn bind_daemon_listener_uses_owner_only_permissions() {
 
 #[test]
 fn bind_daemon_listener_refuses_non_socket_path() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     let socket_path = store.root().join("run").join("bridgevmd.sock");
     fs::create_dir_all(socket_path.parent().unwrap()).unwrap();
     fs::write(&socket_path, "not a socket").unwrap();
@@ -129,7 +129,7 @@ fn bind_daemon_listener_refuses_non_socket_path() {
 
 #[test]
 fn daemon_connection_lists_vms_with_swift_dashboard_wire_shape() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
 
     let response = daemon_request(store.clone(), BridgeVmRequest::ListVms);
@@ -152,7 +152,7 @@ fn daemon_connection_lists_vms_with_swift_dashboard_wire_shape() {
 
 #[test]
 fn daemon_connection_creates_vm_from_dashboard_manifest_shape() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     let mut manifest = VmManifest::new(
         "Ubuntu Daily",
         VmMode::Fast,

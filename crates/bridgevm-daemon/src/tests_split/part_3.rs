@@ -19,7 +19,7 @@ use std::thread;
 
 #[test]
 fn daemon_fast_spawn_opt_in_supervises_lightvm_runner_child() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&ready_fast_manifest("fast-linux")).unwrap();
     let bundle = store.bundle_path("fast-linux");
     fs::create_dir_all(bundle.join("boot")).unwrap();
@@ -92,7 +92,7 @@ fn daemon_fast_spawn_opt_in_supervises_lightvm_runner_child() {
 
 #[test]
 fn daemon_fast_spawn_immediate_exit_reconcile_clears_runtime_state() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&ready_fast_manifest("fast-linux")).unwrap();
     let bundle = store.bundle_path("fast-linux");
     fs::create_dir_all(bundle.join("boot")).unwrap();
@@ -158,7 +158,7 @@ fn daemon_fast_spawn_immediate_exit_reconcile_clears_runtime_state() {
 
 #[test]
 fn daemon_connection_exports_only_fixed_structural_diagnostics() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     let token = store.guest_tools_token("legacy").unwrap().token;
     let bundle_path = store.bundle_path("legacy");
@@ -217,7 +217,7 @@ fn daemon_connection_exports_only_fixed_structural_diagnostics() {
 
 #[test]
 fn daemon_connection_creates_performance_sample() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
 
     let output = store.root().join("daemon-performance");
@@ -250,7 +250,7 @@ fn daemon_connection_creates_performance_sample() {
 
 #[test]
 fn reconcile_children_clears_exited_backend_state() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     store
         .transition_state("legacy", VmRuntimeState::Running)
@@ -297,7 +297,7 @@ fn reconcile_children_clears_exited_backend_state() {
 
 #[test]
 fn cleanup_owned_backend_clears_already_exited_child_state() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     store
         .transition_state("legacy", VmRuntimeState::Running)
@@ -359,7 +359,7 @@ fn daemon_routes_compat_resume_to_supervised_handler() {
     // supervised path (the generic api fallback would have produced the
     // same marker error only via resume_compatibility_backend, never the
     // legacy "not wired yet" message).
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     store
         .transition_state("legacy", VmRuntimeState::Running)
@@ -381,7 +381,7 @@ fn daemon_routes_fast_resume_to_supervised_handler() {
     // Fast resume with no saved state and no real-start env reports the Fast
     // state-missing error, proving the request reached the supervised Fast
     // resume branch (not the compat branch and not "not wired yet").
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&fast_manifest("fast-linux")).unwrap();
     store
         .transition_state("fast-linux", VmRuntimeState::Running)
@@ -400,7 +400,7 @@ fn daemon_routes_fast_resume_to_supervised_handler() {
 
 #[test]
 fn reconcile_children_cleans_up_terminal_qmp_event() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     store
         .transition_state("legacy", VmRuntimeState::Running)

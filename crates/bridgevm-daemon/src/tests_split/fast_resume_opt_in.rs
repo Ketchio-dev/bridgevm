@@ -1,66 +1,15 @@
 //! Fast suspend and resume must preserve the daemon's explicit Apple VZ launch opt-in.
 
-use super::helpers::ready_fast_manifest;
-use super::helpers::temp_store;
-use super::helpers::write_executable;
+use super::fast_opt_in_fixture::FastOptInFixture;
 use super::helpers::EnvVarGuard;
 use super::wait::wait_up_to_ten_seconds;
 use crate::*;
-use bridgevm_api::fast_suspend_state_path;
 use bridgevm_api::stop_backend;
 use bridgevm_storage::VmRuntimeState;
-use bridgevm_storage::VmStore;
 use std::env;
-use std::fs;
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 static FAST_LIFECYCLE_ENV_LOCK: Mutex<()> = Mutex::new(());
-
-struct FastOptInFixture {
-    store: VmStore,
-    state_path: PathBuf,
-    lightvm_runner: PathBuf,
-    apple_vz_runner: PathBuf,
-}
-
-impl FastOptInFixture {
-    fn new(state: VmRuntimeState, saved_state: bool) -> Self {
-        let store = temp_store();
-        let manifest = ready_fast_manifest("fast-linux");
-        store.create_vm(&manifest).unwrap();
-        let bundle = store.bundle_path("fast-linux");
-        fs::create_dir_all(bundle.join("boot")).unwrap();
-        fs::create_dir_all(bundle.join("disks")).unwrap();
-        fs::write(bundle.join("boot").join("vmlinuz"), b"kernel").unwrap();
-        fs::write(bundle.join("disks").join("root.raw"), b"disk").unwrap();
-        let state_path = fast_suspend_state_path(&bundle, "fast-linux");
-        if saved_state {
-            fs::create_dir_all(state_path.parent().unwrap()).unwrap();
-            fs::write(&state_path, b"saved-state").unwrap();
-        }
-        store.force_transition_state("fast-linux", state).unwrap();
-        let lightvm_runner = store.root().join("fake-lightvm-runner");
-        let apple_vz_runner = store.root().join("fake-AppleVzRunner");
-        Self {
-            store,
-            state_path,
-            lightvm_runner,
-            apple_vz_runner,
-        }
-    }
-
-    fn set_runner_env(&self, script: &str) {
-        write_executable(&self.lightvm_runner, script);
-        write_executable(&self.apple_vz_runner, "#!/bin/sh\nexit 0\n");
-        env::set_var("BRIDGEVM_LIGHTVM_RUNNER", &self.lightvm_runner);
-        env::set_var("BRIDGEVM_APPLE_VZ_RUNNER", &self.apple_vz_runner);
-    }
-
-    fn cleanup(&self) {
-        fs::remove_dir_all(self.store.root()).unwrap();
-    }
-}
 
 fn capture_fast_lifecycle_env() -> EnvVarGuard {
     EnvVarGuard::capture(&[

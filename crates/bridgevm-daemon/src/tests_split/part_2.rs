@@ -14,7 +14,7 @@ use std::fs;
 
 #[test]
 fn daemon_connection_lists_templates_for_dashboard_creation_flow() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
 
     let response = daemon_request(store, BridgeVmRequest::ListTemplates);
     let BridgeVmResponse::BootTemplates { templates } = response else {
@@ -37,7 +37,7 @@ fn daemon_connection_lists_templates_for_dashboard_creation_flow() {
 
 #[test]
 fn daemon_connection_reports_boot_media_status_for_dashboard_detail() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     let source = store.root().join("fixtures").join("ubuntu.iso");
     fs::create_dir_all(source.parent().unwrap()).unwrap();
     fs::write(&source, b"fake installer").unwrap();
@@ -104,7 +104,7 @@ fn daemon_connection_reports_boot_media_status_for_dashboard_detail() {
 
 #[test]
 fn daemon_connection_imports_boot_media_for_dashboard_detail() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     let source = store.root().join("fixtures").join("ubuntu.iso");
     fs::create_dir_all(source.parent().unwrap()).unwrap();
     fs::write(&source, b"fake installer").unwrap();
@@ -170,7 +170,7 @@ fn daemon_connection_imports_boot_media_for_dashboard_detail() {
 
 #[test]
 fn daemon_connection_verifies_and_plans_boot_media_download_for_dashboard_detail() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     let source = store.root().join("fixtures").join("ubuntu.iso");
     fs::create_dir_all(source.parent().unwrap()).unwrap();
     fs::write(&source, b"fake installer").unwrap();
@@ -309,7 +309,7 @@ fn daemon_connection_verifies_and_plans_boot_media_download_for_dashboard_detail
 
 #[test]
 fn daemon_connection_returns_network_planner_errors() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
 
     let response = daemon_request(
@@ -363,7 +363,7 @@ fn daemon_qemu_error_message_preserves_network_blocker_requirement() {
 
 #[test]
 fn daemon_fast_spawn_error_updates_runner_metadata_with_blocker() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&fast_manifest("fast-linux")).unwrap();
 
     let response = daemon_request(
@@ -402,7 +402,7 @@ fn daemon_fast_spawn_error_updates_runner_metadata_with_blocker() {
 
 #[test]
 fn daemon_refuses_qemu_host_only_spawn_without_privileged_networking() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     let mut manifest = compatibility_manifest("legacy");
     manifest.storage.primary.path = "disks/root.raw".to_string();
     manifest.storage.primary.format = "raw".to_string();
@@ -432,7 +432,7 @@ fn daemon_refuses_qemu_host_only_spawn_without_privileged_networking() {
 
 #[test]
 fn bundled_helper_discovery_uses_executable_siblings() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     let helpers = store.root().join("BridgeVM.app/Contents/Helpers");
     fs::create_dir_all(&helpers).unwrap();
     let bridgevmd = helpers.join("bridgevmd");
@@ -491,7 +491,7 @@ fn entitlement_plist_requires_virtualization_true_value() {
 
 #[test]
 fn daemon_fast_spawn_preflight_failure_does_not_mutate_runtime_state() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&ready_fast_manifest("fast-linux")).unwrap();
     let bundle = store.bundle_path("fast-linux");
     fs::create_dir_all(bundle.join("boot")).unwrap();
