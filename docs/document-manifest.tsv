@@ -66,7 +66,7 @@ docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md	current	win
 docs/windows-arm/snapshot-scope-v1.md	current	windows-snapshots	-
 @include	docs/document-manifests/native-vmm-share-sync-hardening.tsv	-	-
 @include	docs/document-manifests/native-vmm-agent-get-bound.tsv	-	-
-@include	docs/document-manifests/product-e2e-owned-result-volume.tsv	-	-
+@include	docs/document-manifests/runtime-control-socket-cleanup.tsv	-	-
 docs/archive/README-before-20260722.md	historical-evidence	documentation-history	docs/README.md
 docs/archive/STATUS-before-20260722.md	historical-evidence	documentation-history	STATUS.md
 docs/windows-arm/capability-matrix.md	current	windows-hvf-engine	-

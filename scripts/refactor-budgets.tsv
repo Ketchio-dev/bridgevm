@@ -1239,7 +1239,7 @@ apps/macos/Sources/AppleVzRunner/main.swift	4	0
 apps/macos/Sources/AppleVzRunnerCore/AppleVzConfigurationBuilder.swift	360	0
 apps/macos/Sources/AppleVzRunnerCore/AppleVzHandoff.swift	360	0
 apps/macos/Sources/AppleVzRunnerCore/AppleVzRunnerCommand.swift	628	0
-apps/macos/Sources/AppleVzRunnerCore/AppleVzVirtualMachineLauncher.swift	1596	0
+apps/macos/Sources/AppleVzRunnerCore/AppleVzVirtualMachineLauncher.swift	1148	0
 apps/macos/Sources/BridgeVMApp/BridgeVMApp.swift	38	0
 apps/macos/Sources/BridgeVMApp/Models/HostPasteboard.swift	40	0
 apps/macos/Sources/BridgeVMApp/Models/VirtualMachine.swift	2186	0
@@ -1316,7 +1316,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMLifecycleCommand.swift	368	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMStateSecurity.swift	181	0
 apps/macos/Sources/BridgeVMControl/LibraryModel.swift	177	0
 apps/macos/Sources/BridgeVMControl/VMLibrary.swift	178	0
-apps/macos/Tests/AppleVzRunnerTests/AppleVzDisplayRuntimeControlServerTests.swift	538	0
+apps/macos/Tests/AppleVzRunnerTests/AppleVzDisplayRuntimeControlServerTests.swift	535	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzRunnerCommandTests.swift	692	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzRunnerCoreTests.swift	439	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzVirtualMachineLauncherTests.swift	183	0
@@ -4109,3 +4109,8 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_skip.r
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing.rs	37	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_failure_budget_tests.rs	27	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_failure_tests.rs	63	0
+apps/macos/Sources/AppleVzRunnerCore/AppleVzDisplayRuntimeControlServer.swift	456	0
+apps/macos/Tests/AppleVzRunnerTests/RuntimeControlSocketFixture.swift	24	0
+apps/macos/Tests/AppleVzRunnerTests/RuntimeControlSocketCleanupTests.swift	81	0
+docs/document-manifests/runtime-control-socket-cleanup.tsv	3	0
+docs/history/windows-hvf/runtime-control-socket-cleanup-20261007.md	33	0

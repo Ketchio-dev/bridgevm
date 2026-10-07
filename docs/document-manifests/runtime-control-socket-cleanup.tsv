@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+@include	docs/document-manifests/product-e2e-owned-result-volume.tsv	-	-
+docs/history/windows-hvf/runtime-control-socket-cleanup-20261007.md	historical-evidence	windows-native-vmm	-
