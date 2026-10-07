@@ -47,6 +47,7 @@ struct FileRecord {
     host_mtime_ms: Option<u128>,
     guest_mtime: Option<String>,
     awaiting_guest_stamp: bool,
+    host_write_failed: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -176,12 +177,21 @@ impl ShareSync {
                 Some(_) => {}
             }
         }
+        // A skip is reported once per listed oversized version. Forget versions
+        // that left the listing, or guest listings grow this set without limit.
+        let listed = &self.guest_file_entries_scratch;
+        let max_bytes = self.max_bytes;
+        self.guest_skip_seen.retain(|(name, mtime, _)| {
+            listed
+                .get(name)
+                .is_some_and(|entry| entry.size > max_bytes && entry.mtime == *mtime)
+        });
 
         for (name, record) in &self.records {
             if self.present_scratch.contains(name) {
                 continue;
             }
-            if record.hash == 0 {
+            if record.host_write_failed {
                 continue;
             }
             if self.pending_host_changed.contains(name) {
@@ -207,7 +217,7 @@ impl ShareSync {
             .or_else(|| self.pending_guest_mtime.remove(&name));
         self.pending_host_changed.remove(&name);
         if let Some(record) = self.records.get_mut(&name) {
-            if record.hash == hash {
+            if !record.host_write_failed && record.hash == hash {
                 record.size = size;
                 record.guest_mtime = guest_mtime;
                 record.awaiting_guest_stamp = false;
@@ -222,16 +232,31 @@ impl ShareSync {
                 host_mtime_ms: None,
                 guest_mtime,
                 awaiting_guest_stamp: false,
+                host_write_failed: true,
             },
         );
         GuestFileOutcome::WriteHost(bytes)
     }
 
+    #[cfg(test)]
     pub fn note_host_stat(&mut self, name: &str, mtime_ms: u128) {
-        let name = normalize_rel(name);
-        if let Some(record) = self.records.get_mut(&name) {
-            record.host_mtime_ms = Some(mtime_ms);
+        self.on_host_write_succeeded(name, Some(mtime_ms));
+    }
+
+    pub fn on_host_write_succeeded(&mut self, name: &str, mtime_ms: Option<u128>) {
+        if let Some(record) = self.records.get_mut(&normalize_rel(name)) {
+            record.host_write_failed = false;
+            record.host_mtime_ms = mtime_ms;
         }
+    }
+
+    pub fn forget_absent_failed(&mut self, mut is_absent: impl FnMut(&str) -> bool) {
+        let guest = &self.present_scratch;
+        self.records.retain(|name, record| {
+            !(record.host_write_failed && !guest.contains(name) && is_absent(name))
+        });
+        self.pending_guest_mtime.retain(|name, _| guest.contains(name));
+        self.pending_host_changed.retain(|name| self.records.contains_key(name));
     }
 
     #[cfg(test)]
@@ -275,6 +300,9 @@ impl ShareSync {
         }
 
         for (name, file) in &self.host_files_scratch {
+            if self.records.get(name).is_some_and(|record| record.host_write_failed) {
+                continue;
+            }
             if self.records.get(name).is_none_or(|record| {
                 record.size != file.size || record.host_mtime_ms != Some(file.mtime_ms)
             }) {
@@ -287,7 +315,7 @@ impl ShareSync {
             if self.host_files_scratch.contains_key(name) {
                 continue;
             }
-            if record.hash == 0 {
+            if record.host_write_failed {
                 continue;
             }
             if self.pending_guest_mtime.contains_key(name) {
@@ -306,6 +334,9 @@ impl ShareSync {
         mtime_ms: u128,
     ) -> Option<PushGuest> {
         let name = normalize_rel(&name);
+        if self.records.get(&name).is_some_and(|record| record.host_write_failed) {
+            return None;
+        }
         self.pending_host_changed.remove(&name);
         self.pending_guest_mtime.remove(&name);
         let hash = fnv1a64(&bytes);
@@ -331,6 +362,7 @@ impl ShareSync {
                 host_mtime_ms: None,
                 guest_mtime: None,
                 awaiting_guest_stamp: true,
+                host_write_failed: false,
             },
         );
     }
@@ -340,6 +372,23 @@ impl ShareSync {
         self.records.remove(&name);
         self.pending_host_changed.remove(&name);
         self.pending_guest_mtime.remove(&name);
+    }
+
+    /// Retry a failed write on the next guest listing. Never turn its missing,
+    /// old or partial destination into a reverse upload or a guest deletion.
+    pub fn on_host_write_failed(&mut self, name: &str) -> bool {
+        let name = normalize_rel(name);
+        self.pending_host_changed.remove(&name);
+        if let Some(record) = self.records.get_mut(&name) {
+            record.host_write_failed = true;
+            record.guest_mtime = None;
+        }
+        // Do not evict failed-destination protection to accommodate guest churn.
+        // The caller disables sync at this bound rather than risking data loss.
+        let (count, bytes) = self.records.iter().filter(|(_, r)| r.host_write_failed)
+            .fold((0usize, 0usize), |(count, bytes), (name, _)|
+                (count.saturating_add(1), bytes.saturating_add(name.len())));
+        count >= 4096 || bytes >= 4 * 1024 * 1024
     }
 
     pub fn on_host_deleted(&mut self, name: &str) {
@@ -356,41 +405,11 @@ mod share_rel_path;
 pub use share_rel_path::to_guest_rel;
 pub use share_rel_path::{append_guest_rel_into, from_guest_rel, normalize_rel};
 
-/// Parse the guest LS/LSR format `relpath|size|isDir|mtime`. The split is from
-/// the right so a pathological file name containing `|` still round-trips; the
-/// numeric fields and ISO mtime emitted by the guest agent never contain that
-/// separator.
+#[path = "share_listing.rs"]
+mod share_listing;
 #[cfg(test)]
-fn parse_ls(listing: &str) -> Vec<LsEntry> {
-    let mut entries = Vec::new();
-    parse_ls_into(listing, &mut entries);
-    entries
-}
-
-pub fn parse_ls_into(listing: &str, out: &mut Vec<LsEntry>) {
-    out.clear();
-    for line in listing.lines().filter(|line| !line.is_empty()) {
-        let mut parts = line.rsplitn(4, '|');
-        let Some(mtime) = parts.next() else {
-            continue;
-        };
-        let Some(is_dir) = parts.next() else {
-            continue;
-        };
-        let Some(size) = parts.next().and_then(|part| part.parse().ok()) else {
-            continue;
-        };
-        let Some(name) = parts.next().and_then(from_guest_rel) else {
-            continue;
-        };
-        out.push(LsEntry {
-            name,
-            size,
-            is_dir: is_dir == "1",
-            mtime: mtime.to_string(),
-        });
-    }
-}
+use share_listing::parse_ls;
+pub use share_listing::parse_ls_into;
 
 pub fn fnv1a64(bytes: &[u8]) -> u64 {
     let mut hash = 0xcbf29ce484222325u64;
@@ -402,320 +421,11 @@ pub fn fnv1a64(bytes: &[u8]) -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn ls_file(name: &str, size: u64, mtime: &str) -> LsEntry {
-        LsEntry {
-            name: name.into(),
-            size,
-            is_dir: false,
-            mtime: mtime.into(),
-        }
-    }
-
-    fn host_file(name: &str, size: u64, mtime_ms: u128) -> HostFile {
-        HostFile {
-            name: name.into(),
-            size,
-            mtime_ms,
-        }
-    }
-
-    #[test]
-    fn parse_ls_handles_lines_empty_pipe_names_and_normalizes_guest_rels() {
-        assert!(parse_ls("").is_empty());
-        let entries = parse_ls(
-            "a.txt|3|0|2026-01-01T00:00:00.0000000Z\n\
-             sub\\dir|0|1|2026-01-01T00:00:01.0000000Z\n\
-             sub\\odd|name.txt|4|0|2026-01-01T00:00:02.0000000Z\n",
-        );
-        assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0].name, "a.txt");
-        assert_eq!(entries[0].size, 3);
-        assert!(!entries[0].is_dir);
-        assert_eq!(entries[1].name, "sub/dir");
-        assert!(entries[1].is_dir);
-        assert_eq!(entries[2].name, "sub/odd|name.txt");
-    }
-
-    #[test]
-    fn parse_ls_into_reuses_output_vec_and_clears_old_entries() {
-        let mut entries = Vec::with_capacity(4);
-        entries.push(ls_file("old.txt", 1, "old"));
-        let capacity = entries.capacity();
-
-        parse_ls_into(
-            "a.txt|3|0|2026-01-01T00:00:00.0000000Z\n\
-             malformed\n\
-             sub\\dir|0|1|2026-01-01T00:00:01.0000000Z\n",
-            &mut entries,
-        );
-
-        assert_eq!(entries.capacity(), capacity);
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].name, "a.txt");
-        assert_eq!(entries[1].name, "sub/dir");
-        assert!(entries[1].is_dir);
-    }
-
-    #[test]
-    fn rel_path_helpers_round_trip_guest_and_host_forms() {
-        assert_eq!(
-            from_guest_rel("sub\\dir\\file.txt").as_deref(),
-            Some("sub/dir/file.txt")
-        );
-        assert_eq!(to_guest_rel("sub/dir/file.txt"), "sub\\dir\\file.txt");
-        let mut prefixed = String::from("C:\\share\\");
-        append_guest_rel_into("./sub//./dir\\file.txt", &mut prefixed);
-        assert_eq!(prefixed, "C:\\share\\sub\\dir\\file.txt");
-        assert_eq!(
-            from_guest_rel(&to_guest_rel("sub/dir/file.txt")).as_deref(),
-            Some("sub/dir/file.txt")
-        );
-        assert_eq!(normalize_rel("./sub//./dir\\file.txt"), "sub/dir/file.txt");
-        assert_eq!(to_guest_rel("./sub//./dir\\file.txt"), "sub\\dir\\file.txt");
-    }
-
-    #[test]
-    fn guest_listing_entries_cannot_name_paths_outside_the_share() {
-        let entries = parse_ls(
-            "..\\escaped.txt|3|0|2026-01-01T00:00:00.0000000Z\n\
-             sub\\..\\..\\x|3|0|2026-01-01T00:00:00.0000000Z\n\
-             ../up|0|1|2026-01-01T00:00:00.0000000Z\n\
-             \\\\abs\\..ok.txt|3|0|2026-01-01T00:00:00.0000000Z\n",
-        );
-        let names: Vec<&str> = entries.iter().map(|entry| entry.name.as_str()).collect();
-        assert_eq!(names, ["abs/..ok.txt"]);
-
-        let mut sync = ShareSync::new(1024);
-        let actions = sync.on_guest_listing_normalized(parse_ls(
-            "..\\escaped.txt|3|0|2026-01-01T00:00:00.0000000Z\n",
-        ));
-        assert!(actions.is_empty());
-    }
-
-    #[test]
-    fn fnv1a_known_vectors() {
-        assert_eq!(fnv1a64(b""), 0xcbf29ce484222325);
-        assert_eq!(fnv1a64(b"a"), 0xaf63dc4c8601ec8c);
-    }
-
-    #[test]
-    fn host_guest_round_trip_does_not_ping_pong() {
-        let mut sync = ShareSync::new(512);
-        assert_eq!(
-            sync.on_host_scan(vec![host_file("sub/x.txt", 5, 10)]),
-            vec![SyncAction::Get {
-                name: "sub/x.txt".into()
-            }]
-        );
-        let push = sync
-            .on_host_file("sub/x.txt".into(), b"hello".to_vec(), 10)
-            .expect("host edit pushes guest");
-        sync.on_put_ok("sub/x.txt".into(), push.bytes.len() as u64, push.hash);
-
-        let actions = sync.on_guest_listing(vec![ls_file("sub\\x.txt", 5, "guest-1")]);
-        assert!(actions.is_empty(), "PUT landing mtime is only stamped");
-        assert!(sync
-            .on_guest_listing(vec![ls_file("sub\\x.txt", 5, "guest-1")])
-            .is_empty());
-
-        assert_eq!(
-            sync.on_guest_listing(vec![ls_file("sub\\x.txt", 6, "guest-2")]),
-            vec![SyncAction::Get {
-                name: "sub/x.txt".into()
-            }]
-        );
-        match sync.on_guest_file("sub\\x.txt".into(), b"world!".to_vec(), None) {
-            GuestFileOutcome::WriteHost(bytes) => assert_eq!(bytes, b"world!"),
-            GuestFileOutcome::AlreadySynced => panic!("guest edit must write host"),
-        }
-        sync.note_host_stat("sub/x.txt", 20);
-        assert!(sync
-            .on_host_file("sub/x.txt".into(), b"world!".to_vec(), 20)
-            .is_none());
-    }
-
-    #[test]
-    fn guest_oversize_skips_are_deduped_by_name_mtime_kind_and_dirs_are_ignored() {
-        let mut sync = ShareSync::new(1);
-        let entries = vec![
-            ls_file("big.bin", 2048, "m1"),
-            LsEntry {
-                name: "sub".into(),
-                size: 0,
-                is_dir: true,
-                mtime: "d1".into(),
-            },
-        ];
-        assert_eq!(
-            sync.on_guest_listing(entries.clone()),
-            vec![SyncAction::Skip {
-                name: "big.bin".into(),
-                reason: SkipReason::TooLarge { size: 2048 },
-            }]
-        );
-        assert!(sync.on_guest_listing(entries).is_empty());
-        assert_eq!(
-            sync.on_guest_listing(vec![ls_file("big.bin", 2048, "m2")]),
-            vec![SyncAction::Skip {
-                name: "big.bin".into(),
-                reason: SkipReason::TooLarge { size: 2048 },
-            }]
-        );
-    }
-
-    #[test]
-    fn recursive_host_scan_detects_nested_changes() {
-        let mut sync = ShareSync::new(512);
-        assert_eq!(
-            sync.on_host_scan(vec![host_file("sub/dir/a.txt", 1, 10)]),
-            vec![SyncAction::Get {
-                name: "sub/dir/a.txt".into()
-            }]
-        );
-        let push = sync
-            .on_host_file("sub/dir/a.txt".into(), b"a".to_vec(), 10)
-            .unwrap();
-        sync.on_put_ok("sub/dir/a.txt".into(), 1, push.hash);
-        sync.on_guest_listing(vec![ls_file("sub\\dir\\a.txt", 1, "g1")]);
-        sync.note_host_stat("sub/dir/a.txt", 10);
-        assert!(sync
-            .on_host_scan(vec![host_file("sub/dir/a.txt", 1, 10)])
-            .is_empty());
-        assert_eq!(
-            sync.on_host_scan(vec![host_file("sub/dir/a.txt", 2, 11)]),
-            vec![SyncAction::Get {
-                name: "sub/dir/a.txt".into()
-            }]
-        );
-    }
-
-    #[test]
-    fn tombstone_lifecycle_host_delete_then_confirm_removes_record() {
-        let mut sync = ShareSync::new(512);
-        let push = sync
-            .on_host_file("gone.txt".into(), b"gone".to_vec(), 10)
-            .unwrap();
-        sync.on_put_ok("gone.txt".into(), 4, push.hash);
-        sync.on_guest_listing(vec![ls_file("gone.txt", 4, "g1")]);
-        sync.note_host_stat("gone.txt", 10);
-
-        assert_eq!(
-            sync.on_host_scan(Vec::new()),
-            vec![SyncAction::DeleteGuest {
-                name: "gone.txt".into()
-            }]
-        );
-        sync.on_guest_deleted("gone.txt");
-        assert_eq!(
-            sync.on_guest_listing(vec![ls_file("gone.txt", 4, "g1")]),
-            vec![SyncAction::Get {
-                name: "gone.txt".into()
-            }]
-        );
-    }
-
-    #[test]
-    fn tombstone_lifecycle_guest_delete_then_confirm_removes_record() {
-        let mut sync = ShareSync::new(512);
-        let push = sync
-            .on_host_file("gone.txt".into(), b"gone".to_vec(), 10)
-            .unwrap();
-        sync.on_put_ok("gone.txt".into(), 4, push.hash);
-        sync.on_guest_listing(vec![ls_file("gone.txt", 4, "g1")]);
-        sync.note_host_stat("gone.txt", 10);
-
-        assert_eq!(
-            sync.on_guest_listing(Vec::new()),
-            vec![SyncAction::DeleteHost {
-                name: "gone.txt".into()
-            }]
-        );
-        sync.on_host_deleted("gone.txt");
-        assert_eq!(
-            sync.on_host_scan(vec![host_file("gone.txt", 4, 10)]),
-            vec![SyncAction::Get {
-                name: "gone.txt".into()
-            }]
-        );
-    }
-
-    #[test]
-    fn never_recorded_path_absence_never_deletes() {
-        let mut sync = ShareSync::new(512);
-        assert!(sync.on_host_scan(Vec::new()).is_empty());
-        assert!(sync.on_guest_listing(Vec::new()).is_empty());
-    }
-
-    #[test]
-    fn listing_scratch_tables_reuse_capacity() {
-        let mut sync = ShareSync::new(512);
-
-        let _ = sync.on_guest_listing(vec![
-            ls_file("a.txt", 1, "g1"),
-            LsEntry {
-                name: "dir".into(),
-                size: 0,
-                is_dir: true,
-                mtime: "d1".into(),
-            },
-        ]);
-        let guest_present_capacity = sync.present_scratch.capacity();
-        let guest_entries_capacity = sync.guest_file_entries_scratch.capacity();
-        assert!(guest_present_capacity > 0);
-        assert!(guest_entries_capacity > 0);
-
-        let _ = sync.on_guest_listing(Vec::new());
-        assert_eq!(sync.present_scratch.capacity(), guest_present_capacity);
-        assert_eq!(
-            sync.guest_file_entries_scratch.capacity(),
-            guest_entries_capacity
-        );
-
-        let _ = sync.on_host_scan_normalized(vec![host_file("b.txt", 1, 10)]);
-        let host_files_capacity = sync.host_files_scratch.capacity();
-        assert!(host_files_capacity > 0);
-
-        let _ = sync.on_host_scan_normalized(Vec::new());
-        assert_eq!(sync.host_files_scratch.capacity(), host_files_capacity);
-    }
-
-    #[test]
-    fn modification_wins_when_host_deleted_but_guest_changed() {
-        let mut sync = ShareSync::new(512);
-        let push = sync
-            .on_host_file("race.txt".into(), b"old".to_vec(), 10)
-            .unwrap();
-        sync.on_put_ok("race.txt".into(), 3, push.hash);
-        sync.on_guest_listing(vec![ls_file("race.txt", 3, "g1")]);
-        sync.note_host_stat("race.txt", 10);
-
-        assert_eq!(
-            sync.on_guest_listing(vec![ls_file("race.txt", 4, "g2")]),
-            vec![SyncAction::Get {
-                name: "race.txt".into()
-            }]
-        );
-    }
-
-    #[test]
-    fn modification_wins_when_guest_deleted_but_host_changed() {
-        let mut sync = ShareSync::new(512);
-        let push = sync
-            .on_host_file("race.txt".into(), b"old".to_vec(), 10)
-            .unwrap();
-        sync.on_put_ok("race.txt".into(), 3, push.hash);
-        sync.on_guest_listing(vec![ls_file("race.txt", 3, "g1")]);
-        sync.note_host_stat("race.txt", 10);
-
-        assert_eq!(
-            sync.on_host_scan(vec![host_file("race.txt", 4, 11)]),
-            vec![SyncAction::Get {
-                name: "race.txt".into()
-            }]
-        );
-        assert!(sync.on_guest_listing(Vec::new()).is_empty());
-    }
-}
+#[path = "share_sync_tests.rs"]
+mod tests;
+#[cfg(test)]
+#[path = "share_sync_failure_tests.rs"]
+mod failure_tests;
+#[cfg(test)]
+#[path = "share_sync_failure_budget_tests.rs"]
+mod failure_budget_tests;
