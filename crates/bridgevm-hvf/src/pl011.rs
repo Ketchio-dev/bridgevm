@@ -84,6 +84,10 @@ impl WritableRegisters {
     }
 }
 
+/// Undrained guest TX kept for the host's serial scanners and stop log. Later
+/// bytes are discarded; QEMU hands TX to its chardev and keeps no backlog.
+pub const MAX_RETAINED_TX_LEN: usize = 16 * 1024 * 1024;
+
 /// Interrupt generation, DMA, modem pins, and baud timing are outside this
 /// bounded subset; their status remains inactive when configuration is retained.
 #[derive(Debug, Default)]
@@ -156,7 +160,8 @@ impl Pl011 {
             eprintln!("pl011: write off=0x{offset:03x} <- 0x{value:x}");
         }
         match offset {
-            UARTDR => self.tx.push(value as u8),
+            UARTDR if self.tx.len() < MAX_RETAINED_TX_LEN => self.tx.push(value as u8),
+            UARTDR => {}
             UARTRSR | UARTICR => {}
             _ => {
                 self.registers.write(offset, value);
@@ -172,6 +177,10 @@ impl Pl011 {
         std::mem::take(&mut self.tx)
     }
 }
+
+#[cfg(test)]
+#[path = "pl011_tx_bound_tests.rs"]
+mod tx_bound_tests;
 
 #[cfg(test)]
 mod tests {

@@ -118,7 +118,7 @@ docs/windows-arm/evidence/b6-presentmon-collector-contract-20260910.md	current	w
 docs/windows-arm/evidence/live-queue-deterministic-venue-20260910.md	current	live-gates	-
 docs/windows-arm/evidence/b6-active-frame-time-collection-20260910.md	current	windows-graphics	-
 docs/windows-arm/evidence/b6-sealed-cell-observation-contract-20260910.md	current	windows-graphics	-
-docs/windows-arm/evidence/b6-integer-negation-paired-observation-20260911.md	historical-evidence	windows-graphics	-
+@include	docs/document-manifests/native-vmm-pl011-tx-bound.tsv	-	-
 docs/windows-arm/evidence/b6-physical-uia-observation-20260911.md	historical-evidence	b6-physical-uia	-
 @include	docs/document-manifests/t17-selection-attempt-and-failed-pilot.tsv	-	-
 @include	docs/document-manifests/native-vmm-virtio-gpu-parked-chain-bound.tsv	-	-
