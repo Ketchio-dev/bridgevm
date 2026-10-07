@@ -197,7 +197,8 @@ crates/bridgevm-hvf/src/checkpoint/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/checkpoint/tests/part_1.rs	24	0
 crates/bridgevm-hvf/src/dtb.rs	660	0
 crates/bridgevm-hvf/src/host_entropy.rs	100	1
-crates/bridgevm-hvf/src/fwcfg.rs	771	0
+crates/bridgevm-hvf/src/fwcfg.rs	499	0
+crates/bridgevm-hvf/src/fwcfg_tests.rs	376	0
 crates/bridgevm-hvf/src/hda/codec_parameter.rs	95	0
 crates/bridgevm-hvf/src/hda/hdapcmsink.rs	733	0
 crates/bridgevm-hvf/src/hda/pcm_sink.rs	13	0
@@ -4031,3 +4032,5 @@ docs/history/windows-hvf/native-vmm-virtio-pci-isr-20261007.md	53	0
 crates/bridgevm-hvf/src/virtio_gpu/tests/hostmem.rs	48	0
 docs/document-manifests/native-vmm-virtio-gpu-hostmem.tsv	3	0
 docs/history/windows-hvf/native-vmm-virtio-gpu-hostmem-20261007.md	57	0
+docs/document-manifests/native-vmm-fwcfg-dma-bound.tsv	3	0
+docs/history/windows-hvf/native-vmm-fwcfg-dma-bound-20261007.md	59	0
