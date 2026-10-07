@@ -9,6 +9,7 @@ use std::{
     time::Instant,
 };
 
+use super::reply_queue::{reply_queue_full, MAX_PENDING_REPLY_FRAMES, MAX_TCP_WRITE_BACKLOG};
 use crate::virtio_net::NetBackend;
 
 pub type MacAddr = [u8; 6];
@@ -97,35 +98,6 @@ pub trait OutboundIpv4Handler {
     }
     fn active_flow_counts(&self) -> (usize, usize) {
         (0, 0)
-    }
-}
-
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct QueuedOutboundIpv4Handler {
-    pub(crate) packets: VecDeque<Vec<u8>>,
-}
-
-impl QueuedOutboundIpv4Handler {
-    pub fn len(&self) -> usize {
-        self.packets.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.packets.is_empty()
-    }
-
-    pub fn pop_front(&mut self) -> Option<Vec<u8>> {
-        self.packets.pop_front()
-    }
-
-    pub fn packets(&self) -> &VecDeque<Vec<u8>> {
-        &self.packets
-    }
-}
-
-impl OutboundIpv4Handler for QueuedOutboundIpv4Handler {
-    fn handle_outbound_ipv4(&mut self, packet: &Ipv4Packet<'_>) {
-        self.packets.push_back(packet.bytes.to_vec());
     }
 }
 
@@ -241,6 +213,9 @@ impl<H: OutboundIpv4Handler + Send> NetBackend for NatBackend<H> {
     }
 
     fn poll_host_sockets(&mut self) {
+        if reply_queue_full(&self.reply_queue) {
+            return;
+        }
         self.outbound_ipv4.poll_host_sockets(
             self.guest_mac,
             &mut self.reply_queue,
@@ -270,7 +245,7 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
             self.stats.dropped_no_guest_mac = self.stats.dropped_no_guest_mac.saturating_add(1);
             return;
         };
-        self.reply_queue.push_back(build_arp_reply_frame(
+        self.queue_reply(build_arp_reply_frame(
             dst_mac,
             GATEWAY_MAC,
             reply_ip,
@@ -360,7 +335,7 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
         ) else {
             return;
         };
-        self.reply_queue.push_back(frame);
+        self.queue_reply(frame);
         self.stats.dhcp_lease_ip = GUEST_IP;
         if reply_type == DHCP_OFFER {
             self.stats.dhcp_offers = self.stats.dhcp_offers.saturating_add(1);
@@ -403,7 +378,7 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
         ) else {
             return false;
         };
-        self.reply_queue.push_back(frame);
+        self.queue_reply(frame);
         true
     }
 }
@@ -605,11 +580,13 @@ impl HostSocketOutboundIpv4Handler {
             {
                 Ok(stream) => stream,
                 Err(_) => {
-                    self.pending_tcp_resets.push_back(PendingTcpReset {
-                        key,
-                        seq: our_seq,
-                        ack: tcp.seq.wrapping_add(1),
-                    });
+                    if self.pending_tcp_resets.len() < MAX_PENDING_REPLY_FRAMES {
+                        self.pending_tcp_resets.push_back(PendingTcpReset {
+                            key,
+                            seq: our_seq,
+                            ack: tcp.seq.wrapping_add(1),
+                        });
+                    }
                     return;
                 }
             };
@@ -628,6 +605,11 @@ impl HostSocketOutboundIpv4Handler {
             flow.observe_guest_ack(tcp.ack);
         }
         if !tcp.payload.is_empty() && tcp.seq == flow.guest_next {
+            if flow.write_buf.len() >= MAX_TCP_WRITE_BACKLOG {
+                // The host peer is not reading: drop the whole segment, FIN
+                // included, unacknowledged so the guest retransmits it later.
+                return;
+            }
             flow.guest_next = flow.guest_next.wrapping_add(tcp.payload.len() as u32);
             flow.write_buf.extend(tcp.payload);
             flow.pending_ack = true;
@@ -697,7 +679,10 @@ impl HostSocketOutboundIpv4Handler {
         let Some(guest_mac) = guest_mac else {
             return;
         };
-        while let Some(reset) = self.pending_tcp_resets.pop_front() {
+        while !reply_queue_full(reply_queue) {
+            let Some(reset) = self.pending_tcp_resets.pop_front() else {
+                break;
+            };
             queue_tcp_reply(
                 reply_queue,
                 guest_mac,
@@ -779,7 +764,9 @@ impl HostSocketOutboundIpv4Handler {
                         flow.pending_ack = false;
                         active = true;
                     }
-                    loop {
+                    // Leave host data in the socket while the guest is not
+                    // draining; this NAT never retransmits a dropped segment.
+                    while !reply_queue_full(reply_queue) {
                         match flow.stream.read(read_scratch) {
                             Ok(0) => {
                                 if !flow.host_fin_sent {
