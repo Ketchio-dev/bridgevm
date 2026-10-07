@@ -16,6 +16,6 @@ grep -Fq 'run-round --out "$OUT"' "$RUN"; grep -Fq 'cargo test --workspace --loc
 ! GITHUB_ACTIONS=false RUNNER_TEMP=/tmp "$RUN" 2>/dev/null
 grep -Fq 'UnixListener' "$BASELINE"
 ! grep -Eq 'TcpListener|TcpStream|sleep [0-9]{3}|sudo|actions-runner' "$RUN" "$BASELINE"
-bin="$(mktemp)"; trap 'rm -f "$bin"' EXIT; rustc "$BASELINE" -o "$bin"
+bin="$(mktemp "${TMPDIR:-/tmp}/bridgevm-qmp.XXXXXX")"; trap 'rm -f "$bin"' EXIT; rustc "$BASELINE" -o "$bin"
 [[ "$($bin 20)" == $'baseline_iterations=20\nbaseline_einval_then_econnrefused=20' ]]
 echo 'PASS: hosted QMP 20/20 negative control and exact 60-round contract'

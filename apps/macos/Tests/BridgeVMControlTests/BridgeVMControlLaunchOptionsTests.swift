@@ -9,13 +9,9 @@ final class BridgeVMControlLaunchOptionsTests: XCTestCase {
     }
 
     func testE2EAnswerFileMustBeRegularAndBesideTheIsolatedLibrary() throws {
-        let lane = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
-            .appendingPathComponent("bridgevm-e2e-answer-\(UUID().uuidString)")
-        let library = lane.appendingPathComponent("library", isDirectory: true)
+        let fixture = try E2EAdmissionFixture(), lane = fixture.lane, library = fixture.library
         let answer = lane.appendingPathComponent("e2e-unattend.xml")
-        try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
         try Data("<unattend/>".utf8).write(to: answer)
-        defer { try? FileManager.default.removeItem(at: lane) }
 
         let parsed = try BridgeVMControlLaunchOptions.parse(arguments: [
             "--e2e-unattend-path", answer.path,
@@ -35,10 +31,7 @@ final class BridgeVMControlLaunchOptionsTests: XCTestCase {
     }
 
     func testAcceptsOnlyAnExistingEmptyCanonicalE2ERoot() throws {
-        let root = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
-            .appendingPathComponent("bridgevm-e2e-options-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
-        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = try E2EAdmissionFixture(), root = fixture.library
         let parsed = try BridgeVMControlLaunchOptions.parse(
             arguments: ["--e2e-library-root", root.path])
         XCTAssertEqual(parsed.e2eLibraryRoot?.path, root.resolvingSymlinksInPath().path)
@@ -47,18 +40,15 @@ final class BridgeVMControlLaunchOptionsTests: XCTestCase {
     func testRejectsRelativeDuplicateNonEmptyAndUnrelatedRoots() throws {
         XCTAssertThrowsError(try BridgeVMControlLaunchOptions.parse(
             arguments: ["--e2e-library-root", "relative"]))
+        let fixture = try E2EAdmissionFixture()
         XCTAssertThrowsError(try BridgeVMControlLaunchOptions.parse(arguments: [
-            "--e2e-library-root", "/tmp/bridgevm-e2e-a",
-            "--e2e-library-root", "/tmp/bridgevm-e2e-b",
+            "--e2e-library-root", fixture.library.path, "--e2e-library-root", fixture.library.path,
         ]))
         XCTAssertThrowsError(try BridgeVMControlLaunchOptions.parse(
             arguments: ["--e2e-library-root", FileManager.default.homeDirectoryForCurrentUser.path]))
 
-        let nonEmpty = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
-            .appendingPathComponent("bridgevm-e2e-nonempty-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: nonEmpty, withIntermediateDirectories: false)
+        let nonEmpty = fixture.library
         try Data("occupied".utf8).write(to: nonEmpty.appendingPathComponent("entry"))
-        defer { try? FileManager.default.removeItem(at: nonEmpty) }
         XCTAssertThrowsError(try BridgeVMControlLaunchOptions.parse(
             arguments: ["--e2e-library-root", nonEmpty.path]))
     }

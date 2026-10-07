@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; WORK="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"; trap 'rm -rf "$WORK"' EXIT
 export BRIDGEVM_LIVE_ROOT="$WORK/queue"; CLI="$ROOT/scripts/live-gates/bridgevm-live"
 asset="$ROOT/scripts/win-assets/bvgpu-apply-host-resolution.ps1"
 grep -q 'Get-RequestedMode' "$asset"; grep -q 'change_attempt=' "$asset"; ! grep -q '^\$dm = \$before' "$asset"

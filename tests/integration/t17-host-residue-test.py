@@ -27,13 +27,13 @@ class ResidueTest(unittest.TestCase):
     def setUp(self) -> None:
         if sys.platform != "darwin":
             self.skipTest("the T17 cleanup fence reads the macOS mount table and hdiutil image list")
-        work = Path("/tmp") / f"bridgevm-e2e-residue-fixture.{secrets.token_hex(3)}"
+        self.private = Path(tempfile.mkdtemp(prefix="t17-residue-private-")).resolve()
+        work = self.private / f"bridgevm-e2e-residue-fixture.{secrets.token_hex(3)}"
         work.mkdir(mode=0o700)
-        self.addCleanup(shutil.rmtree, work)
+        self.addCleanup(shutil.rmtree, work, ignore_errors=True)
         self.work = work.resolve()
         (self.work / "lane-1").mkdir()
-        self.private = Path(tempfile.mkdtemp(prefix="t17-residue-private-")).resolve()
-        self.addCleanup(shutil.rmtree, self.private)
+        self.addCleanup(shutil.rmtree, self.private, ignore_errors=True)
         self.tools = Path(tempfile.mkdtemp(prefix="t17-residue-tools-")).resolve()
         self.addCleanup(shutil.rmtree, self.tools)
         self.images = plistlib.dumps({"images": []}).decode()
@@ -126,7 +126,7 @@ def run_tier_fixture(tier: Path, manifest: Path, temporary: Path) -> None:
     lane_root = Path(next(line.removeprefix("lane_root=") for line in helper_log.splitlines()
                           if line.startswith("lane_root=")))
     work = lane_root.parent
-    assert re.fullmatch(r"/(?:private/)?tmp/bridgevm-e2e-" + re.escape(LEFTOVER_JOB) + r"\.[A-Za-z0-9]{6}", str(work))
+    assert work.parent == private.resolve() and re.fullmatch(r"bridgevm-e2e-" + re.escape(LEFTOVER_JOB) + r"\.[A-Za-z0-9]{6}", work.name)
     try:
         assert completed.returncode != 0, "an unreleased harvest let the tier pass"
         receipt = json.loads((out / "receipt.json").read_text())

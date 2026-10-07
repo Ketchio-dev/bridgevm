@@ -15,7 +15,7 @@ grep -q '"required_run_count": $REQUIRED_LANES' "$RUN"
 grep -q 't9-bridgevm-pc-pci) helper=run-bridgevm-pc-pci-tier.sh' "$SPECIAL"
 ! grep -Eq 'N:-|sleep [0-9]{3}|sudo|actions-runner' "$RUN" "$SPECIAL"
 
-queue="$(mktemp -d)"; trap 'rm -rf "$queue"' EXIT
+queue="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"; trap 'rm -rf "$queue"' EXIT
 job="$(BRIDGEVM_LIVE_ROOT="$queue" "$CLI" submit t9-bridgevm-pc-pci)"
 BRIDGEVM_LIVE_ROOT="$queue" "$CLI" status "$job" | grep -q '^tier=t9-bridgevm-pc-pci$'
 BRIDGEVM_LIVE_ROOT="$queue" "$CLI" cancel "$job" | grep -q "canceled $job"

@@ -32,7 +32,7 @@ TESTING_LIBS=/Library/Developer/CommandLineTools/Library/Developer/usr/lib
   exit 1
 }
 
-OUT=$(mktemp -d)
+OUT=$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")
 trap 'rm -rf "$OUT"' EXIT
 
 # Each suite lists the sources under test on its first line as:

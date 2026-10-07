@@ -11,7 +11,7 @@ grep -q 'exit_boot_services_attempts=\[1-3\]' "$RUN"
 [[ "$(grep -Fc 'cp -c' "$RUN")" -eq 2 ]]
 grep -q 'codesign --sign - --entitlements' "$RUN"
 grep -q 't13-bridgevm-pc-bds-exit)' "$SPECIAL"
-queue="$(mktemp -d)"
+queue="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"
 trap 'rm -rf "$queue"' EXIT
 job="$(BRIDGEVM_LIVE_ROOT="$queue" "$CLI" submit t13-bridgevm-pc-bds-exit)"
 BRIDGEVM_LIVE_ROOT="$queue" "$CLI" status "$job" |

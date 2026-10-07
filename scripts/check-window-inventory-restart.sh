@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TEMP="$(mktemp -d)"; trap 'rm -rf "$TEMP"' EXIT
+TEMP="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"; trap 'rm -rf "$TEMP"' EXIT
 PROTOCOL="$ROOT/apps/macos/Sources/BridgeVMWindowProtocol"
 swiftc -emit-module -emit-library -module-name BridgeVMWindowProtocol \
   "$PROTOCOL/GuestWindowRecord.swift" "$PROTOCOL/HvfGuestWindowValidation.swift" \

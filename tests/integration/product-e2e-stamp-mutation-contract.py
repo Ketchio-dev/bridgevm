@@ -9,12 +9,14 @@ import unittest
 from unittest.mock import patch
 
 import product_e2e_identity_fixtures as fixture
+from product_e2e_work_fixture import allocate
+from product_e2e_t17_identity_fixture import prepare_t17
 
 
 class StampMutationContract(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="bridgevm-import-e2e-stamp-", dir="/private/tmp")
-        self.root = Path(self.temporary.name)
+        self.temporary = tempfile.TemporaryDirectory(prefix="bridgevm-import-e2e-stamp-")
+        self.root = allocate(self.temporary.name).parent
         self.request, self.result = fixture.import_request(self.root / "lane-1")
         self.stamp = self.root / "stamp.json"
         self.request_seal = fixture.T19.digest(self.request)
@@ -22,16 +24,7 @@ class StampMutationContract(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def prepare_t17(self):
-        writer = fixture.T17
-        prefix = fixture.NONCE[:12]
-        value = {"schema_version": "bridgevm.windows-hvf-3d-off-product-e2e-request.v2",
-                 "job_id": fixture.JOB, "commit": fixture.COMMIT, "campaign_mode": "pilot",
-                 "lane": 1, "nonce": fixture.NONCE, "three_d_injection": False,
-                 "vm_name": f"BridgeVM T17 Lane 1 {prefix}", "vm_slug": f"bridgevm-t17-lane-1-{prefix}",
-                 **{field: f"/private/tmp/fixture/{field}" for field in writer.REQUEST_PATHS}}
-        self.request.write_text(json.dumps(value))
-        self.result.write_text(json.dumps(fixture.lane(writer)))
+    prepare_t17 = prepare_t17
 
     def audit(self, writer):
         if writer is fixture.T17:

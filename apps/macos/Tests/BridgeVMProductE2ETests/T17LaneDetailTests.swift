@@ -1,11 +1,11 @@
 import XCTest
 @testable import BridgeVMProductE2E
 
-/// failure_code alone cost a day: "ui-element-missing" says nothing about which
-/// element. The detail the blocker was thrown with now rides beside the code.
+/// Retain the specific failing element beside the generic failure code.
 final class T17LaneDetailTests: XCTestCase {
     func testLaneResultCarriesTheBlockerDetailBesideItsCode() throws {
-        let fixture = try T17ContractTests().makeFixture()
+        let owner = T17ContractTests(); defer { owner.tearDown() }
+        let fixture = try owner.makeFixture()
         let request = try T17Request.load(fixture.request)
         var evidence = T17Evidence(nonce: request.nonce)
         try evidence.prove(.artifactPreflight)

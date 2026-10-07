@@ -16,7 +16,7 @@ grep -q 't14-bridgevm-pc-windows-start)' "$SPECIAL"
 grep -q 't14-bridgevm-pc-windows-start' "$TIER"
 grep -q 't14-bridgevm-pc-windows-start' "$WORKER"
 
-work="$(mktemp -d)"
+work="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 image="$work/image"; vars="$work/vars"; manifest="$work/manifest.tsv"
 dd if=/dev/zero of="$image" bs=512 count=2 status=none

@@ -5,9 +5,11 @@ import argparse, hashlib, importlib.util, json, platform, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
 from product_e2e_identity import fixed_fields_match, is_sha256
+from product_e2e_digest import digest
 import windows_product_e2e_artifacts as ARTIFACTS
 import windows_product_e2e_failure as FAILURE
 from product_e2e_json_snapshot import JsonSnapshot, unchanged
+import product_e2e_work as WORK
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("product_receipt_verifier", ROOT / "scripts/verify-windows-product-e2e-receipt.py")
@@ -21,19 +23,10 @@ LANE_HASHES = ("installer_source_sha256", "final_disk_sha256", "final_vars_sha25
 LANE_FAILURE_CODES = frozenset({"none", "invalid-request", "missing-guest-payload", "accessibility-untrusted", "app-launch-failed", "ui-element-missing", "input-selection-failed", "vm-creation-failed", "installer-failed", "guest-evidence-missing", "snapshot-unavailable", "cleanup-failed", "canceled", "internal-error"})
 LANE_KEYS = frozenset({"schema_version", "job_id", "commit", "campaign_mode", "lane", "nonce", "three_d_injection", "ui_frontend_automated", "failure_code", "failure_detail", "cleanup_verified", "installer_source_path", *LANE_STAGES, *LANE_HASHES})
 REQUEST_PATHS = ("app_bundle_path", "app_executable_path", "runner_path", "firmware_path", "secure_boot_policy_path", "iso_path", "bundled_vars_seed_path", "guest_payload_path", "guest_payload_manifest_path", "lane_root", "library_root_path", "share_path", "disk_path", "vars_path", "vtpm_state_path", "snapshot_path", "secure_boot_receipt_path", "guest_evidence_path")
-REQUEST_KEYS = frozenset({"schema_version", "job_id", "commit", "campaign_mode", "lane", "nonce", "three_d_injection", "vm_name", "vm_slug", *REQUEST_PATHS})
+REQUEST_KEYS = frozenset({"schema_version", "job_id", "commit", "campaign_mode", "lane", "nonce", "three_d_injection", "vm_name", "vm_slug", *REQUEST_PATHS, *WORK.FIELDS})
 STAMP_KEYS = frozenset({"schema_version", "job_id", "commit", "lane", "nonce", "request_sha256", "result_sha256"})
 def load_json(path: Path) -> object:
     return JsonSnapshot.read(path).value
-
-def digest(path: Path) -> str:
-    if not path.is_file() or path.is_symlink():
-        return "absent"
-    value = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            value.update(chunk)
-    return value.hexdigest()
 
 def aggregate(values: list[str]) -> str:
     if not values:
@@ -96,6 +89,7 @@ def authenticate(request_path: Path, result_path: Path, stamp_path: Path, *, job
     for field in REQUEST_PATHS:
         if not isinstance(request[field], str) or not request[field].startswith("/"):
             raise ValueError(f"lane {ordinal} request path {field} is invalid")
+    WORK.validate(request, "e2e")
     if result["failure_code"] == "none":
         ARTIFACTS.authenticate(request, result, ordinal)
     unchanged(request_document, result_document)

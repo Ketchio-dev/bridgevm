@@ -45,7 +45,7 @@ parse_run_log() { # fired press release stuck first_ms classification
 }
 
 if [[ "${1:-}" == "--selftest" ]]; then
-  d=$(mktemp -d); t="$d/run.log"; p="$d/bvptr.log"; c="$d/click.log"; mkdir "$d/visible" "$d/share"; printf 'BVTARGET click count=1\r\n' > "$c"
+  d=$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX"); t="$d/run.log"; p="$d/bvptr.log"; c="$d/click.log"; mkdir "$d/visible" "$d/share"; printf 'BVTARGET click count=1\r\n' > "$c"
   printf 'BVTARGET ready width=1600 height=900 screen_x=0 screen_y=0 center_x=800 center_y=450 virtual_x=0 virtual_y=0 virtual_w=1600 virtual_h=900 hwnd=9\r\n' > "$d/share/bv-pointer-target-ready.log"
   printf 'source=active-cgl-iosurface\nhid_x=16384\nhid_y=16384\nfirst_changed_ms=250\n' > "$d/visible/visible.env"
   printf 'live input accepted: command=Pointer("click:16384x16384")\n' > "$t"

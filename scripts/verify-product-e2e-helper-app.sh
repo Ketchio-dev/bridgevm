@@ -24,7 +24,7 @@ verify_app() {
 }
 self_test() (
   local temporary app helper
-  temporary="$(mktemp -d)"; trap 'rm -rf "$temporary"' EXIT
+  temporary="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"; trap 'rm -rf "$temporary"' EXIT
   app="$temporary/BridgeVM.app"; helper="$app/Contents/Helpers/BridgeVMProductE2E.app"
   install -d "$app/Contents/MacOS" "$helper/Contents/MacOS"
   install -m 644 "$ROOT/apps/macos/BridgeVMProductE2E-Info.plist" "$helper/Contents/Info.plist"

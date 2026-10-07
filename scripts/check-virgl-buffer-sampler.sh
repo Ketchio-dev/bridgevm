@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="${BRIDGEVM_VIRGL_SOURCE:-${BRIDGEVM_3D_DIR:-$HOME/BridgeVM/3d}/virglrenderer}"
 BUILD="${BRIDGEVM_VIRGL_BUILD:-$SRC/build-venus}"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 includes=("$BUILD" "$BUILD/src" "$BUILD/src/gallium" "$SRC/src" "$SRC/src/mesa"
   "$SRC/src/mesa/pipe" "$SRC/src/mesa/compat" "$SRC/src/gallium/include" "$SRC/src/gallium/auxiliary")
 args=(); for path in "${includes[@]}"; do args+=("-I$path"); done

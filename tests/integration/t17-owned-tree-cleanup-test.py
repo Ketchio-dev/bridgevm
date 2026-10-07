@@ -11,9 +11,11 @@ import tempfile
 import unittest
 from unittest import mock
 import uuid
+from t17_cleanup_fixture import make_readonly_payload
 
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts/live-gates/t17_owned_tree_cleanup.py"
+sys.path.insert(0, str(SCRIPT.parent))
 SPEC = importlib.util.spec_from_file_location("t17_owned_tree_cleanup", SCRIPT)
 CLEANUP = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CLEANUP)
@@ -22,11 +24,13 @@ SPEC.loader.exec_module(CLEANUP)
 class OwnedTreeCleanupTests(unittest.TestCase):
     def setUp(self):
         self.job = "cleanup-test-" + uuid.uuid4().hex
-        self.root = Path("/tmp") / ("bridgevm-e2e-" + self.job + "." + uuid.uuid4().hex[:6])
+        self.parent = Path(tempfile.mkdtemp(prefix="bridgevm-cleanup-parent-")).resolve()
+        self.parent_identity = CLEANUP.WORK.directory(self.parent)
+        self.root = self.parent / ("bridgevm-e2e-" + self.job + "." + uuid.uuid4().hex[:6])
         self.root.mkdir(mode=0o700)
         info = self.root.stat()
         self.captured = f"{info.st_dev}:{info.st_ino}"
-        self.external = Path(tempfile.mkdtemp(prefix="bridgevm-cleanup-sentinel-"))
+        self.external = Path(tempfile.mkdtemp(prefix="sentinel-", dir=self.parent))
 
     def tearDown(self):
         for root in (self.root, self.external):
@@ -36,22 +40,12 @@ class OwnedTreeCleanupTests(unittest.TestCase):
                 for directory, _, _ in os.walk(root, followlinks=False):
                     os.chmod(directory, 0o700)
                 shutil.rmtree(root)
+        self.parent.rmdir()
 
     def run_cleanup(self):
-        CLEANUP.cleanup(str(self.root), self.job, self.captured)
+        CLEANUP.cleanup(str(self.root), self.job, self.captured, str(self.parent), self.parent_identity)
 
-    def make_readonly_payload(self, root):
-        payload = root / "payload"
-        payload.mkdir()
-        for name in ("network", "storage", "serial"):
-            directory = payload / name
-            directory.mkdir()
-            file = directory / "driver.inf"
-            file.write_bytes(b"immutable driver fixture\n")
-            file.chmod(0o400)
-            directory.chmod(0o500)
-        payload.chmod(0o500)
-        return payload
+    make_readonly_payload = staticmethod(make_readonly_payload)
 
     def test_readonly_clone_removed_without_changing_source(self):
         source = self.make_readonly_payload(self.external)
@@ -98,14 +92,14 @@ class OwnedTreeCleanupTests(unittest.TestCase):
                           (str(self.root) + "/../" + self.root.name, self.job),
                           (str(self.external), self.job)):
             with self.subTest(root=root, job=job), self.assertRaises(ValueError):
-                CLEANUP.cleanup(root, job, self.captured)
+                CLEANUP.cleanup(root, job, self.captured, str(self.parent), self.parent_identity)
         self.assertTrue(self.root.is_dir())
 
     def test_wrong_captured_inode_and_missing_identity_rejected(self):
         device, inode = map(int, self.captured.split(":"))
         for captured in (f"{device}:{inode + 1}", "", "unbound"):
             with self.subTest(captured=captured), self.assertRaises(ValueError):
-                CLEANUP.cleanup(str(self.root), self.job, captured)
+                CLEANUP.cleanup(str(self.root), self.job, captured, str(self.parent), self.parent_identity)
         self.assertTrue(self.root.is_dir())
 
     def test_different_owner_rejected(self):
@@ -117,7 +111,7 @@ class OwnedTreeCleanupTests(unittest.TestCase):
     def test_different_device_rejected(self):
         device, inode = map(int, self.captured.split(":"))
         with self.assertRaises(ValueError):
-            CLEANUP.cleanup(str(self.root), self.job, f"{device + 1}:{inode}")
+            CLEANUP.cleanup(str(self.root), self.job, f"{device + 1}:{inode}", str(self.parent), self.parent_identity)
         self.assertTrue(self.root.is_dir())
 
     def test_root_symlink_rejected(self):
@@ -160,7 +154,8 @@ class OwnedTreeCleanupTests(unittest.TestCase):
         self.make_readonly_payload(self.root)
         result = subprocess.run(
             [sys.executable, str(SCRIPT), "--root", str(self.root),
-             "--job-id", self.job, "--identity", self.captured],
+             "--job-id", self.job, "--identity", self.captured,
+             "--parent", str(self.parent), "--parent-identity", self.parent_identity],
             capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.root.exists())

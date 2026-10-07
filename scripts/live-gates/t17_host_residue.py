@@ -18,27 +18,18 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import product_e2e_work as BOUNDARY
 import t17_guest_setup_harvest as HARVEST  # noqa: E402
+from product_e2e_host_listing import listing
 from t17_private_diagnostic_packet import INDEX_CAP  # noqa: E402
 
 MOUNT = "/sbin/mount"
 HDIUTIL = HARVEST.HDIUTIL
-WORK = re.compile(r"/(?:private/)?tmp/bridgevm-e2e-[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.[A-Za-z0-9]{6}\Z")
+WORK = re.compile(r"bridgevm-e2e-(" + BOUNDARY.JOB + r")\.[A-Za-z0-9]{6}\Z")
 LANE = re.compile(r"lane-[1-3]\Z")
 INDEX = re.compile(r"t17-diagnostic-lane-[1-3]-index\.json\Z")
 READ_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
 DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
-
-
-def listing(*argv: str) -> bytes | None:
-    """Tool output, or None when the tool fails or outlives the release bound."""
-    try:
-        completed = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                   stderr=subprocess.DEVNULL, env=HARVEST.TOOL_ENV,
-                                   timeout=HARVEST.RELEASE_SECONDS, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return completed.stdout if completed.returncode == 0 else None
 
 
 def recorded_cleanup(private: int, name: str) -> object:
@@ -57,8 +48,10 @@ def recorded_cleanup(private: int, name: str) -> object:
 
 def residue(work: str, private: str) -> str | None:
     """Return why host state may still reference the tree, or None when nothing does."""
-    if not WORK.fullmatch(work):
+    match = WORK.fullmatch(Path(work).name)
+    if not match or Path(work).parent != Path(private):
         return "work-outside-job-boundary"
+    BOUNDARY.directory(private); BOUNDARY.directory(work)
     table = listing(MOUNT)
     if table is None or b" on / (" not in table:
         return "mount-table-unreadable"

@@ -1,4 +1,5 @@
 import Foundation
+import BridgeVMWindowProtocol
 
 struct BridgeVMControlLaunchOptions: Equatable {
     let e2eLibraryRoot: URL?
@@ -24,7 +25,7 @@ struct BridgeVMControlLaunchOptions: Equatable {
             case let .relativeLibraryRoot(path):
                 return "--e2e-library-root must be absolute: \(path)"
             case let .unsafeLibraryRoot(path):
-                return "--e2e-library-root must be an existing, empty, non-symlink /tmp/bridgevm-e2e-* directory: \(path)"
+                return "--e2e-library-root must be an existing, empty, non-symlink identity-bound E2E library directory: \(path)"
             case let .unavailableLibraryRoot(path):
                 return "--e2e-library-root cannot be inspected: \(path)"
             case .missingUnattendedPath:
@@ -113,10 +114,8 @@ struct BridgeVMControlLaunchOptions: Equatable {
         }
         let lexical = URL(fileURLWithPath: raw, isDirectory: true).standardizedFileURL
         let canonical = lexical.resolvingSymlinksInPath()
-        guard canonical.path.hasPrefix("/tmp/bridgevm-e2e-") else {
-            throw ParseError.unsafeLibraryRoot(raw)
-        }
         do {
+            try ProductE2EWorkBoundary.validateLibrary(canonical)
             let values = try lexical.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             guard values.isDirectory == true, values.isSymbolicLink != true,
                   lexical.path == canonical.path,

@@ -5,6 +5,7 @@ import os
 import re
 import stat
 import sys
+import product_e2e_work as WORK
 
 
 DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
@@ -79,19 +80,12 @@ def remove_contents(descriptor, expected, children, device, owner):
             os.close(child)
 
 
-def cleanup(root, job_id, captured_identity):
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", job_id):
-        raise ValueError("invalid cleanup job identity")
-    pattern = r"/(?:private/)?tmp/bridgevm-(?:e2e|import-e2e)-" + re.escape(job_id) + r"\.[A-Za-z0-9]{6}"
-    if not re.fullmatch(pattern, root):
-        raise ValueError("cleanup root is outside the exact job boundary")
+def cleanup(root, job_id, captured_identity, parent, parent_identity):
     if not re.fullmatch(r"[0-9]+:[0-9]+", captured_identity):
         raise ValueError("cleanup root lacks a captured device/inode identity")
     device, inode = map(int, captured_identity.split(":"))
     owner = os.geteuid()
-    # Open the already validated parent spelling and never follow a link
-    # inside it, including the caller-supplied root entry.
-    parent = os.open(os.path.dirname(root), os.O_RDONLY | os.O_DIRECTORY)
+    parent = WORK.cleanup_parent(root, parent, job_id, parent_identity)
     try:
         name = os.path.basename(root)
         info = os.stat(name, dir_fd=parent, follow_symlinks=False)
@@ -123,9 +117,11 @@ def main():
     parser.add_argument("--root", required=True)
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--identity", required=True)
+    parser.add_argument("--parent", required=True)
+    parser.add_argument("--parent-identity", required=True)
     args = parser.parse_args()
     try:
-        cleanup(args.root, args.job_id, args.identity)
+        cleanup(args.root, args.job_id, args.identity, args.parent, args.parent_identity)
     except (OSError, ValueError) as error:
         print(f"T17 owned-tree cleanup refused: {error}", file=sys.stderr)
         return 1

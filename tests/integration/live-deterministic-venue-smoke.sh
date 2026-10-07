@@ -2,7 +2,7 @@
 # Deterministic contract: neither submission nor dispatch may run t0 on a Mac.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"
 trap 'rm -rf "${WORK:?}"' EXIT
 export BRIDGEVM_LIVE_ROOT="$WORK/queue"
 export VENUE_MARKER="$WORK/project-check-ran"

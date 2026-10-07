@@ -39,14 +39,13 @@ def json_file(path: Path, value: dict) -> str:
 
 class PacketTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.work = Path("/tmp") / f"bridgevm-e2e-{JOB}.{secrets.token_hex(3)}"
-        self.work.mkdir(mode=0o700)
-        self.work = self.work.resolve()
-        self.lane = self.work / "lane-1"
-        self.lane.mkdir(mode=0o700)
         self.output = Path(tempfile.mkdtemp(prefix="t17-packet-out-")).resolve()
         self.private = self.output / "private"
         self.private.mkdir(mode=0o700)
+        self.work = self.private / f"bridgevm-e2e-{JOB}.{secrets.token_hex(3)}"
+        self.work.mkdir(mode=0o700)
+        self.lane = self.work / "lane-1"
+        self.lane.mkdir(mode=0o700)
         self.slug = "bridgevm-t17-lane-1-" + NONCE[:12]
         self.evidence = self.lane / "library" / self.slug / "bundle.vmbridge" / "logs" / "hvf"
         self.evidence.mkdir(parents=True)
@@ -61,6 +60,7 @@ class PacketTest(unittest.TestCase):
                        "job_id": JOB, "commit": COMMIT, "campaign_mode": "pilot", "lane": 1,
                        "nonce": NONCE, "failure_code": "guest-evidence-missing", "first_ready": False,
                        "failure_detail": f"first boot has no BVAGENT READY/PONG evidence; host_stop=status=complete,generation=7,nonce={STOP_NONCE},report=complete,helper=terminal,log_offset=0"}
+        self.request.update(packet.WORK.capture(self.lane, JOB, "e2e", 1))
         self.refresh_seal()
         self.args = argparse.Namespace(private=self.private, lane_root=self.lane,
                                        job_id=JOB, commit=COMMIT, mode="pilot", lane=1, kind="first-ready")
