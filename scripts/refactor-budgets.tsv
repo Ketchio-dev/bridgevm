@@ -556,7 +556,7 @@ crates/bridgevm-hvf/src/virtio_gpu/venus_start_trace.rs	127	0
 crates/bridgevm-hvf/src/virtio_gpu/virtqueue.rs	388	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/backend.rs	224	3
 crates/bridgevm-hvf/src/virtio_gpu_3d/backend_types.rs	17	0
-crates/bridgevm-hvf/src/virtio_gpu_3d/blob_host_mapping.rs	278	0
+crates/bridgevm-hvf/src/virtio_gpu_3d/blob_host_mapping.rs	228	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/blob_resource.rs	175	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/capset.rs	58	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/command_dispatch.rs	45	0
@@ -568,7 +568,7 @@ crates/bridgevm-hvf/src/virtio_gpu_3d/fences.rs	46	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/local_resource_copy.rs	267	1
 crates/bridgevm-hvf/src/virtio_gpu_3d/mod.rs	12	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/protocol.rs	147	0
-crates/bridgevm-hvf/src/virtio_gpu_3d/resource_3d.rs	185	0
+crates/bridgevm-hvf/src/virtio_gpu_3d/resource_3d.rs	152	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/resource_create_3d.rs	72	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/scanout_present.rs	107	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/scanout_types.rs	43	0
@@ -4064,3 +4064,8 @@ crates/bridgevm-hvf/src/userspace_gic/acknowledge.rs	35	0
 crates/bridgevm-hvf/src/userspace_gic/active_list_bound_tests.rs	65	0
 docs/history/windows-hvf/native-vmm-gic-active-list-bound-20261007.md	61	0
 docs/document-manifests/native-vmm-gic-active-list-bound.tsv	3	0
+crates/bridgevm-hvf/src/virtio_gpu_3d/resource_unref.rs	46	0
+crates/bridgevm-hvf/src/virtio_gpu_3d/tests/blob_lifecycle_bounds.rs	90	0
+docs/history/windows-hvf/native-vmm-virtio-gpu-3d-blob-bounds-20261007.md	78	0
+docs/document-manifests/native-vmm-virtio-gpu-3d-blob-bounds.tsv	3	0
+crates/bridgevm-hvf/src/virtio_gpu_3d/blob_unmap.rs	60	0
