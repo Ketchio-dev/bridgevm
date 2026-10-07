@@ -37,7 +37,7 @@ docs/windows-arm/evidence/vtpm-windows-command-path-20260722.md	historical-evide
 @include	docs/document-manifests/native-vmm-gic-active-list-bound.tsv	-	-
 @include	docs/document-manifests/native-vmm-virtio-gpu-3d-blob-bounds.tsv	-	-
 @include	docs/document-manifests/native-vmm-share-path-containment.tsv	-	-
-docs/windows-arm/evidence/gpu-live-receipt-20260723.md	historical-evidence	windows-graphics	STATUS.md
+@include	docs/document-manifests/live-worker-ssd-launch.tsv	-	-
 docs/windows-arm/evidence/app-install-to-3d-desktop-20260730.md	current	windows-app	GOAL.md
 docs/windows-arm/evidence/fresh-12041-a1-a2-a3-a8-rediagnosis-20260730.md	current	windows-graphics	GOAL.md
 docs/windows-arm/evidence/a3-attach-backing-0xd1-fix-20260731.md	current	windows-graphics	GOAL.md

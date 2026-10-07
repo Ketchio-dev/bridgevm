@@ -9,7 +9,7 @@ PLIST="$AGENTS/$LABEL.plist"
 TEMPLATE="$REPO/scripts/live-gates/$LABEL.plist"
 WORKER="$REPO/scripts/live-gates/bridgevm-live-worker.sh"
 QUEUE_ROOT="${BRIDGEVM_LIVE_ROOT:-$HOME/BridgeVM/live-queue}"
-LOGDIR="$QUEUE_ROOT/logs"
+LOGDIR="$HOME/Library/Logs/BridgeVM"
 MIN_FREE_GIB="${BRIDGEVM_LIVE_MIN_FREE_GIB:-100}"
 
 DRY_RUN=0
@@ -62,8 +62,8 @@ fi
 
 echo "== install =="
 mkdir -p "$AGENTS" "$QUEUE_ROOT"/{queued,running,done} "$LOGDIR"
-# The queue can name private image paths in raw receipts; keep it to this user.
-chmod 700 "$QUEUE_ROOT"
+# Queue receipts and worker logs can name private paths; keep both user-only.
+chmod 700 "$QUEUE_ROOT" "$LOGDIR"
 
 sed -e "s|__WORKER__|$WORKER|g" -e "s|__LOGDIR__|$LOGDIR|g" \
     -e "s|__HOME__|$HOME|g" -e "s|__USER__|$(id -un)|g" "$TEMPLATE" > "$PLIST"
@@ -79,6 +79,6 @@ echo "submit a job:  scripts/live-gates/bridgevm-live submit t1-vtimer"
 echo "watch it:      scripts/live-gates/bridgevm-live status"
 echo "worker logs:   $LOGDIR/worker.err.log"
 echo
-echo "One-time user action, if not already granted: the first live gate will"
-echo "ask for Screen Recording / Accessibility permission for the terminal"
-echo "that runs it. No credentials are stored by this installer."
+echo "External-volume access requires operator-granted Full Disk Access for /bin/bash."
+echo "Screen Recording / Accessibility for the live helpers are separate permissions."
+echo "This installer grants no permissions and stores no credentials."
