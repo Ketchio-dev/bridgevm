@@ -3,10 +3,6 @@
 use super::*;
 use crate::virtio_gpu_trace::venus_start_trace_enabled;
 
-pub(crate) fn round_up_usize(value: usize, align: usize) -> usize {
-    value.div_ceil(align) * align
-}
-
 pub(crate) fn aligned_u64(value: u64, align: u64) -> bool {
     value % align == 0
 }
@@ -16,28 +12,6 @@ pub(crate) fn aligned_usize(value: usize, align: usize) -> bool {
 }
 
 pub(crate) const HVF_PAGE_SIZE: u64 = 16 * 1024;
-
-/// Classified `RESOURCE_UNMAP_BLOB` invalid-parameter rejections. The guest
-/// driver's cleanup order determines which class fires: an unmap that arrives
-/// after `RESOURCE_UNREF` of a still-mapped blob is late-but-harmless cleanup
-/// (the host already unmapped at destroy), while `never_created` points at a
-/// real mapping-lifecycle bug or resource-id confusion.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct UnmapBlobRejectCounts {
-    pub short_request: u64,
-    pub destroyed_while_mapped: u64,
-    pub destroyed_after_unmap: u64,
-    pub never_created: u64,
-}
-
-impl UnmapBlobRejectCounts {
-    pub fn total(&self) -> u64 {
-        self.short_request
-            + self.destroyed_while_mapped
-            + self.destroyed_after_unmap
-            + self.never_created
-    }
-}
 
 impl VirtioGpu3d {
     pub(crate) fn resource_map_blob_into(
@@ -87,7 +61,19 @@ impl VirtioGpu3d {
         }
         let size = resource.size;
         // Validate against the page-rounded footprint the mapping will occupy.
-        let rounded_size = round_up_usize(size as usize, HVF_PAGE_SIZE as usize) as u64;
+        // The guest chose `size`; one within a page of u64::MAX has none.
+        let Some(rounded_size) = size.checked_next_multiple_of(HVF_PAGE_SIZE) else {
+            let window = self.shm_window_size;
+            venus_start_trace_map_blob_reject(
+                resource_id,
+                shm_offset,
+                size,
+                window,
+                "size overflows",
+            );
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
+        };
         if !aligned_u64(shm_offset, HVF_PAGE_SIZE)
             || shm_offset
                 .checked_add(rounded_size)
@@ -202,42 +188,6 @@ impl VirtioGpu3d {
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_MAP_INFO, Some(hdr));
         out.extend_from_slice(&(mapped.map_info & VIRTIO_GPU_MAP_CACHE_MASK).to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
-    }
-
-    pub(crate) fn resource_unmap_blob_into(
-        &mut self,
-        request: &[u8],
-        hdr: CtrlHdr3d,
-        out: &mut Vec<u8>,
-    ) {
-        if request.len() < RESOURCE_UNMAP_BLOB_LEN {
-            self.unmap_blob_reject_counts.short_request += 1;
-            venus_start_trace_unmap_blob_reject(0, "short_request");
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
-            return;
-        }
-        let resource_id = read_le_u32(request, 24).unwrap_or(0);
-        if !self.blob_resources.contains_key(&resource_id) {
-            let reason = if self.destroyed_blob_mapped_ids.contains(&resource_id) {
-                self.unmap_blob_reject_counts.destroyed_while_mapped += 1;
-                "already_destroyed_was_mapped"
-            } else if self.destroyed_blob_unmapped_ids.contains(&resource_id) {
-                self.unmap_blob_reject_counts.destroyed_after_unmap += 1;
-                "already_destroyed_was_unmapped"
-            } else {
-                self.unmap_blob_reject_counts.never_created += 1;
-                "never_created"
-            };
-            venus_start_trace_unmap_blob_reject(resource_id, reason);
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
-            return;
-        }
-        self.unmap_blob_resource(resource_id);
-        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
-    }
-
-    pub fn unmap_blob_reject_counts(&self) -> UnmapBlobRejectCounts {
-        self.unmap_blob_reject_counts
     }
 
     pub(crate) fn unmap_blob_resource(&mut self, resource_id: u32) {

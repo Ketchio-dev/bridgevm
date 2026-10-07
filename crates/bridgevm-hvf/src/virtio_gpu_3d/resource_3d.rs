@@ -1,4 +1,4 @@
-//! The VirGL 3D/2D resource registry: create, backing attach/detach, transfers, scanout classification, unref.
+//! The VirGL 3D/2D resource registry: create, backing attach/detach, transfers, scanout classification.
 
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
@@ -27,34 +27,6 @@ pub(crate) const VIRGL_BIND_SCANOUT: u32 = 1 << 18;
 pub(crate) const MAX_LOCAL_SCANOUT_DIMENSION: u32 = 16_384;
 
 impl VirtioGpu3d {
-    pub fn unref_resource(&mut self, resource_id: u32) {
-        self.resource_2d_ids.remove(&resource_id);
-        let mut destroy_backend_resource = self.resource_3d_ids.remove(&resource_id);
-        if self.local_3d_backing.remove(&resource_id).is_some() {
-            destroy_backend_resource = false;
-        }
-        self.resource_3d_info.remove(&resource_id);
-        if let Some(resource) = self.blob_resources.get(&resource_id) {
-            if resource.mapped.is_some() {
-                self.destroyed_blob_mapped_ids.insert(resource_id);
-                self.destroyed_blob_unmapped_ids.remove(&resource_id);
-            } else {
-                self.destroyed_blob_unmapped_ids.insert(resource_id);
-                self.destroyed_blob_mapped_ids.remove(&resource_id);
-            }
-            self.unmap_blob_resource(resource_id);
-            self.blob_resources.remove(&resource_id);
-            self.mapped_intervals
-                .retain(|_, (_, mapped_resource)| *mapped_resource != resource_id);
-            destroy_backend_resource = true;
-        }
-        if destroy_backend_resource {
-            if let Some(backend) = self.backend.as_mut() {
-                backend.destroy_resource(resource_id);
-            }
-        }
-    }
-
     pub fn register_2d_resource(&mut self, resource_id: u32) {
         if resource_id != 0 {
             self.resource_2d_ids.insert(resource_id);

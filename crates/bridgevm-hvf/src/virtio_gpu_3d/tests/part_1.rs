@@ -1,5 +1,6 @@
 //! Split test module.
 
+use super::super::blob_host_mapping::HVF_PAGE_SIZE;
 use super::super::*;
 use super::helpers::*;
 use crate::fwcfg::GuestMemoryMut;
