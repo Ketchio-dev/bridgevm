@@ -41,8 +41,8 @@ fn occupied_generated_names_are_never_adopted() {
     assert_eq!(fs::read(candidate(0)).unwrap(), b"foreign-ordinary");
     assert_eq!(fs::read(&sentinel).unwrap(), b"foreign-sentinel");
     assert_eq!(fs::read_link(candidate(2)).unwrap(), f.0.join("missing"));
-    for n in 0..3 {
-        assert_eq!(fs::symlink_metadata(candidate(n)).unwrap().ino(), before[n]);
+    for (n, inode) in before.iter().enumerate() {
+        assert_eq!(fs::symlink_metadata(candidate(n)).unwrap().ino(), *inode);
     }
     assert!(!candidate(3).exists());
 }
