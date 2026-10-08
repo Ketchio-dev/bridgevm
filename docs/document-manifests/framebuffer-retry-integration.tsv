@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/history/windows-hvf/framebuffer-image-retry-20261004.md	historical-evidence	windows-graphics	-
+docs/history/windows-hvf/framebuffer-retry-integration-20261008.md	historical-evidence	windows-graphics	-
+docs/guest-tools/protocol.md	current	guest-tools	-

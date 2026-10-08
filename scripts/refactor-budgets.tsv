@@ -1284,7 +1284,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfPasteKeyOrderingTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfHostKeyModifierTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteSessionTests.swift	84	0
 apps/macos/Tests/BridgeVMControlTests/HvfHostShortcutIsolationTests.swift	31	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	447	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	424	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFileIdentity.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFileIdentityTests.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferBindingTests.swift	48	0
@@ -4145,3 +4145,8 @@ docs/history/windows-hvf/live-worker-lock-quoting-20261008.md	35	0
 tests/integration/windows-product-e2e-launch-diagnostic-privacy.py	52	0
 docs/history/windows-hvf/t17-launch-diagnostic-privacy-20261008.md	31	0
 docs/document-manifests/t17-launch-diagnostic-privacy.tsv	3	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferImageFactory.swift	28	0
+apps/macos/Tests/BridgeVMControlTests/HvfFramebufferRetryTests.swift	78	1
+docs/history/windows-hvf/framebuffer-image-retry-20261004.md	61	0
+docs/history/windows-hvf/framebuffer-retry-integration-20261008.md	34	0
+docs/document-manifests/framebuffer-retry-integration.tsv	4	0
