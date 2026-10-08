@@ -5,11 +5,7 @@ struct HvfLibraryLaunchContext: Equatable {
     let rootURL: URL
     var e2eHostDiagnosticStopAdmitted: Bool = false
 
-    var readinessIssues: [HvfWindowsReadinessIssue] {
-        guard VMRelocationJournal.isPending(config, rootURL: rootURL) else { return [] }
-        return [.init(code: "relocation-pending", scope: .launch,
-                      summary: "VM relocation recovery is unresolved. Check both bundles and registration before starting.")]
-    }
+
 }
 extension HvfEngineConfig {
     static func libraryVM(_ config: VMConfig, rootURL: URL = VMLibrary.root, e2eHostDiagnosticStopAdmitted: Bool = false) -> HvfEngineConfig? {
