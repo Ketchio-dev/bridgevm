@@ -67,11 +67,11 @@ final class AppleVzDisplayRuntimeControlServerTests: XCTestCase {
   func testStopPreservesReplacementAtSocketPath() throws {
     let socketPath = makeShortSocketPath()
     let server = makeServer(socketPath: socketPath)
-    try server.start()
+    try server.start(); defer { server.stop() }
     XCTAssertEqual(unlink(socketPath), 0)
     try Data("replacement".utf8).write(to: URL(fileURLWithPath: socketPath))
 
-    server.stop()
+    try stopRuntimeControlListener(server)
     XCTAssertEqual(try String(contentsOfFile: socketPath, encoding: .utf8), "replacement")
     try FileManager.default.removeItem(atPath: socketPath)
   }
@@ -417,10 +417,7 @@ final class AppleVzDisplayRuntimeControlServerTests: XCTestCase {
     return object
   }
 
-  private func makeShortSocketPath() -> String {
-    let suffix = UUID().uuidString.prefix(8)
-    return "/tmp/bvm-rc-\(getpid())-\(suffix).sock"
-  }
+  private func makeShortSocketPath() -> String { runtimeControlSocketPath() }
 
   private func makeServer(socketPath: String) -> AppleVzDisplayRuntimeControlServer {
     AppleVzDisplayRuntimeControlServer(

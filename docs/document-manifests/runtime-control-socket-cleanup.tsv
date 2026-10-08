@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/snapshot-scope-v1.md	current	windows-snapshots	-
+docs/history/windows-hvf/runtime-control-socket-cleanup-20261007.md	historical-evidence	windows-native-vmm	-
