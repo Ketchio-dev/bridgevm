@@ -13,7 +13,7 @@ final class InstallLineAccumulatorBoundTests: XCTestCase {
             let bytes = try XCTUnwrap(Mirror(reflecting: accumulator).children.first {
                 $0.label == "buffer"
             }?.value as? Data)
-            XCTAssertLessThanOrEqual(bytes.count, limit)
+            XCTAssertTrue(bytes.count <= limit, "pending bytes \(bytes.count) exceed \(limit)")
             if index >= 2 { XCTAssertEqual(bytes.count, 0) }
         }
     }

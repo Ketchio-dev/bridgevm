@@ -29,7 +29,7 @@ the fragment limit reproduces retention/output failures (two tests/30assertions)
 removed, restored broader Windows-install/line selection156/0. Existing native
 framework duplicate-class warnings remain in logs; no warning suppression.
 
-Extraction lowers the installation source ceiling; new modules are registered
-at actual size. Exact sealed local full and hosted checks remain required.
-Product wording, criteria, installed worker/fence, permissions and user media
-are unchanged. This does not establish a release or guest capability.
+First sealed full failed: the shim lacks XCTAssertLessThanOrEqual, though
+native156 passed. Same <= predicate uses supported XCTAssertTrue; no relaxation.
+Failure retained; new exact full/hosted proof required. Budget extraction and
+product/worker/fence/permissions/media unchanged; no release/guest claim.
