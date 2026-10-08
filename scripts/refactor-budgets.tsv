@@ -1848,7 +1848,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallFinalizationTests.swift	2
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallFinalizationIntegrityTests.swift	185	0
 scripts/hvf-disk-image-utils.sh	23	0
 scripts/verify-windows-product-e2e-receipt.py	389	0
-tests/integration/windows-product-e2e-contract-smoke.sh	79	0
+tests/integration/windows-product-e2e-contract-smoke.sh	8	0
 tests/integration/windows-product-e2e-launchservices-admission.py	124	0
 tests/integration/windows-product-e2e-launchservices-report-origin.py	74	0
 tests/integration/host-console-session-contract.py	69	0
@@ -4118,3 +4118,12 @@ crates/bridgevm-daemon/src/tests_split/fast_opt_in_fixture.rs	49	0
 crates/bridgevm-daemon/src/tests_split/temp_store.rs	163	0
 docs/document-manifests/daemon-test-root-cleanup.tsv	3	0
 docs/history/windows-hvf/daemon-test-root-cleanup-20261007.md	41	0
+docs/document-manifests/product-storage-routing.tsv	3	0
+docs/history/windows-hvf/product-storage-routing-20261008.md	48	0
+scripts/live-gates/product_e2e_retained_destination.py	47	0
+tests/integration/product-e2e-retained-destination-test.py	51	0
+tests/integration/source-builder-mount-layout.py	17	0
+tests/integration/source-builder-storage-contract.sh	77	0
+tests/integration/t17-queued-retention-contract.py	32	0
+scripts/live-gates/queue-directories.sh	14	0
+tests/integration/live-queue-storage-contract.py	70	0

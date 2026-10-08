@@ -68,7 +68,7 @@ docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md	current	win
 @include	docs/document-manifests/native-vmm-agent-get-bound.tsv	-	-
 @include	docs/document-manifests/product-e2e-owned-result-volume.tsv	-	-
 @include	docs/document-manifests/daemon-test-root-cleanup.tsv	-	-
-docs/archive/STATUS-before-20260722.md	historical-evidence	documentation-history	STATUS.md
+@include	docs/document-manifests/product-storage-routing.tsv	-	-
 docs/windows-arm/capability-matrix.md	current	windows-hvf-engine	-
 docs/windows-arm/graphics-compatibility.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/native-vmm-msix.tsv	-	-

@@ -61,9 +61,9 @@ if [ "$DRY_RUN" -eq 1 ]; then
 fi
 
 echo "== install =="
-mkdir -p "$AGENTS" "$QUEUE_ROOT"/{queued,running,done} "$LOGDIR"
-# Queue receipts and worker logs can name private paths; keep both user-only.
-chmod 700 "$QUEUE_ROOT" "$LOGDIR"
+bash "$REPO/scripts/live-gates/queue-directories.sh" "$QUEUE_ROOT"
+mkdir -p "$AGENTS" "$LOGDIR"
+chmod 700 "$LOGDIR" # Logs and queue receipts can name private paths.
 
 sed -e "s|__WORKER__|$WORKER|g" -e "s|__LOGDIR__|$LOGDIR|g" \
     -e "s|__HOME__|$HOME|g" -e "s|__USER__|$(id -un)|g" "$TEMPLATE" > "$PLIST"

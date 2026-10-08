@@ -26,13 +26,13 @@ class LaunchContract(unittest.TestCase):
         fixture.queue = fixture.home / "BridgeVM/live-queue"
         fixture.env.pop("BRIDGEVM_LIVE_ROOT")
         fixture.template.write_bytes((SCRIPTS / f"{LABEL}.plist").read_bytes())
-        for name in ("mkdir", "chmod", "sed", "id"):
+        for name in ("mkdir", "chmod", "sed", "id", "bash"):
             path = fixture.bin / name
-            path.unlink()
+            path.unlink(missing_ok=True)
             path.symlink_to(shutil.which(name))
         fixture.stub("plutil", "exit 0\n")  # plistlib below authenticates rendered syntax.
         fixture.stub("launchctl", 'printf "launchctl:%s\\n" "$*" >> "$FIXTURE_CALLS"\n')
-        result = subprocess.run(["/bin/bash", str(fixture.installer)], env=fixture.env,
+        result = subprocess.run(["/bin/bash", "-c", 'umask 002; exec /bin/bash "$1"', "fixture", str(fixture.installer)], env=fixture.env,
                                 cwd=fixture.root, text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         plist = fixture.home / "Library/LaunchAgents" / f"{LABEL}.plist"
@@ -55,7 +55,7 @@ class LaunchContract(unittest.TestCase):
         self.assertEqual(plist["StandardErrorPath"], str(logs / "worker.err.log"))
         self.assertEqual(logs.stat().st_mode & 0o777, 0o700)
         self.assertEqual(fixture.queue.stat().st_mode & 0o777, 0o700)
-        self.assertTrue((fixture.queue / "queued").is_dir())
+        for state in ("queued", "running", "done", "job-ledger"): self.assertEqual((fixture.queue / state).stat().st_mode & 0o777, 0o700)
         self.assertFalse((fixture.queue / "logs").exists())
         self.assertIn("external volume", str(fixture.queue.resolve()))
         self.assertNotIn("external volume", str(logs.resolve()))

@@ -1,79 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-product-e2e.XXXXXX")"
-trap 'rm -rf "$TMP"' EXIT
-FAKE="$TMP/bin"; mkdir -p "$FAKE" "$TMP/assets"
-CATALOG_VERIFIER="$("$ROOT/tests/integration/build-windows-catalog-verifier-test-helper.sh" "$TMP")"
-cp "$ROOT/scripts/win-assets/"{winpeshl.ini,bvinstall.cmd,bvdiskpart.txt,unattend.xml,bvagent.ps1,bvagent-firstboot.ps1,bvagent-input.ps1,bvagent-unicode-input.cs,bvagent-key-input.cs,bvagent-pointer-input.cs,bvagent-window-inventory.ps1,bv-window-inventory.cs,bvagent-task.ps1} "$TMP/assets/"
-printf 'fake ISO\n' > "$TMP/windows.iso"
-python3 "$ROOT/tests/fixtures/make-synthetic-windows-guest-payload.py" "$TMP/payload" "$TMP/payload.tsv"
-cat > "$FAKE/hdiutil" <<'MOCK'
-#!/usr/bin/env bash
-printf '%s\n' "$*" >> "$BRIDGEVM_HDIUTIL_LOG"
-case "$1" in
-  attach)
-    mountpoint=""; readonly=0
-    while (( $# )); do
-      [[ "$1" == -readonly ]] && readonly=1
-      if [[ "$1" == -mountpoint ]]; then mountpoint="$2"; shift; fi
-      shift
-    done
-    if [[ -n "$mountpoint" && "$readonly" == 1 ]]; then
-      mkdir -p "$mountpoint/sources" "$mountpoint/efi/boot"
-      : > "$mountpoint/sources/install.wim"
-      : > "$mountpoint/sources/boot.wim"
-      : > "$mountpoint/efi/boot/bootaa64.efi"
-      printf '/dev/disk-iso\t%s\n' "$mountpoint"
-    elif [[ -n "$mountpoint" ]]; then
-      mkdir -p "$mountpoint"
-      printf '/dev/disk-destination\t%s\n' "$mountpoint"
-    else
-      printf '/dev/disk-destination\n'
-    fi
-    ;;
-  detach|info) ;;
-  *) exit 2 ;;
-esac
-MOCK
-cat > "$FAKE/diskutil" <<'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-cat > "$FAKE/mkfile" <<'MOCK'
-#!/usr/bin/env bash
-for argument in "$@"; do output="$argument"; done
-: > "$output"
-MOCK
-cat > "$FAKE/rsync" <<'MOCK'
-#!/usr/bin/env bash
-source_path="${@: -2:1}"; destination="${@: -1}"
-cp -R "$source_path/." "$destination/"
-rm -f "$destination/sources/install.wim"
-MOCK
-cat > "$FAKE/wimlib-imagex" <<'MOCK'
-#!/usr/bin/env bash
-case "$1" in
-  split) : > "$3" ;;
-  update) cat >/dev/null ;;
-  dir) printf '%s\n' winpeshl.ini bvinstall.cmd bvdiskpart.txt bv-file-compare.exe ;;
-  *) exit 2 ;;
-esac
-MOCK
-chmod 755 "$FAKE/"*; : > "$TMP/bv-file-compare.exe"
-BRIDGEVM_HDIUTIL_LOG="$TMP/hdiutil.log" \
-ISO="$TMP/windows.iso" ASSETS="$TMP/assets" OUT="$TMP/source.raw" \
-WIMLIB="$FAKE/wimlib-imagex" \
-WINDOWS_FILE_COMPARE="$TMP/bv-file-compare.exe" \
-WINDOWS_GUEST_PAYLOAD_DIR="$TMP/payload" WINDOWS_GUEST_PAYLOAD_MANIFEST="$TMP/payload.tsv" WINDOWS_GUEST_PAYLOAD_CATALOG_VERIFIER="$CATALOG_VERIFIER" \
-TMPDIR="$TMP" PATH="$FAKE:/usr/bin:/bin:/usr/sbin:/sbin" \
-  "$ROOT/scripts/build-hvf-windows-scripted-source.sh" >/dev/null
-[[ "$(grep -c '^attach ' "$TMP/hdiutil.log")" == 3 ]]
-[[ "$(grep -c -- '-readonly' "$TMP/hdiutil.log")" == 1 ]]
-[[ "$(grep -c "$TMP/windows.iso" "$TMP/hdiutil.log")" == 1 ]]
-[[ "$(grep -c '^detach ' "$TMP/hdiutil.log")" == 3 ]]
-grep -q -- '-mountpoint .*/bridgevm-win-source\..*/iso' "$TMP/hdiutil.log"
-grep -q -- '-mountpoint .*/bridgevm-win-source\..*/dst' "$TMP/hdiutil.log"
+bash "$ROOT/tests/integration/source-builder-storage-contract.sh"
+python3 "$ROOT/tests/integration/product-e2e-retained-destination-test.py"; python3 "$ROOT/tests/integration/live-queue-storage-contract.py"
 python3 "$ROOT/tests/integration/windows-guest-payload-verifier-smoke.py"; python3 "$ROOT/tests/integration/windows-install-security-contract-smoke.py"; python3 "$ROOT/tests/integration/hvf-scripted-install-firmware-contract.py"; python3 "$ROOT/tests/integration/scripted-installer-file-compare-wiring-contract.py"
 python3 "$ROOT/scripts/verify-windows-product-e2e-receipt.py" --self-test; python3 "$ROOT/scripts/live-gates/windows-product-e2e-launchservices-preflight.py" --self-test; python3 "$ROOT/tests/integration/windows-product-e2e-launchservices-admission.py"; python3 "$ROOT/tests/integration/windows-product-e2e-launchservices-report-origin.py"; python3 "$ROOT/tests/integration/windows-product-e2e-observation-reader.py"; "$ROOT/scripts/verify-product-e2e-helper-app.sh" --self-test; "$ROOT/tests/integration/windows-product-e2e-live-tier-smoke.sh"; python3 "$ROOT/tests/integration/windows-product-e2e-request-mode.py" && python3 "$ROOT/tests/integration/product-e2e-work-boundary-test.py" && python3 "$ROOT/tests/integration/product-e2e-process-absence-test.py" && python3 "$ROOT/tests/integration/t17-packet-allocation-test.py"; python3 "$ROOT/tests/integration/windows-product-e2e-signing-class.py"; python3 "$ROOT/tests/integration/t17-private-diagnostic-packet-test.py"; python3 "$ROOT/tests/integration/t17-packet-directory-race-test.py"; python3 "$ROOT/tests/integration/t17-guest-setup-harvest-test.py"; python3 "$ROOT/tests/integration/t17-host-residue-test.py"; python3 "$ROOT/tests/integration/t17-terminal-report-tail-test.py"; python3 "$ROOT/tests/integration/hda-continuity-host-tail-contract.py"; python3 "$ROOT/tests/integration/hvf-stop-line-contract.py"; python3 "$ROOT/tests/integration/hvf-display-export-stop-order-contract.py"; python3 "$ROOT/tests/integration/host-console-session-contract.py"; python3 "$ROOT/tests/integration/runtime-diagnostics-disclosure-contract.py"; python3 "$ROOT/tests/integration/runtime-diagnostics-expand-contract.py"; python3 "$ROOT/tests/integration/t17-send-field-entry-contract.py"; python3 "$ROOT/tests/integration/t17-input-challenge-ready-contract.py"; python3 "$ROOT/tests/integration/t17-input-challenge-desktop-contract.py"; python3 "$ROOT/tests/integration/t17-post-ready-freeze-contract.py"; python3 "$ROOT/tests/integration/t17-guest-workload-errors-contract.py"; python3 "$ROOT/tests/integration/t17-audio-counters-test.py"; python3 "$ROOT/tests/integration/t17-display-click-contract.py"; python3 "$ROOT/tests/integration/hvf-reset-record-contract.py"; python3 "$ROOT/tests/integration/hvf-terminal-stop-contract.py"; python3 "$ROOT/tests/integration/hvf-terminal-stop-limit-contract.py"; python3 "$ROOT/tests/integration/t17-post-ready-packet-test.py"; python3 "$ROOT/tests/integration/t17-share-listing-test.py"; python3 "$ROOT/tests/integration/hvf-stop-readers-contract.py"; python3 "$ROOT/tests/integration/hvf-host-media-readers-contract.py"; python3 "$ROOT/tests/integration/a19-shutdown-count-contract.py"
 "$ROOT/tests/integration/windows-import-product-e2e-contract-smoke.sh"; echo "PASS: Windows product E2E deterministic contracts"

@@ -24,12 +24,13 @@ cleanup() {
   [[ -n "${MOUNT_ROOT:-}" ]] && rmdir "$MOUNT_ROOT/iso" "$MOUNT_ROOT/dst" "$MOUNT_ROOT" 2>/dev/null || true
 }
 trap cleanup EXIT
-MOUNT_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-win-source.XXXXXX")"
+mkdir -p "$(dirname "$OUT")"; OUT="$(cd "$(dirname "$OUT")" && pwd -P)/$(basename "$OUT")"
+MOUNT_ROOT="$(mktemp -d "$(dirname "$OUT")/bridgevm-win-source.XXXXXX")"
 ISO_MNT="$MOUNT_ROOT/iso"
 DST_VOL="$MOUNT_ROOT/dst"
 mkdir "$ISO_MNT" "$DST_VOL"
 PROVISION_STAGE="$MOUNT_ROOT/provisioning"
-"$SCRIPT_DIR/stage-hvf-windows-guest-payload.sh" \
+TMPDIR="$MOUNT_ROOT" "$SCRIPT_DIR/stage-hvf-windows-guest-payload.sh" \
   --payload-dir "${WINDOWS_GUEST_PAYLOAD_DIR:-}" --manifest "${WINDOWS_GUEST_PAYLOAD_MANIFEST:-}" \
   --assets "$ASSETS" --output "$PROVISION_STAGE" \
   --catalog-verifier "${WINDOWS_GUEST_PAYLOAD_CATALOG_VERIFIER:-}"
@@ -41,7 +42,6 @@ ISO_DEV="$(awk 'NR==1{print $1}' <<<"$ISO_ATTACH")"
 [[ "$ISO_DEV" == /dev/* && -d "$ISO_MNT" ]] || { echo "FAIL: ISO attach did not produce a device and mount" >&2; exit 1; }
 log "ISO mounted at $ISO_MNT"
 log "creating destination raw $OUT ($SIZE_BYTES bytes)"
-mkdir -p "$(dirname "$OUT")"
 rm -f "$OUT"
 mkfile -n "$SIZE_BYTES" "$OUT" 2>/dev/null || dd if=/dev/zero of="$OUT" bs=1 count=0 seek="$SIZE_BYTES"
 DST_DEV="$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -nomount "$OUT" | awk 'NR==1{print $1}')"

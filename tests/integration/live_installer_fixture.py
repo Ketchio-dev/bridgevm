@@ -17,7 +17,7 @@ class InstallerFixture:
         self.scripts = self.repo / "scripts/live-gates"
         self.scripts.mkdir(parents=True)
         self.installer = self.scripts / "install-studio-queue.sh"
-        self.installer.write_bytes(source.read_bytes())
+        self.installer.write_bytes(source.read_bytes()); (self.scripts / "queue-directories.sh").write_bytes((source.parent / "queue-directories.sh").read_bytes())
         self.worker = self.scripts / "bridgevm-live-worker.sh"
         self.worker.write_text("#!/bin/sh\nexit 98\n")
         self.worker.chmod(0o700)
