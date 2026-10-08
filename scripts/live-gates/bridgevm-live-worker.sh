@@ -35,8 +35,7 @@ acquire_lock() {
         fi
     fi
     printf '%s\n' "$$" > "$lock/pid"
-    # shellcheck disable=SC2064
-    trap "rm -rf '$lock'" EXIT
+    trap 'rm -rf -- "$QUEUE_ROOT/worker.lock"' EXIT
 }
 
 run_job() {
