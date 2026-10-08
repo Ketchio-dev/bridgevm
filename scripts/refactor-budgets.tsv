@@ -4138,3 +4138,4 @@ tests/integration/live-storage-capacity-contract.py	94	0
 tests/integration/live_installer_storage_fixture.py	21	0
 scripts/live-gates/queue-root-path.py	22	0
 tests/integration/live-storage-queue-alias-contract.py	51	0
+tests/integration/queue-root-transport-contract.py	29	0
