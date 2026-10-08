@@ -11,13 +11,12 @@ import tempfile
 import unittest
 
 import product_e2e_identity_fixtures as fixture
+from product_e2e_import_fixture_base import prepare
 
 
 class ImportGuestEvidence(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="bridgevm-import-e2e-guest-proof-", dir="/private/tmp")
-        self.root = Path(self.temporary.name) / "lane-1"
-        self.request_path, self.result_path = fixture.import_request(self.root)
+        prepare(self, "bridgevm-import-proof-")
         self.request = json.loads(self.request_path.read_text())
         self.evidence_path = Path(self.request["guest_evidence_path"])
         self.evidence = json.loads(self.evidence_path.read_text())

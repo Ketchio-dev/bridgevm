@@ -1863,7 +1863,7 @@ scripts/live-gates/windows-product-e2e-manifest.py	124	0
 scripts/live-gates/make-windows-product-e2e-request.py	76	0
 scripts/live-gates/windows_product_e2e_artifacts.py	105	0
 scripts/live-gates/windows_product_e2e_guest_evidence.py	114	0
-scripts/live-gates/write-windows-product-e2e-receipt.py	222	0
+scripts/live-gates/write-windows-product-e2e-receipt.py	216	0
 scripts/live-gates/windows_product_e2e_failure.py	22	0
 scripts/live-gates/run-windows-product-e2e-tier.sh	121	0
 scripts/live-gates/retain-windows-import-source.py	180	0
@@ -1878,7 +1878,7 @@ apps/macos/Sources/BridgeVMProductE2E/BridgeVMProductE2EMain.swift	70	0
 apps/macos/Sources/BridgeVMProductE2E/T17Accessibility.swift	155	0
 apps/macos/Sources/BridgeVMProductE2E/T17UIControlling.swift	15	0
 apps/macos/Sources/BridgeVMProductE2E/T17TextEntry.swift	17	0
-apps/macos/Sources/BridgeVMProductE2E/T17Contract.swift	220	0
+apps/macos/Sources/BridgeVMProductE2E/T17Contract.swift	207	0
 apps/macos/Sources/BridgeVMProductE2E/T17Evidence.swift	80	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestJourney.swift	206	0
 apps/macos/Sources/BridgeVMProductE2E/T17InputChallenge.swift	26	0
@@ -1889,7 +1889,7 @@ apps/macos/Sources/BridgeVMProductE2E/T17ProductRunner.swift	229	0
 apps/macos/Sources/BridgeVMProductE2E/T17BoundedLog.swift	23	0
 apps/macos/Sources/BridgeVMProductE2E/T17SecureBootReceipt.swift	61	0
 apps/macos/Sources/BridgeVMProductE2E/T17UIContract.swift	3	0
-apps/macos/Tests/BridgeVMProductE2ETests/T17ContractTests.swift	188	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17ContractTests.swift	186	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ProductEntryTests.swift	9	0
 apps/macos/BridgeVMProductE2E-Info.plist	24	0
 apps/macos/scripts/package-hvf-product-e2e.sh	14	0
@@ -1898,7 +1898,7 @@ scripts/verify-product-e2e-helper-app.sh	46	0
 scripts/win-assets/bv-product-e2e.ps1	144	0
 scripts/win-assets/bv-product-e2e-launch.ps1	28	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlAppLaunch.swift	10	0
-apps/macos/Sources/BridgeVMControl/BridgeVMControlLaunchOptions.swift	133	0
+apps/macos/Sources/BridgeVMControl/BridgeVMControlLaunchOptions.swift	132	0
 apps/macos/Sources/BridgeVMControl/CreateVMSheetCreation.swift	81	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsGuestPayloadIdentity.swift	95	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsGuestPayloadTree.swift	75
@@ -1909,7 +1909,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsWimlib.swift	30	0
 apps/macos/Sources/BridgeVMControl/WindowsHVFGuestPayloadPolicy.swift	43	0
 apps/macos/Sources/BridgeVMControl/WindowsHVFInstallInputPolicy.swift	31	0
 apps/macos/Sources/BridgeVMControl/WindowsHVFUnattendPolicy.swift	21	0
-apps/macos/Tests/BridgeVMControlTests/BridgeVMControlLaunchOptionsTests.swift	65	0
+apps/macos/Tests/BridgeVMControlTests/BridgeVMControlLaunchOptionsTests.swift	55	0
 apps/macos/Tests/BridgeVMControlTests/HvfEngineReleasePathTests.swift	36	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsGuestPayloadIdentityTests.swift	116	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsGuestPayloadTreeTests.swift	47
@@ -2327,7 +2327,7 @@ scripts/live-gates/guest_input_driver_variant.py	83
 tests/integration/guest-input-driver-variant-test.py	83
 .github/workflows/guest-input-driver-variant.yml	12
 tests/integration/window-inventory-restart.swift	41
-scripts/check-window-inventory-restart.sh	13
+scripts/check-window-inventory-restart.sh	13	0
 .github/workflows/window-inventory-restart.yml	11
 scripts/live-gates/coherence_inventory_observation.py	63
 scripts/live-gates/coherence_inventory_controller.py	35
@@ -2361,8 +2361,8 @@ apps/macos/Sources/BridgeVMControl/CreateVMSheetCreationResult.swift	15
 apps/macos/Sources/BridgeVMProductE2E/T17AccessibilityTree.swift	31
 apps/macos/Sources/BridgeVMProductE2E/T17CreationProbe.swift	23
 apps/macos/Tests/BridgeVMProductE2ETests/T17CreationProbeTests.swift	65
-scripts/live-gates/t17_owned_tree_cleanup.py	136
-tests/integration/t17-owned-tree-cleanup-test.py	170
+scripts/live-gates/t17_owned_tree_cleanup.py	132	0
+tests/integration/t17-owned-tree-cleanup-test.py	165	0
 .github/workflows/t17-owned-tree-cleanup.yml	13
 scripts/test-bvagent-window-inventory-native-schema.ps1	27
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsAgentAssets.swift	13
@@ -3051,14 +3051,14 @@ docs/history/windows-hvf/native-app-lifecycle-guidance-deterministic-20260916.md
 apps/macos/Sources/BridgeVMProductE2E/T17FileChooserSemanticIdentity.swift	24	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FileChooserSemanticIdentityTests.swift	69	0
 apps/macos/Sources/BridgeVMProductE2E/T17JourneyRequest.swift	24	0
-apps/macos/Sources/BridgeVMProductE2E/A9ImportRequest.swift	167	0
+apps/macos/Sources/BridgeVMProductE2E/A9ImportRequest.swift	154	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportTreeDigest.swift	40	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportEvidence.swift	93	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportProductRunner.swift	201	0
 apps/macos/Sources/BridgeVMProductE2E/ProductE2ECLI.swift	54	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportEvidenceTests.swift	42	0
 apps/macos/Tests/BridgeVMProductE2ETests/ProductE2ECLITests.swift	28	0
-apps/macos/Tests/BridgeVMProductE2ETests/A9ImportRequestTests.swift	121	0
+apps/macos/Tests/BridgeVMProductE2ETests/A9ImportRequestTests.swift	57	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestStage.swift	18	0
 scripts/live-gates/windows-import-product-e2e-manifest.py	108	0
 scripts/live-gates/make-windows-import-product-e2e-request.py	76	0
@@ -3066,7 +3066,7 @@ tests/integration/windows-import-product-e2e-contract-smoke.sh	60	0
 scripts/verify-windows-import-product-e2e-receipt.py	103	0
 scripts/live-gates/launch-import-product-e2e-helper.sh	8	0
 tests/integration/windows-import-product-e2e-receipt.py	30	0
-scripts/live-gates/write-windows-import-product-e2e-receipt.py	192	0
+scripts/live-gates/write-windows-import-product-e2e-receipt.py	188	0
 scripts/live-gates/run-windows-import-product-e2e-tier.sh	69	0
 scripts/live-gates/write-windows-import-product-e2e-missing-receipt.sh	8	0
 tests/fixtures/fake-windows-import-product-e2e-helper.py	34	0
@@ -3085,7 +3085,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMImportedRecoveryCleanup.swift	2
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMImportCleanupCommand.swift	57	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportedKeyCleanup.swift	29	0
 apps/macos/Tests/BridgeVMControlTests/VTPMImportedRecoveryCleanupTests.swift	36	0
-apps/macos/Tests/BridgeVMProductE2ETests/A9ImportedKeyCleanupTests.swift	44	0
+apps/macos/Tests/BridgeVMProductE2ETests/A9ImportedKeyCleanupTests.swift	17	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICommandLifecycle.swift	11	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshot.swift	106	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshotHelp.swift	13	0
@@ -3267,17 +3267,17 @@ docs/windows-arm/evidence/a19-t21-t22-r2-20260930.md	61	0
 docs/windows-arm/evidence/a19-t21-r2-20260930-receipt.json	49	0
 docs/windows-arm/evidence/a19-t22-r2-20260930-receipt.json	66	0
 apps/macos/Sources/BridgeVMProductE2E/T17FirstReadyStopCapture.swift	130	0
-apps/macos/Tests/BridgeVMControlTests/HvfDiagnosticStopAdmissionTests.swift	69	0
+apps/macos/Tests/BridgeVMControlTests/HvfDiagnosticStopAdmissionTests.swift	66	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FirstReadyStopCaptureTests.swift	170	0
 crates/bridgevm-hvf-runtime/src/vm_process_surfaces.rs	97	0
 crates/bridgevm-hvf-runtime/src/vm_process_surfaces_tests.rs	51	0
-scripts/live-gates/t17_private_diagnostic_packet.py	616	0
+scripts/live-gates/t17_private_diagnostic_packet.py	602	0
 tests/integration/t17-private-diagnostic-packet-test.py	459	0
 tests/integration/t17-packet-directory-race-test.py	80	0
 tests/integration/hvf-display-export-stop-order-contract.py	64	0
 scripts/live-gates/t17_guest_setup_harvest.py	550	0
 tests/integration/t17-guest-setup-harvest-test.py	474	0
-scripts/live-gates/t17_host_residue.py	107	0
+scripts/live-gates/t17_host_residue.py	100	0
 tests/integration/t17-host-residue-test.py	151	0
 scripts/live-gates/t17_packet_kind.py	162	0
 tests/integration/t17-post-ready-packet-test.py	244	0
@@ -3537,8 +3537,8 @@ apps/macos/Tests/BridgeVMControlTests/HvfEventFeedMultilineTests.swift	53	0
 crates/bridgevm-hvf/src/managed_pair_staging_ownership.rs	41	0
 crates/bridgevm-hvf/src/managed_pair_staging_ownership_tests.rs	101	0
 scripts/live-gates/product_e2e_identity.py	38	0
-tests/integration/product-e2e-identity-contract.py	162	0
-tests/integration/product_e2e_identity_fixtures.py	72	0
+tests/integration/product-e2e-identity-contract.py	160	0
+tests/integration/product_e2e_identity_fixtures.py	64	0
 tests/fixtures/fake_import_mutations.py	14	0
 crates/bridgevm-hvf/src/snapshot_regular_file.rs	15	0
 crates/bridgevm-hvf/src/snapshot_hash_stream.rs	21	0
@@ -3557,7 +3557,7 @@ docs/history/windows-hvf/snapshot-media-and-evidence-followup-20261002.md	106	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportLaneResult.swift	25	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportSelectedEvidenceTests.swift	24	0
 tests/integration/product_e2e_selected_fixtures.py	12	0
-tests/integration/t19-selected-final-media-contract.py	89	0
+tests/integration/t19-selected-final-media-contract.py	88	0
 scripts/check-selected-windows-media-contracts.sh	6	0
 docs/history/windows-hvf/t19-selected-final-media-correction-20261002.md	54	0
 crates/bridgevm-hvf/src/managed_pair_runtime_policy.rs	82	0
@@ -3567,7 +3567,7 @@ crates/bridgevm-hvf/src/smccc_trng_rnd32_tests.rs	32	0
 scripts/verify-signing-entitlements.py	40	0
 tests/integration/signing-entitlements-contract.py	108	0
 tests/fixtures/fake_import_guest_evidence.py	31	0
-tests/integration/t19-guest-evidence-contract.py	117	0
+tests/integration/t19-guest-evidence-contract.py	116	0
 apps/macos/Tests/BridgeVMControlTests/HvfInputFocusMonitorTests.swift	33	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFocusBindingTests.swift	63	0
 apps/macos/Sources/BridgeVMProductE2E/T17DisplayClickWait.swift	26	0
@@ -3590,7 +3590,7 @@ crates/bridgevm-hvf/src/virtio_queue_publication_tests.rs	42	0
 crates/bridgevm-hvf/src/virtio_queue_used.rs	26	0
 docs/history/windows-hvf/continuation-40min-boundaries-20261002.md	61	0
 scripts/live-gates/product_e2e_json_snapshot.py	39	0
-tests/integration/product-e2e-stamp-mutation-contract.py	98	0
+tests/integration/product-e2e-stamp-mutation-contract.py	91	0
 crates/bridgevm-agentd/src/framed_reader.rs	60	0
 crates/bridgevm-agentd/src/tests_split/framed_reader.rs	167	0
 crates/bridgevm-daemon/src/tests_split/guest_tools_framing.rs	96	0
@@ -3732,7 +3732,7 @@ scripts/live-gates/t22_pair_admission.py	71	0
 scripts/live-gates/t22_pair_controller.py	32	0
 scripts/live-gates/t22_pair_environment.py	22	0
 scripts/live-gates/t22_pair_output_lock.py	62	0
-scripts/live-gates/t22_pair_provenance.py	160	0
+scripts/live-gates/t22_pair_provenance.py	158	0
 scripts/live-gates/t22_pair_publication.py	73	0
 scripts/live-gates/t22_pair_query.py	44	0
 scripts/live-gates/t22_pair_runtime.py	125	0
@@ -4069,3 +4069,29 @@ crates/bridgevm-hvf/src/virtio_gpu_3d/tests/blob_lifecycle_bounds.rs	90	0
 docs/history/windows-hvf/native-vmm-virtio-gpu-3d-blob-bounds-20261007.md	78	0
 docs/document-manifests/native-vmm-virtio-gpu-3d-blob-bounds.tsv	3	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/blob_unmap.rs	60	0
+apps/macos/Sources/BridgeVMWindowProtocol/ProductE2EWorkBoundary.swift	88	0
+apps/macos/Tests/BridgeVMControlTests/E2EAdmissionFixture.swift	29	0
+apps/macos/Tests/BridgeVMControlTests/E2EAllocationAdmissionTests.swift	47	0
+apps/macos/Tests/BridgeVMProductE2ETests/A9CleanupFixture.swift	31	0
+apps/macos/Tests/BridgeVMProductE2ETests/A9ImportRequestFixture.swift	69	0
+apps/macos/Tests/BridgeVMProductE2ETests/ProductWorkFixture.swift	21	0
+docs/document-manifests/product-e2e-owned-result-volume.tsv	3	0
+docs/history/windows-hvf/product-e2e-owned-result-volume-20261007.md	55	0
+scripts/live-gates/product_e2e_digest.py	12	0
+scripts/live-gates/product_e2e_host_listing.py	13	0
+scripts/live-gates/product_e2e_work.py	70	0
+scripts/live-gates/t17_observed_generation.py	6	0
+tests/integration/product-e2e-work-boundary-test.py	55	0
+tests/integration/product_e2e_identity_command.py	12	0
+tests/integration/product_e2e_identity_records.py	18	0
+tests/integration/product_e2e_import_fixture_base.py	12	0
+tests/integration/product_e2e_t17_identity_fixture.py	17	0
+tests/integration/product_e2e_work_fixture.py	17	0
+tests/integration/t17_cleanup_fixture.py	14	0
+scripts/live-gates/product_e2e_process_absent.py	31	0
+scripts/live-gates/t17_display_header.py	16	0
+scripts/live-gates/t17_packet_allocation.py	31	0
+tests/integration/product-e2e-process-absence-test.py	41	0
+tests/integration/t17-packet-allocation-test.py	49	0
+scripts/live-gates/t22_retained_request.py	27	0
+tests/integration/t22-retained-request-contract.py	67	0

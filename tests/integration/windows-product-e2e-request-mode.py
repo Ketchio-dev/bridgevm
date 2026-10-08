@@ -14,10 +14,10 @@ CASES = (("pilot", "pilot", True), ("release", "release", True),
          (None, "pilot", False), ("invalid", "pilot", False))
 
 for verified_mode, requested_mode, accepted in CASES:
-    with tempfile.TemporaryDirectory(prefix="bridgevm-e2e-mode-", dir="/tmp") as directory:
-        root = Path(directory)
-        lane = root / "lane"
-        lane.mkdir()
+    with tempfile.TemporaryDirectory(prefix="bridgevm-e2e-mode-") as directory:
+        root = Path(directory).resolve()
+        work = root / "bridgevm-e2e-mode-contract.Ab12Cd"; work.mkdir(mode=0o700)
+        lane = work / "lane-1"; lane.mkdir(mode=0o700)
         verified = root / "verified.json"
         value = {"verified": True, "assets": {key: {"path": "/fixture/" + key} for key in KEYS}}
         if verified_mode is not None:

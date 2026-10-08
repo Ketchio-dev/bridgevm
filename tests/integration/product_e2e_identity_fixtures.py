@@ -7,6 +7,8 @@ from pathlib import Path
 import subprocess
 import sys
 from product_e2e_selected_fixtures import package_pair_helper
+from product_e2e_work_fixture import WORK
+import product_e2e_identity_records as records
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/live-gates"))
@@ -24,22 +26,11 @@ T19 = module("t19_identity_writer", "write-windows-import-product-e2e-receipt.py
 JOB, COMMIT, NONCE = "integrity-fixture", "b" * 40, "a" * 64
 
 
-def lane(writer) -> dict:
-    value = {"schema_version": writer.LANE_SCHEMA, "job_id": JOB, "commit": COMMIT,
-             "campaign_mode": "pilot", "lane": 1, "nonce": NONCE, "three_d_injection": False,
-             "ui_frontend_automated": True, "failure_code": "none", "failure_detail": "",
-             "cleanup_verified": True, **dict.fromkeys(writer.LANE_STAGES, True),
-             **dict.fromkeys(writer.LANE_HASHES, "c" * 64)}
-    if writer is T17:
-        value["installer_source_path"] = "/private/tmp/synthetic-source.raw"
-    return value
+def lane(writer):
+    return records.lane(writer, JOB, COMMIT, NONCE)
 
-
-def stamp(writer, result: Path) -> dict:
-    schema = ("bridgevm.windows-hvf-3d-off-product-e2e-host-stamp.v1" if writer is T17
-              else "bridgevm.windows-hvf-import-product-e2e-host-stamp.v1")
-    return {"schema_version": schema, "job_id": JOB, "commit": COMMIT, "lane": 1,
-            "nonce": NONCE, "request_sha256": "d" * 64, "result_sha256": writer.digest(result)}
+def stamp(writer, result):
+    return records.stamp(writer, result, JOB, COMMIT, NONCE)
 
 def import_request(root: Path) -> tuple[Path, Path]:
     inputs = root / "inputs"
@@ -64,6 +55,7 @@ def import_request(root: Path) -> tuple[Path, Path]:
                "commit": COMMIT, "campaign_mode": "pilot", "lane": 1, "nonce": NONCE,
                "vm_name": f"BridgeVM A9 Import Lane 1 {NONCE[:12]}", "vm_slug": slug,
                "three_d_injection": False, **{key: str(value) for key, value in paths.items()}}
+    request.update(WORK.capture(root, JOB, "import-e2e", 1))
     request_path, result_path = root / "request.json", root.parent / "result.json"
     request_path.write_text(json.dumps(request)); package_pair_helper(paths["app_bundle_path"], ROOT)
     subprocess.run([sys.executable, str(ROOT / "tests/fixtures/fake-windows-import-product-e2e-helper.py"),

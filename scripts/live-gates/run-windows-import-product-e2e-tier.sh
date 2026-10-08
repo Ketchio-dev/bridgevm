@@ -6,13 +6,13 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --out) OUT="$2"; shift 2;; --input-manifest) INPUT_MANIFEST="$2"; shift 2;; --job-id) JOB_ID="$2"; shift 2;;
   *) echo "unknown T19 option: $1" >&2; exit 2;; esac; done
 [[ -n "$OUT" && -n "$INPUT_MANIFEST" && -n "$JOB_ID" && "$JOB_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || exit 2
-mkdir -p "$OUT"; PRIVATE="$OUT/private"; mkdir -m 700 "$PRIVATE"
+mkdir -p "$OUT"; PRIVATE="$OUT/private"; mkdir -m 700 "$PRIVATE"; PRIVATE="$(cd "$PRIVATE" && pwd -P)"
 [[ -z "$(find "$PRIVATE" -mindepth 1 -maxdepth 1 -print -quit)" ]] || { echo "T19 private result directory is not empty" >&2; exit 1; }
 MANIFEST="$REPO/scripts/live-gates/windows-import-product-e2e-manifest.py"
 REQUEST="$REPO/scripts/live-gates/make-windows-import-product-e2e-request.py"
 WRITER="$REPO/scripts/live-gates/write-windows-import-product-e2e-receipt.py"
 VERIFIED="$PRIVATE/verified-inputs.json"; COMMIT="$(git -C "$REPO" rev-parse HEAD)"; STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-WORK=""; WORK_ID=""; EMITTED=0; MODE=pilot; ATTEMPTS=0; VALID=false; SIGNING=unverified
+WORK=""; WORK_ID=""; PARENT_ID="$(stat -f '%d:%i' "$PRIVATE")"; EMITTED=0; MODE=pilot; ATTEMPTS=0; VALID=false; SIGNING=unverified
 json_value() { python3 - "$1" "$2" <<'PY'
 import json,sys
 value=json.load(open(sys.argv[1],encoding="utf-8"))
@@ -22,9 +22,9 @@ PY
 }
 cleanup_work() {
   [[ -z "$WORK" ]] && return 0
-  case "$WORK" in "/tmp/bridgevm-import-e2e-$JOB_ID."??????|"/private/tmp/bridgevm-import-e2e-$JOB_ID."??????) ;; *) return 1;; esac
-  mount | grep -F "$WORK" >/dev/null 2>&1 && return 1; pgrep -f "$WORK" >/dev/null 2>&1 && return 1
-  python3 "$REPO/scripts/live-gates/t17_owned_tree_cleanup.py" --root "$WORK" --job-id "$JOB_ID" --identity "$WORK_ID" || return 1
+  case "$WORK" in "$PRIVATE/bridgevm-import-e2e-$JOB_ID."??????) ;; *) return 1;; esac
+  mount | grep -F "$WORK" >/dev/null 2>&1 && return 1; python3 "$REPO/scripts/live-gates/product_e2e_process_absent.py" "$WORK" || return 1
+  python3 "$REPO/scripts/live-gates/t17_owned_tree_cleanup.py" --root "$WORK" --job-id "$JOB_ID" --identity "$WORK_ID" --parent "$PRIVATE" --parent-identity "$PARENT_ID" || return 1
   [[ ! -e "$WORK" ]]
 }
 emit() {
@@ -45,14 +45,14 @@ VALID=true; [[ ! -f "$OUT/cancel.requested" ]] || { emit canceled canceled 0 tru
 APP="$(json_value "$VERIFIED" assets.app_bundle.path)"; HELPER="$(json_value "$VERIFIED" assets.product_helper.path)"
 if ! codesign --verify --deep --strict "$APP" >/dev/null 2>&1 || ! "$REPO/scripts/verify-product-e2e-helper-app.sh" "$APP" >/dev/null 2>&1; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
 if ! SIGNING="$(bash "$REPO/scripts/live-gates/classify-product-e2e-signing.sh" "$APP")"; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
-WORK="$(mktemp -d "/tmp/bridgevm-import-e2e-$JOB_ID.XXXXXX")"; WORK="$(cd "$WORK" && pwd -P)"; WORK_ID="$(stat -f '%d:%i' "$WORK")"; chmod 700 "$WORK"
+WORK="$(mktemp -d "$PRIVATE/bridgevm-import-e2e-$JOB_ID.XXXXXX")"; WORK="$(cd "$WORK" && pwd -P)"; WORK_ID="$(stat -f '%d:%i' "$WORK")"; chmod 700 "$WORK"
 SOURCE_DISK="$(json_value "$VERIFIED" assets.source_disk.path)"; SOURCE_VARS="$(json_value "$VERIFIED" assets.source_vars.path)"; SOURCE_VTPM="$(json_value "$VERIFIED" assets.source_vtpm.path)"; SOURCE_VTPM_PACKAGE="$(json_value "$VERIFIED" assets.source_vtpm_package.path)"; SOURCE_VTPM_CODE="$(json_value "$VERIFIED" assets.source_vtpm_code.path)"
 work_device="$(stat -f '%d' "$WORK")"
 for source in "$SOURCE_DISK" "$SOURCE_VARS" "$SOURCE_VTPM" "$SOURCE_VTPM_PACKAGE" "$SOURCE_VTPM_CODE"; do [[ "$(stat -f '%d' "$source")" == "$work_device" ]] || { emit preflight-blocked internal-error 0 true "$SIGNING" || exit 1; exit 1; }; done
 EXPECTED=1; [[ "$MODE" != release ]] || EXPECTED=3; previous_inode=""
 for (( lane=1; lane<=EXPECTED; lane++ )); do
   [[ ! -f "$OUT/cancel.requested" ]] || { emit canceled canceled "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; }
-  lane_root="$WORK/lane-$lane"; mkdir -m 700 -p "$lane_root/inputs/vtpm"; inode="$(stat -f '%i' "$lane_root")"
+  lane_root="$WORK/lane-$lane"; mkdir -m 700 "$lane_root"; mkdir -m 700 -p "$lane_root/inputs/vtpm"; inode="$(stat -f '%i' "$lane_root")"
   [[ -z "$previous_inode" || "$inode" != "$previous_inode" ]] || { emit failed internal-error "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; }; previous_inode="$inode"
   cp -c "$SOURCE_DISK" "$lane_root/inputs/windows.raw"; cp -c "$SOURCE_VARS" "$lane_root/inputs/vars.fd"; cp -cR "$SOURCE_VTPM/." "$lane_root/inputs/vtpm/"; cp -c "$SOURCE_VTPM_PACKAGE" "$lane_root/inputs/vtpm-recovery.json"; cp -c "$SOURCE_VTPM_CODE" "$lane_root/inputs/vtpm-recovery-code.txt"; chmod -R a-w "$lane_root/inputs"
   nonce="$(openssl rand -hex 32)"; request="$lane_root/request.json"; result="$PRIVATE/lane-$lane-result.json"
@@ -61,7 +61,7 @@ for (( lane=1; lane<=EXPECTED; lane++ )); do
   if (( helper_status != 0 )) || [[ ! -f "$result" || -L "$result" ]]; then emit failed product-model-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if [[ "$(shasum -a 256 "$request" | awk '{print $1}')" != "$request_sha" ]]; then emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if find "$WORK" \( \( ! -type d ! -type f \) -o \( -type f -links +1 \) \) -print -quit | grep -q .; then printf '%s\n' "$lane" > "$PRIVATE/lane-isolation-failed"; emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
-  if mount | grep -F "$lane_root" >/dev/null 2>&1 || pgrep -f "$lane_root" >/dev/null 2>&1; then emit cleanup-failed cleanup-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
+  if mount | grep -F "$lane_root" >/dev/null 2>&1 || ! python3 "$REPO/scripts/live-gates/product_e2e_process_absent.py" "$lane_root"; then emit cleanup-failed cleanup-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   python3 "$WRITER" --check-lane "$result" --request "$request" --expected-request-sha256 "$request_sha" --stamp "$PRIVATE/lane-$lane-authenticated.json" --job-id "$JOB_ID" --commit "$COMMIT" --mode "$MODE" --ordinal "$lane" || { emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; }
   after="$PRIVATE/verified-after-lane-$lane.json"; python3 "$MANIFEST" --manifest "$INPUT_MANIFEST" --out "$after" >/dev/null 2>&1 && cmp -s "$VERIFIED" "$after" || { emit failed hash-mismatch "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; }
 done

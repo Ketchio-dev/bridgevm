@@ -124,14 +124,13 @@ class LaneFixture(unittest.TestCase):
     def setUp(self) -> None:
         if sys.platform != "darwin":
             self.skipTest("the harvest clones with fclonefileat(2) and attaches with hdiutil, both macOS-only")
-        self.work = (Path("/tmp") / f"bridgevm-e2e-{JOB}.{secrets.token_hex(3)}")
-        self.work.mkdir(mode=0o700)
-        self.work = self.work.resolve()
-        self.lane = self.work / "lane-1"
-        self.lane.mkdir(mode=0o700)
         self.output = Path(tempfile.mkdtemp(prefix="t17-harvest-out-")).resolve()
         self.private = self.output / "private"
         self.private.mkdir(mode=0o700)
+        self.work = self.private / f"bridgevm-e2e-{JOB}.{secrets.token_hex(3)}"
+        self.work.mkdir(mode=0o700)
+        self.lane = self.work / "lane-1"
+        self.lane.mkdir(mode=0o700)
         self.slug = "bridgevm-t17-lane-1-" + NONCE[:12]
         self.disks = self.lane / "library" / self.slug / "bundle.vmbridge" / "disks"
         self.disks.mkdir(parents=True)
@@ -143,6 +142,7 @@ class LaneFixture(unittest.TestCase):
                   "campaign_mode": "pilot", "lane": 1, "nonce": NONCE,
                   "failure_code": "guest-evidence-missing", "first_ready": False,
                   "failure_detail": "first boot has no BVAGENT READY/PONG evidence; host_stop=status=missing,reason=acknowledgement-missing"}
+        request.update(packet.WORK.capture(self.lane, JOB, "e2e", 1))
         request_sha = json_file(self.lane / "request.json", request)
         result_sha = json_file(self.private / "lane-1-result.json", result)
         json_file(self.private / "lane-1-authenticated.json", {

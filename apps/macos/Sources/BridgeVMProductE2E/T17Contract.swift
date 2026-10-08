@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import BridgeVMWindowProtocol
 
 struct T17Blocker: Error, Equatable {
     let code: String
@@ -25,6 +26,7 @@ struct T17Request: Decodable, Equatable {
     let bundledVarsSeedPath: String
     let guestPayloadPath: String
     let guestPayloadManifestPath: String
+    let workParent: String; let workParentIdentity: String; let workIdentity: String
     let laneRoot: String
     let libraryRootPath: String
     let sharePath: String
@@ -36,6 +38,7 @@ struct T17Request: Decodable, Equatable {
     let guestEvidencePath: String
 
     enum CodingKeys: String, CodingKey, CaseIterable {
+        case workParent = "work_parent", workParentIdentity = "work_parent_identity", workIdentity = "work_identity"
         case schemaVersion = "schema_version"
         case jobID = "job_id"
         case commit, campaignMode = "campaign_mode", lane, nonce
@@ -68,28 +71,12 @@ struct T17Request: Decodable, Equatable {
             throw T17Blocker(code: "invalid-request", detail: "request is not a bounded regular file")
         }
         let data = try Data(contentsOf: url)
-        try requireExactTopLevelKeys(data)
+        try ProductE2EWorkBoundary.exactKeys(data, importing: false)
         let request = try JSONDecoder().decode(T17Request.self, from: data)
         try request.validate()
         return request
     }
 
-    private static func requireExactTopLevelKeys(_ data: Data) throws {
-        guard let text = String(data: data, encoding: .utf8) else {
-            throw T17Blocker(code: "invalid-request", detail: "request is not UTF-8")
-        }
-        let pattern = #""((?:\\.|[^"\\])*)"\s*:"#
-        let regex = try NSRegularExpression(pattern: pattern)
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        let keys = regex.matches(in: text, range: range).compactMap { match -> String? in
-            guard let swiftRange = Range(match.range(at: 1), in: text) else { return nil }
-            return String(text[swiftRange])
-        }
-        let expected = Set(CodingKeys.allCases.map(\.rawValue))
-        guard keys.count == expected.count, Set(keys) == expected else {
-            throw T17Blocker(code: "invalid-request", detail: "request has missing, duplicate, or unknown fields")
-        }
-    }
     func validate(fileManager: FileManager = .default) throws {
         guard schemaVersion == "bridgevm.windows-hvf-3d-off-product-e2e-request.v2",
               Self.matches(jobID, #"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"#),
@@ -103,10 +90,10 @@ struct T17Request: Decodable, Equatable {
         }
         let root = URL(fileURLWithPath: laneRoot, isDirectory: true).standardizedFileURL
         let normalizedLaneRoot = laneRoot.replacingOccurrences(of: "/private/tmp/", with: "/tmp/", options: .anchored)
-        guard !(laneRoot as NSString).pathComponents.contains(".."), normalizedLaneRoot == root.path,
-              normalizedLaneRoot.hasPrefix("/tmp/bridgevm-e2e-") else {
+        guard !(laneRoot as NSString).pathComponents.contains(".."), normalizedLaneRoot == root.path else {
             throw T17Blocker(code: "invalid-request", detail: "lane root is outside the fixed temporary boundary")
         }
+        try ProductE2EWorkBoundary.validate(laneRoot: laneRoot, parent: workParent, parentIdentity: workParentIdentity, workIdentity: workIdentity, job: jobID, lane: lane, importing: false)
         let library = root.appendingPathComponent("library", isDirectory: true)
         let bundle = library.appendingPathComponent(vmSlug, isDirectory: true)
             .appendingPathComponent("bundle.vmbridge", isDirectory: true)

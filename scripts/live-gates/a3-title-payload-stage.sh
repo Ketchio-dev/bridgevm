@@ -41,7 +41,7 @@ install_a3_payload_guest() {
 }
 
 if [[ "${1:-}" == --self-test ]]; then
-    work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+    work=$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX"); trap 'rm -rf "$work"' EXIT
     truncate -s $((A3_PAYLOAD_CHUNK_BYTES * 2 + 17)) "$work/payload.zip"
     prepare_a3_payload_share "$work/payload.zip" "$work" "$(printf 'a%.0s' {1..64})"
     [[ "$A3_PAYLOAD_PART_COUNT" -eq 3 ]]

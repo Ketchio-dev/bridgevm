@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SEC="$ROOT/crates/bridgevm-hvf/firmware/BridgeVmPcPkg/ResetVector"
-BUILD="$(mktemp -d "/tmp/bridgevm-pc-sec-test.XXXXXX")"
+BUILD="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-pc-sec-test.XXXXXX")"
 trap 'rm -rf "$BUILD"' EXIT
 grep -Fq '.equ BRIDGE_VM_PC_STACK_TOP,       0x100020000' "$SEC/BridgeVmPcResetVector.S"
 grep -Fq '#define BRIDGE_VM_PC_STACK_TOP              0x100020000ULL' "$SEC/BridgeVmPcSec.h"

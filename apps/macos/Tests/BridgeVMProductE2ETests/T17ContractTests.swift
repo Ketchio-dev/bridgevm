@@ -11,11 +11,9 @@ final class T17ContractTests: XCTestCase {
     }
 
     func testStrictRequestAcceptsFixedProductPaths() throws {
-        for prefix in ["/tmp", "/private/tmp"] {
-            let fixture = try makeFixture(prefix: prefix), request = try T17Request.load(fixture.request)
-            XCTAssertEqual(request.vmSlug, fixture.slug)
-            XCTAssertEqual(request.diskPath, fixture.bundle.appendingPathComponent("disks/hvf-target.raw").path)
-        }
+        let fixture = try makeFixture(), request = try T17Request.load(fixture.request)
+        XCTAssertEqual(request.vmSlug, fixture.slug)
+        XCTAssertEqual(request.diskPath, fixture.bundle.appendingPathComponent("disks/hvf-target.raw").path)
     }
 
     func testRequestRejectsUnknownAndDuplicateFields() throws {
@@ -140,10 +138,9 @@ final class T17ContractTests: XCTestCase {
         XCTAssertThrowsError(try T17SecureBootReceipt.verify(receipt: receiptURL, policy: policyURL))
     }
 
-    func makeFixture(prefix: String = "/tmp") throws -> (root: URL, request: URL, bundle: URL, slug: String) {
-        let root = URL(fileURLWithPath: "\(prefix)/bridgevm-e2e-swift-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
-        roots.append(root)
+    func makeFixture() throws -> (root: URL, request: URL, bundle: URL, slug: String) {
+        let allocation = try ProductWorkFixture(job: "fixture"), root = allocation.lane
+        roots.append(allocation.parent)
         let app = root.appendingPathComponent("BridgeVMControl.app", isDirectory: true)
         let executable = app.appendingPathComponent("Contents/MacOS/BridgeVMControl")
         let runner = app.appendingPathComponent("Contents/Resources/target/release/hvf-runner")
@@ -161,7 +158,7 @@ final class T17ContractTests: XCTestCase {
         let nonce = String(repeating: "a", count: 64), slug = "bridgevm-t17-lane-1-aaaaaaaaaaaa"
         let library = root.appendingPathComponent("library", isDirectory: true)
         let bundle = library.appendingPathComponent(slug).appendingPathComponent("bundle.vmbridge")
-        let object: [String: Any] = [
+        var object: [String: Any] = [
             "schema_version": "bridgevm.windows-hvf-3d-off-product-e2e-request.v2", "job_id": "fixture",
             "commit": String(repeating: "b", count: 40), "campaign_mode": "pilot", "lane": 1,
             "nonce": nonce, "vm_name": "BridgeVM T17 Lane 1 aaaaaaaaaaaa", "vm_slug": slug,
@@ -177,6 +174,7 @@ final class T17ContractTests: XCTestCase {
             "secure_boot_receipt_path": bundle.appendingPathComponent("metadata/secure-boot-provisioning.json").path,
             "guest_evidence_path": bundle.appendingPathComponent("metadata/product-e2e-guest-evidence.json").path,
         ]
+        object.merge(allocation.fields) { _, new in new }
         let request = root.appendingPathComponent("request.json")
         try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]).write(to: request)
         return (root, request, bundle, slug)

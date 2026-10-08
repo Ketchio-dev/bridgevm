@@ -3,6 +3,7 @@
 from __future__ import annotations
 import argparse, hashlib, importlib.util, json, os, stat
 from pathlib import Path
+from product_e2e_work import capture
 HERE = Path(__file__).resolve().parent
 SPEC = importlib.util.spec_from_file_location("import_manifest", HERE / "windows-import-product-e2e-manifest.py")
 MANIFEST = importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(MANIFEST)
@@ -39,8 +40,7 @@ def main() -> int:
     if verified.get("verified") is not True or not isinstance(assets, dict) or verified.get("campaign_mode") != args.mode:
         raise ValueError("import inputs were not verified for this campaign")
     root = args.lane_root; raw_root = str(root)
-    if not raw_root.startswith(("/tmp/bridgevm-import-e2e-", "/private/tmp/bridgevm-import-e2e-")) or raw_root != os.path.normpath(raw_root):
-        raise ValueError("lane root is outside /tmp/bridgevm-import-e2e-*")
+    work = capture(root, args.job_id, "import-e2e", args.lane)
     inputs = root / "inputs"; disk = inputs / "windows.raw"; variables = inputs / "vars.fd"; vtpm = inputs / "vtpm"; package = inputs / "vtpm-recovery.json"; code = inputs / "vtpm-recovery-code.txt"
     if not root.is_dir() or root.is_symlink() or set(item.name for item in root.iterdir()) != {"inputs"}:
         raise ValueError("lane root must contain only its prepared inputs")
@@ -58,7 +58,7 @@ def main() -> int:
     library = root / "library"; bundle = library / vm_slug / "bundle"
     request = {
         "schema_version": "bridgevm.windows-hvf-import-product-e2e-request.v1",
-        "job_id": args.job_id, "commit": args.commit, "campaign_mode": args.mode,
+        "job_id": args.job_id, "commit": args.commit, "campaign_mode": args.mode, **work,
         "lane": args.lane, "nonce": args.nonce, "vm_name": vm_name, "vm_slug": vm_slug,
         "three_d_injection": False,
         **{f"{key}_path": assets[key]["path"] for key in APP_ASSETS},

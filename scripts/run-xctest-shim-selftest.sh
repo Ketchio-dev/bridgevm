@@ -9,7 +9,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SHIM="$ROOT/apps/macos/XCTestShim"
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
 TARGET=arm64-apple-macosx14.0

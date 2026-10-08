@@ -12,6 +12,7 @@ from native_snapshot_restore_public import _reject_constant, _unique_fields
 from native_snapshot_restore_seal import read_bounded_regular
 from product_e2e_identity import fixed_fields_match
 from product_e2e_json_snapshot import JsonSnapshot
+from t22_retained_request import validate as validate_retained_request
 
 SHA = re.compile(r"[0-9a-f]{64}\Z")
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
@@ -101,11 +102,8 @@ def origin(path, expected, rows):
              "job_id": value["job_id"], "commit": value["commit"], "campaign_mode": value["mode"],
              "lane": value["lane"], "nonce": lane["nonce"], "three_d_injection": False,
              "vm_name": f"{title} {value['lane']} {prefix}", "vm_slug": f"{slug}-{value['lane']}-{prefix}"}
-    if (type(request.value) is not dict or set(request.value) != writer.REQUEST_KEYS
-            or not fixed_fields_match(request.value, fixed)
-            or any(type(request.value[k]) is not str or not request.value[k].startswith("/") for k in writer.REQUEST_PATHS)
-            or stamp.value["request_sha256"] != request.sha256):
-        raise ValueError("retained request is not bound to its stamp")
+    validate_retained_request(request.value, writer, fixed, value["tier"],
+                              stamp.value["request_sha256"], request.sha256)
     pair = selected.value
     directory = selected.path.parent
     if (selected.path.name != "manifest.json" or directory.is_symlink()

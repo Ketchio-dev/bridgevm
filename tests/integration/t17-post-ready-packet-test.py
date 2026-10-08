@@ -177,7 +177,7 @@ class PostReadyPacketTest(PostReadyCase):
         with self.assertRaises(FileExistsError):
             packet.capture(self.args)
         self.assertEqual(sorted(path.name for path in self.case.private.iterdir()),
-                         ["lane-1-authenticated.json", "lane-1-result.json", LISTING])
+                         sorted([self.case.work.name, "lane-1-authenticated.json", "lane-1-result.json", LISTING]))
 
 
 def augment_synthetic_helper(path: Path) -> None:

@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
-work=$(mktemp -d)
+work=$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 if ! cargo test -p bridgevm-hvf --example hvf_gic_boot_probe --locked \
     input_receipt_cross_language_transcript -- --nocapture --test-threads=1 > "$work/transcript" 2>&1; then

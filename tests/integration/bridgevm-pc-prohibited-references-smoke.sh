@@ -8,7 +8,7 @@ SCAN="$ROOT/scripts/check-bridgevm-pc-prohibited-references.sh"
 printf 'independent board\n' | "$SCAN" stream clean-fixture
 ! printf 'QEMU compatibility\n' | "$SCAN" stream bad-fixture >/dev/null 2>&1
 
-work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
+work="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"; trap 'rm -rf "$work"' EXIT
 printf 'UEFI PCI\n' > "$work/source.txt"
 "$SCAN" tree clean-tree "$work"
 printf 'ArmVirt\n' > "$work/source.txt"

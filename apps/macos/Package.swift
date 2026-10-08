@@ -26,7 +26,7 @@ let package = Package(
                 .copy("Resources/secureboot-microsoft-windows-transition-aarch64-v1.6.5.json")
             ]
         ),
-        .executableTarget(name: "BridgeVMProductE2E", path: "Sources/BridgeVMProductE2E"),
+        .executableTarget(name: "BridgeVMProductE2E", dependencies: ["BridgeVMWindowProtocol"], path: "Sources/BridgeVMProductE2E"),
         .target(name: "AppleVzRunnerCore", path: "Sources/AppleVzRunnerCore"),
         .executableTarget(
             name: "AppleVzRunner",

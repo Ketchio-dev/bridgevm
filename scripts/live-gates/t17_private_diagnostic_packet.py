@@ -14,6 +14,10 @@ import struct
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import product_e2e_work as WORK
+import t17_packet_allocation as ALLOCATION
+from t17_observed_generation import observed_generation
+from t17_display_header import display_header
 from t17_terminal_report_tail import terminal_report  # noqa: E402
 import t17_guest_setup_harvest as HARVEST  # noqa: E402
 import t17_packet_kind as KIND  # noqa: E402
@@ -248,32 +252,11 @@ def final_frame_names(tail: bytes, frame_dir: str, detail: str, tail_offset: int
     return result[0], result[1]
 
 
-def observed_generation(detail: str, tail: bytes, tail_offset: int) -> int | None:
-    parsed = terminal_report(tail, detail, tail_offset)
-    return parsed[0] if parsed is not None else None
-
-
-def display_header(header: bytes, size: int) -> tuple[int, int] | None:
-    if len(header) != 64:
-        return None
-    magic, version, width, height, stride, fourcc = struct.unpack_from("<6I", header)
-    sequence = struct.unpack_from("<Q", header, 24)[0]
-    if (magic != 0x42564642 or version != 1 or fourcc != 0x34325258
-            or not (0 < width <= 16384 and 0 < height <= 16384)
-            or stride < width * 4 or stride % 4 or sequence == 0 or sequence & 1):
-        return None
-    count = 64 + height * stride
-    if count > DISPLAY_CAP or count > size:
-        return None
-    return sequence, count
-
-
 def capture(args: argparse.Namespace) -> None:
     if not JOB.fullmatch(args.job_id) or not COMMIT.fullmatch(args.commit) or args.lane not in (1, 2, 3):
         raise CaptureError("invalid packet identity")
     lane_root = str(args.lane_root)
-    if not re.fullmatch(r"/(?:private/)?tmp/bridgevm-e2e-" + re.escape(args.job_id) + r"\.[A-Za-z0-9]{6}/lane-" + str(args.lane), lane_root):
-        raise CaptureError("lane root is outside its job boundary")
+    WORK.layout(lane_root, str(args.private), args.job_id, "e2e", args.lane)
     created: list[str] = []
     with ExitStack() as stack:
         private = open_absolute_directory(args.private, stack)
@@ -281,6 +264,7 @@ def capture(args: argparse.Namespace) -> None:
         lane = open_absolute_directory(args.lane_root, stack)
         lane_info = owned_directory(lane)
         request, request_sha = read_json(lane, "request.json", lane_info.st_dev, stack)
+        WORK.validate(request, "e2e")
         result_name = f"lane-{args.lane}-result.json"
         stamp_name = f"lane-{args.lane}-authenticated.json"
         result, result_sha = read_json(private, result_name, private_info.st_dev, stack)
@@ -390,9 +374,10 @@ def capture(args: argparse.Namespace) -> None:
                 write_all(output, body)
                 os.fsync(output)
                 share = {"file": KIND.listing_name(args.lane), "sha256": digest(body)}
+            ALLOCATION.retain(globals(), lane, lane_info.st_dev, private, stack, created, args.lane, request_sha)
             guest_setup = HARVEST.Harvest(lane_root, lane, slug, private, args.lane, TOTAL_CAP - total, created).run()
             index = {"schema_version": SCHEMA, "packet_kind": args.kind, "job_id": args.job_id, "commit": args.commit,
-                     "campaign_mode": args.mode, "lane": args.lane, "lane_root": lane_root, "share_listing": share,
+                     "campaign_mode": args.mode, "lane": args.lane, "lane_root": lane_root, "share_listing": share, **{k: request[k] for k in WORK.FIELDS},
                      "lane_identity": f"{lane_info.st_dev}:{lane_info.st_ino}", "nonce": nonce,
                      "request_sha256": request_sha, "result_sha256": result_sha,
                      "stamp_sha256": stamp_sha, "host_stop_status": stop,
@@ -423,7 +408,7 @@ def verify(args: argparse.Namespace) -> None:
         expected_keys = {"schema_version", "packet_kind", "share_listing", "job_id", "commit", "campaign_mode", "lane", "lane_root",
                      "lane_identity", "nonce", "request_sha256", "result_sha256", "stamp_sha256",
                      "host_stop_status", "observed_generation", "display_generation",
-                     "windows_function_symbols", "total_bytes", "guest_setup", "artifacts"}
+                     "windows_function_symbols", "total_bytes", "guest_setup", "artifacts", *WORK.FIELDS}
         detail = result.get("failure_detail")
         statuses = HOST_STATUS.findall(detail) if isinstance(detail, str) else []
         expected_stamp_keys = {"schema_version", "job_id", "commit", "lane", "nonce", "request_sha256", "result_sha256"}
@@ -439,7 +424,6 @@ def verify(args: argparse.Namespace) -> None:
                 or stamp.get("lane") != args.lane or stamp.get("nonce") != result.get("nonce")
                 or not isinstance(stamp.get("request_sha256"), str) or not HEX.fullmatch(stamp["request_sha256"])
                 or not isinstance(index["lane_root"], str)
-                or not re.fullmatch(r"/(?:private/)?tmp/bridgevm-e2e-" + re.escape(args.job_id) + r"\.[A-Za-z0-9]{6}/lane-" + str(args.lane), index["lane_root"])
                 or not re.fullmatch(r"[0-9]+:[0-9]+", str(index["lane_identity"]))
                 or not isinstance(index["nonce"], str) or not HEX.fullmatch(index["nonce"])
                 or index["nonce"] != result.get("nonce") or index["nonce"] != stamp.get("nonce")
@@ -451,6 +435,7 @@ def verify(args: argparse.Namespace) -> None:
                 or not (index["observed_generation"] is None or type(index["observed_generation"]) is int and index["observed_generation"] >= 0)
                 or type(index["total_bytes"]) is not int):
             raise CaptureError("private index identity or schema differs")
+        ALLOCATION.verify(globals(), private, info.st_dev, stack, index, args.lane)
         name = KIND.listing_name(args.lane)
         listing = None if index["share_listing"] is None else read_json(private, name, info.st_dev, stack)
         if ((listing is None) != (args.kind == "first-ready")
@@ -573,8 +558,10 @@ def verify(args: argparse.Namespace) -> None:
                     or request.get("job_id") != args.job_id or request.get("commit") != args.commit
                     or request.get("campaign_mode") != args.mode or request.get("lane") != args.lane
                     or request.get("nonce") != index["nonce"]
-                    or request.get("lane_root") != index["lane_root"]):
+                    or request.get("lane_root") != index["lane_root"]
+                    or any(request.get(k) != index[k] for k in WORK.FIELDS)):
                 raise CaptureError("private index request binding differs")
+            WORK.validate(request, "e2e")
             if index["host_stop_status"] == "complete":
                 evidence = lane
                 slug = f"bridgevm-t17-lane-{args.lane}-{index['nonce'][:12]}"

@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 import product_e2e_identity_fixtures as fixture
+from product_e2e_import_fixture_base import prepare
 from windows_selected_media_cli import CLI, selected
 
 
@@ -21,9 +22,7 @@ class SelectedImportMedia(unittest.TestCase):
             cwd=fixture.ROOT, text=True).strip())
 
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="bridgevm-import-e2e-selected-", dir="/private/tmp")
-        self.root = Path(self.temporary.name).resolve() / "lane-1"
-        self.request_path, self.result_path = fixture.import_request(self.root)
+        prepare(self, "bridgevm-import-selected-")
         self.request = json.loads(self.request_path.read_text())
         self.result = json.loads(self.result_path.read_text())
         helper = Path(self.request["app_bundle_path"]) / CLI

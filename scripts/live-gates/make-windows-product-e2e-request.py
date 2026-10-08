@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+from product_e2e_work import capture
 
 
 ASSETS = (
@@ -42,8 +43,7 @@ def main() -> int:
         raise ValueError("T17 verified inputs are incomplete")
     root = args.lane_root
     raw_root = str(root)
-    if not raw_root.startswith(("/tmp/bridgevm-e2e-", "/private/tmp/bridgevm-e2e-")) or raw_root != os.path.normpath(raw_root):
-        raise ValueError("lane root is outside the fixed /tmp/bridgevm-e2e-* boundary")
+    work = capture(root, args.job_id, "e2e", args.lane)
     if not root.is_dir() or root.is_symlink() or any(root.iterdir()):
         raise ValueError("lane root must be an existing empty non-symlink directory")
     nonce_prefix = args.nonce[:12]
@@ -53,7 +53,7 @@ def main() -> int:
     bundle = library / vm_slug / "bundle.vmbridge"
     request = {
         "schema_version": "bridgevm.windows-hvf-3d-off-product-e2e-request.v2",
-        "job_id": args.job_id, "commit": args.commit, "campaign_mode": args.mode,
+        "job_id": args.job_id, "commit": args.commit, "campaign_mode": args.mode, **work,
         "lane": args.lane, "nonce": args.nonce, "three_d_injection": False,
         "vm_name": vm_name, "vm_slug": vm_slug,
         **{f"{key}_path": assets[key]["path"] for key in ASSETS},

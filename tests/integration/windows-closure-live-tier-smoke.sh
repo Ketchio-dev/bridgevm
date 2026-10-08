@@ -11,7 +11,7 @@ CLI="$ROOT/scripts/live-gates/bridgevm-live"
 WORKER="$ROOT/scripts/live-gates/bridgevm-live-worker.sh"
 DISPATCH="$ROOT/scripts/live-gates/run-tier.sh"
 MISSING="$ROOT/scripts/live-gates/write-missing-receipt.sh"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 
 for executable in "$MANIFEST_HELPER" "$TIER" "$INTERACT" "$RECEIPT" "$MISSING"; do
   [[ -x "$executable" ]] || { echo "FAIL: not executable: $executable" >&2; exit 1; }

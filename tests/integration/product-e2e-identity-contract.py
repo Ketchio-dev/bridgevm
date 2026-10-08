@@ -11,6 +11,8 @@ import unittest
 from unittest.mock import patch
 
 import product_e2e_identity_fixtures as fixture
+from product_e2e_work_fixture import allocate, WORK
+from product_e2e_identity_command import command
 
 
 class FixedIdentityContract(unittest.TestCase):
@@ -63,6 +65,8 @@ class FixedIdentityContract(unittest.TestCase):
                    "lane": 1, "nonce": fixture.NONCE, "three_d_injection": False,
                    "vm_name": f"BridgeVM T17 Lane 1 {prefix}", "vm_slug": f"bridgevm-t17-lane-1-{prefix}",
                    **{field: f"/private/tmp/fixture/{field}" for field in writer.REQUEST_PATHS}}
+        root = allocate(self.root, kind="e2e")
+        request.update(WORK.capture(root, fixture.JOB, "e2e", 1)); request["lane_root"] = str(root)
         for field, invalid in ((None, None), ("lane", True), ("lane", 1.0), ("three_d_injection", 0)):
             stamp = self.root / f"stamp-{field}-{invalid}.json"
             request_path.write_text(json.dumps(request if field is None else {**request, field: invalid}))
@@ -81,8 +85,8 @@ class FixedIdentityContract(unittest.TestCase):
 
 class ImportRequestSealContract(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="bridgevm-import-e2e-integrity-", dir="/private/tmp")
-        self.root = Path(self.temporary.name) / "lane-1"
+        self.temporary = tempfile.TemporaryDirectory(prefix="bridgevm-import-e2e-integrity-")
+        self.root = allocate(self.temporary.name)
         self.request, self.result = fixture.import_request(self.root)
         self.prelaunch_hash = fixture.T19.digest(self.request)
         self.stamp = self.root.parent / "stamp.json"
@@ -94,13 +98,7 @@ class ImportRequestSealContract(unittest.TestCase):
         fixture.T19.authenticate(self.request, self.result, self.stamp, fixture.JOB, fixture.COMMIT,
                                  "pilot", 1, self.prelaunch_hash if expected_hash is None else expected_hash)
 
-    def command(self, include_hash: bool = True) -> subprocess.CompletedProcess:
-        command = [sys.executable, str(fixture.ROOT / "scripts/live-gates/write-windows-import-product-e2e-receipt.py"),
-                   "--check-lane", str(self.result), "--request", str(self.request), "--stamp", str(self.stamp),
-                   "--job-id", fixture.JOB, "--commit", fixture.COMMIT, "--mode", "pilot", "--ordinal", "1"]
-        if include_hash:
-            command += ["--expected-request-sha256", self.prelaunch_hash]
-        return subprocess.run(command, capture_output=True, text=True, timeout=30)
+    command = command
 
     def test_original_request_authenticates_and_cli_records_its_seal(self):
         self.audit()

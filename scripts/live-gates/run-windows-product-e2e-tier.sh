@@ -19,7 +19,7 @@ PRIVATE="$OUT/private"; mkdir -m 700 "$PRIVATE"; PRIVATE="$(cd "$PRIVATE" && pwd
 MANIFEST_TOOL="$REPO/scripts/live-gates/windows-product-e2e-manifest.py"; WRITER="$REPO/scripts/live-gates/write-windows-product-e2e-receipt.py"
 REQUEST_WRITER="$REPO/scripts/live-gates/make-windows-product-e2e-request.py"; VERIFIED="$PRIVATE/verified-inputs.json"
 COMMIT="$(git -C "$REPO" rev-parse HEAD)"; STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-WORK=""; WORK_ID=""; EMITTED=0; MODE=pilot; ATTEMPTS=0; VALID=false; SIGNING=unverified
+WORK=""; WORK_ID=""; PARENT_ID="$(stat -f '%d:%i' "$PRIVATE")"; EMITTED=0; MODE=pilot; ATTEMPTS=0; VALID=false; SIGNING=unverified
 json_value() {
   python3 - "$1" "$2" <<'PY'
 import json, sys
@@ -37,10 +37,10 @@ collect_diagnostic_packet() {
 
 cleanup_work() {
   [[ -z "$WORK" ]] && return 0
-  case "$WORK" in "/tmp/bridgevm-e2e-$JOB_ID."??????|"/private/tmp/bridgevm-e2e-$JOB_ID."??????) ;; *) return 1 ;; esac
+  case "$WORK" in "$PRIVATE/bridgevm-e2e-$JOB_ID."??????) ;; *) return 1 ;; esac
   python3 "$REPO/scripts/live-gates/t17_host_residue.py" --work "$WORK" --private "$PRIVATE" || return 1
-  pgrep -f "$WORK" >/dev/null 2>&1 && return 1
-  python3 "$REPO/scripts/live-gates/t17_owned_tree_cleanup.py" --root "$WORK" --job-id "$JOB_ID" --identity "$WORK_ID" || return 1
+  python3 "$REPO/scripts/live-gates/product_e2e_process_absent.py" "$WORK" || return 1
+  python3 "$REPO/scripts/live-gates/t17_owned_tree_cleanup.py" --root "$WORK" --job-id "$JOB_ID" --identity "$WORK_ID" --parent "$PRIVATE" --parent-identity "$PARENT_ID" || return 1
   [[ ! -e "$WORK" ]]
 }
 
@@ -86,7 +86,7 @@ APP="$(json_value "$VERIFIED" assets.app_bundle.path)"; HELPER="$(json_value "$V
 if ! codesign --verify --deep --strict "$APP" >/dev/null 2>&1 || ! "$REPO/scripts/verify-product-e2e-helper-app.sh" "$APP" >/dev/null 2>&1; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
 if ! SIGNING="$(bash "$REPO/scripts/live-gates/classify-product-e2e-signing.sh" "$APP")"; then emit preflight-blocked product-model-failed 0 true || exit 1; exit 1; fi
 
-WORK="$(mktemp -d "/tmp/bridgevm-e2e-$JOB_ID.XXXXXX")"; WORK="$(cd "$WORK" && pwd -P)"
+WORK="$(mktemp -d "$PRIVATE/bridgevm-e2e-$JOB_ID.XXXXXX")"; WORK="$(cd "$WORK" && pwd -P)"
 WORK_ID="$(stat -f '%d:%i' "$WORK")"; chmod 700 "$WORK"
 EXPECTED=1; [[ "$MODE" == release ]] && EXPECTED=3; previous_inode=""
 for (( lane=1; lane<=EXPECTED; lane++ )); do
@@ -106,7 +106,7 @@ for (( lane=1; lane<=EXPECTED; lane++ )); do
   if (( helper_status != 0 )) || [[ ! -f "$result" || -L "$result" ]]; then emit failed product-model-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if [[ "$(shasum -a 256 "$request" | awk '{print $1}')" != "$request_sha" ]]; then emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if find "$WORK" \( \( ! -type d ! -type f \) -o \( -type f -links +1 \) \) -print -quit | grep -q .; then printf '%s\n' "$lane" > "$PRIVATE/lane-isolation-failed"; emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
-  if mount | grep -F "$lane_root" >/dev/null 2>&1 || pgrep -f "$lane_root" >/dev/null 2>&1; then emit cleanup-failed cleanup-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
+  if mount | grep -F "$lane_root" >/dev/null 2>&1 || ! python3 "$REPO/scripts/live-gates/product_e2e_process_absent.py" "$lane_root"; then emit cleanup-failed cleanup-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if ! python3 "$WRITER" --check-lane "$result" --request "$request" --stamp "$PRIVATE/lane-$lane-authenticated.json" --job-id "$JOB_ID" --commit "$COMMIT" --mode "$MODE" --ordinal "$lane"; then emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   lane_failure="$(json_value "$result" failure_code)"; lane_ready="$(json_value "$result" first_ready)"; if [[ "$lane_failure" == guest-evidence-missing && "$lane_ready" == true ]]; then collect_diagnostic_packet post-ready; elif [[ "$lane_failure" == guest-evidence-missing && "$lane_ready" == false && "$(json_value "$result" failure_detail)" == "first boot has no BVAGENT READY/PONG evidence;"* ]]; then collect_diagnostic_packet first-ready; fi
   next_verified="$PRIVATE/verified-after-lane-$lane.json"

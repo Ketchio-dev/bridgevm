@@ -1,4 +1,5 @@
 import Foundation
+import BridgeVMWindowProtocol
 struct A9ImportRequest: Decodable, Equatable, T17JourneyRequest {
     let schemaVersion: String
     let jobID: String
@@ -15,6 +16,7 @@ struct A9ImportRequest: Decodable, Equatable, T17JourneyRequest {
     let sourceDiskPath: String
     let sourceVarsPath: String
     let sourceVtpmPath: String; let sourceVtpmPackagePath: String; let sourceVtpmCodePath: String
+    let workParent: String; let workParentIdentity: String; let workIdentity: String
     let laneRoot: String
     let libraryRootPath: String
     let sharePath: String
@@ -25,6 +27,7 @@ struct A9ImportRequest: Decodable, Equatable, T17JourneyRequest {
     let guestEvidencePath: String
 
     enum CodingKeys: String, CodingKey, CaseIterable {
+        case workParent = "work_parent", workParentIdentity = "work_parent_identity", workIdentity = "work_identity"
         case schemaVersion = "schema_version", jobID = "job_id", commit
         case campaignMode = "campaign_mode", lane, nonce
         case vmName = "vm_name", vmSlug = "vm_slug", threeDInjection = "three_d_injection"
@@ -43,7 +46,7 @@ struct A9ImportRequest: Decodable, Equatable, T17JourneyRequest {
             throw T17Blocker(code: "invalid-import-request", detail: "request is not a bounded regular file")
         }
         let data = try Data(contentsOf: url)
-        try requireExactKeys(data)
+        try ProductE2EWorkBoundary.exactKeys(data, importing: true)
         let request = try JSONDecoder().decode(Self.self, from: data)
         try request.validate()
         return request
@@ -60,11 +63,10 @@ struct A9ImportRequest: Decodable, Equatable, T17JourneyRequest {
             throw T17Blocker(code: "invalid-import-request", detail: "request identity or 3D policy is invalid")
         }
         let root = URL(fileURLWithPath: laneRoot, isDirectory: true).standardizedFileURL
-        guard !(laneRoot as NSString).pathComponents.contains(".."), laneRoot == root.path,
-              laneRoot.hasPrefix("/tmp/bridgevm-import-e2e-")
-                || laneRoot.hasPrefix("/private/tmp/bridgevm-import-e2e-") else {
+        guard !(laneRoot as NSString).pathComponents.contains(".."), laneRoot == root.path else {
             throw T17Blocker(code: "invalid-import-request", detail: "lane root is outside the fixed boundary")
         }
+        try ProductE2EWorkBoundary.validate(laneRoot: laneRoot, parent: workParent, parentIdentity: workParentIdentity, workIdentity: workIdentity, job: jobID, lane: lane, importing: true)
         let inputs = root.appendingPathComponent("inputs", isDirectory: true)
         let library = root.appendingPathComponent("library", isDirectory: true)
         let bundle = library.appendingPathComponent(vmSlug, isDirectory: true)
@@ -102,21 +104,6 @@ struct A9ImportRequest: Decodable, Equatable, T17JourneyRequest {
                 == app.appendingPathComponent("Contents/Resources/target/release/hvf-runner").standardizedFileURL,
               sourceDiskPath != diskPath, sourceVarsPath != varsPath, sourceVtpmPath != vtpmStatePath else {
             throw T17Blocker(code: "invalid-import-request", detail: "artifact relation or media ownership is invalid")
-        }
-    }
-
-    private static func requireExactKeys(_ data: Data) throws {
-        guard let text = String(data: data, encoding: .utf8),
-              let regex = try? NSRegularExpression(pattern: #""((?:\\.|[^"\\])*)"\s*:"#) else {
-            throw T17Blocker(code: "invalid-import-request", detail: "request is not UTF-8 JSON")
-        }
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        let keys = regex.matches(in: text, range: range).compactMap { match in
-            Range(match.range(at: 1), in: text).map { String(text[$0]) }
-        }
-        let expected = Set(CodingKeys.allCases.map(\.rawValue))
-        guard keys.count == expected.count, Set(keys) == expected else {
-            throw T17Blocker(code: "invalid-import-request", detail: "request has missing, duplicate, or unknown fields")
         }
     }
 

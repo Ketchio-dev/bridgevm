@@ -18,7 +18,7 @@ A3_PAYLOAD_VALIDATOR="$REPO/scripts/live-gates/a3-title-payload.py"
 A3_STAGE="$REPO/scripts/live-gates/a3-title-payload-stage.sh"
 BOOT_RUNNER="$REPO/scripts/run-hvf-windows-installed-boot-runner.sh"
 POSTMORTEM_HARVEST="$REPO/scripts/harvest-hvf-windows-postmortem.sh"
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"
 POSTMORTEM_MOUNT=""
 cleanup() {
     [[ -z "$POSTMORTEM_MOUNT" ]] || hdiutil detach "$POSTMORTEM_MOUNT" -quiet >/dev/null 2>&1 || true

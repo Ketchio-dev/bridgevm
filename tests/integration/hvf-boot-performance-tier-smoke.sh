@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 seal() { shasum -a 256 "$1" | cut -d' ' -f1; }
 printf image > "$WORK/image"

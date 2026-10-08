@@ -14,7 +14,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/prepare-native-test-helpers.sh"
 SHIM="$ROOT/apps/macos/XCTestShim"
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-xctest.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 TARGET=arm64-apple-macosx14.0
 
@@ -52,7 +52,7 @@ logged BridgeVMApp apps/macos/Sources/BridgeVMApp apps/macos/Tests/BridgeVMAppTe
 logged BridgeVMControl apps/macos/Sources/BridgeVMControl apps/macos/Tests/BridgeVMControlTests -I "$WORK" -L "$WORK" -lBridgeVMWindowProtocol & pids+=($!)
 logged AppleVzRunnerCore apps/macos/Sources/AppleVzRunnerCore apps/macos/Tests/AppleVzRunnerTests \
     -framework Virtualization & pids+=($!)
-logged BridgeVMProductE2E apps/macos/Sources/BridgeVMProductE2E apps/macos/Tests/BridgeVMProductE2ETests -framework AppKit -framework ApplicationServices -F /Library/Developer/CommandLineTools/Library/Developer/Frameworks -framework Testing -load-plugin-library /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/Frameworks -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/usr/lib & pids+=($!)
+logged BridgeVMProductE2E apps/macos/Sources/BridgeVMProductE2E apps/macos/Tests/BridgeVMProductE2ETests -I "$WORK" -L "$WORK" -lBridgeVMWindowProtocol -framework AppKit -framework ApplicationServices -F /Library/Developer/CommandLineTools/Library/Developer/Frameworks -framework Testing -load-plugin-library /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/Frameworks -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/usr/lib & pids+=($!)
 failed=0
 for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
 for name in BridgeVMApp BridgeVMControl AppleVzRunnerCore BridgeVMProductE2E; do cat "$WORK/log-$name"; grep -Eq '^shim XCTest: [1-9][0-9]* passed, 0 failed, [0-9]+ skipped$' "$WORK/log-$name" || failed=1; done

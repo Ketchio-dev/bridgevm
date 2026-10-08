@@ -10,12 +10,9 @@ final class HvfRuntimeDiagnosticStopAdmissionTests: XCTestCase {
     }
 
     func testOnlyValidatedTwoOptionE2EAdmissionEnablesOwnedStop() throws {
-        let lane = URL(fileURLWithPath: "/private/tmp", isDirectory: true).appendingPathComponent("bridgevm-e2e-stop-admission-\(UUID().uuidString)")
-        let libraryRoot = lane.appendingPathComponent("library", isDirectory: true)
+        let fixture = try E2EAdmissionFixture(), lane = fixture.lane, libraryRoot = fixture.library
         let answer = lane.appendingPathComponent("e2e-unattend.xml")
-        try FileManager.default.createDirectory(at: libraryRoot, withIntermediateDirectories: true)
         try Data("<unattend/>".utf8).write(to: answer)
-        defer { try? FileManager.default.removeItem(at: lane) }
 
         let rootOnly = try BridgeVMControlLaunchOptions.parse(arguments: ["--e2e-library-root", libraryRoot.path])
         XCTAssertFalse(rootOnly.admitsHostDiagnosticStop)
@@ -43,7 +40,7 @@ final class HvfRuntimeDiagnosticStopAdmissionTests: XCTestCase {
         XCTAssertFalse(runnerArgs(e2eConfig, owned: false).contains("--helper-host-diagnostic-stop"))
         XCTAssertFalse(runnerArgs(try XCTUnwrap(HvfEngineConfig.libraryVM(saved, rootURL: libraryRoot)),
             owned: true).contains("--helper-host-diagnostic-stop"),
-            "a matching /tmp library path alone is not admission")
+            "a matching library path alone is not admission")
     }
 
     func testPreparationRemovesStaleDiagnosticRequestSymlink() throws {

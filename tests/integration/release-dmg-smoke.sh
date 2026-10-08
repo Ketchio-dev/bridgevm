@@ -9,7 +9,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DMG_SCRIPT="$ROOT/scripts/package-release-dmg.sh"
 NOTARY_SCRIPT="$ROOT/scripts/notarize-submit.sh"
 
-work="$(mktemp -d)"
+work="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"
 mount_point=""
 cleanup() {
   [[ -n "$mount_point" ]] && hdiutil detach "$mount_point" >/dev/null 2>&1 || true
@@ -47,7 +47,7 @@ if bash "$DMG_SCRIPT" --app "$app" --output "$dmg" >/dev/null 2>&1; then
 fi
 
 # Mount and inspect.
-mount_point="$(mktemp -d)"
+mount_point="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"
 hdiutil attach "$dmg" -mountpoint "$mount_point" -nobrowse -readonly >/dev/null \
   || fail "hdiutil attach failed"
 [[ -d "$mount_point/BridgeVMControl.app" ]] || fail "app missing in dmg"

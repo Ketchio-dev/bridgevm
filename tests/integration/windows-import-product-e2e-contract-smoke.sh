@@ -33,7 +33,7 @@ python3 "$MANIFEST" --manifest "$INPUT" --out "$TMP/verified.json"
 QUEUE="$TMP/queue"; COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 [[ "$(BRIDGEVM_LIVE_ROOT="$QUEUE" "$ROOT/scripts/live-gates/bridgevm-live" submit t19-windows-hvf-import-product-e2e --sha "$COMMIT" --input-manifest "$INPUT" --job-id t19-contract)" == t19-contract ]]
 [[ -f "$QUEUE/queued/t19-contract/input-manifest.tsv" && ! -e "$QUEUE/queued/t19-contract/hvf_gic_boot_probe" ]]
-LANE="/tmp/bridgevm-import-e2e-contract-$$"; rm -rf "$LANE"; mkdir -p "$LANE/inputs/vtpm"
+TMP="$(cd "$TMP" && pwd -P)"; WORK="$(mktemp -d "$TMP/bridgevm-import-e2e-import-contract.XXXXXX")"; LANE="$WORK/lane-1"; mkdir -m 700 "$LANE"; mkdir -m 700 -p "$LANE/inputs/vtpm"
 trap 'chmod -R u+w "$TMP" "$LANE" 2>/dev/null || true; rm -rf "$TMP" "$LANE"' EXIT
 cp "$TMP/windows.raw" "$LANE/inputs/windows.raw"; cp "$TMP/vars.fd" "$LANE/inputs/vars.fd"; cp "$TMP/vtpm-recovery.json" "$LANE/inputs/vtpm-recovery.json"; cp "$TMP/vtpm-recovery-code.txt" "$LANE/inputs/vtpm-recovery-code.txt"
 cp -R "$TMP/vtpm/." "$LANE/inputs/vtpm/"; chmod -R a-w "$LANE/inputs"
@@ -46,7 +46,7 @@ value = json.load(open(sys.argv[1])); root = pathlib.Path(sys.argv[2]); prefix =
 assert value["schema_version"] == "bridgevm.windows-hvf-import-product-e2e-request.v1"
 assert value["three_d_injection"] is False and value["source_disk_path"] == str(root / "inputs/windows.raw")
 assert value["disk_path"] == str(root / "library" / f"bridgevm-a9-import-lane-1-{prefix}" / "bundle/disks/hvf-target.raw")
-assert len(value) == 25
+assert len(value) == 28
 PY
 rm "$request"; chmod u+w "$LANE/inputs/vars.fd"
 if python3 "$REQUEST" --out "$request" --verified "$TMP/verified.json" --job-id import-contract \
