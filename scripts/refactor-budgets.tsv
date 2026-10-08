@@ -1306,7 +1306,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfPointerCaptureTests.swift	52	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift	380	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	50	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift	407	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	233	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	204	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsDriverPreflight.swift	45	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallView.swift	84	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/TailOffsetReader.swift	22	0
@@ -4227,3 +4227,8 @@ docs/history/windows-hvf/raw-nvme-runtime-output-ownership-20261008.md	48	0
 tests/integration/a19_interrupt_child_fixture.py	77	0
 docs/document-manifests/a19-exited-child-fixture.tsv	3	0
 docs/history/windows-hvf/a19-exited-child-fixture-20261008.md	32	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/LineAccumulator.swift	38	0
+apps/macos/Tests/BridgeVMControlTests/InstallLineAccumulatorBoundTests.swift	29	0
+apps/macos/Tests/BridgeVMControlTests/InstallLineAccumulatorCompatibilityTests.swift	84	0
+docs/history/windows-hvf/install-pipe-line-bound-20261008.md	35	0
+docs/document-manifests/install-pipe-line-bound.tsv	3	0

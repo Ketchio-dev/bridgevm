@@ -19,7 +19,7 @@ docs/windows-arm/README.md	historical-evidence	windows-hvf-engine-history	STATUS
 docs/plans/hvf-p3-windows-3d-plan.md	active-plan	windows-graphics	-
 @include	docs/document-manifests/raw-nvme-runtime-output-ownership.tsv	-	-
 @include	docs/document-manifests/a19-exited-child-fixture.tsv	-	-
-docs/plans/hvf-gpu-thread-design-20260721.md	active-plan	windows-performance	-
+@include	docs/document-manifests/install-pipe-line-bound.tsv	-	-
 docs/handoffs/claude-code-20260722.md	active-plan	development-handoff	-
 docs/plans/refactor-handoff.md	active-plan	development-handoff	-
 @include	docs/document-manifests/native-vmm-nvme-admin-prp.tsv	-	-
