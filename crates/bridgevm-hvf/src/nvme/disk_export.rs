@@ -2,9 +2,9 @@
 //! Split from disk.rs: what leaves or is retained by the backend, rather
 //! than how a request is decoded.
 
-use super::{DiskBackend, EXPORT_CHUNK_SIZE};
+use super::DiskBackend;
 use std::fs::File;
-use std::io::{self, Write};
+use std::io;
 use std::path::Path;
 #[path = "export_staging.rs"]
 mod export_staging;
@@ -31,18 +31,8 @@ impl DiskBackend {
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or(Path::new("."));
         let mut staged = ExportStaging::create(parent, path)?;
-        let len = self.byte_len();
-        {
-            let out = &mut staged.file;
-            let mut offset = 0u64;
-            while offset < len {
-                let chunk_len = (len - offset).min(EXPORT_CHUNK_SIZE as u64) as usize;
-                let chunk = self.read_at(offset, chunk_len)?;
-                out.write_all(&chunk)?;
-                offset += chunk_len as u64;
-            }
-            out.sync_all()?;
-        }
+        let len = self.export_into(&mut staged.file)?;
+        staged.file.sync_all()?;
         std::fs::rename(&staged.path, path)?;
         File::open(parent)?.sync_all()?;
         Ok(len)

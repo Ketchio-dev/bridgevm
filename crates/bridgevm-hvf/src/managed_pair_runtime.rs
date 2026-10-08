@@ -10,12 +10,9 @@ mod policy;
 use policy::Policies;
 pub use policy::RuntimeMediaSlot;
 
-pub struct RuntimeLease {
-    _pair: Option<LockedPair>,
-    _logical: MediaLease,
-    policies: Policies,
-    retained: BTreeSet<PathBuf>,
-}
+#[path = "managed_pair_runtime_owner.rs"]
+mod owner;
+pub use owner::RuntimeLease;
 
 #[path = "managed_pair_runtime_acquire.rs"]
 mod acquisition;

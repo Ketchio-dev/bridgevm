@@ -8,6 +8,7 @@ mod export_case;
 mod export_collision;
 mod export_failure;
 mod export_staging;
+mod export_stream;
 mod helpers;
 mod identify_prp;
 mod identify_prp_support;

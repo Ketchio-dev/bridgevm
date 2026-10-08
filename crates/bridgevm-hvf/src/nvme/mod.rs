@@ -25,6 +25,7 @@ mod queue_geometry;
 mod queue_lifecycle;
 mod registers;
 mod snapshot;
+mod stream;
 mod trace;
 
 #[cfg(test)]

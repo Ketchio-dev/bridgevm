@@ -176,6 +176,8 @@ fn captured_policy_cannot_be_retargeted_by_mutating_the_config() {
 
 #[path = "managed_pair_runtime_atomic_tests.rs"]
 mod atomic;
+#[path = "managed_pair_runtime_case_tests.rs"]
+mod case;
 
 #[test]
 fn runtime_selects_restored_pair_and_persists_vars_there() {

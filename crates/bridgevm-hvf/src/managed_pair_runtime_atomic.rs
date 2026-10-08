@@ -1,10 +1,10 @@
 //! Fresh staged files are owned before publication; uncertain writes stay owned.
 
 use super::*;
-use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-use std::sync::atomic::{AtomicU64, Ordering};
+#[path = "managed_pair_runtime_staging.rs"]
+mod staging;
+use staging::StagedFile;
 
 impl RuntimeLease {
     pub(super) fn write_owned(
@@ -13,6 +13,15 @@ impl RuntimeLease {
         bytes: &[u8],
         publish: &mut impl FnMut(&Path, &Path) -> io::Result<()>,
     ) -> io::Result<()> {
+        self.write_owned_with(path, |out| out.write_all(bytes), publish)
+    }
+
+    pub(super) fn write_owned_with<T>(
+        &mut self,
+        path: &Path,
+        write: impl FnOnce(&mut dyn Write) -> io::Result<T>,
+        publish: &mut impl FnMut(&Path, &Path) -> io::Result<()>,
+    ) -> io::Result<T> {
         let parent = path
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
@@ -26,58 +35,12 @@ impl RuntimeLease {
         self.retained.insert(destination.clone());
         let mut staged = StagedFile::create(&destination)?;
         self.owner().extend([staged.path.as_path()])?;
-        staged.file.write_all(bytes)?;
+        let result = write(&mut staged.file)?;
         staged.file.sync_all()?;
         publish(&staged.path, &destination)?;
         let retained: Vec<_> = self.retained.iter().cloned().collect();
-        self.owner().replace(retained.iter().map(PathBuf::as_path))
-    }
-}
-
-struct StagedFile {
-    path: PathBuf,
-    file: File,
-}
-
-impl StagedFile {
-    fn create(destination: &Path) -> io::Result<Self> {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let parent = destination.parent().unwrap();
-        for _ in 0..128 {
-            let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
-            let path = parent.join(format!(
-                ".bridgevm-write-{}-{sequence}.tmp",
-                std::process::id()
-            ));
-            if path == destination {
-                continue;
-            }
-            match OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(&path)
-            {
-                Ok(file) => return Ok(Self { path, file }),
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(error),
-            }
-        }
-        Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            "no free media staging name",
-        ))
-    }
-}
-
-impl Drop for StagedFile {
-    fn drop(&mut self) {
-        // Publication may have renamed the file even when it returned Err.
-        // Clean only our own remaining inode, never a replacement at this name.
-        if let (Ok(path), Ok(file)) = (fs::symlink_metadata(&self.path), self.file.metadata()) {
-            if (path.dev(), path.ino()) == (file.dev(), file.ino()) {
-                let _ = fs::remove_file(&self.path);
-            }
-        }
+        self.owner()
+            .replace(retained.iter().map(PathBuf::as_path))?;
+        Ok(result)
     }
 }

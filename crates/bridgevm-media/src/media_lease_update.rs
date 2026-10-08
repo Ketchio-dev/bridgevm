@@ -24,9 +24,11 @@ impl MediaLease {
         self.replace_keys(keys)
     }
 
-    fn replace_keys(&mut self, keys: BTreeSet<String>) -> io::Result<()> {
+    pub(super) fn replace_keys(&mut self, mut keys: BTreeSet<String>) -> io::Result<()> {
+        keys.extend(self.pinned.iter().cloned());
         let mut added = Self {
             files: BTreeMap::new(),
+            pinned: BTreeSet::new(),
         };
         let missing: Vec<_> = keys
             .iter()
@@ -52,27 +54,9 @@ impl MediaLease {
     }
 }
 
-fn lock_key(root: &Path, key: &str, uid: u32) -> io::Result<File> {
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
-        .open(root.join(key))?;
-    let metadata = file.metadata()?;
-    if !metadata.is_file()
-        || metadata.uid() != uid
-        || metadata.nlink() != 1
-        || metadata.permissions().mode() & 0o077 != 0
-    {
-        return Err(io::Error::other("unsafe media lease file"));
-    }
-    os::lock(&file, libc::LOCK_EX | libc::LOCK_NB)?;
-    Ok(file)
-}
-
+#[path = "media_lease_lock.rs"]
+mod lock;
+use lock::lock_key;
 #[cfg(test)]
 #[path = "media_lease_update_tests.rs"]
 mod tests;
