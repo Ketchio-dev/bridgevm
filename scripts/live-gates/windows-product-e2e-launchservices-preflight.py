@@ -114,8 +114,7 @@ def launch_and_observe(helper_app: Path) -> None:
         while time.monotonic() < deadline and (not report.exists() or report.stat().st_size == 0):
             time.sleep(0.05)
         if not report.exists() or report.stat().st_size == 0:
-            detail = errors.read_text(encoding="utf-8", errors="replace")[:512] if errors.exists() else ""
-            raise PreflightError(f"LaunchServices diagnostic produced no report (open={completed.returncode}): {detail}")
+            raise PreflightError("LaunchServices diagnostic produced no report")
         value = read_report(report)
         validate_report(value, helper_app)
 def preflight(manifest: Path) -> None:
