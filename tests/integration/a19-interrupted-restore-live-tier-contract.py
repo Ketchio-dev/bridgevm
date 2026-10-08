@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "scripts/live-gates"))
 import a19_interrupt_restore_child as observer
 import a19_interrupted_restore_receipt as receipt
 import native_snapshot_restore_inputs as inputs
+from a19_interrupt_child_fixture import InterruptedChildCases
 from importlib.util import module_from_spec, spec_from_file_location
 
 spec = spec_from_file_location("interrupt_runner", ROOT / "scripts/live-gates/run-a19-interrupted-restore-tier.py")
@@ -46,7 +47,7 @@ def passing(job_id: str = "interrupt-fixture") -> dict:
     return receipt.validate(value, COMMIT)
 
 
-class InterruptedRestoreContract(unittest.TestCase):
+class InterruptedRestoreContract(InterruptedChildCases, unittest.TestCase):
     def make_child(self, root: Path, publish: bool = False) -> tuple[Path, Path, Path, Path, Path]:
         disk, vars, snapshot, output = (root / "disk.raw", root / "vars.fd", root / "snapshot", root / "output")
         write(disk, b"old-disk")
@@ -98,20 +99,6 @@ class InterruptedRestoreContract(unittest.TestCase):
         self.assertFalse(observer.read_fd_observed(sample, 124, path))
         self.assertFalse(observer.read_fd_observed(sample.replace("ar", "aw"), 123, path))
         self.assertFalse(observer.read_fd_observed(sample, 123, Path("/wrong/disk.raw")))
-
-    def test_lost_child_and_missing_stage_cannot_create_an_observation(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            helper, snapshot, disk, vars, output = self.make_child(Path(temporary))
-            helper.write_text("#!/usr/bin/env python3\nraise SystemExit(1)\n")
-            with self.assertRaises(RuntimeError):
-                observer.run(helper, snapshot, disk, vars, output, 1)
-            self.assertFalse((output / "interrupt-helper-fd.private.log").exists())
-        with tempfile.TemporaryDirectory() as temporary:
-            helper, snapshot, disk, vars, output = self.make_child(Path(temporary))
-            helper.write_text("#!/usr/bin/env python3\nimport time\ntime.sleep(10)\n")
-            with self.assertRaises(TimeoutError):
-                observer.run(helper, snapshot, disk, vars, output, 1)
-            self.assertFalse((output / "interrupt-helper-fd.private.log").exists())
 
     def test_receipt_rejects_mixed_pair_missing_proof_and_promotion(self):
         value = passing()
