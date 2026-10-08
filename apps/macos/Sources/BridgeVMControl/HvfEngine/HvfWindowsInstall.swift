@@ -86,8 +86,6 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
     var bundleDiskPath: String { "\(bundlePath)/disks/hvf-target.raw" }
     var bundleVarsPath: String { "\(bundlePath)/metadata/hvf-vars.fd" }
 
-    var freshTargetSizeBytes: UInt64 { UInt64(request.diskGiB) * 1024 * 1024 * 1024 }
-
     // MARK: commands
 
     /// Stage a: host-side WinPE scripted-installer source build from the ISO.
@@ -172,9 +170,7 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
         }) {
             return "앱 설치 리소스가 없습니다: \(missing)"
         }
-        guard request.diskGiB >= Self.minimumDiskGiB else {
-            return "디스크 크기는 최소 \(Self.minimumDiskGiB) GiB여야 합니다."
-        }
+        if let error = Self.diskSizeError(request.diskGiB) { return error }
         let expectedPayloadDirectory = "\(bundlePath)/metadata/windows-guest-payload"
         let expectedPayloadManifest = "\(bundlePath)/metadata/windows-guest-payload.tsv"
         guard request.guestPayloadDirectory == expectedPayloadDirectory,

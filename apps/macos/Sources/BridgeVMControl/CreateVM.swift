@@ -441,7 +441,7 @@ extension VMLibrary {
         let fm = FileManager.default
         guard windowsHVFInjectionError(requested: injectViogpu3d) == nil,
               let name = normalizedVMName(name),
-              diskGiB >= Int(HvfWindowsInstallPlan.minimumDiskGiB),
+              HvfWindowsInstallPlan.diskSizeError(diskGiB) == nil,
               isReadableRegularFile(isoPath),
               let reserved = reserveDestination(
                 name, storageBase: storageDir ?? libraryRoot, libraryRoot: libraryRoot
