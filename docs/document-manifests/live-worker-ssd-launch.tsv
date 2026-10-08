@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/gpu-live-receipt-20260723.md	historical-evidence	windows-graphics	STATUS.md
+docs/history/windows-hvf/live-worker-ssd-launch-20261007.md	historical-evidence	windows-native-vmm	-

@@ -9,6 +9,11 @@
        Hypervisor.framework entitlement and GPU session. -->
   <key>ProgramArguments</key>
   <array>
+    <string>/bin/bash</string>
+    <string>-p</string>
+    <string>-c</string>
+    <string>exec "$@"</string>
+    <string>bridgevm-live-launch</string>
     <string>/usr/bin/env</string>
     <string>-i</string>
     <string>HOME=__HOME__</string>

@@ -283,7 +283,7 @@ chmod 644 "$WORK/unreadable.raw"
 check "a present but unreadable input is refused too" \
     'printf "%s" "$unreadable_output" | grep -q "unreadable.raw"'
 
-check "the installer supports a dry run" 'python3 "$REPO/tests/integration/live-installer-dry-run-contract.py"'
+check "the installer supports a dry run" 'python3 "$REPO/tests/integration/live-installer-dry-run-contract.py" && python3 "$REPO/tests/integration/live-installer-launch-contract.py"'
 check "the installer guards LaunchAgent privacy-protected source paths" 'grep -q "LaunchAgent privacy policy" "$INSTALL"'
 no_match "the installer stores no credentials" \
     'password|token=|api[_-]key' "$INSTALL"

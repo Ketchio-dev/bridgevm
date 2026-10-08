@@ -4095,3 +4095,6 @@ tests/integration/product-e2e-process-absence-test.py	41	0
 tests/integration/t17-packet-allocation-test.py	49	0
 scripts/live-gates/t22_retained_request.py	27	0
 tests/integration/t22-retained-request-contract.py	67	0
+tests/integration/live-installer-launch-contract.py	112	0
+docs/history/windows-hvf/live-worker-ssd-launch-20261007.md	45	0
+docs/document-manifests/live-worker-ssd-launch.tsv	3	0
