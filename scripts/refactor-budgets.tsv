@@ -3302,7 +3302,7 @@ scripts/live-gates/run-a19-interrupted-restore-tier.py	108	0
 scripts/verify-native-snapshot-interrupted-restore.sh	164	0
 scripts/a19-t22-marker-share.sh	120	0
 scripts/win-assets/bv-a19-t22-marker.ps1	59	0
-tests/integration/a19-interrupted-restore-live-tier-contract.py	224	0
+tests/integration/a19-interrupted-restore-live-tier-contract.py	211	0
 tests/integration/a19-interrupted-restore-public-contract.py	77	0
 tests/integration/a19-interrupted-restore-guest-share-contract.py	106	0
 scripts/live-gates/a19_interrupt_stop_points.py	97	0
@@ -4224,3 +4224,6 @@ crates/bridgevm-media/src/media_lease_pin_tests.rs	74	0
 crates/bridgevm-media/src/media_lease_rebind_tests.rs	22	0
 docs/document-manifests/raw-nvme-runtime-output-ownership.tsv	3	0
 docs/history/windows-hvf/raw-nvme-runtime-output-ownership-20261008.md	48	0
+tests/integration/a19_interrupt_child_fixture.py	77	0
+docs/document-manifests/a19-exited-child-fixture.tsv	3	0
+docs/history/windows-hvf/a19-exited-child-fixture-20261008.md	32	0
