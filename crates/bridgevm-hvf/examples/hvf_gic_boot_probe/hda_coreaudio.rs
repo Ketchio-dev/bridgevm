@@ -1,8 +1,8 @@
-//! Non-blocking CoreAudio output sink for the live HVF probe.
+//! CoreAudio output sink for the live HVF probe.
 //!
 //! The HDA controller calls `write_pcm` on the vCPU thread while the platform
-//! lock is held. That method only attempts a short ring-buffer lock and copies
-//! bytes; AudioQueue's private callback thread drains the ring into its own
+//! lock is held. The producer assembles complete frames under a short ring lock;
+//! AudioQueue's private callback thread drains the ring into its own
 //! buffers and substitutes silence on underrun or lock contention.
 //!
 //! Teardown prints the `hda CoreAudio stats:` record, whose exact ordered
@@ -12,10 +12,15 @@
 
 use std::ffi::c_void;
 use std::ptr;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use bridgevm_hvf::hda::HdaPcmSink;
+#[path = "hda_coreaudio_fill.rs"]
+mod hda_coreaudio_fill;
+#[path = "hda_coreaudio_frames.rs"]
+mod hda_coreaudio_frames;
+#[path = "hda_coreaudio_producer.rs"]
+mod hda_coreaudio_producer;
+use hda_coreaudio_producer::PcmProducer;
 #[path = "hda_coreaudio_callback.rs"]
 mod hda_coreaudio_callback;
 #[path = "hda_coreaudio_continuity.rs"]
@@ -78,6 +83,7 @@ struct CallbackContext {
 
 /// Fixed-format AudioQueue sink for the Windows HDA endpoint's s16le stream.
 pub struct CoreAudioPcmSink {
+    producer: PcmProducer,
     queue: *mut c_void,
     callback_context: *mut CallbackContext,
     shared: Arc<Shared>,
@@ -144,6 +150,7 @@ impl CoreAudioPcmSink {
         }
 
         Ok(Self {
+            producer: PcmProducer::default(),
             queue,
             callback_context,
             shared,
@@ -151,49 +158,10 @@ impl CoreAudioPcmSink {
     }
 }
 
-impl HdaPcmSink for CoreAudioPcmSink {
-    fn write_pcm(&mut self, samples: &[u8], rate: u32, channels: u8, bits: u8) {
-        if samples.is_empty() {
-            return;
-        }
-        if rate != SAMPLE_RATE || channels != CHANNELS || bits != BITS_PER_CHANNEL {
-            self.shared.record_format_drop(samples.len());
-            return;
-        }
-
-        // The old producer-side try_lock discarded the entire DMA fragment
-        // whenever CoreAudio's callback happened to hold this same short-lived
-        // lock. A live run showed 54 such tiny drops totaling only 3,668 bytes.
-        // Blocking here preserves PCM; the callback remains try_lock-based so
-        // the real-time CoreAudio thread can always substitute silence instead
-        // of waiting on the vCPU.
-        let mut ring = match self.shared.ring.lock() {
-            Ok(ring) => ring,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        if samples.len() > RING_CAPACITY_BYTES.saturating_sub(ring.len()) {
-            drop(ring);
-            self.shared.record_ring_full_drop(samples.len());
-            return;
-        }
-        ring.extend(samples.iter().copied());
-        self.shared.continuity.note_pcm_written();
-        // Every earlier return records a drop. Increment only after the bytes
-        // have actually reached the ring, and report audio frames rather than
-        // bytes (s16 stereo = four bytes per frame).
-        self.shared.frames_rendered.fetch_add(
-            samples.len() as u64 / u64::from(BYTES_PER_FRAME),
-            Ordering::Relaxed,
-        );
-    }
-
-    fn stream_stopped(&mut self) {
-        self.shared.continuity.note_stream_stopped();
-    }
-}
-
 impl Drop for CoreAudioPcmSink {
     fn drop(&mut self) {
+        // Account for a terminal fragment; immediate stop does not prove playback.
+        self.producer.finish(&self.shared, RING_CAPACITY_BYTES);
         self.shared.callback_failures.begin_stopping();
         self.shared.continuity.begin_stopping();
         let (stop_status, dispose_status) = unsafe {

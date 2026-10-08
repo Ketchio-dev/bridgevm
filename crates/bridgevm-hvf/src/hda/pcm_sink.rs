@@ -1,15 +1,15 @@
 //! Host PCM destinations for the HDA playback stream.
 
-/// Host-provided destination for decoded interleaved PCM stream bytes.
-///
-/// Implementations run on the vCPU thread while the platform lock is held, so
-/// live sinks must return promptly and move potentially blocking work elsewhere.
+/// Host destination for interleaved PCM, called on the vCPU thread under the
+/// platform lock: return promptly and move potentially blocking work elsewhere.
 pub trait HdaPcmSink: Send {
     fn write_pcm(&mut self, samples: &[u8], rate: u32, channels: u8, bits: u8);
 
-    /// The guest stopped its running playback stream: it cleared RUN, or reset
-    /// the stream or the controller. A sink that measures playback continuity
-    /// uses it to tell an intended stop from an underrun; the default ignores it.
-    /// A stream the device itself halts on a DMA error is not reported.
+    /// Guest stopped a running stream (RUN clear or reset), not a DMA error halt.
     fn stream_stopped(&mut self) {}
+
+    /// Unlike `stream_stopped`, ends a PCM generation on every controller/stream
+    /// reset (even with RUN clear) or effective stopped-stream format change.
+    /// Resolve partial frames. RUN pause/resume and DMA faults do not trigger it.
+    fn stream_reset(&mut self) {}
 }

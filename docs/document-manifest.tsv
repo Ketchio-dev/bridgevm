@@ -8,7 +8,7 @@ docs/README.md	current	documentation-index	-
 @include	docs/document-manifests/native-vmm-lifecycle.tsv	-	-
 @include	docs/document-manifests/native-vmm-secondary-t12.tsv	-	-
 @include	docs/document-manifests/native-fixture.tsv	-	-
-docs/contributing/README.md	current	contributing	-
+@include	docs/document-manifests/audio-pcm-frame-boundary.tsv	-	-
 docs/fast-mode/README.md	current	apple-vz-engine	-
 @include	docs/document-manifests/framebuffer-retry-integration.tsv	-	-
 @include	docs/document-manifests/t17-launch-diagnostic-privacy.tsv	-	-

@@ -36,11 +36,9 @@
 //! producer only marks the stream fed or stopped. Every update is a relaxed
 //! atomic, so the real-time thread never allocates, locks or waits for them.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
-use std::sync::TryLockError;
-
-use super::hda_coreaudio_stats::Shared;
+pub(super) use super::hda_coreaudio_fill::fill_and_record;
 use super::{AUDIO_QUEUE_BUFFER_BYTES, BYTES_PER_FRAME};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 
 const PREFIX: &str = "hda CoreAudio continuity:";
 const FRAME_BYTES: usize = BYTES_PER_FRAME as usize;
@@ -57,30 +55,6 @@ pub(super) enum CallbackFill {
         capacity_bytes: usize,
         stream_idle: bool,
     },
-}
-
-/// Fill one silent callback buffer from the ring without waiting, and record
-/// what it received. Runs on CoreAudio's real-time callback thread.
-pub(super) fn fill_and_record(destination: &mut [u8], shared: &Shared) {
-    let capacity_bytes = destination.len();
-    let mut ring = match shared.ring.try_lock() {
-        Ok(ring) => ring,
-        Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
-        Err(TryLockError::WouldBlock) => {
-            return shared
-                .continuity
-                .record(CallbackFill::Contended { capacity_bytes });
-        }
-    };
-    let stream_idle = shared.continuity.stream_idle();
-    let pcm_bytes = shared.prefill.drain(&mut ring, destination, stream_idle);
-    drop(ring);
-    let fill = CallbackFill::Drained {
-        pcm_bytes,
-        capacity_bytes,
-        stream_idle,
-    };
-    shared.continuity.record(fill);
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -154,8 +128,13 @@ impl ContinuityCounters {
 
     /// The guest stopped its playback stream (HdaPcmSink::stream_stopped).
     pub(super) fn note_stream_stopped(&self) {
-        self.streaming.store(false, Relaxed);
+        self.note_stream_reset();
         self.stream_stops.fetch_add(1, Relaxed);
+    }
+
+    /// A generation ended, including reset after a DMA halt; not a RUN-stop count.
+    pub(super) fn note_stream_reset(&self) {
+        self.streaming.store(false, Relaxed);
     }
 
     pub(super) fn stream_idle(&self) -> bool {

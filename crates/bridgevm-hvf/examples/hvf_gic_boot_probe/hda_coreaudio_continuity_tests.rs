@@ -1,5 +1,6 @@
 //! Continuity counter semantics and the printed record.
 
+use super::super::hda_coreaudio_stats::Shared;
 use super::*;
 
 const FULL: usize = AUDIO_QUEUE_BUFFER_BYTES as usize;

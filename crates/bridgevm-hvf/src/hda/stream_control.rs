@@ -1,17 +1,8 @@
-//! Stream and controller reset semantics, and the host sink's stop notice.
+//! Playback stream control and pause/resume semantics.
 
 use super::*;
 
 impl HdaController {
-    pub(crate) fn controller_reset(&mut self) {
-        self.notify_stream_stopped(self.stream.ctl & SDCTL_RUN != 0);
-        let pcm_sink = self.pcm_sink.take();
-        let pcm_sink_overridden = self.pcm_sink_overridden;
-        *self = Self::with_pcm_output_path::<&Path>(None);
-        self.pcm_sink = pcm_sink;
-        self.pcm_sink_overridden = pcm_sink_overridden;
-    }
-
     pub(crate) fn write_stream_ctl(&mut self, next: u32) {
         let was_running = self.stream.ctl & SDCTL_RUN != 0;
         if next & SDCTL_SRST != 0 {
@@ -30,6 +21,7 @@ impl HdaController {
             self.last_poll = None;
             self.byte_time_remainder = 0;
             self.notify_stream_stopped(was_running);
+            self.notify_stream_reset();
             return;
         }
         self.stream.ctl = next & !SDCTL_SRST;
@@ -52,13 +44,6 @@ impl HdaController {
         } else if !running {
             self.last_poll = None;
             self.notify_stream_stopped(was_running);
-        }
-    }
-
-    /// A guest stop of a running stream reaches the host sink (HdaPcmSink::stream_stopped).
-    fn notify_stream_stopped(&mut self, was_running: bool) {
-        if let (true, Some(sink)) = (was_running, self.pcm_sink.as_mut()) {
-            sink.stream_stopped();
         }
     }
 }
