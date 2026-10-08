@@ -177,7 +177,7 @@ crates/bridgevm-daemon/src/tests_split/part_3.rs	470	0
 crates/bridgevm-daemon/src/tests_split/performance_guest_benchmark.rs	148	0
 crates/bridgevm-daemon/src/tests_split/part_4.rs	425	0
 crates/bridgevm-daemon/src/tests_split/part_4_agent_update.rs	90	0
-crates/bridgevm-daemon/src/tests_split/part_4_2.rs	623	0
+crates/bridgevm-daemon/src/tests_split/part_4_2.rs	437	0
 crates/bridgevm-daemon/src/tests_split/part_4_3.rs	55	2
 crates/bridgevm-daemon/src/unix_time.rs	16	0
 crates/bridgevm-fullvm/src/lib.rs	26	0
@@ -4232,3 +4232,8 @@ apps/macos/Tests/BridgeVMControlTests/InstallLineAccumulatorBoundTests.swift	29	
 apps/macos/Tests/BridgeVMControlTests/InstallLineAccumulatorCompatibilityTests.swift	84	0
 docs/history/windows-hvf/install-pipe-line-bound-20261008.md	35	0
 docs/document-manifests/install-pipe-line-bound.tsv	3	0
+crates/bridgevm-daemon/src/tests_split/guest_command_fixture.rs	117	0
+crates/bridgevm-daemon/src/tests_split/guest_command_result_tests.rs	161	0
+crates/bridgevm-daemon/src/tests_split/guest_command_cleanup_tests.rs	23	0
+docs/history/windows-hvf/guest-command-fixture-order-20261008.md	35	0
+docs/document-manifests/guest-command-fixture-order.tsv	3	0
