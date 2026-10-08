@@ -21,8 +21,8 @@ Retention remains outside work cleanup and state-directory movement. The
 existing explicit direct-tier destination, no-overwrite publication, immutable
 source locking and all five T19 device/clone checks remain unchanged. CLI and
 installer share private queue-directory creation independent of caller umask;
-leaf symlinks/non-directories/unowned directories refuse before chmod. Raw
-trailing slash/dot/dot-dot root spellings refuse rather than bypass leaf checks.
+state-leaf symlinks/non-directories/unowned directories refuse before chmod.
+Existing root aliases require an already-private owned target; terminal syntax refuses.
 
 Synthetic source-builder fixtures distinguish caller TMPDIR from an initially
 absent output parent, check two unique mount roots and preserve attach/detach
@@ -43,6 +43,6 @@ in installer-r1, corrected setup passes3. Restoring the old mountroot location
 failed the layout assertion (mutation_exit1); production repair was restored.
 The first raw trailing-slash symlink regression failed before repair, proving
 the new helper could adopt/chmod its target; queue-storage-r3 passes all4.
-Full-project/current-SHA
-hosted validation remains pending. No queue relocation, worker reconfiguration,
+Full7c83378f FAILED existing V2 queue-alias claim coverage; root-alias admission
+was repaired, not the test. Successor full/hosted pending. No queue relocation,
 TCC change, private-media staging or live job was performed. A9/A11/A19 OPEN.

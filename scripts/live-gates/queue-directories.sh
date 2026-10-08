@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Create private queue directories regardless of caller umask; refuse leaf aliases.
 set -euo pipefail
-root="${1:?queue root required}"
-case "$root" in */|.|..|*/.|*/..) echo "queue root needs an unambiguous directory leaf" >&2; exit 1;; esac
+root="$(python3 -I -B "$(dirname "$0")/queue-root-path.py" "${1:?queue root required}")"
 for dir in "$root" "$root/queued" "$root/running" "$root/done" "$root/job-ledger"; do
     if [[ ! -e "$dir" && ! -L "$dir" ]]; then
         (umask 077; mkdir -p "$dir")
