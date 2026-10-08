@@ -25,7 +25,7 @@ class DisplayClick(unittest.TestCase):
 
     def test_surface_reports_the_frame_that_gates_pointer_input(self) -> None:
         view = text(ENGINE / "HvfFramebufferView.swift")
-        self.assertIn("HvfDisplaySurfaceAccessibility.configure(self)", view.split("init(session: HvfEngineSession) {", 1)[1].split("\n    }\n", 1)[0])
+        self.assertIn("HvfDisplaySurfaceAccessibility.configure(self)", re.split(r"init\(session: HvfEngineSession(?:, [^{}\n]+)?\) \{", view, maxsplit=1)[1].split("\n    }\n", 1)[0])
         self.assertIn("didSet { if guestSize != oldValue { HvfDisplaySurfaceAccessibility.update(self, guestSize: guestSize) } }", view)
         down = view.split("override func mouseDown(with event: NSEvent) {", 1)[1].split("\n    }\n", 1)[0]
         self.assertIn("guard let session, hasGuestSize else {", down)
