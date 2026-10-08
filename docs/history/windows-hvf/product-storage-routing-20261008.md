@@ -44,5 +44,5 @@ failed the layout assertion (mutation_exit1); production repair was restored.
 The first raw trailing-slash symlink regression failed before repair, proving
 the new helper could adopt/chmod its target; queue-storage-r3 passes all4.
 Full7c83378f FAILED existing V2 queue-alias claim coverage; root-alias admission
-was repaired, not the test. Successor full/hosted pending. No queue relocation,
-TCC change, private-media staging or live job was performed. A9/A11/A19 OPEN.
+was repaired, not the test. Full74e58ace passed. A later raw/resolved newline
+transport regression failed then passed after rejection; new full/hosted pending. A9/A11/A19 OPEN.

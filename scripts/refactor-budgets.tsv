@@ -4128,3 +4128,4 @@ tests/integration/t17-queued-retention-contract.py	32	0
 scripts/live-gates/queue-directories.sh	13	0
 tests/integration/live-queue-storage-contract.py	70	0
 scripts/live-gates/queue-root-path.py	22	0
+tests/integration/queue-root-transport-contract.py	29	0
