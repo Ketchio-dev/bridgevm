@@ -37,11 +37,8 @@ enum HvfWindowsInstallRecovery {
                   journal.transactionID == ticket.transactionID else {
                 throw HvfWindowsInstallFinalizationError.invalidState("복구를 기다리는 동안 설치 기록이 변경되었습니다.")
             }
-            try HvfWindowsInstallFinalization.resume(journal, paths: paths, faultInjector: { _ in },
-                                                     secureBootSeeder: secureBootSeeder)
-            let config = try HvfWindowsInstallFinalization.loadConfig(paths.config)
-            try HvfWindowsInstallFinalization.validateConfig(config, pending: false, paths: paths)
-            return config
+            return try HvfWindowsInstallFinalization.resume(journal, paths: paths, faultInjector: { _ in },
+                                                            secureBootSeeder: secureBootSeeder)
         }
     }
 
@@ -74,7 +71,7 @@ enum HvfWindowsInstallRecovery {
         let config = try HvfWindowsInstallFinalization.loadConfig(paths.config)
         // A crash may publish config before advancing the journal; either explicit state can resume.
         try HvfWindowsInstallFinalization.validateConfig(config, pending: config.installPending ?? true, paths: paths)
-        let requestPath = journal.phase < .requestStaged ? paths.pendingRequest : paths.stagedRequest
+        let requestPath = HvfWindowsInstallFinalization.recoveryRequest(journal, paths: paths)
         let preserved = try HvfWindowsInstallRequestSnapshot.load(requestPath, expectedSHA256: journal.requestSHA256)
         guard preserved.request == plan.request else {
             throw HvfWindowsInstallFinalizationError.invalidState("복구할 설치 요청이 승인된 설치 계획과 다릅니다.")

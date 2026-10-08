@@ -65,11 +65,13 @@ enum HvfWindowsInstallDurability {
         try publish(temporary, to: destination)
     }
 
-    static func durableRemove(_ url: URL) throws {
+    static func durableRemove(
+        _ url: URL, syncParent: (URL) throws -> Void = syncDirectory
+    ) throws {
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         try refuseSymlink(url)
         try FileManager.default.removeItem(at: url)
-        try syncDirectory(url.deletingLastPathComponent())
+        try syncParent(url.deletingLastPathComponent())
     }
 
     static func readRegularFile(_ url: URL, maximumBytes: Int? = nil) throws -> Data {

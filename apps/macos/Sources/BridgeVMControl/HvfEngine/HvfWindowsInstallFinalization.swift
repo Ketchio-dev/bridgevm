@@ -28,14 +28,14 @@ enum HvfWindowsInstallFinalization {
                 journal = try begin(plan: plan, paths: paths)
                 try faultInjector(.prepared)
             }
-            try resume(journal, paths: paths, faultInjector: faultInjector, secureBootSeeder: secureBootSeeder)
+            _ = try resume(journal, paths: paths, faultInjector: faultInjector, secureBootSeeder: secureBootSeeder)
         }
     }
 
     static func reconcile(
-        config: VMConfig,
-        libraryRoot: URL,
-        secureBootSeeder: SecureBootSeeder = defaultSecureBootSeeder
+        config: VMConfig, libraryRoot: URL,
+        secureBootSeeder: SecureBootSeeder = defaultSecureBootSeeder,
+        removeTransaction: (URL) throws -> Void = { try HvfWindowsInstallDurability.durableRemove($0) }
     ) -> ReconcileResult {
         var config = config
         let paths = paths(slug: config.slug, libraryRoot: libraryRoot,
@@ -49,12 +49,13 @@ enum HvfWindowsInstallFinalization {
             try HvfWindowsInstallDurability.refuseSymlink(paths.transaction)
             let lock = try HvfWindowsInstallDurability.TransactionLock(
                 url: paths.lock, nonBlocking: true)
-            try withExtendedLifetime(lock) {
-                let journal = try loadJournal(paths.journal)
-                try resume(journal, paths: paths, faultInjector: { _ in }, secureBootSeeder: secureBootSeeder)
+            config = try withExtendedLifetime(lock) {
+                try resume(loadJournal(paths.journal), paths: paths, faultInjector: { _ in },
+                           secureBootSeeder: secureBootSeeder, removeTransaction: removeTransaction)
             }
-            config = try loadConfig(paths.config)
             return ReconcileResult(config: config, issue: nil)
+        } catch let cleanup as HvfWindowsInstallCommittedCleanupFailure {
+            return ReconcileResult(config: cleanup.config, issue: cleanup.localizedDescription)
         } catch HvfWindowsInstallFinalizationError.transactionBusy {
             config.installPending = true
             return ReconcileResult(config: config, issue: nil)
@@ -67,40 +68,4 @@ enum HvfWindowsInstallFinalization {
         }
     }
 
-    private static func begin(
-        plan: HvfWindowsInstallPlan,
-        paths: HvfWindowsInstallFinalizationPaths
-    ) throws -> HvfWindowsInstallFinalizationJournal {
-        try validatePathIdentity(paths: paths, slug: plan.slug, bundlePath: plan.bundlePath)
-        let config = try loadConfig(paths.config)
-        guard config.slug == plan.slug,
-              HvfWindowsInstallDurability.canonical(URL(fileURLWithPath: config.bundlePath))
-                == HvfWindowsInstallDurability.canonical(paths.bundle),
-              config.installPending == true else {
-            throw HvfWindowsInstallFinalizationError.invalidState(
-                "설치 대기 중인 동일 VM 설정을 찾을 수 없습니다.")
-        }
-        let requestSnapshot = try HvfWindowsInstallRequestSnapshot.load(paths.pendingRequest)
-        guard requestSnapshot.request == plan.request else {
-            throw HvfWindowsInstallFinalizationError.invalidState("저장된 설치 요청이 실행 계획과 다릅니다.")
-        }
-        let sourceDisk = paths.stagingDisk
-        let sourceVars = paths.stagingVars
-        let diskIdentity = try HvfWindowsInstallFinalizationIdentity.seal(sourceDisk)
-        let varsIdentity = try HvfWindowsInstallFinalizationIdentity.seal(sourceVars)
-        let journal = HvfWindowsInstallFinalizationJournal(
-            schemaVersion: currentJournalSchemaVersion,
-            transactionID: UUID().uuidString, phase: .prepared,
-            slug: plan.slug,
-            libraryRoot: HvfWindowsInstallDurability.canonical(plan.libraryRoot),
-            bundlePath: HvfWindowsInstallDurability.canonical(paths.bundle),
-            sourceDiskPath: sourceDisk.path, sourceVarsPath: sourceVars.path,
-            diskBytes: diskIdentity.bytes, varsBytes: varsIdentity.bytes,
-            requestSHA256: requestSnapshot.sha256,
-            diskSHA256: diskIdentity.sha256, varsSHA256: varsIdentity.sha256,
-            provisionedVarsSHA256: nil)
-        try HvfWindowsInstallDurability.ensureDirectory(paths.transaction)
-        try writeJournal(journal, to: paths.journal)
-        return journal
-    }
 }

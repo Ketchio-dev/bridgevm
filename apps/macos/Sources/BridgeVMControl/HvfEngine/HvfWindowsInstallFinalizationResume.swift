@@ -4,11 +4,14 @@ extension HvfWindowsInstallFinalization {
     static func resume(
         _ stored: HvfWindowsInstallFinalizationJournal,
         paths: HvfWindowsInstallFinalizationPaths,
-        faultInjector: FaultInjector,
-        secureBootSeeder: SecureBootSeeder
-    ) throws {
+        faultInjector: FaultInjector, secureBootSeeder: SecureBootSeeder,
+        removeTransaction: (URL) throws -> Void = { try HvfWindowsInstallDurability.durableRemove($0) }
+    ) throws -> VMConfig {
         var journal = stored
         try validate(journal: journal, paths: paths)
+        if journal.phase == .committed {
+            return try finishCommitted(journal, paths: paths, removeTransaction: removeTransaction)
+        }
         guard let diskSHA256 = journal.diskSHA256,
               let varsSHA256 = journal.varsSHA256 else {
             throw HvfWindowsInstallFinalizationError.unsupportedJournal
@@ -91,28 +94,7 @@ extension HvfWindowsInstallFinalization {
                         phase: .requestPublished, boundary: .requestPublished,
                         journal: &journal, paths: paths, faultInjector: faultInjector,
                         validator: { try validateRequest($0, expectedSHA256: requestSHA256) })
-        if journal.phase < .configPublished {
-            try HvfWindowsInstallDurability.durableCloneOrCopy(from: paths.stagedConfig, to: paths.config)
-            let committed = try loadConfig(paths.config)
-            guard committed.installPending == false else {
-                throw HvfWindowsInstallFinalizationError.invalidState("설치 완료 설정을 공개하지 못했습니다.")
-            }
-            try advance(&journal, to: .configPublished, boundary: .configPublished,
-                        paths: paths, faultInjector: faultInjector)
-        } else if try loadConfig(paths.config).installPending != false {
-            try HvfWindowsInstallDurability.durableCloneOrCopy(from: paths.stagedConfig, to: paths.config)
-        }
-        if journal.phase < .pendingRemoved {
-            try HvfWindowsInstallDurability.durableRemove(paths.pendingRequest)
-            try advance(&journal, to: .pendingRemoved, boundary: .pendingRemoved,
-                        paths: paths, faultInjector: faultInjector)
-        } else if FileManager.default.fileExists(atPath: paths.pendingRequest.path) {
-            try HvfWindowsInstallDurability.durableRemove(paths.pendingRequest)
-        }
-        if journal.phase < .committed {
-            try advance(&journal, to: .committed, boundary: .committed, paths: paths, faultInjector: faultInjector)
-        }
-        try? HvfWindowsInstallStaging.discard(paths) // evidence survives only as logs/install-run.log
-        try HvfWindowsInstallDurability.durableRemove(paths.transaction)
+        try commitConfiguration(&journal, paths: paths, faultInjector: faultInjector)
+        return try finishCommitted(journal, paths: paths, removeTransaction: removeTransaction)
     }
 }
