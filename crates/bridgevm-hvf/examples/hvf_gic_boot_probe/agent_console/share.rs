@@ -86,6 +86,7 @@ pub(super) fn parse_share_spec(spec: &str) -> Option<(String, String)> {
 }
 
 pub(super) fn scan_share_host_dir(share: &mut ShareState) {
+    share_host_write::forget_absent_share_failures(share);
     share.host_scan_scratch.clear();
     let root = &share.host_dir;
     let max_bytes = share.engine.max_bytes();
@@ -180,38 +181,9 @@ pub(super) fn file_mtime_ms_from_meta(meta: &std::fs::Metadata) -> Option<u128> 
         .map(|d| d.as_millis())
 }
 
-pub(super) fn print_host_skip_once(
-    share: &mut ShareState,
-    name: &str,
-    mtime_ms: u128,
-    kind: HostSkipKind,
-    size: u64,
-) {
-    print_host_skip_once_seen(&mut share.host_skip_seen, name, mtime_ms, kind, size);
-}
-
-pub(super) fn print_host_skip_once_seen(
-    host_skip_seen: &mut HashSet<(String, u128, HostSkipKind)>,
-    name: &str,
-    mtime_ms: u128,
-    kind: HostSkipKind,
-    size: u64,
-) {
-    if !host_skip_seen.insert((name.to_string(), mtime_ms, kind)) {
-        return;
-    }
-    match kind {
-        HostSkipKind::TooLarge => println!("BVAGENT SHARE skip {name} too-large {size}"),
-    }
-}
-
-pub(super) fn print_guest_skip(name: &str, reason: SkipReason) {
-    match reason {
-        SkipReason::TooLarge { size } => {
-            println!("BVAGENT SHARE skip {name} too-large {size}")
-        }
-    }
-}
+#[path = "share/share_skip.rs"]
+mod share_skip;
+pub(super) use share_skip::*;
 
 pub(super) fn write_share_guest_path_into(dir: &str, name: &str, out: &mut String) {
     out.clear();
@@ -221,6 +193,13 @@ pub(super) fn write_share_guest_path_into(dir: &str, name: &str, out: &mut Strin
     share_sync::append_guest_rel_into(name, out);
 }
 
+#[path = "share/host_destination.rs"]
+mod host_destination;
+#[path = "share/share_host_write.rs"]
+mod share_host_write;
 #[path = "share/share_put.rs"]
 mod share_put;
 pub(super) use share_put::*;
+#[cfg(test)]
+#[path = "share/share_failure_tests.rs"]
+mod failure_tests;

@@ -829,9 +829,9 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/config.rs	28	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/control_file.rs	17	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/harness_protocol.rs	521	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs	133	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	652	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	583	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/service_wake.rs	45	1
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share.rs	220	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share.rs	191	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_put.rs	323	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/state.rs	354	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/window_protocol.rs	79	0
@@ -908,7 +908,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/plan_tests.rs	73
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/psci_adapter.rs	255	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs	545	26
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/serial_input.rs	158	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync.rs	717	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync.rs	418	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace.rs	124	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace/event_ring.rs	231	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace/event_ring_tests.rs	130	0
@@ -4098,3 +4098,14 @@ tests/integration/t22-retained-request-contract.py	67	0
 tests/integration/live-installer-launch-contract.py	112	0
 docs/history/windows-hvf/live-worker-ssd-launch-20261007.md	45	0
 docs/document-manifests/live-worker-ssd-launch.tsv	3	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_tests.rs	334	0
+docs/history/windows-hvf/native-vmm-share-sync-hardening-20261007.md	67	0
+docs/document-manifests/native-vmm-share-sync-hardening.tsv	3	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_write.rs	58	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/host_destination.rs	155	9
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/host_destination_tests.rs	120	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_failure_tests.rs	31	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_skip.rs	33	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing.rs	37	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_failure_budget_tests.rs	27	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_failure_tests.rs	63	0
