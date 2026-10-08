@@ -1,7 +1,6 @@
 //! Own one snapshot parent before admitting its output and clearing staging.
 
-use super::admission::admit_destination;
-use super::staging_debris::clear_staging;
+use super::member_lease;
 use super::{staging_path, Path};
 use crate::media_lease::MediaLease;
 use std::fs;
@@ -20,11 +19,8 @@ pub(super) fn claim_staging(destination: &Path) -> io::Result<(MediaLease, PathB
         Ok(_) => return Err(io::Error::other("snapshot lease key path is occupied")),
         Err(error) => return Err(error),
     }
-    let lease = MediaLease::acquire([key.as_path()])?;
-    // Both admissions run under the lease and before any staging mutation.
-    admit_destination(destination)?;
+    let mut lease = MediaLease::acquire([key.as_path()])?;
     let staged = staging_path(destination);
-    clear_staging(&staged)?;
-    fs::create_dir(&staged)?;
+    member_lease::prepare_owned(&mut lease, destination, &staged)?;
     Ok((lease, staged))
 }
