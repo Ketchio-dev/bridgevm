@@ -67,7 +67,7 @@ final class AppleVzDisplayRuntimeControlServerTests: XCTestCase {
   func testStopPreservesReplacementAtSocketPath() throws {
     let socketPath = makeShortSocketPath()
     let server = makeServer(socketPath: socketPath)
-    try server.start()
+    try server.start(); defer { server.stop() }
     XCTAssertEqual(unlink(socketPath), 0)
     try Data("replacement".utf8).write(to: URL(fileURLWithPath: socketPath))
 
