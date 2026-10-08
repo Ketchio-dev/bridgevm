@@ -2396,7 +2396,7 @@ crates/bridgevm-media/src/media_lease_update_tests.rs	122	0
 crates/bridgevm-hvf/src/snapshot_create.rs	36	0
 crates/bridgevm-hvf/src/snapshot_create_concurrency_tests.rs	139	0
 crates/bridgevm-hvf/src/snapshot_create_destination.rs	27	0
-crates/bridgevm-hvf/src/snapshot_create_destination_lease.rs	22	0
+crates/bridgevm-hvf/src/snapshot_create_destination_lease.rs	19	0
 crates/bridgevm-hvf/src/snapshot_create_stage.rs	8	0
 crates/bridgevm-hvf/src/snapshot_create_interruption_tests.rs	87	0
 crates/bridgevm-hvf/src/snapshot_create_overlap_tests.rs	95	0
@@ -4167,3 +4167,8 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallDiskSizeTests.swift	45	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallDiskSizeStagingTests.swift	27	0
 docs/document-manifests/install-disk-size-admission.tsv	3	0
 docs/history/windows-hvf/install-disk-size-admission-20261008.md	32	0
+crates/bridgevm-hvf/src/snapshot_create_member_lease.rs	40	0
+crates/bridgevm-hvf/src/snapshot_create_member_lease_tests.rs	64	0
+crates/bridgevm-hvf/src/snapshot_create_member_ownership_tests.rs	75	0
+docs/document-manifests/snapshot-replacement-member-lease.tsv	3	0
+docs/history/windows-hvf/snapshot-replacement-member-lease-20261008.md	38	0

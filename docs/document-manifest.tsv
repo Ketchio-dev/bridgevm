@@ -12,7 +12,7 @@ docs/README.md	current	documentation-index	-
 @include	docs/document-manifests/install-disk-size-admission.tsv	-	-
 @include	docs/document-manifests/framebuffer-retry-integration.tsv	-	-
 @include	docs/document-manifests/t17-launch-diagnostic-privacy.tsv	-	-
-docs/licensing-and-attribution.md	current	licensing	-
+@include	docs/document-manifests/snapshot-replacement-member-lease.tsv	-	-
 docs/windows-arm/README.md	historical-evidence	windows-hvf-engine-history	STATUS.md
 docs/plans/hvf-lib-refactor-extraction-plan.md	active-plan	hvf-refactor	-
 docs/plans/hvf-3d-engine-plan.md	active-plan	windows-graphics	-
