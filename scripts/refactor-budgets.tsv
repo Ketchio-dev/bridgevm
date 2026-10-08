@@ -1269,7 +1269,7 @@ apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	22	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	56	0
 apps/macos/Sources/BridgeVMControl/ContentView.swift	289	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	254	0
-apps/macos/Sources/BridgeVMControl/CreateVM.swift	497	0
+apps/macos/Sources/BridgeVMControl/CreateVM.swift	435	0
 apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	116	0
 apps/macos/Sources/BridgeVMControl/FirstRunView.swift	60	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
@@ -2357,7 +2357,7 @@ scripts/win-assets/bvagent-window-inventory.ps1	50
 scripts/test-bvagent-window-inventory.ps1	48
 .github/workflows/coherence-inventory-wire.yml	17
 scripts/test-bvagent-window-inventory-errors.ps1	40
-apps/macos/Sources/BridgeVMControl/CreateVMSheetCreationResult.swift	15
+apps/macos/Sources/BridgeVMControl/CreateVMSheetCreationResult.swift	11
 apps/macos/Sources/BridgeVMProductE2E/T17AccessibilityTree.swift	31
 apps/macos/Sources/BridgeVMProductE2E/T17CreationProbe.swift	23
 apps/macos/Tests/BridgeVMProductE2ETests/T17CreationProbeTests.swift	65
@@ -2572,7 +2572,7 @@ scripts/live-gates/app_ui_host_diagnostic.py	151	0
 scripts/live-gates/app_ui_host_manifest.py	95	0
 tests/integration/app-ui-host-tier-smoke.py	254	0
 tests/integration/app-ui-launcher-ownership.swift	87	0
-apps/macos/Sources/BridgeVMControl/CreateVMCreationFooter.swift	37	0
+apps/macos/Sources/BridgeVMControl/CreateVMCreationFooter.swift	36	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlResources.swift	16	0
 tests/integration/PackagedControlResourcesSmoke.swift	62	0
 tests/integration/compile-control-resources-smoke.sh	22	0
@@ -3037,7 +3037,7 @@ crates/bridgevm-cli/tests/cli_app_create.rs	62	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICreateWindowsOptions.swift	26	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICreateWindowsParser.swift	101	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICreateWindowsOutput.swift	22	0
-apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICreateWindows.swift	49	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICreateWindows.swift	40	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICreateWindowsHelp.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLICreateWindowsParserTests.swift	92	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLICreateWindowsTests.swift	63	0
@@ -4172,3 +4172,16 @@ crates/bridgevm-hvf/src/snapshot_create_member_lease_tests.rs	64	0
 crates/bridgevm-hvf/src/snapshot_create_member_ownership_tests.rs	75	0
 docs/document-manifests/snapshot-replacement-member-lease.tsv	3	0
 docs/history/windows-hvf/snapshot-replacement-member-lease-20261008.md	38	0
+apps/macos/Sources/BridgeVMControl/CreateVMCreationPrimaryAction.swift	11	0
+apps/macos/Sources/BridgeVMControl/CreateVMCreationState.swift	37	0
+apps/macos/Sources/BridgeVMControl/CreateVMSheetCreationFooter.swift	9	0
+apps/macos/Sources/BridgeVMControl/CreateVMSheetCreationRecovery.swift	12	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HVFCreationOutcome.swift	24	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallCreation.swift	67	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLIWindowsCreationOutcome.swift	22	0
+apps/macos/Tests/BridgeVMControlTests/CreateVMCreationStateTests.swift	72	0
+apps/macos/Tests/BridgeVMControlTests/HVFCreationPublicationFixture.swift	92	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsImportPublicationTests.swift	124	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallPublicationTests.swift	100	0
+docs/document-manifests/hvf-creation-publication-outcome.tsv	3	0
+docs/history/windows-hvf/hvf-creation-publication-outcome-20261008.md	46	0

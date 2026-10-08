@@ -26,6 +26,7 @@ struct CreateVMSheet: View {
     @State var working = false
     @State var error = ""
     @State var creationFailureCode = ""
+    @State var creationState = CreateVMCreationState()
     let resolutions = [(1280, 800), (1440, 900), (1920, 1080), (2560, 1440)]
     enum OSFamily: Equatable { case windows, linux }
     enum Mode: Equatable {
@@ -67,13 +68,12 @@ struct CreateVMSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("새 VM 만들기").font(.title2.bold()).padding(20)
             Divider()
-            ScrollView { fields.padding(20).disabled(working) }
+            ScrollView { fields.padding(20).disabled(working || !creationState.permitsCreation) }
             Divider()
             CreateVMResourceSummary(cpuCount: cpuCount, ramMiB: ramMiB,
                                     diskGiB: createsFreshDisk ? diskGiB : nil)
                 .padding(.horizontal, 20).padding(.top, 12)
-            CreateVMCreationFooter(working: working, error: error, failureCode: creationFailureCode,
-                                   canCreate: canCreate, cancel: { dismiss() }, create: create)
+            creationFooter
         }
         .frame(width: 480, height: 640)
         .interactiveDismissDisabled(working)
@@ -267,8 +267,8 @@ struct CreateVMSheet: View {
         FileSelection.choose(directories: false, extensions: ["fd", "vars"]) { hvfVarsPath = $0.path }
     }
 
-    private var canCreate: Bool {
-        guard !working, VMLibrary.normalizedVMName(name) != nil else { return false }
+    var canCreate: Bool {
+        guard !working, creationState.permitsCreation, VMLibrary.normalizedVMName(name) != nil else { return false }
         switch mode {
         case .windowsHVF:
             return !hvfTargetPath.isEmpty && !hvfVarsPath.isEmpty

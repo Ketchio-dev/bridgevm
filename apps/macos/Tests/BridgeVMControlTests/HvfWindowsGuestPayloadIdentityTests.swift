@@ -62,12 +62,12 @@ final class HvfWindowsGuestPayloadIdentityTests: XCTestCase {
         try Data("iso".utf8).write(to: iso)
         let library = root.appendingPathComponent("library", isDirectory: true)
         try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
-        let config = try XCTUnwrap(VMLibrary.createWindowsHVFInstall(
+        guard case .created(let config)? = VMLibrary.createWindowsHVFInstall(
             name: "Payload Managed", isoPath: iso.path, diskGiB: 64,
             injectViogpu3d: false, driverPackageDir: nil,
             guestPayloadDirectory: root.appendingPathComponent("payload").path,
             guestPayloadManifest: root.appendingPathComponent("manifest.tsv").path,
-            storageDir: library, libraryRoot: library, persist: false))
+            storageDir: library, libraryRoot: library, persist: false) else { return XCTFail("expected created") }
         let request = try XCTUnwrap(HvfWindowsInstallRequest.load(bundlePath: config.bundlePath))
         XCTAssertEqual(request.guestPayloadDirectory,
                        config.bundlePath + "/metadata/windows-guest-payload")

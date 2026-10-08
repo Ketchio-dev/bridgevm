@@ -22,7 +22,7 @@ final class NativeCLICreateWindowsFailureTests: XCTestCase {
         replaced.memMiB = 8_192
         XCTAssertThrowsError(try NativeCLICreateWindows.create(request,
             libraryRoot: URL(fileURLWithPath: "/tmp/library"),
-            creator: { _, _ in config }, reader: { _, _ in replaced }))
+            creator: { _, _ in .created(config) }, reader: { _, _ in replaced }))
     }
 
     private func makeRequest() -> NativeCLICreateWindowsOptions {

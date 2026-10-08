@@ -17,10 +17,10 @@ final class WindowsHVFProductPolicyTests: XCTestCase {
         try contents.write(to: iso)
         let storage = temp.appendingPathComponent("library", isDirectory: true)
         try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
-        let config = try XCTUnwrap(VMLibrary.createWindowsHVFInstall(
+        guard case .created(let config)? = VMLibrary.createWindowsHVFInstall(
             name: "E2E \(UUID().uuidString.prefix(8))", isoPath: iso.path,
             diskGiB: 64, injectViogpu3d: false, driverPackageDir: nil,
-            storageDir: storage, persist: false))
+            storageDir: storage, persist: false) else { return XCTFail("expected created") }
         let request = try XCTUnwrap(HvfWindowsInstallRequest.load(bundlePath: config.bundlePath))
         XCTAssertEqual(request.isoPath, config.bundlePath + "/disks/installer.iso")
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: request.isoPath)), contents)
@@ -37,10 +37,10 @@ final class WindowsHVFProductPolicyTests: XCTestCase {
         try Data(count: 1024).write(to: iso)
         let storage = temp.appendingPathComponent("library", isDirectory: true)
         try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
-        var installed = try XCTUnwrap(VMLibrary.createWindowsHVFInstall(
+        guard case .created(var installed)? = VMLibrary.createWindowsHVFInstall(
             name: "3D Off \(UUID().uuidString.prefix(8))", isoPath: iso.path,
             diskGiB: 64, injectViogpu3d: false, driverPackageDir: nil,
-            storageDir: storage, persist: false))
+            storageDir: storage, persist: false) else { return XCTFail("expected created") }
         installed.installPending = false
         try assertThreeDOff(try XCTUnwrap(HvfEngineConfig.libraryVM(installed)))
 
@@ -51,10 +51,10 @@ final class WindowsHVFProductPolicyTests: XCTestCase {
         let varsHandle = try FileHandle(forWritingTo: vars)
         try varsHandle.truncate(atOffset: VMLibrary.windowsHVFVarsBytes)
         try varsHandle.close()
-        let imported = try XCTUnwrap(VMLibrary.createWindowsHVF(
+        guard case .created(let imported)? = VMLibrary.createWindowsHVF(
             name: "Imported 3D Off \(UUID().uuidString.prefix(8))",
             targetDiskPath: disk.path, varsPath: vars.path,
-            storageDir: storage, persist: false, snapshotHelper: HvfMediaImportTestSupport.helper))
+            storageDir: storage, persist: false, snapshotHelper: HvfMediaImportTestSupport.helper) else { return XCTFail("expected created") }
         XCTAssertEqual(imported.experimental3DAllowed, false)
         try assertThreeDOff(try XCTUnwrap(HvfEngineConfig.libraryVM(imported)))
     }
