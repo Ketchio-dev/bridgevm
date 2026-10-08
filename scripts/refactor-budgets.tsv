@@ -1400,7 +1400,7 @@ scripts/check-supply-chain.sh	52	0
 scripts/check-virgl-integer-attributes.sh	72	0
 scripts/check-virtio-queue-narrowing.sh	27	0
 scripts/find-hvf-windows-viogpu3d-packages.sh	210	0
-scripts/live-gates/bridgevm-live-worker.sh	162	0
+scripts/live-gates/bridgevm-live-worker.sh	161	0
 scripts/live-gates/recover-stale-jobs.sh	33	0
 scripts/live-gates/install-studio-queue.sh	76	0
 scripts/live-gates/hvf-boot-performance-manifest.sh	64	0
@@ -4139,3 +4139,6 @@ tests/integration/live_installer_storage_fixture.py	21	0
 scripts/live-gates/queue-root-path.py	22	0
 tests/integration/live-storage-queue-alias-contract.py	51	0
 tests/integration/queue-root-transport-contract.py	29	0
+tests/integration/live-worker-lock-quoting-contract.py	46	0
+docs/document-manifests/live-worker-lock-quoting.tsv	3	0
+docs/history/windows-hvf/live-worker-lock-quoting-20261008.md	35	0
