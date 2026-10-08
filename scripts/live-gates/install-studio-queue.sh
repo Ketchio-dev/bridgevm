@@ -8,7 +8,7 @@ AGENTS="$HOME/Library/LaunchAgents"
 PLIST="$AGENTS/$LABEL.plist"
 TEMPLATE="$REPO/scripts/live-gates/$LABEL.plist"
 WORKER="$REPO/scripts/live-gates/bridgevm-live-worker.sh"
-QUEUE_ROOT="${BRIDGEVM_LIVE_ROOT:-$HOME/BridgeVM/live-queue}"
+QUEUE_ROOT="${BRIDGEVM_LIVE_ROOT:-$HOME/BridgeVM/live-queue}"; WORK_ROOT="${BRIDGEVM_LIVE_WORK:-$HOME/BridgeVM/live-work}"
 LOGDIR="$HOME/Library/Logs/BridgeVM"
 MIN_FREE_GIB="${BRIDGEVM_LIVE_MIN_FREE_GIB:-100}"
 
@@ -36,14 +36,7 @@ if ! command -v cargo >/dev/null; then
     fail "cargo is required; install the pinned toolchain first"
 fi
 
-free_gib="$(df -g "$HOME" | awk 'NR==2 {print $4}')"
-if [ "$free_gib" -lt "$MIN_FREE_GIB" ]; then
-    # A warning, not a failure: installing the agent is still correct, but a
-    # job will refuse rather than delete canonical media to make room.
-    echo "warning: ${free_gib}GiB free, below the ${MIN_FREE_GIB}GiB job guard"
-else
-    echo "free space: ${free_gib}GiB (guard ${MIN_FREE_GIB}GiB)"
-fi
+/bin/bash "$REPO/scripts/live-gates/installer-storage-preflight.sh" "$REPO" "$QUEUE_ROOT" "$WORK_ROOT" "$MIN_FREE_GIB"
 
 # A registered runner on a public repo is the thing this design exists to
 # avoid, so refuse to install alongside one.
@@ -62,11 +55,10 @@ fi
 
 echo "== install =="
 bash "$REPO/scripts/live-gates/queue-directories.sh" "$QUEUE_ROOT"
-mkdir -p "$AGENTS" "$LOGDIR"
-chmod 700 "$LOGDIR" # Logs and queue receipts can name private paths.
+mkdir -p "$AGENTS" "$LOGDIR" "$WORK_ROOT"
+chmod 700 "$LOGDIR" "$WORK_ROOT" # Logs, builds and queue receipts can name private paths.
 
-sed -e "s|__WORKER__|$WORKER|g" -e "s|__LOGDIR__|$LOGDIR|g" \
-    -e "s|__HOME__|$HOME|g" -e "s|__USER__|$(id -un)|g" "$TEMPLATE" > "$PLIST"
+python3 -I -B "$REPO/scripts/live-gates/render-live-launchagent.py" "$TEMPLATE" "$HOME" "$(id -un)" "$WORKER" "$LOGDIR" "$QUEUE_ROOT" "$WORK_ROOT" "$MIN_FREE_GIB" > "$PLIST"
 plutil -lint "$PLIST" >/dev/null || fail "generated plist is malformed"
 
 # Idempotent: unload an older revision before loading this one.
@@ -75,8 +67,8 @@ launchctl bootstrap "gui/$(id -u)" "$PLIST"
 launchctl enable "gui/$(id -u)/$LABEL"
 
 echo "== installed =="
-echo "submit a job:  scripts/live-gates/bridgevm-live submit t1-vtimer"
-echo "watch it:      scripts/live-gates/bridgevm-live status"
+printf 'submit a job:  BRIDGEVM_LIVE_ROOT=%q scripts/live-gates/bridgevm-live submit t1-vtimer\n' "$QUEUE_ROOT"
+printf 'watch it:      BRIDGEVM_LIVE_ROOT=%q scripts/live-gates/bridgevm-live status\n' "$QUEUE_ROOT"
 echo "worker logs:   $LOGDIR/worker.err.log"
 echo
 echo "External-volume access requires operator-granted Full Disk Access for /bin/bash."

@@ -30,7 +30,7 @@ class InstallerFixture:
             (self.bin / name).symlink_to(Path("/usr/bin") / name)
         for name in ("git", "python3", "caffeinate", "taskpolicy", "cargo"):
             self.stub(name, "exit 0\n")
-        self.stub("df", f"printf 'Filesystem Blocks Used Available\\nfake 1000 1 {free_gib}\\n'\n")
+        from live_installer_storage_fixture import prepare; prepare(self, source, free_gib)
         self.stub("pgrep", f'printf "pgrep:%s\\n" "$*" >> "$FIXTURE_CALLS"\nexit {0 if listener else 1}\n')
         for name in ("mkdir", "chmod", "sed", "plutil", "launchctl", "id"):
             self.stub(name, f'printf "forbidden:{name}:%s\\n" "$*" >> "$FIXTURE_CALLS"\nexit 97\n')

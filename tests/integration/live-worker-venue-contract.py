@@ -24,6 +24,7 @@ class WorkerVenueContracts(unittest.TestCase):
             (job / "job.env").write_text("job_id=fixture\ntier=" + tier + "\ncommit=" + sha + "\n")
             (helpers / "worker.sh").write_bytes((ROOT / "scripts/live-gates/bridgevm-live-worker.sh").read_bytes())
             scripts = {
+                **{helpers / n: (ROOT / "scripts/live-gates" / n).read_text() for n in ("worker-storage-admission.sh", "live_storage_capacity.py")},
                 helpers / "live-process-cleanup.sh": "bridgevm_wait_for_tier_group() { return 126; }\n",
                 helpers / "app-ui-host-worker-cleanup.sh": (ROOT / "scripts/live-gates/app-ui-host-worker-cleanup.sh").read_text(),
                 helpers / "t17-worker-cleanup-fence.sh": (ROOT / "scripts/live-gates/t17-worker-cleanup-fence.sh").read_text(),
@@ -41,7 +42,6 @@ printf '%s\\n' "$target"
             shim = root / "bin"
             shim.mkdir()
             scripts[shim / "git"] = '#!/bin/sh\nprintf called >> "$VENUE_GIT_MARKER"\nexit 77\n'
-            scripts[shim / "df"] = '#!/bin/sh\nprintf "Filesystem Size Used Available\\nfixture 999 0 999\\n"\n'
             for path, content in scripts.items():
                 path.write_text(content)
                 path.chmod(0o700)

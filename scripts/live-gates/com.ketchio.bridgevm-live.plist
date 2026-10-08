@@ -21,6 +21,9 @@
     <string>LOGNAME=__USER__</string>
     <string>SHELL=/bin/bash</string>
     <string>PATH=__HOME__/.cargo/bin:/opt/homebrew/opt/rustup/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <string>BRIDGEVM_LIVE_ROOT=__QUEUE__</string>
+    <string>BRIDGEVM_LIVE_WORK=__WORK__</string>
+    <string>BRIDGEVM_LIVE_MIN_FREE_GIB=__MINIMUM__</string>
     <string>__WORKER__</string>
   </array>
 
