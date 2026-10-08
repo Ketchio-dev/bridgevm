@@ -4146,7 +4146,7 @@ tests/integration/windows-product-e2e-launch-diagnostic-privacy.py	52	0
 docs/history/windows-hvf/t17-launch-diagnostic-privacy-20261008.md	31	0
 docs/document-manifests/t17-launch-diagnostic-privacy.tsv	3	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferImageFactory.swift	28	0
-apps/macos/Tests/BridgeVMControlTests/HvfFramebufferRetryTests.swift	78	1
+apps/macos/Tests/BridgeVMControlTests/HvfFramebufferRetryTests.swift	78	0
 docs/history/windows-hvf/framebuffer-image-retry-20261004.md	61	0
 docs/history/windows-hvf/framebuffer-retry-integration-20261008.md	34	0
 docs/document-manifests/framebuffer-retry-integration.tsv	4	0
