@@ -6,6 +6,9 @@ use super::{DiskBackend, EXPORT_CHUNK_SIZE};
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
+#[path = "export_staging.rs"]
+mod export_staging;
+use export_staging::ExportStaging;
 
 /// Default copy-on-write overlay ceiling: 2 GiB. Larger than any read-only
 /// boot writes in practice (injector and firstboot write tens of megabytes)
@@ -23,14 +26,14 @@ impl DiskBackend {
     /// good one had been.
     pub(crate) fn export_to_path(&mut self, path: impl AsRef<Path>) -> io::Result<u64> {
         let path = path.as_ref();
-        let parent = path.parent().unwrap_or(Path::new("."));
-        let tmp = parent.join(format!(
-            ".{}.export",
-            path.file_name().unwrap_or_default().to_string_lossy()
-        ));
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let mut staged = ExportStaging::create(parent, path)?;
         let len = self.byte_len();
         {
-            let mut out = File::create(&tmp)?;
+            let out = &mut staged.file;
             let mut offset = 0u64;
             while offset < len {
                 let chunk_len = (len - offset).min(EXPORT_CHUNK_SIZE as u64) as usize;
@@ -40,7 +43,7 @@ impl DiskBackend {
             }
             out.sync_all()?;
         }
-        std::fs::rename(&tmp, path)?;
+        std::fs::rename(&staged.path, path)?;
         File::open(parent)?.sync_all()?;
         Ok(len)
     }

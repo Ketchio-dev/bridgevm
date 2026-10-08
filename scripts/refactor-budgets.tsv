@@ -4185,3 +4185,11 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsImportPublicationTests.swift	124
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallPublicationTests.swift	100	0
 docs/document-manifests/hvf-creation-publication-outcome.tsv	3	0
 docs/history/windows-hvf/hvf-creation-publication-outcome-20261008.md	46	0
+crates/bridgevm-hvf/src/nvme/export_staging.rs	58	0
+crates/bridgevm-hvf/src/nvme/export_staging_tests.rs	24	0
+crates/bridgevm-hvf/src/nvme/tests/export_case.rs	35	0
+crates/bridgevm-hvf/src/nvme/tests/export_collision.rs	46	0
+crates/bridgevm-hvf/src/nvme/tests/export_failure.rs	64	0
+crates/bridgevm-hvf/src/nvme/tests/export_staging.rs	63	0
+docs/document-manifests/nvme-export-staging-ownership.tsv	3	0
+docs/history/windows-hvf/nvme-export-staging-ownership-20261008.md	40	0
