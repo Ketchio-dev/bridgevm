@@ -24,7 +24,7 @@ use std::time::Duration;
 
 #[test]
 fn daemon_performance_sample_runs_guest_benchmark_when_session_is_connected() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     store
         .transition_state("legacy", VmRuntimeState::Running)

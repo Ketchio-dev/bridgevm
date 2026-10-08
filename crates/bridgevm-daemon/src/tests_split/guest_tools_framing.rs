@@ -9,8 +9,8 @@ use std::os::unix::net::UnixStream;
 use std::process::Command;
 use std::time::Duration;
 
-fn connected_state() -> (DaemonState, UnixStream) {
-    let store = temp_store();
+fn connected_state() -> (TestStoreRoot, DaemonState, UnixStream) {
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     let (host, guest) = UnixStream::pair().unwrap();
     host.set_read_timeout(Some(Duration::from_millis(25)))
@@ -31,12 +31,12 @@ fn connected_state() -> (DaemonState, UnixStream) {
     backend.guest_tools_stream = Some(EnvelopeLineReader::new(BufReader::new(host)));
     let mut state = DaemonState::new(store);
     state.children.insert("legacy".to_string(), backend);
-    (state, guest)
+    (_root, state, guest)
 }
 
 #[test]
 fn drain_reassembles_active_heartbeat_after_socket_timeout() {
-    let (mut state, mut guest) = connected_state();
+    let (_root, mut state, mut guest) = connected_state();
     let line = encode_envelope_line(&AgentEnvelope::new(AgentMessage::Heartbeat)).unwrap();
     let split = line.len() / 2;
     guest.write_all(&line.as_bytes()[..split]).unwrap();
@@ -62,7 +62,7 @@ fn drain_reassembles_active_heartbeat_after_socket_timeout() {
 
 #[test]
 fn command_wait_retains_result_prefix_when_wait_times_out() {
-    let (mut state, mut guest) = connected_state();
+    let (_root, mut state, mut guest) = connected_state();
     let command = AgentEnvelope::with_request_id(
         AgentMessage::SetClipboard {
             text: "test".to_string(),

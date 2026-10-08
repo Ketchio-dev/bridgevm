@@ -23,7 +23,7 @@ use std::time::Duration;
 
 #[test]
 fn daemon_sends_guest_tools_command_and_tracks_result() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     let mut manifest = compatibility_manifest("legacy");
     manifest.shared_folders = vec![SharedFolder {
         name: "work".to_string(),
@@ -209,7 +209,7 @@ fn daemon_sends_guest_tools_command_and_tracks_result() {
 
 #[test]
 fn daemon_executes_application_consistent_snapshot_scaffold_commands() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     store
         .transition_state("legacy", VmRuntimeState::Running)
@@ -351,7 +351,7 @@ fn daemon_executes_application_consistent_snapshot_scaffold_commands() {
 
 #[test]
 fn daemon_thaws_after_application_consistent_snapshot_failure() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     store
         .transition_state("legacy", VmRuntimeState::Running)
@@ -512,7 +512,7 @@ fn daemon_surfaces_thaw_failure_after_successful_snapshot() {
     // agent's thaw reply is ok:false. The orchestration must still have
     // DISPATCHED the thaw (the guest cannot be left frozen silently) and
     // then surface the thaw failure to the caller.
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     store
         .transition_state("legacy", VmRuntimeState::Running)

@@ -18,15 +18,11 @@ use std::net::TcpListener;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::path::PathBuf;
 use std::process::Command;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-pub(super) static TEST_ID: AtomicU64 = AtomicU64::new(0);
 pub(super) static PROXY_WINDOW_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
@@ -65,12 +61,7 @@ impl Drop for EnvVarGuard {
     }
 }
 
-pub(super) fn temp_store() -> VmStore {
-    let mut path = PathBuf::from("/tmp");
-    let id = TEST_ID.fetch_add(1, Ordering::Relaxed);
-    path.push(format!("bvmd-{}-{}", std::process::id(), id));
-    VmStore::new(path)
-}
+pub(super) use super::temp_store::{temp_store, TestStoreRoot};
 
 pub(super) fn compatibility_manifest(name: &str) -> VmManifest {
     VmManifest::new(
@@ -159,7 +150,7 @@ pub(super) fn serve_one_http_response(body: &'static [u8]) -> (String, JoinHandl
 
 #[test]
 fn bundled_helper_discovery_rejects_non_executable_siblings() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     let helpers = store.root().join("BridgeVM.app/Contents/Helpers");
     fs::create_dir_all(&helpers).unwrap();
     let bridgevmd = helpers.join("bridgevmd");
@@ -177,7 +168,7 @@ fn bundled_helper_discovery_rejects_non_executable_siblings() {
 
 #[test]
 fn fast_spawn_config_validate_rejects_non_executable_apple_vz_runner() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     fs::create_dir_all(store.root()).unwrap();
     let lightvm_runner = store.root().join("fake-lightvm-runner");
     let apple_vz_runner = store.root().join("fake-AppleVzRunner");

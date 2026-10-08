@@ -1,5 +1,6 @@
 //! Split test module.
 
+mod fast_opt_in_fixture;
 mod fast_restore_supervision;
 mod fast_resume_opt_in;
 mod guest_tools_framing;
@@ -18,5 +19,6 @@ mod qmp_nonterminal;
 mod reconcile_exited;
 mod restart_owned;
 mod suspend_owned;
+mod temp_store;
 mod vnc_displays;
 mod wait;

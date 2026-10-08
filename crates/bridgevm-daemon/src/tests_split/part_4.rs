@@ -23,7 +23,7 @@ use std::time::Duration;
 
 #[test]
 fn reconcile_children_records_qmp_drain_limit_metadata() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     store
         .transition_state("legacy", VmRuntimeState::Running)
@@ -120,7 +120,7 @@ fn reconcile_children_records_qmp_drain_limit_metadata() {
 
 #[test]
 fn reconcile_children_bootstraps_guest_tools_session() {
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     store
         .transition_state("legacy", VmRuntimeState::Running)
@@ -263,7 +263,7 @@ fn reconcile_holds_connection_and_catches_delayed_guest_hello() {
     // after the host connects. The daemon must connect host-first and HOLD
     // that connection across reconcile ticks so it catches the delayed
     // hello, instead of reconnecting each tick and racing past it.
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     store
         .transition_state("legacy", VmRuntimeState::Running)
@@ -355,7 +355,7 @@ fn reconcile_reassembles_a_guest_hello_split_across_reads() {
     // timeout. The held connection must NOT consume + lose the partial frame
     // when the timeout fires mid-frame -- it must reassemble and accept once
     // the whole line is present. (Guards the peek-before-consume fix.)
-    let store = temp_store();
+    let (_root, store) = temp_store();
     store.create_vm(&compatibility_manifest("legacy")).unwrap();
     store
         .transition_state("legacy", VmRuntimeState::Running)
