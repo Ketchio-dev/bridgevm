@@ -24,7 +24,7 @@ class WorkerVenueContracts(unittest.TestCase):
             (job / "job.env").write_text("job_id=fixture\ntier=" + tier + "\ncommit=" + sha + "\n")
             (helpers / "worker.sh").write_bytes((ROOT / "scripts/live-gates/bridgevm-live-worker.sh").read_bytes())
             scripts = {
-                **{helpers / n: (ROOT / "scripts/live-gates" / n).read_text() for n in ("worker-storage-admission.sh", "live_storage_capacity.py")},
+                **{helpers / n: (ROOT / "scripts/live-gates" / n).read_text() for n in ("worker-storage-admission.sh", "live_storage_capacity.py", "queue-root-path.py")},
                 helpers / "live-process-cleanup.sh": "bridgevm_wait_for_tier_group() { return 126; }\n",
                 helpers / "app-ui-host-worker-cleanup.sh": (ROOT / "scripts/live-gates/app-ui-host-worker-cleanup.sh").read_text(),
                 helpers / "t17-worker-cleanup-fence.sh": (ROOT / "scripts/live-gates/t17-worker-cleanup-fence.sh").read_text(),

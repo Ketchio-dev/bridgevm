@@ -11,11 +11,10 @@ storage_path, threshold = capacity["storage_path"], capacity["threshold"]
 
 
 def render(template, home, user, worker, logs, queue, work, minimum):
-    threshold(minimum)
+    threshold(minimum); queue = runpy.run_path(str(Path(__file__).with_name("queue-root-path.py")))["root"](queue)
     values = {"__HOME__": home, "__USER__": user, "__WORKER__": worker, "__LOGDIR__": logs,
               "__QUEUE__": str(storage_path(queue).resolve(strict=True)),
               "__WORK__": str(storage_path(work).resolve()), "__MINIMUM__": minimum}
-    if Path(queue).is_symlink() or Path(work).is_symlink(): raise ValueError("storage root leaf is an alias")
     def replace(value):
         if isinstance(value, str):
             return re.sub("|".join(map(re.escape, values)), lambda match: values[match.group()], value)

@@ -36,7 +36,7 @@ if ! command -v cargo >/dev/null; then
     fail "cargo is required; install the pinned toolchain first"
 fi
 
-/bin/bash "$REPO/scripts/live-gates/installer-storage-preflight.sh" "$REPO" "$QUEUE_ROOT" "$WORK_ROOT" "$MIN_FREE_GIB"
+QUEUE_ROOT="$(python3 -I -B "$REPO/scripts/live-gates/queue-root-path.py" "$QUEUE_ROOT")" || fail "storage capacity unavailable or configuration invalid"; /bin/bash "$REPO/scripts/live-gates/installer-storage-preflight.sh" "$REPO" "$QUEUE_ROOT" "$WORK_ROOT" "$MIN_FREE_GIB"
 
 # A registered runner on a public repo is the thing this design exists to
 # avoid, so refuse to install alongside one.

@@ -140,7 +140,7 @@ run_job() {
 }
 
 main() {
-    python3 -I -B "$REPO/scripts/live-gates/live_storage_capacity.py" --paths-only --minimum "$MIN_FREE_GIB" "$QUEUE_ROOT" "$WORK_ROOT" || return 1
+    QUEUE_ROOT="$(python3 -I -B "$REPO/scripts/live-gates/queue-root-path.py" "$QUEUE_ROOT")" || return 1; python3 -I -B "$REPO/scripts/live-gates/live_storage_capacity.py" --paths-only --minimum "$MIN_FREE_GIB" "$QUEUE_ROOT" "$WORK_ROOT" || return 1
     if ! acquire_lock; then
         log "another worker holds the lock; exiting"
         exit 0

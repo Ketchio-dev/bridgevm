@@ -5,7 +5,7 @@ argv dropped that setting. The worker could therefore use its HOME default
 instead of the selected queue. The installer now renders plist data using an
 isolated Python interpreter and explicitly freezes queue/work/minimum settings
 inside the existing Bash-p/env-i argument vector. Parent HOME aliases remain
-supported; leaf aliases and ambiguous terminal path spellings refuse. Printed
+supported; private owned queue-root aliases canonicalize, work aliases refuse. Printed
 submit/status commands include the same shell-escaped queue selection.
 
 The worker previously measured HOME free space, not its actual queue output
@@ -31,14 +31,14 @@ Image-backed pilot admission must separately authenticate the mount-to-backing
 association and backing capacity. No automatic discovery or second queue is
 introduced; final queue/work paths and any sole-queue migration remain guarded
 operator operations. No installer, service, fence, TCC or media mutation ran.
-
-Focused fixtures: capacity7, renderer/custom-installer4, existing installer
-launch3/dry11, worker venue2, policy103, T17 cleanup-fence5, T22 worker21 PASS.
-The isolated renderer ignores owned PYTHONPATH startup code; its nonisolated
-control executes the sentinel. Exact plist special characters and hostile
-inherited storage overrides are covered. Tests use controlled providers, not
-actual space exhaustion or Windows hardware. One targeted invocation named a
-nonexistent file; the next T22 wrapper hit90s after17 dots and is interrupted,
-not passing. Its unchanged rerun completed21 in95.129s; retained fixture residue
-from the interruption remains distinct. Full local/current-SHA hosted checks
-remain pending. Product state and all criteria are unchanged; A9/A11/A19 OPEN.
+Focused capacity7, renderer/custom-install4, launch3/dry11, venue2, policy103,
+T17fence5 and T22worker21 PASS. Isolated renderer ignores owned PYTHONPATH
+startup code; its nonisolated control executes the sentinel. Special characters
+and hostile inherited overrides are covered; these are controlled providers,
+not actual exhaustion or Windows. A mistyped invocation ran no test; next T22
+hit90s after17 dots, interrupted not passing. Unchanged r3 completed21 in95.129s;
+interrupted fixture residue retained. Full local/current-SHA hosted pending.
+Queue-alias compatibility preserves existing V2 flow: actual worker/installer2
+pass; unsafe755 targets refuse unchanged. Provider exit2 initially failed the
+expected installer refusal1; normalized preflight retains that failed policy run.
+Product state and all criteria unchanged; A9/A11/A19 OPEN.
