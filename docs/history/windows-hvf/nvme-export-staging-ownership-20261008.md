@@ -34,7 +34,7 @@ NVMe190/0 plus one existing ignored microbenchmark; full HVF library1370/0 plus
 that ignore; Clippy warnings-denied and rustfmt pass. Static review confirmed the
 case correction; reviewer did not independently execute the root tests.
 
-No arbitrary concurrent namespace mutation protection or raw-output lease
-redesign is claimed. Destination publication and sync error semantics remain;
-this does not prove durability under power loss. New exact sealed local/hosted
-checks remain required. No product/criterion promotion, permissions or fence change.
+First full92cb failed workspace/venus Clippy on a test index loop; library-only
+Clippy had not covered tests. Enumerate preserves assertions; all-target Venus
+Clippy and collision test now pass. Failed full retained; successor full required.
+No namespace-mutation/raw-output-lease/power-loss claim or criterion promotion.
