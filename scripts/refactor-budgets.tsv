@@ -4125,7 +4125,7 @@ tests/integration/product-e2e-retained-destination-test.py	51	0
 tests/integration/source-builder-mount-layout.py	17	0
 tests/integration/source-builder-storage-contract.sh	77	0
 tests/integration/t17-queued-retention-contract.py	32	0
-scripts/live-gates/queue-directories.sh	14	0
+scripts/live-gates/queue-directories.sh	13	0
 tests/integration/live-queue-storage-contract.py	70	0
 docs/document-manifests/live-storage-admission.tsv	3	0
 docs/history/windows-hvf/live-storage-admission-20261008.md	44	0
@@ -4136,3 +4136,4 @@ scripts/live-gates/worker-storage-admission.sh	12	0
 tests/integration/live-installer-storage-contract.py	69	0
 tests/integration/live-storage-capacity-contract.py	94	0
 tests/integration/live_installer_storage_fixture.py	21	0
+scripts/live-gates/queue-root-path.py	22	0

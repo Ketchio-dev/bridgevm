@@ -25,7 +25,7 @@ class LaunchContract(unittest.TestCase):
         fixture.queue = external / "queue & custom" if custom else fixture.home / "BridgeVM/live-queue"
         fixture.env.update(BRIDGEVM_LIVE_ROOT=str(fixture.queue)) if custom else fixture.env.pop("BRIDGEVM_LIVE_ROOT")
         fixture.template.write_bytes((SCRIPTS / f"{LABEL}.plist").read_bytes())
-        for name in ("mkdir", "chmod", "sed", "id", "bash"):
+        for name in ("mkdir", "chmod", "sed", "id", "bash", "python3"):
             path = fixture.bin / name
             path.unlink(missing_ok=True)
             path.symlink_to(shutil.which(name))
