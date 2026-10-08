@@ -150,11 +150,11 @@ final class HvfWindowsInstallTests: XCTestCase {
         let storage = temp.appendingPathComponent("library", isDirectory: true)
         try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
 
-        let config = try XCTUnwrap(VMLibrary.createWindowsHVFInstall(
+        guard case .created(let config)? = VMLibrary.createWindowsHVFInstall(
             name: "Fresh Windows \(UUID().uuidString.prefix(8))",
             isoPath: iso.path, diskGiB: 64,
             injectViogpu3d: false, driverPackageDir: nil,
-            storageDir: storage, persist: false))
+            storageDir: storage, persist: false) else { return XCTFail("expected created") }
 
         XCTAssertEqual(config.backendKind, "hvf-engine")
         XCTAssertEqual(config.installPending, true)
@@ -173,11 +173,11 @@ final class HvfWindowsInstallTests: XCTestCase {
         let storage = temp.appendingPathComponent("library", isDirectory: true)
         try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
 
-        let config = try XCTUnwrap(VMLibrary.createWindowsHVFInstall(
+        guard case .created(let config)? = VMLibrary.createWindowsHVFInstall(
             name: "Big Windows \(UUID().uuidString.prefix(8))",
             isoPath: iso.path, diskGiB: 128,
             injectViogpu3d: false, driverPackageDir: nil,
-            storageDir: storage, memMiB: 16384, cpuCount: 8, persist: false))
+            storageDir: storage, memMiB: 16384, cpuCount: 8, persist: false) else { return XCTFail("expected created") }
         XCTAssertEqual(config.memMiB, 16384)
         XCTAssertEqual(config.cpuCount, 8)
     }
@@ -190,12 +190,12 @@ final class HvfWindowsInstallTests: XCTestCase {
         let storage = temp.appendingPathComponent("library", isDirectory: true)
         try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
 
-        let offline = try XCTUnwrap(VMLibrary.createWindowsHVFInstall(
+        guard case .created(let offline)? = VMLibrary.createWindowsHVFInstall(
             name: "Offline \(UUID().uuidString.prefix(6))",
             isoPath: iso.path, diskGiB: 64,
             injectViogpu3d: false, driverPackageDir: nil,
             storageDir: storage, memMiB: 6144, cpuCount: 4,
-            networkEnabled: false, persist: false))
+            networkEnabled: false, persist: false) else { return XCTFail("expected created") }
         XCTAssertEqual(offline.networkEnabled, false)
         var offlineReady = offline
         offlineReady.installPending = false
@@ -203,12 +203,12 @@ final class HvfWindowsInstallTests: XCTestCase {
         XCTAssertFalse(offlineConfig.virtioNet)
         XCTAssertFalse(offlineConfig.wrapperArguments().contains("--virtio-net"))
 
-        let online = try XCTUnwrap(VMLibrary.createWindowsHVFInstall(
+        guard case .created(let online)? = VMLibrary.createWindowsHVFInstall(
             name: "Online \(UUID().uuidString.prefix(6))",
             isoPath: iso.path, diskGiB: 64,
             injectViogpu3d: false, driverPackageDir: nil,
             storageDir: storage, memMiB: 6144, cpuCount: 4,
-            networkEnabled: true, persist: false))
+            networkEnabled: true, persist: false) else { return XCTFail("expected created") }
         var onlineReady = online
         onlineReady.installPending = false
         let onlineConfig = try XCTUnwrap(HvfEngineConfig.libraryVM(onlineReady))

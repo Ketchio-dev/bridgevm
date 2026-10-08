@@ -14,11 +14,11 @@ final class WindowsHVFUnattendPolicyTests: XCTestCase {
         let library = temp.appendingPathComponent("library", isDirectory: true)
         try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
 
-        let config = try XCTUnwrap(VMLibrary.createWindowsHVFInstall(
+        guard case .created(let config)? = VMLibrary.createWindowsHVFInstall(
             name: "E2E Answer", isoPath: iso.path, diskGiB: 64,
             injectViogpu3d: false, driverPackageDir: nil,
             e2eUnattendedPath: answer.path, storageDir: library,
-            libraryRoot: library, persist: false))
+            libraryRoot: library, persist: false) else { return XCTFail("expected created") }
         let request = try XCTUnwrap(HvfWindowsInstallRequest.load(bundlePath: config.bundlePath))
         XCTAssertEqual(request.unattendedPath,
                        config.bundlePath + "/metadata/windows-install-unattend.xml")

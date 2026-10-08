@@ -7,6 +7,8 @@ struct CreateVMCreationFooter: View {
     let canCreate: Bool
     let cancel: () -> Void
     let create: () -> Void
+    let recoveryAvailable: Bool
+    let recover: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -26,10 +28,7 @@ struct CreateVMCreationFooter: View {
                     .keyboardShortcut(.cancelAction)
                     .disabled(working)
                     .accessibilityIdentifier("bridgevm.create.cancel")
-                Button(working ? "생성 중…" : "생성", action: create)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canCreate)
-                    .accessibilityIdentifier("bridgevm.create.commit")
+                primaryAction
             }
             .padding(20)
         }

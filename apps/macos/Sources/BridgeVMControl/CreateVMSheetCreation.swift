@@ -2,7 +2,7 @@ import SwiftUI
 
 extension CreateVMSheet {
     func create() {
-        guard !working else { return }
+        guard !working, creationState.permitsCreation else { return }
         creationFailureCode = ""
         let selectedTemplate = template
         if WindowsHVFProductPolicy.requiresTemplate(mode) && selectedTemplate == nil {
@@ -42,22 +42,22 @@ extension CreateVMSheet {
         let network = hvfNetwork
         let libraryRoot = library.rootURL
         Task.detached {
-            let config: VMConfig?
+            let config: HVFCreationOutcome?
             switch selectedMode {
             case .ubuntu:
                 config = selectedTemplate.flatMap { VMLibrary.cloneUbuntu(
                     name: normalizedName, template: $0, storageDir: storage,
-                    width: width, height: height, memMiB: memory, cpuCount: cpu) }
+                    width: width, height: height, memMiB: memory, cpuCount: cpu) }.map(HVFCreationOutcome.created)
             case .iso:
                 config = selectedTemplate.flatMap { VMLibrary.createFromISO(
                     name: normalizedName, isoPath: selectedISO, template: $0,
                     storageDir: storage, width: width, height: height,
-                    diskGiB: disk, memMiB: memory, cpuCount: cpu) }
+                    diskGiB: disk, memMiB: memory, cpuCount: cpu) }.map(HVFCreationOutcome.created)
             case .windows:
                 config = selectedTemplate.flatMap { VMLibrary.createWindows(
                     name: normalizedName, isoPath: selectedISO, template: $0,
                     storageDir: storage, width: width, height: height,
-                    diskGiB: disk, memMiB: memory, cpuCount: cpu) }
+                    diskGiB: disk, memMiB: memory, cpuCount: cpu) }.map(HVFCreationOutcome.created)
             case .windowsHVF:
                 config = VMLibrary.createWindowsHVF(
                     name: normalizedName, targetDiskPath: target, varsPath: vars,

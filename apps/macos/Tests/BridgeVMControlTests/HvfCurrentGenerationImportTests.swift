@@ -87,9 +87,9 @@ final class HvfCurrentGenerationImportTests: XCTestCase {
         let firstLayout = FirstRunImport.BundleLayout(bundleURL: URL(fileURLWithPath: first.bundlePath))
         XCTAssertEqual(try prefix(firstLayout.diskURL), "disk-old")
         XCTAssertEqual(try prefix(firstLayout.varsURL), "vars-old")
-        let ordinary = try XCTUnwrap(VMLibrary.createWindowsHVF(name: "ordinary", targetDiskPath: fixture.disk.path,
+        guard case .created(let ordinary)? = VMLibrary.createWindowsHVF(name: "ordinary", targetDiskPath: fixture.disk.path,
             varsPath: fixture.vars.path, libraryRoot: fixture.root.appendingPathComponent("ordinary-library"),
-            persist: false, snapshotHelper: helper))
+            persist: false, snapshotHelper: helper) else { return XCTFail("expected created") }
         let ordinaryLayout = FirstRunImport.BundleLayout(bundleURL: URL(fileURLWithPath: ordinary.bundlePath))
         XCTAssertEqual(try prefix(ordinaryLayout.diskURL), "disk-old")
         XCTAssertEqual(try prefix(ordinaryLayout.varsURL), "vars-old")

@@ -19,7 +19,7 @@ final class HvfWindowsImportTests: XCTestCase {
         try varsHandle.truncate(atOffset: VMLibrary.windowsHVFVarsBytes)
         try varsHandle.close()
 
-        let config = try XCTUnwrap(VMLibrary.createWindowsHVF(
+        guard case .created(let config)? = VMLibrary.createWindowsHVF(
             name: "Imported HVF \(UUID().uuidString)",
             targetDiskPath: sourceDisk.path,
             varsPath: sourceVars.path,
@@ -27,7 +27,7 @@ final class HvfWindowsImportTests: XCTestCase {
             width: 1920,
             height: 1080,
             persist: false, snapshotHelper: HvfMediaImportTestSupport.helper
-        ))
+        ) else { return XCTFail("expected created") }
 
         XCTAssertEqual(config.backendKind, "hvf-engine")
         XCTAssertEqual(config.bootMode, "windows-hvf")
