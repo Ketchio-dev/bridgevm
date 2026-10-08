@@ -4,7 +4,6 @@ import os
 import subprocess
 import tempfile
 
-
 class InstallerFixture:
     def __init__(self, source, *, location="checkout", listener=False, free_gib=200):
         self.work = tempfile.TemporaryDirectory(prefix="bridgevm-installer-contract-")
@@ -18,6 +17,7 @@ class InstallerFixture:
         self.scripts.mkdir(parents=True)
         self.installer = self.scripts / "install-studio-queue.sh"
         self.installer.write_bytes(source.read_bytes())
+        for name in ("queue-directories.sh", "queue-root-path.py"): (self.scripts / name).write_bytes((source.parent / name).read_bytes())
         self.worker = self.scripts / "bridgevm-live-worker.sh"
         self.worker.write_text("#!/bin/sh\nexit 98\n")
         self.worker.chmod(0o700)

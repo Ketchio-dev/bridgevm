@@ -32,11 +32,7 @@ usage() {
 }
 
 ensure_dirs() {
-    mkdir -p "$QUEUED" "$RUNNING" "$DONE" "$JOB_LEDGER"
-    [ -d "$JOB_LEDGER" ] && [ ! -L "$JOB_LEDGER" ] || {
-        echo "job ledger must be a real directory" >&2; exit 1;
-    }
-    chmod 700 "$JOB_LEDGER"
+    bash "$(dirname "$0")/queue-directories.sh" "$QUEUE_ROOT"
 }
 
 # Job states are directories and a job moves between them with `mv`, which is
