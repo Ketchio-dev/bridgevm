@@ -1306,7 +1306,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfPointerCaptureTests.swift	52	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift	380	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	50	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift	407	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	237	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	233	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsDriverPreflight.swift	45	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallView.swift	84	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/TailOffsetReader.swift	22	0
@@ -3211,7 +3211,7 @@ docs/history/windows-hvf/a9-first-ready-terminal-observation-20260920.md	46	0
 docs/history/windows-hvf/native-app-cli-doctor-20260920.md	24	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFinalizationWorker.swift	21	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallFinalizationWorkerTests.swift	73	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallStaging.swift	92	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallStaging.swift	85	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallPrivateDirectory.swift	117	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingFixture.swift	142	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallStagingTests.swift	176	0
@@ -4161,3 +4161,9 @@ crates/bridgevm-hvf/src/hda/tests/pcm_fragments.rs	34	0
 crates/bridgevm-hvf/src/hda/tests/stream_reset.rs	227	0
 docs/document-manifests/audio-pcm-frame-boundary.tsv	3	0
 docs/history/windows-hvf/audio-pcm-frame-boundary-20261008.md	52	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallDiskSize.swift	23	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallStagingPreparation.swift	17	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallDiskSizeTests.swift	45	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallDiskSizeStagingTests.swift	27	0
+docs/document-manifests/install-disk-size-admission.tsv	3	0
+docs/history/windows-hvf/install-disk-size-admission-20261008.md	32	0

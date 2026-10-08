@@ -14,17 +14,10 @@ enum HvfWindowsInstallStaging {
 
     /// Fresh attempts only: the pipeline has just proven no finalization journal owns these inputs.
     static func prepare(_ plan: HvfWindowsInstallPlan) throws {
-        let seed = try HvfWindowsBootSeed.bundledSeed()
-        let metadata = try HvfWindowsInstallPrivateDirectory.metadata(of: URL(fileURLWithPath: plan.bundlePath))
-        try metadata.removeTree(directoryName)
-        let staging = try metadata.makeDirectory(directoryName)
-        _ = try staging.makeDirectory(evidenceName)
-        try staging.createFile(varsName) { try $0.write(contentsOf: seed) }
-        try staging.createFile(targetName) { try $0.truncate(atOffset: plan.freshTargetSizeBytes) }
-        var values = URLResourceValues()
-        values.isExcludedFromBackup = true
-        var url = staging.url
-        try? url.setResourceValues(values)
+        guard let targetBytes = plan.freshTargetSizeBytes else {
+            throw HvfWindowsInstallFinalizationError.invalidState(HvfWindowsInstallPlan.unrepresentableDiskSizeMessage)
+        }
+        try prepareValidated(plan, targetBytes: targetBytes)
     }
 
     /// Cancelled or failed fresh attempts drop the large media; the evidence stays for diagnosis.
