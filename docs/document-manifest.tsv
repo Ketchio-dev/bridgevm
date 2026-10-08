@@ -18,7 +18,7 @@ docs/windows-arm/README.md	historical-evidence	windows-hvf-engine-history	STATUS
 docs/plans/hvf-3d-engine-plan.md	active-plan	windows-graphics	-
 docs/plans/hvf-p3-windows-3d-plan.md	active-plan	windows-graphics	-
 docs/plans/hvf-perf-optimization-plan.md	active-plan	windows-performance	-
-docs/plans/hvf-graphics-integration-gap-plan.md	active-plan	windows-graphics	-
+@include	docs/document-manifests/a19-exited-child-fixture.tsv	-	-
 docs/plans/hvf-gpu-thread-design-20260721.md	active-plan	windows-performance	-
 docs/handoffs/claude-code-20260722.md	active-plan	development-handoff	-
 docs/plans/refactor-handoff.md	active-plan	development-handoff	-
