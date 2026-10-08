@@ -3,6 +3,9 @@
 mod fast_opt_in_fixture;
 mod fast_restore_supervision;
 mod fast_resume_opt_in;
+mod guest_command_cleanup_tests;
+mod guest_command_fixture;
+mod guest_command_result_tests;
 mod guest_tools_framing;
 mod helpers;
 mod owned_cleanup;

@@ -16,7 +16,7 @@ docs/windows-first-coherence-integration-gap-20260911.md	active-plan	windows-coh
 docs/windows-arm/README.md	historical-evidence	windows-hvf-engine-history	STATUS.md
 @include	docs/document-manifests/nvme-export-staging-ownership.tsv	-	-
 @include	docs/document-manifests/install-committed-cleanup.tsv	-	-
-docs/plans/hvf-p3-windows-3d-plan.md	active-plan	windows-graphics	-
+@include	docs/document-manifests/guest-command-fixture-order.tsv	-	-
 docs/plans/hvf-perf-optimization-plan.md	active-plan	windows-performance	-
 @include	docs/document-manifests/a19-exited-child-fixture.tsv	-	-
 docs/plans/hvf-gpu-thread-design-20260721.md	active-plan	windows-performance	-
