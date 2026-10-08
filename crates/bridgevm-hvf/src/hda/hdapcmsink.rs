@@ -16,6 +16,8 @@ mod playback_descriptor;
 mod playback_dma;
 #[path = "stream_control.rs"]
 mod stream_control;
+#[path = "stream_lifecycle.rs"]
+mod stream_lifecycle;
 pub use file_pcm_sink::FilePcmSink;
 pub use pcm_sink::HdaPcmSink;
 
@@ -481,8 +483,8 @@ impl HdaController {
             self.stream.lvi = next as u16;
         }
         let (touched, next) = rw!(REG_SD_FMT, 2, self.stream.fmt);
-        if touched && self.stream.ctl & SDCTL_RUN == 0 {
-            self.stream.fmt = next as u16 & 0x7fff;
+        if touched {
+            self.write_stream_format(next as u16);
         }
         let (touched, next) = rw!(REG_SD_BDPL, 4, self.stream.bdl as u32);
         if touched && self.stream.ctl & SDCTL_RUN == 0 {

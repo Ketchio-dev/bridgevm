@@ -10,7 +10,6 @@ use super::hda_coreaudio_teardown::CallbackFailureCounters;
 
 pub(super) struct Shared {
     pub(super) ring: Mutex<VecDeque<u8>>,
-    /// Guest PCM frames copied into the ring; nonzero tells real audio from an idle device.
     pub(super) frames_rendered: AtomicU64,
     dropped_writes: AtomicU64,
     dropped_bytes: AtomicU64,
@@ -61,3 +60,6 @@ impl Shared {
             .print_stats(frames, drops, bytes, format, ring_full, lifecycle);
     }
 }
+#[cfg(test)]
+#[path = "hda_coreaudio_framing_stats_tests.rs"]
+mod tests;
