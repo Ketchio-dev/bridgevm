@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Render and execute the SSD launch contract using only owned/stubbed assets."""
 from pathlib import Path
-import os
 import plistlib
 import shutil
 import subprocess
@@ -17,14 +16,14 @@ PREFIX = ["/bin/bash", "-p", "-c", 'exec "$@"', "bridgevm-live-launch"]
 
 
 class LaunchContract(unittest.TestCase):
-    def fixture(self):
+    def fixture(self, custom=False):
         fixture = InstallerFixture(SCRIPTS / "install-studio-queue.sh", location="source checkout")
         self.addCleanup(fixture.close)
         external = fixture.root / "external volume"
         external.mkdir()
-        (fixture.home / "BridgeVM").symlink_to(external, target_is_directory=True)
-        fixture.queue = fixture.home / "BridgeVM/live-queue"
-        fixture.env.pop("BRIDGEVM_LIVE_ROOT")
+        if not custom: (fixture.home / "BridgeVM").symlink_to(external, target_is_directory=True)
+        fixture.queue = external / "queue & custom" if custom else fixture.home / "BridgeVM/live-queue"
+        fixture.env.update(BRIDGEVM_LIVE_ROOT=str(fixture.queue)) if custom else fixture.env.pop("BRIDGEVM_LIVE_ROOT")
         fixture.template.write_bytes((SCRIPTS / f"{LABEL}.plist").read_bytes())
         for name in ("mkdir", "chmod", "sed", "id", "bash", "python3"):
             path = fixture.bin / name
@@ -45,7 +44,8 @@ class LaunchContract(unittest.TestCase):
         path = f"{home}/.cargo/bin:/opt/homebrew/opt/rustup/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         self.assertEqual(plist["ProgramArguments"], PREFIX + [
             "/usr/bin/env", "-i", f"HOME={home}", f"USER={user}", f"LOGNAME={user}",
-            "SHELL=/bin/bash", f"PATH={path}", str(fixture.worker)])
+            "SHELL=/bin/bash", f"PATH={path}", f"BRIDGEVM_LIVE_ROOT={fixture.queue.resolve()}",
+            f"BRIDGEVM_LIVE_WORK={(fixture.home / 'BridgeVM/live-work').resolve()}", "BRIDGEVM_LIVE_MIN_FREE_GIB=100", str(fixture.worker)])
         self.assertEqual(plist["Label"], LABEL)
         self.assertEqual(plist["StartInterval"], 60)
         self.assertIs(plist["RunAtLoad"], False)
@@ -66,8 +66,8 @@ class LaunchContract(unittest.TestCase):
     def test_wrapper_preserves_spaced_arguments_and_exit_but_drops_inherited_overrides(self):
         fixture, plist = self.fixture()
         fixture.worker.write_text('''#!/bin/bash
-printf '%s\n' "$HOME" "$0"
-if [ "${SENTINEL_SECRET+x}${BRIDGEVM_REPO+x}${BRIDGEVM_LIVE_ROOT+x}" ]; then exit 99; fi
+printf '%s\n' "$HOME" "$0" "$BRIDGEVM_LIVE_ROOT"
+if [ "${SENTINEL_SECRET+x}${BRIDGEVM_REPO+x}" ]; then exit 99; fi
 exit 37
 ''')
         hook = fixture.root / "inherited-hook.sh"
@@ -77,7 +77,7 @@ exit 37
         result = subprocess.run(plist["ProgramArguments"], env=env, text=True,
                                 capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 37, result.stderr)
-        self.assertEqual(result.stdout.splitlines(), [str(fixture.home), str(fixture.worker)])
+        self.assertEqual(result.stdout.splitlines(), [str(fixture.home), str(fixture.worker), str(fixture.queue.resolve())])
         control = plist["ProgramArguments"].copy()
         control.remove("-p")
         result = subprocess.run(control, env=env, text=True, capture_output=True, timeout=10)
@@ -86,7 +86,7 @@ exit 37
 
     def test_real_worker_fence_precedes_recovery_and_claim_through_wrapper(self):
         fixture, plist = self.fixture()
-        for name in ("bridgevm-live-worker.sh", "live-process-cleanup.sh",
+        for name in ("bridgevm-live-worker.sh", "live_storage_capacity.py", "live-process-cleanup.sh",
                      "app-ui-host-worker-cleanup.sh", "t17-worker-cleanup-fence.sh"):
             (fixture.scripts / name).write_bytes((SCRIPTS / name).read_bytes())
         for name in ("recover-stale-jobs.sh", "bridgevm-live"):

@@ -123,7 +123,7 @@ class T17WorkerCleanupFence(unittest.TestCase):
         for name in ("bridgevm-live-worker.sh", "live-process-cleanup.sh",
                      "app-ui-host-worker-cleanup.sh", "publish-receipt.sh", "development-queue-receipt-dispatch.sh",
                      "redact-receipt.py", "receipt_public_fields.py", "recover-stale-jobs.sh",
-                     "recover-stale-receipt.sh"):
+                     "recover-stale-receipt.sh", "worker-storage-admission.sh", "live_storage_capacity.py", "queue-root-path.py"):
             shutil.copy2(LIVE / name, scripts / name)
         shutil.copy2(ROOT / "scripts/verify-windows-product-e2e-receipt.py",
                      self.repo / "scripts/verify-windows-product-e2e-receipt.py")

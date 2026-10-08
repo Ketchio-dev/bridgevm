@@ -19,10 +19,6 @@ MIN_FREE_GIB="${BRIDGEVM_LIVE_MIN_FREE_GIB:-100}"
 
 log() { printf '%s %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 
-free_gib() {
-    df -g "$HOME" | awk 'NR==2 {print $4}'
-}
-
 # Live gates contend for GPU, vCPUs and guest media; run exactly one at a time.
 acquire_lock() {
     local lock="$QUEUE_ROOT/worker.lock"
@@ -64,13 +60,8 @@ run_job() {
     [[ "$tier" != t0-check ]] || { log "refusing deterministic tier before sealed revision lookup"; printf 'result=refused-deterministic-venue\n' > "$dir/result.env"; return 1; }; log "job $job_id tier=$tier commit=$commit"
     printf 'started_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$dir/job.env"
 
-    local available
-    available="$(free_gib)"
-    if [ "$available" -lt "$MIN_FREE_GIB" ]; then
-        # Refuse rather than free space: canonical images are immutable inputs.
-        log "only ${available}GiB free, need ${MIN_FREE_GIB}GiB"
-        printf 'result=refused-free-space\navailable_gib=%s\n' "$available" > "$dir/result.env"
-        return 1
+    if ! bash "$REPO/scripts/live-gates/worker-storage-admission.sh" "$REPO" "$dir" "$WORK_ROOT" "$MIN_FREE_GIB"; then
+        log "job $job_id storage admission refused before source or tier activity"; return 1
     fi
 
     # t14-bridgevm-pc-windows-start and future tiers are routed by seals, not names.
@@ -98,7 +89,6 @@ run_job() {
     fi
 
     local worktree="$WORK_ROOT/$job_id"
-    mkdir -p "$WORK_ROOT"
     if ! git -C "$REPO" cat-file -e "$commit^{commit}" 2>/dev/null; then
         git -C "$REPO" fetch --no-tags origin "$commit" >>"$dir/run.log" 2>&1 || true
     fi
@@ -150,6 +140,7 @@ run_job() {
 }
 
 main() {
+    QUEUE_ROOT="$(python3 -I -B "$REPO/scripts/live-gates/queue-root-path.py" "$QUEUE_ROOT")" || return 1; python3 -I -B "$REPO/scripts/live-gates/live_storage_capacity.py" --paths-only --minimum "$MIN_FREE_GIB" "$QUEUE_ROOT" "$WORK_ROOT" || return 1
     if ! acquire_lock; then
         log "another worker holds the lock; exiting"
         exit 0

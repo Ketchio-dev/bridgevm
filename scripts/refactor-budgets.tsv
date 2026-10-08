@@ -1400,9 +1400,9 @@ scripts/check-supply-chain.sh	52	0
 scripts/check-virgl-integer-attributes.sh	72	0
 scripts/check-virtio-queue-narrowing.sh	27	0
 scripts/find-hvf-windows-viogpu3d-packages.sh	210	0
-scripts/live-gates/bridgevm-live-worker.sh	177	0
+scripts/live-gates/bridgevm-live-worker.sh	162	0
 scripts/live-gates/recover-stale-jobs.sh	33	0
-scripts/live-gates/install-studio-queue.sh	84	0
+scripts/live-gates/install-studio-queue.sh	76	0
 scripts/live-gates/hvf-boot-performance-manifest.sh	64	0
 scripts/live-gates/hvf-boot-performance-profile.sh	19	0
 scripts/live-gates/hvf-nvme-performance-manifest.sh	158	0
@@ -4127,5 +4127,15 @@ tests/integration/source-builder-storage-contract.sh	77	0
 tests/integration/t17-queued-retention-contract.py	32	0
 scripts/live-gates/queue-directories.sh	13	0
 tests/integration/live-queue-storage-contract.py	70	0
+docs/document-manifests/live-storage-admission.tsv	3	0
+docs/history/windows-hvf/live-storage-admission-20261008.md	44	0
+scripts/live-gates/installer-storage-preflight.sh	14	0
+scripts/live-gates/live_storage_capacity.py	83	0
+scripts/live-gates/render-live-launchagent.py	32	0
+scripts/live-gates/worker-storage-admission.sh	12	0
+tests/integration/live-installer-storage-contract.py	69	0
+tests/integration/live-storage-capacity-contract.py	94	0
+tests/integration/live_installer_storage_fixture.py	21	0
 scripts/live-gates/queue-root-path.py	22	0
+tests/integration/live-storage-queue-alias-contract.py	51	0
 tests/integration/queue-root-transport-contract.py	29	0
