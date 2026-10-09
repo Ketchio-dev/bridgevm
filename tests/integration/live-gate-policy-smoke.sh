@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Policy tests for the Studio live-gate queue.
-# No listener/runner; claiming is atomic and published receipts are redacted.
-set -euo pipefail
+# Synthetic queue policy: no listener/runner, atomic claims, redacted receipts.
+set -eEuo pipefail
+trap 'printf "FAIL: live gate policy: line=%s status=%s command=%s\n" "$LINENO" "$?" "$BASH_COMMAND" >&2' ERR
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 CLI="$REPO/scripts/live-gates/bridgevm-live"
 WORKER="$REPO/scripts/live-gates/bridgevm-live-worker.sh"
