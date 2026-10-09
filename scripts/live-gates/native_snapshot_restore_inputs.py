@@ -1,6 +1,7 @@
 """Authenticate and clone inputs for the native app snapshot restore tier."""
 from __future__ import annotations
 
+from collections.abc import Callable
 import hashlib
 import argparse
 import os
@@ -72,12 +73,17 @@ def prepare(
     directory: Path,
     clone_file=clone,
     clone_tree=clone_app,
+    *,
+    on_created: Callable[[Path], None] | None = None,
 ) -> tuple[dict, dict]:
     regular(manifest)
     data = manifest.read_bytes()
     rows = parse_manifest(data, commit)
     authenticate(rows, sealed_binary)
     directory.mkdir(mode=0o700)
+    # Record ownership before cloning: callers must also clean partial failures.
+    if on_created is not None:
+        on_created(directory)
     sealed_app = directory / "BridgeVM.app"
     clone_tree(Path(rows["app_bundle"][0]), sealed_app)
     authenticate_app(rows, sealed_app)

@@ -68,12 +68,12 @@ class ShutdownCountContract(unittest.TestCase):
                     (output / phase / "run.log").write_bytes(log)
             runner = load(f"shutdown_count_{tier}", LIVE_GATES / script)
 
-            def prepare(*_args):
+            def prepare(*_args, on_created=lambda _path: None):
                 (output / "prepared-inputs").mkdir()
+                on_created(output / "prepared-inputs")
                 for name in ("disk.raw", "vars.fd"):
                     (output / "prepared-inputs" / name).write_bytes(b"x")
                 return dict(SEALED), {"binary": "binary", "app_cli": "cli", "sealed_app": temporary}
-
             def identity(command, **_kwargs):
                 return COMMIT if command[0] == "git" else "Mac17,9"
             with (mock.patch.object(runner.sys, "argv", ["tier", str(output), "job", "manifest", "binary"]),
