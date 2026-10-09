@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+@include	docs/document-manifests/a19-archived-receipt-read.tsv	-	-
+docs/history/windows-hvf/a19-continuation-safety-20261009.md	historical-evidence	windows-storage	-

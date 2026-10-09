@@ -136,7 +136,7 @@ docs/windows-arm/evidence/a19-t22-r1-20260925.md	historical-evidence	windows-sto
 docs/windows-arm/evidence/a19-t20-r7-20260929.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-t20-r8-20260930.md	current	windows-storage	-
 @include	docs/document-manifests/live-worker-lock-quoting.tsv	-	-
-@include	docs/document-manifests/a19-archived-receipt-read.tsv	-	-
+@include	docs/document-manifests/a19-continuation-safety.tsv	-	-
 @include	docs/document-manifests/native-vmm-virtio-console-backlog-bound.tsv	-	-
 @include	docs/document-manifests/diagnostic-observation-recovery.tsv	-	-
 @include	docs/document-manifests/t22-loader-admission-terminal.tsv	-	-

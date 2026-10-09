@@ -4251,3 +4251,5 @@ docs/document-manifests/a19-archived-receipt-read.tsv	3	0
 scripts/live-gates/a19_prepared_inputs_cleanup.py	29	0
 tests/integration/a19_process_cleanup_fixture.py	56	0
 tests/integration/a19_prepared_inputs_cleanup_cases.py	201	0
+docs/history/windows-hvf/a19-continuation-safety-20261009.md	56	0
+docs/document-manifests/a19-continuation-safety.tsv	3	0
