@@ -81,7 +81,7 @@ def main():
     stage.mkdir(mode=0o700)
     for origin, member in zip(sources, ("disk.raw", "vars.fd")):
         with (stage / member).open("wb") as target:
-            target.write(origin.read_bytes())
+            target.write(b"wrongseed vars" if fault == "seed-wrong-vars" and destination.name == "seed.snapshot" and member == "vars.fd" else origin.read_bytes())
             target.flush()
             os.fsync(target.fileno())
     if operation == "restore":

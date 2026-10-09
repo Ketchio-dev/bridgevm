@@ -32,13 +32,13 @@ def interrupt(helper: Path, snapshot: Path, disk: Path, variables: Path,
 
 
 def swap_case(helper: Path, snapshot: Path, disk: Path, variables: Path,
-              output: Path, commands: Commands, deadline: int, original: dict) -> None:
+              output: Path, commands: Commands, deadline: int, original: dict, source: dict) -> None:
     seed = disk.parent / "seed.snapshot"
     quota = sum(path.stat().st_size for path in (disk, variables))
     seeded = execute(helper, ["create", str(disk), str(variables), str(seed), CREATE_VM_ID,
                               str(quota)], commands, output, "seed-create.stdout")
-    if seeded != manifest(seed):
-        raise ValueError("auxiliary seed creation result differs from media")
+    if seeded != manifest(seed) or {field: seeded[field] for field in DIGEST_FIELDS} != source:
+        raise ValueError("auxiliary seed creation result differs from media or phase3 source")
     if execute(helper, ["restore", str(seed), str(disk), str(variables)], commands, output, "seed-restore.stdout") != seeded:
         raise ValueError("auxiliary seed restore result differs from verified seed")
     before = commands.digest(helper, disk, variables, output, "preinterrupt")
@@ -121,7 +121,7 @@ def run(helper: Path, snapshot: Path, disk: Path, variables: Path, output: Path,
             if pair(own_disk, own_vars) != source:
                 raise ValueError("auxiliary clones differ from their sources")
             if name == "swap":
-                operation(helper, snapshot, own_disk, own_vars, retained, commands, deadline, original)
+                operation(helper, snapshot, own_disk, own_vars, retained, commands, deadline, original, source)
             else:
                 operation(helper, own_disk, own_vars, retained, commands, deadline)
             if pair(own_disk, own_vars) != source:

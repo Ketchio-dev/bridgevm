@@ -1,6 +1,6 @@
 path	class	topic	superseded_by
 @include	docs/document-manifests/history.tsv	-	-
-docs/windows-first-coherence-integration-gap-20260911.md	active-plan	windows-coherence	-
+@include	docs/document-manifests/a19-continuation-safety.tsv	-	-
 @include	docs/document-manifests/hvf-creation-publication-outcome.tsv	-	-
 @include	docs/document-manifests/development-boundaries.tsv	-	-
 @include	docs/document-manifests/storage-portability.tsv	-	-

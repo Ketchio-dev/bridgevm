@@ -2,9 +2,6 @@
 """Actual job-control timeout retention and failed production receipt contracts."""
 from __future__ import annotations
 
-from contextlib import redirect_stderr
-from importlib.util import module_from_spec, spec_from_file_location
-import io
 import json
 import os
 from pathlib import Path
@@ -20,10 +17,8 @@ sys.path.insert(0, str(ROOT / "scripts/live-gates"))
 import a19_lifecycle_process as lifecycle
 import a19_interrupted_restore_receipt as receipt
 from a19_collection_fixtures import added_cases, first_case
-
-spec = spec_from_file_location("process_t22", ROOT / "scripts/live-gates/run-a19-interrupted-restore-tier.py")
-runner = module_from_spec(spec)
-spec.loader.exec_module(runner)
+from a19_process_cleanup_fixture import ProcessRunnerFixture
+from a19_prepared_inputs_cleanup_cases import PreparedInputsCleanupCases
 
 
 def fixture_repo(root: Path) -> Path:
@@ -52,42 +47,7 @@ def cleanup_fixture_groups(output: Path) -> None:
             pass
 
 
-class ProcessCleanup(unittest.TestCase):
-    def run_main(self, output: Path, operation, complete: bool = False) -> int:
-        app = output.parent / "fixture.app"
-        helper = app / runner.RELATIONS["snapshot_helper"]
-        helper.parent.mkdir(parents=True)
-        helper.write_text("fixture-helper")
-        helper.chmod(0o700)
-
-        def prepare(_manifest, _binary, _commit, prepared):
-            prepared.mkdir()
-            (prepared / "disk.raw").write_bytes(b"fixture disk")
-            (prepared / "vars.fd").write_bytes(b"fixture vars")
-            public = {**dict.fromkeys(receipt.HASHES, "a" * 64),
-                      "image_sha256": "b" * 64, "vars_sha256": "b" * 64}
-            return public, {"sealed_app": str(app), "app_cli": "fixture-cli", "binary": "fixture-probe"}
-
-        error = io.StringIO()
-        actual_output = subprocess.check_output
-        def host_output(args, **options):
-            if args[0] in ("git", "sysctl"):
-                return "c" * 40 if args[0] == "git" else "Mac16,9"
-            return actual_output(args, **options)
-        with patch.object(sys, "argv", ["runner", str(output), "cleanup-fixture", "manifest", "binary"]), \
-                patch.object(runner.subprocess, "check_output", side_effect=host_output), \
-                patch.object(runner.platform, "mac_ver", return_value=("26.7", (), "")), \
-                patch.object(runner, "sealed_hashes", return_value={
-                    "input_manifest_sha256": "a" * 64, "binary_hash": "a" * 64}), \
-                patch.object(runner, "prepare", side_effect=prepare), \
-                patch.object(runner, "run_lifecycle", side_effect=operation), \
-                patch.object(runner, "reauthenticate"), \
-                patch.object(runner, "shutdown_count", return_value=4 if complete else 0), \
-                redirect_stderr(error):
-            status = runner.main()
-        self.last_error = error.getvalue()
-        return status
-
+class ProcessCleanup(PreparedInputsCleanupCases, ProcessRunnerFixture, unittest.TestCase):
     def test_actual_hung_foreground_and_job_control_child_leave_fenced_failed_receipt(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

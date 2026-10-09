@@ -3604,7 +3604,8 @@ scripts/document_manifest.py	81	0
 tests/integration/document-manifest-contract.py	109	0
 scripts/a19-t22-native-library.sh	25	0
 scripts/check-a19-contracts.sh	16	0
-scripts/live-gates/a19_auxiliary_collection.py	84	0
+scripts/live-gates/a19_auxiliary_collection.py	82	0
+scripts/live-gates/a19_production_case_binding.py	15	0
 scripts/live-gates/a19_auxiliary_protocol.py	95	0
 scripts/live-gates/a19_first_restore_collection.py	115	0
 scripts/live-gates/a19_interrupt_auxiliary.py	159	0
@@ -3612,9 +3613,10 @@ scripts/live-gates/a19_interrupt_auxiliary_io.py	211	0
 scripts/live-gates/a19_interrupt_observation.py	31	0
 scripts/live-gates/a19_lifecycle_process.py	64	0
 tests/fixtures/a19_auxiliary_helper.py	113	0
-tests/integration/a19-interrupted-restore-auxiliary-orchestration-contract.py	322	0
+tests/integration/a19-interrupted-restore-auxiliary-orchestration-contract.py	315	0
 tests/integration/a19-interrupted-restore-process-cleanup-contract.py	174	0
-tests/integration/a19-interrupted-restore-production-collection-contract.py	238	0
+tests/integration/a19-interrupted-restore-production-collection-contract.py	230	0
+tests/integration/a19_seed_source_binding_cases.py	77	0
 tests/integration/a19_collection_fixtures.py	96	0
 docs/document-manifests/a19-interruption.tsv	3	0
 docs/history/windows-hvf/a19-three-interruption-cases-20261002.md	114	0
@@ -4243,5 +4245,11 @@ tests/integration/a19_archived_receipt_fixtures.py	50	0
 tests/integration/a19_archived_receipt_refusal_cases.py	83	0
 scripts/live-gates/a19_archive_public_hint.py	27	0
 tests/integration/a19_archived_receipt_hint_cases.py	50	0
+tests/integration/a19_archived_receipt_hint_boundary_cases.py	60	0
 docs/history/windows-hvf/a19-archived-receipt-read-20261009.md	39	0
 docs/document-manifests/a19-archived-receipt-read.tsv	3	0
+scripts/live-gates/a19_prepared_inputs_cleanup.py	29	0
+tests/integration/a19_process_cleanup_fixture.py	56	0
+tests/integration/a19_prepared_inputs_cleanup_cases.py	201	0
+docs/history/windows-hvf/a19-continuation-safety-20261009.md	56	0
+docs/document-manifests/a19-continuation-safety.tsv	3	0

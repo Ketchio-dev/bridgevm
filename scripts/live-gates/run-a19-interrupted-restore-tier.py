@@ -20,6 +20,7 @@ from a19_interrupted_restore_seal import merge_prepared, sealed_hashes
 from native_snapshot_restore_artifacts import RELATIONS, digest, regular
 from native_snapshot_restore_inputs import prepare, reauthenticate
 from native_snapshot_restore_results import shutdown_count
+from a19_prepared_inputs_cleanup import PreparedInputsCleanup
 
 PHASES = ("phase1-original", "phase3-clobber", "phase5-postkill", "phase7-restored")
 
@@ -37,9 +38,11 @@ def main() -> int:
     status = 1
     cleanup_proven = True
     prepared = output / "prepared-inputs"
+    prepared_cleanup = PreparedInputsCleanup(prepared)
     try:
         receipt.update(sealed_hashes(output, sys.argv[2], commit))
-        public, private = prepare(manifest, sealed_binary, commit, prepared)
+        public, private = prepare(manifest, sealed_binary, commit, prepared,
+                                  on_created=prepared_cleanup.allocated)
         merge_prepared(receipt, public)
         receipt["prepared_image_sha256"] = digest(prepared / "disk.raw")
         receipt["prepared_vars_sha256"] = digest(prepared / "vars.fd")
@@ -76,16 +79,7 @@ def main() -> int:
             json.JSONDecodeError) as error:
         print(f"FAIL: T22 interrupted restore: {type(error).__name__}: {error}", file=sys.stderr)
     finally:
-        try:
-            cleanup_proven = cleanup_proven and not os.path.lexists(output / "live")
-            if cleanup_proven and prepared.is_dir() and not prepared.is_symlink():
-                shutil.rmtree(prepared)
-            receipt["worker_cleanup_verified"] = cleanup_proven and (
-                not prepared.exists() and not prepared.is_symlink() and
-                not (output / "live").exists() and not (output / "live").is_symlink()
-            )
-        except OSError:
-            receipt["worker_cleanup_verified"] = False
+        receipt["worker_cleanup_verified"] = prepared_cleanup.cleanup(output / "live", cleanup_proven)
         if status == 0 and receipt["worker_cleanup_verified"]:
             candidate = {**receipt, "outcome": "completed", "pass": True,
                          "run_count": 1, "interruption_case_count": case_count(receipt), "sample_count": 1,
