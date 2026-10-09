@@ -4237,3 +4237,11 @@ crates/bridgevm-daemon/src/tests_split/guest_command_result_tests.rs	161	0
 crates/bridgevm-daemon/src/tests_split/guest_command_cleanup_tests.rs	23	0
 docs/history/windows-hvf/guest-command-fixture-order-20261008.md	35	0
 docs/document-manifests/guest-command-fixture-order.tsv	3	0
+scripts/live-gates/a19_archived_receipt_read.py	46	0
+tests/integration/a19-archived-receipt-read-contract.py	81	0
+tests/integration/a19_archived_receipt_fixtures.py	50	0
+tests/integration/a19_archived_receipt_refusal_cases.py	83	0
+scripts/live-gates/a19_archive_public_hint.py	27	0
+tests/integration/a19_archived_receipt_hint_cases.py	50	0
+docs/history/windows-hvf/a19-archived-receipt-read-20261009.md	39	0
+docs/document-manifests/a19-archived-receipt-read.tsv	3	0
