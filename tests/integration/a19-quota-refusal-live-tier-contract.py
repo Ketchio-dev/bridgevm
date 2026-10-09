@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/live-gates"))
 import a19_quota_refusal_receipt as receipt
 import native_snapshot_restore_inputs as inputs
+from a19_quota_cleanup_cases import QuotaCleanupCases
 
 COMMIT = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
 HELPER = '''#!/usr/bin/env python3
@@ -55,8 +56,7 @@ elif verb == "verify":
 else:
     sys.exit(2)
 '''
-
-class QuotaTierContract(unittest.TestCase):
+class QuotaTierContract(QuotaCleanupCases, unittest.TestCase):
     def fixture(self, root: Path, mode: str = "normal") -> tuple[Path, Path, Path]:
         app = root / "BridgeVM.app"
         files = {

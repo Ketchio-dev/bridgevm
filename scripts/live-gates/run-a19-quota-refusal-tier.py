@@ -5,22 +5,19 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
-import os
 from pathlib import Path
 import platform
 import shutil
 import subprocess
 import sys
 
+from a19_quota_cleanup import OWNED, QuotaCleanup
 from a19_quota_refusal_receipt import initial, quota_error, write_new
 from a19_quota_seal import merge_prepared, present, sealed_hashes
 from native_snapshot_restore_artifacts import RELATIONS, digest, regular
 from native_snapshot_restore_inputs import prepare, reauthenticate
 
 MAX_U64 = (1 << 64) - 1
-OWNED = ("prepared-inputs", "quota-refusal.snapshot", ".quota-refusal.snapshot.staging",
-         "quota-boundary.snapshot", ".quota-boundary.snapshot.staging",
-         ".bridgevm-snapshot-parent-lease")
 
 
 def invoke(helper: Path, *args: str, timeout: int) -> subprocess.CompletedProcess[bytes]:
@@ -47,9 +44,12 @@ def exercise(output: Path, prepared: Path, private: dict, receipt: dict) -> None
                     "prepared_image_sha256": digest(disk), "prepared_vars_sha256": digest(vars)})
     helper = Path(private["sealed_app"]) / RELATIONS["snapshot_helper"]
     regular(helper)
-    refused = output / "quota-refusal.snapshot"
-    accepted = output / "quota-boundary.snapshot"
-    if any(present(output / name) for name in OWNED if name != "prepared-inputs"):
+    # The helper owns children of this attempt's allocated tree, not loose names
+    # at OUT. Siblings of BridgeVM.app do not alter its authenticated app tree.
+    refused = prepared / "quota-refusal.snapshot"
+    accepted = prepared / "quota-boundary.snapshot"
+    if any(present(root / name) for root in (output, prepared)
+           for name in OWNED if name != "prepared-inputs"):
         raise ValueError("quota destination is not fresh")
 
     denied = invoke(helper, "create", str(disk), str(vars), str(refused),
@@ -59,7 +59,7 @@ def exercise(output: Path, prepared: Path, private: dict, receipt: dict) -> None
     if denied.returncode != 1 or denied.stdout or denied.stderr != quota_error(pair):
         raise ValueError("packaged helper did not report exact quota refusal")
     receipt["refusal_reason"] = "quota_exceeded"
-    receipt["refusal_destination_absent"] = not any(present(output / name) for name in
+    receipt["refusal_destination_absent"] = not any(present(prepared / name) for name in
                                                         ("quota-refusal.snapshot", ".quota-refusal.snapshot.staging",
                                                          ".bridgevm-snapshot-parent-lease"))
     if not receipt["refusal_destination_absent"]:
@@ -97,18 +97,6 @@ def exercise(output: Path, prepared: Path, private: dict, receipt: dict) -> None
     receipt["success_verified"] = True
 
 
-def clean_owned(output: Path) -> bool:
-    for name in OWNED:
-        path = output / name
-        if path.is_symlink():
-            return False
-        if path.is_dir():
-            shutil.rmtree(path)
-        elif present(path):
-            return False
-    return not any(present(output / name) for name in OWNED)
-
-
 def main() -> int:
     if len(sys.argv) != 5:
         print("usage: run-a19-quota-refusal-tier.py OUT JOB_ID MANIFEST SEALED_BINARY", file=sys.stderr)
@@ -120,10 +108,12 @@ def main() -> int:
     receipt["host_model"] = subprocess.check_output(["sysctl", "-n", "hw.model"], text=True).strip()
     receipt["macos_version"] = platform.mac_ver()[0]
     status = 1
+    cleanup = QuotaCleanup(output)
     try:
         receipt.update(sealed_hashes(output, sys.argv[2], commit))
         prepared = output / "prepared-inputs"
-        public, private = prepare(manifest, sealed_binary, commit, prepared)
+        public, private = prepare(manifest, sealed_binary, commit, prepared,
+                                  on_created=cleanup.allocated)
         merge_prepared(receipt, public)
         receipt["outcome"] = "failed"
         exercise(output, prepared, private, receipt)
@@ -132,10 +122,7 @@ def main() -> int:
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, json.JSONDecodeError) as error:
         print(f"FAIL: A19 quota tier: {type(error).__name__}", file=sys.stderr)
     finally:
-        try:
-            receipt["worker_cleanup_verified"] = clean_owned(output)
-        except OSError:
-            receipt["worker_cleanup_verified"] = False
+        receipt["worker_cleanup_verified"] = cleanup.cleanup()
         if status == 0 and receipt["worker_cleanup_verified"]:
             receipt.update({"outcome": "completed", "pass": True,
                             "run_count": 1, "quota_case_count": 1})
