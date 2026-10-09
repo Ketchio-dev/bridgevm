@@ -13,7 +13,7 @@ path	class	topic	superseded_by
 @include	docs/document-manifests/framebuffer-retry-integration.tsv	-	-
 @include	docs/document-manifests/t17-launch-diagnostic-privacy.tsv	-	-
 @include	docs/document-manifests/snapshot-replacement-member-lease.tsv	-	-
-docs/windows-arm/README.md	historical-evidence	windows-hvf-engine-history	STATUS.md
+@include	docs/document-manifests/a19-neighbor-cleanup.tsv	-	-
 @include	docs/document-manifests/nvme-export-staging-ownership.tsv	-	-
 @include	docs/document-manifests/install-committed-cleanup.tsv	-	-
 @include	docs/document-manifests/guest-command-fixture-order.tsv	-	-

@@ -6,10 +6,10 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import platform
-import shutil
 import subprocess
 import sys
 
+from a19_prepared_inputs_cleanup import PreparedInputsCleanup
 from native_snapshot_restore_inputs import digest, prepare, reauthenticate
 from native_snapshot_export_evidence import load_evidence, receipt_fields
 from native_snapshot_restore_receipt import initial, write_new
@@ -30,9 +30,12 @@ def main() -> int:
     receipt["macos_version"] = platform.mac_ver()[0]
     status = 1
     prepared = output / "prepared-inputs"
+    prepared_cleanup = PreparedInputsCleanup(prepared)
+    children_stopped = True
     try:
         receipt.update(sealed_hashes(output, job_id, commit))
-        public, private = prepare(manifest, sealed_binary, commit, prepared)
+        public, private = prepare(manifest, sealed_binary, commit, prepared,
+                                  on_created=prepared_cleanup.allocated)
         merge_prepared(receipt, public)
         receipt["prepared_image_sha256"] = digest(prepared / "disk.raw")
         receipt["prepared_vars_sha256"] = digest(prepared / "vars.fd")
@@ -46,10 +49,13 @@ def main() -> int:
             NATIVE_SNAPSHOT_VM_ID="a19-native-cli-live",
         )
         receipt["outcome"] = "failed"
+        children_stopped = False
         completed = subprocess.run(
             [str(repo / "scripts/verify-native-snapshot-restore-boots.sh")],
             cwd=repo, env=environment, check=False,
         )
+        # A signal or interrupted wait cannot prove the shell's cleanup ran.
+        children_stopped = completed.returncode >= 0
         receipt["boots_attempted"] = sum((output / phase).is_dir() for phase in T20_PHASES)
         receipt["natural_shutdown_count"] = shutdown_count(output, T20_PHASES)
         receipt["boots_passed"] = receipt["natural_shutdown_count"]
@@ -73,13 +79,7 @@ def main() -> int:
     except (OSError, UnicodeError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print("FAIL: native snapshot restore tier: " + str(error), file=sys.stderr)
     finally:
-        try:
-            if prepared.is_dir() and not prepared.is_symlink():
-                shutil.rmtree(prepared)
-            receipt["worker_cleanup_verified"] = not any(
-                os.path.lexists(output / name) for name in ("prepared-inputs", "live"))
-        except OSError:
-            receipt["worker_cleanup_verified"] = False
+        receipt["worker_cleanup_verified"] = prepared_cleanup.cleanup(output / "live", children_stopped)
         if status == 0 and receipt["worker_cleanup_verified"]:
             receipt.update({"outcome": "completed", "pass": True,
                             "run_count": 1, "sample_count": 1})

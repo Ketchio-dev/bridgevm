@@ -3118,7 +3118,10 @@ tests/integration/native-snapshot-restore-receipt-seal-contract.py	207	0
 tests/integration/native-snapshot-restore-cli-path-contract.py	53	0
 tests/integration/native-snapshot-restore-cli-read-contract.py	110	0
 tests/integration/native_snapshot_restore_legacy_read_cases.py	90	0
-tests/integration/native-snapshot-restore-cleanup-contract.py	129	0
+tests/integration/native-snapshot-restore-cleanup-contract.py	86	0
+tests/integration/native_snapshot_restore_cleanup_fixture.py	80	0
+tests/integration/native_snapshot_restore_prepared_cleanup_cases.py	190	0
+tests/integration/native_snapshot_restore_subprocess_fixture.py	28	0
 tests/integration/native-snapshot-export-evidence-contract.py	123	0
 docs/history/windows-hvf/native-snapshot-restore-live-tier-20260917.md	52	0
 scripts/live-gates/native_snapshot_restore_artifacts.py	63	0
@@ -3286,9 +3289,13 @@ scripts/live-gates/run-a19-snapshot-tiers.sh	11	0
 scripts/live-gates/verify-live-receipt.sh	7	0
 scripts/live-gates/write-live-missing-receipt.sh	17	0
 scripts/live-gates/a19-quota-worker-cleanup-fence.sh	36	0
-scripts/live-gates/run-a19-quota-refusal-tier.py	150	0
+scripts/live-gates/run-a19-quota-refusal-tier.py	137	0
+scripts/live-gates/a19_quota_cleanup.py	34	0
 scripts/live-gates/a19_quota_refusal_receipt.py	167	0
 tests/integration/a19-quota-refusal-live-tier-contract.py	270	0
+tests/integration/a19_quota_cleanup_cases.py	138	0
+tests/integration/a19_quota_cleanup_fixture.py	76	0
+tests/integration/a19_quota_owned_cases.py	143	0
 docs/history/windows-hvf/a19-real-media-quota-tier-20260925.md	36	0
 scripts/live-gates/b6_cell_evidence.py	62	0
 tests/integration/b6-untraced-startup-contract.py	128	0
@@ -4253,3 +4260,5 @@ tests/integration/a19_process_cleanup_fixture.py	56	0
 tests/integration/a19_prepared_inputs_cleanup_cases.py	201	0
 docs/history/windows-hvf/a19-continuation-safety-20261009.md	56	0
 docs/document-manifests/a19-continuation-safety.tsv	3	0
+docs/history/windows-hvf/a19-neighbor-cleanup-20261009.md	40	0
+docs/document-manifests/a19-neighbor-cleanup.tsv	3	0
