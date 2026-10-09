@@ -15,13 +15,14 @@ sys.path.insert(0, str(ROOT / "scripts/live-gates"))
 from a19_interrupt_cases import absent_cases, case_count
 import a19_interrupted_restore_receipt as receipt
 from a19_collection_fixtures import added_cases, first_case, put
+from a19_seed_source_binding_cases import ProductionSourceBinding
 
 spec = spec_from_file_location("production_t22", ROOT / "scripts/live-gates/run-a19-interrupted-restore-tier.py")
 runner = module_from_spec(spec)
 spec.loader.exec_module(runner)
 
 
-class ProductionCollection(unittest.TestCase):
+class ProductionCollection(ProductionSourceBinding, unittest.TestCase):
     def prepared(self, output: Path) -> dict:
         original = first_case(output)
         added_cases(output, original)
@@ -53,6 +54,10 @@ class ProductionCollection(unittest.TestCase):
             output = Path(temporary)
             value = self.prepared(output)
             runner.collect(output, value)
+            self.assertNotEqual(value["snapshot_vars_sha256"], value["preinterrupt_vars_sha256"])
+            for member in ("disk", "vars"):
+                for prefix in ("postkill", "swap_preinterrupt", "swap_postkill", "create_source", "create_postretry"):
+                    self.assertEqual(value[f"{prefix}_{member}_sha256"], value[f"preinterrupt_{member}_sha256"])
             for field in receipt.HASHES:
                 if value[field] == "absent":
                     value[field] = "a" * 64
@@ -188,19 +193,6 @@ class ProductionCollection(unittest.TestCase):
                 else:
                     (output / "pre-interrupt-vars.sha256").write_text(" " * 129)
                 self.refused(output, value)
-
-    def test_swap_retry_with_only_one_restored_member_refuses(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            output = Path(temporary)
-            value = self.prepared(output)
-            root = output / "aux-swap"
-            old_vars = (root / "preinterrupt-digest.txt").read_text().splitlines()[3]
-            for suffix in ("-digest.txt", "-host-digest.txt"):
-                path = root / ("postretry" + suffix)
-                lines = path.read_text().splitlines()
-                lines[3] = old_vars
-                path.write_text("\n".join(lines) + "\n")
-            self.refused(output, value)
 
     def test_noop_retry_mixed_pair_or_changed_source_refuses_even_when_host_agrees(self):
         for case, name, source in (("aux-swap", "postretry", "preinterrupt"),

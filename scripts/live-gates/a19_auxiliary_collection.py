@@ -6,8 +6,9 @@ from pathlib import Path
 
 from a19_auxiliary_protocol import manifest, media, protocol, selected, stop
 from a19_first_restore_collection import VM_ID, collect_first
-from a19_interrupt_cases import ADDED_POINTS, CASE_FLAGS, case_count, validate_cases
+from a19_interrupt_cases import ADDED_POINTS
 from a19_interrupt_stop_points import CREATE_VM_ID, STAGED_RESTORE
+from a19_production_case_binding import validate_production_cases
 from native_snapshot_export_json import load_json
 
 
@@ -77,8 +78,5 @@ def collect(output: Path, receipt: dict) -> None:
     verified = manifest(snapshot, VM_ID)
     candidate.update(swap_case(output, verified))
     candidate.update(create_case(output))
-    if case_count(candidate) != 3 or any(not candidate[prefix + flag]
-            for prefix in ADDED_POINTS for flag in CASE_FLAGS):
-        raise ValueError("production collection requires all three interruption cases")
-    validate_cases({**candidate, "pass": True})
+    validate_production_cases(candidate)
     receipt.update(candidate)

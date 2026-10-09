@@ -51,7 +51,7 @@ def stop(root: Path, point: str, staged: Path, pid: int, selection: str) -> None
 
 
 def first_case(output: Path) -> dict:
-    original = pair(b"original disk", b"original vars")
+    original, old = pair(b"original disk", b"original vars"), pair(b"clobbered disk", b"clobbered vars")
     put(output, "snapshot-created-manifest.json", json.dumps(manifest(original)))
     library = output / "live/library"
     for filename, command in (("create.json", "create"), ("restore-retry.json", "restore")):
@@ -66,12 +66,12 @@ def first_case(output: Path) -> dict:
         put(output, name, content)
     for name in ("pre-interrupt", "postkill"):
         for key in ("disk", "vars"):
-            put(output, f"{name}-{key}.sha256", original[key + "_sha256"] + "\n")
-    for folder in ("postkill-export", "postretry-export"):
+            put(output, f"{name}-{key}.sha256", old[key + "_sha256"] + "\n")
+    for folder, value in (("postkill-export", old), ("postretry-export", original)):
         put(output / folder, "export-evidence.json", json.dumps({
             "schema": "bridgevm.native-snapshot-export-evidence.v1", "vm_id": VM_ID,
             "result_sha256": "a" * 64, "manifest_sha256": "b" * 64,
-            "disk_sha256": original["disk_sha256"], "vars_sha256": original["vars_sha256"]}))
+            "disk_sha256": value["disk_sha256"], "vars_sha256": value["vars_sha256"]}))
     bundle = output.resolve() / "live/library/a19-native-cli-live/bundle.vmbridge"
     first_stage = stable_root(bundle / "disks/hvf-target.raw", bundle / "metadata/hvf-vars.fd") / "staging/disk.raw"
     stop(output, "staged-disk-verify-read", first_stage, 123, "initial")

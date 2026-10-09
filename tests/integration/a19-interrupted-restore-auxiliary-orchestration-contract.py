@@ -17,6 +17,7 @@ import a19_interrupt_auxiliary as auxiliary
 import a19_interrupt_auxiliary_io as io
 import a19_interrupt_restore_child as observer
 import a19_interrupt_stop_points as points
+from a19_seed_source_binding_cases import AuxiliarySeedBinding
 
 
 class AuxiliaryWiring(unittest.TestCase):
@@ -47,7 +48,7 @@ def fixture(root: Path, fault: str = ""):
     return helper, snapshot, disk, variables, output
 
 
-class AuxiliaryExecution(unittest.TestCase):
+class AuxiliaryExecution(AuxiliarySeedBinding, unittest.TestCase):
     def setUp(self):
         if not Path(observer.LSOF).is_file():
             if sys.platform == "darwin":
@@ -98,14 +99,6 @@ class AuxiliaryExecution(unittest.TestCase):
                 if pid_path.exists():
                     with self.assertRaises(ProcessLookupError):
                         os.kill(int(pid_path.read_text()), 0)
-
-    def test_nondistinct_source_refuses_before_clone_or_helper_launch(self):
-        args, _ = self.run_case()
-        args[2].write_bytes((args[1] / "disk.raw").read_bytes())
-        with self.assertRaisesRegex(ValueError, "distinct"):
-            auxiliary.run(*args, deadline=1, budget=30, clone=shutil.copyfile)
-        self.assertFalse((args[0].parent / "calls.json").exists())
-        self.assertFalse((args[-1] / "live/auxiliary").exists())
 
 
 class TerminalOwnership(unittest.TestCase):
