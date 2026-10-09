@@ -3,11 +3,11 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 import tempfile
 from unittest.mock import patch
 
-from native_snapshot_restore_cleanup_fixture import CleanupFixture, SCRIPT
+from native_snapshot_restore_cleanup_fixture import CleanupFixture
+from native_snapshot_restore_subprocess_fixture import run_failed_seal
 
 
 def preexisting(root, prepared, kind):
@@ -36,8 +36,6 @@ class PreparedCleanupCases(CleanupFixture):
             self.assertTrue(prepared.is_symlink())
 
     def test_actual_cli_failed_seal_preserves_unowned_inputs(self):
-        if sys.platform != "darwin":
-            self.skipTest("unmocked T20 host identity requires macOS")
         for kind in ("absent", "directory", "file", "symlink", "dangling-symlink"):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
@@ -45,13 +43,14 @@ class PreparedCleanupCases(CleanupFixture):
                 output.mkdir()
                 prepared = output / "prepared-inputs"
                 foreign = preexisting(root, prepared, kind)
-                result = subprocess.run([sys.executable, str(SCRIPT), str(output), output.name,
-                                         str(root / "missing-manifest"), str(root / "missing-binary")],
-                                        capture_output=True, text=True, timeout=20)
+                result = run_failed_seal(output)
                 self.assertEqual(result.returncode, 1, result.stderr)
                 self.assertIn("T20 ledger directory is unsafe", result.stderr)
+                self.assertTrue((output / "receipt.json").is_file(), f"receipt missing; stderr:\n{result.stderr}")
                 self.last_error = result.stderr
-                self.failed_receipt(output, kind == "absent")
+                value = self.failed_receipt(output, kind == "absent")
+                self.assertEqual((value["host_model"], value["macos_version"]),
+                                 ("Mac16,9", "15.7.9"))
                 self.assert_preserved(prepared, foreign, kind)
 
     def test_real_prepare_refuses_preexisting_inputs_without_owning_them(self):
