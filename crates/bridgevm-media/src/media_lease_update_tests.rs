@@ -60,6 +60,7 @@ fn partial_update_failure_preserves_prior_locks_and_releases_additions() {
         let root = os::private_root(uid).unwrap();
         let blocker = MediaLease {
             files: BTreeMap::from([(blocked.clone(), lock_key(&root, &blocked, uid).unwrap())]),
+            pinned: BTreeSet::new(),
         };
         let result = if extend {
             lease.extend([first.as_path(), second.as_path()])
@@ -101,24 +102,7 @@ fn replacement_unlocks_removed_keys_even_with_duplicate_descriptors() {
     MediaLease::acquire([new.as_path()]).unwrap();
 }
 
-#[test]
-fn successful_rebinding_keeps_a_bounded_set_of_descriptors() {
-    let s = Scratch::new("lease-replace-bounded");
-    let logical = s.write("logical", b"logical");
-    let current = s.write("current", b"initial");
-    let staging = s.path("staging");
-    let mut lease = MediaLease::acquire([logical.as_path(), current.as_path()]).unwrap();
-    let count = lease.files.len();
-    for generation in 0..16 {
-        fs::write(&staging, generation.to_string()).unwrap();
-        lease.extend([staging.as_path()]).unwrap();
-        fs::rename(&staging, &current).unwrap();
-        lease
-            .replace([logical.as_path(), current.as_path()])
-            .unwrap();
-        assert_eq!(lease.files.len(), count);
-        for path in [&logical, &current] {
-            assert!(MediaLease::acquire([path.as_path()]).is_err());
-        }
-    }
-}
+#[path = "media_lease_pin_tests.rs"]
+mod pin;
+#[path = "media_lease_rebind_tests.rs"]
+mod rebind;

@@ -4,6 +4,8 @@
 mod disk_export;
 #[path = "disk_overlay.rs"]
 mod disk_overlay;
+#[path = "disk_stream.rs"]
+mod disk_stream;
 use super::*;
 use disk_export::DEFAULT_OVERLAY_QUOTA_BYTES;
 use std::collections::BTreeMap;

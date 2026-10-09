@@ -3,12 +3,7 @@
 use super::*;
 
 pub fn acquire(media: &mut VirtBootMediaConfig) -> io::Result<RuntimeLease> {
-    let mut lease = RuntimeLease {
-        _pair: None,
-        _logical: MediaLease::acquire([])?,
-        policies: Policies::capture(media),
-        retained: BTreeSet::new(),
-    };
+    let mut lease = RuntimeLease::new(media)?;
     let disks: Vec<_> = [&media.nvme_disk, &media.nvme_target]
         .into_iter()
         .flatten()

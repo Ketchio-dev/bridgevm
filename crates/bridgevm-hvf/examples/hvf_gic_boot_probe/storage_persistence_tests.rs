@@ -2,29 +2,12 @@ use super::*;
 use bridgevm_hvf::media_lease::MediaLease;
 use bridgevm_hvf::snapshot_pair::managed::runtime::acquire;
 use std::{fs, io};
+#[path = "storage_persistence_owner_tests.rs"]
+mod ownership;
 
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new() -> Self {
-        let unique = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        let path = std::env::temp_dir().join(format!("bridgevm-owned-stop-{}-{unique}", std::process::id()));
-        fs::create_dir(&path).unwrap();
-        Self(path)
-    }
-
-    fn media(&self, name: &str) -> WritableMedia {
-        let path = self.0.join(name);
-        fs::write(&path, b"initial").unwrap();
-        WritableMedia::new(path).with_write_back(true)
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+#[path = "storage_persistence_scratch.rs"]
+mod scratch;
+use scratch::Scratch;
 
 #[test]
 fn actual_stop_helper_keeps_vars_and_both_memory_namespaces_owned() {

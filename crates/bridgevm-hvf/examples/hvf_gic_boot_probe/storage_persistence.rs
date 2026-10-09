@@ -1,4 +1,4 @@
-//! Native NVMe persistence; memory-backed slots use the runtime owner.
+//! Native NVMe persistence; snapshot publication uses the runtime owner.
 
 use crate::*;
 use bridgevm_hvf::snapshot_pair::managed::runtime::{RuntimeLease, RuntimeMediaSlot};
@@ -31,11 +31,11 @@ impl NvmePersistNamespace {
     pub(crate) fn export_snapshot(
         self,
         platform: &mut VirtPlatform,
-        path: &Path,
+        out: &mut dyn std::io::Write,
     ) -> std::io::Result<u64> {
         match self {
-            Self::Primary => platform.export_nvme_disk(path),
-            Self::Target => platform.export_nvme_second_namespace_disk(path),
+            Self::Primary => platform.export_nvme_disk_into(out),
+            Self::Target => platform.export_nvme_second_namespace_into(out),
         }
     }
     pub(crate) fn flush(self, platform: &mut VirtPlatform) -> std::io::Result<()> {
@@ -65,21 +65,11 @@ pub(crate) fn persist_nvme_media(
     }
 
     let mut writes = Vec::new();
-    if let Some(path) = media.snapshot_path.as_ref() {
-        let bytes = namespace
-            .export_snapshot(platform, path)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "export {} snapshot {}: {e}",
-                    namespace.subject(),
-                    path.display()
-                )
-            });
-        writes.push(MediaWrite {
-            kind: MediaWriteKind::Snapshot,
-            path: path.clone(),
-            bytes: usize::try_from(bytes).unwrap_or(usize::MAX),
-        });
+    if let Some(write) = owner
+        .export_snapshot(namespace.slot(), |out| namespace.export_snapshot(platform, out))
+        .unwrap_or_else(|e| panic!("export {} snapshot: {e}", namespace.subject()))
+    {
+        writes.push(write);
     }
     if media.write_back {
         namespace.flush(platform).unwrap_or_else(|e| {
