@@ -1,4 +1,4 @@
-"""T22 cleanup owns only the directory allocated by this preparation attempt."""
+"""Cleanup owns only the directory allocated by this preparation attempt."""
 from __future__ import annotations
 
 import os

@@ -3118,7 +3118,9 @@ tests/integration/native-snapshot-restore-receipt-seal-contract.py	207	0
 tests/integration/native-snapshot-restore-cli-path-contract.py	53	0
 tests/integration/native-snapshot-restore-cli-read-contract.py	110	0
 tests/integration/native_snapshot_restore_legacy_read_cases.py	90	0
-tests/integration/native-snapshot-restore-cleanup-contract.py	129	0
+tests/integration/native-snapshot-restore-cleanup-contract.py	86	0
+tests/integration/native_snapshot_restore_cleanup_fixture.py	80	0
+tests/integration/native_snapshot_restore_prepared_cleanup_cases.py	191	0
 tests/integration/native-snapshot-export-evidence-contract.py	123	0
 docs/history/windows-hvf/native-snapshot-restore-live-tier-20260917.md	52	0
 scripts/live-gates/native_snapshot_restore_artifacts.py	63	0

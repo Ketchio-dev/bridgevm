@@ -2,31 +2,21 @@
 """Synthetic T20 failed-run cleanup, publication, and worker-fence contracts."""
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
-from types import SimpleNamespace
 import unittest
-from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/live-gates"))
 from native_snapshot_restore_receipt import TIER, initial
+from native_snapshot_restore_prepared_cleanup_cases import PreparedCleanupCases
 
 COMMIT = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
 MANIFEST = "b" * 64
 BINARY = "c" * 64
-
-
-def runner_module():
-    path = ROOT / "scripts/live-gates/run-native-snapshot-restore-tier.py"
-    spec = importlib.util.spec_from_file_location("native_t20_runner", path)
-    value = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(value)
-    return value
 
 
 def failed_job(root: Path) -> Path:
@@ -67,7 +57,7 @@ def guard(job: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-class NativeSnapshotRestoreCleanupContract(unittest.TestCase):
+class NativeSnapshotRestoreCleanupContract(PreparedCleanupCases, unittest.TestCase):
     def test_failed_clean_job_publishes_and_worker_continues(self):
         with tempfile.TemporaryDirectory() as temporary:
             job = failed_job(Path(temporary))
@@ -90,39 +80,6 @@ class NativeSnapshotRestoreCleanupContract(unittest.TestCase):
                 self.assertFalse((job / "receipt.public.json").exists())
                 self.assertEqual(guard(job).returncode, 126)
                 self.assertTrue((job.parent.parent / "worker-cleanup-required").is_file())
-
-    def test_runner_records_cleanup_on_failed_lifecycle(self):
-        for dirty in (False, True):
-            with self.subTest(dirty=dirty), tempfile.TemporaryDirectory() as temporary:
-                output = Path(temporary) / "job"
-                output.mkdir()
-                runner = runner_module()
-                def prepare(*_args):
-                    (output / "prepared-inputs").mkdir()
-                    return ({"input_manifest_sha256": MANIFEST, "binary_hash": BINARY},
-                            {"binary": "synthetic-binary", "app_cli": "synthetic-cli"})
-                def fail_lifecycle(*_args, **_kwargs):
-                    if dirty:
-                        (output / "live").mkdir()
-                    return SimpleNamespace(returncode=1)
-                def identity(command, **_kwargs):
-                    return COMMIT if command[0] == "git" else "Mac17,9"
-                with (mock.patch.object(runner.sys, "argv", ["runner", str(output), "job", "manifest", "binary"]),
-                      mock.patch.object(runner.subprocess, "check_output", side_effect=identity),
-                      mock.patch.object(runner.subprocess, "run", side_effect=fail_lifecycle),
-                      mock.patch.object(runner.platform, "mac_ver", return_value=("26.0", (), "")),
-                      mock.patch.object(runner, "sealed_hashes", return_value={
-                          "input_manifest_sha256": MANIFEST, "binary_hash": BINARY}),
-                      mock.patch.object(runner, "prepare", side_effect=prepare),
-                      mock.patch.object(runner, "digest", return_value="d" * 64),
-                      mock.patch.object(runner, "shutdown_count", return_value=0),
-                      mock.patch.object(runner, "reauthenticate")):
-                    self.assertEqual(runner.main(), 1)
-                receipt = json.loads((output / "receipt.json").read_text(encoding="utf-8"))
-                self.assertFalse(receipt["pass"])
-                self.assertEqual((receipt["sample_count"], receipt["run_count"]), (0, 0))
-                self.assertIs(receipt["worker_cleanup_verified"], not dirty)
-                self.assertFalse((output / "prepared-inputs").exists())
 
 
 if __name__ == "__main__":
