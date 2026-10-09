@@ -44,11 +44,11 @@ class EntrypointFailure(unittest.TestCase):
         self.assertEqual(result.returncode, 23, result.stderr)
         self.assertEqual(observed, suites[:suites.index(suite) + 1])
 
-    def test_receipt_failure_stops_the_driver(self):
-        self.fails_at(RECEIPT)
-
-    def test_dispatch_failure_stops_the_driver(self):
-        self.fails_at(DISPATCH)
+    def test_each_suite_failure_stops_the_driver(self):
+        _, _, suites = self.driver()
+        for suite in suites:
+            with self.subTest(suite=suite):
+                self.fails_at(suite)
 
     def test_success_reaches_every_suite_and_t22_tail(self):
         result, observed, suites = self.driver()

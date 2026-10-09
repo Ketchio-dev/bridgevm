@@ -2,7 +2,7 @@
 # Deterministic A19 receipt, interruption and lifecycle contracts; no live guest.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-python3 tests/integration/a19-quota-refusal-live-tier-contract.py
+python3 tests/integration/a19-quota-refusal-live-tier-contract.py; python3 tests/integration/a19-archived-receipt-read-contract.py
 python3 tests/integration/a19-interrupted-restore-live-tier-contract.py
 python3 tests/integration/a19-interrupted-restore-public-contract.py
 python3 tests/integration/a19-interrupted-restore-guest-share-contract.py

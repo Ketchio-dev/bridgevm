@@ -1,4 +1,4 @@
-"""Serve T20 and T23 receipts only after checking their current queue and content seals."""
+"""Serve A19 receipts only after checking their current queue and content seals."""
 from __future__ import annotations
 
 import json
@@ -8,8 +8,8 @@ import re
 import shutil
 import sys
 
-from a19_lifecycle_campaign_read import strict_reader
-from receipt_public_tier import public_tier
+from a19_archived_receipt_read import strict_reader
+from a19_archive_public_hint import public_tier
 from native_snapshot_restore_seal import JOB_ID, _env
 
 LEGACY_COMMIT = re.compile(r"[0-9a-f]{7,40}\Z")
@@ -39,7 +39,7 @@ def serve(directory: Path, job_id: str) -> None:
     reader = strict_reader(tiers)
     if reader is not None:
         if directory.parent.name != "done" or directory.parent.is_symlink():
-            raise ValueError("strict T20/T23 receipt is not in the done queue")
+            raise ValueError("strict A19 receipt is not in the done queue")
         value = reader(public, directory)
         json.dump(value, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n"); return
@@ -52,5 +52,5 @@ if __name__ == "__main__":
         raise SystemExit("usage: bridgevm_live_receipt.py JOB_DIR JOB_ID")
     try:
         serve(Path(sys.argv[1]), sys.argv[2])
-    except (OSError, UnicodeError, ValueError) as error:
+    except (OSError, UnicodeError, ValueError, RecursionError) as error:
         raise SystemExit(f"receipt refused: {error}") from error
