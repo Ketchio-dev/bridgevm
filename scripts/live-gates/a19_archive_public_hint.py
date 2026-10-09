@@ -15,12 +15,12 @@ def public_tier(path: Path) -> str | None:
         hints.extend(value for key, value in pairs if key == "tier")
         return dict(pairs)
 
-    try:
-        # Permissive parsing is routing only: duplicate keys and nonfinite
-        # values still fail the strict receipt loader before any output.
-        json.loads(read_bounded_regular(path, 65_536), object_pairs_hook=collect)
-    except (OSError, UnicodeError, ValueError, RecursionError):
-        pass
+    # An unreadable hint is not evidence of a legacy tier. Propagate read and
+    # parse failures so oversized, aliased or malformed files cannot bypass
+    # strict authentication (or block the raw-output path on a FIFO).
+    # Duplicate keys and nonfinite values remain routing-only; a strict tier
+    # still fails its receipt loader before any output.
+    json.loads(read_bounded_regular(path, 65_536), object_pairs_hook=collect)
     for tier in STRICT_TIERS:
         if tier in hints:
             return tier

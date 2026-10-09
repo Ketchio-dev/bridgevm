@@ -8,13 +8,13 @@ import tempfile
 import unittest
 
 from a19_archived_receipt_fixtures import fixture, interrupt, quota, read
-from a19_archived_receipt_hint_cases import ArchivedHintCases
+from a19_archived_receipt_hint_boundary_cases import ArchivedHintBoundaryCases
 from a19_archived_receipt_refusal_cases import ArchivedRefusalCases
 from a19_interrupt_case_fixtures import SHA_C, SHA_D, passing, proven
 import a19_archived_receipt_read as archive
 from a19_lifecycle_campaign_read import strict_reader as lifecycle_reader
 
-class ArchivedReceiptReadContract(ArchivedHintCases, ArchivedRefusalCases, unittest.TestCase):
+class ArchivedReceiptReadContract(ArchivedHintBoundaryCases, ArchivedRefusalCases, unittest.TestCase):
     def refused(self, root: Path, job: Path):
         result = read(root, job)
         self.assertNotEqual(result.returncode, 0, result.stdout)

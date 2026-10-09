@@ -4245,3 +4245,4 @@ scripts/live-gates/a19_archive_public_hint.py	27	0
 tests/integration/a19_archived_receipt_hint_cases.py	50	0
 docs/history/windows-hvf/a19-archived-receipt-read-20261009.md	39	0
 docs/document-manifests/a19-archived-receipt-read.tsv	3	0
+tests/integration/a19_archived_receipt_hint_boundary_cases.py	60	0
