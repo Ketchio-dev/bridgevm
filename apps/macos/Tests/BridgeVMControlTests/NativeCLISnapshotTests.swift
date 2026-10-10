@@ -43,6 +43,7 @@ final class NativeCLISnapshotTests: XCTestCase {
         XCTAssertEqual(
             try fixture.invocations(),
             [
+                ["size", fixture.disk.path, fixture.vars.path],
                 ["create", fixture.disk.path, fixture.vars.path, fixture.snapshot.path, fixture.id, "68"],
                 ["verify", fixture.snapshot.path],
             ]
@@ -54,7 +55,7 @@ final class NativeCLISnapshotTests: XCTestCase {
             operation: .restore,
             repoRoot: fixture.repo
         )
-        XCTAssertTrue(restored.complete, restored.unavailableReason ?? "")
+        XCTAssertTrue(restored.complete, restored.unavailableReason ?? ""); XCTAssertEqual(try fixture.invocations().count, 4)
         XCTAssertEqual(
             try fixture.invocations().last,
             ["restore", fixture.snapshot.path, fixture.disk.path, fixture.vars.path]
@@ -117,7 +118,7 @@ final class NativeCLISnapshotTests: XCTestCase {
             let script = """
             #!/bin/sh
             printf '%s\\n' "$@" | "\(try NativeTestPython.executable().path)" -c 'import json,sys; print(json.dumps(sys.stdin.read().splitlines()))' >> "\(log.path)"
-            if [ "$1" = create ]; then mkdir -p "$4"; fi
+            if [ "$1" = size ]; then printf 'disk_bytes 64\\nvars_bytes 4\\n'; elif [ "$1" = create ]; then mkdir -p "$4"; fi
             """
             try Data(script.utf8).write(to: helper)
             try FileManager.default.setAttributes(
@@ -125,8 +126,7 @@ final class NativeCLISnapshotTests: XCTestCase {
                 ofItemAtPath: helper.path
             )
             let config = VMConfig(
-                id: id,
-                name: "개발 VM",
+                id: id, name: "개발 VM",
                 displayName: "개발 VM",
                 backendKind: backend,
                 bootMode: "windows-hvf",

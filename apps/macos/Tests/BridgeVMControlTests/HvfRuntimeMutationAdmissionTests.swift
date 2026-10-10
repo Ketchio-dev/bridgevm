@@ -55,7 +55,7 @@ final class HvfRuntimeMutationAdmissionTests: XCTestCase {
         let output = f.root.appendingPathComponent("must-not-exist/latest.snapshot")
         let plan = HvfWindowsSnapshotCommand.Plan(executable: URL(fileURLWithPath: "/usr/bin/false"),
             disk: URL(fileURLWithPath: f.config.targetDiskPath), vars: URL(fileURLWithPath: f.config.uefiVarsPath),
-            snapshot: output, vmID: "synthetic", quotaBytes: 1)
+            snapshot: output, vmID: "synthetic")
         stillRegistered = false
         do {
             _ = try await HvfWindowsSnapshotCommand.run(.create, plan: plan) {

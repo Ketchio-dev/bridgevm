@@ -11,8 +11,10 @@ saved, installed own-HVF Windows VM. Installation-pending and unsupported VM
 entries are refused. The snapshot contains the VM's current NVMe disk and
 matching UEFI variable store as one managed pair. Create and export both resolve
 the selected managed generation, so an export after restore cannot silently copy
-stale logical originals. Export atomically publishes `disk.raw`, `vars.fd`, and
-`manifest.json`, then verifies both hashes. The destination must be absent, an
+stale logical originals. Their byte quota also comes from the leased selected
+pair; create rechecks that ceiling if selection changes before capture. Export
+atomically publishes and verifies `disk.raw`, `vars.fd`, and `manifest.json`.
+The destination must be absent, an
 empty directory or a prior snapshot of exactly those files; anything else, even
 Finder metadata, is refused and left intact. Restore verifies before selecting
 the pair. The media lease refuses an active runtime rather than waiting.
@@ -22,15 +24,13 @@ must be absolute and outside the managed VM bundle. Disk and vars paths come
 from the exact saved app-library entry; secrets remain off argv. The bundled
 helper must be a canonical regular executable in the BridgeVM installation.
 
-Text output describes the host operation and names its limitation. JSON uses
-`schema: "bridgevm.app-snapshot.v1"` and includes the operation, exact VM ID,
+Text output describes the host operation and its limitation. JSON uses
+`schema: "bridgevm.app-snapshot.v1"` with the operation, exact VM ID,
 library path, snapshot path, completion state and refusal reason when present.
 
 Exit codes are 0 for a completed host operation, 1 for refusal or failure, and
-2 for invalid usage. Success does not prove that Windows boots after restore,
-that a guest marker survived, or that A19 is complete. Those claims require the
-live sample and interruption evidence defined by the
-[V1 snapshot scope](windows-arm/snapshot-scope-v1.md).
-
-This command controls the native app library. The older `bridgevm snapshot`
-commands address the separate compatibility store in [CLI setup](app-cli.md).
+2 for invalid usage. Success does not prove Windows boots after restore, a guest
+marker survived, or A19 is complete. Those claims require the live sample and
+interruption evidence in the [V1 snapshot scope](windows-arm/snapshot-scope-v1.md).
+These commands use the native app library; older `bridgevm snapshot` commands
+use the separate compatibility store in [CLI setup](app-cli.md).

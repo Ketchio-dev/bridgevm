@@ -1051,7 +1051,8 @@ crates/bridgevm-hvf/src/snapshot_manifest_json.rs	51	0
 crates/bridgevm-hvf/src/snapshot_manifest_json_tests.rs	26	0
 crates/bridgevm-hvf/src/nvme/disk_export.rs	32	0
 crates/bridgevm-hvf/src/nvme/overlay_quota_tests.rs	123	0
-crates/bridgevm-hvf/examples/snapshot_pair_cli.rs	61	0
+crates/bridgevm-hvf/examples/snapshot_pair_cli.rs	53	0
+crates/bridgevm-hvf/examples/snapshot_pair_cli/usage.rs	13	0
 crates/bridgevm-hvf/src/snapshot_free_space.rs	43	2
 crates/bridgevm-hvf/src/snapshot_restore_space_tests.rs	47	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_kill_tests.rs	43	0
@@ -3504,6 +3505,8 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEventFeedText.swift	15	0
 apps/macos/Tests/BridgeVMControlTests/HvfEventFeedTextTests.swift	18	0
 crates/bridgevm-hvf/src/snapshot_pair_selected.rs	50	0
 crates/bridgevm-hvf/src/snapshot_pair_selected_tests.rs	39	0
+crates/bridgevm-hvf/src/snapshot_pair_size.rs	49	0
+crates/bridgevm-hvf/src/snapshot_pair_size_tests.rs	197	0
 apps/macos/Sources/BridgeVMProductE2E/T17SelectedMedia.swift	60	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17SelectedMediaTests.swift	30	0
 scripts/live-gates/windows_product_e2e_selected.py	14	0
@@ -4262,3 +4265,6 @@ docs/history/windows-hvf/a19-continuation-safety-20261009.md	56	0
 docs/document-manifests/a19-continuation-safety.tsv	3	0
 docs/history/windows-hvf/a19-neighbor-cleanup-20261009.md	40	0
 docs/document-manifests/a19-neighbor-cleanup.tsv	3	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsSnapshotQuota.swift	37	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsSnapshotQuotaTests.swift	72	0
+apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotSelectedQuotaTests.swift	177	0

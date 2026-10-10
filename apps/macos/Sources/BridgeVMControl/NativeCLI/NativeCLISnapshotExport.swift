@@ -20,7 +20,7 @@ enum NativeCLISnapshotExport {
             guard !resolved.output.pathComponents.starts(with: bundle.pathComponents) else { throw unavailable("Snapshot export output must be outside the managed VM bundle.") }
             _ = try HvfWindowsSnapshotCommand.invoke(
                 plan.executable,
-                ["create", plan.disk.path, plan.vars.path, resolved.output.path, plan.vmID, String(plan.quotaBytes)]
+                plan.createArguments(destination: resolved.output)
             )
             _ = try HvfWindowsSnapshotCommand.invoke(plan.executable, ["verify", resolved.output.path])
             return result(rootURL, resolved, complete: true, reason: nil)
