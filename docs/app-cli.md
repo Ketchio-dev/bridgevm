@@ -72,8 +72,8 @@ fields are `schema`, `libraryPath`, `records`, `issues`, and `complete`. Records
 include the canonical ID, display name, backend, saved CPU/memory values,
 installation-pending flag, configuration and bundle paths, unobserved runtime
 state, and recovery-record observations. Optional saved values may be omitted.
-Inventory issues remain visible; recovery markers are reported without running
-recovery or interpreting guest media.
+Inventory issues stay visible; recovery markers do not trigger recovery. Inventory
+and readiness text escape control characters; JSON preserves original values.
 
 `readiness` uses `bridgevm.app-readiness.v1` and checks launch inputs without
 starting a VM. Release capability limitations remain separate from these launch
