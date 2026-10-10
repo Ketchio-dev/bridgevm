@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 from native_app_status_contract import check_status
-
+from native_app_text_contract import check_text
 def run(binary, arguments, expected):
     process = subprocess.Popen(
         [str(binary), "--cli", *arguments], stdout=subprocess.PIPE,
@@ -85,7 +85,7 @@ def main():
         assert not output and error
         run(binary, ["inspect", "missing", "--library", str(library), "--json"], 1)
         assert tree(root) == before, "Native queries changed input files or created runtime state"
-        check_status(binary, library, run, tree)
+        check_status(binary, library, run, tree); check_text(binary, run, tree)
         corrupt = library / "corrupt"
         corrupt.mkdir()
         (corrupt / "vm.json").write_text("broken configuration", encoding="utf-8")

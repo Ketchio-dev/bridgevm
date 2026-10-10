@@ -2603,7 +2603,10 @@ apps/macos/Sources/BridgeVMControl/NativeCLI/NativeLibraryRecord.swift	60	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLIOptionsTests.swift	55	0
 apps/macos/Tests/BridgeVMControlTests/NativeLibraryReaderTests.swift	178	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLIHelp.swift	30	0
-apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLIOutput.swift	56	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLIOutput.swift	53	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLITextValue.swift	28	0
+apps/macos/Tests/BridgeVMControlTests/NativeCLIOutputTests.swift	157	0
+apps/macos/Tests/BridgeVMControlTests/NativeCLITextValueTests.swift	32	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLIReadiness.swift	64	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeLibraryConfigLoader.swift	32	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLIReadinessTests.swift	142	0
@@ -2621,6 +2624,7 @@ crates/bridgevm-cli/src/doctor_summary.rs	74	0
 crates/bridgevm-cli/src/doctor_summary_tests.rs	50	0
 crates/bridgevm-cli/tests/cli_doctor.rs	103	0
 tests/integration/native-app-cli-contract.py	101	0
+tests/integration/native_app_text_contract.py	38	0
 scripts/check-project-macos.sh	13	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimePreparation.swift	48	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeOutcome.swift	43	0

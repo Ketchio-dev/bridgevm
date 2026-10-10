@@ -24,9 +24,10 @@ struct NativeCLIReadiness: Encodable {
     let releaseBlockers: [NativeCLIReadinessIssue]
     let productLimitations: [String]
     let recoveryObservations: [String]
+}
 
-    static func snapshot(rootURL: URL, id: String,
-                         repoRoot: URL = HvfEngineSession.defaultRepoRoot()) throws -> Self {
+extension NativeCLIReadiness {
+    static func snapshot(rootURL: URL, id: String, repoRoot: URL = HvfEngineSession.defaultRepoRoot()) throws -> Self {
         let config = try NativeLibraryReader.readConfig(rootURL: rootURL, id: id)
         guard config.backendKind == "hvf-engine" else {
             return blocked(config: config, rootURL: rootURL, code: "unsupported-backend",
@@ -49,8 +50,7 @@ struct NativeCLIReadiness: Encodable {
         return Self(config: config, rootURL: rootURL, report: report, engineChecksPerformed: false)
     }
 
-    private init(config: VMConfig, rootURL: URL, report: HvfWindowsReadinessReport,
-                 engineChecksPerformed: Bool) {
+    private init(config: VMConfig, rootURL: URL, report: HvfWindowsReadinessReport, engineChecksPerformed: Bool) {
         libraryPath = rootURL.path
         id = config.slug
         backendKind = config.backendKind
