@@ -5,15 +5,9 @@ use bridgevm_hvf::snapshot_pair::{create_snapshot, restore_snapshot, verify_snap
 use std::path::Path;
 use std::process::ExitCode;
 
-fn usage() -> ExitCode {
-    eprintln!(
-        "usage:\n  \
-         snapshot_pair_cli create <disk> <vars> <dest> <vm-id> <quota-bytes>\n  \
-         snapshot_pair_cli verify <snapshot-dir>\n  \
-         snapshot_pair_cli restore <snapshot-dir> <disk> <vars>\n  snapshot_pair_cli lease <disk> <vars>\n  snapshot_pair_cli digest <disk> <vars>"
-    );
-    ExitCode::from(2)
-}
+#[path = "snapshot_pair_cli/usage.rs"]
+mod usage;
+use usage::usage;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -24,6 +18,7 @@ fn main() -> ExitCode {
     let result = match (command.as_str(), args.len()) {
         ("lease", 3) => return bridgevm_hvf::media_lease_session::command(&args[1..]),
         ("digest", 3) => return bridgevm_hvf::snapshot_pair::selected::command(&args[1..]),
+        ("size", 3) => return bridgevm_hvf::snapshot_pair::size::command(&args[1..]),
         ("create", 6) => {
             let Ok(quota) = args[5].parse::<u64>() else {
                 eprintln!("quota must be a number of bytes");
