@@ -1,6 +1,6 @@
 //! Host-scan planning: changed host files become PUTs and vanished ones guest
 //! deletions. A case-only rename is the same file; a refused PUT waits for a
-//! host change.
+//! host change; a file the scan found but could not read has not vanished.
 
 use super::*;
 
@@ -64,7 +64,7 @@ impl ShareSync {
         self.put_rejected.retain(|name, stat| host.get(name) == Some(stat));
 
         for (name, record) in &self.records {
-            if self.host_files_scratch.contains_key(name) {
+            if self.host_files_scratch.contains_key(name) || self.host_unseen_covers(name) {
                 continue;
             }
             if record.host_write_failed {

@@ -72,6 +72,7 @@ pub struct ShareSync {
     guest_file_entries_scratch: HashMap<String, GuestFileStat>,
     host_files_scratch: HashMap<String, HostFileStat>,
     put_rejected: HashMap<String, HostFileStat>,
+    host_unseen: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -91,6 +92,7 @@ impl ShareSync {
             guest_file_entries_scratch: HashMap::new(),
             host_files_scratch: HashMap::new(),
             put_rejected: HashMap::new(),
+            host_unseen: HashSet::new(),
         }
     }
 
@@ -144,11 +146,7 @@ impl ShareSync {
                 .insert(name, GuestFileStat { size, mtime });
         }
         self.alias_guest_renames();
-        // Windows keys, because the guest may store a held host name in another case.
-        let held: HashSet<String> = (self.pending_host_changed.iter())
-            .chain(self.put_rejected.keys())
-            .map(|name| share_win_names::windows_key(name))
-            .collect();
+        let held = self.pull_held_keys();
 
         for (name, entry) in &self.guest_file_entries_scratch {
             if entry.size > self.max_bytes {
@@ -164,9 +162,8 @@ impl ShareSync {
                 }
                 continue;
             }
-            // The host version is not on the guest yet (queued, or refused after
-            // the guest may have truncated its copy): never pull that copy back.
-            if !held.is_empty() && held.contains(&share_win_names::windows_key(name)) {
+            // The host version is not on the guest yet, or the host file is unreadable.
+            if self.pull_held(&held, name) {
                 continue;
             }
 
@@ -207,7 +204,7 @@ impl ShareSync {
             if record.host_write_failed {
                 continue;
             }
-            if self.pending_host_changed.contains(name) {
+            if self.pending_host_changed.contains(name) || self.host_unseen_covers(name) {
                 continue;
             }
             actions.push(SyncAction::DeleteHost { name: name.clone() });
@@ -328,6 +325,8 @@ mod share_rel_path;
 pub use share_rel_path::to_guest_rel;
 pub use share_rel_path::{append_guest_rel_into, from_guest_rel, normalize_rel};
 
+#[path = "share_host_unseen.rs"]
+mod share_host_unseen;
 #[path = "share_listing.rs"]
 mod share_listing;
 #[path = "share_sync_host.rs"]

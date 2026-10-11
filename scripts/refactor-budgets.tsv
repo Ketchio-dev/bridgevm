@@ -831,7 +831,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/harness_protocol.r
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs	133	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	473	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/service_wake.rs	45	1
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share.rs	190	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share.rs	130	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_put.rs	258	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/state.rs	354	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/window_protocol.rs	79	0
@@ -910,7 +910,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/plan_tests.rs	73
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/psci_adapter.rs	255	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs	545	26
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/serial_input.rs	158	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync.rs	342	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync.rs	339	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace.rs	124	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace/event_ring.rs	231	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace/event_ring_tests.rs	130	0
@@ -4158,6 +4158,9 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_sync_s
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_host.rs	108	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_windows_name_tests.rs	102	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_win_names.rs	92	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_host_unseen.rs	74	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_scan.rs	73	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_unseen_tests.rs	154	0
 apps/macos/Sources/AppleVzRunnerCore/AppleVzDisplayRuntimeControlServer.swift	456	0
 apps/macos/Tests/AppleVzRunnerTests/RuntimeControlSocketFixture.swift	24	0
 apps/macos/Tests/AppleVzRunnerTests/RuntimeControlSocketCleanupTests.swift	81	0
