@@ -91,7 +91,7 @@ impl AgentConsoleHarness {
             queue: VecDeque::new(),
             in_flight: None,
             overdue_beats: 0,
-            last_synced: None,
+            last_synced: ClipBaseline::default(),
             pasteboard,
             ctl_path,
             ctl_offset,

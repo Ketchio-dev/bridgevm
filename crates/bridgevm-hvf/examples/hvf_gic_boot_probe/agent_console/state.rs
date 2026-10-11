@@ -98,10 +98,10 @@ pub struct AgentConsoleHarness {
     /// Consecutive overdue reports for the current in-flight request; at 3
     /// the request is dropped from the wire and re-queued (retransmit).
     pub(super) overdue_beats: u32,
-    /// Last clipboard text synced in EITHER direction, stored normalized (LF).
-    /// Guards the CRLF/LF ping-pong: a value we just pushed one way must not be
-    /// re-adopted when it comes back the other way.
-    pub(super) last_synced: Option<String>,
+    /// Clipboard text the guest is known to hold (normalized LF); advances to
+    /// a host copy only on CLIPSET OK. Guards the CRLF/LF ping-pong and stale
+    /// guest text replacing a newer Mac copy (see clip_sync.rs).
+    pub(super) last_synced: ClipBaseline,
     /// macOS pasteboard bridge (guest<->host). Some only when clipsync is on.
     pub(super) pasteboard: Option<HostPasteboard>,
     /// Optional control file tailed for injected commands.

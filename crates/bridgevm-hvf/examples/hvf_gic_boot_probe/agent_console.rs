@@ -23,6 +23,8 @@ use share_sync::{GuestFileOutcome, HostFile, LsEntry, ShareSync, SkipReason, Syn
 #[cfg(test)]
 #[path = "agent_console_tests.rs"]
 mod agent_console_tests;
+#[path = "agent_console/clip_sync.rs"]
+mod clip_sync;
 #[path = "agent_console/clipboard.rs"]
 mod clipboard;
 #[path = "agent_console/config.rs"]
@@ -43,6 +45,7 @@ mod share;
 mod state;
 #[path = "agent_console/window_protocol.rs"]
 mod window_protocol;
+use clip_sync::*;
 use clipboard::*;
 use config::*;
 use control_file::*;

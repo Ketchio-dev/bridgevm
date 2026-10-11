@@ -66,10 +66,15 @@ impl Poller {
     }
 
     /// Write guest text to the pasteboard, recording the post-write changeCount
-    /// so the write does not re-emerge from on_tick. (If the user copies in the
-    /// tiny window between set_string and change_count, that copy is missed —
-    /// accepted race, the next real change re-syncs.)
+    /// so the write does not re-emerge from on_tick. A changeCount that moved
+    /// since the last observation is a newer Mac copy: it wins, is left in
+    /// place and is reported by the next on_tick. (A copy landing between that
+    /// check and set_string, or between set_string and change_count, is still
+    /// missed: NSPasteboard has no compare-and-swap.)
     pub fn apply_set<B: PasteboardBackend>(&mut self, backend: &mut B, text: &str) {
+        if self.last_count != -1 && backend.change_count() != self.last_count {
+            return;
+        }
         if backend.set_string(text) {
             self.last_seen = Some(text.to_owned());
             self.last_count = backend.change_count();
@@ -106,6 +111,15 @@ impl HostPasteboard {
     pub fn set(&self, text: String) {
         let _ = self.cmds.send(text);
     }
+
+    /// Channel-only bridge for service-loop tests (no NSPasteboard thread):
+    /// returns it with the host-change sender and the set() receiver.
+    #[cfg(test)]
+    pub fn test_pair() -> (Self, Sender<String>, Receiver<String>) {
+        let (event_tx, events) = channel();
+        let (cmds, cmd_rx) = channel();
+        (Self { events, cmds }, event_tx, cmd_rx)
+    }
 }
 
 fn run<B: PasteboardBackend>(
@@ -116,8 +130,8 @@ fn run<B: PasteboardBackend>(
 ) {
     let mut poller = Poller::new();
     loop {
-        // Drain set() requests first: a fresh guest->host write supersedes
-        // whatever a stale poll would have reported.
+        // Drain set() requests before polling: apply_set refuses to overwrite
+        // a Mac copy made since the last poll, which this poll then reports.
         loop {
             match cmds.try_recv() {
                 Ok(text) => poller.apply_set(&mut backend, &text),
@@ -315,112 +329,5 @@ extern "C" {
 extern "C" {}
 
 #[cfg(test)]
-mod tests {
-    use super::{PasteboardBackend, Poller};
-
-    struct MockBackend {
-        count: i64,
-        text: Option<String>,
-        set_success: bool,
-    }
-
-    impl MockBackend {
-        fn new(count: i64, text: Option<&str>) -> Self {
-            Self {
-                count,
-                text: text.map(str::to_owned),
-                set_success: true,
-            }
-        }
-
-        fn external_change(&mut self, count: i64, text: Option<&str>) {
-            self.count = count;
-            self.text = text.map(str::to_owned);
-        }
-    }
-
-    impl PasteboardBackend for MockBackend {
-        fn change_count(&mut self) -> i64 {
-            self.count
-        }
-
-        fn get_string(&mut self) -> Option<String> {
-            self.text.clone()
-        }
-
-        fn set_string(&mut self, text: &str) -> bool {
-            if !self.set_success {
-                return false;
-            }
-            self.count += 1;
-            self.text = Some(text.to_owned());
-            true
-        }
-    }
-
-    #[test]
-    fn startup_content_emitted_exactly_once_on_first_tick() {
-        let mut poller = Poller::new();
-        let mut backend = MockBackend::new(7, Some("startup"));
-
-        assert_eq!(poller.on_tick(&mut backend), Some("startup".to_owned()));
-        assert_eq!(poller.on_tick(&mut backend), None);
-    }
-
-    #[test]
-    fn external_change_emits_once_and_unchanged_count_emits_nothing() {
-        let mut poller = Poller::new();
-        let mut backend = MockBackend::new(1, Some("old"));
-
-        assert_eq!(poller.on_tick(&mut backend), Some("old".to_owned()));
-        backend.external_change(2, Some("new"));
-
-        assert_eq!(poller.on_tick(&mut backend), Some("new".to_owned()));
-        assert_eq!(poller.on_tick(&mut backend), None);
-    }
-
-    #[test]
-    fn apply_set_does_not_echo_on_following_tick() {
-        let mut poller = Poller::new();
-        let mut backend = MockBackend::new(0, None);
-
-        poller.apply_set(&mut backend, "guest");
-
-        assert_eq!(poller.on_tick(&mut backend), None);
-    }
-
-    #[test]
-    fn external_same_text_after_apply_set_does_not_reemit() {
-        let mut poller = Poller::new();
-        let mut backend = MockBackend::new(0, None);
-
-        poller.apply_set(&mut backend, "same");
-        backend.external_change(backend.count + 1, Some("same"));
-
-        assert_eq!(poller.on_tick(&mut backend), None);
-    }
-
-    #[test]
-    fn empty_string_content_is_never_emitted() {
-        let mut poller = Poller::new();
-        let mut backend = MockBackend::new(1, Some(""));
-
-        assert_eq!(poller.on_tick(&mut backend), None);
-        backend.external_change(2, Some(""));
-        assert_eq!(poller.on_tick(&mut backend), None);
-    }
-
-    #[test]
-    fn failed_set_string_leaves_poller_state_unchanged() {
-        let mut poller = Poller::new();
-        let mut backend = MockBackend::new(1, Some("host"));
-
-        assert_eq!(poller.on_tick(&mut backend), Some("host".to_owned()));
-        backend.set_success = false;
-        backend.external_change(2, Some("guest"));
-
-        poller.apply_set(&mut backend, "guest");
-
-        assert_eq!(poller.on_tick(&mut backend), Some("guest".to_owned()));
-    }
-}
+#[path = "host_pasteboard_tests.rs"]
+mod tests;

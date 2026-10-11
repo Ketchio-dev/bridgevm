@@ -30,32 +30,7 @@ impl AgentConsoleHarness {
         // 1. Host pasteboard changes collapse to a single latest-wins ClipPush.
         //    Draining every pending change and keeping only the last means a
         //    burst of copies syncs the final value, not each intermediate one.
-        if let Some(pasteboard) = self.pasteboard.as_ref() {
-            let mut latest = None;
-            while let Some(text) = pasteboard.try_changed() {
-                latest = Some(text);
-            }
-            if let Some(text) = latest {
-                let normalized = normalize_clip(&text);
-                if self.last_synced.as_deref() != Some(normalized.as_str()) {
-                    // Oversized copies are marked seen but never pushed: the
-                    // guest agent reads the wire with per-call P/Invoke cost, so
-                    // a huge CLIPSET line wedges the whole channel (every later
-                    // request piles into the port and times out).
-                    if text.len() > self.clip_max_bytes {
-                        println!(
-                            "BVAGENT CLIPSYNC skip bytes={} too-large t={}",
-                            text.len(),
-                            self.t_ms(now)
-                        );
-                        self.last_synced = Some(normalized);
-                    } else {
-                        self.last_synced = Some(normalized);
-                        self.enqueue_clip_push(text);
-                    }
-                }
-            }
-        }
+        self.enqueue_host_clip_change(now);
 
         // 2. Control-file lines become Ctl commands.
         self.drain_ctl(now);
@@ -287,14 +262,6 @@ impl AgentConsoleHarness {
             },
         }
     }
-    /// Coalesce host->guest clipboard pushes: a newer host value obsoletes any
-    /// still-queued (unsent) ClipPush, so drop those before queuing this one.
-    /// The in-flight push is already on the wire and is left alone.
-    pub(super) fn enqueue_clip_push(&mut self, text: String) {
-        self.queue
-            .retain(|req| !matches!(req, ServiceReq::ClipPush(_)));
-        self.queue.push_back(ServiceReq::ClipPush(text));
-    }
     /// Whether any queued OR in-flight request satisfies `pred`.
     pub(super) fn any_pending(&self, pred: impl Fn(&ServiceReq) -> bool) -> bool {
         if let Some((req, _)) = self.in_flight.as_ref() {
@@ -379,8 +346,11 @@ impl AgentConsoleHarness {
             println!("BVAGENT re-READY {hostname} t={}", self.t_ms(now));
             // A fresh guest agent cannot complete the previous process's
             // request. READY is therefore the only honest resynchronization
-            // point at which the old wire slot may be released.
-            self.in_flight = None;
+            // point at which the old wire slot may be released. An unconfirmed
+            // push may not have landed, so the guest's text is re-learned.
+            if let Some((ServiceReq::ClipPush(_), _)) = self.in_flight.take() {
+                self.last_synced.rebaseline = true;
+            }
             self.get_accum = None;
             self.out_accum = None;
             return;
@@ -400,43 +370,9 @@ impl AgentConsoleHarness {
             None => return,
         };
         match kind {
-            InFlightSnapshot::ClipPoll => {
-                if let Some(b64) = line.strip_prefix("CLIP ") {
-                    let text = base64_decode(b64)
-                        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                        .unwrap_or_default();
-                    // Adopt only genuinely-new content (normalized compare) so a
-                    // value we just pushed host->guest doesn't bounce straight
-                    // back through the guest clipboard.
-                    if let Some(normalized) = guest_clip_decision(&self.last_synced, &text) {
-                        let bytes = normalized.len();
-                        self.last_synced = Some(normalized.clone());
-                        if let Some(pasteboard) = self.pasteboard.as_ref() {
-                            pasteboard.set(normalized);
-                        }
-                        println!(
-                            "BVAGENT CLIPSYNC guest->host bytes={bytes} t={}",
-                            self.t_ms(now)
-                        );
-                    }
-                    self.complete_in_flight();
-                } else if line.starts_with("ERR") {
-                    println!("BVAGENT CLIPSYNC guest->host {line}");
-                    self.complete_in_flight();
-                }
-            }
+            InFlightSnapshot::ClipPoll => self.handle_clip_poll_reply(line, now),
             InFlightSnapshot::ClipPush { guest_bytes } => {
-                if line.starts_with("OK") {
-                    println!(
-                        "BVAGENT CLIPSYNC host->guest bytes={} t={}",
-                        guest_bytes,
-                        self.t_ms(now)
-                    );
-                    self.complete_in_flight();
-                } else if line.starts_with("ERR") {
-                    println!("BVAGENT CLIPSYNC host->guest {line}");
-                    self.complete_in_flight();
-                }
+                self.handle_clip_push_reply(line, guest_bytes, now);
             }
             InFlightSnapshot::Ctl(command) => match self.handle_reply_line(line, &command) {
                 ReplyProgress::Complete => self.complete_in_flight(),

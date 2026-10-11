@@ -829,7 +829,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/config.rs	28	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/control_file.rs	17	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/harness_protocol.rs	521	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs	133	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	534	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	470	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/service_wake.rs	45	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share.rs	190	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_put.rs	258	0
@@ -854,7 +854,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_continuity.rs	213	
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_continuity_tests.rs	283	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_prefill.rs	34	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_prefill_tests.rs	70	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard.rs	424	21
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard.rs	329	21
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_support.rs	41	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_snapshot.rs	176	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_snapshot_tests.rs	181	0
@@ -4321,3 +4321,6 @@ apps/macos/Tests/BridgeVMControlTests/FastVZResourcePersistenceTests.swift	245	0
 crates/bridgevm-cli/src/args/app_operand.rs	20	0
 crates/bridgevm-cli/src/app_cli_operand_tests.rs	65	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLICreateWindowsNameTests.swift	40	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_sync.rs	106	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_sync_tests.rs	248	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard_tests.rs	139	0
