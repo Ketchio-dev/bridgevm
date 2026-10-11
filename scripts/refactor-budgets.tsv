@@ -4310,3 +4310,6 @@ apps/macos/Tests/BridgeVMControlTests/HvfPendingDeletionReferenceTests.swift	162
 apps/macos/Tests/BridgeVMControlTests/HvfPendingDeletionReferenceReadTests.swift	106	0
 apps/macos/Sources/BridgeVMControl/FastVZResourceUpdate.swift	54	0
 apps/macos/Tests/BridgeVMControlTests/FastVZResourcePersistenceTests.swift	245	0
+crates/bridgevm-cli/src/args/app_operand.rs	20	0
+crates/bridgevm-cli/src/app_cli_operand_tests.rs	65	0
+apps/macos/Tests/BridgeVMControlTests/NativeCLICreateWindowsNameTests.swift	40	0

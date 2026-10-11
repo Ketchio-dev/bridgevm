@@ -1,6 +1,6 @@
 include!("app_command_support.rs");
 #[rustfmt::skip]
-#[derive(Debug, Subcommand)]
+#[derive(Debug, Subcommand)] #[command(mut_subcommands = reject_option_like_operands)]
 pub(crate) enum AppCommand {
     #[command(flatten)]
     Query(AppQueryCommand), #[command(about = "Diagnose native app discovery and CLI protocol compatibility without opening the app.")] Doctor,
