@@ -3003,7 +3003,10 @@ apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeInstallControlProtocol.sw
 apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeInstallControlCodec.swift	61	0
 apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeInstallObservation.swift	44	0
 apps/macos/Tests/BridgeVMControlTests/NativeInstallControlCodecTests.swift	89	0
-apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeInstallOperation.swift	123	0
+apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeInstallOperation.swift	119	0
+apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeInstallOperationBounds.swift	24	0
+apps/macos/Tests/BridgeVMControlTests/NativeInstallOperationStartTests.swift	103	0
+apps/macos/Tests/BridgeVMControlTests/NativeInstallOperationAdmissionTests.swift	73	0
 apps/macos/Tests/BridgeVMControlTests/NativeInstallOperationTests.swift	75	0
 apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeInstallOperationStore.swift	51	0
 apps/macos/Tests/BridgeVMControlTests/NativeInstallOperationStoreTests.swift	50	0
@@ -3013,8 +3016,10 @@ apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeInstallOperationStoreAdmi
 apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeInstallModelResult.swift	6	0
 apps/macos/Sources/BridgeVMControl/LibraryModelOwnedInstallValidation.swift	26	0
 apps/macos/Sources/BridgeVMControl/LibraryModelOwnedInstall.swift	49	0
-apps/macos/Sources/BridgeVMControl/LibraryModelOwnedInstallExecution.swift	64	0
+apps/macos/Sources/BridgeVMControl/LibraryModelOwnedInstallExecution.swift	63	0
 apps/macos/Tests/BridgeVMControlTests/NativeInstallOwnedModelTests.swift	113	0
+apps/macos/Tests/BridgeVMControlTests/NativeInstallOwnedAdoptionFixture.swift	76	0
+apps/macos/Tests/BridgeVMControlTests/NativeInstallOwnedAdoptionTests.swift	88	0
 apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeRuntimeAppInstallRouter.swift	47	0
 apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeInstallRequestRouting.swift	15	0
 apps/macos/Tests/BridgeVMControlTests/NativeRuntimeInstallAdmissionTests.swift	56	0
