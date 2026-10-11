@@ -85,19 +85,17 @@ pub(super) fn parse_share_spec(spec: &str) -> Option<(String, String)> {
     Some((host.to_string(), guest.to_string()))
 }
 
-pub(super) fn scan_share_host_dir(share: &mut ShareState) {
+/// False when the share root itself cannot be listed.
+pub(super) fn scan_share_host_dir(share: &mut ShareState) -> bool {
     share_host_write::forget_absent_share_failures(share);
     share.host_scan_scratch.clear();
-    let root = &share.host_dir;
-    let max_bytes = share.engine.max_bytes();
-    let host_skip_seen = &mut share.host_skip_seen;
     scan_share_host_dir_inner(
-        root,
-        root,
-        max_bytes,
-        host_skip_seen,
+        &share.host_dir,
+        &share.host_dir,
+        share.engine.max_bytes(),
+        &mut share.host_skip_seen,
         &mut share.host_scan_scratch,
-    );
+    )
 }
 
 pub(super) fn scan_share_host_dir_inner(
@@ -106,9 +104,9 @@ pub(super) fn scan_share_host_dir_inner(
     max_bytes: u64,
     host_skip_seen: &mut HashSet<(String, u128, HostSkipKind)>,
     files: &mut Vec<HostFile>,
-) {
+) -> bool {
     let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
+        return false;
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -146,6 +144,7 @@ pub(super) fn scan_share_host_dir_inner(
             mtime_ms,
         });
     }
+    true
 }
 
 pub(super) fn host_rel_path(root: &Path, path: &Path) -> Option<String> {
@@ -195,6 +194,8 @@ pub(super) fn write_share_guest_path_into(dir: &str, name: &str, out: &mut Strin
 
 #[path = "share/host_destination.rs"]
 mod host_destination;
+#[path = "share/share_host_change.rs"]
+mod share_host_change;
 #[path = "share/share_host_write.rs"]
 mod share_host_write;
 #[path = "share/share_put.rs"]
