@@ -4309,4 +4309,4 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPendingDeletionReferences.swift	
 apps/macos/Tests/BridgeVMControlTests/HvfPendingDeletionReferenceTests.swift	162	0
 apps/macos/Tests/BridgeVMControlTests/HvfPendingDeletionReferenceReadTests.swift	106	0
 apps/macos/Sources/BridgeVMControl/FastVZResourceUpdate.swift	54	0
-apps/macos/Tests/BridgeVMControlTests/FastVZResourcePersistenceTests.swift	239	0
+apps/macos/Tests/BridgeVMControlTests/FastVZResourcePersistenceTests.swift	245	0

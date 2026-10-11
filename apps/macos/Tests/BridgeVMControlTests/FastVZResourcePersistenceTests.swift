@@ -154,10 +154,12 @@ final class FastVZResourcePersistenceTests: XCTestCase {
             if removed { try FileManager.default.removeItem(at: directory) }
             else { XCTAssertTrue(VMLibrary.save(edited, rootURL: fixture.library)) }
             let launchBefore = try Data(contentsOf: fixture.launchSpec)
+            let handoffBefore = try Data(contentsOf: fixture.handoff)
 
             XCTAssertFalse(fixture.config.makeBackend(libraryRoot: fixture.library).setResources(memMiB: 8192, cpu: 6))
 
             XCTAssertEqual(try Data(contentsOf: fixture.launchSpec), launchBefore)
+            XCTAssertEqual(try Data(contentsOf: fixture.handoff), handoffBefore)
             if removed { XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path)) }
             else { XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: fixture.library, id: fixture.slug).displayName, "Renamed elsewhere") }
         }
@@ -167,8 +169,11 @@ final class FastVZResourcePersistenceTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.clean() }
         try fixture.prepare()
-        // A regular file where the library directory should be: vm.json cannot be saved.
-        try Data("blocked".utf8).write(to: fixture.library)
+        // The registration is current, but its directory refuses the atomic vm.json replacement.
+        XCTAssertTrue(VMLibrary.save(fixture.config, rootURL: fixture.library))
+        let registration = fixture.library.appendingPathComponent(fixture.slug)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: registration.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: registration.path) }
         let launchBefore = try Data(contentsOf: fixture.launchSpec)
         let handoffBefore = try Data(contentsOf: fixture.handoff)
         let backend = fixture.config.makeBackend(libraryRoot: fixture.library)
@@ -180,6 +185,7 @@ final class FastVZResourcePersistenceTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: fixture.handoff), handoffBefore)
         XCTAssertEqual(backend.resources().memMiB, 4096)
         XCTAssertEqual(backend.resources().cpu, 2)
+        XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: fixture.library, id: fixture.slug).memMiB, 4096)
     }
 
     func testUnreadableLaunchSpecRefusesBeforeAnyWrite() throws {
