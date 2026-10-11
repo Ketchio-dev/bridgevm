@@ -265,7 +265,7 @@ final class FBLayerView: NSView {
         guard let delta = HvfScrollDelta.hid(from: event.scrollingDeltaY) else {
             return
         }
-
+        pointerMoves.reset()
         session.sendPointerScroll(
             delta,
             location: point(event),
