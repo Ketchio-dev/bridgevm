@@ -4245,7 +4245,7 @@ crates/bridgevm-hvf/src/nvme/tests/export_failure.rs	64	0
 crates/bridgevm-hvf/src/nvme/tests/export_staging.rs	63	0
 docs/document-manifests/nvme-export-staging-ownership.tsv	3	0
 docs/history/windows-hvf/nvme-export-staging-ownership-20261008.md	40	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLibraryLaunchReadiness.swift	22	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLibraryLaunchReadiness.swift	16	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallCommittedCleanup.swift	44	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFinalizationBegin.swift	40	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallFinalizationCommit.swift	30	0
@@ -4331,3 +4331,7 @@ crates/bridgevm-hvf/src/snapshot_runtime_exclusion.rs	57	0
 crates/bridgevm-hvf/src/snapshot_runtime_exclusion_tests.rs	181	0
 crates/bridgevm-hvf-runtime/src/vm_builder_snapshot_tests.rs	64	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotRuntimeOwnershipTests.swift	105	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallTransactionResidue.swift	27	0
+apps/macos/Sources/BridgeVMControl/VMRegistrationCurrency.swift	11	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallCommittedCleanupRelocationTests.swift	78	0
+apps/macos/Tests/BridgeVMControlTests/WindowsVMRelocationUnconfirmedOutcomeTests.swift	112	0

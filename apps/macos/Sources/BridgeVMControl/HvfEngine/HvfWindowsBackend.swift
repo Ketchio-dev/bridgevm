@@ -158,10 +158,10 @@ final class HvfWindowsBackend: VMBackend {
     }
 
     func setResources(memMiB: Int, cpu: Int) -> Bool {
-        guard VMResourceLimits.contains(memoryMiB: memMiB, cpu: cpu) else { return false }
+        guard VMResourceLimits.contains(memoryMiB: memMiB, cpu: cpu),
+              VMLibrary.isCurrentRegistration(config, rootURL: libraryRoot) else { return false }
         var updated = config
-        updated.memMiB = memMiB
-        updated.cpuCount = cpu
+        updated.memMiB = memMiB; updated.cpuCount = cpu
         guard VMLibrary.save(updated, rootURL: libraryRoot) else { return false }
         config = updated
         return true

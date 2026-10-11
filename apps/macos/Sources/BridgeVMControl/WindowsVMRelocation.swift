@@ -14,6 +14,7 @@ extension VMLibrary {
         let destination = destinationParent.standardizedFileURL
             .appendingPathComponent(source.lastPathComponent, isDirectory: true)
         guard VMRelocationPaths.isSafe(source: source, destination: destination),
+              !HvfWindowsInstallTransactionResidue.isPresent(config, rootURL: rootURL),
               (try? source.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]).isDirectory) == true,
               (try? source.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true,
               !fm.fileExists(atPath: destination.path) else { return nil }

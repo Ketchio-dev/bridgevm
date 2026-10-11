@@ -26,7 +26,7 @@ extension LibraryModel {
     }
 
     func admitLibraryAction(_ cfg: VMConfig, action: LibraryFileAction) -> Bool {
-        let pending = action == .deletion ? pendingDeletionReferenceRefusal(for: cfg) : nil
+        let pending = action == .deletion ? pendingDeletionReferenceRefusal(for: cfg) : transactionResidueRefusal(for: cfg, action: action)
         guard let refusal = libraryActionRefusal(for: cfg) ?? pending else { return true }
         switch action {
         case .deletion: deletionError = refusal
