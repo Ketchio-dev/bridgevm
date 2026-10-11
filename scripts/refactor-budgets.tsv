@@ -3118,6 +3118,7 @@ apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICommandLifecycle.swift	11	
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshot.swift	106	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshotHelp.swift	13	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshotExportParser.swift	56	0
+apps/macos/Tests/BridgeVMControlTests/NativeSnapshotExportHelpTests.swift	24	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshotExport.swift	59	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotTests.swift	161	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotExportTests.swift	147	0
