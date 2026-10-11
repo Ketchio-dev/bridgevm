@@ -4339,3 +4339,4 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/verb_reply.rs	17	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/ctl_verb_reply_tests.rs	85	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestCommandError.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfGuestCommandTests.swift	99	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/ctl_input_line_tests.rs	82	0

@@ -13,7 +13,7 @@ final class HvfUnicodeInputRequestTests: XCTestCase {
         XCTAssertEqual(request.insertedEventCount, 10)
         XCTAssertNil(HvfUnicodeInputRequest(text: "", now: now))
         XCTAssertNil(HvfUnicodeInputRequest(text: String(repeating: "a", count: 65_537), now: now))
-        XCTAssertNotNil(HvfUnicodeInputRequest(text: String(repeating: "a", count: 65_536), now: now))
+        XCTAssertEqual(HvfUnicodeInputRequest(text: String(repeating: "a", count: 65_536), now: now)?.command.utf8.count, 87_431)
         XCTAssertNil(HvfUnicodeInputRequest(text: String(repeating: "\u{d55c}", count: 21_846), now: now))
     }
 

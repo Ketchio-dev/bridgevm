@@ -52,8 +52,8 @@ pub(super) const COMMAND_OUTPUT_CHUNK_B64_BYTES: usize = COMMAND_OUTPUT_CHUNK_BY
 
 pub(super) const MAX_COMMAND_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
-pub(super) const MAX_CTL_COMMAND_BYTES: usize = 64 * 1024;
-
+/// Equals the app's input-line guard: input verb, id, base64 of one 65,536-byte text event.
+pub(super) const MAX_CTL_COMMAND_BYTES: usize = 87_434;
 pub(super) const MAX_CTL_READ_BYTES_PER_POLL: u64 = 256 * 1024;
 
 pub(super) const MAX_SERVICE_QUEUE_DEPTH: usize = 1024;
