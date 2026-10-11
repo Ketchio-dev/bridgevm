@@ -1,17 +1,17 @@
 import Foundation
 
 extension HvfMediaLeaseSession {
-    private static func acquire(config: VMConfig) throws -> HvfMediaLeaseSession {
+    private static func acquire(config: VMConfig, mode: Mode = .ordinary) throws -> HvfMediaLeaseSession {
         let root = HvfEngineSession.defaultRepoRoot()
         let helper = root.appendingPathComponent("target/release/examples/snapshot_pair_cli")
         return try HvfMediaLeaseSession(
             executable: helper,
             disk: config.diskPath ?? (config.bundlePath + "/disks/hvf-target.raw"),
-            vars: config.bundlePath + "/metadata/hvf-vars.fd")
+            vars: config.bundlePath + "/metadata/hvf-vars.fd", mode: mode)
     }
 
-    static func withOwnership<T>(config: VMConfig, operation: () throws -> T) throws -> T {
-        let lease = try acquire(config: config)
+    static func withOwnership<T>(config: VMConfig, mode: Mode = .ordinary, operation: () throws -> T) throws -> T {
+        let lease = try acquire(config: config, mode: mode)
         defer { lease.abort() }
         let value = try operation()
         try lease.finish()

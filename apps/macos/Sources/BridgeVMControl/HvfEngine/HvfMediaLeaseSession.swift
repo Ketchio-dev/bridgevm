@@ -4,6 +4,11 @@ import Darwin
 /// Worker-thread client. Successful completion requires a live native owner
 /// throughout the normal protocol; callers must handle operation rollback.
 final class HvfMediaLeaseSession {
+    enum Mode: String {
+        case ordinary = "lease"
+        case pendingDelete = "lease-pending-delete"
+    }
+
     private let process = Process()
     private let input = Pipe()
     private let output = Pipe()
@@ -11,7 +16,8 @@ final class HvfMediaLeaseSession {
     private var released = false
     private static let ready = Data("bridgevm-media-lease-v1\n".utf8)
 
-    init(executable: URL, disk: String, vars: String, timeout: TimeInterval = 5) throws {
+    init(executable: URL, disk: String, vars: String, mode: Mode = .ordinary,
+         timeout: TimeInterval = 5) throws {
         self.timeout = timeout
         guard timeout.isFinite, timeout > 0,
               executable.standardizedFileURL == executable.resolvingSymlinksInPath().standardizedFileURL,
@@ -23,7 +29,7 @@ final class HvfMediaLeaseSession {
             throw Self.failure("cannot configure lease control pipe")
         }
         process.executableURL = executable
-        process.arguments = ["lease", disk, vars]
+        process.arguments = [mode.rawValue, disk, vars]
         process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C"]
         process.standardInput = input
         process.standardOutput = output

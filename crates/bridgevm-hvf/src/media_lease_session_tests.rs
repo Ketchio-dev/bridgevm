@@ -6,6 +6,31 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[path = "media_lease_session_test_support.rs"]
 mod support;
 use support::{Contender, Fixture};
+#[path = "media_lease_session_pending_delete_tests.rs"]
+mod pending_delete;
+
+#[test]
+fn ordinary_lease_still_refuses_absent_or_partial_pairs() {
+    for missing in [vec!["disk", "vars"], vec!["disk"], vec!["vars"]] {
+        let fixture = Fixture::new();
+        for name in missing {
+            fs::remove_file(fixture.disk().parent().unwrap().join(name)).unwrap();
+        }
+        let mut output = Vec::new();
+        assert_eq!(
+            hold(
+                &fixture.disk(),
+                &fixture.vars(),
+                &mut Cursor::new(RELEASE),
+                &mut output
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::NotFound
+        );
+        assert!(output.is_empty());
+    }
+}
 
 #[test]
 fn ready_session_holds_ownership_until_exact_release() {

@@ -2,7 +2,6 @@ typealias LibraryActionJob = @Sendable () async -> Void
 typealias LibraryActionScheduler = @MainActor (@escaping LibraryActionJob) -> Void
 
 enum LibraryFileAction { case deletion, clone, move }
-
 extension LibraryModel {
     func libraryActionRefusal(for cfg: VMConfig) -> String? {
         guard vms.first(where: { $0.slug == cfg.slug }) == cfg else {
@@ -11,7 +10,7 @@ extension LibraryModel {
         if deletingSlugs.contains(cfg.slug) || cloningSlugs.contains(cfg.slug) || movingSlugs.contains(cfg.slug) {
             return "이 VM의 삭제·복제·이동 작업이 진행 중입니다. 완료 후 다시 시도하세요."
         }
-        if windowsInstallSessions.isActive(slug: cfg.slug) {
+        if windowsInstallSessions.isActive(slug: cfg.slug) || windowsInstallSessions.cliOperations.isActive(vmID: cfg.slug) {
             return "Windows 설치가 진행 중입니다. 설치를 완료하거나 취소한 뒤 다시 시도하세요."
         }
         if hvfRuntimeSessions.isActive(slug: cfg.slug) {
@@ -27,7 +26,8 @@ extension LibraryModel {
     }
 
     func admitLibraryAction(_ cfg: VMConfig, action: LibraryFileAction) -> Bool {
-        guard let refusal = libraryActionRefusal(for: cfg) else { return true }
+        let pending = action == .deletion ? pendingDeletionReferenceRefusal(for: cfg) : nil
+        guard let refusal = libraryActionRefusal(for: cfg) ?? pending else { return true }
         switch action {
         case .deletion: deletionError = refusal
         case .clone: cloneError = refusal
