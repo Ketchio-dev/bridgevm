@@ -2817,6 +2817,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeLegacyLaunch.swift	20	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeWorkAdmissionGate.swift	12	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMRuntimeKey.swift	17	0
 apps/macos/Sources/BridgeVMControl/LibraryModelOwnedRuntimeStop.swift	18	0
+apps/macos/Sources/BridgeVMControl/LibraryModelOwnedRuntimeStopRetention.swift	17	0
 apps/macos/Sources/BridgeVMControl/LibraryModelRuntimeRecords.swift	22	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICommandVerb.swift	10	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLIExecution.swift	23	0
@@ -2959,6 +2960,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfOwnedStartCLITests.swift	67	0
 apps/macos/Tests/BridgeVMControlTests/HvfOwnedStartExecutionTests.swift	117	0
 apps/macos/Tests/BridgeVMControlTests/HvfOwnedStartProofTests.swift	61	0
 apps/macos/Tests/BridgeVMControlTests/HvfOwnedStartRunnerFixture.swift	150	0
+apps/macos/Tests/BridgeVMControlTests/HvfOwnedStopPendingStartTests.swift	111	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeMutationAdmissionTests.swift	83	0
 apps/macos/Tests/BridgeVMControlTests/LibraryModelOwnedRuntimeStartTests.swift	127	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLIStartTests.swift	92	0
