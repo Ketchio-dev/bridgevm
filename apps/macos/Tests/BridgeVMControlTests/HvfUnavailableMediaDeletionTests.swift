@@ -119,7 +119,7 @@ final class HvfUnavailableMediaDeletionTests: XCTestCase {
         installed.bundlePath = stale
         installed.diskPath = stale + "/disks/hvf-target.raw"
         try f.save(installed)
-        XCTAssertEqual(VMLibrary.deletionImpact(for: installed, rootURL: f.library), .registrationOnly)
+        XCTAssertEqual(VMLibrary.deletionImpact(for: installed, rootURL: f.library), .managedBundleDeleted)
         let restore = try useRealHelper(f)
         defer { restore() }
         XCTAssertFalse(LibraryDeletionProtection.delete(installed, rootURL: f.library))

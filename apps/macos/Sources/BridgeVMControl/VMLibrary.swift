@@ -156,9 +156,9 @@ enum VMLibrary {
         if bundle.path == entry.path || bundle.path.hasPrefix(entryPrefix) {
             return .managedBundleDeleted
         }
-        return .registrationOnly
+        // A stale saved path must not hide a managed bundle the entry delete removes.
+        return (try? rawEntry.appendingPathComponent("bundle.vmbridge", isDirectory: true).resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true ? .managedBundleDeleted : .registrationOnly
     }
-
 
     /// One-time import of the legacy single ~/.bridgevm-control/config.json into
     /// the library, so the VM the user already runs shows up as the first entry.
