@@ -55,13 +55,13 @@ final class HvfCloneLeaseFailureTests: XCTestCase {
         let session = try fixture.session(exitStatus: 7)
         var validated = false
         let result: VMConfig? = HvfMediaLeaseSession.copyWhileOwned(session: session) { validate in
-            VMLibrary.cloneWindowsHVF(name: "Copy", template: fixture.config, libraryRoot: fixture.library) {
+            VMLibrary.cloneWindowsHVF(name: "Copy", template: fixture.config, libraryRoot: fixture.library, afterCopy: {
                 validated = true
                 XCTAssertEqual(try? Data(contentsOf: fixture.copied.appendingPathComponent("disks/hvf-target.raw")), Data("source-disk".utf8))
                 XCTAssertTrue(VMLibrary.list(rootURL: fixture.library).isEmpty)
                 if abortBeforeValidation { session.abort() }
                 return validate()
-            }
+            })
         }
         XCTAssertTrue(validated)
         XCTAssertNil(result)
@@ -76,10 +76,10 @@ final class HvfCloneLeaseFailureTests: XCTestCase {
         invalid.installPending = true
         var validated = false
         let result: VMConfig? = HvfMediaLeaseSession.copyWhileOwned(session: session) { validate in
-            VMLibrary.cloneWindowsHVF(name: "Copy", template: invalid, libraryRoot: fixture.library) {
+            VMLibrary.cloneWindowsHVF(name: "Copy", template: invalid, libraryRoot: fixture.library, afterCopy: {
                 validated = true
                 return validate()
-            }
+            })
         }
         XCTAssertFalse(validated)
         XCTAssertNil(result)

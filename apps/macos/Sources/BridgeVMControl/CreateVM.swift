@@ -262,23 +262,24 @@ extension VMLibrary {
     /// Duplicate the default Ubuntu VM (instant APFS clone of the bundle + fresh
     /// machine identity), so a new ready-to-run Ubuntu lands in the library.
     static func cloneUbuntu(name: String, template: VMConfig, storageDir: URL? = nil,
-                            width: Int = 1440, height: Int = 900,
-                            memMiB: Int? = nil, cpuCount: Int? = nil) -> VMConfig? {
+                            libraryRoot: URL = root, width: Int = 1440, height: Int = 900,
+                            memMiB: Int? = nil, cpuCount: Int? = nil,
+                            beforeCopy: () -> Bool = { true }) -> VMConfig? {
         let fm = FileManager.default
         let sourceBundle = URL(fileURLWithPath: template.bundlePath, isDirectory: true)
-        let storageBase = storageDir ?? root
+        let storageBase = storageDir ?? libraryRoot
         guard let name = normalizedVMName(name),
               width > 0, height > 0,
               isReadableDirectory(template.bundlePath),
-              !isSameOrDescendant(storageBase, of: sourceBundle),
-              let reserved = reserveDestination(name, storageBase: storageBase) else { return nil }
+              VMRelocationPaths.isSafe(source: sourceBundle, destination: storageBase),
+              let reserved = reserveDestination(name, storageBase: storageBase, libraryRoot: libraryRoot) else { return nil }
         let slug = reserved.slug
         let destDir = reserved.root
         var succeeded = false
         defer { if !succeeded { try? fm.removeItem(at: destDir) } }
         let bundle = destDir.appendingPathComponent("bundle.vmbridge", isDirectory: true).path
         // APFS copy-on-write clone: instant, no extra disk for the 14G rootfs.
-        guard cloneOrCopyDirectory(from: template.bundlePath, to: bundle) else { return nil }
+        guard beforeCopy(), cloneOrCopyDirectory(from: template.bundlePath, to: bundle) else { return nil }
         let b = bundle
         // fresh identity so two VMs don't collide on MAC/machine-id
         for identity in ["\(b)/metadata/machine-identifier.bin", "\(b)/metadata/network-mac-address.txt"] {
@@ -311,7 +312,7 @@ extension VMLibrary {
         cfg.displayHeight = height
         if let memMiB { cfg.memMiB = memMiB }
         if let cpuCount { cfg.cpuCount = cpuCount }
-        guard save(cfg) else { return nil }
+        guard save(cfg, rootURL: libraryRoot) else { return nil }
         succeeded = true
         return cfg
     }
@@ -324,6 +325,7 @@ extension VMLibrary {
         template: VMConfig,
         storageDir: URL? = nil,
         libraryRoot: URL = root,
+        beforeCopy: () -> Bool = { true },
         afterCopy: () -> Bool = { true }
     ) -> VMConfig? {
         let fm = FileManager.default
@@ -334,7 +336,7 @@ extension VMLibrary {
               !VMRelocationJournal.isPending(template, rootURL: libraryRoot),
               let name = normalizedVMName(name),
               isReadableDirectory(template.bundlePath),
-              !isSameOrDescendant(storageBase, of: sourceBundle),
+              VMRelocationPaths.isSafe(source: sourceBundle, destination: storageBase),
               let reserved = reserveDestination(
                   name,
                   storageBase: storageBase,
@@ -345,7 +347,7 @@ extension VMLibrary {
         var succeeded = false
         defer { if !succeeded { try? fm.removeItem(at: destinationRoot) } }
         let bundle = destinationRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true)
-        guard cloneOrCopyDirectory(from: template.bundlePath, to: bundle.path) else { return nil }
+        guard beforeCopy(), cloneOrCopyDirectory(from: template.bundlePath, to: bundle.path) else { return nil }
         guard afterCopy() else { return nil }
 
         let lifecycle = VTPMIdentityLifecycle(keyStore: KeychainVTPMStateKeyStore())
@@ -430,6 +432,4 @@ extension VMLibrary {
         guard requested else { return nil }
         return HvfWindowsDriverPreflight.message(for: HvfWindowsDriverPreflight.provenanceBlocker)
     }
-
-
 }
