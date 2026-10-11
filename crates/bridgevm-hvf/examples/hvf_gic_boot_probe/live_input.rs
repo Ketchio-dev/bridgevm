@@ -22,6 +22,9 @@ mod control_reader;
 #[cfg(test)]
 #[path = "live_input/backpressure_tests.rs"]
 mod backpressure_tests;
+#[cfg(test)]
+#[path = "live_input/identity_tests.rs"]
+mod identity_tests;
 enum LiveInputCommand {
     Key(String),
     Pointer(String),

@@ -866,7 +866,9 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_export.rs	116	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_export_tests.rs	231	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_thread.rs	198	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_thread_tests.rs	331	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file.rs	49	2
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file.rs	36	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file/checked_access.rs	55	3
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/identity_tests.rs	190	4
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input.rs	414	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/line_frames.rs	89	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/key_actions.rs	99	0
