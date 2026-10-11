@@ -348,8 +348,11 @@ impl AgentConsoleHarness {
             // request. READY is therefore the only honest resynchronization
             // point at which the old wire slot may be released. An unconfirmed
             // push may not have landed, so the guest's text is re-learned.
-            if let Some((ServiceReq::ClipPush(_), _)) = self.in_flight.take() {
+            if let Some((ServiceReq::ClipPush(text), _)) = self.in_flight.take() {
                 self.last_synced.rebaseline = true;
+                if !self.queue.iter().any(|req| matches!(req, ServiceReq::ClipPush(_))) {
+                    self.queue.push_front(ServiceReq::ClipPush(text));
+                }
             }
             self.get_accum = None;
             self.out_accum = None;

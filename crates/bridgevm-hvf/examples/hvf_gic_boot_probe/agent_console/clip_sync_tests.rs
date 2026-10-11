@@ -143,6 +143,10 @@ fn clip_push_dropped_by_agent_restart_does_not_revert_mac_copy() {
         rig.mac_sets().is_empty(),
         "older guest text written over the Mac copy"
     );
+    assert_eq!(
+        rig.guest, "mac-new",
+        "the dropped Mac copy is re-sent to the new agent"
+    );
 }
 
 #[test]

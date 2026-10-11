@@ -73,6 +73,9 @@ impl Poller {
     /// missed: NSPasteboard has no compare-and-swap.)
     pub fn apply_set<B: PasteboardBackend>(&mut self, backend: &mut B, text: &str) {
         if self.last_count != -1 && backend.change_count() != self.last_count {
+            // Forget the last report so the next on_tick re-reports the Mac
+            // text even if it is unchanged; the Mac copy then wins.
+            self.last_seen = None;
             return;
         }
         if backend.set_string(text) {
