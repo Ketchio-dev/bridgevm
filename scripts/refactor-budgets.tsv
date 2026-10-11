@@ -3062,6 +3062,8 @@ crates/bridgevm-cli/tests/cli_app_create.rs	62	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICreateWindowsOptions.swift	26	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICreateWindowsParser.swift	101	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICreateWindowsOutput.swift	22	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICreateWindowsGuidance.swift	11	0
+apps/macos/Tests/BridgeVMControlTests/NativeCreatePayloadGuidanceTests.swift	38	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICreateWindows.swift	40	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICreateWindowsHelp.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLICreateWindowsParserTests.swift	92	0
