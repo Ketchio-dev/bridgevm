@@ -173,7 +173,7 @@ final class HvfWindowsBackend: VMBackend {
 
     private func executeGuestCommand(_ command: String, timeout: TimeInterval) -> (output: String, code: Int32) {
         let normalized: String
-        switch HvfGuestCommand.normalize(command) {
+        switch HvfGuestCommand.normalizeShell(command) {
         case let .success(value):
             normalized = value
         case let .failure(error):
