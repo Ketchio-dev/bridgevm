@@ -119,6 +119,50 @@ final class FastVZResourcePersistenceTests: XCTestCase {
         XCTAssertEqual(record.cpuCount, 6)
     }
 
+    /// After Apply the library must show the saved allocation and keep owning the
+    /// (restarted, running) control model across a later library reload.
+    @MainActor
+    func testLibraryShowsAppliedResourcesAndKeepsControlOwnershipAfterReload() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        try fixture.prepare()
+        XCTAssertTrue(VMLibrary.save(fixture.config, rootURL: fixture.library))
+        let library = LibraryModel(rootURL: fixture.library, migrateLegacy: false, startsModelsAutomatically: false)
+        let model = library.model(for: try XCTUnwrap(library.vms.first { $0.slug == fixture.slug }))
+        model.pendingMemGiB = 8
+        model.pendingCPU = 6
+        model.applyResources()
+        for _ in 0..<200 where model.busy { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertFalse(model.busy)
+        XCTAssertEqual(library.vms.first { $0.slug == fixture.slug }?.memMiB, 8192, "library card stayed stale")
+        model.running = true
+        library.reload()
+        model.running = false
+        XCTAssertNil(model.workAdmission?(false), "Start must stay admitted after an unrelated library reload")
+        XCTAssertNil(model.workAdmission?(true), "Apply must stay admitted after an unrelated library reload")
+    }
+
+    func testChangedOrRemovedRegistrationIsNeitherRevertedNorResurrected() throws {
+        for removed in [false, true] {
+            let fixture = Fixture()
+            defer { fixture.clean() }
+            try fixture.prepare()
+            XCTAssertTrue(VMLibrary.save(fixture.config, rootURL: fixture.library))
+            let directory = fixture.library.appendingPathComponent(fixture.slug)
+            var edited = fixture.config
+            edited.displayName = "Renamed elsewhere"
+            if removed { try FileManager.default.removeItem(at: directory) }
+            else { XCTAssertTrue(VMLibrary.save(edited, rootURL: fixture.library)) }
+            let launchBefore = try Data(contentsOf: fixture.launchSpec)
+
+            XCTAssertFalse(fixture.config.makeBackend(libraryRoot: fixture.library).setResources(memMiB: 8192, cpu: 6))
+
+            XCTAssertEqual(try Data(contentsOf: fixture.launchSpec), launchBefore)
+            if removed { XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path)) }
+            else { XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: fixture.library, id: fixture.slug).displayName, "Renamed elsewhere") }
+        }
+    }
+
     func testUnsavableLibraryRegistrationRefusesWithoutTouchingBundle() throws {
         let fixture = Fixture()
         defer { fixture.clean() }

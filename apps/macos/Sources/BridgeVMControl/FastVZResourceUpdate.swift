@@ -13,12 +13,16 @@ import Foundation
 /// still leave the three files disagreeing.
 enum FastVZResourceUpdate {
     static func apply(_ config: VMConfig, memMiB: Int, cpu: Int, libraryRoot: URL) -> VMConfig? {
+        var registered = config
+        registered.id = config.slug
+        // Only an unchanged, still-present registration is rewritten; never resurrect or revert one.
         guard VMResourceLimits.contains(memoryMiB: memMiB, cpu: cpu),
+              (try? NativeLibraryReader.readConfig(rootURL: libraryRoot, id: config.slug)) == registered,
               let launch = JSONFile.loadDict(config.launchSpecPath),
               let handoff = JSONFile.loadDict(config.handoffPath),
               let newLaunch = updating(launch, memMiB: memMiB, cpu: cpu),
               let newHandoff = updating(handoff, memMiB: memMiB, cpu: cpu) else { return nil }
-        var updated = config
+        var updated = registered
         updated.memMiB = memMiB
         updated.cpuCount = cpu
         let saved = VMLibrary.saveOutcome(updated, rootURL: libraryRoot)

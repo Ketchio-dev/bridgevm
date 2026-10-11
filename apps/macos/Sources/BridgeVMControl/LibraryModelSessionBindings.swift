@@ -28,9 +28,9 @@ extension LibraryModel {
 extension LibraryModel {
     func bindControlModel(_ model: ControlModel) -> ControlModel {
         model.workAdmission = boundWorkAdmission(slug: model.config.slug) { [weak model] owner, current in
-            guard let model else { return false }
-            return owner.ownsControlModel(model, for: current)
+            model.map { owner.ownsControlModel($0, for: current) } ?? false
         }
+        model.onConfigurationPersisted = { [weak self] in self?.reload() }
         return model
     }
 }

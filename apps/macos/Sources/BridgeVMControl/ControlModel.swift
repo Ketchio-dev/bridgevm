@@ -25,9 +25,10 @@ final class ControlModel: ObservableObject {
     // Software install output
     @Published var softwareLog = ""
 
-    let config: VMConfig
+    private(set) var config: VMConfig
     let backend: VMBackend
     var workAdmission: LibraryWorkAdmission?
+    var onConfigurationPersisted: (@MainActor () -> Void)?
     private var timer: Timer?
     private var startConfirmationDeadline: Date?
     private var refreshGeneration: UInt64 = 0
@@ -179,6 +180,7 @@ final class ControlModel: ObservableObject {
                 }
                 return
             }
+            await MainActor.run { self.config.memMiB = mem; self.config.cpuCount = cpus; self.onConfigurationPersisted?() }
             let wasRunning = backend.isRunning()
             if wasRunning {
                 backend.stop()
@@ -220,9 +222,7 @@ final class ControlModel: ObservableObject {
         }
     }
 
-    private func invalidateRefreshes() {
-        refreshGeneration &+= 1
-    }
+    private func invalidateRefreshes() { refreshGeneration &+= 1 }
 
     private func applyRuntimeStatus(running: Bool, ip: String?) {
         if let deadline = startConfirmationDeadline {
