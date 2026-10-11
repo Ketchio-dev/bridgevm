@@ -64,7 +64,7 @@ enum VMLibrary {
                 issues.append(VMLibraryIssue(path: dir.path, message: "심볼릭 링크 VM 항목은 안전을 위해 불러오지 않았습니다."))
                 continue
             }
-            guard values.isDirectory == true else { continue }
+            guard values.isDirectory == true, !VMLibraryInternalEntries.isSourceCache(dir) else { continue }
             let canonicalID = VMConfig.slugify(dir.lastPathComponent)
             guard dir.lastPathComponent == canonicalID else {
                 issues.append(VMLibraryIssue(

@@ -1321,6 +1321,8 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMLifecycleCommand.swift	368	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMStateSecurity.swift	181	0
 apps/macos/Sources/BridgeVMControl/LibraryModel.swift	177	0
 apps/macos/Sources/BridgeVMControl/VMLibrary.swift	178	0
+apps/macos/Sources/BridgeVMControl/VMLibraryInternalEntries.swift	13	0
+apps/macos/Tests/BridgeVMControlTests/LibraryCacheInventoryTests.swift	49	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzDisplayRuntimeControlServerTests.swift	535	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzRunnerCommandTests.swift	692	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzRunnerCoreTests.swift	439	0
