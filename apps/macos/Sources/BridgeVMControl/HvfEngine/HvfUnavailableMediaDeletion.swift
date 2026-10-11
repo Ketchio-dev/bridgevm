@@ -15,7 +15,20 @@ enum HvfUnavailableMediaDeletion {
         do {
             guard try absent(config.bundlePath) || (absent(media.disk) && absent(media.vars)) else { return nil }
         } catch { return false }
+        // The saved path proves nothing about what the recursive delete removes: a
+        // managed bundle behind a stale absolute path still lives in the entry.
+        guard onlyRegistration(in: rootURL.appendingPathComponent(config.slug, isDirectory: true)) else { return false }
         return VMLibrary.delete(config.slug, rootURL: rootURL)
+    }
+
+    private static func onlyRegistration(in entry: URL) -> Bool {
+        var info = stat()
+        guard lstat(entry.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR,
+              let names = try? FileManager.default.contentsOfDirectory(atPath: entry.path),
+              Set(names).subtracting([".DS_Store"]) == ["vm.json"],
+              lstat(entry.appendingPathComponent("vm.json").path, &info) == 0, info.st_mode & S_IFMT == S_IFREG
+        else { return false }
+        return true
     }
 
     private static func isRegistrationOnly(_ config: VMConfig, rootURL: URL) -> Bool {

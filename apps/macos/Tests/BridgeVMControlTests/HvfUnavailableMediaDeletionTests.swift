@@ -109,6 +109,24 @@ final class HvfUnavailableMediaDeletionTests: XCTestCase {
         }
     }
 
+    /// A managed bundle whose saved absolute path went stale (renamed home,
+    /// remounted volume) looks external but still lives inside the entry.
+    func testManagedBundleBehindAStaleSavedPathIsNeverDeleted() throws {
+        let f = try HvfPendingDeletionFixture()
+        var installed = try install(f, media: true)
+        let realDisk = f.bundle.appendingPathComponent("disks/hvf-target.raw")
+        let stale = f.root.appendingPathComponent("old-home/library/\(installed.slug)/bundle.vmbridge").path
+        installed.bundlePath = stale
+        installed.diskPath = stale + "/disks/hvf-target.raw"
+        try f.save(installed)
+        XCTAssertEqual(VMLibrary.deletionImpact(for: installed, rootURL: f.library), .registrationOnly)
+        let restore = try useRealHelper(f)
+        defer { restore() }
+        XCTAssertFalse(LibraryDeletionProtection.delete(installed, rootURL: f.library))
+        XCTAssertEqual(try Data(contentsOf: realDisk), Data("disk".utf8))
+        XCTAssertTrue(f.fm.fileExists(atPath: f.entry.appendingPathComponent("vm.json").path))
+    }
+
     private func install(_ f: HvfPendingDeletionFixture, media: Bool) throws -> VMConfig {
         var installed = f.config
         installed.installPending = false

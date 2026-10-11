@@ -4340,5 +4340,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/ctl_verb_reply_tes
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestCommandError.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfGuestCommandTests.swift	99	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/ctl_input_line_tests.rs	82	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfUnavailableMediaDeletion.swift	63	0
-apps/macos/Tests/BridgeVMControlTests/HvfUnavailableMediaDeletionTests.swift	164	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfUnavailableMediaDeletion.swift	76	0
+apps/macos/Tests/BridgeVMControlTests/HvfUnavailableMediaDeletionTests.swift	182	0
