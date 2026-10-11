@@ -414,9 +414,7 @@ final class HvfEngineSession: ObservableObject {
 
     func append(_ event: BvAgentEvent) {
         events.append(event)
-        if events.count > 500 {
-            events.removeFirst(events.count - 500)
-        }
+        if events.count > 500 { events.removeFirst(events.count - 500) }
     }
 
     private var inputBinding: [String] {
@@ -428,6 +426,8 @@ final class HvfEngineSession: ObservableObject {
         inputDriver.beginOwnedBoot(binding: inputBinding)
     }
 
-    func cancelOrderedInputTarget() { inputDriver.cancelTarget() }
-
+    func cancelOrderedInputTarget() {
+        if pendingPaste != nil { pendingPaste = nil; append(.unknown("clipboard paste canceled: input target changed")) }
+        inputDriver.cancelTarget()
+    }
 }
