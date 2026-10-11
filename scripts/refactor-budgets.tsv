@@ -2229,7 +2229,7 @@ crates/bridgevm-hvf/src/media_lease_session_process_test_support.rs	108	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMediaLeaseSession.swift	111	0
 apps/macos/Tests/BridgeVMControlTests/HvfMediaLeaseSessionTests.swift	45	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfProtectedTransfers.swift	17	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMediaOwnership.swift	41	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMediaOwnership.swift	39	0
 apps/macos/Tests/BridgeVMControlTests/HvfCloneValidationTests.swift	39	0
 apps/macos/Tests/BridgeVMControlTests/HvfCloneLeaseFailureTests.swift	89	0
 apps/macos/Sources/BridgeVMControl/WindowsVMRelocation.swift	67	0
@@ -4340,3 +4340,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/ctl_verb_reply_tes
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestCommandError.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfGuestCommandTests.swift	99	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/ctl_input_line_tests.rs	82	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfUnavailableMediaDeletion.swift	63	0
+apps/macos/Tests/BridgeVMControlTests/HvfUnavailableMediaDeletionTests.swift	164	0

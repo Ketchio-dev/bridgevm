@@ -4,10 +4,8 @@ extension HvfMediaLeaseSession {
     private static func acquire(config: VMConfig, mode: Mode = .ordinary) throws -> HvfMediaLeaseSession {
         let root = HvfEngineSession.defaultRepoRoot()
         let helper = root.appendingPathComponent("target/release/examples/snapshot_pair_cli")
-        return try HvfMediaLeaseSession(
-            executable: helper,
-            disk: config.diskPath ?? (config.bundlePath + "/disks/hvf-target.raw"),
-            vars: config.bundlePath + "/metadata/hvf-vars.fd", mode: mode)
+        let media = finalMediaPaths(config)
+        return try HvfMediaLeaseSession(executable: helper, disk: media.disk, vars: media.vars, mode: mode)
     }
 
     static func withOwnership<T>(config: VMConfig, mode: Mode = .ordinary, operation: () throws -> T) throws -> T {
