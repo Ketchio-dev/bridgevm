@@ -94,7 +94,7 @@ extension VMConfig {
     /// Resolve the concrete backend for this VM (the engine seam).
     func makeBackend(libraryRoot: URL = VMLibrary.root) -> VMBackend {
         switch engineKind {
-        case .fastVZ: return FastVZBackend(self)
+        case .fastVZ: return FastVZBackend(self, libraryRoot: libraryRoot)
         case .qemuCompat: return QemuCompatBackend(self)
         case .hvfEngine: return HvfWindowsBackend(self, libraryRoot: libraryRoot)
         }
@@ -324,8 +324,9 @@ protocol VMBackend: AnyObject {
 // MARK: - Fast Mode (Apple Virtualization.framework) backend
 
 final class FastVZBackend: VMBackend {
-    let config: VMConfig
-    init(_ config: VMConfig) { self.config = config }
+    private(set) var config: VMConfig
+    private let libraryRoot: URL
+    init(_ config: VMConfig, libraryRoot: URL = VMLibrary.root) { self.config = config; self.libraryRoot = libraryRoot }
 
     var displayName: String { config.displayName }
     let kind = "fast-vz"
@@ -394,15 +395,11 @@ final class FastVZBackend: VMBackend {
         return (mem, cpu)
     }
 
+    /// Launch spec, handoff and vm.json together; see FastVZResourceUpdate for ordering.
     func setResources(memMiB: Int, cpu: Int) -> Bool {
-        guard VMResourceLimits.contains(memoryMiB: memMiB, cpu: cpu) else { return false }
-        guard var obj = JSONFile.loadDict(config.launchSpecPath),
-              var res = obj["resources"] as? [String: Any] else { return false }
-        res["memory"] = String(memMiB)
-        res["cpu"] = String(cpu)
-        res["rationale"] = "Set from BridgeVM Control app."
-        obj["resources"] = res
-        return JSONFile.writeDict(obj, to: config.launchSpecPath)
+        guard let updated = FastVZResourceUpdate.apply(config, memMiB: memMiB, cpu: cpu, libraryRoot: libraryRoot) else { return false }
+        config = updated
+        return true
     }
 
     // Reuse one warm SSH connection across guest commands: after the first, each
