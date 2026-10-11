@@ -39,8 +39,7 @@ final class HvfEngineSession: ObservableObject {
     var stopDeadline: Date?
     var attachedToExistingProcess = false
     var nextAttachedLivenessCheck = Date.distantPast
-    private var liveInputHandle: FileHandle?
-    private var liveInputPath: URL?
+    private let liveInputFile = HvfLiveInputFile()
     var liveInputWriteFailureReported = false
     var processLaunch: (Process) throws -> Void = { try $0.run() }
     let processIsRunning: (String) -> Bool
@@ -75,7 +74,7 @@ final class HvfEngineSession: ObservableObject {
     deinit {
         timer?.invalidate()
         if ownedController == nil { process?.terminate() }
-        try? liveInputHandle?.close()
+        liveInputFile.close()
     }
 
     func requestOwnedStop(target: HvfOwnedRuntimeIdentity, operationID: UUID) -> HvfOwnedStopAdmission {
@@ -267,16 +266,9 @@ final class HvfEngineSession: ObservableObject {
         let path = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("input.ctl")
         guard let data = "\(line)\n".data(using: .utf8) else { return }
         do {
-            let handle = try liveInputHandle(for: path)
-            #if os(macOS)
-            guard flock(handle.fileDescriptor, LOCK_EX) == 0 else { return }
-            defer { flock(handle.fileDescriptor, LOCK_UN) }
-            #endif
-            try handle.seekToEnd()
-            try handle.write(contentsOf: data)
+            try liveInputFile.append(data, to: path)
             liveInputWriteFailureReported = false
         } catch {
-            closeLiveInput()
             if !liveInputWriteFailureReported {
                 append(.unknown("live input write failed: \(error.localizedDescription)"))
                 liveInputWriteFailureReported = true
@@ -284,25 +276,8 @@ final class HvfEngineSession: ObservableObject {
         }
     }
 
-    private func liveInputHandle(for path: URL) throws -> FileHandle {
-        if let liveInputHandle, liveInputPath == path {
-            return liveInputHandle
-        }
-        closeLiveInput()
-        if !FileManager.default.fileExists(atPath: path.path) {
-            FileManager.default.createFile(atPath: path.path, contents: nil)
-        }
-        let handle = try FileHandle(forWritingTo: path)
-        try handle.seekToEnd()
-        liveInputHandle = handle
-        liveInputPath = path
-        return handle
-    }
-
     func closeLiveInput() {
-        try? liveInputHandle?.close()
-        liveInputHandle = nil
-        liveInputPath = nil
+        liveInputFile.close()
     }
 
     func startPolling() {
