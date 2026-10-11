@@ -1,7 +1,7 @@
 use super::*;
 use crate::media_lease::MediaLease;
 use crate::snapshot_pair::snapshot_pair_tests::{Scratch, QUOTA};
-use crate::snapshot_pair::{create_snapshot, restore_snapshot, SnapshotError};
+use crate::snapshot_pair::{create_snapshot, managed::LockedPair, restore_snapshot, SnapshotError};
 use std::fs::{self, OpenOptions};
 use std::os::unix::fs::symlink;
 use std::sync::mpsc;

@@ -4327,3 +4327,7 @@ apps/macos/Tests/BridgeVMControlTests/NativeCLICreateWindowsNameTests.swift	40	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_sync.rs	106	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_sync_tests.rs	252	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard_tests.rs	155	0
+crates/bridgevm-hvf/src/snapshot_runtime_exclusion.rs	57	0
+crates/bridgevm-hvf/src/snapshot_runtime_exclusion_tests.rs	181	0
+crates/bridgevm-hvf-runtime/src/vm_builder_snapshot_tests.rs	64	0
+apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotRuntimeOwnershipTests.swift	105	0

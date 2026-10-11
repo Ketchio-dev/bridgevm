@@ -12,9 +12,9 @@ pub(super) fn create_stopped(
     copy: impl FnMut(&Path, &Path) -> io::Result<u64>,
     mut observe: impl FnMut(CreateStage),
 ) -> Result<SnapshotManifest, SnapshotError> {
-    // Refuse before writing anything, not after filling the disk.
-    let owner = managed::LockedPair::open(disk, vars)?;
-    let (selected_disk, selected_vars) = owner.paths()?;
+    // Refuse before writing anything, including while a runtime owns the media.
+    let owner = runtime_exclusion::open(disk, vars, "create")?;
+    let (selected_disk, selected_vars) = owner.pair.paths()?;
     let logical_disk = fs::canonicalize(disk)?;
     let logical_vars = fs::canonicalize(vars)?;
     let (disk, vars) = (selected_disk.as_path(), selected_vars.as_path());

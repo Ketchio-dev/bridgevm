@@ -29,9 +29,9 @@ mod quota;
 
 /// Capture `disk` and `vars` into `dest` as one atomic pair.
 ///
-/// `vm_running` is passed in rather than probed here: only the caller knows
-/// whether a helper still holds the media, and a snapshot of a running VM is
-/// the failure this whole module exists to prevent.
+/// `vm_running` is the caller's knowledge; an owned runtime's writer leases
+/// are checked too, because between guest generations nothing else shows that
+/// it owns the media. A snapshot of a running VM is what this module prevents.
 pub fn create_snapshot(
     disk: &Path,
     vars: &Path,

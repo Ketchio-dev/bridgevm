@@ -3,6 +3,8 @@ use crate::snapshot_pair::{snapshot_pair_tests::Scratch, verify_snapshot};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::Duration;
+#[path = "snapshot_runtime_exclusion_tests.rs"]
+mod runtime_exclusion_tests;
 
 #[derive(Debug)]
 enum SecondEvent {

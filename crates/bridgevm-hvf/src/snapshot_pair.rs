@@ -191,11 +191,13 @@ pub fn restore_snapshot(
     if vm_running {
         return Err(SnapshotError::VmRunning);
     }
-    managed::LockedPair::open(disk, vars)?.restore(dir)
+    runtime_exclusion::restore(dir, disk, vars)
 }
 
 #[path = "managed_pair.rs"]
 pub mod managed;
+#[path = "snapshot_runtime_exclusion.rs"]
+mod runtime_exclusion;
 #[path = "snapshot_pair_selected.rs"]
 pub mod selected;
 #[path = "snapshot_pair_size.rs"]
