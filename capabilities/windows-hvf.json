@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-10-07",
-  "tested_commit": "e07e6465bc141eea8081fd9694490e7216129786",
+  "tested_commit": "8686ccdc830b0dff532f148bbb7aa45936108ddc",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
