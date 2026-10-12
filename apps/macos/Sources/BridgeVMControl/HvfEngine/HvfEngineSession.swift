@@ -33,7 +33,7 @@ final class HvfEngineSession: ObservableObject {
     var tailReader = TailOffsetReader()
     var lastHeartbeatDate: Date?
     var serviceStarted = false
-    private var pendingPaste: HvfClipboardPaste?
+    var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
     private let inputDriver = HvfSessionInputDriver()
     var stopCommandSent = false
     var stopDeadline: Date?
@@ -179,7 +179,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func sendKey(_ action: String) {
-        guard pendingPaste == nil else { append(.unknown("key input refused: clipboard paste pending")); return }
+        guard legacyPaste.pending == nil else { append(.unknown("key input refused: clipboard paste pending")); return }
         if inputDriver.route(.key(action), binding: inputBinding) != .legacy { return }
         appendLiveInput("KEY \(action)")
     }
@@ -187,7 +187,7 @@ final class HvfEngineSession: ObservableObject {
     @discardableResult
     func sendText(_ value: String) -> HvfTextInputSubmission {
         guard !guiStartCleanupOnly else { return .refused }
-        guard pendingPaste == nil else { append(.unknown("text input refused: clipboard paste pending")); return .refused }
+        guard legacyPaste.pending == nil else { append(.unknown("text input refused: clipboard paste pending")); return .refused }
         guard !value.isEmpty else { return .refused }
         switch inputDriver.route(.text(value), binding: inputBinding) {
         case .queued: return .acceptedForProcessing
@@ -204,7 +204,7 @@ final class HvfEngineSession: ObservableObject {
             }
             let request = HvfClipboardPaste(base64: base64, now: Date())
             guard request.fitsGuestCommandLine(reportingTo: self), sendCtl(request.command) else { return .refused }
-            pendingPaste = request
+            legacyPaste.pending = request
             return .acceptedForProcessing
         }
         return .legacyAttempted
@@ -286,10 +286,10 @@ final class HvfEngineSession: ObservableObject {
         if guiStartCleanupOnly { pollGUIStartCleanup(); return }
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
         let lines = tailReader.readNewLines(from: logURL)
-        if let ready = pendingPaste?.consume(lines: lines, now: Date()) {
-            pendingPaste = nil
-            if ready, case .connected = connectionState { appendLiveInput("KEY ctrl+v") }
-            else { append(.unknown("clipboard paste failed, expired or canceled")) }
+        if let ready = legacyPaste.pending?.consume(lines: lines, now: Date()) {
+            let backlog = legacyPaste.finish()
+            if ready, case .connected = connectionState { appendLiveInput("KEY ctrl+v"); replayDisplayInput(backlog) }
+            else { append(.unknown("clipboard paste failed, expired or canceled" + HvfLegacyPasteState.discarded(backlog))) }
         }
         if !lines.isEmpty {
             for event in BvAgentEvent.parse(lines: lines) {
@@ -358,7 +358,7 @@ final class HvfEngineSession: ObservableObject {
             lastOwnedExit = HvfOwnedRuntimeExit(identity: identity, process: process)
         }
         ownedProcessIdentity = nil
-        pendingPaste = nil
+        legacyPaste = HvfLegacyPasteState()
         inputDriver.attachUnknown(binding: inputBinding)
         timer?.invalidate()
         timer = nil
@@ -376,7 +376,7 @@ final class HvfEngineSession: ObservableObject {
 
     func resetObservedRuntimeState(clearEvents: Bool) {
         if !hasPendingGUIStart { guiStartOperation = nil }
-        pendingPaste = nil
+        legacyPaste = HvfLegacyPasteState()
         inputDriver.attachUnknown(binding: inputBinding)
         tailReader = TailOffsetReader()
         lastHeartbeatDate = nil
@@ -398,7 +398,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func beginOwnedInputBoot() {
-        pendingPaste = nil
+        legacyPaste = HvfLegacyPasteState()
         inputDriver.beginOwnedBoot(binding: inputBinding)
     }
 
@@ -409,6 +409,6 @@ final class HvfEngineSession: ObservableObject {
 
     /// Drops a legacy paste before its delayed `KEY ctrl+v` can reach a different guest target.
     private func cancelPendingPaste(_ reason: String) {
-        if pendingPaste != nil { pendingPaste = nil; append(.unknown("clipboard paste canceled: \(reason)")) }
+        if let message = legacyPaste.cancel(reason) { append(.unknown(message)) }
     }
 }
