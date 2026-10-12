@@ -16,6 +16,7 @@ final class HvfEngineSession: ObservableObject {
     var repoRoot: URL
     var workAdmission: LibraryWorkAdmission?
     var reservedWorkAdmission: (@MainActor (UUID, Bool) -> String?)?
+    var onConfigurationPersisted: (@MainActor (_ previous: VMConfig, _ saved: VMConfig) -> Void)? // library rebind + reload
     var ownedStartOperation: HvfOwnedStartOperation?
     var ownedStartExecution: HvfOwnedStartExecution?
     var guiStartOperation: HvfGUIStartOperation?
@@ -59,16 +60,6 @@ final class HvfEngineSession: ObservableObject {
         self.vtpmKeyProvider = vtpmKeyProvider
         inputDriver.onPoll = { [weak self] in self?.poll() }
         inputDriver.onDiagnostic = { [weak self] in self?.append(.unknown($0)) }
-    }
-
-    // The injected launcher must run the supplied Process or throw before spawning it.
-    convenience init(config: HvfEngineConfig, repoRoot: URL,
-                     processLaunch: @escaping (Process) throws -> Void,
-                     processIsRunning: @escaping (String) -> Bool,
-                     vtpmKeyProvider: VTPMStateKeyProviding) {
-        self.init(config: config, repoRoot: repoRoot,
-                  processIsRunning: processIsRunning, vtpmKeyProvider: vtpmKeyProvider)
-        self.processLaunch = processLaunch
     }
 
     deinit {

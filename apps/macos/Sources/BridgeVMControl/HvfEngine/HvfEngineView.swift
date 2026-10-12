@@ -125,7 +125,7 @@ struct HvfEngineView: View {
                     Spacer()
                 }
                 HStack(spacing: 18) {
-                    Toggle("Clipboard sync", isOn: $clipboardSync).accessibilityIdentifier("bridgevm.runtime.clipboard")
+                    HvfClipboardSyncToggle(session: session, isOn: $clipboardSync)
                     Toggle("Virtio net", isOn: $virtioNet).accessibilityIdentifier("bridgevm.runtime.network")
                     if session.config.allowsExperimental3D {
                         Toggle("Graphics Lab 3D", isOn: $virtioGpu3d)

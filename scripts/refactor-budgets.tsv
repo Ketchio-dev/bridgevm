@@ -1266,7 +1266,7 @@ apps/macos/Sources/BridgeVMApp/ViewModels/DashboardViewModel.swift	4310	0
 apps/macos/Sources/BridgeVMApp/Views/DashboardView.swift	991	0
 apps/macos/Sources/BridgeVMApp/Views/SettingsView.swift	227	0
 apps/macos/Sources/BridgeVMApp/Views/VMDetailView.swift	6392	0
-apps/macos/Sources/BridgeVMControl/Backends.swift	490	0
+apps/macos/Sources/BridgeVMControl/Backends.swift	470	0
 apps/macos/Sources/BridgeVMControl/QemuCompatBackend.swift	130	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	22	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	56	0
@@ -1279,7 +1279,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	333	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	433	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	424	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLiveInputFile.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfLiveInputFileTests.swift	145	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	416	0
@@ -4343,3 +4343,11 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/ctl_input_line_tes
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfUnavailableMediaDeletion.swift	76	0
 apps/macos/Tests/BridgeVMControlTests/HvfUnavailableMediaDeletionTests.swift	182	0
 apps/macos/Tests/BridgeVMControlTests/VMLibraryDeletionImpactTests.swift	39	0
+apps/macos/Sources/BridgeVMControl/BackendKind.swift	20	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfClipboardSyncPreference.swift	66	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSessionLaunchInjection.swift	13	0
+apps/macos/Tests/BridgeVMControlTests/HvfClipboardSyncPreferenceTests.swift	172	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfClipboardSyncToggle.swift	29	0
+apps/macos/Sources/BridgeVMControl/HvfRuntimeSessionStoreQueries.swift	10	0
+apps/macos/Sources/BridgeVMControl/LibraryModelClipboardSyncRebind.swift	29	0
+apps/macos/Tests/BridgeVMControlTests/HvfClipboardSyncPreferenceSaveTests.swift	161	0
