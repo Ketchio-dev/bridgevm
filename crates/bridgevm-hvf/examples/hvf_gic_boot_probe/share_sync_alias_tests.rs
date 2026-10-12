@@ -163,32 +163,49 @@ fn guest_edit_made_during_a_hold_survives_when_the_held_names_leave() {
 #[test]
 fn refused_put_copy_is_never_kept_as_a_guest_edit_across_a_hold() {
     // The guest may have truncated its copy before refusing the PUT: it is
-    // neither fetched nor spared as an edit when the hold ends.
-    for exit in [vec![host_file("doc", 5, 20)], vec![]] {
-        let mut sync = synced("doc", b"old");
-        assert_eq!(
-            gets(&sync.on_host_scan(vec![host_file("doc", 5, 20)])),
-            ["doc"]
-        );
-        assert!(sync
-            .on_host_file("doc".into(), b"newer".to_vec(), 20)
-            .is_some());
-        sync.on_put_rejected("doc");
+    // neither fetched nor spared as an edit when a twin or unseen hold ends.
+    let exits = || [vec![host_file("doc", 5, 20)], vec![]];
+    for exit in exits() {
+        let mut sync = refused_doc();
+        sync.set_host_unseen(["doc".to_string()]);
+        assert_eq!(sync.on_host_scan(Vec::new()), Vec::new());
+        assert_doc_never_pulled(sync, exit);
+    }
+    for exit in exits() {
+        let mut sync = refused_doc();
         let twins = vec![host_file("doc", 5, 20), host_file("doc.", 1, 30)];
         assert_eq!(skips(&sync.on_host_scan(twins)).len(), 1);
-        let partial = || vec![ls_file("doc", 2, "g-partial")];
+        assert_doc_never_pulled(sync, exit);
+    }
+}
+
+/// Synced `doc` whose next PUT the guest refused, perhaps after truncating it.
+fn refused_doc() -> ShareSync {
+    let mut sync = synced("doc", b"old");
+    let changed = sync.on_host_scan(vec![host_file("doc", 5, 20)]);
+    assert_eq!(gets(&changed), ["doc"]);
+    assert!(sync
+        .on_host_file("doc".into(), b"newer".to_vec(), 20)
+        .is_some());
+    sync.on_put_rejected("doc");
+    sync
+}
+
+/// Lists the partial copy during the hold, then ends the hold with `exit`.
+fn assert_doc_never_pulled(mut sync: ShareSync, exit: Vec<HostFile>) {
+    let partial = || vec![ls_file("doc", 2, "g-partial")];
+    assert_eq!(sync.on_guest_listing(partial()), Vec::new());
+    let deleted = exit.is_empty();
+    sync.set_host_unseen(Vec::new());
+    let actions = sync.on_host_scan(exit);
+    let delete = SyncAction::DeleteGuest { name: "doc".into() };
+    assert_eq!(actions.contains(&delete), deleted, "{actions:?}");
+    if deleted {
+        sync.on_guest_deleted("doc"); // OK DEL
+        assert_eq!(sync.on_guest_listing(Vec::new()), Vec::new());
+    } else {
+        // Unchanged host file: still refused, not retried, not fetched.
+        assert_eq!(actions, Vec::new());
         assert_eq!(sync.on_guest_listing(partial()), Vec::new());
-        let deleted = exit.is_empty();
-        let actions = sync.on_host_scan(exit);
-        let delete = SyncAction::DeleteGuest { name: "doc".into() };
-        assert_eq!(actions.contains(&delete), deleted, "{actions:?}");
-        if deleted {
-            sync.on_guest_deleted("doc"); // OK DEL
-            assert_eq!(sync.on_guest_listing(Vec::new()), Vec::new());
-        } else {
-            // Unchanged host file: still refused, not retried, not fetched.
-            assert_eq!(actions, Vec::new());
-            assert_eq!(sync.on_guest_listing(partial()), Vec::new());
-        }
     }
 }

@@ -829,7 +829,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/config.rs	28	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/control_file.rs	17	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/harness_protocol.rs	521	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs	133	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	470	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	458	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/service_wake.rs	45	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share.rs	130	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_put.rs	258	0
@@ -4164,8 +4164,9 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_host_unseen.rs	73	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_scan.rs	73	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_unseen_tests.rs	154	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_win_alias.rs	59	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_alias_tests.rs	187	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_alias_tests.rs	87	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_alias_tests.rs	204	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_alias_tests.rs	161	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/agent_restart.rs	29	0
 apps/macos/Sources/AppleVzRunnerCore/AppleVzDisplayRuntimeControlServer.swift	456	0
 apps/macos/Tests/AppleVzRunnerTests/RuntimeControlSocketFixture.swift	24	0
 apps/macos/Tests/AppleVzRunnerTests/RuntimeControlSocketCleanupTests.swift	81	0

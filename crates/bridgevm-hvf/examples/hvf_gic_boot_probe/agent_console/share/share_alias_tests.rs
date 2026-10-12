@@ -1,9 +1,30 @@
 //! Host names Win32 stores as one guest name (`foo` next to `foo.` or `foo `)
 //! against a real host directory: neither host file is ever uploaded over,
-//! overwritten or deleted because of the guest's single file, and a guest edit
-//! made while they are held survives the hold.
+//! overwritten or deleted because of the guest's single file. A guest edit made
+//! while a name is held (an alias, or unseen) survives the hold; a guest copy a
+//! PUT may have truncated never counts as such an edit.
 
 use super::*;
+
+/// One service step in which the guest agent restarts part-way through a PUT
+/// (after the first chunk of a chunked one), having truncated the file first:
+/// `bvagent.ps1` writes with `FileMode.Create`.
+fn restart_mid_put(rig: &mut Rig) {
+    rig.now += Duration::from_secs(1);
+    rig.h.service_enqueue(rig.now);
+    let queue = &mut rig.h.queue;
+    let at = queue
+        .iter()
+        .position(|req| matches!(req, ServiceReq::SharePut { .. }));
+    let put = queue.remove(at.expect("a PUT is queued")).unwrap();
+    if let ServiceReq::SharePut { name, .. } = &put {
+        rig.guest.write(name, b"");
+    }
+    rig.h.in_flight = Some((put, rig.now));
+    for line in ["OK PUTBEG", "READY GUEST"] {
+        rig.h.handle_service_reply(line, None, None, rig.now);
+    }
+}
 
 #[test]
 fn trailing_dot_or_space_twin_never_overwrites_or_deletes_either_host_file() {
@@ -89,5 +110,59 @@ fn guest_edit_survives_a_trailing_space_rename_and_a_rename_away() {
     assert_eq!(rig.guest.content("notes.txt"), Some(&b"guest edit"[..]));
     assert_eq!(rig.guest.content("notes"), None);
     assert_eq!(rig.host_names(), ["notes.txt"]);
+    rig.assert_settled();
+}
+
+#[test]
+fn put_cut_short_by_an_agent_restart_never_returns_as_a_guest_edit() {
+    // The name is then held (a twin appears, or it grows past the cap) and the
+    // host deletes it: the possibly truncated guest copy must not come back.
+    let (small, twin) = (b"FOO NEWER".to_vec(), b"TWIN".to_vec());
+    let cases = [
+        ("restart-twin", small.clone(), "foo.", twin.clone()),
+        ("restart-chunked", vec![b'n'; 30_000], "foo.", twin),
+        ("restart-big", small, "foo", vec![b'b'; 70_000]),
+    ];
+    for (label, newer, held, bytes) in cases {
+        let mut rig = Rig::new(label);
+        rig.h.share.as_mut().unwrap().engine = ShareSync::new(64);
+        std::fs::write(rig.dir.join("foo"), b"FOO ORIGINAL").unwrap();
+        rig.run(12);
+        std::fs::write(rig.dir.join("foo"), &newer).unwrap();
+        restart_mid_put(&mut rig);
+        std::fs::write(rig.dir.join(held), bytes).unwrap();
+        rig.run(24);
+        let resent = rig.guest.content("foo").map(<[u8]>::to_vec);
+        let _ = std::fs::remove_file(rig.dir.join("foo."));
+        std::fs::remove_file(rig.dir.join("foo")).unwrap();
+        rig.run(24);
+        let back = rig.host("foo");
+        assert!(
+            back.is_none(),
+            "{label}: deleted host file came back as {back:?}"
+        );
+        assert!(rig.guest.gets.is_empty(), "{label}: {:?}", rig.guest.gets);
+        assert_eq!(rig.guest.content("foo"), None, "{label}");
+        assert_eq!(resent, Some(newer), "{label}: PUT resent");
+        rig.assert_settled();
+    }
+}
+
+#[test]
+fn unseen_file_edited_on_the_guest_then_deleted_on_the_host_is_fetched() {
+    // As for a host deletion of any guest-edited file: the edit wins.
+    let mut rig = Rig::new("unseen-then-gone");
+    rig.h.share.as_mut().unwrap().engine = ShareSync::new(1);
+    std::fs::write(rig.dir.join("log.txt"), b"small").unwrap();
+    rig.run(12);
+    std::fs::write(rig.dir.join("log.txt"), [b'b'; 2048]).unwrap();
+    rig.run(24);
+    rig.guest.write("log.txt", b"guest edit");
+    rig.run(24);
+    assert_eq!(rig.host("log.txt"), Some(vec![b'b'; 2048]));
+    std::fs::remove_file(rig.dir.join("log.txt")).unwrap();
+    rig.run(24);
+    assert_eq!(rig.guest.content("log.txt"), Some(&b"guest edit"[..]));
+    assert_eq!(rig.host("log.txt").as_deref(), Some(&b"guest edit"[..]));
     rig.assert_settled();
 }
