@@ -13,6 +13,8 @@ mod destination_lease;
 mod member_lease;
 #[path = "snapshot_create_staging_debris.rs"]
 mod staging_debris;
+#[path = "snapshot_create_staging_reclaim.rs"]
+mod staging_reclaim;
 use destination_lease::claim_staging;
 #[path = "snapshot_create_fill.rs"]
 mod fill;

@@ -4343,3 +4343,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/ctl_input_line_tes
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfUnavailableMediaDeletion.swift	76	0
 apps/macos/Tests/BridgeVMControlTests/HvfUnavailableMediaDeletionTests.swift	182	0
 apps/macos/Tests/BridgeVMControlTests/VMLibraryDeletionImpactTests.swift	39	0
+crates/bridgevm-hvf/src/snapshot_create_staging_reclaim.rs	18	0
+crates/bridgevm-hvf/src/snapshot_create_completed_staging_tests.rs	119	0
