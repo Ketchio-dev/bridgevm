@@ -4374,3 +4374,5 @@ apps/macos/Tests/BridgeVMControlTests/HvfEngineSessionGuestResetGateTests.swift	
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSessionInputGeneration.swift	56	0
 apps/macos/Tests/BridgeVMControlTests/HvfGuestResetInputGenerationTests.swift	178	0
 apps/macos/Tests/BridgeVMControlTests/HvfLateGuestResetInputTests.swift	202	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfClipboardPasteCommandLimit.swift	20	0
+apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteCommandLimitTests.swift	72	0
