@@ -49,6 +49,7 @@ struct FileRecord {
     guest_mtime: Option<String>,
     awaiting_guest_stamp: bool,
     host_write_failed: bool,
+    put_unconfirmed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -237,6 +238,7 @@ impl ShareSync {
                 guest_mtime,
                 awaiting_guest_stamp: false,
                 host_write_failed: true,
+                put_unconfirmed: false,
             },
         );
         GuestFileOutcome::WriteHost(bytes)
@@ -261,24 +263,6 @@ impl ShareSync {
         });
         self.pending_guest_mtime.retain(|name, _| guest.contains(name));
         self.pending_host_changed.retain(|name| self.records.contains_key(name));
-    }
-
-    pub fn on_put_ok(&mut self, name: String, size: u64, hash: u64) {
-        let name = normalize_rel(&name);
-        self.pending_host_changed.remove(&name);
-        self.pending_guest_mtime.remove(&name);
-        self.put_rejected.remove(&name);
-        self.records.insert(
-            name,
-            FileRecord {
-                size,
-                hash,
-                host_mtime_ms: None,
-                guest_mtime: None,
-                awaiting_guest_stamp: true,
-                host_write_failed: false,
-            },
-        );
     }
 
     pub fn on_guest_deleted(&mut self, name: &str) {
@@ -323,6 +307,8 @@ pub use share_rel_path::{append_guest_rel_into, from_guest_rel, normalize_rel};
 mod share_host_unseen;
 #[path = "share_listing.rs"]
 mod share_listing;
+#[path = "share_put_outcome.rs"]
+mod share_put_outcome;
 #[path = "share_sync_host.rs"]
 mod share_sync_host;
 #[path = "share_win_alias.rs"]

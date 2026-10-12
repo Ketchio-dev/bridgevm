@@ -1,7 +1,8 @@
 //! Host-scan planning: changed host files become PUTs and vanished ones guest
 //! deletions. A case-only rename is the same file; a refused PUT waits for a
-//! host change; a file the scan found but could not read has not vanished;
-//! names Windows cannot keep apart are held, neither uploaded nor vanished.
+//! host change (`share_put_outcome`); a file the scan found but could not read
+//! has not vanished; names Windows cannot keep apart are held, neither
+//! uploaded nor vanished.
 
 use super::*;
 
@@ -51,8 +52,11 @@ impl ShareSync {
             if self.records.get(name).is_some_and(|record| record.host_write_failed) {
                 continue;
             }
+            // An unconfirmed PUT is re-sent even if the host stat is the synced one.
             if self.records.get(name).is_none_or(|record| {
-                record.size != file.size || record.host_mtime_ms != Some(file.mtime_ms)
+                record.size != file.size
+                    || record.host_mtime_ms != Some(file.mtime_ms)
+                    || record.put_unconfirmed
             }) {
                 self.pending_host_changed.insert(name.clone());
                 // A PUT the guest refused is retried once the host file changes.
@@ -93,21 +97,14 @@ impl ShareSync {
         self.pending_guest_mtime.remove(&name);
         let hash = fnv1a64(&bytes);
         if let Some(record) = self.records.get_mut(&name) {
-            if record.hash == hash {
+            if record.hash == hash && !record.put_unconfirmed {
                 record.size = bytes.len() as u64;
                 record.host_mtime_ms = Some(mtime_ms);
                 return None;
             }
+            // The guest truncates before writing: its copy is unknown until PUTOK.
+            record.put_unconfirmed = true;
         }
         Some(PushGuest { bytes, hash })
-    }
-
-    /// The guest refused a PUT (for example a name Windows rejects). Keep the
-    /// scanned host version so it is not re-sent every tick ahead of LSR.
-    pub fn on_put_rejected(&mut self, name: &str) {
-        let name = normalize_rel(name);
-        if let Some(stat) = self.host_files_scratch.get(&name).copied() {
-            self.put_rejected.insert(name, stat);
-        }
     }
 }

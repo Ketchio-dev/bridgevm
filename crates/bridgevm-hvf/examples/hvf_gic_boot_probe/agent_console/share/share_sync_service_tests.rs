@@ -7,6 +7,8 @@ use crate::agent_console::agent_console_tests::tests::harness;
 use std::os::unix::fs::MetadataExt;
 #[path = "share_alias_tests.rs"]
 mod alias_tests;
+#[path = "share_put_unconfirmed_tests.rs"]
+mod put_unconfirmed_tests;
 #[path = "share_unseen_tests.rs"]
 mod unseen_tests;
 

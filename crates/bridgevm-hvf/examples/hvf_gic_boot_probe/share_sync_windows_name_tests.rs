@@ -4,6 +4,8 @@
 use super::*;
 #[path = "share_sync_alias_tests.rs"]
 mod alias_tests;
+#[path = "share_sync_put_unconfirmed_tests.rs"]
+mod put_unconfirmed_tests;
 
 fn ls_file(name: &str, size: u64, mtime: &str) -> LsEntry {
     LsEntry { name: name.into(), size, is_dir: false, mtime: mtime.into() }

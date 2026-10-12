@@ -35,21 +35,6 @@ impl ShareSync {
         let mut parents = key.match_indices('/').map(|(end, _)| &key[..end]);
         self.host_unseen.contains(&key) || parents.any(|dir| self.host_unseen.contains(dir))
     }
-
-    /// Windows keys, because the guest may store a held host name in another case.
-    pub(super) fn pull_held_keys(&self) -> HashSet<String> {
-        (self.pending_host_changed.iter())
-            .chain(self.put_rejected.keys())
-            .map(|name| share_win_names::windows_key(name))
-            .collect()
-    }
-
-    /// The host version is not on the guest yet (queued, or refused after the
-    /// guest may have truncated its copy): never pull that copy back, nor keep
-    /// it as a guest edit.
-    pub(super) fn pull_held(&self, held: &HashSet<String>, name: &str) -> bool {
-        !held.is_empty() && held.contains(&share_win_names::windows_key(name))
-    }
 }
 
 #[cfg(test)]
