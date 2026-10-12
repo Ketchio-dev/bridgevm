@@ -1288,7 +1288,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowInventoryRequestTests.swift	70	0
 apps/macos/Tests/BridgeVMControlTests/HvfPasteKeyOrderingTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfHostKeyModifierTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteSessionTests.swift	84	0
-apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteTargetTests.swift	78	0
+apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteTargetTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfHostShortcutIsolationTests.swift	31	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	424	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferScrollOrderingTests.swift	57	0
@@ -4350,4 +4350,5 @@ crates/bridgevm-hvf/src/snapshot_create_publication_failure_tests.rs	112	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshotAdmission.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotRelocationAdmissionTests.swift	106	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerAction.swift	18	0
-apps/macos/Tests/BridgeVMControlTests/HvfClipboardPastePointerTests.swift	48	0
+apps/macos/Tests/BridgeVMControlTests/HvfClipboardPastePointerTests.swift	49	0
+apps/macos/Tests/BridgeVMControlTests/HvfLegacyPasteFixture.swift	41	0

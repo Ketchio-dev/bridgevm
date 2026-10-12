@@ -5,7 +5,8 @@ import XCTest
 
 /// A press can move guest focus without changing the host first responder, so the
 /// delayed legacy `KEY ctrl+v` must not follow it into whatever the press focused.
-extension HvfClipboardPasteTargetTests {
+@MainActor
+final class HvfClipboardPastePointerTests: XCTestCase, HvfLegacyPasteFixture {
     private static let size = CGSize(width: 100, height: 100), at = CGPoint(x: 5, y: 5)
 
     func testPointerPressDuringLegacyPasteCancelsTheDelayedPaste() throws {
