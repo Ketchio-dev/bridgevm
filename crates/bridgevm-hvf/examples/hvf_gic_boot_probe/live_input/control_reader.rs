@@ -1,3 +1,4 @@
+use super::restart_resume::AT_END;
 use super::{LiveInputController, COMPACT_AFTER_BYTES, MAX_PENDING_COMMANDS};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -8,6 +9,9 @@ impl LiveInputController {
         let Ok(len) = file.metadata().map(|metadata| metadata.len()) else {
             return;
         };
+        if self.offset == AT_END {
+            self.offset = len;
+        }
         if len < self.offset {
             self.offset = 0;
             self.lines.clear();

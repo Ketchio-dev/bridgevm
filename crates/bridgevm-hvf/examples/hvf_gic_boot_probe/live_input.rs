@@ -19,12 +19,17 @@ mod key_actions;
 mod line_frames;
 #[path = "live_input/control_reader.rs"]
 mod control_reader;
+#[path = "live_input/restart_resume.rs"]
+mod restart_resume;
 #[cfg(test)]
 #[path = "live_input/backpressure_tests.rs"]
 mod backpressure_tests;
 #[cfg(test)]
 #[path = "live_input/identity_tests.rs"]
 mod identity_tests;
+#[cfg(test)]
+#[path = "live_input/restart_replay_tests.rs"]
+mod restart_replay_tests;
 enum LiveInputCommand {
     Key(String),
     Pointer(String),
@@ -67,9 +72,10 @@ pub struct LiveInputController {
 
 impl LiveInputController {
     pub fn from_env() -> Self {
+        let mut source = InputControlFile::from_env();
         Self {
-            source: InputControlFile::from_env(),
-            offset: 0,
+            offset: restart_resume::initial_offset(source.as_mut()),
+            source,
             lines: Default::default(),
             pending: VecDeque::new(),
             accepted_pointer_moves: 0,
