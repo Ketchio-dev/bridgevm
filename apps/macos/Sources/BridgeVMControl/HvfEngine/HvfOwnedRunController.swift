@@ -76,10 +76,9 @@ final class HvfOwnedRunController {
         return operation?.observation
     }
 
-    func guestServiceReady() {
-        serviceReady = true
-        requestGuestIfReady()
-    }
+    /// Set by this boot generation's `SERVICE start`; a guest reset record drops it, so an unsent request waits.
+    func guestServiceReady() { serviceReady = true; requestGuestIfReady() }
+    func guestServiceLost() { serviceReady = false }
 
     func tick() {
         if runnerExit == nil, !process.isRunning {

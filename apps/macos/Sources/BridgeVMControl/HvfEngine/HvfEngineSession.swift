@@ -334,26 +334,7 @@ final class HvfEngineSession: ObservableObject {
         }
     }
 
-    private func handle(_ event: BvAgentEvent) {
-        append(event)
-        switch event {
-        case let .ready(host, _):
-            if connectionState != .stopping, ownedController?.failure == nil {
-                connectionState = .connected(host: host)
-            }
-        case .serviceStart:
-            serviceStarted = true
-            if let ownedController { ownedController.guestServiceReady() }
-            else { sendGracefulStopIfReady() }
-        case .aliveHeartbeat:
-            lastHeartbeatDate = Date()
-            lastHeartbeatAge = 0
-        default:
-            break
-        }
-    }
-
-    private func sendGracefulStopIfReady() {
+    func sendGracefulStopIfReady() {
         guard case .stopping = connectionState, serviceStarted, !stopCommandSent else { return }
         stopCommandSent = true
         if sendCtl("shutdown.exe /p /f") {

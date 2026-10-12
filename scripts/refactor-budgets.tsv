@@ -1279,7 +1279,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	333	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	433	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	414	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLiveInputFile.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfLiveInputFileTests.swift	145	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	416	0
@@ -4367,3 +4367,5 @@ apps/macos/Tests/BridgeVMControlTests/HvfClipboardPastePointerTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfLegacyPasteFixture.swift	41	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfAgentServiceGate.swift	30	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsBackendServiceGateTests.swift	175	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSessionAgentEvents.swift	29	0
+apps/macos/Tests/BridgeVMControlTests/HvfEngineSessionGuestResetGateTests.swift	174	0
