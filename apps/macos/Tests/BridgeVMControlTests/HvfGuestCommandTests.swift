@@ -69,8 +69,8 @@ final class ControlModelGuestCommandsTests: XCTestCase {
     }
 }
 
-/// The VM reports running until the control file exists, so a command that
-/// reaches the control channel ends promptly instead of waiting 900 s.
+/// The agent service has started and the VM reports running until the control
+/// file exists, so a command that reaches the channel ends promptly, not in 900 s.
 private struct StoppingAfterAppendFixture {
     let dir: URL
     let config: VMConfig
@@ -78,7 +78,6 @@ private struct StoppingAfterAppendFixture {
 
     init() throws {
         dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         config = VMConfig(id: "win-hvf", name: "Win HVF", displayName: "Windows Preview", backendKind: "hvf-engine",
                           bootMode: "windows-hvf", bundlePath: dir.appendingPathComponent("bundle.vmbridge").path,
                           runnerPath: "", launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
@@ -86,6 +85,7 @@ private struct StoppingAfterAppendFixture {
                           memMiB: 4096, cpuCount: 1)
         let ctlPath = HvfWindowsBackend(config, processIsRunning: { _ in false }).ctlFilePath
         backend = HvfWindowsBackend(config, processIsRunning: { _ in !FileManager.default.fileExists(atPath: ctlPath) })
+        try HvfAgentServiceStartFixture.seed(backend) // also creates dir and its bundle/log parents
     }
 
     func remove() { try? FileManager.default.removeItem(at: dir) }

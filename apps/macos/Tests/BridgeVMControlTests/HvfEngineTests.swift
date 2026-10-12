@@ -1173,10 +1173,12 @@ final class HvfWindowsBackendTests: XCTestCase {
         let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
         let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in true })
         let log = URL(fileURLWithPath: backend.evidenceDir).appendingPathComponent("run.log")
+        try HvfAgentServiceStartFixture.seed(backend)
 
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) {
             try? FileManager.default.createDirectory(atPath: backend.evidenceDir, withIntermediateDirectories: true)
             try? """
+            BVAGENT SERVICE start t=1
             BVAGENT CMD foo exit=0
             hello
             world
@@ -1226,6 +1228,7 @@ final class HvfWindowsBackendTests: XCTestCase {
             atPath: backend.ctlFilePath,
             withIntermediateDirectories: true
         )
+        try HvfAgentServiceStartFixture.seed(backend)
 
         let started = Date()
         let result = backend.runInGuest("whoami")
@@ -1265,6 +1268,7 @@ final class HvfWindowsBackendTests: XCTestCase {
             checks += 1
             return checks == 1
         })
+        try HvfAgentServiceStartFixture.seed(backend)
 
         let started = Date()
         let result = backend.runInGuest("foo")
@@ -1325,6 +1329,7 @@ final class HvfWindowsBackendTests: XCTestCase {
         let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
         let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in true })
         let log = URL(fileURLWithPath: backend.evidenceDir).appendingPathComponent("run.log")
+        try HvfAgentServiceStartFixture.seed(backend)
         let group = DispatchGroup()
         for command in ["first", "second"] {
             group.enter()
@@ -1338,12 +1343,13 @@ final class HvfWindowsBackendTests: XCTestCase {
         usleep(150_000)
         XCTAssertEqual(try controlLines(backend).count, 1)
         try FileManager.default.createDirectory(atPath: backend.evidenceDir, withIntermediateDirectories: true)
-        try "BVAGENT CMD \(firstCommand) exit=0\nfirst-ok\nBVAGENT END \(firstCommand)\n"
+        try "BVAGENT SERVICE start t=1\nBVAGENT CMD \(firstCommand) exit=0\nfirst-ok\nBVAGENT END \(firstCommand)\n"
             .write(to: log, atomically: true, encoding: .utf8)
 
         let commands = try waitForControlLines(backend, count: 2).map(String.init)
         let secondCommand = commands[1]
         try """
+        BVAGENT SERVICE start t=1
         BVAGENT CMD \(firstCommand) exit=0
         first-ok
         BVAGENT END \(firstCommand)

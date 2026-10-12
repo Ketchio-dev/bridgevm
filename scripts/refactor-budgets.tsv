@@ -4356,3 +4356,5 @@ apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotRelocationAdmissionTests.
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerAction.swift	18	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPastePointerTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfLegacyPasteFixture.swift	41	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfAgentServiceGate.swift	30	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsBackendServiceGateTests.swift	175	0
