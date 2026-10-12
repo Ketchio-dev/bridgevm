@@ -5,7 +5,7 @@ struct HvfSessionInputRouter {
     private(set) var binding: [String]?
     private(set) var eligible = false
     private(set) var activated = false
-    private(set) var failure: HvfSessionInputFailure? // only `.guestReset` is re-armable
+    private(set) var failure: HvfSessionInputFailure? // see `endsAtGuestReset` for re-arming
     var failed: Bool { failure != nil }
     private var stream = HvfRecoverableInputStream()
     var state: HvfNegotiatedInputStream.State { stream.state }

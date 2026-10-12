@@ -78,7 +78,7 @@ final class HvfGuestResetInputGenerationTests: XCTestCase {
         }
     }
 
-    func testOnlyAGuestResetFailureReArmsAndOnlyForTheSameBinding() {
+    func testResetRecordInTheBatchReArmsOnlyForTheSameBinding() {
         for reset in records {
             var router = readyRouter()
             XCTAssertEqual(router.route(.text("pending"), binding: binding, now: now), .queued)
