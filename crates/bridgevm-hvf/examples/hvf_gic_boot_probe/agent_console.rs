@@ -23,6 +23,8 @@ use share_sync::{GuestFileOutcome, HostFile, LsEntry, ShareSync, SkipReason, Syn
 #[cfg(test)]
 #[path = "agent_console_tests.rs"]
 mod agent_console_tests;
+#[path = "agent_console/clip_paste.rs"]
+mod clip_paste;
 #[path = "agent_console/clip_sync.rs"]
 mod clip_sync;
 #[path = "agent_console/clipboard.rs"]

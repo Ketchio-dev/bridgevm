@@ -162,10 +162,7 @@ impl AgentConsoleHarness {
                 self.service_line_scratch.push('\n');
                 true
             }
-            ServiceReq::Ctl(command) => {
-                write_command_wire_line_into(command, &mut self.service_line_scratch);
-                true
-            }
+            ServiceReq::Ctl(command) => self.write_ctl_wire_line(command),
             ServiceReq::Ping => {
                 self.service_line_scratch.push_str("PING\n");
                 true

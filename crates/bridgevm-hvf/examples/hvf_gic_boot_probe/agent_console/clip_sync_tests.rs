@@ -4,6 +4,8 @@
 use super::*;
 use crate::agent_console::agent_console_tests::tests::harness;
 use std::sync::mpsc::{Receiver, Sender};
+#[path = "clip_paste_tests.rs"]
+mod paste;
 
 /// Service loop wired to a channel-only pasteboard and a modelled guest
 /// clipboard that answers CLIPGET/CLIPSET the way `bvagent.ps1` does.
@@ -67,7 +69,7 @@ impl ClipRig {
                 "OK CLIPSET".to_owned()
             }
         } else {
-            panic!("unexpected request {line:?}");
+            self.run_reply(line)
         };
         self.h.handle_service_reply(&reply, None, None, self.now);
     }

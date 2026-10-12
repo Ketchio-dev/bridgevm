@@ -3,7 +3,8 @@
 //! The baseline is the text the guest is known to hold. It advances to a host
 //! copy only on CLIPSET OK, so a copy the guest never received (oversized, ERR,
 //! dropped by an agent restart, or overtaken by an earlier CLIPGET) cannot make
-//! the guest's older text look like a new guest copy and revert the Mac.
+//! the guest's older text look like a new guest copy and revert the Mac. An
+//! app paste through the guest clipboard re-learns it too (clip_paste.rs).
 
 use super::*;
 
@@ -15,8 +16,8 @@ mod tests;
 pub(super) struct ClipBaseline {
     /// Normalized (LF) guest text last observed, adopted or confirmed.
     pub(super) text: Option<String>,
-    /// A host copy failed to reach the guest: the next CLIPGET is the guest's
-    /// old text, so it becomes the baseline instead of being adopted.
+    /// A host copy failed to reach the guest, or the app pasted through it: the
+    /// next CLIPGET becomes the baseline instead of being adopted onto the Mac.
     pub(super) rebaseline: bool,
 }
 
