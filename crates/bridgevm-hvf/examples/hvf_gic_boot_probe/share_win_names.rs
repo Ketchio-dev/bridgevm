@@ -1,6 +1,7 @@
 //! Case-only renames. NTFS looks names up case-insensitively and Win32 drops
 //! trailing dots and spaces from the last component, so a renamed name can
-//! still be the same file on the other side; treat it as that file.
+//! still be the same file on the other side; treat it as that file. Host names
+//! that share one Windows name never get here: `share_win_alias` holds them.
 
 use super::*;
 

@@ -8,8 +8,7 @@ impl AgentConsoleHarness {
         let Some(share) = self.share.as_mut() else {
             return false;
         };
-        // An unmounted or renamed share root lists nothing; that is not the
-        // user deleting every file, so plan no host changes at all.
+        // An unmounted or renamed root is not the user deleting every file.
         if !scan_share_host_dir(share) {
             return false;
         }
@@ -52,7 +51,8 @@ impl AgentConsoleHarness {
                     });
                     return true;
                 }
-                SyncAction::DeleteHost { .. } | SyncAction::Skip { .. } => {}
+                SyncAction::Skip { name, reason } => print_share_skip(&name, reason),
+                SyncAction::DeleteHost { .. } => {}
             }
         }
         false

@@ -1,6 +1,7 @@
 //! Host-scan planning: changed host files become PUTs and vanished ones guest
 //! deletions. A case-only rename is the same file; a refused PUT waits for a
-//! host change; a file the scan found but could not read has not vanished.
+//! host change; a file the scan found but could not read has not vanished;
+//! names Windows cannot keep apart are held, neither uploaded nor vanished.
 
 use super::*;
 
@@ -44,7 +45,7 @@ impl ShareSync {
             self.host_files_scratch
                 .insert(name, HostFileStat { size, mtime_ms });
         }
-        self.adopt_host_renames();
+        self.hold_windows_aliases(&mut actions);
 
         for (name, file) in &self.host_files_scratch {
             if self.records.get(name).is_some_and(|record| record.host_write_failed) {
@@ -60,11 +61,10 @@ impl ShareSync {
                 }
             }
         }
-        let host = &self.host_files_scratch;
-        self.put_rejected.retain(|name, stat| host.get(name) == Some(stat));
+        self.retain_put_rejected();
 
         for (name, record) in &self.records {
-            if self.host_files_scratch.contains_key(name) || self.host_unseen_covers(name) {
+            if self.host_files_scratch.contains_key(name) || self.host_held(name) {
                 continue;
             }
             if record.host_write_failed {

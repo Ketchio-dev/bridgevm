@@ -7,7 +7,7 @@ use super::*;
 
 /// Windows key per component, so the guest's spelling of an unseen name, or of
 /// a name below an unseen directory, still matches it.
-fn unseen_key(name: &str) -> String {
+pub(super) fn unseen_key(name: &str) -> String {
     let mut key = String::with_capacity(name.len());
     for part in name.split('/').filter(|part| !part.is_empty()) {
         if !key.is_empty() {
@@ -45,11 +45,10 @@ impl ShareSync {
     }
 
     /// The host version is not on the guest yet (queued, or refused after the
-    /// guest may have truncated its copy), or the host file exists but could
-    /// not be read: never pull the guest copy back over it.
+    /// guest may have truncated its copy): never pull that copy back, nor keep
+    /// it as a guest edit.
     pub(super) fn pull_held(&self, held: &HashSet<String>, name: &str) -> bool {
-        (!held.is_empty() && held.contains(&share_win_names::windows_key(name)))
-            || self.host_unseen_covers(name)
+        !held.is_empty() && held.contains(&share_win_names::windows_key(name))
     }
 }
 

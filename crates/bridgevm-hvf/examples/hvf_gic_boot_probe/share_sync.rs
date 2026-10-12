@@ -26,6 +26,7 @@ pub enum SyncAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SkipReason {
     TooLarge { size: u64 },
+    WindowsAlias(Vec<String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +63,7 @@ struct GuestFileStat {
     mtime: String,
 }
 
+#[derive(Default)]
 pub struct ShareSync {
     records: HashMap<String, FileRecord>,
     max_bytes: u64,
@@ -73,6 +75,7 @@ pub struct ShareSync {
     host_files_scratch: HashMap<String, HostFileStat>,
     put_rejected: HashMap<String, HostFileStat>,
     host_unseen: HashSet<String>,
+    host_aliased: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -83,16 +86,8 @@ enum SkipKey {
 impl ShareSync {
     pub fn new(max_kb: u64) -> Self {
         Self {
-            records: HashMap::new(),
             max_bytes: max_kb.saturating_mul(1024),
-            guest_skip_seen: HashSet::new(),
-            pending_guest_mtime: HashMap::new(),
-            pending_host_changed: HashSet::new(),
-            present_scratch: HashSet::new(),
-            guest_file_entries_scratch: HashMap::new(),
-            host_files_scratch: HashMap::new(),
-            put_rejected: HashMap::new(),
-            host_unseen: HashSet::new(),
+            ..Self::default()
         }
     }
 
@@ -162,29 +157,28 @@ impl ShareSync {
                 }
                 continue;
             }
-            // The host version is not on the guest yet, or the host file is unreadable.
             if self.pull_held(&held, name) {
                 continue;
             }
-
-            match self.records.get_mut(name) {
-                None => {
-                    self.pending_guest_mtime
-                        .insert(name.clone(), entry.mtime.clone());
-                    actions.push(SyncAction::Get { name: name.clone() });
-                }
+            let changed = match self.records.get_mut(name) {
                 Some(record) if record.awaiting_guest_stamp && entry.size == record.size => {
                     // A host PUT changes the guest mtime. The first matching LSR after
                     // PUTOK is our write landing, not a guest edit to pull back.
                     record.guest_mtime = Some(entry.mtime.clone());
                     record.awaiting_guest_stamp = false;
+                    false
                 }
-                Some(record) if record.guest_mtime.as_deref() != Some(entry.mtime.as_str()) => {
-                    self.pending_guest_mtime
-                        .insert(name.clone(), entry.mtime.clone());
+                Some(record) => record.guest_mtime.as_deref() != Some(entry.mtime.as_str()),
+                None => true,
+            };
+            if changed {
+                // Noted even for a held host name, so a hold ending with the
+                // host name gone fetches this edit instead of deleting it.
+                self.pending_guest_mtime
+                    .insert(name.clone(), entry.mtime.clone());
+                if !self.host_held(name) {
                     actions.push(SyncAction::Get { name: name.clone() });
                 }
-                Some(_) => {}
             }
         }
         // A skip is reported once per listed oversized version. Forget versions
@@ -204,7 +198,7 @@ impl ShareSync {
             if record.host_write_failed {
                 continue;
             }
-            if self.pending_host_changed.contains(name) || self.host_unseen_covers(name) {
+            if self.pending_host_changed.contains(name) || self.host_held(name) {
                 continue;
             }
             actions.push(SyncAction::DeleteHost { name: name.clone() });
@@ -331,6 +325,8 @@ mod share_host_unseen;
 mod share_listing;
 #[path = "share_sync_host.rs"]
 mod share_sync_host;
+#[path = "share_win_alias.rs"]
+mod share_win_alias;
 #[path = "share_win_names.rs"]
 mod share_win_names;
 #[cfg(test)]

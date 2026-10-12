@@ -2,6 +2,8 @@
 //! A refused PUT is retried on a host change and never pulled back meanwhile.
 
 use super::*;
+#[path = "share_sync_alias_tests.rs"]
+mod alias_tests;
 
 fn ls_file(name: &str, size: u64, mtime: &str) -> LsEntry {
     LsEntry { name: name.into(), size, is_dir: false, mtime: mtime.into() }

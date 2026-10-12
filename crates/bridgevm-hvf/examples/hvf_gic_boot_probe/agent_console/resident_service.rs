@@ -419,7 +419,7 @@ impl AgentConsoleHarness {
                                         });
                                     }
                                     SyncAction::Skip { name, reason } => {
-                                        print_guest_skip(&name, reason);
+                                        print_share_skip(&name, reason);
                                     }
                                 }
                             }
