@@ -212,27 +212,27 @@ final class HvfEngineSession: ObservableObject {
 
     #if canImport(AppKit)
     func sendPointerClick(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        sendPointerAction("click", location: location, viewSize: viewSize, imageSize: imageSize)
+        sendPointerAction(.click, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
     @discardableResult func sendPointerPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> String {
-        sendPointerAction("press", location: location, viewSize: viewSize, imageSize: imageSize)
+        sendPointerAction(.press, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
     func sendPointerMove(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        sendPointerAction("move", location: location, viewSize: viewSize, imageSize: imageSize)
+        sendPointerAction(.move, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
     func sendPointerRelease(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        sendPointerAction("release", location: location, viewSize: viewSize, imageSize: imageSize)
+        sendPointerAction(.release, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
     func sendPointerRightClick(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        sendPointerAction("right-click", location: location, viewSize: viewSize, imageSize: imageSize)
+        sendPointerAction(.rightClick, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
     func sendPointerRightPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        sendPointerAction("right-press", location: location, viewSize: viewSize, imageSize: imageSize)
+        sendPointerAction(.rightPress, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
     func sendPointerScroll(_ delta: Int8, location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
@@ -242,21 +242,16 @@ final class HvfEngineSession: ObservableObject {
     }
 
     /// Returns where the event went (queued, legacy, refused or unmapped) for the display's diagnostic.
-    @discardableResult private func sendPointerAction(_ action: String, location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> String {
+    @discardableResult private func sendPointerAction(_ action: HvfPointerAction, location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> String {
         guard let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return "unmapped" }
-        let verb = action == "release" ? "releaseall" : action.replacingOccurrences(of: "-", with: "")
-        let admission = inputDriver.route(.pointer("\(verb):\(point.x)x\(point.y)"), binding: inputBinding)
+        if action.mayMoveGuestFocus { cancelPendingPaste("pointer pressed") }
+        let admission = inputDriver.route(.pointer("\(action.orderedVerb):\(point.x)x\(point.y)"), binding: inputBinding)
         if admission != .legacy { return admission == .queued ? "queued" : "refused-" + inputDriver.routeDiagnostic(attached: attachedToExistingProcess) }
-        appendLiveInput("POINTER \(action):\(point.x)x\(point.y)"); return "legacy-" + inputDriver.routeDiagnostic(attached: attachedToExistingProcess)
+        appendLiveInput("POINTER \(action.rawValue):\(point.x)x\(point.y)"); return "legacy-" + inputDriver.routeDiagnostic(attached: attachedToExistingProcess)
     }
 
     private func mappedPointer(_ location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> (x: UInt16, y: UInt16)? {
-        guard let point = HvfDisplayCoordinates.absolutePointer(
-            location: location,
-            viewSize: viewSize,
-            imageSize: imageSize
-        ) else { return nil }
-        return point
+        HvfDisplayCoordinates.absolutePointer(location: location, viewSize: viewSize, imageSize: imageSize)
     }
     #endif
 
@@ -427,7 +422,12 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func cancelOrderedInputTarget() {
-        if pendingPaste != nil { pendingPaste = nil; append(.unknown("clipboard paste canceled: input target changed")) }
+        cancelPendingPaste("input target changed")
         inputDriver.cancelTarget()
+    }
+
+    /// Drops a legacy paste before its delayed `KEY ctrl+v` can reach a different guest target.
+    private func cancelPendingPaste(_ reason: String) {
+        if pendingPaste != nil { pendingPaste = nil; append(.unknown("clipboard paste canceled: \(reason)")) }
     }
 }

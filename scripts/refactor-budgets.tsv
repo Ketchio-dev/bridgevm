@@ -4349,3 +4349,5 @@ crates/bridgevm-hvf/src/snapshot_create_owned_staging.rs	44	0
 crates/bridgevm-hvf/src/snapshot_create_publication_failure_tests.rs	112	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshotAdmission.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotRelocationAdmissionTests.swift	106	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerAction.swift	18	0
+apps/macos/Tests/BridgeVMControlTests/HvfClipboardPastePointerTests.swift	48	0

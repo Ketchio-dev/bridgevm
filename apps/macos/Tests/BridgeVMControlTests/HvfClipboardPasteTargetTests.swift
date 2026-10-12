@@ -46,7 +46,7 @@ final class HvfClipboardPasteTargetTests: XCTestCase {
         }
     }
 
-    private func withSession(_ body: (HvfEngineSession, URL) throws -> Void) throws {
+    func withSession(_ body: (HvfEngineSession, URL) throws -> Void) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -62,12 +62,12 @@ final class HvfClipboardPasteTargetTests: XCTestCase {
         try body(session, root)
     }
 
-    private func lastCommand(_ session: HvfEngineSession) throws -> String {
+    func lastCommand(_ session: HvfEngineSession) throws -> String {
         try XCTUnwrap(String(contentsOfFile: session.config.ctlFilePath, encoding: .utf8)
             .split(separator: "\n").last.map(String.init))
     }
 
-    private func acknowledge(_ command: String, root: URL) throws {
+    func acknowledge(_ command: String, root: URL) throws {
         let range = try XCTUnwrap(command.range(of: "BVPASTE_READY [0-9A-Fa-f-]{36}", options: .regularExpression))
         let text = "BVAGENT CMD \(command) exit=0\n\(command[range])\nBVAGENT END \(command)\n"
         let handle = try FileHandle(forWritingTo: root.appendingPathComponent("run.log"))
