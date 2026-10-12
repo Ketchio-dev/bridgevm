@@ -141,23 +141,9 @@ enum VMLibrary {
         }
     }
 
+    /// Derived from `deletionTarget`, so the dialog's named bundle and this agree.
     static func deletionImpact(for config: VMConfig, rootURL: URL = root) -> VMLibraryDeletionImpact {
-        let rawEntry = rootURL.appendingPathComponent(config.slug, isDirectory: true)
-        if (try? rawEntry.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
-            return .registrationOnly
-        }
-        let entry = rawEntry
-            .resolvingSymlinksInPath()
-            .standardizedFileURL
-        let bundle = URL(fileURLWithPath: config.bundlePath)
-            .resolvingSymlinksInPath()
-            .standardizedFileURL
-        let entryPrefix = entry.path.hasSuffix("/") ? entry.path : entry.path + "/"
-        if bundle.path == entry.path || bundle.path.hasPrefix(entryPrefix) {
-            return .managedBundleDeleted
-        }
-        // A stale saved path must not hide a managed bundle the entry delete removes.
-        return (try? rawEntry.appendingPathComponent("bundle.vmbridge", isDirectory: true).resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true ? .managedBundleDeleted : .registrationOnly
+        deletionTarget(for: config, rootURL: rootURL) == nil ? .registrationOnly : .managedBundleDeleted
     }
 
     /// One-time import of the legacy single ~/.bridgevm-control/config.json into

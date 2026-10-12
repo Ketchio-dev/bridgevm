@@ -1270,7 +1270,7 @@ apps/macos/Sources/BridgeVMControl/Backends.swift	490	0
 apps/macos/Sources/BridgeVMControl/QemuCompatBackend.swift	130	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	22	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	56	0
-apps/macos/Sources/BridgeVMControl/ContentView.swift	289	0
+apps/macos/Sources/BridgeVMControl/ContentView.swift	284	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	254	0
 apps/macos/Sources/BridgeVMControl/CreateVM.swift	435	0
 apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	116	0
@@ -1322,7 +1322,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMIdentityLifecycle.swift	451	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMLifecycleCommand.swift	368	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMStateSecurity.swift	181	0
 apps/macos/Sources/BridgeVMControl/LibraryModel.swift	177	0
-apps/macos/Sources/BridgeVMControl/VMLibrary.swift	178	0
+apps/macos/Sources/BridgeVMControl/VMLibrary.swift	164	0
 apps/macos/Sources/BridgeVMControl/VMLibraryInternalEntries.swift	13	0
 apps/macos/Tests/BridgeVMControlTests/LibraryCacheInventoryTests.swift	49	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzDisplayRuntimeControlServerTests.swift	535	0
@@ -3227,6 +3227,8 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfProtectedDeletion.swift	9	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDeletionActionTests.swift	33	0
 apps/macos/Sources/BridgeVMControl/LibraryDeletionProtection.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDeletionProtectionTests.swift	16	0
+apps/macos/Sources/BridgeVMControl/LibraryDeletionPrompt.swift	37	0
+apps/macos/Tests/BridgeVMControlTests/LibraryDeletionPromptTests.swift	98	0
 docs/history/windows-hvf/running-vm-deletion-admission-20260920.md	50	0
 docs/history/windows-hvf/legacy-graphics-opt-in-20260920.md	45	0
 apps/macos/Sources/BridgeVMControl/LibraryRuntimeDetailContent.swift	36	0
