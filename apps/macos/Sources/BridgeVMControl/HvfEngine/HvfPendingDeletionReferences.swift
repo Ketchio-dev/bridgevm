@@ -22,7 +22,7 @@ enum HvfPendingDeletionReferences {
             let requestURL = URL(fileURLWithPath: config.bundlePath)
                 .appendingPathComponent(HvfWindowsInstallRequest.fileName)
             if try kind(requestURL) == nil {
-                guard config.installPending != true else { throw failure() }
+                guard try config.installPending != true || config.isDetachedRegistration(rootURL: rootURL) else { throw failure() }
                 continue
             }
             let request = try HvfWindowsInstallRequestSnapshot.load(requestURL).request

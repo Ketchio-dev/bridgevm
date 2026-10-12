@@ -1,11 +1,11 @@
 import Darwin
 import Foundation
 
-/// The ordinary lease opens the final media, so an installed registration whose
-/// external bundle (or both final media paths) is gone can never reach READY.
-/// Only that case removes the library entry without the lease; no external path
-/// is modified. Absence is lstat/ENOENT, never fileExists; any other lookup error
-/// refuses. Liveness and admission are checked by the caller beforehand.
+/// The ordinary lease opens the final media and the pending guard needs the bundle,
+/// so an external registration whose bundle (or, once installed, both final media
+/// paths) is gone can never be deleted through them. Only that case removes the
+/// entry without a lease; no external path is modified. Absence is lstat/ENOENT,
+/// never fileExists; other lookup errors refuse. Caller checks liveness/admission.
 enum HvfUnavailableMediaDeletion {
     /// nil means this is not such a deletion: use the ordinary lease path.
     static func delete(_ config: VMConfig, rootURL: URL) -> Bool? {
@@ -13,7 +13,8 @@ enum HvfUnavailableMediaDeletion {
         guard [config.bundlePath, media.disk, media.vars].allSatisfy({ $0.hasPrefix("/") }),
               isRegistrationOnly(config, rootURL: rootURL) else { return nil }
         do {
-            guard try absent(config.bundlePath) || (absent(media.disk) && absent(media.vars)) else { return nil }
+            guard try config.bundleIsAbsent()
+                || (config.installPending != true && absent(media.disk) && absent(media.vars)) else { return nil }
         } catch { return false }
         // The saved path proves nothing about what the recursive delete removes: a
         // managed bundle behind a stale absolute path still lives in the entry.
@@ -34,8 +35,7 @@ enum HvfUnavailableMediaDeletion {
     private static func isRegistrationOnly(_ config: VMConfig, rootURL: URL) -> Bool {
         let entry = rootURL.appendingPathComponent(config.slug, isDirectory: true)
         let bundle = URL(fileURLWithPath: config.bundlePath)
-        return config.installPending != true
-            && VMLibrary.deletionImpact(for: config, rootURL: rootURL) == .registrationOnly
+        return VMLibrary.deletionImpact(for: config, rootURL: rootURL) == .registrationOnly
             && !within(bundle.standardizedFileURL.path, entry.standardizedFileURL.path)
             && !within(resolved(bundle), entry.resolvingSymlinksInPath().standardizedFileURL.path)
             && !VMRelocationJournal.isPending(config, rootURL: rootURL)
@@ -60,7 +60,7 @@ enum HvfUnavailableMediaDeletion {
         path == directory || path.hasPrefix(directory.hasSuffix("/") ? directory : directory + "/")
     }
 
-    private static func absent(_ path: String) throws -> Bool {
+    static func absent(_ path: String) throws -> Bool {
         var info = stat()
         if lstat(path, &info) == 0 { return false }
         guard errno == ENOENT else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
