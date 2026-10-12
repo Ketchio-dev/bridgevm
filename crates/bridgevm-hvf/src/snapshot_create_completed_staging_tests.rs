@@ -27,12 +27,15 @@ fn assert_kept_and_named(result: Result<SnapshotManifest, SnapshotError>, stagin
         Err(SnapshotError::Io(error)) => error.to_string(),
         other => panic!("expected a completed-staging refusal, got {other:?}"),
     };
-    let path = staging.to_string_lossy();
-    for wanted in [
-        &*path,
-        "holds a published manifest.json",
-        "remove or rename it",
-    ] {
+    // Creation resolves the parent, so a linked TMPDIR is named canonically.
+    let parent = fs::canonicalize(staging.parent().unwrap()).unwrap();
+    let canonical = parent.join(staging.file_name().unwrap());
+    let named = [staging, &canonical].map(|path| text.contains(&*path.to_string_lossy()));
+    assert!(
+        named.contains(&true),
+        "refusal names neither {staging:?} nor {canonical:?}: {text}"
+    );
+    for wanted in ["holds a published manifest.json", "remove or rename it"] {
         assert!(text.contains(wanted), "refusal lacks {wanted:?}: {text}");
     }
 }
@@ -43,11 +46,8 @@ pub fn refused_then_removed(disk: &Path, vars: &Path, dest: &Path) {
     let staging = staging_path(dest);
     let before = (files(&staging), files(dest));
     let result = create_snapshot(disk, vars, dest, "refused", false, QUOTA);
-    assert_eq!(
-        (files(&staging), files(dest)),
-        before,
-        "refusal changed an output"
-    );
+    let after = (files(&staging), files(dest));
+    assert_eq!(after, before, "refusal changed an output");
     assert_kept_and_named(result, &staging);
     fs::remove_dir_all(&staging).unwrap();
 }

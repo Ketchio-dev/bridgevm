@@ -3410,7 +3410,7 @@ tests/integration/b9-receipt-read-contract.py	135	0
 tests/integration/b9-scanout-byte-contract.py	127	0
 tests/integration/b9-source-reopen-contract.py	116	0
 tests/integration/b9-workload-diagnostic-path-contract.py	102	0
-crates/bridgevm-hvf/src/snapshot_create_admission.rs	96	0
+crates/bridgevm-hvf/src/snapshot_create_admission.rs	86	0
 crates/bridgevm-hvf/src/snapshot_create_admission_tests.rs	172	0
 crates/bridgevm-hvf/src/snapshot_create_staging_admission_tests.rs	69	0
 crates/bridgevm-hvf/src/snapshot_create_publication_recheck_tests.rs	75	0
@@ -3419,7 +3419,7 @@ crates/bridgevm-hvf/src/snapshot_create_staging_debris.rs	29	0
 crates/bridgevm-hvf/src/snapshot_create_admission_shape_tests.rs	99	0
 crates/bridgevm-hvf/src/snapshot_create_staging_debris_tests.rs	84	0
 crates/bridgevm-hvf/src/snapshot_copy.rs	49	0
-crates/bridgevm-hvf/src/snapshot_create_fill.rs	19	0
+crates/bridgevm-hvf/src/snapshot_create_fill.rs	18	0
 crates/bridgevm-hvf/src/snapshot_create_failure_tests.rs	89	0
 crates/bridgevm-hvf/src/managed_pair_restore_admission.rs	20	0
 crates/bridgevm-hvf/src/managed_pair_staging_fill.rs	18	0
@@ -3590,7 +3590,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEventFeedLinePrefix.swift	25	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEventFeedLineBreak.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/HvfEventFeedUnicodeTests.swift	73	0
 apps/macos/Tests/BridgeVMControlTests/HvfEventFeedLineBreakTests.swift	33	0
-crates/bridgevm-hvf/src/snapshot_create_stopped.rs	34	0
+crates/bridgevm-hvf/src/snapshot_create_stopped.rs	30	0
 crates/bridgevm-hvf/src/snapshot_create_contents.rs	36	0
 crates/bridgevm-hvf/src/snapshot_create_quota.rs	12	0
 crates/bridgevm-hvf/src/snapshot_create_quota_tests.rs	97	0
@@ -4345,3 +4345,5 @@ apps/macos/Tests/BridgeVMControlTests/HvfUnavailableMediaDeletionTests.swift	182
 apps/macos/Tests/BridgeVMControlTests/VMLibraryDeletionImpactTests.swift	39	0
 crates/bridgevm-hvf/src/snapshot_create_staging_reclaim.rs	18	0
 crates/bridgevm-hvf/src/snapshot_create_completed_staging_tests.rs	119	0
+crates/bridgevm-hvf/src/snapshot_create_owned_staging.rs	44	0
+crates/bridgevm-hvf/src/snapshot_create_publication_failure_tests.rs	112	0

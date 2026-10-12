@@ -4,8 +4,7 @@
 //! was swapped out, so anything admitted here is eventually removed. Only an
 //! absent path, an empty directory or a previous snapshot qualifies.
 
-use super::staging_debris::clear_staging;
-use super::{snapshot_publish, SnapshotManifest, DISK_NAME, MANIFEST_NAME, VARS_NAME};
+use super::{SnapshotManifest, DISK_NAME, MANIFEST_NAME, VARS_NAME};
 use std::ffi::OsString;
 use std::fs;
 use std::io;
@@ -40,16 +39,6 @@ pub(super) fn admit_destination(destination: &Path) -> io::Result<()> {
         }
     }
     Ok(())
-}
-
-/// Re-admit after staging, so a destination that changed meanwhile is kept.
-pub(super) fn publish(staging: &Path, destination: &Path) -> io::Result<()> {
-    if let Err(error) = admit_destination(destination) {
-        // Staging holds only this attempt's files; do not strand a full copy.
-        let _ = clear_staging(staging);
-        return Err(error);
-    }
-    snapshot_publish::publish(staging, destination)
 }
 
 pub(super) fn present_directory(path: &Path) -> Result<bool, String> {

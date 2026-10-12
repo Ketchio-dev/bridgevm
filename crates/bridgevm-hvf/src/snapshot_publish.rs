@@ -12,7 +12,7 @@ pub(super) fn publish(staged: &Path, destination: &Path) -> io::Result<()> {
     publish_with(staged, destination, exchange)
 }
 
-fn publish_with(
+pub(super) fn publish_with(
     staged: &Path,
     destination: &Path,
     swap: impl FnOnce(&Path, &Path) -> io::Result<()>,

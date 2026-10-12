@@ -2,16 +2,17 @@
 //! A parent key serializes exporters, but readers own the disk/vars keys.
 
 use super::admission::{admit_destination, present_directory, refusal};
+use super::owned_staging::OwnedStaging;
 use super::staging_reclaim::reclaim_staging;
 use super::{DISK_NAME, VARS_NAME};
 use crate::media_lease::MediaLease;
-use std::{fs, io, path::Path};
+use std::{io, path::Path};
 
 pub(super) fn prepare_owned(
     lease: &mut MediaLease,
     destination: &Path,
     staged: &Path,
-) -> io::Result<()> {
+) -> io::Result<OwnedStaging> {
     admit_destination(destination)?;
     own_members(lease, destination)?;
     own_members(lease, staged)?;
@@ -19,9 +20,9 @@ pub(super) fn prepare_owned(
     // refusal to own a leased member must precede all staging reclamation.
     admit_destination(destination)?;
     reclaim_staging(staged)?;
-    fs::create_dir(staged)?;
+    let staging = OwnedStaging::create(staged)?;
     // Reserve the fresh member path keys before copying either file.
-    own_members(lease, staged)
+    own_members(lease, staged).map(|()| staging)
 }
 
 #[cfg(test)]

@@ -11,6 +11,8 @@ mod admission;
 mod destination_lease;
 #[path = "snapshot_create_member_lease.rs"]
 mod member_lease;
+#[path = "snapshot_create_owned_staging.rs"]
+mod owned_staging;
 #[path = "snapshot_create_staging_debris.rs"]
 mod staging_debris;
 #[path = "snapshot_create_staging_reclaim.rs"]
@@ -25,6 +27,8 @@ mod stage;
 use stage::CreateStage;
 #[path = "snapshot_create_stopped.rs"]
 mod stopped;
+use super::copy::copy_and_sync as copy;
+use super::snapshot_publish::publish;
 use stopped::create_stopped;
 #[path = "snapshot_create_quota.rs"]
 mod quota;
@@ -57,7 +61,7 @@ fn create_snapshot_using(
     if vm_running {
         return Err(SnapshotError::VmRunning);
     }
-    create_stopped(disk, vars, dest, vm_id, quota_bytes, copy_and_sync, observe)
+    create_stopped(disk, vars, dest, vm_id, quota_bytes, copy, publish, observe)
 }
 
 #[cfg(test)]
