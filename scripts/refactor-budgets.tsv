@@ -3118,7 +3118,7 @@ apps/macos/Sources/BridgeVMProductE2E/A9ImportedKeyCleanup.swift	29	0
 apps/macos/Tests/BridgeVMControlTests/VTPMImportedRecoveryCleanupTests.swift	36	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportedKeyCleanupTests.swift	17	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLICommandLifecycle.swift	11	0
-apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshot.swift	106	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshot.swift	104	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshotHelp.swift	13	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshotExportParser.swift	56	0
 apps/macos/Tests/BridgeVMControlTests/NativeSnapshotExportHelpTests.swift	24	0
@@ -4347,3 +4347,5 @@ crates/bridgevm-hvf/src/snapshot_create_staging_reclaim.rs	18	0
 crates/bridgevm-hvf/src/snapshot_create_completed_staging_tests.rs	119	0
 crates/bridgevm-hvf/src/snapshot_create_owned_staging.rs	44	0
 crates/bridgevm-hvf/src/snapshot_create_publication_failure_tests.rs	112	0
+apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshotAdmission.swift	17	0
+apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotRelocationAdmissionTests.swift	106	0
