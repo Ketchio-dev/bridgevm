@@ -255,19 +255,20 @@ final class HvfEngineSession: ObservableObject {
     }
     #endif
 
-    private func appendLiveInput(_ line: String) {
-        guard !guiStartCleanupOnly else { return }
-        guard inputDriver.allowLegacyWrite(binding: inputBinding) else { return }
+    @discardableResult func appendLiveInput(_ line: String) -> Bool {
+        guard !guiStartCleanupOnly, inputDriver.allowLegacyWrite(binding: inputBinding) else { return false }
         let path = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("input.ctl")
-        guard let data = "\(line)\n".data(using: .utf8) else { return }
+        guard let data = "\(line)\n".data(using: .utf8) else { return false }
         do {
             try liveInputFile.append(data, to: path)
             liveInputWriteFailureReported = false
+            return true
         } catch {
             if !liveInputWriteFailureReported {
                 append(.unknown("live input write failed: \(error.localizedDescription)"))
                 liveInputWriteFailureReported = true
             }
+            return false
         }
     }
 
@@ -286,11 +287,7 @@ final class HvfEngineSession: ObservableObject {
         if guiStartCleanupOnly { pollGUIStartCleanup(); return }
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
         let lines = tailReader.readNewLines(from: logURL)
-        if let ready = legacyPaste.pending?.consume(lines: lines, now: Date()) {
-            let backlog = legacyPaste.finish()
-            if ready, case .connected = connectionState { appendLiveInput("KEY ctrl+v"); replayDisplayInput(backlog) }
-            else { append(.unknown("clipboard paste failed, expired or canceled" + HvfLegacyPasteState.discarded(backlog))) }
-        }
+        finishLegacyPaste(lines: lines)
         if !lines.isEmpty {
             for event in BvAgentEvent.parse(lines: lines) {
                 handle(event)

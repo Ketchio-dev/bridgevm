@@ -14,9 +14,9 @@ struct HvfRuntimeKeyboardInput: View {
                 Button("Type", action: submit)
                     .disabled(draft.isEmpty)
                     .accessibilityIdentifier("bridgevm.runtime.keyboard.send")
-                Button("Tab") { session.sendKey("tab") }
-                Button("Enter") { session.sendKey("enter") }
-                Button("Space") { session.sendKey("space") }
+                Button("Tab") { submissionRefused = !session.sendToolbarKey("tab") }
+                Button("Enter") { submissionRefused = !session.sendToolbarKey("enter") }
+                Button("Space") { submissionRefused = !session.sendToolbarKey("space") }
             }
             if submissionRefused {
                 Label("입력을 접수하지 못했습니다. 작성한 내용은 유지됩니다. 연결 상태와 로그를 확인한 뒤 다시 시도하세요.",
