@@ -43,7 +43,7 @@ final class HvfSessionInputDriver {
 
     func poll(binding: [String], serviceReady: Bool, lines: [String], send: (String) -> Bool) {
         let previous = router.state
-        let update = router.poll(binding: binding, serviceReady: serviceReady, lines: lines, now: Date(), send: send)
+        let update = router.pollBatch(binding: binding, serviceReady: serviceReady, lines: lines, now: Date(), send: send)
         if case .inserted = update {
             // Never reuse a receipt batch to acknowledge the next request.
             _ = router.poll(binding: binding, serviceReady: serviceReady, lines: [], now: Date(), send: send)

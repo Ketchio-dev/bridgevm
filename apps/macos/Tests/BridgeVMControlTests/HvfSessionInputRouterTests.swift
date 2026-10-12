@@ -55,7 +55,7 @@ final class HvfSessionInputRouterTests: XCTestCase {
         XCTAssertTrue(sent.hasPrefix("POINTERINPUT "), "no renegotiation for a host target change")
     }
 
-    func testRestartAndBindingChangeCancelAndRefuseUntilFreshOwnedBoot() {
+    func testPollAloneLatchesRestartAndBindingChangeUntilFreshOwnedBoot() {
         for changedBinding in [false, true] {
             var router = HvfSessionInputRouter()
             router.beginOwnedBoot(binding: binding)

@@ -2,10 +2,11 @@ import Foundation
 
 /// Owns one UI input channel; file emptiness is never used as drain evidence.
 struct HvfSessionInputRouter {
-    private var binding: [String]?
+    private(set) var binding: [String]?
     private(set) var eligible = false
     private(set) var activated = false
-    private(set) var failed = false
+    private(set) var failure: HvfSessionInputFailure? // only `.guestReset` is re-armable
+    var failed: Bool { failure != nil }
     private var stream = HvfRecoverableInputStream()
     var state: HvfNegotiatedInputStream.State { stream.state }
     var count: Int { stream.count }
@@ -44,17 +45,16 @@ struct HvfSessionInputRouter {
     mutating func poll(binding: [String], serviceReady: Bool, lines: [String], now: Date,
                        send: (String) -> Bool) -> HvfAcknowledgedInputStream.Update? {
         guard matches(binding), !failed, eligible else { return nil }
-        let restarted = lines.contains {
-            $0.hasPrefix("BVAGENT READY") || $0.hasPrefix("BVAGENT re-READY") ||
-            $0.hasPrefix("BVAGENT SERVICE start") || HvfGuestResetRecord.matches($0)
+        let reset = lines.contains { HvfGuestResetRecord.matches($0) }
+        if activated, let reason = HvfSessionInputFailure(reset: reset, serviceReady: serviceReady, lines: lines) {
+            return fail(reason)
         }
-        if activated && (!serviceReady || restarted) { return fail(.sessionChanged) }
         let update = stream.poll(serviceReady: serviceReady, legacyQuiescent: true,
                                  lines: lines, now: now, send: send)
         if stream.state == .ready { activated = true }
-        if case .cancelled = update, activated { failed = true }
+        if case .cancelled = update, activated { failure = .requestFailed }
         if stream.state == .unavailable {
-            if activated { failed = true } else { eligible = false }
+            if activated { failure = .unavailable } else { eligible = false }
         }
         return update
     }
@@ -65,15 +65,15 @@ struct HvfSessionInputRouter {
 
     private mutating func matches(_ next: [String]) -> Bool {
         guard binding == nil || binding == next else {
-            _ = fail(.sessionChanged)
+            _ = fail(.bindingChanged)
             return false
         }
         return true
     }
 
-    private mutating func fail(_ reason: HvfOrderedInputQueue.Failure) -> HvfAcknowledgedInputStream.Update {
-        failed = true
+    private mutating func fail(_ reason: HvfSessionInputFailure) -> HvfAcknowledgedInputStream.Update {
+        failure = reason
         eligible = false
-        return stream.reset(reason)
+        return stream.reset(.sessionChanged)
     }
 }

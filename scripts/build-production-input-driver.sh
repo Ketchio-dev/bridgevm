@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENGINE="$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine"
 sources=()
-for name in HvfSessionInputDriver HvfSessionInputRouter HvfOrderedInputQueue \
+for name in HvfSessionInputDriver HvfSessionInputRouter HvfSessionInputGeneration HvfOrderedInputQueue \
   HvfRecoverableInputStream HvfNegotiatedInputStream HvfAcknowledgedInputStream \
   HvfInputCapabilitiesRequest HvfUnicodeInputRequest HvfGuestInputEncoding \
   HvfPointerInputEncoding HvfPointerScrollEncoding HvfPointerHeldState HvfInputReceiptEnvelope HvfGuestResetRecord; do
