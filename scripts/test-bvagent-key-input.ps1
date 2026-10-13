@@ -6,7 +6,7 @@ if (-not ('BridgeVM.BvUnicodeInput' -as [type])) {
 . (Join-Path $root 'bvagent-input.ps1')
 $cases = @{
     'enter' = '13:0,13:2'; 'left' = '37:1,37:3'; 'delete' = '46:1,46:3'
-    'ctrl+v' = '17:0,86:0,86:2,17:2'; 'shift+tab' = '16:0,9:0,9:2,16:2'
+    'ctrl+v' = '17:0,86:0,86:2,17:2'; 'shift+tab' = '16:0,9:0,9:2,16:2'; 'shift+enter' = '16:0,13:0,13:2,16:2'; 'shift+space' = '16:0,32:0,32:2,16:2'
     'ctrl+shift+left' = '17:0,16:0,37:1,37:3,16:2,17:2'
     'alt+f4' = '18:0,115:0,115:2,18:2'
 }

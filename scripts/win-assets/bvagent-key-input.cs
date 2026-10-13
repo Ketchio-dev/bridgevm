@@ -28,7 +28,7 @@ namespace BridgeVM {
             bool letter = key.Length == 1 && "acvxyz".IndexOf(key[0]) >= 0;
             bool navigation = Navigation.Contains(key);
             bool allowed = prefix == "" && NamedKeys.ContainsKey(key)
-                || prefix == "shift" && (navigation || key == "tab")
+                || prefix == "shift" && (navigation || key == "tab" || key == "enter" || key == "space")
                 || prefix == "ctrl" && (navigation || letter || key == "backspace" || key == "delete")
                 || prefix == "ctrl+shift" && navigation
                 || prefix == "alt" && (key == "tab" || key == "enter" || key == "f4");
