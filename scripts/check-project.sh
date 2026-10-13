@@ -28,7 +28,7 @@ step() {
   fi
 }
 
-step "capability registry" bash scripts/check-capability-registry.sh
+step "capability registry and landing page" bash -c 'bash scripts/check-capability-registry.sh && python3 scripts/check-landing-page.py'
 step "contract and schema json" python3 scripts/check-contract-schema-json.py docs/machine-contract/qemu-virt-deviations.json schemas/bridgevm-capability-v1.json schemas/windows-hvf-3d-off-product-e2e-receipt-v1.json schemas/windows-hvf-import-product-e2e-receipt-v1.json schemas/b8-clean-install-receipt-v1.json
 step "contract module validation" python3 tests/integration/contract-schema-json-test.py
 step "capability evidence" python3 scripts/check-capability-evidence.py
