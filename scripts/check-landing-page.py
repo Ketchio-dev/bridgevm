@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Keep the static preview honest about release and capability boundaries."""
+import hashlib
 import json
 import re
 from html.parser import HTMLParser
@@ -58,6 +59,11 @@ def check():
         assert required in html, f"landing boundary absent: {required}"
     check_image(page, html, SITE, ROOT)
     assert "@import" not in css and "url(http" not in css
+    # The site mark is rendered from the native BridgeVMMark + app-icon generator.
+    assert (SITE / "icon.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert hashlib.sha256((SITE / "icon.png").read_bytes()).hexdigest() == "f6dcbfd1053da08638d17264cb48d4fc933ecdd68cfa2a7a3c3e3e8a2c62de3a"
+    assert html.count('class="brand-logo" src="icon.png"') == 2
+    assert not (SITE / "icon.svg").exists() and "brand-mark" not in css
     assert "prefers-reduced-motion:reduce" in css and "focus-visible" in css
     for href in page.links:
         assert href and not href.startswith("javascript:"), href

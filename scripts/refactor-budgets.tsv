@@ -4383,8 +4383,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfLegacyPasteBacklogTests.swift	163	0
 apps/macos/Tests/BridgeVMControlTests/HvfToolbarPasteBacklogTests.swift	32	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLegacyPasteCompletion.swift	12	0
 apps/macos/Tests/BridgeVMControlTests/HvfLegacyPasteWriteFailureTests.swift	38	0
-scripts/check-landing-page.py	85	0
-scripts/landing_image_contract.py	16	0
+scripts/check-landing-page.py	91	0
+scripts/landing_image_contract.py	18	0
 site/index.html	39	0
-site/styles.css	87	0
-site/icon.svg	1	0
+site/styles.css	85	0

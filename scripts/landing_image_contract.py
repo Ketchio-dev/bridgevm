@@ -3,8 +3,10 @@ import hashlib
 
 
 def check_image(page, html, site, root):
-    assert len(page.images) == 1
-    image = page.images[0]
+    guests = [image for image in page.images if image.get("src", "").startswith("images/")]
+    assert len(guests) == 1
+    image = guests[0]
+    assert len(page.images) == 3 and all(item.get("src") == "icon.png" for item in page.images if item is not image)
     assert image.get("src") == "images/windows-guest-20260813.webp"
     assert image.get("width") == "1200" and image.get("height") == "900"
     assert "Test Mode" in image.get("alt", "") and "not a current release" in image["alt"]
