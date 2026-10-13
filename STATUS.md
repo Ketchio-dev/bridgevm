@@ -19,7 +19,7 @@ Known open defects:
 - Graphics future path: Vulkan is a Graphics Lab future path, excluded from General Preview and v1; D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-10-07 at commit `a4b0e2d70fbe6d7d6068c3335f428f59b0edd82d`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-10-07 at commit `c82214aee490180103a3dabda483f6139709e278`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 ## How to read the generated status
