@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Keep the static preview honest about release and capability boundaries."""
 import json
+import re
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse, unquote
-import re
+
+from landing_image_contract import check_image
 
 ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "site"
@@ -34,7 +36,7 @@ class Page(HTMLParser):
             self.in_summary = True
 
     def handle_endtag(self, tag):
-        if tag == "span" and self.in_summary:
+        if tag == "p" and self.in_summary:
             self.in_summary = False
 
     def handle_data(self, data):
@@ -52,10 +54,11 @@ def check():
     assert "".join(page.summary) == registry["wording"]["engine_summary"]
     assert registry["wording"]["product_state_label"] in html
     assert registry["product_state"] == "ENGINEERING_PREVIEW"
-    for required in ("There is currently no safe downloadable General Preview", "3D acceleration is excluded", "An ISO alone is insufficient", "not a live guest capture"):
+    for required in ("There is currently no safe downloadable General Preview", "3D acceleration is excluded", "An ISO alone is insufficient", "not a current release or app UI screenshot"):
         assert required in html, f"landing boundary absent: {required}"
-    assert page.images == []  # No unqualified guest screenshot or external image.
+    check_image(page, html, SITE, ROOT)
     assert "@import" not in css and "url(http" not in css
+    assert "prefers-reduced-motion:reduce" in css and "focus-visible" in css
     for href in page.links:
         assert href and not href.startswith("javascript:"), href
         if href.startswith("#"):
