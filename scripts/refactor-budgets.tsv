@@ -1279,7 +1279,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	333	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	414	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	413	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLiveInputFile.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfLiveInputFileTests.swift	145	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	416	0
@@ -1290,7 +1290,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfHostKeyModifierTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteSessionTests.swift	84	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteTargetTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfHostShortcutIsolationTests.swift	31	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	424	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	411	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferScrollOrderingTests.swift	57	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFileIdentity.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFileIdentityTests.swift	66	0
@@ -4390,3 +4390,11 @@ site/styles.css	85	0
 apps/macos/Sources/BridgeVMControl/VMLibraryDeletionTarget.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/LibraryImportedDeletionTargetTests.swift	81	0
 apps/macos/Tests/BridgeVMControlTests/HvfDisplayInputFailureTests.swift	109	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferDisplayLink.swift	22	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferTextInput.swift	177	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextCompositionGeometry.swift	20	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextCompositionKeyRouting.swift	14	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextCompositionState.swift	36	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputTargetIdentity.swift	25	0
+apps/macos/Tests/BridgeVMControlTests/HvfFramebufferCompositionBoundaryTests.swift	161	0
+apps/macos/Tests/BridgeVMControlTests/HvfFramebufferTextInputTests.swift	189	0

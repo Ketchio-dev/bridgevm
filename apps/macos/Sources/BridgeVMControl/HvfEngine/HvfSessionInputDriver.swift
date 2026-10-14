@@ -5,16 +5,19 @@ final class HvfSessionInputDriver {
     var onPoll: (() -> Void)?
     var onDiagnostic: ((String) -> Void)?
     private(set) var router = HvfSessionInputRouter()
+    private(set) var textInputGeneration = UUID()
     private var timer: Timer?
 
     deinit { timer?.invalidate() }
 
     func beginOwnedBoot(binding: [String]) {
+        textInputGeneration = UUID()
         timer?.invalidate(); timer = nil
         router.beginOwnedBoot(binding: binding)
     }
 
     func attachUnknown(binding: [String]) {
+        textInputGeneration = UUID()
         timer?.invalidate(); timer = nil
         router.attachUnknown(binding: binding)
     }
@@ -36,6 +39,7 @@ final class HvfSessionInputDriver {
     func allowLegacyWrite(binding: [String]) -> Bool { router.allowLegacyWrite(binding: binding) }
 
     func cancelTarget() {
+        textInputGeneration = UUID()
         _ = router.cancelTarget()
         startPumpIfNeeded()
         onPoll?()
@@ -48,12 +52,8 @@ final class HvfSessionInputDriver {
             // Never reuse a receipt batch to acknowledge the next request.
             _ = router.poll(binding: binding, serviceReady: serviceReady, lines: [], now: Date(), send: send)
         }
-        if case let .cancelled(reason, discarded) = update, discarded > 0 {
-            onDiagnostic?("ordered input cancelled: \(reason), discarded=\(discarded)")
-        }
-        if previous != .ready, router.state == .ready {
-            onDiagnostic?("ordered input active: receipts confirm insertion, not application consumption")
-        }
+        if invalidatesTextInputTarget(previous: previous, lines: lines) { textInputGeneration = UUID() }
+        reportPollUpdate(update, previous: previous)
         if router.count == 0 { timer?.invalidate(); timer = nil }
     }
 

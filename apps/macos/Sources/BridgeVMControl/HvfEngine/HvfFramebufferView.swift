@@ -18,7 +18,7 @@ struct HvfFramebufferView: NSViewRepresentable {
     }
 }
 
-final class FBLayerView: NSView {
+final class FBLayerView: HvfFramebufferTextInput {
     private(set) weak var session: HvfEngineSession?
     private var fileDescriptor: Int32 = -1
     private var mappedPointer: UnsafeMutableRawPointer?
@@ -32,7 +32,7 @@ final class FBLayerView: NSView {
     private var pointerMoves = HvfPointerMoveMailbox()
     private let pointerCapture = HvfPointerCapture()
     private let inputFocusMonitor = HvfInputFocusMonitor()
-    private var frameDisplayLink: CADisplayLink?
+    var frameDisplayLink: CADisplayLink?
     private var pointerTrackingArea: NSTrackingArea?
 
     override var isFlipped: Bool { true }
@@ -40,10 +40,11 @@ final class FBLayerView: NSView {
     private var pointerPresses = 0
 
     func updateSession(_ next: HvfEngineSession) {
+        synchronizeTextInputTarget()
         guard session !== next else { return }
         teardown()
         session = next
-        inputFocusMonitor.watch(window: window) { [weak session = next] in session?.cancelOrderedInputTarget() }
+        inputFocusMonitor.watch(window: window) { [weak self] in self?.cancelGuestInputTarget() }
         if window != nil { startDisplayLink() }
     }
 
@@ -65,8 +66,8 @@ final class FBLayerView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         pointerCapture.cancel()
-        session?.cancelOrderedInputTarget()
-        inputFocusMonitor.watch(window: window) { [weak session = session] in session?.cancelOrderedInputTarget() }
+        cancelGuestInputTarget()
+        inputFocusMonitor.watch(window: window) { [weak self] in self?.cancelGuestInputTarget() }
         pointerMoves.reset()
 
         if window != nil {
@@ -93,11 +94,12 @@ final class FBLayerView: NSView {
         super.updateTrackingAreas()
     }
 
-    @objc private func step(_ link: CADisplayLink) {
+    @objc func step(_ link: CADisplayLink) {
         refreshFrame(at: link.timestamp)
     }
 
     func refreshFrame(at timestamp: TimeInterval) {
+        synchronizeTextInputTarget()
         defer { flushPendingPointerMove() }
         if presentIOSurfaceIfAvailable(at: timestamp) {
             return
@@ -174,7 +176,7 @@ final class FBLayerView: NSView {
 
     func teardown() {
         pointerCapture.cancel()
-        session?.cancelOrderedInputTarget()
+        cancelGuestInputTarget()
         inputFocusMonitor.stop()
         stopDisplayLink()
         resetMapping()
@@ -199,12 +201,13 @@ final class FBLayerView: NSView {
     override func resignFirstResponder() -> Bool {
         guard super.resignFirstResponder() else { return false }
         pointerCapture.cancel()
-        session?.cancelOrderedInputTarget()
+        cancelGuestInputTarget()
         pointerMoves.reset()
         return true
     }
 
     override func mouseDown(with event: NSEvent) {
+        cancelTextComposition()
         window?.makeFirstResponder(self)
         pointerMoves.reset()
 
@@ -238,6 +241,7 @@ final class FBLayerView: NSView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        cancelTextComposition()
         window?.makeFirstResponder(self)
         pointerMoves.reset()
 
@@ -274,13 +278,15 @@ final class FBLayerView: NSView {
         )
     }
 
-    override func keyDown(with event: NSEvent) {
-        guard let session, hasGuestSize else {
-            super.keyDown(with: event)
-            return
-        }
-
-        if !HvfFramebufferKeyInput.send(event, to: session) { super.keyDown(with: event) }
+    override var guestInputAvailable: Bool { session != nil && hasGuestSize }
+    override var guestInputIdentity: HvfTextInputTargetIdentity? { session?.textInputTarget }
+    override func sendGuestKeyEvent(_ event: NSEvent) -> Bool {
+        session.map { HvfFramebufferKeyInput.send(event, to: $0) } ?? false
+    }
+    override func sendGuestText(_ text: String) -> Bool { session?.sendDisplayInput(.text(text)) ?? false }
+    private func cancelGuestInputTarget() {
+        cancelTextComposition()
+        session?.cancelOrderedInputTarget()
     }
 
     private func pointerRelease(at location: CGPoint) -> (() -> Void)? {
@@ -313,25 +319,6 @@ final class FBLayerView: NSView {
     private func flushPendingPointerMove() {
         guard let location = pointerMoves.take(), let session, hasGuestSize else { return }
         session.sendPointerMove(location: location, viewSize: bounds.size, imageSize: guestSize)
-    }
-
-    private func startDisplayLink() {
-        guard frameDisplayLink == nil else {
-            return
-        }
-
-        if #available(macOS 14.0, *) {
-            let link = displayLink(target: self, selector: #selector(step(_:)))
-            frameDisplayLink = link
-            link.add(to: .main, forMode: .common)
-        }
-    }
-
-    private func stopDisplayLink() {
-        if #available(macOS 14.0, *) {
-            frameDisplayLink?.invalidate()
-            frameDisplayLink = nil
-        }
     }
 
     private func presentIOSurfaceIfAvailable(at now: TimeInterval) -> Bool {

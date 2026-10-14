@@ -35,6 +35,7 @@ final class HvfEngineSession: ObservableObject {
     var serviceStarted = false
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
     private let inputDriver = HvfSessionInputDriver()
+    var textInputTarget: HvfTextInputTargetIdentity { .init(owner: ObjectIdentifier(self), generation: inputDriver.textInputGeneration, binding: inputBinding) }
     var stopCommandSent = false
     var stopDeadline: Date?
     var attachedToExistingProcess = false
