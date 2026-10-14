@@ -17,7 +17,7 @@ authorize Windows test drivers. General Preview installs and imports Windows in 
 
 Use this path while the safe successor to `v1.0.0` is still being prepared, or
 whenever you want to inspect exactly what you run. Requirements are Apple silicon,
-macOS 14+, Xcode/Swift 5.9+, and Rust 1.85+. Follow the
+macOS 14+, Xcode/Swift, and Rust 1.85+. Follow the
 [development setup](../CONTRIBUTING.md#set-up-a-development-checkout) for toolchains.
 The app bundle also needs the native dependencies below; the Rust and Swift
 build commands alone do not prepare them.

@@ -22,6 +22,13 @@ BridgeVM development targets an Apple-silicon Mac with macOS 14 or newer. The
 workspace requires Xcode/Swift and Rust; the minimum Rust version is 1.85, while
 the deterministic project gate currently defaults to the pinned 1.97 toolchain.
 
+The [macOS app-build CI job](.github/workflows/ci.yml) uses runner-provided
+Swift on `macos-15` and `macos-26`, without pinning a Swift compiler version.
+Current app source uses `nonisolated(unsafe)`, introduced in Swift 5.10;
+Swift 5.9 predates that syntax. The oldest toolchain that builds the complete
+app has not been validated. The package still declares `swift-tools-version: 5.9`;
+that declaration has not been validated against all current app sources.
+
 ```sh
 git clone https://github.com/Ketchio-dev/bridgevm.git
 cd bridgevm

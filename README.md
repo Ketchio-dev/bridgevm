@@ -52,7 +52,7 @@ There is currently no safe downloadable General Preview. The published
 refuses it. Use the [source-build guide](docs/install.md#build-the-current-source)
 and [development setup](CONTRIBUTING.md#set-up-a-development-checkout).
 
-Requirements: Apple silicon, macOS 14+, Xcode/Swift 5.9+, and Rust 1.85+.
+Requirements: Apple silicon, macOS 14+, Xcode/Swift, and Rust 1.85+.
 Host coverage is limited; see [known limitations](STATUS.md#known-limitations).
 
 Bring your own licensed Windows 11 Arm ISO and a signed ARM64
