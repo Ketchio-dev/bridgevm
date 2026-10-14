@@ -16,8 +16,8 @@ pub(crate) fn export_bundle_tar(
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)?;
     }
-    let staging = unique_temp_path("bridgevm-export-tar");
-    let _staging_guard = TempDirGuard::new(staging.clone());
+    let staging_guard = crate::archive_staging::create()?;
+    let staging = staging_guard.path.join("bundle");
     copy_dir_all(source, &staging)?;
     let metadata_dir = staging.join("metadata");
     fs::create_dir_all(&metadata_dir)?;

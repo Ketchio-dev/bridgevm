@@ -10,6 +10,7 @@ mod tests;
 
 mod active_disk;
 pub(crate) mod application_consistent_snapshot;
+mod archive_staging;
 mod bundle_archive;
 mod bundle_copy;
 mod bundle_directory_permissions;

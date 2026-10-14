@@ -4653,3 +4653,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard_recopy_tests.rs	
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_recopy_tests.rs	141	0
 docs/history/windows-hvf/autonomous-startup-and-network-20261014.md	109	0
 docs/document-manifests/autonomous-startup-and-network-20261014.tsv	3	0
+crates/bridgevm-storage/src/archive_staging.rs	25	0
+crates/bridgevm-storage/src/tests_split/archive_staging.rs	77	0
