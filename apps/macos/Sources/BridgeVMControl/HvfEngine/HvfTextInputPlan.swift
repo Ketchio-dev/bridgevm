@@ -22,21 +22,14 @@ struct HvfTextInputPlan: Equatable {
     static let hidChunkBytes = 32
 
     static func make(for value: String) -> HvfTextInputPlan {
-        let bytes = Array(value.utf8)
-        let isPrintableASCII = bytes.allSatisfy { (0x20...0x7e).contains($0) }
-
-        if isPrintableASCII {
-            return HvfTextInputPlan(hidChunks: hexChunks(bytes), clipboardBase64: nil)
-        }
-
         // Mixed content goes entirely through the clipboard rather than being
         // split across two transports: interleaving HID and paste would let
         // the guest reorder them, and a scrambled string is worse than a slow
         // one.
-        return HvfTextInputPlan(
-            hidChunks: [],
-            clipboardBase64: Data(value.utf8).base64EncodedString()
-        )
+        if let base64 = clipboardBase64(for: value) {
+            return HvfTextInputPlan(hidChunks: [], clipboardBase64: base64)
+        }
+        return HvfTextInputPlan(hidChunks: hexChunks(Array(value.utf8)), clipboardBase64: nil)
     }
 
     private static func hexChunks(_ bytes: [UInt8]) -> [String] {

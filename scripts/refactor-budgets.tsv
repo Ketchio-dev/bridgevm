@@ -1315,7 +1315,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerCapture.swift	39	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferKeyInput.swift	15	0
 apps/macos/Tests/BridgeVMControlTests/HvfPointerCaptureTests.swift	52	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift	380	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	50	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	43	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift	407	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	204	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsDriverPreflight.swift	45	0
@@ -4385,7 +4385,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfGuestResetInputGenerationTests.swift	17
 apps/macos/Tests/BridgeVMControlTests/HvfLateGuestResetInputTests.swift	202	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfClipboardPasteCommandLimit.swift	20	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteCommandLimitTests.swift	72	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLegacyPasteBacklog.swift	84	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLegacyPasteBacklog.swift	50	0
 apps/macos/Tests/BridgeVMControlTests/HvfLegacyPasteBacklogTests.swift	163	0
 apps/macos/Tests/BridgeVMControlTests/HvfToolbarPasteBacklogTests.swift	32	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLegacyPasteCompletion.swift	12	0
@@ -4451,3 +4451,6 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyEventCommand.swift	19	0
 apps/macos/Tests/BridgeVMControlTests/HvfKeyEventIdentityTests.swift	116	0
 docs/document-manifests/autonomous-reliability-20261014.tsv	5	0
 docs/history/windows-hvf/autonomous-reliability-20261014.md	105	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLegacyPasteRouting.swift	39	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputClipboardEncoding.swift	9	0
+apps/macos/Tests/BridgeVMControlTests/HvfLegacyPasteAdmissionTests.swift	113	0
