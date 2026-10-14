@@ -9,6 +9,9 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Output;
 
+#[path = "vm_clone_output.rs"]
+mod clone_output;
+
 pub(crate) fn rebase_copied_path(path: &Path, source: &Path, output: &Path) -> PathBuf {
     path.strip_prefix(source)
         .map(|relative| output.join(relative))
@@ -64,14 +67,7 @@ impl VmStore {
         manifest.network.hostname = format!("{}.bridgevm.local", slug(new_name));
 
         let output = self.bundle_path(new_name);
-        if output.exists() {
-            return Err(StorageError::AlreadyExists(new_name.to_string()));
-        }
-
-        if let Err(error) = copy_dir_all(&source, &output) {
-            let _ = fs::remove_dir_all(&output);
-            return Err(error);
-        }
+        clone_output::copy_new(&source, &output, new_name)?;
 
         let clone_result: Result<VmCloneMetadata, StorageError> = (|| {
             let mut backing_path = None;

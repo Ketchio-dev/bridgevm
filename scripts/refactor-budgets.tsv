@@ -1042,7 +1042,7 @@ crates/bridgevm-storage/src/tests_split/part_3_1.rs	742	0
 crates/bridgevm-storage/src/tests_split/part_3_2.rs	542	0
 crates/bridgevm-storage/src/tests_split/concurrency.rs	32	0
 crates/bridgevm-storage/src/tests_split/part_3_3.rs	556	0
-crates/bridgevm-storage/src/vm_clone.rs	241	0
+crates/bridgevm-storage/src/vm_clone.rs	235	0
 crates/bridgevm-storage/src/vm_registry.rs	65	0
 crates/bridgevm-storage/src/vm_delete.rs	28	0
 crates/bridgevm-storage/src/vm_transfer.rs	89	0
@@ -4565,3 +4565,7 @@ crates/bridgevm-hvf/src/virtio_gpu/interrupt/registers.rs	13	0
 crates/bridgevm-hvf/tests/virtio_gpu_msix.rs	123	0
 crates/bridgevm-hvf/tests/virtio_gpu_msix/platform.rs	72	0
 crates/bridgevm-hvf/tests/virtio_gpu_msix/support.rs	136	0
+crates/bridgevm-cli/tests/cli_clone_preservation.rs	33	0
+crates/bridgevm-cli/tests/support/clone_preservation.rs	138	0
+crates/bridgevm-storage/src/vm_clone_output.rs	22	0
+crates/bridgevm-storage/src/tests_split/clone_output.rs	145	0

@@ -1,6 +1,7 @@
 //! Split test module.
 
 mod bundle_permissions;
+mod clone_output;
 mod helpers;
 mod import_images;
 mod import_portability;
