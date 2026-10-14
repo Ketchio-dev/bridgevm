@@ -4398,3 +4398,4 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextCompositionState.swift	36	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputTargetIdentity.swift	25	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferCompositionBoundaryTests.swift	161	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferTextInputTests.swift	189	0
+apps/macos/Tests/BridgeVMControlTests/HvfInputCancellationDiagnosticTests.swift	89	0

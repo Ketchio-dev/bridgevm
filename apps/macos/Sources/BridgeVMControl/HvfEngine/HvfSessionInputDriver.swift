@@ -40,17 +40,17 @@ final class HvfSessionInputDriver {
 
     func cancelTarget() {
         textInputGeneration = UUID()
-        _ = router.cancelTarget()
+        reportPollUpdate(router.cancelTarget())
         startPumpIfNeeded()
         onPoll?()
     }
 
     func poll(binding: [String], serviceReady: Bool, lines: [String], send: (String) -> Bool) {
         let previous = router.state
-        let update = router.pollBatch(binding: binding, serviceReady: serviceReady, lines: lines, now: Date(), send: send)
+        var update = router.pollBatch(binding: binding, serviceReady: serviceReady, lines: lines, now: Date(), send: send)
         if case .inserted = update {
             // Never reuse a receipt batch to acknowledge the next request.
-            _ = router.poll(binding: binding, serviceReady: serviceReady, lines: [], now: Date(), send: send)
+            update = router.poll(binding: binding, serviceReady: serviceReady, lines: [], now: Date(), send: send)
         }
         if invalidatesTextInputTarget(previous: previous, lines: lines) { textInputGeneration = UUID() }
         reportPollUpdate(update, previous: previous)

@@ -14,11 +14,11 @@ extension HvfSessionInputDriver {
         })
     }
 
-    func reportPollUpdate(_ update: HvfAcknowledgedInputStream.Update?, previous: HvfNegotiatedInputStream.State) {
+    func reportPollUpdate(_ update: HvfAcknowledgedInputStream.Update?, previous: HvfNegotiatedInputStream.State? = nil) {
         if case let .cancelled(reason, discarded) = update, discarded > 0 {
             onDiagnostic?("ordered input cancelled: \(reason), discarded=\(discarded)")
         }
-        if previous != .ready, router.state == .ready {
+        if let previous, previous != .ready, router.state == .ready {
             onDiagnostic?("ordered input active: receipts confirm insertion, not application consumption")
         }
     }
