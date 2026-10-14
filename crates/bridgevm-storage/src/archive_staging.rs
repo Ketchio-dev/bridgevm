@@ -1,4 +1,4 @@
-//! Exclusive private staging keeps concurrent exports and their cleanup separate.
+//! Exclusive private staging keeps concurrent archive operations and their cleanup separate.
 
 use crate::{unique_temp_path, TempDirGuard};
 use std::fs;
@@ -7,8 +7,8 @@ use std::io;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
 
-pub(crate) fn create() -> io::Result<TempDirGuard> {
-    reserve((0..64).map(|_| unique_temp_path("bridgevm-export-tar")))
+pub(crate) fn create(prefix: &str) -> io::Result<TempDirGuard> {
+    reserve((0..64).map(|_| unique_temp_path(prefix)))
 }
 
 fn reserve(candidates: impl IntoIterator<Item = PathBuf>) -> io::Result<TempDirGuard> {

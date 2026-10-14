@@ -4704,3 +4704,6 @@ tests/integration/app-ui-install-cancel-protocol.swift	19	0
 tests/integration/app-ui-install-cancel-tier-smoke.py	186	0
 tests/integration/app_ui_install_cancel_fixtures.py	100	0
 tests/integration/app_ui_install_cancel_rejection_cases.py	76	0
+crates/bridgevm-storage/src/tests_split/import_archive_staging.rs	57	0
+crates/bridgevm-storage/src/tests_split/import_parallel.rs	53	0
+crates/bridgevm-storage/src/tests_split/import_parallel_fixture.rs	74	0

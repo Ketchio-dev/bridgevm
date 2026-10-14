@@ -10,6 +10,8 @@ mod export_destination;
 mod helpers;
 mod import_images;
 mod import_markers;
+mod import_parallel;
+mod import_parallel_fixture;
 mod import_portability;
 mod import_raw_backing;
 mod part_1;

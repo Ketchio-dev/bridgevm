@@ -1,11 +1,13 @@
 //! Reservation collisions preserve foreign entries and the first export's data.
 
 use super::*;
+#[path = "import_archive_staging.rs"]
+mod import_tests;
 use std::os::unix::fs::{symlink, MetadataExt, PermissionsExt};
 
 #[test]
 fn colliding_staging_candidates_keep_distinct_owners_and_cleanup() {
-    let fixture = create().unwrap();
+    let fixture = create("bridgevm-archive-test").unwrap();
     let first_path = fixture.path.join("same-timestamp");
     let second_path = fixture.path.join("next-candidate");
     let first = reserve([first_path.clone()]).unwrap();
@@ -34,7 +36,7 @@ fn colliding_staging_candidates_keep_distinct_owners_and_cleanup() {
 
 #[test]
 fn exhausted_staging_candidates_preserve_occupied_entries() {
-    let fixture = create().unwrap();
+    let fixture = create("bridgevm-archive-test").unwrap();
     let directory = fixture.path.join("directory");
     fs::create_dir(&directory).unwrap();
     fs::write(directory.join("caller-data"), b"caller directory").unwrap();
@@ -64,7 +66,7 @@ fn exhausted_staging_candidates_preserve_occupied_entries() {
 
 #[test]
 fn staging_metadata_errors_do_not_skip_to_another_candidate() {
-    let fixture = create().unwrap();
+    let fixture = create("bridgevm-archive-test").unwrap();
     let file = fixture.path.join("caller-file");
     fs::write(&file, b"caller bytes").unwrap();
     let invalid = file.join("stage");
