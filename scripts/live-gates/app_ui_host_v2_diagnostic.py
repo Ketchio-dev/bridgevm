@@ -14,7 +14,7 @@ from app_ui_host_process import request_cancel
 from app_ui_host_v2_bundle import ROLES, reconstruct_bundles, verify_bundles
 from app_ui_host_v2_cleanup import load_job, read_json, verify_launcher_exit
 from app_ui_host_v2_manifest import FILES, TIER, parse_manifest, verify_input
-from app_ui_host_v2_process import run_launcher
+from app_ui_host_v2_process import run_launcher, supervisor_executable
 
 
 def protocol_record(path, kind, required, optional=()):
@@ -134,7 +134,7 @@ def run(output, repo, commit, manifest, binary):
             request_cancel(private)
             raise TimeoutError("canceled before dual-app launch")
         receipt.update(run_count=1, failure_code="native-ui-driver-failed")
-        code = run_launcher(output / FILES["launcher"], private, expected, fields["launcher"][1], canceled)
+        code = run_launcher(supervisor_executable(private), private, expected, fields["launcher"][1], canceled)
         receipt["failure_code"] = "observation-refused"
         result_hash, driver_hash = verify_result(private, fields, code)
         if canceled():

@@ -4736,3 +4736,5 @@ apps/macos/Tests/BridgeVMControlTests/CreateUbuntuTemplateTests.swift	112	0
 docs/history/windows-hvf/autonomous-readiness-and-sealed-inputs-20261014.md	140	0
 docs/document-manifests/autonomous-readiness-and-sealed-inputs-20261014.tsv	3	0
 apps/macos/Tests/BridgeVMControlTests/LibraryCloneSelectionTests.swift	83	0
+scripts/live-gates/app_ui_host_v2_launch_command.py	18	0
+tests/integration/app-ui-supervisor-bundle-contract.py	145	0

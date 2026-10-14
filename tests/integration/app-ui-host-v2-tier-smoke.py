@@ -196,9 +196,9 @@ test "$?" = 1 && test "$BRIDGEVM_TIER_STATUS" = 126
         child.wait.side_effect = [subprocess.TimeoutExpired("owned-supervisor", 12), 0]
         with mock.patch.object(process.subprocess, "Popen", return_value=child) as popen:
             with self.assertRaises(TimeoutError):
-                process.run_launcher(f.output / manifest.FILES["launcher"], f.private,
+                process.run_launcher(process.supervisor_executable(f.private), f.private,
                     f.fields["binary"][1], f.fields["launcher"][1], lambda: True)
-        self.assertEqual(popen.call_args.args[0], [str(f.output / manifest.FILES["launcher"]),
+        self.assertEqual(popen.call_args.args[0], [str(process.supervisor_executable(f.private)),
             "--app-ui-supervisor-v2", "--private-root", str(f.private), "--host-sha256",
             f.fields["binary"][1], "--launcher-sha256", f.fields["launcher"][1]])
         self.assertEqual(child.terminate.call_count, 1)

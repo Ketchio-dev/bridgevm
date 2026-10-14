@@ -12,7 +12,7 @@ from app_ui_host_process import request_cancel
 from app_ui_host_v2_bundle import reconstruct_bundles
 from app_ui_host_v2_cleanup import load_job
 from app_ui_host_v2_manifest import verify_input
-from app_ui_host_v2_process import run_launcher
+from app_ui_host_v2_process import run_launcher, supervisor_executable
 from app_ui_install_cancel_cleanup import verify_exit
 from app_ui_install_cancel_manifest import FILES, TIER, parse_manifest
 from app_ui_install_cancel_result import verify_result
@@ -57,7 +57,7 @@ def run(output, repo, commit, manifest, binary):
             request_cancel(private)
             raise TimeoutError("canceled before dual-app launch")
         receipt.update(run_count=1, failure_code="native-ui-driver-failed")
-        code = run_launcher(output / FILES["launcher"], private, expected, fields["launcher"][1], canceled,
+        code = run_launcher(supervisor_executable(private), private, expected, fields["launcher"][1], canceled,
             mode="--app-ui-install-cancel-supervisor-v1", log_name="install-cancel-launcher.log")
         receipt["failure_code"] = "observation-refused"
         result_hash, driver_hash = verify_result(private, fields, code)

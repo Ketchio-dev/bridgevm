@@ -142,7 +142,7 @@ class InstallCancelContracts(unittest.TestCase):
         child.wait.side_effect = [subprocess.TimeoutExpired("owned-supervisor", 12), 0]
         with mock.patch.object(process.subprocess, "Popen", return_value=child) as popen:
             with self.assertRaises(TimeoutError):
-                process.run_launcher(f.output / manifest.FILES["launcher"], f.private,
+                process.run_launcher(process.supervisor_executable(f.private), f.private,
                     f.fields["binary"][1], f.fields["launcher"][1], lambda: True,
                     mode="--app-ui-install-cancel-supervisor-v1", log_name="install-cancel-launcher.log")
         self.assertEqual(popen.call_args.args[0][1], "--app-ui-install-cancel-supervisor-v1")

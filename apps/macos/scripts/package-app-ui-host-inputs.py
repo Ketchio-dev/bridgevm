@@ -114,7 +114,7 @@ def package(host_input, launcher_input, resource_commit, output, signing_identit
                   "driver": sign(driver, "dev.bridgevm.app-ui-driver", identity)}
     bare = output / "AppUIHostLauncher"
     publish(bare, regular_bytes(driver_exe, 512 * 1024 * 1024), 0o500)
-    # The bare supervisor has identical code pages, but no bundle resource context.
+    # This sealed transport copy must execute inside the reconstructed driver bundle.
     # Full resource signatures are verified only on the two complete bundles.
     verify_executable(bare, digest(regular_bytes(driver_exe, 512 * 1024 * 1024)))
     paths = {"binary": host_exe, "launcher": bare, "host_info": host / "Contents/Info.plist",
