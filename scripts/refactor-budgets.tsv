@@ -4405,3 +4405,5 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextCompositionOverlay.swift	26	
 apps/macos/Tests/BridgeVMControlTests/HvfTextCompositionViewportTests.swift	38	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallRequestLoadTests.swift	58	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallRejectedRequestTests.swift	90	0
+apps/macos/Sources/BridgeVMControl/CreateVMSheetPrerequisiteGuidance.swift	17	0
+apps/macos/Tests/BridgeVMControlTests/CreateVMPrerequisitePresentationTests.swift	92	0
