@@ -11,7 +11,7 @@ enum LibraryDeletionProtection: Equatable {
     static func delete(_ config: VMConfig, rootURL: URL) -> Bool {
         switch mode(for: config) {
         case .nativeMediaLease: return HvfProtectedTransfers.delete(config, rootURL: rootURL)
-        case .registration: return VMLibrary.delete(config.slug, rootURL: rootURL)
+        case .registration: return LibraryDeletionReferences.delete(config, rootURL: rootURL)
         }
     }
 }

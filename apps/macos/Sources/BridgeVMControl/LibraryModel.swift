@@ -109,7 +109,7 @@ final class LibraryModel: ObservableObject {
                 if outcome == .deleted { self.modelCache[slug] = nil; self.reload(); return }
                 self.deletionError = outcome == .running
                     ? "\(cfg.name)은(는) 실행 중이므로 삭제하지 않았습니다. 제어 화면에서 완전히 중지한 뒤 다시 시도하세요."
-                    : "\(cfg.name)의 라이브러리 항목을 디스크에서 삭제하지 못했습니다."
+                    : LibraryDeletionReferences.failureMessage(for: cfg, rootURL: root)
             }
         }
     }

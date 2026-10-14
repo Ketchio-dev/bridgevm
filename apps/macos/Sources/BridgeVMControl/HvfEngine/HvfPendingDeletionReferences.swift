@@ -30,22 +30,15 @@ enum HvfPendingDeletionReferences {
         }
     }
 
-    /// Also accepts an already-retained request; no filesystem records are loaded here.
+    /// Also accepts an already-retained request; no saved registrations are loaded here.
     static func references(config: VMConfig, request: HvfWindowsInstallRequest? = nil,
                            removedEntry: URL) -> Bool {
-        let entry = removedEntry.resolvingSymlinksInPath().standardizedFileURL.path
         let paths = [config.bundlePath, config.diskPath, config.isoPath, config.launchSpecPath,
                      config.runnerPath, config.handoffPath, config.sshKeyPath, config.leasesPath,
                      request?.isoPath, request?.driverPackageDir, request?.guestPayloadDirectory,
                      request?.guestPayloadManifest, request?.unattendedPath]
         for path in paths.compactMap({ $0 }) where !path.isEmpty {
-            let url = URL(fileURLWithPath: path)
-            // Both matter: deleting an in-entry symlink destroys a saved path even
-            // when its target is external; an external alias can resolve inside.
-            for candidate in [url.standardizedFileURL.path,
-                              url.resolvingSymlinksInPath().standardizedFileURL.path] {
-                if candidate == entry || candidate.hasPrefix(entry + "/") { return true }
-            }
+            if LibraryDeletionPathReference.mayReference(path, removedEntry: removedEntry) { return true }
         }
         return false
     }

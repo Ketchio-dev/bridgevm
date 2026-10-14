@@ -4332,7 +4332,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfPendingDeletionPristineTests.swift	33	0
 apps/macos/Tests/BridgeVMControlTests/HvfPendingDeletionFixture.swift	79	0
 apps/macos/Tests/BridgeVMControlTests/HvfPendingDeletionGuardTests.swift	126	0
 apps/macos/Tests/BridgeVMControlTests/HvfPendingDeletionOwnershipTests.swift	99	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPendingDeletionReferences.swift	64	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPendingDeletionReferences.swift	57	0
 apps/macos/Tests/BridgeVMControlTests/HvfPendingDeletionReferenceTests.swift	162	0
 apps/macos/Tests/BridgeVMControlTests/HvfPendingDeletionReferenceReadTests.swift	106	0
 apps/macos/Sources/BridgeVMControl/FastVZResourceUpdate.swift	54	0
@@ -4437,3 +4437,9 @@ apps/macos/Tests/BridgeVMControlTests/HvfInputKeyCapabilitiesTests.swift	92	0
 scripts/test-bvagent-key-capabilities.ps1	41	0
 docs/machine-contract/qemu-virt-deviations-input-agent.json	15	0
 docs/machine-contract/resident-input-keysets.md	40	0
+apps/macos/Sources/BridgeVMControl/LibraryDeletionPathReference.swift	30	0
+apps/macos/Sources/BridgeVMControl/LibraryDeletionReferences.swift	25	0
+apps/macos/Tests/BridgeVMControlTests/LibraryDeletionCaseAliasTests.swift	68	0
+apps/macos/Tests/BridgeVMControlTests/LibraryDeletionReferenceBoundaryTests.swift	69	0
+apps/macos/Tests/BridgeVMControlTests/LibraryDeletionTestDirectory.swift	8	0
+apps/macos/Tests/BridgeVMControlTests/LibraryNestedBundleDeletionTests.swift	105	0

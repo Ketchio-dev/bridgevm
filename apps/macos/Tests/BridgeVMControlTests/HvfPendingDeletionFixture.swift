@@ -12,7 +12,7 @@ final class HvfPendingDeletionFixture {
     var command: URL { root.appendingPathComponent("command") }
 
     init(external: Bool = false) throws {
-        root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+        root = LibraryDeletionTestDirectory.temporary.resolvingSymlinksInPath()
             .appendingPathComponent("pending-delete-" + UUID().uuidString)
         library = root.appendingPathComponent("library")
         iso = root.appendingPathComponent("source.iso")

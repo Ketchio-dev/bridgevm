@@ -19,7 +19,7 @@ enum HvfUnavailableMediaDeletion {
         // The saved path proves nothing about what the recursive delete removes: a
         // managed bundle behind a stale absolute path still lives in the entry.
         guard onlyRegistration(in: rootURL.appendingPathComponent(config.slug, isDirectory: true)) else { return false }
-        return VMLibrary.delete(config.slug, rootURL: rootURL)
+        return LibraryDeletionReferences.delete(config, rootURL: rootURL)
     }
 
     private static func onlyRegistration(in entry: URL) -> Bool {
