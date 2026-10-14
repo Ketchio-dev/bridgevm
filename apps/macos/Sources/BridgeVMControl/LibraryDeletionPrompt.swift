@@ -17,21 +17,3 @@ struct LibraryDeletionPrompt: Equatable {
         }
     }
 }
-
-extension VMLibrary {
-    /// The bundle deleting this VM removes, or nil when only the registration goes.
-    /// Deletion (directly or behind the HVF media lease) is VMLibrary.delete, which
-    /// recursively removes `<root>/<slug>/`; a stale saved path outside it is never
-    /// what is deleted, but it must not hide the entry's own bundle.vmbridge.
-    static func deletionTarget(for config: VMConfig, rootURL: URL = root) -> URL? {
-        let rawEntry = rootURL.appendingPathComponent(config.slug, isDirectory: true)
-        if (try? rawEntry.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true { return nil }
-        let entry = rawEntry.resolvingSymlinksInPath().standardizedFileURL
-        let saved = URL(fileURLWithPath: config.bundlePath)
-        let bundle = saved.resolvingSymlinksInPath().standardizedFileURL
-        let entryPrefix = entry.path.hasSuffix("/") ? entry.path : entry.path + "/"
-        if bundle.path == entry.path || bundle.path.hasPrefix(entryPrefix) { return saved }
-        let managed = rawEntry.appendingPathComponent("bundle.vmbridge", isDirectory: true)
-        return (try? managed.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true ? managed : nil
-    }
-}

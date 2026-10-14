@@ -3231,7 +3231,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfProtectedDeletion.swift	9	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDeletionActionTests.swift	33	0
 apps/macos/Sources/BridgeVMControl/LibraryDeletionProtection.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDeletionProtectionTests.swift	16	0
-apps/macos/Sources/BridgeVMControl/LibraryDeletionPrompt.swift	37	0
+apps/macos/Sources/BridgeVMControl/LibraryDeletionPrompt.swift	19	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDeletionPromptTests.swift	98	0
 docs/history/windows-hvf/running-vm-deletion-admission-20260920.md	50	0
 docs/history/windows-hvf/legacy-graphics-opt-in-20260920.md	45	0
@@ -4387,3 +4387,5 @@ scripts/check-landing-page.py	91	0
 scripts/landing_image_contract.py	18	0
 site/index.html	39	0
 site/styles.css	85	0
+apps/macos/Sources/BridgeVMControl/VMLibraryDeletionTarget.swift	22	0
+apps/macos/Tests/BridgeVMControlTests/LibraryImportedDeletionTargetTests.swift	81	0
