@@ -4032,7 +4032,9 @@ crates/bridgevm-hvf/src/nvme/tests/write_completion.rs	174	0
 crates/bridgevm-hvf/src/nvme/tests/write_completion_support.rs	88	0
 crates/bridgevm-hvf/src/nvme/tests/write_completion_files.rs	32	0
 crates/bridgevm-hvf/src/nvme/io_write.rs	120	1
-crates/bridgevm-hvf/src/hda/interrupt_sources.rs	23	0
+crates/bridgevm-hvf/src/hda/interrupt_sources.rs	18	0
+crates/bridgevm-hvf/src/hda/controller_interrupt_sources.rs	11	0
+crates/bridgevm-hvf/src/platform_virt/tests/hda_state_change_interrupt.rs	84	0
 crates/bridgevm-hvf/src/platform_virt/tests/hda_corb_interrupt.rs	223	0
 docs/document-manifests/native-vmm-nvme-write-completion.tsv	3	0
 docs/history/windows-hvf/native-vmm-nvme-write-completion-20261005.md	84	0
