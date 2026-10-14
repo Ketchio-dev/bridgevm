@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/wdk-sdk-buffered-storage-20260712.md	historical-evidence	windows-driver	-
+docs/windows-arm/evidence/vtpm-windows-command-path-20260722.md	historical-evidence	windows-security	-
+docs/history/windows-hvf/autonomous-lifecycle-20261014.md	historical-evidence	windows-reliability	-

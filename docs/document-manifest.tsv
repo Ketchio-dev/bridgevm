@@ -32,8 +32,6 @@ docs/plans/refactor-handoff.md	active-plan	development-handoff	-
 @include	docs/document-manifests/native-vmm-gic-history.tsv	-	-
 @include	docs/document-manifests/native-vmm-gic-active-priority.tsv	-	-
 @include	docs/document-manifests/native-vmm-firmware-block-offset.tsv	-	-
-docs/windows-arm/evidence/wdk-sdk-buffered-storage-20260712.md	historical-evidence	windows-driver	-
-docs/windows-arm/evidence/vtpm-windows-command-path-20260722.md	historical-evidence	windows-security	-
 @include	docs/document-manifests/native-vmm-nat-reply-bound.tsv	-	-
 @include	docs/document-manifests/native-vmm-gic-active-list-bound.tsv	-	-
 @include	docs/document-manifests/native-vmm-virtio-gpu-3d-blob-bounds.tsv	-	-
@@ -139,3 +137,4 @@ docs/windows-arm/evidence/a9-stale-code-requirement-20260911.md	current	a9-code-
 @include	docs/document-manifests/native-vmm-queue-lifecycle.tsv	-	-
 @include	docs/document-manifests/autonomous-controls-20261014.tsv	-	-
 @include	docs/document-manifests/autonomous-restore-ownership-20261014.tsv	-	-
+@include	docs/document-manifests/autonomous-lifecycle-20261014.tsv	-	-
