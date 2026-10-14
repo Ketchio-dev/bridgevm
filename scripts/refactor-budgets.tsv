@@ -4573,6 +4573,6 @@ apps/macos/Tests/BridgeVMControlTests/InstallCancellationButtonProbe.swift	42	0
 apps/macos/Tests/BridgeVMControlTests/RetainedInstallCancellationFixture.swift	97	0
 apps/macos/Tests/BridgeVMControlTests/RetainedInstallCancellationTests.swift	69	0
 apps/macos/Sources/BridgeVMControl/LibraryModelCloneAdmission.swift	24	0
-apps/macos/Tests/BridgeVMControlTests/ReservedCloneGenericAdmissionTests.swift	54	0
+apps/macos/Tests/BridgeVMControlTests/ReservedCloneGenericAdmissionTests.swift	53	0
 apps/macos/Tests/BridgeVMControlTests/ReservedCloneGenericFixture.swift	94	0
 apps/macos/Tests/BridgeVMControlTests/ReservedCloneLifetimeTests.swift	142	0

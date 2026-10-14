@@ -103,7 +103,7 @@ final class LibraryModel: ObservableObject {
     }
 
     func cloneWindowsHVF(_ cfg: VMConfig, name: String,
-                         operation: @escaping LibraryCloneOperation = HvfProtectedTransfers.clone) {
+                         operation: @escaping LibraryCloneOperation = { HvfProtectedTransfers.clone(name: $0, template: $1, libraryRoot: $2) }) {
         pendingWindowsClone = nil
         guard admitLibraryAction(cfg, action: .clone) else { return }
         guard !cloningSlugs.contains(cfg.slug) else { return }
