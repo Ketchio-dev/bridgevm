@@ -71,7 +71,7 @@ impl VmStore {
                     vm: vm_name.to_string(),
                     snapshot: snapshot_name.to_string(),
                 })?;
-            if !disk.backing_path.exists() {
+            if !disk.backing_path.is_file() {
                 return Err(StorageError::SnapshotDiskBackingMissing(disk.backing_path));
             }
             let active_disk = self.snapshot_backing_active_disk_at(snapshot_name, &disk, true);
@@ -87,7 +87,7 @@ impl VmStore {
                     vm: vm_name.to_string(),
                     snapshot: snapshot_name.to_string(),
                 })?;
-            suspend_image.image_exists = suspend_image.image_path.exists();
+            suspend_image.image_exists = suspend_image.image_path.is_file();
             self.write_snapshot_suspend_image_metadata_at(&bundle, snapshot_name, &suspend_image)?;
             if !suspend_image.image_exists {
                 return Err(StorageError::SnapshotSuspendImageMissing(
