@@ -4514,3 +4514,4 @@ crates/bridgevm-hvf/src/managed_pair_staging_seal_test_fixture.rs	47	0
 crates/bridgevm-hvf/src/managed_pair_staging_seal_tests.rs	141	0
 docs/history/windows-hvf/autonomous-restore-ownership-20261014.md	88	0
 docs/document-manifests/autonomous-restore-ownership-20261014.tsv	4	0
+crates/bridgevm-cli/src/args/app_windows_setup_help.txt	3	0
