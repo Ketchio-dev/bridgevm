@@ -13,6 +13,7 @@ mod device_state;
 mod msix_bridge;
 mod notify;
 mod pci_transport;
+mod poll;
 mod protocol;
 mod queue_pending;
 mod register_codec;

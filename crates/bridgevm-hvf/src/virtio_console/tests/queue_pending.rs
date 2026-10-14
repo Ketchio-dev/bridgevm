@@ -1,5 +1,6 @@
 use super::super::*;
 use super::helpers::*;
+use super::ready_queue::*;
 
 #[test]
 fn console_tx_queues_cap_malformed_avail_delta_at_queue_size() {
@@ -11,7 +12,7 @@ fn console_tx_queues_cap_malformed_avail_delta_at_queue_size() {
         let used = 0x4000_3000;
         let queue_size = 8u16;
 
-        setup_queue(
+        setup_ready_queue(
             &mut dev,
             &mut mem,
             queue_index as u16,

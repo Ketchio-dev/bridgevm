@@ -9,6 +9,7 @@ mod device_state;
 pub(crate) mod legacy_transport;
 mod media_backend;
 mod mmio_regs;
+mod notify;
 mod pci_transport;
 mod protocol;
 mod queue_pending;

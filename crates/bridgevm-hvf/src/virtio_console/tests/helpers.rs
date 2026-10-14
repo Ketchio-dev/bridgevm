@@ -344,7 +344,7 @@ fn agent_rx_delivery_resumes_after_ring_consumed_and_replenished() {
     let mut dev = VirtioPciConsole::new();
     let mut mem = TestMem::new(0x4000_0000, 0x100000);
     let size: u16 = 4;
-    setup_queue_sized(
+    super::ready_queue::setup_ready_queue_sized(
         &mut dev,
         &mut mem,
         4,

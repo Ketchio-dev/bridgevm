@@ -2,6 +2,7 @@
 
 use super::super::*;
 use super::helpers::*;
+use super::ready_queue::*;
 use crate::msix::MsixMessage;
 use std::collections::VecDeque;
 
@@ -51,8 +52,8 @@ fn full_control_handshake_emits_add_name_and_host_open() {
     let out2 = 0x4000_7200;
     let out3 = 0x4000_7300;
 
-    setup_queue(&mut dev, &mut mem, 2, crx_desc, crx_avail, crx_used, 2);
-    setup_queue(&mut dev, &mut mem, 3, ctx_desc, ctx_avail, ctx_used, 3);
+    setup_ready_queue(&mut dev, &mut mem, 2, crx_desc, crx_avail, crx_used, 2);
+    setup_ready_queue(&mut dev, &mut mem, 3, ctx_desc, ctx_avail, ctx_used, 3);
     for (idx, out) in [out0, out1, out2, out3].into_iter().enumerate() {
         post_rx(&mut mem, crx_desc, crx_avail, out, 64, idx as u16);
     }
@@ -112,9 +113,9 @@ fn vioser_sequence_resends_host_open_before_agent_tx_without_guest_open_control(
     let atx_avail = 0x4000_8000;
     let atx_used = 0x4000_9000;
 
-    setup_queue(&mut dev, &mut mem, 2, crx_desc, crx_avail, crx_used, 2);
-    setup_queue(&mut dev, &mut mem, 3, ctx_desc, ctx_avail, ctx_used, 3);
-    setup_queue(&mut dev, &mut mem, 5, atx_desc, atx_avail, atx_used, 5);
+    setup_ready_queue(&mut dev, &mut mem, 2, crx_desc, crx_avail, crx_used, 2);
+    setup_ready_queue(&mut dev, &mut mem, 3, ctx_desc, ctx_avail, ctx_used, 3);
+    setup_ready_queue(&mut dev, &mut mem, 5, atx_desc, atx_avail, atx_used, 5);
     for (idx, out) in [
         0x4000_a000,
         0x4000_a100,
@@ -213,7 +214,7 @@ fn vioser_sequence_resends_host_open_before_agent_tx_without_guest_open_control(
 fn data_loopback_after_port_open() {
     let mut dev = VirtioPciConsole::new();
     let mut mem = TestMem::new(0x4000_0000, 0x50000);
-    setup_queue(
+    setup_ready_queue(
         &mut dev,
         &mut mem,
         4,
@@ -222,7 +223,7 @@ fn data_loopback_after_port_open() {
         0x4000_3000,
         4,
     );
-    setup_queue(
+    setup_ready_queue(
         &mut dev,
         &mut mem,
         5,
@@ -283,8 +284,8 @@ fn tx_queues_reuse_descriptor_and_read_scratch_across_messages() {
     let atx_avail = 0x4000_5000;
     let atx_used = 0x4000_6000;
 
-    setup_queue(&mut dev, &mut mem, 3, ctx_desc, ctx_avail, ctx_used, 3);
-    setup_queue(&mut dev, &mut mem, 5, atx_desc, atx_avail, atx_used, 5);
+    setup_ready_queue(&mut dev, &mut mem, 3, ctx_desc, ctx_avail, ctx_used, 3);
+    setup_ready_queue(&mut dev, &mut mem, 5, atx_desc, atx_avail, atx_used, 5);
 
     send_tx(
         &mut dev,
@@ -354,7 +355,7 @@ fn agent_rx_delivers_wrapped_host_queue_and_reuses_descriptor_scratch() {
     let out0 = 0x4000_4000;
     let out1 = 0x4000_4100;
 
-    setup_queue(&mut dev, &mut mem, 4, arx_desc, arx_avail, arx_used, 4);
+    setup_ready_queue(&mut dev, &mut mem, 4, arx_desc, arx_avail, arx_used, 4);
     post_rx(&mut mem, arx_desc, arx_avail, out0, 16, 0);
     let mut wrapped = VecDeque::with_capacity(8);
     wrapped.extend(b"ABCDEFGH".iter().copied());
@@ -395,7 +396,7 @@ fn agent_rx_pending_msix_survives_until_table_entry_is_programmed() {
     let arx_used = 0x4000_3000;
     let out = 0x4000_4000;
 
-    setup_queue(&mut dev, &mut mem, 4, arx_desc, arx_avail, arx_used, 4);
+    setup_ready_queue(&mut dev, &mut mem, 4, arx_desc, arx_avail, arx_used, 4);
     post_rx(&mut mem, arx_desc, arx_avail, out, 16, 0);
     dev.agent_send(b"PING");
 
@@ -422,7 +423,7 @@ fn agent_rx_pending_msix_survives_until_table_entry_is_programmed() {
 fn control_backpressure_queues_until_rx_buffer_is_posted() {
     let mut dev = VirtioPciConsole::new();
     let mut mem = TestMem::new(0x4000_0000, 0x30000);
-    setup_queue(
+    setup_ready_queue(
         &mut dev,
         &mut mem,
         2,
@@ -431,7 +432,7 @@ fn control_backpressure_queues_until_rx_buffer_is_posted() {
         0x4000_3000,
         2,
     );
-    setup_queue(
+    setup_ready_queue(
         &mut dev,
         &mut mem,
         3,
@@ -487,7 +488,7 @@ fn guest_model_latches_host_connected_and_relatches_after_d0_bounce() {
     let mut dev = VirtioPciConsole::new();
     let mut mem = TestMem::new(0x4000_0000, 0x100000);
     let size: u16 = 32;
-    setup_queue_sized(
+    setup_ready_queue_sized(
         &mut dev,
         &mut mem,
         2,
@@ -496,7 +497,7 @@ fn guest_model_latches_host_connected_and_relatches_after_d0_bounce() {
         2,
         size,
     );
-    setup_queue_sized(
+    setup_ready_queue_sized(
         &mut dev,
         &mut mem,
         3,
@@ -578,7 +579,7 @@ fn host_open_reassert_is_sustained_until_agent_tx_then_stops() {
     let mut dev = VirtioPciConsole::new();
     let mut mem = TestMem::new(0x4000_0000, 0x100000);
     let size: u16 = 32;
-    setup_queue_sized(
+    setup_ready_queue_sized(
         &mut dev,
         &mut mem,
         2,
@@ -587,7 +588,7 @@ fn host_open_reassert_is_sustained_until_agent_tx_then_stops() {
         2,
         size,
     );
-    setup_queue_sized(
+    setup_ready_queue_sized(
         &mut dev,
         &mut mem,
         3,
@@ -596,7 +597,7 @@ fn host_open_reassert_is_sustained_until_agent_tx_then_stops() {
         3,
         size,
     );
-    setup_queue_sized(
+    setup_ready_queue_sized(
         &mut dev,
         &mut mem,
         5,
@@ -692,7 +693,7 @@ fn control_rx_notifies_alone_never_reassert_port_open_no_storm() {
     let mut dev = VirtioPciConsole::new();
     let mut mem = TestMem::new(0x4000_0000, 0x100000);
     let size: u16 = 32;
-    setup_queue_sized(
+    setup_ready_queue_sized(
         &mut dev,
         &mut mem,
         2,
@@ -701,7 +702,7 @@ fn control_rx_notifies_alone_never_reassert_port_open_no_storm() {
         2,
         size,
     );
-    setup_queue_sized(
+    setup_ready_queue_sized(
         &mut dev,
         &mut mem,
         3,
