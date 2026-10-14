@@ -4721,3 +4721,4 @@ crates/bridgevm-hvf/src/virtio_console/poll.rs	16	0
 crates/bridgevm-hvf/src/virtio_console/tests/driver_ready.rs	79	0
 crates/bridgevm-hvf/src/virtio_console/tests/driver_ready_fixture.rs	70	0
 crates/bridgevm-hvf/src/virtio_console/tests/ready_queue.rs	26	0
+apps/macos/Tests/BridgeVMControlTests/LibraryDashboardLegacyActionTests.swift	92	0

@@ -6,8 +6,8 @@ struct LibraryDashboardLegacyControls: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            DashboardActionButton(title: model.running ? "창 열기" : "시작",
-                symbol: "play.fill", prominent: true, disabled: model.lifecycleBusy,
+            DashboardActionButton(title: model.running ? "실행 중" : "시작",
+                symbol: "play.fill", prominent: true, disabled: model.hasActiveRuntimeWork,
                 action: model.start)
             DashboardActionButton(title: "정지", symbol: "stop.fill",
                 disabled: !model.running || model.lifecycleBusy, action: model.stop)
