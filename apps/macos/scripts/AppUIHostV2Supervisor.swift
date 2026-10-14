@@ -111,11 +111,11 @@ final class AppUIHostV2Supervisor {
     }
 
     private func publishSessionIfReady() {
-        guard !sessionPublished, failure == nil, let nonce, let mailbox,
+        guard !sessionPublished, failure == nil, let nonce, mailbox != nil,
               let host = owners[.host]?.identity, let driver = owners[.driver]?.identity else { return }
         do {
-            _ = try mailbox.publishSession(AppUIDriverSession(nonce: nonce, startedUptime: startedAt,
-                deadlineUptime: startedAt + 90, host: host, driver: driver))
+            try AppUIHostV2Scenario.publish(mode: paths.mode, root: paths.root, nonce: nonce,
+                startedAt: startedAt, host: host, driver: driver)
             sessionPublished = true
         } catch { stop("Could not publish the admitted driver session") }
     }
@@ -123,8 +123,7 @@ final class AppUIHostV2Supervisor {
     private func verifyScenarioCompletion() {
         guard failure == nil, owners.values.allSatisfy(\.success) else { return }
         do {
-            guard let mailbox, let driver = try mailbox.readCompletion(),
-                  let host = try mailbox.readHostCompletion(), host.success, driver.success else {
+            guard mailbox != nil, try AppUIHostV2Scenario.completed(mode: paths.mode, root: paths.root) else {
                 failure = "The owned applications exited without a successful complete scenario"
                 return
             }
@@ -184,7 +183,7 @@ final class AppUIHostV2Supervisor {
 
     private func save() {
         guard let host = owners[.host], let driver = owners[.driver] else { return }
-        let receipt: [String: Any] = ["schema_version": 2, "kind": "native-app-ui-launcher-v2",
+        let receipt: [String: Any] = ["schema_version": 2, "kind": paths.mode.receiptKind,
             "started_uptime": startedAt, "deadline_uptime": startedAt + 90,
             "host": host.receipt, "driver": driver.receipt,
             "cleanup_verified": host.cleanupVerified && driver.cleanupVerified,

@@ -15,7 +15,7 @@ trap 'rm -rf "$scratch"' EXIT
 xcrun swiftc -parse-as-library -swift-version 5 -O -D BRIDGEVM_APP_UI_DRIVER \
   -target arm64-apple-macosx14.0 -module-cache-path "$scratch/module-cache" \
   -framework AppKit -framework ApplicationServices -framework CryptoKit -framework Security \
-  "$core_dir"/*.swift "$script_dir"/AppUIDriver*.swift "$script_dir"/AppUIHostV2*.swift \
+  "$core_dir"/*.swift "$script_dir"/AppUIDriver*.swift "$script_dir"/AppUIInstallCancel*.swift "$script_dir"/AppUIHostV2*.swift \
   "$script_dir/AppUIHostLaunchOwnership.swift" "$script_dir/LaunchAppUIHost.swift" \
   "$script_dir/AppUIHostLauncherMain.swift" -o "$scratch/AppUIHostLauncher"
 chmod 0500 "$scratch/AppUIHostLauncher"

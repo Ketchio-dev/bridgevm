@@ -24,14 +24,14 @@ def read_json(path, required, optional=(), maximum=65_536):
     return value
 
 
-def load_job(output, commit, manifest, expected):
+def load_job(output, commit, manifest, expected, *, tier=TIER):
     fields = {}
     for line in safe_regular(output / "job.env", 16_384).read_text().splitlines():
         key, separator, value = line.partition("=")
         if not separator or key in fields:
             raise ValueError("invalid job record")
         fields[key] = value
-    if (fields.get("tier") != TIER or fields.get("commit") != commit
+    if (fields.get("tier") != tier or fields.get("commit") != commit
             or fields.get("input_manifest_sha256") != digest(manifest)
             or fields.get("sealed_binary_sha256") != expected
             or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", fields.get("job_id", ""))):
@@ -65,12 +65,12 @@ def verify_role(role, value, private, fields):
         raise ValueError("v2 role has no proven no-launch outcome")
 
 
-def verify_launcher_exit(path, private, fields):
+def verify_launcher_exit(path, private, fields, *, kind="native-app-ui-launcher-v2"):
     if private != private.resolve(strict=True):
         raise ValueError("v2 private directory is not canonical")
     launch = read_json(path, TOP_KEYS)
     if (type(launch["schema_version"]) is not int or launch["schema_version"] != 2
-            or launch["kind"] != "native-app-ui-launcher-v2"
+            or launch["kind"] != kind
             or not finite_number(launch["started_uptime"], 0)
             or not finite_number(launch["deadline_uptime"], 0)
             or abs(launch["deadline_uptime"] - launch["started_uptime"] - 90) > 0.000001

@@ -10,6 +10,8 @@ final class AppUIHost {
     let library: LibraryModel
     let capture: AppUIHostCapture
     let lifecycle: AppUIHostLifecycle
+    let installCancel: AppUIInstallCancelFixture?
+    let installCancelCapture: AppUIInstallCancelCapture?
     private weak var window: NSWindow?
     private var launchFinished = false
     private var started = false
@@ -46,7 +48,10 @@ final class AppUIHost {
         root = capture.output.appendingPathComponent("fixture-library", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
                                                attributes: [.posixPermissions: 0o700])
-        library = Self.makeLibrary(root: root, capture: capture)
+        let fixture = try AppUIHostScenarioFixture.make(root: root, capture: capture)
+        library = fixture.library
+        installCancel = fixture.installCancel
+        installCancelCapture = fixture.installCancelCapture
     }
     func checkBeforeApplication() throws {
         do { try Self.checkCancellation(output: capture.output) }
@@ -109,16 +114,6 @@ final class AppUIHost {
             } catch { self.finish(error: error) }
         }
     }
-    func seedOverviewMetadata() {
-        library.vms = [("Amber", 4096), ("Indigo", 8192)].map { name, memory in
-            VMConfig(id: "ui-" + name.lowercased(), name: name, displayName: name,
-                backendKind: "hvf-engine", bootMode: "windows-hvf",
-                bundlePath: root.appendingPathComponent(name + ".vmbridge").path,
-                runnerPath: "", launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
-                leasesPath: "", guestName: "owned-ui-fixture", displayWidth: 1280, displayHeight: 800,
-                memMiB: memory, cpuCount: 4)
-        }
-    }
     private func observeLifecycle(terminal: Bool = false) {
         lifecycle.observe(launchFinished: launchFinished, started: started, finished: finished,
                           window: window, terminal: terminal)
@@ -129,6 +124,10 @@ final class AppUIHost {
         observeLifecycle(terminal: true)
         monitor?.cancel()
         scenario?.cancel()
+        if let installCancelCapture {
+            Task { await AppUIInstallCancelTermination.finish(installCancelCapture, error: error, terminate: terminateApplication) }
+            return
+        }
         if let error { capture.failed(error) }
         var clean = false
         do {

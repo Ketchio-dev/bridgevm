@@ -7,8 +7,8 @@ case "$MODE:$TIER" in
     validate:d6-app-ui-host-v1) exec python3 "$HERE/app_ui_host_manifest.py" validate-manifest "$@" ;;
     seal:d6-app-ui-host-v1)
         exec python3 "$HERE/app_ui_host_manifest.py" seal-launcher "$@" ;;
-    validate:d6-app-ui-host-v2) exec python3 "$HERE/app_ui_host_v2_manifest.py" validate-manifest "$@" ;;
-    seal:d6-app-ui-host-v2) exec python3 "$HERE/app_ui_host_v2_manifest.py" seal-inputs "$@" ;;
+    validate:d6-app-ui-host-v2|validate:d6-app-ui-install-cancel-v1) HELPER=app_ui_host_v2_manifest.py; [[ "$TIER" != d6-app-ui-install-cancel-v1 ]] || HELPER=app_ui_install_cancel_manifest.py; exec python3 "$HERE/$HELPER" validate-manifest "$@" ;;
+    seal:d6-app-ui-host-v2|seal:d6-app-ui-install-cancel-v1) HELPER=app_ui_host_v2_manifest.py; [[ "$TIER" != d6-app-ui-install-cancel-v1 ]] || HELPER=app_ui_install_cancel_manifest.py; exec python3 "$HERE/$HELPER" seal-inputs "$@" ;;
     validate:t17-windows-hvf-product-e2e) python3 "$HERE/windows-product-e2e-launchservices-preflight.py" --manifest "$1" && exec python3 "$HERE/host_console_session.py" --require-unlocked ;; validate:t19-windows-hvf-import-product-e2e) exec python3 "$HERE/host_console_session.py" --require-unlocked ;; validate:t20-a19-native-snapshot-restore|validate:t21-a19-quota-refusal|validate:t22-a19-interrupted-restore|validate:t23-a19-lifecycle-campaign) exec python3 "$HERE/native_snapshot_restore_inputs.py" "$1" "$2" ;; validate:d9-b9-real-workload) exec python3 "$HERE/b9_real_workload_inputs.py" validate "$1" "$2" ;; seal:d9-b9-real-workload) exec python3 "$HERE/b9_real_workload_inputs.py" seal "$1" "$2" "$3" ;;
     validate:*|seal:*) exit 0 ;;
     *) echo "unknown diagnostic manifest operation" >&2; exit 2 ;;

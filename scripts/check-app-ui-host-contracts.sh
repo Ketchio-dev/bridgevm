@@ -18,32 +18,12 @@ if ! swift test --package-path "$repo_root/apps/macos" --scratch-path "$scratch_
   cat "$record/discovery.log" >&2
   exit 1
 fi
-python3 - "$record/discovery.txt" <<'PY'
-from pathlib import Path
-import sys
-
-prefix = "BridgeVMAppUIHostTests.AppUIHostContractTests/"
-methods = {
-    "testAcceptsOnlyExactRequestWithoutWritingToOutput",
-    "testRejectsNonemptyOrNonprivateOutputWithoutRemovingEvidence",
-    "testRejectsSymlinkedParentAndOutput",
-    "testCancellationMarkerRefusesWithoutChangingOutputAdmission",
-    "testFixtureConstructionHasNoDomainWorkOrLibraryWrites",
-    "testIncompleteObservationCannotBecomeSuccessfulCompletion",
-    "testUnpackagedTestProcessRefusesBeforeAppOrFixtureCreation",
-}
-expected = {prefix + method for method in methods}
-actual = [line.strip() for line in Path(sys.argv[1]).read_text().splitlines()
-          if line.strip().startswith("BridgeVMAppUIHostTests.")]
-if len(actual) != 7 or set(actual) != expected:
-    raise SystemExit(f"diagnostic host discovery differs: expected {sorted(expected)!r}; got {actual!r}")
-print("diagnostic host discovery: exactly seven qualified Apple XCTest methods")
-PY
+python3 "$repo_root/scripts/app_ui_host_contract_discovery.py" "$record/discovery.txt"
 swift test --package-path "$repo_root/apps/macos" --scratch-path "$scratch_path" \
   -Xswiftc -DBRIDGEVM_APP_UI_HOST --skip-build \
-  --filter 'BridgeVMAppUIHostTests[.]AppUIHostContractTests' 2>&1 | tee "$record/tests.log"
+  --filter 'BridgeVMAppUIHostTests[.]AppUIHostContractTests|BridgeVMControlTests[.]AppUIInstallCancelFixtureTests' 2>&1 | tee "$record/tests.log"
 swift build --package-path "$repo_root/apps/macos" --scratch-path "$scratch_path" \
   -Xswiftc -DBRIDGEVM_APP_UI_HOST --show-bin-path > "$record/bin-path.txt"
 host_binary="$(cat "$record/bin-path.txt")/BridgeVMControl"
 shasum -a 256 "$host_binary" > "$record/host-binary.sha256"
-echo "native app host contracts: PASS (seven discovered tests; no app launched); evidence: $record"
+echo "native app host contracts: PASS (seven host contracts plus install-cancel fixture tests; no app launched); evidence: $record"

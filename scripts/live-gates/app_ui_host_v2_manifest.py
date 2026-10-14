@@ -24,7 +24,7 @@ def safe_regular(path, maximum):
     return regular(path, maximum)
 
 
-def parse_manifest(path, commit):
+def parse_manifest(path, commit, *, expected_format=FORMAT):
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("invalid commit")
     fields = {}
@@ -35,7 +35,7 @@ def parse_manifest(path, commit):
         fields[row[0]] = row[1:]
     if set(fields) != {"format", "commit", *FILES}:
         raise ValueError("v2 manifest fields differ")
-    if fields["format"] != [FORMAT] or fields["commit"] != [commit]:
+    if fields["format"] != [expected_format] or fields["commit"] != [commit]:
         raise ValueError("v2 manifest format or commit differs")
     result = {}
     for key in FILES:
@@ -57,8 +57,8 @@ def verify_input(key, path, expected):
         raise ValueError("sealed metadata digest differs")
 
 
-def validate_manifest(path, commit):
-    fields = parse_manifest(path, commit)
+def validate_manifest(path, commit, *, expected_format=FORMAT):
+    fields = parse_manifest(path, commit, expected_format=expected_format)
     for key, (source, expected) in fields.items():
         verify_input(key, source, expected)
     return fields
@@ -74,11 +74,11 @@ def copy_input(key, source, destination, expected):
     verify_input(key, destination, expected)
 
 
-def seal_inputs(manifest, commit, staging):
+def seal_inputs(manifest, commit, staging, *, expected_format=FORMAT):
     staging = Path(staging)
     if not staging.is_dir() or staging != staging.resolve(strict=True):
         raise ValueError("staging must be a canonical owned directory")
-    fields = parse_manifest(manifest, commit)
+    fields = parse_manifest(manifest, commit, expected_format=expected_format)
     verify_input("binary", staging / FILES["binary"], fields["binary"][1])
     for key in FILES:
         if key != "binary":

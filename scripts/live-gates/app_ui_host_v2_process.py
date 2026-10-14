@@ -6,12 +6,12 @@ import time
 from app_ui_host_process import DEADLINE_SECONDS, request_cancel
 
 
-def run_launcher(launcher, private, host_digest, launcher_digest, canceled):
+def run_launcher(launcher, private, host_digest, launcher_digest, canceled, *, mode="--app-ui-supervisor-v2", log_name="launcher-v2.log"):
     environment = {key: os.environ[key] for key in ("HOME", "USER", "LOGNAME") if key in os.environ}
     environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
-    command = [str(launcher), "--app-ui-supervisor-v2", "--private-root", str(private),
+    command = [str(launcher), mode, "--private-root", str(private),
                "--host-sha256", host_digest, "--launcher-sha256", launcher_digest]
-    with (private / "launcher-v2.log").open("xb") as log:
+    with (private / log_name).open("xb") as log:
         os.fchmod(log.fileno(), 0o600)
         child = subprocess.Popen(command, env=environment, stdout=log, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + DEADLINE_SECONDS
