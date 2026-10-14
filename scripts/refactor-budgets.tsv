@@ -4711,3 +4711,5 @@ scripts/app_ui_host_build_refusal.py	34	0
 tests/integration/app-ui-host-build-refusal-contract.py	88	0
 scripts/live-gates/app_ui_host_signing.py	32	0
 tests/integration/app-ui-signing-contracts.py	200	0
+docs/history/windows-hvf/autonomous-archive-and-ui-20261014.md	208	0
+docs/document-manifests/autonomous-archive-and-ui-20261014.tsv	3	0
