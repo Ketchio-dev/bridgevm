@@ -2730,7 +2730,7 @@ apps/macos/scripts/AppUIHostV2Ownership.swift	131	0
 apps/macos/scripts/AppUIHostV2Paths.swift	33	0
 apps/macos/scripts/AppUIHostV2Supervisor.swift	200	0
 apps/macos/scripts/build-app-ui-driver.sh	22	0
-apps/macos/scripts/package-app-ui-host-inputs.py	176	0
+apps/macos/scripts/package-app-ui-host-inputs.py	159	0
 scripts/check-app-ui-driver-contracts.sh	40	0
 scripts/live-gates/app_ui_host_v2_bundle.py	73	0
 scripts/live-gates/app_ui_host_v2_cleanup.py	125	0
@@ -4709,3 +4709,5 @@ crates/bridgevm-storage/src/tests_split/import_parallel.rs	53	0
 crates/bridgevm-storage/src/tests_split/import_parallel_fixture.rs	74	0
 scripts/app_ui_host_build_refusal.py	34	0
 tests/integration/app-ui-host-build-refusal-contract.py	88	0
+scripts/live-gates/app_ui_host_signing.py	32	0
+tests/integration/app-ui-signing-contracts.py	200	0
