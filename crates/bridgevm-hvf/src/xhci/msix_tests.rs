@@ -27,7 +27,7 @@ fn xhci_enable_slot_completion_queues_msix_message_when_vector_unmasked() {
         BarWrite {
             offset: 0x40,
             size: 4,
-            value: 1,
+            value: 5,
         },
         BarWrite {
             offset: 0x58,
@@ -119,7 +119,7 @@ fn xhci_ep0_transfer_completion_queues_msix_message_when_vector_unmasked() {
         BarWrite {
             offset: 0x40,
             size: 4,
-            value: 1,
+            value: 5,
         },
         BarWrite {
             offset: 0x58,

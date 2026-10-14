@@ -12,27 +12,8 @@ const MSI_DATA: u32 = 130;
 const IMAN_INTERRUPTER0: u64 = 0x1020;
 const TRANSFER_EVENT_CONTROL: u32 = 32 << 10;
 
-fn program_vector0(xhci: &mut XhciController) {
-    let base = u64::from(XHCI_MSIX_TABLE_OFFSET);
-    xhci.mmio_write(base, 8, MSI_ADDRESS);
-    xhci.mmio_write(base + 8, 4, u64::from(MSI_DATA));
-}
-
-fn unmask_vector0(xhci: &mut XhciController) {
-    xhci.mmio_write(u64::from(XHCI_MSIX_TABLE_OFFSET) + 12, 4, 0);
-}
-
-fn mask_vector0(xhci: &mut XhciController) {
-    xhci.mmio_write(u64::from(XHCI_MSIX_TABLE_OFFSET) + 12, 4, 1);
-}
-
-fn expected_message() -> MsixMessage {
-    MsixMessage {
-        vector: 0,
-        address: MSI_ADDRESS,
-        data: MSI_DATA,
-    }
-}
+mod support;
+use support::*;
 
 #[test]
 fn one_event_raises_exactly_one_message_and_auto_clears_ip() {

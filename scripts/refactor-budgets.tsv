@@ -672,8 +672,8 @@ crates/bridgevm-hvf/src/xhci/hid_unsupported_semantic_stats_tests.rs	80	0
 crates/bridgevm-hvf/src/xhci/interrupt_in.rs	259	0
 crates/bridgevm-hvf/src/xhci/interrupt_pointer.rs	267	0
 crates/bridgevm-hvf/src/xhci/interrupt_trb.rs	94	0
-crates/bridgevm-hvf/src/xhci/interrupter_msix_autoclear_tests.rs	144	0
-crates/bridgevm-hvf/src/xhci/interrupts.rs	62	0
+crates/bridgevm-hvf/src/xhci/interrupter_msix_autoclear_tests.rs	123	0
+crates/bridgevm-hvf/src/xhci/interrupts.rs	45	0
 crates/bridgevm-hvf/src/xhci/lifecycle.rs	54	0
 crates/bridgevm-hvf/src/xhci/mmio.rs	28	0
 crates/bridgevm-hvf/src/xhci/msix_tests.rs	197	0
@@ -4585,3 +4585,6 @@ crates/bridgevm-storage/src/tests_split/export_destination.rs	138	0
 crates/bridgevm-hvf/src/xhci/interrupts/collect.rs	12	0
 crates/bridgevm-hvf/tests/xhci_pending_enable.rs	110	0
 crates/bridgevm-hvf/tests/xhci_pending_enable/support.rs	127	0
+crates/bridgevm-hvf/src/xhci/interrupter_msix_autoclear_tests/support.rs	23	0
+crates/bridgevm-hvf/src/xhci/interrupts/raise.rs	25	0
+crates/bridgevm-hvf/tests/xhci_global_interrupt_gate.rs	112	0

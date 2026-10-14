@@ -30,7 +30,7 @@ fn xhci_ep0_set_configuration_queues_msix_message_when_vector_unmasked() {
         BarWrite {
             offset: 0x40,
             size: 4,
-            value: 1,
+            value: 5,
         },
         BarWrite {
             offset: 0x58,
