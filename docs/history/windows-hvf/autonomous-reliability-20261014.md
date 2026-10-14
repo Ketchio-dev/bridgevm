@@ -80,3 +80,26 @@ Guest assets retain CRLF. Product state, capability wording, criterion
 thresholds and known defects are unchanged. A9, A11 and A19 remain OPEN;
 actual guest behavior, clean-machine journeys and release eligibility require
 their own evidence.
+
+## Integration correction and additional focused repairs
+
+The initial full local check at `3588ee7f4071aa67300f43454b57f75f49fc37b9`
+reported a documentation-system failure: this history and the input-keyset
+contract were missing from the classification catalog. The failed attempt
+remains retained. Both records now use an explicitly included catalog shard;
+two existing rows moved unchanged and the main catalog ceiling decreased.
+This correction does not turn the earlier check into a pass.
+
+Source `7376f1ed` separates physical Control+keypad Enter from the ETX character
+also used by Control+C. Actual framebuffer keyDown tests reproduced an
+unintended guest Copy on both transports. Native52 and actual-shim38 cases,
+plus the optimized driver and two transport checks, passed after the event
+identity adapter. Control+Enter remains unsupported; normal Copy and existing
+keypad modifiers remain intact. No guest protocol is changed.
+
+Source `d1ed49a8` publishes EP0 Running state before resumed transfer completion
+after Stop and SetTRDequeue. Three regression cases failed before the repair;
+the xHCI suite then passed195 cases, including event-publication ordering, an
+empty ring and a refused state write. This matches the existing xHCI contract
+and does not establish actual guest USB behavior. Exact successor full local
+and hosted checks are still required.

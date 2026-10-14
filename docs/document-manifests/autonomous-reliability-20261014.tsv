@@ -1,0 +1,5 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/a19-managed-pair-20260912.md	current	windows-storage	-
+docs/windows-arm/evidence/a19-relocation-containment-20260912.md	current	windows-storage	-
+docs/history/windows-hvf/autonomous-reliability-20261014.md	historical-evidence	windows-reliability	-
+docs/machine-contract/resident-input-keysets.md	current	windows-architecture	-
