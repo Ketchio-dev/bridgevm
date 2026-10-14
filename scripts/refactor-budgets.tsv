@@ -510,7 +510,7 @@ crates/bridgevm-hvf/src/virtio_gpu/fb_sink.rs	48	1
 crates/bridgevm-hvf/src/virtio_gpu/fb_sink_write.rs	201	10
 crates/bridgevm-hvf/src/virtio_gpu/fb_sink_write_tests.rs	76	4
 crates/bridgevm-hvf/src/virtio_gpu/fence.rs	80	0
-crates/bridgevm-hvf/src/virtio_gpu/interrupt.rs	164	0
+crates/bridgevm-hvf/src/virtio_gpu/interrupt.rs	157	0
 crates/bridgevm-hvf/src/virtio_gpu/mod.rs	18	0
 crates/bridgevm-hvf/src/virtio_gpu/pci_device.rs	187	0
 crates/bridgevm-hvf/src/virtio_gpu/protocol.rs	226	0
@@ -4561,3 +4561,7 @@ apps/macos/Tests/BridgeVMControlTests/FirstRunOptionalRecoveryFixture.swift	75	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunOptionalRecoveryTests.swift	83	0
 docs/history/windows-hvf/autonomous-admission-20261014.md	126	0
 docs/document-manifests/autonomous-admission-20261014.tsv	4	0
+crates/bridgevm-hvf/src/virtio_gpu/interrupt/registers.rs	13	0
+crates/bridgevm-hvf/tests/virtio_gpu_msix.rs	123	0
+crates/bridgevm-hvf/tests/virtio_gpu_msix/platform.rs	72	0
+crates/bridgevm-hvf/tests/virtio_gpu_msix/support.rs	136	0

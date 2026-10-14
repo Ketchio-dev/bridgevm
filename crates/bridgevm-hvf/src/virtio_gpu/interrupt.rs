@@ -2,8 +2,7 @@
 
 use super::*;
 use crate::msix::MsixMessage;
-use crate::pcie::VIRTIO_GPU_MSIX_PBA_OFFSET;
-use crate::pcie::VIRTIO_GPU_MSIX_TABLE_OFFSET;
+mod registers;
 
 pub(crate) fn queue_bit(index: usize) -> Option<u8> {
     (index < u8::BITS as usize).then(|| 1u8 << index)
@@ -142,6 +141,9 @@ impl VirtioPciGpu {
         self.msix
             .drain_pending_into(function_enabled, function_masked, out);
         for message in &out[start..] {
+            if message.vector == self.gpu.config_msix_vector {
+                self.gpu.pending_config_change = false;
+            }
             self.clear_pending_queue_for_vector(message.vector);
         }
         self.raise_pending_msix_into(function_enabled, function_masked, out);
@@ -156,15 +158,5 @@ impl VirtioPciGpu {
                 }
             }
         }
-    }
-
-    pub(crate) fn msix_table_offset(&self, offset: u64) -> Option<u64> {
-        let rel = offset.checked_sub(u64::from(VIRTIO_GPU_MSIX_TABLE_OFFSET))?;
-        (rel < self.msix.table_byte_len()).then_some(rel)
-    }
-
-    pub(crate) fn msix_pba_offset(&self, offset: u64) -> Option<u64> {
-        let rel = offset.checked_sub(u64::from(VIRTIO_GPU_MSIX_PBA_OFFSET))?;
-        (rel < self.msix.pba_byte_len()).then_some(rel)
     }
 }
