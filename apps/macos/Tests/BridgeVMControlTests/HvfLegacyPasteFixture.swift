@@ -10,7 +10,7 @@ protocol HvfLegacyPasteFixture {}
 
 extension HvfLegacyPasteFixture {
     func withSession(_ body: (HvfEngineSession, URL) throws -> Void) throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = LibraryDeletionTestDirectory.temporary.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let config = HvfEngineConfig(targetDiskPath: "target", uefiVarsPath: "vars", evidenceDir: root.path,

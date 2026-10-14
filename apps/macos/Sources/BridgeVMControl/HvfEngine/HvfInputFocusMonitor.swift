@@ -10,7 +10,7 @@ final class HvfInputFocusMonitor {
         let expected = generation
         observer = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification,
                                                           object: window, queue: .main) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated { // Delivery is already on .main; do not defer target invalidation.
                 guard self?.generation == expected else { return }; onResign()
             }
         }

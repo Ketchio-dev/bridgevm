@@ -3624,7 +3624,7 @@ scripts/verify-signing-entitlements.py	40	0
 tests/integration/signing-entitlements-contract.py	108	0
 tests/fixtures/fake_import_guest_evidence.py	31	0
 tests/integration/t19-guest-evidence-contract.py	116	0
-apps/macos/Tests/BridgeVMControlTests/HvfInputFocusMonitorTests.swift	33	0
+apps/macos/Tests/BridgeVMControlTests/HvfInputFocusMonitorTests.swift	31	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFocusBindingTests.swift	63	0
 apps/macos/Sources/BridgeVMProductE2E/T17DisplayClickWait.swift	26	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17DisplayClickDeadlineTests.swift	53	0
@@ -4478,3 +4478,4 @@ docs/history/windows-hvf/autonomous-preservation-20261014.md	104	0
 docs/document-manifests/autonomous-preservation-20261014.tsv	4	0
 apps/macos/Sources/BridgeVMControl/LibraryRetainedControlsNavigation.swift	26	0
 apps/macos/Tests/BridgeVMControlTests/RetainedControlsNavigationTests.swift	108	0
+apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFocusAdmissionTests.swift	87	0

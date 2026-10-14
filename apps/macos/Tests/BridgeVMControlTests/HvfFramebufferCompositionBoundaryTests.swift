@@ -129,7 +129,7 @@ final class HvfFramebufferCompositionBoundaryTests: XCTestCase {
     }
 
     @MainActor private final class Fixture {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ime-boundary-" + UUID().uuidString)
+        let root = LibraryDeletionTestDirectory.temporary.appendingPathComponent("ime-boundary-" + UUID().uuidString)
         var session: HvfEngineSession!
         var view: FBLayerView!
         var hasGuestCommands: Bool {

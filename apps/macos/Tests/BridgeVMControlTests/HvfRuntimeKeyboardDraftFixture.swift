@@ -22,7 +22,7 @@ final class HvfRuntimeKeyboardDraftFixture {
     private let access = HvfKeyboardDraftAccess()
 
     init() throws {
-        root = FileManager.default.temporaryDirectory
+        root = LibraryDeletionTestDirectory.temporary
             .appendingPathComponent("keyboard-draft-" + UUID().uuidString)
         evidence = root.appendingPathComponent("evidence")
         control = root.appendingPathComponent("share/agent.ctl")
