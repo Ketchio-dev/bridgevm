@@ -20,9 +20,7 @@ struct HvfFramebufferView: NSViewRepresentable {
 
 final class FBLayerView: HvfFramebufferTextInput {
     private(set) weak var session: HvfEngineSession?
-    private var fileDescriptor: Int32 = -1
-    private var mappedPointer: UnsafeMutableRawPointer?
-    private var mappedLength = 0
+    private var framebufferMapping: HvfFramebufferMapping?
     private var guestSize: CGSize = .zero {
         didSet { if guestSize != oldValue { HvfDisplaySurfaceAccessibility.update(self, guestSize: guestSize) } }
     }
@@ -105,12 +103,15 @@ final class FBLayerView: HvfFramebufferTextInput {
             return
         }
 
-        guard ensureMapping(), let mappedPointer else {
+        guard ensureMapping(), let mapping = framebufferMapping else {
+            invalidateDisplay()
             return
         }
+        let mappedPointer = mapping.pointer, mappedLength = mapping.length
 
         let magic = readUInt32(from: mappedPointer, offset: 0)
         guard magic == 0x42564642 else {
+            resetMapping(); invalidateDisplay()
             return
         }
 
@@ -132,7 +133,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         let strideValue = readUInt32(from: mappedPointer, offset: 16)
 
         guard widthValue > 0, heightValue > 0, strideValue > 0 else {
-            resetMapping()
+            resetMapping(); invalidateDisplay()
             return
         }
 
@@ -143,7 +144,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         guard stride >= width * 4,
               mappedLength >= 64,
               height <= (mappedLength - 64) / stride else {
-            resetMapping()
+            resetMapping(); invalidateDisplay()
             return
         }
 
@@ -187,10 +188,12 @@ final class FBLayerView: HvfFramebufferTextInput {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        guard hasGuestSize else { return }
         pointerMoves.offer(point(event))
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard hasGuestSize else { return }
         let location = point(event)
         pointerMoves.offer(location)
         if let release = pointerRelease(at: location) { pointerCapture.updateRelease(release) }
@@ -337,75 +340,32 @@ final class FBLayerView: HvfFramebufferTextInput {
         return true
     }
 
-    private func ensureMapping() -> Bool {
-        if fileDescriptor < 0 || mappedPointer == nil {
-            return mapFramebuffer()
-        }
-
-        guard let currentLength = fileLength(fileDescriptor) else {
-            resetMapping()
-            return false
-        }
-
-        if currentLength != mappedLength {
-            resetMapping()
-            return mapFramebuffer()
-        }
-
-        return true
+    private func invalidateDisplay() {
+        guard hasGuestSize else { return }
+        pointerCapture.cancel()
+        cancelGuestInputTarget()
+        pointerMoves.reset()
+        guestSize = .zero
+        layer?.contents = nil
     }
 
-    private func mapFramebuffer() -> Bool {
-        guard let framebufferPath else {
-            return false
+    private func ensureMapping() -> Bool {
+        if let mapping = framebufferMapping {
+            guard let currentLength = mapping.currentLength(matching: framebufferPath) else {
+                resetMapping()
+                return false
+            }
+            if currentLength == mapping.length { return true }
+            resetMapping()
         }
-
-        let descriptor = HvfFramebufferFileIdentity.open(framebufferPath)
-        guard descriptor >= 0 else {
-            return false
-        }
-
-        guard let length = fileLength(descriptor), length >= 64 else {
-            Darwin.close(descriptor)
-            return false
-        }
-
-        guard let mapping = Darwin.mmap(
-            nil,
-            length,
-            PROT_READ,
-            MAP_SHARED,
-            descriptor,
-            0
-        ), mapping != MAP_FAILED else {
-            Darwin.close(descriptor)
-            return false
-        }
-
-        fileDescriptor = descriptor
-        mappedPointer = mapping
-        mappedLength = length
-        return true
+        guard let framebufferPath else { return false }
+        framebufferMapping = HvfFramebufferMapping(path: framebufferPath)
+        return framebufferMapping != nil
     }
 
     private func resetMapping() {
-        if let mappedPointer, mappedLength > 0 {
-            Darwin.munmap(mappedPointer, mappedLength)
-        }
-
-        mappedPointer = nil
-        mappedLength = 0
+        framebufferMapping = nil
         lastProcessedSeq = .max
-
-        if fileDescriptor >= 0 {
-            Darwin.close(fileDescriptor)
-            fileDescriptor = -1
-        }
     }
-
-    private func fileLength(_ descriptor: Int32) -> Int? {
-        HvfFramebufferFileIdentity.length(descriptor, matching: framebufferPath)
-    }
-
 }
 #endif

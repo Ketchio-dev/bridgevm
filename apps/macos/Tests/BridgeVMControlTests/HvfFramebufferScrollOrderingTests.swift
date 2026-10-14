@@ -10,7 +10,7 @@ final class HvfFramebufferScrollOrderingTests: XCTestCase {
     }
 
     func testScrollDoesNotReplayAnOlderCoalescedMoveAfterItsOwnPosition() throws {
-        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+        let root = LibraryDeletionTestDirectory.temporary.resolvingSymlinksInPath()
             .appendingPathComponent("scroll-order-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: root) }

@@ -19,7 +19,7 @@ final class HvfIOSurfaceDescriptorTests: XCTestCase {
     }
 
     func testLoadsBoundedSidecarFile() throws {
-        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+        let dir = LibraryDeletionTestDirectory.temporary
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
