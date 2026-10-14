@@ -2,7 +2,6 @@
 """Kill only one owned snapshot helper at a declared staged-read stop point."""
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import os
@@ -16,6 +15,7 @@ from a19_interrupt_stop_points import (STAGED_RESTORE, STOP_POINTS, StopPoint, h
                                        regular, selection, stable_root, staged_ready, staging)
 
 from a19_interrupt_observation import private_new, read_fd_observed
+from a19_interrupt_failure import FailedObservation
 
 LSOF = "/usr/sbin/lsof"
 
@@ -96,55 +96,41 @@ def run(helper: Path, snapshot: Path, disk: Path, vars: Path, output: Path,
 
     stdout = output / "interrupt-helper.stdout"
     stderr = output / "interrupt-helper.stderr"
-    with private_new(stdout, "wb") as out, private_new(stderr, "wb") as err:
-        child = subprocess.Popen(
-            helper_command(point, helper, snapshot, disk, vars, root),
-            cwd=helper.parent, env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C"},
-            stdout=out, stderr=err,
-        )
-        stopped = None
-        try:
-            stopped = stop_at_verified_stage(
-                child, point, stage, still_selected, time.monotonic() + timeout_seconds,
-                output / "interrupt-helper-fd.private.log",
+    with FailedObservation(output, point.name) as failure:
+        with private_new(stdout, "wb") as out, private_new(stderr, "wb") as err:
+            child = subprocess.Popen(
+                helper_command(point, helper, snapshot, disk, vars, root),
+                cwd=helper.parent, env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C"},
+                stdout=out, stderr=err,
             )
-        finally:
-            if getattr(child, "_a19_reaped", False):
-                code = child.returncode
-            else:
-                if child.poll() is None:
-                    child.kill()
-                code = child.wait(timeout=5)
-    after = selection(point, root, snapshot)
-    if stopped is None or code != -signal.SIGKILL or after != before:
-        raise RuntimeError("snapshot helper was not killed before publication")
-    with private_new(output / "interrupt-helper-context.private.json", "w") as context:
-        json.dump({"helper_pid": child.pid, "staged_disk_path": str(stage / "disk.raw"),
-                   "selection_before": before, "selection_after": after}, context)
-        context.write("\n")
-    stopped["helper_killed_and_reaped"] = True
-    return stopped
+            failure.child = child
+            stopped = None
+            try:
+                stopped = stop_at_verified_stage(
+                    child, point, stage, still_selected, time.monotonic() + timeout_seconds,
+                    output / "interrupt-helper-fd.private.log",
+                )
+            finally:
+                if getattr(child, "_a19_reaped", False):
+                    code = child.returncode
+                else:
+                    if child.poll() is None:
+                        child.kill()
+                    code = child.wait(timeout=5)
+        after = selection(point, root, snapshot)
+        if stopped is None or code != -signal.SIGKILL or after != before:
+            raise RuntimeError("snapshot helper was not killed before publication")
+        with private_new(output / "interrupt-helper-context.private.json", "w") as context:
+            json.dump({"helper_pid": child.pid, "staged_disk_path": str(stage / "disk.raw"),
+                       "selection_before": before, "selection_after": after}, context)
+            context.write("\n")
+        stopped["helper_killed_and_reaped"] = True
+        return stopped
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("helper", type=Path)
-    parser.add_argument("snapshot", type=Path)
-    parser.add_argument("disk", type=Path)
-    parser.add_argument("vars", type=Path)
-    parser.add_argument("output", type=Path)
-    parser.add_argument("--deadline", type=int, default=300)
-    parser.add_argument("--stop-point", choices=sorted(STOP_POINTS), default=STAGED_RESTORE.name)
-    args = parser.parse_args()
-    if not 1 <= args.deadline <= 300:
-        parser.error("deadline must be 1..300 seconds")
-    result = run(args.helper, args.snapshot, args.disk, args.vars,
-                 args.output, args.deadline, args.stop_point)
-    result_path = args.output / "interrupt-observation.json"
-    with private_new(result_path, "w") as out:
-        json.dump(result, out, sort_keys=True)
-        out.write("\n")
-    return 0
+    from a19_interrupt_child_cli import main as cli_main
+    return cli_main(run)
 
 
 if __name__ == "__main__":
