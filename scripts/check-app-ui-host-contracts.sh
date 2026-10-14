@@ -21,7 +21,7 @@ fi
 python3 "$repo_root/scripts/app_ui_host_contract_discovery.py" "$record/discovery.txt"
 swift test --package-path "$repo_root/apps/macos" --scratch-path "$scratch_path" \
   -Xswiftc -DBRIDGEVM_APP_UI_HOST --skip-build \
-  --filter 'BridgeVMAppUIHostTests[.]AppUIHostContractTests|BridgeVMControlTests[.]AppUIInstallCancelFixtureTests' 2>&1 | tee "$record/tests.log"
+  --filter 'BridgeVMAppUIHostTests[.](AppUIHostContractTests|AppUIInstallCancelFixtureTests)' 2>&1 | tee "$record/tests.log"
 swift build --package-path "$repo_root/apps/macos" --scratch-path "$scratch_path" \
   -Xswiftc -DBRIDGEVM_APP_UI_HOST --show-bin-path > "$record/bin-path.txt"
 host_binary="$(cat "$record/bin-path.txt")/BridgeVMControl"
