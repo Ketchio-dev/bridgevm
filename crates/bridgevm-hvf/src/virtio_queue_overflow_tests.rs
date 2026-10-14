@@ -1,9 +1,4 @@
-use crate::{
-    fwcfg::GuestMemoryMut,
-    virtio_console::VirtioConsole,
-    virtio_gpu::VirtioGpu,
-    virtio_net::{LoopbackTestBackend, VirtioNet},
-};
+use crate::{fwcfg::GuestMemoryMut, virtio_console::VirtioConsole, virtio_gpu::VirtioGpu};
 struct Unmapped;
 impl GuestMemoryMut for Unmapped {
     fn write_bytes(&mut self, _: u64, _: &[u8]) -> bool {
@@ -12,16 +7,6 @@ impl GuestMemoryMut for Unmapped {
     fn read_bytes(&self, _: u64, _: usize) -> Option<Vec<u8>> {
         None
     }
-}
-#[test]
-fn net_overflowing_driver_base_refuses_without_panicking() {
-    let mut dev = VirtioNet::new(LoopbackTestBackend::default());
-    dev.queues[1].ready = true;
-    dev.queues[1].size = 1;
-    dev.queues[1].desc = 16;
-    dev.queues[1].driver = u64::MAX;
-    dev.process_tx_queue(&mut Unmapped);
-    assert_eq!(dev.queues[1].last_avail_idx, 0);
 }
 #[test]
 fn console_overflowing_driver_base_refuses_without_panicking() {
@@ -104,3 +89,6 @@ fn queue_size_clamps_before_narrowing() {
 
 #[path = "virtio_queue_publication_tests.rs"]
 mod publication_tests;
+
+#[path = "virtio_queue_net_ready_tests.rs"]
+mod net_ready_tests;

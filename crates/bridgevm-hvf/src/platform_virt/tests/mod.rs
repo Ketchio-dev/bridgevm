@@ -2,6 +2,7 @@
 
 mod hda_corb_interrupt;
 mod helpers;
+mod net_ready;
 mod part_1;
 mod part_2;
 mod part_2_2;

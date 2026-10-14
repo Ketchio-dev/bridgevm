@@ -2,6 +2,7 @@
 
 use super::super::*;
 use super::helpers::*;
+use super::ready_queue::setup_ready_queue;
 use crate::msix::MsixMessage;
 
 #[test]
@@ -70,7 +71,7 @@ fn rx_read_only_interior_descriptor_rejects_before_first_buffer_write() {
     let last = 0x4000_4200;
     let frame = b"split-rx-frame";
 
-    setup_queue(&mut dev, &mut mem, QUEUE_RX as u16, table, avail, used, 0);
+    setup_ready_queue(&mut dev, &mut mem, QUEUE_RX as u16, table, avail, used, 0);
     program_msix_vector(&mut dev, 0, 0xfee0_0000, 0x50);
     write_desc(&mut mem, table, 0, first, 8, DESC_F_WRITE | DESC_F_NEXT, 1);
     write_desc(&mut mem, table, 1, middle, 4, DESC_F_WRITE | DESC_F_NEXT, 2);

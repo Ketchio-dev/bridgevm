@@ -1,5 +1,6 @@
 use super::super::*;
 use super::helpers::*;
+use super::ready_queue::setup_ready_queue;
 
 #[test]
 fn net_tx_queue_caps_malformed_avail_delta_at_queue_size() {
@@ -10,7 +11,7 @@ fn net_tx_queue_caps_malformed_avail_delta_at_queue_size() {
     let used = 0x4000_3000;
     let queue_size = 8u16;
 
-    setup_queue(&mut dev, &mut mem, QUEUE_TX as u16, desc, avail, used, 1);
+    setup_ready_queue(&mut dev, &mut mem, QUEUE_TX as u16, desc, avail, used, 1);
     mem.write(avail + 2, &queue_size.wrapping_add(1).to_le_bytes());
 
     pci_write(&mut dev, PCI_NOTIFY_CFG_OFFSET + 4, 4, 0, &mut mem);

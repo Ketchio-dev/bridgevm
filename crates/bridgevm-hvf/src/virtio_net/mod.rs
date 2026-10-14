@@ -10,6 +10,7 @@ mod pci_transport;
 mod protocol;
 mod queue_pending;
 mod register_codec;
+mod rx_delivery;
 mod snapshot;
 mod transport_regs;
 mod tx_gather;
