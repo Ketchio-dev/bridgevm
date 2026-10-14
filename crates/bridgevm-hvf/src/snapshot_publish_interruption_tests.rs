@@ -148,7 +148,7 @@ fn hard_exit_around_generation_swap_selects_one_complete_generation() {
             "{scenario} must leave the unselected generation at the staging name"
         );
 
-        recovery::retry(&mut pair, &g2, &root);
+        recovery::retry(&mut pair, &g2, &root, scenario == "before-swap");
         assert_eq!(contents(&pair), owned(G2), "retry after {scenario}");
         assert!(!root.join("staging").exists(), "debris after {scenario}");
         drop(pair);

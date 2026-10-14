@@ -3,9 +3,9 @@
 use crate::snapshot_pair::managed::LockedPair;
 use std::{fs, path::Path};
 
-pub(super) fn retry(pair: &mut LockedPair, snapshot: &Path, root: &Path) {
+pub(super) fn retry(pair: &mut LockedPair, snapshot: &Path, root: &Path, sealed: bool) {
     let staged = root.join("staging");
-    if staged.join("manifest.json").exists() {
+    if !sealed {
         let read = || {
             ["disk.raw", "vars.fd", "manifest.json"].map(|name| fs::read(staged.join(name)).ok())
         };
@@ -16,8 +16,7 @@ pub(super) fn retry(pair: &mut LockedPair, snapshot: &Path, root: &Path) {
         assert_eq!(read(), before);
         assert_eq!(pair.paths().unwrap(), selected);
         let preserved = root.with_file_name("preserved-complete-staging");
-        fs::rename(&staged, preserved)
-            .expect("simulate explicit user move outside managed storage");
+        fs::rename(&staged, preserved).unwrap();
     }
     pair.restore(snapshot)
         .expect("retry after explicit staging resolution");

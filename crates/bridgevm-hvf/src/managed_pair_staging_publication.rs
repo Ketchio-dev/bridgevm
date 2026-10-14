@@ -11,9 +11,11 @@ impl StageOwner {
         destination: &Path,
         publish: impl FnOnce(&Path, &Path) -> io::Result<()>,
     ) -> io::Result<()> {
-        publish(&self.path, destination).inspect_err(|_| self.clear())
+        self.finish_publication(publish(&self.path, destination))
     }
 }
+#[path = "managed_pair_staging_publication_result.rs"]
+mod result;
 #[cfg(test)]
 #[path = "managed_pair_staging_publication_tests.rs"]
 mod tests;
