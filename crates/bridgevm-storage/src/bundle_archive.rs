@@ -26,7 +26,7 @@ pub(crate) fn export_bundle_tar(
         serde_json::to_string_pretty(metadata)?,
     )?;
 
-    let file = fs::File::create(output)?;
+    let file = crate::export_destination::create_tar(output)?;
     let mut builder = tar::Builder::new(file);
     builder.append_dir_all(".", &staging)?;
     builder.finish()?;

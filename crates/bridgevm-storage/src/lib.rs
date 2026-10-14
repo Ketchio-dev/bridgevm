@@ -22,6 +22,7 @@ mod disk_metadata;
 mod disk_operations;
 mod disk_preparation;
 mod error;
+mod export_destination;
 mod guest_tools_metadata;
 mod guest_tools_store;
 mod import_image_info;

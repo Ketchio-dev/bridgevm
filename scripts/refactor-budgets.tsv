@@ -1045,7 +1045,7 @@ crates/bridgevm-storage/src/tests_split/part_3_3.rs	556	0
 crates/bridgevm-storage/src/vm_clone.rs	235	0
 crates/bridgevm-storage/src/vm_registry.rs	65	0
 crates/bridgevm-storage/src/vm_delete.rs	28	0
-crates/bridgevm-storage/src/vm_transfer.rs	89	0
+crates/bridgevm-storage/src/vm_transfer.rs	87	0
 fuzz/src/lib.rs	55	0
 fuzz/src/bin/smoke.rs	78	0
 crates/bridgevm-hvf/tests/loom_psci.rs	94	0
@@ -4578,3 +4578,7 @@ apps/macos/Tests/BridgeVMControlTests/ReservedCloneGenericFixture.swift	94	0
 apps/macos/Tests/BridgeVMControlTests/ReservedCloneLifetimeTests.swift	142	0
 docs/history/windows-hvf/autonomous-reservations-20261014.md	130	0
 docs/document-manifests/autonomous-reservations-20261014.tsv	4	0
+crates/bridgevm-cli/tests/cli_export_preservation.rs	43	0
+crates/bridgevm-cli/tests/support/export_preservation.rs	127	0
+crates/bridgevm-storage/src/export_destination.rs	21	0
+crates/bridgevm-storage/src/tests_split/export_destination.rs	138	0

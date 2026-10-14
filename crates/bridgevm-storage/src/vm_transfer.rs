@@ -20,9 +20,7 @@ impl VmStore {
                 output,
             });
         }
-        if output.exists() {
-            return Err(StorageError::ExportAlreadyExists(output));
-        }
+        crate::export_destination::ensure_absent(&output)?;
         let archive_format = if is_tar_path(&output) {
             "tar"
         } else if is_unsupported_archive_path(&output) {
