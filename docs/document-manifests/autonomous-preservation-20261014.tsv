@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/a19-t20-r6-20260925.md	current	windows-storage	-
+docs/windows-arm/evidence/a19-t22-r1-20260925.md	historical-evidence	windows-storage	STATUS.md
+docs/history/windows-hvf/autonomous-preservation-20261014.md	historical-evidence	windows-reliability	-

@@ -1,4 +1,5 @@
 path	class	topic	superseded_by
+@include	docs/document-manifests/autonomous-preservation-20261014.tsv	-	-
 @include	docs/document-manifests/history.tsv	-	-
 @include	docs/document-manifests/a19-continuation-safety.tsv	-	-
 @include	docs/document-manifests/hvf-creation-publication-outcome.tsv	-	-
@@ -129,9 +130,7 @@ docs/windows-arm/evidence/a9-stale-code-requirement-20260911.md	current	a9-code-
 @include	docs/document-manifests/autonomous-reliability-20261014.tsv	-	-
 @include	docs/document-manifests/native-fixture-apfs-identity.tsv	-	-
 @include	docs/document-manifests/native-app-cli.tsv	-	-
-docs/windows-arm/evidence/a19-t20-r6-20260925.md	current	windows-storage	-
 @include	docs/document-manifests/live-storage-admission.tsv	-	-
-docs/windows-arm/evidence/a19-t22-r1-20260925.md	historical-evidence	windows-storage	STATUS.md
 docs/windows-arm/evidence/a19-t20-r7-20260929.md	current	windows-storage	-
 docs/windows-arm/evidence/a19-t20-r8-20260930.md	current	windows-storage	-
 @include	docs/document-manifests/live-worker-lock-quoting.tsv	-	-
