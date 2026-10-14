@@ -4732,3 +4732,4 @@ tests/integration/t12-sealed-runtime-contract.py	71	0
 tests/integration/t12-sealed-worker-contract.py	58	0
 tests/integration/t12_sealed_runtime_fixture.py	59	0
 tests/integration/t12_sealed_test_support.py	64	0
+apps/macos/Tests/BridgeVMControlTests/CreateUbuntuTemplateTests.swift	112	0
