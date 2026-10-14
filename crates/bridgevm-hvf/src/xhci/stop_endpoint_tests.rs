@@ -4,6 +4,8 @@ use super::test_support::{
     DOORBELL_BASE, ENABLE_SLOT_ID, EVENT_RING, TRB_SIZE, TRB_TYPE_ADDRESS_DEVICE,
 };
 use super::*;
+#[path = "ep0_restart_tests.rs"]
+mod ep0_restart_tests;
 
 const DCBAA: u64 = 0x4000;
 const INPUT_CONTEXT: u64 = 0x5000;

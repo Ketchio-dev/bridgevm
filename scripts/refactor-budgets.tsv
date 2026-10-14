@@ -714,6 +714,8 @@ crates/bridgevm-hvf/src/xhci/trace_tests.rs	84	0
 crates/bridgevm-hvf/src/xhci/transfer_prefix_tests.rs	116	0
 crates/bridgevm-hvf/src/xhci/transfer_tests.rs	419	0
 crates/bridgevm-hvf/src/xhci/transfers.rs	41	0
+crates/bridgevm-hvf/src/xhci/transfers/ep0_resume.rs	25	0
+crates/bridgevm-hvf/src/xhci/ep0_restart_tests.rs	134	0
 crates/bridgevm-hvf/src/xhci/transfers/completion.rs	240	0
 crates/bridgevm-hvf/src/xhci/transfers/control.rs	270	0
 crates/bridgevm-hvf/src/xhci/transfers/control_data.rs	16	0

@@ -6,6 +6,7 @@ mod completion;
 mod control;
 mod control_data;
 mod control_setup;
+mod ep0_resume;
 mod trb;
 
 const DOORBELL_BASE: u64 = 0x2000;
@@ -39,7 +40,7 @@ impl XhciController {
             return false;
         }
         match target {
-            ENDPOINT_ID_EP0 => self.process_ep0_control_transfer(mem),
+            ENDPOINT_ID_EP0 => self.process_ep0_doorbell(mem),
             ENDPOINT_ID_DCI3 => self.process_dci3_interrupt_in_transfer_after_doorbell(mem),
             ENDPOINT_ID_DCI5 => self.process_dci5_interrupt_in_transfer_after_doorbell(mem),
             _ => false,
