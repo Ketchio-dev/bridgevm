@@ -2538,7 +2538,7 @@ apps/macos/Sources/BridgeVMControl/LibraryAppearance.swift	54	0
 apps/macos/Sources/BridgeVMControl/LibrarySidebarChrome.swift	56	0
 apps/macos/Sources/BridgeVMControl/LibraryVMCard.swift	86	0
 apps/macos/Sources/BridgeVMControl/LibraryOverviewView.swift	80	0
-apps/macos/Sources/BridgeVMControl/LibraryWorkspaceList.swift	161	0
+apps/macos/Sources/BridgeVMControl/LibraryWorkspaceList.swift	160	0
 apps/macos/Sources/BridgeVMControl/LibraryDashboardDetail.swift	244	0
 apps/macos/Sources/BridgeVMControl/LibraryVMContextMenu.swift	37	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeHeader.swift	43	0
@@ -2586,7 +2586,7 @@ apps/macos/Sources/BridgeVMControl/BridgeVMControlAppModel.swift	11	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlMain.swift	27	0
 apps/macos/Sources/BridgeVMControl/CreateVMResourceSummary.swift	19	0
 apps/macos/Sources/BridgeVMControl/CreateWindowsInstallFields.swift	49	0
-apps/macos/Sources/BridgeVMControl/LibraryIssuesSection.swift	53	0
+apps/macos/Sources/BridgeVMControl/LibraryIssuesSection.swift	41	0
 apps/macos/Tests/BridgeVMAppUIHostTests/AppUIHostContractTests.swift	96	0
 apps/macos/scripts/AppUIHostLaunchOwnership.swift	135	0
 apps/macos/scripts/LaunchAppUIHost.swift	216	0
@@ -4479,3 +4479,5 @@ docs/document-manifests/autonomous-preservation-20261014.tsv	4	0
 apps/macos/Sources/BridgeVMControl/LibraryRetainedControlsNavigation.swift	26	0
 apps/macos/Tests/BridgeVMControlTests/RetainedControlsNavigationTests.swift	108	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFocusAdmissionTests.swift	87	0
+apps/macos/Sources/BridgeVMControl/LibraryIssuesDetails.swift	35	0
+apps/macos/Tests/BridgeVMControlTests/LibraryWarningNavigationTests.swift	58	0
