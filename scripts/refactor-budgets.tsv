@@ -1325,7 +1325,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfBoundedLogReadTests.swift	41	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMIdentityLifecycle.swift	451	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMLifecycleCommand.swift	368	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMStateSecurity.swift	181	0
-apps/macos/Sources/BridgeVMControl/LibraryModel.swift	171	0
+apps/macos/Sources/BridgeVMControl/LibraryModel.swift	164	0
 apps/macos/Sources/BridgeVMControl/VMLibrary.swift	164	0
 apps/macos/Sources/BridgeVMControl/VMLibraryInternalEntries.swift	13	0
 apps/macos/Tests/BridgeVMControlTests/LibraryCacheInventoryTests.swift	49	0
@@ -4523,7 +4523,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfFramebufferLossInputTests.swift	89	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportAliasAdmissionTests.swift	189	0
 apps/macos/Sources/BridgeVMControl/LibraryModelFileActionAdmission.swift	13	0
 apps/macos/Tests/BridgeVMControlTests/GenericOwnedRuntimeTests.swift	117	0
-apps/macos/Sources/BridgeVMControl/LibraryModelGenericControlAdmission.swift	69	0
+apps/macos/Sources/BridgeVMControl/LibraryModelGenericControlAdmission.swift	63	0
 apps/macos/Sources/BridgeVMControl/GenericOwnedProcessLauncher.swift	33	0
 apps/macos/Sources/BridgeVMControl/FastVZLaunchDefinition.swift	24	0
 apps/macos/Tests/BridgeVMControlTests/GenericOwnedLaunchPlanTests.swift	128	0
@@ -4554,3 +4554,6 @@ crates/bridgevm-storage/tests/import_literal_names.rs	170	0
 crates/bridgevm-hvf/src/virtio_blk/pci_register_map.rs	20	0
 crates/bridgevm-hvf/tests/virtio_blk_isr.rs	141	0
 crates/bridgevm-hvf/tests/virtio_blk_isr/support.rs	179	0
+apps/macos/Sources/BridgeVMControl/LibraryModelControlModels.swift	25	0
+apps/macos/Tests/BridgeVMControlTests/RegisteredGenericCloneActivityTests.swift	111	0
+apps/macos/Tests/BridgeVMControlTests/RegisteredGenericCloneAdmissionTests.swift	54	0

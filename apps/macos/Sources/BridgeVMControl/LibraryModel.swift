@@ -32,14 +32,7 @@ final class LibraryModel: ObservableObject {
     let retainedControlStore = LibraryRetainedControlStore()
     func runningModels() -> [ControlModel] { vms.compactMap { modelCache[$0.slug] }.filter { $0.running } }
     var rootURL: URL { libraryRoot }
-    func hasAcceptedControlOperation(for slug: String) -> Bool { modelCache[slug]?.hasAcceptedOperation == true || modelCache[slug]?.ownedRuntime?.snapshot.phase == .stopping }
-    func hasActiveOwnedControlRuntime(for slug: String) -> Bool { modelCache[slug]?.ownedRuntime?.snapshot.isActive == true }
-    func hasMismatchedCachedControlConfiguration(for cfg: VMConfig) -> Bool {
-        modelCache[cfg.slug].map { $0.config != cfg } ?? false
-    }
-    func ownsControlModel(_ model: ControlModel, for config: VMConfig) -> Bool {
-        modelCache[config.slug] === model && model.config == config
-    }
+    var cachedControlModels: [String: ControlModel] { modelCache }
 
     init(
         rootURL: URL = VMLibrary.root,

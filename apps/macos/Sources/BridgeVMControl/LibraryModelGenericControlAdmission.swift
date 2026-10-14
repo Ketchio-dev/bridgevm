@@ -16,7 +16,12 @@ extension LibraryModel {
     }
 
     func genericRetainedFileRefusal(for config: VMConfig, action: LibraryFileAction) -> String? {
-        if action == .clone, let refusal = genericRetainedWorkRefusal(for: config) { return refusal }
+        if action == .clone {
+            if let refusal = genericRetainedWorkRefusal(for: config) { return refusal }
+            if activeCachedGenericConfigurations.contains(where: { GenericRuntimeAssetReferences.overlaps($0, config) }) {
+                return "VM 제어가 이 항목의 파일을 사용 중입니다. 기존 실행과 작업이 완전히 끝난 뒤 다시 시도하세요."
+            }
+        }
         let affected = action == .deletion ? rootURL.appendingPathComponent(config.slug)
             : URL(fileURLWithPath: config.bundlePath)
         guard activeGenericControls.contains(where: {
@@ -54,16 +59,5 @@ private enum GenericRuntimeAssetReferences {
                 HvfPendingDeletionReferences.references(config: source, removedEntry: URL(fileURLWithPath: $0))
             }
         }
-    }
-}
-
-extension LibraryModel {
-    func bindControlModel(_ model: ControlModel) -> ControlModel {
-        model.workAdmission = boundWorkAdmission(slug: model.config.slug) { [weak model] owner, current in
-            model.map { owner.ownsControlModel($0, for: current) } ?? false
-        }
-        model.legacyStopAdmission = legacyStopAdmission(for: model)
-        model.onConfigurationPersisted = { [weak self] in self?.reload() }
-        return model
     }
 }
