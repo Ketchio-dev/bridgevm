@@ -1277,7 +1277,7 @@ apps/macos/Sources/BridgeVMControl/CommandPalette.swift	56	0
 apps/macos/Sources/BridgeVMControl/ContentView.swift	284	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	254	0
 apps/macos/Sources/BridgeVMControl/CreateVM.swift	425	0
-apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	116	0
+apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	115	0
 apps/macos/Sources/BridgeVMControl/FirstRunView.swift	60	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
@@ -4520,3 +4520,4 @@ apps/macos/Tests/BridgeVMControlTests/HvfFramebufferAvailabilityFixture.swift	60
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferAvailabilityTests.swift	58	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferCachedFrameTests.swift	60	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferLossInputTests.swift	89	0
+apps/macos/Tests/BridgeVMControlTests/FirstRunImportAliasAdmissionTests.swift	189	0

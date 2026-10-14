@@ -68,8 +68,8 @@ enum FirstRunImport {
             return .diskMissing(inputs.diskPath)
         }
         if isDir.boolValue { return .diskNotAFile(inputs.diskPath) }
-        let diskBytes = (try? fileManager.attributesOfItem(atPath: inputs.diskPath)[.size]
-            as? NSNumber)?.uint64Value ?? 0
+        let diskBytes = (try? fileManager.attributesOfItem(atPath:
+            URL(fileURLWithPath: inputs.diskPath).resolvingSymlinksInPath().path)[.size] as? NSNumber)?.uint64Value ?? 0
         if diskBytes == 0 { return .diskEmpty(inputs.diskPath) }
         if let format = HvfImportedDiskFormat.detect(path: inputs.diskPath) { return .unsupportedDiskFormat(format) }
 
@@ -79,8 +79,8 @@ enum FirstRunImport {
         else {
             return .varsMissing(inputs.varsPath)
         }
-        let varsBytes = (try? fileManager.attributesOfItem(atPath: inputs.varsPath)[.size]
-            as? NSNumber)?.uint64Value ?? 0
+        let varsBytes = (try? fileManager.attributesOfItem(atPath:
+            URL(fileURLWithPath: inputs.varsPath).resolvingSymlinksInPath().path)[.size] as? NSNumber)?.uint64Value ?? 0
         if varsBytes != requiredVarsBytes {
             return .varsWrongSize(path: inputs.varsPath, bytes: varsBytes)
         }
