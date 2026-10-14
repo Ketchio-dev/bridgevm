@@ -45,7 +45,7 @@ extension LibraryModel {
     }
 }
 
-private enum GenericRuntimeAssetReferences {
+enum GenericRuntimeAssetReferences {
     static func mayAffect(_ config: VMConfig, path: URL) -> Bool {
         HvfPendingDeletionReferences.references(config: config, removedEntry: path)
             || (!config.bundlePath.isEmpty && LibraryDeletionPathReference.mayReference(path.path,

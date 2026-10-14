@@ -18,7 +18,7 @@ final class LibraryModel: ObservableObject {
     @Published var operationError: String?
     @Published var firstRunImport = FirstRunImportProgress()
     @Published private(set) var deletingSlugs: Set<String> = []
-    @Published private(set) var cloningSlugs: Set<String> = []
+    @Published private(set) var cloningConfigurations: [String: VMConfig] = [:]
     @Published private(set) var movingSlugs: Set<String> = []
     @Published private(set) var libraryIssues: [VMLibraryIssue] = []
     private var modelCache: [String: ControlModel] = [:]
@@ -102,7 +102,8 @@ final class LibraryModel: ObservableObject {
         }
     }
 
-    func cloneWindowsHVF(_ cfg: VMConfig, name: String) {
+    func cloneWindowsHVF(_ cfg: VMConfig, name: String,
+                         operation: @escaping LibraryCloneOperation = HvfProtectedTransfers.clone) {
         pendingWindowsClone = nil
         guard admitLibraryAction(cfg, action: .clone) else { return }
         guard !cloningSlugs.contains(cfg.slug) else { return }
@@ -111,16 +112,12 @@ final class LibraryModel: ObservableObject {
             cloneError = "실행 중인 VM은 복제할 수 없습니다. 먼저 완전히 정지하세요."
             return
         }
-        cloningSlugs.insert(cfg.slug)
+        cloningConfigurations[cfg.slug] = cfg
         let libraryRoot = self.libraryRoot
         actionScheduler {
-            let clone = HvfProtectedTransfers.clone(
-                name: name,
-                template: cfg,
-                libraryRoot: libraryRoot
-            )
+            let clone = operation(name, cfg, libraryRoot)
             await MainActor.run {
-                self.cloningSlugs.remove(cfg.slug)
+                self.cloningConfigurations[cfg.slug] = nil
                 if let clone {
                     self.reload()
                     self.selectedID = clone.slug

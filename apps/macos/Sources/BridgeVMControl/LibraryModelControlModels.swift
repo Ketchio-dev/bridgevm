@@ -15,9 +15,7 @@ extension LibraryModel {
 
 extension LibraryModel {
     func bindControlModel(_ model: ControlModel) -> ControlModel {
-        model.workAdmission = boundWorkAdmission(slug: model.config.slug) { [weak model] owner, current in
-            model.map { owner.ownsControlModel($0, for: current) } ?? false
-        }
+        model.workAdmission = controlWorkAdmission(for: model)
         model.legacyStopAdmission = legacyStopAdmission(for: model)
         model.onConfigurationPersisted = { [weak self] in self?.reload() }
         return model

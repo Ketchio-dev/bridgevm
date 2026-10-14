@@ -1325,7 +1325,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfBoundedLogReadTests.swift	41	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMIdentityLifecycle.swift	451	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMLifecycleCommand.swift	368	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMStateSecurity.swift	181	0
-apps/macos/Sources/BridgeVMControl/LibraryModel.swift	164	0
+apps/macos/Sources/BridgeVMControl/LibraryModel.swift	161	0
 apps/macos/Sources/BridgeVMControl/VMLibrary.swift	164	0
 apps/macos/Sources/BridgeVMControl/VMLibraryInternalEntries.swift	13	0
 apps/macos/Tests/BridgeVMControlTests/LibraryCacheInventoryTests.swift	49	0
@@ -4554,7 +4554,7 @@ crates/bridgevm-storage/tests/import_literal_names.rs	170	0
 crates/bridgevm-hvf/src/virtio_blk/pci_register_map.rs	20	0
 crates/bridgevm-hvf/tests/virtio_blk_isr.rs	141	0
 crates/bridgevm-hvf/tests/virtio_blk_isr/support.rs	179	0
-apps/macos/Sources/BridgeVMControl/LibraryModelControlModels.swift	25	0
+apps/macos/Sources/BridgeVMControl/LibraryModelControlModels.swift	23	0
 apps/macos/Tests/BridgeVMControlTests/RegisteredGenericCloneActivityTests.swift	111	0
 apps/macos/Tests/BridgeVMControlTests/RegisteredGenericCloneAdmissionTests.swift	54	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunOptionalRecoveryFixture.swift	75	0
@@ -4572,3 +4572,7 @@ crates/bridgevm-storage/src/tests_split/clone_output.rs	145	0
 apps/macos/Tests/BridgeVMControlTests/InstallCancellationButtonProbe.swift	42	0
 apps/macos/Tests/BridgeVMControlTests/RetainedInstallCancellationFixture.swift	97	0
 apps/macos/Tests/BridgeVMControlTests/RetainedInstallCancellationTests.swift	69	0
+apps/macos/Sources/BridgeVMControl/LibraryModelCloneAdmission.swift	24	0
+apps/macos/Tests/BridgeVMControlTests/ReservedCloneGenericAdmissionTests.swift	54	0
+apps/macos/Tests/BridgeVMControlTests/ReservedCloneGenericFixture.swift	94	0
+apps/macos/Tests/BridgeVMControlTests/ReservedCloneLifetimeTests.swift	142	0
