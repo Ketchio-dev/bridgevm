@@ -145,7 +145,7 @@ fn insufficient_post_reclaim_capacity_preserves_original_or_current_pair() {
                 .restore(&snapshot)
                 .unwrap();
         }
-        crash_restore("before-publish", BEFORE_EXIT, &disk, &vars, &snapshot);
+        crash_incomplete_restore(&disk, &vars, &snapshot);
         let mut pair = LockedPair::open(&disk, &vars).unwrap();
         let paths = pair.paths().unwrap();
         let old = contents(&pair);
@@ -198,7 +198,7 @@ fn initial_capacity_refusal_does_not_create_managed_storage() {
 #[test]
 fn unknown_capacity_still_allows_retry_after_reclaim() {
     let (_scratch, disk, vars, snapshot) = fixture("managed-retry-unknown-space");
-    crash_restore("before-publish", BEFORE_EXIT, &disk, &vars, &snapshot);
+    crash_incomplete_restore(&disk, &vars, &snapshot);
     let mut pair = LockedPair::open(&disk, &vars).unwrap();
     let staged = pair.root.join("staging");
     pair.restore_with_capacity(

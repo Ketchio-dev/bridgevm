@@ -2182,7 +2182,7 @@ docs/windows-arm/evidence/a19-restore-boot-20260912.md	66	0
 docs/windows-arm/evidence/a19-restore-atomicity-defect-20260912.md	49	0
 crates/bridgevm-hvf/src/snapshot_publish.rs	68	0
 crates/bridgevm-hvf/src/snapshot_publish_tests.rs	81	0
-crates/bridgevm-hvf/src/snapshot_publish_interruption_tests.rs	157	0
+crates/bridgevm-hvf/src/snapshot_publish_interruption_tests.rs	156	0
 crates/bridgevm-hvf/src/media_lease.rs	107	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_media_lease.rs	21	0
 crates/bridgevm-hvf/src/managed_pair.rs	72	0
@@ -2190,7 +2190,7 @@ crates/bridgevm-hvf/src/managed_pair_tests.rs	128	0
 crates/bridgevm-hvf/src/managed_pair_interruption_tests.rs	109	0
 crates/bridgevm-hvf/src/managed_pair_init_interruption_tests.rs	128	0
 crates/bridgevm-hvf/src/managed_pair_init_debris_tests.rs	79	0
-crates/bridgevm-hvf/src/managed_pair_staging_interruption_tests.rs	112	0
+crates/bridgevm-hvf/src/managed_pair_staging_interruption_tests.rs	97	0
 crates/bridgevm-hvf/src/managed_pair_export_tests.rs	43	0
 crates/bridgevm-hvf/src/managed_pair_layout.rs	62	1
 crates/bridgevm-hvf/src/managed_pair_init.rs	45	0
@@ -4420,3 +4420,11 @@ apps/macos/Sources/BridgeVMControl/LibraryModelClipboardSyncRebind.swift	29	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardSyncPreferenceSaveTests.swift	161	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardSyncPreferenceTests.swift	172	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardSyncImportedPreferenceTests.swift	41	0
+crates/bridgevm-hvf/src/managed_pair_staging_admission.rs	22	0
+crates/bridgevm-hvf/src/managed_pair_staging_contents.rs	31	0
+crates/bridgevm-hvf/src/managed_pair_staging_contents_tests.rs	37	0
+crates/bridgevm-hvf/src/managed_pair_staging_publication.rs	12	0
+crates/bridgevm-hvf/src/managed_pair_staging_publication_tests.rs	45	0
+crates/bridgevm-hvf/src/managed_pair_staging_recovery_test_support.rs	59	0
+crates/bridgevm-hvf/src/snapshot_preserved_staging_test_support.rs	21	0
+crates/bridgevm-hvf/tests/managed_staging_export.rs	112	0

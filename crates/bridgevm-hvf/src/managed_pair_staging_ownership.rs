@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub(super) struct StageOwner {
+pub(in crate::snapshot_pair::managed::restore) struct StageOwner {
     path: PathBuf,
     identity: (u64, u64),
 }
@@ -43,6 +43,8 @@ impl StageOwner {
     }
 }
 
+#[path = "managed_pair_staging_publication.rs"]
+mod publication;
 #[cfg(test)]
 #[path = "managed_pair_staging_ownership_tests.rs"]
 mod tests;

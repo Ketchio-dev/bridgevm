@@ -1,11 +1,13 @@
+use super::staging_recovery_test_support::{
+    crash_restore, retry_after_explicit_staging_resolution,
+};
 use super::*;
 use crate::snapshot_pair::{copy_and_sync, create_snapshot, snapshot_pair_tests::Scratch};
-use std::process::Command;
 
-const SCENARIO_ENV: &str = "BRIDGEVM_TEST_MANAGED_PAIR_STAGING_CRASH";
-const DISK_ENV: &str = "BRIDGEVM_TEST_MANAGED_PAIR_STAGING_DISK";
-const VARS_ENV: &str = "BRIDGEVM_TEST_MANAGED_PAIR_STAGING_VARS";
-const SNAPSHOT_ENV: &str = "BRIDGEVM_TEST_MANAGED_PAIR_STAGING_SNAPSHOT";
+pub(super) const SCENARIO_ENV: &str = "BRIDGEVM_TEST_MANAGED_PAIR_STAGING_CRASH";
+pub(super) const DISK_ENV: &str = "BRIDGEVM_TEST_MANAGED_PAIR_STAGING_DISK";
+pub(super) const VARS_ENV: &str = "BRIDGEVM_TEST_MANAGED_PAIR_STAGING_VARS";
+pub(super) const SNAPSHOT_ENV: &str = "BRIDGEVM_TEST_MANAGED_PAIR_STAGING_SNAPSHOT";
 
 fn required_path(name: &str) -> PathBuf {
     std::env::var_os(name)
@@ -42,22 +44,6 @@ fn restore_partial_staging_crash_child() {
         std::process::exit(75);
     }
     panic!("unknown crash scenario {scenario}");
-}
-
-fn crash_restore(scenario: &str, expected_exit: i32, disk: &Path, vars: &Path, snapshot: &Path) {
-    let status = Command::new(std::env::current_exe().expect("current test executable"))
-        .arg(
-            "snapshot_pair::managed::tests::staging_interruption_tests::restore_partial_staging_crash_child",
-        )
-        .arg("--exact")
-        .arg("--nocapture")
-        .env(SCENARIO_ENV, scenario)
-        .env(DISK_ENV, disk)
-        .env(VARS_ENV, vars)
-        .env(SNAPSHOT_ENV, snapshot)
-        .status()
-        .expect("launch crash subprocess");
-    assert_eq!(status.code(), Some(expected_exit), "child status {status}");
 }
 
 fn fixture(tag: &str) -> (Scratch, PathBuf, PathBuf, PathBuf) {
@@ -102,7 +88,7 @@ fn hard_exit_during_partial_staging_preserves_old_pair_and_allows_retry() {
             (b"old-disk".to_vec(), b"old-vars".to_vec()),
             "partial staging must never become selected for {scenario}"
         );
-        pair.restore(&snapshot).expect("retry restore after crash");
+        retry_after_explicit_staging_resolution(&mut pair, &snapshot);
         assert_eq!(
             contents(&pair),
             (b"new-disk".to_vec(), b"new-vars".to_vec()),

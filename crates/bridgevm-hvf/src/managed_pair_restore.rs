@@ -33,7 +33,7 @@ impl LockedPair {
         let (snapshot, manifest) = self.admit_restore(snapshot, available_bytes)?;
         init::initialize(&self.root, |_| {})?;
         let (staged, copied) = self.stage_restore(&snapshot, &manifest, copy)?;
-        publish(&staged, &self.root.join("current"))?;
+        staged.publish(&self.root.join("current"), publish)?;
         self.own_selected()?;
         layout::acknowledge(&self.root)?;
         Ok(copied)

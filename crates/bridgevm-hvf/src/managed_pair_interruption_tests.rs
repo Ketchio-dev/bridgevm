@@ -1,4 +1,5 @@
 use super::super::*;
+use super::staging_recovery_test_support::retry_after_explicit_staging_resolution;
 use crate::snapshot_pair::{create_snapshot, snapshot_pair_tests::Scratch};
 use std::process::Command;
 
@@ -88,7 +89,7 @@ fn hard_exit_around_publication_reopens_only_complete_generations() {
         contents(&pair),
         (b"old-disk".to_vec(), b"old-vars".to_vec())
     );
-    pair.restore(&snapshot).expect("recover from staged debris");
+    retry_after_explicit_staging_resolution(&mut pair, &snapshot);
     assert_eq!(
         contents(&pair),
         (b"new-disk".to_vec(), b"new-vars".to_vec())
