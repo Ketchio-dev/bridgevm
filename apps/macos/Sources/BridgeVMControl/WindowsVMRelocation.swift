@@ -8,7 +8,7 @@ extension VMLibrary {
         rootURL: URL = root,
         fileManager: FileManager = .default
     ) -> VMConfig? {
-        guard config.engineKind == .hvfEngine else { return nil }
+        guard VMRelocationReferences.permits(config, rootURL: rootURL) else { return nil }
         let fm = fileManager
         let source = URL(fileURLWithPath: config.bundlePath, isDirectory: true).standardizedFileURL
         let destination = destinationParent.standardizedFileURL

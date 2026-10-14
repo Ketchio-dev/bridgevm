@@ -165,7 +165,7 @@ final class LibraryModel: ObservableObject {
                     self.reload()
                     self.selectedID = moved.slug
                 } else {
-                    self.moveError = "VM 이동 완료를 확인하지 못했습니다. 원본과 대상 위치의 번들 및 등록 상태를 확인하세요."
+                    self.moveError = VMRelocationReferences.failureMessage(for: cfg, rootURL: self.libraryRoot)
                     self.reload() // It may have committed: replace stale idle handles with the persisted registration.
                 }
             }
