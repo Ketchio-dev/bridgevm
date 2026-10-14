@@ -39,17 +39,7 @@ extension VMLibrary {
         guard varsBytes == windowsHVFVarsBytes else {
             return "UEFI vars는 정확히 64 MiB여야 합니다 (현재 \(varsBytes)바이트)."
         }
-        if let handle = try? FileHandle(forReadingFrom: targetURL) {
-            defer { try? handle.close() }
-            let header = (try? handle.read(upToCount: 8)) ?? Data()
-            if header.starts(with: Data([0x51, 0x46, 0x49, 0xfb])) {
-                return "QCOW2 이미지는 가져올 수 없습니다. 설치된 RAW 디스크를 선택하세요."
-            }
-            if header.starts(with: Data("vhdxfile".utf8)) {
-                return "VHDX 이미지는 가져올 수 없습니다. 설치된 RAW 디스크를 선택하세요."
-            }
-        }
-        return nil
+        return HvfImportedDiskFormat.detect(path: targetURL.path)?.importError
     }
 
     static func reserveDestination(

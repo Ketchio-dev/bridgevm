@@ -1272,7 +1272,7 @@ apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	22	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	56	0
 apps/macos/Sources/BridgeVMControl/ContentView.swift	284	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	254	0
-apps/macos/Sources/BridgeVMControl/CreateVM.swift	435	0
+apps/macos/Sources/BridgeVMControl/CreateVM.swift	425	0
 apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	116	0
 apps/macos/Sources/BridgeVMControl/FirstRunView.swift	60	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
@@ -4399,3 +4399,5 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputTargetIdentity.swift	25
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferCompositionBoundaryTests.swift	161	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferTextInputTests.swift	189	0
 apps/macos/Tests/BridgeVMControlTests/HvfInputCancellationDiagnosticTests.swift	89	0
+apps/macos/Sources/BridgeVMControl/HvfImportedDiskFormat.swift	21	0
+apps/macos/Tests/BridgeVMControlTests/FirstRunImportDiskFormatTests.swift	55	0
