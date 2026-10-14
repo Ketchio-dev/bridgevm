@@ -36,7 +36,7 @@ class Fixture:
         builder.write_text('#!/bin/sh\nprintf called > "' + str(self.marker) + '"\nexit 79\n'); builder.chmod(0o700)
         self.binary = self.assets / "runner"; self.binary.write_text('#!/bin/sh\nexit 78\n'); self.binary.chmod(0o700)
         self.env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
-        self.git("init", "-q"); self.git("add", ".")
+        self.git("init", "-q"); self.git("config", "maintenance.auto", "false"); self.git("add", ".")
         self.git("-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid", "commit", "-qm", "synthetic T12 fixture")
         self.commit = self.git("rev-parse", "HEAD")
         self.queue = self.base / "queue"

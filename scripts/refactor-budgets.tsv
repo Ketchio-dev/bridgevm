@@ -4741,3 +4741,4 @@ crates/bridgevm-hvf/src/platform_virt/tests/pci_boot_media_queue.rs	30	0
 docs/history/windows-hvf/autonomous-selection-and-diagnostic-launch-20261014.md	136	0
 docs/document-manifests/autonomous-selection-and-diagnostic-launch-20261014.tsv	3	0
 crates/bridgevm-storage/tests/snapshot_restore_media.rs	169	1
+tests/integration/t12-sealed-fixture-lifetime.py	31	0
