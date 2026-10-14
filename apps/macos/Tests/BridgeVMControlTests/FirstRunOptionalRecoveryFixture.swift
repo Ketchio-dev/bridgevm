@@ -27,7 +27,7 @@ enum FirstRunOptionalRecoveryFixture {
             if let previous { setenv("BRIDGEVM_REPO_ROOT", previous, 1) }
             else { unsetenv("BRIDGEVM_REPO_ROOT") }
         }
-        XCTAssertEqual(HvfMediaImportHelper.bundled.path, helper.path)
+        XCTAssertEqual(HvfMediaImportHelper.bundled.path, helper.resolvingSymlinksInPath().path)
         library.selectedID = LibraryModel.firstRunImportSelectionID
         let host = NSHostingView(rootView: FirstRunView(library: library))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 850),
