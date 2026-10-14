@@ -21,8 +21,6 @@ path	class	topic	superseded_by
 @include	docs/document-manifests/raw-nvme-runtime-output-ownership.tsv	-	-
 @include	docs/document-manifests/a19-exited-child-fixture.tsv	-	-
 @include	docs/document-manifests/install-pipe-line-bound.tsv	-	-
-docs/handoffs/claude-code-20260722.md	active-plan	development-handoff	-
-docs/plans/refactor-handoff.md	active-plan	development-handoff	-
 @include	docs/document-manifests/native-vmm-nvme-admin-prp.tsv	-	-
 @include	docs/document-manifests/native-vmm-cancellation-and-io.tsv	-	-
 @include	docs/document-manifests/native-vmm-device-registers.tsv	-	-
@@ -137,3 +135,4 @@ docs/windows-arm/evidence/a9-stale-code-requirement-20260911.md	current	a9-code-
 @include	docs/document-manifests/autonomous-restore-ownership-20261014.tsv	-	-
 @include	docs/document-manifests/autonomous-lifecycle-20261014.tsv	-	-
 @include	docs/document-manifests/autonomous-admission-20261014.tsv	-	-
+@include	docs/document-manifests/autonomous-reservations-20261014.tsv	-	-
