@@ -20,6 +20,7 @@ mod pointer_input_report;
 mod ports;
 mod registers;
 mod reset;
+mod reset_input;
 mod setup_input_report;
 pub(crate) mod trace;
 mod trace_dci3_drain;

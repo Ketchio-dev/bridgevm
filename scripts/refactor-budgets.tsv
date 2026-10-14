@@ -690,7 +690,9 @@ crates/bridgevm-hvf/src/xhci/port_link_state_tests.rs	62	0
 crates/bridgevm-hvf/src/xhci/port_reset_change_tests.rs	193	0
 crates/bridgevm-hvf/src/xhci/ports.rs	138	0
 crates/bridgevm-hvf/src/xhci/registers.rs	138	0
-crates/bridgevm-hvf/src/xhci/reset.rs	29	0
+crates/bridgevm-hvf/src/xhci/reset.rs	17	0
+crates/bridgevm-hvf/src/xhci/reset_input.rs	19	0
+crates/bridgevm-hvf/src/xhci/reset_register_tests.rs	21	0
 crates/bridgevm-hvf/src/xhci/set_configuration_msix_tests.rs	103	0
 crates/bridgevm-hvf/src/xhci/set_configuration_tests.rs	164	0
 crates/bridgevm-hvf/src/xhci/set_protocol_tests.rs	265	0
