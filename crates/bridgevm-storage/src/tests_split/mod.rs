@@ -1,7 +1,11 @@
 //! Split test module.
 
 mod bundle_permissions;
+mod clone_fixture;
+mod clone_identity;
 mod clone_output;
+mod clone_portability;
+mod clone_source_safety;
 mod export_destination;
 mod helpers;
 mod import_images;

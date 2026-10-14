@@ -117,8 +117,8 @@ pub(crate) fn relocate(paths: &ImportPaths, mut files: DiskFiles) -> Result<(), 
     for node in links.keys() {
         check_graph(node, &links, &mut BTreeSet::new())?;
     }
-    // Every target was byte-compared to its input before any header mutation.
-    // Only the name changes: never open a former absolute backing dependency.
+    // Targets are validated owned copies. Only backing names change here;
+    // never open a former absolute backing dependency.
     for (disk, backing) in &links {
         command(vec![
             "rebase".into(),

@@ -1,6 +1,7 @@
 //! Clone reservations preserve caller entries and clean only newly created output.
 
-use super::helpers::{manifest, temp_store};
+use super::clone_fixture::raw_manifest as manifest;
+use super::helpers::temp_store;
 use crate::*;
 use bridgevm_media::media_lease::MediaLease;
 use std::fs;

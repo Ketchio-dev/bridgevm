@@ -1038,11 +1038,11 @@ crates/bridgevm-storage/src/tests_split/helpers.rs	87	0
 crates/bridgevm-storage/src/tests_split/mod.rs	0	0
 crates/bridgevm-storage/src/tests_split/part_1.rs	61	0
 crates/bridgevm-storage/src/tests_split/part_2.rs	29	0
-crates/bridgevm-storage/src/tests_split/part_3_1.rs	742	0
-crates/bridgevm-storage/src/tests_split/part_3_2.rs	542	0
+crates/bridgevm-storage/src/tests_split/part_3_1.rs	734	0
+crates/bridgevm-storage/src/tests_split/part_3_2.rs	424	0
 crates/bridgevm-storage/src/tests_split/concurrency.rs	32	0
 crates/bridgevm-storage/src/tests_split/part_3_3.rs	556	0
-crates/bridgevm-storage/src/vm_clone.rs	235	0
+crates/bridgevm-storage/src/vm_clone.rs	205	0
 crates/bridgevm-storage/src/vm_registry.rs	65	0
 crates/bridgevm-storage/src/vm_delete.rs	28	0
 crates/bridgevm-storage/src/vm_transfer.rs	87	0
@@ -4622,3 +4622,8 @@ scripts/live-gates/a19_interrupt_child_cli.py	28	0
 tests/integration/a19_interrupt_failure_cases.py	176	0
 tests/integration/a19_interrupt_cli_cases.py	47	0
 crates/bridgevm-hvf/src/nvme/tests/number_of_queues.rs	127	0
+crates/bridgevm-storage/src/tests_split/clone_fixture.rs	25	0
+crates/bridgevm-storage/src/tests_split/clone_identity.rs	124	0
+crates/bridgevm-storage/src/tests_split/clone_portability.rs	99	0
+crates/bridgevm-storage/src/vm_clone_media.rs	64	0
+crates/bridgevm-storage/src/tests_split/clone_source_safety.rs	28	0
