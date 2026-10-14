@@ -4569,3 +4569,6 @@ crates/bridgevm-cli/tests/cli_clone_preservation.rs	33	0
 crates/bridgevm-cli/tests/support/clone_preservation.rs	138	0
 crates/bridgevm-storage/src/vm_clone_output.rs	22	0
 crates/bridgevm-storage/src/tests_split/clone_output.rs	145	0
+apps/macos/Tests/BridgeVMControlTests/InstallCancellationButtonProbe.swift	42	0
+apps/macos/Tests/BridgeVMControlTests/RetainedInstallCancellationFixture.swift	97	0
+apps/macos/Tests/BridgeVMControlTests/RetainedInstallCancellationTests.swift	69	0

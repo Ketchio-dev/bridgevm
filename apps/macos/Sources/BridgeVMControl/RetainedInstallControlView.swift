@@ -16,8 +16,8 @@ struct RetainedInstallControlView: View {
                     Text(message).foregroundColor(.secondary)
                 }
                 if session.isRunning {
-                    Button("취소") { session.cancel() }
-                        .accessibilityIdentifier("bridgevm.retained.install.cancel")
+                    Button(session.stage == .cancelling ? "취소 중…" : "취소") { session.cancel() }
+                        .disabled(!session.canCancel).accessibilityIdentifier("bridgevm.retained.install.cancel")
                 } else {
                     Button("목록에서 닫기", action: dismiss)
                         .accessibilityIdentifier("bridgevm.retained.install.dismiss")
