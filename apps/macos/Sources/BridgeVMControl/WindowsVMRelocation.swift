@@ -35,7 +35,7 @@ extension VMLibrary {
         moved.sshKeyPath = rebased(config.sshKeyPath)
         moved.leasesPath = rebased(config.leasesPath)
         moved.isoPath = config.isoPath.map(rebased)
-        moved.diskPath = config.diskPath.map(rebased)
+        moved.diskPath = config.diskPath.map { VMRelocationDiskPath.rebased($0, source: source, destination: destination) ?? rebased($0) }
 
         let stateDirectory = destination.appendingPathComponent("metadata/vtpm", isDirectory: true)
         do {

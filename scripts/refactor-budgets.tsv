@@ -4607,3 +4607,6 @@ apps/macos/Tests/BridgeVMControlTests/LibraryWarningPhysicalPath.swift	13	0
 docs/document-manifests/autonomous-import-preservation-20261014.tsv	5	0
 docs/history/windows-hvf/autonomous-interrupt-fixtures-20261014.md	123	0
 docs/history/windows-hvf/autonomous-import-preservation-20261014.md	112	0
+apps/macos/Sources/BridgeVMControl/VMRelocationDiskPath.swift	15	0
+apps/macos/Tests/BridgeVMControlTests/VMRelocationDiskPathTests.swift	29	0
+apps/macos/Tests/BridgeVMControlTests/VMRelocationSelectedDiskTests.swift	93	0
