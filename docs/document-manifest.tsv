@@ -54,8 +54,6 @@ docs/windows-arm/evidence/coherence-windows-live-20260817.md	current	windows-gra
 @include	docs/document-manifests/native-vmm-hda-corb-interrupt.tsv	-	-
 @include	docs/document-manifests/a19-stop-observation.tsv	-	-
 docs/windows-arm/evidence/a17-live-queue-receipts-20260805.md	current	testing	-
-docs/install.md	current	user-installation	-
-docs/distribution-channels.md	current	distribution-policy	-
 docs/windows-arm/iso-download-spike-20260817.md	current	windows-install	-
 docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/runtime-control-socket-cleanup.tsv	-	-
@@ -136,3 +134,4 @@ docs/windows-arm/evidence/a9-stale-code-requirement-20260911.md	current	a9-code-
 @include	docs/document-manifests/autonomous-lifecycle-20261014.tsv	-	-
 @include	docs/document-manifests/autonomous-admission-20261014.tsv	-	-
 @include	docs/document-manifests/autonomous-reservations-20261014.tsv	-	-
+@include	docs/document-manifests/autonomous-import-preservation-20261014.tsv	-	-

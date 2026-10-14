@@ -3633,7 +3633,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfTailLineAccumulatorTests.swift	54	0
 crates/bridgevm-hvf/src/virtio_queue_address.rs	19	0
 crates/bridgevm-hvf/src/virtio_queue_overflow_tests.rs	104	0
 docs/history/windows-hvf/parallel-existing-code-audit-20261002.md	115	0
-docs/document-manifest.tsv	138	0
+docs/document-manifest.tsv	137	0
 docs/machine-contract/qemu-virt-deviations.json	74	0
 docs/machine-contract/qemu-virt.md	59	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTailFileCursor.swift	40	0
@@ -4604,3 +4604,6 @@ crates/bridgevm-cli/tests/support/import_tombstone.rs	223	0
 crates/bridgevm-storage/src/import_admission.rs	20	0
 crates/bridgevm-storage/src/tests_split/import_markers.rs	106	0
 apps/macos/Tests/BridgeVMControlTests/LibraryWarningPhysicalPath.swift	13	0
+docs/document-manifests/autonomous-import-preservation-20261014.tsv	5	0
+docs/history/windows-hvf/autonomous-interrupt-fixtures-20261014.md	123	0
+docs/history/windows-hvf/autonomous-import-preservation-20261014.md	112	0
