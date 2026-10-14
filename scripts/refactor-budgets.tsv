@@ -4743,3 +4743,5 @@ docs/document-manifests/autonomous-selection-and-diagnostic-launch-20261014.tsv	
 crates/bridgevm-storage/tests/snapshot_restore_media.rs	153	1
 tests/integration/t12-sealed-fixture-lifetime.py	31	0
 crates/bridgevm-storage/tests/snapshot_restore_media/fixture.rs	57	0
+docs/history/windows-hvf/autonomous-media-and-fixture-lifetimes-20261014.md	142	0
+docs/document-manifests/autonomous-media-and-fixture-lifetimes-20261014.tsv	3	0
