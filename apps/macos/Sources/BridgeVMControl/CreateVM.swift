@@ -174,7 +174,7 @@ extension VMLibrary {
         let destinationRoot = reserved.root
         var succeeded = false
         defer {
-            if !succeeded { try? fm.removeItem(at: destinationRoot) }
+            if !succeeded { VMCreationDestinationCleanup.removeIfUnpublished(destinationRoot, libraryRoot: root) }
         }
         let bundle = destinationRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true)
         do {
@@ -229,7 +229,7 @@ extension VMLibrary {
                            sshKeyPath: template.sshKeyPath, sshUser: "user", leasesPath: template.leasesPath,
                            guestName: slug, displayWidth: width, displayHeight: height,
                            installPending: true, memMiB: memMiB, cpuCount: cpuCount)
-        guard save(cfg) else { return nil }
+        guard createRegistration(cfg, preserving: { succeeded = true }) else { return nil }
         succeeded = true
         return cfg
     }
@@ -266,7 +266,7 @@ extension VMLibrary {
         let slug = reserved.slug
         let destDir = reserved.root
         var succeeded = false
-        defer { if !succeeded { try? fm.removeItem(at: destDir) } }
+        defer { if !succeeded { VMCreationDestinationCleanup.removeIfUnpublished(destDir, libraryRoot: libraryRoot) } }
         let bundle = destDir.appendingPathComponent("bundle.vmbridge", isDirectory: true).path
         // APFS copy-on-write clone: instant, no extra disk for the 14G rootfs.
         guard beforeCopy(), cloneOrCopyDirectory(from: template.bundlePath, to: bundle) else { return nil }
@@ -302,7 +302,7 @@ extension VMLibrary {
         cfg.displayHeight = height
         if let memMiB { cfg.memMiB = memMiB }
         if let cpuCount { cfg.cpuCount = cpuCount }
-        guard save(cfg, rootURL: libraryRoot) else { return nil }
+        guard createRegistration(cfg, rootURL: libraryRoot, preserving: { succeeded = true }) else { return nil }
         succeeded = true
         return cfg
     }
@@ -335,7 +335,7 @@ extension VMLibrary {
         let slug = reserved.slug
         let destinationRoot = reserved.root
         var succeeded = false
-        defer { if !succeeded { try? fm.removeItem(at: destinationRoot) } }
+        defer { if !succeeded { VMCreationDestinationCleanup.removeIfUnpublished(destinationRoot, libraryRoot: libraryRoot) } }
         let bundle = destinationRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true)
         guard beforeCopy(), cloneOrCopyDirectory(from: template.bundlePath, to: bundle.path) else { return nil }
         guard afterCopy() else { return nil }
@@ -369,7 +369,7 @@ extension VMLibrary {
         cfg.diskPath = bundle.appendingPathComponent("disks/hvf-target.raw").path
         cfg.guestName = slug
         cfg.installPending = false
-        guard save(cfg, rootURL: libraryRoot) else { return nil }
+        guard createRegistration(cfg, rootURL: libraryRoot, preserving: { succeeded = true }) else { return nil }
         succeeded = true
         return cfg
     }
@@ -390,7 +390,7 @@ extension VMLibrary {
         let destinationRoot = reserved.root
         let bundle = destinationRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true)
         var succeeded = false
-        defer { if !succeeded { try? fm.removeItem(at: destinationRoot) } }
+        defer { if !succeeded { VMCreationDestinationCleanup.removeIfUnpublished(destinationRoot, libraryRoot: root) } }
         do {
             for sub in ["disks", "metadata", "logs"] {
                 try fm.createDirectory(at: bundle.appendingPathComponent(sub), withIntermediateDirectories: true)
@@ -413,7 +413,7 @@ extension VMLibrary {
                            leasesPath: template.leasesPath, guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: true,
                            isoPath: isoLocal, diskPath: disk, memMiB: memMiB, cpuCount: cpuCount)
-        if persist, !save(cfg) { return nil }
+        if persist, !createRegistration(cfg, preserving: { succeeded = true }) { return nil }
         succeeded = true
         return cfg
     }

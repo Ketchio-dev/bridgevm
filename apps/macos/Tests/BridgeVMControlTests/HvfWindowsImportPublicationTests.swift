@@ -29,7 +29,7 @@ final class HvfWindowsImportPublicationTests: XCTestCase {
         try assertSources(fixture)
     }
 
-    func testNotPublishedRollsBackPreparedImportInBothStorageLayouts() throws {
+    func testAmbiguousRegistrationPreservesPreparedImportInBothStorageLayouts() throws {
         for separateStorage in [true, false] {
             let fixture = try makeFixture(separateStorage: separateStorage)
             defer { fixture.remove() }
@@ -39,7 +39,7 @@ final class HvfWindowsImportPublicationTests: XCTestCase {
                 libraryRoot: fixture.library, snapshotHelper: HvfMediaImportTestSupport.helper,
                 publish: fixture.publishWithRenameRefusal)
             XCTAssertNil(outcome)
-            try fixture.assertRolledBack()
+            try fixture.assertAmbiguousPreparationPreserved()
             try assertSources(fixture)
         }
     }

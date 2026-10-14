@@ -13,7 +13,7 @@ extension VMLibrary {
                                         networkEnabled: Bool = true,
                                         libraryRoot: URL = root,
                                         persist: Bool = true,
-                                        publish: (VMConfig, URL) -> VMRegistrationCommitOutcome = { VMLibrary.saveOutcome($0, rootURL: $1) }) -> HVFCreationOutcome? {
+                                        publish: (VMConfig, URL) -> VMRegistrationCommitOutcome = { VMLibrary.createOutcome($0, rootURL: $1) }) -> HVFCreationOutcome? {
         let fm = FileManager.default
         guard windowsHVFInjectionError(requested: injectViogpu3d) == nil,
               let name = normalizedVMName(name),
@@ -25,7 +25,7 @@ extension VMLibrary {
         let slug = reserved.slug
         let destinationRoot = reserved.root
         var preserveDestination = false
-        defer { if !preserveDestination { try? fm.removeItem(at: destinationRoot) } }
+        defer { if !preserveDestination { VMCreationDestinationCleanup.removeIfUnpublished(destinationRoot, libraryRoot: libraryRoot) } }
         let bundle = destinationRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true)
         do {
             for sub in ["disks", "metadata", "logs/hvf"] {
@@ -60,7 +60,7 @@ extension VMLibrary {
                            isoPath: nil, diskPath: "\(b)/disks/hvf-target.raw",
                            memMiB: memMiB, cpuCount: cpuCount, networkEnabled: networkEnabled, experimental3DAllowed: false)
         guard let outcome = HVFCreationOutcome.publish(cfg, libraryRoot: libraryRoot,
-            persist: persist, using: publish) else { return nil }
+            persist: persist, preserving: { preserveDestination = true }, using: publish) else { return nil }
         preserveDestination = true
         return outcome
     }

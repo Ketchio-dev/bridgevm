@@ -15,6 +15,7 @@ enum VMRegistrationCommitOutcome {
 extension VMRegistrationWriter {
     static func commit(
         _ data: Data, to url: URL,
+        replaceExisting: Bool = true,
         syncParent: (URL) throws -> Void = syncParentDirectory
     ) -> VMRegistrationCommitOutcome {
         let parent = url.deletingLastPathComponent()
@@ -23,7 +24,11 @@ extension VMRegistrationWriter {
         do {
             try VTPMStateSecurity.createPrivateFile(data, at: temporary)
             defer { try? FileManager.default.removeItem(at: temporary) }
-            guard Darwin.rename(temporary.path, url.path) == 0 else {
+            let renamed = replaceExisting
+                ? Darwin.rename(temporary.path, url.path)
+                : Darwin.renameatx_np(AT_FDCWD, temporary.path, AT_FDCWD, url.path, UInt32(RENAME_EXCL))
+            guard renamed == 0 else {
+                if !replaceExisting, errno == EEXIST { throw VMRegistrationCollision() }
                 throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
             }
             published = true
@@ -34,14 +39,4 @@ extension VMRegistrationWriter {
         }
     }
 
-    private static func syncParentDirectory(_ parent: URL) throws {
-        let descriptor = Darwin.open(parent.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        guard descriptor >= 0 else {
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-        }
-        defer { Darwin.close(descriptor) }
-        guard Darwin.fsync(descriptor) == 0 else {
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-        }
-    }
 }

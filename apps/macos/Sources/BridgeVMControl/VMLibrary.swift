@@ -159,6 +159,6 @@ enum VMLibrary {
         guard current.configs.isEmpty, current.issues.isEmpty, var legacy else { return false }
         if legacy.id == nil { legacy.id = VMConfig.slugify(legacy.name) }
         if legacy.bootMode == nil { legacy.bootMode = "direct-kernel" }
-        return save(legacy, rootURL: rootURL)
+        return createRegistration(legacy, rootURL: rootURL)
     }
 }

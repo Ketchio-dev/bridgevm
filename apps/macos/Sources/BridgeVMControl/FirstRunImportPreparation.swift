@@ -1,6 +1,6 @@
 import Foundation
 
-/// Owns the exclusively reserved entry until its configuration is published.
+/// Owns the reserved entry until publication or a conflict requires preservation.
 /// This object stays on the import worker; only the value configuration crosses actors.
 final class FirstRunImportPreparation {
     let config: VMConfig
@@ -15,7 +15,9 @@ final class FirstRunImportPreparation {
     }
 
     func preserve() { preserved = true; importedVTPMKey?.preserve() }
-    deinit { if !preserved { destination.removeIfOwned() } }
+    deinit {
+        if !preserved, !destination.removeIfOwned() { importedVTPMKey?.preserve() }
+    }
 }
 
 extension FirstRunImport {
