@@ -4756,3 +4756,5 @@ tests/integration/app-ui-driver-ax-context-contracts.swift	80	0
 tests/integration/app-ui-driver-ax-service-contracts.swift	34	0
 crates/bridgevm-hvf-runtime/src/owned_process_readiness.rs	106	0
 crates/bridgevm-hvf-runtime/src/owned_process_readiness_tests.rs	77	1
+docs/history/windows-hvf/autonomous-diagnostic-attribution-20261014.md	116	0
+docs/document-manifests/autonomous-diagnostic-attribution-20261014.tsv	3	0
