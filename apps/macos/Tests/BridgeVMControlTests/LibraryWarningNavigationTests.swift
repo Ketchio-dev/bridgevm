@@ -25,7 +25,7 @@ final class LibraryWarningNavigationTests: XCTestCase {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let file = directory.appendingPathComponent("vm.json")
             try Data("{invalid".utf8).write(to: file)
-            issuePaths.insert(file.resolvingSymlinksInPath().path)
+            issuePaths.insert(try LibraryWarningPhysicalPath.of(file))
         }
         if includeRegisteredVM {
             let config = VMConfig(id: "registered", name: "Registered", displayName: "Registered",
