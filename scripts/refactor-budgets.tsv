@@ -4391,7 +4391,7 @@ apps/macos/Sources/BridgeVMControl/VMLibraryDeletionTarget.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/LibraryImportedDeletionTargetTests.swift	81	0
 apps/macos/Tests/BridgeVMControlTests/HvfDisplayInputFailureTests.swift	109	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferDisplayLink.swift	22	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferTextInput.swift	177	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferTextInput.swift	164	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextCompositionGeometry.swift	20	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextCompositionKeyRouting.swift	14	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextCompositionState.swift	36	0
@@ -4401,3 +4401,5 @@ apps/macos/Tests/BridgeVMControlTests/HvfFramebufferTextInputTests.swift	189	0
 apps/macos/Tests/BridgeVMControlTests/HvfInputCancellationDiagnosticTests.swift	89	0
 apps/macos/Sources/BridgeVMControl/HvfImportedDiskFormat.swift	21	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportDiskFormatTests.swift	55	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextCompositionOverlay.swift	26	0
+apps/macos/Tests/BridgeVMControlTests/HvfTextCompositionViewportTests.swift	38	0

@@ -142,17 +142,7 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
 
     private func refreshPreedit() {
         if hasMarkedText(), preeditView == nil {
-            let view = HvfTextCompositionOverlay(labelWithString: "")
-            view.translatesAutoresizingMaskIntoConstraints = false
-            view.font = .systemFont(ofSize: 18)
-            view.drawsBackground = true
-            view.backgroundColor = .textBackgroundColor
-            view.textColor = .textColor
-            view.cell?.wraps = false
-            view.cell?.isScrollable = false
-            view.cell?.lineBreakMode = .byClipping
-            view.setAccessibilityIdentifier("bridgevm.runtime.keyboard.composition")
-            view.setAccessibilityLabel("Composing text")
+            let view = HvfTextCompositionOverlay.make()
             addSubview(view)
             NSLayoutConstraint.activate([
                 view.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
@@ -171,7 +161,4 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
     }
 }
 
-private final class HvfTextCompositionOverlay: NSTextField {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
 #endif
