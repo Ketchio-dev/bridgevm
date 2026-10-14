@@ -114,7 +114,7 @@ impl<B: NetBackend> VirtioPciNet<B> {
         if offset == PCI_ISR_CFG_OFFSET {
             return match op {
                 VirtioPciNetOp::Read { size } => VirtioNetResult::ReadValue(mask_to_size(
-                    u64::from(self.net.interrupt_status),
+                    u64::from(std::mem::take(&mut self.net.interrupt_status)),
                     size,
                 )),
                 VirtioPciNetOp::Write { value, .. } => {

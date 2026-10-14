@@ -123,7 +123,7 @@ impl VirtioPciConsole {
         if offset == PCI_ISR_CFG_OFFSET {
             return match op {
                 VirtioPciConsoleOp::Read { size } => VirtioConsoleResult::ReadValue(mask_to_size(
-                    u64::from(self.console.interrupt_status),
+                    u64::from(std::mem::take(&mut self.console.interrupt_status)),
                     size,
                 )),
                 VirtioPciConsoleOp::Write { value, .. } => {

@@ -4545,3 +4545,5 @@ apps/macos/Sources/BridgeVMControl/ControlModelLifecycle.swift	72	0
 apps/macos/Tests/BridgeVMControlTests/GenericOwnedControlFixture.swift	69	0
 apps/macos/Tests/BridgeVMControlTests/GenericControlRetentionTests.swift	73	0
 apps/macos/Sources/BridgeVMControl/ControlModelRefresh.swift	93	0
+crates/bridgevm-hvf/tests/virtio_pci_isr.rs	221	0
+crates/bridgevm-hvf/tests/virtio_pci_isr/platform.rs	58	0
