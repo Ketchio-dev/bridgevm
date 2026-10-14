@@ -26,17 +26,11 @@ impl NvmeController {
         let fid = (cmd.cdw10 & 0xff) as u8;
         match fid {
             FEATURE_NUMBER_OF_QUEUES => {
-                // CDW11: NSQR bits 15:0, NCQR bits 31:16 (both 0-based requests).
-                let nsqr = (cmd.cdw11 & 0xffff) as u16;
-                let ncqr = ((cmd.cdw11 >> 16) & 0xffff) as u16;
-                // Grant the smaller of each request and our capacity (all 0-based).
-                let capacity = self.max_io_queues.saturating_sub(1);
-                let sq_granted = nsqr.min(capacity);
-                let cq_granted = ncqr.min(capacity);
-                // The completion DW0 carries the allocated counts (0-based: NSQA in
-                // bits 15:0, NCQA in bits 31:16); the generic completion path emits
-                // it via `last_feature_result`.
-                self.last_feature_result = (u32::from(cq_granted) << 16) | u32::from(sq_granted);
+                // NVMe 1.4 §5.21.1.7 permits allocating more than requested.
+                // Our fixed allocation must match GET FEATURES and queue creation,
+                // and must not change between resets. Both counts are zero-based.
+                let granted = u32::from(self.max_io_queues.saturating_sub(1));
+                self.last_feature_result = (granted << 16) | granted;
             }
             FEATURE_VOLATILE_WRITE_CACHE => {
                 self.volatile_write_cache_enabled = (cmd.cdw11 & 1) != 0;

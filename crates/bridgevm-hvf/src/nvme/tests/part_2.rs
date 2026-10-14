@@ -244,7 +244,7 @@ fn security_send_reports_invalid_field_without_spdm_socket() {
 #[test]
 fn set_features_number_of_queues_completes() {
     let (mut ctrl, mut mem) = enabled_controller();
-    // Request more queues than we have; controller grants what it can.
+    // Request four queues; the allocated count may exceed the request.
     let cdw11 = (3u32 << 16) | 3; // NCQR=3, NSQR=3 (0-based)
     let sqe = encode_sqe(
         ADMIN_OP_SET_FEATURES,
