@@ -2,6 +2,8 @@ use crate::msix::MsixMessage;
 
 use super::XhciController;
 
+mod collect;
+
 impl XhciController {
     /// xHCI routes interrupter `i` to MSI-X vector `i`; raise one message per
     /// interrupter with an enabled pending interrupt.
@@ -41,16 +43,6 @@ impl XhciController {
         }
     }
 
-    pub fn drain_pending_msix(
-        &mut self,
-        function_enabled: bool,
-        function_masked: bool,
-    ) -> Vec<MsixMessage> {
-        let mut messages = Vec::new();
-        self.drain_pending_msix_into(function_enabled, function_masked, &mut messages);
-        messages
-    }
-
     pub fn drain_pending_msix_into(
         &mut self,
         function_enabled: bool,
@@ -68,5 +60,6 @@ impl XhciController {
         for message in &out[start..] {
             self.clear_interrupter_pending(usize::from(message.vector));
         }
+        self.raise_pending_interrupter_msix_into(function_enabled, function_masked, out);
     }
 }
