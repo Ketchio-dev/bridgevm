@@ -2071,21 +2071,17 @@ tests/integration/b6-physical-uia-contract.ps1	6	0
 apps/macos/Sources/BridgeVMProductE2E/T17PermissionProbe.swift	25	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17PermissionProbeTests.swift	35	0
 tests/integration/b6-asset-staging-contract.py	48	0
-.github/workflows/b6-asset-staging-contracts.yml	11	0
 docs/windows-arm/evidence/b6-physical-uia-observation-20260911.md	84	0
 docs/windows-arm/evidence/a9-readonly-launch-context-20260911.md	47	0
 scripts/doc_code_identity.py	11	0
 tests/integration/doc-code-identity-contract.py	50	0
-.github/workflows/doc-code-identity-contracts.yml	11	0
 scripts/b6-display-proof.sh	13	0
 tests/integration/b6-display-proof-contract.py	77	0
 tests/integration/b6-display-producer-contract.ps1	49	0
 .github/workflows/b6-display-proof-contracts.yml	18	0
 tests/integration/b6-renderer-startup-contract.py	53	0
-.github/workflows/b6-renderer-startup-contracts.yml	11	0
 scripts/live-gates/b6_renderer_runtime.py	18	0
 tests/integration/b6-renderer-runtime-contract.py	79	0
-.github/workflows/b6-renderer-runtime-contracts.yml	11	0
 docs/windows-arm/evidence/b6-renderer-runtime-reassessment-20260911.md	65	0
 tests/integration/agent-channel-acknowledgment-contract.py	47	0
 .github/workflows/agent-channel-acknowledgment.yml	11	0
@@ -4738,3 +4734,4 @@ docs/document-manifests/autonomous-readiness-and-sealed-inputs-20261014.tsv	3	0
 apps/macos/Tests/BridgeVMControlTests/LibraryCloneSelectionTests.swift	83	0
 scripts/live-gates/app_ui_host_v2_launch_command.py	18	0
 tests/integration/app-ui-supervisor-bundle-contract.py	145	0
+.github/workflows/host-python-contracts.yml	24	0
