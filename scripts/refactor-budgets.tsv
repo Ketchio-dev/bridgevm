@@ -1310,7 +1310,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerMoveMailbox.swift	20	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfDisplayCoordinates.swift	32	0
 apps/macos/Tests/BridgeVMControlTests/HvfDisplayCoordinateBoundaryTests.swift	46	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerCapture.swift	39	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferKeyInput.swift	22	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferKeyInput.swift	15	0
 apps/macos/Tests/BridgeVMControlTests/HvfPointerCaptureTests.swift	52	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift	380	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	50	0
@@ -4443,3 +4443,5 @@ apps/macos/Tests/BridgeVMControlTests/LibraryDeletionCaseAliasTests.swift	68	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDeletionReferenceBoundaryTests.swift	69	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDeletionTestDirectory.swift	8	0
 apps/macos/Tests/BridgeVMControlTests/LibraryNestedBundleDeletionTests.swift	105	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyEventCommand.swift	19	0
+apps/macos/Tests/BridgeVMControlTests/HvfKeyEventIdentityTests.swift	116	0

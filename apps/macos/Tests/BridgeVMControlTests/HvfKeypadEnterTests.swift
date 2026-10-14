@@ -9,7 +9,7 @@ final class HvfKeypadEnterTests: XCTestCase {
         let keypad = String(UnicodeScalar(NSEnterCharacter)!)
         XCTAssertEqual(HvfHostKeyCommand.resolve(characters: keypad), .key("enter"))
         XCTAssertEqual(HvfHostKeyCommand.resolve(characters: keypad, modifiers: .option), .key("alt+enter"))
-        XCTAssertEqual(HvfHostKeyCommand.resolve(characters: keypad, modifiers: .control), .key("ctrl+c"))
+        XCTAssertEqual(HvfHostKeyCommand.resolve(characters: keypad, modifiers: .control), .key("ctrl+c"), "Character-only ETX lacks physical key identity")
         XCTAssertEqual(HvfHostKeyCommand.resolve(characters: keypad, modifiers: .command), .ignored)
         XCTAssertEqual(HvfHostKeyCommand.resolve(characters: keypad, modifiers: .shift), .key("shift+enter"))
         XCTAssertEqual(HvfHostKeyCommand.resolve(characters: "\r"), .key("enter"))
