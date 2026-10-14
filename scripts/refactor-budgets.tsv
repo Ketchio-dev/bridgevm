@@ -4476,3 +4476,5 @@ apps/macos/Tests/BridgeVMControlTests/VMCreationRegistrationCollisionTests.swift
 apps/macos/Tests/BridgeVMControlTests/VMRegistrationCreationTests.swift	45	0
 docs/history/windows-hvf/autonomous-preservation-20261014.md	104	0
 docs/document-manifests/autonomous-preservation-20261014.tsv	4	0
+apps/macos/Sources/BridgeVMControl/LibraryRetainedControlsNavigation.swift	26	0
+apps/macos/Tests/BridgeVMControlTests/RetainedControlsNavigationTests.swift	108	0
