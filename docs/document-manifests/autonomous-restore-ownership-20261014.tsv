@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/a19-snapshot-pair-20260804.md	current	windows-graphics	GOAL.md
+docs/windows-arm/evidence/a19-restore-boots-20260805.md	current	windows-graphics	GOAL.md
+docs/history/windows-hvf/autonomous-restore-ownership-20261014.md	historical-evidence	windows-storage	-

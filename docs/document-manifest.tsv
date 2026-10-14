@@ -96,10 +96,8 @@ docs/windows-arm/evidence/b6-dpi-and-capture-live-20260908.md	current	windows-gu
 @include	docs/document-manifests/native-vmm-transfer-and-teardown.tsv	-	-
 @include	docs/document-manifests/a19-interruption.tsv	-	-
 docs/windows-arm/smccc-trng-psci-contract.md	current	windows-hvf-engine	-
-docs/windows-arm/evidence/a19-snapshot-pair-20260804.md	current	windows-graphics	GOAL.md
 docs/windows-arm/evidence/a1-queued-boot-t2-20260804.md	current	windows-graphics	GOAL.md
 docs/windows-arm/evidence/a11-xctest-shim-20260805.md	current	windows-graphics	GOAL.md
-docs/windows-arm/evidence/a19-restore-boots-20260805.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/native-vmm-gic-deactivation.tsv	-	-
 docs/windows-arm/evidence/a1-apple-feedback-draft-20260806.md	current	windows-graphics	GOAL.md
 docs/windows-arm/evidence/a15-reset-recreate-3cycle-20260806.md	current	windows-graphics	GOAL.md
@@ -140,3 +138,4 @@ docs/windows-arm/evidence/a9-stale-code-requirement-20260911.md	current	a9-code-
 @include	docs/document-manifests/t17-fresh-selection-graph.tsv	-	-
 @include	docs/document-manifests/native-vmm-queue-lifecycle.tsv	-	-
 @include	docs/document-manifests/autonomous-controls-20261014.tsv	-	-
+@include	docs/document-manifests/autonomous-restore-ownership-20261014.tsv	-	-
