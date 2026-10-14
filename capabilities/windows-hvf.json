@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-10-14",
-  "tested_commit": "d4c8d9f6de9e1e69b10767fdbb9837e5989a55e3",
+  "tested_commit": "937e2b561b85f4ea6df599515621eadb4ad288d4",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -200,7 +200,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-10-14 22:28 UTC checkpoint: A11 remains OPEN. Fifth source d4c8d9f6 awaits complete local and exact hosted validation. Fourth d913596b failed two local stages and hosted PCI boot-media assertions; those failures remain recorded. The exact5a UI diagnostic failed AMFI loading before an AX result. Its failed job was later quarantined unchanged; original cleanup remains unproven. No repaired live launch or final release regression seal is established. See the [fifth development checkpoint](../history/windows-hvf/autonomous-selection-and-diagnostic-launch-20261014.md) and [verbatim A11 history](../archive/a11-measured-through-20261014.md).",
+      "measured": "2026-10-14 23:14 UTC checkpoint: A11 remains OPEN. Sixth source 937e2b56 awaits complete local and exact hosted validation. Fifth 76c41c39 failed one local stage at owned-child fixture readiness and a separate hosted T12 fixture teardown; the readiness cause remains unknown despite passing bounded replays. Fourth d913596b failures remain recorded. Reviewed regular-media admission and fixture-lifetime changes are source evidence only. No final release regression seal is established. See the [sixth development checkpoint](../history/windows-hvf/autonomous-media-and-fixture-lifetimes-20261014.md) and [verbatim A11 history](../archive/a11-measured-through-20261014.md).",
       "evidence_paths": [
         "STATUS.md",
         "docs/history/windows-hvf/t17-launchservices-preflight-20260917.md",
@@ -360,7 +360,8 @@
         "docs/history/windows-hvf/autonomous-archive-and-ui-20261014.md",
         "docs/history/windows-hvf/autonomous-readiness-and-sealed-inputs-20261014.md",
         "docs/archive/a11-measured-through-20261014.md",
-        "docs/history/windows-hvf/autonomous-selection-and-diagnostic-launch-20261014.md"
+        "docs/history/windows-hvf/autonomous-selection-and-diagnostic-launch-20261014.md",
+        "docs/history/windows-hvf/autonomous-media-and-fixture-lifetimes-20261014.md"
       ]
     },
     {
