@@ -16,17 +16,16 @@ final class LibraryWarningNavigationTests: XCTestCase {
     }
 
     private func assertWarningRoute(includeRegisteredVM: Bool, issueCount: Int = 5) throws {
-        let base = ProcessInfo.processInfo.environment["TMPDIR"] ?? NSTemporaryDirectory()
-        let root = URL(fileURLWithPath: base).appendingPathComponent("library-warning-" + UUID().uuidString)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = try LibraryWarningAliasedFixture()
+        defer { fixture.remove() }
+        let root = fixture.library
         var issuePaths: Set<String> = []
         for index in 0..<issueCount {
             let directory = root.appendingPathComponent("broken-\(index)")
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let file = directory.appendingPathComponent("vm.json")
             try Data("{invalid".utf8).write(to: file)
-            issuePaths.insert(file.path)
+            issuePaths.insert(file.resolvingSymlinksInPath().path)
         }
         if includeRegisteredVM {
             let config = VMConfig(id: "registered", name: "Registered", displayName: "Registered",

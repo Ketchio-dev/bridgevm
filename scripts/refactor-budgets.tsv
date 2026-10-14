@@ -4480,7 +4480,7 @@ apps/macos/Sources/BridgeVMControl/LibraryRetainedControlsNavigation.swift	26	0
 apps/macos/Tests/BridgeVMControlTests/RetainedControlsNavigationTests.swift	108	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFocusAdmissionTests.swift	87	0
 apps/macos/Sources/BridgeVMControl/LibraryIssuesDetails.swift	35	0
-apps/macos/Tests/BridgeVMControlTests/LibraryWarningNavigationTests.swift	58	0
+apps/macos/Tests/BridgeVMControlTests/LibraryWarningNavigationTests.swift	57	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerCleanup.swift	30	0
 apps/macos/Tests/BridgeVMControlTests/HvfFailedPointerReleaseTests.swift	65	0
 apps/macos/Tests/BridgeVMControlTests/HvfPointerCleanupBoundaryTests.swift	50	0
@@ -4549,3 +4549,4 @@ crates/bridgevm-hvf/tests/virtio_pci_isr.rs	221	0
 crates/bridgevm-hvf/tests/virtio_pci_isr/platform.rs	58	0
 docs/history/windows-hvf/autonomous-lifecycle-20261014.md	125	0
 docs/document-manifests/autonomous-lifecycle-20261014.tsv	4	0
+apps/macos/Tests/BridgeVMControlTests/LibraryWarningAliasedFixture.swift	24	0
