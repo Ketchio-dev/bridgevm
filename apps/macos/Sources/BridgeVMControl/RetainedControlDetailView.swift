@@ -5,15 +5,6 @@ struct RetainedControlDetailView: View {
     let record: LibraryRetainedControlRecord
 
     var body: some View {
-        switch record.descriptor {
-        case let .runtime(config, session):
-            RetainedRuntimeControlView(config: config, session: session) {
-                library.dismissRetainedControl(record.id)
-            }
-        case let .install(config, session):
-            RetainedInstallControlView(config: config, session: session) {
-                library.dismissRetainedControl(record.id)
-            }
-        }
+        record.descriptor.detail { library.dismissRetainedControl(record.id) }
     }
 }

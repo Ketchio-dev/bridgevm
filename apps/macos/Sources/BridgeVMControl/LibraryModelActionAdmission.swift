@@ -13,7 +13,7 @@ extension LibraryModel {
         if windowsInstallSessions.isActive(slug: cfg.slug) || windowsInstallSessions.cliOperations.isActive(vmID: cfg.slug) {
             return "Windows 설치가 진행 중입니다. 설치를 완료하거나 취소한 뒤 다시 시도하세요."
         }
-        if hvfRuntimeSessions.isActive(slug: cfg.slug) {
+        if hvfRuntimeSessions.isActive(slug: cfg.slug) || hasActiveOwnedControlRuntime(for: cfg.slug) {
             return "VM이 실행 중이거나 시작·중지 처리 중입니다. 제어 화면에서 완전히 중지한 뒤 다시 시도하세요."
         }
         if hasAcceptedControlOperation(for: cfg.slug) {
@@ -25,14 +25,4 @@ extension LibraryModel {
         return nil
     }
 
-    func admitLibraryAction(_ cfg: VMConfig, action: LibraryFileAction) -> Bool {
-        let pending = action == .deletion ? pendingDeletionReferenceRefusal(for: cfg) : transactionResidueRefusal(for: cfg, action: action)
-        guard let refusal = libraryActionRefusal(for: cfg) ?? pending else { return true }
-        switch action {
-        case .deletion: deletionError = refusal
-        case .clone: cloneError = refusal
-        case .move: moveError = refusal
-        }
-        return false
-    }
 }

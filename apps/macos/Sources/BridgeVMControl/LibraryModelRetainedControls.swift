@@ -25,13 +25,6 @@ extension LibraryModel {
         }
     }
 
-    func captureRetainedControls() {
-        let registered = Set(vms.map(\.slug))
-        retainedControlStore.capture(
-            windowsInstallSessions.retainedControls(excludingSlugs: registered)
-                + hvfRuntimeSessions.retainedControls(excludingSlugs: registered))
-    }
-
     private func activeRetainedControl(for slug: String) -> LibraryRetainedControlRecord? {
         retainedControlRecords
             .filter { $0.descriptor.config.slug == slug && $0.descriptor.isActive }

@@ -32,7 +32,8 @@ final class LibraryModel: ObservableObject {
     let retainedControlStore = LibraryRetainedControlStore()
     func runningModels() -> [ControlModel] { vms.compactMap { modelCache[$0.slug] }.filter { $0.running } }
     var rootURL: URL { libraryRoot }
-    func hasAcceptedControlOperation(for slug: String) -> Bool { modelCache[slug]?.hasAcceptedOperation == true }
+    func hasAcceptedControlOperation(for slug: String) -> Bool { modelCache[slug]?.hasAcceptedOperation == true || modelCache[slug]?.ownedRuntime?.snapshot.phase == .stopping }
+    func hasActiveOwnedControlRuntime(for slug: String) -> Bool { modelCache[slug]?.ownedRuntime?.snapshot.isActive == true }
     func hasMismatchedCachedControlConfiguration(for cfg: VMConfig) -> Bool {
         modelCache[cfg.slug].map { $0.config != cfg } ?? false
     }
@@ -72,17 +73,11 @@ final class LibraryModel: ObservableObject {
         let scan = VMLibrary.scan(rootURL: libraryRoot)
         vms = scan.configs
         libraryIssues = scan.issues
-        captureRetainedControls()
+        captureRetainedControls(Array(modelCache.values))
         windowsInstallSessions.reconcile(with: vms)
         hvfRuntimeSessions.reconcile(with: vms)
         let configsBySlug = Dictionary(vms.map { ($0.slug, $0) }, uniquingKeysWith: { first, _ in first })
-        modelCache = modelCache.filter { slug, model in
-            guard let current = configsBySlug[slug] else { return false }
-            if model.config == current { return true }
-            // Keep the old control handle while it may still own a live process
-            // or operation. Replacing it now could make that VM impossible to stop.
-            return model.running || model.lifecycleBusy || model.busy
-        }
+        modelCache = LibraryControlModelReconciliation.reconcile(modelCache, configurations: configsBySlug)
         reconcileLibrarySelection(configsBySlug: configsBySlug)
     }
 

@@ -12,7 +12,7 @@ extension LibraryModel {
             let request: HvfWindowsInstallRequest?
             switch control {
             case let .install(_, session): request = session.plan.request
-            case .runtime: request = nil
+            case .runtime, .generic: request = nil
             }
             if HvfPendingDeletionReferences.references(config: control.config,
                                                         request: request, removedEntry: entry) {
