@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/a19-t20-r7-20260929.md	current	windows-storage	-
+docs/windows-arm/evidence/a19-t20-r8-20260930.md	current	windows-storage	-
+docs/history/windows-hvf/autonomous-controls-20261014.md	historical-evidence	windows-reliability	-
