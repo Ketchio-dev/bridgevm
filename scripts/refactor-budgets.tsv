@@ -2299,7 +2299,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfSessionInputRouterTests.swift	88	0
 scripts/test-bvagent-pointer-release.ps1	23	0
 apps/macos/Tests/BridgeVMControlTests/HvfPointerReleaseEncodingTests.swift	26	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerHeldState.swift	30	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRecoverableInputStream.swift	67	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRecoverableInputStream.swift	56	0
 apps/macos/Tests/BridgeVMControlTests/HvfPointerRecoveryTests.swift	85	0
 apps/macos/Tests/BridgeVMControlTests/HvfPointerPressOutcomeTests.swift	52	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineRepositoryRoot.swift	49	0
@@ -4481,3 +4481,9 @@ apps/macos/Tests/BridgeVMControlTests/RetainedControlsNavigationTests.swift	108	
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFocusAdmissionTests.swift	87	0
 apps/macos/Sources/BridgeVMControl/LibraryIssuesDetails.swift	35	0
 apps/macos/Tests/BridgeVMControlTests/LibraryWarningNavigationTests.swift	58	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerCleanup.swift	30	0
+apps/macos/Tests/BridgeVMControlTests/HvfFailedPointerReleaseTests.swift	65	0
+apps/macos/Tests/BridgeVMControlTests/HvfPointerCleanupBoundaryTests.swift	50	0
+apps/macos/Tests/BridgeVMControlTests/HvfPointerFailureFixture.swift	68	0
+apps/macos/Tests/BridgeVMControlTests/HvfPointerFailureRecoveryTests.swift	77	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/pointer_cleanup_order_tests.rs	63	0

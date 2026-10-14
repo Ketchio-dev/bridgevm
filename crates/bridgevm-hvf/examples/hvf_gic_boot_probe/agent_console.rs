@@ -35,6 +35,8 @@ mod clipboard;
 mod config;
 #[path = "agent_console/control_file.rs"]
 mod control_file;
+#[path = "agent_console/pointer_cleanup_order_tests.rs"]
+mod pointer_cleanup_order_tests;
 #[path = "agent_console/ctl_input_line_tests.rs"]
 mod ctl_input_line_tests;
 #[path = "agent_console/ctl_verb_reply_tests.rs"]

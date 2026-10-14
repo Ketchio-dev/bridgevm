@@ -36,7 +36,7 @@ enum HvfSessionInputFailure: Equatable {
 
 extension HvfSessionInputRouter {
     /// The owner's poll of one run.log batch. `poll` first cancels the generation a reset record in
-    /// this batch ends; a router that failed earlier already holds no request.
+    /// this batch ends; a failed router may retain only its bounded pointer cleanup.
     mutating func pollBatch(binding: [String], serviceReady: Bool, lines: [String], now: Date,
                             send: (String) -> Bool) -> HvfAcknowledgedInputStream.Update? {
         let update = poll(binding: binding, serviceReady: serviceReady, lines: lines, now: now, send: send)

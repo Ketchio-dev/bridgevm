@@ -7,7 +7,7 @@ sources=()
 for name in HvfSessionInputDriver HvfTextInputTargetIdentity HvfSessionInputRouter HvfSessionInputGeneration HvfOrderedInputQueue \
   HvfRecoverableInputStream HvfNegotiatedInputStream HvfAcknowledgedInputStream \
   HvfInputCapabilitiesRequest HvfInputCapabilityReceipt HvfUnicodeInputRequest HvfGuestInputEncoding \
-  HvfPointerInputEncoding HvfPointerScrollEncoding HvfPointerHeldState HvfInputReceiptEnvelope HvfGuestResetRecord; do
+  HvfPointerInputEncoding HvfPointerScrollEncoding HvfPointerHeldState HvfPointerCleanup HvfInputReceiptEnvelope HvfGuestResetRecord; do
   sources+=("$ENGINE/$name.swift")
 done
 swiftc -parse-as-library -O "${sources[@]}" "$ROOT/scripts/live-gates/production-input-driver.swift" -o "$1"

@@ -3,17 +3,15 @@ import Foundation
 /// Cleanup shares the serial agent transport but never replays a user request.
 struct HvfRecoverableInputStream {
     private var stream = HvfNegotiatedInputStream()
-    private var cleanup = HvfAcknowledgedInputStream()
-    private var held = HvfPointerHeldState()
+    private var cleanup = HvfPointerCleanup()
     private var queued: [HvfOrderedInputQueue.Event] = []
     private var active: HvfOrderedInputQueue.Event?
-    private var recovering = false
-    private var blocked = false
-    var state: HvfNegotiatedInputStream.State { blocked ? .failed : (recovering ? .negotiating : stream.state) }
+    var isRecovering: Bool { cleanup.recovering && !cleanup.blocked }
+    var state: HvfNegotiatedInputStream.State { cleanup.blocked ? .failed : (isRecovering ? .negotiating : stream.state) }
     var count: Int { stream.count + cleanup.count }
 
     mutating func enqueue(_ event: HvfOrderedInputQueue.Event, now: Date) -> HvfNegotiatedInputStream.Admission {
-        guard !blocked, !recovering else { return .refused }
+        guard !cleanup.blocked, !isRecovering else { return .refused }
         let admission = stream.enqueue(event, now: now)
         if admission == .queued { queued.append(event) }
         return admission
@@ -21,27 +19,23 @@ struct HvfRecoverableInputStream {
 
     mutating func poll(serviceReady: Bool, legacyQuiescent: Bool, lines: [String], now: Date,
                        send: (String) -> Bool) -> HvfAcknowledgedInputStream.Update? {
-        guard !blocked else { return nil }
-        if recovering {
-            let update = serviceReady ? cleanup.advance(lines: lines, now: now, send: send) : cleanup.cancel(.sessionChanged)
-            if case .inserted = update { recovering = false; held = HvfPointerHeldState() }
-            if case .cancelled = update { blocked = true }
-            return update
-        }
+        guard !cleanup.blocked else { return nil }
+        if isRecovering { return cleanup.poll(serviceReady: serviceReady, lines: lines, now: now, send: send) }
         let update = stream.poll(serviceReady: serviceReady, legacyQuiescent: legacyQuiescent,
                                  lines: lines, now: now, send: send)
         switch update {
         case .sent:
-            guard !queued.isEmpty else { blocked = true; return stream.reset(.transportFailed) }
+            guard !queued.isEmpty else { cleanup.blocked = true; return stream.reset(.transportFailed) }
             let event = queued.removeFirst()
             active = event
-            held.sent(event)
+            cleanup.held.sent(event)
         case .inserted:
-            if let active { held.inserted(active) }
+            if let active { cleanup.held.inserted(active) }
             active = nil
-        case .cancelled:
+        case let .cancelled(reason, _):
             queued.removeAll()
             active = nil
+            if reason == .transportFailed || reason == .expired { cleanup.begin(now: now) }
         default: break
         }
         return update
@@ -53,14 +47,9 @@ struct HvfRecoverableInputStream {
         queued.removeAll()
         active = nil
         if reason == .targetChanged {
-            if !recovering, !blocked, let release = held.release {
-                recovering = cleanup.enqueue(.pointer(release), now: now)
-                if !recovering { blocked = true }
-            }
+            cleanup.begin(now: now)
         } else {
-            cleanup.cancel(reason)
-            recovering = false
-            held = HvfPointerHeldState()
+            cleanup.reset(reason)
         }
         return update
     }

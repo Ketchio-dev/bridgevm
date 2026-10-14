@@ -8,7 +8,7 @@ struct HvfSessionInputRouter {
     private(set) var failure: HvfSessionInputFailure? // see `endsAtGuestReset` for re-arming
     var failed: Bool { failure != nil }
     private var stream = HvfRecoverableInputStream()
-    var state: HvfNegotiatedInputStream.State { stream.state }
+    var state: HvfNegotiatedInputStream.State { failed ? .failed : stream.state }
     var count: Int { stream.count }
 
     mutating func beginOwnedBoot(binding: [String]) {
@@ -44,7 +44,7 @@ struct HvfSessionInputRouter {
 
     mutating func poll(binding: [String], serviceReady: Bool, lines: [String], now: Date,
                        send: (String) -> Bool) -> HvfAcknowledgedInputStream.Update? {
-        guard matches(binding), !failed, eligible else { return nil }
+        guard matches(binding), eligible, !failed || (failure == .requestFailed && stream.isRecovering) else { return nil }
         let reset = lines.contains { HvfGuestResetRecord.matches($0) }
         if activated, let reason = HvfSessionInputFailure(reset: reset, serviceReady: serviceReady, lines: lines) {
             return fail(reason)
