@@ -37,8 +37,6 @@ docs/plans/refactor-handoff.md	active-plan	development-handoff	-
 @include	docs/document-manifests/native-vmm-virtio-gpu-3d-blob-bounds.tsv	-	-
 @include	docs/document-manifests/native-vmm-share-path-containment.tsv	-	-
 @include	docs/document-manifests/live-worker-ssd-launch.tsv	-	-
-docs/windows-arm/evidence/app-install-to-3d-desktop-20260730.md	current	windows-app	GOAL.md
-docs/windows-arm/evidence/fresh-12041-a1-a2-a3-a8-rediagnosis-20260730.md	current	windows-graphics	GOAL.md
 docs/windows-arm/evidence/a3-attach-backing-0xd1-fix-20260731.md	current	windows-graphics	GOAL.md
 docs/windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md	current	windows-graphics	GOAL.md
 docs/windows-arm/evidence/a1-boot-stall-20260802.md	current	windows-graphics	GOAL.md
@@ -138,3 +136,4 @@ docs/windows-arm/evidence/a9-stale-code-requirement-20260911.md	current	a9-code-
 @include	docs/document-manifests/autonomous-controls-20261014.tsv	-	-
 @include	docs/document-manifests/autonomous-restore-ownership-20261014.tsv	-	-
 @include	docs/document-manifests/autonomous-lifecycle-20261014.tsv	-	-
+@include	docs/document-manifests/autonomous-admission-20261014.tsv	-	-
