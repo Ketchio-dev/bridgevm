@@ -260,8 +260,8 @@ jobs:
         run: bash scripts/check-virgl-integer-attributes.sh
       - name: HVF Windows Coherence protocol
         run: bash scripts/check-hvf-windows-coherence-protocol.sh
-      - name: sealed Windows warm NVMe performance contracts
-        run: bash tests/integration/hvf-nvme-performance-tier-smoke.sh
+      - name: sealed Windows warm NVMe and T12 input contracts
+        run: bash tests/integration/hvf-nvme-performance-tier-smoke.sh && bash tests/integration/bridgevm-pc-nvme-block-live-tier-smoke.sh
       - name: the gate scripts themselves are free of the enforced defect classes
         run: bash scripts/check-shell-scripts.sh
       - name: every tracked Python script compiles

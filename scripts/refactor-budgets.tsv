@@ -1425,7 +1425,7 @@ scripts/live-gates/live-process-cleanup.sh	96	0
 scripts/live-gates/pointer-input-manifest.sh	38	0
 scripts/live-gates/run-bridgevm-pc-pci-tier.sh	79	0
 scripts/live-gates/run-bridgevm-pc-nvme-bar-tier.sh	81	0
-scripts/live-gates/run-bridgevm-pc-nvme-block-tier.sh	84	0
+scripts/live-gates/run-bridgevm-pc-nvme-block-tier.sh	41	0
 scripts/live-gates/run-pointer-reliability-tier.sh	61	0
 scripts/live-gates/run-hvf-boot-performance-tier.sh	120	0
 scripts/live-gates/run-hvf-nvme-performance-tier.sh	24	0
@@ -1533,7 +1533,7 @@ tests/integration/bridgevm-pc-reset-vector-live-opt-in-smoke.sh	40	0
 tests/integration/bridgevm-pc-dxe-entry-live-opt-in-smoke.sh	40	0
 tests/integration/bridgevm-pc-pci-live-tier-smoke.sh	22	0
 tests/integration/bridgevm-pc-nvme-bar-live-tier-smoke.sh	19	0
-tests/integration/bridgevm-pc-nvme-block-live-tier-smoke.sh	16	0
+tests/integration/bridgevm-pc-nvme-block-live-tier-smoke.sh	12	0
 tests/integration/bridgevm-pc-prohibited-references-smoke.sh	18	0
 tests/integration/bridgevm-pc-variable-process-persistence.sh	31	0
 tests/integration/bridgevm-pc-pcie-live-opt-in-smoke.sh	28	0
@@ -4722,3 +4722,13 @@ crates/bridgevm-hvf/src/virtio_console/tests/driver_ready.rs	79	0
 crates/bridgevm-hvf/src/virtio_console/tests/driver_ready_fixture.rs	70	0
 crates/bridgevm-hvf/src/virtio_console/tests/ready_queue.rs	26	0
 apps/macos/Tests/BridgeVMControlTests/LibraryDashboardLegacyActionTests.swift	92	0
+scripts/live-gates/t12-receipt.sh	50	0
+scripts/live-gates/t12_input_manifest.py	68	0
+scripts/live-gates/t12_input_seal.py	64	0
+scripts/live-gates/t12_inputs.py	33	0
+tests/integration/t12-sealed-admission-contract.py	32	0
+tests/integration/t12-sealed-input-refusals.py	51	0
+tests/integration/t12-sealed-runtime-contract.py	71	0
+tests/integration/t12-sealed-worker-contract.py	58	0
+tests/integration/t12_sealed_runtime_fixture.py	59	0
+tests/integration/t12_sealed_test_support.py	64	0
