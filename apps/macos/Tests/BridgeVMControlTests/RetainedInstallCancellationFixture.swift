@@ -7,7 +7,7 @@ import XCTest
 /// injected. Deferred windows are never shown, ordered front or focused.
 @MainActor
 final class RetainedInstallCancellationFixture {
-    let root = LibraryDeletionTestDirectory.temporary.appendingPathComponent("retained-install-" + UUID().uuidString)
+    let root = LibraryDeletionTestDirectory.temporary.resolvingSymlinksInPath().appendingPathComponent("retained-install-" + UUID().uuidString)
     let gate = HvfWindowsInstallCancellationGate()
     let queue = HvfWindowsInstallPipelineQueue()
     let buttons = InstallCancellationButtonProbe()
@@ -52,7 +52,7 @@ final class RetainedInstallCancellationFixture {
         guard !queue.jobs.isEmpty else { return }
         let worker = Task { await queue.runNext() }
         let entered = await gate.waitForEntry()
-        XCTAssertTrue(entered)
+        XCTAssertTrue(entered, "The injected install boundary was not reached: \(session.stage)")
         do {
             if entered {
                 try FileManager.default.removeItem(at: root.appendingPathComponent(config.slug + "/vm.json"))
