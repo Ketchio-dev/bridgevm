@@ -2,14 +2,14 @@
 
 use super::*;
 
-struct MemoryPasteboard {
-    text: String,
-    count: i64,
-    writes: Vec<String>,
+pub(super) struct MemoryPasteboard {
+    pub(super) text: String,
+    pub(super) count: i64,
+    pub(super) writes: Vec<String>,
 }
 
 impl MemoryPasteboard {
-    fn new(text: &str) -> Self {
+    pub(super) fn new(text: &str) -> Self {
         Self {
             text: text.into(),
             count: 1,

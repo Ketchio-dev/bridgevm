@@ -8,6 +8,8 @@ use crate::agent_console::host_pasteboard::PasteboardWorker;
 mod observed_host;
 #[path = "clip_paste_tests.rs"]
 mod paste;
+#[path = "clip_recopy_tests.rs"]
+mod recopy;
 
 /// Service loop wired to a channel-only pasteboard and a modelled guest
 /// clipboard that answers CLIPGET/CLIPSET the way `bvagent.ps1` does.
