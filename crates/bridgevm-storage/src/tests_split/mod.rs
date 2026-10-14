@@ -5,6 +5,7 @@ mod clone_output;
 mod export_destination;
 mod helpers;
 mod import_images;
+mod import_markers;
 mod import_portability;
 mod import_raw_backing;
 mod part_1;

@@ -25,6 +25,7 @@ mod error;
 mod export_destination;
 mod guest_tools_metadata;
 mod guest_tools_store;
+mod import_admission;
 mod import_image_info;
 mod import_metadata;
 mod import_paths;

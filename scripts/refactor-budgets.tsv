@@ -3695,7 +3695,7 @@ crates/bridgevm-storage/src/import_publish.rs	36	2
 crates/bridgevm-storage/src/import_qcow.rs	153	0
 crates/bridgevm-storage/src/import_qcow_header.rs	45	0
 crates/bridgevm-storage/src/import_staging.rs	65	0
-crates/bridgevm-storage/src/import_transaction.rs	94	0
+crates/bridgevm-storage/src/import_transaction.rs	93	0
 crates/bridgevm-storage/src/tests_split/import_images.rs	56	0
 crates/bridgevm-storage/src/tests_split/import_portability.rs	349	0
 scripts/check-project-storage.sh	8	0
@@ -4597,3 +4597,9 @@ apps/macos/Tests/BridgeVMControlTests/HvfCloneSourcePathTests.swift	83	0
 apps/macos/Tests/BridgeVMControlTests/RegisteredCloneActivityFixture.swift	59	0
 apps/macos/Tests/BridgeVMControlTests/VMCloneDestinationFixture.swift	27	0
 crates/bridgevm-storage/tests/import_literal_names/active.rs	6	0
+crates/bridgevm-cli/tests/cli_import_invalid_deletion.rs	137	0
+crates/bridgevm-cli/tests/cli_import_original_name.rs	164	0
+crates/bridgevm-cli/tests/cli_import_tombstone.rs	43	0
+crates/bridgevm-cli/tests/support/import_tombstone.rs	223	0
+crates/bridgevm-storage/src/import_admission.rs	20	0
+crates/bridgevm-storage/src/tests_split/import_markers.rs	106	0
