@@ -77,7 +77,6 @@ docs/windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md	current	
 @include	docs/document-manifests/native-vmm-pc-msix-replay.tsv	-	-
 @include	docs/document-manifests/native-vmm-nvme-shutdown.tsv	-	-
 docs/windows-arm/evidence/bridgevm-pc-bds-exit-live-20260831.md	current	windows-architecture	-
-docs/windows-arm/evidence/a11-regression-seal-20260901.md	current	testing	-
 @include	docs/document-manifests/native-vmm-audio-lifecycle.tsv	-	-
 docs/windows-arm/evidence/b10-qmp-stress-hosted-20260902.md	current	testing	-
 docs/windows-arm/evidence/f3-postclose-save-prompt-confirmed-20260908.md	current	windows-guest-integration	-
@@ -89,7 +88,6 @@ docs/windows-arm/evidence/b6-dpi-and-capture-live-20260908.md	current	windows-gu
 @include	docs/document-manifests/a19-interruption.tsv	-	-
 docs/windows-arm/smccc-trng-psci-contract.md	current	windows-hvf-engine	-
 docs/windows-arm/evidence/a1-queued-boot-t2-20260804.md	current	windows-graphics	GOAL.md
-docs/windows-arm/evidence/a11-xctest-shim-20260805.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/native-vmm-gic-deactivation.tsv	-	-
 docs/windows-arm/evidence/a1-apple-feedback-draft-20260806.md	current	windows-graphics	GOAL.md
 docs/windows-arm/evidence/a15-reset-recreate-3cycle-20260806.md	current	windows-graphics	GOAL.md
@@ -135,3 +133,4 @@ docs/windows-arm/evidence/a9-stale-code-requirement-20260911.md	current	a9-code-
 @include	docs/document-manifests/autonomous-admission-20261014.tsv	-	-
 @include	docs/document-manifests/autonomous-reservations-20261014.tsv	-	-
 @include	docs/document-manifests/autonomous-import-preservation-20261014.tsv	-	-
+@include	docs/document-manifests/autonomous-selected-media-20261014.tsv	-	-
