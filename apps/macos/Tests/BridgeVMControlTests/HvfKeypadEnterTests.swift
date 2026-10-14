@@ -11,7 +11,7 @@ final class HvfKeypadEnterTests: XCTestCase {
         XCTAssertEqual(HvfHostKeyCommand.resolve(characters: keypad, modifiers: .option), .key("alt+enter"))
         XCTAssertEqual(HvfHostKeyCommand.resolve(characters: keypad, modifiers: .control), .key("ctrl+c"))
         XCTAssertEqual(HvfHostKeyCommand.resolve(characters: keypad, modifiers: .command), .ignored)
-        XCTAssertEqual(HvfHostKeyCommand.resolve(characters: keypad, modifiers: .shift), .ignored)
+        XCTAssertEqual(HvfHostKeyCommand.resolve(characters: keypad, modifiers: .shift), .key("shift+enter"))
         XCTAssertEqual(HvfHostKeyCommand.resolve(characters: "\r"), .key("enter"))
         XCTAssertEqual(HvfHostKeyCommand.resolve(characters: "\n"), .key("enter"))
     }

@@ -39,7 +39,7 @@ final class HvfHostKeyModifierTests: XCTestCase {
     }
 
     func testShiftedTextAndSecureAttentionRemainAvailable() {
-        for text in ["A", "!", " "] {
+        for text in ["A", "!"] {
             XCTAssertEqual(HvfHostKeyCommand.resolve(characters: text, modifiers: .shift), .text(text))
         }
         XCTAssertEqual(HvfHostKeyCommand.resolve(

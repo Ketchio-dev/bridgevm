@@ -2149,7 +2149,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfGuestKeyInputRequestTests.swift	56	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfAcknowledgedInputStream.swift	76	0
 apps/macos/Tests/BridgeVMControlTests/HvfAcknowledgedInputStreamTests.swift	90	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/input_protocol.rs	45	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfInputCapabilitiesRequest.swift	51	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfInputCapabilitiesRequest.swift	39	0
 apps/macos/Tests/BridgeVMControlTests/HvfInputCapabilitiesRequestTests.swift	50	0
 scripts/test-bvagent-input-capabilities.ps1	26	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfNegotiatedInputStream.swift	75	0
@@ -4429,3 +4429,10 @@ crates/bridgevm-hvf/src/managed_pair_staging_recovery_test_support.rs	59	0
 crates/bridgevm-hvf/src/snapshot_preserved_staging_test_support.rs	21	0
 crates/bridgevm-hvf/tests/managed_staging_export.rs	112	0
 apps/macos/Tests/BridgeVMControlTests/ControlModelResourceCompletionTests.swift	107	0
+apps/macos/Tests/BridgeVMControlTests/HvfShiftKeyChordTests.swift	75	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfInputCapabilityReceipt.swift	41	0
+apps/macos/Tests/BridgeVMControlTests/HvfShiftKeyCompatibilityTests.swift	94	0
+apps/macos/Tests/BridgeVMControlTests/HvfInputKeyCapabilitiesTests.swift	92	0
+scripts/test-bvagent-key-capabilities.ps1	41	0
+docs/machine-contract/qemu-virt-deviations-input-agent.json	15	0
+docs/machine-contract/resident-input-keysets.md	40	0

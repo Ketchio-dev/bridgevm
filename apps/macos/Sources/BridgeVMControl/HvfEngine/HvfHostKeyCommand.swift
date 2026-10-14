@@ -61,7 +61,7 @@ extension HvfHostKeyCommand {
         ]
         if flags == .shift {
             if let key = navigation[characters] { return .key("shift+" + key) }
-            if characters == "\t" || characters == "\u{19}" { return .key("shift+tab") }
+            if let name = ["\t": "tab", "\u{19}": "tab", "\r": "enter", "\n": "enter", "\u{3}": "enter", " ": "space"][characters] { return .key("shift+" + name) }
             guard !characters.isEmpty, characters.unicodeScalars.allSatisfy({
                 !CharacterSet.controlCharacters.contains($0) && !(0xf700...0xf8ff).contains($0.value)
             }) else { return .ignored }

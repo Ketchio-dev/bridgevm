@@ -10,7 +10,7 @@ final class HvfGuestKeyInputRequestTests: XCTestCase {
         let navigation = ["left", "up", "right", "down", "home", "end", "pageup", "pagedown"]
         let named = navigation + ["backspace", "tab", "enter", "esc", "escape", "space", "insert", "delete"]
             + (1...12).map { "f\($0)" }
-        let shifted = navigation.map { "shift+" + $0 } + ["shift+tab"]
+        let shifted = navigation.map { "shift+" + $0 } + ["shift+tab", "shift+enter", "shift+space"]
         let controlled = (navigation + ["a", "c", "v", "x", "y", "z", "backspace", "delete"]).map { "ctrl+" + $0 }
         let combined = navigation.map { "ctrl+shift+" + $0 }
         for key in named + shifted + controlled + combined + ["alt+tab", "alt+enter", "alt+f4"] {
@@ -22,7 +22,7 @@ final class HvfGuestKeyInputRequestTests: XCTestCase {
 
     func testUnsupportedCommandsNeverBecomeRequests() {
         for key in ["", "a", "CTRL+V", "ctrl+alt+delete", "command+c", "shift+ctrl+left",
-                    "ctrl+ctrl+v", "+enter", "enter+", "ctrl++v", "alt+a", "shift+enter",
+                    "ctrl+ctrl+v", "+enter", "enter+", "ctrl++v", "alt+a", "shift+delete",
                     "enter\n", "enter\r", " ctrl+v", "f13", String(repeating: "a", count: 33)] {
             XCTAssertNil(HvfUnicodeInputRequest(event: .key(key), now: now), key)
         }

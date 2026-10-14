@@ -41,7 +41,7 @@ struct HvfGuestInputEncoding {
         let allowed: Bool
         switch prefix {
         case "": allowed = parts.count == 1 && named.contains(key)
-        case "shift": allowed = navigation.contains(key) || key == "tab"
+        case "shift": allowed = navigation.contains(key) || ["tab", "enter", "space"].contains(key)
         case "ctrl":
             allowed = navigation.contains(key) || ["a", "c", "v", "x", "y", "z", "backspace", "delete"].contains(key)
         case "ctrl+shift": allowed = navigation.contains(key)
