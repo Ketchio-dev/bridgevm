@@ -1,12 +1,12 @@
 import Foundation
 
-struct VMLibraryIssue: Identifiable, Equatable {
+struct VMLibraryIssue: Identifiable, Equatable, Sendable {
     let path: String
     let message: String
     var id: String { path }
 }
 
-struct VMLibraryScan {
+struct VMLibraryScan: Sendable {
     let configs: [VMConfig]
     let issues: [VMLibraryIssue]
 }

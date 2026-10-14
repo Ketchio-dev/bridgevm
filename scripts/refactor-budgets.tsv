@@ -4629,3 +4629,14 @@ crates/bridgevm-storage/src/vm_clone_media.rs	64	0
 crates/bridgevm-storage/src/tests_split/clone_source_safety.rs	28	0
 docs/history/windows-hvf/autonomous-queue-and-clone-20261014.md	113	0
 docs/document-manifests/autonomous-queue-and-clone-20261014.tsv	3	0
+apps/macos/Sources/BridgeVMControl/BridgeVMControlAppContent.swift	18	0
+apps/macos/Sources/BridgeVMControl/LibraryInitialScan.swift	10	0
+apps/macos/Sources/BridgeVMControl/LibraryStartupCoordinator.swift	65	0
+apps/macos/Sources/BridgeVMControl/LibraryStartupView.swift	29	0
+apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeRuntimeLibraryStartup.swift	18	0
+apps/macos/Tests/BridgeVMControlTests/LibraryStartupAdmissionTests.swift	59	0
+apps/macos/Tests/BridgeVMControlTests/LibraryStartupCompatibilityTests.swift	62	0
+apps/macos/Tests/BridgeVMControlTests/LibraryStartupCoordinatorTests.swift	100	0
+apps/macos/Tests/BridgeVMControlTests/LibraryStartupFixture.swift	35	0
+apps/macos/Tests/BridgeVMControlTests/LibraryStartupProbe.swift	35	0
+apps/macos/Tests/BridgeVMControlTests/LibraryStartupRecoveryFixture.swift	51	0

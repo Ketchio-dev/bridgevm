@@ -10,6 +10,7 @@ final class NativeRuntimeAppOwner {
     private let options: BridgeVMControlLaunchOptions
     private let appInstanceID = UUID().uuidString
     private let cache: NativeRuntimeModelCache<LibraryModel>
+    private var startup: LibraryStartupCoordinator?
     private lazy var requests = NativeRuntimeAppRequestHandlers(appInstanceID: appInstanceID, library: library.identity,
         validateOwner: { [weak self] in
             guard let self else { throw NativeRuntimeError.ownerUnavailable }
@@ -42,21 +43,17 @@ final class NativeRuntimeAppOwner {
         }
     }
 
-    func model() -> LibraryModel {
-        do {
-            return try cache.model {
-                LibraryModel(rootURL: URL(fileURLWithPath: library.identity.canonicalPath),
-                    e2eUnattendedPath: options.e2eUnattendedPath?.path, e2eHostDiagnosticStopAdmitted: options.admitsHostDiagnosticStop,
-                    migrateLegacy: BridgeVMControlLaunchPolicy.shouldMigrateLegacy(options: options))
-            }
-        } catch {
-            FileHandle.standardError.write(Data("BridgeVM: \(error.localizedDescription)\n".utf8))
-            exit(1)
-        }
+    func libraryStartup() -> LibraryStartupCoordinator {
+        if let startup { return startup }
+        let startup = NativeRuntimeLibraryStartup.make(rootURL: URL(fileURLWithPath: library.identity.canonicalPath),
+            owner: owner, cache: cache, options: options)
+        self.startup = startup
+        return startup
     }
 
     static func shutdown() {
-        prepared?.owner.close()
+        if let startup = prepared?.startup { startup.close() }
+        else { prepared?.owner.close() }
         prepared = nil
     }
 }

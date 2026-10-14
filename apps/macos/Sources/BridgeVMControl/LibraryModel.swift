@@ -39,6 +39,7 @@ final class LibraryModel: ObservableObject {
         e2eUnattendedPath: String? = nil,
         e2eHostDiagnosticStopAdmitted: Bool = false,
         migrateLegacy: Bool = true,
+        initialScan: VMLibraryScan? = nil,
         installSessionFactory: @escaping HvfWindowsInstallSessionStore.Factory = { HvfWindowsInstallSession(plan: $0) },
         runtimeSessionFactory: @escaping HvfRuntimeSessionStore.Factory = { HvfEngineSession(config: $0) },
         installPreparation: HvfWindowsInstallPreparationOptions = .init(),
@@ -55,15 +56,13 @@ final class LibraryModel: ObservableObject {
         windowsInstallSessions = HvfWindowsInstallSessionStore(
             makeSession: installSessionFactory, preparation: installPreparation)
         hvfRuntimeSessions = HvfRuntimeSessionStore(makeSession: runtimeSessionFactory)
-        if migrateLegacy {
-            VMLibrary.migrateLegacyIfNeeded(rootURL: rootURL, legacy: VMConfig.loadLegacy())
-        }
-        reload()
+        applyScan(initialScan ?? LibraryInitialScan.perform(rootURL: rootURL, migrateLegacy: migrateLegacy))
         configureLibraryNavigation()
     }
 
-    func reload() {
-        let scan = VMLibrary.scan(rootURL: libraryRoot)
+    func reload() { applyScan(VMLibrary.scan(rootURL: libraryRoot)) }
+
+    private func applyScan(_ scan: VMLibraryScan) {
         vms = scan.configs
         libraryIssues = scan.issues
         captureRetainedControls(Array(modelCache.values))
