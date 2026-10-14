@@ -21,7 +21,6 @@ struct ContentView: View {
         .tint(LibraryAppearance.accent)
         .groupBoxStyle(LibraryGroupBoxStyle())
         .background(LibraryAppearance.canvas)
-        .preferredColorScheme(.light)
         .sheet(isPresented: $library.showingCreate) {
             CreateVMSheet(library: library)
         }

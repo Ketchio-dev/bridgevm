@@ -1274,7 +1274,7 @@ apps/macos/Sources/BridgeVMControl/Backends.swift	339	0
 apps/macos/Sources/BridgeVMControl/QemuCompatBackend.swift	94	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	22	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	56	0
-apps/macos/Sources/BridgeVMControl/ContentView.swift	284	0
+apps/macos/Sources/BridgeVMControl/ContentView.swift	283	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	135	0
 apps/macos/Sources/BridgeVMControl/CreateVM.swift	358	0
 apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	115	0
