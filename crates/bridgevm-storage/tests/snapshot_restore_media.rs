@@ -5,18 +5,9 @@ use bridgevm_storage::{SnapshotKind, StorageError, VmStore};
 use std::ffi::CString;
 use std::fs;
 use std::os::unix::{ffi::OsStrExt, fs::symlink};
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
-struct Fixture(PathBuf);
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.0).unwrap();
-    }
-}
+#[path = "snapshot_restore_media/fixture.rs"]
+mod fixture;
+use fixture::Fixture;
 
 #[derive(Clone, Copy, Debug)]
 enum Media {
@@ -29,12 +20,7 @@ enum Media {
 }
 
 fn restore(kind: SnapshotKind, media: Media, accepted: bool) {
-    let fixture = Fixture(std::env::temp_dir().join(format!(
-        "bridgevm-restore-media-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    )));
-    fs::create_dir(&fixture.0).unwrap();
+    let fixture = Fixture::new();
     let store = VmStore::new(fixture.0.join("store"));
     let mut manifest = VmManifest::new(
         "synthetic",
