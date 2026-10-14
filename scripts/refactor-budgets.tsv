@@ -4735,3 +4735,5 @@ apps/macos/Tests/BridgeVMControlTests/LibraryCloneSelectionTests.swift	83	0
 scripts/live-gates/app_ui_host_v2_launch_command.py	18	0
 tests/integration/app-ui-supervisor-bundle-contract.py	145	0
 .github/workflows/host-python-contracts.yml	24	0
+docs/archive/a11-measured-through-20261014.md	19	0
+docs/document-manifests/a11-measurement-history-20261014.tsv	3	0

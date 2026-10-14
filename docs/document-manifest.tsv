@@ -60,7 +60,7 @@ docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md	current	win
 @include	docs/document-manifests/product-e2e-owned-result-volume.tsv	-	-
 @include	docs/document-manifests/daemon-test-root-cleanup.tsv	-	-
 @include	docs/document-manifests/product-storage-routing.tsv	-	-
-docs/windows-arm/capability-matrix.md	current	windows-hvf-engine	-
+@include	docs/document-manifests/a11-measurement-history-20261014.tsv	-	-
 docs/windows-arm/graphics-compatibility.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/native-vmm-msix.tsv	-	-
 @include	docs/document-manifests/native-vmm-interrupt-firmware.tsv	-	-
