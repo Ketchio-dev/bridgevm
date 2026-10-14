@@ -4627,3 +4627,5 @@ crates/bridgevm-storage/src/tests_split/clone_identity.rs	124	0
 crates/bridgevm-storage/src/tests_split/clone_portability.rs	99	0
 crates/bridgevm-storage/src/vm_clone_media.rs	64	0
 crates/bridgevm-storage/src/tests_split/clone_source_safety.rs	28	0
+docs/history/windows-hvf/autonomous-queue-and-clone-20261014.md	113	0
+docs/document-manifests/autonomous-queue-and-clone-20261014.tsv	3	0
