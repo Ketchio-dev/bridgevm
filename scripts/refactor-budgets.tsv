@@ -4557,3 +4557,5 @@ crates/bridgevm-hvf/tests/virtio_blk_isr/support.rs	179	0
 apps/macos/Sources/BridgeVMControl/LibraryModelControlModels.swift	25	0
 apps/macos/Tests/BridgeVMControlTests/RegisteredGenericCloneActivityTests.swift	111	0
 apps/macos/Tests/BridgeVMControlTests/RegisteredGenericCloneAdmissionTests.swift	54	0
+apps/macos/Tests/BridgeVMControlTests/FirstRunOptionalRecoveryFixture.swift	75	0
+apps/macos/Tests/BridgeVMControlTests/FirstRunOptionalRecoveryTests.swift	83	0

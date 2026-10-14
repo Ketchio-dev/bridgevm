@@ -50,8 +50,8 @@ struct FirstRunView: View {
         let inputs = FirstRunImport.Inputs(
             displayName: displayName, diskPath: diskPath, varsPath: varsPath,
             vtpmStateDir: vtpmPath.isEmpty ? nil : vtpmPath,
-            vtpmRecoveryPackagePath: vtpmPackagePath.isEmpty ? nil : vtpmPackagePath,
-            vtpmRecoveryCodePath: vtpmCodePath.isEmpty ? nil : vtpmCodePath,
+            vtpmRecoveryPackagePath: vtpmPath.isEmpty || vtpmPackagePath.isEmpty ? nil : vtpmPackagePath,
+            vtpmRecoveryCodePath: vtpmPath.isEmpty || vtpmCodePath.isEmpty ? nil : vtpmCodePath,
             memMiB: memGiB * 1024,
             cpuCount: cpuCount)
         Task { await library.importExistingHvfVM(inputs) }
