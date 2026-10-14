@@ -6,6 +6,11 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- Save the Windows HVF "Clipboard sync" toggle for each library VM
+  (`clipboardSyncEnabled` in `vm.json`; absent means on), so starting the VM
+  from the dashboard or the command line no longer turns two-way clipboard
+  sync back on after it was switched off. The toggle can be changed only
+  while the VM is fully stopped.
 - Infer integer buffer sampler types for legacy TGSI shaders from their bound
   view formats while preserving explicit sampler declarations. This restores
   classic Notepad caption text in the tested Windows graphics scene; the full

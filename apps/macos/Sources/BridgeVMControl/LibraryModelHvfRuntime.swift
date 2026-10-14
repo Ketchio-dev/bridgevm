@@ -9,10 +9,6 @@ final class HvfRuntimeSessionStore {
 
     init(makeSession: @escaping Factory) { self.makeSession = makeSession }
     func existingRecord(slug: String) -> HvfRuntimeSessionRecord? { entries[.libraryVM(slug)] }
-    func isActive(slug: String) -> Bool {
-        guard let entry = entries[.libraryVM(slug)] else { return false }
-        return entry.session.hasActiveRuntimeWork
-    }
 
     func experimentalSession() -> HvfEngineSession {
         if let entry = entries[.experimental] { return entry.session }
@@ -32,9 +28,13 @@ final class HvfRuntimeSessionStore {
         return session
     }
 
-    func owns(_ session: HvfEngineSession, for config: VMConfig) -> Bool {
-        guard let entry = entries[.libraryVM(config.slug)] else { return false }
-        return entry.session === session && entry.sourceConfig == config
+    /// A stopped session follows a registration it saved itself, so its view and unsaved edits survive.
+    func rebind(_ session: HvfEngineSession, from previous: VMConfig, to saved: VMConfig) -> Bool {
+        let key = Key.libraryVM(saved.slug)
+        guard previous.slug == saved.slug, let entry = entries[key], entry.session === session,
+              entry.sourceConfig == previous, !session.hasActiveRuntimeWork else { return false }
+        entries[key] = HvfRuntimeSessionRecord(sourceConfig: saved, session: session)
+        return true
     }
 
     func retainedControls(excludingSlugs: Set<String>) -> [LibraryRetainedControlDescriptor] {

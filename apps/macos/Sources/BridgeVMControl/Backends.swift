@@ -41,6 +41,7 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     var cpuCount: Int? = nil
     var networkEnabled: Bool? = nil  // nil == default on; false disables the guest NIC (HVF only)
     var experimental3DAllowed: Bool? = nil
+    var clipboardSyncEnabled: Bool? = nil  // nil == default on; false keeps two-way clipboard sync off (HVF only)
     /// A config can be imported or hand-edited, so never trust its persisted ID
     /// as a filesystem component. Normalizing here keeps every caller inside the
     /// VM library even when an ID contains separators or traversal components.
@@ -67,27 +68,6 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
         guard let data = FileManager.default.contents(atPath: path) else { return nil }
         return try? JSONDecoder().decode(VMConfig.self, from: data)
     }
-}
-
-/// The engine a VM runs on — the single source of truth for the kind strings and
-/// their display labels (previously duplicated across views/models).
-enum BackendKind: String {
-    case fastVZ = "fast-vz"
-    case qemuCompat = "qemu-compat"
-    case hvfEngine = "hvf-engine"
-
-    var shortLabel: String {
-        switch self { case .fastVZ: return "Fast VZ"; case .qemuCompat: return "QEMU"; case .hvfEngine: return "HVF" }
-    }
-    var detailLabel: String {
-        switch self {
-        case .fastVZ: return "Fast (Apple VZ)"
-        case .qemuCompat: return "Compatibility (QEMU)"
-        case .hvfEngine: return "Native (HVF)"
-        }
-    }
-    /// Whether this engine is actually selectable/usable today.
-    var available: Bool { self == .fastVZ || self == .qemuCompat || self == .hvfEngine }
 }
 
 extension VMConfig {

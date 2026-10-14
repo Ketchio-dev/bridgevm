@@ -10,7 +10,7 @@ extension LibraryModel {
     func hvfRuntimeSession(for config: VMConfig) -> HvfEngineSession? {
         let latest = latestConfiguration(for: config)
         guard let session = hvfRuntimeSessions.session(for: latest, libraryRoot: rootURL, e2eHostDiagnosticStopAdmitted: e2eHostDiagnosticStopAdmitted) else { return nil }
-        bindRuntimeWorkAdmission(session, configuration: latest)
+        bindRuntimeSession(session, configuration: latest)
         return session
     }
 

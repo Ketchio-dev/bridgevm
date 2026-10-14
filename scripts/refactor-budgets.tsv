@@ -1268,7 +1268,7 @@ apps/macos/Sources/BridgeVMApp/ViewModels/DashboardViewModel.swift	4310	0
 apps/macos/Sources/BridgeVMApp/Views/DashboardView.swift	991	0
 apps/macos/Sources/BridgeVMApp/Views/SettingsView.swift	227	0
 apps/macos/Sources/BridgeVMApp/Views/VMDetailView.swift	6392	0
-apps/macos/Sources/BridgeVMControl/Backends.swift	490	0
+apps/macos/Sources/BridgeVMControl/Backends.swift	470	0
 apps/macos/Sources/BridgeVMControl/QemuCompatBackend.swift	130	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	22	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	56	0
@@ -1281,10 +1281,10 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	333	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	413	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	404	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLiveInputFile.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfLiveInputFileTests.swift	145	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	416	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	403	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryRequest.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowInventoryRequestTests.swift	70	0
 apps/macos/Tests/BridgeVMControlTests/HvfPasteKeyOrderingTests.swift	49	0
@@ -2460,7 +2460,7 @@ apps/macos/Sources/BridgeVMControl/LibraryModelSelection.swift	15	0
 apps/macos/Sources/BridgeVMControl/LibraryModelHvfRuntime.swift	54	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeSessionStoreTests.swift	264	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeViewAdmissionTests.swift	118	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBackend.swift	310	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBackend.swift	309	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPackagedWrapperPolicy.swift	42	0
 apps/macos/Tests/BridgeVMControlTests/HvfPackagedWrapperPolicyTests.swift	60	0
 apps/macos/Tests/BridgeVMControlTests/HvfProductBackendConfigurationTests.swift	144	0
@@ -4411,3 +4411,12 @@ apps/macos/Sources/BridgeVMControl/CreateVMSheetPrerequisiteGuidance.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/CreateVMPrerequisitePresentationTests.swift	92	0
 apps/macos/Sources/BridgeVMControl/LibraryModelWindowsInstallPreparationInput.swift	19	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallMetadataRetryTests.swift	84	0
+apps/macos/Sources/BridgeVMControl/BackendKind.swift	20	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfClipboardSyncPreference.swift	66	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfClipboardSyncToggle.swift	29	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSessionLaunchInjection.swift	13	0
+apps/macos/Sources/BridgeVMControl/HvfRuntimeSessionStoreQueries.swift	10	0
+apps/macos/Sources/BridgeVMControl/LibraryModelClipboardSyncRebind.swift	29	0
+apps/macos/Tests/BridgeVMControlTests/HvfClipboardSyncPreferenceSaveTests.swift	161	0
+apps/macos/Tests/BridgeVMControlTests/HvfClipboardSyncPreferenceTests.swift	172	0
+apps/macos/Tests/BridgeVMControlTests/HvfClipboardSyncImportedPreferenceTests.swift	41	0
