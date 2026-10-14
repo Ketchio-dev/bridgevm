@@ -368,10 +368,10 @@ crates/bridgevm-hvf/src/platform_virt/platform_config.rs	76	0
 crates/bridgevm-hvf/src/platform_virt/snapshot.rs	158	0
 crates/bridgevm-hvf/src/platform_virt/soc_devices.rs	48	0
 crates/bridgevm-hvf/src/platform_virt/storage_devices.rs	249	0
-crates/bridgevm-hvf/src/platform_virt/tests/helpers.rs	685	0
+crates/bridgevm-hvf/src/platform_virt/tests/helpers.rs	669	0
 crates/bridgevm-hvf/src/platform_virt/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/platform_virt/tests/part_1.rs	561	0
-crates/bridgevm-hvf/src/platform_virt/tests/part_2.rs	447	0
+crates/bridgevm-hvf/src/platform_virt/tests/part_2.rs	431	0
 crates/bridgevm-hvf/src/platform_virt/tests/part_2_2.rs	535	0
 crates/bridgevm-hvf/src/platform_virt/tests/part_3.rs	435	0
 crates/bridgevm-hvf/src/platform_virt/tpm_devices.rs	16	0
@@ -4737,3 +4737,4 @@ tests/integration/app-ui-supervisor-bundle-contract.py	145	0
 .github/workflows/host-python-contracts.yml	24	0
 docs/archive/a11-measured-through-20261014.md	19	0
 docs/document-manifests/a11-measurement-history-20261014.tsv	3	0
+crates/bridgevm-hvf/src/platform_virt/tests/pci_boot_media_queue.rs	30	0
