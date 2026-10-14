@@ -2513,7 +2513,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallPreparationView.sw
 apps/macos/Sources/BridgeVMControl/HvfWindowsInstallPreparationStore.swift	109	0
 apps/macos/Sources/BridgeVMControl/LibraryControlModelFactory.swift	11	0
 apps/macos/Sources/BridgeVMControl/LibraryModelWindowsInstallAccess.swift	33	0
-apps/macos/Sources/BridgeVMControl/LibraryModelWindowsInstallPreparation.swift	45	0
+apps/macos/Sources/BridgeVMControl/LibraryModelWindowsInstallPreparation.swift	39	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeSessionStoreFixture.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallPlanPreparationFixture.swift	178	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallPlanPreparationIdentityTests.swift	230	0
@@ -4404,6 +4404,8 @@ apps/macos/Tests/BridgeVMControlTests/FirstRunImportDiskFormatTests.swift	55	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextCompositionOverlay.swift	26	0
 apps/macos/Tests/BridgeVMControlTests/HvfTextCompositionViewportTests.swift	38	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallRequestLoadTests.swift	58	0
-apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallRejectedRequestTests.swift	90	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallRejectedRequestTests.swift	87	0
 apps/macos/Sources/BridgeVMControl/CreateVMSheetPrerequisiteGuidance.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/CreateVMPrerequisitePresentationTests.swift	92	0
+apps/macos/Sources/BridgeVMControl/LibraryModelWindowsInstallPreparationInput.swift	19	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallMetadataRetryTests.swift	84	0

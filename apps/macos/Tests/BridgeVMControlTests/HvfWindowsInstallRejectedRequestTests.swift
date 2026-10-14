@@ -4,8 +4,8 @@ import XCTest
 
 @MainActor
 final class HvfWindowsInstallRejectedRequestTests: XCTestCase {
-    func testRejectedMetadataStaysPendingAndStartPreservesOwnedFiles() async throws {
-        for kind in ["oversized", "malformed", "symlink", "fifo"] {
+    func testRejectedMetadataShowsPreparationFailureAndPreservesOwnedFiles() async throws {
+        for kind in ["oversized", "malformed", "symlink", "fifo", "missing"] {
             let f = try HvfRuntimeWorkAdmissionFixture()
             defer { f.clean() }
             let config = f.config(pending: true)
@@ -15,10 +15,11 @@ final class HvfWindowsInstallRejectedRequestTests: XCTestCase {
                 .appendingPathComponent(HvfWindowsInstallRequest.fileName)
             try reject(kind, at: requestURL)
             XCTAssertNil(HvfWindowsInstallRequest.load(bundlePath: config.bundlePath), kind)
-            var scheduled = 0
+            var scheduled = 0, created = 0
             let library = LibraryModel(rootURL: f.root, migrateLegacy: false,
                 installSessionFactory: { plan in
-                    HvfWindowsInstallSession(plan: plan, schedule: { _ in scheduled += 1 })
+                    created += 1
+                    return HvfWindowsInstallSession(plan: plan, schedule: { _ in scheduled += 1 })
                 }, runtimeSessionFactory: { runtimeConfig in
                     f.runtimeCreations += 1
                     return f.makeRuntime(runtimeConfig)
@@ -35,18 +36,13 @@ final class HvfWindowsInstallRejectedRequestTests: XCTestCase {
             let host = try XCTUnwrap(values(HvfWindowsInstallPreparationView.self, in: body).first)
             XCTAssertTrue(host.preparation === preparation)
             XCTAssertTrue(values(HvfEngineView.self, in: body).isEmpty)
-            guard case let .ready(session) = host.preparation.state else {
-                return XCTFail("Existing nil fallback should remain an idle installer: \(kind)")
+            if case let .failed(message) = host.preparation.state {
+                XCTAssertTrue(message.contains("설치 정보"))
+            } else {
+                XCTFail("Rejected metadata must show preparation failure: \(kind)")
             }
-            XCTAssertEqual(session.stage, .idle)
-            XCTAssertTrue(session.plan.request.isoPath.isEmpty)
-            let task = try XCTUnwrap(session.start())
-            await task.value
-            guard case let .failed(message) = session.stage else {
-                return XCTFail("Rejected metadata must fail before scheduling: \(kind)")
-            }
-            XCTAssertFalse(message.isEmpty)
-            XCTAssertFalse(session.isRunning)
+            XCTAssertTrue(values(HvfWindowsInstallView.self, in: host.body).isEmpty)
+            XCTAssertEqual(created, 0)
             XCTAssertEqual(scheduled, 0)
             XCTAssertEqual(f.runtimeCreations, 0)
             XCTAssertEqual(f.backend(config).calls, .init())
@@ -65,6 +61,7 @@ final class HvfWindowsInstallRejectedRequestTests: XCTestCase {
             bytes.append(Data(repeating: 0x20, count: VMLibrary.maximumConfigBytes + 1 - bytes.count))
             try bytes.write(to: url)
         case "malformed": try Data("not JSON".utf8).write(to: url)
+        case "missing": try FileManager.default.removeItem(at: url)
         case "symlink":
             let target = url.deletingLastPathComponent().appendingPathComponent("other-request.json")
             try FileManager.default.moveItem(at: url, to: target)
