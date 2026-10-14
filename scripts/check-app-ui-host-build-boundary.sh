@@ -14,8 +14,8 @@ boundary_output=$4
 [[ "$boundary_output" == /* && ! -e "$boundary_output" && ! -L "$boundary_output" ]] || fail 'output must be a new absolute directory'
 [[ -d "$(dirname "$boundary_output")" ]] || fail 'output parent must already exist'
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+PYTHONDONTWRITEBYTECODE=1 python3 "$repo_root/tests/integration/app-ui-host-build-refusal-contract.py"
 marker='native-app-ui-host-identity'
-refusal='BRIDGEVM_APP_UI_HOST requires a separate DEBUG diagnostic build'
 mkdir -m 700 "$boundary_output"
 LC_ALL=C /usr/bin/file -b "$diagnostic_binary" > "$boundary_output/diagnostic-filetype.txt"
 /usr/bin/grep -Eq '^Mach-O 64-bit executable (arm64|x86_64)$' "$boundary_output/diagnostic-filetype.txt" || fail 'positive control is not a native executable'
@@ -47,7 +47,7 @@ else
   forbidden_status=$?
 fi
 printf '%s\n' "$forbidden_status" > "$boundary_output/forbidden-release.exit-status"
-LC_ALL=C /usr/bin/grep -Eq "BridgeVMControlMain\\.swift:[0-9]+:[0-9]+: error: ${refusal}$" \
-  "$boundary_output/forbidden-release.log" || fail 'release rejection did not contain the exact diagnostic-only compiler refusal'
+python3 "$repo_root/scripts/app_ui_host_build_refusal.py" "$boundary_output/forbidden-release.log" \
+  "$repo_root/apps/macos/Sources/BridgeVMControl/BridgeVMControlMain.swift" "$forbidden_status" || fail 'release rejection did not contain the exact diagnostic-only compiler refusal'
 printf '%s\n' 'app UI host build boundary: PASS (positive debug marker, absent release marker, exact release refusal; no app executed)' \
   | tee "$boundary_output/result.txt"

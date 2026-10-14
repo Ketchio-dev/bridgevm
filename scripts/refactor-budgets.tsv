@@ -4707,3 +4707,5 @@ tests/integration/app_ui_install_cancel_rejection_cases.py	76	0
 crates/bridgevm-storage/src/tests_split/import_archive_staging.rs	57	0
 crates/bridgevm-storage/src/tests_split/import_parallel.rs	53	0
 crates/bridgevm-storage/src/tests_split/import_parallel_fixture.rs	74	0
+scripts/app_ui_host_build_refusal.py	34	0
+tests/integration/app-ui-host-build-refusal-contract.py	88	0
