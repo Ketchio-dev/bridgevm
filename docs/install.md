@@ -70,6 +70,12 @@ checkout into release evidence. Contributors should follow
 [`CONTRIBUTING.md`](../CONTRIBUTING.md) and run the appropriate deterministic
 checks.
 
+The development bundle command above does not prepare the complete app-side
+resources for Windows ISO installation. Supplying an ISO and signed driver
+payload does not supply those resources. For that separate package, see the
+[Windows HVF app packager](../apps/macos/scripts/package-hvf-control-app.sh) and
+its required [pinned wimlib runtime builder](../scripts/build-pinned-wimlib-runtime.sh).
+
 ## Terminal installer (waiting for a safe release)
 
 ```sh
