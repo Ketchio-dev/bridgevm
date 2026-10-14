@@ -459,7 +459,7 @@ crates/bridgevm-hvf/src/virtio_blk/legacy_transport.rs	87	0
 crates/bridgevm-hvf/src/virtio_blk/media_backend.rs	40	0
 crates/bridgevm-hvf/src/virtio_blk/mmio_regs.rs	204	0
 crates/bridgevm-hvf/src/virtio_blk/mod.rs	9	0
-crates/bridgevm-hvf/src/virtio_blk/pci_transport.rs	129	0
+crates/bridgevm-hvf/src/virtio_blk/pci_transport.rs	115	0
 crates/bridgevm-hvf/src/virtio_blk/protocol.rs	117	0
 crates/bridgevm-hvf/src/virtio_blk/queue_pending.rs	34	0
 crates/bridgevm-hvf/src/virtio_blk/snapshot.rs	90	0
@@ -4551,3 +4551,6 @@ docs/history/windows-hvf/autonomous-lifecycle-20261014.md	125	0
 docs/document-manifests/autonomous-lifecycle-20261014.tsv	4	0
 apps/macos/Tests/BridgeVMControlTests/LibraryWarningAliasedFixture.swift	24	0
 crates/bridgevm-storage/tests/import_literal_names.rs	170	0
+crates/bridgevm-hvf/src/virtio_blk/pci_register_map.rs	20	0
+crates/bridgevm-hvf/tests/virtio_blk_isr.rs	141	0
+crates/bridgevm-hvf/tests/virtio_blk_isr/support.rs	179	0

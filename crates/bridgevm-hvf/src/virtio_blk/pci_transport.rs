@@ -8,31 +8,14 @@ use crate::pcie::VIRTIO_BLK_MSIX_TABLE_OFFSET;
 use crate::pcie::VIRTIO_BLK_MSIX_VECTOR_COUNT;
 use std::io;
 use std::path::Path;
+#[path = "pci_register_map.rs"]
+mod pci_register_map;
+use pci_register_map::pci_to_mmio_offset;
 
 #[derive(Debug)]
 pub struct VirtioPciBlock {
     pub(crate) block: VirtioMmioBlock,
     pub(crate) msix: MsixTable,
-}
-
-pub(crate) fn pci_to_mmio_offset(offset: u64, is_write: bool) -> Option<u64> {
-    if (PCI_COMMON_CFG_OFFSET..PCI_COMMON_CFG_OFFSET + PCI_CFG_REGION_SIZE).contains(&offset) {
-        return Some(offset - PCI_COMMON_CFG_OFFSET);
-    }
-    if (PCI_DEVICE_CFG_OFFSET..PCI_DEVICE_CFG_OFFSET + PCI_CFG_REGION_SIZE).contains(&offset) {
-        return Some(REG_CONFIG + offset - PCI_DEVICE_CFG_OFFSET);
-    }
-    if (PCI_NOTIFY_CFG_OFFSET..PCI_NOTIFY_CFG_OFFSET + PCI_CFG_REGION_SIZE).contains(&offset) {
-        return Some(REG_QUEUE_NOTIFY);
-    }
-    if offset == PCI_ISR_CFG_OFFSET {
-        return Some(if is_write {
-            REG_INTERRUPT_ACK
-        } else {
-            REG_INTERRUPT_STATUS
-        });
-    }
-    None
 }
 
 impl VirtioPciBlock {
@@ -74,6 +57,12 @@ impl VirtioPciBlock {
             };
         };
         match op {
+            VirtioPciBlockOp::Read { size } if offset == PCI_ISR_CFG_OFFSET => {
+                VirtioMmioBlockResult::ReadValue(mask_to_size(
+                    u64::from(std::mem::take(&mut self.block.interrupt_status)),
+                    size,
+                ))
+            }
             VirtioPciBlockOp::Read { size } => self.block.access(mmio_offset, false, size, 0, mem),
             VirtioPciBlockOp::Write { size, value } => {
                 self.block.access(mmio_offset, true, size, value, mem)
