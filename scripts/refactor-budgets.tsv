@@ -4403,3 +4403,5 @@ apps/macos/Sources/BridgeVMControl/HvfImportedDiskFormat.swift	21	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunImportDiskFormatTests.swift	55	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextCompositionOverlay.swift	26	0
 apps/macos/Tests/BridgeVMControlTests/HvfTextCompositionViewportTests.swift	38	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallRequestLoadTests.swift	58	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallRejectedRequestTests.swift	90	0
