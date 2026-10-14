@@ -19,8 +19,8 @@ final class HvfTextCompositionViewportTests: XCTestCase {
             let content = window.convertToScreen(window.contentLayoutRect)
             let overlay = try XCTUnwrap(view.subviews.first as? NSTextField)
             XCTAssertEqual(view.bounds.width, width, "Preedit must not expand the guest display beyond its window")
-            XCTAssertLessThanOrEqual(overlay.frame.maxX, width - 12)
-            XCTAssertLessThanOrEqual(candidate.maxX, content.maxX, "IME candidates must anchor inside the visible window")
+            XCTAssertGreaterThanOrEqual(width - 12, overlay.frame.maxX)
+            XCTAssertGreaterThanOrEqual(content.maxX, candidate.maxX, "IME candidates must anchor inside the visible window")
             XCTAssertEqual(overlay.stringValue, text, "Clipping must preserve the full composition for commit")
             XCTAssertEqual(view.markedRange().length, text.utf16.count)
         }
