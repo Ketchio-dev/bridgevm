@@ -21,8 +21,7 @@ subsequent changes.
 
 ## Concurrent tar export uses an exclusively owned stage
 
-Author commit `0d1e1aa05b3c9090537639468f091d803fe788a2`, integrated as
-`fdedadada067e7eb92eaf0e41edb4801601017c9`, reserves a private directory before copying.
+Integrated commit `fdedadada067e7eb92eaf0e41edb4801601017c9` reserves a private directory before copying.
 Timestamp/PID names are candidates; exclusive directory creation establishes ownership before
 any cleanup guard is constructed. An occupied file, directory or dangling link is preserved and
 another candidate is tried, with a finite reservation limit and normal errors retained. The
@@ -44,8 +43,7 @@ partial-output and pathname-based cleanup limits remain.
 
 ## Concurrent tar import isolates outer extraction
 
-Author commit `a6cdb37d5ce7a66c381b9bf4d4151ae16630f31f`, integrated as
-`85ffb1ccab4000f5e316225bc8d193b927c23602`, addresses concurrent public imports into independent
+Integrated commit `85ffb1ccab4000f5e316225bc8d193b927c23602` addresses concurrent public imports into independent
 stores. At unchanged c2, the serial control passed and the concurrent method
 failed with busy/missing-manifest errors. Diagnostic pathname observation showed two distinct
 tar inputs choosing the same outer extraction path. Successful mixed-content publication was not
@@ -62,8 +60,7 @@ protection, arbitrary permission-failure cleanup or every interleaving.
 
 ## Separately versioned accepted-cancel/retry coverage
 
-Author commit `b5649eba9bd97f3eb4f29d193ee93669f310c6c2`, integrated as
-`c9a0138042c8de40c026212213cf3e6af9e4bdee`, adds the diagnostic tier
+Integrated commit `c9a0138042c8de40c026212213cf3e6af9e4bdee` adds the diagnostic tier
 `d6-app-ui-install-cancel-v1`. This addresses a coverage gap, not a reproduced product defect.
 Existing overview v1/v2 schemas and fixed action/capture counts remain unchanged. The new
 scenario has exactly three AX mutations: Start, Cancel while validation is accepted, then Retry
@@ -123,8 +120,7 @@ c2 source. No guest behavior, Windows installation, release gate or criterion wa
 
 ## Ordinary appearance follows the inherited theme
 
-Author commit `2142859a5e379e31c0d6a4ac00ed8cb4369ef243`, integrated as
-`617691b9eea51394a2d24467982dd0a99d2088c1`, removes the unconditional
+Integrated commit `617691b9eea51394a2d24467982dd0a99d2088c1` removes the unconditional
 `.preferredColorScheme(.light)` from ordinary ContentView in both release and DEBUG builds.
 The semantic palette, actions and diagnostic presentation requirements remain unchanged;
 ContentView's structural ceiling falls from 284 to 283 lines.
@@ -139,8 +135,7 @@ comparison unless separately demonstrated.
 
 The original boundary invocation failed even though the forbidden release correctly reached its
 compiler refusal: the checker did not recognize the swiftbuild diagnostic layout. That failure
-remains recorded. Separate author commit `2356c762fc021fe4e623c096a199b5d326bd457f`, integrated
-as `513e34911ab387676e513e039760141262c99ef4`, replaces the suffix search with two exact
+remains recorded. Integrated commit `513e34911ab387676e513e039760141262c99ef4` replaces the suffix search with two exact
 diagnostic-line layouts, tied to the expected source guard and location and a nonzero compiler
 status. Warning/source echoes, altered text/path/location and
 successful compiler exits remain rejected. Seven parser regression methods passed. Native-layout
@@ -154,8 +149,7 @@ existing checker ceiling stays 53 lines; the new helper and tests are registered
 
 ## Diagnostic packaging can select an exact certificate
 
-Author commit `d4599f7c3b5b325833c41c1ef83cdb01b30896d5`, integrated as
-`5ed3b003128aa830a840530aed15f1526f02c0bd`, adds optional `--signing-identity` with an exact
+Integrated commit `5ed3b003128aa830a840530aed15f1526f02c0bd` adds optional `--signing-identity` with an exact
 40-hex certificate fingerprint. Omission preserves ad-hoc
 signing and the existing four-argument packaging API; no environment identity fallback is added.
 The selected route uses absolute codesign with a 20-second timeout per call, strict complete-bundle
@@ -171,6 +165,12 @@ failure exposed a missing inline `=` prefix: requirement text was treated as a f
 correction, the real ad-hoc control proved valid requirement syntax and certificate refusal;
 it did not exercise a certificate-bearing positive signature. No private-key signing, TCC change,
 actual Accessibility trust, stable designated requirement or release qualification is established.
+
+Publication correction: `5a846f8aeff5d5bb928d563eccbab430a2812e04` failed hosted documentation
+references in run `38639077520`/job `116109688818`: six local author commits were unavailable.
+The local checker had those objects and missed this defect. This document now cites reachable
+integration commits; retained external receipts preserve author mappings. The same six failures
+were reproduced with public GitHub refs only. No reference-check rule was relaxed.
 
 ## Evidence bindings and remaining limits
 
