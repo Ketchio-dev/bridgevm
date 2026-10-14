@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-10-14",
-  "tested_commit": "3298098c944389c41d33d0dbc0c7530d74a755f1",
+  "tested_commit": "d4c8d9f6de9e1e69b10767fdbb9837e5989a55e3",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -200,7 +200,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-10-14 22:06 UTC checkpoint: A11 remains OPEN. Fourth source d913596b still awaits complete local and exact hosted checks; preceding exact 5a846f8a local and hosted regression failures remain recorded. The later exact5a UI diagnostic failed AMFI load validation of its signed bare helper before an AX result; cleanup remains unproven and its queue is fenced. The final release regression seal remains unproven. See the [fourth development checkpoint](../history/windows-hvf/autonomous-readiness-and-sealed-inputs-20261014.md) and [verbatim A11 history](../archive/a11-measured-through-20261014.md).",
+      "measured": "2026-10-14 22:28 UTC checkpoint: A11 remains OPEN. Fifth source d4c8d9f6 awaits complete local and exact hosted validation. Fourth d913596b failed two local stages and hosted PCI boot-media assertions; those failures remain recorded. The exact5a UI diagnostic failed AMFI loading before an AX result. Its failed job was later quarantined unchanged; original cleanup remains unproven. No repaired live launch or final release regression seal is established. See the [fifth development checkpoint](../history/windows-hvf/autonomous-selection-and-diagnostic-launch-20261014.md) and [verbatim A11 history](../archive/a11-measured-through-20261014.md).",
       "evidence_paths": [
         "STATUS.md",
         "docs/history/windows-hvf/t17-launchservices-preflight-20260917.md",
@@ -359,7 +359,8 @@
         "docs/history/windows-hvf/autonomous-startup-and-network-20261014.md",
         "docs/history/windows-hvf/autonomous-archive-and-ui-20261014.md",
         "docs/history/windows-hvf/autonomous-readiness-and-sealed-inputs-20261014.md",
-        "docs/archive/a11-measured-through-20261014.md"
+        "docs/archive/a11-measured-through-20261014.md",
+        "docs/history/windows-hvf/autonomous-selection-and-diagnostic-launch-20261014.md"
       ]
     },
     {
