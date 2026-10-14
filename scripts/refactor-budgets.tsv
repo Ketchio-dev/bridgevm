@@ -1325,7 +1325,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfBoundedLogReadTests.swift	41	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMIdentityLifecycle.swift	451	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMLifecycleCommand.swift	368	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMStateSecurity.swift	181	0
-apps/macos/Sources/BridgeVMControl/LibraryModel.swift	161	0
+apps/macos/Sources/BridgeVMControl/LibraryModel.swift	160	0
 apps/macos/Sources/BridgeVMControl/VMLibrary.swift	164	0
 apps/macos/Sources/BridgeVMControl/VMLibraryInternalEntries.swift	13	0
 apps/macos/Tests/BridgeVMControlTests/LibraryCacheInventoryTests.swift	49	0
@@ -4735,3 +4735,4 @@ tests/integration/t12_sealed_test_support.py	64	0
 apps/macos/Tests/BridgeVMControlTests/CreateUbuntuTemplateTests.swift	112	0
 docs/history/windows-hvf/autonomous-readiness-and-sealed-inputs-20261014.md	140	0
 docs/document-manifests/autonomous-readiness-and-sealed-inputs-20261014.tsv	3	0
+apps/macos/Tests/BridgeVMControlTests/LibraryCloneSelectionTests.swift	83	0

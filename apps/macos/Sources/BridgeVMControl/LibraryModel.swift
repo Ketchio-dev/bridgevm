@@ -113,13 +113,15 @@ final class LibraryModel: ObservableObject {
         }
         cloningConfigurations[cfg.slug] = cfg
         let libraryRoot = self.libraryRoot
+        let selectionAtAdmission = selectedID
         actionScheduler {
             let clone = operation(name, cfg, libraryRoot)
             await MainActor.run {
                 self.cloningConfigurations[cfg.slug] = nil
                 if let clone {
+                    let revealClone = self.selectedID == selectionAtAdmission // Current ID, not navigation history.
                     self.reload()
-                    self.selectedID = clone.slug
+                    if revealClone { self.selectedID = clone.slug }
                 } else {
                     self.cloneError = "Windows HVF 복제 완료를 확인하지 못했습니다. 원본 사용 여부와 대상 번들 상태를 확인하세요."
                 }
@@ -155,6 +157,4 @@ final class LibraryModel: ObservableObject {
             }
         }
     }
-
-
 }
