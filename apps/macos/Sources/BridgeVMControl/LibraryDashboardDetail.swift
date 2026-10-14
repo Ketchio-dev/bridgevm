@@ -5,7 +5,7 @@ struct LibraryDashboardRoute: View {
     @ObservedObject var library: LibraryModel
 
     var body: some View {
-        if let detail = library.selectedDetail,
+        if !library.proMode, let detail = library.selectedDetail,
            !library.shouldShowWindowsInstall(for: detail.config) {
             LibraryDashboardDetail(config: detail.config, model: detail.model, library: library)
                 .id(detail.config.slug)

@@ -4612,3 +4612,5 @@ apps/macos/Tests/BridgeVMControlTests/VMRelocationDiskPathTests.swift	29	0
 apps/macos/Tests/BridgeVMControlTests/VMRelocationSelectedDiskTests.swift	93	0
 docs/history/windows-hvf/autonomous-selected-media-20261014.md	97	0
 docs/document-manifests/autonomous-selected-media-20261014.tsv	4	0
+apps/macos/Tests/BridgeVMControlTests/LibraryDashboardNavigationFixture.swift	37	0
+apps/macos/Tests/BridgeVMControlTests/LibraryDashboardNavigationTests.swift	60	0
