@@ -210,7 +210,7 @@ final class ControlModel: ObservableObject {
             await MainActor.run {
                 self.busy = false
                 self.lifecycleBusy = false
-                self.statusNote = "리소스 적용됨: \(Int(self.pendingMemGiB))GB / \(cpus)코어"
+                self.statusNote = "리소스 적용됨: \(mem / 1024)GB / \(cpus)코어"
                 self.scheduleRefreshBurst()
             }
         }

@@ -4428,3 +4428,4 @@ crates/bridgevm-hvf/src/managed_pair_staging_publication_tests.rs	45	0
 crates/bridgevm-hvf/src/managed_pair_staging_recovery_test_support.rs	59	0
 crates/bridgevm-hvf/src/snapshot_preserved_staging_test_support.rs	21	0
 crates/bridgevm-hvf/tests/managed_staging_export.rs	112	0
+apps/macos/Tests/BridgeVMControlTests/ControlModelResourceCompletionTests.swift	107	0
