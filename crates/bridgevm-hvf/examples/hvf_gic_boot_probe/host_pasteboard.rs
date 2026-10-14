@@ -17,9 +17,11 @@
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};
-use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
-use std::thread;
-use std::time::Duration;
+#[path = "host_pasteboard_bridge.rs"]
+mod bridge;
+pub use bridge::HostPasteboard;
+#[cfg(test)]
+pub(crate) use bridge::PasteboardWorker;
 
 /// Minimal pasteboard surface, abstracted so the poller logic is unit-testable
 /// without touching the real NSPasteboard (tests must never clobber the user's
@@ -82,72 +84,6 @@ impl Poller {
             self.last_seen = Some(text.to_owned());
             self.last_count = backend.change_count();
         }
-    }
-}
-
-pub struct HostPasteboard {
-    events: Receiver<String>,
-    cmds: Sender<String>,
-}
-
-impl HostPasteboard {
-    /// Spawn the polling thread. `poll_ms` is the changeCount poll interval.
-    pub fn spawn(poll_ms: u64) -> Self {
-        let (event_tx, event_rx) = channel();
-        let (cmd_tx, cmd_rx) = channel();
-        let poll = Duration::from_millis(poll_ms.max(50));
-        let _ = thread::Builder::new()
-            .name("bv-pasteboard".into())
-            .spawn(move || run(default_backend(), poll, event_tx, cmd_rx));
-        Self {
-            events: event_rx,
-            cmds: cmd_tx,
-        }
-    }
-
-    /// Non-blocking: next external host-pasteboard change, if one is pending.
-    pub fn try_changed(&self) -> Option<String> {
-        self.events.try_recv().ok()
-    }
-
-    /// Queue a pasteboard write (guest->host sync). Never blocks.
-    pub fn set(&self, text: String) {
-        let _ = self.cmds.send(text);
-    }
-
-    /// Channel-only bridge for service-loop tests (no NSPasteboard thread):
-    /// returns it with the host-change sender and the set() receiver.
-    #[cfg(test)]
-    pub fn test_pair() -> (Self, Sender<String>, Receiver<String>) {
-        let (event_tx, events) = channel();
-        let (cmds, cmd_rx) = channel();
-        (Self { events, cmds }, event_tx, cmd_rx)
-    }
-}
-
-fn run<B: PasteboardBackend>(
-    mut backend: B,
-    poll: Duration,
-    events: Sender<String>,
-    cmds: Receiver<String>,
-) {
-    let mut poller = Poller::new();
-    loop {
-        // Drain set() requests before polling: apply_set refuses to overwrite
-        // a Mac copy made since the last poll, which this poll then reports.
-        loop {
-            match cmds.try_recv() {
-                Ok(text) => poller.apply_set(&mut backend, &text),
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => return,
-            }
-        }
-        if let Some(changed) = poller.on_tick(&mut backend) {
-            if events.send(changed).is_err() {
-                return;
-            }
-        }
-        thread::sleep(poll);
     }
 }
 

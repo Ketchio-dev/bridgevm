@@ -3,7 +3,9 @@
 
 use super::*;
 use crate::agent_console::agent_console_tests::tests::harness;
-use std::sync::mpsc::{Receiver, Sender};
+use crate::agent_console::host_pasteboard::PasteboardWorker;
+#[path = "clip_observed_host_tests.rs"]
+mod observed_host;
 #[path = "clip_paste_tests.rs"]
 mod paste;
 
@@ -11,8 +13,7 @@ mod paste;
 /// clipboard that answers CLIPGET/CLIPSET the way `bvagent.ps1` does.
 struct ClipRig {
     h: AgentConsoleHarness,
-    mac_copy: Sender<String>,
-    mac_sets: Receiver<String>,
+    pasteboard: PasteboardWorker,
     guest: String,
     fail_set: bool,
     now: Instant,
@@ -20,7 +21,7 @@ struct ClipRig {
 
 impl ClipRig {
     fn new(guest: &str) -> Self {
-        let (pasteboard, mac_copy, mac_sets) = HostPasteboard::test_pair();
+        let (pasteboard, worker) = HostPasteboard::test_pair();
         let mut h = harness();
         h.state = AgentConsoleState::Service;
         h.clipsync = true;
@@ -29,8 +30,7 @@ impl ClipRig {
         let guest = guest.to_owned();
         Self {
             h,
-            mac_copy,
-            mac_sets,
+            pasteboard: worker,
             guest,
             fail_set: false,
             now,
@@ -43,8 +43,8 @@ impl ClipRig {
         assert_eq!(rig.mac_sets(), vec![guest.to_owned()]);
         rig
     }
-    fn copy_on_mac(&self, text: &str) {
-        self.mac_copy.send(text.to_owned()).unwrap();
+    fn copy_on_mac(&mut self, text: &str) {
+        assert!(self.pasteboard.report(text.to_owned()));
     }
     /// One service_enqueue pass, one clip interval later.
     fn enqueue(&mut self) {
@@ -83,7 +83,7 @@ impl ClipRig {
         assert!(self.h.in_flight.is_none());
     }
     fn mac_sets(&self) -> Vec<String> {
-        self.mac_sets.try_iter().collect()
+        self.pasteboard.take_sets()
     }
 }
 
