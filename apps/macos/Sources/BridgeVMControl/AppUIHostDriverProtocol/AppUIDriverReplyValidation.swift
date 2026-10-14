@@ -1,6 +1,5 @@
 #if (DEBUG && BRIDGEVM_APP_UI_HOST) || BRIDGEVM_APP_UI_DRIVER
 import Foundation
-
 extension AppUIDriverValidation {
     static func reply(_ value: AppUIDriverReply, request: AppUIDriverRequest,
                       session: AppUIDriverSession, requestSHA256: String) throws {
@@ -11,6 +10,7 @@ extension AppUIDriverValidation {
               value.hostPID == session.host.pid, value.driverPID == session.driver.pid else {
             throw AppUIDriverFailure.invalidReply
         }
+        try value.axContext?.validate(outcome: value.outcome, failure: value.failureCode, rawValue: value.axError)
         if value.outcome == .refused {
             guard value.failureCode != nil, value.values == nil, value.axError != 0 else {
                 throw AppUIDriverFailure.invalidReply

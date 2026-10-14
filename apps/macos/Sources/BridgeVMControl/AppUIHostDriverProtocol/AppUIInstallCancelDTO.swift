@@ -1,6 +1,5 @@
 #if (DEBUG && BRIDGEVM_APP_UI_HOST) || BRIDGEVM_APP_UI_DRIVER
 import Foundation
-
 enum AppUIInstallCancelConstants { static let refusal = "합성 UI 검증 종료" }
 
 enum AppUIInstallCancelOperation: String, Codable, CaseIterable { case readState, start, cancel, retry }
@@ -44,6 +43,7 @@ struct AppUIInstallCancelReply: Codable, Equatable {
     let values: AppUIInstallCancelValues?
     let failureCode: AppUIDriverFailure?
     let axError: Int32?
+    var axContext: AppUIDriverAXContext? = nil
 }
 
 struct AppUIInstallCancelReady: Codable, Equatable {

@@ -5,46 +5,28 @@ struct AppUIDriverAX: AppUIDriverAXAccess {
     let pid: pid_t
     let deadline: Double
     let cancelled: () throws -> Bool
+    var calls = AppUIDriverAXCalls()
     var now: () -> Double = { ProcessInfo.processInfo.systemUptime }
 
     func application() -> AXUIElement { AXUIElementCreateApplication(pid) }
     func hash(_ node: AXUIElement) -> UInt { CFHash(node) }
     func same(_ lhs: AXUIElement, _ rhs: AXUIElement) -> Bool { CFEqual(lhs, rhs) }
 
-    private func check() throws {
-        guard deadline.isFinite, now() < deadline else { throw AppUIDriverFailure.deadlineExceeded }
-        guard try !cancelled() else { throw AppUIDriverFailure.cancelled }
-    }
-    private func prepare(_ node: AXUIElement) throws {
-        try check()
-        var observed: pid_t = 0
-        try status(AXUIElementGetPid(node, &observed))
-        guard observed == pid else { throw AppUIDriverFailure.identityMismatch }
-        let remaining = deadline - now()
-        guard remaining > 0 else { throw AppUIDriverFailure.deadlineExceeded }
-        try status(AXUIElementSetMessagingTimeout(node, Float(min(0.25, remaining))))
-        try check()
-    }
-    private func status(_ value: AXError) throws {
-        guard value == .success else {
-            throw AppUIDriverAXError(failure: .axFailure, rawValue: value.rawValue)
-        }
-    }
     private func attribute(_ node: AXUIElement, _ name: String) throws -> CFTypeRef? {
-        try prepare(node)
+        try prepare(node, attribute: name)
         var value: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(node, name as CFString, &value)
-        if result != .noValue && result != .attributeUnsupported { try status(result) }
+        let result = calls.attribute(node, name as CFString, &value)
+        if result != .noValue && result != .attributeUnsupported { try status(result, .copyAttributeValue, attribute: name) }
         try check()
         if result == .noValue || result == .attributeUnsupported { return nil }
         guard value != nil else { throw AppUIDriverFailure.invalidElement }
         return value
     }
     func related(_ node: AXUIElement, _ name: String) throws -> [AXUIElement] {
-        try prepare(node)
+        try prepare(node, attribute: name)
         var value: CFArray?
-        let result = AXUIElementCopyAttributeValues(node, name as CFString, 0, 10_001, &value)
-        if result != .noValue && result != .attributeUnsupported { try status(result) }
+        let result = calls.related(node, name as CFString, 0, 10_001, &value)
+        if result != .noValue && result != .attributeUnsupported { try status(result, .copyAttributeValues, attribute: name) }
         try check()
         if result == .noValue || result == .attributeUnsupported { return [] }
         guard let value, CFGetTypeID(value) == CFArrayGetTypeID() else { throw AppUIDriverFailure.invalidElement }
@@ -56,7 +38,7 @@ struct AppUIDriverAX: AppUIDriverAXAccess {
             let item = unsafeBitCast(pointer, to: CFTypeRef.self)
             guard CFGetTypeID(item) == AXUIElementGetTypeID() else { throw AppUIDriverFailure.invalidElement }
             let element = unsafeBitCast(item, to: AXUIElement.self)
-            try prepare(element)
+            try prepare(element, attribute: name, scope: .relatedElement)
             nodes.append(element)
         }
         return nodes
@@ -76,20 +58,20 @@ struct AppUIDriverAX: AppUIDriverAXAccess {
     }
     func press(_ node: AXUIElement) throws {
         try prepare(node)
-        let result = AXUIElementPerformAction(node, kAXPressAction as CFString)
-        try status(result)
+        let result = calls.press(node, kAXPressAction as CFString)
+        try status(result, .performAction)
         try check()
     }
     func setSearch(_ node: AXUIElement) throws {
-        try prepare(node)
+        try prepare(node, attribute: kAXValueAttribute)
         var settable: DarwinBoolean = false
-        let writable = AXUIElementIsAttributeSettable(node, kAXValueAttribute as CFString, &settable)
-        try status(writable)
+        let writable = calls.settable(node, kAXValueAttribute as CFString, &settable)
+        try status(writable, .isAttributeSettable, attribute: kAXValueAttribute)
         try check()
         guard settable.boolValue else { throw AppUIDriverFailure.invalidElement }
-        try prepare(node)
-        let result = AXUIElementSetAttributeValue(node, kAXValueAttribute as CFString, "Indigo" as CFString)
-        try status(result)
+        try prepare(node, attribute: kAXValueAttribute)
+        let result = calls.setValue(node, kAXValueAttribute as CFString, "Indigo" as CFString)
+        try status(result, .setAttributeValue, attribute: kAXValueAttribute)
         try check()
     }
 }

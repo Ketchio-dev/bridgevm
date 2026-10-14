@@ -1,10 +1,10 @@
 #!/bin/bash
-# Sourced by check-app-ui-driver-contracts.sh with its bounded output and compile helper.
-: "${scripts:?}" "${tests:?}" "${output:?}"
-compile ax "$scripts/AppUIDriverAXTypes.swift" "$scripts/AppUIDriverAXGraph.swift" \
-  "$scripts/AppUIDriverAXOperations.swift" "$tests/app-ui-driver-ax-fixture.swift" \
-  "$tests/app-ui-driver-ax-contracts.swift" 2>&1 | tee "$output/ax.log"
-compile install-cancel-ax "$scripts/AppUIDriverAXTypes.swift" "$scripts/AppUIDriverAXGraph.swift" \
-  "$scripts/AppUIInstallCancelAXOperations.swift" "$tests/app-ui-driver-ax-fixture.swift" "$tests/app-ui-install-cancel-ax-fixture.swift" \
-  "$tests/app-ui-install-cancel-ax-refusal-contracts.swift" "$tests/app-ui-install-cancel-ax-contracts.swift" \
-  2>&1 | tee "$output/install-cancel-ax.log"
+# Sourced with the owned output and compile helper; no system AX messaging in these fixtures.
+source "$repo_root/scripts/check-app-ui-driver-ax-graph-contracts.sh"
+compile ax-context "$tests/AppUIDriverProtocolTestSupport.swift" "$tests/AppUIInstallCancelProtocolTestSupport.swift" \
+  "$tests/app-ui-driver-ax-context-contracts.swift" 2>&1 | tee "$output/ax-context.log"
+compile ax-calls "$scripts/AppUIDriverAX.swift" "$scripts/AppUIDriverAXCalls.swift" \
+  "$scripts/AppUIDriverAXReadiness.swift" "$scripts/AppUIDriverAXTypes.swift" \
+  "$tests/AppUIDriverProtocolTestSupport.swift" "$tests/app-ui-driver-ax-calls-fixture.swift" \
+  "$tests/app-ui-driver-ax-calls-contracts.swift" 2>&1 | tee "$output/ax-calls.log"
+source "$repo_root/scripts/check-app-ui-driver-ax-service-contracts.sh"

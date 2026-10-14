@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-
 @MainActor
 final class AppUIInstallCancelService {
     let mailbox: AppUIInstallCancelMailbox
@@ -64,7 +63,7 @@ final class AppUIInstallCancelService {
         } catch {
             let failure = Self.failure(error)
             let refusal = reply(request, sha256: sha256, outcome: .refused, values: nil,
-                                failure: failure.code, axError: failure.axError)
+                                failure: failure.code, axError: failure.axError, context: failure.context)
             // A refused or uncertain mutation is terminal and is never replayed.
             try mailbox.publishReply(refusal)
             throw error
@@ -72,11 +71,12 @@ final class AppUIInstallCancelService {
     }
 
     private func reply(_ request: AppUIInstallCancelRequest, sha256: String, outcome: AppUIDriverOutcome,
-                       values: AppUIInstallCancelValues?, failure: AppUIDriverFailure?, axError: Int32?) -> AppUIInstallCancelReply {
+                       values: AppUIInstallCancelValues?, failure: AppUIDriverFailure?, axError: Int32?,
+                       context: AppUIDriverAXContext? = nil) -> AppUIInstallCancelReply {
         AppUIInstallCancelReply(sessionSHA256: sessionSHA256, nonce: session.nonce,
             sequence: request.sequence, requestSHA256: sha256, hostPID: session.host.pid,
             driverPID: session.driver.pid, operation: request.operation, outcome: outcome,
-            values: values, failureCode: failure, axError: axError)
+            values: values, failureCode: failure, axError: axError, axContext: context)
     }
 
     func finish(success: Bool, failure: AppUIDriverFailure?) -> Int32 {
@@ -92,8 +92,8 @@ final class AppUIInstallCancelService {
         return success ? 0 : 1
     }
 
-    static func failure(_ error: Error) -> (code: AppUIDriverFailure, axError: Int32?) {
-        if let error = error as? AppUIDriverAXError { return (error.failure, error.rawValue) }
-        return (error as? AppUIDriverFailure ?? .internalFailure, nil)
+    static func failure(_ error: Error) -> (code: AppUIDriverFailure, axError: Int32?, context: AppUIDriverAXContext?) {
+        if let error = error as? AppUIDriverAXError { return (error.failure, error.rawValue, error.context) }
+        return (error as? AppUIDriverFailure ?? .internalFailure, nil, nil)
     }
 }

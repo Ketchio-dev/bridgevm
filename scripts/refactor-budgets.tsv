@@ -2713,7 +2713,7 @@ apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverValues.swi
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverScenario.swift	94	0
 apps/macos/Sources/BridgeVMControl/AppUIHostLegacyScenario.swift	67	0
 apps/macos/scripts/AppUIDriver.swift	45	0
-apps/macos/scripts/AppUIDriverAX.swift	95	0
+apps/macos/scripts/AppUIDriverAX.swift	77	0
 apps/macos/scripts/AppUIDriverAXGraph.swift	32	0
 apps/macos/scripts/AppUIDriverAXOperations.swift	119	0
 apps/macos/scripts/AppUIDriverAXTypes.swift	29	0
@@ -4745,3 +4745,12 @@ tests/integration/t12-sealed-fixture-lifetime.py	31	0
 crates/bridgevm-storage/tests/snapshot_restore_media/fixture.rs	57	0
 docs/history/windows-hvf/autonomous-media-and-fixture-lifetimes-20261014.md	142	0
 docs/document-manifests/autonomous-media-and-fixture-lifetimes-20261014.tsv	3	0
+apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverAXContext.swift	28	0
+apps/macos/scripts/AppUIDriverAXCalls.swift	18	0
+apps/macos/scripts/AppUIDriverAXReadiness.swift	28	0
+scripts/check-app-ui-driver-ax-graph-contracts.sh	10	0
+scripts/check-app-ui-driver-ax-service-contracts.sh	6	0
+tests/integration/app-ui-driver-ax-calls-contracts.swift	114	0
+tests/integration/app-ui-driver-ax-calls-fixture.swift	57	0
+tests/integration/app-ui-driver-ax-context-contracts.swift	80	0
+tests/integration/app-ui-driver-ax-service-contracts.swift	34	0

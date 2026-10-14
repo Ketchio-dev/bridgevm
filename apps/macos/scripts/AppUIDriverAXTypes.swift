@@ -1,8 +1,8 @@
 import Foundation
-
 struct AppUIDriverAXError: Error {
     let failure: AppUIDriverFailure
     let rawValue: Int32?
+    var context: AppUIDriverAXContext? = nil
 }
 
 protocol AppUIDriverAXAccess {

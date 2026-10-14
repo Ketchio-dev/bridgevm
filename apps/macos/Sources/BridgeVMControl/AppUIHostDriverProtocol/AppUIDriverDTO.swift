@@ -1,6 +1,5 @@
 #if (DEBUG && BRIDGEVM_APP_UI_HOST) || BRIDGEVM_APP_UI_DRIVER
 import Foundation
-
 enum AppUIDriverOperation: String, Codable, CaseIterable {
     case welcomeControls, pressCreate, createForm, cancelCreate
     case pressImport, importForm, pressOverview, overviewCards
@@ -89,6 +88,7 @@ struct AppUIDriverReply: Codable, Equatable {
     let values: AppUIDriverValues?
     let failureCode: AppUIDriverFailure?
     let axError: Int32?
+    var axContext: AppUIDriverAXContext? = nil
 }
 
 struct AppUIDriverReady: Codable, Equatable {
