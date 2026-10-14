@@ -4550,7 +4550,7 @@ crates/bridgevm-hvf/tests/virtio_pci_isr/platform.rs	58	0
 docs/history/windows-hvf/autonomous-lifecycle-20261014.md	125	0
 docs/document-manifests/autonomous-lifecycle-20261014.tsv	4	0
 apps/macos/Tests/BridgeVMControlTests/LibraryWarningAliasedFixture.swift	24	0
-crates/bridgevm-storage/tests/import_literal_names.rs	170	0
+crates/bridgevm-storage/tests/import_literal_names.rs	169	0
 crates/bridgevm-hvf/src/virtio_blk/pci_register_map.rs	20	0
 crates/bridgevm-hvf/tests/virtio_blk_isr.rs	141	0
 crates/bridgevm-hvf/tests/virtio_blk_isr/support.rs	179	0
@@ -4596,3 +4596,4 @@ apps/macos/Tests/BridgeVMControlTests/HvfCloneSourceFixture.swift	42	0
 apps/macos/Tests/BridgeVMControlTests/HvfCloneSourcePathTests.swift	83	0
 apps/macos/Tests/BridgeVMControlTests/RegisteredCloneActivityFixture.swift	59	0
 apps/macos/Tests/BridgeVMControlTests/VMCloneDestinationFixture.swift	27	0
+crates/bridgevm-storage/tests/import_literal_names/active.rs	6	0

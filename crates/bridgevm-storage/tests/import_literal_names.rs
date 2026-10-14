@@ -10,6 +10,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
 
+#[path = "import_literal_names/active.rs"]
+mod active;
+
 fn files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn visit(root: &Path, directory: &Path, result: &mut BTreeMap<PathBuf, Vec<u8>>) {
         for entry in fs::read_dir(directory).unwrap() {
@@ -126,9 +129,7 @@ fn roundtrip(names: Names, archive: bool) {
             receipt.len()
         );
     }
-    let active = target.active_disk("raw-copy").unwrap();
-    assert_eq!(active.path, imported.output.join(relative));
-    assert!(active.exists);
+    active::assert_imported_disk(&target, &imported.output.join(relative));
     fs::remove_dir_all(fixture).unwrap();
 }
 
