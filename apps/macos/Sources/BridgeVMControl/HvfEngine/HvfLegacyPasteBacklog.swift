@@ -50,9 +50,9 @@ struct HvfLegacyPasteState {
 }
 
 extension HvfEngineSession {
-    /// Live-display input. False only when it had to wait behind a paste and the backlog is full.
+    /// Live-display admission. False means a refused route, failed write, or full paste backlog.
     func sendDisplayInput(_ input: HvfLegacyPasteState.Input) -> Bool {
-        guard legacyPaste.pending != nil else { deliverDisplayInput(input); return true }
+        guard legacyPaste.pending != nil else { return deliverDisplayInput(input) }
         if legacyPaste.hold(input) { return true }
         append(.unknown("display input refused: \(HvfLegacyPasteState.maximumBacklog) entries already wait for a clipboard paste"))
         return false
@@ -77,7 +77,7 @@ extension HvfEngineSession {
     @discardableResult
     private func deliverDisplayInput(_ input: HvfLegacyPasteState.Input) -> Bool {
         switch input {
-        case let .key(action): sendKey(action); return true
+        case let .key(action): return sendKey(action)
         case let .text(text): return sendText(text) != .refused
         }
     }

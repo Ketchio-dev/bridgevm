@@ -4389,3 +4389,4 @@ site/index.html	39	0
 site/styles.css	85	0
 apps/macos/Sources/BridgeVMControl/VMLibraryDeletionTarget.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/LibraryImportedDeletionTargetTests.swift	81	0
+apps/macos/Tests/BridgeVMControlTests/HvfDisplayInputFailureTests.swift	109	0

@@ -21,7 +21,7 @@ struct HvfRuntimeSpecialKeys: View {
                 Button("Ctrl-Alt-Delete") { send("ctrl+alt+delete") }
             }
             if inputRefused {
-                Label("Key input refused: clipboard paste backlog is full. Check the event log.", systemImage: "exclamationmark.circle")
+                Label("Key input refused. Check the event log.", systemImage: "exclamationmark.circle")
                     .font(.callout).foregroundStyle(.orange)
                     .accessibilityIdentifier("bridgevm.runtime.specialkeys.refusal")
             }

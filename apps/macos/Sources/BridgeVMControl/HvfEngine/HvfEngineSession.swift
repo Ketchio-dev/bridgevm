@@ -178,10 +178,11 @@ final class HvfEngineSession: ObservableObject {
         return true
     }
 
-    func sendKey(_ action: String) {
-        guard legacyPaste.pending == nil else { append(.unknown("key input refused: clipboard paste pending")); return }
-        if inputDriver.route(.key(action), binding: inputBinding) != .legacy { return }
-        appendLiveInput("KEY \(action)")
+    @discardableResult func sendKey(_ action: String) -> Bool {
+        guard legacyPaste.pending == nil else { append(.unknown("key input refused: clipboard paste pending")); return false }
+        let admission = inputDriver.route(.key(action), binding: inputBinding)
+        guard admission == .legacy else { return admission == .queued }
+        return appendLiveInput("KEY \(action)")
     }
 
     @discardableResult
@@ -196,7 +197,7 @@ final class HvfEngineSession: ObservableObject {
         }
         let plan = HvfTextInputPlan.make(for: value)
         for chunk in plan.hidChunks {
-            appendLiveInput("KEY text-hex:\(chunk)")
+            guard appendLiveInput("KEY text-hex:\(chunk)") else { return .refused }
         }
         if let base64 = plan.clipboardBase64 {
             guard serviceStarted, case .connected = connectionState else {
