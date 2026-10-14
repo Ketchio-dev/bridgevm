@@ -1629,7 +1629,8 @@ tests/integration/local-release-readiness-suite.sh	298	0
 tests/integration/log-viewer-cli-smoke.sh	170	0
 tests/integration/macos-app-name-validation-smoke.sh	81	0
 tests/integration/macos-app-start-path-smoke.sh	28	0
-tests/integration/macos-artifact-manifest-apple-vz-runner-smoke.sh	208	0
+tests/integration/macos-artifact-manifest-apple-vz-runner-smoke.sh	191	0
+tests/integration/macos-artifact-manifest-test-support.sh	62	0
 tests/integration/macos-bundle-helper-verify-smoke.sh	82	0
 tests/integration/macos-bundled-daemon-supervisor-smoke.sh	278	0
 tests/integration/macos-debug-app-clean-build-smoke.sh	84	0

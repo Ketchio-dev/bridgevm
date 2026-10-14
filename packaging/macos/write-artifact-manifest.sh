@@ -18,7 +18,7 @@ HVF_FIRMWARE="$HVF_LAB/Contents/Resources/firmware/edk2-aarch64-secure-code.fd"
 HVF_FIRMWARE_MANIFEST="$HVF_LAB/Contents/Resources/firmware/manifest.txt"
 HVF_FIRMWARE_LICENSES="$HVF_LAB/Contents/Resources/firmware/licenses.txt"
 HVF_FIRMWARE_BUILD_RECEIPT="$HVF_FIRMWARE.build.json"
-HVF_SECURE_BOOT_POLICY="$HVF_LAB/Contents/Resources/BridgeVMApp_BridgeVMControl.bundle/secureboot-microsoft-only-aarch64-v1.6.5.json"
+HVF_SECURE_BOOT_POLICY="$HVF_LAB/Contents/Resources/BridgeVMApp_BridgeVMControl.bundle/secureboot-microsoft-windows-transition-aarch64-v1.6.5.json"
 APP_NOTARY_SUBMIT_JSON="${BRIDGEVM_MACOS_APP_NOTARY_SUBMIT_JSON:-}"
 APP_NOTARY_LOG_JSON="${BRIDGEVM_MACOS_APP_NOTARY_LOG_JSON:-}"
 DMG_NOTARY_SUBMIT_JSON="${BRIDGEVM_MACOS_DMG_NOTARY_SUBMIT_JSON:-}"
@@ -99,7 +99,7 @@ if [[ "${#POSITIONAL[@]}" -ge 1 ]]; then
   HVF_FIRMWARE_MANIFEST="$HVF_LAB/Contents/Resources/firmware/manifest.txt"
   HVF_FIRMWARE_LICENSES="$HVF_LAB/Contents/Resources/firmware/licenses.txt"
   HVF_FIRMWARE_BUILD_RECEIPT="$HVF_FIRMWARE.build.json"
-  HVF_SECURE_BOOT_POLICY="$HVF_LAB/Contents/Resources/BridgeVMApp_BridgeVMControl.bundle/secureboot-microsoft-only-aarch64-v1.6.5.json"
+  HVF_SECURE_BOOT_POLICY="$HVF_LAB/Contents/Resources/BridgeVMApp_BridgeVMControl.bundle/secureboot-microsoft-windows-transition-aarch64-v1.6.5.json"
 fi
 if [[ "$APP_ONLY" == "1" && "${#POSITIONAL[@]}" -ge 2 ]]; then
   OUT="${POSITIONAL[1]}"
