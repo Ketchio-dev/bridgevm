@@ -3,6 +3,7 @@
 use crate::*;
 use std::fs;
 use std::path::Path;
+use std::path::MAIN_SEPARATOR;
 #[path = "bundle_copy_entries.rs"]
 mod entries;
 pub(crate) use entries::copy_dir_all_inner;
@@ -50,7 +51,7 @@ pub(crate) fn collect_regular_files(
             let relative = path
                 .strip_prefix(root)
                 .map_err(|_| StorageError::UnsupportedBundleEntry(path.clone()))?;
-            files.push(relative.to_string_lossy().replace('\\', "/"));
+            files.push(relative.to_string_lossy().replace(MAIN_SEPARATOR, "/"));
         } else {
             return Err(StorageError::UnsupportedBundleEntry(path));
         }

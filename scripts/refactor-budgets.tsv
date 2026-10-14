@@ -4550,3 +4550,4 @@ crates/bridgevm-hvf/tests/virtio_pci_isr/platform.rs	58	0
 docs/history/windows-hvf/autonomous-lifecycle-20261014.md	125	0
 docs/document-manifests/autonomous-lifecycle-20261014.tsv	4	0
 apps/macos/Tests/BridgeVMControlTests/LibraryWarningAliasedFixture.swift	24	0
+crates/bridgevm-storage/tests/import_literal_names.rs	170	0
