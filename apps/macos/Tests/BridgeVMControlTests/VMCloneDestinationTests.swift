@@ -2,35 +2,11 @@ import XCTest
 @testable import BridgeVMControl
 
 final class VMCloneDestinationTests: XCTestCase {
-    private final class Fixture {
-        let fm = FileManager.default
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        var source: URL { root.appendingPathComponent("source") }
-        var library: URL { root.appendingPathComponent("library") }
-        var sentinel: URL { source.appendingPathComponent("sentinel") }
-        init() throws {
-            try fm.createDirectory(at: source, withIntermediateDirectories: true)
-            try Data("keep source unchanged".utf8).write(to: sentinel)
-        }
-        deinit { try? fm.removeItem(at: root) }
-        func config(windows: Bool) -> VMConfig {
-            VMConfig(id: "source", name: "Source", displayName: "Source",
-                backendKind: windows ? "hvf-engine" : "fast-vz", bundlePath: source.path,
-                runnerPath: "", launchSpecPath: "", handoffPath: "", sshKeyPath: "",
-                sshUser: "", leasesPath: "", guestName: "source", displayWidth: 800, displayHeight: 600)
-        }
-        func alias(_ name: String, to destination: URL) throws -> URL {
-            let link = root.appendingPathComponent(name)
-            try fm.createSymbolicLink(at: link, withDestinationURL: destination)
-            return link
-        }
-    }
-
     // The real clone entry points run through reservation. Always stop before cp:
     // a regressed guard must never recursively copy its own source in this test.
-    private func checkDestination(allowed: Bool, make: (Fixture) throws -> URL) throws {
+    private func checkDestination(allowed: Bool, make: (VMCloneDestinationFixture) throws -> URL) throws {
         for windows in [false, true] {
-            let fixture = try Fixture()
+            let fixture = try VMCloneDestinationFixture()
             let destination = try make(fixture)
             let sourceEntries = try fixture.fm.contentsOfDirectory(atPath: fixture.source.path).sorted()
             let storageExisted = fixture.fm.fileExists(atPath: destination.path)
@@ -103,7 +79,7 @@ final class VMCloneDestinationTests: XCTestCase {
     }
 
     func testSafeUbuntuCloneCopiesAndRegistersInIsolatedLibrary() throws {
-        let fixture = try Fixture()
+        let fixture = try VMCloneDestinationFixture()
         let metadata = fixture.source.appendingPathComponent("metadata")
         try fixture.fm.createDirectory(at: metadata, withIntermediateDirectories: false)
         for file in ["apple-vz-launch.json", "handoff.json"] {
@@ -123,7 +99,7 @@ final class VMCloneDestinationTests: XCTestCase {
     }
 
     func testGenericContainmentStillAcceptsRegularFileCandidates() throws {
-        let fixture = try Fixture()
+        let fixture = try VMCloneDestinationFixture()
         let outside = fixture.root.appendingPathComponent("manifest.json")
         try Data("{}".utf8).write(to: outside)
         XCTAssertTrue(VMLibrary.isSameOrDescendant(fixture.sentinel, of: fixture.source))
