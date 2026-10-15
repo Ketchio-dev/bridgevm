@@ -4781,3 +4781,6 @@ apps/macos/Tests/BridgeVMControlTests/ControlModelResourceDisplayTests.swift	98	
 apps/macos/Tests/BridgeVMControlTests/ResourceDisplayCompletionBackend.swift	48	0
 apps/macos/Tests/BridgeVMControlTests/ResourceDisplayCompletionFixture.swift	127	0
 apps/macos/Tests/BridgeVMControlTests/ResourceDisplayStaleReadProbe.swift	44	0
+apps/macos/Tests/BridgeVMControlTests/RetainedTerminalRecoveryBackend.swift	39	0
+apps/macos/Tests/BridgeVMControlTests/RetainedTerminalRecoveryFixture.swift	92	0
+apps/macos/Tests/BridgeVMControlTests/RetainedTerminalRecoveryTests.swift	80	0
