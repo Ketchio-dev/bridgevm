@@ -5,7 +5,7 @@ import XCTest
 final class HvfPendingRelocationCloneTests: XCTestCase {
     func testPendingRelocationRefusesCloneBeforeCopyingMedia() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = LibraryDeletionTestDirectory.temporary.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? fm.removeItem(at: root) }
         let library = root.appendingPathComponent("library")
         let bundle = root.appendingPathComponent("source/bundle.vmbridge")

@@ -4585,13 +4585,13 @@ crates/bridgevm-hvf/src/xhci/interrupter_msix_autoclear_tests/support.rs	23	0
 crates/bridgevm-hvf/src/xhci/interrupts/raise.rs	25	0
 crates/bridgevm-hvf/tests/xhci_global_interrupt_gate.rs	112	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsClone.swift	71	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsCloneSource.swift	37	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsCloneSource.swift	23	0
 apps/macos/Tests/BridgeVMControlTests/HvfCloneExternalDiskSelectionTests.swift	59	0
 apps/macos/Tests/BridgeVMControlTests/HvfCloneSourceAdmissionTests.swift	47	0
-apps/macos/Tests/BridgeVMControlTests/HvfCloneSourceFixture.swift	42	0
+apps/macos/Tests/BridgeVMControlTests/HvfCloneSourceFixture.swift	41	0
 apps/macos/Tests/BridgeVMControlTests/HvfCloneSourcePathTests.swift	83	0
 apps/macos/Tests/BridgeVMControlTests/RegisteredCloneActivityFixture.swift	59	0
-apps/macos/Tests/BridgeVMControlTests/VMCloneDestinationFixture.swift	27	0
+apps/macos/Tests/BridgeVMControlTests/VMCloneDestinationFixture.swift	26	0
 crates/bridgevm-storage/tests/import_literal_names/active.rs	6	0
 crates/bridgevm-cli/tests/cli_import_invalid_deletion.rs	137	0
 crates/bridgevm-cli/tests/cli_import_original_name.rs	164	0
@@ -4758,3 +4758,8 @@ crates/bridgevm-hvf-runtime/src/owned_process_readiness.rs	106	0
 crates/bridgevm-hvf-runtime/src/owned_process_readiness_tests.rs	77	1
 docs/history/windows-hvf/autonomous-diagnostic-attribution-20261014.md	116	0
 docs/document-manifests/autonomous-diagnostic-attribution-20261014.tsv	3	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsCloneMedia.swift	29	0
+apps/macos/Tests/BridgeVMControlTests/HvfCloneTestMedia.swift	12	0
+apps/macos/Tests/BridgeVMControlTests/HvfCloneVarsFixture.swift	82	0
+apps/macos/Tests/BridgeVMControlTests/HvfCloneVarsShapeTests.swift	61	0
+apps/macos/Tests/BridgeVMControlTests/HvfCloneVarsTests.swift	40	0

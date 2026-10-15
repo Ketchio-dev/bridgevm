@@ -3,7 +3,7 @@ import XCTest
 
 final class HvfCloneValidationTests: XCTestCase {
     func testRejectedCopiedMediaIsRemovedBeforeRegistrationOrIdentityWork() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = LibraryDeletionTestDirectory.temporary.appendingPathComponent(UUID().uuidString)
         let source = root.appendingPathComponent("source.bundle")
         let library = root.appendingPathComponent("library")
         let fm = FileManager.default

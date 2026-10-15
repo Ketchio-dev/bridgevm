@@ -3,7 +3,7 @@ import XCTest
 
 final class HvfCloneLeaseFailureTests: XCTestCase {
     private final class Fixture {
-        let root = FileManager.default.temporaryDirectory
+        let root = LibraryDeletionTestDirectory.temporary
             .appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
         var library: URL { root.appendingPathComponent("library") }
         var source: URL { root.appendingPathComponent("source.bundle") }

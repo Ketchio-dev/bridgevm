@@ -81,7 +81,7 @@ final class VMCloneDestinationTests: XCTestCase {
     func testSafeUbuntuCloneCopiesAndRegistersInIsolatedLibrary() throws {
         let fixture = try VMCloneDestinationFixture()
         let metadata = fixture.source.appendingPathComponent("metadata")
-        try fixture.fm.createDirectory(at: metadata, withIntermediateDirectories: false)
+        try fixture.fm.createDirectory(at: metadata, withIntermediateDirectories: true)
         for file in ["apple-vz-launch.json", "handoff.json"] {
             XCTAssertTrue(JSONFile.writeDict(["vm_name": "Source", "bundle_path": fixture.source.path],
                                               to: metadata.appendingPathComponent(file).path))

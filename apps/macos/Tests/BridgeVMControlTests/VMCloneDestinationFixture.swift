@@ -8,8 +8,7 @@ final class VMCloneDestinationFixture {
     var library: URL { root.appendingPathComponent("library") }
     var sentinel: URL { source.appendingPathComponent("sentinel") }
     init() throws {
-        try fm.createDirectory(at: source.appendingPathComponent("disks"), withIntermediateDirectories: true)
-        try Data("owned disk".utf8).write(to: source.appendingPathComponent("disks/hvf-target.raw"))
+        try HvfCloneTestMedia.write(disk: source.appendingPathComponent("disks/hvf-target.raw"), bytes: Data("owned disk".utf8))
         try Data("keep source unchanged".utf8).write(to: sentinel)
     }
     deinit { try? fm.removeItem(at: root) }

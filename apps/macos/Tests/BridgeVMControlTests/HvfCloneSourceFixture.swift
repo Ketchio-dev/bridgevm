@@ -9,8 +9,7 @@ final class HvfCloneSourceFixture {
     var library: URL { root.appendingPathComponent("library") }
     let bytes = Data("owned selected disk".utf8)
     init() throws {
-        try fm.createDirectory(at: disk.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try bytes.write(to: disk)
+        try HvfCloneTestMedia.write(disk: disk, bytes: bytes)
     }
     deinit { try? fm.removeItem(at: root) }
     func config() -> VMConfig {
