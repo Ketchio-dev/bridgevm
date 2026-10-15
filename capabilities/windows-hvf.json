@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-10-14",
-  "tested_commit": "24051064c6db9cec0ee16f4607f0c66dcb4f8c93",
+  "tested_commit": "a10f4b41dfcfcfd0e04ad07bc0812112ce007309",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -200,7 +200,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-10-15 00:38 UTC checkpoint: A11 remains OPEN. Eighth source 24051064 awaits complete local and exact hosted validation. Sixth df70acf5 passed all 45 local stages and all 103 associated hosted workflows; its full hosted run passed 44 executed stages with the optional Linux target explicitly skipped. Seventh d3cace78 retains its 44 PASS / 1 FAIL full check from four shell caller-input findings. Eighth integrates the focused caller-input repair and pre-reservation clone metadata/vars shape checks; focused tests do not establish a completed clone or guest behavior. Fifth 76c41c39 retains the unknown-cause local readiness failure and separate hosted T12 fixture teardown failure. No final release regression seal is established. See the [caller input and clone vars checkpoint](../history/windows-hvf/autonomous-caller-inputs-and-clone-vars-20261015.md), [diagnostic attribution checkpoint](../history/windows-hvf/autonomous-diagnostic-attribution-20261014.md) and [verbatim A11 history](../archive/a11-measured-through-20261014.md).",
+      "measured": "2026-10-15 01:44 UTC checkpoint: A11 remains OPEN. Ninth source a10f4b41 awaits complete local and exact hosted validation. Eighth a114121c retains 44 PASS / 1 FAIL locally and 100 successful / 3 failed hosted workflows; its full hosted run recorded 43 PASS / 1 FAIL across 44 executed stages with the optional Linux target skipped. Its legacy Ubuntu-template test attempted to recreate shared-fixture metadata. Ninth integrates the focused test-only repair, upstream package failure propagation and move-completion selection preservation. Native and actual shim checks passed the same 22, 9 and 10 methods respectively; these focused results do not replace a full regression check or establish guest behavior. Sixth df70acf5 retains 45 local stages and all 103 hosted workflows passing. Seventh shell, fifth local readiness and fifth hosted T12 teardown failures remain recorded. No final release regression seal is established. See the [package and selection checkpoint](../history/windows-hvf/autonomous-package-and-selection-20261015.md), [caller input and clone vars checkpoint](../history/windows-hvf/autonomous-caller-inputs-and-clone-vars-20261015.md) and [verbatim A11 history](../archive/a11-measured-through-20261014.md).",
       "evidence_paths": [
         "STATUS.md",
         "docs/history/windows-hvf/t17-launchservices-preflight-20260917.md",
@@ -363,7 +363,8 @@
         "docs/history/windows-hvf/autonomous-selection-and-diagnostic-launch-20261014.md",
         "docs/history/windows-hvf/autonomous-media-and-fixture-lifetimes-20261014.md",
         "docs/history/windows-hvf/autonomous-diagnostic-attribution-20261014.md",
-        "docs/history/windows-hvf/autonomous-caller-inputs-and-clone-vars-20261015.md"
+        "docs/history/windows-hvf/autonomous-caller-inputs-and-clone-vars-20261015.md",
+        "docs/history/windows-hvf/autonomous-package-and-selection-20261015.md"
       ]
     },
     {
