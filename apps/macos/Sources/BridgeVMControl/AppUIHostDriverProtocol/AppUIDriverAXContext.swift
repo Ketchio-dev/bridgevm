@@ -4,7 +4,7 @@ import Foundation
 // Diagnostic vocabulary only: never serialize an AX value or an arbitrary attribute name.
 struct AppUIDriverAXContext: Codable, Equatable {
     enum API: String, Codable, CaseIterable {
-        case getPID, setMessagingTimeout, copyAttributeValue, copyAttributeValues
+        case getPID, setMessagingTimeout, copyAttributeValue, copyAttributeValues, getAttributeValueCount
         case isAttributeSettable, performAction, setAttributeValue
     }
     enum Attribute: String, Codable, CaseIterable {
