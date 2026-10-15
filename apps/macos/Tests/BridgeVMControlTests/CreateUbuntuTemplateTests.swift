@@ -44,7 +44,7 @@ final class CreateUbuntuTemplateTests: XCTestCase {
     func testLegacyNilBootModeStillCopiesAndRegistersTinyTemplate() throws {
         let f = try VMCloneDestinationFixture()
         let metadata = f.source.appendingPathComponent("metadata")
-        try f.fm.createDirectory(at: metadata, withIntermediateDirectories: false)
+        XCTAssertEqual(try Data(contentsOf: metadata.appendingPathComponent("hvf-vars.fd")), Data("owned clone vars".utf8))
         for file in ["apple-vz-launch.json", "handoff.json"] {
             XCTAssertTrue(JSONFile.writeDict(["vm_name": "Source", "bundle_path": f.source.path],
                 to: metadata.appendingPathComponent(file).path))
