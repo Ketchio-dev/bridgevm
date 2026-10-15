@@ -4784,3 +4784,5 @@ apps/macos/Tests/BridgeVMControlTests/ResourceDisplayStaleReadProbe.swift	44	0
 apps/macos/Tests/BridgeVMControlTests/RetainedTerminalRecoveryBackend.swift	39	0
 apps/macos/Tests/BridgeVMControlTests/RetainedTerminalRecoveryFixture.swift	92	0
 apps/macos/Tests/BridgeVMControlTests/RetainedTerminalRecoveryTests.swift	80	0
+docs/history/windows-hvf/autonomous-resource-and-retained-outcomes-20261015.md	125	0
+docs/document-manifests/autonomous-resource-and-retained-outcomes-20261015.tsv	3	0
