@@ -4765,3 +4765,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfCloneVarsShapeTests.swift	61	0
 apps/macos/Tests/BridgeVMControlTests/HvfCloneVarsTests.swift	40	0
 docs/history/windows-hvf/autonomous-caller-inputs-and-clone-vars-20261015.md	87	0
 docs/document-manifests/autonomous-caller-inputs-and-clone-vars-20261015.tsv	3	0
+apps/macos/Tests/BridgeVMControlTests/ControlModelPackageOutcomeTests.swift	70	0
+apps/macos/Tests/BridgeVMControlTests/ControlModelPackageShellTests.swift	14	0
+apps/macos/Tests/BridgeVMControlTests/PackageCommandBackend.swift	25	0
+apps/macos/Tests/BridgeVMControlTests/PackageCommandFixture.swift	71	0

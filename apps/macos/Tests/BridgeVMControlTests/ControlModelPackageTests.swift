@@ -8,7 +8,7 @@ final class ControlModelPackageTests: XCTestCase {
 
         XCTAssertEqual(
             command,
-            "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y 'git' 'libc6:arm64' 'g++' 2>&1 | tail -25"
+            #"'bash' '-o' 'pipefail' '-c' 'sudo DEBIAN_FRONTEND=noninteractive apt-get install -y '\''git'\'' '\''libc6:arm64'\'' '\''g++'\'' 2>&1 | tail -25'"#
         )
     }
 

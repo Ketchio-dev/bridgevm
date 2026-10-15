@@ -11,7 +11,7 @@ extension ControlModel {
                   ) != nil
               }) else { return nil }
         let arguments = names.map(Shell.shQuote).joined(separator: " ")
-        return "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \(arguments) 2>&1 | tail -25"
+        return Shell.shellCommand("bash", ["-o", "pipefail", "-c", "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \(arguments) 2>&1 | tail -25"])
     }
 
     static func boundedLog(_ value: String, limit: Int) -> String {
