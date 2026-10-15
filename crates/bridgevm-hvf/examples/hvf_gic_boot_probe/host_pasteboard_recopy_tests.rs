@@ -67,3 +67,5 @@ fn disconnected_recopy_owner_cannot_contaminate_fresh_bridge_epoch() {
     assert!(worker.poll(&mut mac));
     assert_eq!(fresh.try_changed(), None);
 }
+#[path = "host_pasteboard_suppressed_tests.rs"]
+mod suppressed;

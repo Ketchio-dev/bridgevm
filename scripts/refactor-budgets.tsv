@@ -4643,7 +4643,7 @@ crates/bridgevm-hvf/src/virtio_net/tests/driver_ready_fixture.rs	65	0
 crates/bridgevm-hvf/src/virtio_net/tests/ready_queue.rs	13	0
 crates/bridgevm-hvf/src/virtio_queue_net_ready_tests.rs	13	0
 crates/bridgevm-hvf/src/virtio_net/tests/driver_ready_status.rs	17	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard_poller.rs	70	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard_poller.rs	57	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard_worker.rs	96	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard_recopy_tests.rs	65	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_recopy_tests.rs	141	0
@@ -4776,3 +4776,6 @@ apps/macos/Tests/BridgeVMControlTests/LibraryMoveSelectionTests.swift	50	0
 apps/macos/Tests/BridgeVMControlTests/LibraryMoveSelectionIdentityTests.swift	26	0
 docs/history/windows-hvf/autonomous-package-and-selection-20261015.md	98	0
 docs/document-manifests/autonomous-package-and-selection-20261015.tsv	3	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_nontext_tests.rs	142	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard_suppressed_tests.rs	85	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard_write.rs	22	0
