@@ -2713,7 +2713,7 @@ apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverValues.swi
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverScenario.swift	94	0
 apps/macos/Sources/BridgeVMControl/AppUIHostLegacyScenario.swift	67	0
 apps/macos/scripts/AppUIDriver.swift	45	0
-apps/macos/scripts/AppUIDriverAX.swift	77	0
+apps/macos/scripts/AppUIDriverAX.swift	56	0
 apps/macos/scripts/AppUIDriverAXGraph.swift	32	0
 apps/macos/scripts/AppUIDriverAXOperations.swift	119	0
 apps/macos/scripts/AppUIDriverAXTypes.swift	29	0
@@ -4678,7 +4678,7 @@ apps/macos/scripts/AppUIInstallCancelAXOperations.swift	59	0
 apps/macos/scripts/AppUIInstallCancelDriver.swift	45	0
 apps/macos/scripts/AppUIInstallCancelService.swift	99	0
 scripts/app_ui_host_contract_discovery.py	28	0
-scripts/check-app-ui-driver-ax-contracts.sh	10	0
+scripts/check-app-ui-driver-ax-contracts.sh	7	0
 scripts/check-app-ui-driver-python-contracts.sh	7	0
 scripts/live-gates/app_ui_install_cancel_cleanup.py	45	0
 scripts/live-gates/app_ui_install_cancel_diagnostic.py	94	0
@@ -4746,12 +4746,12 @@ crates/bridgevm-storage/tests/snapshot_restore_media/fixture.rs	57	0
 docs/history/windows-hvf/autonomous-media-and-fixture-lifetimes-20261014.md	142	0
 docs/document-manifests/autonomous-media-and-fixture-lifetimes-20261014.tsv	3	0
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverAXContext.swift	28	0
-apps/macos/scripts/AppUIDriverAXCalls.swift	18	0
+apps/macos/scripts/AppUIDriverAXCalls.swift	16	0
 apps/macos/scripts/AppUIDriverAXReadiness.swift	28	0
 scripts/check-app-ui-driver-ax-graph-contracts.sh	10	0
 scripts/check-app-ui-driver-ax-service-contracts.sh	6	0
-tests/integration/app-ui-driver-ax-calls-contracts.swift	114	0
-tests/integration/app-ui-driver-ax-calls-fixture.swift	57	0
+tests/integration/app-ui-driver-ax-calls-contracts.swift	67	0
+tests/integration/app-ui-driver-ax-calls-fixture.swift	54	0
 tests/integration/app-ui-driver-ax-context-contracts.swift	80	0
 tests/integration/app-ui-driver-ax-service-contracts.swift	34	0
 crates/bridgevm-hvf-runtime/src/owned_process_readiness.rs	106	0
@@ -4776,3 +4776,10 @@ apps/macos/Tests/BridgeVMControlTests/LibraryMoveSelectionTests.swift	50	0
 apps/macos/Tests/BridgeVMControlTests/LibraryMoveSelectionIdentityTests.swift	26	0
 docs/history/windows-hvf/autonomous-package-and-selection-20261015.md	98	0
 docs/document-manifests/autonomous-package-and-selection-20261015.tsv	3	0
+apps/macos/scripts/AppUIDriverAXArrayCalls.swift	11	0
+apps/macos/scripts/AppUIDriverAXRelationships.swift	44	0
+scripts/check-app-ui-driver-ax-call-contracts.sh	13	0
+tests/integration/app-ui-driver-ax-count-boundaries.swift	101	0
+tests/integration/app-ui-driver-ax-empty-contracts.swift	32	0
+tests/integration/app-ui-driver-ax-relationship-fixture.swift	17	0
+tests/integration/app-ui-driver-ax-wrapper-boundaries.swift	56	0
