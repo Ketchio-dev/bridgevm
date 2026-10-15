@@ -74,7 +74,7 @@ impl HostPasteboard {
     pub fn set(&self, text: String) {
         let _ = self.cmds.send(PasteboardWrite {
             revision: self.observed.get(),
-            // Orders worker-observed duplicate ownership, not native event time.
+            // Orders suppressed host ownership changes, not native event time.
             recopy: self.recopy.load(Ordering::Acquire),
             text,
         });

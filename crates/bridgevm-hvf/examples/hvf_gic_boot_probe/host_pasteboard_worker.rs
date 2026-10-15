@@ -54,7 +54,7 @@ impl PasteboardWorker {
             }
         }
         // A later guest write in this FIFO batch owns the clipboard. Otherwise
-        // restore the refused recopy to the service with a new report revision.
+        // Re-report refused host text when representable; never invent a clear.
         if refused && !fresh {
             if let Some(text) = self.poller.report_current(backend) {
                 return self.report(text);
@@ -67,7 +67,7 @@ impl PasteboardWorker {
         self.initialized = true;
         match self.poller.on_tick(backend) {
             Some(text) => self.report(text),
-            None if self.poller.observed_recopy => {
+            None if self.poller.observed_suppressed_change => {
                 let Some(next) = self.recopy.load(Ordering::Relaxed).checked_add(1) else {
                     self.revision = None;
                     return false;
