@@ -119,9 +119,7 @@ final class LibraryModel: ObservableObject {
             await MainActor.run {
                 self.cloningConfigurations[cfg.slug] = nil
                 if let clone {
-                    let revealClone = self.selectedID == selectionAtAdmission // Current ID, not navigation history.
-                    self.reload()
-                    if revealClone { self.selectedID = clone.slug }
+                    self.reload(revealing: clone.slug, ifSelectionIs: selectionAtAdmission)
                 } else {
                     self.cloneError = "Windows HVF 복제 완료를 확인하지 못했습니다. 원본 사용 여부와 대상 번들 상태를 확인하세요."
                 }
@@ -139,6 +137,7 @@ final class LibraryModel: ObservableObject {
         }
         movingSlugs.insert(cfg.slug)
         let libraryRoot = self.libraryRoot
+        let selectionAtAdmission = selectedID
         actionScheduler {
             let moved = HvfProtectedTransfers.move(cfg,
                 to: destinationParent,
@@ -148,8 +147,7 @@ final class LibraryModel: ObservableObject {
                 self.movingSlugs.remove(cfg.slug)
                 if let moved {
                     self.modelCache[cfg.slug] = nil
-                    self.reload()
-                    self.selectedID = moved.slug
+                    self.reload(revealing: moved.slug, ifSelectionIs: selectionAtAdmission)
                 } else {
                     self.moveError = VMRelocationReferences.failureMessage(for: cfg, rootURL: self.libraryRoot)
                     self.reload() // It may have committed: replace stale idle handles with the persisted registration.

@@ -1325,7 +1325,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfBoundedLogReadTests.swift	41	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMIdentityLifecycle.swift	451	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMLifecycleCommand.swift	368	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMStateSecurity.swift	181	0
-apps/macos/Sources/BridgeVMControl/LibraryModel.swift	160	0
+apps/macos/Sources/BridgeVMControl/LibraryModel.swift	158	0
 apps/macos/Sources/BridgeVMControl/VMLibrary.swift	164	0
 apps/macos/Sources/BridgeVMControl/VMLibraryInternalEntries.swift	13	0
 apps/macos/Tests/BridgeVMControlTests/LibraryCacheInventoryTests.swift	49	0
@@ -4769,3 +4769,8 @@ apps/macos/Tests/BridgeVMControlTests/ControlModelPackageOutcomeTests.swift	70	0
 apps/macos/Tests/BridgeVMControlTests/ControlModelPackageShellTests.swift	14	0
 apps/macos/Tests/BridgeVMControlTests/PackageCommandBackend.swift	25	0
 apps/macos/Tests/BridgeVMControlTests/PackageCommandFixture.swift	71	0
+apps/macos/Sources/BridgeVMControl/LibraryModelCompletionSelection.swift	8	0
+apps/macos/Tests/BridgeVMControlTests/LibraryMoveSelectionAssets.swift	93	0
+apps/macos/Tests/BridgeVMControlTests/LibraryMoveSelectionFixture.swift	93	0
+apps/macos/Tests/BridgeVMControlTests/LibraryMoveSelectionTests.swift	50	0
+apps/macos/Tests/BridgeVMControlTests/LibraryMoveSelectionIdentityTests.swift	26	0
