@@ -83,7 +83,7 @@ corrected to the active workspace-list binding before execution and retained sep
 
 ## Evidence bindings
 
-External records retain raw failures and source mappings; private paths and media are omitted.
+This table omits private paths and media; bound external records retain raw failures and source mappings.
 
 | Record | SHA-256 |
 | --- | --- |
