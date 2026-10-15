@@ -27,7 +27,7 @@ pub(super) mod tests {
             queue: VecDeque::new(),
             in_flight: None,
             overdue_beats: 0,
-            last_synced: None,
+            last_synced: ClipBaseline::default(),
             pasteboard: None,
             ctl_path: None,
             ctl_offset: 0,
@@ -452,7 +452,7 @@ pub(super) mod tests {
         let b64 = base64_encode(b"hello\r\n");
         h.handle_service_reply(&format!("CLIP {b64}"), None, None, Instant::now());
 
-        assert_eq!(h.last_synced.as_deref(), Some("hello\n"));
+        assert_eq!(h.last_synced.text.as_deref(), Some("hello\n"));
         assert!(h.in_flight.is_none(), "reply completes the in-flight poll");
     }
 

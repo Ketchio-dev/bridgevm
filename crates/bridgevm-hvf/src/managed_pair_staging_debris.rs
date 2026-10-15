@@ -1,7 +1,6 @@
-//! Managed staging holds only restore's own copies, so it is removed whole.
+//! Clear only known restore copies; unfamiliar content is recovery evidence.
 
 use crate::snapshot_pair::managed::private_directory;
-use std::fs;
 use std::io;
 use std::path::Path;
 
@@ -9,7 +8,9 @@ use std::path::Path;
 /// A crashed copy must not consume the space needed for its own retry.
 pub(super) fn clear(staged: &Path) -> io::Result<()> {
     if private_directory(staged, false)? {
-        fs::remove_dir_all(staged)?;
+        contents::clear(staged)?;
     }
     Ok(())
 }
+#[path = "managed_pair_staging_contents.rs"]
+mod contents;

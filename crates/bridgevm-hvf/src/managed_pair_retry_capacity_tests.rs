@@ -1,5 +1,6 @@
-//! A crashed restore's owned copies must be reclaimed before measuring space.
+//! Incomplete crash copies must be reclaimed before measuring retry space.
 
+use super::super::staging_recovery_test_support::crash_incomplete_restore;
 use super::*;
 use crate::snapshot_pair::{snapshot_publish, verify_snapshot};
 
@@ -13,7 +14,7 @@ fn constrained_crash_retry(selected: bool) {
         fs::write(disk, b"guest-disk").unwrap();
         fs::write(vars, b"guest-vars").unwrap();
     }
-    crash_restore("before-publish", BEFORE_EXIT, &disk, &vars, &snapshot);
+    crash_incomplete_restore(&disk, &vars, &snapshot);
     let mut pair = LockedPair::open(&disk, &vars).unwrap();
     let old_paths = pair.paths().unwrap();
     let old = contents(&pair);

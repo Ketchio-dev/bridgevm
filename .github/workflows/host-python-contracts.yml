@@ -1,0 +1,24 @@
+name: Host Python contracts
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  contract:
+    name: ${{ matrix.check }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - check: staging
+            command: python3 tests/integration/b6-asset-staging-contract.py
+          - check: runtime
+            command: python3 tests/integration/b6-renderer-runtime-contract.py
+          - check: startup
+            command: python3 tests/integration/b6-renderer-startup-contract.py
+          - check: typed-hashes
+            command: python3 tests/integration/doc-code-identity-contract.py
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: ${{ matrix.command }}

@@ -18,7 +18,7 @@ final class NativeInstallOperation {
 
     var reservesWork: Bool {
         if terminal != nil { return false }
-        if let session { return session.isRunning }
+        if let session { return session.stage == .idle || session.admissionPending || session.isRunning }
         return true
     }
     var cancelledBeforeSession: Bool {
@@ -37,6 +37,16 @@ final class NativeInstallOperation {
         self.session = session
     }
 
+    func start(_ session: HvfWindowsInstallSession) -> Bool {
+        guard terminal == nil, self.session == nil else { return false }
+        // start publishes synchronously; cancellation must already have an owner.
+        preparationTask = nil
+        self.session = session
+        if session.start(admit: { self.terminal == nil }) != nil { return true }
+        self.session = nil
+        return false
+    }
+
     func fail(_ message: String) {
         guard terminal == nil, session == nil else { return }
         preparationTask = nil
@@ -46,11 +56,12 @@ final class NativeInstallOperation {
     @discardableResult
     func cancel() -> Bool {
         guard terminal == nil else { return false }
-        if let session {
+        if let session, !session.admissionPending || session.isRunning {
             guard session.canCancel else { return false }
             session.cancel()
             return true
         }
+        session = nil
         preparationTask?.cancel()
         preparationTask = nil
         terminal = (.cancelled, nil, [])
@@ -75,7 +86,12 @@ final class NativeInstallOperation {
     private func make(_ session: HvfWindowsInstallSession) -> NativeInstallObservation {
         let phase: NativeInstallObservation.Phase
         var failure: String?
-        switch session.stage {
+        // Published sends before storing the new stage, including on retries.
+        let stage: HvfWindowsInstallStage
+        if session.isRunning && session.cancelled && !session.commitStarted { stage = .cancelling }
+        else if session.admissionPending { stage = session.isRunning ? .validating : .idle }
+        else { stage = session.stage }
+        switch stage {
         case .idle: phase = .preparingPlan
         case .validating: phase = .validating
         case .preparingSource: phase = .preparingSource
@@ -88,8 +104,9 @@ final class NativeInstallOperation {
         case let .failed(message): phase = .failed; failure = bounded(message,
             limit: NativeInstallControlCodec.maximumFailureBytes)
         }
-        return make(phase: phase, worker: false, running: session.isRunning,
-                    canCancel: session.canCancel, logs: boundedLogs(session.logLines), failure: failure)
+        return make(phase: phase, worker: phase == .preparingPlan, running: session.isRunning,
+                    canCancel: phase == .preparingPlan || session.canCancel,
+                    logs: boundedLogs(session.logLines), failure: failure)
     }
 
     private func make(phase: NativeInstallObservation.Phase, worker: Bool, running: Bool,
@@ -98,26 +115,5 @@ final class NativeInstallOperation {
               expectedSavedConfigurationDigest: expectedSavedConfigurationDigest,
               phase: phase, acceptedUptime: acceptedUptime, workerPending: worker,
               sessionRunning: running, canCancel: canCancel, logTail: logs, failure: failure)
-    }
-
-    private func boundedLogs(_ input: [String]) -> [String] {
-        var result: [String] = [], bytes = 0
-        for line in input.suffix(NativeInstallControlCodec.maximumLogLines).reversed() {
-            let remaining = NativeInstallControlCodec.maximumLogBytes - bytes
-            guard remaining > 0 else { break }
-            let value = bounded(line, limit: min(remaining, NativeInstallControlCodec.maximumLogLineBytes))
-            guard !value.isEmpty else { break }
-            result.append(value); bytes += value.utf8.count
-        }
-        return result.reversed()
-    }
-
-    private func bounded(_ value: String, limit: Int) -> String {
-        guard value.utf8.count > limit else { return value }
-        let prefix = Array(value.utf8.prefix(limit))
-        for count in stride(from: prefix.count, through: 0, by: -1) {
-            if let result = String(bytes: prefix.prefix(count), encoding: .utf8) { return result }
-        }
-        return ""
     }
 }

@@ -57,7 +57,7 @@ final class HvfFramebufferFileIdentityTests: XCTestCase {
     }
 
     private func withDirectory(_ body: (URL) throws -> Void) throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = LibraryDeletionTestDirectory.temporary.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: root) }
         try body(root)

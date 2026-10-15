@@ -23,7 +23,7 @@ struct LibrarySidebar: View {
             .accessibilityIdentifier("bridgevm.library.overview")
             .accessibilityAddTraits(.isSelected)
             .padding(.horizontal, 12).padding(.bottom, 8)
-            Spacer(minLength: 12)
+            LibraryRetainedControlsNavigation(library: library)
             VStack(spacing: 16) {
                 LibraryHostSummary(library: library)
                 LibraryEngineLegend()

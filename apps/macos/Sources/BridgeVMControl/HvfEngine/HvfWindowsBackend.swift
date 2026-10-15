@@ -5,17 +5,20 @@ final class HvfWindowsBackend: VMBackend {
     private let processIsRunning: (String) -> Bool
     private let libraryRoot: URL
     private let vtpmKeyProvider: VTPMStateKeyProviding
+    private let agentServiceWait: TimeInterval
     private(set) var launchedProcess: Process?
     init(
         _ config: VMConfig,
         processIsRunning: @escaping (String) -> Bool = { Shell.isProcessRunning(matching: $0) },
         libraryRoot: URL = VMLibrary.root,
-        vtpmKeyProvider: VTPMStateKeyProviding = KeychainVTPMStateKeyStore()
+        vtpmKeyProvider: VTPMStateKeyProviding = KeychainVTPMStateKeyStore(),
+        agentServiceWait: TimeInterval = HvfAgentServiceGate.guestCommandWait
     ) {
         self.config = config
         self.processIsRunning = processIsRunning
         self.libraryRoot = libraryRoot
         self.vtpmKeyProvider = vtpmKeyProvider
+        self.agentServiceWait = agentServiceWait
     }
 
     var displayName: String { config.displayName }
@@ -126,10 +129,7 @@ final class HvfWindowsBackend: VMBackend {
 
     func stop() {
         guard isRunning() else { return }
-        let serviceDeadline = Date().addingTimeInterval(180)
-        while isRunning(), !serviceHasStarted(), Date() < serviceDeadline {
-            usleep(250_000)
-        }
+        _ = HvfAgentServiceGate.waitForService(timeout: 180, started: serviceHasStarted, running: isRunning)
         if isRunning(), serviceHasStarted() {
             if requestGracefulStop() {
                 // Give the guest a complete grace period after the request. Reusing
@@ -158,10 +158,10 @@ final class HvfWindowsBackend: VMBackend {
     }
 
     func setResources(memMiB: Int, cpu: Int) -> Bool {
-        guard VMResourceLimits.contains(memoryMiB: memMiB, cpu: cpu) else { return false }
+        guard VMResourceLimits.contains(memoryMiB: memMiB, cpu: cpu),
+              VMLibrary.isCurrentRegistration(config, rootURL: libraryRoot) else { return false }
         var updated = config
-        updated.memMiB = memMiB
-        updated.cpuCount = cpu
+        updated.memMiB = memMiB; updated.cpuCount = cpu
         guard VMLibrary.save(updated, rootURL: libraryRoot) else { return false }
         config = updated
         return true
@@ -173,7 +173,7 @@ final class HvfWindowsBackend: VMBackend {
 
     private func executeGuestCommand(_ command: String, timeout: TimeInterval) -> (output: String, code: Int32) {
         let normalized: String
-        switch HvfGuestCommand.normalize(command) {
+        switch HvfGuestCommand.normalizeShell(command) {
         case let .success(value):
             normalized = value
         case let .failure(error):
@@ -181,12 +181,11 @@ final class HvfWindowsBackend: VMBackend {
         }
         guestCommandLock.lock()
         defer { guestCommandLock.unlock() }
-        guard isRunning() else {
-            return ("HVF VM이 실행 중이 아닙니다.", -1)
-        }
+        guard isRunning() else { return (HvfAgentServiceGate.vmNotRunningMessage, -1) }
         guard ensureDirectories() else {
             return ("HVF 런타임 디렉터리를 준비하지 못했습니다: \(config.bundlePath)", -1)
         }
+        if let refusal = HvfAgentServiceGate.guestCommandRefusal(waiting: agentServiceWait, started: serviceHasStarted, running: isRunning) { return (refusal, -1) }
         let offset = fileSize(at: runLogPath)
         guard appendCtl(normalized) else {
             return ("HVF 제어 채널에 명령을 기록하지 못했습니다: \(ctlFilePath)", -1)
@@ -205,7 +204,7 @@ final class HvfWindowsBackend: VMBackend {
             watchdogMs: nil,
             ramMiB: config.memMiB ?? 6144,
             smpCpus: config.cpuCount ?? 4,
-            clipboardSync: true,
+            clipboardSync: config.clipboardSyncEnabled ?? true,
             shareHostDir: nil,
             shareGuestDir: nil,
             virtioNet: config.networkEnabled ?? true,

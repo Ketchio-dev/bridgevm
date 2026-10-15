@@ -25,7 +25,7 @@ enum HvfHostKeyCommand: Equatable {
         case "\u{f72c}": return .key("pageup")
         case "\u{f72d}": return .key("pagedown")
         case "\t": return .key("tab")
-        case "\r", "\n": return .key("enter")
+        case "\r", "\n", "\u{3}": return .key("enter")
         // NSEvent reports F1..F12 as private-use scalars F704..F70F. The guest
         // side already understands the "f1".."f12" tokens
         // (xhci_hid_input/setup_input/actions.rs:118-174); only this mapping
@@ -61,7 +61,7 @@ extension HvfHostKeyCommand {
         ]
         if flags == .shift {
             if let key = navigation[characters] { return .key("shift+" + key) }
-            if characters == "\t" || characters == "\u{19}" { return .key("shift+tab") }
+            if let name = ["\t": "tab", "\u{19}": "tab", "\r": "enter", "\n": "enter", "\u{3}": "enter", " ": "space"][characters] { return .key("shift+" + name) }
             guard !characters.isEmpty, characters.unicodeScalars.allSatisfy({
                 !CharacterSet.controlCharacters.contains($0) && !(0xf700...0xf8ff).contains($0.value)
             }) else { return .ignored }
@@ -84,7 +84,7 @@ extension HvfHostKeyCommand {
             switch characters {
             case "\u{f707}": return .key("alt+f4")
             case "\t": return .key("alt+tab")
-            case "\r", "\n": return .key("alt+enter")
+            case "\r", "\n", "\u{3}": return .key("alt+enter")
             default: return .ignored
             }
         }

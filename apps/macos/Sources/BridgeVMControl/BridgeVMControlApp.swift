@@ -6,14 +6,14 @@ struct BridgeVMControlApp: App {
 #if canImport(AppKit)
     @NSApplicationDelegateAdaptor(ControlAppDelegate.self) private var appDelegate
 #endif
-    @StateObject var library: LibraryModel
+    @StateObject var library: BridgeVMControlAppState
     init() { _library = BridgeVMControlAppModel.libraryState() }
     var body: some Scene {
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         AppUIHost.prepared?.lifecycle.record(.appBodyEvaluated)
         #endif
         return WindowGroup("BridgeVM Control") {
-            ContentView(library: library)
+            BridgeVMControlAppContent(library: library)
                 .frame(minWidth: 1100)
                 .appUIHostSceneObservation()
         }

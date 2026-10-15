@@ -652,20 +652,12 @@ fn snapshot_chain_uses_active_disk_and_restore_rewinds_to_backing() {
 fn full_clone_rebases_copied_active_and_snapshot_disk_metadata() {
     let store = temp_store();
     store.create_vm(&manifest("dev")).unwrap();
-    let primary = store.prepare_primary_disk("dev").unwrap();
-    fs::write(&primary.path, b"fake backing").unwrap();
+    super::import_images::create_primary(&store, "dev");
     store
         .create_snapshot("dev", "base", SnapshotKind::Disk)
         .unwrap();
     let source_overlay = store
-        .create_snapshot_disk_with("dev", "base", |_program, args| {
-            fs::write(&args[7], b"fake overlay")?;
-            Ok(Output {
-                status: std::process::ExitStatus::from_raw(0),
-                stdout: Vec::new(),
-                stderr: Vec::new(),
-            })
-        })
+        .create_snapshot_disk("dev", "base")
         .unwrap()
         .disk
         .overlay_path;

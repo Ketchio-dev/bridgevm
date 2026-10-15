@@ -23,7 +23,7 @@ enum NativeCLICreateWindowsParser {
         while index < arguments.count {
             let argument = arguments[index]
             switch argument {
-            case "create-windows": try once("command", seen: &seen)
+            case "create-windows" where !seen.contains("command"): try once("command", seen: &seen)
             case "--iso": iso = try value(argument, arguments, index: &index, seen: &seen)
             case "--disk-gib": disk = try integer(argument, arguments, index: &index, seen: &seen)
             case "--memory-mib": memory = try integer(argument, arguments, index: &index, seen: &seen)

@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class HvfFramebufferFocusBindingTests: XCTestCase {
     func testSessionReplacementRebindsWindowResignationCancellation() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = LibraryDeletionTestDirectory.temporary.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let first = try session(root.appendingPathComponent("first"))
         let second = try session(root.appendingPathComponent("second"))

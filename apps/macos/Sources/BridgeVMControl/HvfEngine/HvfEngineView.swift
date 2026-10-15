@@ -125,7 +125,7 @@ struct HvfEngineView: View {
                     Spacer()
                 }
                 HStack(spacing: 18) {
-                    Toggle("Clipboard sync", isOn: $clipboardSync).accessibilityIdentifier("bridgevm.runtime.clipboard")
+                    HvfClipboardSyncToggle(session: session, isOn: $clipboardSync)
                     Toggle("Virtio net", isOn: $virtioNet).accessibilityIdentifier("bridgevm.runtime.network")
                     if session.config.allowsExperimental3D {
                         Toggle("Graphics Lab 3D", isOn: $virtioGpu3d)
@@ -144,20 +144,7 @@ struct HvfEngineView: View {
                     }
                 }
                 HvfRuntimeKeyboardInput(session: session, draft: $keyboardInput)
-                HStack(spacing: 8) {
-                    Button("Esc") { session.sendKey("esc") }
-                    Button("⌫") { session.sendKey("backspace") }.help("Backspace")
-                    Button("⌦") { session.sendKey("delete") }.help("Delete")
-                    Divider().frame(height: 18)
-                    Button("←") { session.sendKey("left") }
-                    Button("↑") { session.sendKey("up") }
-                    Button("↓") { session.sendKey("down") }
-                    Button("→") { session.sendKey("right") }
-                    Button("Home") { session.sendKey("home") }
-                    Button("End") { session.sendKey("end") }
-                    Spacer()
-                    Button("Ctrl-Alt-Delete") { session.sendKey("ctrl+alt+delete") }
-                }
+                HvfRuntimeSpecialKeys(session: session)
             }
             .padding(6)
         } label: {

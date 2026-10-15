@@ -85,68 +85,9 @@ pub(super) fn parse_share_spec(spec: &str) -> Option<(String, String)> {
     Some((host.to_string(), guest.to_string()))
 }
 
-pub(super) fn scan_share_host_dir(share: &mut ShareState) {
-    share_host_write::forget_absent_share_failures(share);
-    share.host_scan_scratch.clear();
-    let root = &share.host_dir;
-    let max_bytes = share.engine.max_bytes();
-    let host_skip_seen = &mut share.host_skip_seen;
-    scan_share_host_dir_inner(
-        root,
-        root,
-        max_bytes,
-        host_skip_seen,
-        &mut share.host_scan_scratch,
-    );
-}
-
-pub(super) fn scan_share_host_dir_inner(
-    root: &Path,
-    dir: &Path,
-    max_bytes: u64,
-    host_skip_seen: &mut HashSet<(String, u128, HostSkipKind)>,
-    files: &mut Vec<HostFile>,
-) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let Ok(meta) = std::fs::symlink_metadata(&path) else {
-            continue;
-        };
-        if meta.file_type().is_symlink() {
-            continue;
-        }
-        if meta.is_dir() {
-            scan_share_host_dir_inner(root, &path, max_bytes, host_skip_seen, files);
-            continue;
-        }
-        if !meta.is_file() {
-            continue;
-        }
-        let Some(name) = host_rel_path(root, &path) else {
-            continue;
-        };
-        let mtime_ms = file_mtime_ms_from_meta(&meta).unwrap_or(0);
-        let size = meta.len();
-        if size > max_bytes {
-            print_host_skip_once_seen(
-                host_skip_seen,
-                &name,
-                mtime_ms,
-                HostSkipKind::TooLarge,
-                size,
-            );
-            continue;
-        }
-        files.push(HostFile {
-            name,
-            size,
-            mtime_ms,
-        });
-    }
-}
+#[path = "share/share_host_scan.rs"]
+mod share_host_scan;
+pub(super) use share_host_scan::*;
 
 pub(super) fn host_rel_path(root: &Path, path: &Path) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;
@@ -195,6 +136,8 @@ pub(super) fn write_share_guest_path_into(dir: &str, name: &str, out: &mut Strin
 
 #[path = "share/host_destination.rs"]
 mod host_destination;
+#[path = "share/share_host_change.rs"]
+mod share_host_change;
 #[path = "share/share_host_write.rs"]
 mod share_host_write;
 #[path = "share/share_put.rs"]

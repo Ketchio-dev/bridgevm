@@ -256,6 +256,8 @@ fn a_large_file_hashes_the_same_as_its_bytes() {
 #[path = "snapshot_restore_space_tests.rs"]
 mod restore_space_tests;
 
+#[path = "snapshot_create_completed_staging_tests.rs"]
+pub mod completed_staging_tests;
 #[path = "snapshot_create_overlap_tests.rs"]
 mod create_overlap_tests;
 #[path = "snapshot_manifest_json_tests.rs"]

@@ -52,8 +52,8 @@ pub(super) const COMMAND_OUTPUT_CHUNK_B64_BYTES: usize = COMMAND_OUTPUT_CHUNK_BY
 
 pub(super) const MAX_COMMAND_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
-pub(super) const MAX_CTL_COMMAND_BYTES: usize = 64 * 1024;
-
+/// Equals the app's input-line guard: input verb, id, base64 of one 65,536-byte text event.
+pub(super) const MAX_CTL_COMMAND_BYTES: usize = 87_434;
 pub(super) const MAX_CTL_READ_BYTES_PER_POLL: u64 = 256 * 1024;
 
 pub(super) const MAX_SERVICE_QUEUE_DEPTH: usize = 1024;
@@ -98,10 +98,10 @@ pub struct AgentConsoleHarness {
     /// Consecutive overdue reports for the current in-flight request; at 3
     /// the request is dropped from the wire and re-queued (retransmit).
     pub(super) overdue_beats: u32,
-    /// Last clipboard text synced in EITHER direction, stored normalized (LF).
-    /// Guards the CRLF/LF ping-pong: a value we just pushed one way must not be
-    /// re-adopted when it comes back the other way.
-    pub(super) last_synced: Option<String>,
+    /// Clipboard text the guest is known to hold (normalized LF); advances to
+    /// a host copy only on CLIPSET OK. Guards the CRLF/LF ping-pong and stale
+    /// guest text replacing a newer Mac copy (see clip_sync.rs).
+    pub(super) last_synced: ClipBaseline,
     /// macOS pasteboard bridge (guest<->host). Some only when clipsync is on.
     pub(super) pasteboard: Option<HostPasteboard>,
     /// Optional control file tailed for injected commands.

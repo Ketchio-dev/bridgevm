@@ -15,9 +15,9 @@ Use the exact ID from `bridgevm app list`; retry only after terminal failure or 
 A compatible app must already own the library. These commands open no window or other lifecycle.
 
 `install` starts or reuses the pending installation request saved when the VM was
-created. It never accepts an ISO path, password, recovery key, unattended secret,
-or driver path on the command line. Those inputs remain in the app-owned VM
-bundle and its existing recovery flow.
+created. Required ISO and signed payload inputs must already be sealed in its bundle.
+It accepts no ISO, password, recovery key, unattended secret or driver path.
+[CLI-created entries lack the payload](app-cli-create.md) and cannot install by retrying.
 
 The app binds the operation to its current instance, canonical library, exact VM ID, and normalized saved-configuration digest. It admits only a
 saved own-HVF Windows VM whose `installPending` value is true. A changed or

@@ -40,7 +40,7 @@ struct CreateVMSheet: View {
     }
     var template: VMConfig? {
         library.vms.first { $0.backendKind == "fast-vz" && ($0.bootMode ?? "direct-kernel") == "direct-kernel" }
-            ?? library.vms.first
+            ?? (mode == .ubuntu ? nil : library.vms.first)
     }
     /// Memory choices in MiB, capped just under host physical RAM.
     private var ramOptions: [Int] {

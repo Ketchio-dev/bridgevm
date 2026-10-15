@@ -41,6 +41,7 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     var cpuCount: Int? = nil
     var networkEnabled: Bool? = nil  // nil == default on; false disables the guest NIC (HVF only)
     var experimental3DAllowed: Bool? = nil
+    var clipboardSyncEnabled: Bool? = nil  // nil == default on; false keeps two-way clipboard sync off (HVF only)
     /// A config can be imported or hand-edited, so never trust its persisted ID
     /// as a filesystem component. Normalizing here keeps every caller inside the
     /// VM library even when an ID contains separators or traversal components.
@@ -69,32 +70,11 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
-/// The engine a VM runs on — the single source of truth for the kind strings and
-/// their display labels (previously duplicated across views/models).
-enum BackendKind: String {
-    case fastVZ = "fast-vz"
-    case qemuCompat = "qemu-compat"
-    case hvfEngine = "hvf-engine"
-
-    var shortLabel: String {
-        switch self { case .fastVZ: return "Fast VZ"; case .qemuCompat: return "QEMU"; case .hvfEngine: return "HVF" }
-    }
-    var detailLabel: String {
-        switch self {
-        case .fastVZ: return "Fast (Apple VZ)"
-        case .qemuCompat: return "Compatibility (QEMU)"
-        case .hvfEngine: return "Native (HVF)"
-        }
-    }
-    /// Whether this engine is actually selectable/usable today.
-    var available: Bool { self == .fastVZ || self == .qemuCompat || self == .hvfEngine }
-}
-
 extension VMConfig {
     /// Resolve the concrete backend for this VM (the engine seam).
     func makeBackend(libraryRoot: URL = VMLibrary.root) -> VMBackend {
         switch engineKind {
-        case .fastVZ: return FastVZBackend(self)
+        case .fastVZ: return FastVZBackend(self, libraryRoot: libraryRoot)
         case .qemuCompat: return QemuCompatBackend(self)
         case .hvfEngine: return HvfWindowsBackend(self, libraryRoot: libraryRoot)
         }
@@ -320,140 +300,6 @@ protocol VMBackend: AnyObject {
     var supportsSSH: Bool { get }
     var supportsResourceChanges: Bool { get }
 }
-
-// MARK: - Fast Mode (Apple Virtualization.framework) backend
-
-final class FastVZBackend: VMBackend {
-    let config: VMConfig
-    init(_ config: VMConfig) { self.config = config }
-
-    var displayName: String { config.displayName }
-    let kind = "fast-vz"
-    let supportsGuestCommands = true
-    let supportsPackageInstall = true
-    let supportsClipboard = true
-    let supportsSSH = true
-    let supportsResourceChanges = true
-
-    // Per-VM identity: match THIS VM's UNIQUE handoff path on the runner's command
-    // line, so start/stop/status never touch another VM's runner.
-    private var runnerPattern: String { config.handoffPath }
-
-    func isRunning() -> Bool { Shell.isProcessRunning(matching: runnerPattern) }
-    func stop() { Shell.killProcesses(matching: runnerPattern) }
-
-    func currentIP() -> String? {
-        guard let text = try? String(contentsOfFile: config.leasesPath, encoding: .utf8) else { return nil }
-        // Find the lease block whose name= matches guestName, then its ip_address=.
-        var matched = false
-        for raw in text.split(separator: "\n") {
-            let line = raw.trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("name=") { matched = (line == "name=\(config.guestName)") }
-            if matched, line.hasPrefix("ip_address=") {
-                let candidate = String(line.dropFirst("ip_address=".count))
-                return Self.isValidIPv4(candidate) ? candidate : nil
-            }
-        }
-        return nil
-    }
-
-    private static func isValidIPv4(_ value: String) -> Bool {
-        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count == 4 else { return false }
-        return parts.allSatisfy { part in
-            guard !part.isEmpty, part.allSatisfy(\.isNumber), let number = Int(part) else { return false }
-            return number >= 0 && number <= 255
-        }
-    }
-
-    private var hasValidSSHUser: Bool {
-        guard let first = config.sshUser.first, first.isLetter || first.isNumber || first == "_" else { return false }
-        return config.sshUser.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" || $0 == "." }
-    }
-
-    @discardableResult func start() -> Bool {
-        guard FileManager.default.isExecutableFile(atPath: config.runnerPath),
-              FileManager.default.isReadableFile(atPath: config.handoffPath),
-              config.displayWidth > 0, config.displayHeight > 0 else { return false }
-        return Shell.launchDetached(launchCommand())
-    }
-
-    func launchCommand() -> String {
-        // Launch the signed AppleVzRunner with its own display window, detached.
-        let args = ["--display", "--display-width", String(config.displayWidth),
-                    "--display-height", String(config.displayHeight), "--allow-real-vz-start",
-                    "--handoff-json", config.handoffPath]
-        return "BRIDGEVM_APPLE_VZ_ALLOW_REAL_START=1 nohup \(Shell.shellCommand(config.runnerPath, args)) >/dev/null 2>&1 &"
-    }
-
-    func resources() -> (memMiB: Int, cpu: Int) {
-        guard let obj = JSONFile.loadDict(config.launchSpecPath),
-              let res = obj["resources"] as? [String: Any] else { return (0, 0) }
-        let mem = Int((res["memory"] as? String) ?? "0") ?? 0
-        let cpu = Int((res["cpu"] as? String) ?? "0") ?? 0
-        return (mem, cpu)
-    }
-
-    func setResources(memMiB: Int, cpu: Int) -> Bool {
-        guard VMResourceLimits.contains(memoryMiB: memMiB, cpu: cpu) else { return false }
-        guard var obj = JSONFile.loadDict(config.launchSpecPath),
-              var res = obj["resources"] as? [String: Any] else { return false }
-        res["memory"] = String(memMiB)
-        res["cpu"] = String(cpu)
-        res["rationale"] = "Set from BridgeVM Control app."
-        obj["resources"] = res
-        return JSONFile.writeDict(obj, to: config.launchSpecPath)
-    }
-
-    // Reuse one warm SSH connection across guest commands: after the first, each
-    // terminal/install command skips the TCP+auth handshake (felt as near-instant
-    // repeats). ControlPath is keyed by (vm, ip) so a guest reboot onto a new DHCP
-    // lease transparently gets a fresh master instead of reusing a dead one.
-    private func controlPath(ip: String) -> String {
-        "/tmp/bvm-ssh-\(config.slug)-\(ip.replacingOccurrences(of: ".", with: "-")).sock"
-    }
-
-    private func sshBaseOpts(controlPath: String) -> [String] {
-        ["-o", "ControlPath=\(controlPath)",
-         "-o", "StrictHostKeyChecking=no",
-         "-o", "UserKnownHostsFile=/dev/null",
-         "-o", "BatchMode=yes",
-         "-o", "ConnectTimeout=8",
-         "-o", "LogLevel=ERROR"]
-    }
-
-    /// Make sure a warm master connection is live. Hang-safe by construction: the
-    /// liveness probe (`-O check`) is a local socket op, and the master itself is
-    /// launched fully detached (no pipe for `Shell.run` to block on). Command
-    /// connections never create a persistent master, so they always EOF on exit.
-    private func ensureMaster(ip: String, controlPath: String) {
-        let host = "\(config.sshUser)@\(ip)"
-        let live = Shell.run("/usr/bin/ssh", ["-O", "check"] + sshBaseOpts(controlPath: controlPath) + [host], timeout: 4)
-        if live.code == 0 { return }
-        let args = ["-fN", "-o", "ControlPath=\(controlPath)",
-                    "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
-                    "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "LogLevel=ERROR",
-                    "-o", "ControlMaster=auto", "-o", "ControlPersist=180",
-                    "-i", config.sshKeyPath, host]
-        // rm -f clears a stale socket left by a dead master before binding a new one.
-        Shell.launchDetached(
-            "\(Shell.shellCommand("/bin/rm", ["-f", controlPath])); "
-                + "\(Shell.shellCommand("/usr/bin/ssh", args)) >/dev/null 2>&1"
-        )
-    }
-
-    func runInGuest(_ command: String) -> (output: String, code: Int32) {
-        guard hasValidSSHUser else { return ("SSH 사용자 이름이 안전한 형식이 아닙니다.", -1) }
-        guard let ip = currentIP() else { return ("게스트 IP를 찾을 수 없음 (VM이 실행 중인가요?)", -1) }
-        let cp = controlPath(ip: ip)
-        ensureMaster(ip: ip, controlPath: cp)
-        let args = ["-i", config.sshKeyPath] + sshBaseOpts(controlPath: cp) + ["\(config.sshUser)@\(ip)", command]
-        return Shell.run("/usr/bin/ssh", args, timeout: 120)
-    }
-}
-
-// MARK: - QEMU Compatibility-mode backend (Windows 11 ARM)
-
 
 // MARK: - JSON file helper
 

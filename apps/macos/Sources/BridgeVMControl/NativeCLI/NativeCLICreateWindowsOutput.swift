@@ -17,6 +17,6 @@ struct NativeCLICreateWindowsOutput: Encodable, Equatable {
     var text: String {
         "Created pending Windows VM \(id) (\(displayName)).\n" +
         "Saved resources: \(cpuCount) CPU, \(memoryMiB) MiB, \(diskGiB) GiB, \(resolution).\n" +
-        "No installation or guest boot was run. Next: bridgevm app install \(id)\n"
+        NativeCLICreateWindowsGuidance.text(id: id)
     }
 }

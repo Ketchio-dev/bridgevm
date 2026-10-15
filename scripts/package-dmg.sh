@@ -19,17 +19,5 @@ done
 [[ -n "$APP" && -n "$OUT" ]] || usage
 [[ -d "$APP" ]] || { echo "FAIL: app bundle not found: $APP" >&2; exit 1; }
 
-codesign --verify --deep --strict "$APP" ||
-  { echo "FAIL: $APP does not pass codesign verification" >&2; exit 1; }
-
-stage=$(mktemp -d)
-trap 'rm -rf "$stage"' EXIT
-cp -R "$APP" "$stage/"
-ln -s /Applications "$stage/Applications"
-
-mkdir -p "$(dirname "$OUT")"
-rm -f "$OUT"
-hdiutil create -quiet -volname "BridgeVM" -srcfolder "$stage" -format UDZO "$OUT"
-
-shasum -a 256 "$OUT"
-echo "dmg: PASS ($OUT)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$SCRIPT_DIR/package_artifact.py" dmg "$APP" "$OUT"

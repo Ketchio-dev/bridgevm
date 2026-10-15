@@ -26,7 +26,7 @@ const CHORDS: &[(&str, u8, u8)] = &[
     ("shift+pagedown", 0x02, 0x4e),
     ("ctrl+pagedown", 0x01, 0x4e),
     ("ctrl+shift+pagedown", 0x03, 0x4e),
-    ("shift+tab", 0x02, 0x2b),
+    ("shift+tab", 0x02, 0x2b), ("shift+enter", 0x02, 0x28), ("shift+space", 0x02, 0x2c),
     ("ctrl+a", 0x01, 0x4),
     ("ctrl+c", 0x01, 0x6),
     ("ctrl+x", 0x01, 0x1b),
@@ -62,7 +62,7 @@ mod tests {
     fn editing_chords_preserve_modifiers_and_key_usages() {
         for (token, modifier, usage) in [
             ("shift+left", 0x02, 0x50), ("ctrl+right", 0x01, 0x4f),
-            ("ctrl+shift+home", 0x03, 0x4a), ("shift+tab", 0x02, 0x2b),
+            ("ctrl+shift+home", 0x03, 0x4a), ("shift+tab", 0x02, 0x2b), ("shift+enter", 0x02, 0x28), ("shift+space", 0x02, 0x2c),
             ("ctrl+c", 0x01, 0x06), ("ctrl+v", 0x01, 0x19),
             ("alt+f4", 0x04, 0x3d), ("alt+tab", 0x04, 0x2b),
         ] {

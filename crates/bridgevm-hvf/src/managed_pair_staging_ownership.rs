@@ -1,6 +1,7 @@
 //! Failed ownership transfer clears only this attempt's staging directory.
 
-use super::debris;
+use super::record::Record;
+use super::recovery::clear_owned;
 use crate::media_lease::MediaLease;
 use std::os::unix::fs::MetadataExt;
 use std::{
@@ -8,9 +9,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub(super) struct StageOwner {
+pub(in crate::snapshot_pair::managed::restore) struct StageOwner {
     path: PathBuf,
     identity: (u64, u64),
+    record: Option<Record>,
 }
 
 impl StageOwner {
@@ -22,6 +24,7 @@ impl StageOwner {
         Ok(Self {
             path: path.to_path_buf(),
             identity: (metadata.dev(), metadata.ino()),
+            record: None,
         })
     }
 
@@ -35,14 +38,15 @@ impl StageOwner {
     }
 
     pub(super) fn clear(&self) {
-        if fs::symlink_metadata(&self.path)
-            .is_ok_and(|metadata| (metadata.dev(), metadata.ino()) == self.identity)
-        {
-            drop(debris::clear(&self.path));
-        }
+        drop(clear_owned(&self.path, self.identity, self.record.as_ref()));
     }
 }
 
+#[path = "managed_pair_staging_publication.rs"]
+mod publication;
 #[cfg(test)]
 #[path = "managed_pair_staging_ownership_tests.rs"]
 mod tests;
+
+#[path = "managed_pair_staging_complete.rs"]
+mod complete;

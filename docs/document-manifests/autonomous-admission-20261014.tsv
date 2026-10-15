@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/app-install-to-3d-desktop-20260730.md	current	windows-app	GOAL.md
+docs/windows-arm/evidence/fresh-12041-a1-a2-a3-a8-rediagnosis-20260730.md	current	windows-graphics	GOAL.md
+docs/history/windows-hvf/autonomous-admission-20261014.md	historical-evidence	windows-reliability	-

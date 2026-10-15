@@ -91,7 +91,7 @@ impl AgentConsoleHarness {
             queue: VecDeque::new(),
             in_flight: None,
             overdue_beats: 0,
-            last_synced: None,
+            last_synced: ClipBaseline::default(),
             pasteboard,
             ctl_path,
             ctl_offset,
@@ -248,10 +248,10 @@ impl AgentConsoleHarness {
     /// Chunked GET/output replies stay incomplete until GETEND/OUTEND.
     /// A command's terminal reply is one of:
     /// OUT <exit> <b64> or OUTBEG/OUTCHUNK*/OUTEND (RUN/PS), LSOK <b64> (LS),
-    /// PUTOK <b64(path)> <bytes> (PUT), CLIP <b64> (CLIPGET), or OK <...> /
+    /// PUTOK <b64(path)> <bytes> (PUT), CLIP <b64> (CLIPGET), PONG (PING), or OK <...> /
     pub(super) fn handle_reply_line(&mut self, line: &str, command: &str) -> ReplyProgress {
         let command = input_receipt_label::label(command);
-        if let Some(progress) = handle_window_reply(line, command) { return progress }
+        if let Some(progress) = handle_verb_reply(line, command) { return progress }
         if let Some(rest) = line.strip_prefix("OUTBEG ") {
             self.begin_out(rest);
             return ReplyProgress::Incomplete;

@@ -152,12 +152,7 @@ impl VirtioMmioBlock {
                     }
                 }
             }
-            REG_QUEUE_NOTIFY => {
-                if value == 0 {
-                    self.stats.notify_count = self.stats.notify_count.saturating_add(1);
-                    self.process_queue(mem);
-                }
-            }
+            REG_QUEUE_NOTIFY => self.notify_mmio_queue(value, mem),
             REG_INTERRUPT_ACK => self.interrupt_status &= !(value as u32),
             REG_STATUS => {
                 self.status = value as u32;

@@ -28,7 +28,7 @@ step() {
   fi
 }
 
-step "capability registry" bash scripts/check-capability-registry.sh
+step "capability registry and landing page" bash -c 'bash scripts/check-capability-registry.sh && python3 scripts/check-landing-page.py'
 step "contract and schema json" python3 scripts/check-contract-schema-json.py docs/machine-contract/qemu-virt-deviations.json schemas/bridgevm-capability-v1.json schemas/windows-hvf-3d-off-product-e2e-receipt-v1.json schemas/windows-hvf-import-product-e2e-receipt-v1.json schemas/b8-clean-install-receipt-v1.json
 step "contract module validation" python3 tests/integration/contract-schema-json-test.py
 step "capability evidence" python3 scripts/check-capability-evidence.py
@@ -51,13 +51,13 @@ step "tests are reachable" python3 scripts/check-tests-are-reachable.py
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
 step "virtio queue narrowing" scripts/check-virtio-queue-narrowing.sh
 step "HVF boot performance and SMP scaling" bash -c 'tests/integration/hvf-boot-performance-tier-smoke.sh && tests/integration/hvf-smp-scaling-contract.sh && tests/integration/hvf-smp-confirmation-contract.sh'
-step "HVF NVMe performance tier" tests/integration/hvf-nvme-performance-tier-smoke.sh
+step "HVF NVMe tier contracts" bash -c 'tests/integration/hvf-nvme-performance-tier-smoke.sh && tests/integration/bridgevm-pc-nvme-block-live-tier-smoke.sh'
 step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
 step "Windows product and A19 live-tier contracts" bash -c 'tests/integration/windows-product-e2e-contract-smoke.sh && python3 tests/integration/native-snapshot-restore-live-tier-contract.py && python3 tests/integration/native-snapshot-restore-receipt-seal-contract.py && python3 tests/integration/native-snapshot-restore-cli-path-contract.py && python3 tests/integration/native-snapshot-restore-cli-read-contract.py && python3 tests/integration/native-snapshot-restore-cleanup-contract.py && python3 tests/integration/native-snapshot-export-evidence-contract.py && python3 tests/integration/native-snapshot-export-json-contract.py && scripts/check-selected-windows-media-contracts.sh && scripts/check-retained-windows-contracts.sh && python3 tests/integration/hvf-install-staging-contract.py && scripts/check-a19-contracts.sh && scripts/check-d11-fixture.sh'
 step "BridgeVM PC firmware boundary" scripts/check-bridgevm-pc-firmware-boundary.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
-step "packaged HVF entitlements" scripts/verify-app-hvf-entitlements.sh --self-test
+step "packaged HVF entitlements" bash -c 'scripts/verify-app-hvf-entitlements.sh --self-test && python3 tests/integration/package-publication-contract.py'
 step "install verify" bash -c 'python3 tests/integration/live-installer-dry-run-contract.py && python3 tests/integration/live-installer-launch-contract.py && bash tests/integration/install-verify-smoke.sh && python3 tests/integration/b8-clean-install-tier-contract.py && python3 tests/integration/b8-clean-install-adversarial-contract.py && python3 tests/integration/b8-clean-install-fifo-contract.py'
 step "rustfmt" cargo "$TOOLCHAIN" fmt --all --check
 if [[ $FAST -eq 1 ]]; then

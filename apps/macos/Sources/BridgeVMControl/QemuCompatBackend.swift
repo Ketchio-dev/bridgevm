@@ -3,7 +3,7 @@ import Foundation
 /// QEMU + HVF for Windows 11 ARM. Replicates the verified bridgevm-qemu device
 /// shape: edk2 firmware, swtpm TPM 2.0, ramfb GOP, qemu-xhci USB HID, and the
 /// installer ISO as a bootable USB CD-ROM, in a native cocoa window.
-final class QemuCompatBackend: VMBackend {
+final class QemuCompatBackend: VMOwnedLaunchingBackend {
     let config: VMConfig
     init(_ config: VMConfig) { self.config = config }
 
@@ -57,13 +57,6 @@ final class QemuCompatBackend: VMBackend {
     private var swtpm: String { VTPMStateSecurity.defaultSwtpmCommand() }
     private var diskPath: String { config.diskPath ?? (config.bundlePath + "/disks/win.qcow2") }
     private var swtpmSock: String { config.bundlePath + "/metadata/swtpm.sock" }
-    private var swtpmState: String { config.bundlePath + "/metadata/swtpm-state" }
-    private func qemuOptionValue(_ value: String) -> String {
-        // QEMU key-value options use commas as separators; doubled commas mean a
-        // literal comma inside a path.
-        value.replacingOccurrences(of: ",", with: ",,")
-    }
-
     func isRunning() -> Bool { Shell.isProcessRunning(matching: diskPath) }
     func currentIP() -> String? { isRunning() ? "NAT (QEMU)" : nil }
 
@@ -81,32 +74,13 @@ final class QemuCompatBackend: VMBackend {
         return Shell.launchDetached(launchCommand())
     }
 
-    func launchCommand() -> String {
-        let mem = config.memMiB ?? 6144
-        let cpu = config.cpuCount ?? 4
-        var qemuArgs = ["-name", config.name, "-machine", "virt", "-accel", "hvf", "-cpu", "host",
-                        "-m", String(mem), "-smp", String(cpu), "-bios", edk2,
-                        "-device", "ramfb", "-device", "qemu-xhci,id=usb",
-                        "-device", "usb-kbd,bus=usb.0", "-device", "usb-tablet,bus=usb.0",
-                        "-drive", "if=none,id=disk,format=qcow2,file=\(qemuOptionValue(diskPath))",
-                        "-device", "nvme,drive=disk,serial=bridgevm", "-netdev", "user,id=net0",
-                        "-device", "virtio-net-pci,netdev=net0",
-                        "-chardev", "socket,id=chrtpm,path=\(qemuOptionValue(swtpmSock))",
-                        "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
-                        "-device", "tpm-tis-device,tpmdev=tpm0", "-display", "cocoa"]
-        if let iso = config.isoPath, !iso.isEmpty {
-            qemuArgs += ["-drive", "if=none,id=installer,file=\(qemuOptionValue(iso)),media=cdrom,readonly=on",
-                         "-device", "usb-storage,bus=usb.0,drive=installer,bootindex=0"]
-        }
-        let qemuCommand = "nohup \(Shell.shellCommand(qemu, qemuArgs)) >\(Shell.shQuote(config.bundlePath + "/logs/qemu.log")) 2>&1 &"
-        // swtpm must listen before QEMU connects → start it, brief wait, then QEMU.
-        let mkdir = Shell.shellCommand("/bin/mkdir", ["-p", swtpmState, config.bundlePath + "/logs"])
-        let probe = Shell.shellCommand("/usr/bin/pgrep", ["-f", Shell.eregEscape(swtpmSock)])
-        let swtpmArgs = ["socket", "--tpmstate", "dir=\(swtpmState)",
-                         "--ctrl", "type=unixio,path=\(swtpmSock)", "--tpm2"]
-        let startTPM = "nohup \(Shell.shellCommand(swtpm, swtpmArgs)) >/dev/null 2>&1 &"
-        return "\(mkdir); \(probe) >/dev/null 2>&1 || (\(startTPM)); sleep 1.5; \(qemuCommand)"
+    private var launchDefinition: QemuCompatLaunchDefinition {
+        .init(config: config, qemu: qemu, edk2: edk2, swtpm: swtpm)
     }
+
+    func launchCommand() -> String { launchDefinition.command }
+
+    func ownedLaunchPlan() -> GenericOwnedLaunchPlan? { launchDefinition.validatedPlan() }
 
     func stop() {
         Shell.killProcesses(matching: diskPath)

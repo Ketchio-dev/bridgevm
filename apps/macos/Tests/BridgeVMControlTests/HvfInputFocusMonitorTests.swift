@@ -5,18 +5,17 @@ import XCTest
 
 @MainActor
 final class HvfInputFocusMonitorTests: XCTestCase {
-    func testStoppedMonitorDiscardsAlreadyQueuedNotification() async {
+    func testStoppedMonitorDoesNotReceiveLaterNotification() {
         let window = NSWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: true)
         let monitor = HvfInputFocusMonitor()
         var calls = 0
         monitor.watch(window: window) { calls += 1 }
-        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
         monitor.stop()
-        for _ in 0..<10 { await Task.yield() }
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
         XCTAssertEqual(calls, 0)
     }
 
-    func testReplacementReceivesOnlyItsOwnNotifications() async {
+    func testReplacementReceivesOnlyItsOwnNotifications() {
         let window = NSWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: true)
         let monitor = HvfInputFocusMonitor()
         var old = 0, current = 0
@@ -24,8 +23,7 @@ final class HvfInputFocusMonitorTests: XCTestCase {
         NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
         monitor.watch(window: window) { current += 1 }
         NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
-        for _ in 0..<10 { await Task.yield() }
-        XCTAssertEqual(old, 0)
+        XCTAssertEqual(old, 1, "The old target lost focus before the monitor was rebound")
         XCTAssertEqual(current, 1)
         monitor.stop()
     }

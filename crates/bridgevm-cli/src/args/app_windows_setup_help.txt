@@ -1,0 +1,3 @@
+CLI-created registrations lack the required signed ARM64 guest driver payload; installation is blocked.
+For installation, create a new VM in the app with the ISO, signed payload and manifest.
+Existing CLI entries cannot be completed through the app or CLI.

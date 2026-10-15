@@ -180,7 +180,7 @@ impl VirtioPciGpu {
         if offset == PCI_ISR_CFG_OFFSET {
             return match op {
                 VirtioPciGpuOp::Read { size } => VirtioGpuResult::ReadValue(mask_to_size(
-                    u64::from(self.gpu.interrupt_status),
+                    u64::from(std::mem::take(&mut self.gpu.interrupt_status)),
                     size,
                 )),
                 VirtioPciGpuOp::Write { value, .. } => {

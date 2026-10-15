@@ -42,7 +42,7 @@ final class HvfWindowsInstallPublicationTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: sourceISO), isoBytes)
     }
 
-    func testNotPublishedRollsBackPreparedInstallInBothStorageLayouts() throws {
+    func testAmbiguousRegistrationPreservesPreparedInstallInBothStorageLayouts() throws {
         for separateStorage in [true, false] {
             let fixture = try HVFCreationPublicationFixture(separateStorage: separateStorage)
             defer { fixture.remove() }
@@ -55,7 +55,7 @@ final class HvfWindowsInstallPublicationTests: XCTestCase {
                 storageDir: fixture.storage, libraryRoot: fixture.library,
                 publish: fixture.publishWithRenameRefusal)
             XCTAssertNil(outcome)
-            try fixture.assertRolledBack()
+            try fixture.assertAmbiguousPreparationPreserved()
             XCTAssertEqual(try Data(contentsOf: sourceISO), bytes)
         }
     }

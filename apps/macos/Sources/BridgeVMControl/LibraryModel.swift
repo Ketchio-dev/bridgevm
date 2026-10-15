@@ -18,7 +18,7 @@ final class LibraryModel: ObservableObject {
     @Published var operationError: String?
     @Published var firstRunImport = FirstRunImportProgress()
     @Published private(set) var deletingSlugs: Set<String> = []
-    @Published private(set) var cloningSlugs: Set<String> = []
+    @Published private(set) var cloningConfigurations: [String: VMConfig] = [:]
     @Published private(set) var movingSlugs: Set<String> = []
     @Published private(set) var libraryIssues: [VMLibraryIssue] = []
     private var modelCache: [String: ControlModel] = [:]
@@ -32,19 +32,14 @@ final class LibraryModel: ObservableObject {
     let retainedControlStore = LibraryRetainedControlStore()
     func runningModels() -> [ControlModel] { vms.compactMap { modelCache[$0.slug] }.filter { $0.running } }
     var rootURL: URL { libraryRoot }
-    func hasAcceptedControlOperation(for slug: String) -> Bool { modelCache[slug]?.hasAcceptedOperation == true }
-    func hasMismatchedCachedControlConfiguration(for cfg: VMConfig) -> Bool {
-        modelCache[cfg.slug].map { $0.config != cfg } ?? false
-    }
-    func ownsControlModel(_ model: ControlModel, for config: VMConfig) -> Bool {
-        modelCache[config.slug] === model && model.config == config
-    }
+    var cachedControlModels: [String: ControlModel] { modelCache }
 
     init(
         rootURL: URL = VMLibrary.root,
         e2eUnattendedPath: String? = nil,
         e2eHostDiagnosticStopAdmitted: Bool = false,
         migrateLegacy: Bool = true,
+        initialScan: VMLibraryScan? = nil,
         installSessionFactory: @escaping HvfWindowsInstallSessionStore.Factory = { HvfWindowsInstallSession(plan: $0) },
         runtimeSessionFactory: @escaping HvfRuntimeSessionStore.Factory = { HvfEngineSession(config: $0) },
         installPreparation: HvfWindowsInstallPreparationOptions = .init(),
@@ -61,28 +56,20 @@ final class LibraryModel: ObservableObject {
         windowsInstallSessions = HvfWindowsInstallSessionStore(
             makeSession: installSessionFactory, preparation: installPreparation)
         hvfRuntimeSessions = HvfRuntimeSessionStore(makeSession: runtimeSessionFactory)
-        if migrateLegacy {
-            VMLibrary.migrateLegacyIfNeeded(rootURL: rootURL, legacy: VMConfig.loadLegacy())
-        }
-        reload()
+        applyScan(initialScan ?? LibraryInitialScan.perform(rootURL: rootURL, migrateLegacy: migrateLegacy))
         configureLibraryNavigation()
     }
 
-    func reload() {
-        let scan = VMLibrary.scan(rootURL: libraryRoot)
+    func reload() { applyScan(VMLibrary.scan(rootURL: libraryRoot)) }
+
+    private func applyScan(_ scan: VMLibraryScan) {
         vms = scan.configs
         libraryIssues = scan.issues
-        captureRetainedControls()
+        captureRetainedControls(Array(modelCache.values))
         windowsInstallSessions.reconcile(with: vms)
         hvfRuntimeSessions.reconcile(with: vms)
         let configsBySlug = Dictionary(vms.map { ($0.slug, $0) }, uniquingKeysWith: { first, _ in first })
-        modelCache = modelCache.filter { slug, model in
-            guard let current = configsBySlug[slug] else { return false }
-            if model.config == current { return true }
-            // Keep the old control handle while it may still own a live process
-            // or operation. Replacing it now could make that VM impossible to stop.
-            return model.running || model.lifecycleBusy || model.busy
-        }
+        modelCache = LibraryControlModelReconciliation.reconcile(modelCache, configurations: configsBySlug)
         reconcileLibrarySelection(configsBySlug: configsBySlug)
     }
 
@@ -109,12 +96,13 @@ final class LibraryModel: ObservableObject {
                 if outcome == .deleted { self.modelCache[slug] = nil; self.reload(); return }
                 self.deletionError = outcome == .running
                     ? "\(cfg.name)은(는) 실행 중이므로 삭제하지 않았습니다. 제어 화면에서 완전히 중지한 뒤 다시 시도하세요."
-                    : "\(cfg.name)의 라이브러리 항목을 디스크에서 삭제하지 못했습니다."
+                    : LibraryDeletionReferences.failureMessage(for: cfg, rootURL: root)
             }
         }
     }
 
-    func cloneWindowsHVF(_ cfg: VMConfig, name: String) {
+    func cloneWindowsHVF(_ cfg: VMConfig, name: String,
+                         operation: @escaping LibraryCloneOperation = { HvfProtectedTransfers.clone(name: $0, template: $1, libraryRoot: $2) }) {
         pendingWindowsClone = nil
         guard admitLibraryAction(cfg, action: .clone) else { return }
         guard !cloningSlugs.contains(cfg.slug) else { return }
@@ -123,19 +111,15 @@ final class LibraryModel: ObservableObject {
             cloneError = "실행 중인 VM은 복제할 수 없습니다. 먼저 완전히 정지하세요."
             return
         }
-        cloningSlugs.insert(cfg.slug)
+        cloningConfigurations[cfg.slug] = cfg
         let libraryRoot = self.libraryRoot
+        let selectionAtAdmission = selectedID
         actionScheduler {
-            let clone = HvfProtectedTransfers.clone(
-                name: name,
-                template: cfg,
-                libraryRoot: libraryRoot
-            )
+            let clone = operation(name, cfg, libraryRoot)
             await MainActor.run {
-                self.cloningSlugs.remove(cfg.slug)
+                self.cloningConfigurations[cfg.slug] = nil
                 if let clone {
-                    self.reload()
-                    self.selectedID = clone.slug
+                    self.reload(revealing: clone.slug, ifSelectionIs: selectionAtAdmission)
                 } else {
                     self.cloneError = "Windows HVF 복제 완료를 확인하지 못했습니다. 원본 사용 여부와 대상 번들 상태를 확인하세요."
                 }
@@ -153,6 +137,7 @@ final class LibraryModel: ObservableObject {
         }
         movingSlugs.insert(cfg.slug)
         let libraryRoot = self.libraryRoot
+        let selectionAtAdmission = selectedID
         actionScheduler {
             let moved = HvfProtectedTransfers.move(cfg,
                 to: destinationParent,
@@ -162,14 +147,12 @@ final class LibraryModel: ObservableObject {
                 self.movingSlugs.remove(cfg.slug)
                 if let moved {
                     self.modelCache[cfg.slug] = nil
-                    self.reload()
-                    self.selectedID = moved.slug
+                    self.reload(revealing: moved.slug, ifSelectionIs: selectionAtAdmission)
                 } else {
-                    self.moveError = "VM 이동 완료를 확인하지 못했습니다. 원본과 대상 위치의 번들 및 등록 상태를 확인하세요."
+                    self.moveError = VMRelocationReferences.failureMessage(for: cfg, rootURL: self.libraryRoot)
+                    self.reload() // It may have committed: replace stale idle handles with the persisted registration.
                 }
             }
         }
     }
-
-
 }

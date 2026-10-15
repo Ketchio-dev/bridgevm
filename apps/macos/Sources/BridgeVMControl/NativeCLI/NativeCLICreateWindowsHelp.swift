@@ -14,7 +14,7 @@ extension NativeCLI {
         --no-network
 
       Defaults: 64 GiB, 6144 MiB, 4 CPUs, 1440x900, shared NAT network.
-      On success, use the returned exact ID with `bridgevm app install ID`.
+      \(NativeCLICreateWindowsGuidance.help)
       JSON schema: bridgevm.app-create-windows.v1.
       Exit codes: 0 registration confirmed, 1 creation/confirmation failed,
       2 invalid name, option, path, media, resource value or host CPU request.

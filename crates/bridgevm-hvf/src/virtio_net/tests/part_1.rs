@@ -1,6 +1,7 @@
 //! Split test module.
 
 use super::super::*;
+use super::ready_queue::setup_ready_queue;
 use crate::msix::MsixMessage;
 
 use super::helpers::*;
@@ -298,7 +299,7 @@ fn tx_notify_strips_virtio_net_header_posts_used_and_raises_msix() {
     let payload = 0x4000_5000;
     let frame = b"\x02\x00\x00\x00\x00\x01\x52\x54\x00\x42\x56\x01\x08\x00payload";
 
-    setup_queue(&mut dev, &mut mem, 1, desc, avail, used, 1);
+    setup_ready_queue(&mut dev, &mut mem, 1, desc, avail, used, 1);
     program_msix_vector(&mut dev, 1, 0xfee0_0000, 0x51);
     mem.write(hdr, &[0; VIRTIO_NET_HDR_LEN]);
     mem.write(payload, frame);
@@ -352,7 +353,7 @@ fn tx_notify_reuses_descriptor_and_packet_scratch_across_frames() {
     let frame1 = b"\x02\x00\x00\x00\x00\x01\x52\x54\x00\x42\x56\x01\x08\x00first";
     let frame2 = b"\x02\x00\x00\x00\x00\x01\x52\x54\x00\x42\x56\x01\x08\x00again";
 
-    setup_queue(&mut dev, &mut mem, 1, desc, avail, used, 1);
+    setup_ready_queue(&mut dev, &mut mem, 1, desc, avail, used, 1);
     mem.write(hdr, &[0; VIRTIO_NET_HDR_LEN]);
     mem.write(payload, frame1);
     write_desc(
@@ -437,7 +438,7 @@ fn rx_pump_prepends_header_posts_used_and_raises_msix() {
     let buf = 0x4000_4000;
     let frame = b"\x52\x54\x00\x42\x56\x01\x02\x00\x00\x00\x00\x01\x08\x00hello";
 
-    setup_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
+    setup_ready_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
     program_msix_vector(&mut dev, 0, 0xfee0_0000, 0x50);
     write_desc(&mut mem, desc, 0, buf, 128, DESC_F_WRITE, 0);
     mem.write(avail + 2, &1u16.to_le_bytes());
@@ -482,7 +483,7 @@ fn rx_pending_msix_survives_until_vector_is_programmed() {
     let buf = 0x4000_4000;
     let frame = b"\x52\x54\x00\x42\x56\x01\x02\x00\x00\x00\x00\x01\x08\x00late-vector";
 
-    setup_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
+    setup_ready_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
     write_desc(&mut mem, desc, 0, buf, 128, DESC_F_WRITE, 0);
     mem.write(avail + 2, &1u16.to_le_bytes());
     mem.write(avail + 4, &0u16.to_le_bytes());
@@ -518,7 +519,7 @@ fn rx_pump_reuses_descriptor_scratch_across_frames_without_packet_copy() {
     let frame1 = b"\x52\x54\x00\x42\x56\x01\x02\x00\x00\x00\x00\x01\x08\x00one";
     let frame2 = b"\x52\x54\x00\x42\x56\x01\x02\x00\x00\x00\x00\x01\x08\x00two";
 
-    setup_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
+    setup_ready_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
     write_desc(&mut mem, desc, 0, buf1, 128, DESC_F_WRITE, 0);
     mem.write(avail + 2, &1u16.to_le_bytes());
     mem.write(avail + 4, &0u16.to_le_bytes());
@@ -561,7 +562,7 @@ fn rx_pump_reuses_backend_receive_scratch_across_frames() {
     let frame1 = [0x33u8; 96];
     let frame2 = [0x44u8; 64];
 
-    setup_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
+    setup_ready_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
     write_desc(&mut mem, desc, 0, buf1, 160, DESC_F_WRITE, 0);
     mem.write(avail + 2, &1u16.to_le_bytes());
     mem.write(avail + 4, &0u16.to_le_bytes());
@@ -602,12 +603,12 @@ fn rx_without_buffers_holds_one_frame_until_buffer_is_posted() {
     let buf = 0x4000_4000;
     let frame = b"\xaa\xbb\xcc\xdd";
 
+    setup_ready_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
     dev.backend_mut().push_receive(frame.to_vec());
     assert!(!dev.pump_receive(&mut mem));
     assert!(dev.stats().pending_rx_frame);
     assert!(dev.net.rx_frame_scratch.is_empty());
 
-    setup_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
     write_desc(&mut mem, desc, 0, buf, 64, DESC_F_WRITE, 0);
     mem.write(avail + 2, &1u16.to_le_bytes());
     mem.write(avail + 4, &0u16.to_le_bytes());

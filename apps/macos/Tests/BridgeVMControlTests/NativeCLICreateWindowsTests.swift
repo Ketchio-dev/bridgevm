@@ -27,7 +27,7 @@ final class NativeCLICreateWindowsTests: XCTestCase {
         let encoded = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
         XCTAssertFalse(encoded.contains(fixture.iso.path))
         XCTAssertFalse(encoded.lowercased().contains("isopath"))
-        XCTAssertTrue(result.text.contains("bridgevm app install \(result.id)"))
+        XCTAssertTrue(result.text.contains("bridgevm app inspect \(result.id)"))
         XCTAssertTrue(result.text.contains("No installation or guest boot was run"))
     }
 

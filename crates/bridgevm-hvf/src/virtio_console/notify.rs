@@ -1,21 +1,16 @@
 //! Queue-doorbell and host-poll dispatch into the per-queue handlers.
 
+use super::poll::DRIVER_OK;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 
 impl VirtioConsole {
-    pub fn poll(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
-        let mut progressed = false;
-        progressed |= self.process_control_tx_queue(mem);
-        progressed |= self.flush_pending_control(mem);
-        progressed |= self.deliver_agent_rx(mem);
-        progressed |= self.process_agent_tx_queue(mem);
-        progressed
-    }
-
     pub(crate) fn notify_queue(&mut self, queue_index: u16, mem: &mut dyn GuestMemoryMut) {
         if let Some(queue) = self.queues.get_mut(usize::from(queue_index)) {
             queue.notify_count = queue.notify_count.saturating_add(1);
+        }
+        if self.status & DRIVER_OK == 0 {
+            return;
         }
         if console_trace_enabled() {
             let avail = self

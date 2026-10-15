@@ -29,11 +29,11 @@ struct FirstRunImportDestination {
         inode = metadata.st_ino
     }
 
-    func removeIfOwned() {
+    @discardableResult func removeIfOwned() -> Bool {
         var metadata = stat()
         guard lstat(root.path, &metadata) == 0,
               metadata.st_mode & S_IFMT == S_IFDIR,
-              metadata.st_dev == device, metadata.st_ino == inode else { return }
-        try? fileManager.removeItem(at: root)
+              metadata.st_dev == device, metadata.st_ino == inode else { return false }
+        return VMCreationDestinationCleanup.removeIfUnpublished(root, fileManager: fileManager)
     }
 }

@@ -17,7 +17,7 @@ final class HvfWindowsInstallPreparationStore {
         guard let input = owner.currentWindowsInstallPreparationInput(slug: slug, repoRoot: options.repoRoot) else {
             let lookup = Handle.Lookup.unavailable(owner.vms.first(where: { $0.slug == slug }))
             if let handle = handles[slug], handle.lookup == lookup { return handle }
-            return insert(slug: slug, lookup: lookup, state: .failed(Handle.missingMessage), owner: owner)
+            return insert(slug: slug, lookup: lookup, state: .failed(owner.windowsInstallPreparationFailure(slug: slug)), owner: owner)
         }
         if let session = owner.cachedWindowsInstallSession(for: input) {
             return ready(session, slug: slug, owner: owner)
@@ -61,7 +61,7 @@ final class HvfWindowsInstallPreparationStore {
             return
         }
         guard let input = owner.currentWindowsInstallPreparationInput(slug: handle.slug, repoRoot: options.repoRoot) else {
-            handle.invalidate(Handle.missingMessage)
+            handle.invalidate(owner.windowsInstallPreparationFailure(slug: handle.slug))
             return
         }
         if let session = owner.cachedWindowsInstallSession(for: input) {

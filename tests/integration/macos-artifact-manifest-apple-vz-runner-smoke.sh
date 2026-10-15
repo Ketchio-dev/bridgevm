@@ -20,7 +20,7 @@ HVF_FIRMWARE="$HVF_LAB/Contents/Resources/firmware/edk2-aarch64-secure-code.fd"
 HVF_FIRMWARE_MANIFEST="$HVF_LAB/Contents/Resources/firmware/manifest.txt"
 HVF_FIRMWARE_LICENSES="$HVF_LAB/Contents/Resources/firmware/licenses.txt"
 HVF_FIRMWARE_BUILD_RECEIPT="$HVF_FIRMWARE.build.json"
-HVF_SECURE_BOOT_POLICY="$HVF_LAB/Contents/Resources/BridgeVMApp_BridgeVMControl.bundle/secureboot-microsoft-only-aarch64-v1.6.5.json"
+HVF_SECURE_BOOT_POLICY="$HVF_LAB/Contents/Resources/BridgeVMApp_BridgeVMControl.bundle/secureboot-microsoft-windows-transition-aarch64-v1.6.5.json"
 APP_NOTARY_SUBMIT_JSON="$WORKDIR/app-notary-submit.json"
 APP_NOTARY_LOG_JSON="$WORKDIR/app-notary-log.json"
 DMG_NOTARY_SUBMIT_JSON="$WORKDIR/dmg-notary-submit.json"
@@ -31,26 +31,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-fail() {
-  echo "FAIL: $*" >&2
-  exit 1
-}
-
-assert_contains_file() {
-  local file="$1"
-  local needle="$2"
-  local label="$3"
-  grep -Fq "$needle" "$file" || fail "$label missing expected text: $needle"
-}
-
-assert_not_contains_file() {
-  local file="$1"
-  local needle="$2"
-  local label="$3"
-  if grep -Fq "$needle" "$file"; then
-    fail "$label included unexpected text: $needle"
-  fi
-}
+source "$ROOT/tests/integration/macos-artifact-manifest-test-support.sh"
 
 [[ -x "$SCRIPT" ]] || fail "missing executable manifest script: $SCRIPT"
 
@@ -94,7 +75,7 @@ printf 'firmware smoke\n' >"$HVF_FIRMWARE"
 printf 'sha256=firmware-smoke\n' >"$HVF_FIRMWARE_MANIFEST"
 printf 'firmware licenses smoke\n' >"$HVF_FIRMWARE_LICENSES"
 printf '{"firmware":"build-receipt-smoke"}\n' >"$HVF_FIRMWARE_BUILD_RECEIPT"
-printf '{"policy":"secure-boot-smoke"}\n' >"$HVF_SECURE_BOOT_POLICY"
+cp "$ROOT/apps/macos/Sources/BridgeVMControl/Resources/$(basename "$HVF_SECURE_BOOT_POLICY")" "$HVF_SECURE_BOOT_POLICY"
 chmod +x \
   "$APP/Contents/MacOS/BridgeVMApp" \
   "$RUNNER" \
@@ -152,7 +133,7 @@ assert_contains_file "$MANIFEST" "windows_hvf_firmware.sha256=" "Windows HVF fir
 assert_contains_file "$MANIFEST" "windows_hvf_firmware_manifest.sha256=" "Windows HVF firmware manifest metadata"
 assert_contains_file "$MANIFEST" "windows_hvf_firmware_licenses.sha256=" "Windows HVF firmware licenses metadata"
 assert_contains_file "$MANIFEST" "windows_hvf_firmware_build_receipt.sha256=" "Windows HVF firmware receipt metadata"
-assert_contains_file "$MANIFEST" "windows_hvf_secure_boot_policy.sha256=" "Windows HVF Secure Boot policy metadata"
+assert_policy_record "$MANIFEST"
 assert_contains_file "$MANIFEST" "windows_hvf_lab_codesign_verify.exit=" "Windows HVF Lab signature recording"
 assert_contains_file "$MANIFEST" "windows_hvf_probe_codesign_verify.exit=" "Windows HVF probe signature recording"
 assert_contains_file "$MANIFEST" "windows_hvf_probe_entitlements.exit=" "Windows HVF probe entitlement recording"
@@ -196,7 +177,7 @@ assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_lab.path=$HVF_LAB" "app-o
 assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_probe.path=$HVF_WINDOWS_PROBE" "app-only Windows HVF probe metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_virgl_renderer.path=$HVF_VIRGL_RENDERER" "app-only Windows HVF VirGL metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_firmware.path=$HVF_FIRMWARE" "app-only Windows HVF firmware metadata"
-assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_secure_boot_policy.path=$HVF_SECURE_BOOT_POLICY" "app-only Windows HVF Secure Boot policy metadata"
+assert_policy_record "$APP_ONLY_MANIFEST"
 assert_contains_file "$APP_ONLY_MANIFEST" "app_codesign_verify.exit=" "app-only app signature recording"
 assert_contains_file "$APP_ONLY_MANIFEST" "app_notary_submit_json.id=app-submit-smoke" "app-only app notary submit metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "app_notary_log_json.status=Accepted" "app-only app notary log metadata"
@@ -204,5 +185,7 @@ assert_not_contains_file "$APP_ONLY_MANIFEST" "dmg.path=" "app-only DMG metadata
 assert_not_contains_file "$APP_ONLY_MANIFEST" "dmg_codesign_verify.exit=" "app-only DMG signature recording"
 assert_not_contains_file "$APP_ONLY_MANIFEST" "dmg_hdiutil_verify.exit=" "app-only DMG verification recording"
 assert_not_contains_file "$APP_ONLY_MANIFEST" "dmg_notary_submit_json" "app-only DMG notary metadata"
+
+check_policy_and_required_input_boundaries
 
 echo "PASS: macOS artifact manifest AppleVzRunner smoke"

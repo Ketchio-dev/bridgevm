@@ -10,6 +10,7 @@ mod tests;
 
 mod active_disk;
 pub(crate) mod application_consistent_snapshot;
+mod archive_staging;
 mod bundle_archive;
 mod bundle_copy;
 mod bundle_directory_permissions;
@@ -22,8 +23,10 @@ mod disk_metadata;
 mod disk_operations;
 mod disk_preparation;
 mod error;
+mod export_destination;
 mod guest_tools_metadata;
 mod guest_tools_store;
+mod import_admission;
 mod import_image_info;
 mod import_metadata;
 mod import_paths;

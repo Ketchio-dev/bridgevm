@@ -41,10 +41,9 @@ extension LibraryModel {
         case .preparing: operation.fail(HvfWindowsInstallPreparation.staleMessage)
         case let .ready(session):
             bindOwnedInstallSession(session, saved: saved, operation: operation)
-            guard session.start() != nil else {
+            guard operation.start(session) else {
                 operation.fail("Windows 설치를 시작할 수 없습니다. VM 상태를 확인한 뒤 다시 시도하세요."); return
             }
-            operation.adopt(session)
         }
     }
 

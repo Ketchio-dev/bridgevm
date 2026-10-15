@@ -41,11 +41,11 @@ fn ignored_term_escalates_after_two_seconds_and_reaps() {
     let child = Command::new(script)
         .arg(fixture.root.join("ready"))
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(fixture.stderr())
         .spawn()
         .unwrap();
     let mut child = OwnedChild::new(child, ChildRole::Helper);
-    fixture.wait_file("ready");
+    fixture.wait_file_with("ready", || child.try_wait());
     let start = Instant::now();
     let exit = child
         .wait(&RuntimeControl::new(&|| true, &|_| {

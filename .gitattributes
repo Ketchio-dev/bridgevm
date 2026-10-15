@@ -12,3 +12,6 @@ scripts/win-assets/** -text whitespace=cr-at-eol
 *.patch text eol=lf
 *.diff text eol=lf
 docs/licenses/** text eol=lf
+
+# Preserve the decoded historical measurement bytes on every checkout.
+docs/archive/a11-measured-through-20261014.md -text

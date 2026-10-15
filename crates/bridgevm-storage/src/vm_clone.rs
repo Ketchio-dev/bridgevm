@@ -2,12 +2,16 @@
 
 use crate::*;
 use bridgevm_config::slug;
-use bridgevm_config::VmManifest;
 use bridgevm_qemu::QemuImgCommand;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Output;
+
+#[path = "vm_clone_media.rs"]
+mod clone_media;
+#[path = "vm_clone_output.rs"]
+mod clone_output;
 
 pub(crate) fn rebase_copied_path(path: &Path, source: &Path, output: &Path) -> PathBuf {
     path.strip_prefix(source)
@@ -64,14 +68,7 @@ impl VmStore {
         manifest.network.hostname = format!("{}.bridgevm.local", slug(new_name));
 
         let output = self.bundle_path(new_name);
-        if output.exists() {
-            return Err(StorageError::AlreadyExists(new_name.to_string()));
-        }
-
-        if let Err(error) = copy_dir_all(&source, &output) {
-            let _ = fs::remove_dir_all(&output);
-            return Err(error);
-        }
+        clone_output::copy_new(&source, &output, new_name)?;
 
         let clone_result: Result<VmCloneMetadata, StorageError> = (|| {
             let mut backing_path = None;
@@ -160,36 +157,6 @@ impl VmStore {
             let _ = fs::remove_dir_all(&output);
         }
         clone_result
-    }
-
-    pub(crate) fn rebase_copied_bundle_metadata(
-        &self,
-        source: &Path,
-        output: &Path,
-        manifest: &VmManifest,
-    ) -> Result<(), StorageError> {
-        let mut active_disk = self.active_disk_at(output, manifest)?;
-        active_disk.path = rebase_copied_path(&active_disk.path, source, output);
-        active_disk.exists = active_disk.path.exists();
-        self.write_active_disk_at(output, &active_disk)?;
-
-        snapshot_records::rebase(source, output)?;
-
-        let suspend_image_metadata_dir = output.join("metadata").join("suspend-images");
-        if suspend_image_metadata_dir.exists() {
-            for entry in fs::read_dir(&suspend_image_metadata_dir)? {
-                let path = entry?.path();
-                if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                    continue;
-                }
-                let mut metadata: SnapshotSuspendImageMetadata = read_json_required(&path)?;
-                metadata.image_path = rebase_copied_path(&metadata.image_path, source, output);
-                metadata.image_exists = metadata.image_path.exists();
-                write_json_pretty_atomic(&path, &metadata)?;
-            }
-        }
-
-        Ok(())
     }
 
     /// Reset a freshly-copied clone bundle so it is an independent VM rather than

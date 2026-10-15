@@ -1,6 +1,7 @@
 //! Split test module.
 
 use super::super::*;
+use super::pci_boot_media_queue::ready_pci_boot_media_queue;
 use crate::dtb::VirtFdtConfig;
 use crate::fwcfg::GuestMemoryMut;
 use crate::fwcfg::DMA_CTL_SELECT;
@@ -188,12 +189,7 @@ pub(super) fn read_pci_boot_media_sector(
     expected_prefix_len: usize,
 ) -> Vec<u8> {
     const PCI_NOTIFY_CFG_OFFSET: u64 = 0x3000;
-    const REG_QUEUE_NUM: u64 = 0x038;
-    const REG_QUEUE_READY: u64 = 0x044;
     const REG_QUEUE_NOTIFY: u64 = 0x050;
-    const REG_QUEUE_DESC_LOW: u64 = 0x080;
-    const REG_QUEUE_DRIVER_LOW: u64 = 0x090;
-    const REG_QUEUE_DEVICE_LOW: u64 = 0x0a0;
     const DESC_F_NEXT: u16 = 1;
     const DESC_F_WRITE: u16 = 2;
     const VIRTIO_BLK_T_IN: u32 = 0;
@@ -212,18 +208,7 @@ pub(super) fn read_pci_boot_media_sector(
     assert!(mem.write_bytes(avail + 2, &1u16.to_le_bytes()));
     assert!(mem.write_bytes(avail + 4, &0u16.to_le_bytes()));
 
-    for (reg, value) in [
-        (REG_QUEUE_NUM, 8),
-        (REG_QUEUE_DESC_LOW, desc),
-        (REG_QUEUE_DRIVER_LOW, avail),
-        (REG_QUEUE_DEVICE_LOW, used),
-        (REG_QUEUE_READY, 1),
-    ] {
-        assert_eq!(
-            p.on_mmio(bar + reg, MmioOp::Write { size: 4, value }, mem),
-            MmioOutcome::WriteAck
-        );
-    }
+    ready_pci_boot_media_queue(p, mem, bar, desc, avail, used);
     assert_eq!(
         p.on_mmio(
             bar + PCI_NOTIFY_CFG_OFFSET + REG_QUEUE_NOTIFY,

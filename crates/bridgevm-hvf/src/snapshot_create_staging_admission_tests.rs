@@ -46,13 +46,13 @@ fn staging_that_is_not_bridgevm_debris_is_refused_and_left_intact() {
     }
 }
 
+/// Staging holding a published manifest is kept (`completed_staging_tests`).
 #[test]
 fn staging_holding_only_bridgevm_debris_is_cleared_for_retry() {
-    let cases: [&[&str]; 4] = [
+    let cases: [&[&str]; 3] = [
         &[],
         &[DISK_NAME],
         &[DISK_NAME, VARS_NAME, ".manifest.json.tmp"],
-        &[DISK_NAME, VARS_NAME, MANIFEST_NAME],
     ];
     for (index, names) in cases.into_iter().enumerate() {
         let s = Scratch::new(&format!("admission-debris-{index}"));

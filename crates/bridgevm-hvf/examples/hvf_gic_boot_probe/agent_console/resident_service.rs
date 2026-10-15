@@ -30,32 +30,7 @@ impl AgentConsoleHarness {
         // 1. Host pasteboard changes collapse to a single latest-wins ClipPush.
         //    Draining every pending change and keeping only the last means a
         //    burst of copies syncs the final value, not each intermediate one.
-        if let Some(pasteboard) = self.pasteboard.as_ref() {
-            let mut latest = None;
-            while let Some(text) = pasteboard.try_changed() {
-                latest = Some(text);
-            }
-            if let Some(text) = latest {
-                let normalized = normalize_clip(&text);
-                if self.last_synced.as_deref() != Some(normalized.as_str()) {
-                    // Oversized copies are marked seen but never pushed: the
-                    // guest agent reads the wire with per-call P/Invoke cost, so
-                    // a huge CLIPSET line wedges the whole channel (every later
-                    // request piles into the port and times out).
-                    if text.len() > self.clip_max_bytes {
-                        println!(
-                            "BVAGENT CLIPSYNC skip bytes={} too-large t={}",
-                            text.len(),
-                            self.t_ms(now)
-                        );
-                        self.last_synced = Some(normalized);
-                    } else {
-                        self.last_synced = Some(normalized);
-                        self.enqueue_clip_push(text);
-                    }
-                }
-            }
-        }
+        self.enqueue_host_clip_change(now);
 
         // 2. Control-file lines become Ctl commands.
         self.drain_ctl(now);
@@ -187,10 +162,7 @@ impl AgentConsoleHarness {
                 self.service_line_scratch.push('\n');
                 true
             }
-            ServiceReq::Ctl(command) => {
-                write_command_wire_line_into(command, &mut self.service_line_scratch);
-                true
-            }
+            ServiceReq::Ctl(command) => self.write_ctl_wire_line(command),
             ServiceReq::Ping => {
                 self.service_line_scratch.push_str("PING\n");
                 true
@@ -287,14 +259,6 @@ impl AgentConsoleHarness {
             },
         }
     }
-    /// Coalesce host->guest clipboard pushes: a newer host value obsoletes any
-    /// still-queued (unsent) ClipPush, so drop those before queuing this one.
-    /// The in-flight push is already on the wire and is left alone.
-    pub(super) fn enqueue_clip_push(&mut self, text: String) {
-        self.queue
-            .retain(|req| !matches!(req, ServiceReq::ClipPush(_)));
-        self.queue.push_back(ServiceReq::ClipPush(text));
-    }
     /// Whether any queued OR in-flight request satisfies `pred`.
     pub(super) fn any_pending(&self, pred: impl Fn(&ServiceReq) -> bool) -> bool {
         if let Some((req, _)) = self.in_flight.as_ref() {
@@ -306,55 +270,6 @@ impl AgentConsoleHarness {
     }
     pub(super) fn share_pending(&self) -> bool {
         self.any_pending(is_share_req)
-    }
-    pub(super) fn enqueue_one_share_host_change(&mut self) -> bool {
-        let Some(share) = self.share.as_mut() else {
-            return false;
-        };
-        scan_share_host_dir(share);
-        for action in share
-            .engine
-            .on_host_scan_normalized(share.host_scan_scratch.drain(..))
-        {
-            match action {
-                SyncAction::Get { name } => {
-                    let path = share.host_dir.join(&name);
-                    let bytes = match read_share_file_bounded(&path, share.engine.max_bytes()) {
-                        Ok(bytes) => bytes,
-                        Err(ShareFileReadError::TooLarge(size)) => {
-                            if let Some(mtime_ms) = file_mtime_ms(&path) {
-                                print_host_skip_once(
-                                    share,
-                                    &name,
-                                    mtime_ms,
-                                    HostSkipKind::TooLarge,
-                                    size,
-                                );
-                            }
-                            continue;
-                        }
-                        Err(ShareFileReadError::Io) => continue,
-                    };
-                    let Some(mtime_ms) = file_mtime_ms(&path) else {
-                        continue;
-                    };
-                    if let Some(push) = share.engine.on_host_file(name.clone(), bytes, mtime_ms) {
-                        self.queue
-                            .push_back(share_put_req(name, push.bytes, push.hash));
-                        return true;
-                    }
-                }
-                SyncAction::DeleteGuest { name } => {
-                    self.queue.push_back(ServiceReq::ShareDel {
-                        name,
-                        direction: ShareDelDirection::HostToGuest,
-                    });
-                    return true;
-                }
-                SyncAction::DeleteHost { .. } | SyncAction::Skip { .. } => {}
-            }
-        }
-        false
     }
     pub(super) fn complete_in_flight(&mut self) {
         self.in_flight = None;
@@ -425,13 +340,7 @@ impl AgentConsoleHarness {
         now: Instant,
     ) {
         if let Some(hostname) = line.strip_prefix("READY ") {
-            println!("BVAGENT re-READY {hostname} t={}", self.t_ms(now));
-            // A fresh guest agent cannot complete the previous process's
-            // request. READY is therefore the only honest resynchronization
-            // point at which the old wire slot may be released.
-            self.in_flight = None;
-            self.get_accum = None;
-            self.out_accum = None;
+            self.resync_after_agent_restart(hostname, now);
             return;
         }
         if matches!(
@@ -449,43 +358,9 @@ impl AgentConsoleHarness {
             None => return,
         };
         match kind {
-            InFlightSnapshot::ClipPoll => {
-                if let Some(b64) = line.strip_prefix("CLIP ") {
-                    let text = base64_decode(b64)
-                        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                        .unwrap_or_default();
-                    // Adopt only genuinely-new content (normalized compare) so a
-                    // value we just pushed host->guest doesn't bounce straight
-                    // back through the guest clipboard.
-                    if let Some(normalized) = guest_clip_decision(&self.last_synced, &text) {
-                        let bytes = normalized.len();
-                        self.last_synced = Some(normalized.clone());
-                        if let Some(pasteboard) = self.pasteboard.as_ref() {
-                            pasteboard.set(normalized);
-                        }
-                        println!(
-                            "BVAGENT CLIPSYNC guest->host bytes={bytes} t={}",
-                            self.t_ms(now)
-                        );
-                    }
-                    self.complete_in_flight();
-                } else if line.starts_with("ERR") {
-                    println!("BVAGENT CLIPSYNC guest->host {line}");
-                    self.complete_in_flight();
-                }
-            }
+            InFlightSnapshot::ClipPoll => self.handle_clip_poll_reply(line, now),
             InFlightSnapshot::ClipPush { guest_bytes } => {
-                if line.starts_with("OK") {
-                    println!(
-                        "BVAGENT CLIPSYNC host->guest bytes={} t={}",
-                        guest_bytes,
-                        self.t_ms(now)
-                    );
-                    self.complete_in_flight();
-                } else if line.starts_with("ERR") {
-                    println!("BVAGENT CLIPSYNC host->guest {line}");
-                    self.complete_in_flight();
-                }
+                self.handle_clip_push_reply(line, guest_bytes, now);
             }
             InFlightSnapshot::Ctl(command) => match self.handle_reply_line(line, &command) {
                 ReplyProgress::Complete => self.complete_in_flight(),
@@ -532,7 +407,7 @@ impl AgentConsoleHarness {
                                         });
                                     }
                                     SyncAction::Skip { name, reason } => {
-                                        print_guest_skip(&name, reason);
+                                        print_share_skip(&name, reason);
                                     }
                                 }
                             }

@@ -26,10 +26,9 @@ enum AppUIHostV2Application {
         value.promptsUserIfNeeded = false
         value.activates = role == .host
         if role == .host {
-            value.environment = ["BRIDGEVM_APP_UI_HOST_MODE": "1",
-                "BRIDGEVM_APP_UI_HOST_OUTPUT": paths.observations.path, "BRIDGEVM_APP_UI_DRIVER_MODE": "1"]
+            value.environment = paths.mode.environment(output: paths.observations)
         } else {
-            value.arguments = ["--app-ui-ax-driver", "--private-root", paths.root.path]
+            value.arguments = [paths.mode.driverFlag, "--private-root", paths.root.path]
         }
         return value
     }

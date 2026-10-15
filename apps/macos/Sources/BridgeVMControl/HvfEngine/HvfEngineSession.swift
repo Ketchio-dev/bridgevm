@@ -16,6 +16,7 @@ final class HvfEngineSession: ObservableObject {
     var repoRoot: URL
     var workAdmission: LibraryWorkAdmission?
     var reservedWorkAdmission: (@MainActor (UUID, Bool) -> String?)?
+    var onConfigurationPersisted: (@MainActor (_ previous: VMConfig, _ saved: VMConfig) -> Void)? // library rebind + reload
     var ownedStartOperation: HvfOwnedStartOperation?
     var ownedStartExecution: HvfOwnedStartExecution?
     var guiStartOperation: HvfGUIStartOperation?
@@ -33,14 +34,14 @@ final class HvfEngineSession: ObservableObject {
     var tailReader = TailOffsetReader()
     var lastHeartbeatDate: Date?
     var serviceStarted = false
-    private var pendingPaste: HvfClipboardPaste?
+    var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
     private let inputDriver = HvfSessionInputDriver()
+    var textInputTarget: HvfTextInputTargetIdentity { .init(owner: ObjectIdentifier(self), generation: inputDriver.textInputGeneration, binding: inputBinding) }
     var stopCommandSent = false
     var stopDeadline: Date?
     var attachedToExistingProcess = false
     var nextAttachedLivenessCheck = Date.distantPast
-    private var liveInputHandle: FileHandle?
-    private var liveInputPath: URL?
+    private let liveInputFile = HvfLiveInputFile()
     var liveInputWriteFailureReported = false
     var processLaunch: (Process) throws -> Void = { try $0.run() }
     let processIsRunning: (String) -> Bool
@@ -62,20 +63,10 @@ final class HvfEngineSession: ObservableObject {
         inputDriver.onDiagnostic = { [weak self] in self?.append(.unknown($0)) }
     }
 
-    // The injected launcher must run the supplied Process or throw before spawning it.
-    convenience init(config: HvfEngineConfig, repoRoot: URL,
-                     processLaunch: @escaping (Process) throws -> Void,
-                     processIsRunning: @escaping (String) -> Bool,
-                     vtpmKeyProvider: VTPMStateKeyProviding) {
-        self.init(config: config, repoRoot: repoRoot,
-                  processIsRunning: processIsRunning, vtpmKeyProvider: vtpmKeyProvider)
-        self.processLaunch = processLaunch
-    }
-
     deinit {
         timer?.invalidate()
         if ownedController == nil { process?.terminate() }
-        try? liveInputHandle?.close()
+        liveInputFile.close()
     }
 
     func requestOwnedStop(target: HvfOwnedRuntimeIdentity, operationID: UUID) -> HvfOwnedStopAdmission {
@@ -179,16 +170,17 @@ final class HvfEngineSession: ObservableObject {
         return true
     }
 
-    func sendKey(_ action: String) {
-        guard pendingPaste == nil else { append(.unknown("key input refused: clipboard paste pending")); return }
-        if inputDriver.route(.key(action), binding: inputBinding) != .legacy { return }
-        appendLiveInput("KEY \(action)")
+    @discardableResult func sendKey(_ action: String) -> Bool {
+        guard legacyPaste.pending == nil else { append(.unknown("key input refused: clipboard paste pending")); return false }
+        let admission = inputDriver.route(.key(action), binding: inputBinding)
+        guard admission == .legacy else { return admission == .queued }
+        return appendLiveInput("KEY \(action)")
     }
 
     @discardableResult
     func sendText(_ value: String) -> HvfTextInputSubmission {
         guard !guiStartCleanupOnly else { return .refused }
-        guard pendingPaste == nil else { append(.unknown("text input refused: clipboard paste pending")); return .refused }
+        guard legacyPaste.pending == nil else { append(.unknown("text input refused: clipboard paste pending")); return .refused }
         guard !value.isEmpty else { return .refused }
         switch inputDriver.route(.text(value), binding: inputBinding) {
         case .queued: return .acceptedForProcessing
@@ -197,15 +189,15 @@ final class HvfEngineSession: ObservableObject {
         }
         let plan = HvfTextInputPlan.make(for: value)
         for chunk in plan.hidChunks {
-            appendLiveInput("KEY text-hex:\(chunk)")
+            guard appendLiveInput("KEY text-hex:\(chunk)") else { return .refused }
         }
         if let base64 = plan.clipboardBase64 {
             guard serviceStarted, case .connected = connectionState else {
                 append(.unknown("clipboard paste refused: guest service is not connected")); return .refused
             }
             let request = HvfClipboardPaste(base64: base64, now: Date())
-            guard sendCtl(request.command) else { return .refused }
-            pendingPaste = request
+            guard request.fitsGuestCommandLine(reportingTo: self), sendCtl(request.command) else { return .refused }
+            legacyPaste.pending = request
             return .acceptedForProcessing
         }
         return .legacyAttempted
@@ -213,27 +205,27 @@ final class HvfEngineSession: ObservableObject {
 
     #if canImport(AppKit)
     func sendPointerClick(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        sendPointerAction("click", location: location, viewSize: viewSize, imageSize: imageSize)
+        sendPointerAction(.click, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
     @discardableResult func sendPointerPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> String {
-        sendPointerAction("press", location: location, viewSize: viewSize, imageSize: imageSize)
+        sendPointerAction(.press, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
     func sendPointerMove(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        sendPointerAction("move", location: location, viewSize: viewSize, imageSize: imageSize)
+        sendPointerAction(.move, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
     func sendPointerRelease(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        sendPointerAction("release", location: location, viewSize: viewSize, imageSize: imageSize)
+        sendPointerAction(.release, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
     func sendPointerRightClick(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        sendPointerAction("right-click", location: location, viewSize: viewSize, imageSize: imageSize)
+        sendPointerAction(.rightClick, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
     func sendPointerRightPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        sendPointerAction("right-press", location: location, viewSize: viewSize, imageSize: imageSize)
+        sendPointerAction(.rightPress, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
     func sendPointerScroll(_ delta: Int8, location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
@@ -243,66 +235,38 @@ final class HvfEngineSession: ObservableObject {
     }
 
     /// Returns where the event went (queued, legacy, refused or unmapped) for the display's diagnostic.
-    @discardableResult private func sendPointerAction(_ action: String, location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> String {
+    @discardableResult private func sendPointerAction(_ action: HvfPointerAction, location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> String {
         guard let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return "unmapped" }
-        let verb = action == "release" ? "releaseall" : action.replacingOccurrences(of: "-", with: "")
-        let admission = inputDriver.route(.pointer("\(verb):\(point.x)x\(point.y)"), binding: inputBinding)
+        if action.mayMoveGuestFocus { cancelPendingPaste("pointer pressed") }
+        let admission = inputDriver.route(.pointer("\(action.orderedVerb):\(point.x)x\(point.y)"), binding: inputBinding)
         if admission != .legacy { return admission == .queued ? "queued" : "refused-" + inputDriver.routeDiagnostic(attached: attachedToExistingProcess) }
-        appendLiveInput("POINTER \(action):\(point.x)x\(point.y)"); return "legacy-" + inputDriver.routeDiagnostic(attached: attachedToExistingProcess)
+        appendLiveInput("POINTER \(action.rawValue):\(point.x)x\(point.y)"); return "legacy-" + inputDriver.routeDiagnostic(attached: attachedToExistingProcess)
     }
 
     private func mappedPointer(_ location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> (x: UInt16, y: UInt16)? {
-        guard let point = HvfDisplayCoordinates.absolutePointer(
-            location: location,
-            viewSize: viewSize,
-            imageSize: imageSize
-        ) else { return nil }
-        return point
+        HvfDisplayCoordinates.absolutePointer(location: location, viewSize: viewSize, imageSize: imageSize)
     }
     #endif
 
-    private func appendLiveInput(_ line: String) {
-        guard !guiStartCleanupOnly else { return }
-        guard inputDriver.allowLegacyWrite(binding: inputBinding) else { return }
+    @discardableResult func appendLiveInput(_ line: String) -> Bool {
+        guard !guiStartCleanupOnly, inputDriver.allowLegacyWrite(binding: inputBinding) else { return false }
         let path = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("input.ctl")
-        guard let data = "\(line)\n".data(using: .utf8) else { return }
+        guard let data = "\(line)\n".data(using: .utf8) else { return false }
         do {
-            let handle = try liveInputHandle(for: path)
-            #if os(macOS)
-            guard flock(handle.fileDescriptor, LOCK_EX) == 0 else { return }
-            defer { flock(handle.fileDescriptor, LOCK_UN) }
-            #endif
-            try handle.seekToEnd()
-            try handle.write(contentsOf: data)
+            try liveInputFile.append(data, to: path)
             liveInputWriteFailureReported = false
+            return true
         } catch {
-            closeLiveInput()
             if !liveInputWriteFailureReported {
                 append(.unknown("live input write failed: \(error.localizedDescription)"))
                 liveInputWriteFailureReported = true
             }
+            return false
         }
-    }
-
-    private func liveInputHandle(for path: URL) throws -> FileHandle {
-        if let liveInputHandle, liveInputPath == path {
-            return liveInputHandle
-        }
-        closeLiveInput()
-        if !FileManager.default.fileExists(atPath: path.path) {
-            FileManager.default.createFile(atPath: path.path, contents: nil)
-        }
-        let handle = try FileHandle(forWritingTo: path)
-        try handle.seekToEnd()
-        liveInputHandle = handle
-        liveInputPath = path
-        return handle
     }
 
     func closeLiveInput() {
-        try? liveInputHandle?.close()
-        liveInputHandle = nil
-        liveInputPath = nil
+        liveInputFile.close()
     }
 
     func startPolling() {
@@ -316,11 +280,7 @@ final class HvfEngineSession: ObservableObject {
         if guiStartCleanupOnly { pollGUIStartCleanup(); return }
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
         let lines = tailReader.readNewLines(from: logURL)
-        if let ready = pendingPaste?.consume(lines: lines, now: Date()) {
-            pendingPaste = nil
-            if ready, case .connected = connectionState { appendLiveInput("KEY ctrl+v") }
-            else { append(.unknown("clipboard paste failed, expired or canceled")) }
-        }
+        finishLegacyPaste(lines: lines)
         if !lines.isEmpty {
             for event in BvAgentEvent.parse(lines: lines) {
                 handle(event)
@@ -364,26 +324,7 @@ final class HvfEngineSession: ObservableObject {
         }
     }
 
-    private func handle(_ event: BvAgentEvent) {
-        append(event)
-        switch event {
-        case let .ready(host, _):
-            if connectionState != .stopping, ownedController?.failure == nil {
-                connectionState = .connected(host: host)
-            }
-        case .serviceStart:
-            serviceStarted = true
-            if let ownedController { ownedController.guestServiceReady() }
-            else { sendGracefulStopIfReady() }
-        case .aliveHeartbeat:
-            lastHeartbeatDate = Date()
-            lastHeartbeatAge = 0
-        default:
-            break
-        }
-    }
-
-    private func sendGracefulStopIfReady() {
+    func sendGracefulStopIfReady() {
         guard case .stopping = connectionState, serviceStarted, !stopCommandSent else { return }
         stopCommandSent = true
         if sendCtl("shutdown.exe /p /f") {
@@ -407,7 +348,7 @@ final class HvfEngineSession: ObservableObject {
             lastOwnedExit = HvfOwnedRuntimeExit(identity: identity, process: process)
         }
         ownedProcessIdentity = nil
-        pendingPaste = nil
+        legacyPaste = HvfLegacyPasteState()
         inputDriver.attachUnknown(binding: inputBinding)
         timer?.invalidate()
         timer = nil
@@ -425,7 +366,7 @@ final class HvfEngineSession: ObservableObject {
 
     func resetObservedRuntimeState(clearEvents: Bool) {
         if !hasPendingGUIStart { guiStartOperation = nil }
-        pendingPaste = nil
+        legacyPaste = HvfLegacyPasteState()
         inputDriver.attachUnknown(binding: inputBinding)
         tailReader = TailOffsetReader()
         lastHeartbeatDate = nil
@@ -439,9 +380,7 @@ final class HvfEngineSession: ObservableObject {
 
     func append(_ event: BvAgentEvent) {
         events.append(event)
-        if events.count > 500 {
-            events.removeFirst(events.count - 500)
-        }
+        if events.count > 500 { events.removeFirst(events.count - 500) }
     }
 
     private var inputBinding: [String] {
@@ -449,10 +388,17 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func beginOwnedInputBoot() {
-        pendingPaste = nil
+        legacyPaste = HvfLegacyPasteState()
         inputDriver.beginOwnedBoot(binding: inputBinding)
     }
 
-    func cancelOrderedInputTarget() { inputDriver.cancelTarget() }
+    func cancelOrderedInputTarget() {
+        cancelPendingPaste("input target changed")
+        inputDriver.cancelTarget()
+    }
 
+    /// Drops a legacy paste before its delayed `KEY ctrl+v` can reach a different guest target.
+    private func cancelPendingPaste(_ reason: String) {
+        if let message = legacyPaste.cancel(reason) { append(.unknown(message)) }
+    }
 }

@@ -21,7 +21,7 @@ extension HvfEngineConfig {
             watchdogMs: nil,
             ramMiB: config.memMiB ?? 6144,
             smpCpus: config.cpuCount ?? 4,
-            clipboardSync: true,
+            clipboardSync: config.clipboardSyncEnabled ?? true,
             shareHostDir: nil,
             shareGuestDir: nil,
             virtioNet: config.networkEnabled ?? true,

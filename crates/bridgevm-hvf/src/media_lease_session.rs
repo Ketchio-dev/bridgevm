@@ -4,6 +4,10 @@ use crate::snapshot_pair::managed::LockedPair;
 use std::io::{self, Read, Write};
 use std::path::Path;
 use std::process::ExitCode;
+#[path = "media_lease_session_pending_delete.rs"]
+pub mod pending_delete;
+#[path = "media_lease_session_protocol.rs"]
+mod protocol;
 
 pub const READY: &[u8] = b"bridgevm-media-lease-v1\n";
 const RELEASE: &[u8] = b"release\n";
@@ -16,36 +20,11 @@ pub fn hold(
     input: &mut impl Read,
     output: &mut impl Write,
 ) -> io::Result<()> {
-    let _owner = LockedPair::open(disk, vars)?;
-    output.write_all(READY)?;
-    output.flush()?;
-    let mut command = [0u8; 8];
-    input.read_exact(&mut command)?;
-    if command != RELEASE {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "invalid lease release command",
-        ));
-    }
-    Ok(())
+    protocol::hold(LockedPair::open(disk, vars), input, output)
 }
 
 pub fn command(arguments: &[String]) -> ExitCode {
-    if arguments.len() != 2 {
-        return ExitCode::from(2);
-    }
-    match hold(
-        Path::new(&arguments[0]),
-        Path::new(&arguments[1]),
-        &mut io::stdin().lock(),
-        &mut io::stdout().lock(),
-    ) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("media lease session: {error}");
-            ExitCode::FAILURE
-        }
-    }
+    protocol::command(arguments, LockedPair::open)
 }
 
 #[cfg(test)]

@@ -1,3 +1,5 @@
+#[path = "reset_register_tests.rs"]
+mod reset_register_tests;
 use super::ports::{PORTSC_PP, PORT_REG_BASE, PORT_REG_STRIDE};
 use super::test_support::TestRam;
 use super::*;

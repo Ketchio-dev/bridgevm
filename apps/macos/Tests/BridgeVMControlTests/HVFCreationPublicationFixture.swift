@@ -14,7 +14,7 @@ final class HVFCreationPublicationFixture {
 
     init(separateStorage: Bool) throws {
         self.separateStorage = separateStorage
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("hvf-publication-" + UUID().uuidString)
+        root = LibraryDeletionTestDirectory.temporary.appendingPathComponent("hvf-publication-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
     }
 
@@ -31,9 +31,9 @@ final class HVFCreationPublicationFixture {
         XCTAssertEqual(libraryRoot, library)
         requestBytes = FileManager.default.contents(atPath: config.bundlePath + "/" + HvfWindowsInstallRequest.fileName)
         if config.installPending == true { XCTAssertNotNil(requestBytes) }
-        return VMLibrary.saveOutcome(config, rootURL: libraryRoot) { data, url in
+        return VMLibrary.createOutcome(config, rootURL: libraryRoot) { data, url in
             registrationBytes = data
-            let outcome = VMRegistrationWriter.commit(data, to: url, syncParent: { parent in
+            let outcome = VMRegistrationWriter.commit(data, to: url, replaceExisting: false, syncParent: { parent in
                 XCTAssertEqual(url, registration(config))
                 XCTAssertEqual(parent, url.deletingLastPathComponent())
                 XCTAssertEqual(try Data(contentsOf: url), data)
@@ -55,11 +55,11 @@ final class HVFCreationPublicationFixture {
         capturedConfig = config
         XCTAssertEqual(libraryRoot, library)
         XCTAssertTrue(FileManager.default.fileExists(atPath: config.bundlePath))
-        return VMLibrary.saveOutcome(config, rootURL: libraryRoot) { data, url in
+        return VMLibrary.createOutcome(config, rootURL: libraryRoot) { data, url in
             do {
                 try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
             } catch { XCTFail("could not prepare rename refusal: \(error)"); return .notPublished(error) }
-            let outcome = VMRegistrationWriter.commit(data, to: url, syncParent: { _ in
+            let outcome = VMRegistrationWriter.commit(data, to: url, replaceExisting: false, syncParent: { _ in
                 XCTFail("rename refusal must not reach directory sync")
             })
             guard case .notPublished = outcome else {

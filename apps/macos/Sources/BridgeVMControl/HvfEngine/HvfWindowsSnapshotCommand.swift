@@ -9,12 +9,11 @@ enum HvfWindowsSnapshotCommand {
         let vars: URL
         let snapshot: URL
         let vmID: String
-        let quotaBytes: UInt64
 
-        func arguments(for operation: Operation) -> [String] {
+        func arguments(for operation: Operation) throws -> [String] {
             switch operation {
             case .create:
-                return ["create", disk.path, vars.path, snapshot.path, vmID, String(quotaBytes)]
+                return try createArguments(destination: snapshot)
             case .restore:
                 return ["restore", snapshot.path, disk.path, vars.path]
             }
@@ -58,15 +57,8 @@ enum HvfWindowsSnapshotCommand {
                 throw failure("snapshot directory is unsafe")
             }
         }
-        let diskBytes = try fileSize(disk)
-        let varsBytes = try fileSize(vars)
-        let sum = diskBytes.addingReportingOverflow(varsBytes)
-        guard !sum.overflow, sum.partialValue > 0 else {
-            throw failure("snapshot quota cannot be calculated")
-        }
         return Plan(
-            executable: executable, disk: disk, vars: vars, snapshot: snapshot,
-            vmID: vmID, quotaBytes: sum.partialValue)
+            executable: executable, disk: disk, vars: vars, snapshot: snapshot, vmID: vmID)
     }
 
     static func run(_ operation: Operation, plan: Plan, checkAdmission: @escaping @Sendable () async throws -> Void = {}) async throws -> String {
@@ -77,7 +69,9 @@ enum HvfWindowsSnapshotCommand {
                     at: plan.snapshot.deletingLastPathComponent(), withIntermediateDirectories: true)
             }
             try await checkAdmission()
-            let output = try invoke(plan.executable, plan.arguments(for: operation))
+            let arguments = try plan.arguments(for: operation)
+            try await checkAdmission()
+            let output = try invoke(plan.executable, arguments)
             if operation == .create {
                 try await checkAdmission()
                 _ = try invoke(plan.executable, ["verify", plan.snapshot.path])

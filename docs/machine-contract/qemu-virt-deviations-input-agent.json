@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "contract": "qemu-virt-compatible",
+  "deviations": [
+    {
+      "id": "resident-input-keyset-negotiation",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU virt does not define BridgeVM's resident input-agent protocol.",
+      "bridgevm_behavior": "BridgeVM's optional resident agent keeps its exact v3 INPUTCAPS base marker and may append a nonce-bound BVINPUT_KEYS marker advertising SHIFT_ENTER_SPACE. New hosts require this extension before queuing Shift+Enter or Shift+Space on the ordered transport.",
+      "guest_visible": true,
+      "impact": "An older resident remains usable for ordinary ordered input; unsupported new chords are refused locally with existing refusal feedback. Older hosts ignore the additive marker and retain v3. This is encoding negotiation, not evidence of foreground delivery, application consumption or reliable legacy clipboard sequencing.",
+      "evidence": "docs/machine-contract/resident-input-keysets.md"
+    }
+  ]
+}

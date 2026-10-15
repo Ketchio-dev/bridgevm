@@ -27,10 +27,9 @@ pub(in crate::agent_console) fn print_host_skip_once_seen(
     }
 }
 
-pub(in crate::agent_console) fn print_guest_skip(name: &str, reason: SkipReason) {
+pub(in crate::agent_console) fn print_share_skip(name: &str, reason: SkipReason) {
     match reason {
-        SkipReason::TooLarge { size } => {
-            println!("BVAGENT SHARE skip {name} too-large {size}")
-        }
+        SkipReason::TooLarge { size } => println!("BVAGENT SHARE skip {name} too-large {size}"),
+        SkipReason::WindowsAlias(names) => println!("BVAGENT SHARE skip {name} alias {names:?}"),
     }
 }

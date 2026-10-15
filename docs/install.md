@@ -17,23 +17,64 @@ authorize Windows test drivers. General Preview installs and imports Windows in 
 
 Use this path while the safe successor to `v1.0.0` is still being prepared, or
 whenever you want to inspect exactly what you run. Requirements are Apple silicon,
-macOS 14+, Xcode/Swift 5.9+, and Rust 1.85+. Follow the
-[development setup](../CONTRIBUTING.md#set-up-a-development-checkout) for toolchains
-and the packaging scripts for bundle dependencies.
+macOS 14+, Xcode/Swift, and Rust 1.85+. Follow the
+[development setup](../CONTRIBUTING.md#set-up-a-development-checkout) for toolchains.
+The app bundle also needs the native dependencies below; the Rust and Swift
+build commands alone do not prepare them.
 
 ```sh
 git clone https://github.com/Ketchio-dev/bridgevm.git
 cd bridgevm
 cargo build --workspace --locked
 swift build --package-path apps/macos
+```
+
+### Prepare the app bundle dependencies
+
+Run the remaining commands from the repository root in the same shell.
+
+- Install the Homebrew packages `meson`, `ninja`, `pkgconf`, `libepoxy`,
+  `molten-vk`, `vulkan-loader` and `vulkan-headers`. Ensure the `python3` on your
+  PATH can import PyYAML (`python3 -c 'import yaml'`). The
+  [renderer build script](../scripts/build-venus-host-deps.sh) checks these
+  inputs before fetching and building its pinned, patched renderer.
+- The TPM packager requires **swtpm 0.10.1** and **libtpms 0.10.2**, installed
+  under the versioned Apple-silicon Homebrew Cellar at `/opt/homebrew/Cellar`,
+  with their dependency libraries and licence files. Check `swtpm --version`
+  and `brew list --versions swtpm libtpms` before building. The
+  [TPM bundler](../apps/macos/scripts/bundle-swtpm-runtime.sh) verifies the
+  actual linked libtpms version as well. Installing the latest Homebrew
+  packages does not guarantee these versions; if they are unavailable, bundle
+  preparation is blocked. The [release workflow](../.github/workflows/release.yml)
+  records the pinned Homebrew recipe used on disposable hosted runners; do not
+  copy its runner-only Homebrew checkout replacement onto your development Mac.
+
+```sh
+export BRIDGEVM_3D_DIR="$PWD/target/native-host"
+export BRIDGEVM_VENUS_PREFIX="$BRIDGEVM_3D_DIR/prefix"
+scripts/build-venus-host-deps.sh
+scripts/verify-venus-native-artifacts.sh
 packaging/macos/build-debug-app-bundle.sh
 open target/macos/BridgeVMApp.app
 ```
+
+The two exported paths must agree: the renderer builder installs below
+`BRIDGEVM_3D_DIR`, while the Rust linker reads `BRIDGEVM_VENUS_PREFIX`.
+The current bundle helper always builds the Windows HVF probe with its `venus`
+feature and packages the renderer libraries, including for a 3D-off guest.
+These are host build dependencies; 3D acceleration is excluded from General
+Preview and v1.
 
 This produces a local ad-hoc-signed development app. It does not turn the
 checkout into release evidence. Contributors should follow
 [`CONTRIBUTING.md`](../CONTRIBUTING.md) and run the appropriate deterministic
 checks.
+
+The development bundle command above does not prepare the complete app-side
+resources for Windows ISO installation. Supplying an ISO and signed driver
+payload does not supply those resources. For that separate package, see the
+[Windows HVF app packager](../apps/macos/scripts/package-hvf-control-app.sh) and
+its required [pinned wimlib runtime builder](../scripts/build-pinned-wimlib-runtime.sh).
 
 ## Terminal installer (waiting for a safe release)
 

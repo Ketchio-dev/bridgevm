@@ -9,7 +9,7 @@ struct CloneWindowsHVFSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Windows HVF VM 복제").font(.title2.bold())
-            Text("APFS copy-on-write로 번들을 복제합니다. 복제본은 원본의 TPM 키를 공유하지 않으며 새 TPM ID로 시작합니다. 복사된 이전 TPM 상태와 실행 증거는 보관됩니다.")
+            Text("가능하면 APFS copy-on-write로 번들을 복제하고, 그렇지 않으면 일반 복사를 시도합니다. 복제본은 원본의 TPM 키를 공유하지 않으며 새 TPM ID로 시작합니다. 복사된 이전 TPM 상태와 실행 증거는 보관됩니다.")
                 .foregroundColor(.secondary)
             TextField("새 VM 이름", text: $name)
                 .textFieldStyle(.roundedBorder)

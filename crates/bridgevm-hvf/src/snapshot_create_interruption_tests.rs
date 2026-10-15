@@ -1,4 +1,5 @@
 use super::*;
+use crate::snapshot_pair::snapshot_pair_tests::completed_staging_tests::retry_create;
 use crate::snapshot_pair::{snapshot_pair_tests::Scratch, verify_snapshot};
 use std::process::Command;
 
@@ -13,13 +14,14 @@ fn required_path(name: &str) -> PathBuf {
         .unwrap_or_else(|| panic!("missing subprocess path {name}"))
 }
 
-fn selected_scenario(stage: CreateStage) -> (&'static str, i32) {
+/// The last field is whether the attempt leaves a finished snapshot in staging.
+fn selected_scenario(stage: CreateStage) -> (&'static str, i32, bool) {
     match stage {
-        CreateStage::DiskSynced => ("disk-synced", 81),
-        CreateStage::VarsSynced => ("vars-synced", 82),
-        CreateStage::ManifestPublished => ("manifest-published", 83),
-        CreateStage::StagingDirectorySynced => ("staging-directory-synced", 84),
-        CreateStage::SnapshotPublished => ("snapshot-published", 85),
+        CreateStage::DiskSynced => ("disk-synced", 81, false),
+        CreateStage::VarsSynced => ("vars-synced", 82, false),
+        CreateStage::ManifestPublished => ("manifest-published", 83, true),
+        CreateStage::StagingDirectorySynced => ("staging-directory-synced", 84, true),
+        CreateStage::SnapshotPublished => ("snapshot-published", 85, false),
     }
 }
 
@@ -32,7 +34,7 @@ fn create_crash_child() {
     let vars = required_path(VARS_ENV);
     let dest = required_path(DEST_ENV);
     create_snapshot_using(&disk, &vars, &dest, "new", false, 1024, |stage| {
-        let (name, exit) = selected_scenario(stage);
+        let (name, exit, _) = selected_scenario(stage);
         if scenario == name {
             std::process::exit(exit);
         }
@@ -64,7 +66,7 @@ fn hard_exit_during_create_selects_only_one_complete_snapshot_and_allows_retry()
         CreateStage::StagingDirectorySynced,
         CreateStage::SnapshotPublished,
     ] {
-        let (scenario, exit) = selected_scenario(stage);
+        let (scenario, exit, finished) = selected_scenario(stage);
         let scratch = Scratch::new(scenario);
         let disk = scratch.write("disk", b"old-disk");
         let vars = scratch.write("vars", b"old-vars");
@@ -81,8 +83,7 @@ fn hard_exit_during_create_selects_only_one_complete_snapshot_and_allows_retry()
             assert_eq!(selected, old);
         }
 
-        let retried = create_snapshot(&disk, &vars, &dest, "retry", false, 1024)
-            .expect("retry after interrupted create");
+        let retried = retry_create(&disk, &vars, &dest, finished);
         assert_eq!(verify_snapshot(&dest).unwrap(), retried);
         assert_eq!(retried.vm_id, "retry");
     }

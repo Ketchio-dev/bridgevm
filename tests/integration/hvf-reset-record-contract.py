@@ -27,7 +27,7 @@ sys.path.insert(0, str(LIVE_GATES))
 DEFINITIONS = (ENGINE / "HvfGuestResetRecord.swift", LIVE_GATES / "hvf_reset_record.py")
 DETECTORS = ("HvfUnicodeInputRequest", "HvfInputCapabilitiesRequest", "HvfAcknowledgedInputStream",
              "HvfNegotiatedInputStream", "HvfSessionInputRouter", "HvfWindowInventoryRequest",
-             "HvfWindowInventoryController", "HvfClipboardPaste")
+             "HvfWindowInventoryController", "HvfClipboardPaste", "HvfEngineSessionAgentEvents")
 RETIRED = ("PSCI_SYSTEM_RESET", '"PSCI SYSTEM_RESET')
 NAMES = ("processRecreation", "inProcessRebootPrefix", "rebootLimitPrefix", "rebootLimitSuffix")
 COMMAND = "WINLIST 277bdd87-9955-4af4-bc5c-f4fe4305c559"

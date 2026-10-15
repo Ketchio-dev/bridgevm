@@ -1,7 +1,6 @@
 //! Finish and own the staged inodes before they can become current media.
 
 use super::*;
-use std::path::PathBuf;
 
 impl LockedPair {
     pub(super) fn stage_restore(
@@ -9,15 +8,14 @@ impl LockedPair {
         snapshot: &Path,
         manifest: &SnapshotManifest,
         copy: impl FnMut(&Path, &Path) -> io::Result<u64>,
-    ) -> Result<(PathBuf, SnapshotManifest), SnapshotError> {
+    ) -> Result<(ownership::StageOwner, SnapshotManifest), SnapshotError> {
         let staged = self.root.join("staging");
         self.reclaim_staging()?;
         super::super::private_directory(&staged, true)?;
-        let owned = ownership::StageOwner::capture(&staged)?;
-        let copied =
-            fill::fill(snapshot, manifest, &staged, copy).inspect_err(|_| owned.clear())?;
+        let mut owned = ownership::StageOwner::capture(&staged)?;
+        let copied = owned.fill(snapshot, manifest, copy)?;
         owned.claim_media(&mut self._lease)?;
-        Ok((staged, copied))
+        Ok((owned, copied))
     }
 }
 
@@ -29,3 +27,10 @@ mod fill;
 mod ownership;
 #[path = "managed_pair_staging_reclaim.rs"]
 mod reclaim;
+
+#[path = "managed_pair_staging_record.rs"]
+mod record;
+#[path = "managed_pair_staging_recovery.rs"]
+mod recovery;
+#[path = "managed_pair_staging_seal.rs"]
+mod seal;

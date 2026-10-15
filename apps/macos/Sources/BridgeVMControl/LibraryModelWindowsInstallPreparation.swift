@@ -5,12 +5,6 @@ extension LibraryModel {
         windowsInstallSessions.preparation.lookup(slug: config.slug, owner: self)
     }
 
-    func currentWindowsInstallPreparationInput(slug: String, repoRoot: URL) -> HvfWindowsInstallPlanInput? {
-        guard let config = vms.first(where: { $0.slug == slug }),
-              config.engineKind == .hvfEngine, config.installPending == true else { return nil }
-        return .load(for: config, libraryRoot: rootURL, repoRoot: repoRoot)
-    }
-
     func cachedWindowsInstallSession(
         for input: HvfWindowsInstallPlanInput
     ) -> HvfWindowsInstallSession? {

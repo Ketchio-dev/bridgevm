@@ -10,7 +10,7 @@ struct HvfClipboardPaste {
     private var finished = false
 
     init(base64: String, now: Date, id: UUID = UUID()) {
-        marker = "BVPASTE_READY \(id.uuidString)"
+        marker = "BVPASTE_READY \(id.uuidString)" // relay agent_console/clip_paste.rs keys clipboard sync on it
         command = "powershell -NoProfile -STA -Command \"$ErrorActionPreference='Stop';"
             + "Set-Clipboard -Value ([Text.Encoding]::UTF8.GetString("
             + "[Convert]::FromBase64String('\(base64)'))) -ErrorAction Stop;"

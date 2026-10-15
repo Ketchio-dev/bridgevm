@@ -125,7 +125,14 @@ function Get-InputCapabilities([string]$Request) {
         if ($probe.Exit -ne 0 -or [BridgeVM.BvUnicodeInput]::BuildKey('enter').Length -ne 2 -or [BridgeVM.BvUnicodeInput]::BuildPointer('click:0x0').Length -ne 2 -or [BridgeVM.BvUnicodeInput]::BuildPointer('wheel:-1').Length -ne 1 -or [BridgeVM.BvUnicodeInput]::BuildPointer('scroll:-128@32767x0').Length -ne 2 -or [BridgeVM.BvUnicodeInput]::BuildPointer('releaseall:0x0')[0].Data.Mouse.Flags -ne 0x8015) {
             throw 'input-support-unavailable'
         }
-        return @{ Exit = 0; Out = ('BVINPUT_CAPS {0} 3 TEXTINPUT KEYINPUT POINTERINPUT 65536' -f $Request) }
+        $keySupport = ''
+        # A running older C# module remains valid v3; advertise only keys it can build.
+        try {
+            if ([BridgeVM.BvUnicodeInput]::BuildKey('shift+enter').Length -eq 4 -and [BridgeVM.BvUnicodeInput]::BuildKey('shift+space').Length -eq 4) {
+                $keySupport = "`nBVINPUT_KEYS $Request SHIFT_ENTER_SPACE"
+            }
+        } catch { }
+        return @{ Exit = 0; Out = (('BVINPUT_CAPS {0} 3 TEXTINPUT KEYINPUT POINTERINPUT 65536' -f $Request) + $keySupport) }
     } catch {
         return @{ Exit = 1; Out = 'BVINPUT_CAPS_FAILED unavailable' }
     }

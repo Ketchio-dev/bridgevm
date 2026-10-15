@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT / "scripts/live-gates"))
 import a19_interrupt_restore_child as observer
 import a19_interrupted_restore_receipt as receipt
 import native_snapshot_restore_inputs as inputs
-from a19_interrupt_child_fixture import InterruptedChildCases
+from a19_interrupt_failure_cases import InterruptedChildCases
 from importlib.util import module_from_spec, spec_from_file_location
 
 spec = spec_from_file_location("interrupt_runner", ROOT / "scripts/live-gates/run-a19-interrupted-restore-tier.py")

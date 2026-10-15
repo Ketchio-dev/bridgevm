@@ -4,12 +4,12 @@ extension HvfWindowsInstallSession {
     /// Acknowledges inspection, validation and pipeline scheduling, not completion.
     /// Use cancel(); cancelling this task handle does not cancel the installation.
     @discardableResult
-    func start() -> Task<Void, Never>? {
+    func start(admit: () -> Bool = { true }) -> Task<Void, Never>? {
         guard !admissionPending, !isRunning, stage != .done else { return nil }
         // Existing library admission must not see its own attempt as a conflict.
         admissionPending = true
         defer { admissionPending = false }
-        guard workAdmission?(true) == nil else { return nil }
+        guard workAdmission?(true) == nil, admit() else { return nil }
         attemptActive = true
         cancelled = false
         commitStarted = false

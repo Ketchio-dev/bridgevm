@@ -27,7 +27,7 @@ final class HvfFramebufferRetryTests: XCTestCase {
             if !failingProvider && imageCalls == 1 { return nil }
             return defaults.image(provider, width, height, stride)
         }
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = LibraryDeletionTestDirectory.temporary.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let pixels = Data([0x11, 0x22, 0x33, 0xff])

@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/capability-matrix.md	current	windows-hvf-engine	-
+docs/archive/a11-measured-through-20261014.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md

@@ -20,9 +20,7 @@ impl VmStore {
                 output,
             });
         }
-        if output.exists() {
-            return Err(StorageError::ExportAlreadyExists(output));
-        }
+        crate::export_destination::ensure_absent(&output)?;
         let archive_format = if is_tar_path(&output) {
             "tar"
         } else if is_unsupported_archive_path(&output) {
@@ -75,8 +73,8 @@ impl VmStore {
                     output: self.vms_dir(),
                 });
             }
-            let staging = unique_temp_path("bridgevm-import-tar");
-            let _staging_guard = TempDirGuard::new(staging.clone());
+            let staging_guard = crate::archive_staging::create("bridgevm-import-tar")?;
+            let staging = staging_guard.path.join("bundle");
             extract_bundle_tar(&input, &staging)?;
             return self.import_vm_bundle(&staging, &input, name_override);
         }

@@ -10,9 +10,9 @@ final class HvfWindowsSnapshotCommandTests: XCTestCase {
         XCTAssertEqual(plan.snapshot.path,
                        fixture.bundle.appendingPathComponent("metadata/snapshots/latest.snapshot").path)
         XCTAssertEqual(plan.vmID, "test-vm")
-        XCTAssertEqual(plan.quotaBytes, 68)
-        XCTAssertEqual(plan.arguments(for: .create).first, "create")
-        XCTAssertEqual(plan.arguments(for: .restore).first, "restore")
+        XCTAssertEqual(try plan.arguments(for: .create).last, "144")
+        XCTAssertEqual(try plan.arguments(for: .create).first, "create")
+        XCTAssertEqual(try plan.arguments(for: .restore).first, "restore")
     }
 
     func testRestoreRequiresExistingSnapshotDirectory() throws {
@@ -62,7 +62,7 @@ final class HvfWindowsSnapshotCommandTests: XCTestCase {
         try FileManager.default.createDirectory(at: helper.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(count: 64).write(to: disk)
         try Data(count: 4).write(to: vars)
-        XCTAssertTrue(FileManager.default.createFile(atPath: helper.path, contents: Data("#!/bin/sh\n".utf8)))
+        XCTAssertTrue(FileManager.default.createFile(atPath: helper.path, contents: Data("#!/bin/sh\nprintf 'disk_bytes 128\\nvars_bytes 16\\n'\n".utf8)))
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
         let config = HvfEngineConfig(
             targetDiskPath: disk.path, uefiVarsPath: vars.path,

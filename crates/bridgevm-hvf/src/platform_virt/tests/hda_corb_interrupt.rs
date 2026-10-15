@@ -7,6 +7,8 @@ use crate::hda::*;
 use crate::machine;
 use crate::msix::MsixMessage;
 use crate::pcie;
+#[path = "hda_state_change_interrupt.rs"]
+mod hda_state_change_interrupt;
 
 const BAR: u64 = machine::PCIE_MMIO_32.base + 0x70_000;
 const CORB: u64 = machine::RAM_BASE + 0x1000;

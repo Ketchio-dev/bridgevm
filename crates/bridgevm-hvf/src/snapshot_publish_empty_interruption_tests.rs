@@ -1,20 +1,21 @@
 //! Process exit around a real empty-directory rename, not a power-loss test.
 
 use super::*;
+use crate::snapshot_pair::snapshot_pair_tests::completed_staging_tests::retry_create;
 use crate::snapshot_pair::staging_path;
 use std::path::PathBuf;
 use std::process::Command;
 
 const CASE_ENV: &str = "BRIDGEVM_TEST_EMPTY_PUBLISH_CRASH";
 const ROOT_ENV: &str = "BRIDGEVM_TEST_EMPTY_PUBLISH_ROOT";
-const CASES: [(&str, i32); 2] = [("before-rename", 96), ("after-rename", 97)];
+const CASES: [(&str, i32, bool); 2] = [("before-rename", 96, true), ("after-rename", 97, false)];
 
 #[test]
 fn empty_rename_crash_child() {
     let Ok(case) = std::env::var(CASE_ENV) else {
         return;
     };
-    let exit = CASES.iter().find(|(name, _)| *name == case).unwrap().1;
+    let exit = CASES.iter().find(|(name, ..)| *name == case).unwrap().1;
     let root = PathBuf::from(std::env::var_os(ROOT_ENV).expect("owned fixture root"));
     let dest = root.join("dest");
     publish_using(
@@ -36,7 +37,7 @@ fn empty_rename_crash_child() {
 
 #[test]
 fn hard_exit_before_and_after_empty_rename_preserves_pair_and_retry() {
-    for (case, exit) in CASES {
+    for (case, exit, finished) in CASES {
         let scratch = Scratch::new(&format!("publish-empty-crash-{case}"));
         let disk = scratch.write("source-disk", b"new-disk");
         let vars = scratch.write("source-vars", b"new-vars");
@@ -56,7 +57,7 @@ fn hard_exit_before_and_after_empty_rename_preserves_pair_and_retry() {
             assert_eq!(verify_snapshot(&dest).unwrap(), new);
             assert!(!stage.exists());
         }
-        let retry = create_snapshot(&disk, &vars, &dest, "retry", false, 1024).unwrap();
+        let retry = retry_create(&disk, &vars, &dest, finished);
         assert_eq!(verify_snapshot(&dest).unwrap(), retry);
         assert!(!stage.exists());
         assert_eq!(fs::read(&disk).unwrap(), b"new-disk");

@@ -1,0 +1,5 @@
+path	class	topic	superseded_by
+docs/install.md	current	user-installation	-
+docs/distribution-channels.md	current	distribution-policy	-
+docs/history/windows-hvf/autonomous-import-preservation-20261014.md	historical-evidence	windows-hvf	-
+docs/history/windows-hvf/autonomous-interrupt-fixtures-20261014.md	historical-evidence	windows-hvf	-

@@ -11,8 +11,12 @@ mod admission;
 mod destination_lease;
 #[path = "snapshot_create_member_lease.rs"]
 mod member_lease;
+#[path = "snapshot_create_owned_staging.rs"]
+mod owned_staging;
 #[path = "snapshot_create_staging_debris.rs"]
 mod staging_debris;
+#[path = "snapshot_create_staging_reclaim.rs"]
+mod staging_reclaim;
 use destination_lease::claim_staging;
 #[path = "snapshot_create_fill.rs"]
 mod fill;
@@ -23,15 +27,17 @@ mod stage;
 use stage::CreateStage;
 #[path = "snapshot_create_stopped.rs"]
 mod stopped;
+use super::copy::copy_and_sync as copy;
+use super::snapshot_publish::publish;
 use stopped::create_stopped;
 #[path = "snapshot_create_quota.rs"]
 mod quota;
 
 /// Capture `disk` and `vars` into `dest` as one atomic pair.
 ///
-/// `vm_running` is passed in rather than probed here: only the caller knows
-/// whether a helper still holds the media, and a snapshot of a running VM is
-/// the failure this whole module exists to prevent.
+/// `vm_running` is the caller's knowledge; an owned runtime's writer leases
+/// are checked too, because between guest generations nothing else shows that
+/// it owns the media. A snapshot of a running VM is what this module prevents.
 pub fn create_snapshot(
     disk: &Path,
     vars: &Path,
@@ -55,7 +61,7 @@ fn create_snapshot_using(
     if vm_running {
         return Err(SnapshotError::VmRunning);
     }
-    create_stopped(disk, vars, dest, vm_id, quota_bytes, copy_and_sync, observe)
+    create_stopped(disk, vars, dest, vm_id, quota_bytes, copy, publish, observe)
 }
 
 #[cfg(test)]

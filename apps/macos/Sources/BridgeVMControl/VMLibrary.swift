@@ -1,12 +1,12 @@
 import Foundation
 
-struct VMLibraryIssue: Identifiable, Equatable {
+struct VMLibraryIssue: Identifiable, Equatable, Sendable {
     let path: String
     let message: String
     var id: String { path }
 }
 
-struct VMLibraryScan {
+struct VMLibraryScan: Sendable {
     let configs: [VMConfig]
     let issues: [VMLibraryIssue]
 }
@@ -64,7 +64,7 @@ enum VMLibrary {
                 issues.append(VMLibraryIssue(path: dir.path, message: "심볼릭 링크 VM 항목은 안전을 위해 불러오지 않았습니다."))
                 continue
             }
-            guard values.isDirectory == true else { continue }
+            guard values.isDirectory == true, !VMLibraryInternalEntries.isSourceCache(dir) else { continue }
             let canonicalID = VMConfig.slugify(dir.lastPathComponent)
             guard dir.lastPathComponent == canonicalID else {
                 issues.append(VMLibraryIssue(
@@ -141,24 +141,10 @@ enum VMLibrary {
         }
     }
 
+    /// Derived from `deletionTarget`, so the dialog's named bundle and this agree.
     static func deletionImpact(for config: VMConfig, rootURL: URL = root) -> VMLibraryDeletionImpact {
-        let rawEntry = rootURL.appendingPathComponent(config.slug, isDirectory: true)
-        if (try? rawEntry.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
-            return .registrationOnly
-        }
-        let entry = rawEntry
-            .resolvingSymlinksInPath()
-            .standardizedFileURL
-        let bundle = URL(fileURLWithPath: config.bundlePath)
-            .resolvingSymlinksInPath()
-            .standardizedFileURL
-        let entryPrefix = entry.path.hasSuffix("/") ? entry.path : entry.path + "/"
-        if bundle.path == entry.path || bundle.path.hasPrefix(entryPrefix) {
-            return .managedBundleDeleted
-        }
-        return .registrationOnly
+        deletionTarget(for: config, rootURL: rootURL) == nil ? .registrationOnly : .managedBundleDeleted
     }
-
 
     /// One-time import of the legacy single ~/.bridgevm-control/config.json into
     /// the library, so the VM the user already runs shows up as the first entry.
@@ -173,6 +159,6 @@ enum VMLibrary {
         guard current.configs.isEmpty, current.issues.isEmpty, var legacy else { return false }
         if legacy.id == nil { legacy.id = VMConfig.slugify(legacy.name) }
         if legacy.bootMode == nil { legacy.bootMode = "direct-kernel" }
-        return save(legacy, rootURL: rootURL)
+        return createRegistration(legacy, rootURL: rootURL)
     }
 }

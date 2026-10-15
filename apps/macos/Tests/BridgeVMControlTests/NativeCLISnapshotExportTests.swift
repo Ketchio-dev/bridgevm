@@ -1,4 +1,3 @@
-import Foundation
 import XCTest
 @testable import BridgeVMControl
 
@@ -58,6 +57,7 @@ final class NativeCLISnapshotExportTests: XCTestCase {
         XCTAssertEqual(
             try fixture.invocations(),
             [
+                ["size", fixture.disk.path, fixture.vars.path],
                 ["create", fixture.disk.path, fixture.vars.path, fixture.output.path, fixture.id, "68"],
                 ["verify", fixture.output.path],
             ]
@@ -123,13 +123,13 @@ final class NativeCLISnapshotExportTests: XCTestCase {
             let script = """
             #!/bin/sh
             printf '%s\\n' "$@" | "\(try NativeTestPython.executable().path)" -c 'import json,sys; print(json.dumps(sys.stdin.read().splitlines()))' >> "\(log.path)"
-            if [ "$1" = create ]; then mkdir -p "$4"; fi
+            if [ "$1" = size ]; then printf 'disk_bytes 64\\nvars_bytes 4\\n'; elif [ "$1" = create ]; then mkdir -p "$4"; fi
             """
             try Data(script.utf8).write(to: helper)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
             let config = VMConfig(
-                id: id, name: "개발 VM", displayName: "개발 VM", backendKind: "hvf-engine",
-                bootMode: "windows-hvf", bundlePath: bundle.path, runnerPath: "", launchSpecPath: "",
+                id: id, name: "개발 VM", displayName: "개발 VM", backendKind: "hvf-engine", bootMode: "windows-hvf",
+                bundlePath: bundle.path, runnerPath: "", launchSpecPath: "",
                 handoffPath: "", sshKeyPath: "", sshUser: "", leasesPath: "", guestName: "Windows",
                 displayWidth: 1280, displayHeight: 800, installPending: false, memMiB: 6144,
                 cpuCount: 4, experimental3DAllowed: false

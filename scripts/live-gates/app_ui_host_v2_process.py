@@ -1,17 +1,17 @@
-"""Bound the bare supervisor; its receipt must independently prove both LS exits."""
+"""Bound the bundled supervisor; its receipt must independently prove both LS exits."""
 import os
 import subprocess
 import time
 
 from app_ui_host_process import DEADLINE_SECONDS, request_cancel
+from app_ui_host_v2_launch_command import supervisor_command, supervisor_executable
 
 
-def run_launcher(launcher, private, host_digest, launcher_digest, canceled):
+def run_launcher(launcher, private, host_digest, launcher_digest, canceled, *, mode="--app-ui-supervisor-v2", log_name="launcher-v2.log"):
     environment = {key: os.environ[key] for key in ("HOME", "USER", "LOGNAME") if key in os.environ}
     environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
-    command = [str(launcher), "--app-ui-supervisor-v2", "--private-root", str(private),
-               "--host-sha256", host_digest, "--launcher-sha256", launcher_digest]
-    with (private / "launcher-v2.log").open("xb") as log:
+    command = supervisor_command(launcher, private, host_digest, launcher_digest, mode)
+    with (private / log_name).open("xb") as log:
         os.fchmod(log.fileno(), 0o600)
         child = subprocess.Popen(command, env=environment, stdout=log, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + DEADLINE_SECONDS

@@ -24,9 +24,9 @@ compile protocol "$tests"/AppUIDriver*Contracts.swift "$tests/AppUIDriverProtoco
   "$tests/app-ui-driver-protocol.swift" 2>&1 | tee "$output/protocol.log"
 compile ownership "$scripts/AppUIHostV2Ownership.swift" "$tests/app-ui-driver-ownership.swift" \
   2>&1 | tee "$output/ownership.log"
-compile ax "$scripts/AppUIDriverAXTypes.swift" "$scripts/AppUIDriverAXGraph.swift" \
-  "$scripts/AppUIDriverAXOperations.swift" "$tests/app-ui-driver-ax-fixture.swift" \
-  "$tests/app-ui-driver-ax-contracts.swift" 2>&1 | tee "$output/ax.log"
+source "$repo_root/scripts/check-app-ui-driver-ax-contracts.sh"
+compile install-cancel-protocol "$tests"/AppUIInstallCancel*Contracts.swift "$tests/AppUIInstallCancelProtocolTestSupport.swift" \
+  "$tests/AppUIDriverProtocolTestSupport.swift" "$tests/app-ui-install-cancel-protocol.swift" 2>&1 | tee "$output/install-cancel-protocol.log"
 bash "$scripts/build-app-ui-driver.sh" --output "$output/AppUIHostLauncher" \
   2>&1 | tee "$output/driver-build.log"
 boundary=apps/macos/Sources/BridgeVMControl/AppUIHostDriverBuildBoundary.swift
@@ -35,7 +35,6 @@ if xcrun swiftc -typecheck -D BRIDGEVM_APP_UI_DRIVER "$boundary" > "$output/forb
   exit 1
 fi
 grep -Fq 'error: BRIDGEVM_APP_UI_DRIVER is reserved for the standalone diagnostic launcher' "$output/forbidden-driver.log"
-python3 "$tests/app-ui-driver-packaging-contracts.py" 2>&1 | tee "$output/packaging.log"
-python3 "$tests/app-ui-host-v2-tier-smoke.py" 2>&1 | tee "$output/queue.log"
+source "$repo_root/scripts/check-app-ui-driver-python-contracts.sh"
 shasum -a 256 "$output/AppUIHostLauncher" > "$output/launcher.sha256"
 echo 'native UI driver contracts: PASS (no application or accessibility permission query)'

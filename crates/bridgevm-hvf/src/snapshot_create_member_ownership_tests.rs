@@ -33,7 +33,7 @@ fn existing_destination_member_or_hardlink_owner_refuses_before_staging_cleanup(
         assert_eq!(fs::read(dest.join(VARS_NAME)).unwrap(), b"vars");
         drop(owner);
         let (_owner, rebuilt) = super::super::destination_lease::claim_staging(&dest).unwrap();
-        assert!(fs::read_dir(rebuilt).unwrap().next().is_none());
+        assert!(fs::read_dir(rebuilt.path).unwrap().next().is_none());
     }
 }
 
@@ -62,7 +62,7 @@ fn fresh_staging_member_paths_stay_owned_until_export_owner_drops() {
     let dest = scratch.path("snapshot");
     let (owner, staged) = super::super::destination_lease::claim_staging(&dest).unwrap();
     for name in [DISK_NAME, VARS_NAME] {
-        let member = staged.join(name);
+        let member = staged.path.join(name);
         fs::write(&member, b"new").unwrap();
         assert_eq!(
             MediaLease::acquire([member.as_path()]).unwrap_err().kind(),
@@ -71,8 +71,8 @@ fn fresh_staging_member_paths_stay_owned_until_export_owner_drops() {
     }
     drop(owner);
     MediaLease::acquire([
-        staged.join(DISK_NAME).as_path(),
-        staged.join(VARS_NAME).as_path(),
+        staged.path.join(DISK_NAME).as_path(),
+        staged.path.join(VARS_NAME).as_path(),
     ])
     .unwrap();
 }

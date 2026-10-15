@@ -2,7 +2,9 @@
 
 use super::*;
 
-/// `copy` stages one file; tests substitute a streaming copy that fails.
+/// `copy` stages one file and `publish` swaps staging in; tests substitute
+/// a streaming copy, or either one failing.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn create_stopped(
     disk: &Path,
     vars: &Path,
@@ -10,11 +12,12 @@ pub(super) fn create_stopped(
     vm_id: &str,
     quota_bytes: u64,
     copy: impl FnMut(&Path, &Path) -> io::Result<u64>,
+    publish: impl FnOnce(&Path, &Path) -> io::Result<()>,
     mut observe: impl FnMut(CreateStage),
 ) -> Result<SnapshotManifest, SnapshotError> {
-    // Refuse before writing anything, not after filling the disk.
-    let owner = managed::LockedPair::open(disk, vars)?;
-    let (selected_disk, selected_vars) = owner.paths()?;
+    // Refuse before writing anything, including while a runtime owns the media.
+    let owner = runtime_exclusion::open(disk, vars, "create")?;
+    let (selected_disk, selected_vars) = owner.pair.paths()?;
     let logical_disk = fs::canonicalize(disk)?;
     let logical_vars = fs::canonicalize(vars)?;
     let (disk, vars) = (selected_disk.as_path(), selected_vars.as_path());
@@ -22,16 +25,9 @@ pub(super) fn create_stopped(
 
     let dest = prepare_destination(dest, [&logical_disk, &logical_vars, disk, vars])?;
     let (_destination_lease, staging) = claim_staging(&dest)?;
-    let manifest = fill::fill_staging(
-        [disk, vars],
-        &staging,
-        vm_id,
-        quota_bytes,
-        copy,
-        &mut observe,
-    )?;
+    let manifest = staging.fill([disk, vars], vm_id, quota_bytes, copy, &mut observe)?;
     // Never remove the previous snapshot before its replacement is published.
-    admission::publish(&staging, &dest)?;
+    staging.publish(&dest, publish)?;
     observe(CreateStage::SnapshotPublished);
     Ok(manifest)
 }

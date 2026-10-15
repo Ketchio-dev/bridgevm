@@ -16,7 +16,7 @@ final class NativeRuntimeStopLedger {
         self.appInstanceID = appInstanceID; self.library = library; self.capacity = capacity
     }
 
-    func process(_ request: NativeRuntimeControlRequest,
+    func process(_ request: NativeRuntimeControlRequest, retainsTarget: () -> Bool = { true },
                  admit: () throws -> HvfOwnedStopAdmission) throws -> NativeRuntimeControlResponse {
         try NativeRuntimeControlCodec.validate(request)
         guard request.library == library else { throw NativeRuntimeError.libraryChanged }
@@ -28,7 +28,7 @@ final class NativeRuntimeStopLedger {
             return try reply(request, record: known, disposition: request.operation == .stopStatus ? .status : .existing)
         }
         if request.operation == .stopStatus { return reply(request, refusal: .operationUnknown) }
-        if let known = records.values.first(where: { $0.vmID == request.vmID && $0.target == request.target }) {
+        if let known = records.values.first(where: { $0.vmID == request.vmID && $0.target == request.target }), retainsTarget() {
             return try reply(request, record: known, disposition: .existing)
         }
         guard records.count < capacity else { return reply(request, refusal: .ledgerFull) }

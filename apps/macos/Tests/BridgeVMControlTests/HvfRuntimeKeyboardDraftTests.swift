@@ -160,16 +160,16 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
         }
     }
 
-    func testFailedLegacyASCIIWriteStillClearsDraftWithoutReplacingDirectory() throws {
+    func testFailedLegacyASCIIWriteRetainsDraftWithoutReplacingDirectory() throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
         defer { fixture.remove() }
         try fixture.withSession { session in
             try FileManager.default.createDirectory(at: fixture.input, withIntermediateDirectories: false)
             var draft = "legacy ASCII"
 
-            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .legacyAttempted)
+            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .refused)
 
-            XCTAssertEqual(draft, "", "Legacy clearing does not guarantee a successful write")
+            XCTAssertEqual(draft, "legacy ASCII", "Refused text must remain editable")
             XCTAssertTrue(session.events.last?.displayText.contains("live input write failed:") == true)
             XCTAssertEqual(try fixture.input.resourceValues(forKeys: [.isDirectoryKey]).isDirectory, true)
             XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: fixture.input.path).isEmpty)

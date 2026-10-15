@@ -31,7 +31,7 @@ enum NativeLibraryReader {
                 continue
             }
             let kind = entry.st_mode & S_IFMT
-            if kind != S_IFDIR && kind != S_IFLNK { continue }
+            if kind != S_IFDIR && kind != S_IFLNK || (id == nil && VMLibraryInternalEntries.isSourceCache(URL(fileURLWithPath: path))) { continue }
             guard kind == S_IFDIR, isCanonicalID(name) else {
                 issues.append(issue("unsafe-entry", path, "Symlink or noncanonical VM directory was not loaded."))
                 continue

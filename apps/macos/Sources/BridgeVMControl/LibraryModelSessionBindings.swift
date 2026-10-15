@@ -10,7 +10,7 @@ extension LibraryModel {
     func hvfRuntimeSession(for config: VMConfig) -> HvfEngineSession? {
         let latest = latestConfiguration(for: config)
         guard let session = hvfRuntimeSessions.session(for: latest, libraryRoot: rootURL, e2eHostDiagnosticStopAdmitted: e2eHostDiagnosticStopAdmitted) else { return nil }
-        bindRuntimeWorkAdmission(session, configuration: latest)
+        bindRuntimeSession(session, configuration: latest)
         return session
     }
 
@@ -22,15 +22,5 @@ extension LibraryModel {
 
     func experimentalHvfRuntimeSession() -> HvfEngineSession {
         hvfRuntimeSessions.experimentalSession()
-    }
-}
-
-extension LibraryModel {
-    func bindControlModel(_ model: ControlModel) -> ControlModel {
-        model.workAdmission = boundWorkAdmission(slug: model.config.slug) { [weak model] owner, current in
-            guard let model else { return false }
-            return owner.ownsControlModel(model, for: current)
-        }
-        return model
     }
 }

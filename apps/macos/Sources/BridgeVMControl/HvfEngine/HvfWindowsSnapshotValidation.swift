@@ -15,12 +15,6 @@ extension HvfWindowsSnapshotCommand {
         url.standardizedFileURL.path == url.resolvingSymlinksInPath().standardizedFileURL.path
     }
 
-    static func fileSize(_ url: URL) throws -> UInt64 {
-        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-        guard let size = attributes[.size] as? NSNumber else { throw failure("media size is unavailable") }
-        return size.uint64Value
-    }
-
     static func failure(_ message: String) -> NSError {
         NSError(domain: "BridgeVM.HvfWindowsSnapshot", code: 1,
                 userInfo: [NSLocalizedDescriptionKey: message.isEmpty ? "snapshot operation failed" : message])

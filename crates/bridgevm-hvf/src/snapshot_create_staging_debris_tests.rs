@@ -14,7 +14,7 @@ fn apple_double_companions_in_staging_are_cleared_for_retry() {
             ".manifest.json.tmp",
             "._.manifest.json.tmp",
         ],
-        &[DISK_NAME, "._disk.raw", MANIFEST_NAME, "._manifest.json"],
+        &[DISK_NAME, "._disk.raw", "._manifest.json"],
     ];
     for (index, names) in cases.into_iter().enumerate() {
         let s = Scratch::new(&format!("debris-apple-double-{index}"));

@@ -1,18 +1,18 @@
 # Native app CLI
 
 `bridgevm app` reads native `vm.json`, [creates a pending Windows VM](app-cli-create.md), and requests [installation](app-cli-install.md), [start](app-cli-start.md) or [stop](app-cli-stop.md).
-Start uses an exact saved installed HVF entry; no command opens an app window, repairs registrations, or changes saved CPU/memory settings. Inventory reports `unobserved` runtime state; saved CPU and memory values are not utilization measurements. This is the canonical lifecycle:
+Start requires a saved installed HVF entry. CLI creation is registration-only: it lacks the required signed payload and cannot proceed to installation. Create installation-ready entries in the app with ISO, payload and manifest. No command opens a window or changes saved resources; inventory runtime is `unobserved`, not utilization.
 
 ```sh
 bridgevm app list
-bridgevm app create-windows "개발 VM" --iso "/absolute/path/Windows 11 ARM.iso"
-bridgevm app install 개발-vm
-bridgevm app install-status 개발-vm --json
-bridgevm app install 개발-vm # only after a terminal failed/cancelled result
-bridgevm app readiness 개발-vm --json
-bridgevm app start 개발-vm --json
-bridgevm app status 개발-vm --json
-bridgevm app stop 개발-vm --json
+bridgevm app create-windows "등록 전용" --iso "/absolute/path/Windows 11 ARM.iso"
+bridgevm app inspect 등록-전용 # cannot install this CLI-created entry
+bridgevm app install 앱에서-생성한-vm # required inputs already sealed by app creation
+bridgevm app install-status 앱에서-생성한-vm --json
+bridgevm app readiness 앱에서-생성한-vm --json # after installation succeeds
+bridgevm app start 앱에서-생성한-vm --json
+bridgevm app status 앱에서-생성한-vm --json
+bridgevm app stop 앱에서-생성한-vm --json
 ```
 
 Use the exact ID returned by `list`, including Korean IDs. `--library` accepts an
@@ -72,8 +72,8 @@ fields are `schema`, `libraryPath`, `records`, `issues`, and `complete`. Records
 include the canonical ID, display name, backend, saved CPU/memory values,
 installation-pending flag, configuration and bundle paths, unobserved runtime
 state, and recovery-record observations. Optional saved values may be omitted.
-Inventory issues remain visible; recovery markers are reported without running
-recovery or interpreting guest media.
+Inventory issues stay visible; recovery markers do not trigger recovery. Inventory
+and readiness text escape control characters; JSON preserves original values.
 
 `readiness` uses `bridgevm.app-readiness.v1` and checks launch inputs without
 starting a VM. Release capability limitations remain separate from these launch

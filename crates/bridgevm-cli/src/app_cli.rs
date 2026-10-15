@@ -25,3 +25,7 @@ mod stop_tests;
 #[cfg(test)]
 #[path = "app_cli_start_tests.rs"]
 mod start_tests;
+
+#[cfg(test)]
+#[path = "app_cli_operand_tests.rs"]
+mod operand_tests;

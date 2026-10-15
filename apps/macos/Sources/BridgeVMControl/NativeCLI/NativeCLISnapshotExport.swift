@@ -14,13 +14,13 @@ enum NativeCLISnapshotExport {
             let config = try NativeLibraryReader.readConfig(rootURL: rootURL, id: options.id)
             guard config.backendKind == "hvf-engine" else { throw unavailable("Powered-off snapshot export requires the saved own-HVF backend.") }
             guard config.installPending != true else { throw unavailable("Windows installation must finish before snapshot export.") }
-            guard let engine = HvfEngineConfig.libraryVM(config, rootURL: rootURL) else { throw unavailable("Cannot form the saved VM's HVF snapshot configuration.") }
+            let engine = try NativeCLISnapshotAdmission.engine(config, rootURL: rootURL)
             let plan = try HvfWindowsSnapshotCommand.plan(config: engine, repoRoot: repoRoot, operation: .create)
             let bundle = plan.disk.deletingLastPathComponent().deletingLastPathComponent().standardizedFileURL
             guard !resolved.output.pathComponents.starts(with: bundle.pathComponents) else { throw unavailable("Snapshot export output must be outside the managed VM bundle.") }
             _ = try HvfWindowsSnapshotCommand.invoke(
                 plan.executable,
-                ["create", plan.disk.path, plan.vars.path, resolved.output.path, plan.vmID, String(plan.quotaBytes)]
+                plan.createArguments(destination: resolved.output)
             )
             _ = try HvfWindowsSnapshotCommand.invoke(plan.executable, ["verify", resolved.output.path])
             return result(rootURL, resolved, complete: true, reason: nil)

@@ -6,12 +6,12 @@ final class ControlModel: ObservableObject {
     static let terminalLogCharacterLimit = 200_000
     static let softwareLogCharacterLimit = 100_000
     // Status
-    @Published var running = false
+    @Published var running = false { didSet { finishRetainedObservationIfTerminal() } }
     @Published var ip: String = "—"
     @Published var memGiB: Double = 8
     @Published var cpu: Int = 4
-    @Published var busy = false
-    @Published private(set) var lifecycleBusy = false
+    @Published var busy = false { didSet { finishRetainedObservationIfTerminal() } }
+    @Published private(set) var lifecycleBusy = false { didSet { finishRetainedObservationIfTerminal() } }
     @Published var statusNote = ""
 
     // Resource editor (pending values until Apply)
@@ -25,12 +25,21 @@ final class ControlModel: ObservableObject {
     // Software install output
     @Published var softwareLog = ""
 
-    let config: VMConfig
+    private(set) var config: VMConfig
     let backend: VMBackend
     var workAdmission: LibraryWorkAdmission?
-    private var timer: Timer?
-    private var startConfirmationDeadline: Date?
-    private var refreshGeneration: UInt64 = 0
+    var legacyStopAdmission: LibraryWorkAdmission?
+    var onConfigurationPersisted: (@MainActor () -> Void)?
+    var timer: Timer?
+    var startConfirmationDeadline: Date?
+    var refreshGeneration: UInt64 = 0
+    var tick = 0
+    var ownedRuntime: GenericOwnedRuntime?
+    var retainedObservationEnded = false
+    private(set) var isRetained = false
+
+    func retainForRecovery() { isRetained = true }
+    func setLifecycleBusy(_ value: Bool) { lifecycleBusy = value }
 
     init(config: VMConfig, backend: VMBackend? = nil, startsAutomatically: Bool = true) {
         self.config = config
@@ -46,108 +55,8 @@ final class ControlModel: ObservableObject {
     var displayName: String { backend.displayName }
     var hasAcceptedOperation: Bool { lifecycleBusy || busy || startConfirmationDeadline != nil }
 
-    func startPolling() {
-        timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.pollTick() }
-        }
-    }
-
-    private var tick = 0
-    /// Running VMs refresh every 3s; idle VMs every ~12s. Idle VMs rarely change
-    /// except via in-app actions, which fire their own refresh burst — polling them
-    /// hard just spins `pgrep` subprocesses and drains battery for nothing.
-    private func pollTick() {
-        tick &+= 1
-        if running || tick % 4 == 0 { refreshStatus() }
-    }
-
-    /// Lean periodic refresh: process liveness (+ IP only while running). Skips the
-    /// static resources spec, which only changes via applyResources().
-    func refreshStatus() {
-        refreshGeneration &+= 1
-        let generation = refreshGeneration
-        let backend = self.backend
-        Task.detached {
-            let running = backend.isRunning()
-            let ip = running ? backend.currentIP() : nil
-            await MainActor.run {
-                guard self.refreshGeneration == generation else { return }
-                self.applyRuntimeStatus(running: running, ip: ip)
-            }
-        }
-    }
-
-    /// Full refresh including the resources spec — for init and post-action bursts.
-    func refresh() {
-        refreshGeneration &+= 1
-        let generation = refreshGeneration
-        let backend = self.backend
-        Task.detached {
-            let running = backend.isRunning()
-            let ip = running ? backend.currentIP() : nil
-            let res = backend.resources()
-            await MainActor.run {
-                guard self.refreshGeneration == generation else { return }
-                self.applyRuntimeStatus(running: running, ip: ip)
-                if res.memMiB > 0 { self.memGiB = Double(res.memMiB) / 1024.0 }
-                if res.cpu > 0 { self.cpu = res.cpu }
-            }
-        }
-    }
-
-    func start() {
-        guard !lifecycleBusy, !running else { return }
-        guard workAdmission?(true) == nil else { return }
-        invalidateRefreshes()
-        lifecycleBusy = true
-        statusNote = "VM 시작 중…"
-        startConfirmationDeadline = Date().addingTimeInterval(10)
-        running = true                 // optimistic: the click registers instantly
-        let backend = self.backend
-        Task.detached {
-            let launched = backend.start() // off the main thread — process spawn no longer hitches the UI
-            await MainActor.run {
-                self.lifecycleBusy = false
-                if launched {
-                    self.statusNote = "VM 부팅 중…"
-                } else {
-                    self.startConfirmationDeadline = nil
-                    self.running = false
-                    self.ip = "—"
-                    self.statusNote = "VM 시작 실패"
-                }
-                self.scheduleRefreshBurst()
-            }
-        }
-    }
-
-    func stop() {
-        guard !lifecycleBusy, running else { return }
-        invalidateRefreshes()
-        lifecycleBusy = true
-        let wasStarting = startConfirmationDeadline != nil
-        startConfirmationDeadline = nil
-        statusNote = "VM 정지 중…"
-        running = false                // optimistic
-        let backend = self.backend
-        Task.detached {
-            if wasStarting {
-                let appearanceDeadline = Date().addingTimeInterval(3)
-                while !backend.isRunning(), Date() < appearanceDeadline { usleep(50_000) }
-            }
-            if backend.isRunning() { backend.stop() }
-            let stillRunning = backend.isRunning()
-            await MainActor.run {
-                self.lifecycleBusy = false
-                self.running = stillRunning
-                self.statusNote = stillRunning ? "VM 정지 실패" : "정지됨"
-                self.scheduleRefreshBurst()
-            }
-        }
-    }
-
     func applyResources() {
-        guard !busy, !lifecycleBusy else { return }
+        guard !refuseRetainedMutation(), !busy, !lifecycleBusy else { return }
         guard workAdmission?(true) == nil else { return }
         guard backend.supportsResourceChanges else {
             statusNote = "이 엔진은 리소스 변경을 지원하지 않습니다."
@@ -169,6 +78,7 @@ final class ControlModel: ObservableObject {
         lifecycleBusy = true
         statusNote = "리소스 적용 중 (\(Int(pendingMemGiB))GB / \(cpus)코어)… VM 재시작"
         let backend = self.backend
+        let previousOwner = ownedRuntime
         Task.detached {
             let ok = backend.setResources(memMiB: mem, cpu: cpus)
             guard ok else {
@@ -179,11 +89,17 @@ final class ControlModel: ObservableObject {
                 }
                 return
             }
-            let wasRunning = backend.isRunning()
+            await MainActor.run { self.config.memMiB = mem; self.config.cpuCount = cpus; self.onConfigurationPersisted?() }
+            let wasRunning = previousOwner.map { $0.snapshot.isActive } ?? backend.isRunning()
             if wasRunning {
-                backend.stop()
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
-                if backend.isRunning() {
+                let stopped: Bool
+                if let previousOwner { stopped = await ControlRuntimeLaunch.stop(previousOwner) }
+                else {
+                    backend.stop()
+                    try? await Task.sleep(nanoseconds: 2_500_000_000)
+                    stopped = !backend.isRunning()
+                }
+                if !stopped {
                     await MainActor.run {
                         self.busy = false
                         self.lifecycleBusy = false
@@ -193,7 +109,9 @@ final class ControlModel: ObservableObject {
                     }
                     return
                 }
-                if !backend.start() {
+                let launch = ControlRuntimeLaunch.begin(backend)
+                if let owned = launch.owned { await MainActor.run { self.ownedRuntime = owned } }
+                if !launch.accepted {
                     await MainActor.run {
                         self.busy = false
                         self.lifecycleBusy = false
@@ -208,47 +126,10 @@ final class ControlModel: ObservableObject {
             await MainActor.run {
                 self.busy = false
                 self.lifecycleBusy = false
-                self.statusNote = "리소스 적용됨: \(Int(self.pendingMemGiB))GB / \(cpus)코어"
+                self.statusNote = "리소스 적용됨: \(mem / 1024)GB / \(cpus)코어"
                 self.scheduleRefreshBurst()
             }
         }
     }
 
-    private func scheduleRefreshBurst() {
-        for delay in [1.0, 3.0, 6.0, 10.5] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.refresh() }
-        }
-    }
-
-    private func invalidateRefreshes() {
-        refreshGeneration &+= 1
-    }
-
-    private func applyRuntimeStatus(running: Bool, ip: String?) {
-        if let deadline = startConfirmationDeadline {
-            self.ip = ip ?? "—"
-            if running {
-                self.running = true
-                startConfirmationDeadline = nil
-                statusNote = "실행 중"
-            } else if Date() >= deadline {
-                self.running = false
-                startConfirmationDeadline = nil
-                statusNote = "VM 시작 확인 실패"
-            }
-            // Before the deadline, keep the optimistic running state. A host
-            // process commonly appears a little after the launch shell exits.
-            return
-        }
-
-        let wasRunning = self.running
-        self.running = running
-        self.ip = ip ?? "—"
-        guard wasRunning != running, !lifecycleBusy else { return }
-        if running {
-            statusNote = "실행 중"
-        } else {
-            statusNote = "VM이 종료됨"
-        }
-    }
 }

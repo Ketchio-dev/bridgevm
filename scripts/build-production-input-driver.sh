@@ -4,10 +4,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENGINE="$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine"
 sources=()
-for name in HvfSessionInputDriver HvfSessionInputRouter HvfOrderedInputQueue \
+for name in HvfSessionInputDriver HvfTextInputTargetIdentity HvfSessionInputRouter HvfSessionInputGeneration HvfOrderedInputQueue \
   HvfRecoverableInputStream HvfNegotiatedInputStream HvfAcknowledgedInputStream \
-  HvfInputCapabilitiesRequest HvfUnicodeInputRequest HvfGuestInputEncoding \
-  HvfPointerInputEncoding HvfPointerScrollEncoding HvfPointerHeldState HvfInputReceiptEnvelope HvfGuestResetRecord; do
+  HvfInputCapabilitiesRequest HvfInputCapabilityReceipt HvfUnicodeInputRequest HvfGuestInputEncoding \
+  HvfPointerInputEncoding HvfPointerScrollEncoding HvfPointerHeldState HvfPointerCleanup HvfInputReceiptEnvelope HvfGuestResetRecord; do
   sources+=("$ENGINE/$name.swift")
 done
 swiftc -parse-as-library -O "${sources[@]}" "$ROOT/scripts/live-gates/production-input-driver.swift" -o "$1"

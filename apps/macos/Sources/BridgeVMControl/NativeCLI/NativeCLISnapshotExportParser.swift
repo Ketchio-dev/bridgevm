@@ -37,7 +37,7 @@ enum NativeCLISnapshotExportParser {
             }
             index += 1
         }
-        if help, positionals == ["snapshot-export"] {
+        if help, positionals.first == "snapshot-export" {
             return NativeCLIOptions(command: .snapshotExport(.init(id: "", output: URL(fileURLWithPath: "/"))), libraryRoot: library ?? defaultLibrary, json: json, showHelp: true)
         }
         guard positionals.count == 3, positionals[0] == "snapshot-export" else { throw invalid("Expected snapshot-export ID OUTPUT. Use --cli --help.") }

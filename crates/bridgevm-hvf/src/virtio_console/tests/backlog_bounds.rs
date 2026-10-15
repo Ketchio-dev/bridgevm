@@ -1,6 +1,7 @@
 use super::super::agent_inbound::MAX_HOST_INBOUND_LEN;
 use super::super::*;
 use super::helpers::*;
+use super::ready_queue::*;
 
 const RING: u16 = 8;
 
@@ -12,7 +13,7 @@ fn ring_with_repeated_chain(
     len: u32,
 ) -> (u64, u64) {
     let (desc, avail, used) = (0x4000_1000, 0x4000_2000, 0x4000_3000);
-    setup_queue(dev, mem, queue, desc, avail, used, queue);
+    setup_ready_queue(dev, mem, queue, desc, avail, used, queue);
     for slot in 0..RING {
         write_desc(mem, desc, slot, data, len, 0, 0);
         mem.write(avail + 4 + u64::from(slot) * 2, &slot.to_le_bytes());

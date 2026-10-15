@@ -2,7 +2,7 @@ import XCTest
 @testable import BridgeVMControl
 
 struct FirstRunImportTransactionFixture: Sendable {
-    let root = FileManager.default.temporaryDirectory
+    let root = LibraryDeletionTestDirectory.temporary
         .appendingPathComponent("first-run-transaction-" + UUID().uuidString)
     var library: URL { root.appendingPathComponent("library") }
     var entry: URL { library.appendingPathComponent("imported") }
@@ -67,7 +67,7 @@ final class FirstRunImportTransactionTests: XCTestCase {
         try fixture.assertPersisted()
     }
 
-    func testRenameRefusalCleansOnlyPreparedEntry() throws {
+    func testAmbiguousRegistrationRefusalPreservesPreparedEntry() throws {
         let fixture = try FirstRunImportTransactionFixture()
         defer { fixture.remove() }
         let marker = fixture.root.appendingPathComponent("unrelated")
@@ -80,11 +80,11 @@ final class FirstRunImportTransactionTests: XCTestCase {
                     withIntermediateDirectories: false)
             } catch { return .notPublished(error) }
             attemptedCommit = true
-            return VMLibrary.saveOutcome(config, rootURL: root)
+            return VMLibrary.createOutcome(config, rootURL: root)
         }
         guard case .failed = result else { return XCTFail("rename onto directory must refuse") }
         XCTAssertTrue(attemptedCommit)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.entry.path))
+        try fixture.assertAmbiguousPreparationPreserved()
         XCTAssertEqual(try Data(contentsOf: marker), Data([9]))
         try fixture.assertSources()
     }
@@ -94,8 +94,8 @@ final class FirstRunImportTransactionTests: XCTestCase {
         defer { fixture.remove() }
         let result = FirstRunImportWorker.run(fixture.inputs(), libraryRoot: fixture.library,
             snapshotHelper: HvfMediaImportTestSupport.helper) { config, root in
-            VMLibrary.saveOutcome(config, rootURL: root) { data, url in
-                VMRegistrationWriter.commit(data, to: url, syncParent: { _ in throw CocoaError(.fileWriteUnknown) })
+            VMLibrary.createOutcome(config, rootURL: root) { data, url in
+                VMRegistrationWriter.commit(data, to: url, replaceExisting: false, syncParent: { _ in throw CocoaError(.fileWriteUnknown) })
             }
         }
         guard case .publishedButUnsynced = result else { return XCTFail("publication must be retained") }

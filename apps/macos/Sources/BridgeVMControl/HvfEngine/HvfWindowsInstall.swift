@@ -22,7 +22,7 @@ struct HvfWindowsInstallRequest: Codable, Equatable, Sendable {
 
     static func load(bundlePath: String) -> HvfWindowsInstallRequest? {
         let url = URL(fileURLWithPath: bundlePath).appendingPathComponent(fileName)
-        guard let data = FileManager.default.contents(atPath: url.path) else { return nil }
+        guard let data = try? HvfWindowsInstallDurability.readRegularFile(url, maximumBytes: VMLibrary.maximumConfigBytes) else { return nil }
         return try? JSONDecoder().decode(HvfWindowsInstallRequest.self, from: data)
     }
     @discardableResult
@@ -30,7 +30,7 @@ struct HvfWindowsInstallRequest: Codable, Equatable, Sendable {
         let url = URL(fileURLWithPath: bundlePath).appendingPathComponent(Self.fileName)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(self) else { return false }
+        guard let data = try? encoder.encode(self), data.count <= VMLibrary.maximumConfigBytes else { return false }
         do {
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(), withIntermediateDirectories: true)

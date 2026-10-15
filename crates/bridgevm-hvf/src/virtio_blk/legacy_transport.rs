@@ -10,7 +10,7 @@ pub(crate) fn align_up(value: u64, align: u64) -> u64 {
 }
 
 impl VirtioMmioBlock {
-    pub(crate) fn legacy_pci_io_read(&self, offset: u64, size: u8) -> u64 {
+    pub(crate) fn legacy_pci_io_read(&mut self, offset: u64, size: u8) -> u64 {
         let value = match offset {
             0x00 => u64::from(VIRTIO_BLK_F_RO | VIRTIO_BLK_F_BLK_SIZE),
             0x04 => u64::from(self.driver_features[0]),
@@ -30,7 +30,7 @@ impl VirtioMmioBlock {
             }
             0x0e => u64::from(self.queue_sel),
             0x12 => u64::from(self.status),
-            0x13 => u64::from(self.interrupt_status),
+            0x13 => u64::from(std::mem::take(&mut self.interrupt_status)),
             o if o >= 0x14 => self.config_read(o - 0x14, size),
             _ => 0,
         };

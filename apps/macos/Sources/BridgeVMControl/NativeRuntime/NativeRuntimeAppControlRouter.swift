@@ -18,7 +18,7 @@ final class NativeRuntimeAppControlRouter {
         try context.validateAdmission()
         try validateOwner()
         try context.validateAdmission()
-        return try ledger.process(request) {
+        return try ledger.process(request, retainsTarget: { retainedModel()?.retainsOwnedStopTarget(request) ?? true }) {
             guard let model = retainedModel() else { throw NativeRuntimeStopRefusal.modelUnavailable }
             return try model.requestOwnedRuntimeStop(request)
         }

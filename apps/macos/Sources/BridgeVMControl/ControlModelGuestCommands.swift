@@ -2,7 +2,7 @@ import Foundation
 
 extension ControlModel {
     func runTerminalCommand() {
-        guard !busy, !lifecycleBusy, running, backend.supportsGuestCommands else { return }
+        guard !refuseRetainedMutation(), !busy, !lifecycleBusy, running, backend.supportsGuestCommands else { return }
         let cmd = terminalInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cmd.isEmpty else { return }
         terminalLog = Self.boundedLog(terminalLog + "dev@guest$ \(cmd)\n", limit: Self.terminalLogCharacterLimit)
@@ -26,7 +26,7 @@ extension ControlModel {
     }
 
     func installPackages(_ packages: [String], label: String) {
-        guard !busy, !lifecycleBusy, running, backend.supportsPackageInstall else { return }
+        guard !refuseRetainedMutation(), !busy, !lifecycleBusy, running, backend.supportsPackageInstall else { return }
         guard let command = Self.packageInstallCommand(packages) else {
             softwareLog = "설치 요청이 올바르지 않습니다. 패키지 이름을 확인해 주세요.\n"
             return

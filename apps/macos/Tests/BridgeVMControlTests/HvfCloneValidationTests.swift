@@ -3,7 +3,7 @@ import XCTest
 
 final class HvfCloneValidationTests: XCTestCase {
     func testRejectedCopiedMediaIsRemovedBeforeRegistrationOrIdentityWork() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = LibraryDeletionTestDirectory.temporary.appendingPathComponent(UUID().uuidString)
         let source = root.appendingPathComponent("source.bundle")
         let library = root.appendingPathComponent("library")
         let fm = FileManager.default
@@ -20,7 +20,7 @@ final class HvfCloneValidationTests: XCTestCase {
             runnerPath: "", launchSpecPath: "", handoffPath: "", sshKeyPath: "",
             sshUser: "", leasesPath: "", guestName: "source", displayWidth: 800, displayHeight: 600)
         var called = false
-        let result = VMLibrary.cloneWindowsHVF(name: "Copy", template: config, libraryRoot: library) {
+        let result = VMLibrary.cloneWindowsHVF(name: "Copy", template: config, libraryRoot: library, afterCopy: {
             called = true
             let copied = library.appendingPathComponent("copy/bundle.vmbridge")
             XCTAssertEqual(try? Data(contentsOf: copied.appendingPathComponent("disks/hvf-target.raw")), Data("source-disk".utf8))
@@ -28,7 +28,7 @@ final class HvfCloneValidationTests: XCTestCase {
             XCTAssertTrue(VMLibrary.list(rootURL: library).isEmpty)
             XCTAssertFalse(fm.fileExists(atPath: copied.appendingPathComponent("metadata/vtpm-lifecycle").path))
             return false
-        }
+        })
         XCTAssertTrue(called)
         XCTAssertNil(result)
         XCTAssertTrue(VMLibrary.list(rootURL: library).isEmpty)

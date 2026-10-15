@@ -148,8 +148,7 @@ fn hard_exit_around_generation_swap_selects_one_complete_generation() {
             "{scenario} must leave the unselected generation at the staging name"
         );
 
-        pair.restore(&g2)
-            .unwrap_or_else(|error| panic!("retry restore after {scenario}: {error}"));
+        recovery::retry(&mut pair, &g2, &root, scenario == "before-swap");
         assert_eq!(contents(&pair), owned(G2), "retry after {scenario}");
         assert!(!root.join("staging").exists(), "debris after {scenario}");
         drop(pair);
@@ -159,3 +158,5 @@ fn hard_exit_around_generation_swap_selects_one_complete_generation() {
         assert_eq!(contents(&reopened), owned(G2));
     }
 }
+#[path = "snapshot_preserved_staging_test_support.rs"]
+mod recovery;

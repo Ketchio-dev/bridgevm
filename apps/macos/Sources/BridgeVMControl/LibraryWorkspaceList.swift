@@ -69,8 +69,7 @@ struct LibraryWorkspaceList: View {
                 .accessibilityIdentifier(createIdentifier)
             }
             if !library.libraryIssues.isEmpty {
-                Label("확인이 필요한 라이브러리 항목 \(library.libraryIssues.count)개", systemImage: "exclamationmark.triangle")
-                    .font(.caption).foregroundStyle(.orange)
+                LibraryIssuesSection(issues: library.libraryIssues, compact: true)
             }
         }
         .padding(22)

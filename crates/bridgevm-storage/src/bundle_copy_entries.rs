@@ -2,6 +2,7 @@ use crate::bundle_directory_permissions as permissions;
 use crate::*;
 use std::fs;
 use std::path::Path;
+use std::path::MAIN_SEPARATOR;
 
 pub(crate) fn copy_dir_all_inner(
     root: &Path,
@@ -27,7 +28,7 @@ pub(crate) fn copy_dir_all_inner(
             let relative = from_path
                 .strip_prefix(root)
                 .map_err(|_| StorageError::UnsupportedBundleEntry(from_path.clone()))?;
-            copied_files.push(relative.to_string_lossy().replace('\\', "/"));
+            copied_files.push(relative.to_string_lossy().replace(MAIN_SEPARATOR, "/"));
         } else {
             return Err(StorageError::UnsupportedBundleEntry(from_path));
         }

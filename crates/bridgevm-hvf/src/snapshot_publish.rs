@@ -12,7 +12,7 @@ pub(super) fn publish(staged: &Path, destination: &Path) -> io::Result<()> {
     publish_with(staged, destination, exchange)
 }
 
-fn publish_with(
+pub(super) fn publish_with(
     staged: &Path,
     destination: &Path,
     swap: impl FnOnce(&Path, &Path) -> io::Result<()>,
@@ -66,7 +66,7 @@ fn publish_using(
         .unwrap_or(Path::new("."));
     sync(parent)?;
     // After exchange, the old complete snapshot occupies the staging name.
-    // Keep it if durability was uncertain; deletion failure only leaves debris.
+    // Keep it if durability was uncertain; a kept copy refuses the next create.
     if exchanged {
         let _ = fs::remove_dir_all(staged);
     }

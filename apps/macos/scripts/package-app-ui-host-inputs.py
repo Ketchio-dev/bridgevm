@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "scripts/live-gates"))
 from app_ui_host_bundle import bundle_metadata
 from app_ui_host_v2_bundle import driver_bundle_metadata
 from app_ui_host_manifest import verify_executable
+from app_ui_host_signing import normalize_identity, sign
 
 RESOURCES = ("windows-boot-seed-vars.fd.gz",
              "secureboot-microsoft-windows-transition-aarch64-v1.6.5.json")
@@ -80,28 +81,8 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def code(command):
-    result = subprocess.run(["/usr/bin/codesign", *command], capture_output=True, text=True, timeout=20)
-    if result.returncode:
-        raise ValueError("codesign refused: " + result.stderr.strip())
-    return {"arguments": command, "exit_code": result.returncode,
-            "stdout": result.stdout, "stderr": result.stderr}
-
-
-def sign(bundle, identifier):
-    signed = code(["--force", "--sign", "-", "--identifier", identifier,
-                   "--timestamp=none", str(bundle)])
-    for path in bundle.rglob("*"):
-        if path.is_dir():
-            path.chmod(0o700)
-        elif path.is_file():
-            path.chmod(0o500 if path.parent.name == "MacOS" else 0o400)
-    verified = code(["--verify", "--strict", "--verbose=4", str(bundle)])
-    display = code(["--display", "--verbose=4", "--requirements", "-", str(bundle)])
-    return {"sign": signed, "verify": verified, "display": display}
-
-
-def package(host_input, launcher_input, resource_commit, output):
+def package(host_input, launcher_input, resource_commit, output, signing_identity=None):
+    identity = None if signing_identity is None else normalize_identity(signing_identity)
     if not re.fullmatch(r"[0-9a-f]{40}", resource_commit):
         raise ValueError("full resource commit required")
     output = canonical(output, existing=False)
@@ -129,11 +110,11 @@ def package(host_input, launcher_input, resource_commit, output):
             raise ValueError("resource length differs")
         publish(host / "Contents/Resources/BridgeVMApp_BridgeVMControl.bundle" / name, data)
         resource_hashes[relative] = digest(data)
-    signatures = {"host": sign(host, "dev.bridgevm.app-ui-host"),
-                  "driver": sign(driver, "dev.bridgevm.app-ui-driver")}
+    signatures = {"host": sign(host, "dev.bridgevm.app-ui-host", identity),
+                  "driver": sign(driver, "dev.bridgevm.app-ui-driver", identity)}
     bare = output / "AppUIHostLauncher"
     publish(bare, regular_bytes(driver_exe, 512 * 1024 * 1024), 0o500)
-    # The bare supervisor has identical code pages, but no bundle resource context.
+    # This sealed transport copy must execute inside the reconstructed driver bundle.
     # Full resource signatures are verified only on the two complete bundles.
     verify_executable(bare, digest(regular_bytes(driver_exe, 512 * 1024 * 1024)))
     paths = {"binary": host_exe, "launcher": bare, "host_info": host / "Contents/Info.plist",
@@ -163,8 +144,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("host-binary", "launcher-binary", "resource-commit", "output"):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--signing-identity", type=normalize_identity,
+                        help="exact certificate SHA-1 fingerprint; omitted means ad-hoc signing")
     args = parser.parse_args()
-    record = package(args.host_binary, args.launcher_binary, args.resource_commit, args.output)
+    record = package(args.host_binary, args.launcher_binary, args.resource_commit, args.output, args.signing_identity)
     print(json.dumps({"output": args.output, "artifacts": record["artifacts"]}, sort_keys=True))
 
 

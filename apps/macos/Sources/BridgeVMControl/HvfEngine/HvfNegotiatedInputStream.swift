@@ -13,7 +13,7 @@ struct HvfNegotiatedInputStream {
 
     mutating func enqueue(_ event: HvfOrderedInputQueue.Event, now: Date) -> Admission {
         switch state {
-        case .ready: return stream.enqueue(event, now: now) ? .queued : .refused
+        case .ready: return capability?.supports(event) == true && stream.enqueue(event, now: now) ? .queued : .refused
         case .failed: return .refused
         case .disconnected, .negotiating, .waitingForLegacy, .unavailable: return .legacy
         }
@@ -43,7 +43,7 @@ struct HvfNegotiatedInputStream {
                 capability = request
                 return nil
             }
-            capability = nil
+            capability = request
             switch result {
             case .supported: state = .waitingForLegacy
             case .failed: state = .unavailable

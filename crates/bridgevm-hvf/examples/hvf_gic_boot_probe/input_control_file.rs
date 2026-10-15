@@ -1,11 +1,14 @@
 //! Persistent access to the append-only host input channel.
 
-use std::fs::{File, OpenOptions};
-use std::os::fd::AsRawFd;
+use std::fs::File;
 use std::path::PathBuf;
+
+#[path = "input_control_file/checked_access.rs"]
+mod checked_access;
 
 pub(crate) struct InputControlFile {
     path: PathBuf,
+    // Once opened, keep this inode even when validation fails; never reopen a replacement.
     file: Option<File>,
 }
 
@@ -22,32 +25,18 @@ impl InputControlFile {
     }
 
     pub(crate) fn length(&mut self) -> Option<u64> {
-        self.file()?.metadata().ok().map(|metadata| metadata.len())
+        self.with_exclusive(|file| file.metadata().ok().map(|metadata| metadata.len()))?
     }
 
-    pub(crate) fn with_exclusive<T>(
-        &mut self,
-        action: impl FnOnce(&mut File) -> T,
-    ) -> Option<T> {
-        let file = self.file()?;
-        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
-            return None;
+    pub(crate) fn with_exclusive<T>(&mut self, action: impl FnOnce(&mut File) -> T) -> Option<T> {
+        if self.file.is_none() {
+            self.file = checked_access::open(&self.path);
         }
-        let result = action(file);
-        unsafe {
-            libc::flock(file.as_raw_fd(), libc::LOCK_UN);
-        }
-        Some(result)
+        checked_access::with_exclusive(&self.path, self.file.as_mut()?, action)
     }
 
     pub(crate) fn file(&mut self) -> Option<&mut File> {
-        if self.file.is_none() {
-            self.file = OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(&self.path)
-                .ok();
-        }
+        self.with_exclusive(|_| ())?;
         self.file.as_mut()
     }
 }

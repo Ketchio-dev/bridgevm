@@ -1,13 +1,13 @@
 //! Own one snapshot parent before admitting its output and clearing staging.
 
 use super::member_lease;
+use super::owned_staging::OwnedStaging;
 use super::{staging_path, Path};
 use crate::media_lease::MediaLease;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
 
-pub(super) fn claim_staging(destination: &Path) -> io::Result<(MediaLease, PathBuf)> {
+pub(super) fn claim_staging(destination: &Path) -> io::Result<(MediaLease, OwnedStaging)> {
     let parent = destination
         .parent()
         .ok_or_else(|| io::Error::other("snapshot destination needs a parent"))?;
@@ -21,6 +21,6 @@ pub(super) fn claim_staging(destination: &Path) -> io::Result<(MediaLease, PathB
     }
     let mut lease = MediaLease::acquire([key.as_path()])?;
     let staged = staging_path(destination);
-    member_lease::prepare_owned(&mut lease, destination, &staged)?;
-    Ok((lease, staged))
+    let staging = member_lease::prepare_owned(&mut lease, destination, &staged)?;
+    Ok((lease, staging))
 }

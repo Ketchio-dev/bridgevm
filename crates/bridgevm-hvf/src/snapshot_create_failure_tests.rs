@@ -70,7 +70,7 @@ fn a_full_volume_during_a_streaming_copy_removes_the_partial_copy() {
         partial = fs::metadata(dst).ok().map(|metadata| metadata.len());
         copied
     };
-    let result = create_stopped(&disk, &vars, &dest, "new", u64::MAX, full, |_| {});
+    let result = create_stopped(&disk, &vars, &dest, "new", u64::MAX, full, publish, |_| {});
     assert_eq!(
         partial,
         Some(COPY_CHUNK as u64),
@@ -85,7 +85,7 @@ fn a_full_volume_during_a_streaming_copy_removes_the_partial_copy() {
         "failed copy stranded staging"
     );
     assert_eq!(verify_snapshot(&dest).unwrap(), old);
-    let stream = |src: &Path, dst: &Path| stream_and_sync(src, dst, |_| Ok(()));
-    let retried = create_stopped(&disk, &vars, &dest, "retry", u64::MAX, stream, |_| {});
+    let copy = |src: &Path, dst: &Path| stream_and_sync(src, dst, |_| Ok(()));
+    let retried = create_stopped(&disk, &vars, &dest, "retry", u64::MAX, copy, publish, drop);
     assert_eq!(verify_snapshot(&dest).unwrap(), retried.unwrap());
 }

@@ -88,7 +88,7 @@ fn hard_exit_around_publication_reopens_only_complete_generations() {
         contents(&pair),
         (b"old-disk".to_vec(), b"old-vars".to_vec())
     );
-    pair.restore(&snapshot).expect("recover from staged debris");
+    pair.restore(&snapshot).unwrap();
     assert_eq!(
         contents(&pair),
         (b"new-disk".to_vec(), b"new-vars".to_vec())

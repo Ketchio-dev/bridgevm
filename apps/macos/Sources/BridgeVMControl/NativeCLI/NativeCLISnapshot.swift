@@ -41,9 +41,7 @@ enum NativeCLISnapshot {
             guard config.installPending != true else {
                 throw NativeCLIError.unavailable("Windows installation must finish before snapshot operations.")
             }
-            guard let engine = HvfEngineConfig.libraryVM(config, rootURL: rootURL) else {
-                throw NativeCLIError.unavailable("Cannot form the saved VM's HVF snapshot configuration.")
-            }
+            let engine = try NativeCLISnapshotAdmission.engine(config, rootURL: rootURL)
             let plan = try HvfWindowsSnapshotCommand.plan(
                 config: engine,
                 repoRoot: repoRoot,

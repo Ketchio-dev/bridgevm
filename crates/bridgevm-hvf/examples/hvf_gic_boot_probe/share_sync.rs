@@ -26,6 +26,7 @@ pub enum SyncAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SkipReason {
     TooLarge { size: u64 },
+    WindowsAlias(Vec<String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,9 +49,10 @@ struct FileRecord {
     guest_mtime: Option<String>,
     awaiting_guest_stamp: bool,
     host_write_failed: bool,
+    put_unconfirmed: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct HostFileStat {
     size: u64,
     mtime_ms: u128,
@@ -62,6 +64,7 @@ struct GuestFileStat {
     mtime: String,
 }
 
+#[derive(Default)]
 pub struct ShareSync {
     records: HashMap<String, FileRecord>,
     max_bytes: u64,
@@ -71,6 +74,9 @@ pub struct ShareSync {
     present_scratch: HashSet<String>,
     guest_file_entries_scratch: HashMap<String, GuestFileStat>,
     host_files_scratch: HashMap<String, HostFileStat>,
+    put_rejected: HashMap<String, HostFileStat>,
+    host_unseen: HashSet<String>,
+    host_aliased: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -81,14 +87,8 @@ enum SkipKey {
 impl ShareSync {
     pub fn new(max_kb: u64) -> Self {
         Self {
-            records: HashMap::new(),
             max_bytes: max_kb.saturating_mul(1024),
-            guest_skip_seen: HashSet::new(),
-            pending_guest_mtime: HashMap::new(),
-            pending_host_changed: HashSet::new(),
-            present_scratch: HashSet::new(),
-            guest_file_entries_scratch: HashMap::new(),
-            host_files_scratch: HashMap::new(),
+            ..Self::default()
         }
     }
 
@@ -141,6 +141,8 @@ impl ShareSync {
             self.guest_file_entries_scratch
                 .insert(name, GuestFileStat { size, mtime });
         }
+        self.alias_guest_renames();
+        let held = self.pull_held_keys();
 
         for (name, entry) in &self.guest_file_entries_scratch {
             if entry.size > self.max_bytes {
@@ -156,25 +158,28 @@ impl ShareSync {
                 }
                 continue;
             }
-
-            match self.records.get_mut(name) {
-                None => {
-                    self.pending_guest_mtime
-                        .insert(name.clone(), entry.mtime.clone());
-                    actions.push(SyncAction::Get { name: name.clone() });
-                }
+            if self.pull_held(&held, name) {
+                continue;
+            }
+            let changed = match self.records.get_mut(name) {
                 Some(record) if record.awaiting_guest_stamp && entry.size == record.size => {
                     // A host PUT changes the guest mtime. The first matching LSR after
                     // PUTOK is our write landing, not a guest edit to pull back.
                     record.guest_mtime = Some(entry.mtime.clone());
                     record.awaiting_guest_stamp = false;
+                    false
                 }
-                Some(record) if record.guest_mtime.as_deref() != Some(entry.mtime.as_str()) => {
-                    self.pending_guest_mtime
-                        .insert(name.clone(), entry.mtime.clone());
+                Some(record) => record.guest_mtime.as_deref() != Some(entry.mtime.as_str()),
+                None => true,
+            };
+            if changed {
+                // Noted even for a held host name, so a hold ending with the
+                // host name gone fetches this edit instead of deleting it.
+                self.pending_guest_mtime
+                    .insert(name.clone(), entry.mtime.clone());
+                if !self.host_held(name) {
                     actions.push(SyncAction::Get { name: name.clone() });
                 }
-                Some(_) => {}
             }
         }
         // A skip is reported once per listed oversized version. Forget versions
@@ -194,7 +199,7 @@ impl ShareSync {
             if record.host_write_failed {
                 continue;
             }
-            if self.pending_host_changed.contains(name) {
+            if self.pending_host_changed.contains(name) || self.host_held(name) {
                 continue;
             }
             actions.push(SyncAction::DeleteHost { name: name.clone() });
@@ -233,6 +238,7 @@ impl ShareSync {
                 guest_mtime,
                 awaiting_guest_stamp: false,
                 host_write_failed: true,
+                put_unconfirmed: false,
             },
         );
         GuestFileOutcome::WriteHost(bytes)
@@ -257,114 +263,6 @@ impl ShareSync {
         });
         self.pending_guest_mtime.retain(|name, _| guest.contains(name));
         self.pending_host_changed.retain(|name| self.records.contains_key(name));
-    }
-
-    #[cfg(test)]
-    pub fn on_host_scan<I>(&mut self, files: I) -> Vec<SyncAction>
-    where
-        I: IntoIterator<Item = HostFile>,
-    {
-        self.on_host_scan_with(files, true)
-    }
-
-    pub fn on_host_scan_normalized<I>(&mut self, files: I) -> Vec<SyncAction>
-    where
-        I: IntoIterator<Item = HostFile>,
-    {
-        self.on_host_scan_with(files, false)
-    }
-
-    fn on_host_scan_with<I>(&mut self, files: I, normalize_names: bool) -> Vec<SyncAction>
-    where
-        I: IntoIterator<Item = HostFile>,
-    {
-        let mut actions = Vec::new();
-        self.host_files_scratch.clear();
-
-        for file in files {
-            let HostFile {
-                name,
-                size,
-                mtime_ms,
-            } = file;
-            let name = if normalize_names {
-                normalize_rel(&name)
-            } else {
-                name
-            };
-            if name.is_empty() {
-                continue;
-            }
-            self.host_files_scratch
-                .insert(name, HostFileStat { size, mtime_ms });
-        }
-
-        for (name, file) in &self.host_files_scratch {
-            if self.records.get(name).is_some_and(|record| record.host_write_failed) {
-                continue;
-            }
-            if self.records.get(name).is_none_or(|record| {
-                record.size != file.size || record.host_mtime_ms != Some(file.mtime_ms)
-            }) {
-                self.pending_host_changed.insert(name.clone());
-                actions.push(SyncAction::Get { name: name.clone() });
-            }
-        }
-
-        for (name, record) in &self.records {
-            if self.host_files_scratch.contains_key(name) {
-                continue;
-            }
-            if record.host_write_failed {
-                continue;
-            }
-            if self.pending_guest_mtime.contains_key(name) {
-                continue;
-            }
-            actions.push(SyncAction::DeleteGuest { name: name.clone() });
-        }
-
-        actions
-    }
-
-    pub fn on_host_file(
-        &mut self,
-        name: String,
-        bytes: Vec<u8>,
-        mtime_ms: u128,
-    ) -> Option<PushGuest> {
-        let name = normalize_rel(&name);
-        if self.records.get(&name).is_some_and(|record| record.host_write_failed) {
-            return None;
-        }
-        self.pending_host_changed.remove(&name);
-        self.pending_guest_mtime.remove(&name);
-        let hash = fnv1a64(&bytes);
-        if let Some(record) = self.records.get_mut(&name) {
-            if record.hash == hash {
-                record.size = bytes.len() as u64;
-                record.host_mtime_ms = Some(mtime_ms);
-                return None;
-            }
-        }
-        Some(PushGuest { bytes, hash })
-    }
-
-    pub fn on_put_ok(&mut self, name: String, size: u64, hash: u64) {
-        let name = normalize_rel(&name);
-        self.pending_host_changed.remove(&name);
-        self.pending_guest_mtime.remove(&name);
-        self.records.insert(
-            name,
-            FileRecord {
-                size,
-                hash,
-                host_mtime_ms: None,
-                guest_mtime: None,
-                awaiting_guest_stamp: true,
-                host_write_failed: false,
-            },
-        );
     }
 
     pub fn on_guest_deleted(&mut self, name: &str) {
@@ -405,8 +303,18 @@ mod share_rel_path;
 pub use share_rel_path::to_guest_rel;
 pub use share_rel_path::{append_guest_rel_into, from_guest_rel, normalize_rel};
 
+#[path = "share_host_unseen.rs"]
+mod share_host_unseen;
 #[path = "share_listing.rs"]
 mod share_listing;
+#[path = "share_put_outcome.rs"]
+mod share_put_outcome;
+#[path = "share_sync_host.rs"]
+mod share_sync_host;
+#[path = "share_win_alias.rs"]
+mod share_win_alias;
+#[path = "share_win_names.rs"]
+mod share_win_names;
 #[cfg(test)]
 use share_listing::parse_ls;
 pub use share_listing::parse_ls_into;
@@ -429,3 +337,6 @@ mod failure_tests;
 #[cfg(test)]
 #[path = "share_sync_failure_budget_tests.rs"]
 mod failure_budget_tests;
+#[cfg(test)]
+#[path = "share_sync_windows_name_tests.rs"]
+mod windows_name_tests;

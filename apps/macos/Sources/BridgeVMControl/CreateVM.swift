@@ -39,17 +39,7 @@ extension VMLibrary {
         guard varsBytes == windowsHVFVarsBytes else {
             return "UEFI vars는 정확히 64 MiB여야 합니다 (현재 \(varsBytes)바이트)."
         }
-        if let handle = try? FileHandle(forReadingFrom: targetURL) {
-            defer { try? handle.close() }
-            let header = (try? handle.read(upToCount: 8)) ?? Data()
-            if header.starts(with: Data([0x51, 0x46, 0x49, 0xfb])) {
-                return "QCOW2 이미지는 가져올 수 없습니다. 설치된 RAW 디스크를 선택하세요."
-            }
-            if header.starts(with: Data("vhdxfile".utf8)) {
-                return "VHDX 이미지는 가져올 수 없습니다. 설치된 RAW 디스크를 선택하세요."
-            }
-        }
-        return nil
+        return HvfImportedDiskFormat.detect(path: targetURL.path)?.importError
     }
 
     static func reserveDestination(
@@ -111,7 +101,7 @@ extension VMLibrary {
         }
     }
 
-    private static func cloneOrCopyDirectory(from source: String, to destination: String) -> Bool {
+    static func cloneOrCopyDirectory(from source: String, to destination: String) -> Bool {
         let fm = FileManager.default
         let clone = Shell.run("/bin/cp", ["-c", "-R", source, destination])
         if clone.code == 0 { return true }
@@ -132,7 +122,7 @@ extension VMLibrary {
         return FileManager.default.isReadableFile(atPath: url.path)
     }
 
-    private static func isReadableDirectory(_ path: String) -> Bool {
+    static func isReadableDirectory(_ path: String) -> Bool {
         var isDirectory: ObjCBool = false
         return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
             && isDirectory.boolValue
@@ -184,7 +174,7 @@ extension VMLibrary {
         let destinationRoot = reserved.root
         var succeeded = false
         defer {
-            if !succeeded { try? fm.removeItem(at: destinationRoot) }
+            if !succeeded { VMCreationDestinationCleanup.removeIfUnpublished(destinationRoot, libraryRoot: root) }
         }
         let bundle = destinationRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true)
         do {
@@ -239,7 +229,7 @@ extension VMLibrary {
                            sshKeyPath: template.sshKeyPath, sshUser: "user", leasesPath: template.leasesPath,
                            guestName: slug, displayWidth: width, displayHeight: height,
                            installPending: true, memMiB: memMiB, cpuCount: cpuCount)
-        guard save(cfg) else { return nil }
+        guard createRegistration(cfg, preserving: { succeeded = true }) else { return nil }
         succeeded = true
         return cfg
     }
@@ -262,23 +252,24 @@ extension VMLibrary {
     /// Duplicate the default Ubuntu VM (instant APFS clone of the bundle + fresh
     /// machine identity), so a new ready-to-run Ubuntu lands in the library.
     static func cloneUbuntu(name: String, template: VMConfig, storageDir: URL? = nil,
-                            width: Int = 1440, height: Int = 900,
-                            memMiB: Int? = nil, cpuCount: Int? = nil) -> VMConfig? {
+                            libraryRoot: URL = root, width: Int = 1440, height: Int = 900,
+                            memMiB: Int? = nil, cpuCount: Int? = nil,
+                            beforeCopy: () -> Bool = { true }) -> VMConfig? {
         let fm = FileManager.default
         let sourceBundle = URL(fileURLWithPath: template.bundlePath, isDirectory: true)
-        let storageBase = storageDir ?? root
+        let storageBase = storageDir ?? libraryRoot
         guard let name = normalizedVMName(name),
               width > 0, height > 0,
               isReadableDirectory(template.bundlePath),
-              !isSameOrDescendant(storageBase, of: sourceBundle),
-              let reserved = reserveDestination(name, storageBase: storageBase) else { return nil }
+              VMRelocationPaths.isSafe(source: sourceBundle, destination: storageBase),
+              let reserved = reserveDestination(name, storageBase: storageBase, libraryRoot: libraryRoot) else { return nil }
         let slug = reserved.slug
         let destDir = reserved.root
         var succeeded = false
-        defer { if !succeeded { try? fm.removeItem(at: destDir) } }
+        defer { if !succeeded { VMCreationDestinationCleanup.removeIfUnpublished(destDir, libraryRoot: libraryRoot) } }
         let bundle = destDir.appendingPathComponent("bundle.vmbridge", isDirectory: true).path
         // APFS copy-on-write clone: instant, no extra disk for the 14G rootfs.
-        guard cloneOrCopyDirectory(from: template.bundlePath, to: bundle) else { return nil }
+        guard beforeCopy(), cloneOrCopyDirectory(from: template.bundlePath, to: bundle) else { return nil }
         let b = bundle
         // fresh identity so two VMs don't collide on MAC/machine-id
         for identity in ["\(b)/metadata/machine-identifier.bin", "\(b)/metadata/network-mac-address.txt"] {
@@ -311,73 +302,7 @@ extension VMLibrary {
         cfg.displayHeight = height
         if let memMiB { cfg.memMiB = memMiB }
         if let cpuCount { cfg.cpuCount = cpuCount }
-        guard save(cfg) else { return nil }
-        succeeded = true
-        return cfg
-    }
-
-    /// APFS-clone an installed Windows HVF bundle while deliberately starting
-    /// the copy with a distinct TPM identity. The copied encrypted TPM state is
-    /// retained inside the new bundle as a source-copy archive and receipted.
-    static func cloneWindowsHVF(
-        name: String,
-        template: VMConfig,
-        storageDir: URL? = nil,
-        libraryRoot: URL = root,
-        afterCopy: () -> Bool = { true }
-    ) -> VMConfig? {
-        let fm = FileManager.default
-        let sourceBundle = URL(fileURLWithPath: template.bundlePath, isDirectory: true)
-        let storageBase = storageDir ?? libraryRoot
-        guard template.engineKind == .hvfEngine,
-              template.installPending != true,
-              !VMRelocationJournal.isPending(template, rootURL: libraryRoot),
-              let name = normalizedVMName(name),
-              isReadableDirectory(template.bundlePath),
-              !isSameOrDescendant(storageBase, of: sourceBundle),
-              let reserved = reserveDestination(
-                  name,
-                  storageBase: storageBase,
-                  libraryRoot: libraryRoot
-              ) else { return nil }
-        let slug = reserved.slug
-        let destinationRoot = reserved.root
-        var succeeded = false
-        defer { if !succeeded { try? fm.removeItem(at: destinationRoot) } }
-        let bundle = destinationRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true)
-        guard cloneOrCopyDirectory(from: template.bundlePath, to: bundle.path) else { return nil }
-        guard afterCopy() else { return nil }
-
-        let lifecycle = VTPMIdentityLifecycle(keyStore: KeychainVTPMStateKeyStore())
-        let copiedState = bundle.appendingPathComponent("metadata/vtpm", isDirectory: true)
-        do {
-            _ = try lifecycle.prepareClonedIdentity(
-                newStableVMID: slug,
-                copiedStateDirectory: copiedState
-            )
-        } catch { return nil }
-
-        let copiedEvidence = bundle.appendingPathComponent("logs/hvf", isDirectory: true)
-        if fm.fileExists(atPath: copiedEvidence.path) {
-            let archive = bundle.appendingPathComponent(
-                "logs/hvf-source-copy-\(Int(Date().timeIntervalSince1970))",
-                isDirectory: true
-            )
-            do { try fm.moveItem(at: copiedEvidence, to: archive) } catch { return nil }
-        }
-        do {
-            try fm.createDirectory(at: copiedEvidence, withIntermediateDirectories: true)
-        } catch { return nil }
-
-        var cfg = template
-        cfg.id = slug
-        cfg.name = name
-        cfg.displayName = name
-        cfg.bundlePath = bundle.path
-        cfg.diskPath = bundle.appendingPathComponent("disks/hvf-target.raw").path
-        cfg.guestName = slug
-        cfg.installPending = false
-        guard save(cfg, rootURL: libraryRoot) else { return nil }
+        guard createRegistration(cfg, rootURL: libraryRoot, preserving: { succeeded = true }) else { return nil }
         succeeded = true
         return cfg
     }
@@ -398,7 +323,7 @@ extension VMLibrary {
         let destinationRoot = reserved.root
         let bundle = destinationRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true)
         var succeeded = false
-        defer { if !succeeded { try? fm.removeItem(at: destinationRoot) } }
+        defer { if !succeeded { VMCreationDestinationCleanup.removeIfUnpublished(destinationRoot, libraryRoot: root) } }
         do {
             for sub in ["disks", "metadata", "logs"] {
                 try fm.createDirectory(at: bundle.appendingPathComponent(sub), withIntermediateDirectories: true)
@@ -421,7 +346,7 @@ extension VMLibrary {
                            leasesPath: template.leasesPath, guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: true,
                            isoPath: isoLocal, diskPath: disk, memMiB: memMiB, cpuCount: cpuCount)
-        if persist, !save(cfg) { return nil }
+        if persist, !createRegistration(cfg, preserving: { succeeded = true }) { return nil }
         succeeded = true
         return cfg
     }
@@ -430,6 +355,4 @@ extension VMLibrary {
         guard requested else { return nil }
         return HvfWindowsDriverPreflight.message(for: HvfWindowsDriverPreflight.provenanceBlocker)
     }
-
-
 }

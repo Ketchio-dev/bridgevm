@@ -4,7 +4,8 @@ use crate::{HelperLaunch, LaunchManifest};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+#[path = "owned_process_readiness.rs"]
+mod readiness;
 
 pub(crate) struct Fixture {
     pub root: PathBuf,
@@ -31,13 +32,6 @@ impl Fixture {
         std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
         path
-    }
-    pub(crate) fn wait_file(&self, name: &str) {
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while !self.root.join(name).exists() && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        assert!(self.root.join(name).exists(), "fixture readiness deadline");
     }
     pub(crate) fn manifest(&self) -> LaunchManifest {
         LaunchManifest::parse(

@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/a11-regression-seal-20260901.md	current	testing	-
+docs/windows-arm/evidence/a11-xctest-shim-20260805.md	current	windows-graphics	GOAL.md
+docs/history/windows-hvf/autonomous-selected-media-20261014.md	historical-evidence	windows-hvf-engine	-

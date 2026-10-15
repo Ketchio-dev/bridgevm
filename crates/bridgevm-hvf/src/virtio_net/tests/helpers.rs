@@ -1,6 +1,7 @@
 //! Split test module.
 
 use super::super::*;
+use super::ready_queue::setup_ready_queue;
 use crate::{fwcfg::GuestMemoryMut, pcie::VIRTIO_NET_MSIX_TABLE_OFFSET};
 
 #[derive(Debug)]
@@ -166,7 +167,7 @@ fn rx_pump_scatters_header_and_frame_across_split_descriptors() {
     let payload_buf = 0x4000_4200;
     let frame = b"\x52\x54\x00\x42\x56\x01\x02\x00\x00\x00\x00\x01\x08\x00split-rx";
 
-    setup_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
+    setup_ready_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
     write_desc(
         &mut mem,
         desc,

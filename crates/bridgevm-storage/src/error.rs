@@ -25,9 +25,9 @@ pub enum StorageError {
     SnapshotDiskMetadataNotFound { vm: String, snapshot: String },
     #[error("suspend image metadata not found for {vm}: {snapshot}")]
     SnapshotSuspendImageMetadataNotFound { vm: String, snapshot: String },
-    #[error("suspend image is missing: {0}")]
+    #[error("suspend image is missing or not a regular file: {0}")]
     SnapshotSuspendImageMissing(PathBuf),
-    #[error("disk snapshot backing image is missing: {0}")]
+    #[error("disk snapshot backing image is missing or not a regular file: {0}")]
     SnapshotDiskBackingMissing(PathBuf),
     #[error("disk snapshot overlay image is missing: {0}")]
     SnapshotDiskOverlayMissing(PathBuf),

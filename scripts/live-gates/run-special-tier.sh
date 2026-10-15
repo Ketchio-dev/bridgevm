@@ -4,13 +4,13 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 TIER="${1:?run-special-tier.sh needs a tier}"; OUT="${2:?run-special-tier.sh needs an output directory}"
 JOB_ID="${3:?run-special-tier.sh needs a job id}"; args=(--out "$OUT" --job-id "$JOB_ID")
 case "$TIER" in d11-native-fixture-preparation|d10-t22-owned-pair-preparation|d9-b9-real-workload|d5-guest-input|d4-winpe-companions) exec "$REPO/scripts/live-gates/run-development-tier.sh" "$TIER" "$OUT" "$JOB_ID" "$REPO" "${4:-}" "${5:-}" ;;
-  d1-windows-media-comparison|d6-app-ui|d6-app-ui-host-v1|d6-app-ui-host-v2) adapter=windows-media-comparison-queue.py; [[ "$TIER" != d6-app-ui ]] || adapter=app_ui_diagnostic.py; [[ "$TIER" != d6-app-ui-host-v1 ]] || adapter=app_ui_host_diagnostic.py; [[ "$TIER" != d6-app-ui-host-v2 ]] || adapter=app_ui_host_v2_diagnostic.py; exec python3 "$REPO/scripts/live-gates/$adapter" run "$OUT" "$REPO" "$(git -C "$REPO" rev-parse HEAD)" "${4:-}" "${5:-}" ;;
+  d1-windows-media-comparison|d6-app-ui|d6-app-ui-host-v1|d6-app-ui-host-v2|d6-app-ui-install-cancel-v1) adapter=windows-media-comparison-queue.py; [[ "$TIER" != d6-app-ui ]] || adapter=app_ui_diagnostic.py; [[ "$TIER" != d6-app-ui-host-v1 ]] || adapter=app_ui_host_diagnostic.py; [[ "$TIER" != d6-app-ui-host-v2 ]] || adapter=app_ui_host_v2_diagnostic.py; [[ "$TIER" != d6-app-ui-install-cancel-v1 ]] || adapter=app_ui_install_cancel_diagnostic.py; exec python3 "$REPO/scripts/live-gates/$adapter" run "$OUT" "$REPO" "$(git -C "$REPO" rev-parse HEAD)" "${4:-}" "${5:-}" ;;
   t8-pointer-reliability)
     helper=run-pointer-reliability-tier.sh
     args+=(--input-manifest "${4:-}") ;;
   t9-bridgevm-pc-pci) helper=run-bridgevm-pc-pci-tier.sh ;;
   t11-bridgevm-pc-nvme-bar) helper=run-bridgevm-pc-nvme-bar-tier.sh ;;
-  t12-bridgevm-pc-nvme-block) helper=run-bridgevm-pc-nvme-block-tier.sh ;;
+  t12-bridgevm-pc-nvme-block) helper=run-bridgevm-pc-nvme-block-tier.sh; args+=(--input-manifest "${4:-}" --sealed-binary "${5:-}") ;;
   t13-bridgevm-pc-bds-exit) helper=run-bridgevm-pc-bds-exit-tier.sh ;;
   t14-bridgevm-pc-windows-start) helper=run-bridgevm-pc-windows-start-tier.sh; args+=(--input-manifest "${4:-}") ;;
   t15-hvf-boot-performance|t16-hvf-nvme-performance|t17-windows-hvf-product-e2e|t18-audio-teardown|t19-windows-hvf-import-product-e2e|d7-hvf-smp-scaling|d8-hvf-smp-confirmation) helper=run-hvf-boot-performance-tier.sh; [[ "$TIER" == t15-* || "$TIER" == d7-* || "$TIER" == d8-* ]] || helper=run-hvf-nvme-performance-tier.sh; [[ "$TIER" != d7-* ]] || helper=run-hvf-smp-scaling-tier.sh; [[ "$TIER" != d8-* ]] || helper=run-hvf-smp-confirmation-tier.sh; [[ "$TIER" != t17-* ]] || helper=run-windows-product-e2e-tier.sh; [[ "$TIER" != t18-* ]] || helper=run-audio-teardown-tier.sh; [[ "$TIER" != t19-* ]] || helper=run-windows-import-product-e2e-tier.sh; args+=(--input-manifest "${4:-}"); [[ "$TIER" == t17-* || "$TIER" == t19-* ]] || args+=(--sealed-binary "${5:-}"); [[ "$TIER" != t17-* ]] || args+=(--retain-import-source "$(python3 "$REPO/scripts/live-gates/product_e2e_retained_destination.py" "$OUT" "$JOB_ID")") ;;

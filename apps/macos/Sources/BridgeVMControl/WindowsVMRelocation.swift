@@ -8,12 +8,13 @@ extension VMLibrary {
         rootURL: URL = root,
         fileManager: FileManager = .default
     ) -> VMConfig? {
-        guard config.engineKind == .hvfEngine else { return nil }
+        guard VMRelocationReferences.permits(config, rootURL: rootURL) else { return nil }
         let fm = fileManager
         let source = URL(fileURLWithPath: config.bundlePath, isDirectory: true).standardizedFileURL
         let destination = destinationParent.standardizedFileURL
             .appendingPathComponent(source.lastPathComponent, isDirectory: true)
         guard VMRelocationPaths.isSafe(source: source, destination: destination),
+              !HvfWindowsInstallTransactionResidue.isPresent(config, rootURL: rootURL),
               (try? source.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]).isDirectory) == true,
               (try? source.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true,
               !fm.fileExists(atPath: destination.path) else { return nil }
@@ -34,7 +35,7 @@ extension VMLibrary {
         moved.sshKeyPath = rebased(config.sshKeyPath)
         moved.leasesPath = rebased(config.leasesPath)
         moved.isoPath = config.isoPath.map(rebased)
-        moved.diskPath = config.diskPath.map(rebased)
+        moved.diskPath = config.diskPath.map { VMRelocationDiskPath.rebased($0, source: source, destination: destination) ?? rebased($0) }
 
         let stateDirectory = destination.appendingPathComponent("metadata/vtpm", isDirectory: true)
         do {

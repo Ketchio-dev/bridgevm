@@ -2,6 +2,8 @@ use super::*;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+#[path = "vm_builder_snapshot_tests.rs"]
+mod snapshot_tests;
 
 fn scratch(tag: &str) -> (PathBuf, PathBuf) {
     let dir = std::env::temp_dir();

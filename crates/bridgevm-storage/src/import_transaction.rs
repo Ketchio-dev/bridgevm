@@ -30,9 +30,7 @@ pub(crate) fn import(
     metadata_source: &Path,
     name: Option<&str>,
 ) -> Result<VmImportMetadata, StorageError> {
-    if !input.is_dir() || !input.join("manifest.yaml").exists() {
-        return Err(StorageError::InvalidImportBundle(input.to_path_buf()));
-    }
+    crate::import_admission::source(input)?;
     let _ownership = crate::bundle_ownership::acquire(input)?;
     let mut manifest = VmManifest::read(&input.join("manifest.yaml"))?;
     let original_name = manifest.name.clone();
@@ -59,6 +57,7 @@ pub(crate) fn import(
     let guard = crate::import_staging::Staging::create(&store.vms_dir())?;
     let staging = guard.bundle.clone();
     let summary = copy_dir_owned(input, &staging)?;
+    crate::import_admission::no_deletion_marker(&staging)?;
     let modes = guard.writable()?;
     for relative in &summary.files {
         same_contents(&input.join(relative), &staging.join(relative))?;
