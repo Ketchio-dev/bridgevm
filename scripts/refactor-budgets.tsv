@@ -4776,3 +4776,8 @@ apps/macos/Tests/BridgeVMControlTests/LibraryMoveSelectionTests.swift	50	0
 apps/macos/Tests/BridgeVMControlTests/LibraryMoveSelectionIdentityTests.swift	26	0
 docs/history/windows-hvf/autonomous-package-and-selection-20261015.md	98	0
 docs/document-manifests/autonomous-package-and-selection-20261015.tsv	3	0
+apps/macos/Sources/BridgeVMControl/ControlResourceAllocation.swift	15	0
+apps/macos/Tests/BridgeVMControlTests/ControlModelResourceDisplayTests.swift	98	0
+apps/macos/Tests/BridgeVMControlTests/ResourceDisplayCompletionBackend.swift	48	0
+apps/macos/Tests/BridgeVMControlTests/ResourceDisplayCompletionFixture.swift	127	0
+apps/macos/Tests/BridgeVMControlTests/ResourceDisplayStaleReadProbe.swift	44	0

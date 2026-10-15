@@ -62,17 +62,11 @@ final class ControlModel: ObservableObject {
             statusNote = "이 엔진은 리소스 변경을 지원하지 않습니다."
             return
         }
-        guard pendingMemGiB.isFinite, pendingCPU.isFinite,
-              pendingMemGiB >= Double(VMResourceLimits.minimumMemoryMiB) / 1024,
-              pendingMemGiB <= Double(VMResourceLimits.maximumMemoryMiB) / 1024,
-              pendingCPU.rounded() == pendingCPU,
-              pendingCPU >= Double(VMResourceLimits.minimumCPU),
-              pendingCPU <= Double(VMResourceLimits.maximumCPU) else {
+        guard let allocation = ControlResourceAllocation(memoryGiB: pendingMemGiB, cpu: pendingCPU) else {
             statusNote = "메모리와 CPU 값이 올바르지 않습니다."
             return
         }
-        let mem = Int((pendingMemGiB * 1024).rounded())
-        let cpus = Int(pendingCPU)
+        let mem = allocation.memoryMiB, cpus = allocation.cpu
         invalidateRefreshes()
         busy = true
         lifecycleBusy = true
@@ -89,7 +83,13 @@ final class ControlModel: ObservableObject {
                 }
                 return
             }
-            await MainActor.run { self.config.memMiB = mem; self.config.cpuCount = cpus; self.onConfigurationPersisted?() }
+            await MainActor.run {
+                self.invalidateRefreshes()
+                self.config.memMiB = mem; self.config.cpuCount = cpus
+                self.memGiB = Double(mem) / 1024.0
+                self.cpu = cpus
+                self.onConfigurationPersisted?()
+            }
             let wasRunning = previousOwner.map { $0.snapshot.isActive } ?? backend.isRunning()
             if wasRunning {
                 let stopped: Bool
