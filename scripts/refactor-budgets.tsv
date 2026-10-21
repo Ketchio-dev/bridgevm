@@ -4822,3 +4822,5 @@ docs/archive/a11-measured-20261015-20261021.md	34	0
 docs/document-manifests/twelfth-integration-20261021.tsv	4	0
 crates/bridgevm-hvf/src/nvme/features_apst.rs	16	0
 crates/bridgevm-hvf/src/nvme/tests/restore_prp.rs	86	0
+docs/history/windows-hvf/nvme-prp-restore-and-apst-20261021.md	41	0
+docs/document-manifests/nvme-prp-restore-and-apst-20261021.tsv	3	0
