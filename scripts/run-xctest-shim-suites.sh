@@ -37,12 +37,12 @@ extension Bundle {
 }
 EOF
 
-
 # Suites compile independently using the available cores.
 SWIFTC_JOBS="${SWIFTC_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
 
 # shellcheck source=scripts/run-xctest-shim-suite.sh
 source "$ROOT/scripts/run-xctest-shim-suite.sh"
+source "$ROOT/scripts/swift-testing-toolchain.sh"; swift_testing_toolchain
 
 bash "$ROOT/scripts/xctest-swiftc.sh" -emit-module -emit-library -static -module-name BridgeVMWindowProtocol -target "$TARGET" \
     -o "$WORK/libBridgeVMWindowProtocol.a" "$ROOT/apps/macos/Sources/BridgeVMWindowProtocol/"*.swift
@@ -52,7 +52,7 @@ logged BridgeVMApp apps/macos/Sources/BridgeVMApp apps/macos/Tests/BridgeVMAppTe
 logged BridgeVMControl apps/macos/Sources/BridgeVMControl apps/macos/Tests/BridgeVMControlTests -I "$WORK" -L "$WORK" -lBridgeVMWindowProtocol & pids+=($!)
 logged AppleVzRunnerCore apps/macos/Sources/AppleVzRunnerCore apps/macos/Tests/AppleVzRunnerTests \
     -framework Virtualization & pids+=($!)
-logged BridgeVMProductE2E apps/macos/Sources/BridgeVMProductE2E apps/macos/Tests/BridgeVMProductE2ETests -I "$WORK" -L "$WORK" -lBridgeVMWindowProtocol -framework AppKit -framework ApplicationServices -F /Library/Developer/CommandLineTools/Library/Developer/Frameworks -framework Testing -load-plugin-library /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/Frameworks -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/usr/lib & pids+=($!)
+logged BridgeVMProductE2E apps/macos/Sources/BridgeVMProductE2E apps/macos/Tests/BridgeVMProductE2ETests -I "$WORK" -L "$WORK" -lBridgeVMWindowProtocol -framework AppKit -framework ApplicationServices -F "$SWIFT_TESTING_FRAMEWORKS" -framework Testing -load-plugin-library "$SWIFT_TESTING_MACROS" -Xlinker -rpath -Xlinker "$SWIFT_TESTING_FRAMEWORKS" -Xlinker -rpath -Xlinker "$SWIFT_TESTING_INTEROP_LIBS" & pids+=($!)
 failed=0
 for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
 for name in BridgeVMApp BridgeVMControl AppleVzRunnerCore BridgeVMProductE2E; do cat "$WORK/log-$name"; grep -Eq '^shim XCTest: [1-9][0-9]* passed, 0 failed, [0-9]+ skipped$' "$WORK/log-$name" || failed=1; done

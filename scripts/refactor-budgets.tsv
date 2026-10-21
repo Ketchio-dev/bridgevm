@@ -1457,7 +1457,7 @@ scripts/run-hvf-windows-installed-boot-usage.sh	124	0
 scripts/run-hvf-windows-installed-boot-validation.sh	345	0
 scripts/run-hvf-windows-installed-boot.sh	27	0
 scripts/run-hvf-windows-scripted-install.sh	338	0
-scripts/run-swift-tests.sh	75	0
+scripts/run-swift-tests.sh	68	0
 scripts/run-venus-device-smoke.sh	56	0
 scripts/run-venus-host-probe.sh	53	0
 scripts/run-virgl-host-probe.sh	24	0
@@ -4776,3 +4776,7 @@ apps/macos/Tests/BridgeVMControlTests/LibraryMoveSelectionTests.swift	50	0
 apps/macos/Tests/BridgeVMControlTests/LibraryMoveSelectionIdentityTests.swift	26	0
 docs/history/windows-hvf/autonomous-package-and-selection-20261015.md	98	0
 docs/document-manifests/autonomous-package-and-selection-20261015.tsv	3	0
+scripts/swift-testing-toolchain.sh	40	0
+tests/integration/swift-testing-toolchain-smoke.sh	51	0
+docs/history/windows-hvf/hosted-swift-testing-toolchain-20261021.md	64	0
+docs/document-manifests/hosted-swift-testing-toolchain-20261021.tsv	3	0
