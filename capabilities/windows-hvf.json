@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-10-21",
-  "tested_commit": "33271cf70d4930b6de3285f06e9c405af92e7027",
+  "tested_commit": "1e704c47c5872fc38773506743099c21082bb8d0",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -200,7 +200,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-10-21 07:12 UTC checkpoint: A11 remains OPEN. Eleventh source 33271cf7 combines the swift-testing toolchain repair a2ff144e, whose seal 6ee5789e passed 45 local stages, hosted full run 39539746199 and all 101 associated workflows including macOS 26 app suites on runner image 20261013.0424; the tenth resource display and retained-terminal fixes; a repair for the tenth's regression of an existing runtime-session test; the accepted resource-write ownership fix; and two Dependabot updates. The unpublished tenth 5014ad8a failed that existing method in the full shim suite and never received full checks. The eleventh's earlier seal ce7e5512 passed all 45 local stages; this source adds a test pinning both sides of the retained lookup boundary, which fails against either earlier lookup. Focused native and shim suites pass; exact local and hosted checks are pending. These are deterministic checks, not guest behavior. No final release regression seal is established. See the [retained lookup and resource write record](../history/windows-hvf/retained-lookup-and-resource-writes-20261021.md), [boundary review](../history/windows-hvf/retained-lookup-boundary-review-20261021.md), [swift-testing toolchain record](../history/windows-hvf/hosted-swift-testing-toolchain-20261021.md) and [verbatim A11 history](../archive/a11-measured-through-20261014.md).",
+      "measured": "2026-10-21 08:35 UTC checkpoint: A11 remains OPEN. Eleventh source 1e704c47 combines the swift-testing toolchain repair a2ff144e, whose seal 6ee5789e passed 45 local stages, hosted full run 39539746199 and all 101 associated workflows including macOS 26 app suites on runner image 20261013.0424; the tenth resource display and retained-terminal fixes; a repair for the tenth's regression of an existing runtime-session test; the accepted resource-write ownership fix; and two Dependabot updates. The unpublished tenth 5014ad8a failed that existing method in the full shim suite and never received full checks. The eleventh's earlier seal ce7e5512 passed all 45 local stages; it and seal a2f201c6, which added a test pinning both sides of the retained lookup boundary, then failed one resource display test in every hosted shim run. That test's own waits starved the three-thread cooperative pool of hosted runners; this source moves them to a dedicated thread without changing assertions or bounds. Focused native and shim suites pass; exact local and hosted checks are pending. These are deterministic checks, not guest behavior. No final release regression seal is established. See the [retained lookup and resource write record](../history/windows-hvf/retained-lookup-and-resource-writes-20261021.md), [boundary review](../history/windows-hvf/retained-lookup-boundary-review-20261021.md), [hosted pool starvation record](../history/windows-hvf/hosted-pool-starvation-20261021.md), [swift-testing toolchain record](../history/windows-hvf/hosted-swift-testing-toolchain-20261021.md) and [verbatim A11 history](../archive/a11-measured-through-20261014.md).",
       "evidence_paths": [
         "STATUS.md",
         "docs/history/windows-hvf/t17-launchservices-preflight-20260917.md",
@@ -367,7 +367,8 @@
         "docs/history/windows-hvf/autonomous-package-and-selection-20261015.md",
         "docs/history/windows-hvf/hosted-swift-testing-toolchain-20261021.md",
         "docs/history/windows-hvf/retained-lookup-and-resource-writes-20261021.md",
-        "docs/history/windows-hvf/retained-lookup-boundary-review-20261021.md"
+        "docs/history/windows-hvf/retained-lookup-boundary-review-20261021.md",
+        "docs/history/windows-hvf/hosted-pool-starvation-20261021.md"
       ]
     },
     {
