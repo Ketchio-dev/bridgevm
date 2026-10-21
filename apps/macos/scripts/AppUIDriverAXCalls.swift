@@ -7,9 +7,7 @@ struct AppUIDriverAXCalls {
     var attribute: (AXUIElement, CFString, UnsafeMutablePointer<CFTypeRef?>) -> AXError = {
         AXUIElementCopyAttributeValue($0, $1, $2)
     }
-    var related: (AXUIElement, CFString, CFIndex, CFIndex, UnsafeMutablePointer<CFArray?>) -> AXError = {
-        AXUIElementCopyAttributeValues($0, $1, $2, $3, $4)
-    }
+    var relationships = AppUIDriverAXArrayCalls()
     var press: (AXUIElement, CFString) -> AXError = { AXUIElementPerformAction($0, $1) }
     var settable: (AXUIElement, CFString, UnsafeMutablePointer<DarwinBoolean>) -> AXError = {
         AXUIElementIsAttributeSettable($0, $1, $2)

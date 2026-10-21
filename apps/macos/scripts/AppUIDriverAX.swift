@@ -22,27 +22,6 @@ struct AppUIDriverAX: AppUIDriverAXAccess {
         guard value != nil else { throw AppUIDriverFailure.invalidElement }
         return value
     }
-    func related(_ node: AXUIElement, _ name: String) throws -> [AXUIElement] {
-        try prepare(node, attribute: name)
-        var value: CFArray?
-        let result = calls.related(node, name as CFString, 0, 10_001, &value)
-        if result != .noValue && result != .attributeUnsupported { try status(result, .copyAttributeValues, attribute: name) }
-        try check()
-        if result == .noValue || result == .attributeUnsupported { return [] }
-        guard let value, CFGetTypeID(value) == CFArrayGetTypeID() else { throw AppUIDriverFailure.invalidElement }
-        let count = CFArrayGetCount(value)
-        guard count <= 10_000 else { throw AppUIDriverFailure.protocolLimit }
-        var nodes: [AXUIElement] = []
-        for index in 0..<count {
-            guard let pointer = CFArrayGetValueAtIndex(value, index) else { throw AppUIDriverFailure.invalidElement }
-            let item = unsafeBitCast(pointer, to: CFTypeRef.self)
-            guard CFGetTypeID(item) == AXUIElementGetTypeID() else { throw AppUIDriverFailure.invalidElement }
-            let element = unsafeBitCast(item, to: AXUIElement.self)
-            try prepare(element, attribute: name, scope: .relatedElement)
-            nodes.append(element)
-        }
-        return nodes
-    }
     func string(_ node: AXUIElement, _ name: String) throws -> String? {
         guard let value = try attribute(node, name) else { return nil }
         guard CFGetTypeID(value) == CFStringGetTypeID() else { throw AppUIDriverFailure.invalidElement }
