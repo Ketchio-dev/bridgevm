@@ -4797,3 +4797,5 @@ scripts/swift-testing-toolchain.sh	40	0
 tests/integration/swift-testing-toolchain-smoke.sh	51	0
 docs/history/windows-hvf/hosted-swift-testing-toolchain-20261021.md	64	0
 docs/document-manifests/hosted-swift-testing-toolchain-20261021.tsv	3	0
+docs/history/windows-hvf/retained-lookup-and-resource-writes-20261021.md	65	0
+docs/document-manifests/retained-lookup-and-resource-writes-20261021.tsv	3	0

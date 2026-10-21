@@ -43,7 +43,7 @@ path	class	topic	superseded_by
 @include	docs/document-manifests/autonomous-caller-inputs-and-clone-vars-20261015.tsv	-	-
 @include	docs/document-manifests/autonomous-package-and-selection-20261015.tsv	-	-
 @include	docs/document-manifests/autonomous-resource-and-retained-outcomes-20261015.tsv	-	-
-docs/windows-arm/evidence/b4-pointer-reliability-batch-20260820.md	current	windows-graphics	-
+@include	docs/document-manifests/retained-lookup-and-resource-writes-20261021.tsv	-	-
 docs/windows-arm/evidence/b4-pointer-reliability-proven-20260830.md	current	windows-graphics	-
 docs/windows-arm/evidence/b4-pointer-followup-session-variance-20260830.md	current	windows-graphics	-
 @include	docs/document-manifests/hosted-swift-testing-toolchain-20261021.tsv	-	-
