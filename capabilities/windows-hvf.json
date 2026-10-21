@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-10-21",
-  "tested_commit": "a2ff144ed6237f025a35f22ca26f7531bf68b9fa",
+  "tested_commit": "c3aa07c056d95394d09c2be78e2b7a50d0e24753",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -200,7 +200,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-10-21 03:36 UTC checkpoint: A11 remains OPEN. Main 5cd18f46, tree-identical to ninth d1171eda, passed a separate corrected 45-stage local full check, all 52 push workflows and exact-main hosted full run 38749353353 on 2026-10-15; the original 41 PASS / 4 FAIL local invocation remains recorded. Scheduled CI 39279022129 on that unchanged main later failed macOS app suites (macos-26): the runner image now pairs Xcode 26.6 with Command Line Tools 27, and swift-testing used fixed Command Line Tools paths. Source a2ff144e resolves swift-testing from the active compiler's developer directory; focused runs pass under Xcode 27 and Command Line Tools 26.6, and its exact local and hosted checks are pending. These are deterministic checks, not guest behavior. No final release regression seal is established. See the [swift-testing toolchain record](../history/windows-hvf/hosted-swift-testing-toolchain-20261021.md), [package and selection checkpoint](../history/windows-hvf/autonomous-package-and-selection-20261015.md) and [verbatim A11 history](../archive/a11-measured-through-20261014.md).",
+      "measured": "2026-10-21 06:43 UTC checkpoint: A11 remains OPEN. Eleventh source c3aa07c0 combines the swift-testing toolchain repair a2ff144e, whose seal 6ee5789e passed 45 local stages, hosted full run 39539746199 and all 101 associated workflows including macOS 26 app suites on runner image 20261013.0424; the tenth resource display and retained-terminal fixes; a repair for the tenth's regression of an existing runtime-session test; the accepted resource-write ownership fix; and two Dependabot updates. The unpublished tenth 5014ad8a failed that existing method in the full shim suite and never received full checks. Focused native (58 tests) and shim suites pass on the eleventh source; its exact local and hosted checks are pending. These are deterministic checks, not guest behavior. No final release regression seal is established. See the [retained lookup and resource write record](../history/windows-hvf/retained-lookup-and-resource-writes-20261021.md), [swift-testing toolchain record](../history/windows-hvf/hosted-swift-testing-toolchain-20261021.md) and [verbatim A11 history](../archive/a11-measured-through-20261014.md).",
       "evidence_paths": [
         "STATUS.md",
         "docs/history/windows-hvf/t17-launchservices-preflight-20260917.md",
@@ -365,7 +365,8 @@
         "docs/history/windows-hvf/autonomous-diagnostic-attribution-20261014.md",
         "docs/history/windows-hvf/autonomous-caller-inputs-and-clone-vars-20261015.md",
         "docs/history/windows-hvf/autonomous-package-and-selection-20261015.md",
-        "docs/history/windows-hvf/hosted-swift-testing-toolchain-20261021.md"
+        "docs/history/windows-hvf/hosted-swift-testing-toolchain-20261021.md",
+        "docs/history/windows-hvf/retained-lookup-and-resource-writes-20261021.md"
       ]
     },
     {
