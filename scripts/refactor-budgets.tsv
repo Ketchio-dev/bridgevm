@@ -3693,7 +3693,7 @@ crates/bridgevm-storage/src/import_qcow_header.rs	45	0
 crates/bridgevm-storage/src/import_staging.rs	65	0
 crates/bridgevm-storage/src/import_transaction.rs	93	0
 crates/bridgevm-storage/src/tests_split/import_images.rs	56	0
-crates/bridgevm-storage/src/tests_split/import_portability.rs	349	0
+crates/bridgevm-storage/src/tests_split/import_portability.rs	342	0
 scripts/check-project-storage.sh	8	0
 tests/integration/bundle-import-portability-cli-socket-contract.py	211	0
 tests/integration/bundle_import_portability_support.py	174	0
