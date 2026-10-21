@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-10-21",
-  "tested_commit": "83e74f0a9f674b8c920cc6f628c1495a2a2b83f0",
+  "tested_commit": "ff8dbdb00b8fe822231fdd645b79f43d8a412ce1",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -200,7 +200,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Workspace, Venus library, probe example, Swift suites, formatting, clippy, structural budgets and documentation gates all pass at the exact current release head, with a retained exact-SHA receipt.",
-      "measured": "2026-10-21 16:45 UTC checkpoint: A11 remains OPEN. Twelfth source 83e74f0a stacks on the eleventh candidate, whose seal 6e8e558c passed all 45 local stages, hosted full run 39570473094 and all 101 associated workflows, after its earlier seals ce7e5512 and a2f201c6 each failed one resource display test in every hosted shim run because the test's own waits starved the three-thread cooperative pool of hosted runners. The twelfth merges draft #417, counted AX relationships, and draft #418, nontext clipboard ownership, unchanged. Neither previously had a complete local run with Apple XCTest available. It adds refusal guidance that names how to release a slot held by a terminal retained control, releases that slot as soon as its record is closed, and makes one storage test leave its temporary directory removable. Focused native, native UI driver contract, probe example and storage tests pass; exact local and hosted checks are pending. These are deterministic checks, not guest behavior. #417 still needs its physical UI pilot. No final release regression seal is established. See the [twelfth integration record](../history/windows-hvf/twelfth-integration-20261021.md), [hosted pool starvation record](../history/windows-hvf/hosted-pool-starvation-20261021.md), [retained lookup and resource write record](../history/windows-hvf/retained-lookup-and-resource-writes-20261021.md), [boundary review](../history/windows-hvf/retained-lookup-boundary-review-20261021.md), [swift-testing toolchain record](../history/windows-hvf/hosted-swift-testing-toolchain-20261021.md), [replaced A11 notes](../archive/a11-measured-20261015-20261021.md) and [verbatim A11 history](../archive/a11-measured-through-20261014.md).",
+      "measured": "2026-10-21 17:08 UTC checkpoint: A11 remains OPEN. Thirteenth source ff8dbdb0 stacks on the twelfth candidate, whose seal 973bfb7c passed all 45 local stages with its hosted checks pending. The twelfth merges drafts #417, counted AX relationships, and #418, nontext clipboard ownership, unchanged, and adds retained-slot guidance and a storage test cleanup. It stacks on the eleventh candidate, whose seal 6e8e558c passed all 45 local stages, hosted full run 39570473094 and all 101 associated workflows, after its earlier seals ce7e5512 and a2f201c6 each failed one resource display test in every hosted shim run because the test's own waits starved the three-thread cooperative pool of hosted runners. The thirteenth repairs two NVMe model defects that tests confirmed: after a checkpoint restore, transfers needing a PRP list failed, and APST feature data ignored PRP2. Focused NVMe tests and clippy pass; exact local and hosted checks for this source are pending. These are deterministic checks, not guest behavior. #417 still needs its physical UI pilot. No final release regression seal is established. See the [NVMe PRP record](../history/windows-hvf/nvme-prp-restore-and-apst-20261021.md), [twelfth integration record](../history/windows-hvf/twelfth-integration-20261021.md), [hosted pool starvation record](../history/windows-hvf/hosted-pool-starvation-20261021.md), [retained lookup and resource write record](../history/windows-hvf/retained-lookup-and-resource-writes-20261021.md), [boundary review](../history/windows-hvf/retained-lookup-boundary-review-20261021.md), [swift-testing toolchain record](../history/windows-hvf/hosted-swift-testing-toolchain-20261021.md), [replaced A11 notes](../archive/a11-measured-20261015-20261021.md) and [verbatim A11 history](../archive/a11-measured-through-20261014.md).",
       "evidence_paths": [
         "STATUS.md",
         "docs/history/windows-hvf/t17-launchservices-preflight-20260917.md",
@@ -370,6 +370,7 @@
         "docs/history/windows-hvf/retained-lookup-boundary-review-20261021.md",
         "docs/history/windows-hvf/hosted-pool-starvation-20261021.md",
         "docs/history/windows-hvf/twelfth-integration-20261021.md",
+        "docs/history/windows-hvf/nvme-prp-restore-and-apst-20261021.md",
         "docs/archive/a11-measured-20261015-20261021.md"
       ]
     },
