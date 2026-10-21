@@ -2500,7 +2500,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfRuntimeWorkAdmissionOwnershipTests.swif
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeWorkAdmissionReservationTests.swift	128	0
 apps/macos/Sources/BridgeVMControl/HvfAcceptedSessionRecords.swift	23	0
 apps/macos/Sources/BridgeVMControl/LibraryEmptyState.swift	9	0
-apps/macos/Sources/BridgeVMControl/LibraryModelRetainedControls.swift	40	0
+apps/macos/Sources/BridgeVMControl/LibraryModelRetainedControls.swift	33	0
 apps/macos/Sources/BridgeVMControl/LibraryRetainedControlDescriptor.swift	52	0
 apps/macos/Sources/BridgeVMControl/LibraryRetainedControlStore.swift	34	0
 apps/macos/Sources/BridgeVMControl/LibrarySidebar.swift	49	0
@@ -4815,3 +4815,5 @@ tests/integration/app-ui-driver-ax-wrapper-boundaries.swift	56	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_nontext_tests.rs	142	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard_suppressed_tests.rs	85	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard_write.rs	22	0
+apps/macos/Sources/BridgeVMControl/LibraryModelRetainedDismissal.swift	23	0
+apps/macos/Tests/BridgeVMControlTests/RetainedTerminalGuidanceTests.swift	38	0

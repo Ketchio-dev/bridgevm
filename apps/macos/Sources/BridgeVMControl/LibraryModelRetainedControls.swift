@@ -30,11 +30,4 @@ extension LibraryModel {
             .filter { $0.descriptor.config.slug == slug && $0.descriptor.isActive }
             .min { $0.descriptor.sortKey.lexicographicallyPrecedes($1.descriptor.sortKey) }
     }
-
-    @discardableResult
-    func dismissRetainedControl(_ token: String) -> Bool {
-        guard retainedControlStore.dismiss(token) else { return false }
-        if selectedID == token { selectedID = vms.first?.slug }
-        return true
-    }
 }
