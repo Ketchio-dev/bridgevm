@@ -4792,3 +4792,4 @@ apps/macos/Tests/BridgeVMControlTests/ResourceRegistrationBackend.swift	44	0
 apps/macos/Tests/BridgeVMControlTests/ResourceRegistrationFailureTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/ResourceRegistrationFixture.swift	130	0
 apps/macos/Tests/BridgeVMControlTests/ResourceRegistrationOwnershipTests.swift	67	0
+apps/macos/Sources/BridgeVMControl/LibraryModelRetainedLookup.swift	9	0
