@@ -48,12 +48,10 @@ impl NvmeController {
             FEATURE_INTERRUPT_VECTOR_CONFIGURATION => cmd.cdw11 & 0xffff,
             FEATURE_WRITE_ATOMICITY_NORMAL => 0,
             FEATURE_ASYNC_EVENT_CONFIGURATION => 0,
-            FEATURE_AUTONOMOUS_POWER_STATE_TRANSITION => {
-                if cmd.prp1 != 0 && !mem.write_bytes(cmd.prp1, &ZERO_APST_FEATURE_DATA) {
-                    return SC_INVALID_FIELD;
-                }
-                0
-            }
+            FEATURE_AUTONOMOUS_POWER_STATE_TRANSITION => match self.write_apst_table(cmd, mem) {
+                SC_SUCCESS => 0,
+                status => return status,
+            },
             _ => return SC_INVALID_FIELD_DNR,
         };
         self.last_feature_result = value;
