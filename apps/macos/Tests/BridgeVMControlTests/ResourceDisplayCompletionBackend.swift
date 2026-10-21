@@ -19,8 +19,8 @@ final class ResourceDisplayCompletionBackend: VMBackend {
     var writeCalls: Int { lock.withLock { writes } }
     func install(_ probe: ResourceDisplayStaleReadProbe) { lock.withLock { staleReadProbe = probe } }
     func release() { finish.signal() }
-    func waitForSaved() async -> Bool {
-        await Task.detached { [saved] in saved.wait(timeout: .now() + 3) == .success }.value
+    @MainActor func waitForSaved() async -> Bool {
+        await waitOffCooperativePool(saved, seconds: 3)
     }
     func setResources(memMiB: Int, cpu: Int) -> Bool {
         lock.withLock { writes += 1 }

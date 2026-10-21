@@ -4802,3 +4802,6 @@ docs/document-manifests/retained-lookup-and-resource-writes-20261021.tsv	3	0
 apps/macos/Tests/BridgeVMControlTests/RetainedTerminalUndismissedTests.swift	27	0
 docs/history/windows-hvf/retained-lookup-boundary-review-20261021.md	48	0
 docs/document-manifests/retained-lookup-boundary-review-20261021.tsv	3	0
+apps/macos/Tests/BridgeVMControlTests/CooperativePoolFreeWait.swift	15	0
+docs/history/windows-hvf/hosted-pool-starvation-20261021.md	56	0
+docs/document-manifests/hosted-pool-starvation-20261021.tsv	3	0

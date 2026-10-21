@@ -15,9 +15,9 @@ final class ResourceDisplayStaleReadProbe {
     func releaseWrite() { allowWrite.signal() }
     func releaseRead() { allowRead.signal() }
     func releaseAll() { releaseWrite(); releaseRead() }
-    func waitForWriteEntry() async -> Bool { await wait(writeEntered) }
-    func waitForReadCapture() async -> Bool { await wait(readCaptured) }
-    func waitForReadReturnBoundary() async -> Bool { await wait(readReturnBoundary) }
+    @MainActor func waitForWriteEntry() async -> Bool { await wait(writeEntered) }
+    @MainActor func waitForReadCapture() async -> Bool { await wait(readCaptured) }
+    @MainActor func waitForReadReturnBoundary() async -> Bool { await wait(readReturnBoundary) }
 
     func beforeWrite() {
         writeEntered.signal()
@@ -38,7 +38,7 @@ final class ResourceDisplayStaleReadProbe {
         return value
     }
 
-    private func wait(_ semaphore: DispatchSemaphore) async -> Bool {
-        await Task.detached { semaphore.wait(timeout: .now() + 3) == .success }.value
+    @MainActor private func wait(_ semaphore: DispatchSemaphore) async -> Bool {
+        await waitOffCooperativePool(semaphore, seconds: 3)
     }
 }
