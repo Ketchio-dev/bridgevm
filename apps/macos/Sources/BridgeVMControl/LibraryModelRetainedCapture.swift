@@ -3,8 +3,8 @@ import Foundation
 extension LibraryModel {
     func captureRetainedControls(_ models: [ControlModel]) {
         let registered = Set(vms.map(\.slug))
-        let generic = models.filter {
-            $0.config.engineKind != .hvfEngine && $0.hasActiveRuntimeWork && !vms.contains($0.config)
+        let generic = models.filter { model in
+            model.config.engineKind != .hvfEngine && model.hasActiveRuntimeWork && !vms.contains(where: model.matchesRegisteredConfiguration)
         }.map { model -> LibraryRetainedControlDescriptor in
             model.retainForRecovery()
             return .generic(config: model.config, model: model)

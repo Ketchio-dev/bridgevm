@@ -1275,7 +1275,7 @@ apps/macos/Sources/BridgeVMControl/QemuCompatBackend.swift	94	0
 apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	22	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	56	0
 apps/macos/Sources/BridgeVMControl/ContentView.swift	283	0
-apps/macos/Sources/BridgeVMControl/ControlModel.swift	135	0
+apps/macos/Sources/BridgeVMControl/ControlModel.swift	68	0
 apps/macos/Sources/BridgeVMControl/CreateVM.swift	358	0
 apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	115	0
 apps/macos/Sources/BridgeVMControl/FirstRunView.swift	60	0
@@ -4550,7 +4550,7 @@ crates/bridgevm-storage/tests/import_literal_names.rs	169	0
 crates/bridgevm-hvf/src/virtio_blk/pci_register_map.rs	20	0
 crates/bridgevm-hvf/tests/virtio_blk_isr.rs	141	0
 crates/bridgevm-hvf/tests/virtio_blk_isr/support.rs	179	0
-apps/macos/Sources/BridgeVMControl/LibraryModelControlModels.swift	23	0
+apps/macos/Sources/BridgeVMControl/LibraryModelControlModels.swift	14	0
 apps/macos/Tests/BridgeVMControlTests/RegisteredGenericCloneActivityTests.swift	55	0
 apps/macos/Tests/BridgeVMControlTests/RegisteredGenericCloneAdmissionTests.swift	54	0
 apps/macos/Tests/BridgeVMControlTests/FirstRunOptionalRecoveryFixture.swift	75	0
@@ -4786,3 +4786,9 @@ apps/macos/Tests/BridgeVMControlTests/RetainedTerminalRecoveryFixture.swift	92	0
 apps/macos/Tests/BridgeVMControlTests/RetainedTerminalRecoveryTests.swift	80	0
 docs/history/windows-hvf/autonomous-resource-and-retained-outcomes-20261015.md	125	0
 docs/document-manifests/autonomous-resource-and-retained-outcomes-20261015.tsv	3	0
+apps/macos/Sources/BridgeVMControl/ControlModelResources.swift	88	0
+apps/macos/Sources/BridgeVMControl/LibraryModelControlBinding.swift	9	0
+apps/macos/Tests/BridgeVMControlTests/ResourceRegistrationBackend.swift	44	0
+apps/macos/Tests/BridgeVMControlTests/ResourceRegistrationFailureTests.swift	49	0
+apps/macos/Tests/BridgeVMControlTests/ResourceRegistrationFixture.swift	130	0
+apps/macos/Tests/BridgeVMControlTests/ResourceRegistrationOwnershipTests.swift	67	0
