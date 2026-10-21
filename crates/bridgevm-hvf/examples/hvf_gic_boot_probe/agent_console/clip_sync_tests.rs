@@ -10,6 +10,8 @@ mod observed_host;
 mod paste;
 #[path = "clip_recopy_tests.rs"]
 mod recopy;
+#[path = "clip_nontext_tests.rs"]
+mod nontext;
 
 /// Service loop wired to a channel-only pasteboard and a modelled guest
 /// clipboard that answers CLIPGET/CLIPSET the way `bvagent.ps1` does.
