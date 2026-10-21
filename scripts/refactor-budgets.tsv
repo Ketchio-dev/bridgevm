@@ -4817,3 +4817,6 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard_suppressed_tests
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard_write.rs	22	0
 apps/macos/Sources/BridgeVMControl/LibraryModelRetainedDismissal.swift	23	0
 apps/macos/Tests/BridgeVMControlTests/RetainedTerminalGuidanceTests.swift	38	0
+docs/history/windows-hvf/twelfth-integration-20261021.md	59	0
+docs/archive/a11-measured-20261015-20261021.md	34	0
+docs/document-manifests/twelfth-integration-20261021.tsv	4	0
