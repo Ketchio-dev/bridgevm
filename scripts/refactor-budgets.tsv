@@ -4868,3 +4868,4 @@ tests/integration/t19-lane-key-forget-staging-test.py	67	0
 tests/integration/t19-tier-key-forget-fixtures.py	110	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeHeartbeat.swift	42	0
 apps/macos/Tests/BridgeVMControlTests/HvfEngineSessionPublishTests.swift	96	0
+apps/macos/Tests/BridgeVMControlTests/HvfEngineSessionOwnedTickPublishTests.swift	40	0
