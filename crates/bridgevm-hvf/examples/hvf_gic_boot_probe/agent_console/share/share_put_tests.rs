@@ -1,6 +1,8 @@
 //! Chunked PUT retransmit and phase-specific reply correlation.
 
 use super::*;
+#[path = "share_put_seq_tests.rs"]
+mod seq_tests;
 
 fn chunked_req() -> ServiceReq {
     share_put_req(

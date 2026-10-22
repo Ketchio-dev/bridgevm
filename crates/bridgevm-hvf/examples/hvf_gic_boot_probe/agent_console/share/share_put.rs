@@ -208,7 +208,7 @@ impl AgentConsoleHarness {
         else {
             return None;
         };
-        if *phase != SharePutPhase::Chunk || seq + 1 != *next_chunk {
+        if *phase != SharePutPhase::Chunk || seq.checked_add(1) != Some(*next_chunk) {
             return None;
         }
         let nchunks = bytes.len().div_ceil(SHARE_PUT_CHUNK_BYTES);

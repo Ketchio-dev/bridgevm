@@ -4846,3 +4846,4 @@ scripts/live-gates/t17_lane_key_forget.py	218	0
 scripts/live-gates/product_e2e_json_value.py	9	0
 tests/integration/t17-lane-key-forget-test.py	331	0
 tests/fixtures/fake-vtpm-lifecycle-app.py	133	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_put_seq_tests.rs	46	0
