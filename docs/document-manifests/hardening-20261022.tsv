@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/a9-stale-code-requirement-20260911.md	current	a9-code-requirement	-
+docs/history/windows-hvf/t17-key-forget-and-agent-channel-hardening-20261022.md	historical-evidence	live-pilots-20261022	-
+docs/archive/a11-measured-20261022-hardening.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md

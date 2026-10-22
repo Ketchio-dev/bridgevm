@@ -53,6 +53,7 @@ path	class	topic	superseded_by
 @include	docs/document-manifests/a19-stop-observation.tsv	-	-
 @include	docs/document-manifests/live-pilots-20261022.tsv	-	-
 @include	docs/document-manifests/t19-import-diagnosis-20261022.tsv	-	-
+@include	docs/document-manifests/hardening-20261022.tsv	-	-
 docs/windows-arm/iso-download-spike-20260817.md	current	windows-install	-
 docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/runtime-control-socket-cleanup.tsv	-	-
@@ -110,7 +111,6 @@ docs/windows-arm/evidence/b6-sealed-cell-observation-contract-20260910.md	curren
 @include	docs/document-manifests/t17-selection-attempt-and-failed-pilot.tsv	-	-
 @include	docs/document-manifests/native-vmm-virtio-gpu-parked-chain-bound.tsv	-	-
 @include	docs/document-manifests/native-vmm-fwcfg-dma-bound.tsv	-	-
-docs/windows-arm/evidence/a9-stale-code-requirement-20260911.md	current	a9-code-requirement	-
 @include	docs/document-manifests/native-vmm-nvme-write-completion.tsv	-	-
 @include	docs/document-manifests/a19-hosted-exfat-and-eof.tsv	-	-
 @include	docs/document-manifests/autonomous-reliability-20261014.tsv	-	-
