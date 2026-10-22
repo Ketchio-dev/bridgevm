@@ -52,6 +52,7 @@ path	class	topic	superseded_by
 @include	docs/document-manifests/native-vmm-hda-corb-interrupt.tsv	-	-
 @include	docs/document-manifests/a19-stop-observation.tsv	-	-
 @include	docs/document-manifests/live-pilots-20261022.tsv	-	-
+@include	docs/document-manifests/t19-import-diagnosis-20261022.tsv	-	-
 docs/windows-arm/iso-download-spike-20260817.md	current	windows-install	-
 docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/runtime-control-socket-cleanup.tsv	-	-
@@ -76,7 +77,6 @@ docs/windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md	current	
 @include	docs/document-manifests/native-vmm-nvme-shutdown.tsv	-	-
 docs/windows-arm/evidence/bridgevm-pc-bds-exit-live-20260831.md	current	windows-architecture	-
 @include	docs/document-manifests/native-vmm-audio-lifecycle.tsv	-	-
-docs/windows-arm/evidence/b10-qmp-stress-hosted-20260902.md	current	testing	-
 docs/windows-arm/evidence/f3-postclose-save-prompt-confirmed-20260908.md	current	windows-guest-integration	-
 docs/windows-arm/evidence/b6-tab-scene-spike-20260908.md	current	windows-guest-integration	-
 docs/windows-arm/evidence/b6-scale-mechanism-spike-20260908.md	current	windows-guest-integration	-

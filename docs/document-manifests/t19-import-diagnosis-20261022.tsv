@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/b10-qmp-stress-hosted-20260902.md	current	testing	-
+docs/history/windows-hvf/t19-import-name-and-key-cleanup-20261022.md	historical-evidence	live-pilots-20261022	-
+docs/archive/a11-measured-20261022-pm.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
