@@ -20,17 +20,7 @@ MANIFEST_TOOL="$REPO/scripts/live-gates/windows-product-e2e-manifest.py"; WRITER
 REQUEST_WRITER="$REPO/scripts/live-gates/make-windows-product-e2e-request.py"; VERIFIED="$PRIVATE/verified-inputs.json"
 COMMIT="$(git -C "$REPO" rev-parse HEAD)"; STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 WORK=""; WORK_ID=""; PARENT_ID="$(stat -f '%d:%i' "$PRIVATE")"; EMITTED=0; MODE=pilot; ATTEMPTS=0; VALID=false; SIGNING=unverified
-json_value() {
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-value = json.load(open(sys.argv[1], encoding="utf-8"))
-for part in sys.argv[2].split("."):
-    value = value[part]
-if not isinstance(value, (str, int, bool)):
-    raise SystemExit(2)
-print(str(value).lower() if isinstance(value, bool) else value)
-PY
-}
+json_value() { python3 "$REPO/scripts/live-gates/product_e2e_json_value.py" "$1" "$2"; }
 collect_diagnostic_packet() {
   python3 "$REPO/scripts/live-gates/t17_private_diagnostic_packet.py" capture --kind "$1" --private "$PRIVATE" --lane-root "$lane_root" --job-id "$JOB_ID" --commit "$COMMIT" --campaign-mode "$MODE" --lane "$lane" || { : > "$PRIVATE/lane-$lane-diagnostic-capture-failed" || true; }
 }
@@ -40,6 +30,7 @@ cleanup_work() {
   case "$WORK" in "$PRIVATE/bridgevm-e2e-$JOB_ID."??????) ;; *) return 1 ;; esac
   python3 "$REPO/scripts/live-gates/t17_host_residue.py" --work "$WORK" --private "$PRIVATE" || return 1
   python3 "$REPO/scripts/live-gates/product_e2e_process_absent.py" "$WORK" || return 1
+  python3 "$REPO/scripts/live-gates/t17_lane_key_forget.py" --work "$WORK" --verified "$VERIFIED" || return 1
   python3 "$REPO/scripts/live-gates/t17_owned_tree_cleanup.py" --root "$WORK" --job-id "$JOB_ID" --identity "$WORK_ID" --parent "$PRIVATE" --parent-identity "$PARENT_ID" || return 1
   [[ ! -e "$WORK" ]]
 }

@@ -215,6 +215,16 @@ fences the queue. Before clearing that fence, look in `hdiutil info` and
 `mount` for an attached `disk.raw` clone and a mounted guest volume under
 `/private/tmp/bridgevm-e2e-<job>.*/lane-N/guest-setup-harvest`, and unmount
 and detach them before removing the tree.
+Before removing the tree, cleanup forgets each lane's vTPM key through the
+sealed app's own `--vtpm-lifecycle export` and `forget-import`
+(`scripts/live-gates/t17_lane_key_forget.py`). It keeps the tree and reports
+`cleanup-failed` when the app executable no longer matches its seal, when a
+lane's request, slug, vTPM path or library departs from the lane's fixed
+layout, or when the product neither prints `forgot_imported_key=<slug>` nor,
+for a lane whose vTPM state is empty or absent, reports the key missing. When
+the export succeeded, the kept lane holds its private recovery package and code
+for a manual `forget-import`. Earlier T17 receipts reported
+`worker_cleanup_verified` without forgetting these keys.
 T19 seals a packaged app, fixed-identity helper, runner, installed disk, exact 64 MiB vars and symlink-free vTPM tree; each lane imports independent read-only clones through `--windows-import-product-e2e`, runs the full guest journey, reauthenticates canonical inputs, and retains `claim_eligible=false` because A9 also requires T17.
 T9 is deliberately not assigned a product capability criterion. It rebuilds
 the experimental BridgeVM Virtual ARM PC firmware and HVF runner from the

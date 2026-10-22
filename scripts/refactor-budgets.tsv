@@ -1883,7 +1883,7 @@ scripts/live-gates/windows_product_e2e_artifacts.py	105	0
 scripts/live-gates/windows_product_e2e_guest_evidence.py	114	0
 scripts/live-gates/write-windows-product-e2e-receipt.py	216	0
 scripts/live-gates/windows_product_e2e_failure.py	22	0
-scripts/live-gates/run-windows-product-e2e-tier.sh	121	0
+scripts/live-gates/run-windows-product-e2e-tier.sh	112	0
 scripts/live-gates/retain-windows-import-source.py	180	0
 scripts/live-gates/classify-product-e2e-signing.sh	16	0
 tests/integration/windows-product-e2e-signing-class.py	57	0
@@ -4842,3 +4842,7 @@ docs/document-manifests/live-pilots-20261022.tsv	5	0
 docs/history/windows-hvf/t19-import-name-and-key-cleanup-20261022.md	141	0
 docs/archive/a11-measured-20261022-pm.md	23	0
 docs/document-manifests/t19-import-diagnosis-20261022.tsv	4	0
+scripts/live-gates/t17_lane_key_forget.py	218	0
+scripts/live-gates/product_e2e_json_value.py	9	0
+tests/integration/t17-lane-key-forget-test.py	331	0
+tests/fixtures/fake-vtpm-lifecycle-app.py	133	0
