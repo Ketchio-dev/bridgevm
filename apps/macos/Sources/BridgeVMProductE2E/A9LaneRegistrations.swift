@@ -25,14 +25,6 @@ enum A9LaneRegistrations {
         return result
     }
 
-    /// The request's vTPM state path below its slug directory, e.g. "bundle/metadata/vtpm".
-    static func stateSuffix(request: A9ImportRequest) -> String? {
-        let base = URL(fileURLWithPath: request.libraryRootPath).appendingPathComponent(request.vmSlug).path + "/"
-        guard request.vtpmStatePath.hasPrefix(base) else { return nil }
-        let suffix = String(request.vtpmStatePath.dropFirst(base.count))
-        return suffix.isEmpty || suffix.hasPrefix("/") || suffix.split(separator: "/").contains("..") ? nil : suffix
-    }
-
     private static func safe(_ slug: String) -> Bool {
         !slug.isEmpty && slug != "." && slug != ".." && slug.utf8.count <= 255 && !slug.contains("/")
             && !slug.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
