@@ -123,13 +123,7 @@ final class A9ImportProductRunner {
     }
 
     private func importVM(_ ui: T17UIControlling) throws {
-        try ui.press("bridgevm.first-run.import", timeout: 30)
-        try ui.setText(request.vmName, identifier: "bridgevm.first-run.name", timeout: 10)
-        try ui.choose(path: request.sourceDiskPath, from: "bridgevm.first-run.disk.choose", timeout: 20)
-        try ui.choose(path: request.sourceVarsPath, from: "bridgevm.first-run.vars.choose", timeout: 20)
-        try ui.choose(path: request.sourceVtpmPath, from: "bridgevm.first-run.vtpm.choose", timeout: 20)
-        try ui.choose(path: request.sourceVtpmPackagePath, from: "bridgevm.first-run.vtpm-package.choose", timeout: 20); try ui.choose(path: request.sourceVtpmCodePath, from: "bridgevm.first-run.vtpm-code.choose", timeout: 20)
-        try ui.press("bridgevm.first-run.import.commit", timeout: 15)
+        try A9ImportFormEntry.enter(request, ui: ui)
         try A9ImportRuntimeNavigation.openRuntimeControls(ui)
     }
 

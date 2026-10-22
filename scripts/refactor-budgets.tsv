@@ -3094,9 +3094,11 @@ apps/macos/Sources/BridgeVMProductE2E/T17JourneyRequest.swift	24	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportRequest.swift	154	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportTreeDigest.swift	40	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportEvidence.swift	93	0
-apps/macos/Sources/BridgeVMProductE2E/A9ImportProductRunner.swift	201	0
+apps/macos/Sources/BridgeVMProductE2E/A9ImportProductRunner.swift	195	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportRuntimeNavigation.swift	14	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportRuntimeNavigationTests.swift	48	0
+apps/macos/Sources/BridgeVMProductE2E/A9ImportFormEntry.swift	24	0
+apps/macos/Tests/BridgeVMProductE2ETests/A9ImportFormEntryTests.swift	67	0
 apps/macos/Sources/BridgeVMProductE2E/ProductE2ECLI.swift	54	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportEvidenceTests.swift	42	0
 apps/macos/Tests/BridgeVMProductE2ETests/ProductE2ECLITests.swift	28	0
