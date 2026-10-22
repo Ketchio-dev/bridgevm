@@ -3100,7 +3100,9 @@ apps/macos/Tests/BridgeVMProductE2ETests/A9ImportRuntimeNavigationTests.swift	48
 apps/macos/Sources/BridgeVMProductE2E/A9ImportFormEntry.swift	24	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportFormEntryTests.swift	67	0
 apps/macos/Sources/BridgeVMProductE2E/A9LaneRegistrations.swift	38	0
+apps/macos/Sources/BridgeVMProductE2E/A9FirstReadyLine.swift	8	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9LaneRegistrationCleanupTests.swift	54	0
+apps/macos/Tests/BridgeVMProductE2ETests/A9FirstReadyLineTests.swift	19	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportEndState.swift	78	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportEndStateTests.swift	77	0
 apps/macos/Tests/BridgeVMControlTests/HvfMediaImportOwnershipTests.swift	43	0

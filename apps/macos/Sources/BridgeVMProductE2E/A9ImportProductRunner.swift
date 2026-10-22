@@ -146,7 +146,7 @@ final class A9ImportProductRunner {
         try T17RuntimeIntegrationSetup.apply(sharePath: request.sharePath, ui: ui)
         try ui.press("bridgevm.windows.runtime.start", timeout: 20)
         return try T17FirstReadyWaiter.wait(observe: {
-            let ready = self.boundedLines(self.runLog).first { $0.hasPrefix("BVAGENT READY") }
+            let ready = A9FirstReadyLine.first(in: self.boundedLines(self.runLog))
             return try T17FirstReadyObservation.capture(
                 readyLine: ready, applicationRunning: self.application?.isRunning == true, ui: ui)
         }, diagnostic: { T17FirstBootDiagnostic.capture(self.runLog) })
