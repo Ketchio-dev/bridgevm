@@ -2422,7 +2422,7 @@ crates/bridgevm-hvf/src/snapshot_create_destination_lease.rs	19	0
 crates/bridgevm-hvf/src/snapshot_create_stage.rs	8	0
 crates/bridgevm-hvf/src/snapshot_create_interruption_tests.rs	87	0
 crates/bridgevm-hvf/src/snapshot_create_overlap_tests.rs	95	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMediaImport.swift	27	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMediaImport.swift	26	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMediaImportHelper.swift	31	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsImport.swift	78	0
 apps/macos/Tests/BridgeVMControlTests/HvfCurrentGenerationImportTests.swift	115	0
@@ -3103,6 +3103,7 @@ apps/macos/Sources/BridgeVMProductE2E/A9LaneRegistrations.swift	46	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9LaneRegistrationCleanupTests.swift	54	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportEndState.swift	78	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportEndStateTests.swift	77	0
+apps/macos/Tests/BridgeVMControlTests/HvfMediaImportOwnershipTests.swift	43	0
 apps/macos/Sources/BridgeVMProductE2E/ProductE2ECLI.swift	54	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportEvidenceTests.swift	42	0
 apps/macos/Tests/BridgeVMProductE2ETests/ProductE2ECLITests.swift	28	0

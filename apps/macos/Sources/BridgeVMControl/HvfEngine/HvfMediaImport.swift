@@ -13,15 +13,14 @@ enum HvfMediaImport {
         defer { try? fileManager.removeItem(at: workspace) }
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workspace.path)
         let snapshot = workspace.appendingPathComponent("selected.snapshot", isDirectory: true)
-        try HvfMediaImportHelper.invoke(helper, arguments: [
-            "create", disk, vars, snapshot.path, "import", String(UInt64.max)
-        ])
+        try HvfMediaImportHelper.invoke(helper, arguments: ["create", disk, vars, snapshot.path, "import", String(UInt64.max)])
         try HvfMediaImportHelper.invoke(helper, arguments: ["verify", snapshot.path])
-        // Foundation refuses existing destinations. The caller owns and rolls
-        // back its newly reserved VM directory if either move fails.
-        try fileManager.moveItem(atPath: snapshot.appendingPathComponent("disk.raw").path,
-                                 toPath: toDisk.path)
-        try fileManager.moveItem(atPath: snapshot.appendingPathComponent("vars.fd").path,
-                                 toPath: toVars.path)
+        // Foundation refuses existing destinations; the caller rolls back its reserved VM directory
+        // if a move fails. An APFS clone keeps the source's mode, and a read-only selection left the
+        // VM's own disk and vars unwritable, so launch readiness refused them (T19 r3, 2026-10-22).
+        for (name, target) in [("disk.raw", toDisk), ("vars.fd", toVars)] {
+            try fileManager.moveItem(atPath: snapshot.appendingPathComponent(name).path, toPath: target.path)
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
+        }
     }
 }
