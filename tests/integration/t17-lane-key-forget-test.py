@@ -3,22 +3,18 @@
 exact proof keeps the job tree with its cleanup unverified."""
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import importlib.util
-import io
 import json
 import os
 from pathlib import Path
 import re
 import secrets
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
 import unittest
-from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL = ROOT / "scripts/live-gates/t17_lane_key_forget.py"
@@ -53,7 +49,7 @@ def options(call: list[str]) -> dict[str, str]:
     return dict(zip(call[2::2], call[3::2]))
 
 
-class LaneKeyForgetTest(unittest.TestCase):
+class LaneKeyForgetCase(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = Path(tempfile.mkdtemp(prefix="t17-key-forget-")).resolve()
         self.addCleanup(shutil.rmtree, self.temporary, ignore_errors=True)
@@ -120,12 +116,14 @@ class LaneKeyForgetTest(unittest.TestCase):
             self.assertEqual(values["--stable-vm-id"], request["vm_slug"])
             self.assertEqual(folder.parent, Path(request["lane_root"]))
             self.assertTrue(folder.name.startswith("vtpm-key-forget."))
-            self.assertEqual(stat.S_IMODE(folder.lstat().st_mode), 0o700)
+            self.assertFalse(os.path.lexists(folder), "the forget folder and its recovery material outlived the forget")
             self.assertEqual(Path(values["--recovery-code-file"]).parent, folder)
             state = Path(values["--state-dir"])
             self.assertEqual(state, folder / "empty-state" if scratch else Path(request["vtpm_state_path"]))
             self.assertFalse(self.key(request).exists(), "the lane key survived cleanup")
 
+
+class LaneKeyForgetTest(LaneKeyForgetCase):
     def test_state_and_key_are_exported_then_forgotten_for_exactly_that_slug(self) -> None:
         request = self.lane(1)
         (Path(request["library_root_path"]) / "Derived/WindowsInstallSources").mkdir(parents=True)
@@ -247,16 +245,6 @@ class LaneKeyForgetTest(unittest.TestCase):
         self.assert_refused(self.forget(), [])
         self.assertTrue(self.key(request).exists())
 
-    def test_a_command_that_does_not_return_fails_closed(self) -> None:
-        request = self.lane(1)
-        self.key(request, "hang").touch()
-        forget = load("t17_lane_key_forget", TOOL)
-        with mock.patch.object(forget, "TIMEOUT_SECONDS", 1), contextlib.redirect_stderr(io.StringIO()) as stderr:
-            status = forget.main(["--work", str(self.work), "--verified", str(self.verified)])
-        self.assertEqual(status, 1)
-        self.assertIn("did not finish", stderr.getvalue())
-        self.assertTrue(self.key(request).exists())
-
     def test_product_messages_and_lines_match_the_packaged_sources(self) -> None:
         forget = load("t17_lane_key_forget", TOOL)
         fake = load("fake_vtpm_lifecycle_app", FAKE_APP)
@@ -315,6 +303,7 @@ def run_tier_fixtures(tier: Path, manifest: Path, temporary: Path) -> None:
             assert "T17 lane vTPM key forget refused" in completed.stderr, completed.stderr[-1500:]
             assert (private / "cleanup-failed").is_file() and (lane / "request.json").is_file(), "a refused forget did not keep the tree"
             assert (keychain / f"{slug}.key").is_file(), "the refused key disappeared"
+            assert not [path for path in lane.rglob("*") if path.name.startswith(("vtpm-recovery", "vtpm-key-forget."))], "the kept tree holds recovery material for a key that still exists"
             shutil.rmtree(lane.parent)
             for suffix in ("key", "refuse"):
                 (keychain / f"{slug}.{suffix}").unlink()

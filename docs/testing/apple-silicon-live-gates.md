@@ -221,9 +221,10 @@ sealed app's own `--vtpm-lifecycle export` and `forget-import`
 `cleanup-failed` when the app executable no longer matches its seal, when a
 lane's request, slug, vTPM path or library departs from the lane's fixed
 layout, or when the product neither prints `forgot_imported_key=<slug>` nor,
-for a lane whose vTPM state is empty or absent, reports the key missing. When
-the export succeeded, the kept lane holds its private recovery package and code
-for a manual `forget-import`. Earlier T17 receipts reported
+for a lane whose vTPM state is empty or absent, reports the key missing. Seal
+and layout refusals run no app; after a product refusal the other lanes are
+still forgotten, and each refused lane is named. The recovery package and code
+are removed unless a cancel kills this step. Earlier T17 receipts reported
 `worker_cleanup_verified` without forgetting these keys.
 T19 seals a packaged app, fixed-identity helper, runner, installed disk, exact 64 MiB vars and symlink-free vTPM tree; each lane imports independent read-only clones through `--windows-import-product-e2e`, runs the full guest journey, reauthenticates canonical inputs, and retains `claim_eligible=false` because A9 also requires T17.
 T9 is deliberately not assigned a product capability criterion. It rebuilds
