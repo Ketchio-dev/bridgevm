@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/live-queue-deterministic-venue-20260910.md	current	live-gates	-
+docs/history/windows-hvf/key-cleanup-review-fixes-20261022.md	historical-evidence	live-pilots-20261022	-
+docs/archive/a11-measured-20261022-review.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
