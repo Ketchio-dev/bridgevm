@@ -25,7 +25,7 @@ enum A9LaneRegistrations {
         return result
     }
 
-    private static func safe(_ slug: String) -> Bool {
+    static func safe(_ slug: String) -> Bool {
         !slug.isEmpty && slug != "." && slug != ".." && slug.utf8.count <= 255 && !slug.contains("/")
             && !slug.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
     }

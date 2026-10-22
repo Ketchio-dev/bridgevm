@@ -9,10 +9,10 @@ final class A9LaneRegistrationCleanupTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.allocation.parent) }
         try register("windows-11", fixture)
         XCTAssertTrue(A9ImportedKeyCleanup.run(request: fixture.request, fileManager: .default))
-        let lines = try invocations(fixture)
-        XCTAssertEqual(lines.count, 1)
-        XCTAssertTrue(lines.first?.contains("--stable-vm-id windows-11 --state-dir \(fixture.request.sourceVtpmPath) ") == true)
-        XCTAssertTrue(lines.first?.contains("--package package --recovery-code-file code") == true)
+        let line = try invocations(fixture).first { $0.contains("--stable-vm-id windows-11 ") }
+        XCTAssertTrue(line?.contains("--stable-vm-id windows-11 --state-dir \(fixture.request.sourceVtpmPath) ") == true)
+        XCTAssertTrue(line?.contains("--package package --recovery-code-file code") == true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.keychain.appendingPathComponent("windows-11").path))
     }
 
     func testCleanupForgetsEveryRegistration() throws {
@@ -45,7 +45,7 @@ final class A9LaneRegistrationCleanupTests: XCTestCase {
     private func register(_ slug: String, _ fixture: A9CleanupFixture) throws {
         let directory = URL(fileURLWithPath: fixture.request.libraryRootPath).appendingPathComponent(slug)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try Data("{}".utf8).write(to: directory.appendingPathComponent("vm.json"))
+        try Data("{}".utf8).write(to: directory.appendingPathComponent("vm.json")); try Data().write(to: fixture.keychain.appendingPathComponent(slug))
     }
 
     private func invocations(_ fixture: A9CleanupFixture) throws -> [String] {
