@@ -379,8 +379,8 @@ class LaneKeyForgetTest(unittest.TestCase):
         empty = self.work / "lane-1"
         empty.mkdir(mode=0o700)
         self.assertEqual(self.forget().returncode, 0, "a lane whose request was never written owns no key")
-        (empty / "inputs").mkdir()
-        self.assert_refused(self.forget(), [], "lane 1 holds files but no request")
+        (empty / "inputs").mkdir(); (empty / "share").mkdir()
+        self.assert_refused(self.forget(), [], "lane 1 holds more than its staged inputs but no request")
         shutil.rmtree(empty)
         request = self.lane(1)
         for name, make in {"a second pilot lane": lambda path: path.mkdir(mode=0o700), "a stray file": lambda path: path.write_text("")}.items():

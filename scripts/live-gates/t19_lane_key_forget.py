@@ -3,15 +3,14 @@
 
 An import installs the source's vTPM key under the new VM's slug before the product publishes vm.json. The helper
 forgets it at the end of its lane (A9ImportedKeyCleanup), but not when it crashes, hangs, is killed or its cleanup
-fails, and never when the tier stops before or between lanes. This repeats that accounting from the tier: the
-sealed app's own `--vtpm-lifecycle forget-import` for the requested slug and every real directory in the lane
-library except an unregistered `Derived` source cache. Each call gets the lane's read-only inputs, re-hashed
-against their seal: the vTPM state the recovery package was made from (never the lane's booted state, which no
-longer matches the package), the package and its code. The product deletes only a stored key equal to the packaged
-one. A call counts only as exit 0 with exactly one proof line, for its slug, or as exit 1 with the product's
-missing-key line. Every candidate of every lane is attempted and every refusal reported, but no call follows a
-timeout or a changed executable. Any refusal exits 1, so the tier reports cleanup-failed and keeps the tree.
-Refusals name no private path.
+fails, and never when the tier stops before or between lanes. This repeats that accounting from the tier with the
+sealed app's own `--vtpm-lifecycle forget-import` for the requested slug and every real lane-library directory but
+an unregistered `Derived` source cache, given the lane's read-only inputs re-hashed against their seal: the vTPM
+state the package was made from (never the booted state, which no longer matches it), the package and its code.
+The product deletes only a stored key equal to the packaged one. A call counts only as exit 0 with exactly one
+proof line, for its slug, or as exit 1 with the product's missing-key line. Every candidate of every lane is tried
+and every refusal reported, but no call follows a timeout or a changed executable. A request-less lane may hold only
+the inputs/ the tier stages first. Any refusal exits 1 (cleanup-failed, tree kept); refusals name no private path.
 """
 from __future__ import annotations
 
@@ -127,9 +126,10 @@ def matches(request: dict, field: str) -> bool:
 def lane_request(work: Path, lane: Path, ordinal: int, mode: str, apps: dict) -> dict | None:
     """The lane's request once every field is what make-windows-import-product-e2e-request.py writes; None if absent."""
     path = lane / "request.json"
-    if not os.path.lexists(path):
-        if os.listdir(lane):
-            raise Refusal(f"lane {ordinal} holds files but no request")
+    if not os.path.lexists(path):  # the tier stages inputs/ before the request, and no app runs for the lane before it
+        staged = os.path.lexists(lane / "inputs") and stat.S_ISDIR(os.lstat(lane / "inputs").st_mode)
+        if set(os.listdir(lane)) - ({"inputs"} if staged else set()):
+            raise Refusal(f"lane {ordinal} holds more than its staged inputs but no request")
         return None
     request = bounded_json(path, f"lane {ordinal} request")
     if not isinstance(request, dict) or set(request) != FIELDS:

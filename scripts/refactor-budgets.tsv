@@ -4861,4 +4861,5 @@ scripts/live-gates/t17_lane_request.py	99	0
 tests/integration/t17-lane-key-forget-failure-test.py	156	0
 scripts/live-gates/t19_lane_key_forget.py	308	0
 tests/integration/t19-lane-key-forget-test.py	446	0
+tests/integration/t19-lane-key-forget-staging-test.py	67	0
 tests/integration/t19-tier-key-forget-fixtures.py	110	0
