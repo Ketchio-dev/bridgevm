@@ -130,7 +130,7 @@ final class A9ImportProductRunner {
         try ui.choose(path: request.sourceVtpmPath, from: "bridgevm.first-run.vtpm.choose", timeout: 20)
         try ui.choose(path: request.sourceVtpmPackagePath, from: "bridgevm.first-run.vtpm-package.choose", timeout: 20); try ui.choose(path: request.sourceVtpmCodePath, from: "bridgevm.first-run.vtpm-code.choose", timeout: 20)
         try ui.press("bridgevm.first-run.import.commit", timeout: 15)
-        try ui.waitFor("bridgevm.windows.runtime.view", timeout: 1_200)
+        try A9ImportRuntimeNavigation.openRuntimeControls(ui)
     }
 
     private func verifyImportedConfiguration() throws {
