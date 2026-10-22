@@ -4826,3 +4826,7 @@ crates/bridgevm-hvf/src/nvme/features_apst.rs	16	0
 crates/bridgevm-hvf/src/nvme/tests/restore_prp.rs	86	0
 docs/history/windows-hvf/nvme-prp-restore-and-apst-20261021.md	41	0
 docs/document-manifests/nvme-prp-restore-and-apst-20261021.tsv	3	0
+docs/history/windows-hvf/app-ui-417-live-diagnostic-20261022.md	78	0
+docs/history/windows-hvf/a9-r82-r84-and-t19-main-pilots-20261022.md	142	0
+docs/archive/a11-measured-20261022.md	34	0
+docs/document-manifests/live-pilots-20261022.tsv	5	0

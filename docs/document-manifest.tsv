@@ -51,7 +51,7 @@ path	class	topic	superseded_by
 @include	docs/document-manifests/nvme-prp-restore-and-apst-20261021.tsv	-	-
 @include	docs/document-manifests/native-vmm-hda-corb-interrupt.tsv	-	-
 @include	docs/document-manifests/a19-stop-observation.tsv	-	-
-docs/windows-arm/evidence/a17-live-queue-receipts-20260805.md	current	testing	-
+@include	docs/document-manifests/live-pilots-20261022.tsv	-	-
 docs/windows-arm/iso-download-spike-20260817.md	current	windows-install	-
 docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/runtime-control-socket-cleanup.tsv	-	-
