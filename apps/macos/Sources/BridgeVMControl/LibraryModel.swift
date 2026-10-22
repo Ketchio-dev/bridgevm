@@ -74,7 +74,7 @@ final class LibraryModel: ObservableObject {
     }
 
     func model(for cfg: VMConfig) -> ControlModel {
-        if let m = modelCache[cfg.slug] { return m }
+        if let m = modelCache[cfg.slug], keepsCachedControl(m) { return m }
         let m = bindControlModel(modelFactory(latestConfiguration(for: cfg)))
         modelCache[cfg.slug] = m
         return m

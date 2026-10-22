@@ -12,12 +12,3 @@ extension LibraryModel {
         cachedControlModels.values.filter { $0.config.engineKind != .hvfEngine && $0.hasActiveRuntimeWork }.map(\.config)
     }
 }
-
-extension LibraryModel {
-    func bindControlModel(_ model: ControlModel) -> ControlModel {
-        model.workAdmission = controlWorkAdmission(for: model)
-        model.legacyStopAdmission = legacyStopAdmission(for: model)
-        model.onConfigurationPersisted = { [weak self] in self?.reload() }
-        return model
-    }
-}

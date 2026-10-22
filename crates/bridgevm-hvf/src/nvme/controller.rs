@@ -43,7 +43,8 @@ pub struct NvmeController {
     /// the guest-memory view exposes no stable host pointer for direct DMA). Kept
     /// at its high-water mark across commands so a steady stream of IO reuses one
     /// allocation instead of allocating per PRP page. Holds no state between
-    /// commands; each command fully overwrites the prefix it reads.
+    /// commands; each command fully overwrites the prefix it reads. It must stay at least one
+    /// page long, because PRP-list decoding reads each list page into it.
     pub(crate) io_scratch: Vec<u8>,
     /// Whether the zero-copy host-pointer data path is allowed. The default is
     /// enabled; `BRIDGEVM_NVME_BUFFERED_IO=1` forces the byte-identical buffered

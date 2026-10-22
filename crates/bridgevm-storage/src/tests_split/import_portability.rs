@@ -251,32 +251,24 @@ fn copied_backing_cycle_is_refused_before_any_header_mutation() {
 #[cfg(unix)]
 #[test]
 fn restricted_copied_directories_remain_private_and_cleanup_on_failure() {
-    use std::os::unix::fs::PermissionsExt;
+    use super::bundle_permissions::{mode, set_mode};
     let source = temp_store();
     let bundle = source.create_vm(&manifest("dev")).unwrap();
     let metadata = bundle.join("metadata");
-    fs::set_permissions(&metadata, fs::Permissions::from_mode(0o500)).unwrap();
+    set_mode(&metadata, 0o500);
     let target = temp_store();
     let imported = target.import_vm(&bundle, Some("copy")).unwrap().output;
-    assert_eq!(
-        fs::metadata(imported.join("metadata"))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o777,
-        0o500
-    );
-    fs::set_permissions(&metadata, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(mode(&imported.join("metadata")), 0o500);
+    set_mode(&metadata, 0o700);
     fs::write(metadata.join("active-disk.json"), b"invalid").unwrap();
-    fs::set_permissions(&metadata, fs::Permissions::from_mode(0o500)).unwrap();
+    set_mode(&metadata, 0o500);
     assert!(target.import_vm(&bundle, Some("failed")).is_err());
     assert!(!target.bundle_path("failed").exists());
     assert_no_staging(&target);
-    assert_eq!(
-        fs::metadata(&metadata).unwrap().permissions().mode() & 0o777,
-        0o500
-    );
-    fs::set_permissions(&metadata, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(mode(&metadata), 0o500);
+    // Leave both restricted directories removable by an ordinary recursive delete.
+    set_mode(&metadata, 0o700);
+    set_mode(&imported.join("metadata"), 0o700);
 }
 
 #[test]

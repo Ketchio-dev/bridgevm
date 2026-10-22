@@ -127,7 +127,7 @@ impl NvmeController {
         self.msix.restore_state(&input.read_blob());
 
         self.command_trace.clear();
-        self.io_scratch.clear();
+        self.io_scratch = vec![0; PAGE_SIZE]; // PRP-list decoding reads up to one page into it.
         self.prp_spans_scratch.clear();
         self.io_segments_scratch.clear();
         input.finish();

@@ -15,6 +15,7 @@ final class AppUIDriverAXCallsFixture {
     var cancelled = false
     var afterCall: ((API) -> Void)?
     var array: [AXUIElement] = []
+    var reportedCount: CFIndex?
     var value: CFTypeRef? = "fixture" as CFString
     var writable = true
     var ranges: [(CFIndex, CFIndex)] = []
@@ -37,11 +38,7 @@ final class AppUIDriverAXCallsFixture {
                 self.attributes.append(name as String); output.pointee = self.value
                 return self.result(.copyAttributeValue)
             },
-            related: { _, name, index, maximum, output in
-                self.attributes.append(name as String); self.ranges.append((index, maximum))
-                output.pointee = self.array as CFArray
-                return self.result(.copyAttributeValues)
-            },
+            relationships: relationshipCalls(),
             press: { _, action in self.actions.append(action as String); return self.result(.performAction) },
             settable: { _, name, output in
                 self.attributes.append(name as String); output.pointee = DarwinBoolean(self.writable)

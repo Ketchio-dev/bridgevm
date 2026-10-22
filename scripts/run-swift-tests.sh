@@ -7,30 +7,23 @@
 # three XCTest targets fail the build before any swift-testing target can run,
 # and adding a swift-testing target to Package.swift does not help.
 #
-# swift-testing itself does ship in CommandLineTools, so the new suites are
-# compiled directly against the sources they cover and run as a plain binary.
-# When Xcode is installed this script can be replaced by `swift test`.
+# swift-testing ships with both CommandLineTools and Xcode, so the new suites
+# are compiled directly against the sources they cover and run as a plain
+# binary. When Xcode is installed this script can be replaced by `swift test`.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO"
 
-FRAMEWORKS=/Library/Developer/CommandLineTools/Library/Developer/Frameworks
-SWIFT_LIBS=/Library/Developer/CommandLineTools/usr/lib/swift/macosx
-# swift-testing's #expect/#require are macros; without the plugin they fail to
-# expand with "plugin for module 'TestingMacros' not found".
-MACROS=/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib
-# Testing.framework loads lib_TestingInterop.dylib from here at run time.
-TESTING_LIBS=/Library/Developer/CommandLineTools/Library/Developer/usr/lib
-
-[[ -d "$FRAMEWORKS/Testing.framework" ]] || {
-  echo "FAIL: Testing.framework not found at $FRAMEWORKS" >&2
-  exit 1
-}
-[[ -f "$MACROS" ]] || {
-  echo "FAIL: TestingMacros plugin not found at $MACROS" >&2
-  exit 1
-}
+# Testing.framework, the TestingMacros plugin (without it #expect/#require fail
+# to expand) and lib_TestingInterop come from the active swiftc's developer
+# directory; mixing toolchains fails to load the plugin.
+source "$REPO/scripts/swift-testing-toolchain.sh"
+swift_testing_toolchain
+FRAMEWORKS=$SWIFT_TESTING_FRAMEWORKS
+SWIFT_LIBS=$SWIFT_TESTING_RUNTIME_LIBS
+MACROS=$SWIFT_TESTING_MACROS
+TESTING_LIBS=$SWIFT_TESTING_INTEROP_LIBS
 
 OUT=$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")
 trap 'rm -rf "$OUT"' EXIT

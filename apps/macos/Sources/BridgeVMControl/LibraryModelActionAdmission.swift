@@ -20,7 +20,7 @@ extension LibraryModel {
             return "이 VM의 제어 작업이 진행 중입니다. 완료 후 다시 시도하세요."
         }
         if hasMismatchedCachedControlConfiguration(for: cfg) {
-            return "VM 제어 정보가 최신 등록 정보와 다릅니다. 기존 VM을 완전히 중지하고 목록을 새로고침한 뒤 다시 시도하세요."
+            return mismatchedCachedControlRefusal(for: cfg)
         }
         return nil
     }

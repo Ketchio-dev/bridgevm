@@ -9,6 +9,7 @@ mod controller;
 mod disk;
 mod doorbell;
 mod features;
+mod features_apst;
 mod features_get;
 mod identify;
 mod identify_command;

@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/a8-resize-secure-boot-wall-20260817.md	current	windows-graphics	-
+docs/history/windows-hvf/twelfth-integration-20261021.md	historical-evidence	twelfth-integration	-
+docs/archive/a11-measured-20261015-20261021.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
