@@ -17,13 +17,13 @@ pub fn append_guest_rel_into(name: &str, out: &mut String) {
 
 /// Convert a guest listing path to a share key. A `..` component would let a
 /// guest-chosen key name a host path outside the share root once joined to it,
-/// so such entries are refused. Separators are already collapsed, so leading
-/// slashes cannot make the key absolute.
+/// and no host scan can see a file under a key over the macOS name limits
+/// (`share_name_limits`); both are refused. Collapsed separators keep it relative.
 pub fn from_guest_rel(name: &str) -> Option<String> {
     if name.split(['/', '\\']).any(|part| part == "..") {
         return None;
     }
-    Some(normalize_rel(name))
+    Some(normalize_rel(name)).filter(|key| super::share_name_limits::fits_host_limits(key))
 }
 
 fn normalize_rel_with_sep(name: &str, sep: char) -> String {

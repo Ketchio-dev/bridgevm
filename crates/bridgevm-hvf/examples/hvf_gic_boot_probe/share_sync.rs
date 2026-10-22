@@ -307,6 +307,8 @@ pub use share_rel_path::{append_guest_rel_into, from_guest_rel, normalize_rel};
 mod share_host_unseen;
 #[path = "share_listing.rs"]
 mod share_listing;
+#[path = "share_name_limits.rs"]
+mod share_name_limits;
 #[path = "share_put_outcome.rs"]
 mod share_put_outcome;
 #[path = "share_sync_host.rs"]

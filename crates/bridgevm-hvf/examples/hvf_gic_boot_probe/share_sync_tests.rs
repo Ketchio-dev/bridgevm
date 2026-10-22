@@ -1,6 +1,8 @@
 //! Share sync planning: guest listings, host scans, conflicts and skips.
 
 use super::*;
+#[path = "share_name_limit_tests.rs"]
+mod name_limit_tests;
 
 fn ls_file(name: &str, size: u64, mtime: &str) -> LsEntry {
     LsEntry {
