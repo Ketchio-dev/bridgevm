@@ -9,7 +9,7 @@ struct A9CleanupFixture {
         capture = root.appendingPathComponent("arguments.txt")
         let executable = root.appendingPathComponent("cleanup.sh")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try Data("#!/bin/sh\nprintf '%s ' \"$@\" > \"\(capture.path)\"\n".utf8).write(to: executable)
+        try Data("#!/bin/sh\nprintf '%s ' \"$@\" >> \"\(capture.path)\"\nprintf '\\n' >> \"\(capture.path)\"\n".utf8).write(to: executable)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
         let nonce = String(repeating: "a", count: 64), slug = "bridgevm-a9-import-lane-1-aaaaaaaaaaaa"
         let library = root.appendingPathComponent("library"), bundle = library.appendingPathComponent(slug).appendingPathComponent("bundle")
