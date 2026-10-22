@@ -15,12 +15,12 @@ enum HvfMediaImport {
         let snapshot = workspace.appendingPathComponent("selected.snapshot", isDirectory: true)
         try HvfMediaImportHelper.invoke(helper, arguments: ["create", disk, vars, snapshot.path, "import", String(UInt64.max)])
         try HvfMediaImportHelper.invoke(helper, arguments: ["verify", snapshot.path])
-        // Foundation refuses existing destinations; the caller rolls back its reserved VM directory
-        // if a move fails. An APFS clone keeps the source's mode, and a read-only selection left the
-        // VM's own disk and vars unwritable, so launch readiness refused them (T19 r3, 2026-10-22).
+        // A clone keeps the source's mode (read-only media blocked Start in T19 r3), so each member becomes
+        // 0600 in the private workspace, never via the library path. Existing targets fail; the caller rolls back.
         for (name, target) in [("disk.raw", toDisk), ("vars.fd", toVars)] {
-            try fileManager.moveItem(atPath: snapshot.appendingPathComponent(name).path, toPath: target.path)
-            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
+            let member = snapshot.appendingPathComponent(name).path
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: member)
+            try fileManager.moveItem(atPath: member, toPath: target.path)
         }
     }
 }

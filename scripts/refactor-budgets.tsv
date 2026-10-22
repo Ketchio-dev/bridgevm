@@ -3110,6 +3110,7 @@ apps/macos/Tests/BridgeVMProductE2ETests/A9KeyCleanupProofTests.swift	77	0
 apps/macos/Sources/BridgeVMProductE2E/A9ImportEndState.swift	78	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportEndStateTests.swift	77	0
 apps/macos/Tests/BridgeVMControlTests/HvfMediaImportOwnershipTests.swift	43	0
+apps/macos/Tests/BridgeVMControlTests/HvfMediaImportModeOrderTests.swift	55	0
 apps/macos/Sources/BridgeVMProductE2E/ProductE2ECLI.swift	54	0
 apps/macos/Tests/BridgeVMProductE2ETests/A9ImportEvidenceTests.swift	42	0
 apps/macos/Tests/BridgeVMProductE2ETests/ProductE2ECLITests.swift	28	0
