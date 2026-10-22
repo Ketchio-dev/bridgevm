@@ -11,7 +11,7 @@ import AppKit
 final class HvfEngineSession: ObservableObject {
     @Published var config: HvfEngineConfig { didSet { runtimeConfigurationChanged() } }
     @Published var connectionState: HvfConnectionState = .stopped
-    @Published var lastHeartbeatAge: TimeInterval?
+    let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
     @Published var events: [BvAgentEvent] = []
     var repoRoot: URL
     var workAdmission: LibraryWorkAdmission?

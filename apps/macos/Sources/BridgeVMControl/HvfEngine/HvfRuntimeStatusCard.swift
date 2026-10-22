@@ -5,7 +5,6 @@ struct HvfRuntimeStatusCard: View {
     let ready: Bool
     let stateText: String
     let stateCode: String
-    let heartbeatText: String
     let refusal: String?
     let start: () -> Void
 
@@ -31,7 +30,7 @@ struct HvfRuntimeStatusCard: View {
                     .accessibilityValue(refusal ?? session.guiStartFailureText ?? "none")
                 HStack(spacing: 24) {
                     infoItem("State", stateText, "bridgevm.windows.runtime.state")
-                    infoItem("Heartbeat", heartbeatText, "bridgevm.windows.runtime.heartbeat")
+                    HvfRuntimeHeartbeatItem(heartbeat: session.heartbeat)
                     infoItem("Events", "\(session.events.count)", "bridgevm.windows.runtime.events")
                 }
             }
