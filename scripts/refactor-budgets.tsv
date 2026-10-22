@@ -437,7 +437,9 @@ crates/bridgevm-hvf/src/smccc_trng_tests.rs	219	0
 crates/bridgevm-hvf/src/stage1.rs	438	0
 crates/bridgevm-hvf/src/support.rs	63	0
 crates/bridgevm-hvf/src/tpm_ppi.rs	188	0
-crates/bridgevm-hvf/src/tpm_tis.rs	815	0
+crates/bridgevm-hvf/src/tpm_tis.rs	620	0
+crates/bridgevm-hvf/src/tpm_swtpm.rs	168	0
+crates/bridgevm-hvf/src/tpm_swtpm_tests.rs	269	0
 crates/bridgevm-hvf/src/venus_backend/ffi_submit.rs	7	1
 crates/bridgevm-hvf/src/venus_backend/map_resource_ref.rs	357	15
 crates/bridgevm-hvf/src/venus_backend/poll_stall.rs	157	0
@@ -4456,6 +4458,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfShiftKeyCompatibilityTests.swift	94	0
 apps/macos/Tests/BridgeVMControlTests/HvfInputKeyCapabilitiesTests.swift	92	0
 scripts/test-bvagent-key-capabilities.ps1	41	0
 docs/machine-contract/qemu-virt-deviations-input-agent.json	15	0
+docs/machine-contract/qemu-virt-deviations-vtpm-failure.json	15	0
 docs/machine-contract/resident-input-keysets.md	40	0
 apps/macos/Sources/BridgeVMControl/LibraryDeletionPathReference.swift	30	0
 apps/macos/Sources/BridgeVMControl/LibraryDeletionReferences.swift	25	0

@@ -69,6 +69,6 @@
     }
   ],
   "deviation_modules": [
-    "qemu-virt-deviations-device-recovery.json", "qemu-virt-deviations-input-agent.json"
+    "qemu-virt-deviations-device-recovery.json", "qemu-virt-deviations-input-agent.json", "qemu-virt-deviations-vtpm-failure.json"
   ]
 }
