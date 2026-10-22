@@ -13,17 +13,12 @@ REQUEST="$REPO/scripts/live-gates/make-windows-import-product-e2e-request.py"
 WRITER="$REPO/scripts/live-gates/write-windows-import-product-e2e-receipt.py"
 VERIFIED="$PRIVATE/verified-inputs.json"; COMMIT="$(git -C "$REPO" rev-parse HEAD)"; STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 WORK=""; WORK_ID=""; PARENT_ID="$(stat -f '%d:%i' "$PRIVATE")"; EMITTED=0; MODE=pilot; ATTEMPTS=0; VALID=false; SIGNING=unverified
-json_value() { python3 - "$1" "$2" <<'PY'
-import json,sys
-value=json.load(open(sys.argv[1],encoding="utf-8"))
-for part in sys.argv[2].split("."): value=value[part]
-print(str(value).lower() if isinstance(value,bool) else value)
-PY
-}
+json_value() { python3 "$REPO/scripts/live-gates/product_e2e_json_value.py" "$1" "$2"; }
 cleanup_work() {
   [[ -z "$WORK" ]] && return 0
   case "$WORK" in "$PRIVATE/bridgevm-import-e2e-$JOB_ID."??????) ;; *) return 1;; esac
   mount | grep -F "$WORK" >/dev/null 2>&1 && return 1; python3 "$REPO/scripts/live-gates/product_e2e_process_absent.py" "$WORK" || return 1
+  python3 "$REPO/scripts/live-gates/t19_lane_key_forget.py" --work "$WORK" --verified "$VERIFIED" || return 1
   python3 "$REPO/scripts/live-gates/t17_owned_tree_cleanup.py" --root "$WORK" --job-id "$JOB_ID" --identity "$WORK_ID" --parent "$PRIVATE" --parent-identity "$PARENT_ID" || return 1
   [[ ! -e "$WORK" ]]
 }
