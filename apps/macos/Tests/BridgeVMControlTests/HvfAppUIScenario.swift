@@ -52,24 +52,24 @@ enum HvfAppUIScenario {
             try capture.action("import_opened")
             fixture.seedOverviewMetadata()
             try HvfAppUIAccessibility.press("bridgevm.library.overview", in: content)
-            try await HvfAppUIAccessibility.wait("overview cards") {
-                try fixture.library.proMode && fixture.library.selectedID == nil
-                    && HvfAppUIAccessibility.hasCard(named: "Amber", in: content)
-                    && HvfAppUIAccessibility.hasCard(named: "Indigo", in: content)
+            try await HvfAppUIAccessibility.wait("overview rows") {
+                try HvfAppUIOverview.reached(fixture.library)
+                    && HvfAppUIAccessibility.hasRow(HvfAppUIOverview.amber, in: content)
+                    && HvfAppUIAccessibility.hasRow(HvfAppUIOverview.indigo, in: content)
             }
             try capture.capture(content, name: "overview")
             try capture.action("overview_opened")
             try HvfAppUIAccessibility.setText("Indigo", identifier: "bridgevm.library.search", in: content)
             try await HvfAppUIAccessibility.wait("search results") {
-                try HvfAppUIAccessibility.hasCard(named: "Indigo", in: content)
-                    && !HvfAppUIAccessibility.hasCard(named: "Amber", in: content)
+                try HvfAppUIAccessibility.hasRow(HvfAppUIOverview.indigo, in: content)
+                    && !HvfAppUIAccessibility.hasRow(HvfAppUIOverview.amber, in: content)
             }
             try capture.capture(content, name: "overview-search")
             try capture.action("search_filtered")
             try HvfAppUIAccessibility.pressButton(label: "검색 지우기", in: content)
             try await HvfAppUIAccessibility.wait("cleared search") {
-                try HvfAppUIAccessibility.hasCard(named: "Amber", in: content)
-                    && HvfAppUIAccessibility.hasCard(named: "Indigo", in: content)
+                try HvfAppUIAccessibility.hasRow(HvfAppUIOverview.amber, in: content)
+                    && HvfAppUIAccessibility.hasRow(HvfAppUIOverview.indigo, in: content)
                     && HvfAppUIAccessibility.find("bridgevm.library.search", in: content)?.accessibilityValue() as? String == ""
             }
             try capture.action("search_cleared")

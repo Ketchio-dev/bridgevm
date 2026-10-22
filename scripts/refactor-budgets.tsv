@@ -2737,7 +2737,7 @@ tests/integration/AppUIDriverAdmissionContracts.swift	113	0
 tests/integration/AppUIDriverCanonicalContracts.swift	45	0
 tests/integration/AppUIDriverMailboxContracts.swift	118	0
 tests/integration/AppUIDriverProtocolTestSupport.swift	68	0
-tests/integration/app-ui-driver-ax-contracts.swift	119	0
+tests/integration/app-ui-driver-ax-contracts.swift	118	0
 tests/integration/app-ui-driver-ax-fixture.swift	59	0
 tests/integration/app-ui-driver-ownership.swift	75	0
 tests/integration/app-ui-driver-packaging-contracts.py	124	0
@@ -4877,3 +4877,9 @@ apps/macos/Tests/BridgeVMControlTests/HvfAppUIDomainWork.swift	66	0
 apps/macos/Tests/BridgeVMAppUIHostTests/AppUIHostOverviewContractTests.swift	88	0
 scripts/live-gates/app_ui_domain_work.py	21	0
 tests/integration/app-ui-host-model-creations-contract.py	170	0
+apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverOverviewRows.swift	12	0
+apps/macos/Sources/BridgeVMControl/AppUIHostOverviewState.swift	16	0
+apps/macos/Tests/BridgeVMAppUIHostTests/AppUIHostOverviewStateContractTests.swift	98	0
+apps/macos/Tests/BridgeVMControlTests/HvfAppUIOverview.swift	16	0
+apps/macos/Tests/BridgeVMControlTests/HvfAppUIOverviewContractTests.swift	44	0
+tests/integration/app-ui-driver-ax-overview-contracts.swift	50	0

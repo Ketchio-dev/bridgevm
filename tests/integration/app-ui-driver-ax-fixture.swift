@@ -24,8 +24,8 @@ final class AppUIDriverAXFixture: AppUIDriverAXAccess {
         add(4, role: "AXButton", identifier: "bridgevm.first-run.import")
         add(5, role: "AXTextField", identifier: "bridgevm.first-run.name")
         add(6, role: "AXButton", identifier: "bridgevm.library.overview")
-        add(7, role: "AXButton", title: "Amber, HVF, stopped")
-        add(8, role: "AXButton", title: "Indigo, HVF, stopped")
+        add(7, role: "AXButton", description: "Amber, 정지됨, 4 vCPU  ·  4 GiB RAM  ·  HVF")
+        add(8, role: "AXButton", description: "Indigo, 정지됨, 4 vCPU  ·  8 GiB RAM  ·  HVF")
         add(9, role: "AXTextField", identifier: "bridgevm.library.search", value: "")
         add(10, role: "AXButton", title: "검색 지우기")
         add(11, role: "AXButton", identifier: "bridgevm.create.commit")
@@ -34,9 +34,9 @@ final class AppUIDriverAXFixture: AppUIDriverAXAccess {
         add(14, role: "AXStaticText", identifier: "bridgevm.create.windows.guest-manifest.selection", value: "")
         add(15, role: "AXButton", title: "취소")
     }
-    func add(_ id: Int, role: String, identifier: String? = nil, title: String? = nil, value: String? = nil) {
+    func add(_ id: Int, role: String, identifier: String? = nil, title: String? = nil, value: String? = nil, description: String? = nil) {
         var strings = [A.role: role]
-        strings[A.identifier] = identifier; strings[A.title] = title; strings[A.value] = value
+        strings[A.identifier] = identifier; strings[A.title] = title; strings[A.value] = value; strings[A.description] = description
         nodes[id] = Node(strings: strings)
     }
     func application() -> Int { 0 }

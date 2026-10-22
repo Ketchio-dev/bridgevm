@@ -29,8 +29,8 @@ struct AppUIDriverAXOperations<Access: AppUIDriverAXAccess> {
             return observed(AppUIDriverValues(nameVisible: try identified("bridgevm.first-run.name", nodes) != nil))
         case .pressOverview: return try pressID("bridgevm.library.overview", nodes)
         case .overviewCards:
-            return observed(AppUIDriverValues(amberVisible: try card("Amber", nodes),
-                                               indigoVisible: try card("Indigo", nodes)))
+            return observed(AppUIDriverValues(amberVisible: try row(AppUIDriverOverviewRows.amber, nodes),
+                                               indigoVisible: try row(AppUIDriverOverviewRows.indigo, nodes)))
         case .setSearchIndigo:
             let node = try required("bridgevm.library.search", nodes)
             guard try access.string(node, A.role) == "AXTextField" else { throw AppUIDriverFailure.invalidElement }
@@ -42,8 +42,8 @@ struct AppUIDriverAXOperations<Access: AppUIDriverAXAccess> {
         case .searchState:
             let node = try required("bridgevm.library.search", nodes)
             guard let value = try access.string(node, A.value) else { throw AppUIDriverFailure.invalidElement }
-            return observed(AppUIDriverValues(amberVisible: try card("Amber", nodes),
-                                               indigoVisible: try card("Indigo", nodes), searchValue: value))
+            return observed(AppUIDriverValues(amberVisible: try row(AppUIDriverOverviewRows.amber, nodes),
+                                               indigoVisible: try row(AppUIDriverOverviewRows.indigo, nodes), searchValue: value))
         }
     }
 
@@ -106,11 +106,11 @@ struct AppUIDriverAXOperations<Access: AppUIDriverAXAccess> {
                                            payloadSelection: try selection("guest-payload"),
                                            manifestSelection: try selection("guest-manifest")))
     }
-    private func card(_ name: String, _ nodes: [Access.Element]) throws -> Bool {
+    /// A seeded overview row by its exact current label; a second match (two lists) is ambiguous.
+    private func row(_ label: String, _ nodes: [Access.Element]) throws -> Bool {
         try AppUIDriverAXGraph.unique(nodes, matching: { node in
             guard try access.string(node, A.role) == "AXButton" else { return false }
-            return try [access.string(node, A.title), access.string(node, A.description)]
-                .compactMap { $0 }.contains { $0.hasPrefix(name + ", HVF,") }
+            return try access.string(node, A.title) == label || access.string(node, A.description) == label
         }) != nil
     }
     private func observed(_ values: AppUIDriverValues) -> AppUIDriverAXResult {
