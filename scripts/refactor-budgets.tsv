@@ -4859,3 +4859,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_name_limits.rs	12	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_name_limit_tests.rs	52	0
 scripts/live-gates/t17_lane_request.py	99	0
 tests/integration/t17-lane-key-forget-failure-test.py	156	0
+scripts/live-gates/t19_lane_key_forget.py	308	0
+tests/integration/t19-lane-key-forget-test.py	446	0
