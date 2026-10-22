@@ -4869,3 +4869,5 @@ tests/integration/t19-tier-key-forget-fixtures.py	110	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeHeartbeat.swift	42	0
 apps/macos/Tests/BridgeVMControlTests/HvfEngineSessionPublishTests.swift	96	0
 apps/macos/Tests/BridgeVMControlTests/HvfEngineSessionOwnedTickPublishTests.swift	40	0
+docs/history/windows-hvf/session-heartbeat-republish-20261022.md	72	0
+docs/document-manifests/session-publish-20261022.tsv	3	0

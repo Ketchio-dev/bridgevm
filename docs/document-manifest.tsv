@@ -55,6 +55,7 @@ path	class	topic	superseded_by
 @include	docs/document-manifests/t19-import-diagnosis-20261022.tsv	-	-
 @include	docs/document-manifests/hardening-20261022.tsv	-	-
 @include	docs/document-manifests/key-cleanup-review-20261022.tsv	-	-
+@include	docs/document-manifests/session-publish-20261022.tsv	-	-
 docs/windows-arm/iso-download-spike-20260817.md	current	windows-install	-
 docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/runtime-control-socket-cleanup.tsv	-	-
@@ -105,7 +106,6 @@ docs/windows-arm/evidence/b6-second-capture-focus-refusal-20260909.md	current	wi
 docs/windows-arm/evidence/b6-presentmon-live-and-focus-refusal-20260909.md	current	windows-graphics	-
 docs/windows-arm/evidence/b6-presentmon-collector-contract-20260910.md	current	windows-graphics	-
 docs/windows-arm/evidence/b6-active-frame-time-collection-20260910.md	current	windows-graphics	-
-docs/windows-arm/evidence/b6-sealed-cell-observation-contract-20260910.md	current	windows-graphics	-
 @include	docs/document-manifests/native-vmm-pl011-tx-bound.tsv	-	-
 @include	docs/document-manifests/autonomous-diagnostic-attribution-20261014.tsv	-	-
 @include	docs/document-manifests/t17-selection-attempt-and-failed-pilot.tsv	-	-
