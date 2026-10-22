@@ -2,6 +2,8 @@
 mod input_control_wake;
 #[path = "../hvf_gic_boot_probe/pointer_deadline_trace.rs"]
 mod pointer_deadline_trace;
+#[path = "probe_runtime/system_reset_failure.rs"]
+mod system_reset_failure;
 #[path = "probe_runtime/vtimer_recovery.rs"]
 pub(crate) mod vtimer_recovery;
 use super::*;
@@ -14,6 +16,7 @@ use crate::hvf_setup::{create_gic, create_vm};
 use crate::probe_config::ProbeConfig;
 use crate::probe_setup::prepare_platform;
 use crate::watchpoint_setup::watchpoint_config;
+use system_reset_failure::system_reset_failure;
 #[path = "probe_media_lease.rs"]
 mod media_lease;
 pub(crate) fn run() -> ExitCode {
@@ -933,17 +936,14 @@ pub(crate) fn run() -> ExitCode {
                         } else {
                             0
                         };
-                        if gic_reset_status != 0 {
+                        if let Some(reason) = system_reset_failure(
+                            gic_reset_status,
+                            actions.reset_platform,
+                            &platform,
+                        ) {
                             fatal_reset_error = true;
-                            stop_reason = format!(
-                                "hv_gic_reset failed during PSCI SYSTEM_RESET: {gic_reset_status:#x}"
-                            );
+                            stop_reason = reason;
                         } else {
-                            if actions.reset_platform {
-                                let mut platform_guard = platform.lock().expect("platform mutex");
-                                let platform = &mut *platform_guard;
-                                platform.reset();
-                            }
                             if actions.reset_guest_ram {
                                 reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
                             }

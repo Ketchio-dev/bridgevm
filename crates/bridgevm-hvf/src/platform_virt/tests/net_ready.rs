@@ -109,7 +109,7 @@ fn pcie_virtio_net_opt_in_routes_tx_msix_and_reset_clears_runtime_state() {
     assert_eq!(stats.tx_count, 1);
     assert_eq!(stats.queues[usize::from(NET_TX_QUEUE)].last_avail_idx, 1);
 
-    p.reset();
+    p.reset().unwrap();
 
     assert_eq!(
         p.take_pending_msix(),

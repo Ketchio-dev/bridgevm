@@ -825,8 +825,10 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_bar2.rs	37	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_setup.rs	12	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_setup.rs	88	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_config.rs	83	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	1000	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	997	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/vtimer_recovery.rs	8	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/system_reset_failure.rs	29	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/system_reset_failure_tests.rs	86	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_setup.rs	89	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/watchpoint_setup.rs	14	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console.rs	15	0
@@ -4757,6 +4759,7 @@ tests/integration/app-ui-supervisor-bundle-contract.py	145	0
 docs/archive/a11-measured-through-20261014.md	19	0
 docs/document-manifests/a11-measurement-history-20261014.tsv	3	0
 crates/bridgevm-hvf/src/platform_virt/tests/pci_boot_media_queue.rs	30	0
+crates/bridgevm-hvf/src/platform_virt/tests/tpm_reset_failure.rs	42	0
 docs/history/windows-hvf/autonomous-selection-and-diagnostic-launch-20261014.md	136	0
 docs/document-manifests/autonomous-selection-and-diagnostic-launch-20261014.tsv	3	0
 crates/bridgevm-storage/tests/snapshot_restore_media.rs	153	1

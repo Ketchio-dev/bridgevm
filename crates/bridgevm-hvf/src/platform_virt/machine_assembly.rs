@@ -31,6 +31,7 @@ use crate::tpm_ppi::build_fw_cfg_tpm_config;
 use crate::tpm_ppi::TpmPpi;
 use crate::tpm_ppi::TPM_PPI_FW_CFG_FILE;
 use crate::tpm_tis::Tpm2Backend;
+use crate::tpm_tis::TpmBackendError;
 use crate::tpm_tis::TpmTis;
 use crate::virtio_blk::VirtioMmioBlock;
 use crate::virtio_blk::VirtioPciBlock;
@@ -228,7 +229,10 @@ impl VirtPlatform {
         self.host_now = Some(now);
     }
 
-    pub fn reset(&mut self) {
+    /// Reset for the next boot. A TPM backend reset failure returns before any
+    /// device is touched; the caller must stop the run instead of booting.
+    pub fn reset(&mut self) -> Result<(), TpmBackendError> {
+        self.tpm_tis.as_mut().map_or(Ok(()), TpmTis::reset)?;
         let virtio_iso_irq_was_high = self
             .virtio_iso
             .as_ref()
@@ -281,9 +285,6 @@ impl VirtPlatform {
         if let Some(dev) = self.virtio_console.as_mut() {
             dev.reset_runtime_state();
         }
-        if let Some(tpm) = self.tpm_tis.as_mut() {
-            tpm.reset().expect("TPM backend reset failed");
-        }
         if let Some(ppi) = self.tpm_ppi.as_mut() {
             ppi.reset_runtime_state();
         }
@@ -308,5 +309,6 @@ impl VirtPlatform {
         // start report pacing fresh (the configured interval is preserved).
         self.xhci_dci3_last_emission = None;
         self.xhci_dci5_last_emission = None;
+        Ok(())
     }
 }
