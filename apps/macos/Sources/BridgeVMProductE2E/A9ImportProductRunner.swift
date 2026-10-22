@@ -124,7 +124,7 @@ final class A9ImportProductRunner {
 
     private func importVM(_ ui: T17UIControlling) throws {
         try A9ImportFormEntry.enter(request, ui: ui)
-        try A9ImportRuntimeNavigation.openRuntimeControls(ui)
+        try A9ImportRuntimeNavigation.openRuntimeControls(ui) { A9ImportEndState.capture(ui, request: request, fileManager: fileManager) }
     }
 
     private func verifyImportedConfiguration() throws {

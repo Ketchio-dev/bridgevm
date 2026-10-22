@@ -5,9 +5,9 @@ import Foundation
 enum A9ImportRuntimeNavigation {
     static let importTimeout: TimeInterval = 1_200
 
-    static func openRuntimeControls(_ ui: T17UIControlling) throws {
+    static func openRuntimeControls(_ ui: T17UIControlling, endState: () -> String = { "import_state=unavailable" }) throws {
         if (try? ui.waitFor("bridgevm.windows.runtime.view", timeout: 1)) == nil {
-            try ui.press("bridgevm.dashboard.advanced", timeout: importTimeout)
+            try A9ImportEndState.attributed(endState) { try ui.press("bridgevm.dashboard.advanced", timeout: importTimeout) }
         }
         try ui.waitFor("bridgevm.windows.runtime.view", timeout: 60)
     }
