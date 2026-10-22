@@ -55,9 +55,9 @@ class AppUITierContracts(unittest.TestCase):
             path = self.root / (name + ".png")
             path.write_bytes(png())
             captures.append({"name": name, "file": path.name, "sha256": ui.digest(path), "width": 1, "height": 1})
-        return {"schema_version": 1, "kind": "native-app-ui-diagnostic", "fixture_data": True,
-                "guest_behavior_proof": False, "failure": None, "screenshots": captures,
-                "actions": dict.fromkeys(ui.ACTIONS, True), "tripwires": dict.fromkeys(ui.TRIPWIRES, 0)}
+        return {"schema_version": 1, "kind": "native-app-ui-diagnostic", "fixture_data": True, "failure": None,
+                "guest_behavior_proof": False, "screenshots": captures, "actions": dict.fromkeys(ui.ACTIONS, True),
+                "tripwires": dict.fromkeys(ui.TRIPWIRES, 0), "model_creations": dict(ui.MODEL_CREATIONS)}
 
     def write_report(self, value):
         (self.root / "ui-observations.json").write_text(json.dumps(value))

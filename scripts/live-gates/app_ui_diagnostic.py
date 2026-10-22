@@ -15,6 +15,9 @@ import sys
 import time
 import zlib
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from app_ui_domain_work import MODEL_CREATIONS, TRIPWIRES, verify_domain_work  # noqa: E402,F401
+
 TIER = "d6-app-ui"
 FORMAT = "bridgevm-app-ui-v1"
 TEST_CLASS = "BridgeVMControlTests.HvfAppUIRenderTests"
@@ -27,7 +30,6 @@ ACTIONS = (
     "welcome_visible", "create_opened", "create_cancelled", "import_opened",
     "overview_opened", "search_filtered", "search_cleared",
 )
-TRIPWIRES = ("model_creations", "runtime_creations", "install_creations", "file_jobs")
 
 
 def regular(path, maximum):
@@ -178,7 +180,7 @@ def verify_observations(output):
     report = regular(output / "ui-observations.json", 65_536)
     value = json.loads(report.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
     expected = {"schema_version", "kind", "fixture_data", "guest_behavior_proof",
-                "screenshots", "actions", "tripwires", "failure"}
+                "screenshots", "actions", "tripwires", "model_creations", "failure"}
     if not isinstance(value, dict) or set(value) != expected:
         raise ValueError("observation schema differs")
     if type(value["schema_version"]) is not int or value["schema_version"] != 1:
@@ -186,15 +188,12 @@ def verify_observations(output):
     if (value["kind"] != "native-app-ui-diagnostic" or value["fixture_data"] is not True
             or value["guest_behavior_proof"] is not False or value["failure"] is not None):
         raise ValueError("observation is not a completed app-only fixture")
-    actions, tripwires = value["actions"], value["tripwires"]
+    actions = value["actions"]
     if not isinstance(actions, dict) or set(actions) != set(ACTIONS):
         raise ValueError("action schema differs")
     if not all(actions[key] is True for key in ACTIONS):
         raise ValueError("a native UI action was not observed")
-    if not isinstance(tripwires, dict) or set(tripwires) != set(TRIPWIRES):
-        raise ValueError("tripwire schema differs")
-    if not all(type(tripwires[key]) is int and tripwires[key] == 0 for key in TRIPWIRES):
-        raise ValueError("domain work was attempted")
+    verify_domain_work(value["tripwires"], value["model_creations"])
     captures = value["screenshots"]
     if not isinstance(captures, list) or len(captures) != len(SCREENSHOTS):
         raise ValueError("screenshot set is incomplete")

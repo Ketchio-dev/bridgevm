@@ -75,7 +75,7 @@ final class AppUIHostContractTests: XCTestCase {
         XCTAssertEqual(library.rootURL, libraryRoot)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: libraryRoot.path), [])
         let report = try object(fixture.output, "ui-observations.json")
-        XCTAssertEqual(report["tripwires"] as? [String: Int], ["model_creations": 0, "runtime_creations": 0,
+        XCTAssertEqual(report["tripwires"] as? [String: Int], ["backend_calls": 0, "runtime_creations": 0,
             "install_creations": 0, "file_jobs": 0])
     }
     func testIncompleteObservationCannotBecomeSuccessfulCompletion() async throws {

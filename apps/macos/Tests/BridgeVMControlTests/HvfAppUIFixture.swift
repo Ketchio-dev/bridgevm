@@ -18,7 +18,7 @@ final class HvfAppUIFixture {
             installSessionFactory: { _ in capture.tripwire("install_creations") },
             runtimeSessionFactory: { _ in capture.tripwire("runtime_creations") },
             actionScheduler: { _ in capture.tripwire("file_jobs") }, startsModelsAutomatically: false,
-            modelFactory: { _ in capture.tripwire("model_creations") })
+            modelFactory: { capture.makeModel($0) })
         presentation = HvfAppUIWindow(rootView: ContentView(library: library))
     }
 
@@ -27,16 +27,16 @@ final class HvfAppUIFixture {
     }
 
     func seedOverviewMetadata() {
-        // Explicitly synthetic registration metadata only. No registration or
-        // media exists on disk, and no VM card is ever activated by this test.
-        library.vms = [("Amber", 4096), ("Indigo", 8192)].map { name, memory in
+        // Explicitly synthetic registration metadata only. No registration or media exists on disk;
+        // each row holds one inert-backend model, and no VM row is ever activated by this test.
+        library.vms = capture.work.seed([("Amber", 4096), ("Indigo", 8192)].map { name, memory in
             VMConfig(id: "ui-" + name.lowercased(), name: name, displayName: name,
                 backendKind: "hvf-engine", bootMode: "windows-hvf",
                 bundlePath: root.appendingPathComponent(name + ".vmbridge").path,
                 runnerPath: "", launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
                 leasesPath: "", guestName: "owned-ui-fixture", displayWidth: 1280, displayHeight: 800,
                 memMiB: memory, cpuCount: 4)
-        }
+        })
     }
 
     func assertNoLibraryWrites() throws {

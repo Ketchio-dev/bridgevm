@@ -11,8 +11,7 @@ final class AppUIHostCapture {
     private var screenshots: [[String: Any]] = []
     private var actions = Dictionary(uniqueKeysWithValues: ["welcome_visible", "create_opened",
         "create_cancelled", "import_opened", "overview_opened", "search_filtered", "search_cleared"].map { ($0, false) })
-    private var tripwires = Dictionary(uniqueKeysWithValues: ["model_creations", "runtime_creations",
-        "install_creations", "file_jobs"].map { ($0, 0) })
+    let work = AppUIHostDomainWork()
     private var failure: String?
 
     init(output: URL) throws {
@@ -35,7 +34,7 @@ final class AppUIHostCapture {
         try? save()
     }
     func tripwire(_ name: String) -> Never {
-        tripwires[name, default: 0] += 1
+        work.trip(name)
         failure = "Forbidden domain work: \(name)"
         try? save()
         try? writeCompletion(cleanupVerified: false)
@@ -62,12 +61,12 @@ final class AppUIHostCapture {
     }
     func save() throws {
         try write(["schema_version": 1, "kind": "native-app-ui-diagnostic", "fixture_data": true,
-            "guest_behavior_proof": false, "screenshots": screenshots, "actions": actions,
-            "tripwires": tripwires, "failure": failure.map { $0 as Any } ?? NSNull()], name: "ui-observations.json")
+            "guest_behavior_proof": false, "screenshots": screenshots, "actions": actions, "tripwires": work.tripwires,
+            "model_creations": work.modelCreations, "failure": failure.map { $0 as Any } ?? NSNull()], name: "ui-observations.json")
     }
     func writeCompletion(cleanupVerified: Bool) throws {
         let complete = actions.values.allSatisfy { $0 } && screenshots.count == Self.screenshotNames.count
-            && tripwires.values.allSatisfy { $0 == 0 }
+            && work.complete
         if failure == nil && (!complete || !cleanupVerified) {
             failure = "Host ended without all required observations and verified fixture cleanup"
         }
