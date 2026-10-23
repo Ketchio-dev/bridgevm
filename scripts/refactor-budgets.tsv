@@ -4863,6 +4863,8 @@ docs/document-manifests/hardening-20261022.tsv	4	0
 docs/history/windows-hvf/key-cleanup-review-fixes-20261022.md	153	0
 docs/archive/a11-measured-20261022-review.md	25	0
 docs/document-manifests/key-cleanup-review-20261022.tsv	4	0
+docs/history/windows-hvf/tpm-backend-failure-20261022.md	258	0
+docs/document-manifests/tpm-failure-20261022.tsv	3	0
 scripts/live-gates/t17_lane_key_forget.py	193	0
 scripts/live-gates/product_e2e_json_value.py	9	0
 tests/integration/t17-lane-key-forget-test.py	320	0
