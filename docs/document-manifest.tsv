@@ -86,7 +86,6 @@ docs/windows-arm/smccc-trng-psci-contract.md	current	windows-hvf-engine	-
 @include	docs/document-manifests/native-vmm-gic-group-enable.tsv	-	-
 @include	docs/document-manifests/native-vmm-gic-pending-readback.tsv	-	-
 HANDOFF.md	historical-evidence	project-status	STATUS.md
-docs/windows-arm/evidence/windows-1.0-closure-f1-f4-20260820.md	current	windows-graphics	GOAL.md
 docs/windows-arm/evidence/b6-injector-firstboot-plant-failure-20260907.md	current	windows-graphics	-
 docs/windows-arm/evidence/b6-glyph-observation-active-iosurface-20260907.md	current	windows-graphics	-
 docs/windows-arm/evidence/b6-second-capture-focus-refusal-20260909.md	current	windows-graphics	-
@@ -134,3 +133,4 @@ docs/windows-arm/evidence/b6-active-frame-time-collection-20260910.md	current	wi
 @include	docs/document-manifests/post-merge-integration-20261023.tsv	-	-
 @include	docs/document-manifests/d6-overview-ax-race-20261023.tsv	-	-
 @include	docs/document-manifests/post-merge-integration-r2-20261023.tsv	-	-
+@include	docs/document-manifests/d6-ax-failure-locus-20261023.tsv	-	-
