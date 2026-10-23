@@ -2708,7 +2708,7 @@ apps/macos/Sources/BridgeVMControl/AppUIHostDriverBuildBoundary.swift	13	0
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverClient.swift	106	0
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverAdmission.swift	73	0
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverCanonicalJSON.swift	31	0
-apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverCompletion.swift	45	0
+apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverCompletion.swift	34	0
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverDTO.swift	105	0
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverHostCompletion.swift	42	0
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverMailbox.swift	88	0
@@ -5012,3 +5012,6 @@ scripts/check-app-ui-driver-ax-restart-contracts.sh	5	0
 tests/integration/app-ui-driver-ax-transient-access.swift	72	0
 tests/integration/app-ui-driver-ax-restart-contracts.swift	140	0
 tests/integration/app-ui-driver-ax-restart-terminal-contracts.swift	112	0
+apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverCompletionMailbox.swift	19	0
+tests/integration/app-ui-driver-ax-restart-count-contracts.swift	88	0
+tests/integration/app-ui-host-v2-restart-count-contract.py	47	0

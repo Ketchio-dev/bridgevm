@@ -6,8 +6,7 @@ final class AppUIDriverService {
     let session: AppUIDriverSession
     let sessionSHA256: String
     private var admission: AppUIDriverAdmission
-    private var requestsProcessed = 0
-    private var mutationsPerformed = 0
+    private var requestsProcessed = 0, mutationsPerformed = 0, axRestarts = 0
     private let hostApplication: NSRunningApplication
     private var now: Double { ProcessInfo.processInfo.systemUptime }
 
@@ -53,6 +52,7 @@ final class AppUIDriverService {
             try AppUIDriverIdentity.verify(session.host, privateRoot: mailbox.privateRoot, driver: false)
             let deadline = min(session.deadlineUptime, request.phaseDeadlineUptime)
             let restart = AppUIDriverAXRestart.live(deadline: deadline, cancelled: { try self.mailbox.isCancelled() })
+            defer { axRestarts += restart.count }
             let access = AppUIDriverAX(pid: session.host.pid, deadline: deadline, cancelled: restart.cancelled)
             let result = try AppUIDriverAXOperations(access: access, restart: restart).perform(request.operation)
             if result.outcome == .performed { mutationsPerformed += 1 }
@@ -84,7 +84,7 @@ final class AppUIDriverService {
             try mailbox.publishCompletion(AppUIDriverCompletion(sessionSHA256: sessionSHA256,
                 nonce: session.nonce, hostPID: session.host.pid, driverPID: session.driver.pid,
                 success: success, failureCode: failure, requestsProcessed: requestsProcessed,
-                mutationsPerformed: mutationsPerformed))
+                mutationsPerformed: mutationsPerformed, axRestarts: axRestarts))
         } catch {
             FileHandle.standardError.write(Data("app UI driver completion refused: \(Self.failure(error).code.rawValue)\n".utf8))
             return 2

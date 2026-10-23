@@ -46,9 +46,8 @@ def verify_driver(private, launch):
         {"sessionSHA256", "nonce", "driver", "trusted"},
         {"failureCode", "codeRequirement", "codeRequirementUnavailableReason"})
     completion_path = private / "driver-completion.json"
-    completion = protocol_record(completion_path, "native-app-ui-driver-completion",
-        {"sessionSHA256", "nonce", "hostPID", "driverPID", "success", "requestsProcessed", "mutationsPerformed"},
-        {"failureCode"})
+    completion = protocol_record(completion_path, "native-app-ui-driver-completion", {"sessionSHA256", "nonce",
+        "hostPID", "driverPID", "success", "requestsProcessed", "mutationsPerformed", "axRestarts"}, {"failureCode"})
     for record in (ready, completion):
         if (record["sessionSHA256"] != session_hash or record["nonce"] != session["nonce"]
                 or record.get("failureCode") is not None):
@@ -63,7 +62,8 @@ def verify_driver(private, launch):
             or type(completion["hostPID"]) is not int or completion["hostPID"] != launch["host"]["pid"]
             or type(completion["driverPID"]) is not int or completion["driverPID"] != launch["driver"]["pid"]
             or type(completion["requestsProcessed"]) is not int or not 12 <= completion["requestsProcessed"] <= 1024
-            or type(completion["mutationsPerformed"]) is not int or completion["mutationsPerformed"] != 6):
+            or type(completion["mutationsPerformed"]) is not int or completion["mutationsPerformed"] != 6
+            or type(completion["axRestarts"]) is not int or not 0 <= completion["axRestarts"] <= 3600):
         raise ValueError("v2 driver has no complete fixed-scenario result")
     return digest(completion_path)
 

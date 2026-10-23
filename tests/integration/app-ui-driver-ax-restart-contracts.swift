@@ -9,8 +9,7 @@ import Foundation
 enum AppUIDriverAXRestartContracts {
     typealias A = AppUIDriverAXAttribute
     typealias Access = AppUIDriverAXTransientAccess
-    static var passed = 0
-    static var failed: [String] = []
+    static var passed = 0, failed: [String] = []
 
     static func check(_ condition: @autoclosure () throws -> Bool, _ name: String) {
         if (try? condition()) == true { passed += 1; return }
@@ -131,6 +130,7 @@ enum AppUIDriverAXRestartContracts {
         mutationsAndReadbacksStaySingleShot()
         observationsRestart()
         liveRestartYieldsOnTheMainRunLoop()
+        restartCountContracts()
         guard failed.isEmpty else {
             FileHandle.standardError.write(Data("FAIL: \(failed.count) of \(passed + failed.count) AX restart checks\n".utf8))
             exit(1)

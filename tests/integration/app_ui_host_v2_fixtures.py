@@ -92,7 +92,7 @@ class Fixture:
         ready = dict(**binding, kind="native-app-ui-driver-ready", driver=session["driver"], trusted=True,
                      codeRequirementUnavailableReason="fixture-only: no signed executable was launched")
         completion = dict(**binding, kind="native-app-ui-driver-completion", hostPID=4242, driverPID=4243,
-                          success=True, requestsProcessed=12, mutationsPerformed=6)
+                          success=True, requestsProcessed=12, mutationsPerformed=6, axRestarts=0)
         (self.private / "driver-ready.json").write_text(json.dumps(ready))
         (self.private / "driver-completion.json").write_text(json.dumps(completion))
         return ready, completion

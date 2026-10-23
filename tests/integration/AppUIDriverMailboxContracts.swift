@@ -90,12 +90,12 @@ enum AppUIDriverMailboxContracts {
         typealias T = AppUIDriverProtocolTestSupport
         let completion = AppUIDriverCompletion(sessionSHA256: try T.hash(session), nonce: session.nonce,
             hostPID: session.host.pid, driverPID: session.driver.pid, success: false, failureCode: nil,
-            requestsProcessed: 12, mutationsPerformed: 6)
+            requestsProcessed: 12, mutationsPerformed: 6, axRestarts: 0)
         try box.publishCompletion(completion)
         try T.check(try box.readCompletion() == completion, "host failure remains driver false without invented AX error")
         let invalid = AppUIDriverCompletion(sessionSHA256: try T.hash(session), nonce: session.nonce,
             hostPID: session.host.pid, driverPID: session.driver.pid, success: true, failureCode: nil,
-            requestsProcessed: 11, mutationsPerformed: 5)
+            requestsProcessed: 11, mutationsPerformed: 5, axRestarts: 0)
         try T.refuses("completion cannot promote missing actions") { try box.publishCompletion(invalid) }
         let observations = root.appendingPathComponent("host-observations")
         try FileManager.default.createDirectory(at: observations, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
