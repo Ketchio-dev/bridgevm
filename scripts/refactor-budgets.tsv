@@ -921,7 +921,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/plan_tests.rs	73
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/psci_adapter.rs	255	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs	545	26
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/serial_input.rs	158	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync.rs	309	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync.rs	307	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace.rs	124	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace/event_ring.rs	231	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace/event_ring_tests.rs	130	0
@@ -4927,3 +4927,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_name_refusals.rs	44	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_hash.rs	8	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_report.rs	34	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_report_tests.rs	88	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_size_cap.rs	42	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_cap_tests.rs	105	0

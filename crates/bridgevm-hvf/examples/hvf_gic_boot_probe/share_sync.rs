@@ -33,6 +33,7 @@ pub enum SkipReason {
 pub enum GuestFileOutcome {
     AlreadySynced,
     WriteHost(Vec<u8>),
+    Skip(SkipReason),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +79,7 @@ pub struct ShareSync {
     host_unseen: HashSet<String>,
     host_aliased: HashSet<String>,
     refused_names_seen: (usize, u64),
+    fetched_over_cap: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -144,6 +146,7 @@ impl ShareSync {
         }
         self.alias_guest_renames();
         let held = self.pull_held_keys();
+        self.drop_fetched_over_cap();
 
         for (name, entry) in &self.guest_file_entries_scratch {
             if entry.size > self.max_bytes {
@@ -183,15 +186,7 @@ impl ShareSync {
                 }
             }
         }
-        // A skip is reported once per listed oversized version. Forget versions
-        // that left the listing, or guest listings grow this set without limit.
-        let listed = &self.guest_file_entries_scratch;
-        let max_bytes = self.max_bytes;
-        self.guest_skip_seen.retain(|(name, mtime, _)| {
-            listed
-                .get(name)
-                .is_some_and(|entry| entry.size > max_bytes && entry.mtime == *mtime)
-        });
+        self.retain_guest_skips();
 
         for (name, record) in &self.records {
             if self.present_scratch.contains(name) {
@@ -216,6 +211,9 @@ impl ShareSync {
         mtime: Option<&str>,
     ) -> GuestFileOutcome {
         let name = normalize_rel(&name);
+        if bytes.len() as u64 > self.max_bytes {
+            return self.refuse_over_cap(name, bytes.len() as u64, mtime);
+        }
         let hash = fnv1a64(&bytes);
         let size = bytes.len() as u64;
         let guest_mtime = mtime
@@ -318,6 +316,8 @@ mod share_name_refusals;
 pub use share_name_refusals::RefusedNames;
 #[path = "share_put_outcome.rs"]
 mod share_put_outcome;
+#[path = "share_size_cap.rs"]
+mod share_size_cap;
 #[path = "share_sync_host.rs"]
 mod share_sync_host;
 #[path = "share_win_alias.rs"]
