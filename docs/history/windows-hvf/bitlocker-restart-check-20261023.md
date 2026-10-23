@@ -281,7 +281,7 @@ result beside `tpm_evidence`:
 | guest assets | `tests/integration/t19-bitlocker-guest-contract.ps1` (pwsh 7.5.2); the Windows PowerShell job runs it through `tests/integration/windows-guest-pwsh-contracts.ps1` | the workload file could not be read | PASS; the Windows job has not run |
 | host plumbing | `apps/macos/Tests/BridgeVMProductE2ETests/T19BitLockerGuestResultTests.swift`, `apps/macos/Tests/BridgeVMProductE2ETests/T19BitLockerCheckTests.swift` and `apps/macos/Tests/BridgeVMProductE2ETests/T19BitLockerLaneTests.swift` | against the base sources the tests did not build (220 errors, every one a missing T19 type or member); after the first green, the two unlock-boot refinements failed 4 assertions | the ProductE2E shim suite: 452 passed, 0 failed (436 before; 16 new tests) |
 | host plumbing | `tests/integration/t19-bitlocker-switch-test.py` and `tests/integration/t19-bitlocker-private-lane-test.py` | against the base scripts 5 of 7 switch tests failed (the default and refusal tests passed) and the private-lane test could not import `t19_private_lane` | 7 of 7 and 6 of 6 pass; both run in `tests/integration/windows-import-product-e2e-contract-smoke.sh` |
-| defaults | t19-bitlocker-default-unchanged-test.py | pending | pending |
+| defaults | `tests/integration/t19-bitlocker-default-unchanged-test.py` | a guard of unchanged behaviour, so it was reddened by mutation: with the verifier adding the key without the row, 2 of 5 tests failed | 5 of 5 pass; default verified inputs are the base verifier's exact bytes, and the T17 verifier refuses the row |
 
 ## Not verified
 
