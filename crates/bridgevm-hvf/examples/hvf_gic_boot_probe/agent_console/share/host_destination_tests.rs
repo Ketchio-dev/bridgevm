@@ -2,6 +2,9 @@
 
 use super::*;
 use std::os::unix::fs::symlink;
+use std::os::unix::fs::PermissionsExt;
+#[path = "guest_write_policy_tests.rs"]
+mod write_policy;
 
 static FIXTURE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 struct Fixture { path: std::path::PathBuf, _lock: std::sync::MutexGuard<'static, ()> }

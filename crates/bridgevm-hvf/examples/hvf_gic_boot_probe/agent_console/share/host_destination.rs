@@ -4,9 +4,11 @@ use std::ffi::{CStr, CString};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[path = "guest_write_policy.rs"]
+mod policy;
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
@@ -85,18 +87,8 @@ impl Destination {
         let (temporary, mut file) = self.temporary()?;
         let result = (|| {
             write(&mut file)?;
-            if let Some(existing) = existing {
-                let mode = existing.metadata()?.permissions().mode() & 0o777;
-                file.set_permissions(std::fs::Permissions::from_mode(mode))?;
-                #[cfg(target_os = "macos")]
-                {
-                    // SAFETY: both descriptors are live; no data/stat copy so the
-                    // replacement keeps its new content and modification time.
-                    let status = unsafe { libc::fcopyfile(existing.as_raw_fd(), file.as_raw_fd(),
-                        std::ptr::null_mut(), libc::COPYFILE_ACL | libc::COPYFILE_XATTR) };
-                    if status != 0 { return Err(io::Error::last_os_error()); }
-                }
-            }
+            // No execute bits and a quarantine mark before publication, or no write.
+            policy::seal(existing.as_ref(), &file)?;
             file.sync_all()?;
             let mtime = file.metadata()?.modified().ok()
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|t| t.as_millis());
@@ -123,7 +115,7 @@ impl Destination {
             let temporary = CString::new(format!(".bridgevm-sync-{}-{id}", std::process::id())).unwrap();
             if temporary == self.leaf { continue; }
             match open_at(&self.parent, &temporary,
-                          libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW, 0o600) {
+                          libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW, policy::NEW_FILE_MODE) {
                 Ok(file) => return Ok((temporary, file)),
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return Err(e),
