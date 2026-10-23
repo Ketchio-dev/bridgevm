@@ -4703,7 +4703,7 @@ apps/macos/scripts/AppUIInstallCancelAXOperations.swift	59	0
 apps/macos/scripts/AppUIInstallCancelDriver.swift	45	0
 apps/macos/scripts/AppUIInstallCancelService.swift	99	0
 scripts/app_ui_host_contract_discovery.py	28	0
-scripts/check-app-ui-driver-ax-contracts.sh	7	0
+scripts/check-app-ui-driver-ax-contracts.sh	6	0
 scripts/check-app-ui-driver-python-contracts.sh	7	0
 scripts/live-gates/app_ui_install_cancel_cleanup.py	45	0
 scripts/live-gates/app_ui_install_cancel_diagnostic.py	94	0
@@ -5024,3 +5024,8 @@ tests/integration/live-submit-publishable-job-id-test.sh	30	0
 docs/archive/a11-measured-20261023-integration.md	24	0
 docs/history/windows-hvf/t17-r92-integration-pilot-20261023.md	86	0
 docs/document-manifests/post-merge-integration-r2-20261023.tsv	4	0
+apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverAXLocus.swift	62	0
+apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverAXContextAttribute.swift	13	0
+scripts/check-app-ui-driver-ax-context-contracts.sh	8	0
+tests/integration/app-ui-driver-ax-locus-protocol-contracts.swift	110	0
+tests/integration/app-ui-driver-ax-locus-wire-cases.swift	152	0
