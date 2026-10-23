@@ -15,6 +15,6 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Build TPM2_PCR_Read, parse fixed responses and bind tbs.dll
+      - name: Build TPM2_PCR_Read, bind tbs.dll, and run the BitLocker workload on scripted CIM answers
         shell: powershell
-        run: tests/integration/t17-tpm-pcr-contract.ps1
+        run: tests/integration/windows-guest-pwsh-contracts.ps1

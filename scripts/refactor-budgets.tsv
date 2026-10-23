@@ -5071,3 +5071,8 @@ docs/history/windows-hvf/guest-write-followups-20261023.md	167	0
 docs/document-manifests/guest-write-followups-20261023.tsv	3	0
 docs/history/windows-hvf/bitlocker-restart-check-20261023.md	296	0
 docs/document-manifests/bitlocker-restart-check-20261023.tsv	3	0
+scripts/win-assets/bv-product-e2e-bitlocker.ps1	158	0
+scripts/win-assets/bv-product-e2e-bitlocker-launch.ps1	17	0
+tests/integration/t19-bitlocker-guest-contract.ps1	123	0
+tests/integration/t19-bitlocker-guest-contract.py	177	0
+tests/integration/windows-guest-pwsh-contracts.ps1	8	0

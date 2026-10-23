@@ -277,8 +277,8 @@ result beside `tpm_evidence`:
 
 | Step | Test | Before | After |
 | --- | --- | --- | --- |
-| guest assets | t19-bitlocker-guest-contract.py | pending | pending |
-| guest assets | t19-bitlocker-guest-contract.ps1 under pwsh, and in the Windows PowerShell job | pending | pending |
+| guest assets | `tests/integration/t19-bitlocker-guest-contract.py` | the guest assets did not exist; 8 of 9 failed | 9 of 9 pass, including 20 scenario results read by an independent Python parser |
+| guest assets | `tests/integration/t19-bitlocker-guest-contract.ps1` (pwsh 7.5.2); the Windows PowerShell job runs it through `tests/integration/windows-guest-pwsh-contracts.ps1` | the workload file could not be read | PASS; the Windows job has not run |
 | host plumbing | the T19BitLocker suites of the ProductE2E shim suite | pending | pending |
 | host plumbing | t19-bitlocker-switch-test.py and t19-bitlocker-private-lane-test.py | pending | pending |
 | defaults | t19-bitlocker-default-unchanged-test.py | pending | pending |
