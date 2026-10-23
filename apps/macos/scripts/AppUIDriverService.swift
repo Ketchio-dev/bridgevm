@@ -54,7 +54,7 @@ final class AppUIDriverService {
             let restart = AppUIDriverAXRestart.live(deadline: deadline, cancelled: { try self.mailbox.isCancelled() })
             defer { axRestarts += restart.count }
             let access = AppUIDriverAX(pid: session.host.pid, deadline: deadline, cancelled: restart.cancelled)
-            let result = try AppUIDriverAXOperations(access: access, restart: restart).perform(request.operation)
+            let result = try AppUIDriverAXOperations(access: AppUIDriverAXLocusAccess(access), restart: restart).perform(request.operation)
             if result.outcome == .performed { mutationsPerformed += 1 }
             let reply = reply(request, sha256: sha256, outcome: result.outcome,
                               values: result.values, failure: nil, axError: nil)

@@ -5026,6 +5026,12 @@ docs/history/windows-hvf/t17-r92-integration-pilot-20261023.md	86	0
 docs/document-manifests/post-merge-integration-r2-20261023.tsv	4	0
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverAXLocus.swift	62	0
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverAXContextAttribute.swift	13	0
-scripts/check-app-ui-driver-ax-context-contracts.sh	8	0
+scripts/check-app-ui-driver-ax-context-contracts.sh	6	0
 tests/integration/app-ui-driver-ax-locus-protocol-contracts.swift	110	0
 tests/integration/app-ui-driver-ax-locus-wire-cases.swift	152	0
+apps/macos/scripts/AppUIDriverAXLocusAccess.swift	148	0
+scripts/check-app-ui-driver-ax-locus-contracts.sh	16	0
+tests/integration/app-ui-driver-ax-locus-fake.swift	72	0
+tests/integration/app-ui-driver-ax-locus-contracts.swift	167	0
+tests/integration/app-ui-driver-ax-locus-sweep-contracts.swift	169	0
+tests/integration/app-ui-driver-ax-locus-names-contracts.swift	77	0

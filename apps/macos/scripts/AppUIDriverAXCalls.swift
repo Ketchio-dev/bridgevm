@@ -1,6 +1,6 @@
 import ApplicationServices
 
-// Only this table calls the system messaging APIs; deterministic fixtures replace every closure.
+// Only this table and AppUIDriverAXNameCalls call the system messaging APIs; deterministic fixtures replace every closure.
 struct AppUIDriverAXCalls {
     var getPID: (AXUIElement, UnsafeMutablePointer<pid_t>) -> AXError = { AXUIElementGetPid($0, $1) }
     var timeout: (AXUIElement, Float) -> AXError = { AXUIElementSetMessagingTimeout($0, $1) }
