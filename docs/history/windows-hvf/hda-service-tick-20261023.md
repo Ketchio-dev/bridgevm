@@ -51,7 +51,7 @@ dropped 116 ms, and IOCs that one poll crossed shared one MSI.
   `deviation_modules` of `docs/machine-contract/qemu-virt-deviations.json`.
   Guest-visible: DMA position and IOC interrupts advance on a 5 ms host tick
   while a stream runs, and on vCPU exits otherwise or under the userspace GIC.
-  The QEMU side is recalled from QEMU's timer-driven HDA model, not re-read.
+  QEMU (master, read 2026-10-23 at integration): a 1 ms virtual-clock timer.
 
 ### The ring's 70 ms high-water mark (`cfbdb930`)
 
@@ -156,7 +156,7 @@ fields, and the count was updated (`step2-xctest-shim-first.log`).
   GIC or a real AudioQueue device cycle.
 - `hv_gic_send_msi` from a non-vCPU thread rests on the header's silence,
   not on a live run.
-- The QEMU side of the deviation entry is recalled, not re-read.
+- QEMU's side: recalled here, then verified against QEMU master at integration.
 - The controller-reset branch of `machine_assembly.rs` (`reset()`) was not
   fully read; the platform-reset test covers the flag's handle.
 - The wake latency gained from user-interactive QoS is not measured.
