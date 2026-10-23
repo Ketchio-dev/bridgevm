@@ -9,7 +9,7 @@ there at most once each, in that order and before any stats or continuity
 record, within its unchanged record and byte bounds. Fields are unsigned
 decimals without leading zeros, `*_ms` buffer lengths carry three decimals and
 position_buffer is 0 or 1. A log from before the records reads as it did and
-nothing requires them.
+nothing requires them; hda_diagnostics.py reports them.
 """
 
 from __future__ import annotations

@@ -4915,3 +4915,5 @@ scripts/live-gates/hvf_host_diagnostics.py	39	0
 apps/macos/Sources/BridgeVMProductE2E/HvfHostDiagnostics.swift	50	0
 apps/macos/Tests/BridgeVMProductE2ETests/HvfHostDiagnosticsTests.swift	104	0
 tests/integration/hda-diagnostics-host-tail-contract.py	285	0
+scripts/live-gates/hda_diagnostics.py	132	0
+tests/integration/hda-diagnostics-report-test.py	156	0
