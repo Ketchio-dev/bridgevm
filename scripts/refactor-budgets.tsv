@@ -5124,3 +5124,5 @@ crates/bridgevm-hvf/src/display_fb_requests_tests.rs	106	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferViewMapping.swift	24	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFrameRequester.swift	47	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFrameRequestTests.swift	66	0
+docs/history/windows-hvf/display-export-20261023.md	308	0
+docs/document-manifests/display-export-20261023.tsv	3	0

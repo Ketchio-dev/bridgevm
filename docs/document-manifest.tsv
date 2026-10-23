@@ -79,7 +79,6 @@ path	class	topic	superseded_by
 @include	docs/document-manifests/native-vmm-audio-lifecycle.tsv	-	-
 @include	docs/document-manifests/native-vmm-transfer-and-teardown.tsv	-	-
 @include	docs/document-manifests/a19-interruption.tsv	-	-
-docs/windows-arm/smccc-trng-psci-contract.md	current	windows-hvf-engine	-
 @include	docs/document-manifests/native-vmm-gic-deactivation.tsv	-	-
 @include	docs/document-manifests/native-vmm-gic-group-enable.tsv	-	-
 @include	docs/document-manifests/native-vmm-gic-pending-readback.tsv	-	-
@@ -134,3 +133,4 @@ HANDOFF.md	historical-evidence	project-status	STATUS.md
 @include	docs/document-manifests/bitlocker-restart-check-20261023.tsv	-	-
 @include	docs/document-manifests/followups-r2-r3-20261023.tsv	-	-
 @include	docs/document-manifests/hda-service-tick-20261023.tsv	-	-
+@include	docs/document-manifests/display-export-20261023.tsv	-	-
