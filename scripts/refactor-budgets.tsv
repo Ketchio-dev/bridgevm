@@ -5019,3 +5019,5 @@ apps/macos/Sources/BridgeVMControl/AppUIHostOverviewRequests.swift	29	0
 apps/macos/Tests/BridgeVMAppUIHostTests/AppUIHostOverviewRequestsContractTests.swift	72	0
 docs/history/windows-hvf/d6-overview-ax-race-20261023.md	223	0
 docs/document-manifests/d6-overview-ax-race-20261023.tsv	3	0
+scripts/live-gates/publishable_job_id.py	23	0
+tests/integration/live-submit-publishable-job-id-test.sh	30	0

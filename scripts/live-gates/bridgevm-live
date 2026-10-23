@@ -94,7 +94,7 @@ cmd_submit() {
     ensure_dirs
     local id
     if [ "$job_id_set" -eq 1 ]; then id="$requested_id"; else id="$(date +%Y%m%d-%H%M%S)-$$-$RANDOM"; fi
-    [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || { echo "job id is not canonical" >&2; exit 2; }; [[ "$tier" != d10-t22-owned-pair-preparation && "$tier" != d11-native-fixture-preparation ]] || [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$ ]] || { echo "development job id exceeds preparation limit" >&2; exit 2; }
+    [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || { echo "job id is not canonical" >&2; exit 2; }; python3 -B "$(dirname "$0")/publishable_job_id.py" "$id" || { echo "job id would be refused by receipt redaction: drop image, vars, vTPM and key words" >&2; exit 2; }; [[ "$tier" != d10-t22-owned-pair-preparation && "$tier" != d11-native-fixture-preparation ]] || [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$ ]] || { echo "development job id exceeds preparation limit" >&2; exit 2; }
     local ledger_entry="$JOB_LEDGER/$id"
     if ! mkdir -m 700 "$ledger_entry" 2>/dev/null; then
         echo "job id has already been burned: $id" >&2; exit 2
