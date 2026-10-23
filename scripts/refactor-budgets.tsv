@@ -2540,9 +2540,9 @@ apps/macos/Tests/BridgeVMControlTests/HvfRuntimeKeyboardDraftTests.swift	179	0
 apps/macos/Sources/BridgeVMControl/CreateVMSheet.swift	293	0
 apps/macos/Sources/BridgeVMControl/LibraryAppearance.swift	54	0
 apps/macos/Sources/BridgeVMControl/LibrarySidebarChrome.swift	56	0
-apps/macos/Sources/BridgeVMControl/LibraryVMCard.swift	86	0
+apps/macos/Sources/BridgeVMControl/LibraryVMCard.swift	80	0
 apps/macos/Sources/BridgeVMControl/LibraryOverviewView.swift	80	0
-apps/macos/Sources/BridgeVMControl/LibraryWorkspaceList.swift	160	0
+apps/macos/Sources/BridgeVMControl/LibraryWorkspaceList.swift	154	0
 apps/macos/Sources/BridgeVMControl/LibraryDashboardDetail.swift	244	0
 apps/macos/Sources/BridgeVMControl/LibraryVMContextMenu.swift	37	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeHeader.swift	43	0
@@ -5039,3 +5039,6 @@ docs/history/windows-hvf/d6-ax-failure-locus-20261023.md	214	0
 docs/document-manifests/d6-ax-failure-locus-20261023.tsv	3	0
 docs/archive/a11-measured-20261023-locus.md	26	0
 docs/document-manifests/d6-locus-integration-20261023.tsv	3	0
+apps/macos/Sources/BridgeVMControl/LibraryVMActionsMenu.swift	23	0
+apps/macos/Tests/BridgeVMControlTests/LibraryMenuIdentifierSourceTests.swift	34	0
+apps/macos/Tests/BridgeVMControlTests/LibraryVMActionsMenuValueTests.swift	54	0
