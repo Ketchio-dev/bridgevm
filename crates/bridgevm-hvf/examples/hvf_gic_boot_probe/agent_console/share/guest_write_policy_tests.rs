@@ -5,7 +5,6 @@
 //! set is refused.
 
 use super::*;
-use bridgevm_hvf::host_entropy::HostEntropy;
 use bridgevm_hvf::smccc_trng::{EntropyError, EntropySource};
 use std::os::unix::ffi::OsStrExt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -215,15 +214,6 @@ impl EntropySource for Constant {
     }
 }
 
-/// A host CSPRNG that cannot produce bytes.
-struct NoEntropy;
-
-impl EntropySource for NoEntropy {
-    fn fill(&mut self, _: &mut [u8]) -> Result<(), EntropyError> {
-        Err(EntropyError::Unavailable)
-    }
-}
-
 #[test]
 fn mark_is_flags_hex_seconds_agent_and_a_version_4_uuid() {
     let at = UNIX_EPOCH + Duration::from_secs(0x6a1b_2c3d);
@@ -237,43 +227,4 @@ fn mark_is_flags_hex_seconds_agent_and_a_version_4_uuid() {
         mark,
         "0083;6a1b2c3d;BridgeVM;00000000-0000-4000-8000-000000000000"
     );
-}
-
-#[test]
-fn csprng_failure_refuses_the_write_without_a_fallback_uuid() {
-    let f = Fixture::new();
-    let file = File::create(f.root().join("t")).unwrap();
-    let mut marked = false;
-    let result = policy::seal_with(None, &file, &mut NoEntropy, |_, _, _| {
-        marked = true;
-        Ok(())
-    });
-    assert!(result.is_err());
-    assert!(!marked, "a mark was set without a CSPRNG UUID");
-}
-
-#[test]
-fn a_temporary_that_keeps_execute_bits_is_refused() {
-    // FAT and exFAT report every file rwx------ whatever chmod asks for.
-    let f = Fixture::new();
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true).mode(0o700);
-    let file = options.open(f.root().join("t")).unwrap();
-    let mut marked = false;
-    let result = policy::seal_with(None, &file, &mut HostEntropy::new(), |_, _, _| {
-        marked = true;
-        Ok(())
-    });
-    assert!(result.is_err(), "guest file with execute bits sealed");
-    assert!(!marked, "guest file with execute bits marked");
-}
-
-#[test]
-fn share_filesystem_without_extended_attributes_refuses_the_write() {
-    let f = Fixture::new();
-    let file = File::create(f.root().join("t")).unwrap();
-    let enotsup = |_: &File, _: &CStr, _: &[u8]| Err(io::Error::from_raw_os_error(libc::ENOTSUP));
-    let error = policy::seal_with(None, &file, &mut HostEntropy::new(), enotsup).unwrap_err();
-    assert_eq!(error.kind(), io::ErrorKind::Unsupported);
-    assert!(error.to_string().contains("extended attributes"), "{error}");
 }

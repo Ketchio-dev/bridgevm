@@ -3,6 +3,8 @@
 use super::*;
 use std::os::unix::fs::symlink;
 use std::os::unix::fs::PermissionsExt;
+#[path = "guest_write_filesystem_tests.rs"]
+mod filesystem;
 #[path = "guest_write_policy_tests.rs"]
 mod write_policy;
 

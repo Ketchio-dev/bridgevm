@@ -1,16 +1,22 @@
 //! What a guest-written share file carries onto the Mac (decisions of
-//! 2026-10-23, revised the same day). It never carries an execute bit: a new
-//! file is created owner-only 0600 before the umask, and an overwrite keeps
-//! only the replaced file's read/write bits, so setuid, setgid and sticky stay
-//! cleared too. It always carries a
-//! com.apple.quarantine mark, set on the unpublished temporary. A temporary
-//! that still reports one of those bits (FAT and exFAT report every file as
-//! rwx------) or whose mark cannot be set refuses the write, including on a
-//! share filesystem without extended attributes (ENOTSUP).
+//! 2026-10-23, revised the same day). A new file is created owner-only 0600
+//! before the umask; an overwrite keeps only the replaced file's read/write
+//! bits, which clears every execute, setuid, setgid and sticky bit. Every file
+//! carries a com.apple.quarantine mark, set on the unpublished temporary. A
+//! mark that cannot be set refuses the write, including on a share filesystem
+//! without extended attributes (ENOTSUP).
+//!
+//! The mode is read back after chmod. A leftover execute, setuid, setgid or
+//! sticky bit refuses the write, with one exception: msdos and exfat report
+//! every file as executable whatever chmod asks, so there leftover execute
+//! bits alone are accepted when the mark reads back exactly. On those volumes
+//! a guest file stays executable to the owner; the mark, stored in an
+//! AppleDouble sidecar, still makes Gatekeeper check it when it is opened
+//! through LaunchServices.
 
+use super::seal_host::{NativeSealHost, SealHost};
 use bridgevm_hvf::host_entropy::HostEntropy;
 use bridgevm_hvf::smccc_trng::EntropySource;
-use std::ffi::CStr;
 use std::fs::{File, Permissions};
 use std::io;
 use std::os::fd::AsRawFd;
@@ -19,18 +25,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Mode a new guest file is created with, before the process umask: owner-only.
 pub(super) const NEW_FILE_MODE: libc::mode_t = 0o600;
-const QUARANTINE: &CStr = c"com.apple.quarantine";
 
-/// Make the unpublished temporary `file` publishable over `existing`, or fail.
-pub(super) fn seal(existing: Option<&File>, file: &File) -> io::Result<()> {
-    seal_with(existing, file, &mut HostEntropy::new(), set_xattr)
+/// Make the unpublished temporary `file`, created in `directory`, publishable
+/// over `existing`, or fail.
+pub(super) fn seal(existing: Option<&File>, file: &File, directory: &File) -> io::Result<()> {
+    let host = &mut NativeSealHost { directory };
+    seal_with(existing, file, &mut HostEntropy::new(), host)
 }
 
 pub(super) fn seal_with(
     existing: Option<&File>,
     file: &File,
     entropy: &mut impl EntropySource,
-    set: impl FnOnce(&File, &CStr, &[u8]) -> io::Result<()>,
+    host: &mut impl SealHost,
 ) -> io::Result<()> {
     if let Some(existing) = existing {
         #[cfg(target_os = "macos")]
@@ -54,19 +61,31 @@ pub(super) fn seal_with(
         file.set_permissions(Permissions::from_mode(mode))?;
     }
     // Verified, not assumed: some filesystems ignore the create mode and chmod.
-    if file.metadata()?.permissions().mode() & 0o7111 != 0 {
+    let leftover = host.mode(file)? & 0o7111;
+    // Only execute bits, and only where every file reports them.
+    let fat = leftover != 0
+        && leftover & 0o7000 == 0
+        && matches!(host.filesystem()?.as_str(), "msdos" | "exfat");
+    if leftover != 0 && !fat {
         let reason = "execute bits refused: share filesystem keeps them on guest files";
         return Err(io::Error::new(io::ErrorKind::PermissionDenied, reason));
     }
     // Last: fcopyfile re-applies the replaced file's own quarantine, if any.
     let mark = quarantine_mark(SystemTime::now(), entropy)?;
-    set(file, QUARANTINE, mark.as_bytes()).map_err(|error| {
+    host.set_mark(file, mark.as_bytes()).map_err(|error| {
         if error.raw_os_error() == Some(libc::ENOTSUP) {
             let reason = "quarantine refused: share filesystem has no extended attributes";
             return io::Error::new(io::ErrorKind::Unsupported, reason);
         }
         io::Error::new(error.kind(), format!("quarantine not set: {error}"))
-    })
+    })?;
+    // There the mark is the only barrier left, so it must read back exactly.
+    if fat && host.get_mark(file).ok().as_deref() != Some(mark.as_bytes()) {
+        return Err(io::Error::other(
+            "quarantine refused: msdos/exfat mark did not read back",
+        ));
+    }
+    Ok(())
 }
 
 /// `flags;hex-seconds;agent;UUID`, the form of the system's own marks, with
@@ -93,22 +112,4 @@ pub(super) fn quarantine_mark(
         &hex[16..20],
         &hex[20..]
     ))
-}
-
-fn set_xattr(file: &File, name: &CStr, value: &[u8]) -> io::Result<()> {
-    // SAFETY: live descriptor, NUL-terminated name, `value` is value.len() bytes.
-    let status = unsafe {
-        libc::fsetxattr(
-            file.as_raw_fd(),
-            name.as_ptr(),
-            value.as_ptr().cast(),
-            value.len(),
-            0,
-            0,
-        )
-    };
-    if status != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
 }

@@ -9,6 +9,8 @@ use std::path::{Component, Path};
 use std::sync::atomic::{AtomicU64, Ordering};
 #[path = "guest_write_policy.rs"]
 mod policy;
+#[path = "guest_write_host.rs"]
+mod seal_host;
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
@@ -87,8 +89,8 @@ impl Destination {
         let (temporary, mut file) = self.temporary()?;
         let result = (|| {
             write(&mut file)?;
-            // No execute bits and a quarantine mark before publication, or no write.
-            policy::seal(existing.as_ref(), &file)?;
+            // The guest write policy's mode and quarantine mark, or no write.
+            policy::seal(existing.as_ref(), &file, &self.parent)?;
             file.sync_all()?;
             let mtime = file.metadata()?.modified().ok()
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|t| t.as_millis());
