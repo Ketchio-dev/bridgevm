@@ -51,10 +51,10 @@ final class AppUIDriverService {
             try admission.admit(request, now: now)
             try AppUIDriverIdentity.verify(session.driver, privateRoot: mailbox.privateRoot, driver: true)
             try AppUIDriverIdentity.verify(session.host, privateRoot: mailbox.privateRoot, driver: false)
-            let access = AppUIDriverAX(pid: session.host.pid,
-                deadline: min(session.deadlineUptime, request.phaseDeadlineUptime),
-                cancelled: { try self.mailbox.isCancelled() })
-            let result = try AppUIDriverAXOperations(access: access).perform(request.operation)
+            let deadline = min(session.deadlineUptime, request.phaseDeadlineUptime)
+            let restart = AppUIDriverAXRestart.live(deadline: deadline, cancelled: { try self.mailbox.isCancelled() })
+            let access = AppUIDriverAX(pid: session.host.pid, deadline: deadline, cancelled: restart.cancelled)
+            let result = try AppUIDriverAXOperations(access: access, restart: restart).perform(request.operation)
             if result.outcome == .performed { mutationsPerformed += 1 }
             let reply = reply(request, sha256: sha256, outcome: result.outcome,
                               values: result.values, failure: nil, axError: nil)

@@ -5007,3 +5007,8 @@ tests/integration/product-e2e-lane-private-keys-test.py	110	0
 docs/archive/a11-measured-20261023-merged.md	26	0
 docs/history/windows-hvf/post-merge-integration-20261023.md	112	0
 docs/document-manifests/post-merge-integration-20261023.tsv	4	0
+apps/macos/scripts/AppUIDriverAXRestart.swift	69	0
+scripts/check-app-ui-driver-ax-restart-contracts.sh	5	0
+tests/integration/app-ui-driver-ax-transient-access.swift	72	0
+tests/integration/app-ui-driver-ax-restart-contracts.swift	140	0
+tests/integration/app-ui-driver-ax-restart-terminal-contracts.swift	112	0
