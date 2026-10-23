@@ -5048,3 +5048,6 @@ docs/archive/a11-measured-20261023-menu.md	29	0
 docs/document-manifests/d6-menu-integration-20261023.tsv	3	0
 apps/macos/Sources/BridgeVMControl/LibrarySearchTextField.swift	87	0
 apps/macos/Tests/BridgeVMControlTests/LibrarySearchFieldAccessibilityTests.swift	62	0
+docs/history/windows-hvf/d6-search-binding-20261023.md	104	0
+docs/archive/a11-measured-20261023-search.md	28	0
+docs/document-manifests/d6-search-integration-20261023.tsv	4	0

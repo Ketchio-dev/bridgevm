@@ -1,0 +1,4 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/b6-active-frame-time-collection-20260910.md	current	windows-graphics	-
+docs/history/windows-hvf/d6-search-binding-20261023.md	historical-evidence	live-pilots-20261022	-
+docs/archive/a11-measured-20261023-search.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
