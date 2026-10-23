@@ -1,3 +1,5 @@
+#[path = "probe_runtime/generation_tpm.rs"]
+mod generation_tpm;
 #[path = "../hvf_gic_boot_probe/input_control_wake.rs"]
 mod input_control_wake;
 #[path = "../hvf_gic_boot_probe/pointer_deadline_trace.rs"]
@@ -16,6 +18,7 @@ use crate::hvf_setup::{create_gic, create_vm};
 use crate::probe_config::ProbeConfig;
 use crate::probe_setup::prepare_platform;
 use crate::watchpoint_setup::watchpoint_config;
+use generation_tpm::generation_tpm;
 use system_reset_failure::system_reset_failure;
 #[path = "probe_media_lease.rs"]
 mod media_lease;
@@ -23,14 +26,14 @@ pub(crate) fn run() -> ExitCode {
     let mut fatal_vcpu_run_error = false;
     let mut fatal_reset_error = false;
     let mut exit_for_recreate = false;
-    let Some((config, mut media_lease)) = media_lease::prepare() else {
+    let Some((config, mut media_lease, tpm_backend)) = media_lease::prepare() else {
         return ExitCode::FAILURE;
     };
     let ProbeConfig {
         media,
         smp_cpus,
-        swtpm_data_socket,
-        swtpm_control_socket,
+        swtpm_data_socket: _,
+        swtpm_control_socket: _,
         platform_cfg,
         ram_size,
         watchdog_ms,
@@ -48,12 +51,8 @@ pub(crate) fn run() -> ExitCode {
         create_vm();
         let _vm_guard = HvVmGuard;
         create_gic(smp_cpus as usize);
-        let (mut platform, vars_data, boot_dtb) = prepare_platform(
-            &media,
-            platform_cfg,
-            swtpm_data_socket.as_deref(),
-            swtpm_control_socket.as_deref(),
-        );
+        let (mut platform, vars_data, boot_dtb) =
+            prepare_platform(&media, platform_cfg, tpm_backend);
 
         let ram_backing = GuestRamBacking::allocate_and_map(machine::RAM_BASE, ram_size);
         let ram = ram_backing.pointer();

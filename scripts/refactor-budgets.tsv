@@ -440,6 +440,7 @@ crates/bridgevm-hvf/src/tpm_ppi.rs	188	0
 crates/bridgevm-hvf/src/tpm_tis.rs	620	0
 crates/bridgevm-hvf/src/tpm_swtpm.rs	168	0
 crates/bridgevm-hvf/src/tpm_swtpm_tests.rs	269	0
+crates/bridgevm-hvf/src/tpm_swtpm_boot.rs	16	0
 crates/bridgevm-hvf/src/venus_backend/ffi_submit.rs	7	1
 crates/bridgevm-hvf/src/venus_backend/map_resource_ref.rs	357	15
 crates/bridgevm-hvf/src/venus_backend/poll_stall.rs	157	0
@@ -825,11 +826,13 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_bar2.rs	37	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_setup.rs	12	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_setup.rs	88	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_config.rs	83	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	997	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	993	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/vtimer_recovery.rs	8	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/system_reset_failure.rs	29	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/system_reset_failure_tests.rs	86	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_setup.rs	89	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/generation_tpm.rs	43	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/generation_tpm_tests.rs	133	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_setup.rs	59	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/watchpoint_setup.rs	14	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console.rs	15	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clipboard.rs	65	0
@@ -1125,6 +1128,7 @@ crates/bridgevm-hvf-runtime/src/vtpm.rs	78	0
 crates/bridgevm-hvf-runtime/src/vtpm_wait.rs	1	0
 crates/bridgevm-hvf-runtime/src/vtpm_tests.rs	60	0
 crates/bridgevm-hvf-runtime/src/vtpm_tests_real.rs	145	0
+crates/bridgevm-hvf-runtime/src/vtpm_generation_tests_real.rs	76	0
 crates/bridgevm-hvf/src/userspace_gic/mod.rs	565	0
 crates/bridgevm-hvf/src/userspace_gic/hppir.rs	11	0
 crates/bridgevm-hvf/src/userspace_gic/hppir_tests.rs	194	0

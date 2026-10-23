@@ -64,3 +64,5 @@ fn a_binary_that_exits_early_is_reported_not_waited_out() {
 
 #[path = "vtpm_tests_real.rs"]
 mod real;
+#[path = "vtpm_generation_tests_real.rs"]
+mod real_generations;

@@ -16,6 +16,8 @@ use std::{
     path::Path,
     time::Duration,
 };
+#[path = "tpm_swtpm_boot.rs"]
+mod boot;
 
 /// swtpm control-channel command that performs a `_TPM_Init` power cycle.
 ///

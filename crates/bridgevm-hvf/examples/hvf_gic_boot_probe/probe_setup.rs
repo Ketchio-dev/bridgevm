@@ -3,8 +3,7 @@ use super::*;
 pub(crate) unsafe fn prepare_platform(
     media: &VirtBootMediaConfig,
     platform_cfg: VirtPlatformConfig,
-    swtpm_data_socket: Option<&Path>,
-    swtpm_control_socket: Option<&Path>,
+    tpm_backend: Option<Box<dyn Tpm2Backend>>,
 ) -> (VirtPlatform, Vec<u8>, Vec<u8>) {
     map_file(
         &media.firmware_code_path,
@@ -16,35 +15,6 @@ pub(crate) unsafe fn prepare_platform(
         .flash_vars
         .read_bounded(machine::FLASH_VARS.size as usize)
         .unwrap_or_else(|e| panic!("read UEFI vars {}: {e}", media.flash_vars.path.display()));
-    let tpm_backend: Option<Box<dyn Tpm2Backend>> =
-        swtpm_data_socket
-            .as_ref()
-            .map(|path| match swtpm_control_socket.as_ref() {
-                Some(control) => {
-                    println!(
-                        "TPM2 TIS backend: swtpm data socket {} control socket {}",
-                        path.display(),
-                        control.display()
-                    );
-                    Box::new(
-                        SwtpmUnixBackend::connect_with_control(path, Some(control)).unwrap_or_else(
-                            |error| {
-                                panic!(
-                                    "connect swtpm data {} control {}: {error}",
-                                    path.display(),
-                                    control.display()
-                                )
-                            },
-                        ),
-                    ) as Box<dyn Tpm2Backend>
-                }
-                None => {
-                    println!("TPM2 TIS backend: swtpm data socket {}", path.display());
-                    Box::new(SwtpmUnixBackend::connect(path).unwrap_or_else(|error| {
-                        panic!("connect swtpm {}: {error}", path.display())
-                    })) as Box<dyn Tpm2Backend>
-                }
-            });
     let mut platform = VirtPlatform::new_with_config_and_tpm_backend(platform_cfg, tpm_backend);
     if env_flag("BRIDGEVM_HDA_COREAUDIO") {
         if !platform_cfg.devices.hda_present {
