@@ -2562,7 +2562,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfAppUICapture.swift	71	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIRenderTests.swift	30	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIScenario.swift	81	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIProbe.swift	73	0
-apps/macos/Sources/BridgeVMControl/LibrarySearchField.swift	36	0
+apps/macos/Sources/BridgeVMControl/LibrarySearchField.swift	32	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIWindow.swift	34	0
 apps/macos/Tests/BridgeVMControlTests/HvfAppUIClient.swift	57	0
 apps/macos/Sources/BridgeVMControl/FirstRunImportNameField.swift	28	0
@@ -5046,3 +5046,5 @@ docs/history/windows-hvf/d6-menu-identifier-20261023.md	94	0
 docs/document-manifests/d6-menu-identifier-20261023.tsv	3	0
 docs/archive/a11-measured-20261023-menu.md	29	0
 docs/document-manifests/d6-menu-integration-20261023.tsv	3	0
+apps/macos/Sources/BridgeVMControl/LibrarySearchTextField.swift	87	0
+apps/macos/Tests/BridgeVMControlTests/LibrarySearchFieldAccessibilityTests.swift	62	0
