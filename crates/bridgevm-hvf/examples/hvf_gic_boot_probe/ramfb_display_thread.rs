@@ -7,18 +7,24 @@
 //! config, with `try_lock`, so it never waits behind a vCPU. A running
 //! exporter counts its tick lateness and publish intervals and leaves its
 //! `ramfb display timing:` record with the platform (ramfb_display_timing.rs).
+//! It exports when the app's display tick asks for a frame, and on its own
+//! deadline only when nobody asks (ramfb_display_loop.rs).
 
 use std::sync::{Arc, Mutex, TryLockError};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+#[path = "ramfb_display_loop.rs"]
+mod pull;
 #[path = "ramfb_display_stop.rs"]
 mod stop;
 #[path = "ramfb_display_timing.rs"]
 mod timing;
-use stop::StopSignal;
-use timing::RamfbDisplayTiming;
+#[path = "ramfb_display_wake.rs"]
+mod wake;
+use pull::export_loop;
 use timing::SharedTiming;
+use wake::ExportWake;
 
 use super::{has_virtio_gpu, ramfb_export_interval, FramePublisher};
 use crate::{MappedRam, VirtPlatform};
@@ -57,7 +63,7 @@ impl ConfigSource for PlatformConfig {
 /// runs; dropping it stops and joins the thread, so declare it after the RAM
 /// backing: every exit path, unwinding included, then joins before unmapping.
 pub struct RamfbDisplayThread {
-    stop: Arc<StopSignal>,
+    wake: Arc<ExportWake>,
     handle: Option<JoinHandle<()>>,
     timing: SharedTiming,
 }
@@ -118,8 +124,8 @@ impl RamfbDisplayThread {
         source: impl ConfigSource,
         memory: impl FnOnce() -> M + Send + 'static,
     ) -> Self {
-        let stop = Arc::new(StopSignal::default());
-        let (signal, timing) = (Arc::clone(&stop), SharedTiming::default());
+        let wake = Arc::new(ExportWake::new());
+        let (signal, timing) = (Arc::clone(&wake), SharedTiming::default());
         let counts = Arc::clone(&timing);
         let spawned = std::thread::Builder::new()
             .name("ramfb-display-export".into())
@@ -131,7 +137,7 @@ impl RamfbDisplayThread {
             });
         match spawned {
             Ok(handle) => Self {
-                stop,
+                wake,
                 handle: Some(handle),
                 timing,
             },
@@ -144,7 +150,7 @@ impl RamfbDisplayThread {
 
     fn inert() -> Self {
         Self {
-            stop: Arc::default(),
+            wake: Arc::default(),
             handle: None,
             timing: SharedTiming::default(),
         }
@@ -153,7 +159,7 @@ impl RamfbDisplayThread {
 
 impl Drop for RamfbDisplayThread {
     fn drop(&mut self) {
-        self.stop.stop();
+        self.wake.stop();
         // A tick is bounded work, so the join waits at most one frame.
         if let Some(handle) = self.handle.take() {
             if handle.join().is_err() {
@@ -161,38 +167,6 @@ impl Drop for RamfbDisplayThread {
             }
         }
     }
-}
-
-/// Deadline-paced: a tick that overruns resynchronises instead of bursting.
-fn export_loop(
-    mut publisher: FramePublisher,
-    mut source: impl ConfigSource,
-    mem: &dyn GuestMemoryMut,
-    interval: Duration,
-    stop: &StopSignal,
-    counts: &Mutex<RamfbDisplayTiming>,
-) {
-    let started = Instant::now();
-    let (mut next, mut polls, mut published) = (started, 0u64, 0u64);
-    let mut slowest = Duration::ZERO;
-    while !stop.wait_until(next) {
-        let tick = Instant::now();
-        let fresh = publisher.publish_changed(source.poll(), mem);
-        published += u64::from(fresh);
-        polls += 1;
-        let done = Instant::now();
-        timing::lock(counts).note_tick(next, tick, fresh.then_some(done));
-        slowest = slowest.max(done - tick);
-        next = (next + interval).max(done);
-    }
-    let seconds = started.elapsed().as_secs_f64().max(f64::EPSILON);
-    let (poll_hz, publish_hz) = (polls as f64 / seconds, published as f64 / seconds);
-    println!(
-        "ramfb display export: stopped polls={polls} published={published} \
-         seconds={seconds:.1} poll_hz={poll_hz:.1} publish_hz={publish_hz:.1} \
-         slowest_tick_us={}",
-        slowest.as_micros()
-    );
 }
 
 #[cfg(test)]

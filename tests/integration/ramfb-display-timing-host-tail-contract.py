@@ -106,7 +106,7 @@ class DisplayHostTailContract(unittest.TestCase):
         values = dict(re.findall(r" (ms|n)='([^']*)'", shell))
         [pattern] = re.findall(r'-e "(' + re.escape(display.DISPLAY_PREFIX) + r'[^"]*)"', shell)
         self.assertEqual((values["n"], pattern.replace("$n", values["n"])), (display.VALUE, display.DISPLAY_LINE.pattern))
-        thread = (PROBE / "ramfb_display_thread.rs").read_text(encoding="utf-8")
+        thread = (PROBE / "ramfb_display_loop.rs").read_text(encoding="utf-8")
         self.assertEqual(thread.count(STOP), 1, "the export's stop record is byte-identical")
 
     def test_tail_readers_admit_one_record_after_every_hda_record(self):

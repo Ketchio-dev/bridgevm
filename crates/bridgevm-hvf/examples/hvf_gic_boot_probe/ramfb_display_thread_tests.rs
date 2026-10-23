@@ -14,6 +14,8 @@ use bridgevm_hvf::dtb::VirtFdtConfig;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::platform_virt::VirtPlatform;
 use bridgevm_hvf::ramfb::RamfbConfig;
+#[path = "ramfb_display_request_tests.rs"]
+mod requests;
 
 const TICK: Duration = Duration::from_millis(5);
 
