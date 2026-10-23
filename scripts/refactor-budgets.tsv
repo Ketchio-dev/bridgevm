@@ -358,7 +358,7 @@ crates/bridgevm-hvf/src/platform_virt/gpu_device.rs	105	0
 crates/bridgevm-hvf/src/platform_virt/gpu_device_setup.rs	96	0
 crates/bridgevm-hvf/src/platform_virt/guest_memory.rs	97	0
 crates/bridgevm-hvf/src/platform_virt/interrupt_routing.rs	140	0
-crates/bridgevm-hvf/src/platform_virt/machine_assembly.rs	270	0
+crates/bridgevm-hvf/src/platform_virt/machine_assembly.rs	267	0
 crates/bridgevm-hvf/src/platform_virt/mmio_dispatch.rs	263	0
 crates/bridgevm-hvf/src/platform_virt/mmio_types.rs	40	0
 crates/bridgevm-hvf/src/platform_virt/mod.rs	10	0
@@ -875,7 +875,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/kd_serial_bridge.rs	234	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_display_export.rs	144	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_export.rs	116	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_export_tests.rs	231	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_thread.rs	198	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_thread.rs	176	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_thread_tests.rs	331	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file.rs	36	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file/checked_access.rs	55	3
