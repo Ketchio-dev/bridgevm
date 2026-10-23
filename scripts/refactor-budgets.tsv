@@ -5042,3 +5042,5 @@ docs/document-manifests/d6-locus-integration-20261023.tsv	3	0
 apps/macos/Sources/BridgeVMControl/LibraryVMActionsMenu.swift	23	0
 apps/macos/Tests/BridgeVMControlTests/LibraryMenuIdentifierSourceTests.swift	34	0
 apps/macos/Tests/BridgeVMControlTests/LibraryVMActionsMenuValueTests.swift	54	0
+docs/history/windows-hvf/d6-menu-identifier-20261023.md	94	0
+docs/document-manifests/d6-menu-identifier-20261023.tsv	3	0
