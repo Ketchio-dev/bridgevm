@@ -5112,3 +5112,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_ring_latency_tests
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_ring_trim_tests.rs	77	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_sink.rs	21	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_timing_callback.rs	32	0
+docs/history/windows-hvf/hda-service-tick-20261023.md	170	0
+docs/document-manifests/hda-service-tick-20261023.tsv	3	0
