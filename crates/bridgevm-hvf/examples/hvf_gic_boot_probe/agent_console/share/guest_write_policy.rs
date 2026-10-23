@@ -13,7 +13,13 @@
 //! a guest file stays executable to the owner; the mark, stored in an
 //! AppleDouble sidecar, still makes Gatekeeper check it when it is opened
 //! through LaunchServices.
+//!
+//! A refusal of the mode or the mark holds until the guest file changes, so it
+//! is persistent (follow-up of 2026-10-23, guest_write_refusal.rs); the mark is
+//! set in guest_write_mark.rs.
 
+use super::super::guest_write_refusal::persistent;
+use super::mark::set_mark;
 use super::seal_host::{NativeSealHost, SealHost};
 use bridgevm_hvf::host_entropy::HostEntropy;
 use bridgevm_hvf::smccc_trng::EntropySource;
@@ -68,22 +74,14 @@ pub(super) fn seal_with(
         && matches!(host.filesystem()?.as_str(), "msdos" | "exfat");
     if leftover != 0 && !fat {
         let reason = "execute bits refused: share filesystem keeps them on guest files";
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, reason));
+        return Err(persistent(io::ErrorKind::PermissionDenied, reason));
     }
     // Last: fcopyfile re-applies the replaced file's own quarantine, if any.
-    let mark = quarantine_mark(SystemTime::now(), entropy)?;
-    host.set_mark(file, mark.as_bytes()).map_err(|error| {
-        if error.raw_os_error() == Some(libc::ENOTSUP) {
-            let reason = "quarantine refused: share filesystem has no extended attributes";
-            return io::Error::new(io::ErrorKind::Unsupported, reason);
-        }
-        io::Error::new(error.kind(), format!("quarantine not set: {error}"))
-    })?;
+    let mark = set_mark(file, entropy, host)?;
     // There the mark is the only barrier left, so it must read back exactly.
     if fat && host.get_mark(file).ok().as_deref() != Some(mark.as_bytes()) {
-        return Err(io::Error::other(
-            "quarantine refused: msdos/exfat mark did not read back",
-        ));
+        let reason = "quarantine refused: msdos/exfat mark did not read back";
+        return Err(persistent(io::ErrorKind::Other, reason));
     }
     Ok(())
 }

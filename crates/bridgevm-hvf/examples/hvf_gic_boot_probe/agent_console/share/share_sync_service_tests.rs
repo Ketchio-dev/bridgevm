@@ -15,6 +15,8 @@ mod listing_report_tests;
 mod put_unconfirmed_tests;
 #[path = "share_unseen_tests.rs"]
 mod unseen_tests;
+#[path = "share_write_refusal_tests.rs"]
+mod write_refusal_tests;
 
 const ROOT: &str = "C:\\share";
 

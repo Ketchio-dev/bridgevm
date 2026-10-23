@@ -921,7 +921,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/plan_tests.rs	73
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/psci_adapter.rs	255	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs	545	26
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/serial_input.rs	158	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync.rs	307	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync.rs	283	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace.rs	124	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace/event_ring.rs	231	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace/event_ring_tests.rs	130	0
@@ -4955,7 +4955,7 @@ docs/history/windows-hvf/agent-channel-hygiene-r2-20261023.md	130	0
 docs/document-manifests/hygiene-r2-20261023.tsv	3	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_guest_admission.rs	89	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_guest_admission_tests.rs	191	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_policy.rs	94	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_policy.rs	86	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_policy_tests.rs	222	2
 docs/history/windows-hvf/guest-write-policy-20261023.md	244	0
 docs/document-manifests/guest-write-policy-20261023.tsv	3	0
@@ -5058,3 +5058,8 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_operator_repl
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_operator_reply_tests.rs	73	0
 apps/macos/Sources/BridgeVMProductE2E/T17ClipboardFingerprint.swift	13	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ClipboardFingerprintReplyTests.swift	37	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_write_failures.rs	89	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_mark.rs	21	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_refusal.rs	24	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_refusal_tests.rs	56	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_write_refusal_tests.rs	118	0

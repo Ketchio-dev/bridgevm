@@ -10,6 +10,8 @@ use super::*;
 use bridgevm_hvf::host_entropy::HostEntropy;
 use bridgevm_hvf::smccc_trng::{EntropyError, EntropySource};
 use seal_host::{NativeSealHost, SealHost};
+#[path = "guest_write_refusal_tests.rs"]
+mod refusal;
 
 /// How msdos and exfat report every file, whatever chmod asked.
 const FAT_MODE: u32 = 0o100700;

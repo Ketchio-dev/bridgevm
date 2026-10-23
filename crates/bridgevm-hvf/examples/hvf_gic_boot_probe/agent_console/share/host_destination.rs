@@ -7,6 +7,8 @@ use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[path = "guest_write_mark.rs"]
+mod mark;
 #[path = "guest_write_policy.rs"]
 mod policy;
 #[path = "guest_write_host.rs"]

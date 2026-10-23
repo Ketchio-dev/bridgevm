@@ -80,6 +80,7 @@ pub struct ShareSync {
     host_aliased: HashSet<String>,
     refused_names_seen: (usize, u64),
     fetched_over_cap: HashMap<String, String>,
+    refused_writes: share_write_failures::RefusedWrites,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -147,6 +148,7 @@ impl ShareSync {
         self.alias_guest_renames();
         let held = self.pull_held_keys();
         self.drop_fetched_over_cap();
+        self.drop_refused_writes();
 
         for (name, entry) in &self.guest_file_entries_scratch {
             if entry.size > self.max_bytes {
@@ -255,37 +257,11 @@ impl ShareSync {
         }
     }
 
-    pub fn forget_absent_failed(&mut self, mut is_absent: impl FnMut(&str) -> bool) {
-        let guest = &self.present_scratch;
-        self.records.retain(|name, record| {
-            !(record.host_write_failed && !guest.contains(name) && is_absent(name))
-        });
-        self.pending_guest_mtime.retain(|name, _| guest.contains(name));
-        self.pending_host_changed.retain(|name| self.records.contains_key(name));
-    }
-
     pub fn on_guest_deleted(&mut self, name: &str) {
         let name = normalize_rel(name);
         self.records.remove(&name);
         self.pending_host_changed.remove(&name);
         self.pending_guest_mtime.remove(&name);
-    }
-
-    /// Retry a failed write on the next guest listing. Never turn its missing,
-    /// old or partial destination into a reverse upload or a guest deletion.
-    pub fn on_host_write_failed(&mut self, name: &str) -> bool {
-        let name = normalize_rel(name);
-        self.pending_host_changed.remove(&name);
-        if let Some(record) = self.records.get_mut(&name) {
-            record.host_write_failed = true;
-            record.guest_mtime = None;
-        }
-        // Do not evict failed-destination protection to accommodate guest churn.
-        // The caller disables sync at this bound rather than risking data loss.
-        let (count, bytes) = self.records.iter().filter(|(_, r)| r.host_write_failed)
-            .fold((0usize, 0usize), |(count, bytes), (name, _)|
-                (count.saturating_add(1), bytes.saturating_add(name.len())));
-        count >= 4096 || bytes >= 4 * 1024 * 1024
     }
 
     pub fn on_host_deleted(&mut self, name: &str) {
@@ -324,6 +300,8 @@ mod share_sync_host;
 mod share_win_alias;
 #[path = "share_win_names.rs"]
 mod share_win_names;
+#[path = "share_write_failures.rs"]
+mod share_write_failures;
 #[cfg(test)]
 use share_listing::parse_ls;
 pub use share_listing::parse_ls_into;

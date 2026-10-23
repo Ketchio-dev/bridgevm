@@ -1,6 +1,7 @@
 //! Guest-initiated writes/deletes use pinned, no-follow directory descriptors.
 
 use super::*;
+use super::guest_write_refusal::is_persistent;
 use super::host_destination::Destination;
 
 pub(in crate::agent_console) fn forget_absent_share_failures(share: &mut ShareState) {
@@ -49,7 +50,7 @@ impl AgentConsoleHarness {
                 println!("BVAGENT SHARE guest->host {name} bytes={} t={}", bytes.len(), self.t_ms(now));
             }
             Err(e) => {
-                let exhausted = share.engine.on_host_write_failed(name);
+                let exhausted = share.engine.on_host_write_error(name, is_persistent(&e));
                 println!("BVAGENT SHARE write-refused {name} {e}");
                 if exhausted {
                     self.share = None;
