@@ -25,16 +25,16 @@ struct SystemHostPasteboard: HostPasteboardWriting {
 /// Pure helper: write a guest clipboard snapshot's text into the host pasteboard.
 ///
 /// Returns `true` when text was written, `false` when there was nothing safe to
-/// write (nil snapshot or empty text). Never writes empty/nil text, so a guest
-/// cannot silently blank the host pasteboard through this path.
+/// write: no snapshot, empty text (a guest cannot blank the host pasteboard
+/// here) or text over the 8 MiB guest-to-host limit, refused whole, never cut.
 @discardableResult
 func copyGuestClipboardToHost(
   _ snapshot: GuestClipboardSnapshot?,
   into pasteboard: HostPasteboardWriting
 ) -> Bool {
-  guard let text = snapshot?.text, !text.isEmpty else {
+  guard let snapshot, snapshot.isCopyableToHost else {
     return false
   }
-  pasteboard.writeString(text)
+  pasteboard.writeString(snapshot.text)
   return true
 }

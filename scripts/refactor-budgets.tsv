@@ -5051,3 +5051,6 @@ apps/macos/Tests/BridgeVMControlTests/LibrarySearchFieldAccessibilityTests.swift
 docs/history/windows-hvf/d6-search-binding-20261023.md	104	0
 docs/archive/a11-measured-20261023-search.md	28	0
 docs/document-manifests/d6-search-integration-20261023.tsv	4	0
+apps/macos/Sources/BridgeVMApp/Models/GuestClipboardCopyLimit.swift	21	0
+apps/macos/Tests/BridgeVMAppTests/GuestClipboardCopyRouteTests.swift	82	0
+crates/bridgevm-storage/src/tests_split/guest_tools_clipboard_key.rs	30	0

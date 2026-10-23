@@ -5947,7 +5947,7 @@ private struct GuestClipboardTelemetryView: View {
   var pasteboard: HostPasteboardWriting = SystemHostPasteboard()
 
   private var canCopyToHost: Bool {
-    !(clipboard?.text.isEmpty ?? true)
+    clipboard?.isCopyableToHost ?? false
   }
 
   var body: some View {
@@ -5959,7 +5959,7 @@ private struct GuestClipboardTelemetryView: View {
       if let clipboard {
         VStack(alignment: .leading, spacing: 6) {
           GuestToolsFactRow(title: "Updated", value: unixTimeText(clipboard.updatedAtUnix))
-          Text(clipboard.text.isEmpty ? "Empty text" : clipboard.text)
+          Text(clipboard.previewText)
             .font(.callout)
             .lineLimit(3)
             .textSelection(.enabled)
