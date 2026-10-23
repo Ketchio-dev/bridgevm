@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "contract": "qemu-virt-compatible",
+  "deviations": [
+    {
+      "id": "xhci-hid-report-pacing",
+      "area": "usb-input",
+      "qemu_behavior": "Recalled from QEMU's hw/usb/dev-hid.c, hw/input/hid.c and hw/usb/hcd-xhci.c, not re-read for this entry: usb-kbd and usb-tablet are separate USB HID devices. A host input event is queued in the HID device, where usb-tablet merges motion into a pending event the guest has not read while the button state is unchanged, and wakes that device's interrupt-IN endpoint. The report is returned on the guest's next queued transfer for the endpoint, subject to the endpoint interval in the xHCI model. QEMU sets no host-time minimum spacing between reports, and a report does not wait for a vCPU exit.",
+      "bridgevm_behavior": "BridgeVM's xHCI presents one high-speed composite HID device. Its keyboard (endpoint 0x81, DCI3) and pointer (endpoint 0x82, DCI5) interrupt-IN endpoints both declare bInterval 10, which the xHCI model does not enforce. The probe paces report emission in host time instead. One interval, BRIDGEVM_XHCI_REPORT_INTERVAL_MS (default 30 ms; 0 disables pacing; a value above 10000 is clamped to 10000; an unparsable value uses the default), applies to each endpoint against that endpoint's own previous emission, so a keyboard report does not delay a pointer report. Reports are written only by a vCPU thread after a vCPU exit: in the pre-run and data-abort drains, after an xHCI register write, and when vCPU0's live-input poll, due every 16 ms or woken by an input-file write, queues input. Once pacing is active, each drain releases at most one report per endpoint. A queued pointer report that pacing holds arms a host thread that forces a vCPU0 exit at its deadline. The legacy live-input route replaces a pointer move still waiting at the back of its queue with a newer one.",
+      "guest_visible": true,
+      "impact": "With the default interval the guest receives at most about 33 reports per second on each endpoint, each at least 30 ms after the previous one. Pointer motion on this route therefore reaches Windows as absolute positions at most about every 30 ms, and consecutive keystroke reports are at least 30 ms apart. The probe's documented reason is that Windows dropped keystrokes when reports landed microseconds apart. Input on the resident agent's ordered route is inserted with SendInput in the guest and does not pass through these endpoints. This entry records existing behaviour; nothing was changed. The evidence is the code and its deterministic tests at 9fa07eb4. No live run measured the report spacing the guest observes, and the QEMU description is recalled, not re-read.",
+      "evidence": "crates/bridgevm-hvf/src/platform_virt/xhci_input.rs"
+    }
+  ]
+}
