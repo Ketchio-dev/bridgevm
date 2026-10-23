@@ -14,8 +14,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/live-gates"))
 from retained_windows_publication import OwnedRetention  # noqa: E402
-# The export-output cases share this RETAIN module and run with this contract.
-from retained_windows_export_cases import RETAIN, RetainedExportOutputCases  # noqa: E402,F401
+# The export-output and refusal-text cases share this RETAIN module and run with this contract.
+from retained_windows_refusal_cases import RETAIN, RetainedExportOutputCases, RetainedRefusalOutputCases  # noqa: E402,F401
 
 
 class RetainedWindowsPublicationContract(unittest.TestCase):

@@ -4919,7 +4919,7 @@ scripts/live-gates/hda_diagnostics.py	132	0
 tests/integration/hda-diagnostics-report-test.py	156	0
 docs/history/windows-hvf/audio-diagnostics-records-20261022.md	202	0
 docs/document-manifests/audio-diagnostics-20261022.tsv	3	0
-scripts/live-gates/retained_windows_vtpm.py	31	0
+scripts/live-gates/retained_windows_vtpm.py	22	0
 tests/integration/retained_windows_export_cases.py	137	0
 scripts/live-gates/stop_signals.py	28	0
 tests/integration/t17_lane_key_forget_signal_cases.py	84	0
@@ -4949,3 +4949,5 @@ docs/archive/a11-measured-20261023-followups-r5.md	26	0
 docs/document-manifests/followups-r5-20261023.tsv	3	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/harness_get_end.rs	62	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/get_end_tests.rs	194	0
+scripts/live-gates/retained_windows_quiet.py	42	0
+tests/integration/retained_windows_refusal_cases.py	48	0
