@@ -5044,3 +5044,5 @@ apps/macos/Tests/BridgeVMControlTests/LibraryMenuIdentifierSourceTests.swift	34	
 apps/macos/Tests/BridgeVMControlTests/LibraryVMActionsMenuValueTests.swift	54	0
 docs/history/windows-hvf/d6-menu-identifier-20261023.md	94	0
 docs/document-manifests/d6-menu-identifier-20261023.tsv	3	0
+docs/archive/a11-measured-20261023-menu.md	29	0
+docs/document-manifests/d6-menu-integration-20261023.tsv	3	0
