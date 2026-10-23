@@ -1302,7 +1302,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfHostKeyModifierTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteSessionTests.swift	84	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteTargetTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfHostShortcutIsolationTests.swift	31	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	321	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	304	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferScrollOrderingTests.swift	57	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFileIdentity.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFileIdentityTests.swift	66	0
@@ -5121,3 +5121,6 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_loop.rs	97	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_request_tests.rs	198	1
 crates/bridgevm-hvf/src/display_fb_requests.rs	37	2
 crates/bridgevm-hvf/src/display_fb_requests_tests.rs	106	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferViewMapping.swift	24	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFrameRequester.swift	47	0
+apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFrameRequestTests.swift	66	0

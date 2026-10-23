@@ -20,13 +20,14 @@ struct HvfFramebufferView: NSViewRepresentable {
 
 final class FBLayerView: HvfFramebufferTextInput {
     private(set) weak var session: HvfEngineSession?
-    private var framebufferMapping: HvfFramebufferMapping?
+    var framebufferMapping: HvfFramebufferMapping?
     private var guestSize: CGSize = .zero {
         didSet { if guestSize != oldValue { HvfDisplaySurfaceAccessibility.update(self, guestSize: guestSize) } }
     }
-    private var lastProcessedSeq: UInt64 = .max
+    var lastProcessedSeq: UInt64 = .max
     private let imageFactory: HvfFramebufferImageFactory
     var frameReader = HvfFramebufferFrameReader()
+    let frameRequester = HvfFramebufferFrameRequester()
     private var iosurfacePresenter = HvfIOSurfacePresenter()
     private var pointerMoves = HvfPointerMoveMailbox()
     private let pointerCapture = HvfPointerCapture()
@@ -108,6 +109,7 @@ final class FBLayerView: HvfFramebufferTextInput {
             invalidateDisplay()
             return
         }
+        defer { if framebufferMapping === mapping { frameRequester.post(mapping, path: framebufferPath) } }
         let read = frameReader.read(mapping.pointer, length: mapping.length, shown: lastProcessedSeq)
         guard case let .frame(buffer, byteCount, width, height, stride, sequence) = read else {
             if case .invalid = read {
@@ -253,7 +255,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         }
     }
 
-    private var framebufferPath: String? {
+    var framebufferPath: String? {
         session.map { $0.config.evidenceDir + "/display.fb" }
     }
 
@@ -297,25 +299,6 @@ final class FBLayerView: HvfFramebufferTextInput {
         pointerMoves.reset()
         guestSize = .zero
         layer?.contents = nil
-    }
-
-    private func ensureMapping() -> Bool {
-        if let mapping = framebufferMapping {
-            guard let currentLength = mapping.currentLength(matching: framebufferPath) else {
-                resetMapping()
-                return false
-            }
-            if currentLength == mapping.length { return true }
-            resetMapping()
-        }
-        guard let framebufferPath else { return false }
-        framebufferMapping = HvfFramebufferMapping(path: framebufferPath)
-        return framebufferMapping != nil
-    }
-
-    private func resetMapping() {
-        framebufferMapping = nil
-        lastProcessedSeq = .max
     }
 }
 #endif
