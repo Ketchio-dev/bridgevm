@@ -1,7 +1,8 @@
 //! What a guest-written share file carries onto the Mac (decisions of
-//! 2026-10-23). It never carries an execute bit: a new file is created 0644
-//! before the umask, and an overwrite keeps only the replaced file's read/write
-//! bits, so setuid, setgid and sticky stay cleared too. It always carries a
+//! 2026-10-23, revised the same day). It never carries an execute bit: a new
+//! file is created owner-only 0600 before the umask, and an overwrite keeps
+//! only the replaced file's read/write bits, so setuid, setgid and sticky stay
+//! cleared too. It always carries a
 //! com.apple.quarantine mark, set on the unpublished temporary. A temporary
 //! that still reports one of those bits (FAT and exFAT report every file as
 //! rwx------) or whose mark cannot be set refuses the write, including on a
@@ -16,8 +17,8 @@ use std::os::fd::AsRawFd;
 use std::os::unix::fs::PermissionsExt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Mode a new guest file is created with, before the process umask.
-pub(super) const NEW_FILE_MODE: libc::mode_t = 0o644;
+/// Mode a new guest file is created with, before the process umask: owner-only.
+pub(super) const NEW_FILE_MODE: libc::mode_t = 0o600;
 const QUARANTINE: &CStr = c"com.apple.quarantine";
 
 /// Make the unpublished temporary `file` publishable over `existing`, or fail.

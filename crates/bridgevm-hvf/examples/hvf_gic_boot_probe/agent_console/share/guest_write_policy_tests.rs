@@ -1,7 +1,8 @@
-//! Guest-written share files (decisions of 2026-10-23): a new file is created
-//! 0644 before the umask, an overwrite keeps only the replaced file's
-//! read/write bits, and the temporary carries a com.apple.quarantine mark
-//! before the rename. A write whose mark cannot be set is refused.
+//! Guest-written share files (decisions of 2026-10-23, revised the same day):
+//! a new file is created owner-only 0600 before the umask, an overwrite keeps
+//! only the replaced file's read/write bits, and the temporary carries a
+//! com.apple.quarantine mark before the rename. A write whose mark cannot be
+//! set is refused.
 
 use super::*;
 use bridgevm_hvf::host_entropy::HostEntropy;
@@ -82,18 +83,13 @@ fn now() -> u64 {
 }
 
 #[test]
-fn new_guest_file_is_created_0644_before_the_umask() {
+fn new_guest_file_is_created_owner_only_0600() {
     let f = Fixture::new();
     let d = Destination::open(&f.root(), "new.bin", true).unwrap();
     d.write(b"guest").unwrap();
-    // What any 0644 create gets under this process's umask.
-    let reference = f.path.join("reference");
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true).mode(0o644);
-    options.open(&reference).unwrap();
+    // 0600 before the umask; the usual umasks (022, 077) leave it as is.
     let created = mode(&f.root().join("new.bin"));
-    assert_eq!(created, mode(&reference), "{created:o}");
-    assert_eq!(created & 0o7111, 0, "{created:o}");
+    assert_eq!(created, 0o600, "{created:o}");
 }
 
 #[test]

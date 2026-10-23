@@ -4956,6 +4956,6 @@ docs/document-manifests/hygiene-r2-20261023.tsv	3	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_guest_admission.rs	92	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_guest_admission_tests.rs	191	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_policy.rs	98	2
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_policy_tests.rs	275	2
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_policy_tests.rs	270	2
 docs/history/windows-hvf/guest-write-policy-20261023.md	244	0
 docs/document-manifests/guest-write-policy-20261023.tsv	3	0
