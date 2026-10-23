@@ -5069,3 +5069,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/harness_get_
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/get_dir_policy_tests.rs	106	1
 docs/history/windows-hvf/guest-write-followups-20261023.md	167	0
 docs/document-manifests/guest-write-followups-20261023.tsv	3	0
+docs/history/windows-hvf/bitlocker-restart-check-20261023.md	296	0
+docs/document-manifests/bitlocker-restart-check-20261023.tsv	3	0
