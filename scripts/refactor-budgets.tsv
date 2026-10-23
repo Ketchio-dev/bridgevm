@@ -4989,3 +4989,12 @@ apps/macos/Sources/BridgeVMProductE2E/T17FirstRunHostRecords.swift	39	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FirstRunHostRecordsTests.swift	141	0
 scripts/live-gates/product_e2e_host_records.py	40	0
 tests/integration/product-e2e-lane-host-records-test.py	130	0
+crates/bridgevm-hvf/src/platform_virt/teardown_records.rs	45	0
+crates/bridgevm-hvf/src/platform_virt/tests/teardown_records.rs	48	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_stop.rs	35	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_timing.rs	83	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_timing_tests.rs	197	0
+scripts/live-gates/hvf_host_display.py	28	0
+tests/integration/ramfb-display-timing-host-tail-contract.py	165	0
+apps/macos/Sources/BridgeVMProductE2E/HvfHostDisplay.swift	30	0
+apps/macos/Tests/BridgeVMProductE2ETests/HvfHostDisplayTests.swift	51	0

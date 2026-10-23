@@ -26,6 +26,7 @@ mod snapshot;
 mod soc_devices;
 mod storage_devices;
 mod storage_stream;
+mod teardown_records;
 mod tpm_devices;
 mod xhci_input;
 mod xhci_pointer_wake;

@@ -3,10 +3,10 @@ import Foundation
 /// The host records that may follow the final report's footer, as
 /// scripts/live-gates/hvf_host_tail.py states them: the HDA diagnostic records
 /// at most once each in print order (HvfHostDiagnostics.swift), CoreAudio
-/// callback-enqueue, lifecycle and stats records, at most one continuity record
-/// after a stats record, and for HvfTerminalReport the render server's line.
-/// All count against the bounds, so a guest cannot extend a forged footer; a
-/// log printed before either record kind existed reads exactly as before.
+/// callback-enqueue, lifecycle and stats records, at most one continuity record after
+/// a stats record, at most one display timing record after every HDA record
+/// (HvfHostDisplay.swift), and for HvfTerminalReport the render server's line. All
+/// count against the bounds, so a guest cannot extend a forged footer; older logs read as before.
 enum HvfHostTail {
     static let maxBytes = 4 * 1024
     static let maxLines = 16
@@ -19,7 +19,7 @@ enum HvfHostTail {
         #"^hda CoreAudio lifecycle: operation=(stop|dispose) osstatus=-?[0-9]+ success=(true|false)$"#,
         #"^hda CoreAudio stats: [a-z][a-z0-9_]*=[0-9]+( [a-z][a-z0-9_]*=[0-9]+)*$"#,
         "^hda CoreAudio continuity:" + continuityFields.map { " \($0)=(0|[1-9][0-9]{0,19})" }.joined() + "$",
-    ] + diagnosticLines
+    ] + diagnosticLines + [displayLine]
     static let lines = audioLines + [
         #"^[A-Z][a-z]{2} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2}  virgl_render_server\[[0-9]+\] <Debug>: socket disconnected$"#,
     ]
@@ -35,7 +35,7 @@ enum HvfHostTail {
                 continuity = true
             }
         }
-        return diagnosticsPlaced(records)
+        return diagnosticsPlaced(records) && displayPlaced(records)
     }
 
     /// A T17 terminal report's post-footer text: empty, or bounded audio records.
