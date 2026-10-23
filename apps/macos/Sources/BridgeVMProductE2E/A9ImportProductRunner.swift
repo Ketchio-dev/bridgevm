@@ -9,13 +9,16 @@ struct A9ImportRunOutcome {
 }
 
 final class A9ImportProductRunner {
-    private let request: A9ImportRequest; let tpm = T17TPMEvidenceLog()
-    private let fileManager: FileManager
+    let request: A9ImportRequest; let tpm = T17TPMEvidenceLog()
+    let fileManager: FileManager
+    /// `bitlocker_restart_check`, only when the sealed T19 manifest asked for the check.
+    private(set) var bitlocker: T19BitLockerEvidence?
     private var application: Process?
     private var ui: T17UIControlling?
 
-    init(request: A9ImportRequest, fileManager: FileManager = .default) {
+    init(request: A9ImportRequest, fileManager: FileManager = .default, bitLockerRestartCheck: Bool = false) {
         self.request = request; self.fileManager = fileManager
+        bitlocker = bitLockerRestartCheck ? T19BitLockerEvidence() : nil
     }
 
     func run() -> A9ImportRunOutcome {
@@ -40,6 +43,7 @@ final class A9ImportProductRunner {
             try evidence.prove(.firstReady)
             try T17GuestJourney(request: request, ui: control, fileManager: fileManager, tpm: tpm)
                 .run(firstReady: ready) { try evidence.prove(A9ImportStage(guest: $0)) }
+            if bitlocker != nil { bitlocker = T19BitLockerCheck(request: request, appBundlePath: request.appBundlePath, ui: control).run() }
             try authenticateFinal(&evidence)
             try requireUnchangedSource(evidence)
             failure = "none"
@@ -51,40 +55,6 @@ final class A9ImportProductRunner {
         let clean = stopOwnedApplication()
         return A9ImportRunOutcome(evidence: evidence, failureCode: failure, failureDetail: detail,
             cleanupVerified: clean, uiFrontendAutomated: automated)
-    }
-
-    private func authenticateSource(_ evidence: inout A9ImportEvidence) throws {
-        try evidence.authenticate("source_disk_sha256", file: URL(fileURLWithPath: request.sourceDiskPath))
-        try evidence.authenticate("source_vars_sha256", file: URL(fileURLWithPath: request.sourceVarsPath))
-        try evidence.authenticateTree("source_vtpm_tree_sha256", root: URL(fileURLWithPath: request.sourceVtpmPath), fileManager: fileManager)
-    }
-
-    private func authenticateImported(_ evidence: inout A9ImportEvidence) throws {
-        try evidence.authenticate("imported_initial_disk_sha256", file: URL(fileURLWithPath: request.diskPath))
-        try evidence.authenticate("imported_initial_vars_sha256", file: URL(fileURLWithPath: request.varsPath))
-        try evidence.authenticateTree("imported_initial_vtpm_tree_sha256", root: URL(fileURLWithPath: request.vtpmStatePath), fileManager: fileManager)
-    }
-
-    private func authenticateFinal(_ evidence: inout A9ImportEvidence) throws {
-        try evidence.authenticateSelectedMedia(disk: request.diskPath, vars: request.varsPath)
-        try evidence.authenticateTree("final_vtpm_tree_sha256", root: URL(fileURLWithPath: request.vtpmStatePath), fileManager: fileManager)
-        try evidence.authenticate("guest_evidence_sha256", file: URL(fileURLWithPath: request.guestEvidencePath))
-    }
-
-    private func requireMatchingInitialMedia(_ evidence: A9ImportEvidence) throws {
-        guard evidence.hashes["source_disk_sha256"] == evidence.hashes["imported_initial_disk_sha256"],
-              evidence.hashes["source_vars_sha256"] == evidence.hashes["imported_initial_vars_sha256"],
-              evidence.hashes["source_vtpm_tree_sha256"] == evidence.hashes["imported_initial_vtpm_tree_sha256"] else {
-            throw T17Blocker(code: "import-media-mismatch", detail: "UI-imported media differs from the sealed source")
-        }
-    }
-
-    private func requireUnchangedSource(_ evidence: A9ImportEvidence) throws {
-        guard evidence.hashes["source_disk_sha256"] == (try T17Evidence.sha256(URL(fileURLWithPath: request.sourceDiskPath))),
-              evidence.hashes["source_vars_sha256"] == (try T17Evidence.sha256(URL(fileURLWithPath: request.sourceVarsPath))),
-              evidence.hashes["source_vtpm_tree_sha256"] == (try A9ImportTreeDigest.compute(URL(fileURLWithPath: request.sourceVtpmPath), fileManager: fileManager)) else {
-            throw T17Blocker(code: "source-media-mutated", detail: "the installed-disk import changed its read-only source")
-        }
     }
 
     private func prepareLane() throws {

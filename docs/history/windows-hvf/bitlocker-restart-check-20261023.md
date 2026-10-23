@@ -54,12 +54,12 @@ boot after the restart exercises exactly that power cycle.
 - The T19 input manifest is the file given to `scripts/live-gates/bridgevm-live`
   with `--input-manifest`; the queue copies it into the job and seals its digest.
 - It may carry one more row: `bitlocker_restart_check`, a tab, `tpm-only`. The
-  verifier (`scripts/live-gates/windows-import-product-e2e-manifest.py`) accepts it
+  verifier's row grammar (`scripts/live-gates/t19_manifest_grammar.py`) accepts it
   at most once, with exactly that value, and only beside `campaign_mode` `pilot`.
   A second row, another value or a release manifest is refused at preflight.
 - Only then does verified-inputs.json gain `"bitlocker_restart_check": "tpm-only"`.
-  The tier then passes the helper one more option, through the existing launcher:
-  --bitlocker-restart-check, accepted only in import mode
+  The tier's `scripts/live-gates/launch-import-product-e2e-lane.sh` then passes the
+  helper one more option, `--bitlocker-restart-check`, accepted only in import mode
   (`--windows-import-product-e2e`); the T17 mode refuses it.
 - Without the row, verified-inputs.json, request.json, the helper's arguments, the
   lane result and the receipt are byte-for-byte as before. Contracts check this.
@@ -279,8 +279,8 @@ result beside `tpm_evidence`:
 | --- | --- | --- | --- |
 | guest assets | `tests/integration/t19-bitlocker-guest-contract.py` | the guest assets did not exist; 8 of 9 failed | 9 of 9 pass, including 20 scenario results read by an independent Python parser |
 | guest assets | `tests/integration/t19-bitlocker-guest-contract.ps1` (pwsh 7.5.2); the Windows PowerShell job runs it through `tests/integration/windows-guest-pwsh-contracts.ps1` | the workload file could not be read | PASS; the Windows job has not run |
-| host plumbing | the T19BitLocker suites of the ProductE2E shim suite | pending | pending |
-| host plumbing | t19-bitlocker-switch-test.py and t19-bitlocker-private-lane-test.py | pending | pending |
+| host plumbing | `apps/macos/Tests/BridgeVMProductE2ETests/T19BitLockerGuestResultTests.swift`, `apps/macos/Tests/BridgeVMProductE2ETests/T19BitLockerCheckTests.swift` and `apps/macos/Tests/BridgeVMProductE2ETests/T19BitLockerLaneTests.swift` | against the base sources the tests did not build (220 errors, every one a missing T19 type or member); after the first green, the two unlock-boot refinements failed 4 assertions | the ProductE2E shim suite: 452 passed, 0 failed (436 before; 16 new tests) |
+| host plumbing | `tests/integration/t19-bitlocker-switch-test.py` and `tests/integration/t19-bitlocker-private-lane-test.py` | against the base scripts 5 of 7 switch tests failed (the default and refusal tests passed) and the private-lane test could not import `t19_private_lane` | 7 of 7 and 6 of 6 pass; both run in `tests/integration/windows-import-product-e2e-contract-smoke.sh` |
 | defaults | t19-bitlocker-default-unchanged-test.py | pending | pending |
 
 ## Not verified

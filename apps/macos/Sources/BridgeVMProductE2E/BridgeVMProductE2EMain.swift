@@ -17,12 +17,12 @@ enum BridgeVMProductE2EMain {
                     uiFrontendAutomated: outcome.uiFrontendAutomated), bundlePath: request.bundlePath), tpm: runner.tpm.evidence), to: cli.result)
             case .installedDiskImport:
                 let request = try A9ImportRequest.load(cli.request)
-                let runner = A9ImportProductRunner(request: request)
+                let runner = A9ImportProductRunner(request: request, bitLockerRestartCheck: cli.bitLockerRestartCheck)
                 let outcome = runner.run()
                 try T17ResultWriter.write(ProductE2EPrivateLaneResult(lane: T17FirstRunHostRecords.attach(outcome.evidence.result(
                     request: request, failureCode: outcome.failureCode, failureDetail: outcome.failureDetail,
                     cleanupVerified: outcome.cleanupVerified,
-                    uiFrontendAutomated: outcome.uiFrontendAutomated), bundlePath: request.bundlePath), tpm: runner.tpm.evidence), to: cli.result)
+                    uiFrontendAutomated: outcome.uiFrontendAutomated), bundlePath: request.bundlePath).adding(runner.bitlocker), tpm: runner.tpm.evidence), to: cli.result)
             }
             exit(EXIT_SUCCESS)
         } catch let blocker as T17Blocker {

@@ -9,7 +9,7 @@ from product_e2e_identity import fixed_fields_match, is_sha256
 from product_e2e_digest import digest
 from windows_product_e2e_selected import selected_digests
 from product_e2e_json_snapshot import JsonSnapshot, unchanged
-import product_e2e_work as WORK, product_e2e_private_lane as PRIVATE_LANE, product_e2e_host_records as HOST_RECORDS
+import product_e2e_work as WORK, t19_private_lane as PRIVATE_LANE, product_e2e_host_records as HOST_RECORDS
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("import_receipt_verifier", ROOT / "scripts/verify-windows-import-product-e2e-receipt.py")
