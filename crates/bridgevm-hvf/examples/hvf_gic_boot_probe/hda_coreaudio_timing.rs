@@ -14,9 +14,14 @@
 //!   not (the continuity record counts only those inside one);
 //! - the ring level a callback found before draining it, from the first
 //!   callback that plays guest PCM until the guest stops its stream:
-//!   `ring_samples` and the minimum, maximum and final level in ms.
+//!   `ring_samples` and the minimum, maximum and final level in ms;
+//! - `ring_trimmed_ms`: guest PCM the producer did not append because the
+//!   ring would have passed its 70 ms high-water mark
+//!   (hda_coreaudio_high_water.rs), rounded up so any trim reads at least 1.
 //!
-//! The callback thread is the only writer. It reads the host clock
+//! The producer adds trimmed bytes to their own counter, outside the sequence
+//! count below, as it writes; the callback thread is the only writer of
+//! everything else. It reads the host clock
 //! (`Instant::now`, a user-space clock read on macOS, not a system call) and
 //! updates relaxed atomics inside a sequence count, so a reader gets a
 //! consistent record even while callbacks continue; the callback never locks,
@@ -28,9 +33,8 @@
 
 use super::super::hda_coreaudio_stats::Shared;
 use super::super::{CoreAudioPcmSink, BYTES_PER_FRAME, SAMPLE_RATE};
-use super::{CallbackFill, ContinuityCounters};
+use super::ContinuityCounters;
 use bridgevm_hvf::platform_virt::VirtPlatform;
-use std::collections::VecDeque;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use std::sync::atomic::{fence, AtomicBool, AtomicU64};
 use std::sync::{Arc, Weak};
@@ -59,6 +63,8 @@ pub(in crate::hda_coreaudio) struct CallbackTiming {
     ring_min: AtomicU64,
     ring_max: AtomicU64,
     ring_final: AtomicU64,
+    /// Written by the producer, not the callback thread.
+    ring_trimmed: AtomicU64,
 }
 
 impl Default for CallbackTiming {
@@ -83,6 +89,7 @@ impl CallbackTiming {
             ring_min: AtomicU64::new(0),
             ring_max: AtomicU64::new(0),
             ring_final: AtomicU64::new(0),
+            ring_trimmed: AtomicU64::new(0),
         }
     }
 
@@ -167,6 +174,7 @@ impl CallbackTiming {
             ring_min_ms: load(&self.ring_min) / BYTES_PER_MS,
             ring_max_ms: load(&self.ring_max) / BYTES_PER_MS,
             ring_final_ms: load(&self.ring_final) / BYTES_PER_MS,
+            ring_trimmed_ms: load(&self.ring_trimmed).div_ceil(BYTES_PER_MS),
         }
     }
 }
@@ -182,13 +190,14 @@ struct TimingSnapshot {
     ring_min_ms: u64,
     ring_max_ms: u64,
     ring_final_ms: u64,
+    ring_trimmed_ms: u64,
 }
 
 impl TimingSnapshot {
     fn record(&self) -> String {
         let [le10, le15, le20, le30, le50, over] = self.intervals;
         format!(
-            "hda CoreAudio timing: callbacks={} interval_le_10ms={le10} interval_le_15ms={le15} interval_le_20ms={le20} interval_le_30ms={le30} interval_le_50ms={le50} interval_gt_50ms={over} max_interval_ms={} late_callbacks={} trylock_misses={} ring_samples={} ring_min_ms={} ring_max_ms={} ring_final_ms={}",
+            "hda CoreAudio timing: callbacks={} interval_le_10ms={le10} interval_le_15ms={le15} interval_le_20ms={le20} interval_le_30ms={le30} interval_le_50ms={le50} interval_gt_50ms={over} max_interval_ms={} late_callbacks={} trylock_misses={} ring_samples={} ring_min_ms={} ring_max_ms={} ring_final_ms={} ring_trimmed_ms={}",
             self.callbacks,
             self.max_interval_ms,
             self.late_callbacks,
@@ -196,40 +205,18 @@ impl TimingSnapshot {
             self.ring_samples,
             self.ring_min_ms,
             self.ring_max_ms,
-            self.ring_final_ms
+            self.ring_final_ms,
+            self.ring_trimmed_ms
         )
     }
 }
 
 impl ContinuityCounters {
-    /// Count one output callback: its timing unless teardown began, then its
-    /// continuity exactly as before. Callback thread only.
-    pub(in crate::hda_coreaudio) fn record_callback(&self, fill: CallbackFill) {
-        if !self.stopping.load(Relaxed) {
-            let contended = matches!(fill, CallbackFill::Contended { .. });
-            self.timing.note_callback(Instant::now(), contended);
-        }
-        self.record(fill);
+    /// The producer did not append `bytes` of guest PCM: the ring was at its
+    /// high-water mark. Producer thread, under the ring lock or after it.
+    pub(in crate::hda_coreaudio) fn note_trimmed(&self, bytes: usize) {
+        self.timing.ring_trimmed.fetch_add(bytes as u64, Relaxed);
     }
-}
-
-/// Drain the ring into one callback buffer exactly as `Prefill::drain` does,
-/// noting the level the callback found. Callback thread, under the ring lock.
-pub(in crate::hda_coreaudio) fn timed_drain(
-    shared: &Shared,
-    ring: &mut VecDeque<u8>,
-    destination: &mut [u8],
-    stream_idle: bool,
-) -> usize {
-    let ring_bytes = ring.len();
-    let pcm_bytes = shared.prefill.drain(ring, destination, stream_idle);
-    let continuity = &shared.continuity;
-    if !continuity.stopping.load(Relaxed) {
-        continuity
-            .timing
-            .note_drain(ring_bytes, pcm_bytes, stream_idle);
-    }
-    pcm_bytes
 }
 
 /// The live sink's timing record, or none once the sink is gone.
@@ -248,6 +235,14 @@ impl CoreAudioPcmSink {
     }
 }
 
+#[path = "hda_coreaudio_timing_callback.rs"]
+pub mod callback;
+#[cfg(test)]
+#[path = "hda_coreaudio_ring_latency_tests.rs"]
+mod ring_latency_tests;
+#[cfg(test)]
+#[path = "hda_coreaudio_ring_trim_tests.rs"]
+mod ring_trim_tests;
 #[cfg(test)]
 #[path = "hda_coreaudio_timing_tests.rs"]
 mod tests;

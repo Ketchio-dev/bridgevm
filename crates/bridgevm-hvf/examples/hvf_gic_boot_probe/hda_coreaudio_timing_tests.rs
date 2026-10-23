@@ -12,7 +12,7 @@ const FULL: usize = AUDIO_QUEUE_BUFFER_BYTES as usize;
 const IDLE: &str = "hda CoreAudio timing: callbacks=0 interval_le_10ms=0 interval_le_15ms=0 \
                     interval_le_20ms=0 interval_le_30ms=0 interval_le_50ms=0 interval_gt_50ms=0 \
                     max_interval_ms=0 late_callbacks=0 trylock_misses=0 ring_samples=0 \
-                    ring_min_ms=0 ring_max_ms=0 ring_final_ms=0";
+                    ring_min_ms=0 ring_max_ms=0 ring_final_ms=0 ring_trimmed_ms=0";
 
 fn feed(shared: &Shared, bytes: usize) {
     let mut ring = shared.ring.lock().unwrap();
@@ -39,7 +39,7 @@ fn injected_callback_times_give_the_exact_interval_histogram_and_late_count() {
         "hda CoreAudio timing: callbacks=10 interval_le_10ms=1 interval_le_15ms=2 \
          interval_le_20ms=1 interval_le_30ms=2 interval_le_50ms=2 interval_gt_50ms=1 \
          max_interval_ms=51 late_callbacks=3 trylock_misses=0 ring_samples=0 ring_min_ms=0 \
-         ring_max_ms=0 ring_final_ms=0"
+         ring_max_ms=0 ring_final_ms=0 ring_trimmed_ms=0"
     );
     assert_eq!(CallbackTiming::starting_at(base).snapshot().record(), IDLE);
 }

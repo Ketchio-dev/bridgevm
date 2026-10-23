@@ -111,7 +111,7 @@ class DisplayHostTailContract(unittest.TestCase):
 
     def test_tail_readers_admit_one_record_after_every_hda_record(self):
         widest = HDA.WIDEST + WIDEST
-        self.assertEqual((widest.count("\n"), len(widest.encode())), (12, 3680))
+        self.assertEqual((widest.count("\n"), len(widest.encode())), (12, 3717))
         with tempfile.TemporaryDirectory() as temp:
             log = Path(temp) / "run.log"
             for name, (tail, admitted) in {**TAILS, **BOUNDS, **VIRGL_TAILS}.items():

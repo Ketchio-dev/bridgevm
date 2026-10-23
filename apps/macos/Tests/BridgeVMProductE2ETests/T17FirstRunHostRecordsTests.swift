@@ -16,7 +16,7 @@ final class T17FirstRunHostRecordsTests: XCTestCase {
     static let repeats = "hda repeat: passes=12 silent_passes=2 compared_passes=8 repeat_passes=3 max_repeat_run=2"
     static let timing = "hda CoreAudio timing: callbacks=10 interval_le_10ms=1 interval_le_15ms=2 interval_le_20ms=1 "
         + "interval_le_30ms=2 interval_le_50ms=2 interval_gt_50ms=1 max_interval_ms=51 late_callbacks=3 "
-        + "trylock_misses=0 ring_samples=4 ring_min_ms=30 ring_max_ms=50 ring_final_ms=18446744073709551615"
+        + "trylock_misses=0 ring_samples=4 ring_min_ms=30 ring_max_ms=50 ring_final_ms=18446744073709551615 ring_trimmed_ms=7"
     static let teardown = "hda CoreAudio lifecycle: operation=stop osstatus=0 success=true\n" + T17AudioCountersTests.line()
         + "\nhda CoreAudio continuity: active_callbacks=412 underrun_callbacks=9 underrun_frames=2160 "
         + "contention_callbacks=1 gaps=4 max_gap_frames=960 stream_stops=1 callback_frames=480\n"
@@ -31,7 +31,7 @@ final class T17FirstRunHostRecordsTests: XCTestCase {
         "hda_coreaudio_timing": ["callbacks": 10, "interval_le_10ms": 1, "interval_le_15ms": 2, "interval_le_20ms": 1,
                                  "interval_le_30ms": 2, "interval_le_50ms": 2, "interval_gt_50ms": 1,
                                  "max_interval_ms": 51, "late_callbacks": 3, "trylock_misses": 0, "ring_samples": 4,
-                                 "ring_min_ms": 30, "ring_max_ms": 50, "ring_final_ms": UInt64.max],
+                                 "ring_min_ms": 30, "ring_max_ms": 50, "ring_final_ms": UInt64.max, "ring_trimmed_ms": 7],
     ]
 
     static func report(serial: String = "UEFI firmware\r\n", tail: String) -> String {

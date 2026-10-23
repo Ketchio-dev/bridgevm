@@ -4251,7 +4251,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_fill.rs	24	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_frame_tests.rs	129	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_frames.rs	69	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_framing_stats_tests.rs	34	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_producer.rs	79	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_producer.rs	64	0
 crates/bridgevm-hvf/src/hda/stream_lifecycle.rs	32	0
 crates/bridgevm-hvf/src/hda/tests/pcm_fragments.rs	34	0
 crates/bridgevm-hvf/src/hda/tests/stream_reset.rs	227	0
@@ -4906,7 +4906,7 @@ crates/bridgevm-hvf/src/hda/tests/diagnostics.rs	191	0
 crates/bridgevm-hvf/src/hda/tests/repeat_detector.rs	111	0
 crates/bridgevm-hvf/src/platform_virt/audio_diagnostics.rs	20	0
 crates/bridgevm-hvf/src/platform_virt/tests/hda_diagnostic_records.rs	27	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_timing.rs	219	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_timing.rs	203	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_timing_tests.rs	129	0
 crates/bridgevm-hvf/src/hda/diagnostics_teardown.rs	19	0
 crates/bridgevm-hvf/src/hda/tests/diagnostics_teardown.rs	82	0
@@ -5107,3 +5107,8 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_replay_tests.rs
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_tests.rs	373	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/service_wake_interval.rs	30	0
 docs/machine-contract/qemu-virt-deviations-audio.json	11	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_high_water.rs	33	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_ring_latency_tests.rs	96	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_ring_trim_tests.rs	77	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_sink.rs	21	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_timing_callback.rs	32	0

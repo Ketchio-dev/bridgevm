@@ -4,6 +4,8 @@
 
 use super::BYTES_PER_FRAME;
 use std::collections::VecDeque;
+#[path = "hda_coreaudio_high_water.rs"]
+pub mod high_water;
 
 const FRAME: usize = BYTES_PER_FRAME as usize;
 

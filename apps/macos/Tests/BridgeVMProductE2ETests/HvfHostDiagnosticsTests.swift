@@ -17,7 +17,7 @@ final class HvfHostDiagnosticsTests: XCTestCase {
     private let repeats = "hda repeat: passes=12 silent_passes=2 compared_passes=8 repeat_passes=3 max_repeat_run=2"
     private let timing = "hda CoreAudio timing: callbacks=10 interval_le_10ms=1 interval_le_15ms=2 interval_le_20ms=1 "
         + "interval_le_30ms=2 interval_le_50ms=2 interval_gt_50ms=1 max_interval_ms=51 late_callbacks=3 "
-        + "trylock_misses=0 ring_samples=4 ring_min_ms=30 ring_max_ms=50 ring_final_ms=30"
+        + "trylock_misses=0 ring_samples=4 ring_min_ms=30 ring_max_ms=50 ring_final_ms=30 ring_trimmed_ms=7"
     private let continuity = "hda CoreAudio continuity: active_callbacks=412 underrun_callbacks=9 underrun_frames=2160 "
         + "contention_callbacks=1 gaps=4 max_gap_frames=960 stream_stops=1 callback_frames=480\n"
     private let lifecycle = "hda CoreAudio lifecycle: operation=stop osstatus=0 success=true\n"
@@ -80,7 +80,7 @@ final class HvfHostDiagnosticsTests: XCTestCase {
 
     func testTheWidestTailFitsTheUnchangedBounds() {
         XCTAssertEqual(widest.split(separator: "\n").count, 11)
-        XCTAssertEqual(widest.utf8.count, 3211)
+        XCTAssertEqual(widest.utf8.count, 3248)
         XCTAssertTrue(HvfHostTail.isBoundedShutdownTail(widest))
         XCTAssertEqual(HvfTerminalReport.stop(in: report(tail: widest))?.line, HvfStopLine.systemOff)
     }
@@ -99,6 +99,6 @@ final class HvfHostDiagnosticsTests: XCTestCase {
         XCTAssertTrue(HvfHostTail.continuityPlaced(["hda poll: x", "hda CoreAudio timing: x", stats, continuity]))
         XCTAssertFalse(HvfHostTail.continuityPlaced(["hda repeat: x", "hda stream: x", stats]))
         XCTAssertFalse(HvfHostTail.continuityPlaced([stats, continuity, "hda poll: x"]))
-        XCTAssertEqual(HvfHostTail.diagnosticRecords.map(\.fields.count), [12, 15, 5, 14])
+        XCTAssertEqual(HvfHostTail.diagnosticRecords.map(\.fields.count), [12, 15, 5, 15])
     }
 }

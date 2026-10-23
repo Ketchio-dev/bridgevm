@@ -46,10 +46,10 @@ PRINTED = (
       for p, s, c, r, m in ((0, 0, 0, 0, 0), (4, 0, 2, 2, 2), (4, 0, 2, 0, 0), (4, 0, 2, 1, 1), (6, 6, 0, 0, 0), (9, 0, 7, 3, 1))),
     "hda CoreAudio timing: callbacks=10 interval_le_10ms=1 interval_le_15ms=2 interval_le_20ms=1 interval_le_30ms=2 "
     "interval_le_50ms=2 interval_gt_50ms=1 max_interval_ms=51 late_callbacks=3 trylock_misses=0 ring_samples=0 "
-    "ring_min_ms=0 ring_max_ms=0 ring_final_ms=0",
+    "ring_min_ms=0 ring_max_ms=0 ring_final_ms=0 ring_trimmed_ms=0",
     "hda CoreAudio timing: callbacks=0 interval_le_10ms=0 interval_le_15ms=0 interval_le_20ms=0 interval_le_30ms=0 "
     "interval_le_50ms=0 interval_gt_50ms=0 max_interval_ms=0 late_callbacks=0 trylock_misses=0 ring_samples=0 "
-    "ring_min_ms=0 ring_max_ms=0 ring_final_ms=0",
+    "ring_min_ms=0 ring_max_ms=0 ring_final_ms=0 ring_trimmed_ms=0",
 )
 UNRECONCILED = (
     (POLL, "polls=3", "polls=4", "gap buckets do not sum to polls"),

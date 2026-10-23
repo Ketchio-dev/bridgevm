@@ -55,7 +55,7 @@ STREAM = ("hda stream: runs=1 rate_hz=48000 channels=2 bits=16 cbl_bytes=3840 cb
 REPEAT = "hda repeat: passes=12 silent_passes=2 compared_passes=8 repeat_passes=3 max_repeat_run=2"
 TIMING = ("hda CoreAudio timing: callbacks=10 interval_le_10ms=1 interval_le_15ms=2 interval_le_20ms=1 "
           "interval_le_30ms=2 interval_le_50ms=2 interval_gt_50ms=1 max_interval_ms=51 late_callbacks=3 "
-          "trylock_misses=0 ring_samples=4 ring_min_ms=30 ring_max_ms=50 ring_final_ms=30")
+          "trylock_misses=0 ring_samples=4 ring_min_ms=30 ring_max_ms=50 ring_final_ms=30 ring_trimmed_ms=7")
 RECORDS = (POLL, STREAM, REPEAT, TIMING)
 DIAG = "".join(record + "\n" for record in RECORDS)
 CONTINUITY = ("hda CoreAudio continuity: active_callbacks=412 underrun_callbacks=9 underrun_frames=2160 "
@@ -177,7 +177,7 @@ class DiagnosticsHostTailContract(unittest.TestCase):
         self.assertIn(f"=~ ^{diagnostics.DIAGNOSTIC_ORDER}(S+C)?S*$ ]]", shell)
 
     def test_tail_readers_admit_each_record_once_before_the_teardown(self):
-        self.assertEqual((WIDEST.count("\n"), len(WIDEST.encode())), (11, 3211))
+        self.assertEqual((WIDEST.count("\n"), len(WIDEST.encode())), (11, 3248))
         cases = {**AUDIO, **BOUNDS, **VIRGL_TAILS}
         with tempfile.TemporaryDirectory() as temp:
             log = Path(temp) / "run.log"
