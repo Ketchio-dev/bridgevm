@@ -5037,3 +5037,5 @@ tests/integration/app-ui-driver-ax-locus-sweep-contracts.swift	169	0
 tests/integration/app-ui-driver-ax-locus-names-contracts.swift	77	0
 docs/history/windows-hvf/d6-ax-failure-locus-20261023.md	214	0
 docs/document-manifests/d6-ax-failure-locus-20261023.tsv	3	0
+docs/archive/a11-measured-20261023-locus.md	26	0
+docs/document-manifests/d6-locus-integration-20261023.tsv	3	0
