@@ -8,6 +8,8 @@
 use super::*;
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
+#[path = "get_dir_policy_tests.rs"]
+mod dir_policy;
 
 static GET_DIR_LOCK: Mutex<()> = Mutex::new(());
 const GET_DIR_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_GET_DIR";

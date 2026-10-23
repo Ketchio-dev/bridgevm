@@ -1,9 +1,11 @@
 //! Harness-mode GETEND. It completes only the GET command whose path its GETBEG
 //! named, and it writes the file to BRIDGEVM_VIRTIO_CONSOLE_GET_DIR through the
-//! share's pinned, no-follow writer, as guest-to-host share files are written.
+//! share's pinned, no-follow writer, as guest-to-host share files are written,
+//! creating missing levels of that directory as guest directories are.
 
-use super::host_destination::Destination;
 use super::*;
+#[path = "harness_get_dir.rs"]
+mod get_dir;
 
 impl AgentConsoleHarness {
     /// GETEND <seq> for the command labelled `label`. A GETEND for no GET that
@@ -54,8 +56,7 @@ impl AgentConsoleHarness {
                 .filter(|s| !s.is_empty())
                 .unwrap_or("bvagent-get.bin");
             let dir = Path::new(&dir);
-            let _ = std::fs::create_dir_all(dir);
-            match Destination::open(dir, name, false).and_then(|d| d.write(&accum.bytes)) {
+            match get_dir::destination(dir, name).and_then(|d| d.write(&accum.bytes)) {
                 Ok(_) => written_note = format!(" wrote={}", dir.join(name).display()),
                 Err(e) => written_note = format!(" write-error={e}"),
             }

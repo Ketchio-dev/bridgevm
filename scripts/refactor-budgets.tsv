@@ -4947,7 +4947,7 @@ docs/archive/a11-measured-20261023-followups-r4.md	26	0
 docs/document-manifests/followups-r4-20261023.tsv	3	0
 docs/archive/a11-measured-20261023-followups-r5.md	26	0
 docs/document-manifests/followups-r5-20261023.tsv	3	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/harness_get_end.rs	62	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/harness_get_end.rs	61	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/get_end_tests.rs	194	0
 scripts/live-gates/retained_windows_quiet.py	42	0
 tests/integration/retained_windows_refusal_cases.py	48	0
@@ -5065,3 +5065,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_write_refusal_tests.rs	118	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_directory.rs	26	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_directory_tests.rs	71	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/harness_get_dir.rs	18	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/get_dir_policy_tests.rs	106	1
