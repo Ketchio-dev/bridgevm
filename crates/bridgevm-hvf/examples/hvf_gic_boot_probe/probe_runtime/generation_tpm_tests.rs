@@ -67,9 +67,9 @@ fn serve(path: &Path, log: &Log, len: usize, event: &'static str, reply: &[u8]) 
     let (log, reply) = (Arc::clone(log), reply.to_vec());
     std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(10)))
-            .unwrap();
+        let Ok(()) = stream.set_read_timeout(Some(Duration::from_secs(10))) else {
+            return; // macOS: EINVAL once the client closed; the event log shows no request
+        };
         let mut request = vec![0u8; len];
         while stream.read_exact(&mut request).is_ok() {
             log.lock().unwrap().push(event);
