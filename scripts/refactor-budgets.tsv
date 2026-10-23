@@ -5004,3 +5004,6 @@ docs/history/windows-hvf/live-diagnostic-records-20261023.md	192	0
 docs/document-manifests/live-diagnostic-records-20261023.tsv	3	0
 apps/macos/Tests/BridgeVMProductE2ETests/ProductE2EPrivateLaneCompositionTests.swift	62	0
 tests/integration/product-e2e-lane-private-keys-test.py	110	0
+docs/archive/a11-measured-20261023-merged.md	26	0
+docs/history/windows-hvf/post-merge-integration-20261023.md	112	0
+docs/document-manifests/post-merge-integration-20261023.tsv	4	0
