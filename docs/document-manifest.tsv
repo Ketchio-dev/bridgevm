@@ -79,7 +79,6 @@ docs/windows-arm/graphics-compatibility.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/native-vmm-gic-preemption-hppir.tsv	-	-
 @include	docs/document-manifests/native-vmm-pc-msix-replay.tsv	-	-
 @include	docs/document-manifests/native-vmm-nvme-shutdown.tsv	-	-
-docs/windows-arm/evidence/bridgevm-pc-bds-exit-live-20260831.md	current	windows-architecture	-
 @include	docs/document-manifests/native-vmm-audio-lifecycle.tsv	-	-
 docs/windows-arm/evidence/f3-postclose-save-prompt-confirmed-20260908.md	current	windows-guest-integration	-
 docs/windows-arm/evidence/b6-dpi-and-capture-live-20260908.md	current	windows-guest-integration	-
@@ -134,3 +133,4 @@ docs/windows-arm/evidence/b6-active-frame-time-collection-20260910.md	current	wi
 @include	docs/document-manifests/autonomous-startup-and-network-20261014.tsv	-	-
 @include	docs/document-manifests/followups-20261023.tsv	-	-
 @include	docs/document-manifests/followups-r2-20261023.tsv	-	-
+@include	docs/document-manifests/followups-r3-20261023.tsv	-	-
