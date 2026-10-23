@@ -47,7 +47,7 @@ class TpmJourneyContract(unittest.TestCase):
 
     def test_helper_writes_the_evidence_beside_both_lane_results(self) -> None:
         main = source("BridgeVMProductE2EMain.swift")
-        self.assertEqual(main.count("try T17ResultWriter.write(ProductE2EPrivateLaneResult(lane: outcome.evidence.result("), 2)
+        self.assertEqual(main.count("try T17ResultWriter.write(ProductE2EPrivateLaneResult(lane: T17FirstRunHostRecords.attach(outcome.evidence.result("), 2)
         self.assertEqual(main.count("tpm: runner.tpm.evidence), to: cli.result)"), 2)
         self.assertNotIn("T17ResultWriter.write(outcome", main)
 

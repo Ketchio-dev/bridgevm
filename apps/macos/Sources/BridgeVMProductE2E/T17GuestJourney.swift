@@ -20,7 +20,7 @@ struct T17GuestJourney {
             throw T17Blocker(code: "guest-evidence-missing", detail: "guest audio lacked successful host CoreAudio counters")
         }
         try prove(.audio); try prove(.firstShutdown)
-        let first = try archiveLog(named: "first-run.log", ready: "first-ready", shutdown: "first-shutdown")
+        let first = try archiveLog(named: T17FirstRunHostRecords.archive, ready: "first-ready", shutdown: "first-shutdown")
         try createSnapshot()
         _ = try bootReady(); readTPM(.mutation)
         try workload("MarkerB", output: "t17-snapshot-b-\(prefix).txt")

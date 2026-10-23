@@ -9,7 +9,7 @@ from product_e2e_identity import fixed_fields_match, is_sha256
 from product_e2e_digest import digest
 from windows_product_e2e_selected import selected_digests
 from product_e2e_json_snapshot import JsonSnapshot, unchanged
-import product_e2e_work as WORK, product_e2e_private_lane as PRIVATE_LANE
+import product_e2e_work as WORK, product_e2e_private_lane as PRIVATE_LANE, product_e2e_host_records as HOST_RECORDS
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("import_receipt_verifier", ROOT / "scripts/verify-windows-import-product-e2e-receipt.py")
@@ -56,7 +56,7 @@ def lane(path: Path, job: str, commit: str, mode: str, ordinal: int, stamp: Path
     document = _document or JsonSnapshot.read(path); value = document.value
     fixed = {"schema_version": LANE_SCHEMA, "job_id": job, "commit": commit, "campaign_mode": mode,
              "lane": ordinal, "three_d_injection": False}
-    if not isinstance(value, dict) or PRIVATE_LANE.judged_keys(value) != LANE_KEYS or not fixed_fields_match(value, fixed):
+    if not isinstance(value, dict) or HOST_RECORDS.lane_keys(value) - PRIVATE_LANE.KEYS != LANE_KEYS or not fixed_fields_match(value, fixed):
         raise ValueError(f"lane {ordinal} identity differs")
     if not isinstance(value["nonce"], str) or not VERIFIER.SHA256.fullmatch(value["nonce"]):
         raise ValueError(f"lane {ordinal} nonce is invalid")

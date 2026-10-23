@@ -11,18 +11,18 @@ enum BridgeVMProductE2EMain {
                 let request = try T17Request.load(cli.request)
                 let runner = T17ProductRunner(request: request)
                 let outcome = runner.run()
-                try T17ResultWriter.write(ProductE2EPrivateLaneResult(lane: outcome.evidence.result(
+                try T17ResultWriter.write(ProductE2EPrivateLaneResult(lane: T17FirstRunHostRecords.attach(outcome.evidence.result(
                     request: request, failureCode: outcome.failureCode, failureDetail: outcome.failureDetail,
                     cleanupVerified: outcome.cleanupVerified, installerSourcePath: outcome.installerSourcePath,
-                    uiFrontendAutomated: outcome.uiFrontendAutomated), tpm: runner.tpm.evidence), to: cli.result)
+                    uiFrontendAutomated: outcome.uiFrontendAutomated), bundlePath: request.bundlePath), tpm: runner.tpm.evidence), to: cli.result)
             case .installedDiskImport:
                 let request = try A9ImportRequest.load(cli.request)
                 let runner = A9ImportProductRunner(request: request)
                 let outcome = runner.run()
-                try T17ResultWriter.write(ProductE2EPrivateLaneResult(lane: outcome.evidence.result(
+                try T17ResultWriter.write(ProductE2EPrivateLaneResult(lane: T17FirstRunHostRecords.attach(outcome.evidence.result(
                     request: request, failureCode: outcome.failureCode, failureDetail: outcome.failureDetail,
                     cleanupVerified: outcome.cleanupVerified,
-                    uiFrontendAutomated: outcome.uiFrontendAutomated), tpm: runner.tpm.evidence), to: cli.result)
+                    uiFrontendAutomated: outcome.uiFrontendAutomated), bundlePath: request.bundlePath), tpm: runner.tpm.evidence), to: cli.result)
             }
             exit(EXIT_SUCCESS)
         } catch let blocker as T17Blocker {

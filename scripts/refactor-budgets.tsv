@@ -4984,3 +4984,8 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17TPMReadTests.swift	208	0
 tests/integration/t17-tpm-journey-contract.py	57	0
 docs/history/windows-hvf/t17-tpm-pcr-evidence-20261023.md	197	0
 docs/document-manifests/t17-tpm-evidence-20261023.tsv	3	0
+apps/macos/Sources/BridgeVMProductE2E/HvfHostRecordFields.swift	52	0
+apps/macos/Sources/BridgeVMProductE2E/T17FirstRunHostRecords.swift	39	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17FirstRunHostRecordsTests.swift	141	0
+scripts/live-gates/product_e2e_host_records.py	40	0
+tests/integration/product-e2e-lane-host-records-test.py	130	0
