@@ -80,7 +80,6 @@ docs/windows-arm/graphics-compatibility.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/native-vmm-pc-msix-replay.tsv	-	-
 @include	docs/document-manifests/native-vmm-nvme-shutdown.tsv	-	-
 @include	docs/document-manifests/native-vmm-audio-lifecycle.tsv	-	-
-docs/windows-arm/evidence/f3-postclose-save-prompt-confirmed-20260908.md	current	windows-guest-integration	-
 @include	docs/document-manifests/native-vmm-transfer-and-teardown.tsv	-	-
 @include	docs/document-manifests/a19-interruption.tsv	-	-
 docs/windows-arm/smccc-trng-psci-contract.md	current	windows-hvf-engine	-
@@ -134,3 +133,4 @@ docs/windows-arm/evidence/b6-active-frame-time-collection-20260910.md	current	wi
 @include	docs/document-manifests/followups-r2-20261023.tsv	-	-
 @include	docs/document-manifests/followups-r3-20261023.tsv	-	-
 @include	docs/document-manifests/followups-r4-20261023.tsv	-	-
+@include	docs/document-manifests/followups-r5-20261023.tsv	-	-
