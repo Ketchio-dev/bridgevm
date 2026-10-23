@@ -1,5 +1,6 @@
-//! Non-waiting callback fill and continuity recording.
+//! Non-waiting callback fill and continuity and timing recording.
 
+use super::hda_coreaudio_continuity::timing::timed_drain;
 use super::hda_coreaudio_continuity::CallbackFill;
 use super::hda_coreaudio_stats::Shared;
 use std::sync::TryLockError;
@@ -14,16 +15,16 @@ pub(super) fn fill_and_record(destination: &mut [u8], shared: &Shared) {
         Err(TryLockError::WouldBlock) => {
             return shared
                 .continuity
-                .record(CallbackFill::Contended { capacity_bytes });
+                .record_callback(CallbackFill::Contended { capacity_bytes });
         }
     };
     let stream_idle = shared.continuity.stream_idle();
-    let pcm_bytes = shared.prefill.drain(&mut ring, destination, stream_idle);
+    let pcm_bytes = timed_drain(shared, &mut ring, destination, stream_idle);
     drop(ring);
     let fill = CallbackFill::Drained {
         pcm_bytes,
         capacity_bytes,
         stream_idle,
     };
-    shared.continuity.record(fill);
+    shared.continuity.record_callback(fill);
 }

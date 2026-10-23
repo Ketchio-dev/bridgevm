@@ -24,7 +24,7 @@ pub(crate) unsafe fn prepare_platform(
             {
                 let sink = hda_coreaudio::CoreAudioPcmSink::new()
                     .unwrap_or_else(|error| panic!("initialize HDA CoreAudio output: {error}"));
-                platform.set_hda_pcm_sink(Some(Box::new(sink)));
+                sink.install(&mut platform);
                 println!("HDA CoreAudio output: s16le 48000 Hz stereo, enabled");
             }
             #[cfg(not(target_os = "macos"))]

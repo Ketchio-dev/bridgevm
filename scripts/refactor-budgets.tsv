@@ -4906,3 +4906,5 @@ crates/bridgevm-hvf/src/hda/tests/diagnostics.rs	191	0
 crates/bridgevm-hvf/src/hda/tests/repeat_detector.rs	111	0
 crates/bridgevm-hvf/src/platform_virt/audio_diagnostics.rs	20	0
 crates/bridgevm-hvf/src/platform_virt/tests/hda_diagnostic_records.rs	27	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_timing.rs	219	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_timing_tests.rs	129	0
