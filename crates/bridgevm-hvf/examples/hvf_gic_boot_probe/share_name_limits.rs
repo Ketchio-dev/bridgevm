@@ -7,7 +7,7 @@
 //! components.
 
 /// macOS PATH_MAX (sys/syslimits.h), counting the terminating NUL.
-const PATH_MAX_BYTES: usize = 1024;
+pub(super) const PATH_MAX_BYTES: usize = 1024;
 /// macOS NAME_MAX, which APFS, like NTFS, counts in UTF-16 code units.
 const NAME_MAX_UTF16: usize = 255;
 

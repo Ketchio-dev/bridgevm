@@ -77,6 +77,7 @@ pub struct ShareSync {
     put_rejected: HashMap<String, HostFileStat>,
     host_unseen: HashSet<String>,
     host_aliased: HashSet<String>,
+    refused_names_seen: (usize, u64),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -303,12 +304,18 @@ mod share_rel_path;
 pub use share_rel_path::to_guest_rel;
 pub use share_rel_path::{append_guest_rel_into, from_guest_rel, normalize_rel};
 
+#[path = "share_hash.rs"]
+mod share_hash;
+pub use share_hash::fnv1a64;
 #[path = "share_host_unseen.rs"]
 mod share_host_unseen;
 #[path = "share_listing.rs"]
 mod share_listing;
 #[path = "share_name_limits.rs"]
 mod share_name_limits;
+#[path = "share_name_refusals.rs"]
+mod share_name_refusals;
+pub use share_name_refusals::RefusedNames;
 #[path = "share_put_outcome.rs"]
 mod share_put_outcome;
 #[path = "share_sync_host.rs"]
@@ -320,15 +327,6 @@ mod share_win_names;
 #[cfg(test)]
 use share_listing::parse_ls;
 pub use share_listing::parse_ls_into;
-
-pub fn fnv1a64(bytes: &[u8]) -> u64 {
-    let mut hash = 0xcbf29ce484222325u64;
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    hash
-}
 
 #[cfg(test)]
 #[path = "share_sync_tests.rs"]

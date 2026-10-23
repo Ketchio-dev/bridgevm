@@ -1,11 +1,12 @@
 //! Guest listing parsing and lexical share-name validation.
+//!
+//! The guest LS/LSR format is `relpath|size|isDir|mtime`. The split is from the
+//! right so a pathological file name containing `|` still round-trips; the
+//! numeric fields and ISO mtime emitted by the guest agent never contain that
+//! separator. Names the host limits refuse are counted (`share_name_refusals`).
 
-use super::{from_guest_rel, LsEntry};
+use super::{LsEntry, RefusedNames};
 
-/// Parse the guest LS/LSR format `relpath|size|isDir|mtime`. The split is from
-/// the right so a pathological file name containing `|` still round-trips; the
-/// numeric fields and ISO mtime emitted by the guest agent never contain that
-/// separator.
 #[cfg(test)]
 pub(super) fn parse_ls(listing: &str) -> Vec<LsEntry> {
     let mut entries = Vec::new();
@@ -13,8 +14,9 @@ pub(super) fn parse_ls(listing: &str) -> Vec<LsEntry> {
     entries
 }
 
-pub fn parse_ls_into(listing: &str, out: &mut Vec<LsEntry>) {
+pub fn parse_ls_into(listing: &str, out: &mut Vec<LsEntry>) -> RefusedNames {
     out.clear();
+    let mut refused = RefusedNames::default();
     for line in listing.lines().filter(|line| !line.is_empty()) {
         let mut parts = line.rsplitn(4, '|');
         let Some(mtime) = parts.next() else {
@@ -26,7 +28,7 @@ pub fn parse_ls_into(listing: &str, out: &mut Vec<LsEntry>) {
         let Some(size) = parts.next().and_then(|part| part.parse().ok()) else {
             continue;
         };
-        let Some(name) = parts.next().and_then(from_guest_rel) else {
+        let Some(name) = parts.next().and_then(|listed| refused.key(listed)) else {
             continue;
         };
         out.push(LsEntry {
@@ -36,4 +38,5 @@ pub fn parse_ls_into(listing: &str, out: &mut Vec<LsEntry>) {
             mtime: mtime.to_string(),
         });
     }
+    refused
 }
