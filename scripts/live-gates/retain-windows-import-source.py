@@ -14,6 +14,7 @@ import uuid
 from pathlib import Path
 from retained_windows_media import export_selected
 from retained_windows_publication import OwnedRetention
+from retained_windows_vtpm import export_vtpm
 HERE = Path(__file__).resolve().parent
 def load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -106,11 +107,7 @@ def retain(args: argparse.Namespace) -> None:
         retained_disk, retained_vars = export_selected(request, result, staging)
         package = staging / "vtpm-recovery.json"
         code = staging / "vtpm-recovery-code.txt"
-        subprocess.run([
-            str(executable), "--vtpm-lifecycle", "export",
-            "--stable-vm-id", request["vm_slug"], "--state-dir", str(state),
-            "--package", str(package), "--recovery-code-file", str(code),
-        ], check=True, stdout=subprocess.DEVNULL)
+        export_vtpm(executable, request["vm_slug"], state, package, code)
         if (not package.is_file() or package.is_symlink() or not code.is_file()
                 or code.is_symlink() or code.stat().st_mode & 0o077):
             raise ValueError("packaged vTPM export did not create private regular files")

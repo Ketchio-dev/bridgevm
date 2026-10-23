@@ -1892,7 +1892,7 @@ scripts/live-gates/windows_product_e2e_guest_evidence.py	114	0
 scripts/live-gates/write-windows-product-e2e-receipt.py	216	0
 scripts/live-gates/windows_product_e2e_failure.py	22	0
 scripts/live-gates/run-windows-product-e2e-tier.sh	112	0
-scripts/live-gates/retain-windows-import-source.py	180	0
+scripts/live-gates/retain-windows-import-source.py	177	0
 scripts/live-gates/classify-product-e2e-signing.sh	16	0
 tests/integration/windows-product-e2e-signing-class.py	57	0
 scripts/live-gates/publish-receipt.sh	17	0
@@ -3594,7 +3594,7 @@ scripts/live-gates/windows_selected_media_cli.py	38	0
 tests/fixtures/fake_snapshot_pair_commands.py	30	0
 tests/integration/a19-lifecycle-campaign-progress-contract.py	96	0
 tests/integration/native-snapshot-export-json-contract.py	113	0
-tests/integration/retained-windows-publication-contract.py	145	0
+tests/integration/retained-windows-publication-contract.py	141	0
 tests/integration/t17-selected-retention-contract.py	115	0
 scripts/live-gates/retained_windows_cleanup.py	30	0
 scripts/live-gates/retained_windows_identity.py	15	0
@@ -4919,3 +4919,5 @@ scripts/live-gates/hda_diagnostics.py	132	0
 tests/integration/hda-diagnostics-report-test.py	156	0
 docs/history/windows-hvf/audio-diagnostics-records-20261022.md	202	0
 docs/document-manifests/audio-diagnostics-20261022.tsv	3	0
+scripts/live-gates/retained_windows_vtpm.py	31	0
+tests/integration/retained_windows_export_cases.py	137	0

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -15,11 +14,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/live-gates"))
 from retained_windows_publication import OwnedRetention  # noqa: E402
-
-SPEC = importlib.util.spec_from_file_location(
-    "retain_fixture", ROOT / "scripts/live-gates/retain-windows-import-source.py")
-RETAIN = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(RETAIN)
+# The export-output cases share this RETAIN module and run with this contract.
+from retained_windows_export_cases import RETAIN, RetainedExportOutputCases  # noqa: E402,F401
 
 
 class RetainedWindowsPublicationContract(unittest.TestCase):
