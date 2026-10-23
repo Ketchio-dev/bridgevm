@@ -48,12 +48,12 @@ enum HvfAppUIAccessibility {
         else { throw HvfAppUIError.refused("AX field rejected its requested value") }
     }
 
-    static func hasCard(named name: String, in root: NSView) throws -> Bool {
-        try elements(in: root).contains {
-            $0.accessibilityRole() == .button
-                && ([$0.accessibilityLabel(), $0.accessibilityTitle()].compactMap { $0 }
-                    .contains { $0.hasPrefix(name + ", HVF,") })
+    static func hasRow(_ label: String, in root: NSView) throws -> Bool { // exact label; a second list is ambiguous
+        let rows = try elements(in: root).filter {
+            $0.accessibilityRole() == .button && ($0.accessibilityLabel() == label || $0.accessibilityTitle() == label)
         }
+        guard rows.count <= 1 else { throw HvfAppUIError.refused("Ambiguous overview row: \(label)") }
+        return rows.count == 1
     }
 
     static func wait(_ reason: String, until condition: () throws -> Bool) async throws {

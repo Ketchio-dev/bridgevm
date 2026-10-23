@@ -37,7 +37,10 @@
 //! atomic, so the real-time thread never allocates, locks or waits for them.
 
 pub(super) use super::hda_coreaudio_fill::fill_and_record;
-use super::{AUDIO_QUEUE_BUFFER_BYTES, BYTES_PER_FRAME};
+#[path = "hda_coreaudio_timing.rs"]
+pub mod timing;
+use super::AUDIO_QUEUE_BUFFER_BYTES;
+use super::BYTES_PER_FRAME;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 
 const PREFIX: &str = "hda CoreAudio continuity:";
@@ -118,6 +121,7 @@ pub(super) struct ContinuityCounters {
     gaps: AtomicU64,
     max_gap_frames: AtomicU64,
     stream_stops: AtomicU64,
+    timing: timing::CallbackTiming,
 }
 
 impl ContinuityCounters {

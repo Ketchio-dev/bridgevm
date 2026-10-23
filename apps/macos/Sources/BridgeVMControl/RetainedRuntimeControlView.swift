@@ -12,9 +12,7 @@ struct RetainedRuntimeControlView: View {
                 Text("등록 목록에서 사라졌을 때 보관한 기존 실행입니다.")
                     .foregroundColor(.secondary)
                 Text(LibraryRetainedControlDescriptor.runtime(config: config, session: session).statusLabel)
-                if let age = session.lastHeartbeatAge {
-                    Text("최근 응답: \(age, specifier: "%.1f")초 전").font(.caption)
-                }
+                RetainedRuntimeHeartbeatText(heartbeat: session.heartbeat)
                 if session.connectionState != .stopped {
                     RetainedRuntimeStopControl(session: session)
                 } else {

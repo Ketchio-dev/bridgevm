@@ -1,6 +1,8 @@
 //! Share sync planning: guest listings, host scans, conflicts and skips.
 
 use super::*;
+#[path = "share_name_limit_tests.rs"]
+mod name_limit_tests;
 
 fn ls_file(name: &str, size: u64, mtime: &str) -> LsEntry {
     LsEntry {
@@ -126,7 +128,7 @@ fn host_guest_round_trip_does_not_ping_pong() {
     );
     match sync.on_guest_file("sub\\x.txt".into(), b"world!".to_vec(), None) {
         GuestFileOutcome::WriteHost(bytes) => assert_eq!(bytes, b"world!"),
-        GuestFileOutcome::AlreadySynced => panic!("guest edit must write host"),
+        other => panic!("guest edit must write host, not {other:?}"),
     }
     sync.note_host_stat("sub/x.txt", 20);
     assert!(sync

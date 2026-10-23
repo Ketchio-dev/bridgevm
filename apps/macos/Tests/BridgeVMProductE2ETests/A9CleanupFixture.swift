@@ -3,13 +3,13 @@ import Foundation
 
 struct A9CleanupFixture {
     let allocation: ProductWorkFixture
-    let root: URL, capture: URL, config: URL, request: A9ImportRequest
+    let root: URL, capture: URL, keychain: URL, config: URL, request: A9ImportRequest
     init() throws {
         allocation = try ProductWorkFixture(job: "cleanup", importing: true); root = allocation.lane
-        capture = root.appendingPathComponent("arguments.txt")
+        capture = root.appendingPathComponent("arguments.txt"); keychain = root.appendingPathComponent("keychain")
         let executable = root.appendingPathComponent("cleanup.sh")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try Data("#!/bin/sh\nprintf '%s ' \"$@\" > \"\(capture.path)\"\n".utf8).write(to: executable)
+        try FileManager.default.createDirectory(at: keychain, withIntermediateDirectories: true)
+        try Data(A9CleanupStubApp.script(capture: capture, keychain: keychain).utf8).write(to: executable)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
         let nonce = String(repeating: "a", count: 64), slug = "bridgevm-a9-import-lane-1-aaaaaaaaaaaa"
         let library = root.appendingPathComponent("library"), bundle = library.appendingPathComponent(slug).appendingPathComponent("bundle")

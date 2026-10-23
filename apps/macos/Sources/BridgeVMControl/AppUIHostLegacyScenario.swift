@@ -41,24 +41,24 @@ enum AppUIHostLegacyScenario {
         try capture.action("import_opened")
         host.seedOverviewMetadata()
         try AppUIHostAccessibility.press("bridgevm.library.overview", in: content)
-        try await AppUIHostAccessibility.wait("overview cards") {
-            try host.library.proMode && host.library.selectedID == nil
-                && AppUIHostAccessibility.hasCard(named: "Amber", in: content)
-                && AppUIHostAccessibility.hasCard(named: "Indigo", in: content)
+        try await AppUIHostAccessibility.wait("overview rows") {
+            try AppUIHostOverviewState.reached(host.library)
+                && AppUIHostAccessibility.hasRow(AppUIDriverOverviewRows.amber, in: content)
+                && AppUIHostAccessibility.hasRow(AppUIDriverOverviewRows.indigo, in: content)
         }
         try capture.capture(content, name: "overview")
         try capture.action("overview_opened")
         try AppUIHostAccessibility.setText("Indigo", identifier: "bridgevm.library.search", in: content)
         try await AppUIHostAccessibility.wait("search results") {
-            try AppUIHostAccessibility.hasCard(named: "Indigo", in: content)
-                && !AppUIHostAccessibility.hasCard(named: "Amber", in: content)
+            try AppUIHostAccessibility.hasRow(AppUIDriverOverviewRows.indigo, in: content)
+                && !AppUIHostAccessibility.hasRow(AppUIDriverOverviewRows.amber, in: content)
         }
         try capture.capture(content, name: "overview-search")
         try capture.action("search_filtered")
         try AppUIHostAccessibility.pressButton(label: "검색 지우기", in: content)
         try await AppUIHostAccessibility.wait("cleared search") {
-            try AppUIHostAccessibility.hasCard(named: "Amber", in: content)
-                && AppUIHostAccessibility.hasCard(named: "Indigo", in: content)
+            try AppUIHostAccessibility.hasRow(AppUIDriverOverviewRows.amber, in: content)
+                && AppUIHostAccessibility.hasRow(AppUIDriverOverviewRows.indigo, in: content)
                 && AppUIHostAccessibility.find("bridgevm.library.search", in: content)?.accessibilityValue() as? String == ""
         }
         try capture.action("search_cleared")

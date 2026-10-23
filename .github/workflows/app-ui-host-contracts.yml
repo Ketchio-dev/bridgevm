@@ -12,13 +12,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Original and versioned diagnostic queue contracts (no app launch)
         run: |
-          for contract in app-ui-tier-smoke app-ui-host-tier-smoke app-ui-host-v2-tier-smoke app-ui-install-cancel-tier-smoke; do python3 "tests/integration/$contract.py" || exit $?; done
+          for contract in app-ui-tier-smoke app-ui-host-tier-smoke app-ui-host-model-creations-contract app-ui-host-v2-tier-smoke app-ui-install-cancel-tier-smoke; do python3 "tests/integration/$contract.py" || exit $?; done
   native-contracts:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - name: Compile and verify all seven owned host contracts (no NSApplication)
+      - name: Compile and verify all owned host and overview fixture contracts (no NSApplication)
         run: bash scripts/check-app-ui-host-contracts.sh --scratch-path "$RUNNER_TEMP/app-ui-host-swift"
       - name: Verify diagnostic host is excluded from release builds (no app launch)
         run: |

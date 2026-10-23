@@ -11,7 +11,7 @@ import AppKit
 final class HvfEngineSession: ObservableObject {
     @Published var config: HvfEngineConfig { didSet { runtimeConfigurationChanged() } }
     @Published var connectionState: HvfConnectionState = .stopped
-    @Published var lastHeartbeatAge: TimeInterval?
+    let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
     @Published var events: [BvAgentEvent] = []
     var repoRoot: URL
     var workAdmission: LibraryWorkAdmission?
@@ -82,13 +82,13 @@ final class HvfEngineSession: ObservableObject {
         ownedController?.observation(target: target, operationID: operationID)
     }
 
-    func ownedRuntimeChanged(token: UUID) {
+    func ownedRuntimeChanged(token: UUID) { // runs on every controller tick: assign only a changed state
         guard let controller = ownedController, controller.identity.token == token else { return }
         refreshOwnedStart()
         lastOwnedExit = controller.runnerExit
         if controller.teardownConfirmed { markStopped() }
-        else if controller.failure != nil { connectionState = .timedOut }
-        else if controller.operation != nil { connectionState = .stopping }
+        else if controller.failure != nil { if connectionState != .timedOut { connectionState = .timedOut } }
+        else if controller.operation != nil { if connectionState != .stopping { connectionState = .stopping } }
     }
 
     @discardableResult

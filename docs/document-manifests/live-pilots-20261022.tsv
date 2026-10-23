@@ -1,0 +1,5 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/a17-live-queue-receipts-20260805.md	current	testing	-
+docs/history/windows-hvf/app-ui-417-live-diagnostic-20261022.md	historical-evidence	live-pilots-20261022	-
+docs/history/windows-hvf/a9-r82-r84-and-t19-main-pilots-20261022.md	historical-evidence	live-pilots-20261022	-
+docs/archive/a11-measured-20261022.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md

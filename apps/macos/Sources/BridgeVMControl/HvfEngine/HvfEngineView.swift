@@ -209,7 +209,7 @@ struct HvfEngineView: View {
     private var statusCard: some View {
         HvfRuntimeStatusCard(session: session, ready: bootConfigReady, stateText: stateText,
             stateCode: HvfRuntimeAccessibilityState.code(pending: pendingWorkText != nil, connection: session.connectionState),
-            heartbeatText: heartbeatText, refusal: startRefusal, start: start)
+            refusal: startRefusal, start: start)
     }
 
     private var screenshotCard: some View {
@@ -280,11 +280,6 @@ struct HvfEngineView: View {
         case .stopping: return .orange
         case .timedOut: return .red
         }
-    }
-
-    private var heartbeatText: String {
-        guard let age = session.lastHeartbeatAge else { return "-" }
-        return String(format: "%.1fs ago", age)
     }
 
     private var displayWindowTitle: String {

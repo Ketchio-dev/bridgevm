@@ -380,10 +380,7 @@ impl AgentConsoleHarness {
                                 .share
                                 .as_mut()
                                 .map(|share| {
-                                    share_sync::parse_ls_into(
-                                        &listing,
-                                        &mut share.guest_ls_scratch,
-                                    );
+                                    share.parse_guest_listing(&listing);
                                     share.engine.on_guest_listing_normalized(
                                         share.guest_ls_scratch.drain(..),
                                     )

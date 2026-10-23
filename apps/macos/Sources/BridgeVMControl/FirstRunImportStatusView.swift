@@ -14,7 +14,7 @@ struct FirstRunImportStatusView: View {
                 }
             }
             if let error = library.firstRunImportError {
-                Text(error).foregroundStyle(.red).font(.callout)
+                Text(error).foregroundStyle(.red).font(.callout).accessibilityIdentifier("bridgevm.first-run.import.error")
             }
             HStack {
                 Spacer()
@@ -24,7 +24,7 @@ struct FirstRunImportStatusView: View {
                     Button("저장된 VM 불러오기") {
                         Task { await library.recoverPublishedFirstRunImport() }
                     }
-                    .disabled(library.firstRunImportBusy)
+                    .disabled(library.firstRunImportBusy).accessibilityIdentifier("bridgevm.first-run.import.recover")
                 } else {
                     Button(library.firstRunImportBusy ? "가져오는 중…" : "가져오기", action: importAction)
                         .keyboardShortcut(.defaultAction).accessibilityIdentifier("bridgevm.first-run.import.commit")

@@ -13,15 +13,14 @@ enum HvfMediaImport {
         defer { try? fileManager.removeItem(at: workspace) }
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workspace.path)
         let snapshot = workspace.appendingPathComponent("selected.snapshot", isDirectory: true)
-        try HvfMediaImportHelper.invoke(helper, arguments: [
-            "create", disk, vars, snapshot.path, "import", String(UInt64.max)
-        ])
+        try HvfMediaImportHelper.invoke(helper, arguments: ["create", disk, vars, snapshot.path, "import", String(UInt64.max)])
         try HvfMediaImportHelper.invoke(helper, arguments: ["verify", snapshot.path])
-        // Foundation refuses existing destinations. The caller owns and rolls
-        // back its newly reserved VM directory if either move fails.
-        try fileManager.moveItem(atPath: snapshot.appendingPathComponent("disk.raw").path,
-                                 toPath: toDisk.path)
-        try fileManager.moveItem(atPath: snapshot.appendingPathComponent("vars.fd").path,
-                                 toPath: toVars.path)
+        // A clone keeps the source's mode (read-only media blocked Start in T19 r3), so each member becomes
+        // 0600 in the private workspace, never via the library path. Existing targets fail; the caller rolls back.
+        for (name, target) in [("disk.raw", toDisk), ("vars.fd", toVars)] {
+            let member = snapshot.appendingPathComponent(name).path
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: member)
+            try fileManager.moveItem(atPath: member, toPath: target.path)
+        }
     }
 }

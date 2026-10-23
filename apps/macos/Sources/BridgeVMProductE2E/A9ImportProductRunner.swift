@@ -123,14 +123,8 @@ final class A9ImportProductRunner {
     }
 
     private func importVM(_ ui: T17UIControlling) throws {
-        try ui.press("bridgevm.first-run.import", timeout: 30)
-        try ui.setText(request.vmName, identifier: "bridgevm.first-run.name", timeout: 10)
-        try ui.choose(path: request.sourceDiskPath, from: "bridgevm.first-run.disk.choose", timeout: 20)
-        try ui.choose(path: request.sourceVarsPath, from: "bridgevm.first-run.vars.choose", timeout: 20)
-        try ui.choose(path: request.sourceVtpmPath, from: "bridgevm.first-run.vtpm.choose", timeout: 20)
-        try ui.choose(path: request.sourceVtpmPackagePath, from: "bridgevm.first-run.vtpm-package.choose", timeout: 20); try ui.choose(path: request.sourceVtpmCodePath, from: "bridgevm.first-run.vtpm-code.choose", timeout: 20)
-        try ui.press("bridgevm.first-run.import.commit", timeout: 15)
-        try ui.waitFor("bridgevm.windows.runtime.view", timeout: 1_200)
+        try A9ImportFormEntry.enter(request, ui: ui)
+        try A9ImportRuntimeNavigation.openRuntimeControls(ui) { A9ImportEndState.capture(ui, request: request, fileManager: fileManager) }
     }
 
     private func verifyImportedConfiguration() throws {
@@ -152,7 +146,7 @@ final class A9ImportProductRunner {
         try T17RuntimeIntegrationSetup.apply(sharePath: request.sharePath, ui: ui)
         try ui.press("bridgevm.windows.runtime.start", timeout: 20)
         return try T17FirstReadyWaiter.wait(observe: {
-            let ready = self.boundedLines(self.runLog).first { $0.hasPrefix("BVAGENT READY") }
+            let ready = A9FirstReadyLine.first(in: self.boundedLines(self.runLog))
             return try T17FirstReadyObservation.capture(
                 readyLine: ready, applicationRunning: self.application?.isRunning == true, ui: ui)
         }, diagnostic: { T17FirstBootDiagnostic.capture(self.runLog) })

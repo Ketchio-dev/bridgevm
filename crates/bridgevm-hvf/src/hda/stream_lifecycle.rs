@@ -8,7 +8,7 @@ impl HdaController {
         self.notify_stream_reset();
         let pcm_sink = self.pcm_sink.take();
         let pcm_sink_overridden = self.pcm_sink_overridden;
-        *self = Self::with_pcm_output_path::<&Path>(None);
+        self.replace_keeping_diagnostics(Self::with_pcm_output_path::<&Path>(None));
         self.pcm_sink = pcm_sink;
         self.pcm_sink_overridden = pcm_sink_overridden;
     }

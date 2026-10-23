@@ -4,7 +4,7 @@ import Foundation
 struct HvfRecoverableInputStream {
     private var stream = HvfNegotiatedInputStream()
     private var cleanup = HvfPointerCleanup()
-    private var queued: [HvfOrderedInputQueue.Event] = []
+    private var queued: [HvfOrderedInputQueue.Event] = [] // The stream's unsent events, a replaced move included.
     private var active: HvfOrderedInputQueue.Event?
     var isRecovering: Bool { cleanup.recovering && !cleanup.blocked }
     var state: HvfNegotiatedInputStream.State { cleanup.blocked ? .failed : (isRecovering ? .negotiating : stream.state) }
@@ -12,8 +12,8 @@ struct HvfRecoverableInputStream {
 
     mutating func enqueue(_ event: HvfOrderedInputQueue.Event, now: Date) -> HvfNegotiatedInputStream.Admission {
         guard !cleanup.blocked, !isRecovering else { return .refused }
-        let admission = stream.enqueue(event, now: now)
-        if admission == .queued { queued.append(event) }
+        let held = stream.count, admission = stream.enqueue(event, now: now)
+        if admission == .queued { if stream.count == held { _ = queued.popLast() }; queued.append(event) }
         return admission
     }
 

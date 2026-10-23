@@ -295,7 +295,7 @@ fn platform_reset_preserving_media_and_vars_clears_runtime_state() {
     let flash_after_program = p.flash_vars_image()[0..8].to_vec();
 
     // When: the probe reboot loop asks the platform to reset runtime state.
-    p.reset();
+    p.reset().unwrap();
 
     // Then: persistent media and vars survive, while PCIe/NVMe runtime state
     // no longer carries over to the next boot.

@@ -57,9 +57,9 @@ class AppUIHostContracts(unittest.TestCase):
             path = observations / (name + ".png")
             path.write_bytes(png())
             screenshots.append(dict(name=name, file=path.name, sha256=original.digest(path), width=1, height=1))
-        report = dict(schema_version=1, kind="native-app-ui-diagnostic", fixture_data=True,
-                      guest_behavior_proof=False, failure=None, screenshots=screenshots,
-                      actions=dict.fromkeys(original.ACTIONS, True), tripwires=dict.fromkeys(original.TRIPWIRES, 0))
+        report = dict(schema_version=1, kind="native-app-ui-diagnostic", fixture_data=True, guest_behavior_proof=False,
+                      failure=None, screenshots=screenshots, actions=dict.fromkeys(original.ACTIONS, True),
+                      tripwires=dict.fromkeys(original.TRIPWIRES, 0), model_creations=dict(original.MODEL_CREATIONS))
         (observations / "ui-observations.json").write_text(json.dumps(report))
         identity = dict(schema_version=1, kind="native-app-ui-host-identity", pid=4242,
                         bundle_identifier=host.BUNDLE_ID, bundle_path=str(bundle),

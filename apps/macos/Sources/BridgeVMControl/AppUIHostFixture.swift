@@ -9,7 +9,7 @@ extension AppUIHost {
             installSessionFactory: { _ in capture.tripwire("install_creations") },
             runtimeSessionFactory: { _ in capture.tripwire("runtime_creations") },
             actionScheduler: { _ in capture.tripwire("file_jobs") }, startsModelsAutomatically: false,
-            modelFactory: { _ in capture.tripwire("model_creations") })
+            modelFactory: { capture.makeModel($0) })
     }
     static func checkCancellation(output: URL) throws {
         let marker = output.deletingLastPathComponent().appendingPathComponent("cancel.requested").path

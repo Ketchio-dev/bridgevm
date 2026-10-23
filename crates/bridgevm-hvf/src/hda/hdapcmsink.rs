@@ -4,6 +4,8 @@ use super::*;
 
 #[path = "command_dma.rs"]
 mod command_dma;
+#[path = "diagnostics.rs"]
+mod diagnostics;
 #[path = "file_pcm_sink.rs"]
 mod file_pcm_sink;
 #[path = "interrupt_sources.rs"]
@@ -14,10 +16,16 @@ mod pcm_sink;
 mod playback_descriptor;
 #[path = "playback_dma.rs"]
 mod playback_dma;
+#[path = "playback_entry.rs"]
+mod playback_entry;
+#[path = "repeat_detector.rs"]
+mod repeat_detector;
 #[path = "stream_control.rs"]
 mod stream_control;
 #[path = "stream_lifecycle.rs"]
 mod stream_lifecycle;
+use diagnostics::HdaDiagnostics;
+pub use diagnostics::HdaHostRecords;
 pub use file_pcm_sink::FilePcmSink;
 pub use pcm_sink::HdaPcmSink;
 
@@ -190,6 +198,7 @@ pub struct HdaController {
     pub(crate) pcm_sink_overridden: bool,
     pub(crate) interrupt_asserted: bool,
     pub(crate) interrupt_pending: bool,
+    pub(crate) diagnostics: HdaDiagnostics,
 }
 
 impl std::fmt::Debug for HdaController {
@@ -264,6 +273,7 @@ impl HdaController {
             pcm_sink_overridden: false,
             interrupt_asserted: false,
             interrupt_pending: false,
+            diagnostics: HdaDiagnostics::default(),
         }
     }
 
@@ -280,7 +290,7 @@ impl HdaController {
         if self.pcm_sink_overridden {
             self.controller_reset();
         } else {
-            *self = Self::new();
+            self.replace_keeping_diagnostics(Self::new());
         }
     }
 
@@ -306,6 +316,7 @@ impl HdaController {
 
         if enabled && self.interrupt_pending {
             self.interrupt_pending = false;
+            self.diagnostics.note_msi(self.stream.ctl & SDCTL_RUN != 0);
             out.push(MsixMessage {
                 vector: MSI_CONTROLLER_VECTOR,
                 address,
@@ -318,6 +329,8 @@ impl HdaController {
         if size == 0 || size > 8 {
             return 0;
         }
+        let running = self.stream.ctl & SDCTL_RUN != 0;
+        self.diagnostics.note_register_read(offset, size, running);
         let mut value = 0;
         for byte in 0..size {
             value |= u64::from(self.read_byte(offset + u64::from(byte))) << (byte * 8);
@@ -505,6 +518,7 @@ impl HdaController {
             self.last_poll = now;
             return;
         }
+        self.note_diagnostic_poll(now, mem);
         let elapsed = match now {
             Some(now) => match self.last_poll.replace(now) {
                 Some(last) => now.saturating_duration_since(last).min(MAX_POLL_ELAPSED),
@@ -547,38 +561,6 @@ impl HdaController {
             }
         }
         self.gctl = (self.gctl & GCTL_CRST) | (next & 0x0000_0102);
-    }
-
-    pub(crate) fn complete_bdl_entry(&mut self, flags: u32) {
-        if flags & BDL_IOC != 0 {
-            self.stream.sts |= SDSTS_BCIS;
-            if hda_trace_enabled() {
-                println!(
-                    "hda: BDL IOC index={} lpib={}",
-                    self.stream.bdl_index, self.stream.lpib
-                );
-            }
-        }
-        self.stream.bdl_offset = 0;
-        self.stream.bdl_index = if self.stream.bdl_index >= self.stream.lvi {
-            0
-        } else {
-            self.stream.bdl_index + 1
-        };
-    }
-
-    pub(crate) fn wrap_cyclic_buffer(&mut self) {
-        self.stream.lpib = 0;
-        self.stream.bdl_index = 0;
-        self.stream.bdl_offset = 0;
-    }
-
-    pub(crate) fn write_position_buffer(&self, mem: &mut dyn GuestMemoryMut) {
-        if self.dp_base & 1 == 0 {
-            return;
-        }
-        let base = self.dp_base & !0x7f;
-        let _ = mem.write_bytes(base, &self.stream.lpib.to_le_bytes());
     }
 
     pub(crate) fn codec_verb(&mut self, command: u32) -> u32 {

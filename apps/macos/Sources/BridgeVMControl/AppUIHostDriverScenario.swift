@@ -65,8 +65,8 @@ enum AppUIHostDriverScenario {
 
         let overview = deadline()
         try await client.perform(.pressOverview, phase: .overview, deadline: overview)
-        try await AppUIHostDriverClient.wait("overview cards", deadline: overview) {
-            guard host.library.proMode && host.library.selectedID == nil else { return false }
+        try await AppUIHostDriverClient.wait("overview rows", deadline: overview) {
+            guard AppUIHostOverviewState.reached(host.library) else { return false }
             let value = try await client.perform(.overviewCards, phase: .overview, deadline: overview)
             return value?.amberVisible == true && value?.indigoVisible == true
         }

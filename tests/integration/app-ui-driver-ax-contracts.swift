@@ -32,8 +32,7 @@ enum AppUIDriverAXContracts {
         check(form?.commitVisible == true && form?.isoSelection == "" && form?.payloadSelection == ""
               && form?.manifestSelection == "", "selection values come from observed nodes")
         try check(operations.perform(.importForm).values?.nameVisible == true, "import name observed")
-        let cards = try operations.perform(.overviewCards).values
-        check(cards?.amberVisible == true && cards?.indigoVisible == true, "two exact cards observed")
+        try overviewRowContracts()
         try check(operations.perform(.searchState).values?.searchValue == "", "clear readback observed")
 
         let missing = AppUIDriverAXFixture()

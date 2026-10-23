@@ -44,9 +44,7 @@ impl HdaController {
                 self.stream.ctl &= !SDCTL_RUN;
                 break;
             }
-            if let Some(output) = self.pcm_sink.as_mut() {
-                output.write_pcm(&self.pcm_scratch, rate, channels, bits);
-            }
+            self.emit_pcm_chunk(length, (rate, channels, bits));
             self.stream.bdl_offset += chunk_len as u32;
             self.stream.lpib += chunk_len as u32;
             budget -= chunk_len;
