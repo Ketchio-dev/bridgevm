@@ -77,7 +77,6 @@ docs/windows-arm/graphics-compatibility.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/native-vmm-nvme-identify-prp.tsv	-	-
 @include	docs/document-manifests/native-vmm-secondary-shutdown.tsv	-	-
 @include	docs/document-manifests/native-vmm-gic-preemption-hppir.tsv	-	-
-docs/windows-arm/evidence/bridgevm-pc-runtime-dxe-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-variable-restore-live-20260830.md	current	windows-architecture	-
 @include	docs/document-manifests/native-vmm-pc-msix-replay.tsv	-	-
 @include	docs/document-manifests/native-vmm-nvme-shutdown.tsv	-	-
@@ -134,3 +133,4 @@ docs/windows-arm/evidence/b6-active-frame-time-collection-20260910.md	current	wi
 @include	docs/document-manifests/autonomous-selected-media-20261014.tsv	-	-
 @include	docs/document-manifests/autonomous-queue-and-clone-20261014.tsv	-	-
 @include	docs/document-manifests/autonomous-startup-and-network-20261014.tsv	-	-
+@include	docs/document-manifests/followups-20261023.tsv	-	-
