@@ -3,13 +3,13 @@ import Foundation
 struct T17GuestJourney {
     let request: any T17JourneyRequest
     let ui: T17UIControlling
-    let fileManager: FileManager
+    let fileManager: FileManager; let tpm: T17TPMEvidenceLog
 
     func run(firstReady: String, prove: (T17GuestStage) throws -> Void) throws {
         guard currentLogText().contains(firstReady) else {
             throw T17Blocker(code: "guest-evidence-missing", detail: "first READY record changed before the product journey")
         }
-        try keyboardAndPointer(); try prove(.keyboardPointer)
+        try keyboardAndPointer(); try prove(.keyboardPointer); readTPM(.first)
         try clipboard(); try prove(.clipboard)
         try workload("Share", output: "t17-guest-\(prefix).txt"); try prove(.folderShare)
         try workload("Network", output: "t17-network-\(prefix).txt"); try prove(.network)
@@ -22,12 +22,12 @@ struct T17GuestJourney {
         try prove(.audio); try prove(.firstShutdown)
         let first = try archiveLog(named: "first-run.log", ready: "first-ready", shutdown: "first-shutdown")
         try createSnapshot()
-        _ = try bootReady()
+        _ = try bootReady(); readTPM(.mutation)
         try workload("MarkerB", output: "t17-snapshot-b-\(prefix).txt")
         try shutdown()
         let mutation = try archiveLog(named: "mutation-run.log", ready: "mutation-ready", shutdown: "mutation-shutdown")
         try restoreSnapshot()
-        _ = try bootReady()
+        _ = try bootReady(); readTPM(.final)
         try workload("MarkerRestoredA", output: "t17-snapshot-restored-a-\(prefix).txt")
         try workload("AgentResult", output: "t17-agent-result-\(prefix).json", includeIdentity: true)
         let artifacts = try T17GuestArtifacts.collect(request: request, fileManager: fileManager)

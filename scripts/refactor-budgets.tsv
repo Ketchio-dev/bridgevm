@@ -4972,3 +4972,13 @@ scripts/win-assets/bv-product-e2e-tpm.ps1	34	0
 tests/integration/t17-tpm-pcr-contract.ps1	66	0
 tests/integration/t17-tpm-pcr-command-contract.py	137	0
 .github/workflows/t17-tpm-pcr-contract.yml	20	0
+apps/macos/Sources/BridgeVMProductE2E/T17TPMEvidence.swift	95	0
+apps/macos/Sources/BridgeVMProductE2E/T17TPMGuestResult.swift	76	0
+apps/macos/Sources/BridgeVMProductE2E/T17TPMBootReader.swift	91	0
+apps/macos/Sources/BridgeVMProductE2E/T17TPMGuestAssets.swift	21	0
+apps/macos/Sources/BridgeVMProductE2E/ProductE2EPrivateLaneResult.swift	15	0
+apps/macos/Sources/BridgeVMProductE2E/T17GuestJourneyTPM.swift	13	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17TPMGuestResultTests.swift	119	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17TPMEvidenceTests.swift	127	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17TPMReadTests.swift	208	0
+tests/integration/t17-tpm-journey-contract.py	57	0

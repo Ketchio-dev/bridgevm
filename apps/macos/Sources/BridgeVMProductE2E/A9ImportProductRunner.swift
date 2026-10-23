@@ -9,7 +9,7 @@ struct A9ImportRunOutcome {
 }
 
 final class A9ImportProductRunner {
-    private let request: A9ImportRequest
+    private let request: A9ImportRequest; let tpm = T17TPMEvidenceLog()
     private let fileManager: FileManager
     private var application: Process?
     private var ui: T17UIControlling?
@@ -38,7 +38,7 @@ final class A9ImportProductRunner {
             try evidence.prove(.importedMediaAuthenticated)
             let ready = try bootToFirstReady(control)
             try evidence.prove(.firstReady)
-            try T17GuestJourney(request: request, ui: control, fileManager: fileManager)
+            try T17GuestJourney(request: request, ui: control, fileManager: fileManager, tpm: tpm)
                 .run(firstReady: ready) { try evidence.prove(A9ImportStage(guest: $0)) }
             try authenticateFinal(&evidence)
             try requireUnchangedSource(evidence)
@@ -89,7 +89,7 @@ final class A9ImportProductRunner {
 
     private func prepareLane() throws {
         try fileManager.createDirectory(atPath: request.libraryRootPath, withIntermediateDirectories: false)
-        try fileManager.createDirectory(atPath: request.sharePath, withIntermediateDirectories: false)
+        try fileManager.createDirectory(atPath: request.sharePath, withIntermediateDirectories: false); T17TPMGuestAssets.stage(appBundlePath: request.appBundlePath, sharePath: request.sharePath, fileManager: fileManager)
         let root = URL(fileURLWithPath: request.sharePath)
         try Data("bridgevm-t17-share-v1\n\(request.nonce)\n".utf8)
             .write(to: root.appendingPathComponent("t17-\(prefix).txt"), options: [.withoutOverwriting])

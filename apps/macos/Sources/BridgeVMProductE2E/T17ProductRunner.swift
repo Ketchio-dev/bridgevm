@@ -11,7 +11,7 @@ struct T17RunOutcome {
 }
 
 final class T17ProductRunner {
-    let request: T17Request
+    let request: T17Request; let tpm = T17TPMEvidenceLog()
     private let fileManager: FileManager
     private(set) var application: Process?
     private(set) var ui: T17UIControlling?
@@ -51,7 +51,7 @@ final class T17ProductRunner {
             try evidence.prove(.secureBootProvisioned)
             let readyLine = try bootToFirstReady(control)
             try evidence.prove(.firstReady); afterReady = true
-            try T17GuestJourney(request: request, ui: control, fileManager: fileManager)
+            try T17GuestJourney(request: request, ui: control, fileManager: fileManager, tpm: tpm)
                 .run(firstReady: readyLine) { try evidence.prove($0.installStage) }
             try evidence.authenticateSelectedMedia(disk: request.diskPath, vars: request.varsPath)
             try evidence.authenticate("guest_evidence_sha256", file: URL(fileURLWithPath: request.guestEvidencePath))
@@ -69,7 +69,7 @@ final class T17ProductRunner {
 
     private func prepareLane() throws {
         try fileManager.createDirectory(atPath: request.libraryRootPath, withIntermediateDirectories: false)
-        try fileManager.createDirectory(atPath: request.sharePath, withIntermediateDirectories: false)
+        try fileManager.createDirectory(atPath: request.sharePath, withIntermediateDirectories: false); T17TPMGuestAssets.stage(appBundlePath: request.appBundlePath, sharePath: request.sharePath, fileManager: fileManager)
         try T17PrivateUnattend.write(to: privateUnattend, nonce: request.nonce, fileManager: fileManager)
         let shareProbe = URL(fileURLWithPath: request.sharePath).appendingPathComponent("t17-\(request.nonce.prefix(12)).txt")
         try Data("bridgevm-t17-share-v1\n\(request.nonce)\n".utf8).write(to: shareProbe, options: [.withoutOverwriting])

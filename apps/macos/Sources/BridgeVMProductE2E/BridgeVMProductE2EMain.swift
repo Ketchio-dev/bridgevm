@@ -9,18 +9,20 @@ enum BridgeVMProductE2EMain {
             switch cli.mode {
             case .isoInstall:
                 let request = try T17Request.load(cli.request)
-                let outcome = T17ProductRunner(request: request).run()
-                try T17ResultWriter.write(outcome.evidence.result(
+                let runner = T17ProductRunner(request: request)
+                let outcome = runner.run()
+                try T17ResultWriter.write(ProductE2EPrivateLaneResult(lane: outcome.evidence.result(
                     request: request, failureCode: outcome.failureCode, failureDetail: outcome.failureDetail,
                     cleanupVerified: outcome.cleanupVerified, installerSourcePath: outcome.installerSourcePath,
-                    uiFrontendAutomated: outcome.uiFrontendAutomated), to: cli.result)
+                    uiFrontendAutomated: outcome.uiFrontendAutomated), tpm: runner.tpm.evidence), to: cli.result)
             case .installedDiskImport:
                 let request = try A9ImportRequest.load(cli.request)
-                let outcome = A9ImportProductRunner(request: request).run()
-                try T17ResultWriter.write(outcome.evidence.result(
+                let runner = A9ImportProductRunner(request: request)
+                let outcome = runner.run()
+                try T17ResultWriter.write(ProductE2EPrivateLaneResult(lane: outcome.evidence.result(
                     request: request, failureCode: outcome.failureCode, failureDetail: outcome.failureDetail,
                     cleanupVerified: outcome.cleanupVerified,
-                    uiFrontendAutomated: outcome.uiFrontendAutomated), to: cli.result)
+                    uiFrontendAutomated: outcome.uiFrontendAutomated), tpm: runner.tpm.evidence), to: cli.result)
             }
             exit(EXIT_SUCCESS)
         } catch let blocker as T17Blocker {
