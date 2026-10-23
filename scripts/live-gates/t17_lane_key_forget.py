@@ -8,8 +8,8 @@ in place. The only product delete that proves which key it removed is
 checks the state fingerprint and deletes only a stored key equal to the
 packaged one. Each lane therefore exports its own slug's key into a new private
 folder inside the lane and forgets it with the same stable ID, state, package
-and code. The package and code are removed again whatever the outcome; what
-cannot be removed is named, and a signal that kills this process leaves them.
+and code. Both are removed again whatever the outcome, even on SIGTERM, SIGINT
+or SIGHUP; what cannot be removed is named, and a SIGKILL leaves them.
 
 A lane whose state is empty or absent can still own a key, because the key
 exists before swtpm writes state. Only an export refusal carrying the product's
@@ -37,6 +37,7 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import product_e2e_work as WORK  # noqa: E402
 from product_e2e_identity import is_sha256  # noqa: E402
+from stop_signals import stoppable  # noqa: E402
 from t17_lane_request import Refusal, bounded_json, lane_request, lane_state  # noqa: E402
 
 # VTPMStateSecurityError.missingKeyForExistingState as VTPMLifecycleCommand prints it.
@@ -47,8 +48,7 @@ PACKAGE, CODE, SCRATCH = "vtpm-recovery.json", "vtpm-recovery-code.txt", "empty-
 LANE = re.compile(r"lane-([1-3])\Z")
 WORK_NAME = re.compile(r"bridgevm-e2e-" + WORK.JOB + r"\.[A-Za-z0-9]{6}\Z")
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
-TIMEOUT_SECONDS = 120
-OUTPUT_LIMIT = 65_536
+TIMEOUT_SECONDS, OUTPUT_LIMIT = 120, 65_536
 
 
 def describe(error: BaseException) -> str:
@@ -190,4 +190,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(stoppable(main))  # A stop signal exits 128 + its number after each finally ran.

@@ -224,7 +224,11 @@ layout, or when the product neither prints `forgot_imported_key=<slug>` nor,
 for a lane whose vTPM state is empty or absent, reports the key missing. Seal
 and layout refusals run no app; after a product refusal the other lanes are
 still forgotten, and each refused lane is named. The recovery package and code
-are removed unless a cancel kills this step. Earlier T17 receipts reported
+are removed whatever the outcome: SIGTERM, SIGINT or SIGHUP, such as a queue
+cancel's SIGTERM, ends this step with status 128 plus the signal number only
+after that removal. Only SIGKILL can still leave them, for example the cancel's
+SIGKILL about 5 seconds later if it lands while the cancel's own cleanup runs
+this step again. Earlier T17 receipts reported
 `worker_cleanup_verified` without forgetting these keys.
 T19 seals a packaged app, fixed-identity helper, runner, installed disk, exact 64 MiB vars and symlink-free vTPM tree; each lane imports independent read-only clones through `--windows-import-product-e2e`, runs the full guest journey, reauthenticates canonical inputs, and retains `claim_eligible=false` because A9 also requires T17.
 T9 is deliberately not assigned a product capability criterion. It rebuilds

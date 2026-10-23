@@ -5,7 +5,6 @@ private path."""
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import io
 import os
 from pathlib import Path
@@ -14,11 +13,8 @@ import stat
 import unittest
 from unittest import mock
 
-FIXTURE = Path(__file__).with_name("t17-lane-key-forget-test.py")
-SPEC = importlib.util.spec_from_file_location("t17_lane_key_forget_fixture", FIXTURE)
-assert SPEC and SPEC.loader
-base = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(base)
+# The signal cases load the shared fixture module and run with these failures.
+from t17_lane_key_forget_signal_cases import LaneKeyForgetSignalCases, base  # noqa: F401
 REFUSED = "T17 lane vTPM key forget refused: "
 
 
