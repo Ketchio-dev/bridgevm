@@ -5092,3 +5092,6 @@ scripts/live-gates/t19_private_lane.py	7	0
 tests/integration/t19-bitlocker-private-lane-test.py	114	0
 tests/integration/t19-bitlocker-switch-test.py	159	0
 tests/integration/t19-bitlocker-default-unchanged-test.py	98	0
+docs/history/windows-hvf/followups-r2-integration-r3-20261023.md	108	0
+docs/archive/a11-measured-20261023-d6pass.md	25	0
+docs/document-manifests/followups-r2-r3-20261023.tsv	4	0
