@@ -4967,3 +4967,8 @@ docs/history/windows-hvf/guest-write-policy-revised-20261023.md	101	0
 docs/document-manifests/guest-write-policy-revised-20261023.tsv	3	0
 scripts/live-gates/product_e2e_private_lane.py	10	0
 tests/integration/product-e2e-private-lane-contract.py	101	0
+scripts/win-assets/bv-product-e2e-tpm.cs	67	0
+scripts/win-assets/bv-product-e2e-tpm.ps1	34	0
+tests/integration/t17-tpm-pcr-contract.ps1	66	0
+tests/integration/t17-tpm-pcr-command-contract.py	137	0
+.github/workflows/t17-tpm-pcr-contract.yml	20	0
