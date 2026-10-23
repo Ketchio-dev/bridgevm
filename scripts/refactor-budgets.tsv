@@ -4917,3 +4917,5 @@ apps/macos/Tests/BridgeVMProductE2ETests/HvfHostDiagnosticsTests.swift	104	0
 tests/integration/hda-diagnostics-host-tail-contract.py	285	0
 scripts/live-gates/hda_diagnostics.py	132	0
 tests/integration/hda-diagnostics-report-test.py	156	0
+docs/history/windows-hvf/audio-diagnostics-records-20261022.md	202	0
+docs/document-manifests/audio-diagnostics-20261022.tsv	3	0
