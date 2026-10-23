@@ -63,7 +63,6 @@ path	class	topic	superseded_by
 @include	docs/document-manifests/hygiene-20261023.tsv	-	-
 @include	docs/document-manifests/pointer-coalesce-20261023.tsv	-	-
 docs/windows-arm/iso-download-spike-20260817.md	current	windows-install	-
-docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/runtime-control-socket-cleanup.tsv	-	-
 @include	docs/document-manifests/native-vmm-share-sync-hardening.tsv	-	-
 @include	docs/document-manifests/native-vmm-agent-get-bound.tsv	-	-
@@ -134,3 +133,4 @@ docs/windows-arm/evidence/b6-active-frame-time-collection-20260910.md	current	wi
 @include	docs/document-manifests/followups-r5-20261023.tsv	-	-
 @include	docs/document-manifests/hygiene-r2-20261023.tsv	-	-
 @include	docs/document-manifests/guest-write-policy-20261023.tsv	-	-
+@include	docs/document-manifests/guest-write-policy-revised-20261023.tsv	-	-

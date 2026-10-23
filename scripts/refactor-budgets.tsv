@@ -4963,3 +4963,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_guest_fingerp
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_guest_fingerprint_tests.rs	47	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_host.rs	60	4
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_filesystem_tests.rs	202	0
+docs/history/windows-hvf/guest-write-policy-revised-20261023.md	101	0
+docs/document-manifests/guest-write-policy-revised-20261023.tsv	3	0
