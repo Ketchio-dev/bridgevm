@@ -6,7 +6,7 @@
 //! content. Host-to-guest sync keeps its own `clip_max_bytes` limit.
 
 use super::*;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::DefaultHasher;
 
 /// Largest guest clipboard text, in decoded UTF-8 bytes, the Mac may receive.
 pub(super) const GUEST_CLIP_MAX_BYTES: usize = 8 * 1024 * 1024;
@@ -83,9 +83,7 @@ impl AgentConsoleHarness {
     /// rebaseline stays pending: a paste landing after this poll is learned,
     /// not published.
     fn refuse_guest_clip(&mut self, b64: &str, bytes: usize, now: Instant) {
-        let mut hasher = DefaultHasher::new();
-        b64.hash(&mut hasher);
-        let fingerprint = Some(hasher.finish());
+        let fingerprint = Some(guest_clip_fingerprint(b64, &mut DefaultHasher::new()));
         let t_ms = self.t_ms(now);
         let baseline = &mut self.last_synced;
         // Each interval re-polls an unchanged guest clipboard: one refusal.
