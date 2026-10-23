@@ -8,6 +8,8 @@ use super::*;
 use bridgevm_hvf::smccc_trng::{EntropyError, EntropySource};
 use std::os::unix::ffi::OsStrExt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+#[path = "guest_write_directory_tests.rs"]
+mod directory;
 
 const QUARANTINE: &CStr = c"com.apple.quarantine";
 

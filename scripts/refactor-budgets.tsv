@@ -4182,7 +4182,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_tests.rs	334	0
 docs/history/windows-hvf/native-vmm-share-sync-hardening-20261007.md	67	0
 docs/document-manifests/native-vmm-share-sync-hardening.tsv	3	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_write.rs	58	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/host_destination.rs	144	8
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/host_destination.rs	140	7
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/host_destination_tests.rs	120	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_failure_tests.rs	31	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_skip.rs	32	0
@@ -5063,3 +5063,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_refusal.rs	24	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_refusal_tests.rs	56	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_write_refusal_tests.rs	118	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_directory.rs	26	2
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_directory_tests.rs	71	0

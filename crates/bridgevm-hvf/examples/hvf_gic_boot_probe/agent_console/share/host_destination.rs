@@ -7,6 +7,8 @@ use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[path = "guest_write_directory.rs"]
+mod directory;
 #[path = "guest_write_mark.rs"]
 mod mark;
 #[path = "guest_write_policy.rs"]
@@ -54,12 +56,8 @@ impl Destination {
             parent = match open_at(&parent, &part, flags, 0) {
                 Ok(file) => file,
                 Err(e) if create && e.kind() == io::ErrorKind::NotFound => {
-                    // SAFETY: live directory descriptor and NUL-terminated child name.
-                    let status = unsafe { libc::mkdirat(parent.as_raw_fd(), part.as_ptr(), 0o755) };
-                    if status < 0 && io::Error::last_os_error().kind() != io::ErrorKind::AlreadyExists {
-                        return Err(io::Error::last_os_error());
-                    }
-                    open_at(&parent, &part, flags, 0)?
+                    // Owner-only and marked before anything is published in it.
+                    directory::open_or_create(&parent, &part, flags)?
                 }
                 Err(e) => return Err(e),
             };
