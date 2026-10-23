@@ -85,7 +85,6 @@ docs/windows-arm/smccc-trng-psci-contract.md	current	windows-hvf-engine	-
 @include	docs/document-manifests/native-vmm-gic-deactivation.tsv	-	-
 @include	docs/document-manifests/native-vmm-gic-group-enable.tsv	-	-
 @include	docs/document-manifests/native-vmm-gic-pending-readback.tsv	-	-
-docs/windows-arm/evidence/a3-viogpu3d-d1-bugcheck-20260808.md	current	windows-graphics	GOAL.md
 docs/windows-arm/evidence/a3-d3d11-title-fps-3of3-20260812.md	current	windows-graphics	GOAL.md
 HANDOFF.md	historical-evidence	project-status	STATUS.md
 docs/windows-arm/evidence/windows-1.0-closure-f1-f4-20260820.md	current	windows-graphics	GOAL.md
@@ -134,3 +133,4 @@ docs/windows-arm/evidence/b6-active-frame-time-collection-20260910.md	current	wi
 @include	docs/document-manifests/t17-tpm-evidence-20261023.tsv	-	-
 @include	docs/document-manifests/live-diagnostic-records-20261023.tsv	-	-
 @include	docs/document-manifests/post-merge-integration-20261023.tsv	-	-
+@include	docs/document-manifests/d6-overview-ax-race-20261023.tsv	-	-

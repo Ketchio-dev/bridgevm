@@ -5017,3 +5017,5 @@ tests/integration/app-ui-driver-ax-restart-count-contracts.swift	88	0
 tests/integration/app-ui-host-v2-restart-count-contract.py	47	0
 apps/macos/Sources/BridgeVMControl/AppUIHostOverviewRequests.swift	29	0
 apps/macos/Tests/BridgeVMAppUIHostTests/AppUIHostOverviewRequestsContractTests.swift	72	0
+docs/history/windows-hvf/d6-overview-ax-race-20261023.md	223	0
+docs/document-manifests/d6-overview-ax-race-20261023.tsv	3	0
