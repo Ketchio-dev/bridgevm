@@ -10,7 +10,7 @@ final class T17ControlReplyTests: XCTestCase {
     }
 
     func testClipboardReadNeedsItsOwnCompleteFrame() {
-        XCTAssertTrue(T17ControlReply.succeeded(tail: "BVAGENT CLIP CLIPGET\r\nvalue\r\nBVAGENT END CLIPGET\r\n",
+        XCTAssertTrue(T17ControlReply.succeeded(tail: "BVAGENT CLIP CLIPGET bytes=5 sha256=cd42404d52ad55cc\r\n",
             command: "CLIPGET", marker: "value"))
         XCTAssertFalse(T17ControlReply.succeeded(tail: "BVAGENT CLIP CLIPGET\nvalue\nBVAGENT END other\n",
             command: "CLIPGET", marker: "value"))

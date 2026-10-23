@@ -320,15 +320,8 @@ impl AgentConsoleHarness {
             return ReplyProgress::Complete;
         }
         if let Some(b64) = line.strip_prefix("CLIP ") {
-            match base64_decode(b64) {
-                Ok(bytes) => println!(
-                    "BVAGENT CLIP {command}\n{}\nBVAGENT END {command}",
-                    String::from_utf8_lossy(&bytes)
-                ),
-                Err(error) => println!(
-                    "BVAGENT CLIP {command}\n<base64 decode error: {error:?}>\nBVAGENT END {command}"
-                ),
-            }
+            // Never the guest's text: its byte length and a SHA-256 prefix.
+            println!("{}", operator_clip_line(command, b64));
             return ReplyProgress::Complete;
         }
         if line.starts_with("OK") || line.starts_with("ERR") {

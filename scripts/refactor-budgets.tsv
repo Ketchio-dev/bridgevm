@@ -838,7 +838,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console.rs	15	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clipboard.rs	65	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/config.rs	28	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/control_file.rs	17	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/harness_protocol.rs	507	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/harness_protocol.rs	500	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs	133	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	455	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/service_wake.rs	45	1
@@ -1480,7 +1480,7 @@ scripts/verify-agent-clipboard-share.sh	225	0
 scripts/verify-audio-playback.sh	153	0
 scripts/verify-d3d11-title-fps.sh	243	0
 scripts/verify-dynamic-resize.sh	112	0
-scripts/verify-keyboard-input.sh	176	0
+scripts/verify-keyboard-input.sh	175	0
 scripts/verify-powered-off-snapshot.sh	118	0
 scripts/verify-snapshot-restore-boots.sh	162	0
 scripts/verify-hvf-performance-binary-provenance.sh	71	0
@@ -2123,7 +2123,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfAttachedLivenessSchedule.swift	1
 tests/integration/clipboard-paste-command-fixture.swift	15	0
 tests/integration/clipboard-paste-command-contract.ps1	44	0
 .github/workflows/clipboard-paste-command-contract.yml	30	0
-apps/macos/Sources/BridgeVMProductE2E/T17ControlReply.swift	27	0
+apps/macos/Sources/BridgeVMProductE2E/T17ControlReply.swift	26	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17ControlReplyTests.swift	34	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlReadinessTests.swift	33	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlWriteFailureTests.swift	32	0
@@ -5054,3 +5054,7 @@ docs/document-manifests/d6-search-integration-20261023.tsv	4	0
 apps/macos/Sources/BridgeVMApp/Models/GuestClipboardCopyLimit.swift	21	0
 apps/macos/Tests/BridgeVMAppTests/GuestClipboardCopyRouteTests.swift	82	0
 crates/bridgevm-storage/src/tests_split/guest_tools_clipboard_key.rs	30	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_operator_reply.rs	24	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_operator_reply_tests.rs	73	0
+apps/macos/Sources/BridgeVMProductE2E/T17ClipboardFingerprint.swift	13	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17ClipboardFingerprintReplyTests.swift	37	0
