@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/b6-dpi-and-capture-live-20260908.md	current	windows-guest-integration	-
+docs/archive/a11-measured-20261023-followups-r4.md	historical-evidence	windows-regression-history	docs/windows-arm/capability-matrix.md
