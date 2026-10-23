@@ -4935,3 +4935,5 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOrderedInputEvent.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfOrderedPointerBacklogTests.swift	133	0
 apps/macos/Tests/BridgeVMControlTests/HvfOrderedPointerCoalescingTests.swift	184	0
 docs/machine-contract/qemu-virt-deviations-usb-input.json	15	0
+docs/history/windows-hvf/ordered-pointer-coalescing-20261023.md	266	0
+docs/document-manifests/pointer-coalesce-20261023.tsv	3	0
