@@ -1,6 +1,7 @@
 //! Split test module.
 
 mod hda_corb_interrupt;
+mod hda_diagnostic_records;
 mod helpers;
 mod net_ready;
 mod part_1;

@@ -6,6 +6,7 @@ mod bootorder;
 mod tests;
 
 mod audio_device;
+mod audio_diagnostics;
 mod console_device;
 mod env_config;
 #[cfg(feature = "venus")]

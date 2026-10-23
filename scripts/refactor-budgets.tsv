@@ -200,7 +200,7 @@ crates/bridgevm-hvf/src/host_entropy.rs	100	1
 crates/bridgevm-hvf/src/fwcfg.rs	499	0
 crates/bridgevm-hvf/src/fwcfg_tests.rs	376	0
 crates/bridgevm-hvf/src/hda/codec_parameter.rs	95	0
-crates/bridgevm-hvf/src/hda/hdapcmsink.rs	733	0
+crates/bridgevm-hvf/src/hda/hdapcmsink.rs	707	0
 crates/bridgevm-hvf/src/hda/pcm_sink.rs	13	0
 crates/bridgevm-hvf/src/hda/file_pcm_sink.rs	34	0
 crates/bridgevm-hvf/src/hda/stream_control.rs	46	0
@@ -3911,7 +3911,7 @@ crates/bridgevm-hvf/src/mmio_data_abort_tests.rs	81	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/mmio_registers.rs	15	2
 crates/bridgevm-hvf/src/nvme/completion_capacity.rs	10	0
 crates/bridgevm-hvf/src/nvme/tests/completion_backpressure.rs	207	0
-crates/bridgevm-hvf/src/hda/playback_dma.rs	60	0
+crates/bridgevm-hvf/src/hda/playback_dma.rs	58	0
 crates/bridgevm-hvf/src/hda/tests/dma_address.rs	58	0
 docs/history/windows-hvf/native-vmm-mmio-nvme-hda-20261005.md	80	0
 docs/document-manifests/native-vmm-core.tsv	4	0
@@ -4899,3 +4899,10 @@ docs/history/windows-hvf/d6-overview-respec-20261022.md	169	0
 docs/document-manifests/d6-overview-20261022.tsv	3	0
 docs/archive/a11-measured-20261022-robustness.md	26	0
 docs/document-manifests/robustness-20261022.tsv	3	0
+crates/bridgevm-hvf/src/hda/diagnostics.rs	224	0
+crates/bridgevm-hvf/src/hda/repeat_detector.rs	91	0
+crates/bridgevm-hvf/src/hda/playback_entry.rs	47	0
+crates/bridgevm-hvf/src/hda/tests/diagnostics.rs	191	0
+crates/bridgevm-hvf/src/hda/tests/repeat_detector.rs	111	0
+crates/bridgevm-hvf/src/platform_virt/audio_diagnostics.rs	20	0
+crates/bridgevm-hvf/src/platform_virt/tests/hda_diagnostic_records.rs	27	0
