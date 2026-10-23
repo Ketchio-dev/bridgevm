@@ -1,13 +1,13 @@
 //! Agent console scripted protocol and command response handling.
 
 use super::*;
+#[cfg(test)]
+#[path = "get_bound_tests.rs"]
+mod get_bound_tests;
 #[path = "input_receipt_label.rs"]
 mod input_receipt_label;
 #[path = "output_finish.rs"]
 mod output_finish;
-#[cfg(test)]
-#[path = "get_bound_tests.rs"]
-mod get_bound_tests;
 
 /// Largest guest file a GET reassembles on the host.
 pub(super) const MAX_AGENT_GET_BYTES: usize = 64 * 1024 * 1024;
@@ -249,9 +249,21 @@ impl AgentConsoleHarness {
     /// A command's terminal reply is one of:
     /// OUT <exit> <b64> or OUTBEG/OUTCHUNK*/OUTEND (RUN/PS), LSOK <b64> (LS),
     /// PUTOK <b64(path)> <bytes> (PUT), CLIP <b64> (CLIPGET), PONG (PING), or OK <...> /
+    ///
+    /// A GET reassembly ends with the command it answered: any reply that
+    /// completes the command drops one still in progress.
     pub(super) fn handle_reply_line(&mut self, line: &str, command: &str) -> ReplyProgress {
+        let progress = self.reply_progress(line, command);
+        if matches!(progress, ReplyProgress::Complete) {
+            self.get_accum = None;
+        }
+        progress
+    }
+    fn reply_progress(&mut self, line: &str, command: &str) -> ReplyProgress {
         let command = input_receipt_label::label(command);
-        if let Some(progress) = handle_verb_reply(line, command) { return progress }
+        if let Some(progress) = handle_verb_reply(line, command) {
+            return progress;
+        }
         if let Some(rest) = line.strip_prefix("OUTBEG ") {
             self.begin_out(rest);
             return ReplyProgress::Incomplete;
@@ -268,8 +280,7 @@ impl AgentConsoleHarness {
             return progress;
         }
         if let Some(rest) = line.strip_prefix("GETEND ") {
-            self.finish_get(command, rest);
-            return ReplyProgress::Complete;
+            return self.end_get(command, rest);
         }
         if let Some(b64) = line.strip_prefix("LSOK ") {
             match base64_decode(b64) {
@@ -386,7 +397,11 @@ impl AgentConsoleHarness {
             path,
             total,
             nchunks,
-            bytes: Vec::with_capacity(if total <= MAX_AGENT_GET_BYTES { total } else { 0 }),
+            bytes: Vec::with_capacity(if total <= MAX_AGENT_GET_BYTES {
+                total
+            } else {
+                0
+            }),
             chunks_seen: 0,
         });
     }
@@ -397,46 +412,17 @@ impl AgentConsoleHarness {
         };
         let payload = rest.split_once(' ').map_or(rest, |(_, b64)| b64);
         if let Ok(bytes) = base64_decode(payload) {
-            let limit = if accum.total <= MAX_AGENT_GET_BYTES { accum.total } else { 0 };
+            let limit = if accum.total <= MAX_AGENT_GET_BYTES {
+                accum.total
+            } else {
+                0
+            };
             if accum.bytes.len().saturating_add(bytes.len()) > limit {
                 return;
             }
             accum.bytes.extend_from_slice(&bytes);
             accum.chunks_seen += 1;
         }
-    }
-    /// GETEND <seq> — finalize: verify byte count, print a summary labelled by
-    /// the requesting command, and if BRIDGEVM_VIRTIO_CONSOLE_GET_DIR is set,
-    /// write the file there.
-    pub(super) fn finish_get(&mut self, label: &str, _rest: &str) {
-        let Some(accum) = self.take_finished_get() else {
-            return;
-        };
-        let ok = accum.bytes.len() == accum.total;
-        let preview_len = accum.bytes.len().min(48);
-        let mut head = String::with_capacity(preview_len * 2);
-        for byte in &accum.bytes[..preview_len] {
-            let _ = write!(&mut head, "{byte:02x}");
-        }
-        let mut written_note = String::new();
-        if let Ok(dir) = std::env::var("BRIDGEVM_VIRTIO_CONSOLE_GET_DIR") {
-            let name = accum
-                .path
-                .rsplit(['\\', '/'])
-                .next()
-                .filter(|s| !s.is_empty())
-                .unwrap_or("bvagent-get.bin");
-            let _ = std::fs::create_dir_all(&dir);
-            let out = std::path::Path::new(&dir).join(name);
-            match std::fs::write(&out, &accum.bytes) {
-                Ok(()) => written_note = format!(" wrote={}", out.display()),
-                Err(e) => written_note = format!(" write-error={e}"),
-            }
-        }
-        println!(
-            "BVAGENT GET {label} path={} bytes={} expected={} chunks={}/{} ok={ok}{written_note} head={head}",
-            accum.path, accum.bytes.len(), accum.total, accum.chunks_seen, accum.nchunks
-        );
     }
     pub(super) fn take_finished_get(&mut self) -> Option<FinishedGet> {
         self.get_accum.take().map(|accum| FinishedGet {

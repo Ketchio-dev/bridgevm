@@ -838,7 +838,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console.rs	15	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clipboard.rs	65	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/config.rs	28	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/control_file.rs	17	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/harness_protocol.rs	521	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/harness_protocol.rs	507	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs	133	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	455	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/service_wake.rs	45	1
@@ -4947,3 +4947,5 @@ docs/archive/a11-measured-20261023-followups-r4.md	26	0
 docs/document-manifests/followups-r4-20261023.tsv	3	0
 docs/archive/a11-measured-20261023-followups-r5.md	26	0
 docs/document-manifests/followups-r5-20261023.tsv	3	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/harness_get_end.rs	62	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/get_end_tests.rs	194	0
