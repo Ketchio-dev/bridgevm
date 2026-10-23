@@ -1,4 +1,4 @@
-//! The final report reads the HDA diagnostic records through the platform.
+//! The platform exposes the HDA diagnostic records and its host sink's.
 
 use super::super::*;
 use super::helpers::platform_with_devices;

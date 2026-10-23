@@ -22,7 +22,9 @@
 //! consistent record even while callbacks continue; the callback never locks,
 //! allocates or waits, and what it copies into its buffer is unchanged.
 //! `CoreAudioPcmSink::install` adds the record to the platform's HDA
-//! diagnostic records.
+//! diagnostic records, which the controller prints as the platform drops it
+//! after the final report, just before this sink's teardown prints the
+//! lifecycle, stats and continuity records (hda/diagnostics_teardown.rs).
 
 use super::super::hda_coreaudio_stats::Shared;
 use super::super::{CoreAudioPcmSink, BYTES_PER_FRAME, SAMPLE_RATE};
@@ -238,7 +240,7 @@ fn host_records(shared: &Weak<Shared>) -> Vec<String> {
 
 impl CoreAudioPcmSink {
     /// Install this sink on the platform's HDA controller, with its timing
-    /// record among the controller's diagnostic records.
+    /// record among the diagnostic records the controller prints at drop.
     pub fn install(self, platform: &mut VirtPlatform) {
         let shared = Arc::downgrade(&self.shared);
         platform.set_hda_diagnostic_host_records(Box::new(move || host_records(&shared)));

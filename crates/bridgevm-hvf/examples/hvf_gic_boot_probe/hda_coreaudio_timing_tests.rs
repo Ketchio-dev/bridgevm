@@ -5,6 +5,8 @@ use crate::hda_coreaudio::hda_coreaudio_continuity::fill_and_record;
 use crate::hda_coreaudio::hda_coreaudio_prefill::PREFILL_BYTES;
 use crate::hda_coreaudio::{AUDIO_QUEUE_BUFFER_BYTES, RING_CAPACITY_BYTES};
 use std::time::Duration;
+#[path = "hda_coreaudio_teardown_record_tests.rs"]
+mod teardown_records;
 
 const FULL: usize = AUDIO_QUEUE_BUFFER_BYTES as usize;
 const IDLE: &str = "hda CoreAudio timing: callbacks=0 interval_le_10ms=0 interval_le_15ms=0 \

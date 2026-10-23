@@ -1,4 +1,4 @@
-//! Run-lifetime playback diagnostics for the final report.
+//! Run-lifetime playback diagnostics, printed as the controller is dropped.
 //!
 //! Guest PCM advances only when a vCPU exit polls the controller, and one poll
 //! plays at most MAX_POLL_ELAPSED of host time. Nothing counted how often
@@ -21,13 +21,18 @@
 //!   host time its running polls spanned;
 //! - `hda repeat:` BDL-entry passes whose bytes hash as on that entry's
 //!   previous lap (repeat_detector.rs).
+//!
+//! A controller whose host installed its records prints all of them as it is
+//! dropped, after the final report (diagnostics_teardown.rs).
 
 use super::repeat_detector::RepeatDetector;
 use super::*;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+#[path = "diagnostics_teardown.rs"]
+mod teardown;
 
 /// Records a host PCM sink adds after the controller's own, such as
-/// CoreAudio callback timing; called when the final report prints.
+/// CoreAudio callback timing; read when the controller is dropped.
 pub type HdaHostRecords = Box<dyn Fn() -> Vec<String> + Send>;
 
 /// HDA 1.0a allows at most 256 BDL entries.
@@ -221,8 +226,8 @@ impl HdaController {
         self.diagnostics.stream = shape;
     }
 
-    /// The final report's `hda poll:`, `hda stream:` and `hda repeat:` records,
-    /// then the records the host sink adds.
+    /// The `hda poll:`, `hda stream:` and `hda repeat:` records, then the
+    /// records the host sink adds.
     pub fn diagnostic_records(&self) -> Vec<String> {
         let diagnostics = &self.diagnostics;
         let mut records = vec![
@@ -236,7 +241,7 @@ impl HdaController {
         records
     }
 
-    /// Install or clear the host sink's records that follow the controller's.
+    /// Install or clear the host sink's records; installed, all print at drop.
     pub fn set_diagnostic_host_records(&mut self, records: Option<HdaHostRecords>) {
         self.diagnostics.host_records = records;
     }

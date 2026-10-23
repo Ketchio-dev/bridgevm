@@ -4908,3 +4908,10 @@ crates/bridgevm-hvf/src/platform_virt/audio_diagnostics.rs	20	0
 crates/bridgevm-hvf/src/platform_virt/tests/hda_diagnostic_records.rs	27	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_timing.rs	219	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_timing_tests.rs	129	0
+crates/bridgevm-hvf/src/hda/diagnostics_teardown.rs	19	0
+crates/bridgevm-hvf/src/hda/tests/diagnostics_teardown.rs	82	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_teardown_record_tests.rs	32	0
+scripts/live-gates/hvf_host_diagnostics.py	39	0
+apps/macos/Sources/BridgeVMProductE2E/HvfHostDiagnostics.swift	50	0
+apps/macos/Tests/BridgeVMProductE2ETests/HvfHostDiagnosticsTests.swift	104	0
+tests/integration/hda-diagnostics-host-tail-contract.py	285	0

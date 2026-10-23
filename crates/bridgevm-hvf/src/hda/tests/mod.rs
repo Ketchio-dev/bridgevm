@@ -3,6 +3,7 @@
 mod command_dma;
 mod descriptor_rebase;
 mod diagnostics;
+mod diagnostics_teardown;
 mod dma_address;
 mod helpers;
 mod part_1;
