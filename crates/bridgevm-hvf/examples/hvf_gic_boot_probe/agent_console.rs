@@ -25,6 +25,8 @@ use share_sync::{GuestFileOutcome, HostFile, LsEntry, ShareSync, SkipReason, Syn
 mod agent_console_tests;
 #[path = "agent_console/agent_restart.rs"]
 mod agent_restart;
+#[path = "agent_console/clip_guest_admission.rs"]
+mod clip_guest_admission;
 #[path = "agent_console/clip_paste.rs"]
 mod clip_paste;
 #[path = "agent_console/clip_sync.rs"]
@@ -57,6 +59,7 @@ mod state;
 mod verb_reply;
 #[path = "agent_console/window_protocol.rs"]
 mod window_protocol;
+use clip_guest_admission::*;
 use clip_sync::*;
 use clipboard::*;
 use config::*;

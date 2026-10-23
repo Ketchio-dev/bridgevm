@@ -4,6 +4,8 @@
 use super::*;
 use crate::agent_console::agent_console_tests::tests::harness;
 use crate::agent_console::host_pasteboard::PasteboardWorker;
+#[path = "clip_guest_admission_tests.rs"]
+mod guest_admission;
 #[path = "clip_observed_host_tests.rs"]
 mod observed_host;
 #[path = "clip_paste_tests.rs"]

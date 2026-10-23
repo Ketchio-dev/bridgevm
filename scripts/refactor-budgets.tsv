@@ -4368,7 +4368,7 @@ apps/macos/Tests/BridgeVMControlTests/FastVZResourcePersistenceTests.swift	245	0
 crates/bridgevm-cli/src/args/app_operand.rs	20	0
 crates/bridgevm-cli/src/app_cli_operand_tests.rs	65	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLICreateWindowsNameTests.swift	40	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_sync.rs	106	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_sync.rs	102	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_sync_tests.rs	249	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_paste.rs	22	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_paste_tests.rs	109	0
@@ -4953,3 +4953,5 @@ scripts/live-gates/retained_windows_quiet.py	42	0
 tests/integration/retained_windows_refusal_cases.py	48	0
 docs/history/windows-hvf/agent-channel-hygiene-r2-20261023.md	130	0
 docs/document-manifests/hygiene-r2-20261023.tsv	3	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_guest_admission.rs	92	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_guest_admission_tests.rs	191	0
