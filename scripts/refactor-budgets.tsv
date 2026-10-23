@@ -4982,3 +4982,5 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17TPMGuestResultTests.swift	119	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17TPMEvidenceTests.swift	127	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17TPMReadTests.swift	208	0
 tests/integration/t17-tpm-journey-contract.py	57	0
+docs/history/windows-hvf/t17-tpm-pcr-evidence-20261023.md	197	0
+docs/document-manifests/t17-tpm-evidence-20261023.tsv	3	0

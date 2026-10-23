@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/a15-reset-recreate-3cycle-20260806.md	current	windows-graphics	GOAL.md
+docs/history/windows-hvf/t17-tpm-pcr-evidence-20261023.md	historical-evidence	windows-native-vmm	-
