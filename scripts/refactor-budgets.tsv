@@ -4931,3 +4931,6 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_size_cap.rs	42	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_cap_tests.rs	105	0
 docs/history/windows-hvf/agent-channel-and-live-gate-hygiene-20261023.md	116	0
 docs/document-manifests/hygiene-20261023.tsv	3	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOrderedInputEvent.swift	22	0
+apps/macos/Tests/BridgeVMControlTests/HvfOrderedPointerBacklogTests.swift	133	0
+apps/macos/Tests/BridgeVMControlTests/HvfOrderedPointerCoalescingTests.swift	184	0

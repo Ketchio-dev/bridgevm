@@ -3,17 +3,6 @@ import Foundation
 /// Host input ordering only. The transport must acknowledge actual completion
 /// and cancel this queue when the guest session or input target changes.
 struct HvfOrderedInputQueue {
-    enum Event: Equatable {
-        case text(String)
-        case key(String)
-        case pointer(String)
-        var byteCount: Int {
-            switch self {
-            case .text(let value), .key(let value), .pointer(let value): return value.utf8.count
-            }
-        }
-    }
-
     struct Ticket: Equatable {
         let id: UUID
         let generation: UUID
@@ -46,6 +35,17 @@ struct HvfOrderedInputQueue {
     /// False means the caller must surface rejection; existing input is retained.
     mutating func enqueue(_ event: Event, now: Date) -> Bool {
         let bytes = event.byteCount
+        if active != nil, event.isPointerMove, let last = entries.last, last.ticket.event.isPointerMove,
+           last.ticket.generation == generation {
+            // Behind an awaited receipt the newest unsent move takes the newer position in place:
+            // no new slot, a fresh id and the original deadline. A sent ticket is never modified.
+            let others = byteCount - last.ticket.event.byteCount
+            guard bytes <= Self.maximumBytes - others else { return false }
+            entries[entries.count - 1] = Entry(ticket: Ticket(id: UUID(), generation: generation, event: event),
+                                               deadline: last.deadline)
+            byteCount = others + bytes
+            return true
+        }
         guard bytes > 0, count < Self.maximumEvents,
               bytes <= Self.maximumBytes - byteCount else { return false }
         let ticket = Ticket(id: UUID(), generation: generation, event: event)
