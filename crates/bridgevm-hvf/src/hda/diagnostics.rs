@@ -1,13 +1,14 @@
 //! Run-lifetime playback diagnostics, printed as the controller is dropped.
 //!
-//! Guest PCM advances only when a vCPU exit polls the controller, and one poll
-//! plays at most MAX_POLL_ELAPSED of host time. Nothing counted how often
+//! Guest PCM advances only when a vCPU exit, or the probe's host service tick
+//! while the stream runs (stream_activity.rs), polls the controller, and one
+//! poll plays at most MAX_POLL_ELAPSED of host time. Nothing counted how often
 //! running polls came, what buffer the guest programmed, or whether the DMA
 //! re-read bytes the guest had not rewritten. These counters record that and
 //! nothing else: no method returns a value the DMA, interrupt or register
-//! paths act on, and `replace_keeping_diagnostics` keeps them across guest and
-//! platform controller resets, so the records cover the whole probe process
-//! as the CoreAudio sink's records do.
+//! paths act on, and `replace_keeping_diagnostics` (stream_activity.rs) keeps
+//! them across guest and platform controller resets, so the records cover the
+//! whole probe process as the CoreAudio sink's records do.
 //!
 //! - `hda poll:` running polls by host-time gap since the previous running
 //!   poll (the first after RUN only takes the time base), the longest gap, the
@@ -244,12 +245,5 @@ impl HdaController {
     /// Install or clear the host sink's records; installed, all print at drop.
     pub fn set_diagnostic_host_records(&mut self, records: Option<HdaHostRecords>) {
         self.diagnostics.host_records = records;
-    }
-
-    /// Reinitialize the controller as `fresh`, keeping run-lifetime diagnostics.
-    pub(crate) fn replace_keeping_diagnostics(&mut self, fresh: Self) {
-        let diagnostics = std::mem::take(&mut self.diagnostics);
-        *self = fresh;
-        self.diagnostics = diagnostics;
     }
 }

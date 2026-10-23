@@ -7,6 +7,7 @@ mod tests;
 
 mod audio_device;
 mod audio_diagnostics;
+mod audio_service_tick;
 mod console_device;
 mod env_config;
 #[cfg(feature = "venus")]

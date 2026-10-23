@@ -4,6 +4,8 @@ use super::*;
 
 #[path = "command_dma.rs"]
 mod command_dma;
+#[path = "controller_debug.rs"]
+mod controller_debug;
 #[path = "diagnostics.rs"]
 mod diagnostics;
 #[path = "file_pcm_sink.rs"]
@@ -20,14 +22,20 @@ mod playback_dma;
 mod playback_entry;
 #[path = "repeat_detector.rs"]
 mod repeat_detector;
+#[path = "stream_activity.rs"]
+mod stream_activity;
 #[path = "stream_control.rs"]
 mod stream_control;
 #[path = "stream_lifecycle.rs"]
 mod stream_lifecycle;
+#[path = "stream_run_trace.rs"]
+mod stream_run_trace;
 use diagnostics::HdaDiagnostics;
 pub use diagnostics::HdaHostRecords;
 pub use file_pcm_sink::FilePcmSink;
 pub use pcm_sink::HdaPcmSink;
+use std::sync::Arc;
+pub use stream_activity::HdaStreamActivity;
 
 use std::{
     path::Path,
@@ -199,25 +207,7 @@ pub struct HdaController {
     pub(crate) interrupt_asserted: bool,
     pub(crate) interrupt_pending: bool,
     pub(crate) diagnostics: HdaDiagnostics,
-}
-
-impl std::fmt::Debug for HdaController {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("HdaController")
-            .field("gctl", &self.gctl)
-            .field("statests", &self.statests)
-            .field("intctl", &self.intctl)
-            .field("corb_base", &self.corb_base)
-            .field("corb_wp", &self.corb_wp)
-            .field("corb_rp", &self.corb_rp)
-            .field("rirb_base", &self.rirb_base)
-            .field("rirb_wp", &self.rirb_wp)
-            .field("stream", &self.stream)
-            .field("pcm_sink", &self.pcm_sink.is_some())
-            .field("interrupt_asserted", &self.interrupt_asserted)
-            .field("interrupt_pending", &self.interrupt_pending)
-            .finish()
-    }
+    pub(crate) stream_activity: Arc<HdaStreamActivity>,
 }
 
 impl Default for HdaController {
@@ -274,6 +264,7 @@ impl HdaController {
             interrupt_asserted: false,
             interrupt_pending: false,
             diagnostics: HdaDiagnostics::default(),
+            stream_activity: Arc::default(),
         }
     }
 

@@ -200,10 +200,10 @@ crates/bridgevm-hvf/src/host_entropy.rs	100	1
 crates/bridgevm-hvf/src/fwcfg.rs	499	0
 crates/bridgevm-hvf/src/fwcfg_tests.rs	376	0
 crates/bridgevm-hvf/src/hda/codec_parameter.rs	95	0
-crates/bridgevm-hvf/src/hda/hdapcmsink.rs	707	0
+crates/bridgevm-hvf/src/hda/hdapcmsink.rs	690	0
 crates/bridgevm-hvf/src/hda/pcm_sink.rs	13	0
 crates/bridgevm-hvf/src/hda/file_pcm_sink.rs	34	0
-crates/bridgevm-hvf/src/hda/stream_control.rs	46	0
+crates/bridgevm-hvf/src/hda/stream_control.rs	39	0
 crates/bridgevm-hvf/src/hda/tests/stream_stop.rs	131	0
 crates/bridgevm-hvf/src/hda/tests/stream_status.rs	107	0
 crates/bridgevm-hvf/src/hda/tests/resume_position.rs	73	0
@@ -826,7 +826,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_bar2.rs	37	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_setup.rs	12	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_setup.rs	88	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_config.rs	83	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	993	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	975	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/vtimer_recovery.rs	8	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/system_reset_failure.rs	29	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/system_reset_failure_tests.rs	86	0
@@ -3911,7 +3911,7 @@ crates/bridgevm-hvf/src/mmio_data_abort_tests.rs	81	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/mmio_registers.rs	15	2
 crates/bridgevm-hvf/src/nvme/completion_capacity.rs	10	0
 crates/bridgevm-hvf/src/nvme/tests/completion_backpressure.rs	207	0
-crates/bridgevm-hvf/src/hda/playback_dma.rs	58	0
+crates/bridgevm-hvf/src/hda/playback_dma.rs	55	0
 crates/bridgevm-hvf/src/hda/tests/dma_address.rs	58	0
 docs/history/windows-hvf/native-vmm-mmio-nvme-hda-20261005.md	80	0
 docs/document-manifests/native-vmm-core.tsv	4	0
@@ -4899,7 +4899,7 @@ docs/history/windows-hvf/d6-overview-respec-20261022.md	169	0
 docs/document-manifests/d6-overview-20261022.tsv	3	0
 docs/archive/a11-measured-20261022-robustness.md	26	0
 docs/document-manifests/robustness-20261022.tsv	3	0
-crates/bridgevm-hvf/src/hda/diagnostics.rs	224	0
+crates/bridgevm-hvf/src/hda/diagnostics.rs	217	0
 crates/bridgevm-hvf/src/hda/repeat_detector.rs	91	0
 crates/bridgevm-hvf/src/hda/playback_entry.rs	47	0
 crates/bridgevm-hvf/src/hda/tests/diagnostics.rs	191	0
@@ -5095,3 +5095,15 @@ tests/integration/t19-bitlocker-default-unchanged-test.py	98	0
 docs/history/windows-hvf/followups-r2-integration-r3-20261023.md	108	0
 docs/archive/a11-measured-20261023-d6pass.md	25	0
 docs/document-manifests/followups-r2-r3-20261023.tsv	4	0
+crates/bridgevm-hvf/src/hda/stream_activity.rs	61	0
+crates/bridgevm-hvf/src/hda/stream_run_trace.rs	16	0
+crates/bridgevm-hvf/src/hda/controller_debug.rs	19	0
+crates/bridgevm-hvf/src/hda/tests/stream_activity.rs	180	0
+crates/bridgevm-hvf/src/platform_virt/audio_service_tick.rs	26	0
+crates/bridgevm-hvf/src/platform_virt/tests/hda_service_poll.rs	116	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick.rs	300	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_fixture.rs	201	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_replay_tests.rs	125	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_tests.rs	373	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/service_wake_interval.rs	30	0
+docs/machine-contract/qemu-virt-deviations-audio.json	11	0
