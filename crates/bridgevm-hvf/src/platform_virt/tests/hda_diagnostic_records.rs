@@ -24,7 +24,7 @@ fn platform_reports_hda_diagnostics_then_the_host_sinks_records_across_resets() 
     let timing = "hda CoreAudio timing: callbacks=0".to_string();
     let host = timing.clone();
     platform.set_hda_diagnostic_host_records(Box::new(move || vec![host.clone()]));
-    platform.reset().expect("a platform without a TPM backend resets");
+    platform.reset().expect("reset without a TPM");
     let records = platform.hda_diagnostic_records();
     assert_eq!(records.len(), 4);
     assert_eq!(records[3], timing);
