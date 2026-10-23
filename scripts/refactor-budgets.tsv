@@ -2718,7 +2718,7 @@ apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverPrivateFil
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverReplyValidation.swift	37	0
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverValidation.swift	85	0
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverValues.swift	43	0
-apps/macos/Sources/BridgeVMControl/AppUIHostDriverScenario.swift	94	0
+apps/macos/Sources/BridgeVMControl/AppUIHostDriverScenario.swift	90	0
 apps/macos/Sources/BridgeVMControl/AppUIHostLegacyScenario.swift	67	0
 apps/macos/scripts/AppUIDriver.swift	45	0
 apps/macos/scripts/AppUIDriverAX.swift	56	0
@@ -5015,3 +5015,5 @@ tests/integration/app-ui-driver-ax-restart-terminal-contracts.swift	112	0
 apps/macos/Sources/BridgeVMControl/AppUIHostDriverProtocol/AppUIDriverCompletionMailbox.swift	19	0
 tests/integration/app-ui-driver-ax-restart-count-contracts.swift	88	0
 tests/integration/app-ui-host-v2-restart-count-contract.py	47	0
+apps/macos/Sources/BridgeVMControl/AppUIHostOverviewRequests.swift	29	0
+apps/macos/Tests/BridgeVMAppUIHostTests/AppUIHostOverviewRequestsContractTests.swift	72	0

@@ -21,9 +21,9 @@ fi
 python3 "$repo_root/scripts/app_ui_host_contract_discovery.py" "$record/discovery.txt"
 swift test --package-path "$repo_root/apps/macos" --scratch-path "$scratch_path" \
   -Xswiftc -DBRIDGEVM_APP_UI_HOST --skip-build \
-  --filter 'BridgeVMAppUIHostTests[.](AppUIHostContractTests|AppUIInstallCancelFixtureTests|AppUIHostOverview(State)?ContractTests)' 2>&1 | tee "$record/tests.log"
+  --filter 'BridgeVMAppUIHostTests[.](AppUIHostContractTests|AppUIInstallCancelFixtureTests|AppUIHostOverview(State|Requests)?ContractTests)' 2>&1 | tee "$record/tests.log"
 swift build --package-path "$repo_root/apps/macos" --scratch-path "$scratch_path" \
   -Xswiftc -DBRIDGEVM_APP_UI_HOST --show-bin-path > "$record/bin-path.txt"
 host_binary="$(cat "$record/bin-path.txt")/BridgeVMControl"
 shasum -a 256 "$host_binary" > "$record/host-binary.sha256"
-echo "native app host contracts: PASS (seven host contracts, overview fixture and state contracts and install-cancel fixture tests; no app launched); evidence: $record"
+echo "native app host contracts: PASS (seven host contracts, overview fixture, state and request-order contracts and install-cancel fixture tests; no app launched); evidence: $record"
