@@ -60,6 +60,7 @@ path	class	topic	superseded_by
 @include	docs/document-manifests/tpm-failure-20261022.tsv	-	-
 @include	docs/document-manifests/robustness-20261022.tsv	-	-
 @include	docs/document-manifests/audio-diagnostics-20261022.tsv	-	-
+@include	docs/document-manifests/hygiene-20261023.tsv	-	-
 docs/windows-arm/iso-download-spike-20260817.md	current	windows-install	-
 docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/runtime-control-socket-cleanup.tsv	-	-
@@ -74,7 +75,6 @@ docs/windows-arm/graphics-compatibility.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/native-vmm-interrupt-firmware.tsv	-	-
 @include	docs/document-manifests/native-vmm-nvme-identify-prp.tsv	-	-
 @include	docs/document-manifests/native-vmm-secondary-shutdown.tsv	-	-
-docs/windows-arm/evidence/bridgevm-pc-hob-live-20260830.md	current	windows-architecture	-
 docs/windows-arm/evidence/bridgevm-pc-dxe-dispatch-live-20260830.md	current	windows-architecture	-
 @include	docs/document-manifests/native-vmm-gic-preemption-hppir.tsv	-	-
 docs/windows-arm/evidence/bridgevm-pc-runtime-dxe-live-20260830.md	current	windows-architecture	-
