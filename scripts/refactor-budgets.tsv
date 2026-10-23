@@ -4897,3 +4897,5 @@ apps/macos/Tests/BridgeVMControlTests/HvfAppUIOverviewContractTests.swift	44	0
 tests/integration/app-ui-driver-ax-overview-contracts.swift	50	0
 docs/history/windows-hvf/d6-overview-respec-20261022.md	169	0
 docs/document-manifests/d6-overview-20261022.tsv	3	0
+docs/archive/a11-measured-20261022-robustness.md	26	0
+docs/document-manifests/robustness-20261022.tsv	3	0
