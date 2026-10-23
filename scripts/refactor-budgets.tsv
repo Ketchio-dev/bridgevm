@@ -5000,3 +5000,5 @@ apps/macos/Sources/BridgeVMProductE2E/HvfHostDisplay.swift	30	0
 apps/macos/Tests/BridgeVMProductE2ETests/HvfHostDisplayTests.swift	51	0
 apps/macos/Tests/BridgeVMProductE2ETests/T17FirstRunDisplayRecordsTests.swift	74	0
 tests/integration/product-e2e-lane-display-records-test.py	84	0
+docs/history/windows-hvf/live-diagnostic-records-20261023.md	192	0
+docs/document-manifests/live-diagnostic-records-20261023.tsv	3	0
