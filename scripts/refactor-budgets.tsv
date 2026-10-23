@@ -5115,3 +5115,4 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_timing_callback.rs
 docs/history/windows-hvf/hda-service-tick-20261023.md	170	0
 docs/document-manifests/hda-service-tick-20261023.tsv	3	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFrameReader.swift	90	0
+apps/macos/Tests/BridgeVMControlTests/HvfFramebufferSeqlockRetryTests.swift	114	0

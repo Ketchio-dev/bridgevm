@@ -22,7 +22,7 @@ struct HvfFramebufferFrameReader {
         case invalid
     }
 
-    static let retries = 0
+    static let retries = 2
     static let budgetNanoseconds: UInt64 = 500_000
 
     var clock: () -> UInt64 = { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) }
