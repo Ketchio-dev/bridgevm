@@ -1302,7 +1302,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfHostKeyModifierTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteSessionTests.swift	84	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteTargetTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfHostShortcutIsolationTests.swift	31	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	371	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	321	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferScrollOrderingTests.swift	57	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFileIdentity.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFileIdentityTests.swift	66	0
@@ -5114,3 +5114,4 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_sink.rs	21	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_timing_callback.rs	32	0
 docs/history/windows-hvf/hda-service-tick-20261023.md	170	0
 docs/document-manifests/hda-service-tick-20261023.tsv	3	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFrameReader.swift	90	0

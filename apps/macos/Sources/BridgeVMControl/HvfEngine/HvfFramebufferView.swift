@@ -26,6 +26,7 @@ final class FBLayerView: HvfFramebufferTextInput {
     }
     private var lastProcessedSeq: UInt64 = .max
     private let imageFactory: HvfFramebufferImageFactory
+    var frameReader = HvfFramebufferFrameReader()
     private var iosurfacePresenter = HvfIOSurfacePresenter()
     private var pointerMoves = HvfPointerMoveMailbox()
     private let pointerCapture = HvfPointerCapture()
@@ -107,71 +108,20 @@ final class FBLayerView: HvfFramebufferTextInput {
             invalidateDisplay()
             return
         }
-        let mappedPointer = mapping.pointer, mappedLength = mapping.length
-
-        let magic = readUInt32(from: mappedPointer, offset: 0)
-        guard magic == 0x42564642 else {
-            resetMapping(); invalidateDisplay()
+        let read = frameReader.read(mapping.pointer, length: mapping.length, shown: lastProcessedSeq)
+        guard case let .frame(buffer, byteCount, width, height, stride, sequence) = read else {
+            if case .invalid = read {
+                resetMapping(); invalidateDisplay()
+            }
             return
         }
-
-        let sequence0 = readUInt64(from: mappedPointer, offset: 24)
-        guard sequence0 & 1 == 0 else {
-            return
-        }
-
-        // Skip the 8 MB copy + CGImage build when the guest hasn't published a new
-        // frame. The device publishes only on RESOURCE_FLUSH, so an idle desktop
-        // leaves seq unchanged for long stretches; re-decoding the same frame every
-        // CADisplayLink tick just saturates the main thread and stutters interaction.
-        guard sequence0 != lastProcessedSeq else {
-            return
-        }
-
-        let widthValue = readUInt32(from: mappedPointer, offset: 8)
-        let heightValue = readUInt32(from: mappedPointer, offset: 12)
-        let strideValue = readUInt32(from: mappedPointer, offset: 16)
-
-        guard widthValue > 0, heightValue > 0, strideValue > 0 else {
-            resetMapping(); invalidateDisplay()
-            return
-        }
-
-        let width = Int(widthValue)
-        let height = Int(heightValue)
-        let stride = Int(strideValue)
-
-        guard stride >= width * 4,
-              mappedLength >= 64,
-              height <= (mappedLength - 64) / stride else {
-            resetMapping(); invalidateDisplay()
-            return
-        }
-
-        let pixelByteCount = height * stride
-
-        // Copy the guest frame exactly ONCE into a fresh, CGDataProvider-owned
-        // buffer. The old path did two 4 MB copies per frame (mmap -> [UInt8]
-        // frameCopy, then Data(frameCopy)); at ~77 fps that was ~300 MB/s of
-        // redundant main-thread memcpy. Now: one memcpy, and the provider frees
-        // the buffer when the CGImage is released.
-        guard let buffer = malloc(pixelByteCount) else {
-            return
-        }
-        Darwin.memcpy(buffer, mappedPointer.advanced(by: 64), pixelByteCount)
-
-        let sequence1 = readUInt64(from: mappedPointer, offset: 24)
-        guard sequence1 == sequence0, sequence1 & 1 == 0 else {
-            free(buffer)
-            return
-        }
-        guard let image = imageFactory.make(buffer: buffer, byteCount: pixelByteCount,
+        guard let image = imageFactory.make(buffer: buffer, byteCount: byteCount,
                                            width: width, height: height, stride: stride), let layer else {
             return
         }
 
         layer.contents = image
-        lastProcessedSeq = sequence1
+        lastProcessedSeq = sequence
         guestSize = CGSize(width: CGFloat(width), height: CGFloat(height))
     }
 
