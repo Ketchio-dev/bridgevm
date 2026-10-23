@@ -62,7 +62,7 @@ final class T17FirstRunHostRecordsTests: XCTestCase {
         XCTAssertEqual(parsed(Self.report(tail: tail)), Self.expected)
         XCTAssertEqual(parsed(Self.report(tail: Self.records(Self.timing) + Self.teardown)),
                        ["hda_coreaudio_timing": Self.expected["hda_coreaudio_timing"]!])
-        XCTAssertEqual(HvfHostRecordFields.records.map(\.prefix), HvfHostTail.diagnosticRecords.map(\.prefix))
+        XCTAssertEqual(HvfHostRecordFields.records.map(\.prefix), HvfHostTail.diagnosticRecords.map(\.prefix) + [HvfHostTail.displayRecord.prefix])
     }
 
     func testRecordsTheHostDidNotPrintAreAbsent() {

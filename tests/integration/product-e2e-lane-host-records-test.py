@@ -97,7 +97,7 @@ class LaneHostRecords(unittest.TestCase):
                 self.check(writer, {**fixture.lane(writer), "host_records": RECORDS})
 
     def test_the_lane_records_are_the_hda_grammar_with_milliseconds_as_microseconds(self):
-        self.assertEqual({name: frozenset(fields) for name, fields in RECORDS.items()}, HOST_RECORDS.LANE_RECORDS)
+        self.assertEqual({**{name: frozenset(fields) for name, fields in RECORDS.items()}, "ramfb_display_timing": frozenset(HOST_RECORDS.DISPLAY.DISPLAY_FIELDS)}, HOST_RECORDS.LANE_RECORDS)
         self.assertEqual(HOST_RECORDS.KEY, KEY)
 
     def test_receipt_writers_never_copy_the_records(self):

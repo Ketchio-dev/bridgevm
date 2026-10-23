@@ -1,14 +1,14 @@
 import Foundation
 
 /// The host records of a bound post-footer tail as integer fields, for the private
-/// lane result (T17FirstRunHostRecords.swift). Each record the host printed becomes
-/// an object named after its prefix, `hda poll:` as hda_poll, holding the record's
-/// unsigned fields; a three-decimal millisecond field becomes integer microseconds,
-/// cbl_ms as cbl_us. scripts/live-gates/product_e2e_host_records.py admits the same
-/// names. A record with a value beyond UInt64 is left out. The tail comes from
+/// lane result (T17FirstRunHostRecords.swift): the HDA diagnostic records and the display
+/// timing record. Each one the host printed becomes an object named after its prefix,
+/// `hda poll:` as hda_poll, holding the record's unsigned fields; a three-decimal millisecond
+/// field becomes integer microseconds, cbl_ms as cbl_us. product_e2e_host_records.py admits
+/// the same names. A record with a value beyond UInt64 is left out. The tail comes from
 /// HvfTerminalReport.hostTail, whose grammar admits each record at most once.
 enum HvfHostRecordFields {
-    static let records = HvfHostTail.diagnosticRecords
+    static let records = HvfHostTail.diagnosticRecords + [HvfHostTail.displayRecord]
     private static let millis = #"\.[0-9]{3}"#
 
     static func parse(tail: Data) -> [String: [String: UInt64]] {
