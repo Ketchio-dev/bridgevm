@@ -5021,3 +5021,6 @@ docs/history/windows-hvf/d6-overview-ax-race-20261023.md	223	0
 docs/document-manifests/d6-overview-ax-race-20261023.tsv	3	0
 scripts/live-gates/publishable_job_id.py	23	0
 tests/integration/live-submit-publishable-job-id-test.sh	30	0
+docs/archive/a11-measured-20261023-integration.md	24	0
+docs/history/windows-hvf/t17-r92-integration-pilot-20261023.md	86	0
+docs/document-manifests/post-merge-integration-r2-20261023.tsv	4	0
