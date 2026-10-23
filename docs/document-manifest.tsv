@@ -83,7 +83,6 @@ docs/windows-arm/graphics-compatibility.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/native-vmm-transfer-and-teardown.tsv	-	-
 @include	docs/document-manifests/a19-interruption.tsv	-	-
 docs/windows-arm/smccc-trng-psci-contract.md	current	windows-hvf-engine	-
-docs/windows-arm/evidence/a1-queued-boot-t2-20260804.md	current	windows-graphics	GOAL.md
 @include	docs/document-manifests/native-vmm-gic-deactivation.tsv	-	-
 docs/windows-arm/evidence/a1-apple-feedback-draft-20260806.md	current	windows-graphics	GOAL.md
 docs/windows-arm/evidence/a15-reset-recreate-3cycle-20260806.md	current	windows-graphics	GOAL.md
@@ -134,3 +133,4 @@ docs/windows-arm/evidence/b6-active-frame-time-collection-20260910.md	current	wi
 @include	docs/document-manifests/followups-r3-20261023.tsv	-	-
 @include	docs/document-manifests/followups-r4-20261023.tsv	-	-
 @include	docs/document-manifests/followups-r5-20261023.tsv	-	-
+@include	docs/document-manifests/hygiene-r2-20261023.tsv	-	-

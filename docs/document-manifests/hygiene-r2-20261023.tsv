@@ -1,0 +1,3 @@
+path	class	topic	superseded_by
+docs/windows-arm/evidence/a1-queued-boot-t2-20260804.md	current	windows-graphics	GOAL.md
+docs/history/windows-hvf/agent-channel-hygiene-r2-20261023.md	historical-evidence	live-pilots-20261022	-

@@ -4951,3 +4951,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/harness_get_
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/get_end_tests.rs	194	0
 scripts/live-gates/retained_windows_quiet.py	42	0
 tests/integration/retained_windows_refusal_cases.py	48	0
+docs/history/windows-hvf/agent-channel-hygiene-r2-20261023.md	130	0
+docs/document-manifests/hygiene-r2-20261023.tsv	3	0
