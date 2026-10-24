@@ -5098,7 +5098,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFrameReader.swift	90	
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferSeqlockRetryTests.swift	114	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_wake.rs	117	7
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_loop.rs	97	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_request_tests.rs	198	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_request_tests.rs	198	0
 crates/bridgevm-hvf/src/display_fb_requests.rs	37	2
 crates/bridgevm-hvf/src/display_fb_requests_tests.rs	106	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferViewMapping.swift	24	0

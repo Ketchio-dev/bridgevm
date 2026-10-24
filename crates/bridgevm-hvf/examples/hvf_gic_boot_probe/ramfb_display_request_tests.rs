@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::super::super::tests::{cleanup, config, frame, read_fb, scratch_path};
-use super::super::{timing, RamfbDisplayThread};
+use super::super::{timing, wake::uptime_ns, RamfbDisplayThread};
 use super::{exporter_with, published, wait_for, SharedConfig, SharedRam};
 use bridgevm_hvf::display_fb::DisplayFramebuffer;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
@@ -47,15 +47,6 @@ fn redrawn_exporter(path: &Path, interval: Duration) -> (RamfbDisplayThread, Arc
         RamfbDisplayThread::spawn(target, interval, source, move || ram),
         ticks,
     )
-}
-
-fn uptime_ns() -> u64 {
-    let mut now = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-    unsafe { libc::clock_gettime(libc::CLOCK_UPTIME_RAW, &mut now) };
-    now.tv_sec as u64 * 1_000_000_000 + now.tv_nsec as u64
 }
 
 /// What the app's display tick does: `pwrite` its `CLOCK_UPTIME_RAW`
@@ -181,21 +172,30 @@ fn an_app_that_never_asks_still_gets_frames_on_the_deadline() {
 #[test]
 fn the_deadline_exports_only_while_no_request_comes() {
     let path = scratch_path();
-    let (thread, ticks) = redrawn_exporter(&path, Duration::from_millis(100));
+    let interval = Duration::from_millis(100);
+    let (thread, ticks) = redrawn_exporter(&path, interval);
     wait_for("the first frame", || {
         settled(&path).is_some_and(|sequence| sequence >= 2)
     });
     wait_for("the writer to answer requests", || marker(&path) == MARKER);
-    // 40 requests at least 10 ms apart: a deadline on its own grid would add
-    // at least 4 ticks; re-armed by each request it adds at most the one that
-    // may race the first request.
+    // 40 requests at least 10 ms apart: a grid deadline would add at least 4
+    // ticks; re-armed by each request it adds one that may race the first, plus
+    // one per whole period between writes, which only a stretched sleep leaves.
     let before = ticks.load(Ordering::SeqCst);
+    let (mut unasked, mut since) = (0, Instant::now());
     for _ in 0..40 {
+        let start = Instant::now();
         request(&path);
+        unasked += since.elapsed().as_millis() / interval.as_millis();
+        since = start;
         std::thread::sleep(Duration::from_millis(10));
     }
     let during = ticks.load(Ordering::SeqCst) - before;
-    assert!(during <= 41, "{during} ticks for 40 requests");
+    unasked += since.elapsed().as_millis() / interval.as_millis();
+    assert!(
+        u128::from(during) <= 41 + unasked,
+        "{during} ticks for 40 requests, {unasked} periods unasked"
+    );
     // Nobody asks any more: the deadline exports again.
     let quiet = ticks.load(Ordering::SeqCst);
     std::thread::sleep(Duration::from_millis(450));
