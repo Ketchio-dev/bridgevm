@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('KeyboardPointer', 'Clipboard', 'Share', 'Network', 'Audio', 'MarkerA', 'MarkerB', 'MarkerRestoredA', 'AgentResult')]
+    [ValidateSet('KeyboardPointer', 'Clipboard', 'Share', 'Network', 'Audio', 'MarkerA', 'MarkerB', 'MarkerRestoredA', 'AgentResult', 'TpmBoot1', 'TpmBoot2', 'TpmBoot3')]
     [string]$Action,
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[0-9a-f]{64}$')]
@@ -12,9 +12,9 @@ param(
     [string]$VMSlug = ''
 )
 
-$ErrorActionPreference = 'Stop'; $Prefix = $Nonce.Substring(0, 12)
+$ErrorActionPreference = 'Stop'; $Prefix = $Nonce.Substring(0, 12); $Workload = if ($Action -like 'TpmBoot?') { 'bv-product-e2e-tpm.ps1' } else { 'bv-product-e2e.ps1' }
 $Arguments = @(
-    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\bridgevm-share\bv-product-e2e.ps1',
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "C:\bridgevm-share\$Workload",
     '-Action', $Action, '-Nonce', $Nonce
 )
 if ($Action -eq 'AgentResult') {

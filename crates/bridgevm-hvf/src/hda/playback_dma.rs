@@ -13,16 +13,14 @@ impl HdaController {
         };
         while budget > 0 && self.stream.ctl & SDCTL_RUN != 0 {
             let Some(raw) = self.read_playback_descriptor(mem) else {
-                self.stream.sts |= SDSTS_DESE;
-                self.stream.ctl &= !SDCTL_RUN;
+                self.halt_stream_dma();
                 break;
             };
             let address = u64::from_le_bytes(raw[..8].try_into().unwrap());
             let length = u32::from_le_bytes(raw[8..12].try_into().unwrap());
             let flags = u32::from_le_bytes(raw[12..16].try_into().unwrap());
             if length == 0 {
-                self.stream.sts |= SDSTS_DESE;
-                self.stream.ctl &= !SDCTL_RUN;
+                self.halt_stream_dma();
                 break;
             }
             if self.stream.bdl_offset >= length {
@@ -40,8 +38,7 @@ impl HdaController {
             self.pcm_scratch.resize(chunk_len, 0);
             let dma_address = address.checked_add(u64::from(self.stream.bdl_offset));
             if !dma_address.is_some_and(|address| mem.read_into(address, &mut self.pcm_scratch)) {
-                self.stream.sts |= SDSTS_DESE;
-                self.stream.ctl &= !SDCTL_RUN;
+                self.halt_stream_dma();
                 break;
             }
             self.emit_pcm_chunk(length, (rate, channels, bits));

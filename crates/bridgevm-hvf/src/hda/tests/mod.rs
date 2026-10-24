@@ -11,6 +11,7 @@ mod pcm_fragments;
 mod read_into;
 mod repeat_detector;
 mod resume_position;
+mod stream_activity;
 mod stream_reset;
 mod stream_status;
 mod stream_stop;

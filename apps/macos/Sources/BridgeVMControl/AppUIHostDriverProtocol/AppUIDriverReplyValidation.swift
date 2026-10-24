@@ -10,7 +10,7 @@ extension AppUIDriverValidation {
               value.hostPID == session.host.pid, value.driverPID == session.driver.pid else {
             throw AppUIDriverFailure.invalidReply
         }
-        try value.axContext?.validate(outcome: value.outcome, failure: value.failureCode, rawValue: value.axError)
+        try value.axContext?.validate(outcome: value.outcome, failure: value.failureCode, rawValue: value.axError, locus: true)
         if value.outcome == .refused {
             guard value.failureCode != nil, value.values == nil, value.axError != 0 else {
                 throw AppUIDriverFailure.invalidReply

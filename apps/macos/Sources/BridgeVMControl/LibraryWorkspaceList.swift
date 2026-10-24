@@ -117,13 +117,7 @@ private struct LibraryWorkspaceRow: View {
             .buttonStyle(.plain)
             .accessibilityLabel("\(config.name), \(stateText), \(resourceText)")
             .accessibilityHint("VM 상세 정보 보기")
-            Menu {
-                LibraryVMContextMenu(library: library, config: config)
-            } label: {
-                Image(systemName: "ellipsis").frame(width: 30, height: 30)
-            }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-            .accessibilityLabel("\(config.name) 작업")
+            LibraryVMActionsMenu(library: library, config: config, size: CGSize(width: 30, height: 30))
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

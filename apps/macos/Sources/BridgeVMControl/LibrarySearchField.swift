@@ -2,16 +2,12 @@ import SwiftUI
 
 struct LibrarySearchField: View {
     @Binding var query: String
-    @FocusState private var isFocused: Bool
+    @State private var focusRequests = 0
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
-            TextField("VM 이름 또는 엔진 검색", text: $query)
-                .textFieldStyle(.plain)
-                .focused($isFocused)
-                .accessibilityIdentifier("bridgevm.library.search")
-                .help("가상 머신 검색 (⌘F)")
+            LibrarySearchTextField(query: $query, focusRequests: focusRequests)
             if !query.isEmpty {
                 Button { query = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -26,7 +22,7 @@ struct LibrarySearchField: View {
         .padding(12)
         .background(LibraryAppearance.inset, in: RoundedRectangle(cornerRadius: 10))
         .background {
-            Button("VM 검색") { isFocused = true }
+            Button("VM 검색") { focusRequests += 1 }
                 .keyboardShortcut("f", modifiers: .command)
                 .focusable(false)
                 .accessibilityHidden(true)

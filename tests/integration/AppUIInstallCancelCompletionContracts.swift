@@ -18,7 +18,7 @@ enum AppUIInstallCancelCompletionContracts {
         try AppUIInstallCancelValidation.completion(F.completion(session, success: false, requests: 0, mutations: 0),
             session: session, sessionSHA256: hash)
         let legacyCompletion = AppUIDriverCompletion(sessionSHA256: hash, nonce: session.nonce, hostPID: session.host.pid,
-            driverPID: session.driver.pid, success: false, failureCode: nil, requestsProcessed: 8, mutationsPerformed: 3)
+            driverPID: session.driver.pid, success: false, failureCode: nil, requestsProcessed: 8, mutationsPerformed: 3, axRestarts: 0)
         try T.refuses("v2 completion cannot satisfy install kind") {
             let decoded = try AppUIDriverCanonicalJSON.decode(AppUIDriverCanonicalJSON.encode(legacyCompletion),
                 as: AppUIInstallCancelCompletion.self)

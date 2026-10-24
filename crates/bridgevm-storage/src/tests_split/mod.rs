@@ -7,6 +7,7 @@ mod clone_output;
 mod clone_portability;
 mod clone_source_safety;
 mod export_destination;
+mod guest_tools_clipboard_key;
 mod helpers;
 mod import_images;
 mod import_markers;

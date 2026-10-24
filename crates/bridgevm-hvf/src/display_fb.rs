@@ -11,6 +11,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::virtio_gpu::FbSink;
+#[path = "display_fb_requests.rs"]
+pub mod requests;
 
 /// Owner of one BVFB display file: magic `0x42564642`, version 1, width,
 /// height, stride and fourcc as little-endian u32 at bytes 0..24, a seqlock

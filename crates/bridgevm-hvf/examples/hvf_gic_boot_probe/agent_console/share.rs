@@ -136,6 +136,10 @@ pub(super) fn write_share_guest_path_into(dir: &str, name: &str, out: &mut Strin
     share_sync::append_guest_rel_into(name, out);
 }
 
+#[path = "share/guest_write_refusal.rs"]
+mod guest_write_refusal;
+#[path = "share/harness_get_end.rs"]
+mod harness_get_end;
 #[path = "share/host_destination.rs"]
 mod host_destination;
 #[path = "share/share_host_change.rs"]

@@ -9,7 +9,7 @@ from product_e2e_digest import digest
 import windows_product_e2e_artifacts as ARTIFACTS
 import windows_product_e2e_failure as FAILURE
 from product_e2e_json_snapshot import JsonSnapshot, unchanged
-import product_e2e_work as WORK
+import product_e2e_work as WORK, product_e2e_private_lane as PRIVATE_LANE, product_e2e_host_records as HOST_RECORDS
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("product_receipt_verifier", ROOT / "scripts/verify-windows-product-e2e-receipt.py")
@@ -45,7 +45,7 @@ def host_value(command: list[str], fallback: str) -> str:
 
 def lane(path: Path, *, job_id: str, commit: str, mode: str, ordinal: int, stamp: Path | None = None, _document: JsonSnapshot | None = None) -> dict:
     document = _document or JsonSnapshot.read(path); value = document.value
-    if not isinstance(value, dict) or frozenset(value) != LANE_KEYS:
+    if not isinstance(value, dict) or HOST_RECORDS.lane_keys(value) - PRIVATE_LANE.KEYS != LANE_KEYS:
         raise ValueError(f"lane {ordinal} has missing or unknown fields")
     fixed = {"schema_version": LANE_SCHEMA, "job_id": job_id, "commit": commit, "campaign_mode": mode, "lane": ordinal, "three_d_injection": False}
     if not fixed_fields_match(value, fixed):

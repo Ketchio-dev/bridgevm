@@ -1,9 +1,9 @@
 #!/bin/bash
 : "${scripts:?}" "${tests:?}" "${output:?}" # Caller owns the output and compile helper.
 ax_sources=(
-  "$scripts/AppUIDriverAX.swift" "$scripts/AppUIDriverAXCalls.swift"
+  "$scripts/AppUIDriverAX.swift" "$scripts/AppUIDriverAXCalls.swift" "$scripts/AppUIDriverAXLocusAccess.swift"
   "$scripts/AppUIDriverAXArrayCalls.swift" "$scripts/AppUIDriverAXRelationships.swift"
-  "$scripts/AppUIDriverAXReadiness.swift" "$scripts/AppUIDriverAXTypes.swift"
+  "$scripts/AppUIDriverAXReadiness.swift" "$scripts/AppUIDriverAXTypes.swift" "$scripts/AppUIDriverAXRestart.swift"
   "$tests/AppUIDriverProtocolTestSupport.swift" "$tests/app-ui-driver-ax-calls-fixture.swift"
   "$tests/app-ui-driver-ax-relationship-fixture.swift"
 )

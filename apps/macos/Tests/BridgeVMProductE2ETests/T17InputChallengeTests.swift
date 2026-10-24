@@ -22,7 +22,7 @@ final class T17InputChallengeTests: XCTestCase {
             + "BVAGENT SHARE host->guest bv-product-e2e.ps1 bytes=1 t=2\n").utf8).write(to: log)
         let ui = GuestUI(runLog: log, ready: ready, readyBody: readyBody, readyDelay: 0.6,
                          output: share.appendingPathComponent("t17-keyboard-pointer-5c5c5c5c5c5c.txt"))
-        let journey = T17GuestJourney(request: Request(root: root, nonce: nonce), ui: ui, fileManager: .default)
+        let journey = T17GuestJourney(request: Request(root: root, nonce: nonce), ui: ui, fileManager: .default, tpm: T17TPMEvidenceLog())
         XCTAssertThrowsError(try journey.run(firstReady: "BVAGENT READY T17 v3-share2") { throw Stop.after($0) }) {
             XCTAssertEqual($0 as? Stop, .after(.keyboardPointer))
         }

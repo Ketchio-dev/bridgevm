@@ -14,7 +14,8 @@ import uuid
 from pathlib import Path
 from retained_windows_media import export_selected
 from retained_windows_publication import OwnedRetention
-from retained_windows_vtpm import export_vtpm
+from retained_windows_quiet import describe
+from retained_windows_vtpm import copy_vtpm_state, export_vtpm
 HERE = Path(__file__).resolve().parent
 def load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -112,8 +113,7 @@ def retain(args: argparse.Namespace) -> None:
                 or code.is_symlink() or code.stat().st_mode & 0o077):
             raise ValueError("packaged vTPM export did not create private regular files")
         retained_state = staging / "vtpm"
-        retained_state.mkdir(mode=0o700)
-        subprocess.run(["/bin/cp", "-cR", f"{state}/.", str(retained_state)], check=True)
+        copy_vtpm_state(state, retained_state)
         safe_tree(retained_state)
         disk_hash = T19.file_hash(retained_disk); vars_hash = T19.file_hash(retained_vars)
         retained_state_hash = T19.tree_hash(retained_state, allow_symlinks=False)
@@ -168,7 +168,7 @@ def main() -> int:
     try:
         retain(args)
     except (OSError, ValueError, KeyError, json.JSONDecodeError, subprocess.SubprocessError) as error:
-        print(f"T17-to-T19 handoff refused: {error}", file=sys.stderr)
+        print(f"T17-to-T19 handoff refused: {describe(error)}", file=sys.stderr)
         return 1
     return 0
 

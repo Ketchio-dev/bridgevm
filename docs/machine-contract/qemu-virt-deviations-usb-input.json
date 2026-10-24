@@ -1,7 +1,4 @@
-{
-  "schema_version": 1,
-  "contract": "qemu-virt-compatible",
-  "deviations": [
+{"schema_version": 1, "contract": "qemu-virt-compatible", "deviations": [
     {
       "id": "xhci-hid-report-pacing",
       "area": "usb-input",
@@ -10,6 +7,9 @@
       "guest_visible": true,
       "impact": "With the default interval the guest receives at most about 33 reports per second on each endpoint, each at least 30 ms after the previous one. Pointer motion on this route therefore reaches Windows as absolute positions at most about every 30 ms, and consecutive keystroke reports are at least 30 ms apart. The probe's documented reason is that Windows dropped keystrokes when reports landed microseconds apart. Input on the resident agent's ordered route is inserted with SendInput in the guest and does not pass through these endpoints. This entry records existing behaviour; nothing was changed. The evidence is the code and its deterministic tests at 9fa07eb4. No live run measured the report spacing the guest observes, and the QEMU description is recalled, not re-read.",
       "evidence": "crates/bridgevm-hvf/src/platform_virt/xhci_input.rs"
-    }
-  ]
-}
+    },
+    {"id": "xhci-hid-composite-device", "area": "usb-input", "guest_visible": true,
+      "qemu_behavior": "Recalled from QEMU's hw/usb/dev-hid.c and hw/usb/hcd-xhci.c, not re-read for this entry. High confidence: QEMU presents the keyboard and the absolute pointer as two separate USB devices, usb-kbd and usb-tablet, which a virt machine has only when they are added explicitly. Each has one HID interface with one interrupt-IN endpoint, 0x81, and on qemu-xhci each takes its own root port, device slot and address. Medium-high confidence: usb-kbd's interface is a boot keyboard (subclass 1, protocol 1), and usb-tablet's has no boot protocol and reports absolute X and Y in 0 to 0x7fff with three buttons and a wheel. Medium confidence: both use vendor ID 0x0627 and product ID 0x0001 with manufacturer, product and serial strings, the high-speed tablet's endpoint declares a 1 ms interval, and both answer a Microsoft OS descriptor that enables selective suspend in Windows.",
+      "bridgevm_behavior": "BridgeVM's xHCI always attaches one high-speed USB 2.0 device to root port 1 of its eight (four USB 2.0 and four USB 3.0), and Enable Slot always gives it slot 1. Its device descriptor declares class 0, vendor ID 0x1209, product ID 0x0001, no manufacturer, product or serial string, and one configuration with two interfaces, no remote wakeup and 100 mA. Interface 0 is a HID boot keyboard (subclass 1, protocol 1) whose interrupt-IN endpoint 0x81 (DCI3) carries the 8-byte boot report. Interface 1 is a HID pointer without boot protocol, with the Generic Desktop Mouse usage, whose endpoint 0x82 (DCI5) carries a 6-byte report: three buttons, absolute 16-bit X and Y in 0 to 32767, and a relative wheel from -127 to 127. Both endpoints declare an 8-byte maximum packet and bInterval 10, which at high speed is 2^9 microframes, 64 ms. The device answers only string descriptor 0 (language 0x0409), so it has no Microsoft OS descriptor. The report and HID descriptors, SET_PROTOCOL, SET_IDLE and SET_REPORT are answered per interface, 0 or 1.",
+      "impact": "Windows sees one USB composite device with two HID functions where QEMU has two HID devices. By the general Windows rule for a class-0 device with several interfaces and no interface association, the USB generic parent driver (usbccgp) enumerates one child per interface, USB\\VID_1209&PID_0001&MI_00 and &MI_01, where QEMU's two devices bind the HID driver directly under their own IDs; this was not observed in a BridgeVM guest. The two functions share one port, slot and address, so a port reset, a device reset or a re-enumeration after a fault takes the keyboard and the pointer together. Drivers, settings or tools keyed on QEMU's IDs or strings do not match. This entry records existing behaviour; nothing was changed. The evidence is the code at 5de1f8ca: usb_descriptors.rs, usb.rs, ports.rs, registers.rs and commands.rs under crates/bridgevm-hvf/src/xhci. No live run inspected how Windows enumerated the device, and the QEMU description is recalled, not re-read.", "evidence": "crates/bridgevm-hvf/src/xhci/usb_descriptors.rs"}
+]}

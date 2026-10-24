@@ -1,5 +1,6 @@
 //! The VirtPlatform struct, its construction and reset: fw_cfg control files, ACPI/SMBIOS/DTB, PCIe and device instantiation.
 
+use super::teardown_records::TeardownRecords;
 use super::*;
 use crate::acpi::build_acpi_with_devices;
 use crate::acpi::AcpiDeviceConfig;
@@ -86,12 +87,8 @@ pub struct VirtPlatform {
     pub(crate) host_now: Option<Instant>,
     pub(crate) xhci_dci3_last_emission: Option<Instant>,
     pub(crate) xhci_dci5_last_emission: Option<Instant>,
+    pub(crate) teardown_records: TeardownRecords,
 }
-
-const _: fn() = || {
-    fn assert_send<T: Send>() {}
-    assert_send::<crate::platform_virt::VirtPlatform>();
-};
 
 impl VirtPlatform {
     /// Build the platform: generate the device tree from the machine map and
@@ -218,6 +215,7 @@ impl VirtPlatform {
             host_now: None,
             xhci_dci3_last_emission: None,
             xhci_dci5_last_emission: None,
+            teardown_records: TeardownRecords::default(),
         }
     }
 

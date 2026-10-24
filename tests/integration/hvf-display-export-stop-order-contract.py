@@ -40,10 +40,10 @@ class Contract(unittest.TestCase):
         self.assertNotIn("_ramfb_display", source)
 
     def test_the_thread_prints_its_stop_record_once_as_it_ends(self):
-        source = (PROBE / "ramfb_display_thread.rs").read_text()
+        source = (PROBE / "ramfb_display_loop.rs").read_text()
         self.assertEqual(source.count('"ramfb display export: stopped '), 1)
         loop = source[source.index("fn export_loop("):]
-        self.assertLess(loop.index("while !stop.wait_until(next)"), loop.index('"ramfb display export: stopped '))
+        self.assertLess(loop.index("Wake::Stop => break"), loop.index('"ramfb display export: stopped '))
 
     def test_readers_take_the_record_before_the_report_and_refuse_it_after_the_footer(self):
         before = (READERS.AGENT + EXPORT_STOP + READERS.report(SYSTEM_OFF)).encode()

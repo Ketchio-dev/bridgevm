@@ -2,6 +2,8 @@ use super::super::hda_coreaudio_continuity::fill_and_record;
 use super::super::hda_coreaudio_producer::PcmProducer;
 use super::*;
 use std::sync::atomic::Ordering::Relaxed;
+#[path = "hda_coreaudio_capped_gap_a5_tests.rs"]
+mod capped_gap_a5;
 
 #[test]
 fn rejected_format_ends_carry_without_counting_padding_as_guest_frame() {

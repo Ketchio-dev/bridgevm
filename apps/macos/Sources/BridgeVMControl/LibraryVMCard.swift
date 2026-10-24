@@ -60,14 +60,8 @@ struct LibraryVMCard: View {
                       systemImage: config.installPending == true ? "arrow.down.circle" : "folder")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Menu {
-                    LibraryVMContextMenu(library: library, config: config)
-                } label: {
-                    Image(systemName: "ellipsis").frame(width: 28, height: 24)
-                }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .accessibilityLabel("\(config.name) 작업")
-                .help("VM 작업")
+                LibraryVMActionsMenu(library: library, config: config, size: CGSize(width: 28, height: 24))
+                    .help("VM 작업")
             }
             .padding(.horizontal, 20).padding(.vertical, 10)
         }

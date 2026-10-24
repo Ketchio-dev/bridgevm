@@ -19,6 +19,8 @@ pub(super) struct ClipBaseline {
     /// A host copy failed to reach the guest, or the app pasted through it: the
     /// next CLIPGET becomes the baseline instead of being adopted onto the Mac.
     pub(super) rebaseline: bool,
+    /// Guest texts refused for size (clip_guest_admission.rs).
+    pub(super) refusals: GuestClipRefusals,
 }
 
 impl AgentConsoleHarness {
@@ -71,15 +73,9 @@ impl AgentConsoleHarness {
             if self.clip_push_pending() {
                 return;
             }
-            let text = base64_decode(b64)
-                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                .unwrap_or_default();
-            if std::mem::take(&mut self.last_synced.rebaseline) {
-                if !text.is_empty() {
-                    self.last_synced.text = Some(normalize_clip(&text));
-                }
+            let Some(text) = self.admit_guest_clip(b64, now) else {
                 return;
-            }
+            };
             // Adopt only genuinely-new content (normalized compare) so a value
             // we pushed host->guest doesn't bounce straight back.
             if let Some(normalized) = guest_clip_decision(&self.last_synced.text, &text) {

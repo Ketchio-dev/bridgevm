@@ -4,11 +4,27 @@
 //! This thread paces itself, reads guest RAM through the existing host
 //! mapping without any lock (a frame torn by a guest mid-draw is replaced by
 //! the next one), and takes the platform lock only to copy the 28-byte ramfb
-//! config, with `try_lock`, so it never waits behind a vCPU.
+//! config, with `try_lock`, so it never waits behind a vCPU. A running
+//! exporter counts its tick lateness and publish intervals and leaves its
+//! `ramfb display timing:` record with the platform (ramfb_display_timing.rs).
+//! It exports when the app's display tick asks for a frame, and on its own
+//! deadline only when nobody asks (ramfb_display_loop.rs).
 
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, TryLockError};
+use std::sync::{Arc, Mutex, TryLockError};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+#[path = "ramfb_display_loop.rs"]
+mod pull;
+#[path = "ramfb_display_stop.rs"]
+mod stop;
+#[path = "ramfb_display_timing.rs"]
+mod timing;
+#[path = "ramfb_display_wake.rs"]
+mod wake;
+use pull::export_loop;
+use timing::SharedTiming;
+use wake::ExportWake;
 
 use super::{has_virtio_gpu, ramfb_export_interval, FramePublisher};
 use crate::{MappedRam, VirtPlatform};
@@ -42,47 +58,14 @@ impl ConfigSource for PlatformConfig {
     }
 }
 
-#[derive(Default)]
-struct StopSignal {
-    stopped: Mutex<bool>,
-    wake: Condvar,
-}
-
-impl StopSignal {
-    fn flag(&self) -> MutexGuard<'_, bool> {
-        self.stopped.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn stop(&self) {
-        *self.flag() = true;
-        self.wake.notify_all();
-    }
-
-    /// Sleep until `deadline`; true as soon as a stop is requested.
-    fn wait_until(&self, deadline: Instant) -> bool {
-        let mut stopped = self.flag();
-        while !*stopped {
-            let left = deadline.saturating_duration_since(Instant::now());
-            if left.is_zero() {
-                return false;
-            }
-            stopped = self
-                .wake
-                .wait_timeout(stopped, left)
-                .unwrap_or_else(PoisonError::into_inner)
-                .0;
-        }
-        true
-    }
-}
-
 /// The process's ramfb display writer. Start it once per probe process,
 /// outside the reboot loop, after guest RAM is mapped and before any vCPU
 /// runs; dropping it stops and joins the thread, so declare it after the RAM
 /// backing: every exit path, unwinding included, then joins before unmapping.
 pub struct RamfbDisplayThread {
-    stop: Arc<StopSignal>,
+    wake: Arc<ExportWake>,
     handle: Option<JoinHandle<()>>,
+    timing: SharedTiming,
 }
 
 impl RamfbDisplayThread {
@@ -128,7 +111,11 @@ impl RamfbDisplayThread {
             platform: Arc::clone(platform),
             last: None,
         };
-        Self::spawn(target, interval, source, memory)
+        let thread = Self::spawn(target, interval, source, memory);
+        if thread.handle.is_some() {
+            timing::install(platform, &thread.timing);
+        }
+        thread
     }
 
     fn spawn<M: GuestMemoryMut + 'static>(
@@ -137,20 +124,22 @@ impl RamfbDisplayThread {
         source: impl ConfigSource,
         memory: impl FnOnce() -> M + Send + 'static,
     ) -> Self {
-        let stop = Arc::new(StopSignal::default());
-        let signal = Arc::clone(&stop);
+        let wake = Arc::new(ExportWake::new());
+        let (signal, timing) = (Arc::clone(&wake), SharedTiming::default());
+        let counts = Arc::clone(&timing);
         let spawned = std::thread::Builder::new()
             .name("ramfb-display-export".into())
             .spawn(move || {
                 let (ms, path) = (interval.as_millis(), target.path().display());
                 println!("ramfb display export: thread started interval_ms={ms} path={path}");
                 let publisher = FramePublisher::new(target);
-                export_loop(publisher, source, &memory(), interval, &signal);
+                export_loop(publisher, source, &memory(), interval, &signal, &counts);
             });
         match spawned {
             Ok(handle) => Self {
-                stop,
+                wake,
                 handle: Some(handle),
+                timing,
             },
             Err(error) => {
                 eprintln!("ramfb display export: thread not started: {error}");
@@ -161,15 +150,16 @@ impl RamfbDisplayThread {
 
     fn inert() -> Self {
         Self {
-            stop: Arc::default(),
+            wake: Arc::default(),
             handle: None,
+            timing: SharedTiming::default(),
         }
     }
 }
 
 impl Drop for RamfbDisplayThread {
     fn drop(&mut self) {
-        self.stop.stop();
+        self.wake.stop();
         // A tick is bounded work, so the join waits at most one frame.
         if let Some(handle) = self.handle.take() {
             if handle.join().is_err() {
@@ -177,35 +167,6 @@ impl Drop for RamfbDisplayThread {
             }
         }
     }
-}
-
-/// Deadline-paced: a tick that overruns resynchronises instead of bursting.
-fn export_loop(
-    mut publisher: FramePublisher,
-    mut source: impl ConfigSource,
-    mem: &dyn GuestMemoryMut,
-    interval: Duration,
-    stop: &StopSignal,
-) {
-    let started = Instant::now();
-    let (mut next, mut polls, mut published) = (started, 0u64, 0u64);
-    let mut slowest = Duration::ZERO;
-    while !stop.wait_until(next) {
-        let tick = Instant::now();
-        published += u64::from(publisher.publish_changed(source.poll(), mem));
-        polls += 1;
-        let done = Instant::now();
-        slowest = slowest.max(done - tick);
-        next = (next + interval).max(done);
-    }
-    let seconds = started.elapsed().as_secs_f64().max(f64::EPSILON);
-    let (poll_hz, publish_hz) = (polls as f64 / seconds, published as f64 / seconds);
-    println!(
-        "ramfb display export: stopped polls={polls} published={published} \
-         seconds={seconds:.1} poll_hz={poll_hz:.1} publish_hz={publish_hz:.1} \
-         slowest_tick_us={}",
-        slowest.as_micros()
-    );
 }
 
 #[cfg(test)]

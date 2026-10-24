@@ -1,7 +1,7 @@
 import ApplicationServices
 import Foundation
 
-struct AppUIDriverAX: AppUIDriverAXAccess {
+struct AppUIDriverAX: AppUIDriverAXAccess, AppUIDriverAXPreparation {
     let pid: pid_t
     let deadline: Double
     let cancelled: () throws -> Bool

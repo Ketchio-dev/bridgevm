@@ -1,7 +1,7 @@
 //! Host PCM destinations for the HDA playback stream.
 
-/// Host destination for interleaved PCM, called on the vCPU thread under the
-/// platform lock: return promptly and move potentially blocking work elsewhere.
+/// Host destination for interleaved PCM, called under the platform lock by a
+/// vCPU or the HDA service tick: return promptly, move blocking work elsewhere.
 pub trait HdaPcmSink: Send {
     fn write_pcm(&mut self, samples: &[u8], rate: u32, channels: u8, bits: u8);
 
