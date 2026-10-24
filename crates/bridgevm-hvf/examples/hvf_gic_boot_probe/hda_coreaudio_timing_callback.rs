@@ -1,6 +1,5 @@
-//! Where the output callback reaches the timing counters, moved out of
-//! hda_coreaudio_timing.rs unchanged to make room there for the producer's
-//! trimmed-byte count. Both run on the callback thread.
+//! Where the output callback reaches the timing counters, kept apart from
+//! the record in hda_coreaudio_timing.rs. Both run on the callback thread.
 
 use super::super::super::hda_coreaudio_stats::Shared;
 use super::super::{CallbackFill, ContinuityCounters};

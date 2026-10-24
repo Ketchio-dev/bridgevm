@@ -1,6 +1,5 @@
 //! Producer-side PCM framing. The callback never observes partial frames.
 
-use super::hda_coreaudio_frames::high_water::RING_HIGH_WATER_BYTES;
 use super::hda_coreaudio_frames::{PcmFrames, Publication};
 use super::hda_coreaudio_stats::Shared;
 use super::{BITS_PER_CHANNEL, CHANNELS, SAMPLE_RATE};
@@ -35,15 +34,11 @@ impl PcmProducer {
     pub(super) fn write(&mut self, samples: &[u8], shared: &Shared, capacity: usize) {
         // Producer waits for this short copy; the realtime callback still uses
         // try_lock and substitutes silence rather than waiting on the vCPU or
-        // the HDA service tick. Past the high-water mark the excess is trimmed.
+        // the HDA service tick.
         let mut ring = shared.ring.lock().unwrap_or_else(|p| p.into_inner());
-        let high_water = RING_HIGH_WATER_BYTES;
-        let (result, trimmed) = self
-            .frames
-            .write_bounded(samples, &mut ring, capacity, high_water);
+        let result = self.frames.write(samples, &mut ring, capacity);
         shared.continuity.note_pcm_written();
         drop(ring);
-        shared.continuity.note_trimmed(trimmed);
         Self::record(shared, result);
     }
 

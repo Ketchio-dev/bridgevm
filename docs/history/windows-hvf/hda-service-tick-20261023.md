@@ -3,7 +3,7 @@
 Classification: audio fixes 1 and 3 of the 2026-10-21 audio investigation.
 T17 r92's host-record analysis (2026-10-23, sections 1-3) supports fix 1 and
 then fix 3, and refutes fix 4 for that run. Implemented test-first on the base
-`63ad6ce5` in `984ced08` (fix 1) and `cfbdb930` (fix 3). Design choices were
+`63ad6ce5` in `984ced08` (fix 1) and `cfbdb930` (fix 3, withdrawn 2026-10-24). Design choices were
 delegated by the operator; each is recorded here. **No live run has exercised
 either change.** No criterion, registry entry, capability wording or product
 state changes. Ranks are those of `AGENTS.md`: rank 3 is an automated test,
@@ -53,14 +53,14 @@ dropped 116 ms, and IOCs that one poll crossed shared one MSI.
   while a stream runs, and on vCPU exits otherwise or under the userspace GIC.
   QEMU (master, read 2026-10-23 at integration): a 1 ms virtual-clock timer.
 
-### The ring's 70 ms high-water mark (`cfbdb930`)
+### The ring's 70 ms high-water mark (`cfbdb930`), withdrawn 2026-10-24
 
 r92's ring ended at 104 ms, 2.6 times the 40 ms reserve, with no contention
 and no late callback: the one capped poll wrote 100 ms onto a drained ring and
 nothing brought the level back.
 
 - **The mark**
-  (`crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_high_water.rs`):
+  (the probe's `hda_coreaudio_high_water.rs` at `cfbdb930`, deleted in `9253aaf8`):
   the producer appends until the ring would pass 70 ms (13,440 B: the 40 ms
   reserve, the 10.7 ms device-cycle sawtooth and margin) and trims the whole
   frames beyond it. The partial frame after them stays private, so accepted
@@ -145,10 +145,10 @@ fields, and the count was updated (`step2-xctest-shim-first.log`).
   `capped_polls=0`; `msis_sent` near `ioc_completions` and
   `max_iocs_per_poll=1`.
 - `hda repeat:` with `repeat_passes=0`.
-- `hda CoreAudio timing:` with `ring_min_ms` above 0, `ring_max_ms` at most
-  70 and `ring_trimmed_ms=0`; the stats record with `drops=0`.
-- For fix 3's long-session claim, `ring_full_drops=0` over at least 30
-  minutes; that is where device-clock drift would show.
+- `hda CoreAudio timing:` with `ring_min_ms` above 0, and the stats record
+  with `drops=0`; fix 3's `ring_max_ms` and `ring_trimmed_ms` signs are withdrawn.
+- Fix 3 is withdrawn, so no long-session claim stands; `ring_full_drops=0`
+  over 30 minutes would still show whether device-clock drift fills the ring.
 
 ## 5. Not verified
 

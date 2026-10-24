@@ -1,6 +1,5 @@
-//! The CoreAudio sink's HdaPcmSink entry points, moved out of
-//! hda_coreaudio_producer.rs unchanged to make room there for the ring's
-//! high-water mark (hda_coreaudio_high_water.rs).
+//! The CoreAudio sink's HdaPcmSink entry points, kept apart from the
+//! producer's framing in hda_coreaudio_producer.rs.
 
 use super::super::{CoreAudioPcmSink, RING_CAPACITY_BYTES};
 use bridgevm_hvf::hda::HdaPcmSink;

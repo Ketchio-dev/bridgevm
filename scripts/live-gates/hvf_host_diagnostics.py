@@ -28,7 +28,7 @@ RECORDS = {
     "hda CoreAudio timing:": ("callbacks", "interval_le_10ms", "interval_le_15ms", "interval_le_20ms",
                               "interval_le_30ms", "interval_le_50ms", "interval_gt_50ms", "max_interval_ms",
                               "late_callbacks", "trylock_misses", "ring_samples", "ring_min_ms", "ring_max_ms",
-                              "ring_final_ms", "ring_trimmed_ms"),
+                              "ring_final_ms"),
 }
 FIELD_VALUES = {"cbl_ms": MILLIS, "entry_ms_min": MILLIS, "entry_ms_max": MILLIS, "position_buffer": "([01])"}
 GRAMMARS = {prefix: re.compile(prefix + "".join(f" {field}={FIELD_VALUES.get(field, VALUE)}" for field in fields))

@@ -37,7 +37,7 @@ RECORDS = {
     "hda_coreaudio_timing": {"callbacks": 10, "interval_le_10ms": 1, "interval_le_15ms": 2, "interval_le_20ms": 1,
                              "interval_le_30ms": 2, "interval_le_50ms": 2, "interval_gt_50ms": 1, "max_interval_ms": 51,
                              "late_callbacks": 3, "trylock_misses": 0, "ring_samples": 4, "ring_min_ms": 30,
-                             "ring_max_ms": 50, "ring_final_ms": 2 ** 64 - 1, "ring_trimmed_ms": 7},
+                             "ring_max_ms": 50, "ring_final_ms": 2 ** 64 - 1},
 }
 
 
