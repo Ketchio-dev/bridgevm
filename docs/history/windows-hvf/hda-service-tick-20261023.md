@@ -53,7 +53,7 @@ dropped 116 ms, and IOCs that one poll crossed shared one MSI.
   while a stream runs, and on vCPU exits otherwise or under the userspace GIC.
   QEMU (master, read 2026-10-23 at integration): a 1 ms virtual-clock timer.
 
-### The ring's 70 ms high-water mark (`cfbdb930`), withdrawn 2026-10-24
+### The ring's 70 ms high-water mark (`cfbdb930`), withdrawn: see `docs/history/windows-hvf/hda-mark-withdrawal-20261024.md`
 
 r92's ring ended at 104 ms, 2.6 times the 40 ms reserve, with no contention
 and no late callback: the one capped poll wrote 100 ms onto a drained ring and

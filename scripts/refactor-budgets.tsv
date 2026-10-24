@@ -5111,3 +5111,5 @@ docs/archive/a11-measured-20261023-tick.md	25	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_capped_gap_a5_tests.rs	115	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_counts.rs	60	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_busy_run_tests.rs	81	0
+docs/history/windows-hvf/hda-mark-withdrawal-20261024.md	85	0
+docs/document-manifests/hda-mark-withdrawal-20261024.tsv	2	0
