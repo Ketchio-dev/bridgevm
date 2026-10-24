@@ -5085,7 +5085,7 @@ crates/bridgevm-hvf/src/hda/controller_debug.rs	19	0
 crates/bridgevm-hvf/src/hda/tests/stream_activity.rs	180	0
 crates/bridgevm-hvf/src/platform_virt/audio_service_tick.rs	26	0
 crates/bridgevm-hvf/src/platform_virt/tests/hda_service_poll.rs	116	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick.rs	300	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick.rs	279	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_fixture.rs	201	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_replay_tests.rs	125	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_tests.rs	373	0
@@ -5109,3 +5109,5 @@ docs/document-manifests/post-merge-integration-docs-20261023.tsv	43	0
 docs/history/windows-hvf/followups-r2-integration-r4-20261023.md	126	0
 docs/archive/a11-measured-20261023-tick.md	25	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_capped_gap_a5_tests.rs	115	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_counts.rs	60	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_busy_run_tests.rs	81	0

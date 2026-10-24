@@ -46,6 +46,9 @@ use bridgevm_hvf::machine;
 use bridgevm_hvf::msix::MsixMessage;
 
 use crate::{deliver_pending_msix, HvReturn, MappedRam, VirtPlatform};
+#[path = "hda_service_tick_counts.rs"]
+mod counts;
+pub(crate) use counts::TickCounts;
 
 /// Half the 10 ms period Windows programs, so each IOC gets its own MSI.
 pub(crate) const TICK_INTERVAL: Duration = Duration::from_millis(5);
@@ -103,20 +106,6 @@ impl<M: GuestMemoryMut> TickPort for ProbePort<M> {
     }
 }
 
-/// What the thread did, printed as it ends.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TickCounts {
-    /// Wakes for a running stream.
-    pub(crate) streams: u64,
-    /// Ticks that tried the platform lock.
-    pub(crate) ticks: u64,
-    pub(crate) busy: u64,
-    /// Ticks a reset's `quiesce()` skipped.
-    pub(crate) quiesced: u64,
-    pub(crate) msis: u64,
-    pub(crate) max_late: Duration,
-}
-
 /// Why a tick ended the thread.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Halt {
@@ -135,16 +124,16 @@ pub(crate) fn tick_once(
     let _gate = match gate.try_lock() {
         Ok(gate) => gate,
         Err(TryLockError::WouldBlock) => {
-            counts.quiesced += 1;
+            counts.note_quiesced();
             return Ok(());
         }
         Err(TryLockError::Poisoned(gate)) => gate.into_inner(),
     };
-    counts.ticks += 1;
-    match port.service(now) {
-        Service::Busy => counts.busy += 1,
+    let service = port.service(now);
+    counts.note_try(service == Service::Busy);
+    match service {
+        Service::Busy | Service::Polled(None) => {}
         Service::Poisoned => return Err(Halt::Poisoned),
-        Service::Polled(None) => {}
         Service::Polled(Some(message)) => match port.send(message) {
             0 => counts.msis += 1,
             status => return Err(Halt::SendFailed(status)),
@@ -225,16 +214,7 @@ impl HdaServiceTick {
                     interval.as_millis()
                 );
                 let c = run(port(), &activity, &thread_shared, interval);
-                println!(
-                    "hda service tick: stopped streams={} ticks={} busy={} quiesced={} \
-                     msis={} max_late_us={}",
-                    c.streams,
-                    c.ticks,
-                    c.busy,
-                    c.quiesced,
-                    c.msis,
-                    c.max_late.as_micros()
-                );
+                println!("{}", c.stopped_record(interval));
             });
         match spawned {
             Ok(handle) => Self {
@@ -292,7 +272,7 @@ fn run(
             }
             thread::park();
         }
-        counts.streams += 1;
+        counts.note_stream();
         let mut next = Instant::now() + interval;
         loop {
             if !sleep_until(next, &shared.stop) {
@@ -337,6 +317,9 @@ fn raise_qos() {
     }
 }
 
+#[cfg(test)]
+#[path = "hda_service_tick_busy_run_tests.rs"]
+mod busy_run_tests;
 #[cfg(test)]
 #[path = "hda_service_tick_fixture.rs"]
 mod fixture;
