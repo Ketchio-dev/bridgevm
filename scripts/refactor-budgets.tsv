@@ -1293,7 +1293,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	333	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	404	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	392	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLiveInputFile.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfLiveInputFileTests.swift	145	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	398	0
@@ -1304,7 +1304,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfHostKeyModifierTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteSessionTests.swift	84	0
 apps/macos/Tests/BridgeVMControlTests/HvfClipboardPasteTargetTests.swift	49	0
 apps/macos/Tests/BridgeVMControlTests/HvfHostShortcutIsolationTests.swift	31	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	304	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferView.swift	303	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferScrollOrderingTests.swift	57	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFileIdentity.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFileIdentityTests.swift	66	0
@@ -5096,7 +5096,7 @@ docs/machine-contract/qemu-virt-deviations-audio.json	11	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_sink.rs	21	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_timing_callback.rs	32	0
 docs/history/windows-hvf/hda-service-tick-20261023.md	170	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFrameReader.swift	90	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFrameReader.swift	88	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferSeqlockRetryTests.swift	114	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_wake.rs	117	7
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_loop.rs	97	0
@@ -5141,3 +5141,13 @@ schemas/a9-clean-host-attestation-v1.json	20	0
 docs/history/windows-hvf/autonomy-integration-20261025.md	122	0
 docs/archive/a11-measured-20261025-autonomy.md	24	0
 docs/document-manifests/autonomy-integration-20261025.tsv	3	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfAppPacingRecords.swift	83	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfDisplayPacingRecord.swift	124	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOrderedInputRecord.swift	74	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfMainThreadStalls.swift	52	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferDisplayTick.swift	27	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferHeaderFields.swift	23	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSessionGracefulStop.swift	20	0
+apps/macos/Tests/BridgeVMControlSwiftTests/HvfDisplayPacingRecordTests.swift	159	0
+apps/macos/Tests/BridgeVMControlSwiftTests/HvfAppPacingRecordsTests.swift	152	0
+apps/macos/Tests/BridgeVMControlTests/HvfFramebufferPacingTests.swift	84	0
