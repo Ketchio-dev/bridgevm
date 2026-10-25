@@ -77,7 +77,7 @@ class LaneDisplayRecords(unittest.TestCase):
     def test_the_lane_record_is_the_display_grammar_beside_the_hda_records(self):
         self.assertEqual(HOST_RECORDS.LANE_RECORDS[NAME], frozenset(DISPLAY.DISPLAY_FIELDS))
         self.assertEqual(frozenset(TIMING), frozenset(DISPLAY.DISPLAY_FIELDS))
-        self.assertEqual(sorted(HOST_RECORDS.LANE_RECORDS), sorted([*HDA.RECORDS, NAME]))
+        self.assertEqual(sorted(HOST_RECORDS.LANE_RECORDS), sorted([*HDA.RECORDS, NAME, "app_display_pacing", "app_ordered_input"]))
 
 
 if __name__ == "__main__":

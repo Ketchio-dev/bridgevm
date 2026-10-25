@@ -1908,7 +1908,7 @@ apps/macos/Sources/BridgeVMProductE2E/T17UIControlling.swift	15	0
 apps/macos/Sources/BridgeVMProductE2E/T17TextEntry.swift	17	0
 apps/macos/Sources/BridgeVMProductE2E/T17Contract.swift	207	0
 apps/macos/Sources/BridgeVMProductE2E/T17Evidence.swift	80	0
-apps/macos/Sources/BridgeVMProductE2E/T17GuestJourney.swift	206	0
+apps/macos/Sources/BridgeVMProductE2E/T17GuestJourney.swift	175	0
 apps/macos/Sources/BridgeVMProductE2E/T17InputChallenge.swift	26	0
 apps/macos/Sources/BridgeVMProductE2E/T17RuntimeControlInput.swift	18	0
 apps/macos/Sources/BridgeVMProductE2E/T17GuestProof.swift	152	0
@@ -5151,3 +5151,10 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSessionGracefulStop.swift	
 apps/macos/Tests/BridgeVMControlSwiftTests/HvfDisplayPacingRecordTests.swift	159	0
 apps/macos/Tests/BridgeVMControlSwiftTests/HvfAppPacingRecordsTests.swift	152	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferPacingTests.swift	84	0
+apps/macos/Sources/BridgeVMProductE2E/T17FirstRunAppPacing.swift	103	0
+apps/macos/Sources/BridgeVMProductE2E/T17GuestJourneySnapshot.swift	37	0
+apps/macos/Tests/BridgeVMProductE2ETests/T17FirstRunAppPacingTests.swift	113	0
+scripts/live-gates/hvf_app_pacing.py	121	0
+scripts/live-gates/app_pacing_diagnostics.py	124	0
+tests/integration/app-pacing-diagnostics-test.py	196	0
+tests/integration/product-e2e-lane-app-pacing-test.py	103	0
