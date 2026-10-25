@@ -189,13 +189,10 @@ impl FbSink {
     }
 
     fn finish_frame(&mut self) {
+        self.stamp_publish_time();
         std::sync::atomic::fence(Ordering::Release);
         self.seq = self.seq.wrapping_add(1);
         self.sequence().store(self.seq, Ordering::Release);
-    }
-
-    fn sequence(&self) -> &std::sync::atomic::AtomicU64 {
-        unsafe { &*(self.map.add(24) as *const std::sync::atomic::AtomicU64) }
     }
 }
 

@@ -510,7 +510,9 @@ crates/bridgevm-hvf/src/virtio_gpu/device_stats.rs	82	0
 crates/bridgevm-hvf/src/virtio_gpu/display.rs	71	0
 crates/bridgevm-hvf/src/virtio_gpu/display/edid.rs	172	0
 crates/bridgevm-hvf/src/virtio_gpu/fb_sink.rs	48	1
-crates/bridgevm-hvf/src/virtio_gpu/fb_sink_write.rs	201	10
+crates/bridgevm-hvf/src/virtio_gpu/fb_sink_header.rs	43	3
+crates/bridgevm-hvf/src/virtio_gpu/fb_sink_header_tests.rs	80	0
+crates/bridgevm-hvf/src/virtio_gpu/fb_sink_write.rs	198	9
 crates/bridgevm-hvf/src/virtio_gpu/fb_sink_write_tests.rs	76	4
 crates/bridgevm-hvf/src/virtio_gpu/fence.rs	80	0
 crates/bridgevm-hvf/src/virtio_gpu/interrupt.rs	157	0
