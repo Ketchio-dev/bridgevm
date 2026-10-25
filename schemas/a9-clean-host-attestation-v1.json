@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridgevm.dev/schemas/a9-clean-host-attestation-v1.json",
+  "title": "BridgeVM A9 clean-host attestation v1",
+  "description": "An operator statement, written before the campaign starts, that the host running both A9 journeys was clean. Like the B8 clean_host_attestation, the operator records its SHA-256 beforehand and scripts/a9-release-claim.py refuses it unless the bytes match that record, the commit is the claimed commit, host_model and macos_version equal both journey receipts (sysctl -n hw.model; sw_vers -productVersion), and attested_at is no later than the first journey start. Hashing a statement does not inspect the host: what counts as clean is the operator's definition, recorded in clean_machine_definition.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "criterion", "commit", "host_model", "macos_version", "attested_at", "attested_by",
+               "clean_machine_definition"],
+  "properties": {
+    "schema_version": {"const": "bridgevm.a9-clean-host-attestation.v1"},
+    "criterion": {"const": "A9"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "host_model": {"type": "string", "pattern": "^[^/\\\\\\u0000-\\u001f\\u007f]{1,128}$"},
+    "macos_version": {"type": "string", "pattern": "^[^/\\\\\\u0000-\\u001f\\u007f]{1,128}$"},
+    "attested_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "attested_by": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "clean_machine_definition": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[^\\u0000-\\u0009\\u000b-\\u001f\\u007f]+$"}
+  }
+}

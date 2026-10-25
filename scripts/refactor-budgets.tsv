@@ -5128,3 +5128,11 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_holds_tests.rs	
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_pacing.rs	24	1
 docs/history/windows-hvf/platform-lock-holds-20261025.md	135	0
 docs/document-manifests/platform-lock-holds-20261025.tsv	2	0
+scripts/a9_ci_attestation.py	99	0
+scripts/fetch-a9-ci-attestation.py	148	0
+scripts/a9-release-claim.py	484	0
+tests/integration/a9-release-claim-contract.py	318	0
+tests/integration/a9-ci-attestation-contract.py	231	0
+schemas/a9-release-claim-v1.json	89	0
+schemas/a9-ci-run-attestation-v1.json	27	0
+schemas/a9-clean-host-attestation-v1.json	20	0
