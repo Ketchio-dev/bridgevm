@@ -5136,3 +5136,6 @@ tests/integration/a9-ci-attestation-contract.py	231	0
 schemas/a9-release-claim-v1.json	89	0
 schemas/a9-ci-run-attestation-v1.json	27	0
 schemas/a9-clean-host-attestation-v1.json	20	0
+docs/history/windows-hvf/autonomy-integration-20261025.md	122	0
+docs/archive/a11-measured-20261025-autonomy.md	24	0
+docs/document-manifests/autonomy-integration-20261025.tsv	3	0
