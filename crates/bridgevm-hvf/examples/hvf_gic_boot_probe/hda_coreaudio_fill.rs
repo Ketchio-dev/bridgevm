@@ -1,6 +1,6 @@
 //! Non-waiting callback fill and continuity and timing recording.
 
-use super::hda_coreaudio_continuity::timing::timed_drain;
+use super::hda_coreaudio_continuity::timing::callback::timed_drain;
 use super::hda_coreaudio_continuity::CallbackFill;
 use super::hda_coreaudio_stats::Shared;
 use std::sync::TryLockError;

@@ -1,0 +1,20 @@
+name: T17 TPM PCR guest contract
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tpm-pcr:
+    name: T17 TPM workload parses and its TBS helper compiles and binds under Windows PowerShell
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build TPM2_PCR_Read, bind tbs.dll, and run the BitLocker workload on scripted CIM answers
+        shell: powershell
+        run: tests/integration/windows-guest-pwsh-contracts.ps1

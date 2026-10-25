@@ -2,9 +2,10 @@
 
 use super::hda_coreaudio_frames::{PcmFrames, Publication};
 use super::hda_coreaudio_stats::Shared;
-use super::{CoreAudioPcmSink, BITS_PER_CHANNEL, CHANNELS, RING_CAPACITY_BYTES, SAMPLE_RATE};
-use bridgevm_hvf::hda::HdaPcmSink;
+use super::{BITS_PER_CHANNEL, CHANNELS, SAMPLE_RATE};
 use std::sync::atomic::Ordering;
+#[path = "hda_coreaudio_sink.rs"]
+mod sink;
 
 #[derive(Default)]
 pub(super) struct PcmProducer {
@@ -32,7 +33,8 @@ impl PcmProducer {
 
     pub(super) fn write(&mut self, samples: &[u8], shared: &Shared, capacity: usize) {
         // Producer waits for this short copy; the realtime callback still uses
-        // try_lock and substitutes silence rather than waiting on the vCPU.
+        // try_lock and substitutes silence rather than waiting on the vCPU or
+        // the HDA service tick.
         let mut ring = shared.ring.lock().unwrap_or_else(|p| p.into_inner());
         let result = self.frames.write(samples, &mut ring, capacity);
         shared.continuity.note_pcm_written();
@@ -64,23 +66,3 @@ impl PcmProducer {
 #[cfg(test)]
 #[path = "hda_coreaudio_dma_tests.rs"]
 mod tests;
-
-impl HdaPcmSink for CoreAudioPcmSink {
-    fn write_pcm(&mut self, samples: &[u8], rate: u32, channels: u8, bits: u8) {
-        self.producer.write_format(
-            samples,
-            (rate, channels, bits),
-            &self.shared,
-            RING_CAPACITY_BYTES,
-        );
-    }
-
-    fn stream_stopped(&mut self) {
-        // RUN pause resumes at the saved DMA cursor, including any partial frame.
-        self.shared.continuity.note_stream_stopped();
-    }
-
-    fn stream_reset(&mut self) {
-        self.producer.finish(&self.shared, RING_CAPACITY_BYTES);
-    }
-}

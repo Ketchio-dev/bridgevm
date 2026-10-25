@@ -1,9 +1,13 @@
 #[path = "probe_runtime/generation_tpm.rs"]
 mod generation_tpm;
+#[path = "hda_service_tick.rs"]
+mod hda_service_tick;
 #[path = "../hvf_gic_boot_probe/input_control_wake.rs"]
 mod input_control_wake;
 #[path = "../hvf_gic_boot_probe/pointer_deadline_trace.rs"]
 mod pointer_deadline_trace;
+#[path = "probe_runtime/service_wake_interval.rs"]
+mod service_wake_interval;
 #[path = "probe_runtime/system_reset_failure.rs"]
 mod system_reset_failure;
 #[path = "probe_runtime/vtimer_recovery.rs"]
@@ -19,6 +23,8 @@ use crate::probe_config::ProbeConfig;
 use crate::probe_setup::prepare_platform;
 use crate::watchpoint_setup::watchpoint_config;
 use generation_tpm::generation_tpm;
+use hda_service_tick::HdaServiceTick;
+use service_wake_interval::service_wake_interval;
 use system_reset_failure::system_reset_failure;
 #[path = "probe_media_lease.rs"]
 mod media_lease;
@@ -124,6 +130,8 @@ pub(crate) fn run() -> ExitCode {
         let mut live_input = LiveInputController::from_env();
         // Off vCPU0; joined on drop, before the guest RAM backing is unmapped.
         let ramfb_display = RamfbDisplayThread::start(&platform, ram, ram_size);
+        // Polls HDA DMA every 5 ms while the guest's stream runs; same lifetime.
+        let hda_service_tick = HdaServiceTick::start(&platform, ram, ram_size);
 
         'reboot: loop {
             // Secondary vCPUs are intentionally scoped to one boot generation in
@@ -309,34 +317,11 @@ pub(crate) fn run() -> ExitCode {
             // deliberately do not force the automation block's platform mutex
             // on every CPU0 exit. ensure_started is idempotent, so re-entering
             // here after a guest reboot is fine.
-            let service_wake_interval = boot_timer
-                .service_wake_interval()
-                .or_else(|| {
-                    agent_console
-                        .as_ref()
-                        .is_some_and(|harness| harness.service_wake_needed())
-                        // Every ServiceWake tick is an hv_vcpus_exit cancel,
-                        // and each cancel rolls the A1 swallow race (measured
-                        // 3516/3517 wakes were agent-console in a wedged A2
-                        // run). The default stays 250ms; a longer interval
-                        // trades reply latency for an 8x lower cancel rate
-                        // during measurement windows (A2's fps gate).
-                        .then(|| {
-                            Duration::from_millis(
-                                env_u64("BRIDGEVM_AGENT_WAKE_MS", 250).clamp(50, 10_000),
-                            )
-                        })
-                })
-                // A guest halted at a KD breakpoint generates no vCPU exits, so
-                // the pre-run drain (and the KD serial pump with it) would stall
-                // until the debugger's next byte happened to arrive. A steady
-                // wake keeps the debugger<->guest byte pipe flowing while halted.
-                .or_else(|| {
-                    kd_serial_bridge
-                        .is_some()
-                        .then_some(Duration::from_millis(2))
-                });
-            if let Some(interval) = service_wake_interval {
+            if let Some(interval) = service_wake_interval(
+                &boot_timer,
+                agent_console.as_ref(),
+                kd_serial_bridge.is_some(),
+            ) {
                 agent_service_wake.ensure_started(vcpu, interval);
             }
             input_control_wake.ensure_started(vcpu);
@@ -914,6 +899,8 @@ pub(crate) fn run() -> ExitCode {
                         next_reboot_count,
                         actions,
                     } => {
+                        // No HDA tick polls or sends an MSI across these resets.
+                        let _hda_quiesced = hda_service_tick.quiesce();
                         reboot_count = next_reboot_count;
                         boot_progress.record_reboot();
                         println!(
@@ -972,6 +959,7 @@ pub(crate) fn run() -> ExitCode {
             // Terminal runs only; the export's stop record must precede the report footer.
             boot_progress.disarm();
             drop(ramfb_display);
+            drop(hda_service_tick);
             persist_and_report_stop!(
                 platform,
                 (media, media_lease),

@@ -1,20 +1,13 @@
 #!/usr/bin/env python3
 """Strictly authenticate installed-disk import inputs for the physical-Mac tier."""
 from __future__ import annotations
-import argparse, hashlib, json, os, re, stat, sys
+import argparse, hashlib, importlib.util, json, os, stat, sys
 from pathlib import Path
 
-ASSETS = ("app_bundle", "app_executable", "product_helper", "runner",
-          "source_disk", "source_vars", "source_vtpm", "source_vtpm_package", "source_vtpm_code")
-SHA256 = re.compile(r"^[0-9a-f]{64}$")
-RELATIONS = {
-    "app_executable": "Contents/MacOS/BridgeVMControl",
-    "product_helper": "Contents/Helpers/BridgeVMProductE2E.app/Contents/MacOS/BridgeVMProductE2E",
-    "runner": "Contents/Resources/target/release/hvf-runner",
-}
-
-class ManifestError(ValueError):
-    pass
+# The row grammar, loaded by path so that every loader of this script finds it.
+_GRAMMAR = importlib.util.spec_from_file_location("t19_manifest_grammar", Path(__file__).with_name("t19_manifest_grammar.py"))
+GRAMMAR = importlib.util.module_from_spec(_GRAMMAR); _GRAMMAR.loader.exec_module(GRAMMAR)
+ASSETS, ManifestError, parse = GRAMMAR.ASSETS, GRAMMAR.ManifestError, GRAMMAR.parse
 
 def file_hash(path: Path) -> str:
     digest = hashlib.sha256()
@@ -41,30 +34,8 @@ def tree_hash(root: Path, *, allow_symlinks: bool) -> str:
         else: raise ManifestError(f"unsupported tree entry: {relative}")
     return hashlib.sha256(b"".join(records)).hexdigest()
 
-def parse(path: Path) -> tuple[str, dict[str, tuple[Path, str]]]:
-    if not path.is_file() or path.is_symlink() or not 0 < path.stat().st_size <= 16 * 1024:
-        raise ManifestError("manifest is missing, unsafe, empty, or oversized")
-    mode: str | None = None; assets: dict[str, tuple[Path, str]] = {}
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        fields = line.split("\t")
-        if fields[0] == "campaign_mode" and len(fields) == 2 and mode is None:
-            mode = fields[1]; continue
-        if len(fields) != 3 or fields[0] not in ASSETS or fields[0] in assets:
-            raise ManifestError(f"malformed, duplicate, or unknown row {number}")
-        raw, expected = fields[1], fields[2]
-        if not raw.startswith("/") or os.path.normpath(raw) != raw or not SHA256.fullmatch(expected):
-            raise ManifestError(f"invalid path or digest in row {number}")
-        assets[fields[0]] = Path(raw), expected
-    if mode not in ("pilot", "release") or set(assets) != set(ASSETS):
-        raise ManifestError("manifest lacks its one exact mode and asset set")
-    bundle = assets["app_bundle"][0]
-    for key, relative in RELATIONS.items():
-        if assets[key][0] != bundle / relative:
-            raise ManifestError(f"{key} is outside its fixed app location")
-    return mode, assets
-
 def verify(path: Path) -> dict:
-    try: mode, assets = parse(path)
+    try: mode, assets, inputs = parse(path)
     except (OSError, UnicodeError, ManifestError) as error:
         return {"valid": False, "verified": False, "campaign_mode": "pilot",
                 "failure_code": "internal-error", "detail": str(error), "assets": {}}
@@ -90,7 +61,7 @@ def verify(path: Path) -> dict:
             return {"valid": True, "verified": False, "campaign_mode": mode,
                     "failure_code": "hash-mismatch", "detail": key, "assets": public}
     return {"valid": True, "verified": True, "campaign_mode": mode,
-            "failure_code": "none", "detail": "none", "assets": public}
+            "failure_code": "none", "detail": "none", "assets": public, **inputs}
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)

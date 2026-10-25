@@ -14,7 +14,7 @@
 #
 # Evidence is what the guest reports back, not what the host believes it sent:
 # HID keys are read out of the guest's own key log, and the pasted text is
-# compared byte for byte.
+# compared by byte length and SHA-256 prefix (the probe never prints it).
 set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -108,20 +108,19 @@ wait_for '^xHCI setup-input injection .* fired:' 1 \
 # thing, then paste. Reading it back out of the clipboard proves the transport
 # carried it; a marker line would not.
 send "CLIPSET $TYPED_B64" "^BVAGENT CLIPSET $TYPED_B64 -> OK"
-send 'CLIPGET' '^BVAGENT CLIP CLIPGET$'
+send 'CLIPGET' '^BVAGENT CLIP CLIPGET '
 
-GOT=$(awk '/^BVAGENT CLIP CLIPGET$/{c=""; f=1; next}
-           /^BVAGENT END CLIPGET$/{f=0; last=c; next}
-           f{c = c $0}
-           END{printf "%s", last}' "$RUN_LOG")
-printf '%s' "$GOT" > "$OUT/typed-actual.txt"
+WANT="BVAGENT CLIP CLIPGET bytes=$(wc -c < "$OUT/typed-expected.txt" | tr -d ' ')"
+WANT="$WANT sha256=$(shasum -a 256 "$OUT/typed-expected.txt" | cut -c1-16)"
+GOT=$(grep -E '^BVAGENT CLIP CLIPGET ' "$RUN_LOG" | tail -1)
+printf '%s\n' "$GOT" > "$OUT/typed-actual.txt"
 
-if [[ "$GOT" == "$TYPED" ]]; then
-  echo "A4 non-ASCII: PASS (round-tripped exactly)"
+if [[ "$GOT" == "$WANT" ]]; then
+  echo "A4 non-ASCII: PASS (same byte length and SHA-256 prefix)"
   A4T=pass
 else
   echo "A4 non-ASCII: FAIL" >&2
-  echo "  expected: $TYPED" >&2
+  echo "  expected: $WANT" >&2
   echo "  actual:   $GOT" >&2
   A4T=fail
 fi
@@ -169,7 +168,7 @@ fi
   echo "a4_function_keys=$A4F"
   echo "a4_non_ascii=$A4T"
   echo "typed_expected_sha=$(shasum -a 256 "$OUT/typed-expected.txt" | cut -d' ' -f1)"
-  echo "typed_actual_sha=$(shasum -a 256 "$OUT/typed-actual.txt" | cut -d' ' -f1)"
+  echo "typed_actual_sha256_prefix=${GOT##*sha256=}"
 } > "$OUT/summary.txt"
 cat "$OUT/summary.txt"
 

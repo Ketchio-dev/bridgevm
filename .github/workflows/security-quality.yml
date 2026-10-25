@@ -82,6 +82,7 @@ jobs:
       # because it is the boundary that keeps live gates off this runner.
       - run: python3 scripts/live-gates/redact-receipt.py --self-test
       - run: tests/integration/live-gate-policy-smoke.sh
+      - run: tests/integration/live-submit-publishable-job-id-test.sh
 
   graphics-claims:
     name: graphics compatibility claims

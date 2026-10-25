@@ -8,9 +8,9 @@
 #
 # The checks are content-based on purpose: a marker line saying CLIPSET
 # succeeded proves only that the guest accepted the command. These compare the
-# text that comes back and the SHA-256 of the bytes that land on disk, and the
-# clipboard payload is Korean so the base64(UTF-8) path is exercised rather
-# than assumed from ASCII.
+# byte length and SHA-256 prefix of the text that comes back, and the SHA-256 of
+# the bytes that land on disk; the clipboard payload is Korean so the
+# base64(UTF-8) path is exercised rather than assumed from ASCII.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -144,23 +144,23 @@ echo "agent up at ${SECONDS}s"
 
 ### A6: clipboard, host -> guest -> host, Korean
 send "CLIPSET $CLIP_B64" "^BVAGENT CLIPSET $CLIP_B64 -> OK"
-send 'CLIPGET' '^BVAGENT CLIP CLIPGET$'
+send 'CLIPGET' '^BVAGENT CLIP CLIPGET '
 
-# The reply body sits between the CLIP header and its END marker. Take the
-# last occurrence: CLIPSET refreshes the guest's cache, so an earlier poll may
-# have logged the pre-existing clipboard.
-CLIP_GOT=$(awk '/^BVAGENT CLIP CLIPGET$/{c=""; f=1; next}
-                /^BVAGENT END CLIPGET$/{f=0; last=c; next}
-                f{c = c $0}
-                END{printf "%s", last}' "$RUN_LOG")
-printf '%s' "$CLIP_GOT" > "$OUT/clip-actual.txt"
+# The probe never prints guest clipboard text: its reply carries the byte
+# length and the first 16 hex digits of the SHA-256. Take the last reply:
+# CLIPSET refreshes the guest's cache, so an earlier poll may have reported
+# the pre-existing clipboard.
+CLIP_WANT="BVAGENT CLIP CLIPGET bytes=$(wc -c < "$OUT/clip-expected.txt" | tr -d ' ')"
+CLIP_WANT="$CLIP_WANT sha256=$(shasum -a 256 "$OUT/clip-expected.txt" | cut -c1-16)"
+CLIP_GOT=$(grep -E '^BVAGENT CLIP CLIPGET ' "$RUN_LOG" | tail -1)
+printf '%s\n' "$CLIP_GOT" > "$OUT/clip-actual.txt"
 
-if [[ "$CLIP_GOT" == "$CLIP_TEXT" ]]; then
-  echo "A6 clipboard: PASS (round-tripped Korean exactly)"
+if [[ "$CLIP_GOT" == "$CLIP_WANT" ]]; then
+  echo "A6 clipboard: PASS (Korean round-tripped: same byte length and SHA-256 prefix)"
   A6=pass
 else
   echo "A6 clipboard: FAIL" >&2
-  echo "  expected: $CLIP_TEXT" >&2
+  echo "  expected: $CLIP_WANT" >&2
   echo "  actual:   $CLIP_GOT" >&2
   A6=fail
 fi
@@ -216,7 +216,7 @@ fi
   echo "a7_host_to_guest=$A7A"
   echo "a7_guest_to_host=$A7B"
   echo "clip_expected_sha=$(shasum -a 256 "$OUT/clip-expected.txt" | cut -d' ' -f1)"
-  echo "clip_actual_sha=$(shasum -a 256 "$OUT/clip-actual.txt" | cut -d' ' -f1)"
+  echo "clip_actual_sha256_prefix=${CLIP_GOT##*sha256=}"
   echo "share_host_to_guest_sha=$HOST_SHA"
   echo "share_guest_to_host_sha=$GUEST_SHA"
 } > "$OUT/summary.txt"

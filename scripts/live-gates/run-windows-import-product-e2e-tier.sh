@@ -52,7 +52,7 @@ for (( lane=1; lane<=EXPECTED; lane++ )); do
   cp -c "$SOURCE_DISK" "$lane_root/inputs/windows.raw"; cp -c "$SOURCE_VARS" "$lane_root/inputs/vars.fd"; cp -cR "$SOURCE_VTPM/." "$lane_root/inputs/vtpm/"; cp -c "$SOURCE_VTPM_PACKAGE" "$lane_root/inputs/vtpm-recovery.json"; cp -c "$SOURCE_VTPM_CODE" "$lane_root/inputs/vtpm-recovery-code.txt"; chmod -R a-w "$lane_root/inputs"
   nonce="$(openssl rand -hex 32)"; request="$lane_root/request.json"; result="$PRIVATE/lane-$lane-result.json"
   python3 "$REQUEST" --out "$request" --verified "$VERIFIED" --job-id "$JOB_ID" --commit "$COMMIT" --mode "$MODE" --lane "$lane" --nonce "$nonce" --lane-root "$lane_root"; request_sha="$(shasum -a 256 "$request" | awk '{print $1}')"
-  ATTEMPTS=$lane; set +e; "$REPO/scripts/live-gates/launch-import-product-e2e-helper.sh" "$HELPER" "$PRIVATE/lane-$lane-helper.log" "$request" "$result"; helper_status=$?; set -e
+  ATTEMPTS=$lane; set +e; "$REPO/scripts/live-gates/launch-import-product-e2e-lane.sh" "$VERIFIED" "$HELPER" "$PRIVATE/lane-$lane-helper.log" "$request" "$result"; helper_status=$?; set -e
   if (( helper_status != 0 )) || [[ ! -f "$result" || -L "$result" ]]; then emit failed product-model-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if [[ "$(shasum -a 256 "$request" | awk '{print $1}')" != "$request_sha" ]]; then emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi
   if find "$WORK" \( \( ! -type d ! -type f \) -o \( -type f -links +1 \) \) -print -quit | grep -q .; then printf '%s\n' "$lane" > "$PRIVATE/lane-isolation-failed"; emit failed integration-failed "$ATTEMPTS" true "$SIGNING" || exit 1; exit 1; fi

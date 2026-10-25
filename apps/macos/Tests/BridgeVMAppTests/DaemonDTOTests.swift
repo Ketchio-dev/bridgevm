@@ -1512,7 +1512,7 @@ final class DaemonDTOTests: XCTestCase {
               "memory_used_mib": 512,
               "updated_at_unix": 1710000061
             },
-            "last_clipboard": {
+            "clipboard": {
               "text": "guest copied text",
               "updated_at_unix": 1710000064
             },

@@ -5518,7 +5518,7 @@ struct DaemonGuestToolsRuntimeDTO: Decodable {
     case guestIPAddresses = "guest_ip_addresses"
     case sharedFolders = "shared_folders"
     case metrics
-    case lastClipboard = "last_clipboard"
+    case lastClipboard = "clipboard"
     case lastCommandResult = "last_command_result"
     case agentUpdate = "agent_update"
     case updatedAtUnix = "updated_at_unix"

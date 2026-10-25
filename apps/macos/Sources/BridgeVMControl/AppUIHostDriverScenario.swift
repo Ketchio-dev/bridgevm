@@ -61,14 +61,10 @@ enum AppUIHostDriverScenario {
         }
         try capture.capture(content, name: "import-form")
         try capture.action("import_opened")
-        host.seedOverviewMetadata()
 
         let overview = deadline()
-        try await client.perform(.pressOverview, phase: .overview, deadline: overview)
-        try await AppUIHostDriverClient.wait("overview rows", deadline: overview) {
-            guard AppUIHostOverviewState.reached(host.library) else { return false }
-            let value = try await client.perform(.overviewCards, phase: .overview, deadline: overview)
-            return value?.amberVisible == true && value?.indigoVisible == true
+        try await AppUIHostOverviewRequests.run(host.library, seed: { host.seedOverviewMetadata() }, deadline: overview) {
+            try await client.perform($0, phase: .overview, deadline: overview)
         }
         try capture.capture(content, name: "overview")
         try capture.action("overview_opened")

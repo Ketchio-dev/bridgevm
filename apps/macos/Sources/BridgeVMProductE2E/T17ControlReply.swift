@@ -10,14 +10,13 @@ enum T17ControlReply {
                 && lines.contains("BVAGENT \(command) -> OK CLIPSET")
                 && !lines.contains(where: { $0.hasPrefix("BVAGENT \(command) -> ERR") })
         }
-        let header: String
+        // The probe prints a CLIPGET's byte length and SHA-256 prefix, never the text.
         if command == "CLIPGET" {
-            header = "BVAGENT CLIP \(command)"
-        } else {
-            header = "BVAGENT CMD \(command) exit=0"
-            if lines.contains(where: { $0.hasPrefix("BVAGENT CMD \(command) exit=") && $0 != header }) {
-                return false
-            }
+            return lines.contains("BVAGENT CLIP \(command) \(T17ClipboardFingerprint.fields(of: marker))")
+        }
+        let header = "BVAGENT CMD \(command) exit=0"
+        if lines.contains(where: { $0.hasPrefix("BVAGENT CMD \(command) exit=") && $0 != header }) {
+            return false
         }
         guard let start = lines.firstIndex(of: header),
               let end = lines.indices.first(where: { $0 > start && lines[$0] == "BVAGENT END \(command)" })

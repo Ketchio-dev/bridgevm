@@ -1,5 +1,7 @@
 use super::super::agent_console_tests::tests::harness;
 use super::*;
+#[path = "get_end_tests.rs"]
+mod get_end_tests;
 
 #[test]
 fn oversized_get_declaration_reserves_nothing_and_never_completes() {

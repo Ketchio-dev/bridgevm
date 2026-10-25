@@ -7,6 +7,7 @@ mod tests;
 
 mod audio_device;
 mod audio_diagnostics;
+mod audio_service_tick;
 mod console_device;
 mod env_config;
 #[cfg(feature = "venus")]
@@ -26,6 +27,7 @@ mod snapshot;
 mod soc_devices;
 mod storage_devices;
 mod storage_stream;
+mod teardown_records;
 mod tpm_devices;
 mod xhci_input;
 mod xhci_pointer_wake;

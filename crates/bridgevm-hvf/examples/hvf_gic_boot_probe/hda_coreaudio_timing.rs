@@ -28,9 +28,7 @@
 
 use super::super::hda_coreaudio_stats::Shared;
 use super::super::{CoreAudioPcmSink, BYTES_PER_FRAME, SAMPLE_RATE};
-use super::{CallbackFill, ContinuityCounters};
 use bridgevm_hvf::platform_virt::VirtPlatform;
-use std::collections::VecDeque;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use std::sync::atomic::{fence, AtomicBool, AtomicU64};
 use std::sync::{Arc, Weak};
@@ -201,37 +199,6 @@ impl TimingSnapshot {
     }
 }
 
-impl ContinuityCounters {
-    /// Count one output callback: its timing unless teardown began, then its
-    /// continuity exactly as before. Callback thread only.
-    pub(in crate::hda_coreaudio) fn record_callback(&self, fill: CallbackFill) {
-        if !self.stopping.load(Relaxed) {
-            let contended = matches!(fill, CallbackFill::Contended { .. });
-            self.timing.note_callback(Instant::now(), contended);
-        }
-        self.record(fill);
-    }
-}
-
-/// Drain the ring into one callback buffer exactly as `Prefill::drain` does,
-/// noting the level the callback found. Callback thread, under the ring lock.
-pub(in crate::hda_coreaudio) fn timed_drain(
-    shared: &Shared,
-    ring: &mut VecDeque<u8>,
-    destination: &mut [u8],
-    stream_idle: bool,
-) -> usize {
-    let ring_bytes = ring.len();
-    let pcm_bytes = shared.prefill.drain(ring, destination, stream_idle);
-    let continuity = &shared.continuity;
-    if !continuity.stopping.load(Relaxed) {
-        continuity
-            .timing
-            .note_drain(ring_bytes, pcm_bytes, stream_idle);
-    }
-    pcm_bytes
-}
-
 /// The live sink's timing record, or none once the sink is gone.
 fn host_records(shared: &Weak<Shared>) -> Vec<String> {
     let timing = |shared: Arc<Shared>| shared.continuity.timing.snapshot().record();
@@ -248,6 +215,8 @@ impl CoreAudioPcmSink {
     }
 }
 
+#[path = "hda_coreaudio_timing_callback.rs"]
+pub mod callback;
 #[cfg(test)]
 #[path = "hda_coreaudio_timing_tests.rs"]
 mod tests;
