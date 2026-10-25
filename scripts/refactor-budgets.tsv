@@ -5126,3 +5126,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/platform_lock_holds.rs	265	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/platform_lock_holds_tests.rs	261	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_holds_tests.rs	76	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_pacing.rs	24	1
+docs/history/windows-hvf/platform-lock-holds-20261025.md	135	0
+docs/document-manifests/platform-lock-holds-20261025.tsv	2	0
