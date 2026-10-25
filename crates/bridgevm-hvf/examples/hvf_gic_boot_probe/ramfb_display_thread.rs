@@ -4,7 +4,8 @@
 //! This thread paces itself, reads guest RAM through the existing host
 //! mapping without any lock (a frame torn by a guest mid-draw is replaced by
 //! the next one), and takes the platform lock only to copy the 28-byte ramfb
-//! config, with `try_lock`, so it never waits behind a vCPU. A running
+//! config, with `try_lock`, so it never waits behind a vCPU; that copy is a
+//! hold the platform lock record charges (platform_lock_holds.rs). A running
 //! exporter counts its tick lateness and publish intervals and leaves its
 //! `ramfb display timing:` record with the platform (ramfb_display_timing.rs).
 //! It exports when the app's display tick asks for a frame, and on its own
@@ -27,6 +28,8 @@ use timing::SharedTiming;
 use wake::ExportWake;
 
 use super::{has_virtio_gpu, ramfb_export_interval, FramePublisher};
+use crate::platform_lock_holds::try_lock_platform;
+use crate::platform_lock_holds::HoldSite;
 use crate::{MappedRam, VirtPlatform};
 use bridgevm_hvf::display_fb::DisplayFramebuffer;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
@@ -48,7 +51,7 @@ struct PlatformConfig {
 
 impl ConfigSource for PlatformConfig {
     fn poll(&mut self) -> Option<RamfbConfig> {
-        match self.platform.try_lock() {
+        match try_lock_platform(&self.platform, HoldSite::Display) {
             Ok(platform) => self.last = platform.ramfb_config(),
             Err(TryLockError::WouldBlock) => {}
             // A vCPU panicked while holding the platform: stop exporting.

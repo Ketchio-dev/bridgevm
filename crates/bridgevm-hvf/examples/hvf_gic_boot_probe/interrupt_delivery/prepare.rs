@@ -92,7 +92,7 @@ impl RunLoopDrainStats {
         trace: DrainTrace,
         context: DrainContext,
     ) -> Result<PendingDrainDelivery, SpiDeliveryError> {
-        let mut platform = lock_platform(platform, smp_trace, 0, "cpu0 pre-run platform mutex");
+        let mut platform = lock_platform(platform, smp_trace, 0, HoldSite::PreRun);
         if let Some(bridge) = bridge {
             bridge.pump(&mut platform);
         }
@@ -107,8 +107,7 @@ impl RunLoopDrainStats {
         trace: DrainTrace,
         context: DrainContext,
     ) -> Result<PendingDrainDelivery, SpiDeliveryError> {
-        let mut platform =
-            lock_platform(platform, smp_trace, cpu, "secondary pre-run platform mutex");
+        let mut platform = lock_platform(platform, smp_trace, cpu, HoldSite::PreRun);
         self.prepare_pending_delivery(&mut platform, mem, trace, context)
     }
 }

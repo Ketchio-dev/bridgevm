@@ -33,7 +33,9 @@
 //!   waits woke 4-8 ms late at p50 in T17 r92.
 //! - A failed MSI send ends the tick with one line; HDA then advances on vCPU
 //!   exits as before, and their own failed delivery stops the run. The thread
-//!   prints `hda service tick: stopped ...` with its counts as it ends.
+//!   prints `hda service tick: stopped ...` with its counts as it ends, then
+//!   the probe's `platform lock holds:` record, which charges each busy tick
+//!   to the platform-lock hold it found (platform_lock_holds.rs).
 
 use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
@@ -45,10 +47,14 @@ use bridgevm_hvf::hda::HdaStreamActivity;
 use bridgevm_hvf::machine;
 use bridgevm_hvf::msix::MsixMessage;
 
+use crate::platform_lock_holds::{PlatformHolds, PLATFORM_HOLDS};
 use crate::{deliver_pending_msix, HvReturn, MappedRam, VirtPlatform};
 #[path = "hda_service_tick_counts.rs"]
 mod counts;
 pub(crate) use counts::TickCounts;
+#[path = "hda_service_tick_pacing.rs"]
+mod pacing;
+use pacing::{raise_qos, sleep_until};
 
 /// Half the 10 ms period Windows programs, so each IOC gets its own MSI.
 pub(crate) const TICK_INTERVAL: Duration = Duration::from_millis(5);
@@ -64,15 +70,20 @@ pub(crate) enum Service {
     Poisoned,
 }
 
-/// `try_lock` the platform, poll HDA at `now` taking only its MSI, unlock.
+/// `try_lock` the platform, poll HDA at `now` taking only its MSI, unlock. A
+/// busy platform is noted in `holds`, which charges it to the hold it found.
 pub(crate) fn service_once(
     platform: &Mutex<VirtPlatform>,
+    holds: &PlatformHolds,
     mem: &mut dyn GuestMemoryMut,
     now: Instant,
 ) -> Service {
     let mut platform = match platform.try_lock() {
         Ok(platform) => platform,
-        Err(TryLockError::WouldBlock) => return Service::Busy,
+        Err(TryLockError::WouldBlock) => {
+            holds.note_busy();
+            return Service::Busy;
+        }
         Err(TryLockError::Poisoned(_)) => return Service::Poisoned,
     };
     let message = platform.poll_hda_taking_msi(mem, now);
@@ -95,7 +106,7 @@ struct ProbePort<M> {
 
 impl<M: GuestMemoryMut> TickPort for ProbePort<M> {
     fn service(&mut self, now: Instant) -> Service {
-        service_once(&self.platform, &mut self.memory, now)
+        service_once(&self.platform, &PLATFORM_HOLDS, &mut self.memory, now)
     }
 
     fn send(&mut self, message: MsixMessage) -> HvReturn {
@@ -215,6 +226,7 @@ impl HdaServiceTick {
                 );
                 let c = run(port(), &activity, &thread_shared, interval);
                 println!("{}", c.stopped_record(interval));
+                println!("{}", PLATFORM_HOLDS.record());
             });
         match spawned {
             Ok(handle) => Self {
@@ -293,36 +305,15 @@ fn run(
     }
 }
 
-/// Park until `deadline`; false as soon as a stop is requested.
-fn sleep_until(deadline: Instant, stop: &AtomicBool) -> bool {
-    loop {
-        if stop.load(SeqCst) {
-            return false;
-        }
-        let left = deadline.saturating_duration_since(Instant::now());
-        if left.is_zero() {
-            return true;
-        }
-        thread::park_timeout(left);
-    }
-}
-
-/// User-interactive QoS for the calling thread, so its 5 ms wakes are prompt.
-fn raise_qos() {
-    use libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE;
-    // SAFETY: sets only the calling thread's own QoS class; no pointers.
-    let status = unsafe { libc::pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0) };
-    if status != 0 {
-        eprintln!("hda service tick: QoS not raised: {status}");
-    }
-}
-
 #[cfg(test)]
 #[path = "hda_service_tick_busy_run_tests.rs"]
 mod busy_run_tests;
 #[cfg(test)]
 #[path = "hda_service_tick_fixture.rs"]
 mod fixture;
+#[cfg(test)]
+#[path = "hda_service_tick_holds_tests.rs"]
+mod holds_tests;
 #[cfg(test)]
 #[path = "hda_service_tick_replay_tests.rs"]
 mod replay_tests;

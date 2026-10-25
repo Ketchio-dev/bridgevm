@@ -80,6 +80,6 @@ every byte.
 
 - No live run has exercised the withdrawal or `max_busy_run_ms`.
 - Which thread holds the platform lock for r94's busy ticks is unknown.
-  `max_busy_run_ms` only measures how long each hold lasts.
+  `max_busy_run_ms` only measures how long each hold lasts ([later](platform-lock-holds-20261025.md)).
 - The display exporter's 119 ms late wake is unexplained.
 - The latency creep after a capped gap is unfixed again.

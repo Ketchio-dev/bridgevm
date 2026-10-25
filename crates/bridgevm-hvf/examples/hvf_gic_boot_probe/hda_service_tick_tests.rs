@@ -59,7 +59,7 @@ impl TickPort for Watched {
         if !self.activity.running() {
             self.seen.stopped_attempts.fetch_add(1, SeqCst);
         }
-        service_once(&self.platform, &mut self.mem, now)
+        service_once(&self.platform, &PlatformHolds::new(), &mut self.mem, now)
     }
 
     fn send(&mut self, message: MsixMessage) -> HvReturn {

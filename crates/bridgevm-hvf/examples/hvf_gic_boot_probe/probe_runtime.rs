@@ -178,12 +178,8 @@ pub(crate) fn run() -> ExitCode {
             }
 
             {
-                let mut platform_guard = lock_platform(
-                    &platform,
-                    smp_trace.as_deref(),
-                    0,
-                    "cpu0 UART preload platform mutex",
-                );
+                let mut platform_guard =
+                    lock_platform(&platform, smp_trace.as_deref(), 0, HoldSite::UartPreload);
                 let platform = &mut *platform_guard;
                 if let Ok(input) = std::env::var("BRIDGEVM_UART_RX") {
                     platform.push_uart_input(input.as_bytes());
@@ -483,7 +479,7 @@ pub(crate) fn run() -> ExitCode {
                                     &platform,
                                     smp_trace.as_deref(),
                                     0,
-                                    "cpu0 data-abort platform mutex",
+                                    HoldSite::Mmio(ipa),
                                 );
                                 let platform = &mut *platform_guard;
                                 let device = machine::device_at(ipa).unwrap_or("<unmapped>");
@@ -751,12 +747,8 @@ pub(crate) fn run() -> ExitCode {
                         || live_display_exporter.due(tick)
                         || live_input.poll_due(tick),
                 ) {
-                    let mut platform_guard = lock_platform(
-                        &platform,
-                        smp_trace.as_deref(),
-                        0,
-                        "cpu0 automation platform mutex",
-                    );
+                    let mut platform_guard =
+                        lock_platform(&platform, smp_trace.as_deref(), 0, HoldSite::Automation);
                     let platform = &mut *platform_guard;
                     automation_gate.note_checked();
                     if let Some(d) = platform.xhci_pointer_report_deadline() {

@@ -121,3 +121,5 @@ HANDOFF.md	historical-evidence	project-status	STATUS.md
 @include	docs/document-manifests/followups-r2-r5-20261024.tsv	-	-
 @include	docs/document-manifests/followups-r2-r6-20261024.tsv	-	-
 @include	docs/document-manifests/followups-r2-r7-20261024.tsv	-	-
+@include	docs/document-manifests/platform-lock-holds-20261025.tsv	-	-
+@include	docs/document-manifests/autonomy-integration-20261025.tsv	-	-
