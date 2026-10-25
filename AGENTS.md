@@ -4,14 +4,51 @@ These are binding rules for anyone, human or agent, changing this repository.
 They exist because this project's failure mode is not bad code; it is
 **believing something works when the evidence does not support it**.
 
-Carry a requested change through implementation, relevant checks, failure
-analysis and repair, and a reviewable result. Decide routine, reversible
-repository steps without stopping for approval; request operator input when a
-missing fact or product decision materially changes the outcome. Publishing a
-release or changing live user assets requires separate authorization unless
-the request already provides it. An elapsed timer is a checkpoint for judgment,
-not a reason by itself to abandon unfinished work. The evidence, security and
-data boundaries below still apply.
+Agents work autonomously under the standing authority in section 0. Carry each
+change through implementation, relevant checks, failure analysis and repair,
+merge and a recorded result without stopping for approval. An elapsed timer is
+a checkpoint for judgment, not a reason by itself to stop. Autonomy changes who
+decides, never what counts as evidence: the evidence, security and data
+boundaries below still apply.
+
+## 0. Standing autonomy
+
+On 2026-10-25 the operator granted standing authority for continuous,
+autonomous development. Do not stop to ask for opinions or approval. Choose the
+next work yourself: release-blocking criteria and disclosed known defects
+first, then the open threads in the operator dev wiki (section 12). When one
+item is blocked, record why and move to the next.
+
+Without asking, an agent may:
+
+- merge its own pull request with a merge commit once the exact head passes
+  `scripts/check-project.sh`, the GitHub-hosted full project check and every
+  required pull-request check, then confirm post-merge `main` CI and repair or
+  revert a red `main` before other work;
+- submit physical-Mac live-queue jobs (pilots, campaigns, diagnostics) for a
+  pushed SHA, record each run, and clean up the lane state it created:
+  clones, scratch, retained sources and lane vTPM keys;
+- take product decisions inside the current product scope, such as limits,
+  refusals, defaults and user-interface behaviour within registry wording,
+  recording each with its reason in the wiki's `decisions.md` and, when
+  user-visible, in the repository history;
+- record a criterion as PROVEN when a retained receipt meets its unchanged
+  statement at the stated sample count on the stated head, and retract one
+  when the evidence no longer supports it;
+- delete merged or patch-equivalent branches and worktrees after distilling
+  anything the wiki requires;
+- continue across sessions: before stopping, leave the state, running job ids
+  and the next step in the wiki so the next agent resumes without asking.
+
+Ask the operator only for what an agent cannot or must not do itself: spending
+money or creating accounts; credentials, certificates and passwords; physical
+presence such as a console unlock, reboot or operating-system installation;
+TCC or other host security-policy changes; legal or licensing judgments;
+publishing a release or changing public release assets; changing the
+operator's own data, canonical images or other assets that no agent lane
+created; changing `product_state`; and changing a criterion's statement,
+threshold or scope. Ask once and concretely, keep the dependent criterion open,
+and continue other work while waiting.
 
 ## 1. Evidence hierarchy
 
@@ -33,6 +70,11 @@ Thresholds may be raised, never lowered, and never redefined mid-investigation
 to match what was achieved. If a gate cannot be met, the criterion stays open
 and the product wording stays honest. Substituting a smoke benchmark for a real
 workload is the same violation.
+
+Agents never change a criterion's statement, threshold or scope. The operator
+may, as an explicit dated scope decision recorded in the registry history. It
+applies only to measurements taken after the decision and never turns an
+earlier failure into a pass.
 
 ## 3. Claim discipline
 
@@ -91,8 +133,9 @@ New files are registered at their actual size.
 ## 8. Planning and commits
 
 - Make a concise plan when a change crosses subsystems or affects a release,
-  security, or guest-contract boundary. Identify any product decision that
-  genuinely needs operator input; file count alone does not require approval.
+  security, or guest-contract boundary, record it in the wiki thread, and
+  execute it. A plan is not a request for approval; only the items listed in
+  section 0 go to the operator.
 - Commit per proven conclusion, not per experiment. A commit message states
   what is now known, not what was attempted.
 - After pushing, confirm hosted CI is green for that SHA. Red CI blocks
@@ -154,7 +197,8 @@ this checkout. It is for BridgeVM work only. When it exists:
 
 - pull it and read its `index.md` before starting;
 - search it before guessing a past run, decision or machine fact;
-- after a run or decision, update it under the rules in its own `AGENTS.md`.
+- after a run or decision, update it under the rules in its own `AGENTS.md`,
+  recording every decision taken under section 0 in its `decisions.md`.
 
 The wiki ranks below this repository. Product truth stays in
 `capabilities/windows-hvf.json`, and nothing private is copied from the wiki
