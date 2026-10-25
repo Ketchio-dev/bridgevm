@@ -200,7 +200,7 @@ impl Guest {
 impl TickPort for Guest {
     fn service(&mut self, now: Instant) -> Service {
         self.clock = now;
-        service_once(&self.platform, &mut self.mem, now)
+        service_once(&self.platform, &PlatformHolds::new(), &mut self.mem, now)
     }
 
     fn send(&mut self, message: MsixMessage) -> HvReturn {

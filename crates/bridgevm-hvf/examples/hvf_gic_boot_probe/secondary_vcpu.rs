@@ -380,12 +380,8 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                     continue;
                 }
                 let (outcome, pending) = {
-                    let mut platform_guard = lock_platform(
-                        platform,
-                        smp_trace,
-                        control.index,
-                        "secondary data-abort platform mutex",
-                    );
+                    let mut platform_guard =
+                        lock_platform(platform, smp_trace, control.index, HoldSite::Mmio(ipa));
                     platform_guard.set_host_now(std::time::Instant::now());
                     let (outcome, post_drain) =
                         platform_guard.on_mmio_with_post_drain(ipa, op, guest_ram);

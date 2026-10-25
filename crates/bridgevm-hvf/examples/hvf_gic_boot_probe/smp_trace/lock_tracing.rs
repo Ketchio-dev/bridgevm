@@ -3,7 +3,8 @@
 //! Split from `smp_trace.rs` so the tracer holds the event ring and these hold
 //! the locking policy. Only slow acquisitions are recorded: an uncontended
 //! lock must cost nothing beyond `try_lock`, since these wrap the platform and
-//! vCPU-state mutexes taken on every exit.
+//! vCPU-state mutexes taken on every exit. The platform's sites lock through
+//! `lock_platform` (platform_lock_holds.rs), which also charges their holds.
 
 use crate::*;
 use super::event_ring::{lock_id, EventKind};
@@ -56,15 +57,6 @@ pub(crate) fn lock_with_optional_trace<'a, T>(
         Some(trace) => trace.lock_with_wait_trace(cpu, lock_name, context, mutex),
         None => mutex.lock().expect(context),
     }
-}
-
-pub(crate) fn lock_platform<'a>(
-    platform: &'a Arc<Mutex<VirtPlatform>>,
-    smp_trace: Option<&SmpTrace>,
-    cpu: u64,
-    context: &'static str,
-) -> MutexGuard<'a, VirtPlatform> {
-    lock_with_optional_trace(platform, smp_trace, cpu, "platform mutex", context)
 }
 
 pub(crate) fn lock_vcpu_state<'a>(
