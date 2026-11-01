@@ -5173,3 +5173,7 @@ crates/bridgevm-hvf/src/nvme/tests/scratch_path.rs	28	0
 crates/bridgevm-hvf/src/nvme/tests/scratch_path_tests.rs	60	0
 docs/history/windows-hvf/nvme-test-scratch-ownership-20261101.md	41	0
 docs/document-manifests/nvme-test-scratch-ownership-20261101.tsv	2	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfNonLatinControlShortcut.swift	18	0
+apps/macos/Tests/BridgeVMControlSwiftTests/HvfNonLatinControlShortcutTests.swift	44	0
+docs/history/windows-hvf/nonlatin-control-shortcuts-20261101.md	30	0
+docs/document-manifests/nonlatin-control-shortcuts-20261101.tsv	2	0
