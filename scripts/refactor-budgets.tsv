@@ -175,7 +175,7 @@ crates/bridgevm-daemon/src/tests_split/part_1_proxy_windows.rs	294	0
 crates/bridgevm-daemon/src/tests_split/part_2.rs	525	0
 crates/bridgevm-daemon/src/tests_split/part_3.rs	470	0
 crates/bridgevm-daemon/src/tests_split/performance_guest_benchmark.rs	148	0
-crates/bridgevm-daemon/src/tests_split/part_4.rs	425	0
+crates/bridgevm-daemon/src/tests_split/part_4.rs	333	0
 crates/bridgevm-daemon/src/tests_split/part_4_agent_update.rs	90	0
 crates/bridgevm-daemon/src/tests_split/part_4_2.rs	437	0
 crates/bridgevm-daemon/src/tests_split/part_4_3.rs	55	2
@@ -5177,3 +5177,4 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfNonLatinControlShortcut.swift	18
 apps/macos/Tests/BridgeVMControlSwiftTests/HvfNonLatinControlShortcutTests.swift	44	0
 docs/history/windows-hvf/nonlatin-control-shortcuts-20261101.md	30	0
 docs/document-manifests/nonlatin-control-shortcuts-20261101.tsv	2	0
+crates/bridgevm-daemon/src/tests_split/delayed_guest_hello.rs	100	0

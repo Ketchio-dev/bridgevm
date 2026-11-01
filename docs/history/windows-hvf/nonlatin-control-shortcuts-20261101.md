@@ -1,30 +1,28 @@
 # Non-Latin Ctrl shortcut events (2026-11-01)
 
-The live-display event resolver previously ignored Ctrl-only key events
-whose characters were a non-Latin letter, even at one of the supported
-A/C/V/X/Y/Z key positions. For example, C-position keyCode0x08 withㅊ
-produced no guest command. This is an event-contract result, not a retained
-live observation of a particular macOS input source or Windows application.
+The live-display resolver ignored Ctrl-only events containing a non-Latin
+letter at supported A/C/V/X/Y/Z positions: C-position keyCode0x08 withㅊ
+produced no guest command. This describes the event contract; native macOS
+input-source generation and Windows delivery have not been measured.
 
-The resolver now preserves any command recognized from the event’s logical
-characters first, including ASCII/control-scalar shortcuts on remapped
-layouts. Only an otherwise ignored event can use the fallback: Ctrl alone,
-one non-ASCII Unicode letter, and a supported ANSI key position. Existing
-guest tokens are reused. No guest protocol or device-contract change.
+Recognized logical characters win first, preserving ASCII/control-scalar
+shortcuts on remapped layouts. Otherwise, Ctrl alone with one non-ASCII
+Unicode letter can fall back to a supported ANSI position. Cmd/Shift/Option,
+empty/multiple scalars, symbols, emoji and unsupported positions keep their
+behavior. Ctrl+keypad Enter is refused before ETX can become Copy.
+Existing guest tokens and host IME composition are unchanged.
 
-Cmd, Shift and Option combinations, empty or multiple scalars, symbols,
-emoji and unsupported positions retain existing behavior. Ctrl+keypad Enter
-remains refused before resolution, preventing ETX from becoming Copy.
-Host IME composition already exists and is not newly claimed by this patch.
+Two focused AppKit-event tests cover Korean/Cyrillic/Greek letters, logical
+remaps and refusals. The old positive matrix had8 failures; preservation
+cases passed. Both tests pass with the fix. Structural ceilings stay intact.
 
-## Validation
+The first PR CI attempt failed the existing daemon delayed-hello test:
+its session was absent after a50ms scheduling sleep; its fake peer closed
+at250ms. The log does not identify which race occurred. The test now
+acknowledges the write and holds its peer open through the original
+held-connection assertions. Daemon product code is unchanged. The test was
+extracted under the existing ceiling; no timing criterion was relaxed.
+Superseded final checks were stopped and their failure record retained.
 
-Two focused AppKit-event tests cover supported Korean/Cyrillic/Greek letter
-shapes plus logical remaps and unsupported combinations. Before the fix,
-the positive matrix recorded8 failures while preservation cases passed.
-After the fix, both tests pass. New helper/test files stay within their
-actual structural budgets; the existing resolver ceiling is unchanged.
-
-Final exact-source local/hosted/PR checks remain required at this source
-checkpoint. No live VM/GPU run, release gate sample, criterion promotion or
-product-state change is made.
+Final exact-source local/hosted/PR checks remain required. No live VM/GPU
+run, release-gate sample, criterion promotion or product-state change.
