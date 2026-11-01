@@ -1,12 +1,10 @@
 //! Split test module.
 
 use super::super::*;
+pub(super) use super::scratch_path::temp_path;
 use crate::fwcfg::GuestMemoryMut;
 use std::io;
 use std::path::Path;
-use std::path::PathBuf;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 
 /// A flat span of guest RAM for exercising the queue/DMA path in tests,
 /// mirroring `fwcfg.rs`'s `FakeMem`.
@@ -121,17 +119,6 @@ pub(super) const IO_SQ_BASE: u64 = 0x4000_3000;
 pub(super) const IO_CQ_BASE: u64 = 0x4000_4000;
 pub(super) const DATA_BASE: u64 = 0x4000_5000; // PRP data buffer
 pub(super) const QDEPTH: u16 = 8;
-
-pub(super) fn temp_path(name: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    std::env::temp_dir().join(format!(
-        "bridgevm-hvf-nvme-{name}-{}-{nanos}",
-        std::process::id()
-    ))
-}
 
 pub(super) fn raw_file_sync_attempts(backend: &DiskBackend) -> usize {
     match backend {

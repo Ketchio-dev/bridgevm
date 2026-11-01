@@ -253,7 +253,7 @@ crates/bridgevm-hvf/src/nvme/prp.rs	152	0
 crates/bridgevm-hvf/src/nvme/queue.rs	278	0
 crates/bridgevm-hvf/src/nvme/registers.rs	166	0
 crates/bridgevm-hvf/src/nvme/snapshot.rs	132	0
-crates/bridgevm-hvf/src/nvme/tests/helpers.rs	377	0
+crates/bridgevm-hvf/src/nvme/tests/helpers.rs	367	0
 crates/bridgevm-hvf/src/nvme/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/nvme/tests/part_1.rs	774	0
 crates/bridgevm-hvf/src/nvme/tests/part_2.rs	560	0
@@ -5169,3 +5169,7 @@ tests/integration/a19_auxiliary_cancellation_cases.py	31	0
 docs/history/windows-hvf/a19-python-cancellation-20261101.md	37	0
 docs/document-manifests/a19-python-cancellation-20261101.tsv	2	0
 tests/integration/a19_auxiliary_timeout_cases.py	45	0
+crates/bridgevm-hvf/src/nvme/tests/scratch_path.rs	28	0
+crates/bridgevm-hvf/src/nvme/tests/scratch_path_tests.rs	60	0
+docs/history/windows-hvf/nvme-test-scratch-ownership-20261101.md	41	0
+docs/document-manifests/nvme-test-scratch-ownership-20261101.tsv	2	0
