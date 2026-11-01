@@ -33,8 +33,8 @@ it. The first-run reader also checked a pathname before reopening it, leaving
 a link-replacement race. Integration repairs address these with regression
 coverage. No routing behavior, criterion threshold or product state changes.
 
-The focused Python reader and lane contracts passed before the full check.
-Full local and exact-source hosted project checks are pending at this source
-checkpoint; their run IDs and final results are retained in the development
-wiki. No live VM or GPU campaign was run during the operator’s LoRA training.
+Seal `0b8ad5e5` failed hosted production-input-driver run 41332195527:
+the explicit source list omitted the observer extension. It is repaired; the
+obsolete local full check was stopped with its log retained.
+Final local/hosted results go in the wiki. No live campaign ran during LoRA training.
 A9, A11 and A19 remain OPEN.
