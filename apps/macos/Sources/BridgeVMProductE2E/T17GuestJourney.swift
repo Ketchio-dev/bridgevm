@@ -9,6 +9,7 @@ struct T17GuestJourney {
         guard currentLogText().contains(firstReady) else {
             throw T17Blocker(code: "guest-evidence-missing", detail: "first READY record changed before the product journey")
         }
+        let pacing = T17FirstRunAppPacing.mark(bundle: bundle) // the app's records of this first session
         try keyboardAndPointer(); try prove(.keyboardPointer); readTPM(.first)
         try clipboard(); try prove(.clipboard)
         try workload("Share", output: "t17-guest-\(prefix).txt"); try prove(.folderShare)
@@ -21,6 +22,7 @@ struct T17GuestJourney {
         }
         try prove(.audio); try prove(.firstShutdown)
         let first = try archiveLog(named: T17FirstRunHostRecords.archive, ready: "first-ready", shutdown: "first-shutdown")
+        T17FirstRunAppPacing.archive(since: pacing, bundle: bundle)
         try createSnapshot()
         _ = try bootReady(); readTPM(.mutation)
         try workload("MarkerB", output: "t17-snapshot-b-\(prefix).txt")
@@ -135,31 +137,6 @@ struct T17GuestJourney {
         try verifySnapshot(restored: true)
     }
 
-    private func verifySnapshot(restored: Bool) throws {
-        let root = URL(fileURLWithPath: request.snapshotPath, isDirectory: true)
-        let entries = try fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-        guard Set(entries.map(\.lastPathComponent)) == ["disk.raw", "vars.fd", "manifest.json"],
-              let manifest = try JSONSerialization.jsonObject(
-                with: Data(contentsOf: root.appendingPathComponent("manifest.json"))) as? [String: Any],
-              Set(manifest.keys) == ["format_version", "vm_id", "disk_bytes", "disk_sha256", "vars_bytes", "vars_sha256"] else {
-            throw T17Blocker(code: "snapshot-unavailable", detail: "snapshot pair or manifest shape is invalid")
-        }
-        let disk = root.appendingPathComponent("disk.raw"), vars = root.appendingPathComponent("vars.fd")
-        let diskSize = try fileSize(disk), varsSize = try fileSize(vars)
-        guard manifest["format_version"] as? Int == 1, manifest["vm_id"] as? String == request.vmSlug,
-              manifest["disk_bytes"] as? Int == diskSize, manifest["vars_bytes"] as? Int == varsSize,
-              manifest["disk_sha256"] as? String == (try T17Evidence.sha256(disk)),
-              manifest["vars_sha256"] as? String == (try T17Evidence.sha256(vars)) else {
-            throw T17Blocker(code: "snapshot-unavailable", detail: "snapshot manifest does not authenticate its pair")
-        }
-        if restored {
-            let selected = try T17SelectedMedia.digest(disk: request.diskPath, vars: request.varsPath)
-            if let difference = T17SelectedMedia.difference(selected, manifest: manifest) {
-                throw T17Blocker(code: "snapshot-unavailable", detail: difference)
-            }
-        }
-    }
-
     private func waitForSharedAsset() throws {
         guard wait(timeout: 120, predicate: {
             let log = self.currentLogText()
@@ -180,14 +157,6 @@ struct T17GuestJourney {
 
     private func requireOutput(_ name: String, timeout: TimeInterval) throws {
         try T17GuestWorkloadOutput.await(share: URL(fileURLWithPath: request.sharePath), name: name, prefix: prefix, timeout: timeout)
-    }
-
-    private func fileSize(_ url: URL) throws -> Int {
-        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
-        guard values.isRegularFile == true, values.isSymbolicLink != true, let size = values.fileSize else {
-            throw T17Blocker(code: "snapshot-unavailable", detail: "snapshot member is not a regular file")
-        }
-        return size
     }
 
     private var prefix: String { String(request.nonce.prefix(12)) }

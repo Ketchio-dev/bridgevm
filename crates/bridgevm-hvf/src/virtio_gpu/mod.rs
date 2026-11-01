@@ -16,6 +16,7 @@ mod descriptor_chain_trace;
 mod device;
 pub(crate) mod display;
 mod fb_sink;
+mod fb_sink_header;
 mod fb_sink_write;
 mod fence;
 pub(crate) mod interrupt;

@@ -1,12 +1,12 @@
 import Foundation
 
-/// The first run's host records in a T17 or T19 lane result. The journey archives the
-/// run log of its first boot, where the guest played audio and took the keyboard and
-/// pointer challenge, as metadata/product-e2e/first-run.log. The records of that log's
-/// bound post-footer host tail (HvfHostRecordFields) join the private lane result as
-/// `first_run_host_records`. When the host printed none, or the log is missing, unsafe,
-/// over 64 MiB or without a bound final report, the key is absent and the lane result
-/// is byte-identical to the one before. Nothing gates on the records.
+/// The first run's host records in a T17 or T19 lane result. The journey archives the run log of its first boot,
+/// where the guest played audio and took the keyboard and pointer challenge, as metadata/product-e2e/first-run.log.
+/// The records of that log's bound post-footer host tail (HvfHostRecordFields), and the app's pacing records of that
+/// session when the journey kept them (T17FirstRunAppPacing.swift), join the private lane result as
+/// `first_run_host_records`. When there are none (the host printed none, or the log is missing, unsafe, over 64 MiB
+/// or without a bound final report, and no app records were kept), the key is absent and the lane result is
+/// byte-identical to the one before. Nothing gates on the records.
 enum T17FirstRunHostRecords {
     static let key = "first_run_host_records"
     static let archive = "first-run.log"
@@ -21,7 +21,7 @@ enum T17FirstRunHostRecords {
     }
 
     static func attach<Lane: Encodable>(_ lane: Lane, bundlePath: String) -> T17HostRecordLane<Lane> {
-        T17HostRecordLane(lane: lane, records: read(bundlePath: bundlePath))
+        T17HostRecordLane(lane: lane, records: read(bundlePath: bundlePath).merging(T17FirstRunAppPacing.read(bundlePath: bundlePath)) { host, _ in host })
     }
 }
 

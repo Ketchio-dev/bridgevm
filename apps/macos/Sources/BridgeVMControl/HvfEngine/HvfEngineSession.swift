@@ -36,6 +36,7 @@ final class HvfEngineSession: ObservableObject {
     var serviceStarted = false
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
     private let inputDriver = HvfSessionInputDriver()
+    let appPacing = HvfAppPacingRecords() // the session's app-side display and input records
     var textInputTarget: HvfTextInputTargetIdentity { .init(owner: ObjectIdentifier(self), generation: inputDriver.textInputGeneration, binding: inputBinding) }
     var stopCommandSent = false
     var stopDeadline: Date?
@@ -61,6 +62,7 @@ final class HvfEngineSession: ObservableObject {
         self.vtpmKeyProvider = vtpmKeyProvider
         inputDriver.onPoll = { [weak self] in self?.poll() }
         inputDriver.onDiagnostic = { [weak self] in self?.append(.unknown($0)) }
+        appPacing.observe(inputDriver)
     }
 
     deinit {
@@ -324,26 +326,11 @@ final class HvfEngineSession: ObservableObject {
         }
     }
 
-    func sendGracefulStopIfReady() {
-        guard case .stopping = connectionState, serviceStarted, !stopCommandSent else { return }
-        stopCommandSent = true
-        if sendCtl("shutdown.exe /p /f") {
-            append(.unknown("graceful guest shutdown requested"))
-            return
-        }
-        append(.unknown("graceful guest shutdown unavailable; terminating the HVF wrapper"))
-        if let process {
-            process.terminate()
-        } else if attachedToExistingProcess {
-            Shell.killProcesses(matching: config.targetDiskPath)
-        }
-        stopDeadline = nil
-    }
-
     func markStopped() {
         guard !runtimeTransitionInProgress, !mayHaveOwnedWork else { return }
         runtimeTransitionInProgress = true
         defer { runtimeTransitionInProgress = false }
+        appPacing.end(evidenceDir: config.evidenceDir)
         if let process, let identity = ownedProcessIdentity, !process.isRunning {
             lastOwnedExit = HvfOwnedRuntimeExit(identity: identity, process: process)
         }
@@ -366,6 +353,7 @@ final class HvfEngineSession: ObservableObject {
 
     func resetObservedRuntimeState(clearEvents: Bool) {
         if !hasPendingGUIStart { guiStartOperation = nil }
+        appPacing.begin()
         legacyPaste = HvfLegacyPasteState()
         inputDriver.attachUnknown(binding: inputBinding)
         tailReader = TailOffsetReader()

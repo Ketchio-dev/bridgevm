@@ -18,6 +18,8 @@ import a19_interrupt_auxiliary_io as io
 import a19_interrupt_restore_child as observer
 import a19_interrupt_stop_points as points
 from a19_seed_source_binding_cases import AuxiliarySeedBinding
+from a19_auxiliary_cancellation_cases import AuxiliaryCancellationCases
+from a19_auxiliary_timeout_cases import AuxiliaryTimeoutCases
 
 
 class AuxiliaryWiring(unittest.TestCase):
@@ -135,7 +137,7 @@ class TerminalOwnership(unittest.TestCase):
         self.assertEqual([call.args[1] for call in killed.call_args_list], [observer.signal.SIGSTOP])
 
 
-class AuxiliarySafety(unittest.TestCase):
+class AuxiliarySafety(AuxiliaryCancellationCases, AuxiliaryTimeoutCases, unittest.TestCase):
     def test_reaped_session_leader_never_receives_group_signals(self):
         child = mock.Mock(pid=12345, returncode=0)
         signals = []
@@ -247,25 +249,6 @@ class AuxiliarySafety(unittest.TestCase):
                 for child in owned:
                     io.stop_group(child)
 
-    def test_timeout_kills_and_reaps_an_owned_command_tree(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            script = root / "tree.py"
-            pid_path = root / "descendant.pid"
-            script.write_text("import pathlib,signal,subprocess,sys,time\n"
-                              "child=subprocess.Popen(['/bin/sleep','30'])\n"
-                              f"pathlib.Path({str(pid_path)!r}).write_text(str(child.pid))\n"
-                              "def stop(signum,frame):\n"
-                              "    child.terminate();child.wait(timeout=1);raise SystemExit(0)\n"
-                              "signal.signal(signal.SIGTERM,stop)\n"
-                              "time.sleep(30)\n")
-            commands = io.Commands(5, command_timeout=0.5)
-            with self.assertRaises(subprocess.TimeoutExpired):
-                commands.run([sys.executable, str(script)], root / "tree.stdout")
-            self.assertTrue(commands.cleanup_verified)
-            with self.assertRaises(ProcessLookupError):
-                os.kill(int(pid_path.read_text()), 0)
-
     def test_term_unwinds_and_cleans_the_active_owned_command_tree(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -274,20 +257,20 @@ class AuxiliarySafety(unittest.TestCase):
             tree.write_text("import os,pathlib,signal,subprocess,time\n"
                             "child=subprocess.Popen(['/bin/sleep','30'])\n"
                             f"pathlib.Path({str(descendant)!r}).write_text(str(child.pid))\n"
-                            f"pathlib.Path({str(group)!r}).write_text(str(os.getpgrp()))\n"
                             "def stop(signum,frame):\n"
                             "    child.terminate();child.wait(timeout=1);raise SystemExit(0)\n"
                             "signal.signal(signal.SIGTERM,stop)\n"
+                            f"pathlib.Path({str(group)!r}).write_text(str(os.getpgrp()))\n"
                             "time.sleep(30)\n")
             driver.write_text("import json,pathlib,signal,sys\n"
                               f"sys.path.insert(0,{str(ROOT / 'scripts/live-gates')!r})\n"
-                              "from a19_interrupt_auxiliary import interrupted\n"
+                              "from a19_interrupt_auxiliary import AuxiliaryInterrupted, interrupted\n"
                               "from a19_interrupt_auxiliary_io import Commands\n"
                               "signal.signal(signal.SIGTERM,interrupted)\n"
                               "commands=Commands(60)\n"
                               "try:\n"
                               f"    commands.run([sys.executable,{str(tree)!r}],pathlib.Path({str(root / 'tree.stdout')!r}))\n"
-                              "except InterruptedError:\n"
+                              "except AuxiliaryInterrupted:\n"
                               f"    pathlib.Path({str(result)!r}).write_text(json.dumps(commands.cleanup_verified))\n")
             child = subprocess.Popen([sys.executable, str(driver)])
             try:

@@ -94,37 +94,36 @@ final class FBLayerView: HvfFramebufferTextInput {
         super.updateTrackingAreas()
     }
 
-    @objc func step(_ link: CADisplayLink) {
-        refreshFrame(at: link.timestamp)
-    }
-
-    func refreshFrame(at timestamp: TimeInterval) {
+    /// What the tick did, for the session's `app display pacing:` record (HvfFramebufferDisplayTick.swift).
+    @discardableResult func refreshFrame(at timestamp: TimeInterval) -> HvfDisplayTick {
         synchronizeTextInputTarget()
         defer { flushPendingPointerMove() }
         if presentIOSurfaceIfAvailable(at: timestamp) {
-            return
+            return .iosurface
         }
 
         guard ensureMapping(), let mapping = framebufferMapping else {
             invalidateDisplay()
-            return
+            return .unmapped
         }
         defer { if framebufferMapping === mapping { frameRequester.post(mapping, path: framebufferPath) } }
         let read = frameReader.read(mapping.pointer, length: mapping.length, shown: lastProcessedSeq)
-        guard case let .frame(buffer, byteCount, width, height, stride, sequence) = read else {
+        guard case let .frame(buffer, byteCount, width, height, stride, sequence, published) = read else {
             if case .invalid = read {
                 resetMapping(); invalidateDisplay()
             }
-            return
+            return HvfDisplayTick(unpresented: read)
         }
         guard let image = imageFactory.make(buffer: buffer, byteCount: byteCount,
                                            width: width, height: height, stride: stride), let layer else {
-            return
+            return .busy
         }
 
+        let previous = lastProcessedSeq
         layer.contents = image
         lastProcessedSeq = sequence
         guestSize = CGSize(width: CGFloat(width), height: CGFloat(height))
+        return .presented(sequence: sequence, previous: previous, published: published)
     }
 
     func teardown() {

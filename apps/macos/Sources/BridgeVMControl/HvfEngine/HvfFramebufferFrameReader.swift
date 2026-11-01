@@ -11,9 +11,10 @@ import _Builtin_stdatomic
 /// while `budgetNanoseconds` have not passed since its first read.
 struct HvfFramebufferFrameReader {
     enum Outcome {
-        /// A complete frame, copied once into `buffer`, which the caller owns.
+        /// A complete frame, copied once into `buffer`, which the caller owns, with its publish time
+        /// read under the same seqlock (HvfFramebufferHeaderFields.swift).
         case frame(buffer: UnsafeMutableRawPointer, byteCount: Int,
-                   width: Int, height: Int, stride: Int, sequence: UInt64)
+                   width: Int, height: Int, stride: Int, sequence: UInt64, published: UInt64)
         /// The published frame is the one already shown.
         case unchanged
         /// The writer held the frame for the whole budget, or no memory: keep what is shown.
@@ -64,11 +65,7 @@ struct HvfFramebufferFrameReader {
         guard sequence != shown else {
             return .unchanged
         }
-        let width = Int(Self.readUInt32(pointer, at: 8))
-        let height = Int(Self.readUInt32(pointer, at: 12))
-        let stride = Int(Self.readUInt32(pointer, at: 16))
-        guard width > 0, height > 0, stride > 0, stride >= width * 4,
-              length >= 64, height <= (length - 64) / stride else {
+        guard let (width, height, stride) = Self.geometry(pointer, length: length) else {
             return .invalid
         }
         // One copy into a buffer the CGDataProvider frees with the CGImage.
@@ -77,14 +74,15 @@ struct HvfFramebufferFrameReader {
             return .busy
         }
         Darwin.memcpy(buffer, pointer.advanced(by: 64), byteCount)
-        // No pixel read above may be satisfied after the sequence is re-read.
+        let published = Self.publishTime(pointer)
+        // No pixel or time read above may be satisfied after the sequence is re-read.
         atomic_thread_fence(memory_order_acquire)
         guard loadSequence(pointer) == sequence else {
             free(buffer)
             return nil
         }
         return .frame(buffer: buffer, byteCount: byteCount,
-                      width: width, height: height, stride: stride, sequence: sequence)
+                      width: width, height: height, stride: stride, sequence: sequence, published: published)
     }
 }
 #endif
