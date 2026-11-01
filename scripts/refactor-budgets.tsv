@@ -5164,3 +5164,8 @@ apps/macos/Sources/BridgeVMProductE2E/T17AppPacingFile.swift	32	0
 apps/macos/Tests/BridgeVMProductE2ESwiftTests/T17AppPacingFileTests.swift	55	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSessionInputDriverObservation.swift	11	0
 apps/macos/Tests/BridgeVMControlSwiftTests/HvfInputBindingDiscardRecordTests.swift	52	0
+scripts/live-gates/a19_interrupt_auxiliary_cancel.py	9	0
+tests/integration/a19_auxiliary_cancellation_cases.py	31	0
+docs/history/windows-hvf/a19-python-cancellation-20261101.md	37	0
+docs/document-manifests/a19-python-cancellation-20261101.tsv	2	0
+tests/integration/a19_auxiliary_timeout_cases.py	45	0

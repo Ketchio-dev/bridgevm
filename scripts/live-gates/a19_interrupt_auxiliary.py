@@ -12,6 +12,7 @@ import subprocess
 import sys
 
 from a19_interrupt_auxiliary_io import Commands, DIGEST_FIELDS, MANIFEST_FIELDS, manifest, pair, parsed, read_record, stop_proof
+from a19_interrupt_auxiliary_cancel import AuxiliaryInterrupted, interrupted
 from a19_interrupt_restore_child import private_new
 from a19_interrupt_stop_points import CREATE_EXPORT, CREATE_VM_ID, SWAP_RESTORE, helper_command, regular, stable_root, staging
 
@@ -134,10 +135,6 @@ def run(helper: Path, snapshot: Path, disk: Path, variables: Path, output: Path,
         else:
             with private_new(work / "cleanup-unproven", "w") as flag:
                 flag.write("owned auxiliary helper group remains unproven\n")
-
-
-def interrupted(_signal, _frame):
-    raise InterruptedError("auxiliary orchestration interrupted")
 
 
 def main() -> int:
