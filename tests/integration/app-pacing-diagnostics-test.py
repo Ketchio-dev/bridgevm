@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
-"""app_pacing_diagnostics.py summarises the app's pacing records and gates nothing.
-
-The app writes app-pacing.log as a runtime session ends (HvfAppPacingRecords.swift). The reader accepts exactly the
-two lines the app writes, or a lane result's first_run_host_records, refuses records whose counters do not reconcile,
-and reads anything else as having no records. The Swift writer, the T17 reader and hvf_app_pacing.py name the same
-fields in the same order; HvfDisplayPacingRecordTests.swift and HvfAppPacingRecordsTests.swift print the samples here.
-"""
+"""The app pacing reader accepts the app's two lines or lane records, reconciles their counters and gates nothing.
+The Swift writer, T17 reader and Python grammar share the fields and sample records pinned here."""
 
 from __future__ import annotations
 
@@ -179,6 +174,9 @@ class AppPacingReader(unittest.TestCase):
                  "a malformed exporter record": {"first_run_host_records": {
                      **{APP.lane_name(p): dict.fromkeys(f, 0) for p, f in APP.RECORDS.items()},
                      "ramfb_display_timing": {"ticks": "1"}}}}
+        lanes.update({f"{prefix} invalid shape {index}": {"first_run_host_records": {
+            APP.lane_name(p): value if p == prefix else dict.fromkeys(f, 0) for p, f in APP.RECORDS.items()}}
+            for prefix in APP.RECORDS for index, value in enumerate((None, 7, True, [], list(APP.RECORDS[prefix])))})
         cases = {"missing": str(self.root / "missing.log"), "a link": str(link), "a fifo": str(fifo),
                  "an old run": self.write("old.log", "boot\n"), "not json": self.write("bad.json", "{nope"),
                  "unreconciled": self.write("bad.log", FILE.replace("sent=2", "sent=1")),

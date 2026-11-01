@@ -1,7 +1,7 @@
 import Foundation
 
 /// One runtime session's app-side pacing records, the measurements the exporter's `ramfb display timing:`
-/// record cannot make: what the live display window presented (`app display pacing:`,
+/// record cannot make: what the live display window assigned to its layer (`app display pacing:`,
 /// HvfDisplayPacingRecord) and how the ordered input route kept up (`app ordered input:`,
 /// HvfOrderedInputRecord).
 ///

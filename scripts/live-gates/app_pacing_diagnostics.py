@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Summarise the app's pacing records: what the live display window showed and how ordered input kept up. Read-only.
+"""Summarise the app's pacing records: what the live display window assigned to its layer and how ordered input kept up. Read-only.
 
     app_pacing_diagnostics.py [--json] FILE
 
 FILE is an app-pacing.log the app wrote as a runtime session ended (logs/hvf in the VM bundle, or the T17 journey's
 copy of its first run, metadata/product-e2e/first-run-app-pacing.log), or a private T17 or T19 lane result whose
 first_run_host_records carry the records (hvf_app_pacing.py defines both). A lane result's `ramfb display timing:`
-record, when present, is summarised beside them, so the exporter's publish cadence and what the window presented read
+record, when present, is summarised beside them, so the exporter's publish cadence and what the window assigned to its layer read
 together. The file is read once through a no-follow descriptor (a missing, linked, irregular or oversized file reads
 as empty). It refuses records whose counters do not reconcile and prints the records with a summary, or with --json
 their fields by prefix.
@@ -80,7 +80,7 @@ def summary(found: dict[str, dict]) -> list[str]:
         f"{d['max_tick_gap_ms']} ms",
         f"display frames: new {d['presented']} ({share(d['presented'], d['ticks'])} of ticks), repeated {d['repeated']}, "
         f"busy {d['busy']}, unmapped {d['unmapped']}, iosurface {d['iosurface']}; first {d['first_frames']}, "
-        f"never shown {d['skipped']}",
+        f"never assigned {d['skipped']}",
         "display holds in vsyncs: " + spread(("1", "2", "3", "4", "5", "6", ">6"), holds),
         "display content age at its target vsync: " + spread(("<=8ms", "<=17ms", "<=33ms", "<=50ms", "<=100ms", ">100ms"), ages)
         + f", unknown {d['age_unknown']}, oldest {d['max_age_us'] / 1000:.3f} ms",

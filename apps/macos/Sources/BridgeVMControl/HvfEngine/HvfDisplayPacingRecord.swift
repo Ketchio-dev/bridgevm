@@ -27,7 +27,7 @@ enum HvfDisplayTick: Equatable {
 ///   that starts a run (the first after the mapping or the display link started, or after an untimed new
 ///   frame) or is untimed has no hold, no age and no skip count; `first_frames` counts those.
 /// - frames the writer published that never reached the layer (BVFB sequence gaps between new frames).
-/// - each new frame's content age: from its BVFB publish time to the vsync it shows at, on the shared
+/// - each new frame's content age: from its BVFB publish time to its target vsync (not actual presentation), on the shared
 ///   CLOCK_UPTIME_RAW timebase; unknown when the writer left no time or it is not before that vsync.
 /// - the longest tick (the app's own copy, image and layer work) and, from HvfMainThreadStalls, the main
 ///   run loop's busy stretches over 50 ms.

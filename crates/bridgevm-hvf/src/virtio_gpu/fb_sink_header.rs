@@ -6,7 +6,7 @@
 //! pixels and before the closing even sequence, so a reader that takes the
 //! frame under the seqlock takes its time with it. The app's display link
 //! (`CACurrentMediaTime`) and its frame requests use the same clock, so the
-//! app can tell how old a frame is when it presents it (the `app display
+//! app can tell a frame’s age at its target vsync (the `app display
 //! pacing:` record). Readers from before the word ignore bytes 48..56, and a
 //! writer from before it leaves them 0, which readers take as unknown. Every
 //! writer of the file stamps its frames, so a time left by an earlier writer

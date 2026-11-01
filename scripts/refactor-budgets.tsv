@@ -5158,3 +5158,9 @@ scripts/live-gates/hvf_app_pacing.py	121	0
 scripts/live-gates/app_pacing_diagnostics.py	124	0
 tests/integration/app-pacing-diagnostics-test.py	196	0
 tests/integration/product-e2e-lane-app-pacing-test.py	103	0
+docs/history/windows-hvf/display-pacing-integration-20261101.md	40	0
+docs/document-manifests/display-pacing-integration-20261101.tsv	2	0
+apps/macos/Sources/BridgeVMProductE2E/T17AppPacingFile.swift	32	0
+apps/macos/Tests/BridgeVMProductE2ESwiftTests/T17AppPacingFileTests.swift	55	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSessionInputDriverObservation.swift	11	0
+apps/macos/Tests/BridgeVMControlSwiftTests/HvfInputBindingDiscardRecordTests.swift	52	0

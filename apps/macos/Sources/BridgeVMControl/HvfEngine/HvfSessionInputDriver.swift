@@ -11,16 +11,14 @@ final class HvfSessionInputDriver {
     private(set) var router = HvfSessionInputRouter()
     private(set) var textInputGeneration = UUID()
     private var timer: Timer?
-
     deinit { timer?.invalidate() }
-
     func beginOwnedBoot(binding: [String]) { restart(); router.beginOwnedBoot(binding: binding) }
     func attachUnknown(binding: [String]) { restart(); router.attachUnknown(binding: binding) }
     private func restart() { textInputGeneration = UUID(); timer?.invalidate(); timer = nil }
-
     /// Only legacy admission allows the caller to use the legacy input path.
     func route(_ event: HvfOrderedInputQueue.Event, binding: [String]) -> HvfNegotiatedInputStream.Admission {
-        let held = router.count, admission = router.route(event, binding: binding, now: Date())
+        let held = router.count; defer { observeBindingDiscard(held: held) }
+        let admission = router.route(event, binding: binding, now: Date())
         onAdmission?(admission, held, router.count)
         switch admission {
         case .legacy: break
@@ -32,8 +30,10 @@ final class HvfSessionInputDriver {
         }
         return admission
     }
-
-    func allowLegacyWrite(binding: [String]) -> Bool { router.allowLegacyWrite(binding: binding) }
+    func allowLegacyWrite(binding: [String]) -> Bool {
+        let held = router.count; defer { observeBindingDiscard(held: held) }
+        return router.allowLegacyWrite(binding: binding)
+    }
 
     func cancelTarget() {
         textInputGeneration = UUID()
@@ -44,7 +44,7 @@ final class HvfSessionInputDriver {
     }
 
     func poll(binding: [String], serviceReady: Bool, lines: [String], send: (String) -> Bool) {
-        let previous = router.state
+        let previous = router.state, held = router.count; defer { observeBindingDiscard(held: held) }
         var update = router.pollBatch(binding: binding, serviceReady: serviceReady, lines: lines, now: Date(), send: send)
         if case .inserted = update {
             onUpdate?(update)

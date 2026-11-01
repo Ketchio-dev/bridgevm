@@ -123,3 +123,4 @@ HANDOFF.md	historical-evidence	project-status	STATUS.md
 @include	docs/document-manifests/followups-r2-r7-20261024.tsv	-	-
 @include	docs/document-manifests/platform-lock-holds-20261025.tsv	-	-
 @include	docs/document-manifests/autonomy-integration-20261025.tsv	-	-
+@include	docs/document-manifests/display-pacing-integration-20261101.tsv	-	-

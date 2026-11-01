@@ -86,10 +86,7 @@ enum T17FirstRunAppPacing {
 
     /// A regular, unlinked file of at most `limit` bytes.
     private static func contents(_ url: URL) -> Data? {
-        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
-              values.isRegularFile == true, values.isSymbolicLink != true, (values.fileSize ?? .max) <= limit,
-              let data = try? Data(contentsOf: url), data.count <= limit else { return nil }
-        return data
+        T17AppPacingFile.read(url, limit: limit)
     }
 
     private static func version(of url: URL) -> Version? {

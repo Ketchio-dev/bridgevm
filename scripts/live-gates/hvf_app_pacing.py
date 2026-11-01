@@ -1,11 +1,11 @@
-"""The app's own pacing records: what its live display window presented and how its ordered input route kept up.
+"""The app's own pacing records: what its live display window assigned to its layer and how its ordered input route kept up.
 
 As a runtime session it observed ends, the app (apps/macos/Sources/BridgeVMControl/HvfEngine/HvfAppPacingRecords.swift)
 replaces app-pacing.log in that session's evidence directory with two lines, `app display pacing:`
 (HvfDisplayPacingRecord.swift) and `app ordered input:` (HvfOrderedInputRecord.swift), whose fields are unsigned
 decimals without leading zeros. The display record counts display-link ticks by outcome, the display's frame period,
 skipped vsyncs, each new frame's hold in vsyncs and its content age from the BVFB publish time to the display link's
-target vsync (where the frame shows unless Core Animation misses that vsync, which nothing here can see), frames that
+target vsync (actual presentation and missed Core Animation deadlines are unobserved), frames that
 never reached the layer, the longest tick and the main thread's stalls over 50 ms. The input record counts
 admissions, queue depth, coalesced pointer moves and send-to-receipt round trips. Buckets hold a value at most their
 bound in the unit printed. The T17 journey keeps its first run's file, whose records join the private lane result
@@ -37,7 +37,6 @@ AGE_BOUNDS_US = (8_000, 17_000, 33_000, 50_000, 100_000)
 DEPTH_BOUNDS = (1, 2, 4, 16)
 RTT_BOUNDS_MS = (10, 20, 50, 100, 250)
 STALL_MS = 50
-# The file holds two lines of under 1 KiB; anything larger is not one the app wrote.
 FILE_LIMIT = 64 * 1024
 
 
@@ -87,9 +86,10 @@ def checks(prefix: str, v: dict) -> tuple[tuple[bool, str], ...]:
             (fits(rtts, v["max_rtt_ms"], RTT_BOUNDS_MS), "the longest round trip is outside its bucket"))
 
 
-def reconcile(prefix: str, v: dict) -> dict:
+def reconcile(prefix: str, v: object) -> dict:
     """`v` when every field is an unsigned 64-bit integer and every counter agrees, else PacingError."""
-    if set(v) != set(RECORDS[prefix]) or not all(type(value) is int and 0 <= value < 1 << 64 for value in v.values()):
+    if (not isinstance(v, dict) or set(v) != set(RECORDS[prefix])
+            or not all(type(value) is int and 0 <= value < 1 << 64 for value in v.values())):
         raise PacingError(f"{prefix} record is malformed")
     for holds, reason in checks(prefix, v):
         if not holds:
