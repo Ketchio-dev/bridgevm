@@ -5228,3 +5228,5 @@ docs/document-manifests/owned-force-stop-20261102.tsv	2	0
 docs/history/windows-hvf/owned-force-stop-20261102.md	28	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_guest_decode.rs	27	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_guest_strict_tests.rs	73	0
+docs/history/windows-hvf/strict-guest-clipboard-20261102.md	23	0
+docs/document-manifests/strict-guest-clipboard-20261102.tsv	2	0

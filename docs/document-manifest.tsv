@@ -133,3 +133,4 @@ HANDOFF.md	historical-evidence	project-status	STATUS.md
 @include	docs/document-manifests/agent-host-work-unlocked-20261102.tsv	-	-
 @include	docs/document-manifests/live-input-host-phase-20261102.tsv	-	-
 @include	docs/document-manifests/owned-force-stop-20261102.tsv	-	-
+@include	docs/document-manifests/strict-guest-clipboard-20261102.tsv	-	-
