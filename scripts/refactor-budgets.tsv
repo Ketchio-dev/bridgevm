@@ -879,10 +879,10 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_export.rs	116	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_export_tests.rs	231	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_thread.rs	143	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_thread_tests.rs	331	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file.rs	36	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file/checked_access.rs	55	3
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file.rs	29	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file/checked_access.rs	38	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/identity_tests.rs	190	4
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input.rs	414	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input.rs	346	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/line_frames.rs	89	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/key_actions.rs	99	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input_clock_tests/mod.rs	0	0
@@ -5188,3 +5188,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_limit_tests.rs	79	
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_limits.rs	28	0
 docs/document-manifests/share-listing-bounds-20261101.tsv	2	0
 docs/history/windows-hvf/share-listing-bounds-20261101.md	29	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file/access.rs	26	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file/exclusive_lock.rs	19	2
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/device_apply.rs	81	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/host_prepare_tests.rs	133	0

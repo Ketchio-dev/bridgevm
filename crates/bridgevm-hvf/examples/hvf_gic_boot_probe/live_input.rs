@@ -3,8 +3,6 @@ use std::time::{Duration, Instant};
 
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::platform_virt::VirtPlatform;
-use bridgevm_hvf::xhci::{XhciPointerInputQueueError, XhciSetupInputQueueError};
-use crate::xhci_hid_input::parse_pointer_input_actions;
 #[path = "input_control_file.rs"]
 mod input_control_file;
 pub(crate) use input_control_file::InputControlFile;
@@ -13,23 +11,28 @@ const MAX_PENDING_COMMANDS: usize = 64;
 use line_frames::MAX_COMMAND_BYTES;
 const MAX_READ_BYTES_PER_TICK: u64 = 1024 * 1024;
 const COMPACT_AFTER_BYTES: u64 = 1024 * 1024;
+#[cfg(test)]
+#[path = "live_input/backpressure_tests.rs"]
+mod backpressure_tests;
+#[path = "live_input/control_reader.rs"]
+mod control_reader;
+#[path = "live_input/device_apply.rs"]
+mod device_apply;
+#[cfg(test)]
+#[path = "live_input/host_prepare_tests.rs"]
+mod host_prepare_tests;
+#[cfg(test)]
+#[path = "live_input/identity_tests.rs"]
+mod identity_tests;
 #[path = "live_input/key_actions.rs"]
 mod key_actions;
 #[path = "live_input/line_frames.rs"]
 mod line_frames;
-#[path = "live_input/control_reader.rs"]
-mod control_reader;
-#[path = "live_input/restart_resume.rs"]
-mod restart_resume;
-#[cfg(test)]
-#[path = "live_input/backpressure_tests.rs"]
-mod backpressure_tests;
-#[cfg(test)]
-#[path = "live_input/identity_tests.rs"]
-mod identity_tests;
 #[cfg(test)]
 #[path = "live_input/restart_replay_tests.rs"]
 mod restart_replay_tests;
+#[path = "live_input/restart_resume.rs"]
+mod restart_resume;
 enum LiveInputCommand {
     Key(String),
     Pointer(String),
@@ -43,8 +46,11 @@ impl std::fmt::Debug for LiveInputCommand {
             // Diagnostics must never persist typed text or individual keys.
             Self::Key(_) => f.write_str("Key(<redacted>)"),
             Self::Pointer(value) => f.debug_tuple("Pointer").field(value).finish(),
-            Self::Resize { width, height } => f.debug_struct("Resize")
-                .field("width", width).field("height", height).finish(),
+            Self::Resize { width, height } => f
+                .debug_struct("Resize")
+                .field("width", width)
+                .field("height", height)
+                .finish(),
             Self::Snapshot(label) => f.debug_tuple("Snapshot").field(label).finish(),
         }
     }
@@ -83,7 +89,9 @@ impl LiveInputController {
         }
     }
 
-    pub fn poll_due(&self, now: Instant) -> bool { self.source.is_some() && now >= self.next_poll }
+    pub fn poll_due(&self, now: Instant) -> bool {
+        self.source.is_some() && now >= self.next_poll
+    }
 
     pub fn tick(
         &mut self,
@@ -92,78 +100,20 @@ impl LiveInputController {
         now: Instant,
         event_wake: bool,
     ) {
+        if self.prepare_tick(now, event_wake) {
+            self.apply_pending(platform, mem, now);
+        }
+    }
+
+    /// Read and queue host input without a platform or guest-memory borrow.
+    /// A busy writer defers only this read; already queued device work can run.
+    pub fn prepare_tick(&mut self, now: Instant, event_wake: bool) -> bool {
         if !event_wake && !self.poll_due(now) {
-            return;
+            return false;
         }
         self.next_poll = now + POLL_INTERVAL;
         self.read_new_commands();
-        let Some(command) = self.pending.front() else {
-            return;
-        };
-        platform.set_host_now(now);
-        let result = match command {
-            LiveInputCommand::Key(value) => match key_actions::parse(value) {
-                Ok(actions) => platform
-                    .queue_xhci_setup_input_actions_with_mem(&actions, mem)
-                    .map(|()| true)
-                    .map_err(|error| matches!(error, XhciSetupInputQueueError::Busy)),
-                Err(error) => {
-                    eprintln!("live input rejected: kind=key parse_error={}", error);
-                    Ok(false)
-                }
-            },
-            LiveInputCommand::Pointer(value) => match parse_pointer_input_actions(value) {
-                Ok(actions) => {
-                    platform.queue_xhci_pointer_input_actions_with_mem(&actions, mem) }
-                    .map(|()| true)
-                    .map_err(|error| matches!(error, XhciPointerInputQueueError::Busy)),
-                Err(error) => {
-                    eprintln!(
-                        "live input rejected: kind=pointer parse_error={}",
-                        error.name()
-                    );
-                    Ok(false)
-                }
-            },
-            LiveInputCommand::Resize { width, height } => {
-                if platform.request_virtio_gpu_resolution(*width, *height) {
-                    println!("live input accepted: resize={width}x{height}");
-                } else {
-                    eprintln!(
-                        "live input rejected: kind=resize {width}x{height} (no-op/no-gpu/out-of-range)"
-                    );
-                }
-                Ok(false)
-            }
-            LiveInputCommand::Snapshot(label) => {
-                crate::ramfb_dump::print_checkpoint_for_platform(label, platform, mem);
-                println!("live input accepted: snapshot={label:?}");
-                Ok(false)
-            }
-        };
-        match result {
-            Ok(accepted) => {
-                if accepted {
-                    if command.is_pointer_move() {
-                        self.accepted_pointer_moves = self.accepted_pointer_moves.saturating_add(1);
-                        if self.accepted_pointer_moves % 1024 == 0 {
-                            println!(
-                                "live input accepted: kind=pointer_move total={}",
-                                self.accepted_pointer_moves
-                            );
-                        }
-                    } else {
-                        println!("live input accepted: command={command:?}");
-                    }
-                }
-                self.pending.pop_front();
-            }
-            Err(true) => {}
-            Err(false) => {
-                eprintln!("live input rejected: command={command:?} queue_error=invalid");
-                self.pending.pop_front();
-            }
-        }
+        true
     }
 
     fn read_new_commands(&mut self) {
@@ -173,10 +123,9 @@ impl LiveInputController {
         let Some(mut source) = self.source.take() else {
             return;
         };
-        let _ = source.with_exclusive(|file| self.read_new_commands_locked(file));
+        let _ = source.try_with_exclusive(|file| self.read_new_commands_locked(file));
         self.source = Some(source);
     }
-
 
     fn push_line(&mut self, line: &str) {
         if line.is_empty() || line.len() > MAX_COMMAND_BYTES {
@@ -260,8 +209,14 @@ mod tests {
 
     #[test]
     fn key_diagnostics_redact_payloads_for_all_debug_formats() {
-        for value in ["text:private-input", "text-hex:736563726574", "a", "ctrl+v",
-                      "text:line\nbreak", "malformed-private-input"] {
+        for value in [
+            "text:private-input",
+            "text-hex:736563726574",
+            "a",
+            "ctrl+v",
+            "text:line\nbreak",
+            "malformed-private-input",
+        ] {
             let command = LiveInputCommand::Key(value.into());
             assert_eq!(format!("{command:?}"), "Key(<redacted>)");
             assert_eq!(format!("{command:#?}"), "Key(<redacted>)");
@@ -271,7 +226,8 @@ mod tests {
     #[test]
     fn live_input_accepts_only_bounded_typed_commands() {
         let mut input = controller();
-        input.source = Some(InputControlFile::from_path(PathBuf::from("input.ctl"))); input.push_line("KEY text:abc123");
+        input.source = Some(InputControlFile::from_path(PathBuf::from("input.ctl")));
+        input.push_line("KEY text:abc123");
         input.push_line("POINTER click:100x200");
         input.push_line("UNKNOWN anything");
         assert_eq!(input.pending.len(), 2);
