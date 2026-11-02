@@ -131,3 +131,5 @@ HANDOFF.md	historical-evidence	project-status	STATUS.md
 @include	docs/document-manifests/data-and-runtime-20261102.tsv	-	-
 @include	docs/document-manifests/guest-destination-identity-20261102.tsv	-	-
 @include	docs/document-manifests/input-host-msrv-fixture-20261102.tsv	-	-
+@include	docs/document-manifests/host-file-snapshot-20261102.tsv	-	-
+@include	docs/document-manifests/ramfb-publication-measurement-20261102.tsv	-	-

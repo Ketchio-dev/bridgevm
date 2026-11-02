@@ -5277,3 +5277,7 @@ docs/history/windows-hvf/input-host-msrv-fixture-20261102.md	20	0
 docs/document-manifests/input-host-msrv-fixture-20261102.tsv	2	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_request_measurement.rs	55	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_test_receipt.rs	7	0
+docs/history/windows-hvf/host-file-snapshot-20261102.md	29	0
+docs/document-manifests/host-file-snapshot-20261102.tsv	2	0
+docs/history/windows-hvf/ramfb-publication-measurement-20261102.md	27	0
+docs/document-manifests/ramfb-publication-measurement-20261102.tsv	2	0
