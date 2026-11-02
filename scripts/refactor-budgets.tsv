@@ -842,7 +842,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/config.rs	28	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/control_file.rs	17	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/harness_protocol.rs	500	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs	133	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	455	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	400	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/service_wake.rs	45	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share.rs	130	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_put.rs	258	0
@@ -4180,7 +4180,7 @@ tests/integration/t22-retained-request-contract.py	67	0
 tests/integration/live-installer-launch-contract.py	112	0
 docs/history/windows-hvf/live-worker-ssd-launch-20261007.md	45	0
 docs/document-manifests/live-worker-ssd-launch.tsv	3	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_tests.rs	334	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_tests.rs	314	0
 docs/history/windows-hvf/native-vmm-share-sync-hardening-20261007.md	67	0
 docs/document-manifests/native-vmm-share-sync-hardening.tsv	3	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_write.rs	58	0
@@ -4188,7 +4188,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/host_destina
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/host_destination_tests.rs	120	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_failure_tests.rs	31	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_skip.rs	32	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing.rs	35	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing.rs	19	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_failure_budget_tests.rs	27	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_failure_tests.rs	63	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_change.rs	58	0
@@ -4927,8 +4927,8 @@ scripts/live-gates/stop_signals.py	28	0
 tests/integration/t17_lane_key_forget_signal_cases.py	84	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_name_refusals.rs	44	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_hash.rs	8	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_report.rs	34	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_report_tests.rs	88	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_report.rs	23	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_report_tests.rs	70	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_size_cap.rs	42	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_cap_tests.rs	105	0
 docs/history/windows-hvf/agent-channel-and-live-gate-hygiene-20261023.md	116	0
@@ -5183,3 +5183,13 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferRequestLease.swift	31
 apps/macos/Tests/BridgeVMControlSwiftTests/HvfFramebufferRequestLeaseTests.swift	60	0
 docs/document-manifests/framebuffer-request-backing-20261102.tsv	2	0
 docs/history/windows-hvf/framebuffer-request-backing-20261102.md	26	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/service_queue.rs	19	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/service_queue_tests.rs	75	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_reply.rs	89	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_reply_tests.rs	57	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_report_count_tests.rs	23	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_entries.rs	28	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_limit_tests.rs	79	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_limits.rs	28	0
+docs/document-manifests/share-listing-bounds-20261101.tsv	2	0
+docs/history/windows-hvf/share-listing-bounds-20261101.md	29	0

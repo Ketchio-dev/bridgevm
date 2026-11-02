@@ -3,6 +3,8 @@
 use super::*;
 #[path = "share_name_limit_tests.rs"]
 mod name_limit_tests;
+#[path = "share_listing_limit_tests.rs"]
+mod listing_limit_tests;
 
 fn ls_file(name: &str, size: u64, mtime: &str) -> LsEntry {
     LsEntry {
@@ -36,26 +38,6 @@ fn parse_ls_handles_lines_empty_pipe_names_and_normalizes_guest_rels() {
     assert_eq!(entries[1].name, "sub/dir");
     assert!(entries[1].is_dir);
     assert_eq!(entries[2].name, "sub/odd|name.txt");
-}
-
-#[test]
-fn parse_ls_into_reuses_output_vec_and_clears_old_entries() {
-    let mut entries = Vec::with_capacity(4);
-    entries.push(ls_file("old.txt", 1, "old"));
-    let capacity = entries.capacity();
-
-    parse_ls_into(
-        "a.txt|3|0|2026-01-01T00:00:00.0000000Z\n\
-         malformed\n\
-         sub\\dir|0|1|2026-01-01T00:00:01.0000000Z\n",
-        &mut entries,
-    );
-
-    assert_eq!(entries.capacity(), capacity);
-    assert_eq!(entries.len(), 2);
-    assert_eq!(entries[0].name, "a.txt");
-    assert_eq!(entries[1].name, "sub/dir");
-    assert!(entries[1].is_dir);
 }
 
 #[test]
