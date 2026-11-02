@@ -149,7 +149,7 @@ final class HvfClipboardSyncPreferenceSaveTests: XCTestCase {
         defer { fixture.clean() }
         let library = fixture.library()
         let session = library.experimentalHvfRuntimeSession()
-        XCTAssertFalse(session.persistsClipboardSyncPreference)
+        XCTAssertFalse(session.persistsLibraryPreferences)
         session.connectionState = .booting
         XCTAssertFalse(HvfClipboardSyncToggle(session: session, isOn: .constant(true)).isDisabled)
         XCTAssertNil(session.saveClipboardSyncPreference(false))

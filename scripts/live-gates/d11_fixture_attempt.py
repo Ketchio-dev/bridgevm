@@ -4,7 +4,7 @@ from d11_fixture_files import record
 from d11_fixture_inputs import Inputs
 from d11_fixture_queue_inputs import bound, create_output
 from d11_fixture_receipt import empty, collect
-from d11_fixture_runtime import execute
+from d11_fixture_runtime import FixtureInterrupted, execute
 from t22_pair_queue import require_source
 
 def run(directory, root, commit, manifest, binary):
@@ -19,7 +19,7 @@ def run(directory, root, commit, manifest, binary):
             inputs.check()
         require_source(root, commit)
         value = collect(directory, commit)
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except (OSError, ValueError, subprocess.SubprocessError, FixtureInterrupted):
         record(directory / "d11-refusal.private.json", {"reason": "admission-or-integrity-refused"})
         value = empty(binding, "cleanup-unproved")
     record(directory / "receipt.json", value)

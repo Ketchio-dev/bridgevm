@@ -16,9 +16,9 @@ from t22_pair_boot import boot_command
 from t22_pair_launch import OwnedLaunch
 
 
+class PairPreparationInterrupted(RuntimeError): """Not an OSError: subprocess wait helpers may swallow those."""
 def interrupt(signum, frame):
-    raise InterruptedError("owned pair preparation interrupted")
-
+    raise PairPreparationInterrupted("owned pair preparation interrupted")
 
 
 def execute(rows, manifest, data, documents, output, receipt):

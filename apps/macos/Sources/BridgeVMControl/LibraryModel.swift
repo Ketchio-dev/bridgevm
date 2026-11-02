@@ -13,6 +13,7 @@ final class LibraryModel: ObservableObject {
     @Published var pendingDeletion: VMConfig?
     @Published var pendingWindowsClone: VMConfig?
     @Published var deletionError: String?
+    @Published var deletionWarning: String?
     @Published var cloneError: String?
     @Published var moveError: String?
     @Published var operationError: String?
@@ -27,6 +28,7 @@ final class LibraryModel: ObservableObject {
     let e2eHostDiagnosticStopAdmitted: Bool
     private let modelFactory: @MainActor (VMConfig) -> ControlModel
     private let actionScheduler: LibraryActionScheduler
+    private let deletionOperation: LibraryDeletionOperation
     let windowsInstallSessions: HvfWindowsInstallSessionStore
     let hvfRuntimeSessions: HvfRuntimeSessionStore
     let retainedControlStore = LibraryRetainedControlStore()
@@ -44,13 +46,14 @@ final class LibraryModel: ObservableObject {
         runtimeSessionFactory: @escaping HvfRuntimeSessionStore.Factory = { HvfEngineSession(config: $0) },
         installPreparation: HvfWindowsInstallPreparationOptions = .init(),
         actionScheduler: @escaping LibraryActionScheduler = { job in _ = Task.detached(operation: job) },
+        deletionOperation: @escaping LibraryDeletionOperation = LibraryDeletionKeyArchive.live,
         startsModelsAutomatically: Bool = true,
         modelFactory: (@MainActor (VMConfig) -> ControlModel)? = nil
     ) {
         libraryRoot = rootURL
         self.e2eUnattendedPath = e2eUnattendedPath
         self.e2eHostDiagnosticStopAdmitted = e2eHostDiagnosticStopAdmitted && e2eUnattendedPath != nil
-        self.actionScheduler = actionScheduler
+        self.actionScheduler = actionScheduler; self.deletionOperation = deletionOperation
         self.modelFactory = modelFactory ?? LibraryControlModelFactory.make(
             rootURL: rootURL, startsAutomatically: startsModelsAutomatically)
         windowsInstallSessions = HvfWindowsInstallSessionStore(
@@ -86,15 +89,13 @@ final class LibraryModel: ObservableObject {
         guard admitLibraryAction(cfg, action: .deletion), !deletingSlugs.contains(slug) else { return }
         deletingSlugs.insert(slug)
         let backend = modelCache[slug]?.backend ?? cfg.makeBackend(libraryRoot: libraryRoot)
-        let root = libraryRoot
+        let root = libraryRoot, deletion = deletionOperation
         actionScheduler {
-            let outcome = LibraryDeletionAction.perform(isRunning: backend.isRunning) {
-                LibraryDeletionProtection.delete(cfg, rootURL: root)
-            }
+            let result = deletion(cfg, root, backend.isRunning)
             await MainActor.run {
                 self.deletingSlugs.remove(slug)
-                if outcome == .deleted { self.modelCache[slug] = nil; self.reload(); return }
-                self.deletionError = outcome == .running
+                if result.outcome == .deleted { self.modelCache[slug] = nil; self.deletionWarning = result.warning ?? self.deletionWarning; self.reload(); return }
+                self.deletionError = result.outcome == .running
                     ? "\(cfg.name)은(는) 실행 중이므로 삭제하지 않았습니다. 제어 화면에서 완전히 중지한 뒤 다시 시도하세요."
                     : LibraryDeletionReferences.failureMessage(for: cfg, rootURL: root)
             }
@@ -104,8 +105,7 @@ final class LibraryModel: ObservableObject {
     func cloneWindowsHVF(_ cfg: VMConfig, name: String,
                          operation: @escaping LibraryCloneOperation = { HvfProtectedTransfers.clone(name: $0, template: $1, libraryRoot: $2) }) {
         pendingWindowsClone = nil
-        guard admitLibraryAction(cfg, action: .clone) else { return }
-        guard !cloningSlugs.contains(cfg.slug) else { return }
+        guard admitLibraryAction(cfg, action: .clone), !cloningSlugs.contains(cfg.slug) else { return }
         let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         guard !backend.isRunning() else {
             cloneError = "실행 중인 VM은 복제할 수 없습니다. 먼저 완전히 정지하세요."
