@@ -6,6 +6,9 @@
 use super::*;
 use crate::agent_console::share::share_listing_report::refused_name_lines;
 
+#[path = "share_listing_report_count_tests.rs"]
+mod count_tests;
+
 /// A guest-form name of `bytes` bytes: ten 99-byte folders, then a file name.
 fn long_path(bytes: usize) -> String {
     format!("{}\\", "d".repeat(99)).repeat(10) + &"f".repeat(bytes - 1000)
@@ -21,7 +24,7 @@ fn listing(names: &[String]) -> String {
 /// Parse `listing` as the resident service does; return its entries and report lines.
 fn report(engine: &mut ShareSync, listing: &str) -> (Vec<String>, Vec<String>) {
     let mut entries = Vec::new();
-    let refused = share_sync::parse_ls_into(listing, &mut entries);
+    let refused = share_sync::parse_ls_into(listing, &mut entries).unwrap();
     let names = entries.into_iter().map(|entry| entry.name).collect();
     (names, refused_name_lines(engine, &refused))
 }
@@ -50,25 +53,6 @@ fn refused_names_are_reported_by_reason_and_byte_length_only() {
             // The `..` name is refused as before, but not as a host-limit name.
             "BVAGENT SHARE skip <guest-names> over-host-limits 4",
         ]
-    );
-}
-
-#[test]
-fn a_hostile_listing_gets_a_few_lines_and_one_count_line() {
-    let mut engine = ShareSync::new(1024);
-    let names: Vec<String> = (0..10_000).map(|i| long_path(1024 + i % 50)).collect();
-    let (synced, lines) = report(&mut engine, &listing(&names));
-    assert!(synced.is_empty());
-    assert_eq!(lines.len(), 4, "{lines:?}");
-    assert_eq!(
-        lines[3],
-        "BVAGENT SHARE skip <guest-names> over-host-limits 10000"
-    );
-    assert!(
-        lines
-            .iter()
-            .all(|line| line.len() < 64 && !line.contains("ddd")),
-        "{lines:?}"
     );
 }
 

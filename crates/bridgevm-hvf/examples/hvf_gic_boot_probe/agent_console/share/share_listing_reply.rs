@@ -1,0 +1,93 @@
+//! Bounded guest directory snapshots; a refused snapshot never implies deletion.
+
+use super::share_listing_report::refused_name_lines;
+use super::*;
+
+impl AgentConsoleHarness {
+    pub(in crate::agent_console) fn handle_share_listing_reply(&mut self, line: &str) {
+        if let Some(b64) = line.strip_prefix("LSOK ") {
+            self.apply_share_listing(b64);
+            self.complete_in_flight();
+        } else if line.starts_with("ERR") {
+            println!("BVAGENT SHARE ls-error {line}");
+            self.complete_in_flight();
+        } else if parse_out_line(line).is_some_and(|(exit, _)| exit == 255) {
+            if !self.share_old_agent_warned {
+                println!("BVAGENT SHARE agent-too-old (needs v3-share2); share disabled");
+                self.share_old_agent_warned = true;
+            }
+            self.share = None;
+            self.queue.retain(|req| !is_share_req(req));
+            self.complete_in_flight();
+        }
+    }
+
+    fn apply_share_listing(&mut self, b64: &str) {
+        let max_encoded = share_sync::MAX_LISTING_BYTES.div_ceil(3) * 4;
+        if b64.len() > max_encoded {
+            println!(
+                "BVAGENT SHARE ls-error <listing-encoded-limit bytes={} limit={max_encoded}>",
+                b64.len()
+            );
+            return;
+        }
+        let bytes = match base64_decode(b64) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                println!("BVAGENT SHARE ls-error <base64 decode error: {error:?}>");
+                return;
+            }
+        };
+        if bytes.len() > share_sync::MAX_LISTING_BYTES {
+            report_listing_limit(share_sync::ListingLimitError::TooManyBytes {
+                bytes: bytes.len(),
+            });
+            return;
+        }
+        let listing = match std::str::from_utf8(&bytes) {
+            Ok(listing) => listing,
+            Err(_) => {
+                println!("BVAGENT SHARE ls-error <listing-invalid-utf8>");
+                return;
+            }
+        };
+        let Some(share) = self.share.as_mut() else {
+            return;
+        };
+        let refused = match share_sync::parse_ls_into(listing, &mut share.guest_ls_scratch) {
+            Ok(refused) => refused,
+            Err(error) => {
+                report_listing_limit(error);
+                return;
+            }
+        };
+        for line in refused_name_lines(&mut share.engine, &refused) {
+            println!("{line}");
+        }
+        let actions = share
+            .engine
+            .on_guest_listing_normalized(share.guest_ls_scratch.drain(..));
+        for action in actions {
+            match action {
+                SyncAction::Get { name } => self.queue.push_back(ServiceReq::ShareGet { name }),
+                SyncAction::DeleteHost { name } => self.queue.push_back(ServiceReq::ShareDel {
+                    name,
+                    direction: ShareDelDirection::GuestToHost,
+                }),
+                SyncAction::DeleteGuest { name } => self.queue.push_back(ServiceReq::ShareDel {
+                    name,
+                    direction: ShareDelDirection::HostToGuest,
+                }),
+                SyncAction::Skip { name, reason } => print_share_skip(&name, reason),
+            }
+        }
+    }
+}
+
+fn report_listing_limit(error: share_sync::ListingLimitError) {
+    let limit = match error {
+        share_sync::ListingLimitError::TooManyBytes { .. } => share_sync::MAX_LISTING_BYTES,
+        share_sync::ListingLimitError::TooManyEntries { .. } => share_sync::MAX_LISTING_ENTRIES,
+    };
+    println!("BVAGENT SHARE ls-error <listing-limit {error:?} limit={limit}>");
+}

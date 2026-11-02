@@ -305,6 +305,9 @@ mod share_write_failures;
 #[cfg(test)]
 use share_listing::parse_ls;
 pub use share_listing::parse_ls_into;
+pub use share_listing::ListingLimitError;
+pub use share_listing::MAX_LISTING_BYTES;
+pub use share_listing::MAX_LISTING_ENTRIES;
 
 #[cfg(test)]
 #[path = "share_sync_tests.rs"]
