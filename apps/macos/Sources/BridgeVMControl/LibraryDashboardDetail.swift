@@ -193,7 +193,10 @@ struct LibraryDashboardDetail: View {
             : String(format: "%.1f GiB", model.memGiB)
     }
 
-    private var displayText: String { "\(config.displayWidth) × \(config.displayHeight)" }
+    private var displayText: String {
+        config.engineKind == .hvfEngine
+            ? "게스트 화면 기준" : "\(config.displayWidth) × \(config.displayHeight)"
+    }
 
     private var heroColors: [Color] {
         config.engineKind == .hvfEngine

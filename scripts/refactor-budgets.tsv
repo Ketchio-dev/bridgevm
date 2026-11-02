@@ -2539,7 +2539,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfConnectionState.swift	7	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfKeyboardDraft.swift	12	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeKeyboardDraftFixture.swift	122	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeKeyboardDraftTests.swift	179	0
-apps/macos/Sources/BridgeVMControl/CreateVMSheet.swift	293	0
+apps/macos/Sources/BridgeVMControl/CreateVMSheet.swift	286	0
 apps/macos/Sources/BridgeVMControl/LibraryAppearance.swift	54	0
 apps/macos/Sources/BridgeVMControl/LibrarySidebarChrome.swift	56	0
 apps/macos/Sources/BridgeVMControl/LibraryVMCard.swift	80	0
@@ -5230,3 +5230,4 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_guest_decode.
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_guest_strict_tests.rs	73	0
 docs/history/windows-hvf/strict-guest-clipboard-20261102.md	23	0
 docs/document-manifests/strict-guest-clipboard-20261102.tsv	2	0
+apps/macos/Sources/BridgeVMControl/CreateVMResolutionRow.swift	24	0

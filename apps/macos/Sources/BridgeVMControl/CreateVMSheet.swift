@@ -165,15 +165,8 @@ struct CreateVMSheet: View {
                 }
             }
 
-            HStack {
-                Text("해상도").frame(width: 64, alignment: .leading)
-                Picker("해상도", selection: $resIndex) {
-                    ForEach(0..<resolutions.count, id: \.self) { i in
-                        Text("\(resolutions[i].0)×\(resolutions[i].1)").tag(i)
-                    }
-                }.labelsHidden().frame(width: 150)
-                Spacer()
-            }
+            CreateVMResolutionRow(usesGuestScreen: isHVFWindows,
+                                  selection: $resIndex, resolutions: resolutions)
 
             DisclosureGroup("고급 설정", isExpanded: $showAdvanced) {
                 VStack(alignment: .leading, spacing: 10) {
