@@ -5,6 +5,9 @@
 use super::*;
 use crate::agent_console::host_pasteboard::PasteboardBackend;
 
+#[path = "clip_guest_strict_tests.rs"]
+mod strict_decoding;
+
 const LIMIT: usize = 8 * 1024 * 1024;
 
 /// Answer the next CLIPGET with any payload: the modelled guest holds only
@@ -39,7 +42,7 @@ fn guest_text_of_exactly_8_mib_syncs_untruncated() {
 }
 
 #[test]
-fn invalid_utf8_growing_past_8_mib_is_refused_not_truncated() {
+fn invalid_utf8_is_refused_even_when_replacement_would_fit_8_mib() {
     // Within 8 MiB as bytes; U+FFFD (3 bytes) makes the text 8 MiB + 1.
     let mut bytes = vec![b'a'; LIMIT - 2];
     bytes.push(0xff);
@@ -49,14 +52,12 @@ fn invalid_utf8_growing_past_8_mib_is_refused_not_truncated() {
         rig.mac_sets().is_empty(),
         "lossy text over 8 MiB written to the Mac pasteboard"
     );
-    // Exactly 8 MiB after replacement is still adopted, whole.
+    // Replacement would fit exactly 8 MiB, but the source is still invalid.
     bytes.truncate(LIMIT - 3);
     bytes.push(0xff);
     poll_guest(&mut rig, &base64_encode(&bytes));
-    let sets = rig.mac_sets();
-    assert_eq!(sets.len(), 1);
-    assert_eq!(sets[0].len(), LIMIT);
-    assert!(sets[0].ends_with('\u{fffd}'));
+    assert!(rig.mac_sets().is_empty(), "invalid text was replaced rather than refused");
+    assert_eq!(rig.h.last_synced.refusals.count, 2);
 }
 
 #[test]
@@ -128,9 +129,9 @@ fn oversized_payload_is_refused_by_its_base64_length_before_decoding() {
     // Not base64: decoding would fail and leave nothing to refuse or count.
     poll_guest(&mut rig, &"!".repeat((LIMIT + 3) / 3 * 4));
     assert_eq!(rig.h.last_synced.refusals.count, 1);
-    // A malformed payload within the limit still decodes to nothing.
+    // A malformed payload within the limit is separately refused, not made empty.
     poll_guest(&mut rig, "!!!!");
-    assert_eq!(rig.h.last_synced.refusals.count, 1);
+    assert_eq!(rig.h.last_synced.refusals.count, 2);
     assert!(rig.mac_sets().is_empty());
 }
 
