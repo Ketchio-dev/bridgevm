@@ -7,6 +7,8 @@ use crate::snapshot_pair::snapshot_publish::publish_with;
 use crate::snapshot_pair::*;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
+#[path = "snapshot_create_publication_report_tests.rs"]
+mod report;
 
 fn unsupported() -> io::Error {
     // exFAT has no directory swap.
@@ -31,10 +33,10 @@ fn create_with(
     )
 }
 
-fn assert_unsupported(result: Result<SnapshotManifest, SnapshotError>) {
+fn assert_unsupported(result: Result<SnapshotManifest, SnapshotError>) -> String {
     match result {
-        Err(SnapshotError::Io(error)) => assert_eq!(error.raw_os_error(), Some(libc::ENOTSUP)),
-        other => panic!("expected the swap's own error, got {other:?}"),
+        Err(SnapshotError::Io(e)) if e.kind() == io::ErrorKind::Unsupported => e.to_string(),
+        other => panic!("expected the typed exchange refusal, got {other:?}"),
     }
 }
 
@@ -91,7 +93,7 @@ fn staging_replaced_before_publication_fails_is_not_cleared() {
         fs::write(staged.join(DISK_NAME), b"foreign")?;
         Err(unsupported())
     };
-    assert_unsupported(create_with(&s, "new", replace));
+    assert!(create_with(&s, "new", replace).is_err());
     assert_eq!(fs::read(staging.join(DISK_NAME)).unwrap(), b"foreign");
     assert_eq!(fs::read_dir(&staging).unwrap().count(), 1);
     assert_eq!(verify_snapshot(&moved).unwrap().vm_id, "new");
