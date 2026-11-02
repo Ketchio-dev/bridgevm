@@ -5,6 +5,13 @@ use super::*;
 
 impl AgentConsoleHarness {
     pub(in crate::agent_console) fn enqueue_one_share_host_change(&mut self) -> bool {
+        self.enqueue_one_share_host_change_with(read_share_host_snapshot)
+    }
+
+    pub(in crate::agent_console) fn enqueue_one_share_host_change_with(
+        &mut self,
+        mut read: impl FnMut(&mut ShareState, &str) -> Result<HostSnapshot, ShareFileReadError>,
+    ) -> bool {
         let Some(share) = self.share.as_mut() else {
             return false;
         };
@@ -18,27 +25,15 @@ impl AgentConsoleHarness {
         {
             match action {
                 SyncAction::Get { name } => {
-                    let path = share.host_dir.join(&name);
-                    let bytes = match read_share_file_bounded(&path, share.engine.max_bytes()) {
-                        Ok(bytes) => bytes,
-                        Err(ShareFileReadError::TooLarge(size)) => {
-                            if let Some(mtime_ms) = file_mtime_ms(&path) {
-                                print_host_skip_once(
-                                    share,
-                                    &name,
-                                    mtime_ms,
-                                    HostSkipKind::TooLarge,
-                                    size,
-                                );
-                            }
-                            continue;
-                        }
-                        Err(ShareFileReadError::Io) => continue,
-                    };
-                    let Some(mtime_ms) = file_mtime_ms(&path) else {
+                    let Some(snapshot) = read_share_snapshot_or_skip(share, &name, &mut read)
+                    else {
                         continue;
                     };
-                    if let Some(push) = share.engine.on_host_file(name.clone(), bytes, mtime_ms) {
+                    if let Some(push) =
+                        share
+                            .engine
+                            .on_host_file(name.clone(), snapshot.bytes, snapshot.mtime_ms)
+                    {
                         self.queue
                             .push_back(share_put_req(name, push.bytes, push.hash));
                         return true;

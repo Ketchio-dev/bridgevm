@@ -12,6 +12,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 #[path = "host_destination_open.rs"]
 mod open;
+#[path = "host_destination_snapshot.rs"]
+pub(super) mod snapshot;
 #[path = "guest_write_directory.rs"]
 mod directory;
 #[path = "guest_write_mark.rs"]
@@ -22,7 +24,6 @@ mod policy;
 mod seal_host;
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
-
 pub(super) struct Destination {
     parent: File,
     leaf: CString,

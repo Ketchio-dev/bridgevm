@@ -943,25 +943,6 @@ pub(super) mod tests {
         assert_eq!(bytes.len() as u64, MAX_CTL_READ_BYTES_PER_POLL);
     }
 
-    #[test]
-    fn share_file_read_rejects_oversized_file_before_allocation() {
-        let path = std::env::temp_dir().join(format!(
-            "bvagent-share-bounded-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let file = std::fs::File::create(&path).unwrap();
-        file.set_len(512 * 1024 * 1024).unwrap();
-
-        let error = read_share_file_bounded(&path, 4096).unwrap_err();
-        let _ = std::fs::remove_file(&path);
-
-        assert_eq!(error, ShareFileReadError::TooLarge(512 * 1024 * 1024));
-    }
-
     fn test_share_state(label: &str) -> ShareState {
         let dir =
             std::env::temp_dir().join(format!("bvagent-share-{label}-{}", std::process::id()));

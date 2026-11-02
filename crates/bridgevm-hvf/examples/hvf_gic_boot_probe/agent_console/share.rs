@@ -8,28 +8,6 @@ pub(super) enum ShareFileReadError {
     TooLarge(u64),
 }
 
-pub(super) fn read_share_file_bounded(
-    path: &Path,
-    max_bytes: u64,
-) -> Result<Vec<u8>, ShareFileReadError> {
-    use std::io::Read;
-    let file = std::fs::File::open(path).map_err(|_| ShareFileReadError::Io)?;
-    let size = file.metadata().map_err(|_| ShareFileReadError::Io)?.len();
-    if size > max_bytes {
-        return Err(ShareFileReadError::TooLarge(size));
-    }
-    let capacity = usize::try_from(size).map_err(|_| ShareFileReadError::TooLarge(size))?;
-    let read_limit = max_bytes.checked_add(1).ok_or(ShareFileReadError::Io)?;
-    let mut bytes = Vec::with_capacity(capacity);
-    file.take(read_limit)
-        .read_to_end(&mut bytes)
-        .map_err(|_| ShareFileReadError::Io)?;
-    if bytes.len() as u64 > max_bytes {
-        return Err(ShareFileReadError::TooLarge(bytes.len() as u64));
-    }
-    Ok(bytes)
-}
-
 /// Short label for a service request, used in the stall-timeout print.
 pub(super) fn req_kind(req: &ServiceReq) -> &'static str {
     match req {
@@ -144,6 +122,9 @@ mod guest_write_refusal;
 mod harness_get_end;
 #[path = "share/host_destination.rs"]
 mod host_destination;
+#[path = "share/share_host_snapshot.rs"]
+mod share_host_snapshot;
+pub(super) use share_host_snapshot::*;
 #[path = "share/share_host_change.rs"]
 mod share_host_change;
 #[path = "share/share_host_write.rs"]
