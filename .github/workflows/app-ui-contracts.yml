@@ -1,6 +1,6 @@
 name: App-only native UI diagnostic contracts
 on:
-  push:
+  push: {branches: [main]}
   pull_request:
 permissions:
   contents: read

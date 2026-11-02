@@ -1,6 +1,6 @@
 name: Glyph pixel evidence contracts
 on:
-  push:
+  push: {branches: [main]}
   pull_request:
 permissions:
   contents: read
