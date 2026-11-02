@@ -1,5 +1,5 @@
 name: Guest application input sink contracts
-on: [push, pull_request]
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/test-bvagent-input-sink.ps1', 'scripts/win-assets/bv-input-order-sink.ps1', '.github/workflows/guest-input-sink.yml']}}
 permissions:
   contents: read
 jobs:

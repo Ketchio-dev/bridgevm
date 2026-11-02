@@ -48,6 +48,8 @@ jobs:
           echo "BRIDGEVM_RELEASE_TAG=v$version" >> "$GITHUB_ENV"
 
       - name: Verify the general-preview source boundary
+        env:
+          BRIDGEVM_RELEASE_GATE: "1"
         run: |
           test "$(git rev-parse --is-shallow-repository)" = false
           python3 scripts/render-capability-status.py --check

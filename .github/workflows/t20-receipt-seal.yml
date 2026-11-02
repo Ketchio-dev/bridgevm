@@ -2,7 +2,7 @@ name: T20 receipt and cleanup contracts
 
 on:
   push: {branches: [main]}
-  pull_request:
+  pull_request: {paths: ['docs/windows-arm/evidence/a19-t22-r1-20260925-receipt.json', 'scripts/a19-t22-marker-share.sh', 'scripts/check-a19-contracts.sh', 'scripts/check-t22-pair-*', 'scripts/live-gates/**', 'scripts/verify-native-snapshot-interrupted-restore.sh', 'scripts/verify-windows-product-e2e-receipt.py', 'scripts/win-assets/bv-a19-t22-marker.ps1', 'tests/fixtures/a19*', 'tests/fixtures/t22*', 'tests/integration/a19*', 'tests/integration/hvf-stop-readers-contract.py', 'tests/integration/native-snapshot-restore-*', 'tests/integration/native_snapshot_restore_*', 'tests/integration/t22*', '.github/workflows/t20-receipt-seal.yml']}
   workflow_dispatch:
 
 permissions:

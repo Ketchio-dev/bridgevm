@@ -1,5 +1,5 @@
 name: Unicode input encoding contracts
-on: [push, pull_request]
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/test-bvagent-input-*', 'scripts/test-bvagent-key-*', 'scripts/test-bvagent-unicode-*', 'scripts/win-assets/bv-window-inventory.cs', 'scripts/win-assets/bvagent*', '.github/workflows/unicode-input-contract.yml']}}
 permissions:
   contents: read
 jobs:

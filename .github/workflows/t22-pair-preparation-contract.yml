@@ -2,7 +2,7 @@ name: T22 development pair preparation contracts
 
 on:
   push: {branches: [main]}
-  pull_request:
+  pull_request: {paths: ['scripts/live-gates/t22_pair_query.py', 'scripts/win-assets/bv-t22-pair-admission.ps1', 'tests/integration/t22-pair-admission-powershell-test.ps1', '.github/workflows/t22-pair-preparation-contract.yml']}
   workflow_dispatch:
 
 permissions:

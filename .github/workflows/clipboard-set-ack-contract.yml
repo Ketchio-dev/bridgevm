@@ -1,5 +1,5 @@
 name: Clipboard set acknowledgment contract
-on: [push, pull_request]
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/win-assets/bvagent.ps1', 'tests/integration/clipboard-set-ack-contract.ps1', '.github/workflows/clipboard-set-ack-contract.yml']}}
 permissions:
   contents: read
 jobs:

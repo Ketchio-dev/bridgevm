@@ -1,5 +1,5 @@
 name: Agent channel acknowledgment contract
-on: [push, pull_request, workflow_dispatch]
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/agent-channel-lib.sh', 'scripts/snapshot-restore-*', 'scripts/verify-snapshot-restore-boots.sh', 'scripts/live-gates/bridgevm-live', 'scripts/live-gates/snapshot_restore_inputs.py', 'scripts/live-gates/live-process-cleanup.sh', 'tests/integration/agent-channel-acknowledgment-contract.py', 'tests/integration/firstboot-launcher-liveness-contract.py', 'tests/integration/snapshot-restore-*', '.github/workflows/agent-channel-acknowledgment.yml']}, workflow_dispatch: {}}
 permissions:
   contents: read
 jobs:

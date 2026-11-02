@@ -64,16 +64,8 @@ while IFS=$'\t' read -r path class topic superseded_by extra; do
   fi
 done <<< "$manifest_rows"
 
-# Tracked root documents are classified too. HANDOFF.md is a dated operator
-# record, so leaving it unclassified let its point-in-time numbers read as
-# current. GOAL.md and PLAN.md are deliberately untracked and so cannot be
-# required to appear here.
-while IFS= read -r path; do
-  if ! is_seen "$path"; then
-    echo "unclassified Markdown document: $path" >&2
-    errors=$((errors + 1))
-  fi
-done < <(cd "$ROOT" && { find docs -type f -name '*.md'; git ls-files 'HANDOFF.md'; } | LC_ALL=C sort)
+# Classifying a document is optional since 2026-11-02 (AGENTS.md section 2):
+# unclassified documents are allowed; classified rows must still be valid.
 
 # Relative links must resolve, so a moved or renamed file cannot leave a
 # document pointing at nothing. docs/archive holds point-in-time snapshots whose
