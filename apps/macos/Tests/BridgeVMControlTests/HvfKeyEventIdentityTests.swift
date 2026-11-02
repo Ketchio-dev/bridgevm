@@ -6,12 +6,12 @@ import XCTest
 final class HvfKeyEventIdentityTests: XCTestCase {
     func testControlKeypadEnterNeverBecomesCopyInLegacyDisplay() throws {
         try withDisplay { view, _, fixture in
-            for flags: NSEvent.ModifierFlags in [.control, [.control, .numericPad]] {
+            for (count, flags) in [(1, .control), (2, [.control, .numericPad])] as [(Int, NSEvent.ModifierFlags)] {
                 view.keyDown(with: try keypad(flags))
-                XCTAssertNil(try fixture.bytes(fixture.input), "Unsupported Ctrl+Enter must not become Ctrl+C")
+                XCTAssertEqual(try fixture.bytes(fixture.input), Data(String(repeating: "KEY ctrl+enter\n", count: count).utf8), "Ctrl+keypad Enter is Ctrl+Enter, never Ctrl+C")
             }
             view.keyDown(with: try copy())
-            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY ctrl+c\n".utf8))
+            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY ctrl+enter\nKEY ctrl+enter\nKEY ctrl+c\n".utf8))
             XCTAssertNil(try fixture.bytes(fixture.control))
         }
     }
@@ -39,7 +39,7 @@ final class HvfKeyEventIdentityTests: XCTestCase {
             XCTAssertTrue(view.hasMarkedText())
             view.keyDown(with: try keypad([.control, .numericPad]))
             XCTAssertFalse(view.hasMarkedText())
-            XCTAssertNil(try fixture.bytes(fixture.input))
+            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY ctrl+enter\n".utf8), "preedit discarded, never text or Ctrl+C")
             XCTAssertNil(try fixture.bytes(fixture.control))
         }
     }

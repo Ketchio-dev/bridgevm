@@ -1,4 +1,4 @@
-// sources: apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyCommand.swift apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyEventCommand.swift apps/macos/Sources/BridgeVMControl/HvfEngine/HvfNonLatinControlShortcut.swift
+// sources: apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyCommand.swift apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyEventCommand.swift apps/macos/Sources/BridgeVMControl/HvfEngine/HvfNonLatinControlShortcut.swift apps/macos/Sources/BridgeVMControl/HvfEngine/HvfControlChordKeys.swift
 import AppKit
 import SwiftUI
 import Testing
@@ -21,14 +21,14 @@ struct HvfNonLatinControlShortcutTests {
         let cases: [(String, UInt16, NSEvent.ModifierFlags, HvfHostKeyCommand)] = [
             ("c", 0x00, .control, .key("ctrl+c")),
             ("\u{3}", 0x00, .control, .key("ctrl+c")),
-            ("b", 0x08, .control, .ignored), ("💬", 0x08, .control, .ignored), ("\u{301}", 0x08, .control, .ignored),
+            ("1", 0x08, .control, .ignored), ("💬", 0x08, .control, .ignored), ("\u{301}", 0x08, .control, .ignored),
             ("한글", 0x08, .control, .ignored), ("ㅎᅡ", 0x08, .control, .ignored),
-            ("", 0x08, .control, .ignored), ("ㅊ", 0x0b, .control, .ignored),
+            ("", 0x08, .control, .ignored), ("ㅊ", 0x12, .control, .ignored),
             ("ㅊ", 0x08, .command, .ignored),
             ("ㅊ", 0x08, [.command, .control], .ignored),
             ("ㅊ", 0x08, [.control, .shift], .ignored),
             ("ㅊ", 0x08, [.control, .option], .ignored),
-            ("\u{3}", 0x4c, .control, .ignored),
+            ("\u{3}", 0x4c, [.control, .shift], .ignored),
             ("ㅊ", 0x08, [], .text("ㅊ")), ("A", 0x00, .shift, .text("A"))
         ]
         for (text, code, flags, expected) in cases {
