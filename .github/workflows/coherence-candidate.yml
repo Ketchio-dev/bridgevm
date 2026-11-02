@@ -1,5 +1,5 @@
 name: Coherence isolated native candidate contracts
-on: {push: {}, pull_request: {paths: ['scripts/live-gates/coherence_*', 'scripts/live-gates/guest_input_*', 'scripts/test-coherence-candidate.ps1', 'scripts/win-assets/bv-coherence-inventory-proof.ps1', 'scripts/win-assets/bv-window-inventory.cs', 'tests/integration/coherence-candidate-test.py', 'tests/integration/coherence-fixture-readiness-test.py', '.github/workflows/coherence-candidate.yml']}}
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/live-gates/coherence_*', 'scripts/live-gates/guest_input_*', 'scripts/test-coherence-candidate.ps1', 'scripts/win-assets/bv-coherence-inventory-proof.ps1', 'scripts/win-assets/bv-window-inventory.cs', 'tests/integration/coherence-candidate-test.py', 'tests/integration/coherence-fixture-readiness-test.py', '.github/workflows/coherence-candidate.yml']}}
 permissions:
   contents: read
 jobs:

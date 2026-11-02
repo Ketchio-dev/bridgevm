@@ -1,5 +1,5 @@
 name: Guest input diagnostic controller contracts
-on: {push: {}, pull_request: {paths: ['scripts/live-gates/guest_input_*', 'scripts/test-guest-input-controller-wire.ps1', 'scripts/win-assets/bvagent-*-input.cs', 'tests/integration/guest-input-controller-*', '.github/workflows/guest-input-controller.yml']}}
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/live-gates/guest_input_*', 'scripts/test-guest-input-controller-wire.ps1', 'scripts/win-assets/bvagent-*-input.cs', 'tests/integration/guest-input-controller-*', '.github/workflows/guest-input-controller.yml']}}
 permissions:
   contents: read
 jobs:

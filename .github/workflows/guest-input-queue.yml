@@ -1,5 +1,5 @@
 name: Installed guest input queue contracts
-on: {push: {}, pull_request: {paths: ['scripts/live-gates/guest_input_*', 'tests/integration/guest-input-queue-test.py', '.github/workflows/guest-input-queue.yml']}}
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/live-gates/guest_input_*', 'tests/integration/guest-input-queue-test.py', '.github/workflows/guest-input-queue.yml']}}
 permissions:
   contents: read
 jobs:

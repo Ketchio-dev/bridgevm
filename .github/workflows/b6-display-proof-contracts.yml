@@ -1,5 +1,5 @@
 name: B6 requested display proof contracts
-on: {push: {}, pull_request: {paths: ['scripts/b6-display-proof.sh', 'scripts/win-assets/bv-windows-closure-proof.ps1', 'tests/integration/b6-display-*', '.github/workflows/b6-display-proof-contracts.yml']}}
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/b6-display-proof.sh', 'scripts/win-assets/bv-windows-closure-proof.ps1', 'tests/integration/b6-display-*', '.github/workflows/b6-display-proof-contracts.yml']}}
 permissions:
   contents: read
 jobs:

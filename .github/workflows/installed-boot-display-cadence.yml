@@ -1,5 +1,5 @@
 name: Installed-boot display cadence contract
-on: {push: {}, pull_request: {paths: ['crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/vtimer_recovery.rs', 'scripts/check-hvf-windows-p3-gpu-readiness.sh', 'scripts/harvest-hvf-windows-postmortem.sh', 'scripts/hvf-terminal-report.sh', 'scripts/run-hvf-windows-installed-boot*', 'scripts/win-assets/bv-ppsspp-title.json', 'tests/integration/hvf-windows-installed-boot-p3-gpu-policy-smoke.sh', 'tests/integration/hvf-windows-installed-boot-ramfb-display-cadence-smoke.sh', '.github/workflows/installed-boot-display-cadence.yml']}}
+on: {push: {branches: [main]}, pull_request: {paths: ['crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/vtimer_recovery.rs', 'scripts/check-hvf-windows-p3-gpu-readiness.sh', 'scripts/harvest-hvf-windows-postmortem.sh', 'scripts/hvf-terminal-report.sh', 'scripts/run-hvf-windows-installed-boot*', 'scripts/win-assets/bv-ppsspp-title.json', 'tests/integration/hvf-windows-installed-boot-p3-gpu-policy-smoke.sh', 'tests/integration/hvf-windows-installed-boot-ramfb-display-cadence-smoke.sh', '.github/workflows/installed-boot-display-cadence.yml']}}
 permissions:
   contents: read
 jobs:

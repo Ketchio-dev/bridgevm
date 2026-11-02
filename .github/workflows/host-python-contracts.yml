@@ -1,5 +1,5 @@
 name: Host Python contracts
-on: {push: {}, pull_request: {paths: ['scripts/b6-cell-capture.sh', 'scripts/doc_code_identity.py', 'scripts/live-gates/b6_*', 'scripts/win-assets/bv-b6-*', 'scripts/win-assets/bv-windows-closure-*', 'scripts/win-assets/bvgpu-apply-host-resolution.ps1', 'tests/integration/b6-asset-staging-contract.py', 'tests/integration/b6-cell-observation-contract.py', 'tests/integration/b6-renderer-*', 'tests/integration/doc-code-identity-contract.py', '.github/workflows/host-python-contracts.yml']}}
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/b6-cell-capture.sh', 'scripts/doc_code_identity.py', 'scripts/live-gates/b6_*', 'scripts/win-assets/bv-b6-*', 'scripts/win-assets/bv-windows-closure-*', 'scripts/win-assets/bvgpu-apply-host-resolution.ps1', 'tests/integration/b6-asset-staging-contract.py', 'tests/integration/b6-cell-observation-contract.py', 'tests/integration/b6-renderer-*', 'tests/integration/doc-code-identity-contract.py', '.github/workflows/host-python-contracts.yml']}}
 permissions:
   contents: read
 jobs:
