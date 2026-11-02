@@ -119,7 +119,7 @@ impl AgentConsoleHarness {
             return;
         }
         self.overdue_beats = 0;
-        let Some(req) = self.queue.pop_front() else {
+        let Some(req) = super::service_queue::pop_next_request(&mut self.queue) else {
             return;
         };
         if !self.write_service_req_line(&req, now) {
@@ -321,7 +321,7 @@ impl AgentConsoleHarness {
         self.ctl_read_scratch.clear();
         for line in self.ctl_line_scratch.drain(..) {
             let command = line.trim();
-            if !command.is_empty() && self.queue.len() < MAX_SERVICE_QUEUE_DEPTH {
+            if !command.is_empty() && super::service_queue::has_foreground_capacity(&self.queue) {
                 self.queue.push_back(ServiceReq::Ctl(command.to_string()));
             } else if !command.is_empty() {
                 eprintln!("BVAGENT CTL rejected reason=queue_full");
@@ -371,62 +371,7 @@ impl AgentConsoleHarness {
                     self.complete_in_flight();
                 }
             }
-            InFlightSnapshot::ShareLs => {
-                if let Some(b64) = line.strip_prefix("LSOK ") {
-                    match base64_decode(b64) {
-                        Ok(bytes) => {
-                            let listing = String::from_utf8_lossy(&bytes);
-                            let actions = self
-                                .share
-                                .as_mut()
-                                .map(|share| {
-                                    share.parse_guest_listing(&listing);
-                                    share.engine.on_guest_listing_normalized(
-                                        share.guest_ls_scratch.drain(..),
-                                    )
-                                })
-                                .unwrap_or_default();
-                            for action in actions {
-                                match action {
-                                    SyncAction::Get { name } => {
-                                        self.queue.push_back(ServiceReq::ShareGet { name });
-                                    }
-                                    SyncAction::DeleteHost { name } => {
-                                        self.queue.push_back(ServiceReq::ShareDel {
-                                            name,
-                                            direction: ShareDelDirection::GuestToHost,
-                                        });
-                                    }
-                                    SyncAction::DeleteGuest { name } => {
-                                        self.queue.push_back(ServiceReq::ShareDel {
-                                            name,
-                                            direction: ShareDelDirection::HostToGuest,
-                                        });
-                                    }
-                                    SyncAction::Skip { name, reason } => {
-                                        print_share_skip(&name, reason);
-                                    }
-                                }
-                            }
-                        }
-                        Err(error) => {
-                            println!("BVAGENT SHARE ls-error <base64 decode error: {error:?}>");
-                        }
-                    }
-                    self.complete_in_flight();
-                } else if line.starts_with("ERR") {
-                    println!("BVAGENT SHARE ls-error {line}");
-                    self.complete_in_flight();
-                } else if parse_out_line(line).is_some_and(|(exit, _)| exit == 255) {
-                    if !self.share_old_agent_warned {
-                        println!("BVAGENT SHARE agent-too-old (needs v3-share2); share disabled");
-                        self.share_old_agent_warned = true;
-                    }
-                    self.share = None;
-                    self.queue.retain(|req| !is_share_req(req));
-                    self.complete_in_flight();
-                }
-            }
+            InFlightSnapshot::ShareLs => self.handle_share_listing_reply(line),
             InFlightSnapshot::ShareGet { name } => {
                 if let Some(rest) = line.strip_prefix("GETEND ") {
                     self.handle_share_get_end(&name, rest, now);

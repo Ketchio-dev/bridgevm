@@ -2,17 +2,6 @@
 
 use super::*;
 
-impl ShareState {
-    /// Parse a guest listing into the scratch entries and print the skip
-    /// report for the names the host limits refused.
-    pub(in crate::agent_console) fn parse_guest_listing(&mut self, listing: &str) {
-        let refused = share_sync::parse_ls_into(listing, &mut self.guest_ls_scratch);
-        for line in refused_name_lines(&mut self.engine, &refused) {
-            println!("{line}");
-        }
-    }
-}
-
 /// At most `REFUSED_SHOWN` lines, each a fixed reason and a byte length but
 /// never the name, then one count line, so a hostile listing cannot flood
 /// run.log. No lines when nothing was refused or the same names were refused

@@ -7,36 +7,24 @@
 
 use super::{LsEntry, RefusedNames};
 
+#[path = "share_listing_entries.rs"]
+mod entries;
+#[path = "share_listing_limits.rs"]
+mod limits;
+pub use limits::{ListingLimitError, MAX_LISTING_BYTES, MAX_LISTING_ENTRIES};
+
 #[cfg(test)]
 pub(super) fn parse_ls(listing: &str) -> Vec<LsEntry> {
     let mut entries = Vec::new();
-    parse_ls_into(listing, &mut entries);
+    parse_ls_into(listing, &mut entries).expect("test listing is within bounds");
     entries
 }
 
-pub fn parse_ls_into(listing: &str, out: &mut Vec<LsEntry>) -> RefusedNames {
-    out.clear();
-    let mut refused = RefusedNames::default();
-    for line in listing.lines().filter(|line| !line.is_empty()) {
-        let mut parts = line.rsplitn(4, '|');
-        let Some(mtime) = parts.next() else {
-            continue;
-        };
-        let Some(is_dir) = parts.next() else {
-            continue;
-        };
-        let Some(size) = parts.next().and_then(|part| part.parse().ok()) else {
-            continue;
-        };
-        let Some(name) = parts.next().and_then(|listed| refused.key(listed)) else {
-            continue;
-        };
-        out.push(LsEntry {
-            name,
-            size,
-            is_dir: is_dir == "1",
-            mtime: mtime.to_string(),
-        });
-    }
-    refused
+/// Refuse the whole listing before changing `out` when either bound is exceeded.
+pub fn parse_ls_into(
+    listing: &str,
+    out: &mut Vec<LsEntry>,
+) -> Result<RefusedNames, ListingLimitError> {
+    limits::check(listing)?;
+    Ok(entries::parse_into(listing, out))
 }

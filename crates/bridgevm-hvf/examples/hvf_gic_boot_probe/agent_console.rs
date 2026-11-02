@@ -55,6 +55,8 @@ mod harness_protocol;
 mod protocol;
 #[path = "agent_console/resident_service.rs"]
 mod resident_service;
+#[path = "agent_console/service_queue.rs"]
+mod service_queue;
 #[path = "agent_console/service_wake.rs"]
 mod service_wake;
 #[path = "agent_console/share.rs"]

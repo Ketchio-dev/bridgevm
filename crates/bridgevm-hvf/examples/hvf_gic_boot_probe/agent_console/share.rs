@@ -127,6 +127,10 @@ mod share_skip;
 pub(super) use share_skip::*;
 #[path = "share/share_listing_report.rs"]
 mod share_listing_report;
+#[path = "share/share_listing_reply.rs"]
+mod share_listing_reply;
+#[path = "share/share_listing_reply_tests.rs"]
+mod share_listing_reply_tests;
 
 pub(super) fn write_share_guest_path_into(dir: &str, name: &str, out: &mut String) {
     out.clear();
