@@ -14,8 +14,8 @@ from d11_fixture_mounts import Container
 from d11_fixture_process import Processes, quiet_host
 from t22_pair_admission import shutdown_observed
 
-
-def interrupted(signum, frame): raise InterruptedError("fixture interrupted")
+class FixtureInterrupted(RuntimeError): """Not an OSError: subprocess wait helpers may swallow those."""
+def interrupted(signum, frame): raise FixtureInterrupted("fixture interrupted")
 
 
 def seal_pair(work):
@@ -93,7 +93,7 @@ def execute(directory, root, inputs, output, binary):
         value.update(seal_pair(work))
         value["failure"] = "none"
     except BaseException as error:
-        value["failure"] = "canceled" if isinstance(error, InterruptedError) else "incomplete"
+        value["failure"] = "canceled" if isinstance(error, (InterruptedError, FixtureInterrupted)) else "incomplete"
         value["failure_type"] = type(error).__name__
     finally:
         for sig in handlers: signal.signal(sig, signal.SIG_IGN)

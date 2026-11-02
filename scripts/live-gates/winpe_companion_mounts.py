@@ -82,8 +82,8 @@ def _cleanup(image, mount_root, expected_device):
     return detached and remaining is None and (device is None or device not in devices)
 
 
-def _interrupt(signum, _frame):
-    raise InterruptedError("mount-operation-cancelled-%d" % signum)
+class MountOperationCancelled(RuntimeError): """Not an OSError: subprocess wait helpers may swallow those."""
+def _interrupt(signum, _frame): raise MountOperationCancelled("mount-operation-cancelled-%d" % signum)
 
 
 @contextmanager

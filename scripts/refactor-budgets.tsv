@@ -5281,3 +5281,11 @@ docs/history/windows-hvf/host-file-snapshot-20261102.md	29	0
 docs/document-manifests/host-file-snapshot-20261102.tsv	2	0
 docs/history/windows-hvf/ramfb-publication-measurement-20261102.md	27	0
 docs/document-manifests/ramfb-publication-measurement-20261102.tsv	2	0
+tests/integration/signal_driver_support.py	38	0
+tests/integration/t22-pair-queue-signal-contract.py	76	0
+tests/integration/t22-pair-preparation-signal-contract.py	96	0
+tests/integration/guest-input-live-signal-test.py	71	0
+tests/integration/winpe-companion-signal-test.py	92	0
+tests/integration/d11-fixture-signal-contract.py	89	0
+docs/history/windows-hvf/live-gate-signal-cancellation-20261102.md	23	0
+docs/document-manifests/live-gate-signal-cancellation-20261102.tsv	2	0
