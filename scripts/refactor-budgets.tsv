@@ -5196,7 +5196,7 @@ docs/history/windows-hvf/share-listing-bounds-20261101.md	29	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file/access.rs	26	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file/exclusive_lock.rs	19	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/device_apply.rs	81	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/host_prepare_tests.rs	133	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/host_prepare_tests.rs	91	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_atomic_ring.rs	173	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_atomic_ring_tests.rs	84	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_prefill_drain.rs	20	0
@@ -5226,3 +5226,4 @@ apps/macos/Sources/BridgeVMControl/LibraryDashboardStopPresentation.swift	8	0
 apps/macos/Tests/BridgeVMControlTests/HvfForceStopTests.swift	130	0
 docs/document-manifests/owned-force-stop-20261102.tsv	2	0
 docs/history/windows-hvf/owned-force-stop-20261102.md	28	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/host_prepare_held_writer_tests.rs	46	0

@@ -26,3 +26,12 @@ acquisition-coverage test now covers all four actual Automation guards.
 
 No live guest or audible responsiveness claim is made. Final exact project,
 hosted and required PR gates remain necessary; criteria/state are unchanged.
+
+Required CI41394337862 failed on Rust1.85.0 because the new held-writer
+fixture called unstable std::fs::File lock/unlock methods. The fixture now
+holds the existing InputControlFile RAII lock, releasing it before joining
+the reader even after a timeout. The same five-second causal deadline and
+recovery/replay assertions remain; production code is unchanged. Both host
+preparation regressions pass on installed Rust1.85.0. The superseded local
+full was stopped with observed exit143 and is retained as aborted, not PASS;
+replacement exact local/hosted/PR checks remain required.
