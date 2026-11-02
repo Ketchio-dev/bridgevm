@@ -1,5 +1,6 @@
 //! Continuity counter semantics and the printed record.
 
+use super::super::hda_coreaudio_producer::PcmProducer;
 use super::super::hda_coreaudio_stats::Shared;
 use super::*;
 
@@ -212,9 +213,7 @@ fn fill_reads_the_ring_and_records_what_the_buffer_received() {
         "an empty ring leaves the buffer silent"
     );
     for bytes in [FULL, FULL + HALF] {
-        let mut ring = shared.ring.lock().unwrap();
-        ring.extend(std::iter::repeat_n(0x5a, bytes));
-        shared.continuity.note_pcm_written();
+        PcmProducer::default().write(&vec![0x5a; bytes], &shared, 4 * FULL);
     }
     for expected in [FULL, FULL, HALF] {
         let mut buffer = vec![0u8; FULL];
@@ -224,34 +223,25 @@ fn fill_reads_the_ring_and_records_what_the_buffer_received() {
             expected
         );
     }
-    shared
-        .ring
-        .lock()
-        .unwrap()
-        .extend(std::iter::repeat_n(0x5a, FULL));
+    PcmProducer::default().write(&vec![0x5a; FULL], &shared, 4 * FULL);
     fill_and_record(&mut buffer, &shared);
     assert_eq!(shared.continuity.snapshot(), snapshot(4, 1, 240, 0, 1, 240));
 }
 
 #[test]
-fn fill_never_waits_for_the_producer_and_counts_the_contention() {
+fn fill_never_waits_for_another_consumer_and_counts_the_contention() {
     let shared = Shared::new(4 * FULL, 0);
-    shared
-        .ring
-        .lock()
-        .unwrap()
-        .extend(std::iter::repeat_n(0x5a, 3 * FULL));
-    shared.continuity.note_pcm_written();
+    PcmProducer::default().write(&vec![0x5a; 3 * FULL], &shared, 4 * FULL);
     let mut buffer = vec![0u8; FULL];
     fill_and_record(&mut buffer, &shared);
     {
-        let _producer = shared.ring.lock().unwrap();
+        let _consumer = shared.ring.try_consumer().unwrap();
         let mut silent = vec![0u8; FULL];
         fill_and_record(&mut silent, &shared);
         assert_eq!(
             silent,
             vec![0u8; FULL],
-            "a busy ring leaves the buffer silent"
+            "an overlapping consumer leaves the buffer silent"
         );
     }
     fill_and_record(&mut buffer, &shared);
@@ -259,25 +249,15 @@ fn fill_never_waits_for_the_producer_and_counts_the_contention() {
 }
 
 #[test]
-fn fill_reads_a_guest_stop_under_the_ring_lock() {
+fn fill_reads_a_guest_stop_with_the_consumer_snapshot() {
     let shared = Shared::new(4 * FULL, 0);
-    shared
-        .ring
-        .lock()
-        .unwrap()
-        .extend(std::iter::repeat_n(0x5a, FULL + HALF));
-    shared.continuity.note_pcm_written();
+    PcmProducer::default().write(&vec![0x5a; FULL + HALF], &shared, 4 * FULL);
     shared.continuity.note_stream_stopped();
     let mut buffer = vec![0u8; FULL];
     for _ in 0..3 {
         fill_and_record(&mut buffer, &shared);
     }
-    shared
-        .ring
-        .lock()
-        .unwrap()
-        .extend(std::iter::repeat_n(0x5a, FULL));
-    shared.continuity.note_pcm_written();
+    PcmProducer::default().write(&vec![0x5a; FULL], &shared, 4 * FULL);
     fill_and_record(&mut buffer, &shared);
     let expected = ContinuitySnapshot {
         stream_stops: 1,

@@ -2,8 +2,8 @@
 //! The ring always starts and ends on a complete four-byte frame. Loss rejects
 //! whole frames, never shifting the phase of the next accepted source bytes.
 
+use super::hda_coreaudio_publication::PcmQueue;
 use super::BYTES_PER_FRAME;
-use std::collections::VecDeque;
 
 const FRAME: usize = BYTES_PER_FRAME as usize;
 
@@ -25,7 +25,7 @@ impl PcmFrames {
     pub(super) fn write(
         &mut self,
         samples: &[u8],
-        ring: &mut VecDeque<u8>,
+        ring: &mut impl PcmQueue,
         capacity: usize,
     ) -> Publication {
         debug_assert_eq!(ring.len() % FRAME, 0);
@@ -36,9 +36,7 @@ impl PcmFrames {
             return Publication::default();
         }
         let consumed = complete - self.len;
-        let result = if complete <= capacity.saturating_sub(ring.len()) {
-            ring.extend(self.tail[..self.len].iter().copied());
-            ring.extend(samples[..consumed].iter().copied());
+        let result = if ring.publish_parts(&self.tail[..self.len], &samples[..consumed], capacity) {
             Publication {
                 guest_frames: (complete / FRAME) as u64,
                 dropped_bytes: 0,
@@ -56,14 +54,12 @@ impl PcmFrames {
 
     /// End a generation, not a RUN pause. Preserve supplied bytes with terminal
     /// zero padding; this constructed frame is NOT counted as a guest frame.
-    pub(super) fn finish(&mut self, ring: &mut VecDeque<u8>, capacity: usize) -> Publication {
+    pub(super) fn finish(&mut self, ring: &mut impl PcmQueue, capacity: usize) -> Publication {
         debug_assert_eq!(ring.len() % FRAME, 0);
         let mut result = Publication::default();
         if self.len != 0 {
-            if FRAME <= capacity.saturating_sub(ring.len()) {
-                self.tail[self.len..].fill(0);
-                ring.extend(self.tail);
-            } else {
+            self.tail[self.len..].fill(0);
+            if !ring.publish_parts(&self.tail, &[], capacity) {
                 result.dropped_bytes = self.len;
             }
             self.len = 0;

@@ -14,7 +14,7 @@ final class HvfFramebufferFrameRequester {
     static let marker: UInt32 = 0x5145_5242
 
     var clock: () -> UInt64 = { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) }
-    private var descriptor: Int32 = -1
+    private let lease = HvfFramebufferRequestLease()
 
     /// `mapping` must be the current mapping of the file at `path`.
     func post(_ mapping: HvfFramebufferMapping, path: String?) {
@@ -23,25 +23,14 @@ final class HvfFramebufferFrameRequester {
               HvfFramebufferFrameReader.readUInt32(mapping.pointer, at: 40) == Self.marker else {
             return
         }
-        if descriptor < 0 {
-            let opened = Darwin.open(path, O_WRONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-            guard opened >= 0 else { return }
-            // The same regular file the mapping was checked against, not a replacement.
-            guard HvfFramebufferFileIdentity.length(opened, matching: path) != nil else {
-                Darwin.close(opened)
-                return
-            }
-            descriptor = opened
-        }
+        guard let descriptor = lease.descriptor(for: mapping, path: path) else { return }
         var request = clock().littleEndian
         _ = withUnsafeBytes(of: &request) { Darwin.pwrite(descriptor, $0.baseAddress, 8, 32) }
     }
 
     func reset() {
-        if descriptor >= 0 { Darwin.close(descriptor) }
-        descriptor = -1
+        lease.reset()
     }
 
-    deinit { reset() }
 }
 #endif

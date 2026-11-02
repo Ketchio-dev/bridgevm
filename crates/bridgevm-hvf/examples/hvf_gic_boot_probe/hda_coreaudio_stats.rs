@@ -1,15 +1,14 @@
 //! Shared CoreAudio ring state and A5 telemetry.
 
-use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
 
 use super::hda_coreaudio_continuity::ContinuityCounters;
 use super::hda_coreaudio_prefill::Prefill;
+use super::hda_coreaudio_ring::AtomicPcmRing;
 use super::hda_coreaudio_teardown::CallbackFailureCounters;
 
 pub(super) struct Shared {
-    pub(super) ring: Mutex<VecDeque<u8>>,
+    pub(super) ring: AtomicPcmRing,
     pub(super) frames_rendered: AtomicU64,
     dropped_writes: AtomicU64,
     dropped_bytes: AtomicU64,
@@ -23,7 +22,7 @@ pub(super) struct Shared {
 impl Shared {
     pub(super) fn new(ring_capacity_bytes: usize, prefill_bytes: usize) -> Self {
         Self {
-            ring: Mutex::new(VecDeque::with_capacity(ring_capacity_bytes)),
+            ring: AtomicPcmRing::new(ring_capacity_bytes),
             frames_rendered: AtomicU64::new(0),
             dropped_writes: AtomicU64::new(0),
             dropped_bytes: AtomicU64::new(0),

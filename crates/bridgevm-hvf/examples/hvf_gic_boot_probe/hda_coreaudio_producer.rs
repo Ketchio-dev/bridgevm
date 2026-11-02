@@ -32,23 +32,18 @@ impl PcmProducer {
     }
 
     pub(super) fn write(&mut self, samples: &[u8], shared: &Shared, capacity: usize) {
-        // Producer waits for this short copy; the realtime callback still uses
-        // try_lock and substitutes silence rather than waiting on the vCPU or
-        // the HDA service tick.
-        let mut ring = shared.ring.lock().unwrap_or_else(|p| p.into_inner());
-        let result = self.frames.write(samples, &mut ring, capacity);
+        let mut ring = shared.ring.producer();
+        // Publish the activity flag before the ring's release publication.
         shared.continuity.note_pcm_written();
-        drop(ring);
+        let result = self.frames.write(samples, &mut ring, capacity);
         Self::record(shared, result);
     }
 
     pub(super) fn finish(&mut self, shared: &Shared, capacity: usize) {
-        let mut ring = shared.ring.lock().unwrap_or_else(|p| p.into_inner());
-        let result = self.frames.finish(&mut ring, capacity);
-        // Even a reset after a DMA halt must let a sub-threshold tail flush.
-        // This is not another guest RUN-stop event.
+        let mut ring = shared.ring.producer();
+        // A reset flushes its terminal fragment, even below the start threshold.
         shared.continuity.note_stream_reset();
-        drop(ring);
+        let result = self.frames.finish(&mut ring, capacity);
         Self::record(shared, result);
     }
 

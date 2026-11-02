@@ -1,9 +1,9 @@
 //! Where the output callback reaches the timing counters, kept apart from
 //! the record in hda_coreaudio_timing.rs. Both run on the callback thread.
 
+use super::super::super::hda_coreaudio_ring::Consumer;
 use super::super::super::hda_coreaudio_stats::Shared;
 use super::super::{CallbackFill, ContinuityCounters};
-use std::collections::VecDeque;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::Instant;
 
@@ -20,10 +20,10 @@ impl ContinuityCounters {
 }
 
 /// Drain the ring into one callback buffer exactly as `Prefill::drain` does,
-/// noting the level the callback found. Callback thread, under the ring lock.
+/// noting the level the callback found. Callback thread, under the consumer guard.
 pub(in crate::hda_coreaudio) fn timed_drain(
     shared: &Shared,
-    ring: &mut VecDeque<u8>,
+    ring: &mut Consumer<'_>,
     destination: &mut [u8],
     stream_idle: bool,
 ) -> usize {

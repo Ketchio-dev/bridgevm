@@ -1,0 +1,75 @@
+//! Host-only agent progression; the caller supplies short, synchronous wire sends.
+
+use crate::agent_console::*;
+
+impl AgentConsoleHarness {
+    /// Only drain the device while its owning platform guard is held.
+    pub fn capture_inbound(&mut self, platform: &mut VirtPlatform) {
+        if matches!(
+            self.state,
+            AgentConsoleState::Done | AgentConsoleState::TimedOut
+        ) {
+            return;
+        }
+        self.inbound_scratch.clear();
+        platform.virtio_console_agent_drain_inbound_into(&mut self.inbound_scratch);
+    }
+
+    /// Process replies and host filesystem work without borrowing a platform or guest RAM.
+    pub fn advance(&mut self, now: Instant, send: &mut dyn FnMut(&[u8])) {
+        if matches!(
+            self.state,
+            AgentConsoleState::Done | AgentConsoleState::TimedOut
+        ) {
+            return;
+        }
+
+        self.frame_inbound_lines();
+        let mut lines = std::mem::take(&mut self.line_scratch);
+        for line in lines.drain(..) {
+            self.handle_line_with_sender(&line, now, send);
+        }
+        self.line_scratch = lines;
+
+        // Proactively PING while waiting to connect. The agent may have sent
+        // its one-shot READY before the guest driver's host-open latched (that
+        // write is silently dropped), so waiting passively for READY can
+        // deadlock. A PING the agent echoes as PONG breaks that: any inbound
+        // line (READY or PONG) advances us to the command phase.
+        if matches!(self.state, AgentConsoleState::WaitingReady) {
+            let due = self
+                .last_ping
+                .is_none_or(|t| now.duration_since(t) >= PING_INTERVAL);
+            if due {
+                send(b"PING\n");
+                self.last_ping = Some(now);
+            }
+        }
+
+        if matches!(
+            self.state,
+            AgentConsoleState::WaitingReady | AgentConsoleState::WaitingPong
+        ) && now.duration_since(self.start) >= self.timeout
+        {
+            println!("BVAGENT TIMEOUT waiting for READY");
+            self.state = AgentConsoleState::TimedOut;
+        }
+
+        // Once connected and out of the scripted phase, run the resident loop:
+        // pump the request queue and the clipboard bridge.
+        if matches!(self.state, AgentConsoleState::Service) {
+            self.service_tick_with_sender(now, send);
+        }
+
+        // BVAGENT lines are the greppable live evidence, and run.log is a shell
+        // redirect (not a tty) — live-observed to lag by minutes without an
+        // explicit flush, which breaks log-tailing proof drivers. Flushing an
+        // empty buffer is a no-op, so doing it every tick is cheap.
+        use std::io::Write as _;
+        let _ = std::io::stdout().flush();
+    }
+}
+
+#[cfg(test)]
+#[path = "host_tick_tests.rs"]
+mod tests;

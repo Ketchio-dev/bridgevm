@@ -4,10 +4,15 @@ use super::*;
 #[cfg(test)]
 #[path = "get_bound_tests.rs"]
 mod get_bound_tests;
+#[path = "host_tick.rs"]
+mod host_tick;
 #[path = "input_receipt_label.rs"]
 mod input_receipt_label;
 #[path = "output_finish.rs"]
 mod output_finish;
+#[cfg(test)]
+#[path = "transport_test_adapter.rs"]
+mod transport_test_adapter;
 
 /// Largest guest file a GET reassembles on the host.
 pub(super) const MAX_AGENT_GET_BYTES: usize = 64 * 1024 * 1024;
@@ -123,71 +128,12 @@ impl AgentConsoleHarness {
         }
         self.inbound_scratch.clear();
     }
-    pub fn tick(
-        &mut self,
-        platform: &mut VirtPlatform,
-        mem: &mut dyn GuestMemoryMut,
-        now: Instant,
-    ) {
-        if matches!(
-            self.state,
-            AgentConsoleState::Done | AgentConsoleState::TimedOut
-        ) {
-            return;
-        }
 
-        self.inbound_scratch.clear();
-        platform.virtio_console_agent_drain_inbound_into(&mut self.inbound_scratch);
-        self.frame_inbound_lines();
-        let mut lines = std::mem::take(&mut self.line_scratch);
-        for line in lines.drain(..) {
-            self.handle_line(&line, platform, mem, now);
-        }
-        self.line_scratch = lines;
-
-        // Proactively PING while waiting to connect. The agent may have sent
-        // its one-shot READY before the guest driver's host-open latched (that
-        // write is silently dropped), so waiting passively for READY can
-        // deadlock. A PING the agent echoes as PONG breaks that: any inbound
-        // line (READY or PONG) advances us to the command phase.
-        if matches!(self.state, AgentConsoleState::WaitingReady) {
-            let due = self
-                .last_ping
-                .is_none_or(|t| now.duration_since(t) >= PING_INTERVAL);
-            if due {
-                platform.virtio_console_agent_send(b"PING\n", mem);
-                self.last_ping = Some(now);
-            }
-        }
-
-        if matches!(
-            self.state,
-            AgentConsoleState::WaitingReady | AgentConsoleState::WaitingPong
-        ) && now.duration_since(self.start) >= self.timeout
-        {
-            println!("BVAGENT TIMEOUT waiting for READY");
-            self.state = AgentConsoleState::TimedOut;
-        }
-
-        // Once connected and out of the scripted phase, run the resident loop:
-        // pump the request queue and the clipboard bridge.
-        if matches!(self.state, AgentConsoleState::Service) {
-            self.service_tick(platform, mem, now);
-        }
-
-        // BVAGENT lines are the greppable live evidence, and run.log is a shell
-        // redirect (not a tty) — live-observed to lag by minutes without an
-        // explicit flush, which breaks log-tailing proof drivers. Flushing an
-        // empty buffer is a no-op, so doing it every tick is cheap.
-        use std::io::Write as _;
-        let _ = std::io::stdout().flush();
-    }
-    pub(super) fn handle_line(
+    pub(super) fn handle_line_with_sender(
         &mut self,
         line: &str,
-        platform: &mut VirtPlatform,
-        mem: &mut dyn GuestMemoryMut,
         now: Instant,
+        send: &mut dyn FnMut(&[u8]),
     ) {
         match self.state {
             AgentConsoleState::WaitingReady => {
@@ -199,14 +145,14 @@ impl AgentConsoleHarness {
                         hostname,
                         now.duration_since(self.start).as_millis()
                     );
-                    platform.virtio_console_agent_send(b"PING\n", mem);
+                    send(b"PING\n");
                     self.state = AgentConsoleState::WaitingPong;
                 } else if line == "PONG" {
                     println!(
                         "BVAGENT PONG (proactive) t={}",
                         now.duration_since(self.start).as_millis()
                     );
-                    self.send_next_command_or_done(0, platform, mem, now);
+                    self.send_next_command_with_sender(0, now, send);
                 }
             }
             AgentConsoleState::WaitingPong => {
@@ -214,7 +160,7 @@ impl AgentConsoleHarness {
                     return;
                 }
                 println!("BVAGENT PONG");
-                self.send_next_command_or_done(0, platform, mem, now);
+                self.send_next_command_with_sender(0, now, send);
             }
             AgentConsoleState::WaitingOut { index } => {
                 // Label the reply with the scripted command it answers. A
@@ -229,13 +175,13 @@ impl AgentConsoleHarness {
                 };
                 match progress {
                     ReplyProgress::Complete => {
-                        self.send_next_command_or_done(index + 1, platform, mem, now);
+                        self.send_next_command_with_sender(index + 1, now, send);
                     }
                     ReplyProgress::Incomplete | ReplyProgress::Ignored => {}
                 }
             }
             AgentConsoleState::Service => {
-                self.handle_service_reply(line, Some(platform), Some(mem), now);
+                self.handle_service_reply_with_sender(line, now, send);
             }
             AgentConsoleState::Done | AgentConsoleState::TimedOut => {}
         }
@@ -341,15 +287,14 @@ impl AgentConsoleHarness {
         }
         None
     }
-    pub(super) fn send_next_command_or_done(
+    pub(super) fn send_next_command_with_sender(
         &mut self,
         index: usize,
-        platform: &mut VirtPlatform,
-        mem: &mut dyn GuestMemoryMut,
         now: Instant,
+        send: &mut dyn FnMut(&[u8]),
     ) {
         if let Some(line) = self.next_command_line(index, now) {
-            platform.virtio_console_agent_send(line.as_bytes(), mem);
+            send(line.as_bytes());
         }
     }
     /// Advance to command `index`: returns the wire bytes to send and moves to
