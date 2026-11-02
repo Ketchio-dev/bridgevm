@@ -5284,7 +5284,7 @@ docs/document-manifests/ramfb-publication-measurement-20261102.tsv	2	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSessionEvents.swift	7	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeStatusMessages.swift	16	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfShareRootNotice.swift	28	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfShareRootNoticeView.swift	20	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfShareRootNoticeView.swift	19	0
 apps/macos/Tests/BridgeVMControlTests/HvfShareRootNoticeTests.swift	124	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_scan_accept.rs	12	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_feedback.rs	44	0
@@ -5295,7 +5295,7 @@ crates/bridgevm-hvf/src/snapshot_create_publication_report_tests.rs	78	0
 crates/bridgevm-hvf/src/snapshot_create_staging_kept.rs	41	0
 crates/bridgevm-hvf/src/snapshot_publish_unsupported.rs	47	1
 crates/bridgevm-hvf/src/snapshot_publish_unsupported_tests.rs	24	0
-docs/document-manifests/autonomous-twelve-hour-20261102.tsv	7	0
+docs/document-manifests/autonomous-twelve-hour-20261102.tsv	8	0
 docs/history/windows-hvf/snapshot-exchange-refusal-20261102.md	30	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfDisplayKeyRepeat.swift	15	0
 apps/macos/Tests/BridgeVMControlTests/HvfDisplayKeyRepeatTests.swift	45	0
@@ -5327,3 +5327,6 @@ apps/macos/Tests/BridgeVMControlTests/HvfNetworkPreferenceSaveTests.swift	113	0
 apps/macos/Tests/BridgeVMControlTests/HvfSharedFolderPreferenceTests.swift	125	0
 apps/macos/Tests/BridgeVMControlTests/HvfSharedFolderPreferenceSaveTests.swift	162	0
 docs/history/windows-hvf/hvf-runtime-settings-persist-20261102.md	24	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfShareStop.swift	29	0
+apps/macos/Tests/BridgeVMControlTests/HvfShareStopNoticeTests.swift	63	0
+docs/history/windows-hvf/share-stop-notice-20261102.md	16	0
