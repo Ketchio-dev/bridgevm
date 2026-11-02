@@ -5264,3 +5264,6 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_pu
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_delete.rs	30	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_failure_fixture.rs	43	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_guest_destination_identity_tests.rs	151	0
+docs/document-manifests/data-and-runtime-20261102.tsv	11	0
+docs/history/windows-hvf/guest-destination-identity-20261102.md	30	0
+docs/document-manifests/guest-destination-identity-20261102.tsv	2	0
