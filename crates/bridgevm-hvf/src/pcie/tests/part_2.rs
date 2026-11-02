@@ -190,7 +190,7 @@ fn nvme_endpoint_reports_storage_class_and_bar0() {
 
 #[test]
 fn nvme_endpoint_exposes_msix_capability() {
-    let ecam = PcieEcam::new();
+    let mut ecam = PcieEcam::new();
     let status = ecam.cfg_read(ecam_offset(0, 1, 0, REG_COMMAND_STATUS), 4) >> 16;
     assert_ne!(
         status & u64::from(STATUS_CAP_LIST),
@@ -220,6 +220,19 @@ fn nvme_endpoint_exposes_msix_capability() {
         u64::from(NVME_PCIE_CAP_OFFSET),
         "Power Management capability must chain to PCI Express"
     );
+    // PowerState follows guest writes (Windows writes D3hot at shutdown and
+    // polls for it); unsupported D1/D2 and D3->D2-style moves are ignored, and
+    // the rest of PMCSR (No_Soft_Reset) stays.
+    let pmcsr = ecam_offset(0, 1, 0, pm + 4);
+    assert_eq!(ecam.cfg_read(pmcsr, 2), 0x0008, "PMCSR starts in D0");
+    ecam.cfg_write(pmcsr, 2, 0x0001);
+    assert_eq!(ecam.cfg_read(pmcsr, 2), 0x0008, "D1 is not supported");
+    ecam.cfg_write(pmcsr, 2, 0x0003);
+    assert_eq!(ecam.cfg_read(pmcsr, 2), 0x000b, "D3hot reads back");
+    ecam.cfg_write(pmcsr, 2, 0x0002);
+    assert_eq!(ecam.cfg_read(pmcsr, 2), 0x000b, "no D3hot -> D2");
+    ecam.cfg_write(pmcsr, 2, 0x0000);
+    assert_eq!(ecam.cfg_read(pmcsr, 2), 0x0008, "D0 again");
     // The PCI Express capability (ID 0x10) that EDK2's NvmExpressDxe needs
     // terminates the list.
     let pcie = u16::from(NVME_PCIE_CAP_OFFSET);
