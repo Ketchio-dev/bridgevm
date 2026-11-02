@@ -127,3 +127,4 @@ HANDOFF.md	historical-evidence	project-status	STATUS.md
 @include	docs/document-manifests/a19-python-cancellation-20261101.tsv	-	-
 @include	docs/document-manifests/nvme-test-scratch-ownership-20261101.tsv	-	-
 @include	docs/document-manifests/nonlatin-control-shortcuts-20261101.tsv	-	-
+@include	docs/document-manifests/framebuffer-request-backing-20261102.tsv	-	-

@@ -4538,7 +4538,7 @@ crates/bridgevm-hvf/src/managed_pair_staging_seal_tests.rs	141	0
 docs/history/windows-hvf/autonomous-restore-ownership-20261014.md	88	0
 docs/document-manifests/autonomous-restore-ownership-20261014.tsv	4	0
 crates/bridgevm-cli/src/args/app_windows_setup_help.txt	3	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferMapping.swift	33	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferMapping.swift	30	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferAvailabilityFixture.swift	60	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferAvailabilityTests.swift	58	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferCachedFrameTests.swift	60	0
@@ -5104,7 +5104,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_request_tests.rs	1
 crates/bridgevm-hvf/src/display_fb_requests.rs	37	2
 crates/bridgevm-hvf/src/display_fb_requests_tests.rs	106	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferViewMapping.swift	24	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFrameRequester.swift	47	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferFrameRequester.swift	36	0
 apps/macos/Tests/BridgeVMControlTests/HvfFramebufferFrameRequestTests.swift	66	0
 docs/history/windows-hvf/display-export-20261023.md	308	0
 docs/document-manifests/post-merge-integration-docs-20261023.tsv	43	0
@@ -5178,3 +5178,8 @@ apps/macos/Tests/BridgeVMControlSwiftTests/HvfNonLatinControlShortcutTests.swift
 docs/history/windows-hvf/nonlatin-control-shortcuts-20261101.md	30	0
 docs/document-manifests/nonlatin-control-shortcuts-20261101.tsv	2	0
 crates/bridgevm-daemon/src/tests_split/delayed_guest_hello.rs	100	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferMappedRegion.swift	26	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfFramebufferRequestLease.swift	31	0
+apps/macos/Tests/BridgeVMControlSwiftTests/HvfFramebufferRequestLeaseTests.swift	60	0
+docs/document-manifests/framebuffer-request-backing-20261102.tsv	2	0
+docs/history/windows-hvf/framebuffer-request-backing-20261102.md	26	0

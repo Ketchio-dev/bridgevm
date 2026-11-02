@@ -8,17 +8,14 @@ final class HvfFramebufferMapping {
     private let descriptor: Int32
 
     init?(path: String) {
-        let descriptor = HvfFramebufferFileIdentity.open(path)
-        guard descriptor >= 0 else { return nil }
-        guard let length = HvfFramebufferFileIdentity.length(descriptor, matching: path), length >= 64,
-              let pointer = Darwin.mmap(nil, length, PROT_READ, MAP_SHARED, descriptor, 0),
-              pointer != MAP_FAILED else {
-            Darwin.close(descriptor)
-            return nil
-        }
-        self.descriptor = descriptor
-        self.pointer = pointer
-        self.length = length
+        guard let mapped = HvfFramebufferMappedRegion.open(path) else { return nil }
+        descriptor = mapped.descriptor
+        pointer = mapped.pointer
+        length = mapped.length
+    }
+
+    func owns(_ candidate: Int32) -> Bool {
+        HvfFramebufferMappedRegion.sameBacking(descriptor, candidate)
     }
 
     func currentLength(matching path: String?) -> Int? {
