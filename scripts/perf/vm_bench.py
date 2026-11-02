@@ -19,6 +19,7 @@ import base64
 import calendar
 import ctypes
 import hashlib
+import math
 import http.server
 import json
 import os
@@ -35,7 +36,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_wire import AgentWire  # noqa: E402
-from guest_bench_commands import HIGHER_IS_BETTER, SUITE, command_line, net_download, parse_bvbench  # noqa: E402
+from guest_bench_commands import (  # noqa: E402
+    HIGHER_IS_BETTER, SUITE, command_line, cursor_logger, net_download, parse_bvbench)
 
 ROOT = Path(__file__).resolve().parents[2]
 QEMU_FIRMWARE = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
@@ -108,6 +110,7 @@ class Qemu(Engine):
 
     def start(self, boot_dir: Path) -> None:
         sock = f"/tmp/bvbench-{os.getpid()}-{boot_dir.name}.sock"
+        self.qmp_path = sock + ".qmp"
         cmd = [
             "qemu-system-aarch64", "-name", "bvbench", "-machine", "virt,highmem=on,gic-version=3",
             "-accel", "hvf", "-cpu", "host", "-smp", str(self.args.cpus), "-m", str(self.args.ram_mib),
@@ -138,6 +141,23 @@ class Qemu(Engine):
     def request_shutdown(self) -> None:
         self.wire.send("RUN " + base64.b64encode(SHUTDOWN.encode()).decode())
 
+    def inject_moves(self, points) -> None:
+        """usb-tablet absolute moves through QMP input-send-event at the given pace."""
+        qmp = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        qmp.connect(self.qmp_path)
+        reader = qmp.makefile("rb")
+        reader.readline()
+        qmp.sendall(b'{"execute":"qmp_capabilities"}\n')
+        reader.readline()
+        threading.Thread(target=lambda: [None for _ in iter(reader.readline, b"")], daemon=True).start()
+        for x, y, due in points:
+            time.sleep(max(0.0, due - time.monotonic()))
+            event = {"execute": "input-send-event", "arguments": {"events": [
+                {"type": "abs", "data": {"axis": "x", "value": x}},
+                {"type": "abs", "data": {"axis": "y", "value": y}}]}}
+            qmp.sendall(json.dumps(event).encode() + b"\n")
+        qmp.close()
+
 
 class BridgeVM(Engine):
     def __init__(self, args, disk: Path, vars_fd: Path):
@@ -146,6 +166,8 @@ class BridgeVM(Engine):
     def start(self, boot_dir: Path) -> None:
         self.ctl = boot_dir / "ctl.txt"
         self.ctl.write_text("")
+        self.input_ctl = boot_dir / "input.ctl"
+        self.input_ctl.write_text("")
         evidence = boot_dir / "hvf"
         self.log, self.offset, self.pending = evidence / "run.log", 0, ""
         cmd = [
@@ -153,7 +175,7 @@ class BridgeVM(Engine):
             "--vars", str(self.vars_fd), "--evidence-dir", str(evidence), "--release", "--skip-build",
             "--smp-cpus", str(self.args.cpus), "--ram-mib", str(self.args.ram_mib), "--enable-xhci",
             "--boot-timer-desktop-agent", "--agent-service-control", str(self.ctl),
-            "--watchdog-ms", "3600000", "--no-guest-disk-harvest",
+            "--watchdog-ms", "3600000", "--no-guest-disk-harvest", "--input-control", str(self.input_ctl),
         ] + (["--virtio-net"] if self.args.net else [])
         epoch = calendar.timegm(time.strptime(self.args.guest_date, "%Y-%m-%dT%H:%M:%S"))
         env = dict(os.environ, BRIDGEVM_PREBUILT_PROBE=str(self.args.probe), BRIDGEVM_GUEST_RTC_EPOCH=str(epoch))
@@ -194,11 +216,13 @@ class BridgeVM(Engine):
     def run(self, command: str, deadline: float) -> tuple[int, str]:
         with open(self.ctl, "a") as handle:
             handle.write(command + "\n")
-        head, body, code = f"BVAGENT CMD {command} exit=", None, 0
+        # The runner logs input commands without their payload (VERB <uuid>).
+        label = " ".join(command.split(" ")[:2]) if command.split(" ")[0].endswith("INPUT") else command
+        head, body, code = f"BVAGENT CMD {label} exit=", None, 0
         for line in self._lines(deadline):
             if body is None and line.startswith(head):
                 body, code = [], int(line[len(head):])
-            elif body is not None and line == f"BVAGENT END {command}":
+            elif body is not None and line == f"BVAGENT END {label}":
                 return code, "\n".join(body)
             elif body is not None:
                 body.append(line)
@@ -207,6 +231,14 @@ class BridgeVM(Engine):
     def request_shutdown(self) -> None:
         with open(self.ctl, "a") as handle:
             handle.write(SHUTDOWN + "\n")
+
+    def inject_moves(self, points) -> None:
+        """xHCI tablet moves through the live input control file (the legacy route)."""
+        with open(self.input_ctl, "a") as handle:
+            for x, y, due in points:
+                time.sleep(max(0.0, due - time.monotonic()))
+                handle.write(f"POINTER move:{x}x{y}\n")
+                handle.flush()
 
     def guest_off_seen(self) -> bool:
         """PSCI SYSTEM_OFF reached the VMM; the rest of shutdown_ms is host teardown."""
@@ -243,6 +275,36 @@ def blob_server() -> str:
     return f"http://{address}:{server.server_address[1]}/blob"
 
 
+def circle(count: int, hz: float, start: float):
+    return [(16384 + int(8000 * math.cos(i / 20)), 16384 + int(8000 * math.sin(i / 20)), start + i / hz)
+            for i in range(count)]
+
+
+def pointer_test(engine: Engine, record: dict) -> None:
+    """Device route: 120 Hz absolute moves for 5 s while a guest logger counts cursor changes.
+    Agent route: sequential trivial RUN round trips for 5 s (one command in flight, like the app's
+    ordered input queue, which waits for each receipt)."""
+    injector = threading.Thread(target=engine.inject_moves, args=(circle(600, 120.0, time.monotonic() + 1.5),))
+    injector.start()
+    _, text = engine.run(command_line(cursor_logger(8000)), time.monotonic() + 120)
+    injector.join()
+    record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
+    rtts, stop = [], time.monotonic() + 5
+    echo = "echo bv"  # both engines wrap a plain command line into RUN
+    while time.monotonic() < stop:
+        started = time.monotonic()
+        code, text = engine.run(echo, time.monotonic() + 30)
+        if code != 0 or "bv" not in text:
+            record["errors"].append(f"agent rtt: exit={code} {text.strip()[:120]}")
+            break
+        rtts.append((time.monotonic() - started) * 1000)
+    if rtts:
+        rtts.sort()
+        record["bench"].update({"agent-cmd-hz": round(len(rtts) / 5, 1),
+                                "agent-rtt-p50": round(rtts[len(rtts) // 2], 1),
+                                "agent-rtt-p95": round(rtts[int(len(rtts) * 0.95)], 1)})
+
+
 def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
     record = {"boot": int(boot_dir.name.split("-")[1]), "loadavg_start": os.getloadavg(), "bench": {}, "errors": []}
     try:
@@ -255,8 +317,13 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
         if first and second:
             record["idle_cpu_pct"] = round((second[0] - first[0]) / args.idle_s * 100, 1)
             record["rss_mib"] = round(second[1] / 1024)
+        if args.pointer:
+            try:
+                pointer_test(engine, record)
+            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                record["errors"].append(f"pointer: {type(error).__name__}: {error}")
         suite = SUITE + ([("net-download", net_download(args.blob_url))] if args.net else [])
-        for name, script in suite:
+        for name, script in ([] if args.skip_suite else suite):
             started = time.monotonic()
             try:
                 code, text = engine.run(command_line(script), time.monotonic() + 600)
@@ -308,6 +375,13 @@ def run(args) -> None:
     results = {"identity": identity(args), "boots": []}
     out.mkdir(parents=True)
     disk, vars_fd = out / "disk.raw", out / "vars.fd"
+    if args.engine == "bridgevm":  # a private signed copy: later rebuilds cannot change a running campaign
+        (out / "bin").mkdir()
+        shutil.copy2(args.probe, out / "bin" / "hvf_gic_boot_probe")
+        args.probe = str(out / "bin" / "hvf_gic_boot_probe")
+        subprocess.run(["codesign", "--sign", "-", "--force", "--entitlements",
+                        str(ROOT / "apps/macos/HvfRunner.entitlements"), args.probe], check=True, capture_output=True)
+        results["identity"]["probe_sha256"] = hashlib.sha256(Path(args.probe).read_bytes()).hexdigest()
     engine = (Qemu if args.engine == "qemu" else BridgeVM)(args, disk, vars_fd)
     args.blob_url = blob_server() if args.net else None
     try:
@@ -346,7 +420,8 @@ def compare(a: str, b: str) -> None:
     left, right = summary(a), summary(b)
     names = (left["identity"]["engine"], right["identity"]["engine"])
     print(f"{'metric':28} {names[0]:>12} {names[1]:>12}  better")
-    lower_better = {"ready_wall_ms", "boot_timer_desktop_ms", "idle_cpu_pct", "rss_mib", "guest_off_ms", "shutdown_ms"}
+    lower_better = {"ready_wall_ms", "boot_timer_desktop_ms", "idle_cpu_pct", "rss_mib", "guest_off_ms", "shutdown_ms",
+                    "cursor-interval-p50", "cursor-interval-p95", "agent-rtt-p50", "agent-rtt-p95"}
     for key in left["median"].keys() | right["median"].keys():
         x, y = left["median"].get(key), right["median"].get(key)
         if x is None or y is None:
@@ -371,6 +446,8 @@ def main() -> None:
     r.add_argument("--cpus", type=int, default=4)
     r.add_argument("--ram-mib", type=int, default=6144)
     r.add_argument("--net", action="store_true")
+    r.add_argument("--pointer", action="store_true", help="cursor update rate per input route")
+    r.add_argument("--skip-suite", action="store_true", help="only boot, idle, optional pointer/net, shutdown")
     r.add_argument("--settle-s", type=float, default=60)
     r.add_argument("--idle-s", type=float, default=30)
     r.add_argument("--ready-timeout", type=float, default=600)

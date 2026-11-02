@@ -96,9 +96,30 @@ def net_download(url: str) -> str:
     )
 
 
+def cursor_logger(ms: int) -> str:
+    """Poll GetCursorPos every ~1 ms for `ms`; report distinct positions per second while moving."""
+    return (
+        "Add-Type -TypeDefinition 'using System; using System.Collections.Generic; using System.Diagnostics;"
+        " using System.Runtime.InteropServices; using System.Threading; public static class BvCur {"
+        " [StructLayout(LayoutKind.Sequential)] public struct P { public int X; public int Y; }"
+        " [DllImport(\"user32.dll\")] static extern bool GetCursorPos(out P p);"
+        " [DllImport(\"winmm.dll\")] static extern uint timeBeginPeriod(uint p);"
+        " public static string Run(int ms) { timeBeginPeriod(1); P last; GetCursorPos(out last);"
+        " var t = new List<double>(); var sw = Stopwatch.StartNew(); while (sw.ElapsedMilliseconds < ms) {"
+        " P p; GetCursorPos(out p); if (p.X != last.X || p.Y != last.Y) { t.Add(sw.Elapsed.TotalMilliseconds); last = p; }"
+        " Thread.Sleep(1); } if (t.Count < 3) { return \"BVBENCH cursor-hz 0.0 Hz\"; }"
+        " var d = new double[t.Count - 1]; for (int i = 1; i < t.Count; i++) { d[i - 1] = t[i] - t[i - 1]; } Array.Sort(d);"
+        " double span = (t[t.Count - 1] - t[0]) / 1000.0; return string.Format(\"BVBENCH cursor-hz {0:F1} Hz\\n"
+        "BVBENCH cursor-interval-p50 {1:F1} ms\\nBVBENCH cursor-interval-p95 {2:F1} ms\", (t.Count - 1) / span,"
+        " d[d.Length / 2], d[(int)(d.Length * 0.95)]); } }';"
+        f"[BvCur]::Run({ms})"
+    )
+
+
 # Every guest metric is higher-is-better; one script may print several.
 HIGHER_IS_BETTER = {name for name, _ in SUITE} | {
-    "disk-write-seq-1m", "disk-read-seq-1m", "disk-read-rand-4k", "net-download"}
+    "disk-write-seq-1m", "disk-read-seq-1m", "disk-read-rand-4k", "net-download", "cursor-hz",
+    "agent-cmd-hz"}
 
 _BVBENCH = re.compile(r"^BVBENCH (\S+) ([0-9]+(?:\.[0-9]+)?) (\S+)\s*$", re.M)
 
