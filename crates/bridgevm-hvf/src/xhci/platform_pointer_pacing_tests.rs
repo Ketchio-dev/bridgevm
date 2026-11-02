@@ -128,3 +128,35 @@ fn erdp_mmio_does_not_bypass_pointer_report_pacing() {
     platform.drain_xhci_pointer_input_reports(&mut mem);
     assert_eq!(emitted(&platform), (1, 1, 1));
 }
+
+#[test]
+fn pointer_reports_use_their_own_shorter_interval() {
+    let (mut platform, mut mem) = new_platform_and_ram();
+    program_xhci_bar0(&mut platform, &mut mem);
+    configure_dci5(&mut platform, &mut mem);
+    platform.set_xhci_report_interval(Duration::from_millis(30));
+    platform.set_xhci_pointer_report_interval(Duration::from_millis(8));
+    let base = Instant::now();
+    platform.set_host_now(base);
+    let position = PointerPosition::new(1_024, 2_048).unwrap();
+    platform
+        .queue_xhci_pointer_input_actions_with_mem(
+            &[
+                PointerInputAction::Move(position),
+                PointerInputAction::Click(position),
+            ],
+            &mut mem,
+        )
+        .unwrap();
+    assert_eq!(emitted(&platform), (1, 0, 0));
+    assert_eq!(
+        platform.xhci_pointer_report_deadline(),
+        Some(base + Duration::from_millis(8))
+    );
+    platform.set_host_now(base + Duration::from_millis(7));
+    platform.drain_xhci_pointer_input_reports(&mut mem);
+    assert_eq!(emitted(&platform), (1, 0, 0));
+    platform.set_host_now(base + Duration::from_millis(8));
+    platform.drain_xhci_pointer_input_reports(&mut mem);
+    assert_eq!(emitted(&platform), (1, 1, 0));
+}
