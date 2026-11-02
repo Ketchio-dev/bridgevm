@@ -5292,3 +5292,6 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_f
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_feedback_tests.rs	20	0
 docs/history/windows-hvf/share-root-notice-20261102.md	29	0
 docs/document-manifests/share-root-notice-20261102.tsv	2	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfDisplayKeyRepeat.swift	15	0
+apps/macos/Tests/BridgeVMControlTests/HvfDisplayKeyRepeatTests.swift	45	0
+docs/history/windows-hvf/display-key-repeat-20261102.md	19	0

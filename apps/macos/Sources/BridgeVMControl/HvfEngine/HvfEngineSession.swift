@@ -37,7 +37,7 @@ final class HvfEngineSession: ObservableObject {
     var lastHeartbeatDate: Date?
     var serviceStarted = false
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
-    private let inputDriver = HvfSessionInputDriver()
+    let inputDriver = HvfSessionInputDriver()
     let appPacing = HvfAppPacingRecords() // the session's app-side display and input records
     var textInputTarget: HvfTextInputTargetIdentity { .init(owner: ObjectIdentifier(self), generation: inputDriver.textInputGeneration, binding: inputBinding) }
     var stopCommandSent = false
