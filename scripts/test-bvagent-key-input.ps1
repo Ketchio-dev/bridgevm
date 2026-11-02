@@ -7,8 +7,8 @@ if (-not ('BridgeVM.BvUnicodeInput' -as [type])) {
 $cases = @{
     'enter' = '13:0,13:2'; 'left' = '37:1,37:3'; 'delete' = '46:1,46:3'
     'ctrl+v' = '17:0,86:0,86:2,17:2'; 'shift+tab' = '16:0,9:0,9:2,16:2'; 'shift+enter' = '16:0,13:0,13:2,16:2'; 'shift+space' = '16:0,32:0,32:2,16:2'
-    'ctrl+shift+left' = '17:0,16:0,37:1,37:3,16:2,17:2'
-    'alt+f4' = '18:0,115:0,115:2,18:2'
+    'ctrl+shift+left' = '17:0,16:0,37:1,37:3,16:2,17:2'; 'ctrl+shift+tab' = '17:0,16:0,9:0,9:2,16:2,17:2'; 'shift+f10' = '16:0,121:0,121:2,16:2'; 'shift+f1' = '16:0,112:0,112:2,16:2'; 'shift+delete' = '16:0,46:1,46:3,16:2'
+    'alt+f4' = '18:0,115:0,115:2,18:2'; 'ctrl+s' = '17:0,83:0,83:2,17:2'; 'ctrl+w' = '17:0,87:0,87:2,17:2'; 'ctrl+enter' = '17:0,13:0,13:2,17:2'; 'ctrl+tab' = '17:0,9:0,9:2,17:2'
 }
 foreach ($command in $cases.Keys) {
     $events = [BridgeVM.BvUnicodeInput]::BuildKey($command)
@@ -20,12 +20,12 @@ foreach ($command in $cases.Keys) {
         }
     }
 }
-foreach ($bad in @('', 'a', 'CTRL+V', 'ctrl+alt+delete', 'shift+ctrl+left', 'ctrl+ctrl+v', 'command+c', "enter`n")) {
+foreach ($bad in @('', 'a', 'CTRL+V', 'ctrl+alt+delete', 'shift+ctrl+left', 'ctrl+ctrl+v', 'command+c', "enter`n", 'ctrl+shift+s', 'shift+s', 'alt+s', 'ctrl+1', 'ctrl+f1', 'shift+f13', 'ctrl+shift+enter', 'shift+backspace', 'ctrl+')) {
     $blocked = $false
     try { [BridgeVM.BvUnicodeInput]::BuildKey($bad) | Out-Null } catch { $blocked = $true }
     if (-not $blocked) { throw "unsupported chord accepted: $bad" }
 }
-$id = '01234567-89AB-CDEF-0123-456789ABCDEF'
+foreach ($letter in [char[]]'abcdefghijklmnopqrstuvwxyz') { $vk = [int][char]::ToUpperInvariant($letter); if ((([BridgeVM.BvUnicodeInput]::BuildKey('ctrl+' + $letter) | ForEach-Object { '{0}:{1}' -f $_.Data.Keyboard.VirtualKey, $_.Data.Keyboard.Flags }) -join ',') -cne "17:0,${vk}:0,${vk}:2,17:2") { throw "wrong ctrl letter: $letter" } }; $id = '01234567-89AB-CDEF-0123-456789ABCDEF'
 $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('ctrl+shift+left'))
 $result = Invoke-UnicodeInput "$id $payload" { param($key) return [uint32]([BridgeVM.BvUnicodeInput]::BuildKey($key).Length) } $true
 if ($result.Exit -ne 0 -or $result.Out -cne "BVINPUT_INSERTED $id 6") { throw 'key receipt mismatch' }

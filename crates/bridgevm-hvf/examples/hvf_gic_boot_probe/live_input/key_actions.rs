@@ -1,6 +1,9 @@
 use bridgevm_hvf::xhci::SetupInputAction;
 use crate::xhci_hid_input::parse_setup_input_actions;
 
+#[path = "key_chords.rs"]
+mod key_chords;
+
 const CHORDS: &[(&str, u8, u8)] = &[
     ("shift+left", 0x02, 0x50),
     ("ctrl+left", 0x01, 0x50),
@@ -27,11 +30,6 @@ const CHORDS: &[(&str, u8, u8)] = &[
     ("ctrl+pagedown", 0x01, 0x4e),
     ("ctrl+shift+pagedown", 0x03, 0x4e),
     ("shift+tab", 0x02, 0x2b), ("shift+enter", 0x02, 0x28), ("shift+space", 0x02, 0x2c),
-    ("ctrl+a", 0x01, 0x4),
-    ("ctrl+c", 0x01, 0x6),
-    ("ctrl+x", 0x01, 0x1b),
-    ("ctrl+z", 0x01, 0x1d),
-    ("ctrl+y", 0x01, 0x1c),
     ("ctrl+backspace", 0x01, 0x2a),
     ("ctrl+delete", 0x01, 0x4c),
     ("alt+tab", 0x04, 0x2b),
@@ -48,7 +46,9 @@ pub(super) fn parse(value: &str) -> Result<Vec<SetupInputAction>, &'static str> 
         return Err(error);
     }
     let normalized = value.trim().to_ascii_lowercase();
-    let Some(&(name, modifier, usage)) = CHORDS.iter().find(|(name, _, _)| *name == normalized) else {
+    // Ctrl letters other than V (a setup-input token) and the Ctrl/Shift chord set live in key_chords.
+    let chord = CHORDS.iter().copied().find(|(name, _, _)| *name == normalized);
+    let Some((name, modifier, usage)) = chord.or_else(|| key_chords::find(&normalized)) else {
         return Err(error);
     };
     Ok(vec![SetupInputAction::Key { name, modifier, usage }])

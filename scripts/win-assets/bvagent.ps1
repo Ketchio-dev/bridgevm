@@ -132,6 +132,12 @@ function Get-InputCapabilities([string]$Request) {
                 $keySupport = "`nBVINPUT_KEYS $Request SHIFT_ENTER_SPACE"
             }
         } catch { }
+        # Hosts that predate the separate chord marker ignore it. Advertise it only when every chord dry-builds.
+        try {
+            $chords = @([char[]]'abcdefghijklmnopqrstuvwxyz' | ForEach-Object { 'ctrl+' + $_ }) + @(1..12 | ForEach-Object { 'shift+f' + $_ }) + @('ctrl+enter', 'ctrl+tab', 'shift+delete')
+            foreach ($chord in $chords) { if ([BridgeVM.BvUnicodeInput]::BuildKey($chord).Length -ne 4) { throw 'chord-unavailable' } }
+            if ([BridgeVM.BvUnicodeInput]::BuildKey('ctrl+shift+tab').Length -eq 6) { $keySupport += "`nBVINPUT_CHORDS $Request CTRL_SHIFT_CHORDS" }
+        } catch { }
         return @{ Exit = 0; Out = (('BVINPUT_CAPS {0} 3 TEXTINPUT KEYINPUT POINTERINPUT 65536' -f $Request) + $keySupport) }
     } catch {
         return @{ Exit = 1; Out = 'BVINPUT_CAPS_FAILED unavailable' }

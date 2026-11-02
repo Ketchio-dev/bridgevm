@@ -48,6 +48,6 @@ struct HvfGuestInputEncoding {
         case "alt": allowed = ["tab", "enter", "f4"].contains(key)
         default: allowed = false
         }
-        return allowed ? parts.count * 2 : nil
+        return allowed || HvfControlChordKeys.extended.contains(command) ? parts.count * 2 : nil
     }
 }

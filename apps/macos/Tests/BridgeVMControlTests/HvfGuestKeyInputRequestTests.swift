@@ -22,7 +22,7 @@ final class HvfGuestKeyInputRequestTests: XCTestCase {
 
     func testUnsupportedCommandsNeverBecomeRequests() {
         for key in ["", "a", "CTRL+V", "ctrl+alt+delete", "command+c", "shift+ctrl+left",
-                    "ctrl+ctrl+v", "+enter", "enter+", "ctrl++v", "alt+a", "shift+delete",
+                    "ctrl+ctrl+v", "+enter", "enter+", "ctrl++v", "alt+a", "shift+backspace", "ctrl+shift+s", "shift+f13",
                     "enter\n", "enter\r", " ctrl+v", "f13", String(repeating: "a", count: 33)] {
             XCTAssertNil(HvfUnicodeInputRequest(event: .key(key), now: now), key)
         }

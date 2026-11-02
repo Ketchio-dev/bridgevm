@@ -25,13 +25,13 @@ namespace BridgeVM {
             int separator = command.LastIndexOf('+');
             string prefix = separator < 0 ? "" : command.Substring(0, separator);
             string key = command.Substring(separator + 1);
-            bool letter = key.Length == 1 && "acvxyz".IndexOf(key[0]) >= 0;
-            bool navigation = Navigation.Contains(key);
+            bool letter = key.Length == 1 && key[0] >= 'a' && key[0] <= 'z', navigation = Navigation.Contains(key);
             bool allowed = prefix == "" && NamedKeys.ContainsKey(key)
                 || prefix == "shift" && (navigation || key == "tab" || key == "enter" || key == "space")
-                || prefix == "ctrl" && (navigation || letter || key == "backspace" || key == "delete")
+                || prefix == "ctrl" && (navigation || letter && "acvxyz".IndexOf(key[0]) >= 0 || key == "backspace" || key == "delete")
                 || prefix == "ctrl+shift" && navigation
-                || prefix == "alt" && (key == "tab" || key == "enter" || key == "f4");
+                || prefix == "alt" && (key == "tab" || key == "enter" || key == "f4")
+                || (prefix == "ctrl" && (letter || key == "enter" || key == "tab") || prefix == "ctrl+shift" && key == "tab" || prefix == "shift" && (key == "delete" || NamedKeys.ContainsKey(key) && key[0] == 'f'));
             if (!allowed) { throw new ArgumentException("unsupported-key-input"); }
             ushort code = letter ? (ushort)Char.ToUpperInvariant(key[0]) : NamedKeys[key];
             List<ushort> modifiers = new List<ushort>();

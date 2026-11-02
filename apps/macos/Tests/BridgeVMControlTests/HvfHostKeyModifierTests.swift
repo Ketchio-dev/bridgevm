@@ -30,7 +30,7 @@ final class HvfHostKeyModifierTests: XCTestCase {
 
     func testUnsupportedModifiersNeverBecomePlainDestructiveKeys() {
         for (characters, modifiers): (String, EventModifiers) in [
-            ("\u{f728}", .shift), ("\u{f702}", .option),
+            ("\u{7f}", .shift), ("\u{f728}", [.control, .shift]), ("\u{f702}", .option),
             ("\u{f703}", [.control, .option]), ("c", [.control, .shift])
         ] {
             XCTAssertEqual(HvfHostKeyCommand.resolve(characters: characters, modifiers: modifiers), .ignored)
