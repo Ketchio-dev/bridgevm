@@ -13,7 +13,7 @@ extension HvfHostKeyCommand {
         if flags.contains(.option) { modifiers.insert(.option) }
         if flags.contains(.command) { modifiers.insert(.command) }
         if flags.contains(.shift) { modifiers.insert(.shift) }
-        return resolve(characters: event.characters ?? "", modifiers: modifiers)
+        return resolve(characters: event.characters ?? "", modifiers: modifiers, keyCode: event.keyCode)
     }
 }
 #endif

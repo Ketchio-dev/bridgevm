@@ -126,3 +126,4 @@ HANDOFF.md	historical-evidence	project-status	STATUS.md
 @include	docs/document-manifests/display-pacing-integration-20261101.tsv	-	-
 @include	docs/document-manifests/a19-python-cancellation-20261101.tsv	-	-
 @include	docs/document-manifests/nvme-test-scratch-ownership-20261101.tsv	-	-
+@include	docs/document-manifests/nonlatin-control-shortcuts-20261101.tsv	-	-

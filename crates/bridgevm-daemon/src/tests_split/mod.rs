@@ -1,5 +1,6 @@
 //! Split test module.
 
+mod delayed_guest_hello;
 mod fast_opt_in_fixture;
 mod fast_restore_supervision;
 mod fast_resume_opt_in;
