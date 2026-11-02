@@ -276,10 +276,7 @@ final class HvfWindowsBackend: VMBackend {
             }
         }
         do {
-            let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: ctlFilePath))
-            defer { try? handle.close() }
-            try handle.seekToEnd()
-            try handle.write(contentsOf: data)
+            try HvfControlFileAppend.append(data, to: URL(fileURLWithPath: ctlFilePath))
             return true
         } catch {
             return false

@@ -1293,7 +1293,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	333	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	382	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	379	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLiveInputFile.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfLiveInputFileTests.swift	145	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	398	0
@@ -2473,7 +2473,7 @@ apps/macos/Sources/BridgeVMControl/LibraryModelSelection.swift	15	0
 apps/macos/Sources/BridgeVMControl/LibraryModelHvfRuntime.swift	54	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeSessionStoreTests.swift	264	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeViewAdmissionTests.swift	118	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBackend.swift	309	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBackend.swift	306	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPackagedWrapperPolicy.swift	42	0
 apps/macos/Tests/BridgeVMControlTests/HvfPackagedWrapperPolicyTests.swift	60	0
 apps/macos/Tests/BridgeVMControlTests/HvfProductBackendConfigurationTests.swift	144	0
@@ -5242,3 +5242,6 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_schema.rs	19	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_schema_tests.rs	86	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_refusal.rs	15	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_malformed_tests.rs	95	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfControlFileAppend.swift	20	0
+apps/macos/Tests/BridgeVMControlTests/HvfControlFileAppendTests.swift	58	0
+apps/macos/Tests/BridgeVMControlTests/HvfControlCommandAppendIntegrationTests.swift	34	0
