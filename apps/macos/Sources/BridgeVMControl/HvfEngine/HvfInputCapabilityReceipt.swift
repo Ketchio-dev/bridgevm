@@ -6,7 +6,7 @@ struct HvfInputCapabilityReceipt {
     var command: String { "INPUTCAPS \(id)" }
     private let id: String
     private var accepted: [String] = [], phase = Phase.header
-    /// Shift+Enter/Space, then the Ctrl/Shift chord set: each optional marker at most once, in this order.
+    /// Shift+Enter/Space and the Ctrl/Shift chord set, in any order after BVINPUT_CAPS.
     private var markers: [String] { ["BVINPUT_KEYS \(id) SHIFT_ENTER_SPACE", "BVINPUT_CHORDS \(id) \(HvfControlChordKeys.token)"] }
 
     init(id: UUID) { self.id = id.uuidString }
@@ -29,9 +29,9 @@ struct HvfInputCapabilityReceipt {
             }
             phase = .end
         } else if line.hasPrefix("BVINPUT_KEYS ") || line.hasPrefix("BVINPUT_CHORDS ") {
-            guard phase == .end, let index = markers.firstIndex(of: line),
-                  !markers[index...].contains(where: { accepted.contains($0) }) else { return .failed(.invalidReceipt) }
-            accepted.append(line)
+            // A marker only ever grants its own keys: a foreign, early, repeated or misspelled one is ignored
+            // instead of failing the whole handshake (which would leave the guest with no typed input at all).
+            if phase == .end, markers.contains(line), !accepted.contains(line) { accepted.append(line) }
         } else if line == "BVAGENT END \(command)" {
             return phase == .end ? .supported : .failed(.invalidReceipt)
         }
