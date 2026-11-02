@@ -126,23 +126,13 @@ struct HvfEngineView: View {
                 }
                 HStack(spacing: 18) {
                     HvfClipboardSyncToggle(session: session, isOn: $clipboardSync)
-                    Toggle("Virtio net", isOn: $virtioNet).accessibilityIdentifier("bridgevm.runtime.network")
+                    HvfNetworkToggle(session: session, isOn: $virtioNet)
                     if session.config.allowsExperimental3D {
                         Toggle("Graphics Lab 3D", isOn: $virtioGpu3d)
                     }
-                    Toggle("Shared folder", isOn: $shareEnabled).accessibilityIdentifier("bridgevm.runtime.share.enabled")
                     Spacer()
                 }
-                if shareEnabled {
-                    pathRow("Host share", text: $shareHostDir, chooseDirectory: true, identifier: "bridgevm.runtime.share.host",
-                            chooseIdentifier: "bridgevm.runtime.share.host.choose")
-                    HStack {
-                        Text("Guest share").frame(width: 92, alignment: .leading)
-                        TextField("C:\\bridgevm-share", text: $shareGuestDir)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.body.monospaced()).accessibilityIdentifier("bridgevm.runtime.share.guest")
-                    }
-                }
+                HvfSharedFolderSettings(session: session, enabled: $shareEnabled, hostDir: $shareHostDir, guestDir: $shareGuestDir)
                 HvfRuntimeKeyboardInput(session: session, draft: $keyboardInput)
                 HvfRuntimeSpecialKeys(session: session)
             }
@@ -319,6 +309,8 @@ struct HvfEngineView: View {
 
     private func start() {
         startRefusal = nil
+        let share = shareEnabled ? HvfSharedFolderSelection(hostPath: shareHostDir, guestPath: shareGuestDir) : nil
+        if let refusal = session.saveSharedFolderBeforeStart(share) { startRefusal = refusal; return }
         if case let .refused(reason) = session.requestGUIStart(configuration: currentConfig()) {
             startRefusal = reason; return
         }

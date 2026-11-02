@@ -5,13 +5,13 @@ struct HvfClipboardSyncToggle: View {
     @Binding var isOn: Bool
     @State private var message: String?
 
-    var isDisabled: Bool { session.persistsClipboardSyncPreference && !session.clipboardSyncPreferenceEditable }
+    var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
 
     var body: some View {
         Toggle("Clipboard sync", isOn: Binding(get: { isOn }, set: update))
             .accessibilityIdentifier("bridgevm.runtime.clipboard")
             .disabled(isDisabled)
-            .help(session.persistsClipboardSyncPreference ? "VM이 중지된 동안 변경하면 이 VM의 모든 시작에 저장됩니다." : "")
+            .help(session.persistsLibraryPreferences ? "VM이 중지된 동안 변경하면 이 VM의 모든 시작에 저장됩니다." : "")
             .alert("클립보드 동기화 설정", isPresented: Binding(
                 get: { message != nil }, set: { if !$0 { message = nil } }
             )) {
