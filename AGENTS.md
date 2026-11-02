@@ -1,225 +1,101 @@
-# AGENTS.md — how work is done in this repository
+# AGENTS.md — how we work here
 
-These are binding rules for anyone, human or agent, changing this repository.
-They exist because this project's failure mode is not bad code; it is
-**believing something works when the evidence does not support it**.
+BridgeVM is a Windows-on-Mac virtual machine app. The goal is a
+Parallels-class experience that beats QEMU-based VMs on measured numbers. Ship
+small working improvements quickly, measure them, keep what wins.
 
-Agents work autonomously under the standing authority in section 0. Carry each
-change through implementation, relevant checks, failure analysis and repair,
-merge and a recorded result without stopping for approval. An elapsed timer is
-a checkpoint for judgment, not a reason by itself to stop. Autonomy changes who
-decides, never what counts as evidence: the evidence, security and data
-boundaries below still apply.
+These rules replace the earlier gate-heavy process (operator decision,
+2026-11-02). When a rule here and a habit of the old process disagree, this
+file wins.
 
-## 0. Standing autonomy
+## 1. Autonomy
 
-On 2026-10-25 the operator granted standing authority for continuous,
-autonomous development. Do not stop to ask for opinions or approval. Choose the
-next work yourself: release-blocking criteria and disclosed known defects
-first, then the open threads in the operator dev wiki (section 12). When one
-item is blocked, record why and move to the next.
+Work without asking for approval: pick the most valuable next thing,
+implement it, test what matters, open a PR, merge it when its required
+checks are green, and fix or revert a red `main` before anything else.
+Before stopping, leave the state and the next step in the wiki (section 8).
 
-Without asking, an agent may:
+Ask the operator only for what an agent cannot or must not do: spending
+money or creating accounts; passwords, keys and certificates; physical
+presence (console unlock, reboot, OS install); macOS privacy or security
+settings (TCC); legal or licensing calls; publishing a release; touching the
+operator's own data, images or VMs.
 
-- merge its own pull request with a merge commit once the exact head passes
-  every required pull-request check, then confirm post-merge `main` CI and
-  repair or revert a red `main` before other work (fast development mode,
-  below);
-- submit physical-Mac live-queue jobs (pilots, campaigns, diagnostics) for a
-  pushed SHA, record each run, and clean up the lane state it created:
-  clones, scratch, retained sources and lane vTPM keys;
-- take product decisions inside the current product scope, such as limits,
-  refusals, defaults and user-interface behaviour within registry wording,
-  recording each with its reason in the wiki's `decisions.md` and, when
-  user-visible, in the repository history;
-- record a criterion as PROVEN when a retained receipt meets its unchanged
-  statement at the stated sample count on the stated head, and retract one
-  when the evidence no longer supports it;
-- delete merged or patch-equivalent branches and worktrees after distilling
-  anything the wiki requires;
-- continue across sessions: before stopping, leave the state, running job ids
-  and the next step in the wiki so the next agent resumes without asking.
+## 2. Keep it simple — the main rule
 
-### Fast development mode (operator decision, 2026-11-02)
+- Build the real user path first. Handle failures that actually happen,
+  not every failure you can imagine.
+- Validate at trust boundaries only: bytes from the guest, file paths, the
+  network, anything security-relevant. Inside our own code, trust the
+  invariants; a `debug_assert!` beats a new error type.
+- Be tolerant with our own components: ignore unknown fields, optional
+  markers and harmless formatting differences instead of failing the whole
+  operation.
+- A refusal is a bug unless it protects user data or security. When one
+  feature fails, switch that feature off, keep the VM running, and tell the
+  user in one plain sentence what happened and what to do.
+- Do not add gates, manifests, registries, budgets or other process unless a
+  real incident shows it is needed. Delete checks that never catch bugs.
+- Tests cover real behaviour and real regressions, not exhaustive matrices
+  of hypothetical input. One focused test that fails before the fix beats
+  twenty that cannot fail.
+- Prefer deleting code to adding it. Equal results with less code wins.
 
-The operator chose development speed and measured numbers over duplicated
-gates. The pull-request CI already runs formatting, clippy, the Rust and
-Swift suites and the registry, documentation and budget checks, so:
+## 3. Numbers decide performance
 
-- Before pushing, run focused tests for what changed. A local
-  `scripts/check-project.sh` or a dispatched hosted full check is optional,
-  for cross-cutting or risky changes, and not a merge prerequisite.
-- Ordinary changes need no `tested_commit` seal, A11 note or history
-  document; the commit message and pull-request body are the record. Only
-  the release gate (`BRIDGEVM_RELEASE_GATE=1`) requires a fresh
-  `tested_commit`, and a release head still needs its full exact-SHA receipt.
-- Prefer measured numbers (benchmarks, live single runs) to decide what to
-  optimise; record them with their evidence rank.
-- Evidence, claim, security and data rules (sections 1 to 6) are unchanged.
+- The perf harness (`vm_bench.py`) boots one Windows clone under BridgeVM and
+  QEMU/HVF and reports boot time, idle CPU, memory, CPU, memory
+  bandwidth, disk, flush and process-spawn numbers. Run it before and after
+  a performance change; keep the change only if it wins beyond run-to-run
+  noise without making data less safe.
+- Say how you know: measured on a VM, tested, or reasoned. Never present a
+  guess as a measurement, and never move a target to make it pass.
 
-Ask the operator only for what an agent cannot or must not do itself: spending
-money or creating accounts; credentials, certificates and passwords; physical
-presence such as a console unlock, reboot or operating-system installation;
-TCC or other host security-policy changes; legal or licensing judgments;
-publishing a release or changing public release assets; changing the
-operator's own data, canonical images or other assets that no agent lane
-created; changing `product_state`; and changing a criterion's statement,
-threshold or scope. Ask once and concretely, keep the dependent criterion open,
-and continue other work while waiting.
+## 4. Honest product claims
 
-## 1. Evidence hierarchy
+- README, STATUS and app text describe what actually works. User-facing
+  capability wording comes from `capabilities/windows-hvf.json`; its
+  `product_state` changes only with the operator.
+- Never advertise a security feature that is not implemented. Guest-visible
+  randomness comes from the host CSPRNG.
 
-Claims are ranked. A lower-ranked result never overrides a higher-ranked one.
+## 5. Data and secrets
 
-1. **Live gate receipts** at the stated sample count on real hardware.
-2. **Live single runs** — useful signal, never a criterion pass.
-3. **Automated tests** — necessary, but they do not prove guest behaviour.
-4. **Static reasoning** — generates hypotheses only.
+- Never commit or upload Windows media paths, disk images, UEFI vars, vTPM
+  state, keys, passwords or other secrets.
+- Never boot or modify canonical images or the operator's VMs directly. Test
+  runs use `cp -c` APFS clones with their own vars file and delete the
+  clones (and any vTPM key they created) afterwards.
+- A guest flush is acknowledged only after the host made the data durable
+  (`F_FULLFSYNC`), unless the user explicitly chooses a faster mode.
 
-A single passing run does not close a criterion that asks for 9 of 10. Read the
-failing state — framebuffer, symbols, instruction bytes, timer and mask state,
-owning-thread GIC snapshots — before proposing a cause. A plausible narrative
-that explains the symptom is not evidence.
+## 6. Pull requests and CI
 
-## 2. Never relax a criterion to pass it
+- Small PRs. Before pushing, run the focused tests for what you changed, and
+  `scripts/check-project.sh --fast` when you touch build or CI plumbing.
+- Merge with a merge commit once the required checks pass on the exact head.
+  Other workflows are signal: if one turns `main` red, fix or revert first.
+- The commit message and PR body are the record: what changed, why, how it
+  was tested, numbers if any. No seal commits, no per-change history docs.
+- A release candidate runs the full `scripts/check-project.sh`; the release
+  workflow also requires a fresh `tested_commit` (`BRIDGEVM_RELEASE_GATE=1`).
+- CI runs on GitHub-hosted runners only; never attach a self-hosted runner to
+  this public repository. VM runs that need a real Mac happen locally or on
+  the physical-Mac live queue, never in public CI.
 
-Thresholds may be raised, never lowered, and never redefined mid-investigation
-to match what was achieved. If a gate cannot be met, the criterion stays open
-and the product wording stays honest. Substituting a smoke benchmark for a real
-workload is the same violation.
+## 7. Practical conventions
 
-Agents never change a criterion's statement, threshold or scope. The operator
-may, as an explicit dated scope decision recorded in the registry history. It
-applies only to measurements taken after the decision and never turns an
-earlier failure into a pass.
+- Source `../../env.sh` before building when it exists.
+- Files under `scripts/win-assets/**` keep CRLF line endings; normalise guest
+  logs with `tr '\r' '\n'` before parsing.
+- Guest agent: append to `agent.ctl` only after `BVAGENT SERVICE start`, keep
+  shared files under about 8 MB, wait for results by file name.
+- Long jobs run in the background; check back instead of blocking a session.
+- `GOAL.md`, `PLAN.md` and `HANDOFF.md` belong to the operator; never stage
+  them. Remove temporary instrumentation before you finish.
 
-## 3. Claim discipline
+## 8. Operator dev wiki
 
-- Retracting a claim is normal work. State plainly that a previous conclusion
-  was wrong, and leave the failed experiment in the record.
-- Never rewrite a failed experiment into a success.
-- User-facing capability wording comes from `capabilities/windows-hvf.json`.
-  Do not invent alternative phrasing in README, STATUS, the CLI or the app.
-- The product state lives in `capabilities/windows-hvf.json` (`product_state`)
-  and may never be promoted while a release-blocking criterion is unproven.
-  Graphics are an *experimental Vulkan path* and an *experimental
-  D3D11-compatible subset*. A non-blocking criterion with a live user-visible
-  defect stays OPEN and its `known_defect` wording is surfaced by generation —
-  never hidden by reclassifying the criterion as satisfied-by-recording.
-- The guest platform is a *QEMU `virt`-compatible contract with documented
-  deviations*, not a bit-for-bit copy. New guest-visible differences require an
-  entry in `docs/machine-contract/qemu-virt-deviations.json`.
-
-## 4. Security fails closed
-
-- Never advertise a security feature that is not implemented. A guest-visible
-  RNG must come from the host CSPRNG; a provider failure returns an error
-  status rather than a predictable value.
-- Never derive security-relevant values from exit counts, time, PIDs or
-  constants.
-- Release builds must not honour repository or PATH overrides for helper
-  binaries.
-- Media whose key provenance cannot be established is classified as
-  development-only and is not promoted by an audit that only sees timestamps.
-
-## 5. Image and data safety
-
-- Canonical images are immutable. Live runs use `cp -c` clones.
-- Cross-volume `cp -c` does not preserve APFS clone relationships; stage
-  external sources into an internal sparse cache first.
-- Each parallel lane gets its own cloned disk **and** its own vars file. A
-  shared writable vars file invalidates the run.
-- Guest disks, UEFI vars, vTPM state, recovery keys and third-party title
-  content never enter git or CI artifacts. Receipts carry hashes and counts.
-
-## 6. Guest asset conventions
-
-- Files under `scripts/win-assets/**` keep CRLF line endings.
-- Normalise guest logs with `tr '\r' '\n'` before parsing.
-- Agent protocol: append to `agent.ctl` only after the service starts, deliver
-  via the share plus `powershell -File`, launch workloads through
-  `Invoke-CimMethod Win32_Process Create`, wait by filename, and keep individual
-  shared files under about 8 MB.
-
-## 7. Structural budgets
-
-`scripts/refactor-budgets.tsv` ceilings are a ratchet. **Never raise an existing
-ceiling.** When a file would exceed its budget, extract a module instead.
-New files are registered at their actual size.
-
-## 8. Planning and commits
-
-- Make a concise plan when a change crosses subsystems or affects a release,
-  security, or guest-contract boundary, record it in the wiki thread, and
-  execute it. A plan is not a request for approval; only the items listed in
-  section 0 go to the operator.
-- Commit per proven conclusion, not per experiment. A commit message states
-  what is now known, not what was attempted.
-- After pushing, confirm hosted CI is green for that SHA. Red CI blocks
-  promoting any live result to release evidence.
-- Remove all temporary instrumentation before ending a session.
-- `GOAL.md`, `PLAN.md` and `HANDOFF.md` are operator-owned and are not staged.
-
-## 9. Long tests use the correct execution venue
-
-- Local deterministic developer checks, including `scripts/check-project.sh`,
-  may run past **300 seconds** when they are making useful progress. At 300
-  seconds, inspect progress and machine load, then choose a finite next
-  checkpoint. Continue, move the check to GitHub-hosted Actions, or stop with
-  the reason recorded. A local result does not replace the required
-  GitHub-hosted CI result for a pushed SHA.
-- Run required deterministic CI for a pushed SHA on GitHub-hosted Actions and
-  record the run id; local checks provide development feedback. **Never submit
-  an ordinary deterministic check to the physical-Mac live queue merely
-  because it is slow.**
-- The physical-Mac live queue (historically called the Studio queue) is
-  reserved for live work that genuinely requires a physical Apple-silicon
-  Mac, bare-metal Hypervisor.framework, WindowServer/CGL, private Windows
-  media or a real GPU. Record its job id.
-- `sleep 6000`, long `while ps; sleep` loops and multi-hour synchronous tool
-  calls are prohibited.
-- Poll hosted CI in bounded intervals. After 180 seconds, reassess whether to
-  keep following that run in this turn or record its id and return later; the
-  elapsed time alone does not decide when the task ends.
-- A submitted live-hardware job seals its commit, binary, image and vars
-  hashes, so later edits cannot change what it measured.
-- Fast tiers filter candidates. Only the release tier produces shipping
-  evidence.
-
-## 10. CI boundary
-
-- Everything deterministic runs on **GitHub-hosted** Actions.
-- Only work needing a physical Apple-silicon Mac, bare-metal
-  Hypervisor.framework, WindowServer/CGL, private Windows media or a real GPU
-  runs on the physical-Mac live queue. The particular Mac that drains this
-  queue is test infrastructure, not a product runtime or build dependency.
-- **No self-hosted runner is attached to this public repository.** A workflow
-  reachable from a fork must never execute on a personal machine.
-- Moving an ordinary check off hosted CI to hide a failure is forbidden.
-
-## 11. Before you finish
-
-Merged work needs green pull-request CI on its exact head and a green
-post-merge `main`. A release candidate also needs the deterministic project
-check on its exact SHA:
-
-```sh
-scripts/check-project.sh
-```
-
-Nothing is "done" while a required check fails.
-
-## 12. Operator dev wiki
-
-The operator may keep a private BridgeVM dev wiki at `../../wiki`, relative to
-this checkout. It is for BridgeVM work only. When it exists:
-
-- pull it and read its `index.md` before starting;
-- search it before guessing a past run, decision or machine fact;
-- after a run or decision, update it under the rules in its own `AGENTS.md`,
-  recording every decision taken under section 0 in its `decisions.md`.
-
-The wiki ranks below this repository. Product truth stays in
-`capabilities/windows-hvf.json`, and nothing private is copied from the wiki
-into this repository. When `../../env.sh` exists, source it before building;
-it puts that machine's toolchain on PATH.
+If `../../wiki` exists, read its `index.md` first, and record decisions and
+run results there (`decisions.md`, a thread page). Nothing private from the
+wiki goes into this repository.

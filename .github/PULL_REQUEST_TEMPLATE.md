@@ -1,25 +1,9 @@
-## Outcome
+## What and why
 
-What user-visible or engineering conclusion does this change establish?
+## How it was tested
 
-## Validation
+Focused tests, and numbers (`vm_bench.py`) for performance changes.
 
-List the exact commands, hosted runs, or retained live receipts used. State the
-evidence level: static reasoning, deterministic test, live single run, or fixed
-sample-count live gate.
+## Risk
 
-## Risk and boundaries
-
-Describe security, private-data, compatibility, machine-contract, packaging,
-and rollback impact. Write “none” only after checking each category.
-
-## Checklist
-
-- [ ] I read `AGENTS.md` and did not weaken an existing criterion.
-- [ ] Cross-subsystem or release/security/guest-contract changes have a concise plan; in-scope product decisions are recorded, and only the operator-only items in `AGENTS.md` section 0 are left for the operator.
-- [ ] Focused tests pass and the pull-request CI is green on the exact head (`scripts/check-project.sh` only for release candidates or risky changes).
-- [ ] Capability wording comes from `capabilities/windows-hvf.json` where applicable.
-- [ ] New or revised documentation is classified and its links resolve.
-- [ ] No Windows media, VM disk, vars, vTPM state, recovery key, proprietary title content, private receipt, `GOAL.md`, `PLAN.md`, or `HANDOFF.md` is staged.
-- [ ] Test-signed graphics inputs have not been presented as A9 production-signing evidence.
-- [ ] Temporary instrumentation has been removed or explicitly scoped as retained diagnostics.
+Anything that could lose user data, weaken security, or break existing VMs? Write "none" if not.

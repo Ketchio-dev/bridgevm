@@ -135,9 +135,6 @@ failure. Hosted CI and Security and quality must pass for the exact pushed SHA.
 - Canonical VM images are immutable. Live work uses `cp -c` clones, with a
   separate writable disk and vars file for every parallel lane.
 - Files under `scripts/win-assets/**` keep CRLF line endings.
-- Structural limits in `scripts/refactor-budgets.tsv` are a ratchet. Do not
-  raise an existing ceiling; extract a module and register new files at their
-  actual size.
 - Security paths fail closed. A missing signer, helper, hash, or provenance
   record is an error, not permission to continue.
 - Test-signed Windows graphics packages belong only to Graphics Lab. They are
