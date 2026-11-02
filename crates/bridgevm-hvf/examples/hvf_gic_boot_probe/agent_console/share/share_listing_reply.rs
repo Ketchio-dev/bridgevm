@@ -2,6 +2,9 @@
 
 use super::share_listing_report::refused_name_lines;
 use super::*;
+#[path = "share_listing_refusal.rs"]
+mod refusal;
+use refusal::report_listing_limit;
 
 impl AgentConsoleHarness {
     pub(in crate::agent_console) fn handle_share_listing_reply(&mut self, line: &str) {
@@ -82,12 +85,4 @@ impl AgentConsoleHarness {
             }
         }
     }
-}
-
-fn report_listing_limit(error: share_sync::ListingLimitError) {
-    let limit = match error {
-        share_sync::ListingLimitError::TooManyBytes { .. } => share_sync::MAX_LISTING_BYTES,
-        share_sync::ListingLimitError::TooManyEntries { .. } => share_sync::MAX_LISTING_ENTRIES,
-    };
-    println!("BVAGENT SHARE ls-error <listing-limit {error:?} limit={limit}>");
 }

@@ -3,11 +3,11 @@
 pub const MAX_LISTING_BYTES: usize = 1024 * 1024;
 pub const MAX_LISTING_ENTRIES: usize = 4096;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ListingLimitError {
-    TooManyBytes { bytes: usize },
-    TooManyEntries { at_least: usize },
-}
+#[path = "share_listing_error.rs"]
+mod error;
+#[path = "share_listing_schema.rs"]
+mod schema;
+pub use error::ListingLimitError;
 
 pub(super) fn check(listing: &str) -> Result<(), ListingLimitError> {
     if listing.len() > MAX_LISTING_BYTES {
@@ -26,5 +26,5 @@ pub(super) fn check(listing: &str) -> Result<(), ListingLimitError> {
             at_least: MAX_LISTING_ENTRIES + 1,
         });
     }
-    Ok(())
+    schema::check(listing)
 }

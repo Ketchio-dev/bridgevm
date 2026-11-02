@@ -58,3 +58,5 @@ fn rejected_listings_preserve_sync_state_and_recover_on_a_valid_snapshot() {
         );
     }
 }
+#[path = "share_listing_malformed_tests.rs"]
+mod malformed_listing;

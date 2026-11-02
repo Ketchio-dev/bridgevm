@@ -5,6 +5,8 @@ use super::*;
 mod name_limit_tests;
 #[path = "share_listing_limit_tests.rs"]
 mod listing_limit_tests;
+#[path = "share_listing_schema_tests.rs"]
+mod listing_schema;
 
 fn ls_file(name: &str, size: u64, mtime: &str) -> LsEntry {
     LsEntry {

@@ -5185,12 +5185,12 @@ docs/document-manifests/framebuffer-request-backing-20261102.tsv	2	0
 docs/history/windows-hvf/framebuffer-request-backing-20261102.md	26	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/service_queue.rs	19	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/service_queue_tests.rs	75	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_reply.rs	89	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_reply.rs	81	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_reply_tests.rs	57	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_report_count_tests.rs	23	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_entries.rs	28	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_limit_tests.rs	79	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_limits.rs	28	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_limit_tests.rs	78	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_limits.rs	23	0
 docs/document-manifests/share-listing-bounds-20261101.tsv	2	0
 docs/history/windows-hvf/share-listing-bounds-20261101.md	29	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file/access.rs	26	0
@@ -5237,3 +5237,8 @@ docs/document-manifests/hvf-resolution-presentation-20261102.tsv	2	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_reply.rs	90	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_test_fixture.rs	34	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_reply_identity_tests.rs	130	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_error.rs	13	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_schema.rs	19	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_schema_tests.rs	86	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_refusal.rs	15	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_malformed_tests.rs	95	0

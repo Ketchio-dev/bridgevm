@@ -69,7 +69,6 @@ fn parse_ls_into_reuses_output_vec_and_clears_old_entries() {
     let capacity = entries.capacity();
     parse_ls_into(
         "a.txt|3|0|2026-01-01T00:00:00.0000000Z\n\
-         malformed\n\
          sub\\dir|0|1|2026-01-01T00:00:01.0000000Z\n",
         &mut entries,
     )
