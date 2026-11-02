@@ -10,7 +10,7 @@
 //!   ms and above) and the longest;
 //! - `late_callbacks`: intervals more than 20 ms beyond the 10 ms buffer
 //!   period, that is over 30 ms, so exactly the last two interval buckets;
-//! - `trylock_misses`: every failed ring try_lock, inside a playback span or
+//! - `trylock_misses`: every busy non-waiting consumer guard, inside a span or
 //!   not (the continuity record counts only those inside one);
 //! - the ring level a callback found before draining it, from the first
 //!   callback that plays guest PCM until the guest stops its stream:
@@ -93,7 +93,7 @@ impl CallbackTiming {
         self.sequence.store(sequence.wrapping_add(2), Release);
     }
 
-    /// One output callback at `now`; `contended` when its ring try_lock failed.
+    /// One output callback at `now`; `contended` when its consumer guard was busy.
     fn note_callback(&self, now: Instant, contended: bool) {
         let since = now.saturating_duration_since(self.base).as_nanos();
         let at = u64::try_from(since).unwrap_or(NO_CALLBACK - 1);

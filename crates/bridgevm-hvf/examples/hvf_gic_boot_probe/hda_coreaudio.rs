@@ -1,9 +1,10 @@
 //! CoreAudio output sink for the live HVF probe.
 //!
-//! The HDA controller calls `write_pcm` on the vCPU thread while the platform
-//! lock is held. The producer assembles complete frames under a short ring lock;
-//! AudioQueue's private callback thread drains the ring into its own
-//! buffers and substitutes silence on underrun or lock contention.
+//! HDA polling calls `write_pcm` while the platform lock is held. The owning
+//! sink's `&mut HdaPcmSink` calls serialize its sole producer. The callback
+//! context only owns shared PCM state and cannot publish frames. Complete
+//! frames cross an atomic ring; a non-waiting consumer guard protects overlapping
+//! callbacks, which otherwise substitute silence only on underrun.
 //!
 //! Teardown prints the `hda CoreAudio stats:` record, whose exact ordered
 //! field set B7 and T17 parse, and after it a separate `hda CoreAudio
@@ -21,12 +22,16 @@ mod hda_coreaudio_frames;
 #[path = "hda_coreaudio_producer.rs"]
 mod hda_coreaudio_producer;
 use hda_coreaudio_producer::PcmProducer;
+#[path = "hda_coreaudio_atomic_ring.rs"]
+mod hda_coreaudio_atomic_ring;
 #[path = "hda_coreaudio_callback.rs"]
 mod hda_coreaudio_callback;
 #[path = "hda_coreaudio_continuity.rs"]
 mod hda_coreaudio_continuity;
 #[path = "hda_coreaudio_prefill.rs"]
 mod hda_coreaudio_prefill;
+#[path = "hda_coreaudio_publication.rs"]
+mod hda_coreaudio_publication;
 #[path = "hda_coreaudio_ring.rs"]
 mod hda_coreaudio_ring;
 #[path = "hda_coreaudio_stats.rs"]
