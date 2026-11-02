@@ -29,6 +29,7 @@ impl ServiceWake {
             return;
         }
         self.started = true;
+        super::ctl_wake::start(vcpu, &self.fired);
         let fired = Arc::clone(&self.fired);
         std::thread::spawn(move || loop {
             std::thread::sleep(interval);

@@ -260,9 +260,10 @@ impl AgentConsoleHarness {
     /// Poll the control file (throttled) and turn appended lines into Ctl
     /// requests. A missing file means no commands yet (silent retry).
     pub(super) fn drain_ctl(&mut self, now: Instant) {
-        let due = self
-            .ctl_last_poll
-            .is_none_or(|t| now.duration_since(t) >= CTL_POLL_INTERVAL);
+        let due = super::ctl_wake::take_ctl_changed()
+            || self
+                .ctl_last_poll
+                .is_none_or(|t| now.duration_since(t) >= CTL_POLL_INTERVAL);
         if self.ctl_path.is_none() || !due {
             return;
         }
