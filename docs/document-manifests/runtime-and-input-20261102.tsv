@@ -1,0 +1,7 @@
+path	class	topic	superseded_by
+@include	docs/document-manifests/framebuffer-request-backing-20261102.tsv	-	-
+@include	docs/document-manifests/coreaudio-atomic-pcm-20261102.tsv	-	-
+@include	docs/document-manifests/agent-host-work-unlocked-20261102.tsv	-	-
+@include	docs/document-manifests/live-input-host-phase-20261102.tsv	-	-
+@include	docs/document-manifests/owned-force-stop-20261102.tsv	-	-
+@include	docs/document-manifests/strict-guest-clipboard-20261102.tsv	-	-

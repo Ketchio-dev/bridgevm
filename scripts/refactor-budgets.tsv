@@ -5231,3 +5231,6 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_guest_strict_
 docs/history/windows-hvf/strict-guest-clipboard-20261102.md	23	0
 docs/document-manifests/strict-guest-clipboard-20261102.tsv	2	0
 apps/macos/Sources/BridgeVMControl/CreateVMResolutionRow.swift	24	0
+docs/document-manifests/runtime-and-input-20261102.tsv	7	0
+docs/history/windows-hvf/hvf-resolution-presentation-20261102.md	14	0
+docs/document-manifests/hvf-resolution-presentation-20261102.tsv	2	0
