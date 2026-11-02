@@ -2,8 +2,6 @@ import Foundation
 
 @MainActor
 final class HvfOwnedRunController {
-    static let guestGrace: TimeInterval = 180
-    static let completionObservation: TimeInterval = 12
     let identity: HvfOwnedRuntimeIdentity
     let config: HvfEngineConfig
     let process: Process
@@ -14,7 +12,7 @@ final class HvfOwnedRunController {
     private let channel: HvfOwnedRuntimeChannel
     private let guestShutdown: HvfOwnedGuestShutdown
     private let now: () -> TimeInterval
-    private var eventTask: Task<Void, Never>?
+    private var eventObserver: HvfOwnedRuntimeEventObserver?
     private var graceDeadline: TimeInterval?
     private var cancelled = false
     private var serviceReady = false
@@ -26,7 +24,6 @@ final class HvfOwnedRunController {
     var onChange: (() -> Void)?
     var onDiagnostic: ((String) -> Void)?
     var teardownConfirmed: Bool { protocolValid && outputEnded && !guestEffectPending && ledger.complete != nil && runnerExit != nil }
-    var mayHaveOwnedWork: Bool { !teardownConfirmed }
 
     init(identity: HvfOwnedRuntimeIdentity, config: HvfEngineConfig, process: Process,
          manifestSHA256: String, channel: HvfOwnedRuntimeChannel,
@@ -38,16 +35,8 @@ final class HvfOwnedRunController {
     }
 
     func activate(helloFrame: Data) {
-        let events = channel.events
-        eventTask = Task { [weak self] in
-            for await event in events {
-                guard let self else { return }
-                self.receive(event)
-            }
-        }
-        process.terminationHandler = { [weak self] _ in
-            Task { @MainActor [weak self] in self?.tick() }
-        }
+        eventObserver = HvfOwnedRuntimeEventObserver(events: channel.events, process: process,
+            receive: { [weak self] in self?.receive($0) }, terminated: { [weak self] in self?.tick() })
         channel.start(helloFrame: helloFrame)
     }
 
@@ -71,9 +60,15 @@ final class HvfOwnedRunController {
         return .accepted(ticket)
     }
 
-    func observation(target: HvfOwnedRuntimeIdentity, operationID: UUID) -> HvfOwnedStopObservation? {
-        guard target == identity, operation?.operationID == operationID else { return nil }
-        return operation?.observation
+    func requestForceStop(_ target: HvfForceStopTarget) -> HvfForceStopResult {
+        guard target.identity == identity else { return .refused(.targetChanged) }
+        guard let operation, operation.operationID == target.operationID else { return .refused(.operationChanged) }
+        guard operation.observation.phase == .guestGrace, let deadline = graceDeadline,
+              now() < deadline, !cancelled, ledger.complete == nil, runnerExit == nil,
+              failure == nil, process.isRunning else { return .refused(.notWaiting) }
+        cancelRunner()
+        tick()
+        return .requested
     }
 
     /// Set by this boot generation's `SERVICE start`; a guest reset record drops it, so an unsent request waits.
@@ -172,5 +167,5 @@ final class HvfOwnedRunController {
     }
 
     func closeOwnerChannel() { channel.close(); guestShutdown.close() }
-    deinit { eventTask?.cancel(); channel.close(); guestShutdown.close() }
+    deinit { eventObserver?.cancel(); channel.close(); guestShutdown.close() }
 }

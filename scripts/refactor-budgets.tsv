@@ -1293,7 +1293,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	333	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	392	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	382	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLiveInputFile.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfLiveInputFileTests.swift	145	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	398	0
@@ -2820,7 +2820,7 @@ runners/hvf-runner/tests/owned_cancellation.rs	37	0
 runners/hvf-runner/tests/owned_cancellation_fixture.py	274	0
 tests/integration/b6-tip-query-fixtures.ps1	29	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedGuestShutdown.swift	65	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedRunController.swift	177	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedRunController.swift	171	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedRuntimeChannel.swift	148	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedRuntimeCodec.swift	54	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedRuntimeEncoding.swift	70	0
@@ -3253,7 +3253,7 @@ apps/macos/Sources/BridgeVMControl/HvfRuntimeStopAction.swift	30	0
 apps/macos/Sources/BridgeVMControl/RetainedRuntimeStopControl.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeStopActionTests.swift	85	0
 apps/macos/Sources/BridgeVMControl/HvfRuntimeStopPresentation.swift	19	0
-apps/macos/Sources/BridgeVMControl/LibraryDashboardRuntimeStopControl.swift	23	0
+apps/macos/Sources/BridgeVMControl/LibraryDashboardRuntimeStopControl.swift	20	0
 apps/macos/Tests/BridgeVMControlTests/HvfRuntimeStopPresentationTests.swift	28	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeStatusStopControl.swift	26	0
 docs/history/windows-hvf/retained-runtime-owned-stop-20260920.md	50	0
@@ -5217,3 +5217,12 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/automation_stop.rs
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/input_prepare.rs	14	0
 docs/document-manifests/live-input-host-phase-20261102.tsv	2	0
 docs/history/windows-hvf/live-input-host-phase-20261102.md	28	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSessionOwnedStop.swift	35	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfForceStopTarget.swift	24	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedRunStopAvailability.swift	18	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedRuntimeEventObserver.swift	18	0
+apps/macos/Sources/BridgeVMControl/HvfForceStopControl.swift	48	0
+apps/macos/Sources/BridgeVMControl/LibraryDashboardStopPresentation.swift	8	0
+apps/macos/Tests/BridgeVMControlTests/HvfForceStopTests.swift	130	0
+docs/document-manifests/owned-force-stop-20261102.tsv	2	0
+docs/history/windows-hvf/owned-force-stop-20261102.md	28	0
