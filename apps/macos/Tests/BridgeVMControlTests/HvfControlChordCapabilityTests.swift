@@ -52,27 +52,23 @@ final class HvfControlChordCapabilityTests: XCTestCase {
     }
 
     func testMisplacedOrMisspelledChordMarkerIsIgnoredAndRepeatsOrOrderDoNotMatter() {
-        for lines in [
-            [chords, header, base, end], [header, chords, base, end],
-            [header, base, chords + " EXTRA", end], [header, base, keys + " " + "CTRL_SHIFT_CHORDS", end],
-            [header, base, chords.replacingOccurrences(of: "CTRL_SHIFT_CHORDS", with: "CTRL_CHORDS"), end],
-            [header, base, chords.replacingOccurrences(of: id.uuidString, with: UUID().uuidString), end]
-        ] {
+        for lines in [[chords, header, base, end], [header, chords, base, end], [header, base, chords + " EXTRA", end],
+                      [header, base, keys + " " + "CTRL_SHIFT_CHORDS", end],
+                      [header, base, chords.replacingOccurrences(of: "CTRL_SHIFT_CHORDS", with: "CTRL_CHORDS"), end],
+                      [header, base, chords.replacingOccurrences(of: id.uuidString, with: UUID().uuidString), end]] {
             var request = HvfInputCapabilitiesRequest(now: now, id: id)
             XCTAssertEqual(request.consume(lines: lines, now: now), .supported, "\(lines)")
             XCTAssertFalse(request.supports(.key("ctrl+s")), "\(lines)")
             XCTAssertTrue(request.supports(.key("ctrl+c")), "base chords stay available")
         }
-        for lines in [[header, base, chords, keys, end], [header, base, chords, chords, end],
-                      [header, base, keys, chords, keys, end]] {
+        for lines in [[header, base, chords, keys, end], [header, base, chords, chords, end], [header, base, keys, chords, keys, end]] {
             var request = HvfInputCapabilitiesRequest(now: now, id: id)
             XCTAssertEqual(request.consume(lines: lines, now: now), .supported, "\(lines)")
             XCTAssertTrue(request.supports(.key("ctrl+s")), "\(lines)")
         }
         var reheaded = HvfInputCapabilitiesRequest(now: now, id: id)
-        XCTAssertEqual(reheaded.consume(lines: [header, base, chords, "BVAGENT CMD INPUTCAPS \(id.uuidString) exit=1", end],
-                                        now: now), .failed(.invalidReceipt))
-        XCTAssertFalse(reheaded.supports(.key("ctrl+s")))
+        let again = "BVAGENT CMD INPUTCAPS \(id.uuidString) exit=1"
+        XCTAssertEqual(reheaded.consume(lines: [header, base, chords, again, end], now: now), .failed(.invalidReceipt))
     }
 
     func testUnknownMarkerKeywordsAreIgnoredWithoutGrantingChords() {

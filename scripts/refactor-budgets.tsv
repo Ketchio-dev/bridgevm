@@ -5295,7 +5295,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfControlChordKeys.swift	38	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/key_chords.rs	127	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlChordResolverTests.swift	84	0
 apps/macos/Tests/BridgeVMControlTests/HvfNonLatinControlChordTests.swift	55	0
-apps/macos/Tests/BridgeVMControlTests/HvfControlChordCapabilityTests.swift	94	0
+apps/macos/Tests/BridgeVMControlTests/HvfControlChordCapabilityTests.swift	97	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlChordRoutingTests.swift	91	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlChordDisplayTests.swift	59	0
 crates/bridgevm-hvf/src/snapshot_create_publication_report_tests.rs	78	0
