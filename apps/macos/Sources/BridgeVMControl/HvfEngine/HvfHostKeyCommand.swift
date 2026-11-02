@@ -60,7 +60,7 @@ extension HvfHostKeyCommand {
             "\u{f729}": "home", "\u{f72b}": "end", "\u{f72c}": "pageup", "\u{f72d}": "pagedown"
         ]
         if flags == .shift {
-            if let key = navigation[characters] { return .key("shift+" + key) }
+            if let key = navigation[characters] ?? HvfControlChordKeys.shiftKeys[characters] { return .key("shift+" + key) }
             if let name = ["\t": "tab", "\u{19}": "tab", "\r": "enter", "\n": "enter", "\u{3}": "enter", " ": "space"][characters] { return .key("shift+" + name) }
             guard !characters.isEmpty, characters.unicodeScalars.allSatisfy({
                 !CharacterSet.controlCharacters.contains($0) && !(0xf700...0xf8ff).contains($0.value)
@@ -73,12 +73,9 @@ extension HvfHostKeyCommand {
             guard flags == .control else { return .ignored }
             if characters == "\u{7f}" { return .key("ctrl+backspace") }
             if characters == "\u{f728}" { return .key("ctrl+delete") }
-            var letter = characters.lowercased()
-            if characters.unicodeScalars.count == 1, let scalar = characters.unicodeScalars.first,
-               (1...26).contains(scalar.value) {
-                letter = String(UnicodeScalar(UInt8(scalar.value) + 96))
-            }
-            return ["a", "c", "v", "x", "y", "z"].contains(letter) ? .key("ctrl+" + letter) : .ignored
+            // Every Ctrl+letter; the ordered route gates letters beyond A/C/V/X/Y/Z on the guest marker.
+            guard let letter = HvfControlChordKeys.letter(characters) else { return .ignored }
+            return .key("ctrl+" + letter)
         }
         if flags == .option {
             switch characters {

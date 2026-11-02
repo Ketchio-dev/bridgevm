@@ -884,7 +884,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file/checked_acces
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/identity_tests.rs	190	4
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input.rs	334	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/line_frames.rs	89	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/key_actions.rs	99	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/key_actions.rs	94	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input_clock_tests/mod.rs	0	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input_clock_tests/command_time.rs	34	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input_clock_tests/keyboard_time.rs	36	0
@@ -2130,7 +2130,7 @@ apps/macos/Tests/BridgeVMProductE2ETests/T17ControlReplyTests.swift	34	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlReadinessTests.swift	33	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlWriteFailureTests.swift	32	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/setup_input/actions_tests.rs	87	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyCommand.swift	93	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyCommand.swift	90	0
 apps/macos/Tests/BridgeVMControlTests/HvfKeypadEnterTests.swift	52	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/window_protocol_tests.rs	47	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLiveDisplaySurface.swift	13	0
@@ -4461,7 +4461,7 @@ crates/bridgevm-hvf/src/snapshot_preserved_staging_test_support.rs	20	0
 crates/bridgevm-hvf/tests/managed_staging_export.rs	112	0
 apps/macos/Tests/BridgeVMControlTests/ControlModelResourceCompletionTests.swift	107	0
 apps/macos/Tests/BridgeVMControlTests/HvfShiftKeyChordTests.swift	75	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfInputCapabilityReceipt.swift	41	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfInputCapabilityReceipt.swift	40	0
 apps/macos/Tests/BridgeVMControlTests/HvfShiftKeyCompatibilityTests.swift	94	0
 apps/macos/Tests/BridgeVMControlTests/HvfInputKeyCapabilitiesTests.swift	92	0
 scripts/test-bvagent-key-capabilities.ps1	41	0
@@ -5291,6 +5291,13 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_f
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_feedback_service_tests.rs	57	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_feedback_tests.rs	20	0
 docs/history/windows-hvf/share-root-notice-20261102.md	29	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfControlChordKeys.swift	38	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/key_chords.rs	127	0
+apps/macos/Tests/BridgeVMControlTests/HvfControlChordResolverTests.swift	84	0
+apps/macos/Tests/BridgeVMControlTests/HvfNonLatinControlChordTests.swift	55	0
+apps/macos/Tests/BridgeVMControlTests/HvfControlChordCapabilityTests.swift	97	0
+apps/macos/Tests/BridgeVMControlTests/HvfControlChordRoutingTests.swift	91	0
+apps/macos/Tests/BridgeVMControlTests/HvfControlChordDisplayTests.swift	59	0
 crates/bridgevm-hvf/src/snapshot_create_publication_report_tests.rs	78	0
 crates/bridgevm-hvf/src/snapshot_create_staging_kept.rs	41	0
 crates/bridgevm-hvf/src/snapshot_publish_unsupported.rs	47	1
