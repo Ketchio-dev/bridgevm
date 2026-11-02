@@ -3,16 +3,14 @@
 use super::hda_coreaudio_continuity::timing::callback::timed_drain;
 use super::hda_coreaudio_continuity::CallbackFill;
 use super::hda_coreaudio_stats::Shared;
-use std::sync::TryLockError;
 
 /// Fill one silent callback buffer from the ring without waiting, and record
 /// what it received. Runs on CoreAudio's real-time callback thread.
 pub(super) fn fill_and_record(destination: &mut [u8], shared: &Shared) {
     let capacity_bytes = destination.len();
-    let mut ring = match shared.ring.try_lock() {
-        Ok(ring) => ring,
-        Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
-        Err(TryLockError::WouldBlock) => {
+    let mut ring = match shared.ring.try_consumer() {
+        Some(ring) => ring,
+        None => {
             return shared
                 .continuity
                 .record_callback(CallbackFill::Contended { capacity_bytes });

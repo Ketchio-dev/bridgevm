@@ -4,6 +4,7 @@ use super::super::hda_coreaudio_producer::PcmProducer;
 use super::super::hda_coreaudio_stats::Shared;
 use super::super::AUDIO_QUEUE_BUFFER_BYTES;
 use super::*;
+use std::collections::VecDeque;
 use std::sync::atomic::Ordering::Relaxed;
 
 #[test]
@@ -20,7 +21,7 @@ fn callback_retains_partial_stereo_frame_until_next_dma_fragment() {
     let mut first = [0; 8];
     fill_and_record(&mut first, &shared);
     assert_eq!(first, [1, 2, 3, 4, 0, 0, 0, 0]);
-    assert!(shared.ring.lock().unwrap().is_empty());
+    assert!(shared.ring.is_empty());
     producer.write(&[7, 8, 9, 10, 11, 12], &shared, 16 * PREFILL_BYTES);
     let mut second = [0; 8];
     fill_and_record(&mut second, &shared);
@@ -46,7 +47,7 @@ fn terminal_fragments_pad_once_and_are_not_complete_guest_frames() {
         fill_and_record(&mut output, &shared);
         assert_eq!(&output[..count], &[1, 2, 3][..count]);
         assert!(output[count..].iter().all(|&b| b == 0));
-        assert!(shared.ring.lock().unwrap().is_empty());
+        assert!(shared.ring.is_empty());
     }
 }
 

@@ -1,6 +1,7 @@
 //! A file-sync backlog cannot reject or delay user traffic; its own order remains intact.
 
 use super::*;
+use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use crate::agent_console::agent_console_tests::tests::harness;
 use bridgevm_hvf::dtb::VirtFdtConfig;
 use std::io::Write;

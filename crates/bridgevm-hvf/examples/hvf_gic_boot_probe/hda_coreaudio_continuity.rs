@@ -2,8 +2,8 @@
 //!
 //! The callback fills each 10 ms AudioQueue buffer from the ring and leaves
 //! silence wherever the ring cannot: the ring holds fewer bytes than the
-//! buffer (an underrun, partial or whole), or the producer holds the ring lock
-//! and try_lock fails (contention, a whole silent buffer). frames_rendered and
+//! buffer (an underrun, partial or whole), or another callback consumes the ring
+//! and the non-waiting consumer guard fails (a whole silent buffer). frames_rendered and
 //! drops cannot see either, so A5 and T17 pass on gapped playback. These
 //! counters make the gaps measurable; teardown prints them as their own
 //! `hda CoreAudio continuity:` record after the unchanged stats record.
@@ -50,7 +50,7 @@ const CALLBACK_FRAMES: u64 = (AUDIO_QUEUE_BUFFER_BYTES / BYTES_PER_FRAME) as u64
 /// What one output callback put into its already-silent buffer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum CallbackFill {
-    /// try_lock found the producer holding the ring; the buffer stays silent.
+    /// Another consumer owns the ring; the buffer stays silent.
     Contended { capacity_bytes: usize },
     /// The ring supplied `pcm_bytes`; `stream_idle` was read under the ring lock.
     Drained {
@@ -112,8 +112,8 @@ impl Tally {
 pub(super) struct ContinuityCounters {
     stopping: AtomicBool,
     /// Guest PCM reached the ring since the guest last stopped its stream.
-    /// Written and read under the ring lock, except that a stop may land any
-    /// time: the stream has then stopped, whichever PCM the ring still holds.
+    /// Written before PCM release-publication and read after the consumer's
+    /// acquire snapshot. A stop may land at any time, independently of PCM.
     streaming: AtomicBool,
     in_span: AtomicBool,
     committed: Tally,
@@ -125,7 +125,7 @@ pub(super) struct ContinuityCounters {
 }
 
 impl ContinuityCounters {
-    /// The producer stored guest PCM in the ring and still holds its lock.
+    /// Mark incoming PCM before release-publishing its frames.
     pub(super) fn note_pcm_written(&self) {
         self.streaming.store(true, Relaxed);
     }

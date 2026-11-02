@@ -3,6 +3,7 @@
 use super::*;
 use crate::hda_coreaudio::hda_coreaudio_continuity::fill_and_record;
 use crate::hda_coreaudio::hda_coreaudio_prefill::PREFILL_BYTES;
+use crate::hda_coreaudio::hda_coreaudio_producer::PcmProducer;
 use crate::hda_coreaudio::{AUDIO_QUEUE_BUFFER_BYTES, RING_CAPACITY_BYTES};
 use std::time::Duration;
 #[path = "hda_coreaudio_teardown_record_tests.rs"]
@@ -15,9 +16,7 @@ const IDLE: &str = "hda CoreAudio timing: callbacks=0 interval_le_10ms=0 interva
                     ring_min_ms=0 ring_max_ms=0 ring_final_ms=0";
 
 fn feed(shared: &Shared, bytes: usize) {
-    let mut ring = shared.ring.lock().unwrap();
-    ring.extend(std::iter::repeat_n(0x5a, bytes));
-    shared.continuity.note_pcm_written();
+    PcmProducer::default().write(&vec![0x5a; bytes], shared, RING_CAPACITY_BYTES);
 }
 
 #[test]
@@ -45,11 +44,11 @@ fn injected_callback_times_give_the_exact_interval_histogram_and_late_count() {
 }
 
 #[test]
-fn every_failed_try_lock_counts_even_where_continuity_does_not() {
+fn every_busy_consumer_counts_even_where_continuity_does_not() {
     let shared = Shared::new(4 * FULL, 0);
     let mut buffer = vec![0u8; FULL];
     {
-        let _producer = shared.ring.lock().unwrap();
+        let _consumer = shared.ring.try_consumer().unwrap();
         fill_and_record(&mut buffer, &shared);
         fill_and_record(&mut buffer, &shared);
     }

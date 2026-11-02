@@ -1,7 +1,7 @@
 //! Start threshold for CoreAudio playback.
 //!
-//! Guest PCM reaches the ring only when a vCPU exit drains the HDA stream, so
-//! the ring fills in bursts while the output callback empties it every 10 ms.
+//! HDA polling supplies guest PCM in bursts while the output callback empties
+//! the ring every 10 ms.
 //! With no reserve, the first stall after playback starts left a partial buffer
 //! silent: T17 r52 counted 13 and 14 gaps per probe process whether a span held
 //! 447 or 1,789 callbacks. The callback therefore leaves its buffer silent until
@@ -13,10 +13,8 @@
 //! stopped its stream and the ring ran short, which is where a span closes;
 //! an underrun inside a running stream keeps playing whatever arrives.
 
-use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+use std::sync::atomic::AtomicBool;
 
-use super::hda_coreaudio_ring::drain_ring_into;
 use super::AUDIO_QUEUE_BUFFER_BYTES;
 
 /// Four callback buffers, 40 ms at 48 kHz stereo s16le.
@@ -34,20 +32,10 @@ impl Prefill {
             primed: AtomicBool::new(false),
         }
     }
-
-    /// Drain the ring into one callback buffer once playback is primed, and
-    /// return the PCM bytes copied. Callback thread only, under the ring lock.
-    pub(super) fn drain(&self, ring: &mut VecDeque<u8>, destination: &mut [u8], stream_idle: bool) -> usize {
-        let flush = stream_idle && !ring.is_empty();
-        if !self.primed.load(Relaxed) && ring.len() < self.threshold && !flush {
-            return 0;
-        }
-        let pcm_bytes = drain_ring_into(ring, destination);
-        self.primed
-            .store(!(stream_idle && pcm_bytes < destination.len()), Relaxed);
-        pcm_bytes
-    }
 }
+
+#[path = "hda_coreaudio_prefill_drain.rs"]
+mod drain;
 
 #[cfg(test)]
 #[path = "hda_coreaudio_prefill_tests.rs"]

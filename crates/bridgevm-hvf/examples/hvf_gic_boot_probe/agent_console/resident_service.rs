@@ -4,12 +4,7 @@ use super::*;
 
 impl AgentConsoleHarness {
     // --- Service mode -------------------------------------------------------
-    pub(super) fn service_tick(
-        &mut self,
-        platform: &mut VirtPlatform,
-        mem: &mut dyn GuestMemoryMut,
-        now: Instant,
-    ) {
+    pub(super) fn service_tick_with_sender(&mut self, now: Instant, send: &mut dyn FnMut(&[u8])) {
         // 30s liveness heartbeat in the log: distinguishes "service quiet, all
         // healthy" from "ticks starved" (live-diagnosed once: an idle guest
         // stopped producing vCPU exits and the whole service froze silently).
@@ -21,7 +16,7 @@ impl AgentConsoleHarness {
             println!("BVAGENT SERVICE alive t={}", self.t_ms(now));
         }
         self.service_enqueue(now);
-        self.service_pump(platform, mem, now);
+        self.service_pump_with_sender(now, send);
     }
     /// Steps 1-4 of the service loop: fold host/guest/control-file activity into
     /// the request queue. None of this touches the wire, so it needs no platform
@@ -74,12 +69,7 @@ impl AgentConsoleHarness {
     }
     /// Report an overdue in-flight request without abandoning its wire slot,
     /// then — only when the wire is truly idle — send one queued request.
-    pub(super) fn service_pump(
-        &mut self,
-        platform: &mut VirtPlatform,
-        mem: &mut dyn GuestMemoryMut,
-        now: Instant,
-    ) {
+    pub(super) fn service_pump_with_sender(&mut self, now: Instant, send: &mut dyn FnMut(&[u8])) {
         if let Some(kind) = self.note_service_overdue(now) {
             println!(
                 "BVAGENT SERVICE overdue {kind} awaiting-reply=true t={}",
@@ -95,10 +85,7 @@ impl AgentConsoleHarness {
             // whole runtime of a long command (gates run for minutes), so an
             // overdue Cmd usually IS still running and a resend would run it
             // twice.
-            let cmd_in_flight = matches!(
-                self.in_flight.as_ref(),
-                Some((ServiceReq::Ctl(_), _))
-            );
+            let cmd_in_flight = matches!(self.in_flight.as_ref(), Some((ServiceReq::Ctl(_), _)));
             if !cmd_in_flight {
                 self.overdue_beats += 1;
                 if self.overdue_beats >= 3 {
@@ -108,8 +95,7 @@ impl AgentConsoleHarness {
                             req_kind(&req),
                             now.duration_since(self.start).as_millis()
                         );
-                        self.queue
-                            .push_front(rewind_share_put_for_retransmit(req));
+                        self.queue.push_front(rewind_share_put_for_retransmit(req));
                     }
                     self.overdue_beats = 0;
                 }
@@ -125,7 +111,7 @@ impl AgentConsoleHarness {
         if !self.write_service_req_line(&req, now) {
             return;
         }
-        platform.virtio_console_agent_send(self.service_line_scratch.as_bytes(), mem);
+        send(self.service_line_scratch.as_bytes());
         self.last_send = Some(now);
         self.in_flight = Some((req, now));
     }
@@ -332,12 +318,11 @@ impl AgentConsoleHarness {
     /// the in-flight request is completed; unrelated lines are ignored and the
     /// request stays in-flight until its matching reply. A re-emitted READY is
     /// the explicit agent-restart resynchronization point.
-    pub(super) fn handle_service_reply(
+    pub(super) fn handle_service_reply_with_sender(
         &mut self,
         line: &str,
-        platform: Option<&mut VirtPlatform>,
-        mem: Option<&mut dyn GuestMemoryMut>,
         now: Instant,
+        send: &mut dyn FnMut(&[u8]),
     ) {
         if let Some(hostname) = line.strip_prefix("READY ") {
             self.resync_after_agent_restart(hostname, now);
@@ -382,7 +367,7 @@ impl AgentConsoleHarness {
                 }
             }
             InFlightSnapshot::SharePut => {
-                self.handle_share_put_reply(line, platform, mem, now);
+                self.handle_share_put_reply_with_sender(line, now, send);
             }
             InFlightSnapshot::ShareDel { name, direction } => {
                 if line.starts_with("OK DEL") {
