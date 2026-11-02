@@ -18,7 +18,7 @@ impl OwnedStaging {
         observe: &mut impl FnMut(CreateStage),
     ) -> Result<SnapshotManifest, SnapshotError> {
         contents::fill(sources, &self.path, vm_id, quota_bytes, copy, observe)
-            .inspect_err(|_| self.discard())
+            .inspect_err(|_| drop(self.discard()))
     }
 }
 
