@@ -4395,7 +4395,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfPendingUnavailableBundleDeletionTests.s
 apps/macos/Tests/BridgeVMControlTests/VMLibraryDeletionImpactTests.swift	39	0
 crates/bridgevm-hvf/src/snapshot_create_staging_reclaim.rs	18	0
 crates/bridgevm-hvf/src/snapshot_create_completed_staging_tests.rs	119	0
-crates/bridgevm-hvf/src/snapshot_create_owned_staging.rs	44	0
+crates/bridgevm-hvf/src/snapshot_create_owned_staging.rs	38	0
 crates/bridgevm-hvf/src/snapshot_create_publication_failure_tests.rs	112	0
 apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLISnapshotAdmission.swift	17	0
 apps/macos/Tests/BridgeVMControlTests/NativeCLISnapshotRelocationAdmissionTests.swift	106	0
@@ -5299,3 +5299,9 @@ apps/macos/Tests/BridgeVMControlTests/HvfNonLatinControlChordTests.swift	55	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlChordCapabilityTests.swift	94	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlChordRoutingTests.swift	91	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlChordDisplayTests.swift	59	0
+crates/bridgevm-hvf/src/snapshot_create_publication_report_tests.rs	78	0
+crates/bridgevm-hvf/src/snapshot_create_staging_kept.rs	41	0
+crates/bridgevm-hvf/src/snapshot_publish_unsupported.rs	47	1
+crates/bridgevm-hvf/src/snapshot_publish_unsupported_tests.rs	24	0
+docs/document-manifests/autonomous-twelve-hour-20261102.tsv	3	0
+docs/history/windows-hvf/snapshot-exchange-refusal-20261102.md	30	0
