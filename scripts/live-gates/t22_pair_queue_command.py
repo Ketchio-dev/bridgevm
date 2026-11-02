@@ -27,8 +27,8 @@ def store(path, value):
     write_exclusive(path, raw); path.chmod(0o400)
     return hashlib.sha256(raw).hexdigest()
 
-
-def interrupted(signum, frame): raise InterruptedError("development preparation canceled")
+class PreparationCanceled(RuntimeError): """Not an OSError: subprocess wait helpers may swallow those."""
+def interrupted(signum, frame): raise PreparationCanceled("development preparation canceled")
 
 
 def launch(argv, directory, identity, timeout=1800):

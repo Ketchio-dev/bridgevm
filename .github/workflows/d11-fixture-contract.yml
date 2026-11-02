@@ -1,6 +1,6 @@
 name: D11 development fixture contracts
 on:
-  push:
+  push: {branches: [main]}
   pull_request:
   workflow_dispatch:
 permissions:

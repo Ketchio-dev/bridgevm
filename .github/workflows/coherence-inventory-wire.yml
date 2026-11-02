@@ -1,6 +1,6 @@
 name: Coherence resident inventory wire contracts
 on:
-  push:
+  push: {branches: [main]}
   pull_request:
 permissions:
   contents: read

@@ -56,14 +56,7 @@ extension VMLibrary {
             try fm.createDirectory(at: copiedEvidence, withIntermediateDirectories: true)
         } catch { return nil }
 
-        var cfg = template
-        cfg.id = slug
-        cfg.name = name
-        cfg.displayName = name
-        cfg.bundlePath = bundle.path
-        cfg.diskPath = bundle.appendingPathComponent("disks/hvf-target.raw").path
-        cfg.guestName = slug
-        cfg.installPending = false
+        let cfg = template.windowsCloneRegistration(slug: slug, name: name, bundle: bundle)
         guard createRegistration(cfg, rootURL: libraryRoot, preserving: { succeeded = true }) else { return nil }
         succeeded = true
         return cfg

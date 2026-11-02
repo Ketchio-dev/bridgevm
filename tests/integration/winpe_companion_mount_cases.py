@@ -131,7 +131,7 @@ class WinPEMountSafetyTests(TestCase):
         self.assertEqual(self.detached(), ["/dev/disk77"])
 
     def test_interrupted_attach_remains_uncertain_after_observed_absence(self):
-        self.attach = InterruptedError("mount-operation-cancelled-15")
+        self.attach = mounts.MountOperationCancelled("mount-operation-cancelled-15")
         self.inventories = [[], [], []]
         self.failure(False)
         self.assertTrue(self.root.exists())

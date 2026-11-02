@@ -20,8 +20,12 @@ from guest_input_fixture_staging import stage
 from hvf_guest_shutdown import guest_shutdown_observed
 
 
+class LiveDiagnosticInterrupted(RuntimeError):
+    """Not an OSError: subprocess wait helpers may swallow those."""
+
+
 def interrupted(signum, frame):
-    raise InterruptedError("owned live diagnostic interrupted")
+    raise LiveDiagnosticInterrupted("owned live diagnostic interrupted")
 
 
 def execute(args):
@@ -93,7 +97,7 @@ def execute(args):
             receipt["clean_shutdown"] = guest_shutdown_observed(status, boot / "run.log")
             if not receipt["clean_shutdown"]:
                 raise ValueError("clean guest shutdown not observed")
-    except (OSError, ValueError, TimeoutError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, TimeoutError, subprocess.SubprocessError, LiveDiagnosticInterrupted) as error:
         receipt["failure_type"] = type(error).__name__
     finally:
         for sig in (signal.SIGTERM, signal.SIGINT):
@@ -109,7 +113,7 @@ def main():
         parser.add_argument("--" + name, required=True)
     try:
         return execute(parser.parse_args())
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, subprocess.SubprocessError, LiveDiagnosticInterrupted) as error:
         print(json.dumps({"claim_eligible": False, "complete": False, "failure_type": type(error).__name__}))
         return 1
 
