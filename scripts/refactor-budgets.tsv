@@ -5291,7 +5291,6 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_f
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_feedback_service_tests.rs	57	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_feedback_tests.rs	20	0
 docs/history/windows-hvf/share-root-notice-20261102.md	29	0
-docs/document-manifests/share-root-notice-20261102.tsv	2	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfControlChordKeys.swift	38	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/key_chords.rs	127	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlChordResolverTests.swift	84	0
