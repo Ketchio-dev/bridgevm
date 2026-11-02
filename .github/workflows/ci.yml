@@ -19,6 +19,43 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Pull requests skip what their files cannot affect; main, schedule and
+  # dispatch run everything. Fail-closed: if this job fails, everything runs.
+  changes:
+    name: changed areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      rust: ${{ steps.diff.outputs.rust }}
+      swift: ${{ steps.diff.outputs.swift }}
+      venus: ${{ steps.diff.outputs.venus }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then
+            printf 'rust=true\nswift=true\nvenus=true\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE" HEAD)
+          printf '%s\n' "$files"
+          # Rust jobs skip only when every file is documentation, another
+          # workflow or the perf harness (Rust tests read Swift sources and
+          # scripts, so nothing else is safe to skip).
+          other=$(printf '%s\n' "$files" | grep -vE '(\.md$|^docs/|^site/|^scripts/perf/|^\.github/(ISSUE_TEMPLATE/|workflows/))' || true)
+          ci=$(printf '%s\n' "$files" | grep -E '^\.github/workflows/ci\.yml$' || true)
+          rust=false; [ -n "$other$ci" ] && rust=true
+          swift=false
+          printf '%s\n' "$files" | grep -qE '^(apps/|packaging/|tests/integration/|install\.sh$|\.github/workflows/ci\.yml$)|^scripts/[^p]|^scripts/p[^e]' && swift=true
+          venus=false
+          printf '%s\n' "$files" | grep -qE '^(crates/bridgevm-hvf/(src/|build\.rs$|Cargo\.toml$)|Cargo\.(toml|lock)$|scripts/.*(venus|virgl)|scripts/patches/|\.github/workflows/ci\.yml$)' && venus=true
+          printf 'rust=%s\nswift=%s\nvenus=%s\n' "$rust" "$swift" "$venus" | tee -a "$GITHUB_OUTPUT"
+
   fmt:
     name: rustfmt
     runs-on: ubuntu-latest
@@ -33,6 +70,8 @@ jobs:
 
   clippy:
     name: clippy (-D warnings)
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -45,12 +84,10 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   test:
-    name: test (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15, macos-26]
-    runs-on: ${{ matrix.os }}
+    name: test (macos-15)
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    runs-on: macos-15
     # Hosted macOS runners lack nested virtualization, so tests that boot a
     # real VM must be #[ignore]-d or env-gated (BRIDGEVM_LIVE_*).
     timeout-minutes: 45
@@ -68,8 +105,30 @@ jobs:
       - name: every file containing a test contributes one to a binary
         run: python3 scripts/check-tests-are-reachable.py
 
+  test-macos-26:
+    # Pull requests run macOS 15 only; main and the schedule cover macOS 26.
+    name: test (macos-26)
+    if: github.event_name != 'pull_request'
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: 1.97.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.1
+      - run: brew install qemu && cargo test --workspace --locked
+      - name: Deterministic runner example contracts (no live VM)
+        run: cargo test -p bridgevm-hvf --example hvf_gic_boot_probe --example bridgevm_pc_dxe_entry_live --locked
+      - name: every file containing a test contributes one to a binary
+        run: python3 scripts/check-tests-are-reachable.py
+
   check-venus:
     name: check venus feature
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -82,6 +141,8 @@ jobs:
 
   test-venus-native:
     name: test venus native
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.venus == 'true') }}
     runs-on: macos-15
     timeout-minutes: 75
     steps:
@@ -128,6 +189,8 @@ jobs:
 
   msrv:
     name: msrv (1.85)
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -143,6 +206,8 @@ jobs:
     # guest target. check-project.sh checks this only when the target happens to
     # be installed locally, so nothing guaranteed it.
     name: cross-compile (linux stubs)
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -191,10 +256,12 @@ jobs:
   swift:
     # Host the app's largest Swift suites on macOS to catch local-only test gaps.
     name: macOS app suites (${{ matrix.os }})
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.swift == 'true') }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, macos-26]
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["macos-15"]' || '["macos-15", "macos-26"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
