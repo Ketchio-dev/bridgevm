@@ -19,6 +19,8 @@ import base64
 import calendar
 import ctypes
 import hashlib
+import mmap
+import struct
 import math
 import http.server
 import json
@@ -37,7 +39,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_wire import AgentWire  # noqa: E402
 from guest_bench_commands import (  # noqa: E402
-    HIGHER_IS_BETTER, SUITE, command_line, cursor_logger, net_download, parse_bvbench)
+    HIGHER_IS_BETTER, SUITE, command_line, cursor_logger, display_animation, net_download, parse_bvbench,
+    stall_under_flush)
 
 ROOT = Path(__file__).resolve().parents[2]
 QEMU_FIRMWARE = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
@@ -174,9 +177,14 @@ class BridgeVM(Engine):
             "bash", str(ROOT / "scripts/run-hvf-windows-installed-boot.sh"), "--target", str(self.disk),
             "--vars", str(self.vars_fd), "--evidence-dir", str(evidence), "--release", "--skip-build",
             "--smp-cpus", str(self.args.cpus), "--ram-mib", str(self.args.ram_mib), "--enable-xhci",
-            "--boot-timer-desktop-agent", "--agent-service-control", str(self.ctl),
+            # BOOT_TIMER (for the READY milestone) would otherwise checksum the framebuffer every second
+            # for the whole run; the product never enables it, so keep it out of the idle numbers.
+            "--boot-timer-desktop-agent", "--boot-timer-ramfb-ms", "60000", "--agent-service-control", str(self.ctl),
             "--watchdog-ms", "3600000", "--no-guest-disk-harvest", "--input-control", str(self.input_ctl),
         ] + (["--virtio-net"] if self.args.net else [])
+        self.display_fb = evidence / "display.fb"
+        if self.args.display:  # the app's export path: frames on request, 16 ms fallback
+            cmd += ["--display-export-fb", str(self.display_fb), "--ramfb-display-export-ms", "16"]
         epoch = calendar.timegm(time.strptime(self.args.guest_date, "%Y-%m-%dT%H:%M:%S"))
         env = dict(os.environ, BRIDGEVM_PREBUILT_PROBE=str(self.args.probe), BRIDGEVM_GUEST_RTC_EPOCH=str(epoch))
         env.update(item.split("=", 1) for item in self.args.bvm_env)
@@ -186,7 +194,7 @@ class BridgeVM(Engine):
                                      start_new_session=True)
         self.vmm_pid = None
 
-    def _lines(self, deadline: float):
+    def _lines(self, deadline: float, poll: float = 0.25):
         while time.monotonic() < deadline:
             if self.log.exists():
                 with open(self.log, "rb") as handle:
@@ -198,7 +206,7 @@ class BridgeVM(Engine):
                 yield from done
             if self.proc.poll() is not None:
                 raise RuntimeError(f"BridgeVM runner exited {self.proc.returncode}")
-            time.sleep(0.25)
+            time.sleep(poll)
         raise TimeoutError("BridgeVM deadline")
 
     def wait_ready(self, deadline: float) -> dict:
@@ -219,7 +227,7 @@ class BridgeVM(Engine):
         # The runner logs input commands without their payload (VERB <uuid>).
         label = " ".join(command.split(" ")[:2]) if command.split(" ")[0].endswith("INPUT") else command
         head, body, code = f"BVAGENT CMD {label} exit=", None, 0
-        for line in self._lines(deadline):
+        for line in self._lines(deadline, poll=0.002):  # reply latency is measured; QEMU's socket is immediate
             if body is None and line.startswith(head):
                 body, code = [], int(line[len(head):])
             elif body is not None and line == f"BVAGENT END {label}":
@@ -305,6 +313,55 @@ def pointer_test(engine: Engine, record: dict) -> None:
                                 "agent-rtt-p95": round(rtts[int(len(rtts) * 0.95)], 1)})
 
 
+def consume_display(path: Path, seconds: float, hz: float = 120.0) -> dict:
+    """Read display.fb like the app's display link: each tick take the published frame (even
+    sequence at byte 24, publish time at 48) and post a frame request (CLOCK_UPTIME_RAW ns at 32)."""
+    fd = os.open(path, os.O_RDWR)
+    try:
+        view = mmap.mmap(fd, 64, mmap.MAP_SHARED, mmap.PROT_READ)
+        if struct.unpack_from("<I", view, 0)[0] != 0x42564642:
+            return {}
+        frames, last_seq, ages, stamps = 0, None, [], []
+        start = time.perf_counter()
+        tick = start
+        while time.perf_counter() - start < seconds:
+            seq, published = struct.unpack_from("<Q", view, 24)[0], struct.unpack_from("<Q", view, 48)[0]
+            now = time.clock_gettime_ns(time.CLOCK_UPTIME_RAW)
+            if seq % 2 == 0 and seq != last_seq:
+                if last_seq is not None:
+                    frames += 1
+                    stamps.append(published)
+                    ages.append((now - published) / 1e6)
+                last_seq = seq
+            os.pwrite(fd, struct.pack("<Q", now), 32)
+            tick += 1 / hz
+            time.sleep(max(0.0, tick - time.perf_counter()))
+        view.close()
+    finally:
+        os.close(fd)
+    gaps = sorted((b - a) / 1e6 for a, b in zip(stamps, stamps[1:]))
+    ages.sort()
+    out = {"display-fps": round(frames / seconds, 1)}
+    if gaps:
+        out.update({"display-frame-ms-p50": round(gaps[len(gaps) // 2], 1),
+                    "display-frame-ms-p95": round(gaps[int(len(gaps) * 0.95)], 1),
+                    "display-age-ms-p95": round(ages[int(len(ages) * 0.95)], 1)})
+    return out
+
+
+def display_test(engine: Engine, record: dict) -> None:
+    host = {}
+    consumer = None
+    if isinstance(engine, BridgeVM) and engine.display_fb.exists():
+        consumer = threading.Thread(target=lambda: host.update(consume_display(engine.display_fb, 6.0)))
+        threading.Timer(3.0, consumer.start).start()  # the window is up and animating by then
+    _, text = engine.run(command_line(display_animation(10000)), time.monotonic() + 120)
+    if consumer is not None:
+        consumer.join()
+    record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
+    record["bench"].update(host)
+
+
 def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
     record = {"boot": int(boot_dir.name.split("-")[1]), "loadavg_start": os.getloadavg(), "bench": {}, "errors": []}
     try:
@@ -322,8 +379,31 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                 pointer_test(engine, record)
             except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
                 record["errors"].append(f"pointer: {type(error).__name__}: {error}")
+        if args.display:
+            try:
+                display_test(engine, record)
+            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                record["errors"].append(f"display: {type(error).__name__}: {error}")
+        if args.shutdown_diag:  # how the previous shutdown of this disk spent its time (guest's own log)
+            script = ("Get-WinEvent -LogName 'Microsoft-Windows-Diagnostics-Performance/Operational' -MaxEvents 12 "
+                      "-ErrorAction SilentlyContinue | Where-Object { $_.Id -ge 200 -and $_.Id -le 206 } | "
+                      "ForEach-Object { $x = [xml]$_.ToXml(); $d = ($x.Event.EventData.Data | Where-Object { $_.'#text' } | "
+                      "ForEach-Object { $_.Name + '=' + $_.'#text' }) -join ' '; "
+                      "'{0:o} {1} {2}' -f $_.TimeCreated, $_.Id, $d }")
+            try:
+                _, text = engine.run(command_line(script), time.monotonic() + 60)
+                record["shutdown_diag"] = text.strip()[-4000:]
+            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                record["errors"].append(f"shutdown-diag: {type(error).__name__}: {error}")
+        if args.stall:
+            try:
+                _, text = engine.run(command_line(stall_under_flush(8000)), time.monotonic() + 120)
+                record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
+            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                record["errors"].append(f"stall: {type(error).__name__}: {error}")
         suite = SUITE + ([("net-download", net_download(args.blob_url))] if args.net else [])
-        for name, script in ([] if args.skip_suite else suite):
+        only = None if args.only is None else set(args.only.split(","))
+        for name, script in ([] if args.skip_suite else [t for t in suite if only is None or t[0] in only]):
             started = time.monotonic()
             try:
                 code, text = engine.run(command_line(script), time.monotonic() + 600)
@@ -421,7 +501,9 @@ def compare(a: str, b: str) -> None:
     names = (left["identity"]["engine"], right["identity"]["engine"])
     print(f"{'metric':28} {names[0]:>12} {names[1]:>12}  better")
     lower_better = {"ready_wall_ms", "boot_timer_desktop_ms", "idle_cpu_pct", "rss_mib", "guest_off_ms", "shutdown_ms",
-                    "cursor-interval-p50", "cursor-interval-p95", "agent-rtt-p50", "agent-rtt-p95"}
+                    "cursor-interval-p50", "cursor-interval-p95", "agent-rtt-p50", "agent-rtt-p95",
+                    "stall-max", "stall-p99", "stall-over-20ms", "display-frame-ms-p50", "display-frame-ms-p95",
+                    "display-age-ms-p95"}
     for key in left["median"].keys() | right["median"].keys():
         x, y = left["median"].get(key), right["median"].get(key)
         if x is None or y is None:
@@ -448,6 +530,10 @@ def main() -> None:
     r.add_argument("--net", action="store_true")
     r.add_argument("--pointer", action="store_true", help="cursor update rate per input route")
     r.add_argument("--skip-suite", action="store_true", help="only boot, idle, optional pointer/net, shutdown")
+    r.add_argument("--only", help="comma-separated suite tests to run (e.g. net-download)")
+    r.add_argument("--display", action="store_true", help="guest animation; BridgeVM also counts frames reaching the host")
+    r.add_argument("--stall", action="store_true", help="guest timer gaps while another thread flushes files")
+    r.add_argument("--shutdown-diag", action="store_true", help="record the guest's own shutdown timing events")
     r.add_argument("--settle-s", type=float, default=60)
     r.add_argument("--idle-s", type=float, default=30)
     r.add_argument("--ready-timeout", type=float, default=600)

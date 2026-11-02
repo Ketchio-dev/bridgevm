@@ -116,9 +116,51 @@ def cursor_logger(ms: int) -> str:
     )
 
 
+def stall_under_flush(ms: int) -> str:
+    """Guest responsiveness while another thread flushes small files: the longest gap of a
+    Sleep(1) loop (1 ms timer resolution). A VMM that blocks every vCPU during a host flush
+    shows up here even though throughput looks fine."""
+    return (
+        "Add-Type -TypeDefinition 'using System; using System.Collections.Generic; using System.Diagnostics;"
+        " using System.IO; using System.Runtime.InteropServices; using System.Threading; public static class BvStall {"
+        " [DllImport(\"winmm.dll\")] static extern uint timeBeginPeriod(uint p);"
+        " public static string Run(string d, int ms) { timeBeginPeriod(1); if (Directory.Exists(d)) { Directory.Delete(d, true); }"
+        " Directory.CreateDirectory(d); var stop = false; int files = 0; var buf = new byte[4096];"
+        " var writer = new Thread(() => { while (!stop) { using (var f = new FileStream(Path.Combine(d, \"f\" + (files % 64)),"
+        " FileMode.Create, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough)) { f.Write(buf, 0, buf.Length);"
+        " f.Flush(true); } files++; } }); writer.Start(); Thread.Sleep(200);"
+        " var gaps = new List<double>(); var sw = Stopwatch.StartNew(); double last = 0;"
+        " while (sw.ElapsedMilliseconds < ms) { Thread.Sleep(1); double now = sw.Elapsed.TotalMilliseconds; gaps.Add(now - last); last = now; }"
+        " stop = true; writer.Join(); Directory.Delete(d, true); gaps.Sort(); int over = 0; foreach (var g in gaps) { if (g > 20) { over++; } }"
+        " return string.Format(\"BVBENCH stall-max {0:F1} ms\\nBVBENCH stall-p99 {1:F1} ms\\nBVBENCH stall-over-20ms {2} count\\n"
+        "BVBENCH stall-flush-rate {3:F1} files/s\", gaps[gaps.Count - 1], gaps[(int)(gaps.Count * 0.99)], over, files * 1000.0 / (ms + 200)); } }';"
+        f"[BvStall]::Run((Join-Path $env:TEMP 'bvbench-stall'), {ms})"
+    )
+
+
+def display_animation(ms: int) -> str:
+    """A borderless full-screen WinForms window repainting as fast as it can: a moving bar and a
+    frame counter. Reports the guest's own render rate; the host side counts what reaches it."""
+    return (
+        "Add-Type -ReferencedAssemblies System.Windows.Forms,System.Drawing -TypeDefinition 'using System;"
+        " using System.Diagnostics; using System.Drawing; using System.Windows.Forms; public class BvAnim : Form {"
+        " int n; Stopwatch sw = Stopwatch.StartNew(); int ms; public BvAnim(int ms) { this.ms = ms;"
+        " FormBorderStyle = FormBorderStyle.None; WindowState = FormWindowState.Maximized; TopMost = true;"
+        " DoubleBuffered = true; BackColor = Color.Black; }"
+        " protected override void OnPaint(PaintEventArgs e) { n++; int w = ClientSize.Width, h = ClientSize.Height;"
+        " int x = (int)(sw.ElapsedMilliseconds * w / 1000) % w; e.Graphics.FillRectangle(Brushes.White, x, 0, 24, h);"
+        " e.Graphics.DrawString(n.ToString(), Font, Brushes.Yellow, 10, 10);"
+        " if (sw.ElapsedMilliseconds < ms) { Invalidate(); } else { Close(); } }"
+        " public static string Run(int ms) { var f = new BvAnim(ms); Application.Run(f);"
+        " return string.Format(\"BVBENCH guest-render-fps {0:F1} fps\", f.n * 1000.0 / f.sw.ElapsedMilliseconds); } }';"
+        f"[BvAnim]::Run({ms})"
+    )
+
+
 # Every guest metric is higher-is-better; one script may print several.
 HIGHER_IS_BETTER = {name for name, _ in SUITE} | {
-    "disk-write-seq-1m", "disk-read-seq-1m", "disk-read-rand-4k", "net-download", "cursor-hz",
+    "disk-write-seq-1m", "disk-read-seq-1m", "disk-read-rand-4k", "net-download", "cursor-hz", "stall-flush-rate",
+    "guest-render-fps", "display-fps",
     "agent-cmd-hz"}
 
 _BVBENCH = re.compile(r"^BVBENCH (\S+) ([0-9]+(?:\.[0-9]+)?) (\S+)\s*$", re.M)
