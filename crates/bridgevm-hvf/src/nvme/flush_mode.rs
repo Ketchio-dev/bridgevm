@@ -1,7 +1,7 @@
 //! Host durability of a guest NVMe FLUSH or FUA write. The default is
 //! `F_FULLFSYNC` (via `sync_data`), which survives power loss.
-//! `BRIDGEVM_NVME_FLUSH=fsync` is an opt-in measurement mode matching QEMU's
-//! macOS behaviour (plain `fsync`; recently flushed data may not survive power loss).
+//! `BRIDGEVM_NVME_FLUSH=fsync` is an opt-in measurement mode: plain `fsync`, the
+//! durability QEMU gives a guest flush on macOS (recent data may not survive power loss).
 
 use std::fs::File;
 use std::io;
