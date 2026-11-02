@@ -662,16 +662,12 @@ pub(super) mod tests {
         let mut h = harness();
         h.state = AgentConsoleState::Service;
         h.last_send = Some(Instant::now());
-        h.share = Some(ShareState {
-            engine: ShareSync::new(512),
-            host_dir: dir.clone(),
-            guest_dir: "C:\\share".into(),
-            interval: Duration::from_millis(500),
-            last_poll: None,
-            host_skip_seen: HashSet::new(),
-            guest_ls_scratch: Vec::new(),
-            host_scan_scratch: Vec::new(),
-        });
+        h.share = Some(ShareState::new(
+            ShareSync::new(512),
+            dir.clone(),
+            "C:\\share".into(),
+            Duration::from_millis(500),
+        ));
 
         h.service_enqueue(Instant::now());
         std::fs::write(&path, b"second").unwrap();
@@ -708,16 +704,12 @@ pub(super) mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink(dir.join("sub/dir/x.txt"), dir.join("link.txt")).unwrap();
 
-        let mut share = ShareState {
-            engine: ShareSync::new(512),
-            host_dir: dir.clone(),
-            guest_dir: "C:\\share".into(),
-            interval: Duration::from_millis(500),
-            last_poll: None,
-            host_skip_seen: HashSet::new(),
-            guest_ls_scratch: Vec::new(),
-            host_scan_scratch: Vec::new(),
-        };
+        let mut share = ShareState::new(
+            ShareSync::new(512),
+            dir.clone(),
+            "C:\\share".into(),
+            Duration::from_millis(500),
+        );
         scan_share_host_dir(&mut share);
         assert_eq!(share.host_scan_scratch.len(), 1);
         assert_eq!(share.host_scan_scratch[0].name, "sub/dir/x.txt");
@@ -739,16 +731,12 @@ pub(super) mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("a\\b.txt"), b"ambiguous").unwrap();
 
-        let mut share = ShareState {
-            engine: ShareSync::new(512),
-            host_dir: dir.clone(),
-            guest_dir: "C:\\share".into(),
-            interval: Duration::from_millis(500),
-            last_poll: None,
-            host_skip_seen: HashSet::new(),
-            guest_ls_scratch: Vec::new(),
-            host_scan_scratch: Vec::new(),
-        };
+        let mut share = ShareState::new(
+            ShareSync::new(512),
+            dir.clone(),
+            "C:\\share".into(),
+            Duration::from_millis(500),
+        );
 
         scan_share_host_dir(&mut share);
         assert!(share.host_scan_scratch.is_empty());
@@ -978,15 +966,11 @@ pub(super) mod tests {
         let dir =
             std::env::temp_dir().join(format!("bvagent-share-{label}-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        ShareState {
-            engine: ShareSync::new(512),
-            host_dir: dir,
-            guest_dir: "C:\\share".into(),
-            interval: Duration::from_millis(500),
-            last_poll: None,
-            host_skip_seen: HashSet::new(),
-            guest_ls_scratch: Vec::new(),
-            host_scan_scratch: Vec::new(),
-        }
+        ShareState::new(
+            ShareSync::new(512),
+            dir,
+            "C:\\share".into(),
+            Duration::from_millis(500),
+        )
     }
 }

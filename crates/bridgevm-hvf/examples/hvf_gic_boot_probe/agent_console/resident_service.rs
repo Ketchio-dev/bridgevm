@@ -109,6 +109,17 @@ impl AgentConsoleHarness {
             return;
         };
         if !self.write_service_req_line(&req, now) {
+            if self.share.is_some()
+                && matches!(
+                    &req,
+                    ServiceReq::ShareDel {
+                        direction: ShareDelDirection::HostToGuest,
+                        ..
+                    }
+                )
+            {
+                self.queue.push_front(req);
+            }
             return;
         }
         send(self.service_line_scratch.as_bytes());
@@ -223,23 +234,7 @@ impl AgentConsoleHarness {
                 }
             }
             ServiceReq::ShareDel { name, direction } => match direction {
-                ShareDelDirection::HostToGuest => {
-                    let Some(share) = self.share.as_ref() else {
-                        return false;
-                    };
-                    write_share_guest_path_into(
-                        &share.guest_dir,
-                        name,
-                        &mut self.share_guest_path_scratch,
-                    );
-                    self.service_line_scratch.push_str("DEL ");
-                    base64_encode_into(
-                        self.share_guest_path_scratch.as_bytes(),
-                        &mut self.service_line_scratch,
-                    );
-                    self.service_line_scratch.push('\n');
-                    true
-                }
+                ShareDelDirection::HostToGuest => self.write_share_delete_wire(name),
                 ShareDelDirection::GuestToHost => {
                     self.handle_share_delete(name, *direction, now);
                     false

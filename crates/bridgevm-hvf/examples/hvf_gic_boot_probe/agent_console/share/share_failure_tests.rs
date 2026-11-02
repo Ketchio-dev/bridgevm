@@ -13,16 +13,12 @@ fn failed_destination_limit_disables_share_and_drops_queued_puts_and_deletes() {
         engine.on_guest_file(name.clone(), vec![1], Some("g1"));
         assert!(!engine.on_host_write_failed(&name));
     }
-    h.share = Some(ShareState {
+    h.share = Some(ShareState::new(
         engine,
-        host_dir: PathBuf::from("/unused-root"),
-        guest_dir: "C:\\share".into(),
-        interval: Duration::from_secs(1),
-        last_poll: None,
-        host_skip_seen: HashSet::new(),
-        guest_ls_scratch: Vec::new(),
-        host_scan_scratch: Vec::new(),
-    });
+        PathBuf::from("/unused-root"),
+        "C:\\share".into(),
+        Duration::from_secs(1),
+    ));
     h.queue.push_back(ServiceReq::ShareLs);
     h.queue.push_back(share_put_req("a".into(), vec![1], 1));
     h.queue.push_back(ServiceReq::ShareDel { name: "a".into(), direction: ShareDelDirection::HostToGuest });

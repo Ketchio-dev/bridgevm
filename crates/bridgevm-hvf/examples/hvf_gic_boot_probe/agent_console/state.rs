@@ -162,16 +162,9 @@ pub(super) struct OutAccum {
     pub(super) valid: bool,
 }
 
-pub(super) struct ShareState {
-    pub(super) engine: ShareSync,
-    pub(super) host_dir: PathBuf,
-    pub(super) guest_dir: String,
-    pub(super) interval: Duration,
-    pub(super) last_poll: Option<Instant>,
-    pub(super) host_skip_seen: HashSet<(String, u128, HostSkipKind)>,
-    pub(super) guest_ls_scratch: Vec<LsEntry>,
-    pub(super) host_scan_scratch: Vec<HostFile>,
-}
+#[path = "share/share_state.rs"]
+mod share_state;
+pub(super) use share_state::ShareState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum HostSkipKind {

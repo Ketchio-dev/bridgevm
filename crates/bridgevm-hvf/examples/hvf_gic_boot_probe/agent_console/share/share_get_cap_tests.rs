@@ -13,16 +13,12 @@ fn capped(label: &str) -> (AgentConsoleHarness, PathBuf) {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let mut h = harness();
-    h.share = Some(ShareState {
-        engine: ShareSync::new(1),
-        host_dir: dir.clone(),
-        guest_dir: ROOT.into(),
-        interval: Duration::from_secs(1),
-        last_poll: None,
-        host_skip_seen: HashSet::new(),
-        guest_ls_scratch: Vec::new(),
-        host_scan_scratch: Vec::new(),
-    });
+    h.share = Some(ShareState::new(
+        ShareSync::new(1),
+        dir.clone(),
+        ROOT.into(),
+        Duration::from_secs(1),
+    ));
     (h, dir)
 }
 

@@ -9,16 +9,12 @@ fn synced_share() -> AgentConsoleHarness {
     let mut engine = ShareSync::new(1024);
     engine.on_guest_file("keep.txt".into(), vec![7], Some("m1"));
     engine.on_host_write_succeeded("keep.txt", Some(1));
-    h.share = Some(ShareState {
+    h.share = Some(ShareState::new(
         engine,
-        host_dir: PathBuf::from("/unused-test-root"),
-        guest_dir: "C:\\share".into(),
-        interval: Duration::from_secs(1),
-        last_poll: None,
-        host_skip_seen: HashSet::new(),
-        guest_ls_scratch: Vec::new(),
-        host_scan_scratch: Vec::new(),
-    });
+        PathBuf::from("/unused-test-root"),
+        "C:\\share".into(),
+        Duration::from_secs(1),
+    ));
     h
 }
 
