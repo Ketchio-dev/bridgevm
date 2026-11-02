@@ -1,5 +1,5 @@
 name: Sealed production input driver profile contracts
-on: [push, pull_request]
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/live-gates/guest_input_*', 'tests/integration/guest-input-controller-test.py', 'tests/integration/guest-input-driver-variant-test.py', 'tests/integration/guest-input-queue-test.py', '.github/workflows/guest-input-driver-variant.yml']}}
 permissions:
   contents: read
 jobs:

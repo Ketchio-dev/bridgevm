@@ -1,5 +1,5 @@
 name: B6 reference inventory contract
-on: [push, pull_request, workflow_dispatch]
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/agent-channel-lib.sh', 'scripts/win-assets/bv-b6-reference-inventory.ps1', 'scripts/win-assets/bv-firstboot-policy.cmd', 'tests/integration/b6-reference-inventory-contract.ps1', 'tests/integration/firstboot-policy-contract.ps1', 'tests/integration/firstboot-readiness-diagnostic-contract.ps1', '.github/workflows/b6-reference-inventory.yml']}, workflow_dispatch: {}}
 permissions:
   contents: read
 jobs:

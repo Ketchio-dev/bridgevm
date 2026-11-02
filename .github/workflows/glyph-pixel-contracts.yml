@@ -1,7 +1,7 @@
 name: Glyph pixel evidence contracts
 on:
   push: {branches: [main]}
-  pull_request:
+  pull_request: {paths: ['scripts/b6-observe-scene-failure.py', 'scripts/b6-scene-contract.sh', 'scripts/b6-uia-*', 'scripts/build-glyph-pixel-mask.py', 'scripts/glyph_frame.py', 'scripts/verify-b6-cell.py', 'scripts/verify-glyph-pixel-mask.py', 'scripts/win-assets/bv-b6-uia-diagnostic.ps1', 'tests/integration/b6-scene-*', 'tests/integration/b6-uia-diagnostic-contract.py', 'tests/integration/glyph-ppm-contract.py', '.github/workflows/glyph-pixel-contracts.yml']}
 permissions:
   contents: read
 jobs:

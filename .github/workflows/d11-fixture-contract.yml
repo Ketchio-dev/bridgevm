@@ -1,7 +1,7 @@
 name: D11 development fixture contracts
 on:
   push: {branches: [main]}
-  pull_request:
+  pull_request: {paths: ['apps/macos/Sources/BridgeVMControl/BridgeVMControlResources.swift', 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift', 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift', 'apps/macos/Sources/BridgeVMProductE2E/T17PrivateUnattend.swift', 'crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd', 'scripts/*.py', 'scripts/check-d11-fixture.sh', 'scripts/development/D11FixtureHelper.swift', 'scripts/live-gates/**', 'scripts/win-assets/bv-d11-fixture-ready.ps1', 'scripts/win-assets/unattend.xml', 'tests/integration/d11*', '.github/workflows/d11-fixture-contract.yml']}
   workflow_dispatch:
 permissions:
   contents: read
