@@ -160,7 +160,7 @@ def display_animation(ms: int) -> str:
 # Every guest metric is higher-is-better; one script may print several.
 HIGHER_IS_BETTER = {name for name, _ in SUITE} | {
     "disk-write-seq-1m", "disk-read-seq-1m", "disk-read-rand-4k", "net-download", "cursor-hz", "stall-flush-rate",
-    "guest-render-fps", "display-fps",
+    "guest-render-fps", "display-fps", "pointer-display-fps",
     "agent-cmd-hz"}
 
 _BVBENCH = re.compile(r"^BVBENCH (\S+) ([0-9]+(?:\.[0-9]+)?) (\S+)\s*$", re.M)
