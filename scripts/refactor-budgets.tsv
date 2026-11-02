@@ -5297,3 +5297,7 @@ crates/bridgevm-hvf/src/snapshot_publish_unsupported.rs	47	1
 crates/bridgevm-hvf/src/snapshot_publish_unsupported_tests.rs	24	0
 docs/document-manifests/autonomous-twelve-hour-20261102.tsv	3	0
 docs/history/windows-hvf/snapshot-exchange-refusal-20261102.md	30	0
+docs/document-manifests/share-root-notice-20261102.tsv	2	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfDisplayKeyRepeat.swift	15	0
+apps/macos/Tests/BridgeVMControlTests/HvfDisplayKeyRepeatTests.swift	45	0
+docs/history/windows-hvf/display-key-repeat-20261102.md	19	0
