@@ -163,7 +163,8 @@ def execute():
             replacement['interpretation'] = 'supported replacement; no assumed unsupported exchange'
         else:
             validated(replacement['after'], expected)
-            replacement['interpretation'] = 'old selection preserved; errno does not identify syscall'
+            named = 'renamex_np RENAME_SWAP' in replacement['stderr_preview']
+            replacement['interpretation'] = 'old selection preserved; ' + ('names RENAME_SWAP' if named else 'unnamed refusal')
             staged_value = replacement['staging_after']
             if staged_value['present']:
                 validated(staged_value, new_expected)
@@ -172,8 +173,7 @@ def execute():
                 replacement['pair_state'] = 'old destination / absent staging; earlier refusal possible'
             if not replacement['before_exact_shape']:
                 replacement['interpretation'] = 'extra-member admission refusal; exchange unobserved'
-        result['source_pair_after'] = [content(p, 4096) for p in paths]
-        result['replacement_pair_after'] = [content(p, 4096) for p in new_paths]
+        result['source_pair_after'], result['replacement_pair_after'] = ([content(p, 4096) for p in ps] for ps in (paths, new_paths))
         if result['source_pair_after'] != expected or result['replacement_pair_after'] != new_expected:
             raise ValueError('synthetic source pair changed')
         result['helper_after'] = content(cli, 128 * 1024**2)
