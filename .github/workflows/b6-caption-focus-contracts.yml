@@ -1,6 +1,6 @@
 name: B6 caption focus contracts
 on:
-  push:
+  push: {branches: [main]}
   pull_request:
 permissions:
   contents: read
