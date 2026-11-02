@@ -77,7 +77,11 @@ fn watch_until_replaced(file: &std::fs::File, vcpu: HvVcpuT, fired: &AtomicBool)
     let mut ok = unsafe { libc::kevent(queue, &change, 1, null_mut(), 0, null()) } == 0;
     while ok {
         // SAFETY: as above; blocks until the next vnode event.
-        ok = unsafe { libc::kevent(queue, null(), 0, &mut event, 1, null()) } == 1;
+        let n = unsafe { libc::kevent(queue, null(), 0, &mut event, 1, null()) };
+        if n < 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+            continue;
+        }
+        ok = n == 1;
         if ok {
             ctl_changed(vcpu, fired);
             if event.fflags & (libc::NOTE_DELETE | libc::NOTE_RENAME) != 0 {
