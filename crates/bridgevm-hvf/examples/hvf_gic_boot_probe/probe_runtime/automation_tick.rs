@@ -2,16 +2,24 @@
 
 macro_rules! automation_tick {
     ($platform:ident, $smp_trace:ident, $automation_gate:ident, $live_input:ident, $guest_ram:ident, $input_wake:ident, $serial_stop_scans:ident, $uart_triggers:ident, $xhci_hid_boot_key_triggers:ident, $agent_console:ident, $boot_timer:ident, $exits:ident, $vcpu:ident, $ram:ident, $ram_size:ident, $xhci_setup_input_triggers:ident, $pointer_deadline_wake:ident, $setup_input_host_wake:ident, $xhci_pointer_input_triggers:ident, $ramfb_sample_loop:ident, $live_display_exporter:ident, $last_pc:ident, $stop_on_linux:ident $(,)?) => {{
+        let input_prepared = $crate::probe_runtime::input_prepare::prepare_live_input!(
+            $platform,
+            $smp_trace,
+            $automation_gate,
+            $live_input,
+            $input_wake
+        );
         let panicked = {
             let mut platform_guard =
                 lock_platform(&$platform, $smp_trace.as_deref(), 0, HoldSite::Automation);
             let locked_platform = &mut *platform_guard;
-            $automation_gate.note_checked();
-            if let Some(d) = locked_platform.xhci_pointer_report_deadline() {
-                pointer_deadline_trace::report_overdue(d);
+            if input_prepared {
+                $live_input.apply_pending(
+                    locked_platform,
+                    &mut $guest_ram,
+                    std::time::Instant::now(),
+                );
             }
-            let now = std::time::Instant::now();
-            $live_input.tick(locked_platform, &mut $guest_ram, now, $input_wake);
             if serial_reached_linux_panic(locked_platform.uart_output(), &mut $serial_stop_scans) {
                 true
             } else {
@@ -94,23 +102,14 @@ macro_rules! automation_tick {
             });
             $live_display_exporter.export_due(locked_platform, std::time::Instant::now());
             $boot_timer.tick(locked_platform, &$guest_ram, $exits, $last_pc);
-            if checkpoint_committed {
-                Some("VM checkpoint committed; suspended process exiting".into())
-            } else if $stop_on_linux
-                && serial_reached_linux_early_boot(
-                    locked_platform.uart_output(),
-                    &mut $serial_stop_scans,
-                )
-            {
-                Some("serial reached Linux early boot".into())
-            } else if serial_reached_shell(locked_platform.uart_output(), &mut $serial_stop_scans) {
-                match $ramfb_sample_loop.observe_shell($vcpu) {
-                    RamfbSampleShellAction::Continue => None,
-                    RamfbSampleShellAction::StopNow { reason } => Some(reason.into()),
-                }
-            } else {
-                None
-            }
+            $crate::probe_runtime::automation_stop::automation_stop!(
+                checkpoint_committed,
+                $stop_on_linux,
+                locked_platform,
+                $serial_stop_scans,
+                $ramfb_sample_loop,
+                $vcpu,
+            )
         }
     }};
 }

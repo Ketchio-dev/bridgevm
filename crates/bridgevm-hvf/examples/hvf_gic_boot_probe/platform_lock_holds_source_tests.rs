@@ -1,13 +1,12 @@
 //! The split automation scopes retain instrumentation at every actual acquisition.
 
+#[path = "platform_lock_holds_sources.rs"]
+mod sources;
+
 #[test]
 fn every_lock_site_beside_the_tick_holds_through_the_record() {
     let count = |text: &str, needle: &str| text.matches(needle).count();
-    let run_source = [
-        include_str!("probe_runtime.rs"),
-        include_str!("probe_runtime/automation_tick.rs"),
-    ]
-    .concat();
+    let run_source = sources::runtime();
     let run = run_source.as_str();
     for site in [
         "HoldSite::UartPreload",
@@ -16,11 +15,11 @@ fn every_lock_site_beside_the_tick_holds_through_the_record() {
     ] {
         assert_eq!(
             count(run, site),
-            if site == "HoldSite::Automation" { 3 } else { 1 },
+            if site == "HoldSite::Automation" { 4 } else { 1 },
             "{site}"
         );
     }
-    assert_eq!(count(run, "lock_platform("), 5);
+    assert_eq!(count(run, "lock_platform("), 6);
     let secondary = include_str!("secondary_vcpu.rs");
     assert_eq!(count(secondary, "lock_platform("), 1);
     assert_eq!(count(secondary, "HoldSite::Mmio(ipa)"), 1);

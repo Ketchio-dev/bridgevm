@@ -5,7 +5,7 @@ struct RetainedRuntimeStopControl: View {
     @State private var message: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        HvfForceStopControl(session: session, identifier: "bridgevm.retained.runtime", spacing: 6) {
             Button("중지") {
                 HvfRuntimeStopAction.perform(
                     session: session,

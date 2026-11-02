@@ -3,6 +3,8 @@
 use std::fs::File;
 use std::path::PathBuf;
 
+#[path = "input_control_file/access.rs"]
+mod access;
 #[path = "input_control_file/checked_access.rs"]
 mod checked_access;
 
@@ -26,13 +28,6 @@ impl InputControlFile {
 
     pub(crate) fn length(&mut self) -> Option<u64> {
         self.with_exclusive(|file| file.metadata().ok().map(|metadata| metadata.len()))?
-    }
-
-    pub(crate) fn with_exclusive<T>(&mut self, action: impl FnOnce(&mut File) -> T) -> Option<T> {
-        if self.file.is_none() {
-            self.file = checked_access::open(&self.path);
-        }
-        checked_access::with_exclusive(&self.path, self.file.as_mut()?, action)
     }
 
     pub(crate) fn file(&mut self) -> Option<&mut File> {

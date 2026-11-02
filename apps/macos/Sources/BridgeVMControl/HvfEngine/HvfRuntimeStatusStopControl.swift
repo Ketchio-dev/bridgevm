@@ -5,7 +5,7 @@ struct HvfRuntimeStatusStopControl: View {
     @State private var message: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        HvfForceStopControl(session: session, identifier: "bridgevm.windows.runtime") {
             Button {
                 HvfRuntimeStopAction.perform(session: session,
                     requestStop: { $0.stopOwned(expectedToken: $1.token) },

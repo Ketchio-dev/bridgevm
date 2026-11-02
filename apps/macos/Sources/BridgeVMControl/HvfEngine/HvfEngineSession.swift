@@ -29,6 +29,7 @@ final class HvfEngineSession: ObservableObject {
     let workAdmissionGate = HvfRuntimeWorkAdmissionGate()
     var process: Process?
     var ownedController: HvfOwnedRunController?
+    @Published var forceStopTarget: HvfForceStopTarget?
     var runtimeTransitionInProgress = false
     var timer: Timer?
     var tailReader = TailOffsetReader()
@@ -71,19 +72,6 @@ final class HvfEngineSession: ObservableObject {
         liveInputFile.close()
     }
 
-    func requestOwnedStop(target: HvfOwnedRuntimeIdentity, operationID: UUID) -> HvfOwnedStopAdmission {
-        guard let ownedController else { return .refused(.supervisionUnavailable) }
-        let result = ownedController.requestStop(target: target, operationID: operationID)
-        if case .refused = result { return result }
-        cancelOrderedInputTarget()
-        ownedRuntimeChanged(token: ownedController.identity.token)
-        return result
-    }
-
-    func ownedStopObservation(target: HvfOwnedRuntimeIdentity, operationID: UUID) -> HvfOwnedStopObservation? {
-        ownedController?.observation(target: target, operationID: operationID)
-    }
-
     func ownedRuntimeChanged(token: UUID) { // runs on every controller tick: assign only a changed state
         guard let controller = ownedController, controller.identity.token == token else { return }
         refreshOwnedStart()
@@ -91,6 +79,7 @@ final class HvfEngineSession: ObservableObject {
         if controller.teardownConfirmed { markStopped() }
         else if controller.failure != nil { if connectionState != .timedOut { connectionState = .timedOut } }
         else if controller.operation != nil { if connectionState != .stopping { connectionState = .stopping } }
+        refreshForceStopTarget()
     }
 
     @discardableResult
@@ -347,6 +336,7 @@ final class HvfEngineSession: ObservableObject {
         serviceStarted = false
         stopCommandSent = false
         stopDeadline = nil
+        if forceStopTarget != nil { forceStopTarget = nil }
         guiStartCleanupOnly = false
         connectionState = .stopped
     }
