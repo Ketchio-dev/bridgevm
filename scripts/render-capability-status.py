@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 from capability_forbidden import check_forbidden
-from capability_freshness import code_changed_since, measured_head_mismatch
+from capability_release_gate import measured_head_mismatch, stale_tested_commit
 
 ROOT = Path(__file__).resolve().parent.parent
 REGISTRY = ROOT / "capabilities" / "windows-hvf.json"
@@ -71,7 +71,7 @@ def validate(registry: dict) -> None:
     if not re.fullmatch(r"[0-9a-f]{7,40}", registry["tested_commit"]):
         fail("tested_commit must be a hex commit id")
 
-    stale = code_changed_since(registry["tested_commit"], ROOT)
+    stale = stale_tested_commit(registry["tested_commit"], ROOT)
     if stale:
         fail(f"code changed since tested_commit ({stale}); re-prove A11")
 

@@ -1,5 +1,5 @@
 name: Injector binary comparison contract
-on: [push, pull_request]
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/build-hvf-windows-driver-injector.sh', 'scripts/injector-file-compare-build.sh', 'scripts/win-assets/bv-file-compare.c', 'scripts/win-assets/bvinject.cmd', 'tests/integration/injector-file-compare-*', '.github/workflows/injector-file-compare.yml']}}
 permissions:
   contents: read
 jobs:

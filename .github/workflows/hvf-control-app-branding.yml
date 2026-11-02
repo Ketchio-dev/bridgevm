@@ -1,6 +1,6 @@
 name: HVF control app branding
 on:
-  pull_request:
+  pull_request: {paths: ['apps/macos/BridgeVMControl-Info.plist', 'apps/macos/Sources/BridgeVMControl/BridgeVMMark.swift', 'apps/macos/scripts/GenerateControlAppIcon.swift', 'apps/macos/scripts/bundle-control-app-metadata.sh', 'tests/integration/hvf-control-app-branding-smoke.sh', '.github/workflows/hvf-control-app-branding.yml']}
   push:
     branches: [main]
 permissions:

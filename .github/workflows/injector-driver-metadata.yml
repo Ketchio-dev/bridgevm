@@ -1,5 +1,5 @@
 name: WinPE driver metadata contracts
-on: [push, pull_request]
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/build-hvf-windows-driver-injector.sh', 'scripts/stage-injector-boot-alias.sh', 'tests/integration/injector-boot-alias-test.py', 'tests/integration/injector-driver-*', '.github/workflows/injector-driver-metadata.yml']}}
 permissions:
   contents: read
 jobs:

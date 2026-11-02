@@ -2,7 +2,7 @@ name: B6 active frame-time contracts
 on:
   push:
     branches: [main]
-  pull_request:
+  pull_request: {paths: ['scripts/b6-active-frame-time.sh', 'scripts/b6_presentmon_evidence.py', 'tests/integration/b6-active-frame-time-contract.py', '.github/workflows/b6-active-frame-time-contracts.yml']}
 permissions:
   contents: read
 jobs:

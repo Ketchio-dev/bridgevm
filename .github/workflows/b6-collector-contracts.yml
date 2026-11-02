@@ -2,7 +2,7 @@ name: B6 collector contracts
 
 on:
   push: {branches: [main]}
-  pull_request:
+  pull_request: {paths: ['scripts/win-assets/bv-b6-presentmon-capture.ps1', 'tests/integration/b6-presentmon-capture-contract.ps1', '.github/workflows/b6-collector-contracts.yml']}
   workflow_dispatch:
 
 permissions:

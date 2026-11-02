@@ -1,5 +1,5 @@
 name: Installed guest input live asset contracts
-on: [push, pull_request]
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/live-gates/guest_input_*', 'tests/integration/guest-input-live-*', 'tests/integration/guest_input_*', '.github/workflows/guest-input-live.yml']}}
 permissions:
   contents: read
 jobs:

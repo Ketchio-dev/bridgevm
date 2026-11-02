@@ -1,5 +1,5 @@
 name: WinPE no-3D diagnostic contracts
-on: [push, pull_request]
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/live-gates/run-winpe-companions.py', 'scripts/live-gates/winpe_companion_*', 'tests/integration/winpe-companion-diagnostic-test.py', 'tests/integration/winpe_companion_*', '.github/workflows/winpe-companion-diagnostic.yml']}}
 permissions:
   contents: read
 jobs:

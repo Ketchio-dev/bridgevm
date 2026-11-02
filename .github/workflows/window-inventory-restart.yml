@@ -1,5 +1,5 @@
 name: Coherence inventory restart ordering contracts
-on: [push, pull_request]
+on: {push: {branches: [main]}, pull_request: {paths: ['apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestResetRecord.swift', 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryRequest.swift', 'apps/macos/Sources/BridgeVMWindowProtocol/**', 'scripts/check-window-inventory-restart.sh', 'tests/integration/window-inventory-restart.swift', '.github/workflows/window-inventory-restart.yml']}}
 permissions:
   contents: read
 jobs:
