@@ -179,7 +179,8 @@ class BridgeVM(Engine):
             "--smp-cpus", str(self.args.cpus), "--ram-mib", str(self.args.ram_mib), "--enable-xhci",
             # BOOT_TIMER (for the READY milestone) would otherwise checksum the framebuffer every second
             # for the whole run; the product never enables it, so keep it out of the idle numbers.
-            "--boot-timer-desktop-agent", "--boot-timer-ramfb-ms", "60000", "--agent-service-control", str(self.ctl),
+            "--boot-timer-desktop-agent", "--boot-timer-ramfb-ms", str(self.args.boot_timer_ms),
+            "--agent-service-control", str(self.ctl),
             "--watchdog-ms", "3600000", "--no-guest-disk-harvest", "--input-control", str(self.input_ctl),
         ] + (["--virtio-net"] if self.args.net else [])
         self.display_fb = evidence / "display.fb"
@@ -531,6 +532,7 @@ def main() -> None:
     r.add_argument("--pointer", action="store_true", help="cursor update rate per input route")
     r.add_argument("--skip-suite", action="store_true", help="only boot, idle, optional pointer/net, shutdown")
     r.add_argument("--only", help="comma-separated suite tests to run (e.g. net-download)")
+    r.add_argument("--boot-timer-ms", type=int, default=60000, help="BridgeVM framebuffer sample period (diagnostics)")
     r.add_argument("--display", action="store_true", help="guest animation; BridgeVM also counts frames reaching the host")
     r.add_argument("--stall", action="store_true", help="guest timer gaps while another thread flushes files")
     r.add_argument("--shutdown-diag", action="store_true", help="record the guest's own shutdown timing events")
