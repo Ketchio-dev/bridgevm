@@ -12,6 +12,7 @@ final class HvfEngineSession: ObservableObject {
     @Published var config: HvfEngineConfig { didSet { runtimeConfigurationChanged() } }
     @Published var connectionState: HvfConnectionState = .stopped
     let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
+    let shareRootNotice = HvfShareRootNotice()
     @Published var events: [BvAgentEvent] = []
     var repoRoot: URL
     var workAdmission: LibraryWorkAdmission?
@@ -331,6 +332,7 @@ final class HvfEngineSession: ObservableObject {
         lastHeartbeatDate = nil
         lastHeartbeatAge = nil
         serviceStarted = false
+        shareRootNotice.reset()
         stopCommandSent = false
         stopDeadline = nil
         if forceStopTarget != nil { forceStopTarget = nil }
@@ -347,15 +349,11 @@ final class HvfEngineSession: ObservableObject {
         lastHeartbeatDate = nil
         lastHeartbeatAge = nil
         serviceStarted = false
+        shareRootNotice.reset()
         stopCommandSent = false
         stopDeadline = nil
         liveInputWriteFailureReported = false
         if clearEvents { events = [] }
-    }
-
-    func append(_ event: BvAgentEvent) {
-        events.append(event)
-        if events.count > 500 { events.removeFirst(events.count - 500) }
     }
 
     private var inputBinding: [String] {

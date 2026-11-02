@@ -1293,7 +1293,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HelperCodeSignature.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfCommandReplyReader.swift	96	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift	333	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	379	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift	377	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLiveInputFile.swift	66	0
 apps/macos/Tests/BridgeVMControlTests/HvfLiveInputFileTests.swift	145	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineView.swift	398	0
@@ -3010,7 +3010,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeLegacySpawn.swift	27	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeReadinessModel.swift	55	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeReadinessView.swift	32	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeStartFeedback.swift	21	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeStatusCard.swift	50	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeStatusCard.swift	47	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeWorkState.swift	32	0
 apps/macos/Tests/BridgeVMControlTests/HvfGUIStartFixture.swift	185	0
 apps/macos/Tests/BridgeVMControlTests/HvfGUIStartLibraryTests.swift	68	0
@@ -4198,7 +4198,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_host.rs	103	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_windows_name_tests.rs	102	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_win_names.rs	92	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_host_unseen.rs	58	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_scan.rs	24	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_scan.rs	18	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_unseen_tests.rs	154	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_win_alias.rs	59	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_alias_tests.rs	204	0
@@ -5253,7 +5253,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_delete
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_scan_walk.rs	56	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root.rs	37	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_identity_tests.rs	150	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_state.rs	40	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_state.rs	38	0
 docs/history/windows-hvf/share-root-identity-20261102.md	29	0
 docs/document-manifests/share-root-identity-20261102.tsv	2	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_checked.rs	15	0
@@ -5281,3 +5281,14 @@ docs/history/windows-hvf/host-file-snapshot-20261102.md	29	0
 docs/document-manifests/host-file-snapshot-20261102.tsv	2	0
 docs/history/windows-hvf/ramfb-publication-measurement-20261102.md	27	0
 docs/document-manifests/ramfb-publication-measurement-20261102.tsv	2	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSessionEvents.swift	7	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfRuntimeStatusMessages.swift	16	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfShareRootNotice.swift	28	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfShareRootNoticeView.swift	20	0
+apps/macos/Tests/BridgeVMControlTests/HvfShareRootNoticeTests.swift	124	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_scan_accept.rs	12	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_feedback.rs	44	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_feedback_service_tests.rs	57	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_feedback_tests.rs	20	0
+docs/history/windows-hvf/share-root-notice-20261102.md	29	0
+docs/document-manifests/share-root-notice-20261102.tsv	2	0

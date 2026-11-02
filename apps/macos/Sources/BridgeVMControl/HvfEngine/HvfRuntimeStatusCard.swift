@@ -24,10 +24,7 @@ struct HvfRuntimeStatusCard: View {
                         Text(pending).font(.callout).foregroundStyle(.secondary)
                     }
                 }
-                Text(refusal ?? session.guiStartFailureText ?? "시작 오류 없음")
-                    .font(.callout).foregroundColor((refusal ?? session.guiStartFailureText) == nil ? Color.secondary : Color.red).textSelection(.enabled)
-                    .accessibilityIdentifier("bridgevm.windows.runtime.start.failure")
-                    .accessibilityValue(refusal ?? session.guiStartFailureText ?? "none")
+                HvfRuntimeStatusMessages(session: session, refusal: refusal)
                 HStack(spacing: 24) {
                     infoItem("State", stateText, "bridgevm.windows.runtime.state")
                     HvfRuntimeHeartbeatItem(heartbeat: session.heartbeat)

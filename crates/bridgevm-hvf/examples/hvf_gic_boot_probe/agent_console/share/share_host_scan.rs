@@ -3,6 +3,8 @@
 //! interval and races below the selected root are not an atomic snapshot.
 
 use super::*;
+#[path = "share_host_scan_accept.rs"]
+mod accept;
 #[path = "share_host_scan_walk.rs"]
 mod walk;
 
@@ -21,11 +23,5 @@ pub(in crate::agent_console) fn scan_share_host_dir(share: &mut ShareState) -> b
         &mut share.host_scan_work,
         &mut unseen,
     );
-    if !listed || !share.root_matches() {
-        return false;
-    }
-    share_host_write::forget_absent_share_failures(share);
-    std::mem::swap(&mut share.host_scan_scratch, &mut share.host_scan_work);
-    share.engine.set_host_unseen(unseen);
-    true
+    accept::accept_scan(share, listed, unseen)
 }
