@@ -1,29 +1,18 @@
 //! Failure-budget exhaustion stops share work, not unrelated console service.
 
 use super::*;
-use crate::agent_console::agent_console_tests::tests::harness;
 use crate::agent_console::share::share_host_write::get_test_fixture::fetched;
+#[path = "share_failure_fixture.rs"]
+mod fixture;
 
 #[test]
 fn failed_destination_limit_disables_share_and_drops_queued_puts_and_deletes() {
-    let mut h = harness();
-    let mut engine = ShareSync::new(1024);
-    for i in 0..4095 {
-        let name = format!("blocked/{i}");
-        engine.on_guest_file(name.clone(), vec![1], Some("g1"));
-        assert!(!engine.on_host_write_failed(&name));
-    }
-    h.share = Some(ShareState::new(
-        engine,
-        PathBuf::from("/unused-root"),
-        "C:\\share".into(),
-        Duration::from_secs(1),
-    ));
+    let (mut h, _root) = fixture::nearly_exhausted_share();
     h.queue.push_back(ServiceReq::ShareLs);
     h.queue.push_back(share_put_req("a".into(), vec![1], 1));
     h.queue.push_back(ServiceReq::ShareDel { name: "a".into(), direction: ShareDelDirection::HostToGuest });
     h.queue.push_back(ServiceReq::Ping);
-    // Invalid component refuses before opening even the root; no host mutation.
+    // A real root verifies, then the invalid component exhausts the same budget.
     fetched(&mut h, "../refused", &[1]);
     assert!(h.share.is_none());
     assert_eq!(h.queue.len(), 1);

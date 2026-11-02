@@ -1,12 +1,17 @@
 //! Descriptor-relative guest writes: no symlink traversal below the chosen root.
 
 use std::ffi::{CStr, CString};
-use std::fs::{File, OpenOptions};
+use std::fs::File;
+#[cfg(test)]
+use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
+#[cfg(test)]
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::{Component, Path};
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+#[path = "host_destination_open.rs"]
+mod open;
 #[path = "guest_write_directory.rs"]
 mod directory;
 #[path = "guest_write_mark.rs"]
@@ -39,32 +44,6 @@ fn open_at(parent: &File, leaf: &CStr, flags: i32, mode: libc::mode_t) -> io::Re
 }
 
 impl Destination {
-    pub(super) fn open(root: &Path, key: &str, create: bool) -> io::Result<Self> {
-        let mut names = Vec::new();
-        for component in Path::new(key).components() {
-            match component {
-                Component::Normal(part) => names.push(name(part)?),
-                _ => return Err(io::ErrorKind::InvalidInput.into()),
-            }
-        }
-        let leaf = names.pop().ok_or(io::ErrorKind::InvalidInput)?;
-        // The explicitly selected root may itself be a symlink; pin its target.
-        let mut parent = OpenOptions::new().read(true)
-            .custom_flags(libc::O_DIRECTORY | libc::O_CLOEXEC).open(root)?;
-        for part in names {
-            let flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW;
-            parent = match open_at(&parent, &part, flags, 0) {
-                Ok(file) => file,
-                Err(e) if create && e.kind() == io::ErrorKind::NotFound => {
-                    // Owner-only and marked before anything is published in it.
-                    directory::open_or_create(&parent, &part, flags)?
-                }
-                Err(e) => return Err(e),
-            };
-        }
-        Ok(Self { parent, leaf })
-    }
-
     fn existing(&self, access: i32) -> io::Result<Option<File>> {
         match open_at(&self.parent, &self.leaf, access | libc::O_NOFOLLOW | libc::O_NONBLOCK, 0) {
             Ok(file) => {

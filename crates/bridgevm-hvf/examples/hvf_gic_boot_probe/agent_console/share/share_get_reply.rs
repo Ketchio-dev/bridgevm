@@ -1,6 +1,8 @@
 //! Resident GET completion is bound to both its active request and wire path.
 
 use super::*;
+#[path = "share_get_publish.rs"]
+mod publish;
 
 impl AgentConsoleHarness {
     pub(in crate::agent_console) fn handle_share_get_reply(
@@ -48,46 +50,5 @@ impl AgentConsoleHarness {
         };
         self.apply_finished_share_get(name, finished, now);
         true
-    }
-
-    fn apply_finished_share_get(&mut self, name: &str, finished: FinishedGet, now: Instant) {
-        if finished.bytes.len() != finished.total {
-            println!(
-                "BVAGENT SHARE get-short {name} got={} expected={}",
-                finished.bytes.len(),
-                finished.total
-            );
-            return;
-        }
-        let Some(share) = self.share.as_mut() else {
-            return;
-        };
-        let bytes = match share
-            .engine
-            .on_guest_file(name.to_string(), finished.bytes, None)
-        {
-            GuestFileOutcome::AlreadySynced => return,
-            GuestFileOutcome::Skip(reason) => return print_share_skip(name, reason),
-            GuestFileOutcome::WriteHost(bytes) => bytes,
-        };
-        match Destination::open(&share.host_dir, name, true).and_then(|d| d.write(&bytes)) {
-            Ok(mtime) => {
-                share.engine.on_host_write_succeeded(name, mtime);
-                println!(
-                    "BVAGENT SHARE guest->host {name} bytes={} t={}",
-                    bytes.len(),
-                    self.t_ms(now)
-                );
-            }
-            Err(e) => {
-                let exhausted = share.engine.on_host_write_error(name, is_persistent(&e));
-                println!("BVAGENT SHARE write-refused {name} {e}");
-                if exhausted {
-                    self.share = None;
-                    self.queue.retain(|request| !is_share_req(request));
-                    println!("BVAGENT SHARE disabled failed-destination-limit");
-                }
-            }
-        }
     }
 }

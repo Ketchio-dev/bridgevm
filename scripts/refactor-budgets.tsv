@@ -4183,10 +4183,10 @@ docs/document-manifests/live-worker-ssd-launch.tsv	3	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_tests.rs	314	0
 docs/history/windows-hvf/native-vmm-share-sync-hardening-20261007.md	67	0
 docs/document-manifests/native-vmm-share-sync-hardening.tsv	3	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_write.rs	35	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/host_destination.rs	140	7
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_write.rs	9	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/host_destination.rs	114	7
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/host_destination_tests.rs	120	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_failure_tests.rs	26	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_failure_tests.rs	14	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_skip.rs	32	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing.rs	19	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_failure_budget_tests.rs	27	0
@@ -5234,7 +5234,7 @@ apps/macos/Sources/BridgeVMControl/CreateVMResolutionRow.swift	24	0
 docs/document-manifests/runtime-and-input-20261102.tsv	7	0
 docs/history/windows-hvf/hvf-resolution-presentation-20261102.md	14	0
 docs/document-manifests/hvf-resolution-presentation-20261102.tsv	2	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_reply.rs	90	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_reply.rs	49	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_test_fixture.rs	34	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_reply_identity_tests.rs	130	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing_error.rs	13	0
@@ -5256,3 +5256,11 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_i
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_state.rs	40	0
 docs/history/windows-hvf/share-root-identity-20261102.md	29	0
 docs/document-manifests/share-root-identity-20261102.tsv	2	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_checked.rs	15	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_state_destination.rs	6	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/host_destination_open.rs	60	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/host_destination_root_fd_tests.rs	36	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_publish.rs	55	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_delete.rs	30	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_failure_fixture.rs	43	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_guest_destination_identity_tests.rs	151	0

@@ -7,6 +7,8 @@ use std::os::unix::fs::PermissionsExt;
 mod filesystem;
 #[path = "guest_write_policy_tests.rs"]
 mod write_policy;
+#[path = "host_destination_root_fd_tests.rs"]
+mod root_fd;
 
 static FIXTURE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 struct Fixture { path: std::path::PathBuf, _lock: std::sync::MutexGuard<'static, ()> }
