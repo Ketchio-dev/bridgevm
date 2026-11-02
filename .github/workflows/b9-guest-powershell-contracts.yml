@@ -1,7 +1,7 @@
 name: B9 guest PowerShell refusal contracts
 
 on:
-  push:
+  push: {branches: [main]}
   pull_request: {paths: ['scripts/win-assets/bv-b9-private-inputs.ps1', 'scripts/win-assets/bv-b9-vlc-playback.ps1', 'tests/integration/b9-guest-powershell-contract.py', '.github/workflows/b9-guest-powershell-contracts.yml']}
   workflow_dispatch:
 

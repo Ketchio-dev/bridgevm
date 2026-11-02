@@ -1,6 +1,6 @@
 name: B6 renderer trace contracts
 on:
-  push:
+  push: {branches: [main]}
   pull_request: {paths: ['scripts/live-gates/b6_*', 'scripts/live-gates/bridgevm-live', 'scripts/live-gates/redact-receipt.py', 'scripts/live-gates/run-b6-*', 'scripts/live-gates/run-tier.sh', 'tests/integration/b6-cell-observation-contract.py', 'tests/integration/b6-renderer-trace-*', 'tests/integration/b6-untraced-startup-contract.py', '.github/workflows/b6-renderer-trace-contracts.yml']}
 permissions:
   contents: read

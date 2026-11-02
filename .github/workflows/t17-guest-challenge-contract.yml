@@ -1,7 +1,7 @@
 name: T17 guest challenge contract
 
 on:
-  push:
+  push: {branches: [main]}
   pull_request: {paths: ['scripts/test-bv-product-e2e-challenge.ps1', 'scripts/win-assets/bv-product-e2e-launch.ps1', 'scripts/win-assets/bv-product-e2e.ps1', '.github/workflows/t17-guest-challenge-contract.yml']}
   workflow_dispatch:
 

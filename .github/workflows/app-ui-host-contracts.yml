@@ -1,6 +1,6 @@
 name: Normal-app native UI host contracts
 on:
-  push:
+  push: {branches: [main]}
   pull_request:
 permissions:
   contents: read

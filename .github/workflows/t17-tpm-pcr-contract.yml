@@ -1,7 +1,7 @@
 name: T17 TPM PCR guest contract
 
 on:
-  push:
+  push: {branches: [main]}
   pull_request: {paths: ['scripts/win-assets/bv-product-e2e*', 'tests/integration/t17-tpm-pcr-contract.ps1', 'tests/integration/t19-bitlocker-guest-contract.ps1', 'tests/integration/windows-guest-pwsh-contracts.ps1', '.github/workflows/t17-tpm-pcr-contract.yml']}
   workflow_dispatch:
 
