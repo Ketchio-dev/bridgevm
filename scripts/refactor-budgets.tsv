@@ -5259,3 +5259,5 @@ docs/document-manifests/share-root-identity-20261102.tsv	2	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/host_prepare_held_writer_tests.rs	46	0
 docs/history/windows-hvf/input-host-msrv-fixture-20261102.md	20	0
 docs/document-manifests/input-host-msrv-fixture-20261102.tsv	2	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_request_measurement.rs	55	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_test_receipt.rs	7	0
