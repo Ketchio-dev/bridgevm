@@ -1,8 +1,6 @@
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-use bridgevm_hvf::fwcfg::GuestMemoryMut;
-use bridgevm_hvf::platform_virt::VirtPlatform;
 #[path = "input_control_file.rs"]
 mod input_control_file;
 pub(crate) use input_control_file::InputControlFile;
@@ -16,6 +14,8 @@ const COMPACT_AFTER_BYTES: u64 = 1024 * 1024;
 mod backpressure_tests;
 #[path = "live_input/control_reader.rs"]
 mod control_reader;
+#[path = "live_input/tick_adapter.rs"]
+mod tick_adapter;
 #[path = "live_input/device_apply.rs"]
 mod device_apply;
 #[cfg(test)]
@@ -91,18 +91,6 @@ impl LiveInputController {
 
     pub fn poll_due(&self, now: Instant) -> bool {
         self.source.is_some() && now >= self.next_poll
-    }
-
-    pub fn tick(
-        &mut self,
-        platform: &mut VirtPlatform,
-        mem: &mut dyn GuestMemoryMut,
-        now: Instant,
-        event_wake: bool,
-    ) {
-        if self.prepare_tick(now, event_wake) {
-            self.apply_pending(platform, mem, now);
-        }
     }
 
     /// Read and queue host input without a platform or guest-memory borrow.

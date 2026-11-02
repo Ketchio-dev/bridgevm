@@ -1,5 +1,9 @@
 #[path = "probe_runtime/automation_tick.rs"]
 mod automation_tick;
+#[path = "probe_runtime/automation_stop.rs"]
+mod automation_stop;
+#[path = "probe_runtime/input_prepare.rs"]
+mod input_prepare;
 use automation_tick::automation_tick;
 #[path = "probe_runtime/generation_tpm.rs"]
 mod generation_tpm;

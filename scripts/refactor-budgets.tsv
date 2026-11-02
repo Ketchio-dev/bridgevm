@@ -882,7 +882,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_display_thread_tests.rs	33
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file.rs	29	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_file/checked_access.rs	38	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/identity_tests.rs	190	4
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input.rs	346	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input.rs	334	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/line_frames.rs	89	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/key_actions.rs	99	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input_clock_tests/mod.rs	0	0
@@ -5207,7 +5207,13 @@ docs/history/windows-hvf/coreaudio-atomic-pcm-20261102.md	30	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/host_tick.rs	69	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/host_tick_tests.rs	133	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/transport_test_adapter.rs	49	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/platform_lock_holds_source_tests.rs	65	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/automation_tick.rs	115	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/platform_lock_holds_source_tests.rs	62	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/automation_tick.rs	114	0
 docs/document-manifests/agent-host-work-unlocked-20261102.tsv	2	0
 docs/history/windows-hvf/agent-host-work-unlocked-20261102.md	28	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input/tick_adapter.rs	16	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/platform_lock_holds_sources.rs	9	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/automation_stop.rs	22	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/input_prepare.rs	14	0
+docs/document-manifests/live-input-host-phase-20261102.tsv	2	0
+docs/history/windows-hvf/live-input-host-phase-20261102.md	28	0

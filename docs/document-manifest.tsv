@@ -131,3 +131,4 @@ HANDOFF.md	historical-evidence	project-status	STATUS.md
 @include	docs/document-manifests/share-listing-bounds-20261101.tsv	-	-
 @include	docs/document-manifests/coreaudio-atomic-pcm-20261102.tsv	-	-
 @include	docs/document-manifests/agent-host-work-unlocked-20261102.tsv	-	-
+@include	docs/document-manifests/live-input-host-phase-20261102.tsv	-	-
