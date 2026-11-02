@@ -1,3 +1,6 @@
+#[path = "probe_runtime/automation_tick.rs"]
+mod automation_tick;
+use automation_tick::automation_tick;
 #[path = "probe_runtime/generation_tpm.rs"]
 mod generation_tpm;
 #[path = "hda_service_tick.rs"]
@@ -346,7 +349,9 @@ pub(crate) fn run() -> ExitCode {
                     drain_trace,
                     DrainContext::pre_run(exits, drain_pc),
                 );
-                if let Err(error) = drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace) {
+                if let Err(error) =
+                    drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace)
+                {
                     stop_reason = error.stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);
                     break;
                 }
@@ -747,109 +752,31 @@ pub(crate) fn run() -> ExitCode {
                         || live_display_exporter.due(tick)
                         || live_input.poll_due(tick),
                 ) {
-                    let mut platform_guard =
-                        lock_platform(&platform, smp_trace.as_deref(), 0, HoldSite::Automation);
-                    let platform = &mut *platform_guard;
-                    automation_gate.note_checked();
-                    if let Some(d) = platform.xhci_pointer_report_deadline() {
-                        pointer_deadline_trace::report_overdue(d);
-                    }
-                    let now = std::time::Instant::now();
-                    live_input.tick(platform, &mut guest_ram, now, input_wake);
-                    if serial_reached_linux_panic(platform.uart_output(), &mut serial_stop_scans) {
-                        Some("serial reached Linux kernel panic".into())
-                    } else {
-                        for trigger in &mut uart_triggers {
-                            trigger.maybe_fire(platform);
-                        }
-                        for trigger in &mut xhci_hid_boot_key_triggers {
-                            trigger.maybe_fire(platform);
-                        }
-                        let now = std::time::Instant::now();
-                        let mut checkpoint_committed = false;
-                        if let Some(agent_console) = agent_console.as_mut() {
-                            agent_console.tick(platform, &mut guest_ram, now);
-                            if agent_console.desktop_ready() {
-                                boot_timer.observe_agent_ready(now, exits);
-                                checkpoint_committed = checkpoint_glue::checkpoint_if_requested(
-                                    &[vcpu],
-                                    std::slice::from_raw_parts(ram, ram_size),
-                                    platform,
-                                )
-                                .unwrap_or_else(|error| panic!("capture VM checkpoint: {error}"));
-                            }
-                        }
-                        for trigger in &mut xhci_setup_input_triggers {
-                            let now = std::time::Instant::now();
-                            trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
-                                platform,
-                                &mut guest_ram,
-                                now,
-                                |platform, label, mem| {
-                                    ramfb_dump::print_checkpoint_for_platform(label, platform, mem);
-                                },
-                            );
-                            if let Some(deadline) =
-                                trigger.pending_host_wake_deadline_at(platform, now)
-                            {
-                                if pointer_deadline_wake
-                                    .arm_at(deadline, &mut setup_input_host_wake)
-                                {
-                                    println!(
-                                        "xHCI setup-input host wake armed for delayed trigger"
-                                    );
-                                }
-                            }
-                        }
-                        for trigger in &mut xhci_pointer_input_triggers {
-                            let now = std::time::Instant::now();
-                            trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
-                                platform,
-                                &mut guest_ram,
-                                now,
-                                |platform, label, mem| {
-                                    ramfb_dump::print_checkpoint_for_platform(label, platform, mem);
-                                },
-                            );
-                            if let Some(deadline) =
-                                trigger.pending_host_wake_deadline_at(platform, now)
-                            {
-                                if pointer_deadline_wake
-                                    .arm_at(deadline, &mut setup_input_host_wake)
-                                {
-                                    println!(
-                                        "xHCI pointer-input host wake armed for delayed trigger"
-                                    );
-                                }
-                            }
-                        }
-                        pointer_deadline_wake.arm(platform, &mut setup_input_host_wake);
-                        ramfb_sample_loop.emit_due(vcpu, |label| {
-                            ramfb_dump::print_checkpoint_for_platform(label, platform, &guest_ram);
-                        });
-                        live_display_exporter.export_due(platform, std::time::Instant::now());
-                        boot_timer.tick(platform, &guest_ram, exits, last_pc);
-                        if checkpoint_committed {
-                            Some("VM checkpoint committed; suspended process exiting".into())
-                        } else if stop_on_linux
-                            && serial_reached_linux_early_boot(
-                                platform.uart_output(),
-                                &mut serial_stop_scans,
-                            )
-                        {
-                            Some("serial reached Linux early boot".into())
-                        } else if serial_reached_shell(
-                            platform.uart_output(),
-                            &mut serial_stop_scans,
-                        ) {
-                            match ramfb_sample_loop.observe_shell(vcpu) {
-                                RamfbSampleShellAction::Continue => None,
-                                RamfbSampleShellAction::StopNow { reason } => Some(reason.into()),
-                            }
-                        } else {
-                            None
-                        }
-                    }
+                    automation_tick!(
+                        platform,
+                        smp_trace,
+                        automation_gate,
+                        live_input,
+                        guest_ram,
+                        input_wake,
+                        serial_stop_scans,
+                        uart_triggers,
+                        xhci_hid_boot_key_triggers,
+                        agent_console,
+                        boot_timer,
+                        exits,
+                        vcpu,
+                        ram,
+                        ram_size,
+                        xhci_setup_input_triggers,
+                        pointer_deadline_wake,
+                        setup_input_host_wake,
+                        xhci_pointer_input_triggers,
+                        ramfb_sample_loop,
+                        live_display_exporter,
+                        last_pc,
+                        stop_on_linux,
+                    )
                 } else {
                     None
                 };

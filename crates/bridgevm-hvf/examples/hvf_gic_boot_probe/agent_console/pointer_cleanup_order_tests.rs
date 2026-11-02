@@ -3,6 +3,7 @@
 
 use super::agent_console_tests::tests::harness;
 use super::*;
+use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::dtb::VirtFdtConfig;
 
 struct NoGuestMemory;

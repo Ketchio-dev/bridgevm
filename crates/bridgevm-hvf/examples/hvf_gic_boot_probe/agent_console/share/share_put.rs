@@ -21,9 +21,7 @@ pub(in crate::agent_console) fn share_put_req(
     }
 }
 
-pub(in crate::agent_console) fn rewind_share_put_for_retransmit(
-    mut req: ServiceReq,
-) -> ServiceReq {
+pub(in crate::agent_console) fn rewind_share_put_for_retransmit(mut req: ServiceReq) -> ServiceReq {
     if let ServiceReq::SharePut {
         next_chunk, phase, ..
     } = &mut req
@@ -44,18 +42,20 @@ pub(in crate::agent_console) fn share_put_reply_matches_phase(
         return false;
     };
     match phase {
-        SharePutPhase::Legacy => line == "ERR PUT"
-            || line.starts_with("ERR PUT ")
-            || line.starts_with("PUTOK "),
-        SharePutPhase::Beg => line == "OK PUTBEG"
-            || line == "ERR PUTBEG"
-            || line.starts_with("ERR PUTBEG "),
-        SharePutPhase::Chunk => line.starts_with("OK PUTCHUNK ")
-            || line == "ERR PUTCHUNK"
-            || line.starts_with("ERR PUTCHUNK "),
-        SharePutPhase::End => line.starts_with("PUTOK ")
-            || line == "ERR PUTEND"
-            || line.starts_with("ERR PUTEND "),
+        SharePutPhase::Legacy => {
+            line == "ERR PUT" || line.starts_with("ERR PUT ") || line.starts_with("PUTOK ")
+        }
+        SharePutPhase::Beg => {
+            line == "OK PUTBEG" || line == "ERR PUTBEG" || line.starts_with("ERR PUTBEG ")
+        }
+        SharePutPhase::Chunk => {
+            line.starts_with("OK PUTCHUNK ")
+                || line == "ERR PUTCHUNK"
+                || line.starts_with("ERR PUTCHUNK ")
+        }
+        SharePutPhase::End => {
+            line.starts_with("PUTOK ") || line == "ERR PUTEND" || line.starts_with("ERR PUTEND ")
+        }
     }
 }
 
@@ -64,12 +64,11 @@ pub(in crate::agent_console) fn share_put_reply_matches_phase(
 mod tests;
 
 impl AgentConsoleHarness {
-    pub(in crate::agent_console) fn handle_share_put_reply(
+    pub(in crate::agent_console) fn handle_share_put_reply_with_sender(
         &mut self,
         line: &str,
-        platform: Option<&mut VirtPlatform>,
-        mem: Option<&mut dyn GuestMemoryMut>,
         now: Instant,
+        send: &mut dyn FnMut(&[u8]),
     ) {
         if !self
             .in_flight
@@ -79,7 +78,7 @@ impl AgentConsoleHarness {
             return;
         }
         if line == "OK PUTBEG" {
-            self.send_next_share_put_chunk(platform, mem, now);
+            self.send_next_share_put_chunk_with_sender(now, send);
             return;
         }
 
@@ -87,7 +86,7 @@ impl AgentConsoleHarness {
             .strip_prefix("OK PUTCHUNK ")
             .and_then(|s| s.parse::<usize>().ok())
         {
-            self.advance_share_put_after_chunk(seq, platform, mem, now);
+            self.advance_share_put_after_chunk_with_sender(seq, now, send);
             return;
         }
 
@@ -126,11 +125,10 @@ impl AgentConsoleHarness {
             }
         }
     }
-    pub(in crate::agent_console) fn send_next_share_put_chunk(
+    pub(in crate::agent_console) fn send_next_share_put_chunk_with_sender(
         &mut self,
-        platform: Option<&mut VirtPlatform>,
-        mem: Option<&mut dyn GuestMemoryMut>,
         now: Instant,
+        send: &mut dyn FnMut(&[u8]),
     ) {
         let Some((seq, start, end)) = self.prepare_next_share_put_chunk_payload(now) else {
             return;
@@ -139,9 +137,7 @@ impl AgentConsoleHarness {
             return;
         }
         self.last_send = Some(now);
-        if let (Some(platform), Some(mem)) = (platform, mem) {
-            platform.virtio_console_agent_send(self.service_line_scratch.as_bytes(), mem);
-        }
+        send(self.service_line_scratch.as_bytes());
     }
     pub(in crate::agent_console) fn prepare_next_share_put_chunk_payload(
         &mut self,
@@ -173,12 +169,11 @@ impl AgentConsoleHarness {
         *sent_at = now;
         Some((seq, start, end))
     }
-    pub(in crate::agent_console) fn advance_share_put_after_chunk(
+    pub(in crate::agent_console) fn advance_share_put_after_chunk_with_sender(
         &mut self,
         seq: usize,
-        platform: Option<&mut VirtPlatform>,
-        mem: Option<&mut dyn GuestMemoryMut>,
         now: Instant,
+        send: &mut dyn FnMut(&[u8]),
     ) {
         let Some(line) = self.prepare_share_put_line_after_chunk(seq, now) else {
             return;
@@ -187,9 +182,7 @@ impl AgentConsoleHarness {
             return;
         }
         self.last_send = Some(now);
-        if let (Some(platform), Some(mem)) = (platform, mem) {
-            platform.virtio_console_agent_send(self.service_line_scratch.as_bytes(), mem);
-        }
+        send(self.service_line_scratch.as_bytes());
     }
     pub(in crate::agent_console) fn prepare_share_put_line_after_chunk(
         &mut self,
@@ -230,7 +223,10 @@ impl AgentConsoleHarness {
         *sent_at = now;
         Some(line)
     }
-    pub(in crate::agent_console) fn write_share_put_wire_line(&mut self, line: SharePutWireLine) -> bool {
+    pub(in crate::agent_console) fn write_share_put_wire_line(
+        &mut self,
+        line: SharePutWireLine,
+    ) -> bool {
         match line {
             SharePutWireLine::Chunk { seq, start, end } => {
                 self.write_share_put_chunk_line(seq, start, end)

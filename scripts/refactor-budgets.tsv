@@ -828,7 +828,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_bar2.rs	37	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_setup.rs	12	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_setup.rs	88	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_config.rs	83	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	967	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	891	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/vtimer_recovery.rs	8	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/system_reset_failure.rs	29	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/system_reset_failure_tests.rs	86	0
@@ -840,12 +840,12 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console.rs	15	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clipboard.rs	65	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/config.rs	28	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/control_file.rs	17	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/harness_protocol.rs	500	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/harness_protocol.rs	442	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs	133	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	400	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	385	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/service_wake.rs	45	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share.rs	130	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_put.rs	258	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_put.rs	254	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/state.rs	354	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/window_protocol.rs	79	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console_tests.rs	987	0
@@ -5125,7 +5125,7 @@ docs/history/windows-hvf/followups-r2-integration-r7-20261024.md	55	0
 docs/archive/a11-measured-20261024-flake.md	25	0
 docs/document-manifests/followups-r2-r7-20261024.tsv	3	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/platform_lock_holds.rs	265	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/platform_lock_holds_tests.rs	261	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/platform_lock_holds_tests.rs	205	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_holds_tests.rs	76	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_service_tick_pacing.rs	24	1
 docs/history/windows-hvf/platform-lock-holds-20261025.md	135	0
@@ -5200,3 +5200,10 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_prefill_tail_tests
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_publication.rs	19	0
 docs/document-manifests/coreaudio-atomic-pcm-20261102.tsv	2	0
 docs/history/windows-hvf/coreaudio-atomic-pcm-20261102.md	30	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/host_tick.rs	69	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/host_tick_tests.rs	133	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/transport_test_adapter.rs	49	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/platform_lock_holds_source_tests.rs	65	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/automation_tick.rs	115	0
+docs/document-manifests/agent-host-work-unlocked-20261102.tsv	2	0
+docs/history/windows-hvf/agent-host-work-unlocked-20261102.md	28	0
