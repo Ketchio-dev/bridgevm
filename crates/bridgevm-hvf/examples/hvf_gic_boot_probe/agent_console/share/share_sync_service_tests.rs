@@ -9,6 +9,8 @@ use std::os::unix::fs::MetadataExt;
 mod alias_tests;
 #[path = "share_get_cap_tests.rs"]
 mod get_cap_tests;
+#[path = "share_get_reply_identity_tests.rs"]
+mod get_reply_identity;
 #[path = "share_listing_report_tests.rs"]
 mod listing_report_tests;
 #[path = "share_put_unconfirmed_tests.rs"]

@@ -842,7 +842,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/config.rs	28	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/control_file.rs	17	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/harness_protocol.rs	442	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs	133	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	385	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/resident_service.rs	379	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/service_wake.rs	45	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share.rs	130	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_put.rs	254	0
@@ -4183,10 +4183,10 @@ docs/document-manifests/live-worker-ssd-launch.tsv	3	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_tests.rs	314	0
 docs/history/windows-hvf/native-vmm-share-sync-hardening-20261007.md	67	0
 docs/document-manifests/native-vmm-share-sync-hardening.tsv	3	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_write.rs	58	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_write.rs	35	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/host_destination.rs	140	7
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/host_destination_tests.rs	120	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_failure_tests.rs	31	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_failure_tests.rs	30	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_skip.rs	32	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_listing.rs	19	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_failure_budget_tests.rs	27	0
@@ -4930,7 +4930,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_hash.rs	8	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_report.rs	23	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listing_report_tests.rs	70	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_size_cap.rs	42	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_cap_tests.rs	105	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_cap_tests.rs	92	0
 docs/history/windows-hvf/agent-channel-and-live-gate-hygiene-20261023.md	116	0
 docs/document-manifests/hygiene-20261023.tsv	3	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOrderedInputEvent.swift	22	0
@@ -5051,7 +5051,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_write_failures.rs	89	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_mark.rs	21	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_refusal.rs	24	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_refusal_tests.rs	56	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_write_refusal_tests.rs	118	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_write_refusal_tests.rs	106	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_directory.rs	26	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/guest_write_directory_tests.rs	71	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/harness_get_dir.rs	18	0
@@ -5234,3 +5234,6 @@ apps/macos/Sources/BridgeVMControl/CreateVMResolutionRow.swift	24	0
 docs/document-manifests/runtime-and-input-20261102.tsv	7	0
 docs/history/windows-hvf/hvf-resolution-presentation-20261102.md	14	0
 docs/document-manifests/hvf-resolution-presentation-20261102.tsv	2	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_reply.rs	90	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_test_fixture.rs	34	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_get_reply_identity_tests.rs	130	0

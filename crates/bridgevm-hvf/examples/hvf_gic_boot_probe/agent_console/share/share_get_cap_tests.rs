@@ -5,6 +5,7 @@
 //! that still name that version do not fetch it again.
 
 use super::*;
+use crate::agent_console::share::share_host_write::get_test_fixture::fetched;
 
 /// A harness whose share syncs a fresh host directory with a 1 KiB cap.
 fn capped(label: &str) -> (AgentConsoleHarness, PathBuf) {
@@ -38,19 +39,6 @@ fn list(h: &mut AgentConsoleHarness, name: &str, size: u64, mtime: &str) -> Vec<
         .unwrap()
         .engine
         .on_guest_listing_normalized([entry])
-}
-
-/// Finish a share GET of `name` that returned `bytes`, as its GETEND does.
-fn fetched(h: &mut AgentConsoleHarness, name: &str, bytes: &[u8]) {
-    let (total, bytes) = (bytes.len(), bytes.to_vec());
-    h.get_accum = Some(GetAccum {
-        path: name.into(),
-        total,
-        nchunks: 1,
-        bytes,
-        chunks_seen: 1,
-    });
-    h.handle_share_get_end(name, "", Instant::now());
 }
 
 fn get(name: &str) -> Vec<SyncAction> {
