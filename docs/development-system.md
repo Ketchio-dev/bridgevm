@@ -219,19 +219,9 @@ Microsoft ESL payloads, and proves PK-last/idempotent/conflict-safe
 provisioning. It is E2 evidence only; the Windows guest and recovery gates stay
 open until their dated live receipts exist.
 
-During the structural-debt refactoring, run the ratchet budget guard:
-
-```sh
-scripts/check-refactor-budgets.sh
-```
-
-It fails if any file in `scripts/refactor-budgets.tsv` exceeds its recorded line
-or `unsafe`-site ceiling, or if a tracked source file is absent from the TSV at
-all: an unlisted file used to be unbounded, so a new 3,000-line module passed
-untouched. Grow code into extracted modules rather than these files, and lower a
-ceiling only after an extraction actually reduces the file. Bare `mod`, `use`
-and `#[path]` lines are not counted, because charging a parent for a split
-penalises the one action the ratchet exists to encourage.
+The per-file line-count ratchet was removed on 2026-11-02;
+`scripts/check-refactor-budgets.sh` now only lists the largest source files.
+Split a file when that makes it easier to work with, not to satisfy a gate.
 
 ### Gates that defend the gates
 

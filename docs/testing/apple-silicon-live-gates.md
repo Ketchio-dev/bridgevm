@@ -252,7 +252,7 @@ Apple-silicon Mac, bare-metal Hypervisor.framework, WindowServer/CGL, private
 Windows media or a real GPU. Submit that live work asynchronously and record
 its job id. Slow deterministic checks do not belong in this queue.
 
-These are the execution-venue rules in [AGENTS.md §9](../../AGENTS.md#9-long-tests-use-the-correct-execution-venue).
+These follow the CI and live-run rules in [AGENTS.md](../../AGENTS.md) (sections 6 and 7).
 `sleep 6000`, long `while ps; sleep` loops and multi-hour synchronous tool calls
 remain prohibited.
 

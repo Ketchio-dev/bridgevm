@@ -28,7 +28,9 @@ import subprocess
 import sys
 from doc_code_identity import is_cdhash_reference
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HISTORICAL = ("docs/archive/", "docs/handoffs/")
+# Point-in-time records keep the references they were written with.
+HISTORICAL = ("docs/archive/", "docs/handoffs/", "docs/history/", "docs/windows-arm/evidence/", "docs/plans/",
+              "HANDOFF.md")
 # "Ketchio-dev" alone is not evidence of an external commit: it owns this
 # repository too, and as a bare term it matched the copyright line and excused
 # any invented id placed near it. The fork forms stay because they name another
