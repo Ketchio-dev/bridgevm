@@ -4,7 +4,10 @@
 //! implements the counter, match interrupt, mask/clear, load, control, and
 //! PrimeCell identification registers used by firmware and the guest OS.
 
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
+
+mod epoch;
+use epoch::host_epoch_seconds;
 
 const RTCDR: u64 = 0x000;
 const RTCMR: u64 = 0x004;
@@ -110,13 +113,6 @@ impl Pl031 {
             self.fired_match_value = Some(self.match_value);
         }
     }
-}
-
-fn host_epoch_seconds() -> u32 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as u32
 }
 
 #[cfg(test)]
