@@ -127,7 +127,8 @@ class Qemu(Engine):
             "-device", "virtserialport,bus=vser.0,chardev=agent,name=org.bridgevm.agent.0",
             "-display", "none", "-monitor", "none", "-serial", f"file:{boot_dir / 'serial.log'}",
             "-rtc", f"base={self.args.guest_date}", "-qmp", f"unix:{sock}.qmp,server=on,wait=off",
-        ] + (["-nic", "user,model=virtio-net-pci"] if self.args.net else ["-nic", "none"])
+        ] + (["-nic", "user,model=virtio-net-pci"] if self.args.net else ["-nic", "none"]) + [
+            arg.replace("{boot}", str(boot_dir)) for arg in self.args.qemu_arg]
         log = open(boot_dir / "qemu.log", "w")
         self.t0 = time.monotonic()
         self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -176,16 +177,18 @@ class BridgeVM(Engine):
         cmd = [
             "bash", str(ROOT / "scripts/run-hvf-windows-installed-boot.sh"), "--target", str(self.disk),
             "--vars", str(self.vars_fd), "--evidence-dir", str(evidence), "--release", "--skip-build",
-            "--smp-cpus", str(self.args.cpus), "--ram-mib", str(self.args.ram_mib), "--enable-xhci",
+            "--smp-cpus", str(self.args.cpus), "--ram-mib", str(self.args.ram_mib),
             # BOOT_TIMER (for the READY milestone) would otherwise checksum the framebuffer every second
             # for the whole run; the product never enables it, so keep it out of the idle numbers.
             "--boot-timer-desktop-agent", "--boot-timer-ramfb-ms", str(self.args.boot_timer_ms),
             "--agent-service-control", str(self.ctl),
-            "--watchdog-ms", "3600000", "--no-guest-disk-harvest", "--input-control", str(self.input_ctl),
-        ] + (["--virtio-net"] if self.args.net else [])
+            "--watchdog-ms", "3600000", "--no-guest-disk-harvest",
+        ] + (["--virtio-net"] if self.args.net else []) + (
+            [] if self.args.no_xhci else ["--enable-xhci", "--input-control", str(self.input_ctl)])
         self.display_fb = evidence / "display.fb"
-        if self.args.display:  # the app's export path: frames on request, 16 ms fallback
-            cmd += ["--display-export-fb", str(self.display_fb), "--ramfb-display-export-ms", "16"]
+        if self.args.display:  # the app's export settings (HvfEngineConfig): frames on request, 33 ms fallback
+            cmd += ["--display-export-ms", "100", "--ramfb-display-export-ms", "33",
+                    "--display-export-fb", str(self.display_fb)]
         epoch = calendar.timegm(time.strptime(self.args.guest_date, "%Y-%m-%dT%H:%M:%S"))
         env = dict(os.environ, BRIDGEVM_PREBUILT_PROBE=str(self.args.probe), BRIDGEVM_GUEST_RTC_EPOCH=str(epoch))
         env.update(item.split("=", 1) for item in self.args.bvm_env)
@@ -295,9 +298,17 @@ def pointer_test(engine: Engine, record: dict) -> None:
     ordered input queue, which waits for each receipt)."""
     injector = threading.Thread(target=engine.inject_moves, args=(circle(600, 120.0, time.monotonic() + 1.5),))
     injector.start()
+    seen = {}  # with --display: frames reaching the host while only the cursor moves (60 Hz consumer)
+    watcher = None
+    if isinstance(engine, BridgeVM) and engine.display_fb.exists():
+        watcher = threading.Timer(2.5, lambda: seen.update(consume_display(engine.display_fb, 3.0, hz=60.0)))
+        watcher.start()
     _, text = engine.run(command_line(cursor_logger(8000)), time.monotonic() + 120)
     injector.join()
+    if watcher is not None:
+        watcher.join()  # a Timer's join waits for its function too
     record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
+    record["bench"].update({"pointer-" + k: v for k, v in seen.items()})
     rtts, stop = [], time.monotonic() + 5
     echo = "echo bv"  # both engines wrap a plain command line into RUN
     while time.monotonic() < stop:
@@ -370,8 +381,17 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
         record.update(engine.wait_ready(time.monotonic() + args.ready_timeout))
         time.sleep(args.settle_s)
         first = cpu_and_rss(engine.vmm_pid) if engine.vmm_pid else None
+        diag = os.environ.get("BVBENCH_SAMPLE") and engine.vmm_pid
+        if diag:  # where the idle time goes: per-thread times around the window, plus a stack sample
+            threads_before = subprocess.run(["ps", "-M", "-p", str(engine.vmm_pid)], capture_output=True,
+                                            text=True).stdout
+            subprocess.Popen(["/usr/bin/sample", str(engine.vmm_pid), "5", "-file", str(boot_dir / "idle-sample.txt")],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(args.idle_s)
         second = cpu_and_rss(engine.vmm_pid) if engine.vmm_pid else None
+        if diag:
+            after = subprocess.run(["ps", "-M", "-p", str(engine.vmm_pid)], capture_output=True, text=True).stdout
+            (boot_dir / "idle-threads.txt").write_text(threads_before + "\n----\n" + after)
         if first and second:
             record["idle_cpu_pct"] = round((second[0] - first[0]) / args.idle_s * 100, 1)
             record["rss_mib"] = round(second[1] / 1024)
@@ -504,7 +524,8 @@ def compare(a: str, b: str) -> None:
     lower_better = {"ready_wall_ms", "boot_timer_desktop_ms", "idle_cpu_pct", "rss_mib", "guest_off_ms", "shutdown_ms",
                     "cursor-interval-p50", "cursor-interval-p95", "agent-rtt-p50", "agent-rtt-p95",
                     "stall-max", "stall-p99", "stall-over-20ms", "display-frame-ms-p50", "display-frame-ms-p95",
-                    "display-age-ms-p95"}
+                    "display-age-ms-p95", "pointer-display-frame-ms-p50", "pointer-display-frame-ms-p95",
+                    "pointer-display-age-ms-p95"}
     for key in left["median"].keys() | right["median"].keys():
         x, y = left["median"].get(key), right["median"].get(key)
         if x is None or y is None:
@@ -533,6 +554,8 @@ def main() -> None:
     r.add_argument("--skip-suite", action="store_true", help="only boot, idle, optional pointer/net, shutdown")
     r.add_argument("--only", help="comma-separated suite tests to run (e.g. net-download)")
     r.add_argument("--boot-timer-ms", type=int, default=60000, help="BridgeVM framebuffer sample period (diagnostics)")
+    r.add_argument("--no-xhci", action="store_true", help="BridgeVM without the USB controller (diagnostics)")
+    r.add_argument("--qemu-arg", action="append", default=[], help="extra QEMU argument; {boot} expands to the boot dir")
     r.add_argument("--display", action="store_true", help="guest animation; BridgeVM also counts frames reaching the host")
     r.add_argument("--stall", action="store_true", help="guest timer gaps while another thread flushes files")
     r.add_argument("--shutdown-diag", action="store_true", help="record the guest's own shutdown timing events")
