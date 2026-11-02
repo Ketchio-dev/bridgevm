@@ -5292,3 +5292,4 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_f
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_feedback_tests.rs	20	0
 docs/history/windows-hvf/share-root-notice-20261102.md	29	0
 docs/document-manifests/share-root-notice-20261102.tsv	2	0
+scripts/capability_release_gate.py	19	0

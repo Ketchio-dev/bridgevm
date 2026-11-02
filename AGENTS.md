@@ -22,9 +22,9 @@ item is blocked, record why and move to the next.
 Without asking, an agent may:
 
 - merge its own pull request with a merge commit once the exact head passes
-  `scripts/check-project.sh`, the GitHub-hosted full project check and every
-  required pull-request check, then confirm post-merge `main` CI and repair or
-  revert a red `main` before other work;
+  every required pull-request check, then confirm post-merge `main` CI and
+  repair or revert a red `main` before other work (fast development mode,
+  below);
 - submit physical-Mac live-queue jobs (pilots, campaigns, diagnostics) for a
   pushed SHA, record each run, and clean up the lane state it created:
   clones, scratch, retained sources and lane vTPM keys;
@@ -39,6 +39,23 @@ Without asking, an agent may:
   anything the wiki requires;
 - continue across sessions: before stopping, leave the state, running job ids
   and the next step in the wiki so the next agent resumes without asking.
+
+### Fast development mode (operator decision, 2026-11-02)
+
+The operator chose development speed and measured numbers over duplicated
+gates. The pull-request CI already runs formatting, clippy, the Rust and
+Swift suites and the registry, documentation and budget checks, so:
+
+- Before pushing, run focused tests for what changed. A local
+  `scripts/check-project.sh` or a dispatched hosted full check is optional,
+  for cross-cutting or risky changes, and not a merge prerequisite.
+- Ordinary changes need no `tested_commit` seal, A11 note or history
+  document; the commit message and pull-request body are the record. Only
+  the release gate (`BRIDGEVM_RELEASE_GATE=1`) requires a fresh
+  `tested_commit`, and a release head still needs its full exact-SHA receipt.
+- Prefer measured numbers (benchmarks, live single runs) to decide what to
+  optimise; record them with their evidence rank.
+- Evidence, claim, security and data rules (sections 1 to 6) are unchanged.
 
 Ask the operator only for what an agent cannot or must not do itself: spending
 money or creating accounts; credentials, certificates and passwords; physical
@@ -182,13 +199,15 @@ New files are registered at their actual size.
 
 ## 11. Before you finish
 
-Run the deterministic project check:
+Merged work needs green pull-request CI on its exact head and a green
+post-merge `main`. A release candidate also needs the deterministic project
+check on its exact SHA:
 
 ```sh
 scripts/check-project.sh
 ```
 
-Nothing is "done" while that check fails.
+Nothing is "done" while a required check fails.
 
 ## 12. Operator dev wiki
 

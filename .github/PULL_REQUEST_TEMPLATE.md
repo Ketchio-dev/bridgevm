@@ -17,7 +17,7 @@ and rollback impact. Write “none” only after checking each category.
 
 - [ ] I read `AGENTS.md` and did not weaken an existing criterion.
 - [ ] Cross-subsystem or release/security/guest-contract changes have a concise plan; in-scope product decisions are recorded, and only the operator-only items in `AGENTS.md` section 0 are left for the operator.
-- [ ] Focused tests pass, and `scripts/check-project.sh` passes before merge.
+- [ ] Focused tests pass and the pull-request CI is green on the exact head (`scripts/check-project.sh` only for release candidates or risky changes).
 - [ ] Capability wording comes from `capabilities/windows-hvf.json` where applicable.
 - [ ] New or revised documentation is classified and its links resolve.
 - [ ] No Windows media, VM disk, vars, vTPM state, recovery key, proprietary title content, private receipt, `GOAL.md`, `PLAN.md`, or `HANDOFF.md` is staged.
