@@ -30,6 +30,7 @@ struct LibraryDashboardRuntimeControls: View {
             if let failure = session.guiStartFailureText {
                 Text(failure).font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
+            HvfShareRootNoticeView(notice: session.shareRootNotice)
         }
         .onChange(of: session.runtimeStartupWorkerPending) { wasPending, isPending in
             guard wasPending, !isPending else { return }

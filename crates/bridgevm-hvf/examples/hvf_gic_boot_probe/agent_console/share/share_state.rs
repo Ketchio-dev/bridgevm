@@ -3,6 +3,8 @@
 use super::*;
 #[path = "share_state_destination.rs"]
 mod destination;
+#[path = "share_root_feedback.rs"]
+mod feedback;
 #[path = "share_root.rs"]
 mod root;
 
@@ -17,6 +19,7 @@ pub(in crate::agent_console) struct ShareState {
     pub(in crate::agent_console) host_scan_scratch: Vec<HostFile>,
     pub(in crate::agent_console) host_scan_work: Vec<HostFile>,
     root: root::ShareRoot,
+    root_blocked: bool,
 }
 
 impl ShareState {
@@ -38,10 +41,7 @@ impl ShareState {
             host_scan_scratch: Vec::new(),
             host_scan_work: Vec::new(),
             root,
+            root_blocked: false,
         }
-    }
-
-    pub(in crate::agent_console) fn root_matches(&mut self) -> bool {
-        self.root.matches(&self.host_dir)
     }
 }

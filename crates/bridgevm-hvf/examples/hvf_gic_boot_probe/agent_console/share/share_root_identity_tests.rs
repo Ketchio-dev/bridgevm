@@ -2,6 +2,8 @@
 
 use super::*;
 use std::os::unix::fs::symlink;
+#[path = "share_root_feedback_service_tests.rs"]
+mod feedback_service;
 
 struct OwnedHolder(PathBuf);
 
