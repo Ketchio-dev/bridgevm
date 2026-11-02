@@ -207,7 +207,8 @@ pub(super) const SERVICE_OVERDUE_INTERVAL: Duration = Duration::from_secs(20);
 /// often when otherwise idle. With clipsync on, CLIPGET is the heartbeat.
 pub(super) const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
 
-/// Control file is stat'd/read at most this often to keep the tick loop cheap.
+/// Fallback cadence for reading the control file; ctl_wake.rs reads it at once
+/// on an append.
 pub(super) const CTL_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 pub(super) enum AgentConsoleState {

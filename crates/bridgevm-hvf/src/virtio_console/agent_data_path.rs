@@ -94,6 +94,9 @@ impl VirtioConsole {
         bytes.clear();
         self.descriptor_scratch = descs;
         self.read_scratch = bytes;
+        if progressed {
+            self.notify_agent_inbound();
+        }
         progressed
     }
 }
