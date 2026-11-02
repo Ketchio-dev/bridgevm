@@ -174,7 +174,7 @@ impl RawFileDisk {
             }
         }
 
-        self.file.sync_data()
+        super::flush_mode::sync(&self.file)
     }
 
     /// Read `dst.len()` bytes at `offset`: one `pread` of the whole span from the

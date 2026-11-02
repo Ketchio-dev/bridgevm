@@ -11,6 +11,7 @@ mod doorbell;
 mod features;
 mod features_apst;
 mod features_get;
+mod flush_mode;
 mod identify;
 mod identify_command;
 mod interrupts;
