@@ -4,7 +4,7 @@ struct LibraryOperationAlerts: ViewModifier {
     @ObservedObject var library: LibraryModel
 
     func body(content: Content) -> some View {
-        content
+        content.modifier(LibraryDeletionWarningAlert(library: library))
         .alert(
             "VM 삭제 실패",
             isPresented: Binding(
