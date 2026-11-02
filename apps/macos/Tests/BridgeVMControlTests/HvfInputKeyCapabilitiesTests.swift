@@ -30,19 +30,19 @@ final class HvfInputKeyCapabilitiesTests: XCTestCase {
         XCTAssertFalse(request.supports(.key("shift+space")))
     }
 
-    func testForeignMalformedDuplicatedAndOutOfOrderExtensionsFailClosed() {
-        for lines in [
-            [keys, header, base, end], [header, keys, base, end],
-            [header, base, keys, keys, end],
-            [header, base, keys.replacingOccurrences(of: id.uuidString, with: UUID().uuidString), end],
-            [header, base, keys + " UNKNOWN", end],
-            [header, base, keys.replacingOccurrences(of: "SHIFT_ENTER_SPACE", with: "SHIFT_ENTER"), end],
-            [header, base, keys, "BVAGENT CMD INPUTCAPS \(id.uuidString) exit=1", end]
-        ] {
+    func testForeignMalformedAndEarlyExtensionsAreIgnoredWithoutFailingInput() {
+        for lines in [[keys, header, base, end], [header, keys, base, end], [header, base, keys + " UNKNOWN", end],
+                      [header, base, keys.replacingOccurrences(of: id.uuidString, with: UUID().uuidString), end],
+                      [header, base, keys.replacingOccurrences(of: "SHIFT_ENTER_SPACE", with: "SHIFT_ENTER"), end]] {
             var request = HvfInputCapabilitiesRequest(now: now, id: id)
-            XCTAssertEqual(request.consume(lines: lines, now: now), .failed(.invalidReceipt))
-            XCTAssertFalse(request.supports(.key("shift+enter")))
+            XCTAssertEqual(request.consume(lines: lines, now: now), .supported, "\(lines)")
+            XCTAssertFalse(request.supports(.key("shift+enter")), "\(lines)")
         }
+        var repeated = HvfInputCapabilitiesRequest(now: now, id: id)
+        XCTAssertEqual(repeated.consume(lines: [header, base, keys, keys, end], now: now), .supported)
+        XCTAssertTrue(repeated.supports(.key("shift+enter")) && repeated.supports(.key("shift+tab")))
+        var reheaded = HvfInputCapabilitiesRequest(now: now, id: id), again = "BVAGENT CMD INPUTCAPS \(id.uuidString) exit=1"
+        XCTAssertEqual(reheaded.consume(lines: [header, base, keys, again, end], now: now), .failed(.invalidReceipt))
     }
 
     func testExtensionAfterEnvelopeCannotUpgradeCompletedBaseReceipt() {

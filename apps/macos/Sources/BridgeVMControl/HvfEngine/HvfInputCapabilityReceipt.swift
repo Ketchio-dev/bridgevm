@@ -1,22 +1,20 @@
 import Foundation
 
-/// The optional keyset extends v3; older hosts safely ignore its separate marker.
+/// Optional keyset markers extend v3; a host ignores a separate marker keyword it predates.
 struct HvfInputCapabilityReceipt {
-    private enum Phase { case header, marker, end, keys }
-    let command: String
-    private let markerPrefix: String
-    private let keyMarker: String
-    private var phase = Phase.header
+    private enum Phase { case header, marker, end }
+    var command: String { "INPUTCAPS \(id)" }
+    private let id: String
+    private var accepted: [String] = [], phase = Phase.header
+    /// Shift+Enter/Space and the Ctrl/Shift chord set, in any order after BVINPUT_CAPS.
+    private var markers: [String] { ["BVINPUT_KEYS \(id) SHIFT_ENTER_SPACE", "BVINPUT_CHORDS \(id) \(HvfControlChordKeys.token)"] }
 
-    init(id: UUID) {
-        command = "INPUTCAPS \(id.uuidString)"
-        markerPrefix = "BVINPUT_CAPS \(id.uuidString) "
-        keyMarker = "BVINPUT_KEYS \(id.uuidString) SHIFT_ENTER_SPACE"
-    }
+    init(id: UUID) { self.id = id.uuidString }
 
     func supports(_ event: HvfOrderedInputQueue.Event) -> Bool {
-        guard case let .key(key) = event, ["shift+enter", "shift+space"].contains(key) else { return true }
-        return phase == .keys
+        guard case let .key(key) = event else { return true }
+        if ["shift+enter", "shift+space"].contains(key) { return accepted.contains(markers[0]) }
+        return !HvfControlChordKeys.extended.contains(key) || accepted.contains(markers[1])
     }
 
     mutating func consume(_ line: String) -> HvfInputCapabilitiesRequest.Outcome? {
@@ -25,16 +23,17 @@ struct HvfInputCapabilityReceipt {
             guard phase == .header else { return .failed(.invalidReceipt) }
             guard line == header + "0" else { return .failed(.unsupported) }
             phase = .marker
-        } else if line.hasPrefix(markerPrefix) {
-            guard phase == .marker, line == markerPrefix + "3 TEXTINPUT KEYINPUT POINTERINPUT 65536" else {
+        } else if line.hasPrefix("BVINPUT_CAPS \(id) ") {
+            guard phase == .marker, line == "BVINPUT_CAPS \(id) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536" else {
                 return .failed(.invalidReceipt)
             }
             phase = .end
-        } else if line.hasPrefix("BVINPUT_KEYS ") {
-            guard phase == .end, line == keyMarker else { return .failed(.invalidReceipt) }
-            phase = .keys
+        } else if line.hasPrefix("BVINPUT_KEYS ") || line.hasPrefix("BVINPUT_CHORDS ") {
+            // A marker only ever grants its own keys: a foreign, early, repeated or misspelled one is ignored
+            // instead of failing the whole handshake (which would leave the guest with no typed input at all).
+            if phase == .end, markers.contains(line), !accepted.contains(line) { accepted.append(line) }
         } else if line == "BVAGENT END \(command)" {
-            return phase == .end || phase == .keys ? .supported : .failed(.invalidReceipt)
+            return phase == .end ? .supported : .failed(.invalidReceipt)
         }
         return nil
     }
