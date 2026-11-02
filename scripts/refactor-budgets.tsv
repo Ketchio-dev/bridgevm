@@ -5281,3 +5281,12 @@ docs/history/windows-hvf/host-file-snapshot-20261102.md	29	0
 docs/document-manifests/host-file-snapshot-20261102.tsv	2	0
 docs/history/windows-hvf/ramfb-publication-measurement-20261102.md	27	0
 docs/document-manifests/ramfb-publication-measurement-20261102.tsv	2	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMDeletedIdentityArchive.swift	46	0
+apps/macos/Sources/BridgeVMControl/LibraryDeletionKeyArchive.swift	36	0
+apps/macos/Sources/BridgeVMControl/LibraryDeletionWarningAlert.swift	21	0
+apps/macos/Tests/BridgeVMControlTests/VTPMDeletionTestKeyStore.swift	58	0
+apps/macos/Tests/BridgeVMControlTests/VTPMDeletedIdentityArchiveTests.swift	69	0
+apps/macos/Tests/BridgeVMControlTests/LibraryDeletionKeyArchiveTests.swift	109	0
+apps/macos/Tests/BridgeVMControlTests/LibraryDeletionSlugReuseTests.swift	70	0
+apps/macos/Tests/BridgeVMControlTests/LibraryModelDeletionWarningTests.swift	61	0
+docs/history/windows-hvf/vtpm-key-delete-archive-20261102.md	24	0
