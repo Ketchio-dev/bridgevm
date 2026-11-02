@@ -4,6 +4,8 @@ use std::fs::{File, OpenOptions};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
+#[path = "share_root_checked.rs"]
+mod checked;
 pub(in crate::agent_console) struct ShareRoot {
     directory: Option<File>,
 }

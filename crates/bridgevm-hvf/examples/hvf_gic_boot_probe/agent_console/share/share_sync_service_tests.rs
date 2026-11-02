@@ -11,8 +11,14 @@ mod alias_tests;
 mod get_cap_tests;
 #[path = "share_get_reply_identity_tests.rs"]
 mod get_reply_identity;
+#[path = "share_guest_destination_identity_tests.rs"]
+mod guest_destination_identity;
 #[path = "share_root_identity_tests.rs"]
 mod root_identity;
+#[path = "share_host_snapshot_tests.rs"]
+mod host_snapshot;
+#[path = "share_host_snapshot_limit_tests.rs"]
+mod snapshot_limit;
 #[path = "share_listing_report_tests.rs"]
 mod listing_report_tests;
 #[path = "share_put_unconfirmed_tests.rs"]

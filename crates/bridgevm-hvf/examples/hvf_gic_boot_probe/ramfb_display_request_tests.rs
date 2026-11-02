@@ -51,9 +51,11 @@ fn redrawn_exporter(path: &Path, interval: Duration) -> (RamfbDisplayThread, Arc
 
 /// What the app's display tick does: `pwrite` its `CLOCK_UPTIME_RAW`
 /// nanoseconds into bytes 32..40 of the header.
-fn request(path: &Path) {
+fn request(path: &Path) -> u64 {
     let file = OpenOptions::new().write(true).open(path).unwrap();
-    file.write_all_at(&uptime_ns().to_le_bytes(), 32).unwrap();
+    let stamp = uptime_ns();
+    file.write_all_at(&stamp.to_le_bytes(), 32).unwrap();
+    stamp
 }
 
 fn marker(path: &Path) -> u32 {
@@ -62,19 +64,9 @@ fn marker(path: &Path) -> u32 {
         .map_or(0, |word| u32::from_le_bytes(word.try_into().unwrap()))
 }
 
-/// The published sequence once no frame is being written.
-fn settled(path: &Path) -> Option<u64> {
-    let len = std::fs::metadata(path).ok()?.len();
-    let sequence = (len >= 64).then(|| read_fb(path).1)?;
-    (sequence & 1 == 0).then_some(sequence)
-}
-
-fn field(record: &str, name: &str) -> u64 {
-    let value = record.split(' ').find_map(|field| field.strip_prefix(name));
-    value
-        .and_then(|value| value.parse().ok())
-        .unwrap_or_else(|| panic!("{name} in {record}"))
-}
+#[path = "ramfb_display_request_measurement.rs"]
+mod measurement;
+use measurement::{field, receipt, settled};
 
 #[test]
 fn publishes_within_one_ms_of_a_frame_request() {
@@ -86,11 +78,12 @@ fn publishes_within_one_ms_of_a_frame_request() {
     });
     wait_for("the writer to answer requests", || marker(&path) == MARKER);
     let mut latencies = Vec::new();
+    let mut diagnostics = Vec::new();
     for redraw in 0..20u8 {
         ram.draw(&frame(redraw + 10));
         let before = settled(&path).unwrap();
         let posted = Instant::now();
-        request(&path);
+        let request_stamp = request(&path);
         while settled(&path).is_none_or(|sequence| sequence == before) {
             assert!(
                 posted.elapsed() < Duration::from_secs(1),
@@ -98,18 +91,21 @@ fn publishes_within_one_ms_of_a_frame_request() {
             );
             std::thread::yield_now();
         }
-        latencies.push(posted.elapsed());
+        let observed = posted.elapsed();
         assert_eq!(published(&path), Some((before + 2, frame(redraw + 10))));
+        let sample = receipt(&thread, &path, before, posted, request_stamp, observed);
+        latencies.push(sample.1);
+        diagnostics.push(sample);
     }
+    let record = timing::lock(&thread.timing).record();
     latencies.sort();
     let median = latencies[latencies.len() / 2];
     assert!(
         median <= Duration::from_millis(1),
-        "median {median:?} of {latencies:?}"
+        "producer median {median:?} of {latencies:?}; observer/producer/header {diagnostics:?}; {record}"
     );
     // The record keeps its grammar: one tick per request after the first
     // frame, each late by the time since the app stamped its request.
-    let record = timing::lock(&thread.timing).record();
     assert_eq!(
         (field(&record, "ticks="), field(&record, "published=")),
         (21, 21)
