@@ -1,5 +1,5 @@
 name: Coherence multiwindow diagnostic contracts
-on: [push, pull_request]
+on: {push: {}, pull_request: {paths: ['scripts/live-gates/coherence_*', 'scripts/live-gates/guest_input_*', 'scripts/test-coherence-multiwindow.ps1', 'scripts/win-assets/bv-coherence-*', 'scripts/win-assets/bv-window-inventory.cs', 'tests/integration/coherence-inventory-observation-test.py', '.github/workflows/coherence-multiwindow.yml']}}
 permissions:
   contents: read
 jobs:

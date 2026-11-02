@@ -2,7 +2,7 @@ name: Firstboot provisioner contract
 
 on:
   push:
-  pull_request:
+  pull_request: {paths: ['scripts/test-bvagent-firstboot-receipt.ps1', 'scripts/win-assets/bvagent-firstboot.ps1', '.github/workflows/firstboot-provisioner-contract.yml']}
   workflow_dispatch:
 
 permissions:

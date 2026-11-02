@@ -1,5 +1,5 @@
 name: Guest input controller Windows builder contracts
-on: [push, pull_request]
+on: {push: {}, pull_request: {paths: ['scripts/live-gates/guest_input_protocol.py', 'scripts/test-guest-input-controller-wire.ps1', 'scripts/win-assets/bvagent-*-input.cs', '.github/workflows/guest-input-controller-windows.yml']}}
 permissions:
   contents: read
 jobs:

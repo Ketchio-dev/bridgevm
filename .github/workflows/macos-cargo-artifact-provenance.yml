@@ -1,7 +1,7 @@
 name: macOS Cargo artifact provenance
 
 on:
-  pull_request:
+  pull_request: {paths: ['apps/macos/scripts/build-sign-hvf-*', 'apps/macos/scripts/cargo-built-artifact.py', 'apps/macos/scripts/package-hvf-*', 'scripts/verify-signing-entitlements.py', 'tests/integration/macos-cargo-artifact-provenance-smoke.sh', '.github/workflows/macos-cargo-artifact-provenance.yml']}
   workflow_dispatch:
 
 permissions:

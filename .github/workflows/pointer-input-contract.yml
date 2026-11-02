@@ -1,5 +1,5 @@
 name: Native pointer encoding contracts
-on: [push, pull_request]
+on: {push: {}, pull_request: {paths: ['scripts/test-bvagent-pointer-*', 'scripts/win-assets/bvagent-*-input.cs', 'scripts/win-assets/bvagent-input.ps1', '.github/workflows/pointer-input-contract.yml']}}
 permissions:
   contents: read
 jobs:

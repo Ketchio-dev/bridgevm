@@ -1,7 +1,7 @@
 name: B6 caption focus contracts
 on:
   push:
-  pull_request:
+  pull_request: {paths: ['.github/actions/b6-tip-contracts/**', 'scripts/b6-caption-focus.sh', 'scripts/b6-tip-dismiss.sh', 'scripts/win-assets/bv-b6-caption-point.ps1', 'scripts/win-assets/bv-b6-tip-point.ps1', 'tests/integration/b6-caption-*', 'tests/integration/b6-tip-*', '.github/workflows/b6-caption-focus-contracts.yml']}
 permissions:
   contents: read
 jobs:

@@ -1,7 +1,7 @@
 name: App-only native UI diagnostic contracts
 on:
   push:
-  pull_request:
+  pull_request: {paths: ['scripts/live-gates/**', 'tests/integration/app-ui-tier-smoke.py', '.github/workflows/app-ui-contracts.yml']}
 permissions:
   contents: read
 jobs:

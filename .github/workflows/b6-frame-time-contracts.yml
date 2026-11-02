@@ -2,7 +2,7 @@ name: B6 frame-time contracts
 
 on:
   push:
-  pull_request:
+  pull_request: {paths: ['scripts/analyze-b6-frame-times.py', 'scripts/b6_frame_times.py', 'tests/integration/b6-frame-time-contract.py', '.github/workflows/b6-frame-time-contracts.yml']}
   workflow_dispatch:
 
 permissions:

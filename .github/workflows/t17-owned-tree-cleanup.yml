@@ -1,7 +1,7 @@
 name: T17 owned readonly tree cleanup contracts
 on:
   push:
-  pull_request:
+  pull_request: {paths: ['scripts/live-gates/t17_owned_tree_cleanup.py', 'tests/integration/t17-owned-tree-cleanup-test.py', 'tests/integration/t17_cleanup_fixture.py', '.github/workflows/t17-owned-tree-cleanup.yml']}
 permissions:
   contents: read
 jobs:

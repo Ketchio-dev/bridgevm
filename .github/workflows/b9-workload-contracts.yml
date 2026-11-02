@@ -2,7 +2,7 @@ name: B9 candidate CSV diagnostic contracts
 
 on:
   push:
-  pull_request:
+  pull_request: {paths: ['scripts/b9_workload_diagnostic.py', 'scripts/live-gates/**', 'scripts/verify-presentmon-binary.py', 'scripts/win-assets/bv-b9-*', 'tests/integration/b9-*', '.github/workflows/b9-workload-contracts.yml']}
   workflow_dispatch:
 
 permissions:

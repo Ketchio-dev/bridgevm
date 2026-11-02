@@ -1,5 +1,5 @@
 name: Native pointer request contracts
-on: [push, pull_request]
+on: {push: {}, pull_request: {paths: ['scripts/test-bvagent-input-dispatch.ps1', 'scripts/test-bvagent-pointer-request.ps1', 'scripts/win-assets/bvagent-*-input.cs', 'scripts/win-assets/bvagent-input.ps1', 'scripts/win-assets/bvagent.ps1', '.github/workflows/pointer-request-contract.yml']}}
 permissions:
   contents: read
 jobs:

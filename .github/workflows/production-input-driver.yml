@@ -1,5 +1,5 @@
 name: Production Swift input driver transport contracts
-on: [push, pull_request]
+on: {push: {}, pull_request: {paths: ['apps/macos/Sources/BridgeVMControl/HvfEngine/Hvf*Input*.swift', 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestResetRecord.swift', 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointer*.swift', 'scripts/build-production-input-driver.sh', 'scripts/live-gates/production-input-driver.swift', 'tests/integration/production-input-driver-test.py', '.github/workflows/production-input-driver.yml']}}
 permissions:
   contents: read
 jobs:

@@ -1,7 +1,7 @@
 name: Packaged control resource contracts
 on:
   push:
-  pull_request:
+  pull_request: {paths: ['apps/macos/Sources/BridgeVMControl/BridgeVMControlResources.swift', 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift', 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift', 'apps/macos/Sources/BridgeVMControl/Resources/**', 'crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd*', 'tests/integration/HvfSecureBootProvisioningSmoke.swift', 'tests/integration/PackagedControlResourcesSmoke.swift', 'tests/integration/compile-control-resources-smoke.sh', 'tests/integration/hvf-secure-boot-provisioning-smoke.sh', 'tests/integration/packaged-control-resources-smoke.sh', '.github/workflows/packaged-control-resources.yml']}
 permissions:
   contents: read
 jobs:

@@ -1,5 +1,5 @@
 name: WinPE agent companion delivery contracts
-on: [push, pull_request]
+on: {push: {}, pull_request: {paths: ['scripts/test-bvagent-injector-delivery.ps1', 'scripts/win-assets/bvinject.cmd', '.github/workflows/injector-input-delivery.yml']}}
 permissions:
   contents: read
 jobs:

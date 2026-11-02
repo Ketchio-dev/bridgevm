@@ -1,5 +1,5 @@
 name: B6 native UIA contracts
-on: [push, pull_request]
+on: {push: {}, pull_request: {paths: ['scripts/win-assets/bv-b6-native-uia.*', 'tests/integration/b6-native-uia-contract.ps1', '.github/workflows/b6-native-uia-contracts.yml']}}
 permissions:
   contents: read
 jobs:

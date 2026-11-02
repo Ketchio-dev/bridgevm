@@ -1,5 +1,5 @@
 name: Generated clipboard paste command contract
-on: [push, pull_request]
+on: {push: {}, pull_request: {paths: ['apps/macos/Sources/BridgeVMControl/HvfEngine/HvfClipboardPaste.swift', 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestResetRecord.swift', 'tests/integration/clipboard-paste-command-*', '.github/workflows/clipboard-paste-command-contract.yml']}}
 permissions:
   contents: read
 jobs:
