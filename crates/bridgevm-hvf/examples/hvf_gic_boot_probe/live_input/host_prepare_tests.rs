@@ -8,7 +8,9 @@ use crate::xhci_hid_input::test_support::{
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::mpsc;
+
+#[path = "host_prepare_held_writer_tests.rs"]
+mod held_writer_tests;
 
 struct InputFile {
     writer: File,
@@ -52,49 +54,6 @@ impl Drop for InputFile {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
     }
-}
-
-#[test]
-fn a_held_writer_defers_preparation_without_losing_partial_or_queued_commands() {
-    let mut file = InputFile::new("held-writer", b"KEY a\nKEY text:par");
-    let now = Instant::now();
-    let mut input = file.controller(now);
-    assert!(input.prepare_tick(now, false));
-    let before = input.offset;
-    assert_eq!(input.pending.len(), 1);
-    assert!(!input.lines.is_empty());
-    file.writer.lock().unwrap();
-    file.writer.write_all(b"tial\nKEY b\n").unwrap();
-    let (finished, completion) = mpsc::channel();
-    let poll = now + POLL_INTERVAL;
-    let reader = std::thread::spawn(move || {
-        let ready = input.prepare_tick(poll, false);
-        let _ = finished.send((input, ready));
-    });
-    let completed_while_locked = completion.recv_timeout(Duration::from_secs(5));
-    // Unlock even on a failing blocking implementation, before joining its reader.
-    file.writer.unlock().unwrap();
-    reader.join().unwrap();
-    let (mut input, ready) =
-        completed_while_locked.expect("prepare waited for the writer to unlock");
-    assert!(ready, "already queued device work must remain eligible");
-    assert_eq!(input.offset, before);
-    assert_eq!(input.pending.len(), 1);
-    assert!(!input.lines.is_empty());
-    assert!(!input.prepare_tick(poll + POLL_INTERVAL / 2, false));
-    assert!(input.prepare_tick(poll + POLL_INTERVAL, false));
-    assert_eq!(input.pending.len(), 3);
-    assert!(matches!(&input.pending[0], LiveInputCommand::Key(value) if value == "a"));
-    assert!(matches!(&input.pending[1], LiveInputCommand::Key(value) if value == "text:partial"));
-    assert!(matches!(&input.pending[2], LiveInputCommand::Key(value) if value == "b"));
-    assert!(input.lines.is_empty());
-    let consumed = input.offset;
-    assert!(input.prepare_tick(poll + 2 * POLL_INTERVAL, false));
-    assert_eq!(
-        (input.offset, input.pending.len()),
-        (consumed, 3),
-        "a retry replayed input"
-    );
 }
 
 #[test]

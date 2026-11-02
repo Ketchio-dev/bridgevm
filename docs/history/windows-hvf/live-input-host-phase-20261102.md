@@ -25,4 +25,4 @@ macro trailing-comma compilation error is retained and repaired. The existing
 acquisition-coverage test now covers all four actual Automation guards.
 
 No live guest or audible responsiveness claim is made. Final exact project,
-hosted and required PR gates remain necessary; criteria/state are unchanged.
+hosted and required PR gates remain necessary; criteria/state are unchanged. [MSRV repair](input-host-msrv-fixture-20261102.md).
