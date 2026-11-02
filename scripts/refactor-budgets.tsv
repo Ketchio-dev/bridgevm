@@ -5254,3 +5254,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_host_s
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root.rs	37	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_root_identity_tests.rs	150	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_state.rs	40	0
+docs/history/windows-hvf/share-root-identity-20261102.md	29	0
+docs/document-manifests/share-root-identity-20261102.tsv	2	0
