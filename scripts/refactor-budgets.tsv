@@ -5245,3 +5245,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/share/share_listin
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfControlFileAppend.swift	20	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlFileAppendTests.swift	58	0
 apps/macos/Tests/BridgeVMControlTests/HvfControlCommandAppendIntegrationTests.swift	34	0
+docs/history/windows-hvf/share-snapshot-and-get-admission-20261102.md	28	0
+docs/document-manifests/share-snapshot-and-get-admission-20261102.tsv	2	0
+docs/history/windows-hvf/control-command-append-20261102.md	26	0
+docs/document-manifests/control-command-append-20261102.tsv	2	0

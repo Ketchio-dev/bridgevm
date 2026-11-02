@@ -130,3 +130,5 @@ HANDOFF.md	historical-evidence	project-status	STATUS.md
 @include	docs/document-manifests/share-listing-bounds-20261101.tsv	-	-
 @include	docs/document-manifests/runtime-and-input-20261102.tsv	-	-
 @include	docs/document-manifests/hvf-resolution-presentation-20261102.tsv	-	-
+@include	docs/document-manifests/share-snapshot-and-get-admission-20261102.tsv	-	-
+@include	docs/document-manifests/control-command-append-20261102.tsv	-	-
