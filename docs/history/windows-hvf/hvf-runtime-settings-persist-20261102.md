@@ -19,6 +19,6 @@ saved (the app is not sandboxed and stores other user paths the same way);
 the runtime still pins the root only within one run. Older builds drop the
 new keys when they save vm.json.
 
-Evidence rank: static reasoning plus new XCTest cases using temporary
-directories and no VM. At this commit they have not been compiled or run.
-No live run; no criterion claim.
+Evidence: new XCTest cases (temporary directories, no VM) pass with the
+clipboard preference and clone suites; the save interfaces are new, so the old
+code has no runtime baseline. No live run (T17 drives these controls); no criterion claim.
