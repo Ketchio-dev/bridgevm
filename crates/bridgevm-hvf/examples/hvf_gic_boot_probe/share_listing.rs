@@ -20,7 +20,7 @@ pub(super) fn parse_ls(listing: &str) -> Vec<LsEntry> {
     entries
 }
 
-/// Refuse the whole listing before changing `out` when either bound is exceeded.
+/// Refuse invalid rows or exceeded bounds before changing `out`.
 pub fn parse_ls_into(
     listing: &str,
     out: &mut Vec<LsEntry>,

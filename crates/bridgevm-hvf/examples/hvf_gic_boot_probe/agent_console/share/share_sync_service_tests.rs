@@ -9,6 +9,10 @@ use std::os::unix::fs::MetadataExt;
 mod alias_tests;
 #[path = "share_get_cap_tests.rs"]
 mod get_cap_tests;
+#[path = "share_get_reply_identity_tests.rs"]
+mod get_reply_identity;
+#[path = "share_root_identity_tests.rs"]
+mod root_identity;
 #[path = "share_listing_report_tests.rs"]
 mod listing_report_tests;
 #[path = "share_put_unconfirmed_tests.rs"]
@@ -149,16 +153,12 @@ impl Rig {
         std::fs::create_dir_all(&dir).unwrap();
         let mut h = harness();
         h.state = AgentConsoleState::Service;
-        h.share = Some(ShareState {
-            engine: ShareSync::new(512),
-            host_dir: dir.clone(),
-            guest_dir: ROOT.into(),
-            interval: Duration::from_millis(500),
-            last_poll: None,
-            host_skip_seen: HashSet::new(),
-            guest_ls_scratch: Vec::new(),
-            host_scan_scratch: Vec::new(),
-        });
+        h.share = Some(ShareState::new(
+            ShareSync::new(512),
+            dir.clone(),
+            ROOT.into(),
+            Duration::from_millis(500),
+        ));
         Self { h, guest: NtfsGuest::default(), now: Instant::now(), dir }
     }
     /// Service ticks with each request answered at once. Chunked PUT steps

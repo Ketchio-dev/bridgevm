@@ -150,10 +150,7 @@ final class HvfEngineSession: ObservableObject {
         }
         guard let data = "\(cleaned)\n".data(using: .utf8) else { return false }
         do {
-            let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
-            defer { try? handle.close() }
-            try handle.seekToEnd()
-            try handle.write(contentsOf: data)
+            try HvfControlFileAppend.append(data, to: URL(fileURLWithPath: path))
         } catch {
             append(.unknown("control command write failed: \(error.localizedDescription)"))
             return false

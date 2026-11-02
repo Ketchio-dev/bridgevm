@@ -6,6 +6,7 @@
 //! other failure. At most 1024 refusals are remembered; the oldest goes first.
 
 use super::*;
+use crate::agent_console::share::share_host_write::get_test_fixture::fetched;
 
 /// From now on every file created in `dir` inherits "deny writeextattr".
 fn deny_marks(dir: &Path) {
@@ -41,18 +42,6 @@ fn fetches(h: &mut AgentConsoleHarness, names: &[String]) -> Vec<String> {
         .collect();
     gets.sort();
     gets
-}
-
-/// Finish a share GET of `name` that returned `bytes`, as its GETEND does.
-fn fetched(h: &mut AgentConsoleHarness, name: &str, bytes: &[u8]) {
-    h.get_accum = Some(GetAccum {
-        path: name.into(),
-        total: bytes.len(),
-        nchunks: 1,
-        bytes: bytes.to_vec(),
-        chunks_seen: 1,
-    });
-    h.handle_share_get_end(name, "", Instant::now());
 }
 
 #[test]

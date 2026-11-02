@@ -34,16 +34,13 @@ fn resident(directory: &HostDirectory, now: Instant) -> AgentConsoleHarness {
     h.service = true;
     h.last_send = Some(now);
     h.last_alive = Some(now);
-    h.share = Some(ShareState {
-        engine: ShareSync::new(1024),
-        host_dir: directory.0.clone(),
-        guest_dir: "C:\\share".into(),
-        interval: Duration::from_secs(1),
-        last_poll: Some(now),
-        host_skip_seen: HashSet::new(),
-        guest_ls_scratch: Vec::new(),
-        host_scan_scratch: Vec::new(),
-    });
+    h.share = Some(ShareState::new(
+        ShareSync::new(1024),
+        directory.0.clone(),
+        "C:\\share".into(),
+        Duration::from_secs(1),
+    ));
+    h.share.as_mut().unwrap().last_poll = Some(now);
     h
 }
 

@@ -65,16 +65,12 @@ pub(super) fn init_share_from_env() -> Option<ShareState> {
     };
     let interval_ms = env_u64(SHARE_MS_ENV, DEFAULT_SHARE_MS).max(SHARE_MS_FLOOR);
     let max_kb = env_u64(SHARE_MAX_KB_ENV, DEFAULT_SHARE_MAX_KB);
-    Some(ShareState {
-        engine: ShareSync::new(max_kb),
-        host_dir: PathBuf::from(host),
-        guest_dir: guest,
-        interval: Duration::from_millis(interval_ms),
-        last_poll: None,
-        host_skip_seen: HashSet::new(),
-        guest_ls_scratch: Vec::new(),
-        host_scan_scratch: Vec::new(),
-    })
+    Some(ShareState::new(
+        ShareSync::new(max_kb),
+        PathBuf::from(host),
+        guest,
+        Duration::from_millis(interval_ms),
+    ))
 }
 
 pub(super) fn parse_share_spec(spec: &str) -> Option<(String, String)> {
@@ -88,6 +84,8 @@ pub(super) fn parse_share_spec(spec: &str) -> Option<(String, String)> {
 #[path = "share/share_host_scan.rs"]
 mod share_host_scan;
 pub(super) use share_host_scan::*;
+#[path = "share/share_delete_wire.rs"]
+mod share_delete_wire;
 
 pub(super) fn host_rel_path(root: &Path, path: &Path) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;
@@ -125,12 +123,12 @@ pub(super) fn file_mtime_ms_from_meta(meta: &std::fs::Metadata) -> Option<u128> 
 #[path = "share/share_skip.rs"]
 mod share_skip;
 pub(super) use share_skip::*;
-#[path = "share/share_listing_report.rs"]
-mod share_listing_report;
 #[path = "share/share_listing_reply.rs"]
 mod share_listing_reply;
 #[path = "share/share_listing_reply_tests.rs"]
 mod share_listing_reply_tests;
+#[path = "share/share_listing_report.rs"]
+mod share_listing_report;
 
 pub(super) fn write_share_guest_path_into(dir: &str, name: &str, out: &mut String) {
     out.clear();

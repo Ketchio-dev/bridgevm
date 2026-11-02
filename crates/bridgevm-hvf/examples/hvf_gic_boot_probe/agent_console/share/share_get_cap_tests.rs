@@ -5,6 +5,7 @@
 //! that still name that version do not fetch it again.
 
 use super::*;
+use crate::agent_console::share::share_host_write::get_test_fixture::fetched;
 
 /// A harness whose share syncs a fresh host directory with a 1 KiB cap.
 fn capped(label: &str) -> (AgentConsoleHarness, PathBuf) {
@@ -12,16 +13,12 @@ fn capped(label: &str) -> (AgentConsoleHarness, PathBuf) {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let mut h = harness();
-    h.share = Some(ShareState {
-        engine: ShareSync::new(1),
-        host_dir: dir.clone(),
-        guest_dir: ROOT.into(),
-        interval: Duration::from_secs(1),
-        last_poll: None,
-        host_skip_seen: HashSet::new(),
-        guest_ls_scratch: Vec::new(),
-        host_scan_scratch: Vec::new(),
-    });
+    h.share = Some(ShareState::new(
+        ShareSync::new(1),
+        dir.clone(),
+        ROOT.into(),
+        Duration::from_secs(1),
+    ));
     (h, dir)
 }
 
@@ -38,19 +35,6 @@ fn list(h: &mut AgentConsoleHarness, name: &str, size: u64, mtime: &str) -> Vec<
         .unwrap()
         .engine
         .on_guest_listing_normalized([entry])
-}
-
-/// Finish a share GET of `name` that returned `bytes`, as its GETEND does.
-fn fetched(h: &mut AgentConsoleHarness, name: &str, bytes: &[u8]) {
-    let (total, bytes) = (bytes.len(), bytes.to_vec());
-    h.get_accum = Some(GetAccum {
-        path: name.into(),
-        total,
-        nchunks: 1,
-        bytes,
-        chunks_seen: 1,
-    });
-    h.handle_share_get_end(name, "", Instant::now());
 }
 
 fn get(name: &str) -> Vec<SyncAction> {
