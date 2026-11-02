@@ -7,7 +7,21 @@ use super::*;
 /// the ring and are consumed on a later poll once the host drains.
 pub(crate) const MAX_HOST_INBOUND_LEN: usize = 4 * 1024 * 1024;
 
+/// Called (from whichever vCPU thread took the notify) once new guest agent
+/// bytes are buffered, so the owner services them now instead of at its next
+/// periodic tick. Set at most once per process; unset means "poll".
+pub static AGENT_INBOUND_HOOK: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>> =
+    std::sync::OnceLock::new();
+
 impl VirtioConsole {
+    pub(crate) fn notify_agent_inbound(&self) {
+        if !self.host_inbound.is_empty() {
+            if let Some(hook) = AGENT_INBOUND_HOOK.get() {
+                hook();
+            }
+        }
+    }
+
     pub fn take_inbound(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.host_inbound)
     }

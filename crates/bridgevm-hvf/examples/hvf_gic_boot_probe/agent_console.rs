@@ -56,6 +56,8 @@ mod protocol;
 mod resident_service;
 #[path = "agent_console/service_queue.rs"]
 mod service_queue;
+#[path = "agent_console/ctl_wake.rs"]
+mod ctl_wake;
 #[path = "agent_console/service_wake.rs"]
 mod service_wake;
 #[path = "agent_console/share.rs"]

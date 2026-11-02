@@ -25,6 +25,11 @@ pub const CAP_ID_MSI: u8 = 0x05;
 /// The MSI-X capability id (PCI capability list entry type `0x11`).
 pub const CAP_ID_MSIX: u8 = 0x11;
 
+/// The PCI Power Management capability id and its PMC D1/D2 support bits.
+pub const CAP_ID_PM: u8 = 0x01;
+const PM_CAP_D1: u16 = 1 << 9;
+const PM_CAP_D2: u16 = 1 << 10;
+
 impl Function {
     /// Read a dword out of the sparse capability bytes (zero-filled).
     pub(crate) fn read_capability_dword(&self, reg: u16) -> u32 {
@@ -58,7 +63,8 @@ impl Function {
     /// writable. MSI-X exposes only function mask and enable here; its message
     /// fields live in the device's MSI-X table BAR.
     pub(crate) fn write_capability_dword(&mut self, reg: u16, value: u32) -> bool {
-        if self.write_msi_capability_dword(reg, value) {
+        if self.write_msi_capability_dword(reg, value) || self.write_pm_capability_dword(reg, value)
+        {
             return true;
         }
         let Some(cap) = self.msix_capability_offset() else {
@@ -92,6 +98,32 @@ impl Function {
         let [lo, hi] = next.to_le_bytes();
         self.set_capability_byte(control_off, lo);
         self.set_capability_byte(control_off + 1, hi);
+        true
+    }
+
+    /// PMCSR PowerState (bits 1:0) is writable, with the PCI PM rules QEMU's
+    /// `pci_pm_update` applies: unsupported D1/D2 and transitions to a lower
+    /// non-D0 state keep the old state. Windows writes D3hot at shutdown and
+    /// polls until it reads back; a read-only D0 made it poll for seconds.
+    pub(crate) fn write_pm_capability_dword(&mut self, reg: u16, value: u32) -> bool {
+        let Some(cap) = self.capability_offset(CAP_ID_PM) else {
+            return false;
+        };
+        let pmcsr = cap + 4;
+        if reg != pmcsr {
+            return false;
+        }
+        let pmc =
+            u16::from_le_bytes([self.capability_byte(cap + 2), self.capability_byte(cap + 3)]);
+        let current = self.capability_byte(pmcsr);
+        let old = current & 0x03;
+        let requested = (value & 0x03) as u8;
+        let unsupported = (requested == 1 && pmc & PM_CAP_D1 == 0)
+            || (requested == 2 && pmc & PM_CAP_D2 == 0)
+            || (old != 0 && requested != 0 && requested < old);
+        if !unsupported {
+            self.set_capability_byte(pmcsr, (current & !0x03) | requested);
+        }
         true
     }
 

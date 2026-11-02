@@ -335,12 +335,13 @@ build_installed_boot_env_args() {
   [[ -z "${BRIDGEVM_AGENT_WAKE_MS:-}" ]] || ENV_ARGS+=("BRIDGEVM_AGENT_WAKE_MS=$BRIDGEVM_AGENT_WAKE_MS")
   # A1 diagnostic: swap Apple's in-kernel GICv3 for BridgeVM's userspace device
   # model (usgic_bridge.rs). This remains opt-in and does not change the default.
-  [[ -z "${BRIDGEVM_USERSPACE_GIC:-}" ]] || ENV_ARGS+=("BRIDGEVM_USERSPACE_GIC=$BRIDGEVM_USERSPACE_GIC")
-  [[ -z "${BRIDGEVM_USGIC_TRACE:-}" ]] || ENV_ARGS+=("BRIDGEVM_USGIC_TRACE=$BRIDGEVM_USGIC_TRACE")
-  [[ -z "${BRIDGEVM_USGIC_RING:-}" ]] || ENV_ARGS+=("BRIDGEVM_USGIC_RING=$BRIDGEVM_USGIC_RING")
-  [[ -z "${BRIDGEVM_USGIC_WFI_NAP:-}" ]] || ENV_ARGS+=("BRIDGEVM_USGIC_WFI_NAP=$BRIDGEVM_USGIC_WFI_NAP")
-  [[ -z "${BRIDGEVM_CHECKPOINT_STATE:-}" ]] || ENV_ARGS+=("BRIDGEVM_CHECKPOINT_STATE=$BRIDGEVM_CHECKPOINT_STATE")
-  [[ -z "${BRIDGEVM_RESTORE_STATE:-}" ]] || ENV_ARGS+=("BRIDGEVM_RESTORE_STATE=$BRIDGEVM_RESTORE_STATE")
+  # BRIDGEVM_GUEST_RTC_EPOCH (pl031/epoch.rs) boots a date-bound test image at a fixed date.
+  local forwarded
+  for forwarded in BRIDGEVM_USERSPACE_GIC BRIDGEVM_USGIC_TRACE BRIDGEVM_USGIC_RING BRIDGEVM_USGIC_WFI_NAP \
+    BRIDGEVM_CHECKPOINT_STATE BRIDGEVM_RESTORE_STATE BRIDGEVM_GUEST_RTC_EPOCH BRIDGEVM_DISABLE_VIRTIO_ISO BRIDGEVM_NVME_FLUSH \
+    BRIDGEVM_TRACE_XHCI_MMIO BRIDGEVM_TRACE_XHCI_BRINGUP; do
+    [[ -z "${!forwarded:-}" ]] || ENV_ARGS+=("$forwarded=${!forwarded}")
+  done
   # Forward the KD serial bridge socket (kd_serial_bridge.rs; the bridge owns
   # the PL011 for the run, so boot-marker serial scanning yields KD protocol
   # bytes instead of text while a debugger is wired).

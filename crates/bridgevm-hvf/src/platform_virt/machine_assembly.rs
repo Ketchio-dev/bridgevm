@@ -84,6 +84,9 @@ pub struct VirtPlatform {
     // probe: it pushes `Instant::now()` in via `set_host_now`, and while
     // `host_now` is `None` (the unit-test default) the drain paths are unpaced.
     pub(crate) xhci_report_interval: Duration,
+    /// Pointer (DCI5) pacing. Follows `xhci_report_interval` unless set on its
+    /// own: a 30 ms gap that protects keystrokes held the cursor at about 33 Hz.
+    pub(crate) xhci_pointer_report_interval: Duration,
     pub(crate) host_now: Option<Instant>,
     pub(crate) xhci_dci3_last_emission: Option<Instant>,
     pub(crate) xhci_dci5_last_emission: Option<Instant>,
@@ -212,6 +215,7 @@ impl VirtPlatform {
             nvme_admin_doorbell_rung: false,
             dtb,
             xhci_report_interval: Duration::ZERO,
+            xhci_pointer_report_interval: Duration::ZERO,
             host_now: None,
             xhci_dci3_last_emission: None,
             xhci_dci5_last_emission: None,

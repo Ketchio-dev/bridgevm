@@ -53,6 +53,12 @@ impl VirtPlatform {
     /// runs set this to avoid bursting keystrokes the guest then drops.
     pub fn set_xhci_report_interval(&mut self, interval: Duration) {
         self.xhci_report_interval = interval;
+        self.xhci_pointer_report_interval = interval;
+    }
+
+    /// Pointer reports (DCI5) only; call after `set_xhci_report_interval`.
+    pub fn set_xhci_pointer_report_interval(&mut self, interval: Duration) {
+        self.xhci_pointer_report_interval = interval;
     }
 
     pub fn queue_xhci_hid_boot_key_usage(
@@ -162,6 +168,16 @@ impl VirtPlatform {
         }
     }
 
+    fn pointer_pacing_allows_emission(&self) -> bool {
+        self.host_now.is_none_or(|now| {
+            report_pacing_allows_emission(
+                self.xhci_pointer_report_interval,
+                self.xhci_dci5_last_emission,
+                now,
+            )
+        })
+    }
+
     pub fn xhci_hid_boot_key_report_stats(&self) -> XhciHidBootKeyReportStats {
         self.xhci_hid_boot_key_report_stats
     }
@@ -205,7 +221,7 @@ impl VirtPlatform {
         for _ in 0..pending_reports.min(MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS as u64) {
             // ERDP describes event-ring capacity, not HID report pacing, so a
             // ready TD plus the elapsed hold is sufficient.
-            if !self.report_pacing_allows_emission(self.xhci_dci5_last_emission) {
+            if !self.pointer_pacing_allows_emission() {
                 break;
             }
             if !self.xhci.process_queued_dci5_pointer_input(mem) {
