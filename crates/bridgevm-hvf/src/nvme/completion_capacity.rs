@@ -8,6 +8,10 @@ impl NvmeController {
             return false;
         };
         // NVMe 1.4 section 4.1 reserves one slot: next tail == head is full.
-        cq.size >= 2 && cq.tail < cq.size && cq.head < cq.size && (cq.tail + 1) % cq.size != cq.head
+        // Flushes in flight hold a slot each for their later completion.
+        let (size, tail, head) = (u32::from(cq.size), u32::from(cq.tail), u32::from(cq.head));
+        let used = (tail + size - head) % size.max(1);
+        let held = u32::from(self.flush_reserved_slots(cqid));
+        size >= 2 && tail < size && head < size && used + 1 + held < size
     }
 }

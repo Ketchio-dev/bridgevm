@@ -13,6 +13,12 @@ impl NvmeController {
     pub(crate) fn write_cc(&mut self, value: u32) {
         let was_enabled = self.cc & CC_EN_BIT != 0;
         let now_enabled = value & CC_EN_BIT != 0;
+        // Durable before any state change; a reset drops their completions.
+        if was_enabled && !now_enabled {
+            self.discard_flushes();
+        } else {
+            self.wait_for_flushes();
+        }
         self.cc = value;
 
         if now_enabled && !was_enabled {

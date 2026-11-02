@@ -59,6 +59,11 @@ pub struct NvmeController {
     /// raised. This minimal controller does not raise events yet, so it only
     /// tracks the advertised limit and leaves accepted requests pending.
     pub(crate) pending_async_event_requests: u8,
+    /// FLUSH on a worker thread (flush_worker.rs); off until the VMM opts in.
+    pub(crate) async_flush: bool,
+    pub(crate) flush_worker: Option<FlushWorker>,
+    /// Completion slots held per CQ for flushes in flight.
+    pub(crate) flush_reserved: Vec<u16>,
 }
 
 impl NvmeController {
@@ -111,32 +116,41 @@ impl NvmeController {
             prp_spans_scratch: Vec::new(),
             io_segments_scratch: Vec::new(),
             pending_async_event_requests: 0,
+            async_flush: false,
+            flush_worker: None,
+            flush_reserved: Vec::new(),
         }
     }
 
     /// Replace the backing disk image, padding to a full LBA. This resets queue
     /// and controller register state, mirroring a cold-plugged different device.
     pub fn load_disk_image(&mut self, disk: Vec<u8>) {
-        let direct_dma_enabled = self.direct_dma_enabled;
+        self.discard_flushes();
+        let (direct_dma_enabled, async_flush) = (self.direct_dma_enabled, self.async_flush);
         *self = Self::with_disk_image(disk);
         self.direct_dma_enabled = direct_dma_enabled;
+        self.async_flush = async_flush;
     }
 
     /// Replace the backing disk with a host raw file and reset controller state.
     pub fn load_raw_file(&mut self, path: impl AsRef<Path>, write_back: bool) -> io::Result<()> {
-        let direct_dma_enabled = self.direct_dma_enabled;
+        self.discard_flushes();
+        let (direct_dma_enabled, async_flush) = (self.direct_dma_enabled, self.async_flush);
         *self = Self::with_raw_file(path, write_back)?;
         self.direct_dma_enabled = direct_dma_enabled;
+        self.async_flush = async_flush;
         Ok(())
     }
 
     pub fn reset_registers_keep_disks(&mut self) {
-        let direct_dma_enabled = self.direct_dma_enabled;
+        self.discard_flushes();
+        let (direct_dma_enabled, async_flush) = (self.direct_dma_enabled, self.async_flush);
         let disk = std::mem::replace(&mut self.disk, DiskBackend::memory(Vec::new()));
         let disk2 = self.disk2.take();
         *self = Self::with_disk_backend(disk);
         self.disk2 = disk2;
         self.direct_dma_enabled = direct_dma_enabled;
+        self.async_flush = async_flush;
     }
 
     /// Select the NVMe data path without changing queue or media state. This is

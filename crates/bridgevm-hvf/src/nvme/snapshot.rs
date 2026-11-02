@@ -56,6 +56,7 @@ impl NvmeController {
     }
 
     pub fn restore_state(&mut self, data: &[u8]) {
+        self.discard_flushes();
         let mut input = crate::checkpoint::StateReader::new(data);
         assert_eq!(input.read_u32(), 1, "unsupported NVMe snapshot version");
 
