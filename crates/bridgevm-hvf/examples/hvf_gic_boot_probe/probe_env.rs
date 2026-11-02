@@ -76,6 +76,11 @@ pub(crate) const XHCI_REPORT_INTERVAL_DEFAULT_MS: u64 = 30;
 
 pub(crate) const XHCI_REPORT_INTERVAL_MAX_MS: u64 = 10_000;
 
+/// Pointer reports are spaced at most 4 ms apart (250 Hz), above any host
+/// event rate; adjacent moves are coalesced before they get here.
+pub(crate) const XHCI_POINTER_REPORT_INTERVAL: std::time::Duration =
+    std::time::Duration::from_millis(4);
+
 /// Minimum host-time spacing between consecutive HID interrupt-IN reports, from
 /// `BRIDGEVM_XHCI_REPORT_INTERVAL_MS` (default 30 ms; `0` disables pacing).
 /// Windows drops keystrokes when a burst of reports lands microseconds apart, so

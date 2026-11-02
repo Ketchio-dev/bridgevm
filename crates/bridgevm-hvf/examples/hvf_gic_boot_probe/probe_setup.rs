@@ -46,12 +46,16 @@ pub(crate) unsafe fn prepare_platform(
     }
     let xhci_report_interval = parse_xhci_report_interval_env();
     platform.set_xhci_report_interval(xhci_report_interval);
+    // Only keystrokes need the wider gap; pointer reports follow host events.
+    let pointer_interval = xhci_report_interval.min(XHCI_POINTER_REPORT_INTERVAL);
+    platform.set_xhci_pointer_report_interval(pointer_interval);
     if xhci_report_interval.is_zero() {
         println!("xHCI HID report pacing: disabled (BRIDGEVM_XHCI_REPORT_INTERVAL_MS=0)");
     } else {
         println!(
-            "xHCI HID report pacing: {} ms between reports",
-            xhci_report_interval.as_millis()
+            "xHCI HID report pacing: {} ms between reports ({} ms for pointer reports)",
+            xhci_report_interval.as_millis(),
+            pointer_interval.as_millis()
         );
     }
 
