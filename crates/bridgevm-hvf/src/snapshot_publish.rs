@@ -7,6 +7,8 @@ use std::path::Path;
 #[path = "snapshot_publish_exchange.rs"]
 mod exchange;
 use exchange::exchange;
+#[path = "snapshot_publish_unsupported.rs"]
+mod unsupported;
 
 pub(super) fn publish(staged: &Path, destination: &Path) -> io::Result<()> {
     publish_with(staged, destination, exchange)
@@ -49,7 +51,7 @@ fn publish_using(
                 rename(staged, destination)?;
                 false
             } else {
-                swap(staged, destination)?;
+                swap(staged, destination).map_err(|e| unsupported::refuse(e, destination))?;
                 true
             }
         }

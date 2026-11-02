@@ -37,7 +37,7 @@ fn complete_destination_still_requires_exchange_support() {
     let result = publish_with(&stage, &dest, |_, _| {
         Err(io::Error::from_raw_os_error(libc::ENOTSUP))
     });
-    assert_eq!(result.unwrap_err().raw_os_error(), Some(libc::ENOTSUP));
+    assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Unsupported);
     assert_eq!(verify_snapshot(&dest).unwrap(), old);
     assert_eq!(verify_snapshot(&stage).unwrap(), new);
 }
