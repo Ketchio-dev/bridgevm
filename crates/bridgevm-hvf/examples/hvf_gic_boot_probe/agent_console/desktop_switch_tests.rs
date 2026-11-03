@@ -97,7 +97,7 @@ fn the_script_targets_the_virtio_display_fixes_the_layout_and_retries() {
     for needle in [
         // viogpudo's display, by adapter ID; otherwise the primary as before.
         r#"T(b,328,256).Contains("VEN_1AF4&DEV_1050")"#,
-        "if(t==null){var m=M(null,-1)",
+        r#"if(t==null){res="0";if(S(t)!=want){var m=M(null,-1)"#,
         // Layout: virtio primary at 0,0, other attached displays 0x0, apply.
         "P(cur,76,0);P(cur,80,0);lay=\"\"+C(V,cur,0x10000011)",
         "P(z,72,0x180020);det.Add(o+\"=\"+C(o,z,0x10000001))",
