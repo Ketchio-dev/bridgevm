@@ -1,6 +1,7 @@
 //! virtio-gpu runtime: scanout and resolution API, fence and vblank polling, BAR handlers.
 
 use super::*;
+use crate::display_fb::DisplayFramebuffer;
 use crate::fwcfg::GuestMemoryMut;
 use crate::virtio_gpu::VblankWakeState;
 use crate::virtio_gpu::VirtioGpuResult;
@@ -34,6 +35,15 @@ impl VirtPlatform {
         self.virtio_gpu
             .as_mut()
             .is_some_and(|gpu| gpu.request_display_resolution(width, height))
+    }
+
+    /// A writer of the virtio-gpu device's display file
+    /// (`BRIDGEVM_DISPLAY_EXPORT_FB`) that shares the device's lock and
+    /// sequence, so a host producer such as the ramfb exporter can publish
+    /// into the same file. `None` without the device or without the file.
+    pub fn display_framebuffer(&self) -> Option<DisplayFramebuffer> {
+        let sink = self.virtio_gpu.as_ref()?.gpu.fb_sink.as_ref()?;
+        Some(DisplayFramebuffer::sharing(sink))
     }
 
     /// Current virtio-gpu scanout geometry, if the device is present.
