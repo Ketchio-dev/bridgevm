@@ -97,19 +97,30 @@ macro_rules! automation_tick {
                 }
             }
             $pointer_deadline_wake.arm(locked_platform, &mut $setup_input_host_wake);
-            $ramfb_sample_loop.emit_due($vcpu, |label| {
-                ramfb_dump::print_checkpoint_for_platform(label, locked_platform, &$guest_ram);
-            });
+            // Framebuffer checkpoints read and write the frame after the lock
+            // is released (display_checkpoints.rs).
+            let checkpoints = $crate::display_checkpoints::DisplayCheckpoints::take(
+                locked_platform,
+                &mut $ramfb_sample_loop,
+                &mut $boot_timer,
+                $vcpu,
+                $exits,
+                $last_pc,
+            );
             $live_display_exporter.export_due(locked_platform, std::time::Instant::now());
-            $boot_timer.tick(locked_platform, &$guest_ram, $exits, $last_pc);
-            $crate::probe_runtime::automation_stop::automation_stop!(
+            let stop = $crate::probe_runtime::automation_stop::AutomationStop::check(
                 checkpoint_committed,
                 $stop_on_linux,
-                locked_platform,
-                $serial_stop_scans,
-                $ramfb_sample_loop,
-                $vcpu,
-            )
+                locked_platform.uart_output(),
+                &mut $serial_stop_scans,
+            );
+            checkpoints.emit_after(
+                platform_guard,
+                &mut $boot_timer,
+                &$guest_ram,
+                ramfb_dump::print_checkpoint_with_virtio_gpu,
+            );
+            stop.reason(&mut $ramfb_sample_loop, $vcpu)
         }
     }};
 }

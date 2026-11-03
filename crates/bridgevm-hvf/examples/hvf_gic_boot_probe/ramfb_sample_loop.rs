@@ -45,6 +45,18 @@ impl RamfbSampleLoop {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_schedule(schedule: RamfbSampleSchedule) -> Self {
+        Self {
+            schedule: Some(schedule),
+            sample_until_complete: false,
+            start: Instant::now(),
+            tick_fired: Arc::new(AtomicBool::new(false)),
+            tick_armed_for: None,
+            shell_observed: false,
+        }
+    }
+
     pub fn canceled_by_sample_tick(&self, exit_reason: u32, watchdog_fired: &AtomicBool) -> bool {
         exit_reason == EXIT_CANCELED
             && self.tick_fired.swap(false, Ordering::SeqCst)

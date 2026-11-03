@@ -1,6 +1,7 @@
 //! Serial milestone scanning and boot timer telemetry.
 
 use crate::*;
+use bridgevm_hvf::virtio_gpu::VirtioGpuScanout;
 
 pub(crate) fn maybe_write_file(path_env: &str, bytes: &[u8], description: &str) {
     if let Ok(path) = std::env::var(path_env) {
@@ -71,6 +72,22 @@ pub(crate) struct BootTimerSerialMilestone {
     pub(crate) emitted: bool,
 }
 
+/// One pass's BOOT_TIMER work found under the platform lock, printed after it
+/// is released (display_checkpoints.rs).
+#[derive(Default)]
+pub(crate) struct BootTimerTick {
+    /// Serial milestone lines, in the order they were found.
+    lines: Vec<String>,
+    /// A display sample came due: (elapsed, exit, cpu0 PC).
+    sample: Option<(Duration, u64, u64)>,
+}
+
+impl BootTimerTick {
+    pub(crate) fn samples_display(&self) -> bool {
+        self.sample.is_some()
+    }
+}
+
 impl BootTimer {
     const MAX_SERVICE_WAKE_INTERVAL: Duration = Duration::from_millis(250);
     pub(crate) fn from_env() -> Self {
@@ -120,46 +137,67 @@ impl BootTimer {
             milestones,
         }
     }
-    pub(crate) fn tick(
-        &mut self,
-        platform: &VirtPlatform,
-        mem: &dyn GuestMemoryMut,
-        exit: u64,
-        cpu0_pc: u64,
-    ) {
+    /// Under the platform lock: scan the serial log and note a display sample
+    /// that came due; `finish_tick` prints both once the lock is released.
+    pub(crate) fn take_tick(&mut self, serial: &[u8], exit: u64, cpu0_pc: u64) -> BootTimerTick {
+        let mut tick = BootTimerTick::default();
         if !self.enabled {
-            return;
+            return tick;
         }
         let now = Instant::now();
         let elapsed = now.saturating_duration_since(self.start);
-        self.scan_serial(platform.uart_output(), elapsed, exit);
+        self.scan_serial(serial, elapsed, exit, &mut tick.lines);
         if now >= self.next_display_sample {
             self.next_display_sample = now + self.display_interval;
-            self.sample_display(platform, mem, elapsed, exit, cpu0_pc);
+            tick.sample = Some((elapsed, exit, cpu0_pc));
+        }
+        tick
+    }
+    /// Without the platform lock: print `tick`'s milestones, then summarize
+    /// the display from the source taken with it.
+    pub(crate) fn finish_tick(
+        &mut self,
+        tick: BootTimerTick,
+        gpu: Option<VirtioGpuScanout<'_>>,
+        ramfb: Option<RamfbConfig>,
+        mem: &dyn GuestMemoryMut,
+    ) {
+        for line in tick.lines {
+            println!("{line}");
+        }
+        if let Some((elapsed, exit, cpu0_pc)) = tick.sample {
+            self.sample_display(gpu, ramfb, mem, elapsed, exit, cpu0_pc);
         }
     }
-    pub(crate) fn scan_serial(&mut self, serial: &[u8], elapsed: Duration, exit: u64) {
+    pub(crate) fn scan_serial(
+        &mut self,
+        serial: &[u8],
+        elapsed: Duration,
+        exit: u64,
+        lines: &mut Vec<String>,
+    ) {
         for milestone in &mut self.milestones {
             if !milestone.emitted && milestone.scan.contains_new(serial, milestone.needle) {
                 milestone.emitted = true;
-                println!(
+                lines.push(format!(
                     "BOOT_TIMER milestone name={} source=serial elapsed_ms={} exit={}",
                     milestone.name,
                     elapsed.as_millis(),
                     exit
-                );
+                ));
             }
         }
     }
     pub(crate) fn sample_display(
         &mut self,
-        platform: &VirtPlatform,
+        gpu: Option<VirtioGpuScanout<'_>>,
+        ramfb: Option<RamfbConfig>,
         mem: &dyn GuestMemoryMut,
         elapsed: Duration,
         exit: u64,
         cpu0_pc: u64,
     ) {
-        match boot_timer_display_summary(platform, mem) {
+        match boot_timer_display_summary(gpu, ramfb, mem) {
             Ok((source, summary)) => {
                 let desktop_match =
                     self.expected_desktop_checksum == Some(summary.checksum64);
@@ -281,10 +319,11 @@ pub(crate) fn boot_timer_default_milestones() -> Vec<BootTimerSerialMilestone> {
 }
 
 pub(crate) fn boot_timer_display_summary(
-    platform: &VirtPlatform,
+    gpu: Option<VirtioGpuScanout<'_>>,
+    ramfb: Option<RamfbConfig>,
     mem: &dyn GuestMemoryMut,
 ) -> Result<(&'static str, RamfbSnapshotSummary), BootTimerDisplayState> {
-    if let Some(scanout) = platform.virtio_gpu_scanout() {
+    if let Some(scanout) = gpu {
         let config = RamfbConfig {
             addr: 1,
             fourcc: scanout.fourcc,
@@ -300,7 +339,7 @@ pub(crate) fn boot_timer_display_summary(
                 error,
             });
     }
-    let Some(config) = platform.ramfb_config() else {
+    let Some(config) = ramfb else {
         return Err(BootTimerDisplayState::Inactive);
     };
     RamfbSnapshot::read_from(mem, config)
@@ -346,14 +385,19 @@ mod boot_timer_tests {
             vec![BootTimerSerialMilestone::new("test", b"Boot0001")],
         );
 
-        timer.scan_serial(b"BdsDxe: starting Boo", Duration::ZERO, 1);
+        let mut lines = Vec::new();
+        timer.scan_serial(b"BdsDxe: starting Boo", Duration::ZERO, 1, &mut lines);
         assert!(!timer.milestones[0].emitted);
 
-        timer.scan_serial(b"BdsDxe: starting Boot0001", Duration::ZERO, 2);
+        timer.scan_serial(b"BdsDxe: starting Boot0001", Duration::ZERO, 2, &mut lines);
         assert!(timer.milestones[0].emitted);
 
-        timer.scan_serial(b"BdsDxe: starting Boot0001", Duration::ZERO, 3);
+        timer.scan_serial(b"BdsDxe: starting Boot0001", Duration::ZERO, 3, &mut lines);
         assert!(timer.milestones[0].emitted);
+        assert_eq!(
+            lines,
+            ["BOOT_TIMER milestone name=test source=serial elapsed_ms=0 exit=2"]
+        );
     }
 
     #[test]
