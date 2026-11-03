@@ -24,18 +24,21 @@ impl OutboundIpv4Handler for CountingSweeps {
 
 #[test]
 fn acknowledged_burst_gives_its_buffer_back() {
-    // A drained VecDeque keeps its allocation; long-lived flows downloading
-    // in turn must not each keep the size of their largest burst.
-    let mut send = TcpSendState::new(1000, u16::MAX, Some(8));
-    send.unacked.extend(std::iter::repeat_n(7u8, 1 << 20));
-    send.next = send.una.wrapping_add(1 << 20);
-    send.on_guest_ack(send.next, 1 << 20, false);
-    assert!(send.unacked.is_empty());
-    assert!(
-        send.unacked.capacity() <= 64 * 1024,
-        "kept {}",
-        send.unacked.capacity()
-    );
+    // The unacked budget counts allocations and a drained VecDeque keeps its
+    // own, so buffers left on idle flows (even small ones, times 256 flows)
+    // would exhaust the budget and stall every download.
+    for burst in [40 * 1024, 1 << 20] {
+        let mut send = TcpSendState::new(1000, u16::MAX, Some(8));
+        send.unacked.extend(std::iter::repeat_n(7u8, burst));
+        send.next = send.una.wrapping_add(burst as u32);
+        send.on_guest_ack(send.next, 1 << 20, false);
+        assert!(send.unacked.is_empty());
+        assert_eq!(
+            send.unacked.capacity(),
+            0,
+            "a {burst}-byte burst kept its buffer"
+        );
+    }
 }
 
 #[test]
