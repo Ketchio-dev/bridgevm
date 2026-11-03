@@ -15,14 +15,18 @@ final class HvfDisplayDriverInstallScriptTests: XCTestCase {
         XCTAssertEqual(String(data: data, encoding: .utf16LittleEndian), Install.script)
     }
 
-    func testScriptDownloadsThePinAndRefusesAnyOtherBytes() {
+    func testScriptDownloadsThePinWithResumingCurlAndRefusesAnyOtherBytes() {
         let script = Install.script
-        XCTAssertTrue(script.contains("Invoke-WebRequest -UseBasicParsing -UserAgent 'BridgeVM' -Uri 'https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/upstream-virtio/attestation-virtio-win-prewhql-0.1-299.zip' -OutFile $zip"))
-        XCTAssertTrue(script.contains("[Net.SecurityProtocolType]::Tls12"))
+        XCTAssertTrue(script.contains("$curl = Join-Path $env:SystemRoot 'System32\\curl.exe'"))
+        XCTAssertTrue(script.contains("if (-not (Test-Path -LiteralPath $curl)) { throw 'curl.exe missing' }"))
+        XCTAssertTrue(script.contains("& $curl -sS -A BridgeVM --fail --location --connect-timeout 30 --speed-limit 20000 --speed-time 20 --retry 10 --retry-all-errors -C '-' --stderr $log -o $zip 'https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/upstream-virtio/attestation-virtio-win-prewhql-0.1-299.zip'"))
+        XCTAssertTrue(script.contains("if ($LASTEXITCODE -ne 0) { throw ('curl.exe exit '"))
+        XCTAssertFalse(script.contains("Invoke-WebRequest"))
         XCTAssertTrue(script.contains("if ($length -ne 94849704) { throw"))
         XCTAssertTrue(script.contains("(Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash"))
         XCTAssertTrue(script.contains("if ($hash -ne 'ff393c5338c35d1606a0108d2d818a29be48de373be7aac95b632aa5a46aead0') { throw"))
-        // Both checks run before anything is extracted or installed.
+        // Both checks follow the download and run before anything is extracted or installed.
+        XCTAssertLessThan(script.range(of: "& $curl")!.lowerBound, script.range(of: "if ($length -ne")!.lowerBound)
         let checks = script.range(of: "if ($hash -ne")!.lowerBound
         XCTAssertLessThan(checks, script.range(of: "OpenRead")!.lowerBound)
         XCTAssertLessThan(checks, script.range(of: "pnputil.exe")!.lowerBound)
@@ -42,7 +46,7 @@ final class HvfDisplayDriverInstallScriptTests: XCTestCase {
     func testScriptPrintsExactlyOneResultLine() {
         let script = Install.script
         XCTAssertEqual(script.components(separatedBy: "Write-Output").count - 1, 1)
-        XCTAssertTrue(script.hasSuffix("Write-Output ('BVDRIVER result=' + $result + ' detail=' + (([string]$detail -replace '\\s+', ' ').Trim()))"))
+        XCTAssertTrue(script.hasSuffix("Write-Output ('BVDRIVER result=' + $result + ' detail=' + (($detail -replace '\\s+', ' ').Trim()))"))
         for result in ["'installed'", "'staged'", "'failed'"] {
             XCTAssertTrue(script.contains("$result = \(result)"), result)
         }
@@ -81,6 +85,7 @@ final class HvfDisplayDriverInstallParseTests: XCTestCase {
         XCTAssertTrue(refused.detail.contains(HvfAgentServiceGate.serviceNotStartedMessage))
 
         XCTAssertEqual(parse("BVDRIVER result=maybe detail=x").status, .failed)
+        XCTAssertEqual(parse("BVDRIVER result=failed detail=curl.exe missing"), .init(status: .failed, detail: "curl.exe missing"))
     }
 }
 

@@ -33,22 +33,26 @@ enum HvfDisplayDriverInstall {
         }
     }
 
-    /// Windows PowerShell 5.1 script. The explicit User-Agent matters: fedorapeople.org answers
-    /// browser-like agents (PowerShell's default names Mozilla) with an HTML bot check, which the
-    /// length pin then refuses (live, 2026-11-03). `[NullString]::Value`, not `$null`, would be
-    /// needed for a .NET string parameter; none is passed here.
+    /// Windows PowerShell 5.1 script. Windows' own curl.exe downloads because it resumes: a
+    /// stalled transfer (seen through the VMM's NAT and on real networks) restarts with `-C -`
+    /// where Invoke-WebRequest waited 300 s and failed (live, 2026-11-03). fedorapeople.org
+    /// answers browser-like agents with an HTML bot check, hence `-A BridgeVM`; the length and
+    /// hash pins refuse such a page or a truncated file. `[NullString]::Value`, not `$null`,
+    /// would be needed for a .NET string parameter; none is passed here.
     static let script: String = {
         let files = driverFiles.map { "'\($0)'" }.joined(separator: ", ")
         return #"""
         $ErrorActionPreference = 'Stop'
-        $ProgressPreference = 'SilentlyContinue'
         $work = Join-Path ([IO.Path]::GetTempPath()) 'bridgevm-viogpudo'
         $zip = Join-Path $work 'virtio-win.zip'
         try {
           if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force }
           New-Item -ItemType Directory -Path $work | Out-Null
-          [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-          Invoke-WebRequest -UseBasicParsing -UserAgent 'BridgeVM' -Uri '\#(archiveURL)' -OutFile $zip
+          $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
+          if (-not (Test-Path -LiteralPath $curl)) { throw 'curl.exe missing' }
+          $log = Join-Path $work 'curl.log'
+          & $curl -sS -A BridgeVM --fail --location --connect-timeout 30 --speed-limit 20000 --speed-time 20 --retry 10 --retry-all-errors -C '-' --stderr $log -o $zip '\#(archiveURL)'
+          if ($LASTEXITCODE -ne 0) { throw ('curl.exe exit ' + $LASTEXITCODE + ': ' + (Get-Content -LiteralPath $log -Tail 1)) }
           $length = (Get-Item -LiteralPath $zip).Length
           if ($length -ne \#(archiveBytes)) { throw "download is $length bytes, expected \#(archiveBytes)" }
           $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
@@ -71,11 +75,11 @@ enum HvfDisplayDriverInstall {
           if ($bound.Count -gt 0 -or $output -match 'installed on device') {
             $result = 'installed'
             $device = @($bound + $devices)[0]
-            $detail = [string]$device.FriendlyName + ' status=' + [string]$device.Status
+            $detail = $device.FriendlyName + ' status=' + $device.Status
             if ($code -eq 3010) { $detail += '; restart Windows to finish' }
           } elseif ($devices.Count -eq 0) {
             $result = 'staged'
-            $detail = 'no 1AF4:1050 device yet; Windows binds the driver on the next boot with one'
+            $detail = 'no 1AF4:1050 device yet; it binds on the next boot with one'
           } else {
             throw ('pnputil exit ' + $code + ' left the 1AF4:1050 device without VioGpuDod')
           }
@@ -85,7 +89,7 @@ enum HvfDisplayDriverInstall {
         } finally {
           Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
         }
-        Write-Output ('BVDRIVER result=' + $result + ' detail=' + (([string]$detail -replace '\s+', ' ').Trim()))
+        Write-Output ('BVDRIVER result=' + $result + ' detail=' + (($detail -replace '\s+', ' ').Trim()))
         """#
     }()
 
