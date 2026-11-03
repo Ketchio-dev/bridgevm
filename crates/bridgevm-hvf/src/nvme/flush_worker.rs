@@ -376,7 +376,7 @@ impl NvmeController {
     /// Wait for the flushes, READs and WRITEs in flight; their completions
     /// stay queued for `complete_flushes`.
     pub(crate) fn wait_for_flushes(&mut self) {
-        self.run_untaken_io();
+        self.fail_untaken_io();
         let Some(worker) = self.flush_worker.as_ref() else {
             return;
         };
@@ -398,7 +398,7 @@ impl NvmeController {
 
     fn take_finished(&mut self, wait: bool) -> Vec<Finished> {
         if wait {
-            self.run_untaken_io();
+            self.fail_untaken_io();
         }
         let Some(worker) = self.flush_worker.as_mut() else {
             return Vec::new();

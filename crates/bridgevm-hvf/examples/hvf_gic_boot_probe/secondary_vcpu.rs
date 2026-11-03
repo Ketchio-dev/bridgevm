@@ -405,7 +405,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                 // NVMe reads and writes run unlocked; this exit's second hold
                 // posts their completions.
                 if let Some(io) = nvme_io {
-                    io.run();
+                    io.run(&*guest_ram);
                     let pending = {
                         let mut platform_guard =
                             lock_platform(platform, smp_trace, control.index, HoldSite::Mmio(ipa));

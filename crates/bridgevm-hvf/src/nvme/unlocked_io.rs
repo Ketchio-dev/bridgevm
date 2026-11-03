@@ -8,8 +8,8 @@
 //! write-back raw file, decodes its PRPs and resolves them to host pointers,
 //! holds its completion slot and counts it in flight with the flushes, all
 //! under the lock. The doorbell vCPU takes the jobs before it unlocks
-//! ([`NvmeController::take_io`]), runs the transfers unlocked ([`NvmeIo::run`])
-//! and publishes the results to the flush worker's `finished` list; it then
+//! ([`NvmeController::take_io`]), runs the transfers unlocked in its own view of
+//! guest RAM ([`NvmeIo::run`]) and publishes the results to the flush worker's `finished` list; it then
 //! locks again and its drain posts the completions (`complete_flushes`), each
 //! only after its transfer returned. A FUA or write-cache-off WRITE goes on to
 //! the worker's sync from there and completes after it, as inline.
@@ -23,40 +23,37 @@
 //! so none can reach a queue deleted or re-created meanwhile.
 
 use std::fs::File;
-use std::os::unix::fs::FileExt;
+use std::io;
+use std::os::fd::{AsRawFd, RawFd};
 use std::sync::Arc;
 
 use super::flush_worker::{Finished, FlushJob, Shared};
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 
-/// One READ or WRITE, checked and resolved under the platform lock.
+/// One READ or WRITE, checked under the platform lock.
 pub(crate) struct IoJob {
     done: FlushJob,
     file: Arc<File>,
     write: bool,
     sync_next: bool,
     offset: u64,
-    /// Host address and length of each contiguous guest segment.
-    iov: Vec<(usize, usize)>,
+    /// Guest-physical address and length of each contiguous segment.
+    segments: Vec<(u64, usize)>,
 }
 
 impl IoJob {
-    fn transfer(&self) -> u16 {
+    /// Guest RAM is shared with the guest and with other vCPUs' transfers,
+    /// so it is never borrowed as a Rust slice: `pread`/`pwrite` copy
+    /// straight to and from the mapped pages, as DMA would.
+    fn transfer(&self, mem: &dyn GuestMemoryMut) -> u16 {
+        let fd = self.file.as_raw_fd();
         let mut offset = self.offset;
-        for &(addr, len) in &self.iov {
-            // SAFETY: `host_ptr` resolved [addr, addr + len) inside guest RAM
-            // under the platform lock. Guest RAM stays mapped while vCPUs run,
-            // and a reset waits for this job before guest RAM is reused. The
-            // guest does not touch a buffer while its command is outstanding.
-            let result = if self.write {
-                let src = unsafe { std::slice::from_raw_parts(addr as *const u8, len) };
-                self.file.write_all_at(src, offset)
-            } else {
-                let dst = unsafe { std::slice::from_raw_parts_mut(addr as *mut u8, len) };
-                self.file.read_exact_at(dst, offset)
+        for &(gpa, len) in &self.segments {
+            let Some(ptr) = mem.host_ptr(gpa, len) else {
+                return SC_INVALID_FIELD;
             };
-            if result.is_err() {
+            if copy_all(fd, ptr, len, offset, self.write).is_err() {
                 return SC_INVALID_FIELD;
             }
             offset += len as u64;
@@ -65,9 +62,41 @@ impl IoJob {
     }
 }
 
+/// `pread` into, or `pwrite` from, the `len` bytes at `ptr`, across short
+/// transfers and EINTR.
+fn copy_all(fd: RawFd, ptr: *mut u8, len: usize, offset: u64, write: bool) -> io::Result<()> {
+    let mut done = 0;
+    while done < len {
+        let at = libc::off_t::try_from(offset + done as u64)
+            .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+        // SAFETY: `host_ptr` resolved [ptr, ptr + len) inside the guest RAM
+        // that `mem` maps, which the caller borrows for the whole transfer;
+        // the kernel copies to or from it without a Rust reference to it.
+        let n = unsafe {
+            let at_ptr = ptr.add(done).cast::<libc::c_void>();
+            if write {
+                libc::pwrite(fd, at_ptr, len - done, at)
+            } else {
+                libc::pread(fd, at_ptr, len - done, at)
+            }
+        };
+        match n {
+            0 => return Err(io::ErrorKind::UnexpectedEof.into()),
+            n if n < 0 => {
+                let error = io::Error::last_os_error();
+                if error.kind() != io::ErrorKind::Interrupted {
+                    return Err(error);
+                }
+            }
+            n => done += n as usize,
+        }
+    }
+    Ok(())
+}
+
 /// The READs and WRITEs a doorbell queued. Run them after dropping the
 /// platform lock; the next drain under the lock posts their completions.
-#[must_use = "a waiting reset or admin command blocks until the jobs run"]
+#[must_use = "a waiting reset or admin command blocks until the jobs finish"]
 pub struct NvmeIo {
     jobs: Vec<IoJob>,
     shared: Arc<Shared>,
@@ -76,19 +105,22 @@ pub struct NvmeIo {
 }
 
 impl NvmeIo {
-    /// Run the transfers in order and publish their results.
-    pub fn run(mut self) {
-        self.run_jobs();
+    /// Run the transfers in order and publish their results. `mem` is the
+    /// calling vCPU's view of the guest RAM the doorbell checked them in.
+    pub fn run(mut self, mem: &dyn GuestMemoryMut) {
+        let jobs = std::mem::take(&mut self.jobs);
+        self.publish(jobs, |job| {
+            #[cfg(test)]
+            self.gate.pass();
+            job.transfer(mem)
+        });
     }
 
-    fn run_jobs(&mut self) {
-        let jobs = std::mem::take(&mut self.jobs);
+    fn publish(&self, jobs: Vec<IoJob>, mut status_of: impl FnMut(&IoJob) -> u16) {
         let done: Vec<Finished> = jobs
             .iter()
             .map(|job| {
-                #[cfg(test)]
-                self.gate.pass();
-                let status = job.transfer();
+                let status = status_of(job);
                 Finished {
                     job: job.done,
                     status,
@@ -101,11 +133,12 @@ impl NvmeIo {
 }
 
 impl Drop for NvmeIo {
-    /// Jobs taken but not run (an exit that stopped its vCPU first) run here:
-    /// every wait for the jobs in flight counts them.
+    /// Jobs never run (an exit that stopped its vCPU first) fail without
+    /// touching guest RAM: every wait for the jobs in flight counts them.
     fn drop(&mut self) {
         if !self.jobs.is_empty() {
-            self.run_jobs();
+            let jobs = std::mem::take(&mut self.jobs);
+            self.publish(jobs, |_| SC_INTERNAL_DEVICE_ERROR);
         }
     }
 }
@@ -148,20 +181,18 @@ impl NvmeController {
         let mut segments = std::mem::take(&mut self.io_segments_scratch);
         spans.clear();
         segments.clear();
-        let iov = if prp_spans_into(cmd, len, mem, &mut spans, &mut self.io_scratch) {
+        let resolved = prp_spans_into(cmd, len, mem, &mut spans, &mut self.io_scratch) && {
             coalesce_spans_into(&spans, &mut segments);
             segments
                 .iter()
-                .map(|&(gpa, len)| mem.host_ptr(gpa, len).map(|ptr| (ptr as usize, len)))
-                .collect::<Option<Vec<_>>>()
-        } else {
-            None
+                .all(|&(gpa, len)| mem.host_ptr(gpa, len).is_some())
         };
+        let job_segments = resolved.then(|| segments.clone());
         spans.clear();
         segments.clear();
         self.prp_spans_scratch = spans;
         self.io_segments_scratch = segments;
-        let Some(iov) = iov else {
+        let Some(segments) = job_segments else {
             return false;
         };
         let sync_next = write && self.write_needs_sync(cmd);
@@ -173,7 +204,7 @@ impl NvmeController {
             write,
             sync_next,
             offset,
-            iov,
+            segments,
         });
         self.hold_completion_slot(cqid);
         true
@@ -194,12 +225,10 @@ impl NvmeController {
         })
     }
 
-    /// Jobs nobody took (only a caller that skips `take_io` leaves any) run
-    /// here, under the lock, before a wait would block on them forever.
-    pub(super) fn run_untaken_io(&mut self) {
-        if let Some(io) = self.take_io() {
-            io.run();
-        }
+    /// Jobs nobody took (only a caller that skips `take_io` leaves any) fail
+    /// here, before a wait would block on them forever.
+    pub(super) fn fail_untaken_io(&mut self) {
+        drop(self.take_io());
     }
 }
 

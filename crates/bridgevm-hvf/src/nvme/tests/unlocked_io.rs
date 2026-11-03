@@ -102,8 +102,9 @@ fn while_held<R>(
     let gate = Arc::clone(&ctrl.io_gate);
     gate.close();
     let io = ctrl.take_io().expect("the doorbell queued a transfer");
+    let view = mem.view();
     std::thread::scope(|s| {
-        s.spawn(move || io.run());
+        s.spawn(move || io.run(&view));
         assert!(gate.reached(1), "the transfer never started");
         s.spawn(|| {
             std::thread::sleep(Duration::from_millis(50));
@@ -127,6 +128,7 @@ fn read_held_by_a_vcpu(unlocked: bool) -> (Seen, FakeMem) {
     ctrl.set_unlocked_io(unlocked);
     let gate = Arc::clone(&ctrl.io_gate);
     gate.close();
+    let view = mem.view();
     let platform = Mutex::new((ctrl, mem));
     let seen = std::thread::scope(|s| {
         let vcpu = s.spawn(|| {
@@ -137,7 +139,7 @@ fn read_held_by_a_vcpu(unlocked: bool) -> (Seen, FakeMem) {
                 ctrl.take_io()
             };
             if let Some(io) = io {
-                io.run();
+                io.run(&view);
                 let mut held = platform.lock().unwrap();
                 let (ctrl, mem) = &mut *held;
                 assert_eq!(drain(ctrl, mem).len(), 1);
@@ -199,6 +201,7 @@ fn two_vcpus_transfer_at_once_without_waiting_on_each_other() {
     assert!(mem.write_bytes(DATA_BASE, &[0x5a; LBA_SIZE]));
     let gate = Arc::clone(&ctrl.io_gate);
     gate.close();
+    let view = mem.view();
     let platform = Mutex::new((ctrl, mem));
     // Each vCPU: ring under the lock, transfer without it, drain under it.
     let vcpu = |sqe: [u8; 64], sq: u64, doorbell: u64, wait: bool| {
@@ -216,7 +219,7 @@ fn two_vcpus_transfer_at_once_without_waiting_on_each_other() {
             assert!(ctrl.process(mem).is_empty());
             ctrl.take_io().expect("a queued transfer")
         };
-        io.run();
+        io.run(&view);
         let mut held = platform.lock().unwrap();
         let (ctrl, mem) = &mut *held;
         drain(ctrl, mem).len()
@@ -260,7 +263,7 @@ fn a_write_reaches_the_file_in_its_transfer_and_completes_after_it() {
     assert!(ring(&mut ctrl, &mut mem, 0, &write(0x61, 4, DATA_BASE, 0)).is_empty());
     let io = ctrl.take_io().expect("a queued transfer");
     assert_eq!(file_block(&path, 4), [block_byte(4); LBA_SIZE]);
-    io.run();
+    io.run(&mem);
     assert_eq!(file_block(&path, 4), [0x5a; LBA_SIZE]);
     assert_eq!(cqe(&mem, IO_CQ_BASE, 0), (0, 0), "posted only by a drain");
     assert_eq!(drain(&mut ctrl, &mut mem).len(), 1);
@@ -274,7 +277,7 @@ fn a_fua_write_completes_once_after_its_data_and_its_sync() {
     let syncs = flush_mode::recorded_syncs(&path).len();
     assert!(mem.write_bytes(DATA_BASE, &[0xa5; LBA_SIZE]));
     ring(&mut ctrl, &mut mem, 0, &write(0x71, 1, DATA_BASE, FUA));
-    ctrl.take_io().expect("a queued transfer").run();
+    ctrl.take_io().expect("a queued transfer").run(&mem);
     assert_eq!(file_block(&path, 1), [0xa5; LBA_SIZE]);
     assert!(
         drain(&mut ctrl, &mut mem).is_empty(),
@@ -304,7 +307,7 @@ fn transfers_in_flight_hold_their_completion_slots() {
     // The eighth waits, unfetched, while the seven are in flight.
     ring(&mut ctrl, &mut mem, 7, &read(0x87, 1, DATA_BASE));
     let io = ctrl.take_io().expect("seven queued transfers");
-    io.run();
+    io.run(&mem);
     assert_eq!(drain(&mut ctrl, &mut mem).len(), 7);
     assert_eq!(cqe(&mem, IO_CQ_BASE, 6), (0x86, SC_SUCCESS));
     assert_eq!(
@@ -315,7 +318,7 @@ fn transfers_in_flight_hold_their_completion_slots() {
     // The guest consumes the seven; the eighth runs next.
     ctrl.mmio_write(IO_CQ_DOORBELL, 4, 7);
     ctrl.process(&mut mem);
-    ctrl.take_io().expect("the eighth").run();
+    ctrl.take_io().expect("the eighth").run(&mem);
     assert_eq!(drain(&mut ctrl, &mut mem).len(), 1);
     assert_eq!(cqe(&mem, IO_CQ_BASE, 7), (0x87, SC_SUCCESS));
     let _ = fs::remove_file(path);
@@ -352,7 +355,7 @@ fn a_reset_waits_for_a_held_read_and_a_recreated_queue_gets_no_stale_completion(
         CREATE_IO_CQ_PC_BIT | CREATE_IO_CQ_IEN_BIT,
     );
     ring(&mut ctrl, &mut mem, 0, &read(0x22, 5, DATA_BASE + 0x1000));
-    ctrl.take_io().expect("a queued transfer").run();
+    ctrl.take_io().expect("a queued transfer").run(&mem);
     assert_eq!(drain(&mut ctrl, &mut mem).len(), 1);
     assert_eq!(cqe(&mem, IO_CQ_BASE, 0), (0x22, SC_SUCCESS));
     assert_eq!(cqe(&mem, IO_CQ_BASE, 1), (0, 0), "no stale completion");
@@ -466,4 +469,17 @@ fn other_disks_and_paths_stay_inline() {
     for file in [path, path2] {
         let _ = fs::remove_file(file);
     }
+}
+
+#[test]
+fn a_transfer_dropped_unrun_fails_without_touching_guest_ram() {
+    let (mut ctrl, mut mem, path) = unlocked_controller("unlocked-io-dropped");
+    ring(&mut ctrl, &mut mem, 0, &read(0x91, 3, DATA_BASE));
+    drop(ctrl.take_io().expect("a queued transfer"));
+    // The wait a reset or admin command makes returns at once.
+    let mut events = Vec::new();
+    ctrl.complete_flushes(&mut mem, &mut events, true);
+    assert_eq!(cqe(&mem, IO_CQ_BASE, 0), (0x91, SC_INTERNAL_DEVICE_ERROR));
+    assert_eq!(byte_at(&mem, DATA_BASE), 0, "guest RAM untouched");
+    let _ = fs::remove_file(path);
 }

@@ -23,11 +23,11 @@ fn every_lock_site_beside_the_tick_holds_through_the_record() {
         assert_eq!(count(run, site), sites, "{site}");
     }
     assert_eq!(count(run, "lock_platform("), 7);
-    assert_eq!(count(run, "io.run();"), 1);
+    assert_eq!(count(run, "io.run(&"), 1);
     let secondary = include_str!("secondary_vcpu.rs");
     assert_eq!(count(secondary, "lock_platform("), 2);
     assert_eq!(count(secondary, "HoldSite::Mmio(ipa)"), 2);
-    assert_eq!(count(secondary, "io.run();"), 1);
+    assert_eq!(count(secondary, "io.run(&"), 1);
     let prepare = include_str!("interrupt_delivery/prepare.rs");
     assert_eq!(count(prepare, "lock_platform("), 2);
     assert_eq!(count(prepare, "HoldSite::PreRun"), 2);
