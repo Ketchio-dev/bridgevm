@@ -14,6 +14,7 @@ final class HvfEngineSession: ObservableObject {
     let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
     let shareRootNotice = HvfShareRootNotice()
     @Published var events: [BvAgentEvent] = []
+    @Published var displayDriverFlagMessage: String? // why HvfDisplayDriverFlag could not save yet
     var repoRoot: URL
     var workAdmission: LibraryWorkAdmission?
     var reservedWorkAdmission: (@MainActor (UUID, Bool) -> String?)?
@@ -348,7 +349,6 @@ final class HvfEngineSession: ObservableObject {
     func markStopped() {
         guard !runtimeTransitionInProgress, !mayHaveOwnedWork else { return }
         runtimeTransitionInProgress = true
-        defer { runtimeTransitionInProgress = false }
         appPacing.end(evidenceDir: config.evidenceDir)
         if let process, let identity = ownedProcessIdentity, !process.isRunning {
             lastOwnedExit = HvfOwnedRuntimeExit(identity: identity, process: process)
@@ -370,6 +370,10 @@ final class HvfEngineSession: ObservableObject {
         if forceStopTarget != nil { forceStopTarget = nil }
         guiStartCleanupOnly = false
         connectionState = .stopped
+        runtimeTransitionInProgress = false
+        // vm.json may change again: a display driver installed during this run is saved now,
+        // whether or not the VM's view is open (a guest shutdown, another VM selected).
+        HvfDisplayDriverFlag.saveIfStopped(self)
     }
 
     func resetObservedRuntimeState(clearEvents: Bool) {
