@@ -13,13 +13,20 @@
 # `BVAGENT SERVICE start`. Prints one `BVA8` line per check and exits 1 if any
 # check fails.
 set -euo pipefail
+CALLER=$PWD
+# Paths given relative to the caller stay relative to the caller after the cd below.
+abs() { case $1 in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$CALLER" "$1" ;; esac; }
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); cd "$REPO"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 TARGET=${TARGET:?Windows disk with the signed display driver (it is cloned, never modified)}
+TARGET=$(abs "$TARGET")
 VARS=${VARS:?its UEFI variables (copied)}
+VARS=$(abs "$VARS")
 PROBE=${PROBE:?prebuilt release probe}
+PROBE=$(abs "$PROBE")
 OUT=${OUT:?evidence directory}
+OUT=$(abs "$OUT")
 REQUESTS=${REQUESTS:-1517x931 1600x900 1920x1080}
 GUEST_EPOCH=${GUEST_EPOCH:-}   # optional: boot a date-bound test image at a fixed date
 BOOT_TIMEOUT=${BOOT_TIMEOUT:-600}
@@ -177,6 +184,12 @@ for _ in $(seq 1 240); do kill -0 "$LAUNCHER" 2>/dev/null || break; sleep 0.5; d
 if kill -0 "$LAUNCHER" 2>/dev/null; then
   shutdown=timeout
   echo "FAIL: Windows did not power off within 120 s; stopping this lane VM" >&2
+else
+  launcher_status=0; wait "$LAUNCHER" || launcher_status=$?
+  if (( launcher_status != 0 )); then
+    shutdown=launcher-exit-$launcher_status
+    echo "FAIL: the launcher exited with status $launcher_status (see $OUT/launcher.out)" >&2
+  fi
 fi
 trap - EXIT
 cleanup || shutdown=vm-still-running

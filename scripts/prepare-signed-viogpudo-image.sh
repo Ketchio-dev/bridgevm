@@ -11,15 +11,24 @@
 # REMOVE_PS1 (optional, development images only): removes an older test-signed display
 # package first, for example scripts/win-assets/bvgpu-remove-test-3d-package.ps1.
 set -euo pipefail
+CALLER=$PWD
+# Paths given relative to the caller stay relative to the caller after the cd below.
+abs() { case $1 in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$CALLER" "$1" ;; esac; }
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); cd "$REPO"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 TARGET=${TARGET:?installed Windows disk (cloned, never modified)}
+TARGET=$(abs "$TARGET")
 VARS=${VARS:?its UEFI variables (copied)}
+VARS=$(abs "$VARS")
 DRIVER_DIR=${DRIVER_DIR:?folder holding viogpudo.inf, .cat and .sys}
+DRIVER_DIR=$(abs "$DRIVER_DIR")
 PROBE=${PROBE:?prebuilt release probe}
+PROBE=$(abs "$PROBE")
 OUT=${OUT:?output directory}
+OUT=$(abs "$OUT")
 REMOVE_PS1=${REMOVE_PS1:-}
+[[ -z "$REMOVE_PS1" ]] || REMOVE_PS1=$(abs "$REMOVE_PS1")
 GUEST_EPOCH=${GUEST_EPOCH:-}   # optional: boot a date-bound test image at a fixed date
 BOOT_TIMEOUT=${BOOT_TIMEOUT:-600}
 STEP_TIMEOUT=${STEP_TIMEOUT:-120}
@@ -111,6 +120,8 @@ for _ in $(seq 1 240); do kill -0 "$LAUNCHER" 2>/dev/null || break; sleep 0.5; d
 if kill -0 "$LAUNCHER" 2>/dev/null; then
   fail "Windows did not power off within 120 s; the prepared pair is incomplete"
 fi
+launcher_status=0; wait "$LAUNCHER" || launcher_status=$?
+(( launcher_status == 0 )) || fail "the launcher exited with status $launcher_status (see $OUT/launcher.out)"
 trap - EXIT
 stop_vm || fail "this lane VM is still running"
 rm -rf "${WORK:?}/bin"
