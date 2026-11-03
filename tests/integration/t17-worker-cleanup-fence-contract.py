@@ -75,6 +75,8 @@ pathlib.Path(sys.argv[1], 'survivor.pid').write_text(str(child.pid))
 PY
 fi
 finish() {
+  # A real T17 cancel ends the product, forgets the lane key and removes its tree first.
+  [[ "$mode" != slow-clean ]] || { sleep 7; mode=clean; }
   python3 "$repo/scripts/live-gates/fixture-receipt.py" "$out" "$job" "$mode" "$repo"
   exit 130
 }
@@ -206,6 +208,13 @@ class T17WorkerCleanupFence(unittest.TestCase):
         self.assertTrue((self.queue / "worker-cleanup-required").is_file())
         self.assertTrue((self.queue / "running/a-fixture").is_dir())
         self.assertTrue((self.work / "a-fixture").is_dir())
+
+    def test_slow_verified_cancel_cleanup_is_not_killed_and_does_not_fence(self):
+        status, output = self.cancel_tier("slow-clean")
+        self.assertEqual(status, 0, output)
+        self.assertFalse((self.queue / "worker-cleanup-required").exists())
+        self.assertTrue((self.queue / "done/a-fixture").is_dir())
+        self.assertFalse((self.work / "a-fixture").exists())
 
     def test_verified_cleanup_allows_worker_finalization(self):
         status, output = self.cancel_tier("clean")
