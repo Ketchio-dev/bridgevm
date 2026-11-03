@@ -23,6 +23,22 @@ impl OutboundIpv4Handler for CountingSweeps {
 }
 
 #[test]
+fn acknowledged_burst_gives_its_buffer_back() {
+    // A drained VecDeque keeps its allocation; long-lived flows downloading
+    // in turn must not each keep the size of their largest burst.
+    let mut send = TcpSendState::new(1000, u16::MAX, Some(8));
+    send.unacked.extend(std::iter::repeat_n(7u8, 1 << 20));
+    send.next = send.una.wrapping_add(1 << 20);
+    send.on_guest_ack(send.next, 1 << 20, false);
+    assert!(send.unacked.is_empty());
+    assert!(
+        send.unacked.capacity() <= 64 * 1024,
+        "kept {}",
+        send.unacked.capacity()
+    );
+}
+
+#[test]
 fn host_sockets_wait_while_a_ring_of_frames_waits_for_the_guest() {
     let mut backend = NatBackend::with_outbound_handler(CountingSweeps::default());
     let arp = arp_request(GUEST_MAC, GUEST_IP, GATEWAY_IP);

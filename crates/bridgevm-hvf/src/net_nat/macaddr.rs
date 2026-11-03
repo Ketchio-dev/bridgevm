@@ -701,7 +701,12 @@ impl HostSocketOutboundIpv4Handler {
             stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
         }
         let now = self.now_ms();
-        let unacked: usize = self.tcp_flows.values().map(|f| f.send.unacked.len()).sum();
+        // Capacity, not length: a drained deque keeps its allocation.
+        let unacked: usize = self
+            .tcp_flows
+            .values()
+            .map(|f| f.send.unacked.capacity())
+            .sum();
         let mut unacked_budget = MAX_TCP_UNACKED_BYTES.saturating_sub(unacked);
         {
             let remove_scratch = &mut self.tcp_remove_scratch;

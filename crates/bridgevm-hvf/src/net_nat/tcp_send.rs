@@ -19,10 +19,13 @@ use std::{collections::VecDeque, io::Read};
 
 /// Payload bytes per segment: a 1500-byte MTU minus the IPv4 and TCP headers.
 pub(crate) const TCP_MSS: usize = 1460;
-/// Bytes sent and not yet acknowledged, for all flows together. The guest's
-/// window decides how many it takes, so this bounds the memory it can pin,
-/// like the reply queue's frame limit did before windows were honoured.
+/// Memory kept for unacknowledged bytes, for all flows together (allocated,
+/// so a drained buffer still counts). The guest's window decides how much it
+/// takes, so this bounds what it can pin, like the reply queue's frame limit
+/// did before windows were honoured.
 pub(crate) const MAX_TCP_UNACKED_BYTES: usize = 16 * 1024 * 1024;
+/// A drained buffer above this size is given back; below it, reuse is cheaper.
+const KEPT_UNACKED_CAPACITY: usize = 64 * 1024;
 const INITIAL_RTO_MS: u64 = 200;
 const MAX_RTO_MS: u64 = 3_200;
 const DUP_ACK_THRESHOLD: u8 = 3;
@@ -136,6 +139,9 @@ impl TcpSendState {
         if acked != 0 && acked <= self.in_flight() {
             let data = (acked as usize).min(self.unacked.len());
             self.unacked.drain(..data);
+            if self.unacked.is_empty() && self.unacked.capacity() > KEPT_UNACKED_CAPACITY {
+                self.unacked = VecDeque::new();
+            }
             self.una = ack;
             self.window = window;
             self.dup_acks = 0;
