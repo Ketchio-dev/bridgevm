@@ -20,6 +20,9 @@ enum T17DisplayClickWait {
             if let point, let owner = coveredBy(point) {
                 cover = owner
             } else if let point {
+                // The coverage query is synchronous too: an attempt it carried
+                // past the deadline must not click.
+                guard now() < deadline else { throw failure }
                 guard post(point) else {
                     throw T17Blocker(code: "ui-element-missing", detail: "display click events could not be created")
                 }

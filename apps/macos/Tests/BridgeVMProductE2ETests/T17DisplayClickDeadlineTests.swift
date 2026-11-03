@@ -58,6 +58,27 @@ final class T17DisplayClickDeadlineTests: XCTestCase {
         XCTAssertEqual(posts, 0)
     }
 
+    func testCoverageQueryEndingAtOrAfterDeadlineCannotPost() {
+        for elapsed in [1.0, 2.0] {
+            var clock = Date(timeIntervalSince1970: 0), posts = 0
+            XCTAssertThrowsError(try T17DisplayClick.click(at: spot, timeout: 1,
+                read: { self.target }, post: { _ in posts += 1; return true }, now: { clock },
+                pause: {}, coveredBy: { _ in clock = Date(timeIntervalSince1970: elapsed); return nil })) {
+                    self.assertTimeout($0)
+                }
+            XCTAssertEqual(posts, 0)
+        }
+    }
+
+    func testCoverageQueryEndingBeforeDeadlineStillPostsOnce() throws {
+        var clock = Date(timeIntervalSince1970: 0), posts = 0
+        try T17DisplayClick.click(at: spot, timeout: 1,
+            read: { self.target }, post: { _ in posts += 1; return true }, now: { clock },
+            pause: { XCTFail("uncovered ready read paused") },
+            coveredBy: { _ in clock = Date(timeIntervalSince1970: 0.9); return nil })
+        XCTAssertEqual(posts, 1)
+    }
+
     func testTopOwnerIsTheFrontmostWindowUnderThePoint() {
         func window(_ pid: Int, _ name: String, _ rect: CGRect, alpha: Double = 1) -> [String: Any] {
             [kCGWindowOwnerPID as String: pid, kCGWindowOwnerName as String: name, kCGWindowAlpha as String: alpha,
