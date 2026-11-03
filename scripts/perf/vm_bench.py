@@ -231,7 +231,9 @@ class BridgeVM(Engine):
         # The runner logs input commands without their payload (VERB <uuid>).
         label = " ".join(command.split(" ")[:2]) if command.split(" ")[0].endswith("INPUT") else command
         head, body, code = f"BVAGENT CMD {label} exit=", None, 0
-        for line in self._lines(deadline, poll=0.002):  # reply latency is measured; QEMU's socket is immediate
+        # Reply latency is measured and QEMU's socket is immediate: poll the log
+        # at 0.5 ms so the harness adds ~0.25 ms on average, not ~1 ms.
+        for line in self._lines(deadline, poll=0.0005):
             if body is None and line.startswith(head):
                 body, code = [], int(line[len(head):])
             elif body is not None and line == f"BVAGENT END {label}":
