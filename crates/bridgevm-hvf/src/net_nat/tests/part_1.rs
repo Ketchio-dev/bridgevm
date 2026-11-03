@@ -813,11 +813,11 @@ fn host_socket_tcp_poll_reuses_remove_scratch() {
         dst_ip: [127, 0, 0, 1],
         dst_port: listener.local_addr().unwrap().port(),
     };
-    let mut flow = TcpFlow::new(stream, 0, 0, 0);
+    let mut flow = TcpFlow::new(stream, 0, 0, u16::MAX, None, 0);
     flow.state = TcpProxyState::Established;
     flow.guest_fin = true;
-    flow.host_fin_sent = true;
-    flow.host_fin_acked = true;
+    flow.send.fin_sent = true;
+    flow.send.fin_acked = true;
     handler.tcp_flows.insert(key, flow);
 
     let mut replies = VecDeque::new();

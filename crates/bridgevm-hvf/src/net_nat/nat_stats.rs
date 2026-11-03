@@ -36,4 +36,9 @@ pub struct NatStats {
     pub tcp_read_again: u64,
     pub tcp_write_again: u64,
     pub socket_errors: u64,
+    /// Host-to-guest segments resent after duplicate or partial guest ACKs.
+    pub tcp_fast_retransmits: u64,
+    /// Host-to-guest segments resent after a retransmission timeout.
+    pub tcp_timeout_retransmits: u64,
+    pub tcp_zero_window_probes: u64,
 }

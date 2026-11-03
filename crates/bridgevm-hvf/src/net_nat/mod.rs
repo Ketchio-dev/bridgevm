@@ -7,12 +7,14 @@ mod nat_stats;
 mod queued_outbound;
 mod reply_queue;
 mod tcp_connection_state;
+mod tcp_send;
 
 pub use handle_outbound_ipv4::*;
 pub(crate) use icmp_reply_rejection_reason::*;
 pub use macaddr::*;
 pub use nat_stats::*;
 pub use queued_outbound::*;
+pub(crate) use tcp_send::*;
 
 #[cfg(test)]
 mod tests;

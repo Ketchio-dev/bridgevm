@@ -96,7 +96,20 @@ pub(crate) fn queue_tcp_reply(
     flags: u8,
     payload: &[u8],
 ) {
-    let Some(frame) = build_tcp_reply_frame(
+    let (source, destination) = tcp_reply_endpoints(guest_mac, key);
+    let Some(frame) = build_tcp_reply_frame(source, destination, seq, ack, flags, &[], payload)
+    else {
+        return;
+    };
+    reply_queue.push_back(frame);
+}
+
+/// The NAT side of a flow (the remote host behind the gateway MAC), then the guest.
+pub(crate) fn tcp_reply_endpoints(
+    guest_mac: MacAddr,
+    key: &TcpFlowKey,
+) -> (EthernetIpv4Endpoint, EthernetIpv4Endpoint) {
+    (
         EthernetIpv4Endpoint {
             mac: GATEWAY_MAC,
             network: Ipv4Endpoint::new(key.dst_ip, key.dst_port),
@@ -105,14 +118,7 @@ pub(crate) fn queue_tcp_reply(
             mac: guest_mac,
             network: Ipv4Endpoint::new(key.guest_ip, key.guest_port),
         },
-        seq,
-        ack,
-        flags,
-        payload,
-    ) else {
-        return;
-    };
-    reply_queue.push_back(frame);
+    )
 }
 
 pub(crate) fn evict_lru<K: Copy + Eq + std::hash::Hash, V: HasLastActivity>(

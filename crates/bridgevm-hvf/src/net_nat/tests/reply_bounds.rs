@@ -47,7 +47,7 @@ fn tcp_payload_past_the_write_backlog_is_left_unacknowledged() {
         dst_port: port,
     };
     let guest_next = 0x3000_0000u32;
-    let mut flow = TcpFlow::new(stream, guest_next, 0x10, 0);
+    let mut flow = TcpFlow::new(stream, guest_next, 0x10, u16::MAX, None, 0);
     flow.state = TcpProxyState::Established;
     flow.write_buf
         .extend(std::iter::repeat_n(0u8, MAX_TCP_WRITE_BACKLOG));
