@@ -39,7 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_wire import AgentWire  # noqa: E402
 from guest_bench_commands import (  # noqa: E402
-    HIGHER_IS_BETTER, SUITE, command_line, cursor_logger, desktop_mode, display_animation, net_download,
+    HIGHER_IS_BETTER, SUITE, audio_loop, command_line, cursor_logger, desktop_mode, display_animation, net_download,
     parse_bvbench,
     stall_under_flush, stall_idle)
 
@@ -192,6 +192,8 @@ class BridgeVM(Engine):
                     "--display-export-fb", str(self.display_fb)]
         epoch = calendar.timegm(time.strptime(self.args.guest_date, "%Y-%m-%dT%H:%M:%S"))
         env = dict(os.environ, BRIDGEVM_PREBUILT_PROBE=str(self.args.probe), BRIDGEVM_GUEST_RTC_EPOCH=str(epoch))
+        if self.args.audio:  # the HDA device without a host sink: silent on the host
+            env["BRIDGEVM_HDA"] = "1"
         env.update(item.split("=", 1) for item in self.args.bvm_env)
         runner_log = open(boot_dir / "runner.log", "w")
         self.t0 = time.monotonic()
@@ -441,6 +443,13 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                 record["shutdown_diag"] = text.strip()[-4000:]
             except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
                 record["errors"].append(f"shutdown-diag: {type(error).__name__}: {error}")
+        if args.audio:
+            try:
+                code, text = engine.run(command_line(audio_loop(1800)), time.monotonic() + 60)
+                if code != 0 or "BVAUDIO rv=0" not in text:
+                    record["errors"].append(f"audio: exit={code} {text.strip()[:200]}")
+            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                record["errors"].append(f"audio: {type(error).__name__}: {error}")
         if args.stall_idle:
             try:
                 _, text = engine.run(command_line(stall_idle(8000)), time.monotonic() + 120)
@@ -595,6 +604,8 @@ def main() -> None:
     r.add_argument("--stall", action="store_true", help="guest timer gaps while another thread flushes files")
     r.add_argument("--stall-idle", action="store_true", help="the same timer gaps with no other load")
     r.add_argument("--shutdown-diag", action="store_true", help="record the guest's own shutdown timing events")
+    r.add_argument("--audio", action="store_true",
+                   help="loop silent guest audio during the tests (BridgeVM: HDA on, which prints the platform lock holds)")
     r.add_argument("--settle-s", type=float, default=60)
     r.add_argument("--idle-s", type=float, default=30)
     r.add_argument("--ready-timeout", type=float, default=600)

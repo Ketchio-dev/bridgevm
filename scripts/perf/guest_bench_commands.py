@@ -159,6 +159,24 @@ def stall_idle(ms: int) -> str:
     )
 
 
+def audio_loop(seconds: int) -> str:
+    """Start a detached guest process that loops one second of silent 48 kHz stereo PCM for
+    `seconds`, so the guest's audio stream runs during the tests that follow. Returns at once."""
+    player = (
+        "$p = Join-Path $env:PUBLIC 'bvbench-silence.wav'; $w = New-Object IO.BinaryWriter([IO.File]::Create($p));"
+        " $a = [Text.Encoding]::ASCII; $w.Write($a.GetBytes('RIFF')); $w.Write([int]192036);"
+        " $w.Write($a.GetBytes('WAVEfmt ')); $w.Write([int]16); $w.Write([int16]1); $w.Write([int16]2);"
+        " $w.Write([int]48000); $w.Write([int]192000); $w.Write([int16]4); $w.Write([int16]16);"
+        " $w.Write($a.GetBytes('data')); $w.Write([int]192000); $w.Write((New-Object byte[] 192000)); $w.Close();"
+        f" $s = New-Object Media.SoundPlayer $p; $s.PlayLooping(); Start-Sleep -Seconds {seconds}; $s.Stop()"
+    )
+    encoded = base64.b64encode(player.encode("utf-16-le")).decode("ascii")
+    return (
+        "$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine="
+        f"'powershell -NoProfile -NonInteractive -EncodedCommand {encoded}'}}; 'BVAUDIO rv={{0}}' -f $r.ReturnValue"
+    )
+
+
 def display_animation(ms: int) -> str:
     """A borderless full-screen WinForms window repainting as fast as it can: a moving bar and a
     frame counter. Reports the guest's own render rate; the host side counts what reaches it."""
@@ -234,6 +252,7 @@ def _self_test() -> None:
     assert "'BVBENCH net-download-sha256-match {0} bool' -f [int]($h -eq '" + "ab" * 32 + "')" in net
     assert parse_bvbench("BVBENCH net-download-sha256-match 1 bool\r\n") == {"net-download-sha256-match": (1.0, "bool")}
     idle = stall_idle(8000)
+    assert "Win32_Process" in audio_loop(900) and len(command_line(audio_loop(900))) < 8000
     assert "BVBENCH stall-idle-max" in idle and "FileStream" not in idle and len(command_line(idle)) < 8000
     for native in (False, True):
         assert len(command_line(desktop_mode(native))) < 8000
