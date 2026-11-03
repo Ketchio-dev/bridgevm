@@ -181,6 +181,7 @@ pub(crate) fn installed_boot_launch_args(
         "--guest-resolution",
         args.guest_resolution.as_deref(),
     );
+    push_flag(&mut out, args.virtio_gpu, "--virtio-gpu");
     push_flag(&mut out, args.virtio_gpu_3d, "--virtio-gpu-3d");
     push_string_arg(
         &mut out,

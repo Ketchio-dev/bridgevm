@@ -209,6 +209,7 @@ final class HvfWindowsBackend: VMBackend {
             shareGuestDir: config.sharedFolderGuestPath,
             virtioNet: config.networkEnabled ?? true,
             virtioGpu3d: config.experimental3DAllowed ?? false,
+            virtioGpu2d: HvfEngineConfig.virtioGpu2d(for: config),
             nvmeBufferedIO: false,
             durableDiskWrites: config.durableDiskWritesEnabled ?? false,
             guestResolution: config.guestResolution,

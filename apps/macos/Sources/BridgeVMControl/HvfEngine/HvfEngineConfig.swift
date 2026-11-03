@@ -25,8 +25,11 @@ struct HvfEngineConfig: Equatable {
     /// Mac speakers via CoreAudio. On by default for parity with a real machine.
     var audioEnabled: Bool = true
     /// Enable the normal Windows display path proven by the live VirGL
-    /// evidence run. When disabled, the wrapper retains its legacy 2D device.
+    /// evidence run. When disabled, the display is ramfb (plus `virtioGpu2d`).
     var virtioGpu3d: Bool
+    /// Attach the 2D virtio-gpu display device (PCI 1AF4:1050) for a guest with
+    /// the signed virtio-win display driver; ramfb stays. `virtioGpu3d` wins.
+    var virtioGpu2d: Bool = false
     var nvmeBufferedIO: Bool
     /// The user's opt-in: every guest flush waits for F_FULLFSYNC instead of
     /// the ordered default (F_BARRIERFSYNC, durable within about a second).
@@ -86,6 +89,8 @@ struct HvfEngineConfig: Equatable {
                 "--virtio-gpu-device-id", "1050",
                 "--gpu-trace-protocol", "virgl"
             ])
+        } else if virtioGpu2d {
+            args.append("--virtio-gpu")
         }
         if nvmeBufferedIO { args.append("--nvme-buffered-io") }
         if durableDiskWrites { args.append("--nvme-durable-flush") }
@@ -183,6 +188,8 @@ struct HvfEngineConfig: Equatable {
                 "--virtio-gpu-device-id", "1050",
                 "--gpu-trace-protocol", "virgl"
             ])
+        } else if virtioGpu2d {
+            args.append("--virtio-gpu")
         }
         return args
     }
