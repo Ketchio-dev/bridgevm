@@ -3,7 +3,7 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{has_virtio_gpu, interval_from, ramfb_interval_from, FramePublisher};
+use super::{interval_from, ramfb_interval_from, FramePublisher, VIRTIO_IDLE};
 use bridgevm_hvf::display_fb::DisplayFramebuffer;
 use bridgevm_hvf::dtb::VirtFdtConfig;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
@@ -129,13 +129,76 @@ fn publishes_an_xrgb8888_ramfb_frame_with_the_bvfb_header_and_pixels() {
     cleanup(&path);
 }
 
+/// The ramfb publisher and a writer standing in for the virtio-gpu device's,
+/// sharing one file as `VirtPlatform::display_framebuffer` arranges.
+fn with_device(path: &Path) -> (FramePublisher, DisplayFramebuffer) {
+    let device = DisplayFramebuffer::at_path(path);
+    (FramePublisher::new(device.share()), device)
+}
+
+/// 2x2 virtio frame of `byte`, a different geometry from the ramfb one.
+fn virtio_frame(device: &mut DisplayFramebuffer, byte: u8) {
+    device
+        .publish(2, 2, 8, DRM_FORMAT_XRGB8888, &[byte; 16])
+        .unwrap();
+}
+
 #[test]
-fn device_presence_not_scanout_presence_decides_ownership() {
-    let plain = VirtPlatform::new(VirtFdtConfig::default());
-    assert!(!has_virtio_gpu(&plain));
-    let gpu = gpu_platform();
-    assert!(gpu.virtio_gpu_scanout().is_none(), "no scanout set yet");
-    assert!(has_virtio_gpu(&gpu));
+fn ramfb_frames_publish_while_the_device_has_no_scanout() {
+    let path = scratch_path();
+    let (mut publisher, mut device) = with_device(&path);
+    let mut ram = ram_with(&frame(1));
+    publisher.note_virtio_scanout(false);
+    assert!(publisher.publish_changed(Some(config()), &ram));
+    virtio_frame(&mut device, 0x11);
+    assert!(ram.write_bytes(FB_ADDR, &[0xee]));
+    assert!(publisher.publish_changed(Some(config()), &ram), "unbound: ramfb wins");
+    let (header, sequence, pixels) = read_fb(&path);
+    assert_eq!((header[2], sequence), (4, 6), "one sequence, +2 per frame");
+    assert_eq!(pixels[0], 0xee);
+    cleanup(&path);
+}
+
+#[test]
+fn a_presenting_device_holds_off_ramfb_changes_until_it_idles() {
+    let path = scratch_path();
+    let (publisher, mut device) = with_device(&path);
+    let mut publisher = publisher.with_watch(&IDLE_WATCH);
+    let mut ram = ram_with(&frame(1));
+    assert!(publisher.publish_changed(Some(config()), &ram));
+    publisher.note_virtio_scanout(true);
+    virtio_frame(&mut device, 0x22);
+    assert!(ram.write_bytes(FB_ADDR, &[0xee]));
+    assert!(IDLE_WATCH.take_write_fault(FB_ADDR, 0x9200_004f));
+    assert!(!publisher.publish_changed(Some(config()), &ram), "within 1 s");
+    assert_eq!(read_fb(&path).1, 4, "the device's frame stays");
+    std::thread::sleep(VIRTIO_IDLE);
+    assert!(publisher.publish_changed(Some(config()), &ram), "the device idled");
+    let (header, sequence, pixels) = read_fb(&path);
+    assert_eq!((header[2], sequence, pixels[0]), (4, 6, 0xee));
+    IDLE_WATCH.release();
+    cleanup(&path);
+}
+
+#[test]
+fn losing_the_device_scanout_keeps_its_frame_until_ramfb_changes() {
+    let path = scratch_path();
+    let (mut publisher, mut device) = with_device(&path);
+    let mut ram = ram_with(&frame(1));
+    assert!(publisher.publish_changed(Some(config()), &ram));
+    publisher.note_virtio_scanout(true);
+    virtio_frame(&mut device, 0x33);
+    publisher.note_virtio_scanout(false);
+    assert!(!publisher.publish_changed(Some(config()), &ram), "unchanged ramfb");
+    let (header, sequence, pixels) = read_fb(&path);
+    let device_frame = (header[2], sequence, &pixels[..16]);
+    assert_eq!(device_frame, (2, 4, &[0x33; 16][..]), "the device's frame stays");
+    assert!(ram.write_bytes(FB_ADDR, &frame(7)));
+    assert!(publisher.publish_changed(Some(config()), &ram), "ramfb changed");
+    let (header, sequence, pixels) = read_fb(&path);
+    assert_eq!(header, [0x4256_4642, 1, 4, 2, 16, DRM_FORMAT_XRGB8888]);
+    assert_eq!((sequence, &pixels[..32]), (6, &frame(7)[..]), "whole");
+    cleanup(&path);
 }
 
 #[test]
@@ -170,6 +233,8 @@ fn allow(_: u64, _: u64, _: u64) -> bool {
 }
 
 static WATCH: crate::ramfb_dirty_watch::FbWatch = crate::ramfb_dirty_watch::FbWatch::new(allow);
+static IDLE_WATCH: crate::ramfb_dirty_watch::FbWatch =
+    crate::ramfb_dirty_watch::FbWatch::new(allow);
 
 /// Guest memory that counts how often the exporter reads it.
 struct CountingRam {

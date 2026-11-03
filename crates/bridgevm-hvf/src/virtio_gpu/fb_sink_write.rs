@@ -1,9 +1,11 @@
 //! Framebuffer mmap allocation and full or damaged-row publication.
 
-use super::{FbSink, Rect};
+use super::{FbShared, FbSink, Rect};
 use std::fs::OpenOptions;
 use std::os::unix::io::AsRawFd;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::time::Instant;
 
 const HEADER_LEN: usize = 64;
 const PIXEL_BYTES: usize = 4;
@@ -36,9 +38,12 @@ impl FbSink {
         }
     }
 
-    /// Publish one frame. `Ok(false)`: the geometry overflows or `bytes` is
-    /// shorter than `height * stride`, so nothing changed. `Err`: the file
-    /// could not be created, sized or mapped. Logging is the caller's choice.
+    /// Publish one frame under the lock every writer of the file shares.
+    /// Damage is applied only on top of this writer's own previous frame;
+    /// after another writer's frame the whole frame is copied. `Ok(false)`:
+    /// the geometry overflows or `bytes` is shorter than `height * stride`, so
+    /// nothing changed. `Err`: the file could not be created, sized or mapped.
+    /// Logging is the caller's choice.
     pub(crate) fn write_inner(
         &mut self,
         width: u32,
@@ -57,23 +62,23 @@ impl FbSink {
         if bytes.len() < frame_len {
             return Ok(false);
         }
-        let new_mapping = self.ensure_mapping(needed)?;
-        let same_layout = !new_mapping && self.layout_matches(width, height, stride, fourcc);
-        self.begin_frame(width, height, stride, fourcc);
-        if same_layout {
-            if let Some(rect) = damage {
-                self.copy_damage(bytes, width, height, stride, rect);
-            } else {
-                self.copy_full(bytes, frame_len);
-            }
-        } else {
-            self.copy_full(bytes, frame_len);
+        let shared = Arc::clone(&self.shared);
+        let mut shared = FbShared::lock(&shared);
+        let new_mapping = self.ensure_mapping(needed, &mut shared.seq)?;
+        let ours = matches!(shared.newest, Some((writer, _)) if writer == self.writer);
+        let same_layout =
+            ours && !new_mapping && self.layout_matches(width, height, stride, fourcc);
+        self.begin_frame(&mut shared.seq, width, height, stride, fourcc);
+        match damage.filter(|_| same_layout) {
+            Some(rect) => self.copy_damage(bytes, width, height, stride, rect),
+            None => self.copy_full(bytes, frame_len),
         }
-        self.finish_frame();
+        self.finish_frame(&mut shared.seq);
+        shared.newest = Some((self.writer, Instant::now()));
         Ok(true)
     }
 
-    fn ensure_mapping(&mut self, needed: usize) -> std::io::Result<bool> {
+    fn ensure_mapping(&mut self, needed: usize, seq: &mut u64) -> std::io::Result<bool> {
         if !self.map.is_null() && self.capacity >= needed {
             return Ok(false);
         }
@@ -114,11 +119,11 @@ impl FbSink {
         self.map_len = needed;
         self.capacity = needed;
         // Continue an earlier writer's sequence so the reader never skips our first frame.
-        if self.seq == 0
+        if *seq == 0
             && existing >= HEADER_LEN as u64
             && unsafe { read_u32(self.map, 0) } == 0x4256_4642
         {
-            self.seq = self.sequence().load(Ordering::Acquire) & !1;
+            *seq = self.sequence().load(Ordering::Acquire) & !1;
         }
         Ok(true)
     }
@@ -144,9 +149,9 @@ impl FbSink {
         }
     }
 
-    fn begin_frame(&mut self, width: u32, height: u32, stride: u32, fourcc: u32) {
-        self.seq = self.seq.wrapping_add(1);
-        self.sequence().store(self.seq, Ordering::Release);
+    fn begin_frame(&mut self, seq: &mut u64, width: u32, height: u32, stride: u32, fourcc: u32) {
+        *seq = seq.wrapping_add(1);
+        self.sequence().store(*seq, Ordering::Release);
         std::sync::atomic::fence(Ordering::Release);
         let mut header = [0u8; 24];
         for (slot, value) in
@@ -188,11 +193,11 @@ impl FbSink {
         }
     }
 
-    fn finish_frame(&mut self) {
+    fn finish_frame(&mut self, seq: &mut u64) {
         self.stamp_publish_time();
         std::sync::atomic::fence(Ordering::Release);
-        self.seq = self.seq.wrapping_add(1);
-        self.sequence().store(self.seq, Ordering::Release);
+        *seq = seq.wrapping_add(1);
+        self.sequence().store(*seq, Ordering::Release);
     }
 }
 

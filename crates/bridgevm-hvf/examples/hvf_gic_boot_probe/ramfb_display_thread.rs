@@ -4,10 +4,11 @@
 //! This thread paces itself, reads guest RAM through the existing host
 //! mapping without any lock (a frame torn by a guest mid-draw is replaced by
 //! the next one), and takes the platform lock only to copy the 28-byte ramfb
-//! config, with `try_lock`, so it never waits behind a vCPU; that copy is a
-//! hold the platform lock record charges (platform_lock_holds.rs). A running
-//! exporter counts its tick lateness and publish intervals and leaves its
-//! `ramfb display timing:` record with the platform (ramfb_display_timing.rs).
+//! config and whether a virtio-gpu scanout is bound, with `try_lock`, so it
+//! never waits behind a vCPU; that copy is a hold the platform lock record
+//! charges (platform_lock_holds.rs). A running exporter counts its tick
+//! lateness and publish intervals and leaves its `ramfb display timing:`
+//! record with the platform (ramfb_display_timing.rs).
 //! It exports when the app's display tick asks for a frame, and on its own
 //! deadline only when nobody asks (ramfb_display_loop.rs).
 
@@ -27,7 +28,7 @@ use pull::export_loop;
 use timing::SharedTiming;
 use wake::ExportWake;
 
-use super::{has_virtio_gpu, ramfb_export_interval, FramePublisher};
+use super::{ramfb_export_interval, FramePublisher};
 use crate::platform_lock_holds::try_lock_platform;
 use crate::platform_lock_holds::HoldSite;
 use crate::{MappedRam, VirtPlatform};
@@ -39,25 +40,38 @@ use bridgevm_hvf::ramfb::RamfbConfig;
 /// Where the thread learns the guest-programmed ramfb geometry.
 trait ConfigSource: Send + 'static {
     fn poll(&mut self) -> Option<RamfbConfig>;
+    /// Whether the virtio-gpu device had a bound scanout at the last poll.
+    fn virtio_scanout_bound(&self) -> bool {
+        false
+    }
 }
 
-/// `VirtPlatform::ramfb_config`, polled once per tick. A busy lock (a vCPU
-/// mid-exit, the final report) keeps the last value rather than waiting; the
-/// config changes only when firmware programs ramfb or the platform resets.
+/// `VirtPlatform::ramfb_config` and whether a virtio-gpu scanout is bound,
+/// polled once per tick. A busy lock (a vCPU mid-exit, the final report)
+/// keeps the last values rather than waiting; both change only when the
+/// guest programs a display or the platform resets.
 struct PlatformConfig {
     platform: Arc<Mutex<VirtPlatform>>,
     last: Option<RamfbConfig>,
+    virtio_bound: bool,
 }
 
 impl ConfigSource for PlatformConfig {
     fn poll(&mut self) -> Option<RamfbConfig> {
         match try_lock_platform(&self.platform, HoldSite::Display) {
-            Ok(platform) => self.last = platform.ramfb_config(),
+            Ok(platform) => {
+                self.last = platform.ramfb_config();
+                self.virtio_bound = platform.virtio_gpu_scanout().is_some();
+            }
             Err(TryLockError::WouldBlock) => {}
             // A vCPU panicked while holding the platform: stop exporting.
             Err(TryLockError::Poisoned(_)) => self.last = None,
         }
         self.last
+    }
+
+    fn virtio_scanout_bound(&self) -> bool {
+        self.virtio_bound
     }
 }
 
@@ -75,7 +89,13 @@ impl RamfbDisplayThread {
     /// `ram`/`len` are the live guest-RAM mapping at `machine::RAM_BASE`.
     pub fn start(platform: &Arc<Mutex<VirtPlatform>>, ram: *mut u8, len: usize) -> Self {
         let ram = ram as usize;
-        let target = DisplayFramebuffer::from_env();
+        // With a virtio-gpu device, publish through the device's own writer:
+        // one lock and one sequence for both producers of the file.
+        let target = platform.lock().ok().and_then(|platform| {
+            platform
+                .display_framebuffer()
+                .or_else(DisplayFramebuffer::from_env)
+        });
         Self::start_with(platform, target, ramfb_export_interval(), move || {
             MappedRam {
                 base: machine::RAM_BASE,
@@ -91,28 +111,17 @@ impl RamfbDisplayThread {
         interval: Duration,
         memory: impl FnOnce() -> M + Send + 'static,
     ) -> Self {
+        if platform.is_poisoned() {
+            eprintln!("ramfb display export: off, platform mutex poisoned");
+            return Self::inert();
+        }
         let Some(target) = target else {
             return Self::inert();
         };
-        // Device presence is fixed when the platform is built, so this one
-        // check keeps the thread away for the whole process. The device's
-        // own sink owns the file: a second writer with its own sequence
-        // counter would corrupt it. Unknown ownership fails closed.
-        let path = target.path().display();
-        match platform.lock().map(|platform| has_virtio_gpu(&platform)) {
-            Ok(false) => {}
-            Ok(true) => {
-                println!("ramfb display export: off, virtio-gpu owns {path}");
-                return Self::inert();
-            }
-            Err(_) => {
-                eprintln!("ramfb display export: off, platform mutex poisoned");
-                return Self::inert();
-            }
-        }
         let source = PlatformConfig {
             platform: Arc::clone(platform),
             last: None,
+            virtio_bound: false,
         };
         let thread = Self::spawn(target, interval, source, memory);
         if thread.handle.is_some() {

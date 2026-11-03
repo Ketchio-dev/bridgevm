@@ -49,7 +49,9 @@ pub(super) fn export_loop(
             },
         };
         let tick = Instant::now();
-        let fresh = publisher.publish_changed(source.poll(), mem);
+        let config = source.poll();
+        publisher.note_virtio_scanout(source.virtio_scanout_bound());
+        let fresh = publisher.publish_changed(config, mem);
         published += u64::from(fresh);
         polls += 1;
         let done = Instant::now();

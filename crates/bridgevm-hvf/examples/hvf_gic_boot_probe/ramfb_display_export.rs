@@ -1,13 +1,21 @@
 //! Publishes ramfb frames to the app's BVFB display file
-//! (`BRIDGEVM_DISPLAY_EXPORT_FB`) when the machine has no virtio-gpu device,
-//! which is the supported 3D-off configuration: Windows then draws into the
-//! GOP framebuffer that ramfb describes, and nothing else writes the file.
+//! (`BRIDGEVM_DISPLAY_EXPORT_FB`). Windows draws into the GOP framebuffer
+//! that ramfb describes whenever no display driver presents elsewhere:
+//! firmware, bootmgr, BitLocker, logon before a driver, Safe Mode.
 //! A dedicated host thread (`ramfb_display_thread.rs`) takes the frames; no
 //! vCPU copies them, and the platform lock is never held across the copy.
+//!
+//! With a virtio-gpu device both write the file through one shared writer
+//! (one lock, one sequence). The device's frames win while its scanout is
+//! bound and it published within [`VIRTIO_IDLE`]; otherwise changed ramfb
+//! frames are published. Losing the scanout publishes nothing by itself: the
+//! device's last frame stays until the ramfb frame changes. Windows changes it
+//! whenever it draws there (the boot spinner after ExitBootServices, Basic
+//! Display after the driver goes), and the stale ramfb frame left when the
+//! driver unloads at shutdown is never shown.
 
 use std::time::Duration;
 
-use crate::VirtPlatform;
 use bridgevm_hvf::display_fb::DisplayFramebuffer;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::ramfb::RamfbConfig;
@@ -22,6 +30,11 @@ pub use thread::RamfbDisplayThread;
 /// buffer is allocated before guest RAM backs the range. 64 MiB is 4096x4096
 /// XRGB8888; the firmware's ramfb modes are far smaller.
 const MAX_FRAME_BYTES: usize = 64 << 20;
+
+/// A bound virtio-gpu scanout that published within this long owns the
+/// display. A bound scanout left idle longer is stale (the firmware's, while
+/// bootmgr or BitLocker draw on ramfb), so changed ramfb frames win.
+const VIRTIO_IDLE: Duration = Duration::from_secs(1);
 
 /// Cadence shared with the PPM exporter: `BRIDGEVM_DISPLAY_EXPORT_MS`, 100 ms
 /// to 60 s, otherwise 500 ms.
@@ -56,10 +69,11 @@ fn bounded_ms(value: Option<&str>, min_ms: u64) -> Option<Duration> {
         .then(|| Duration::from_millis(ms))
 }
 
-/// The display file's single writer, owned by the export thread for the
-/// whole process: its sequence keeps advancing across in-process guest
-/// resets. A recreated process starts a new writer, which reopens the file in
-/// place on its first frame, never shrinking it, as the virtio-gpu sink does.
+/// The export thread's writer of the display file for the whole process (a
+/// share of the virtio-gpu device's writer when the device exists): its
+/// sequence keeps advancing across in-process guest resets. A recreated
+/// process starts a new writer, which reopens the file in place on its first
+/// frame, never shrinking it, as the virtio-gpu sink does.
 struct FramePublisher {
     target: DisplayFramebuffer,
     published: Option<(RamfbConfig, Vec<u8>)>,
@@ -67,6 +81,8 @@ struct FramePublisher {
     failure_logged: bool,
     /// Guest write tracking; frames are compared every tick without it.
     watch: Option<&'static FbWatch>,
+    /// The virtio-gpu device had a bound scanout at the last poll.
+    virtio_bound: bool,
 }
 
 impl FramePublisher {
@@ -77,7 +93,23 @@ impl FramePublisher {
             scratch: Vec::new(),
             failure_logged: false,
             watch: None,
+            virtio_bound: false,
         }
+    }
+
+    /// Whether the virtio-gpu device has a bound scanout, once per tick.
+    fn note_virtio_scanout(&mut self, bound: bool) {
+        self.virtio_bound = bound;
+    }
+
+    /// The device presents: its scanout is bound and its frame, newer than
+    /// ours, is younger than [`VIRTIO_IDLE`].
+    fn virtio_presenting(&self) -> bool {
+        self.virtio_bound
+            && self
+                .target
+                .other_frame_age()
+                .is_some_and(|age| age < VIRTIO_IDLE)
     }
 
     /// Read guest pixels only after the guest wrote them.
@@ -87,8 +119,13 @@ impl FramePublisher {
     }
 
     /// Publish the guest's current frame if its bytes or geometry changed
-    /// since the last published one; true when a frame was published.
+    /// since the last published one and the virtio-gpu device is not
+    /// presenting; true when a frame was published.
     fn publish_changed(&mut self, config: Option<RamfbConfig>, mem: &dyn GuestMemoryMut) -> bool {
+        // Before the watch: a guest write seen now stays pending for later.
+        if self.virtio_presenting() {
+            return false;
+        }
         // Inactive, not XRGB8888, stride below the row, or oversized: skip.
         let frame = config
             .and_then(|config| Some((config, config.framebuffer_len().ok()?)))
@@ -166,12 +203,6 @@ impl FramePublisher {
         // bytes. No Rust reference to guest memory is formed while vCPUs write it.
         unsafe { libc::memcmp(live.cast(), bytes.as_ptr().cast(), len) == 0 }
     }
-}
-
-/// `virtio_gpu_resolution` is `Some` whenever the device exists, before the
-/// guest has set any scanout, which is the ownership boundary that matters.
-fn has_virtio_gpu(platform: &VirtPlatform) -> bool {
-    platform.virtio_gpu_resolution().is_some()
 }
 
 #[cfg(test)]

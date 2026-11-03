@@ -250,22 +250,34 @@ fn inert_without_a_display_path() {
 }
 
 #[test]
-fn inert_for_the_process_when_the_machine_has_a_virtio_gpu_device() {
-    let path = scratch_path();
-    let target = || Some(DisplayFramebuffer::at_path(&path));
+fn a_machine_with_a_virtio_gpu_device_still_exports_ramfb_frames() {
     let gpu = Arc::new(Mutex::new(gpu_platform()));
+    let mut source = PlatformConfig {
+        platform: Arc::clone(&gpu),
+        last: None,
+        virtio_bound: true,
+    };
+    assert_eq!(source.poll(), None);
+    assert!(!source.virtio_scanout_bound(), "the device exists, no scanout");
+    let path = scratch_path();
     let ran = Arc::new(AtomicBool::new(false));
-    let thread = RamfbDisplayThread::start_with(&gpu, target(), TICK, watched_memory(&ran));
-    assert!(thread.handle.is_none(), "the virtio-gpu device owns the file");
-    std::thread::sleep(TICK * 4);
-    assert!(!ran.load(Ordering::SeqCst) && !path.exists());
-    // The same call on a machine without the device does start the writer.
-    let plain = Arc::new(Mutex::new(VirtPlatform::new(VirtFdtConfig::default())));
-    let thread = RamfbDisplayThread::start_with(&plain, target(), TICK, watched_memory(&ran));
+    let target = Some(DisplayFramebuffer::at_path(&path));
+    let thread = RamfbDisplayThread::start_with(&gpu, target, TICK, watched_memory(&ran));
     assert!(thread.handle.is_some());
-    wait_for("the plain machine's writer", || ran.load(Ordering::SeqCst));
+    wait_for("the writer", || ran.load(Ordering::SeqCst));
     drop(thread);
-    assert!(!path.exists(), "no ramfb programmed, nothing published");
+    // Through the thread: ramfb and device frames alternate on one sequence.
+    let ram = SharedRam::with(&frame(1));
+    let mut device = DisplayFramebuffer::at_path(&path);
+    let source = SharedConfig(Arc::new(Mutex::new((Some(config()), 0))));
+    let held = ram.clone();
+    let thread = RamfbDisplayThread::spawn(device.share(), TICK, source, || HeldRam(held));
+    wait_for("the ramfb frame", || published(&path) == Some((2, frame(1))));
+    device.publish(4, 2, 16, config().fourcc, &frame(40)).unwrap();
+    assert_eq!(published(&path), Some((4, frame(40))));
+    ram.draw(&frame(9));
+    wait_for("the next ramfb frame", || published(&path) == Some((6, frame(9))));
+    drop(thread);
     cleanup(&path);
 }
 
@@ -275,6 +287,7 @@ fn a_platform_poll_never_waits_for_a_lock_holder_and_fails_closed() {
     let mut source = PlatformConfig {
         platform: Arc::clone(&platform),
         last: Some(config()),
+        virtio_bound: false,
     };
     {
         let _vcpu = platform.lock().unwrap();
