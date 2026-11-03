@@ -142,6 +142,23 @@ def stall_under_flush(ms: int) -> str:
     )
 
 
+def stall_idle(ms: int) -> str:
+    """The same Sleep(1) loop as `stall_under_flush` with no writer: how late an otherwise idle
+    guest's timer wakes a thread. Separates the timer and wake path from disk interference."""
+    return (
+        "Add-Type -TypeDefinition 'using System; using System.Collections.Generic; using System.Diagnostics;"
+        " using System.Runtime.InteropServices; using System.Threading; public static class BvStallIdle {"
+        " [DllImport(\"winmm.dll\")] static extern uint timeBeginPeriod(uint p);"
+        " public static string Run(int ms) { timeBeginPeriod(1); Thread.Sleep(200);"
+        " var gaps = new List<double>(); var sw = Stopwatch.StartNew(); double last = 0;"
+        " while (sw.ElapsedMilliseconds < ms) { Thread.Sleep(1); double now = sw.Elapsed.TotalMilliseconds; gaps.Add(now - last); last = now; }"
+        " gaps.Sort(); int over = 0; foreach (var g in gaps) { if (g > 5) { over++; } }"
+        " return string.Format(\"BVBENCH stall-idle-max {0:F1} ms\\nBVBENCH stall-idle-p99 {1:F1} ms\\nBVBENCH stall-idle-over-5ms {2} count\","
+        " gaps[gaps.Count - 1], gaps[(int)(gaps.Count * 0.99)], over); } }';"
+        f"[BvStallIdle]::Run({ms})"
+    )
+
+
 def display_animation(ms: int) -> str:
     """A borderless full-screen WinForms window repainting as fast as it can: a moving bar and a
     frame counter. Reports the guest's own render rate; the host side counts what reaches it."""
@@ -216,6 +233,8 @@ def _self_test() -> None:
     net = net_download("http://h/blob", "ab" * 32)
     assert "'BVBENCH net-download-sha256-match {0} bool' -f [int]($h -eq '" + "ab" * 32 + "')" in net
     assert parse_bvbench("BVBENCH net-download-sha256-match 1 bool\r\n") == {"net-download-sha256-match": (1.0, "bool")}
+    idle = stall_idle(8000)
+    assert "BVBENCH stall-idle-max" in idle and "FileStream" not in idle and len(command_line(idle)) < 8000
     for native in (False, True):
         assert len(command_line(desktop_mode(native))) < 8000
         assert ("[BvDm]::ChangeDisplaySettingsEx(" in desktop_mode(native)) == native
