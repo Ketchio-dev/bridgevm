@@ -346,6 +346,9 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
         match ec {
             EC_DATA_ABORT => {
                 let ipa = unsafe { (*exit).exception.physical_address };
+                if crate::ramfb_dirty_watch::FB_WATCH.take_write_fault(ipa, esr) {
+                    continue;
+                }
                 trace_isv0_data_abort(esr, pc, ipa);
                 let access = match DataAbort::decode(esr) {
                     Ok(access) => access,

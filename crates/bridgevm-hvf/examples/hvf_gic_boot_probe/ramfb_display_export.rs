@@ -12,6 +12,8 @@ use bridgevm_hvf::display_fb::DisplayFramebuffer;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::ramfb::RamfbConfig;
 
+use crate::ramfb_dirty_watch::FbWatch;
+
 #[path = "ramfb_display_thread.rs"]
 mod thread;
 pub use thread::RamfbDisplayThread;
@@ -63,6 +65,8 @@ struct FramePublisher {
     published: Option<(RamfbConfig, Vec<u8>)>,
     scratch: Vec<u8>,
     failure_logged: bool,
+    /// Guest write tracking; frames are compared every tick without it.
+    watch: Option<&'static FbWatch>,
 }
 
 impl FramePublisher {
@@ -72,17 +76,31 @@ impl FramePublisher {
             published: None,
             scratch: Vec::new(),
             failure_logged: false,
+            watch: None,
         }
+    }
+
+    /// Read guest pixels only after the guest wrote them.
+    fn with_watch(mut self, watch: &'static FbWatch) -> Self {
+        self.watch = Some(watch);
+        self
     }
 
     /// Publish the guest's current frame if its bytes or geometry changed
     /// since the last published one; true when a frame was published.
     fn publish_changed(&mut self, config: Option<RamfbConfig>, mem: &dyn GuestMemoryMut) -> bool {
         // Inactive, not XRGB8888, stride below the row, or oversized: skip.
-        let Some((config, len)) = config
+        let frame = config
             .and_then(|config| Some((config, config.framebuffer_len().ok()?)))
-            .filter(|(_, len)| *len <= MAX_FRAME_BYTES)
-        else {
+            .filter(|(_, len)| *len <= MAX_FRAME_BYTES);
+        if let Some(watch) = self.watch {
+            let range = frame.map(|(config, len)| (config.addr, len as u64));
+            let current = matches!((&self.published, frame), (Some((p, _)), Some((c, _))) if *p == c);
+            if !watch.may_have_changed(range) && current {
+                return false;
+            }
+        }
+        let Some((config, len)) = frame else {
             return false;
         };
         if self.unchanged_in_place(config, len, mem) {
@@ -112,6 +130,9 @@ impl FramePublisher {
                 true
             }
             Err(error) => {
+                if let Some(watch) = self.watch {
+                    watch.mark_dirty();
+                }
                 if !self.failure_logged {
                     self.failure_logged = true;
                     eprintln!(

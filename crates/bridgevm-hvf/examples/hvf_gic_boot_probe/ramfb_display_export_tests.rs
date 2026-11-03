@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -161,6 +162,55 @@ fn unchanged_frames_do_not_advance_the_sequence() {
     assert!(publisher.publish_changed(Some(narrower), &ram));
     let (header, sequence, _) = read_fb(&path);
     assert_eq!((header[2], sequence), (2, 8), "same bytes, new geometry");
+    cleanup(&path);
+}
+
+fn allow(_: u64, _: u64, _: u64) -> bool {
+    true
+}
+
+static WATCH: crate::ramfb_dirty_watch::FbWatch = crate::ramfb_dirty_watch::FbWatch::new(allow);
+
+/// Guest memory that counts how often the exporter reads it.
+struct CountingRam {
+    ram: TestRam,
+    reads: Cell<usize>,
+}
+
+impl GuestMemoryMut for CountingRam {
+    fn write_bytes(&mut self, gpa: u64, data: &[u8]) -> bool {
+        self.ram.write_bytes(gpa, data)
+    }
+
+    fn read_bytes(&self, gpa: u64, len: usize) -> Option<Vec<u8>> {
+        self.reads.set(self.reads.get() + 1);
+        self.ram.read_bytes(gpa, len)
+    }
+
+    fn host_ptr(&self, gpa: u64, len: usize) -> Option<*mut u8> {
+        self.reads.set(self.reads.get() + 1);
+        self.ram.host_ptr(gpa, len)
+    }
+}
+
+#[test]
+fn a_watched_frame_is_read_only_after_a_guest_write() {
+    let path = scratch_path();
+    let mut publisher = publisher(&path).with_watch(&WATCH);
+    let mut ram = CountingRam {
+        ram: ram_with(&frame(1)),
+        reads: Cell::new(0),
+    };
+    assert!(publisher.publish_changed(Some(config()), &ram));
+    let reads = ram.reads.get();
+    assert!(!publisher.publish_changed(Some(config()), &ram));
+    assert_eq!(ram.reads.get(), reads, "no guest write, no read");
+    assert!(ram.write_bytes(FB_ADDR + 3, &[0xab]));
+    assert!(WATCH.take_write_fault(FB_ADDR + 3, 0x9200_004f));
+    assert!(publisher.publish_changed(Some(config()), &ram));
+    assert_eq!(read_fb(&path).2[3], 0xab);
+    assert!(!publisher.publish_changed(Some(config()), &ram));
+    WATCH.release();
     cleanup(&path);
 }
 
