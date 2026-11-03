@@ -47,6 +47,9 @@ ROOT = Path(__file__).resolve().parents[2]
 QEMU_FIRMWARE = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
 QEMU_VARS_TEMPLATE = "/opt/homebrew/share/qemu/edk2-arm-vars.fd"
 SHUTDOWN = "shutdown.exe /p /f"
+# The probe prints this at PSCI SYSTEM_OFF, before it persists media and reports the stop.
+GUEST_OFF = "guest powered off; host teardown follows"
+SHUTDOWN_TIMEOUT_S = 240
 
 
 def clone(src: Path, dst: Path) -> None:
@@ -261,7 +264,7 @@ class BridgeVM(Engine):
         """PSCI SYSTEM_OFF reached the VMM; the rest of shutdown_ms is host teardown."""
         try:
             for line in self._lines(time.monotonic() + 0.3):
-                if line.startswith("stop: PSCI 0x84000008"):
+                if line == GUEST_OFF:
                     return True
         except (TimeoutError, RuntimeError):
             pass
@@ -479,17 +482,22 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
             record.setdefault("bench_wall_s", {})[name] = round(time.monotonic() - started, 2)
         stop_started = time.monotonic()
         engine.request_shutdown()
-        while engine.vmm_alive() and time.monotonic() < stop_started + 240:
+        while engine.vmm_alive() and time.monotonic() < stop_started + SHUTDOWN_TIMEOUT_S:
             if "guest_off_ms" not in record and getattr(engine, "guest_off_seen", lambda: False)():
                 record["guest_off_ms"] = round((time.monotonic() - stop_started) * 1000)
             time.sleep(0.1)
-        record["shutdown_ms"] = round((time.monotonic() - stop_started) * 1000)
-        record["clean_exit"] = engine.stop(time.monotonic() + 240)
+        if engine.vmm_alive():  # no shutdown time: the shutdown never completed
+            record["errors"].append(f"shutdown: the VMM still ran {SHUTDOWN_TIMEOUT_S} s after the request")
+        else:
+            record["shutdown_ms"] = round((time.monotonic() - stop_started) * 1000)
+        record["clean_exit"] = engine.stop(time.monotonic() + SHUTDOWN_TIMEOUT_S)
     except BaseException as error:
         record["errors"].append(f"boot: {type(error).__name__}: {error}")
         if getattr(engine, "proc", None) is not None and engine.proc.poll() is None:
             os.killpg(engine.proc.pid, signal.SIGKILL)
             engine.proc.wait()
+        if not isinstance(error, Exception):  # SIGTERM (SystemExit) or Ctrl-C ends the campaign
+            raise
     record["loadavg_end"] = os.getloadavg()
     return record
 
@@ -513,7 +521,7 @@ def identity(args) -> dict:
 
 
 def run(args) -> None:
-    out = Path(args.out)
+    out = Path(args.out).resolve()  # the BridgeVM runner starts in ROOT
     results = {"identity": identity(args), "boots": []}
     out.mkdir(parents=True)
     disk, vars_fd = out / "disk.raw", out / "vars.fd"

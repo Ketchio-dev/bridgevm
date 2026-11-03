@@ -802,6 +802,10 @@ pub(crate) fn run() -> ExitCode {
             // persistence and diagnostic dumps below are evidence work, not
             // guest boot time.
             let boot_timer_elapsed = boot_timer.elapsed();
+            if stop_reason == format!("PSCI {PSCI_SYSTEM_OFF:#x} (system off)") {
+                // The guest's shutdown ends here; vm_bench times it to this line.
+                println!("guest powered off; host teardown follows");
+            }
             invalidate_watchdog_generation(&watchdog_generation);
             let secondary_stop = secondary_vcpus
                 .map(SecondaryVcpuSet::shutdown_and_join)
