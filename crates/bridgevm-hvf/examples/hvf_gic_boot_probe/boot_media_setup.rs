@@ -51,14 +51,26 @@ pub(crate) fn attach_boot_media(
         // Checkpoints capture no flush in flight, so they keep the inline sync,
         // which is durable: no worker timer follows an inline barrier.
         let var = |name| std::env::var_os(name).is_some_and(|v| !v.is_empty());
-        let inline = std::env::var("BRIDGEVM_NVME_ASYNC_FLUSH").as_deref() == Ok("0")
-            || var("BRIDGEVM_CHECKPOINT_STATE")
-            || var("BRIDGEVM_RESTORE_STATE");
+        let checkpoint = var("BRIDGEVM_CHECKPOINT_STATE") || var("BRIDGEVM_RESTORE_STATE");
+        let inline = std::env::var("BRIDGEVM_NVME_ASYNC_FLUSH").as_deref() == Ok("0") || checkpoint;
         platform.set_nvme_async_flush(!inline);
         println!(
             "NVMe flush: {}, host sync {}",
             if inline { "inline" } else { "worker thread" },
             bridgevm_hvf::nvme::host_sync_label(inline)
+        );
+        // Reads and writes run after the vCPU drops the platform lock, except
+        // under checkpoints, which capture no I/O in flight either.
+        let unlocked =
+            !checkpoint && std::env::var("BRIDGEVM_NVME_UNLOCKED_IO").as_deref() != Ok("0");
+        platform.set_nvme_unlocked_io(unlocked);
+        println!(
+            "NVMe I/O: {}",
+            if unlocked {
+                "unlocked (reads and writes run without the platform lock)"
+            } else {
+                "under the platform lock"
+            }
         );
     }
     let mut pci_installer_iso_attached = false;

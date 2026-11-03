@@ -491,7 +491,7 @@ pub(crate) fn run() -> ExitCode {
                                 ipa - machine::FW_CFG.base
                             );
                             }
-                            let (outcome, pending, device, pcie_target, pcie_context) = {
+                            let (outcome, pending, device, pcie_target, pcie_context, nvme_io) = {
                                 let mut platform_guard = lock_platform(
                                     &platform,
                                     smp_trace.as_deref(),
@@ -553,7 +553,8 @@ pub(crate) fn run() -> ExitCode {
                                     DrainContext::data_abort(exits, last_pc),
                                     post_drain,
                                 );
-                                (outcome, pending, device, pcie_target, pcie_context)
+                                let nvme_io = platform.take_nvme_io();
+                                (outcome, pending, device, pcie_target, pcie_context, nvme_io)
                             };
                             recent_pcie_mmio.record_with_context(PcieMmioEventInput {
                                 device,
@@ -582,6 +583,32 @@ pub(crate) fn run() -> ExitCode {
                                 stop_reason =
                                     error.stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);
                                 break;
+                            }
+                            // NVMe reads and writes run unlocked; this exit's
+                            // second hold posts their completions.
+                            if let Some(io) = nvme_io {
+                                io.run();
+                                let pending = {
+                                    let mut platform_guard = lock_platform(
+                                        &platform,
+                                        smp_trace.as_deref(),
+                                        0,
+                                        HoldSite::Mmio(ipa),
+                                    );
+                                    drain_stats.prepare_pending_delivery(
+                                        &mut platform_guard,
+                                        &mut guest_ram,
+                                        drain_trace,
+                                        DrainContext::data_abort(exits, last_pc),
+                                    )
+                                };
+                                if let Err(error) = drain_stats
+                                    .finish_prepared_interrupt_delivery(pending, drain_trace)
+                                {
+                                    stop_reason = error
+                                        .stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);
+                                    break;
+                                }
                             }
                             if trace_this_fwcfg {
                                 println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");

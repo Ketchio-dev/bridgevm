@@ -4,6 +4,7 @@ use super::*;
 use crate::fwcfg::GuestMemoryMut;
 use crate::machine;
 use crate::nvme::NvmeCommandTrace;
+use crate::nvme::NvmeIo;
 use crate::virtio_blk::VirtioBlockRequestTrace;
 use crate::virtio_blk::VirtioMmioBlock;
 use crate::virtio_blk::VirtioMmioBlockResult;
@@ -245,8 +246,21 @@ impl VirtPlatform {
         self.nvme.set_async_flush(enabled);
     }
 
-    /// Post the completions of flushes the NVMe worker finished, with their
-    /// MSI-X. Cheap when none finished; the pre-run drain calls it.
+    /// NVMe READ and WRITE run without the platform lock (live VMM only).
+    pub fn set_nvme_unlocked_io(&mut self, enabled: bool) {
+        self.nvme.set_unlocked_io(enabled);
+    }
+
+    /// The NVMe READs and WRITEs the last doorbell queued. The vCPU takes them
+    /// before it unlocks the platform, runs them, then locks it again; that
+    /// hold's drain (`poll_nvme_flushes`) posts their completions.
+    pub fn take_nvme_io(&mut self) -> Option<NvmeIo> {
+        self.nvme.take_io()
+    }
+
+    /// Post the completions of flushes the NVMe worker finished and of READs
+    /// and WRITEs run without the lock, with their MSI-X. Cheap when none
+    /// finished; every drain calls it.
     pub fn poll_nvme_flushes(&mut self, mem: &mut dyn GuestMemoryMut) {
         if !self.nvme.flushes_ready() {
             return;

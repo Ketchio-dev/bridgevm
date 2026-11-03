@@ -30,6 +30,7 @@ mod registers;
 mod snapshot;
 mod stream;
 mod trace;
+mod unlocked_io;
 
 #[cfg(test)]
 mod tests;
@@ -48,3 +49,4 @@ pub(crate) use prp::*;
 pub use queue::*;
 pub use registers::*;
 pub use trace::*;
+pub use unlocked_io::NvmeIo;

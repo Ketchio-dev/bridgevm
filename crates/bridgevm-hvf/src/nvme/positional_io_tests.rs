@@ -36,8 +36,7 @@ fn raw(disk: &mut DiskBackend) -> &mut RawFileDisk {
 fn a_read_does_not_move_the_shared_file_offset() {
     let path = image("read");
     let mut disk = DiskBackend::raw_file(&path, false).expect("open");
-    raw(&mut disk)
-        .file
+    (&*raw(&mut disk).file)
         .seek(SeekFrom::Start(4096))
         .expect("park the offset");
 
@@ -49,7 +48,7 @@ fn a_read_does_not_move_the_shared_file_offset() {
         "read landed at the wrong offset"
     );
 
-    let after = raw(&mut disk).file.stream_position().expect("tell");
+    let after = (&*raw(&mut disk).file).stream_position().expect("tell");
     assert_eq!(
         after, 4096,
         "the read moved the shared file offset from 4096 to {after}; \
@@ -61,14 +60,13 @@ fn a_read_does_not_move_the_shared_file_offset() {
 fn a_write_back_write_does_not_move_the_shared_file_offset() {
     let path = image("write");
     let mut disk = DiskBackend::raw_file(&path, true).expect("open");
-    raw(&mut disk)
-        .file
+    (&*raw(&mut disk).file)
         .seek(SeekFrom::Start(4096))
         .expect("park the offset");
 
     disk.write_at(1024, &[0xab; 512]).expect("write");
 
-    let after = raw(&mut disk).file.stream_position().expect("tell");
+    let after = (&*raw(&mut disk).file).stream_position().expect("tell");
     assert_eq!(
         after, 4096,
         "the write moved the shared file offset to {after}"
@@ -85,14 +83,13 @@ fn a_copy_on_write_fault_does_not_move_the_shared_file_offset() {
     // write_back = false takes the overlay path, which reads a whole chunk from
     // the backing file before modifying it -- a third seek site.
     let mut disk = DiskBackend::raw_file(&path, false).expect("open");
-    raw(&mut disk)
-        .file
+    (&*raw(&mut disk).file)
         .seek(SeekFrom::Start(4096))
         .expect("park the offset");
 
     disk.write_at(1024, &[0xcd; 64]).expect("overlay write");
 
-    let after = raw(&mut disk).file.stream_position().expect("tell");
+    let after = (&*raw(&mut disk).file).stream_position().expect("tell");
     assert_eq!(
         after, 4096,
         "faulting a copy-on-write chunk moved the shared file offset to {after}"

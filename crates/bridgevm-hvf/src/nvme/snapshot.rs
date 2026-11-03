@@ -4,6 +4,8 @@ use super::*;
 
 impl NvmeController {
     pub fn snapshot_state(&self) -> Vec<u8> {
+        // Checkpointing keeps flushes and I/O inline, so none is in flight.
+        debug_assert!(!self.flushes_in_flight(), "NVMe job in flight at a checkpoint");
         let mut out = crate::checkpoint::StateWriter::new();
         out.write_u32(1);
         out.write_u32(self.cc);

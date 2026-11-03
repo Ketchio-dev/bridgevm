@@ -382,7 +382,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                 ) {
                     continue;
                 }
-                let (outcome, pending) = {
+                let (outcome, pending, nvme_io) = {
                     let mut platform_guard =
                         lock_platform(platform, smp_trace, control.index, HoldSite::Mmio(ipa));
                     platform_guard.set_host_now(std::time::Instant::now());
@@ -396,11 +396,32 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                         DrainContext::data_abort(*exits, pc),
                         post_drain,
                     );
-                    (outcome, pending)
+                    (outcome, pending, platform_guard.take_nvme_io())
                 };
                 if let Err(error) = drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace) {
                     error.stop_secondary(|| control.record_run_error(primary_vcpu));
                     return true;
+                }
+                // NVMe reads and writes run unlocked; this exit's second hold
+                // posts their completions.
+                if let Some(io) = nvme_io {
+                    io.run();
+                    let pending = {
+                        let mut platform_guard =
+                            lock_platform(platform, smp_trace, control.index, HoldSite::Mmio(ipa));
+                        drain_stats.prepare_pending_delivery(
+                            &mut platform_guard,
+                            guest_ram,
+                            drain_trace,
+                            DrainContext::data_abort(*exits, pc),
+                        )
+                    };
+                    if let Err(error) =
+                        drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace)
+                    {
+                        error.stop_secondary(|| control.record_run_error(primary_vcpu));
+                        return true;
+                    }
                 }
                 pre_run_drain_gate.mark_secondary_pending();
                 match outcome {

@@ -121,6 +121,7 @@ impl NvmeController {
     /// Export the full current disk image to `path`, applying any sparse overlay
     /// writes on top of the source raw file.
     pub fn export_disk_image(&mut self, path: impl AsRef<Path>) -> io::Result<u64> {
+        self.wait_for_flushes();
         self.disk.export_to_path(path)
     }
 
@@ -128,18 +129,22 @@ impl NvmeController {
         &mut self,
         path: impl AsRef<Path>,
     ) -> io::Result<u64> {
+        self.wait_for_flushes();
         self.disk2
             .as_mut()
             .ok_or_else(second_namespace_missing)?
             .export_to_path(path)
     }
 
-    /// Make host-file-backed write-through media durable (VM exit).
+    /// Make host-file-backed write-through media durable (VM exit), after
+    /// the writes in flight.
     pub fn flush_disk(&mut self) -> io::Result<()> {
+        self.wait_for_flushes();
         self.disk.flush_durable()
     }
 
     pub fn flush_second_namespace_disk(&mut self) -> io::Result<()> {
+        self.wait_for_flushes();
         self.disk2
             .as_mut()
             .ok_or_else(second_namespace_missing)?
