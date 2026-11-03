@@ -1,3 +1,4 @@
+import CoreGraphics
 import XCTest
 @testable import BridgeVMProductE2E
 
