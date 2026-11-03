@@ -216,6 +216,7 @@ impl<H: OutboundIpv4Handler + Send> NetBackend for NatBackend<H> {
 
     fn poll_host_sockets(&mut self) {
         if self.reply_queue.len() >= REPLY_BACKLOG_SKIPS_SWEEP {
+            self.stats.sweeps_deferred = self.stats.sweeps_deferred.saturating_add(1);
             return;
         }
         self.outbound_ipv4.poll_host_sockets(

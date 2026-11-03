@@ -246,6 +246,7 @@ impl TcpFlow {
         while !self.send.fin_sent && !reply_queue_full(reply_queue) {
             let room = self.send.room().min(*unacked_budget);
             if room == 0 {
+                stats.tcp_window_full = stats.tcp_window_full.saturating_add(1);
                 break;
             }
             let read = self.stream.read(&mut scratch[..room.min(TCP_MSS)]);

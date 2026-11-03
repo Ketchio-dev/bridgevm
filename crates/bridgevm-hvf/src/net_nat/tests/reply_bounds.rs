@@ -39,6 +39,7 @@ fn host_sockets_wait_while_a_ring_of_frames_waits_for_the_guest() {
         1,
         "swept with a full ring queued"
     );
+    assert_eq!(backend.stats().sweeps_deferred, 1);
 
     assert!(backend.poll_receive().is_some());
     backend.poll_host_sockets();
