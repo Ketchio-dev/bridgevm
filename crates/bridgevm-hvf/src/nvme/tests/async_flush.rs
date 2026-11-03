@@ -168,3 +168,32 @@ fn memory_disks_and_async_off_flush_inline() {
     assert_eq!(raw_file_sync_attempts(&ctrl.disk), 1);
     let _ = fs::remove_file(path);
 }
+
+#[test]
+fn a_fua_write_lands_at_once_and_completes_after_the_sync() {
+    let (mut ctrl, mut mem, path) = async_controller("async-flush-fua");
+    assert!(mem.write_bytes(DATA_BASE, &[0xa5; LBA_SIZE]));
+    let fua = 1 << 30;
+    put_io(
+        &mut mem,
+        0,
+        &encode_sqe(NVM_OP_WRITE, 0x90, NSID, DATA_BASE, 0, 0, fua),
+    );
+    ctrl.mmio_write(IO_SQ_DOORBELL, 4, 1);
+    ctrl.process(&mut mem);
+    assert_eq!(
+        read_completion(&mem, IO_CQ_BASE, 0),
+        [0; 16],
+        "not before the sync"
+    );
+    assert_eq!(&fs::read(&path).unwrap()[..LBA_SIZE], &[0xa5; LBA_SIZE][..]);
+
+    let mut events = Vec::new();
+    ctrl.complete_flushes(&mut mem, &mut events, true);
+    let entry = read_completion(&mem, IO_CQ_BASE, 0);
+    assert_eq!(
+        (command_id(&entry), completion_status(&entry)),
+        (0x90, SC_SUCCESS)
+    );
+    let _ = fs::remove_file(path);
+}

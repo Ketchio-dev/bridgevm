@@ -164,11 +164,24 @@ impl NvmeController {
                 sq.head = new_head;
             }
 
-            // Completed when the worker's sync returns (flush_worker.rs).
+            // Completed when the worker's sync returns (flush_worker.rs): a
+            // FLUSH, and a write that must reach media first (FUA or write cache
+            // off), whose data goes to the file now.
             if cmd.opcode == NVM_OP_FLUSH && self.defer_flush(qid as u16, cqid, &cmd) {
                 continue;
             }
-            let result = if qid == 0 {
+            let synced_write = qid != 0 && self.async_flush && self.write_needs_sync(&cmd);
+            let result = if synced_write {
+                let status = self.io_write_data(&cmd, mem);
+                if status == SC_SUCCESS && self.defer_flush(qid as u16, cqid, &cmd) {
+                    continue;
+                }
+                CommandResult::complete(if status == SC_SUCCESS {
+                    self.io_flush(&cmd)
+                } else {
+                    status
+                })
+            } else if qid == 0 {
                 self.execute_admin(&cmd, mem)
             } else {
                 self.execute_io(&cmd, mem)
