@@ -34,6 +34,7 @@ final class HvfEngineSession: ObservableObject {
     var runtimeTransitionInProgress = false
     var timer: Timer?
     var tailReader = TailOffsetReader()
+    var agentEvents = BvAgentEvent.Stream() // run.log's lines across polls, with tailReader
     var lastHeartbeatDate: Date?
     var serviceStarted = false
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
@@ -302,10 +303,8 @@ final class HvfEngineSession: ObservableObject {
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
         let lines = tailReader.readNewLines(from: logURL)
         finishLegacyPaste(lines: lines)
-        if !lines.isEmpty {
-            for event in BvAgentEvent.parse(lines: lines) {
-                handle(event)
-            }
+        for event in agentEvents.parse(lines) {
+            handle(event)
         }
         if let lastHeartbeatDate {
             lastHeartbeatAge = Date().timeIntervalSince(lastHeartbeatDate)
@@ -379,6 +378,7 @@ final class HvfEngineSession: ObservableObject {
         legacyPaste = HvfLegacyPasteState()
         inputDriver.attachUnknown(binding: inputBinding)
         tailReader = TailOffsetReader()
+        agentEvents = BvAgentEvent.Stream()
         lastHeartbeatDate = nil
         lastHeartbeatAge = nil
         serviceStarted = false

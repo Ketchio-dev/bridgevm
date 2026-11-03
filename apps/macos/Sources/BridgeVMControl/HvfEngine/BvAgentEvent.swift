@@ -39,38 +39,43 @@ enum BvAgentEvent: Equatable, Identifiable {
         }
     }
 
-    static func parse(lines: [String]) -> [BvAgentEvent] {
-        var events: [BvAgentEvent] = []
-        var commandLabel: String?
-        var commandBody: [String] = []
+    /// Parses a run.log as it grows. A command's output can reach the reader over several
+    /// polls (each reads at most 1 MiB), so an open command stays open until its END line.
+    struct Stream {
+        private var commandLabel: String?
+        private var commandBody: [String] = []
 
-        func flushCommand() {
-            guard let label = commandLabel else { return }
-            events.append(.commandOutput(label: label, body: commandBody.joined(separator: "\n")))
-            commandLabel = nil
-            commandBody = []
-        }
-
-        for line in lines {
-            if let label = commandLabel {
-                if line == "BVAGENT END \(label)" {
-                    flushCommand()
+        /// The events these lines complete.
+        mutating func parse(_ lines: [String]) -> [BvAgentEvent] {
+            var events: [BvAgentEvent] = []
+            for line in lines {
+                if let label = commandLabel {
+                    if line == "BVAGENT END \(label)" {
+                        events += finish()
+                    } else {
+                        commandBody.append(line)
+                    }
+                } else if let label = BvAgentEvent.commandStartLabel(line) {
+                    commandLabel = label
                 } else {
-                    commandBody.append(line)
+                    events.append(BvAgentEvent.parseSingle(line))
                 }
-                continue
             }
-
-            if let label = commandStartLabel(line) {
-                commandLabel = label
-                commandBody = []
-                continue
-            }
-
-            events.append(parseSingle(line))
+            return events
         }
-        flushCommand()
-        return events
+
+        /// The open command's output so far, if a command is open.
+        mutating func finish() -> [BvAgentEvent] {
+            guard let label = commandLabel else { return [] }
+            defer { commandLabel = nil; commandBody = [] }
+            return [.commandOutput(label: label, body: commandBody.joined(separator: "\n"))]
+        }
+    }
+
+    /// Complete lines; a command without its END line ends with them.
+    static func parse(lines: [String]) -> [BvAgentEvent] {
+        var stream = Stream()
+        return stream.parse(lines) + stream.finish()
     }
 
     private static func parseSingle(_ line: String) -> BvAgentEvent {
