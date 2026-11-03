@@ -424,7 +424,8 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                 record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
             except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
                 record["errors"].append(f"stall: {type(error).__name__}: {error}")
-        suite = SUITE + ([("net-download", net_download(args.blob_url))] if args.net else [])
+        suite = SUITE + ([("net-download", net_download(args.blob_url, hashlib.sha256(_Blob.payload).hexdigest()))]
+                         if args.net else [])
         only = None if args.only is None else set(args.only.split(","))
         for name, script in ([] if args.skip_suite else [t for t in suite if only is None or t[0] in only]):
             started = time.monotonic()

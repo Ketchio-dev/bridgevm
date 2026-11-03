@@ -87,12 +87,16 @@ SUITE = [
     ("process-spawn", _PROCESS_SPAWN),
 ]
 
-def net_download(url: str) -> str:
-    """Guest<-host TCP through the VMM's NAT: one warm-up GET, then one timed GET."""
+def net_download(url: str, sha256: str) -> str:
+    """Guest<-host TCP through the VMM's NAT: one warm-up GET, then one timed GET whose
+    size and SHA-256 are checked against the host's copy."""
     return (
         f"$u='{url}'; $c=New-Object Net.WebClient; $null=$c.DownloadData($u);"
         "$s=[Diagnostics.Stopwatch]::StartNew(); $d=$c.DownloadData($u); $s.Stop();"
-        "'BVBENCH net-download {0:F1} MB/s' -f ($d.Length/1MB/$s.Elapsed.TotalSeconds)"
+        "'BVBENCH net-download {0:F1} MB/s' -f ($d.Length/1MB/$s.Elapsed.TotalSeconds);"
+        "$h=-join ([Security.Cryptography.SHA256]::Create().ComputeHash($d) | % { $_.ToString('x2') });"
+        f"'BVBENCH net-download-sha256-match {{0}} bool' -f [int]($h -eq '{sha256}');"
+        "'BVBENCH net-download-mib {0} MiB' -f ($d.Length/1MB)"
     )
 
 
@@ -159,7 +163,8 @@ def display_animation(ms: int) -> str:
 
 # Every guest metric is higher-is-better; one script may print several.
 HIGHER_IS_BETTER = {name for name, _ in SUITE} | {
-    "disk-write-seq-1m", "disk-read-seq-1m", "disk-read-rand-4k", "net-download", "cursor-hz", "stall-flush-rate",
+    "disk-write-seq-1m", "disk-read-seq-1m", "disk-read-rand-4k", "net-download", "net-download-sha256-match",
+    "cursor-hz", "stall-flush-rate",
     "guest-render-fps", "display-fps", "pointer-display-fps",
     "agent-cmd-hz"}
 
@@ -180,6 +185,9 @@ def parse_bvbench(text: str) -> dict[str, tuple[float, str]]:
 def _self_test() -> None:
     assert parse_bvbench("noise\r\nBVBENCH cpu-sha256-1t 812.5 MB/s\r\n") == {"cpu-sha256-1t": (812.5, "MB/s")}
     assert parse_bvbench("BVBENCH x 1,5 MB/s") == {}
+    net = net_download("http://h/blob", "ab" * 32)
+    assert "'BVBENCH net-download-sha256-match {0} bool' -f [int]($h -eq '" + "ab" * 32 + "')" in net
+    assert parse_bvbench("BVBENCH net-download-sha256-match 1 bool\r\n") == {"net-download-sha256-match": (1.0, "bool")}
     for name, script in SUITE:
         line = command_line(script)
         assert "\n" not in line and len(line) < 8000, name

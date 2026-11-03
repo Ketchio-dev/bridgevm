@@ -574,11 +574,12 @@
     {
       "id": "A20",
       "title": "Network download",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": true,
       "statement": "Windows downloads a file of at least 64 MiB over the default virtio-net adapter and its SHA-256 matches the host copy.",
-      "measured": "2026-11-03: criterion added with the scenario gate; no retained live receipt yet.",
+      "measured": "2026-11-03: criterion added with the scenario gate. 2026-11-03: 2 of 2 live runs downloaded 256 MiB over virtio-net with the NAT backend with a matching SHA-256, at 298.9 and 338.1 MB/s (QEMU/HVF on the same image: 255.7 and 226.5 MB/s), see docs/windows-arm/evidence/a20-network-download-20261103.md.",
       "evidence_paths": [
+        "docs/windows-arm/evidence/a20-network-download-20261103.md",
         "docs/windows-arm/evidence/net-live-receipt-20260724.md"
       ],
       "known_defect": null
