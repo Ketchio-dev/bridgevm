@@ -49,6 +49,7 @@ impl RunLoopDrainStats {
         }
         platform.drain_xhci_pointer_input_reports(mem);
         platform.poll_virtio_net(mem);
+        platform.poll_nvme_flushes(mem);
         platform.poll_virtio_console(mem);
         platform.poll_virtio_gpu_fences(mem);
         platform.poll_hda(mem);

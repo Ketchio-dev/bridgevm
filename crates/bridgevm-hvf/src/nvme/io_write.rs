@@ -11,6 +11,25 @@ impl NvmeController {
     /// A successful write with FUA or disabled volatile cache synchronizes its
     /// namespace through the existing backend flush before posting completion.
     pub(crate) fn io_write(&mut self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
+        let status = self.io_write_data(cmd, mem);
+        if status == SC_SUCCESS && self.write_needs_sync(cmd) {
+            return self.io_flush(cmd);
+        }
+        status
+    }
+
+    /// A WRITE whose completion promises media durability.
+    pub(crate) fn write_needs_sync(&self, cmd: &SubmissionEntry) -> bool {
+        cmd.opcode == NVM_OP_WRITE
+            && (!self.volatile_write_cache_enabled || cmd.cdw12 & WRITE_FUA_BIT != 0)
+    }
+
+    /// The data part of WRITE: guest data into the disk, no sync.
+    pub(crate) fn io_write_data(
+        &mut self,
+        cmd: &SubmissionEntry,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> u16 {
         let Some(byte_len) = self.backend_for_nsid(cmd.nsid).map(DiskBackend::byte_len) else {
             return SC_INVALID_FIELD;
         };
@@ -39,11 +58,6 @@ impl NvmeController {
         segments.clear();
         self.prp_spans_scratch = spans;
         self.io_segments_scratch = segments;
-        if status == SC_SUCCESS
-            && (!self.volatile_write_cache_enabled || cmd.cdw12 & WRITE_FUA_BIT != 0)
-        {
-            return self.io_flush(cmd);
-        }
         status
     }
 

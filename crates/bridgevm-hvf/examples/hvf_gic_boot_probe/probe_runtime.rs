@@ -328,6 +328,11 @@ pub(crate) fn run() -> ExitCode {
                 agent_service_wake.ensure_started(vcpu, interval);
             }
             input_control_wake.ensure_started(vcpu);
+            // A finished NVMe flush completes at the next pre-run drain: run one now.
+            // (vCPU0's live handle; the call only asks it to leave hv_vcpu_run.)
+            let _ = bridgevm_hvf::nvme::FLUSH_DONE_HOOK.set(Box::new(move || {
+                hv_vcpus_exit(&vcpu, 1);
+            }));
             if let Some(state) = gpu_vblank_wake_state.as_ref() {
                 gpu_vblank_wake.ensure_started(vcpu, Arc::clone(state));
             }

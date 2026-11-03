@@ -240,6 +240,24 @@ impl VirtPlatform {
         }
     }
 
+    /// FLUSH runs on the NVMe worker thread (live VMM only).
+    pub fn set_nvme_async_flush(&mut self, enabled: bool) {
+        self.nvme.set_async_flush(enabled);
+    }
+
+    /// Post the completions of flushes the NVMe worker finished, with their
+    /// MSI-X. Cheap when none finished; the pre-run drain calls it.
+    pub fn poll_nvme_flushes(&mut self, mem: &mut dyn GuestMemoryMut) {
+        if !self.nvme.flushes_ready() {
+            return;
+        }
+        self.nvme_completion_scratch.clear();
+        self.nvme
+            .complete_flushes(mem, &mut self.nvme_completion_scratch, false);
+        self.queue_nvme_completion_msix();
+        self.flush_nvme_pending_msix();
+    }
+
     pub(crate) fn nvme_access(
         &mut self,
         offset: u64,

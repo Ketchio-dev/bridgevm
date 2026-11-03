@@ -86,6 +86,15 @@ impl NvmeController {
         mem: &mut dyn GuestMemoryMut,
         completions: &mut Vec<NvmeCompletionEvent>,
     ) {
+        // Finished flushes first; an admin command (queue deletion among them)
+        // waits for the ones still in flight.
+        let admin_pending = self
+            .pending_sq_bits
+            .first()
+            .is_some_and(|word| word & 1 != 0);
+        if self.flushes_ready() || admin_pending && self.flushes_in_flight() {
+            self.complete_flushes(mem, completions, admin_pending);
+        }
         // Admin queue (index 0) first, then I/O queues whose tail doorbell has
         // advanced. The run loop calls this speculatively, so avoid scanning the
         // whole advertised queue space when no SQ has work.
@@ -155,7 +164,24 @@ impl NvmeController {
                 sq.head = new_head;
             }
 
-            let result = if qid == 0 {
+            // Completed when the worker's sync returns (flush_worker.rs): a
+            // FLUSH, and a write that must reach media first (FUA or write cache
+            // off), whose data goes to the file now.
+            if cmd.opcode == NVM_OP_FLUSH && self.defer_flush(qid as u16, cqid, &cmd) {
+                continue;
+            }
+            let synced_write = qid != 0 && self.async_flush && self.write_needs_sync(&cmd);
+            let result = if synced_write {
+                let status = self.io_write_data(&cmd, mem);
+                if status == SC_SUCCESS && self.defer_flush(qid as u16, cqid, &cmd) {
+                    continue;
+                }
+                CommandResult::complete(if status == SC_SUCCESS {
+                    self.io_flush(&cmd)
+                } else {
+                    status
+                })
+            } else if qid == 0 {
                 self.execute_admin(&cmd, mem)
             } else {
                 self.execute_io(&cmd, mem)

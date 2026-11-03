@@ -44,6 +44,7 @@ impl NvmeController {
     /// Attach a blank NSID-2 target namespace backed by `disk_bytes` of in-memory
     /// storage (rounded to a whole LBA). Windows sees a second, empty disk.
     pub fn attach_second_namespace(&mut self, disk_bytes: usize) {
+        self.restart_flush_worker();
         self.disk2 = Some(DiskBackend::memory(vec![0u8; rounded_disk_len(disk_bytes)]));
     }
 
@@ -54,6 +55,7 @@ impl NvmeController {
         path: impl AsRef<Path>,
         write_back: bool,
     ) -> io::Result<()> {
+        self.restart_flush_worker();
         self.disk2 = Some(DiskBackend::raw_file(path, write_back)?);
         Ok(())
     }
