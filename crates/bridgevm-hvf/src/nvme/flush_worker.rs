@@ -5,11 +5,12 @@
 //!
 //! With async flush on, an I/O-queue FLUSH for a write-back raw file goes to a
 //! worker thread that syncs duplicated handles of the disk files, one sync per
-//! disk for every flush queued meanwhile. The command completes, with the same
-//! status rules, only after that sync returns: the pre-run drain posts the
-//! completion, and `FLUSH_DONE_HOOK` asks a vCPU to run that drain at once.
-//! FLUSH covers the writes completed before it was submitted (NVMe 1.4 6.8);
-//! those are in the host page cache by then, so the later sync covers them.
+//! disk for every flush queued meanwhile, and keeps each disk's ordered-mode
+//! debt (flush_mode.rs). The command completes, with the same status rules,
+//! only after that sync returns: the pre-run drain posts the completion, and
+//! `FLUSH_DONE_HOOK` asks a vCPU to run that drain at once. FLUSH covers the
+//! writes completed before it was submitted (NVMe 1.4 6.8); those are in the
+//! host page cache by then, so the later sync covers them.
 //!
 //! A controller register write, any admin command and a reset first wait for
 //! the flushes in flight, so queue deletion and reset never meet a pending
@@ -22,6 +23,7 @@ use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::Instant;
 
+use super::flush_mode::DiskSync;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 
@@ -53,8 +55,11 @@ struct Shared {
     clock: flush_mode::Clock,
 }
 
+#[derive(Default)]
 pub(crate) struct FlushWorker {
-    jobs: Sender<FlushJob>,
+    /// The thread's inbox; `None` once a namespace change let the thread go,
+    /// until the next FLUSH starts one on the current disks.
+    jobs: Option<Sender<FlushJob>>,
     shared: Arc<Shared>,
     in_flight: usize,
 }
@@ -68,71 +73,65 @@ impl std::fmt::Debug for FlushWorker {
 }
 
 impl FlushWorker {
-    fn spawn(disk: Option<File>, disk2: Option<File>) -> io::Result<Self> {
+    /// Start a thread that syncs `disk` and `disk2` and queues its
+    /// completions here.
+    fn start(&mut self, disk: Option<File>, disk2: Option<File>) -> io::Result<()> {
         let (jobs, inbox) = channel::<FlushJob>();
-        let shared = Arc::new(Shared::default());
-        let worker = Arc::clone(&shared);
+        let worker = Arc::clone(&self.shared);
         std::thread::Builder::new()
             .name("nvme-flush".into())
             .spawn(move || {
                 let clock = &worker.clock;
-                // When an ordered flush left a full sync owed: run it then.
-                let mut owed: Option<Instant> = None;
+                let mut disks = [disk.map(DiskSync::new), disk2.map(DiskSync::new)];
+                // When a disk owes the full sync after an ordered flush: run it then.
+                let mut due: Option<Instant> = None;
                 loop {
                     // Ends when the controller drops its sender.
-                    let first = match owed {
-                        None => match inbox.recv() {
-                            Ok(job) => job,
-                            Err(_) => break,
-                        },
-                        Some(due) => {
-                            match inbox.recv_timeout(due.saturating_duration_since(clock.now())) {
-                                Ok(job) => job,
-                                Err(RecvTimeoutError::Timeout) => {
-                                    owed = None;
-                                    if flush_mode::full_sync_owed() {
-                                        for file in disk.iter().chain(disk2.iter()) {
-                                            let _ = flush_mode::sync_durable(file);
-                                        }
-                                    }
-                                    continue;
-                                }
-                                Err(RecvTimeoutError::Disconnected) => break,
-                            }
+                    let next = match due {
+                        None => inbox.recv().map_err(|_| RecvTimeoutError::Disconnected),
+                        Some(at) => inbox.recv_timeout(at.saturating_duration_since(clock.now())),
+                    };
+                    let stop = matches!(next, Err(RecvTimeoutError::Disconnected));
+                    if let Ok(first) = next {
+                        let mut batch = vec![first];
+                        batch.extend(inbox.try_iter());
+                        let sync = |disk: &mut Option<DiskSync>, needed: bool| {
+                            !needed || disk.as_mut().is_some_and(|d| d.sync(clock).is_ok())
+                        };
+                        let ok = sync(&mut disks[0], batch.iter().any(|job| job.disk));
+                        let ok2 = sync(&mut disks[1], batch.iter().any(|job| job.disk2));
+                        let done = batch.into_iter().map(|job| Finished {
+                            ok: (!job.disk || ok) && (!job.disk2 || ok2),
+                            job,
+                        });
+                        let mut finished = lock(&worker.finished);
+                        finished.extend(done);
+                        worker.ready.store(finished.len(), Ordering::Release);
+                        drop(finished);
+                        worker.changed.notify_all();
+                        if let Some(hook) = FLUSH_DONE_HOOK.get() {
+                            hook();
                         }
-                    };
-                    let mut batch = vec![first];
-                    batch.extend(inbox.try_iter());
-                    let sync = |file: &Option<File>, needed: bool| {
-                        !needed
-                            || file
-                                .as_ref()
-                                .is_some_and(|f| flush_mode::sync_at(f, clock.now()).is_ok())
-                    };
-                    let ok = sync(&disk, batch.iter().any(|job| job.disk));
-                    let ok2 = sync(&disk2, batch.iter().any(|job| job.disk2));
-                    let done = batch.into_iter().map(|job| Finished {
-                        ok: (!job.disk || ok) && (!job.disk2 || ok2),
-                        job,
-                    });
-                    let mut finished = lock(&worker.finished);
-                    finished.extend(done);
-                    worker.ready.store(finished.len(), Ordering::Release);
-                    drop(finished);
-                    worker.changed.notify_all();
-                    if let Some(hook) = FLUSH_DONE_HOOK.get() {
-                        hook();
                     }
-                    if owed.is_none() && flush_mode::full_sync_owed() {
-                        owed = Some(clock.now() + flush_mode::DURABLE_WITHIN);
+                    // A disk's debt comes due even while flushes of the other
+                    // disk keep the worker busy, and before the worker goes.
+                    let now = clock.now();
+                    if stop || due.is_some_and(|at| at <= now) {
+                        due = None;
+                        for disk in disks.iter_mut().flatten() {
+                            disk.settle(clock);
+                        }
+                    }
+                    if stop {
+                        break;
+                    }
+                    if due.is_none() && disks.iter().flatten().any(DiskSync::owed) {
+                        due = Some(now + flush_mode::DURABLE_WITHIN);
                     }
                 }
             })?;
-        Ok(Self {
-            jobs,
-            shared,
-            in_flight: 0,
-        })
+        self.jobs = Some(jobs);
+        Ok(())
     }
 }
 
@@ -186,18 +185,20 @@ impl NvmeController {
         if !disk && !disk2 {
             return false;
         }
-        if self.flush_worker.is_none() {
-            let handles = (
+        if self
+            .flush_worker
+            .as_ref()
+            .is_none_or(|worker| worker.jobs.is_none())
+        {
+            let (disk, disk2) = (
                 sync_handle(Some(&self.disk)),
                 sync_handle(self.disk2.as_ref()),
             );
-            match FlushWorker::spawn(handles.0, handles.1) {
-                Ok(worker) => self.flush_worker = Some(worker),
-                Err(error) => {
-                    eprintln!("nvme: flush worker not started, flushing inline: {error}");
-                    self.async_flush = false;
-                    return false;
-                }
+            let worker = self.flush_worker.get_or_insert_with(FlushWorker::default);
+            if let Err(error) = worker.start(disk, disk2) {
+                eprintln!("nvme: flush worker not started, flushing inline: {error}");
+                self.async_flush = false;
+                return false;
             }
         }
         let job = FlushJob {
@@ -210,7 +211,11 @@ impl NvmeController {
         let Some(worker) = self.flush_worker.as_mut() else {
             return false;
         };
-        if worker.jobs.send(job).is_err() {
+        if worker
+            .jobs
+            .as_ref()
+            .is_none_or(|jobs| jobs.send(job).is_err())
+        {
             self.flush_worker = None;
             self.async_flush = false;
             return false;
@@ -224,13 +229,14 @@ impl NvmeController {
         true
     }
 
-    /// The worker holds the disk handles it started with: a namespace change
-    /// waits for its flushes and starts a new worker on the next FLUSH. Their
-    /// completions, if any are still untaken, keep the current worker.
+    /// The worker thread holds the disk handles it started with: a namespace
+    /// change waits for its flushes and lets it go (it first runs the full
+    /// syncs its disks still owe); the next FLUSH starts a thread on the
+    /// current disks. Completions not yet posted stay queued.
     pub(crate) fn restart_flush_worker(&mut self) {
         self.wait_for_flushes();
-        if !self.flushes_ready() {
-            self.flush_worker = None;
+        if let Some(worker) = self.flush_worker.as_mut() {
+            worker.jobs = None;
         }
     }
 

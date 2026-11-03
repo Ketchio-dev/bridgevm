@@ -61,7 +61,8 @@ pub(crate) fn attach_boot_media(
     }
     if media.nvme_disk.is_some() || media.nvme_target.is_some() {
         // FLUSH syncs on a worker thread instead of under the platform lock.
-        // Checkpoints capture no flush in flight, so they keep the inline sync.
+        // Checkpoints capture no flush in flight, so they keep the inline sync,
+        // which is durable: no worker timer follows an inline barrier.
         let var = |name| std::env::var_os(name).is_some_and(|v| !v.is_empty());
         let inline = std::env::var("BRIDGEVM_NVME_ASYNC_FLUSH").as_deref() == Ok("0")
             || var("BRIDGEVM_CHECKPOINT_STATE")
@@ -70,7 +71,7 @@ pub(crate) fn attach_boot_media(
         println!(
             "NVMe flush: {}, host sync {}",
             if inline { "inline" } else { "worker thread" },
-            bridgevm_hvf::nvme::host_sync_label()
+            bridgevm_hvf::nvme::host_sync_label(inline)
         );
     }
     let mut pci_installer_iso_attached = false;
