@@ -33,7 +33,7 @@
         "A5",
         "A8"
       ],
-      "known_defect": "The supported 3D-off display has a fixed resolution chosen per VM before it starts (1280x800 by default, up to 2560x1600), and recent runs showed a choppy window and audible audio stutter (see A8 and A9)."
+      "known_defect": "The Windows display follows the window size only after the one-time display driver install in the VM view (Red Hat virtio-win, Microsoft-signed, downloaded by the guest) and a VM restart; until then the resolution is fixed per VM before it starts (1280x800 by default, up to 2560x1600). The app window was choppy in earlier runs and its smoothness has not been measured since, and no listening check has confirmed that the audio stutter is gone (see A9)."
     },
     {
       "id": "S3",
@@ -163,16 +163,16 @@
     {
       "id": "A8",
       "title": "Dynamic resize",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": true,
       "statement": "After a window resize the guest-reported resolution equals the request.",
-      "measured": "2026-11-03 retraction: in the supported 3D-off configuration (Secure Boot on, no test-signed driver) Windows runs on the firmware framebuffer at a fixed resolution (800x600 until 2026-11-03; since then one chosen per VM before it starts, 1280x800 by default and up to 2560x1600, see docs/windows-arm/evidence/guest-resolution-20261103.md), so a window resize cannot change the guest resolution. Correction, same day: the intermediate 1024x768 wording described the framebuffer only; on an installed Windows the desktop stayed at its saved 800x600, scaled into the larger frame, until the VMM had the agent switch the desktop mode. The PASS results below used the test-signed virtio-gpu driver, which the 2026-08-17 re-run showed Secure Boot refuses. 1600x900, 1920x1080 and 1280x720 all PASS with a matching final SET_SCANOUT. Re-run 2026-08-17 on net-live-20260724: the viogpu3d adapter is present but refused with CM_PROB_UNSIGNED_DRIVER (code 52), and bcdedit /set testsigning on is blocked by Secure Boot policy inside the guest, so no display exists that can adopt a resize on this image. The 1.0 install flow must provision SB-off or pre-enable testsigning; the host-side plumbing needs no change (a8-resize-secure-boot-wall-20260817.md).",
+      "measured": "2026-11-03 re-proof in the supported 3D-off configuration (Secure Boot on, no test-signed driver). The VM's app launch carries the 2D virtio-gpu (PCI 1AF4:1050). The app attaches it once its display-driver action has installed the Microsoft attestation-signed Red Hat virtio-win viogpudo, which the guest downloads from the pinned upstream archive. At main 33c4df6f515e, scripts/verify-a8-window-resize.sh wrote only RESIZE WxH lines to the live input file, exactly as the app writes them when its window is resized. 12 of 12 requests over 4 boots (1024x768 to 2560x1600, including an unlisted size and a resend after a guest restart) ended with the guest-reported resolution (EnumDisplaySettings, reported by the agent) equal to the request and a host frame of the same size; frames settled 1497-5644 ms after the request. No live run dragged the app window; the window-to-request mapping (points, clamped 640x480-3840x2160, 400 ms debounce) is covered by unit tests. See docs/windows-arm/evidence/a8-signed-viogpudo-20261103.md. Earlier record: 2026-11-03 retraction: in the supported 3D-off configuration (Secure Boot on, no test-signed driver) Windows runs on the firmware framebuffer at a fixed resolution (800x600 until 2026-11-03; since then one chosen per VM before it starts, 1280x800 by default and up to 2560x1600, see docs/windows-arm/evidence/guest-resolution-20261103.md), so a window resize cannot change the guest resolution. Correction, same day: the intermediate 1024x768 wording described the framebuffer only; on an installed Windows the desktop stayed at its saved 800x600, scaled into the larger frame, until the VMM had the agent switch the desktop mode. The PASS results below used the test-signed virtio-gpu driver, which the 2026-08-17 re-run showed Secure Boot refuses. 1600x900, 1920x1080 and 1280x720 all PASS with a matching final SET_SCANOUT. Re-run 2026-08-17 on net-live-20260724: the viogpu3d adapter is present but refused with CM_PROB_UNSIGNED_DRIVER (code 52), and bcdedit /set testsigning on is blocked by Secure Boot policy inside the guest, so no display exists that can adopt a resize on this image. The 1.0 install flow must provision SB-off or pre-enable testsigning; the host-side plumbing needs no change (a8-resize-secure-boot-wall-20260817.md).",
       "evidence_paths": [
+        "docs/windows-arm/evidence/a8-signed-viogpudo-20261103.md",
         "docs/windows-arm/evidence/guest-resolution-20261103.md",
         "docs/windows-arm/evidence/a8-resize-guest-blocker-20260801.md",
         "docs/windows-arm/evidence/a8-resize-secure-boot-wall-20260817.md"
-      ],
-      "known_defect": "In the supported 3D-off configuration Windows runs at a fixed resolution chosen per VM before it starts (1280x800 by default, up to 2560x1600); resizing the window does not change it and a change needs a restart. Resize was proven only with a test-signed virtio-gpu driver that Secure Boot blocks."
+      ]
     },
     {
       "id": "A9",
@@ -245,7 +245,7 @@
         "docs/history/windows-hvf/t17-selection-attempt-and-failed-pilot-20261004.md",
         "docs/windows-arm/evidence/t17-5da403e7-fresh-selection-pilot-failure-20261004.json"
       ],
-      "known_defect": "No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window was choppy in recent hardware runs, and guest audio stuttered audibly. In r52 the display export held its 33 ms cadence, but the app window's smoothness was not measured, and audio underran in up to 3% of callbacks; with a 40 ms start reserve, a single r54 run showed 2 gaps in 1,733 callbacks, and no listening check has confirmed the stutter is gone."
+      "known_defect": "No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window was choppy in recent hardware runs; its smoothness has not been measured since. Guest audio stuttered audibly: until 2026-11-03 every other 10 ms of Windows playback reached the host as silence, because the sound controller answered Windows' position reads at the 0x2084 alias with 0. Since that fix, 60-second live runs had 2-6 silent 10 ms blocks out of about 6,330 and no host underruns, and under host load 0-8 blocks per run still repeated stale audio; no listening check has confirmed the stutter is gone."
     },
     {
       "id": "A10",
