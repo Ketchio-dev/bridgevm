@@ -28,7 +28,7 @@ snapshot describes retained evidence, not a guarantee for every later commit:
 <!-- BEGIN GENERATED: capability-summary -->
 **Product state: Engineering Preview.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots and window Coherence verbs. 3D acceleration is excluded from General Preview and v1; release-blocking evidence remains open and known defects are disclosed below.
 
-Release scenarios met: **1 / 5**.
+Release scenarios met: **2 / 5**.
 
 | ID | Scenario | State | Criteria | Known defects |
 | --- | --- | --- | --- | --- |
@@ -36,9 +36,9 @@ Release scenarios met: **1 / 5**.
 | S2 | Use the Windows desktop | `OPEN` | A4, B4, A5, A8 (open) | The supported 3D-off display is a fixed 1024x768 framebuffer (the largest mode of the bundled firmware), and recent runs showed a choppy window and audible audio stutter (see A8 and A9). **A8**: In the supported 3D-off configuration Windows runs at a fixed 1024x768 and resizing the window does not change its resolution; resize was proven only with a test-signed virtio-gpu driver that Secure Boot blocks. |
 | S3 | Work with the Mac | `MET` | A6, A7 | none |
 | S4 | Keep the VM safe | `OPEN` | A19 (open), A15, A16, A12 | **A19**: Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage is unproven. The ten-lane product lifecycle campaign passed 10/10 once, at 949f4c26, which the operator accepted before a release head was designated. Physical power loss during a snapshot operation is outside this criterion and is not tested. |
-| S5 | Go online | `OPEN` | A20 (open) | none |
+| S5 | Go online | `MET` | A20 | none |
 
-Release-blocking criteria proven: **10 / 14**. Open: A8, A9, A19, A20.
+Release-blocking criteria proven: **11 / 14**. Open: A8, A9, A19.
 
 Other known open defects:
 - **B6**: Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness.
