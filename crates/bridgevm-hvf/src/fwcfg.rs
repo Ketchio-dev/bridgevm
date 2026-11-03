@@ -35,6 +35,10 @@ pub const KEY_FILE_DIR: u16 = 0x0019;
 /// First selector handed out to dynamically registered named files.
 pub const KEY_FILE_FIRST: u16 = 0x0020;
 
+/// `FW_CFG_BOOT_MENU` — non-zero makes the firmware read `etc/boot-menu-wait`.
+pub const KEY_BOOT_MENU: u16 = 0x000e;
+/// `etc/boot-menu-wait`: the firmware front-page wait in milliseconds (u16).
+pub const BOOT_MENU_WAIT_FILE: &str = "etc/boot-menu-wait";
 /// `FW_CFG_KERNEL_SIZE` — direct-boot kernel payload size.
 pub const KEY_KERNEL_SIZE: u16 = 0x0008;
 /// `FW_CFG_INITRD_SIZE` — direct-boot initrd payload size.

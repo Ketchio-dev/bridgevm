@@ -41,6 +41,19 @@ fn generated_smbios_tables_are_registered_by_default() {
 }
 
 #[test]
+fn the_firmware_boots_without_its_front_page_countdown() {
+    // ArmVirtQemu's QemuBootOrderLib: boot menu on + etc/boot-menu-wait = 0 ms
+    // sets PcdPlatformBootTimeOut to 0 instead of the 5 s platform default.
+    let mut p = platform();
+    p.fw_cfg.select(crate::fwcfg::KEY_BOOT_MENU);
+    assert_eq!(p.fw_cfg.read_data(2), 1u16.to_le_bytes());
+    let (select, size) = fw_cfg_file_entry(&mut p, b"etc/boot-menu-wait");
+    assert_eq!(size, 2);
+    p.fw_cfg.select(select);
+    assert_eq!(p.fw_cfg.read_data(2), 0u16.to_le_bytes());
+}
+
+#[test]
 fn default_fw_cfg_omits_the_optional_ramfb_file() {
     let mut p = platform();
 
