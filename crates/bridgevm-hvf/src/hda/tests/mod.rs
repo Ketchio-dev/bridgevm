@@ -6,6 +6,7 @@ mod diagnostics;
 mod diagnostics_teardown;
 mod dma_address;
 mod helpers;
+mod lpib_alias;
 mod part_1;
 mod pcm_fragments;
 mod read_into;
