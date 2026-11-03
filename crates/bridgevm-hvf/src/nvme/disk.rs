@@ -133,10 +133,20 @@ impl DiskBackend {
         }
     }
 
+    /// Sync for a guest FLUSH or FUA write, in the configured mode.
     pub(crate) fn flush(&mut self) -> io::Result<()> {
+        self.flush_with(false)
+    }
+
+    /// Host-side sync (clean shutdown, VM exit): always `F_FULLFSYNC`.
+    pub(crate) fn flush_durable(&mut self) -> io::Result<()> {
+        self.flush_with(true)
+    }
+
+    fn flush_with(&mut self, durable: bool) -> io::Result<()> {
         match self {
             Self::Memory(_) => Ok(()),
-            Self::RawFile(disk) => disk.flush(),
+            Self::RawFile(disk) => disk.flush(durable),
         }
     }
 
@@ -161,7 +171,7 @@ impl RawFileDisk {
     /// Make prior write-through writes durable on the backing storage. A
     /// read-only raw backend keeps guest writes in its volatile COW overlay, so
     /// it has no host-file data to synchronize.
-    pub(crate) fn flush(&mut self) -> io::Result<()> {
+    pub(crate) fn flush(&mut self, durable: bool) -> io::Result<()> {
         if !self.write_back {
             return Ok(());
         }
@@ -174,7 +184,11 @@ impl RawFileDisk {
             }
         }
 
-        super::flush_mode::sync(&self.file)
+        if durable {
+            super::flush_mode::sync_durable(&self.file)
+        } else {
+            super::flush_mode::sync(&self.file)
+        }
     }
 
     /// Read `dst.len()` bytes at `offset`: one `pread` of the whole span from the

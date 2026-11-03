@@ -23,9 +23,21 @@ impl NvmeController {
     /// FLUSH and disabling the write cache both promise durability, so both
     /// must cover every namespace and surface a failure instead of success.
     pub(crate) fn flush_all_namespaces(&mut self) -> u16 {
-        let mut ok = self.disk.flush().is_ok();
+        self.flush_all_namespaces_with(DiskBackend::flush)
+    }
+
+    /// A clean guest shutdown leaves every namespace durable in any mode.
+    pub(crate) fn flush_all_namespaces_durable(&mut self) -> u16 {
+        self.flush_all_namespaces_with(DiskBackend::flush_durable)
+    }
+
+    fn flush_all_namespaces_with(
+        &mut self,
+        flush: fn(&mut DiskBackend) -> std::io::Result<()>,
+    ) -> u16 {
+        let mut ok = flush(&mut self.disk).is_ok();
         if let Some(disk2) = self.disk2.as_mut() {
-            ok &= disk2.flush().is_ok();
+            ok &= flush(disk2).is_ok();
         }
         if ok {
             SC_SUCCESS

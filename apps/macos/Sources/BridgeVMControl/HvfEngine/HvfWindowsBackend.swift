@@ -210,6 +210,7 @@ final class HvfWindowsBackend: VMBackend {
             virtioNet: config.networkEnabled ?? true,
             virtioGpu3d: config.experimental3DAllowed ?? false,
             nvmeBufferedIO: false,
+            durableDiskWrites: config.durableDiskWritesEnabled ?? false,
             ctlFilePath: ctlFilePath, allowsExperimental3D: config.experimental3DAllowed ?? false
         )
     }

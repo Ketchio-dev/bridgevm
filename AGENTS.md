@@ -66,8 +66,12 @@ operator's own data, images or VMs.
 - Never boot or modify canonical images or the operator's VMs directly. Test
   runs use `cp -c` APFS clones with their own vars file and delete the
   clones (and any vTPM key they created) afterwards.
-- A guest flush is acknowledged only after the host made the data durable
-  (`F_FULLFSYNC`), unless the user explicitly chooses a faster mode.
+- Guest flushes are ordered by default: acknowledged after `F_BARRIERFSYNC`
+  and made durable with `F_FULLFSYNC` within about a second, so a host power
+  loss can drop the last second of writes but never leaves the guest disk
+  inconsistent. A per-VM setting makes every flush durable before it is
+  acknowledged, and a clean guest shutdown always ends with `F_FULLFSYNC`
+  (operator delegation, 2026-11-03).
 
 ## 6. Pull requests and CI
 

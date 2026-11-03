@@ -134,16 +134,16 @@ impl NvmeController {
             .export_to_path(path)
     }
 
-    /// Flush host-file-backed write-through media.
+    /// Make host-file-backed write-through media durable (VM exit).
     pub fn flush_disk(&mut self) -> io::Result<()> {
-        self.disk.flush()
+        self.disk.flush_durable()
     }
 
     pub fn flush_second_namespace_disk(&mut self) -> io::Result<()> {
         self.disk2
             .as_mut()
             .ok_or_else(second_namespace_missing)?
-            .flush()
+            .flush_durable()
     }
 
     /// Current byte length of the backing disk.

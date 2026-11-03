@@ -152,6 +152,7 @@ fn the_app_surfaces_reproduce_the_wrapper_device_shape() {
             }),
             aggressive_performance: true,
             nvme_buffered_io: true,
+            nvme_durable_flush: false,
             clipboard_sync: true,
             share: Some(ShareSurface {
                 host_dir: "/host/share".into(),
@@ -237,6 +238,7 @@ fn surfaced_spawns_append_to_the_run_log_across_generations() {
             virtio_gpu_3d: None,
             aggressive_performance: false,
             nvme_buffered_io: false,
+            nvme_durable_flush: false,
             clipboard_sync: false,
             share: None,
             virtio_net: false,
@@ -308,6 +310,7 @@ fn the_app_ships_virgl_1050_and_the_env_says_so() {
             }),
             aggressive_performance: true,
             nvme_buffered_io: true,
+            nvme_durable_flush: false,
             clipboard_sync: false,
             share: None,
             virtio_net: false,

@@ -87,6 +87,9 @@ Options:
                           Windows binds its in-box hdaudio driver.
   --hda-coreaudio         --hda plus real-time CoreAudio playback, so the guest
                           audio comes out the Mac speakers.
+  --nvme-durable-flush    The user's durable disk writes: every guest flush
+                          waits for F_FULLFSYNC. Default: ordered flushes
+                          (F_BARRIERFSYNC, durable within about a second).
   --nvme-buffered-io      Force the byte-identical buffered NVMe data path for
                           an audited storage-integrity A/B diagnostic run.
                           The production default remains direct DMA.

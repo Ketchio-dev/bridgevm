@@ -37,6 +37,7 @@ mod tests;
 pub use admin::*;
 pub use controller::*;
 pub(crate) use disk::*;
+pub use flush_mode::host_sync_label;
 pub(crate) use flush_worker::FlushWorker;
 pub use flush_worker::FLUSH_DONE_HOOK;
 pub(crate) use identify::*;

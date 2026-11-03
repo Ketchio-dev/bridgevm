@@ -18,8 +18,9 @@
 use std::fs::File;
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::time::Instant;
 
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
@@ -72,8 +73,31 @@ impl FlushWorker {
         std::thread::Builder::new()
             .name("nvme-flush".into())
             .spawn(move || {
-                // Ends when the controller drops its sender.
-                while let Ok(first) = inbox.recv() {
+                // When an ordered flush left a full sync owed: run it then.
+                let mut owed: Option<Instant> = None;
+                loop {
+                    // Ends when the controller drops its sender.
+                    let first = match owed {
+                        None => match inbox.recv() {
+                            Ok(job) => job,
+                            Err(_) => break,
+                        },
+                        Some(due) => match inbox
+                            .recv_timeout(due.saturating_duration_since(Instant::now()))
+                        {
+                            Ok(job) => job,
+                            Err(RecvTimeoutError::Timeout) => {
+                                owed = None;
+                                if flush_mode::full_sync_owed() {
+                                    for file in disk.iter().chain(disk2.iter()) {
+                                        let _ = flush_mode::sync_durable(file);
+                                    }
+                                }
+                                continue;
+                            }
+                            Err(RecvTimeoutError::Disconnected) => break,
+                        },
+                    };
                     let mut batch = vec![first];
                     batch.extend(inbox.try_iter());
                     let sync = |file: &Option<File>, needed: bool| {
@@ -92,6 +116,9 @@ impl FlushWorker {
                     worker.changed.notify_all();
                     if let Some(hook) = FLUSH_DONE_HOOK.get() {
                         hook();
+                    }
+                    if owed.is_none() && flush_mode::full_sync_owed() {
+                        owed = Some(Instant::now() + flush_mode::DURABLE_WITHIN);
                     }
                 }
             })?;

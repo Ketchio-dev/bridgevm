@@ -55,7 +55,11 @@ pub(crate) fn attach_boot_media(
             || var("BRIDGEVM_CHECKPOINT_STATE")
             || var("BRIDGEVM_RESTORE_STATE");
         platform.set_nvme_async_flush(!inline);
-        println!("NVMe flush: {}", if inline { "inline" } else { "worker thread" });
+        println!(
+            "NVMe flush: {}, host sync {}",
+            if inline { "inline" } else { "worker thread" },
+            bridgevm_hvf::nvme::host_sync_label()
+        );
     }
     let mut pci_installer_iso_attached = false;
     let mut legacy_mmio_installer_iso_attached = false;

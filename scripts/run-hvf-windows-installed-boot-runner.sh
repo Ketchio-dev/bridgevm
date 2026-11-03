@@ -449,6 +449,9 @@ build_installed_boot_env_args() {
   if [[ "${HDA_COREAUDIO:-0}" == "1" ]]; then
     ENV_ARGS+=('BRIDGEVM_HDA_COREAUDIO=1')
   fi
+  if [[ "${NVME_DURABLE_FLUSH:-0}" == "1" ]]; then
+    ENV_ARGS+=('BRIDGEVM_NVME_FLUSH=durable')
+  fi
   if [[ "${NVME_BUFFERED_IO:-0}" == "1" ]]; then
     ENV_ARGS+=('BRIDGEVM_NVME_BUFFERED_IO=1')
   fi
