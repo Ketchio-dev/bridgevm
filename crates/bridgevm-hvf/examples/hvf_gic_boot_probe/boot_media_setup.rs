@@ -7,7 +7,15 @@ pub(crate) fn attach_boot_media(
     ram_size: usize,
     vars_data: &[u8],
 ) {
-    platform.load_flash_vars(vars_data);
+    // Persisted with the vars at exit, like a choice made in the firmware setup.
+    match bridgevm_hvf::uefi_resolution::with_default_resolution(vars_data) {
+        Some(seeded) => {
+            let (width, height) = bridgevm_hvf::uefi_resolution::DEFAULT_RESOLUTION;
+            println!("UEFI vars: preferred resolution {width}x{height} added (PlatformConfig)");
+            platform.load_flash_vars(&seeded);
+        }
+        None => platform.load_flash_vars(vars_data),
+    }
     if let Some(nvme) = media.nvme_disk.as_ref() {
         platform
             .attach_nvme_raw_file(&nvme.path, nvme.write_back)
