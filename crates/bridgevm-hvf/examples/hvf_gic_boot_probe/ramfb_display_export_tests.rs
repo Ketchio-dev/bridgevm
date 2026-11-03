@@ -70,9 +70,10 @@ pub(super) fn frame(seed: u8) -> Vec<u8> {
     (0..32).map(|byte| seed.wrapping_add(byte)).collect()
 }
 
+/// One 16 KiB stage-2 page of guest RAM at `RAM_BASE`.
 pub(super) fn ram_with(pixels: &[u8]) -> TestRam {
     let mut ram = TestRam {
-        bytes: vec![0; 0x1000],
+        bytes: vec![0; 0x4000],
     };
     assert!(ram.write_bytes(FB_ADDR, pixels));
     ram
@@ -211,6 +212,28 @@ fn a_watched_frame_is_read_only_after_a_guest_write() {
     assert_eq!(read_fb(&path).2[3], 0xab);
     assert!(!publisher.publish_changed(Some(config()), &ram));
     WATCH.release();
+    cleanup(&path);
+}
+
+fn never(ipa: u64, len: u64, _: u64) -> bool {
+    panic!("protected {ipa:#x}+{len:#x}, outside guest RAM")
+}
+
+static OUTSIDE_RAM: crate::ramfb_dirty_watch::FbWatch =
+    crate::ramfb_dirty_watch::FbWatch::new(never);
+
+#[test]
+fn a_frame_beyond_the_guest_ram_the_exporter_reads_is_never_write_protected() {
+    let path = scratch_path();
+    let mut publisher = publisher(&path).with_watch(&OUTSIDE_RAM);
+    let (ram, changed) = (ram_with(&frame(1)), ram_with(&frame(2)));
+    let beyond = RamfbConfig {
+        addr: RAM_BASE + 0x4000,
+        ..config()
+    };
+    assert!(!publisher.publish_changed(Some(beyond), &ram), "nothing to read there");
+    assert!(publisher.publish_changed(Some(config()), &ram), "frames in RAM still publish");
+    assert!(publisher.publish_changed(Some(config()), &changed), "compared every tick");
     cleanup(&path);
 }
 

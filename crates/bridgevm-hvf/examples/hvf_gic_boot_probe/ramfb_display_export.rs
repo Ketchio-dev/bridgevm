@@ -96,7 +96,7 @@ impl FramePublisher {
         if let Some(watch) = self.watch {
             let range = frame.map(|(config, len)| (config.addr, len as u64));
             let current = matches!((&self.published, frame), (Some((p, _)), Some((c, _))) if *p == c);
-            if !watch.may_have_changed(range) && current {
+            if !watch.may_have_changed(range, mem) && current {
                 return false;
             }
         }

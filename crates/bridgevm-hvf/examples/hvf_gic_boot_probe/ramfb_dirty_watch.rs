@@ -7,6 +7,11 @@
 //! exits and no frame compare, and a drawing guest at most one exit per export
 //! tick. `BRIDGEVM_RAMFB_DIRTY_WATCH=0` turns it off (every tick compares).
 //!
+//! The guest chooses the framebuffer address, so the watch protects a range
+//! only when the guest RAM the exporter reads backs every page of it; any
+//! other range is never protected, and every tick compares. Pages are made
+//! writable again only in ranges the watch itself protected.
+//!
 //! One lock covers each protection change together with the state that
 //! records it, on the exporter and the vCPU side, so a vCPU always sees the
 //! watch state that matches the protection. A store can still fault while its
@@ -16,6 +21,8 @@
 //! emulated as MMIO.
 
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
+
+use bridgevm_hvf::fwcfg::GuestMemoryMut;
 
 use crate::hvf_abi::{HV_MEMORY_EXEC, HV_MEMORY_READ, HV_MEMORY_WRITE};
 
@@ -44,7 +51,8 @@ pub(crate) struct FbWatch {
 struct State {
     /// The protected page range `(ipa, len)`, when armed.
     armed: Option<(u64, u64)>,
-    /// Bounds `[lo, hi)` of every range the watch ever protected.
+    /// Bounds `[lo, hi)` of every range the watch ever protected, all of them
+    /// in guest RAM.
     ever_protected: Option<(u64, u64)>,
     /// The guest wrote the armed range since the exporter last looked.
     dirty: bool,
@@ -90,12 +98,9 @@ impl FbWatch {
         if let Some((start, len)) = state.armed.filter(watched) {
             (self.protect)(start, len, WRITABLE);
             state.dirty = true;
-        } else {
-            // It faulted before the exporter made this page writable and moved
-            // or dropped the watch. Unprotect the page anyway, in case that
-            // failed, so the retried store completes.
-            (self.protect)(ipa & !(PAGE - 1), PAGE, WRITABLE);
         }
+        // Otherwise it faulted before the exporter made the page writable
+        // again and moved or dropped the watch: the retry goes through.
         true
     }
 
@@ -104,7 +109,12 @@ impl FbWatch {
     /// and returns whether the frame may have changed since the last call:
     /// always on a new range or without a watch, otherwise only after a guest
     /// write, write-protecting the range again before the caller reads it.
-    pub(crate) fn may_have_changed(&self, framebuffer: Option<(u64, u64)>) -> bool {
+    /// `ram` is the guest memory the caller reads the frame from.
+    pub(crate) fn may_have_changed(
+        &self,
+        framebuffer: Option<(u64, u64)>,
+        ram: &dyn GuestMemoryMut,
+    ) -> bool {
         let mut state = self.state();
         let usable = enabled() && !state.unavailable;
         let wanted = framebuffer.filter(|_| usable).and_then(page_range);
@@ -113,6 +123,11 @@ impl FbWatch {
                 (self.protect)(start, len, WRITABLE);
             }
             if let Some((start, len)) = wanted {
+                let size = usize::try_from(len).ok();
+                if size.and_then(|size| ram.host_ptr(start, size)).is_none() {
+                    give_up(&mut state, (start, len), "framebuffer outside guest RAM");
+                    return true;
+                }
                 let (lo, hi) = state.ever_protected.unwrap_or((start, start + len));
                 state.ever_protected = Some((lo.min(start), hi.max(start + len)));
                 state.dirty = false;
@@ -135,15 +150,10 @@ impl FbWatch {
     fn protect_or_give_up(&self, state: &mut State, (start, len): (u64, u64)) {
         if (self.protect)(start, len, READ_ONLY) {
             state.armed = Some((start, len));
-            return;
+        } else {
+            (self.protect)(start, len, WRITABLE);
+            give_up(state, (start, len), "hv_vm_protect refused");
         }
-        (self.protect)(start, len, WRITABLE);
-        state.armed = None;
-        state.unavailable = true;
-        eprintln!(
-            "ramfb display export: write tracking unavailable for \
-             {start:#x}+{len:#x}; comparing every tick"
-        );
     }
 
     /// The exporter could not publish what it read: read it again next tick.
@@ -158,6 +168,16 @@ impl FbWatch {
             (self.protect)(start, len, WRITABLE);
         }
     }
+}
+
+/// Stop tracking for good: every tick compares from now on.
+fn give_up(state: &mut State, (start, len): (u64, u64), reason: &str) {
+    state.armed = None;
+    state.unavailable = true;
+    eprintln!(
+        "ramfb display export: write tracking unavailable for {start:#x}+{len:#x} \
+         ({reason}); comparing every tick"
+    );
 }
 
 /// The stage-2 pages covering `(gpa, len)`.
