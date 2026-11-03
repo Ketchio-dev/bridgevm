@@ -13,10 +13,13 @@ fn swap_fails_with(error: impl Fn() -> io::Error) -> impl Fn(&Path, &Path) -> io
 fn an_unsupported_exchange_names_the_operation_and_volume_and_keeps_the_old_snapshot() {
     let (s, dest, staging, old, manifest) = fixture("publication-unsupported-report");
     let reported = assert_unsupported(create_with(&s, "new", swap_fails_with(unsupported)));
-    let prefix = format!(
-        "{} is on a volume of type ",
-        dest.canonicalize().unwrap().display()
-    );
+    // Only macOS reports the volume's type.
+    let volume = if cfg!(target_os = "macos") {
+        "a volume of type "
+    } else {
+        "a volume"
+    };
+    let prefix = format!("{} is on {volume}", dest.canonicalize().unwrap().display());
     let operation = format!(
         " that cannot atomically exchange directories (renamex_np RENAME_SWAP: {}); \
          it was left unchanged; {GUIDANCE}",
