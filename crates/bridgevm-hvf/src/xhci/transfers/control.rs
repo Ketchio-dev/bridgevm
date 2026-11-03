@@ -21,6 +21,8 @@ const TRB_SIZE_BYTES: u64 = 16;
 const TRB_TYPE_SETUP_STAGE: u32 = 2;
 const TRB_TYPE_DATA_STAGE: u32 = 3;
 const TRB_DATA_STAGE_DIRECTION_IN: u32 = 1 << 16;
+/// IDT: the data stage's bytes (at most 8) are the TRB parameter itself.
+const TRB_IMMEDIATE_DATA: u32 = 1 << 6;
 const DATA_STAGE_OFFSET: u64 = TRB_SIZE_BYTES;
 const STATUS_STAGE_OFFSET: u64 = TRB_SIZE_BYTES * 2;
 
@@ -153,7 +155,10 @@ impl XhciController {
             trace::ep0_reject_with_value("unexpected_data_length", data_length);
             return false;
         };
-        if !guest_range_readable(mem, data.parameter, data_len) {
+        // Immediate data (IDT) travels in the TRB's parameter field, not at a
+        // guest address: Windows sends the keyboard LED report this way.
+        let immediate = data.control & TRB_IMMEDIATE_DATA != 0 && data_len <= 8;
+        if !immediate && !guest_range_readable(mem, data.parameter, data_len) {
             trace::ep0_reject_with_gpa("data_read_failed", data.parameter);
             return false;
         }

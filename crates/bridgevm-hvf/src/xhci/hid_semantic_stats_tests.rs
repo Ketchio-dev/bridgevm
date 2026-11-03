@@ -252,3 +252,32 @@ fn hid_semantic_stats_record_interface_one_class_protocol_idle_and_set_report_re
         XHCI_HID_PROTOCOL_BOOT
     );
 }
+
+#[test]
+fn set_report_with_immediate_data_completes() {
+    // Given: Windows sets the keyboard LEDs with the one-byte report inside the
+    // data stage TRB (IDT), so its parameter is the data, not an address.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    // Bytes past the report's length are not guest RAM either.
+    for (parameter, slot) in [(0x5a5a_0000_0000_0000u64, 1u64), (0xffff_ffff_ffff_ff02, 2)] {
+        let packet = SetupPacketFields {
+            bm_request_type: 0x21,
+            request: 0x09,
+            value: 0x0200,
+            index: 0,
+            length: 1,
+        };
+        let shape = ControlTransferShape::DataOutImmediate { parameter };
+        if slot == 1 {
+            prepare_addressed_control_transfer(&mut xhci, &mut mem, packet, shape);
+        } else {
+            write_control_transfer_at(&mut mem, xhci.slot1_ep0_dequeue, packet, shape);
+        }
+        // When: the guest rings EP0.
+        assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
+    }
+    // Then: both requests complete (a pending one stalled shutdown by ~2 s).
+    assert_eq!(xhci.hid_semantic_stats().hid_set_report, 2);
+    assert_success_transfer_event_for_trb(&mem, EVENT_RING + TRB_SIZE, EP0_RING);
+}
