@@ -118,7 +118,11 @@ fn while_held<R>(
 /// A vCPU rings a READ and runs it as its MMIO exit does; while the
 /// transfer is held, another thread tries the lock. Returns whether it got
 /// the lock, with the READ's CQ slot and buffer as it saw them.
-fn read_held_by_a_vcpu(unlocked: bool) -> (Option<((u16, u16), u8)>, FakeMem) {
+/// The READ's (command ID, status) and first buffer byte, as another thread
+/// saw them during the transfer.
+type Seen = Option<((u16, u16), u8)>;
+
+fn read_held_by_a_vcpu(unlocked: bool) -> (Seen, FakeMem) {
     let (mut ctrl, mem, path) = unlocked_controller(&format!("unlocked-io-lock-{unlocked}"));
     ctrl.set_unlocked_io(unlocked);
     let gate = Arc::clone(&ctrl.io_gate);
