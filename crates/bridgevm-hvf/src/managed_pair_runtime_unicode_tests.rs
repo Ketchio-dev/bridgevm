@@ -1,4 +1,5 @@
 use super::super::tests::fixture;
+#[cfg(target_os = "macos")]
 use super::super::*;
 
 #[cfg(target_os = "macos")]

@@ -24,8 +24,6 @@ final class LibraryMoveSelectionAssets {
             .appendingPathComponent("move selection ' " + UUID().uuidString)
         guard mkdir(root.path, 0o700) == 0 else { throw CocoaError(.fileWriteFileExists) }
         ownsRoot = true
-        // Do not silently choose a stale helper or build a new one from the test.
-        _ = try XCTUnwrap(ProcessInfo.processInfo.environment["BRIDGEVM_TEST_SNAPSHOT_HELPER"])
         let originalHelper = HvfMediaImportTestSupport.helper
         let wrapper = repository.appendingPathComponent("scripts/run-hvf-windows-installed-boot.sh")
         for file in [helper, wrapper] {

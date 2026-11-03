@@ -6,8 +6,10 @@ use std::{
     collections::{HashMap, VecDeque},
     io::{self, Read, Write},
     net::{Ipv4Addr as StdIpv4Addr, Shutdown, TcpStream},
-    os::fd::RawFd,
 };
+
+#[cfg(target_os = "macos")]
+use std::os::fd::RawFd;
 
 use super::helpers::*;
 
