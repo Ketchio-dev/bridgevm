@@ -38,7 +38,7 @@
         "RELEASE_CANDIDATE",
         "RELEASED"
       ],
-      "description": "BETA or later requires every release-blocking criterion to be PROVEN."
+      "description": "BETA or later requires every release-blocking criterion to be PROVEN and every scenario to be met."
     },
     "wording": {
       "type": "object",
@@ -74,6 +74,20 @@
         }
       }
     },
+    "scenarios": {
+      "type": "array",
+      "description": "The release gate: user scenarios. When present, a criterion is release-blocking exactly when a scenario lists it, and a scenario is met only when all its criteria are PROVEN and its known_defect is null.",
+      "items": {
+        "$ref": "#/definitions/scenario"
+      }
+    },
+    "scope_history": {
+      "type": "array",
+      "description": "Dated operator decisions that changed the release scope, oldest first.",
+      "items": {
+        "$ref": "#/definitions/scope_decision"
+      }
+    },
     "criteria": {
       "type": "array",
       "minItems": 1,
@@ -83,6 +97,64 @@
     }
   },
   "definitions": {
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "statement",
+        "criteria",
+        "known_defect"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^S[1-9]$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[AB][0-9]{1,2}$"
+          }
+        },
+        "known_defect": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "User-facing disclosure of a scenario-level defect that no single criterion captures."
+        }
+      }
+    },
+    "scope_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "decision"
+      ],
+      "properties": {
+        "date": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "decision": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "criterion": {
       "type": "object",
       "additionalProperties": false,
