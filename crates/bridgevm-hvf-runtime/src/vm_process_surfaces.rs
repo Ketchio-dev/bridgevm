@@ -92,6 +92,10 @@ pub(super) fn env(surfaces: &DeviceSurfaces) -> Vec<(&'static str, String)> {
             "BRIDGEVM_VIRTIO_GPU_TRACE_JSONL",
             evidence("virtio-gpu.jsonl"),
         ));
+    } else if surfaces.virtio_gpu_2d {
+        // The device alone, at its default 1AF4:1050 identity: no 3D backend,
+        // bind alias or trace. ramfb above stays for firmware and driverless boots.
+        env.push(("BRIDGEVM_VIRTIO_GPU", "1".to_string()));
     }
     if surfaces.host_diagnostic_stop {
         env.push((

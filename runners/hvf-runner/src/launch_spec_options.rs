@@ -21,6 +21,7 @@ pub(super) fn build(args: &crate::Args, helper: &Path) -> HelperLaunch {
                 virgl: args.gpu_trace_protocol.as_deref() == Some("virgl"),
                 device_id: args.virtio_gpu_device_id.clone(),
             }),
+            virtio_gpu_2d: args.virtio_gpu,
             aggressive_performance: args.virtio_gpu_3d,
             nvme_buffered_io: args.nvme_buffered_io,
             nvme_durable_flush: args.nvme_durable_flush,
@@ -41,5 +42,31 @@ pub(super) fn build(args: &crate::Args, helper: &Path) -> HelperLaunch {
             host_diagnostic_stop: args.typed.helper_host_diagnostic_stop,
         }),
         swtpm_sockets: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+    use std::path::Path;
+
+    fn surfaces(gpu_flags: &[&str]) -> bridgevm_hvf_runtime::DeviceSurfaces {
+        let mut argv = vec!["hvf-runner", "--launch-spec", "m.json", "--helper", "p"];
+        argv.extend(["--helper-evidence-dir", "/ev"]);
+        argv.extend(gpu_flags);
+        let args = crate::Args::try_parse_from(argv).unwrap();
+        super::build(&args, Path::new("p")).surfaces.unwrap()
+    }
+
+    #[test]
+    fn the_owned_launch_carries_the_2d_display_device() {
+        assert!(!surfaces(&[]).virtio_gpu_2d);
+        let two_d = surfaces(&["--virtio-gpu"]);
+        assert!(two_d.virtio_gpu_2d);
+        assert!(two_d.virtio_gpu_3d.is_none());
+        assert!(
+            !two_d.aggressive_performance,
+            "the 3D renderer lane stays off"
+        );
     }
 }

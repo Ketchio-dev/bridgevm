@@ -35,7 +35,7 @@ pub struct HelperLaunch {
 }
 
 /// What the product app wires beyond bare boot: display out, input in,
-/// and (when the guest image carries the driver) the venus 3D GPU.
+/// and (when the guest image carries the driver) a virtio-gpu, 2D or 3D.
 ///
 /// These mirror the wrapper script's flags exactly -- same env contract,
 /// same defaults -- so a boot through the typed path presents the same
@@ -52,6 +52,9 @@ pub struct DeviceSurfaces {
     /// virtio-gpu 3D. The protocol and PCI identity follow the app's
     /// shipping choice; venus additionally wires MoltenVK + BAR2 sizing.
     pub virtio_gpu_3d: Option<GpuSurface>,
+    /// The 2D virtio-gpu display device (PCI 1AF4:1050) for a guest with the
+    /// signed virtio-win display driver. `virtio_gpu_3d` wins when both are set.
+    pub virtio_gpu_2d: bool,
     /// The app's shipping renderer lane (wrapper --performance-risk
     /// aggressive): direct renderer, async scanout, and IOSurface scanout.
     /// CPU readback remains paced at the display-export cadence for evidence

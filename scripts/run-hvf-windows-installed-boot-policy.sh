@@ -27,6 +27,8 @@ print_installed_boot_policy() {
       gpu_bind_policy="1"
     fi
     gpu_trace_policy="${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}"
+  elif [[ "${VIRTIO_GPU:-0}" == "1" ]]; then
+    gpu_enabled_policy="1"
   fi
   if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" || -n "$AGENT_SERVICE_CONTROL" ]]; then
     virtio_console_policy="1"

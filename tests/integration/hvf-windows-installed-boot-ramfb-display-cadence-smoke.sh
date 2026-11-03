@@ -74,4 +74,19 @@ fi
 grep -q "FAIL: --display-export-ms requires an integer from 100 to 60000" <<< "$out" ||
   fail "--display-export-ms 33: $out"
 
-echo "PASS: ramfb display cadence is its own bounded flag"
+# --virtio-gpu adds the 2D display device and nothing else GPU-related; ramfb stays.
+gpu_lines() { grep '^BRIDGEVM_VIRTIO_GPU' <<< "$1" | grep -v '^BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=' || true; }
+[[ -z "$(gpu_lines "$app")" ]] || fail "a run without --virtio-gpu got a GPU: $app"
+two_d="$(installed_boot_env --display-export-ms 100 --display-export-fb "$FB" --virtio-gpu)" ||
+  fail "--virtio-gpu rejected: $two_d"
+[[ "$(gpu_lines "$two_d")" == "BRIDGEVM_VIRTIO_GPU=1" ]] || fail "--virtio-gpu env: $two_d"
+expect "$two_d" BRIDGEVM_RAMFB 1
+both="$(installed_boot_env --virtio-gpu --virtio-gpu-3d)" || fail "--virtio-gpu --virtio-gpu-3d rejected: $both"
+expect "$both" BRIDGEVM_VIRTIO_GPU_3D 1
+# The launcher drops inherited BRIDGEVM_* except its forward list.
+inherited="$(BRIDGEVM_VIRTIO_GPU=1 BRIDGEVM_VIRTIO_GPU_TRACE_JSONL="$STORE/gpu.jsonl" installed_boot_env)" ||
+  fail "inherited GPU env rejected: $inherited"
+expect "$inherited" BRIDGEVM_VIRTIO_GPU 1
+expect "$inherited" BRIDGEVM_VIRTIO_GPU_TRACE_JSONL "$STORE/gpu.jsonl"
+
+echo "PASS: ramfb display cadence is its own bounded flag; --virtio-gpu adds only the 2D device"

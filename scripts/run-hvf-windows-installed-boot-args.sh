@@ -25,6 +25,7 @@ init_installed_boot_defaults() {
   SWTPM_BIN_EXPLICIT="0"
   SWTPM_KEY_STDIN="0"
   PERFORMANCE_RISK="balanced"
+  VIRTIO_GPU="0"
   VIRTIO_GPU_3D="0"
   VIRTIO_GPU_PCI_DEVICE_ID=""
   VIRTIO_GPU_TRACE_JSONL=""
@@ -210,6 +211,7 @@ parse_installed_boot_args() {
         shift 2
         ;;
       --trace-irq) TRACE_IRQ="1"; shift ;;
+      --virtio-gpu) VIRTIO_GPU="1"; shift ;;
       --virtio-gpu-3d) VIRTIO_GPU_3D="1"; shift ;;
       --virtio-gpu-device-id)
         [[ $# -ge 2 ]] || { usage; exit 2; }

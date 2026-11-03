@@ -1,3 +1,4 @@
+use super::super::GpuSurface;
 use super::*;
 
 fn surfaces() -> DeviceSurfaces {
@@ -6,6 +7,7 @@ fn surfaces() -> DeviceSurfaces {
         display_export_ms: 100,
         input_control: None,
         virtio_gpu_3d: None,
+        virtio_gpu_2d: false,
         aggressive_performance: false,
         nvme_buffered_io: false,
         nvme_durable_flush: false,
@@ -59,6 +61,35 @@ fn only_the_users_durable_disk_choice_makes_every_flush_a_full_sync() {
     assert!(values(&surfaces, "BRIDGEVM_NVME_FLUSH").is_empty());
     surfaces.nvme_durable_flush = true;
     assert_eq!(values(&surfaces, "BRIDGEVM_NVME_FLUSH"), ["durable"]);
+}
+
+#[test]
+fn the_2d_display_device_adds_exactly_the_device_switch() {
+    let mut surfaces = surfaces();
+    let without = env(&surfaces);
+    surfaces.virtio_gpu_2d = true;
+    let with = env(&surfaces);
+    let added: Vec<_> = with
+        .iter()
+        .filter(|entry| !without.contains(entry))
+        .collect();
+    // No 3D backend, PCI id override, bind alias or trace: the default 1AF4:1050 device.
+    assert_eq!(added, [&("BRIDGEVM_VIRTIO_GPU", "1".to_string())]);
+    assert_eq!(with.len(), without.len() + 1);
+}
+
+#[test]
+fn three_d_wins_when_both_gpu_surfaces_are_set() {
+    let mut surfaces = surfaces();
+    surfaces.virtio_gpu_3d = Some(GpuSurface {
+        virgl: true,
+        device_id: Some("1050".to_string()),
+    });
+    let three_d = env(&surfaces);
+    surfaces.virtio_gpu_2d = true;
+    assert_eq!(env(&surfaces), three_d);
+    assert_eq!(values(&surfaces, "BRIDGEVM_VIRTIO_GPU"), ["1"]);
+    assert_eq!(values(&surfaces, "BRIDGEVM_VIRTIO_GPU_3D"), ["1"]);
 }
 
 #[test]
