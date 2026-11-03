@@ -39,7 +39,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_wire import AgentWire  # noqa: E402
 from guest_bench_commands import (  # noqa: E402
-    HIGHER_IS_BETTER, SUITE, command_line, cursor_logger, display_animation, net_download, parse_bvbench,
+    HIGHER_IS_BETTER, SUITE, command_line, cursor_logger, desktop_mode, display_animation, net_download,
+    parse_bvbench,
     stall_under_flush)
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -327,6 +328,20 @@ def pointer_test(engine: Engine, record: dict) -> None:
                                 "agent-rtt-p95": round(rtts[int(len(rtts) * 0.95)], 1)})
 
 
+def save_display_frame(path: Path, out: Path) -> None:
+    """The last published BVFB frame (XRGB8888) as a PPM."""
+    data = path.read_bytes()
+    magic, _, width, height, stride = struct.unpack_from("<5I", data, 0)
+    if magic != 0x42564642 or not width or not height:
+        return
+    rgb = bytearray(width * height * 3)
+    for y in range(height):
+        row = data[64 + y * stride:64 + y * stride + width * 4]
+        rgb[y * width * 3:(y + 1) * width * 3] = bytes(
+            b for x in range(width) for b in (row[4 * x + 2], row[4 * x + 1], row[4 * x]))
+    out.write_bytes(b"P6 %d %d 255\n" % (width, height) + bytes(rgb))
+
+
 def consume_display(path: Path, seconds: float, hz: float = 120.0) -> dict:
     """Read display.fb like the app's display link: each tick take the published frame (even
     sequence at byte 24, publish time at 48) and post a frame request (CLOCK_UPTIME_RAW ns at 32)."""
@@ -402,6 +417,14 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                 pointer_test(engine, record)
             except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
                 record["errors"].append(f"pointer: {type(error).__name__}: {error}")
+        if args.desktop_mode:
+            try:
+                _, text = engine.run(command_line(desktop_mode(args.desktop_mode == "native")), time.monotonic() + 60)
+                record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
+                if isinstance(engine, BridgeVM) and engine.display_fb.exists():
+                    save_display_frame(engine.display_fb, boot_dir / "desktop.pnm")
+            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                record["errors"].append(f"desktop-mode: {type(error).__name__}: {error}")
         if args.display:
             try:
                 display_test(engine, record)
@@ -554,6 +577,8 @@ def main() -> None:
     r.add_argument("--ram-mib", type=int, default=6144)
     r.add_argument("--net", action="store_true")
     r.add_argument("--pointer", action="store_true", help="cursor update rate per input route")
+    r.add_argument("--desktop-mode", choices=["report", "native"],
+                   help="Windows desktop resolution (native: first switch to the display's largest mode)")
     r.add_argument("--skip-suite", action="store_true", help="only boot, idle, optional pointer/net, shutdown")
     r.add_argument("--only", help="comma-separated suite tests to run (e.g. net-download)")
     r.add_argument("--boot-timer-ms", type=int, default=60000, help="BridgeVM framebuffer sample period (diagnostics)")

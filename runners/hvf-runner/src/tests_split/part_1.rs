@@ -308,6 +308,31 @@ fn launch_forwards_audited_buffered_nvme_diagnostic() {
 }
 
 #[test]
+fn launch_forwards_the_users_guest_resolution_and_refuses_an_empty_one() {
+    let parse = |resolution: &str| {
+        Args::try_parse_from([
+            "hvf-runner",
+            "--launch",
+            "--target",
+            "/tmp/win.raw",
+            "--vars",
+            "/tmp/vars.fd",
+            "--evidence-dir",
+            "/tmp/evidence",
+            "--guest-resolution",
+            resolution,
+        ])
+    };
+
+    let wrapper_args =
+        installed_boot_launch_args(&parse("1920x1080").unwrap(), Path::new("/work")).unwrap();
+    assert!(wrapper_args
+        .windows(2)
+        .any(|pair| pair == ["--guest-resolution", "1920x1080"]));
+    assert!(parse("").is_err());
+}
+
+#[test]
 fn launch_requires_vars_and_evidence_dir() {
     let args =
         Args::try_parse_from(["hvf-runner", "--launch", "--target", "/tmp/win.raw"]).unwrap();

@@ -24,6 +24,7 @@ pub(super) fn build(args: &crate::Args, helper: &Path) -> HelperLaunch {
             aggressive_performance: args.virtio_gpu_3d,
             nvme_buffered_io: args.nvme_buffered_io,
             nvme_durable_flush: args.nvme_durable_flush,
+            guest_resolution: args.guest_resolution.clone(),
             clipboard_sync: args.agent_clipboard_sync,
             share: args
                 .agent_share_host

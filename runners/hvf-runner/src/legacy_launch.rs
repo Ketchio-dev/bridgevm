@@ -176,6 +176,11 @@ pub(crate) fn installed_boot_launch_args(
     push_flag(&mut out, args.virtio_net, "--virtio-net");
     push_flag(&mut out, args.nvme_buffered_io, "--nvme-buffered-io");
     push_flag(&mut out, args.nvme_durable_flush, "--nvme-durable-flush");
+    push_string_arg(
+        &mut out,
+        "--guest-resolution",
+        args.guest_resolution.as_deref(),
+    );
     push_flag(&mut out, args.virtio_gpu_3d, "--virtio-gpu-3d");
     push_string_arg(
         &mut out,

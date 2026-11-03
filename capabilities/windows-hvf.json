@@ -33,7 +33,7 @@
         "A5",
         "A8"
       ],
-      "known_defect": "The supported 3D-off display is a fixed 1024x768 framebuffer (the largest mode of the bundled firmware), and recent runs showed a choppy window and audible audio stutter (see A8 and A9)."
+      "known_defect": "The supported 3D-off display has a fixed resolution chosen per VM before it starts (1280x800 by default, up to 2560x1600), and recent runs showed a choppy window and audible audio stutter (see A8 and A9)."
     },
     {
       "id": "S3",
@@ -166,12 +166,13 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "After a window resize the guest-reported resolution equals the request.",
-      "measured": "2026-11-03 retraction: in the supported 3D-off configuration (Secure Boot on, no test-signed driver) Windows runs on the firmware framebuffer at a fixed resolution (800x600 until 2026-11-03, then 1024x768, the largest mode of the bundled firmware), so a window resize cannot change the guest resolution. The PASS results below used the test-signed virtio-gpu driver, which the 2026-08-17 re-run showed Secure Boot refuses. 1600x900, 1920x1080 and 1280x720 all PASS with a matching final SET_SCANOUT. Re-run 2026-08-17 on net-live-20260724: the viogpu3d adapter is present but refused with CM_PROB_UNSIGNED_DRIVER (code 52), and bcdedit /set testsigning on is blocked by Secure Boot policy inside the guest, so no display exists that can adopt a resize on this image. The 1.0 install flow must provision SB-off or pre-enable testsigning; the host-side plumbing needs no change (a8-resize-secure-boot-wall-20260817.md).",
+      "measured": "2026-11-03 retraction: in the supported 3D-off configuration (Secure Boot on, no test-signed driver) Windows runs on the firmware framebuffer at a fixed resolution (800x600 until 2026-11-03; since then one chosen per VM before it starts, 1280x800 by default and up to 2560x1600, see docs/windows-arm/evidence/guest-resolution-20261103.md), so a window resize cannot change the guest resolution. Correction, same day: the intermediate 1024x768 wording described the framebuffer only; on an installed Windows the desktop stayed at its saved 800x600, scaled into the larger frame, until the VMM had the agent switch the desktop mode. The PASS results below used the test-signed virtio-gpu driver, which the 2026-08-17 re-run showed Secure Boot refuses. 1600x900, 1920x1080 and 1280x720 all PASS with a matching final SET_SCANOUT. Re-run 2026-08-17 on net-live-20260724: the viogpu3d adapter is present but refused with CM_PROB_UNSIGNED_DRIVER (code 52), and bcdedit /set testsigning on is blocked by Secure Boot policy inside the guest, so no display exists that can adopt a resize on this image. The 1.0 install flow must provision SB-off or pre-enable testsigning; the host-side plumbing needs no change (a8-resize-secure-boot-wall-20260817.md).",
       "evidence_paths": [
+        "docs/windows-arm/evidence/guest-resolution-20261103.md",
         "docs/windows-arm/evidence/a8-resize-guest-blocker-20260801.md",
         "docs/windows-arm/evidence/a8-resize-secure-boot-wall-20260817.md"
       ],
-      "known_defect": "In the supported 3D-off configuration Windows runs at a fixed 1024x768 and resizing the window does not change its resolution; resize was proven only with a test-signed virtio-gpu driver that Secure Boot blocks."
+      "known_defect": "In the supported 3D-off configuration Windows runs at a fixed resolution chosen per VM before it starts (1280x800 by default, up to 2560x1600); resizing the window does not change it and a change needs a restart. Resize was proven only with a test-signed virtio-gpu driver that Secure Boot blocks."
     },
     {
       "id": "A9",

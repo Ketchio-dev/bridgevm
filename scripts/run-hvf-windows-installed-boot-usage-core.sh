@@ -90,6 +90,9 @@ Options:
   --nvme-durable-flush    The user's durable disk writes: every guest flush
                           waits for F_FULLFSYNC. Default: ordered flushes
                           (F_BARRIERFSYNC, durable within about a second).
+  --guest-resolution WxH  Windows display resolution WxH chosen by the user;
+                          default: 1280x800 unless the VM's firmware already
+                          has one.
   --nvme-buffered-io      Force the byte-identical buffered NVMe data path for
                           an audited storage-integrity A/B diagnostic run.
                           The production default remains direct DMA.

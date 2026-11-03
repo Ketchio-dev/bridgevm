@@ -305,6 +305,9 @@ impl AgentConsoleHarness {
         let Some(command) = self.commands.get(index) else {
             if self.service {
                 println!("BVAGENT SERVICE start t={}", self.t_ms(now));
+                if let Some(command) = super::desktop_switch::take_desktop_switch_command() {
+                    self.queue.push_back(ServiceReq::Ctl(command));
+                }
                 // Anchor the heartbeat clock at service entry so the first ping
                 // is a full interval away rather than immediate.
                 self.last_send = Some(now);

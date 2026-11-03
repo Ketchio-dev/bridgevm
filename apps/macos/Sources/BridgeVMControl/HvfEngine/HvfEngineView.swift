@@ -20,6 +20,7 @@ struct HvfEngineView: View {
     @State private var shareGuestDir = "C:\\bridgevm-share"
     @State private var virtioNet = false
     @State private var durableDiskWrites = false
+    @State private var guestResolution: String?
     @State private var virtioGpu3d = false
     @State private var nvmeBufferedIO = false
     @State private var ctlFilePath = ""
@@ -129,6 +130,7 @@ struct HvfEngineView: View {
                     HvfClipboardSyncToggle(session: session, isOn: $clipboardSync)
                     HvfNetworkToggle(session: session, isOn: $virtioNet)
                     HvfDurableDiskWritesToggle(session: session, isOn: $durableDiskWrites)
+                    HvfGuestResolutionPicker(session: session, selection: $guestResolution)
                     if session.config.allowsExperimental3D {
                         Toggle("Graphics Lab 3D", isOn: $virtioGpu3d)
                     }
@@ -340,6 +342,7 @@ struct HvfEngineView: View {
         config.shareGuestDir = shareEnabled ? shareGuestDir : nil
         config.virtioNet = virtioNet
         config.durableDiskWrites = durableDiskWrites
+        config.guestResolution = guestResolution
         config.virtioGpu3d = virtioGpu3d
         config.nvmeBufferedIO = nvmeBufferedIO
         config.ctlFilePath = ctlFilePath
@@ -361,6 +364,7 @@ struct HvfEngineView: View {
         shareGuestDir = cfg.shareGuestDir ?? "C:\\bridgevm-share"
         virtioNet = cfg.virtioNet
         durableDiskWrites = cfg.durableDiskWrites
+        guestResolution = cfg.guestResolution
         virtioGpu3d = cfg.virtioGpu3d
         nvmeBufferedIO = cfg.nvmeBufferedIO
         ctlFilePath = cfg.ctlFilePath

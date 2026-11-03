@@ -223,6 +223,9 @@ pub(crate) struct Args {
     /// The user's opt-in: every guest flush waits for F_FULLFSYNC (`BRIDGEVM_NVME_FLUSH=durable`).
     #[arg(long)]
     pub(crate) nvme_durable_flush: bool,
+    /// The user's Windows display resolution, `WxH` (`BRIDGEVM_GUEST_RESOLUTION`).
+    #[arg(long, value_name = "WxH", value_parser = clap::builder::NonEmptyStringValueParser::new())]
+    pub(crate) guest_resolution: Option<String>,
     #[arg(long)]
     pub(crate) virtio_gpu_3d: bool,
     #[arg(long)]

@@ -28,6 +28,7 @@ extension HvfEngineConfig {
             virtioGpu3d: config.experimental3DAllowed ?? false,
             nvmeBufferedIO: false,
             durableDiskWrites: config.durableDiskWritesEnabled ?? false,
+            guestResolution: config.guestResolution,
             ctlFilePath: config.bundlePath + "/metadata/hvf.ctl",
             vtpmStateDir: config.bundlePath + "/metadata/vtpm",
             swtpmBin: VTPMStateSecurity.defaultSwtpmCommand(),

@@ -20,7 +20,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY_NAME = "run-hvf-windows-scripted-install-policy.sh"
-PIN = "b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b"
+PIN = "241ce0117723bf30008e83ce1329528c3486398ce6256d943cd1300defffd8ff"
 PAYLOAD = b"owned-firmware-fixture".ljust(3 * 1024 * 1024, b"\0")
 
 

@@ -31,6 +31,9 @@ struct HvfEngineConfig: Equatable {
     /// The user's opt-in: every guest flush waits for F_FULLFSYNC instead of
     /// the ordered default (F_BARRIERFSYNC, durable within about a second).
     var durableDiskWrites: Bool = false
+    /// The user's Windows display resolution ("WxH"); nil lets the VMM keep the
+    /// firmware's resolution or add its 1280x800 default.
+    var guestResolution: String? = nil
     var ctlFilePath: String
     /// The app deliberately prefers the high-performance renderer lane. It is
     /// a launch-policy switch only: falling back to balanced does not mutate
@@ -86,6 +89,7 @@ struct HvfEngineConfig: Equatable {
         }
         if nvmeBufferedIO { args.append("--nvme-buffered-io") }
         if durableDiskWrites { args.append("--nvme-durable-flush") }
+        if let guestResolution { args.append(contentsOf: ["--guest-resolution", guestResolution]) }
         if virtioNet { args.append("--virtio-net") }
         if audioEnabled { args.append("--helper-hda") }
         if clipboardSync { args.append("--agent-clipboard-sync") }
@@ -169,6 +173,9 @@ struct HvfEngineConfig: Equatable {
         }
         if durableDiskWrites {
             args.append("--nvme-durable-flush")
+        }
+        if let guestResolution {
+            args.append(contentsOf: ["--guest-resolution", guestResolution])
         }
         if virtioGpu3d {
             args.append(contentsOf: [

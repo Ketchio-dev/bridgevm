@@ -4,6 +4,8 @@
   "tag": "edk2-stable202605",
   "commit": "b03a21a63e3bd001f52c527e5a57feddb53a690b",
   "sourceDateEpoch": 1778208179,
+  "buildWorkspace": "/tmp/bridgevm-edk2-stable202605",
+  "stackCookieValue64": "0xebf683e4b7f38051",
   "platform": "ArmVirtPkg/ArmVirtQemu.dsc",
   "architecture": "AARCH64",
   "target": "RELEASE",
@@ -12,8 +14,8 @@
   "gccVersion": "aarch64-elf-gcc (GCC) 16.1.0",
   "iaslVersion": "20260408",
   "size": 3145728,
-  "sha256": "b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b",
+  "sha256": "241ce0117723bf30008e83ce1329528c3486398ce6256d943cd1300defffd8ff",
   "verifiedModules": ["SecurityStubDxe", "SecureBootConfigDxe", "EnrollDefaultKeys", "Tcg2Dxe"],
   "verifiedLibraryInstances": ["Tcg2PhysicalPresenceLibQemu"],
-  "patches": [{"path": "crates/bridgevm-hvf/firmware/patches/0001-armvirt-process-tpm-ppi.patch", "sha256": "400493912254bfe03336a8112b7fb56a42ca8bae9610d6c1bda92d250c046b14"}]
+  "patches": [{"path": "crates/bridgevm-hvf/firmware/patches/0001-armvirt-process-tpm-ppi.patch", "sha256": "400493912254bfe03336a8112b7fb56a42ca8bae9610d6c1bda92d250c046b14"}, {"path": "crates/bridgevm-hvf/firmware/patches/0002-ramfb-desktop-resolutions.patch", "sha256": "38b2a5a1b1b50a543a67fb5745771ca0c3bfe4fa28bd53fd22b819840e6ac974"}]
 }

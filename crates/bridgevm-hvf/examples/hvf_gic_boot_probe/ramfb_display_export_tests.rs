@@ -32,6 +32,25 @@ impl GuestMemoryMut for TestRam {
         let start = usize::try_from(gpa.checked_sub(RAM_BASE)?).ok()?;
         self.bytes.get(start..start.checked_add(len)?).map(<[u8]>::to_vec)
     }
+
+    fn host_ptr(&self, gpa: u64, len: usize) -> Option<*mut u8> {
+        let start = usize::try_from(gpa.checked_sub(RAM_BASE)?).ok()?;
+        let bytes = self.bytes.get(start..start.checked_add(len)?)?;
+        Some(bytes.as_ptr().cast_mut())
+    }
+}
+
+/// Guest memory without a direct host view: frames are copied to compare.
+struct CopyOnly(TestRam);
+
+impl GuestMemoryMut for CopyOnly {
+    fn write_bytes(&mut self, gpa: u64, data: &[u8]) -> bool {
+        self.0.write_bytes(gpa, data)
+    }
+
+    fn read_bytes(&self, gpa: u64, len: usize) -> Option<Vec<u8>> {
+        self.0.read_bytes(gpa, len)
+    }
 }
 
 /// 4x2 XRGB8888 with 16-byte rows: the stride equals the visible row.
@@ -132,13 +151,29 @@ fn unchanged_frames_do_not_advance_the_sequence() {
     let (_, sequence, pixels) = read_fb(&path);
     assert_eq!(sequence, 4);
     assert_eq!(pixels[5], 0xee);
+    assert!(ram.write_bytes(FB_ADDR + 31, &[0x77]));
+    assert!(publisher.publish_changed(Some(config()), &ram), "the last byte counts");
+    assert_eq!(read_fb(&path).1, 6);
     let narrower = RamfbConfig {
         width: 2,
         ..config()
     };
     assert!(publisher.publish_changed(Some(narrower), &ram));
     let (header, sequence, _) = read_fb(&path);
-    assert_eq!((header[2], sequence), (2, 6), "same bytes, new geometry");
+    assert_eq!((header[2], sequence), (2, 8), "same bytes, new geometry");
+    cleanup(&path);
+}
+
+#[test]
+fn memory_without_a_direct_view_still_skips_unchanged_frames() {
+    let path = scratch_path();
+    let mut publisher = publisher(&path);
+    let mut ram = CopyOnly(ram_with(&frame(1)));
+    assert!(publisher.publish_changed(Some(config()), &ram));
+    assert!(!publisher.publish_changed(Some(config()), &ram));
+    assert!(ram.write_bytes(FB_ADDR + 31, &[0x55]));
+    assert!(publisher.publish_changed(Some(config()), &ram), "the last byte counts");
+    assert_eq!(read_fb(&path).2[31], 0x55);
     cleanup(&path);
 }
 

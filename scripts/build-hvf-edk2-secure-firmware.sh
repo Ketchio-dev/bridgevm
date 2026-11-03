@@ -10,7 +10,13 @@ readonly SOURCE_DATE_EPOCH_PIN="1778208179"
 readonly OUTPUT_NAME="edk2-aarch64-secure-code.fd"
 readonly EXPECTED_GCC_VERSION="aarch64-elf-gcc (GCC) 16.1.0"
 readonly EXPECTED_IASL_VERSION="20260408"
-readonly EXPECTED_SHA256="b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b"
+readonly EXPECTED_SHA256="241ce0117723bf30008e83ce1329528c3486398ce6256d943cd1300defffd8ff"
+# Module debug entries embed the build path, and EDK2 draws a random stack
+# cookie per build, so both are pinned for the digest to reproduce. The cookie
+# was drawn once from a CSPRNG; it is readable in the published binary anyway,
+# as with any prebuilt EDK2 firmware.
+readonly BUILD_WORKSPACE="/tmp/bridgevm-edk2-stable202605"
+readonly STACK_COOKIE_VALUE64="0xebf683e4b7f38051"
 
 usage() {
   echo "usage: $0 /path/to/edk2 [output-directory]" >&2
@@ -25,7 +31,9 @@ fi
 edk2_root="$(cd "$1" && pwd)"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 output_dir="${2:-${repo_root}/crates/bridgevm-hvf/firmware}"
-ppi_patch="$repo_root/crates/bridgevm-hvf/firmware/patches/0001-armvirt-process-tpm-ppi.patch"
+patch_dir="$repo_root/crates/bridgevm-hvf/firmware/patches"
+ppi_patch="$patch_dir/0001-armvirt-process-tpm-ppi.patch"
+ramfb_patch="$patch_dir/0002-ramfb-desktop-resolutions.patch"
 
 actual_commit="$(git -C "$edk2_root" rev-parse HEAD)"
 if [[ "$actual_commit" != "$EXPECTED_COMMIT" ]]; then
@@ -43,20 +51,30 @@ if git -C "$edk2_root" submodule status --recursive | grep -Eq '^[+-U]' ; then
   exit 66
 fi
 
-if [[ ! -f "$ppi_patch" ]]; then
-  echo "required ArmVirt TPM PPI patch is missing: ${ppi_patch}" >&2
-  exit 67
-fi
+for patch in "$ppi_patch" "$ramfb_patch"; do
+  if [[ ! -f "$patch" ]]; then
+    echo "required firmware patch is missing: ${patch}" >&2
+    exit 67
+  fi
+  if ! git -C "$edk2_root" apply --check --ignore-space-change "$patch"; then
+    echo "firmware patch does not apply cleanly to the pinned source: ${patch}" >&2
+    exit 67
+  fi
+done
 
-if ! git -C "$edk2_root" apply --check --ignore-space-change "$ppi_patch"; then
-  echo "ArmVirt TPM PPI patch does not apply cleanly to the pinned source" >&2
-  exit 67
+if [[ -e "$BUILD_WORKSPACE" || -L "$BUILD_WORKSPACE" ]]; then
+  if [[ ! -L "$BUILD_WORKSPACE" || "$(cd "$BUILD_WORKSPACE" && pwd -P)" != "$(cd "$edk2_root" && pwd -P)" ]]; then
+    echo "refusing: ${BUILD_WORKSPACE} exists and is not a link to ${edk2_root}" >&2
+    exit 68
+  fi
+else
+  ln -s "$edk2_root" "$BUILD_WORKSPACE"
 fi
 
 patch_active=0
 cleanup_source_patch() {
   if [[ "$patch_active" == "1" ]]; then
-    git -C "$edk2_root" apply --reverse --ignore-space-change "$ppi_patch" || {
+    git -C "$edk2_root" apply --reverse --ignore-space-change "$ramfb_patch" "$ppi_patch" || {
       echo "failed to restore the EDK2 source tree after the build" >&2
       return 1
     }
@@ -66,12 +84,13 @@ cleanup_source_patch() {
     git -C "$edk2_root" restore --source=HEAD -- \
       OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c \
       OvmfPkg/Library/PlatformBootManagerLibLight/PlatformBm.c \
-      OvmfPkg/Library/PlatformBootManagerLibLight/PlatformBootManagerLib.inf
+      OvmfPkg/Library/PlatformBootManagerLibLight/PlatformBootManagerLib.inf \
+      OvmfPkg/QemuRamfbDxe/QemuRamfb.c
     patch_active=0
   fi
 }
 trap cleanup_source_patch EXIT
-git -C "$edk2_root" apply --ignore-space-change "$ppi_patch"
+git -C "$edk2_root" apply --ignore-space-change "$ppi_patch" "$ramfb_patch"
 patch_active=1
 
 readonly TPM_PPI_LIBRARY_BINDING='Tcg2PhysicalPresenceLib|OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.inf'
@@ -87,6 +106,10 @@ fi
 if ! grep -Fq 'QemuTpmPpiRead32' \
   "$edk2_root/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c"; then
   echo "firmware source does not use AArch64-safe TPM PPI field accessors" >&2
+  exit 67
+fi
+if ! grep -Eq '^ +2560, // HorizontalResolution' "$edk2_root/OvmfPkg/QemuRamfbDxe/QemuRamfb.c"; then
+  echo "firmware source does not offer the desktop ramfb resolutions" >&2
   exit 67
 fi
 
@@ -108,8 +131,14 @@ export GCC_AARCH64_PREFIX="/opt/homebrew/bin/aarch64-elf-"
 export SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH_PIN"
 export PYTHON_COMMAND="$(command -v python3)"
 
-make -C "$edk2_root/BaseTools"
-cd "$edk2_root"
+make -C "$BUILD_WORKSPACE/BaseTools"
+cd "$BUILD_WORKSPACE"
+# A clean platform build: stale makefiles would keep another workspace path.
+rm -rf Build/ArmVirtQemu-AArch64
+build_dir="Build/ArmVirtQemu-AArch64/RELEASE_GCC"
+mkdir -p "$build_dir"
+python3 -c 'import json, sys; json.dump([int(sys.argv[1], 16)] * 100, open(sys.argv[2], "w"))' \
+  "$STACK_COOKIE_VALUE64" "$build_dir/StackCookieValues64.json"
 # shellcheck disable=SC1091
 set +u
 source ./edksetup.sh BaseTools
@@ -119,8 +148,8 @@ build -a AARCH64 -t GCC -p ArmVirtPkg/ArmVirtQemu.dsc -b RELEASE \
   -D TPM2_ENABLE=TRUE \
   -D TPM2_CONFIG_ENABLE=TRUE
 
-firmware="$edk2_root/Build/ArmVirtQemu-AArch64/RELEASE_GCC/FV/QEMU_EFI.fd"
-xref="$edk2_root/Build/ArmVirtQemu-AArch64/RELEASE_GCC/FV/Guid.xref"
+firmware="$BUILD_WORKSPACE/$build_dir/FV/QEMU_EFI.fd"
+xref="$BUILD_WORKSPACE/$build_dir/FV/Guid.xref"
 if [[ ! -f "$firmware" || ! -f "$xref" ]]; then
   echo "expected EDK2 build outputs are missing" >&2
   exit 70
@@ -146,6 +175,7 @@ if [[ "$built_sha256" != "$EXPECTED_SHA256" ]]; then
 fi
 
 ppi_patch_sha256="$(shasum -a 256 "$ppi_patch" | awk '{print $1}')"
+ramfb_patch_sha256="$(shasum -a 256 "$ramfb_patch" | awk '{print $1}')"
 cleanup_source_patch
 trap - EXIT
 if ! git -C "$edk2_root" diff --quiet || ! git -C "$edk2_root" diff --cached --quiet; then
@@ -165,6 +195,8 @@ printf '%s\n' \
   '  "tag": "edk2-stable202605",' \
   "  \"commit\": \"${EXPECTED_COMMIT}\"," \
   "  \"sourceDateEpoch\": ${SOURCE_DATE_EPOCH_PIN}," \
+  "  \"buildWorkspace\": \"${BUILD_WORKSPACE}\"," \
+  "  \"stackCookieValue64\": \"${STACK_COOKIE_VALUE64}\"," \
   '  "platform": "ArmVirtPkg/ArmVirtQemu.dsc",' \
   '  "architecture": "AARCH64",' \
   '  "target": "RELEASE",' \
@@ -176,7 +208,7 @@ printf '%s\n' \
   "  \"sha256\": \"${firmware_sha256}\"," \
   '  "verifiedModules": ["SecurityStubDxe", "SecureBootConfigDxe", "EnrollDefaultKeys", "Tcg2Dxe"],' \
   '  "verifiedLibraryInstances": ["Tcg2PhysicalPresenceLibQemu"],' \
-  "  \"patches\": [{\"path\": \"crates/bridgevm-hvf/firmware/patches/0001-armvirt-process-tpm-ppi.patch\", \"sha256\": \"${ppi_patch_sha256}\"}]" \
+  "  \"patches\": [{\"path\": \"crates/bridgevm-hvf/firmware/patches/0001-armvirt-process-tpm-ppi.patch\", \"sha256\": \"${ppi_patch_sha256}\"}, {\"path\": \"crates/bridgevm-hvf/firmware/patches/0002-ramfb-desktop-resolutions.patch\", \"sha256\": \"${ramfb_patch_sha256}\"}]" \
   '}' > "$receipt"
 
 echo "installed $output_dir/$OUTPUT_NAME"

@@ -61,6 +61,9 @@ pub struct DeviceSurfaces {
     pub nvme_buffered_io: bool,
     /// The user's opt-in durable disk writes: every guest flush waits for `F_FULLFSYNC`.
     pub nvme_durable_flush: bool,
+    /// The user's Windows display resolution (`WxH`); None lets the VMM keep the
+    /// firmware's resolution or add its 1280x800 default.
+    pub guest_resolution: Option<String>,
     /// Host<->guest clipboard sync over the agent console.
     pub clipboard_sync: bool,
     /// Folder share over the agent console (host dir -> guest dir).
