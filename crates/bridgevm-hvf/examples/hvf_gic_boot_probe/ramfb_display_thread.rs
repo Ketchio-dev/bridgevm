@@ -135,8 +135,10 @@ impl RamfbDisplayThread {
             .spawn(move || {
                 let (ms, path) = (interval.as_millis(), target.path().display());
                 println!("ramfb display export: thread started interval_ms={ms} path={path}");
-                let publisher = FramePublisher::new(target);
+                let watch = &crate::ramfb_dirty_watch::FB_WATCH;
+                let publisher = FramePublisher::new(target).with_watch(watch);
                 export_loop(publisher, source, &memory(), interval, &signal, &counts);
+                watch.release();
             });
         match spawned {
             Ok(handle) => Self {

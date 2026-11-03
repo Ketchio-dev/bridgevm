@@ -131,6 +131,7 @@ probe_modules!(
     "hvf_gic_boot_probe/wake_coordinator.rs" => wake_coordinator,
     "hvf_gic_boot_probe/wfi_diagnostics.rs" => wfi_diagnostics,
     "hvf_gic_boot_probe/boot_media_setup.rs" => boot_media_setup,
+    "hvf_gic_boot_probe/ramfb_dirty_watch.rs" => ramfb_dirty_watch,
     "hvf_gic_boot_probe/final_report.rs" => final_report,
     "hvf_gic_boot_probe/hvf_setup.rs" => hvf_setup,
     "hvf_gic_boot_probe/usgic_bridge.rs" => usgic_bridge,

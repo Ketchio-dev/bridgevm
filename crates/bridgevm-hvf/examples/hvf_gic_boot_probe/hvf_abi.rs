@@ -36,6 +36,7 @@ extern "C" {
     pub(crate) fn hv_vm_destroy() -> HvReturn;
     pub(crate) fn hv_vm_map(addr: *mut c_void, ipa: u64, size: usize, flags: u64) -> HvReturn;
     pub(crate) fn hv_vm_unmap(ipa: u64, size: usize) -> HvReturn;
+    pub(crate) fn hv_vm_protect(ipa: u64, size: usize, flags: u64) -> HvReturn;
     pub(crate) fn hv_vcpu_create(
         vcpu: *mut HvVcpuT,
         exit: *mut *mut HvVcpuExit,

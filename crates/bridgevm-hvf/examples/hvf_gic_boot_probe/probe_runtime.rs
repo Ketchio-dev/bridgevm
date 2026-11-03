@@ -453,6 +453,9 @@ pub(crate) fn run() -> ExitCode {
                     match ec {
                         EC_DATA_ABORT => {
                             let ipa = (*exit).exception.physical_address;
+                            if crate::ramfb_dirty_watch::FB_WATCH.take_write_fault(ipa, esr) {
+                                continue;
+                            }
                             trace_isv0_data_abort(esr, last_pc, ipa);
                             let access = match DataAbort::decode(esr) {
                                 Ok(access) => access,
