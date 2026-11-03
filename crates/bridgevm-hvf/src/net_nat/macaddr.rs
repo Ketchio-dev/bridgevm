@@ -9,7 +9,9 @@ use std::{
     time::Instant,
 };
 
-use super::reply_queue::{reply_queue_full, MAX_PENDING_REPLY_FRAMES, MAX_TCP_WRITE_BACKLOG};
+use super::reply_queue::{
+    reply_queue_full, MAX_PENDING_REPLY_FRAMES, MAX_TCP_WRITE_BACKLOG, REPLY_BACKLOG_SKIPS_SWEEP,
+};
 use crate::virtio_net::NetBackend;
 
 pub type MacAddr = [u8; 6];
@@ -213,7 +215,7 @@ impl<H: OutboundIpv4Handler + Send> NetBackend for NatBackend<H> {
     }
 
     fn poll_host_sockets(&mut self) {
-        if reply_queue_full(&self.reply_queue) {
+        if self.reply_queue.len() >= REPLY_BACKLOG_SKIPS_SWEEP {
             return;
         }
         self.outbound_ipv4.poll_host_sockets(

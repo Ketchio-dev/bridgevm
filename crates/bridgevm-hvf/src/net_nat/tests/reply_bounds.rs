@@ -1,8 +1,49 @@
-use super::super::reply_queue::{MAX_PENDING_REPLY_FRAMES, MAX_TCP_WRITE_BACKLOG};
+use super::super::reply_queue::{
+    MAX_PENDING_REPLY_FRAMES, MAX_TCP_WRITE_BACKLOG, REPLY_BACKLOG_SKIPS_SWEEP,
+};
 use super::super::*;
 use super::helpers::*;
 use crate::virtio_net::NetBackend;
+use std::collections::VecDeque;
 use std::net::{Ipv4Addr as StdIpv4Addr, TcpListener, TcpStream};
+
+#[derive(Default)]
+struct CountingSweeps(usize);
+
+impl OutboundIpv4Handler for CountingSweeps {
+    fn handle_outbound_ipv4(&mut self, _packet: &Ipv4Packet<'_>) {}
+    fn poll_host_sockets(
+        &mut self,
+        _guest_mac: Option<MacAddr>,
+        _reply_queue: &mut VecDeque<Vec<u8>>,
+        _stats: &mut NatStats,
+    ) {
+        self.0 += 1;
+    }
+}
+
+#[test]
+fn host_sockets_wait_while_a_ring_of_frames_waits_for_the_guest() {
+    let mut backend = NatBackend::with_outbound_handler(CountingSweeps::default());
+    let arp = arp_request(GUEST_MAC, GUEST_IP, GATEWAY_IP);
+    for _ in 0..REPLY_BACKLOG_SKIPS_SWEEP - 1 {
+        backend.transmit(&arp);
+    }
+    backend.poll_host_sockets();
+    assert_eq!(backend.outbound_ipv4_handler().0, 1);
+
+    backend.transmit(&arp);
+    backend.poll_host_sockets();
+    assert_eq!(
+        backend.outbound_ipv4_handler().0,
+        1,
+        "swept with a full ring queued"
+    );
+
+    assert!(backend.poll_receive().is_some());
+    backend.poll_host_sockets();
+    assert_eq!(backend.outbound_ipv4_handler().0, 2);
+}
 
 #[test]
 fn guest_requests_without_rx_draining_keep_a_bounded_reply_queue() {
