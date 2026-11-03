@@ -14,7 +14,7 @@ final class HvfDisplayDriverInstallScriptTests: XCTestCase {
     func testLaunchAndPollAreEachOneAgentLineThatFitsCmd() throws {
         for command in [Install.launchCommand, Install.pollCommand] {
             XCTAssertEqual(try HvfGuestCommand.normalizeShell(command).get(), command)
-            XCTAssertLessThanOrEqual(command.utf8.count, HvfClipboardPaste.maximumCommandCharacters)
+            XCTAssertTrue(command.utf8.count <= HvfClipboardPaste.maximumCommandCharacters, "\(command.utf8.count)")
             // Base64 and the fixed wrapper only: nothing cmd.exe would expand, quote or redirect.
             XCTAssertFalse(command.contains(where: { "\"%^|<>".contains($0) }))
         }
@@ -198,7 +198,7 @@ final class HvfDisplayDriverInstallSessionTests: XCTestCase {
                                            "BVDRIVER result=installed detail=Red Hat VirtIO GPU DOD controller status=OK"]
         let outcome = await Install.install(runner: { command, timeout in
             sent.append(command)
-            XCTAssertLessThanOrEqual(timeout, 30)
+            XCTAssertTrue(timeout <= 30, "\(timeout)")
             return (replies.removeFirst(), 0)
         }, pollInterval: 0.01, timeout: 30)
         XCTAssertEqual(sent, [Install.launchCommand, Install.pollCommand, Install.pollCommand])
