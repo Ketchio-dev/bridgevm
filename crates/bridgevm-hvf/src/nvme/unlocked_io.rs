@@ -136,7 +136,9 @@ impl NvmeController {
             return false;
         }
         let (file, byte_len) = match self.backend_for_nsid(cmd.nsid) {
-            Some(DiskBackend::RawFile(disk)) if disk.write_back => (Arc::clone(&disk.file), disk.len),
+            Some(DiskBackend::RawFile(disk)) if disk.write_back => {
+                (Arc::clone(&disk.file), disk.len)
+            }
             _ => return false,
         };
         let Some((offset, len)) = transfer_range(cmd, byte_len) else {
