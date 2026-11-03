@@ -1,8 +1,6 @@
 //! Split out of mmio.rs by responsibility.
 
 use super::super::super::*;
-use super::*;
-use crate::*;
 
 pub fn probe_hvf_guest_entry(allow_entry: bool, host: HvfHostCapabilities) -> HvfGuestEntryProbe {
     HvfGuestEntryProbe {

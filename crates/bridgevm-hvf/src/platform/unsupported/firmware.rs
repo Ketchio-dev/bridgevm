@@ -1,8 +1,6 @@
 //! Split out of unsupported.rs by responsibility.
 
 use super::super::*;
-use super::*;
-use crate::*;
 
 pub fn probe_windows_11_arm_uefi_firmware_run_loop(
     options: WindowsArmUefiFirmwareRunLoopExecutionOptions,

@@ -19,6 +19,8 @@ mod virtio_runner;
 pub(crate) use bus::*;
 pub(crate) use bus_impl::*;
 pub(crate) use firmware_irq::*;
+// Used by the Apple platform's firmware run loop and by the bus tests.
+#[cfg(any(all(target_os = "macos", target_arch = "aarch64"), test))]
 pub(crate) use gic_cpu_interface::*;
 pub(crate) use gic_distributor::*;
 pub(crate) use gic_redistributor::*;
@@ -26,6 +28,7 @@ pub(crate) use gic_select::*;
 pub(crate) use primecell::*;
 pub(crate) use telemetry::*;
 pub(crate) use virtio_backend::*;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub(crate) use virtio_complete::*;
 pub(crate) use virtio_device::*;
 pub(crate) use virtio_memory::*;

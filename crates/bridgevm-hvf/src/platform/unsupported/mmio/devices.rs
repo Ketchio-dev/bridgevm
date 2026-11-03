@@ -1,7 +1,6 @@
 //! Split out of mmio.rs by responsibility.
 
 use super::super::super::*;
-use super::*;
 
 pub fn probe_hvf_mmio_serial_device(
     allow_device: bool,

@@ -1,8 +1,6 @@
 //! Split out of unsupported.rs by responsibility.
 
 use super::super::*;
-use super::*;
-use crate::*;
 
 pub fn query_hvf_host_capabilities() -> HvfHostCapabilities {
     HvfHostCapabilities {

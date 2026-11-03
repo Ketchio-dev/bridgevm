@@ -2,6 +2,7 @@
 
 use super::*;
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use std::ffi::c_void;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};

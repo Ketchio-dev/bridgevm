@@ -24,8 +24,9 @@ final class LibraryModelFirstRunImportTests: XCTestCase {
         defer { fixture.remove() }
         let model = LibraryModel(rootURL: fixture.library, migrateLegacy: false)
         let gate = WorkerGate()
+        let snapshotHelper = HvfMediaImportTestSupport.helper  // resolved (maybe built) before the 5 s wait
         let task = Task {
-            await model.importExistingHvfVM(fixture.inputs(), snapshotHelper: HvfMediaImportTestSupport.helper,
+            await model.importExistingHvfVM(fixture.inputs(), snapshotHelper: snapshotHelper,
                 worker: { inputs, root, helper, _ in
                     guard gate.enter() else { return .failed("worker did not run off main thread") }
                     return FirstRunImportWorker.run(inputs, libraryRoot: root, snapshotHelper: helper)
