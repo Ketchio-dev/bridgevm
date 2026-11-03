@@ -14,6 +14,9 @@ extension HvfEngineSession {
             }
         case .serviceStart:
             serviceStarted = true
+            // A guest reboot recreates the helper, whose display device starts at its default size
+            // and reads input.ctl from its end: poll() sends the window size again.
+            displayResize.deviceRestarted()
             if let ownedController { ownedController.guestServiceReady() }
             else { sendGracefulStopIfReady() }
         case let .unknown(line) where HvfGuestResetRecord.matches(line):
