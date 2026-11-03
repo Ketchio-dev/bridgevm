@@ -77,6 +77,9 @@ pub const REG_DPUBASE: u64 = 0x74;
 pub const REG_SD_CTL: u64 = 0x80;
 pub const REG_SD_STS: u64 = 0x83;
 pub const REG_SD_LPIB: u64 = 0x84;
+/// SD0 LPIB's read-only alias. HDA puts it on its own page so a driver can map
+/// just the stream position into its audio engine; Windows reads it there.
+pub const REG_SD_LPIB_ALIAS: u64 = 0x2084;
 pub const REG_SD_CBL: u64 = 0x88;
 pub const REG_SD_LVI: u64 = 0x8c;
 pub const REG_SD_FMT: u64 = 0x92;
@@ -715,6 +718,7 @@ impl HdaController {
         byte!(REG_SD_CTL, 3, self.stream.ctl);
         byte!(REG_SD_STS, 1, self.stream.sts);
         byte!(REG_SD_LPIB, 4, self.stream.lpib);
+        byte!(REG_SD_LPIB_ALIAS, 4, self.stream.lpib);
         byte!(REG_SD_CBL, 4, self.stream.cbl);
         byte!(REG_SD_LVI, 2, self.stream.lvi);
         byte!(0x8e, 2, 0x0004u16); // FIFOW: 16-byte watermark encoding.
