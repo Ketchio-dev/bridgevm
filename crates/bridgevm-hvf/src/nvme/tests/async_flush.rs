@@ -2,11 +2,13 @@
 //! after its sync, holds its completion slot meanwhile, and admin commands and
 //! resets wait for it.
 
+use super::super::flush_mode::{self, SyncKind};
 use super::super::*;
 use super::helpers::*;
 use crate::fwcfg::GuestMemoryMut;
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 const IO_SQ_DOORBELL: u64 = REG_DOORBELL_BASE + 2 * 4;
 const IO_CQ_DOORBELL: u64 = REG_DOORBELL_BASE + 3 * 4;
@@ -31,6 +33,94 @@ fn put_io(mem: &mut FakeMem, slot: u16, sqe: &[u8; 64]) {
 
 fn command_id(entry: &[u8; 16]) -> u16 {
     u16::from_le_bytes([entry[12], entry[13]])
+}
+
+/// Ring one FLUSH of `nsid` at SQ slot `slot` and post its completion.
+fn flush_and_complete(ctrl: &mut NvmeController, mem: &mut FakeMem, slot: u16, nsid: u32) {
+    let cid = 0x40 + slot;
+    put_io(mem, slot, &encode_sqe(NVM_OP_FLUSH, cid, nsid, 0, 0, 0, 0));
+    ctrl.mmio_write(IO_SQ_DOORBELL, 4, u64::from(slot + 1));
+    ctrl.process(mem);
+    let mut events = Vec::new();
+    ctrl.complete_flushes(mem, &mut events, true);
+    let entry = read_completion(mem, IO_CQ_BASE, slot);
+    assert_eq!(
+        (command_id(&entry), completion_status(&entry)),
+        (cid, SC_SUCCESS)
+    );
+}
+
+#[test]
+fn a_full_sync_of_one_disk_leaves_the_other_disks_full_sync_owed() {
+    // NSID 1 and 2 on different files, maybe different drives: a full sync of
+    // NSID 1 does not make NSID 2's acknowledged writes durable.
+    let (mut ctrl, mut mem, path) = async_controller("async-flush-owed-ns1");
+    let path2 = temp_path("async-flush-owed-ns2");
+    fs::write(&path2, vec![0u8; LBA_SIZE * 8]).unwrap();
+    ctrl.attach_second_namespace_raw_file(&path2, true).unwrap();
+    let seen = flush_mode::recorded_syncs(&path2).len();
+    let syncs2 = || flush_mode::recorded_syncs(&path2).split_off(seen);
+
+    // NSID 2's second flush is acknowledged after a barrier: it owes a full sync.
+    flush_and_complete(&mut ctrl, &mut mem, 0, NSID2);
+    flush_and_complete(&mut ctrl, &mut mem, 1, NSID2);
+    assert_eq!(syncs2(), [SyncKind::Full, SyncKind::Barrier]);
+
+    // A second later NSID 1 flushes, which takes a full sync of its own file.
+    ctrl.advance_flush_clock(flush_mode::DURABLE_WITHIN);
+    flush_and_complete(&mut ctrl, &mut mem, 2, NSID);
+
+    // NSID 2 still gets the full sync it owes.
+    let give_up = Instant::now() + Duration::from_secs(3);
+    while syncs2().len() < 3 && Instant::now() < give_up {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        syncs2(),
+        [SyncKind::Full, SyncKind::Barrier, SyncKind::Full],
+        "NSID 2's barrier-acknowledged flush never became durable"
+    );
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(path2);
+}
+
+#[test]
+fn a_namespace_replaced_while_a_completion_waits_syncs_its_new_file() {
+    let (mut ctrl, mut mem, path) = async_controller("async-flush-swap-ns1");
+    let old = temp_path("async-flush-swap-old");
+    let new = temp_path("async-flush-swap-new");
+    for file in [&old, &new] {
+        fs::write(file, vec![0u8; LBA_SIZE * 8]).unwrap();
+    }
+    ctrl.attach_second_namespace_raw_file(&old, true).unwrap();
+    // The worker syncs this FLUSH; no vCPU has posted its completion yet.
+    put_io(
+        &mut mem,
+        0,
+        &encode_sqe(NVM_OP_FLUSH, 0x20, NSID, 0, 0, 0, 0),
+    );
+    ctrl.mmio_write(IO_SQ_DOORBELL, 4, 1);
+    ctrl.process(&mut mem);
+    ctrl.attach_second_namespace_raw_file(&new, true).unwrap();
+    let mut events = Vec::new();
+    ctrl.complete_flushes(&mut mem, &mut events, true);
+    let entry = read_completion(&mem, IO_CQ_BASE, 0);
+    assert_eq!(
+        (command_id(&entry), completion_status(&entry)),
+        (0x20, SC_SUCCESS)
+    );
+
+    // NSID 2 is the new file now, so its FLUSH must sync that file.
+    let seen = flush_mode::recorded_syncs(&new).len();
+    flush_and_complete(&mut ctrl, &mut mem, 1, NSID2);
+    assert_eq!(
+        flush_mode::recorded_syncs(&new)[seen..],
+        [SyncKind::Full],
+        "the FLUSH synced the replaced file"
+    );
+    for file in [path, old, new] {
+        let _ = fs::remove_file(file);
+    }
 }
 
 #[test]

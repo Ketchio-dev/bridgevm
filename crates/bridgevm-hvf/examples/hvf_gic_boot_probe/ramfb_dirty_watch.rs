@@ -6,9 +6,23 @@
 //! the frame dirty, then retries the store. An idle desktop therefore costs no
 //! exits and no frame compare, and a drawing guest at most one exit per export
 //! tick. `BRIDGEVM_RAMFB_DIRTY_WATCH=0` turns it off (every tick compares).
+//!
+//! The guest chooses the framebuffer address, so the watch protects a range
+//! only when the guest RAM the exporter reads backs every page of it; any
+//! other range is never protected, and every tick compares. Pages are made
+//! writable again only in ranges the watch itself protected.
+//!
+//! One lock covers each protection change together with the state that
+//! records it, on the exporter and the vCPU side, so a vCPU always sees the
+//! watch state that matches the protection. A store can still fault while its
+//! page is protected and reach its vCPU's handler only after the exporter made
+//! the page writable and moved or dropped the watch: every write permission
+//! fault inside the pages the watch ever protected is therefore retried, never
+//! emulated as MMIO.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
+
+use bridgevm_hvf::fwcfg::GuestMemoryMut;
 
 use crate::hvf_abi::{HV_MEMORY_EXEC, HV_MEMORY_READ, HV_MEMORY_WRITE};
 
@@ -30,15 +44,20 @@ fn hv_protect(ipa: u64, len: u64, flags: u64) -> bool {
 }
 
 pub(crate) struct FbWatch {
-    /// The protected page range `(ipa, len)`, when armed.
-    range: Mutex<Option<(u64, u64)>>,
-    /// The guest wrote the range since the exporter last looked.
-    dirty: AtomicBool,
-    /// Any range is armed: lets every other data abort skip the mutex.
-    armed: AtomicBool,
-    /// `hv_vm_protect` refused a range once: compare every tick from then on.
-    unavailable: AtomicBool,
+    state: Mutex<State>,
     protect: Protect,
+}
+
+struct State {
+    /// The protected page range `(ipa, len)`, when armed.
+    armed: Option<(u64, u64)>,
+    /// Bounds `[lo, hi)` of every range the watch ever protected, all of them
+    /// in guest RAM.
+    ever_protected: Option<(u64, u64)>,
+    /// The guest wrote the armed range since the exporter last looked.
+    dirty: bool,
+    /// `hv_vm_protect` refused a range once: compare every tick from then on.
+    unavailable: bool,
 }
 
 pub(crate) static FB_WATCH: FbWatch = FbWatch::new(hv_protect);
@@ -46,43 +65,42 @@ pub(crate) static FB_WATCH: FbWatch = FbWatch::new(hv_protect);
 impl FbWatch {
     pub(crate) const fn new(protect: Protect) -> Self {
         Self {
-            range: Mutex::new(None),
-            dirty: AtomicBool::new(false),
-            armed: AtomicBool::new(false),
-            unavailable: AtomicBool::new(false),
+            state: Mutex::new(State {
+                armed: None,
+                ever_protected: None,
+                dirty: false,
+                unavailable: false,
+            }),
             protect,
         }
     }
 
-    fn range(&self) -> Option<(u64, u64)> {
-        *self.range.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    fn set_range(&self, range: Option<(u64, u64)>) {
-        *self.range.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = range;
-        self.armed.store(range.is_some(), Ordering::Release);
+    fn state(&self) -> MutexGuard<'_, State> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// vCPU side, first thing on a data abort: a stage-2 write permission
     /// fault inside the watched range makes it writable again, marks the frame
     /// dirty, and returns true; the vCPU then retries the store without
-    /// advancing its PC. Every other abort returns false at once.
+    /// advancing its PC. A write permission fault elsewhere in the pages the
+    /// watch ever protected is retried too. Every other abort returns false,
+    /// and every non-permission fault (all MMIO exits) without taking the lock.
     pub(crate) fn take_write_fault(&self, ipa: u64, esr: u64) -> bool {
         const WNR: u64 = 1 << 6;
-        let permission_fault = esr & 0x3c == 0x0c;
-        if !permission_fault || esr & WNR == 0 || !self.armed.load(Ordering::Acquire) {
+        if esr & 0x3c != 0x0c || esr & WNR == 0 {
             return false;
         }
-        let Some((start, len)) = self.range() else {
-            return false;
-        };
-        if ipa < start || ipa - start >= len {
+        let mut state = self.state();
+        if !state.ever_protected.is_some_and(|(lo, hi)| (lo..hi).contains(&ipa)) {
             return false;
         }
-        // Writable first, then dirty: whenever the exporter sees the range
-        // writable without a dirty mark, the mark is about to land.
-        (self.protect)(start, len, WRITABLE);
-        self.dirty.store(true, Ordering::Release);
+        let watched = |&(start, len): &(u64, u64)| (start..start + len).contains(&ipa);
+        if let Some((start, len)) = state.armed.filter(watched) {
+            (self.protect)(start, len, WRITABLE);
+            state.dirty = true;
+        }
+        // Otherwise it faulted before the exporter made the page writable
+        // again and moved or dropped the watch: the retry goes through.
         true
     }
 
@@ -91,52 +109,75 @@ impl FbWatch {
     /// and returns whether the frame may have changed since the last call:
     /// always on a new range or without a watch, otherwise only after a guest
     /// write, write-protecting the range again before the caller reads it.
-    pub(crate) fn may_have_changed(&self, framebuffer: Option<(u64, u64)>) -> bool {
-        let usable = enabled() && !self.unavailable.load(Ordering::Relaxed);
+    /// `ram` is the guest memory the caller reads the frame from.
+    pub(crate) fn may_have_changed(
+        &self,
+        framebuffer: Option<(u64, u64)>,
+        ram: &dyn GuestMemoryMut,
+    ) -> bool {
+        let mut state = self.state();
+        let usable = enabled() && !state.unavailable;
         let wanted = framebuffer.filter(|_| usable).and_then(page_range);
-        let current = self.range();
-        if wanted != current {
-            self.set_range(None);
-            if let Some((start, len)) = current {
+        if wanted != state.armed {
+            if let Some((start, len)) = state.armed.take() {
                 (self.protect)(start, len, WRITABLE);
             }
             if let Some((start, len)) = wanted {
-                self.dirty.store(false, Ordering::Release);
-                if (self.protect)(start, len, READ_ONLY) {
-                    self.set_range(wanted);
-                } else {
-                    (self.protect)(start, len, WRITABLE);
-                    self.unavailable.store(true, Ordering::Relaxed);
-                    eprintln!(
-                        "ramfb display export: write tracking unavailable for \
-                         {start:#x}+{len:#x}; comparing every tick"
-                    );
+                let size = usize::try_from(len).ok();
+                if size.and_then(|size| ram.host_ptr(start, size)).is_none() {
+                    give_up(&mut state, (start, len), "framebuffer outside guest RAM");
+                    return true;
                 }
+                let (lo, hi) = state.ever_protected.unwrap_or((start, start + len));
+                state.ever_protected = Some((lo.min(start), hi.max(start + len)));
+                state.dirty = false;
+                self.protect_or_give_up(&mut state, (start, len));
             }
             return true;
         }
-        let Some((start, len)) = wanted else {
+        let Some(range) = wanted else {
             return true;
         };
-        if !self.dirty.swap(false, Ordering::AcqRel) {
+        if !std::mem::take(&mut state.dirty) {
             return false;
         }
-        (self.protect)(start, len, READ_ONLY);
+        self.protect_or_give_up(&mut state, range);
         true
+    }
+
+    /// Write-protect `range` and arm the watch on it. If `hv_vm_protect`
+    /// refuses, leave the range writable and compare every tick from now on.
+    fn protect_or_give_up(&self, state: &mut State, (start, len): (u64, u64)) {
+        if (self.protect)(start, len, READ_ONLY) {
+            state.armed = Some((start, len));
+        } else {
+            (self.protect)(start, len, WRITABLE);
+            give_up(state, (start, len), "hv_vm_protect refused");
+        }
     }
 
     /// The exporter could not publish what it read: read it again next tick.
     pub(crate) fn mark_dirty(&self) {
-        self.dirty.store(true, Ordering::Release);
+        self.state().dirty = true;
     }
 
     /// Leave guest RAM fully writable (the exporter is stopping).
     pub(crate) fn release(&self) {
-        if let Some((start, len)) = self.range() {
-            self.set_range(None);
+        let mut state = self.state();
+        if let Some((start, len)) = state.armed.take() {
             (self.protect)(start, len, WRITABLE);
         }
     }
+}
+
+/// Stop tracking for good: every tick compares from now on.
+fn give_up(state: &mut State, (start, len): (u64, u64), reason: &str) {
+    state.armed = None;
+    state.unavailable = true;
+    eprintln!(
+        "ramfb display export: write tracking unavailable for {start:#x}+{len:#x} \
+         ({reason}); comparing every tick"
+    );
 }
 
 /// The stage-2 pages covering `(gpa, len)`.

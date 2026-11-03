@@ -24,7 +24,8 @@ import vm_bench  # noqa: E402
 
 GUEST_OFF = "guest powered off; host teardown follows"
 BOOT_ARGS = dict(ready_timeout=600, settle_s=0, idle_s=0, pointer=False, desktop_mode=None, display=False,
-                 shutdown_diag=False, stall_idle=False, stall=False, net=False, only=None, skip_suite=True)
+                 shutdown_diag=False, stall_idle=False, stall=False, net=False, only=None, skip_suite=True,
+                 audio=False)
 
 
 class Clock:
@@ -98,7 +99,7 @@ class VmBenchContract(unittest.TestCase):
 
         args = types.SimpleNamespace(engine="bridgevm", out="campaign", probe="probe", disk="disk.raw",
                                      vars="vars.fd", boots=1, net=False, keep_media=False, cpus=4, ram_mib=6144,
-                                     boot_timer_ms=60000, no_xhci=False, display=False,
+                                     boot_timer_ms=60000, no_xhci=False, display=False, audio=False,
                                      guest_date="2026-08-01T00:00:00", bvm_env=[])
         caller = os.getcwd()
         with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stdout(io.StringIO()):

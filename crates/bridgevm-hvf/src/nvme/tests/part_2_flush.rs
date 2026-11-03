@@ -3,6 +3,7 @@
 //! Split out of part_2.rs. These share one question -- when the guest is told
 //! its writes are durable, did the host actually make them so.
 
+use super::super::flush_mode::{self, SyncKind};
 use super::super::*;
 use super::helpers::*;
 use crate::fwcfg::GuestMemoryMut;
@@ -32,6 +33,28 @@ fn flush_command_completes_for_namespace_and_broadcast_nsid() {
         completion_status(&read_completion(&mem, IO_CQ_BASE, 1)),
         SC_SUCCESS
     );
+}
+
+#[test]
+fn an_inline_flush_or_fua_write_is_a_full_sync() {
+    // Without the flush worker (checkpoints, BRIDGEVM_NVME_ASYNC_FLUSH=0)
+    // nothing would follow a barrier with the promised F_FULLFSYNC.
+    let path = temp_path("inline-flush-durable");
+    fs::write(&path, vec![0u8; LBA_SIZE * 8]).unwrap();
+    let (mut ctrl, mut mem) = enabled_controller_with_raw_file(&path, true, 0x10000);
+    create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+    let seen = flush_mode::recorded_syncs(&path).len();
+
+    let flush = encode_sqe(NVM_OP_FLUSH, 0x30, NSID, 0, 0, 0, 0);
+    assert_eq!(submit_io(&mut ctrl, &mut mem, 0, &flush), SC_SUCCESS);
+    let fua_write = encode_sqe(NVM_OP_WRITE, 0x31, NSID, DATA_BASE, 0, 0, 1 << 30);
+    assert_eq!(submit_io(&mut ctrl, &mut mem, 1, &fua_write), SC_SUCCESS);
+    assert_eq!(
+        flush_mode::recorded_syncs(&path)[seen..],
+        [SyncKind::Full, SyncKind::Full]
+    );
+    drop(ctrl);
+    fs::remove_file(path).ok();
 }
 
 #[test]
