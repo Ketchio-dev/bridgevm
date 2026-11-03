@@ -8,25 +8,12 @@ pub(crate) fn attach_boot_media(
     vars_data: &[u8],
 ) {
     // Persisted with the vars at exit, like a choice made in the firmware setup.
-    use bridgevm_hvf::uefi_resolution as res;
     let chosen = std::env::var("BRIDGEVM_GUEST_RESOLUTION").ok();
-    let update = match chosen.as_deref().map(|text| (text, res::parse_resolution(text))) {
-        Some((_, Some(mode))) => res::with_resolution(vars_data, mode).map(|v| (v, mode, "set")),
-        Some((text, None)) => {
-            println!("UEFI vars: guest resolution {text:?} is not a firmware mode; kept");
-            None
-        }
-        None => res::with_default_resolution(vars_data).map(|v| (v, res::DEFAULT_RESOLUTION, "added")),
-    };
-    // Windows keeps its saved desktop mode: switch it in the boot that changed
-    // the firmware's mode (Windows saves the switch).
-    match update {
-        Some((vars, mode, how)) => {
-            println!("UEFI vars: preferred resolution {}x{} {how} (PlatformConfig)", mode.0, mode.1);
-            platform.load_flash_vars(&vars);
-            agent_console::request_desktop_mode(mode);
-        }
-        None => platform.load_flash_vars(vars_data),
+    let ramfb_desktop = !platform_cfg.devices.virtio_gpu_present;
+    let (vars, desktop) = guest_resolution(chosen.as_deref(), vars_data, ramfb_desktop);
+    platform.load_flash_vars(vars.as_deref().unwrap_or(vars_data));
+    if let Some(mode) = desktop {
+        agent_console::request_desktop_mode(mode);
     }
     if let Some(nvme) = media.nvme_disk.as_ref() {
         platform
@@ -144,3 +131,51 @@ pub(crate) fn attach_boot_media(
         platform.set_linux_boot_blobs(kernel, initrd, linux.cmdline_bytes());
     }
 }
+
+/// The vars with the firmware's preferred resolution for `chosen`
+/// (`BRIDGEVM_GUEST_RESOLUTION`), `None` when they stay as they are, and the
+/// mode the agent switches the Windows desktop to once its service starts.
+///
+/// Windows keeps the desktop mode it saved, whatever the firmware's mode, so
+/// the boot that changes the mode switches it (Windows saves the switch). On
+/// the ramfb desktop a chosen mode is switched to in every boot: vars that
+/// already ask for it do not show that Windows has it (it was set in the
+/// firmware setup, or the boot that set it stopped before the switch ran). A
+/// virtio-gpu display's desktop follows the window instead. The default is
+/// switched to only in the boot that adds it, so a mode set in Windows stays.
+fn guest_resolution(
+    chosen: Option<&str>,
+    vars: &[u8],
+    ramfb_desktop: bool,
+) -> (Option<Vec<u8>>, Option<(u32, u32)>) {
+    use bridgevm_hvf::uefi_resolution as res;
+    let report = |mode: (u32, u32), how| {
+        println!("UEFI vars: preferred resolution {}x{} {how} (PlatformConfig)", mode.0, mode.1);
+    };
+    match chosen.map(|text| (text, res::parse_resolution(text))) {
+        Some((_, Some(mode))) => {
+            let vars = res::with_resolution(vars, mode);
+            if vars.is_some() {
+                report(mode, "set");
+            }
+            let switch = vars.is_some() || ramfb_desktop;
+            (vars, switch.then_some(mode))
+        }
+        Some((text, None)) => {
+            println!("UEFI vars: guest resolution {text:?} is not a firmware mode; kept");
+            (None, None)
+        }
+        None => {
+            let vars = res::with_default_resolution(vars);
+            let mode = vars.is_some().then_some(res::DEFAULT_RESOLUTION);
+            if let Some(mode) = mode {
+                report(mode, "added");
+            }
+            (vars, mode)
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "boot_media_setup_tests.rs"]
+mod tests;
