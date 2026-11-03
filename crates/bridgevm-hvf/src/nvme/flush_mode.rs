@@ -73,28 +73,42 @@ fn full_sync_due(now: Duration, last_plus_one: u64) -> bool {
 
 /// Sync for a guest FLUSH or FUA write, in the configured mode.
 pub(crate) fn sync(file: &File) -> io::Result<()> {
-    let command = match mode() {
-        FlushMode::Durable => return sync_durable(file),
+    match mode() {
+        FlushMode::Durable => sync_durable(file),
         FlushMode::Ordered
             if full_sync_due(clock().elapsed(), LAST_FULL_SYNC.load(Ordering::Relaxed)) =>
         {
-            return sync_durable(file);
+            sync_durable(file)
         }
-        FlushMode::Ordered => libc::F_BARRIERFSYNC,
+        FlushMode::Ordered => {
+            barrier_sync(file)?;
+            FULL_SYNC_OWED.store(true, Ordering::Relaxed);
+            Ok(())
+        }
         FlushMode::Fast => {
             // SAFETY: `file` owns a live descriptor for the whole call.
             if unsafe { libc::fsync(file.as_raw_fd()) } != 0 {
                 return Err(io::Error::last_os_error());
             }
-            return Ok(());
+            Ok(())
         }
-    };
+    }
+}
+
+/// `F_BARRIERFSYNC`: the data reaches the drive in order with earlier writes.
+#[cfg(target_os = "macos")]
+fn barrier_sync(file: &File) -> io::Result<()> {
     // SAFETY: `file` owns a live descriptor; the command takes no argument.
-    if unsafe { libc::fcntl(file.as_raw_fd(), command) } == -1 {
+    if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_BARRIERFSYNC) } == -1 {
         return Err(io::Error::last_os_error());
     }
-    FULL_SYNC_OWED.store(true, Ordering::Relaxed);
     Ok(())
+}
+
+/// Other hosts (cross-compiled stubs) have no barrier: sync the data.
+#[cfg(not(target_os = "macos"))]
+fn barrier_sync(file: &File) -> io::Result<()> {
+    file.sync_data()
 }
 
 /// `F_FULLFSYNC`: the data survives a power loss once this returns.
