@@ -6,7 +6,7 @@
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
-    "engine_summary": "Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots and window Coherence verbs. 3D acceleration is excluded from General Preview and v1; release-blocking evidence remains open and known defects are disclosed below.",
+    "engine_summary": "Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots and window Coherence verbs. 3D acceleration is excluded from General Preview and v1; release-blocking evidence remains open and known defects are disclosed below.",
     "graphics_vulkan": "Vulkan is a Graphics Lab future path, excluded from General Preview and v1",
     "graphics_d3d11": "D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1",
     "machine_contract": "QEMU virt-compatible guest contract with documented deviations"
@@ -70,7 +70,7 @@
   "scope_history": [
     {
       "date": "2026-11-03",
-      "decision": "Operator decision: the release gate is the five user scenarios S1-S5. A criterion blocks a release exactly when a scenario lists it; the other criteria stay as supporting engineering records with their states, evidence and known defects unchanged. A20 (network download) was added for S5, and A8 was retracted to OPEN because the supported 3D-off display cannot resize. This applies to measurements after 2026-11-03 and turns no earlier result into a pass; product_state is unchanged."
+      "decision": "Operator decision: the release gate is the five user scenarios S1-S5. A criterion blocks a release exactly when a scenario lists it; the other criteria stay as supporting engineering records with their states, evidence and known defects unchanged. A20 (network download) was added for S5, and A8 was retracted to OPEN because the supported 3D-off display cannot resize; the engine summary no longer lists dynamic resolution. This applies to measurements after 2026-11-03 and turns no earlier result into a pass; product_state is unchanged."
     }
   ],
   "criteria": [
