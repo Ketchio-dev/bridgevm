@@ -41,7 +41,7 @@ from agent_wire import AgentWire  # noqa: E402
 from guest_bench_commands import (  # noqa: E402
     HIGHER_IS_BETTER, SUITE, command_line, cursor_logger, desktop_mode, display_animation, net_download,
     parse_bvbench,
-    stall_under_flush)
+    stall_under_flush, stall_idle)
 
 ROOT = Path(__file__).resolve().parents[2]
 QEMU_FIRMWARE = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
@@ -441,6 +441,12 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                 record["shutdown_diag"] = text.strip()[-4000:]
             except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
                 record["errors"].append(f"shutdown-diag: {type(error).__name__}: {error}")
+        if args.stall_idle:
+            try:
+                _, text = engine.run(command_line(stall_idle(8000)), time.monotonic() + 120)
+                record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
+            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                record["errors"].append(f"stall-idle: {type(error).__name__}: {error}")
         if args.stall:
             try:
                 _, text = engine.run(command_line(stall_under_flush(8000)), time.monotonic() + 120)
@@ -549,7 +555,8 @@ def compare(a: str, b: str) -> None:
     print(f"{'metric':28} {names[0]:>12} {names[1]:>12}  better")
     lower_better = {"ready_wall_ms", "boot_timer_desktop_ms", "idle_cpu_pct", "rss_mib", "guest_off_ms", "shutdown_ms",
                     "cursor-interval-p50", "cursor-interval-p95", "agent-rtt-p50", "agent-rtt-p95",
-                    "stall-max", "stall-p99", "stall-over-20ms", "display-frame-ms-p50", "display-frame-ms-p95",
+                    "stall-max", "stall-p99", "stall-over-20ms", "stall-idle-max", "stall-idle-p99",
+                    "stall-idle-over-5ms", "display-frame-ms-p50", "display-frame-ms-p95",
                     "display-age-ms-p95", "pointer-display-frame-ms-p50", "pointer-display-frame-ms-p95",
                     "pointer-display-age-ms-p95"}
     for key in left["median"].keys() | right["median"].keys():
@@ -586,6 +593,7 @@ def main() -> None:
     r.add_argument("--qemu-arg", action="append", default=[], help="extra QEMU argument; {boot} expands to the boot dir")
     r.add_argument("--display", action="store_true", help="guest animation; BridgeVM also counts frames reaching the host")
     r.add_argument("--stall", action="store_true", help="guest timer gaps while another thread flushes files")
+    r.add_argument("--stall-idle", action="store_true", help="the same timer gaps with no other load")
     r.add_argument("--shutdown-diag", action="store_true", help="record the guest's own shutdown timing events")
     r.add_argument("--settle-s", type=float, default=60)
     r.add_argument("--idle-s", type=float, default=30)
