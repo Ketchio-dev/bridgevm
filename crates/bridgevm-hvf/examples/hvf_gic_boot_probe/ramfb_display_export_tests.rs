@@ -181,20 +181,23 @@ fn a_presenting_device_holds_off_ramfb_changes_until_it_idles() {
 }
 
 #[test]
-fn losing_the_device_scanout_republishes_the_ramfb_frame_whole() {
+fn losing_the_device_scanout_keeps_its_frame_until_ramfb_changes() {
     let path = scratch_path();
     let (mut publisher, mut device) = with_device(&path);
-    let ram = ram_with(&frame(1));
+    let mut ram = ram_with(&frame(1));
     assert!(publisher.publish_changed(Some(config()), &ram));
     publisher.note_virtio_scanout(true);
     virtio_frame(&mut device, 0x33);
-    assert!(!publisher.publish_changed(Some(config()), &ram), "presenting");
     publisher.note_virtio_scanout(false);
-    assert!(publisher.publish_changed(Some(config()), &ram), "unchanged, yet republished");
+    assert!(!publisher.publish_changed(Some(config()), &ram), "unchanged ramfb");
+    let (header, sequence, pixels) = read_fb(&path);
+    let device_frame = (header[2], sequence, &pixels[..16]);
+    assert_eq!(device_frame, (2, 4, &[0x33; 16][..]), "the device's frame stays");
+    assert!(ram.write_bytes(FB_ADDR, &frame(7)));
+    assert!(publisher.publish_changed(Some(config()), &ram), "ramfb changed");
     let (header, sequence, pixels) = read_fb(&path);
     assert_eq!(header, [0x4256_4642, 1, 4, 2, 16, DRM_FORMAT_XRGB8888]);
-    assert_eq!((sequence, &pixels[..32]), (6, &frame(1)[..]));
-    assert!(!publisher.publish_changed(Some(config()), &ram), "once");
+    assert_eq!((sequence, &pixels[..32]), (6, &frame(7)[..]), "whole");
     cleanup(&path);
 }
 

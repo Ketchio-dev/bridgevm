@@ -8,8 +8,11 @@
 //! With a virtio-gpu device both write the file through one shared writer
 //! (one lock, one sequence). The device's frames win while its scanout is
 //! bound and it published within [`VIRTIO_IDLE`]; otherwise changed ramfb
-//! frames are published, and the current one is republished whole once the
-//! device's scanout goes away.
+//! frames are published. Losing the scanout publishes nothing by itself: the
+//! device's last frame stays until the ramfb frame changes. Windows changes it
+//! whenever it draws there (the boot spinner after ExitBootServices, Basic
+//! Display after the driver goes), and the stale ramfb frame left when the
+//! driver unloads at shutdown is never shown.
 
 use std::time::Duration;
 
@@ -80,9 +83,6 @@ struct FramePublisher {
     watch: Option<&'static FbWatch>,
     /// The virtio-gpu device had a bound scanout at the last poll.
     virtio_bound: bool,
-    /// The device's scanout went away: its last frame may fill the file, so
-    /// publish the current ramfb frame even if it did not change.
-    republish: bool,
 }
 
 impl FramePublisher {
@@ -94,13 +94,11 @@ impl FramePublisher {
             failure_logged: false,
             watch: None,
             virtio_bound: false,
-            republish: false,
         }
     }
 
     /// Whether the virtio-gpu device has a bound scanout, once per tick.
     fn note_virtio_scanout(&mut self, bound: bool) {
-        self.republish = !bound && (self.republish || self.virtio_bound);
         self.virtio_bound = bound;
     }
 
@@ -128,7 +126,6 @@ impl FramePublisher {
         if self.virtio_presenting() {
             return false;
         }
-        let force = self.republish;
         // Inactive, not XRGB8888, stride below the row, or oversized: skip.
         let frame = config
             .and_then(|config| Some((config, config.framebuffer_len().ok()?)))
@@ -136,14 +133,14 @@ impl FramePublisher {
         if let Some(watch) = self.watch {
             let range = frame.map(|(config, len)| (config.addr, len as u64));
             let current = matches!((&self.published, frame), (Some((p, _)), Some((c, _))) if *p == c);
-            if !watch.may_have_changed(range) && current && !force {
+            if !watch.may_have_changed(range) && current {
                 return false;
             }
         }
         let Some((config, len)) = frame else {
             return false;
         };
-        if !force && self.unchanged_in_place(config, len, mem) {
+        if self.unchanged_in_place(config, len, mem) {
             return false;
         }
         self.scratch.resize(len, 0);
@@ -151,7 +148,7 @@ impl FramePublisher {
             return false;
         }
         if let Some((published, bytes)) = &self.published {
-            if !force && *published == config && *bytes == self.scratch {
+            if *published == config && *bytes == self.scratch {
                 return false;
             }
         }
@@ -167,7 +164,6 @@ impl FramePublisher {
                 let previous = self.published.take().map(|(_, bytes)| bytes);
                 let frame = std::mem::replace(&mut self.scratch, previous.unwrap_or_default());
                 self.published = Some((config, frame));
-                self.republish = false;
                 true
             }
             Err(error) => {
