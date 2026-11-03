@@ -21,8 +21,19 @@ const TRB_DATA_STAGE_DIRECTION_IN: u32 = 1 << 16;
 #[derive(Clone, Copy)]
 pub(super) enum ControlTransferShape {
     NoData,
-    DataIn { buffer: u64, length: u16 },
-    DataOut { buffer: u64, payload: u8 },
+    DataIn {
+        buffer: u64,
+        length: u16,
+    },
+    DataOut {
+        buffer: u64,
+        payload: u8,
+    },
+    /// The payload rides in the data stage TRB (IDT), as Windows sends LED
+    /// reports; `parameter` is the whole field (low byte the report).
+    DataOutImmediate {
+        parameter: u64,
+    },
 }
 
 pub(super) fn prepare_addressed_control_transfer(
@@ -65,6 +76,18 @@ pub(super) fn write_control_transfer_at(
             mem.write_u32(
                 ring + TRB_SIZE + 12,
                 transfer_control(TRB_TYPE_DATA_STAGE) | TRB_DATA_STAGE_DIRECTION_IN,
+            );
+            mem.write_u32(
+                ring + (TRB_SIZE * 2) + 12,
+                transfer_control(TRB_TYPE_STATUS_STAGE),
+            );
+        }
+        ControlTransferShape::DataOutImmediate { parameter } => {
+            mem.write_u64(ring + TRB_SIZE, parameter);
+            mem.write_u32(ring + TRB_SIZE + 8, 1);
+            mem.write_u32(
+                ring + TRB_SIZE + 12,
+                transfer_control(TRB_TYPE_DATA_STAGE) | (1 << 6),
             );
             mem.write_u32(
                 ring + (TRB_SIZE * 2) + 12,
