@@ -182,6 +182,8 @@ pub(crate) use wake_coordinator::*;
 #[path = "hvf_gic_boot_probe/wake_coordinator/cancel_stop.rs"]
 mod cancel_stop;
 pub(crate) use cancel_stop::{cancel_stop_reason, stall_gic_report};
+#[path = "hvf_gic_boot_probe/display_checkpoints.rs"]
+mod display_checkpoints;
 #[path = "hvf_gic_boot_probe/guest_text.rs"]
 mod guest_text;
 #[path = "hvf_gic_boot_probe/platform_lock_holds.rs"]
