@@ -41,7 +41,8 @@ while IFS=$'\t' read -r patch_file component revision license scope output licen
     *) fail "third-party patch has an unknown distribution scope: $patch_file ($scope)" ;;
   esac
   case "$patch_file" in
-    crates/bridgevm-hvf/firmware/patches/0001-armvirt-process-tpm-ppi.patch)
+    crates/bridgevm-hvf/firmware/patches/0001-armvirt-process-tpm-ppi.patch | \
+      crates/bridgevm-hvf/firmware/patches/0002-ramfb-desktop-resolutions.patch)
       expected_revision=b03a21a63e3bd001f52c527e5a57feddb53a690b
       expected_license=BSD-2-Clause-Patent
       expected_scope=product-bundled
