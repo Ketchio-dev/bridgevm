@@ -15,18 +15,17 @@ struct LibraryFileField: View {
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel(title).accessibilityIdentifier("\(accessibilityIdentifier).path")
                     .help(path.isEmpty ? detail : path)
-                Button("선택…", action: pick)
+                Button("선택…") { Self.choose(with: NSOpenPanel(), directory: chooseDirectory, path: $path) }
                     .accessibilityLabel("\(title) 선택").accessibilityIdentifier("\(accessibilityIdentifier).choose")
             }
             Text(detail).font(.caption).foregroundStyle(.secondary)
         }
     }
 
-    private func pick() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = !chooseDirectory
-        panel.canChooseDirectories = chooseDirectory
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url { path = url.path }
+    /// T19 presses these choosers through Accessibility; like the create sheet, they must not hold
+    /// that request in a modal loop (FileSelection). Cancel keeps the typed or earlier path.
+    @MainActor
+    static func choose(with panel: FileSelectionPanel, directory: Bool, path: Binding<String>) {
+        FileSelection.present(panel, directories: directory) { path.wrappedValue = $0.path }
     }
 }

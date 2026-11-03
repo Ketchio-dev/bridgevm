@@ -4,6 +4,10 @@ p=argparse.ArgumentParser(); p.add_argument("--windows-product-e2e", action="sto
 r=json.load(open(a.request)); print("lane_root="+r["lane_root"]); assert r["schema_version"] == "bridgevm.windows-hvf-3d-off-product-e2e-request.v2"
 assert r["vm_slug"] == f"bridgevm-t17-lane-{r['lane']}-{r['nonce'][:12]}"
 if "noresult" in r["job_id"]: raise SystemExit(0)
+if "midlane-cancel" in r["job_id"]:
+    # Stand in for the app the real helper starts: like this helper it is outside the tier's process group.
+    app=subprocess.Popen([sys.executable,"-c","import time; time.sleep(120)",r["library_root_path"]],start_new_session=True)
+    pathlib.Path(r["lane_root"],"product-app.pid").write_text(f"{app.pid}\n"); __import__("time").sleep(120); raise SystemExit(1)
 if "survivor" in r["job_id"]:
     subprocess.run([sys.executable, str(pathlib.Path(__file__).with_name("fake-windows-product-e2e-survivor.py")), r["lane_root"]], check=True)
     raise SystemExit(1)

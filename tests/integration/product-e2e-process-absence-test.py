@@ -2,9 +2,11 @@
 """Literal-path process observation refuses matches and probe errors."""
 from pathlib import Path
 import os
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/live-gates"))
@@ -35,6 +37,21 @@ class ProcessAbsenceTests(unittest.TestCase):
                 process.terminate(); process.wait(timeout=10)
             result = subprocess.run([sys.executable, probe.__file__, marker], timeout=15)
             self.assertEqual(result.returncode, 0)
+
+    def test_end_stops_only_processes_inside_the_tree(self):
+        with tempfile.TemporaryDirectory(prefix="process-[owned](x)+-") as directory:
+            work = str(Path(directory) / "bridgevm-e2e-job.abc123")
+            sleep = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)"
+            owned = subprocess.Popen([sys.executable, "-c", sleep, work + "/lane-1/library"], start_new_session=True)
+            other = subprocess.Popen([sys.executable, "-c", sleep, work + "-other/lane-1"], start_new_session=True)
+            try:
+                time.sleep(0.3)
+                self.assertTrue(probe.end(work + "/", term_seconds=1.0))
+                self.assertEqual(owned.wait(timeout=5), -signal.SIGKILL)  # ignored TERM, then KILL
+                self.assertIsNone(other.poll())
+            finally:
+                for process in (owned, other):
+                    process.kill(); process.wait(timeout=10)
 
 
 if __name__ == "__main__":
