@@ -35,7 +35,7 @@ enum HvfWindowsInstallStagingRunnerFixture {
         let payload = Data(repeating: 0x31, count: 3 * 1024 * 1024)
         try payload.write(to: firmware)
         let digest = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
-        let pin = "b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b"
+        let pin = "241ce0117723bf30008e83ce1329528c3486398ce6256d943cd1300defffd8ff"
         let policyName = "run-hvf-windows-scripted-install-policy.sh"
         let policy = try String(contentsOf: checkout.appendingPathComponent("scripts/" + policyName), encoding: .utf8)
         XCTAssertEqual(policy.components(separatedBy: pin).count, 2)

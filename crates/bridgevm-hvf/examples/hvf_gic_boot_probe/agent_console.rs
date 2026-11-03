@@ -46,6 +46,8 @@ mod control_file;
 mod ctl_input_line_tests;
 #[path = "agent_console/ctl_verb_reply_tests.rs"]
 mod ctl_verb_reply_tests;
+#[path = "agent_console/desktop_switch.rs"]
+mod desktop_switch;
 #[path = "agent_console/harness_protocol.rs"]
 mod harness_protocol;
 #[path = "agent_console/pointer_cleanup_order_tests.rs"]
@@ -76,6 +78,7 @@ use clipboard::*;
 use config::*;
 use control_file::*;
 use protocol::*;
+pub use desktop_switch::request_desktop_mode;
 pub use service_wake::ServiceWake;
 use share::*;
 pub use state::AgentConsoleHarness;

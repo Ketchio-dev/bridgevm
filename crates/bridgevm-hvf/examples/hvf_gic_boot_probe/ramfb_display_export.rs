@@ -85,6 +85,9 @@ impl FramePublisher {
         else {
             return false;
         };
+        if self.unchanged_in_place(config, len, mem) {
+            return false;
+        }
         self.scratch.resize(len, 0);
         if !mem.read_into(config.addr, &mut self.scratch) {
             return false;
@@ -119,6 +122,28 @@ impl FramePublisher {
                 false
             }
         }
+    }
+}
+
+impl FramePublisher {
+    /// An idle desktop is the common case: compare the live guest pixels with
+    /// the published frame where they lie, so an unchanged frame costs one
+    /// compare and no copy. A frame the guest changes mid-compare is caught on
+    /// the next tick.
+    fn unchanged_in_place(&self, config: RamfbConfig, len: usize, mem: &dyn GuestMemoryMut) -> bool {
+        let Some((published, bytes)) = &self.published else {
+            return false;
+        };
+        if *published != config || bytes.len() != len {
+            return false;
+        }
+        let Some(live) = mem.host_ptr(config.addr, len) else {
+            return false;
+        };
+        // SAFETY: `host_ptr` checked that `len` bytes from `live` lie inside the
+        // guest RAM mapping, which outlives the call, and `bytes` holds `len`
+        // bytes. No Rust reference to guest memory is formed while vCPUs write it.
+        unsafe { libc::memcmp(live.cast(), bytes.as_ptr().cast(), len) == 0 }
     }
 }
 

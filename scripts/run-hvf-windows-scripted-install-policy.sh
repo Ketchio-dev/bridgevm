@@ -51,7 +51,7 @@ require_destructive_media_path() {
 
 select_scripted_install_firmware() {
   local runtime_root="$1"
-  local expected_sha="b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b"
+  local expected_sha="241ce0117723bf30008e83ce1329528c3486398ce6256d943cd1300defffd8ff"
   local size hash_output
   case "$runtime_root" in
     */Contents/Resources) FIRMWARE_CODE="$runtime_root/firmware/edk2-aarch64-secure-code.fd" ;;

@@ -86,7 +86,7 @@ enum HvfSecureBootProvisioner {
     private static let expectedAssetSha256 =
         "8c87c63e8ba0385d17238e8feb3b87de25007bec8e43251246bccbf18007af20"
     private static let expectedFirmwareSha256 =
-        "b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b"
+        "241ce0117723bf30008e83ce1329528c3486398ce6256d943cd1300defffd8ff"
     private static let expectedEdk2Commit =
         "b03a21a63e3bd001f52c527e5a57feddb53a690b"
     private static let expectedPayloadHashes = [

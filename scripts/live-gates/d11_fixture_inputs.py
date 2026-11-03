@@ -14,7 +14,7 @@ FILES = {"iso", "payload_manifest", "binary", "renderer", "firmware"}
 TREES = {"payload", "tools", "fixture_helper"}
 META = {"schema", "classification", "source_commit", "binary_source_commit", "binary_profile",
         "binary_features", "rust_toolchain", "container_gib"}
-FIRMWARE = "b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b"
+FIRMWARE = "241ce0117723bf30008e83ce1329528c3486398ce6256d943cd1300defffd8ff"
 RESOURCES = "D11Resources.bundle/Contents/Resources"
 SEED = "windows-boot-seed-vars.fd.gz"
 POLICY = "secureboot-microsoft-windows-transition-aarch64-v1.6.5.json"

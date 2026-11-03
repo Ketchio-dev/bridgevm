@@ -9,6 +9,7 @@ fn surfaces() -> DeviceSurfaces {
         aggressive_performance: false,
         nvme_buffered_io: false,
         nvme_durable_flush: false,
+        guest_resolution: None,
         clipboard_sync: false,
         share: None,
         virtio_net: false,
@@ -58,4 +59,15 @@ fn only_the_users_durable_disk_choice_makes_every_flush_a_full_sync() {
     assert!(values(&surfaces, "BRIDGEVM_NVME_FLUSH").is_empty());
     surfaces.nvme_durable_flush = true;
     assert_eq!(values(&surfaces, "BRIDGEVM_NVME_FLUSH"), ["durable"]);
+}
+
+#[test]
+fn only_the_users_resolution_choice_reaches_the_vmm_verbatim() {
+    let mut surfaces = surfaces();
+    assert!(values(&surfaces, "BRIDGEVM_GUEST_RESOLUTION").is_empty());
+    surfaces.guest_resolution = Some("1920x1080".to_string());
+    assert_eq!(
+        values(&surfaces, "BRIDGEVM_GUEST_RESOLUTION"),
+        ["1920x1080"]
+    );
 }

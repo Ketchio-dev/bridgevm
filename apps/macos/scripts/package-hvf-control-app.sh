@@ -33,7 +33,7 @@ done
 [[ ! -e "$OUTPUT" ]] || { echo "refusing to overwrite existing output: $OUTPUT" >&2; exit 1; }
 [[ "$SHORT_VERSION" =~ ^[0-9]+(\.[0-9]+){2}([.-][0-9A-Za-z]+)*$ ]] || { echo "invalid bundle short version: $SHORT_VERSION" >&2; exit 2; }
 [[ -f "$FIRMWARE_CODE" ]] || { echo "firmware code image is missing: $FIRMWARE_CODE" >&2; exit 1; }
-readonly SECURE_FIRMWARE_SHA256="b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b"
+readonly SECURE_FIRMWARE_SHA256="241ce0117723bf30008e83ce1329528c3486398ce6256d943cd1300defffd8ff"
 [[ "$(stat -f '%z' "$FIRMWARE_CODE")" == "3145728" ]] || {
   echo "secure firmware code volume must be exactly 3 MiB: $FIRMWARE_CODE" >&2
   exit 1

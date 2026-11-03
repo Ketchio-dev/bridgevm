@@ -8,11 +8,23 @@ pub(crate) fn attach_boot_media(
     vars_data: &[u8],
 ) {
     // Persisted with the vars at exit, like a choice made in the firmware setup.
-    match bridgevm_hvf::uefi_resolution::with_default_resolution(vars_data) {
-        Some(seeded) => {
-            let (width, height) = bridgevm_hvf::uefi_resolution::DEFAULT_RESOLUTION;
-            println!("UEFI vars: preferred resolution {width}x{height} added (PlatformConfig)");
-            platform.load_flash_vars(&seeded);
+    use bridgevm_hvf::uefi_resolution as res;
+    let chosen = std::env::var("BRIDGEVM_GUEST_RESOLUTION").ok();
+    let update = match chosen.as_deref().map(|text| (text, res::parse_resolution(text))) {
+        Some((_, Some(mode))) => res::with_resolution(vars_data, mode).map(|v| (v, mode, "set")),
+        Some((text, None)) => {
+            println!("UEFI vars: guest resolution {text:?} is not a firmware mode; kept");
+            None
+        }
+        None => res::with_default_resolution(vars_data).map(|v| (v, res::DEFAULT_RESOLUTION, "added")),
+    };
+    // Windows keeps its saved desktop mode: switch it in the boot that changed
+    // the firmware's mode (Windows saves the switch).
+    match update {
+        Some((vars, mode, how)) => {
+            println!("UEFI vars: preferred resolution {}x{} {how} (PlatformConfig)", mode.0, mode.1);
+            platform.load_flash_vars(&vars);
+            agent_console::request_desktop_mode(mode);
         }
         None => platform.load_flash_vars(vars_data),
     }

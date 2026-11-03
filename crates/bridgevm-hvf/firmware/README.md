@@ -9,8 +9,18 @@ Two firmware artifacts are retained deliberately:
 - `edk2-aarch64-secure-code.fd` is the product default. It is built from
   tianocore/edk2 `edk2-stable202605`, commit
   `b03a21a63e3bd001f52c527e5a57feddb53a690b`, with Secure Boot, TPM2, and the
-  TPM2 configuration UI enabled. Its adjacent `.build.json` is the
-  machine-readable provenance receipt.
+  TPM2 configuration UI enabled, plus the two patches in `patches/`: ArmVirt
+  TPM2 physical-presence processing, and common desktop resolutions up to
+  2560x1600 for the ramfb display (upstream offers only 640x480, 800x600 and
+  1024x768). Its adjacent `.build.json` is the machine-readable provenance
+  receipt. `scripts/build-hvf-edk2-secure-firmware.sh` rebuilds it byte for
+  byte from a clean pinned checkout with the pinned toolchain: module debug
+  entries embed the build path, so the script builds through the fixed link
+  `/tmp/bridgevm-edk2-stable202605`, and EDK2 draws a random stack cookie per
+  build, so the script pins one value (drawn once from a CSPRNG; it is readable
+  in the published binary anyway). The previous build
+  (`b1dc201b…`, TPM patch only) reproduced only with its original build path
+  and its own cookie, both read back from the binary on 2026-11-03.
 
 Both are `ArmVirtPkg/ArmVirtQemu.dsc` RELEASE AARCH64 firmware volumes. They
 replace Homebrew qemu's older firmware, whose NvmExpressDxe/PciBus does **not**

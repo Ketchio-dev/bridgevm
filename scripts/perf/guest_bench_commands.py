@@ -171,6 +171,34 @@ HIGHER_IS_BETTER = {name for name, _ in SUITE} | {
 _BVBENCH = re.compile(r"^BVBENCH (\S+) ([0-9]+(?:\.[0-9]+)?) (\S+)\s*$", re.M)
 
 
+def desktop_mode(native: bool) -> str:
+    """The Windows desktop resolution and its mode count; with `native`, first switch the desktop
+    (persistently) to the display's largest mode, as picking the recommended resolution does.
+    PowerShell passes `$null` to a string parameter as "", which names no display."""
+    return (
+        "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class BvDm {"
+        " [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct M {"
+        " [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string N; public short V1, V2, Size, Extra;"
+        " public int Fields, X, Y, O, F; public short C1, C2, C3, C4, C5;"
+        " [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string Form; public short Lp;"
+        " public int Bpp, W, H, Fl, Hz, I1, I2, I3, I4, R1, R2, P1, P2; }"
+        " [DllImport(\"user32.dll\", CharSet=CharSet.Unicode)] public static extern bool EnumDisplaySettings(string d, int i, ref M m);"
+        " [DllImport(\"user32.dll\", CharSet=CharSet.Unicode)] public static extern int ChangeDisplaySettingsEx(string d, ref M m, IntPtr h, int f, IntPtr l); }';"
+        "function Cur { $m = New-Object BvDm+M; $m.Size = 220; $null = [BvDm]::EnumDisplaySettings([NullString]::Value, -1, [ref]$m); $m };"
+        "$c = Cur; 'BVBENCH desktop-width-before {0} px' -f $c.W; 'BVBENCH desktop-height-before {0} px' -f $c.H;"
+        "$i = 0; $best = $null; while ($true) { $m = New-Object BvDm+M; $m.Size = 220;"
+        " if (-not [BvDm]::EnumDisplaySettings([NullString]::Value, $i, [ref]$m)) { break }; $i++;"
+        " if (-not $best -or $m.W * $m.H -gt $best.W * $best.H) { $best = $m } };"
+        "'BVBENCH desktop-modes {0} count' -f $i; 'BVBENCH desktop-max-width {0} px' -f $best.W;"
+        "'BVBENCH desktop-max-height {0} px' -f $best.H;"
+        + ("if ($best.W * $best.H -gt $c.W * $c.H) { $best.Fields = 0x180000;"
+           " $r = [BvDm]::ChangeDisplaySettingsEx([NullString]::Value, [ref]$best, [IntPtr]::Zero, 1, [IntPtr]::Zero);"
+           " 'BVBENCH desktop-change-ok {0} bool' -f [int]($r -eq 0); Start-Sleep -Milliseconds 1500 };"
+           if native else "")
+        + "$c = Cur; 'BVBENCH desktop-width {0} px' -f $c.W; 'BVBENCH desktop-height {0} px' -f $c.H"
+    )
+
+
 def command_line(script: str) -> str:
     # Any guest-side error aborts the script before its BVBENCH line: no number from a failed run.
     script = "$ErrorActionPreference='Stop'; " + script
@@ -188,6 +216,9 @@ def _self_test() -> None:
     net = net_download("http://h/blob", "ab" * 32)
     assert "'BVBENCH net-download-sha256-match {0} bool' -f [int]($h -eq '" + "ab" * 32 + "')" in net
     assert parse_bvbench("BVBENCH net-download-sha256-match 1 bool\r\n") == {"net-download-sha256-match": (1.0, "bool")}
+    for native in (False, True):
+        assert len(command_line(desktop_mode(native))) < 8000
+        assert ("[BvDm]::ChangeDisplaySettingsEx(" in desktop_mode(native)) == native
     for name, script in SUITE:
         line = command_line(script)
         assert "\n" not in line and len(line) < 8000, name

@@ -1,0 +1,71 @@
+From: BridgeVM contributors
+Subject: [PATCH] OvmfPkg/QemuRamfbDxe: offer common desktop resolutions
+
+QemuRamfbDxe offers only 640x480, 800x600 and 1024x768. A guest without its
+own display driver, such as Windows on the Basic Display Adapter, keeps the
+mode the firmware set, so the largest desktop it can have is 1024x768.
+
+Add the common 16:9, 16:10 and 5:4 desktop modes up to 2560x1600. The first
+three entries keep their numbers, so a saved PlatformConfig preference and the
+default 800x600 console still select the same modes. The framebuffer is sized
+for the largest mode (about 16 MB).
+
+diff --git a/OvmfPkg/QemuRamfbDxe/QemuRamfb.c b/OvmfPkg/QemuRamfbDxe/QemuRamfb.c
+index 5a1044f..fabe0ab 100644
+--- a/OvmfPkg/QemuRamfbDxe/QemuRamfb.c
++++ b/OvmfPkg/QemuRamfbDxe/QemuRamfb.c
+@@ -54,6 +54,54 @@ STATIC EFI_GRAPHICS_OUTPUT_MODE_INFORMATION  mQemuRamfbModeInfo[] = {
+     0,    // Version
+     1024, // HorizontalResolution
+     768,  // VerticalResolution
++  },{
++    0,    // Version
++    1280, // HorizontalResolution
++    720,  // VerticalResolution
++  },{
++    0,    // Version
++    1280, // HorizontalResolution
++    800,  // VerticalResolution
++  },{
++    0,    // Version
++    1280, // HorizontalResolution
++    1024, // VerticalResolution
++  },{
++    0,    // Version
++    1366, // HorizontalResolution
++    768,  // VerticalResolution
++  },{
++    0,    // Version
++    1440, // HorizontalResolution
++    900,  // VerticalResolution
++  },{
++    0,    // Version
++    1600, // HorizontalResolution
++    900,  // VerticalResolution
++  },{
++    0,    // Version
++    1600, // HorizontalResolution
++    1200, // VerticalResolution
++  },{
++    0,    // Version
++    1680, // HorizontalResolution
++    1050, // VerticalResolution
++  },{
++    0,    // Version
++    1920, // HorizontalResolution
++    1080, // VerticalResolution
++  },{
++    0,    // Version
++    1920, // HorizontalResolution
++    1200, // VerticalResolution
++  },{
++    0,    // Version
++    2560, // HorizontalResolution
++    1440, // VerticalResolution
++  },{
++    0,    // Version
++    2560, // HorizontalResolution
++    1600, // VerticalResolution
+   }
+ };
+ 
