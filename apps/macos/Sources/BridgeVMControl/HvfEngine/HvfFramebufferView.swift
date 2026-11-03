@@ -46,6 +46,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         session = next
         inputFocusMonitor.watch(window: window) { [weak self] in self?.cancelGuestInputTarget() }
         if window != nil { startDisplayLink() }
+        reportDisplaySize(settled: false)
     }
 
     init(session: HvfEngineSession, imageFactory: HvfFramebufferImageFactory = HvfFramebufferImageFactory()) {
@@ -75,6 +76,30 @@ final class FBLayerView: HvfFramebufferTextInput {
         } else {
             stopDisplayLink()
         }
+        reportDisplaySize(settled: false)
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        reportDisplaySize(settled: false)
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        reportDisplaySize(settled: true)
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        reportDisplaySize(settled: false)
+    }
+
+    /// The guest display follows the window (HvfDisplayResizeRequest), in points, so a Retina window asks
+    /// for its 1x size. SwiftUI lays this view out at its minimum size before the window is shown, so only
+    /// a view on screen reports.
+    private func reportDisplaySize(settled: Bool) {
+        guard let session, window?.isVisible == true else { return }
+        session.displayViewResized(to: bounds.size, settled: settled)
     }
 
     override func updateTrackingAreas() {
