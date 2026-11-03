@@ -61,6 +61,32 @@ fn clock() -> Instant {
     *START.get_or_init(Instant::now)
 }
 
+/// The flush worker's time. Tests move it forward instead of sleeping.
+#[derive(Debug, Default)]
+pub(crate) struct Clock {
+    #[cfg(test)]
+    skew_nanos: AtomicU64,
+}
+
+impl Clock {
+    #[cfg(not(test))]
+    pub(crate) fn now(&self) -> Instant {
+        Instant::now()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn now(&self) -> Instant {
+        Instant::now() + Duration::from_nanos(self.skew_nanos.load(Ordering::Relaxed))
+    }
+
+    /// As if `by` had passed.
+    #[cfg(test)]
+    pub(crate) fn advance(&self, by: Duration) {
+        let nanos = u64::try_from(by.as_nanos()).unwrap_or(u64::MAX);
+        self.skew_nanos.fetch_add(nanos, Ordering::Relaxed);
+    }
+}
+
 /// Nanoseconds after `clock()` of the last `F_FULLFSYNC`, plus one (0: never).
 static LAST_FULL_SYNC: AtomicU64 = AtomicU64::new(0);
 /// An ordered flush was acknowledged after the last `F_FULLFSYNC`.
@@ -73,10 +99,18 @@ fn full_sync_due(now: Duration, last_plus_one: u64) -> bool {
 
 /// Sync for a guest FLUSH or FUA write, in the configured mode.
 pub(crate) fn sync(file: &File) -> io::Result<()> {
+    sync_at(file, Instant::now())
+}
+
+/// [`sync`] as of `now`.
+pub(crate) fn sync_at(file: &File, now: Instant) -> io::Result<()> {
     match mode() {
         FlushMode::Durable => sync_durable(file),
         FlushMode::Ordered
-            if full_sync_due(clock().elapsed(), LAST_FULL_SYNC.load(Ordering::Relaxed)) =>
+            if full_sync_due(
+                now.saturating_duration_since(clock()),
+                LAST_FULL_SYNC.load(Ordering::Relaxed),
+            ) =>
         {
             sync_durable(file)
         }
@@ -102,19 +136,71 @@ fn barrier_sync(file: &File) -> io::Result<()> {
     if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_BARRIERFSYNC) } == -1 {
         return Err(io::Error::last_os_error());
     }
+    #[cfg(test)]
+    record(file, SyncKind::Barrier);
     Ok(())
 }
 
 /// Other hosts (cross-compiled stubs) have no barrier: sync the data.
 #[cfg(not(target_os = "macos"))]
 fn barrier_sync(file: &File) -> io::Result<()> {
-    file.sync_data()
+    file.sync_data()?;
+    #[cfg(test)]
+    record(file, SyncKind::Barrier);
+    Ok(())
+}
+
+/// `F_FULLFSYNC` on macOS (Rust's `sync_data`), `fdatasync` elsewhere.
+fn full_sync(file: &File) -> io::Result<()> {
+    file.sync_data()?;
+    #[cfg(test)]
+    record(file, SyncKind::Full);
+    Ok(())
+}
+
+/// A host sync the tests observe.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SyncKind {
+    Barrier,
+    Full,
+}
+
+/// Completed syncs by file (device, inode): the worker syncs duplicated handles.
+#[cfg(test)]
+static SYNCS: std::sync::Mutex<Vec<((u64, u64), SyncKind)>> = std::sync::Mutex::new(Vec::new());
+
+#[cfg(test)]
+fn record(file: &File, kind: SyncKind) {
+    use std::os::unix::fs::MetadataExt;
+    if let Ok(meta) = file.metadata() {
+        let mut syncs = SYNCS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        syncs.push(((meta.dev(), meta.ino()), kind));
+    }
+}
+
+/// The syncs of the file at `path` so far, oldest first.
+#[cfg(test)]
+pub(crate) fn recorded_syncs(path: &std::path::Path) -> Vec<SyncKind> {
+    use std::os::unix::fs::MetadataExt;
+    let meta = std::fs::metadata(path).expect("synced file exists");
+    let id = (meta.dev(), meta.ino());
+    let syncs = SYNCS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    syncs
+        .iter()
+        .filter(|(file, _)| *file == id)
+        .map(|(_, kind)| *kind)
+        .collect()
 }
 
 /// `F_FULLFSYNC`: the data survives a power loss once this returns.
 pub(crate) fn sync_durable(file: &File) -> io::Result<()> {
     FULL_SYNC_OWED.store(false, Ordering::Relaxed);
-    if let Err(error) = file.sync_data() {
+    if let Err(error) = full_sync(file) {
         FULL_SYNC_OWED.store(true, Ordering::Relaxed);
         return Err(error);
     }

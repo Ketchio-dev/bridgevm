@@ -49,6 +49,8 @@ struct Shared {
     changed: Condvar,
     /// Finished jobs not yet taken; lets the pre-run drain skip the mutex.
     ready: AtomicUsize,
+    /// The worker thread's time (tests move it forward).
+    clock: flush_mode::Clock,
 }
 
 pub(crate) struct FlushWorker {
@@ -73,6 +75,7 @@ impl FlushWorker {
         std::thread::Builder::new()
             .name("nvme-flush".into())
             .spawn(move || {
+                let clock = &worker.clock;
                 // When an ordered flush left a full sync owed: run it then.
                 let mut owed: Option<Instant> = None;
                 loop {
@@ -82,26 +85,29 @@ impl FlushWorker {
                             Ok(job) => job,
                             Err(_) => break,
                         },
-                        Some(due) => match inbox
-                            .recv_timeout(due.saturating_duration_since(Instant::now()))
-                        {
-                            Ok(job) => job,
-                            Err(RecvTimeoutError::Timeout) => {
-                                owed = None;
-                                if flush_mode::full_sync_owed() {
-                                    for file in disk.iter().chain(disk2.iter()) {
-                                        let _ = flush_mode::sync_durable(file);
+                        Some(due) => {
+                            match inbox.recv_timeout(due.saturating_duration_since(clock.now())) {
+                                Ok(job) => job,
+                                Err(RecvTimeoutError::Timeout) => {
+                                    owed = None;
+                                    if flush_mode::full_sync_owed() {
+                                        for file in disk.iter().chain(disk2.iter()) {
+                                            let _ = flush_mode::sync_durable(file);
+                                        }
                                     }
+                                    continue;
                                 }
-                                continue;
+                                Err(RecvTimeoutError::Disconnected) => break,
                             }
-                            Err(RecvTimeoutError::Disconnected) => break,
-                        },
+                        }
                     };
                     let mut batch = vec![first];
                     batch.extend(inbox.try_iter());
                     let sync = |file: &Option<File>, needed: bool| {
-                        !needed || file.as_ref().is_some_and(|f| flush_mode::sync(f).is_ok())
+                        !needed
+                            || file
+                                .as_ref()
+                                .is_some_and(|f| flush_mode::sync_at(f, clock.now()).is_ok())
                     };
                     let ok = sync(&disk, batch.iter().any(|job| job.disk));
                     let ok2 = sync(&disk2, batch.iter().any(|job| job.disk2));
@@ -118,7 +124,7 @@ impl FlushWorker {
                         hook();
                     }
                     if owed.is_none() && flush_mode::full_sync_owed() {
-                        owed = Some(Instant::now() + flush_mode::DURABLE_WITHIN);
+                        owed = Some(clock.now() + flush_mode::DURABLE_WITHIN);
                     }
                 }
             })?;
@@ -141,6 +147,15 @@ fn sync_handle(backend: Option<&DiskBackend>) -> Option<File> {
     match backend? {
         DiskBackend::RawFile(disk) if disk.write_back => disk.file.try_clone().ok(),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+impl NvmeController {
+    /// Move the flush worker's clock forward, as if `by` had passed.
+    pub(crate) fn advance_flush_clock(&self, by: std::time::Duration) {
+        let worker = self.flush_worker.as_ref().expect("a flush worker");
+        worker.shared.clock.advance(by);
     }
 }
 
