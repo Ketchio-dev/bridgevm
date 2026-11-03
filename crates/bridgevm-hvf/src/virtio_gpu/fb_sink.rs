@@ -29,6 +29,17 @@ pub(crate) struct FbShared {
     pub(crate) newest: Option<(u64, Instant)>,
 }
 
+/// What a frame write did (`FbSink::write_inner`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Wrote {
+    /// The frame is the file's newest.
+    Frame,
+    /// Another writer's frame, younger than the hold, stays; nothing written.
+    Held,
+    /// The geometry overflows or the bytes are short; nothing written.
+    Invalid,
+}
+
 // Each FbSink is used by one thread at a time (the device's on a vCPU, the
 // ramfb exporter's on its own thread). Its raw mmap pointer is never shared
 // across threads; this only satisfies the Send bounds of its owners.
