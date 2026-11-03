@@ -133,7 +133,8 @@ impl DiskBackend {
         }
     }
 
-    /// Sync for a guest FLUSH or FUA write, in the configured mode.
+    /// Sync for a guest FLUSH or FUA write run inline: durable unless the
+    /// mode is fast (`flush_mode::sync_inline`).
     pub(crate) fn flush(&mut self) -> io::Result<()> {
         self.flush_with(false)
     }
@@ -184,11 +185,7 @@ impl RawFileDisk {
             }
         }
 
-        if durable {
-            super::flush_mode::sync_durable(&self.file)
-        } else {
-            super::flush_mode::sync(&self.file)
-        }
+        super::flush_mode::sync_inline(&self.file, durable)
     }
 
     /// Read `dst.len()` bytes at `offset`: one `pread` of the whole span from the
