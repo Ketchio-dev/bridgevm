@@ -47,6 +47,13 @@ def load_registry() -> dict:
     raise AssertionError("unreachable")
 
 
+def scenario_met(scenario: dict, criteria: dict) -> bool:
+    """Met only when all its criteria are PROVEN and it has no known defect."""
+    return not scenario.get("known_defect") and all(
+        criteria[cid]["state"] == "PROVEN" for cid in scenario["criteria"]
+    )
+
+
 def validate(registry: dict) -> None:
     """Check the registry against the parts of the schema we depend on.
 
@@ -115,6 +122,32 @@ def validate(registry: dict) -> None:
             if not (ROOT / path).exists():
                 fail(f"criterion {cid} references a missing evidence path: {path}")
 
+    # The release gate is the user scenarios: a criterion blocks a release
+    # exactly when one scenario lists it.
+    scenarios = registry.get("scenarios")
+    if scenarios is not None:
+        for scenario in scenarios:
+            for key in schema["definitions"]["scenario"]["required"]:
+                if key not in scenario:
+                    fail(f"scenario {scenario.get('id', '?')} is missing {key}")
+        listed = [cid for scenario in scenarios for cid in scenario["criteria"]]
+        unknown = sorted(set(listed) - seen)
+        if unknown:
+            fail(f"scenarios list unknown criteria: {', '.join(unknown)}")
+        repeated = sorted({cid for cid in listed if listed.count(cid) > 1})
+        if repeated:
+            fail(f"criteria listed by more than one scenario: {', '.join(repeated)}")
+        mismatched = [
+            c["id"]
+            for c in registry["criteria"]
+            if c["release_blocking"] != (c["id"] in listed)
+        ]
+        if mismatched:
+            fail(
+                "release_blocking must be true exactly for criteria a scenario "
+                f"lists: {', '.join(mismatched)}"
+            )
+
     # The central consistency rule: a promoted product state requires proof.
     if registry["product_state"] != "ENGINEERING_PREVIEW":
         unproven = [
@@ -127,6 +160,47 @@ def validate(registry: dict) -> None:
                 "product_state may not be promoted while release-blocking "
                 f"criteria are unproven: {', '.join(unproven)}"
             )
+        criteria = {c["id"]: c for c in registry["criteria"]}
+        unmet = [s["id"] for s in scenarios or [] if not scenario_met(s, criteria)]
+        if unmet:
+            fail(
+                "product_state may not be promoted while scenarios are open: "
+                f"{', '.join(unmet)}"
+            )
+
+
+def render_scenarios(registry: dict) -> list[str]:
+    """The release gate table, with every defect that keeps a scenario open."""
+    scenarios = registry.get("scenarios")
+    if not scenarios:
+        return []
+    criteria = {c["id"]: c for c in registry["criteria"]}
+    met = [s["id"] for s in scenarios if scenario_met(s, criteria)]
+    lines = [
+        f"Release scenarios met: **{len(met)} / {len(scenarios)}**.",
+        "",
+        "| ID | Scenario | State | Criteria | Known defects |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for scenario in scenarios:
+        listed = [criteria[cid] for cid in scenario["criteria"]]
+        ids = ", ".join(
+            c["id"] if c["state"] == "PROVEN"
+            else f"{c['id']} ({STATE_MARK[c['state']]})"
+            for c in listed
+        )
+        defects = [scenario["known_defect"]] if scenario.get("known_defect") else []
+        defects += [
+            f"**{c['id']}**: {c['known_defect']}"
+            for c in listed
+            if c["state"] != "PROVEN" and c.get("known_defect")
+        ]
+        state = "MET" if scenario["id"] in met else "OPEN"
+        lines.append(
+            f"| {scenario['id']} | {scenario['title']} | `{state}` | {ids} | "
+            f"{' '.join(defects) or 'none'} |"
+        )
+    return lines + [""]
 
 
 def render_summary(registry: dict) -> str:
@@ -136,21 +210,30 @@ def render_summary(registry: dict) -> str:
     proven = [c for c in blocking if c["state"] == "PROVEN"]
     open_ids = [c["id"] for c in blocking if c["state"] != "PROVEN"]
 
+    # Defects of scenario criteria are already in the scenario table.
+    in_scenarios = {
+        cid for s in registry.get("scenarios", []) for cid in s["criteria"]
+    }
     defects = [
         (c["id"], c["known_defect"])
         for c in criteria
-        if c["state"] != "PROVEN" and c.get("known_defect")
+        if c["state"] != "PROVEN"
+        and c.get("known_defect")
+        and c["id"] not in in_scenarios
     ]
+    # The product state line stays first: its wording discloses defects "below".
     lines = [
         f"**Product state: {wording['product_state_label']}.** "
         f"{wording['engine_summary']}",
         "",
+        *render_scenarios(registry),
         f"Release-blocking criteria proven: **{len(proven)} / {len(blocking)}**. "
         f"Open: {', '.join(open_ids) if open_ids else 'none'}.",
         "",
     ]
     if defects:
-        lines.append("Known open defects:")
+        label = "Other known open defects:" if in_scenarios else "Known open defects:"
+        lines.append(label)
         lines.extend(f"- **{cid}**: {text}" for cid, text in defects)
         lines.append("")
     lines += [
@@ -169,6 +252,7 @@ def render_summary(registry: dict) -> str:
 def render_matrix(registry: dict, target: Path) -> str:
     registry_link = os.path.relpath(REGISTRY, target.parent)
     lines = [
+        *render_scenarios(registry),
         "| ID | Capability | State | Threshold | Latest measurement |",
         "| --- | --- | --- | --- | --- |",
     ]
