@@ -46,6 +46,33 @@ final class T17DisplayClickDeadlineTests: XCTestCase {
         }
     }
 
+    func testClickIsWithheldWhileAnotherAppCoversThePoint() {
+        var clock = Date(timeIntervalSince1970: 0), posts = 0
+        XCTAssertThrowsError(try T17DisplayClick.click(at: spot, timeout: 1,
+            read: { self.target }, post: { _ in posts += 1; return true }, now: { clock },
+            pause: { clock = clock.addingTimeInterval(0.5) }, coveredBy: { _ in "Tart" })) { error in
+                XCTAssertEqual(error as? T17Blocker, .init(code: "display-covered",
+                    detail: "another app's window (Tart) covers the guest display; click withheld"))
+            }
+        XCTAssertEqual(posts, 0)
+    }
+
+    func testTopOwnerIsTheFrontmostWindowUnderThePoint() {
+        func window(_ pid: Int, _ name: String, _ rect: CGRect, alpha: Double = 1) -> [String: Any] {
+            [kCGWindowOwnerPID as String: pid, kCGWindowOwnerName as String: name, kCGWindowAlpha as String: alpha,
+             kCGWindowBounds as String: rect.dictionaryRepresentation]
+        }
+        let point = CGPoint(x: 740, y: 450), app: pid_t = 42
+        let behind = window(42, "BridgeVM", CGRect(x: 100, y: 50, width: 1280, height: 800))
+        XCTAssertNil(T17DisplayClick.topOwner(at: point, pid: app, windows: [behind]))
+        XCTAssertEqual(T17DisplayClick.topOwner(at: point, pid: app,
+            windows: [window(7, "Tart", CGRect(x: 600, y: 400, width: 400, height: 300)), behind]), "Tart")
+        XCTAssertNil(T17DisplayClick.topOwner(at: point, pid: app,
+            windows: [window(7, "Overlay", CGRect(x: 0, y: 0, width: 4000, height: 3000), alpha: 0), behind]))
+        XCTAssertNil(T17DisplayClick.topOwner(at: point, pid: app,
+            windows: [window(7, "Elsewhere", CGRect(x: 0, y: 0, width: 50, height: 50)), behind]))
+    }
+
     private func assertTimeout(_ error: Error) {
         XCTAssertEqual(error as? T17Blocker, .init(code: "ui-element-missing",
             detail: "guest display surface did not present a frame in the focused window"))

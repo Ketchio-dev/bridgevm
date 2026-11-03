@@ -109,7 +109,7 @@ final class T17Accessibility: T17UIControlling {
             let frame = point(surface).flatMap { origin in size(surface).map { CGRect(origin: origin, size: $0) } }
             return T17DisplayClick.Target(value: attribute(surface, kAXValueAttribute as CFString) as? String,
                                           focused: window.flatMap { w in focused.map { CFEqual(w, $0) } } ?? false, frame: frame)
-        }, post: T17DisplayClick.post)
+        }, post: T17DisplayClick.post, coveredBy: { T17DisplayClick.otherOwner(at: $0, pid: self.pid) })
     }
 
     private func element(_ identifier: String, role expectedRole: String? = nil,
