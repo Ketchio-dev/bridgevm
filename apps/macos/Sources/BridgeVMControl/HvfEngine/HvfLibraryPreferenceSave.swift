@@ -1,7 +1,7 @@
 import Foundation
 
 /// A library VM's runtime-view launch preferences (clipboard sync, network, durable disk writes,
-/// display resolution, shared folder) are saved in vm.json, so every start path (runtime view,
+/// display resolution, shared folder, display driver) are saved in vm.json, so every start path (runtime view,
 /// dashboard, native CLI, relaunch) uses them. The experimental non-library entry keeps
 /// view-local options.
 extension HvfEngineSession {
@@ -68,6 +68,7 @@ extension VMConfig {
         copy.networkEnabled = other.networkEnabled
         copy.durableDiskWritesEnabled = other.durableDiskWritesEnabled
         copy.guestResolution = other.guestResolution
+        copy.virtioDisplayDriverInstalled = other.virtioDisplayDriverInstalled
         copy.sharedFolderHostPath = other.sharedFolderHostPath
         copy.sharedFolderGuestPath = other.sharedFolderGuestPath
         return copy
@@ -84,6 +85,7 @@ extension HvfEngineConfig {
         if saved.networkEnabled != previous.networkEnabled { rebound.virtioNet = launch.virtioNet }
         if saved.durableDiskWritesEnabled != previous.durableDiskWritesEnabled { rebound.durableDiskWrites = launch.durableDiskWrites }
         if saved.guestResolution != previous.guestResolution { rebound.guestResolution = launch.guestResolution }
+        if saved.virtioDisplayDriverInstalled != previous.virtioDisplayDriverInstalled { rebound.virtioGpu2d = launch.virtioGpu2d }
         if saved.sharedFolderHostPath != previous.sharedFolderHostPath
             || saved.sharedFolderGuestPath != previous.sharedFolderGuestPath {
             rebound.shareHostDir = launch.shareHostDir

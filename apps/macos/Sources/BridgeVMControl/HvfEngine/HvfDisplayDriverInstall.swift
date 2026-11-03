@@ -163,12 +163,45 @@ enum HvfDisplayDriverInstall {
     }
 }
 
+/// The per-VM `virtioDisplayDriverInstalled` flag, which attaches the 2D virtio-gpu from the next
+/// start. It is saved like the other per-VM settings, through `saveLibraryPreference`, which
+/// refuses while the VM runs (a running VM keeps the launch it was admitted with). The install
+/// always runs in a running guest, so the flag waits here, per VM for this app session, until
+/// the VM has fully stopped.
+@MainActor
+enum HvfDisplayDriverFlag {
+    private(set) static var pendingVMs: Set<String> = []
+
+    /// For an installed or staged outcome: saves now if the VM is stopped, otherwise once it is.
+    @discardableResult
+    static func record(_ session: HvfEngineSession,
+                       publish: @escaping HvfEngineSession.RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> String? {
+        guard let slug = session.config.libraryContext?.config.slug else { return nil }
+        pendingVMs.insert(slug)
+        return saveIfStopped(session, publish: publish)
+    }
+
+    /// Nil while the VM runs or once the flag is in vm.json; otherwise why the save failed.
+    @discardableResult
+    static func saveIfStopped(_ session: HvfEngineSession,
+                              publish: @escaping HvfEngineSession.RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> String? {
+        guard let slug = session.config.libraryContext?.config.slug, pendingVMs.contains(slug),
+              session.libraryPreferencesEditable else { return nil }
+        let message = session.saveLibraryPreference("디스플레이 드라이버 설정", publish: publish) {
+            $0.virtioDisplayDriverInstalled = true
+        }
+        if message == nil { pendingVMs.remove(slug) }
+        return message
+    }
+}
+
 /// The VM view's display driver action, enabled only while the guest agent is ready.
 struct HvfDisplayDriverInstallButton: View {
     @ObservedObject var session: HvfEngineSession
     let onInstalled: @MainActor (HvfDisplayDriverInstall.Outcome) -> Void
     @State private var installing = false
     @State private var outcome: HvfDisplayDriverInstall.Outcome?
+    @State private var flagMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -185,7 +218,18 @@ struct HvfDisplayDriverInstallButton: View {
                 Text(outcome.message)
                     .font(.caption).foregroundColor(outcome.leavesDriverInGuest ? .green : .orange)
                     .textSelection(.enabled)
+                if outcome.leavesDriverInGuest && session.persistsLibraryPreferences {
+                    Text("다음에 VM을 시작하면 새 디스플레이가 연결됩니다.")
+                        .font(.caption).foregroundColor(.secondary)
+                }
             }
+            if let flagMessage {
+                Text(flagMessage).font(.caption).foregroundColor(.orange)
+            }
+        }
+        .onAppear { flagMessage = HvfDisplayDriverFlag.saveIfStopped(session) }
+        .onChange(of: session.connectionState) { _, state in
+            if state == .stopped { flagMessage = HvfDisplayDriverFlag.saveIfStopped(session) }
         }
     }
 

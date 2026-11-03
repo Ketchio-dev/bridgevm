@@ -181,3 +181,36 @@ final class HvfDisplayDriverInstallSessionTests: XCTestCase {
         func remove() { try? FileManager.default.removeItem(at: root) }
     }
 }
+
+@MainActor
+final class HvfDisplayDriverFlagTests: XCTestCase {
+    /// Installed and staged save the per-VM flag through the normal vm.json path once the VM has
+    /// stopped (the install itself runs in a running guest); failed never saves it.
+    func testInstalledOrStagedOutcomeSetsTheFlagAndFailedDoesNot() async throws {
+        for (status, expected) in [("installed", true), ("staged", true), ("failed", false)] {
+            let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
+            defer { fixture.clean() }
+            let saved = fixture.config("windows-\(status)"); fixture.save(saved)
+            let library = fixture.library(probe: probe)
+            let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+            session.connectionState = .connected(host: "guest")
+            let outcome = await withCheckedContinuation { (done: CheckedContinuation<HvfDisplayDriverInstall.Outcome, Never>) in
+                HvfDisplayDriverInstall.start(runner: { _ in ("BVDRIVER result=\(status) detail=x", 0) },
+                                              onInstalled: { _ in HvfDisplayDriverFlag.record(session) }) { done.resume(returning: $0) }
+            }
+            XCTAssertEqual(outcome.status.rawValue, status)
+            XCTAssertNil(library.latestConfiguration(for: saved).virtioDisplayDriverInstalled, "\(status): not while running")
+
+            session.connectionState = .stopped
+            XCTAssertNil(HvfDisplayDriverFlag.saveIfStopped(session), status)
+            let latest = library.latestConfiguration(for: saved)
+            XCTAssertEqual(latest.virtioDisplayDriverInstalled == true, expected, status)
+            XCTAssertEqual(try XCTUnwrap(HvfEngineConfig.libraryVM(latest, rootURL: library.rootURL)).virtioGpu2d, expected, status)
+            // Rebound in place: this view's next start attaches the device, with no re-registration warning.
+            XCTAssertEqual(session.config.virtioGpu2d, expected, status)
+            XCTAssertTrue(library.hvfRuntimeDetailSession(for: latest) === session, status)
+            XCTAssertNil(library.operationError, status)
+            XCTAssertFalse(HvfDisplayDriverFlag.pendingVMs.contains(saved.slug), status)
+        }
+    }
+}

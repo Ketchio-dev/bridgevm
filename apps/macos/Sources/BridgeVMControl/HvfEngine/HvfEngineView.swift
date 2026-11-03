@@ -224,8 +224,8 @@ struct HvfEngineView: View {
                         Label("화면 창 열기", systemImage: "macwindow")
                     }.accessibilityIdentifier("bridgevm.runtime.display.open")
                 }
-                // Integration point: onInstalled receives installed/staged outcomes for the per-VM driver flag.
-                HvfDisplayDriverInstallButton(session: session, onInstalled: { _ in })
+                // Installed or staged: this VM's virtioDisplayDriverInstalled is saved once it has stopped.
+                HvfDisplayDriverInstallButton(session: session) { _ in HvfDisplayDriverFlag.record(session) }
             }
             .padding(6)
             #else
