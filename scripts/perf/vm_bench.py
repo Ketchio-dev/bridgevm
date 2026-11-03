@@ -502,6 +502,18 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
     return record
 
 
+def other_vmms(text) -> str:
+    """VMM processes already running, one line each with its command line.
+
+    Matches exact process names: matching command lines (pgrep -f) also caught
+    waiter shells whose arguments name a VMM, and those filled the record."""
+    pids = text(["pgrep", "-x", "hvf_gic_boot_probe|qemu-system-aarch64|tart|prl_vm_app"]).split()
+    if not pids:
+        return ""
+    rows = text(["ps", "-o", "pid=,command=", "-p", ",".join(pids)]).splitlines()
+    return "\n".join(row.strip()[:160] for row in rows)[:1200]
+
+
 def identity(args) -> dict:
     def text(cmd):
         return subprocess.run(cmd, capture_output=True, text=True).stdout.strip()
@@ -511,7 +523,7 @@ def identity(args) -> dict:
         "guest_date": args.guest_date, "bvm_env": args.bvm_env,
         "host": text(["/usr/sbin/sysctl", "-n", "machdep.cpu.brand_string"]), "macos": platform.mac_ver()[0],
         "source_commit": text(["git", "-C", str(ROOT), "rev-parse", "HEAD"]), "disk": Path(args.disk).name,
-        "other_vmms": text(["pgrep", "-fl", "tart run|qemu-system|Parallels|hvf_gic_boot_probe"])[:400],
+        "other_vmms": other_vmms(text),
     }
     if args.engine == "bridgevm":
         ident["probe_sha256"] = hashlib.sha256(Path(args.probe).read_bytes()).hexdigest()
