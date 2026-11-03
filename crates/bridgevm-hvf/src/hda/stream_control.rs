@@ -31,6 +31,7 @@ impl HdaController {
             // RUN resumes DMA without acknowledging status or resetting the cursor.
             self.last_poll = None;
             self.byte_time_remainder = 0;
+            self.hold.start_run(usize::from(self.stream.lvi) + 1);
             self.stream_activity.start();
             self.trace_stream_run();
         } else if !running {

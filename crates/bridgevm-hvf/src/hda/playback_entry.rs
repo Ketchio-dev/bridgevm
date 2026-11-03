@@ -18,6 +18,7 @@ impl HdaController {
     }
 
     pub(crate) fn complete_bdl_entry(&mut self, flags: u32) {
+        self.hold.note_completed(self.stream.bdl_index);
         if flags & BDL_IOC != 0 {
             self.stream.sts |= SDSTS_BCIS;
             self.diagnostics.note_ioc();

@@ -115,9 +115,7 @@ impl HdaDiagnostics {
 
     /// Count a guest read that covers SD0 LPIB or its alias while the stream runs.
     pub(crate) fn note_register_read(&self, offset: u64, size: u8, running: bool) {
-        let end = offset.saturating_add(u64::from(size));
-        let covers = |register: u64| offset < register + 4 && end > register;
-        if running && (covers(REG_SD_LPIB) || covers(REG_SD_LPIB_ALIAS)) {
+        if running && super::reads_position(offset, size) {
             self.lpib_reads.fetch_add(1, Relaxed);
         }
     }

@@ -12,6 +12,8 @@ mod diagnostics;
 mod file_pcm_sink;
 #[path = "interrupt_sources.rs"]
 mod interrupt_sources;
+#[path = "late_guest_hold.rs"]
+mod late_guest_hold;
 #[path = "pcm_sink.rs"]
 mod pcm_sink;
 #[path = "playback_descriptor.rs"]
@@ -33,6 +35,7 @@ mod stream_run_trace;
 use diagnostics::HdaDiagnostics;
 pub use diagnostics::HdaHostRecords;
 pub use file_pcm_sink::FilePcmSink;
+use late_guest_hold::{reads_position, LateGuestHold};
 pub use pcm_sink::HdaPcmSink;
 use std::sync::Arc;
 pub use stream_activity::HdaStreamActivity;
@@ -211,6 +214,7 @@ pub struct HdaController {
     pub(crate) interrupt_pending: bool,
     pub(crate) diagnostics: HdaDiagnostics,
     pub(crate) stream_activity: Arc<HdaStreamActivity>,
+    pub(crate) hold: LateGuestHold,
 }
 
 impl Default for HdaController {
@@ -268,6 +272,7 @@ impl HdaController {
             interrupt_pending: false,
             diagnostics: HdaDiagnostics::default(),
             stream_activity: Arc::default(),
+            hold: LateGuestHold::default(),
         }
     }
 
@@ -325,6 +330,9 @@ impl HdaController {
         }
         let running = self.stream.ctl & SDCTL_RUN != 0;
         self.diagnostics.note_register_read(offset, size, running);
+        if running && reads_position(offset, size) {
+            self.hold.note_read();
+        }
         let mut value = 0;
         for byte in 0..size {
             value |= u64::from(self.read_byte(offset + u64::from(byte))) << (byte * 8);
@@ -538,6 +546,7 @@ impl HdaController {
         let budget = (whole_bytes as usize / frame_bytes) * frame_bytes;
         self.byte_time_remainder =
             (numerator % 1_000_000_000 + (whole_bytes - budget as u128) * 1_000_000_000) as u64;
+        let budget = budget + self.repay_hold(budget, frame_bytes);
         self.consume_stream(mem, budget);
     }
 

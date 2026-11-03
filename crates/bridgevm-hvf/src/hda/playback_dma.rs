@@ -27,7 +27,16 @@ impl HdaController {
                 self.complete_bdl_entry(flags);
                 continue;
             }
-            let remaining_entry = (length - self.stream.bdl_offset) as usize;
+            let mut remaining_entry = (length - self.stream.bdl_offset) as usize;
+            match self.late_guest_room(remaining_entry) {
+                0 => {
+                    budget = self.hold_for_late_guest(budget);
+                    if budget == 0 {
+                        break;
+                    }
+                }
+                room => remaining_entry = room,
+            }
             let remaining_cbl = (self.stream.cbl - self.stream.lpib.min(self.stream.cbl)) as usize;
             let chunk_len = budget.min(remaining_entry).min(remaining_cbl);
             if chunk_len == 0 {
