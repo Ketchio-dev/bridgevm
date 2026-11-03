@@ -57,7 +57,27 @@ report() { send "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BVRS\\$
 # Not grep -q: under pipefail its early exit kills tr with SIGPIPE and the pipeline fails.
 logged() { tr -d '\r' < "$RUN_LOG" | grep -E "$1" > /dev/null; }
 
-ENV=(BRIDGEVM_PREBUILT_PROBE="$WORK/bin/hvf_gic_boot_probe")
+LANE_PROBE=$WORK/bin/hvf_gic_boot_probe
+lane_vm_running() { pgrep -f "^$LANE_PROBE( |\$)" > /dev/null; }
+# Stops this lane's VM: TERM the launcher (it stops its own probe), then TERM and
+# finally KILL the probe copy under $WORK, whose path is unique to this run.
+stop_vm() {
+  kill -TERM "$LAUNCHER" 2>/dev/null || true
+  for _ in $(seq 1 60); do
+    kill -0 "$LAUNCHER" 2>/dev/null || lane_vm_running || break
+    sleep 0.5
+  done
+  if lane_vm_running; then pkill -TERM -f "^$LANE_PROBE( |\$)" || true; sleep 5; fi
+  if lane_vm_running || kill -0 "$LAUNCHER" 2>/dev/null; then
+    pkill -KILL -f "^$LANE_PROBE( |\$)" || true
+    kill -KILL "$LAUNCHER" 2>/dev/null || true
+    sleep 1
+  fi
+  wait "$LAUNCHER" 2>/dev/null || true
+  ! lane_vm_running
+}
+
+ENV=(BRIDGEVM_PREBUILT_PROBE="$LANE_PROBE")
 [[ -z "$GUEST_EPOCH" ]] || ENV+=(BRIDGEVM_GUEST_RTC_EPOCH="$GUEST_EPOCH")
 env "${ENV[@]}" scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" \
@@ -66,7 +86,7 @@ env "${ENV[@]}" scripts/run-hvf-windows-installed-boot.sh \
   --virtio-gpu --agent-service-control "$CTL" \
   --agent-share-host "$SHARE" --agent-share-guest 'C:\BVRS' > "$OUT/launcher.out" 2>&1 &
 LAUNCHER=$!
-trap 'kill $LAUNCHER 2>/dev/null || true' EXIT
+trap 'stop_vm || echo "FAIL: this lane VM is still running" >&2' EXIT
 wait_for '^BVAGENT SERVICE start' 1 "$BOOT_TIMEOUT" || fail "agent service timeout"
 shared viogpudo.sys; shared "$REPORT_PS1"
 
@@ -87,9 +107,13 @@ if logged 'BVPNP after .*VirtIO.*problem=CM_PROB_NEED_RESTART'; then
   pnp rebooted; report
 fi
 printf '%s\n' 'shutdown /s /t 2' >> "$CTL"
-wait "$LAUNCHER" 2>/dev/null || true
+for _ in $(seq 1 240); do kill -0 "$LAUNCHER" 2>/dev/null || break; sleep 0.5; done
+if kill -0 "$LAUNCHER" 2>/dev/null; then
+  fail "Windows did not power off within 120 s; the prepared pair is incomplete"
+fi
 trap - EXIT
-rm -rf "$WORK/bin"
+stop_vm || fail "this lane VM is still running"
+rm -rf "${WORK:?}/bin"
 tr -d '\r' < "$RUN_LOG" | grep -aE '^(secure_boot=|BVPNP |BVDISP |BVCLEAN |BVERR)' | head -60
 logged 'BVPNP (after|rebooted) .*VirtIO GPU DOD.*status=OK' || fail "viogpudo is not running on the virtio-gpu device"
 echo "prepared: $WORK/disk.raw $WORK/vars.fd"

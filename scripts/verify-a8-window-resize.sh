@@ -123,7 +123,33 @@ check() {   # boot, request
 ( while :; do echo "$SECONDS $(fb)"; sleep 1; done ) > "$OUT/fb-samples.txt" 2>/dev/null &
 SAMPLER=$!
 
-ENV=(BRIDGEVM_PREBUILT_PROBE="$WORK/bin/hvf_gic_boot_probe")
+LANE_PROBE=$WORK/bin/hvf_gic_boot_probe
+lane_vm_running() { pgrep -f "^$LANE_PROBE( |\$)" > /dev/null; }
+# Stops this lane's VM: TERM the launcher (it stops its own probe), then TERM and
+# finally KILL the probe copy under $WORK, whose path is unique to this run.
+stop_vm() {
+  kill -TERM "$LAUNCHER" 2>/dev/null || true
+  for _ in $(seq 1 60); do
+    kill -0 "$LAUNCHER" 2>/dev/null || lane_vm_running || break
+    sleep 0.5
+  done
+  if lane_vm_running; then pkill -TERM -f "^$LANE_PROBE( |\$)" || true; sleep 5; fi
+  if lane_vm_running || kill -0 "$LAUNCHER" 2>/dev/null; then
+    pkill -KILL -f "^$LANE_PROBE( |\$)" || true
+    kill -KILL "$LAUNCHER" 2>/dev/null || true
+    sleep 1
+  fi
+  wait "$LAUNCHER" 2>/dev/null || true
+  ! lane_vm_running
+}
+# The clone is deleted only once this lane's VM is gone.
+cleanup() {
+  kill "$SAMPLER" 2>/dev/null || true
+  if ! stop_vm; then echo "FAIL: this lane VM is still running; kept $WORK" >&2; return 1; fi
+  [[ "${KEEP_WORK:-0}" == 1 ]] || rm -rf "${WORK:?}"
+}
+
+ENV=(BRIDGEVM_PREBUILT_PROBE="$LANE_PROBE")
 [[ -z "$GUEST_EPOCH" ]] || ENV+=(BRIDGEVM_GUEST_RTC_EPOCH="$GUEST_EPOCH")
 env "${ENV[@]}" scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" \
@@ -132,7 +158,7 @@ env "${ENV[@]}" scripts/run-hvf-windows-installed-boot.sh \
   --virtio-gpu --display-export-fb "$FB" --input-control "$INPUT" \
   --agent-service-control "$CTL" > "$OUT/launcher.out" 2>&1 &
 LAUNCHER=$!
-trap 'kill $LAUNCHER $SAMPLER 2>/dev/null || true' EXIT
+trap cleanup EXIT
 
 wait_for '^BVAGENT SERVICE start' 1 "$BOOT_TIMEOUT" || fail "agent service timeout"
 echo "boot 1: agent up at ${SECONDS}s, display.fb $(fb "$OUT/boot1-start.png")"
@@ -146,11 +172,15 @@ echo "boot 2: agent up at ${SECONDS}s, display.fb before the resend $(fb "$OUT/b
 check 2 "$last"
 
 printf '%s\n' 'shutdown /s /t 2' >> "$CTL"
+shutdown=clean
 for _ in $(seq 1 240); do kill -0 "$LAUNCHER" 2>/dev/null || break; sleep 0.5; done
-kill "$SAMPLER" 2>/dev/null || true
+if kill -0 "$LAUNCHER" 2>/dev/null; then
+  shutdown=timeout
+  echo "FAIL: Windows did not power off within 120 s; stopping this lane VM" >&2
+fi
 trap - EXIT
-[[ "${KEEP_WORK:-0}" == 1 ]] || rm -rf "$WORK"
+cleanup || shutdown=vm-still-running
 log | grep -aE '^(BVDISPLAY|live input accepted: resize=|BVAGENT SERVICE start)' > "$OUT/display-lines.txt" || true
 passed=$(grep -c ' PASS$' "$RESULTS" || true); total=$(wc -l < "$RESULTS" | tr -d ' ')
-echo "BVA8 summary $passed/$total"
-[[ "$passed" == "$total" && "$total" -gt 0 ]]
+echo "BVA8 summary $passed/$total shutdown=$shutdown"
+[[ "$passed" == "$total" && "$total" -gt 0 && "$shutdown" == clean ]]
