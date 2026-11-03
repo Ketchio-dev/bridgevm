@@ -163,6 +163,20 @@ impl VirtPlatform {
                 build_fw_cfg_tpm_config(ppi_address).to_vec(),
             );
         }
+        // No firmware countdown before the boot option: ArmVirtQemu waits
+        // its platform default (the 5 s "Start boot option" bar) unless the
+        // boot menu is on with `etc/boot-menu-wait`, QEMU's
+        // `-boot menu=on,splash-time=N`. BRIDGEVM_BOOT_MENU_WAIT_MS restores a
+        // wait (rounded up to seconds) for reaching the firmware menu with Esc.
+        let wait_ms = std::env::var("BRIDGEVM_BOOT_MENU_WAIT_MS")
+            .ok()
+            .and_then(|value| value.parse::<u16>().ok())
+            .unwrap_or(0);
+        fw_cfg.add_item(crate::fwcfg::KEY_BOOT_MENU, 1u16.to_le_bytes().to_vec());
+        fw_cfg.add_file(
+            crate::fwcfg::BOOT_MENU_WAIT_FILE,
+            wait_ms.to_le_bytes().to_vec(),
+        );
         let smbios = build_smbios(config.fdt.cpu_count, config.fdt.ram_size);
         fw_cfg.add_file(SMBIOS_ANCHOR_FILE, smbios.anchor);
         fw_cfg.add_file(SMBIOS_TABLE_FILE, smbios.tables);
