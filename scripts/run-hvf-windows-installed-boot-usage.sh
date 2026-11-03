@@ -19,6 +19,9 @@ usage() {
                           and a 100 ms CPU evidence/fallback readback cadence.
                           The recorded, media-independent mode can return to
                           balanced without changing VM media.
+  --virtio-gpu            Attach the 2D virtio-gpu display device (PCI
+                          1AF4:1050) for the signed virtio-win display driver;
+                          ramfb stays. --virtio-gpu-3d wins when both are given.
   --virtio-gpu-3d         Attach the virtio-gpu PCI device with the selected
                           3D backend, expose the viogpu3d bind-id alias
                           DEV_10F7 by default, build hvf_gic_boot_probe with

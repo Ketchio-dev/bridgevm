@@ -22,6 +22,9 @@ impl AgentConsoleHarness {
     /// the request queue. None of this touches the wire, so it needs no platform
     /// handle (and is unit-testable on its own).
     pub(super) fn service_enqueue(&mut self, now: Instant) {
+        // 0. A requested desktop mode switch.
+        self.enqueue_desktop_switch();
+
         // 1. Host pasteboard changes collapse to a single latest-wins ClipPush.
         //    Draining every pending change and keeping only the last means a
         //    burst of copies syncs the final value, not each intermediate one.
@@ -65,6 +68,29 @@ impl AgentConsoleHarness {
         });
         if share_due && !self.share_pending() && !self.enqueue_one_share_host_change() {
             self.queue.push_back(ServiceReq::ShareLs);
+        }
+    }
+    /// Keep at most one pending desktop switch, for the latest requested size:
+    /// a queued one is replaced, and one already running gets a single
+    /// follow-up once its reply arrives.
+    pub(super) fn enqueue_desktop_switch(&mut self) {
+        use super::desktop_switch::{has_requested_mode, is_desktop_switch_command};
+        let is_switch =
+            |req: &ServiceReq| matches!(req, ServiceReq::Ctl(c) if is_desktop_switch_command(c));
+        if !has_requested_mode()
+            || self
+                .in_flight
+                .as_ref()
+                .is_some_and(|(req, _)| is_switch(req))
+        {
+            return;
+        }
+        let Some(command) = super::desktop_switch::take_desktop_switch_command() else {
+            return;
+        };
+        match self.queue.iter_mut().find(|req| is_switch(req)) {
+            Some(queued) => *queued = ServiceReq::Ctl(command),
+            None => self.queue.push_back(ServiceReq::Ctl(command)),
         }
     }
     /// Report an overdue in-flight request without abandoning its wire slot,

@@ -29,8 +29,17 @@ enum T17FileChooser {
         try run("accept-selection") { try wait("enabled Open button acceptance") { try driver.acceptSelectionIfReady() } }
         try run("selection-confirmation") { try wait("chooser dismissal and exact selected path") {
             guard try !driver.panelIsPresent() else { return false }
-            return try driver.selectedPath() == path
+            return sameFile(try driver.selectedPath(), path)
         } }
+    }
+    /// The panel may report the resolved form of a symlinked request path (r96 on macOS 27),
+    /// so the selection counts when it names the same file (device and inode), not only the same string.
+    static func sameFile(_ selected: String?, _ path: String) -> Bool {
+        guard let selected, !selected.isEmpty else { return false }
+        if selected == path { return true }
+        var chosen = stat(), requested = stat()
+        guard selected.hasPrefix("/"), stat(selected, &chosen) == 0, stat(path, &requested) == 0 else { return false }
+        return chosen.st_dev == requested.st_dev && chosen.st_ino == requested.st_ino
     }
     static func failure(_ detail: String) -> T17Blocker {
         T17Blocker(code: "input-selection-failed", detail: detail)

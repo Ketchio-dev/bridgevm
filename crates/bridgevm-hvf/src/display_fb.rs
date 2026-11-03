@@ -3,12 +3,15 @@
 //!
 //! The virtio-gpu device publishes its scanout through the same crate-private
 //! sink. This wrapper lets a host-side exporter publish frames from another
-//! source, such as the probe's ramfb exporter on a machine without virtio-gpu,
-//! through that one header and seqlock implementation. A file must have one
-//! writer: each writer keeps its own sequence counter, so two writers on one
-//! file would publish sequence values the reader cannot order.
+//! source, such as the probe's ramfb exporter, through that one header and
+//! seqlock implementation. Two producers of one file in one process must
+//! share a writer ([`DisplayFramebuffer::share`],
+//! `VirtPlatform::display_framebuffer`): shared writers take turns under one
+//! lock and one sequence. Independent writers on one file would interleave
+//! frames and publish sequence values the reader cannot order.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::virtio_gpu::FbSink;
 #[path = "display_fb_requests.rs"]
@@ -36,14 +39,33 @@ impl DisplayFramebuffer {
         }
     }
 
+    /// Another writer of the same file that shares this one's lock and
+    /// sequence, for a second producer in the same process.
+    pub fn share(&self) -> Self {
+        Self::sharing(&self.sink)
+    }
+
+    pub(crate) fn sharing(sink: &FbSink) -> Self {
+        Self { sink: sink.share() }
+    }
+
     pub fn path(&self) -> &Path {
         &self.sink.path
     }
 
-    /// Sequence value after the last completed publish: 0 before the first,
-    /// then even, advancing by 2 per published frame.
+    /// Sequence value after the last completed publish by any writer sharing
+    /// this one: 0 before the first, then even, advancing by 2 per frame.
     pub fn sequence(&self) -> u64 {
-        self.sink.seq
+        self.sink.lock_shared().seq
+    }
+
+    /// How long ago a writer sharing this one published the file's newest
+    /// frame; `None` when the newest frame is this writer's or there is none.
+    pub fn other_frame_age(&self) -> Option<Duration> {
+        match self.sink.lock_shared().newest {
+            Some((writer, at)) if writer != self.sink.writer => Some(at.elapsed()),
+            _ => None,
+        }
     }
 
     /// Publish one complete frame. The first publish by a writer, exactly like

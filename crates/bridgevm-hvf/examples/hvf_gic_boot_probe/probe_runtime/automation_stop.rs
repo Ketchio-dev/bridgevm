@@ -1,24 +1,48 @@
-//! The existing automation stop decisions, evaluated while the caller owns the platform.
+//! The existing automation stop decisions. The serial scans run while the
+//! caller owns the platform; the UEFI-shell decision, which may print, runs
+//! after that pass's framebuffer checkpoints have printed.
 
-macro_rules! automation_stop {
-    ($checkpoint_committed:ident, $stop_on_linux:ident, $locked_platform:ident, $serial_stop_scans:ident, $ramfb_sample_loop:ident, $vcpu:ident $(,)?) => {{
-        if $checkpoint_committed {
-            Some("VM checkpoint committed; suspended process exiting".into())
-        } else if $stop_on_linux
-            && serial_reached_linux_early_boot(
-                $locked_platform.uart_output(),
-                &mut $serial_stop_scans,
-            )
-        {
-            Some("serial reached Linux early boot".into())
-        } else if serial_reached_shell($locked_platform.uart_output(), &mut $serial_stop_scans) {
-            match $ramfb_sample_loop.observe_shell($vcpu) {
+use crate::*;
+
+pub(crate) enum AutomationStop {
+    None,
+    Checkpoint,
+    LinuxEarlyBoot,
+    Shell,
+}
+
+impl AutomationStop {
+    /// Under the platform lock: `serial` is its UART output.
+    pub(crate) fn check(
+        checkpoint_committed: bool,
+        stop_on_linux: bool,
+        serial: &[u8],
+        scans: &mut SerialStopScans,
+    ) -> Self {
+        if checkpoint_committed {
+            Self::Checkpoint
+        } else if stop_on_linux && serial_reached_linux_early_boot(serial, scans) {
+            Self::LinuxEarlyBoot
+        } else if serial_reached_shell(serial, scans) {
+            Self::Shell
+        } else {
+            Self::None
+        }
+    }
+
+    pub(crate) fn reason(
+        self,
+        ramfb_sample_loop: &mut RamfbSampleLoop,
+        vcpu: HvVcpuT,
+    ) -> Option<String> {
+        match self {
+            Self::None => None,
+            Self::Checkpoint => Some("VM checkpoint committed; suspended process exiting".into()),
+            Self::LinuxEarlyBoot => Some("serial reached Linux early boot".into()),
+            Self::Shell => match ramfb_sample_loop.observe_shell(vcpu) {
                 RamfbSampleShellAction::Continue => None,
                 RamfbSampleShellAction::StopNow { reason } => Some(reason.into()),
-            }
-        } else {
-            None
+            },
         }
-    }};
+    }
 }
-pub(crate) use automation_stop;

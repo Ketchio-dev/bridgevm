@@ -181,13 +181,11 @@ fn a_running_exporter_leaves_its_record_with_the_platform_and_an_inert_one_none(
     );
 
     let gpu = Arc::new(Mutex::new(gpu_platform()));
+    let gpu_records = || gpu.lock().unwrap().teardown_host_records();
     let thread = RamfbDisplayThread::start_with(&gpu, target(), TICK, memory());
-    assert!(thread.handle.is_none());
+    wait_for_ticks(2, gpu_records);
     drop(thread);
-    assert!(
-        gpu.lock().unwrap().teardown_host_records().is_empty(),
-        "virtio-gpu owns the file"
-    );
+    assert_eq!(gpu_records().len(), 1, "a virtio-gpu machine exports ramfb too");
     let headless = Arc::new(Mutex::new(VirtPlatform::new(VirtFdtConfig::default())));
     drop(RamfbDisplayThread::start_with(
         &headless,

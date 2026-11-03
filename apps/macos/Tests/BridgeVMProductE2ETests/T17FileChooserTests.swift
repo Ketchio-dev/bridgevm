@@ -49,6 +49,27 @@ final class T17FileChooserTests: XCTestCase {
         }
     }
 
+    /// r96: the manifest named a symlinked path and the panel reported the resolved one.
+    func testSymlinkedRequestPathAcceptsTheSameFileButNotAnother() throws {
+        let files = FileManager.default
+        let root = files.temporaryDirectory.appendingPathComponent("t17-chooser-\(UUID().uuidString)")
+        defer { try? files.removeItem(at: root) }
+        let media = root.appendingPathComponent("media"), link = root.appendingPathComponent("link")
+        try files.createDirectory(at: media, withIntermediateDirectories: true)
+        try files.createSymbolicLink(at: link, withDestinationURL: media)
+        try Data("iso".utf8).write(to: media.appendingPathComponent("installer.iso"))
+        try Data("iso".utf8).write(to: media.appendingPathComponent("other.iso"))
+        let requested = link.appendingPathComponent("installer.iso").path
+
+        let driver = Driver(); driver.returnedPath = media.appendingPathComponent("installer.iso").path
+        XCTAssertNotEqual(driver.returnedPath, requested)
+        try run(driver, path: requested)
+        for selected in [media.appendingPathComponent("other.iso").path, "media/installer.iso"] {
+            let refused = Driver(); refused.returnedPath = selected
+            XCTAssertThrowsError(try run(refused, path: requested))
+        }
+    }
+
     func testExactSelectionWithOpenPanelIsNotSuccess() {
         let driver = Driver(); driver.panelCloses = false
         XCTAssertThrowsError(try run(driver))

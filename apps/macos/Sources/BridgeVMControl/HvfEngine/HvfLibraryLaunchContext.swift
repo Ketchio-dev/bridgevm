@@ -8,6 +8,11 @@ struct HvfLibraryLaunchContext: Equatable {
 
 }
 extension HvfEngineConfig {
+    /// The 2D virtio-gpu rides on a guest with the signed display driver and 3D off.
+    static func virtioGpu2d(for config: VMConfig) -> Bool {
+        config.virtioDisplayDriverInstalled == true && config.experimental3DAllowed != true
+    }
+
     static func libraryVM(_ config: VMConfig, rootURL: URL = VMLibrary.root, e2eHostDiagnosticStopAdmitted: Bool = false) -> HvfEngineConfig? {
         guard config.engineKind == .hvfEngine else { return nil }
         // A VM whose unattended install has not completed has no bootable disk
@@ -26,6 +31,7 @@ extension HvfEngineConfig {
             shareGuestDir: config.sharedFolderGuestPath,
             virtioNet: config.networkEnabled ?? true,
             virtioGpu3d: config.experimental3DAllowed ?? false,
+            virtioGpu2d: Self.virtioGpu2d(for: config),
             nvmeBufferedIO: false,
             durableDiskWrites: config.durableDiskWritesEnabled ?? false,
             guestResolution: config.guestResolution,

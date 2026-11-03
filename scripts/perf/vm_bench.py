@@ -39,7 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_wire import AgentWire  # noqa: E402
 from guest_bench_commands import (  # noqa: E402
-    HIGHER_IS_BETTER, SUITE, command_line, cursor_logger, desktop_mode, display_animation, net_download,
+    HIGHER_IS_BETTER, SUITE, audio_loop, command_line, cursor_logger, desktop_mode, display_animation, net_download,
     parse_bvbench,
     stall_under_flush, stall_idle)
 
@@ -47,6 +47,9 @@ ROOT = Path(__file__).resolve().parents[2]
 QEMU_FIRMWARE = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
 QEMU_VARS_TEMPLATE = "/opt/homebrew/share/qemu/edk2-arm-vars.fd"
 SHUTDOWN = "shutdown.exe /p /f"
+# The probe prints this at PSCI SYSTEM_OFF, before it persists media and reports the stop.
+GUEST_OFF = "guest powered off; host teardown follows"
+SHUTDOWN_TIMEOUT_S = 240
 
 
 def clone(src: Path, dst: Path) -> None:
@@ -192,6 +195,8 @@ class BridgeVM(Engine):
                     "--display-export-fb", str(self.display_fb)]
         epoch = calendar.timegm(time.strptime(self.args.guest_date, "%Y-%m-%dT%H:%M:%S"))
         env = dict(os.environ, BRIDGEVM_PREBUILT_PROBE=str(self.args.probe), BRIDGEVM_GUEST_RTC_EPOCH=str(epoch))
+        if self.args.audio:  # the HDA device without a host sink: silent on the host
+            env["BRIDGEVM_HDA"] = "1"
         env.update(item.split("=", 1) for item in self.args.bvm_env)
         runner_log = open(boot_dir / "runner.log", "w")
         self.t0 = time.monotonic()
@@ -259,7 +264,7 @@ class BridgeVM(Engine):
         """PSCI SYSTEM_OFF reached the VMM; the rest of shutdown_ms is host teardown."""
         try:
             for line in self._lines(time.monotonic() + 0.3):
-                if line.startswith("stop: PSCI 0x84000008"):
+                if line == GUEST_OFF:
                     return True
         except (TimeoutError, RuntimeError):
             pass
@@ -441,6 +446,13 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                 record["shutdown_diag"] = text.strip()[-4000:]
             except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
                 record["errors"].append(f"shutdown-diag: {type(error).__name__}: {error}")
+        if args.audio:
+            try:
+                code, text = engine.run(command_line(audio_loop(1800)), time.monotonic() + 60)
+                if code != 0 or "BVAUDIO rv=0" not in text:
+                    record["errors"].append(f"audio: exit={code} {text.strip()[:200]}")
+            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                record["errors"].append(f"audio: {type(error).__name__}: {error}")
         if args.stall_idle:
             try:
                 _, text = engine.run(command_line(stall_idle(8000)), time.monotonic() + 120)
@@ -470,19 +482,36 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
             record.setdefault("bench_wall_s", {})[name] = round(time.monotonic() - started, 2)
         stop_started = time.monotonic()
         engine.request_shutdown()
-        while engine.vmm_alive() and time.monotonic() < stop_started + 240:
+        while engine.vmm_alive() and time.monotonic() < stop_started + SHUTDOWN_TIMEOUT_S:
             if "guest_off_ms" not in record and getattr(engine, "guest_off_seen", lambda: False)():
                 record["guest_off_ms"] = round((time.monotonic() - stop_started) * 1000)
             time.sleep(0.1)
-        record["shutdown_ms"] = round((time.monotonic() - stop_started) * 1000)
-        record["clean_exit"] = engine.stop(time.monotonic() + 240)
+        if engine.vmm_alive():  # no shutdown time: the shutdown never completed
+            record["errors"].append(f"shutdown: the VMM still ran {SHUTDOWN_TIMEOUT_S} s after the request")
+        else:
+            record["shutdown_ms"] = round((time.monotonic() - stop_started) * 1000)
+        record["clean_exit"] = engine.stop(time.monotonic() + SHUTDOWN_TIMEOUT_S)
     except BaseException as error:
         record["errors"].append(f"boot: {type(error).__name__}: {error}")
         if getattr(engine, "proc", None) is not None and engine.proc.poll() is None:
             os.killpg(engine.proc.pid, signal.SIGKILL)
             engine.proc.wait()
+        if not isinstance(error, Exception):  # SIGTERM (SystemExit) or Ctrl-C ends the campaign
+            raise
     record["loadavg_end"] = os.getloadavg()
     return record
+
+
+def other_vmms(text) -> str:
+    """VMM processes already running, one line each with its command line.
+
+    Matches exact process names: matching command lines (pgrep -f) also caught
+    waiter shells whose arguments name a VMM, and those filled the record."""
+    pids = text(["pgrep", "-x", "hvf_gic_boot_probe|qemu-system-aarch64|tart|prl_vm_app"]).split()
+    if not pids:
+        return ""
+    rows = text(["ps", "-o", "pid=,command=", "-p", ",".join(pids)]).splitlines()
+    return "\n".join(row.strip()[:160] for row in rows)[:1200]
 
 
 def identity(args) -> dict:
@@ -494,7 +523,7 @@ def identity(args) -> dict:
         "guest_date": args.guest_date, "bvm_env": args.bvm_env,
         "host": text(["/usr/sbin/sysctl", "-n", "machdep.cpu.brand_string"]), "macos": platform.mac_ver()[0],
         "source_commit": text(["git", "-C", str(ROOT), "rev-parse", "HEAD"]), "disk": Path(args.disk).name,
-        "other_vmms": text(["pgrep", "-fl", "tart run|qemu-system|Parallels|hvf_gic_boot_probe"])[:400],
+        "other_vmms": other_vmms(text),
     }
     if args.engine == "bridgevm":
         ident["probe_sha256"] = hashlib.sha256(Path(args.probe).read_bytes()).hexdigest()
@@ -504,7 +533,7 @@ def identity(args) -> dict:
 
 
 def run(args) -> None:
-    out = Path(args.out)
+    out = Path(args.out).resolve()  # the BridgeVM runner starts in ROOT
     results = {"identity": identity(args), "boots": []}
     out.mkdir(parents=True)
     disk, vars_fd = out / "disk.raw", out / "vars.fd"
@@ -595,6 +624,8 @@ def main() -> None:
     r.add_argument("--stall", action="store_true", help="guest timer gaps while another thread flushes files")
     r.add_argument("--stall-idle", action="store_true", help="the same timer gaps with no other load")
     r.add_argument("--shutdown-diag", action="store_true", help="record the guest's own shutdown timing events")
+    r.add_argument("--audio", action="store_true",
+                   help="loop silent guest audio during the tests (BridgeVM: HDA on, which prints the platform lock holds)")
     r.add_argument("--settle-s", type=float, default=60)
     r.add_argument("--idle-s", type=float, default=30)
     r.add_argument("--ready-timeout", type=float, default=600)

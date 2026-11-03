@@ -1,75 +1,143 @@
-//! Brings the Windows desktop to the resolution the firmware set. Windows keeps
-//! the desktop mode it saved for the display, so after the VMM changes the
-//! firmware's preferred resolution (`uefi_resolution`) an installed Windows
-//! shows its old desktop scaled into the new framebuffer. In the boot that
-//! changed it, the agent switches the desktop to that mode once its service
-//! starts, as picking the recommended resolution in Settings does; Windows
-//! saves it, so later boots need nothing.
+//! Switches the Windows desktop to a requested mode through the guest agent.
+//!
+//! Two callers ask: the boot that changed the firmware's preferred resolution
+//! (`uefi_resolution`; Windows keeps the desktop mode it saved) and every live
+//! `RESIZE WxH`. With a virtio-gpu display (PCI 1AF4:1050, viogpudo) the
+//! script first makes it the only display on the desktop: primary at 0,0, the
+//! other attached displays set to 0x0 (their devices stay enabled, so Windows
+//! can fall back to them). viogpudo puts the host's size in its custom mode
+//! slot, but Windows keeps its cached mode list, so until WxH is listed the
+//! script forces a mode re-enumeration (SetDisplayConfig on the active
+//! configuration with SDC_FORCE_MODE_ENUMERATION), for up to 10 s, then
+//! selects that listed mode and saves it. When the virtio display is the only
+//! one, that SetDisplayConfig already asks for a WxH source mode and leaves
+//! the target mode to Windows: the switch then happens in one step, where the
+//! unchanged configuration first fell back to another listed mode whenever
+//! the current one was the previous custom size. If Windows refuses it, the
+//! unchanged configuration is applied. Without a virtio display the primary
+//! display is switched directly, as before. The script prints one
+//! `BVDISPLAY` line.
+//!
+//! Only the latest request is kept: requests made before the agent's service
+//! starts become one command at `BVAGENT SERVICE start`, a queued switch takes
+//! the newest size, and requests made while one runs give one follow-up.
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 
 use super::protocol::base64_encode_into;
 
-/// The requested mode as `width << 32 | height`; 0 when none or already sent.
-static REQUESTED: AtomicU64 = AtomicU64::new(0);
+/// `RUN` lines go through `cmd.exe /c`, which refuses lines over 8191 chars.
+pub(super) const MAX_RUN_COMMAND_CHARS: usize = 8191;
 
-/// Ask for a desktop switch to `width`x`height` at the next service start.
-pub fn request_desktop_mode((width, height): (u32, u32)) {
-    REQUESTED.store(u64::from(width) << 32 | u64::from(height), Ordering::Relaxed);
+const POWERSHELL: &str = "powershell -NoProfile -NonInteractive -EncodedCommand ";
+
+/// Everything but the final `[BvD]::Run(W,H)` call. C# inside a PowerShell
+/// single-quoted string: no single quotes. DEVMODEW is 220 bytes (dmSize at
+/// 68, dmFields 72, position 76/80, width/height 172/176), DISPLAY_DEVICEW is
+/// 840 bytes (name at 4, StateFlags 324, DeviceID 328). Display-config paths
+/// are 72 bytes (target mode index at 32), modes 64 (type at 0, source mode
+/// width/height at 16/20). No line breaks: they would only cost length.
+const SCRIPT_BODY: &str = concat!(
+    r#"Add-Type -TypeDefinition '"#,
+    r#"using System;using System.Collections.Generic;using System.Runtime.InteropServices;using System.Threading;"#,
+    r#"[module:DefaultCharSet(CharSet.Unicode)]public static class BvD{const string U="user32.dll";"#,
+    r#"[DllImport(U)]static extern bool EnumDisplayDevicesW(string d,int i,byte[] b,int f);"#,
+    r#"[DllImport(U)]static extern bool EnumDisplaySettingsW(string d,int i,byte[] m);"#,
+    r#"[DllImport(U)]static extern int ChangeDisplaySettingsExW(string d,byte[] m,IntPtr w,int f,IntPtr l);"#,
+    r#"[DllImport(U)]static extern int QueryDisplayConfig(int f,ref int p,byte[] a,ref int m,byte[] b,IntPtr t);"#,
+    r#"[DllImport(U)]static extern int SetDisplayConfig(int p,byte[] a,int m,byte[] b,int f);"#,
+    r#"static string V,Pr;static bool A;static List<string> O;"#,
+    r#"static int G(byte[] b,int o){return BitConverter.ToInt32(b,o);}"#,
+    r#"static void P(byte[] b,int o,int v){BitConverter.GetBytes(v).CopyTo(b,o);}"#,
+    r#"static string T(byte[] b,int o,int n){return System.Text.Encoding.Unicode.GetString(b,o,n).Split((char)0)[0];}"#,
+    r#"static byte[] M(string d,int i){var m=new byte[220];m[68]=220;return EnumDisplaySettingsW(d,i,m)?m:null;}"#,
+    r#"static string S(string d){var m=M(d,-1);return m==null?"none":G(m,172)+"x"+G(m,176);}"#,
+    r#"static int C(string d,byte[] m,int f){return ChangeDisplaySettingsExW(d,m,IntPtr.Zero,f,IntPtr.Zero);}"#,
+    r#"static void Scan(){V=null;Pr="none";A=false;O=new List<string>();"#,
+    r#"for(int i=0;;i++){var b=new byte[840];P(b,0,840);if(!EnumDisplayDevicesW(null,i,b,0))return;"#,
+    r#"string n=T(b,4,64);int f=G(b,324);"#,
+    r#"if(V==null&&T(b,328,256).Contains("VEN_1AF4&DEV_1050")){V=n;A=(f&1)!=0;}else if((f&1)!=0)O.Add(n);"#,
+    r#"if((f&4)!=0)Pr=n;}}"#,
+    r#"static string Force(int w,int h){string s="";for(int k=A&&O.Count==0?0:1;k<2;k++){int p=16,m=32;"#,
+    r#"var a=new byte[p*72];var b=new byte[m*64];QueryDisplayConfig(2,ref p,a,ref m,b,IntPtr.Zero);"#,
+    r#"if(k==0){for(int i=0;i<m;i++)if(G(b,i*64)==1){P(b,i*64+16,w);P(b,i*64+20,h);}for(int i=0;i<p;i++)P(a,i*72+32,-1);}"#,
+    r#"int r=SetDisplayConfig(p,a,m,b,0x80|0x20|0x400|0x1000);s+=r+";";if(r==0)break;}return s;}"#,
+    r#"public static string Run(int w,int h){"#,
+    r#"Scan();string t=V,want=w+"x"+h,before=S(t),res="not_listed",force="none",lay="none";var det=new List<string>();"#,
+    r#"var cur=V!=null&&A?M(V,-1):null;"#,
+    r#"if(cur!=null&&O.Count>0){P(cur,72,0x20);P(cur,76,0);P(cur,80,0);lay=""+C(V,cur,0x10000011);"#,
+    r#"foreach(var o in O){var z=new byte[220];z[68]=220;P(z,72,0x180020);det.Add(o+"="+C(o,z,0x10000001));}"#,
+    r#"lay+="/"+C(null,null,0);Scan();}"#,
+    r#"var end=DateTime.Now.AddSeconds(10);"#,
+    r#"if(t==null){res="0";if(S(t)!=want){var m=M(null,-1);P(m,72,0x180000);P(m,172,w);P(m,176,h);res=""+C(null,m,1);}}"#,
+    r#"else while(true){byte[] f=null;for(int n=0;f==null;n++){var m=M(t,n);if(m==null)break;if(G(m,172)==w&&G(m,176)==h)f=m;}"#,
+    r#"res=f==null?"not_listed":""+C(t,f,1);if(res=="0"&&S(t)==want||DateTime.Now>end)break;"#,
+    r#"force=Force(w,h);Thread.Sleep(400);}"#,
+    r#"Scan();"#,
+    r#"return "BVDISPLAY target="+want+" before="+before+" after="+S(t)+" primary="+Pr+" layout="+lay+" detached="+(det.Count==0?"none":string.Join(",",det))+" force="+force+" result="+res;}}';"#,
+);
+
+fn requested() -> &'static AtomicU64 {
+    #[cfg(not(test))]
+    {
+        static REQUESTED: AtomicU64 = AtomicU64::new(0);
+        &REQUESTED
+    }
+    // Tests drive harnesses on their own threads; keep their requests apart.
+    #[cfg(test)]
+    {
+        thread_local!(static REQUESTED: &'static AtomicU64 = Box::leak(Box::new(AtomicU64::new(0))));
+        REQUESTED.with(|slot| *slot)
+    }
 }
 
-/// The agent command for the requested switch, once.
+/// Ask the agent to switch the desktop to `width`x`height`; the latest wins.
+pub fn request_desktop_mode((width, height): (u32, u32)) {
+    requested().store(
+        u64::from(width) << 32 | u64::from(height),
+        Ordering::Relaxed,
+    );
+}
+
+pub(super) fn has_requested_mode() -> bool {
+    requested().load(Ordering::Relaxed) != 0
+}
+
+/// The agent command for the latest request, once.
 pub(super) fn take_desktop_switch_command() -> Option<String> {
-    let mode = REQUESTED.swap(0, Ordering::Relaxed);
+    let mode = requested().swap(0, Ordering::Relaxed);
     (mode != 0).then(|| desktop_switch_command((mode >> 32) as u32, mode as u32))
 }
 
+/// Whether `command` is a switch built here, whatever its size.
+pub(super) fn is_desktop_switch_command(command: &str) -> bool {
+    command.starts_with(command_head())
+}
+
+/// The command up to the last base64 group that holds only `SCRIPT_BODY`.
+fn command_head() -> &'static str {
+    static HEAD: OnceLock<String> = OnceLock::new();
+    HEAD.get_or_init(|| {
+        let body = utf16le(SCRIPT_BODY);
+        let mut head = String::from(POWERSHELL);
+        base64_encode_into(&body[..body.len() / 3 * 3], &mut head);
+        head
+    })
+}
+
+fn utf16le(text: &str) -> Vec<u8> {
+    text.encode_utf16().flat_map(u16::to_le_bytes).collect()
+}
+
 fn desktop_switch_command(width: u32, height: u32) -> String {
-    let script = format!(
-        "$ErrorActionPreference='Stop'; Add-Type -TypeDefinition 'using System; \
-         using System.Runtime.InteropServices; public static class BvDesk {{ \
-         [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct M {{ \
-         [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string N; public short V1, V2, Size, Extra; \
-         public int Fields, X, Y, O, F; public short C1, C2, C3, C4, C5; \
-         [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string Form; public short Lp; \
-         public int Bpp, W, H, Fl, Hz, I1, I2, I3, I4, R1, R2, P1, P2; }} \
-         [DllImport(\"user32.dll\", CharSet=CharSet.Unicode)] public static extern bool EnumDisplaySettings(string d, int i, ref M m); \
-         [DllImport(\"user32.dll\", CharSet=CharSet.Unicode)] public static extern int ChangeDisplaySettingsEx(string d, ref M m, IntPtr h, int f, IntPtr l); }}'; \
-         $m = New-Object BvDesk+M; $m.Size = 220; \
-         $null = [BvDesk]::EnumDisplaySettings([NullString]::Value, -1, [ref]$m); \
-         $before = '{{0}}x{{1}}' -f $m.W, $m.H; $result = 'unchanged'; \
-         if ($m.W -ne {width} -or $m.H -ne {height}) {{ $m.W = {width}; $m.H = {height}; $m.Fields = 0x180000; \
-         $result = [BvDesk]::ChangeDisplaySettingsEx([NullString]::Value, [ref]$m, [IntPtr]::Zero, 1, [IntPtr]::Zero) }}; \
-         'BVDESKTOP before={{0}} target={width}x{height} result={{1}}' -f $before, $result"
-    );
-    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
-    let mut line =
-        String::from("powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ");
-    base64_encode_into(&utf16, &mut line);
+    let script = format!("{SCRIPT_BODY}[BvD]::Run({width},{height})");
+    let mut line = String::from(POWERSHELL);
+    base64_encode_into(&utf16le(&script), &mut line);
+    debug_assert!(line.len() <= MAX_RUN_COMMAND_CHARS);
     line
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn decoded(command: &str) -> String {
-        let b64 = command.rsplit(' ').next().unwrap();
-        let bytes = super::super::protocol::base64_decode(b64).unwrap();
-        let units: Vec<u16> = bytes.chunks(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
-        String::from_utf16(&units).unwrap()
-    }
-
-    #[test]
-    fn one_requested_switch_is_sent_once_with_the_exact_mode() {
-        assert_eq!(take_desktop_switch_command(), None);
-        request_desktop_mode((1920, 1080));
-        let command = take_desktop_switch_command().expect("requested");
-        assert!(command.starts_with("powershell -NoProfile -NonInteractive"));
-        let script = decoded(&command);
-        assert!(script.contains("if ($m.W -ne 1920 -or $m.H -ne 1080)"), "{script}");
-        assert!(script.contains("target=1920x1080"));
-        assert!(script.contains("EnumDisplaySettings([NullString]::Value, -1"));
-        assert_eq!(take_desktop_switch_command(), None, "only once");
-    }
-}
+#[path = "desktop_switch_tests.rs"]
+mod tests;

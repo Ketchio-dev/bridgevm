@@ -14,6 +14,7 @@ final class HvfEngineSession: ObservableObject {
     let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
     let shareRootNotice = HvfShareRootNotice()
     @Published var events: [BvAgentEvent] = []
+    @Published var displayDriverFlagMessage: String? // why HvfDisplayDriverFlag could not save yet
     var repoRoot: URL
     var workAdmission: LibraryWorkAdmission?
     var reservedWorkAdmission: (@MainActor (UUID, Bool) -> String?)?
@@ -34,6 +35,7 @@ final class HvfEngineSession: ObservableObject {
     var runtimeTransitionInProgress = false
     var timer: Timer?
     var tailReader = TailOffsetReader()
+    var agentEvents = BvAgentEvent.Stream() // run.log's lines across polls, with tailReader
     var lastHeartbeatDate: Date?
     var serviceStarted = false
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
@@ -46,6 +48,7 @@ final class HvfEngineSession: ObservableObject {
     var nextAttachedLivenessCheck = Date.distantPast
     private let liveInputFile = HvfLiveInputFile()
     var liveInputWriteFailureReported = false
+    var displayResize = HvfDisplayResizeRequest() // the display window size the guest display should follow
     var processLaunch: (Process) throws -> Void = { try $0.run() }
     let processIsRunning: (String) -> Bool
     var ownedProcessIdentity: HvfOwnedRuntimeIdentity?
@@ -239,6 +242,37 @@ final class HvfEngineSession: ObservableObject {
 
     @discardableResult func appendLiveInput(_ line: String) -> Bool {
         guard !guiStartCleanupOnly, inputDriver.allowLegacyWrite(binding: inputBinding) else { return false }
+        return writeLiveInput(line)
+    }
+
+    /// The display view's size in points; `settled` (live resize ended) sends it without the debounce.
+    func displayViewResized(to points: CGSize, settled: Bool) {
+        displayResize.viewResized(to: points, at: ProcessInfo.processInfo.systemUptime)
+        if settled {
+            displayResize.settle()
+            flushDisplayResize()
+        }
+    }
+
+    private func flushDisplayResize() {
+        guard let size = displayResize.take(at: ProcessInfo.processInfo.systemUptime),
+              appendDisplayResize(size) else { return }
+        displayResize.didSend(size)
+    }
+
+    /// `RESIZE` is a request to the VMM's display device, not guest input: it bypasses the ordered input
+    /// stream (`allowLegacyWrite` would refuse it or reset that stream) and checks only that this run's
+    /// input channel is still the bound one.
+    private func appendDisplayResize(_ size: HvfDisplayResizeRequest.Size) -> Bool {
+        switch connectionState {
+        case .booting, .connected: break
+        case .stopped, .stopping, .timedOut: return false
+        }
+        guard !guiStartCleanupOnly, inputDriver.router.binding == inputBinding else { return false }
+        return writeLiveInput(size.command)
+    }
+
+    private func writeLiveInput(_ line: String) -> Bool {
         let path = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("input.ctl")
         guard let data = "\(line)\n".data(using: .utf8) else { return false }
         do {
@@ -270,10 +304,8 @@ final class HvfEngineSession: ObservableObject {
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
         let lines = tailReader.readNewLines(from: logURL)
         finishLegacyPaste(lines: lines)
-        if !lines.isEmpty {
-            for event in BvAgentEvent.parse(lines: lines) {
-                handle(event)
-            }
+        for event in agentEvents.parse(lines) {
+            handle(event)
         }
         if let lastHeartbeatDate {
             lastHeartbeatAge = Date().timeIntervalSince(lastHeartbeatDate)
@@ -292,6 +324,7 @@ final class HvfEngineSession: ObservableObject {
                 return
             }
         }
+        flushDisplayResize()
         let connected: Bool
         if case .connected = connectionState { connected = true } else { connected = false }
         inputDriver.poll(binding: inputBinding, serviceReady: serviceStarted && connected, lines: lines) { [self] command in
@@ -316,7 +349,6 @@ final class HvfEngineSession: ObservableObject {
     func markStopped() {
         guard !runtimeTransitionInProgress, !mayHaveOwnedWork else { return }
         runtimeTransitionInProgress = true
-        defer { runtimeTransitionInProgress = false }
         appPacing.end(evidenceDir: config.evidenceDir)
         if let process, let identity = ownedProcessIdentity, !process.isRunning {
             lastOwnedExit = HvfOwnedRuntimeExit(identity: identity, process: process)
@@ -338,6 +370,10 @@ final class HvfEngineSession: ObservableObject {
         if forceStopTarget != nil { forceStopTarget = nil }
         guiStartCleanupOnly = false
         connectionState = .stopped
+        runtimeTransitionInProgress = false
+        // vm.json may change again: a display driver installed during this run is saved now,
+        // whether or not the VM's view is open (a guest shutdown, another VM selected).
+        HvfDisplayDriverFlag.saveIfStopped(self)
     }
 
     func resetObservedRuntimeState(clearEvents: Bool) {
@@ -346,6 +382,7 @@ final class HvfEngineSession: ObservableObject {
         legacyPaste = HvfLegacyPasteState()
         inputDriver.attachUnknown(binding: inputBinding)
         tailReader = TailOffsetReader()
+        agentEvents = BvAgentEvent.Stream()
         lastHeartbeatDate = nil
         lastHeartbeatAge = nil
         serviceStarted = false
@@ -353,6 +390,7 @@ final class HvfEngineSession: ObservableObject {
         stopCommandSent = false
         stopDeadline = nil
         liveInputWriteFailureReported = false
+        displayResize.deviceRestarted() // a new run's display starts at its default size; an attached one is unknown
         if clearEvents { events = [] }
     }
 

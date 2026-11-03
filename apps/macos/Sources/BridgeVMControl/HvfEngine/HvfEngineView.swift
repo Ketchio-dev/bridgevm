@@ -209,19 +209,23 @@ struct HvfEngineView: View {
     private var screenshotCard: some View {
         GroupBox {
             #if canImport(AppKit)
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("게스트 화면은 별도 창에서 열립니다.")
-                    Text("연결 상태: \(displayConnectionStateText)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("게스트 화면은 별도 창에서 열립니다.")
+                        Text("연결 상태: \(displayConnectionStateText)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button {
+                        HvfDisplayWindowController.present(session: session, title: displayWindowTitle)
+                    } label: {
+                        Label("화면 창 열기", systemImage: "macwindow")
+                    }.accessibilityIdentifier("bridgevm.runtime.display.open")
                 }
-                Spacer()
-                Button {
-                    HvfDisplayWindowController.present(session: session, title: displayWindowTitle)
-                } label: {
-                    Label("화면 창 열기", systemImage: "macwindow")
-                }.accessibilityIdentifier("bridgevm.runtime.display.open")
+                // Installed or staged: this VM's virtioDisplayDriverInstalled is saved once it has stopped.
+                HvfDisplayDriverInstallButton(session: session) { _ in HvfDisplayDriverFlag.record(session) }
             }
             .padding(6)
             #else

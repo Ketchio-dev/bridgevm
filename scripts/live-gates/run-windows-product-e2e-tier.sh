@@ -53,6 +53,9 @@ on_exit() {
 }
 on_signal() {
   trap - INT TERM HUP
+  # The helper runs under LaunchServices, outside this process group, and starts the app, runner
+  # and swtpm. End every process naming this job's lane tree so the cleanup can prove absence (r97).
+  [[ -z "$WORK" ]] || python3 "$REPO/scripts/live-gates/product_e2e_process_absent.py" --end "$WORK/" || true
   emit canceled canceled "$ATTEMPTS" "$VALID" "$SIGNING" || exit 1
   exit 130
 }

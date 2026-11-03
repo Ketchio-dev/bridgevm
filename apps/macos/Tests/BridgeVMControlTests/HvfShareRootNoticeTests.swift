@@ -58,6 +58,34 @@ final class HvfShareRootNoticeTests: XCTestCase {
     }
 
     @MainActor
+    func testMarkersInCommandOutputSplitAcrossPollsLeaveStateUnchanged() throws {
+        let session = session()
+        let root = URL(fileURLWithPath: session.config.evidenceDir)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let log = root.appendingPathComponent("run.log")
+        try Data().write(to: log)
+        func poll(_ lines: [String]) throws {
+            let handle = try FileHandle(forWritingTo: log)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data(lines.map { $0 + "\n" }.joined().utf8))
+            session.poll()
+        }
+        try poll(["BVAGENT CMD type notes.txt exit=0"])
+        try poll([blocked, "BVAGENT END type notes.txt"])
+        XCTAssertFalse(session.shareRootNotice.isBlocked)
+        XCTAssertEqual(session.events.last, .commandOutput(label: "type notes.txt", body: blocked))
+        try poll([blocked])
+        XCTAssertTrue(session.shareRootNotice.isBlocked)
+        try poll(["BVAGENT CMD type notes.txt exit=0", "first line"])
+        try poll([ready])
+        try poll(["BVAGENT END type notes.txt"])
+        XCTAssertTrue(session.shareRootNotice.isBlocked, "printed text does not hide a real deferral")
+        XCTAssertEqual(session.events.last, .commandOutput(label: "type notes.txt", body: "first line\n" + ready))
+    }
+
+    @MainActor
     func testGuestResetRecordClearsTheNoticeButCommandOutputTextDoesNot() {
         let session = session()
         feed(session, [blocked])

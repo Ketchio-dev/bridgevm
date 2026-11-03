@@ -333,6 +333,22 @@ fn launch_forwards_the_users_guest_resolution_and_refuses_an_empty_one() {
 }
 
 #[test]
+fn launch_forwards_the_2d_display_device_only_when_asked() {
+    let parse = |extra: &[&str]| {
+        let mut argv = vec!["hvf-runner", "--launch", "--target", "/tmp/win.raw"];
+        argv.extend(["--vars", "/tmp/vars.fd", "--evidence-dir", "/tmp/evidence"]);
+        argv.extend(extra);
+        let args = Args::try_parse_from(argv).unwrap();
+        installed_boot_launch_args(&args, Path::new("/work")).unwrap()
+    };
+
+    assert!(!parse(&[]).iter().any(|arg| arg.starts_with("--virtio-gpu")));
+    let two_d = parse(&["--virtio-gpu"]);
+    assert!(two_d.iter().any(|arg| arg == "--virtio-gpu"));
+    assert!(!two_d.iter().any(|arg| arg == "--virtio-gpu-3d"));
+}
+
+#[test]
 fn launch_requires_vars_and_evidence_dir() {
     let args =
         Args::try_parse_from(["hvf-runner", "--launch", "--target", "/tmp/win.raw"]).unwrap();

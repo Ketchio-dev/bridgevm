@@ -45,11 +45,16 @@ impl LiveInputController {
                 }
             },
             LiveInputCommand::Resize { width, height } => {
-                if platform.request_virtio_gpu_resolution(*width, *height) {
+                let size = (*width, *height);
+                platform.request_virtio_gpu_resolution(size.0, size.1);
+                // The device now reports the size (also when it already did);
+                // Windows only switches when the guest agent asks it to.
+                if platform.virtio_gpu_resolution() == Some(size) {
+                    crate::agent_console::request_desktop_mode(size);
                     println!("live input accepted: resize={width}x{height}");
                 } else {
                     eprintln!(
-                        "live input rejected: kind=resize {width}x{height} (no-op/no-gpu/out-of-range)"
+                        "live input rejected: kind=resize {width}x{height} (no-gpu/out-of-range)"
                     );
                 }
                 Ok(false)

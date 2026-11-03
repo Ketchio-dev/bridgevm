@@ -19,8 +19,30 @@ enum T17DisplayClick {
 
     static func click(at spot: CGPoint, timeout: TimeInterval, read: () -> Target?, post: (CGPoint) -> Bool,
                       now: () -> Date = Date.init,
-                      pause: () -> Void = { RunLoop.current.run(until: Date().addingTimeInterval(0.1)) }) throws {
-        try T17DisplayClickWait.perform(spot: spot, timeout: timeout, read: read, post: post, now: now, pause: pause)
+                      pause: () -> Void = { RunLoop.current.run(until: Date().addingTimeInterval(0.1)) },
+                      coveredBy: (CGPoint) -> String? = { _ in nil }) throws {
+        try T17DisplayClickWait.perform(spot: spot, timeout: timeout, read: read, post: post, now: now, pause: pause,
+                                        coveredBy: coveredBy)
+    }
+
+    /// The owner of the topmost visible on-screen window under a global point
+    /// when that owner is not `pid`; nil when `pid` owns it or nothing is there.
+    /// Window bounds and owners need no screen-recording permission.
+    static func otherOwner(at point: CGPoint, pid: pid_t) -> String? {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                       kCGNullWindowID) as? [[String: Any]] else { return nil }
+        return topOwner(at: point, pid: pid, windows: windows)
+    }
+
+    static func topOwner(at point: CGPoint, pid: pid_t, windows: [[String: Any]]) -> String? {
+        for window in windows {   // front to back
+            guard let bounds = (window[kCGWindowBounds as String] as? NSDictionary).flatMap({
+                CGRect(dictionaryRepresentation: $0)
+            }), bounds.contains(point), (window[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { continue }
+            let owner = (window[kCGWindowOwnerPID as String] as? Int).map { pid_t($0) }
+            return owner == pid ? nil : (window[kCGWindowOwnerName as String] as? String ?? "pid \(owner ?? -1)")
+        }
+        return nil
     }
 
     static func post(_ point: CGPoint) -> Bool {

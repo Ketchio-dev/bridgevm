@@ -31,7 +31,8 @@ emit() {
   [[ "$outcome" != completed ]] || python3 "$REPO/scripts/verify-windows-import-product-e2e-receipt.py" "$OUT/receipt.json" --expected-commit "$COMMIT" >/dev/null
 }
 on_exit() { local status=$?; (( EMITTED == 1 )) || cleanup_work || : > "$PRIVATE/cleanup-failed"; return "$status"; }
-on_signal() { trap - INT TERM HUP; emit canceled canceled "$ATTEMPTS" "$VALID" "$SIGNING" || exit 1; exit 130; }
+# The LaunchServices-launched helper and its app are outside this process group: end what names the lane tree.
+on_signal() { trap - INT TERM HUP; [[ -z "$WORK" ]] || python3 "$REPO/scripts/live-gates/product_e2e_process_absent.py" --end "$WORK/" || true; emit canceled canceled "$ATTEMPTS" "$VALID" "$SIGNING" || exit 1; exit 130; }
 trap on_exit EXIT; trap on_signal INT TERM HUP
 set +e; python3 "$MANIFEST" --manifest "$INPUT_MANIFEST" --out "$VERIFIED"; manifest_status=$?; set -e
 MODE="$(json_value "$VERIFIED" campaign_mode 2>/dev/null || echo pilot)"

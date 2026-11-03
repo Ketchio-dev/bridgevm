@@ -226,6 +226,10 @@ pub(crate) struct Args {
     /// The user's Windows display resolution, `WxH` (`BRIDGEVM_GUEST_RESOLUTION`).
     #[arg(long, value_name = "WxH", value_parser = clap::builder::NonEmptyStringValueParser::new())]
     pub(crate) guest_resolution: Option<String>,
+    /// The 2D virtio-gpu display device for a guest with the signed virtio-win
+    /// display driver (`BRIDGEVM_VIRTIO_GPU=1`); `--virtio-gpu-3d` wins.
+    #[arg(long)]
+    pub(crate) virtio_gpu: bool,
     #[arg(long)]
     pub(crate) virtio_gpu_3d: bool,
     #[arg(long)]

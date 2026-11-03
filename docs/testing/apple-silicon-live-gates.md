@@ -209,8 +209,11 @@ attaches the clone read-only and mounts the Windows NTFS volume read-only below
 The tier reports `cleanup-failed` and keeps its job tree when `mount` or
 `hdiutil info` cannot be read within 20 seconds or still lists the tree, or
 when the harvest did not prove its release. A queue cancel sends SIGTERM to the
-tier's process group and SIGKILL about 5 seconds later, which can stop the
-harvest before it detaches. The job then has no tier receipt and the worker
+tier's process group. The tier then ends every process whose command line names
+its lane tree (the helper runs under LaunchServices, so it and the app, runner
+and swtpm it starts are outside that group) and runs this cleanup; T17 and T19
+get 2 minutes before the worker's SIGKILL, which can still stop the harvest
+before it detaches. The job then has no tier receipt and the worker
 fences the queue. Before clearing that fence, look in `hdiutil info` and
 `mount` for an attached `disk.raw` clone and a mounted guest volume under
 `/private/tmp/bridgevm-e2e-<job>.*/lane-N/guest-setup-harvest`, and unmount
@@ -227,7 +230,7 @@ still forgotten, and each refused lane is named. The recovery package and code
 are removed whatever the outcome: SIGTERM, SIGINT or SIGHUP, such as a queue
 cancel's SIGTERM, ends this step with status 128 plus the signal number only
 after that removal. Only SIGKILL can still leave them, for example the cancel's
-SIGKILL about 5 seconds later if it lands while the cancel's own cleanup runs
+SIGKILL 2 minutes later if it lands while the cancel's own cleanup runs
 this step again. Earlier T17 receipts reported
 `worker_cleanup_verified` without forgetting these keys.
 T19 seals a packaged app, fixed-identity helper, runner, installed disk, exact 64 MiB vars and symlink-free vTPM tree; each lane imports independent read-only clones through `--windows-import-product-e2e`, runs the full guest journey, reauthenticates canonical inputs, and retains `claim_eligible=false` because A9 also requires T17.

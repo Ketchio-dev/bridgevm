@@ -115,8 +115,13 @@ fn stream_record_reports_the_programmed_buffer_position_buffer_and_lpib_reads() 
     let entries = [(1_000, false), (PERIOD, false), (2_880, true)];
     let (mut ctrl, mut mem) = running_stream(&entries, true);
     poll_at(&mut ctrl, &mut mem, Instant::now(), &[0, 4]);
-    // Reads that cover SD0 LPIB (0x84..0x88) count; neighbours do not.
-    let reads = [(REG_SD_LPIB, 4), (REG_SD_LPIB + 2, 2), (REG_SD_CTL, 8)];
+    // Reads that cover SD0 LPIB (0x84..0x88) or its alias count; neighbours do not.
+    let reads = [
+        (REG_SD_LPIB, 4),
+        (REG_SD_LPIB + 2, 2),
+        (REG_SD_CTL, 8),
+        (REG_SD_LPIB_ALIAS, 4),
+    ];
     for (offset, size) in reads.into_iter().chain([(REG_SD_CTL, 4), (REG_SD_CBL, 4)]) {
         ctrl.mmio_read(offset, size);
     }
@@ -126,7 +131,7 @@ fn stream_record_reports_the_programmed_buffer_position_buffer_and_lpib_reads() 
         ctrl.diagnostic_records()[1],
         "hda stream: runs=1 rate_hz=48000 channels=2 bits=16 cbl_bytes=5800 cbl_ms=30.208 \
          entries=3 entry_bytes_min=1000 entry_bytes_max=2880 entry_ms_min=5.208 \
-         entry_ms_max=15.000 ioc_entries=1 position_buffer=1 lpib_reads=3 running_ms=4"
+         entry_ms_max=15.000 ioc_entries=1 position_buffer=1 lpib_reads=4 running_ms=4"
     );
 }
 
