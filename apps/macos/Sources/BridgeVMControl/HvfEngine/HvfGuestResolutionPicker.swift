@@ -48,8 +48,8 @@ struct HvfGuestResolutionPicker: View {
         .fixedSize()
         .accessibilityIdentifier("bridgevm.runtime.guest-resolution")
         .disabled(isDisabled)
-        .help("Windows 화면 해상도입니다. 다음 시작부터 적용되며, Windows가 이전 해상도를 기억하고 있으면 BridgeVM이 시작 후 자동으로 맞춥니다. 창 크기를 바꿔도 해상도는 바뀌지 않습니다."
-            + (session.persistsLibraryPreferences ? " VM이 중지된 동안 변경하면 이 VM의 모든 시작에 저장됩니다." : ""))
+        .help(Self.helpText(followsWindow: session.config.virtioGpu2d || session.config.virtioGpu3d,
+                            persists: session.persistsLibraryPreferences))
         .alert("화면 해상도 설정", isPresented: Binding(
             get: { message != nil }, set: { if !$0 { message = nil } }
         )) {
@@ -57,6 +57,15 @@ struct HvfGuestResolutionPicker: View {
         } message: {
             Text(message ?? "")
         }
+    }
+
+    /// With a virtio display (the signed display driver, or 3D) Windows follows the window after it
+    /// starts, so this setting only covers boot and the time before the driver loads.
+    static func helpText(followsWindow: Bool, persists: Bool) -> String {
+        (followsWindow
+            ? "부팅 화면과 디스플레이 드라이버가 로드되기 전의 Windows 해상도입니다. 이 VM은 시작 후 Windows 화면이 창 크기를 따라갑니다."
+            : "Windows 화면 해상도입니다. 다음 시작부터 적용되며, Windows가 이전 해상도를 기억하고 있으면 BridgeVM이 시작 후 자동으로 맞춥니다. 창 크기에 맞추려면 VM 화면에서 디스플레이 드라이버를 설치하세요.")
+            + (persists ? " VM이 중지된 동안 변경하면 이 VM의 모든 시작에 저장됩니다." : "")
     }
 
     private func update(_ value: String?) {
