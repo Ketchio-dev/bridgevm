@@ -65,6 +65,19 @@ fn seq_before(a: u32, b: u32) -> bool {
     (a.wrapping_sub(b) as i32) < 0
 }
 
+/// Appends `payload`, growing the buffer by doubling but never past `budget`
+/// (plain `extend` could double past it), and charges the growth to it.
+pub(crate) fn append_within_budget(unacked: &mut VecDeque<u8>, payload: &[u8], budget: &mut usize) {
+    let before = unacked.capacity();
+    let need = unacked.len() + payload.len();
+    if need > before {
+        let target = (before * 2).min(before + *budget).max(need);
+        unacked.reserve_exact(target - unacked.len());
+    }
+    unacked.extend(payload);
+    *budget = budget.saturating_sub(unacked.capacity() - before);
+}
+
 /// The window scale option of a guest SYN (RFC 7323), capped at 14.
 pub(crate) fn syn_window_shift(segment: &[u8]) -> Option<u8> {
     let header_len = usize::from(*segment.get(12)? >> 4) * 4;
@@ -249,7 +262,9 @@ impl TcpFlow {
         }
         let mut result = HostRead::Idle;
         while !self.send.fin_sent && !reply_queue_full(reply_queue) {
-            let room = self.send.room().min(*unacked_budget);
+            let unacked = &self.send.unacked;
+            let spare = unacked.capacity() - unacked.len();
+            let room = self.send.room().min(spare + *unacked_budget);
             if room == 0 {
                 stats.tcp_window_full = stats.tcp_window_full.saturating_add(1);
                 break;
@@ -279,8 +294,7 @@ impl TcpFlow {
                 payload,
             );
             stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
-            self.send.unacked.extend(payload);
-            *unacked_budget -= len;
+            append_within_budget(&mut self.send.unacked, payload, unacked_budget);
             if len == 0 {
                 // The FIN takes one sequence number.
                 self.send.next = self.send.next.wrapping_add(1);

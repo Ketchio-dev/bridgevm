@@ -42,6 +42,27 @@ fn acknowledged_burst_gives_its_buffer_back() {
 }
 
 #[test]
+fn send_buffers_grow_within_the_unacked_budget() {
+    // Plain VecDeque doubling allocated 186,880 bytes for this 100,000-byte
+    // budget; send_to_guest reads at most spare capacity plus budget.
+    let mut unacked = VecDeque::new();
+    let mut budget = 100_000;
+    loop {
+        let len = TCP_MSS.min(unacked.capacity() - unacked.len() + budget);
+        if len == 0 {
+            break;
+        }
+        append_within_budget(&mut unacked, &[7; TCP_MSS][..len], &mut budget);
+    }
+    assert!(
+        unacked.capacity() <= 100_000,
+        "allocated {}",
+        unacked.capacity()
+    );
+    assert_eq!(unacked.len(), unacked.capacity());
+}
+
+#[test]
 fn host_sockets_wait_while_a_ring_of_frames_waits_for_the_guest() {
     let mut backend = NatBackend::with_outbound_handler(CountingSweeps::default());
     let arp = arp_request(GUEST_MAC, GUEST_IP, GATEWAY_IP);
