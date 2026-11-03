@@ -27,6 +27,7 @@ extension HvfEngineConfig {
             virtioNet: config.networkEnabled ?? true,
             virtioGpu3d: config.experimental3DAllowed ?? false,
             nvmeBufferedIO: false,
+            durableDiskWrites: config.durableDiskWritesEnabled ?? false,
             ctlFilePath: config.bundlePath + "/metadata/hvf.ctl",
             vtpmStateDir: config.bundlePath + "/metadata/vtpm",
             swtpmBin: VTPMStateSecurity.defaultSwtpmCommand(),

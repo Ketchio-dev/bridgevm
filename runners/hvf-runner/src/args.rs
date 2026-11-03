@@ -220,6 +220,9 @@ pub(crate) struct Args {
     pub(crate) virtio_net: bool,
     #[arg(long)]
     pub(crate) nvme_buffered_io: bool,
+    /// The user's opt-in: every guest flush waits for F_FULLFSYNC (`BRIDGEVM_NVME_FLUSH=durable`).
+    #[arg(long)]
+    pub(crate) nvme_durable_flush: bool,
     #[arg(long)]
     pub(crate) virtio_gpu_3d: bool,
     #[arg(long)]

@@ -41,6 +41,7 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     var networkEnabled: Bool? = nil  // nil == default on; false disables the guest NIC (HVF only)
     var experimental3DAllowed: Bool? = nil
     var clipboardSyncEnabled: Bool? = nil  // nil == default on; false keeps two-way clipboard sync off (HVF only)
+    var durableDiskWritesEnabled: Bool? = nil  // nil == off: guest flushes are ordered, durable within ~1 s; true: every flush waits for F_FULLFSYNC (HVF only)
     var sharedFolderHostPath: String? = nil, sharedFolderGuestPath: String? = nil  // user-chosen pair; nil == no sharing (HVF only)
     /// A config can be imported or hand-edited, so never trust its persisted ID
     /// as a filesystem component. Normalizing here keeps every caller inside the

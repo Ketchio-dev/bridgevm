@@ -64,7 +64,7 @@ impl NvmeController {
         // A combined EN-clear/SHN write resets first, then shuts down. SHN=0
         // does not cancel shutdown; another attempt requires a controller reset.
         self.csts = (self.csts & !CSTS_SHST_MASK) | CSTS_SHST_PROCESSING;
-        if self.flush_all_namespaces() == SC_SUCCESS {
+        if self.flush_all_namespaces_durable() == SC_SUCCESS {
             self.csts = (self.csts & !CSTS_SHST_MASK) | CSTS_SHST_COMPLETE;
         } else {
             // MMIO shutdown has no command completion in which to report a

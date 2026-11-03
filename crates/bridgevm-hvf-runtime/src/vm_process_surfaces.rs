@@ -55,6 +55,9 @@ pub(super) fn env(surfaces: &DeviceSurfaces) -> Vec<(&'static str, String)> {
     if surfaces.nvme_buffered_io {
         env.push(("BRIDGEVM_NVME_BUFFERED_IO", "1".to_string()));
     }
+    if surfaces.nvme_durable_flush {
+        env.push(("BRIDGEVM_NVME_FLUSH", "durable".to_string()));
+    }
     if let Some(gpu) = &surfaces.virtio_gpu_3d {
         env.push(("BRIDGEVM_VIRTIO_GPU", "1".to_string()));
         env.push(("BRIDGEVM_VIRTIO_GPU_3D", "1".to_string()));

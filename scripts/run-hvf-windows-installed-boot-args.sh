@@ -18,6 +18,7 @@ init_installed_boot_defaults() {
   HDA_AUDIO="0"
   HDA_COREAUDIO="0"
   NVME_BUFFERED_IO="0"
+  NVME_DURABLE_FLUSH="0"
   VTPM_STATE_DIR=""
   SWTPM_BIN="swtpm"
   SWTPM_BIN_EXPLICIT="0"
@@ -183,6 +184,7 @@ parse_installed_boot_args() {
       --hda) HDA_AUDIO="1"; shift ;;
       --hda-coreaudio) HDA_AUDIO="1"; HDA_COREAUDIO="1"; shift ;;
       --nvme-buffered-io) NVME_BUFFERED_IO="1"; shift ;;
+      --nvme-durable-flush) NVME_DURABLE_FLUSH="1"; shift ;;
       --vtpm-state-dir)
         [[ $# -ge 2 && -n "$2" ]] || { echo "FAIL: --vtpm-state-dir requires a non-empty path" >&2; exit 2; }
         VTPM_STATE_DIR="$2"; shift 2

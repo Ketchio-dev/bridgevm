@@ -59,6 +59,8 @@ pub struct DeviceSurfaces {
     pub aggressive_performance: bool,
     /// Buffered NVMe I/O (the app ships it on).
     pub nvme_buffered_io: bool,
+    /// The user's opt-in durable disk writes: every guest flush waits for `F_FULLFSYNC`.
+    pub nvme_durable_flush: bool,
     /// Host<->guest clipboard sync over the agent console.
     pub clipboard_sync: bool,
     /// Folder share over the agent console (host dir -> guest dir).
