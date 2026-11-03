@@ -48,6 +48,7 @@ pub mod snapshot_pair;
 pub mod stage1;
 pub mod tpm_ppi;
 pub mod tpm_tis;
+pub mod uefi_resolution;
 #[cfg(feature = "venus")]
 pub mod venus_backend;
 pub mod virtio_blk;
