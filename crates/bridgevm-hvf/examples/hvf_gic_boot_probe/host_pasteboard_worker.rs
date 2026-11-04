@@ -118,14 +118,6 @@ impl PasteboardWorker {
         self.cmds.try_iter().map(|write| write.text).collect()
     }
 
-    /// Queued guest writes as (text, image) pairs; text is empty without one.
-    #[cfg(test)]
-    pub(crate) fn take_writes(&self) -> Vec<(String, Option<super::PngImage>)> {
-        self.cmds
-            .try_iter()
-            .map(|write| (write.text, write.image))
-            .collect()
-    }
 }
 
 pub(super) fn run<B: PasteboardBackend>(
