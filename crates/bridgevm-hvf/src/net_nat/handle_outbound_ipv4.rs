@@ -57,8 +57,8 @@ pub(crate) struct UdpFlowKey {
     pub(crate) guest_port: u16,
     pub(crate) public_dst: Ipv4Addr,
     pub(crate) public_dst_port: u16,
-    pub(crate) socket_dst: Ipv4Addr,
-    pub(crate) socket_dst_port: u16,
+    /// The host socket's peer; for 10.0.2.3:53 the resolver at flow creation.
+    pub(crate) socket_dst: std::net::SocketAddr,
 }
 
 #[derive(Debug)]

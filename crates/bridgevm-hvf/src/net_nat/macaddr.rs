@@ -5,7 +5,8 @@ use super::*;
 use std::{
     collections::{hash_map::Entry, HashMap, VecDeque},
     io,
-    net::{Ipv4Addr as StdIpv4Addr, Shutdown, SocketAddrV4, UdpSocket},
+    net::{IpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr, Shutdown, SocketAddr, UdpSocket},
+    path::PathBuf,
     time::Instant,
 };
 
@@ -77,7 +78,6 @@ pub(crate) const DHCP_LEASE_SECONDS: u32 = 86_400;
 pub(crate) const DHCP_REPLY_FIXED_LEN: usize = 240;
 pub(crate) const DHCP_REPLY_OPTIONS_LEN: usize = 3 + (5 * 6) + 1;
 pub(crate) const DHCP_REPLY_PAYLOAD_LEN: usize = DHCP_REPLY_FIXED_LEN + DHCP_REPLY_OPTIONS_LEN;
-pub(crate) const MAX_RESOLV_CONF_BYTES: u64 = 64 * 1024;
 #[cfg(test)]
 pub(crate) const DHCP_OPT_REQUESTED_IP: u8 = 50;
 
@@ -403,7 +403,7 @@ pub struct HostSocketOutboundIpv4Handler {
     pub(crate) tcp_read_scratch: [u8; TCP_MSS],
     pub(crate) icmp_recv_scratch: [u8; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
     pub(crate) pending_socket_errors: u64,
-    pub(crate) dns_resolver: StdIpv4Addr,
+    pub(crate) dns: DnsUpstream,
     pub(crate) epoch: Instant,
     pub(crate) last_idle_sweep_ms: u64,
     pub(crate) idle_timeout_ms: u64,
@@ -433,12 +433,20 @@ impl HostSocketOutboundIpv4Handler {
     pub(crate) const MAX_ICMP_RECV_PER_POLL: usize = 64;
 
     pub fn new() -> Self {
-        Self::with_dns_resolver(
-            first_resolv_conf_nameserver().unwrap_or(StdIpv4Addr::new(1, 1, 1, 1)),
-        )
+        Self::with_resolv_conf("/etc/resolv.conf")
     }
 
+    /// Guest DNS follows the first nameserver in `path` as the file changes.
+    pub fn with_resolv_conf(path: impl Into<PathBuf>) -> Self {
+        Self::with_dns(DnsUpstream::from_resolv_conf(path.into()))
+    }
+
+    /// Guest DNS always goes to `dns_resolver`.
     pub fn with_dns_resolver(dns_resolver: StdIpv4Addr) -> Self {
+        Self::with_dns(DnsUpstream::fixed(dns_resolver.into()))
+    }
+
+    fn with_dns(dns: DnsUpstream) -> Self {
         Self {
             udp_flows: HashMap::new(),
             tcp_flows: HashMap::new(),
@@ -449,7 +457,7 @@ impl HostSocketOutboundIpv4Handler {
             tcp_read_scratch: [0; TCP_MSS],
             icmp_recv_scratch: [0; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
             pending_socket_errors: 0,
-            dns_resolver,
+            dns,
             epoch: Instant::now(),
             last_idle_sweep_ms: 0,
             idle_timeout_ms: Self::DEFAULT_IDLE_TIMEOUT_MS,
@@ -524,32 +532,30 @@ impl HostSocketOutboundIpv4Handler {
 
     pub(crate) fn handle_udp(&mut self, packet: &Ipv4Packet<'_>, udp: &UdpDatagram<'_>) {
         let now = self.now_ms();
-        let mut public_dst = packet.dst;
-        let mut socket_dst = packet.dst;
-        let mut dst_port = udp.dst_port;
-        if packet.dst == DNS_IP && udp.dst_port == 53 {
-            public_dst = DNS_IP;
-            socket_dst = self.dns_resolver.octets();
-            dst_port = 53;
-        }
+        let socket_dst = if packet.dst == DNS_IP && udp.dst_port == 53 {
+            self.dns.server_at(now)
+        } else {
+            SocketAddr::from((packet.dst, udp.dst_port))
+        };
         let key = UdpFlowKey {
             guest_ip: packet.src,
             guest_port: udp.src_port,
-            public_dst,
+            public_dst: packet.dst,
             public_dst_port: udp.dst_port,
             socket_dst,
-            socket_dst_port: dst_port,
         };
         let flow = match self.udp_flows.entry(key) {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => {
-                let socket = match UdpSocket::bind(SocketAddrV4::new(StdIpv4Addr::UNSPECIFIED, 0))
-                    .and_then(|socket| {
-                        socket.set_nonblocking(true)?;
-                        socket
-                            .connect(SocketAddrV4::new(StdIpv4Addr::from(socket_dst), dst_port))?;
-                        Ok(socket)
-                    }) {
+                let local = match socket_dst {
+                    SocketAddr::V4(_) => IpAddr::V4(StdIpv4Addr::UNSPECIFIED),
+                    SocketAddr::V6(_) => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+                };
+                let socket = match UdpSocket::bind(SocketAddr::new(local, 0)).and_then(|socket| {
+                    socket.set_nonblocking(true)?;
+                    socket.connect(socket_dst)?;
+                    Ok(socket)
+                }) {
                     Ok(socket) => socket,
                     Err(_) => return,
                 };

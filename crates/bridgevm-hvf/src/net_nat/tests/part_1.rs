@@ -5,7 +5,8 @@ use crate::virtio_net::NetBackend;
 use std::{
     collections::{HashMap, VecDeque},
     io::{self, Read, Write},
-    net::{Ipv4Addr as StdIpv4Addr, Shutdown, TcpStream},
+    net::{Ipv4Addr as StdIpv4Addr, Shutdown, SocketAddr, SocketAddrV6, TcpStream, UdpSocket},
+    path::Path,
 };
 
 #[cfg(target_os = "macos")]
@@ -22,10 +23,133 @@ fn resolver_reader_parses_first_ipv4_nameserver() {
     )
     .unwrap();
 
-    let resolver = first_nameserver_from_path(&path);
+    let resolver = nameserver_from_path(&path);
     let _ = std::fs::remove_file(&path);
 
-    assert_eq!(resolver, Some(StdIpv4Addr::new(9, 8, 7, 6)));
+    assert_eq!(resolver, Some(SocketAddr::from(([9, 8, 7, 6], 53))));
+}
+
+#[test]
+fn resolver_reader_uses_ipv6_only_without_an_ipv4_nameserver() {
+    let path = temp_resolv_path("ipv6-only");
+    std::fs::write(
+        &path,
+        "search example.net\nnameserver fe80::1%1\nnameserver 2001:db8::53\n",
+    )
+    .unwrap();
+
+    let resolver = nameserver_from_path(&path);
+    let _ = std::fs::remove_file(&path);
+
+    let link_local = "fe80::1".parse().unwrap();
+    assert_eq!(
+        resolver,
+        Some(SocketAddrV6::new(link_local, 53, 0, 1).into())
+    );
+    assert_eq!(
+        parse_nameserver("2001:db8::53"),
+        Some("[2001:db8::53]:53".parse().unwrap())
+    );
+    // macOS names the interface of a link-local server; the socket needs its index.
+    #[cfg(target_os = "macos")]
+    assert!(matches!(
+        parse_nameserver("fe80::1%lo0"),
+        Some(SocketAddr::V6(server)) if server.scope_id() != 0
+    ));
+    assert_eq!(parse_nameserver("fe80::1%bridgevm-no-such-if"), None);
+}
+
+#[test]
+fn resolver_reader_finds_no_server_without_a_nameserver_line() {
+    let path = temp_resolv_path("no-nameserver");
+    std::fs::write(&path, "# no network\nsearch example.net\nnameserver\n").unwrap();
+
+    let resolver = nameserver_from_path(&path);
+    let dns = DnsUpstream::from_resolv_conf(path.clone());
+    let _ = std::fs::remove_file(&path);
+
+    assert_eq!(resolver, None);
+    assert_eq!(dns.server, FALLBACK_DNS_SERVER);
+    let missing = DnsUpstream::from_resolv_conf(temp_resolv_path("missing"));
+    assert_eq!(missing.server, FALLBACK_DNS_SERVER);
+}
+
+/// configd replaces the file; a rename also gives it a new inode.
+fn replace_resolv_conf(path: &Path, contents: &str) {
+    let staged = path.with_extension("new");
+    std::fs::write(&staged, contents).unwrap();
+    std::fs::rename(&staged, path).unwrap();
+}
+
+#[test]
+fn resolv_conf_is_rechecked_at_most_once_a_second_and_counts_real_changes() {
+    let path = temp_resolv_path("recheck");
+    std::fs::write(&path, "nameserver 192.0.2.1\n").unwrap();
+    let first = SocketAddr::from(([192, 0, 2, 1], 53));
+    let second = SocketAddr::from(([198, 51, 100, 7], 53));
+    let mut dns = DnsUpstream::from_resolv_conf(path.clone());
+    assert_eq!(dns.server_at(0), first);
+
+    replace_resolv_conf(&path, "nameserver 198.51.100.7\n");
+    assert_eq!(dns.server_at(RESOLV_CONF_RECHECK_MS - 1), first);
+    assert_eq!(dns.server_at(RESOLV_CONF_RECHECK_MS), second);
+    assert_eq!(dns.changes, 1);
+
+    // A rewrite that keeps the server (a new search domain) is not a change.
+    replace_resolv_conf(&path, "search example.net\nnameserver 198.51.100.7\n");
+    assert_eq!(dns.server_at(2 * RESOLV_CONF_RECHECK_MS), second);
+    assert_eq!(dns.changes, 1);
+
+    // Network down: no nameserver, then no file, means 1.1.1.1 until one returns.
+    replace_resolv_conf(&path, "search example.net\n");
+    assert_eq!(
+        dns.server_at(3 * RESOLV_CONF_RECHECK_MS),
+        FALLBACK_DNS_SERVER
+    );
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(
+        dns.server_at(4 * RESOLV_CONF_RECHECK_MS),
+        FALLBACK_DNS_SERVER
+    );
+    std::fs::write(&path, "nameserver 192.0.2.1\n").unwrap();
+    assert_eq!(dns.server_at(5 * RESOLV_CONF_RECHECK_MS), first);
+    let _ = std::fs::remove_file(&path);
+    assert_eq!(dns.changes, 3);
+}
+
+#[test]
+fn new_guest_dns_queries_follow_a_rewritten_resolv_conf() {
+    // Loopback servers: the forwarded queries never leave the Mac.
+    if UdpSocket::bind("[::1]:0").is_err() {
+        return;
+    }
+    let path = temp_resolv_path("follow");
+    std::fs::write(&path, "nameserver 127.0.0.1\n").unwrap();
+    let mut backend =
+        NatBackend::with_outbound_handler(HostSocketOutboundIpv4Handler::with_resolv_conf(&path));
+
+    backend.transmit(&udp_guest_frame(DNS_IP, 53, 53000, b"before"));
+    replace_resolv_conf(&path, "nameserver ::1\n");
+    // The recheck is due (the once-a-second limit is tested above).
+    backend.outbound_ipv4.dns.next_check_ms = 0;
+    backend.transmit(&udp_guest_frame(DNS_IP, 53, 53001, b"after"));
+    let _ = std::fs::remove_file(&path);
+
+    let servers: HashMap<u16, SocketAddr> = backend
+        .outbound_ipv4
+        .udp_flows
+        .iter()
+        .map(|(key, flow)| {
+            assert_eq!(key.public_dst, DNS_IP);
+            let local = flow.socket.local_addr().unwrap();
+            assert_eq!(local.is_ipv6(), key.socket_dst.is_ipv6());
+            (key.guest_port, key.socket_dst)
+        })
+        .collect();
+    assert_eq!(servers[&53000], SocketAddr::from(([127, 0, 0, 1], 53)));
+    assert_eq!(servers[&53001], "[::1]:53".parse().unwrap());
+    assert_eq!(backend.outbound_ipv4.dns.changes, 1);
+    assert_eq!(backend.stats().dns_queries, 2);
 }
 
 #[test]
@@ -34,7 +158,7 @@ fn resolver_reader_rejects_sparse_oversized_input_before_allocation() {
     let file = std::fs::File::create(&path).unwrap();
     file.set_len(512 * 1024 * 1024).unwrap();
 
-    let resolver = first_nameserver_from_path(&path);
+    let resolver = nameserver_from_path(&path);
     let _ = std::fs::remove_file(&path);
 
     assert_eq!(resolver, None);
@@ -45,7 +169,7 @@ fn resolver_reader_rejects_invalid_utf8() {
     let path = temp_resolv_path("invalid-utf8");
     std::fs::write(&path, [0xff, 0xfe]).unwrap();
 
-    let resolver = first_nameserver_from_path(&path);
+    let resolver = nameserver_from_path(&path);
     let _ = std::fs::remove_file(&path);
 
     assert_eq!(resolver, None);
