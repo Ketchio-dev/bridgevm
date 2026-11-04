@@ -13,13 +13,13 @@ extension HvfOwnedRunController {
     }
 
     var forceStopTarget: HvfForceStopTarget? {
-        guard forceStopAvailable, let operation else { return nil }
+        guard waitsForGuestShutdown, let operation else { return nil }
         return HvfForceStopTarget(identity: identity, operationID: operation.operationID)
     }
 
     /// What the stop controls tell the user while Windows has not turned off yet.
     var guestStopWait: HvfGuestStopWait? {
-        guard forceStopAvailable else { return nil }
+        guard waitsForGuestShutdown else { return nil }
         if graceExpired { return .windowsStillRunning }
         return guestStopRequested ? .windowsClosingApps : .waitingForGuestAgent
     }

@@ -69,13 +69,8 @@ final class HvfOwnedStopWaitTests: XCTestCase {
 
     func testTheSessionStopHoldsAndPublishesWhatWindowsIsDoing() throws {
         let f = try Fixture(); defer { f.clean() }
-        let session = HvfEngineSession(config: f.base.config, repoRoot: f.base.root,
-            processIsRunning: { _ in false }, vtpmKeyProvider: f.base.keys)
-        session.process = f.process
-        session.ownedProcessIdentity = f.controller.identity
-        session.ownedController = f.controller
+        let session = bind(f)
         let token = f.controller.identity.token
-        f.controller.onChange = { [weak session] in session?.ownedRuntimeChanged(token: token) }
         f.controller.receive(.message(try f.event("ready", sequence: 1)))
 
         XCTAssertEqual(session.stopOwned(expectedToken: token), .requested(deadline: nil))
@@ -85,6 +80,59 @@ final class HvfOwnedStopWaitTests: XCTestCase {
         XCTAssertEqual(session.stopWait, .windowsStillRunning)
         XCTAssertNotNil(session.forceStopTarget)
         XCTAssertTrue(session.blocksAppTermination)
+    }
+
+    func testGuestInputKeepsWorkingWhileTheStopWaitsForWindows() throws {
+        let f = try Fixture(); defer { f.clean() }
+        let evidence = URL(fileURLWithPath: f.base.config.evidenceDir)
+        try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
+        let log = evidence.appendingPathComponent("run.log")
+        try "BVAGENT READY host=test t=1\nBVAGENT SERVICE start t=2\n".write(to: log, atomically: true, encoding: .utf8)
+        let session = bind(f)
+        // Synthetic owned-boot boundary and capability reply, not a real Windows receipt.
+        session.beginOwnedInputBoot()
+        session.poll(); session.poll() // the READY batch resets the stream; the next poll asks for capabilities
+        let request = try XCTUnwrap(try commands(f).last)
+        let id = request.split(separator: " ").last ?? "missing"
+        try append("BVAGENT CMD \(request) exit=0\nBVINPUT_CAPS \(id) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536\n"
+            + "BVAGENT END \(request)\n", to: log)
+        session.poll(); session.poll()
+        f.controller.receive(.message(try f.event("ready", sequence: 1)))
+
+        XCTAssertEqual(session.stopOwned(expectedToken: f.controller.identity.token), .requested(deadline: nil))
+        session.poll()
+        XCTAssertTrue(session.sendKey("enter"), "Windows still runs: the user may have to save or answer it")
+        XCTAssertEqual(try commands(f).filter { $0.hasPrefix("KEYINPUT ") }.count, 1)
+        f.clock.value = 290; f.controller.tick(); session.poll()
+        XCTAssertEqual(f.controller.guestStopWait, .windowsStillRunning)
+        XCTAssertTrue(session.sendKey("enter"), "The held Stop keeps input after its grace")
+
+        let target = try XCTUnwrap(session.forceStopTarget)
+        XCTAssertEqual(session.requestForceStop(target), .requested)
+        session.poll()
+        XCTAssertFalse(session.sendKey("enter"), "Force Stop closes Windows' apps without asking")
+    }
+
+    private func bind(_ f: Fixture) -> HvfEngineSession {
+        let session = HvfEngineSession(config: f.base.config, repoRoot: f.base.root,
+            processIsRunning: { _ in false }, vtpmKeyProvider: f.base.keys)
+        session.process = f.process
+        session.ownedProcessIdentity = f.controller.identity
+        session.ownedController = f.controller
+        let token = f.controller.identity.token
+        f.controller.onChange = { [weak session] in session?.ownedRuntimeChanged(token: token) }
+        return session
+    }
+
+    private func commands(_ f: Fixture) throws -> [String] {
+        try String(contentsOfFile: f.base.config.ctlFilePath, encoding: .utf8).split(separator: "\n").map(String.init)
+    }
+
+    private func append(_ value: String, to log: URL) throws {
+        let handle = try FileHandle(forWritingTo: log)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(value.utf8))
     }
 
     private func appStop(_ f: Fixture) throws -> HvfOwnedStopOperation {

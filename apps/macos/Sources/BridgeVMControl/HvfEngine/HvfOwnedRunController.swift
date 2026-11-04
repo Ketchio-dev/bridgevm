@@ -80,7 +80,7 @@ final class HvfOwnedRunController {
     func requestForceStop(_ target: HvfForceStopTarget) -> HvfForceStopResult {
         guard target.identity == identity else { return .refused(.targetChanged) }
         guard let operation, operation.operationID == target.operationID else { return .refused(.operationChanged) }
-        guard forceStopAvailable else { return .refused(.notWaiting) }
+        guard waitsForGuestShutdown else { return .refused(.notWaiting) }
         graceDeadline = nil; forceRequested = true
         if serviceReady {
             let time = now(), limit = time + Self.forcedGuestWindow
@@ -97,8 +97,9 @@ final class HvfOwnedRunController {
         return .requested
     }
 
-    /// A Stop is waiting on Windows and may still be escalated; a held Stop stays so after its grace.
-    var forceStopAvailable: Bool {
+    /// A Stop is waiting for Windows to shut itself down: Windows still runs and takes input, and the
+    /// Stop may still be escalated. A held Stop stays so after its grace; Force Stop or cancellation ends it.
+    var waitsForGuestShutdown: Bool {
         guard let operation, operation.observation.phase == .guestGrace, let deadline = graceDeadline,
               holdsAfterGrace || now() < deadline, !cancelled, failure == nil, ledger.complete == nil,
               runnerExit == nil, process.isRunning else { return false }

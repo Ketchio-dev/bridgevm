@@ -327,9 +327,7 @@ final class HvfEngineSession: ObservableObject {
             }
         }
         flushDisplayResize()
-        let connected: Bool
-        if case .connected = connectionState { connected = true } else { connected = false }
-        inputDriver.poll(binding: inputBinding, serviceReady: serviceStarted && connected, lines: lines) { [self] command in
+        inputDriver.poll(binding: inputBinding, serviceReady: serviceStarted && guestTakesInput, lines: lines) { [self] command in
             guard command.utf8.count <= 87_434, !command.contains("\n"),
                   !command.contains("\r"), !command.contains("\0") else { return false }
             return appendControlCommand(command)
@@ -395,6 +393,13 @@ final class HvfEngineSession: ObservableObject {
         liveInputWriteFailureReported = false
         displayResize.deviceRestarted() // a new run's display starts at its default size; an attached one is unknown
         if clearEvents { events = [] }
+    }
+
+    /// Windows keeps its input while a Stop waits for it to shut down: the user may still have to save
+    /// or answer Windows' "apps are preventing shutdown" screen. Force Stop or cancellation ends that.
+    private var guestTakesInput: Bool {
+        if case .connected = connectionState { return true }
+        return connectionState == .stopping && ownedController?.waitsForGuestShutdown == true
     }
 
     private var inputBinding: [String] {
