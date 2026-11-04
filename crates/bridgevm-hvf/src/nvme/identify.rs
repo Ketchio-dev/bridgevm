@@ -52,6 +52,9 @@ pub(crate) const VWC_NSID_BROADCAST_SUPPORT: u8 = 3 << 1;
 
 pub(crate) const VWC_IDENTIFY_CAPABILITIES: u8 = VWC_PRESENT | VWC_NSID_BROADCAST_SUPPORT;
 
+/// ONCS bit 2: Dataset Management (dataset_management.rs).
+pub(crate) const ONCS_DATASET_MANAGEMENT: u16 = 1 << 2;
+
 impl NvmeController {
     /// Build a 4 KiB Identify Controller structure (NVMe 1.4 §5.15.2.2).
     pub(crate) fn identify_controller(&self) -> NvmePage {
@@ -79,6 +82,8 @@ impl NvmeController {
         d[513] = 0x44;
         // NN (516..520): maximum/number of namespaces (1 or 2).
         d[516..520].copy_from_slice(&self.namespace_count().to_le_bytes());
+        // ONCS (520..522): optional NVM commands; DLFEAT stays 0.
+        d[520..522].copy_from_slice(&ONCS_DATASET_MANAGEMENT.to_le_bytes());
         // VWC (525): cache present with broadcast-NSID flush support.
         d[525] = VWC_IDENTIFY_CAPABILITIES;
         // SUBNQN (768..1024): NUL-terminated subsystem NQN. Linux warns for

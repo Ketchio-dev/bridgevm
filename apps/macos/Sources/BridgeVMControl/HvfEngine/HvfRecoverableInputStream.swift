@@ -9,6 +9,7 @@ struct HvfRecoverableInputStream {
     var isRecovering: Bool { cleanup.recovering && !cleanup.blocked }
     var state: HvfNegotiatedInputStream.State { cleanup.blocked ? .failed : (isRecovering ? .negotiating : stream.state) }
     var count: Int { stream.count + cleanup.count }
+    var modifierChords: Bool { stream.modifierChords }
 
     mutating func enqueue(_ event: HvfOrderedInputQueue.Event, now: Date) -> HvfNegotiatedInputStream.Admission {
         guard !cleanup.blocked, !isRecovering else { return .refused }

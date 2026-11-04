@@ -11,7 +11,9 @@ final class HvfControlChordDisplayTests: XCTestCase {
         ("\u{f70d}", 0x6d, [.shift, .function], "shift+f10"), ("\u{f728}", 0x75, [.shift, .function], "shift+delete")
     ]
 
-    func testLegacyDisplayEventsWriteChordsAsHidKeysAndCommandStaysLocal() throws {
+    /// The VMM shipped with the app takes generic chords, so Command is Ctrl there (the Mac-like default)
+    /// and only the app shortcuts the Mac keeps stay local.
+    func testLegacyDisplayEventsWriteChordsAsHidKeysAndCommandIsCtrlExceptMacShortcuts() throws {
         let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
             .appendingPathComponent("control-chords-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
@@ -25,10 +27,12 @@ final class HvfControlChordDisplayTests: XCTestCase {
             XCTAssertTrue(HvfFramebufferKeyInput.send(try event(characters, code: code, flags: flags), to: session,
                                                       refused: { XCTFail("legacy refusal") }))
         }
-        XCTAssertFalse(HvfFramebufferKeyInput.send(try event("s", code: 0x01, flags: .command), to: session))
-        XCTAssertFalse(HvfFramebufferKeyInput.send(try event("\u{13}", code: 0x01, flags: [.command, .control]), to: session))
+        XCTAssertTrue(HvfFramebufferKeyInput.send(try event("s", code: 0x01, flags: .command), to: session))
+        XCTAssertTrue(HvfFramebufferKeyInput.send(try event("\u{13}", code: 0x01, flags: [.command, .control]), to: session))
+        XCTAssertFalse(HvfFramebufferKeyInput.send(try event("q", code: 0x0c, flags: .command), to: session))
+        XCTAssertFalse(HvfFramebufferKeyInput.send(try event("f", code: 0x03, flags: [.command, .control]), to: session))
         XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("input.ctl")),
-                       events.map { "KEY \($0.3)\n" }.joined())
+                       events.map { "KEY \($0.3)\n" }.joined() + "KEY ctrl+s\nKEY ctrl+s\n")
         XCTAssertFalse(FileManager.default.fileExists(atPath: config.ctlFilePath))
     }
 

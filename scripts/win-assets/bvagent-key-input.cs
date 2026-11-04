@@ -4,6 +4,10 @@ namespace BridgeVM {
     using System.Runtime.InteropServices;
 
     public static partial class BvUnicodeInput {
+        // One generic chord: win, ctrl, alt and shift, each at most once and in this order, then
+        // one key; or a single modifier alone (a bare tap, such as the Windows key opening Start).
+        private static readonly string[] ModifierNames = { "win", "ctrl", "alt", "shift" };
+        private static readonly ushort[] ModifierKeys = { 0x5B, 0x11, 0x12, 0x10 };
         private static readonly Dictionary<string, ushort> NamedKeys = new Dictionary<string, ushort>(StringComparer.Ordinal) {
             { "backspace", 0x08 }, { "tab", 0x09 }, { "enter", 0x0D },
             { "esc", 0x1B }, { "escape", 0x1B }, { "space", 0x20 },
@@ -14,36 +18,49 @@ namespace BridgeVM {
             { "f5", 0x74 }, { "f6", 0x75 }, { "f7", 0x76 }, { "f8", 0x77 },
             { "f9", 0x78 }, { "f10", 0x79 }, { "f11", 0x7A }, { "f12", 0x7B }
         };
-        private static readonly HashSet<string> Navigation = new HashSet<string>(StringComparer.Ordinal) {
-            "left", "up", "right", "down", "home", "end", "pageup", "pagedown"
+        // US-layout punctuation keys by name (VK_OEM_*).
+        private static readonly Dictionary<string, ushort> PunctuationKeys = new Dictionary<string, ushort>(StringComparer.Ordinal) {
+            { "minus", 0xBD }, { "equal", 0xBB }, { "lbracket", 0xDB }, { "rbracket", 0xDD }, { "backslash", 0xDC },
+            { "semicolon", 0xBA }, { "quote", 0xDE }, { "grave", 0xC0 }, { "comma", 0xBC }, { "period", 0xBE }, { "slash", 0xBF }
         };
 
         public static Input[] BuildKey(string command) {
             if (String.IsNullOrEmpty(command) || command.Length > 32) {
                 throw new ArgumentException("key-input-length");
             }
-            int separator = command.LastIndexOf('+');
-            string prefix = separator < 0 ? "" : command.Substring(0, separator);
-            string key = command.Substring(separator + 1);
-            bool letter = key.Length == 1 && key[0] >= 'a' && key[0] <= 'z', navigation = Navigation.Contains(key);
-            bool allowed = prefix == "" && NamedKeys.ContainsKey(key)
-                || prefix == "shift" && (navigation || key == "tab" || key == "enter" || key == "space")
-                || prefix == "ctrl" && (navigation || letter && "acvxyz".IndexOf(key[0]) >= 0 || key == "backspace" || key == "delete")
-                || prefix == "ctrl+shift" && navigation
-                || prefix == "alt" && (key == "tab" || key == "enter" || key == "f4")
-                || (prefix == "ctrl" && (letter || key == "enter" || key == "tab") || prefix == "ctrl+shift" && key == "tab" || prefix == "shift" && (key == "delete" || NamedKeys.ContainsKey(key) && key[0] == 'f'));
-            if (!allowed) { throw new ArgumentException("unsupported-key-input"); }
-            ushort code = letter ? (ushort)Char.ToUpperInvariant(key[0]) : NamedKeys[key];
+            string[] parts = command.Split('+');
             List<ushort> modifiers = new List<ushort>();
-            if (prefix == "ctrl" || prefix == "ctrl+shift") { modifiers.Add(0x11); }
-            if (prefix == "shift" || prefix == "ctrl+shift") { modifiers.Add(0x10); }
-            if (prefix == "alt") { modifiers.Add(0x12); }
-            bool extended = (code >= 0x21 && code <= 0x28) || code == 0x2D || code == 0x2E;
+            int next = 0;
+            for (int i = 0; i < parts.Length - 1; i++) {
+                int index = next < ModifierNames.Length ? Array.IndexOf(ModifierNames, parts[i], next) : -1;
+                if (index < 0) { throw new ArgumentException("unsupported-key-input"); }
+                modifiers.Add(ModifierKeys[index]);
+                next = index + 1;
+            }
+            string key = parts[parts.Length - 1];
+            int bare = parts.Length == 1 ? Array.IndexOf(ModifierNames, key) : -1;
+            ushort code;
+            if (bare >= 0) {
+                code = ModifierKeys[bare];
+            } else if (!NamedKeys.TryGetValue(key, out code)) {
+                // A character key alone or with only Shift is text, which has its own path.
+                bool chord = modifiers.Exists(delegate(ushort modifier) { return modifier != 0x10; });
+                bool character = key.Length == 1 && (key[0] >= 'a' && key[0] <= 'z' || key[0] >= '0' && key[0] <= '9');
+                if (character) { code = (ushort)Char.ToUpperInvariant(key[0]); }
+                if (!chord || !character && !PunctuationKeys.TryGetValue(key, out code)) {
+                    throw new ArgumentException("unsupported-key-input");
+                }
+            }
+            // SendInput cannot raise the secure attention sequence; never type its keys into an application instead.
+            if (code == 0x2E && modifiers.Contains(0x11) && modifiers.Contains(0x12)) {
+                throw new ArgumentException("unsupported-key-input");
+            }
+            bool extended = (code >= 0x21 && code <= 0x28) || code == 0x2D || code == 0x2E || code == 0x5B;
             List<Input> inputs = new List<Input>();
-            foreach (ushort modifier in modifiers) { inputs.Add(KeyEvent(modifier, false, false)); }
+            foreach (ushort modifier in modifiers) { inputs.Add(KeyEvent(modifier, false, modifier == 0x5B)); }
             inputs.Add(KeyEvent(code, false, extended));
             inputs.Add(KeyEvent(code, true, extended));
-            for (int i = modifiers.Count - 1; i >= 0; i--) { inputs.Add(KeyEvent(modifiers[i], true, false)); }
+            for (int i = modifiers.Count - 1; i >= 0; i--) { inputs.Add(KeyEvent(modifiers[i], true, modifiers[i] == 0x5B)); }
             return inputs.ToArray();
         }
 

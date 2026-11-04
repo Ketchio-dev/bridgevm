@@ -37,6 +37,8 @@ struct HvfEngineConfig: Equatable {
     /// The user's Windows display resolution ("WxH"); nil lets the VMM keep the
     /// firmware's resolution or add its 1280x800 default.
     var guestResolution: String? = nil
+    /// How the live display maps the Command key (HvfHostKeyChord.swift); host-side only.
+    var commandKeyMode: HvfCommandKeyMode = .mac
     var ctlFilePath: String
     /// The app deliberately prefers the high-performance renderer lane. It is
     /// a launch-policy switch only: falling back to balanced does not mutate

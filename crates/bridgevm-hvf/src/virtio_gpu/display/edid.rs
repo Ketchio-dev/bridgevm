@@ -1,8 +1,9 @@
-//! EDID base-block construction: the byte format the guest driver parses to
-//! decide which display modes exist.
+//! EDID construction: the byte format the guest driver parses to decide which
+//! display modes exist.
 
-pub(crate) fn build_edid(width: u32, height: u32) -> [u8; 128] {
-    let mut edid = [0u8; 128];
+/// The base block for `width`x`height` and one CTA-861 extension.
+pub(crate) fn build_edid(width: u32, height: u32) -> [u8; 256] {
+    let mut edid = [0u8; 256];
     edid[0..8].copy_from_slice(&[0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00]);
     edid[8..10].copy_from_slice(&encode_manufacturer("BVM"));
     edid[10..12].copy_from_slice(&0x0001u16.to_le_bytes());
@@ -52,7 +53,14 @@ pub(crate) fn build_edid(width: u32, height: u32) -> [u8; 128] {
         edid[39 + slot * 2] = bytes[1];
     }
 
-    let dtd = detailed_timing_descriptor(width, height, 120);
+    // The pixel clock field is 16 bits of 10 kHz (655.35 MHz): 120 Hz fits up
+    // to about 2560x1600, larger sizes get 60 Hz rather than a clamped clock.
+    let refresh_hz = if required_pixel_clock_10khz(width, height, 120) <= u64::from(u16::MAX) {
+        120
+    } else {
+        60
+    };
+    let dtd = detailed_timing_descriptor(width, height, refresh_hz);
     let pixel_clock_10khz = u16::from_le_bytes([dtd[0], dtd[1]]);
     let max_pixel_clock_10mhz = pixel_clock_10khz.div_ceil(1_000) as u8;
     edid[54..72].copy_from_slice(&dtd);
@@ -76,12 +84,37 @@ pub(crate) fn build_edid(width: u32, height: u32) -> [u8; 128] {
     ));
     edid[90..108].copy_from_slice(&monitor_descriptor_text(0xfc, b"BridgeVM GPU"));
     edid[108..126].copy_from_slice(&monitor_descriptor_text(0xfe, b"virtio-gpu"));
-    edid[126] = 0;
-    let sum = edid[..127]
-        .iter()
-        .fold(0u8, |acc, byte| acc.wrapping_add(*byte));
-    edid[127] = 0u8.wrapping_sub(sum);
+    edid[126] = 1; // extension blocks
+    edid[127] = checksum(&edid[..127]);
+    edid[128..].copy_from_slice(&cta_extension());
     edid
+}
+
+/// A CTA-861 extension whose only content is a video data block listing
+/// 3840x2160 (VIC 97) and 1920x1080 (VIC 16).
+///
+/// viogpudo sets aside its framebuffer memory once, when the driver starts:
+/// at least 16 MiB, more only for the largest mode it knows then. Later modes
+/// that do not fit are refused (STATUS_NO_MEMORY), so without this 3840x2160
+/// a host resize above 4,194,304 pixels fails: 2560x1600 fits, 3456x2234 does
+/// not. Its parser takes (byte 2 - 5) bytes from byte 4, the block header
+/// among them, so VIC 97 goes first.
+fn cta_extension() -> [u8; 128] {
+    let mut ext = [0u8; 128];
+    ext[0] = 0x02; // CTA-861 extension tag
+    ext[1] = 0x03; // revision 3
+    ext[2] = 7; // detailed timings would start here; there are none
+    ext[3] = 0x00; // no underscan, audio or YCbCr, no native detailed timings
+    ext[4] = 0x40 | 2; // video data block of two VICs
+    ext[5] = 97; // 3840x2160 at 60 Hz
+    ext[6] = 16; // 1920x1080 at 60 Hz
+    ext[127] = checksum(&ext[..127]);
+    ext
+}
+
+/// The byte that makes an EDID block sum to zero.
+fn checksum(bytes: &[u8]) -> u8 {
+    0u8.wrapping_sub(bytes.iter().fold(0u8, |acc, byte| acc.wrapping_add(*byte)))
 }
 
 /// One EDID standard-timing slot at 60 Hz, or the unused marker when the mode
@@ -105,18 +138,27 @@ fn standard_timing(width: u32, height: u32) -> [u8; 2] {
     [encoded_width as u8, aspect << 6]
 }
 
+fn blanking(width: u32, height: u32) -> (u32, u32) {
+    (160u32.max(width / 8), 45u32.max(height / 20))
+}
+
+/// The detailed timing's pixel clock in 10 kHz units, before any clamp.
+fn required_pixel_clock_10khz(width: u32, height: u32, refresh_hz: u32) -> u64 {
+    let (h_blank, v_blank) = blanking(width, height);
+    ((u64::from(width) + u64::from(h_blank))
+        * (u64::from(height) + u64::from(v_blank))
+        * u64::from(refresh_hz)
+        / 10_000)
+        .max(1)
+}
+
 pub(crate) fn detailed_timing_descriptor(width: u32, height: u32, refresh_hz: u32) -> [u8; 18] {
-    let h_blank = 160u32.max(width / 8);
-    let v_blank = 45u32.max(height / 20);
+    let (h_blank, v_blank) = blanking(width, height);
     let h_sync_offset = 48u32.min(h_blank / 3);
     let h_sync_width = 32u32.min(h_blank.saturating_sub(h_sync_offset).max(1));
     let v_sync_offset = 3u32;
     let v_sync_width = 5u32;
-    let requested_pixel_clock_10khz = ((u64::from(width) + u64::from(h_blank))
-        * (u64::from(height) + u64::from(v_blank))
-        * u64::from(refresh_hz)
-        / 10_000)
-        .max(1);
+    let requested_pixel_clock_10khz = required_pixel_clock_10khz(width, height, refresh_hz);
     let pixel_clock_10khz = requested_pixel_clock_10khz.min(u64::from(u16::MAX));
     if requested_pixel_clock_10khz > u64::from(u16::MAX) {
         eprintln!(

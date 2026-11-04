@@ -6,7 +6,7 @@ ENGINE="$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine"
 sources=()
 for name in HvfSessionInputDriver HvfSessionInputDriverObservation HvfTextInputTargetIdentity HvfSessionInputRouter HvfSessionInputGeneration HvfOrderedInputQueue HvfOrderedInputEvent \
   HvfRecoverableInputStream HvfNegotiatedInputStream HvfAcknowledgedInputStream \
-  HvfInputCapabilitiesRequest HvfInputCapabilityReceipt HvfUnicodeInputRequest HvfGuestInputEncoding HvfControlChordKeys \
+  HvfInputCapabilitiesRequest HvfInputCapabilityReceipt HvfUnicodeInputRequest HvfGuestInputEncoding HvfModifierChord HvfControlChordKeys \
   HvfPointerInputEncoding HvfPointerScrollEncoding HvfPointerHeldState HvfPointerCleanup HvfInputReceiptEnvelope HvfGuestResetRecord; do
   sources+=("$ENGINE/$name.swift")
 done

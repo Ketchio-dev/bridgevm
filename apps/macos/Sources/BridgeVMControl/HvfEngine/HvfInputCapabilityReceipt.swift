@@ -6,15 +6,21 @@ struct HvfInputCapabilityReceipt {
     var command: String { "INPUTCAPS \(id)" }
     private let id: String
     private var accepted: [String] = [], phase = Phase.header
-    /// Shift+Enter/Space and the Ctrl/Shift chord set, in any order after BVINPUT_CAPS.
-    private var markers: [String] { ["BVINPUT_KEYS \(id) SHIFT_ENTER_SPACE", "BVINPUT_CHORDS \(id) \(HvfControlChordKeys.token)"] }
+    /// Shift+Enter/Space, the Ctrl/Shift chord set and every generic chord, in any order after BVINPUT_CAPS.
+    private var markers: [String] {
+        ["BVINPUT_KEYS \(id) SHIFT_ENTER_SPACE", "BVINPUT_CHORDS \(id) \(HvfControlChordKeys.token)",
+         "BVINPUT_CHORDS \(id) \(HvfModifierChord.token)"]
+    }
+    /// Any modifiers plus a key and a bare modifier tap (HvfModifierChord); the agent builds every key then.
+    var modifierChords: Bool { accepted.contains(markers[2]) }
 
     init(id: UUID) { self.id = id.uuidString }
 
     func supports(_ event: HvfOrderedInputQueue.Event) -> Bool {
-        guard case let .key(key) = event else { return true }
+        guard case let .key(key) = event, !modifierChords else { return true }
         if ["shift+enter", "shift+space"].contains(key) { return accepted.contains(markers[0]) }
-        return !HvfControlChordKeys.extended.contains(key) || accepted.contains(markers[1])
+        if HvfControlChordKeys.extended.contains(key) { return accepted.contains(markers[1]) }
+        return HvfModifierChord.isBase(key)
     }
 
     mutating func consume(_ line: String) -> HvfInputCapabilitiesRequest.Outcome? {
