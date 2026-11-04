@@ -1,14 +1,15 @@
 import SwiftUI
 
 /// Restart for one VM. With the guest agent Windows restarts itself; otherwise the user confirms a
-/// Reset, which restarts the VM at once, as after a power cut.
+/// Reset, which restarts the VM at once, as after a power cut. The confirmation belongs to the guest
+/// boot it was asked for: the session drops it when that boot ends, which closes the dialog.
 @MainActor
 struct HvfRestartControl<Content: View>: View {
     @ObservedObject var session: HvfEngineSession
     let identifier: String
     private let content: (_ enabled: Bool, _ press: @escaping () -> Void) -> Content
-    @State private var prompt: HvfResetPrompt?
-    @State private var promptedRun: HvfOwnedRuntimeIdentity?
+    /// This control asked; another control on the same session shows nothing.
+    @State private var asked = false
     @State private var resultMessage: String?
 
     init(session: HvfEngineSession, identifier: String,
@@ -20,53 +21,41 @@ struct HvfRestartControl<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             content(session.vmmControlAvailable && !session.runtimeStartupWorkerPending) { press() }
-            if let text = session.restartRequest?.message ?? resultMessage {
+            if let text = session.restartRequest?.kind.message ?? session.restartNotice ?? resultMessage {
                 Text(text).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier(identifier + ".restart-status")
             }
         }
-        .onChange(of: session.restartRequest) { _, _ in resultMessage = nil }
-        .confirmationDialog(title, isPresented: confirming, titleVisibility: .visible, presenting: prompt) { prompt in
-            if prompt == .windowsHasNotRestarted {
-                Button("다시 요청") { finish(session.requestWindowsRestart()) }
+        .onChange(of: session.guestBoot) { _, _ in resultMessage = nil }
+        .confirmationDialog(title, isPresented: confirming, titleVisibility: .visible,
+                            presenting: session.resetConfirmation) { confirmation in
+            if confirmation.prompt == .windowsHasNotRestarted {
+                Button("다시 요청") { resultMessage = session.requestWindowsRestart().message }
                     .accessibilityIdentifier(identifier + ".restart-again")
             }
-            Button("재설정", role: .destructive) { finish(session.requestReset()) }
+            Button("재설정", role: .destructive) { resultMessage = session.requestReset().message }
                 .accessibilityIdentifier(identifier + ".confirm-reset")
-            Button("취소", role: .cancel) { self.prompt = nil }
-        } message: { prompt in
-            Text(Self.message(prompt))
+            Button("취소", role: .cancel) { session.cancelResetConfirmation() }
+        } message: { confirmation in
+            Text(Self.message(confirmation.prompt))
         }
     }
 
     private var title: String {
-        prompt == .windowsHasNotRestarted ? "Windows가 아직 다시 시작하지 않았습니다" : "VM을 재설정할까요?"
+        session.resetConfirmation?.prompt == .windowsHasNotRestarted
+            ? "Windows가 아직 다시 시작하지 않았습니다" : "VM을 재설정할까요?"
     }
 
     private var confirming: Binding<Bool> {
-        Binding(get: { prompt != nil }, set: { if !$0 { prompt = nil } })
+        Binding(get: { asked && session.resetConfirmation != nil },
+                set: { if !$0 { asked = false } })
     }
 
     private func press() {
         resultMessage = nil
-        switch session.requestRestart() {
-        case let .needsResetConfirmation(next):
-            promptedRun = session.ownedProcessIdentity
-            prompt = next
-        case let outcome:
-            resultMessage = outcome.message
-        }
-    }
-
-    /// The answer applies only to the run it was asked for.
-    private func finish(_ request: @autoclosure () -> HvfRestartOutcome) {
-        defer { prompt = nil }
-        guard session.ownedProcessIdentity == promptedRun else {
-            resultMessage = "VM 실행이 바뀌어 요청을 보내지 않았습니다."
-            return
-        }
-        resultMessage = request().message
+        let outcome = session.requestRestart()
+        if case .needsResetConfirmation = outcome { asked = true } else { resultMessage = outcome.message }
     }
 
     static func message(_ prompt: HvfResetPrompt) -> String {

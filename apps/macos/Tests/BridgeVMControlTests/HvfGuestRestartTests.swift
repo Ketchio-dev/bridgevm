@@ -14,7 +14,7 @@ final class HvfGuestRestartTests: XCTestCase {
 
             XCTAssertEqual(session.requestRestart(), .requested(.windowsAsked))
             XCTAssertEqual(try fixture.commands(), negotiated + ["shutdown.exe /r /t 0"])
-            XCTAssertEqual(session.restartRequest, .windowsAsked)
+            XCTAssertEqual(session.restartRequest?.kind, .windowsAsked)
 
             // Windows has not restarted yet (an app may hold it): a second press offers Reset.
             XCTAssertEqual(session.requestRestart(), .needsResetConfirmation(.windowsHasNotRestarted))
@@ -37,10 +37,10 @@ final class HvfGuestRestartTests: XCTestCase {
             session.beginOwnedInputBoot()
             session.connectionState = .booting
 
+            guard case .refused = session.requestReset() else { return XCTFail("a Reset nobody confirmed") }
             XCTAssertEqual(session.requestRestart(), .needsResetConfirmation(.agentUnavailable))
             XCTAssertNil(try fixture.bytes(fixture.input), "nothing before the user confirms")
 
-            XCTAssertEqual(session.requestReset(), .requested(.reset))
             XCTAssertEqual(session.requestReset(), .requested(.reset))
             XCTAssertEqual(session.requestRestart(), .requested(.reset))
             XCTAssertEqual(try fixture.bytes(fixture.input), Data("RESET\n".utf8),
@@ -60,6 +60,34 @@ final class HvfGuestRestartTests: XCTestCase {
             guard case .refused = session.requestReset() else { return XCTFail("reset during a Stop") }
             XCTAssertNil(try fixture.bytes(fixture.input))
             XCTAssertEqual(try fixture.commands(), [])
+        }
+    }
+
+    /// A Reset the VMM took stays pending, however long the reset record takes, and only that record
+    /// (or another boot change) ends it.
+    func testAnAcknowledgedResetStaysPendingUntilItsRecord() throws {
+        let fixture = try HvfRuntimeKeyboardDraftFixture()
+        defer { fixture.remove() }
+        try fixture.withSession { session in
+            var now: TimeInterval = 100
+            session.ownedStartNow = { now }
+            session.beginOwnedInputBoot()
+            session.connectionState = .booting
+            XCTAssertEqual(session.requestRestart(), .needsResetConfirmation(.agentUnavailable))
+            XCTAssertEqual(session.requestReset(), .requested(.reset))
+            try fixture.appendLog("BVPOWER host reset t=4200\n")
+            session.poll()
+            now += 30
+            session.poll()
+            XCTAssertEqual(session.restartRequest?.kind, .reset)
+            XCTAssertEqual(session.restartRequest?.acknowledged, true)
+            XCTAssertEqual(session.requestRestart(), .requested(.reset), "no second line")
+
+            try fixture.appendLog(HvfGuestResetRecord.processRecreation + "\n")
+            session.poll()
+            XCTAssertNil(session.restartRequest)
+            XCTAssertEqual(session.requestRestart(), .needsResetConfirmation(.agentUnavailable))
+            XCTAssertEqual(try fixture.bytes(fixture.input), Data("RESET\n".utf8))
         }
     }
 }
