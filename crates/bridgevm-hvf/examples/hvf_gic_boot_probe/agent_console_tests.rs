@@ -44,6 +44,7 @@ pub(super) mod tests {
             share: None,
             share_old_agent_warned: false,
             clock: HostClock::default(),
+            dns_flush: DnsFlush::default(),
         }
     }
 

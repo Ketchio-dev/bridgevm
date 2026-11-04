@@ -39,6 +39,7 @@ final class HvfEngineSession: ObservableObject {
     var agentEvents = BvAgentEvent.Stream() // run.log's lines across polls, with tailReader
     var lastHeartbeatDate: Date?
     var serviceStarted = false
+    var hardwareCursorOffSent = false // HWCursor=0 went to the guest after the setting was turned off
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
     let inputDriver = HvfSessionInputDriver()
     let appPacing = HvfAppPacingRecords() // the session's app-side display and input records

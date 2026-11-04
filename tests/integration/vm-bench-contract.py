@@ -25,7 +25,7 @@ import vm_bench  # noqa: E402
 GUEST_OFF = "guest powered off; host teardown follows"
 BOOT_ARGS = dict(ready_timeout=600, settle_s=0, idle_s=0, pointer=False, desktop_mode=None, display=False,
                  shutdown_diag=False, stall_idle=False, stall=False, net=False, only=None, skip_suite=True,
-                 audio=False)
+                 audio=False, hw_cursor=False)
 
 
 class Clock:
@@ -119,6 +119,19 @@ class VmBenchContract(unittest.TestCase):
                                                        "--agent-service-control", "--input-control")]
         for path in paths + [launched["env"]["BRIDGEVM_PREBUILT_PROBE"]]:
             self.assertTrue(Path(path).is_absolute(), path)
+
+    def test_an_unknown_only_test_stops_before_any_vm_starts(self):
+        argv = ["vm_bench.py", "run", "--engine", "qemu", "--disk", "d", "--vars", "v", "--out", "o",
+                "--only", "cpu-sha256-mt,mem-first-tuch"]
+        with mock.patch.object(sys, "argv", argv), mock.patch.object(vm_bench, "run") as run, \
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            vm_bench.main()
+        run.assert_not_called()
+        argv[-1] = "cpu-sha256-1t,cpu-sha256-mt,mem-first-touch,mem-copy"
+        with mock.patch.object(sys, "argv", argv), mock.patch.object(vm_bench, "run") as run, \
+                mock.patch.object(vm_bench.signal, "signal"):
+            vm_bench.main()
+        self.assertEqual(run.call_args.args[0].only, argv[-1])
 
     def test_guest_off_is_the_power_off_line_the_probe_prints_before_persisting_media(self):
         runtime = (ROOT / "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs").read_text()

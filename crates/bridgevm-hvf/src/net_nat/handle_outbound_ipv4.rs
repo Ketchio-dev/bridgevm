@@ -40,6 +40,10 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
                 .saturating_add(self.pending_socket_errors);
             self.pending_socket_errors = 0;
         }
+        // Notice a resolver change without waiting for a guest query: a name
+        // Windows cached as failed sends none until its cache is flushed.
+        let now = self.now_ms();
+        self.dns.server_at(now);
         self.poll_udp(guest_mac, reply_queue, stats);
         self.poll_tcp(guest_mac, reply_queue, stats);
         self.poll_icmp(guest_mac, reply_queue, stats);
@@ -49,6 +53,10 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
     fn active_flow_counts(&self) -> (usize, usize) {
         (self.tcp_flows.len(), self.udp_flows.len())
     }
+
+    fn dns_server_changes(&self) -> u64 {
+        self.dns.changes
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -57,8 +65,8 @@ pub(crate) struct UdpFlowKey {
     pub(crate) guest_port: u16,
     pub(crate) public_dst: Ipv4Addr,
     pub(crate) public_dst_port: u16,
-    pub(crate) socket_dst: Ipv4Addr,
-    pub(crate) socket_dst_port: u16,
+    /// The host socket's peer; for 10.0.2.3:53 the resolver at flow creation.
+    pub(crate) socket_dst: std::net::SocketAddr,
 }
 
 #[derive(Debug)]

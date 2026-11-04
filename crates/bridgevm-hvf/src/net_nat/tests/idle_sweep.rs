@@ -10,8 +10,7 @@ fn udp_flow(port: u16) -> (UdpFlowKey, UdpFlow) {
             guest_port: port,
             public_dst: [127, 0, 0, 1],
             public_dst_port: port,
-            socket_dst: [127, 0, 0, 1],
-            socket_dst_port: port,
+            socket_dst: SocketAddrV4::new(StdIpv4Addr::LOCALHOST, port).into(),
         },
         UdpFlow {
             socket,

@@ -13,6 +13,7 @@ impl AgentConsoleHarness {
         }
         self.inbound_scratch.clear();
         platform.virtio_console_agent_drain_inbound_into(&mut self.inbound_scratch);
+        self.observe_dns_server(platform);
     }
 
     /// Process replies and host filesystem work without borrowing a platform or guest RAM.

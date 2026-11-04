@@ -45,4 +45,6 @@ pub struct NatStats {
     pub tcp_window_full: u64,
     /// Socket sweeps skipped while a full RX ring of frames waited.
     pub sweeps_deferred: u64,
+    /// Times guest DNS moved to another host nameserver (resolv.conf changed).
+    pub dns_server_changes: u64,
 }

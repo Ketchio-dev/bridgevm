@@ -134,6 +134,8 @@ pub struct AgentConsoleHarness {
     pub(super) share_old_agent_warned: bool,
     /// Host suspension detection for the guest clock resync.
     pub(super) clock: HostClock,
+    /// NAT resolver switches, for the guest DNS cache flush.
+    pub(super) dns_flush: DnsFlush,
 }
 
 /// Reassembly state for a chunked GET reply (GETBEG -> GETCHUNK* -> GETEND).
