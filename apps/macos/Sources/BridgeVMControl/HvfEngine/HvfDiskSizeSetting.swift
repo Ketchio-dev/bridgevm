@@ -51,8 +51,6 @@ struct HvfDiskSizeSetting: View {
     private var note: String {
         if busy { return "디스크를 늘리는 중…" }
         if let notice = session.diskGrowNotice { return notice }
-        if let marker = HvfDiskGrow.pendingMarker(config: config),
-           FileManager.default.fileExists(atPath: marker.path) { return HvfDiskGrow.pendingNote }
         if !stopped { return HvfDiskGrow.stopFirst }
         if currentBytes != nil, range == nil {
             return "Mac 볼륨에 여유 공간이 부족해 디스크를 늘릴 수 없습니다. 10 GiB 넘게 여유 공간을 확보하세요."

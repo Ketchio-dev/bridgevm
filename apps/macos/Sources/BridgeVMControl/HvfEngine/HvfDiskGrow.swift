@@ -7,14 +7,16 @@ import Foundation
 /// (ftruncate on the selected generation, refused while the VM runs) is instant and sparse: no Mac
 /// space is used until Windows writes there. The scripted install leaves ESP, MSR, then C: up to
 /// the end of the disk, with no recovery partition after it (scripts/win-assets/bvdiskpart.txt),
-/// so C: simply extends. A grow leaves `metadata/disk-grow-pending` in the bundle; at the next
-/// `BVAGENT SERVICE start` the session runs `extendCommand` through the agent's plain RUN verb,
-/// which every agent has. The file holds the failed attempts so far: a `failed` report keeps it for
-/// the next start until `maximumAttempts`, any other report removes it. Without a report (no agent)
-/// the file stays, and the setting says to extend C: in Disk Management. The session's
-/// `diskGrowNotice` is the latest message, so the guest's report replaces the grow's.
+/// so C: simply extends. A grow leaves the permanent flag `metadata/disk-grown` in the bundle, and
+/// at every `BVAGENT SERVICE start` of that VM the session runs `extendCommand` through the agent's
+/// plain RUN verb, which every agent has. The command is idempotent (`already` unless C: can gain
+/// more than 1000 MiB), so a disk whose partition table went back to before an extend, as after
+/// restoring a snapshot taken between the grow and the next boot, is extended again. The flag holds
+/// the consecutive failed reports: `maximumAttempts` of them stop the check until the next grow, and
+/// the notice then says to extend C: in Disk Management; any other report resets it to 0. The
+/// session's `diskGrowNotice` is the latest message, so the guest's report replaces the grow's.
 enum HvfDiskGrow {
-    static let pendingName = "metadata/disk-grow-pending"
+    static let grownName = "metadata/disk-grown"
     static let bytesPerGiB: UInt64 = 1 << 30
     /// Free space the largest offered size still leaves on the Mac volume.
     static let safetyMarginBytes: UInt64 = 10 << 30
@@ -28,13 +30,15 @@ enum HvfDiskGrow {
     static let pendingNote = "다음 Windows 시작 때 C: 드라이브를 자동으로 확장합니다. 확장되지 않으면 Windows의 디스크 관리에서 C: 볼륨을 확장하세요."
     static let stopFirst = "VM을 완전히 중지한 뒤 디스크 크기를 변경하세요."
 
-    /// Whole GiB sizes above the current one that leave the margin free; nil when none does.
+    /// Whole GiB sizes at least 1 GiB above the current one (the extend acts only on more than
+    /// 1000 MiB) that leave the margin free; nil when none does.
     static func sizeRange(currentBytes: UInt64, availableBytes: UInt64) -> ClosedRange<Int>? {
         let room = availableBytes > safetyMarginBytes ? availableBytes - safetyMarginBytes : 0
         // ftruncate takes a signed off_t.
         let (sum, overflow) = currentBytes.addingReportingOverflow(room)
         let largestBytes = overflow ? UInt64(Int64.max) : min(sum, UInt64(Int64.max))
-        let smallest = currentBytes / bytesPerGiB + 1, largest = largestBytes / bytesPerGiB
+        let smallest = (currentBytes / bytesPerGiB) + (currentBytes % bytesPerGiB == 0 ? 1 : 2)
+        let largest = largestBytes / bytesPerGiB
         guard smallest <= largest else { return nil }
         return Int(smallest)...Int(largest)
     }
@@ -55,21 +59,21 @@ enum HvfDiskGrow {
         return bundle
     }
 
-    static func pendingMarker(config: HvfEngineConfig) -> URL? {
-        bundle(config: config)?.appendingPathComponent(pendingName)
+    static func grownFlag(config: HvfEngineConfig) -> URL? {
+        bundle(config: config)?.appendingPathComponent(grownName)
     }
 
     // MARK: guest
 
-    /// One agent line that extends C: to the largest size Windows supports and prints
-    /// `BVDISK result=<extended|already|failed> [size=<bytes>] [detail=...]`.
+    /// One agent line that extends C: to the largest size Windows supports when that gains more
+    /// than 1000 MiB, and prints `BVDISK result=<extended|already|failed> [size=<bytes>] [detail=...]`.
     static let extendCommand: String = {
         let script = #"""
             $ErrorActionPreference = 'Stop'
             try {
               $size = (Get-Partition -DriveLetter C).Size
               $max = (Get-PartitionSupportedSize -DriveLetter C).SizeMax
-              if ($max -le $size + 1MB) { 'BVDISK result=already size=' + $size; exit }
+              if ($max -le $size + 1000MB) { 'BVDISK result=already size=' + $size; exit }
               Resize-Partition -DriveLetter C -Size $max
               'BVDISK result=extended size=' + (Get-Partition -DriveLetter C).Size
             } catch { 'BVDISK result=failed detail=' + (($_.Exception.Message -replace '\s+', ' ').Trim()) }
@@ -131,8 +135,8 @@ enum HvfDiskGrow {
         let executable: URL
         let disk: URL
         let vars: URL
-        var pendingMarker: URL {
-            disk.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(HvfDiskGrow.pendingName)
+        var grownFlag: URL {
+            disk.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(HvfDiskGrow.grownName)
         }
     }
 
@@ -155,20 +159,20 @@ enum HvfDiskGrow {
         return try diskBytes(completion.text)
     }
 
-    /// Grows the selected disk to `bytes`, then leaves the marker the next agent start extends C: for,
-    /// with no failed attempt yet.
+    /// Grows the selected disk to `bytes`, then sets the flag that makes every agent start extend
+    /// C:, with no failed report yet.
     static func grow(_ plan: Plan, to bytes: UInt64) throws -> UInt64 {
         let completion = try HvfHelperProcess.run(
             plan.executable, ["grow", plan.disk.path, plan.vars.path, String(bytes)])
         guard completion.succeeded else { throw failure(completion, action: "디스크를 늘리지") }
         let grown = try diskBytes(completion.text)
-        try Data("0\n".utf8).write(to: plan.pendingMarker, options: [.atomic])
+        try Data("0\n".utf8).write(to: plan.grownFlag, options: [.atomic])
         return grown
     }
 
-    /// Failed extend attempts the marker records; anything unreadable counts as none.
-    static func failedAttempts(_ marker: URL) -> Int {
-        let text = (try? String(contentsOf: marker, encoding: .utf8)) ?? ""
+    /// Consecutive failed reports the flag records; anything unreadable counts as none.
+    static func failedAttempts(_ flag: URL) -> Int {
+        let text = (try? String(contentsOf: flag, encoding: .utf8)) ?? ""
         return Int(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
     }
 
@@ -214,12 +218,14 @@ extension HvfEngineSession {
         }
     }
 
-    /// At `BVAGENT SERVICE start` after a grow: extend C:, and say how it went. A reply without a
-    /// report keeps the marker for the next agent start; so does a failure, up to `maximumAttempts`.
+    /// At every `BVAGENT SERVICE start` of a VM whose disk the app grew: extend C: if it can gain
+    /// space, and say how it went. A reply without a report changes nothing; a failed report counts
+    /// toward `maximumAttempts`, after which the check waits for the next grow; any other resets it.
     @discardableResult
-    func extendGrownDiskIfPending(runner: HvfDisplayDriverInstall.Runner? = nil) -> Task<Void, Never>? {
-        guard !diskExtendInFlight, let marker = HvfDiskGrow.pendingMarker(config: config),
-              FileManager.default.fileExists(atPath: marker.path) else { return nil }
+    func extendGrownDisk(runner: HvfDisplayDriverInstall.Runner? = nil) -> Task<Void, Never>? {
+        guard !diskExtendInFlight, let flag = HvfDiskGrow.grownFlag(config: config),
+              FileManager.default.fileExists(atPath: flag.path),
+              HvfDiskGrow.failedAttempts(flag) < HvfDiskGrow.maximumAttempts else { return nil }
         diskExtendInFlight = true
         let run = runner ?? { [weak self] command, timeout in
             guard let self else { return ("", -1) }
@@ -229,16 +235,11 @@ extension HvfEngineSession {
             let reply = await run(HvfDiskGrow.extendCommand, HvfDiskGrow.extendTimeout)
             diskExtendInFlight = false
             guard let outcome = HvfDiskGrow.outcome(reply: reply.output) else { return }
-            if case .failed = outcome {
-                let attempts = HvfDiskGrow.failedAttempts(marker) + 1
-                if attempts < HvfDiskGrow.maximumAttempts,
-                   (try? Data("\(attempts)\n".utf8).write(to: marker, options: [.atomic])) != nil {
-                    diskGrowNotice = outcome.retryNotice
-                    return
-                }
-            }
-            try? FileManager.default.removeItem(at: marker)
-            diskGrowNotice = outcome.notice
+            var failures = 0
+            if case .failed = outcome { failures = HvfDiskGrow.failedAttempts(flag) + 1 }
+            try? Data("\(failures)\n".utf8).write(to: flag, options: [.atomic])
+            let retried = failures > 0 && failures < HvfDiskGrow.maximumAttempts
+            diskGrowNotice = retried ? outcome.retryNotice : outcome.notice
         }
     }
 }
