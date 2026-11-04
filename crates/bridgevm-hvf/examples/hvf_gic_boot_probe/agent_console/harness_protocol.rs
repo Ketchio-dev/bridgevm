@@ -112,6 +112,7 @@ impl AgentConsoleHarness {
             last_alive: None,
             share,
             share_old_agent_warned: false,
+            clock: HostClock::from_env(),
         })
     }
     /// Frame drained agent bytes into `line_scratch`. An unterminated reply
