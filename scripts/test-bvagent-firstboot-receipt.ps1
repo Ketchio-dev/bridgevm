@@ -11,7 +11,7 @@ foreach ($path in @($root, $log, $marker)) {
     if (Test-Path -LiteralPath $path) { throw ('refusing to replace existing guest state: ' + $path) }
 }
 $createdBase = -not (Test-Path -LiteralPath $base)
-$assets = @('bvagent.ps1', 'bvagent-firstboot.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-window-inventory.ps1', 'bv-window-inventory.cs', 'bvagent-task.ps1')
+$assets = @('bvagent.ps1', 'bvagent-firstboot.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-window-inventory.ps1', 'bv-window-inventory.cs', 'bvagent-task.ps1', 'bvagent-update.ps1')
 $stub = "function Start-VerifiedGuestAgentTask([string]`$TaskName, [string]`$AgentPath) {`r`n    Set-Content -LiteralPath 'C:\BridgeVM\provisioning\task-started.txt' -Value (`$TaskName + '|' + `$AgentPath)`r`n    return 'BRIDGEVM\contract'`r`n}`r`n"
 
 function Get-Sha256([string]$Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
