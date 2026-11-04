@@ -1,0 +1,521 @@
+//! Clipboard images with an agent that answered CLIPCAPS with IMAGE_PNG and
+//! the directory it keeps clipboard files in. PNG bytes move as files there,
+//! through the shared folder's chunked PUT and GET verbs, never in a command
+//! line:
+//! - Mac to Windows: PUTBEG/PUTCHUNK/PUTEND `<dir>\host.png`, then
+//!   `CLIPSETIMG <b64(path)> <b64(text)|->`, which sets the text (when the
+//!   copy has one) and the image in one clipboard write. The text alone went
+//!   first as a CLIPSET, as before.
+//! - Windows to Mac: CLIPX replaces CLIPGET and adds the image's size and
+//!   SHA-256. A new image is fetched with `GET <dir>\guest.png` (no other path)
+//!   and reaches the Mac only as a PNG whose signature and IHDR are within the
+//!   limits and whose SHA-256 matches. Nothing past the header is decoded.
+//!
+//! `ClipBaseline::image` is the image the guest is known to hold, so an image
+//! never bounces back. Over a limit, an image stays where it was copied with
+//! one log line, which the app shows as a notice. An agent without the marker
+//! keeps text only, exactly as before.
+
+use super::*;
+use host_pasteboard::{
+    admit_png, parse_digest_hex, within_limits, HostImage, PngImage, PngRefusal,
+    CLIP_IMAGE_MAX_BYTES, CLIP_IMAGE_MAX_SIDE,
+};
+
+#[cfg(test)]
+#[path = "clip_image_tests.rs"]
+mod tests;
+
+pub(super) const CLIP_CAPS_IMAGE_MARKER: &str = "IMAGE_PNG";
+/// Longest clipboard directory the agent may announce, in bytes.
+const MAX_CLIP_DIR_BYTES: usize = 1024;
+
+/// The agent's clipboard file directory, from its CLIPCAPS reply.
+pub(super) struct ClipImages {
+    pub(super) dir: String,
+}
+
+impl ClipImages {
+    pub(super) fn host_path(&self) -> String {
+        format!("{}\\host.png", self.dir)
+    }
+    pub(super) fn guest_path(&self) -> String {
+        format!("{}\\guest.png", self.dir)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ClipImagePhase {
+    Beg,
+    Chunk,
+    End,
+    Set,
+}
+
+/// A Mac image on its way to the guest clipboard.
+#[derive(Clone)]
+pub(super) struct ClipImagePush {
+    pub(super) png: PngImage,
+    /// The copy's text (LF), set together with the image.
+    pub(super) text: Option<String>,
+    pub(super) next_chunk: usize,
+    pub(super) phase: ClipImagePhase,
+}
+
+impl ClipImagePush {
+    pub(super) fn new(png: PngImage, text: Option<String>) -> Self {
+        Self {
+            png,
+            text,
+            next_chunk: 0,
+            phase: ClipImagePhase::Beg,
+        }
+    }
+    fn chunks(&self) -> usize {
+        self.png.bytes.len().div_ceil(SHARE_PUT_CHUNK_BYTES)
+    }
+}
+
+/// Restart an interrupted image push from PUTBEG, which truncates the file.
+pub(super) fn rewind_clip_image_push(mut req: ServiceReq) -> ServiceReq {
+    if let ServiceReq::ClipImagePush(push) = &mut req {
+        push.next_chunk = 0;
+        push.phase = ClipImagePhase::Beg;
+    }
+    req
+}
+
+/// The image part of a CLIPX reply: `<w> <h> <bytes> <sha256|-> <b64(path)|->`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct GuestImage {
+    pub(super) width: u32,
+    pub(super) height: u32,
+    pub(super) bytes: usize,
+    pub(super) digest: Option<[u8; 32]>,
+    pub(super) path: Option<String>,
+}
+
+/// One refused guest image, so a re-polled one stays one log line.
+pub(super) type GuestImageKey = (u32, u32, usize, Option<[u8; 32]>);
+
+impl GuestImage {
+    fn key(&self) -> GuestImageKey {
+        (self.width, self.height, self.bytes, self.digest)
+    }
+}
+
+/// CLIPX `<w> <h> <bytes> <sha256|-> <b64(path)|-> <b64(text)>`: the image
+/// (None without one) and the text's base64, or Err when malformed.
+pub(super) fn parse_clipx(rest: &str) -> Result<(Option<GuestImage>, &str), ()> {
+    let mut fields = rest.splitn(6, ' ');
+    let mut next = || fields.next().ok_or(());
+    let width = next()?.parse::<u32>().map_err(|_| ())?;
+    let height = next()?.parse::<u32>().map_err(|_| ())?;
+    let bytes = next()?.parse::<usize>().map_err(|_| ())?;
+    let digest = match next()? {
+        "-" => None,
+        hex => Some(parse_digest_hex(hex).ok_or(())?),
+    };
+    let path = match next()? {
+        "-" => None,
+        b64 => Some(
+            base64_decode(b64)
+                .ok()
+                .and_then(|path| String::from_utf8(path).ok())
+                .ok_or(())?,
+        ),
+    };
+    let text = next()?;
+    let present = width > 0 || height > 0 || bytes > 0 || digest.is_some();
+    let image = present.then_some(GuestImage {
+        width,
+        height,
+        bytes,
+        digest,
+        path,
+    });
+    Ok((image, text))
+}
+
+/// The clipboard directory a CLIPCAPS reply announces with IMAGE_PNG. Unknown
+/// markers are ignored.
+pub(super) fn parse_clip_caps(rest: &str) -> Option<ClipImages> {
+    let mut words = rest.split_whitespace();
+    while let Some(word) = words.next() {
+        if word != CLIP_CAPS_IMAGE_MARKER {
+            continue;
+        }
+        let dir = base64_decode(words.next()?).ok()?;
+        let dir = String::from_utf8(dir).ok()?;
+        let dir = dir.trim_end_matches('\\');
+        let usable = !dir.is_empty()
+            && dir.len() <= MAX_CLIP_DIR_BYTES
+            && !dir.chars().any(char::is_control);
+        return usable.then(|| ClipImages {
+            dir: dir.to_owned(),
+        });
+    }
+    None
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum GuestImageRefusal {
+    TooLarge,
+    UnexpectedPath,
+    NotPng,
+    Mismatch,
+    GetError,
+    Malformed,
+}
+
+impl GuestImageRefusal {
+    fn reason(self) -> &'static str {
+        match self {
+            Self::TooLarge => "too-large",
+            Self::UnexpectedPath => "unexpected-path",
+            Self::NotPng => "not-png",
+            Self::Mismatch => "mismatch",
+            Self::GetError => "get-error",
+            Self::Malformed => "malformed",
+        }
+    }
+}
+
+/// The bounded refusal record: sizes only, never image or path content. It
+/// names no direction, so the app's run.log parser never reads it as a sync.
+pub(super) fn guest_image_refusal_line(
+    refusal: GuestImageRefusal,
+    image: Option<&GuestImage>,
+    t_ms: u128,
+) -> String {
+    let reason = refusal.reason();
+    match image {
+        Some(image) => format!(
+            "BVAGENT CLIPSYNC refused guest-image {reason} bytes={} width={} height={} \
+             limit-bytes={CLIP_IMAGE_MAX_BYTES} limit-side={CLIP_IMAGE_MAX_SIDE} t={t_ms}",
+            image.bytes, image.width, image.height
+        ),
+        None => format!("BVAGENT CLIPSYNC refused guest-image {reason} t={t_ms}"),
+    }
+}
+
+impl AgentConsoleHarness {
+    /// CLIPCAPS reply: IMAGE_PNG switches images on; a bare CLIPCAPS, or the
+    /// unknown-token OUT of an agent that predates it, keeps text only.
+    pub(super) fn handle_clip_caps_reply(&mut self, line: &str, now: Instant) {
+        let images = if let Some(rest) = line.strip_prefix("CLIPCAPS") {
+            parse_clip_caps(rest)
+        } else if line.starts_with("OUT ") || line.starts_with("ERR") {
+            None
+        } else {
+            return;
+        };
+        self.complete_in_flight();
+        let on = images.is_some();
+        if !on {
+            // Nothing queued for the old agent can be served; the baseline
+            // image means nothing to a text-only clipboard sync.
+            self.queue.retain(|req| {
+                !matches!(
+                    req,
+                    ServiceReq::ClipImagePush(_) | ServiceReq::ClipImagePull { .. }
+                )
+            });
+            self.last_synced.image = None;
+        }
+        self.clip_images = images;
+        if let Some(pasteboard) = self.pasteboard.as_ref() {
+            pasteboard.set_images(on);
+        }
+        println!(
+            "BVAGENT CLIPSYNC images {} t={}",
+            if on { "on" } else { "off" },
+            self.t_ms(now)
+        );
+    }
+
+    /// A Mac copy with an image: text first under the text rules, then the
+    /// image with that text. Called only while images are on.
+    pub(super) fn enqueue_host_image(&mut self, text: Option<String>, png: PngImage, now: Instant) {
+        let text = text.filter(|text| {
+            let fits = text.len() <= self.clip_max_bytes;
+            if !fits {
+                println!(
+                    "BVAGENT CLIPSYNC skip bytes={} too-large t={}",
+                    text.len(),
+                    self.t_ms(now)
+                );
+            }
+            fits
+        });
+        let normalized = text.as_deref().map(normalize_clip);
+        let settled = !self.last_synced.rebaseline && !self.clip_push_pending();
+        let text_held = settled && self.last_synced.text == normalized;
+        if text_held && self.last_synced.image == Some(png.digest) {
+            return;
+        }
+        self.drop_queued_host_pushes();
+        if let Some(text) = text.as_ref().filter(|_| !text_held) {
+            self.queue.push_back(ServiceReq::ClipPush(text.clone()));
+        }
+        self.queue
+            .push_back(ServiceReq::ClipImagePush(ClipImagePush::new(png, text)));
+    }
+
+    /// A Mac image over a limit stays on the Mac, as an oversized text does.
+    pub(super) fn skip_host_image(&mut self, image: &HostImage, now: Instant) {
+        if let HostImage::TooLarge {
+            bytes,
+            width,
+            height,
+        } = image
+        {
+            println!(
+                "BVAGENT CLIPSYNC skip image too-large bytes={bytes} width={width} height={height} \
+                 limit-bytes={CLIP_IMAGE_MAX_BYTES} limit-side={CLIP_IMAGE_MAX_SIDE} t={}",
+                self.t_ms(now)
+            );
+        }
+    }
+
+    pub(super) fn drop_queued_host_pushes(&mut self) {
+        self.queue.retain(|req| {
+            !matches!(
+                req,
+                ServiceReq::ClipPush(_) | ServiceReq::ClipImagePush(_)
+            )
+        });
+    }
+
+    /// The image part of a CLIPX reply, after its text was handled.
+    /// `learning` is the rebaseline the text part consumed: the image the
+    /// guest holds then is learned, never published.
+    pub(super) fn handle_guest_image(
+        &mut self,
+        image: Option<GuestImage>,
+        learning: bool,
+        now: Instant,
+    ) {
+        let Some(image) = image else {
+            self.last_synced.image = None;
+            return;
+        };
+        if learning {
+            self.last_synced.image = image.digest;
+            return;
+        }
+        if image.digest.is_some() && self.last_synced.image == image.digest {
+            return;
+        }
+        self.last_synced.image = image.digest;
+        let expected = self.clip_images.as_ref().map(ClipImages::guest_path);
+        let refusal = if !within_limits(image.bytes, image.width, image.height) {
+            Some(GuestImageRefusal::TooLarge)
+        } else if image.digest.is_none() || image.bytes == 0 {
+            Some(GuestImageRefusal::Malformed)
+        } else if expected.is_none() || image.path != expected {
+            Some(GuestImageRefusal::UnexpectedPath)
+        } else {
+            None
+        };
+        if let Some(refusal) = refusal {
+            self.refuse_guest_image(refusal, Some(&image), now);
+            return;
+        }
+        if let Some(digest) = image.digest {
+            // Next on the wire, so no later CLIPX can replace guest.png first.
+            self.queue.push_front(ServiceReq::ClipImagePull {
+                digest,
+                bytes: image.bytes,
+            });
+        }
+    }
+
+    pub(super) fn refuse_guest_image(
+        &mut self,
+        refusal: GuestImageRefusal,
+        image: Option<&GuestImage>,
+        now: Instant,
+    ) {
+        if let Some(image) = image {
+            if self.last_synced.refused_image == Some(image.key()) {
+                return;
+            }
+            self.last_synced.refused_image = Some(image.key());
+        }
+        println!("{}", guest_image_refusal_line(refusal, image, self.t_ms(now)));
+    }
+
+    /// PUT, then CLIPSETIMG, one reply at a time; the in-flight request keeps
+    /// the wire for the whole push, as a shared-folder PUT does.
+    pub(super) fn handle_clip_image_push_reply(
+        &mut self,
+        line: &str,
+        now: Instant,
+        send: &mut dyn FnMut(&[u8]),
+    ) {
+        let Some((ServiceReq::ClipImagePush(push), sent_at)) = self.in_flight.as_mut() else {
+            return;
+        };
+        let error = match push.phase {
+            ClipImagePhase::Beg => "ERR PUTBEG",
+            ClipImagePhase::Chunk => "ERR PUTCHUNK",
+            ClipImagePhase::End => "ERR PUTEND",
+            ClipImagePhase::Set => "ERR CLIPSETIMG",
+        };
+        let acked = match push.phase {
+            ClipImagePhase::Beg => line == "OK PUTBEG",
+            ClipImagePhase::Chunk => {
+                line.strip_prefix("OK PUTCHUNK ")
+                    .and_then(|seq| seq.parse::<usize>().ok())
+                    == push.next_chunk.checked_sub(1)
+            }
+            ClipImagePhase::End => line.starts_with("PUTOK "),
+            ClipImagePhase::Set => line == "OK CLIPSETIMG" || line.starts_with("OK CLIPSETIMG "),
+        };
+        if !acked {
+            // An agent that lost the verb answers OUT; any other line is not ours.
+            let set_refused = push.phase == ClipImagePhase::Set && line.starts_with("OUT ");
+            if line.starts_with(error) || set_refused {
+                println!("BVAGENT CLIPSYNC host->guest image-error {line}");
+                self.last_synced.rebaseline = true;
+                self.in_flight = None;
+            }
+            return;
+        }
+        *sent_at = now;
+        let line_out = &mut self.service_line_scratch;
+        line_out.clear();
+        match push.phase {
+            ClipImagePhase::Beg | ClipImagePhase::Chunk if push.next_chunk < push.chunks() => {
+                let seq = push.next_chunk;
+                let start = seq * SHARE_PUT_CHUNK_BYTES;
+                let end = (start + SHARE_PUT_CHUNK_BYTES).min(push.png.bytes.len());
+                let _ = write!(line_out, "PUTCHUNK {seq} ");
+                base64_encode_into(&push.png.bytes[start..end], line_out);
+                line_out.push('\n');
+                push.next_chunk += 1;
+                push.phase = ClipImagePhase::Chunk;
+            }
+            ClipImagePhase::Beg | ClipImagePhase::Chunk => {
+                let _ = writeln!(line_out, "PUTEND {}", push.chunks());
+                push.phase = ClipImagePhase::End;
+            }
+            ClipImagePhase::End => {
+                let Some(images) = self.clip_images.as_ref() else {
+                    self.in_flight = None;
+                    return;
+                };
+                line_out.push_str("CLIPSETIMG ");
+                base64_encode_into(images.host_path().as_bytes(), line_out);
+                match push.text.as_deref() {
+                    Some(text) => {
+                        line_out.push(' ');
+                        to_guest_crlf_into(text, &mut self.clip_crlf_scratch);
+                        base64_encode_into(self.clip_crlf_scratch.as_bytes(), line_out);
+                    }
+                    None => line_out.push_str(" -"),
+                }
+                line_out.push('\n');
+                push.phase = ClipImagePhase::Set;
+            }
+            ClipImagePhase::Set => {
+                let Some((ServiceReq::ClipImagePush(push), _)) = self.in_flight.take() else {
+                    return;
+                };
+                let text = push.text.as_deref().map(normalize_clip);
+                self.last_synced.text = text.clone();
+                self.last_synced.guest_text = text;
+                self.last_synced.image = Some(push.png.digest);
+                self.last_synced.rebaseline = false;
+                println!(
+                    "BVAGENT CLIPSYNC host->guest image bytes={} width={} height={} t={}",
+                    push.png.bytes.len(),
+                    push.png.width,
+                    push.png.height,
+                    self.t_ms(now)
+                );
+                return;
+            }
+        }
+        self.last_send = Some(now);
+        send(self.service_line_scratch.as_bytes());
+    }
+
+    /// GETBEG/GETCHUNK accumulate as for any GET; GETEND checks the file and
+    /// writes it to the Mac with the guest's current text.
+    pub(super) fn handle_clip_image_pull_reply(&mut self, line: &str, now: Instant) {
+        let error = line.starts_with("ERR");
+        if !error && !line.starts_with("GETEND ") {
+            return;
+        }
+        let Some((ServiceReq::ClipImagePull { digest, bytes }, _)) = self.in_flight.take() else {
+            return;
+        };
+        let finished = self.take_finished_get();
+        if error {
+            self.refuse_guest_image(GuestImageRefusal::GetError, None, now);
+            return;
+        }
+        let expected = self.clip_images.as_ref().map(ClipImages::guest_path);
+        let png = match finished {
+            Some(get) if Some(&get.path) == expected.as_ref()
+                && get.total == bytes
+                && get.bytes.len() == bytes =>
+            {
+                admit_png(get.bytes)
+            }
+            _ => Err(PngRefusal::NotPng),
+        };
+        let png = match png {
+            Ok(png) if png.digest == digest => png,
+            Ok(_) => return self.refuse_guest_image(GuestImageRefusal::Mismatch, None, now),
+            Err(PngRefusal::TooLarge { .. }) => {
+                return self.refuse_guest_image(GuestImageRefusal::TooLarge, None, now)
+            }
+            Err(PngRefusal::NotPng) => {
+                return self.refuse_guest_image(GuestImageRefusal::NotPng, None, now)
+            }
+        };
+        // A newer guest poll, a pending Mac copy or an app paste replaced it.
+        if self.last_synced.image != Some(digest)
+            || self.last_synced.rebaseline
+            || self.clip_push_pending()
+        {
+            return;
+        }
+        let (len, width, height) = (png.bytes.len(), png.width, png.height);
+        if let Some(pasteboard) = self.pasteboard.as_ref() {
+            pasteboard.set_image(png, self.last_synced.guest_text.clone());
+        }
+        println!(
+            "BVAGENT CLIPSYNC guest->host image bytes={len} width={width} height={height} t={}",
+            self.t_ms(now)
+        );
+    }
+
+    /// The wire line of a queued image request; false drops it (images off).
+    pub(super) fn write_clip_image_line(&mut self, req: &ServiceReq) -> bool {
+        let Some(images) = self.clip_images.as_ref() else {
+            return false;
+        };
+        let line = &mut self.service_line_scratch;
+        match req {
+            ServiceReq::ClipImagePush(push) => {
+                debug_assert_eq!(push.phase, ClipImagePhase::Beg);
+                line.push_str("PUTBEG ");
+                base64_encode_into(images.host_path().as_bytes(), line);
+                let _ = writeln!(line, " {} {}", push.png.bytes.len(), push.chunks());
+            }
+            ServiceReq::ClipImagePull { .. } => {
+                // A new GET cannot inherit an earlier request's fragments.
+                self.get_accum = None;
+                line.push_str("GET ");
+                base64_encode_into(images.guest_path().as_bytes(), line);
+                line.push('\n');
+            }
+            _ => return false,
+        }
+        true
+    }
+}

@@ -104,6 +104,9 @@ pub struct AgentConsoleHarness {
     pub(super) last_synced: ClipBaseline,
     /// macOS pasteboard bridge (guest<->host). Some only when clipsync is on.
     pub(super) pasteboard: Option<HostPasteboard>,
+    /// Clipboard images: Some once the agent's CLIPCAPS reply carried
+    /// IMAGE_PNG and its clipboard directory (clip_image.rs).
+    pub(super) clip_images: Option<ClipImages>,
     /// Optional control file tailed for injected commands.
     pub(super) ctl_path: Option<String>,
     /// Byte offset consumed so far from the control file.
@@ -233,6 +236,12 @@ pub(super) enum ServiceReq {
     /// Push host clipboard text to the guest (CLIPSET). Carries the host (LF)
     /// text; the CRLF conversion happens at send time.
     ClipPush(String),
+    /// Ask the agent whether it can move clipboard images (CLIPCAPS).
+    ClipCaps,
+    /// Push a Mac image, with the copy's text, to the guest clipboard.
+    ClipImagePush(ClipImagePush),
+    /// Fetch the guest clipboard image a CLIPX reply announced.
+    ClipImagePull { digest: [u8; 32], bytes: usize },
     /// A command injected via the control file (same semantics as a scripted
     /// command: raw verb sent verbatim, else RUN-wrapped).
     Ctl(String),
@@ -274,6 +283,9 @@ pub(super) enum InFlightSnapshot {
     ClipPush {
         guest_bytes: usize,
     },
+    ClipCaps,
+    ClipImagePush,
+    ClipImagePull,
     Ctl(String),
     Ping,
     ShareLs,
@@ -295,6 +307,9 @@ impl InFlightSnapshot {
             ServiceReq::ClipPush(text) => Self::ClipPush {
                 guest_bytes: to_guest_crlf_len(text),
             },
+            ServiceReq::ClipCaps => Self::ClipCaps,
+            ServiceReq::ClipImagePush(_) => Self::ClipImagePush,
+            ServiceReq::ClipImagePull { .. } => Self::ClipImagePull,
             ServiceReq::Ctl(command) => Self::Ctl(command.clone()),
             ServiceReq::Ping => Self::Ping,
             ServiceReq::ShareLs => Self::ShareLs,

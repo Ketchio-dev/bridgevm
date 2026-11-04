@@ -5,24 +5,35 @@
 // clipboard sync) flow the other way. The VM tick loop stays non-blocking: it
 // only ever does try_recv/send on the channels.
 //
-// PUBLIC API (frozen — agent_console.rs codes against exactly this):
+// PUBLIC API (agent_console.rs codes against exactly this):
 //   HostPasteboard::spawn(poll_ms) -> HostPasteboard
-//   try_changed(&self) -> Option<String>  // deduped external pasteboard changes
-//   set(&self, text: String)              // guest->host sync; never echoes back
+//   try_changed_clip(&self) -> Option<HostClip>  // deduped external changes
+//   set(&self, text: String)                     // guest->host text sync
+//   set_image(&self, png, text: Option<String>)  // guest->host image (+text)
+//   set_images(&self, on: bool)                  // read images too (IMAGE_PNG)
 //
-// Echo suppression contract: text written via set() must NOT come back out of
-// try_changed(), and neither must a text equal to the last one emitted/set.
-// A refused queued write may re-report that text to restore host ownership.
-// The first poll after spawn reports the pasteboard's current content (host
-// wins at startup).
+// Echo suppression contract: content written via set()/set_image() must NOT
+// come back out of try_changed_clip(), and neither must content equal to the
+// last one emitted/set. A refused queued write may re-report that content to
+// restore host ownership. The first poll after spawn reports the pasteboard's
+// current content (host wins at startup); so does the first poll after images
+// are switched on, when the pasteboard holds an image.
+// BRIDGEVM_TEST_CLIP_PASTEBOARD=<name> swaps the general pasteboard for a
+// private named one, so live checks never touch the user's clipboard.
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};
 #[path = "host_pasteboard_bridge.rs"]
 mod bridge;
-pub use bridge::HostPasteboard;
+pub use bridge::{HostClip, HostPasteboard};
 #[cfg(test)]
 pub(crate) use bridge::PasteboardWorker;
+#[path = "host_pasteboard_image.rs"]
+mod image;
+pub use image::*;
+
+/// Test-only: the name of a private pasteboard used instead of the user's.
+pub const TEST_PASTEBOARD_ENV: &str = "BRIDGEVM_TEST_CLIP_PASTEBOARD";
 
 /// Minimal pasteboard surface, abstracted so the poller logic is unit-testable
 /// without touching the real NSPasteboard (tests must never clobber the user's
@@ -34,6 +45,15 @@ pub trait PasteboardBackend: Send {
     fn get_string(&mut self) -> Option<String>;
     /// Replace the pasteboard content with `text`. Returns false on failure.
     fn set_string(&mut self, text: &str) -> bool;
+    /// The pasteboard's image as PNG (only read while images are on).
+    fn get_image(&mut self) -> Option<PasteboardImage> {
+        None
+    }
+    /// Replace the content with `text` (first, when given) and `png`.
+    fn set_image(&mut self, png: &[u8], text: Option<&str>) -> bool {
+        let _ = (png, text);
+        false
+    }
 }
 
 #[path = "host_pasteboard_poller.rs"]
@@ -41,14 +61,20 @@ mod poller;
 pub use poller::Poller;
 
 fn default_backend() -> NsPasteboardBackend {
-    NsPasteboardBackend::new()
+    let name = std::env::var(TEST_PASTEBOARD_ENV)
+        .ok()
+        .filter(|name| !name.is_empty())
+        .and_then(|name| CString::new(name).ok());
+    NsPasteboardBackend { general: std::ptr::null_mut(), name }
 }
 
 type ObjcId = *mut c_void;
 type Sel = *mut c_void;
 
-struct NsPasteboardBackend {
+pub(crate) struct NsPasteboardBackend {
     general: ObjcId,
+    /// TEST_PASTEBOARD_ENV's private pasteboard instead of the general one.
+    name: Option<CString>,
 }
 
 // The backend is created before thread spawn and then moved into the dedicated
@@ -57,14 +83,20 @@ struct NsPasteboardBackend {
 unsafe impl Send for NsPasteboardBackend {}
 
 impl NsPasteboardBackend {
-    fn new() -> Self {
+    #[cfg(test)]
+    pub(crate) fn named(name: &str) -> Self {
         Self {
             general: std::ptr::null_mut(),
+            name: Some(CString::new(name).expect("pasteboard name")),
         }
     }
 
     unsafe fn pasteboard(&mut self) -> ObjcId {
         if self.general.is_null() {
+            if let Some(name) = self.name.as_ref() {
+                self.general = image::named_pasteboard(name);
+                return self.general;
+            }
             let class = objc_getClass(c"NSPasteboard".as_ptr().cast());
             if class.is_null() {
                 return std::ptr::null_mut();
@@ -139,6 +171,23 @@ impl PasteboardBackend for NsPasteboardBackend {
             }
             let _ = msg_send_i64(pb, sel(b"clearContents\0"));
             msg_send_bool_id_id(pb, sel(b"setString:forType:\0"), ns_text, ty)
+        })
+    }
+
+    fn get_image(&mut self) -> Option<PasteboardImage> {
+        with_autorelease_pool(|| unsafe {
+            let pb = self.pasteboard();
+            if pb.is_null() {
+                return None;
+            }
+            image::read_image(pb)
+        })
+    }
+
+    fn set_image(&mut self, png: &[u8], text: Option<&str>) -> bool {
+        with_autorelease_pool(|| unsafe {
+            let pb = self.pasteboard();
+            !pb.is_null() && image::write_image(pb, png, text)
         })
     }
 }

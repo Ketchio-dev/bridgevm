@@ -28,6 +28,8 @@ mod agent_restart;
 mod clip_guest_admission;
 #[path = "agent_console/clip_guest_fingerprint.rs"]
 mod clip_guest_fingerprint;
+#[path = "agent_console/clip_image.rs"]
+mod clip_image;
 #[path = "agent_console/clip_operator_reply.rs"]
 mod clip_operator_reply;
 #[path = "agent_console/clip_operator_reply_tests.rs"]
@@ -76,6 +78,8 @@ mod verb_reply;
 mod window_protocol;
 use clip_guest_admission::*;
 use clip_guest_fingerprint::*;
+use clip_image::*;
+use host_pasteboard::HostImage;
 use clip_operator_reply::*;
 use clip_sync::*;
 use clipboard::*;

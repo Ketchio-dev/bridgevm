@@ -69,6 +69,9 @@ impl ClipRig {
     fn answer(&mut self, line: &str) {
         let reply = if line == "CLIPGET\n" {
             format!("CLIP {}", base64_encode(self.guest.as_bytes()))
+        } else if line == "CLIPCAPS\n" {
+            // A text-only agent: bvagent.ps1 before CLIPCAPS.
+            format!("OUT 255 {}", base64_encode(b"unknown token: CLIPCAPS"))
         } else if let Some(b64) = line.trim_end().strip_prefix("CLIPSET ") {
             if self.fail_set {
                 "ERR CLIPSET Requested Clipboard operation did not succeed.".to_owned()
