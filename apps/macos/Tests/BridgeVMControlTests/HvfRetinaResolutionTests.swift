@@ -113,4 +113,17 @@ final class HvfRetinaResolutionTests: XCTestCase {
         XCTAssertEqual(corner?.x, 32_767)
         XCTAssertEqual(corner?.y, 32_767)
     }
+
+    /// Pointer mapping and the guest's hardware cursor (its sprite, and the Mac cursor's size) place the
+    /// frame with HvfDisplayFit. For a frame of the backing size that is the whole view at 1/scale,
+    /// exactly where `.center` at `contentsScale = scale` shows it.
+    func testTheDisplayFitOfABackingSizeFrameIsTheWholeView() throws {
+        for view in [CGSize(width: 1280, height: 800), CGSize(width: 1728, height: 1117), CGSize(width: 1000.5, height: 700)] {
+            let frame = CGSize(width: view.width * 2, height: view.height * 2)
+            XCTAssertEqual(FBLayerView.contentsGravity(frame: frame, view: view, scale: 2), CALayerContentsGravity.center)
+            let fit = try XCTUnwrap(HvfDisplayFit(viewSize: view, imageSize: frame))
+            XCTAssertEqual(fit.rect, CGRect(origin: .zero, size: view), "\(view)")
+            XCTAssertEqual(fit.scale, 0.5, "a 64-pixel guest cursor is 32 points")
+        }
+    }
 }

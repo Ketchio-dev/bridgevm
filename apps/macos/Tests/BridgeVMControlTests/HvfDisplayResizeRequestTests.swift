@@ -157,10 +157,12 @@ final class HvfDisplayResizeRequestTests: XCTestCase {
             let fixture = try HvfRuntimeKeyboardDraftFixture()
             defer { fixture.remove() }
             try fixture.withSession { session in
+                // Set after the agent starts: a 2D virtio-gpu session also sends the hardware cursor
+                // command then (HvfDisplayDriverHardwareCursor.swift), and the fixture expects none.
+                try fixture.negotiateOrderedInput(session)
                 session.config.retinaResolution = retina
                 session.config.virtioGpu2d = virtio2d
                 session.config.virtioGpu3d = virtio3d
-                try fixture.negotiateOrderedInput(session)
                 session.displayViewResized(to: CGSize(width: 1280, height: 800), scale: 2, settled: true)
                 XCTAssertEqual(try fixture.bytes(fixture.input), Data((line + "\n").utf8), line)
             }
