@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 if ($IsWindows -or $env:OS -eq 'Windows_NT') { throw 'run this on macOS or Linux; it maps its own C: drive' }
 $drive = Join-Path ([IO.Path]::GetTempPath()) ('bvagent-acl-' + [guid]::NewGuid().ToString('N'))
 $agent = Join-Path $drive 'BridgeVM/provisioning/agent'
-$assets = 'bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-window-inventory.ps1', 'bv-window-inventory.cs', 'bvagent-task.ps1'
+$assets = 'bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-window-inventory.ps1', 'bv-window-inventory.cs', 'bvagent-task.ps1', 'bvagent-update.ps1'
 $stub = "function Start-VerifiedGuestAgentTask([string]`$TaskName, [string]`$AgentPath) { Set-Content -LiteralPath 'C:\BridgeVM\provisioning\task-started.txt' -Value `$TaskName; 'BRIDGEVM\stand-in' }`n"
 $locked = 'O:S-1-5-32-544D:PAI(A;OICI;FA;;;S-1-5-18)(A;OICI;FA;;;S-1-5-32-544)(A;OICI;0x1200a9;;;S-1-5-32-545)'
 
