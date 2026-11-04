@@ -3,8 +3,8 @@ import XCTest
 @testable import BridgeVMControl
 
 final class HvfOwnedGuestShutdownTests: XCTestCase {
-    private func request(_ owner: HvfOwnedGuestShutdown) async -> Bool {
-        await withCheckedContinuation { continuation in owner.request { continuation.resume(returning: $0) } }
+    private func request(_ owner: HvfOwnedGuestShutdown, _ command: HvfGuestStopCommand = .shutdown) async -> Bool {
+        await withCheckedContinuation { continuation in owner.request(command) { continuation.resume(returning: $0) } }
     }
 
     func testExactFrozenFileReceivesOnlyOneCommand() async throws {
@@ -20,7 +20,13 @@ final class HvfOwnedGuestShutdownTests: XCTestCase {
         XCTAssertTrue(delivered)
         let repeated = await request(owner)
         XCTAssertFalse(repeated)
-        XCTAssertEqual(try String(contentsOf: control), "existing\nshutdown.exe /p /f\n")
+        XCTAssertEqual(try String(contentsOf: control), "existing\nshutdown.exe /s /t 0\n",
+                       "The Stop asks Windows to close its apps; it never forces them")
+        let forced = await request(owner, .forceShutdown)
+        XCTAssertTrue(forced, "An explicit Force Stop follows the Stop once")
+        let forcedAgain = await request(owner, .forceShutdown)
+        XCTAssertFalse(forcedAgain)
+        XCTAssertEqual(try String(contentsOf: control), "existing\nshutdown.exe /s /t 0\nshutdown.exe /p /f\n")
         XCTAssertEqual(try String(contentsOf: other), "other\n")
     }
 

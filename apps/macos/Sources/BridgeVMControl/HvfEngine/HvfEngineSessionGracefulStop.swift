@@ -1,11 +1,12 @@
 import Foundation
 
 extension HvfEngineSession {
-    /// Asks a connected guest to power off once a stop is pending, or ends the wrapper when it cannot.
+    /// Asks a connected guest to shut down once a stop is pending, or ends the wrapper when it cannot.
+    /// A legacy wrapper launch has no Force Stop control, so its 180 s deadline still ends the wrapper.
     func sendGracefulStopIfReady() {
         guard case .stopping = connectionState, serviceStarted, !stopCommandSent else { return }
         stopCommandSent = true
-        if sendCtl("shutdown.exe /p /f") {
+        if sendCtl(HvfGuestStopCommand.shutdown.line) {
             append(.unknown("graceful guest shutdown requested"))
             return
         }

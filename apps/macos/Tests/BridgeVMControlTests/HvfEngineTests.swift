@@ -1289,7 +1289,7 @@ final class HvfWindowsBackendTests: XCTestCase {
 
         XCTAssertEqual(
             try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8),
-            "shutdown.exe /p /f\n"
+            "shutdown.exe /s /t 0\n"
         )
     }
 
@@ -1320,7 +1320,7 @@ final class HvfWindowsBackendTests: XCTestCase {
         let lines = try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8)
             .split(separator: "\n")
         XCTAssertEqual(lines.count, 32)
-        XCTAssertTrue(lines.allSatisfy { $0 == "shutdown.exe /p /f" })
+        XCTAssertTrue(lines.allSatisfy { $0 == "shutdown.exe /s /t 0" })
     }
 
     func testConcurrentGuestCommandsWaitForPriorReplyBeforeAppending() throws {
