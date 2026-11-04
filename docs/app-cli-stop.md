@@ -18,7 +18,11 @@ be stopped through this command; ambiguous targets are refused.
 The command waits for the accepted operation. When the guest control service is
 ready, the app sends `shutdown.exe /s /t 0` using the file identity retained at
 launch; Windows asks its apps to close, so an app with unsaved work can hold the
-shutdown on Windows' own screen. The command allows up to 180 seconds before
+shutdown on Windows' own screen. When the service is not ready (the login screen,
+early boot), the app presses the guest's ACPI power button once instead, by
+appending `POWERBUTTON` to the live input channel, and Windows shuts down the
+same way; the agent's command still follows if the service becomes ready first.
+The command allows up to 180 seconds before
 requesting runner cancellation, followed by up to 12 seconds to observe cleanup.
 If the guest control file was replaced, the app requests runner cancellation
 without writing to the replacement. Each retained helper and TPM process gets a

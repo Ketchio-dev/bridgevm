@@ -5,7 +5,8 @@ extension HvfEngineSession {
     func requestOwnedStop(target: HvfOwnedRuntimeIdentity, operationID: UUID,
                           afterGrace: HvfOwnedStopGraceEnd = .cancelRunner) -> HvfOwnedStopAdmission {
         guard let ownedController else { return .refused(.supervisionUnavailable) }
-        let result = ownedController.requestStop(target: target, operationID: operationID, afterGrace: afterGrace)
+        let result = ownedController.requestStop(target: target, operationID: operationID, afterGrace: afterGrace,
+            pressPowerButton: { [weak self] in self?.pressGuestPowerButton() ?? false })
         if case .refused = result { return result }
         cancelOrderedInputTarget()
         ownedRuntimeChanged(token: ownedController.identity.token)
