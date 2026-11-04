@@ -28,7 +28,9 @@ pub(super) unsafe extern "C" fn output_callback(
     }
     fill_from_ring(buffer, &context.shared);
     let status = AudioQueueEnqueueBuffer(queue, buffer, 0, ptr::null());
-    if status != 0 {
+    // A queue retired while this callback ran failed because of its own stop,
+    // which counts nothing; the flag was set before that stop.
+    if status != 0 && !context.retired.load(Acquire) {
         context.shared.callback_failures.record(status);
         // The queue lost this buffer; the supervisor replaces the queue.
         context.shared.output.note_enqueue_failed();
