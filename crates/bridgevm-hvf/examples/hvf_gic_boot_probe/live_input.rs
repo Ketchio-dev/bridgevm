@@ -84,6 +84,9 @@ pub struct LiveInputController {
     pending: VecDeque<LiveInputCommand>,
     accepted_pointer_moves: u64,
     next_poll: Instant,
+    /// File offset up to which a full-queue read-ahead already queued every
+    /// POWERBUTTON line.
+    power_scanned_to: u64,
 }
 
 impl LiveInputController {
@@ -94,6 +97,7 @@ impl LiveInputController {
             offset: restart_resume::initial_offset(source.as_mut()),
             source,
             lines: Default::default(),
+            power_scanned_to: 0,
             pending: VecDeque::new(),
             accepted_pointer_moves: 0,
             next_poll: Instant::now(),
@@ -115,10 +119,8 @@ impl LiveInputController {
         true
     }
 
+    /// With a full queue this still reads ahead for POWERBUTTON lines.
     fn read_new_commands(&mut self) {
-        if self.pending.len() >= MAX_PENDING_COMMANDS {
-            return;
-        }
         let Some(mut source) = self.source.take() else {
             return;
         };
@@ -202,6 +204,7 @@ mod tests {
             source: None,
             offset: 0,
             lines: Default::default(),
+            power_scanned_to: 0,
             pending: VecDeque::new(),
             accepted_pointer_moves: 0,
             next_poll: Instant::now(),
@@ -277,6 +280,47 @@ mod tests {
     }
 
     #[test]
+    fn power_button_is_read_past_a_full_queue_and_pressed_once() {
+        use bridgevm_hvf::platform_virt::{
+            FlatGuestRam, VirtPlatform, VirtPlatformConfig, VirtPlatformDeviceConfig,
+        };
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-live-input-power-{}-{}.ctl",
+            std::process::id(),
+            Instant::now().elapsed().as_nanos()
+        ));
+        // The guest reads no HID (xHCI off), so 64 clicks fill the queue first.
+        let mut contents = String::new();
+        for index in 0..super::MAX_PENDING_COMMANDS {
+            contents.push_str(&format!("POINTER click:{index}x1\n"));
+        }
+        contents.push_str("POWERBUTTON\n");
+        fs::write(&path, contents).unwrap();
+        let mut platform = VirtPlatform::new_with_config(VirtPlatformConfig {
+            fdt: Default::default(),
+            devices: VirtPlatformDeviceConfig {
+                xhci_present: false,
+                ..Default::default()
+            },
+        });
+        let mut mem = FlatGuestRam::new(0x4000_0000, 0);
+        let mut input = controller();
+        input.source = Some(InputControlFile::from_path(path.clone()));
+
+        input.read_new_commands();
+        input.apply_pending(&mut platform, &mut mem, Instant::now());
+        assert_eq!(platform.take_pending_spi_levels(), [(41, true)]);
+
+        // When the queue moves again, the reader skips the line it already pressed.
+        input.pending.clear();
+        input.read_new_commands();
+        input.apply_pending(&mut platform, &mut mem, Instant::now());
+        assert!(platform.take_pending_spi_levels().is_empty());
+        assert!(input.pending.is_empty());
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn live_input_coalesces_adjacent_pointer_moves() {
         let mut input = controller();
         input.push_line("POINTER move:1x2");
@@ -331,6 +375,7 @@ mod tests {
             source: None,
             offset: 0,
             lines: Default::default(),
+            power_scanned_to: 0,
             pending: VecDeque::new(),
             accepted_pointer_moves: 0,
             next_poll: Instant::now(),
@@ -362,6 +407,7 @@ mod tests {
             source: Some(InputControlFile::from_path(PathBuf::from(&path))),
             offset: 0,
             lines: Default::default(),
+            power_scanned_to: 0,
             pending: VecDeque::new(),
             accepted_pointer_moves: 0,
             next_poll: Instant::now(),
@@ -390,6 +436,7 @@ mod tests {
             source: Some(InputControlFile::from_path(PathBuf::from(&path))),
             offset: 0,
             lines: Default::default(),
+            power_scanned_to: 0,
             pending: VecDeque::new(),
             accepted_pointer_moves: 0,
             next_poll: Instant::now(),

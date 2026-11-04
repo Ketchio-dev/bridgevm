@@ -17,6 +17,7 @@ fn vnode_event_wake_bypasses_the_periodic_poll_deadline() {
         source: Some(InputControlFile::from_path(path.clone())),
         offset: 0,
         lines: Default::default(),
+        power_scanned_to: 0,
         pending: VecDeque::new(),
         accepted_pointer_moves: 0,
         next_poll: now + Duration::from_secs(60),
