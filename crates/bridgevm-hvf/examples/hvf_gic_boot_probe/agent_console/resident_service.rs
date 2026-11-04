@@ -26,11 +26,13 @@ impl AgentConsoleHarness {
     /// the request queue. None of this touches the wire, so it needs no platform
     /// handle (and is unit-testable on its own).
     pub(super) fn service_enqueue(&mut self, now: Instant) {
-        // 0. A requested desktop mode switch, then the display scale, and a
-        //    clock resync after the host slept.
+        // 0. A requested desktop mode switch, then the display scale, a clock
+        //    resync after the host slept, and a DNS cache flush after the
+        //    Mac's resolver changed.
         self.enqueue_desktop_switch();
         self.enqueue_desktop_scale();
         self.enqueue_time_resync();
+        self.enqueue_dns_flush();
 
         // 1. Host pasteboard changes collapse to a single latest-wins ClipPush.
         //    Draining every pending change and keeping only the last means a

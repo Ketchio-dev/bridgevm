@@ -31,6 +31,10 @@ pub struct VirtioGpuStats {
     pub deferred_scanout_flushes: u64,
     pub deferred_scanout_serviced: u64,
     pub scanout_blits: u64,
+    /// Cursor-queue commands, and times the guest's sprite went from shown to hidden.
+    pub cursor_updates: u64,
+    pub cursor_moves: u64,
+    pub cursor_hides: u64,
     pub three_d: VirtioGpu3dStats,
     pub queues: [VirtioGpuQueueStats; QUEUE_COUNT],
 }
@@ -61,6 +65,9 @@ impl VirtioGpu {
             deferred_scanout_flushes: self.deferred_scanout_flush_count,
             deferred_scanout_serviced: self.deferred_scanout_serviced_count,
             scanout_blits: self.scanout_blit_count,
+            cursor_updates: self.cursor.updates,
+            cursor_moves: self.cursor.moves,
+            cursor_hides: self.cursor.hides,
             three_d: self.three_d.stats(self.pending_fenced.len()),
             queues: [VirtioGpuQueueStats::default(); QUEUE_COUNT],
         };

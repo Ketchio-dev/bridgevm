@@ -221,7 +221,7 @@ def display_animation(ms: int) -> str:
 HIGHER_IS_BETTER = {name for name, _ in SUITE} | {
     "disk-write-seq-1m", "disk-read-seq-1m", "disk-read-rand-4k", "net-download", "net-download-sha256-match",
     "cursor-hz", "stall-flush-rate",
-    "guest-render-fps", "display-fps", "pointer-display-fps",
+    "guest-render-fps", "display-fps", "pointer-display-fps", "pointer-cursor-hz", "pointer-cursor-matched-pct",
     "agent-cmd-hz"}
 
 _BVBENCH = re.compile(r"^BVBENCH (\S+) ([0-9]+(?:\.[0-9]+)?) (\S+)\s*$", re.M)

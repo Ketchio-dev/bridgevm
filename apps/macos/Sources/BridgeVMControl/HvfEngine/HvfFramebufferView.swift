@@ -32,6 +32,14 @@ final class FBLayerView: HvfFramebufferTextInput {
     private var pointerMoves = HvfPointerMoveMailbox()
     private let pointerCapture = HvfPointerCapture()
     private let inputFocusMonitor = HvfInputFocusMonitor()
+    /// The guest's hardware cursor (HvfGuestCursorPresenter.swift).
+    let guestCursor = HvfGuestCursorPresenter()
+    /// Whether this view's window is the key window, and where the pointer is in the view; tests set them.
+    lazy var windowIsKey: () -> Bool = { [weak self] in self?.window?.isKeyWindow == true }
+    lazy var hostPointer: () -> CGPoint? = { [weak self] in
+        guard let self, let window = self.window else { return nil }
+        return self.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+    }
     var frameDisplayLink: CADisplayLink?
     private var pointerTrackingArea: NSTrackingArea?
 
@@ -44,7 +52,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         guard session !== next else { return }
         teardown()
         session = next
-        inputFocusMonitor.watch(window: window) { [weak self] in self?.cancelGuestInputTarget() }
+        inputFocusMonitor.watch(window: window) { [weak self] in self?.windowResignedKey() }
         if window != nil { startDisplayLink() }
         reportDisplaySize(settled: false)
     }
@@ -68,8 +76,9 @@ final class FBLayerView: HvfFramebufferTextInput {
         super.viewDidMoveToWindow()
         pointerCapture.cancel()
         cancelGuestInputTarget()
-        inputFocusMonitor.watch(window: window) { [weak self] in self?.cancelGuestInputTarget() }
+        inputFocusMonitor.watch(window: window) { [weak self] in self?.windowResignedKey() }
         pointerMoves.reset()
+        guestCursor.reset()
 
         if window != nil {
             startDisplayLink()
@@ -109,7 +118,7 @@ final class FBLayerView: HvfFramebufferTextInput {
 
         let trackingArea = NSTrackingArea(
             rect: bounds,
-            options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -122,7 +131,10 @@ final class FBLayerView: HvfFramebufferTextInput {
     /// What the tick did, for the session's `app display pacing:` record (HvfFramebufferDisplayTick.swift).
     @discardableResult func refreshFrame(at timestamp: TimeInterval) -> HvfDisplayTick {
         synchronizeTextInputTarget()
-        defer { flushPendingPointerMove() }
+        defer {
+            flushPendingPointerMove()
+            updateGuestCursor(pointer: hostPointer(), reload: true)
+        }
         if presentIOSurfaceIfAvailable(at: timestamp) {
             return .iosurface
         }
@@ -159,16 +171,28 @@ final class FBLayerView: HvfFramebufferTextInput {
         resetMapping()
         iosurfacePresenter.reset()
         pointerMoves.reset()
+        guestCursor.reset()
         guestSize = .zero
         layer?.contents = nil
     }
 
     override func mouseMoved(with event: NSEvent) {
+        updateGuestCursor(pointer: point(event))
         guard hasGuestSize else { return }
         pointerMoves.offer(point(event))
     }
 
+    override func mouseEntered(with event: NSEvent) {
+        updateGuestCursor(pointer: point(event))
+    }
+
+    /// Leaving the view: the arrow again, and the guest's sprite at its own position.
+    override func mouseExited(with event: NSEvent) {
+        updateGuestCursor(pointer: nil)
+    }
+
     override func mouseDragged(with event: NSEvent) {
+        updateGuestCursor(pointer: point(event))
         guard hasGuestSize else { return }
         let location = point(event)
         pointerMoves.offer(location)
@@ -268,6 +292,26 @@ final class FBLayerView: HvfFramebufferTextInput {
         session?.cancelOrderedInputTarget()
     }
 
+    /// The window is no longer key (another window or app): the arrow again.
+    func windowResignedKey() {
+        cancelGuestInputTarget()
+        updateGuestCursor(pointer: nil)
+    }
+
+    /// Shows the guest's hardware cursor for the pointer at `pointer` (view points, nil outside the
+    /// view); `reload` (each display tick) reads display.cursor again. Only a running VM's file counts,
+    /// so a stopped VM gives the arrow back.
+    func updateGuestCursor(pointer: CGPoint?, reload: Bool = false) {
+        if reload {
+            let live = session?.connectionState.guestCursorIsLive == true && hasGuestSize
+            guestCursor.refresh(path: live ? guestCursorPath : nil)
+        }
+        let fit = HvfDisplayFit(viewSize: bounds.size, imageSize: guestSize)
+        let presentation = HvfGuestCursorPresentation.decide(
+            cursor: guestCursor.state, keyWindow: windowIsKey(), pointer: pointer, fit: fit, imageSize: guestSize)
+        guestCursor.apply(presentation, fit: fit, in: layer)
+    }
+
     private func pointerRelease(at location: CGPoint) -> (() -> Void)? {
         let viewSize = bounds.size, imageSize = guestSize
         guard let session, HvfDisplayCoordinates.absolutePointer(
@@ -281,6 +325,10 @@ final class FBLayerView: HvfFramebufferTextInput {
 
     var framebufferPath: String? {
         session.map { $0.config.evidenceDir + "/display.fb" }
+    }
+
+    var guestCursorPath: String? {
+        session.map { HvfGuestCursorFile.path(evidenceDir: $0.config.evidenceDir) }
     }
 
     private var iosurfaceSidecarURL: URL? {
@@ -321,6 +369,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         pointerCapture.cancel()
         cancelGuestInputTarget()
         pointerMoves.reset()
+        guestCursor.reset()
         guestSize = .zero
         layer?.contents = nil
     }

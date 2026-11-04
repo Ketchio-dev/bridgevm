@@ -284,6 +284,8 @@ enum HvfDisplayDriverInstall {
                                  completion: @escaping @MainActor (Outcome) -> Void) {
         Task { @MainActor in
             let outcome = await install(runner: runner)
+            // A driver update rewrites the INF's HWCursor=0 (HvfDisplayDriverHardwareCursor.swift).
+            if outcome.status == .installed { _ = await runner(hardwareCursorCommand, 60) }
             if outcome.leavesDriverInGuest { onInstalled(outcome) }
             completion(outcome)
         }

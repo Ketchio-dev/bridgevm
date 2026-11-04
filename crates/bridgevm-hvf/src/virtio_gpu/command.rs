@@ -20,7 +20,8 @@ impl VirtioGpu {
     pub(crate) fn handle_cursor_request_into(&mut self, request: &[u8], out: &mut Vec<u8>) {
         let hdr = CtrlHdr::parse(request);
         match hdr.map(|h| h.typ) {
-            Some(VIRTIO_GPU_CMD_UPDATE_CURSOR | VIRTIO_GPU_CMD_MOVE_CURSOR) => {
+            Some(typ @ (VIRTIO_GPU_CMD_UPDATE_CURSOR | VIRTIO_GPU_CMD_MOVE_CURSOR)) => {
+                self.cursor.command(typ, request, &self.resources);
                 response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
             }
             _ => response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr),
