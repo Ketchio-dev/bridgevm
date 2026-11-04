@@ -113,6 +113,24 @@ final class HvfOwnedStopWaitTests: XCTestCase {
         XCTAssertFalse(session.sendKey("enter"), "Force Stop closes Windows' apps without asking")
     }
 
+    func testAStopNeverOpensANewInputNegotiation() throws {
+        let f = try Fixture(); defer { f.clean() }
+        let evidence = URL(fileURLWithPath: f.base.config.evidenceDir)
+        try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
+        try "BVAGENT READY host=test t=1\nBVAGENT SERVICE start t=2\n".write(
+            to: evidence.appendingPathComponent("run.log"), atomically: true, encoding: .utf8)
+        let session = bind(f)
+        session.beginOwnedInputBoot()
+        session.poll() // the READY batch: the stream has not asked for capabilities yet
+        f.controller.receive(.message(try f.event("ready", sequence: 1)))
+
+        XCTAssertEqual(session.stopOwned(expectedToken: f.controller.identity.token), .requested(deadline: nil))
+        session.poll(); session.poll()
+        XCTAssertEqual(try commands(f).filter { $0.hasPrefix("INPUTCAPS") }, [],
+                       "The Stop may have found the control file replaced: it writes nothing new there")
+        XCTAssertTrue(session.sendKey("enter"), "Input goes through the legacy device path")
+    }
+
     private func bind(_ f: Fixture) -> HvfEngineSession {
         let session = HvfEngineSession(config: f.base.config, repoRoot: f.base.root,
             processIsRunning: { _ in false }, vtpmKeyProvider: f.base.keys)

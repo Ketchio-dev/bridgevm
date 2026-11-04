@@ -397,9 +397,12 @@ final class HvfEngineSession: ObservableObject {
 
     /// Windows keeps its input while a Stop waits for it to shut down: the user may still have to save
     /// or answer Windows' "apps are preventing shutdown" screen. Force Stop or cancellation ends that.
+    /// A Stop keeps an open ordered channel but never opens one: a new negotiation would write to a
+    /// control file the Stop may have found replaced. Until then input uses the legacy device path.
     private var guestTakesInput: Bool {
         if case .connected = connectionState { return true }
-        return connectionState == .stopping && ownedController?.waitsForGuestShutdown == true
+        return connectionState == .stopping && inputDriver.router.activated
+            && ownedController?.waitsForGuestShutdown == true
     }
 
     private var inputBinding: [String] {
