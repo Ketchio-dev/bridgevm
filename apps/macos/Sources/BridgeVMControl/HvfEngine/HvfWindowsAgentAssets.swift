@@ -7,6 +7,7 @@ enum HvfWindowsAgentAssets {
         "scripts/win-assets/bvagent-key-input.cs",
         "scripts/win-assets/bvagent-pointer-input.cs",
         "scripts/win-assets/bvagent-task.ps1",
+        "scripts/win-assets/bvagent-update.ps1",
         "scripts/win-assets/bvagent-window-inventory.ps1",
         "scripts/win-assets/bv-window-inventory.cs",
     ]

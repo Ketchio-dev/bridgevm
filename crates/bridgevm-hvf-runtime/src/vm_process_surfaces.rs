@@ -44,6 +44,18 @@ pub(super) fn env(surfaces: &DeviceSurfaces) -> Vec<(&'static str, String)> {
             share.max_kb.to_string(),
         ));
     }
+    if let Some(update) = &surfaces.agent_update {
+        let marker = update.marker.display().to_string();
+        env.push((
+            "BRIDGEVM_VIRTIO_CONSOLE_AGENT_UPDATE",
+            update.dir.display().to_string(),
+        ));
+        env.push(("BRIDGEVM_VIRTIO_CONSOLE_AGENT_UPDATE_MARKER", marker));
+        env.push((
+            "BRIDGEVM_VIRTIO_CONSOLE_AGENT_UPDATE_SESSION",
+            update.session.clone(),
+        ));
+    }
     if surfaces.virtio_net {
         env.push(("BRIDGEVM_VIRTIO_NET", "1".to_string()));
         env.push(("BRIDGEVM_VIRTIO_NET_BACKEND", "nat".to_string()));

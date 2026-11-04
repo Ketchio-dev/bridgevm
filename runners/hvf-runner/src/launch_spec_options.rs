@@ -1,5 +1,7 @@
 //! One launch configuration builder shared by legacy and owned wire modes.
-use bridgevm_hvf_runtime::{DeviceSurfaces, GpuSurface, HelperLaunch, ShareSurface};
+use bridgevm_hvf_runtime::{
+    AgentUpdateSurface, DeviceSurfaces, GpuSurface, HelperLaunch, ShareSurface,
+};
 use std::path::Path;
 pub(super) fn build(args: &crate::Args, helper: &Path) -> HelperLaunch {
     let firmware = args
@@ -39,6 +41,20 @@ pub(super) fn build(args: &crate::Args, helper: &Path) -> HelperLaunch {
                 }),
             virtio_net: args.virtio_net,
             hda_audio: args.typed.helper_hda,
+            // clap requires the marker and the session with the folder.
+            agent_update: match &args.typed {
+                crate::launch_spec::LaunchSpecArgs {
+                    helper_agent_update: Some(dir),
+                    helper_agent_update_marker: Some(marker),
+                    helper_agent_update_session: Some(session),
+                    ..
+                } => Some(AgentUpdateSurface {
+                    dir: dir.clone(),
+                    marker: marker.clone(),
+                    session: session.clone(),
+                }),
+                _ => None,
+            },
             host_diagnostic_stop: args.typed.helper_host_diagnostic_stop,
         }),
         swtpm_sockets: None,
@@ -67,6 +83,30 @@ mod tests {
         assert!(
             !two_d.aggressive_performance,
             "the 3D renderer lane stays off"
+        );
+    }
+
+    #[test]
+    fn the_owned_launch_carries_the_guest_tools_update() {
+        assert!(surfaces(&[]).agent_update.is_none());
+        let update = surfaces(&[
+            "--helper-agent-update",
+            "/app/scripts/win-assets",
+            "--helper-agent-update-marker",
+            "/vm/metadata/agent-update.json",
+            "--helper-agent-update-session",
+            "s-1",
+        ])
+        .agent_update
+        .unwrap();
+        assert_eq!(update.dir, Path::new("/app/scripts/win-assets"));
+        assert_eq!(update.marker, Path::new("/vm/metadata/agent-update.json"));
+        assert_eq!(update.session, "s-1");
+        let argv = ["hvf-runner", "--launch-spec", "m.json", "--helper", "p"];
+        let partial = argv.iter().chain(&["--helper-agent-update", "/app"]);
+        assert!(
+            crate::Args::try_parse_from(partial).is_err(),
+            "marker and session are required"
         );
     }
 }

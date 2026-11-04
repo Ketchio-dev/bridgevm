@@ -5,7 +5,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-product-e2e.XXXXXX")"
 WORK="$TMP"; trap 'rm -rf "$WORK"' EXIT
 TMP="$TMP/space and apostrophe's"; mkdir "$TMP"; FAKE="$TMP/bin"; mkdir -p "$FAKE" "$TMP/assets"
 CATALOG_VERIFIER="$("$ROOT/tests/integration/build-windows-catalog-verifier-test-helper.sh" "$TMP")"
-cp "$ROOT/scripts/win-assets/"{winpeshl.ini,bvinstall.cmd,bvdiskpart.txt,unattend.xml,bvagent.ps1,bvagent-firstboot.ps1,bvagent-input.ps1,bvagent-unicode-input.cs,bvagent-key-input.cs,bvagent-pointer-input.cs,bvagent-window-inventory.ps1,bv-window-inventory.cs,bvagent-task.ps1} "$TMP/assets/"
+cp "$ROOT/scripts/win-assets/"{winpeshl.ini,bvinstall.cmd,bvdiskpart.txt,unattend.xml,bvagent.ps1,bvagent-firstboot.ps1,bvagent-input.ps1,bvagent-unicode-input.cs,bvagent-key-input.cs,bvagent-pointer-input.cs,bvagent-window-inventory.ps1,bv-window-inventory.cs,bvagent-task.ps1,bvagent-update.ps1} "$TMP/assets/"
 printf 'fake ISO\n' > "$TMP/windows.iso"
 python3 "$ROOT/tests/fixtures/make-synthetic-windows-guest-payload.py" "$TMP/payload" "$TMP/payload.tsv"
 cat > "$FAKE/hdiutil" <<'MOCK'
