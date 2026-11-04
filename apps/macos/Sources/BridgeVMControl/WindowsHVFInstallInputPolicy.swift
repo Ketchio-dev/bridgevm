@@ -26,7 +26,7 @@ enum WindowsHVFInstallInputPolicy {
                 e2eUnattendedPath, in: bundlePath) else { return nil }
             unattended = staged
         } else {
-            unattended = WindowsHVFUnattendPolicy.stageHostTimeZone(
+            unattended = WindowsHVFUnattendPolicy.stageHostRegion(
                 in: bundlePath, repoRoot: repoRoot)
         }
         return StagedInputs(payload: payload, unattended: unattended)

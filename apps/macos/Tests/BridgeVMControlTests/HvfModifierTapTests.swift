@@ -9,11 +9,21 @@ final class HvfModifierTapTests: XCTestCase {
         var tap = HvfModifierTap()
         XCTAssertNil(tap.changed(keyCode: command, flags: .command))
         XCTAssertEqual(tap.changed(keyCode: command, flags: []), "win")
-        XCTAssertNil(tap.changed(keyCode: rightCommand, flags: [.command, .capsLock]), "Caps Lock is not a modifier here")
-        XCTAssertEqual(tap.changed(keyCode: rightCommand, flags: .capsLock), "win")
+        XCTAssertNil(tap.changed(keyCode: command, flags: [.command, .capsLock]), "Caps Lock is not a modifier here")
+        XCTAssertEqual(tap.changed(keyCode: command, flags: .capsLock), "win")
         XCTAssertNil(tap.changed(keyCode: option, flags: .option))
         XCTAssertEqual(tap.changed(keyCode: option, flags: []), "alt")
         XCTAssertNil(tap.changed(keyCode: command, flags: []), "a release without its press is no tap")
+    }
+
+    func testRightCommandNeverTapsSoAKoreanLanguageKeyDoesNotOpenStart() {
+        var tap = HvfModifierTap()
+        XCTAssertNil(tap.changed(keyCode: rightCommand, flags: .command))
+        XCTAssertNil(tap.changed(keyCode: rightCommand, flags: []), "한/영 on right Command is no Windows key")
+        XCTAssertNil(tap.changed(keyCode: rightCommand, flags: .command))
+        XCTAssertNil(tap.changed(keyCode: command, flags: []), "nor does it arm the left key")
+        XCTAssertNil(tap.changed(keyCode: command, flags: .command))
+        XCTAssertEqual(tap.changed(keyCode: command, flags: []), "win")
     }
 
     func testAnotherModifierOrACancelEndsThePendingTap() {

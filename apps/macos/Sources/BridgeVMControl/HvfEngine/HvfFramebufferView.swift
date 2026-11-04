@@ -230,7 +230,7 @@ final class FBLayerView: HvfFramebufferTextInput {
 
     override func mouseDown(with event: NSEvent) {
         cancelModifierTap()
-        cancelTextComposition()
+        settleCompositionForClick()
         window?.makeFirstResponder(self)
         pointerMoves.reset()
 
@@ -265,7 +265,7 @@ final class FBLayerView: HvfFramebufferTextInput {
 
     override func rightMouseDown(with event: NSEvent) {
         cancelModifierTap()
-        cancelTextComposition()
+        settleCompositionForClick()
         window?.makeFirstResponder(self)
         pointerMoves.reset()
 
@@ -313,6 +313,13 @@ final class FBLayerView: HvfFramebufferTextInput {
     override func sendGuestModifierTap(_ action: String) {
         if let session { HvfFramebufferKeyInput.sendTap(action, to: session) }
     }
+    /// A click commits the syllable being composed when that text reaches the guest before the click.
+    /// A clipboard paste would not: the press cancels it (#391), so the syllable is discarded as before.
+    private func settleCompositionForClick() {
+        _ = synchronizeTextInputTarget()
+        commitTextComposition { [weak session] text in session?.displayTextPrecedesPointer(text) == true }
+    }
+
     /// Window resign, first-responder loss, teardown and display loss also drop a pending modifier tap.
     private func cancelGuestInputTarget() {
         cancelModifierTap()

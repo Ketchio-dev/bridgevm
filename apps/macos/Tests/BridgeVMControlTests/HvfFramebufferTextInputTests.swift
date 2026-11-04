@@ -95,7 +95,7 @@ final class HvfFramebufferTextInputTests: XCTestCase {
         view.keyDown(with: try event("\u{3}", flags: .control))
         XCTAssertFalse(view.hasMarkedText())
         XCTAssertEqual(view.keys, ["\r", "\u{3}"])
-        XCTAssertTrue(view.texts.isEmpty)
+        XCTAssertEqual(view.texts, ["한"], "a chord commits the syllable first, as on a Mac")
     }
 
     func testOptionTextGoesThroughInterpreterAndAltTabRemainsPhysical() throws {

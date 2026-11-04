@@ -257,7 +257,12 @@ def desktop_mode(native: bool) -> str:
 
 def command_line(script: str) -> str:
     # Any guest-side error aborts the script before its BVBENCH line: no number from a failed run.
-    script = "$ErrorActionPreference='Stop'; " + script
+    # The invariant culture keeps 812.5 from turning into 812,5 (-f and C# string.Format follow the
+    # thread's culture) on a guest whose regional format uses a decimal comma: new installs take it
+    # from the Mac's region, and parse_bvbench reads dot decimals only.
+    script = ("$ErrorActionPreference='Stop'; "
+              "[Threading.Thread]::CurrentThread.CurrentCulture=[Globalization.CultureInfo]::InvariantCulture; "
+              + script)
     encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
     return "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + encoded
 
@@ -269,6 +274,8 @@ def parse_bvbench(text: str) -> dict[str, tuple[float, str]]:
 def _self_test() -> None:
     assert parse_bvbench("noise\r\nBVBENCH cpu-sha256-1t 812.5 MB/s\r\n") == {"cpu-sha256-1t": (812.5, "MB/s")}
     assert parse_bvbench("BVBENCH x 1,5 MB/s") == {}
+    decoded = base64.b64decode(command_line("x").rsplit(" ", 1)[1]).decode("utf-16-le")
+    assert "CurrentCulture=[Globalization.CultureInfo]::InvariantCulture; x" in decoded
     net = net_download("http://h/blob", "ab" * 32)
     assert "'BVBENCH net-download-sha256-match {0} bool' -f [int]($h -eq '" + "ab" * 32 + "')" in net
     assert parse_bvbench("BVBENCH net-download-sha256-match 1 bool\r\n") == {"net-download-sha256-match": (1.0, "bool")}

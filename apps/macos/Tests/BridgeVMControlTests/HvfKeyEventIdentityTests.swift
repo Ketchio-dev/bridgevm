@@ -32,14 +32,15 @@ final class HvfKeyEventIdentityTests: XCTestCase {
         }
     }
 
-    func testControlKeypadEnterCancelsPreeditWithoutSendingTextOrCopy() throws {
+    func testControlKeypadEnterEndsPreeditAndNeverSendsCopy() throws {
         try withDisplay { view, _, fixture in
             view.setMarkedText("한", selectedRange: NSRange(location: 1, length: 0),
                 replacementRange: NSRange(location: NSNotFound, length: 0))
             XCTAssertTrue(view.hasMarkedText())
             view.keyDown(with: try keypad([.control, .numericPad]))
             XCTAssertFalse(view.hasMarkedText())
-            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY ctrl+enter\n".utf8), "preedit discarded, never text or Ctrl+C")
+            // The preedit is committed first, but Hangul needs the guest service, which is not connected here.
+            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY ctrl+enter\n".utf8), "never text or Ctrl+C")
             XCTAssertNil(try fixture.bytes(fixture.control))
         }
     }
