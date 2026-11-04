@@ -38,8 +38,9 @@ macro_rules! automation_tick {
         if panicked {
             Some("serial reached Linux kernel panic".into())
         } else {
-            // VM time: a pause does not make in-flight requests overdue (vm_clock).
-            let now = bridgevm_hvf::vm_clock::active_now();
+            // The agent console on VM time, boot telemetry on host time (boot_clocks).
+            let times = crate::boot_clocks::tick_times(&crate::boot_clocks::Live);
+            let now = times.agent;
             if let Some(harness) = $agent_console.as_mut() {
                 harness.advance(now, &mut |bytes| {
                     let mut platform_guard =
@@ -55,7 +56,7 @@ macro_rules! automation_tick {
                 .as_ref()
                 .is_some_and(AgentConsoleHarness::desktop_ready)
             {
-                $boot_timer.observe_agent_ready(now, $exits);
+                $boot_timer.observe_agent_ready(times.telemetry, $exits);
                 checkpoint_committed = checkpoint_glue::checkpoint_if_requested(
                     &[$vcpu],
                     std::slice::from_raw_parts($ram, $ram_size),

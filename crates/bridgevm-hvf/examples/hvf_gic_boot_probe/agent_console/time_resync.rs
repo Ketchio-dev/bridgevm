@@ -124,8 +124,10 @@ impl AgentConsoleHarness {
     /// Every tick in every state, so a sleep during boot is caught too. Both
     /// clocks are read here, together: the caller's `now` may predate a wait.
     pub(super) fn observe_host_clock(&mut self) {
+        // The detector compares two host clocks; the test gap's time is on the
+        // harness's own (VM) timeline (boot_clocks).
         let (wall, mono) = (SystemTime::now(), Instant::now());
-        let elapsed = mono.saturating_duration_since(self.start);
+        let elapsed = bridgevm_hvf::vm_clock::active_now().saturating_duration_since(self.start);
         self.clock.tick(wall, mono, elapsed);
     }
 

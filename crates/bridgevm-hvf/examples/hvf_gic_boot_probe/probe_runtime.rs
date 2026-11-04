@@ -306,7 +306,8 @@ pub(crate) fn run() -> ExitCode {
             let mut ramfb_sample_loop = RamfbSampleLoop::from_env();
             let mut live_display_exporter = LiveDisplayExporter::from_env();
             let mut setup_input_host_wake = SetupInputHostWake::new();
-            let boot_started = Instant::now();
+            // The agent console runs on VM time, from this boot's start (boot_clocks).
+            let boot_started = crate::boot_clocks::agent_origin(&crate::boot_clocks::Live);
             let mut boot_timer = BootTimer::from_env();
             let mut agent_console = AgentConsoleHarness::from_env(boot_started);
             let automation_always_check = !uart_triggers.is_empty()

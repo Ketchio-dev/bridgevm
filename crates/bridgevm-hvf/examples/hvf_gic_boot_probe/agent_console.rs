@@ -22,6 +22,9 @@ use share_sync::{GuestFileOutcome, HostFile, LsEntry, ShareSync, SkipReason, Syn
 #[cfg(test)]
 #[path = "agent_console_tests.rs"]
 mod agent_console_tests;
+#[cfg(test)]
+#[path = "boot_clocks_tests.rs"]
+mod boot_clocks_tests;
 #[path = "agent_console/agent_restart.rs"]
 mod agent_restart;
 #[path = "agent_console/clip_guest_admission.rs"]
