@@ -46,6 +46,7 @@ pub(super) mod tests {
             share_old_agent_warned: false,
             clock: HostClock::default(),
             dns_flush: DnsFlush::default(),
+            drops: FileDrops::default(),
         }
     }
 
@@ -91,6 +92,7 @@ pub(super) mod tests {
                     format!("share-del:{direction:?}:{name}")
                 }
                 ServiceReq::TimeSync => "time-sync".to_string(),
+                ServiceReq::Drop(req) => format!("drop:{req:?}"),
                 other => req_kind(other).to_string(),
             })
             .collect()

@@ -139,6 +139,8 @@ pub struct AgentConsoleHarness {
     pub(super) clock: HostClock,
     /// NAT resolver switches, for the guest DNS cache flush.
     pub(super) dns_flush: DnsFlush,
+    /// Finder drops copied into the guest Desktop (file_drop.rs).
+    pub(super) drops: FileDrops,
 }
 
 /// Reassembly state for a chunked GET reply (GETBEG -> GETCHUNK* -> GETEND).
@@ -266,6 +268,8 @@ pub(super) enum ServiceReq {
     },
     /// Set the guest clock to host UTC after a host suspension.
     TimeSync,
+    /// One step of a Finder drop (file_drop.rs).
+    Drop(DropReq),
 }
 
 /// Outcome of interpreting one guest reply line against the in-flight request.
@@ -298,6 +302,7 @@ pub(super) enum InFlightSnapshot {
         direction: ShareDelDirection,
     },
     TimeSync,
+    Drop,
 }
 
 impl InFlightSnapshot {
@@ -320,6 +325,7 @@ impl InFlightSnapshot {
                 direction: *direction,
             },
             ServiceReq::TimeSync => Self::TimeSync,
+            ServiceReq::Drop(_) => Self::Drop,
         }
     }
 }

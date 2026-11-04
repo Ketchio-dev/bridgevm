@@ -8,6 +8,7 @@ struct HvfLiveDisplaySurface: View {
         HvfFramebufferView(session: session)
             .background(Color.black)
             .overlay(alignment: .topTrailing) { HvfWindowInventoryButton(session: session) }
+            .overlay(alignment: .bottom) { HvfFileDropNoticeView(drops: session.fileDrops) }
     }
 }
 #endif

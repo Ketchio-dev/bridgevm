@@ -36,6 +36,8 @@ impl AgentConsoleHarness {
             Some((ServiceReq::TimeSync, _)) => self.requeue_time_resync(),
             _ => {}
         }
+        // The new agent holds no open drop file; end the job instead of guessing its state.
+        self.fail_drop("agent-restarted", now);
         self.get_accum = None;
         self.out_accum = None;
         // The new agent answers CLIPCAPS before any other request.
