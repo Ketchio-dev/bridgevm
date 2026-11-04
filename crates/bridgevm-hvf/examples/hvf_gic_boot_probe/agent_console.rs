@@ -46,6 +46,8 @@ mod control_file;
 mod ctl_input_line_tests;
 #[path = "agent_console/ctl_verb_reply_tests.rs"]
 mod ctl_verb_reply_tests;
+#[path = "agent_console/desktop_scale.rs"]
+mod desktop_scale;
 #[path = "agent_console/desktop_switch.rs"]
 mod desktop_switch;
 #[path = "agent_console/harness_protocol.rs"]
@@ -78,6 +80,7 @@ use clipboard::*;
 use config::*;
 use control_file::*;
 use protocol::*;
+pub use desktop_scale::{request_desktop_scale, DESKTOP_SCALES};
 pub use desktop_switch::request_desktop_mode;
 pub use service_wake::ServiceWake;
 use share::*;
