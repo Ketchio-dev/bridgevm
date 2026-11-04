@@ -21,6 +21,7 @@ struct HvfEngineView: View {
     @State private var virtioNet = false
     @State private var durableDiskWrites = false
     @State private var guestResolution: String?
+    @State private var commandKeyMode = HvfCommandKeyMode.mac
     @State private var virtioGpu3d = false
     @State private var nvmeBufferedIO = false
     @State private var ctlFilePath = ""
@@ -131,6 +132,7 @@ struct HvfEngineView: View {
                     HvfNetworkToggle(session: session, isOn: $virtioNet)
                     HvfDurableDiskWritesToggle(session: session, isOn: $durableDiskWrites)
                     HvfGuestResolutionPicker(session: session, selection: $guestResolution)
+                    HvfCommandKeyPicker(session: session, selection: $commandKeyMode)
                     if session.config.allowsExperimental3D {
                         Toggle("Graphics Lab 3D", isOn: $virtioGpu3d)
                     }
@@ -347,6 +349,7 @@ struct HvfEngineView: View {
         config.virtioNet = virtioNet
         config.durableDiskWrites = durableDiskWrites
         config.guestResolution = guestResolution
+        config.commandKeyMode = commandKeyMode
         config.virtioGpu3d = virtioGpu3d
         config.nvmeBufferedIO = nvmeBufferedIO
         config.ctlFilePath = ctlFilePath
@@ -369,6 +372,7 @@ struct HvfEngineView: View {
         virtioNet = cfg.virtioNet
         durableDiskWrites = cfg.durableDiskWrites
         guestResolution = cfg.guestResolution
+        commandKeyMode = cfg.commandKeyMode
         virtioGpu3d = cfg.virtioGpu3d
         nvmeBufferedIO = cfg.nvmeBufferedIO
         ctlFilePath = cfg.ctlFilePath

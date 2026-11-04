@@ -44,6 +44,7 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     var clipboardSyncEnabled: Bool? = nil  // nil == default on; false keeps two-way clipboard sync off (HVF only)
     var durableDiskWritesEnabled: Bool? = nil  // nil == off: guest flushes are ordered, durable within ~1 s; true: every flush waits for F_FULLFSYNC (HVF only)
     var guestResolution: String? = nil  // Windows display "WxH"; nil == automatic: the VMM's 1280x800 unless the VM's firmware already has one (HVF only)
+    var commandKeyMode: String? = nil  // nil == Mac-like: Command chords are Ctrl chords, a bare Command tap is the Windows key; "windows": Command is the Windows key (HVF only)
     var sharedFolderHostPath: String? = nil, sharedFolderGuestPath: String? = nil  // user-chosen pair; nil == no sharing (HVF only)
     /// A config can be imported or hand-edited, so never trust its persisted ID
     /// as a filesystem component. Normalizing here keeps every caller inside the

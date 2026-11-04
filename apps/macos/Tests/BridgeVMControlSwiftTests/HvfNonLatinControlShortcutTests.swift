@@ -1,4 +1,4 @@
-// sources: apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyCommand.swift apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyEventCommand.swift apps/macos/Sources/BridgeVMControl/HvfEngine/HvfNonLatinControlShortcut.swift apps/macos/Sources/BridgeVMControl/HvfEngine/HvfControlChordKeys.swift
+// sources: apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyCommand.swift apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyEventCommand.swift apps/macos/Sources/BridgeVMControl/HvfEngine/HvfNonLatinControlShortcut.swift apps/macos/Sources/BridgeVMControl/HvfEngine/HvfControlChordKeys.swift apps/macos/Sources/BridgeVMControl/HvfEngine/HvfHostKeyChord.swift apps/macos/Sources/BridgeVMControl/HvfEngine/HvfModifierChord.swift
 import AppKit
 import SwiftUI
 import Testing
