@@ -12,7 +12,9 @@ foreach ($endpoint in $capture) {
 }
 Write-Output ('MIC ENDPOINTS capture=' + $capture.Count)
 try {
-    Add-Type -CompilerOptions '/langversion:5' -Path (Join-Path $PSScriptRoot 'bv-mic-capture.cs')
+    # Windows PowerShell 5.1 compiles with the .NET Framework's C# 5 compiler; its Add-Type has no
+    # -CompilerOptions (PowerShell 7 only).
+    Add-Type -Path (Join-Path $PSScriptRoot 'bv-mic-capture.cs')
     Write-Output ([BvMicCapture]::Run($Seconds))
 } catch {
     $message = $_.Exception.Message
