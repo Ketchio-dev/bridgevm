@@ -25,7 +25,7 @@ import vm_bench  # noqa: E402
 GUEST_OFF = "guest powered off; host teardown follows"
 BOOT_ARGS = dict(ready_timeout=600, settle_s=0, idle_s=0, pointer=False, desktop_mode=None, display=False,
                  shutdown_diag=False, stall_idle=False, stall=False, net=False, only=None, skip_suite=True,
-                 audio=False, hw_cursor=False)
+                 audio=False, hw_cursor=False, overlap_guard=False)
 
 
 class Clock:
@@ -81,6 +81,15 @@ class VmBenchContract(unittest.TestCase):
         self.assertNotIn("shutdown_ms", record)
         self.assertEqual(record["errors"], ["shutdown: the VMM still ran 240 s after the request"])
         self.assertFalse(record["clean_exit"])
+
+    def test_the_overlap_guard_marks_a_boot_whose_process_outlives_its_window_invalid(self):
+        engine = NeverOff()
+        answers = iter(["BVGUARD pids=7", "BVGUARD pids=7,9"])  # after READY, then as the idle window opens
+        engine.run = lambda command, deadline: (0, next(answers))
+        with mock.patch.dict(BOOT_ARGS, overlap_guard=True):
+            record = self.boot(engine)
+        self.assertEqual(record["invalid"], "a bench process was still running when idle opened")
+        self.assertIn("overlap guard before idle: processes [9] still running", record["errors"])
 
     def test_sigterm_or_ctrl_c_during_a_boot_kills_the_vm_and_ends_the_campaign(self):
         for error in (SystemExit(143), KeyboardInterrupt()):

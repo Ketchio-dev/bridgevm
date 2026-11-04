@@ -41,8 +41,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_wire import AgentWire  # noqa: E402
 from guest_bench_commands import (  # noqa: E402
-    HIGHER_IS_BETTER, SUITE, audio_loop, command_line, cursor_logger, desktop_mode, display_animation, net_download,
-    parse_bvbench,
+    HIGHER_IS_BETTER, OVERLAP_GUARD, SUITE, audio_loop, command_line, cursor_logger, desktop_mode, display_animation,
+    net_download, parse_bvbench,
     stall_under_flush, stall_idle)
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -472,12 +472,32 @@ def display_test(engine: Engine, record: dict) -> None:
     record["bench"].update(host)
 
 
+def guard_pids(engine: Engine):
+    """The agent's PowerShell children other than the guard itself, or None when the guest gives no answer."""
+    _, text = engine.run(command_line(OVERLAP_GUARD), time.monotonic() + 60)
+    match = re.search(r"BVGUARD pids=([0-9,]*)", text)
+    return None if match is None else {int(p) for p in match.group(1).split(",") if p}
+
+
+def overlap_check(engine: Engine, record: dict, baseline, window: str) -> None:
+    """--overlap-guard: a guest process started after READY and still alive as `window` opens marks the boot invalid."""
+    pids = guard_pids(engine)
+    if pids is None:
+        record["errors"].append(f"overlap guard before {window}: no answer")
+    elif pids - baseline:
+        record["errors"].append(f"overlap guard before {window}: processes {sorted(pids - baseline)} still running")
+        record.setdefault("invalid", f"a bench process was still running when {window} opened")
+
+
 def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
     record = {"boot": int(boot_dir.name.split("-")[1]), "loadavg_start": os.getloadavg(), "bench": {}, "errors": []}
     try:
         engine.start(boot_dir)
         record.update(engine.wait_ready(time.monotonic() + args.ready_timeout))
+        baseline = (guard_pids(engine) or set()) if args.overlap_guard else None
         time.sleep(args.settle_s)
+        if baseline is not None:
+            overlap_check(engine, record, baseline, "idle")
         first = cpu_and_rss(engine.vmm_pid) if engine.vmm_pid else None
         diag = os.environ.get("BVBENCH_SAMPLE") and engine.vmm_pid
         if diag:  # where the idle time goes: per-thread times around the window, plus a stack sample
@@ -545,6 +565,8 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                          if args.net else [])
         only = None if args.only is None else set(args.only.split(","))
         for name, script in ([] if args.skip_suite else [t for t in suite if only is None or t[0] in only]):
+            if baseline is not None:
+                overlap_check(engine, record, baseline, name)
             started = time.monotonic()
             try:
                 code, text = engine.run(command_line(script), time.monotonic() + 600)
@@ -707,6 +729,9 @@ def main() -> None:
     r.add_argument("--desktop-mode", choices=["report", "native"],
                    help="Windows desktop resolution (native: first switch to the display's largest mode)")
     r.add_argument("--skip-suite", action="store_true", help="only boot, idle, optional pointer/net, shutdown")
+    r.add_argument("--overlap-guard", action="store_true",
+                   help="mark a boot invalid if a guest process started after READY is still running when the idle"
+                        " window or a suite test opens")
     r.add_argument("--only", help="comma-separated suite tests to run (e.g. mem-first-touch,net-download)")
     r.add_argument("--boot-timer-ms", type=int, default=60000, help="BridgeVM framebuffer sample period (diagnostics)")
     r.add_argument("--no-xhci", action="store_true", help="BridgeVM without the USB controller (diagnostics)")
