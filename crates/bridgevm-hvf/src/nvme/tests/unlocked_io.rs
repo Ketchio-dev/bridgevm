@@ -24,7 +24,7 @@ const FUA: u32 = 1 << 30;
 /// `take_io` for the tests, which run the transfers only in their `FakeMem`,
 /// its `RawView`, or a worker over that view, and keep the `FakeMem` alive
 /// until every transfer has returned (their workers are dropped first).
-trait QueuedIo {
+pub(super) trait QueuedIo {
     fn queued_io(&mut self) -> Option<NvmeIo>;
 }
 
@@ -36,13 +36,13 @@ impl QueuedIo for NvmeController {
 }
 
 /// Byte `lba + 1` fills each block of the test image.
-fn block_byte(lba: u32) -> u8 {
+pub(super) fn block_byte(lba: u32) -> u8 {
     lba as u8 + 1
 }
 
 /// A write-back raw file, one I/O queue pair, host pointers, async flush and
 /// unlocked I/O on: the live VMM's data path.
-fn unlocked_controller(name: &str) -> (NvmeController, FakeMem, PathBuf) {
+pub(super) fn unlocked_controller(name: &str) -> (NvmeController, FakeMem, PathBuf) {
     let path = temp_path(name);
     let image: Vec<u8> = (0..16)
         .flat_map(|lba| [block_byte(lba); LBA_SIZE])
@@ -65,13 +65,13 @@ fn read(cid: u16, lba: u32, buf: u64) -> [u8; 64] {
     encode_sqe(NVM_OP_READ, cid, NSID, buf, lba, 0, 0)
 }
 
-fn write(cid: u16, lba: u32, buf: u64, cdw12: u32) -> [u8; 64] {
+pub(super) fn write(cid: u16, lba: u32, buf: u64, cdw12: u32) -> [u8; 64] {
     encode_sqe(NVM_OP_WRITE, cid, NSID, buf, lba, 0, cdw12)
 }
 
 /// The guest queues `sqe` at I/O SQ slot `slot` and rings the doorbell; the
 /// events are the completions the doorbell exit posted.
-fn ring(
+pub(super) fn ring(
     ctrl: &mut NvmeController,
     mem: &mut FakeMem,
     slot: u16,
@@ -83,13 +83,13 @@ fn ring(
 }
 
 /// The drain of the vCPU's second hold.
-fn drain(ctrl: &mut NvmeController, mem: &mut FakeMem) -> Vec<NvmeCompletionEvent> {
+pub(super) fn drain(ctrl: &mut NvmeController, mem: &mut FakeMem) -> Vec<NvmeCompletionEvent> {
     let mut events = Vec::new();
     ctrl.complete_flushes(mem, &mut events, false);
     events
 }
 
-fn cqe(mem: &FakeMem, cq: u64, slot: u16) -> (u16, u16) {
+pub(super) fn cqe(mem: &FakeMem, cq: u64, slot: u16) -> (u16, u16) {
     let entry = read_completion(mem, cq, slot);
     (
         u16::from_le_bytes([entry[12], entry[13]]),
@@ -101,7 +101,7 @@ fn byte_at(mem: &FakeMem, gpa: u64) -> u8 {
     mem.bytes[mem.at(gpa)]
 }
 
-fn file_block(path: &PathBuf, lba: u32) -> Vec<u8> {
+pub(super) fn file_block(path: &PathBuf, lba: u32) -> Vec<u8> {
     let start = lba as usize * LBA_SIZE;
     fs::read(path).unwrap()[start..start + LBA_SIZE].to_vec()
 }
@@ -505,7 +505,7 @@ fn worker_for(mem: &FakeMem) -> NvmeIoWorker {
     NvmeIoWorker::new("nvme-io-test", move || view)
 }
 
-fn wait_until(mut ready: impl FnMut() -> bool) {
+pub(super) fn wait_until(mut ready: impl FnMut() -> bool) {
     let give_up = Instant::now() + Duration::from_secs(5);
     while !ready() {
         assert!(Instant::now() < give_up, "timed out");

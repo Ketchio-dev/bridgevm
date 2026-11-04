@@ -62,10 +62,10 @@ pub struct NvmeController {
     /// FLUSH on a worker thread (flush_worker.rs); off until the VMM opts in.
     pub(crate) async_flush: bool,
     pub(crate) flush_worker: Option<FlushWorker>,
-    /// Completion slots held per CQ for flushes, READs and WRITEs in flight.
+    /// Completion slots held per CQ for flushes and unlocked jobs in flight.
     pub(crate) flush_reserved: Vec<u16>,
-    /// READ and WRITE without the platform lock (unlocked_io.rs); off until
-    /// the VMM opts in.
+    /// READ, WRITE and Deallocate without the platform lock (unlocked_io.rs);
+    /// off until the VMM opts in.
     pub(crate) unlocked_io: bool,
     #[cfg(test)]
     pub(crate) io_gate: std::sync::Arc<super::unlocked_io::test_gate::IoGate>,

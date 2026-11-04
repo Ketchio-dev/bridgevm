@@ -597,7 +597,7 @@ pub(crate) fn run() -> ExitCode {
                                     error.stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);
                                 break;
                             }
-                            // NVMe reads and writes run on vCPU0's worker,
+                            // NVMe reads, writes and TRIM run on vCPU0's worker,
                             // unlocked. Finished within NVME_IO_WAIT, this
                             // exit's second hold posts them; otherwise the
                             // drain FLUSH_DONE_HOOK asks for does.
