@@ -404,9 +404,9 @@ def cursor_metrics(states, sent, width: int, height: int) -> dict:
 
 def hw_cursor_command() -> str:
     """The app's own command, from its one raw multi-line string, so the bench switches the cursor on
-    exactly as the app does."""
+    exactly as the app does (the app puts the value to write, `$want`, in front of it)."""
     script = APP_HW_CURSOR.read_text().split('#"""\n', 1)[1].split('"""#', 1)[0]
-    return command_line(textwrap.dedent(script))
+    return command_line("$want = 1\n" + textwrap.dedent(script))
 
 
 def save_display_frame(path: Path, out: Path) -> None:
