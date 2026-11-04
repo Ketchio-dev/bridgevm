@@ -25,7 +25,7 @@ import vm_bench  # noqa: E402
 GUEST_OFF = "guest powered off; host teardown follows"
 BOOT_ARGS = dict(ready_timeout=600, settle_s=0, idle_s=0, pointer=False, desktop_mode=None, display=False,
                  shutdown_diag=False, stall_idle=False, stall=False, net=False, only=None, skip_suite=True,
-                 audio=False)
+                 audio=False, hw_cursor=False)
 
 
 class Clock:
