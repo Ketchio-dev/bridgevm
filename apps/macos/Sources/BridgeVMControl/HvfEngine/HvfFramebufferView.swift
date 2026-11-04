@@ -66,6 +66,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         layer?.backgroundColor = NSColor.black.cgColor
         layer?.contentsGravity = .resizeAspect
         HvfDisplaySurfaceAccessibility.configure(self)
+        registerForDraggedTypes([.fileURL])
     }
 
     required init?(coder: NSCoder) {
@@ -279,6 +280,34 @@ final class FBLayerView: HvfFramebufferTextInput {
             viewSize: bounds.size,
             imageSize: guestSize
         )
+    }
+
+    // Finder drops: files and folders are copied to the guest Desktop (HvfEngineSessionFileDrop.swift).
+    private static let fileURLsOnly: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard session != nil,
+              sender.draggingPasteboard.canReadObject(forClasses: [NSURL.self], options: Self.fileURLsOnly) else { return [] }
+        showDropTarget(true)
+        return .copy
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) { showDropTarget(false) }
+
+    override func draggingEnded(_ sender: NSDraggingInfo) { showDropTarget(false) }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        showDropTarget(false)
+        guard let session,
+              let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: Self.fileURLsOnly) as? [URL],
+              !items.isEmpty else { return false }
+        session.copyDroppedFiles(items)
+        return true
+    }
+
+    private func showDropTarget(_ shown: Bool) {
+        layer?.borderWidth = shown ? 4 : 0
+        layer?.borderColor = shown ? NSColor.controlAccentColor.cgColor : nil
     }
 
     override var guestInputAvailable: Bool { session != nil && hasGuestSize }
