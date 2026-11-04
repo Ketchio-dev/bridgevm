@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// The per-VM 'Command 키' setting. Mac-like (the default): a Command chord is the same Ctrl chord
-/// (⌘C is Ctrl+C) and a bare Command tap is the Windows key. Windows key: Command is the Windows
-/// key in every chord. Saved in vm.json as `commandKeyMode`, absent for the default.
+/// (⌘C is Ctrl+C), text navigation follows the Mac (`macTextNavigation`) and a bare Command tap is
+/// the Windows key. Windows key: Command is the Windows key and Option is Alt in every chord.
+/// Saved in vm.json as `commandKeyMode`, absent for the default.
 enum HvfCommandKeyMode: String, CaseIterable, Equatable {
     case mac
     case windows
@@ -28,6 +29,9 @@ extension HvfHostKeyCommand {
               !isReservedForMac(key, flags: flags) else { return .ignored }
         // Ctrl+Option+Delete (the Mac's Backspace) stays the secure attention sequence.
         if key == "backspace", flags.isSuperset(of: [.control, .option]), !flags.contains(.command) { return .key("ctrl+alt+delete") }
+        let held = [flags.contains(.command) ? "cmd" : nil, flags.contains(.control) ? "ctrl" : nil,
+                    flags.contains(.option) ? "opt" : nil, flags.contains(.shift) ? "shift" : nil].compactMap { $0 }
+        if mapping.commandKey == .mac, let action = macTextNavigation[(held + [key]).joined(separator: "+")] { return .key(action) }
         let command = flags.contains(.command)
         let parts = [command && mapping.commandKey == .windows ? "win" : nil,
                      flags.contains(.control) || command && mapping.commandKey == .mac ? "ctrl" : nil,
@@ -35,6 +39,16 @@ extension HvfHostKeyCommand {
                      flags.contains(.shift) ? "shift" : nil].compactMap { $0 }
         return .key((parts + [key]).joined(separator: "+"))
     }
+
+    /// 'Mac처럼' text navigation does what these keys do on a Mac, not the literal Ctrl or Alt chord
+    /// (Alt+Left is Back in Windows). Exact modifiers only; the Shift variants select.
+    static let macTextNavigation: [String: String] = [
+        "cmd+left": "home", "cmd+right": "end", "cmd+up": "ctrl+home", "cmd+down": "ctrl+end",
+        "cmd+shift+left": "shift+home", "cmd+shift+right": "shift+end",
+        "cmd+shift+up": "ctrl+shift+home", "cmd+shift+down": "ctrl+shift+end",
+        "opt+left": "ctrl+left", "opt+right": "ctrl+right", "opt+backspace": "ctrl+backspace",
+        "opt+shift+left": "ctrl+shift+left", "opt+shift+right": "ctrl+shift+right"
+    ]
 
     /// App shortcuts the Mac keeps in both modes: Quit, Hide, Minimize, Settings, Full Screen and the
     /// app switcher (which the system takes anyway).

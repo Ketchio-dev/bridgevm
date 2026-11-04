@@ -28,7 +28,7 @@ final class HvfModifierChordResolverTests: XCTestCase {
             (0x01, "S", [.command, .shift], "ctrl+shift+s", "win+shift+s"),
             (0x11, "T", [.command, .shift], "ctrl+shift+t", "win+shift+t"),
             (0x13, "@", [.command, .shift], "ctrl+shift+2", "win+shift+2"),
-            (0x7b, "\u{f702}", .command, "ctrl+left", "win+left"),
+            (0x7b, "\u{f702}", .command, "home", "win+left"),
             (0x2f, ".", .command, "ctrl+period", "win+period"),
             (0x18, "=", .command, "ctrl+equal", "win+equal"),
             (0x02, "d", [.command, .control], "ctrl+d", "win+ctrl+d"),
@@ -48,7 +48,7 @@ final class HvfModifierChordResolverTests: XCTestCase {
             (0x76, "\u{f707}", .option, "alt+f4"),
             (0x30, "\t", .option, "alt+tab"),
             (0x24, "\r", .option, "alt+enter"),
-            (0x7b, "\u{f702}", .option, "alt+left"),
+            (0x7e, "\u{f700}", .option, "alt+up"),
             (0x12, "1", .control, "ctrl+1"),
             (0x19, "9", .control, "ctrl+9"),
             (0x00, "A", [.control, .shift], "ctrl+shift+a"),
@@ -71,6 +71,38 @@ final class HvfModifierChordResolverTests: XCTestCase {
         for (keyCode, characters, modifiers, action) in rows {
             XCTAssertEqual(chord(keyCode, characters, modifiers, mac), .key(action), action)
             XCTAssertEqual(chord(keyCode, characters, modifiers, windows), .key(action), "\(action): Command not held")
+        }
+    }
+
+    /// 'Mac처럼' text navigation does what it does on a Mac; 'Windows 키로' keeps the literal chord.
+    func testMacLikeTextNavigationFollowsTheMacAndWindowsKeyModeStaysLiteral() {
+        let rows: [(UInt16, String, EventModifiers, String, String)] = [
+            (0x7b, "\u{f702}", .command, "home", "win+left"),
+            (0x7c, "\u{f703}", .command, "end", "win+right"),
+            (0x7e, "\u{f700}", .command, "ctrl+home", "win+up"),
+            (0x7d, "\u{f701}", .command, "ctrl+end", "win+down"),
+            (0x7b, "\u{f702}", [.command, .shift], "shift+home", "win+shift+left"),
+            (0x7c, "\u{f703}", [.command, .shift], "shift+end", "win+shift+right"),
+            (0x7e, "\u{f700}", [.command, .shift], "ctrl+shift+home", "win+shift+up"),
+            (0x7d, "\u{f701}", [.command, .shift], "ctrl+shift+end", "win+shift+down"),
+            (0x7b, "\u{f702}", .option, "ctrl+left", "alt+left"),
+            (0x7c, "\u{f703}", .option, "ctrl+right", "alt+right"),
+            (0x7b, "\u{f702}", [.option, .shift], "ctrl+shift+left", "alt+shift+left"),
+            (0x7c, "\u{f703}", [.option, .shift], "ctrl+shift+right", "alt+shift+right"),
+            (0x33, "\u{7f}", .option, "ctrl+backspace", "alt+backspace"),
+            // Not in the table: the generic chord in both modes.
+            (0x33, "\u{7f}", .command, "ctrl+backspace", "win+backspace"),
+            (0x7b, "\u{f702}", [.command, .option], "ctrl+alt+left", "win+alt+left"),
+            (0x7b, "\u{f702}", [.command, .control], "ctrl+left", "win+ctrl+left"),
+            (0x7b, "\u{f702}", .control, "ctrl+left", "ctrl+left"),
+            (0x33, "\u{7f}", [.control, .option], "ctrl+alt+delete", "ctrl+alt+delete")
+        ]
+        for (keyCode, characters, modifiers, macAction, windowsAction) in rows {
+            XCTAssertEqual(chord(keyCode, characters, modifiers, mac), .key(macAction), "\(modifiers) \(macAction)")
+            XCTAssertEqual(chord(keyCode, characters, modifiers, windows), .key(windowsAction), "\(modifiers) \(windowsAction)")
+        }
+        for action in HvfHostKeyCommand.macTextNavigation.values {
+            XCTAssertTrue(HvfModifierChord.isBase(action), "\(action) also reaches agents without the marker")
         }
     }
 
@@ -132,7 +164,9 @@ final class HvfModifierChordResolverTests: XCTestCase {
             (.option, "\u{f707}", "\u{f707}", 0x76, .key("alt+f4")),
             (.control, "\u{13}", "s", 0x01, .key("ctrl+s")),
             (.control, "1", "1", 0x12, .ignored),
-            ([.control, .shift], "\u{1}", "A", 0x00, .ignored)
+            ([.control, .shift], "\u{1}", "A", 0x00, .ignored),
+            ([.command, .numericPad, .function], "\u{f702}", "\u{f702}", 0x7b, .ignored),
+            ([.option, .numericPad, .function], "\u{f702}", "\u{f702}", 0x7b, .ignored)
         ] {
             let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
                 timestamp: 0, windowNumber: 0, context: nil, characters: characters,
@@ -152,7 +186,10 @@ final class HvfModifierChordResolverTests: XCTestCase {
             (.option, "", "e", 0x0e, mac, "alt+e"),
             ([.control, .shift], "\u{1b}", "\u{1b}", 0x35, mac, "ctrl+shift+esc"),
             (.control, "1", "1", 0x12, mac, "ctrl+1"),
-            ([.control, .numericPad], "\u{3}", "\u{3}", 0x4c, mac, "ctrl+enter")
+            ([.control, .numericPad], "\u{3}", "\u{3}", 0x4c, mac, "ctrl+enter"),
+            ([.command, .numericPad, .function], "\u{f702}", "\u{f702}", 0x7b, mac, "home"),
+            ([.option, .shift, .numericPad, .function], "\u{f703}", "\u{f703}", 0x7c, mac, "ctrl+shift+right"),
+            ([.option, .numericPad, .function], "\u{f702}", "\u{f702}", 0x7b, windows, "alt+left")
         ] {
             let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
                 timestamp: 0, windowNumber: 0, context: nil, characters: characters,
