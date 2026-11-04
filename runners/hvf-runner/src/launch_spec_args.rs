@@ -36,6 +36,10 @@ pub(crate) struct LaunchSpecArgs {
     pub(crate) helper_vtpm_key_stdin: bool,
     #[arg(long, requires = "helper")]
     pub(crate) helper_hda: bool,
+    /// The VM's microphone setting: with --helper-hda, the guest microphone
+    /// records the Mac's default input (`BRIDGEVM_HDA_MICROPHONE=1`).
+    #[arg(long, requires = "helper")]
+    pub(crate) helper_hda_microphone: bool,
     /// swtpm binary for --helper-vtpm-state (the app passes its
     /// signature-validated choice; default is the homebrew install).
     #[arg(long, value_name = "PATH", requires = "helper_vtpm_state")]

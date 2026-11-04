@@ -16,8 +16,24 @@ fn surfaces() -> DeviceSurfaces {
         share: None,
         virtio_net: false,
         hda_audio: false,
+        hda_microphone: false,
         host_diagnostic_stop: false,
     }
+}
+
+#[test]
+fn the_microphone_opens_only_with_the_users_setting_on_an_audio_vm() {
+    let mut surfaces = surfaces();
+    let microphone = |surfaces: &DeviceSurfaces| values(surfaces, "BRIDGEVM_HDA_MICROPHONE");
+    surfaces.hda_audio = true;
+    assert!(microphone(&surfaces).is_empty(), "off by default");
+    surfaces.hda_microphone = true;
+    assert_eq!(microphone(&surfaces), ["1"]);
+    surfaces.hda_audio = false;
+    assert!(
+        microphone(&surfaces).is_empty(),
+        "no HDA device, no microphone"
+    );
 }
 
 /// Every value `key` takes in the helper environment, in order.

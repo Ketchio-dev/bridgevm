@@ -87,6 +87,9 @@ Options:
                           Windows binds its in-box hdaudio driver.
   --hda-coreaudio         --hda plus real-time CoreAudio playback, so the guest
                           audio comes out the Mac speakers.
+  --hda-microphone        --hda plus the user's microphone setting: the guest
+                          microphone records the Mac's default input while
+                          Windows captures. Without it, it records silence.
   --nvme-durable-flush    The user's durable disk writes: every guest flush
                           waits for F_FULLFSYNC. Default: ordered flushes
                           (F_BARRIERFSYNC, durable within about a second).

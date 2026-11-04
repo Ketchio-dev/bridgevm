@@ -25,6 +25,7 @@
 //!   BRIDGEVM_VIRTIO_CONSOLE=1 BRIDGEVM_VIRTIO_CONSOLE_TEST=1 BRIDGEVM_VIRTIO_CONSOLE_CMDS='whoami|ver' BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=180000 ... # drive bvagent.ps1 over virtio-console
 //!   BRIDGEVM_HDA=1 BRIDGEVM_HDA_COREAUDIO=1 ...       # play guest HDA PCM on Mac speakers
 //!   BRIDGEVM_HDA=1 BRIDGEVM_HDA_CAPTURE_TEST_WAV=/path/to/s16le-48k-stereo.wav ... # guest microphone plays the WAV in a loop
+//!   BRIDGEVM_HDA=1 BRIDGEVM_HDA_MICROPHONE=1 ...      # guest microphone records the Mac's default input (test WAV wins)
 //!
 //! Optional fw_cfg Linux direct boot:
 //!   BRIDGEVM_LINUX_KERNEL=/path/to/Image BRIDGEVM_LINUX_CMDLINE='console=ttyAMA0' ... # BRIDGEVM_LINUX_INITRD optional

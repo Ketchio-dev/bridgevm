@@ -75,6 +75,9 @@ pub struct DeviceSurfaces {
     pub virtio_net: bool,
     /// Intel HDA audio played through CoreAudio.
     pub hda_audio: bool,
+    /// The user's opt-in: the guest microphone records the Mac's default input
+    /// while the guest captures. Only with `hda_audio`; otherwise it records silence.
+    pub hda_microphone: bool,
     /// Only a validated typed E2E launch may enable a fixed host stop request.
     pub host_diagnostic_stop: bool,
 }
