@@ -49,6 +49,10 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
     fn active_flow_counts(&self) -> (usize, usize) {
         (self.tcp_flows.len(), self.udp_flows.len())
     }
+
+    fn dns_server_changes(&self) -> u64 {
+        self.dns.changes
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

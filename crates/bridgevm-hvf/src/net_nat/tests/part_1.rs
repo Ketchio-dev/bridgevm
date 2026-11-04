@@ -148,8 +148,9 @@ fn new_guest_dns_queries_follow_a_rewritten_resolv_conf() {
         .collect();
     assert_eq!(servers[&53000], SocketAddr::from(([127, 0, 0, 1], 53)));
     assert_eq!(servers[&53001], "[::1]:53".parse().unwrap());
-    assert_eq!(backend.outbound_ipv4.dns.changes, 1);
-    assert_eq!(backend.stats().dns_queries, 2);
+    let stats = backend.stats();
+    assert_eq!(stats.dns_server_changes, 1);
+    assert_eq!(stats.dns_queries, 2);
 }
 
 #[test]

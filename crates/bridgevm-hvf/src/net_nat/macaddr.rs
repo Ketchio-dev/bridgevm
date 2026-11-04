@@ -101,6 +101,9 @@ pub trait OutboundIpv4Handler {
     fn active_flow_counts(&self) -> (usize, usize) {
         (0, 0)
     }
+    fn dns_server_changes(&self) -> u64 {
+        0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -166,6 +169,7 @@ impl<H> NatBackend<H> {
             tcp_flow_count,
             udp_flow_count,
             pending_replies: self.reply_queue.len(),
+            dns_server_changes: self.outbound_ipv4.dns_server_changes(),
             ..self.stats
         }
     }
