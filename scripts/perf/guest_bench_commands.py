@@ -41,13 +41,19 @@ _MEMCOPY = (
     "$s.Stop(); 'BVBENCH mem-copy {0:F1} MB/s' -f (4096/$s.Elapsed.TotalSeconds)"
 )
 
-# A fresh 1 GiB array that nothing has touched, then one byte written per 4 KiB page: the guest's
-# demand-zero fault path plus the VMM's backing of guest memory.
+# 1 GiB of committed but never touched native pages (the CLR clears a managed array before returning
+# it), then one byte written per 4 KiB page: the guest's demand-zero fault path plus the VMM's backing
+# of guest memory.
 _FIRST_TOUCH = (
-    "Add-Type -TypeDefinition 'using System; using System.Diagnostics; public static class BvTouch {"
-    " public static double Run() { var b = new byte[1 << 30]; var s = Stopwatch.StartNew();"
-    " for (int i = 0; i < b.Length; i += 4096) { b[i] = 1; } s.Stop(); GC.KeepAlive(b);"
-    " return 1024 / s.Elapsed.TotalSeconds; } }';"
+    "Add-Type -TypeDefinition 'using System; using System.Diagnostics; using System.Runtime.InteropServices;"
+    " public static class BvTouch {"
+    " [DllImport(\"kernel32\", SetLastError = true)] static extern IntPtr VirtualAlloc(IntPtr a, UIntPtr s, uint t, uint p);"
+    " [DllImport(\"kernel32\")] static extern bool VirtualFree(IntPtr a, UIntPtr s, uint t);"
+    " public static double Run() { const int Size = 1 << 30;"
+    " var p = VirtualAlloc(IntPtr.Zero, (UIntPtr)Size, 0x3000, 4);"  # MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE
+    " if (p == IntPtr.Zero) throw new Exception(\"VirtualAlloc \" + Marshal.GetLastWin32Error());"
+    " var s = Stopwatch.StartNew(); for (int off = 0; off < Size; off += 4096) { Marshal.WriteByte(p, off, 1); }"
+    " s.Stop(); VirtualFree(p, UIntPtr.Zero, 0x8000); return 1024 / s.Elapsed.TotalSeconds; } }';"  # MEM_RELEASE
     "'BVBENCH mem-first-touch {0:F1} MB/s' -f [BvTouch]::Run()"
 )
 
@@ -280,6 +286,9 @@ def _self_test() -> None:
         assert "BVBENCH " in script, name
     mt = dict(SUITE)["cpu-sha256-mt"]  # random data and one hash per thread before the timed region
     assert mt.index("NextBytes") < mt.index("ComputeHash") < mt.index("StartNew")
+    touch = dict(SUITE)["mem-first-touch"]  # native pages: nothing touches them before the timed writes
+    assert "new byte[" not in touch
+    assert touch.index("VirtualAlloc(IntPtr.Zero") < touch.index("StartNew") < touch.index("WriteByte")
 
 
 if __name__ == "__main__":
