@@ -20,6 +20,7 @@ pub(super) fn req_kind(req: &ServiceReq) -> &'static str {
         ServiceReq::SharePut { .. } => "share-put",
         ServiceReq::ShareDel { .. } => "share-del",
         ServiceReq::TimeSync => "time-sync",
+        ServiceReq::Drop(_) => "drop",
     }
 }
 

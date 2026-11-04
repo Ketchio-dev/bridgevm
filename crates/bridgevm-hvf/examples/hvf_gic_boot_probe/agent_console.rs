@@ -50,6 +50,8 @@ mod ctl_verb_reply_tests;
 mod desktop_switch;
 #[path = "agent_console/dns_flush.rs"]
 mod dns_flush;
+#[path = "agent_console/file_drop.rs"]
+mod file_drop;
 #[path = "agent_console/harness_protocol.rs"]
 mod harness_protocol;
 #[path = "agent_console/pointer_cleanup_order_tests.rs"]
@@ -82,6 +84,7 @@ use clipboard::*;
 use config::*;
 use control_file::*;
 use dns_flush::*;
+use file_drop::*;
 use protocol::*;
 pub use desktop_switch::request_desktop_mode;
 pub use service_wake::ServiceWake;

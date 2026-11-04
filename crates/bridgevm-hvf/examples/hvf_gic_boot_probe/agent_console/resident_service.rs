@@ -33,8 +33,10 @@ impl AgentConsoleHarness {
         //    burst of copies syncs the final value, not each intermediate one.
         self.enqueue_host_clip_change(now);
 
-        // 2. Control-file lines become Ctl commands.
+        // 2. Control-file lines become Ctl commands (a BVDROP line becomes a drop job), and
+        //    an active drop queues its next step.
         self.drain_ctl(now);
+        self.enqueue_file_drop(now);
 
         // 3. Periodic guest clipboard poll. With clipsync on this doubles as the
         //    keepalive, so step 4 stays quiet.
@@ -119,12 +121,17 @@ impl AgentConsoleHarness {
                 self.overdue_beats += 1;
                 if self.overdue_beats >= 3 {
                     if let Some((req, _)) = self.in_flight.take() {
-                        println!(
-                            "BVAGENT SERVICE retransmit {} t={}",
-                            req_kind(&req),
-                            now.duration_since(self.start).as_millis()
-                        );
-                        self.queue.push_front(rewind_share_put_for_retransmit(req));
+                        // A drop step creates guest files; resending could duplicate one.
+                        if is_drop_req(&req) {
+                            self.fail_drop("stalled", now);
+                        } else {
+                            println!(
+                                "BVAGENT SERVICE retransmit {} t={}",
+                                req_kind(&req),
+                                now.duration_since(self.start).as_millis()
+                            );
+                            self.queue.push_front(rewind_share_put_for_retransmit(req));
+                        }
                     }
                     self.overdue_beats = 0;
                 }
@@ -273,6 +280,10 @@ impl AgentConsoleHarness {
                 self.write_time_resync_line(now);
                 true
             }
+            ServiceReq::Drop(req) => {
+                write_drop_wire_line(req, &mut self.service_line_scratch);
+                true
+            }
         }
     }
     /// Whether any queued OR in-flight request satisfies `pred`.
@@ -338,7 +349,11 @@ impl AgentConsoleHarness {
         self.ctl_read_scratch.clear();
         for line in self.ctl_line_scratch.drain(..) {
             let command = line.trim();
-            if !command.is_empty() && super::service_queue::has_foreground_capacity(&self.queue) {
+            if let Some(request) = command.strip_prefix("BVDROP ") {
+                self.drops.submit(request);
+            } else if !command.is_empty()
+                && super::service_queue::has_foreground_capacity(&self.queue)
+            {
                 self.queue.push_back(ServiceReq::Ctl(command.to_string()));
             } else if !command.is_empty() {
                 eprintln!("BVAGENT CTL rejected reason=queue_full");
@@ -393,6 +408,7 @@ impl AgentConsoleHarness {
                 self.handle_share_put_reply_with_sender(line, now, send);
             }
             InFlightSnapshot::TimeSync => self.handle_time_resync_reply(line),
+            InFlightSnapshot::Drop => self.handle_drop_reply(line, now),
             InFlightSnapshot::ShareDel { name, direction } => {
                 if line.starts_with("OK DEL") {
                     if direction == ShareDelDirection::HostToGuest {
