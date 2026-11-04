@@ -12,20 +12,51 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
     private var discardingComposition = false
     private var preeditView: HvfTextCompositionOverlay?
     private var compositionTarget: HvfTextInputTargetIdentity?
+    private var modifierTap = HvfModifierTap()
 
     var guestInputAvailable: Bool { false }
     var guestInputIdentity: HvfTextInputTargetIdentity? { nil }
+    /// Whether the guest takes generic chords now (HvfHostKeyMapping.modifierChords).
+    var guestModifierChords: Bool { false }
     func sendGuestKeyEvent(_ event: NSEvent) -> Bool { false }
+    func sendGuestModifierTap(_ action: String) {}
     func sendGuestText(_ text: String) -> Bool { false }
     func textInputRefused() { NSSound.beep() }
+    /// A key, click, other modifier or focus loss ends a pending bare Command or Option tap.
+    func cancelModifierTap() { modifierTap.cancel() }
+
+    /// With generic chords, Command chords reach the guest before the app menu sees them; the app
+    /// shortcuts the Mac keeps (HvfHostKeyCommand.isReservedForMac) resolve to nothing and stay with it.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.type == .keyDown, event.modifierFlags.contains(.command), window?.firstResponder === self,
+              guestInputAvailable, guestModifierChords else { return super.performKeyEquivalent(with: event) }
+        cancelModifierTap()
+        _ = synchronizeTextInputTarget()
+        cancelTextComposition()
+        return sendGuestKeyEvent(event) || super.performKeyEquivalent(with: event)
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        if guestInputAvailable, guestModifierChords,
+           let action = modifierTap.changed(keyCode: event.keyCode, flags: event.modifierFlags) {
+            cancelTextComposition()
+            sendGuestModifierTap(action)
+        } else if !guestInputAvailable || !guestModifierChords {
+            cancelModifierTap()
+        }
+        super.flagsChanged(with: event)
+    }
 
     override func keyDown(with event: NSEvent) {
+        cancelModifierTap()
         guard guestInputAvailable else { super.keyDown(with: event); return }
         _ = synchronizeTextInputTarget()
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        // Keep existing host shortcuts and guest physical chords. Text, Option dead
-        // keys and navigation during preedit must first be offered to the input method.
-        if !flags.intersection([.command, .control]).isEmpty {
+        // Keep existing host shortcuts and guest physical chords. Text, Option dead keys and
+        // navigation during preedit must first be offered to the input method, unless the guest
+        // takes generic chords: then Option is Alt for every key.
+        let chordFlags: NSEvent.ModifierFlags = guestModifierChords ? [.command, .control, .option] : [.command, .control]
+        if !flags.intersection(chordFlags).isEmpty {
             cancelTextComposition()
             if !sendGuestKeyEvent(event) { super.keyDown(with: event) }
             return
@@ -103,6 +134,7 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
 
     override func resignFirstResponder() -> Bool {
         guard super.resignFirstResponder() else { return false }
+        cancelModifierTap()
         cancelTextComposition()
         return true
     }

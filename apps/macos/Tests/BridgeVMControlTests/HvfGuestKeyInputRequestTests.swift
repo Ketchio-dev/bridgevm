@@ -21,10 +21,15 @@ final class HvfGuestKeyInputRequestTests: XCTestCase {
     }
 
     func testUnsupportedCommandsNeverBecomeRequests() {
-        for key in ["", "a", "CTRL+V", "ctrl+alt+delete", "command+c", "shift+ctrl+left",
-                    "ctrl+ctrl+v", "+enter", "enter+", "ctrl++v", "alt+a", "shift+backspace", "ctrl+shift+s", "shift+f13",
+        for key in ["", "a", "shift+a", "CTRL+V", "ctrl+alt+delete", "command+c", "shift+ctrl+left", "shift+win+e",
+                    "ctrl+ctrl+v", "+enter", "enter+", "ctrl++v", "ctrl+win", "shift+f13",
                     "enter\n", "enter\r", " ctrl+v", "f13", String(repeating: "a", count: 33)] {
             XCTAssertNil(HvfUnicodeInputRequest(event: .key(key), now: now), key)
+        }
+        // Generic chords are requests too; only an agent with MODIFIER_CHORDS is ever sent one.
+        for key in ["alt+a", "shift+backspace", "ctrl+shift+s", "win", "win+e"] {
+            XCTAssertEqual(HvfUnicodeInputRequest(event: .key(key), now: now, id: id)?.insertedEventCount,
+                           key.split(separator: "+").count * 2, key)
         }
     }
 

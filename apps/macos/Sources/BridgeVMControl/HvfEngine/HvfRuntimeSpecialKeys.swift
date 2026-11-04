@@ -18,6 +18,8 @@ struct HvfRuntimeSpecialKeys: View {
                 Button("Home") { send("home") }
                 Button("End") { send("end") }
                 Spacer()
+                Button("Win") { send("win") }.help("Windows key (Start)")
+                    .accessibilityIdentifier("bridgevm.runtime.specialkeys.windows")
                 Button("Ctrl-Alt-Delete") { send("ctrl+alt+delete") }
             }
             if inputRefused {
