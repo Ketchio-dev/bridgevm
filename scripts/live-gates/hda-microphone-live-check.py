@@ -152,8 +152,8 @@ def parse_capture(body):
             endpoints.append({"status": fields.get("status"), "name": name})
         elif line.startswith("MIC CAPTURE "):
             capture = dict(token.split("=", 1) for token in line[len("MIC CAPTURE "):].split(" "))
-        elif line.startswith("MIC FORMAT "):
-            formats.append(line[len("MIC FORMAT "):])
+        elif line.startswith(("MIC FORMAT ", "MIC LAYOUT ", "MIC PACKET", "MIC BREAK ")):
+            formats.append(line[len("MIC "):])
         elif line.startswith("MIC SHARED ERROR"):
             shared = {"error": line[len("MIC SHARED ERROR "):]}
         elif line.startswith("MIC SHARED "):
@@ -265,7 +265,7 @@ def main():
         code, body = guest.command(f"powershell -NoProfile -ExecutionPolicy Bypass -File {script} "
                                    f"-Seconds {CAPTURE_SECONDS}", timeout=300)
         summary["capture_exit"], summary["capture_output"] = code, body
-        (summary["endpoints"], summary["capture"], summary["capture_error"], summary["exclusive_formats"],
+        (summary["endpoints"], summary["capture"], summary["capture_error"], summary["exclusive_details"],
          summary["shared"]) = parse_capture(body)
         log(f"capture exit={code}: " + " | ".join(line for line in body if line.startswith("MIC ")))
         with open(ctl, "a") as handle:

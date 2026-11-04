@@ -8,6 +8,8 @@
 // converts and may apply volume: the left channel's correlation, gain and phase against the
 // pattern's ramp. C# 5.
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -87,6 +89,16 @@ public static class BvMicCapture
 
     [DllImport("ole32.dll")]
     static extern int PropVariantClear(IntPtr value);
+
+    /// One GetBuffer: where it landed in the output, its size, flags, the device position and
+    /// QPC time (100 ns) Windows gave it, and when this thread read it (QPC, 100 ns).
+    struct Packet
+    {
+        public int At, Count;
+        public uint Flags;
+        public ulong Position, Qpc;
+        public long Read;
+    }
 
     struct Wave
     {
@@ -193,7 +205,7 @@ public static class BvMicCapture
 
     /// Starts `client`, keeps `wanted` frames of `blockAlign` bytes (zeros for silent
     /// packets), and stops it.
-    static byte[] Record(IAudioClient client, int wanted, int blockAlign, out int frames, out int silentPackets, out int discontinuities)
+    static byte[] Record(IAudioClient client, int wanted, int blockAlign, List<Packet> packets, out int frames, out int silentPackets, out int discontinuities)
     {
         AutoResetEvent ready = new AutoResetEvent(false);
         Check(client.SetEventHandle(ready.SafeWaitHandle.DangerousGetHandle()), "SetEventHandle");
@@ -224,6 +236,11 @@ public static class BvMicCapture
                     uint count, flags;
                     ulong devicePosition, qpcPosition;
                     Check(capture.GetBuffer(out buffer, out count, out flags, out devicePosition, out qpcPosition), "GetBuffer");
+                    if (packets != null)
+                    {
+                        packets.Add(new Packet { At = frames, Count = (int)count, Flags = flags, Position = devicePosition, Qpc = qpcPosition,
+                            Read = (long)(Stopwatch.GetTimestamp() * (10000000.0 / Stopwatch.Frequency)) });
+                    }
                     int take = (int)Math.Min(count, (uint)(wanted - frames));
                     if ((flags & SilentFlag) != 0) silentPackets++;
                     else if (take > 0) Marshal.Copy(buffer, data, frames * blockAlign, take * blockAlign);
@@ -278,19 +295,27 @@ public static class BvMicCapture
             }
             int frames, silentPackets, discontinuities;
             byte[] pcm;
+            List<Packet> packets = new List<Packet>();
             try
             {
                 Check(hr, "Initialize");
-                pcm = Record(client, wave.Rate * seconds, wave.BlockAlign, out frames, out silentPackets, out discontinuities);
+                uint bufferFrames;
+                long defaultPeriod, minimumPeriod;
+                Check(client.GetBufferSize(out bufferFrames), "GetBufferSize");
+                Check(client.GetDevicePeriod(out defaultPeriod, out minimumPeriod), "GetDevicePeriod");
+                lines.AppendLine("MIC LAYOUT buffer_frames=" + bufferFrames + " default_period_hns=" + defaultPeriod
+                    + " minimum_period_hns=" + minimumPeriod);
+                pcm = Record(client, wave.Rate * seconds, wave.BlockAlign, packets, out frames, out silentPackets, out discontinuities);
             }
             finally
             {
                 Marshal.ReleaseComObject(client);
             }
+            DescribePackets(packets, lines);
             bool exact = IsPcm(wave) && wave.Channels == 2 && wave.Bits == 16 && wave.Rate == 48000 && wave.BlockAlign == 4;
             return "MIC CAPTURE endpoint=" + Convert.ToBase64String(Encoding.UTF8.GetBytes(id)) + " format=" + names[chosen]
                 + " period_hns=" + duration + " frames=" + frames + " silent_packets=" + silentPackets
-                + " discontinuities=" + discontinuities + " " + (exact ? Analyze(pcm, frames) : "analysis=not-48k-16-bit-stereo-pcm");
+                + " discontinuities=" + discontinuities + " " + (exact ? Analyze(pcm, frames, lines) : "analysis=not-48k-16-bit-stereo-pcm");
         }
         finally
         {
@@ -312,7 +337,7 @@ public static class BvMicCapture
             Wave wave = Read(mix);
             Check(client.Initialize(Shared, EventCallback, 1000000, 0, mix, IntPtr.Zero), "Initialize");
             int frames, silentPackets, discontinuities;
-            byte[] data = Record(client, wave.Rate * seconds, wave.BlockAlign, out frames, out silentPackets, out discontinuities);
+            byte[] data = Record(client, wave.Rate * seconds, wave.BlockAlign, null, out frames, out silentPackets, out discontinuities);
             string fit = "correlation=none reason=not-48k-float32-or-pcm16";
             if (wave.Rate == 48000 && ((IsFloat(wave) && wave.Bits == 32) || (IsPcm(wave) && wave.Bits == 16)))
                 fit = Correlate(data, frames, wave.BlockAlign, IsFloat(wave));
@@ -406,6 +431,40 @@ public static class BvMicCapture
             + bestGain.ToString("F4", CultureInfo.InvariantCulture) + " phase=" + bestPhase + " wrap_at=" + wrap;
     }
 
+    /// The first 40 packets one per line (times in ms from the first packet's QPC time), then
+    /// how many packets had each size and each device-position step, and the latest read.
+    static void DescribePackets(List<Packet> packets, StringBuilder lines)
+    {
+        if (packets.Count == 0) return;
+        double origin = packets[0].Qpc;
+        SortedDictionary<int, int> sizes = new SortedDictionary<int, int>(), steps = new SortedDictionary<int, int>();
+        double latestRead = double.MinValue;
+        for (int i = 0; i < packets.Count; i++)
+        {
+            Packet packet = packets[i];
+            if (i < 40)
+            {
+                lines.AppendLine("MIC PACKET n=" + i + " at=" + packet.At + " count=" + packet.Count + " flags=0x" + packet.Flags.ToString("X")
+                    + " pos=" + packet.Position + " qpc_ms=" + ((packet.Qpc - origin) / 10000.0).ToString("F2", CultureInfo.InvariantCulture)
+                    + " read_ms=" + ((packet.Read - origin) / 10000.0).ToString("F2", CultureInfo.InvariantCulture));
+            }
+            int size;
+            sizes[packet.Count] = sizes.TryGetValue(packet.Count, out size) ? size + 1 : 1;
+            if (i > 0)
+            {
+                int step = (int)((long)packet.Position - (long)packets[i - 1].Position), seen;
+                steps[step] = steps.TryGetValue(step, out seen) ? seen + 1 : 1;
+            }
+            latestRead = Math.Max(latestRead, (packet.Read - (double)packet.Qpc) / 10000.0);
+        }
+        StringBuilder summary = new StringBuilder("MIC PACKETS total=" + packets.Count + " sizes=");
+        foreach (KeyValuePair<int, int> entry in sizes) summary.Append(entry.Key + ":" + entry.Value + ",");
+        summary.Append(" pos_steps=");
+        foreach (KeyValuePair<int, int> entry in steps) summary.Append(entry.Key + ":" + entry.Value + ",");
+        summary.Append(" max_read_after_qpc_ms=" + latestRead.ToString("F2", CultureInfo.InvariantCulture));
+        lines.AppendLine(summary.ToString());
+    }
+
     /// -1 unless the frame at `offset` is a pattern frame.
     static int Index(byte[] pcm, int offset)
     {
@@ -418,8 +477,9 @@ public static class BvMicCapture
 
     /// Pattern frames, the first one's offset and index, breaks in the sequence after it
     /// (a silent gap or a jump counts once, where it starts), the longest unbroken run,
-    /// and the SHA-256 of the unbroken span from the first pattern frame.
-    public static string Analyze(byte[] pcm, int frames)
+    /// and the SHA-256 of the unbroken span from the first pattern frame. The first 20 breaks
+    /// go to `details` (if any) as MIC BREAK lines: output offset, expected and found index.
+    public static string Analyze(byte[] pcm, int frames, StringBuilder details)
     {
         int patternFrames = 0, firstOffset = -1, firstIndex = -1, breaks = 0, run = 0, longest = 0, span = 0;
         int expected = -1;
@@ -441,7 +501,15 @@ public static class BvMicCapture
             }
             else
             {
-                if (!gap) breaks++;
+                if (!gap)
+                {
+                    breaks++;
+                    if (details != null && breaks <= 20)
+                    {
+                        details.AppendLine("MIC BREAK at=" + offset + " expected=" + expected + " got=" + index
+                            + " delta=" + (index >= 0 ? (index - expected).ToString() : "gap"));
+                    }
+                }
                 run = index >= 0 ? 1 : 0;
             }
             gap = index < 0;
