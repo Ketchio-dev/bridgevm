@@ -6,10 +6,8 @@ permissions:
   contents: read
 jobs:
   ppm-contracts:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-15]
-    runs-on: ${{ matrix.os }}
+    # Pure Python with no platform branch or host tool, so Linux covers it.
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
