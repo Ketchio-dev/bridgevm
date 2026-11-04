@@ -14,7 +14,7 @@ use crate::virtio_gpu_3d::VIRTIO_GPU_BLOB_MEM_HOST3D;
 use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_GET_CAPSET_INFO;
 
 /// The preferred detailed timing: active size, refresh and pixel clock (10 kHz).
-fn edid_preferred_timing(edid: &[u8; 128]) -> ((u32, u32), u32, u32) {
+fn edid_preferred_timing(edid: &[u8]) -> ((u32, u32), u32, u32) {
     let dtd = &edid[54..72];
     let pixel_clock_10khz = u32::from(u16::from_le_bytes([dtd[0], dtd[1]]));
     let h_active = u32::from(dtd[2]) | (u32::from(dtd[4] >> 4) << 8);
@@ -380,7 +380,7 @@ fn trace_records_display_edid_and_pre_reset_state() {
     assert!(contents.contains("\"response_scanout0_width\":1600"));
     assert!(contents.contains("\"response_scanout0_height\":900"));
     assert!(contents.contains("\"response_scanout0_enabled\":1"));
-    assert!(contents.contains("\"response_edid_size\":128"));
+    assert!(contents.contains("\"response_edid_size\":256"));
     assert!(contents.contains("\"response_edid_checksum_valid\":true"));
     assert!(contents
         .contains("\"readable_descriptor_lengths\":[24],\"writable_descriptor_lengths\":[408]"));
@@ -520,13 +520,17 @@ fn get_edid_returns_checksum_valid_base_block() {
     let mut mem = TestMem::new(0x4000_0000, 0x20000);
     let resp = submit_control(&mut dev, &mut mem, &ctrl_req(VIRTIO_GPU_CMD_GET_EDID), 1056);
     assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_EDID));
-    assert_eq!(read_le_u32(&resp, 24), Some(128));
-    let edid = &resp[32..160];
+    assert_eq!(read_le_u32(&resp, 24), Some(256));
+    let edid = &resp[32..288];
     assert_eq!(&edid[0..8], &[0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0]);
-    assert_eq!(
-        edid.iter().fold(0u8, |acc, byte| acc.wrapping_add(*byte)),
-        0
-    );
+    assert_eq!(edid[126], 1, "one extension block");
+    assert_eq!(edid[128], 0x02, "CTA-861");
+    for block in edid.chunks(128) {
+        assert_eq!(
+            block.iter().fold(0u8, |acc, byte| acc.wrapping_add(*byte)),
+            0
+        );
+    }
 }
 
 #[test]
