@@ -81,6 +81,71 @@ final class HvfDiskGrowTests: XCTestCase {
         XCTAssertEqual(sent.count, 2)
     }
 
+    /// A failed report keeps the marker, so the next agent start tries again; the third failure leaves
+    /// it to Disk Management. (Before, the first failure removed the marker and nothing retried.)
+    func testAFailedExtendIsRetriedAtTheNextStartsUpToThreeTimes() async throws {
+        let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
+        defer { fixture.clean() }
+        let saved = fixture.config()
+        fixture.save(saved)
+        let session = try XCTUnwrap(fixture.library(probe: probe).hvfRuntimeDetailSession(for: saved))
+        let marker = try XCTUnwrap(HvfDiskGrow.pendingMarker(config: session.config))
+        try Data("0\n".utf8).write(to: marker)
+        var sent = 0
+        let failed: HvfDisplayDriverInstall.Runner = { _, _ in
+            sent += 1
+            return ("BVDISK result=failed detail=The disk is not ready\n", 0)
+        }
+        for attempt in 1...2 {
+            await session.extendGrownDiskIfPending(runner: failed)?.value
+            XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path), "failure \(attempt) is retried at the next start")
+            XCTAssertEqual(session.diskGrowNotice,
+                           "C: 드라이브를 자동으로 확장하지 못했습니다(The disk is not ready). 다음 Windows 시작 때 다시 시도합니다.")
+        }
+        await session.extendGrownDiskIfPending(runner: failed)?.value
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+        XCTAssertEqual(session.diskGrowNotice,
+                       "C: 드라이브를 자동으로 확장하지 못했습니다(The disk is not ready). Windows의 디스크 관리에서 C: 볼륨을 확장하세요.")
+        XCTAssertNil(session.extendGrownDiskIfPending(runner: failed), "no fourth attempt")
+        XCTAssertEqual(sent, 3)
+    }
+
+    /// The grow's message stays until the guest reports; each report then replaces it, a retried
+    /// failure first and the extended result after it.
+    func testTheGuestReportReplacesTheGrowMessage() async throws {
+        let fixture = try HvfOwnedRuntimeFixture(readyForLaunch: false)
+        defer { fixture.clean() }
+        let bundle = fixture.root.appendingPathComponent("vm/bundle")
+        let disk = bundle.appendingPathComponent("disks/hvf-target.raw"), vars = bundle.appendingPathComponent("metadata/hvf-vars.fd")
+        let helper = fixture.root.appendingPathComponent("target/release/examples/snapshot_pair_cli")
+        for url in [disk, vars, helper] {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            XCTAssertTrue(FileManager.default.createFile(atPath: url.path, contents: Data(count: 512)))
+        }
+        try Data("#!/bin/sh\necho \"disk_bytes $4\"\n".utf8).write(to: helper)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
+        fixture.config.targetDiskPath = disk.path
+        fixture.config.uefiVarsPath = vars.path
+        let session = fixture.session()
+        let plan = try XCTUnwrap(HvfDiskGrow.plan(config: session.config, repoRoot: session.repoRoot))
+
+        await session.growDisk(plan, toGiB: 72)?.value
+        let grew = "디스크를 72 GiB로 늘렸습니다. " + HvfDiskGrow.pendingNote
+        XCTAssertEqual(session.diskGrowNotice, grew)
+        XCTAssertNil(session.mutationReservation, "the reservation ends with the grow")
+
+        var reply = "HVF 게스트 명령 응답 시간 초과"
+        let runner: HvfDisplayDriverInstall.Runner = { _, _ in (reply, 0) }
+        await session.extendGrownDiskIfPending(runner: runner)?.value
+        XCTAssertEqual(session.diskGrowNotice, grew, "no report yet")
+        reply = "BVDISK result=failed detail=busy"
+        await session.extendGrownDiskIfPending(runner: runner)?.value
+        XCTAssertEqual(session.diskGrowNotice, HvfDiskGrow.Outcome.failed(detail: "busy").retryNotice)
+        reply = "BVDISK result=extended size=\(72 * gib)"
+        await session.extendGrownDiskIfPending(runner: runner)?.value
+        XCTAssertEqual(session.diskGrowNotice, HvfDiskGrow.Outcome.extended(bytes: 72 * gib).notice)
+    }
+
     /// `BVAGENT SERVICE start` sends the extend through agent.ctl only while a grow is pending.
     func testServiceStartSendsTheExtendOnlyAfterAGrow() async throws {
         let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
@@ -146,7 +211,7 @@ final class HvfDiskGrowTests: XCTestCase {
 
         XCTAssertEqual(try HvfDiskGrow.currentBytes(plan), 64 * gib)
         XCTAssertEqual(try HvfDiskGrow.grow(plan, to: 72 * gib), 72 * gib)
-        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "\(72 * gib)\n")
+        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "0\n", "no failed extend attempt yet")
         XCTAssertEqual(try String(contentsOf: URL(fileURLWithPath: helper.path + ".args"), encoding: .utf8),
                        "size \(disk.path) \(vars.path)\ngrow \(disk.path) \(vars.path) \(72 * gib)\n")
 

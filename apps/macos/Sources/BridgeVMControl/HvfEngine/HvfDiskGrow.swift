@@ -9,8 +9,10 @@ import Foundation
 /// the end of the disk, with no recovery partition after it (scripts/win-assets/bvdiskpart.txt),
 /// so C: simply extends. A grow leaves `metadata/disk-grow-pending` in the bundle; at the next
 /// `BVAGENT SERVICE start` the session runs `extendCommand` through the agent's plain RUN verb,
-/// which every agent has, and removes the file once the guest reports. Without a report (no agent)
-/// the file stays, and the setting says to extend C: in Disk Management.
+/// which every agent has. The file holds the failed attempts so far: a `failed` report keeps it for
+/// the next start until `maximumAttempts`, any other report removes it. Without a report (no agent)
+/// the file stays, and the setting says to extend C: in Disk Management. The session's
+/// `diskGrowNotice` is the latest message, so the guest's report replaces the grow's.
 enum HvfDiskGrow {
     static let pendingName = "metadata/disk-grow-pending"
     static let bytesPerGiB: UInt64 = 1 << 30
@@ -19,6 +21,8 @@ enum HvfDiskGrow {
     /// Exit status of `snapshot_pair_cli grow` while a runtime holds the media.
     static let inUseExitStatus: Int32 = 3
     static let extendTimeout: TimeInterval = 180
+    /// Agent starts that try the extend before a failure leaves it to Disk Management.
+    static let maximumAttempts = 3
 
     static let sparseHelp = "디스크 파일은 sparse 파일이라 늘려도 Windows가 새 공간에 실제로 쓰기 전까지 Mac 저장 공간을 쓰지 않습니다. 늘린 디스크는 줄일 수 없고, 그 전에 만든 스냅샷을 복원하면 디스크도 그때 크기로 돌아갑니다."
     static let pendingNote = "다음 Windows 시작 때 C: 드라이브를 자동으로 확장합니다. 확장되지 않으면 Windows의 디스크 관리에서 C: 볼륨을 확장하세요."
@@ -86,9 +90,18 @@ enum HvfDiskGrow {
             case .already:
                 return "C: 드라이브가 이미 디스크 끝까지 확장되어 있습니다."
             case let .failed(detail):
-                return "C: 드라이브를 자동으로 확장하지 못했습니다" + (detail.isEmpty ? "" : "(\(detail))")
-                    + ". Windows의 디스크 관리에서 C: 볼륨을 확장하세요."
+                return Self.failedPrefix(detail) + "Windows의 디스크 관리에서 C: 볼륨을 확장하세요."
             }
+        }
+
+        /// A failure the next agent start tries again.
+        var retryNotice: String {
+            guard case let .failed(detail) = self else { return notice }
+            return Self.failedPrefix(detail) + "다음 Windows 시작 때 다시 시도합니다."
+        }
+
+        private static func failedPrefix(_ detail: String) -> String {
+            "C: 드라이브를 자동으로 확장하지 못했습니다" + (detail.isEmpty ? "" : "(\(detail))") + ". "
         }
     }
 
@@ -142,14 +155,21 @@ enum HvfDiskGrow {
         return try diskBytes(completion.text)
     }
 
-    /// Grows the selected disk to `bytes`, then leaves the marker the next agent start extends C: for.
+    /// Grows the selected disk to `bytes`, then leaves the marker the next agent start extends C: for,
+    /// with no failed attempt yet.
     static func grow(_ plan: Plan, to bytes: UInt64) throws -> UInt64 {
         let completion = try HvfHelperProcess.run(
             plan.executable, ["grow", plan.disk.path, plan.vars.path, String(bytes)])
         guard completion.succeeded else { throw failure(completion, action: "디스크를 늘리지") }
         let grown = try diskBytes(completion.text)
-        try Data("\(grown)\n".utf8).write(to: plan.pendingMarker, options: [.atomic])
+        try Data("0\n".utf8).write(to: plan.pendingMarker, options: [.atomic])
         return grown
+    }
+
+    /// Failed extend attempts the marker records; anything unreadable counts as none.
+    static func failedAttempts(_ marker: URL) -> Int {
+        let text = (try? String(contentsOf: marker, encoding: .utf8)) ?? ""
+        return Int(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
     }
 
     private static func diskBytes(_ output: String) throws -> UInt64 {
@@ -171,8 +191,31 @@ enum HvfDiskGrow {
 }
 
 extension HvfEngineSession {
-    /// At `BVAGENT SERVICE start` after a grow: extend C: once, and say how it went. A reply
-    /// without a report keeps the marker for the next agent start.
+    /// Grows the stopped VM's disk under a runtime-mutation reservation. The outcome becomes
+    /// `diskGrowNotice`, which the guest's extend report replaces once it arrives.
+    @discardableResult
+    func growDisk(_ plan: HvfDiskGrow.Plan, toGiB gib: Int) -> Task<Void, Never>? {
+        guard let reservation = reserveRuntimeMutation(kind: .diskGrow, configuration: config) else {
+            diskGrowNotice = HvfDiskGrow.stopFirst
+            return nil
+        }
+        return Task { @MainActor in
+            do {
+                guard validateRuntimeMutation(reservation) else { throw HvfDiskGrow.error(HvfDiskGrow.stopFirst) }
+                try reservation.checkEffect()
+                let grown = try await Task.detached {
+                    try HvfDiskGrow.grow(plan, to: UInt64(gib) * HvfDiskGrow.bytesPerGiB)
+                }.value
+                diskGrowNotice = "디스크를 \(HvfDiskGrow.gibText(grown))로 늘렸습니다. " + HvfDiskGrow.pendingNote
+            } catch {
+                diskGrowNotice = error.localizedDescription
+            }
+            finishRuntimeMutation(reservation)
+        }
+    }
+
+    /// At `BVAGENT SERVICE start` after a grow: extend C:, and say how it went. A reply without a
+    /// report keeps the marker for the next agent start; so does a failure, up to `maximumAttempts`.
     @discardableResult
     func extendGrownDiskIfPending(runner: HvfDisplayDriverInstall.Runner? = nil) -> Task<Void, Never>? {
         guard !diskExtendInFlight, let marker = HvfDiskGrow.pendingMarker(config: config),
@@ -186,6 +229,14 @@ extension HvfEngineSession {
             let reply = await run(HvfDiskGrow.extendCommand, HvfDiskGrow.extendTimeout)
             diskExtendInFlight = false
             guard let outcome = HvfDiskGrow.outcome(reply: reply.output) else { return }
+            if case .failed = outcome {
+                let attempts = HvfDiskGrow.failedAttempts(marker) + 1
+                if attempts < HvfDiskGrow.maximumAttempts,
+                   (try? Data("\(attempts)\n".utf8).write(to: marker, options: [.atomic])) != nil {
+                    diskGrowNotice = outcome.retryNotice
+                    return
+                }
+            }
             try? FileManager.default.removeItem(at: marker)
             diskGrowNotice = outcome.notice
         }

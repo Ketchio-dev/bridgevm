@@ -9,7 +9,6 @@ struct HvfDiskSizeSetting: View {
     @State private var targetGiB = 0
     @State private var busy = false
     @State private var confirming = false
-    @State private var status: String?
 
     private var plan: HvfDiskGrow.Plan? { HvfDiskGrow.plan(config: config, repoRoot: session.repoRoot) }
     private var stopped: Bool { session.libraryPreferencesEditable && !session.hasActiveRuntimeWork }
@@ -48,8 +47,9 @@ struct HvfDiskSizeSetting: View {
         }
     }
 
+    /// The session's latest message: a grow's result until the guest's extend report replaces it.
     private var note: String {
-        if let status { return status }
+        if busy { return "디스크를 늘리는 중…" }
         if let notice = session.diskGrowNotice { return notice }
         if let marker = HvfDiskGrow.pendingMarker(config: config),
            FileManager.default.fileExists(atPath: marker.path) { return HvfDiskGrow.pendingNote }
@@ -80,25 +80,10 @@ struct HvfDiskSizeSetting: View {
 
     private func grow(to gib: Int) {
         guard !busy, let plan, let range, range.contains(gib),
-              let reservation = session.reserveRuntimeMutation(kind: .diskGrow, configuration: config) else {
-            status = HvfDiskGrow.stopFirst
-            return
-        }
+              let task = session.growDisk(plan, toGiB: gib) else { return }
         busy = true
-        status = "디스크를 늘리는 중…"
         Task {
-            do {
-                guard session.validateRuntimeMutation(reservation) else { throw HvfDiskGrow.error(HvfDiskGrow.stopFirst) }
-                try reservation.checkEffect()
-                let grown = try await Task.detached {
-                    try HvfDiskGrow.grow(plan, to: UInt64(gib) * HvfDiskGrow.bytesPerGiB)
-                }.value
-                session.diskGrowNotice = nil
-                status = "디스크를 \(HvfDiskGrow.gibText(grown))로 늘렸습니다. " + HvfDiskGrow.pendingNote
-            } catch {
-                status = error.localizedDescription
-            }
-            session.finishRuntimeMutation(reservation)
+            await task.value
             busy = false
             refresh()
         }
