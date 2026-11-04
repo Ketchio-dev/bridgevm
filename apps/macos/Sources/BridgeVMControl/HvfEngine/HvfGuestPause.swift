@@ -23,6 +23,26 @@ enum HvfPauseState: Equatable {
     }
 }
 
+/// Host time with the paused stretches left out, as the probe's vm_clock is for the devices. The app's
+/// deadlines for guest answers (input receipts and the release cleanup, window inventory, guest
+/// commands) run on it, so a pause never uses up the time the guest has to answer.
+struct HvfGuestRunClock {
+    private var excluded: TimeInterval = 0
+    private var heldSince: Date?
+
+    func now(host: Date) -> Date { (heldSince ?? host).addingTimeInterval(-excluded) }
+
+    /// Held from the press of Pause until the guest runs again (`HvfPauseState.holdsInput`).
+    mutating func hold(_ held: Bool, host: Date) {
+        if held {
+            if heldSince == nil { heldSince = host }
+        } else if let since = heldSince {
+            excluded += max(0, host.timeIntervalSince(since))
+            heldSince = nil
+        }
+    }
+}
+
 enum HvfPauseOutcome: Equatable {
     case requested
     case refused(String)
@@ -39,6 +59,9 @@ extension HvfEngineSession {
     /// The probe parks every vCPU within 2 s (`PARK_TIMEOUT`) or refuses; one it never answers (a
     /// helper without Pause, or one that ended) is dropped after this long.
     static let pauseAnswerTimeout: TimeInterval = 5
+
+    /// The clock for the app's deadlines on guest answers (HvfGuestRunClock).
+    func guestNow() -> Date { guestRunClock.now(host: hostNow()) }
 
     var pauseAvailable: Bool {
         vmmControlAvailable && !runtimeStartupWorkerPending

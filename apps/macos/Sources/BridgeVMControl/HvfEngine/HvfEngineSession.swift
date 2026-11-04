@@ -38,7 +38,11 @@ final class HvfEngineSession: ObservableObject {
     @Published var resetConfirmation: HvfResetConfirmation? // the Reset the user is asked to confirm
     @Published var restartNotice: String? // a Reset that no helper took
     @Published var guestBoot = 0 // bumps at every guest reset record and at every run start or end
-    @Published var pause = HvfPauseState.running // what the probe last said about Pause (HvfGuestPause)
+    @Published var pause = HvfPauseState.running { // what the probe last said about Pause (HvfGuestPause)
+        didSet { guestRunClock.hold(pause.holdsInput, host: hostNow()) }
+    }
+    var hostNow: () -> Date = Date.init // the host clock behind guestNow()
+    var guestRunClock = HvfGuestRunClock()
     @Published var pauseNotice: String? // a Pause or Resume that did not happen
     var runtimeTransitionInProgress = false
     var timer: Timer?
@@ -76,7 +80,9 @@ final class HvfEngineSession: ObservableObject {
         self.repoRoot = repoRoot
         self.processIsRunning = processIsRunning
         self.vtpmKeyProvider = vtpmKeyProvider
-        inputDriver.onPoll = { [weak self] in self?.poll() }
+        // The 10 ms input pump waits out a pause: no receipt comes before the guest runs again.
+        inputDriver.onPoll = { [weak self] in if self?.pause == .running { self?.poll() } }
+        inputDriver.now = { [weak self] in self?.guestNow() ?? Date() }
         inputDriver.onDiagnostic = { [weak self] in self?.append(.unknown($0)) }
         appPacing.observe(inputDriver)
     }
