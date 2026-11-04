@@ -327,6 +327,27 @@ fn guest_image_is_checked_then_written_once_with_its_text() {
 }
 
 #[test]
+fn guest_copy_of_the_same_text_without_the_image_drops_it_on_the_mac() {
+    let mut rig = Rig::new(true);
+    rig.guest.text = "cells\n".into();
+    rig.guest.image = Some(png(64, 32, 1024, 5));
+    rig.settle();
+    assert!(rig.mac.image.is_some());
+    rig.verbs();
+    rig.mac.writes.clear();
+    // Windows: the same text copied again, this time without an image.
+    rig.guest.image = None;
+    rig.settle();
+    assert_eq!(rig.mac.writes, vec![(Some("cells\n".to_owned()), None)]);
+    assert!(rig.mac.image.is_none(), "the Mac no longer pastes the old image");
+    for _ in 0..3 {
+        rig.settle();
+    }
+    assert!(rig.verbs().is_empty(), "nothing fetched or pushed back");
+    assert_eq!(rig.mac.writes.len(), 1);
+}
+
+#[test]
 fn guest_image_is_refused_for_path_size_signature_and_digest() {
     // A path other than <dir>\guest.png is never fetched.
     let mut rig = Rig::new(true);

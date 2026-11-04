@@ -114,7 +114,11 @@ impl AgentConsoleHarness {
         }
         let learning = self.last_synced.rebaseline;
         let text = self.admit_guest_clip(b64, now);
+        // A guest copy without the image the guest held replaces the Mac's
+        // text + image even when its text is unchanged.
+        let mut image_gone = false;
         if let Some(image) = image {
+            image_gone = image.is_none() && self.last_synced.image.is_some();
             self.last_synced.guest_text = text.as_deref().filter(|t| !t.is_empty()).map(normalize_clip);
             self.handle_guest_image(image, learning, now);
         }
@@ -123,7 +127,12 @@ impl AgentConsoleHarness {
         };
         // Adopt only genuinely-new content (normalized compare) so a value
         // we pushed host->guest doesn't bounce straight back.
-        if let Some(normalized) = guest_clip_decision(&self.last_synced.text, &text) {
+        let decision = if image_gone {
+            guest_clip_decision(&None, &text)
+        } else {
+            guest_clip_decision(&self.last_synced.text, &text)
+        };
+        if let Some(normalized) = decision {
             let bytes = normalized.len();
             self.last_synced.text = Some(normalized.clone());
             if let Some(pasteboard) = self.pasteboard.as_ref() {
