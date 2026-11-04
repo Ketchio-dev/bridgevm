@@ -113,6 +113,7 @@ impl AgentConsoleHarness {
             share,
             share_old_agent_warned: false,
             clock: HostClock::from_env(),
+            dns_flush: DnsFlush::default(),
         })
     }
     /// Frame drained agent bytes into `line_scratch`. An unterminated reply

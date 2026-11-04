@@ -41,6 +41,8 @@ pub struct VirtioGpu {
     pub(crate) blob_scanout: Option<BlobScanout>,
     pub(crate) scanout: Vec<u8>,
     pub(crate) fb_sink: Option<FbSink>,
+    /// The guest's hardware cursor, published next to the display file (cursor.rs).
+    pub(crate) cursor: GuestCursor,
     pub(crate) three_d: VirtioGpu3d,
     pub(crate) pending_fenced: VecDeque<PendingFencedResponse>,
     pub(crate) pending_vblank: VecDeque<PendingVblankResponse>,
@@ -136,6 +138,7 @@ impl VirtioGpu {
             blob_scanout: None,
             scanout: vec![0; len],
             fb_sink: FbSink::from_env(),
+            cursor: GuestCursor::from_env(),
             three_d: VirtioGpu3d::new(),
             pending_fenced: VecDeque::new(),
             pending_vblank: VecDeque::new(),
@@ -230,6 +233,7 @@ impl VirtioGpu {
         self.events_clear = 0;
         self.pending_config_change = false;
         self.resources.clear();
+        self.cursor.reset();
         self.scanout_resource = None;
         self.unbind_blob_scanout();
         self.scanout.clear();

@@ -70,6 +70,7 @@ extension VMConfig {
         copy.guestResolution = other.guestResolution
         copy.commandKeyMode = other.commandKeyMode
         copy.virtioDisplayDriverInstalled = other.virtioDisplayDriverInstalled
+        copy.hardwareCursor = other.hardwareCursor
         copy.sharedFolderHostPath = other.sharedFolderHostPath
         copy.sharedFolderGuestPath = other.sharedFolderGuestPath
         return copy
