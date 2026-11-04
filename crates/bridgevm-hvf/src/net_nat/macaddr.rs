@@ -462,7 +462,7 @@ impl HostSocketOutboundIpv4Handler {
             icmp_recv_scratch: [0; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
             pending_socket_errors: 0,
             dns,
-            epoch: Instant::now(),
+            epoch: crate::vm_clock::active_now(),
             last_idle_sweep_ms: 0,
             idle_timeout_ms: Self::DEFAULT_IDLE_TIMEOUT_MS,
             max_flows: Self::DEFAULT_MAX_FLOWS,
@@ -485,7 +485,9 @@ impl HostSocketOutboundIpv4Handler {
     }
 
     pub(crate) fn now_ms(&self) -> u64 {
-        u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
+        // VM time: a pause neither fires retransmits nor ages flows (vm_clock).
+        let elapsed = crate::vm_clock::active_now().saturating_duration_since(self.epoch);
+        u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
     }
 
     pub(crate) fn next_tcp_isn(&mut self) -> u32 {

@@ -241,11 +241,12 @@ impl VirtPlatform {
     }
 
     /// Feed the current host time to the platform once per run-loop iteration.
-    /// The report-pacing gate reads this; the `Instant::now()` call itself stays
-    /// in the probe so this crate holds no clock and unit tests stay
-    /// deterministic (they never call this, so pacing is inert).
+    /// The report-pacing gate and HDA DMA read this. The probe passes
+    /// `Instant::now()`; the platform keeps the VM's time (vm_clock), which
+    /// leaves out paused time, so pacing continues where a pause began. Unit
+    /// tests that never call this keep pacing inert.
     pub fn set_host_now(&mut self, now: Instant) {
-        self.host_now = Some(now);
+        self.host_now = Some(crate::vm_clock::active_at(now));
     }
 
     /// Reset for the next boot. A TPM backend reset failure returns before any
