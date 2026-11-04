@@ -7,9 +7,10 @@ import SwiftUI
 /// with pnputil and records one `BVDRIVER result=<installed|staged|failed> detail=<...>` line.
 ///
 /// The guest agent runs one command at a time, and clipboard, shared folders and the display
-/// applier wait behind it, so the install never runs inside an agent command: one short
-/// command writes the installer into `C:\ProgramData\BridgeVM\display-driver` and starts it
-/// through Win32_Process.Create (no inherited agent handles), then short polls read its result.
+/// applier wait behind it, so the install never runs inside an agent command: one short command
+/// locks `C:\ProgramData\BridgeVM\display-driver` to SYSTEM and Administrators, a second writes
+/// the installer there and starts it through Win32_Process.Create (no inherited agent handles),
+/// then short polls read its result.
 enum HvfDisplayDriverInstall {
     static let archiveURL = "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/upstream-virtio/attestation-virtio-win-prewhql-0.1-299.zip"
     static let archiveBytes = 94_849_704
@@ -42,7 +43,8 @@ enum HvfDisplayDriverInstall {
 
     /// What one launch or poll reply says.
     enum Progress: Equatable {
-        /// `BVDRIVER started` or `BVDRIVER running`: the guest installer is still working.
+        /// `BVDRIVER ready` (the folder is locked; launch next), `BVDRIVER started` or
+        /// `BVDRIVER running`: no result yet.
         case running
         /// The installer's result line, or why there is none.
         case finished(Outcome)
@@ -51,15 +53,18 @@ enum HvfDisplayDriverInstall {
     static let stillRunning = Outcome(status: .failed,
         detail: "15분 안에 끝나지 않았습니다. 게스트에서 설치가 계속 진행 중일 수 있습니다. 다시 누르면 진행 중인 설치를 이어서 기다립니다.")
 
-    /// install.ps1, all of the guest side (Windows PowerShell 5.1, ASCII), in
-    /// `C:\ProgramData\BridgeVM\display-driver` with `running.lock` (the installer's PID while it
-    /// runs), `result.txt` and the kept `virtio-win.zip`. Three modes:
+    /// install.ps1, the installer (Windows PowerShell 5.1, ASCII), in the locked
+    /// `C:\ProgramData\BridgeVM\display-driver` with `launch.token` (the current launch's random
+    /// token), `running.lock` (the installer's PID while it runs), `result-<token>.txt` and the kept
+    /// `virtio-win.zip`. Three modes:
     /// - `Launch` (an agent command) starts `Run` through Win32_Process.Create, which gives it no
     ///   agent handles, and returns at once: `BVDRIVER started`, or `BVDRIVER running` when an
-    ///   install is already running (a second click joins it).
-    /// - `Poll` (an agent command) prints `result.txt`, else `BVDRIVER running`, else a failed
-    ///   result: the installer is gone without one. A lock counts only while its PID is still this
-    ///   script's Run mode, so a restart or a killed installer never blocks the next install.
+    ///   install is already running (a second click joins it). A new launch first writes a new
+    ///   token, which Run gets on its command line.
+    /// - `Poll` (an agent command) prints this launch's result file, else `BVDRIVER running`, else
+    ///   a failed result: the installer is gone without one. Only the result named for the token
+    ///   counts, and a lock only while its PID is still Run with that token, so a restart, a killed
+    ///   installer or a stale or foreign file never blocks the next install or answers for it.
     /// - `Run` downloads with Windows' own curl.exe. A stalled transfer (the VMM's NAT, real
     ///   networks) is cut after 20 s under 20 kB/s, and every attempt is a new curl run on the
     ///   kept partial file, so `-C -` resumes from its real length (curl's own `--retry` discards
@@ -71,26 +76,30 @@ enum HvfDisplayDriverInstall {
     static let script: String = {
         let files = driverFiles.map { "'\($0)'" }.joined(separator: ", ")
         return #"""
-        param([ValidateSet('Launch', 'Poll', 'Run')] [string]$Mode = 'Run')
+        param([ValidateSet('Launch', 'Poll', 'Run')] [string]$Mode = 'Run', [string]$Token = '')
         $ErrorActionPreference = 'Stop'
         $dir = Join-Path $env:ProgramData 'BridgeVM\display-driver'
         $lock = Join-Path $dir 'running.lock'
-        $resultFile = Join-Path $dir 'result.txt'
+        $tokenFile = Join-Path $dir 'launch.token'
         function Format-Result([string]$Result, [string]$Detail) { 'BVDRIVER result=' + $Result + ' detail=' + (($Detail -replace '\s+', ' ').Trim()) }
         if ($Mode -ne 'Run') {
           try {
-            if ($Mode -eq 'Poll' -and (Test-Path -LiteralPath $resultFile)) { [IO.File]::ReadAllText($resultFile); exit }
+            if (Test-Path -LiteralPath $tokenFile) { $Token = [IO.File]::ReadAllText($tokenFile) }
+            $resultFile = Join-Path $dir ('result-' + $Token + '.txt')
+            if ($Mode -eq 'Poll' -and $Token -and (Test-Path -LiteralPath $resultFile)) { [IO.File]::ReadAllText($resultFile); exit }
             $id = 0
             if (Test-Path -LiteralPath $lock) { $id = [IO.File]::ReadAllText($lock).Trim() -as [int] }
             $process = $null
-            if ($id -gt 0) { $process = Get-CimInstance -ClassName Win32_Process -Filter ('ProcessId=' + $id) }
-            if ($null -ne $process -and $process.CommandLine -like '*\BridgeVM\display-driver\install.ps1*-Mode Run*') {
+            if ($id -gt 0 -and $Token) { $process = Get-CimInstance -ClassName Win32_Process -Filter ('ProcessId=' + $id) }
+            if ($null -ne $process -and $process.CommandLine -like ('*\BridgeVM\display-driver\install.ps1" -Mode Run -Token ' + $Token)) {
               'BVDRIVER running pid=' + $id
             } elseif ($Mode -eq 'Poll') {
               Format-Result 'failed' 'the installer stopped without a result (did Windows restart?); install again'
             } else {
-              if (Test-Path -LiteralPath $resultFile) { Remove-Item -LiteralPath $resultFile -Force }
-              $line = 'powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $PSCommandPath + '" -Mode Run'
+              Remove-Item -Path (Join-Path $dir 'result-*') -Force
+              $Token = [guid]::NewGuid().ToString('N')
+              [IO.File]::WriteAllText($tokenFile, $Token)
+              $line = 'powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $PSCommandPath + '" -Mode Run -Token ' + $Token
               $started = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $line }
               if ($started.ReturnValue -ne 0) { throw ('Win32_Process.Create returned ' + $started.ReturnValue) }
               [IO.File]::WriteAllText($lock, [string]$started.ProcessId)
@@ -160,22 +169,59 @@ enum HvfDisplayDriverInstall {
         } finally {
           Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
         }
-        $temp = Join-Path $dir 'result.tmp'
+        $temp = Join-Path $dir ('result-' + $Token + '.tmp')
         [IO.File]::WriteAllText($temp, (Format-Result $result $detail))
-        [IO.File]::Move($temp, $resultFile)
+        [IO.File]::Move($temp, (Join-Path $dir ('result-' + $Token + '.txt')))
         Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue
         """#
     }()
 
-    /// Writes install.ps1 and runs its Launch mode. One agent line under cmd.exe's
+    /// The first agent command of every install. The agent runs elevated (bvagent-task.ps1:
+    /// `-RunLevel Highest`), ordinary users may create folders in ProgramData and own what they
+    /// create, so before anything is written `C:\ProgramData\BridgeVM` and its `display-driver`
+    /// folder must be writable only by SYSTEM (S-1-5-18) and Administrators (S-1-5-32-544), owned
+    /// by Administrators, with nothing inherited. SIDs, not names: Windows ships localized.
+    /// A folder already in exactly that state is reused (it keeps the partial download). Any other
+    /// folder is renamed aside whole and a new one is created with the locked descriptor, so no
+    /// one else can write to it at any moment; neither step follows a junction, whereas relocking
+    /// or deleting in place would act through one that another user swaps in. A reparse point, or
+    /// a folder that does not read back locked, is refused. Prints `BVDRIVER ready` or one failed
+    /// result line.
+    static let prepareCommand = encodedPowerShell(#"""
+        $ErrorActionPreference = 'Stop'
+        try {
+          $root = Join-Path $env:ProgramData 'BridgeVM'
+          $sid = [Security.Principal.SecurityIdentifier]
+          $locked = New-Object Security.AccessControl.DirectorySecurity
+          $locked.SetSecurityDescriptorSddlForm('O:S-1-5-32-544D:PAI(A;OICI;FA;;;S-1-5-18)(A;OICI;FA;;;S-1-5-32-544)')
+          function Test-ReparsePoint([string]$Path) { [bool]([IO.File]::GetAttributes($Path) -band [IO.FileAttributes]::ReparsePoint) }
+          function Test-Locked([string]$Path) {
+            $acl = Get-Acl -LiteralPath $Path
+            $aces = $acl.GetAccessRules($true, $true, $sid) | ForEach-Object { '{0} {1} {2} {3} {4}' -f $_.IdentityReference, $_.AccessControlType, $_.FileSystemRights, $_.InheritanceFlags, $_.IsInherited }
+            $acl.AreAccessRulesProtected -and $acl.GetOwner($sid).Value -eq 'S-1-5-32-544' -and (@($aces | Sort-Object) -join '; ') -eq 'S-1-5-18 Allow FullControl ContainerInherit, ObjectInherit False; S-1-5-32-544 Allow FullControl ContainerInherit, ObjectInherit False'
+          }
+          foreach ($path in $root, (Join-Path $root 'display-driver')) {
+            if (Test-Path -LiteralPath $path) {
+              if (Test-ReparsePoint $path) { throw "$path is a reparse point (a junction or link); remove it and install again" }
+              if (-not (Test-Locked $path)) { [IO.Directory]::Move($path, $path + '.unlocked-' + [guid]::NewGuid().ToString('N')) }
+            }
+            [void][IO.Directory]::CreateDirectory($path, $locked)
+            if ((Test-ReparsePoint $path) -or -not (Test-Locked $path)) { throw "$path could not be locked to SYSTEM and Administrators" }
+          }
+          'BVDRIVER ready'
+        } catch { 'BVDRIVER result=failed detail=' + (($_.Exception.Message -replace '\s+', ' ').Trim()) }
+        """#)
+
+    /// Writes install.ps1 into the folder `prepareCommand` has just locked (only SYSTEM and
+    /// Administrators can change it since) and runs its Launch mode. One agent line under cmd.exe's
     /// 8,191-character limit (see HvfClipboardPasteCommandLimit): cmd's `set` carries the script
     /// as UTF-8 base64, which has no cmd.exe special characters, and `-EncodedCommand`
-    /// (UTF-16LE base64) needs no quoting.
+    /// (UTF-16LE base64) needs no quoting. The locking is its own command because it does not fit
+    /// in this line next to the script.
     static let launchCommand = "set BVDRIVER_INSTALLER=\(Data(script.utf8).base64EncodedString())&& "
         + encodedPowerShell(#"""
         $ErrorActionPreference = 'Stop'
         $file = Join-Path $env:ProgramData 'BridgeVM\display-driver\install.ps1'
-        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
         [IO.File]::WriteAllBytes($file, [Convert]::FromBase64String($env:BVDRIVER_INSTALLER))
         & $file -Mode Launch
         """#)
@@ -197,7 +243,7 @@ enum HvfDisplayDriverInstall {
         }
         let rest = line.dropFirst(prefix.count)
         let token = String(rest.prefix { !$0.isWhitespace })
-        if token == "started" || token == "running" { return .running }
+        if token == "ready" || token == "started" || token == "running" { return .running }
         guard token.hasPrefix("result="), let status = Status(rawValue: String(token.dropFirst("result=".count))) else {
             return .finished(Outcome(status: .failed, detail: "알 수 없는 게스트 결과: \(line)"))
         }
@@ -214,12 +260,15 @@ enum HvfDisplayDriverInstall {
     /// Runs one agent command, waiting at most the given time for its reply.
     typealias Runner = @MainActor (String, TimeInterval) async -> (output: String, code: Int32)
 
-    /// Launches the guest installer (or joins the running one), then polls until it reports,
-    /// for at most `timeout`; a reply may take whatever is left of it.
+    /// Locks the staging folder, launches the guest installer (or joins the running one), then
+    /// polls until it reports, for at most `timeout`; a reply may take whatever is left of it.
     @MainActor static func install(runner: Runner, pollInterval: TimeInterval = pollInterval,
                                    timeout: TimeInterval = installTimeout) async -> Outcome {
         let deadline = Date().addingTimeInterval(timeout)
-        var reply = await runner(launchCommand, timeout)
+        var reply = await runner(prepareCommand, timeout)
+        if progress(output: reply.output, code: reply.code) == .running {
+            reply = await runner(launchCommand, deadline.timeIntervalSinceNow)
+        }
         while true {
             if case let .finished(outcome) = progress(output: reply.output, code: reply.code) { return outcome }
             guard deadline.timeIntervalSinceNow > pollInterval else { return stillRunning }
