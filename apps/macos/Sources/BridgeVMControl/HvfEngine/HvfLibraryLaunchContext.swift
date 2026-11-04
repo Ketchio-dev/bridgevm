@@ -36,6 +36,7 @@ extension HvfEngineConfig {
             durableDiskWrites: config.durableDiskWritesEnabled ?? false,
             guestResolution: config.guestResolution,
             retinaResolution: config.retinaResolution,
+            commandKeyMode: HvfCommandKeyMode(saved: config.commandKeyMode),
             ctlFilePath: config.bundlePath + "/metadata/hvf.ctl",
             vtpmStateDir: config.bundlePath + "/metadata/vtpm",
             swtpmBin: VTPMStateSecurity.defaultSwtpmCommand(),

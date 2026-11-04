@@ -10,6 +10,8 @@ struct HvfNegotiatedInputStream {
     private var capability: HvfInputCapabilitiesRequest?
     private var stream = HvfAcknowledgedInputStream()
     var count: Int { stream.count }
+    /// Generic chords reach the guest through the VMM until this stream is ready, then only with the agent's marker.
+    var modifierChords: Bool { state != .ready || capability?.modifierChords == true }
 
     mutating func enqueue(_ event: HvfOrderedInputQueue.Event, now: Date) -> Admission {
         switch state {

@@ -41,6 +41,8 @@ struct HvfEngineConfig: Equatable {
     /// screen's 2D virtio display asks for the window's backing pixels at the screen's scale; once set,
     /// every request names the Windows scale (HvfDisplayResizeRequest). The app alone applies it.
     var retinaResolution: Bool? = nil
+    /// How the live display maps the Command key (HvfHostKeyChord.swift); host-side only.
+    var commandKeyMode: HvfCommandKeyMode = .mac
     var ctlFilePath: String
     /// The app deliberately prefers the high-performance renderer lane. It is
     /// a launch-policy switch only: falling back to balanced does not mutate

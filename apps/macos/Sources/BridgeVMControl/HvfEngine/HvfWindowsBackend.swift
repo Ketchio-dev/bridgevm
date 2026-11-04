@@ -214,6 +214,7 @@ final class HvfWindowsBackend: VMBackend {
             durableDiskWrites: config.durableDiskWritesEnabled ?? false,
             guestResolution: config.guestResolution,
             retinaResolution: config.retinaResolution,
+            commandKeyMode: HvfCommandKeyMode(saved: config.commandKeyMode),
             ctlFilePath: ctlFilePath, allowsExperimental3D: config.experimental3DAllowed ?? false
         )
     }

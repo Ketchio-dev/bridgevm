@@ -229,6 +229,7 @@ final class FBLayerView: HvfFramebufferTextInput {
     }
 
     override func mouseDown(with event: NSEvent) {
+        cancelModifierTap()
         cancelTextComposition()
         window?.makeFirstResponder(self)
         pointerMoves.reset()
@@ -263,6 +264,7 @@ final class FBLayerView: HvfFramebufferTextInput {
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        cancelModifierTap()
         cancelTextComposition()
         window?.makeFirstResponder(self)
         pointerMoves.reset()
@@ -284,6 +286,7 @@ final class FBLayerView: HvfFramebufferTextInput {
     }
 
     override func scrollWheel(with event: NSEvent) {
+        cancelModifierTap()
         guard let session, hasGuestSize else {
             return
         }
@@ -306,7 +309,13 @@ final class FBLayerView: HvfFramebufferTextInput {
         session.map { HvfFramebufferKeyInput.send(event, to: $0) } ?? false
     }
     override func sendGuestText(_ text: String) -> Bool { session?.sendDisplayInput(.text(text)) ?? false }
+    override var guestModifierChords: Bool { session?.keyMapping.modifierChords ?? false }
+    override func sendGuestModifierTap(_ action: String) {
+        if let session { HvfFramebufferKeyInput.sendTap(action, to: session) }
+    }
+    /// Window resign, first-responder loss, teardown and display loss also drop a pending modifier tap.
     private func cancelGuestInputTarget() {
+        cancelModifierTap()
         cancelTextComposition()
         session?.cancelOrderedInputTarget()
     }

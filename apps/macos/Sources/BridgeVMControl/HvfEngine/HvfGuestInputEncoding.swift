@@ -28,26 +28,11 @@ struct HvfGuestInputEncoding {
         base64 = Data(value.utf8).base64EncodedString()
     }
 
+    /// Any generic chord (HvfModifierChord) except Ctrl+Alt+Delete: SendInput cannot raise the secure
+    /// attention sequence, so the agent refuses its keys rather than type them into an application.
     private static func keyEventCount(_ command: String) -> Int? {
-        guard !command.isEmpty, command.utf8.count <= 32 else { return nil }
-        let parts = command.split(separator: "+", omittingEmptySubsequences: false)
-        guard let last = parts.last else { return nil }
-        let key = String(last)
-        let prefix = parts.dropLast().joined(separator: "+")
-        let navigation: Set<String> = ["left", "up", "right", "down", "home", "end", "pageup", "pagedown"]
-        let named = navigation.union(["backspace", "tab", "enter", "esc", "escape",
-                                      "space", "insert", "delete"])
-            .union((1...12).map { "f\($0)" })
-        let allowed: Bool
-        switch prefix {
-        case "": allowed = parts.count == 1 && named.contains(key)
-        case "shift": allowed = navigation.contains(key) || ["tab", "enter", "space"].contains(key)
-        case "ctrl":
-            allowed = navigation.contains(key) || ["a", "c", "v", "x", "y", "z", "backspace", "delete"].contains(key)
-        case "ctrl+shift": allowed = navigation.contains(key)
-        case "alt": allowed = ["tab", "enter", "f4"].contains(key)
-        default: allowed = false
-        }
-        return allowed || HvfControlChordKeys.extended.contains(command) ? parts.count * 2 : nil
+        let parts = command.split(separator: "+").map(String.init)
+        guard parts.last != "delete" || !parts.contains("ctrl") || !parts.contains("alt") else { return nil }
+        return HvfModifierChord.eventCount(command)
     }
 }

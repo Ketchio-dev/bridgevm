@@ -1,7 +1,7 @@
-param([ValidateSet('all', 'current', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only')][string]$Mode = 'all')
+param([ValidateSet('all', 'current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only')][string]$Mode = 'all')
 $ErrorActionPreference = 'Stop'
 if ($Mode -eq 'all') {
-    foreach ($variant in @('current', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only')) {
+    foreach ($variant in @('current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only')) {
         & (Get-Process -Id $PID).Path -NoProfile -File $PSCommandPath -Mode $variant
         if ($LASTEXITCODE -ne 0) { throw "key capability variant failed: $variant" }
     }
@@ -10,15 +10,31 @@ if ($Mode -eq 'all') {
 }
 $assets = Join-Path $PSScriptRoot 'win-assets'
 $keySource = [IO.File]::ReadAllText((Join-Path $assets 'bvagent-key-input.cs'))
-$expanded = ' || key == "enter" || key == "space"'; $chords = '|| (prefix == "ctrl" && (letter || key == "enter" || key == "tab") || prefix == "ctrl+shift" && key == "tab" || prefix == "shift" && (key == "delete" || NamedKeys.ContainsKey(key) && key[0] == ''f''))'
-if (-not $keySource.Contains($expanded) -or -not $keySource.Contains($chords)) { throw 'missing expanded key allowlist' }
-$replacement = switch ($Mode) {
-    'base' { '' }; 'enter-only' { ' || key == "enter"' }; 'space-only' { ' || key == "space"' }; default { $expanded }
+$anchor = '        public static Input[] BuildKey(string command) {'
+if (-not $keySource.Contains($anchor)) { throw 'missing generic key builder' }
+# Older residents built only these keys (bvagent-key-input.cs allowlists before the generic chord builder).
+$navigation = @('left', 'up', 'right', 'down', 'home', 'end', 'pageup', 'pagedown')
+$base = $navigation + @('backspace', 'tab', 'enter', 'esc', 'escape', 'space', 'insert', 'delete') + @(1..12 | ForEach-Object { "f$_" }) +
+    @($navigation + 'tab' | ForEach-Object { "shift+$_" }) + @($navigation + @('a', 'c', 'v', 'x', 'y', 'z', 'backspace', 'delete') | ForEach-Object { "ctrl+$_" }) +
+    @($navigation | ForEach-Object { "ctrl+shift+$_" }) + @('tab', 'enter', 'f4' | ForEach-Object { "alt+$_" })
+$shift = @('shift+enter', 'shift+space')
+$chords = @([char[]]'abcdefghijklmnopqrstuvwxyz' | ForEach-Object { "ctrl+$_" }) + @('ctrl+enter', 'ctrl+tab', 'ctrl+shift+tab', 'shift+delete')
+$functions = @(1..12 | ForEach-Object { "shift+f$_" })
+$resident = switch ($Mode) {
+    'base' { $base }; 'enter-only' { $base + 'shift+enter' }; 'space-only' { $base + 'shift+space' }; 'shift-only' { $base + $shift }
+    'partial-chords' { $base + $shift + $chords }; 'chords' { $base + $shift + $chords + $functions }; default { $null }
+}
+if ($Mode -eq 'no-taps') {
+    # Every chord, but not a bare modifier tap.
+    $keySource = $keySource.Replace($anchor, $anchor + "`r`n            if (command.IndexOf('+') < 0 && !NamedKeys.ContainsKey(command)) { throw new ArgumentException(""unsupported-key-input""); }")
+} elseif ($null -ne $resident) {
+    $set = '        private static readonly HashSet<string> ResidentKeys = new HashSet<string>(new string[] { "' + ($resident -join '", "') + '" }, StringComparer.Ordinal);' + "`r`n"
+    $keySource = $keySource.Replace($anchor, $set + $anchor + "`r`n            if (!ResidentKeys.Contains(command)) { throw new ArgumentException(""unsupported-key-input""); }")
 }
 # Fresh child processes model resident compiled modules; Add-Type cannot replace a loaded type.
 $temporary = Join-Path ([IO.Path]::GetTempPath()) (([guid]::NewGuid().ToString()) + '.cs')
 try {
-    [IO.File]::WriteAllText($temporary, $keySource.Replace($expanded, $replacement).Replace($chords, $(if ($Mode -eq 'current') { $chords } elseif ($Mode -eq 'partial-chords') { $chords.Replace(" && key[0] == 'f'", ' && false') } else { '' }))) # others predate the chord set
+    [IO.File]::WriteAllText($temporary, $keySource)
     Add-Type -Path (Join-Path $assets 'bvagent-unicode-input.cs'),$temporary,(Join-Path $assets 'bvagent-pointer-input.cs')
 } finally { Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue }
 . (Join-Path $assets 'bvagent-input.ps1')
@@ -32,7 +48,9 @@ if ($null -eq $definition) { throw 'missing resident capability function' }
 . ([scriptblock]::Create($definition.Extent.Text))
 $id = '12345678-1234-1234-1234-123456789abc'
 $expected = "BVINPUT_CAPS $id 3 TEXTINPUT KEYINPUT POINTERINPUT 65536"
-if ($Mode -in @('current', 'shift-only', 'partial-chords')) { $expected += "`nBVINPUT_KEYS $id SHIFT_ENTER_SPACE" }; if ($Mode -eq 'current') { $expected += "`nBVINPUT_CHORDS $id CTRL_SHIFT_CHORDS" }
+if ($Mode -in @('current', 'no-taps', 'chords', 'shift-only', 'partial-chords')) { $expected += "`nBVINPUT_KEYS $id SHIFT_ENTER_SPACE" }
+if ($Mode -in @('current', 'no-taps', 'chords')) { $expected += "`nBVINPUT_CHORDS $id CTRL_SHIFT_CHORDS" }
+if ($Mode -eq 'current') { $expected += "`nBVINPUT_CHORDS $id MODIFIER_CHORDS" }
 $result = Get-InputCapabilities $id
 if ($result.Exit -ne 0 -or $result.Out -cne $expected) { throw "incorrect advertised keyset: $Mode" }
 $ordinary = Invoke-UnicodeInput "$id YQ==" { param($text) [uint32]2 }

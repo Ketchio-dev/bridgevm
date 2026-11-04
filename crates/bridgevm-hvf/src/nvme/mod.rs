@@ -6,6 +6,7 @@ mod admin_data;
 mod completion_capacity;
 mod configuration;
 mod controller;
+mod dataset_management;
 mod disk;
 mod doorbell;
 mod features;
@@ -36,6 +37,7 @@ mod tests;
 
 pub use admin::*;
 pub use controller::*;
+pub use dataset_management::dsm_record;
 pub(crate) use disk::*;
 pub use flush_mode::host_sync_label;
 pub(crate) use flush_worker::FlushWorker;

@@ -22,6 +22,7 @@ struct HvfEngineView: View {
     @State private var durableDiskWrites = false
     @State private var guestResolution: String?
     @State private var retinaResolution: Bool?
+    @State private var commandKeyMode = HvfCommandKeyMode.mac
     @State private var virtioGpu3d = false
     @State private var nvmeBufferedIO = false
     @State private var ctlFilePath = ""
@@ -135,6 +136,7 @@ struct HvfEngineView: View {
                     if session.config.offersRetinaResolution && !virtioGpu3d {
                         HvfRetinaResolutionToggle(session: session, setting: $retinaResolution)
                     }
+                    HvfCommandKeyPicker(session: session, selection: $commandKeyMode)
                     if session.config.allowsExperimental3D {
                         Toggle("Graphics Lab 3D", isOn: $virtioGpu3d)
                     }
@@ -353,6 +355,7 @@ struct HvfEngineView: View {
         config.durableDiskWrites = durableDiskWrites
         config.guestResolution = guestResolution
         config.retinaResolution = retinaResolution
+        config.commandKeyMode = commandKeyMode
         config.virtioGpu3d = virtioGpu3d
         config.nvmeBufferedIO = nvmeBufferedIO
         config.ctlFilePath = ctlFilePath
@@ -376,6 +379,7 @@ struct HvfEngineView: View {
         durableDiskWrites = cfg.durableDiskWrites
         guestResolution = cfg.guestResolution
         retinaResolution = cfg.retinaResolution
+        commandKeyMode = cfg.commandKeyMode
         virtioGpu3d = cfg.virtioGpu3d
         nvmeBufferedIO = cfg.nvmeBufferedIO
         ctlFilePath = cfg.ctlFilePath

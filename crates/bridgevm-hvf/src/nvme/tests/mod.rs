@@ -5,6 +5,7 @@ mod admin_prp_support;
 mod async_flush;
 mod completion_backpressure;
 mod create_queue_identity;
+mod dataset_management;
 mod export_case;
 mod export_collision;
 mod export_failure;
