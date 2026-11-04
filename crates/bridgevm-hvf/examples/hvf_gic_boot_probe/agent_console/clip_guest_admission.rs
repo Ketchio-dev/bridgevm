@@ -47,9 +47,8 @@ pub(super) fn guest_clip_error_line(error: GuestClipError, refusals: u64, t_ms: 
 }
 
 impl AgentConsoleHarness {
-    /// The guest text of a CLIP reply that clip_sync.rs may adopt, or None when
-    /// decoding was refused or it became the baseline of a pending rebaseline.
-    pub(super) fn admit_guest_clip(&mut self, b64: &str, now: Instant) -> Option<String> {
+    /// The decoded guest text, or None when decoding was refused (logged once).
+    pub(super) fn admit_guest_text(&mut self, b64: &str, now: Instant) -> Option<String> {
         let text = match decode_guest_clip(b64) {
             Ok(text) => text,
             Err(error) => {
@@ -58,6 +57,13 @@ impl AgentConsoleHarness {
             }
         };
         self.last_synced.refusals.last = None;
+        Some(text)
+    }
+
+    /// The guest text of a CLIP reply that clip_sync.rs may adopt, or None when
+    /// decoding was refused or it became the baseline of a pending rebaseline.
+    pub(super) fn admit_guest_clip(&mut self, b64: &str, now: Instant) -> Option<String> {
+        let text = self.admit_guest_text(b64, now)?;
         if !std::mem::take(&mut self.last_synced.rebaseline) {
             return Some(text);
         }

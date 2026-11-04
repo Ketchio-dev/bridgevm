@@ -231,6 +231,7 @@ impl AgentConsoleHarness {
                 )
             });
             self.last_synced.image = None;
+            self.last_synced.png = None;
         }
         self.clip_images = images;
         if let Some(pasteboard) = self.pasteboard.as_ref() {
@@ -259,10 +260,10 @@ impl AgentConsoleHarness {
         });
         let normalized = text.as_deref().map(normalize_clip);
         let settled = !self.last_synced.rebaseline && !self.clip_push_pending();
-        let text_held = settled && self.last_synced.text == normalized;
-        if text_held && self.last_synced.image == Some(png.digest) {
+        if settled && self.last_synced.holds(normalized.as_deref(), Some(png.digest)) {
             return;
         }
+        let text_held = settled && self.last_synced.text == normalized;
         self.drop_queued_host_pushes();
         if let Some(text) = text.as_ref().filter(|_| !text_held) {
             self.queue.push_back(ServiceReq::ClipPush(text.clone()));
@@ -293,33 +294,69 @@ impl AgentConsoleHarness {
         });
     }
 
-    /// The image part of a CLIPX reply, after its text was handled.
-    /// `learning` is the rebaseline the text part consumed: the image the
-    /// guest holds then is learned, never published.
-    pub(super) fn handle_guest_image(
+    /// A CLIPX reply: the guest clipboard as one (text, image) pair. Whenever
+    /// it differs from the pair last synced, the Mac gets exactly that pair:
+    /// the text at once, the image from the cache when its digest matches or
+    /// else fetched and written with that text. A refused text or image
+    /// counts as none, and an empty clipboard never clears the Mac.
+    pub(super) fn handle_guest_clip(
         &mut self,
+        b64: &str,
         image: Option<GuestImage>,
-        learning: bool,
         now: Instant,
     ) {
-        let Some(image) = image else {
-            self.last_synced.image = None;
+        let admitted = self.admit_guest_text(b64, now);
+        let text = admitted.as_deref().filter(|text| !text.is_empty()).map(normalize_clip);
+        let digest = image.as_ref().and_then(|image| image.digest);
+        if self.last_synced.rebaseline {
+            // Learned whole, never published; a refused text keeps it pending.
+            self.last_synced.rebaseline = admitted.is_none();
+            self.last_synced.text = text;
+            self.last_synced.image = digest;
+            return;
+        }
+        if self.last_synced.holds(text.as_deref(), digest) || (text.is_none() && image.is_none()) {
+            return;
+        }
+        let fresh_text = self.last_synced.text != text;
+        let had_image = self.last_synced.image.is_some();
+        // Recorded now, so a refused fetch is not retried every poll.
+        self.last_synced.text = text.clone();
+        self.last_synced.image = digest;
+        let fetch = match image {
+            Some(image) => match self.guest_image_refusal(&image) {
+                Some(refusal) => {
+                    self.refuse_guest_image(refusal, Some(&image), now);
+                    None
+                }
+                None => image.digest.map(|digest| (digest, image.bytes)),
+            },
+            None => None,
+        };
+        let Some((digest, bytes)) = fetch else {
+            // Text only: the guest's image is gone, or stays in Windows.
+            if let Some(text) = text.filter(|_| fresh_text || had_image) {
+                self.publish_guest_text(text, now);
+            }
             return;
         };
-        if learning {
-            self.last_synced.image = image.digest;
-            return;
+        if let Some(png) = self.last_synced.png.take_if(|png| png.digest == digest) {
+            return self.publish_guest_image(png, now);
         }
-        // The same image under a new caption is fetched again: the caption's
-        // text-only write replaces the Mac's text and image.
-        let caption_changed = self.last_synced.guest_text.is_some()
-            && self.last_synced.guest_text != self.last_synced.text;
-        if image.digest.is_some() && self.last_synced.image == image.digest && !caption_changed {
-            return;
+        // Text first, as for a text-only copy; the image follows with it.
+        if let Some(text) = text.filter(|_| fresh_text) {
+            self.publish_guest_text(text, now);
         }
-        self.last_synced.image = image.digest;
+        // Next on the wire, so no later CLIPX can replace guest.png first.
+        self.queue
+            .push_front(ServiceReq::ClipImagePull { digest, bytes });
+    }
+
+    /// Why a guest image is not fetched: over a limit, malformed, or not the
+    /// announced `<dir>\guest.png`.
+    fn guest_image_refusal(&self, image: &GuestImage) -> Option<GuestImageRefusal> {
         let expected = self.clip_images.as_ref().map(ClipImages::guest_path);
-        let refusal = if !within_limits(image.bytes, image.width, image.height) {
+        if !within_limits(image.bytes, image.width, image.height) {
             Some(GuestImageRefusal::TooLarge)
         } else if image.digest.is_none() || image.bytes == 0 {
             Some(GuestImageRefusal::Malformed)
@@ -327,18 +364,21 @@ impl AgentConsoleHarness {
             Some(GuestImageRefusal::UnexpectedPath)
         } else {
             None
-        };
-        if let Some(refusal) = refusal {
-            self.refuse_guest_image(refusal, Some(&image), now);
-            return;
         }
-        if let Some(digest) = image.digest {
-            // Next on the wire, so no later CLIPX can replace guest.png first.
-            self.queue.push_front(ServiceReq::ClipImagePull {
-                digest,
-                bytes: image.bytes,
-            });
+    }
+
+    /// The guest's image onto the Mac with the pair's text, in one write. Its
+    /// PNG stays cached for a later caption change.
+    fn publish_guest_image(&mut self, png: PngImage, now: Instant) {
+        let (len, width, height) = (png.bytes.len(), png.width, png.height);
+        if let Some(pasteboard) = self.pasteboard.as_ref() {
+            pasteboard.set_image(png.clone(), self.last_synced.text.clone());
         }
+        self.last_synced.png = Some(png);
+        println!(
+            "BVAGENT CLIPSYNC guest->host image bytes={len} width={width} height={height} t={}",
+            self.t_ms(now)
+        );
     }
 
     pub(super) fn refuse_guest_image(
@@ -433,9 +473,7 @@ impl AgentConsoleHarness {
                 let Some((ServiceReq::ClipImagePush(push), _)) = self.in_flight.take() else {
                     return;
                 };
-                let text = push.text.as_deref().map(normalize_clip);
-                self.last_synced.text = text.clone();
-                self.last_synced.guest_text = text;
+                self.last_synced.text = push.text.as_deref().map(normalize_clip);
                 self.last_synced.image = Some(push.png.digest);
                 self.last_synced.rebaseline = false;
                 println!(
@@ -445,6 +483,7 @@ impl AgentConsoleHarness {
                     push.png.height,
                     self.t_ms(now)
                 );
+                self.last_synced.png = Some(push.png);
                 return;
             }
         }
@@ -494,14 +533,7 @@ impl AgentConsoleHarness {
         {
             return;
         }
-        let (len, width, height) = (png.bytes.len(), png.width, png.height);
-        if let Some(pasteboard) = self.pasteboard.as_ref() {
-            pasteboard.set_image(png, self.last_synced.guest_text.clone());
-        }
-        println!(
-            "BVAGENT CLIPSYNC guest->host image bytes={len} width={width} height={height} t={}",
-            self.t_ms(now)
-        );
+        self.publish_guest_image(png, now);
     }
 
     /// The wire line of a queued image request; false drops it (images off).

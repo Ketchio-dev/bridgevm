@@ -330,57 +330,125 @@ fn guest_image_is_checked_then_written_once_with_its_text() {
     assert_eq!(rig.mac.writes.len(), 2);
 }
 
+/// A clipboard as one unit: its text and its image (a `pair_image` id).
+type Pair = (Option<&'static str>, Option<u8>);
+type Held = (Option<String>, Option<u8>);
+
+fn pair_image(id: u8) -> Vec<u8> {
+    png(8, 8 + u32::from(id), 200, id)
+}
+
+/// 0 for an image that is neither test image.
+fn image_id(bytes: &[u8]) -> u8 {
+    (1..=2).find(|id| pair_image(*id) == bytes).unwrap_or(0)
+}
+
+fn held((text, image): Pair) -> Held {
+    (text.map(str::to_owned), image)
+}
+
+fn mac_held(mac: &Mac) -> Held {
+    let image = match &mac.image {
+        Some(PasteboardImage::Png(bytes)) => Some(image_id(bytes)),
+        Some(_) => Some(0),
+        None => None,
+    };
+    (mac.text.clone(), image)
+}
+
+fn guest_held(guest: &Guest) -> Held {
+    let text = (!guest.text.is_empty()).then(|| guest.text.clone());
+    (text, guest.image.as_deref().map(image_id))
+}
+
+/// Either side's (text, image) pair lands on the other side whole whenever it
+/// changes, and never comes back.
 #[test]
-fn startup_mac_image_wins_over_the_guest_text_polled_with_it() {
+fn every_clipboard_pair_change_lands_whole_on_the_other_side() {
+    const STEPS: [(&str, Pair, Pair); 7] = [
+        ("none -> A", (None, None), (Some("A"), None)),
+        ("A -> A+X", (Some("A"), None), (Some("A"), Some(1))),
+        ("A+X -> B+X", (Some("A"), Some(1)), (Some("B"), Some(1))),
+        ("B+X -> X", (Some("B"), Some(1)), (None, Some(1))),
+        ("X -> Y", (None, Some(1)), (None, Some(2))),
+        ("Y -> A", (None, Some(2)), (Some("A"), None)),
+        ("A+X -> A", (Some("A"), Some(1)), (Some("A"), None)),
+    ];
+    let mut failures = Vec::new();
+    for (name, from, to) in STEPS {
+        // Windows copies `from`, then `to`: the Mac gets each, nothing goes back.
+        let mut rig = Rig::new(true);
+        rig.verbs();
+        for pair in [from, to] {
+            rig.guest.text = pair.0.unwrap_or("").to_owned();
+            rig.guest.image = pair.1.map(pair_image);
+            for _ in 0..3 {
+                rig.settle();
+            }
+            let pushed_back = rig.verbs().iter().any(|verb| verb != "GET");
+            if mac_held(&rig.mac) != held(pair) || pushed_back {
+                failures.push(format!("guest->mac {name}: at {pair:?} the Mac holds {:?}", mac_held(&rig.mac)));
+                break;
+            }
+        }
+        // The Mac copies `from`, then `to`: Windows gets each, nothing comes back.
+        let mut rig = Rig::new(true);
+        for pair in [from, to] {
+            if pair != (None, None) {
+                rig.mac.copy(pair.0, pair.1.map(|id| PasteboardImage::Png(pair_image(id))));
+            }
+            for _ in 0..3 {
+                rig.settle();
+            }
+            let fetched_back = rig.verbs().iter().any(|verb| verb == "GET");
+            if guest_held(&rig.guest) != held(pair) || fetched_back || !rig.mac.writes.is_empty() {
+                failures.push(format!("mac->guest {name}: at {pair:?} Windows holds {:?}", guest_held(&rig.guest)));
+                break;
+            }
+        }
+    }
+    // Startup: a Mac image wins over the guest text polled with it ...
     let mut rig = Rig::unsettled(true);
-    let image = png(16, 16, 300, 4);
-    rig.mac.copy(None, Some(PasteboardImage::Png(image.clone())));
-    rig.guest.text = "windows".into();
+    rig.mac.copy(None, Some(PasteboardImage::Png(pair_image(1))));
+    rig.guest.text = "W".into();
     for _ in 0..3 {
         rig.settle();
     }
-    assert!(rig.mac.writes.is_empty(), "the guest's text never replaced the Mac image");
-    assert_eq!(rig.guest.image.as_deref(), Some(image.as_slice()), "the Mac image reached Windows");
+    if guest_held(&rig.guest) != (None, Some(1)) || !rig.mac.writes.is_empty() {
+        failures.push(format!("startup mac image: Windows holds {:?}", guest_held(&rig.guest)));
+    }
+    // ... and a guest pair reaches an empty Mac.
+    let mut rig = Rig::unsettled(true);
+    rig.guest.text = "A".into();
+    rig.guest.image = Some(pair_image(1));
+    for _ in 0..3 {
+        rig.settle();
+    }
+    if mac_held(&rig.mac) != (Some("A".into()), Some(1)) {
+        failures.push(format!("startup guest pair: the Mac holds {:?}", mac_held(&rig.mac)));
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 #[test]
-fn guest_caption_change_keeps_the_image_on_the_mac() {
+fn a_new_caption_reuses_the_image_already_synced() {
     let mut rig = Rig::new(true);
-    let image = png(64, 32, 1024, 5);
-    rig.guest.text = "first".into();
-    rig.guest.image = Some(image.clone());
-    rig.settle();
     rig.verbs();
-    // Windows: the same picture copied again with a new caption.
-    rig.guest.text = "second".into();
-    rig.settle();
-    assert_eq!(rig.mac.text.as_deref(), Some("second"));
-    assert!(rig.mac.image == Some(PasteboardImage::Png(image)), "the image stays with the new caption");
-    for _ in 0..3 {
+    for text in ["A", "B", ""] {
+        rig.guest.text = text.into();
+        rig.guest.image = Some(pair_image(1));
         rig.settle();
     }
-    assert_eq!(rig.verbs(), verbs(&["GET"]), "fetched once for the new caption, then left alone");
-}
-
-#[test]
-fn guest_copy_of_the_same_text_without_the_image_drops_it_on_the_mac() {
-    let mut rig = Rig::new(true);
-    rig.guest.text = "cells\n".into();
-    rig.guest.image = Some(png(64, 32, 1024, 5));
+    assert_eq!(rig.verbs(), verbs(&["GET"]), "the image is fetched once");
+    assert_eq!(mac_held(&rig.mac), (None, Some(1)));
+    // A Mac image that Windows re-captions comes back from the cache too.
+    rig.mac.copy(Some("C"), Some(PasteboardImage::Png(pair_image(2))));
     rig.settle();
-    assert!(rig.mac.image.is_some());
     rig.verbs();
-    rig.mac.writes.clear();
-    // Windows: the same text copied again, this time without an image.
-    rig.guest.image = None;
+    rig.guest.text = "D".into();
     rig.settle();
-    assert_eq!(rig.mac.writes, vec![(Some("cells\n".to_owned()), None)]);
-    assert!(rig.mac.image.is_none(), "the Mac no longer pastes the old image");
-    for _ in 0..3 {
-        rig.settle();
-    }
-    assert!(rig.verbs().is_empty(), "nothing fetched or pushed back");
-    assert_eq!(rig.mac.writes.len(), 1);
+    assert!(rig.verbs().is_empty(), "no GET for the image the Mac pushed");
+    assert_eq!(mac_held(&rig.mac), (Some("D".into()), Some(2)));
 }
 
 #[test]

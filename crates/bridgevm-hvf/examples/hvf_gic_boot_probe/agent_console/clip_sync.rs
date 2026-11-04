@@ -23,11 +23,19 @@ pub(super) struct ClipBaseline {
     pub(super) refusals: GuestClipRefusals,
     /// SHA-256 of the image the guest is known to hold (clip_image.rs).
     pub(super) image: Option<[u8; 32]>,
-    /// The guest's text as of its last CLIPX reply (LF, None when empty or
-    /// refused): written to the Mac together with a fetched image.
-    pub(super) guest_text: Option<String>,
+    /// The PNG last synced either way, reused while it is `image`: a caption
+    /// change needs no second transfer.
+    pub(super) png: Option<host_pasteboard::PngImage>,
     /// The last refused guest image, so a re-polled one logs once.
     pub(super) refused_image: Option<GuestImageKey>,
+}
+
+impl ClipBaseline {
+    /// The clipboard as one unit, either way: (text, image) is the pair last
+    /// synced. Any other pair is written whole.
+    pub(super) fn holds(&self, text: Option<&str>, image: Option<[u8; 32]>) -> bool {
+        self.text.as_deref() == text && self.image == image
+    }
 }
 
 impl AgentConsoleHarness {
@@ -58,10 +66,7 @@ impl AgentConsoleHarness {
             return;
         };
         let settled = !self.last_synced.rebaseline && !self.clip_push_pending();
-        if settled
-            && self.last_synced.image.is_none()
-            && self.last_synced.text.as_deref() == Some(normalize_clip(&text).as_str())
-        {
+        if settled && self.last_synced.holds(Some(&normalize_clip(&text)), None) {
             return;
         }
         if text.len() > self.clip_max_bytes {
@@ -112,44 +117,35 @@ impl AgentConsoleHarness {
         if self.clip_push_pending() {
             return;
         }
-        let learning = self.last_synced.rebaseline;
-        let text = self.admit_guest_clip(b64, now);
-        // A guest copy without the image the guest held replaces the Mac's
-        // text + image even when its text is unchanged.
-        let mut image_gone = false;
         if let Some(image) = image {
-            image_gone = image.is_none() && self.last_synced.image.is_some();
-            self.last_synced.guest_text = text.as_deref().filter(|t| !t.is_empty()).map(normalize_clip);
-            self.handle_guest_image(image, learning, now);
+            return self.handle_guest_clip(b64, image, now);
         }
-        let Some(text) = text else {
+        let Some(text) = self.admit_guest_clip(b64, now) else {
             return;
         };
         // Adopt only genuinely-new content (normalized compare) so a value
         // we pushed host->guest doesn't bounce straight back.
-        let decision = if image_gone {
-            guest_clip_decision(&None, &text)
-        } else {
-            guest_clip_decision(&self.last_synced.text, &text)
-        };
-        if let Some(normalized) = decision {
-            let bytes = normalized.len();
-            self.last_synced.text = Some(normalized.clone());
-            if let Some(pasteboard) = self.pasteboard.as_ref() {
-                pasteboard.set(normalized);
-            }
-            println!(
-                "BVAGENT CLIPSYNC guest->host bytes={bytes} t={}",
-                self.t_ms(now)
-            );
+        if let Some(normalized) = guest_clip_decision(&self.last_synced.text, &text) {
+            self.publish_guest_text(normalized, now);
         }
+    }
+    /// The guest's text alone onto the Mac, replacing its text and image.
+    pub(super) fn publish_guest_text(&mut self, text: String, now: Instant) {
+        let bytes = text.len();
+        self.last_synced.text = Some(text.clone());
+        if let Some(pasteboard) = self.pasteboard.as_ref() {
+            pasteboard.set(text);
+        }
+        println!(
+            "BVAGENT CLIPSYNC guest->host bytes={bytes} t={}",
+            self.t_ms(now)
+        );
     }
     pub(super) fn handle_clip_push_reply(&mut self, line: &str, guest_bytes: usize, now: Instant) {
         if line.starts_with("OK") {
             if let Some((ServiceReq::ClipPush(text), _)) = self.in_flight.take() {
                 self.last_synced.text = Some(normalize_clip(&text));
                 // CLIPSET replaces the whole guest clipboard.
-                self.last_synced.guest_text = self.last_synced.text.clone();
                 self.last_synced.image = None;
                 self.last_synced.rebaseline = false;
             }
