@@ -75,6 +75,8 @@ pub struct DeviceSurfaces {
     pub virtio_net: bool,
     /// Intel HDA audio played through CoreAudio.
     pub hda_audio: bool,
+    /// Installs the app's copy of the guest agent over an older one.
+    pub agent_update: Option<AgentUpdateSurface>,
     /// Only a validated typed E2E launch may enable a fixed host stop request.
     pub host_diagnostic_stop: bool,
 }
@@ -86,6 +88,13 @@ pub struct GpuSurface {
     /// Explicit PCI device id (hex, no 0x -- "1050"/"10F7"); None binds the
     /// probe's default 3D identity.
     pub device_id: Option<String>,
+}
+
+/// The app's agent files, the VM bundle's update record and the app session.
+pub struct AgentUpdateSurface {
+    pub dir: PathBuf,
+    pub marker: PathBuf,
+    pub session: String,
 }
 
 /// One shared folder, with the app's shipping cadence and size cap.

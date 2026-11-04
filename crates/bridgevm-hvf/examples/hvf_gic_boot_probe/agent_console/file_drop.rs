@@ -92,6 +92,11 @@ impl FileDrops {
             None => println!("BVAGENT DROP failed - bad-request"),
         }
     }
+
+    /// A drop is running. One that waits starts after a guest tools update.
+    pub(super) fn is_running(&self) -> bool {
+        self.active.is_some()
+    }
 }
 
 /// Folders before their contents, names sorted. Only regular files and folders count: a symlink,
@@ -254,7 +259,8 @@ impl AgentConsoleHarness {
         if self.any_pending(is_drop_req) {
             return;
         }
-        if self.drops.active.is_none() && !self.start_next_drop(now) {
+        // A guest tools update restarts the agent: the next drop waits for it.
+        if self.drops.active.is_none() && (self.agent_update_busy() || !self.start_next_drop(now)) {
             return;
         }
         let Some(active) = self.drops.active.as_mut() else {

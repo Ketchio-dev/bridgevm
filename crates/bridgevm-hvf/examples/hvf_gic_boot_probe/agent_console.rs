@@ -24,6 +24,8 @@ use share_sync::{GuestFileOutcome, HostFile, LsEntry, ShareSync, SkipReason, Syn
 mod agent_console_tests;
 #[path = "agent_console/agent_restart.rs"]
 mod agent_restart;
+#[path = "agent_console/agent_update.rs"]
+mod agent_update;
 #[path = "agent_console/clip_guest_admission.rs"]
 mod clip_guest_admission;
 #[path = "agent_console/clip_guest_fingerprint.rs"]
@@ -80,6 +82,7 @@ mod time_resync;
 mod verb_reply;
 #[path = "agent_console/window_protocol.rs"]
 mod window_protocol;
+use agent_update::*;
 use clip_guest_admission::*;
 use clip_guest_fingerprint::*;
 use clip_image::*;

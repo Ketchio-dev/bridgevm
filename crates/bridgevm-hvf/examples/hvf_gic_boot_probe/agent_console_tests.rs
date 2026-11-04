@@ -18,6 +18,7 @@ pub(super) mod tests {
             state: AgentConsoleState::WaitingOut { index: 0 },
             commands: vec!["GET Zm9v".to_string()],
             last_ping: None,
+            out_since: None,
             get_accum: None,
             out_accum: None,
             service: false,
@@ -47,6 +48,7 @@ pub(super) mod tests {
             clock: HostClock::default(),
             dns_flush: DnsFlush::default(),
             drops: FileDrops::default(),
+            agent_update: None,
         }
     }
 

@@ -716,6 +716,49 @@ if (Is-BadHandle $probeC) {
     [void]$K::CloseHandle($probeC)
 }
 
+# Guest tools identity. The app installs and updates exactly these files and
+# hashes them the same way (agent_console/agent_update.rs): SHA-256 over one
+# "<name> <sha256 hex|missing>" line per file, in this order. READY carries the
+# first 16 hex digits; the app updates an agent whose READY has none or another.
+function Get-BvAgentId([string]$Dir) {
+    $files = @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-window-inventory.ps1', 'bv-window-inventory.cs', 'bvagent-task.ps1', 'bvagent-update.ps1')
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $list = New-Object System.Text.StringBuilder
+        foreach ($name in $files) {
+            $path = [System.IO.Path]::Combine($Dir, $name)
+            $digest = 'missing'
+            if ([System.IO.File]::Exists($path)) {
+                $digest = [System.BitConverter]::ToString($sha.ComputeHash([System.IO.File]::ReadAllBytes($path))).Replace('-', '').ToLowerInvariant()
+            }
+            [void]$list.Append($name + ' ' + $digest + "`n")
+        }
+        $all = $sha.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($list.ToString()))
+        return [System.BitConverter]::ToString($all, 0, 8).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
+    }
+}
+# READY carries the ID, and update=pending while an update to this agent waits
+# for the host's Confirm (bvagent-update.ps1 keeps update\pending.txt beside
+# the version folders): the host then confirms it whatever it recorded itself.
+function Get-BvReady([string]$Dir, [string]$Id) {
+    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2'
+    if (-not $Id) { return $ready }
+    $ready += ' agent=' + $Id
+    $root = Split-Path -Parent $Dir
+    if ($root) {
+        $pending = [System.IO.Path]::Combine($root, 'update', 'pending.txt')
+        try {
+            if ([System.IO.File]::Exists($pending) -and ([System.IO.File]::ReadAllText($pending).Trim() -ceq $Id)) { $ready += ' update=pending' }
+        } catch { }
+    }
+    return $ready
+}
+$bvAgentId = ''
+try { $bvAgentId = Get-BvAgentId $PSScriptRoot } catch { Log ('AGENT ID unavailable: ' + $_.Exception.Message) }
+Log ('AGENT ID ' + $bvAgentId)
+
 # Open the port (retry forever; throwing would kill the process and release the
 # singleton mutex, reviving churn). Try-OpenPort logs every candidate tried.
 $h = [System.IntPtr]::Zero
@@ -728,7 +771,8 @@ while ($true) {
     Start-Sleep -Milliseconds 500
 }
 
-Write-Line $h ("READY " + $env:COMPUTERNAME + " v3-share2") 'READY'
+$bvReady = Get-BvReady $PSScriptRoot $bvAgentId
+Write-Line $h $bvReady 'READY'
 Log 'READY sent'
 Log-PortInfo $h 'after-ready'
 

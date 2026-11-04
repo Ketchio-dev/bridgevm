@@ -58,10 +58,10 @@ fn share_backlog_keeps_clipboard_then_control_order_without_preempting_the_wire(
     h.service_pump(&mut platform, &mut mem, now + Duration::from_millis(3));
     assert_eq!(h.service_line_scratch, "PING\n");
     assert!(
-        matches!(pop_next_request(&mut h.queue), Some(ServiceReq::ShareGet { name }) if name == "0")
+        matches!(pop_next_request(&mut h.queue, |_| false), Some(ServiceReq::ShareGet { name }) if name == "0")
     );
     assert!(
-        matches!(pop_next_request(&mut h.queue), Some(ServiceReq::ShareGet { name }) if name == "1")
+        matches!(pop_next_request(&mut h.queue, |_| false), Some(ServiceReq::ShareGet { name }) if name == "1")
     );
     drop(ctl);
     std::fs::remove_file(path).unwrap();
@@ -77,6 +77,6 @@ fn foreground_queue_ceiling_is_preserved_alongside_background_share_work() {
     assert!(has_foreground_capacity(&queue));
     queue.push_back(ServiceReq::Ping);
     assert!(!has_foreground_capacity(&queue));
-    assert!(matches!(pop_next_request(&mut queue), Some(ServiceReq::Ctl(c)) if c == "0"));
+    assert!(matches!(pop_next_request(&mut queue, |_| false), Some(ServiceReq::Ctl(c)) if c == "0"));
     assert!(has_foreground_capacity(&queue));
 }

@@ -19,6 +19,15 @@
       "guest_visible": true,
       "impact": "Dropped files appear on the Windows Desktop. A VM with an older agent keeps working and the app says the agent needs updating; a half-written file is deleted when a drop fails mid-file, except after an agent restart.",
       "evidence": "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/file_drop.rs"
+    },
+    {
+      "id": "guest-agent-auto-update",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU virt does not define BridgeVM's resident agent protocol or install guest software.",
+      "bridgevm_behavior": "The agent's READY line carries an ID over its nine files ('READY <host> v3-share2 agent=<16 hex>'). When an app session starts a library VM whose agent has no ID or another one than the app's copy, the probe locks C:\\Program Files\\BridgeVM\\Agent to SYSTEM and Administrators, puts the files in <id>.new with PUTBEG/PUTCHUNK/PUTEND, and runs bvagent-update.ps1 -Arm. Arm checks that the files are admin-only, their SHA-256s, the ID and the scripts' parse, renames the folder to <id>, backs up the 'BridgeVM Guest Agent' task as XML and starts a one-shot 'BridgeVM Guest Tools Update' task. That task points the agent task at the new folder, restarts the agent, and restores the backed-up task (and any legacy Run value or Startup launcher it moved) unless the host confirms the new agent's READY within 180 s. The previous agent's files are never touched; the VM bundle's metadata/agent-update.json records the last attempt.",
+      "guest_visible": true,
+      "impact": "An older VM gets the current agent's features without reinstalling. The agent is gone for a few seconds while it restarts; the update waits for running Finder drops and does not start after a Stop, and an app session tries each VM once.",
+      "evidence": "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/agent_update.rs"
     }
   ]
 }

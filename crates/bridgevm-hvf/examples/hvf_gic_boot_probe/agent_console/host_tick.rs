@@ -38,7 +38,12 @@ impl AgentConsoleHarness {
         // write is silently dropped), so waiting passively for READY can
         // deadlock. A PING the agent echoes as PONG breaks that: any inbound
         // line (READY or PONG) advances us to the command phase.
-        if matches!(self.state, AgentConsoleState::WaitingReady) {
+        // The same while a PONG is owed: the PING may have gone to an agent
+        // that has restarted since.
+        if matches!(
+            self.state,
+            AgentConsoleState::WaitingReady | AgentConsoleState::WaitingPong
+        ) {
             let due = self
                 .last_ping
                 .is_none_or(|t| now.duration_since(t) >= PING_INTERVAL);
@@ -46,6 +51,18 @@ impl AgentConsoleHarness {
                 send(b"PING\n");
                 self.last_ping = Some(now);
             }
+        }
+
+        // Only the resident service's handshake is short; other scripted
+        // commands may run for minutes.
+        if self.service
+            && matches!(self.state, AgentConsoleState::WaitingOut { .. })
+            && self
+                .out_since
+                .is_some_and(|t| now.duration_since(t) >= HANDSHAKE_REPLY_TIMEOUT)
+        {
+            println!("BVAGENT CMD no reply in {} s: PING again t={}", HANDSHAKE_REPLY_TIMEOUT.as_secs(), self.t_ms(now));
+            self.restart_handshake(now, send);
         }
 
         if matches!(
