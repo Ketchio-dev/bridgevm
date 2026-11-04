@@ -13,9 +13,8 @@ use crate::virtio_gpu_3d::CompletedFence;
 use crate::virtio_gpu_3d::VIRTIO_GPU_BLOB_MEM_HOST3D;
 use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_GET_CAPSET_INFO;
 
-#[test]
-fn edid_preferred_timing_is_120_hz_with_valid_ranges_and_checksum() {
-    let edid = build_edid(1280, 800);
+/// The preferred detailed timing: active size, refresh and pixel clock (10 kHz).
+fn edid_preferred_timing(edid: &[u8; 128]) -> ((u32, u32), u32, u32) {
     let dtd = &edid[54..72];
     let pixel_clock_10khz = u32::from(u16::from_le_bytes([dtd[0], dtd[1]]));
     let h_active = u32::from(dtd[2]) | (u32::from(dtd[4] >> 4) << 8);
@@ -23,6 +22,13 @@ fn edid_preferred_timing_is_120_hz_with_valid_ranges_and_checksum() {
     let v_active = u32::from(dtd[5]) | (u32::from(dtd[7] >> 4) << 8);
     let v_blank = u32::from(dtd[6]) | (u32::from(dtd[7] & 0x0f) << 8);
     let refresh_hz = pixel_clock_10khz * 10_000 / ((h_active + h_blank) * (v_active + v_blank));
+    ((h_active, v_active), refresh_hz, pixel_clock_10khz)
+}
+
+#[test]
+fn edid_preferred_timing_is_120_hz_with_valid_ranges_and_checksum() {
+    let edid = build_edid(1280, 800);
+    let ((h_active, v_active), refresh_hz, _) = edid_preferred_timing(&edid);
 
     assert_eq!((h_active, v_active), (1280, 800));
     assert_eq!(refresh_hz, 119); // Integer 10 kHz clock encoding rounds just below 120 Hz.
@@ -31,6 +37,25 @@ fn edid_preferred_timing_is_120_hz_with_valid_ranges_and_checksum() {
         edid.iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)),
         0
     );
+}
+
+#[test]
+fn edid_describes_a_retina_size_at_60_hz_instead_of_clamping_the_clock() {
+    // 3456x2234 (a 16-inch MacBook Pro screen at 2x) needs 1,094 MHz at
+    // 120 Hz, beyond the field's 655.35 MHz; it used to be clamped to that.
+    let edid = build_edid(3456, 2234);
+    let (size, refresh_hz, pixel_clock_10khz) = edid_preferred_timing(&edid);
+
+    assert_eq!(size, (3456, 2234));
+    assert_eq!(pixel_clock_10khz, 54_704, "(3456+432)x(2234+111) at 60 Hz");
+    assert_eq!(refresh_hz, 59); // 59.998 Hz in whole 10 kHz clock steps.
+    assert_eq!(&edid[75..82], &[0xfd, 0, 48, 144, 30, 160, 55]);
+    assert_eq!(
+        edid.iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)),
+        0
+    );
+    // 2560x1600 still fits at 120 Hz.
+    assert_eq!(edid_preferred_timing(&build_edid(2560, 1600)).1, 119);
 }
 
 #[test]

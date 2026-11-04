@@ -52,7 +52,14 @@ pub(crate) fn build_edid(width: u32, height: u32) -> [u8; 128] {
         edid[39 + slot * 2] = bytes[1];
     }
 
-    let dtd = detailed_timing_descriptor(width, height, 120);
+    // The pixel clock field is 16 bits of 10 kHz (655.35 MHz): 120 Hz fits up
+    // to about 2560x1600, larger sizes get 60 Hz rather than a clamped clock.
+    let refresh_hz = if required_pixel_clock_10khz(width, height, 120) <= u64::from(u16::MAX) {
+        120
+    } else {
+        60
+    };
+    let dtd = detailed_timing_descriptor(width, height, refresh_hz);
     let pixel_clock_10khz = u16::from_le_bytes([dtd[0], dtd[1]]);
     let max_pixel_clock_10mhz = pixel_clock_10khz.div_ceil(1_000) as u8;
     edid[54..72].copy_from_slice(&dtd);
@@ -105,18 +112,27 @@ fn standard_timing(width: u32, height: u32) -> [u8; 2] {
     [encoded_width as u8, aspect << 6]
 }
 
+fn blanking(width: u32, height: u32) -> (u32, u32) {
+    (160u32.max(width / 8), 45u32.max(height / 20))
+}
+
+/// The detailed timing's pixel clock in 10 kHz units, before any clamp.
+fn required_pixel_clock_10khz(width: u32, height: u32, refresh_hz: u32) -> u64 {
+    let (h_blank, v_blank) = blanking(width, height);
+    ((u64::from(width) + u64::from(h_blank))
+        * (u64::from(height) + u64::from(v_blank))
+        * u64::from(refresh_hz)
+        / 10_000)
+        .max(1)
+}
+
 pub(crate) fn detailed_timing_descriptor(width: u32, height: u32, refresh_hz: u32) -> [u8; 18] {
-    let h_blank = 160u32.max(width / 8);
-    let v_blank = 45u32.max(height / 20);
+    let (h_blank, v_blank) = blanking(width, height);
     let h_sync_offset = 48u32.min(h_blank / 3);
     let h_sync_width = 32u32.min(h_blank.saturating_sub(h_sync_offset).max(1));
     let v_sync_offset = 3u32;
     let v_sync_width = 5u32;
-    let requested_pixel_clock_10khz = ((u64::from(width) + u64::from(h_blank))
-        * (u64::from(height) + u64::from(v_blank))
-        * u64::from(refresh_hz)
-        / 10_000)
-        .max(1);
+    let requested_pixel_clock_10khz = required_pixel_clock_10khz(width, height, refresh_hz);
     let pixel_clock_10khz = requested_pixel_clock_10khz.min(u64::from(u16::MAX));
     if requested_pixel_clock_10khz > u64::from(u16::MAX) {
         eprintln!(
