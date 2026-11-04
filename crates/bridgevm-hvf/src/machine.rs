@@ -81,6 +81,10 @@ pub const RTC: Region = Region::new(0x0901_0000, 0x1000);
 pub const FW_CFG: Region = Region::new(0x0902_0000, 0x18);
 /// PL061 GPIO controller.
 pub const GPIO: Region = Region::new(0x0903_0000, 0x1000);
+/// ACPI Generic Event Device (`ACPI0013`) event selector, QEMU virt's
+/// `VIRT_ACPI_GED` slot. One 32-bit read-to-clear register; see
+/// [`crate::acpi_ged`].
+pub const ACPI_GED: Region = Region::new(0x0908_0000, 0x4);
 
 /// Size of a single virtio-mmio transport slot.
 pub const VIRTIO_MMIO_SLOT_SIZE: u64 = 0x200;
@@ -135,6 +139,8 @@ pub const SPI_RTC: u32 = 2;
 pub const SPI_PCIE_INTA: u32 = 3;
 /// PL061 GPIO → SPI 7.
 pub const SPI_GPIO: u32 = 7;
+/// ACPI Generic Event Device → SPI 9 (QEMU virt's GED line).
+pub const SPI_ACPI_GED: u32 = 9;
 /// First virtio-mmio slot → SPI 16; slot `i` → SPI `16 + i`.
 pub const SPI_VIRTIO_MMIO_BASE: u32 = 16;
 
@@ -187,7 +193,7 @@ pub fn virtio_mmio_slot(i: u64) -> Region {
 
 /// The fixed MMIO device regions, in ascending base order. RAM is intentionally
 /// excluded because it is system memory, not a device aperture.
-pub fn mmio_regions() -> [(&'static str, Region); 16] {
+pub fn mmio_regions() -> [(&'static str, Region); 17] {
     [
         ("flash-code", FLASH_CODE),
         ("flash-vars", FLASH_VARS),
@@ -198,6 +204,7 @@ pub fn mmio_regions() -> [(&'static str, Region); 16] {
         ("rtc", RTC),
         ("fw-cfg", FW_CFG),
         ("gpio", GPIO),
+        ("acpi-ged", ACPI_GED),
         ("virtio-mmio", VIRTIO_MMIO),
         ("tpm-tis", TPM_TIS),
         ("tpm-ppi", TPM_PPI),
@@ -246,6 +253,7 @@ mod tests {
         assert_eq!(RTC.base, 0x0901_0000);
         assert_eq!(FW_CFG.base, 0x0902_0000);
         assert_eq!(GPIO.base, 0x0903_0000);
+        assert_eq!(ACPI_GED, Region::new(0x0908_0000, 4));
         assert_eq!(VIRTIO_MMIO.base, 0x0A00_0000);
         assert_eq!(TPM_TIS.base, 0x0C00_0000);
         assert_eq!(TPM_TIS.size, crate::tpm_tis::MMIO_SIZE);
@@ -302,6 +310,7 @@ mod tests {
         assert_eq!(spi_to_intid(SPI_RTC), 34);
         assert_eq!(spi_to_intid(SPI_PCIE_INTA), 35);
         assert_eq!(spi_to_intid(SPI_GPIO), 39);
+        assert_eq!(spi_to_intid(SPI_ACPI_GED), 41);
     }
 
     #[test]
@@ -316,6 +325,7 @@ mod tests {
             spi_to_intid(SPI_PCIE_INTA + 2),
             spi_to_intid(SPI_PCIE_INTA + 3),
             spi_to_intid(SPI_GPIO),
+            spi_to_intid(SPI_ACPI_GED),
             spi_to_intid(virtio_mmio_spi(0)),
             spi_to_intid(virtio_mmio_spi((VIRTIO_MMIO_COUNT - 1) as u32)),
         ];
@@ -347,6 +357,8 @@ mod tests {
     #[test]
     fn device_lookup_resolves_addresses() {
         assert_eq!(device_at(UART.base), Some("uart"));
+        assert_eq!(device_at(ACPI_GED.base), Some("acpi-ged"));
+        assert_eq!(device_at(ACPI_GED.end()), None);
         assert_eq!(device_at(FW_CFG.base + 0x8), Some("fw-cfg"));
         assert_eq!(device_at(0x0A00_3E10), Some("virtio-mmio"));
         assert_eq!(device_at(TPM_TIS.base + 0x24), Some("tpm-tis"));

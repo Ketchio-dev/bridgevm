@@ -21,6 +21,7 @@ impl Fixture {
                 source: Some(InputControlFile::from_path(path.clone())),
                 offset: 0,
                 lines: Default::default(),
+                power_scanned_to: 0,
                 pending: VecDeque::new(),
                 accepted_pointer_moves: 0,
                 next_poll: Instant::now(),
