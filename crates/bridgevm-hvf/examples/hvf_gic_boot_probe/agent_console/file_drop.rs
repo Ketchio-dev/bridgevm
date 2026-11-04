@@ -49,7 +49,6 @@ struct DropFile {
     size: u64,
     read: u64,
     chunks: u64,
-    begun: bool,
 }
 
 struct ActiveDrop {
@@ -148,7 +147,6 @@ impl ActiveDrop {
             return Ok(Some(DropReq::Caps));
         }
         if let Some(file) = self.file.as_mut() {
-            debug_assert!(file.begun, "chunks follow the guest's OK DROPBEG");
             if file.read < file.size {
                 let len = (file.size - file.read).min(DROP_CHUNK_BYTES as u64) as usize;
                 let mut bytes = vec![0; len];
@@ -178,7 +176,6 @@ impl ActiveDrop {
                     size,
                     read: 0,
                     chunks: 0,
-                    begun: false,
                 });
                 DropReq::Beg { rel, size }
             }
@@ -328,7 +325,9 @@ impl AgentConsoleHarness {
         );
     }
 
-    /// End the active drop. A host-side failure mid-file also asks the guest to delete it.
+    /// End the active drop; none of its queued steps go out. A host-side failure once the file's
+    /// DROPBEG has left also asks the guest to delete the file: an unanswered DROPBEG may still
+    /// have created and opened it, and DROPABORT is harmless when it did not.
     pub(super) fn fail_drop(&mut self, reason: &str, now: Instant) {
         let t = self.t_ms(now);
         let Some(active) = self.drops.active.take() else {
@@ -338,8 +337,10 @@ impl AgentConsoleHarness {
             "BVAGENT DROP failed {} {reason} files={}/{} bytes={}/{} t={t}",
             active.id, active.done_files, active.files, active.done_bytes, active.bytes
         );
+        // After an agent restart, a step queued behind another request would reach the new agent.
+        self.queue.retain(|req| !is_drop_req(req));
         let host_side = matches!(reason, "read-error" | "stalled");
-        if host_side && active.file.as_ref().is_some_and(|file| file.begun) {
+        if host_side && active.file.is_some() {
             self.queue.push_back(ServiceReq::Drop(DropReq::Abort));
         }
     }
@@ -360,21 +361,20 @@ impl AgentConsoleHarness {
             DropReply::Ignored | DropReply::Aborted => {}
             DropReply::Failed(reason) => return self.fail_drop(&reason, now),
             DropReply::Caps => active.caps = true,
-            DropReply::Named(name) => match active.file.as_mut() {
-                Some(file) => file.begun = true,
-                None => {
-                    let host_rel = active.entries[active.next].host_rel.clone();
-                    let guest = match host_rel.rsplit_once('/') {
-                        Some((parent, _)) => {
-                            let parent = active.folders.get(parent).map_or(parent, String::as_str);
-                            format!("{parent}\\{name}")
-                        }
-                        None => name,
-                    };
-                    active.folders.insert(host_rel, guest);
-                    active.next += 1;
-                }
-            },
+            // The file's chunks follow; only a folder's final name matters to later requests.
+            DropReply::Named(_) if active.file.is_some() => {}
+            DropReply::Named(name) => {
+                let host_rel = active.entries[active.next].host_rel.clone();
+                let guest = match host_rel.rsplit_once('/') {
+                    Some((parent, _)) => {
+                        let parent = active.folders.get(parent).map_or(parent, String::as_str);
+                        format!("{parent}\\{name}")
+                    }
+                    None => name,
+                };
+                active.folders.insert(host_rel, guest);
+                active.next += 1;
+            }
             DropReply::Chunk(len) => {
                 active.done_bytes += len;
                 active.chunks += 1;

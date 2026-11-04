@@ -196,6 +196,55 @@ fn a_stalled_drop_step_fails_the_job_instead_of_resending_it() {
 }
 
 #[test]
+fn a_stalled_dropbeg_aborts_the_file_even_though_its_acknowledgement_never_came() {
+    let root = staging("lost-beg-ack");
+    std::fs::write(root.join("a.txt"), b"x").unwrap();
+    let mut wire = Wire::new();
+    wire.submit("job-8", &root);
+    assert_eq!(
+        wire.reply("BVDROP_CAPS 1"),
+        [format!("DROPBEG {} 1", b64(b"a.txt"))]
+    );
+    // The guest may have created and opened a.txt; its OK DROPBEG is lost.
+    let mut sent = Vec::new();
+    for beat in 1..=3u32 {
+        let at = wire.now + SERVICE_OVERDUE_INTERVAL * beat;
+        wire.h.service_pump_with_sender(at, &mut |bytes| {
+            sent.push(String::from_utf8_lossy(bytes).trim_end().to_string());
+        });
+    }
+    assert_eq!(sent, ["DROPABORT"]);
+    assert!(wire.h.drops.active.is_none());
+    // A late acknowledgement is not the abort's reply.
+    wire.now += SERVICE_OVERDUE_INTERVAL * 3;
+    assert!(wire.reply(&format!("OK DROPBEG {}", b64(b"a.txt"))).is_empty());
+    assert!(wire.h.any_pending(is_drop_req));
+    assert!(wire.reply("OK DROPABORT").is_empty());
+    assert!(!wire.h.any_pending(is_drop_req));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_drop_ended_by_an_agent_restart_sends_none_of_its_queued_steps() {
+    let root = staging("restart");
+    std::fs::write(root.join("a.txt"), b"x").unwrap();
+    let mut wire = Wire::new();
+    wire.submit("job-9", &root);
+    // A command goes out first, so the DROPBEG waits behind it.
+    wire.h.queue.push_back(ServiceReq::Ctl("whoami".into()));
+    assert_eq!(
+        wire.reply("BVDROP_CAPS 1"),
+        [format!("RUN {}", b64(b"whoami"))]
+    );
+    // The agent restarts before answering: the new one must not get the dead job's DROPBEG.
+    let sent = wire.reply("READY host");
+    assert!(sent.iter().all(|line| !line.starts_with("DROP")), "{sent:?}");
+    assert!(!wire.h.any_pending(is_drop_req));
+    assert!(wire.h.drops.active.is_none());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn a_second_drop_waits_for_the_first() {
     let first = staging("queue-1");
     let second = staging("queue-2");
