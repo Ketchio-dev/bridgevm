@@ -36,4 +36,13 @@ pub struct NatStats {
     pub tcp_read_again: u64,
     pub tcp_write_again: u64,
     pub socket_errors: u64,
+    /// Host-to-guest segments resent after duplicate or partial guest ACKs.
+    pub tcp_fast_retransmits: u64,
+    /// Host-to-guest segments resent after a retransmission timeout.
+    pub tcp_timeout_retransmits: u64,
+    pub tcp_zero_window_probes: u64,
+    /// Polls where a flow's host data waited for room in the guest's window.
+    pub tcp_window_full: u64,
+    /// Socket sweeps skipped while a full RX ring of frames waited.
+    pub sweeps_deferred: u64,
 }

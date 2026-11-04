@@ -85,6 +85,14 @@ pub(crate) fn print_net_nat_stats(stats: NatStats) {
         stats.tcp_write_again,
         stats.socket_errors,
     );
+    println!(
+        "virtio-net NAT tcp send: fast_retransmits={} timeout_retransmits={} zero_window_probes={} window_full={} sweeps_deferred={}",
+        stats.tcp_fast_retransmits,
+        stats.tcp_timeout_retransmits,
+        stats.tcp_zero_window_probes,
+        stats.tcp_window_full,
+        stats.sweeps_deferred,
+    );
 }
 
 pub(crate) fn print_block_request_trace(label: &str, trace: &[VirtioBlockRequestTrace]) {

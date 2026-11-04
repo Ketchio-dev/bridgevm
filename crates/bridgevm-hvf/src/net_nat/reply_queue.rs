@@ -11,6 +11,13 @@ pub(crate) const MAX_PENDING_REPLY_FRAMES: usize = 10_000;
 /// Guest-to-host TCP bytes buffered while the host peer is not reading.
 pub(crate) const MAX_TCP_WRITE_BACKLOG: usize = 4 * 1024 * 1024;
 
+/// A guest RX ring's worth of frames (virtio-net's 256-entry queue). With this
+/// many waiting, the next delivery can fill an empty ring, so the host sockets
+/// can wait: a sweep costs a syscall per socket on a vCPU thread holding the
+/// platform lock (live: about 70 sockets on every exit halved downloads once
+/// guest windows kept the queue short).
+pub(crate) const REPLY_BACKLOG_SKIPS_SWEEP: usize = 256;
+
 pub(crate) fn reply_queue_full(queue: &VecDeque<Vec<u8>>) -> bool {
     queue.len() >= MAX_PENDING_REPLY_FRAMES
 }
