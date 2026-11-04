@@ -93,6 +93,37 @@ _SMALL_FILES = (
     "'BVBENCH disk-small-files-flushed {0:F1} files/s' -f [BvFiles]::Run((Join-Path $env:TEMP 'bvbench-small'))"
 )
 
+# Diagnostic (not for main): repeated first-touch passes. p1/p2 are two more fresh 1 GiB passes;
+# then most available guest RAM is touched once (so nearly every guest-physical page has had its
+# first-ever stage-2 fill) and p3 is one more fresh 1 GiB pass. Also prints the RAM and CPU count
+# Windows sees. If BridgeVM's gap to QEMU closes at p3, the gap is first-ever stage-2 fills.
+_FIRST_TOUCH_DIAG = (
+    "Add-Type -TypeDefinition 'using System; using System.Diagnostics; using System.Runtime.InteropServices;"
+    " public static class BvTouchDiag {"
+    " [DllImport(\"kernel32\", SetLastError = true)] static extern IntPtr VirtualAlloc(IntPtr a, UIntPtr s, uint t, uint p);"
+    " [DllImport(\"kernel32\")] static extern bool VirtualFree(IntPtr a, UIntPtr s, uint t);"
+    " [StructLayout(LayoutKind.Sequential)] public class Ms { public uint Len = 64; public uint Load; public ulong Total, Avail,"
+    " TotalPage, AvailPage, TotalVirt, AvailVirt, AvailExt; }"
+    " [DllImport(\"kernel32\", SetLastError = true)] static extern bool GlobalMemoryStatusEx([In, Out] Ms m);"
+    " static IntPtr Alloc(long size) { return VirtualAlloc(IntPtr.Zero, (UIntPtr)(ulong)size, 0x3000, 4); }"
+    " static double Touch(IntPtr p, long size) { var s = Stopwatch.StartNew(); long b = p.ToInt64();"
+    " for (long off = 0; off < size; off += 4096) { Marshal.WriteByte(new IntPtr(b + off), 1); } s.Stop();"
+    " VirtualFree(p, UIntPtr.Zero, 0x8000); return size / 1048576.0 / s.Elapsed.TotalSeconds; }"
+    " static double Fresh() { var p = Alloc(1L << 30); if (p == IntPtr.Zero) throw new Exception(\"VirtualAlloc \" +"
+    " Marshal.GetLastWin32Error()); return Touch(p, 1L << 30); }"
+    " static Ms Mem() { var m = new Ms(); if (!GlobalMemoryStatusEx(m)) throw new Exception(\"GlobalMemoryStatusEx\"); return m; }"
+    " public static string Run() { var m0 = Mem(); double p1 = Fresh(), p2 = Fresh(); var m1 = Mem();"
+    " long want = ((long)m1.Avail - (256L << 20)) & ~((64L << 20) - 1); IntPtr big = IntPtr.Zero;"
+    " while (want >= (1L << 30)) { big = Alloc(want); if (big != IntPtr.Zero) { break; } want -= 256L << 20; }"
+    " if (big == IntPtr.Zero) throw new Exception(\"pre-touch VirtualAlloc \" + Marshal.GetLastWin32Error());"
+    " double pre = Touch(big, want), p3 = Fresh(); return string.Format(\"BVBENCH touchdiag-total-mib {0} MiB\\n"
+    "BVBENCH touchdiag-avail-mib {1} MiB\\nBVBENCH touchdiag-cpus {2} count\\nBVBENCH touchdiag-p1 {3:F1} MB/s\\n"
+    "BVBENCH touchdiag-p2 {4:F1} MB/s\\nBVBENCH touchdiag-pretouch-mib {5} MiB\\nBVBENCH touchdiag-pretouch {6:F1} MB/s\\n"
+    "BVBENCH touchdiag-p3 {7:F1} MB/s\", m0.Total >> 20, m0.Avail >> 20, Environment.ProcessorCount, p1, p2,"
+    " want >> 20, pre, p3); } }';"
+    "[BvTouchDiag]::Run()"
+)
+
 _PROCESS_SPAWN = (
     "$s=[Diagnostics.Stopwatch]::StartNew(); for($i=0;$i -lt 50;$i++){$null=cmd.exe /c exit 0};"
     "$s.Stop(); 'BVBENCH process-spawn {0:F1} proc/s' -f (50/$s.Elapsed.TotalSeconds)"
@@ -103,6 +134,7 @@ SUITE = [
     ("cpu-sha256-mt", _SHA256_MT),
     ("mem-copy", _MEMCOPY),
     ("mem-first-touch", _FIRST_TOUCH),
+    ("mem-first-touch-diag", _FIRST_TOUCH_DIAG),
     ("disk-io", _DISK_IO),
     ("disk-small-files-flushed", _SMALL_FILES),
     ("process-spawn", _PROCESS_SPAWN),
