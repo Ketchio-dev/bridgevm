@@ -3,8 +3,12 @@
 //! Independently defined from the programmer's model in Arm DDI 0224C, this
 //! implements the counter, match interrupt, mask/clear, load, control, and
 //! PrimeCell identification registers used by firmware and the guest OS.
+//!
+//! The counter follows the host's wall clock, as QEMU's default
+//! `-rtc clock=host` does. `Instant` (mach_absolute_time) stops while the Mac
+//! sleeps, which left the RTC behind by every host sleep.
 
-use std::time::Instant;
+use std::time::SystemTime;
 
 mod epoch;
 use epoch::host_epoch_seconds;
@@ -26,7 +30,7 @@ const IRQ_MATCH: u32 = 1;
 pub struct Pl031 {
     base_epoch_seconds: u32,
     last_load_value: u32,
-    host_start: Instant,
+    host_start: SystemTime,
     match_value: u32,
     fired_match_value: Option<u32>,
     interrupt_mask: u32,
@@ -49,7 +53,7 @@ impl Pl031 {
         Self {
             base_epoch_seconds: epoch_seconds,
             last_load_value: 0,
-            host_start: Instant::now(),
+            host_start: SystemTime::now(),
             match_value: 0,
             fired_match_value: None,
             interrupt_mask: 0,
@@ -90,7 +94,7 @@ impl Pl031 {
             RTCLR => {
                 self.base_epoch_seconds = value as u32;
                 self.last_load_value = value as u32;
-                self.host_start = Instant::now();
+                self.host_start = SystemTime::now();
                 self.fired_match_value = None;
             }
             RTCIMSC => self.interrupt_mask = (value as u32) & IRQ_MATCH,
@@ -100,8 +104,12 @@ impl Pl031 {
     }
 
     fn current_seconds(&self) -> u32 {
-        self.base_epoch_seconds
-            .wrapping_add(self.host_start.elapsed().as_secs() as u32)
+        // A host clock set back moves the counter back with it.
+        let elapsed = match SystemTime::now().duration_since(self.host_start) {
+            Ok(ahead) => ahead.as_secs() as u32,
+            Err(behind) => (behind.duration().as_secs() as u32).wrapping_neg(),
+        };
+        self.base_epoch_seconds.wrapping_add(elapsed)
     }
 
     fn refresh_match_interrupt(&mut self) {

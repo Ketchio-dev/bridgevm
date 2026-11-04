@@ -81,7 +81,7 @@ impl XhciController {
                         read_chained_event_data(mem, &interrupt_transfer, self.slot1_dci5_dcs);
                     let last_td_trb_gpa = event_data
                         .as_ref()
-                        .map(|event_data| event_data.gpa)
+                        .map(|event_data| event_data.trb.gpa)
                         .unwrap_or(interrupt_transfer.gpa);
                     let Some(next_dequeue) = last_td_trb_gpa.checked_add(TRB_SIZE_BYTES) else {
                         self.trace_dci5_drain_blocked(
@@ -146,8 +146,8 @@ impl XhciController {
                     let posted = match event_data.as_ref() {
                         Some(event_data) => self.post_event_to_interrupter(
                             mem,
-                            trb_interrupter_target(event_data.status),
-                            event_data.parameter,
+                            trb_interrupter_target(event_data.trb.status),
+                            event_data.trb.parameter,
                             (completion_code << COMPLETION_CODE_SHIFT) | written_length,
                             event_control | TRANSFER_EVENT_ED,
                         ),
@@ -170,6 +170,12 @@ impl XhciController {
                             self.pointer_input_report_queue.pop_front();
                         }
                         self.slot1_dci5_dequeue = next_dequeue;
+                        if event_data
+                            .as_ref()
+                            .is_some_and(|event_data| event_data.toggles_cycle)
+                        {
+                            self.slot1_dci5_dcs = !self.slot1_dci5_dcs;
+                        }
                         self.write_slot1_dci5_output_dequeue(mem);
                     } else {
                         self.trace_dci5_drain_blocked(

@@ -4,10 +4,9 @@ use super::*;
 
 use std::{
     collections::{hash_map::Entry, HashMap, VecDeque},
-    io::{self, Read},
-    net::{IpAddr, Ipv4Addr as StdIpv4Addr, TcpStream},
+    io,
+    net::{Ipv4Addr as StdIpv4Addr, TcpStream},
     os::fd::{FromRawFd, RawFd},
-    path::Path,
     sync::OnceLock,
 };
 
@@ -32,36 +31,6 @@ pub(crate) fn trace_icmp_enabled() -> bool {
 
 pub(crate) fn trace_icmp_recv(len: usize, first_byte: u8, outcome: &str) {
     eprintln!("bridgevm icmp recv bytes={len} first=0x{first_byte:02x} {outcome}");
-}
-
-pub(crate) fn first_resolv_conf_nameserver() -> Option<StdIpv4Addr> {
-    first_nameserver_from_path(Path::new("/etc/resolv.conf"))
-}
-
-pub(crate) fn first_nameserver_from_path(path: &Path) -> Option<StdIpv4Addr> {
-    let file = std::fs::File::open(path).ok()?;
-    if file.metadata().ok()?.len() > MAX_RESOLV_CONF_BYTES {
-        return None;
-    }
-    let mut bytes = Vec::new();
-    file.take(MAX_RESOLV_CONF_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .ok()?;
-    if bytes.len() as u64 > MAX_RESOLV_CONF_BYTES {
-        return None;
-    }
-    let contents = String::from_utf8(bytes).ok()?;
-    for line in contents.lines() {
-        let line = line.trim();
-        if line.starts_with('#') || !line.starts_with("nameserver") {
-            continue;
-        }
-        let addr = line.split_whitespace().nth(1)?;
-        if let Ok(IpAddr::V4(ip)) = addr.parse::<IpAddr>() {
-            return Some(ip);
-        }
-    }
-    None
 }
 
 pub(crate) fn queue_udp_reply(

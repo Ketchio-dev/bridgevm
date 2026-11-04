@@ -50,6 +50,8 @@ mod ctl_verb_reply_tests;
 mod desktop_scale;
 #[path = "agent_console/desktop_switch.rs"]
 mod desktop_switch;
+#[path = "agent_console/dns_flush.rs"]
+mod dns_flush;
 #[path = "agent_console/harness_protocol.rs"]
 mod harness_protocol;
 #[path = "agent_console/pointer_cleanup_order_tests.rs"]
@@ -68,6 +70,8 @@ mod service_wake;
 mod share;
 #[path = "agent_console/state.rs"]
 mod state;
+#[path = "agent_console/time_resync.rs"]
+mod time_resync;
 #[path = "agent_console/verb_reply.rs"]
 mod verb_reply;
 #[path = "agent_console/window_protocol.rs"]
@@ -79,6 +83,7 @@ use clip_sync::*;
 use clipboard::*;
 use config::*;
 use control_file::*;
+use dns_flush::*;
 use protocol::*;
 pub use desktop_scale::{request_desktop_scale, DESKTOP_SCALES};
 pub use desktop_switch::request_desktop_mode;
@@ -86,5 +91,6 @@ pub use service_wake::ServiceWake;
 use share::*;
 pub use state::AgentConsoleHarness;
 use state::*;
+use time_resync::*;
 use verb_reply::*;
 use window_protocol::*;

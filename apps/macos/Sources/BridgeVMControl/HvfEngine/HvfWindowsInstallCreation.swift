@@ -12,6 +12,7 @@ extension VMLibrary {
                                         memMiB: Int = 6144, cpuCount: Int = 4,
                                         networkEnabled: Bool = true,
                                         libraryRoot: URL = root,
+                                        repoRoot: URL = HvfEngineSession.defaultRepoRoot(),
                                         persist: Bool = true,
                                         publish: (VMConfig, URL) -> VMRegistrationCommitOutcome = { VMLibrary.createOutcome($0, rootURL: $1) }) -> HVFCreationOutcome? {
         let fm = FileManager.default
@@ -39,7 +40,8 @@ extension VMLibrary {
         guard let inputs = WindowsHVFInstallInputPolicy.stage(
             payloadDirectory: guestPayloadDirectory,
             payloadManifest: guestPayloadManifest,
-            e2eUnattendedPath: e2eUnattendedPath, bundlePath: b) else { return nil }
+            e2eUnattendedPath: e2eUnattendedPath, bundlePath: b,
+            repoRoot: repoRoot) else { return nil }
         let request = HvfWindowsInstallRequest(
             isoPath: managedISO.path, isoSHA256: managedISO.sha256,
             diskGiB: diskGiB,

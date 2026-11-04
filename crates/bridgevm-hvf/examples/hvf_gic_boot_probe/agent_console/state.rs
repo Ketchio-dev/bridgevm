@@ -132,6 +132,10 @@ pub struct AgentConsoleHarness {
     /// the engine: file parent directories are created implicitly on write.
     pub(super) share: Option<ShareState>,
     pub(super) share_old_agent_warned: bool,
+    /// Host suspension detection for the guest clock resync.
+    pub(super) clock: HostClock,
+    /// NAT resolver switches, for the guest DNS cache flush.
+    pub(super) dns_flush: DnsFlush,
 }
 
 /// Reassembly state for a chunked GET reply (GETBEG -> GETCHUNK* -> GETEND).
@@ -251,6 +255,8 @@ pub(super) enum ServiceReq {
         name: String,
         direction: ShareDelDirection,
     },
+    /// Set the guest clock to host UTC after a host suspension.
+    TimeSync,
 }
 
 /// Outcome of interpreting one guest reply line against the in-flight request.
@@ -279,6 +285,7 @@ pub(super) enum InFlightSnapshot {
         name: String,
         direction: ShareDelDirection,
     },
+    TimeSync,
 }
 
 impl InFlightSnapshot {
@@ -297,6 +304,7 @@ impl InFlightSnapshot {
                 name: name.clone(),
                 direction: *direction,
             },
+            ServiceReq::TimeSync => Self::TimeSync,
         }
     }
 }

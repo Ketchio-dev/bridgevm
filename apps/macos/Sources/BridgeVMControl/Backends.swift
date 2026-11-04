@@ -41,6 +41,7 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     var networkEnabled: Bool? = nil  // nil == default on; false disables the guest NIC (HVF only)
     var experimental3DAllowed: Bool? = nil
     var virtioDisplayDriverInstalled: Bool? = nil  // nil == false; true: the Microsoft-signed virtio-win display driver is installed or staged in this guest, so a 3D-off launch attaches the 2D virtio-gpu (HVF only)
+    var hardwareCursor: Bool? = nil  // nil == true: with that driver, Windows' pointer shows as the Mac cursor (the app sets viogpudo's HWCursor=1); false: the app writes HWCursor=0 instead (HVF only)
     var clipboardSyncEnabled: Bool? = nil  // nil == default on; false keeps two-way clipboard sync off (HVF only)
     var durableDiskWritesEnabled: Bool? = nil  // nil == off: guest flushes are ordered, durable within ~1 s; true: every flush waits for F_FULLFSYNC (HVF only)
     var retinaResolution: Bool? = nil  // nil == off; true: on a HiDPI screen the 2D virtio display asks for the window's backing pixels at the screen's scale, up to a size the display driver takes (HVF only)

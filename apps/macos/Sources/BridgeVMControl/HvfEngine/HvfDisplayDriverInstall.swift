@@ -279,11 +279,14 @@ enum HvfDisplayDriverInstall {
 
     /// Runs the install and reports the outcome; `onInstalled` sees only the outcomes that leave
     /// the driver in the guest.
-    @MainActor static func start(runner: @escaping Runner,
+    @MainActor static func start(runner: @escaping Runner, hardwareCursor: Bool = true,
                                  onInstalled: @escaping @MainActor (Outcome) -> Void,
                                  completion: @escaping @MainActor (Outcome) -> Void) {
         Task { @MainActor in
             let outcome = await install(runner: runner)
+            // A driver update rewrites the INF's HWCursor=0 (HvfDisplayDriverHardwareCursor.swift),
+            // which is what the VM's setting turned off wants.
+            if outcome.status == .installed && hardwareCursor { _ = await runner(hardwareCursorCommand, 60) }
             if outcome.leavesDriverInGuest { onInstalled(outcome) }
             completion(outcome)
         }
@@ -391,6 +394,7 @@ struct HvfDisplayDriverInstallButton: View {
         outcome = nil
         let session = session
         HvfDisplayDriverInstall.start(runner: { await HvfDisplayDriverInstall.runInGuest($0, session: session, timeout: $1) },
+                                      hardwareCursor: session.guestHardwareCursorWanted,
                                       onInstalled: onInstalled) { result in
             installing = false
             outcome = result
