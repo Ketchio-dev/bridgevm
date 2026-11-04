@@ -54,3 +54,19 @@ fn a_write_racing_the_pause_is_seen_by_the_supervisor_or_wakes_it() {
     );
     assert_eq!(control.writes(), seen + 2);
 }
+
+#[test]
+fn supervisor_lines_reach_the_producer_once_in_order_and_bounded() {
+    let control = OutputControl::default();
+    assert!(control.take_notices().is_empty(), "nothing waits");
+    control.notice("first".into());
+    control.notice("second".into());
+    assert_eq!(control.take_notices(), ["first", "second"]);
+    assert!(control.take_notices().is_empty(), "each line once");
+    control.notice("later".into());
+    assert_eq!(control.take_notices(), ["later"]);
+    for n in 0..2 * MAX_NOTICES {
+        control.notice(n.to_string());
+    }
+    assert_eq!(control.take_notices().len(), MAX_NOTICES);
+}

@@ -10,12 +10,17 @@
 //! (hda_coreaudio_prefill.rs); one that runs writes PCM, silent or not, every poll.
 
 use super::hda_coreaudio_rebuild::Signals;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::SeqCst};
-use std::sync::OnceLock;
+use std::sync::atomic::{
+    AtomicBool, AtomicU64,
+    Ordering::{Acquire, Relaxed, Release, SeqCst},
+};
+use std::sync::{Mutex, OnceLock, PoisonError};
 use std::thread::Thread;
 use std::time::{Duration, Instant};
 
 pub(super) const IDLE_PAUSE: Duration = Duration::from_secs(1);
+/// Supervisor lines kept for the producer; later ones are dropped.
+const MAX_NOTICES: usize = 8;
 
 /// What the supervisor does to the queue.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -80,6 +85,8 @@ pub(super) struct OutputControl {
     default_output_changed: AtomicBool,
     enqueue_failed: AtomicBool,
     supervisor: OnceLock<Thread>,
+    notices: Mutex<Vec<String>>,
+    has_notices: AtomicBool,
 }
 
 impl OutputControl {
@@ -134,6 +141,28 @@ impl OutputControl {
             start_failed: false,
             enqueue_failed: self.enqueue_failed.swap(false, SeqCst),
         }
+    }
+
+    /// A line for the log. The supervisor never prints: a line it printed
+    /// after the final report's footer would end every reader's host tail
+    /// (scripts/live-gates/hvf_host_tail.py). The producer prints it at its
+    /// next write instead, which runs under the platform lock and only before
+    /// that footer. A line still waiting at teardown is dropped.
+    pub(super) fn notice(&self, line: String) {
+        let mut notices = self.notices.lock().unwrap_or_else(PoisonError::into_inner);
+        if notices.len() < MAX_NOTICES {
+            notices.push(line);
+        }
+        self.has_notices.store(true, Release);
+    }
+
+    /// The lines waiting since the last call. Producer only: one relaxed load
+    /// per write while none waits.
+    pub(super) fn take_notices(&self) -> Vec<String> {
+        if !self.has_notices.load(Relaxed) || !self.has_notices.swap(false, Acquire) {
+            return Vec::new();
+        }
+        std::mem::take(&mut *self.notices.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     pub(super) fn request_stop(&self) {

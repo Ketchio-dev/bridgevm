@@ -74,3 +74,51 @@ fn a_stopped_queue_rebuilds_only_once_it_should_have_started() {
         (None, false)
     );
 }
+
+/// A queue that records what happens to it, in order.
+struct Recorded<'a> {
+    name: &'static str,
+    log: &'a std::cell::RefCell<Vec<String>>,
+}
+
+impl Replaceable for Recorded<'_> {
+    fn start(&self) -> i32 {
+        self.log.borrow_mut().push(format!("start {}", self.name));
+        0
+    }
+    fn retire(self) {
+        self.log.borrow_mut().push(format!("retire {}", self.name));
+    }
+}
+
+#[test]
+fn the_old_queue_is_stopped_before_the_new_one_starts() {
+    let log = std::cell::RefCell::new(Vec::new());
+    let mut current = Recorded {
+        name: "old",
+        log: &log,
+    };
+    assert_eq!(
+        replace(
+            &mut current,
+            Recorded {
+                name: "new",
+                log: &log
+            },
+            true
+        ),
+        0
+    );
+    assert_eq!(current.name, "new");
+    assert_eq!(*log.borrow(), ["retire old", "start new"]);
+    // A paused replacement retires the old queue and starts nothing.
+    replace(
+        &mut current,
+        Recorded {
+            name: "paused",
+            log: &log,
+        },
+        false,
+    );
+    assert_eq!(*log.borrow(), ["retire old", "start new", "retire new"]);
+}

@@ -16,6 +16,10 @@ impl HdaPcmSink for CoreAudioPcmSink {
         if !samples.is_empty() {
             self.shared.output.note_pcm();
         }
+        // The supervisor's lines, printed here so none follows the report footer.
+        for line in self.shared.output.take_notices() {
+            eprintln!("{line}");
+        }
     }
 
     fn stream_stopped(&mut self) {

@@ -93,6 +93,29 @@ impl Watch {
     }
 }
 
+/// A queue as `replace` uses it: the AudioQueue in hda_coreaudio_output.rs,
+/// a recording fake in the tests.
+pub(super) trait Replaceable {
+    /// Start or resume playing; the OSStatus.
+    fn start(&self) -> i32;
+    /// Mark retired, stop synchronously and dispose: none of this queue's
+    /// callbacks runs once it returns.
+    fn retire(self);
+}
+
+/// Put `fresh` in place of `current`. The old queue is retired and stopped
+/// before the fresh one starts (when `play`), so two queues never drain the
+/// ring or update the callback-thread counters at once. Returns the start's
+/// OSStatus, 0 when not playing.
+pub(super) fn replace<Q: Replaceable>(current: &mut Q, fresh: Q, play: bool) -> i32 {
+    std::mem::replace(current, fresh).retire();
+    if play {
+        current.start()
+    } else {
+        0
+    }
+}
+
 #[cfg(test)]
 #[path = "hda_coreaudio_rebuild_tests.rs"]
 mod tests;

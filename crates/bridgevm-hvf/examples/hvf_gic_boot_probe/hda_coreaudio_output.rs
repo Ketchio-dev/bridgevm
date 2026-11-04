@@ -8,17 +8,17 @@
 //! its idle-sleep assertion about 8 s after a pause, and 3 s after a stop or
 //! dispose.
 //!
-//! A replacement (hda_coreaudio_rebuild.rs) creates the new queue first and
-//! marks the old one retired before the new one starts: a retired queue's
-//! callbacks neither drain the ring nor hand buffers back, so its stop and
-//! dispose count no callback errors and print no lifecycle record. The ring and
-//! every counter carry over, so the teardown's lifecycle, stats and continuity
-//! records describe the last queue exactly as they described the only one.
+//! A replacement (hda_coreaudio_rebuild.rs) creates the new queue first, then
+//! retires the old one and stops it synchronously before the new one starts,
+//! so two queues never run callbacks at once. A retired queue's callbacks
+//! neither drain the ring nor hand buffers back, so its stop and dispose count
+//! no callback errors and print no lifecycle record. The ring and every counter
+//! carry over, so the teardown's lifecycle, stats and continuity records
+//! describe the last queue exactly as they described the only one.
 //!
-//! Pausing and starting print nothing; a replacement prints one line. A line
-//! printed after the final report's footer would end every reader's host tail
-//! (scripts/live-gates/hvf_host_tail.py), and only a replacement in the
-//! moments between that footer and this sink's drop could.
+//! The supervisor prints nothing itself. Its lines are notices the producer
+//! prints at its next write, before the final report's footer
+//! (OutputControl::notice).
 
 use std::ffi::c_void;
 use std::ptr;
@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 
 use super::hda_coreaudio_callback::{fill_with_silence, output_callback};
 use super::hda_coreaudio_idle::{IdleGate, Step};
-use super::hda_coreaudio_rebuild::{Rebuild, Watch};
+use super::hda_coreaudio_rebuild::{replace, Rebuild, Replaceable, Watch};
 use super::hda_coreaudio_stats::Shared;
 use super::hda_coreaudio_teardown::dispose_failed_queue;
 use super::{
@@ -49,6 +49,7 @@ const TEST_REBUILD_ENV: &str = "BRIDGEVM_HDA_COREAUDIO_TEST_REBUILD_MS";
 pub(super) struct OutputQueue {
     queue: *mut c_void,
     context: *mut CallbackContext,
+    shared: Arc<Shared>,
 }
 
 // One thread at a time calls into the queue: the supervisor, then the dropping
@@ -59,7 +60,7 @@ impl OutputQueue {
     /// Create and start a queue on the current default output.
     pub(super) fn open(shared: &Arc<Shared>) -> Result<Self, String> {
         let output = Self::create(shared)?;
-        let status = output.start();
+        let status = output.play();
         if status != 0 {
             unsafe { dispose_failed_queue(output.queue, output.context, AudioQueueDispose) };
             return Err(status_error("AudioQueueStart", status));
@@ -117,10 +118,16 @@ impl OutputQueue {
                 return Err(status_error("AudioQueueEnqueueBuffer", status));
             }
         }
-        Ok(Self { queue, context })
+        Ok(Self {
+            queue,
+            context,
+            shared: Arc::clone(shared),
+        })
     }
 
-    fn start(&self) -> i32 {
+    /// Start or resume. The first callback after it measures no interval.
+    fn play(&self) -> i32 {
+        self.shared.continuity.note_restart();
         unsafe { AudioQueueStart(self.queue, ptr::null()) }
     }
 
@@ -148,18 +155,8 @@ impl OutputQueue {
         unsafe { (*self.context).retired.store(true, Release) };
     }
 
-    /// Stop and dispose a replaced queue. Its statuses are not the teardown's.
-    fn retire(mut self) {
-        self.mark_retired();
-        let [stop, dispose] = self.close();
-        if stop != 0 || dispose != 0 {
-            eprintln!(
-                "hda CoreAudio output: the replaced queue closed with stop={stop} dispose={dispose}"
-            );
-        }
-    }
-
-    /// Stop immediately and dispose: the teardown's lifecycle statuses.
+    /// Stop immediately and dispose: the teardown's lifecycle statuses. A
+    /// synchronous stop returns once the queue's callbacks are done.
     fn close(&mut self) -> [i32; 2] {
         let stop = unsafe { AudioQueueStop(self.queue, 1) };
         let dispose = unsafe { AudioQueueDispose(self.queue, 1) };
@@ -168,6 +165,23 @@ impl OutputQueue {
         }
         (self.queue, self.context) = (ptr::null_mut(), ptr::null_mut());
         [stop, dispose]
+    }
+}
+
+impl Replaceable for OutputQueue {
+    fn start(&self) -> i32 {
+        self.play()
+    }
+
+    /// Its stop and dispose statuses are not the teardown's.
+    fn retire(mut self) {
+        self.mark_retired();
+        let [stop, dispose] = self.close();
+        if stop != 0 || dispose != 0 {
+            self.shared.output.notice(format!(
+                "hda CoreAudio output: the replaced queue closed with stop={stop} dispose={dispose}"
+            ));
+        }
     }
 }
 
@@ -215,9 +229,9 @@ impl Output {
         self.shared.output.request_stop();
         if let Some(supervisor) = self.supervisor.take() {
             supervisor.thread().unpark();
-            if supervisor.join().is_err() {
-                eprintln!("hda CoreAudio output: supervisor panicked");
-            }
+            // A panic printed its own message when it happened; nothing is
+            // printed here, after the report footer.
+            let _ = supervisor.join();
         }
     }
 
@@ -259,8 +273,7 @@ fn supervise(queue: &Mutex<OutputQueue>, shared: &Arc<Shared>, test_rebuild: Opt
             }
             Some(Step::Start) => {
                 control.set_paused(false);
-                shared.continuity.note_restart();
-                signals.start_failed = lock(queue).start() != 0;
+                signals.start_failed = lock(queue).play() != 0;
                 watch.note_started(now);
             }
             None => {}
@@ -278,18 +291,18 @@ fn supervise(queue: &Mutex<OutputQueue>, shared: &Arc<Shared>, test_rebuild: Opt
         if let Some(reason) = reason {
             match rebuild(queue, shared, playing) {
                 Ok(()) => {
-                    println!(
+                    control.notice(format!(
                         "hda CoreAudio output: {}; sound now plays on the Mac's current default output",
                         reason.label()
-                    );
+                    ));
                     retry = None;
                 }
                 Err(error) => {
                     if retry.is_none() {
-                        eprintln!(
+                        control.notice(format!(
                             "hda CoreAudio output: {}, and the current default output did not open ({error}); trying again while the guest plays",
                             reason.label()
-                        );
+                        ));
                     }
                     retry = Some(reason);
                 }
@@ -309,22 +322,10 @@ fn supervise(queue: &Mutex<OutputQueue>, shared: &Arc<Shared>, test_rebuild: Opt
 }
 
 /// Replace the queue with a new one on the current default output, keeping
-/// the ring. The old queue is retired before the new one starts (if `play`),
-/// so the two never share the ring.
+/// the ring (hda_coreaudio_rebuild.rs::replace).
 fn rebuild(queue: &Mutex<OutputQueue>, shared: &Arc<Shared>, play: bool) -> Result<(), String> {
     let fresh = OutputQueue::create(shared)?;
-    let mut current = lock(queue);
-    current.mark_retired();
-    let old = std::mem::replace(&mut *current, fresh);
-    let status = if play {
-        shared.continuity.note_restart();
-        current.start()
-    } else {
-        0
-    };
-    drop(current);
-    old.retire();
-    match status {
+    match replace(&mut *lock(queue), fresh, play) {
         0 => Ok(()),
         status => Err(status_error("AudioQueueStart", status)),
     }
