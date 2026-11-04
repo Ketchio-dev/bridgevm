@@ -4,7 +4,10 @@
 //! sink's `&mut HdaPcmSink` calls serialize its sole producer. The callback
 //! context only owns shared PCM state and cannot publish frames. Complete
 //! frames cross an atomic ring; a non-waiting consumer guard protects overlapping
-//! callbacks, which otherwise substitute silence only on underrun.
+//! callbacks, which otherwise substitute silence only on underrun. A supervisor
+//! thread pauses the queue while the guest plays nothing, starts it at the
+//! next write, and moves playback to a new queue on the Mac's current default
+//! output when that changes or the queue fails (hda_coreaudio_output.rs).
 //!
 //! Teardown prints the `hda CoreAudio stats:` record, whose exact ordered
 //! field set B7 and T17 parse, and after it a separate `hda CoreAudio
@@ -12,7 +15,7 @@
 //! (hda_coreaudio_continuity.rs), which the stats record cannot show.
 
 use std::ffi::c_void;
-use std::ptr;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 #[path = "hda_coreaudio_fill.rs"]
@@ -28,20 +31,28 @@ mod hda_coreaudio_atomic_ring;
 mod hda_coreaudio_callback;
 #[path = "hda_coreaudio_continuity.rs"]
 mod hda_coreaudio_continuity;
+#[path = "hda_coreaudio_idle.rs"]
+mod hda_coreaudio_idle;
+#[path = "hda_coreaudio_output.rs"]
+mod hda_coreaudio_output;
+use hda_coreaudio_output::{Output, OutputQueue};
 #[path = "hda_coreaudio_prefill.rs"]
 mod hda_coreaudio_prefill;
 #[path = "hda_coreaudio_publication.rs"]
 mod hda_coreaudio_publication;
+#[path = "hda_coreaudio_rebuild.rs"]
+mod hda_coreaudio_rebuild;
 #[path = "hda_coreaudio_ring.rs"]
 mod hda_coreaudio_ring;
+#[path = "hda_coreaudio_start.rs"]
+mod hda_coreaudio_start;
+pub(crate) use hda_coreaudio_start::{start_output, ENABLED};
 #[path = "hda_coreaudio_stats.rs"]
 mod hda_coreaudio_stats;
 #[path = "hda_coreaudio_teardown.rs"]
 mod hda_coreaudio_teardown;
-use hda_coreaudio_callback::{fill_with_silence, output_callback};
 use hda_coreaudio_prefill::PREFILL_BYTES;
 use hda_coreaudio_stats::Shared;
-use hda_coreaudio_teardown::dispose_failed_queue;
 
 const SAMPLE_RATE: u32 = 48_000;
 const CHANNELS: u8 = 2;
@@ -84,80 +95,24 @@ struct AudioQueueBuffer {
 
 struct CallbackContext {
     shared: Arc<Shared>,
+    /// Set before a replaced queue stops (hda_coreaudio_output.rs).
+    retired: AtomicBool,
 }
 
 /// Fixed-format AudioQueue sink for the Windows HDA endpoint's s16le stream.
 pub struct CoreAudioPcmSink {
     producer: PcmProducer,
-    queue: *mut c_void,
-    callback_context: *mut CallbackContext,
+    output: Output,
     shared: Arc<Shared>,
 }
 
-// The queue is created once and subsequently touched only by CoreAudio and by
-// this value's Drop implementation. Shared producer/callback state is synchronized.
-unsafe impl Send for CoreAudioPcmSink {}
-
 impl CoreAudioPcmSink {
     pub fn new() -> Result<Self, String> {
-        let format = AudioStreamBasicDescription {
-            sample_rate: f64::from(SAMPLE_RATE),
-            format_id: AUDIO_FORMAT_LINEAR_PCM,
-            format_flags: AUDIO_FORMAT_FLAG_IS_SIGNED_INTEGER | AUDIO_FORMAT_FLAG_IS_PACKED,
-            bytes_per_packet: BYTES_PER_FRAME,
-            frames_per_packet: 1,
-            bytes_per_frame: BYTES_PER_FRAME,
-            channels_per_frame: u32::from(CHANNELS),
-            bits_per_channel: u32::from(BITS_PER_CHANNEL),
-            reserved: 0,
-        };
         let shared = Arc::new(Shared::new(RING_CAPACITY_BYTES, PREFILL_BYTES));
-        let callback_context = Box::into_raw(Box::new(CallbackContext {
-            shared: Arc::clone(&shared),
-        }));
-        let mut queue = ptr::null_mut();
-        let status = unsafe {
-            AudioQueueNewOutput(
-                &format,
-                Some(output_callback),
-                callback_context.cast(),
-                ptr::null_mut(),
-                ptr::null(),
-                0,
-                &mut queue,
-            )
-        };
-        if status != 0 {
-            unsafe { drop(Box::from_raw(callback_context)) };
-            return Err(status_error("AudioQueueNewOutput", status));
-        }
-
-        for _ in 0..AUDIO_QUEUE_BUFFER_COUNT {
-            let mut buffer = ptr::null_mut();
-            let status =
-                unsafe { AudioQueueAllocateBuffer(queue, AUDIO_QUEUE_BUFFER_BYTES, &mut buffer) };
-            if status != 0 {
-                unsafe { dispose_failed_queue(queue, callback_context, AudioQueueDispose) };
-                return Err(status_error("AudioQueueAllocateBuffer", status));
-            }
-            unsafe { fill_with_silence(buffer) };
-            let status = unsafe { AudioQueueEnqueueBuffer(queue, buffer, 0, ptr::null()) };
-            if status != 0 {
-                unsafe { dispose_failed_queue(queue, callback_context, AudioQueueDispose) };
-                return Err(status_error("AudioQueueEnqueueBuffer", status));
-            }
-        }
-
-        let status = unsafe { AudioQueueStart(queue, ptr::null()) };
-        if status != 0 {
-            unsafe { dispose_failed_queue(queue, callback_context, AudioQueueDispose) };
-            return Err(status_error("AudioQueueStart", status));
-        }
-
+        let queue = OutputQueue::open(&shared)?;
         Ok(Self {
             producer: PcmProducer::default(),
-            queue,
-            callback_context,
+            output: Output::supervise(queue, &shared),
             shared,
         })
     }
@@ -167,16 +122,11 @@ impl Drop for CoreAudioPcmSink {
     fn drop(&mut self) {
         // Account for a terminal fragment; immediate stop does not prove playback.
         self.producer.finish(&self.shared, RING_CAPACITY_BYTES);
+        // No rebuild, pause or device notification from here on.
+        self.output.end_supervision();
         self.shared.callback_failures.begin_stopping();
         self.shared.continuity.begin_stopping();
-        let (stop_status, dispose_status) = unsafe {
-            let stop = AudioQueueStop(self.queue, 1);
-            let dispose = AudioQueueDispose(self.queue, 1);
-            if dispose == 0 {
-                drop(Box::from_raw(self.callback_context));
-            }
-            (stop, dispose)
-        };
+        let [stop_status, dispose_status] = self.output.close();
         // Always print the healthy case too; error-only telemetry cannot prove
         // A5's required frames_rendered>0 AND drops==0.
         self.shared.print_stats([stop_status, dispose_status]);
@@ -210,6 +160,13 @@ extern "C" {
         packet_descriptions: *const c_void,
     ) -> i32;
     fn AudioQueueStart(queue: *mut c_void, start_time: *const c_void) -> i32;
+    fn AudioQueuePause(queue: *mut c_void) -> i32;
     fn AudioQueueStop(queue: *mut c_void, immediate: u8) -> i32;
     fn AudioQueueDispose(queue: *mut c_void, immediate: u8) -> i32;
+    fn AudioQueueGetProperty(
+        queue: *mut c_void,
+        property: u32,
+        data: *mut c_void,
+        size: *mut u32,
+    ) -> i32;
 }

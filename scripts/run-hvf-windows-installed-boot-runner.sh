@@ -371,6 +371,8 @@ build_installed_boot_env_args() {
   [[ -z "${BRIDGEVM_HDA:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA=$BRIDGEVM_HDA")
   [[ -z "${BRIDGEVM_HDA_PCM_OUT:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_PCM_OUT=$BRIDGEVM_HDA_PCM_OUT")
   [[ -z "${BRIDGEVM_HDA_COREAUDIO:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_COREAUDIO=$BRIDGEVM_HDA_COREAUDIO")
+  # Test-only: the CoreAudio sink rebuilds its queue as on a default-output change.
+  [[ -z "${BRIDGEVM_HDA_COREAUDIO_TEST_REBUILD_MS:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_COREAUDIO_TEST_REBUILD_MS=$BRIDGEVM_HDA_COREAUDIO_TEST_REBUILD_MS")
   [[ -z "${BRIDGEVM_TRACE_HDA:-}" ]] || ENV_ARGS+=("BRIDGEVM_TRACE_HDA=$BRIDGEVM_TRACE_HDA")
   # PL011 UART register + KD serial bridge byte-flow trace (pl011.rs /
   # kd_serial_bridge.rs gate on BRIDGEVM_TRACE_PL011; absent = no trace).
