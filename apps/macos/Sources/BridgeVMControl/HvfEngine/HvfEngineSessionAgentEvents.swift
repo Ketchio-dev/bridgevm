@@ -23,7 +23,10 @@ extension HvfEngineSession {
             else { sendGracefulStopIfReady() }
         case let .unknown(line) where HvfGuestResetRecord.matches(line):
             serviceStarted = false
+            guestBootChanged() // a pending Restart or Reset is done; an open confirmation is stale
             ownedController?.guestServiceLost()
+        case let .unknown(line) where line.hasPrefix(Self.resetAcknowledgement):
+            resetAcknowledged()
         case .aliveHeartbeat:
             lastHeartbeatDate = Date()
             lastHeartbeatAge = 0

@@ -34,6 +34,10 @@ final class HvfEngineSession: ObservableObject {
     var ownedController: HvfOwnedRunController?
     @Published var forceStopTarget: HvfForceStopTarget?
     @Published var stopWait: HvfGuestStopWait? // what Windows is doing while a Stop waits for it
+    @Published var restartRequest: HvfPendingRestart? // a Restart or Reset sent this boot (HvfGuestRestart)
+    @Published var resetConfirmation: HvfResetConfirmation? // the Reset the user is asked to confirm
+    @Published var restartNotice: String? // a Reset that no helper took
+    @Published var guestBoot = 0 // bumps at every guest reset record and at every run start or end
     var runtimeTransitionInProgress = false
     var timer: Timer?
     var tailReader = TailOffsetReader()
@@ -268,16 +272,24 @@ final class HvfEngineSession: ObservableObject {
         displayResize.didSend(size)
     }
 
-    /// `RESIZE` is a request to the VMM's display device, not guest input: it bypasses the ordered input
-    /// stream (`allowLegacyWrite` would refuse it or reset that stream) and checks only that this run's
-    /// input channel is still the bound one.
     private func appendDisplayResize(_ size: HvfDisplayResizeRequest.Size) -> Bool {
+        appendVMMControl(size.command)
+    }
+
+    /// True while a running VM's VMM takes requests on this run's input channel.
+    var vmmControlAvailable: Bool {
         switch connectionState {
         case .booting, .connected: break
         case .stopped, .stopping, .timedOut: return false
         }
-        guard !guiStartCleanupOnly, inputDriver.router.binding == inputBinding else { return false }
-        return writeLiveInput(size.command)
+        return !guiStartCleanupOnly && inputDriver.router.binding == inputBinding
+    }
+
+    /// `RESIZE` and `RESET` are requests to the VMM, not guest input: they bypass the ordered input
+    /// stream (`allowLegacyWrite` would refuse them or reset that stream) and check only that this run's
+    /// input channel is still the bound one.
+    func appendVMMControl(_ line: String) -> Bool {
+        vmmControlAvailable && writeLiveInput(line)
     }
 
     private func writeLiveInput(_ line: String) -> Bool {
@@ -318,6 +330,7 @@ final class HvfEngineSession: ObservableObject {
         for event in agentEvents.parse(lines) {
             handle(event)
         }
+        expireUnacknowledgedReset()
         if let lastHeartbeatDate {
             lastHeartbeatAge = Date().timeIntervalSince(lastHeartbeatDate)
         }
@@ -379,6 +392,7 @@ final class HvfEngineSession: ObservableObject {
         stopDeadline = nil
         if forceStopTarget != nil { forceStopTarget = nil }
         if stopWait != nil { stopWait = nil }
+        guestBootChanged()
         guiStartCleanupOnly = false
         connectionState = .stopped
         runtimeTransitionInProgress = false
@@ -401,6 +415,7 @@ final class HvfEngineSession: ObservableObject {
         fileDrops.reset()
         stopCommandSent = false
         stopDeadline = nil
+        guestBootChanged()
         liveInputWriteFailureReported = false
         displayResize.deviceRestarted() // a new run's display starts at its default size; an attached one is unknown
         if clearEvents { events = [] }

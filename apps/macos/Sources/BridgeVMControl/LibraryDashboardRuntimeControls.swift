@@ -16,6 +16,11 @@ struct LibraryDashboardRuntimeControls: View {
                 }
                 LibraryDashboardRuntimeStopControl(config: config, model: model, library: library,
                     session: session, runtimeActive: runtimeActive, lifecycleBusy: lifecycleBusy)
+                HvfRestartControl(session: session, identifier: "bridgevm.dashboard.runtime") { enabled, press in
+                    DashboardActionButton(title: "다시 시작", symbol: "arrow.counterclockwise",
+                        disabled: !enabled || lifecycleBusy, action: press)
+                    .accessibilityIdentifier("bridgevm.dashboard.runtime.restart")
+                }
                 DashboardActionButton(title: "새로고침", symbol: "arrow.clockwise", action: model.refresh)
                 DashboardActionButton(title: "복제", symbol: "plus.square.on.square",
                     disabled: runtimeActive || library.cloningSlugs.contains(config.slug)) {

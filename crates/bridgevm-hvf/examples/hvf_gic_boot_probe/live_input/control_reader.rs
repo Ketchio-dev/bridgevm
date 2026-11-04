@@ -43,15 +43,17 @@ impl LiveInputController {
             }
             self.offset = self.offset.saturating_add(chunk.len() as u64);
             for line in self.lines.consume(chunk) {
-                // The read-ahead below already pressed this one.
-                if line == "POWERBUTTON" && self.offset <= self.power_scanned_to {
+                // The read-ahead below already queued this one.
+                if self.offset <= self.power_scanned_to
+                    && LiveInputCommand::host_control(line.as_bytes()).is_some()
+                {
                     continue;
                 }
                 self.push_line(&line);
             }
         }
         if self.pending.len() >= MAX_PENDING_COMMANDS {
-            self.read_ahead_for_power_button(file, len);
+            self.read_ahead_for_host_control(file, len);
         }
         if self.offset == len
             && self.offset >= COMPACT_AFTER_BYTES
@@ -64,10 +66,11 @@ impl LiveInputController {
     }
 
     /// A full queue leaves unread lines in the file while the guest is not
-    /// reading HID (early boot, a stalled USB stack). Queue the POWERBUTTON
-    /// lines among them anyway (`apply_pending` presses those first); the
-    /// reader skips them when it reaches them.
-    fn read_ahead_for_power_button(&mut self, file: &mut File, len: u64) {
+    /// reading HID (early boot, a stalled USB stack, a hung guest). Queue the
+    /// POWERBUTTON and RESET lines among them anyway (`apply_pending` presses
+    /// the button first, the run loop takes a reset); the reader skips them
+    /// when it reaches them.
+    fn read_ahead_for_host_control(&mut self, file: &mut File, len: u64) {
         const MAX_QUEUED_PRESSES: usize = 4;
         if self.power_scanned_to <= self.offset && !self.lines.is_empty() {
             return; // Mid-line: read ahead from the next line boundary only.
@@ -90,8 +93,8 @@ impl LiveInputController {
                 break;
             }
             scanned += line.len() as u64;
-            if line.trim_ascii() == b"POWERBUTTON" {
-                self.pending.push_back(LiveInputCommand::PowerButton);
+            if let Some(command) = LiveInputCommand::host_control(line.trim_ascii()) {
+                self.pending.push_back(command);
                 queued += 1;
             }
         }

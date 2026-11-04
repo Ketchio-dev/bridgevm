@@ -26,6 +26,11 @@ impl LiveInputController {
             self.pending.remove(index);
             press_power_button(platform);
         }
+        // A reset ends this boot: the run loop takes it after this tick, and
+        // input queued before it must not reach the guest first.
+        if self.pending.iter().any(LiveInputCommand::is_reset) {
+            return;
+        }
         let Some(command) = self.pending.front() else {
             return;
         };
@@ -86,7 +91,9 @@ impl LiveInputController {
                 println!("live input accepted: snapshot={label:?}");
                 Ok(false)
             }
-            LiveInputCommand::PowerButton => unreachable!("power-button presses are applied above"),
+            LiveInputCommand::PowerButton | LiveInputCommand::Reset => {
+                unreachable!("host control lines are handled above")
+            }
         };
         match result {
             Ok(accepted) => {
@@ -111,6 +118,22 @@ impl LiveInputController {
                 self.pending.pop_front();
             }
         }
+    }
+}
+
+impl LiveInputController {
+    /// True when a RESET line was read since the last call: the run loop then
+    /// ends the boot as a guest SYSTEM_RESET does, so the runtime recreates
+    /// the helper.
+    pub fn take_host_reset(&mut self) -> bool {
+        let before = self.pending.len();
+        self.pending.retain(|command| !command.is_reset());
+        if self.pending.len() == before {
+            return false;
+        }
+        let t = super::STARTED.get().map_or(0, |at| at.elapsed().as_millis());
+        println!("BVPOWER host reset t={t}");
+        true
     }
 }
 
