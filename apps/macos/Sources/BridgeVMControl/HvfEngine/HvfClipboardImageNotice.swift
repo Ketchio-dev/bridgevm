@@ -3,7 +3,9 @@ import SwiftUI
 
 /// One plain notice when a copied image stayed where it was copied because it is over the
 /// clipboard image limits. It follows the probe's exact skip and refusal lines
-/// (agent_console/clip_image.rs); the next clipboard sync or a guest reset clears it.
+/// (agent_console/clip_image.rs) and is keyed to the copy they number (` copy=N`): that
+/// copy's own text sync keeps it; a line about a later copy, a guest reset or a session
+/// reset clears it.
 @MainActor
 final class HvfClipboardImageNotice: ObservableObject {
     enum Kind: Equatable { case macImageTooLarge, windowsImageTooLarge }
@@ -12,19 +14,23 @@ final class HvfClipboardImageNotice: ObservableObject {
     static let windowsTooLargePrefix = "BVAGENT CLIPSYNC refused guest-image too-large "
 
     @Published private(set) var shown: Kind?
+    /// The copy the notice is about; nil from a probe without copy numbers.
+    private var copy: Int?
 
     func consume(_ event: BvAgentEvent) {
         switch event {
-        case .clipSync:
-            reset()
+        case let .clipSync(_, _, _, copy):
+            clear(unlessAbout: copy)
         case let .unknown(raw):
             let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
             if HvfGuestResetRecord.matches(line) {
                 reset()
             } else if line.hasPrefix(Self.macTooLargePrefix) {
-                show(.macImageTooLarge)
+                show(.macImageTooLarge, copy: Self.copy(in: line))
             } else if line.hasPrefix(Self.windowsTooLargePrefix) {
-                show(.windowsImageTooLarge)
+                show(.windowsImageTooLarge, copy: Self.copy(in: line))
+            } else if line.hasPrefix("BVAGENT CLIPSYNC "), let lineCopy = Self.copy(in: line) {
+                clear(unlessAbout: lineCopy) // a later copy refused for another reason
             }
         default:
             break
@@ -32,7 +38,15 @@ final class HvfClipboardImageNotice: ObservableObject {
     }
 
     func reset() {
+        copy = nil
         if shown != nil { shown = nil }
+    }
+
+    /// A line about the notice's copy (or an earlier one) keeps it; a later copy's clears it.
+    /// Without copy numbers every sync counts as later, as before.
+    private func clear(unlessAbout lineCopy: Int?) {
+        if let lineCopy, let copy, lineCopy <= copy { return }
+        reset()
     }
 
     var displayed: (text: String, help: String)? {
@@ -44,8 +58,14 @@ final class HvfClipboardImageNotice: ObservableObject {
         }
     }
 
-    private func show(_ kind: Kind) {
+    private func show(_ kind: Kind, copy: Int?) {
+        self.copy = copy
         if shown != kind { shown = kind }
+    }
+
+    private static func copy(in line: String) -> Int? {
+        guard let range = line.range(of: " copy=") else { return nil }
+        return Int(line[range.upperBound...].prefix { $0.isNumber })
     }
 }
 

@@ -586,16 +586,40 @@ fn agent_restart_mid_push_resends_the_image_from_putbeg() {
     assert!(rig.verbs().starts_with(&verbs(&["CLIPCAPS", "PUTBEG"])));
 }
 
+/// The lines about one copy share its number, a re-poll keeps it, and a later
+/// copy either way gets a larger one: the app's notice is keyed by it.
+#[test]
+fn copy_numbers_follow_copies_not_polls() {
+    let mut rig = Rig::new(true);
+    rig.guest.text = "A".into();
+    rig.guest.described = Some(format!("4000 3000 {} - -", CLIP_IMAGE_MAX_BYTES + 1));
+    rig.settle();
+    let refused = rig.h.last_synced.guest_copy;
+    assert_eq!((rig.h.last_synced.image_refusals, rig.mac.text.as_deref()), (1, Some("A")));
+    for _ in 0..3 {
+        rig.settle();
+    }
+    assert_eq!(rig.h.last_synced.guest_copy, refused, "re-polls keep the number");
+    rig.mac.copy(Some("M"), None);
+    rig.settle();
+    let mac = rig.h.last_synced.host_copy;
+    assert!(mac > refused);
+    rig.guest.text = "B".into();
+    rig.guest.described = None;
+    rig.settle();
+    assert!(rig.h.last_synced.guest_copy > mac);
+}
+
 #[test]
 fn notice_lines_keep_the_prefixes_the_app_matches() {
     // HvfClipboardImageNotice.swift matches these prefixes exactly.
-    assert!(host_image_skip_line(40_000_000, 9000, 9000, 812)
+    assert!(host_image_skip_line(40_000_000, 9000, 9000, 3, 812)
         .starts_with("BVAGENT CLIPSYNC skip image too-large bytes=40000000 width=9000 height=9000 "));
     let image = GuestImage { width: 20000, height: 300, bytes: 0, digest: None, path: None };
-    let refused = guest_image_refusal_line(GuestImageRefusal::TooLarge, Some(&image), 913);
+    let refused = guest_image_refusal_line(GuestImageRefusal::TooLarge, Some(&image), 4, 913);
     assert_eq!(
         refused,
         "BVAGENT CLIPSYNC refused guest-image too-large bytes=0 width=20000 height=300 \
-         limit-bytes=33554432 limit-side=16384 t=913"
+         limit-bytes=33554432 limit-side=16384 copy=4 t=913"
     );
 }

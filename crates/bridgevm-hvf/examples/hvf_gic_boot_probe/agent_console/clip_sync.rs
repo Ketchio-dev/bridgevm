@@ -30,9 +30,23 @@ pub(super) struct ClipBaseline {
     pub(super) refused_image: Option<GuestImageKey>,
     /// Guest image refusals logged so far, one per refused copy.
     pub(super) image_refusals: u64,
+    /// Copy numbers handed out so far, either way. The lines about one copy
+    /// carry its number (` copy=N`), so the app can tell that copy's own text
+    /// sync from a later copy (HvfClipboardImageNotice.swift).
+    pub(super) copies: u64,
+    /// The number of the latest Mac copy, and of the latest guest copy.
+    pub(super) host_copy: u64,
+    pub(super) guest_copy: u64,
+    /// Hash of the last guest poll reply: a re-poll keeps its copy number.
+    pub(super) guest_reply: Option<u64>,
 }
 
 impl ClipBaseline {
+    fn next_copy(&mut self) -> u64 {
+        self.copies += 1;
+        self.copies
+    }
+
     /// The clipboard as one unit, either way: (text, image) is the pair last
     /// synced. Any other pair is written whole.
     pub(super) fn holds(&self, text: Option<&str>, image: Option<[u8; 32]>) -> bool {
@@ -51,6 +65,7 @@ impl AgentConsoleHarness {
         let Some(clip) = std::iter::from_fn(|| pasteboard.try_changed_clip()).last() else {
             return;
         };
+        self.last_synced.host_copy = self.last_synced.next_copy();
         // Images arrive only while the agent advertises IMAGE_PNG.
         match clip.image.filter(|_| self.clip_images.is_some()) {
             Some(HostImage::Png(png)) => return self.enqueue_host_image(clip.text, png, now),
@@ -119,6 +134,15 @@ impl AgentConsoleHarness {
         if self.clip_push_pending() {
             return;
         }
+        let reply = {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(line, &mut hasher);
+            std::hash::Hasher::finish(&hasher)
+        };
+        if self.last_synced.guest_reply != Some(reply) {
+            self.last_synced.guest_reply = Some(reply);
+            self.last_synced.guest_copy = self.last_synced.next_copy();
+        }
         if let Some(image) = image {
             return self.handle_guest_clip(b64, image, now);
         }
@@ -139,7 +163,8 @@ impl AgentConsoleHarness {
             pasteboard.set(text);
         }
         println!(
-            "BVAGENT CLIPSYNC guest->host bytes={bytes} t={}",
+            "BVAGENT CLIPSYNC guest->host bytes={bytes} copy={} t={}",
+            self.last_synced.guest_copy,
             self.t_ms(now)
         );
     }
@@ -152,7 +177,8 @@ impl AgentConsoleHarness {
                 self.last_synced.rebaseline = false;
             }
             println!(
-                "BVAGENT CLIPSYNC host->guest bytes={guest_bytes} t={}",
+                "BVAGENT CLIPSYNC host->guest bytes={guest_bytes} copy={} t={}",
+                self.last_synced.host_copy,
                 self.t_ms(now)
             );
         } else if line.starts_with("ERR") {

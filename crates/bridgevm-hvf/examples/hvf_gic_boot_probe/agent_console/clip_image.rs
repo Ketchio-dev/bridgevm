@@ -186,25 +186,32 @@ impl GuestImageRefusal {
 pub(super) fn guest_image_refusal_line(
     refusal: GuestImageRefusal,
     image: Option<&GuestImage>,
+    copy: u64,
     t_ms: u128,
 ) -> String {
     let reason = refusal.reason();
     match image {
         Some(image) => format!(
             "BVAGENT CLIPSYNC refused guest-image {reason} bytes={} width={} height={} \
-             limit-bytes={CLIP_IMAGE_MAX_BYTES} limit-side={CLIP_IMAGE_MAX_SIDE} t={t_ms}",
+             limit-bytes={CLIP_IMAGE_MAX_BYTES} limit-side={CLIP_IMAGE_MAX_SIDE} copy={copy} t={t_ms}",
             image.bytes, image.width, image.height
         ),
-        None => format!("BVAGENT CLIPSYNC refused guest-image {reason} t={t_ms}"),
+        None => format!("BVAGENT CLIPSYNC refused guest-image {reason} copy={copy} t={t_ms}"),
     }
 }
 
 /// A Mac image over a limit; the app shows it (and the refusal below with
 /// `too-large`) as a notice (HvfClipboardImageNotice.swift).
-pub(super) fn host_image_skip_line(bytes: usize, width: u32, height: u32, t_ms: u128) -> String {
+pub(super) fn host_image_skip_line(
+    bytes: usize,
+    width: u32,
+    height: u32,
+    copy: u64,
+    t_ms: u128,
+) -> String {
     format!(
         "BVAGENT CLIPSYNC skip image too-large bytes={bytes} width={width} height={height} \
-         limit-bytes={CLIP_IMAGE_MAX_BYTES} limit-side={CLIP_IMAGE_MAX_SIDE} t={t_ms}"
+         limit-bytes={CLIP_IMAGE_MAX_BYTES} limit-side={CLIP_IMAGE_MAX_SIDE} copy={copy} t={t_ms}"
     )
 }
 
@@ -280,7 +287,7 @@ impl AgentConsoleHarness {
             height,
         } = image
         {
-            let line = host_image_skip_line(*bytes, *width, *height, self.t_ms(now));
+            let line = host_image_skip_line(*bytes, *width, *height, self.last_synced.host_copy, self.t_ms(now));
             println!("{line}");
         }
     }
@@ -382,7 +389,8 @@ impl AgentConsoleHarness {
         }
         self.last_synced.png = Some(png);
         println!(
-            "BVAGENT CLIPSYNC guest->host image bytes={len} width={width} height={height} t={}",
+            "BVAGENT CLIPSYNC guest->host image bytes={len} width={width} height={height} copy={} t={}",
+            self.last_synced.guest_copy,
             self.t_ms(now)
         );
     }
@@ -400,7 +408,7 @@ impl AgentConsoleHarness {
             self.last_synced.refused_image = Some(image.key());
         }
         self.last_synced.image_refusals += 1;
-        println!("{}", guest_image_refusal_line(refusal, image, self.t_ms(now)));
+        println!("{}", guest_image_refusal_line(refusal, image, self.last_synced.guest_copy, self.t_ms(now)));
     }
 
     /// PUT, then CLIPSETIMG, one reply at a time; the in-flight request keeps
@@ -484,10 +492,11 @@ impl AgentConsoleHarness {
                 self.last_synced.image = Some(push.png.digest);
                 self.last_synced.rebaseline = false;
                 println!(
-                    "BVAGENT CLIPSYNC host->guest image bytes={} width={} height={} t={}",
+                    "BVAGENT CLIPSYNC host->guest image bytes={} width={} height={} copy={} t={}",
                     push.png.bytes.len(),
                     push.png.width,
                     push.png.height,
+                    self.last_synced.host_copy,
                     self.t_ms(now)
                 );
                 self.last_synced.png = Some(push.png);
