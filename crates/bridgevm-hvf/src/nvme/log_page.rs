@@ -76,6 +76,10 @@ impl NvmeController {
         set_io(NVM_OP_FLUSH, CMD_EFFECT_CSUPP | CMD_EFFECT_LBCC);
         set_io(NVM_OP_WRITE, CMD_EFFECT_CSUPP | CMD_EFFECT_LBCC);
         set_io(NVM_OP_READ, CMD_EFFECT_CSUPP);
+        set_io(
+            NVM_OP_DATASET_MANAGEMENT,
+            CMD_EFFECT_CSUPP | CMD_EFFECT_LBCC,
+        );
         d
     }
 }
