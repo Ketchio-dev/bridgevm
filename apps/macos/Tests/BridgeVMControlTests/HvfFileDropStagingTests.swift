@@ -73,4 +73,18 @@ final class HvfFileDropStagingTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: staging.path).sorted(),
                        ["note_1 (2).txt", "note_1.txt"])
     }
+
+    func testAFolderHoldingTheStagingFolderIsCopiedWithoutItsOwnStaging() throws {
+        let base = try scratch()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let home = base.appendingPathComponent("home")
+        try FileManager.default.createDirectory(at: home.appendingPathComponent("vm/metadata"), withIntermediateDirectories: true)
+        try Data("a".utf8).write(to: home.appendingPathComponent("a.txt"))
+        // The user drops their home folder, which holds the VM bundle and so the staging folder.
+        let staging = home.appendingPathComponent("vm/metadata/drops/job")
+        let summary = try HvfFileDropStaging.stage([home], into: staging)
+        XCTAssertEqual(try FileManager.default.subpathsOfDirectory(atPath: staging.path).sorted(),
+                       ["home", "home/a.txt", "home/vm", "home/vm/metadata"])
+        XCTAssertEqual(summary.files, 1)
+    }
 }

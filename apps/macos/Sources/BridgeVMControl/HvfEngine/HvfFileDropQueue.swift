@@ -29,6 +29,8 @@ final class HvfFileDropQueue: ObservableObject {
 
     private var jobs: [Job] = []
 
+    func isPending(_ id: String) -> Bool { jobs.contains { $0.id == id } }
+
     func refuse(_ text: String) {
         notice = Notice(text: text, failed: true)
     }

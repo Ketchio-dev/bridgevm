@@ -216,3 +216,16 @@ fn a_second_drop_waits_for_the_first() {
     let _ = std::fs::remove_dir_all(&first);
     let _ = std::fs::remove_dir_all(&second);
 }
+
+#[test]
+fn shared_folder_sync_takes_turns_with_a_drop_but_user_traffic_goes_first() {
+    use crate::agent_console::service_queue::pop_next_request;
+    let mut queue = VecDeque::from([
+        ServiceReq::ShareLs,
+        ServiceReq::Drop(DropReq::End { chunks: 1 }),
+        ServiceReq::Ping,
+    ]);
+    assert!(matches!(pop_next_request(&mut queue), Some(ServiceReq::Ping)));
+    assert!(matches!(pop_next_request(&mut queue), Some(ServiceReq::ShareLs)));
+    assert!(matches!(pop_next_request(&mut queue), Some(ServiceReq::Drop(_))));
+}

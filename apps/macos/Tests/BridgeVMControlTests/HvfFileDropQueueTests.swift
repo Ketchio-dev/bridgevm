@@ -107,4 +107,23 @@ final class HvfFileDropQueueTests: XCTestCase {
         XCTAssertTrue(session.events.contains { $0.displayText.contains("staged: files=1 folders=0 bytes=3 cloned=1 copied=0 skipped=0") })
         XCTAssertEqual(session.fileDrops.notice?.text, "Windows로 복사를 시작하고 있습니다…")
     }
+
+    func testAStagingThatFinishesAfterTheVMStoppedIsDiscarded() async throws {
+        let root = scratch()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = session(root: root)
+        session.serviceStarted = true
+        session.connectionState = .connected(host: "WIN")
+        let source = root.appendingPathComponent("source/a.txt")
+        try FileManager.default.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("a".utf8).write(to: source)
+
+        let staging = session.copyDroppedFiles([source])
+        session.fileDrops.reset() // the VM stopped before staging finished
+        await staging?.value
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: session.config.ctlFilePath))
+        let drops = root.appendingPathComponent("metadata/drops").path
+        XCTAssertEqual((try? FileManager.default.contentsOfDirectory(atPath: drops)) ?? [], [])
+    }
 }

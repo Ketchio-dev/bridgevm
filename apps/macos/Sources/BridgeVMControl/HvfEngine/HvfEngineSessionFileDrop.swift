@@ -23,6 +23,11 @@ extension HvfEngineSession {
     }
 
     private func finishStaging(id: String, staging: URL, outcome: Result<HvfFileDropStaging.Summary, Error>) {
+        // The VM stopped while this drop was staging: never hand it to a later run.
+        guard fileDrops.isPending(id) else {
+            try? FileManager.default.removeItem(at: staging)
+            return
+        }
         switch outcome {
         case let .failure(error):
             append(.unknown("file drop \(id) staging failed: \(error.localizedDescription)"))
