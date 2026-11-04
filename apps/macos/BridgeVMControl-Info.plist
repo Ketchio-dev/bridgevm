@@ -24,6 +24,8 @@
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>가상 머신이 공유기 DNS 같은 로컬 네트워크 주소에 연결하려면 필요합니다. Lets your virtual machine reach addresses on your local network, such as your router's DNS.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 </dict>
