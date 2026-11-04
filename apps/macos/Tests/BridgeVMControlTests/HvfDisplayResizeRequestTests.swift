@@ -50,7 +50,7 @@ final class HvfDisplayResizeRequestTests: XCTestCase {
     }
 
     func testRetinaAsksForBackingPixelsAtTheScreensScale() {
-        XCTAssertEqual(retina(1280, 800, scale: 2), .init(width: 2560, height: 1600, scale: 200), "exactly the cap")
+        XCTAssertEqual(retina(1280, 800, scale: 2), .init(width: 2560, height: 1600, scale: 200))
         XCTAssertEqual(retina(1280, 800, scale: 2)?.command, "RESIZE 2560x1600@200")
         XCTAssertEqual(retina(1000.5, 700, scale: 2)?.command, "RESIZE 2001x1400@200")
         XCTAssertEqual(retina(1000, 700, scale: 1.5)?.command, "RESIZE 1500x1050@150")
@@ -64,12 +64,19 @@ final class HvfDisplayResizeRequestTests: XCTestCase {
         XCTAssertEqual(Request.scale(.nan), 100)
     }
 
-    func testRetinaAboveTheDriverCapAsksForPointsAt100() {
-        XCTAssertEqual(Request.retinaMaximum, .init(width: 2560, height: 1600), "#493: the driver never listed 3456x2234")
-        XCTAssertEqual(retina(1728, 1117, scale: 2)?.command, "RESIZE 1728x1117@100", "16-inch full screen")
-        XCTAssertEqual(retina(1280.5, 800, scale: 2)?.command, "RESIZE 1281x800@100")
-        XCTAssertEqual(retina(1280, 800.5, scale: 2)?.command, "RESIZE 1280x801@100")
-        XCTAssertEqual(retina(2560, 1440, scale: 2)?.command, "RESIZE 2560x1440@100", "5K full screen")
+    /// #493's second live run: viogpudo takes modes up to 3840x2160's pixel count once the EDID lists it.
+    func testRetinaUpTo3840x2160PixelsIsFullSize() {
+        XCTAssertEqual(Request.retinaMaximumPixels, 8_294_400)
+        XCTAssertEqual(retina(1728, 1117, scale: 2), .init(width: 3456, height: 2234, scale: 200), "16-inch full screen")
+        XCTAssertEqual(retina(1512, 982, scale: 2)?.command, "RESIZE 3024x1964@200", "14-inch full screen")
+        XCTAssertEqual(retina(1920, 1080, scale: 2)?.command, "RESIZE 3840x2160@200", "exactly the limit")
+    }
+
+    func testRetinaAboveTheLimitAsksForPointsAt100() {
+        XCTAssertEqual(retina(2560, 1440, scale: 2)?.command, "RESIZE 2560x1440@100", "5K full screen, 5120x2880")
+        XCTAssertEqual(retina(3008, 1692, scale: 2)?.command, "RESIZE 3008x1692@100", "6K full screen, 6016x3384")
+        XCTAssertEqual(retina(1920, 1080.5, scale: 2)?.command, "RESIZE 1920x1081@100", "3840x2161: one row too many")
+        XCTAssertEqual(retina(2000, 1000, scale: 2)?.command, "RESIZE 2000x1000@100", "4000x2000: fewer pixels, but a side above 3840")
         XCTAssertEqual(retina(6016, 3384, scale: 2)?.command, "RESIZE 3840x2160@100", "the same 1x clamp")
     }
 

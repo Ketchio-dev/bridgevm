@@ -4,7 +4,7 @@ import Foundation
 /// Which `RESIZE WxH[@P]` the display window asks the guest display for (A8). The request is the view
 /// size in points (1x), clamped to a sane guest mode range. With Retina resolution on (`retina`) and the
 /// window on a HiDPI screen it is the view's backing pixels instead, with the screen's scale as P, up to
-/// `retinaMaximum`; a larger window asks for its points at `@100`. A size goes out once the view has kept
+/// `retinaMaximumPixels`; a larger window asks for its points at `@100`. A size goes out once the view has kept
 /// it for `settleDelay`, or at once when a live resize ends, and never twice in a row unless the display
 /// device restarted at its default size (new run or guest reboot).
 struct HvfDisplayResizeRequest {
@@ -24,9 +24,11 @@ struct HvfDisplayResizeRequest {
 
     static let minimum = Size(width: 640, height: 480)
     static let maximum = Size(width: 3840, height: 2160)
-    /// The largest Retina mode, in pixels: the signed display driver switched to 2560x1600 live but never
-    /// listed 3456x2234 (#493's run), so a larger backing size asks for points at 100 %.
-    static let retinaMaximum = Size(width: 2560, height: 1600)
+    /// The most pixels a Retina mode may have. #493's second live run switched 3456x2234@200 and
+    /// 3024x1964@200 live once the EDID listed 3840x2160, for which viogpudo reserves 33,177,600 bytes
+    /// (3840x2160 at 4 bytes each). A larger backing size, or a side above `maximum.width`, asks for
+    /// points at 100 %.
+    static let retinaMaximumPixels = 3840 * 2160
     /// The scales Windows offers, in percent (`DESKTOP_SCALES` in the probe's desktop_scale.rs).
     static let scales = [100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500]
     static let settleDelay: TimeInterval = 0.4
@@ -63,7 +65,8 @@ struct HvfDisplayResizeRequest {
             return size
         }
         let width = (view.points.width * view.scale).rounded(), height = (view.points.height * view.scale).rounded()
-        guard width <= CGFloat(retinaMaximum.width), height <= CGFloat(retinaMaximum.height) else {
+        let side = CGFloat(maximum.width)
+        guard width <= side, height <= side, width * height <= CGFloat(retinaMaximumPixels) else {
             size.scale = 100
             return size
         }
