@@ -138,7 +138,7 @@ for that cancellation only when its complete cleanup proof satisfies every condi
 | Runner payload / event buffers | 8,192 bytes; Rust queue plus in-flight frame at most 32; Swift event buffer 32 |
 | Runner control input | At most 16 STOP frames, including duplicates |
 | Pipe I/O | 2-second HELLO, partial-frame, write and final-drain bounds; overflow or invalid framing fails closed |
-| Child cancellation | 2-second TERM grace plus 2-second KILL/reap observation; uncertainty retains ownership afterward |
+| Child cancellation | TERM grace (8 seconds for the HVF helper, which saves its media; 2 for swtpm) plus 2-second KILL/reap observation; uncertainty retains ownership afterward |
 
 CLI transport retries preserve the target and admitted operation. A lost submit
 reply is queried before retrying the same unconfirmed admission ID. The wait never

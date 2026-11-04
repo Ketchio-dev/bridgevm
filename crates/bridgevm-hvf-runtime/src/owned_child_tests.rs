@@ -44,7 +44,7 @@ fn ignored_term_escalates_after_two_seconds_and_reaps() {
         .stderr(fixture.stderr())
         .spawn()
         .unwrap();
-    let mut child = OwnedChild::new(child, ChildRole::Helper);
+    let mut child = OwnedChild::new(child, ChildRole::Swtpm);
     fixture.wait_file_with("ready", || child.try_wait());
     let start = Instant::now();
     let exit = child
@@ -56,4 +56,35 @@ fn ignored_term_escalates_after_two_seconds_and_reaps() {
     assert!(start.elapsed() >= Duration::from_secs(2));
     assert!(start.elapsed() < Duration::from_secs(4));
     assert!(child.try_wait().unwrap().is_some());
+}
+
+#[test]
+fn the_helper_gets_time_to_save_its_media_before_kill() {
+    let fixture = Fixture::new();
+    // Like the probe on TERM: finish the stop (here 3 s of persistence), then exit normally.
+    let script = fixture.script(
+        "persist.sh",
+        "trap 'sleep 3; exit 0' TERM; printf ready > \"$1\"; while :; do sleep 0.05; done",
+    );
+    let child = Command::new(script)
+        .arg(fixture.root.join("ready"))
+        .stdout(Stdio::null())
+        .stderr(fixture.stderr())
+        .spawn()
+        .unwrap();
+    let mut child = OwnedChild::new(child, ChildRole::Helper);
+    fixture.wait_file_with("ready", || child.try_wait());
+    let start = Instant::now();
+    let exit = child
+        .wait(&RuntimeControl::new(&|| true, &|_| {
+            panic!("unexpected uncertainty")
+        }))
+        .unwrap();
+    assert!(exit.cancelled);
+    assert_eq!(
+        exit.status.code(),
+        Some(0),
+        "the persisting helper was killed"
+    );
+    assert!(start.elapsed() >= Duration::from_secs(3));
 }
