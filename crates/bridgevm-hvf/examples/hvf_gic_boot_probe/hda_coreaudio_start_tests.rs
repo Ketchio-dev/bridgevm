@@ -7,7 +7,10 @@ fn an_output_that_cannot_start_turns_sound_off_in_one_line() {
         || Err::<(), _>("AudioQueueNewOutput failed with OSStatus -50 (0xffffffce)".to_string()),
         |()| installed = true,
     );
-    assert!(!installed, "no sink is installed, so the HDA device plays to nothing");
+    assert!(
+        !installed,
+        "no sink is installed, so the HDA device plays to nothing"
+    );
     let line = result.unwrap_err();
     assert_eq!(
         line,
@@ -21,6 +24,9 @@ fn an_output_that_cannot_start_turns_sound_off_in_one_line() {
 #[test]
 fn an_output_that_starts_is_installed() {
     let mut installed = None;
-    assert_eq!(start_output(|| Ok(7), |sink| installed = Some(sink)), Ok(()));
+    assert_eq!(
+        start_output(|| Ok(7), |sink| installed = Some(sink)),
+        Ok(())
+    );
     assert_eq!(installed, Some(7));
 }

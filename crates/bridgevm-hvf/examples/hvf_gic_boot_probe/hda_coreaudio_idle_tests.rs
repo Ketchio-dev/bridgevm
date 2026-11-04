@@ -22,7 +22,11 @@ fn every_write_restarts_the_quiet_period() {
     let mut writes = 0;
     for tick in 1..=20 {
         writes += 1;
-        assert_eq!(gate.step(writes, t0 + tick * IDLE_PAUSE / 2), None, "a running stream");
+        assert_eq!(
+            gate.step(writes, t0 + tick * IDLE_PAUSE / 2),
+            None,
+            "a running stream"
+        );
     }
     let last = t0 + 10 * IDLE_PAUSE;
     assert_eq!(gate.sleep(last), Some(IDLE_PAUSE));
@@ -44,6 +48,9 @@ fn a_write_racing_the_pause_is_seen_by_the_supervisor_or_wakes_it() {
     control.note_pcm();
     let parked = Instant::now();
     std::thread::park_timeout(Duration::from_secs(5));
-    assert!(parked.elapsed() < Duration::from_secs(4), "the write woke the supervisor");
+    assert!(
+        parked.elapsed() < Duration::from_secs(4),
+        "the write woke the supervisor"
+    );
     assert_eq!(control.writes(), seen + 2);
 }

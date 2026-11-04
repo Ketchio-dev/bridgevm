@@ -1,9 +1,12 @@
 //! AudioQueue's output callback. It refills each buffer the queue returns from
 //! the ring without ever waiting on the vCPU producer, records what the buffer
-//! received (hda_coreaudio_continuity.rs) and hands it back to the queue.
+//! received (hda_coreaudio_continuity.rs) and hands it back to the queue. A
+//! retired queue's callback does nothing; a failed hand-back asks the
+//! supervisor for a new queue.
 
 use std::ffi::c_void;
 use std::ptr;
+use std::sync::atomic::Ordering::Acquire;
 
 use super::hda_coreaudio_continuity::fill_and_record;
 use super::hda_coreaudio_stats::Shared;
@@ -18,10 +21,17 @@ pub(super) unsafe extern "C" fn output_callback(
         return;
     }
     let context = &*(user_data.cast::<CallbackContext>());
+    if context.retired.load(Acquire) {
+        // A replaced queue: the ring is the new queue's, and its stop and
+        // dispose must count nothing (hda_coreaudio_output.rs).
+        return;
+    }
     fill_from_ring(buffer, &context.shared);
     let status = AudioQueueEnqueueBuffer(queue, buffer, 0, ptr::null());
     if status != 0 {
         context.shared.callback_failures.record(status);
+        // The queue lost this buffer; the supervisor replaces the queue.
+        context.shared.output.note_enqueue_failed();
     }
 }
 

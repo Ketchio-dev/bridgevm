@@ -9,6 +9,7 @@
 //! wrote is lost. A guest stream that stops has already flushed the ring by then
 //! (hda_coreaudio_prefill.rs); one that runs writes PCM, silent or not, every poll.
 
+use super::hda_coreaudio_rebuild::Signals;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::SeqCst};
 use std::sync::OnceLock;
 use std::thread::Thread;
@@ -56,6 +57,10 @@ impl IdleGate {
         Some(Step::Pause)
     }
 
+    pub(super) fn paused(&self) -> bool {
+        self.paused
+    }
+
     /// How long the supervisor may sleep: until the queue could turn idle, or
     /// `None` while it is paused, since the next write wakes the supervisor.
     pub(super) fn sleep(&self, now: Instant) -> Option<Duration> {
@@ -63,14 +68,17 @@ impl IdleGate {
     }
 }
 
-/// What the producer, the supervisor and the sink's teardown share. The
-/// producer's part is one atomic add and one load per write, under the
-/// platform lock; it unparks the supervisor only while the queue is paused.
+/// What the producer, the callback, the default-output listener, the
+/// supervisor and the sink's teardown share. The producer's part is one atomic
+/// add and one load per write, under the platform lock; it unparks the
+/// supervisor only while the queue is paused.
 #[derive(Default)]
 pub(super) struct OutputControl {
     writes: AtomicU64,
     paused: AtomicBool,
     stop: AtomicBool,
+    default_output_changed: AtomicBool,
+    enqueue_failed: AtomicBool,
     supervisor: OnceLock<Thread>,
 }
 
@@ -104,6 +112,27 @@ impl OutputControl {
     pub(super) fn wake(&self) {
         if let Some(thread) = self.supervisor.get() {
             thread.unpark();
+        }
+    }
+
+    /// The Mac's default output changed. Listener thread.
+    pub(super) fn note_default_output_changed(&self) {
+        self.default_output_changed.store(true, SeqCst);
+        self.wake();
+    }
+
+    /// A callback could not hand its buffer back to the queue while playing.
+    pub(super) fn note_enqueue_failed(&self) {
+        self.enqueue_failed.store(true, SeqCst);
+        self.wake();
+    }
+
+    /// What arrived since the supervisor last asked. Supervisor only.
+    pub(super) fn take_signals(&self) -> Signals {
+        Signals {
+            default_output_changed: self.default_output_changed.swap(false, SeqCst),
+            start_failed: false,
+            enqueue_failed: self.enqueue_failed.swap(false, SeqCst),
         }
     }
 

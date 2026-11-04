@@ -5,8 +5,9 @@
 //! context only owns shared PCM state and cannot publish frames. Complete
 //! frames cross an atomic ring; a non-waiting consumer guard protects overlapping
 //! callbacks, which otherwise substitute silence only on underrun. A supervisor
-//! thread pauses the queue while the guest plays nothing and starts it at the
-//! next write (hda_coreaudio_output.rs).
+//! thread pauses the queue while the guest plays nothing, starts it at the
+//! next write, and moves playback to a new queue on the Mac's current default
+//! output when that changes or the queue fails (hda_coreaudio_output.rs).
 //!
 //! Teardown prints the `hda CoreAudio stats:` record, whose exact ordered
 //! field set B7 and T17 parse, and after it a separate `hda CoreAudio
@@ -14,6 +15,7 @@
 //! (hda_coreaudio_continuity.rs), which the stats record cannot show.
 
 use std::ffi::c_void;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 #[path = "hda_coreaudio_fill.rs"]
@@ -38,6 +40,8 @@ use hda_coreaudio_output::{Output, OutputQueue};
 mod hda_coreaudio_prefill;
 #[path = "hda_coreaudio_publication.rs"]
 mod hda_coreaudio_publication;
+#[path = "hda_coreaudio_rebuild.rs"]
+mod hda_coreaudio_rebuild;
 #[path = "hda_coreaudio_ring.rs"]
 mod hda_coreaudio_ring;
 #[path = "hda_coreaudio_start.rs"]
@@ -91,6 +95,8 @@ struct AudioQueueBuffer {
 
 struct CallbackContext {
     shared: Arc<Shared>,
+    /// Set before a replaced queue stops (hda_coreaudio_output.rs).
+    retired: AtomicBool,
 }
 
 /// Fixed-format AudioQueue sink for the Windows HDA endpoint's s16le stream.
@@ -116,6 +122,8 @@ impl Drop for CoreAudioPcmSink {
     fn drop(&mut self) {
         // Account for a terminal fragment; immediate stop does not prove playback.
         self.producer.finish(&self.shared, RING_CAPACITY_BYTES);
+        // No rebuild, pause or device notification from here on.
+        self.output.end_supervision();
         self.shared.callback_failures.begin_stopping();
         self.shared.continuity.begin_stopping();
         let [stop_status, dispose_status] = self.output.close();
@@ -155,4 +163,10 @@ extern "C" {
     fn AudioQueuePause(queue: *mut c_void) -> i32;
     fn AudioQueueStop(queue: *mut c_void, immediate: u8) -> i32;
     fn AudioQueueDispose(queue: *mut c_void, immediate: u8) -> i32;
+    fn AudioQueueGetProperty(
+        queue: *mut c_void,
+        property: u32,
+        data: *mut c_void,
+        size: *mut u32,
+    ) -> i32;
 }
