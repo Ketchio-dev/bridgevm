@@ -8,7 +8,9 @@ HDA device and BRIDGEVM_HDA_CAPTURE_TEST_WAV: a 10 s s16le 48 kHz stereo WAV who
 i holds L = i & 0xFFFF and R = 0xA500 | (i >> 16). BRIDGEVM_HDA_MICROPHONE is never set,
 so no Mac input device opens and macOS shows no privacy prompt. Through the agent and the
 share it runs scripts/win-assets/bv-mic-capture.ps1, which lists Windows' capture
-endpoints and captures the default one for 3 s in WASAPI exclusive mode.
+endpoints and captures the default one for 3 s in WASAPI exclusive mode, in the first format
+IsFormatSupported accepts (48 kHz 16-bit stereo as WAVEFORMATEX, as WAVEFORMATEXTENSIBLE,
+then the endpoint's device format), and then for 3 s in shared mode (GetMixFormat).
 
 It starts after 60 s with no other VM (pgrep -x) and a 1-minute load under --load-max. A
 signed sentinel named like the VMM runs only while the run does. NAME is one path
@@ -21,6 +23,9 @@ Pass, fixed before the first run:
   - the pattern starts within the first 0.5 s and then runs without a break;
   - its first 2 s hash as the same span of the WAV (bit-exact);
   - the host log shows the test WAV source and no Mac microphone line.
+Also reported, outside the pass: each exclusive format Windows was asked about and its
+HRESULT, and the shared-mode capture's format, correlation, gain and phase against the
+pattern (the engine converts and may apply volume there, so it is not bit-exact).
 Writes DIR/summary.json and DIR/run.log; exits 0 on a pass.
 """
 import argparse
@@ -139,7 +144,7 @@ class Guest:
 
 
 def parse_capture(body):
-    endpoints, capture, error = [], None, None
+    endpoints, capture, error, formats, shared = [], None, None, [], None
     for line in body:
         if line.startswith("MIC ENDPOINT "):
             fields = dict(token.split("=", 1) for token in line[len("MIC ENDPOINT "):].split(" "))
@@ -147,9 +152,15 @@ def parse_capture(body):
             endpoints.append({"status": fields.get("status"), "name": name})
         elif line.startswith("MIC CAPTURE "):
             capture = dict(token.split("=", 1) for token in line[len("MIC CAPTURE "):].split(" "))
+        elif line.startswith("MIC FORMAT "):
+            formats.append(line[len("MIC FORMAT "):])
+        elif line.startswith("MIC SHARED ERROR"):
+            shared = {"error": line[len("MIC SHARED ERROR "):]}
+        elif line.startswith("MIC SHARED "):
+            shared = dict(token.split("=", 1) for token in line[len("MIC SHARED "):].split(" ") if "=" in token)
         elif line.startswith("MIC ERROR"):
             error = line
-    return endpoints, capture, error
+    return endpoints, capture, error, formats, shared
 
 
 def verdict(endpoints, capture, host_lines):
@@ -254,7 +265,8 @@ def main():
         code, body = guest.command(f"powershell -NoProfile -ExecutionPolicy Bypass -File {script} "
                                    f"-Seconds {CAPTURE_SECONDS}", timeout=300)
         summary["capture_exit"], summary["capture_output"] = code, body
-        summary["endpoints"], summary["capture"], summary["capture_error"] = parse_capture(body)
+        (summary["endpoints"], summary["capture"], summary["capture_error"], summary["exclusive_formats"],
+         summary["shared"]) = parse_capture(body)
         log(f"capture exit={code}: " + " | ".join(line for line in body if line.startswith("MIC ")))
         with open(ctl, "a") as handle:
             handle.write("shutdown.exe /p /f\n")
@@ -291,7 +303,7 @@ def main():
         summary["pass"] = summary["pass"] and "error" not in summary
         (args.out / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False))
         log(f"{'PASS' if summary['pass'] else 'FAIL'}: {json.dumps(summary['checks'])}; "
-            f"lane deleted: {summary['lane_deleted']}")
+            f"shared: {json.dumps(summary.get('shared'))}; lane deleted: {summary['lane_deleted']}")
     return 0 if summary["pass"] else 1
 
 
