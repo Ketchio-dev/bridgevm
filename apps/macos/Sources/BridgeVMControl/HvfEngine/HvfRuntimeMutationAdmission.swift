@@ -1,6 +1,6 @@
 import Foundation
 
-enum HvfRuntimeMutationKind { case vtpmRecoveryExport, vtpmRecoveryRestore, vtpmReset, snapshot }
+enum HvfRuntimeMutationKind { case vtpmRecoveryExport, vtpmRecoveryRestore, vtpmReset, snapshot, diskGrow }
 final class HvfRuntimeEffectAdmission: @unchecked Sendable {
     private let lock = NSLock()
     private var valid = true

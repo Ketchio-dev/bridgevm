@@ -40,6 +40,8 @@ final class HvfEngineSession: ObservableObject {
     var lastHeartbeatDate: Date?
     var serviceStarted = false
     var hardwareCursorOffSent = false // HWCursor=0 went to the guest after the setting was turned off
+    @Published var diskGrowNotice: String? // the guest's report on extending C: after a disk grow (HvfDiskGrow)
+    var diskExtendInFlight = false
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
     let inputDriver = HvfSessionInputDriver()
     let appPacing = HvfAppPacingRecords() // the session's app-side display and input records
