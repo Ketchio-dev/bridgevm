@@ -89,6 +89,7 @@ impl AgentConsoleHarness {
                 Vec::new()
             },
             last_ping: None,
+            out_since: None,
             get_accum: None,
             out_accum: None,
             service,
@@ -119,6 +120,7 @@ impl AgentConsoleHarness {
             clock: HostClock::from_env(),
             dns_flush: DnsFlush::default(),
             drops: FileDrops::default(),
+            agent_update: service.then(AgentUpdate::from_env).flatten(),
         })
     }
     /// Frame drained agent bytes into `line_scratch`. An unterminated reply
@@ -152,6 +154,7 @@ impl AgentConsoleHarness {
                         hostname,
                         now.duration_since(self.start).as_millis()
                     );
+                    self.note_agent_ready(hostname, now);
                     send(b"PING\n");
                     self.state = AgentConsoleState::WaitingPong;
                 } else if line == "PONG" {
@@ -161,6 +164,16 @@ impl AgentConsoleHarness {
                     );
                     self.send_next_command_with_sender(0, now, send);
                 }
+            }
+            // The agent restarted during the handshake (a guest tools update's
+            // guard does that): it never saw our PING or command.
+            AgentConsoleState::WaitingPong | AgentConsoleState::WaitingOut { .. }
+                if line.starts_with("READY ") =>
+            {
+                let hostname = &line["READY ".len()..];
+                println!("BVAGENT re-READY host={hostname} (handshake) t={}", self.t_ms(now));
+                self.note_agent_ready(hostname, now);
+                self.restart_handshake(now, send);
             }
             AgentConsoleState::WaitingPong => {
                 if line != "PONG" {
@@ -329,8 +342,17 @@ impl AgentConsoleHarness {
             return None;
         };
         let line = command_wire_line(command);
+        self.out_since = Some(now);
         self.state = AgentConsoleState::WaitingOut { index };
         Some(line)
+    }
+    /// PING again and wait for the PONG; the scripted commands then start over.
+    pub(super) fn restart_handshake(&mut self, now: Instant, send: &mut dyn FnMut(&[u8])) {
+        self.get_accum = None;
+        self.out_accum = None;
+        send(b"PING\n");
+        self.last_ping = Some(now);
+        self.state = AgentConsoleState::WaitingPong;
     }
     /// GETBEG <b64(path)> <total> <nchunks> — start reassembly.
     pub(super) fn begin_get(&mut self, rest: &str) {

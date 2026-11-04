@@ -385,6 +385,13 @@ impl AgentConsoleHarness {
         if let Some(text) = text.filter(|_| fresh_text) {
             self.publish_guest_text(text, now);
         }
+        // The update's file stream or agent switch holds image transfers: a
+        // queued fetch could find a later guest.png. The first poll after it
+        // announces this image again, as after an agent restart.
+        if self.agent_update_holds_images() {
+            self.last_synced.image = None;
+            return;
+        }
         // Next on the wire, so no later CLIPX can replace guest.png first.
         self.queue.push_front(ServiceReq::ClipImagePull {
             digest,

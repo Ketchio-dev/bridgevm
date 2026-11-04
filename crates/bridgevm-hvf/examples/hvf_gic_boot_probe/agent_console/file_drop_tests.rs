@@ -274,7 +274,7 @@ fn shared_folder_sync_takes_turns_with_a_drop_but_user_traffic_goes_first() {
         ServiceReq::Drop(DropReq::End { chunks: 1 }),
         ServiceReq::Ping,
     ]);
-    assert!(matches!(pop_next_request(&mut queue), Some(ServiceReq::Ping)));
-    assert!(matches!(pop_next_request(&mut queue), Some(ServiceReq::ShareLs)));
-    assert!(matches!(pop_next_request(&mut queue), Some(ServiceReq::Drop(_))));
+    assert!(matches!(pop_next_request(&mut queue, |_| false), Some(ServiceReq::Ping)));
+    assert!(matches!(pop_next_request(&mut queue, |_| false), Some(ServiceReq::ShareLs)));
+    assert!(matches!(pop_next_request(&mut queue, |_| false), Some(ServiceReq::Drop(_))));
 }

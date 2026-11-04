@@ -76,6 +76,8 @@ pub struct AgentConsoleHarness {
     pub(super) state: AgentConsoleState,
     pub(super) commands: Vec<String>,
     pub(super) last_ping: Option<Instant>,
+    /// When the scripted handshake command in flight went out.
+    pub(super) out_since: Option<Instant>,
     pub(super) get_accum: Option<GetAccum>,
     pub(super) out_accum: Option<OutAccum>,
     // --- Service mode (resident host loop; see AgentConsoleState::Service). ---
@@ -141,6 +143,8 @@ pub struct AgentConsoleHarness {
     pub(super) dns_flush: DnsFlush,
     /// Finder drops copied into the guest Desktop (file_drop.rs).
     pub(super) drops: FileDrops,
+    /// Installs the app's copy of the guest agent over an older one.
+    pub(super) agent_update: Option<AgentUpdate>,
 }
 
 /// Reassembly state for a chunked GET reply (GETBEG -> GETCHUNK* -> GETEND).
@@ -206,6 +210,9 @@ pub(super) enum SharePutWireLine {
 }
 
 pub(super) const PING_INTERVAL: Duration = Duration::from_secs(3);
+/// A resident-service handshake command (whoami) with no reply this long: the
+/// agent restarted without a READY we heard, so the handshake starts again.
+pub(super) const HANDSHAKE_REPLY_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Report a service request that has not replied after this long. The guest
 /// dispatcher is single-threaded, so the request must remain in-flight: sending
@@ -270,6 +277,8 @@ pub(super) enum ServiceReq {
     TimeSync,
     /// One step of a Finder drop (file_drop.rs).
     Drop(DropReq),
+    /// One step of a guest tools update (agent_update.rs).
+    AgentUpdate(UpdateStep),
 }
 
 /// Outcome of interpreting one guest reply line against the in-flight request.
@@ -303,6 +312,7 @@ pub(super) enum InFlightSnapshot {
     },
     TimeSync,
     Drop,
+    AgentUpdate,
 }
 
 impl InFlightSnapshot {
@@ -326,6 +336,7 @@ impl InFlightSnapshot {
             },
             ServiceReq::TimeSync => Self::TimeSync,
             ServiceReq::Drop(_) => Self::Drop,
+            ServiceReq::AgentUpdate(_) => Self::AgentUpdate,
         }
     }
 }

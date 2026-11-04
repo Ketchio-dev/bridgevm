@@ -24,6 +24,7 @@ pub(super) fn req_kind(req: &ServiceReq) -> &'static str {
         ServiceReq::ShareDel { .. } => "share-del",
         ServiceReq::TimeSync => "time-sync",
         ServiceReq::Drop(_) => "drop",
+        ServiceReq::AgentUpdate(_) => "agent-update",
     }
 }
 

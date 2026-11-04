@@ -80,6 +80,9 @@ impl AgentConsoleHarness {
         if share_due && !self.share_pending() && !self.enqueue_one_share_host_change() {
             self.queue.push_back(ServiceReq::ShareLs);
         }
+
+        // 6. A guest tools update, after the boot traffic and before any stop.
+        self.enqueue_agent_update(now);
     }
     /// Keep at most one pending desktop switch, for the latest requested size:
     /// a queued one is replaced, and one already running gets a single
@@ -152,7 +155,16 @@ impl AgentConsoleHarness {
             // whole runtime of a long command (gates run for minutes), so an
             // overdue Cmd usually IS still running and a resend would run it
             // twice.
-            let cmd_in_flight = matches!(self.in_flight.as_ref(), Some((ServiceReq::Ctl(_), _)));
+            // The update's Prepare and Arm are commands too: they lock and
+            // clear the folders, then rename and register.
+            let cmd_in_flight = matches!(
+                self.in_flight.as_ref(),
+                Some((
+                    ServiceReq::Ctl(_)
+                        | ServiceReq::AgentUpdate(UpdateStep::Prepare | UpdateStep::Arm),
+                    _
+                ))
+            );
             if !cmd_in_flight {
                 self.overdue_beats += 1;
                 if self.overdue_beats >= 3 {
@@ -166,7 +178,9 @@ impl AgentConsoleHarness {
                                 req_kind(&req),
                                 now.duration_since(self.start).as_millis()
                             );
-                            let req = rewind_clip_image_push(rewind_share_put_for_retransmit(req));
+                            let req = rewind_clip_image_push(rewind_agent_update_put(
+                                rewind_share_put_for_retransmit(req),
+                            ));
                             self.queue.push_front(req);
                         }
                     }
@@ -178,7 +192,10 @@ impl AgentConsoleHarness {
             return;
         }
         self.overdue_beats = 0;
-        let Some(req) = super::service_queue::pop_next_request(&mut self.queue) else {
+        let hold_images = self.agent_update_holds_images();
+        let Some(req) = super::service_queue::pop_next_request(&mut self.queue, |req| {
+            hold_images && super::agent_update::is_clip_image_req(req)
+        }) else {
             return;
         };
         if !self.write_service_req_line(&req, now) {
@@ -329,6 +346,7 @@ impl AgentConsoleHarness {
                 write_drop_wire_line(req, &mut self.service_line_scratch);
                 true
             }
+            ServiceReq::AgentUpdate(step) => self.write_agent_update_line(step),
         }
     }
     /// Whether any queued OR in-flight request satisfies `pred`.
@@ -392,6 +410,7 @@ impl AgentConsoleHarness {
             eprintln!("BVAGENT CTL rejected reason=command_too_long count={oversized}");
         }
         self.ctl_read_scratch.clear();
+        let mut stopping = false;
         for line in self.ctl_line_scratch.drain(..) {
             let command = line.trim();
             if let Some(request) = command.strip_prefix("BVDROP ") {
@@ -399,10 +418,17 @@ impl AgentConsoleHarness {
             } else if !command.is_empty()
                 && super::service_queue::has_foreground_capacity(&self.queue)
             {
+                stopping |= self.agent_update.as_mut().is_some_and(|update| {
+                    update.note_ctl_command(command);
+                    update.stop_requested
+                });
                 self.queue.push_back(ServiceReq::Ctl(command.to_string()));
             } else if !command.is_empty() {
                 eprintln!("BVAGENT CTL rejected reason=queue_full");
             }
+        }
+        if stopping {
+            self.stop_agent_update(Instant::now());
         }
     }
     /// Route a guest reply in service mode by the in-flight request kind. Only
@@ -457,6 +483,7 @@ impl AgentConsoleHarness {
             }
             InFlightSnapshot::TimeSync => self.handle_time_resync_reply(line),
             InFlightSnapshot::Drop => self.handle_drop_reply(line, now),
+            InFlightSnapshot::AgentUpdate => self.handle_agent_update_reply_with_sender(line, now, send),
             InFlightSnapshot::ShareDel { name, direction } => {
                 if line.starts_with("OK DEL") {
                     if direction == ShareDelDirection::HostToGuest {
