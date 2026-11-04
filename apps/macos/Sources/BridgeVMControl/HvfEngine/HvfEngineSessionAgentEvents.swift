@@ -23,6 +23,7 @@ extension HvfEngineSession {
             else { sendGracefulStopIfReady() }
         case let .unknown(line) where HvfGuestResetRecord.matches(line):
             serviceStarted = false
+            restartRequest = nil // the restart or reset happened
             ownedController?.guestServiceLost()
         case .aliveHeartbeat:
             lastHeartbeatDate = Date()

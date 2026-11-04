@@ -801,13 +801,14 @@ pub(crate) fn run() -> ExitCode {
                     break;
                 }
                 let tick = Instant::now();
+                let mut host_reset = false;
                 let automation_stop_reason = if automation_gate.should_check(
                     automation_tick_canceled
                         || ramfb_sample_loop.checkpoint_due_at(tick)
                         || live_display_exporter.due(tick)
                         || live_input.poll_due(tick),
                 ) {
-                    automation_tick!(
+                    let reason = automation_tick!(
                         platform,
                         smp_trace,
                         automation_gate,
@@ -831,12 +832,21 @@ pub(crate) fn run() -> ExitCode {
                         live_display_exporter,
                         last_pc,
                         stop_on_linux,
-                    )
+                    );
+                    host_reset = live_input.take_host_reset();
+                    reason
                 } else {
                     None
                 };
                 if let Some(reason) = automation_stop_reason {
                     stop_reason = reason;
+                    break;
+                }
+                if host_reset {
+                    // The app's Reset: end this boot exactly as the guest's
+                    // PSCI SYSTEM_RESET does, so the runtime recreates the helper.
+                    requested_system_reset = true;
+                    stop_reason = "host reset (input.ctl RESET)".into();
                     break;
                 }
             }

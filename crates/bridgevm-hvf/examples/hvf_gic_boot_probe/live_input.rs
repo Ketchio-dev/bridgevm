@@ -47,6 +47,9 @@ enum LiveInputCommand {
     Snapshot(String),
     /// One press of the ACPI power button; needs no guest agent.
     PowerButton,
+    /// A hard reset of the VM, the way a guest PSCI SYSTEM_RESET ends a boot;
+    /// needs no guest agent. The run loop takes it (`take_host_reset`).
+    Reset,
 }
 
 impl std::fmt::Debug for LiveInputCommand {
@@ -67,6 +70,7 @@ impl std::fmt::Debug for LiveInputCommand {
                 .finish(),
             Self::Snapshot(label) => f.debug_tuple("Snapshot").field(label).finish(),
             Self::PowerButton => f.write_str("PowerButton"),
+            Self::Reset => f.write_str("Reset"),
         }
     }
 }
@@ -78,6 +82,19 @@ impl LiveInputCommand {
 
     fn is_power_button(&self) -> bool {
         matches!(self, Self::PowerButton)
+    }
+
+    fn is_reset(&self) -> bool {
+        matches!(self, Self::Reset)
+    }
+
+    /// Lines for the VMM itself that must not wait behind guest input.
+    fn host_control(line: &[u8]) -> Option<Self> {
+        match line {
+            b"POWERBUTTON" => Some(Self::PowerButton),
+            b"RESET" => Some(Self::Reset),
+            _ => None,
+        }
     }
 }
 
@@ -105,7 +122,7 @@ pub struct LiveInputController {
     accepted_pointer_moves: u64,
     next_poll: Instant,
     /// File offset up to which a full-queue read-ahead already queued every
-    /// POWERBUTTON line.
+    /// host control line (POWERBUTTON, RESET).
     power_scanned_to: u64,
 }
 
@@ -139,7 +156,7 @@ impl LiveInputController {
         true
     }
 
-    /// With a full queue this still reads ahead for POWERBUTTON lines.
+    /// With a full queue this still reads ahead for POWERBUTTON and RESET lines.
     fn read_new_commands(&mut self) {
         let Some(mut source) = self.source.take() else {
             return;
@@ -175,8 +192,8 @@ impl LiveInputController {
                 return;
             }
             LiveInputCommand::Snapshot(label.to_string())
-        } else if line == "POWERBUTTON" {
-            LiveInputCommand::PowerButton
+        } else if let Some(command) = LiveInputCommand::host_control(line.as_bytes()) {
+            command
         } else {
             eprintln!("live input rejected: unknown_command");
             return;
@@ -340,6 +357,53 @@ mod tests {
         input.read_new_commands();
         input.apply_pending(&mut platform, &mut mem, Instant::now());
         assert!(platform.take_pending_spi_levels().is_empty());
+        assert!(input.pending.is_empty());
+        fs::remove_file(path).unwrap();
+    }
+
+    /// The app's Reset: one exact `RESET` line ends the boot once, and input
+    /// queued before it does not reach the guest first.
+    #[test]
+    fn reset_line_is_taken_once_ahead_of_queued_input() {
+        let mut platform = bridgevm_hvf::platform_virt::VirtPlatform::new(Default::default());
+        let mut mem = bridgevm_hvf::platform_virt::FlatGuestRam::new(0x4000_0000, 0);
+        let mut input = controller();
+        input.push_line("POINTER click:1x1");
+        input.push_line("RESET now");
+        input.push_line("RESET");
+        input.apply_pending(&mut platform, &mut mem, Instant::now());
+        assert_eq!(input.pending.len(), 2, "the click waits behind the reset");
+
+        assert!(input.take_host_reset());
+        assert!(!input.take_host_reset());
+        assert_eq!(input.pending.len(), 1);
+        assert!(matches!(input.pending[0], LiveInputCommand::Pointer(_)));
+    }
+
+    /// A hung guest reads no HID, which is when Reset is needed most.
+    #[test]
+    fn reset_is_read_past_a_full_queue_and_taken_once() {
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-live-input-reset-{}-{}.ctl",
+            std::process::id(),
+            Instant::now().elapsed().as_nanos()
+        ));
+        let mut contents = String::new();
+        for index in 0..super::MAX_PENDING_COMMANDS {
+            contents.push_str(&format!("POINTER click:{index}x1\n"));
+        }
+        contents.push_str("RESET\n");
+        fs::write(&path, contents).unwrap();
+        let mut input = controller();
+        input.source = Some(InputControlFile::from_path(path.clone()));
+
+        input.read_new_commands();
+        assert!(input.take_host_reset());
+
+        // When the queue moves again, the reader skips the line it already took.
+        input.pending.clear();
+        input.read_new_commands();
+        assert!(!input.take_host_reset());
         assert!(input.pending.is_empty());
         fs::remove_file(path).unwrap();
     }
