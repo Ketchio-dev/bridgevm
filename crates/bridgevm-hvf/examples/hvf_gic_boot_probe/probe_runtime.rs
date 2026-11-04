@@ -36,6 +36,8 @@ use system_reset_failure::system_reset_failure;
 #[path = "probe_media_lease.rs"]
 mod media_lease;
 pub(crate) fn run() -> ExitCode {
+    // Before any media is leased: from here TERM ends the run through persistence.
+    install_host_term_handler();
     let mut fatal_vcpu_run_error = false;
     let mut fatal_reset_error = false;
     let mut exit_for_recreate = false;
@@ -98,6 +100,7 @@ pub(crate) fn run() -> ExitCode {
             setup_boot_supervision(watchdog_enabled, boot_progress_kill);
         let diagnostic_stop_fired =
             start_host_diagnostic_stop_watcher(vcpu, Arc::clone(&boot_progress));
+        start_host_term_watcher(vcpu, Arc::clone(&boot_progress));
         let mut reboot_count = 0u64;
         let mut resets_dumped = 0u64;
         reset_vcpu_for_boot(vcpu);
@@ -421,6 +424,7 @@ pub(crate) fn run() -> ExitCode {
                         &watchdog_fired,
                         stall_kill_fired.as_ref(),
                         diagnostic_stop_fired.as_ref(),
+                        &HOST_TERM_REQUESTED,
                     ) {
                         hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                         stop_reason = reason.into();
