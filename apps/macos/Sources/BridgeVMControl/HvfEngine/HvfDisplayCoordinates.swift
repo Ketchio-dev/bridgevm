@@ -2,7 +2,8 @@
 import CoreGraphics
 
 /// Where the guest image sits in the display view: aspect fit and centred (the layer's
-/// `.resizeAspect`), with its scale in view points per guest pixel.
+/// `.resizeAspect`, or `.center` at the backing scale for a frame of exactly the view's backing size,
+/// which is the same rect), with its scale in view points per guest pixel.
 struct HvfDisplayFit: Equatable {
     var rect: CGRect
     var scale: CGFloat

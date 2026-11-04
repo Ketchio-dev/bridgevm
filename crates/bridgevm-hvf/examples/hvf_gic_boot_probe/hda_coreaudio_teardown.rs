@@ -1,7 +1,7 @@
 //! Typed AudioQueue callback-enqueue failure classification.
 
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::ffi::c_void;
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
 pub(super) unsafe fn dispose_failed_queue<T>(
     queue: *mut c_void,

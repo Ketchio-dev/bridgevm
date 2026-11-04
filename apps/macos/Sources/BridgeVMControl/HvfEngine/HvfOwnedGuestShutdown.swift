@@ -7,7 +7,7 @@ final class HvfOwnedGuestShutdown: @unchecked Sendable {
     private let expected: stat?
     private let queue: DispatchQueue
     private var descriptor: Int32 = -1
-    private var attempted = false
+    private var attempted: [HvfGuestStopCommand] = [] // each command at most once: Stop, then Force Stop
     private let closeLock = NSLock()
     private var closing = false
 
@@ -27,17 +27,17 @@ final class HvfOwnedGuestShutdown: @unchecked Sendable {
         }
     }
 
-    func request(_ completion: @escaping @Sendable (Bool) -> Void) {
+    func request(_ command: HvfGuestStopCommand, _ completion: @escaping @Sendable (Bool) -> Void) {
         queue.async { [self] in
-            guard !isClosing, !attempted else { completion(false); return }
-            attempted = true
+            guard !isClosing, !attempted.contains(command) else { completion(false); return }
+            attempted.append(command)
             guard descriptor >= 0, let expected else { completion(false); return }
             var current = stat(), opened = stat()
             guard lstat(path, &current) == 0, fstat(descriptor, &opened) == 0,
                   Self.same(expected, current), Self.same(expected, opened),
                   Self.regularOwned(current), Self.regularOwned(opened) else { completion(false); return }
             guard !isClosing else { completion(false); return }
-            let bytes = Array("shutdown.exe /p /f\n".utf8)
+            let bytes = Array((command.line + "\n").utf8)
             // One short append: a partial command is not retried or reported as delivered.
             let written = bytes.withUnsafeBytes { Darwin.write(descriptor, $0.baseAddress, $0.count) }
             completion(written == bytes.count)

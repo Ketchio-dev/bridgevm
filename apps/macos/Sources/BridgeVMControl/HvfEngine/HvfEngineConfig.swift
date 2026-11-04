@@ -37,6 +37,10 @@ struct HvfEngineConfig: Equatable {
     /// The user's Windows display resolution ("WxH"); nil lets the VMM keep the
     /// firmware's resolution or add its 1280x800 default.
     var guestResolution: String? = nil
+    /// The user's opt-in, as vm.json holds it: nil never set, true on, false off again. On, a HiDPI
+    /// screen's 2D virtio display asks for the window's backing pixels at the screen's scale; once set,
+    /// every request names the Windows scale (HvfDisplayResizeRequest). The app alone applies it.
+    var retinaResolution: Bool? = nil
     /// How the live display maps the Command key (HvfHostKeyChord.swift); host-side only.
     var commandKeyMode: HvfCommandKeyMode = .mac
     var ctlFilePath: String
@@ -51,6 +55,12 @@ struct HvfEngineConfig: Equatable {
     var vtpmKeyID: String? = nil
     var allowsExperimental3D: Bool = false
     var libraryContext: HvfLibraryLaunchContext? = nil
+
+    /// Retina resolution needs the 2D virtio display: the signed display driver with 3D off.
+    var offersRetinaResolution: Bool { virtioGpu2d && !virtioGpu3d }
+    var requestsRetinaResolution: Bool { retinaResolution == true && offersRetinaResolution }
+    /// HvfDisplayResizeRequest's `retina`: nil for a VM that never set it, otherwise whether it draws at Retina.
+    var retinaResizeSetting: Bool? { retinaResolution == nil ? nil : requestsRetinaResolution }
 
     /// Versioned launch manifest consumed by bridgevm-hvf-runtime (`hvf-runner --launch-spec`). Field names and the
     /// version constant are that crate's contract; drift fails its parser.

@@ -146,10 +146,11 @@ final class HvfWindowsBackend: VMBackend {
         Shell.killProcesses(matching: "\(wrapperName) --target \(targetDiskPath)")
     }
 
+    /// The backend's synchronous stop has no Force Stop control: after its 180 s it still ends the VM.
     @discardableResult
     func requestGracefulStop() -> Bool {
         guard ensureDirectories() else { return false }
-        return appendCtl("shutdown.exe /p /f")
+        return appendCtl(HvfGuestStopCommand.shutdown.line)
     }
 
     func resources() -> (memMiB: Int, cpu: Int) {
@@ -213,6 +214,7 @@ final class HvfWindowsBackend: VMBackend {
             nvmeBufferedIO: false,
             durableDiskWrites: config.durableDiskWritesEnabled ?? false,
             guestResolution: config.guestResolution,
+            retinaResolution: config.retinaResolution,
             commandKeyMode: HvfCommandKeyMode(saved: config.commandKeyMode),
             ctlFilePath: ctlFilePath, allowsExperimental3D: config.experimental3DAllowed ?? false
         )

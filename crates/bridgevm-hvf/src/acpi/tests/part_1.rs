@@ -259,6 +259,35 @@ fn dsdt_names_uart_pci_and_power_devices() {
 }
 
 #[test]
+fn dsdt_ged_notifies_pwrb_from_the_qemu_virt_selector_and_spi() {
+    let blobs = build_acpi(1);
+    let tables = split_tables(&blobs.tables);
+    let dsdt = find(&tables, "DSDT");
+    let ged = [
+        // Device (GED_) { Name (_HID, "ACPI0013") ...
+        b"GED_\x08_HID\x0dACPI0013\x00".to_vec(),
+        // Interrupt (ResourceConsumer, Edge, ActiveHigh, Exclusive) { 41 }
+        vec![0x89, 0x06, 0x00, 0x03, 0x01, 41, 0, 0, 0],
+        // OperationRegion (EREG, SystemMemory, 0x09080000, 4)
+        b"\x5b\x80EREG\x00\x0c\x00\x00\x08\x09\x0a\x04".to_vec(),
+        // Field (EREG, DWordAcc, NoLock, WriteAsZeros) { ESEL, 32 }
+        b"EREG\x43ESEL\x20".to_vec(),
+        // Method (_EVT, 1, Serialized) { Local0 = ESEL ...
+        b"_EVT\x09\x70ESEL\x60".to_vec(),
+        // If (((Local0 & 2) == 2)) { Notify (PWRB, 0x80) }
+        b"\x93\x7b\x60\x0a\x02\x00\x0a\x02\x86PWRB\x0a\x80".to_vec(),
+    ];
+    for needle in ged {
+        assert!(
+            contains_bytes(dsdt, &needle),
+            "DSDT GED AML missing {needle:02x?}"
+        );
+    }
+    assert_eq!(machine::ACPI_GED.base, 0x0908_0000);
+    assert_eq!(machine::spi_to_intid(machine::SPI_ACPI_GED), 41);
+}
+
+#[test]
 fn optional_tpm_tis_has_windows_hid_and_mmio_resource() {
     let blobs = build_acpi_with_devices(
         2,

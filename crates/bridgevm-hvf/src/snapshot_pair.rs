@@ -194,6 +194,8 @@ pub fn restore_snapshot(
     runtime_exclusion::restore(dir, disk, vars)
 }
 
+#[path = "snapshot_pair_grow.rs"]
+pub mod grow;
 #[path = "managed_pair.rs"]
 pub mod managed;
 #[path = "snapshot_runtime_exclusion.rs"]

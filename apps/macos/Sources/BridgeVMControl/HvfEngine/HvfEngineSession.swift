@@ -33,6 +33,7 @@ final class HvfEngineSession: ObservableObject {
     var process: Process?
     var ownedController: HvfOwnedRunController?
     @Published var forceStopTarget: HvfForceStopTarget?
+    @Published var stopWait: HvfGuestStopWait? // what Windows is doing while a Stop waits for it
     var runtimeTransitionInProgress = false
     var timer: Timer?
     var tailReader = TailOffsetReader()
@@ -40,6 +41,8 @@ final class HvfEngineSession: ObservableObject {
     var lastHeartbeatDate: Date?
     var serviceStarted = false
     var hardwareCursorOffSent = false // HWCursor=0 went to the guest after the setting was turned off
+    @Published var diskGrowNotice: String? // the guest's report on extending C: after a disk grow (HvfDiskGrow)
+    var diskExtendInFlight = false
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
     let inputDriver = HvfSessionInputDriver()
     let appPacing = HvfAppPacingRecords() // the session's app-side display and input records
@@ -99,7 +102,7 @@ final class HvfEngineSession: ObservableObject {
         guard !runtimeStartupWorkerPending else { return .notOwned }
         if let controller = ownedController {
             let existing = controller.operation != nil
-            _ = requestOwnedStop(target: controller.identity, operationID: UUID())
+            _ = requestOwnedStop(target: controller.identity, operationID: UUID(), afterGrace: .offerForceStop)
             return existing ? .alreadyStopping(deadline: nil) : .requested(deadline: nil)
         }
         if connectionState == .stopping { return .alreadyStopping(deadline: stopDeadline) }
@@ -247,9 +250,11 @@ final class HvfEngineSession: ObservableObject {
         return writeLiveInput(line)
     }
 
-    /// The display view's size in points; `settled` (live resize ended) sends it without the debounce.
-    func displayViewResized(to points: CGSize, settled: Bool) {
-        displayResize.viewResized(to: points, at: ProcessInfo.processInfo.systemUptime)
+    /// The display view's size in points and its window's backing scale factor; `settled` (live resize
+    /// ended) sends it without the debounce.
+    func displayViewResized(to points: CGSize, scale: CGFloat = 1, settled: Bool) {
+        displayResize.retina = config.retinaResizeSetting
+        displayResize.viewResized(to: .init(points: points, scale: scale), at: ProcessInfo.processInfo.systemUptime)
         if settled {
             displayResize.settle()
             flushDisplayResize()
@@ -257,6 +262,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     private func flushDisplayResize() {
+        displayResize.retina = config.retinaResizeSetting
         guard let size = displayResize.take(at: ProcessInfo.processInfo.systemUptime),
               appendDisplayResize(size) else { return }
         displayResize.didSend(size)
@@ -327,9 +333,7 @@ final class HvfEngineSession: ObservableObject {
             }
         }
         flushDisplayResize()
-        let connected: Bool
-        if case .connected = connectionState { connected = true } else { connected = false }
-        inputDriver.poll(binding: inputBinding, serviceReady: serviceStarted && connected, lines: lines) { [self] command in
+        inputDriver.poll(binding: inputBinding, serviceReady: serviceStarted && guestTakesInput, lines: lines) { [self] command in
             guard command.utf8.count <= 87_434, !command.contains("\n"),
                   !command.contains("\r"), !command.contains("\0") else { return false }
             return appendControlCommand(command)
@@ -371,6 +375,7 @@ final class HvfEngineSession: ObservableObject {
         stopCommandSent = false
         stopDeadline = nil
         if forceStopTarget != nil { forceStopTarget = nil }
+        if stopWait != nil { stopWait = nil }
         guiStartCleanupOnly = false
         connectionState = .stopped
         runtimeTransitionInProgress = false
@@ -396,6 +401,16 @@ final class HvfEngineSession: ObservableObject {
         liveInputWriteFailureReported = false
         displayResize.deviceRestarted() // a new run's display starts at its default size; an attached one is unknown
         if clearEvents { events = [] }
+    }
+
+    /// Windows keeps its input while a Stop waits for it to shut down: the user may still have to save
+    /// or answer Windows' "apps are preventing shutdown" screen. Force Stop or cancellation ends that.
+    /// A Stop keeps an open ordered channel but never opens one: a new negotiation would write to a
+    /// control file the Stop may have found replaced. Until then input uses the legacy device path.
+    private var guestTakesInput: Bool {
+        if case .connected = connectionState { return true }
+        return connectionState == .stopping && inputDriver.router.activated
+            && ownedController?.waitsForGuestShutdown == true
     }
 
     private var inputBinding: [String] {

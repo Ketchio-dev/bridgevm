@@ -3,6 +3,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::hda_coreaudio_continuity::ContinuityCounters;
+use super::hda_coreaudio_idle::OutputControl;
 use super::hda_coreaudio_prefill::Prefill;
 use super::hda_coreaudio_ring::AtomicPcmRing;
 use super::hda_coreaudio_teardown::CallbackFailureCounters;
@@ -17,6 +18,7 @@ pub(super) struct Shared {
     pub(super) callback_failures: CallbackFailureCounters,
     pub(super) continuity: ContinuityCounters,
     pub(super) prefill: Prefill,
+    pub(super) output: OutputControl,
 }
 
 impl Shared {
@@ -31,6 +33,7 @@ impl Shared {
             callback_failures: CallbackFailureCounters::new(),
             continuity: ContinuityCounters::default(),
             prefill: Prefill::new(prefill_bytes),
+            output: OutputControl::default(),
         }
     }
 

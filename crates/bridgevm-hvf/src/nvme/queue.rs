@@ -170,6 +170,11 @@ impl NvmeController {
             if cmd.opcode == NVM_OP_FLUSH && self.defer_flush(qid as u16, cqid, &cmd) {
                 continue;
             }
+            // A READ or WRITE runs once the doorbell vCPU drops the platform
+            // lock and completes at its next drain (unlocked_io.rs).
+            if qid != 0 && self.defer_io(qid as u16, cqid, &cmd, mem) {
+                continue;
+            }
             let synced_write = qid != 0 && self.async_flush && self.write_needs_sync(&cmd);
             let result = if synced_write {
                 let status = self.io_write_data(&cmd, mem);

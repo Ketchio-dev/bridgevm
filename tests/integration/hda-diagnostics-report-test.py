@@ -50,6 +50,10 @@ PRINTED = (
     "hda CoreAudio timing: callbacks=0 interval_le_10ms=0 interval_le_15ms=0 interval_le_20ms=0 interval_le_30ms=0 "
     "interval_le_50ms=0 interval_gt_50ms=0 max_interval_ms=0 late_callbacks=0 trylock_misses=0 ring_samples=0 "
     "ring_min_ms=0 ring_max_ms=0 ring_final_ms=0",
+    # A queue that paused, started again and was replaced (a_paused_queue_is_not_a_late_callback_and_its_record_reconciles).
+    "hda CoreAudio timing: callbacks=4 interval_le_10ms=3 interval_le_15ms=0 interval_le_20ms=0 interval_le_30ms=0 "
+    "interval_le_50ms=0 interval_gt_50ms=0 max_interval_ms=10 late_callbacks=0 trylock_misses=0 ring_samples=0 "
+    "ring_min_ms=0 ring_max_ms=0 ring_final_ms=0",
 )
 UNRECONCILED = (
     (POLL, "polls=3", "polls=4", "gap buckets do not sum to polls"),

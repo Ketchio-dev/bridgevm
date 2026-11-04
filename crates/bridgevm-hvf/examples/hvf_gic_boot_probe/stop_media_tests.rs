@@ -68,6 +68,43 @@ fn stop_records_are_the_completed_writes_in_order() {
 }
 
 #[test]
+fn sigterm_ends_the_run_through_stop_persistence() {
+    install_host_term_handler();
+    // Without the handler TERM's default action ends this test process.
+    // SAFETY: Category 8 - raise only delivers the signal to this thread.
+    assert_eq!(unsafe { libc::raise(libc::SIGTERM) }, 0);
+    assert!(HOST_TERM_REQUESTED.load(Ordering::SeqCst));
+
+    // The run loop's next canceled exit is terminal and names the signal...
+    let unset = AtomicBool::new(false);
+    assert_eq!(
+        cancel_stop_reason(&unset, None, None, &HOST_TERM_REQUESTED),
+        Some("host stop requested (SIGTERM)")
+    );
+    let runtime = include_str!("probe_runtime.rs");
+    assert!(runtime.contains("&HOST_TERM_REQUESTED,"));
+    let installed = runtime.find("install_host_term_handler();").unwrap();
+    assert!(installed < runtime.find("media_lease::prepare()").unwrap());
+
+    // ...and a terminal stop persists the vars and writes the disk back.
+    let scratch = Scratch::new();
+    let mut media = VirtBootMediaConfig::qemu_defaults();
+    media.flash_vars = scratch.media("vars");
+    media.nvme_disk = Some(scratch.media("primary"));
+    let mut owner = acquire(&mut media).unwrap();
+    let mut platform = VirtPlatform::new(VirtFdtConfig::default());
+    platform.load_flash_vars(b"vars changed by the guest");
+    platform.load_nvme_disk(vec![0x5a; 512]);
+
+    let records = persist_stop_media(&mut platform, &media, &mut owner);
+
+    assert!(records[0].starts_with("host media: UEFI vars written back: "));
+    assert!(records[1].starts_with("host media: NVMe disk written back: "));
+    let vars = fs::read(&media.flash_vars.path).unwrap();
+    assert!(vars.starts_with(b"vars changed by the guest"));
+}
+
+#[test]
 fn a_record_keeps_its_host_path_on_one_ascii_line() {
     let write = |kind, path: &str, bytes| MediaWrite {
         kind,

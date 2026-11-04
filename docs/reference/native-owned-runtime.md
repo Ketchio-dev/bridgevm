@@ -99,14 +99,19 @@ EOF prevents a buffered duplicate or malformed terminal frame from escaping chec
 Runner exit alone, presentation state `stopped`, and `stopAck` prove no cleanup.
 
 If ready, the app allows a guest shutdown grace interval. Once the guest service
-is observed, it attempts one `shutdown.exe /p /f` append through the descriptor
-whose regular-file identity was captured at launch. The worker rechecks both the
+is observed, it attempts one `shutdown.exe /s /t 0` append through the descriptor
+whose regular-file identity was captured at launch; a confirmed Force Stop may add
+one `shutdown.exe /p /f` and cancels the runner 30 seconds later. The CLI's stop
+requests runner cancellation when the grace ends; the app's Stop and quit keep
+waiting and offer Force Stop instead. The worker rechecks both the
 path and descriptor; replacement, symlink, hard link or failed delivery leads to
 owned runner cancellation. It never recreates or reopens a replacement control file.
 A pre-READY stop skips guest grace. Guest command delivery is not guest shutdown proof.
 
 Runner cancellation can follow STOP, owner input EOF, a signal or protocol failure.
 Each retained child receives TERM, then KILL if needed, with actual reap observation.
+The HVF helper treats TERM as a stop: it ends the run through its final report,
+which saves the UEFI vars and NVMe media (write-back ends with `F_FULLFSYNC`).
 Wait uncertainty suppresses further PID signalling; it does not abandon the child
 or media leases. Expired reap observation reports `cleanupUnconfirmed` and continues
 retaining ownership. Missing cleanup evidence blocks replacement and destructive
@@ -133,7 +138,7 @@ for that cancellation only when its complete cleanup proof satisfies every condi
 | Runner payload / event buffers | 8,192 bytes; Rust queue plus in-flight frame at most 32; Swift event buffer 32 |
 | Runner control input | At most 16 STOP frames, including duplicates |
 | Pipe I/O | 2-second HELLO, partial-frame, write and final-drain bounds; overflow or invalid framing fails closed |
-| Child cancellation | 2-second TERM grace plus 2-second KILL/reap observation; uncertainty retains ownership afterward |
+| Child cancellation | TERM grace (8 seconds for the HVF helper, which saves its media; 2 for swtpm) plus 2-second KILL/reap observation; uncertainty retains ownership afterward |
 
 CLI transport retries preserve the target and admitted operation. A lost submit
 reply is queried before retrying the same unconfirmed admission ID. The wait never

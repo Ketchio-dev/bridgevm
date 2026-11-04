@@ -13,16 +13,22 @@ fn every_lock_site_beside_the_tick_holds_through_the_record() {
         "HoldSite::Mmio(ipa)",
         "HoldSite::Automation",
     ] {
-        assert_eq!(
-            count(run, site),
-            if site == "HoldSite::Automation" { 4 } else { 1 },
-            "{site}"
-        );
+        // An MMIO exit holds twice when an NVMe doorbell queued reads or
+        // writes: around the doorbell, and after the unlocked transfer when
+        // the vCPU's worker finished it within the wait.
+        let sites = match site {
+            "HoldSite::Automation" => 4,
+            "HoldSite::Mmio(ipa)" => 2,
+            _ => 1,
+        };
+        assert_eq!(count(run, site), sites, "{site}");
     }
-    assert_eq!(count(run, "lock_platform("), 6);
+    assert_eq!(count(run, "lock_platform("), 7);
+    assert_eq!(count(run, "nvme_io_worker.run(io, &"), 1);
     let secondary = include_str!("secondary_vcpu.rs");
-    assert_eq!(count(secondary, "lock_platform("), 1);
-    assert_eq!(count(secondary, "HoldSite::Mmio(ipa)"), 1);
+    assert_eq!(count(secondary, "lock_platform("), 2);
+    assert_eq!(count(secondary, "HoldSite::Mmio(ipa)"), 2);
+    assert_eq!(count(secondary, "nvme_io_worker.run(io, &"), 1);
     let prepare = include_str!("interrupt_delivery/prepare.rs");
     assert_eq!(count(prepare, "lock_platform("), 2);
     assert_eq!(count(prepare, "HoldSite::PreRun"), 2);
