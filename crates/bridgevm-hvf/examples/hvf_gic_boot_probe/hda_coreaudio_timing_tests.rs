@@ -44,6 +44,21 @@ fn injected_callback_times_give_the_exact_interval_histogram_and_late_count() {
 }
 
 #[test]
+fn a_paused_queue_is_not_a_late_callback() {
+    let base = Instant::now();
+    let timing = CallbackTiming::starting_at(base);
+    timing.note_callback(base, false);
+    timing.note_callback(base + Duration::from_millis(10), false);
+    // Paused for 30 s, then started again by the output supervisor.
+    timing.note_restart();
+    timing.note_callback(base + Duration::from_secs(30), false);
+    timing.note_callback(base + Duration::from_millis(30_010), false);
+    let snapshot = timing.snapshot();
+    assert_eq!((snapshot.callbacks, snapshot.intervals[0]), (4, 2));
+    assert_eq!((snapshot.late_callbacks, snapshot.max_interval_ms), (0, 10));
+}
+
+#[test]
 fn every_busy_consumer_counts_even_where_continuity_does_not() {
     let shared = Shared::new(4 * FULL, 0);
     let mut buffer = vec![0u8; FULL];

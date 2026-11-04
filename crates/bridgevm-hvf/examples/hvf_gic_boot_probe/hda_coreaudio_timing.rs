@@ -16,7 +16,10 @@
 //!   callback that plays guest PCM until the guest stops its stream:
 //!   `ring_samples` and the minimum, maximum and final level in ms.
 //!
-//! The callback thread is the only writer. It reads the host clock
+//! A pause of the queue (hda_coreaudio_output.rs) is not an interval: the
+//! first callback after the queue starts again measures none.
+//!
+//! The callback thread is the only writer of the counters. It reads the host clock
 //! (`Instant::now`, a user-space clock read on macOS, not a system call) and
 //! updates relaxed atomics inside a sequence count, so a reader gets a
 //! consistent record even while callbacks continue; the callback never locks,
@@ -52,6 +55,8 @@ pub(in crate::hda_coreaudio) struct CallbackTiming {
     max_interval_ns: AtomicU64,
     late: AtomicU64,
     trylock_misses: AtomicU64,
+    /// Set by the output supervisor before it starts a paused queue.
+    restarted: AtomicBool,
     playing: AtomicBool,
     ring_samples: AtomicU64,
     ring_min: AtomicU64,
@@ -76,6 +81,7 @@ impl CallbackTiming {
             max_interval_ns: AtomicU64::new(0),
             late: AtomicU64::new(0),
             trylock_misses: AtomicU64::new(0),
+            restarted: AtomicBool::new(false),
             playing: AtomicBool::new(false),
             ring_samples: AtomicU64::new(0),
             ring_min: AtomicU64::new(0),
@@ -101,7 +107,9 @@ impl CallbackTiming {
             self.callbacks.fetch_add(1, Relaxed);
             self.trylock_misses.fetch_add(u64::from(contended), Relaxed);
             let last = self.last_ns.swap(at, Relaxed);
-            if last == NO_CALLBACK {
+            // A paused queue's silence is not a late callback.
+            let restarted = self.restarted.swap(false, Acquire);
+            if last == NO_CALLBACK || restarted {
                 return;
             }
             let interval = at.saturating_sub(last);
@@ -112,6 +120,12 @@ impl CallbackTiming {
             self.max_interval_ns.fetch_max(interval, Relaxed);
             self.late.fetch_add(u64::from(interval > LATE_NS), Relaxed);
         });
+    }
+
+    /// The queue starts again after a pause: its next callback measures no
+    /// interval. Output supervisor only, before AudioQueueStart.
+    pub(in crate::hda_coreaudio) fn note_restart(&self) {
+        self.restarted.store(true, Release);
     }
 
     /// A callback found `ring_bytes` in the ring and copied `pcm_bytes`.

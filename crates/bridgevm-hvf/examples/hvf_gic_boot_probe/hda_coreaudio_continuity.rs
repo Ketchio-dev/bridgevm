@@ -145,6 +145,12 @@ impl ContinuityCounters {
         !self.streaming.load(Relaxed)
     }
 
+    /// The queue starts again after a pause; the timing record measures no
+    /// interval across it. Output supervisor only.
+    pub(super) fn note_restart(&self) {
+        self.timing.note_restart();
+    }
+
     /// Teardown began: later callbacks and still-pending silence never count.
     pub(super) fn begin_stopping(&self) {
         self.stopping.store(true, Relaxed);
