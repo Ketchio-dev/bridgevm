@@ -40,10 +40,11 @@ fn a_chosen_mode_is_switched_to_even_when_the_vars_already_ask_for_it() {
 }
 
 #[test]
-fn nvme_reads_and_writes_keep_the_platform_lock_unless_opted_in() {
-    assert!(!nvme_unlocked_io(None, false), "off by default");
-    assert!(!nvme_unlocked_io(Some("0"), false));
-    assert!(!nvme_unlocked_io(Some(""), false));
-    assert!(nvme_unlocked_io(Some("1"), false), "=1 opts in");
-    assert!(!nvme_unlocked_io(Some("1"), true), "checkpoints keep I/O inline");
+fn nvme_reads_and_writes_run_without_the_platform_lock_unless_opted_out() {
+    assert!(nvme_unlocked_io(None, false), "on by default");
+    assert!(nvme_unlocked_io(Some("1"), false));
+    assert!(nvme_unlocked_io(Some(""), false));
+    assert!(!nvme_unlocked_io(Some("0"), false), "=0 opts out");
+    assert!(!nvme_unlocked_io(None, true), "checkpoints keep I/O inline");
+    assert!(!nvme_unlocked_io(Some("1"), true));
 }
