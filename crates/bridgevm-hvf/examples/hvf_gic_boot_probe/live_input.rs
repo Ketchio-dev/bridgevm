@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 #[path = "input_control_file.rs"]
@@ -9,6 +10,8 @@ const MAX_PENDING_COMMANDS: usize = 64;
 use line_frames::MAX_COMMAND_BYTES;
 const MAX_READ_BYTES_PER_TICK: u64 = 1024 * 1024;
 const COMPACT_AFTER_BYTES: u64 = 1024 * 1024;
+/// When the VMM opened its live-input channel; the `t=` of `BVPOWER` lines.
+static STARTED: OnceLock<Instant> = OnceLock::new();
 #[cfg(test)]
 #[path = "live_input/backpressure_tests.rs"]
 mod backpressure_tests;
@@ -38,6 +41,8 @@ enum LiveInputCommand {
     Pointer(String),
     Resize { width: u32, height: u32 },
     Snapshot(String),
+    /// One press of the ACPI power button; needs no guest agent.
+    PowerButton,
 }
 
 impl std::fmt::Debug for LiveInputCommand {
@@ -52,6 +57,7 @@ impl std::fmt::Debug for LiveInputCommand {
                 .field("height", height)
                 .finish(),
             Self::Snapshot(label) => f.debug_tuple("Snapshot").field(label).finish(),
+            Self::PowerButton => f.write_str("PowerButton"),
         }
     }
 }
@@ -78,6 +84,7 @@ pub struct LiveInputController {
 
 impl LiveInputController {
     pub fn from_env() -> Self {
+        STARTED.get_or_init(Instant::now);
         let mut source = InputControlFile::from_env();
         Self {
             offset: restart_resume::initial_offset(source.as_mut()),
@@ -138,6 +145,8 @@ impl LiveInputController {
                 return;
             }
             LiveInputCommand::Snapshot(label.to_string())
+        } else if line == "POWERBUTTON" {
+            LiveInputCommand::PowerButton
         } else {
             eprintln!("live input rejected: unknown_command");
             return;
@@ -221,6 +230,21 @@ mod tests {
         assert_eq!(input.pending.len(), 2);
         assert!(matches!(input.pending[0], LiveInputCommand::Key(_)));
         assert!(matches!(input.pending[1], LiveInputCommand::Pointer(_)));
+    }
+
+    #[test]
+    fn live_input_queues_one_power_button_press_per_line() {
+        let mut input = controller();
+        input.push_line("POWERBUTTON");
+        input.push_line("POWERBUTTON now");
+        assert_eq!(input.pending.len(), 1);
+        assert!(matches!(input.pending[0], LiveInputCommand::PowerButton));
+
+        let mut platform = bridgevm_hvf::platform_virt::VirtPlatform::new(Default::default());
+        let mut mem = bridgevm_hvf::platform_virt::FlatGuestRam::new(0x4000_0000, 0);
+        input.apply_pending(&mut platform, &mut mem, Instant::now());
+        assert!(input.pending.is_empty());
+        assert_eq!(platform.take_pending_spi_levels(), [(41, true)]);
     }
 
     #[test]

@@ -64,6 +64,14 @@ impl LiveInputController {
                 println!("live input accepted: snapshot={label:?}");
                 Ok(false)
             }
+            LiveInputCommand::PowerButton => {
+                platform.press_power_button();
+                let t = super::STARTED.get().map_or(0, |at| at.elapsed().as_millis());
+                println!("BVPOWER button pressed t={t}");
+                use std::io::Write as _;
+                let _ = std::io::stdout().flush();
+                Ok(false)
+            }
         };
         match result {
             Ok(accepted) => {

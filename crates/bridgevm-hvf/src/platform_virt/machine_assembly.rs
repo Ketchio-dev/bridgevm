@@ -8,6 +8,7 @@ use crate::acpi::ACPI_LOADER_FILE;
 use crate::acpi::ACPI_RSDP_FILE;
 use crate::acpi::ACPI_TABLE_FILE;
 use crate::acpi::ACPI_TPM_LOG_FILE;
+use crate::acpi_ged::AcpiGed;
 use crate::dtb::build_virt_fdt_with_devices;
 use crate::dtb::VirtFdtConfig;
 use crate::dtb::VirtFdtDeviceConfig;
@@ -67,6 +68,7 @@ pub struct VirtPlatform {
     pub(crate) tpm_ppi: Option<TpmPpi>,
     pub(crate) ramfb: Ramfb,
     pub(crate) flash_vars: P30NorFlash,
+    pub(crate) acpi_ged: AcpiGed,
     pub(crate) pending_msix: Vec<MsixMessage>,
     pub(crate) pending_spi_levels: Vec<(u32, bool)>,
     pub(crate) nvme_completion_scratch: Vec<NvmeCompletionEvent>,
@@ -219,6 +221,7 @@ impl VirtPlatform {
                 machine::FLASH_VARS.size as usize,
                 0x40000,
             ),
+            acpi_ged: AcpiGed::new(),
             pending_msix: Vec::new(),
             pending_spi_levels: Vec::new(),
             nvme_completion_scratch: Vec::new(),
@@ -316,6 +319,7 @@ impl VirtPlatform {
             self.pending_spi_levels
                 .push((machine::spi_to_intid(machine::SPI_PCIE_INTA), false));
         }
+        self.acpi_ged.reset(&mut self.pending_spi_levels);
         self.xhci_hid_boot_key_report_stats = XhciHidBootKeyReportStats::default();
         self.nvme_ecam_touched = false;
         self.nvme_mmio_reached = false;

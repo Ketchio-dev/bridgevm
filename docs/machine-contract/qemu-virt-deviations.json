@@ -75,6 +75,15 @@
       "guest_visible": true,
       "impact": "The Windows clock is correct again shortly after the Mac wakes instead of lagging by the sleep time for up to a week. Without the agent service the clock stays behind until Windows syncs or reboots.",
       "evidence": "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/time_resync.rs"
+    },
+    {
+      "id": "acpi-ged-power-button",
+      "area": "acpi",
+      "qemu_behavior": "QEMU virt (11.0) describes \\_SB.GED_ (ACPI0013) with an edge-triggered SPI 9 interrupt and a 32-bit read-to-clear event selector at 0x0908_0000. Its _EVT notifies \\_SB.PWRB (PNP0C0C, _UID 0) on the power-down event and \\_SB.ERR0 (PNP0C33) on the generic-error event. system_powerdown sets the selector bit and pulses the line.",
+      "bridgevm_behavior": "Same GED name, _HID, _UID, address, SPI, edge flag, selector semantics, power-down bit (0x2) and _EVT shape. Differences: only the power-down event exists, with no generic-error branch and no ERR0 device. The line stays high until the guest reads the selector and is re-raised on each press, instead of a pulse. PWRB keeps its EISAID-encoded _HID and has no _UID. The host trigger is a POWERBUTTON line in the live input control file.",
+      "guest_visible": true,
+      "impact": "The host gets a shutdown request that does not depend on the guest agent, for example at the login screen or with a hung agent; the guest applies its own power-button action. A guest that configures the line as edge-triggered cannot tell the held line from a pulse, and the held line still delivers the event if the GIC treats it as level-triggered.",
+      "evidence": "crates/bridgevm-hvf/src/acpi_ged.rs"
     }
   ],
   "deviation_modules": [

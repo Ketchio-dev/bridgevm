@@ -587,6 +587,7 @@ pub(crate) const AML_ADD_OP: u8 = 0x72;
 pub(crate) const AML_AND_OP: u8 = 0x7B;
 pub(crate) const AML_OR_OP: u8 = 0x7D;
 pub(crate) const AML_DEREF_OF_OP: u8 = 0x83;
+pub(crate) const AML_NOTIFY_OP: u8 = 0x86;
 pub(crate) const AML_INDEX_OP: u8 = 0x88;
 pub(crate) const AML_CREATE_DWORD_FIELD_OP: u8 = 0x8A;
 pub(crate) const AML_LNOT_OP: u8 = 0x92;
