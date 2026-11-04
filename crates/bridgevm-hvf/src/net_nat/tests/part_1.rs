@@ -130,8 +130,12 @@ fn new_guest_dns_queries_follow_a_rewritten_resolv_conf() {
 
     backend.transmit(&udp_guest_frame(DNS_IP, 53, 53000, b"before"));
     replace_resolv_conf(&path, "nameserver ::1\n");
-    // The recheck is due (the once-a-second limit is tested above).
+    // With the recheck due (the once-a-second limit is tested above), the
+    // socket poll notices the switch before any query: a name Windows cached
+    // as failed sends none.
     backend.outbound_ipv4.dns.next_check_ms = 0;
+    backend.poll_host_sockets();
+    assert_eq!(backend.stats().dns_server_changes, 1);
     backend.transmit(&udp_guest_frame(DNS_IP, 53, 53001, b"after"));
     let _ = std::fs::remove_file(&path);
 
