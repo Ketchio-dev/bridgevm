@@ -23,7 +23,7 @@ impl AgentConsoleHarness {
         ) {
             return;
         }
-        self.observe_host_clock(now);
+        self.observe_host_clock();
 
         self.frame_inbound_lines();
         let mut lines = std::mem::take(&mut self.line_scratch);

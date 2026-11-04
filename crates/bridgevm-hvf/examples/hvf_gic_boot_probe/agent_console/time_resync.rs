@@ -99,10 +99,12 @@ fn is_time_resync(req: &ServiceReq) -> bool {
 }
 
 impl AgentConsoleHarness {
-    /// Every tick in every state, so a sleep during boot is caught too.
-    pub(super) fn observe_host_clock(&mut self, now: Instant) {
-        let elapsed = now.saturating_duration_since(self.start);
-        self.clock.tick(SystemTime::now(), now, elapsed);
+    /// Every tick in every state, so a sleep during boot is caught too. Both
+    /// clocks are read here, together: the caller's `now` may predate a wait.
+    pub(super) fn observe_host_clock(&mut self) {
+        let (wall, mono) = (SystemTime::now(), Instant::now());
+        let elapsed = mono.saturating_duration_since(self.start);
+        self.clock.tick(wall, mono, elapsed);
     }
 
     /// At most one queued resync. Its time is read when it is sent, so a
