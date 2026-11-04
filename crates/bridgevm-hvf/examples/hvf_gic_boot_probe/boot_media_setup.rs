@@ -67,7 +67,7 @@ pub(crate) fn attach_boot_media(
         println!(
             "NVMe I/O: {}",
             if unlocked {
-                "unlocked (reads and writes run without the platform lock)"
+                "unlocked (reads and writes run on per-vCPU workers without the platform lock; a vCPU waits at most 1 ms)"
             } else {
                 "under the platform lock (BRIDGEVM_NVME_UNLOCKED_IO=1 opts in)"
             }
@@ -189,11 +189,12 @@ fn guest_resolution(
     }
 }
 
-/// NVMe reads and writes run after the vCPU drops the platform lock only on
-/// request (`BRIDGEVM_NVME_UNLOCKED_IO=1`). Under host disk pressure it took
-/// away the VM-freeze tail, but the guest serviced audio late more often
-/// (PR #489, rerun R2). Checkpoints keep the I/O inline: they capture none in
-/// flight.
+/// NVMe reads and writes run without the platform lock, on per-vCPU workers
+/// that a vCPU waits at most 1 ms for, only on request
+/// (`BRIDGEVM_NVME_UNLOCKED_IO=1`). Under host disk pressure the vCPU-run
+/// transfers took away the VM-freeze tail, but the guest serviced audio late
+/// more often (PR #489, rerun R2); rerun R3 measures the bounded wait.
+/// Checkpoints keep the I/O inline: they capture none in flight.
 fn nvme_unlocked_io(setting: Option<&str>, checkpoint: bool) -> bool {
     setting == Some("1") && !checkpoint
 }

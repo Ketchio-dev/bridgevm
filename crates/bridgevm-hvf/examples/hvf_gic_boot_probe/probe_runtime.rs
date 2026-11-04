@@ -88,6 +88,8 @@ pub(crate) fn run() -> ExitCode {
             ptr: ram,
             len: ram_size,
         };
+        // vCPU0's NVMe transfer thread; dropped, and joined, before the RAM backing.
+        let mut nvme_io_worker = vcpu_nvme_io_worker(0, ram as usize, ram_size);
         reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
         // Read in the run loop: waking the vCPU is not the same as stopping it.
         let boot_progress_kill = boot_progress_kill_for(vcpu);
@@ -584,10 +586,13 @@ pub(crate) fn run() -> ExitCode {
                                     error.stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);
                                 break;
                             }
-                            // NVMe reads and writes run unlocked; this exit's
-                            // second hold posts their completions.
-                            if let Some(io) = nvme_io {
-                                io.run(&guest_ram);
+                            // NVMe reads and writes run on vCPU0's worker,
+                            // unlocked. Finished within NVME_IO_WAIT, this
+                            // exit's second hold posts them; otherwise the
+                            // drain FLUSH_DONE_HOOK asks for does.
+                            if nvme_io.is_some_and(|io| {
+                                nvme_io_worker.run(io, &guest_ram, bridgevm_hvf::nvme::NVME_IO_WAIT)
+                            }) {
                                 let pending = {
                                     let mut platform_guard = lock_platform(
                                         &platform,
