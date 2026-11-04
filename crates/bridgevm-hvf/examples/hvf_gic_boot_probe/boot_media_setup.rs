@@ -59,17 +59,17 @@ pub(crate) fn attach_boot_media(
             if inline { "inline" } else { "worker thread" },
             bridgevm_hvf::nvme::host_sync_label(inline)
         );
-        // Reads and writes run after the vCPU drops the platform lock, except
-        // under checkpoints, which capture no I/O in flight either.
-        let unlocked =
-            !checkpoint && std::env::var("BRIDGEVM_NVME_UNLOCKED_IO").as_deref() != Ok("0");
+        let unlocked = nvme_unlocked_io(
+            std::env::var("BRIDGEVM_NVME_UNLOCKED_IO").ok().as_deref(),
+            checkpoint,
+        );
         platform.set_nvme_unlocked_io(unlocked);
         println!(
             "NVMe I/O: {}",
             if unlocked {
                 "unlocked (reads and writes run without the platform lock)"
             } else {
-                "under the platform lock"
+                "under the platform lock (BRIDGEVM_NVME_UNLOCKED_IO=1 opts in)"
             }
         );
     }
@@ -187,6 +187,15 @@ fn guest_resolution(
             (vars, mode)
         }
     }
+}
+
+/// NVMe reads and writes run after the vCPU drops the platform lock only on
+/// request (`BRIDGEVM_NVME_UNLOCKED_IO=1`). Under host disk pressure it took
+/// away the VM-freeze tail, but the guest serviced audio late more often
+/// (PR #489, rerun R2). Checkpoints keep the I/O inline: they capture none in
+/// flight.
+fn nvme_unlocked_io(setting: Option<&str>, checkpoint: bool) -> bool {
+    setting == Some("1") && !checkpoint
 }
 
 #[cfg(test)]
