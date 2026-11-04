@@ -29,6 +29,14 @@ extension HvfEngineSession {
         }
     }
 
+    /// Whether `text` sent now reaches the guest before a pointer event sent after it: on the ordered
+    /// route, or as HID keys in input.ctl. A clipboard paste completes later and a press cancels it.
+    func displayTextPrecedesPointer(_ text: String) -> Bool {
+        guard legacyPaste.pending == nil else { return false }
+        if inputDriver.router.eligible, inputDriver.router.state == .ready { return true }
+        return HvfTextInputPlan.clipboardBase64(for: text) == nil
+    }
+
     @discardableResult
     private func deliverDisplayInput(_ input: HvfLegacyPasteState.Input) -> Bool {
         switch input {
