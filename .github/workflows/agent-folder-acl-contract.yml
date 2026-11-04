@@ -1,0 +1,32 @@
+name: Guest agent folder permission contract
+
+on:
+  push: {branches: [main]}
+  pull_request: {paths: ['scripts/win-assets/bvagent-firstboot.ps1', 'scripts/test-bvagent-firstboot-acl.ps1', 'tests/integration/agent-folder-acl-contract.ps1', '.github/workflows/agent-folder-acl-contract.yml']}
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-acl:
+    name: Lock a folder with the provisioner's code and read the permissions back
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Windows PowerShell 5.1
+        shell: powershell
+        run: tests/integration/agent-folder-acl-contract.ps1
+      - name: PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: tests/integration/agent-folder-acl-contract.ps1
+  stand-ins:
+    name: Provisioner locks before hashing and blocks when the lock fails
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - shell: pwsh
+        run: scripts/test-bvagent-firstboot-acl.ps1
