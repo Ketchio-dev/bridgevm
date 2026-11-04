@@ -14,6 +14,7 @@ final class HvfEngineSession: ObservableObject {
     let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
     let shareRootNotice = HvfShareRootNotice()
     let fileDrops = HvfFileDropQueue() // Finder drops copied to the guest Desktop
+    let clipboardImageNotice = HvfClipboardImageNotice()
     @Published var events: [BvAgentEvent] = []
     @Published var displayDriverFlagMessage: String? // why HvfDisplayDriverFlag could not save yet
     var repoRoot: URL
@@ -388,6 +389,7 @@ final class HvfEngineSession: ObservableObject {
         serviceStarted = false
         shareRootNotice.reset()
         fileDrops.reset()
+        clipboardImageNotice.reset()
         stopCommandSent = false
         stopDeadline = nil
         if forceStopTarget != nil { forceStopTarget = nil }
@@ -413,6 +415,7 @@ final class HvfEngineSession: ObservableObject {
         serviceStarted = false
         shareRootNotice.reset()
         fileDrops.reset()
+        clipboardImageNotice.reset()
         stopCommandSent = false
         stopDeadline = nil
         guestBootChanged()

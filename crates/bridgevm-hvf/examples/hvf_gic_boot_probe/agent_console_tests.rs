@@ -29,6 +29,7 @@ pub(super) mod tests {
             overdue_beats: 0,
             last_synced: ClipBaseline::default(),
             pasteboard: None,
+            clip_images: None,
             ctl_path: None,
             ctl_offset: 0,
             ctl_framer: LineFramer::new(),
@@ -92,6 +93,7 @@ pub(super) mod tests {
                 }
                 ServiceReq::TimeSync => "time-sync".to_string(),
                 ServiceReq::Drop(req) => format!("drop:{req:?}"),
+                other => req_kind(other).to_string(),
             })
             .collect()
     }

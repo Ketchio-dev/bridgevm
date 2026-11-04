@@ -59,6 +59,9 @@ impl AgentConsoleHarness {
         // The one cadence drives both the pasteboard poll thread and our CLIPGET
         // rate, so host and guest are sampled in step.
         let pasteboard = clipsync.then(|| HostPasteboard::spawn(clip_ms));
+        if clipsync && std::env::var_os(host_pasteboard::TEST_PASTEBOARD_ENV).is_some() {
+            println!("BVAGENT CLIPSYNC test pasteboard (not the user's clipboard)");
+        }
         let ctl_path = std::env::var(CTL_ENV).ok().filter(|s| !s.is_empty());
         // Start the ctl tail at the file's CURRENT end, not offset 0: the
         // harness is re-created per boot generation, and re-ingesting old ctl
@@ -98,6 +101,7 @@ impl AgentConsoleHarness {
             overdue_beats: 0,
             last_synced: ClipBaseline::default(),
             pasteboard,
+            clip_images: None,
             ctl_path,
             ctl_offset,
             ctl_framer: LineFramer::new(),
@@ -310,6 +314,10 @@ impl AgentConsoleHarness {
                 println!("BVAGENT SERVICE start t={}", self.t_ms(now));
                 // Desktop modes requested before the agent was up.
                 self.enqueue_desktop_switch();
+                // Whether this agent can move clipboard images (clip_image.rs).
+                if self.clipsync {
+                    self.queue.push_front(ServiceReq::ClipCaps);
+                }
                 // Anchor the heartbeat clock at service entry so the first ping
                 // is a full interval away rather than immediate.
                 self.last_send = Some(now);

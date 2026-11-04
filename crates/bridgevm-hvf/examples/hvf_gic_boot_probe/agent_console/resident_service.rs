@@ -166,7 +166,8 @@ impl AgentConsoleHarness {
                                 req_kind(&req),
                                 now.duration_since(self.start).as_millis()
                             );
-                            self.queue.push_front(rewind_share_put_for_retransmit(req));
+                            let req = rewind_clip_image_push(rewind_share_put_for_retransmit(req));
+                            self.queue.push_front(req);
                         }
                     }
                     self.overdue_beats = 0;
@@ -218,8 +219,16 @@ impl AgentConsoleHarness {
         match req {
             ServiceReq::ClipPoll => {
                 self.last_clip_poll = Some(now);
-                self.service_line_scratch.push_str("CLIPGET\n");
+                let verb = if self.clip_images.is_some() { "CLIPX\n" } else { "CLIPGET\n" };
+                self.service_line_scratch.push_str(verb);
                 true
+            }
+            ServiceReq::ClipCaps => {
+                self.service_line_scratch.push_str("CLIPCAPS\n");
+                true
+            }
+            ServiceReq::ClipImagePush(_) | ServiceReq::ClipImagePull { .. } => {
+                self.write_clip_image_line(req)
             }
             ServiceReq::ClipPush(text) => {
                 self.service_line_scratch.push_str("CLIPSET ");
@@ -412,7 +421,7 @@ impl AgentConsoleHarness {
         }
         if matches!(
             self.in_flight.as_ref().map(|(req, _)| req),
-            Some(ServiceReq::Ctl(_) | ServiceReq::ShareGet { .. })
+            Some(ServiceReq::Ctl(_) | ServiceReq::ShareGet { .. } | ServiceReq::ClipImagePull { .. })
         ) && self.handle_unlabelled_get_fragment(line).is_some()
         {
             return;
@@ -429,6 +438,9 @@ impl AgentConsoleHarness {
             InFlightSnapshot::ClipPush { guest_bytes } => {
                 self.handle_clip_push_reply(line, guest_bytes, now);
             }
+            InFlightSnapshot::ClipCaps => self.handle_clip_caps_reply(line, now),
+            InFlightSnapshot::ClipImagePush => self.handle_clip_image_push_reply(line, now, send),
+            InFlightSnapshot::ClipImagePull => self.handle_clip_image_pull_reply(line, now),
             InFlightSnapshot::Ctl(command) => match self.handle_reply_line(line, &command) {
                 ReplyProgress::Complete => self.complete_in_flight(),
                 ReplyProgress::Incomplete | ReplyProgress::Ignored => {}

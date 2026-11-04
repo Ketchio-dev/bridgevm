@@ -13,6 +13,9 @@ pub(super) fn req_kind(req: &ServiceReq) -> &'static str {
     match req {
         ServiceReq::ClipPoll => "clip-poll",
         ServiceReq::ClipPush(_) => "clip-push",
+        ServiceReq::ClipCaps => "clip-caps",
+        ServiceReq::ClipImagePush(_) => "clip-image-push",
+        ServiceReq::ClipImagePull { .. } => "clip-image-pull",
         ServiceReq::Ctl(_) => "ctl",
         ServiceReq::Ping => "ping",
         ServiceReq::ShareLs => "share-ls",
