@@ -11,11 +11,17 @@ import Foundation
 /// stages the driver for a device the VM gets at its next start. So the session sends this command at
 /// `BVAGENT SERVICE start` on 2D virtio-gpu boots whose device has taken no cursor image (the first
 /// boot with the device, and every VM installed before), and the install action sends it after an
-/// `installed` result (a driver update rewrites the INF's 0).
+/// `installed` result (a driver update rewrites the INF's 0). The VM's `hardwareCursor` setting
+/// (HvfHardwareCursorToggle.swift) turned off writes 0 instead and never 1.
 extension HvfDisplayDriverInstall {
     /// One agent line that prints `BVCURSOR result=<set|already|no-device|failed> [detail=...]`.
-    static let hardwareCursorCommand: String = {
-        let script = #"""
+    static let hardwareCursorCommand = hardwareCursorCommand(value: 1)
+    /// The same lookup writing 0: Windows draws its own pointer again from its next start.
+    static let hardwareCursorOffCommand = hardwareCursorCommand(value: 0)
+
+    /// `$want` comes first, outside the script, which scripts/perf/vm_bench.py runs as `$want = 1`.
+    private static func hardwareCursorCommand(value: Int) -> String {
+        let script = "$want = \(value)\n" + #"""
             $ErrorActionPreference = 'Stop'
             try {
               $devices = @(Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -like 'PCI\VEN_1AF4&DEV_1050*' -and $_.Service -eq 'VioGpuDod' })
@@ -23,8 +29,8 @@ extension HvfDisplayDriverInstall {
               $result = 'already'
               foreach ($device in $devices) {
                 $key = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\' + (Get-PnpDeviceProperty -InstanceId $device.InstanceId -KeyName DEVPKEY_Device_Driver).Data
-                if ((Get-ItemProperty -LiteralPath $key).HWCursor -ne 1) {
-                  Set-ItemProperty -LiteralPath $key -Name HWCursor -Value 1 -Type DWord
+                if ((Get-ItemProperty -LiteralPath $key).HWCursor -ne $want) {
+                  Set-ItemProperty -LiteralPath $key -Name HWCursor -Value $want -Type DWord
                   $result = 'set'
                 }
               }
@@ -33,20 +39,35 @@ extension HvfDisplayDriverInstall {
             """#
         let encoded = Data(script.utf16.flatMap { [UInt8($0 & 0xff), UInt8($0 >> 8)] }).base64EncodedString()
         return "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand \(encoded)"
-    }()
+    }
 }
 
 extension HvfEngineSession {
-    /// At `BVAGENT SERVICE start`: a VM on the 2D virtio-gpu whose device took no cursor image in this
-    /// boot still draws a software cursor, so switch the hardware cursor on for its next start. Once it
-    /// is on, the device has an image by the time the agent starts and nothing is sent.
-    func enableGuestHardwareCursorIfNeeded() {
+    /// The VM's saved choice; nil (never set) is on.
+    var guestHardwareCursorWanted: Bool { config.libraryContext?.config.hardwareCursor != false }
+
+    /// At `BVAGENT SERVICE start` on the 2D virtio-gpu:
+    /// - on: a boot whose device took no cursor image still draws a software cursor, so switch the
+    ///   hardware cursor on for the next start. Once it is on, the device has an image by the time the
+    ///   agent starts and nothing is sent.
+    /// - off: write 0 once, at the first agent start after the setting changed or the app started. The
+    ///   device's image flag cannot decide this: Windows may set its first pointer shape only after the
+    ///   agent starts, and a missed write would leave the hardware cursor on. The guest writes only a
+    ///   value that differs and otherwise prints `already`.
+    func applyGuestHardwareCursorSetting() {
         #if canImport(AppKit)
-        guard config.virtioGpu2d, connectionState.guestCursorIsLive,
-              !HvfGuestCursorFile.hasShapeThisBoot(path: HvfGuestCursorFile.path(evidenceDir: config.evidenceDir)),
-              case let .success(command) = HvfGuestCommand.normalizeShell(HvfDisplayDriverInstall.hardwareCursorCommand)
-        else { return }
-        sendCtl(command)
+        guard config.virtioGpu2d, connectionState.guestCursorIsLive else { return }
+        let wanted = guestHardwareCursorWanted
+        if wanted {
+            hardwareCursorOffSent = false
+            guard !HvfGuestCursorFile.hasShapeThisBoot(path: HvfGuestCursorFile.path(evidenceDir: config.evidenceDir))
+            else { return }
+        } else if hardwareCursorOffSent {
+            return
+        }
+        let command = wanted ? HvfDisplayDriverInstall.hardwareCursorCommand : HvfDisplayDriverInstall.hardwareCursorOffCommand
+        guard case let .success(line) = HvfGuestCommand.normalizeShell(command), sendCtl(line) else { return }
+        if !wanted { hardwareCursorOffSent = true }
         #endif
     }
 }

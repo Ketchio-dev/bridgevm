@@ -226,6 +226,7 @@ struct HvfEngineView: View {
                 }
                 // Installed or staged: this VM's virtioDisplayDriverInstalled is saved once it has stopped.
                 HvfDisplayDriverInstallButton(session: session) { _ in HvfDisplayDriverFlag.record(session) }
+                HvfHardwareCursorToggle(session: session)
             }
             .padding(6)
             #else

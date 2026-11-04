@@ -7,24 +7,28 @@ final class HvfDisplayDriverHardwareCursorTests: XCTestCase {
     private typealias Install = HvfDisplayDriverInstall
     private let powershell = "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "
 
-    /// One short agent line, independent of install.ps1, that sets HWCursor=1 where viogpudo reads it.
-    func testTheCommandSetsHWCursorInTheDisplayAdaptersDriverKey() throws {
-        let command = Install.hardwareCursorCommand
-        XCTAssertEqual(try HvfGuestCommand.normalizeShell(command).get(), command)
-        XCTAssertTrue(command.utf8.count <= HvfClipboardPaste.maximumCommandCharacters, "\(command.utf8.count)")
-        XCTAssertFalse(command.contains(where: { "\"%^|<>&".contains($0) }), "nothing cmd.exe would expand")
-        XCTAssertTrue(command.hasPrefix(powershell))
-        let script = try XCTUnwrap(Data(base64Encoded: String(command.dropFirst(powershell.count)))
-            .flatMap { String(data: $0, encoding: .utf16LittleEndian) })
-        for part in ["'PCI\\VEN_1AF4&DEV_1050*' -and $_.Service -eq 'VioGpuDod'",
-                     "-KeyName DEVPKEY_Device_Driver",
-                     "'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\' + ",
-                     "Set-ItemProperty -LiteralPath $key -Name HWCursor -Value 1 -Type DWord",
-                     "'BVCURSOR result=no-device'", "'BVCURSOR result=' + $result",
-                     "'BVCURSOR result=failed detail='"] {
-            XCTAssertTrue(script.contains(part), part)
+    /// Short agent lines, independent of install.ps1, that set HWCursor to 1 (on) or 0 (the VM's setting
+    /// turned off) where viogpudo reads it.
+    func testTheCommandsSetHWCursorInTheDisplayAdaptersDriverKey() throws {
+        for (command, want) in [(Install.hardwareCursorCommand, "$want = 1\n"), (Install.hardwareCursorOffCommand, "$want = 0\n")] {
+            XCTAssertEqual(try HvfGuestCommand.normalizeShell(command).get(), command)
+            XCTAssertTrue(command.utf8.count <= HvfClipboardPaste.maximumCommandCharacters, "\(command.utf8.count)")
+            XCTAssertFalse(command.contains(where: { "\"%^|<>&".contains($0) }), "nothing cmd.exe would expand")
+            XCTAssertTrue(command.hasPrefix(powershell))
+            let script = try XCTUnwrap(Data(base64Encoded: String(command.dropFirst(powershell.count)))
+                .flatMap { String(data: $0, encoding: .utf16LittleEndian) })
+            XCTAssertTrue(script.hasPrefix(want), want)
+            for part in ["'PCI\\VEN_1AF4&DEV_1050*' -and $_.Service -eq 'VioGpuDod'",
+                         "-KeyName DEVPKEY_Device_Driver",
+                         "'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\' + ",
+                         "if ((Get-ItemProperty -LiteralPath $key).HWCursor -ne $want) {",
+                         "Set-ItemProperty -LiteralPath $key -Name HWCursor -Value $want -Type DWord",
+                         "'BVCURSOR result=no-device'", "'BVCURSOR result=' + $result",
+                         "'BVCURSOR result=failed detail='"] {
+                XCTAssertTrue(script.contains(part), part)
+            }
+            XCTAssertTrue(script.unicodeScalars.allSatisfy(\.isASCII))
         }
-        XCTAssertTrue(script.unicodeScalars.allSatisfy(\.isASCII))
     }
 
     /// Sent at the agent's start only on a 2D virtio-gpu boot whose device took no cursor image.
@@ -54,21 +58,23 @@ final class HvfDisplayDriverHardwareCursorTests: XCTestCase {
         }
     }
 
-    /// After an `installed` result (a driver update rewrites the INF's 0), never after staged or failed.
+    /// After an `installed` result (a driver update rewrites the INF's 0), never after staged or failed,
+    /// and never with the VM's setting off, which wants the INF's 0.
     func testTheInstallActionSendsItAfterAnInstalledResultOnly() async {
-        for status in ["installed", "staged", "failed"] {
+        for (status, setting) in [("installed", true), ("staged", true), ("failed", true), ("installed", false)] {
             var sent: [String] = []
             let outcome = await withCheckedContinuation { (done: CheckedContinuation<Install.Outcome, Never>) in
                 Install.start(runner: { command, _ in
                     sent.append(command)
                     return (command == Install.hardwareCursorCommand ? "BVCURSOR result=set"
                         : "BVDRIVER result=\(status) detail=x", 0)
-                }, onInstalled: { _ in }) { done.resume(returning: $0) }
+                }, hardwareCursor: setting, onInstalled: { _ in }) { done.resume(returning: $0) }
             }
+            let expected = status == "installed" && setting
             XCTAssertEqual(outcome.status.rawValue, status)
-            XCTAssertEqual(sent.filter { $0 == Install.hardwareCursorCommand }.count, status == "installed" ? 1 : 0,
-                           status)
-            if status == "installed" { XCTAssertEqual(sent.last, Install.hardwareCursorCommand) }
+            XCTAssertEqual(sent.filter { $0 == Install.hardwareCursorCommand }.count, expected ? 1 : 0, "\(status) \(setting)")
+            XCTAssertFalse(sent.contains(Install.hardwareCursorOffCommand))
+            if expected { XCTAssertEqual(sent.last, Install.hardwareCursorCommand) }
         }
     }
 }
