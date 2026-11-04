@@ -28,6 +28,7 @@ jobs:
     outputs:
       rust: ${{ steps.diff.outputs.rust }}
       rust_build: ${{ steps.diff.outputs.rust_build }}
+      host_contracts: ${{ steps.diff.outputs.host_contracts }}
       swift: ${{ steps.diff.outputs.swift }}
       venus: ${{ steps.diff.outputs.venus }}
     steps:
@@ -40,7 +41,7 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ "$EVENT" != pull_request ]; then
-            printf 'rust=true\nrust_build=true\nswift=true\nvenus=true\n' >> "$GITHUB_OUTPUT"
+            printf 'rust=true\nrust_build=true\nhost_contracts=true\nswift=true\nvenus=true\n' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           files=$(git diff --name-only "$BASE" HEAD)
@@ -61,6 +62,11 @@ jobs:
           rust_build=false
           printf '%s\n' "$files" | grep -qE '\.rs$|^(crates|runners|tools)/|(^|/)(Cargo\.(toml|lock)|rust-toolchain(\.toml)?|\.?clippy\.toml)$|(^|/)\.cargo/|^\.github/workflows/ci\.yml$' && rust_build=true
           printf '%s\n' "$files" | grep -qxE 'apps/macos/Sources/BridgeVMControl/HvfEngine/(BvAgentEvent|HvfClipboardPaste)\.swift|capabilities/windows-hvf\.json|scripts/win-assets/bvagent\.ps1' && rust_build=true
+          # The macOS host contracts run with `rust`, and also when a file they
+          # read that `rust` ignores changes: these workflows and documents
+          # (found by tracing every file the four suites read).
+          host_contracts=$rust
+          printf '%s\n' "$files" | grep -qxE '\.github/workflows/qmp-stress\.yml' && host_contracts=true
           swift=false
           printf '%s\n' "$files" | grep -qE '^(apps/|packaging/|tests/integration/|tests/fixtures/owned-runtime-v1/|install\.sh$|\.github/workflows/ci\.yml$)|^scripts/[^p]|^scripts/p[^e]' && swift=true
           # The app job also builds and runs Rust: the test helpers (hvf-runner,
@@ -70,7 +76,7 @@ jobs:
           [ -n "$app_rust" ] && swift=true
           venus=false
           printf '%s\n' "$files" | grep -qE '^(crates/bridgevm-hvf/(src/|build\.rs$|Cargo\.toml$)|tools/venus-host-probe/|Cargo\.(toml|lock)$|scripts/.*(venus|virgl)|scripts/patches/|\.github/workflows/ci\.yml$)' && venus=true
-          printf 'rust=%s\nrust_build=%s\nswift=%s\nvenus=%s\n' "$rust" "$rust_build" "$swift" "$venus" | tee -a "$GITHUB_OUTPUT"
+          printf 'rust=%s\nrust_build=%s\nhost_contracts=%s\nswift=%s\nvenus=%s\n' "$rust" "$rust_build" "$host_contracts" "$swift" "$venus" | tee -a "$GITHUB_OUTPUT"
 
   fmt:
     name: rustfmt
@@ -317,7 +323,7 @@ jobs:
     # earlier one failed.
     name: macOS host contracts
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.host_contracts == 'true') }}
     runs-on: macos-15
     timeout-minutes: 45
     steps:
