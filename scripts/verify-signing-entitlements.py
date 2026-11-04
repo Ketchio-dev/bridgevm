@@ -15,7 +15,7 @@ class UniqueKeys(dict):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("required_key")
+    parser.add_argument("required_keys", nargs="+", metavar="required_key")
     parser.add_argument("--profile", choices=("debug", "release", "0", "1"), required=True)
     args = parser.parse_args()
     try:
@@ -23,8 +23,11 @@ def main():
         if len(raw) > 65536:
             raise ValueError("entitlement plist exceeds 64 KiB")
         values = plistlib.loads(raw, dict_type=UniqueKeys)
-        if not isinstance(values, dict) or values.get(args.required_key) is not True:
-            raise ValueError(f"{args.required_key} must be Boolean true")
+        if not isinstance(values, dict):
+            raise ValueError("entitlements must be a dictionary")
+        for key in args.required_keys:
+            if values.get(key) is not True:
+                raise ValueError(f"{key} must be Boolean true")
         debug_key = "com.apple.security.get-task-allow"
         if debug_key in values and type(values[debug_key]) is not bool:
             raise ValueError(f"{debug_key} must be Boolean")

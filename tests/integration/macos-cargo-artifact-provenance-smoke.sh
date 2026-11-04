@@ -14,6 +14,7 @@ cp "$ROOT/scripts/verify-signing-entitlements.py" "$fixture/scripts/"
 printf '[workspace]\n' > "$fixture/Cargo.toml"
 printf 'entitlements\n' > "$fixture/apps/macos/HvfRunner.entitlements"
 printf 'entitlements\n' > "$fixture/apps/macos/HvfRunner.release.entitlements"
+printf 'entitlements\n' > "$fixture/apps/macos/HvfProbe.release.entitlements"
 for name in hvf-runner bridgevm; do
   printf 'stale:%s\n' "$name" > "$fixture/target/release/$name"
   chmod +x "$fixture/target/release/$name"
@@ -89,7 +90,7 @@ set -euo pipefail
 case "$1" in
   --force) bin="${*: -1}"; [[ -x "$bin" ]]; printf '%s\n' "$bin" >> "$CODESIGN_LOG" ;;
   --verify) bin="${*: -1}"; [[ -x "$bin" ]] ;;
-  -d) printf '<plist version="1.0"><dict><key>com.apple.security.hypervisor</key><true/></dict></plist>\n' ;;
+  -d) printf '<plist version="1.0"><dict><key>com.apple.security.hypervisor</key><true/><key>com.apple.security.device.audio-input</key><true/></dict></plist>\n' ;;
   *) exit 1 ;;
 esac
 SH

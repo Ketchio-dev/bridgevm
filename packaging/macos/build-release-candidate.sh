@@ -66,7 +66,7 @@ Optional environment:
   BRIDGEVM_APPLE_VZ_ENTITLEMENTS      AppleVzRunner release entitlements path,
                                       defaults to apps/macos/AppleVzRunner.release.entitlements
   BRIDGEVM_HVF_PROBE_ENTITLEMENTS     Windows HVF probe release entitlements,
-                                      defaults to apps/macos/HvfRunner.release.entitlements
+                                      defaults to apps/macos/HvfProbe.release.entitlements
   BRIDGEVM_HVF_FIRMWARE_CODE          pinned 3 MiB Secure Boot + TPM2 AArch64
                                       EDK2 code image embedded in the Windows HVF app
   BRIDGEVM_HVF_FIRMWARE_LICENSES      matching firmware license notices
@@ -292,13 +292,14 @@ run env \
 run "$ROOT/apps/macos/scripts/build-sign-apple-vz-runner.sh" --verify-only "$APPLE_VZ_RUNNER"
 run env \
   "BRIDGEVM_CODESIGN_IDENTITY=$IDENTITY" \
-  "BRIDGEVM_HVF_PROBE_ENTITLEMENTS=${BRIDGEVM_HVF_PROBE_ENTITLEMENTS:-$ROOT/apps/macos/HvfRunner.release.entitlements}" \
+  "BRIDGEVM_HVF_PROBE_ENTITLEMENTS=${BRIDGEVM_HVF_PROBE_ENTITLEMENTS:-$ROOT/apps/macos/HvfProbe.release.entitlements}" \
   "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" \
   --release \
   --output "$HVF_WINDOWS_PROBE" \
   --bundle-frameworks "$HVF_LAB/Contents/Frameworks"
 run "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" --verify-only "$HVF_WINDOWS_PROBE"
-run codesign --force --options runtime --sign "$IDENTITY" "$HVF_LAB"
+run codesign --force --options runtime --sign "$IDENTITY" \
+  --entitlements "$ROOT/apps/macos/BridgeVMControl.entitlements" "$HVF_LAB"
 run codesign --force --options runtime --sign "$IDENTITY" "$APP/Contents/Helpers/bridgevmd"
 run codesign --force --options runtime --sign "$IDENTITY" "$APP/Contents/Helpers/lightvm-runner"
 run codesign --force --options runtime --sign "$IDENTITY" "$APP"

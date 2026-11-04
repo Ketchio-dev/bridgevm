@@ -1,7 +1,7 @@
 import Foundation
 
 /// A library VM's runtime-view launch preferences (clipboard sync, network, durable disk writes,
-/// display resolution, Retina resolution, Command key, shared folder, display driver) are saved in vm.json, so every start path (runtime view,
+/// microphone, display resolution, Retina resolution, Command key, shared folder, display driver) are saved in vm.json, so every start path (runtime view,
 /// dashboard, native CLI, relaunch) uses them. The experimental non-library entry keeps
 /// view-local options.
 extension HvfEngineSession {
@@ -67,6 +67,7 @@ extension VMConfig {
         copy.clipboardSyncEnabled = other.clipboardSyncEnabled
         copy.networkEnabled = other.networkEnabled
         copy.durableDiskWritesEnabled = other.durableDiskWritesEnabled
+        copy.microphoneEnabled = other.microphoneEnabled
         copy.guestResolution = other.guestResolution
         copy.retinaResolution = other.retinaResolution
         copy.commandKeyMode = other.commandKeyMode
@@ -87,6 +88,7 @@ extension HvfEngineConfig {
         if saved.clipboardSyncEnabled != previous.clipboardSyncEnabled { rebound.clipboardSync = launch.clipboardSync }
         if saved.networkEnabled != previous.networkEnabled { rebound.virtioNet = launch.virtioNet }
         if saved.durableDiskWritesEnabled != previous.durableDiskWritesEnabled { rebound.durableDiskWrites = launch.durableDiskWrites }
+        if saved.microphoneEnabled != previous.microphoneEnabled { rebound.microphoneEnabled = launch.microphoneEnabled }
         if saved.guestResolution != previous.guestResolution { rebound.guestResolution = launch.guestResolution }
         if saved.retinaResolution != previous.retinaResolution { rebound.retinaResolution = launch.retinaResolution }
         if saved.commandKeyMode != previous.commandKeyMode { rebound.commandKeyMode = launch.commandKeyMode }

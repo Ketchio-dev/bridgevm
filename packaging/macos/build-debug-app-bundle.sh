@@ -469,10 +469,12 @@ if [[ "$SKIP_APPLE_VZ_RUNNER" != "1" ]]; then
 fi
 
 if [[ "$BUILD_CONFIGURATION" == "release" ]]; then
-  codesign --force --options runtime --sign "$IDENTITY" "$HVF_LAB_APP" >/dev/null
+  codesign --force --options runtime --sign "$IDENTITY" \
+    --entitlements "$ROOT/apps/macos/BridgeVMControl.entitlements" "$HVF_LAB_APP" >/dev/null
   codesign --force --options runtime --sign "$IDENTITY" "$APP" >/dev/null
 else
-  codesign --force --sign "$IDENTITY" "$HVF_LAB_APP" >/dev/null
+  codesign --force --sign "$IDENTITY" \
+    --entitlements "$ROOT/apps/macos/BridgeVMControl.entitlements" "$HVF_LAB_APP" >/dev/null
   codesign --force --sign "$IDENTITY" "$APP" >/dev/null
 fi
 verify_bundle "$APP"

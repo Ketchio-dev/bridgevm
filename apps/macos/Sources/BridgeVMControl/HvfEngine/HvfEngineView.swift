@@ -20,6 +20,7 @@ struct HvfEngineView: View {
     @State private var shareGuestDir = "C:\\bridgevm-share"
     @State private var virtioNet = false
     @State private var durableDiskWrites = false
+    @State private var microphoneEnabled = false
     @State private var guestResolution: String?
     @State private var retinaResolution: Bool?
     @State private var commandKeyMode = HvfCommandKeyMode.mac
@@ -133,6 +134,7 @@ struct HvfEngineView: View {
                     HvfClipboardSyncToggle(session: session, isOn: $clipboardSync)
                     HvfNetworkToggle(session: session, isOn: $virtioNet)
                     HvfDurableDiskWritesToggle(session: session, isOn: $durableDiskWrites)
+                    HvfMicrophoneToggle(session: session, isOn: $microphoneEnabled)
                     HvfGuestResolutionPicker(session: session, selection: $guestResolution)
                     if session.config.offersRetinaResolution && !virtioGpu3d {
                         HvfRetinaResolutionToggle(session: session, setting: $retinaResolution)
@@ -354,6 +356,7 @@ struct HvfEngineView: View {
         config.shareGuestDir = shareEnabled ? shareGuestDir : nil
         config.virtioNet = virtioNet
         config.durableDiskWrites = durableDiskWrites
+        config.microphoneEnabled = microphoneEnabled
         config.guestResolution = guestResolution
         config.retinaResolution = retinaResolution
         config.commandKeyMode = commandKeyMode
@@ -378,6 +381,7 @@ struct HvfEngineView: View {
         shareGuestDir = cfg.shareGuestDir ?? "C:\\bridgevm-share"
         virtioNet = cfg.virtioNet
         durableDiskWrites = cfg.durableDiskWrites
+        microphoneEnabled = cfg.microphoneEnabled
         guestResolution = cfg.guestResolution
         retinaResolution = cfg.retinaResolution
         commandKeyMode = cfg.commandKeyMode

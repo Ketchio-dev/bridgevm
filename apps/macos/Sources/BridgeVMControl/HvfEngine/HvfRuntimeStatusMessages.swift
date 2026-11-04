@@ -11,6 +11,7 @@ struct HvfRuntimeStatusMessages: View {
                 .accessibilityIdentifier("bridgevm.windows.runtime.start.failure")
                 .accessibilityValue(refusal ?? session.guiStartFailureText ?? "none")
             HvfShareRootNoticeView(notice: session.shareRootNotice)
+            HvfMicrophoneNoticeView(session: session)
         }
     }
 }
