@@ -14,7 +14,7 @@ enum HvfRuntimePreparation {
         // session (false attach, false 3D-injection confirmation).
         for name in [
             "display.ppm", "display.ppm.tmp", "display.fb", "display.fb.tmp",
-            "display.fb.iosurface", "input.ctl", "run.log", "diagnostic-stop.request", "diagnostic-stop.request.pending"
+            "display.fb.iosurface", "display.cursor", "input.ctl", "run.log", "diagnostic-stop.request", "diagnostic-stop.request.pending"
         ] {
             let url = evidenceDirectory.appendingPathComponent(name)
             if fileManager.fileExists(atPath: url.path) || (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) != nil {

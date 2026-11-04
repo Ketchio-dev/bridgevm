@@ -1,5 +1,6 @@
 //! Split test module.
 
+mod cursor_queue;
 mod descriptor_chain_trace;
 mod fence_fifo;
 mod helpers;

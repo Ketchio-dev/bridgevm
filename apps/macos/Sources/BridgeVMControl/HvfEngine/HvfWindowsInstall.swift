@@ -190,7 +190,7 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
                   request.unattendedIdentity == sealedUnattendedIdentity,
                   HvfWindowsInstallCacheIdentity.sha256File(expected)
                     == sealedUnattendedIdentity else {
-                return "E2E 설치 응답 파일이 VM 번들에 봉인되지 않았거나 변경되었습니다."
+                return "설치 응답 파일이 VM 번들에 봉인되지 않았거나 변경되었습니다."
             }
         }
         guard wimlibPath != nil else {

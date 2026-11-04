@@ -26,12 +26,14 @@ import http.server
 import json
 import os
 import platform
+import re
 import shutil
 import signal
 import socket
 import statistics
 import subprocess
 import sys
+import textwrap
 import threading
 import time
 from pathlib import Path
@@ -50,6 +52,8 @@ SHUTDOWN = "shutdown.exe /p /f"
 # The probe prints this at PSCI SYSTEM_OFF, before it persists media and reports the stop.
 GUEST_OFF = "guest powered off; host teardown follows"
 SHUTDOWN_TIMEOUT_S = 240
+# The app's command that switches viogpudo's hardware cursor on (from the next Windows start).
+APP_HW_CURSOR = ROOT / "apps/macos/Sources/BridgeVMControl/HvfEngine/HvfDisplayDriverHardwareCursor.swift"
 
 
 def clone(src: Path, dst: Path) -> None:
@@ -190,6 +194,8 @@ class BridgeVM(Engine):
         ] + (["--virtio-net"] if self.args.net else []) + (
             [] if self.args.no_xhci else ["--enable-xhci", "--input-control", str(self.input_ctl)])
         self.display_fb = evidence / "display.fb"
+        self.display_cursor = evidence / "display.cursor"  # the device's hardware cursor, beside display.fb
+        self.sent_moves = []
         if self.args.display:  # the app's export settings (HvfEngineConfig): frames on request, 33 ms fallback
             cmd += ["--display-export-ms", "100", "--ramfb-display-export-ms", "33",
                     "--display-export-fb", str(self.display_fb)]
@@ -259,6 +265,7 @@ class BridgeVM(Engine):
                 time.sleep(max(0.0, due - time.monotonic()))
                 handle.write(f"POINTER move:{x}x{y}\n")
                 handle.flush()
+                self.sent_moves.append((x, y, time.clock_gettime_ns(time.CLOCK_UPTIME_RAW)))
 
     def guest_off_seen(self) -> bool:
         """PSCI SYSTEM_OFF reached the VMM; the rest of shutdown_ms is host teardown."""
@@ -307,16 +314,25 @@ def pointer_test(engine: Engine, record: dict) -> None:
     injector = threading.Thread(target=engine.inject_moves, args=(circle(600, 120.0, time.monotonic() + 1.5),))
     injector.start()
     seen = {}  # with --display: frames reaching the host while only the cursor moves (60 Hz consumer)
-    watcher = None
+    watcher = cursor_watcher = None
+    states = []  # with the guest's hardware cursor: what display.cursor published meanwhile
     if isinstance(engine, BridgeVM) and engine.display_fb.exists():
         watcher = threading.Timer(2.5, lambda: seen.update(consume_display(engine.display_fb, 3.0, hz=60.0)))
         watcher.start()
+        if engine.display_cursor.exists():
+            cursor_watcher = threading.Timer(2.5, lambda: states.extend(watch_cursor(engine.display_cursor, 3.0)))
+            cursor_watcher.start()
     _, text = engine.run(command_line(cursor_logger(8000)), time.monotonic() + 120)
     injector.join()
-    if watcher is not None:
-        watcher.join()  # a Timer's join waits for its function too
+    for timer in (watcher, cursor_watcher):
+        if timer is not None:
+            timer.join()  # a Timer's join waits for its function too
     record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
     record["bench"].update({"pointer-" + k: v for k, v in seen.items()})
+    if states:
+        with open(engine.display_fb, "rb") as handle:  # the guest frame's size, for the moves' pixels
+            width, height = struct.unpack_from("<2I", handle.read(16), 8)
+        record["bench"].update(cursor_metrics(states, engine.sent_moves, width, height))
     rtts, stop = [], time.monotonic() + 5
     echo = "echo bv"  # both engines wrap a plain command line into RUN
     while time.monotonic() < stop:
@@ -331,6 +347,66 @@ def pointer_test(engine: Engine, record: dict) -> None:
         record["bench"].update({"agent-cmd-hz": round(len(rtts) / 5, 1),
                                 "agent-rtt-p50": round(rtts[len(rtts) // 2], 1),
                                 "agent-rtt-p95": round(rtts[int(len(rtts) * 0.95)], 1)})
+
+
+def watch_cursor(path: Path, seconds: float) -> list[tuple[int, int, int]]:
+    """Read display.cursor at about 1 kHz like the app's display tick (even sequence at byte 24): each
+    new visible position of the guest's pointer (the sprite's top left plus the hot spot) with its
+    publish time (CLOCK_UPTIME_RAW ns at byte 48)."""
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        view = mmap.mmap(fd, 64, mmap.MAP_SHARED, mmap.PROT_READ)
+        states, last_seq, last_pos = [], None, None
+        stop = time.perf_counter() + seconds
+        while time.perf_counter() < stop and struct.unpack_from("<I", view, 0)[0] == 0x42564352:
+            seq = struct.unpack_from("<Q", view, 24)[0]
+            if seq % 2 == 0 and seq != last_seq:
+                _, flags, x, y, published, hot_x, hot_y = struct.unpack_from("<IIiiQII", view, 32)
+                if struct.unpack_from("<Q", view, 24)[0] == seq:  # not torn by a publish meanwhile
+                    last_seq = seq
+                    if flags & 1 and (x + hot_x, y + hot_y) != last_pos:
+                        last_pos = (x + hot_x, y + hot_y)
+                        states.append((published, *last_pos))
+            time.sleep(0.001)
+        view.close()
+    finally:
+        os.close(fd)
+    return states
+
+
+def cursor_metrics(states, sent, width: int, height: int) -> dict:
+    """Hardware cursor moves reaching the host while the pointer moves, and each one's lag: from writing
+    the move to input.ctl to the device publishing it. A position belongs to the latest sent move within
+    4 guest pixels of it in the last 0.5 s (one circle step is about 15 pixels at 1280x800; a lap
+    takes about 1 s)."""
+    out = {}
+    if len(states) >= 3:
+        span = (states[-1][0] - states[0][0]) / 1e9
+        gaps = sorted((b[0] - a[0]) / 1e6 for a, b in zip(states, states[1:]))
+        out.update({"pointer-cursor-hz": round((len(states) - 1) / span, 1) if span > 0 else 0.0,
+                    "pointer-cursor-gap-ms-p50": round(gaps[len(gaps) // 2], 1),
+                    "pointer-cursor-gap-ms-p95": round(gaps[int(len(gaps) * 0.95)], 1)})
+    lags, sent = [], list(sent)
+    for published, x, y in states:
+        for sx, sy, ns in reversed(sent):
+            if ns > published or published - ns > 500e6:
+                continue
+            if math.hypot(sx * width / 32767 - x, sy * height / 32767 - y) <= 4:
+                lags.append((published - ns) / 1e6)
+                break
+    if lags:
+        lags.sort()
+        out.update({"pointer-cursor-lag-ms-p50": round(lags[len(lags) // 2], 1),
+                    "pointer-cursor-lag-ms-p95": round(lags[int(len(lags) * 0.95)], 1),
+                    "pointer-cursor-matched-pct": round(100 * len(lags) / len(states), 1)})
+    return out
+
+
+def hw_cursor_command() -> str:
+    """The app's own command, from its one raw multi-line string, so the bench switches the cursor on
+    exactly as the app does (the app puts the value to write, `$want`, in front of it)."""
+    script = APP_HW_CURSOR.read_text().split('#"""\n', 1)[1].split('"""#', 1)[0]
+    return command_line("$want = 1\n" + textwrap.dedent(script))
 
 
 def save_display_frame(path: Path, out: Path) -> None:
@@ -480,6 +556,15 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                 record["errors"].append(f"{name}: {error}")
                 break
             record.setdefault("bench_wall_s", {})[name] = round(time.monotonic() - started, 2)
+        if args.hw_cursor and record["boot"] == 1:  # applies from the next Windows start: boot 2 on
+            try:
+                _, text = engine.run(hw_cursor_command(), time.monotonic() + 120)
+                record["hw_cursor"] = next((line.strip() for line in text.splitlines()
+                                            if line.startswith("BVCURSOR ")), "")
+                if record["hw_cursor"] not in ("BVCURSOR result=set", "BVCURSOR result=already"):
+                    record["errors"].append(f"hw-cursor: {text.strip()[:300]}")
+            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                record["errors"].append(f"hw-cursor: {type(error).__name__}: {error}")
         stop_started = time.monotonic()
         engine.request_shutdown()
         while engine.vmm_alive() and time.monotonic() < stop_started + SHUTDOWN_TIMEOUT_S:
@@ -491,6 +576,10 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
         else:
             record["shutdown_ms"] = round((time.monotonic() - stop_started) * 1000)
         record["clean_exit"] = engine.stop(time.monotonic() + SHUTDOWN_TIMEOUT_S)
+        if isinstance(engine, BridgeVM) and engine.log.exists():  # the probe's end-of-run cursor counts
+            counts = re.findall(rb"virtio-gpu cursor updates=(\d+) moves=(\d+) hides=(\d+)", engine.log.read_bytes())
+            if counts:
+                record["virtio_gpu_cursor"] = dict(zip(("updates", "moves", "hides"), map(int, counts[-1])))
     except BaseException as error:
         record["errors"].append(f"boot: {type(error).__name__}: {error}")
         if getattr(engine, "proc", None) is not None and engine.proc.poll() is None:
@@ -613,6 +702,8 @@ def main() -> None:
     r.add_argument("--ram-mib", type=int, default=6144)
     r.add_argument("--net", action="store_true")
     r.add_argument("--pointer", action="store_true", help="cursor update rate per input route")
+    r.add_argument("--hw-cursor", action="store_true",
+                   help="BridgeVM virtio-gpu: switch viogpudo's hardware cursor on at the end of boot 1 (as the app does)")
     r.add_argument("--desktop-mode", choices=["report", "native"],
                    help="Windows desktop resolution (native: first switch to the display's largest mode)")
     r.add_argument("--skip-suite", action="store_true", help="only boot, idle, optional pointer/net, shutdown")
