@@ -150,7 +150,8 @@ try {
             throw ($case.Name + ' did not block provisioning before the payload was read (exit ' + $result.Exit + '): ' + $result.Log.Trim() + ' events: ' + ($result.Events -join ', '))
         }
     }
-    Write-Output 'Firstboot C:\BridgeVM lock: PASS (stand-ins for Get-Acl and Set-Acl)'
+    # exit 0: the refusal cases leave $LASTEXITCODE at 1, and a CI pwsh step exits with it.
+    Write-Output 'Firstboot C:\BridgeVM lock: PASS (stand-ins for Get-Acl and Set-Acl)'; exit 0
 } finally {
     Remove-PSDrive -Name C -Scope Global -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $drive) { Remove-Item -LiteralPath $drive -Recurse -Force }
