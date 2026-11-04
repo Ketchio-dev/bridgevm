@@ -54,6 +54,22 @@ final class HvfOwnedStopWaitTests: XCTestCase {
         XCTAssertFalse(f.controller.mayHaveOwnedWork)
     }
 
+    func testALateForceStopStillReachesTheCLIAsAValidObservation() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        f.controller.receive(.message(try f.event("ready", sequence: 1)))
+        f.controller.guestServiceReady()
+        let ticket = try appStop(f)
+        try await waitForControl(f, "shutdown.exe /s /t 0\n")
+        f.clock.value = 600; f.controller.tick() // a CLI stop joins this ticket (NativeRuntimeStopLedger)
+        XCTAssertEqual(f.controller.requestForceStop(try XCTUnwrap(f.controller.forceStopTarget)), .requested)
+        XCTAssertEqual(ticket.observation.deadlineUptime, 642)
+        let target = NativeRuntimeStopTarget(appInstanceID: UUID().uuidString,
+            runToken: f.controller.identity.token.uuidString, processID: f.controller.identity.processID,
+            acceptedConfigurationDigest: String(repeating: "a", count: 64))
+        XCTAssertNoThrow(try NativeRuntimeControlCodec.validate(NativeRuntimeStopObservation(ticket.observation), target: target),
+                         "The escalated deadline is 542 s after admission")
+    }
+
     func testForceStopWithoutTheAgentCancelsTheHeldStopAtOnce() throws {
         let f = try Fixture(); defer { f.clean() }
         f.controller.receive(.message(try f.event("ready", sequence: 1)))

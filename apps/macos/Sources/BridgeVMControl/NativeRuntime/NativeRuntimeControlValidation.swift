@@ -2,10 +2,11 @@ import Foundation
 
 extension NativeRuntimeControlCodec {
     static func validate(_ value: NativeRuntimeStopObservation, target: NativeRuntimeStopTarget) throws {
+        // No bound on the span: the app's Stop waits for Windows until the user's Force Stop, which
+        // sets a later deadline. The CLI's own 210 s wait stays its bound.
         guard NativeRuntimeCodec.validUUID(value.operationID), value.acceptedUptime.isFinite,
               value.deadlineUptime.isFinite, value.acceptedUptime >= 0,
-              value.deadlineUptime >= value.acceptedUptime,
-              value.deadlineUptime - value.acceptedUptime <= 192.001
+              value.deadlineUptime >= value.acceptedUptime
         else { throw NativeRuntimeError.invalidMessage }
         if let complete = value.supervisorComplete {
             guard complete.operationID == nil || complete.operationID == value.operationID,
