@@ -252,8 +252,10 @@ impl VirtPlatform {
     }
 
     /// The NVMe READs and WRITEs the last doorbell queued. The vCPU takes them
-    /// before it unlocks the platform, runs them, then locks it again; that
-    /// hold's drain (`poll_nvme_flushes`) posts their completions.
+    /// before it unlocks the platform and runs them on its `NvmeIoWorker`. If
+    /// they finish within `NVME_IO_WAIT` it locks again and that hold's drain
+    /// (`poll_nvme_flushes`) posts their completions; otherwise the drain that
+    /// `FLUSH_DONE_HOOK` asks for does.
     pub fn take_nvme_io(&mut self) -> Option<NvmeIo> {
         self.nvme.take_io()
     }

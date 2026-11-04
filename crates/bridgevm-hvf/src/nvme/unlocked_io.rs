@@ -8,19 +8,23 @@
 //! write-back raw file, decodes its PRPs and resolves them to host pointers,
 //! holds its completion slot and counts it in flight with the flushes, all
 //! under the lock. The doorbell vCPU takes the jobs before it unlocks
-//! ([`NvmeController::take_io`]), runs the transfers unlocked in its own view of
-//! guest RAM ([`NvmeIo::run`]) and publishes the results to the flush worker's `finished` list; it then
-//! locks again and its drain posts the completions (`complete_flushes`), each
-//! only after its transfer returned. A FUA or write-cache-off WRITE goes on to
-//! the worker's sync from there and completes after it, as inline.
+//! ([`NvmeController::take_io`]) and hands them to its transfer thread
+//! ([`NvmeIoWorker`](super::NvmeIoWorker), io_worker.rs), which runs them in
+//! its view of guest RAM ([`NvmeIo::run`]) and publishes the results to the
+//! flush worker's `finished` list. A vCPU whose transfers finished within
+//! 1 ms locks again and its drain posts the completions (`complete_flushes`);
+//! otherwise it returns to the guest and the drain that `FLUSH_DONE_HOOK` asks
+//! for posts them, each only after its transfer returned. A FUA or
+//! write-cache-off WRITE goes on to the flush worker's sync from there and
+//! completes after it, as inline.
 //!
 //! Every wait for the flushes in flight covers these jobs too: a reset,
 //! shutdown, admin command (queue deletion among them), restore or export
-//! waits under the lock, and the vCPU running the transfer publishes without
-//! it, so nothing deadlocks, and a reset returns only after any READ has
-//! written guest RAM. The vCPU carries no job across the unlock: completions
-//! exist only in `finished`, which those paths post or drop under the lock,
-//! so none can reach a queue deleted or re-created meanwhile.
+//! waits under the lock, and the thread running the transfer publishes
+//! without it, so nothing deadlocks, and a reset returns only after any READ
+//! has written guest RAM. Completions exist only in `finished`, which those
+//! paths post or drop under the lock, so none can reach a queue deleted or
+//! re-created meanwhile.
 
 use std::fs::File;
 use std::io;
@@ -95,7 +99,8 @@ fn copy_all(fd: RawFd, ptr: *mut u8, len: usize, offset: u64, write: bool) -> io
 }
 
 /// The READs and WRITEs a doorbell queued. Run them after dropping the
-/// platform lock; the next drain under the lock posts their completions.
+/// platform lock, on the vCPU's [`NvmeIoWorker`](super::NvmeIoWorker); the
+/// next drain under the lock posts their completions.
 #[must_use = "a waiting reset or admin command blocks until the jobs finish"]
 pub struct NvmeIo {
     jobs: Vec<IoJob>,
@@ -106,7 +111,7 @@ pub struct NvmeIo {
 
 impl NvmeIo {
     /// Run the transfers in order and publish their results. `mem` is the
-    /// calling vCPU's view of the guest RAM the doorbell checked them in.
+    /// calling thread's view of the guest RAM the doorbell checked them in.
     pub fn run(mut self, mem: &dyn GuestMemoryMut) {
         let jobs = std::mem::take(&mut self.jobs);
         self.publish(jobs, |job| {
@@ -245,9 +250,15 @@ pub(crate) mod test_gate {
         /// (closed, transfers that reached the gate)
         state: Mutex<(bool, usize)>,
         changed: Condvar,
+        /// The name of the thread each transfer ran on.
+        threads: Mutex<Vec<String>>,
     }
 
     impl IoGate {
+        pub(crate) fn threads(&self) -> Vec<String> {
+            lock(&self.threads).clone()
+        }
+
         pub(crate) fn close(&self) {
             lock(&self.state).0 = true;
         }
@@ -276,6 +287,8 @@ pub(crate) mod test_gate {
         }
 
         pub(crate) fn pass(&self) {
+            let thread = std::thread::current().name().unwrap_or_default().to_owned();
+            lock(&self.threads).push(thread);
             let mut state = lock(&self.state);
             state.1 += 1;
             self.changed.notify_all();

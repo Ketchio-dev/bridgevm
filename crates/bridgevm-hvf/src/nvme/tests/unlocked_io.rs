@@ -1,5 +1,6 @@
 //! READ and WRITE without the platform lock (unlocked_io.rs). The doorbell
-//! queues the transfer; the vCPU runs it after unlocking, and a drain under
+//! queues the transfer; the vCPU runs it after unlocking, or hands it to its
+//! worker and waits at most `NVME_IO_WAIT` (io_worker.rs), and a drain under
 //! the lock posts the completion. `Mutex<(NvmeController, FakeMem)>` stands
 //! in for the platform lock where another vCPU acts during a held transfer.
 
@@ -481,5 +482,169 @@ fn a_transfer_dropped_unrun_fails_without_touching_guest_ram() {
     ctrl.complete_flushes(&mut mem, &mut events, true);
     assert_eq!(cqe(&mem, IO_CQ_BASE, 0), (0x91, SC_INTERNAL_DEVICE_ERROR));
     assert_eq!(byte_at(&mem, DATA_BASE), 0, "guest RAM untouched");
+    let _ = fs::remove_file(path);
+}
+
+/// A transfer thread over `mem`'s bytes, as the probe gives each vCPU one.
+fn worker_for(mem: &FakeMem) -> NvmeIoWorker {
+    let view = mem.view();
+    NvmeIoWorker::new("nvme-io-test", move || view)
+}
+
+fn wait_until(mut ready: impl FnMut() -> bool) {
+    let give_up = Instant::now() + Duration::from_secs(5);
+    while !ready() {
+        assert!(Instant::now() < give_up, "timed out");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+/// The vCPU hands the queued transfer to its worker, which holds it at the
+/// gate, and must be back within the wait; `act` then runs while a thread
+/// releases the transfer 150 ms after the hand-off began. Returns what `act`
+/// returned and how long it took.
+fn while_detached<R>(
+    ctrl: &mut NvmeController,
+    mem: &mut FakeMem,
+    act: impl FnOnce(&mut NvmeController, &mut FakeMem) -> R,
+) -> (R, Duration) {
+    let gate = Arc::clone(&ctrl.io_gate);
+    gate.close();
+    let io = ctrl.take_io().expect("the doorbell queued a transfer");
+    let mut worker = worker_for(mem);
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            std::thread::sleep(Duration::from_millis(150));
+            gate.open();
+        });
+        let start = Instant::now();
+        let posted_now = worker.run(io, &*mem, NVME_IO_WAIT);
+        let returned = start.elapsed();
+        assert!(
+            !posted_now && returned < Duration::from_millis(50),
+            "the vCPU waited {returned:?} for the held transfer"
+        );
+        assert!(gate.reached(1), "the worker holds the transfer");
+        let start = Instant::now();
+        let result = act(ctrl, mem);
+        (result, start.elapsed())
+    })
+}
+
+#[test]
+fn a_held_read_returns_the_vcpu_and_completes_only_after_release() {
+    let (mut ctrl, mut mem, path) = unlocked_controller("io-worker-detach");
+    ring(&mut ctrl, &mut mem, 0, &read(0x13, 3, DATA_BASE));
+    let (held, _) = while_detached(&mut ctrl, &mut mem, |ctrl, mem| {
+        (
+            drain(ctrl, mem).len(),
+            cqe(mem, IO_CQ_BASE, 0),
+            ctrl.flush_reserved_slots(1),
+            ctrl.flushes_in_flight(),
+        )
+    });
+    assert_eq!(
+        held,
+        (0, (0, 0), 1, true),
+        "while held: no completion, its CQ slot kept, still in flight"
+    );
+    // After the release the worker publishes; the drain it asks for posts it.
+    wait_until(|| ctrl.flushes_ready());
+    assert_eq!(drain(&mut ctrl, &mut mem).len(), 1);
+    assert_eq!(cqe(&mem, IO_CQ_BASE, 0), (0x13, SC_SUCCESS));
+    assert_eq!(byte_at(&mem, DATA_BASE), block_byte(3));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn a_reset_waits_for_a_read_its_vcpu_left_to_the_worker() {
+    let (mut ctrl, mut mem, path) = unlocked_controller("io-worker-reset");
+    ring(&mut ctrl, &mut mem, 0, &read(0x23, 3, DATA_BASE));
+    let ((), waited) = while_detached(&mut ctrl, &mut mem, |ctrl, _| {
+        ctrl.mmio_write(REG_CC, 4, 0);
+    });
+    assert!(
+        waited >= Duration::from_millis(40),
+        "returned after {waited:?}"
+    );
+    assert_eq!(
+        byte_at(&mem, DATA_BASE),
+        block_byte(3),
+        "the READ landed first"
+    );
+    assert!(
+        !ctrl.flushes_in_flight() && !ctrl.flushes_ready(),
+        "the reset dropped its completion with the queues"
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn a_queue_deletion_waits_for_a_read_its_vcpu_left_to_the_worker() {
+    let (mut ctrl, mut mem, path) = unlocked_controller("io-worker-delete-sq");
+    ring(&mut ctrl, &mut mem, 0, &read(0x33, 3, DATA_BASE));
+    let (events, waited) = while_detached(&mut ctrl, &mut mem, |ctrl, mem| {
+        let delete_sq = encode_sqe(ADMIN_OP_DELETE_IO_SQ, 0x34, 0, 0, 1, 0, 0);
+        assert!(mem.write_bytes(ASQ_BASE + 2 * SQ_ENTRY_SIZE, &delete_sq));
+        ctrl.mmio_write(REG_DOORBELL_BASE, 4, 3);
+        ctrl.process(mem)
+    });
+    assert!(
+        waited >= Duration::from_millis(40),
+        "returned after {waited:?}"
+    );
+    let cqids: Vec<u16> = events.iter().map(|event| event.cqid).collect();
+    assert_eq!(cqids, [1, 0], "the READ completes before the deletion");
+    assert_eq!(cqe(&mem, IO_CQ_BASE, 0), (0x33, SC_SUCCESS));
+    assert_eq!(cqe(&mem, ACQ_BASE, 2), (0x34, SC_SUCCESS));
+    assert_eq!(byte_at(&mem, DATA_BASE), block_byte(3));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn a_fua_write_its_vcpu_left_to_the_worker_syncs_before_its_completion() {
+    let (mut ctrl, mut mem, path) = unlocked_controller("io-worker-fua");
+    let syncs = flush_mode::recorded_syncs(&path).len();
+    assert!(mem.write_bytes(DATA_BASE, &[0xa5; LBA_SIZE]));
+    ring(&mut ctrl, &mut mem, 0, &write(0x73, 1, DATA_BASE, FUA));
+    while_detached(&mut ctrl, &mut mem, |_, _| ());
+    wait_until(|| ctrl.flushes_ready());
+    assert_eq!(file_block(&path, 1), [0xa5; LBA_SIZE]);
+    assert!(
+        drain(&mut ctrl, &mut mem).is_empty(),
+        "its sync comes first"
+    );
+    let mut events = Vec::new();
+    ctrl.complete_flushes(&mut mem, &mut events, true);
+    assert_eq!(events.len(), 1);
+    assert_eq!(cqe(&mem, IO_CQ_BASE, 0), (0x73, SC_SUCCESS));
+    assert_eq!(cqe(&mem, IO_CQ_BASE, 1), (0, 0), "exactly one completion");
+    assert_eq!(flush_mode::recorded_syncs(&path).len(), syncs + 1);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn a_quick_transfer_runs_on_the_worker_and_its_vcpu_posts_it() {
+    let (mut ctrl, mut mem, path) = unlocked_controller("io-worker-fast");
+    ring(&mut ctrl, &mut mem, 0, &read(0x15, 2, DATA_BASE));
+    let mut worker = worker_for(&mem);
+    let io = ctrl.take_io().expect("a queued transfer");
+    // A wait no test host misses: this pins the path, not the timing.
+    assert!(
+        worker.run(io, &mem, Duration::from_secs(5)),
+        "it finished within the wait"
+    );
+    assert_eq!(
+        ctrl.io_gate.threads(),
+        ["nvme-io-test"],
+        "the worker ran it"
+    );
+    assert_eq!(
+        drain(&mut ctrl, &mut mem).len(),
+        1,
+        "the vCPU's second hold posts it"
+    );
+    assert_eq!(cqe(&mem, IO_CQ_BASE, 0), (0x15, SC_SUCCESS));
+    assert_eq!(byte_at(&mem, DATA_BASE), block_byte(2));
     let _ = fs::remove_file(path);
 }
