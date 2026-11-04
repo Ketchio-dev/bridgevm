@@ -62,24 +62,44 @@ pub(super) const fn transfer_event_control(slot_id: u32, endpoint_id: u32) -> u3
         | (TRB_TYPE_TRANSFER_EVENT << TRB_TYPE_SHIFT)
 }
 
+/// The Event Data TRB a Normal TRB chains to.
+pub(super) struct ChainedEventData {
+    pub(super) trb: InterruptTransferTrb,
+    /// The TD crossed a Link TRB with Toggle Cycle set: the consumer cycle
+    /// state flips for every TRB after it.
+    pub(super) toggles_cycle: bool,
+}
+
+/// When the Normal TRB is the last slot before its segment's Link TRB, the TD
+/// crosses the Link TRB and the Event Data TRB is the first slot it points
+/// to, in the next cycle pass if the Link TRB toggles the cycle bit.
 pub(super) fn read_chained_event_data(
     mem: &dyn GuestMemoryMut,
     normal: &InterruptTransferTrb,
     dcs: bool,
-) -> Option<InterruptTransferTrb> {
+) -> Option<ChainedEventData> {
     if normal.control & TRB_CHAIN == 0 {
         return None;
     }
-    let event_data_gpa = normal.gpa.checked_add(TRB_SIZE_BYTES)?;
-    let event_data = read_transfer_trb(mem, event_data_gpa)?;
-    let expected_cycle = if dcs { TRB_CYCLE } else { 0 };
-    if event_data.control & TRB_CYCLE != expected_cycle
-        || trb_type(event_data.control) != TRB_TYPE_EVENT_DATA
-        || event_data.control & TRB_IOC == 0
+    let mut trb = read_transfer_trb(mem, normal.gpa.checked_add(TRB_SIZE_BYTES)?)?;
+    let mut cycle = dcs;
+    let mut toggles_cycle = false;
+    if trb_type(trb.control) == TRB_TYPE_LINK && has_cycle(&trb, cycle) {
+        toggles_cycle = trb.control & TRB_LINK_TOGGLE_CYCLE != 0;
+        cycle ^= toggles_cycle;
+        trb = read_transfer_trb(mem, trb.parameter & LINK_TRB_POINTER_MASK)?;
+    }
+    if !has_cycle(&trb, cycle)
+        || trb_type(trb.control) != TRB_TYPE_EVENT_DATA
+        || trb.control & TRB_IOC == 0
     {
         return None;
     }
-    Some(event_data)
+    Some(ChainedEventData { trb, toggles_cycle })
+}
+
+fn has_cycle(trb: &InterruptTransferTrb, cycle: bool) -> bool {
+    (trb.control & TRB_CYCLE != 0) == cycle
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
