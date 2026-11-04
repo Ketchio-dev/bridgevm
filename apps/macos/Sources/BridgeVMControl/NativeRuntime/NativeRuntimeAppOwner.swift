@@ -51,6 +51,11 @@ final class NativeRuntimeAppOwner {
         return startup
     }
 
+    /// The sessions a quit must stop first; none before the library model exists.
+    static var terminationSessions: [ControlAppTerminationSession] {
+        prepared?.cache.retainedValue?.appTerminationSessions() ?? []
+    }
+
     static func shutdown() {
         if let startup = prepared?.startup { startup.close() }
         else { prepared?.owner.close() }

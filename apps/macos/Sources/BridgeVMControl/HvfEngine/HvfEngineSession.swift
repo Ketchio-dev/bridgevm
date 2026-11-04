@@ -32,6 +32,7 @@ final class HvfEngineSession: ObservableObject {
     var process: Process?
     var ownedController: HvfOwnedRunController?
     @Published var forceStopTarget: HvfForceStopTarget?
+    @Published var stopWait: HvfGuestStopWait? // what Windows is doing while a Stop waits for it
     var runtimeTransitionInProgress = false
     var timer: Timer?
     var tailReader = TailOffsetReader()
@@ -98,7 +99,7 @@ final class HvfEngineSession: ObservableObject {
         guard !runtimeStartupWorkerPending else { return .notOwned }
         if let controller = ownedController {
             let existing = controller.operation != nil
-            _ = requestOwnedStop(target: controller.identity, operationID: UUID())
+            _ = requestOwnedStop(target: controller.identity, operationID: UUID(), afterGrace: .offerForceStop)
             return existing ? .alreadyStopping(deadline: nil) : .requested(deadline: nil)
         }
         if connectionState == .stopping { return .alreadyStopping(deadline: stopDeadline) }
@@ -326,9 +327,7 @@ final class HvfEngineSession: ObservableObject {
             }
         }
         flushDisplayResize()
-        let connected: Bool
-        if case .connected = connectionState { connected = true } else { connected = false }
-        inputDriver.poll(binding: inputBinding, serviceReady: serviceStarted && connected, lines: lines) { [self] command in
+        inputDriver.poll(binding: inputBinding, serviceReady: serviceStarted && guestTakesInput, lines: lines) { [self] command in
             guard command.utf8.count <= 87_434, !command.contains("\n"),
                   !command.contains("\r"), !command.contains("\0") else { return false }
             return appendControlCommand(command)
@@ -369,6 +368,7 @@ final class HvfEngineSession: ObservableObject {
         stopCommandSent = false
         stopDeadline = nil
         if forceStopTarget != nil { forceStopTarget = nil }
+        if stopWait != nil { stopWait = nil }
         guiStartCleanupOnly = false
         connectionState = .stopped
         runtimeTransitionInProgress = false
@@ -393,6 +393,16 @@ final class HvfEngineSession: ObservableObject {
         liveInputWriteFailureReported = false
         displayResize.deviceRestarted() // a new run's display starts at its default size; an attached one is unknown
         if clearEvents { events = [] }
+    }
+
+    /// Windows keeps its input while a Stop waits for it to shut down: the user may still have to save
+    /// or answer Windows' "apps are preventing shutdown" screen. Force Stop or cancellation ends that.
+    /// A Stop keeps an open ordered channel but never opens one: a new negotiation would write to a
+    /// control file the Stop may have found replaced. Until then input uses the legacy device path.
+    private var guestTakesInput: Bool {
+        if case .connected = connectionState { return true }
+        return connectionState == .stopping && inputDriver.router.activated
+            && ownedController?.waitsForGuestShutdown == true
     }
 
     private var inputBinding: [String] {

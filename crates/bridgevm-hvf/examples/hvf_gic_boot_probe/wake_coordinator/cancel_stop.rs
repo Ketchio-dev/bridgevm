@@ -5,13 +5,14 @@ use std::sync::Arc;
 
 /// Why a canceled exit should end the run, or None to keep going.
 ///
-/// The deadline watchdog is rebuilt per reboot generation; the other two
+/// The deadline watchdog is rebuilt per reboot generation; the other
 /// signals live for the whole run. A canceled exit with no signal is a benign
 /// automation wake, never a guessed terminal event.
 pub(crate) fn cancel_stop_reason(
     watchdog_fired: &AtomicBool,
     stall_kill_fired: Option<&Arc<AtomicBool>>,
     host_diagnostic_stop_fired: Option<&Arc<AtomicBool>>,
+    host_term_requested: &AtomicBool,
 ) -> Option<&'static str> {
     if watchdog_fired.load(Ordering::SeqCst) {
         return Some("watchdog (CANCELED)");
@@ -19,9 +20,12 @@ pub(crate) fn cancel_stop_reason(
     if stall_kill_fired.is_some_and(|fired| fired.load(Ordering::SeqCst)) {
         return Some("boot-progress stall (kill mode)");
     }
-    host_diagnostic_stop_fired
-        .is_some_and(|fired| fired.load(Ordering::SeqCst))
-        .then_some("host diagnostic stop requested")
+    if host_diagnostic_stop_fired.is_some_and(|fired| fired.load(Ordering::SeqCst)) {
+        return Some("host diagnostic stop requested");
+    }
+    host_term_requested
+        .load(Ordering::SeqCst)
+        .then_some(crate::HOST_TERM_STOP_REASON)
 }
 
 #[cfg(test)]

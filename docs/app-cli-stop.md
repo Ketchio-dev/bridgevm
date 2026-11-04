@@ -16,12 +16,16 @@ retarget the request. Attached observations and legacy wrapper launches cannot
 be stopped through this command; ambiguous targets are refused.
 
 The command waits for the accepted operation. When the guest control service is
-ready, the app attempts its existing `shutdown.exe /p /f` command using the file
-identity retained at launch. It allows up to 180 seconds before requesting
-runner cancellation, followed by up to 12 seconds to observe cleanup. If the
-guest control file was replaced, the app requests runner cancellation without
-writing to the replacement. Each retained helper and TPM process gets a TERM
-grace period, then KILL and reap observation if needed. While cleanup is unconfirmed, an exhausted deadline blocks another launch or
+ready, the app sends `shutdown.exe /s /t 0` using the file identity retained at
+launch; Windows asks its apps to close, so an app with unsaved work can hold the
+shutdown on Windows' own screen. The command allows up to 180 seconds before
+requesting runner cancellation, followed by up to 12 seconds to observe cleanup.
+If the guest control file was replaced, the app requests runner cancellation
+without writing to the replacement. Each retained helper and TPM process gets a
+TERM grace period, then KILL and reap observation if needed; on TERM the HVF
+helper stops its vCPUs and saves the UEFI vars and disk before it exits. If the
+app's own Stop is already waiting for Windows, the command joins that operation,
+which does not end by itself after 180 seconds: the app offers Force Stop instead. While cleanup is unconfirmed, an exhausted deadline blocks another launch or
 destructive library work. A later fully validated cleanup can release ownership,
 but the original operation keeps its missed-deadline failure.
 

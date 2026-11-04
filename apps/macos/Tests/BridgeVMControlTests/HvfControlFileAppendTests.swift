@@ -16,7 +16,7 @@ final class HvfControlFileAppendTests: XCTestCase {
         try HvfControlFileAppend.append(Data("KEYINPUT fixture enter\n".utf8), to: control) { descriptor, bytes, count in
             writes += 1
             // The GUI writer is ready. Let the real background owner append shutdown before its write.
-            owner.request { delivered in
+            owner.request(.shutdown) { delivered in
                 XCTAssertTrue(delivered)
                 finished.signal()
             }
@@ -25,7 +25,7 @@ final class HvfControlFileAppendTests: XCTestCase {
         }
         XCTAssertEqual(writes, 1)
         XCTAssertEqual(try String(contentsOf: control, encoding: .utf8),
-                       "existing\nshutdown.exe /p /f\nKEYINPUT fixture enter\n")
+                       "existing\nshutdown.exe /s /t 0\nKEYINPUT fixture enter\n")
     }
 
     func testPartialOrFailedWriteIsRefusedWithoutRetry() throws {
