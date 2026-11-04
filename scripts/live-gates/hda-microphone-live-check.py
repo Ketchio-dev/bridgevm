@@ -11,7 +11,9 @@ share it runs scripts/win-assets/bv-mic-capture.ps1, which lists Windows' captur
 endpoints and captures the default one for 3 s in WASAPI exclusive mode.
 
 It starts after 60 s with no other VM (pgrep -x) and a 1-minute load under --load-max. A
-signed sentinel named like the VMM runs only while the run does. The clones are deleted.
+signed sentinel named like the VMM runs only while the run does. NAME is one path
+component; the run creates ~/.bvm-perf-internal/lanes/NAME itself, refusing one that
+exists, and deletes only that lane, with the clones in it.
 
 Pass, fixed before the first run:
   - Windows lists at least one capture endpoint, and every one has status OK;
@@ -26,6 +28,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import struct
@@ -78,6 +81,13 @@ def wait_for_quiet_host(load_max, limit_s=12 * 3600):
             return True
         time.sleep(5)
     return False
+
+
+def lane_name(value):
+    """A lane directory name: one path component, never '.', '..' or a path."""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", value):
+        raise argparse.ArgumentTypeError(f"{value!r} is not one path component of letters, digits, '.', '_' or '-'")
+    return value
 
 
 def copy_executable(source, target):
@@ -165,7 +175,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--probe", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--name", default=time.strftime("hda-mic-%Y%m%d-%H%M%S", time.gmtime()))
+    parser.add_argument("--name", type=lane_name, default=time.strftime("hda-mic-%Y%m%d-%H%M%S", time.gmtime()))
     parser.add_argument("--load-max", type=float, default=12.0)
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=False)
@@ -174,12 +184,16 @@ def main():
                "commit": subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True,
                                         text=True).stdout.strip()}
     holder = proc = None
+    created = False  # only a lane this run created is ever read from or deleted
     try:
         while True:
             log(f"waiting for 60 s with no other VM and load < {args.load_max}")
             if not wait_for_quiet_host(args.load_max):
                 raise RuntimeError("the host was not quiet within 12 h")
-            lane.mkdir(parents=True, exist_ok=True)
+            if not created:
+                (CANON / "lanes").mkdir(exist_ok=True)
+                lane.mkdir()  # exclusive: another run's lane is refused, never reused
+                created = True
             sentinel = lane / "sentinel" / "hvf_gic_boot_probe"
             sentinel.parent.mkdir(exist_ok=True)
             copy_executable("/bin/sleep", sentinel)
@@ -263,14 +277,15 @@ def main():
     finally:
         run_log = lane / "hvf" / "run.log"
         host_lines = []
-        if run_log.exists():
+        if created and run_log.exists():
             shutil.copyfile(run_log, args.out / "run.log")
             host_lines = run_log.read_text("utf-8", "replace").splitlines()
         if holder is not None:
             holder.kill()
             holder.wait()
-        shutil.rmtree(lane, ignore_errors=True)
-        summary["lane_deleted"] = not lane.exists()
+        if created:
+            shutil.rmtree(lane, ignore_errors=True)
+        summary["lane_created"], summary["lane_deleted"] = created, created and not lane.exists()
         summary["checks"], summary["pass"] = verdict(summary.get("endpoints") or [], summary.get("capture"),
                                                      host_lines)
         summary["pass"] = summary["pass"] and "error" not in summary
