@@ -245,9 +245,11 @@ final class HvfEngineSession: ObservableObject {
         return writeLiveInput(line)
     }
 
-    /// The display view's size in points; `settled` (live resize ended) sends it without the debounce.
-    func displayViewResized(to points: CGSize, settled: Bool) {
-        displayResize.viewResized(to: points, at: ProcessInfo.processInfo.systemUptime)
+    /// The display view's size in points and its window's backing scale factor; `settled` (live resize
+    /// ended) sends it without the debounce.
+    func displayViewResized(to points: CGSize, scale: CGFloat = 1, settled: Bool) {
+        displayResize.retina = config.requestsRetinaResolution
+        displayResize.viewResized(to: .init(points: points, scale: scale), at: ProcessInfo.processInfo.systemUptime)
         if settled {
             displayResize.settle()
             flushDisplayResize()
@@ -255,6 +257,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     private func flushDisplayResize() {
+        displayResize.retina = config.requestsRetinaResolution
         guard let size = displayResize.take(at: ProcessInfo.processInfo.systemUptime),
               appendDisplayResize(size) else { return }
         displayResize.didSend(size)

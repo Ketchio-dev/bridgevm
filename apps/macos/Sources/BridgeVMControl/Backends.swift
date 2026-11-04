@@ -43,6 +43,7 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     var virtioDisplayDriverInstalled: Bool? = nil  // nil == false; true: the Microsoft-signed virtio-win display driver is installed or staged in this guest, so a 3D-off launch attaches the 2D virtio-gpu (HVF only)
     var clipboardSyncEnabled: Bool? = nil  // nil == default on; false keeps two-way clipboard sync off (HVF only)
     var durableDiskWritesEnabled: Bool? = nil  // nil == off: guest flushes are ordered, durable within ~1 s; true: every flush waits for F_FULLFSYNC (HVF only)
+    var retinaResolution: Bool? = nil  // nil == off; true: on a HiDPI screen the 2D virtio display asks for the window's backing pixels at the screen's scale, up to a size the display driver takes (HVF only)
     var guestResolution: String? = nil  // Windows display "WxH"; nil == automatic: the VMM's 1280x800 unless the VM's firmware already has one (HVF only)
     var sharedFolderHostPath: String? = nil, sharedFolderGuestPath: String? = nil  // user-chosen pair; nil == no sharing (HVF only)
     /// A config can be imported or hand-edited, so never trust its persisted ID
