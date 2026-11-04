@@ -51,14 +51,28 @@ pub(crate) fn attach_boot_media(
         // Checkpoints capture no flush in flight, so they keep the inline sync,
         // which is durable: no worker timer follows an inline barrier.
         let var = |name| std::env::var_os(name).is_some_and(|v| !v.is_empty());
-        let inline = std::env::var("BRIDGEVM_NVME_ASYNC_FLUSH").as_deref() == Ok("0")
-            || var("BRIDGEVM_CHECKPOINT_STATE")
-            || var("BRIDGEVM_RESTORE_STATE");
+        let checkpoint = var("BRIDGEVM_CHECKPOINT_STATE") || var("BRIDGEVM_RESTORE_STATE");
+        let inline = std::env::var("BRIDGEVM_NVME_ASYNC_FLUSH").as_deref() == Ok("0") || checkpoint;
         platform.set_nvme_async_flush(!inline);
         println!(
             "NVMe flush: {}, host sync {}",
             if inline { "inline" } else { "worker thread" },
             bridgevm_hvf::nvme::host_sync_label(inline)
+        );
+        let unlocked = nvme_unlocked_io(
+            std::env::var("BRIDGEVM_NVME_UNLOCKED_IO").ok().as_deref(),
+            checkpoint,
+        );
+        platform.set_nvme_unlocked_io(unlocked);
+        println!(
+            "NVMe I/O: {}",
+            if unlocked {
+                "unlocked (reads and writes run on per-vCPU workers without the platform lock; a vCPU waits at most 1 ms; BRIDGEVM_NVME_UNLOCKED_IO=0 opts out)"
+            } else if checkpoint {
+                "under the platform lock (checkpoints keep reads and writes inline)"
+            } else {
+                "under the platform lock (BRIDGEVM_NVME_UNLOCKED_IO=0)"
+            }
         );
     }
     let mut pci_installer_iso_attached = false;
@@ -175,6 +189,15 @@ fn guest_resolution(
             (vars, mode)
         }
     }
+}
+
+/// NVMe reads and writes run without the platform lock, on per-vCPU workers
+/// that a vCPU waits at most 1 ms for, unless `BRIDGEVM_NVME_UNLOCKED_IO=0`.
+/// Under host disk pressure this took away the VM-freeze tail without the late
+/// audio service that vCPU-run transfers caused (PR #489, reruns R2 and R3).
+/// Checkpoints keep the I/O inline: they capture none in flight.
+fn nvme_unlocked_io(setting: Option<&str>, checkpoint: bool) -> bool {
+    setting != Some("0") && !checkpoint
 }
 
 #[cfg(test)]

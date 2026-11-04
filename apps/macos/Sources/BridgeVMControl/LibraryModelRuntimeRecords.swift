@@ -1,6 +1,16 @@
 import Foundation
 
 extension LibraryModel {
+    /// Every runtime session the app holds, retained ones included, each once.
+    func appTerminationSessions() -> [HvfEngineSession] {
+        var seen: Set<ObjectIdentifier> = []
+        let retained = retainedControlStore.records.compactMap { record -> HvfEngineSession? in
+            guard case let .runtime(_, session) = record.descriptor else { return nil }
+            return session
+        }
+        return (hvfRuntimeSessions.sessions + retained).filter { seen.insert(ObjectIdentifier($0)).inserted }
+    }
+
     /// Existing handles only: no session factory, process scan, or guest effect.
     func runtimeRecords(slug: String) throws -> [HvfRuntimeSessionRecord] {
         var records: [HvfRuntimeSessionRecord] = []

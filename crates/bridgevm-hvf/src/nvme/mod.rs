@@ -18,6 +18,7 @@ mod identify;
 mod identify_command;
 mod interrupts;
 mod io;
+mod io_worker;
 mod io_write;
 mod log_page;
 mod namespace;
@@ -31,6 +32,7 @@ mod registers;
 mod snapshot;
 mod stream;
 mod trace;
+mod unlocked_io;
 
 #[cfg(test)]
 mod tests;
@@ -44,9 +46,11 @@ pub(crate) use flush_worker::FlushWorker;
 pub use flush_worker::FLUSH_DONE_HOOK;
 pub(crate) use identify::*;
 pub use interrupts::*;
+pub use io_worker::{NvmeIoWorker, NVME_IO_WAIT};
 pub use namespace::*;
 pub use protocol::*;
 pub(crate) use prp::*;
 pub use queue::*;
 pub use registers::*;
 pub use trace::*;
+pub use unlocked_io::NvmeIo;

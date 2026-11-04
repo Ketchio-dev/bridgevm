@@ -1,9 +1,24 @@
 use super::*;
 
 fn reason(watchdog: bool, stall: bool, diagnostic: bool) -> Option<&'static str> {
+    reason_with_term(watchdog, stall, diagnostic, false)
+}
+
+fn reason_with_term(
+    watchdog: bool,
+    stall: bool,
+    diagnostic: bool,
+    term: bool,
+) -> Option<&'static str> {
     let stall = Arc::new(AtomicBool::new(stall));
     let diagnostic = Arc::new(AtomicBool::new(diagnostic));
-    cancel_stop_reason(&AtomicBool::new(watchdog), Some(&stall), Some(&diagnostic))
+    let term = AtomicBool::new(term);
+    cancel_stop_reason(
+        &AtomicBool::new(watchdog),
+        Some(&stall),
+        Some(&diagnostic),
+        &term,
+    )
 }
 
 #[test]
@@ -21,5 +36,9 @@ fn each_flag_names_itself() {
     assert_eq!(
         reason(false, false, true),
         Some("host diagnostic stop requested")
+    );
+    assert_eq!(
+        reason_with_term(false, false, false, true),
+        Some("host stop requested (SIGTERM)")
     );
 }

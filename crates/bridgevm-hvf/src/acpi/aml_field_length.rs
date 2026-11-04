@@ -41,6 +41,13 @@ pub(crate) fn aml_method(name: &[u8; 4], arg_count: u8, serialized: bool, body: 
     out
 }
 
+pub(crate) fn aml_notify(object: &[u8], value: &[u8]) -> Vec<u8> {
+    let mut out = vec![AML_NOTIFY_OP];
+    out.extend_from_slice(object);
+    out.extend_from_slice(value);
+    out
+}
+
 pub(crate) fn resource_memory32_fixed(base: u64, size: u64) -> Vec<u8> {
     let base = u32::try_from(base).expect("Memory32Fixed base exceeds 32 bits");
     let size = u32::try_from(size).expect("Memory32Fixed size exceeds 32 bits");
@@ -53,6 +60,12 @@ pub(crate) fn resource_memory32_fixed(base: u64, size: u64) -> Vec<u8> {
 pub(crate) fn resource_interrupt(gsiv: u32) -> Vec<u8> {
     let mut out = vec![0x89, 0x06, 0x00, 0x01, 0x01]; // Consumer, level, active-high, exclusive
     out.extend_from_slice(&gsiv.to_le_bytes());
+    out
+}
+
+pub(crate) fn resource_edge_interrupt(gsiv: u32) -> Vec<u8> {
+    let mut out = resource_interrupt(gsiv);
+    out[3] |= 0x02; // Edge-triggered
     out
 }
 
@@ -230,6 +243,43 @@ pub(crate) fn build_pci_root_osc_method() -> Vec<u8> {
     body.extend(aml_else(&unknown_uuid_body));
     body.extend(aml_return(&aml_arg(3)));
     aml_method(b"_OSC", 4, false, &body)
+}
+
+/// Generic Event Device that turns a host power-button press into
+/// `Notify (PWRB, 0x80)`, with the name, address, SPI and `_EVT` shape of the
+/// GED that QEMU virt describes. The register model is [`crate::acpi_ged`].
+pub(crate) fn build_ged_dsdt_device() -> Vec<u8> {
+    let mut crs = resource_edge_interrupt(machine::spi_to_intid(machine::SPI_ACPI_GED));
+    crs.extend(resource_end_tag());
+
+    // Local0 = ESEL; If ((Local0 & 2) == 2) { Notify (PWRB, 0x80) }
+    let local0 = aml_local0();
+    let event = aml_byte(crate::acpi_ged::GED_EVENT_POWER_BUTTON as u8);
+    let mut evt = aml_store(&aml_name_ref(b"ESEL"), &local0);
+    evt.extend(aml_if(
+        &aml_equal(
+            &aml_binary_op(AML_AND_OP, &local0, &event, &[AML_ZERO_OP]),
+            &event,
+        ),
+        &aml_notify(&aml_name_ref(b"PWRB"), &aml_byte(0x80)),
+    ));
+
+    let mut body = Vec::new();
+    body.extend(aml_name_string(b"_HID", "ACPI0013"));
+    body.extend(aml_name_string(b"_UID", "GED"));
+    body.extend(aml_name_buffer(b"_CRS", &crs));
+    body.extend(aml_operation_region(
+        b"EREG",
+        &aml_dword(machine::ACPI_GED.base as u32),
+        &aml_byte(machine::ACPI_GED.size as u8),
+    ));
+    body.extend(aml_field(
+        b"EREG",
+        0x43, // DWordAcc, NoLock, WriteAsZeros
+        &[(b"ESEL", 32)],
+    ));
+    body.extend(aml_method(b"_EVT", 1, true, &evt));
+    aml_device(b"GED_", &body)
 }
 
 pub(crate) fn build_power_button_dsdt_device() -> Vec<u8> {
@@ -473,7 +523,8 @@ pub(crate) fn build_tpm2() -> Vec<u8> {
 /// DSDT surface for devices Linux and Windows enumerate through ACPI.
 /// MADT/GTDT/MCFG/SPCR/DBG2 carry the architectural tables, while this AML names
 /// the platform devices the OS driver core expects to bind (`ACPI0007` CPU
-/// devices, `ARMH0011` PL011, `PNP0A08` PCI root bridge and a power button).
+/// devices, `ARMH0011` PL011, `PNP0A08` PCI root bridge, and a power button
+/// with the `ACPI0013` Generic Event Device that signals it).
 pub(crate) fn build_dsdt(cpu_count: u64, devices: AcpiDeviceConfig) -> Vec<u8> {
     let mut sb = Vec::new();
     for cpu in 0..cpu_count {
@@ -482,6 +533,7 @@ pub(crate) fn build_dsdt(cpu_count: u64, devices: AcpiDeviceConfig) -> Vec<u8> {
     sb.extend(build_pl011_dsdt_device());
     sb.extend(build_pci_root_dsdt_device());
     sb.extend(build_ecam_reserved_dsdt_device());
+    sb.extend(build_ged_dsdt_device());
     sb.extend(build_power_button_dsdt_device());
     if devices.tpm_tis_present {
         sb.extend(build_tpm_tis_dsdt_device());

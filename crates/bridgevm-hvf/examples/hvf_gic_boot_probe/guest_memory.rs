@@ -1,6 +1,7 @@
 //! Guest RAM mappings and GPU shared-memory mapping.
 
 use crate::*;
+use bridgevm_hvf::nvme::NvmeIoWorker;
 
 /// A GuestMemoryMut view over the actual HVF-mapped guest RAM, so fw_cfg DMA
 /// reads/writes hit real firmware memory (not a throwaway buffer).
@@ -8,6 +9,18 @@ pub(crate) struct MappedRam {
     pub(crate) base: u64,
     pub(crate) ptr: *mut u8,
     pub(crate) len: usize,
+}
+
+/// vCPU `index`'s NVMe transfer thread, over its own view of the guest RAM at
+/// `ram`/`len` (bridgevm_hvf::nvme::NvmeIoWorker; the thread starts with the
+/// first unlocked transfer). Declare it after the RAM backing: dropping it
+/// joins the thread.
+pub(crate) fn vcpu_nvme_io_worker(index: u64, ram: usize, len: usize) -> NvmeIoWorker {
+    NvmeIoWorker::new(format!("nvme-io-{index}"), move || MappedRam {
+        base: machine::RAM_BASE,
+        ptr: ram as *mut u8,
+        len,
+    })
 }
 
 /// `BRIDGEVM_TRACE_VENUS_START=1`: flag EC=0x24 exits whose syndrome has

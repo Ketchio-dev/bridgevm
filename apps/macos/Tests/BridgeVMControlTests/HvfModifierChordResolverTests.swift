@@ -7,6 +7,7 @@ final class HvfModifierChordResolverTests: XCTestCase {
     private let mac = HvfHostKeyMapping(commandKey: .mac, modifierChords: true)
     private let windows = HvfHostKeyMapping(commandKey: .windows, modifierChords: true)
     private let older = HvfHostKeyMapping(commandKey: .mac, modifierChords: false)
+    private let rightCommand = NSEvent.ModifierFlags(rawValue: NSEvent.ModifierFlags.command.rawValue | 0x10)
 
     private func chord(_ keyCode: UInt16, _ characters: String, _ modifiers: EventModifiers,
                        _ mapping: HvfHostKeyMapping) -> HvfHostKeyCommand? {
@@ -189,7 +190,11 @@ final class HvfModifierChordResolverTests: XCTestCase {
             ([.control, .numericPad], "\u{3}", "\u{3}", 0x4c, mac, "ctrl+enter"),
             ([.command, .numericPad, .function], "\u{f702}", "\u{f702}", 0x7b, mac, "home"),
             ([.option, .shift, .numericPad, .function], "\u{f703}", "\u{f703}", 0x7c, mac, "ctrl+shift+right"),
-            ([.option, .numericPad, .function], "\u{f702}", "\u{f702}", 0x7b, windows, "alt+left")
+            ([.option, .numericPad, .function], "\u{f702}", "\u{f702}", 0x7b, windows, "alt+left"),
+            // Right Command carries its device bit (NX_DEVICERCMDKEYMASK); its chords map like the left key.
+            (rightCommand, "c", "c", 0x08, mac, "ctrl+c"),
+            (rightCommand, "e", "e", 0x0e, windows, "win+e"),
+            (rightCommand.union(.shift), "S", "S", 0x01, mac, "ctrl+shift+s")
         ] {
             let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
                 timestamp: 0, windowNumber: 0, context: nil, characters: characters,

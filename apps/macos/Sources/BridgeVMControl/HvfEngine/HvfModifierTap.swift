@@ -2,12 +2,14 @@
 import AppKit
 
 /// A bare Command or Option tap: pressed with no other modifier down and released before any key,
-/// click, other modifier or focus loss. Command is the Windows key in both 'Command 키' modes and
-/// Option is Alt. Guest chords are whole press-and-release actions, so the guest never holds a
-/// modifier; losing focus only has to forget a pending tap here.
+/// click, other modifier or focus loss. Left Command is the Windows key in both 'Command 키' modes
+/// and Option is Alt. Right Command (0x36) never taps: Korean users often make it the 한/영 key, and
+/// each language switch would open Start; its chords still map as usual. Guest chords are whole
+/// press-and-release actions, so the guest never holds a modifier; losing focus only has to forget
+/// a pending tap here.
 struct HvfModifierTap: Equatable {
     private var armed: String?
-    private static let taps: [UInt16: String] = [0x37: "win", 0x36: "win", 0x3a: "alt", 0x3d: "alt"]
+    private static let taps: [UInt16: String] = [0x37: "win", 0x3a: "alt", 0x3d: "alt"]
 
     /// The guest action this flags change completes, if any.
     mutating func changed(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> String? {

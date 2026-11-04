@@ -20,6 +20,7 @@ fn main() -> ExitCode {
         ("lease-pending-delete", 3) => return pending_delete::command(&args[1..]),
         ("digest", 3) => return bridgevm_hvf::snapshot_pair::selected::command(&args[1..]),
         ("size", 3) => return bridgevm_hvf::snapshot_pair::size::command(&args[1..]),
+        ("grow", 4) => return bridgevm_hvf::snapshot_pair::grow::command(&args[1..]),
         ("create", 6) => {
             let Ok(quota) = args[5].parse::<u64>() else {
                 eprintln!("quota must be a number of bytes");

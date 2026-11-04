@@ -15,6 +15,7 @@ use std::io;
 // on the same File race even when each is correct. *_at carry it per call.
 use std::os::unix::fs::FileExt;
 use std::path::Path;
+use std::sync::Arc;
 
 pub(crate) fn rounded_disk_len(bytes: usize) -> usize {
     bytes.div_ceil(LBA_SIZE) * LBA_SIZE
@@ -32,7 +33,9 @@ pub(crate) enum DiskBackend {
 
 #[derive(Debug)]
 pub(crate) struct RawFileDisk {
-    pub(crate) file: File,
+    /// Shared with READs and WRITEs that run without the platform lock
+    /// (unlocked_io.rs).
+    pub(crate) file: Arc<File>,
     pub(crate) len: u64,
     pub(crate) overlay: BTreeMap<u64, Vec<u8>>,
     /// Ceiling on the overlay; see DEFAULT_OVERLAY_QUOTA_BYTES.
@@ -68,7 +71,7 @@ impl DiskBackend {
             ));
         }
         Ok(Self::RawFile(RawFileDisk {
-            file,
+            file: Arc::new(file),
             len,
             overlay: BTreeMap::new(),
             overlay_quota_bytes: DEFAULT_OVERLAY_QUOTA_BYTES,

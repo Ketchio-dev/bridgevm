@@ -15,6 +15,8 @@
 //! A controller register write, any admin command and a reset first wait for
 //! the flushes in flight, so queue deletion and reset never meet a pending
 //! completion; a reset drops their completions with the queues they targeted.
+//! READs and WRITEs run without the platform lock (unlocked_io.rs) are counted
+//! and completed here too.
 
 use std::fs::File;
 use std::io;
@@ -24,6 +26,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::Instant;
 
 use super::flush_mode::DiskSync;
+use super::unlocked_io::IoJob;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 
@@ -32,21 +35,37 @@ use crate::fwcfg::GuestMemoryMut;
 pub static FLUSH_DONE_HOOK: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
 
 #[derive(Clone, Copy)]
-struct FlushJob {
-    sqid: u16,
-    cqid: u16,
-    cmd: SubmissionEntry,
+pub(super) struct FlushJob {
+    pub(super) sqid: u16,
+    pub(super) cqid: u16,
+    pub(super) cmd: SubmissionEntry,
     disk: bool,
     disk2: bool,
 }
 
-struct Finished {
-    job: FlushJob,
-    ok: bool,
+impl FlushJob {
+    /// A job with nothing for the worker to sync: a READ or WRITE.
+    pub(super) fn io(sqid: u16, cqid: u16, cmd: SubmissionEntry) -> Self {
+        Self {
+            sqid,
+            cqid,
+            cmd,
+            disk: false,
+            disk2: false,
+        }
+    }
+}
+
+pub(super) struct Finished {
+    pub(super) job: FlushJob,
+    pub(super) status: u16,
+    /// A FUA or write-cache-off WRITE whose data is written: its sync comes
+    /// next, then its completion.
+    pub(super) sync_next: bool,
 }
 
 #[derive(Default)]
-struct Shared {
+pub(super) struct Shared {
     finished: Mutex<Vec<Finished>>,
     changed: Condvar,
     /// Finished jobs not yet taken; lets the pre-run drain skip the mutex.
@@ -55,19 +74,35 @@ struct Shared {
     clock: flush_mode::Clock,
 }
 
+impl Shared {
+    /// Queue finished jobs for `complete_flushes` and wake the waiters. Never
+    /// takes the platform lock, which a waiter may hold.
+    pub(super) fn publish(&self, done: impl IntoIterator<Item = Finished>) {
+        let mut finished = lock(&self.finished);
+        finished.extend(done);
+        self.ready.store(finished.len(), Ordering::Release);
+        drop(finished);
+        self.changed.notify_all();
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct FlushWorker {
     /// The thread's inbox; `None` once a namespace change let the thread go,
     /// until the next FLUSH starts one on the current disks.
     jobs: Option<Sender<FlushJob>>,
-    shared: Arc<Shared>,
-    in_flight: usize,
+    pub(super) shared: Arc<Shared>,
+    /// Flushes, READs and WRITEs not yet taken by `take_finished`.
+    pub(super) in_flight: usize,
+    /// READs and WRITEs that the doorbell vCPU has not taken yet.
+    pub(super) io: Vec<IoJob>,
 }
 
 impl std::fmt::Debug for FlushWorker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FlushWorker")
             .field("in_flight", &self.in_flight)
+            .field("io", &self.io.len())
             .finish_non_exhaustive()
     }
 }
@@ -100,15 +135,15 @@ impl FlushWorker {
                         };
                         let ok = sync(&mut disks[0], batch.iter().any(|job| job.disk));
                         let ok2 = sync(&mut disks[1], batch.iter().any(|job| job.disk2));
-                        let done = batch.into_iter().map(|job| Finished {
-                            ok: (!job.disk || ok) && (!job.disk2 || ok2),
+                        worker.publish(batch.into_iter().map(|job| Finished {
+                            status: if (!job.disk || ok) && (!job.disk2 || ok2) {
+                                SC_SUCCESS
+                            } else {
+                                SC_INTERNAL_DEVICE_ERROR
+                            },
+                            sync_next: false,
                             job,
-                        });
-                        let mut finished = lock(&worker.finished);
-                        finished.extend(done);
-                        worker.ready.store(finished.len(), Ordering::Release);
-                        drop(finished);
-                        worker.changed.notify_all();
+                        }));
                         if let Some(hook) = FLUSH_DONE_HOOK.get() {
                             hook();
                         }
@@ -135,7 +170,7 @@ impl FlushWorker {
     }
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+pub(super) fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -221,12 +256,17 @@ impl NvmeController {
             return false;
         }
         worker.in_flight += 1;
+        self.hold_completion_slot(cqid);
+        true
+    }
+
+    /// Keep a completion slot on `cqid` for a job in flight.
+    pub(super) fn hold_completion_slot(&mut self, cqid: u16) {
         let slot = usize::from(cqid);
         if self.flush_reserved.len() <= slot {
             self.flush_reserved.resize(slot + 1, 0);
         }
         self.flush_reserved[slot] += 1;
-        true
     }
 
     /// The worker thread holds the disk handles it started with: a namespace
@@ -261,9 +301,24 @@ impl NvmeController {
             .is_some_and(|worker| worker.shared.ready.load(Ordering::Acquire) > 0)
     }
 
-    /// Post the completions of finished flushes. With `wait`, first wait until
-    /// none is in flight.
+    /// Post the completions of finished flushes, READs and WRITEs. With
+    /// `wait`, first wait until none is in flight, and return only when none
+    /// is: a finished FUA write goes on to its sync.
     pub fn complete_flushes(
+        &mut self,
+        mem: &mut dyn GuestMemoryMut,
+        completions: &mut Vec<NvmeCompletionEvent>,
+        wait: bool,
+    ) {
+        loop {
+            self.post_finished(mem, completions, wait);
+            if !wait || !self.flushes_in_flight() {
+                return;
+            }
+        }
+    }
+
+    fn post_finished(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
         completions: &mut Vec<NvmeCompletionEvent>,
@@ -273,10 +328,15 @@ impl NvmeController {
             let FlushJob {
                 sqid, cqid, cmd, ..
             } = done.job;
-            let status = if done.ok {
-                SC_SUCCESS
+            // The data is in the file; the sync and then the completion follow,
+            // as for the inline path (queue.rs).
+            if done.sync_next && self.defer_flush(sqid, cqid, &cmd) {
+                continue;
+            }
+            let status = if done.sync_next {
+                self.io_flush(&cmd)
             } else {
-                SC_INTERNAL_DEVICE_ERROR
+                done.status
             };
             let queues_live = matches!(self.sqs.get(usize::from(sqid)), Some(Some(_)))
                 && matches!(self.cqs.get(usize::from(cqid)), Some(Some(_)));
@@ -313,9 +373,10 @@ impl NvmeController {
         }
     }
 
-    /// Wait for the flushes in flight; their completions stay queued for
-    /// `complete_flushes`.
-    pub(crate) fn wait_for_flushes(&self) {
+    /// Wait for the flushes, READs and WRITEs in flight; their completions
+    /// stay queued for `complete_flushes`.
+    pub(crate) fn wait_for_flushes(&mut self) {
+        self.fail_untaken_io();
         let Some(worker) = self.flush_worker.as_ref() else {
             return;
         };
@@ -336,6 +397,9 @@ impl NvmeController {
     }
 
     fn take_finished(&mut self, wait: bool) -> Vec<Finished> {
+        if wait {
+            self.fail_untaken_io();
+        }
         let Some(worker) = self.flush_worker.as_mut() else {
             return Vec::new();
         };

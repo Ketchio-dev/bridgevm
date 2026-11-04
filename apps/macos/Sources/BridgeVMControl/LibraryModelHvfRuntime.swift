@@ -9,6 +9,7 @@ final class HvfRuntimeSessionStore {
 
     init(makeSession: @escaping Factory) { self.makeSession = makeSession }
     func existingRecord(slug: String) -> HvfRuntimeSessionRecord? { entries[.libraryVM(slug)] }
+    var sessions: [HvfEngineSession] { entries.values.map(\.session) }
 
     func experimentalSession() -> HvfEngineSession {
         if let entry = entries[.experimental] { return entry.session }

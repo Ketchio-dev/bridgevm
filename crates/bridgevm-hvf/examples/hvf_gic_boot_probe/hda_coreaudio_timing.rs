@@ -16,7 +16,14 @@
 //!   callback that plays guest PCM until the guest stops its stream:
 //!   `ring_samples` and the minimum, maximum and final level in ms.
 //!
-//! The callback thread is the only writer. It reads the host clock
+//! A pause of the queue (hda_coreaudio_output.rs) is not part of the record.
+//! As it pauses, the queue hands its three buffers back together about 43 ms
+//! after its last callback (measured on macOS 27.0.1). Those callbacks, and
+//! the first one after any later start, are left out of every counter, so
+//! every counted callback after the first measures exactly one interval and
+//! the buckets still sum to `callbacks - 1` (scripts/live-gates/hda_diagnostics.py).
+//!
+//! The callback thread is the only writer of the counters. It reads the host clock
 //! (`Instant::now`, a user-space clock read on macOS, not a system call) and
 //! updates relaxed atomics inside a sequence count, so a reader gets a
 //! consistent record even while callbacks continue; the callback never locks,
@@ -52,6 +59,10 @@ pub(in crate::hda_coreaudio) struct CallbackTiming {
     max_interval_ns: AtomicU64,
     late: AtomicU64,
     trylock_misses: AtomicU64,
+    /// Set by the output supervisor while the queue is paused.
+    paused: AtomicBool,
+    /// Set by the output supervisor before it starts a paused queue.
+    restarted: AtomicBool,
     playing: AtomicBool,
     ring_samples: AtomicU64,
     ring_min: AtomicU64,
@@ -76,6 +87,8 @@ impl CallbackTiming {
             max_interval_ns: AtomicU64::new(0),
             late: AtomicU64::new(0),
             trylock_misses: AtomicU64::new(0),
+            paused: AtomicBool::new(false),
+            restarted: AtomicBool::new(false),
             playing: AtomicBool::new(false),
             ring_samples: AtomicU64::new(0),
             ring_min: AtomicU64::new(0),
@@ -98,10 +111,18 @@ impl CallbackTiming {
         let since = now.saturating_duration_since(self.base).as_nanos();
         let at = u64::try_from(since).unwrap_or(NO_CALLBACK - 1);
         self.write(|| {
-            self.callbacks.fetch_add(1, Relaxed);
-            self.trylock_misses.fetch_add(u64::from(contended), Relaxed);
+            // The next counted callback measures its interval from this one,
+            // counted or not.
             let last = self.last_ns.swap(at, Relaxed);
-            if last == NO_CALLBACK {
+            // Left out: the buffers a pausing queue hands back, and the first
+            // callback after a start. `paused` is read first: a callback that
+            // finds it cleared also finds `restarted` set.
+            if self.paused.load(Acquire) || self.restarted.swap(false, Acquire) {
+                return;
+            }
+            let first = self.callbacks.fetch_add(1, Relaxed) == 0;
+            self.trylock_misses.fetch_add(u64::from(contended), Relaxed);
+            if first {
                 return;
             }
             let interval = at.saturating_sub(last);
@@ -112,6 +133,20 @@ impl CallbackTiming {
             self.max_interval_ns.fetch_max(interval, Relaxed);
             self.late.fetch_add(u64::from(interval > LATE_NS), Relaxed);
         });
+    }
+
+    /// The queue pauses: the callbacks that hand its buffers back are left out
+    /// of the record. Output supervisor only, before AudioQueuePause.
+    pub(in crate::hda_coreaudio) fn note_pause(&self) {
+        self.paused.store(true, Release);
+    }
+
+    /// The queue starts, at creation, after a pause or as a replacement: its
+    /// next callback is left out of the record. Output supervisor only, before
+    /// AudioQueueStart.
+    pub(in crate::hda_coreaudio) fn note_restart(&self) {
+        self.restarted.store(true, Release);
+        self.paused.store(false, Release);
     }
 
     /// A callback found `ring_bytes` in the ring and copied `pcm_bytes`.

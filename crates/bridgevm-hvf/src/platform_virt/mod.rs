@@ -23,6 +23,7 @@ mod mmio_types;
 mod net_backend;
 mod net_device;
 mod platform_config;
+mod power_button;
 mod snapshot;
 mod soc_devices;
 mod storage_devices;

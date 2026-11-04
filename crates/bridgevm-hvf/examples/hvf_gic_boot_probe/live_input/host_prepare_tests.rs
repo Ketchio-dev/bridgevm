@@ -44,6 +44,7 @@ impl InputFile {
             source: Some(InputControlFile::from_path(self.path.clone())),
             offset: 0,
             lines: Default::default(),
+            power_scanned_to: 0,
             pending: Default::default(),
             accepted_pointer_moves: 0,
             next_poll: now,
