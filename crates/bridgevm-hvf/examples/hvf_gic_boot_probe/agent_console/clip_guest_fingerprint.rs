@@ -1,4 +1,5 @@
-//! Fingerprint of a refused guest CLIP reply (clip_guest_admission.rs), so an
+//! Fingerprint of a guest poll reply: a changed one is a new clipboard copy
+//! (clip_sync.rs), the key of every clipboard dedup and notice, so an
 //! oversized text that stays on the guest clipboard is counted only once. It
 //! reads the payload's length and its first and last 4 KiB, not all of it: the
 //! guest is re-polled every interval, and a payload can reach the 32 MiB line

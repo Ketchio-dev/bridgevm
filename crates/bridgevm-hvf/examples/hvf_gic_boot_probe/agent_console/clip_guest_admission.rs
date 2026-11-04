@@ -7,7 +7,6 @@
 //! content. Host-to-guest sync keeps its own `clip_max_bytes` limit.
 
 use super::*;
-use std::hash::DefaultHasher;
 #[path = "clip_guest_decode.rs"]
 mod decode;
 #[cfg(test)]
@@ -21,7 +20,7 @@ pub(super) const GUEST_CLIP_MAX_BYTES: usize = 8 * 1024 * 1024;
 pub(super) struct GuestClipRefusals {
     /// Guest texts refused so far; repeated polls of one text count once.
     pub(super) count: u64,
-    /// Fingerprint of the refused reply the unknown baseline stands for.
+    /// The guest copy whose refusal was logged: its unchanged polls stay quiet.
     last: Option<u64>,
 }
 
@@ -52,7 +51,7 @@ impl AgentConsoleHarness {
         let text = match decode_guest_clip(b64) {
             Ok(text) => text,
             Err(error) => {
-                self.refuse_guest_clip(b64, error, now);
+                self.refuse_guest_clip(error, now);
                 return None;
             }
         };
@@ -77,17 +76,18 @@ impl AgentConsoleHarness {
     /// Mac copy is pushed and the next guest copy is adopted. A pending
     /// rebaseline stays pending: a paste landing after this poll is learned,
     /// not published.
-    fn refuse_guest_clip(&mut self, b64: &str, error: GuestClipError, now: Instant) {
-        let fingerprint = Some(guest_clip_fingerprint(b64, &mut DefaultHasher::new()));
+    fn refuse_guest_clip(&mut self, error: GuestClipError, now: Instant) {
         let t_ms = self.t_ms(now);
         let baseline = &mut self.last_synced;
-        // Each interval re-polls an unchanged guest clipboard: one refusal.
-        if baseline.text.is_some() || baseline.refusals.last != fingerprint {
+        // One refusal per guest copy, the key of every clipboard dedup: each
+        // interval re-polls an unchanged guest clipboard.
+        let copy = Some(baseline.guest_copy);
+        if baseline.refusals.last != copy {
             baseline.refusals.count = baseline.refusals.count.saturating_add(1);
             let refusals = baseline.refusals.count;
             println!("{}", guest_clip_error_line(error, refusals, t_ms));
         }
         baseline.text = None;
-        baseline.refusals.last = fingerprint;
+        baseline.refusals.last = copy;
     }
 }

@@ -95,15 +95,6 @@ pub(super) struct GuestImage {
     pub(super) path: Option<String>,
 }
 
-/// One refused guest image, so a re-polled one stays one log line.
-pub(super) type GuestImageKey = (u32, u32, usize, Option<[u8; 32]>);
-
-impl GuestImage {
-    fn key(&self) -> GuestImageKey {
-        (self.width, self.height, self.bytes, self.digest)
-    }
-}
-
 /// CLIPX `<w> <h> <bytes> <sha256|-> <b64(path)|-> <b64(text)>`: the image
 /// (None without one) and the text's base64, or Err when malformed.
 pub(super) fn parse_clipx(rest: &str) -> Result<(Option<GuestImage>, &str), ()> {
@@ -200,6 +191,19 @@ pub(super) fn guest_image_refusal_line(
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The lines clip_line printed on this test's thread.
+    pub(super) static CLIP_LINES: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Prints one clipboard line the app keys by copy number; tests read them back.
+pub(super) fn clip_line(line: String) {
+    #[cfg(test)]
+    CLIP_LINES.with(|lines| lines.borrow_mut().push(line.clone()));
+    println!("{line}");
+}
+
 /// A Mac image over a limit; the app shows it (and the refusal below with
 /// `too-large`) as a notice (HvfClipboardImageNotice.swift).
 pub(super) fn host_image_skip_line(
@@ -251,24 +255,35 @@ impl AgentConsoleHarness {
         );
     }
 
+    /// A new Mac copy the guest already holds: one line, so the app knows a
+    /// later copy came (HvfClipboardImageNotice.swift).
+    pub(super) fn host_copy_unchanged(&mut self, now: Instant) {
+        clip_line(format!(
+            "BVAGENT CLIPSYNC host->guest unchanged copy={} t={}",
+            self.last_synced.host_copy,
+            self.t_ms(now)
+        ));
+    }
+
     /// A Mac copy with an image: text first under the text rules, then the
     /// image with that text. Called only while images are on.
     pub(super) fn enqueue_host_image(&mut self, text: Option<String>, png: PngImage, now: Instant) {
         let text = text.filter(|text| {
             let fits = text.len() <= self.clip_max_bytes;
             if !fits {
-                println!(
-                    "BVAGENT CLIPSYNC skip bytes={} too-large t={}",
+                clip_line(format!(
+                    "BVAGENT CLIPSYNC skip bytes={} too-large copy={} t={}",
                     text.len(),
+                    self.last_synced.host_copy,
                     self.t_ms(now)
-                );
+                ));
             }
             fits
         });
         let normalized = text.as_deref().map(normalize_clip);
         let settled = !self.last_synced.rebaseline && !self.clip_push_pending();
         if settled && self.last_synced.holds(normalized.as_deref(), Some(png.digest)) {
-            return;
+            return self.host_copy_unchanged(now);
         }
         let text_held = settled && self.last_synced.text == normalized;
         self.drop_queued_host_pushes();
@@ -288,7 +303,7 @@ impl AgentConsoleHarness {
         } = image
         {
             let line = host_image_skip_line(*bytes, *width, *height, self.last_synced.host_copy, self.t_ms(now));
-            println!("{line}");
+            clip_line(line);
         }
     }
 
@@ -310,15 +325,14 @@ impl AgentConsoleHarness {
         &mut self,
         b64: &str,
         image: Option<GuestImage>,
+        later: bool,
+        echo: bool,
         now: Instant,
     ) {
         // Refusals first: each refused copy gets its line (and the app its
         // notice) before anything is learned or deduplicated, then counts as
-        // none. A re-polled refusal stays one line; another image starts over.
+        // none. Their dedup keys on the copy number: unchanged polls only.
         let admitted = self.admit_guest_text(b64, now);
-        if image.as_ref().map(GuestImage::key) != self.last_synced.refused_image {
-            self.last_synced.refused_image = None;
-        }
         let copied_image = image.is_some();
         let image = image.filter(|image| match self.guest_image_refusal(image) {
             Some(refusal) => {
@@ -336,7 +350,20 @@ impl AgentConsoleHarness {
             self.last_synced.image = digest;
             return;
         }
-        if self.last_synced.holds(text.as_deref(), digest) || (text.is_none() && !copied_image) {
+        let held = self.last_synced.holds(text.as_deref(), digest);
+        if held || (text.is_none() && !copied_image) {
+            if echo && held {
+                // A completed push back from the guest: still the Mac's copy.
+                self.last_synced.guest_copy = self.last_synced.host_copy;
+            } else if later {
+                // A later copy that leaves the Mac as it is: one line, so the
+                // app knows a later copy came (HvfClipboardImageNotice.swift).
+                clip_line(format!(
+                    "BVAGENT CLIPSYNC guest->host unchanged copy={} t={}",
+                    self.last_synced.guest_copy,
+                    self.t_ms(now)
+                ));
+            }
             return;
         }
         let fresh_text = self.last_synced.text != text;
@@ -388,11 +415,11 @@ impl AgentConsoleHarness {
             pasteboard.set_image(png.clone(), self.last_synced.text.clone());
         }
         self.last_synced.png = Some(png);
-        println!(
+        clip_line(format!(
             "BVAGENT CLIPSYNC guest->host image bytes={len} width={width} height={height} copy={} t={}",
             self.last_synced.guest_copy,
             self.t_ms(now)
-        );
+        ));
     }
 
     pub(super) fn refuse_guest_image(
@@ -401,14 +428,14 @@ impl AgentConsoleHarness {
         image: Option<&GuestImage>,
         now: Instant,
     ) {
-        if let Some(image) = image {
-            if self.last_synced.refused_image == Some(image.key()) {
-                return;
-            }
-            self.last_synced.refused_image = Some(image.key());
+        // One line per copy: its unchanged polls stay quiet.
+        if self.last_synced.refused_copy == Some(self.last_synced.guest_copy) {
+            return;
         }
+        self.last_synced.refused_copy = Some(self.last_synced.guest_copy);
         self.last_synced.image_refusals += 1;
-        println!("{}", guest_image_refusal_line(refusal, image, self.last_synced.guest_copy, self.t_ms(now)));
+        let line = guest_image_refusal_line(refusal, image, self.last_synced.guest_copy, self.t_ms(now));
+        clip_line(line);
     }
 
     /// PUT, then CLIPSETIMG, one reply at a time; the in-flight request keeps
@@ -491,14 +518,15 @@ impl AgentConsoleHarness {
                 self.last_synced.text = push.text.as_deref().map(normalize_clip);
                 self.last_synced.image = Some(push.png.digest);
                 self.last_synced.rebaseline = false;
-                println!(
+                self.last_synced.echo = true;
+                clip_line(format!(
                     "BVAGENT CLIPSYNC host->guest image bytes={} width={} height={} copy={} t={}",
                     push.png.bytes.len(),
                     push.png.width,
                     push.png.height,
                     self.last_synced.host_copy,
                     self.t_ms(now)
-                );
+                ));
                 self.last_synced.png = Some(push.png);
                 return;
             }

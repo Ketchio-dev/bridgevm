@@ -11,6 +11,27 @@ use std::collections::HashMap;
 
 const DIR: &str = r"C:\Users\u\AppData\Local\Temp\BridgeVM-clip";
 
+/// The copy-numbered clipboard lines since the last call, without `t=`, their
+/// copy numbers named a, b, ... in order of first appearance across calls.
+fn take_lines(names: &mut Vec<String>) -> Vec<String> {
+    let lines = CLIP_LINES.with(|lines| std::mem::take(&mut *lines.borrow_mut()));
+    lines
+        .into_iter()
+        .filter(|line| line.contains(" copy="))
+        .map(|line| {
+            let line = line.split(" t=").next().unwrap_or_default();
+            let Some((head, copy)) = line.split_once(" copy=") else {
+                return line.to_owned();
+            };
+            let index = names.iter().position(|seen| seen == copy).unwrap_or_else(|| {
+                names.push(copy.to_owned());
+                names.len() - 1
+            });
+            format!("{head} copy={}", char::from(b'a' + index as u8))
+        })
+        .collect()
+}
+
 /// A PNG header for `width` x `height` followed by `fill` bytes of `seed`,
 /// so images differ in size and digest; nothing here decodes past IHDR.
 fn png(width: u32, height: u32, fill: usize, seed: u8) -> Vec<u8> {
@@ -519,6 +540,81 @@ fn every_refused_guest_copy_is_reported_once() {
     }
     if rig.h.last_synced.image_refusals != 2 {
         failures.push(format!("copied again: {} refusal lines", rig.h.last_synced.image_refusals));
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// Every copy, either way, gets the lines the app keys its notice by: a refused
+/// copy its refusal before its text, a copy that leaves the other side as it is
+/// one `unchanged` line, unchanged polls and a push coming back none.
+#[test]
+fn every_copy_gets_its_notice_lines() {
+    let big = format!("4000 3000 {} - -", CLIP_IMAGE_MAX_BYTES + 1);
+    let refused = format!(
+        "BVAGENT CLIPSYNC refused guest-image too-large bytes={} width=4000 height=3000 \
+         limit-bytes=33554432 limit-side=16384",
+        CLIP_IMAGE_MAX_BYTES + 1
+    );
+    let text = |copy: char| format!("BVAGENT CLIPSYNC guest->host bytes=1 copy={copy}");
+    let image = format!("BVAGENT CLIPSYNC guest->host image bytes={} width=8 height=9 copy=b", pair_image(1).len());
+    // (row, the guest's second copy as text and image part, the lines it adds)
+    let rows: [(&str, &str, Option<String>, Vec<String>); 4] = [
+        ("the same image, a new caption", "B", Some(big.clone()), vec![format!("{refused} copy=b"), text('b')]),
+        ("the same image and caption polled again", "A", Some(big.clone()), vec![]),
+        ("the image dropped to text only", "A", None, vec!["BVAGENT CLIPSYNC guest->host unchanged copy=b".into()]),
+        ("a new image", "A", Some(String::new()), vec![image]),
+    ];
+    let mut failures = Vec::new();
+    for (row, caption, described, expected) in rows {
+        let mut rig = Rig::new(true);
+        let mut names = Vec::new();
+        take_lines(&mut names);
+        rig.guest.text = "A".into();
+        rig.guest.described = Some(big.clone());
+        rig.settle();
+        let first = take_lines(&mut names);
+        rig.guest.text = caption.into();
+        match described {
+            Some(part) if part.is_empty() => {
+                rig.guest.described = None;
+                rig.guest.image = Some(pair_image(1));
+            }
+            part => rig.guest.described = part,
+        }
+        for _ in 0..3 {
+            rig.settle();
+        }
+        let lines = take_lines(&mut names);
+        if first != vec![format!("{refused} copy=a"), text('a')] || lines != expected {
+            failures.push(format!("{row}: {first:?} then {lines:?}"));
+        }
+    }
+    // The Mac copies T with an image over the limit: the image stays, T goes,
+    // and that push coming back from the guest is no new copy.
+    let mut rig = Rig::new(true);
+    let mut names = Vec::new();
+    take_lines(&mut names);
+    let huge = PasteboardImage::TooLarge { bytes: CLIP_IMAGE_MAX_BYTES + 1, width: 9000, height: 9000 };
+    rig.mac.copy(Some("T"), Some(huge));
+    for _ in 0..3 {
+        rig.settle();
+    }
+    let pushed = take_lines(&mut names);
+    // The Mac then copies T alone: the guest already holds it, one line.
+    rig.mac.copy(Some("T"), None);
+    for _ in 0..3 {
+        rig.settle();
+    }
+    let again = take_lines(&mut names);
+    let skip = format!(
+        "BVAGENT CLIPSYNC skip image too-large bytes={} width=9000 height=9000 \
+         limit-bytes=33554432 limit-side=16384 copy=a",
+        CLIP_IMAGE_MAX_BYTES + 1
+    );
+    if pushed != vec![skip, "BVAGENT CLIPSYNC host->guest bytes=1 copy=a".to_owned()]
+        || again != vec!["BVAGENT CLIPSYNC host->guest unchanged copy=b".to_owned()]
+    {
+        failures.push(format!("mac copies: {pushed:?} then {again:?}"));
     }
     assert!(failures.is_empty(), "{failures:#?}");
 }

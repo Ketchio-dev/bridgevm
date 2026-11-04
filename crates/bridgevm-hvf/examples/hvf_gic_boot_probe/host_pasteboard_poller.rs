@@ -8,6 +8,8 @@ pub struct Poller {
     last_seen: Option<String>,
     /// Digest of the image last reported or written (images on only).
     last_image: Option<[u8; 32]>,
+    /// The last report held an image over the limits (it has no digest).
+    last_oversized: bool,
     pub(super) observed_suppressed_change: bool,
     /// Also read the pasteboard's image: the guest agent advertised IMAGE_PNG.
     pub(super) images: bool,
@@ -21,6 +23,7 @@ impl Poller {
             last_count: -1,
             last_seen: None,
             last_image: None,
+            last_oversized: false,
             observed_suppressed_change: false,
             images: false,
         }
@@ -62,6 +65,7 @@ impl Poller {
     pub(super) fn images_off(&mut self) {
         self.images = false;
         self.last_image = None;
+        self.last_oversized = false;
     }
 
     fn observe<B: PasteboardBackend>(&mut self, backend: &mut B, force: bool) -> Option<HostClip> {
@@ -83,6 +87,7 @@ impl Poller {
             // Preserve initial empty-startup behavior and never send a clear.
             self.last_seen = None;
             self.last_image = None;
+            self.last_oversized = false;
             self.observed_suppressed_change = changed && !force;
             return None;
         }
@@ -90,15 +95,17 @@ impl Poller {
             Some(HostImage::Png(png)) => Some(png.digest),
             _ => None,
         };
-        // A too-large image is reported once per copy so its skip is logged.
-        let new_image =
-            digest != self.last_image || matches!(image, Some(HostImage::TooLarge { .. }));
+        // A too-large image is reported once per copy so its skip is logged,
+        // and so is its going away (the copy that replaced it).
+        let oversized = matches!(image, Some(HostImage::TooLarge { .. }));
+        let new_image = digest != self.last_image || oversized || self.last_oversized;
         if !force && self.last_seen == text && !new_image {
             self.observed_suppressed_change = true;
             return None;
         }
         self.last_seen = text.clone();
         self.last_image = digest;
+        self.last_oversized = oversized;
         Some(HostClip { text, image })
     }
 }

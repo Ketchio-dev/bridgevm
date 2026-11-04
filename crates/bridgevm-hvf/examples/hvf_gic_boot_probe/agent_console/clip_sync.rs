@@ -26,8 +26,8 @@ pub(super) struct ClipBaseline {
     /// The PNG last synced either way, reused while it is `image`: a caption
     /// change needs no second transfer.
     pub(super) png: Option<host_pasteboard::PngImage>,
-    /// The refused guest image still on the guest, so a re-polled one logs once.
-    pub(super) refused_image: Option<GuestImageKey>,
+    /// The guest copy whose image refusal was logged: its unchanged polls stay quiet.
+    pub(super) refused_copy: Option<u64>,
     /// Guest image refusals logged so far, one per refused copy.
     pub(super) image_refusals: u64,
     /// Copy numbers handed out so far, either way. The lines about one copy
@@ -37,8 +37,11 @@ pub(super) struct ClipBaseline {
     /// The number of the latest Mac copy, and of the latest guest copy.
     pub(super) host_copy: u64,
     pub(super) guest_copy: u64,
-    /// Hash of the last guest poll reply: a re-poll keeps its copy number.
+    /// Fingerprint of the last guest poll reply: a re-poll keeps its copy number.
     pub(super) guest_reply: Option<u64>,
+    /// A push just completed: the next changed guest reply that shows its pair
+    /// is that Mac copy coming back, not a new guest copy.
+    pub(super) echo: bool,
 }
 
 impl ClipBaseline {
@@ -84,17 +87,18 @@ impl AgentConsoleHarness {
         };
         let settled = !self.last_synced.rebaseline && !self.clip_push_pending();
         if settled && self.last_synced.holds(Some(&normalize_clip(&text)), None) {
-            return;
+            return self.host_copy_unchanged(now);
         }
         if text.len() > self.clip_max_bytes {
             // Never pushed: the guest agent reads the wire with per-call
             // P/Invoke cost, so a huge CLIPSET line wedges the whole channel.
             // The Mac keeps its copy; queued older pushes are obsolete.
-            println!(
-                "BVAGENT CLIPSYNC skip bytes={} too-large t={}",
+            clip_line(format!(
+                "BVAGENT CLIPSYNC skip bytes={} too-large copy={} t={}",
                 text.len(),
+                self.last_synced.host_copy,
                 self.t_ms(now)
-            );
+            ));
             self.drop_queued_host_pushes();
             self.last_synced.rebaseline = true;
         } else {
@@ -113,14 +117,10 @@ impl AgentConsoleHarness {
     }
     pub(super) fn handle_clip_poll_reply(&mut self, line: &str, now: Instant) {
         // CLIP <b64> answers CLIPGET; CLIPX adds the guest image (clip_image.rs).
-        let (b64, image) = if let Some(b64) = line.strip_prefix("CLIP ") {
-            (b64, None)
+        let (b64, clipx) = if let Some(b64) = line.strip_prefix("CLIP ") {
+            (b64, false)
         } else if let Some(rest) = line.strip_prefix("CLIPX ") {
-            let Ok((image, b64)) = parse_clipx(rest) else {
-                self.complete_in_flight();
-                return self.refuse_guest_image(GuestImageRefusal::Malformed, None, now);
-            };
-            (b64, Some(image))
+            (rest, true)
         } else {
             if line.starts_with("ERR") {
                 println!("BVAGENT CLIPSYNC guest->host {line}");
@@ -134,17 +134,33 @@ impl AgentConsoleHarness {
         if self.clip_push_pending() {
             return;
         }
+        // The copy number, the one key of every dedup below: the clipboard's
+        // image part and text whatever the verb, so a re-poll keeps it. A
+        // changed reply is a new guest copy, unless a completed push comes back.
+        let parsed = if clipx { parse_clipx(b64).ok() } else { Some((None, b64)) };
         let reply = {
+            let (part, text) = match &parsed {
+                Some((_, text)) if clipx => (b64.strip_suffix(*text).unwrap_or(b64), *text),
+                Some((_, text)) => ("0 0 0 - - ", *text),
+                None => (b64, ""),
+            };
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            std::hash::Hash::hash(line, &mut hasher);
-            std::hash::Hasher::finish(&hasher)
+            std::hash::Hash::hash(part, &mut hasher);
+            guest_clip_fingerprint(text, &mut hasher)
         };
-        if self.last_synced.guest_reply != Some(reply) {
+        // Only a later copy, never the first poll, counts for the app's notice.
+        let later = self.last_synced.guest_reply.is_some_and(|last| last != reply);
+        let changed = self.last_synced.guest_reply != Some(reply);
+        let echo = changed && std::mem::take(&mut self.last_synced.echo);
+        if changed {
             self.last_synced.guest_reply = Some(reply);
             self.last_synced.guest_copy = self.last_synced.next_copy();
         }
-        if let Some(image) = image {
-            return self.handle_guest_clip(b64, image, now);
+        if clipx {
+            let Some((image, b64)) = parsed else {
+                return self.refuse_guest_image(GuestImageRefusal::Malformed, None, now);
+            };
+            return self.handle_guest_clip(b64, image, later, echo, now);
         }
         let Some(text) = self.admit_guest_clip(b64, now) else {
             return;
@@ -162,11 +178,11 @@ impl AgentConsoleHarness {
         if let Some(pasteboard) = self.pasteboard.as_ref() {
             pasteboard.set(text);
         }
-        println!(
+        clip_line(format!(
             "BVAGENT CLIPSYNC guest->host bytes={bytes} copy={} t={}",
             self.last_synced.guest_copy,
             self.t_ms(now)
-        );
+        ));
     }
     pub(super) fn handle_clip_push_reply(&mut self, line: &str, guest_bytes: usize, now: Instant) {
         if line.starts_with("OK") {
@@ -174,13 +190,14 @@ impl AgentConsoleHarness {
                 self.last_synced.text = Some(normalize_clip(&text));
                 // CLIPSET replaces the whole guest clipboard.
                 self.last_synced.image = None;
+                self.last_synced.echo = true;
                 self.last_synced.rebaseline = false;
             }
-            println!(
+            clip_line(format!(
                 "BVAGENT CLIPSYNC host->guest bytes={guest_bytes} copy={} t={}",
                 self.last_synced.host_copy,
                 self.t_ms(now)
-            );
+            ));
         } else if line.starts_with("ERR") {
             println!("BVAGENT CLIPSYNC host->guest {line}");
             self.last_synced.rebaseline = true;

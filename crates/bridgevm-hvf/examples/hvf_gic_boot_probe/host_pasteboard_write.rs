@@ -18,6 +18,7 @@ impl Poller {
         if text.len() <= GUEST_CLIP_MAX_BYTES && backend.set_string(text) {
             self.last_seen = Some(text.to_owned());
             self.last_image = None;
+            self.last_oversized = false;
             self.last_count = backend.change_count();
         }
     }
@@ -37,6 +38,7 @@ impl Poller {
         if backend.set_image(&png.bytes, text) {
             self.last_seen = text.map(str::to_owned);
             self.last_image = Some(png.digest);
+            self.last_oversized = false;
             self.last_count = backend.change_count();
         }
     }
@@ -48,6 +50,7 @@ impl Poller {
         if self.last_count != -1 && backend.change_count() != self.last_count {
             self.last_seen = None;
             self.last_image = None;
+            self.last_oversized = false;
             return false;
         }
         true
