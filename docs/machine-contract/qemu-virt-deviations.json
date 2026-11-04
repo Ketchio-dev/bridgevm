@@ -66,6 +66,15 @@
       "guest_visible": true,
       "impact": "The linked historical measurement was approximately 20 FPS against the unchanged 30 FPS gate. Later A3 evidence and current state are recorded in capabilities/windows-hvf.json; composed presentation is not itself an open-criterion claim.",
       "evidence": "docs/windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md"
+    },
+    {
+      "id": "guest-clock-resync",
+      "area": "guest-agent",
+      "qemu_behavior": "Under HVF the guest counter stops while the Mac sleeps, and QEMU leaves the guest clock behind until the guest's own time sync; only a management layer can set it (guest-set-time).",
+      "bridgevm_behavior": "When the host wall clock moves more than 2 s beyond the monotonic clock between service ticks (a host sleep), the resident agent service runs one Set-Date to the host's UTC time. The PL031 counter follows the host wall clock, as QEMU's default -rtc clock=host.",
+      "guest_visible": true,
+      "impact": "The Windows clock is correct again shortly after the Mac wakes instead of lagging by the sleep time for up to a week. Without the agent service the clock stays behind until Windows syncs or reboots.",
+      "evidence": "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/time_resync.rs"
     }
   ],
   "deviation_modules": [

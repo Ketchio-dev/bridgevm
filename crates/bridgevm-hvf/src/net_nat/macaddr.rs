@@ -4,12 +4,15 @@ use super::*;
 
 use std::{
     collections::{hash_map::Entry, HashMap, VecDeque},
-    io::{self, Read},
-    net::{Ipv4Addr as StdIpv4Addr, Shutdown, SocketAddrV4, UdpSocket},
+    io,
+    net::{IpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr, Shutdown, SocketAddr, UdpSocket},
+    path::PathBuf,
     time::Instant,
 };
 
-use super::reply_queue::{reply_queue_full, MAX_PENDING_REPLY_FRAMES, MAX_TCP_WRITE_BACKLOG};
+use super::reply_queue::{
+    reply_queue_full, MAX_PENDING_REPLY_FRAMES, MAX_TCP_WRITE_BACKLOG, REPLY_BACKLOG_SKIPS_SWEEP,
+};
 use crate::virtio_net::NetBackend;
 
 pub type MacAddr = [u8; 6];
@@ -75,7 +78,6 @@ pub(crate) const DHCP_LEASE_SECONDS: u32 = 86_400;
 pub(crate) const DHCP_REPLY_FIXED_LEN: usize = 240;
 pub(crate) const DHCP_REPLY_OPTIONS_LEN: usize = 3 + (5 * 6) + 1;
 pub(crate) const DHCP_REPLY_PAYLOAD_LEN: usize = DHCP_REPLY_FIXED_LEN + DHCP_REPLY_OPTIONS_LEN;
-pub(crate) const MAX_RESOLV_CONF_BYTES: u64 = 64 * 1024;
 #[cfg(test)]
 pub(crate) const DHCP_OPT_REQUESTED_IP: u8 = 50;
 
@@ -98,6 +100,9 @@ pub trait OutboundIpv4Handler {
     }
     fn active_flow_counts(&self) -> (usize, usize) {
         (0, 0)
+    }
+    fn dns_server_changes(&self) -> u64 {
+        0
     }
 }
 
@@ -164,6 +169,7 @@ impl<H> NatBackend<H> {
             tcp_flow_count,
             udp_flow_count,
             pending_replies: self.reply_queue.len(),
+            dns_server_changes: self.outbound_ipv4.dns_server_changes(),
             ..self.stats
         }
     }
@@ -213,7 +219,8 @@ impl<H: OutboundIpv4Handler + Send> NetBackend for NatBackend<H> {
     }
 
     fn poll_host_sockets(&mut self) {
-        if reply_queue_full(&self.reply_queue) {
+        if self.reply_queue.len() >= REPLY_BACKLOG_SKIPS_SWEEP {
+            self.stats.sweeps_deferred = self.stats.sweeps_deferred.saturating_add(1);
             return;
         }
         self.outbound_ipv4.poll_host_sockets(
@@ -397,10 +404,10 @@ pub struct HostSocketOutboundIpv4Handler {
     pub(crate) pending_tcp_resets: VecDeque<PendingTcpReset>,
     pub(crate) tcp_remove_scratch: Vec<TcpFlowKey>,
     pub(crate) udp_recv_scratch: [u8; HOST_SOCKET_UDP_RECV_SCRATCH_LEN],
-    pub(crate) tcp_read_scratch: [u8; HOST_SOCKET_TCP_READ_SCRATCH_LEN],
+    pub(crate) tcp_read_scratch: [u8; TCP_MSS],
     pub(crate) icmp_recv_scratch: [u8; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
     pub(crate) pending_socket_errors: u64,
-    pub(crate) dns_resolver: StdIpv4Addr,
+    pub(crate) dns: DnsUpstream,
     pub(crate) epoch: Instant,
     pub(crate) last_idle_sweep_ms: u64,
     pub(crate) idle_timeout_ms: u64,
@@ -412,7 +419,6 @@ pub struct HostSocketOutboundIpv4Handler {
 }
 
 pub(crate) const HOST_SOCKET_UDP_RECV_SCRATCH_LEN: usize = 2048;
-pub(crate) const HOST_SOCKET_TCP_READ_SCRATCH_LEN: usize = 1460;
 pub(crate) const HOST_SOCKET_ICMP_RECV_SCRATCH_LEN: usize = 2048;
 
 impl Default for HostSocketOutboundIpv4Handler {
@@ -431,12 +437,20 @@ impl HostSocketOutboundIpv4Handler {
     pub(crate) const MAX_ICMP_RECV_PER_POLL: usize = 64;
 
     pub fn new() -> Self {
-        Self::with_dns_resolver(
-            first_resolv_conf_nameserver().unwrap_or(StdIpv4Addr::new(1, 1, 1, 1)),
-        )
+        Self::with_resolv_conf("/etc/resolv.conf")
     }
 
+    /// Guest DNS follows the first nameserver in `path` as the file changes.
+    pub fn with_resolv_conf(path: impl Into<PathBuf>) -> Self {
+        Self::with_dns(DnsUpstream::from_resolv_conf(path.into()))
+    }
+
+    /// Guest DNS always goes to `dns_resolver`.
     pub fn with_dns_resolver(dns_resolver: StdIpv4Addr) -> Self {
+        Self::with_dns(DnsUpstream::fixed(dns_resolver.into()))
+    }
+
+    fn with_dns(dns: DnsUpstream) -> Self {
         Self {
             udp_flows: HashMap::new(),
             tcp_flows: HashMap::new(),
@@ -444,10 +458,10 @@ impl HostSocketOutboundIpv4Handler {
             pending_tcp_resets: VecDeque::new(),
             tcp_remove_scratch: Vec::new(),
             udp_recv_scratch: [0; HOST_SOCKET_UDP_RECV_SCRATCH_LEN],
-            tcp_read_scratch: [0; HOST_SOCKET_TCP_READ_SCRATCH_LEN],
+            tcp_read_scratch: [0; TCP_MSS],
             icmp_recv_scratch: [0; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
             pending_socket_errors: 0,
-            dns_resolver,
+            dns,
             epoch: Instant::now(),
             last_idle_sweep_ms: 0,
             idle_timeout_ms: Self::DEFAULT_IDLE_TIMEOUT_MS,
@@ -522,32 +536,30 @@ impl HostSocketOutboundIpv4Handler {
 
     pub(crate) fn handle_udp(&mut self, packet: &Ipv4Packet<'_>, udp: &UdpDatagram<'_>) {
         let now = self.now_ms();
-        let mut public_dst = packet.dst;
-        let mut socket_dst = packet.dst;
-        let mut dst_port = udp.dst_port;
-        if packet.dst == DNS_IP && udp.dst_port == 53 {
-            public_dst = DNS_IP;
-            socket_dst = self.dns_resolver.octets();
-            dst_port = 53;
-        }
+        let socket_dst = if packet.dst == DNS_IP && udp.dst_port == 53 {
+            self.dns.server_at(now)
+        } else {
+            SocketAddr::from((packet.dst, udp.dst_port))
+        };
         let key = UdpFlowKey {
             guest_ip: packet.src,
             guest_port: udp.src_port,
-            public_dst,
+            public_dst: packet.dst,
             public_dst_port: udp.dst_port,
             socket_dst,
-            socket_dst_port: dst_port,
         };
         let flow = match self.udp_flows.entry(key) {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => {
-                let socket = match UdpSocket::bind(SocketAddrV4::new(StdIpv4Addr::UNSPECIFIED, 0))
-                    .and_then(|socket| {
-                        socket.set_nonblocking(true)?;
-                        socket
-                            .connect(SocketAddrV4::new(StdIpv4Addr::from(socket_dst), dst_port))?;
-                        Ok(socket)
-                    }) {
+                let local = match socket_dst {
+                    SocketAddr::V4(_) => IpAddr::V4(StdIpv4Addr::UNSPECIFIED),
+                    SocketAddr::V6(_) => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+                };
+                let socket = match UdpSocket::bind(SocketAddr::new(local, 0)).and_then(|socket| {
+                    socket.set_nonblocking(true)?;
+                    socket.connect(socket_dst)?;
+                    Ok(socket)
+                }) {
                     Ok(socket) => socket,
                     Err(_) => return,
                 };
@@ -590,9 +602,11 @@ impl HostSocketOutboundIpv4Handler {
                     return;
                 }
             };
+            let shift = syn_window_shift(tcp.segment);
+            let guest_next = tcp.seq.wrapping_add(1);
             self.tcp_flows.insert(
                 key,
-                TcpFlow::new(stream, tcp.seq.wrapping_add(1), our_seq, now),
+                TcpFlow::new(stream, guest_next, our_seq, tcp.window, shift, now),
             );
             self.evict_idle_flows();
             return;
@@ -602,7 +616,9 @@ impl HostSocketOutboundIpv4Handler {
         };
         flow.last_activity = now;
         if tcp.flags & TCP_FLAG_ACK != 0 {
-            flow.observe_guest_ack(tcp.ack);
+            let bare = tcp.payload.is_empty() && tcp.flags & (TCP_FLAG_SYN | TCP_FLAG_FIN) == 0;
+            let window = flow.send.guest_window(tcp.window);
+            flow.send.on_guest_ack(tcp.ack, window, bare);
         }
         if !tcp.payload.is_empty() && tcp.seq == flow.guest_next {
             if flow.write_buf.len() >= MAX_TCP_WRITE_BACKLOG {
@@ -695,6 +711,13 @@ impl HostSocketOutboundIpv4Handler {
             stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
         }
         let now = self.now_ms();
+        // Capacity, not length: a drained deque keeps its allocation.
+        let unacked: usize = self
+            .tcp_flows
+            .values()
+            .map(|f| f.send.unacked.capacity())
+            .sum();
+        let mut unacked_budget = MAX_TCP_UNACKED_BYTES.saturating_sub(unacked);
         {
             let remove_scratch = &mut self.tcp_remove_scratch;
             let read_scratch = &mut self.tcp_read_scratch;
@@ -713,15 +736,7 @@ impl HostSocketOutboundIpv4Handler {
                         Ok(Some(0)) => {
                             active = true;
                             flow.state = TcpProxyState::Established;
-                            queue_tcp_reply(
-                                reply_queue,
-                                guest_mac,
-                                key,
-                                flow.our_seq,
-                                flow.guest_next,
-                                TCP_FLAG_SYN | TCP_FLAG_ACK,
-                                &[],
-                            );
+                            flow.queue_syn_ack(key, guest_mac, reply_queue);
                             stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
                         }
                         Ok(Some(_)) | Err(_) => {
@@ -755,7 +770,7 @@ impl HostSocketOutboundIpv4Handler {
                             reply_queue,
                             guest_mac,
                             key,
-                            flow.our_next,
+                            flow.send.next,
                             flow.guest_next,
                             TCP_FLAG_ACK,
                             &[],
@@ -764,62 +779,31 @@ impl HostSocketOutboundIpv4Handler {
                         flow.pending_ack = false;
                         active = true;
                     }
-                    // Leave host data in the socket while the guest is not
-                    // draining; this NAT never retransmits a dropped segment.
-                    while !reply_queue_full(reply_queue) {
-                        match flow.stream.read(read_scratch) {
-                            Ok(0) => {
-                                if !flow.host_fin_sent {
-                                    active = true;
-                                    queue_tcp_reply(
-                                        reply_queue,
-                                        guest_mac,
-                                        key,
-                                        flow.our_next,
-                                        flow.guest_next,
-                                        TCP_FLAG_FIN | TCP_FLAG_ACK,
-                                        &[],
-                                    );
-                                    stats.tcp_segments_out =
-                                        stats.tcp_segments_out.saturating_add(1);
-                                    flow.our_next = flow.our_next.wrapping_add(1);
-                                    flow.host_fin_sent = true;
-                                }
-                                break;
-                            }
-                            Ok(len) => {
-                                active = true;
-                                queue_tcp_reply(
-                                    reply_queue,
-                                    guest_mac,
-                                    key,
-                                    flow.our_next,
-                                    flow.guest_next,
-                                    TCP_FLAG_PSH | TCP_FLAG_ACK,
-                                    &read_scratch[..len],
-                                );
-                                stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
-                                flow.our_next = flow.our_next.wrapping_add(len as u32);
-                            }
-                            Err(e) if would_block(&e) => {
-                                stats.tcp_read_again = stats.tcp_read_again.saturating_add(1);
-                                break;
-                            }
-                            Err(_) => {
-                                queue_tcp_reply(
-                                    reply_queue,
-                                    guest_mac,
-                                    key,
-                                    flow.our_next,
-                                    flow.guest_next,
-                                    TCP_FLAG_RST | TCP_FLAG_ACK,
-                                    &[],
-                                );
-                                stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
-                                stats.socket_errors = stats.socket_errors.saturating_add(1);
-                                remove_scratch.push(*key);
-                                break;
-                            }
+                    let budget = &mut unacked_budget;
+                    match flow.send_to_guest(
+                        key,
+                        guest_mac,
+                        reply_queue,
+                        stats,
+                        read_scratch,
+                        budget,
+                        now,
+                    ) {
+                        HostRead::Idle => {}
+                        HostRead::Sent => active = true,
+                        HostRead::Failed => {
+                            queue_tcp_reply(
+                                reply_queue,
+                                guest_mac,
+                                key,
+                                flow.send.next,
+                                flow.guest_next,
+                                TCP_FLAG_RST | TCP_FLAG_ACK,
+                                &[],
+                            );
+                            stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
+                            stats.socket_errors = stats.socket_errors.saturating_add(1);
+                            remove_scratch.push(*key);
                         }
                     }
                 }

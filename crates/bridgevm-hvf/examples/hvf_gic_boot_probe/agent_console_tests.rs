@@ -43,6 +43,8 @@ pub(super) mod tests {
             last_alive: None,
             share: None,
             share_old_agent_warned: false,
+            clock: HostClock::default(),
+            dns_flush: DnsFlush::default(),
         }
     }
 
@@ -87,6 +89,7 @@ pub(super) mod tests {
                 ServiceReq::ShareDel { name, direction } => {
                     format!("share-del:{direction:?}:{name}")
                 }
+                ServiceReq::TimeSync => "time-sync".to_string(),
             })
             .collect()
     }

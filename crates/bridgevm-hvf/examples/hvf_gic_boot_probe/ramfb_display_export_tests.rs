@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -199,6 +199,89 @@ fn losing_the_device_scanout_keeps_its_frame_until_ramfb_changes() {
     let (header, sequence, pixels) = read_fb(&path);
     assert_eq!(header, [0x4256_4642, 1, 4, 2, 16, DRM_FORMAT_XRGB8888]);
     assert_eq!((sequence, &pixels[..32]), (6, &frame(7)[..]), "whole");
+    cleanup(&path);
+}
+
+/// Guest memory whose frame read stands in for a vCPU: once armed, the device
+/// publishes a frame while the exporter copies the guest's, after the
+/// exporter's ownership check and before its write.
+struct DeviceFlushesDuringRead {
+    ram: TestRam,
+    device: RefCell<DisplayFramebuffer>,
+    armed: Cell<bool>,
+}
+
+impl GuestMemoryMut for DeviceFlushesDuringRead {
+    fn write_bytes(&mut self, gpa: u64, data: &[u8]) -> bool {
+        self.ram.write_bytes(gpa, data)
+    }
+
+    fn read_bytes(&self, gpa: u64, len: usize) -> Option<Vec<u8>> {
+        if self.armed.replace(false) {
+            virtio_frame(&mut self.device.borrow_mut(), 0x44);
+        }
+        self.ram.read_bytes(gpa, len)
+    }
+
+    fn host_ptr(&self, gpa: u64, len: usize) -> Option<*mut u8> {
+        self.ram.host_ptr(gpa, len)
+    }
+}
+
+/// A ramfb publisher whose `frame(1)` is the file's newest frame while the
+/// device's scanout is bound: the device is idle, as after bootmgr drew on
+/// ramfb. The guest then writes its ramfb frame, seen by `watch` if any.
+fn idle_device_then_ramfb_change(
+    path: &Path,
+    watch: Option<&'static crate::ramfb_dirty_watch::FbWatch>,
+) -> (FramePublisher, DeviceFlushesDuringRead) {
+    let device = DisplayFramebuffer::at_path(path);
+    let mut publisher = FramePublisher::new(device.share());
+    publisher.watch = watch;
+    let mut ram = DeviceFlushesDuringRead {
+        ram: ram_with(&frame(1)),
+        device: RefCell::new(device),
+        armed: Cell::new(false),
+    };
+    assert!(publisher.publish_changed(Some(config()), &ram));
+    publisher.note_virtio_scanout(true);
+    assert!(ram.write_bytes(FB_ADDR, &[0xee]));
+    if let Some(watch) = watch {
+        assert!(watch.take_write_fault(FB_ADDR, 0x9200_004f));
+    }
+    (publisher, ram)
+}
+
+#[test]
+fn a_device_frame_published_while_ramfb_reads_is_never_overwritten() {
+    let path = scratch_path();
+    let (mut publisher, ram) = idle_device_then_ramfb_change(&path, None);
+    ram.armed.set(true);
+    let lost = !publisher.publish_changed(Some(config()), &ram);
+    let (header, sequence, pixels) = read_fb(&path);
+    let device_frame = (header[2], sequence, &pixels[..16]);
+    assert_eq!(device_frame, (2, 4, &[0x44; 16][..]), "the device's frame stays");
+    assert!(lost, "the device took the display while ramfb read its frame");
+    cleanup(&path);
+}
+
+static RACE_WATCH: crate::ramfb_dirty_watch::FbWatch =
+    crate::ramfb_dirty_watch::FbWatch::new(allow);
+
+#[test]
+fn a_ramfb_change_that_lost_to_the_device_publishes_once_ramfb_owns_the_display() {
+    let path = scratch_path();
+    let (mut publisher, ram) = idle_device_then_ramfb_change(&path, Some(&RACE_WATCH));
+    ram.armed.set(true);
+    assert!(!publisher.publish_changed(Some(config()), &ram), "lost to the device");
+    assert!(!publisher.publish_changed(Some(config()), &ram), "the device presents");
+    assert_eq!(read_fb(&path).1, 4, "the device's frame stays");
+    std::thread::sleep(VIRTIO_IDLE);
+    // No guest write since: the change that lost is still pending.
+    assert!(publisher.publish_changed(Some(config()), &ram), "the device idled");
+    let (header, sequence, pixels) = read_fb(&path);
+    assert_eq!((header[2], sequence, pixels[0]), (4, 6, 0xee));
+    RACE_WATCH.release();
     cleanup(&path);
 }
 

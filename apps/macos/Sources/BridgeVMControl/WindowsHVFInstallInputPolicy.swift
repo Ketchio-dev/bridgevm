@@ -1,3 +1,5 @@
+import Foundation
+
 enum WindowsHVFInstallInputPolicy {
     struct StagedInputs {
         let payload: WindowsHVFGuestPayloadPolicy.StagedPayload?
@@ -6,7 +8,7 @@ enum WindowsHVFInstallInputPolicy {
 
     static func stage(
         payloadDirectory: String?, payloadManifest: String?,
-        e2eUnattendedPath: String?, bundlePath: String
+        e2eUnattendedPath: String?, bundlePath: String, repoRoot: URL
     ) -> StagedInputs? {
         let payload: WindowsHVFGuestPayloadPolicy.StagedPayload?
         if payloadDirectory != nil || payloadManifest != nil {
@@ -24,7 +26,8 @@ enum WindowsHVFInstallInputPolicy {
                 e2eUnattendedPath, in: bundlePath) else { return nil }
             unattended = staged
         } else {
-            unattended = nil
+            unattended = WindowsHVFUnattendPolicy.stageHostTimeZone(
+                in: bundlePath, repoRoot: repoRoot)
         }
         return StagedInputs(payload: payload, unattended: unattended)
     }

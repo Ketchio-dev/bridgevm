@@ -8,11 +8,14 @@
 //! With a virtio-gpu device both write the file through one shared writer
 //! (one lock, one sequence). The device's frames win while its scanout is
 //! bound and it published within [`VIRTIO_IDLE`]; otherwise changed ramfb
-//! frames are published. Losing the scanout publishes nothing by itself: the
-//! device's last frame stays until the ramfb frame changes. Windows changes it
-//! whenever it draws there (the boot spinner after ExitBootServices, Basic
-//! Display after the driver goes), and the stale ramfb frame left when the
-//! driver unloads at shutdown is never shown.
+//! frames are published. The write checks that rule again under the file's
+//! lock, in one step, so a device frame published while the exporter read the
+//! guest's frame is never overwritten; the ramfb change then stays pending
+//! until ramfb owns the display again. Losing the scanout publishes nothing by
+//! itself: the device's last frame stays until the ramfb frame changes.
+//! Windows changes it whenever it draws there (the boot spinner after
+//! ExitBootServices, Basic Display after the driver goes), and the stale ramfb
+//! frame left when the driver unloads at shutdown is never shown.
 
 use std::time::Duration;
 
@@ -102,14 +105,22 @@ impl FramePublisher {
         self.virtio_bound = bound;
     }
 
+    /// How long the device's newest frame holds the display against ramfb:
+    /// [`VIRTIO_IDLE`] while its scanout is bound, otherwise not at all.
+    fn hold(&self) -> Duration {
+        if self.virtio_bound {
+            VIRTIO_IDLE
+        } else {
+            Duration::ZERO
+        }
+    }
+
     /// The device presents: its scanout is bound and its frame, newer than
-    /// ours, is younger than [`VIRTIO_IDLE`].
+    /// ours, is younger than [`VIRTIO_IDLE`]. Only a shortcut that spares the
+    /// read; the write decides again under the file's lock.
     fn virtio_presenting(&self) -> bool {
-        self.virtio_bound
-            && self
-                .target
-                .other_frame_age()
-                .is_some_and(|age| age < VIRTIO_IDLE)
+        let age = self.target.other_frame_age();
+        age.is_some_and(|age| age < self.hold())
     }
 
     /// Read guest pixels only after the guest wrote them.
@@ -153,23 +164,23 @@ impl FramePublisher {
             }
         }
         let (width, height, stride) = (config.width, config.height, config.stride);
+        let hold = self.hold();
         match self
             .target
-            .publish(width, height, stride, config.fourcc, &self.scratch)
+            .publish_yielding(hold, width, height, stride, config.fourcc, &self.scratch)
         {
-            Ok(()) => {
+            Ok(true) => {
                 if self.published.is_none() {
                     println!("ramfb display export: first frame {width}x{height} published");
                 }
                 let previous = self.published.take().map(|(_, bytes)| bytes);
                 let frame = std::mem::replace(&mut self.scratch, previous.unwrap_or_default());
                 self.published = Some((config, frame));
-                true
+                return true;
             }
+            // The device published while the frame was read: its frame stays.
+            Ok(false) => {}
             Err(error) => {
-                if let Some(watch) = self.watch {
-                    watch.mark_dirty();
-                }
                 if !self.failure_logged {
                     self.failure_logged = true;
                     eprintln!(
@@ -177,9 +188,13 @@ impl FramePublisher {
                         self.target.path().display()
                     );
                 }
-                false
             }
         }
+        // Unpublished, the change stays pending: read it again next tick.
+        if let Some(watch) = self.watch {
+            watch.mark_dirty();
+        }
+        false
     }
 }
 

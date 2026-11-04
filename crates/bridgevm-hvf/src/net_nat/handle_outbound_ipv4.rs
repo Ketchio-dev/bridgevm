@@ -40,6 +40,10 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
                 .saturating_add(self.pending_socket_errors);
             self.pending_socket_errors = 0;
         }
+        // Notice a resolver change without waiting for a guest query: a name
+        // Windows cached as failed sends none until its cache is flushed.
+        let now = self.now_ms();
+        self.dns.server_at(now);
         self.poll_udp(guest_mac, reply_queue, stats);
         self.poll_tcp(guest_mac, reply_queue, stats);
         self.poll_icmp(guest_mac, reply_queue, stats);
@@ -49,6 +53,10 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
     fn active_flow_counts(&self) -> (usize, usize) {
         (self.tcp_flows.len(), self.udp_flows.len())
     }
+
+    fn dns_server_changes(&self) -> u64 {
+        self.dns.changes
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -57,8 +65,8 @@ pub(crate) struct UdpFlowKey {
     pub(crate) guest_port: u16,
     pub(crate) public_dst: Ipv4Addr,
     pub(crate) public_dst_port: u16,
-    pub(crate) socket_dst: Ipv4Addr,
-    pub(crate) socket_dst_port: u16,
+    /// The host socket's peer; for 10.0.2.3:53 the resolver at flow creation.
+    pub(crate) socket_dst: std::net::SocketAddr,
 }
 
 #[derive(Debug)]
@@ -107,12 +115,11 @@ pub(crate) struct TcpFlow {
     pub(crate) state: TcpProxyState,
     pub(crate) guest_next: u32,
     pub(crate) our_seq: u32,
-    pub(crate) our_next: u32,
+    /// The host-to-guest direction (`tcp_send.rs`).
+    pub(crate) send: TcpSendState,
     pub(crate) write_buf: VecDeque<u8>,
     pub(crate) pending_ack: bool,
     pub(crate) guest_fin: bool,
-    pub(crate) host_fin_sent: bool,
-    pub(crate) host_fin_acked: bool,
     pub(crate) last_activity: u64,
 }
 
@@ -121,6 +128,8 @@ impl TcpFlow {
         stream: TcpStream,
         guest_next: u32,
         our_seq: u32,
+        guest_window: u16,
+        guest_window_shift: Option<u8>,
         last_activity: u64,
     ) -> Self {
         Self {
@@ -128,19 +137,11 @@ impl TcpFlow {
             state: TcpProxyState::Connecting,
             guest_next,
             our_seq,
-            our_next: our_seq.wrapping_add(1),
+            send: TcpSendState::new(our_seq.wrapping_add(1), guest_window, guest_window_shift),
             write_buf: VecDeque::new(),
             pending_ack: false,
             guest_fin: false,
-            host_fin_sent: false,
-            host_fin_acked: false,
             last_activity,
-        }
-    }
-
-    pub(crate) fn observe_guest_ack(&mut self, ack: u32) {
-        if self.host_fin_sent && ack == self.our_next {
-            self.host_fin_acked = true;
         }
     }
 
@@ -159,7 +160,7 @@ impl TcpFlow {
     }
 
     pub(crate) fn closed(&self) -> bool {
-        self.guest_fin && self.host_fin_sent && self.host_fin_acked
+        self.guest_fin && self.send.fin_acked
     }
 }
 
@@ -617,15 +618,19 @@ pub(crate) fn build_dhcp_reply_frame(
     Some(frame)
 }
 
+/// `options` is whole 32-bit words of TCP options.
 pub(crate) fn build_tcp_reply_frame(
     source: EthernetIpv4Endpoint,
     destination: EthernetIpv4Endpoint,
     seq: u32,
     ack: u32,
     flags: u8,
+    options: &[u8],
     payload: &[u8],
 ) -> Option<Vec<u8>> {
-    let tcp_len = 20usize.checked_add(payload.len())?;
+    debug_assert_eq!(options.len() % 4, 0);
+    let header_len = 20 + options.len();
+    let tcp_len = header_len.checked_add(payload.len())?;
     let ipv4_len = 20usize.checked_add(tcp_len)?;
     let total_len = u16::try_from(ipv4_len).ok()?;
     let mut frame = Vec::with_capacity(14 + ipv4_len);
@@ -651,11 +656,12 @@ pub(crate) fn build_tcp_reply_frame(
     frame.extend_from_slice(&destination.network.port.to_be_bytes());
     frame.extend_from_slice(&seq.to_be_bytes());
     frame.extend_from_slice(&ack.to_be_bytes());
-    frame.push(5 << 4);
+    frame.push(((header_len / 4) as u8) << 4);
     frame.push(flags);
     frame.extend_from_slice(&65535u16.to_be_bytes());
     frame.extend_from_slice(&0u16.to_be_bytes());
     frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.extend_from_slice(options);
     frame.extend_from_slice(payload);
     let checksum = tcp_checksum(
         source.network.address,

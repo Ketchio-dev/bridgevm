@@ -10,9 +10,15 @@ final class HvfDisplayDriverInstallScriptTests: XCTestCase {
         Data(base64Encoded: String(base64)).flatMap { String(data: $0, encoding: .utf16LittleEndian) }
     }
 
-    /// The launch line writes install.ps1 and runs its Launch mode; the poll line runs Poll.
-    func testLaunchAndPollAreEachOneAgentLineThatFitsCmd() throws {
-        for command in [Install.launchCommand, Install.pollCommand] {
+    private func decodedPrepare() throws -> String {
+        XCTAssertTrue(Install.prepareCommand.hasPrefix(powershell))
+        return try XCTUnwrap(decodeUTF16(Install.prepareCommand.dropFirst(powershell.count)))
+    }
+
+    /// Prepare locks the folders, the launch line writes install.ps1 and runs its Launch mode, the
+    /// poll line runs Poll: three agent lines, each within cmd.exe's limit.
+    func testPrepareLaunchAndPollAreEachOneAgentLineThatFitsCmd() throws {
+        for command in [Install.prepareCommand, Install.launchCommand, Install.pollCommand] {
             XCTAssertEqual(try HvfGuestCommand.normalizeShell(command).get(), command)
             XCTAssertTrue(command.utf8.count <= HvfClipboardPaste.maximumCommandCharacters, "\(command.utf8.count)")
             // Base64 and the fixed wrapper only: nothing cmd.exe would expand, quote or redirect.
@@ -25,10 +31,10 @@ final class HvfDisplayDriverInstallScriptTests: XCTestCase {
         let script = try XCTUnwrap(Data(base64Encoded: String(parts[0].dropFirst(set.count))))
         XCTAssertEqual(String(data: script, encoding: .utf8), Install.script)
         XCTAssertTrue(parts[1].hasPrefix(powershell))
+        // No folder creation here: the folder is the one prepare has just locked.
         XCTAssertEqual(decodeUTF16(parts[1].dropFirst(powershell.count)), """
             $ErrorActionPreference = 'Stop'
             $file = Join-Path $env:ProgramData 'BridgeVM\\display-driver\\install.ps1'
-            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
             [IO.File]::WriteAllBytes($file, [Convert]::FromBase64String($env:BVDRIVER_INSTALLER))
             & $file -Mode Launch
             """)
@@ -37,18 +43,77 @@ final class HvfDisplayDriverInstallScriptTests: XCTestCase {
                        "& (Join-Path $env:ProgramData 'BridgeVM\\display-driver\\install.ps1') -Mode Poll")
         // Windows PowerShell 5.1 reads a BOM-less script in the ANSI code page.
         XCTAssertTrue(Install.script.unicodeScalars.allSatisfy(\.isASCII))
+        XCTAssertTrue(try decodedPrepare().unicodeScalars.allSatisfy(\.isASCII))
+    }
+
+    /// Both folders end up owned by Administrators with full control for SYSTEM and Administrators
+    /// only and nothing inherited, set and checked by SID (localized Windows has other names).
+    func testPrepareLocksBothFoldersBySID() throws {
+        let prepare = try decodedPrepare()
+        XCTAssertTrue(prepare.contains("$root = Join-Path $env:ProgramData 'BridgeVM'"))
+        XCTAssertTrue(prepare.contains("foreach ($path in $root, (Join-Path $root 'display-driver')) {"))
+        XCTAssertTrue(prepare.contains("$locked.SetSecurityDescriptorSddlForm('O:S-1-5-32-544D:PAI(A;OICI;FA;;;S-1-5-18)(A;OICI;FA;;;S-1-5-32-544)')"))
+        // Created with that descriptor: there is no moment when anyone else may write to it.
+        XCTAssertTrue(prepare.contains("[void][IO.Directory]::CreateDirectory($path, $locked)"))
+        // Read back by SID: owner, no inheritance, exactly the two full-control entries.
+        XCTAssertTrue(prepare.contains("$acl.GetAccessRules($true, $true, $sid)"))
+        XCTAssertTrue(prepare.contains("$acl.AreAccessRulesProtected -and $acl.GetOwner($sid).Value -eq 'S-1-5-32-544' -and (@($aces | Sort-Object) -join '; ') -eq 'S-1-5-18 Allow FullControl ContainerInherit, ObjectInherit False; S-1-5-32-544 Allow FullControl ContainerInherit, ObjectInherit False'"))
+        for name in ["BUILTIN", "NT AUTHORITY", "NTAccount", "icacls"] { XCTAssertFalse(prepare.contains(name), name) }
+        // An unlocked folder is renamed aside whole, never relocked or emptied in place (either
+        // would act through a junction someone swaps in); a locked one is kept with its download.
+        XCTAssertTrue(prepare.contains("if (-not (Test-Locked $path)) { [IO.Directory]::Move($path, $path + '.unlocked-' + [guid]::NewGuid().ToString('N')) }"))
+        for call in ["Set-Acl", "Remove-Item", "Directory]::Delete"] { XCTAssertFalse(prepare.contains(call), call) }
+        XCTAssertTrue(prepare.hasSuffix("""
+              'BVDRIVER ready'
+            } catch { 'BVDRIVER result=failed detail=' + (($_.Exception.Message -replace '\\s+', ' ').Trim()) }
+            """))
+    }
+
+    /// A junction or link at either folder, or a folder that does not read back locked, ends the
+    /// install with one failed result line before anything is written.
+    func testPrepareRefusesAReparsePointOrAnUnverifiedLock() throws {
+        let prepare = try decodedPrepare()
+        // GetAttributes reports the link itself, never its target.
+        XCTAssertTrue(prepare.contains("function Test-ReparsePoint([string]$Path) { [bool]([IO.File]::GetAttributes($Path) -band [IO.FileAttributes]::ReparsePoint) }"))
+        let refuse = "if (Test-ReparsePoint $path) { throw \"$path is a reparse point"
+        let verify = "if ((Test-ReparsePoint $path) -or -not (Test-Locked $path)) { throw \"$path could not be locked to SYSTEM and Administrators\" }"
+        let order = [refuse, "[IO.Directory]::Move(", "[IO.Directory]::CreateDirectory(", verify, "'BVDRIVER ready'"]
+        let positions = try order.map { try XCTUnwrap(prepare.range(of: $0), $0).lowerBound }
+        XCTAssertEqual(positions, positions.sorted())
+        XCTAssertTrue(prepare.hasPrefix("$ErrorActionPreference = 'Stop'\ntry {\n"))
+        // The app sends the launch only after `ready`; a refusal is the install's outcome.
+        XCTAssertEqual(HvfDisplayDriverInstall.progress(output: "BVDRIVER ready\r\n", code: 0), .running)
+        XCTAssertEqual(HvfDisplayDriverInstall.progress(
+            output: "BVDRIVER result=failed detail=C:\\ProgramData\\BridgeVM is a reparse point (a junction or link); remove it and install again", code: 0),
+            .finished(.init(status: .failed, detail: "C:\\ProgramData\\BridgeVM is a reparse point (a junction or link); remove it and install again")))
+    }
+
+    /// Each launch writes a new random token before it starts Run; a result counts only under that
+    /// token's name and a lock only while its PID runs that token, so a stale or foreign
+    /// result or lock is ignored.
+    func testResultAndLockCountOnlyForThisLaunchsToken() throws {
+        let script = Install.script
+        XCTAssertTrue(script.hasPrefix("param([ValidateSet('Launch', 'Poll', 'Run')] [string]$Mode = 'Run', [string]$Token = '')\n"))
+        XCTAssertTrue(script.contains("if (Test-Path -LiteralPath $tokenFile) { $Token = [IO.File]::ReadAllText($tokenFile) }\n    $resultFile = Join-Path $dir ('result-' + $Token + '.txt')"))
+        XCTAssertTrue(script.contains("if ($Mode -eq 'Poll' -and $Token -and (Test-Path -LiteralPath $resultFile)) { [IO.File]::ReadAllText($resultFile); exit }"))
+        XCTAssertTrue(script.contains("if ($id -gt 0 -and $Token) { $process = Get-CimInstance"))
+        XCTAssertTrue(script.contains("$process.CommandLine -like ('*\\BridgeVM\\display-driver\\install.ps1\" -Mode Run -Token ' + $Token)"))
+        let launch = ["Remove-Item -Path (Join-Path $dir 'result-*') -Force", "$Token = [guid]::NewGuid().ToString('N')",
+                      "[IO.File]::WriteAllText($tokenFile, $Token)", "'\" -Mode Run -Token ' + $Token\n", "Invoke-CimMethod"]
+        let positions = try launch.map { try XCTUnwrap(script.range(of: $0), $0).lowerBound }
+        XCTAssertEqual(positions, positions.sorted())
+        XCTAssertFalse(script.contains("result.txt")) // the unbound name an earlier version wrote
     }
 
     func testLaunchStartsTheInstallerDetachedUnlessOneIsRunning() throws {
         let script = Install.script
-        XCTAssertTrue(script.hasPrefix("param([ValidateSet('Launch', 'Poll', 'Run')] [string]$Mode = 'Run')\n"))
         XCTAssertTrue(script.contains("$dir = Join-Path $env:ProgramData 'BridgeVM\\display-driver'"))
-        // The lock's PID counts only while it is still this script's Run mode; a stale lock is ignored.
-        XCTAssertTrue(script.contains("if ($null -ne $process -and $process.CommandLine -like '*\\BridgeVM\\display-driver\\install.ps1*-Mode Run*') {\n      'BVDRIVER running pid=' + $id\n    } elseif"))
-        XCTAssertTrue(script.contains("$line = 'powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"' + $PSCommandPath + '\" -Mode Run'"))
+        // The lock's PID counts only while it is still this launch's Run; a stale lock is ignored.
+        XCTAssertTrue(script.contains("-Mode Run -Token ' + $Token)) {\n      'BVDRIVER running pid=' + $id\n    } elseif"))
+        XCTAssertTrue(script.contains("$line = 'powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"' + $PSCommandPath + '\" -Mode Run -Token ' + $Token"))
         XCTAssertTrue(script.contains("Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $line }"))
         XCTAssertFalse(script.contains("Start-Process")) // it would inherit the agent's output pipe
-        let order = ["if ($null -ne $process", "Remove-Item -LiteralPath $resultFile -Force", "Invoke-CimMethod",
+        let order = ["if ($null -ne $process", "Remove-Item -Path (Join-Path $dir 'result-*') -Force", "Invoke-CimMethod",
                      "[IO.File]::WriteAllText($lock, [string]$started.ProcessId)", "'BVDRIVER started pid='", "exit\n}\n$zip ="]
         let positions = try order.map { try XCTUnwrap(script.range(of: $0), $0).lowerBound }
         XCTAssertEqual(positions, positions.sorted())
@@ -56,7 +121,7 @@ final class HvfDisplayDriverInstallScriptTests: XCTestCase {
 
     func testPollPrintsTheResultFileElseRunningElseAFailure() {
         let script = Install.script
-        XCTAssertTrue(script.contains("if ($Mode -eq 'Poll' -and (Test-Path -LiteralPath $resultFile)) { [IO.File]::ReadAllText($resultFile); exit }"))
+        XCTAssertTrue(script.contains("if ($Mode -eq 'Poll' -and $Token -and (Test-Path -LiteralPath $resultFile)) { [IO.File]::ReadAllText($resultFile); exit }"))
         XCTAssertTrue(script.contains("} elseif ($Mode -eq 'Poll') {\n      Format-Result 'failed' 'the installer stopped without a result"))
     }
 
@@ -103,9 +168,9 @@ final class HvfDisplayDriverInstallScriptTests: XCTestCase {
         let script = Install.script
         XCTAssertEqual(script.components(separatedBy: "'BVDRIVER result='").count - 1, 1)
         XCTAssertTrue(script.hasSuffix("""
-            $temp = Join-Path $dir 'result.tmp'
+            $temp = Join-Path $dir ('result-' + $Token + '.tmp')
             [IO.File]::WriteAllText($temp, (Format-Result $result $detail))
-            [IO.File]::Move($temp, $resultFile)
+            [IO.File]::Move($temp, (Join-Path $dir ('result-' + $Token + '.txt')))
             Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue
             """))
         for result in ["'installed'", "'staged'", "'failed'"] {
@@ -126,6 +191,7 @@ final class HvfDisplayDriverInstallProgressTests: XCTestCase {
     }
 
     func testStartedOrRunningMeansPollAgain() {
+        XCTAssertEqual(progress("BVDRIVER ready"), .running) // folders locked: launch next
         XCTAssertEqual(progress("BVDRIVER started pid=4242\r\n"), .running) // just launched, no result yet
         XCTAssertEqual(progress("BVDRIVER running pid=4242"), .running) // a later poll, or a second click
     }
@@ -194,14 +260,14 @@ final class HvfDisplayDriverInstallSessionTests: XCTestCase {
     /// The launch returns at once; each poll is its own short agent command, so other agent
     /// work runs between them.
     func testInstallLaunchesThenPollsWithShortCommandsUntilTheResult() async {
-        var sent: [String] = [], replies = ["BVDRIVER started pid=7", "BVDRIVER running pid=7",
+        var sent: [String] = [], replies = ["BVDRIVER ready", "BVDRIVER started pid=7", "BVDRIVER running pid=7",
                                            "BVDRIVER result=installed detail=Red Hat VirtIO GPU DOD controller status=OK"]
         let outcome = await Install.install(runner: { command, timeout in
             sent.append(command)
             XCTAssertTrue(timeout <= 30, "\(timeout)")
             return (replies.removeFirst(), 0)
         }, pollInterval: 0.01, timeout: 30)
-        XCTAssertEqual(sent, [Install.launchCommand, Install.pollCommand, Install.pollCommand])
+        XCTAssertEqual(sent, [Install.prepareCommand, Install.launchCommand, Install.pollCommand, Install.pollCommand])
         XCTAssertEqual(outcome, .init(status: .installed, detail: "Red Hat VirtIO GPU DOD controller status=OK"))
     }
 
@@ -227,8 +293,9 @@ final class HvfDisplayDriverInstallSessionTests: XCTestCase {
             outcome = await Install.install(runner: { await Install.runInGuest($0, session: fixture.session, timeout: $1) },
                                             pollInterval: 0.01, timeout: 20)
         }
-        try await fixture.reply(to: Install.launchCommand, with: "BVDRIVER started pid=7", line: 1)
-        try await fixture.reply(to: Install.pollCommand, with: "BVDRIVER result=staged detail=no 1AF4:1050 device yet", line: 2)
+        try await fixture.reply(to: Install.prepareCommand, with: "BVDRIVER ready", line: 1)
+        try await fixture.reply(to: Install.launchCommand, with: "BVDRIVER started pid=7", line: 2)
+        try await fixture.reply(to: Install.pollCommand, with: "BVDRIVER result=staged detail=no 1AF4:1050 device yet", line: 3)
         let deadline = Date().addingTimeInterval(10)
         while outcome == nil, Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertEqual(outcome, .init(status: .staged, detail: "no 1AF4:1050 device yet"))
@@ -239,13 +306,29 @@ final class HvfDisplayDriverInstallSessionTests: XCTestCase {
         var sent: [String] = []
         let outcome = await withCheckedContinuation { (done: CheckedContinuation<Install.Outcome, Never>) in
             Install.start(
-                runner: { command, _ in sent.append(command); return ("BVDRIVER result=failed detail=pnputil exit 5", 0) },
+                runner: { command, _ in
+                    sent.append(command)
+                    return (command == Install.prepareCommand ? "BVDRIVER ready" : "BVDRIVER result=failed detail=pnputil exit 5", 0)
+                },
                 onInstalled: { _ in installed += 1 }
             ) { done.resume(returning: $0) }
         }
-        XCTAssertEqual(sent, [Install.launchCommand])
+        XCTAssertEqual(sent, [Install.prepareCommand, Install.launchCommand])
         XCTAssertEqual(outcome.status, .failed)
         XCTAssertEqual(installed, 0)
+    }
+
+    /// A refused prepare (junction, foreign or unverifiable folder) is the outcome: nothing is
+    /// written or launched.
+    func testARefusedPrepareStopsBeforeTheLaunch() async {
+        var sent: [String] = []
+        let refusal = "C:\\ProgramData\\BridgeVM\\display-driver could not be locked to SYSTEM and Administrators"
+        let outcome = await Install.install(runner: { command, _ in
+            sent.append(command)
+            return ("BVDRIVER result=failed detail=\(refusal)\r\n", 0)
+        }, pollInterval: 0.01, timeout: 30)
+        XCTAssertEqual(sent, [Install.prepareCommand])
+        XCTAssertEqual(outcome, .init(status: .failed, detail: refusal))
     }
 
     private struct Fixture {
