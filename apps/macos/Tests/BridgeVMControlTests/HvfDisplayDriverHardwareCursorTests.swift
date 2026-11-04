@@ -53,4 +53,22 @@ final class HvfDisplayDriverHardwareCursorTests: XCTestCase {
             XCTAssertEqual(lines.map(String.init), expected ? [Install.hardwareCursorCommand] : [], label)
         }
     }
+
+    /// After an `installed` result (a driver update rewrites the INF's 0), never after staged or failed.
+    func testTheInstallActionSendsItAfterAnInstalledResultOnly() async {
+        for status in ["installed", "staged", "failed"] {
+            var sent: [String] = []
+            let outcome = await withCheckedContinuation { (done: CheckedContinuation<Install.Outcome, Never>) in
+                Install.start(runner: { command, _ in
+                    sent.append(command)
+                    return (command == Install.hardwareCursorCommand ? "BVCURSOR result=set"
+                        : "BVDRIVER result=\(status) detail=x", 0)
+                }, onInstalled: { _ in }) { done.resume(returning: $0) }
+            }
+            XCTAssertEqual(outcome.status.rawValue, status)
+            XCTAssertEqual(sent.filter { $0 == Install.hardwareCursorCommand }.count, status == "installed" ? 1 : 0,
+                           status)
+            if status == "installed" { XCTAssertEqual(sent.last, Install.hardwareCursorCommand) }
+        }
+    }
 }
