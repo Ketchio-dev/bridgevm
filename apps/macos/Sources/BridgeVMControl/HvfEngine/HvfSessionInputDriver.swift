@@ -8,6 +8,8 @@ final class HvfSessionInputDriver {
     /// `app ordered input:` record (HvfOrderedInputRecord.swift); observing never changes the routing.
     var onAdmission: ((HvfNegotiatedInputStream.Admission, _ held: Int, _ depth: Int) -> Void)?
     var onUpdate: ((HvfAcknowledgedInputStream.Update?) -> Void)?
+    /// The clock of the receipt deadlines; the session's leaves paused time out (HvfGuestRunClock).
+    var now: () -> Date = Date.init
     private(set) var router = HvfSessionInputRouter()
     private(set) var textInputGeneration = UUID()
     private var timer: Timer?
@@ -18,7 +20,7 @@ final class HvfSessionInputDriver {
     /// Only legacy admission allows the caller to use the legacy input path.
     func route(_ event: HvfOrderedInputQueue.Event, binding: [String]) -> HvfNegotiatedInputStream.Admission {
         let held = router.count; defer { observeBindingDiscard(held: held) }
-        let admission = router.route(event, binding: binding, now: Date())
+        let admission = router.route(event, binding: binding, now: now())
         onAdmission?(admission, held, router.count)
         switch admission {
         case .legacy: break
@@ -37,7 +39,7 @@ final class HvfSessionInputDriver {
 
     func cancelTarget() {
         textInputGeneration = UUID()
-        let cancelled = router.cancelTarget()
+        let cancelled = router.cancelTarget(now: now())
         onUpdate?(cancelled); reportPollUpdate(cancelled)
         startPumpIfNeeded()
         onPoll?()
@@ -45,11 +47,11 @@ final class HvfSessionInputDriver {
 
     func poll(binding: [String], serviceReady: Bool, lines: [String], send: (String) -> Bool) {
         let previous = router.state, held = router.count; defer { observeBindingDiscard(held: held) }
-        var update = router.pollBatch(binding: binding, serviceReady: serviceReady, lines: lines, now: Date(), send: send)
+        var update = router.pollBatch(binding: binding, serviceReady: serviceReady, lines: lines, now: now(), send: send)
         if case .inserted = update {
             onUpdate?(update)
             // Never reuse a receipt batch to acknowledge the next request.
-            update = router.poll(binding: binding, serviceReady: serviceReady, lines: [], now: Date(), send: send)
+            update = router.poll(binding: binding, serviceReady: serviceReady, lines: [], now: now(), send: send)
         }
         onUpdate?(update)
         if invalidatesTextInputTarget(previous: previous, lines: lines) { textInputGeneration = UUID() }

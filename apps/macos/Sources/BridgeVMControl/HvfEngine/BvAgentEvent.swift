@@ -15,7 +15,8 @@ enum BvAgentEvent: Equatable, Identifiable {
     case ready(host: String, tMs: Int)
     case serviceStart(tMs: Int)
     case aliveHeartbeat(tMs: Int)
-    case clipSync(direction: BvAgentDirection, bytes: Int, tMs: Int)
+    /// `copy` numbers the clipboard copy the line is about (the probe's ` copy=N`).
+    case clipSync(direction: BvAgentDirection, bytes: Int, tMs: Int, copy: Int? = nil)
     case shareEvent(kind: BvAgentShareKind, path: String, bytes: Int?, tMs: Int)
     case overdue(kind: String, awaitingReply: Bool, tMs: Int)
     case commandOutput(label: String, body: String)
@@ -28,7 +29,7 @@ enum BvAgentEvent: Equatable, Identifiable {
         case let .ready(host, tMs): return "READY host=\(host) t=\(tMs)"
         case let .serviceStart(tMs): return "SERVICE start t=\(tMs)"
         case let .aliveHeartbeat(tMs): return "SERVICE alive t=\(tMs)"
-        case let .clipSync(direction, bytes, tMs): return "CLIPSYNC \(direction.rawValue) bytes=\(bytes) t=\(tMs)"
+        case let .clipSync(direction, bytes, tMs, _): return "CLIPSYNC \(direction.rawValue) bytes=\(bytes) t=\(tMs)"
         case let .shareEvent(kind, path, bytes, tMs):
             let byteText = bytes.map { " bytes=\($0)" } ?? ""
             return "SHARE \(kind.rawValue) \(path)\(byteText) t=\(tMs)"
@@ -130,7 +131,7 @@ enum BvAgentEvent: Equatable, Identifiable {
             return nil
         }
         guard let bytes = value(after: "bytes=", in: line), let tMs = tMs(in: line) else { return nil }
-        return .clipSync(direction: direction, bytes: bytes, tMs: tMs)
+        return .clipSync(direction: direction, bytes: bytes, tMs: tMs, copy: value(after: " copy=", in: line))
     }
 
     private static func parseShare(_ line: String) -> BvAgentEvent? {

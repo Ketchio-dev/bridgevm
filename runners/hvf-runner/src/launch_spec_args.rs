@@ -40,6 +40,16 @@ pub(crate) struct LaunchSpecArgs {
     /// records the Mac's default input (`BRIDGEVM_HDA_MICROPHONE=1`).
     #[arg(long, requires = "helper")]
     pub(crate) helper_hda_microphone: bool,
+    /// The app's copy of the guest agent: an older agent in the guest gets
+    /// these files (agent_console/agent_update.rs).
+    #[arg(long, value_name = "DIR", requires_all = ["helper", "helper_agent_update_marker", "helper_agent_update_session"])]
+    pub(crate) helper_agent_update: Option<PathBuf>,
+    /// The VM bundle's record of the last update, which allows one attempt per app session.
+    #[arg(long, value_name = "PATH", requires = "helper_agent_update")]
+    pub(crate) helper_agent_update_marker: Option<PathBuf>,
+    /// This app session's ID.
+    #[arg(long, value_name = "ID", requires = "helper_agent_update")]
+    pub(crate) helper_agent_update_session: Option<String>,
     /// swtpm binary for --helper-vtpm-state (the app passes its
     /// signature-validated choice; default is the homebrew install).
     #[arg(long, value_name = "PATH", requires = "helper_vtpm_state")]

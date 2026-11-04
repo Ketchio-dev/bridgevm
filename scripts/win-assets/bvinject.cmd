@@ -447,7 +447,8 @@ if exist %DRV%\..\bvagent.ps1 (
   reg load HKLM\BVSW %WIN%\Windows\System32\config\SOFTWARE
   rem Remove the legacy Run launcher. It required globally disabling UAC to
   rem open vioser. The LocalSystem one-shot service below instead creates an
-  rem ONLOGON /RL HIGHEST task for the interactive bridge session.
+  rem highest-privilege task for the interactive bridge session: it starts
+  rem the agent at logon and again within a minute after it exits.
   reg delete "HKLM\BVSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMAgent /f 2>nul
   rem Disable the guest power plan ONCE at first logon (RunOnce). The default
   rem plan sleeps the VM at desktop+5min, which freezes the guest agent and

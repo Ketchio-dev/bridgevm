@@ -86,7 +86,9 @@ struct HvfEngineConfig: Equatable {
     }
 
     /// The default vector remains the legacy launch contract; owned mode frames stdin/stdout.
+    /// `agentAssetsDir`: the app's guest agent files, installed over an older agent in a library VM.
     func runnerArguments(manifestPath: String, runnerPath: String, firmwareCodePath: String, probePath: String, ownedRuntime: Bool = false,
+                         agentAssetsDir: String? = nil,
                          microphone: any HvfMicrophonePermission = HvfSystemMicrophonePermission()) -> [String] {
         var args = [
             runnerPath,
@@ -114,6 +116,9 @@ struct HvfEngineConfig: Equatable {
         if virtioNet { args.append("--virtio-net") }
         if audioEnabled { args.append("--helper-hda") }
         if audioEnabled && microphoneEnabled && microphone.status == .authorized { args.append("--helper-hda-microphone") }
+        if let libraryContext, let agentAssetsDir {
+            args.append(contentsOf: HvfAgentUpdate.runnerArguments(bundlePath: libraryContext.config.bundlePath, assetsDir: agentAssetsDir))
+        }
         if clipboardSync { args.append("--agent-clipboard-sync") }
         if let host = shareHostDir, let guest = shareGuestDir, !host.isEmpty, !guest.isEmpty {
             args.append(contentsOf: [

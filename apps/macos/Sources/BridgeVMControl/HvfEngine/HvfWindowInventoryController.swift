@@ -37,10 +37,10 @@ final class HvfWindowInventoryController: ObservableObject {
     }
 
     @discardableResult
-    func refresh(now: Date = Date()) -> Bool {
-        poll(now: now)
+    func refresh() -> Bool {
+        poll()
         guard pending == nil, let session, case .connected = session.connectionState else { return false }
-        let request = HvfWindowInventoryRequest(now: now)
+        let request = HvfWindowInventoryRequest(now: session.guestNow())
         guard session.sendCtl(request.command) else { invalidate("Guest service unavailable"); return false }
         pending = request
         isLoading = true
@@ -48,7 +48,7 @@ final class HvfWindowInventoryController: ObservableObject {
         return true
     }
 
-    func poll(now: Date = Date()) {
+    func poll() {
         session?.poll()
         guard let session, case .connected = session.connectionState else {
             invalidate("Disconnected")
@@ -62,7 +62,7 @@ final class HvfWindowInventoryController: ObservableObject {
             invalidate("Guest restarted")
             return
         }
-        guard let result = pending?.consume(lines: lines, now: now) else { return }
+        guard let result = pending?.consume(lines: lines, now: session.guestNow()) else { return }
         pending = nil
         isLoading = false
         switch result {

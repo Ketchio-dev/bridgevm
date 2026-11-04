@@ -32,8 +32,9 @@ impl VirtPlatform {
     ) -> Option<MsixMessage> {
         self.set_host_now(now);
         let config = self.pcie.hda_msi_config();
+        let now = self.host_now;
         let hda = self.hda.as_mut()?;
-        hda.poll(mem, Some(now));
+        hda.poll(mem, now);
         let mut taken = Vec::new();
         hda.drain_pending_msi_into(config.enabled, config.address, config.data, &mut taken);
         taken.pop()

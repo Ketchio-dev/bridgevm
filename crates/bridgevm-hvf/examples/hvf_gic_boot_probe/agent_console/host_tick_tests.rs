@@ -133,3 +133,48 @@ fn advance_writes_the_completed_get_before_sending_queued_control() {
         matches!(h.in_flight.as_ref(), Some((ServiceReq::Ctl(command), _)) if command == "PING")
     );
 }
+
+fn handshake(service: bool, now: Instant) -> AgentConsoleHarness {
+    let mut h = harness();
+    h.start = now;
+    h.timeout = Duration::from_secs(3600);
+    h.service = service;
+    h.commands = vec!["whoami".to_string()];
+    h.state = AgentConsoleState::WaitingPong;
+    h.last_ping = Some(now);
+    h
+}
+
+#[test]
+fn an_agent_restart_during_the_handshake_is_pinged_again() {
+    let t0 = Instant::now();
+    let mut h = handshake(true, t0);
+    // While the PONG is owed.
+    assert_eq!(advance(&mut h, "READY BRIDGEVM v3-share2\n", t0), ["PING\n"]);
+    assert!(matches!(h.state, AgentConsoleState::WaitingPong));
+    let sent = advance(&mut h, "PONG\n", t0);
+    assert!(sent.len() == 1 && sent[0].starts_with("RUN "), "{sent:?}");
+    assert!(matches!(h.state, AgentConsoleState::WaitingOut { index: 0 }));
+    // While the whoami reply is owed: whoami goes again after the new PONG.
+    assert_eq!(advance(&mut h, "READY BRIDGEVM v3-share2 agent=0123456789abcdef\n", t0), ["PING\n"]);
+    assert!(matches!(h.state, AgentConsoleState::WaitingPong));
+    let sent = advance(&mut h, "PONG\n", t0);
+    assert!(sent.len() == 1 && sent[0].starts_with("RUN "), "{sent:?}");
+}
+
+#[test]
+fn a_handshake_with_no_reply_is_asked_again() {
+    let t0 = Instant::now();
+    let mut h = handshake(true, t0);
+    advance(&mut h, "PONG\n", t0);
+    assert!(advance(&mut h, "", t0 + HANDSHAKE_REPLY_TIMEOUT - Duration::from_secs(1)).is_empty());
+    assert_eq!(advance(&mut h, "", t0 + HANDSHAKE_REPLY_TIMEOUT), ["PING\n"]);
+    assert!(matches!(h.state, AgentConsoleState::WaitingPong));
+    // A PONG still owed is asked for again.
+    assert_eq!(advance(&mut h, "", t0 + HANDSHAKE_REPLY_TIMEOUT + PING_INTERVAL), ["PING\n"]);
+
+    // Outside the resident service a scripted command may run for minutes.
+    let mut scripted = handshake(false, t0);
+    advance(&mut scripted, "PONG\n", t0);
+    assert!(advance(&mut scripted, "", t0 + HANDSHAKE_REPLY_TIMEOUT * 5).is_empty());
+}

@@ -653,7 +653,8 @@ impl HdaController {
         if self.gctl & GCTL_CRST == 0 {
             self.gctl = GCTL_CRST;
             self.statests |= 1;
-            self.wallclk_base = Some(Instant::now());
+            // VM time: the guest's audio wall clock does not jump by a pause.
+            self.wallclk_base = Some(crate::vm_clock::active_now());
             if hda_trace_enabled() {
                 println!("hda: controller reset released, codec 0 present");
             }
@@ -782,7 +783,10 @@ impl HdaController {
 
     pub(crate) fn wallclk(&self) -> u32 {
         self.wallclk_base
-            .map(|base| (base.elapsed().as_nanos() * 24_000_000 / 1_000_000_000) as u32)
+            .map(|base| {
+                let elapsed = crate::vm_clock::active_now().saturating_duration_since(base);
+                (elapsed.as_nanos() * 24_000_000 / 1_000_000_000) as u32
+            })
             .unwrap_or(0)
     }
 

@@ -17,6 +17,7 @@ fn surfaces() -> DeviceSurfaces {
         virtio_net: false,
         hda_audio: false,
         hda_microphone: false,
+        agent_update: None,
         host_diagnostic_stop: false,
     }
 }
@@ -43,6 +44,29 @@ fn values(surfaces: &DeviceSurfaces, key: &str) -> Vec<String> {
         .filter(|(name, _)| *name == key)
         .map(|(_, value)| value)
         .collect()
+}
+
+#[test]
+fn guest_tools_update_reaches_the_agent_console() {
+    let mut surfaces = surfaces();
+    assert!(values(&surfaces, "BRIDGEVM_VIRTIO_CONSOLE_AGENT_UPDATE").is_empty());
+    surfaces.agent_update = Some(super::super::AgentUpdateSurface {
+        dir: "/app/scripts/win-assets".into(),
+        marker: "/vm/metadata/agent-update.json".into(),
+        session: "s-1".into(),
+    });
+    assert_eq!(
+        values(&surfaces, "BRIDGEVM_VIRTIO_CONSOLE_AGENT_UPDATE"),
+        ["/app/scripts/win-assets"]
+    );
+    assert_eq!(
+        values(&surfaces, "BRIDGEVM_VIRTIO_CONSOLE_AGENT_UPDATE_MARKER"),
+        ["/vm/metadata/agent-update.json"]
+    );
+    assert_eq!(
+        values(&surfaces, "BRIDGEVM_VIRTIO_CONSOLE_AGENT_UPDATE_SESSION"),
+        ["s-1"]
+    );
 }
 
 #[test]

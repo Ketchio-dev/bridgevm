@@ -27,6 +27,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       rust: ${{ steps.diff.outputs.rust }}
+      rust_build: ${{ steps.diff.outputs.rust_build }}
+      host_contracts: ${{ steps.diff.outputs.host_contracts }}
       swift: ${{ steps.diff.outputs.swift }}
       venus: ${{ steps.diff.outputs.venus }}
     steps:
@@ -39,7 +41,7 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ "$EVENT" != pull_request ]; then
-            printf 'rust=true\nswift=true\nvenus=true\n' >> "$GITHUB_OUTPUT"
+            printf 'rust=true\nrust_build=true\nhost_contracts=true\nswift=true\nvenus=true\n' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           files=$(git diff --name-only "$BASE" HEAD)
@@ -50,6 +52,21 @@ jobs:
           other=$(printf '%s\n' "$files" | grep -vE '(\.md$|^docs/|^site/|^scripts/perf/|^\.github/(ISSUE_TEMPLATE/|workflows/))' || true)
           ci=$(printf '%s\n' "$files" | grep -E '^\.github/workflows/ci\.yml$' || true)
           rust=false; [ -n "$other$ci" ] && rust=true
+          # clippy, msrv and the venus check only compile, so they also skip
+          # when no Rust build input changed: a .rs file, a crate directory,
+          # Cargo or toolchain configuration, this workflow, or a file outside
+          # the crates that Rust code reads with include_str!/include_bytes!
+          # (the second line). The build scripts read no files.
+          # tests/integration/ci-changed-areas-test.py runs this step against
+          # fixed file lists and fails when an include target is missing.
+          rust_build=false
+          printf '%s\n' "$files" | grep -qE '\.rs$|^(crates|runners|tools)/|(^|/)(Cargo\.(toml|lock)|rust-toolchain(\.toml)?|\.?clippy\.toml)$|(^|/)\.cargo/|^\.github/workflows/ci\.yml$' && rust_build=true
+          printf '%s\n' "$files" | grep -qxE 'apps/macos/Sources/BridgeVMControl/HvfEngine/(BvAgentEvent|HvfClipboardPaste)\.swift|capabilities/windows-hvf\.json|scripts/win-assets/bvagent\.ps1' && rust_build=true
+          # The macOS host contracts run with `rust`, and also when a file they
+          # read that `rust` ignores changes: these workflows and documents
+          # (found by tracing every file the four suites read).
+          host_contracts=$rust
+          printf '%s\n' "$files" | grep -qxE '\.github/workflows/qmp-stress\.yml' && host_contracts=true
           swift=false
           printf '%s\n' "$files" | grep -qE '^(apps/|packaging/|tests/integration/|tests/fixtures/owned-runtime-v1/|install\.sh$|\.github/workflows/ci\.yml$)|^scripts/[^p]|^scripts/p[^e]' && swift=true
           # The app job also builds and runs Rust: the test helpers (hvf-runner,
@@ -59,7 +76,7 @@ jobs:
           [ -n "$app_rust" ] && swift=true
           venus=false
           printf '%s\n' "$files" | grep -qE '^(crates/bridgevm-hvf/(src/|build\.rs$|Cargo\.toml$)|tools/venus-host-probe/|Cargo\.(toml|lock)$|scripts/.*(venus|virgl)|scripts/patches/|\.github/workflows/ci\.yml$)' && venus=true
-          printf 'rust=%s\nswift=%s\nvenus=%s\n' "$rust" "$swift" "$venus" | tee -a "$GITHUB_OUTPUT"
+          printf 'rust=%s\nrust_build=%s\nhost_contracts=%s\nswift=%s\nvenus=%s\n' "$rust" "$rust_build" "$host_contracts" "$swift" "$venus" | tee -a "$GITHUB_OUTPUT"
 
   fmt:
     name: rustfmt
@@ -76,7 +93,7 @@ jobs:
   clippy:
     name: clippy (-D warnings)
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust_build == 'true') }}
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -133,7 +150,7 @@ jobs:
   check-venus:
     name: check venus feature
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust_build == 'true') }}
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -195,7 +212,7 @@ jobs:
   msrv:
     name: msrv (1.85)
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust_build == 'true') }}
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -298,6 +315,57 @@ jobs:
       - run: bash tests/integration/windows-product-e2e-contract-smoke.sh
       - run: bash scripts/verify-app-hvf-entitlements.sh --self-test
 
+  macos-contracts:
+    # The macOS halves of four contract suites. Each needs macOS (Swift and
+    # xcrun, hdiutil and plutil, the Darwin rename path, Homebrew's QEMU) but
+    # only minutes of it, and macOS runners are the CI bottleneck, so they
+    # share one runner. Each suite is its own step and runs even when an
+    # earlier one failed.
+    name: macOS host contracts
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.host_contracts == 'true') }}
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: 1.97.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.1
+        with:
+          key: macos-contracts
+      # Asserts the Studio queue has no listener, registers no runner and
+      # publishes no unredacted receipt: the boundary that keeps live gates
+      # off hosted runners.
+      - name: live gate policy
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        timeout-minutes: 15
+        run: |
+          python3 scripts/live-gates/redact-receipt.py --self-test
+          tests/integration/live-gate-policy-smoke.sh
+          tests/integration/live-submit-publishable-job-id-test.sh
+      - name: snapshot evidence contracts
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        timeout-minutes: 15
+        run: scripts/check-snapshot-evidence-contracts.sh
+      # Real copied qcow2 chains through the CLI and daemon APIs, with
+      # Homebrew's current QEMU; the Ubuntu leg of bundle-import-portability.yml
+      # covers QEMU 8. Tiny generated images: no guest, hypervisor or media.
+      - name: portable bundle import contracts (QEMU 11)
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        timeout-minutes: 20
+        env:
+          BRIDGEVM_PORTABILITY_QEMU_MAJOR: 11
+        run: |
+          brew install qemu
+          cargo test -p bridgevm-daemon --locked peer_credentials
+          scripts/check-bundle-import-contracts.sh
+      - name: native UI host contracts (no NSApplication or app launch)
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        timeout-minutes: 30
+        run: bash scripts/check-app-ui-host-native-contracts.sh --output "$RUNNER_TEMP/app-ui-host-native"
+
   truth:
     # Keeps the capability registry, the generated claim blocks and the
     # documentation manifest from drifting apart. Deterministic and free of
@@ -345,6 +413,8 @@ jobs:
         run: |
           python3 -m pip install --break-system-packages --quiet pyyaml
           python3 scripts/check-workflow-yaml.py
+      - name: changed areas skip only the jobs their files cannot affect
+        run: python3 tests/integration/ci-changed-areas-test.py
       - name: every declared daemon DTO coding key is actually decoded
         run: python3 scripts/check-daemon-dto-decoders.py
       - name: the app sources contain no force casts

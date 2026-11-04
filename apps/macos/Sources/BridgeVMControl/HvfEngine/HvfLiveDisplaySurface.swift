@@ -7,7 +7,9 @@ struct HvfLiveDisplaySurface: View {
     var body: some View {
         HvfFramebufferView(session: session)
             .background(Color.black)
+            .overlay { HvfPausedDisplayOverlay(session: session) }
             .overlay(alignment: .topTrailing) { HvfWindowInventoryButton(session: session) }
+            .overlay(alignment: .bottom) { HvfFileDropNoticeView(drops: session.fileDrops) }
     }
 }
 #endif

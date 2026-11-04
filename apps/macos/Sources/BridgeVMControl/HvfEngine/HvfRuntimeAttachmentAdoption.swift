@@ -10,7 +10,8 @@ extension HvfEngineSession {
         nextAttachedLivenessCheck = HvfAttachedLivenessSchedule.next(after: Date())
         resetObservedRuntimeState(clearEvents: true)
         connectionState = .booting
-        startPolling()
+        startPolling() // reads run.log from the start
+        resumeAfterReattach()
         if reportDuplicateLaunch {
             append(.unknown("attached to the already running HVF engine; duplicate launch prevented"))
         }

@@ -70,6 +70,77 @@ final class HvfOwnedStopWaitTests: XCTestCase {
                          "The escalated deadline is 542 s after admission")
     }
 
+    func testStopAtTheLoginScreenPressesThePowerButtonThenWaitsForWindowsWithTheSameGrace() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        f.controller.receive(.message(try f.event("ready", sequence: 1))) // no SERVICE start: no agent
+        var presses = 0
+        let ticket = try appStop(f, pressPowerButton: { presses += 1; return true })
+        XCTAssertEqual(presses, 1)
+        XCTAssertEqual(f.controller.guestStopWait, .windowsClosingApps)
+        XCTAssertTrue(try Data(contentsOf: URL(fileURLWithPath: f.base.config.ctlFilePath)).isEmpty,
+                      "Without the agent nothing is written to the agent channel")
+        guard case .existing = f.controller.requestStop(target: f.controller.identity, operationID: UUID(),
+            afterGrace: .offerForceStop, pressPowerButton: { presses += 1; return true }) else {
+            return XCTFail("A second Stop joins the first")
+        }
+        XCTAssertEqual(presses, 1, "One press per Stop")
+
+        f.clock.value = 281; f.controller.tick()
+        XCTAssertEqual(ticket.observation.phase, .guestGrace, "The grace ending must not kill Windows")
+        XCTAssertEqual(f.controller.guestStopWait, .windowsStillRunning)
+        XCTAssertNotNil(f.controller.forceStopTarget, "Force Stop stays offered")
+        XCTAssertNil(ticket.observation.failure)
+
+        // Windows honours the button and turns off: the held Stop completes.
+        f.controller.receive(.message(try f.event("complete-not-admitted", sequence: 2, success: true)))
+        try await f.exit(); f.controller.receive(.eof)
+        XCTAssertTrue(ticket.observation.isComplete)
+        XCTAssertNil(ticket.observation.failure)
+    }
+
+    func testForceStopAfterThePowerButtonCancelsTheHeldStopAtOnce() throws {
+        let f = try Fixture(); defer { f.clean() }
+        f.controller.receive(.message(try f.event("ready", sequence: 1)))
+        let ticket = try appStop(f, pressPowerButton: { true })
+        f.clock.value = 500; f.controller.tick()
+        XCTAssertEqual(f.controller.requestForceStop(try XCTUnwrap(f.controller.forceStopTarget)), .requested)
+        XCTAssertEqual(ticket.observation.phase, .cancelling)
+        XCTAssertEqual(ticket.observation.deadlineUptime, 512)
+    }
+
+    func testStopWithTheAgentReadyKeepsTheAgentPathAndDoesNotPress() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        f.controller.receive(.message(try f.event("ready", sequence: 1)))
+        f.controller.guestServiceReady()
+        var presses = 0
+        _ = try appStop(f, pressPowerButton: { presses += 1; return true })
+        try await waitForControl(f, "shutdown.exe /s /t 0\n")
+        XCTAssertEqual(presses, 0)
+    }
+
+    func testAnUndeliveredPressWaitsForTheAgentAsBefore() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        f.controller.receive(.message(try f.event("ready", sequence: 1)))
+        _ = try appStop(f, pressPowerButton: { false })
+        XCTAssertEqual(f.controller.guestStopWait, .waitingForGuestAgent)
+        f.controller.guestServiceReady()
+        try await waitForControl(f, "shutdown.exe /s /t 0\n")
+    }
+
+    func testTheSessionStopWritesPOWERBUTTONToTheInputChannelWithoutTheAgent() throws {
+        let f = try Fixture(); defer { f.clean() }
+        let evidence = URL(fileURLWithPath: f.base.config.evidenceDir)
+        try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
+        let session = bind(f)
+        f.controller.receive(.message(try f.event("ready", sequence: 1)))
+
+        XCTAssertEqual(session.stopOwned(expectedToken: f.controller.identity.token), .requested(deadline: nil))
+        XCTAssertEqual(try String(contentsOf: evidence.appendingPathComponent("input.ctl"), encoding: .utf8),
+                       "POWERBUTTON\n")
+        XCTAssertEqual(session.stopWait, .windowsClosingApps)
+        XCTAssertNotNil(session.forceStopTarget)
+    }
+
     func testForceStopWithoutTheAgentCancelsTheHeldStopAtOnce() throws {
         let f = try Fixture(); defer { f.clean() }
         f.controller.receive(.message(try f.event("ready", sequence: 1)))
@@ -169,9 +240,10 @@ final class HvfOwnedStopWaitTests: XCTestCase {
         try handle.write(contentsOf: Data(value.utf8))
     }
 
-    private func appStop(_ f: Fixture) throws -> HvfOwnedStopOperation {
+    private func appStop(_ f: Fixture, pressPowerButton: (@MainActor () -> Bool)? = nil) throws -> HvfOwnedStopOperation {
         guard case let .accepted(ticket) = f.controller.requestStop(
-            target: f.controller.identity, operationID: UUID(), afterGrace: .offerForceStop) else {
+            target: f.controller.identity, operationID: UUID(), afterGrace: .offerForceStop,
+            pressPowerButton: pressPowerButton) else {
             throw CocoaError(.executableRuntimeMismatch)
         }
         return ticket

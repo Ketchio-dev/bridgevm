@@ -242,16 +242,20 @@ impl BootTimer {
     pub(crate) fn elapsed(&self) -> Duration {
         self.start.elapsed()
     }
-    pub(crate) fn observe_agent_ready(&mut self, now: Instant, exit: u64) {
+    /// The desktop milestone at host time `now`; returns its elapsed time the
+    /// first time it is recorded.
+    pub(crate) fn observe_agent_ready(&mut self, now: Instant, exit: u64) -> Option<Duration> {
         if !self.enabled || !self.desktop_agent || self.desktop_reached {
-            return;
+            return None;
         }
         self.desktop_reached = true;
+        let elapsed = now.saturating_duration_since(self.start);
         println!(
             "BOOT_TIMER milestone name=desktop source=agent elapsed_ms={} exit={}",
-            now.saturating_duration_since(self.start).as_millis(),
+            elapsed.as_millis(),
             exit
         );
+        Some(elapsed)
     }
     pub(crate) fn print_summary(
         &self,

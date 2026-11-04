@@ -3,8 +3,8 @@
 use super::super::{PasteboardBackend, Poller};
 #[cfg(test)]
 use super::HostPasteboard;
-use super::{ClipboardText, PasteboardWrite};
-use std::sync::atomic::{AtomicU64, Ordering};
+use super::{ClipboardText, HostClip, PasteboardWrite};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::Arc;
 use std::thread;
@@ -23,6 +23,7 @@ pub(crate) struct PasteboardWorker {
     pub(super) revision: Option<u64>,
     pub(super) initialized: bool,
     pub(super) recopy: Arc<AtomicU64>,
+    pub(super) images: Arc<AtomicBool>,
 }
 
 impl PasteboardWorker {
@@ -40,13 +41,26 @@ impl PasteboardWorker {
                 Err(TryRecvError::Disconnected) => return false,
             }
         }
+        // Images just switched on (seen after the drain, so after any write
+        // sent since): read the Mac's image before a guest write lands. A
+        // startup Mac image is then reported and wins, as startup text does,
+        // and writes queued against the older read are stale.
+        if self.images.load(Ordering::Acquire) && !self.poller.images && !self.poll(backend) {
+            return false;
+        }
         let (mut refused, mut fresh) = (false, false);
         for write in pending {
             // A newer Mac report may still be waiting in the event channel.
             // Only the service's last received revision can authorize a write.
             if Some(write.revision) == self.revision {
                 if write.recopy == self.recopy.load(Ordering::Acquire) {
-                    self.poller.apply_set(backend, &write.text);
+                    match &write.image {
+                        Some(png) => {
+                            let text = Some(write.text.as_str()).filter(|text| !text.is_empty());
+                            self.poller.apply_set_image(backend, png, text);
+                        }
+                        None => self.poller.apply_set(backend, &write.text),
+                    }
                     fresh = true;
                 } else {
                     refused = true;
@@ -56,8 +70,8 @@ impl PasteboardWorker {
         // A later guest write in this FIFO batch owns the clipboard. Otherwise
         // Re-report refused host text when representable; never invent a clear.
         if refused && !fresh {
-            if let Some(text) = self.poller.report_current(backend) {
-                return self.report(text);
+            if let Some(clip) = self.poller.report_current(backend) {
+                return self.report_clip(clip);
             }
         }
         true
@@ -65,8 +79,17 @@ impl PasteboardWorker {
 
     pub(crate) fn poll<B: PasteboardBackend>(&mut self, backend: &mut B) -> bool {
         self.initialized = true;
-        match self.poller.on_tick(backend) {
-            Some(text) => self.report(text),
+        let images = self.images.load(Ordering::Acquire);
+        let change = if images && !self.poller.images {
+            self.poller.report_images_on(backend)
+        } else {
+            if !images && self.poller.images {
+                self.poller.images_off();
+            }
+            self.poller.on_tick_clip(backend)
+        };
+        match change {
+            Some(clip) => self.report_clip(clip),
             None if self.poller.observed_suppressed_change => {
                 let Some(next) = self.recopy.load(Ordering::Relaxed).checked_add(1) else {
                     self.revision = None;
@@ -79,20 +102,29 @@ impl PasteboardWorker {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn report(&mut self, text: String) -> bool {
+        self.report_clip(HostClip {
+            text: Some(text),
+            image: None,
+        })
+    }
+
+    pub(crate) fn report_clip(&mut self, clip: HostClip) -> bool {
         // Exhaustion terminates the worker instead of wrapping to an old
         // accepted revision. Guest writes never advance this host revision.
         self.revision = self.revision.and_then(|revision| revision.checked_add(1));
         let Some(revision) = self.revision else {
             return false;
         };
-        self.events.send(ClipboardText { revision, text }).is_ok()
+        self.events.send(ClipboardText { revision, clip }).is_ok()
     }
 
     #[cfg(test)]
     pub(crate) fn take_sets(&self) -> Vec<String> {
         self.cmds.try_iter().map(|write| write.text).collect()
     }
+
 }
 
 pub(super) fn run<B: PasteboardBackend>(

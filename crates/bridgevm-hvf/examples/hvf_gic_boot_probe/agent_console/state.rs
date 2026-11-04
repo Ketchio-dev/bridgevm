@@ -76,6 +76,8 @@ pub struct AgentConsoleHarness {
     pub(super) state: AgentConsoleState,
     pub(super) commands: Vec<String>,
     pub(super) last_ping: Option<Instant>,
+    /// When the scripted handshake command in flight went out.
+    pub(super) out_since: Option<Instant>,
     pub(super) get_accum: Option<GetAccum>,
     pub(super) out_accum: Option<OutAccum>,
     // --- Service mode (resident host loop; see AgentConsoleState::Service). ---
@@ -104,6 +106,9 @@ pub struct AgentConsoleHarness {
     pub(super) last_synced: ClipBaseline,
     /// macOS pasteboard bridge (guest<->host). Some only when clipsync is on.
     pub(super) pasteboard: Option<HostPasteboard>,
+    /// Clipboard images: Some once the agent's CLIPCAPS reply carried
+    /// IMAGE_PNG and its clipboard directory (clip_image.rs).
+    pub(super) clip_images: Option<ClipImages>,
     /// Optional control file tailed for injected commands.
     pub(super) ctl_path: Option<String>,
     /// Byte offset consumed so far from the control file.
@@ -136,6 +141,10 @@ pub struct AgentConsoleHarness {
     pub(super) clock: HostClock,
     /// NAT resolver switches, for the guest DNS cache flush.
     pub(super) dns_flush: DnsFlush,
+    /// Finder drops copied into the guest Desktop (file_drop.rs).
+    pub(super) drops: FileDrops,
+    /// Installs the app's copy of the guest agent over an older one.
+    pub(super) agent_update: Option<AgentUpdate>,
 }
 
 /// Reassembly state for a chunked GET reply (GETBEG -> GETCHUNK* -> GETEND).
@@ -201,6 +210,9 @@ pub(super) enum SharePutWireLine {
 }
 
 pub(super) const PING_INTERVAL: Duration = Duration::from_secs(3);
+/// A resident-service handshake command (whoami) with no reply this long: the
+/// agent restarted without a READY we heard, so the handshake starts again.
+pub(super) const HANDSHAKE_REPLY_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Report a service request that has not replied after this long. The guest
 /// dispatcher is single-threaded, so the request must remain in-flight: sending
@@ -233,6 +245,12 @@ pub(super) enum ServiceReq {
     /// Push host clipboard text to the guest (CLIPSET). Carries the host (LF)
     /// text; the CRLF conversion happens at send time.
     ClipPush(String),
+    /// Ask the agent whether it can move clipboard images (CLIPCAPS).
+    ClipCaps,
+    /// Push a Mac image, with the copy's text, to the guest clipboard.
+    ClipImagePush(ClipImagePush),
+    /// Fetch the guest clipboard image a CLIPX reply announced.
+    ClipImagePull { digest: [u8; 32], bytes: usize },
     /// A command injected via the control file (same semantics as a scripted
     /// command: raw verb sent verbatim, else RUN-wrapped).
     Ctl(String),
@@ -257,6 +275,10 @@ pub(super) enum ServiceReq {
     },
     /// Set the guest clock to host UTC after a host suspension.
     TimeSync,
+    /// One step of a Finder drop (file_drop.rs).
+    Drop(DropReq),
+    /// One step of a guest tools update (agent_update.rs).
+    AgentUpdate(UpdateStep),
 }
 
 /// Outcome of interpreting one guest reply line against the in-flight request.
@@ -274,6 +296,9 @@ pub(super) enum InFlightSnapshot {
     ClipPush {
         guest_bytes: usize,
     },
+    ClipCaps,
+    ClipImagePush,
+    ClipImagePull,
     Ctl(String),
     Ping,
     ShareLs,
@@ -286,6 +311,8 @@ pub(super) enum InFlightSnapshot {
         direction: ShareDelDirection,
     },
     TimeSync,
+    Drop,
+    AgentUpdate,
 }
 
 impl InFlightSnapshot {
@@ -295,6 +322,9 @@ impl InFlightSnapshot {
             ServiceReq::ClipPush(text) => Self::ClipPush {
                 guest_bytes: to_guest_crlf_len(text),
             },
+            ServiceReq::ClipCaps => Self::ClipCaps,
+            ServiceReq::ClipImagePush(_) => Self::ClipImagePush,
+            ServiceReq::ClipImagePull { .. } => Self::ClipImagePull,
             ServiceReq::Ctl(command) => Self::Ctl(command.clone()),
             ServiceReq::Ping => Self::Ping,
             ServiceReq::ShareLs => Self::ShareLs,
@@ -305,6 +335,8 @@ impl InFlightSnapshot {
                 direction: *direction,
             },
             ServiceReq::TimeSync => Self::TimeSync,
+            ServiceReq::Drop(_) => Self::Drop,
+            ServiceReq::AgentUpdate(_) => Self::AgentUpdate,
         }
     }
 }

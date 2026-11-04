@@ -22,12 +22,19 @@ use share_sync::{GuestFileOutcome, HostFile, LsEntry, ShareSync, SkipReason, Syn
 #[cfg(test)]
 #[path = "agent_console_tests.rs"]
 mod agent_console_tests;
+#[cfg(test)]
+#[path = "boot_clocks_tests.rs"]
+mod boot_clocks_tests;
 #[path = "agent_console/agent_restart.rs"]
 mod agent_restart;
+#[path = "agent_console/agent_update.rs"]
+mod agent_update;
 #[path = "agent_console/clip_guest_admission.rs"]
 mod clip_guest_admission;
 #[path = "agent_console/clip_guest_fingerprint.rs"]
 mod clip_guest_fingerprint;
+#[path = "agent_console/clip_image.rs"]
+mod clip_image;
 #[path = "agent_console/clip_operator_reply.rs"]
 mod clip_operator_reply;
 #[path = "agent_console/clip_operator_reply_tests.rs"]
@@ -52,6 +59,8 @@ mod desktop_scale;
 mod desktop_switch;
 #[path = "agent_console/dns_flush.rs"]
 mod dns_flush;
+#[path = "agent_console/file_drop.rs"]
+mod file_drop;
 #[path = "agent_console/harness_protocol.rs"]
 mod harness_protocol;
 #[path = "agent_console/pointer_cleanup_order_tests.rs"]
@@ -76,14 +85,18 @@ mod time_resync;
 mod verb_reply;
 #[path = "agent_console/window_protocol.rs"]
 mod window_protocol;
+use agent_update::*;
 use clip_guest_admission::*;
 use clip_guest_fingerprint::*;
+use clip_image::*;
+use host_pasteboard::HostImage;
 use clip_operator_reply::*;
 use clip_sync::*;
 use clipboard::*;
 use config::*;
 use control_file::*;
 use dns_flush::*;
+use file_drop::*;
 use protocol::*;
 pub use desktop_scale::{request_desktop_scale, DESKTOP_SCALES};
 pub use desktop_switch::request_desktop_mode;

@@ -1,5 +1,6 @@
 //! Split test module.
 
+mod agent_reopen;
 mod backlog_bounds;
 mod descriptor_access;
 mod driver_ready;

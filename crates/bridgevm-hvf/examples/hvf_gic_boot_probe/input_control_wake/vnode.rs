@@ -29,6 +29,9 @@ pub(super) fn watch(mut file: InputControlFile, vcpu: HvVcpuT, fired: Arc<Atomic
 }
 
 fn request_wake(vcpu: HvVcpuT, fired: &AtomicBool) {
+    // A paused vCPU0 waits outside hv_vcpu_run, where the exit request
+    // below cannot reach it; every append wakes that wait (pause_gate.rs).
+    crate::pause_gate::GATE.notify_input();
     if fired
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_ok()

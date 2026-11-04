@@ -164,10 +164,12 @@ pub(crate) unsafe fn emulate_debug_os_lock_sysreg(vcpu: HvVcpuT, trap: SysRegTra
         // CNTPCT_EL0: the physical counter traps in the userspace-GIC
         // configuration (ntoskrnl reads it once past timer bringup;
         // usgic-diag6). The host timebase ticks at the advertised CNTFRQ
-        // (24 MHz), so mach_absolute_time IS the counter.
+        // (24 MHz), so mach_absolute_time IS the counter, less the pause offset
+        // that CNTVCT_EL0 leaves out too (pause_gate).
         (3, 3, 14, 0, 1, true) => {
             if trap.rt != 31 {
-                let ticks = crate::usgic_bridge::host_time_ticks();
+                let ticks = crate::pause_gate::GATE
+                    .guest_count(crate::usgic_bridge::host_time_ticks());
                 hv_vcpu_set_reg(vcpu, HV_REG_X0 + trap.rt, ticks);
             }
             true

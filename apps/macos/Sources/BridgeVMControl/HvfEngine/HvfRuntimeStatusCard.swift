@@ -19,6 +19,19 @@ struct HvfRuntimeStatusCard: View {
                     .disabled(session.hasActiveRuntimeWork || !ready)
                     .accessibilityIdentifier("bridgevm.windows.runtime.start")
                     HvfRuntimeStatusStopControl(session: session)
+                    HvfRestartControl(session: session, identifier: "bridgevm.windows.runtime") { enabled, press in
+                        Button(action: press) { Label("다시 시작", systemImage: "arrow.counterclockwise") }
+                            .disabled(!enabled).controlSize(.large)
+                            .accessibilityIdentifier("bridgevm.windows.runtime.restart")
+                    }
+                    HvfPauseControl(session: session, identifier: "bridgevm.windows.runtime") { enabled, paused, press in
+                        Button(action: press) {
+                            Label(HvfPauseControl<EmptyView>.title(paused: paused),
+                                  systemImage: HvfPauseControl<EmptyView>.symbol(paused: paused))
+                        }
+                        .disabled(!enabled).controlSize(.large)
+                        .accessibilityIdentifier("bridgevm.windows.runtime.pause")
+                    }
                     if let pending = session.runtimePendingWorkText {
                         ProgressView().controlSize(.small).accessibilityLabel(pending)
                         Text(pending).font(.callout).foregroundStyle(.secondary)

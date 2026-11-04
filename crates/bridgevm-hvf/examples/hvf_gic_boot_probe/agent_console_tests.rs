@@ -18,6 +18,7 @@ pub(super) mod tests {
             state: AgentConsoleState::WaitingOut { index: 0 },
             commands: vec!["GET Zm9v".to_string()],
             last_ping: None,
+            out_since: None,
             get_accum: None,
             out_accum: None,
             service: false,
@@ -29,6 +30,7 @@ pub(super) mod tests {
             overdue_beats: 0,
             last_synced: ClipBaseline::default(),
             pasteboard: None,
+            clip_images: None,
             ctl_path: None,
             ctl_offset: 0,
             ctl_framer: LineFramer::new(),
@@ -45,6 +47,8 @@ pub(super) mod tests {
             share_old_agent_warned: false,
             clock: HostClock::default(),
             dns_flush: DnsFlush::default(),
+            drops: FileDrops::default(),
+            agent_update: None,
         }
     }
 
@@ -90,6 +94,8 @@ pub(super) mod tests {
                     format!("share-del:{direction:?}:{name}")
                 }
                 ServiceReq::TimeSync => "time-sync".to_string(),
+                ServiceReq::Drop(req) => format!("drop:{req:?}"),
+                other => req_kind(other).to_string(),
             })
             .collect()
     }

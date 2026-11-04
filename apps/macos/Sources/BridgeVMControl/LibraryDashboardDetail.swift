@@ -63,8 +63,8 @@ struct LibraryDashboardDetail: View {
                         .buttonStyle(.plain).help("고급 제어 열기")
                 }
                 HStack(spacing: 7) {
-                    Circle().fill(statusColor).frame(width: 10, height: 10)
-                    Text(statusText).foregroundStyle(statusColor)
+                    LibraryVMRunState(text: statusText, color: statusColor,
+                        session: library.hvfRuntimeSessions.existingRecord(slug: config.slug)?.session, dot: 10)
                 }
                 .font(.headline)
                 Text(config.displayName).foregroundStyle(.secondary).lineLimit(2)

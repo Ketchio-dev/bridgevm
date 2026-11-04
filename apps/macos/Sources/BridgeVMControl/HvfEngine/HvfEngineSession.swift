@@ -13,6 +13,9 @@ final class HvfEngineSession: ObservableObject {
     @Published var connectionState: HvfConnectionState = .stopped
     let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
     let shareRootNotice = HvfShareRootNotice()
+    let agentUpdateNotice = HvfAgentUpdateNotice()
+    let fileDrops = HvfFileDropQueue() // Finder drops copied to the guest Desktop
+    let clipboardImageNotice = HvfClipboardImageNotice()
     @Published var events: [BvAgentEvent] = []
     @Published var displayDriverFlagMessage: String? // why HvfDisplayDriverFlag could not save yet
     var repoRoot: URL
@@ -33,6 +36,16 @@ final class HvfEngineSession: ObservableObject {
     var ownedController: HvfOwnedRunController?
     @Published var forceStopTarget: HvfForceStopTarget?
     @Published var stopWait: HvfGuestStopWait? // what Windows is doing while a Stop waits for it
+    @Published var restartRequest: HvfPendingRestart? // a Restart or Reset sent this boot (HvfGuestRestart)
+    @Published var resetConfirmation: HvfResetConfirmation? // the Reset the user is asked to confirm
+    @Published var restartNotice: String? // a Reset that no helper took
+    @Published var guestBoot = 0 // bumps at every guest reset record and at every run start or end
+    @Published var pause = HvfPauseState.running { // what the probe last said about Pause (HvfGuestPause)
+        didSet { guestRunClock.hold(pause.holdsInput, host: hostNow()) }
+    }
+    var hostNow: () -> Date = Date.init // the host clock behind guestNow()
+    var guestRunClock = HvfGuestRunClock()
+    @Published var pauseNotice: String? // a Pause or Resume that did not happen
     var runtimeTransitionInProgress = false
     var timer: Timer?
     var tailReader = TailOffsetReader()
@@ -69,7 +82,9 @@ final class HvfEngineSession: ObservableObject {
         self.repoRoot = repoRoot
         self.processIsRunning = processIsRunning
         self.vtpmKeyProvider = vtpmKeyProvider
-        inputDriver.onPoll = { [weak self] in self?.poll() }
+        // The 10 ms input pump waits out a pause: no receipt comes before the guest runs again.
+        inputDriver.onPoll = { [weak self] in if self?.pause == .running { self?.poll() } }
+        inputDriver.now = { [weak self] in self?.guestNow() ?? Date() }
         inputDriver.onDiagnostic = { [weak self] in self?.append(.unknown($0)) }
         appPacing.observe(inputDriver)
     }
@@ -111,6 +126,7 @@ final class HvfEngineSession: ObservableObject {
             markStopped()
             return .alreadyStopped
         }
+        resumeBeforeStop()
         connectionState = .stopping
         cancelOrderedInputTarget()
         stopDeadline = Date().addingTimeInterval(180)
@@ -167,6 +183,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     @discardableResult func sendKey(_ action: String) -> Bool {
+        guard !pause.holdsInput else { return false }
         guard legacyPaste.pending == nil else { append(.unknown("key input refused: clipboard paste pending")); return false }
         let admission = inputDriver.route(.key(action), binding: inputBinding)
         guard admission == .legacy else { return admission == .queued }
@@ -175,7 +192,7 @@ final class HvfEngineSession: ObservableObject {
 
     @discardableResult
     func sendText(_ value: String) -> HvfTextInputSubmission {
-        guard !guiStartCleanupOnly else { return .refused }
+        guard !guiStartCleanupOnly, !pause.holdsInput else { return .refused }
         guard legacyPaste.pending == nil else { append(.unknown("text input refused: clipboard paste pending")); return .refused }
         guard !value.isEmpty else { return .refused }
         switch inputDriver.route(.text(value), binding: inputBinding) {
@@ -225,13 +242,15 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func sendPointerScroll(_ delta: Int8, location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        guard delta != 0, let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return }
+        guard delta != 0, !pause.holdsInput,
+              let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return }
         if inputDriver.route(.pointer("scroll:\(delta)@\(point.x)x\(point.y)"), binding: inputBinding) != .legacy { return }
         appendLiveInput("POINTER scroll:\(delta)@\(point.x)x\(point.y)")
     }
 
     /// Returns where the event went (queued, legacy, refused or unmapped) for the display's diagnostic.
     @discardableResult private func sendPointerAction(_ action: HvfPointerAction, location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> String {
+        guard !pause.holdsInput else { return "paused" }
         guard let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return "unmapped" }
         if action.mayMoveGuestFocus { cancelPendingPaste("pointer pressed") }
         let admission = inputDriver.route(.pointer("\(action.orderedVerb):\(point.x)x\(point.y)"), binding: inputBinding)
@@ -267,16 +286,30 @@ final class HvfEngineSession: ObservableObject {
         displayResize.didSend(size)
     }
 
-    /// `RESIZE` is a request to the VMM's display device, not guest input: it bypasses the ordered input
-    /// stream (`allowLegacyWrite` would refuse it or reset that stream) and checks only that this run's
-    /// input channel is still the bound one.
     private func appendDisplayResize(_ size: HvfDisplayResizeRequest.Size) -> Bool {
+        appendVMMControl(size.command)
+    }
+
+    /// True while a running VM's VMM takes requests on this run's input channel.
+    var vmmControlAvailable: Bool {
         switch connectionState {
         case .booting, .connected: break
         case .stopped, .stopping, .timedOut: return false
         }
-        guard !guiStartCleanupOnly, inputDriver.router.binding == inputBinding else { return false }
-        return writeLiveInput(size.command)
+        return !guiStartCleanupOnly && inputDriver.router.binding == inputBinding
+    }
+
+    /// `RESIZE` and `RESET` are requests to the VMM, not guest input: they bypass the ordered input
+    /// stream (`allowLegacyWrite` would refuse them or reset that stream) and check only that this run's
+    /// input channel is still the bound one.
+    func appendVMMControl(_ line: String) -> Bool {
+        vmmControlAvailable && writeLiveInput(line)
+    }
+
+    /// `RESUME`, which a Stop or Force Stop already under way still sends: only this run's input
+    /// channel takes it.
+    func appendRunControl(_ line: String) -> Bool {
+        !guiStartCleanupOnly && inputDriver.router.binding == inputBinding && writeLiveInput(line)
     }
 
     private func writeLiveInput(_ line: String) -> Bool {
@@ -294,6 +327,9 @@ final class HvfEngineSession: ObservableObject {
             return false
         }
     }
+
+    /// One press of the guest's ACPI power button, read by the VMM from the live input channel.
+    func pressGuestPowerButton() -> Bool { writeLiveInput("POWERBUTTON") }
 
     func closeLiveInput() {
         liveInputFile.close()
@@ -314,6 +350,8 @@ final class HvfEngineSession: ObservableObject {
         for event in agentEvents.parse(lines) {
             handle(event)
         }
+        expireUnacknowledgedReset()
+        expireUnansweredPause()
         if let lastHeartbeatDate {
             lastHeartbeatAge = Date().timeIntervalSince(lastHeartbeatDate)
         }
@@ -370,10 +408,14 @@ final class HvfEngineSession: ObservableObject {
         lastHeartbeatAge = nil
         serviceStarted = false
         shareRootNotice.reset()
+        agentUpdateNotice.reset()
+        fileDrops.reset()
+        clipboardImageNotice.reset()
         stopCommandSent = false
         stopDeadline = nil
         if forceStopTarget != nil { forceStopTarget = nil }
         if stopWait != nil { stopWait = nil }
+        guestBootChanged()
         guiStartCleanupOnly = false
         connectionState = .stopped
         runtimeTransitionInProgress = false
@@ -393,8 +435,12 @@ final class HvfEngineSession: ObservableObject {
         lastHeartbeatAge = nil
         serviceStarted = false
         shareRootNotice.reset()
+        agentUpdateNotice.reset()
+        fileDrops.reset()
+        clipboardImageNotice.reset()
         stopCommandSent = false
         stopDeadline = nil
+        guestBootChanged()
         liveInputWriteFailureReported = false
         displayResize.deviceRestarted() // a new run's display starts at its default size; an attached one is unknown
         if clearEvents { events = [] }

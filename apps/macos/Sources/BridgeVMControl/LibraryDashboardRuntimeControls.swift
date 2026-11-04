@@ -16,6 +16,17 @@ struct LibraryDashboardRuntimeControls: View {
                 }
                 LibraryDashboardRuntimeStopControl(config: config, model: model, library: library,
                     session: session, runtimeActive: runtimeActive, lifecycleBusy: lifecycleBusy)
+                HvfRestartControl(session: session, identifier: "bridgevm.dashboard.runtime") { enabled, press in
+                    DashboardActionButton(title: "다시 시작", symbol: "arrow.counterclockwise",
+                        disabled: !enabled || lifecycleBusy, action: press)
+                    .accessibilityIdentifier("bridgevm.dashboard.runtime.restart")
+                }
+                HvfPauseControl(session: session, identifier: "bridgevm.dashboard.runtime") { enabled, paused, press in
+                    DashboardActionButton(title: HvfPauseControl<EmptyView>.title(paused: paused),
+                        symbol: HvfPauseControl<EmptyView>.symbol(paused: paused),
+                        disabled: !enabled || lifecycleBusy, action: press)
+                    .accessibilityIdentifier("bridgevm.dashboard.runtime.pause")
+                }
                 DashboardActionButton(title: "새로고침", symbol: "arrow.clockwise", action: model.refresh)
                 DashboardActionButton(title: "복제", symbol: "plus.square.on.square",
                     disabled: runtimeActive || library.cloningSlugs.contains(config.slug)) {
@@ -32,6 +43,8 @@ struct LibraryDashboardRuntimeControls: View {
             }
             HvfShareRootNoticeView(notice: session.shareRootNotice)
             HvfMicrophoneNoticeView(session: session)
+            HvfAgentUpdateNoticeView(notice: session.agentUpdateNotice)
+            HvfClipboardImageNoticeView(notice: session.clipboardImageNotice)
         }
         .onChange(of: session.runtimeStartupWorkerPending) { wasPending, isPending in
             guard wasPending, !isPending else { return }

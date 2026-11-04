@@ -306,7 +306,8 @@ pub(crate) fn run() -> ExitCode {
             let mut ramfb_sample_loop = RamfbSampleLoop::from_env();
             let mut live_display_exporter = LiveDisplayExporter::from_env();
             let mut setup_input_host_wake = SetupInputHostWake::new();
-            let boot_started = Instant::now();
+            // The agent console runs on VM time, from this boot's start (boot_clocks).
+            let boot_started = crate::boot_clocks::agent_origin(&crate::boot_clocks::Live);
             let mut boot_timer = BootTimer::from_env();
             let mut agent_console = AgentConsoleHarness::from_env(boot_started);
             let automation_always_check = !uart_triggers.is_empty()
@@ -345,8 +346,14 @@ pub(crate) fn run() -> ExitCode {
             let mut stop_reason;
             let mut stop_reason_code = None;
             let mut requested_system_reset = false;
+            let mut cpu0_offset_version = 0u64;
 
             loop {
+                // After a resume vCPU0 takes the shifted vTimer offset on its
+                // own thread, outside hv_vcpu_run (pause_gate.rs).
+                crate::pause_gate::GATE.take_offset(&mut cpu0_offset_version, |offset| {
+                    crate::pause_gate::set_vtimer_offset(vcpu, offset)
+                });
                 let mut drain_pc = 0u64;
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
                 last_pre_run_pc = drain_pc;
@@ -801,13 +808,15 @@ pub(crate) fn run() -> ExitCode {
                     break;
                 }
                 let tick = Instant::now();
+                let mut host_reset = false;
+                let mut host_pause = None;
                 let automation_stop_reason = if automation_gate.should_check(
                     automation_tick_canceled
                         || ramfb_sample_loop.checkpoint_due_at(tick)
                         || live_display_exporter.due(tick)
                         || live_input.poll_due(tick),
                 ) {
-                    automation_tick!(
+                    let reason = automation_tick!(
                         platform,
                         smp_trace,
                         automation_gate,
@@ -831,13 +840,61 @@ pub(crate) fn run() -> ExitCode {
                         live_display_exporter,
                         last_pc,
                         stop_on_linux,
-                    )
+                    );
+                    host_reset = live_input.take_host_reset();
+                    host_pause = live_input.take_host_pause();
+                    reason
                 } else {
                     None
                 };
                 if let Some(reason) = automation_stop_reason {
                     stop_reason = reason;
                     break;
+                }
+                if host_reset {
+                    // The app's Reset: end this boot exactly as the guest's
+                    // PSCI SYSTEM_RESET does, so the runtime recreates the helper.
+                    requested_system_reset = true;
+                    stop_reason = "host reset (input.ctl RESET)".into();
+                    break;
+                }
+                if crate::pause_gate::request(host_pause, false)
+                    == crate::pause_gate::Request::AlreadyRunning
+                {
+                    crate::pause_gate::answer_running();
+                }
+                if crate::pause_gate::request(host_pause, false) == crate::pause_gate::Request::Pause {
+                    // No HDA DMA or MSI while paused; with no PCM written, the
+                    // CoreAudio supervisor pauses the AudioQueue (IDLE_PAUSE).
+                    let hda_quiesced = hda_service_tick.quiesce();
+                    let paused = crate::pause_gate::pause_and_wait(
+                        &mut live_input,
+                        secondary_vcpus.as_ref(),
+                        || {
+                            cancel_stop_reason(
+                                &watchdog_fired,
+                                stall_kill_fired.as_ref(),
+                                diagnostic_stop_fired.as_ref(),
+                                &HOST_TERM_REQUESTED,
+                            )
+                            .is_some()
+                        },
+                    );
+                    drop(hda_quiesced);
+                    match paused {
+                        crate::pause_gate::PausedExit::Reset => {
+                            requested_system_reset = true;
+                            stop_reason = "host reset (input.ctl RESET)".into();
+                            break;
+                        }
+                        // Windows' wall clock fell behind by the pause, as after
+                        // a host sleep: the agent puts it back on host time.
+                        crate::pause_gate::PausedExit::Resumed(paused) => {
+                            if let Some(agent) = agent_console.as_mut() {
+                                agent.note_vm_pause(paused);
+                            }
+                        }
+                    }
                 }
             }
 

@@ -36,7 +36,7 @@ extension HvfOwnedRuntimeLaunch {
             runnerPath: runner.path, firmwareCodePath: FileManager.default.fileExists(atPath: firmware.path)
                 ? firmware.path : fallback.path,
             probePath: repoRoot.appendingPathComponent("target/release/examples/hvf_gic_boot_probe").path,
-            ownedRuntime: true)
+            ownedRuntime: true, agentAssetsDir: repoRoot.appendingPathComponent("scripts/win-assets").path)
         process.arguments = Array(arguments.dropFirst()); process.currentDirectoryURL = repoRoot
         process.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("BRIDGEVM_") }
         channel.attach(to: process)

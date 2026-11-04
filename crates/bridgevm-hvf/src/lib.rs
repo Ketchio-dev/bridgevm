@@ -60,6 +60,7 @@ pub mod virtio_gpu_3d_preflight;
 mod virtio_gpu_trace;
 pub mod virtio_net;
 mod virtio_queue;
+pub mod vm_clock;
 mod windows_arm_xhci_hid_boot_key_probe;
 pub mod xhci;
 

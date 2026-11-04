@@ -1,0 +1,15 @@
+name: Clipboard image contract
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/win-assets/bvagent.ps1', 'scripts/test-bvagent-clipboard-images.ps1', '.github/workflows/clipboard-image-contract.yml']}}
+permissions:
+  contents: read
+jobs:
+  clipboard-images:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Agent compile and the real clipboard (Windows PowerShell 5.1)
+        shell: powershell
+        run: scripts/test-bvagent-clipboard-images.ps1
+      - name: C# 5 and the verbs against a stand-in clipboard (PowerShell 7)
+        shell: pwsh
+        run: scripts/test-bvagent-clipboard-images.ps1

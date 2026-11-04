@@ -39,8 +39,10 @@ impl AgentConsoleHarness {
         //    burst of copies syncs the final value, not each intermediate one.
         self.enqueue_host_clip_change(now);
 
-        // 2. Control-file lines become Ctl commands.
+        // 2. Control-file lines become Ctl commands (a BVDROP line becomes a drop job), and
+        //    an active drop queues its next step.
         self.drain_ctl(now);
+        self.enqueue_file_drop(now);
 
         // 3. Periodic guest clipboard poll. With clipsync on this doubles as the
         //    keepalive, so step 4 stays quiet.
@@ -78,6 +80,9 @@ impl AgentConsoleHarness {
         if share_due && !self.share_pending() && !self.enqueue_one_share_host_change() {
             self.queue.push_back(ServiceReq::ShareLs);
         }
+
+        // 6. A guest tools update, after the boot traffic and before any stop.
+        self.enqueue_agent_update(now);
     }
     /// Keep at most one pending desktop switch, for the latest requested size:
     /// a queued one is replaced, and one already running gets a single
@@ -150,17 +155,34 @@ impl AgentConsoleHarness {
             // whole runtime of a long command (gates run for minutes), so an
             // overdue Cmd usually IS still running and a resend would run it
             // twice.
-            let cmd_in_flight = matches!(self.in_flight.as_ref(), Some((ServiceReq::Ctl(_), _)));
+            // The update's Prepare and Arm are commands too: they lock and
+            // clear the folders, then rename and register.
+            let cmd_in_flight = matches!(
+                self.in_flight.as_ref(),
+                Some((
+                    ServiceReq::Ctl(_)
+                        | ServiceReq::AgentUpdate(UpdateStep::Prepare | UpdateStep::Arm),
+                    _
+                ))
+            );
             if !cmd_in_flight {
                 self.overdue_beats += 1;
                 if self.overdue_beats >= 3 {
                     if let Some((req, _)) = self.in_flight.take() {
-                        println!(
-                            "BVAGENT SERVICE retransmit {} t={}",
-                            req_kind(&req),
-                            now.duration_since(self.start).as_millis()
-                        );
-                        self.queue.push_front(rewind_share_put_for_retransmit(req));
+                        // A drop step creates guest files; resending could duplicate one.
+                        if is_drop_req(&req) {
+                            self.fail_drop("stalled", now);
+                        } else {
+                            println!(
+                                "BVAGENT SERVICE retransmit {} t={}",
+                                req_kind(&req),
+                                now.duration_since(self.start).as_millis()
+                            );
+                            let req = rewind_clip_image_push(rewind_agent_update_put(
+                                rewind_share_put_for_retransmit(req),
+                            ));
+                            self.queue.push_front(req);
+                        }
                     }
                     self.overdue_beats = 0;
                 }
@@ -170,7 +192,10 @@ impl AgentConsoleHarness {
             return;
         }
         self.overdue_beats = 0;
-        let Some(req) = super::service_queue::pop_next_request(&mut self.queue) else {
+        let hold_images = self.agent_update_holds_images();
+        let Some(req) = super::service_queue::pop_next_request(&mut self.queue, |req| {
+            hold_images && super::agent_update::is_clip_image_req(req)
+        }) else {
             return;
         };
         if !self.write_service_req_line(&req, now) {
@@ -211,8 +236,16 @@ impl AgentConsoleHarness {
         match req {
             ServiceReq::ClipPoll => {
                 self.last_clip_poll = Some(now);
-                self.service_line_scratch.push_str("CLIPGET\n");
+                let verb = if self.clip_images.is_some() { "CLIPX\n" } else { "CLIPGET\n" };
+                self.service_line_scratch.push_str(verb);
                 true
+            }
+            ServiceReq::ClipCaps => {
+                self.service_line_scratch.push_str("CLIPCAPS\n");
+                true
+            }
+            ServiceReq::ClipImagePush(_) | ServiceReq::ClipImagePull { .. } => {
+                self.write_clip_image_line(req)
             }
             ServiceReq::ClipPush(text) => {
                 self.service_line_scratch.push_str("CLIPSET ");
@@ -309,6 +342,11 @@ impl AgentConsoleHarness {
                 self.write_time_resync_line(now);
                 true
             }
+            ServiceReq::Drop(req) => {
+                write_drop_wire_line(req, &mut self.service_line_scratch);
+                true
+            }
+            ServiceReq::AgentUpdate(step) => self.write_agent_update_line(step),
         }
     }
     /// Whether any queued OR in-flight request satisfies `pred`.
@@ -372,13 +410,25 @@ impl AgentConsoleHarness {
             eprintln!("BVAGENT CTL rejected reason=command_too_long count={oversized}");
         }
         self.ctl_read_scratch.clear();
+        let mut stopping = false;
         for line in self.ctl_line_scratch.drain(..) {
             let command = line.trim();
-            if !command.is_empty() && super::service_queue::has_foreground_capacity(&self.queue) {
+            if let Some(request) = command.strip_prefix("BVDROP ") {
+                self.drops.submit(request);
+            } else if !command.is_empty()
+                && super::service_queue::has_foreground_capacity(&self.queue)
+            {
+                stopping |= self.agent_update.as_mut().is_some_and(|update| {
+                    update.note_ctl_command(command);
+                    update.stop_requested
+                });
                 self.queue.push_back(ServiceReq::Ctl(command.to_string()));
             } else if !command.is_empty() {
                 eprintln!("BVAGENT CTL rejected reason=queue_full");
             }
+        }
+        if stopping {
+            self.stop_agent_update(Instant::now());
         }
     }
     /// Route a guest reply in service mode by the in-flight request kind. Only
@@ -397,7 +447,7 @@ impl AgentConsoleHarness {
         }
         if matches!(
             self.in_flight.as_ref().map(|(req, _)| req),
-            Some(ServiceReq::Ctl(_) | ServiceReq::ShareGet { .. })
+            Some(ServiceReq::Ctl(_) | ServiceReq::ShareGet { .. } | ServiceReq::ClipImagePull { .. })
         ) && self.handle_unlabelled_get_fragment(line).is_some()
         {
             return;
@@ -414,6 +464,9 @@ impl AgentConsoleHarness {
             InFlightSnapshot::ClipPush { guest_bytes } => {
                 self.handle_clip_push_reply(line, guest_bytes, now);
             }
+            InFlightSnapshot::ClipCaps => self.handle_clip_caps_reply(line, now),
+            InFlightSnapshot::ClipImagePush => self.handle_clip_image_push_reply(line, now, send),
+            InFlightSnapshot::ClipImagePull => self.handle_clip_image_pull_reply(line, now),
             InFlightSnapshot::Ctl(command) => match self.handle_reply_line(line, &command) {
                 ReplyProgress::Complete => self.complete_in_flight(),
                 ReplyProgress::Incomplete | ReplyProgress::Ignored => {}
@@ -429,6 +482,8 @@ impl AgentConsoleHarness {
                 self.handle_share_put_reply_with_sender(line, now, send);
             }
             InFlightSnapshot::TimeSync => self.handle_time_resync_reply(line),
+            InFlightSnapshot::Drop => self.handle_drop_reply(line, now),
+            InFlightSnapshot::AgentUpdate => self.handle_agent_update_reply_with_sender(line, now, send),
             InFlightSnapshot::ShareDel { name, direction } => {
                 if line.starts_with("OK DEL") {
                     if direction == ShareDelDirection::HostToGuest {

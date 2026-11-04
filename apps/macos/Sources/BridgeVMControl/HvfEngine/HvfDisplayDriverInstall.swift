@@ -262,28 +262,31 @@ enum HvfDisplayDriverInstall {
 
     /// Locks the staging folder, launches the guest installer (or joins the running one), then
     /// polls until it reports, for at most `timeout`; a reply may take whatever is left of it.
+    /// `clock` is the session's guestNow(), so a pause does not use up the budget.
     @MainActor static func install(runner: Runner, pollInterval: TimeInterval = pollInterval,
-                                   timeout: TimeInterval = installTimeout) async -> Outcome {
-        let deadline = Date().addingTimeInterval(timeout)
+                                   timeout: TimeInterval = installTimeout,
+                                   clock: @MainActor () -> Date = Date.init) async -> Outcome {
+        let deadline = clock().addingTimeInterval(timeout)
         var reply = await runner(prepareCommand, timeout)
         if progress(output: reply.output, code: reply.code) == .running {
-            reply = await runner(launchCommand, deadline.timeIntervalSinceNow)
+            reply = await runner(launchCommand, deadline.timeIntervalSince(clock()))
         }
         while true {
             if case let .finished(outcome) = progress(output: reply.output, code: reply.code) { return outcome }
-            guard deadline.timeIntervalSinceNow > pollInterval else { return stillRunning }
+            guard deadline.timeIntervalSince(clock()) > pollInterval else { return stillRunning }
             try? await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
-            reply = await runner(pollCommand, deadline.timeIntervalSinceNow)
+            reply = await runner(pollCommand, deadline.timeIntervalSince(clock()))
         }
     }
 
     /// Runs the install and reports the outcome; `onInstalled` sees only the outcomes that leave
     /// the driver in the guest.
     @MainActor static func start(runner: @escaping Runner, hardwareCursor: Bool = true,
+                                 clock: @escaping @MainActor () -> Date = Date.init,
                                  onInstalled: @escaping @MainActor (Outcome) -> Void,
                                  completion: @escaping @MainActor (Outcome) -> Void) {
         Task { @MainActor in
-            let outcome = await install(runner: runner)
+            let outcome = await install(runner: runner, clock: clock)
             // A driver update rewrites the INF's HWCursor=0 (HvfDisplayDriverHardwareCursor.swift),
             // which is what the VM's setting turned off wants.
             if outcome.status == .installed && hardwareCursor { _ = await runner(hardwareCursorCommand, 60) }
@@ -310,8 +313,8 @@ enum HvfDisplayDriverInstall {
         guard session.sendCtl(normalized) else {
             return ("HVF 제어 채널에 명령을 기록하지 못했습니다: \(session.config.ctlFilePath)", -1)
         }
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
+        let deadline = session.guestNow().addingTimeInterval(timeout)
+        while session.guestNow() < deadline {
             if let reply = reader.readReply(from: log) { return reply }
             guard agentReady(session) else { return ("HVF 게스트 연결이 명령 실행 중 종료되었습니다.", -1) }
             try? await Task.sleep(nanoseconds: 250_000_000)
@@ -395,7 +398,7 @@ struct HvfDisplayDriverInstallButton: View {
         let session = session
         HvfDisplayDriverInstall.start(runner: { await HvfDisplayDriverInstall.runInGuest($0, session: session, timeout: $1) },
                                       hardwareCursor: session.guestHardwareCursorWanted,
-                                      onInstalled: onInstalled) { result in
+                                      clock: { session.guestNow() }, onInstalled: onInstalled) { result in
             installing = false
             outcome = result
         }

@@ -1,12 +1,18 @@
-//! User/control and clipboard traffic keeps its order ahead of background file sync.
+//! User/control and clipboard traffic keeps its order ahead of background file transfer:
+//! shared-folder sync and Finder drops, which take turns in arrival order.
 
 use super::*;
 
-pub(super) fn pop_next_request(queue: &mut VecDeque<ServiceReq>) -> Option<ServiceReq> {
+/// The next request to send; one `held` returns true for stays queued, in
+/// its place.
+pub(super) fn pop_next_request(
+    queue: &mut VecDeque<ServiceReq>,
+    held: impl Fn(&ServiceReq) -> bool,
+) -> Option<ServiceReq> {
     let position = queue
         .iter()
-        .position(|request| !is_share_req(request))
-        .unwrap_or(0);
+        .position(|request| !held(request) && !is_share_req(request) && !is_drop_req(request))
+        .or_else(|| queue.iter().position(|request| !held(request)))?;
     queue.remove(position)
 }
 
