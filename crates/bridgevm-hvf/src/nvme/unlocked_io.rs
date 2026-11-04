@@ -18,6 +18,13 @@
 //! write-cache-off WRITE goes on to the flush worker's sync from there and
 //! completes after it, as inline.
 //!
+//! A Dataset Management Deallocate (Windows' TRIM, dataset_management.rs)
+//! goes the same way: inline, the punches of one 1 GiB delete held the lock
+//! for up to 24 ms (PR #497). The doorbell reads and checks its range list
+//! under the lock, so an invalid one completes inline with its error, and the
+//! job only punches. WRITEs and deallocations with bytes in common run in
+//! fetch order (io_order.rs).
+//!
 //! Taking the jobs is `unsafe` ([`NvmeController::take_io`]): they run, on
 //! another thread and after the lock is dropped, through the raw host pointers
 //! that the running memory view's `host_ptr` returns, so the caller promises
@@ -37,19 +44,30 @@ use std::io;
 use std::os::fd::{AsRawFd, RawFd};
 use std::sync::Arc;
 
+use super::dataset_management::punch_unlocked;
 use super::flush_worker::{Finished, FlushJob, Shared};
+use super::io_order::Change;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 
-/// One READ or WRITE, checked under the platform lock.
+/// One READ, WRITE or deallocation, checked under the platform lock.
 pub(crate) struct IoJob {
     done: FlushJob,
     file: Arc<File>,
-    write: bool,
+    kind: Kind,
     sync_next: bool,
     offset: u64,
     /// Guest-physical address and length of each contiguous segment.
     segments: Vec<(u64, usize)>,
+    /// A WRITE's or deallocation's place in fetch order (io_order.rs).
+    ticket: Option<u64>,
+}
+
+enum Kind {
+    Read,
+    Write,
+    /// Punch these byte ranges.
+    Deallocate(Arc<[(u64, u64)]>),
 }
 
 impl IoJob {
@@ -58,12 +76,13 @@ impl IoJob {
     /// straight to and from the mapped pages, as DMA would.
     fn transfer(&self, mem: &dyn GuestMemoryMut) -> u16 {
         let fd = self.file.as_raw_fd();
+        let write = matches!(self.kind, Kind::Write);
         let mut offset = self.offset;
         for &(gpa, len) in &self.segments {
             let Some(ptr) = mem.host_ptr(gpa, len) else {
                 return SC_INVALID_FIELD;
             };
-            if copy_all(fd, ptr, len, offset, self.write).is_err() {
+            if copy_all(fd, ptr, len, offset, write).is_err() {
                 return SC_INVALID_FIELD;
             }
             offset += len as u64;
@@ -105,7 +124,7 @@ fn copy_all(fd: RawFd, ptr: *mut u8, len: usize, offset: u64, write: bool) -> io
     Ok(())
 }
 
-/// The READs and WRITEs a doorbell queued, from the `unsafe`
+/// The READs, WRITEs and deallocations a doorbell queued, from the `unsafe`
 /// [`NvmeController::take_io`] only. Run them after dropping the platform
 /// lock, on the vCPU's [`NvmeIoWorker`](super::NvmeIoWorker); the next drain
 /// under the lock posts their completions.
@@ -118,14 +137,28 @@ pub struct NvmeIo {
 }
 
 impl NvmeIo {
-    /// Run the transfers in order and publish their results. `mem` is the
-    /// calling thread's view of the guest RAM the doorbell checked them in.
+    /// Run the jobs in order, each in its turn (io_order.rs), and publish
+    /// their results. `mem` is the calling thread's view of the guest RAM the
+    /// doorbell checked them in.
     pub fn run(mut self, mem: &dyn GuestMemoryMut) {
         let jobs = std::mem::take(&mut self.jobs);
+        let order = &self.shared.order;
         self.publish(jobs, |job| {
-            #[cfg(test)]
-            self.gate.pass();
-            job.transfer(mem)
+            if let Some(ticket) = job.ticket {
+                order.wait_turn(ticket);
+            }
+            let status = match &job.kind {
+                Kind::Deallocate(ranges) => punch_unlocked(&job.file, ranges),
+                Kind::Read | Kind::Write => {
+                    #[cfg(test)]
+                    self.gate.pass();
+                    job.transfer(mem)
+                }
+            };
+            if let Some(ticket) = job.ticket {
+                order.leave(ticket);
+            }
+            status
         });
     }
 
@@ -151,7 +184,13 @@ impl Drop for NvmeIo {
     fn drop(&mut self) {
         if !self.jobs.is_empty() {
             let jobs = std::mem::take(&mut self.jobs);
-            self.publish(jobs, |_| SC_INTERNAL_DEVICE_ERROR);
+            let order = &self.shared.order;
+            self.publish(jobs, |job| {
+                if let Some(ticket) = job.ticket {
+                    order.leave(ticket);
+                }
+                SC_INTERNAL_DEVICE_ERROR
+            });
         }
     }
 }
@@ -162,10 +201,12 @@ impl NvmeController {
         self.unlocked_io = enabled;
     }
 
-    /// Queue an I/O-queue READ or WRITE to run without the platform lock.
-    /// `false` leaves it to the inline path, which reports any error: unlocked
-    /// I/O off, not a write-back raw file, no host pointers, or an invalid
-    /// range or PRP list.
+    /// Queue an I/O-queue READ, WRITE or Deallocate to run without the
+    /// platform lock. `false` leaves it to the inline path, which reports any
+    /// error: unlocked I/O off, not a write-back raw file, no host pointers,
+    /// an invalid range, PRP list or range list, or nothing to deallocate.
+    /// A WRITE and a Deallocate share the conditions, so on one disk both run
+    /// here or both inline.
     pub(crate) fn defer_io(
         &mut self,
         sqid: u16,
@@ -173,12 +214,13 @@ impl NvmeController {
         cmd: &SubmissionEntry,
         mem: &dyn GuestMemoryMut,
     ) -> bool {
-        let write = match cmd.opcode {
-            NVM_OP_READ => false,
-            NVM_OP_WRITE => true,
-            _ => return false,
-        };
-        if !self.unlocked_io || sqid == 0 || !self.direct_dma_enabled {
+        if !matches!(
+            cmd.opcode,
+            NVM_OP_READ | NVM_OP_WRITE | NVM_OP_DATASET_MANAGEMENT
+        ) || !self.unlocked_io
+            || sqid == 0
+            || !self.direct_dma_enabled
+        {
             return false;
         }
         let (file, byte_len) = match self.backend_for_nsid(cmd.nsid) {
@@ -187,9 +229,52 @@ impl NvmeController {
             }
             _ => return false,
         };
-        let Some((offset, len)) = transfer_range(cmd, byte_len) else {
-            return false;
+        let (kind, change, offset, segments) = if cmd.opcode == NVM_OP_DATASET_MANAGEMENT {
+            let Some(ranges) = self.deallocation(cmd, byte_len, mem) else {
+                return false;
+            };
+            let ranges: Arc<[(u64, u64)]> = ranges.into();
+            let change = Change::Punch(Arc::clone(&ranges));
+            (Kind::Deallocate(ranges), Some(change), 0, Vec::new())
+        } else {
+            let Some((offset, len)) = transfer_range(cmd, byte_len) else {
+                return false;
+            };
+            let Some(segments) = self.host_segments(cmd, len, mem) else {
+                return false;
+            };
+            if cmd.opcode == NVM_OP_WRITE {
+                let change = Change::Write(offset, offset + len as u64);
+                (Kind::Write, Some(change), offset, segments)
+            } else {
+                (Kind::Read, None, offset, segments)
+            }
         };
+        let sync_next = matches!(kind, Kind::Write) && self.write_needs_sync(cmd);
+        let worker = self.flush_worker.get_or_insert_with(FlushWorker::default);
+        let ticket = change.map(|change| worker.shared.order.enter(cmd.nsid, change));
+        worker.in_flight += 1;
+        worker.io.push(IoJob {
+            done: FlushJob::io(sqid, cqid, *cmd),
+            file,
+            kind,
+            sync_next,
+            offset,
+            segments,
+            ticket,
+        });
+        self.hold_completion_slot(cqid);
+        true
+    }
+
+    /// The guest segments of a `len`-byte transfer, if its PRPs decode and
+    /// every segment has a host pointer.
+    fn host_segments(
+        &mut self,
+        cmd: &SubmissionEntry,
+        len: usize,
+        mem: &dyn GuestMemoryMut,
+    ) -> Option<Vec<(u64, usize)>> {
         let mut spans = std::mem::take(&mut self.prp_spans_scratch);
         let mut segments = std::mem::take(&mut self.io_segments_scratch);
         spans.clear();
@@ -205,26 +290,11 @@ impl NvmeController {
         segments.clear();
         self.prp_spans_scratch = spans;
         self.io_segments_scratch = segments;
-        let Some(segments) = job_segments else {
-            return false;
-        };
-        let sync_next = write && self.write_needs_sync(cmd);
-        let worker = self.flush_worker.get_or_insert_with(FlushWorker::default);
-        worker.in_flight += 1;
-        worker.io.push(IoJob {
-            done: FlushJob::io(sqid, cqid, *cmd),
-            file,
-            write,
-            sync_next,
-            offset,
-            segments,
-        });
-        self.hold_completion_slot(cqid);
-        true
+        job_segments
     }
 
-    /// The READs and WRITEs queued since the last call, for the doorbell vCPU
-    /// to run once it has dropped the platform lock.
+    /// The READs, WRITEs and deallocations queued since the last call, for
+    /// the doorbell vCPU to run once it has dropped the platform lock.
     ///
     /// # Safety
     ///

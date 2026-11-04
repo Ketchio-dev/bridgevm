@@ -18,6 +18,7 @@ mod identify;
 mod identify_command;
 mod interrupts;
 mod io;
+mod io_order;
 mod io_worker;
 mod io_write;
 mod log_page;

@@ -416,7 +416,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                     error.stop_secondary(|| control.record_run_error(primary_vcpu));
                     return true;
                 }
-                // NVMe reads and writes run on this vCPU's worker, unlocked.
+                // NVMe reads, writes and TRIM run on this vCPU's worker, unlocked.
                 // Finished within NVME_IO_WAIT, this exit's second hold posts
                 // them; otherwise the drain FLUSH_DONE_HOOK asks for does.
                 if nvme_io.is_some_and(|io| {
