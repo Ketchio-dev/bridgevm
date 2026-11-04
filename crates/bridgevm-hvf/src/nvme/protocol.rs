@@ -40,6 +40,8 @@ pub(crate) const NVM_OP_WRITE: u8 = 0x01;
 
 pub(crate) const NVM_OP_READ: u8 = 0x02;
 
+pub(crate) const NVM_OP_DATASET_MANAGEMENT: u8 = 0x09;
+
 // ---- Command Set Identifiers (NVMe 1.4 §7.1) ------------------------------
 pub(crate) const COMMAND_SET_NVM: u8 = 0x00;
 
@@ -62,6 +64,9 @@ pub(crate) const SC_INVALID_FIELD_DNR: u16 = SC_INVALID_FIELD | SC_DNR;
 
 /// Invalid Opcode.
 pub(crate) const SC_INVALID_OPCODE: u16 = 0x0001;
+
+/// LBA Out of Range (NVM command set generic status 0x80).
+pub(crate) const SC_LBA_OUT_OF_RANGE: u16 = 0x0080;
 
 /// A decoded 64-byte NVMe submission-queue entry. Only the fields this minimal
 /// model consumes are surfaced; everything is read from guest RAM little-endian.
