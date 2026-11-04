@@ -60,7 +60,11 @@ pub fn restore(
 
     let checkpoint = VmCheckpoint::read_from_path(path)?;
     platform.restore_state(&checkpoint.device_state);
-    checkpoint.restore_hvf(vcpus, guest_ram)
+    checkpoint.restore_hvf(vcpus, guest_ram)?;
+    // A later pause adds to the restored offset, not to zero.
+    let offset = checkpoint.vcpus.first().map_or(0, |vcpu| vcpu.vtimer_offset);
+    crate::pause_gate::GATE.seed_offset(offset);
+    Ok(())
 }
 
 pub fn restore_if_requested(

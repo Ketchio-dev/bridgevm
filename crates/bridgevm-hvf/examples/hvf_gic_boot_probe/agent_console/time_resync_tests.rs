@@ -138,3 +138,36 @@ fn resync_command_is_fixed_text_plus_the_host_ticks() {
     assert_eq!(limit, 8_156);
     assert!(time_resync_command(u64::MAX).len() < limit);
 }
+
+/// A VM pause stops the guest counter, so Windows' clock is behind by the
+/// pause; the host clocks show no gap, so resume queues the resync itself.
+#[test]
+fn a_vm_pause_queues_one_resync_for_its_length() {
+    let (wall, mono) = clocks();
+    let mut h = resident((wall, mono));
+    h.note_vm_pause(Duration::ZERO);
+    assert_eq!(resyncs(&h), 0, "an abandoned pause stopped nothing");
+    h.note_vm_pause(Duration::from_secs(60));
+    h.note_vm_pause(Duration::from_secs(5));
+    assert_eq!(resyncs(&h), 1);
+    assert_eq!(h.clock.pending_gap_ms, 65_000);
+    let sent = send(&mut h, mono + TICK);
+    assert!(sent.iter().any(|line| line.contains("Set-Date") || line.starts_with("RUN ")), "{sent:?}");
+    assert_eq!(h.clock.pending_gap_ms, 0, "the sent resync covers both pauses");
+}
+
+/// Review on 3d9f317f: live lanes boot test images at a fixed date
+/// (BRIDGEVM_GUEST_RTC_EPOCH); a resync keeps the guest on that timeline.
+#[test]
+fn a_resync_with_a_fixed_guest_epoch_targets_that_date_plus_the_time_since() {
+    let mut clock = HostClock::default();
+    let host_start = UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+    let guest_start = UNIX_EPOCH + Duration::from_secs(1_785_542_400);
+    clock.rtc_epoch = Some((guest_start, host_start));
+    assert_eq!(
+        clock.resync_target(host_start + Duration::from_secs(600)),
+        guest_start + Duration::from_secs(600)
+    );
+    clock.rtc_epoch = None;
+    assert_eq!(clock.resync_target(host_start), host_start);
+}

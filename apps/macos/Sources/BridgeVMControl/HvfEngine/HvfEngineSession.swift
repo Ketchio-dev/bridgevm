@@ -40,6 +40,12 @@ final class HvfEngineSession: ObservableObject {
     @Published var resetConfirmation: HvfResetConfirmation? // the Reset the user is asked to confirm
     @Published var restartNotice: String? // a Reset that no helper took
     @Published var guestBoot = 0 // bumps at every guest reset record and at every run start or end
+    @Published var pause = HvfPauseState.running { // what the probe last said about Pause (HvfGuestPause)
+        didSet { guestRunClock.hold(pause.holdsInput, host: hostNow()) }
+    }
+    var hostNow: () -> Date = Date.init // the host clock behind guestNow()
+    var guestRunClock = HvfGuestRunClock()
+    @Published var pauseNotice: String? // a Pause or Resume that did not happen
     var runtimeTransitionInProgress = false
     var timer: Timer?
     var tailReader = TailOffsetReader()
@@ -76,7 +82,9 @@ final class HvfEngineSession: ObservableObject {
         self.repoRoot = repoRoot
         self.processIsRunning = processIsRunning
         self.vtpmKeyProvider = vtpmKeyProvider
-        inputDriver.onPoll = { [weak self] in self?.poll() }
+        // The 10 ms input pump waits out a pause: no receipt comes before the guest runs again.
+        inputDriver.onPoll = { [weak self] in if self?.pause == .running { self?.poll() } }
+        inputDriver.now = { [weak self] in self?.guestNow() ?? Date() }
         inputDriver.onDiagnostic = { [weak self] in self?.append(.unknown($0)) }
         appPacing.observe(inputDriver)
     }
@@ -118,6 +126,7 @@ final class HvfEngineSession: ObservableObject {
             markStopped()
             return .alreadyStopped
         }
+        resumeBeforeStop()
         connectionState = .stopping
         cancelOrderedInputTarget()
         stopDeadline = Date().addingTimeInterval(180)
@@ -174,6 +183,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     @discardableResult func sendKey(_ action: String) -> Bool {
+        guard !pause.holdsInput else { return false }
         guard legacyPaste.pending == nil else { append(.unknown("key input refused: clipboard paste pending")); return false }
         let admission = inputDriver.route(.key(action), binding: inputBinding)
         guard admission == .legacy else { return admission == .queued }
@@ -182,7 +192,7 @@ final class HvfEngineSession: ObservableObject {
 
     @discardableResult
     func sendText(_ value: String) -> HvfTextInputSubmission {
-        guard !guiStartCleanupOnly else { return .refused }
+        guard !guiStartCleanupOnly, !pause.holdsInput else { return .refused }
         guard legacyPaste.pending == nil else { append(.unknown("text input refused: clipboard paste pending")); return .refused }
         guard !value.isEmpty else { return .refused }
         switch inputDriver.route(.text(value), binding: inputBinding) {
@@ -232,13 +242,15 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func sendPointerScroll(_ delta: Int8, location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        guard delta != 0, let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return }
+        guard delta != 0, !pause.holdsInput,
+              let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return }
         if inputDriver.route(.pointer("scroll:\(delta)@\(point.x)x\(point.y)"), binding: inputBinding) != .legacy { return }
         appendLiveInput("POINTER scroll:\(delta)@\(point.x)x\(point.y)")
     }
 
     /// Returns where the event went (queued, legacy, refused or unmapped) for the display's diagnostic.
     @discardableResult private func sendPointerAction(_ action: HvfPointerAction, location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> String {
+        guard !pause.holdsInput else { return "paused" }
         guard let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return "unmapped" }
         if action.mayMoveGuestFocus { cancelPendingPaste("pointer pressed") }
         let admission = inputDriver.route(.pointer("\(action.orderedVerb):\(point.x)x\(point.y)"), binding: inputBinding)
@@ -294,6 +306,12 @@ final class HvfEngineSession: ObservableObject {
         vmmControlAvailable && writeLiveInput(line)
     }
 
+    /// `RESUME`, which a Stop or Force Stop already under way still sends: only this run's input
+    /// channel takes it.
+    func appendRunControl(_ line: String) -> Bool {
+        !guiStartCleanupOnly && inputDriver.router.binding == inputBinding && writeLiveInput(line)
+    }
+
     private func writeLiveInput(_ line: String) -> Bool {
         let path = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("input.ctl")
         guard let data = "\(line)\n".data(using: .utf8) else { return false }
@@ -333,6 +351,7 @@ final class HvfEngineSession: ObservableObject {
             handle(event)
         }
         expireUnacknowledgedReset()
+        expireUnansweredPause()
         if let lastHeartbeatDate {
             lastHeartbeatAge = Date().timeIntervalSince(lastHeartbeatDate)
         }

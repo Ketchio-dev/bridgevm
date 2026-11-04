@@ -111,6 +111,7 @@ extension HvfEngineSession {
     /// A guest reset record, or the run starting or ending: the next boot is a different one.
     func guestBootChanged() {
         guestBoot += 1
+        pauseEnded()
         if restartRequest != nil { restartRequest = nil }
         if resetConfirmation != nil { resetConfirmation = nil }
         if restartNotice != nil { restartNotice = nil }
@@ -133,7 +134,9 @@ extension HvfEngineSession {
     }
 
     private func askWindows() -> Bool {
-        guard serviceStarted, sendCtl(Self.guestRestartCommand) else { return false }
+        guard serviceStarted else { return false }
+        resumeBeforeStop() // a paused Windows cannot restart
+        guard sendCtl(Self.guestRestartCommand) else { return false }
         restartRequest = HvfPendingRestart(kind: .windowsAsked, boot: guestBoot, sentAt: ownedStartNow())
         restartNotice = nil
         append(.unknown("guest restart requested"))

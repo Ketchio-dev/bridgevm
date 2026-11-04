@@ -21,6 +21,12 @@ struct LibraryDashboardRuntimeControls: View {
                         disabled: !enabled || lifecycleBusy, action: press)
                     .accessibilityIdentifier("bridgevm.dashboard.runtime.restart")
                 }
+                HvfPauseControl(session: session, identifier: "bridgevm.dashboard.runtime") { enabled, paused, press in
+                    DashboardActionButton(title: HvfPauseControl<EmptyView>.title(paused: paused),
+                        symbol: HvfPauseControl<EmptyView>.symbol(paused: paused),
+                        disabled: !enabled || lifecycleBusy, action: press)
+                    .accessibilityIdentifier("bridgevm.dashboard.runtime.pause")
+                }
                 DashboardActionButton(title: "새로고침", symbol: "arrow.clockwise", action: model.refresh)
                 DashboardActionButton(title: "복제", symbol: "plus.square.on.square",
                     disabled: runtimeActive || library.cloningSlugs.contains(config.slug)) {

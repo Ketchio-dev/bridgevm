@@ -691,6 +691,26 @@ fn host_socket_udp_flows_evict_after_idle_timeout() {
     assert_eq!(backend.outbound_ipv4_handler().udp_flow_count(), 0);
 }
 
+/// A VM pause is not idle time: a flow idle only across a pause longer than the
+/// idle timeout survives it (vm_clock).
+#[test]
+fn host_socket_udp_flows_survive_a_vm_pause_longer_than_the_idle_timeout() {
+    let Some(echo) = loopback_udp_socket() else {
+        return;
+    };
+    let port = echo.local_addr().unwrap().port();
+    let handler = HostSocketOutboundIpv4Handler::with_dns_resolver(StdIpv4Addr::LOCALHOST)
+        .with_idle_timeout_ms(200);
+    let mut backend = NatBackend::with_outbound_handler(handler);
+
+    backend.transmit(&udp_guest_frame([127, 0, 0, 1], port, 49152, b"hello"));
+    crate::vm_clock::pause();
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    crate::vm_clock::resume();
+    backend.poll_host_sockets();
+    assert_eq!(backend.outbound_ipv4_handler().udp_flow_count(), 1);
+}
+
 #[test]
 fn host_socket_tcp_flow_proxies_data_and_fin() {
     let Some(listener) = loopback_tcp_listener() else {

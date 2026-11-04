@@ -50,6 +50,9 @@ enum LiveInputCommand {
     /// A hard reset of the VM, the way a guest PSCI SYSTEM_RESET ends a boot;
     /// needs no guest agent. The run loop takes it (`take_host_reset`).
     Reset,
+    /// Stop (`Pause(true)`) or continue every vCPU; the run loop takes it
+    /// (`take_host_pause`, pause_gate.rs).
+    Pause(bool),
 }
 
 impl std::fmt::Debug for LiveInputCommand {
@@ -71,6 +74,7 @@ impl std::fmt::Debug for LiveInputCommand {
             Self::Snapshot(label) => f.debug_tuple("Snapshot").field(label).finish(),
             Self::PowerButton => f.write_str("PowerButton"),
             Self::Reset => f.write_str("Reset"),
+            Self::Pause(paused) => f.debug_tuple("Pause").field(paused).finish(),
         }
     }
 }
@@ -88,11 +92,18 @@ impl LiveInputCommand {
         matches!(self, Self::Reset)
     }
 
+    /// Taken by the run loop, never applied to a device.
+    fn is_run_control(&self) -> bool {
+        matches!(self, Self::Reset | Self::Pause(_))
+    }
+
     /// Lines for the VMM itself that must not wait behind guest input.
     fn host_control(line: &[u8]) -> Option<Self> {
         match line {
             b"POWERBUTTON" => Some(Self::PowerButton),
             b"RESET" => Some(Self::Reset),
+            b"PAUSE" => Some(Self::Pause(true)),
+            b"RESUME" => Some(Self::Pause(false)),
             _ => None,
         }
     }
@@ -122,7 +133,7 @@ pub struct LiveInputController {
     accepted_pointer_moves: u64,
     next_poll: Instant,
     /// File offset up to which a full-queue read-ahead already queued every
-    /// host control line (POWERBUTTON, RESET).
+    /// host control line (POWERBUTTON, RESET, PAUSE, RESUME).
     power_scanned_to: u64,
 }
 
@@ -378,6 +389,50 @@ mod tests {
         assert!(!input.take_host_reset());
         assert_eq!(input.pending.len(), 1);
         assert!(matches!(input.pending[0], LiveInputCommand::Pointer(_)));
+    }
+
+    /// PAUSE and RESUME are exact lines; the last one read wins, and queued
+    /// input waits behind them for the run loop.
+    #[test]
+    fn pause_and_resume_lines_are_taken_by_the_run_loop() {
+        let mut platform = bridgevm_hvf::platform_virt::VirtPlatform::new(Default::default());
+        let mut mem = bridgevm_hvf::platform_virt::FlatGuestRam::new(0x4000_0000, 0);
+        let mut input = controller();
+        input.push_line("PAUSE now");
+        input.push_line("POINTER click:1x1");
+        input.push_line("PAUSE");
+        input.apply_pending(&mut platform, &mut mem, Instant::now());
+        assert_eq!(input.pending.len(), 2, "the click waits");
+        assert_eq!(input.take_host_pause(), Some(true));
+        assert_eq!(input.take_host_pause(), None);
+
+        input.push_line("RESUME");
+        input.push_line("PAUSE");
+        input.push_line("RESUME");
+        assert_eq!(input.take_host_pause(), Some(false));
+        assert_eq!(input.pending.len(), 1);
+        assert!(matches!(input.pending[0], LiveInputCommand::Pointer(_)));
+    }
+
+    /// RESUME must reach a paused VM even behind a full queue of input.
+    #[test]
+    fn resume_is_read_past_a_full_queue() {
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-live-input-resume-{}-{}.ctl",
+            std::process::id(),
+            Instant::now().elapsed().as_nanos()
+        ));
+        let mut contents = String::new();
+        for index in 0..super::MAX_PENDING_COMMANDS {
+            contents.push_str(&format!("POINTER click:{index}x1\n"));
+        }
+        contents.push_str("RESUME\n");
+        fs::write(&path, contents).unwrap();
+        let mut input = controller();
+        input.source = Some(InputControlFile::from_path(path.clone()));
+        input.read_new_commands();
+        assert_eq!(input.take_host_pause(), Some(false));
+        fs::remove_file(path).unwrap();
     }
 
     /// A hung guest reads no HID, which is when Reset is needed most.
