@@ -66,6 +66,8 @@ mod service_wake;
 mod share;
 #[path = "agent_console/state.rs"]
 mod state;
+#[path = "agent_console/time_resync.rs"]
+mod time_resync;
 #[path = "agent_console/verb_reply.rs"]
 mod verb_reply;
 #[path = "agent_console/window_protocol.rs"]
@@ -83,5 +85,6 @@ pub use service_wake::ServiceWake;
 use share::*;
 pub use state::AgentConsoleHarness;
 use state::*;
+use time_resync::*;
 use verb_reply::*;
 use window_protocol::*;

@@ -24,6 +24,7 @@ impl AgentConsoleHarness {
             Some((put @ ServiceReq::SharePut { .. }, _)) => {
                 self.queue.push_front(rewind_share_put_for_retransmit(put));
             }
+            Some((ServiceReq::TimeSync, _)) => self.requeue_time_resync(),
             _ => {}
         }
         self.get_accum = None;
