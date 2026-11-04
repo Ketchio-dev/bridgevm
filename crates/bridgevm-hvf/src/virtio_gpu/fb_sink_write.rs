@@ -1,11 +1,11 @@
 //! Framebuffer mmap allocation and full or damaged-row publication.
 
-use super::{FbShared, FbSink, Rect};
+use super::{FbShared, FbSink, Rect, Wrote};
 use std::fs::OpenOptions;
 use std::os::unix::io::AsRawFd;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 const HEADER_LEN: usize = 64;
 const PIXEL_BYTES: usize = 4;
@@ -19,7 +19,8 @@ impl FbSink {
         fourcc: u32,
         bytes: &[u8],
     ) {
-        if let Err(err) = self.write_inner(width, height, stride, fourcc, bytes, None) {
+        let hold = Duration::ZERO;
+        if let Err(err) = self.write_inner(width, height, stride, fourcc, bytes, None, hold) {
             eprintln!("virtio-gpu fb export failed: {err}");
         }
     }
@@ -33,17 +34,21 @@ impl FbSink {
         bytes: &[u8],
         damage: Rect,
     ) {
-        if let Err(err) = self.write_inner(width, height, stride, fourcc, bytes, Some(damage)) {
+        let hold = Duration::ZERO;
+        if let Err(err) = self.write_inner(width, height, stride, fourcc, bytes, Some(damage), hold)
+        {
             eprintln!("virtio-gpu fb export failed: {err}");
         }
     }
 
-    /// Publish one frame under the lock every writer of the file shares.
-    /// Damage is applied only on top of this writer's own previous frame;
-    /// after another writer's frame the whole frame is copied. `Ok(false)`:
-    /// the geometry overflows or `bytes` is shorter than `height * stride`, so
-    /// nothing changed. `Err`: the file could not be created, sized or mapped.
+    /// Publish one frame under the lock every writer of the file shares,
+    /// unless another writer published the file's newest frame less than
+    /// `hold` ago: that check and the write are one step under the lock, so no
+    /// frame lands between them. Damage is applied only on top of this
+    /// writer's own previous frame; after another writer's frame the whole
+    /// frame is copied. `Err`: the file could not be created, sized or mapped.
     /// Logging is the caller's choice.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn write_inner(
         &mut self,
         width: u32,
@@ -52,18 +57,23 @@ impl FbSink {
         fourcc: u32,
         bytes: &[u8],
         damage: Option<Rect>,
-    ) -> std::io::Result<bool> {
+        hold: Duration,
+    ) -> std::io::Result<Wrote> {
         let Some(frame_len) = (height as usize).checked_mul(stride as usize) else {
-            return Ok(false);
+            return Ok(Wrote::Invalid);
         };
         let Some(needed) = HEADER_LEN.checked_add(frame_len) else {
-            return Ok(false);
+            return Ok(Wrote::Invalid);
         };
         if bytes.len() < frame_len {
-            return Ok(false);
+            return Ok(Wrote::Invalid);
         }
         let shared = Arc::clone(&self.shared);
         let mut shared = FbShared::lock(&shared);
+        let other = shared.newest.filter(|(writer, _)| *writer != self.writer);
+        if other.is_some_and(|(_, at)| at.elapsed() < hold) {
+            return Ok(Wrote::Held);
+        }
         let new_mapping = self.ensure_mapping(needed, &mut shared.seq)?;
         let ours = matches!(shared.newest, Some((writer, _)) if writer == self.writer);
         let same_layout =
@@ -75,7 +85,7 @@ impl FbSink {
         }
         self.finish_frame(&mut shared.seq);
         shared.newest = Some((self.writer, Instant::now()));
-        Ok(true)
+        Ok(Wrote::Frame)
     }
 
     fn ensure_mapping(&mut self, needed: usize, seq: &mut u64) -> std::io::Result<bool> {
