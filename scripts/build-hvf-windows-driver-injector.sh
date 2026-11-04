@@ -185,7 +185,7 @@ if [[ "${PLANT_AGENT:-1}" == "1" && -f "$ASSETS/bvagent.ps1" ]]; then
     printf 'BVAGENT-PACKAGE version=v3-share2\n'
     printf 'agent_sha256=%s\n' "$(shasum -a 256 "$ASSETS/bvagent.ps1" | awk '{print $1}')"
     printf 'installer_sha256=%s\n' "$(shasum -a 256 "$DST_VOL/bvagent-install-service.exe" | awk '{print $1}')"
-    printf 'autostart=scheduled-task:onlogon:highest:interactive\n'
+    printf 'autostart=scheduled-task:onlogon+every-minute:highest:interactive\n'
     printf 'uac_disabled=false\n'
   } > "$DST_VOL/bvagent-package.log"
   # Deliberately do NOT stage bvagent.bat: a Startup-folder launcher would be a

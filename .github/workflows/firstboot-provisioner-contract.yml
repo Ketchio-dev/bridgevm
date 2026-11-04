@@ -2,7 +2,7 @@ name: Firstboot provisioner contract
 
 on:
   push: {branches: [main]}
-  pull_request: {paths: ['scripts/test-bvagent-firstboot-receipt.ps1', 'scripts/win-assets/bvagent-firstboot.ps1', '.github/workflows/firstboot-provisioner-contract.yml']}
+  pull_request: {paths: ['scripts/test-bvagent-firstboot-receipt.ps1', 'scripts/win-assets/bvagent-firstboot.ps1', 'scripts/win-assets/bvagent-task.ps1', 'scripts/win-assets/bvagent-install-service.c', 'tests/integration/agent-task-contract.ps1', '.github/workflows/firstboot-provisioner-contract.yml']}
   workflow_dispatch:
 
 permissions:
@@ -18,3 +18,6 @@ jobs:
       - name: Run the provisioner under Windows PowerShell 5.1 and PowerShell 7
         shell: powershell
         run: scripts/test-bvagent-firstboot-receipt.ps1
+      - name: Register the agent task twice and compare it with the bvinject installer's
+        shell: powershell
+        run: tests/integration/agent-task-contract.ps1
