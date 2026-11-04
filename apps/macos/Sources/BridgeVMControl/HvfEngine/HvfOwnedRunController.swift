@@ -29,6 +29,7 @@ final class HvfOwnedRunController {
     private var cancelled = false
     private var serviceReady = false
     private var guestRequestSent = false
+    private var powerButtonPressed = false
     private var guestEffectsPending = 0
     private var outputEnded = false
     private var protocolValid = true
@@ -53,7 +54,8 @@ final class HvfOwnedRunController {
     }
 
     func requestStop(target: HvfOwnedRuntimeIdentity, operationID: UUID, allowGuestGrace: Bool = true,
-                     afterGrace: HvfOwnedStopGraceEnd = .cancelRunner) -> HvfOwnedStopAdmission {
+                     afterGrace: HvfOwnedStopGraceEnd = .cancelRunner,
+                     pressPowerButton: (@MainActor () -> Bool)? = nil) -> HvfOwnedStopAdmission {
         guard target == identity else { return .refused(.targetMismatch) }
         if let operation { return .existing(operation) }
         let time = now()
@@ -69,6 +71,7 @@ final class HvfOwnedRunController {
         else if useGrace {
             graceDeadline = time + Self.guestGrace
             requestGuestIfReady()
+            if !serviceReady, let pressPowerButton { pressGuestPowerButton(pressPowerButton) }
         } else { cancelRunner() }
         tick()
         return .accepted(ticket)
@@ -105,7 +108,7 @@ final class HvfOwnedRunController {
               runnerExit == nil, process.isRunning else { return false }
         return true
     }
-    var guestStopRequested: Bool { guestRequestSent }
+    var guestStopRequested: Bool { guestRequestSent || powerButtonPressed }
 
     /// Set by this boot generation's `SERVICE start`; a guest reset record drops it, so an unsent request waits.
     func guestServiceReady() { serviceReady = true; requestGuestIfReady() }
@@ -153,6 +156,15 @@ final class HvfOwnedRunController {
 
     /// A held Stop has no deadline until the user escalates; Windows may be waiting on an app.
     private var awaitsUserDecision: Bool { holdsAfterGrace && !forceRequested && !cancelled }
+
+    /// Without the agent (login screen, early boot) Windows still honours its ACPI power button and shuts
+    /// down as for `shutdown.exe /s`. The grace and Force Stop stay as they are, and the agent's request
+    /// still follows if the agent becomes ready while Windows is running.
+    private func pressGuestPowerButton(_ press: @MainActor () -> Bool) {
+        powerButtonPressed = press()
+        onDiagnostic?(powerButtonPressed ? "Guest agent not ready; pressed the guest's ACPI power button"
+            : "Guest power button unavailable; waiting for the guest agent")
+    }
 
     private func requestGuestIfReady() {
         guard operation != nil, graceDeadline != nil, serviceReady, !guestRequestSent,

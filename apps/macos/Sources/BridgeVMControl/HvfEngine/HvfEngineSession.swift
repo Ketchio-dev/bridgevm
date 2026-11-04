@@ -296,6 +296,9 @@ final class HvfEngineSession: ObservableObject {
         }
     }
 
+    /// One press of the guest's ACPI power button, read by the VMM from the live input channel.
+    func pressGuestPowerButton() -> Bool { writeLiveInput("POWERBUTTON") }
+
     func closeLiveInput() {
         liveInputFile.close()
     }
