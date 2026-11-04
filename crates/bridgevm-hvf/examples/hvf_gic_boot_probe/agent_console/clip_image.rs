@@ -199,6 +199,15 @@ pub(super) fn guest_image_refusal_line(
     }
 }
 
+/// A Mac image over a limit; the app shows it (and the refusal below with
+/// `too-large`) as a notice (HvfClipboardImageNotice.swift).
+pub(super) fn host_image_skip_line(bytes: usize, width: u32, height: u32, t_ms: u128) -> String {
+    format!(
+        "BVAGENT CLIPSYNC skip image too-large bytes={bytes} width={width} height={height} \
+         limit-bytes={CLIP_IMAGE_MAX_BYTES} limit-side={CLIP_IMAGE_MAX_SIDE} t={t_ms}"
+    )
+}
+
 impl AgentConsoleHarness {
     /// CLIPCAPS reply: IMAGE_PNG switches images on; a bare CLIPCAPS, or the
     /// unknown-token OUT of an agent that predates it, keeps text only.
@@ -270,11 +279,8 @@ impl AgentConsoleHarness {
             height,
         } = image
         {
-            println!(
-                "BVAGENT CLIPSYNC skip image too-large bytes={bytes} width={width} height={height} \
-                 limit-bytes={CLIP_IMAGE_MAX_BYTES} limit-side={CLIP_IMAGE_MAX_SIDE} t={}",
-                self.t_ms(now)
-            );
+            let line = host_image_skip_line(*bytes, *width, *height, self.t_ms(now));
+            println!("{line}");
         }
     }
 

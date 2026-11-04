@@ -31,6 +31,7 @@ struct LibraryDashboardRuntimeControls: View {
                 Text(failure).font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
             HvfShareRootNoticeView(notice: session.shareRootNotice)
+            HvfClipboardImageNoticeView(notice: session.clipboardImageNotice)
         }
         .onChange(of: session.runtimeStartupWorkerPending) { wasPending, isPending in
             guard wasPending, !isPending else { return }

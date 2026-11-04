@@ -75,6 +75,15 @@
       "guest_visible": true,
       "impact": "The Windows clock is correct again shortly after the Mac wakes instead of lagging by the sleep time for up to a week. Without the agent service the clock stays behind until Windows syncs or reboots.",
       "evidence": "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/time_resync.rs"
+    },
+    {
+      "id": "clipboard-images",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU has no Windows clipboard integration of its own; only a guest agent or remote-display protocol can share one.",
+      "bridgevm_behavior": "With clipboard sync on and an agent that answers CLIPCAPS with IMAGE_PNG, the resident agent service also moves clipboard images: a Mac copy holding public.png or public.tiff becomes one Windows clipboard write of the copy's text, a bitmap and the PNG format, and a Windows bitmap or PNG copy becomes public.png on the Mac. Images over 32 MiB or 16384 pixels per side stay where they were copied. An older agent keeps text-only sync.",
+      "guest_visible": true,
+      "impact": "Screenshots and copied images paste across in either direction. A Finder file copy is not an image copy, so its icon is never sent.",
+      "evidence": "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clip_image.rs"
     }
   ],
   "deviation_modules": [

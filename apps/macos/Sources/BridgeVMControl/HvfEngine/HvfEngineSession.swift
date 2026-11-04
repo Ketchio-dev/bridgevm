@@ -13,6 +13,7 @@ final class HvfEngineSession: ObservableObject {
     @Published var connectionState: HvfConnectionState = .stopped
     let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
     let shareRootNotice = HvfShareRootNotice()
+    let clipboardImageNotice = HvfClipboardImageNotice()
     @Published var events: [BvAgentEvent] = []
     @Published var displayDriverFlagMessage: String? // why HvfDisplayDriverFlag could not save yet
     var repoRoot: URL
@@ -366,6 +367,7 @@ final class HvfEngineSession: ObservableObject {
         lastHeartbeatAge = nil
         serviceStarted = false
         shareRootNotice.reset()
+        clipboardImageNotice.reset()
         stopCommandSent = false
         stopDeadline = nil
         if forceStopTarget != nil { forceStopTarget = nil }
@@ -388,6 +390,7 @@ final class HvfEngineSession: ObservableObject {
         lastHeartbeatAge = nil
         serviceStarted = false
         shareRootNotice.reset()
+        clipboardImageNotice.reset()
         stopCommandSent = false
         stopDeadline = nil
         liveInputWriteFailureReported = false

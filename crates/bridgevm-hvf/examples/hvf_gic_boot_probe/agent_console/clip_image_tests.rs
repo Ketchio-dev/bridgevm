@@ -388,3 +388,17 @@ fn agent_restart_mid_push_resends_the_image_from_putbeg() {
     assert_eq!(rig.guest.image.as_deref(), Some(image.as_slice()));
     assert!(rig.verbs().starts_with(&verbs(&["CLIPCAPS", "PUTBEG"])));
 }
+
+#[test]
+fn notice_lines_keep_the_prefixes_the_app_matches() {
+    // HvfClipboardImageNotice.swift matches these prefixes exactly.
+    assert!(host_image_skip_line(40_000_000, 9000, 9000, 812)
+        .starts_with("BVAGENT CLIPSYNC skip image too-large bytes=40000000 width=9000 height=9000 "));
+    let image = GuestImage { width: 20000, height: 300, bytes: 0, digest: None, path: None };
+    let refused = guest_image_refusal_line(GuestImageRefusal::TooLarge, Some(&image), 913);
+    assert_eq!(
+        refused,
+        "BVAGENT CLIPSYNC refused guest-image too-large bytes=0 width=20000 height=300 \
+         limit-bytes=33554432 limit-side=16384 t=913"
+    );
+}
