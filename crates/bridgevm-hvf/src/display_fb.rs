@@ -8,12 +8,14 @@
 //! share a writer ([`DisplayFramebuffer::share`],
 //! `VirtPlatform::display_framebuffer`): shared writers take turns under one
 //! lock and one sequence. Independent writers on one file would interleave
-//! frames and publish sequence values the reader cannot order.
+//! frames and publish sequence values the reader cannot order. A secondary
+//! producer yields to the other's fresh frames with
+//! [`DisplayFramebuffer::publish_yielding`], which decides under that lock.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::virtio_gpu::FbSink;
+use crate::virtio_gpu::{FbSink, Wrote};
 #[path = "display_fb_requests.rs"]
 pub mod requests;
 
@@ -82,16 +84,37 @@ impl DisplayFramebuffer {
         fourcc: u32,
         bytes: &[u8],
     ) -> std::io::Result<()> {
-        if self
+        // Nothing is younger than zero: never held.
+        let hold = Duration::ZERO;
+        self.publish_yielding(hold, width, height, stride, fourcc, bytes)
+            .map(drop)
+    }
+
+    /// [`publish`](Self::publish), unless a writer sharing this one published
+    /// the file's newest frame less than `hold` ago: then that frame stays,
+    /// nothing is written and the result is `Ok(false)`. The check and the
+    /// write are one step under the lock all sharing writers take, so no
+    /// other frame can land between the decision and the write.
+    pub fn publish_yielding(
+        &mut self,
+        hold: Duration,
+        width: u32,
+        height: u32,
+        stride: u32,
+        fourcc: u32,
+        bytes: &[u8],
+    ) -> std::io::Result<bool> {
+        let wrote = self
             .sink
-            .write_inner(width, height, stride, fourcc, bytes, None)?
-        {
-            return Ok(());
+            .write_inner(width, height, stride, fourcc, bytes, None, hold)?;
+        match wrote {
+            Wrote::Frame => Ok(true),
+            Wrote::Held => Ok(false),
+            Wrote::Invalid => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "display frame geometry overflows or is larger than its bytes",
+            )),
         }
-        Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "display frame geometry overflows or is larger than its bytes",
-        ))
     }
 }
 
