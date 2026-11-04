@@ -337,10 +337,11 @@ build_installed_boot_env_args() {
   # model (usgic_bridge.rs). This remains opt-in and does not change the default.
   # BRIDGEVM_GUEST_RTC_EPOCH (pl031/epoch.rs) boots a date-bound test image at a fixed date.
   # BRIDGEVM_TEST_SUSPEND_GAP_MS (agent_console/time_resync.rs) fakes one host sleep.
+  # BRIDGEVM_GUEST_PMU=0 (vcpu_debug.rs guest_dfr0) hides the PMU from the guest, as QEMU/HVF does.
   local forwarded
   for forwarded in BRIDGEVM_USERSPACE_GIC BRIDGEVM_USGIC_TRACE BRIDGEVM_USGIC_RING BRIDGEVM_USGIC_WFI_NAP BRIDGEVM_TEST_SUSPEND_GAP_MS \
     BRIDGEVM_CHECKPOINT_STATE BRIDGEVM_RESTORE_STATE BRIDGEVM_GUEST_RTC_EPOCH BRIDGEVM_DISABLE_VIRTIO_ISO BRIDGEVM_NVME_FLUSH BRIDGEVM_NVME_ASYNC_FLUSH BRIDGEVM_VIRTIO_GPU BRIDGEVM_VIRTIO_GPU_TRACE_JSONL BRIDGEVM_BOOT_MENU_WAIT_MS BRIDGEVM_GUEST_RESOLUTION BRIDGEVM_RAMFB_DIRTY_WATCH \
-    BRIDGEVM_TRACE_XHCI_MMIO BRIDGEVM_TRACE_XHCI_BRINGUP; do
+    BRIDGEVM_TRACE_XHCI_MMIO BRIDGEVM_TRACE_XHCI_BRINGUP BRIDGEVM_GUEST_PMU; do
     [[ -z "${!forwarded:-}" ]] || ENV_ARGS+=("$forwarded=${!forwarded}")
   done
   # Forward the KD serial bridge socket (kd_serial_bridge.rs; the bridge owns

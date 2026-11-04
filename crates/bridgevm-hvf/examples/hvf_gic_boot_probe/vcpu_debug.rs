@@ -29,6 +29,18 @@ pub(crate) fn print_gpr_context(vcpu: HvVcpuT) {
     }
 }
 
+/// The guest's ID_AA64DFR0_EL1: PMUVer 1 (a PMUv3 whose counters read zero; HVF traps every
+/// PMU access to us). `BRIDGEVM_GUEST_PMU=0` keeps HVF's value, no PMU, which is what a
+/// QEMU/HVF guest sees (perf experiment; T43e found BridgeVM's in-guest fault path slower).
+pub(crate) fn guest_dfr0(hvf: u64) -> u64 {
+    static PMU: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *PMU.get_or_init(|| std::env::var("BRIDGEVM_GUEST_PMU").as_deref() != Ok("0")) {
+        (hvf & !(0xf << 8)) | (0x1 << 8)
+    } else {
+        hvf
+    }
+}
+
 pub(crate) fn reset_vcpu_for_boot(vcpu: HvVcpuT) {
     // SAFETY: Category 8 - FFI boundary. `vcpu` is the live HVF vCPU handle
     // reset on the run-loop thread while it is not inside `hv_vcpu_run`; all
@@ -62,7 +74,7 @@ pub(crate) fn reset_vcpu_for_boot(vcpu: HvVcpuT) {
         let mut dfr0_before = 0u64;
         let dfr0_read_status =
             hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_ID_AA64DFR0_EL1, &mut dfr0_before);
-        let dfr0_after = (dfr0_before & !(0xf << 8)) | (0x1 << 8);
+        let dfr0_after = guest_dfr0(dfr0_before);
         let dfr0_set_status = hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_ID_AA64DFR0_EL1, dfr0_after);
         println!(
             "ID_AA64DFR0_EL1 PMUVer: before={dfr0_before:#x} read={dfr0_read_status:#x} after={dfr0_after:#x} set={dfr0_set_status:#x}"

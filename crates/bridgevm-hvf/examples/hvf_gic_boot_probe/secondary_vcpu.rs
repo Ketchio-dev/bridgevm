@@ -208,7 +208,7 @@ pub(crate) fn apply_secondary_cpu_on_reset(vcpu: HvVcpuT, mpidr: u64, entry: u64
         hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, mpidr);
         let mut dfr0 = 0u64;
         if hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_ID_AA64DFR0_EL1, &mut dfr0) == 0 {
-            let dfr0 = (dfr0 & !(0xf << 8)) | (0x1 << 8);
+            let dfr0 = guest_dfr0(dfr0);
             hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_ID_AA64DFR0_EL1, dfr0);
         }
         hv_vcpu_set_reg(vcpu, HV_REG_PC, entry);
