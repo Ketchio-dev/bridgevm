@@ -371,6 +371,173 @@ function Write-CommandResult($handle, $result) {
     Write-Line $handle ("OUTEND " + $seq) 'OUTEND'
 }
 
+# >>> clipboard images (CLIPCAPS, CLIPX, CLIPSETIMG)
+# PNG bytes move as files in $script:BvClipDir through PUTBEG/PUTCHUNK/PUTEND
+# and GET, never in a command line. BridgeVM.BvClipImage reads and sets the
+# clipboard on its own STA thread: Windows Forms needs STA, and a wedged
+# clipboard call must not hold this loop. It is compiled on the first CLIPCAPS;
+# when that fails the agent answers a bare CLIPCAPS and the host keeps text only.
+$script:BvClipImageSource = @'
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
+using System.Windows.Forms;
+namespace BridgeVM {
+    public static class BvClipImage {
+        public const int MaxBytes = 33554432;
+        public const int MaxSide = 16384;
+
+        static void OnSta(ThreadStart body) {
+            Exception failure = null;
+            Thread thread = new Thread(delegate () {
+                try { body(); } catch (Exception e) { failure = e; }
+            });
+            // Always succeeds on Windows before Start; Clipboard refuses a non-STA thread anyway.
+            thread.TrySetApartmentState(ApartmentState.STA);
+            thread.IsBackground = true;
+            thread.Start();
+            if (!thread.Join(20000)) { throw new TimeoutException("the clipboard did not answer"); }
+            if (failure != null) { throw new InvalidOperationException(failure.Message, failure); }
+        }
+
+        // Width and height from a PNG's signature and IHDR; false when it is no PNG.
+        public static bool PngSize(byte[] png, out int width, out int height) {
+            width = 0;
+            height = 0;
+            byte[] head = new byte[] { 137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82 };
+            if (png == null || png.Length < 33) { return false; }
+            for (int i = 0; i < head.Length; i++) { if (png[i] != head[i]) { return false; } }
+            long w = ((long)png[16] << 24) | ((long)png[17] << 16) | ((long)png[18] << 8) | png[19];
+            long h = ((long)png[20] << 24) | ((long)png[21] << 16) | ((long)png[22] << 8) | png[23];
+            if (w < 1 || h < 1 || w > int.MaxValue || h > int.MaxValue) { return false; }
+            width = (int)w;
+            height = (int)h;
+            return true;
+        }
+
+        public static string Sha256Hex(byte[] bytes) {
+            using (SHA256 sha = SHA256.Create()) {
+                StringBuilder hex = new StringBuilder(64);
+                foreach (byte b in sha.ComputeHash(bytes)) { hex.Append(b.ToString("x2")); }
+                return hex.ToString();
+            }
+        }
+
+        // One clipboard write of the text (when not empty) and the PNG: a bitmap for
+        // Paint and Word, and the PNG bytes as the registered "PNG" format, which keeps
+        // transparency and reads back unchanged. Returns "<width> <height>".
+        public static string Set(byte[] png, string text) {
+            int width, height;
+            if (png == null || png.Length > MaxBytes || !PngSize(png, out width, out height) || width > MaxSide || height > MaxSide) {
+                throw new InvalidDataException("not a PNG within the clipboard image limits");
+            }
+            OnSta(delegate () {
+                using (MemoryStream source = new MemoryStream(png))
+                using (Bitmap bitmap = new Bitmap(source)) {
+                    DataObject data = new DataObject();
+                    if (!string.IsNullOrEmpty(text)) { data.SetData(DataFormats.UnicodeText, true, text); }
+                    data.SetData(DataFormats.Bitmap, true, bitmap);
+                    data.SetData("PNG", false, new MemoryStream(png));
+                    Clipboard.SetDataObject(data, true, 10, 100);
+                }
+            });
+            return width + " " + height;
+        }
+
+        // The clipboard image as PNG: the "PNG" format's own bytes when they are a PNG,
+        // else the bitmap encoded as PNG. Null without an image; an image over MaxSide
+        // returns null with its size set.
+        public static byte[] Get(out int width, out int height) {
+            byte[] result = null;
+            int w = 0, h = 0;
+            OnSta(delegate () {
+                IDataObject data = Clipboard.GetDataObject();
+                if (data == null) { return; }
+                if (data.GetDataPresent("PNG", false)) {
+                    MemoryStream stream = data.GetData("PNG", false) as MemoryStream;
+                    int pw, ph;
+                    if (stream != null) {
+                        byte[] bytes = stream.ToArray();
+                        if (PngSize(bytes, out pw, out ph)) { result = bytes; w = pw; h = ph; return; }
+                    }
+                }
+                if (!data.GetDataPresent(DataFormats.Bitmap, true)) { return; }
+                using (Image image = data.GetData(DataFormats.Bitmap, true) as Image) {
+                    if (image == null) { return; }
+                    w = image.Width;
+                    h = image.Height;
+                    if (w > MaxSide || h > MaxSide) { return; }
+                    using (MemoryStream output = new MemoryStream()) {
+                        image.Save(output, ImageFormat.Png);
+                        result = output.ToArray();
+                    }
+                }
+            });
+            width = w;
+            height = h;
+            return result;
+        }
+    }
+}
+'@
+$script:BvClipDir = Join-Path ([System.IO.Path]::GetTempPath()) 'BridgeVM-clip'
+$script:BvClipImageReady = $null
+# Like BvClipSeq for CLIPGET: the image part is read again only after a change.
+$script:BvClipImgSeq = [uint32]4294967295
+$script:BvClipImgDesc = '0 0 0 - -'
+
+function Initialize-ClipImage {
+    if ($null -eq $script:BvClipImageReady) {
+        try {
+            Add-Type -TypeDefinition $script:BvClipImageSource -ReferencedAssemblies System.Windows.Forms, System.Drawing -ErrorAction Stop
+            [void][System.IO.Directory]::CreateDirectory($script:BvClipDir)
+            $script:BvClipImageReady = $true
+        } catch {
+            Log ('CLIP IMAGE unavailable: ' + $_.Exception.Message)
+            $script:BvClipImageReady = $false
+        }
+    }
+    return $script:BvClipImageReady
+}
+
+# The image part of CLIPX: <w> <h> <bytes> <sha256|-> <b64(path)|->. A readable
+# image within the limits is written to guest.png for the host's GET; the previous
+# copy's file goes first. A failed read counts as no image for that change.
+function Get-ClipImageDescriptor {
+    $seq = $K::GetClipboardSequenceNumber()
+    if ($seq -eq $script:BvClipImgSeq) { return $script:BvClipImgDesc }
+    $desc = '0 0 0 - -'
+    if ($script:BvClipImageReady) {
+        try {
+            $guestPath = $script:BvClipDir + '\guest.png'
+            [void][System.IO.Directory]::CreateDirectory($script:BvClipDir)
+            [System.IO.File]::Delete($guestPath)
+            $width = 0
+            $height = 0
+            $png = [BridgeVM.BvClipImage]::Get([ref]$width, [ref]$height)
+            if ($null -eq $png) {
+                $desc = '{0} {1} 0 - -' -f $width, $height
+            } elseif ($png.Length -gt [BridgeVM.BvClipImage]::MaxBytes) {
+                $desc = '{0} {1} {2} - -' -f $width, $height, $png.Length
+            } else {
+                [System.IO.File]::WriteAllBytes($guestPath, $png)
+                $desc = '{0} {1} {2} {3} {4}' -f $width, $height, $png.Length, [BridgeVM.BvClipImage]::Sha256Hex($png), [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($guestPath))
+            }
+        } catch {
+            Log ('CLIPX image read failed: ' + $_.Exception.Message)
+            $desc = '0 0 0 - -'
+        }
+    }
+    $script:BvClipImgDesc = $desc
+    $script:BvClipImgSeq = $seq
+    return $desc
+}
+# <<< clipboard images
+
 # One-shot sanity probe: does CreateFile work AT ALL in this process context, and
 # what does the port's GetLastError actually mean? Opening \\.\C: (a known-good
 # device) isolates a vioser-specific open failure from a general P/Invoke / token
@@ -485,6 +652,49 @@ while ($true) {
                         $script:BvClipSeq = $seq
                     }
                     Write-Line $h ("CLIP " + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipCache))) 'CLIP'
+                }
+                'CLIPX' {
+                    # CLIPGET plus the clipboard image, for hosts that saw IMAGE_PNG:
+                    # CLIPX <w> <h> <bytes> <sha256|-> <b64(path)|-> <b64(utf8 text)>.
+                    $seq = $K::GetClipboardSequenceNumber()
+                    if ($seq -ne $script:BvClipSeq) {
+                        $clip = ''
+                        try { $c = Get-Clipboard -Raw -ErrorAction SilentlyContinue; if ($null -ne $c) { $clip = [string]$c } } catch { }
+                        $script:BvClipCache = $clip
+                        $script:BvClipSeq = $seq
+                    }
+                    $image = Get-ClipImageDescriptor
+                    Write-Line $h ('CLIPX ' + $image + ' ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipCache))) 'CLIPX'
+                }
+                'CLIPCAPS' {
+                    # CLIPCAPS -> CLIPCAPS IMAGE_PNG <b64(dir)> when this agent can move
+                    # clipboard images, else a bare CLIPCAPS (text only).
+                    if (Initialize-ClipImage) {
+                        Write-Line $h ('CLIPCAPS IMAGE_PNG ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipDir))) 'CLIPCAPS'
+                    } else { Write-Line $h 'CLIPCAPS' 'CLIPCAPS' }
+                }
+                'CLIPSETIMG' {
+                    # CLIPSETIMG <b64(path)> <b64(utf8 text)|-> -> OK CLIPSETIMG <w> <h>: one
+                    # clipboard write of the text and the PNG file the host just PUT. The file
+                    # becomes guest.png, which CLIPX names until the clipboard changes.
+                    try {
+                        if (-not (Initialize-ClipImage)) { throw 'clipboard images unavailable' }
+                        $parts = $arg.Split(' ')
+                        $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))
+                        $txt = ''
+                        if ($parts.Length -ge 2 -and $parts[1] -ne '-') { $txt = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[1])) }
+                        $png = [System.IO.File]::ReadAllBytes($path)
+                        $size = [BridgeVM.BvClipImage]::Set($png, $txt)
+                        $guestPath = $script:BvClipDir + '\guest.png'
+                        [System.IO.File]::Delete($guestPath)
+                        [System.IO.File]::Move($path, $guestPath)
+                        $seq = $K::GetClipboardSequenceNumber()
+                        $script:BvClipCache = $txt
+                        $script:BvClipSeq = $seq
+                        $script:BvClipImgDesc = '{0} {1} {2} {3}' -f $size, $png.Length, [BridgeVM.BvClipImage]::Sha256Hex($png), [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($guestPath))
+                        $script:BvClipImgSeq = $seq
+                        Write-Line $h ('OK CLIPSETIMG ' + $size) 'OK'
+                    } catch { Write-Line $h ('ERR CLIPSETIMG ' + $_.Exception.Message) 'ERR' }
                 }
                 'CLIPSET' {
                     # Set the guest Windows clipboard from CLIPSET <base64(utf8)>.
