@@ -169,6 +169,12 @@ struct Rig {
 impl Rig {
     /// A resident service right after `BVAGENT SERVICE start`.
     fn new(images: bool) -> Self {
+        let mut rig = Self::unsettled(images);
+        rig.settle();
+        rig
+    }
+    /// The same before its first clip interval, so both clipboards can be seeded.
+    fn unsettled(images: bool) -> Self {
         let (pasteboard, worker) = HostPasteboard::test_pair();
         let mut h = harness();
         h.service = true;
@@ -177,16 +183,14 @@ impl Rig {
         h.pasteboard = Some(pasteboard);
         let now = Instant::now();
         assert!(h.next_command_line(0, now).is_none());
-        let mut rig = Self {
+        Self {
             h,
             worker,
             mac: Mac::default(),
             guest: Guest::new(images),
             wire: Vec::new(),
             now,
-        };
-        rig.settle();
-        rig
+        }
     }
     /// One clip interval: the Mac poll, a service pass, every reply in
     /// lockstep, then the Mac applies queued writes.
@@ -324,6 +328,38 @@ fn guest_image_is_checked_then_written_once_with_its_text() {
     }
     assert!(rig.verbs().is_empty(), "neither fetched again nor pushed back");
     assert_eq!(rig.mac.writes.len(), 2);
+}
+
+#[test]
+fn startup_mac_image_wins_over_the_guest_text_polled_with_it() {
+    let mut rig = Rig::unsettled(true);
+    let image = png(16, 16, 300, 4);
+    rig.mac.copy(None, Some(PasteboardImage::Png(image.clone())));
+    rig.guest.text = "windows".into();
+    for _ in 0..3 {
+        rig.settle();
+    }
+    assert!(rig.mac.writes.is_empty(), "the guest's text never replaced the Mac image");
+    assert_eq!(rig.guest.image.as_deref(), Some(image.as_slice()), "the Mac image reached Windows");
+}
+
+#[test]
+fn guest_caption_change_keeps_the_image_on_the_mac() {
+    let mut rig = Rig::new(true);
+    let image = png(64, 32, 1024, 5);
+    rig.guest.text = "first".into();
+    rig.guest.image = Some(image.clone());
+    rig.settle();
+    rig.verbs();
+    // Windows: the same picture copied again with a new caption.
+    rig.guest.text = "second".into();
+    rig.settle();
+    assert_eq!(rig.mac.text.as_deref(), Some("second"));
+    assert!(rig.mac.image == Some(PasteboardImage::Png(image)), "the image stays with the new caption");
+    for _ in 0..3 {
+        rig.settle();
+    }
+    assert_eq!(rig.verbs(), verbs(&["GET"]), "fetched once for the new caption, then left alone");
 }
 
 #[test]

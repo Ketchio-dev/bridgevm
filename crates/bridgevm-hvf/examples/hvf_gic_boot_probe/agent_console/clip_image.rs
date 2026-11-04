@@ -310,7 +310,11 @@ impl AgentConsoleHarness {
             self.last_synced.image = image.digest;
             return;
         }
-        if image.digest.is_some() && self.last_synced.image == image.digest {
+        // The same image under a new caption is fetched again: the caption's
+        // text-only write replaces the Mac's text and image.
+        let caption_changed = self.last_synced.guest_text.is_some()
+            && self.last_synced.guest_text != self.last_synced.text;
+        if image.digest.is_some() && self.last_synced.image == image.digest && !caption_changed {
             return;
         }
         self.last_synced.image = image.digest;

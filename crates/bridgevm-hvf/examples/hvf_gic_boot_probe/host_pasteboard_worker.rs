@@ -41,6 +41,13 @@ impl PasteboardWorker {
                 Err(TryRecvError::Disconnected) => return false,
             }
         }
+        // Images just switched on (seen after the drain, so after any write
+        // sent since): read the Mac's image before a guest write lands. A
+        // startup Mac image is then reported and wins, as startup text does,
+        // and writes queued against the older read are stale.
+        if self.images.load(Ordering::Acquire) && !self.poller.images && !self.poll(backend) {
+            return false;
+        }
         let (mut refused, mut fresh) = (false, false);
         for write in pending {
             // A newer Mac report may still be waiting in the event channel.
