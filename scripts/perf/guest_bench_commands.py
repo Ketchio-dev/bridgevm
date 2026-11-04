@@ -20,14 +20,18 @@ _SHA256 = (
     "$s.Stop(); 'BVBENCH cpu-sha256-1t {0:F1} MB/s' -f (512/$s.Elapsed.TotalSeconds)"
 )
 
-# One thread per guest CPU; the C# helper is compiled before the timed region.
+# One thread per guest CPU, each hashing its own 32 MB of random data. Filling the buffers (first-touch
+# faults) and one hash per thread happen before the timed region, which is 64 hashes per thread: about
+# 1 s at 4 vCPUs (about 2 GB/s per thread), so timer ticks and background noise average out.
 _SHA256_MT = (
     "Add-Type -TypeDefinition 'using System; using System.Diagnostics; using System.Security.Cryptography;"
     " using System.Threading.Tasks; public static class BvMt { public static double Run(int n) {"
-    " var b = new byte[n][]; for (int i = 0; i < n; i++) { b[i] = new byte[32 << 20]; }"
-    " var s = Stopwatch.StartNew(); Parallel.For(0, n, new ParallelOptions { MaxDegreeOfParallelism = n }, i => {"
-    " using (var h = SHA256.Create()) { for (int k = 0; k < 8; k++) { h.ComputeHash(b[i]); } } });"
-    " s.Stop(); return n * 256.0 / s.Elapsed.TotalSeconds; } }';"
+    " var b = new byte[n][]; var o = new ParallelOptions { MaxDegreeOfParallelism = n };"
+    " Parallel.For(0, n, o, i => { b[i] = new byte[32 << 20]; new Random(7 + i).NextBytes(b[i]);"
+    " using (var h = SHA256.Create()) { h.ComputeHash(b[i]); } });"
+    " var s = Stopwatch.StartNew(); Parallel.For(0, n, o, i => {"
+    " using (var h = SHA256.Create()) { for (int k = 0; k < 64; k++) { h.ComputeHash(b[i]); } } });"
+    " s.Stop(); return n * 2048.0 / s.Elapsed.TotalSeconds; } }';"
     "'BVBENCH cpu-sha256-mt {0:F1} MB/s' -f [BvMt]::Run([Environment]::ProcessorCount)"
 )
 
@@ -35,6 +39,16 @@ _MEMCOPY = (
     "$a=New-Object byte[] (256MB); $c=New-Object byte[] (256MB); [Buffer]::BlockCopy($a,0,$c,0,$a.Length);"
     "$s=[Diagnostics.Stopwatch]::StartNew(); for($i=0;$i -lt 16;$i++){[Buffer]::BlockCopy($a,0,$c,0,$a.Length)};"
     "$s.Stop(); 'BVBENCH mem-copy {0:F1} MB/s' -f (4096/$s.Elapsed.TotalSeconds)"
+)
+
+# A fresh 1 GiB array that nothing has touched, then one byte written per 4 KiB page: the guest's
+# demand-zero fault path plus the VMM's backing of guest memory.
+_FIRST_TOUCH = (
+    "Add-Type -TypeDefinition 'using System; using System.Diagnostics; public static class BvTouch {"
+    " public static double Run() { var b = new byte[1 << 30]; var s = Stopwatch.StartNew();"
+    " for (int i = 0; i < b.Length; i += 4096) { b[i] = 1; } s.Stop(); GC.KeepAlive(b);"
+    " return 1024 / s.Elapsed.TotalSeconds; } }';"
+    "'BVBENCH mem-first-touch {0:F1} MB/s' -f [BvTouch]::Run()"
 )
 
 # Unbuffered (FILE_FLAG_NO_BUFFERING) I/O with page-aligned buffers measures the
@@ -82,6 +96,7 @@ SUITE = [
     ("cpu-sha256-1t", _SHA256),
     ("cpu-sha256-mt", _SHA256_MT),
     ("mem-copy", _MEMCOPY),
+    ("mem-first-touch", _FIRST_TOUCH),
     ("disk-io", _DISK_IO),
     ("disk-small-files-flushed", _SMALL_FILES),
     ("process-spawn", _PROCESS_SPAWN),
@@ -263,6 +278,8 @@ def _self_test() -> None:
         decoded = base64.b64decode(line.rsplit(" ", 1)[1]).decode("utf-16-le")
         assert decoded.endswith(script) and decoded.startswith("$ErrorActionPreference='Stop'; "), name
         assert "BVBENCH " in script, name
+    mt = dict(SUITE)["cpu-sha256-mt"]  # random data and one hash per thread before the timed region
+    assert mt.index("NextBytes") < mt.index("ComputeHash") < mt.index("StartNew")
 
 
 if __name__ == "__main__":
