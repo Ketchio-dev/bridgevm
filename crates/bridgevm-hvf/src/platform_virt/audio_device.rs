@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
-use crate::hda::HdaPcmSink;
+use crate::hda::{HdaPcmSink, HdaPcmSource};
 
 impl VirtPlatform {
     pub(crate) fn hda_access(
@@ -40,6 +40,14 @@ impl VirtPlatform {
     pub fn set_hda_pcm_sink(&mut self, sink: Option<Box<dyn HdaPcmSink>>) {
         if let Some(hda) = self.hda.as_mut() {
             hda.set_pcm_sink(sink);
+        }
+    }
+
+    /// Install or clear the host capture source for the HDA input stream; the
+    /// guest records silence without one.
+    pub fn set_hda_pcm_source(&mut self, source: Option<Box<dyn HdaPcmSource>>) {
+        if let Some(hda) = self.hda.as_mut() {
+            hda.set_pcm_source(source);
         }
     }
 }

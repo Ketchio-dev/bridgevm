@@ -7,10 +7,10 @@
 //! against Windows' 20 ms cyclic buffer, so the DMA re-read audio the guest had
 //! not rewritten (30 repeat passes), the 100 ms cap dropped 116 ms, and IOCs
 //! that one poll crossed shared one MSI (372 MSIs for 568 IOCs). This thread
-//! polls the controller every 5 ms while the guest's stream runs.
+//! polls the controller every 5 ms while a guest stream runs.
 //!
 //! - Parked otherwise: it sleeps on its park token until the controller's
-//!   lock-free stream-activity flag rises with SD0CTL.RUN (HdaStreamActivity),
+//!   lock-free stream-activity flag rises with a stream's RUN (HdaStreamActivity),
 //!   so a guest without a running stream costs no wakeup and no lock attempt.
 //! - A tick only `try_lock`s the platform. A busy platform skips the tick: the
 //!   holder is a vCPU, whose drain polls HDA itself, or a reset; the next poll

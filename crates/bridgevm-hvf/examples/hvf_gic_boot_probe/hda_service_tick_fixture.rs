@@ -4,7 +4,9 @@
 
 use super::*;
 use bridgevm_hvf::dtb::VirtFdtConfig;
-use bridgevm_hvf::hda::{HdaPcmSink, REG_GCTL, REG_INTCTL, REG_SD_BDPL, REG_SD_CBL};
+use bridgevm_hvf::hda::{
+    HdaPcmSink, INTCTL_PLAYBACK_STREAM, REG_GCTL, REG_INTCTL, REG_SD_BDPL, REG_SD_CBL,
+};
 use bridgevm_hvf::hda::{REG_SD_CTL, REG_SD_FMT, REG_SD_LVI, REG_SD_STS};
 use bridgevm_hvf::pcie;
 use bridgevm_hvf::platform_virt::VirtPlatformDeviceConfig;
@@ -93,7 +95,7 @@ pub(super) fn program(platform: &mut VirtPlatform) {
         (cfg(msi + 12), 2, u64::from(HDA_MSI.data)),
         (cfg(msi + 2), 2, 1),
         (BAR + REG_GCTL, 4, 1),
-        (BAR + REG_INTCTL, 4, (1 << 31) | 1),
+        (BAR + REG_INTCTL, 4, (1 << 31) | u64::from(INTCTL_PLAYBACK_STREAM)),
         (BAR + REG_SD_BDPL, 4, BDL),
         (BAR + REG_SD_CBL, 4, 2 * PERIOD_BYTES as u64),
         (BAR + REG_SD_LVI, 2, 1),
@@ -103,7 +105,7 @@ pub(super) fn program(platform: &mut VirtPlatform) {
     }
 }
 
-/// A vCPU's SD0CTL write: RUN with IOC interrupts enabled, or a stop.
+/// A vCPU's playback SD1CTL write: RUN with IOC interrupts enabled, or a stop.
 pub(super) fn run_stream(platform: &Mutex<VirtPlatform>, run: bool) {
     let mut platform = platform.lock().unwrap();
     let value = if run { RUN_IOCE } else { 0 };

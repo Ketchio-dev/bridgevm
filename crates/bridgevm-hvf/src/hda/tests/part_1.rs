@@ -12,7 +12,10 @@ use super::helpers::*;
 fn controller_reset_flow_and_register_semantics() {
     let mut ctrl = HdaController::with_pcm_output_path::<&Path>(None);
     let mut mem = FlatGuestRam::new(RAM_BASE, 0x10000);
-    assert_eq!(ctrl.mmio_read(REG_GCAP, 2), u64::from(GCAP_64OK_ONE_OUTPUT));
+    assert_eq!(
+        ctrl.mmio_read(REG_GCAP, 2),
+        u64::from(GCAP_64OK_ONE_INPUT_ONE_OUTPUT)
+    );
     assert_eq!(ctrl.mmio_read(0x02, 2), 0x0100);
     assert_eq!(ctrl.mmio_read(REG_GCTL, 4), 0);
     assert_eq!(ctrl.mmio_read(REG_CORBSIZE, 1), 0xe2);
@@ -118,8 +121,8 @@ fn codec_afg_exposes_children_and_all_enumeration_parameters() {
     // 0x001f0004 is CAD 0, NID 1, GET_PARAMETER (0xf00), parameter 0x04.
     assert_eq!(child_count, CODEC_AFG_CHILD_NODE_COUNT);
     assert_eq!(first_child, CODEC_DAC);
-    assert_eq!(children, CODEC_SPEAKER - CODEC_DAC + 1);
-    assert_eq!(first_child + children - 1, CODEC_SPEAKER);
+    assert_eq!(children, CODEC_MIC - CODEC_DAC + 1);
+    assert_eq!(first_child + children - 1, CODEC_MIC);
     for parameter in [0x10, 0x13] {
         assert_eq!(afg_parameter(parameter), None);
         assert_eq!(ctrl.codec_verb(verb(0, CODEC_AFG, 0xf00, parameter)), 0);
@@ -242,7 +245,7 @@ fn corb_rirb_enumeration_verb_round_trip() {
         vec![
             CODEC_VENDOR_ID,
             0x0001_0001,
-            0x0002_0002,
+            CODEC_AFG_CHILD_NODE_COUNT,
             SPEAKER_WIDGET_CAPABILITIES,
             SPEAKER_CONFIG_DEFAULT
         ]
@@ -283,7 +286,7 @@ fn stream_bdl_dma_captures_pcm_updates_position_and_raises_ioc() {
         &mut mem,
         REG_INTCTL,
         4,
-        u64::from(INTCTL_GIE | INTCTL_STREAM0),
+        u64::from(INTCTL_GIE | INTCTL_PLAYBACK_STREAM),
     );
     write(
         &mut ctrl,
@@ -302,7 +305,12 @@ fn stream_bdl_dma_captures_pcm_updates_position_and_raises_ioc() {
     assert_ne!(ctrl.mmio_read(REG_SD_STS, 1) & u64::from(SDSTS_BCIS), 0);
     assert!(ctrl.interrupt_level());
     assert_eq!(
-        u32::from_le_bytes(mem.read_bytes(dp, 4).unwrap().try_into().unwrap()),
+        u32::from_le_bytes(
+            mem.read_bytes(dp + PLAYBACK_POSITION_ENTRY, 4)
+                .unwrap()
+                .try_into()
+                .unwrap()
+        ),
         0
     );
     drop(ctrl);
@@ -387,7 +395,7 @@ fn controller_and_stream_sources_raise_one_programmed_hda_msi() {
 
     ctrl.stream.sts = SDSTS_BCIS;
     ctrl.stream.ctl = SDCTL_IOCE;
-    ctrl.intctl = INTCTL_GIE | INTCTL_STREAM0;
+    ctrl.intctl = INTCTL_GIE | INTCTL_PLAYBACK_STREAM;
     ctrl.drain_pending_msi_into(true, message_address, 0x41, &mut messages);
     assert_eq!(
         messages,

@@ -20,7 +20,7 @@ impl HdaController {
             };
             self.last_poll = None;
             self.byte_time_remainder = 0;
-            self.stream_activity.stop();
+            self.sync_stream_activity();
             self.notify_stream_stopped(was_running);
             self.notify_stream_reset();
             return;
@@ -31,11 +31,11 @@ impl HdaController {
             // RUN resumes DMA without acknowledging status or resetting the cursor.
             self.last_poll = None;
             self.byte_time_remainder = 0;
-            self.stream_activity.start();
+            self.sync_stream_activity();
             self.trace_stream_run();
         } else if !running {
             self.last_poll = None;
-            self.stream_activity.stop();
+            self.sync_stream_activity();
             self.notify_stream_stopped(was_running);
         }
     }

@@ -41,7 +41,7 @@ pub(super) fn running_stream(
     write(&mut ctrl, &mut mem, REG_SD_CBL, 4, u64::from(cbl));
     write(&mut ctrl, &mut mem, REG_SD_LVI, 2, entries.len() as u64 - 1);
     write(&mut ctrl, &mut mem, REG_SD_FMT, 2, 0x0011);
-    let interrupts = u64::from(INTCTL_GIE | INTCTL_STREAM0);
+    let interrupts = u64::from(INTCTL_GIE | INTCTL_PLAYBACK_STREAM);
     write(&mut ctrl, &mut mem, REG_INTCTL, 4, interrupts);
     write(&mut ctrl, &mut mem, REG_SD_CTL, 3, RUN_WITH_IOC);
     (ctrl, mem)
@@ -115,7 +115,7 @@ fn stream_record_reports_the_programmed_buffer_position_buffer_and_lpib_reads() 
     let entries = [(1_000, false), (PERIOD, false), (2_880, true)];
     let (mut ctrl, mut mem) = running_stream(&entries, true);
     poll_at(&mut ctrl, &mut mem, Instant::now(), &[0, 4]);
-    // Reads that cover SD0 LPIB (0x84..0x88) or its alias count; neighbours do not.
+    // Reads that cover SD1 LPIB (0xa4..0xa8) or its alias count; neighbours do not.
     let reads = [
         (REG_SD_LPIB, 4),
         (REG_SD_LPIB + 2, 2),

@@ -1,4 +1,4 @@
-//! The stream-activity flag mirrors SD0CTL.RUN through every transition, keeps
+//! The stream-activity flag mirrors SD1CTL.RUN through every transition, keeps
 //! its handle across controller resets, and wakes its parked waiter on a rise.
 
 use super::super::*;
@@ -62,10 +62,10 @@ impl Stream {
         activity
     }
 
-    /// The flag and SD0CTL.RUN agree, and equal `expected`.
+    /// The flag and SD1CTL.RUN agree, and equal `expected`.
     fn assert_mirrors_run(&self, expected: bool) {
         let run = self.ctrl.mmio_read(REG_SD_CTL, 1) & u64::from(SDCTL_RUN) != 0;
-        assert_eq!(run, expected, "SD0CTL.RUN");
+        assert_eq!(run, expected, "SD1CTL.RUN");
         assert_eq!(self.ctrl.stream_activity().running(), expected, "flag");
     }
 }

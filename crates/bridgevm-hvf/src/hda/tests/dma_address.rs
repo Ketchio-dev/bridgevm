@@ -48,7 +48,9 @@ fn rewritten_pcm_address_overflow_stops_without_advancing_or_completing_dma() {
     assert_eq!(*writes.lock().unwrap(), expected);
     assert_eq!(ctrl.mmio_read(REG_SD_LPIB, 4), 192);
     assert_eq!(ctrl.stream.bdl_offset, 192);
-    let position_before = mem.read_bytes(position, 4).unwrap();
+    let position_before = mem
+        .read_bytes(position + PLAYBACK_POSITION_ENTRY, 4)
+        .unwrap();
     assert_eq!(position_before, 192u32.to_le_bytes());
     assert_eq!(ctrl.mmio_read(REG_SD_STS, 1), 0);
 
@@ -57,7 +59,11 @@ fn rewritten_pcm_address_overflow_stops_without_advancing_or_completing_dma() {
 
     assert_eq!(*writes.lock().unwrap(), expected);
     assert_eq!(ctrl.mmio_read(REG_SD_LPIB, 4), 192);
-    assert_eq!(mem.read_bytes(position, 4).unwrap(), position_before);
+    assert_eq!(
+        mem.read_bytes(position + PLAYBACK_POSITION_ENTRY, 4)
+            .unwrap(),
+        position_before
+    );
     assert_eq!((ctrl.stream.bdl_index, ctrl.stream.bdl_offset), (0, 192));
     assert_eq!(ctrl.mmio_read(REG_SD_CTL, 1) & u64::from(SDCTL_RUN), 0);
     assert_ne!(ctrl.mmio_read(REG_SD_STS, 1) & u64::from(SDSTS_DESE), 0);

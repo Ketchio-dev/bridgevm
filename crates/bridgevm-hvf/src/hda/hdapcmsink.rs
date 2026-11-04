@@ -2,6 +2,8 @@
 
 use super::*;
 
+#[path = "capture_dma.rs"]
+mod capture_dma;
 #[path = "command_dma.rs"]
 mod command_dma;
 #[path = "controller_debug.rs"]
@@ -14,6 +16,8 @@ mod file_pcm_sink;
 mod interrupt_sources;
 #[path = "pcm_sink.rs"]
 mod pcm_sink;
+#[path = "pcm_source.rs"]
+mod pcm_source;
 #[path = "playback_descriptor.rs"]
 mod playback_descriptor;
 #[path = "playback_dma.rs"]
@@ -34,6 +38,7 @@ use diagnostics::HdaDiagnostics;
 pub use diagnostics::HdaHostRecords;
 pub use file_pcm_sink::FilePcmSink;
 pub use pcm_sink::HdaPcmSink;
+pub use pcm_source::HdaPcmSource;
 use std::sync::Arc;
 pub use stream_activity::HdaStreamActivity;
 
@@ -74,23 +79,40 @@ pub const REG_ICIS: u64 = 0x68;
 pub const REG_DPLBASE: u64 = 0x70;
 pub const REG_DPUBASE: u64 = 0x74;
 
-pub const REG_SD_CTL: u64 = 0x80;
-pub const REG_SD_STS: u64 = 0x83;
-pub const REG_SD_LPIB: u64 = 0x84;
-/// SD0 LPIB's read-only alias. HDA puts it on its own page so a driver can map
-/// just the stream position into its audio engine; Windows reads it there.
-pub const REG_SD_LPIB_ALIAS: u64 = 0x2084;
-pub const REG_SD_CBL: u64 = 0x88;
-pub const REG_SD_LVI: u64 = 0x8c;
-pub const REG_SD_FMT: u64 = 0x92;
-pub const REG_SD_BDPL: u64 = 0x98;
-pub const REG_SD_BDPU: u64 = 0x9c;
+// Stream descriptors follow GCAP's order, input streams first: SD0 is the
+// capture stream at 0x80 and SD1 the playback stream at 0xa0. Each LPIB has a
+// read-only alias at 0x2000 above it, on its own page so a driver can map just
+// the stream position into its audio engine; Windows reads it there.
+pub const REG_CAPTURE_SD_CTL: u64 = 0x80;
+pub const REG_CAPTURE_SD_STS: u64 = 0x83;
+pub const REG_CAPTURE_SD_LPIB: u64 = 0x84;
+pub const REG_CAPTURE_SD_LPIB_ALIAS: u64 = 0x2084;
+pub const REG_CAPTURE_SD_CBL: u64 = 0x88;
+pub const REG_CAPTURE_SD_LVI: u64 = 0x8c;
+pub const REG_CAPTURE_SD_FMT: u64 = 0x92;
+pub const REG_CAPTURE_SD_BDPL: u64 = 0x98;
+pub const REG_CAPTURE_SD_BDPU: u64 = 0x9c;
+pub const REG_SD_CTL: u64 = 0xa0;
+pub const REG_SD_STS: u64 = 0xa3;
+pub const REG_SD_LPIB: u64 = 0xa4;
+pub const REG_SD_LPIB_ALIAS: u64 = 0x20a4;
+pub const REG_SD_CBL: u64 = 0xa8;
+pub const REG_SD_LVI: u64 = 0xac;
+pub const REG_SD_FMT: u64 = 0xb2;
+pub const REG_SD_BDPL: u64 = 0xb8;
+pub const REG_SD_BDPU: u64 = 0xbc;
+/// Each stream's DMA position entry is 8 bytes, in descriptor order.
+pub const CAPTURE_POSITION_ENTRY: u64 = 0;
+pub const PLAYBACK_POSITION_ENTRY: u64 = 8;
 
-pub(crate) const GCAP_64OK_ONE_OUTPUT: u16 = 0x1001;
+/// One input stream (ISS 1), one output stream (OSS 1), 64-bit addressing.
+pub(crate) const GCAP_64OK_ONE_INPUT_ONE_OUTPUT: u16 = 0x1101;
 pub(crate) const GCTL_CRST: u32 = 1;
 pub(crate) const INTCTL_GIE: u32 = 1 << 31;
 pub(crate) const INTCTL_CIE: u32 = 1 << 30;
-pub(crate) const INTCTL_STREAM0: u32 = 1;
+/// Stream interrupt enable and status bits follow descriptor order.
+pub const INTCTL_CAPTURE_STREAM: u32 = 1;
+pub const INTCTL_PLAYBACK_STREAM: u32 = 1 << 1;
 pub(crate) const INTSTS_GIS: u32 = 1 << 31;
 pub(crate) const INTSTS_CIS: u32 = 1 << 30;
 pub(crate) const CORBCTL_RUN: u8 = 1 << 1;
@@ -119,12 +141,15 @@ pub(crate) const CODEC_ROOT: u8 = 0;
 pub(crate) const CODEC_AFG: u8 = 1;
 pub(crate) const CODEC_DAC: u8 = 2;
 pub(crate) const CODEC_SPEAKER: u8 = 3;
-// Stable virtual codec identity; the output path is nodes 2 -> 3.
+pub(crate) const CODEC_ADC: u8 = 4;
+pub(crate) const CODEC_MIC: u8 = 5;
+// Stable virtual codec identity; the output path is nodes 2 -> 3 and the input
+// path 5 -> 4, QEMU hda-duplex's numbering with fixed speaker and mic pins.
 pub(crate) const CODEC_VENDOR_ID: u32 = 0x1af4_0022;
 pub(crate) const CODEC_IMPLEMENTATION_ID: u32 = CODEC_VENDOR_ID;
 pub(crate) const CODEC_REVISION_ID: u32 = 0x0010_0101;
 pub(crate) const CODEC_AFG_CHILD_NODE_COUNT: u32 =
-    ((CODEC_DAC as u32) << 16) | (CODEC_SPEAKER - CODEC_DAC + 1) as u32;
+    ((CODEC_DAC as u32) << 16) | (CODEC_MIC - CODEC_DAC + 1) as u32;
 pub(crate) const CODEC_AFG_CAPABILITIES: u32 = 0x0000_0808;
 pub(crate) const CODEC_PCM_SIZE_RATES: u32 = 0x0002_01fc; // 16..96 kHz, signed 16-bit.
 pub(crate) const CODEC_STREAM_FORMATS: u32 = 0x0000_0001; // PCM.
@@ -138,6 +163,16 @@ pub(crate) const SPEAKER_WIDGET_CAPABILITIES: u32 = 0x0040_0501;
 pub(crate) const SPEAKER_PIN_CAPABILITIES: u32 = 0x0001_0014;
 pub(crate) const SPEAKER_CONFIG_DEFAULT: u32 = 0x9017_0110;
 pub(crate) const SPEAKER_PIN_SENSE: u32 = 0x8000_0000;
+/// Input converter: stereo, connection list, format override, power control,
+/// no amp, so Windows applies its own capture volume and mute.
+pub(crate) const ADC_WIDGET_CAPABILITIES: u32 = 0x0010_0511;
+/// The capture source delivers 48 kHz signed 16-bit PCM only.
+pub(crate) const ADC_PCM_SIZE_RATES: u32 = 0x0002_0040;
+pub(crate) const MIC_WIDGET_CAPABILITIES: u32 = 0x0040_0401;
+pub(crate) const MIC_PIN_CAPABILITIES: u32 = 0x0000_0020; // input capable.
+/// Fixed internal microphone, association 2, no jack detection.
+pub(crate) const MIC_CONFIG_DEFAULT: u32 = 0x90a7_0120;
+pub(crate) const PINCTL_IN_EN: u8 = 0x20;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct StreamDescriptor {
@@ -157,10 +192,13 @@ pub(crate) struct CodecState {
     pub(crate) converter_format: u16,
     pub(crate) stream_channel: u8,
     pub(crate) pin_ctl: u8,
-    pub(crate) power_state: [u8; 4],
+    pub(crate) power_state: [u8; 6],
     pub(crate) connection_select: u8,
     pub(crate) eapd: u8,
     pub(crate) dac_amp_gain_mute: [u8; 2],
+    pub(crate) adc_format: u16,
+    pub(crate) adc_stream_channel: u8,
+    pub(crate) mic_pin_ctl: u8,
 }
 
 impl CodecState {
@@ -170,12 +208,15 @@ impl CodecState {
             pin_ctl: 0x40,
             eapd: 0x02,
             dac_amp_gain_mute: [0x4a; 2],
+            adc_format: 0x0011,
+            mic_pin_ctl: PINCTL_IN_EN,
             ..Self::default()
         }
     }
 }
 
-/// Intel HDA register block, one playback stream, and one speaker codec.
+/// Intel HDA register block, one capture and one playback stream, and one
+/// codec with a speaker and a microphone.
 pub struct HdaController {
     pub(crate) gctl: u32,
     pub(crate) wakeen: u16,
@@ -200,15 +241,26 @@ pub struct HdaController {
     pub(crate) icii: u32,
     pub(crate) icis: u16,
     pub(crate) dp_base: u64,
+    /// SD1, the playback stream.
     pub(crate) stream: StreamDescriptor,
+    /// SD0, the capture stream (capture_dma.rs).
+    pub(crate) capture: StreamDescriptor,
+    pub(crate) capture_last_poll: Option<Instant>,
+    pub(crate) capture_byte_time_remainder: u64,
+    pub(crate) capture_scratch: Vec<u8>,
+    pub(crate) pcm_source: Option<Box<dyn HdaPcmSource>>,
     pub(crate) codec: CodecState,
     pub(crate) last_poll: Option<Instant>,
     pub(crate) byte_time_remainder: u64,
     pub(crate) pcm_sink: Option<Box<dyn HdaPcmSink>>,
     pub(crate) pcm_scratch: Vec<u8>,
     pub(crate) pcm_sink_overridden: bool,
-    pub(crate) interrupt_asserted: bool,
+    /// Interrupt sources (INTSTS bits) asserted at the last MSI latch.
+    pub(crate) interrupt_asserted: u32,
     pub(crate) interrupt_pending: bool,
+    /// The latched message was raised by playback or the controller, not
+    /// capture alone: `hda poll:` msis_sent keeps counting only those.
+    pub(crate) interrupt_pending_beyond_capture: bool,
     pub(crate) diagnostics: HdaDiagnostics,
     pub(crate) stream_activity: Arc<HdaStreamActivity>,
 }
@@ -258,14 +310,20 @@ impl HdaController {
             icis: 0,
             dp_base: 0,
             stream: StreamDescriptor::default(),
+            capture: StreamDescriptor::default(),
+            capture_last_poll: None,
+            capture_byte_time_remainder: 0,
+            capture_scratch: Vec::new(),
+            pcm_source: None,
             codec: CodecState::new(),
             last_poll: None,
             byte_time_remainder: 0,
             pcm_sink,
             pcm_scratch: Vec::new(),
             pcm_sink_overridden: false,
-            interrupt_asserted: false,
+            interrupt_asserted: 0,
             interrupt_pending: false,
+            interrupt_pending_beyond_capture: false,
             diagnostics: HdaDiagnostics::default(),
             stream_activity: Arc::default(),
         }
@@ -292,9 +350,13 @@ impl HdaController {
         self.intctl & INTCTL_GIE != 0 && self.interrupt_sources() != 0
     }
 
-    /// Latch the controller's single aggregate interrupt source and, when the
-    /// enclosing PCI function has standard MSI enabled, emit one message using
-    /// the address/data programmed in PCI config space.
+    /// Latch a message when an interrupt source rises and, when the enclosing
+    /// PCI function has standard MSI enabled, emit one message using the
+    /// address/data programmed in PCI config space. A source rising while
+    /// another is still pending gets its own message: with one message per
+    /// rise of the aggregate level, a capture IOC set while the guest's handler
+    /// cleared a playback IOC would leave the level high and both streams
+    /// without another interrupt.
     pub fn drain_pending_msi_into(
         &mut self,
         enabled: bool,
@@ -302,15 +364,23 @@ impl HdaController {
         data: u32,
         out: &mut Vec<MsixMessage>,
     ) {
-        let active = self.interrupt_level();
-        if active && !self.interrupt_asserted {
+        let sources = if self.intctl & INTCTL_GIE != 0 {
+            self.interrupt_sources()
+        } else {
+            0
+        };
+        let rising = sources & !self.interrupt_asserted;
+        if rising != 0 {
             self.interrupt_pending = true;
+            self.interrupt_pending_beyond_capture |= rising & !INTCTL_CAPTURE_STREAM != 0;
         }
-        self.interrupt_asserted = active;
+        self.interrupt_asserted = sources;
 
         if enabled && self.interrupt_pending {
             self.interrupt_pending = false;
-            self.diagnostics.note_msi(self.stream.ctl & SDCTL_RUN != 0);
+            let counted = std::mem::take(&mut self.interrupt_pending_beyond_capture);
+            self.diagnostics
+                .note_msi(counted && self.stream.ctl & SDCTL_RUN != 0);
             out.push(MsixMessage {
                 vector: MSI_CONTROLLER_VECTOR,
                 address,
@@ -341,8 +411,8 @@ impl HdaController {
         }
         let size = size.min(8);
         let incoming = value.to_le_bytes();
-        let mut written = [false; 0xa0];
-        let mut bytes = [0u8; 0xa0];
+        let mut written = [false; 0xc0];
+        let mut bytes = [0u8; 0xc0];
         for byte in 0..size {
             let absolute = offset + u64::from(byte);
             if let Ok(index) = usize::try_from(absolute) {
@@ -383,7 +453,8 @@ impl HdaController {
         }
         let (touched, next) = rw!(REG_INTCTL, 4, self.intctl);
         if touched {
-            self.intctl = next as u32 & (INTCTL_GIE | INTCTL_CIE | INTCTL_STREAM0);
+            self.intctl = next as u32
+                & (INTCTL_GIE | INTCTL_CIE | INTCTL_CAPTURE_STREAM | INTCTL_PLAYBACK_STREAM);
         }
         let (touched, next) = rw!(REG_CORBLBASE, 4, self.corb_base as u32);
         if touched {
@@ -473,6 +544,34 @@ impl HdaController {
         if touched {
             self.dp_base = (self.dp_base & 0xffff_ffff) | ((next as u32 as u64) << 32);
         }
+        let (touched, next) = rw!(REG_CAPTURE_SD_CTL, 3, self.capture.ctl);
+        if touched {
+            self.write_capture_ctl(next as u32 & 0x00f0_001f);
+        }
+        let (touched, next) = rw!(REG_CAPTURE_SD_STS, 1, 0u8);
+        if touched {
+            self.capture.sts &= !(next as u8 & (SDSTS_BCIS | SDSTS_FIFOE | SDSTS_DESE));
+        }
+        let (touched, next) = rw!(REG_CAPTURE_SD_CBL, 4, self.capture.cbl);
+        if touched && self.capture.ctl & SDCTL_RUN == 0 {
+            self.capture.cbl = next as u32;
+        }
+        let (touched, next) = rw!(REG_CAPTURE_SD_LVI, 2, self.capture.lvi);
+        if touched && self.capture.ctl & SDCTL_RUN == 0 {
+            self.capture.lvi = next as u16;
+        }
+        let (touched, next) = rw!(REG_CAPTURE_SD_FMT, 2, self.capture.fmt);
+        if touched && self.capture.ctl & SDCTL_RUN == 0 {
+            self.capture.fmt = next as u16 & 0x7fff;
+        }
+        let (touched, next) = rw!(REG_CAPTURE_SD_BDPL, 4, self.capture.bdl as u32);
+        if touched && self.capture.ctl & SDCTL_RUN == 0 {
+            self.capture.bdl = (self.capture.bdl & !0xffff_ffff) | (next as u32 as u64 & !0x7f);
+        }
+        let (touched, next) = rw!(REG_CAPTURE_SD_BDPU, 4, self.capture.bdl >> 32);
+        if touched && self.capture.ctl & SDCTL_RUN == 0 {
+            self.capture.bdl = (self.capture.bdl & 0xffff_ffff) | ((next as u32 as u64) << 32);
+        }
         let (touched, next) = rw!(REG_SD_CTL, 3, self.stream.ctl);
         if touched {
             self.write_stream_ctl(next as u32 & 0x00f0_001f);
@@ -505,9 +604,14 @@ impl HdaController {
         self.process_corb(mem);
     }
 
-    /// Consume playback DMA according to elapsed host time. `None` is the
+    /// Advance playback and capture DMA by elapsed host time. `None` is the
     /// deterministic unit-test mode and advances one 10 ms quantum.
     pub fn poll(&mut self, mem: &mut dyn GuestMemoryMut, now: Option<Instant>) {
+        self.poll_capture(mem, now);
+        self.poll_playback(mem, now);
+    }
+
+    fn poll_playback(&mut self, mem: &mut dyn GuestMemoryMut, now: Option<Instant>) {
         if self.stream.ctl & SDCTL_RUN == 0 || self.gctl & GCTL_CRST == 0 {
             self.last_poll = now;
             return;
@@ -561,7 +665,7 @@ impl HdaController {
         let codec = ((command >> 28) & 0x0f) as u8;
         let nid = ((command >> 20) & 0xff) as u8;
         let payload20 = command & 0x000f_ffff;
-        if codec != 0 || !matches!(nid, CODEC_ROOT | CODEC_AFG | CODEC_DAC | CODEC_SPEAKER) {
+        if codec != 0 || nid > CODEC_MIC {
             return 0;
         }
         let verb12 = ((payload20 >> 8) & 0x0fff) as u16;
@@ -572,6 +676,8 @@ impl HdaController {
             0x2 => {
                 if nid == CODEC_DAC {
                     self.codec.converter_format = payload16;
+                } else if nid == CODEC_ADC {
+                    self.codec.adc_format = payload16;
                 }
                 0
             }
@@ -588,6 +694,7 @@ impl HdaController {
                 0
             }
             0xa if nid == CODEC_DAC => u32::from(self.codec.converter_format),
+            0xa if nid == CODEC_ADC => u32::from(self.codec.adc_format),
             0xa => 0,
             0xb if nid == CODEC_DAC => {
                 u32::from(self.codec.dac_amp_gain_mute[usize::from(payload16 & 0x2000 == 0)])
@@ -603,6 +710,7 @@ impl HdaController {
                     0
                 }
                 0xf02 if nid == CODEC_SPEAKER && payload8 == 0 => u32::from(CODEC_DAC),
+                0xf02 if nid == CODEC_ADC && payload8 == 0 => u32::from(CODEC_MIC),
                 0xf02 => 0,
                 0xf05 if nid != CODEC_ROOT => {
                     power_state_response(self.codec.power_state[nid as usize])
@@ -614,20 +722,26 @@ impl HdaController {
                     0
                 }
                 0xf06 if nid == CODEC_DAC => u32::from(self.codec.stream_channel),
+                0xf06 if nid == CODEC_ADC => u32::from(self.codec.adc_stream_channel),
                 0x706 => {
                     if nid == CODEC_DAC {
                         self.codec.stream_channel = payload8;
+                    } else if nid == CODEC_ADC {
+                        self.codec.adc_stream_channel = payload8;
                     }
                     0
                 }
                 0xf07 if nid == CODEC_SPEAKER => u32::from(self.codec.pin_ctl),
+                0xf07 if nid == CODEC_MIC => u32::from(self.codec.mic_pin_ctl),
                 0x707 => {
                     if nid == CODEC_SPEAKER {
                         self.codec.pin_ctl = payload8 & 0x40;
+                    } else if nid == CODEC_MIC {
+                        self.codec.mic_pin_ctl = payload8 & PINCTL_IN_EN;
                     }
                     0
                 }
-                0xf09 if nid == CODEC_SPEAKER => SPEAKER_PIN_SENSE,
+                0xf09 if nid == CODEC_SPEAKER || nid == CODEC_MIC => SPEAKER_PIN_SENSE,
                 0xf0c if nid == CODEC_SPEAKER => u32::from(self.codec.eapd),
                 0x70c => {
                     if nid == CODEC_SPEAKER {
@@ -636,6 +750,7 @@ impl HdaController {
                     0
                 }
                 0xf1c if nid == CODEC_SPEAKER => SPEAKER_CONFIG_DEFAULT,
+                0xf1c if nid == CODEC_MIC => MIC_CONFIG_DEFAULT,
                 // The Implementation Identification register belongs to function
                 // groups.  It is a verb (F20), not GET_PARAMETER parameter 01.
                 0xf20 if nid == CODEC_AFG => CODEC_IMPLEMENTATION_ID,
@@ -679,7 +794,7 @@ impl HdaController {
                 }
             };
         }
-        byte!(REG_GCAP, 2, GCAP_64OK_ONE_OUTPUT);
+        byte!(REG_GCAP, 2, GCAP_64OK_ONE_INPUT_ONE_OUTPUT);
         byte!(0x02, 1, 0u8); // VMIN
         byte!(0x03, 1, 1u8); // VMAJ
         byte!(0x04, 2, 0x003cu16); // OUTPAY
@@ -715,17 +830,22 @@ impl HdaController {
         byte!(REG_ICIS, 2, self.icis);
         byte!(REG_DPLBASE, 4, self.dp_base as u32);
         byte!(REG_DPUBASE, 4, self.dp_base >> 32);
-        byte!(REG_SD_CTL, 3, self.stream.ctl);
-        byte!(REG_SD_STS, 1, self.stream.sts);
-        byte!(REG_SD_LPIB, 4, self.stream.lpib);
-        byte!(REG_SD_LPIB_ALIAS, 4, self.stream.lpib);
-        byte!(REG_SD_CBL, 4, self.stream.cbl);
-        byte!(REG_SD_LVI, 2, self.stream.lvi);
-        byte!(0x8e, 2, 0x0004u16); // FIFOW: 16-byte watermark encoding.
-        byte!(0x90, 2, 0x0020u16); // FIFOS: 32 bytes.
-        byte!(REG_SD_FMT, 2, self.stream.fmt);
-        byte!(REG_SD_BDPL, 4, self.stream.bdl as u32);
-        byte!(REG_SD_BDPU, 4, self.stream.bdl >> 32);
+        for (base, stream) in [
+            (REG_CAPTURE_SD_CTL, &self.capture),
+            (REG_SD_CTL, &self.stream),
+        ] {
+            byte!(base, 3, stream.ctl);
+            byte!(base + 0x03, 1, stream.sts);
+            byte!(base + 0x04, 4, stream.lpib);
+            byte!(base + 0x2004, 4, stream.lpib); // LPIB alias
+            byte!(base + 0x08, 4, stream.cbl);
+            byte!(base + 0x0c, 2, stream.lvi);
+            byte!(base + 0x0e, 2, 0x0004u16); // FIFOW: 16-byte watermark encoding.
+            byte!(base + 0x10, 2, 0x0020u16); // FIFOS: 32 bytes.
+            byte!(base + 0x12, 2, stream.fmt);
+            byte!(base + 0x18, 4, stream.bdl as u32);
+            byte!(base + 0x1c, 4, stream.bdl >> 32);
+        }
         0
     }
 }

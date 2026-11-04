@@ -195,7 +195,11 @@ fn six_byte_dma_then_error_resets_generation_without_a_guest_stop() {
         stream.write(REG_SD_LVI, 2, 1);
         let position = RAM_BASE + 0x3000;
         stream.write(REG_DPLBASE, 4, position | 1);
-        stream.write(REG_INTCTL, 4, u64::from(INTCTL_GIE | INTCTL_STREAM0));
+        stream.write(
+            REG_INTCTL,
+            4,
+            u64::from(INTCTL_GIE | INTCTL_PLAYBACK_STREAM),
+        );
         stream.ctl(SDCTL_RUN | SDCTL_IOCE | SDCTL_DEIE);
         stream.poll();
 
@@ -206,7 +210,10 @@ fn six_byte_dma_then_error_resets_generation_without_a_guest_stop() {
         );
         assert_eq!(stream.ctrl.mmio_read(REG_SD_LPIB, 4), 6);
         assert_eq!(
-            stream.mem.read_bytes(position, 4).unwrap(),
+            stream
+                .mem
+                .read_bytes(position + PLAYBACK_POSITION_ENTRY, 4)
+                .unwrap(),
             6u32.to_le_bytes()
         );
         assert_eq!(

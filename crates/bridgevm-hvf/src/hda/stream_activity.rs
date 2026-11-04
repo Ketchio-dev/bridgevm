@@ -1,9 +1,10 @@
-//! The lock-free "stream 0 is running" flag a host service thread waits on.
+//! The lock-free "a stream is running" flag a host service thread waits on.
 //!
 //! Guest PCM advances only when something polls the controller: a vCPU exit's
 //! drain, under the platform lock, and, while this flag is set, the probe's
 //! host service tick (examples/hvf_gic_boot_probe/hda_service_tick.rs). The
-//! flag mirrors SD0CTL.RUN. The controller sets it on the RUN rise
+//! flag is set while the playback or the capture stream's RUN is: capture DMA
+//! advances only when polled, as playback does. The controller sets it on a RUN rise
 //! (stream_control.rs) and clears it on every RUN clear: a guest stop and a
 //! stream reset (SRST, both stream_control.rs), a DMA halt on a descriptor or
 //! memory fault (`halt_stream_dma`, from playback_dma.rs), and every controller
@@ -18,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
 use std::sync::{Arc, OnceLock};
 use std::thread::{self, Thread};
 
-/// Whether the playback stream runs, readable without the platform lock.
+/// Whether a stream runs, readable without the platform lock.
 #[derive(Debug, Default)]
 pub struct HdaStreamActivity {
     running: AtomicBool,
@@ -26,7 +27,7 @@ pub struct HdaStreamActivity {
 }
 
 impl HdaStreamActivity {
-    /// True while SD0CTL.RUN is set.
+    /// True while the playback or the capture stream's RUN is set.
     pub fn running(&self) -> bool {
         self.running.load(SeqCst)
     }
@@ -60,18 +61,32 @@ impl HdaController {
     pub(crate) fn halt_stream_dma(&mut self) {
         self.stream.sts |= SDSTS_DESE;
         self.stream.ctl &= !SDCTL_RUN;
-        self.stream_activity.stop();
+        self.sync_stream_activity();
+    }
+
+    /// The flag follows both streams' RUN bits.
+    pub(crate) fn sync_stream_activity(&self) {
+        if (self.stream.ctl | self.capture.ctl) & SDCTL_RUN != 0 {
+            self.stream_activity.start();
+        } else {
+            self.stream_activity.stop();
+        }
     }
 
     /// Reinitialize the controller as `fresh`, keeping run-lifetime diagnostics
     /// and the stream-activity handle, which it clears: `fresh` is stopped.
     /// Moved here from diagnostics.rs when it began keeping the handle.
+    /// The host's capture source survives too: the host installed it, as the
+    /// activity handle, and a running capture stream is told it stopped.
     pub(crate) fn replace_keeping_diagnostics(&mut self, fresh: Self) {
+        self.notify_capture_stopped(self.capture.ctl & SDCTL_RUN != 0);
         let diagnostics = std::mem::take(&mut self.diagnostics);
         let activity = Arc::clone(&self.stream_activity);
+        let source = self.pcm_source.take();
         *self = fresh;
         self.diagnostics = diagnostics;
         activity.stop();
         self.stream_activity = activity;
+        self.pcm_source = source;
     }
 }

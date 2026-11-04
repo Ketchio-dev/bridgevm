@@ -325,7 +325,7 @@ fn opt_in_hda_pci_bar_routes_controller_mmio() {
             MmioOp::Read { size: 2 },
             &mut mem
         ),
-        MmioOutcome::ReadValue(0x1001)
+        MmioOutcome::ReadValue(0x1101)
     );
     assert_eq!(
         p.on_mmio(
@@ -444,7 +444,7 @@ fn poll_hda_routes_stream_ioc_through_standard_msi_aggregation() {
     hda.mmio_write(
         crate::hda::REG_INTCTL,
         4,
-        u64::from((1u32 << 31) | 1),
+        u64::from((1u32 << 31) | crate::hda::INTCTL_PLAYBACK_STREAM),
         &mut mem,
     );
     hda.mmio_write(crate::hda::REG_SD_CTL, 1, 0x06, &mut mem);

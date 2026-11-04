@@ -1,5 +1,6 @@
 //! Split test module.
 
+mod capture;
 mod command_dma;
 mod descriptor_rebase;
 mod diagnostics;

@@ -34,7 +34,7 @@ impl Stream {
             &mut mem,
             REG_INTCTL,
             4,
-            u64::from(INTCTL_GIE | INTCTL_STREAM0),
+            u64::from(INTCTL_GIE | INTCTL_PLAYBACK_STREAM),
         );
         let mut stream = Self { ctrl, mem };
         stream.ctl(SDCTL_IOCE | SDCTL_RUN);
