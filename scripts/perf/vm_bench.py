@@ -616,7 +616,7 @@ def main() -> None:
     r.add_argument("--desktop-mode", choices=["report", "native"],
                    help="Windows desktop resolution (native: first switch to the display's largest mode)")
     r.add_argument("--skip-suite", action="store_true", help="only boot, idle, optional pointer/net, shutdown")
-    r.add_argument("--only", help="comma-separated suite tests to run (e.g. net-download)")
+    r.add_argument("--only", help="comma-separated suite tests to run (e.g. mem-first-touch,net-download)")
     r.add_argument("--boot-timer-ms", type=int, default=60000, help="BridgeVM framebuffer sample period (diagnostics)")
     r.add_argument("--no-xhci", action="store_true", help="BridgeVM without the USB controller (diagnostics)")
     r.add_argument("--qemu-arg", action="append", default=[], help="extra QEMU argument; {boot} expands to the boot dir")
@@ -638,6 +638,9 @@ def main() -> None:
     c.add_argument("a")
     c.add_argument("b")
     args = parser.parse_args()
+    unknown = set((getattr(args, "only", None) or "").split(",")) - {n for n, _ in SUITE} - {"net-download", ""}
+    if unknown:  # a typo would boot every VM of a campaign and measure nothing
+        parser.error(f"--only: unknown tests {sorted(unknown)}; known: {[n for n, _ in SUITE] + ['net-download']}")
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # kill the VM and drop media clones
     run(args) if args.mode == "run" else compare(args.a, args.b)
 
