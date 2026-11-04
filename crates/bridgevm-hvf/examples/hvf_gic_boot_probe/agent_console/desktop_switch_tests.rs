@@ -5,7 +5,7 @@ use super::super::agent_console_tests::tests::harness;
 use super::super::*;
 use super::*;
 
-fn decoded(command: &str) -> String {
+pub(crate) fn decoded(command: &str) -> String {
     let b64 = command.rsplit(' ').next().unwrap();
     let bytes = base64_decode(b64).unwrap();
     let units: Vec<u16> = bytes
@@ -26,7 +26,7 @@ fn queued_switches(h: &AgentConsoleHarness) -> Vec<String> {
         .collect()
 }
 
-fn service_harness() -> AgentConsoleHarness {
+pub(crate) fn service_harness() -> AgentConsoleHarness {
     let mut h = harness();
     h.commands.clear();
     h.service = true;

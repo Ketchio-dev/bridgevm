@@ -20,7 +20,9 @@
 //!
 //! Only the latest request is kept: requests made before the agent's service
 //! starts become one command at `BVAGENT SERVICE start`, a queued switch takes
-//! the newest size, and requests made while one runs give one follow-up.
+//! the newest size, and requests made while one runs give one follow-up. The
+//! latest `RESIZE WxH@P` scale is set again after each switch
+//! (desktop_scale.rs).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
@@ -119,29 +121,36 @@ pub(super) fn is_desktop_switch_command(command: &str) -> bool {
     command.starts_with(command_head())
 }
 
-/// The command up to the last base64 group that holds only `SCRIPT_BODY`.
 fn command_head() -> &'static str {
     static HEAD: OnceLock<String> = OnceLock::new();
-    HEAD.get_or_init(|| {
-        let body = utf16le(SCRIPT_BODY);
-        let mut head = String::from(POWERSHELL);
-        base64_encode_into(&body[..body.len() / 3 * 3], &mut head);
-        head
-    })
+    HEAD.get_or_init(|| powershell_command_head(SCRIPT_BODY))
 }
 
 fn utf16le(text: &str) -> Vec<u8> {
     text.encode_utf16().flat_map(u16::to_le_bytes).collect()
 }
 
-fn desktop_switch_command(width: u32, height: u32) -> String {
-    let script = format!("{SCRIPT_BODY}[BvD]::Run({width},{height})");
+/// The start of every `powershell_command` whose script begins with `body`:
+/// up to the last base64 group that holds only `body`.
+pub(super) fn powershell_command_head(body: &str) -> String {
+    let body = utf16le(body);
+    let mut head = String::from(POWERSHELL);
+    base64_encode_into(&body[..body.len() / 3 * 3], &mut head);
+    head
+}
+
+/// The agent command that runs `script` in Windows PowerShell.
+pub(super) fn powershell_command(script: &str) -> String {
     let mut line = String::from(POWERSHELL);
-    base64_encode_into(&utf16le(&script), &mut line);
+    base64_encode_into(&utf16le(script), &mut line);
     debug_assert!(line.len() <= MAX_RUN_COMMAND_CHARS);
     line
 }
 
+fn desktop_switch_command(width: u32, height: u32) -> String {
+    powershell_command(&format!("{SCRIPT_BODY}[BvD]::Run({width},{height})"))
+}
+
 #[cfg(test)]
 #[path = "desktop_switch_tests.rs"]
-mod tests;
+pub(crate) mod tests;

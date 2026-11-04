@@ -2,6 +2,10 @@
 
 use super::*;
 
+fn is_scale(req: &ServiceReq) -> bool {
+    matches!(req, ServiceReq::Ctl(c) if super::desktop_scale::is_desktop_scale_command(c))
+}
+
 impl AgentConsoleHarness {
     // --- Service mode -------------------------------------------------------
     pub(super) fn service_tick_with_sender(&mut self, now: Instant, send: &mut dyn FnMut(&[u8])) {
@@ -22,8 +26,9 @@ impl AgentConsoleHarness {
     /// the request queue. None of this touches the wire, so it needs no platform
     /// handle (and is unit-testable on its own).
     pub(super) fn service_enqueue(&mut self, now: Instant) {
-        // 0. A requested desktop mode switch.
+        // 0. A requested desktop mode switch, then the display scale.
         self.enqueue_desktop_switch();
+        self.enqueue_desktop_scale();
 
         // 1. Host pasteboard changes collapse to a single latest-wins ClipPush.
         //    Draining every pending change and keeping only the last means a
@@ -89,6 +94,36 @@ impl AgentConsoleHarness {
             return;
         };
         match self.queue.iter_mut().find(|req| is_switch(req)) {
+            Some(queued) => *queued = ServiceReq::Ctl(command),
+            None => self.queue.push_back(ServiceReq::Ctl(command)),
+        }
+        // The new mode brings a new monitor, whose scale Windows keeps apart:
+        // a scale still queued would run first, so it goes after the switch.
+        self.queue.retain(|req| !is_scale(req));
+        super::desktop_scale::reapply_desktop_scale();
+    }
+    /// Keep at most one pending scale, for the latest request, queued only
+    /// when no desktop switch is requested, queued or running: a queued one is
+    /// replaced, and one already running gets a single follow-up.
+    pub(super) fn enqueue_desktop_scale(&mut self) {
+        use super::desktop_scale::{has_requested_scale, take_desktop_scale_command};
+        use super::desktop_switch::{has_requested_mode, is_desktop_switch_command};
+        let is_switch =
+            |req: &ServiceReq| matches!(req, ServiceReq::Ctl(c) if is_desktop_switch_command(c));
+        if !has_requested_scale()
+            || has_requested_mode()
+            || self.queue.iter().any(is_switch)
+            || self
+                .in_flight
+                .as_ref()
+                .is_some_and(|(req, _)| is_switch(req) || is_scale(req))
+        {
+            return;
+        }
+        let Some(command) = take_desktop_scale_command() else {
+            return;
+        };
+        match self.queue.iter_mut().find(|req| is_scale(req)) {
             Some(queued) => *queued = ServiceReq::Ctl(command),
             None => self.queue.push_back(ServiceReq::Ctl(command)),
         }
