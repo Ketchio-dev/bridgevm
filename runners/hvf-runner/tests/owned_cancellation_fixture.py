@@ -222,10 +222,14 @@ def main():
         elif args.scenario == "ignore":
             runner.send_signal(signal.SIGINT)
             peers["helper"].receive("term", 2)
+            term_seen = time.monotonic()
             assert not peers["helper"].watch.wait(0.2)
         else:
             runner.terminate()
-        stdout, stderr = runner.communicate(timeout=7)
+        # The helper's TERM grace is 8 s (it saves its media on TERM), then KILL and the swtpm's 2 s.
+        stdout, stderr = runner.communicate(timeout=16)
+        if args.scenario == "ignore":
+            assert time.monotonic() - term_seen >= 7.5, "KILL came before the helper's TERM grace"
         assert runner.returncode == 1, (runner.returncode, stdout, stderr)
         assert b"cancelled" in stderr
         assert b"vm run complete" not in stdout
