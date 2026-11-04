@@ -91,6 +91,7 @@ final class FBLayerView: HvfFramebufferTextInput {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         reportDisplaySize(settled: false)
+        placeContents()
     }
 
     override func viewDidEndLiveResize() {
@@ -98,17 +99,34 @@ final class FBLayerView: HvfFramebufferTextInput {
         reportDisplaySize(settled: true)
     }
 
+    /// Moving to a screen with another scale asks for a new size when the request is in backing pixels.
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         reportDisplaySize(settled: false)
+        placeContents()
     }
 
-    /// The guest display follows the window (HvfDisplayResizeRequest), in points, so a Retina window asks
-    /// for its 1x size. SwiftUI lays this view out at its minimum size before the window is shown, so only
-    /// a view on screen reports.
+    /// The guest display follows the window (HvfDisplayResizeRequest): its points, or with Retina
+    /// resolution its backing pixels. SwiftUI lays this view out at its minimum size before the window is
+    /// shown, so only a view on screen reports.
     private func reportDisplaySize(settled: Bool) {
-        guard let session, window?.isVisible == true else { return }
-        session.displayViewResized(to: bounds.size, settled: settled)
+        guard let session, let window, window.isVisible else { return }
+        session.displayViewResized(to: bounds.size, scale: window.backingScaleFactor, settled: settled)
+    }
+
+    /// A frame of exactly the view's backing size is shown 1:1, one guest pixel per screen pixel;
+    /// any other, for example while the guest switches modes, is scaled to fit.
+    static func contentsGravity(frame: CGSize, view: CGSize, scale: CGFloat) -> CALayerContentsGravity {
+        let backing = CGSize(width: (view.width * scale).rounded(), height: (view.height * scale).rounded())
+        return frame.width > 0 && frame.height > 0 && frame == backing ? .center : .resizeAspect
+    }
+
+    private func placeContents() {
+        guard let layer else { return }
+        let scale = window?.backingScaleFactor ?? 1
+        let gravity = Self.contentsGravity(frame: guestSize, view: bounds.size, scale: scale)
+        if gravity == .center, layer.contentsScale != scale { layer.contentsScale = scale }
+        if layer.contentsGravity != gravity { layer.contentsGravity = gravity }
     }
 
     override func updateTrackingAreas() {
@@ -160,6 +178,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         layer.contents = image
         lastProcessedSeq = sequence
         guestSize = CGSize(width: CGFloat(width), height: CGFloat(height))
+        placeContents()
         return .presented(sequence: sequence, previous: previous, published: published)
     }
 
@@ -369,6 +388,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         // updated in place, while descriptor file I/O stays paced separately.
         layer?.contents = presentation.surface
         guestSize = CGSize(width: presentation.width, height: presentation.height)
+        placeContents()
         if presentation.changed { resetMapping() }
         return true
     }
