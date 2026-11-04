@@ -34,6 +34,9 @@ mod hda_coreaudio_prefill;
 mod hda_coreaudio_publication;
 #[path = "hda_coreaudio_ring.rs"]
 mod hda_coreaudio_ring;
+#[path = "hda_coreaudio_start.rs"]
+mod hda_coreaudio_start;
+pub(crate) use hda_coreaudio_start::{start_output, ENABLED};
 #[path = "hda_coreaudio_stats.rs"]
 mod hda_coreaudio_stats;
 #[path = "hda_coreaudio_teardown.rs"]
