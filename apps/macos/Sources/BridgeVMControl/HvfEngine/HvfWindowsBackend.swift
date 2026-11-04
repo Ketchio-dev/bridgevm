@@ -213,7 +213,7 @@ final class HvfWindowsBackend: VMBackend {
             nvmeBufferedIO: false,
             durableDiskWrites: config.durableDiskWritesEnabled ?? false,
             guestResolution: config.guestResolution,
-            retinaResolution: config.retinaResolution ?? false,
+            retinaResolution: config.retinaResolution,
             ctlFilePath: ctlFilePath, allowsExperimental3D: config.experimental3DAllowed ?? false
         )
     }

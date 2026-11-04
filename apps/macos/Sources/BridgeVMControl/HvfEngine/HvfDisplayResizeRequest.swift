@@ -2,9 +2,11 @@ import CoreGraphics
 import Foundation
 
 /// Which `RESIZE WxH[@P]` the display window asks the guest display for (A8). The request is the view
-/// size in points (1x), clamped to a sane guest mode range. With Retina resolution on (`retina`) and the
-/// window on a HiDPI screen it is the view's backing pixels instead, with the screen's scale as P, up to
-/// `retinaMaximumPixels`; a larger window asks for its points at `@100`. A size goes out once the view has kept
+/// size in points (1x), clamped to a sane guest mode range. A VM whose Retina setting was ever set
+/// (`retina` not nil) names the Windows scale in every request, because Windows keeps a scale across
+/// mode switches (#493's live runs) and, by its persistence, restarts. With Retina resolution on and the
+/// window on a HiDPI screen the request is the view's backing pixels at the screen's scale, up to
+/// `retinaMaximumPixels`; otherwise it is the view's points at `@100`. A size goes out once the view has kept
 /// it for `settleDelay`, or at once when a live resize ends, and never twice in a row unless the display
 /// device restarted at its default size (new run or guest reboot).
 struct HvfDisplayResizeRequest {
@@ -33,17 +35,15 @@ struct HvfDisplayResizeRequest {
     static let scales = [100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500]
     static let settleDelay: TimeInterval = 0.4
 
-    /// Retina resolution is on and the display is the 2D virtio-gpu.
-    var retina = false
+    /// The VM's Retina setting for this display: nil never set (plain requests); true on, with the 2D
+    /// virtio display; false otherwise, as after turning it off (points at 100 %).
+    var retina: Bool?
     private(set) var view: View?
     private(set) var sent: Size?
-    /// A scale went out. The VMM sets its latest scale again after every switch, also for a plain
-    /// `RESIZE WxH` and through an in-process guest reboot, so from then on a 1x request asks for 100 %.
-    private(set) var scaleSent = false
     private var dueAt: TimeInterval?
 
     /// The request for the view as it is now; nil before it is laid out.
-    var latest: Size? { view.flatMap { Self.size(for: $0, retina: retina, scaleSent: scaleSent) } }
+    var latest: Size? { view.flatMap { Self.size(for: $0, retina: retina) } }
 
     /// nil for an empty or non-finite view (not laid out yet).
     static func size(points: CGSize) -> Size? {
@@ -55,21 +55,17 @@ struct HvfDisplayResizeRequest {
                     height: clamp(points.height, minimum.height, maximum.height))
     }
 
-    /// Off, or on a 1x screen, this is `size(points:)`, plain unless the device already got a scale.
-    static func size(for view: View, retina: Bool, scaleSent: Bool = false) -> Size? {
+    /// Never set: `size(points:)`, plain. Set: the points at 100 %, or for `true` on a HiDPI screen within
+    /// the cap the backing pixels at the screen's scale.
+    static func size(for view: View, retina: Bool?) -> Size? {
         guard var size = size(points: view.points) else { return nil }
-        guard retina else { return size }
+        guard let retina else { return size }
+        size.scale = 100
         let percent = scale(view.scale)
-        if percent == 100 {
-            if scaleSent { size.scale = 100 }
-            return size
-        }
+        guard retina, percent != 100 else { return size }
         let width = (view.points.width * view.scale).rounded(), height = (view.points.height * view.scale).rounded()
         let side = CGFloat(maximum.width)
-        guard width <= side, height <= side, width * height <= CGFloat(retinaMaximumPixels) else {
-            size.scale = 100
-            return size
-        }
+        guard width <= side, height <= side, width * height <= CGFloat(retinaMaximumPixels) else { return size }
         return Size(width: max(Int(width), minimum.width), height: max(Int(height), minimum.height), scale: percent)
     }
 
@@ -108,6 +104,5 @@ struct HvfDisplayResizeRequest {
 
     mutating func didSend(_ size: Size) {
         sent = size
-        if size.scale != nil { scaleSent = true }
     }
 }

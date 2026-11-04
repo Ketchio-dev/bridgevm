@@ -80,31 +80,53 @@ final class HvfDisplayResizeRequestTests: XCTestCase {
         XCTAssertEqual(retina(6016, 3384, scale: 2)?.command, "RESIZE 3840x2160@100", "the same 1x clamp")
     }
 
-    func testOffOrOnA1xScreenTheRequestIsTodays() {
+    /// A VM that never set the setting asks exactly as before Retina mode: points, plain, on any screen.
+    func testANeverSetVMAsksExactlyAsBefore() {
         for (width, height) in [(1517, 931), (1516.6, 930.4), (320, 200), (6016, 3384)] as [(CGFloat, CGFloat)] {
             let points = Request.size(points: CGSize(width: width, height: height))
             XCTAssertNil(points?.scale)
-            XCTAssertEqual(Request.size(for: view(width, height, scale: 2), retina: false), points, "off")
-            XCTAssertEqual(Request.size(for: view(width, height, scale: 1), retina: true), points, "1x screen")
+            XCTAssertEqual(Request.size(for: view(width, height, scale: 2), retina: nil), points, "2x screen")
+            XCTAssertEqual(Request.size(for: view(width, height, scale: 1), retina: nil), points, "1x screen")
         }
-        XCTAssertEqual(Request.size(for: view(1517, 931, scale: 2), retina: false)?.command, "RESIZE 1517x931")
+        XCTAssertEqual(Request.size(for: view(1517, 931, scale: 2), retina: nil)?.command, "RESIZE 1517x931")
 
         var request = Request()
-        request.retina = true
-        request.viewResized(to: view(1300, 800), at: 10)
-        request.viewResized(to: view(1517, 931), at: 10.25)
+        request.viewResized(to: view(1300, 800, scale: 2), at: 10)
+        request.viewResized(to: view(1517, 931, scale: 2), at: 10.25)
         XCTAssertNil(request.take(at: 10.6), "the same debounce")
         XCTAssertEqual(request.take(at: 10.66)?.command, "RESIZE 1517x931")
     }
 
-    func testMovingBetweenScreensSendsANewRequest() {
-        var off = Request()
-        off.viewResized(to: view(1280, 800, scale: 1), at: 0)
-        let points = off.take(at: 1)
-        XCTAssertEqual(points?.command, "RESIZE 1280x800")
-        off.didSend(points!)
-        off.viewResized(to: view(1280, 800, scale: 2), at: 2)
-        XCTAssertNil(off.take(at: 3), "off, the points are unchanged")
+    /// Once set, every request names the scale: Windows keeps one across mode switches and restarts.
+    func testOnceSetEveryRequestNamesTheScale() {
+        XCTAssertEqual(retina(1517, 931, scale: 1)?.command, "RESIZE 1517x931@100", "on, 1x screen")
+        XCTAssertEqual(retina(320, 200, scale: 1)?.command, "RESIZE 640x480@100", "on, the same clamp")
+        for scale in [CGFloat(1), 2] {
+            XCTAssertEqual(Request.size(for: view(1517, 931, scale: scale), retina: false)?.command, "RESIZE 1517x931@100",
+                           "off after on, scale \(scale)")
+        }
+        XCTAssertEqual(Request.size(for: view(6016, 3384, scale: 2), retina: false)?.command, "RESIZE 3840x2160@100")
+        XCTAssertNil(Request.size(for: view(0, 0, scale: 2), retina: false))
+
+        var request = Request()
+        request.retina = false
+        request.viewResized(to: view(1300, 800, scale: 2), at: 10)
+        request.viewResized(to: view(1517, 931, scale: 2), at: 10.25)
+        XCTAssertNil(request.take(at: 10.6), "the same debounce")
+        XCTAssertEqual(request.take(at: 10.66)?.command, "RESIZE 1517x931@100")
+    }
+
+    func testMovingBetweenScreensSendsANewRequestOnlyInPixels() {
+        for setting in [nil, false] as [Bool?] {
+            var request = Request()
+            request.retina = setting
+            request.viewResized(to: view(1280, 800, scale: 1), at: 0)
+            let points = request.take(at: 1)
+            XCTAssertEqual(points?.command, setting == nil ? "RESIZE 1280x800" : "RESIZE 1280x800@100")
+            request.didSend(points!)
+            request.viewResized(to: view(1280, 800, scale: 2), at: 2)
+            XCTAssertNil(request.take(at: 3), "in points the request is unchanged")
+        }
 
         var request = Request()
         request.retina = true
@@ -117,8 +139,8 @@ final class HvfDisplayResizeRequestTests: XCTestCase {
                 sent.append(size.command)
             }
         }
-        // Back on 1x the scale goes to 100 %: the VMM sets its latest scale again after every switch.
-        XCTAssertEqual(sent, ["RESIZE 1280x800", "RESIZE 2560x1600@200", "RESIZE 1280x800@100", "RESIZE 2560x1600@200"])
+        // The first request already names 100 %: an earlier run may have left Windows at 200 %.
+        XCTAssertEqual(sent, ["RESIZE 1280x800@100", "RESIZE 2560x1600@200", "RESIZE 1280x800@100", "RESIZE 2560x1600@200"])
         request.deviceRestarted()
         XCTAssertEqual(request.take(at: 7)?.command, "RESIZE 2560x1600@200", "a restarted device gets it again")
     }
@@ -147,12 +169,14 @@ final class HvfDisplayResizeRequestTests: XCTestCase {
         }
     }
 
-    /// A session asks in backing pixels only with Retina resolution on and the 2D virtio display.
+    /// A session asks in backing pixels only with Retina resolution on and the 2D virtio display; once the
+    /// setting was saved, its every request names the scale, and a never-set VM's request is plain.
     @MainActor
-    func testRetinaResizeNeedsTheSettingAndThe2DVirtioDisplay() throws {
-        let cases: [(retina: Bool, virtio2d: Bool, virtio3d: Bool, line: String)] = [
-            (true, true, false, "RESIZE 2560x1600@200"), (false, true, false, "RESIZE 1280x800"),
-            (true, false, false, "RESIZE 1280x800"), (true, true, true, "RESIZE 1280x800")]
+    func testTheSessionsRequestFollowsTheSavedSetting() throws {
+        let cases: [(retina: Bool?, virtio2d: Bool, virtio3d: Bool, line: String)] = [
+            (nil, true, false, "RESIZE 1280x800"), (true, true, false, "RESIZE 2560x1600@200"),
+            (false, true, false, "RESIZE 1280x800@100"), (true, false, false, "RESIZE 1280x800@100"),
+            (true, true, true, "RESIZE 1280x800@100")]
         for (retina, virtio2d, virtio3d, line) in cases {
             let fixture = try HvfRuntimeKeyboardDraftFixture()
             defer { fixture.remove() }

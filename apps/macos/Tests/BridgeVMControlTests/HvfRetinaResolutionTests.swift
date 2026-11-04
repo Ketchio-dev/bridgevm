@@ -11,32 +11,46 @@ final class HvfRetinaResolutionTests: XCTestCase {
         config.runnerArguments(manifestPath: "m", runnerPath: "r", firmwareCodePath: "f", probePath: "p", ownedRuntime: true)
     }
 
-    /// Off until the user saves it, offered only with the signed display driver and 3D off, and the
-    /// launch is the same either way: only the app's resize request changes.
-    func testRetinaResolutionIsOffUntilTheUserSavesIt() throws {
+    /// Never set, on and off again: vm.json keeps nil, true and false, the session's request follows
+    /// (plain, Retina, points at 100 %), and the launch is the same in all three: only the app applies it.
+    /// Offered only with the signed display driver and 3D off.
+    func testTheSettingHasThreeSavedStates() throws {
         let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
         defer { fixture.clean() }
         var saved = fixture.config(); saved.virtioDisplayDriverInstalled = true; fixture.save(saved)
         let library = fixture.library(probe: probe)
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
-        XCTAssertFalse(session.config.retinaResolution, "An absent key keeps the 1x request")
+        func registration() throws -> String { String(decoding: try Data(contentsOf: fixture.registration(saved)), as: UTF8.self) }
+        XCTAssertNil(session.config.retinaResolution, "never set")
+        XCTAssertNil(session.config.retinaResizeSetting, "plain requests, as before")
         XCTAssertTrue(session.config.offersRetinaResolution)
-        XCTAssertFalse(session.config.requestsRetinaResolution)
         let arguments = ownedArguments(session.config), wrapper = session.config.wrapperArguments()
+
+        XCTAssertTrue(session.applyRetinaResolutionToggle(false) == (nil, nil), "off on a never-set VM keeps nil")
+        XCTAssertFalse(try registration().contains("retinaResolution"))
 
         XCTAssertTrue(session.applyRetinaResolutionToggle(true) == (true, nil))
         let latest = library.latestConfiguration(for: saved)
         XCTAssertEqual(latest.retinaResolution, true)
         XCTAssertTrue(library.hvfRuntimeSessions.owns(session, for: latest), "Rebound in place")
-        XCTAssertTrue(session.config.requestsRetinaResolution)
+        XCTAssertEqual(session.config.retinaResizeSetting, true)
         XCTAssertEqual(ownedArguments(session.config), arguments)
         XCTAssertEqual(session.config.wrapperArguments(), wrapper)
 
-        // Turning it off again restores the never-touched registration.
+        // Off again is saved as false: Windows may keep the scale Retina mode set.
         XCTAssertTrue(session.applyRetinaResolutionToggle(false) == (false, nil))
-        XCTAssertNil(library.latestConfiguration(for: saved).retinaResolution)
-        let restored = try Data(contentsOf: fixture.registration(saved))
-        XCTAssertFalse(String(decoding: restored, as: UTF8.self).contains("retinaResolution"))
+        XCTAssertEqual(library.latestConfiguration(for: saved).retinaResolution, false)
+        XCTAssertTrue(try registration().contains("retinaResolution"))
+        XCTAssertEqual(session.config.retinaResolution, false)
+        XCTAssertEqual(session.config.retinaResizeSetting, false, "points at 100 %")
+        XCTAssertEqual(ownedArguments(session.config), arguments)
+        XCTAssertEqual(session.config.wrapperArguments(), wrapper)
+        XCTAssertTrue(session.applyRetinaResolutionToggle(true) == (true, nil), "on again")
+
+        for (current, enabled, next) in [(nil, false, nil), (nil, true, true), (true, false, false),
+                                         (false, true, true), (false, false, false)] as [(Bool?, Bool, Bool?)] {
+            XCTAssertEqual(HvfRetinaResolutionToggle.saved(current, enabled: enabled), next)
+        }
 
         for (driver, allows3D, offered) in [(nil, nil, false), (true, true, false), (true, false, true)] as [(Bool?, Bool?, Bool)] {
             var other = saved; other.virtioDisplayDriverInstalled = driver; other.experimental3DAllowed = allows3D
@@ -52,12 +66,12 @@ final class HvfRetinaResolutionTests: XCTestCase {
         let url = fixture.registration(saved), original = try Data(contentsOf: url)
         let library = fixture.library(probe: probe)
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
-        let toggle = HvfRetinaResolutionToggle(session: session, isOn: .constant(false))
+        let toggle = HvfRetinaResolutionToggle(session: session, setting: .constant(nil))
         XCTAssertFalse(toggle.isDisabled)
         session.connectionState = .connected(host: "fixture")
         XCTAssertTrue(toggle.isDisabled)
         XCTAssertTrue(session.applyRetinaResolutionToggle(true)
-            == (false, "VM을 완전히 중지한 뒤 Retina 해상도 설정을 변경하세요."))
+            == (nil, "VM을 완전히 중지한 뒤 Retina 해상도 설정을 변경하세요."))
         XCTAssertEqual(try Data(contentsOf: url), original)
         XCTAssertFalse(session.config.requestsRetinaResolution)
         session.connectionState = .stopped
@@ -65,7 +79,8 @@ final class HvfRetinaResolutionTests: XCTestCase {
 
     func testHelpTextIsKoreanAndMarkedExperimental() {
         let text = HvfRetinaResolutionToggle.helpText(persists: true)
-        for needle in ["실험적 기능", "픽셀 수", "200%", "CPU", "흐리게", "일반 해상도", "VM이 중지된 동안"] {
+        for needle in ["실험적 기능", "픽셀 수", "200%", "CPU", "흐리게", "일반 해상도", "끈 뒤에도", "100%",
+                       "직접 바꾼 배율은 유지되지 않습니다", "VM이 중지된 동안"] {
             XCTAssertTrue(text.contains(needle), needle)
         }
         XCTAssertFalse(HvfRetinaResolutionToggle.helpText(persists: false).contains("VM이 중지된 동안"))

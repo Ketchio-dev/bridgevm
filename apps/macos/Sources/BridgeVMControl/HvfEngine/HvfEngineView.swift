@@ -21,7 +21,7 @@ struct HvfEngineView: View {
     @State private var virtioNet = false
     @State private var durableDiskWrites = false
     @State private var guestResolution: String?
-    @State private var retinaResolution = false
+    @State private var retinaResolution: Bool?
     @State private var virtioGpu3d = false
     @State private var nvmeBufferedIO = false
     @State private var ctlFilePath = ""
@@ -133,7 +133,7 @@ struct HvfEngineView: View {
                     HvfDurableDiskWritesToggle(session: session, isOn: $durableDiskWrites)
                     HvfGuestResolutionPicker(session: session, selection: $guestResolution)
                     if session.config.offersRetinaResolution && !virtioGpu3d {
-                        HvfRetinaResolutionToggle(session: session, isOn: $retinaResolution)
+                        HvfRetinaResolutionToggle(session: session, setting: $retinaResolution)
                     }
                     if session.config.allowsExperimental3D {
                         Toggle("Graphics Lab 3D", isOn: $virtioGpu3d)
