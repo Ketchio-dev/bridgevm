@@ -18,6 +18,7 @@ extension HvfEngineSession {
             // and reads input.ctl from its end: poll() sends the window size again.
             displayResize.deviceRestarted()
             applyGuestHardwareCursorSetting()
+            extendGrownDiskIfPending()
             if let ownedController { ownedController.guestServiceReady() }
             else { sendGracefulStopIfReady() }
         case let .unknown(line) where HvfGuestResetRecord.matches(line):
