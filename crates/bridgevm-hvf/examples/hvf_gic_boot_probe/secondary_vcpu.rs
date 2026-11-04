@@ -404,7 +404,13 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                         DrainContext::data_abort(*exits, pc),
                         post_drain,
                     );
-                    (outcome, pending, platform_guard.take_nvme_io())
+                    // SAFETY: the transfers run only on nvme_io_worker below or,
+                    // if it cannot run them, in guest_ram. Both views map the
+                    // guest RAM backing, which the primary unmaps only after it
+                    // has joined this thread (shutdown_and_join, or the reset
+                    // join), and so dropped and joined this vCPU's worker.
+                    let nvme_io = unsafe { platform_guard.take_nvme_io() };
+                    (outcome, pending, nvme_io)
                 };
                 if let Err(error) = drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace) {
                     error.stop_secondary(|| control.record_run_error(primary_vcpu));

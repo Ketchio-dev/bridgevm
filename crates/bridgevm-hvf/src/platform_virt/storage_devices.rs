@@ -256,8 +256,16 @@ impl VirtPlatform {
     /// they finish within `NVME_IO_WAIT` it locks again and that hold's drain
     /// (`poll_nvme_flushes`) posts their completions; otherwise the drain that
     /// `FLUSH_DONE_HOOK` asks for does.
-    pub fn take_nvme_io(&mut self) -> Option<NvmeIo> {
-        self.nvme.take_io()
+    ///
+    /// # Safety
+    ///
+    /// [`NvmeController::take_io`](crate::nvme::NvmeController::take_io)'s:
+    /// run the transfers only in a guest-memory view whose `host_ptr` pointers
+    /// stay valid until each transfer returns (a worker's, until the worker is
+    /// dropped). Dropping them unrun is always sound.
+    pub unsafe fn take_nvme_io(&mut self) -> Option<NvmeIo> {
+        // SAFETY: the caller takes on `take_io`'s contract, which is this one's.
+        unsafe { self.nvme.take_io() }
     }
 
     /// Post the completions of flushes the NVMe worker finished and of READs

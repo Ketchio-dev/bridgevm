@@ -555,6 +555,13 @@ pub(crate) fn run() -> ExitCode {
                                     DrainContext::data_abort(exits, last_pc),
                                     post_drain,
                                 );
+                                // SAFETY (inside `run`'s unsafe block): the
+                                // transfers run only on nvme_io_worker below
+                                // or, if it cannot run them, in guest_ram. Both
+                                // views map ram_backing, which outlives the
+                                // worker (declared after it) and is unmapped
+                                // only after every secondary vCPU thread, and
+                                // so its worker, is joined (shutdown_and_join).
                                 let nvme_io = platform.take_nvme_io();
                                 (outcome, pending, device, pcie_target, pcie_context, nvme_io)
                             };

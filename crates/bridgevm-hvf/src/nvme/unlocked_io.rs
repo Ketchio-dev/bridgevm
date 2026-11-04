@@ -18,6 +18,12 @@
 //! write-cache-off WRITE goes on to the flush worker's sync from there and
 //! completes after it, as inline.
 //!
+//! Taking the jobs is `unsafe` ([`NvmeController::take_io`]): they run, on
+//! another thread and after the lock is dropped, through the raw host pointers
+//! that the running memory view's `host_ptr` returns, so the caller promises
+//! that view stays mapped until each transfer returns. A job dropped unrun
+//! touches no guest RAM.
+//!
 //! Every wait for the flushes in flight covers these jobs too: a reset,
 //! shutdown, admin command (queue deletion among them), restore or export
 //! waits under the lock, and the thread running the transfer publishes
@@ -73,9 +79,10 @@ fn copy_all(fd: RawFd, ptr: *mut u8, len: usize, offset: u64, write: bool) -> io
     while done < len {
         let at = libc::off_t::try_from(offset + done as u64)
             .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
-        // SAFETY: `host_ptr` resolved [ptr, ptr + len) inside the guest RAM
-        // that `mem` maps, which the caller borrows for the whole transfer;
-        // the kernel copies to or from it without a Rust reference to it.
+        // SAFETY: `host_ptr` resolved [ptr, ptr + len) in `mem`, which
+        // `take_io`'s caller promised stays valid for reads and writes until
+        // this transfer returns; the kernel copies to or from it without a
+        // Rust reference to it.
         let n = unsafe {
             let at_ptr = ptr.add(done).cast::<libc::c_void>();
             if write {
@@ -98,9 +105,10 @@ fn copy_all(fd: RawFd, ptr: *mut u8, len: usize, offset: u64, write: bool) -> io
     Ok(())
 }
 
-/// The READs and WRITEs a doorbell queued. Run them after dropping the
-/// platform lock, on the vCPU's [`NvmeIoWorker`](super::NvmeIoWorker); the
-/// next drain under the lock posts their completions.
+/// The READs and WRITEs a doorbell queued, from the `unsafe`
+/// [`NvmeController::take_io`] only. Run them after dropping the platform
+/// lock, on the vCPU's [`NvmeIoWorker`](super::NvmeIoWorker); the next drain
+/// under the lock posts their completions.
 #[must_use = "a waiting reset or admin command blocks until the jobs finish"]
 pub struct NvmeIo {
     jobs: Vec<IoJob>,
@@ -217,7 +225,35 @@ impl NvmeController {
 
     /// The READs and WRITEs queued since the last call, for the doorbell vCPU
     /// to run once it has dropped the platform lock.
-    pub fn take_io(&mut self) -> Option<NvmeIo> {
+    ///
+    /// # Safety
+    ///
+    /// The transfers read and write guest RAM through the raw pointers that
+    /// `host_ptr` returns when they run, possibly on another thread and long
+    /// after this call. Run them, with [`NvmeIo::run`] or on an
+    /// [`NvmeIoWorker`](super::NvmeIoWorker), only in a memory view whose
+    /// `host_ptr` pointers stay valid for reads and writes of the requested
+    /// length until the transfer returns; a worker's view must stay valid
+    /// until the worker is dropped, which joins its thread. Dropping the
+    /// result unrun is always sound: its jobs fail without touching guest RAM.
+    ///
+    /// Safe code cannot take them:
+    ///
+    /// ```compile_fail
+    /// use bridgevm_hvf::nvme::{NvmeController, NvmeIo};
+    /// fn take(ctrl: &mut NvmeController) -> Option<NvmeIo> {
+    ///     ctrl.take_io()
+    /// }
+    /// ```
+    ///
+    /// ```
+    /// use bridgevm_hvf::nvme::{NvmeController, NvmeIo};
+    /// fn take(ctrl: &mut NvmeController) -> Option<NvmeIo> {
+    ///     // SAFETY: (example) the caller runs them only in guest RAM it keeps mapped.
+    ///     unsafe { ctrl.take_io() }
+    /// }
+    /// ```
+    pub unsafe fn take_io(&mut self) -> Option<NvmeIo> {
         let worker = self.flush_worker.as_mut()?;
         if worker.io.is_empty() {
             return None;
@@ -233,7 +269,8 @@ impl NvmeController {
     /// Jobs nobody took (only a caller that skips `take_io` leaves any) fail
     /// here, before a wait would block on them forever.
     pub(super) fn fail_untaken_io(&mut self) {
-        drop(self.take_io());
+        // SAFETY: dropped unrun, so the jobs fail without touching guest RAM.
+        drop(unsafe { self.take_io() });
     }
 }
 
