@@ -27,8 +27,12 @@ use std::sync::OnceLock;
 
 use super::protocol::base64_encode_into;
 
-/// `RUN` lines go through `cmd.exe /c`, which refuses lines over 8191 chars.
-pub(super) const MAX_RUN_COMMAND_CHARS: usize = 8191;
+/// `RUN` lines go through `cmd.exe /c`, which refuses lines over 8,191
+/// characters. bvagent.ps1 runs `& cmd.exe /c $cmd`, so cmd.exe's line is
+/// `"C:\Windows\system32\cmd.exe" /c "<command>"`: the command gets what that
+/// 35-character wrapper leaves (as in HvfClipboardPasteCommandLimit.swift).
+pub(super) const MAX_RUN_COMMAND_CHARS: usize =
+    8191 - r#""C:\Windows\system32\cmd.exe" /c """#.len();
 
 const POWERSHELL: &str = "powershell -NoProfile -NonInteractive -EncodedCommand ";
 

@@ -84,11 +84,7 @@ fn the_script_targets_the_virtio_display_fixes_the_layout_and_retries() {
     let command = take_desktop_switch_command().expect("requested");
     assert_eq!(take_desktop_switch_command(), None, "only once");
     assert!(command.starts_with("powershell -NoProfile -NonInteractive"));
-    assert!(
-        command.len() <= MAX_RUN_COMMAND_CHARS,
-        "{} chars",
-        command.len()
-    );
+    assert!(command.len() <= 8_156, "{} chars", command.len());
     assert!(is_desktop_switch_command(&command));
     assert!(!is_desktop_switch_command(
         "powershell -NoProfile -NonInteractive -Command whoami"
@@ -115,4 +111,13 @@ fn the_script_targets_the_virtio_display_fixes_the_layout_and_retries() {
     ] {
         assert!(script.contains(needle), "missing {needle}");
     }
+}
+
+#[test]
+fn the_longest_switch_fits_cmd_exe_with_the_agent_wrapper() {
+    // cmd.exe takes 8,191 characters, 35 of them the agent's
+    // `"C:\Windows\system32\cmd.exe" /c "..."` around the command.
+    assert_eq!(MAX_RUN_COMMAND_CHARS, 8_156);
+    let command = desktop_switch_command(u32::MAX, u32::MAX);
+    assert!(command.len() <= 8_156, "{} chars", command.len());
 }
