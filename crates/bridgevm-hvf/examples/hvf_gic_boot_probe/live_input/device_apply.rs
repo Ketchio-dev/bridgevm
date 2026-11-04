@@ -15,6 +15,17 @@ impl LiveInputController {
         mem: &mut dyn GuestMemoryMut,
         now: Instant,
     ) {
+        // A busy xHCI queue keeps the front KEY/POINTER command until the guest
+        // reads its reports. The power button must not wait behind input the
+        // guest is not reading (early boot, xHCI off), so it is pressed first.
+        while let Some(index) = self
+            .pending
+            .iter()
+            .position(LiveInputCommand::is_power_button)
+        {
+            self.pending.remove(index);
+            press_power_button(platform);
+        }
         let Some(command) = self.pending.front() else {
             return;
         };
@@ -64,14 +75,7 @@ impl LiveInputController {
                 println!("live input accepted: snapshot={label:?}");
                 Ok(false)
             }
-            LiveInputCommand::PowerButton => {
-                platform.press_power_button();
-                let t = super::STARTED.get().map_or(0, |at| at.elapsed().as_millis());
-                println!("BVPOWER button pressed t={t}");
-                use std::io::Write as _;
-                let _ = std::io::stdout().flush();
-                Ok(false)
-            }
+            LiveInputCommand::PowerButton => unreachable!("power-button presses are applied above"),
         };
         match result {
             Ok(accepted) => {
@@ -97,4 +101,12 @@ impl LiveInputController {
             }
         }
     }
+}
+
+fn press_power_button(platform: &mut VirtPlatform) {
+    platform.press_power_button();
+    let t = super::STARTED.get().map_or(0, |at| at.elapsed().as_millis());
+    println!("BVPOWER button pressed t={t}");
+    use std::io::Write as _;
+    let _ = std::io::stdout().flush();
 }

@@ -66,6 +66,10 @@ impl LiveInputCommand {
     fn is_pointer_move(&self) -> bool {
         matches!(self, Self::Pointer(value) if value.starts_with("move:"))
     }
+
+    fn is_power_button(&self) -> bool {
+        matches!(self, Self::PowerButton)
+    }
 }
 
 fn parse_resize(value: &str) -> Option<(u32, u32)> {
@@ -245,6 +249,31 @@ mod tests {
         input.apply_pending(&mut platform, &mut mem, Instant::now());
         assert!(input.pending.is_empty());
         assert_eq!(platform.take_pending_spi_levels(), [(41, true)]);
+    }
+
+    #[test]
+    fn power_button_does_not_wait_behind_input_the_guest_is_not_reading() {
+        use bridgevm_hvf::platform_virt::{
+            FlatGuestRam, VirtPlatform, VirtPlatformConfig, VirtPlatformDeviceConfig,
+        };
+        // Without xHCI every KEY is Busy, so it stays at the queue front.
+        let mut platform = VirtPlatform::new_with_config(VirtPlatformConfig {
+            fdt: Default::default(),
+            devices: VirtPlatformDeviceConfig {
+                xhci_present: false,
+                ..Default::default()
+            },
+        });
+        let mut mem = FlatGuestRam::new(0x4000_0000, 0);
+        let mut input = controller();
+        input.push_line("KEY enter");
+        input.push_line("POWERBUTTON");
+        input.apply_pending(&mut platform, &mut mem, Instant::now());
+        input.apply_pending(&mut platform, &mut mem, Instant::now());
+
+        assert_eq!(platform.take_pending_spi_levels(), [(41, true)]);
+        assert_eq!(input.pending.len(), 1);
+        assert!(matches!(input.pending[0], LiveInputCommand::Key(_)));
     }
 
     #[test]
