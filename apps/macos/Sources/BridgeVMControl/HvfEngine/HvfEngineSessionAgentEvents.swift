@@ -27,6 +27,8 @@ extension HvfEngineSession {
             ownedController?.guestServiceLost()
         case let .unknown(line) where line.hasPrefix(Self.resetAcknowledgement):
             resetAcknowledged()
+        case let .unknown(line) where line.hasPrefix("BVPAUSE "):
+            pauseReported(line)
         case .aliveHeartbeat:
             lastHeartbeatDate = Date()
             lastHeartbeatAge = 0

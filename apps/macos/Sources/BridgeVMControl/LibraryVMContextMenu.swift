@@ -6,6 +6,9 @@ struct LibraryVMContextMenu: View {
     let config: VMConfig
 
     var body: some View {
+        if config.engineKind == .hvfEngine, let session = library.hvfRuntimeSessions.existingRecord(slug: config.slug)?.session {
+            HvfPauseMenuItem(session: session)
+        }
         if config.engineKind == .hvfEngine, config.installPending != true {
             Button { library.requestWindowsClone(config) } label: {
                 Label("새 TPM ID로 복제", systemImage: "plus.square.on.square")

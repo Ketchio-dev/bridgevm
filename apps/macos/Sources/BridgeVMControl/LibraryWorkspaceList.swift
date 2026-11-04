@@ -103,8 +103,8 @@ private struct LibraryWorkspaceRow: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(config.name).font(.title3.weight(.semibold)).lineLimit(1)
                     HStack(spacing: 7) {
-                        Circle().fill(stateColor).frame(width: 8, height: 8)
-                        Text(stateText).foregroundStyle(stateColor)
+                        LibraryVMRunState(text: stateText, color: stateColor,
+                            session: library.hvfRuntimeSessions.existingRecord(slug: config.slug)?.session, dot: 8)
                     }
                     .font(.callout.weight(.medium))
                     Text(resourceText)
