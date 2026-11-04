@@ -7,6 +7,8 @@ const TRB_TYPE_SHIFT: u32 = 10;
 const TRB_TYPE_MASK: u32 = 0x3f;
 const TRB_TRANSFER_LENGTH_MASK: u32 = 0x1f_ffff;
 const TRB_INTERRUPTER_TARGET_SHIFT: u32 = 22;
+const TRB_TYPE_LINK: u32 = 6;
+const LINK_TRB_POINTER_MASK: u64 = !0xf;
 
 #[derive(Clone, Copy)]
 pub(super) struct TransferTrb {
@@ -27,6 +29,17 @@ pub(super) fn read_transfer_trb(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<Tr
         status: read_u32(&raw, 8)?,
         control: read_u32(&raw, 12)?,
     })
+}
+
+/// The TRB of a TD at `gpa`, or the one the Link TRB there points to: a TD
+/// can cross the end of its ring segment between any two of its TRBs.
+pub(super) fn read_td_trb(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<TransferTrb> {
+    let trb = read_transfer_trb(mem, gpa)?;
+    if trb_type(trb.control) != TRB_TYPE_LINK {
+        return Some(trb);
+    }
+    trace_transfer_trb("link", trb);
+    read_transfer_trb(mem, trb.parameter & LINK_TRB_POINTER_MASK)
 }
 
 pub(super) fn trb_type(control: u32) -> u32 {

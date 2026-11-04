@@ -7,6 +7,16 @@ fn data_register_reports_epoch_seconds() {
 }
 
 #[test]
+fn data_register_follows_the_host_wall_clock_both_ways() {
+    use std::time::{Duration, SystemTime};
+    let mut rtc = Pl031::new_at_epoch(1_000_000);
+    rtc.host_start = SystemTime::now() - Duration::from_secs(3_600);
+    assert_eq!(rtc.mmio_read(RTCDR, 4), 1_003_600);
+    rtc.host_start = SystemTime::now() + Duration::from_millis(10_500);
+    assert_eq!(rtc.mmio_read(RTCDR, 4), 999_990);
+}
+
+#[test]
 fn load_register_resets_the_counter_base() {
     let mut rtc = Pl031::new_at_epoch(1);
     rtc.mmio_write(RTCLR, 4, 0x1234_5678);

@@ -26,9 +26,11 @@ impl AgentConsoleHarness {
     /// the request queue. None of this touches the wire, so it needs no platform
     /// handle (and is unit-testable on its own).
     pub(super) fn service_enqueue(&mut self, now: Instant) {
-        // 0. A requested desktop mode switch, then the display scale.
+        // 0. A requested desktop mode switch, then the display scale, and a
+        //    clock resync after the host slept.
         self.enqueue_desktop_switch();
         self.enqueue_desktop_scale();
+        self.enqueue_time_resync();
 
         // 1. Host pasteboard changes collapse to a single latest-wins ClipPush.
         //    Draining every pending change and keeping only the last means a
@@ -301,6 +303,10 @@ impl AgentConsoleHarness {
                     false
                 }
             },
+            ServiceReq::TimeSync => {
+                self.write_time_resync_line(now);
+                true
+            }
         }
     }
     /// Whether any queued OR in-flight request satisfies `pred`.
@@ -420,6 +426,7 @@ impl AgentConsoleHarness {
             InFlightSnapshot::SharePut => {
                 self.handle_share_put_reply_with_sender(line, now, send);
             }
+            InFlightSnapshot::TimeSync => self.handle_time_resync_reply(line),
             InFlightSnapshot::ShareDel { name, direction } => {
                 if line.starts_with("OK DEL") {
                     if direction == ShareDelDirection::HostToGuest {
