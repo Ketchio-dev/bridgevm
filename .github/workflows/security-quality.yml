@@ -71,18 +71,8 @@ jobs:
           toolchain: 1.97.0
       - run: scripts/check-loom.sh
 
-  live-gate-policy:
-    name: live gate policy
-    runs-on: macos-15
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Asserts the Studio queue has no listener, registers no runner and
-      # publishes no unredacted receipt. Checked on every push precisely
-      # because it is the boundary that keeps live gates off this runner.
-      - run: python3 scripts/live-gates/redact-receipt.py --self-test
-      - run: tests/integration/live-gate-policy-smoke.sh
-      - run: tests/integration/live-submit-publishable-job-id-test.sh
+  # The live gate policy (no listener, no runner registration, redacted
+  # receipts) needs macOS and runs in ci.yml, job "macOS host contracts".
 
   graphics-claims:
     name: graphics compatibility claims

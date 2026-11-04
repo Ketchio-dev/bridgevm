@@ -16,18 +16,13 @@ concurrency:
 jobs:
   portable-import:
     # Tiny generated qcow2 files require no guest, hypervisor or private media.
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            qemu_major: 8
-          - os: macos-15
-            qemu_major: 11
-    runs-on: ${{ matrix.os }}
+    # The macOS leg (Homebrew's QEMU 11) runs in ci.yml, job "macOS host
+    # contracts".
+    name: portable-import (ubuntu-24.04, 8)
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      BRIDGEVM_PORTABILITY_QEMU_MAJOR: ${{ matrix.qemu_major }}
+      BRIDGEVM_PORTABILITY_QEMU_MAJOR: 8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
@@ -35,12 +30,8 @@ jobs:
           toolchain: 1.97.0
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.1
         with:
-          key: portable-import-${{ matrix.os }}
+          key: portable-import-ubuntu-24.04
       - name: Install QEMU 8 fixture tools on Ubuntu
-        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y qemu-utils
-      - name: Install QEMU fixture tools on macOS
-        if: runner.os == 'macOS'
-        run: brew install qemu
       - name: Require real copied chains through CLI and daemon APIs
         run: cargo test -p bridgevm-daemon --locked peer_credentials && scripts/check-bundle-import-contracts.sh
