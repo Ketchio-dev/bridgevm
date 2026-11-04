@@ -80,7 +80,8 @@ PY
 }
 now_ms() { perl -MTime::HiRes=time -e 'printf "%d\n", time * 1000'; }
 # Milliseconds from the RESIZE write (arg 2) to the last frame published at the
-# requested size, once no frame has followed for 1.5 s; -1 if none within 20 s.
+# requested size, once no frame has followed for 1.5 s; -1 if no frame at that
+# size came within 20 s, and "timeout" if frames never went quiet for 1.5 s.
 # The first frames at a new size can still show the old desktop in the old
 # area while Windows repaints.
 settle_ms() {
@@ -88,6 +89,7 @@ settle_ms() {
 import struct, sys, time
 path, want, t0 = sys.argv[1], sys.argv[2], int(sys.argv[3])
 last_seq = last_change = None
+settled = False
 deadline = time.time() + 20
 while time.time() < deadline:
     try:
@@ -102,9 +104,10 @@ while time.time() < deadline:
         if seq != last_seq:
             last_seq, last_change = seq, now
         elif now - last_change >= 1500:
+            settled = True
             break
     time.sleep(0.1)
-print(last_change - t0 if last_change else -1)
+print(last_change - t0 if settled else ("timeout" if last_change else -1))
 PY
 }
 check() {   # boot, request
