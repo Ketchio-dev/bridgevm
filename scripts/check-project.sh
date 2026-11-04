@@ -39,6 +39,7 @@ step "documentation references" python3 scripts/check-doc-references.py
 step "structural budgets" scripts/check-refactor-budgets.sh
 step "shell scripts" bash scripts/check-shell-scripts.sh
 step "python scripts" python3 scripts/check-python-scripts.py
+step "guest PowerShell 5.1 syntax" pwsh -NoProfile -File scripts/check-guest-powershell.ps1
 step "audio result classifiers" bash -c 'python3 scripts/audio-playback-result.py --self-test && python3 tests/integration/audio-playback-host-stats-contract.py && python3 tests/integration/audio-teardown-result-test.py && python3 tests/integration/hda-microphone-live-check-lane-test.py'
 step "glyph pixel mask" bash -c 'python3 scripts/verify-glyph-pixel-mask.py --self-test && python3 tests/integration/glyph-ppm-contract.py'
 step "glyph pixel mask builder" python3 scripts/build-glyph-pixel-mask.py --self-test
