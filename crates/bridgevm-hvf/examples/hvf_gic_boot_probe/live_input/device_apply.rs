@@ -26,9 +26,9 @@ impl LiveInputController {
             self.pending.remove(index);
             press_power_button(platform);
         }
-        // A reset ends this boot: the run loop takes it after this tick, and
-        // input queued before it must not reach the guest first.
-        if self.pending.iter().any(LiveInputCommand::is_reset) {
+        // A reset ends this boot and a pause stops it: the run loop takes
+        // either after this tick, and queued input waits until then.
+        if self.pending.iter().any(LiveInputCommand::is_run_control) {
             return;
         }
         let Some(command) = self.pending.front() else {
@@ -91,7 +91,7 @@ impl LiveInputController {
                 println!("live input accepted: snapshot={label:?}");
                 Ok(false)
             }
-            LiveInputCommand::PowerButton | LiveInputCommand::Reset => {
+            LiveInputCommand::PowerButton | LiveInputCommand::Reset | LiveInputCommand::Pause(_) => {
                 unreachable!("host control lines are handled above")
             }
         };
@@ -134,6 +134,20 @@ impl LiveInputController {
         let t = super::STARTED.get().map_or(0, |at| at.elapsed().as_millis());
         println!("BVPOWER host reset t={t}");
         true
+    }
+
+    /// The last PAUSE (`Some(true)`) or RESUME (`Some(false)`) read since the
+    /// last call, if any; the run loop pauses or resumes every vCPU.
+    pub fn take_host_pause(&mut self) -> Option<bool> {
+        let mut last = None;
+        self.pending.retain(|command| match command {
+            LiveInputCommand::Pause(paused) => {
+                last = Some(*paused);
+                false
+            }
+            _ => true,
+        });
+        last
     }
 }
 

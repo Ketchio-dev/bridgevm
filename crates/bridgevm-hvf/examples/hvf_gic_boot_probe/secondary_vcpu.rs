@@ -265,7 +265,17 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
     if let Some(trace) = smp_trace {
         trace.secondary_run_loop_entered(control.index, *exits);
     }
+    // A pause waits for every vCPU in this loop to park (pause_gate.rs).
+    let _in_run_loop = crate::pause_gate::GATE.enter_run_loop();
+    let mut offset_version = 0u64;
     loop {
+        if shutdown.load(Ordering::SeqCst) {
+            return true;
+        }
+        // SAFETY: this thread owns `vcpu` and is outside hv_vcpu_run.
+        crate::pause_gate::GATE.before_run(&mut offset_version, |offset| unsafe {
+            crate::pause_gate::set_vtimer_offset(vcpu, offset)
+        });
         if shutdown.load(Ordering::SeqCst) {
             return true;
         }

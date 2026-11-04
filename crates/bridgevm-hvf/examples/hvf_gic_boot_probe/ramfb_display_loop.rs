@@ -25,6 +25,9 @@ use super::wake::{uptime_ns, ExportWake, Wake};
 use super::ConfigSource;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 
+/// How often a paused VM's export thread looks for a resume.
+const PAUSED_RECHECK: Duration = Duration::from_millis(250);
+
 /// Between requests deadline-paced: a tick that overruns resynchronises
 /// instead of bursting.
 pub(super) fn export_loop(
@@ -48,6 +51,11 @@ pub(super) fn export_loop(
                 None => continue,
             },
         };
+        if crate::pause_gate::GATE.paused() {
+            // The guest cannot draw while paused; keep the last frame and look again later.
+            next = Instant::now() + PAUSED_RECHECK;
+            continue;
+        }
         let tick = Instant::now();
         let config = source.poll();
         publisher.note_virtio_scanout(source.virtio_scanout_bound());

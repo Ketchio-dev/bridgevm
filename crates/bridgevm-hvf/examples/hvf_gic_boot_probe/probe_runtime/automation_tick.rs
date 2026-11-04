@@ -38,7 +38,8 @@ macro_rules! automation_tick {
         if panicked {
             Some("serial reached Linux kernel panic".into())
         } else {
-            let now = std::time::Instant::now();
+            // VM time: a pause does not make in-flight requests overdue (vm_clock).
+            let now = bridgevm_hvf::vm_clock::active_now();
             if let Some(harness) = $agent_console.as_mut() {
                 harness.advance(now, &mut |bytes| {
                     let mut platform_guard =

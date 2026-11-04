@@ -190,6 +190,14 @@ pub(crate) fn wfx_trap(cpu: usize, vcpu: HvVcpuT, esr: u64, pc: u64) -> bool {
     true
 }
 
+/// A pause from CPU0: wake every secondary sleeping in a WFI trap (outside
+/// `hv_vcpu_run`, which `hv_vcpus_exit` cannot reach) and kick the rest.
+pub(crate) fn kick_secondaries() {
+    if let Some(bridge) = usgic() {
+        bridge.kick(u64::MAX, 0);
+    }
+}
+
 /// Device SPI level -> userspace distributor (replaces `hv_gic_set_spi`).
 pub(crate) fn deliver_spi(intid: u32, level: bool) -> Option<HvReturn> {
     let bridge = usgic()?;

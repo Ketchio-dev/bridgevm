@@ -34,6 +34,9 @@ pub(super) struct HostClock {
     pub(super) pending_gap_ms: u64,
     /// The synthetic gap and when it appears.
     pub(super) test_suspend: Option<(Duration, Duration)>,
+    /// BRIDGEVM_GUEST_RTC_EPOCH: the guest's fixed start time, and the host
+    /// time it was taken at.
+    pub(super) rtc_epoch: Option<(SystemTime, SystemTime)>,
 }
 
 impl HostClock {
@@ -42,7 +45,26 @@ impl HostClock {
             test_suspend: std::env::var(TEST_SUSPEND_ENV)
                 .ok()
                 .and_then(|value| parse_test_suspend(&value)),
+            rtc_epoch: std::env::var("BRIDGEVM_GUEST_RTC_EPOCH")
+                .ok()
+                .and_then(|value| value.parse::<u32>().ok().filter(|&seconds| seconds > 0))
+                .map(|seconds| {
+                    let start = UNIX_EPOCH + Duration::from_secs(seconds.into());
+                    (start, SystemTime::now())
+                }),
             ..Self::default()
+        }
+    }
+
+    /// The time a resync sets: host time, or with BRIDGEVM_GUEST_RTC_EPOCH (a
+    /// test image booted at a fixed date) that date plus the wall time since,
+    /// so the guest stays on its own timeline.
+    pub(super) fn resync_target(&self, now: SystemTime) -> SystemTime {
+        match self.rtc_epoch {
+            Some((guest_start, host_start)) => {
+                guest_start + now.duration_since(host_start).unwrap_or_default()
+            }
+            None => now,
         }
     }
 
@@ -115,6 +137,17 @@ impl AgentConsoleHarness {
         }
     }
 
+    /// A VM pause stopped the guest counter, so Windows' wall clock is behind
+    /// by `paused`, as after a host sleep that the tick cannot see.
+    pub(crate) fn note_vm_pause(&mut self, paused: std::time::Duration) {
+        if paused.is_zero() {
+            return;
+        }
+        let paused_ms = u64::try_from(paused.as_millis()).unwrap_or(u64::MAX);
+        self.clock.pending_gap_ms = self.clock.pending_gap_ms.saturating_add(paused_ms);
+        self.enqueue_time_resync();
+    }
+
     /// An agent restart may have dropped the resync before it ran.
     pub(super) fn requeue_time_resync(&mut self) {
         if !self.queue.iter().any(is_time_resync) {
@@ -123,7 +156,9 @@ impl AgentConsoleHarness {
     }
 
     pub(super) fn write_time_resync_line(&mut self, now: Instant) {
-        let set = SystemTime::now()
+        let set = self
+            .clock
+            .resync_target(SystemTime::now())
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             + SEND_LATENCY;
