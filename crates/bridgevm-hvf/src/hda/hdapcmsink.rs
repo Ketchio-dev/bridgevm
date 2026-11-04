@@ -798,7 +798,7 @@ impl HdaController {
         byte!(0x02, 1, 0u8); // VMIN
         byte!(0x03, 1, 1u8); // VMAJ
         byte!(0x04, 2, 0x003cu16); // OUTPAY
-        byte!(0x06, 2, 0u16); // INPAY
+        byte!(0x06, 2, 0x001du16); // INPAY: 29 words per frame, the link's input bandwidth.
         byte!(REG_GCTL, 4, self.gctl);
         byte!(REG_WAKEEN, 2, self.wakeen);
         byte!(REG_STATESTS, 2, self.statests);

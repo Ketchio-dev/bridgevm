@@ -114,6 +114,20 @@ impl Capture {
     }
 }
 
+/// Windows' HD Audio bus driver budgets link bandwidth for each DMA engine from OUTPAY and
+/// INPAY (16-bit words per 48 kHz frame). With INPAY 0 no capture stream fits, and the live
+/// check's exclusive 48 kHz stereo 16-bit capture failed with AUDCLNT_E_UNSUPPORTED_FORMAT.
+#[test]
+fn the_link_advertises_input_bandwidth_for_capture() {
+    let ctrl = HdaController::with_pcm_output_path::<&Path>(None);
+    let (outpay, inpay) = (ctrl.mmio_read(0x04, 2), ctrl.mmio_read(0x06, 2));
+    assert_eq!(
+        (outpay, inpay),
+        (0x3c, 0x1d),
+        "ICH6 (and QEMU) payload capabilities"
+    );
+}
+
 #[test]
 fn input_streams_come_first_and_each_lpib_has_its_alias() {
     let mut capture = Capture::new(Some(usize::MAX));
