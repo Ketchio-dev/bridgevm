@@ -5,7 +5,7 @@ use super::super::agent_console_tests::tests::harness;
 use super::super::*;
 use super::*;
 
-fn decoded(command: &str) -> String {
+pub(crate) fn decoded(command: &str) -> String {
     let b64 = command.rsplit(' ').next().unwrap();
     let bytes = base64_decode(b64).unwrap();
     let units: Vec<u16> = bytes
@@ -26,7 +26,7 @@ fn queued_switches(h: &AgentConsoleHarness) -> Vec<String> {
         .collect()
 }
 
-fn service_harness() -> AgentConsoleHarness {
+pub(crate) fn service_harness() -> AgentConsoleHarness {
     let mut h = harness();
     h.commands.clear();
     h.service = true;
@@ -84,11 +84,7 @@ fn the_script_targets_the_virtio_display_fixes_the_layout_and_retries() {
     let command = take_desktop_switch_command().expect("requested");
     assert_eq!(take_desktop_switch_command(), None, "only once");
     assert!(command.starts_with("powershell -NoProfile -NonInteractive"));
-    assert!(
-        command.len() <= MAX_RUN_COMMAND_CHARS,
-        "{} chars",
-        command.len()
-    );
+    assert!(command.len() <= 8_156, "{} chars", command.len());
     assert!(is_desktop_switch_command(&command));
     assert!(!is_desktop_switch_command(
         "powershell -NoProfile -NonInteractive -Command whoami"
@@ -115,4 +111,13 @@ fn the_script_targets_the_virtio_display_fixes_the_layout_and_retries() {
     ] {
         assert!(script.contains(needle), "missing {needle}");
     }
+}
+
+#[test]
+fn the_longest_switch_fits_cmd_exe_with_the_agent_wrapper() {
+    // cmd.exe takes 8,191 characters, 35 of them the agent's
+    // `"C:\Windows\system32\cmd.exe" /c "..."` around the command.
+    assert_eq!(MAX_RUN_COMMAND_CHARS, 8_156);
+    let command = desktop_switch_command(u32::MAX, u32::MAX);
+    assert!(command.len() <= 8_156, "{} chars", command.len());
 }

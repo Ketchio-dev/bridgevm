@@ -9,6 +9,11 @@
 # - the guest's applier reports exactly that mode (`BVDISPLAY ... result=0`);
 # - the host display file holds a frame of exactly that size.
 #
+# A request `WxH@P` also asks for a Windows display scale of P percent. Its
+# check also needs the agent's `BVDPI ... after=P ... result=0` after the mode
+# switch, and an independent reading: the effective DPI of the primary monitor
+# from a per-monitor-aware thread (GetDpiForMonitor) must be P * 96 / 100.
+#
 # After a guest restart the last size is sent again, as the app does after
 # `BVAGENT SERVICE start`. Prints one `BVA8` line per check and exits 1 if any
 # check fails.
@@ -79,6 +84,34 @@ if png and len(data) >= stride * h:
 PY
 }
 now_ms() { perl -MTime::HiRes=time -e 'printf "%d\n", time * 1000'; }
+# The first log line matching $3 after the $2-th line matching $1.
+first_after() { log | awk -v a="$1" -v n="$2" -v re="$3" 'k >= n && $0 ~ re { print; exit } $0 ~ a { k++ }'; }
+# Effective DPI and scale of the primary monitor (the virtio display, at 0,0)
+# as a per-monitor-aware thread sees them, like bv-b6-window-dpi.ps1.
+MONITOR_DPI_PS=$(cat <<'PS'
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class BvM {
+  [StructLayout(LayoutKind.Sequential)] public struct Pt { public int X, Y; }
+  [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+  [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(Pt point, int flags);
+  [DllImport("shcore.dll")] static extern int GetDpiForMonitor(IntPtr monitor, int type, out int x, out int y);
+  [DllImport("shcore.dll")] static extern int GetScaleFactorForMonitor(IntPtr monitor, out int scale);
+  public static string Run() {
+    bool aware = SetThreadDpiAwarenessContext(new IntPtr(-4)) != IntPtr.Zero;   // per-monitor aware v2
+    IntPtr monitor = MonitorFromPoint(new Pt(), 1);                              // MONITOR_DEFAULTTOPRIMARY
+    int x, y, scale;
+    int result = GetDpiForMonitor(monitor, 0, out x, out y);                     // MDT_EFFECTIVE_DPI
+    GetScaleFactorForMonitor(monitor, out scale);
+    return "BVMONDPI dpi=" + x + " scale=" + scale + " aware=" + aware + " result=" + result;
+  }
+}
+'@
+[BvM]::Run()
+PS
+)
+MONITOR_DPI_CMD="powershell -NoProfile -NonInteractive -EncodedCommand $(printf '%s' "$MONITOR_DPI_PS" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n')"
 # Milliseconds from the RESIZE write (arg 2) to the last frame published at the
 # requested size, once no frame has followed for 1.5 s; -1 if no frame at that
 # size came within 20 s, and "timeout" if frames never went quiet for 1.5 s.
@@ -110,23 +143,50 @@ while time.time() < deadline:
 print(last_change - t0 if settled else ("timeout" if last_change else -1))
 PY
 }
-check() {   # boot, request
-  local boot=$1 request=$2 pattern n deadline size="none" guest="none" verdict=FAIL t0 settle
-  pattern="^BVDISPLAY target=$request .*after=$request .*result=0"
+check() {   # boot, request (WxH or WxH@P)
+  local boot=$1 request=$2 mode=${2%@*} scale="" pattern n deadline size="none" guest="none" verdict=FAIL t0 settle
+  local line="" dpi="none" monitor="none" m re=' after=([^ ]*) .*result=([^ ]*)' mre=' dpi=([0-9]+) '
+  [[ "$request" != *@* ]] || scale=${request#*@}
+  pattern="^BVDISPLAY target=$mode .*after=$mode .*result=0"
   n=$(count "$pattern"); n=${n:-0}
   t0=$(now_ms)
   printf 'RESIZE %s\n' "$request" >> "$INPUT"
-  if wait_for "$pattern" $((n + 1)) "$STEP_TIMEOUT"; then guest=$request; fi
+  if wait_for "$pattern" $((n + 1)) "$STEP_TIMEOUT"; then guest=$mode; fi
   deadline=$((SECONDS + 15))
   while (( SECONDS < deadline )); do
-    size=$(fb); [[ "$size" == "$request" ]] && break
+    size=$(fb); [[ "$size" == "$mode" ]] && break
     sleep 0.5
   done
   fb "$OUT/boot$boot-$request.png" > /dev/null
-  [[ "$guest" == "$request" && "$size" == "$request" ]] && verdict=PASS
-  settle=$(settle_ms "$request" "$t0")
+  [[ "$guest" == "$mode" && "$size" == "$mode" ]] && verdict=PASS
+  if [[ -n "$scale" ]]; then
+    # The agent sets the scale once the switch is done, so the first BVDPI
+    # after this request's BVDISPLAY answers it.
+    deadline=$((SECONDS + STEP_TIMEOUT))
+    while [[ "$guest" == "$mode" ]] && (( SECONDS < deadline )); do
+      line=$(first_after "$pattern" $((n + 1)) '^BVDPI '); [[ -z "$line" ]] || break
+      sleep 0.3
+    done
+    if [[ "$line" =~ $re ]]; then
+      dpi=${BASH_REMATCH[1]}; [[ "${BASH_REMATCH[2]}" == 0 ]] || dpi+="/result=${BASH_REMATCH[2]}"
+    fi
+    if [[ "$dpi" == "$scale" ]]; then
+      m=$(count '^BVMONDPI '); m=${m:-0}
+      printf '%s\n' "$MONITOR_DPI_CMD" >> "$CTL"
+      if wait_for '^BVMONDPI ' $((m + 1)) "$STEP_TIMEOUT"; then
+        line=$(log | grep -E '^BVMONDPI ' | tail -1 || true)
+        [[ "$line" =~ $mre ]] && monitor=${BASH_REMATCH[1]}
+      fi
+    fi
+    [[ "$dpi" == "$scale" && "$monitor" == "$((scale * 96 / 100))" ]] || verdict=FAIL
+  fi
+  settle=$(settle_ms "$mode" "$t0")
   fb "$OUT/boot$boot-$request-settled.png" > /dev/null   # after the guest's repaint
-  echo "BVA8 boot=$boot request=$request guest=$guest display_fb=$size settle_ms=$settle $verdict" | tee -a "$RESULTS"
+  if [[ -z "$scale" ]]; then
+    echo "BVA8 boot=$boot request=$request guest=$guest display_fb=$size settle_ms=$settle $verdict" | tee -a "$RESULTS"
+  else
+    echo "BVA8 boot=$boot request=$request guest=$guest dpi=$dpi monitor_dpi=$monitor display_fb=$size settle_ms=$settle $verdict" | tee -a "$RESULTS"
+  fi
 }
 
 # display.fb once a second for the whole run: shows who presented at boot.
@@ -196,7 +256,7 @@ else
 fi
 trap - EXIT
 cleanup || shutdown=vm-still-running
-log | grep -aE '^(BVDISPLAY|live input accepted: resize=|BVAGENT SERVICE start)' > "$OUT/display-lines.txt" || true
+log | grep -aE '^(BVDISPLAY|BVDPI|BVMONDPI|live input accepted: resize=|BVAGENT SERVICE start)' > "$OUT/display-lines.txt" || true
 passed=$(grep -c ' PASS$' "$RESULTS" || true); total=$(wc -l < "$RESULTS" | tr -d ' ')
 echo "BVA8 summary $passed/$total shutdown=$shutdown"
 [[ "$passed" == "$total" && "$total" -gt 0 && "$shutdown" == clean ]]

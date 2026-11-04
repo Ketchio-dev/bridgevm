@@ -36,7 +36,11 @@ mod restart_resume;
 enum LiveInputCommand {
     Key(String),
     Pointer(String),
-    Resize { width: u32, height: u32 },
+    Resize {
+        width: u32,
+        height: u32,
+        scale: Option<u32>,
+    },
     Snapshot(String),
 }
 
@@ -46,10 +50,15 @@ impl std::fmt::Debug for LiveInputCommand {
             // Diagnostics must never persist typed text or individual keys.
             Self::Key(_) => f.write_str("Key(<redacted>)"),
             Self::Pointer(value) => f.debug_tuple("Pointer").field(value).finish(),
-            Self::Resize { width, height } => f
+            Self::Resize {
+                width,
+                height,
+                scale,
+            } => f
                 .debug_struct("Resize")
                 .field("width", width)
                 .field("height", height)
+                .field("scale", scale)
                 .finish(),
             Self::Snapshot(label) => f.debug_tuple("Snapshot").field(label).finish(),
         }
@@ -62,9 +71,20 @@ impl LiveInputCommand {
     }
 }
 
-fn parse_resize(value: &str) -> Option<(u32, u32)> {
-    let (w, h) = value.trim().split_once('x')?;
-    Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
+/// `WxH`, optionally `@P`: a Windows display scale in percent.
+fn parse_resize(value: &str) -> Option<(u32, u32, Option<u32>)> {
+    let (size, scale) = match value.split_once('@') {
+        Some((size, scale)) => {
+            let scale: u32 = scale.trim().parse().ok()?;
+            (size, Some(scale))
+        }
+        None => (value, None),
+    };
+    if scale.is_some_and(|p| !crate::agent_console::DESKTOP_SCALES.contains(&p)) {
+        return None;
+    }
+    let (w, h) = size.trim().split_once('x')?;
+    Some((w.trim().parse().ok()?, h.trim().parse().ok()?, scale))
 }
 
 pub struct LiveInputController {
@@ -125,7 +145,11 @@ impl LiveInputController {
             LiveInputCommand::Pointer(value.to_string())
         } else if let Some(value) = line.strip_prefix("RESIZE ") {
             match parse_resize(value) {
-                Some((width, height)) => LiveInputCommand::Resize { width, height },
+                Some((width, height, scale)) => LiveInputCommand::Resize {
+                    width,
+                    height,
+                    scale,
+                },
                 None => {
                     eprintln!("live input rejected: kind=resize parse_error");
                     return;
@@ -263,13 +287,56 @@ mod tests {
             input.pending.back(),
             Some(LiveInputCommand::Resize {
                 width: 1920,
-                height: 1080
+                height: 1080,
+                scale: None
             })
         ));
         let before = input.pending.len();
         input.push_line("RESIZE not-a-size");
         input.push_line("RESIZE 1920");
         assert_eq!(input.pending.len(), before, "malformed resizes are dropped");
+    }
+
+    #[test]
+    fn live_input_takes_a_resize_scale_only_from_the_windows_ladder() {
+        let mut input = controller();
+        input.push_line("RESIZE 3456x2234@200");
+        assert!(matches!(
+            input.pending.back(),
+            Some(LiveInputCommand::Resize {
+                width: 3456,
+                height: 2234,
+                scale: Some(200)
+            })
+        ));
+        for percent in [100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500] {
+            input.pending.clear();
+            input.push_line(&format!("RESIZE 1280x800@{percent}"));
+            assert!(
+                matches!(
+                    input.pending.back(),
+                    Some(LiveInputCommand::Resize { scale: Some(p), .. }) if *p == percent
+                ),
+                "@{percent}"
+            );
+        }
+        input.pending.clear();
+        for line in [
+            "RESIZE 1280x800@0",
+            "RESIZE 1280x800@99",
+            "RESIZE 1280x800@120",
+            "RESIZE 1280x800@201",
+            "RESIZE 1280x800@275",
+            "RESIZE 1280x800@550",
+            "RESIZE 1280x800@-200",
+            "RESIZE 1280x800@",
+            "RESIZE 1280x800@2x",
+            "RESIZE 1280x800@200@200",
+            "RESIZE @200",
+        ] {
+            input.push_line(line);
+            assert!(input.pending.is_empty(), "{line} accepted");
+        }
     }
 
     #[test]

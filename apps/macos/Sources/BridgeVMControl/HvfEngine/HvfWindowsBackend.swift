@@ -213,6 +213,7 @@ final class HvfWindowsBackend: VMBackend {
             nvmeBufferedIO: false,
             durableDiskWrites: config.durableDiskWritesEnabled ?? false,
             guestResolution: config.guestResolution,
+            commandKeyMode: HvfCommandKeyMode(saved: config.commandKeyMode),
             ctlFilePath: ctlFilePath, allowsExperimental3D: config.experimental3DAllowed ?? false
         )
     }

@@ -10,6 +10,9 @@ struct HvfSessionInputRouter {
     private var stream = HvfRecoverableInputStream()
     var state: HvfNegotiatedInputStream.State { failed ? .failed : stream.state }
     var count: Int { stream.count }
+    /// Whether a generic chord (HvfModifierChord) can reach the guest now: on the legacy route the VMM
+    /// shipped with this app builds it; on the ordered route only an agent with the marker does.
+    var modifierChords: Bool { !eligible || stream.modifierChords }
 
     mutating func beginOwnedBoot(binding: [String]) {
         self = Self()

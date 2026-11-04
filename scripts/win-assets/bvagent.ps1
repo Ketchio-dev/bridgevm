@@ -138,6 +138,13 @@ function Get-InputCapabilities([string]$Request) {
             foreach ($chord in $chords) { if ([BridgeVM.BvUnicodeInput]::BuildKey($chord).Length -ne 4) { throw 'chord-unavailable' } }
             if ([BridgeVM.BvUnicodeInput]::BuildKey('ctrl+shift+tab').Length -eq 6) { $keySupport += "`nBVINPUT_CHORDS $Request CTRL_SHIFT_CHORDS" }
         } catch { }
+        # Any modifiers plus a key, and a bare modifier tap; advertised only when every probe dry-builds.
+        try {
+            foreach ($chord in @('win', 'alt', 'win+e', 'win+shift+s', 'alt+f', 'ctrl+1', 'ctrl+slash', 'ctrl+shift+esc', 'win+ctrl+alt+shift+f12')) {
+                if ([BridgeVM.BvUnicodeInput]::BuildKey($chord).Length -ne 2 * $chord.Split('+').Length) { throw 'modifier-chord-unavailable' }
+            }
+            $keySupport += "`nBVINPUT_CHORDS $Request MODIFIER_CHORDS"
+        } catch { }
         return @{ Exit = 0; Out = (('BVINPUT_CAPS {0} 3 TEXTINPUT KEYINPUT POINTERINPUT 65536' -f $Request) + $keySupport) }
     } catch {
         return @{ Exit = 1; Out = 'BVINPUT_CAPS_FAILED unavailable' }

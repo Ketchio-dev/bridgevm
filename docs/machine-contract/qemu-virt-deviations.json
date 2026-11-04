@@ -77,6 +77,15 @@
       "evidence": "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/time_resync.rs"
     },
     {
+      "id": "nvme-dataset-management",
+      "area": "storage",
+      "qemu_behavior": "QEMU 11.0.2's NVMe device advertises Dataset Management with Write Zeroes, Compare and Copy (ONCS), DLFEAT 0x9 (a deallocated block reads zeros; Write Zeroes may deallocate) and range limits in the NVM Identify Controller page (DMRL, DMRSL, DMSL). A range outside the namespace or over DMRSL is skipped and the command still succeeds. With discard=unmap a file-backed drive punches holes aligned to the host file-system block (F_PUNCHHOLE on macOS); with the default discard=ignore nothing is freed (hw/nvme/ctrl.c, hw/nvme/ns.c, block/file-posix.c).",
+      "bridgevm_behavior": "ONCS advertises Dataset Management only. DLFEAT stays 0, so what a deallocated block reads is not reported, and the NVM Identify Controller page stays zero: no range limits besides NR's 256 ranges and the namespace. Deallocate punches the whole host file-system blocks inside each range out of a raw write-back image (F_PUNCHHOLE on macOS); partial blocks at a range's edges keep their bytes, and memory disks, read-only overlays and file systems that cannot punch (HFS+, exFAT) complete the command unchanged. A range ending past the namespace, its start plus length overflowing included, fails the whole command with LBA Out of Range (DNR) before anything is punched; reserved bits above NR fail it with Invalid Field (DNR).",
+      "guest_visible": true,
+      "impact": "Windows' TRIM (file deletes and Optimize-Volume -ReTrim) gives the space back to the Mac when the image is on APFS. A deallocated block then reads zeros where it was punched and its old data elsewhere, which DLFEAT 0 allows and NTFS never reads. A malformed range list is refused instead of partly ignored. The punches run inline under the platform lock; the final report's nvme dsm: record counts their time.",
+      "evidence": "crates/bridgevm-hvf/src/nvme/tests/dataset_management.rs"
+    },
+    {
       "id": "clipboard-images",
       "area": "guest-agent",
       "qemu_behavior": "QEMU has no Windows clipboard integration of its own; only a guest agent or remote-display protocol can share one.",

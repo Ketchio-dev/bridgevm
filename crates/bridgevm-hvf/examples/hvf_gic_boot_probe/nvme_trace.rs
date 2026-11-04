@@ -9,6 +9,7 @@ use crate::nvme_storage_effect::{
 };
 
 pub(super) fn print_nvme_command_trace(platform: &VirtPlatform) {
+    println!("{}", bridgevm_hvf::nvme::dsm_record());
     let limit = usize::try_from(super::env_u64("BRIDGEVM_RECENT_NVME_COMMANDS", 32)).unwrap_or(32);
     let trace = platform.nvme_command_trace();
     let liveness = NvmePcieLivenessSnapshot::from(platform.nvme_pcie_liveness());
@@ -125,6 +126,7 @@ fn nvme_opcode_name(trace: &NvmeCommandTrace) -> &'static str {
             0x00 => "flush",
             0x01 => "write",
             0x02 => "read",
+            0x09 => "dataset-management",
             _ => "io-unknown",
         }
     }
@@ -136,6 +138,7 @@ fn nvme_status_name(status: u16) -> &'static str {
         0x0001 => "invalid-opcode",
         0x0002 => "invalid-field",
         0x4002 => "invalid-field-dnr",
+        0x4080 => "lba-out-of-range-dnr",
         _ => "unknown",
     }
 }

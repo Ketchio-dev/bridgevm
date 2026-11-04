@@ -54,15 +54,16 @@ final class HvfKeyEventIdentityTests: XCTestCase {
         }
     }
 
-    func testCommandKeypadRemainsAHostShortcut() throws {
+    /// The VMM takes generic chords, so Command keypad Enter is the Mac-like Ctrl+Enter: Enter by key code, never Copy.
+    func testCommandKeypadIsCtrlEnterOnTheLegacyDisplay() throws {
         try withDisplay { view, _, fixture in
             view.keyDown(with: try keypad([.command, .numericPad]))
-            XCTAssertNil(try fixture.bytes(fixture.input))
+            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY ctrl+enter\n".utf8))
             XCTAssertNil(try fixture.bytes(fixture.control))
         }
     }
 
-    func testAdditionalControlKeypadModifiersNeverBecomeGuestShortcuts() throws {
+    func testAdditionalKeypadModifiersAreEnterChordsAndNeverCopy() throws {
         try withDisplay { view, _, fixture in
             for flags: NSEvent.ModifierFlags in [[.control, .shift], [.control, .option], [.control, .command]] {
                 view.setMarkedText("한", selectedRange: NSRange(location: 1, length: 0),
@@ -70,8 +71,21 @@ final class HvfKeyEventIdentityTests: XCTestCase {
                 view.keyDown(with: try keypad(flags))
                 XCTAssertFalse(view.hasMarkedText())
             }
-            XCTAssertNil(try fixture.bytes(fixture.input))
+            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY ctrl+shift+enter\nKEY ctrl+alt+enter\nKEY ctrl+enter\n".utf8))
             XCTAssertNil(try fixture.bytes(fixture.control))
+        }
+    }
+
+    /// An agent without MODIFIER_CHORDS keeps the earlier contract: these never become guest shortcuts.
+    func testOlderAgentNeverQueuesCommandOrExtraKeypadModifiers() throws {
+        try withDisplay { view, session, fixture in
+            try fixture.negotiateOrderedInput(session)
+            let before = try fixture.commands()
+            for flags: NSEvent.ModifierFlags in [[.command, .numericPad], [.control, .shift], [.control, .option], [.control, .command]] {
+                view.keyDown(with: try keypad(flags))
+            }
+            XCTAssertEqual(try fixture.commands(), before)
+            XCTAssertNil(try fixture.bytes(fixture.input))
         }
     }
 

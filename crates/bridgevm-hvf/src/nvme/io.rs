@@ -14,6 +14,7 @@ impl NvmeController {
             NVM_OP_FLUSH => self.io_flush(cmd),
             NVM_OP_READ => self.io_read(cmd, mem),
             NVM_OP_WRITE => self.io_write(cmd, mem),
+            NVM_OP_DATASET_MANAGEMENT => self.io_dataset_management(cmd, mem),
             _ => SC_INVALID_OPCODE,
         };
         CommandResult::complete(status)
