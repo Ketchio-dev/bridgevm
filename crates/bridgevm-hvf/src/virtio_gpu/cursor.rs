@@ -101,8 +101,9 @@ impl GuestCursor {
             // moving it to (0,0) with the resource still attached (upstream
             // 8972250b now sends UPDATE_CURSOR with resource 0). A move to
             // exactly (0,0) therefore counts as hidden. The trade-off: the
-            // cursor vanishes while the guest pointer really sits on pixel
-            // (0,0), and comes back with the next move off it.
+            // cursor vanishes while the sprite really sits at (0,0) (the
+            // arrow with its tip on the top-left pixel) and comes back with
+            // the next move off it.
             if !origin {
                 (self.state.x, self.state.y) = (x, y);
             }

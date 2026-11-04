@@ -11,7 +11,10 @@
 //!   of the file, so a reader reloads the image whenever it changes;
 //! - 36 u32 flags: bit 0 the guest shows its sprite, bit 1 this writer (this
 //!   boot's device) has accepted an image;
-//! - 40/44 i32 x/y: the hot spot's position on scanout 0, in guest pixels;
+//! - 40/44 i32 x/y: the sprite's top left on scanout 0, in guest pixels, as
+//!   the guest sent it (virtio-gpu's cursor position; viogpudo passes WDDM's
+//!   pointer position, which is the image's top left and can be negative);
+//!   the guest pointer is at x + hot x, y + hot y;
 //! - 48 u64 publish time, `CLOCK_UPTIME_RAW` ns (the clock of BVFB byte 48);
 //! - 56/60 u32 hot spot inside the image; 64.. the 64x64 image.
 //!
