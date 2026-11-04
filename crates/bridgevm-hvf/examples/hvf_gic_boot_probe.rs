@@ -24,6 +24,7 @@
 //!   BRIDGEVM_UART_RX_ON_SERIAL_MARKER=' ' BRIDGEVM_UART_RX_SERIAL_MARKER='BdsDxe: starting Boot0001' ...  # serial-marker-gated UART injection
 //!   BRIDGEVM_VIRTIO_CONSOLE=1 BRIDGEVM_VIRTIO_CONSOLE_TEST=1 BRIDGEVM_VIRTIO_CONSOLE_CMDS='whoami|ver' BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=180000 ... # drive bvagent.ps1 over virtio-console
 //!   BRIDGEVM_HDA=1 BRIDGEVM_HDA_COREAUDIO=1 ...       # play guest HDA PCM on Mac speakers
+//!   BRIDGEVM_HDA=1 BRIDGEVM_HDA_CAPTURE_TEST_WAV=/path/to/s16le-48k-stereo.wav ... # guest microphone plays the WAV in a loop
 //!
 //! Optional fw_cfg Linux direct boot:
 //!   BRIDGEVM_LINUX_KERNEL=/path/to/Image BRIDGEVM_LINUX_CMDLINE='console=ttyAMA0' ... # BRIDGEVM_LINUX_INITRD optional
@@ -130,6 +131,7 @@ probe_modules!(
     "hvf_gic_boot_probe/wake_coordinator.rs" => wake_coordinator,
     "hvf_gic_boot_probe/wfi_diagnostics.rs" => wfi_diagnostics,
     "hvf_gic_boot_probe/boot_media_setup.rs" => boot_media_setup,
+    "hvf_gic_boot_probe/hda_capture_setup.rs" => hda_capture_setup,
     "hvf_gic_boot_probe/ramfb_dirty_watch.rs" => ramfb_dirty_watch,
     "hvf_gic_boot_probe/final_report.rs" => final_report,
     "hvf_gic_boot_probe/hvf_setup.rs" => hvf_setup,

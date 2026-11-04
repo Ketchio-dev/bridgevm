@@ -17,3 +17,4 @@ mod stream_activity;
 mod stream_reset;
 mod stream_status;
 mod stream_stop;
+mod wav_source;
