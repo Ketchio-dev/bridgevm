@@ -65,10 +65,10 @@ impl VirtioGpu {
 
     pub(crate) fn response_edid_into(&self, hdr: Option<CtrlHdr>, out: &mut Vec<u8>) {
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_EDID, hdr);
-        out.extend_from_slice(&128u32.to_le_bytes());
-        out.extend_from_slice(&0u32.to_le_bytes());
         let edid = build_edid(self.requested_width, self.requested_height);
+        out.extend_from_slice(&(edid.len() as u32).to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
         out.extend_from_slice(&edid);
-        out.resize(out.len() + (1024 - 128), 0);
+        out.resize(out.len() + (1024 - edid.len()), 0);
     }
 }
