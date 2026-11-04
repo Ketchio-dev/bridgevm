@@ -33,13 +33,32 @@ final class WindowsHVFUnattendPolicyTests: XCTestCase {
         XCTAssertEqual(WindowsHVFUnattendPolicy.windowsTimeZone(for: "Mars/Olympus_Mons"), "UTC")
     }
 
-    func testGeneratedAnswerFileIsTheTemplateWithTheMacTimeZone() throws {
+    func testMacRegionMapsToItsWindowsLocaleAndUnknownRegionsToEnUS() {
+        for (mac, windows) in [
+            ("ko_KR", "ko-KR"), ("en_US", "en-US"),
+            ("en_AQ", "en-US"), ("ko", "en-US"), // a region Windows has no locale for, and none
+            ("en_KR", "ko-KR"), // the app's English language with the Mac's Korean region
+            ("fr_CA", "fr-CA"), ("en_CA", "en-CA"), ("zh-Hant_TW", "zh-TW"), ("sr-Latn_RS", "sr-Latn-RS")
+        ] {
+            XCTAssertEqual(WindowsHVFUnattendPolicy.windowsLocale(for: Locale(identifier: mac)), windows, mac)
+        }
+        let names = Set(WindowsLocales.byRegion.values).union(WindowsLocales.otherLanguages)
+        for (region, name) in WindowsLocales.byRegion {
+            XCTAssertTrue(name.hasSuffix("-" + region), name)
+        }
+        for name in WindowsLocales.otherLanguages {
+            XCTAssertNotNil(WindowsLocales.byRegion[String(name.suffix(2))], "\(name) is in a known region")
+        }
+        XCTAssertEqual(names.count, WindowsLocales.byRegion.count + WindowsLocales.otherLanguages.count)
+    }
+
+    func testGeneratedAnswerFileIsTheTemplateWithTheMacTimeZoneAndRegion() throws {
         let bundle = try makeTemp()
         defer { try? FileManager.default.removeItem(at: bundle) }
         let seoul = try XCTUnwrap(TimeZone(identifier: "Asia/Seoul"))
 
-        let staged = try XCTUnwrap(WindowsHVFUnattendPolicy.stageHostTimeZone(
-            in: bundle.path, timeZone: seoul, repoRoot: repoRoot))
+        let staged = try XCTUnwrap(WindowsHVFUnattendPolicy.stageHostRegion(
+            in: bundle.path, timeZone: seoul, locale: Locale(identifier: "ko_KR"), repoRoot: repoRoot))
 
         XCTAssertEqual(staged.path, bundle.path + "/metadata/windows-install-unattend.xml")
         XCTAssertEqual(staged.sha256, HvfWindowsInstallCacheIdentity.sha256File(staged.path))
@@ -51,13 +70,42 @@ final class WindowsHVFUnattendPolicyTests: XCTestCase {
         XCTAssertEqual(answer.components(
             separatedBy: "<TimeZone>Korea Standard Time</TimeZone>").count, 3)
         XCTAssertFalse(answer.contains("<TimeZone>UTC</TimeZone>"))
-        XCTAssertEqual(answer.replacingOccurrences(of: "Korea Standard Time", with: "UTC"),
-                       template)
+        XCTAssertTrue(answer.contains("<SystemLocale>ko-KR</SystemLocale>"))
+        XCTAssertTrue(answer.contains("<UserLocale>ko-KR</UserLocale>"))
+        // Typed text arrives composed, and the display language follows the image.
+        XCTAssertTrue(answer.contains("<InputLocale>en-US</InputLocale>"))
+        XCTAssertTrue(answer.contains("<UILanguage>en-US</UILanguage>"))
+        XCTAssertEqual(answer.replacingOccurrences(of: "Korea Standard Time", with: "UTC")
+                       .replacingOccurrences(of: "ko-KR", with: "en-US"), template)
         XCTAssertEqual(answer.components(separatedBy: "\r\n").count,
                        answer.components(separatedBy: "\n").count, "CRLF kept")
 
-        XCTAssertNil(WindowsHVFUnattendPolicy.stageHostTimeZone(
+        XCTAssertNil(WindowsHVFUnattendPolicy.stageHostRegion(
             in: bundle.path, timeZone: seoul, repoRoot: bundle))
+    }
+
+    func testTheRegionIsPartOfTheAnswerFileHashThatKeysTheInstallCache() throws {
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        var hashes: [String: String] = [:]
+        for mac in ["en_US", "ko_KR", "en_AQ"] {
+            let bundle = try makeTemp()
+            defer { try? FileManager.default.removeItem(at: bundle) }
+            let staged = try XCTUnwrap(WindowsHVFUnattendPolicy.stageHostRegion(
+                in: bundle.path, timeZone: utc, locale: Locale(identifier: mac), repoRoot: repoRoot))
+            hashes[mac] = staged.sha256
+            if mac != "ko_KR" {
+                XCTAssertEqual(try String(contentsOfFile: staged.path, encoding: .utf8), try String(
+                    contentsOf: repoRoot.appendingPathComponent("scripts/win-assets/unattend.xml"),
+                    encoding: .utf8), "\(mac) keeps the en-US template")
+            }
+        }
+        XCTAssertEqual(hashes["en_US"], hashes["en_AQ"])
+        XCTAssertNotEqual(hashes["en_US"], hashes["ko_KR"])
+        XCTAssertNotEqual(
+            HvfWindowsInstallCacheIdentity.key(
+                isoSHA256: "iso", unattendedIdentity: try XCTUnwrap(hashes["en_US"]), repoRoot: repoRoot),
+            HvfWindowsInstallCacheIdentity.key(
+                isoSHA256: "iso", unattendedIdentity: try XCTUnwrap(hashes["ko_KR"]), repoRoot: repoRoot))
     }
 
     func testCreatedInstallUsesTheGeneratedAnswerFile() throws {
@@ -79,8 +127,11 @@ final class WindowsHVFUnattendPolicyTests: XCTestCase {
         XCTAssertEqual(request.unattendedPath, answer)
         XCTAssertEqual(request.unattendedIdentity, HvfWindowsInstallCacheIdentity.sha256File(answer))
         let zone = WindowsHVFUnattendPolicy.windowsTimeZone(for: TimeZone.current.identifier)
-        XCTAssertTrue(try String(contentsOfFile: answer, encoding: .utf8)
-            .contains("<TimeZone>\(zone)</TimeZone>"))
+        let locale = WindowsHVFUnattendPolicy.windowsLocale(for: .current)
+        let text = try String(contentsOfFile: answer, encoding: .utf8)
+        XCTAssertTrue(text.contains("<TimeZone>\(zone)</TimeZone>"))
+        XCTAssertTrue(text.contains("<SystemLocale>\(locale)</SystemLocale>"))
+        XCTAssertTrue(text.contains("<UserLocale>\(locale)</UserLocale>"))
         let plan = HvfWindowsInstallPlan(
             repoRoot: repoRoot, libraryRoot: library,
             bundlePath: config.bundlePath, slug: config.slug, request: request)
