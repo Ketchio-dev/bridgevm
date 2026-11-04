@@ -302,6 +302,151 @@ function Close-PutStream {
     $script:BvPutSeq = 0
 }
 
+# Finder drops land on the logged-on user's Desktop through their own stream, apart from the
+# shared folder's PUT stream, so share sync and a drop can take turns on the wire.
+$script:BvDropStream = $null
+$script:BvDropPath = ''
+$script:BvDropTotal = [int64]0
+$script:BvDropWritten = [int64]0
+$script:BvDropSeq = [int64]0
+
+function Close-DropStream([bool]$Keep) {
+    if ($null -ne $script:BvDropStream) {
+        try { $script:BvDropStream.Close() } catch { }
+        $script:BvDropStream = $null
+        if (-not $Keep -and $script:BvDropPath) { try { [System.IO.File]::Delete($script:BvDropPath) } catch { } }
+    }
+    $script:BvDropPath = ''
+    $script:BvDropTotal = [int64]0
+    $script:BvDropWritten = [int64]0
+    $script:BvDropSeq = [int64]0
+}
+
+# A 1 MiB chunk arrives as about 340 vioser receive buffers (one per ReadFile call). Interpreted,
+# that loop is the transfer's ceiling, so the payload line has its own compiled reader. It is
+# compiled on the first DROPCAPS, not at agent start, so boot does not pay for it.
+$script:BvDropReader = $null
+$script:BvDropReaderSource = @'
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+namespace BridgeVM {
+    public static class BvDropReader {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool ReadFile(IntPtr h, byte[] buf, uint toRead, out uint read, IntPtr overlapped);
+        static readonly byte[] Scratch = new byte[65536];
+        public static long ReadTicks;
+        public static long DecodeTicks;
+
+        // Completes one base64 payload line of exactly `want` characters plus its newline. `prefix`
+        // is what the line reader already holds; `rest` returns whatever arrived after the newline.
+        public static byte[] ReadPayload(IntPtr h, string prefix, int want, int idleMs, out string rest) {
+            long start = Stopwatch.GetTimestamp();
+            byte[] text = new byte[want + 1];
+            int have = Math.Min(prefix.Length, want + 1);
+            for (int i = 0; i < have; i++) { text[i] = (byte)prefix[i]; }
+            StringBuilder extra = new StringBuilder();
+            if (prefix.Length > have) { extra.Append(prefix, have, prefix.Length - have); }
+            long idleSince = 0;
+            while (have < want + 1) {
+                uint read;
+                if (!ReadFile(h, Scratch, (uint)Scratch.Length, out read, IntPtr.Zero) || read == 0) {
+                    long now = Stopwatch.GetTimestamp();
+                    if (idleSince == 0) { idleSince = now; }
+                    long idle = now - idleSince;
+                    if (idle > idleMs * Stopwatch.Frequency / 1000) { throw new TimeoutException("drop-payload-timeout"); }
+                    // Spin for the first few ms: a 1 ms sleep is a 15.6 ms timer tick on Windows.
+                    if (idle < Stopwatch.Frequency / 200) { Thread.Sleep(0); } else { Thread.Sleep(1); }
+                    continue;
+                }
+                idleSince = 0;
+                int take = Math.Min((int)read, want + 1 - have);
+                Buffer.BlockCopy(Scratch, 0, text, have, take);
+                have += take;
+                if (take < (int)read) { extra.Append(Encoding.ASCII.GetString(Scratch, take, (int)read - take)); }
+            }
+            rest = extra.ToString();
+            if (text[want] != (byte)'\n') { throw new FormatException("drop-payload-frame"); }
+            long mid = Stopwatch.GetTimestamp();
+            byte[] data = Convert.FromBase64String(Encoding.ASCII.GetString(text, 0, want));
+            ReadTicks += mid - start;
+            DecodeTicks += Stopwatch.GetTimestamp() - mid;
+            return data;
+        }
+    }
+}
+'@
+
+function Test-DropReader {
+    if ($null -eq $script:BvDropReader) {
+        try {
+            Add-Type -TypeDefinition $script:BvDropReaderSource -ErrorAction Stop
+            $script:BvDropReader = $true
+        } catch {
+            $script:BvDropReader = $false
+            Log ('DROP reader unavailable, using Read-Line: ' + $_.Exception.Message)
+        }
+    }
+    return $script:BvDropReader
+}
+
+# Chunk replies skip Write-Bytes' per-write log line; a short write still goes through it.
+function Write-DropLine($handle, [string]$line) {
+    $data = [System.Text.Encoding]::ASCII.GetBytes($line + "`n")
+    $written = [uint32]0
+    $ok = $K::WriteFile($handle, $data, [uint32]$data.Length, [ref]$written, [IntPtr]::Zero)
+    if (-not $ok -or $written -lt $data.Length) {
+        $suffix = New-Object byte[] ($data.Length - [int]$written)
+        [System.Array]::Copy($data, [int]$written, $suffix, 0, $suffix.Length)
+        Write-Bytes $handle $suffix 'DROP'
+    }
+}
+
+# One path component the host already cleaned for Windows. Anything else is refused, not
+# repaired: no separators, invalid or reserved names, '.', '..', or trailing dots and spaces.
+function Test-DropName([string]$Name) {
+    if ([string]::IsNullOrEmpty($Name) -or $Name -eq '.' -or $Name -eq '..') { return $false }
+    if ($Name.IndexOfAny([char[]]'<>:"/\|?*') -ge 0 -or $Name -match '[\x00-\x1F]') { return $false }
+    if ($Name.EndsWith('.') -or $Name.EndsWith(' ')) { return $false }
+    $stem = $Name.Split('.')[0].TrimEnd(' ')
+    return -not ($stem -match '^(CON|PRN|AUX|NUL|COM[0-9\u00B9\u00B2\u00B3]|LPT[0-9\u00B9\u00B2\u00B3])$')
+}
+
+# The full path for a dropped item below the Desktop. Every parent must be a real folder, never a
+# reparse point; an existing name becomes "name (2).ext" ("name (2)" for a folder).
+function Get-DropRoot {
+    $dir = [Environment]::GetFolderPath('Desktop')
+    if ([string]::IsNullOrEmpty($dir) -or -not [System.IO.Directory]::Exists($dir)) { throw 'no-desktop' }
+    return $dir
+}
+
+function Resolve-DropTarget([string]$Root, [string]$Rel, [bool]$IsDir) {
+    $dir = $Root
+    $parts = $Rel.Split([char]92)
+    foreach ($part in $parts) { if (-not (Test-DropName $part)) { throw 'bad-name' } }
+    for ($i = 0; $i -lt $parts.Length - 1; $i++) {
+        $dir = [System.IO.Path]::Combine($dir, $parts[$i])
+        $attr = [System.IO.File]::GetAttributes($dir)
+        if (($attr -band [System.IO.FileAttributes]::Directory) -eq 0 -or ($attr -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'bad-parent' }
+    }
+    $leaf = $parts[$parts.Length - 1]
+    $stem = $leaf
+    $ext = ''
+    if (-not $IsDir) {
+        $stem = [System.IO.Path]::GetFileNameWithoutExtension($leaf)
+        $ext = [System.IO.Path]::GetExtension($leaf)
+    }
+    $target = [System.IO.Path]::Combine($dir, $leaf)
+    $n = 2
+    while ([System.IO.File]::Exists($target) -or [System.IO.Directory]::Exists($target)) {
+        $target = [System.IO.Path]::Combine($dir, ('{0} ({1}){2}' -f $stem, $n, $ext))
+        $n++
+    }
+    return $target
+}
+
 function Read-Line($handle) {
     # Full line, or $null after ~2s idle so the caller can poll port state.
     if ($script:BvLines.Count -gt 0) { return $script:BvLines.Dequeue() }
@@ -636,6 +781,95 @@ while ($true) {
                         Write-Line $h ('ERR PUTEND ' + $_.Exception.Message) 'ERR'
                     }
                 }
+                'DROPCAPS' { [void](Test-DropReader); Write-Line $h 'BVDROP_CAPS 1' 'CAPS' }
+                'DROPDIR' {
+                    # DROPDIR <b64(rel)> -> OK DROPDIR <b64(final name)>: a new folder below the Desktop.
+                    try {
+                        $target = Resolve-DropTarget (Get-DropRoot) ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg))) $true
+                        [void][System.IO.Directory]::CreateDirectory($target)
+                        Write-Line $h ('OK DROPDIR ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([System.IO.Path]::GetFileName($target)))) 'OK'
+                    } catch { Write-Line $h ('ERR DROPDIR ' + $_.Exception.Message) 'ERR' }
+                }
+                'DROPBEG' {
+                    # DROPBEG <b64(rel)> <size> -> OK DROPBEG <b64(final name)>. Always a new file, never
+                    # an existing one; DROPCHUNK/DROPEND fill it, and any failure deletes it.
+                    try {
+                        Close-DropStream $false
+                        $parts = $arg.Split(' ')
+                        $total = [int64]$parts[1]
+                        $target = Resolve-DropTarget (Get-DropRoot) ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))) $false
+                        $script:BvDropStream = [System.IO.File]::Open($target, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+                        $script:BvDropPath = $target
+                        $script:BvDropTotal = $total
+                        $script:BvDropStart = [System.Diagnostics.Stopwatch]::GetTimestamp()
+                        $script:BvDropWriteTicks = [int64]0
+                        if ($script:BvDropReader -eq $true) { [BridgeVM.BvDropReader]::ReadTicks = 0; [BridgeVM.BvDropReader]::DecodeTicks = 0 }
+                        Log ('DROP BEG ' + $target + ' size=' + $total)
+                        Write-Line $h ('OK DROPBEG ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([System.IO.Path]::GetFileName($target)))) 'OK'
+                    } catch {
+                        Close-DropStream $false
+                        Write-Line $h ('ERR DROPBEG ' + $_.Exception.Message) 'ERR'
+                    }
+                }
+                'DROPCHUNK' {
+                    # DROPCHUNK <seq> <chars>, then the payload as its own line of <chars> base64
+                    # characters -> OK DROPCHUNK <seq>. The payload is consumed before any check, so
+                    # a refused chunk still leaves the wire on a line boundary.
+                    try {
+                        $p = $arg.Split(' ')
+                        $dropSeq = [int64]$p[0]
+                        $want = [int]$p[1]
+                        if ($script:BvLines.Count -gt 0) {
+                            $data = [System.Convert]::FromBase64String($script:BvLines.Dequeue())
+                        } elseif (Test-DropReader) {
+                            $rest = ''
+                            $data = [BridgeVM.BvDropReader]::ReadPayload($h, $script:BvPending.ToString(), $want, 30000, [ref]$rest)
+                            $script:BvPending.Length = 0
+                            if ($rest.Contains("`n")) {
+                                $restParts = $rest.Split([char]10)
+                                for ($i = 0; $i -lt $restParts.Length - 1; $i++) { $script:BvLines.Enqueue($restParts[$i].TrimEnd([char]13)) }
+                                $rest = $restParts[$restParts.Length - 1]
+                            }
+                            [void]$script:BvPending.Append($rest)
+                        } else {
+                            $payload = $null
+                            for ($i = 0; $null -eq $payload -and $i -lt 15; $i++) { $payload = Read-Line $h }
+                            $data = [System.Convert]::FromBase64String([string]$payload)
+                        }
+                        if ($null -eq $script:BvDropStream) { throw 'no-open-drop' }
+                        if ($dropSeq -ne $script:BvDropSeq) { throw 'seq' }
+                        if ($script:BvDropWritten + $data.Length -gt $script:BvDropTotal) { throw 'too-long' }
+                        $t0 = [System.Diagnostics.Stopwatch]::GetTimestamp()
+                        $script:BvDropStream.Write($data, 0, $data.Length)
+                        $script:BvDropWriteTicks += [System.Diagnostics.Stopwatch]::GetTimestamp() - $t0
+                        $script:BvDropWritten += [int64]$data.Length
+                        $script:BvDropSeq++
+                        Write-DropLine $h ('OK DROPCHUNK ' + $dropSeq)
+                    } catch {
+                        Close-DropStream $false
+                        Write-DropLine $h ('ERR DROPCHUNK ' + $_.Exception.Message)
+                    }
+                }
+                'DROPEND' {
+                    # DROPEND <chunks> -> OK DROPEND <bytes> once every byte is written.
+                    try {
+                        if ($null -eq $script:BvDropStream) { throw 'no-open-drop' }
+                        if ([int64]$arg -ne $script:BvDropSeq) { throw 'seq' }
+                        if ($script:BvDropWritten -ne $script:BvDropTotal) { throw 'short' }
+                        $script:BvDropStream.Flush()
+                        $written = $script:BvDropWritten
+                        $tick = [double][System.Diagnostics.Stopwatch]::Frequency / 1000
+                        $readMs = 0; $decodeMs = 0
+                        if ($script:BvDropReader -eq $true) { $readMs = [BridgeVM.BvDropReader]::ReadTicks / $tick; $decodeMs = [BridgeVM.BvDropReader]::DecodeTicks / $tick }
+                        Log ('DROP END {0} bytes={1} chunks={2} ms={3:F0} read_ms={4:F0} decode_ms={5:F0} write_ms={6:F0}' -f $script:BvDropPath, $written, $script:BvDropSeq, (([System.Diagnostics.Stopwatch]::GetTimestamp() - $script:BvDropStart) / $tick), $readMs, $decodeMs, ($script:BvDropWriteTicks / $tick))
+                        Close-DropStream $true
+                        Write-Line $h ('OK DROPEND ' + $written) 'OK'
+                    } catch {
+                        Close-DropStream $false
+                        Write-Line $h ('ERR DROPEND ' + $_.Exception.Message) 'ERR'
+                    }
+                }
+                'DROPABORT' { Close-DropStream $false; Write-Line $h 'OK DROPABORT' 'OK' }
                 'DEL' {
                     # DEL <b64(path)> deletes files only. Directories are never
                     # removed recursively by the shared-folder protocol.

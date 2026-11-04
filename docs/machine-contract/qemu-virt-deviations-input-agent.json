@@ -10,6 +10,15 @@
       "guest_visible": true,
       "impact": "An older resident remains usable for ordinary ordered input; unsupported new chords are refused locally with existing refusal feedback. Older hosts ignore additive marker keywords they predate and retain v3. This is encoding negotiation, not evidence of foreground delivery, application consumption or reliable legacy clipboard sequencing.",
       "evidence": "docs/machine-contract/resident-input-keysets.md"
+    },
+    {
+      "id": "finder-file-drop",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU virt does not define BridgeVM's resident agent protocol or host file drops.",
+      "bridgevm_behavior": "Files and folders dropped from Finder onto the VM window are staged by the app and streamed by the resident agent service into the logged-on user's Desktop (DROPCAPS, DROPDIR, DROPBEG, DROPCHUNK, DROPEND, DROPABORT). The agent creates only new files and folders below the Desktop: every name must already be Windows-clean, no parent may be a reparse point, nothing is overwritten, and a name collision becomes 'name (2).ext'. An agent without these verbs answers DROPCAPS with OUT 255 and the drop is refused before any write.",
+      "guest_visible": true,
+      "impact": "Dropped files appear on the Windows Desktop. A VM with an older agent keeps working and the app says the agent needs updating; a half-written file is deleted when a drop fails mid-file, except after an agent restart.",
+      "evidence": "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/file_drop.rs"
     }
   ]
 }
