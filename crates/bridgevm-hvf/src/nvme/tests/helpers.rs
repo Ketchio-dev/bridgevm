@@ -77,6 +77,39 @@ impl GuestMemoryMut for FakeMem {
     }
 }
 
+/// Another view of a FakeMem's bytes, as each vCPU maps guest RAM itself:
+/// an unlocked transfer resolves its pointers in it while the FakeMem is
+/// borrowed elsewhere. Only `host_ptr` works.
+#[derive(Clone, Copy)]
+pub(super) struct RawView {
+    base: u64,
+    ptr: usize,
+    len: usize,
+}
+
+impl FakeMem {
+    pub(super) fn view(&self) -> RawView {
+        RawView {
+            base: self.base,
+            ptr: self.bytes.as_ptr() as usize,
+            len: self.bytes.len(),
+        }
+    }
+}
+
+impl GuestMemoryMut for RawView {
+    fn write_bytes(&mut self, _gpa: u64, _data: &[u8]) -> bool {
+        false
+    }
+    fn read_bytes(&self, _gpa: u64, _len: usize) -> Option<Vec<u8>> {
+        None
+    }
+    fn host_ptr(&self, gpa: u64, len: usize) -> Option<*mut u8> {
+        let start = usize::try_from(gpa.checked_sub(self.base)?).ok()?;
+        (start.checked_add(len)? <= self.len).then_some((self.ptr + start) as *mut u8)
+    }
+}
+
 /// Build a 64-byte submission-queue entry from its decoded fields.
 pub(super) fn encode_sqe(
     opcode: u8,

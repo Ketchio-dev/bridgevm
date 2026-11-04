@@ -27,6 +27,7 @@ mod queue_lifecycle;
 mod restore_prp;
 mod scratch_path;
 mod shutdown;
+mod unlocked_io;
 mod write_completion;
 mod write_completion_files;
 mod write_completion_support;

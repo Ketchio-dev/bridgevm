@@ -63,7 +63,7 @@ impl WriteFixture {
             panic!("raw file required");
         };
         // Keep write_back=true but use a read-only owned descriptor: pwrite fails.
-        raw.file = file;
+        raw.file = file.into();
     }
 
     pub fn write(&mut self, nsid: u32, fua: bool, prp: u64, lba: u32) -> u16 {
