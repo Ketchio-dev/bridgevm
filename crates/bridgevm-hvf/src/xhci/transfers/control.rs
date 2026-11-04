@@ -14,7 +14,8 @@ use super::completion::{find_control_completion, ControlEventRequest};
 use super::control_data::write_control_in_data;
 use super::control_setup::{control_setup_start, ControlSetupStart};
 use super::trb::{
-    read_transfer_trb, trace_transfer_trb, trb_transfer_length, trb_type, TransferTrb,
+    read_later_td_trb, read_transfer_trb, trace_transfer_trb, trb_transfer_length, trb_type,
+    TransferTrb,
 };
 
 const TRB_SIZE_BYTES: u64 = 16;
@@ -24,7 +25,6 @@ const TRB_DATA_STAGE_DIRECTION_IN: u32 = 1 << 16;
 /// IDT: the data stage's bytes (at most 8) are the TRB parameter itself.
 const TRB_IMMEDIATE_DATA: u32 = 1 << 6;
 const DATA_STAGE_OFFSET: u64 = TRB_SIZE_BYTES;
-const STATUS_STAGE_OFFSET: u64 = TRB_SIZE_BYTES * 2;
 
 impl XhciController {
     pub(super) fn process_ep0_control_transfer(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
@@ -123,13 +123,13 @@ impl XhciController {
             trace::ep0_reject_with_gpa("data_trb_overflow", transfer_ring);
             return false;
         };
-        let Some(data) = read_transfer_trb(mem, data_gpa) else {
+        let Some(data) = read_later_td_trb(mem, data_gpa) else {
             trace::ep0_reject_with_gpa("data_trb_read_failed", data_gpa);
             return false;
         };
         trace_transfer_trb("data", data);
-        let Some(completion_gpa) = transfer_ring.checked_add(STATUS_STAGE_OFFSET) else {
-            trace::ep0_reject_with_gpa("completion_trbs_overflow", transfer_ring);
+        let Some(completion_gpa) = data.gpa.checked_add(TRB_SIZE_BYTES) else {
+            trace::ep0_reject_with_gpa("completion_trbs_overflow", data.gpa);
             return false;
         };
         let Some(completion) = find_control_completion(mem, completion_gpa) else {
@@ -184,13 +184,13 @@ impl XhciController {
             trace::ep0_reject_with_gpa("data_trb_overflow", transfer_ring);
             return false;
         };
-        let Some(data) = read_transfer_trb(mem, data_gpa) else {
+        let Some(data) = read_later_td_trb(mem, data_gpa) else {
             trace::ep0_reject_with_gpa("data_trb_read_failed", data_gpa);
             return false;
         };
         trace_transfer_trb("data", data);
-        let Some(completion_gpa) = transfer_ring.checked_add(STATUS_STAGE_OFFSET) else {
-            trace::ep0_reject_with_gpa("completion_trbs_overflow", transfer_ring);
+        let Some(completion_gpa) = data.gpa.checked_add(TRB_SIZE_BYTES) else {
+            trace::ep0_reject_with_gpa("completion_trbs_overflow", data.gpa);
             return false;
         };
         let Some(completion) = find_control_completion(mem, completion_gpa) else {

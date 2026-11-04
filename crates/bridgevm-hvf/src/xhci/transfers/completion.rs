@@ -2,7 +2,8 @@ use crate::fwcfg::GuestMemoryMut;
 
 use super::super::{trace, XhciController};
 use super::trb::{
-    read_transfer_trb, trace_transfer_trb, trb_interrupter_target, trb_type, TransferTrb,
+    read_later_td_trb, read_td_trb, read_transfer_trb, trace_transfer_trb, trb_interrupter_target,
+    trb_type, TransferTrb,
 };
 
 const TRB_SIZE_BYTES: u64 = 16;
@@ -157,7 +158,7 @@ pub(super) fn find_control_completion(
     mem: &dyn GuestMemoryMut,
     first_gpa: u64,
 ) -> Option<ControlCompletion> {
-    let first = control_completion_start(mem, first_gpa)?;
+    let first = read_td_trb(mem, first_gpa)?;
     match trb_type(first.control) {
         TRB_TYPE_STATUS_STAGE => {
             trace_transfer_trb("status", first);
@@ -174,7 +175,7 @@ pub(super) fn find_control_completion(
                 trace::ep0_reject_with_gpa("completion_second_overflow", first.gpa);
                 return None;
             };
-            let second = read_transfer_trb(mem, second_gpa)?;
+            let second = read_later_td_trb(mem, second_gpa)?;
             trace_transfer_trb("status", second);
             match trb_type(second.control) {
                 TRB_TYPE_STATUS_STAGE => {
@@ -204,15 +205,6 @@ pub(super) fn find_control_completion(
     }
 }
 
-fn control_completion_start(mem: &dyn GuestMemoryMut, first_gpa: u64) -> Option<TransferTrb> {
-    let first = read_transfer_trb(mem, first_gpa)?;
-    if trb_type(first.control) == TRB_TYPE_LINK {
-        trace_transfer_trb("completion_link", first);
-        return read_transfer_trb(mem, first.parameter & LINK_TRB_POINTER_MASK);
-    }
-    Some(first)
-}
-
 fn find_trailing_event_data(
     mem: &dyn GuestMemoryMut,
     status_stage: TransferTrb,
@@ -224,7 +216,7 @@ fn find_trailing_event_data(
         trace::ep0_reject_with_gpa("status_chain_next_overflow", status_stage.gpa);
         return None;
     };
-    let trailing = read_transfer_trb(mem, trailing_gpa)?;
+    let trailing = read_later_td_trb(mem, trailing_gpa)?;
     if trb_type(trailing.control) != TRB_TYPE_EVENT_DATA {
         trace::ep0_reject_with_value("status_chain_not_event_data", trb_type(trailing.control));
         return None;
