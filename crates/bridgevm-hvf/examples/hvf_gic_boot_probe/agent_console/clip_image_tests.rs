@@ -74,6 +74,9 @@ struct Guest {
     announce: Option<String>,
     /// Bytes the next GET serves instead of the file.
     serve: Option<Vec<u8>>,
+    /// The image part CLIPX reports instead, as the agent describes an image
+    /// it does not write.
+    described: Option<String>,
 }
 
 impl Guest {
@@ -86,6 +89,7 @@ impl Guest {
             put: None,
             announce: None,
             serve: None,
+            described: None,
         }
     }
     fn b64_text(s: &str) -> String {
@@ -100,6 +104,15 @@ impl Guest {
             "CLIPX" if self.images => {
                 let guest_path = format!("{DIR}\\guest.png");
                 let descriptor = match &self.image {
+                    _ if self.described.is_some() => self.described.clone().unwrap(),
+                    // As bvagent.ps1: over the side limit it is never encoded or hashed.
+                    Some(bytes)
+                        if host_pasteboard::png_size(bytes)
+                            .is_some_and(|(w, h)| w.max(h) > CLIP_IMAGE_MAX_SIDE) =>
+                    {
+                        let (w, h) = host_pasteboard::png_size(bytes).unwrap();
+                        format!("{w} {h} 0 - -")
+                    }
                     Some(bytes) => {
                         self.files.insert(guest_path.clone(), bytes.clone());
                         let (w, h) = host_pasteboard::png_size(bytes).unwrap();
@@ -449,6 +462,65 @@ fn a_new_caption_reuses_the_image_already_synced() {
     rig.settle();
     assert!(rig.verbs().is_empty(), "no GET for the image the Mac pushed");
     assert_eq!(mac_held(&rig.mac), (Some("D".into()), Some(2)));
+}
+
+/// Each refused guest copy gets its line (the app's notice) once, also when
+/// the pair it leaves for the Mac looks unchanged.
+#[test]
+fn every_refused_guest_copy_is_reported_once() {
+    let over_bytes = format!("4000 3000 {} - -", CLIP_IMAGE_MAX_BYTES + 1);
+    let over_side = format!("{} 2 0 - -", CLIP_IMAGE_MAX_SIDE + 1);
+    // (case, text the guest held first, then the refused copy: its text and image part)
+    let cases: [(&str, Option<&str>, &str, String); 6] = [
+        ("over the byte limit, no text, empty baseline", None, "", over_bytes.clone()),
+        ("over the side limit, no text, empty baseline", None, "", over_side),
+        ("over the byte limit, unchanged text", Some("A"), "A", over_bytes.clone()),
+        ("no digest, empty baseline", None, "", "3 3 33 - -".into()),
+        ("the synced image at another path", None, "", String::new()),
+        ("over the byte limit while re-learning", None, "", over_bytes.clone()),
+    ];
+    let mut failures = Vec::new();
+    for (name, first, text, described) in cases {
+        let mut rig = Rig::new(true);
+        if let Some(first) = first {
+            rig.guest.text = first.into();
+        }
+        if described.is_empty() {
+            rig.guest.image = Some(pair_image(1));
+        }
+        rig.settle();
+        rig.verbs();
+        let writes = rig.mac.writes.len();
+        rig.guest.text = text.into();
+        if described.is_empty() {
+            rig.guest.announce = Some(format!("{DIR}\\other.png"));
+        } else {
+            rig.guest.described = Some(described);
+        }
+        if name.ends_with("re-learning") {
+            rig.h.last_synced.rebaseline = true;
+        }
+        for _ in 0..3 {
+            rig.settle();
+        }
+        let refusals = rig.h.last_synced.image_refusals;
+        let fetched = rig.verbs().iter().any(|verb| verb == "GET");
+        if refusals != 1 || fetched || rig.mac.writes.len() != writes {
+            failures.push(format!("{name}: {refusals} refusal lines, fetched={fetched}"));
+        }
+    }
+    // The same refused image copied again after another copy: a line each time.
+    let mut rig = Rig::new(true);
+    for described in [Some(over_bytes.clone()), None, Some(over_bytes)] {
+        rig.guest.text = if described.is_some() { String::new() } else { "B".into() };
+        rig.guest.described = described;
+        rig.settle();
+        rig.settle();
+    }
+    if rig.h.last_synced.image_refusals != 2 {
+        failures.push(format!("copied again: {} refusal lines", rig.h.last_synced.image_refusals));
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 #[test]

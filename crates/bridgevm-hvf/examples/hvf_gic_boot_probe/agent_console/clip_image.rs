@@ -297,15 +297,29 @@ impl AgentConsoleHarness {
     /// A CLIPX reply: the guest clipboard as one (text, image) pair. Whenever
     /// it differs from the pair last synced, the Mac gets exactly that pair:
     /// the text at once, the image from the cache when its digest matches or
-    /// else fetched and written with that text. A refused text or image
-    /// counts as none, and an empty clipboard never clears the Mac.
+    /// else fetched and written with that text. An empty clipboard never
+    /// clears the Mac.
     pub(super) fn handle_guest_clip(
         &mut self,
         b64: &str,
         image: Option<GuestImage>,
         now: Instant,
     ) {
+        // Refusals first: each refused copy gets its line (and the app its
+        // notice) before anything is learned or deduplicated, then counts as
+        // none. A re-polled refusal stays one line; another image starts over.
         let admitted = self.admit_guest_text(b64, now);
+        if image.as_ref().map(GuestImage::key) != self.last_synced.refused_image {
+            self.last_synced.refused_image = None;
+        }
+        let copied_image = image.is_some();
+        let image = image.filter(|image| match self.guest_image_refusal(image) {
+            Some(refusal) => {
+                self.refuse_guest_image(refusal, Some(image), now);
+                false
+            }
+            None => true,
+        });
         let text = admitted.as_deref().filter(|text| !text.is_empty()).map(normalize_clip);
         let digest = image.as_ref().and_then(|image| image.digest);
         if self.last_synced.rebaseline {
@@ -315,7 +329,7 @@ impl AgentConsoleHarness {
             self.last_synced.image = digest;
             return;
         }
-        if self.last_synced.holds(text.as_deref(), digest) || (text.is_none() && image.is_none()) {
+        if self.last_synced.holds(text.as_deref(), digest) || (text.is_none() && !copied_image) {
             return;
         }
         let fresh_text = self.last_synced.text != text;
@@ -323,17 +337,7 @@ impl AgentConsoleHarness {
         // Recorded now, so a refused fetch is not retried every poll.
         self.last_synced.text = text.clone();
         self.last_synced.image = digest;
-        let fetch = match image {
-            Some(image) => match self.guest_image_refusal(&image) {
-                Some(refusal) => {
-                    self.refuse_guest_image(refusal, Some(&image), now);
-                    None
-                }
-                None => image.digest.map(|digest| (digest, image.bytes)),
-            },
-            None => None,
-        };
-        let Some((digest, bytes)) = fetch else {
+        let (Some(image), Some(digest)) = (image, digest) else {
             // Text only: the guest's image is gone, or stays in Windows.
             if let Some(text) = text.filter(|_| fresh_text || had_image) {
                 self.publish_guest_text(text, now);
@@ -348,8 +352,10 @@ impl AgentConsoleHarness {
             self.publish_guest_text(text, now);
         }
         // Next on the wire, so no later CLIPX can replace guest.png first.
-        self.queue
-            .push_front(ServiceReq::ClipImagePull { digest, bytes });
+        self.queue.push_front(ServiceReq::ClipImagePull {
+            digest,
+            bytes: image.bytes,
+        });
     }
 
     /// Why a guest image is not fetched: over a limit, malformed, or not the
@@ -393,6 +399,7 @@ impl AgentConsoleHarness {
             }
             self.last_synced.refused_image = Some(image.key());
         }
+        self.last_synced.image_refusals += 1;
         println!("{}", guest_image_refusal_line(refusal, image, self.t_ms(now)));
     }
 

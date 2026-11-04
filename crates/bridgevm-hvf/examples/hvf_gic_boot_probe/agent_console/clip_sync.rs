@@ -26,8 +26,10 @@ pub(super) struct ClipBaseline {
     /// The PNG last synced either way, reused while it is `image`: a caption
     /// change needs no second transfer.
     pub(super) png: Option<host_pasteboard::PngImage>,
-    /// The last refused guest image, so a re-polled one logs once.
+    /// The refused guest image still on the guest, so a re-polled one logs once.
     pub(super) refused_image: Option<GuestImageKey>,
+    /// Guest image refusals logged so far, one per refused copy.
+    pub(super) image_refusals: u64,
 }
 
 impl ClipBaseline {
