@@ -76,7 +76,8 @@ final class HvfRuntimeKeyboardDraftFixture {
         XCTAssertNil(try bytes(input))
     }
 
-    func negotiateOrderedInput(_ session: HvfEngineSession) throws {
+    /// `modifierChords` adds the agent's MODIFIER_CHORDS marker (generic chords on the ordered route).
+    func negotiateOrderedInput(_ session: HvfEngineSession, modifierChords: Bool = false) throws {
         try connect(session)
         session.beginOwnedInputBoot()
         session.poll()
@@ -90,6 +91,7 @@ final class HvfRuntimeKeyboardDraftFixture {
         }
         try appendLog("BVAGENT CMD \(command) exit=0\n"
             + "BVINPUT_CAPS \(words[1]) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536\n"
+            + (modifierChords ? "BVINPUT_CHORDS \(words[1]) MODIFIER_CHORDS\n" : "")
             + "BVAGENT END \(command)\n")
         session.poll()
         session.poll()
@@ -111,7 +113,8 @@ final class HvfRuntimeKeyboardDraftFixture {
         return try Data(contentsOf: url)
     }
 
-    private func appendLog(_ text: String) throws {
+    /// Appends synthetic guest output (receipts, markers) to the session's run.log.
+    func appendLog(_ text: String) throws {
         let log = evidence.appendingPathComponent("run.log")
         if !FileManager.default.fileExists(atPath: log.path) { try Data().write(to: log) }
         let handle = try FileHandle(forWritingTo: log)

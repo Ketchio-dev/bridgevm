@@ -23,7 +23,7 @@ fn live_keyboard_uses_command_now_instead_of_stale_cached_time() {
     let command_now = base + Duration::from_millis(900);
     let mut input = LiveInputController { source: Some(InputControlFile::from_path(path.clone())), offset: 0,
         lines: Default::default(), pending: VecDeque::new(), accepted_pointer_moves: 0,
-        next_poll: command_now - POLL_INTERVAL };
+        next_poll: command_now - POLL_INTERVAL, power_scanned_to: 0 };
     input.tick(&mut platform, &mut mem, command_now, false);
     assert_eq!(platform.xhci_setup_input_report_stats().emitted_key_reports, 1);
     platform.set_host_now(base + Duration::from_secs(1));

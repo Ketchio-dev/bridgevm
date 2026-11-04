@@ -8,7 +8,8 @@ pub(super) fn usage() -> ExitCode {
          snapshot_pair_cli lease <disk> <vars>\n  \
          snapshot_pair_cli lease-pending-delete <disk> <vars>\n  \
          snapshot_pair_cli digest <disk> <vars>\n  \
-         snapshot_pair_cli size <disk> <vars>"
+         snapshot_pair_cli size <disk> <vars>\n  \
+         snapshot_pair_cli grow <disk> <vars> <bytes>"
     );
     ExitCode::from(2)
 }

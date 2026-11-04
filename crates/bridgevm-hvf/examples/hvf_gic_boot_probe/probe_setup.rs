@@ -20,12 +20,13 @@ pub(crate) unsafe fn prepare_platform(
         if !platform_cfg.devices.hda_present {
             eprintln!("BRIDGEVM_HDA_COREAUDIO ignored because BRIDGEVM_HDA is not enabled");
         } else {
+            // A Mac output that cannot start turns sound off; the VM still runs.
             #[cfg(target_os = "macos")]
-            {
-                let sink = hda_coreaudio::CoreAudioPcmSink::new()
-                    .unwrap_or_else(|error| panic!("initialize HDA CoreAudio output: {error}"));
-                sink.install(&mut platform);
-                println!("HDA CoreAudio output: s16le 48000 Hz stereo, enabled");
+            match hda_coreaudio::start_output(hda_coreaudio::CoreAudioPcmSink::new, |sink| {
+                sink.install(&mut platform)
+            }) {
+                Ok(()) => println!("{}", hda_coreaudio::ENABLED),
+                Err(line) => eprintln!("{line}"),
             }
             #[cfg(not(target_os = "macos"))]
             panic!("BRIDGEVM_HDA_COREAUDIO is only supported on macOS");

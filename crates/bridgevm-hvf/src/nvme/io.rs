@@ -117,6 +117,8 @@ impl NvmeController {
         // Probe before writing anything: an all-or-nothing host_ptr view either
         // resolves the first span or the whole memory lacks direct pointers.
         mem.host_ptr(first.0, first.1)?;
+        #[cfg(test)]
+        self.io_gate.pass();
         let mut disk_off = start;
         for &(gpa, seg_len) in segments {
             let Some(ptr) = mem.host_ptr(gpa, seg_len) else {

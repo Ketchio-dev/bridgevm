@@ -1,9 +1,11 @@
 import Foundation
 
 extension HvfEngineSession {
-    func requestOwnedStop(target: HvfOwnedRuntimeIdentity, operationID: UUID) -> HvfOwnedStopAdmission {
+    /// The CLI's stop is bounded (`.cancelRunner`); the app's Stop and quit wait for Windows (`.offerForceStop`).
+    func requestOwnedStop(target: HvfOwnedRuntimeIdentity, operationID: UUID,
+                          afterGrace: HvfOwnedStopGraceEnd = .cancelRunner) -> HvfOwnedStopAdmission {
         guard let ownedController else { return .refused(.supervisionUnavailable) }
-        let result = ownedController.requestStop(target: target, operationID: operationID)
+        let result = ownedController.requestStop(target: target, operationID: operationID, afterGrace: afterGrace)
         if case .refused = result { return result }
         cancelOrderedInputTarget()
         ownedRuntimeChanged(token: ownedController.identity.token)
@@ -31,5 +33,7 @@ extension HvfEngineSession {
             target = controller.forceStopTarget
         } else { target = nil }
         if forceStopTarget != target { forceStopTarget = target }
+        let wait = target == nil ? nil : ownedController?.guestStopWait
+        if stopWait != wait { stopWait = wait }
     }
 }

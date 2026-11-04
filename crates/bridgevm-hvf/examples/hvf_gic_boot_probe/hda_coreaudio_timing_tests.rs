@@ -43,6 +43,44 @@ fn injected_callback_times_give_the_exact_interval_histogram_and_late_count() {
     assert_eq!(CallbackTiming::starting_at(base).snapshot().record(), IDLE);
 }
 
+/// The record of a queue that starts, pauses, starts again and is replaced, as
+/// hda-diagnostics-report-test.py has the reader accept it.
+#[test]
+fn a_paused_queue_is_not_a_late_callback_and_its_record_reconciles() {
+    let base = Instant::now();
+    let at = |ms: u64| base + Duration::from_millis(ms);
+    let timing = CallbackTiming::starting_at(base);
+    // Created and started (OutputQueue::open marks the start).
+    timing.note_restart();
+    for ms in [0, 10, 20] {
+        timing.note_callback(at(ms), false);
+    }
+    // The supervisor pauses the queue, which hands its three buffers back
+    // together about 43 ms after its last callback (macOS 27.0.1).
+    timing.note_pause();
+    for contended in [false, true, false] {
+        timing.note_callback(at(63), contended);
+    }
+    // Paused for 30 s, started again, then replaced by a new queue.
+    timing.note_restart();
+    timing.note_callback(at(30_000), false);
+    timing.note_callback(at(30_010), false);
+    timing.note_restart();
+    timing.note_callback(at(30_036), false);
+    timing.note_callback(at(30_046), false);
+    let snapshot = timing.snapshot();
+    assert_eq!(
+        snapshot.record(),
+        "hda CoreAudio timing: callbacks=4 interval_le_10ms=3 interval_le_15ms=0 \
+         interval_le_20ms=0 interval_le_30ms=0 interval_le_50ms=0 interval_gt_50ms=0 \
+         max_interval_ms=10 late_callbacks=0 trylock_misses=0 ring_samples=0 ring_min_ms=0 \
+         ring_max_ms=0 ring_final_ms=0"
+    );
+    // What scripts/live-gates/hda_diagnostics.py reconciles.
+    let measured: u64 = snapshot.intervals.iter().sum();
+    assert_eq!(measured, snapshot.callbacks - 1);
+}
+
 #[test]
 fn every_busy_consumer_counts_even_where_continuity_does_not() {
     let shared = Shared::new(4 * FULL, 0);

@@ -12,6 +12,14 @@ impl HdaPcmSink for CoreAudioPcmSink {
             &self.shared,
             RING_CAPACITY_BYTES,
         );
+        // A paused queue starts again for this PCM (hda_coreaudio_output.rs).
+        if !samples.is_empty() {
+            self.shared.output.note_pcm();
+        }
+        // The supervisor's lines, printed here so none follows the report footer.
+        for line in self.shared.output.take_notices() {
+            eprintln!("{line}");
+        }
     }
 
     fn stream_stopped(&mut self) {

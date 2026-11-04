@@ -20,6 +20,11 @@ struct HvfForceStopControl<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: spacing) {
             content
+            if let wait = session.stopWait {
+                Text(wait.message).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier(identifier + ".stop-wait")
+            }
             if session.forceStopTarget != nil {
                 Button("강제 중단", role: .destructive) {
                     guard let target = session.forceStopTarget else { return }
@@ -33,7 +38,7 @@ struct HvfForceStopControl<Content: View>: View {
             if state != .stopping { resultMessage = nil }
         }
         .onChange(of: session.ownedProcessIdentity) { _, _ in resultMessage = nil }
-        .confirmationDialog("정상 종료를 기다리지 않고 중단할까요?", isPresented: $confirming,
+        .confirmationDialog("Windows 종료를 기다리지 않고 강제 중단할까요?", isPresented: $confirming,
                             titleVisibility: .visible, presenting: capturedTarget) { target in
             Button("강제 중단", role: .destructive) {
                 resultMessage = session.requestForceStop(target).message
@@ -42,7 +47,7 @@ struct HvfForceStopControl<Content: View>: View {
             .accessibilityIdentifier(identifier + ".confirm-force-stop")
             Button("취소", role: .cancel) { capturedTarget = nil }
         } message: { _ in
-            Text("게스트에서 저장하지 않은 작업이 손실될 수 있습니다.")
+            Text("Windows가 앱을 저장하지 않고 닫은 뒤 바로 꺼집니다. 저장하지 않은 작업은 사라질 수 있습니다.")
         }
     }
 }

@@ -4,6 +4,7 @@ use super::*;
 use crate::fwcfg::GuestMemoryMut;
 use crate::machine;
 use crate::nvme::NvmeCommandTrace;
+use crate::nvme::NvmeIo;
 use crate::virtio_blk::VirtioBlockRequestTrace;
 use crate::virtio_blk::VirtioMmioBlock;
 use crate::virtio_blk::VirtioMmioBlockResult;
@@ -245,8 +246,31 @@ impl VirtPlatform {
         self.nvme.set_async_flush(enabled);
     }
 
-    /// Post the completions of flushes the NVMe worker finished, with their
-    /// MSI-X. Cheap when none finished; the pre-run drain calls it.
+    /// NVMe READ and WRITE run without the platform lock (live VMM only).
+    pub fn set_nvme_unlocked_io(&mut self, enabled: bool) {
+        self.nvme.set_unlocked_io(enabled);
+    }
+
+    /// The NVMe READs and WRITEs the last doorbell queued. The vCPU takes them
+    /// before it unlocks the platform and runs them on its `NvmeIoWorker`. If
+    /// they finish within `NVME_IO_WAIT` it locks again and that hold's drain
+    /// (`poll_nvme_flushes`) posts their completions; otherwise the drain that
+    /// `FLUSH_DONE_HOOK` asks for does.
+    ///
+    /// # Safety
+    ///
+    /// [`NvmeController::take_io`](crate::nvme::NvmeController::take_io)'s:
+    /// run the transfers only in a guest-memory view whose `host_ptr` pointers
+    /// stay valid until each transfer returns (a worker's, until the worker is
+    /// dropped). Dropping them unrun is always sound.
+    pub unsafe fn take_nvme_io(&mut self) -> Option<NvmeIo> {
+        // SAFETY: the caller takes on `take_io`'s contract, which is this one's.
+        unsafe { self.nvme.take_io() }
+    }
+
+    /// Post the completions of flushes the NVMe worker finished and of READs
+    /// and WRITEs run without the lock, with their MSI-X. Cheap when none
+    /// finished; every drain calls it.
     pub fn poll_nvme_flushes(&mut self, mem: &mut dyn GuestMemoryMut) {
         if !self.nvme.flushes_ready() {
             return;

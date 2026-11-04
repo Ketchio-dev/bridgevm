@@ -62,8 +62,13 @@ pub struct NvmeController {
     /// FLUSH on a worker thread (flush_worker.rs); off until the VMM opts in.
     pub(crate) async_flush: bool,
     pub(crate) flush_worker: Option<FlushWorker>,
-    /// Completion slots held per CQ for flushes in flight.
+    /// Completion slots held per CQ for flushes, READs and WRITEs in flight.
     pub(crate) flush_reserved: Vec<u16>,
+    /// READ and WRITE without the platform lock (unlocked_io.rs); off until
+    /// the VMM opts in.
+    pub(crate) unlocked_io: bool,
+    #[cfg(test)]
+    pub(crate) io_gate: std::sync::Arc<super::unlocked_io::test_gate::IoGate>,
 }
 
 impl NvmeController {
@@ -119,38 +124,48 @@ impl NvmeController {
             async_flush: false,
             flush_worker: None,
             flush_reserved: Vec::new(),
+            unlocked_io: false,
+            #[cfg(test)]
+            io_gate: Default::default(),
         }
     }
 
     /// Replace the backing disk image, padding to a full LBA. This resets queue
     /// and controller register state, mirroring a cold-plugged different device.
     pub fn load_disk_image(&mut self, disk: Vec<u8>) {
-        self.discard_flushes();
-        let (direct_dma_enabled, async_flush) = (self.direct_dma_enabled, self.async_flush);
+        let keep = self.discard_keeping_config();
         *self = Self::with_disk_image(disk);
-        self.direct_dma_enabled = direct_dma_enabled;
-        self.async_flush = async_flush;
+        self.restore_config(keep);
     }
 
     /// Replace the backing disk with a host raw file and reset controller state.
     pub fn load_raw_file(&mut self, path: impl AsRef<Path>, write_back: bool) -> io::Result<()> {
-        self.discard_flushes();
-        let (direct_dma_enabled, async_flush) = (self.direct_dma_enabled, self.async_flush);
+        let keep = self.discard_keeping_config();
         *self = Self::with_raw_file(path, write_back)?;
-        self.direct_dma_enabled = direct_dma_enabled;
-        self.async_flush = async_flush;
+        self.restore_config(keep);
         Ok(())
     }
 
     pub fn reset_registers_keep_disks(&mut self) {
-        self.discard_flushes();
-        let (direct_dma_enabled, async_flush) = (self.direct_dma_enabled, self.async_flush);
+        let keep = self.discard_keeping_config();
         let disk = std::mem::replace(&mut self.disk, DiskBackend::memory(Vec::new()));
         let disk2 = self.disk2.take();
         *self = Self::with_disk_backend(disk);
         self.disk2 = disk2;
-        self.direct_dma_enabled = direct_dma_enabled;
+        self.restore_config(keep);
+    }
+
+    /// Wait for the jobs in flight and drop their completions (the queues
+    /// go), keeping the data-path settings for the replacement state.
+    fn discard_keeping_config(&mut self) -> (bool, bool, bool) {
+        self.discard_flushes();
+        (self.direct_dma_enabled, self.async_flush, self.unlocked_io)
+    }
+
+    fn restore_config(&mut self, (direct_dma, async_flush, unlocked_io): (bool, bool, bool)) {
+        self.direct_dma_enabled = direct_dma;
         self.async_flush = async_flush;
+        self.unlocked_io = unlocked_io;
     }
 
     /// Select the NVMe data path without changing queue or media state. This is

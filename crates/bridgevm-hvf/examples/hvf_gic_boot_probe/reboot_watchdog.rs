@@ -8,9 +8,12 @@ mod boot_progress;
 mod boot_progress_kill;
 #[path = "reboot_watchdog/host_diagnostic_stop.rs"]
 mod host_diagnostic_stop;
+#[path = "reboot_watchdog/host_term_stop.rs"]
+mod host_term_stop;
 pub(crate) use boot_progress::*;
 pub(crate) use boot_progress_kill::*;
 pub(crate) use host_diagnostic_stop::*;
+pub(crate) use host_term_stop::*;
 
 impl RebootPlan {
     pub(crate) fn from_env() -> Self {

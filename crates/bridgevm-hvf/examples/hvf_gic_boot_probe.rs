@@ -97,7 +97,6 @@ probe_modules!(
     "hvf_gic_boot_probe/ramfb_sample_loop.rs" => ramfb_sample_loop,
     "hvf_gic_boot_probe/live_display_export.rs" => live_display_export,
     "hvf_gic_boot_probe/live_input.rs" => live_input,
-    "hvf_gic_boot_probe/hda_coreaudio.rs" => hda_coreaudio,
     "hvf_gic_boot_probe/vblank_wake.rs" => vblank_wake,
     "hvf_gic_boot_probe/kd_serial_bridge.rs" => kd_serial_bridge,
     "hvf_gic_boot_probe/serial_input.rs" => serial_input,
@@ -139,6 +138,10 @@ probe_modules!(
     "hvf_gic_boot_probe/probe_runtime.rs" => probe_runtime,
     "hvf_gic_boot_probe/probe_setup.rs" => probe_setup,
 );
+// CoreAudio exists only on macOS; probe_setup.rs installs the sink there.
+#[cfg(target_os = "macos")]
+#[path = "hvf_gic_boot_probe/hda_coreaudio.rs"]
+mod hda_coreaudio;
 use agent_console::AgentConsoleHarness;
 use arm64_trace::print_translated_instruction_words;
 use live_display_export::LiveDisplayExporter;

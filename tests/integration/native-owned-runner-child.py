@@ -52,7 +52,8 @@ def main(config):
                 break
             if role == "helper":
                 commands = Path(config["control"]).read_text()
-                if "shutdown.exe /p /f\n" in commands:
+                # The app's Stop, or an explicit Force Stop: the fixture guest turns off on either.
+                if "shutdown.exe /s /t 0\n" in commands or "shutdown.exe /p /f\n" in commands:
                     (root / "guest-command-observed").write_text("owned fixture only\n")
                     break
             ready, _, _ = select.select(listeners, [], [], 0.01)

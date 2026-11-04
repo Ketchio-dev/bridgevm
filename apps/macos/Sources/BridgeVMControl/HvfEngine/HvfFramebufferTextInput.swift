@@ -32,14 +32,15 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
               guestInputAvailable, guestModifierChords else { return super.performKeyEquivalent(with: event) }
         cancelModifierTap()
         _ = synchronizeTextInputTarget()
-        cancelTextComposition()
+        commitTextComposition()
         return sendGuestKeyEvent(event) || super.performKeyEquivalent(with: event)
     }
 
     override func flagsChanged(with event: NSEvent) {
         if guestInputAvailable, guestModifierChords,
            let action = modifierTap.changed(keyCode: event.keyCode, flags: event.modifierFlags) {
-            cancelTextComposition()
+            _ = synchronizeTextInputTarget()
+            commitTextComposition()
             sendGuestModifierTap(action)
         } else if !guestInputAvailable || !guestModifierChords {
             cancelModifierTap()
@@ -57,7 +58,7 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
         // takes generic chords: then Option is Alt for every key.
         let chordFlags: NSEvent.ModifierFlags = guestModifierChords ? [.command, .control, .option] : [.command, .control]
         if !flags.intersection(chordFlags).isEmpty {
-            cancelTextComposition()
+            commitTextComposition()
             if !sendGuestKeyEvent(event) { super.keyDown(with: event) }
             return
         }
@@ -122,6 +123,16 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
         refreshPreedit()
         inputContext?.discardMarkedText()
         discardingComposition = false
+    }
+
+    /// Commits the syllable being composed, as a Mac does before a shortcut, so it reaches the guest
+    /// before whatever follows. The input method is reset under `discardingComposition`, so it cannot
+    /// insert the text a second time. `admits` can refuse the text, which is then discarded.
+    func commitTextComposition(admits: (String) -> Bool = { _ in true }) {
+        let text = composition.text
+        cancelTextComposition()
+        guard !text.isEmpty, admits(text) else { return }
+        if !sendGuestText(text) { textInputRefused() }
     }
 
     @discardableResult

@@ -36,6 +36,8 @@ use system_reset_failure::system_reset_failure;
 #[path = "probe_media_lease.rs"]
 mod media_lease;
 pub(crate) fn run() -> ExitCode {
+    // Before any media is leased: from here TERM ends the run through persistence.
+    install_host_term_handler();
     let mut fatal_vcpu_run_error = false;
     let mut fatal_reset_error = false;
     let mut exit_for_recreate = false;
@@ -88,6 +90,8 @@ pub(crate) fn run() -> ExitCode {
             ptr: ram,
             len: ram_size,
         };
+        // vCPU0's NVMe transfer thread; dropped, and joined, before the RAM backing.
+        let mut nvme_io_worker = vcpu_nvme_io_worker(0, ram as usize, ram_size);
         reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
         // Read in the run loop: waking the vCPU is not the same as stopping it.
         let boot_progress_kill = boot_progress_kill_for(vcpu);
@@ -98,6 +102,7 @@ pub(crate) fn run() -> ExitCode {
             setup_boot_supervision(watchdog_enabled, boot_progress_kill);
         let diagnostic_stop_fired =
             start_host_diagnostic_stop_watcher(vcpu, Arc::clone(&boot_progress));
+        start_host_term_watcher(vcpu, Arc::clone(&boot_progress));
         let mut reboot_count = 0u64;
         let mut resets_dumped = 0u64;
         reset_vcpu_for_boot(vcpu);
@@ -421,6 +426,7 @@ pub(crate) fn run() -> ExitCode {
                         &watchdog_fired,
                         stall_kill_fired.as_ref(),
                         diagnostic_stop_fired.as_ref(),
+                        &HOST_TERM_REQUESTED,
                     ) {
                         hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                         stop_reason = reason.into();
@@ -491,7 +497,7 @@ pub(crate) fn run() -> ExitCode {
                                 ipa - machine::FW_CFG.base
                             );
                             }
-                            let (outcome, pending, device, pcie_target, pcie_context) = {
+                            let (outcome, pending, device, pcie_target, pcie_context, nvme_io) = {
                                 let mut platform_guard = lock_platform(
                                     &platform,
                                     smp_trace.as_deref(),
@@ -553,7 +559,15 @@ pub(crate) fn run() -> ExitCode {
                                     DrainContext::data_abort(exits, last_pc),
                                     post_drain,
                                 );
-                                (outcome, pending, device, pcie_target, pcie_context)
+                                // SAFETY (inside `run`'s unsafe block): the
+                                // transfers run only on nvme_io_worker below
+                                // or, if it cannot run them, in guest_ram. Both
+                                // views map ram_backing, which outlives the
+                                // worker (declared after it) and is unmapped
+                                // only after every secondary vCPU thread, and
+                                // so its worker, is joined (shutdown_and_join).
+                                let nvme_io = platform.take_nvme_io();
+                                (outcome, pending, device, pcie_target, pcie_context, nvme_io)
                             };
                             recent_pcie_mmio.record_with_context(PcieMmioEventInput {
                                 device,
@@ -582,6 +596,35 @@ pub(crate) fn run() -> ExitCode {
                                 stop_reason =
                                     error.stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);
                                 break;
+                            }
+                            // NVMe reads and writes run on vCPU0's worker,
+                            // unlocked. Finished within NVME_IO_WAIT, this
+                            // exit's second hold posts them; otherwise the
+                            // drain FLUSH_DONE_HOOK asks for does.
+                            if nvme_io.is_some_and(|io| {
+                                nvme_io_worker.run(io, &guest_ram, bridgevm_hvf::nvme::NVME_IO_WAIT)
+                            }) {
+                                let pending = {
+                                    let mut platform_guard = lock_platform(
+                                        &platform,
+                                        smp_trace.as_deref(),
+                                        0,
+                                        HoldSite::Mmio(ipa),
+                                    );
+                                    drain_stats.prepare_pending_delivery(
+                                        &mut platform_guard,
+                                        &mut guest_ram,
+                                        drain_trace,
+                                        DrainContext::data_abort(exits, last_pc),
+                                    )
+                                };
+                                if let Err(error) = drain_stats
+                                    .finish_prepared_interrupt_delivery(pending, drain_trace)
+                                {
+                                    stop_reason = error
+                                        .stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);
+                                    break;
+                                }
                             }
                             if trace_this_fwcfg {
                                 println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");

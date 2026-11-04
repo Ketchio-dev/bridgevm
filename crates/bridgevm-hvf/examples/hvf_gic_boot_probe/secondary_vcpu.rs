@@ -1,6 +1,7 @@
 //! Secondary vCPU creation, PSCI handling, and run-loop execution.
 
 use crate::*;
+use bridgevm_hvf::nvme::NvmeIoWorker;
 
 pub(crate) fn secondary_vcpu_thread(
     control: Arc<VcpuControl>,
@@ -28,6 +29,9 @@ pub(crate) fn secondary_vcpu_thread(
         ptr: ram_base as *mut u8,
         len: ram_size,
     };
+    // This vCPU's NVMe transfer thread; joined when this thread ends, which
+    // the primary waits for before the RAM backing goes.
+    let mut nvme_io_worker = vcpu_nvme_io_worker(control.index, ram_base, ram_size);
     let mut drain_stats = RunLoopDrainStats::new(false);
     let mut exits = 0u64;
 
@@ -85,6 +89,7 @@ pub(crate) fn secondary_vcpu_thread(
                     vcpu,
                     exit,
                     guest_ram: &mut guest_ram,
+                    nvme_io_worker: &mut nvme_io_worker,
                     platform: &platform,
                     drain_stats: &mut drain_stats,
                     drain_trace,
@@ -109,6 +114,7 @@ pub(crate) fn secondary_vcpu_thread(
                     vcpu,
                     exit,
                     guest_ram: &mut guest_ram,
+                    nvme_io_worker: &mut nvme_io_worker,
                     platform: &platform,
                     drain_stats: &mut drain_stats,
                     drain_trace,
@@ -222,6 +228,7 @@ pub(crate) struct SecondaryRunLoopContext<'a> {
     pub(crate) vcpu: HvVcpuT,
     pub(crate) exit: *mut HvVcpuExit,
     pub(crate) guest_ram: &'a mut MappedRam,
+    pub(crate) nvme_io_worker: &'a mut NvmeIoWorker,
     pub(crate) platform: &'a Arc<Mutex<VirtPlatform>>,
     pub(crate) drain_stats: &'a mut RunLoopDrainStats,
     pub(crate) drain_trace: DrainTrace,
@@ -241,6 +248,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
         vcpu,
         exit,
         guest_ram,
+        nvme_io_worker,
         platform,
         drain_stats,
         drain_trace,
@@ -382,7 +390,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                 ) {
                     continue;
                 }
-                let (outcome, pending) = {
+                let (outcome, pending, nvme_io) = {
                     let mut platform_guard =
                         lock_platform(platform, smp_trace, control.index, HoldSite::Mmio(ipa));
                     platform_guard.set_host_now(std::time::Instant::now());
@@ -396,11 +404,40 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                         DrainContext::data_abort(*exits, pc),
                         post_drain,
                     );
-                    (outcome, pending)
+                    // SAFETY: the transfers run only on nvme_io_worker below or,
+                    // if it cannot run them, in guest_ram. Both views map the
+                    // guest RAM backing, which the primary unmaps only after it
+                    // has joined this thread (shutdown_and_join, or the reset
+                    // join), and so dropped and joined this vCPU's worker.
+                    let nvme_io = unsafe { platform_guard.take_nvme_io() };
+                    (outcome, pending, nvme_io)
                 };
                 if let Err(error) = drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace) {
                     error.stop_secondary(|| control.record_run_error(primary_vcpu));
                     return true;
+                }
+                // NVMe reads and writes run on this vCPU's worker, unlocked.
+                // Finished within NVME_IO_WAIT, this exit's second hold posts
+                // them; otherwise the drain FLUSH_DONE_HOOK asks for does.
+                if nvme_io.is_some_and(|io| {
+                    nvme_io_worker.run(io, &*guest_ram, bridgevm_hvf::nvme::NVME_IO_WAIT)
+                }) {
+                    let pending = {
+                        let mut platform_guard =
+                            lock_platform(platform, smp_trace, control.index, HoldSite::Mmio(ipa));
+                        drain_stats.prepare_pending_delivery(
+                            &mut platform_guard,
+                            guest_ram,
+                            drain_trace,
+                            DrainContext::data_abort(*exits, pc),
+                        )
+                    };
+                    if let Err(error) =
+                        drain_stats.finish_prepared_interrupt_delivery(pending, drain_trace)
+                    {
+                        error.stop_secondary(|| control.record_run_error(primary_vcpu));
+                        return true;
+                    }
                 }
                 pre_run_drain_gate.mark_secondary_pending();
                 match outcome {

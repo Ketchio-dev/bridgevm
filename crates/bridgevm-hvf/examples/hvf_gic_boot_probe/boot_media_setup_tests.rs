@@ -38,3 +38,13 @@ fn a_chosen_mode_is_switched_to_even_when_the_vars_already_ask_for_it() {
     // The default never replaces a preference, nor switches without adding one.
     assert_eq!(guest_resolution(None, &at_1024, true), (None, None));
 }
+
+#[test]
+fn nvme_reads_and_writes_run_without_the_platform_lock_unless_opted_out() {
+    assert!(nvme_unlocked_io(None, false), "on by default");
+    assert!(nvme_unlocked_io(Some("1"), false));
+    assert!(nvme_unlocked_io(Some(""), false));
+    assert!(!nvme_unlocked_io(Some("0"), false), "=0 opts out");
+    assert!(!nvme_unlocked_io(None, true), "checkpoints keep I/O inline");
+    assert!(!nvme_unlocked_io(Some("1"), true));
+}
