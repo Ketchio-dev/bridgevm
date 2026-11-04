@@ -1,5 +1,3 @@
-use std::sync::OnceLock;
-
 use crate::fwcfg::GuestMemoryMut;
 
 use super::super::trace;
@@ -42,20 +40,6 @@ pub(super) fn read_td_trb(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<Transfer
     }
     trace_transfer_trb("link", trb);
     read_transfer_trb(mem, trb.parameter & LINK_TRB_POINTER_MASK)
-}
-
-/// A TD's TRB past its first: like `read_td_trb`, unless the trial baseline
-/// `BRIDGEVM_XHCI_TD_LINKS=0` asks for the old walk, which followed a Link TRB
-/// only in front of a control TD's first completion TRB.
-pub(super) fn read_later_td_trb(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<TransferTrb> {
-    static LINKS: OnceLock<bool> = OnceLock::new();
-    let links = *LINKS
-        .get_or_init(|| !matches!(std::env::var("BRIDGEVM_XHCI_TD_LINKS").as_deref(), Ok("0")));
-    if links {
-        read_td_trb(mem, gpa)
-    } else {
-        read_transfer_trb(mem, gpa)
-    }
 }
 
 pub(super) fn trb_type(control: u32) -> u32 {

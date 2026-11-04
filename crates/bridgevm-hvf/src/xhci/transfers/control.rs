@@ -14,8 +14,7 @@ use super::completion::{find_control_completion, ControlEventRequest};
 use super::control_data::write_control_in_data;
 use super::control_setup::{control_setup_start, ControlSetupStart};
 use super::trb::{
-    read_later_td_trb, read_transfer_trb, trace_transfer_trb, trb_transfer_length, trb_type,
-    TransferTrb,
+    read_td_trb, read_transfer_trb, trace_transfer_trb, trb_transfer_length, trb_type, TransferTrb,
 };
 
 const TRB_SIZE_BYTES: u64 = 16;
@@ -123,7 +122,7 @@ impl XhciController {
             trace::ep0_reject_with_gpa("data_trb_overflow", transfer_ring);
             return false;
         };
-        let Some(data) = read_later_td_trb(mem, data_gpa) else {
+        let Some(data) = read_td_trb(mem, data_gpa) else {
             trace::ep0_reject_with_gpa("data_trb_read_failed", data_gpa);
             return false;
         };
@@ -184,7 +183,7 @@ impl XhciController {
             trace::ep0_reject_with_gpa("data_trb_overflow", transfer_ring);
             return false;
         };
-        let Some(data) = read_later_td_trb(mem, data_gpa) else {
+        let Some(data) = read_td_trb(mem, data_gpa) else {
             trace::ep0_reject_with_gpa("data_trb_read_failed", data_gpa);
             return false;
         };

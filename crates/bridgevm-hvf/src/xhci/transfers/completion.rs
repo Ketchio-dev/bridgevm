@@ -2,8 +2,8 @@ use crate::fwcfg::GuestMemoryMut;
 
 use super::super::{trace, XhciController};
 use super::trb::{
-    read_later_td_trb, read_td_trb, read_transfer_trb, trace_transfer_trb, trb_interrupter_target,
-    trb_type, TransferTrb,
+    read_td_trb, read_transfer_trb, trace_transfer_trb, trb_interrupter_target, trb_type,
+    TransferTrb,
 };
 
 const TRB_SIZE_BYTES: u64 = 16;
@@ -175,7 +175,7 @@ pub(super) fn find_control_completion(
                 trace::ep0_reject_with_gpa("completion_second_overflow", first.gpa);
                 return None;
             };
-            let second = read_later_td_trb(mem, second_gpa)?;
+            let second = read_td_trb(mem, second_gpa)?;
             trace_transfer_trb("status", second);
             match trb_type(second.control) {
                 TRB_TYPE_STATUS_STAGE => {
@@ -216,7 +216,7 @@ fn find_trailing_event_data(
         trace::ep0_reject_with_gpa("status_chain_next_overflow", status_stage.gpa);
         return None;
     };
-    let trailing = read_later_td_trb(mem, trailing_gpa)?;
+    let trailing = read_td_trb(mem, trailing_gpa)?;
     if trb_type(trailing.control) != TRB_TYPE_EVENT_DATA {
         trace::ep0_reject_with_value("status_chain_not_event_data", trb_type(trailing.control));
         return None;
