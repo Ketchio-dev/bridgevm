@@ -46,15 +46,22 @@ fn injected_callback_times_give_the_exact_interval_histogram_and_late_count() {
 #[test]
 fn a_paused_queue_is_not_a_late_callback() {
     let base = Instant::now();
+    let at = |ms: u64| base + Duration::from_millis(ms);
     let timing = CallbackTiming::starting_at(base);
-    timing.note_callback(base, false);
-    timing.note_callback(base + Duration::from_millis(10), false);
+    timing.note_callback(at(0), false);
+    timing.note_callback(at(10), false);
+    // The supervisor pauses the queue, which hands its three buffers back
+    // together about 43 ms after its last callback (macOS 27.0.1).
+    timing.note_pause();
+    for _ in 0..3 {
+        timing.note_callback(at(53), false);
+    }
     // Paused for 30 s, then started again by the output supervisor.
     timing.note_restart();
-    timing.note_callback(base + Duration::from_secs(30), false);
-    timing.note_callback(base + Duration::from_millis(30_010), false);
+    timing.note_callback(at(30_000), false);
+    timing.note_callback(at(30_010), false);
     let snapshot = timing.snapshot();
-    assert_eq!((snapshot.callbacks, snapshot.intervals[0]), (4, 2));
+    assert_eq!((snapshot.callbacks, snapshot.intervals[0]), (7, 2));
     assert_eq!((snapshot.late_callbacks, snapshot.max_interval_ms), (0, 10));
 }
 

@@ -131,8 +131,9 @@ impl OutputQueue {
         unsafe { AudioQueueStart(self.queue, ptr::null()) }
     }
 
-    /// Keeps the enqueued buffers; `start` resumes them.
+    /// Keeps the enqueued buffers; `play` resumes them.
     fn pause(&self) -> i32 {
+        self.shared.continuity.note_pause();
         unsafe { AudioQueuePause(self.queue) }
     }
 

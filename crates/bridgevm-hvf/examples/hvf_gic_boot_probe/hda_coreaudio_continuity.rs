@@ -145,6 +145,12 @@ impl ContinuityCounters {
         !self.streaming.load(Relaxed)
     }
 
+    /// The queue pauses; the timing record measures no interval until it
+    /// starts again. Output supervisor only.
+    pub(super) fn note_pause(&self) {
+        self.timing.note_pause();
+    }
+
     /// The queue starts again after a pause; the timing record measures no
     /// interval across it. Output supervisor only.
     pub(super) fn note_restart(&self) {
