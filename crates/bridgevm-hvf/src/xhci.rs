@@ -257,6 +257,8 @@ mod hid_semantic_stats_tests;
 #[cfg(test)]
 mod hid_unsupported_semantic_stats_tests;
 #[cfg(test)]
+mod interrupt_link_tests;
+#[cfg(test)]
 mod interrupter_msix_autoclear_tests;
 #[cfg(test)]
 mod msix_tests;
