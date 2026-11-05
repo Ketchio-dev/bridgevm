@@ -40,6 +40,9 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
                 .saturating_add(self.pending_socket_errors);
             self.pending_socket_errors = 0;
         }
+        stats.tcp_noflow_drops = stats
+            .tcp_noflow_drops
+            .saturating_add(std::mem::take(&mut self.pending_tcp_noflow_drops));
         // Notice a resolver change without waiting for a guest query: a name
         // Windows cached as failed sends none until its cache is flushed.
         let now = self.now_ms();
@@ -101,6 +104,7 @@ pub(crate) struct PendingTcpReset {
     pub(crate) key: TcpFlowKey,
     pub(crate) seq: u32,
     pub(crate) ack: u32,
+    pub(crate) error: HostError,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

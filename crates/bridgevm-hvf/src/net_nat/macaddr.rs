@@ -407,6 +407,7 @@ pub struct HostSocketOutboundIpv4Handler {
     pub(crate) tcp_read_scratch: [u8; TCP_MSS],
     pub(crate) icmp_recv_scratch: [u8; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
     pub(crate) pending_socket_errors: u64,
+    pub(crate) pending_tcp_noflow_drops: u64,
     pub(crate) dns: DnsUpstream,
     pub(crate) epoch: Instant,
     pub(crate) last_idle_sweep_ms: u64,
@@ -461,6 +462,7 @@ impl HostSocketOutboundIpv4Handler {
             tcp_read_scratch: [0; TCP_MSS],
             icmp_recv_scratch: [0; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
             pending_socket_errors: 0,
+            pending_tcp_noflow_drops: 0,
             dns,
             epoch: crate::vm_clock::active_now(),
             last_idle_sweep_ms: 0,
@@ -593,12 +595,13 @@ impl HostSocketOutboundIpv4Handler {
             let stream = match nonblocking_tcp_connect(StdIpv4Addr::from(packet.dst), tcp.dst_port)
             {
                 Ok(stream) => stream,
-                Err(_) => {
+                Err(e) => {
                     if self.pending_tcp_resets.len() < MAX_PENDING_REPLY_FRAMES {
                         self.pending_tcp_resets.push_back(PendingTcpReset {
                             key,
                             seq: our_seq,
                             ack: tcp.seq.wrapping_add(1),
+                            error: HostError::from(&e),
                         });
                     }
                     return;
@@ -614,6 +617,7 @@ impl HostSocketOutboundIpv4Handler {
             return;
         }
         let Some(flow) = self.tcp_flows.get_mut(&key) else {
+            self.pending_tcp_noflow_drops = self.pending_tcp_noflow_drops.saturating_add(1);
             return;
         };
         flow.last_activity = now;
@@ -711,6 +715,13 @@ impl HostSocketOutboundIpv4Handler {
                 &[],
             );
             stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
+            note_tcp_reset(
+                stats,
+                TcpResetReason::Connect,
+                &reset.key,
+                None,
+                reset.error,
+            );
         }
         let now = self.now_ms();
         // Capacity, not length: a drained deque keeps its allocation.
@@ -734,31 +745,42 @@ impl HostSocketOutboundIpv4Handler {
                 // handlers.
                 let mut active = false;
                 if flow.state == TcpProxyState::Connecting {
-                    match tcp_connect_error(&flow.stream) {
+                    let failed = match tcp_connect_error(&flow.stream) {
                         Ok(Some(0)) => {
                             active = true;
                             flow.state = TcpProxyState::Established;
                             flow.queue_syn_ack(key, guest_mac, reply_queue);
                             stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
+                            None
                         }
-                        Ok(Some(_)) | Err(_) => {
-                            queue_tcp_reply(
-                                reply_queue,
-                                guest_mac,
-                                key,
-                                flow.our_seq,
-                                flow.guest_next,
-                                TCP_FLAG_RST | TCP_FLAG_ACK,
-                                &[],
-                            );
-                            stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
-                            stats.socket_errors = stats.socket_errors.saturating_add(1);
-                            remove_scratch.push(*key);
-                            continue;
-                        }
+                        Ok(Some(errno)) => Some(HostError::os(errno)),
+                        Err(e) => Some(HostError::from(&e)),
                         Ok(None) => {
                             stats.tcp_connect_again = stats.tcp_connect_again.saturating_add(1);
+                            None
                         }
+                    };
+                    if let Some(error) = failed {
+                        queue_tcp_reply(
+                            reply_queue,
+                            guest_mac,
+                            key,
+                            flow.our_seq,
+                            flow.guest_next,
+                            TCP_FLAG_RST | TCP_FLAG_ACK,
+                            &[],
+                        );
+                        stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
+                        stats.socket_errors = stats.socket_errors.saturating_add(1);
+                        note_tcp_reset(
+                            stats,
+                            TcpResetReason::Connect,
+                            key,
+                            Some(&flow.stream),
+                            error,
+                        );
+                        remove_scratch.push(*key);
+                        continue;
                     }
                 }
                 if flow.state != TcpProxyState::Connecting {
@@ -793,7 +815,7 @@ impl HostSocketOutboundIpv4Handler {
                     ) {
                         HostRead::Idle => {}
                         HostRead::Sent => active = true,
-                        HostRead::Failed => {
+                        HostRead::Failed(error) => {
                             queue_tcp_reply(
                                 reply_queue,
                                 guest_mac,
@@ -805,6 +827,13 @@ impl HostSocketOutboundIpv4Handler {
                             );
                             stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
                             stats.socket_errors = stats.socket_errors.saturating_add(1);
+                            note_tcp_reset(
+                                stats,
+                                TcpResetReason::HostRead,
+                                key,
+                                Some(&flow.stream),
+                                error,
+                            );
                             remove_scratch.push(*key);
                         }
                     }
