@@ -32,8 +32,8 @@ struct HvfSystemMicrophonePermission: HvfMicrophonePermission {
 
 /// Why a VM whose microphone setting is on still records silence. The VM starts either way.
 enum HvfMicrophoneNotice {
-    static let denied = "macOS가 마이크 사용을 허용하지 않아 Windows 마이크는 무음을 녹음합니다. 시스템 설정 > 개인정보 보호 및 보안 > 마이크에서 BridgeVM Control을 허용한 뒤 VM을 다시 시작하세요."
-    static let undetermined = "마이크 권한이 없어 Windows 마이크는 무음을 녹음합니다. VM을 중지한 뒤 '마이크 사용'을 껐다가 다시 켜면 macOS가 권한을 묻습니다."
+    static let denied = "macOS가 마이크 사용을 허용하지 않아 이 VM의 Windows에는 마이크가 없습니다. 시스템 설정 > 개인정보 보호 및 보안 > 마이크에서 BridgeVM Control을 허용한 뒤 VM을 다시 시작하세요."
+    static let undetermined = "마이크 권한이 없어 이 VM의 Windows에는 마이크가 없습니다. VM을 중지한 뒤 '마이크 사용'을 껐다가 다시 켜면 macOS가 권한을 묻습니다."
 
     static func text(_ status: HvfMicrophoneStatus) -> String? {
         switch status {
@@ -44,8 +44,9 @@ enum HvfMicrophoneNotice {
     }
 }
 
-/// The guest microphone. Off (the default), Windows records silence; on, it records the
-/// Mac's default input while Windows captures, once macOS allows it.
+/// The guest microphone. Off (the default), Windows has no microphone; on, it gets one that
+/// records the Mac's default input while Windows captures, once macOS allows it. The launch
+/// reads the setting, so a change applies at the next start.
 struct HvfMicrophoneToggle: View {
     @ObservedObject var session: HvfEngineSession
     @Binding var isOn: Bool
@@ -58,7 +59,7 @@ struct HvfMicrophoneToggle: View {
         Toggle("마이크 사용", isOn: Binding(get: { isOn }, set: update))
             .accessibilityIdentifier("bridgevm.runtime.microphone")
             .disabled(isDisabled)
-            .help("켜면 Windows가 녹음하는 동안 Mac의 기본 입력 장치를 Windows 마이크로 씁니다. 끄면(기본) Windows 마이크는 무음을 녹음합니다."
+            .help("켜면 Windows에 마이크가 생기고, Windows가 녹음하는 동안 Mac의 기본 입력 장치를 씁니다. 끄면(기본) Windows에는 마이크가 없습니다. 바꾼 설정은 다음 VM 시작부터 적용됩니다."
                 + (session.persistsLibraryPreferences ? " VM이 중지된 동안 변경하면 이 VM의 모든 시작에 저장됩니다." : ""))
             .alert("마이크", isPresented: Binding(
                 get: { message != nil }, set: { if !$0 { message = nil } }

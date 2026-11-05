@@ -35,7 +35,7 @@ struct HvfEngineConfig: Equatable {
     /// the ordered default (F_BARRIERFSYNC, durable within about a second).
     var durableDiskWrites: Bool = false
     /// The user's microphone setting. It reaches the VM only with macOS's permission
-    /// (HvfMicrophoneSetting.swift); otherwise the guest microphone records silence.
+    /// (HvfMicrophoneSetting.swift); otherwise the guest has no microphone.
     var microphoneEnabled: Bool = false
     /// The user's Windows display resolution ("WxH"); nil lets the VMM keep the
     /// firmware's resolution or add its 1280x800 default.
