@@ -41,7 +41,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_wire import AgentWire  # noqa: E402
 from guest_bench_commands import (  # noqa: E402
-    HIGHER_IS_BETTER, OVERLAP_GUARD, SUITE, audio_loop, command_line, cursor_logger, desktop_mode, display_animation,
+    GUEST_DNS_BLOCK, GUEST_NET_BYTES, HIGHER_IS_BETTER, OVERLAP_GUARD, SUITE, audio_loop, command_line, cursor_logger, desktop_mode, display_animation,
     net_download, parse_bvbench,
     stall_under_flush, stall_idle)
 
@@ -482,15 +482,16 @@ def guard_pids(engine: Engine):
     return None if match is None else {int(p) for p in match.group(1).split(",") if p}
 
 
-class GuardLost(Exception):
-    """The overlap guard got no answer. Its late reply may still be in the agent stream, where the next command
-    would take it as its own, so the boot is invalid and sends no more guest commands before its shutdown."""
+class NoAnswer(Exception):
+    """A harness command (the overlap guard, the DNS block, a byte count) got no answer. Its late reply may still be
+    in the agent stream, where the next command would take it as its own, so the boot is invalid and sends no more
+    guest commands before its shutdown."""
 
 
-def guard_lost(record: dict, window: str) -> GuardLost:
+def guard_lost(record: dict, window: str) -> NoAnswer:
     record["errors"].append(f"overlap guard before {window}: no answer")
     record["invalid"] = f"the overlap guard gave no answer before {window}"
-    return GuardLost(window)
+    return NoAnswer(window)
 
 
 def overlap_check(engine: Engine, record: dict, baseline, window: str) -> None:
@@ -503,12 +504,53 @@ def overlap_check(engine: Engine, record: dict, baseline, window: str) -> None:
         record.setdefault("invalid", f"a bench process was still running when {window} opened")
 
 
+def harness_command(engine: Engine, record: dict, script: str, timeout_s: float, what: str) -> str:
+    """The output of a harness command; no answer makes the boot invalid and raises NoAnswer."""
+    try:
+        return engine.run(command_line(script), time.monotonic() + timeout_s)[1]
+    except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+        record["errors"].append(f"{what}: no answer: {type(error).__name__}: {error}"[:300])
+        record.setdefault("invalid", f"the {what} gave no answer")
+        raise NoAnswer(what) from error
+
+
+def dns_block(engine: Engine, record: dict) -> None:
+    """--guest-dns-block: no DNS for the guest (see GUEST_DNS_BLOCK). An answer that still lists another server marks
+    the boot invalid. The setting stays on the disk clone, so the boots after the first start blocked."""
+    text = harness_command(engine, record, GUEST_DNS_BLOCK, 120, "guest DNS block")
+    record["guest_dns"] = text.strip()[-600:]
+    line = next((row for row in text.splitlines() if row.startswith("BVDNS adapters=")), None)
+    servers = {s for listed in re.findall(r"\d+/\d+=(\S*)", line or "") for s in listed.split(",") if s}
+    if line is None or servers - {"127.0.0.1", "::1"}:
+        record["errors"].append(f"guest DNS block did not apply: {record['guest_dns'][:300]}")
+        record.setdefault("invalid", "the guest DNS block did not apply")
+
+
+def guest_net_bytes(engine: Engine, record: dict, when: str) -> None:
+    """--guest-dns-block: the guest adapters' byte counters, so traffic beyond the bench's own shows on both engines."""
+    text = harness_command(engine, record, GUEST_NET_BYTES, 60, f"guest net bytes {when}")
+    match = re.search(r"BVNET rx=(\d+) tx=(\d+)", text)
+    if match is None:
+        record["errors"].append(f"guest net bytes {when}: no answer: {text.strip()[:200]}")
+    else:
+        record.setdefault("guest_net_bytes", {})[when] = {"rx": int(match.group(1)), "tx": int(match.group(2))}
+
+
+def nat_stats(log: bytes) -> dict | None:
+    """The BridgeVM probe's last `virtio-net NAT stats:` line (printed at exit) as key/value strings."""
+    lines = re.findall(rb"virtio-net NAT stats: ([^\n]*)", log)
+    return dict(re.findall(r"(\w+)=(\S+)", lines[-1].decode("utf-8", "replace"))) if lines else None
+
+
 def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
     record = {"boot": int(boot_dir.name.split("-")[1]), "loadavg_start": os.getloadavg(), "bench": {}, "errors": []}
     try:
         engine.start(boot_dir)
         record.update(engine.wait_ready(time.monotonic() + args.ready_timeout))
         try:
+            if args.guest_dns_block:
+                dns_block(engine, record)
+                guest_net_bytes(engine, record, "ready")
             baseline = guard_pids(engine) if args.overlap_guard else None
             if args.overlap_guard and baseline is None:
                 raise guard_lost(record, "the settle window")
@@ -581,6 +623,8 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
             suite = SUITE + ([("net-download", net_download(args.blob_url, hashlib.sha256(_Blob.payload).hexdigest()))]
                              if args.net else [])
             only = None if args.only is None else set(args.only.split(","))
+            if args.guest_dns_block:
+                guest_net_bytes(engine, record, "before")
             for name, script in ([] if args.skip_suite else [t for t in suite if only is None or t[0] in only]):
                 if baseline is not None:
                     overlap_check(engine, record, baseline, name)
@@ -595,6 +639,8 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                     record["errors"].append(f"{name}: {error}")
                     break
                 record.setdefault("bench_wall_s", {})[name] = round(time.monotonic() - started, 2)
+            if args.guest_dns_block:
+                guest_net_bytes(engine, record, "after")
             if args.hw_cursor and record["boot"] == 1:  # applies from the next Windows start: boot 2 on
                 try:
                     _, text = engine.run(hw_cursor_command(), time.monotonic() + 120)
@@ -604,7 +650,7 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                         record["errors"].append(f"hw-cursor: {text.strip()[:300]}")
                 except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
                     record["errors"].append(f"hw-cursor: {type(error).__name__}: {error}")
-        except GuardLost:
+        except NoAnswer:
             pass  # invalid: no more guest commands, straight to the shutdown
         shutdown_boot(engine, record)
     except BaseException as error:
@@ -631,10 +677,13 @@ def shutdown_boot(engine: Engine, record: dict) -> None:
     else:
         record["shutdown_ms"] = round((time.monotonic() - stop_started) * 1000)
     record["clean_exit"] = engine.stop(time.monotonic() + SHUTDOWN_TIMEOUT_S)
-    if isinstance(engine, BridgeVM) and engine.log.exists():  # the probe's end-of-run cursor counts
-        counts = re.findall(rb"virtio-gpu cursor updates=(\d+) moves=(\d+) hides=(\d+)", engine.log.read_bytes())
+    if isinstance(engine, BridgeVM) and engine.log.exists():  # the probe's end-of-run counts
+        log = engine.log.read_bytes()
+        counts = re.findall(rb"virtio-gpu cursor updates=(\d+) moves=(\d+) hides=(\d+)", log)
         if counts:
             record["virtio_gpu_cursor"] = dict(zip(("updates", "moves", "hides"), map(int, counts[-1])))
+        if nat_stats(log):
+            record["nat_stats"] = nat_stats(log)
 
 
 def other_vmms(text) -> str:
@@ -763,6 +812,9 @@ def main() -> None:
     r.add_argument("--overlap-guard", action="store_true",
                    help="mark a boot invalid if a guest process started after READY is still running when the idle"
                         " window or a suite test opens")
+    r.add_argument("--guest-dns-block", action="store_true",
+                   help="right after READY point the guest's DNS at its own loopback so Windows cannot reach its update"
+                        " servers (the benches use IP addresses); record the guest's adapter bytes around the suite")
     r.add_argument("--only", help="comma-separated suite tests to run (e.g. mem-first-touch,net-download)")
     r.add_argument("--boot-timer-ms", type=int, default=60000, help="BridgeVM framebuffer sample period (diagnostics)")
     r.add_argument("--no-xhci", action="store_true", help="BridgeVM without the USB controller (diagnostics)")
