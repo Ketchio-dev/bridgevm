@@ -47,7 +47,7 @@ impl HdaController {
             return;
         }
         let base = self.dp_base & !0x7f;
-        let entry = base.wrapping_add(PLAYBACK_POSITION_ENTRY);
+        let entry = base.wrapping_add(self.playback_position_entry());
         let _ = mem.write_bytes(entry, &self.stream.lpib.to_le_bytes());
     }
 }

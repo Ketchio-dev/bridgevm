@@ -14,6 +14,8 @@ mod diagnostics;
 mod file_pcm_sink;
 #[path = "interrupt_sources.rs"]
 mod interrupt_sources;
+#[path = "layout.rs"]
+mod layout;
 #[path = "pcm_sink.rs"]
 mod pcm_sink;
 #[path = "pcm_source.rs"]
@@ -107,6 +109,8 @@ pub const PLAYBACK_POSITION_ENTRY: u64 = 8;
 
 /// One input stream (ISS 1), one output stream (OSS 1), 64-bit addressing.
 pub(crate) const GCAP_64OK_ONE_INPUT_ONE_OUTPUT: u16 = 0x1101;
+/// Without the microphone: main's controller, one output stream at SD0.
+pub(crate) const GCAP_64OK_ONE_OUTPUT: u16 = 0x1001;
 pub(crate) const GCTL_CRST: u32 = 1;
 pub(crate) const INTCTL_GIE: u32 = 1 << 31;
 pub(crate) const INTCTL_CIE: u32 = 1 << 30;
@@ -148,6 +152,9 @@ pub(crate) const CODEC_MIC: u8 = 5;
 pub(crate) const CODEC_VENDOR_ID: u32 = 0x1af4_0022;
 pub(crate) const CODEC_IMPLEMENTATION_ID: u32 = CODEC_VENDOR_ID;
 pub(crate) const CODEC_REVISION_ID: u32 = 0x0010_0101;
+/// Without the microphone the function group has main's nodes 2 DAC and 3 speaker.
+pub(crate) const CODEC_AFG_CHILD_NODE_COUNT_NO_MIC: u32 =
+    ((CODEC_DAC as u32) << 16) | (CODEC_SPEAKER - CODEC_DAC + 1) as u32;
 pub(crate) const CODEC_AFG_CHILD_NODE_COUNT: u32 =
     ((CODEC_DAC as u32) << 16) | (CODEC_MIC - CODEC_DAC + 1) as u32;
 pub(crate) const CODEC_AFG_CAPABILITIES: u32 = 0x0000_0808;
@@ -249,6 +256,12 @@ pub struct HdaController {
     pub(crate) capture_byte_time_remainder: u64,
     pub(crate) capture_scratch: Vec<u8>,
     pub(crate) pcm_source: Option<Box<dyn HdaPcmSource>>,
+    /// The launch-time microphone setting. Off, the guest sees main's device
+    /// register for register and verb for verb: GCAP 0x1001, playback as SD0 at
+    /// 0x80 (LPIB alias 0x2084, interrupt bit 0, position entry 0) and a codec
+    /// with nodes 2 and 3 only. On, the capture stream is SD0 and playback SD1.
+    /// It survives controller and platform resets.
+    pub(crate) microphone: bool,
     pub(crate) codec: CodecState,
     pub(crate) last_poll: Option<Instant>,
     pub(crate) byte_time_remainder: u64,
@@ -315,6 +328,7 @@ impl HdaController {
             capture_byte_time_remainder: 0,
             capture_scratch: Vec::new(),
             pcm_source: None,
+            microphone: true,
             codec: CodecState::new(),
             last_poll: None,
             byte_time_remainder: 0,
@@ -369,7 +383,15 @@ impl HdaController {
         } else {
             0
         };
-        let rising = sources & !self.interrupt_asserted;
+        // Without the microphone, main's latch: one message per rise of the
+        // aggregate level.
+        let rising = if self.microphone {
+            sources & !self.interrupt_asserted
+        } else if self.interrupt_asserted == 0 {
+            sources
+        } else {
+            0
+        };
         if rising != 0 {
             self.interrupt_pending = true;
             self.interrupt_pending_beyond_capture |= rising & !INTCTL_CAPTURE_STREAM != 0;
@@ -394,10 +416,15 @@ impl HdaController {
             return 0;
         }
         let running = self.stream.ctl & SDCTL_RUN != 0;
-        self.diagnostics.note_register_read(offset, size, running);
+        if let Some(internal) = self.layout_offset(offset) {
+            self.diagnostics.note_register_read(internal, size, running);
+        }
         let mut value = 0;
         for byte in 0..size {
-            value |= u64::from(self.read_byte(offset + u64::from(byte))) << (byte * 8);
+            let byte_value = self
+                .layout_offset(offset + u64::from(byte))
+                .map_or(0, |internal| self.read_byte(internal));
+            value |= u64::from(byte_value) << (byte * 8);
         }
         if hda_trace_enabled() {
             println!("hda: mmio read off={offset:#x} size={size} value={value:#x}");
@@ -414,7 +441,9 @@ impl HdaController {
         let mut written = [false; 0xc0];
         let mut bytes = [0u8; 0xc0];
         for byte in 0..size {
-            let absolute = offset + u64::from(byte);
+            let Some(absolute) = self.layout_offset(offset + u64::from(byte)) else {
+                continue;
+            };
             if let Ok(index) = usize::try_from(absolute) {
                 if index < bytes.len() {
                     written[index] = true;
@@ -451,9 +480,9 @@ impl HdaController {
         if touched {
             self.statests &= !(next as u16);
         }
-        let (touched, next) = rw!(REG_INTCTL, 4, self.intctl);
+        let (touched, next) = rw!(REG_INTCTL, 4, self.guest_stream_bits(self.intctl));
         if touched {
-            self.intctl = next as u32
+            self.intctl = self.internal_stream_bits(next as u32)
                 & (INTCTL_GIE | INTCTL_CIE | INTCTL_CAPTURE_STREAM | INTCTL_PLAYBACK_STREAM);
         }
         let (touched, next) = rw!(REG_CORBLBASE, 4, self.corb_base as u32);
@@ -666,7 +695,12 @@ impl HdaController {
         let codec = ((command >> 28) & 0x0f) as u8;
         let nid = ((command >> 20) & 0xff) as u8;
         let payload20 = command & 0x000f_ffff;
-        if codec != 0 || nid > CODEC_MIC {
+        let last_node = if self.microphone {
+            CODEC_MIC
+        } else {
+            CODEC_SPEAKER
+        };
+        if codec != 0 || nid > last_node {
             return 0;
         }
         let verb12 = ((payload20 >> 8) & 0x0fff) as u16;
@@ -702,7 +736,7 @@ impl HdaController {
             }
             0xb => 0,
             _ => match verb12 {
-                0xf00 => codec_parameter(nid, payload8),
+                0xf00 => codec_parameter(nid, payload8, self.microphone),
                 0xf01 if nid == CODEC_SPEAKER => u32::from(self.codec.connection_select),
                 0x701 => {
                     if nid == CODEC_SPEAKER {
@@ -798,17 +832,23 @@ impl HdaController {
                 }
             };
         }
-        byte!(REG_GCAP, 2, GCAP_64OK_ONE_INPUT_ONE_OUTPUT);
+        let gcap = if self.microphone {
+            GCAP_64OK_ONE_INPUT_ONE_OUTPUT
+        } else {
+            GCAP_64OK_ONE_OUTPUT
+        };
+        byte!(REG_GCAP, 2, gcap);
         byte!(0x02, 1, 0u8); // VMIN
         byte!(0x03, 1, 1u8); // VMAJ
         byte!(0x04, 2, 0x003cu16); // OUTPAY
-        byte!(0x06, 2, 0x001du16); // INPAY: 29 words per frame, the link's input bandwidth.
+        let inpay: u16 = if self.microphone { 0x001d } else { 0 };
+        byte!(0x06, 2, inpay); // INPAY: 29 words per frame (input bandwidth); main's 0 without the mic
         byte!(REG_GCTL, 4, self.gctl);
         byte!(REG_WAKEEN, 2, self.wakeen);
         byte!(REG_STATESTS, 2, self.statests);
         byte!(0x10, 2, 0u16); // GSTS
-        byte!(REG_INTCTL, 4, self.intctl);
-        byte!(REG_INTSTS, 4, self.intsts());
+        byte!(REG_INTCTL, 4, self.guest_stream_bits(self.intctl));
+        byte!(REG_INTSTS, 4, self.guest_stream_bits(self.intsts()));
         byte!(REG_WALLCLK, 4, self.wallclk());
         byte!(0x34, 4, 0u32); // SSYNC
         byte!(REG_CORBLBASE, 4, self.corb_base as u32);

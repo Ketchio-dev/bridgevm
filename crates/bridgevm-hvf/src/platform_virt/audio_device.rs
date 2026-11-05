@@ -43,6 +43,14 @@ impl VirtPlatform {
         }
     }
 
+    /// The launch-time microphone setting: without it the guest sees main's
+    /// HDA device, with no input stream or microphone pin (hda/layout.rs).
+    pub fn set_hda_microphone(&mut self, on: bool) {
+        if let Some(hda) = self.hda.as_mut() {
+            hda.set_microphone(on);
+        }
+    }
+
     /// Install or clear the host capture source for the HDA input stream; the
     /// guest records silence without one.
     pub fn set_hda_pcm_source(&mut self, source: Option<Box<dyn HdaPcmSource>>) {

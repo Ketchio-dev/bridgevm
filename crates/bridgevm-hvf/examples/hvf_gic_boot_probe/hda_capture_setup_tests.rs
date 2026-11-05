@@ -44,3 +44,11 @@ fn a_test_wav_wins_and_the_microphone_never_opens() {
     });
     assert!(opened);
 }
+
+#[test]
+fn only_the_microphone_setting_or_a_test_wav_adds_the_input_stream() {
+    assert!(!microphone_layout(false, false, true), "setting off: main's device");
+    assert!(microphone_layout(false, true, true), "setting on");
+    assert!(microphone_layout(true, false, true), "test WAV");
+    assert!(!microphone_layout(true, true, false), "no HDA");
+}

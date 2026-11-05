@@ -83,10 +83,12 @@ impl HdaController {
         let diagnostics = std::mem::take(&mut self.diagnostics);
         let activity = Arc::clone(&self.stream_activity);
         let source = self.pcm_source.take();
+        let microphone = self.microphone;
         *self = fresh;
         self.diagnostics = diagnostics;
         activity.stop();
         self.stream_activity = activity;
         self.pcm_source = source;
+        self.microphone = microphone;
     }
 }

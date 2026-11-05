@@ -8,6 +8,11 @@
 //!
 //! Without a source the guest's microphone records silence. A source that
 //! cannot start leaves silence and one line saying why; the VM runs on.
+//!
+//! The input stream and the microphone pin exist only when one of these is set
+//! at launch. Otherwise the guest sees main's HDA device (GCAP 0x1001, playback
+//! as SD0, a codec without ADC or mic pin), so a VM with the setting off is
+//! unchanged.
 
 use super::*;
 use bridgevm_hvf::hda::{HdaPcmSource, WavPcmSource};
@@ -17,9 +22,27 @@ pub(crate) fn install_hda_capture(platform: &mut VirtPlatform, hda_present: bool
         .filter(|path| !path.is_empty())
         .map(PathBuf::from);
     let microphone = env_flag("BRIDGEVM_HDA_MICROPHONE");
+    let layout = microphone_layout(test_wav.is_some(), microphone, hda_present);
+    platform.set_hda_microphone(layout);
+    if hda_present {
+        println!(
+            "HDA layout: {}",
+            if layout {
+                "microphone (GCAP 0x1101, capture SD0, playback SD1)"
+            } else {
+                "no microphone (GCAP 0x1001, playback SD0)"
+            }
+        );
+    }
     if let Some(source) = capture_source(test_wav, microphone, hda_present, open_microphone) {
         platform.set_hda_pcm_source(Some(source));
     }
+}
+
+/// Whether the guest gets the input stream and the microphone pin: only with
+/// HDA and the microphone setting or a test WAV at launch.
+fn microphone_layout(test_wav: bool, microphone: bool, hda_present: bool) -> bool {
+    hda_present && (test_wav || microphone)
 }
 
 /// The source for these settings. A test WAV wins, refused or not, so a test

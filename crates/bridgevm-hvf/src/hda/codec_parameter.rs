@@ -4,8 +4,11 @@ use super::*;
 
 use std::sync::OnceLock;
 
-pub(crate) fn codec_parameter(nid: u8, parameter: u8) -> u32 {
+pub(crate) fn codec_parameter(nid: u8, parameter: u8, microphone: bool) -> u32 {
     if nid == CODEC_AFG {
+        if parameter == 0x04 && !microphone {
+            return CODEC_AFG_CHILD_NODE_COUNT_NO_MIC; // main's NIDs 2 DAC, 3 speaker
+        }
         return afg_parameter(parameter).unwrap_or(0);
     }
     match (nid, parameter) {
