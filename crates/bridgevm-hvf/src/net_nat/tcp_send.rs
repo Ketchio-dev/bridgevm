@@ -58,7 +58,7 @@ pub(crate) struct TcpSendState {
 pub(crate) enum HostRead {
     Idle,
     Sent,
-    Failed,
+    Failed(HostError),
 }
 
 fn seq_before(a: u32, b: u32) -> bool {
@@ -277,7 +277,7 @@ impl TcpFlow {
                     stats.tcp_read_again = stats.tcp_read_again.saturating_add(1);
                     break;
                 }
-                Err(_) => return HostRead::Failed,
+                Err(e) => return HostRead::Failed(HostError::from(&e)),
             };
             if self.send.in_flight() == 0 {
                 self.send.rto_ms = INITIAL_RTO_MS;

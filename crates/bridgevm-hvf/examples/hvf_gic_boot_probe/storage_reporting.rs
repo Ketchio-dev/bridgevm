@@ -47,7 +47,7 @@ pub(crate) fn print_block_media_stats(label: &str, stats: VirtioMmioBlockStats) 
 
 pub(crate) fn print_net_nat_stats(stats: NatStats) {
     println!(
-        "virtio-net NAT stats: guest_frames={} arp_requests={} dhcp_discover={} dhcp_request={} dns_queries={} icmp_echo={} tcp_segments={} udp_datagrams={} other={} pending_replies={} lease={}.{}.{}.{} tcp_flows={} udp_flows={}",
+        "virtio-net NAT stats: guest_frames={} arp_requests={} dhcp_discover={} dhcp_request={} dns_queries={} icmp_echo={} tcp_segments={} udp_datagrams={} other={} pending_replies={} lease={}.{}.{}.{} tcp_flows={} udp_flows={} rst_hostread={} rst_connect={} tcp_noflow_drops={}",
         stats.guest_frames,
         stats.arp_requests,
         stats.dhcp_discover,
@@ -64,6 +64,9 @@ pub(crate) fn print_net_nat_stats(stats: NatStats) {
         stats.dhcp_lease_ip[3],
         stats.tcp_flow_count,
         stats.udp_flow_count,
+        stats.rst_hostread,
+        stats.rst_connect,
+        stats.tcp_noflow_drops,
     );
     println!(
         "virtio-net NAT replies: arp={} dhcp_offers={} dhcp_acks={} dns={} icmp={} tcp={} udp={}",

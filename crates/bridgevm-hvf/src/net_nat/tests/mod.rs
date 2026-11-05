@@ -10,4 +10,5 @@ mod tcp_connect_failure;
 mod tcp_download;
 mod tcp_readiness;
 mod tcp_refusal_fixture;
+mod tcp_reset_reasons;
 mod tcp_socket_flags;

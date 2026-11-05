@@ -2,7 +2,7 @@ use super::super::super::raw_nonblocking_tcp_socket;
 use std::net::{Ipv4Addr, TcpStream};
 use std::os::fd::{AsRawFd, FromRawFd};
 
-pub(super) fn reserved_nonlistening_socket() -> TcpStream {
+pub(in crate::net_nat::tests) fn reserved_nonlistening_socket() -> TcpStream {
     let fd = raw_nonblocking_tcp_socket().unwrap();
     // SAFETY: the newly created descriptor is uniquely transferred to TcpStream.
     let stream = unsafe { TcpStream::from_raw_fd(fd) };

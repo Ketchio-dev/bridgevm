@@ -47,4 +47,11 @@ pub struct NatStats {
     pub sweeps_deferred: u64,
     /// Times guest DNS moved to another host nameserver (resolv.conf changed).
     pub dns_server_changes: u64,
+    /// Resets sent to the guest because the host connect for its SYN failed.
+    pub rst_connect: u64,
+    /// Resets sent to the guest because reading an established flow's host
+    /// socket failed.
+    pub rst_hostread: u64,
+    /// Guest TCP segments that matched no flow, dropped without a reset.
+    pub tcp_noflow_drops: u64,
 }

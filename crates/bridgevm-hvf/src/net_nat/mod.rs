@@ -8,6 +8,7 @@ mod nat_stats;
 mod queued_outbound;
 mod reply_queue;
 mod tcp_connection_state;
+mod tcp_reset;
 mod tcp_send;
 
 pub(crate) use dns_upstream::*;
@@ -16,6 +17,7 @@ pub(crate) use icmp_reply_rejection_reason::*;
 pub use macaddr::*;
 pub use nat_stats::*;
 pub use queued_outbound::*;
+pub(crate) use tcp_reset::*;
 pub(crate) use tcp_send::*;
 
 #[cfg(test)]

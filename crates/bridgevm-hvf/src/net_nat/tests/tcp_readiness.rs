@@ -1,7 +1,7 @@
 #![cfg(unix)]
 
 #[path = "tcp_fixture.rs"]
-mod fixture;
+pub(super) mod fixture; // also used by tcp_reset_reasons
 use fixture::reserved_nonlistening_socket;
 
 use super::super::*;
