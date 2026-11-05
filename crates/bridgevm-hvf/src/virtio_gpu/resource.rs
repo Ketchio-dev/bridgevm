@@ -47,7 +47,9 @@ pub(crate) fn copy_backing_to_resource(
     // + x*4, which double-counts rect.{x,y} and sends every non-origin partial
     // update (taskbar, clock, cursor) out of bounds so it silently vanishes.
     for y in rect.y..y_end {
-        let guest_row_off = offset + u64::from(y - rect.y) * stride;
+        let Some(guest_row_off) = offset.checked_add(u64::from(y - rect.y) * stride) else {
+            break;
+        };
         let dst_row = ((y as usize) * (resource.width as usize) + (rect.x as usize)) * 4;
         if read_from_backing_into_from(
             mem,
@@ -59,7 +61,9 @@ pub(crate) fn copy_backing_to_resource(
             continue;
         }
         for x in rect.x..x_end {
-            let guest_off = guest_row_off + u64::from(x - rect.x) * 4;
+            let Some(guest_off) = guest_row_off.checked_add(u64::from(x - rect.x) * 4) else {
+                break;
+            };
             let mut pixel = [0u8; 4];
             if !read_from_backing_into(mem, &resource.backing, guest_off, &mut pixel) {
                 continue;
