@@ -430,6 +430,13 @@ PLIST
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_IDENTIFIER.hvf-lab" "$HVF_LAB_CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $BUNDLE_SHORT_VERSION" "$HVF_LAB_CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUNDLE_VERSION" "$HVF_LAB_CONTENTS/Info.plist"
+# The nested app runs BridgeVMControl, so it carries the standalone app's privacy purpose strings:
+# macOS terminates an app that asks for the microphone without NSMicrophoneUsageDescription.
+CONTROL_INFO_PLIST="$ROOT/apps/macos/BridgeVMControl-Info.plist"
+for key in NSMicrophoneUsageDescription NSLocalNetworkUsageDescription; do
+  value="$(plutil -extract "$key" raw -o - "$CONTROL_INFO_PLIST")"
+  plutil -replace "$key" -string "$value" "$HVF_LAB_CONTENTS/Info.plist"
+done
 
 source "$ROOT/apps/macos/scripts/install-installed-boot-modules.sh"
 install_installed_boot_modules "$HVF_LAB_RESOURCES"
