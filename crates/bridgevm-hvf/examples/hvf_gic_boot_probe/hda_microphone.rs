@@ -16,13 +16,19 @@
 //! a full ring drops new input. A new capture stream starts from an empty ring.
 //! A queue that cannot open queues one line, printed by the next guest read so
 //! it comes before the final report, and the guest records silence.
+//!
+//! When the Mac's default input changes (AirPods connect, say), the supervisor
+//! closes the queue, its callbacks ended, and while the guest captures opens a
+//! new one on the new default. The ring keeps its audio and the guest's stream
+//! carries on. A burst of changes makes one reopen.
 
 use super::hda_coreaudio_atomic_ring::{AtomicPcmRing, Consumer};
+use super::hda_coreaudio_output::{DefaultDeviceListener, DEFAULT_INPUT};
 use super::hda_coreaudio_publication::PcmQueue;
 use bridgevm_hvf::hda::HdaPcmSource;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
+use std::sync::{Arc, Mutex, Weak};
+use std::thread::{self, JoinHandle, Thread};
 use std::time::{Duration, Instant};
 
 #[path = "hda_microphone_queue.rs"]
@@ -59,7 +65,27 @@ impl CaptureRing {
 #[derive(Default)]
 struct Control {
     capturing: AtomicBool,
+    /// The Mac's default input changed since the supervisor last looked.
+    input_changed: AtomicBool,
     shutdown: AtomicBool,
+}
+
+/// What the default-input listener calls on the HAL's thread. Once the source
+/// is gone it does nothing.
+struct InputChanges {
+    control: Weak<Control>,
+    supervisor: Thread,
+}
+
+impl InputChanges {
+    /// Set the flag and wake the supervisor, which moves an active capture to
+    /// the new default input.
+    fn note_default_input_changed(&self) {
+        if let Some(control) = self.control.upgrade() {
+            control.input_changed.store(true, Ordering::Release);
+            self.supervisor.unpark();
+        }
+    }
 }
 
 pub(crate) struct MicrophoneSource {
@@ -67,6 +93,7 @@ pub(crate) struct MicrophoneSource {
     control: Arc<Control>,
     notices: Arc<Mutex<Vec<String>>>,
     supervisor: Option<JoinHandle<()>>,
+    listener: Option<DefaultDeviceListener>,
     primed: bool,
 }
 
@@ -89,8 +116,30 @@ impl MicrophoneSource {
             control,
             notices,
             supervisor: Some(supervisor),
+            listener: None,
             primed: false,
         })
+    }
+
+    /// Follow the Mac's default input while this source lives. Only the
+    /// production open path (hda_capture_setup.rs) listens; tests call
+    /// `note_default_input_changed` themselves.
+    pub(crate) fn follow_default_input(&mut self) -> Result<(), String> {
+        let changes = self.input_changes();
+        let changed = Box::new(move || changes.note_default_input_changed());
+        self.listener = Some(DefaultDeviceListener::add(DEFAULT_INPUT, changed)?);
+        Ok(())
+    }
+
+    fn input_changes(&self) -> InputChanges {
+        let supervisor = self
+            .supervisor
+            .as_ref()
+            .expect("the supervisor runs until drop");
+        InputChanges {
+            control: Arc::downgrade(&self.control),
+            supervisor: supervisor.thread().clone(),
+        }
     }
 
     fn wake_supervisor(&self) {
@@ -150,6 +199,9 @@ impl Drop for MicrophoneSource {
     /// Closes an open queue on the supervisor thread before returning. Prints
     /// nothing: the final report may already have ended.
     fn drop(&mut self) {
+        if let Some(listener) = self.listener.take() {
+            listener.remove();
+        }
         self.control.shutdown.store(true, Ordering::Release);
         if let Some(supervisor) = self.supervisor.take() {
             supervisor.thread().unpark();
@@ -181,6 +233,14 @@ fn supervise(
     let mut reported = false;
     let mut idle_since: Option<Instant> = None;
     while !control.shutdown.load(Ordering::Acquire) {
+        if control.input_changed.swap(false, Ordering::AcqRel) {
+            // The ring takes one producer: the old queue stops and is disposed,
+            // its callbacks ended, before a new one opens on the new default.
+            input = None;
+            idle_since = None;
+            tried = false;
+            reported = false;
+        }
         if control.capturing.load(Ordering::Acquire) {
             idle_since = None;
             if input.is_none() && !std::mem::replace(&mut tried, true) {

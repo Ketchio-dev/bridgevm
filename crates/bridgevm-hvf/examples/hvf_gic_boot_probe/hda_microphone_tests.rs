@@ -19,6 +19,16 @@ fn logging_opener(log: &Arc<Mutex<Vec<&'static str>>>) -> OpenInput {
     })
 }
 
+/// `open`, which then waits for `gate` before it returns.
+fn gated(mut open: OpenInput, gate: &Arc<Mutex<()>>) -> OpenInput {
+    let gate = Arc::clone(gate);
+    Box::new(move |ring| {
+        let opened = open(ring);
+        drop(gate.lock().unwrap());
+        opened
+    })
+}
+
 fn wait_for(what: &str, done: impl Fn() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(10);
     while !done() {
@@ -65,6 +75,64 @@ fn the_input_opens_only_while_the_guest_captures_and_closes_after_the_grace() {
     wait_for("reopen", || log.lock().unwrap().len() == 3);
     drop(source);
     assert_eq!(*log.lock().unwrap(), ["open", "close", "open", "close"]);
+}
+
+#[test]
+fn a_default_input_change_during_capture_reopens_the_input_and_keeps_the_buffered_audio() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut source = MicrophoneSource::new(logging_opener(&log), STOP_GRACE).unwrap();
+    source.stream_started();
+    wait_for("open", || log.lock().unwrap().len() == 1);
+    source.ring.publish(&frames(0, 40));
+    let mut out = vec![0u8; 20 * MS];
+    assert_eq!(read(&mut source, &mut out), 20 * MS);
+    source.input_changes().note_default_input_changed();
+    wait_for("the reopen", || log.lock().unwrap().len() == 3);
+    assert_eq!(*log.lock().unwrap(), ["open", "close", "open"]);
+    // The 20 ms already published is still read, below the prime level: the
+    // ring and the primed state carried over.
+    assert_eq!(read(&mut source, &mut out), 20 * MS);
+    assert_eq!(out, frames(960, 20));
+    drop(source);
+    assert_eq!(*log.lock().unwrap(), ["open", "close", "open", "close"]);
+}
+
+#[test]
+fn a_default_input_change_while_the_guest_is_idle_opens_nothing() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut source = MicrophoneSource::new(logging_opener(&log), Duration::from_secs(60)).unwrap();
+    let changes = source.input_changes();
+    changes.note_default_input_changed();
+    thread::sleep(Duration::from_millis(50));
+    assert!(log.lock().unwrap().is_empty(), "opened without a capture");
+    // Within the grace the old input's queue closes at once, and nothing opens
+    // until the guest captures again.
+    source.stream_started();
+    wait_for("open", || log.lock().unwrap().len() == 1);
+    source.stream_stopped();
+    changes.note_default_input_changed();
+    wait_for("close", || log.lock().unwrap().len() == 2);
+    thread::sleep(Duration::from_millis(50));
+    assert_eq!(*log.lock().unwrap(), ["open", "close"]);
+}
+
+#[test]
+fn a_burst_of_default_input_changes_reopens_once() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let gate = Arc::new(Mutex::new(()));
+    let open = gated(logging_opener(&log), &gate);
+    let mut source = MicrophoneSource::new(open, STOP_GRACE).unwrap();
+    let changes = source.input_changes();
+    // Both changes arrive while the supervisor is still opening the first queue.
+    let held = gate.lock().unwrap();
+    source.stream_started();
+    wait_for("open", || log.lock().unwrap().len() == 1);
+    changes.note_default_input_changed();
+    changes.note_default_input_changed();
+    drop(held);
+    wait_for("the reopen", || log.lock().unwrap().len() == 3);
+    thread::sleep(Duration::from_millis(50));
+    assert_eq!(*log.lock().unwrap(), ["open", "close", "open"]);
 }
 
 #[test]

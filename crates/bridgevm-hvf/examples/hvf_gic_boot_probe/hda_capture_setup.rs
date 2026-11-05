@@ -3,8 +3,9 @@
 //! - `BRIDGEVM_HDA_CAPTURE_TEST_WAV=<file>` plays a WAV file in a loop. It
 //!   wins over the microphone, so a test run never opens a Mac input device.
 //! - `BRIDGEVM_HDA_MICROPHONE=1` records the Mac's default input while the
-//!   guest captures (hda_coreaudio/hda_microphone.rs). The app passes it only
-//!   when the VM's microphone setting is on and macOS allowed access.
+//!   guest captures (hda_coreaudio/hda_microphone.rs), and moves an active
+//!   capture to a new default input. The app passes it only when the VM's
+//!   microphone setting is on and macOS allowed access.
 //!
 //! Without a source the guest's microphone records silence. A source that
 //! cannot start leaves silence and one line saying why; the VM runs on.
@@ -89,7 +90,10 @@ fn capture_source(
 fn open_microphone() -> Option<Box<dyn HdaPcmSource>> {
     use hda_coreaudio::hda_microphone::{open_default_input, MicrophoneSource, STOP_GRACE};
     match MicrophoneSource::new(Box::new(open_default_input), STOP_GRACE) {
-        Ok(source) => {
+        Ok(mut source) => {
+            if let Err(error) = source.follow_default_input() {
+                eprintln!("HDA capture: will not follow default input changes, {error}");
+            }
             println!("HDA capture: the Mac's default input, open while the guest records");
             Some(Box::new(source))
         }
