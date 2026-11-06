@@ -91,6 +91,25 @@ class VmBenchContract(unittest.TestCase):
         self.assertEqual(record["invalid"], "a bench process was still running when idle opened")
         self.assertIn("overlap guard before idle: processes [9] still running", record["errors"])
 
+    def test_a_guard_that_times_out_is_an_error_and_the_boot_goes_on_to_its_shutdown(self):
+        for answers in ([TimeoutError("guard")], ["BVGUARD pids=7", TimeoutError("guard")]):
+            with self.subTest(timeouts_after=len(answers) - 1):
+                engine, replies = NeverOff(), iter(answers)
+                engine.request_shutdown = mock.Mock()
+
+                def run(command, deadline):
+                    reply = next(replies)
+                    if isinstance(reply, Exception):
+                        raise reply
+                    return 0, reply
+                engine.run = run
+                with mock.patch.dict(BOOT_ARGS, overlap_guard=True):
+                    record = self.boot(engine)
+                engine.request_shutdown.assert_called_once()
+                self.assertNotIn("invalid", record)
+                self.assertEqual(record["errors"][0], "overlap guard after READY: no answer; no guard this boot"
+                                 if len(answers) == 1 else "overlap guard before idle: no answer")
+
     def test_sigterm_or_ctrl_c_during_a_boot_kills_the_vm_and_ends_the_campaign(self):
         for error in (SystemExit(143), KeyboardInterrupt()):
             with self.subTest(error=type(error).__name__), self.assertRaises(type(error)):

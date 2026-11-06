@@ -474,7 +474,10 @@ def display_test(engine: Engine, record: dict) -> None:
 
 def guard_pids(engine: Engine):
     """The agent's PowerShell children other than the guard itself, or None when the guest gives no answer."""
-    _, text = engine.run(command_line(OVERLAP_GUARD), time.monotonic() + 60)
+    try:
+        _, text = engine.run(command_line(OVERLAP_GUARD), time.monotonic() + 60)
+    except (TimeoutError, RuntimeError, ConnectionError, OSError):
+        return None  # an optional guard; the boot and its measurements go on
     match = re.search(r"BVGUARD pids=([0-9,]*)", text)
     return None if match is None else {int(p) for p in match.group(1).split(",") if p}
 
@@ -494,7 +497,9 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
     try:
         engine.start(boot_dir)
         record.update(engine.wait_ready(time.monotonic() + args.ready_timeout))
-        baseline = (guard_pids(engine) or set()) if args.overlap_guard else None
+        baseline = guard_pids(engine) if args.overlap_guard else None
+        if args.overlap_guard and baseline is None:
+            record["errors"].append("overlap guard after READY: no answer; no guard this boot")
         time.sleep(args.settle_s)
         if baseline is not None:
             overlap_check(engine, record, baseline, "idle")
