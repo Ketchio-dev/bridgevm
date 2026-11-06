@@ -78,9 +78,10 @@ pub fn request_desktop_scale(percent: u32) {
 
 /// A desktop switch brings a new monitor: apply the latest scale, if any, again.
 pub(super) fn reapply_desktop_scale() {
-    let _ = requested().fetch_update(Ordering::Relaxed, Ordering::Relaxed, |scale| {
-        (scale != 0).then_some(scale | PENDING)
-    });
+    // Once set, the request is never 0 again, so this cannot mark an empty one.
+    if requested().load(Ordering::Relaxed) != 0 {
+        requested().fetch_or(PENDING, Ordering::Relaxed);
+    }
 }
 
 pub(super) fn has_requested_scale() -> bool {
