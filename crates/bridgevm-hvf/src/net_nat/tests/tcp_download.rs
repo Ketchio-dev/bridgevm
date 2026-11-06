@@ -37,8 +37,11 @@ fn window_scale_offered_in_the_guest_syn_is_applied() {
     let Some((mut nat, mut guest, server)) = connect(&sent, capacity, Some(4)) else {
         return;
     };
-    // MSS 1460, NOP, window scale with shift 0 for the NAT's own window.
-    assert_eq!(guest.syn_ack_options, [2, 4, 0x05, 0xb4, 1, 3, 3, 0]);
+    // MSS 1460, NOP, and the NAT's own window scale.
+    assert_eq!(
+        guest.syn_ack_options,
+        [2, 4, 0x05, 0xb4, 1, 3, 3, crate::net_nat::OUR_WINDOW_SHIFT]
+    );
     // The guest takes data but holds its ACKs back, so everything it gets
     // was sent on the strength of the handshake's window field alone: 32 KiB
     // unscaled, the whole buffer scaled.

@@ -184,14 +184,23 @@ impl TcpSendState {
 
 impl TcpFlow {
     /// The SYN-ACK: MSS 1460, and when the guest's SYN offered window scaling,
-    /// shift 0 for ours (our window field stays in bytes).
+    /// ours (`OUR_WINDOW_SHIFT`). A SYN's own window field is never scaled.
     pub(crate) fn queue_syn_ack(
         &self,
         key: &TcpFlowKey,
         guest_mac: MacAddr,
         reply_queue: &mut VecDeque<Vec<u8>>,
     ) {
-        const OPTIONS: [u8; 8] = [2, 4, (TCP_MSS >> 8) as u8, TCP_MSS as u8, 1, 3, 3, 0];
+        const OPTIONS: [u8; 8] = [
+            2,
+            4,
+            (TCP_MSS >> 8) as u8,
+            TCP_MSS as u8,
+            1,
+            3,
+            3,
+            OUR_WINDOW_SHIFT,
+        ];
         let options = match self.send.window_shift {
             Some(_) => &OPTIONS[..],
             None => &OPTIONS[..4],
@@ -205,6 +214,7 @@ impl TcpFlow {
             seq,
             self.guest_next,
             flags,
+            u16::MAX,
             options,
             &[],
         ) {
@@ -246,13 +256,15 @@ impl TcpFlow {
             } else if self.send.window == 0 && !self.send.fin_sent {
                 // One below the window, so the guest answers with its current one.
                 let seq = self.send.una.wrapping_sub(1);
-                queue_tcp_reply(
+                let window = self.window_field();
+                queue_tcp_segment(
                     reply_queue,
                     guest_mac,
                     key,
                     seq,
                     self.guest_next,
                     TCP_FLAG_ACK,
+                    window,
                     &[],
                 );
                 self.send.rto_ms = (self.send.rto_ms * 2).min(MAX_RTO_MS);
@@ -287,14 +299,16 @@ impl TcpFlow {
                 self.send.rto_ms = INITIAL_RTO_MS;
                 self.send.deadline_ms = Some(now.saturating_add(INITIAL_RTO_MS));
             }
+            let window = self.window_field();
             let payload = &scratch[..len];
-            queue_tcp_reply(
+            queue_tcp_segment(
                 reply_queue,
                 guest_mac,
                 key,
                 self.send.next,
                 self.guest_next,
                 flags,
+                window,
                 payload,
             );
             stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
@@ -325,6 +339,7 @@ impl TcpFlow {
         reply_queue: &mut VecDeque<Vec<u8>>,
         scratch: &mut [u8; TCP_MSS],
     ) {
+        let window = self.window_field();
         let unacked = &self.send.unacked;
         let len = unacked.len().min(TCP_MSS);
         let (front, back) = unacked.as_slices();
@@ -339,13 +354,14 @@ impl TcpFlow {
             flags |= TCP_FLAG_FIN;
         }
         let seq = self.send.una;
-        queue_tcp_reply(
+        queue_tcp_segment(
             reply_queue,
             guest_mac,
             key,
             seq,
             self.guest_next,
             flags,
+            window,
             &scratch[..len],
         );
     }

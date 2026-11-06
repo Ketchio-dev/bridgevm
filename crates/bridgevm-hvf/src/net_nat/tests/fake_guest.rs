@@ -1,4 +1,5 @@
-//! A fake guest TCP receiver for host-to-guest downloads through the NAT.
+//! A fake guest TCP receiver for host-to-guest downloads through the NAT,
+//! which can also upload within the window the NAT announces.
 //!
 //! It behaves like a real stack whose application reads slowly: it advertises
 //! what is left of a small receive buffer, accepts only the next in-order
@@ -41,6 +42,11 @@ pub(super) struct FakeGuest {
     /// The window scale offered in the SYN; dropped when the SYN-ACK has none.
     shift: Option<u8>,
     pub(super) syn_ack_options: Vec<u8>,
+    /// The NAT's window scale from its SYN-ACK.
+    nat_shift: u8,
+    /// Upload bytes the NAT has acknowledged, and the window it announced.
+    pub(super) acked: u32,
+    pub(super) nat_window: usize,
 }
 
 impl FakeGuest {
@@ -60,7 +66,32 @@ impl FakeGuest {
             window_updates: true,
             shift,
             syn_ack_options: Vec::new(),
+            nat_shift: 0,
+            acked: GUEST_ISN.wrapping_add(1),
+            nat_window: 0,
         }
+    }
+
+    /// Upload bytes sent and not yet acknowledged by the NAT.
+    pub(super) fn in_flight(&self) -> usize {
+        self.seq.wrapping_sub(self.acked) as usize
+    }
+
+    /// The next upload segment, or `None` when the NAT's window has no room
+    /// for a full one, as a sender that honours the window does.
+    pub(super) fn upload(&mut self, data: &[u8]) -> Option<Vec<u8>> {
+        if self.in_flight() + data.len() > self.nat_window {
+            return None;
+        }
+        let frame = self.segment_with(TCP_FLAG_ACK | TCP_FLAG_PSH, data);
+        self.seq = self.seq.wrapping_add(data.len() as u32);
+        Some(frame)
+    }
+
+    pub(super) fn upload_fin(&mut self) -> Vec<u8> {
+        let frame = self.segment(TCP_FLAG_ACK | TCP_FLAG_FIN);
+        self.seq = self.seq.wrapping_add(1);
+        frame
     }
 
     pub(super) fn window(&self) -> usize {
@@ -68,6 +99,10 @@ impl FakeGuest {
     }
 
     fn segment(&mut self, flags: u8) -> Vec<u8> {
+        self.segment_with(flags, &[])
+    }
+
+    fn segment_with(&mut self, flags: u8, payload: &[u8]) -> Vec<u8> {
         // A SYN's window is never scaled; it carries the offer instead.
         let syn = flags & TCP_FLAG_SYN != 0;
         let shift = if syn { 0 } else { self.shift.unwrap_or(0) };
@@ -79,7 +114,7 @@ impl FakeGuest {
             self.seq,
             self.rcv_nxt,
             flags,
-            &[],
+            payload,
         );
         if let Some(offer) = self.shift.filter(|_| syn) {
             tcp.splice(20..20, [1, 3, 3, offer]);
@@ -108,10 +143,16 @@ impl FakeGuest {
             self.rcv_nxt = tcp.seq.wrapping_add(1);
             let header_len = usize::from(tcp.segment[12] >> 4) * 4;
             self.syn_ack_options = tcp.segment[20..header_len].to_vec();
-            if syn_window_shift(tcp.segment).is_none() {
-                self.shift = None;
+            match syn_window_shift(tcp.segment) {
+                Some(shift) => self.nat_shift = shift,
+                None => self.shift = None,
             }
+            self.nat_window = usize::from(tcp.window);
             return Some(self.segment(TCP_FLAG_ACK));
+        }
+        if tcp.flags & TCP_FLAG_ACK != 0 {
+            self.acked = tcp.ack;
+            self.nat_window = usize::from(tcp.window) << self.nat_shift;
         }
         if !tcp.payload.is_empty() {
             self.data_segments += 1;

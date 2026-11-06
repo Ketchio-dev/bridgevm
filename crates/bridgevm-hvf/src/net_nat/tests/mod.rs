@@ -13,3 +13,4 @@ mod tcp_readiness;
 mod tcp_refusal_fixture;
 mod tcp_reset_reasons;
 mod tcp_socket_flags;
+mod tcp_upload;

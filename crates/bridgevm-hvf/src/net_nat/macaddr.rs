@@ -428,11 +428,11 @@ pub struct HostSocketOutboundIpv4Handler {
 pub(crate) fn watch_socket(
     wake: &std::cell::OnceCell<Option<HostWake>>,
     fd: i32,
-    connecting: bool,
+    writable: bool,
 ) -> bool {
     wake.get_or_init(HostWake::start)
         .as_ref()
-        .is_some_and(|wake| wake.watch(fd, connecting))
+        .is_some_and(|wake| wake.watch(fd, writable))
 }
 
 pub(crate) const HOST_SOCKET_UDP_RECV_SCRATCH_LEN: usize = 2048;
@@ -516,7 +516,10 @@ impl HostSocketOutboundIpv4Handler {
             return;
         }
         for flow in self.tcp_flows.values_mut() {
-            flow.readable |= self.ready_scratch.contains(&flow.stream.as_raw_fd());
+            if self.ready_scratch.contains(&flow.stream.as_raw_fd()) {
+                flow.readable = true;
+                flow.write_armed = false;
+            }
         }
         for flow in self.udp_flows.values_mut() {
             flow.readable |= self.ready_scratch.contains(&flow.socket.as_raw_fd());
@@ -674,15 +677,19 @@ impl HostSocketOutboundIpv4Handler {
         if !tcp.payload.is_empty() && tcp.seq == flow.guest_next {
             if flow.write_buf.len() >= MAX_TCP_WRITE_BACKLOG {
                 // The host peer is not reading: drop the whole segment, FIN
-                // included, unacknowledged so the guest retransmits it later.
+                // included. The ACK tells the guest the window is shut.
+                flow.pending_ack = true;
                 return;
             }
             flow.guest_next = flow.guest_next.wrapping_add(tcp.payload.len() as u32);
             flow.write_buf.extend(tcp.payload);
             flow.pending_ack = true;
             flow.flush_host_write();
-            // Out-of-order payload is intentionally dropped; the guest TCP stack
-            // will retransmit from the last ACKed byte.
+        } else if !tcp.payload.is_empty() || tcp.seq == flow.guest_next.wrapping_sub(1) {
+            // Out of order, a retransmission, a window probe or a keepalive:
+            // dropped and answered with an ACK and the current window (RFC
+            // 9293 3.10.7.4), so the guest resends from there at once.
+            flow.pending_ack = true;
         }
         if tcp.flags & TCP_FLAG_FIN != 0 && tcp.seq == flow.guest_next {
             flow.guest_next = flow.guest_next.wrapping_add(1);
@@ -836,14 +843,20 @@ impl HostSocketOutboundIpv4Handler {
                     if flow.write_buf.len() != write_backlog {
                         active = true;
                     }
-                    if flow.pending_ack {
-                        queue_tcp_reply(
+                    if !flow.write_buf.is_empty() && flow.watched && !flow.write_armed {
+                        // The host socket is full: wake when it drains.
+                        flow.write_armed = watch_socket(&self.wake, flow.stream.as_raw_fd(), true);
+                    }
+                    if flow.pending_ack || flow.window_grew() {
+                        let window = flow.window_field();
+                        queue_tcp_segment(
                             reply_queue,
                             guest_mac,
                             key,
                             flow.send.next,
                             flow.guest_next,
                             TCP_FLAG_ACK,
+                            window,
                             &[],
                         );
                         stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
