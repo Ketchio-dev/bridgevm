@@ -1,5 +1,5 @@
-# The guest agent's log: successful writes add no line, and a log past 8 MB
-# moves to bvagent.log.old when the agent starts.
+# The guest agent's log: successful writes and unchanged idle port polls add
+# no line, and a log past 8 MB moves to bvagent.log.old when the agent starts.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $source = [IO.File]::ReadAllText((Join-Path $root 'scripts/win-assets/bvagent.ps1'))
@@ -9,7 +9,8 @@ function Extract([string]$pattern, [string]$what) {
     $found[0].Value
 }
 $functions = (Extract '(?ms)^function Log\(.*?^}\r?\n' 'Log function') +
-    (Extract '(?ms)^function Write-Bytes\(.*?^}\r?\n' 'Write-Bytes function')
+    (Extract '(?ms)^function Write-Bytes\(.*?^}\r?\n' 'Write-Bytes function') +
+    (Extract '(?ms)^function Log-PortInfo\(.*?^}\r?\n' 'Log-PortInfo function')
 $rotation = Extract '(?ms)^# The log keeps.*?^} catch \{ \}\r?\n' 'log rotation'
 $dir = Join-Path ([IO.Path]::GetTempPath()) ('bvagent-log-' + [guid]::NewGuid())
 New-Item -ItemType Directory $dir | Out-Null
@@ -24,6 +25,17 @@ try {
     if (Test-Path -LiteralPath $bvLog) {
         throw ('50 successful writes logged ' + @(Get-Content -LiteralPath $bvLog).Count + ' lines')
     }
+    $script:port = @{ Id = 1; OutVqFull = 0; Host = 1; Guest = 1; Name = 'bridgevm.agent' }
+    function Get-PortInfoRaw($handle) { $script:port }
+    Log-PortInfo ([IntPtr]1) 'after-ready'
+    foreach ($i in 1..50) { Log-PortInfo ([IntPtr]1) 'idle' }
+    $script:port = @{ Id = 1; OutVqFull = 0; Host = 0; Guest = 1; Name = 'bridgevm.agent' }
+    foreach ($i in 1..50) { Log-PortInfo ([IntPtr]1) 'idle' }
+    $lines = @(Get-Content -LiteralPath $bvLog)
+    if ($lines.Count -ne 2 -or $lines[1] -notmatch 'PORTINFO\[idle\] .*HostConnected=0') {
+        throw ('Idle port polls logged ' + $lines.Count + " lines, not the state and its one change:`n" + ($lines -join "`n"))
+    }
+    Remove-Item -LiteralPath $bvLog
     [IO.File]::WriteAllBytes($bvLog, (New-Object byte[] (9MB)))
     . ([scriptblock]::Create($rotation))
     if ((Test-Path -LiteralPath $bvLog) -or (Get-Item -LiteralPath ($bvLog + '.old')).Length -ne 9MB) {
@@ -32,7 +44,7 @@ try {
     [IO.File]::WriteAllBytes($bvLog, (New-Object byte[] 1024))
     . ([scriptblock]::Create($rotation))
     if ((Get-Item -LiteralPath $bvLog).Length -ne 1024) { throw 'A small log was moved' }
-    'agent log contract: PASS (3 cases)'
+    'agent log contract: PASS (4 cases)'
 } finally {
     Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
 }
