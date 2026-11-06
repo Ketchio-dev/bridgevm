@@ -24,7 +24,7 @@ use std::ffi::c_void;
 use std::ptr;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Release;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -191,7 +191,7 @@ pub(super) struct Output {
     queue: Arc<Mutex<OutputQueue>>,
     shared: Arc<Shared>,
     supervisor: Option<JoinHandle<()>>,
-    listener: Option<DefaultOutputListener>,
+    listener: Option<DefaultDeviceListener>,
 }
 
 impl Output {
@@ -212,7 +212,7 @@ impl Output {
             .ok();
         let listener = supervisor
             .is_some()
-            .then(|| DefaultOutputListener::add(shared))
+            .then(|| follow_default_output(shared))
             .flatten();
         Self {
             queue,
@@ -332,8 +332,24 @@ fn rebuild(queue: &Mutex<OutputQueue>, shared: &Arc<Shared>, play: bool) -> Resu
     }
 }
 
+/// Raise the rebuild flag whenever the Mac's default output changes.
+fn follow_default_output(shared: &Arc<Shared>) -> Option<DefaultDeviceListener> {
+    let shared = Arc::downgrade(shared);
+    let changed: DeviceChanged = Box::new(move || {
+        if let Some(shared) = shared.upgrade() {
+            shared.output.note_default_output_changed();
+        }
+    });
+    DefaultDeviceListener::add(DEFAULT_OUTPUT, changed)
+        .map_err(|error| {
+            eprintln!("hda CoreAudio output: will not follow default output changes, {error}")
+        })
+        .ok()
+}
+
 #[repr(C)]
-struct PropertyAddress {
+#[derive(Clone, Copy)]
+pub(super) struct PropertyAddress {
     selector: u32,
     scope: u32,
     element: u32,
@@ -345,64 +361,63 @@ const DEFAULT_OUTPUT: PropertyAddress = PropertyAddress {
     scope: u32::from_be_bytes(*b"glob"),
     element: 0,
 };
+/// kAudioHardwarePropertyDefaultInputDevice, which the microphone follows.
+pub(super) const DEFAULT_INPUT: PropertyAddress = PropertyAddress {
+    selector: u32::from_be_bytes(*b"dIn "),
+    ..DEFAULT_OUTPUT
+};
 
 type PropertyListener = unsafe extern "C" fn(u32, u32, *const PropertyAddress, *mut c_void) -> i32;
 
-/// A kAudioHardwarePropertyDefaultOutputDevice listener. The HAL calls it on
-/// its own notification thread; the probe runs no run loop and needs none
-/// (checked on macOS 27.0.1).
-struct DefaultOutputListener {
-    /// A leaked `Weak<Shared>`: a notification already under way when the
-    /// listener is removed may still read it, so it is never freed.
+/// What a default-device listener calls. It holds only weak references.
+pub(super) type DeviceChanged = Box<dyn Fn() + Send + Sync>;
+
+/// A listener for a default-device property of the system object, such as
+/// kAudioHardwarePropertyDefaultOutputDevice. The HAL calls it on its own
+/// notification thread; the probe runs no run loop and needs none (checked on
+/// macOS 27.0.1).
+pub(super) struct DefaultDeviceListener {
+    address: PropertyAddress,
+    /// A leaked `DeviceChanged`: a notification already under way when the
+    /// listener is removed may still call it, so it is never freed.
     data: *mut c_void,
 }
 
 // Only the pointer moves between threads; what it points to is never freed.
-unsafe impl Send for DefaultOutputListener {}
+unsafe impl Send for DefaultDeviceListener {}
 
-impl DefaultOutputListener {
-    fn add(shared: &Arc<Shared>) -> Option<Self> {
-        let data = Box::into_raw(Box::new(Arc::downgrade(shared))).cast::<c_void>();
+impl DefaultDeviceListener {
+    pub(super) fn add(address: PropertyAddress, changed: DeviceChanged) -> Result<Self, String> {
+        let data = Box::into_raw(Box::new(changed)).cast::<c_void>();
         let status = unsafe {
-            AudioObjectAddPropertyListener(
-                SYSTEM_OBJECT,
-                &DEFAULT_OUTPUT,
-                default_output_changed,
-                data,
-            )
+            AudioObjectAddPropertyListener(SYSTEM_OBJECT, &address, default_device_changed, data)
         };
         if status != 0 {
-            unsafe { drop(Box::from_raw(data.cast::<Weak<Shared>>())) };
-            eprintln!(
-                "hda CoreAudio output: will not follow default output changes, {}",
-                status_error("AudioObjectAddPropertyListener", status)
-            );
-            return None;
+            unsafe { drop(Box::from_raw(data.cast::<DeviceChanged>())) };
+            return Err(status_error("AudioObjectAddPropertyListener", status));
         }
-        Some(Self { data })
+        Ok(Self { address, data })
     }
 
-    fn remove(self) {
+    pub(super) fn remove(self) {
         unsafe {
             AudioObjectRemovePropertyListener(
                 SYSTEM_OBJECT,
-                &DEFAULT_OUTPUT,
-                default_output_changed,
+                &self.address,
+                default_device_changed,
                 self.data,
             )
         };
     }
 }
 
-unsafe extern "C" fn default_output_changed(
+unsafe extern "C" fn default_device_changed(
     _object: u32,
     _count: u32,
     _addresses: *const PropertyAddress,
     data: *mut c_void,
 ) -> i32 {
-    if let Some(shared) = unsafe { &*data.cast::<Weak<Shared>>() }.upgrade() {
-        shared.output.note_default_output_changed();
-    }
+    unsafe { (*data.cast::<DeviceChanged>())() };
     0
 }
 
