@@ -1,0 +1,12 @@
+name: Guest agent log contract
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/win-assets/bvagent.ps1', 'tests/integration/agent-log-contract.ps1', '.github/workflows/agent-log-contract.yml']}}
+permissions:
+  contents: read
+jobs:
+  agent-log:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Exercise the guest agent's log writes and rotation
+        shell: powershell
+        run: tests/integration/agent-log-contract.ps1

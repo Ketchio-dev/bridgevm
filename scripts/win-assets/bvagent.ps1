@@ -22,6 +22,12 @@ function Log([string]$m) {
     $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff')
     try { Add-Content -LiteralPath $bvLog -Value "$ts pid=$PID $m" -ErrorAction SilentlyContinue } catch { }
 }
+# The log keeps its last few MB: one past 8 MB moves to bvagent.log.old at start.
+try {
+    if ((Get-Item -LiteralPath $bvLog -ErrorAction Stop).Length -gt 8MB) {
+        Move-Item -LiteralPath $bvLog -Destination ($bvLog + '.old') -Force -ErrorAction Stop
+    }
+} catch { }
 
 # Single-instance guard, decided BEFORE any port access. A duplicate exits
 # without opening; the winner opens once and never exits, holding the mutex and
@@ -267,10 +273,8 @@ function Write-Bytes($handle, [byte[]]$data, [string]$what) {
             $remaining = New-Object byte[] 0
         }
     }
-    # Evidence for the HostConnected question: ok=True with written=want yet no
-    # host wire traffic (queue[5] notify=0) means vioser's WillWriteBlock
-    # silently consumed the write because HostConnected is false.
-    Log "WriteFile[$what] complete written=$totalWritten want=$want"
+    # Only failures are logged: a line per message (every PONG, clipboard and
+    # share poll) grew C:\bvagent.log by about 130k lines a day.
 }
 function Write-Line($handle, [string]$line, [string]$what) {
     Write-Bytes $handle ([System.Text.Encoding]::ASCII.GetBytes($line + "`n")) $what
