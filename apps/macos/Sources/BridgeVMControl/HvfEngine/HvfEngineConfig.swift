@@ -34,6 +34,9 @@ struct HvfEngineConfig: Equatable {
     /// The user's opt-in: every guest flush waits for F_FULLFSYNC instead of
     /// the ordered default (F_BARRIERFSYNC, durable within about a second).
     var durableDiskWrites: Bool = false
+    /// The user's microphone setting. It reaches the VM only with macOS's permission
+    /// (HvfMicrophoneSetting.swift); otherwise the guest has no microphone.
+    var microphoneEnabled: Bool = false
     /// The user's Windows display resolution ("WxH"); nil lets the VMM keep the
     /// firmware's resolution or add its 1280x800 default.
     var guestResolution: String? = nil
@@ -85,7 +88,8 @@ struct HvfEngineConfig: Equatable {
     /// The default vector remains the legacy launch contract; owned mode frames stdin/stdout.
     /// `agentAssetsDir`: the app's guest agent files, installed over an older agent in a library VM.
     func runnerArguments(manifestPath: String, runnerPath: String, firmwareCodePath: String, probePath: String, ownedRuntime: Bool = false,
-                         agentAssetsDir: String? = nil) -> [String] {
+                         agentAssetsDir: String? = nil,
+                         microphone: any HvfMicrophonePermission = HvfSystemMicrophonePermission()) -> [String] {
         var args = [
             runnerPath,
             "--launch-spec", manifestPath,
@@ -111,6 +115,7 @@ struct HvfEngineConfig: Equatable {
         if let guestResolution { args.append(contentsOf: ["--guest-resolution", guestResolution]) }
         if virtioNet { args.append("--virtio-net") }
         if audioEnabled { args.append("--helper-hda") }
+        if audioEnabled && microphoneEnabled && microphone.status == .authorized { args.append("--helper-hda-microphone") }
         if let libraryContext, let agentAssetsDir {
             args.append(contentsOf: HvfAgentUpdate.runnerArguments(bundlePath: libraryContext.config.bundlePath, assetsDir: agentAssetsDir))
         }
@@ -135,7 +140,7 @@ struct HvfEngineConfig: Equatable {
         return args
     }
 
-    func wrapperArguments() -> [String] {
+    func wrapperArguments(microphone: any HvfMicrophonePermission = HvfSystemMicrophonePermission()) -> [String] {
         var args = [
             "scripts/run-hvf-windows-installed-boot.sh",
             "--target", targetDiskPath,
@@ -189,6 +194,9 @@ struct HvfEngineConfig: Equatable {
         }
         if audioEnabled {
             args.append("--hda-coreaudio")
+        }
+        if audioEnabled && microphoneEnabled && microphone.status == .authorized {
+            args.append("--hda-microphone")
         }
         if nvmeBufferedIO {
             args.append("--nvme-buffered-io")

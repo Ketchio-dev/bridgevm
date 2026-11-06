@@ -18,7 +18,7 @@
 //! - `hda stream:` RUN starts and, for the latest one, its format, cyclic
 //!   buffer length, the BDL entries guest memory held at its first poll (bytes
 //!   and milliseconds, IOC-flagged entries) and whether DPLBASE enabled the DMA
-//!   position buffer; guest reads of SD0 LPIB or its alias while the stream
+//!   position buffer; guest reads of playback (SD1) LPIB or its alias while it
 //!   ran, and the host time its running polls spanned;
 //! - `hda repeat:` BDL-entry passes whose bytes hash as on that entry's
 //!   previous lap (repeat_detector.rs).
@@ -113,7 +113,7 @@ impl HdaDiagnostics {
         self.polls.msis += u64::from(running);
     }
 
-    /// Count a guest read that covers SD0 LPIB or its alias while the stream runs.
+    /// Count a guest read that covers playback (SD1) LPIB or its alias while it runs.
     pub(crate) fn note_register_read(&self, offset: u64, size: u8, running: bool) {
         let end = offset.saturating_add(u64::from(size));
         let covers = |register: u64| offset < register + 4 && end > register;
@@ -163,7 +163,7 @@ impl HdaDiagnostics {
     }
 }
 
-/// Rate, channels and container bits as the guest programmed SD0FMT, whether
+/// Rate, channels and container bits as the guest programmed SD1FMT, whether
 /// or not the controller can play them.
 fn stream_layout(fmt: u16) -> (u32, u16, u16) {
     let bits = match (fmt >> 4) & 0x7 {

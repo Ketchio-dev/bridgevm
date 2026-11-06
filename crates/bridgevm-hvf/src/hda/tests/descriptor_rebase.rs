@@ -57,7 +57,9 @@ fn assert_rebased_descriptor_failure(base: u64, expected_read: Option<u64>) {
     assert_eq!((ctrl.stream.bdl_index, ctrl.stream.bdl_offset), (8, 0));
     let output_before = writes.lock().unwrap().clone();
     assert_eq!(output_before.len(), 8);
-    let position_before = ram.read_bytes(position, 4).unwrap();
+    let position_before = ram
+        .read_bytes(position + PLAYBACK_POSITION_ENTRY, 4)
+        .unwrap();
 
     write(&mut ctrl, &mut ram, REG_SD_CTL, 1, 0);
     write(&mut ctrl, &mut ram, REG_SD_BDPL, 4, base as u32 as u64);
@@ -74,7 +76,7 @@ fn assert_rebased_descriptor_failure(base: u64, expected_read: Option<u64>) {
         &mut ram,
         REG_INTCTL,
         4,
-        u64::from(INTCTL_GIE | INTCTL_STREAM0),
+        u64::from(INTCTL_GIE | INTCTL_PLAYBACK_STREAM),
     );
     let mut mem = ObservedMemory {
         ram,
@@ -88,7 +90,12 @@ fn assert_rebased_descriptor_failure(base: u64, expected_read: Option<u64>) {
     );
     assert_eq!(*writes.lock().unwrap(), output_before);
     assert_eq!(ctrl.mmio_read(REG_SD_LPIB, 4), 8 * 192);
-    assert_eq!(mem.ram.read_bytes(position, 4).unwrap(), position_before);
+    assert_eq!(
+        mem.ram
+            .read_bytes(position + PLAYBACK_POSITION_ENTRY, 4)
+            .unwrap(),
+        position_before
+    );
     assert_eq!((ctrl.stream.bdl_index, ctrl.stream.bdl_offset), (8, 0));
     assert_eq!(ctrl.mmio_read(REG_SD_CTL, 1) & u64::from(SDCTL_RUN), 0);
     assert_eq!(ctrl.mmio_read(REG_SD_STS, 1), u64::from(SDSTS_DESE));

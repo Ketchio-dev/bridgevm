@@ -26,6 +26,8 @@
     <true/>
     <key>NSLocalNetworkUsageDescription</key>
     <string>가상 머신이 공유기 DNS 같은 로컬 네트워크 주소에 연결하려면 필요합니다. Lets your virtual machine reach addresses on your local network, such as your router's DNS.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>VM 설정에서 '마이크 사용'을 켠 경우, Windows가 녹음하는 동안 Mac의 마이크 소리를 Windows 마이크로 전달하려면 필요합니다. Lets Windows use your Mac's microphone while it records, only when the VM's Microphone setting is on.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 </dict>

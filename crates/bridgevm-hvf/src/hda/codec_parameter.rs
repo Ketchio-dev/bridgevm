@@ -4,8 +4,11 @@ use super::*;
 
 use std::sync::OnceLock;
 
-pub(crate) fn codec_parameter(nid: u8, parameter: u8) -> u32 {
+pub(crate) fn codec_parameter(nid: u8, parameter: u8, microphone: bool) -> u32 {
     if nid == CODEC_AFG {
+        if parameter == 0x04 && !microphone {
+            return CODEC_AFG_CHILD_NODE_COUNT_NO_MIC; // main's NIDs 2 DAC, 3 speaker
+        }
         return afg_parameter(parameter).unwrap_or(0);
     }
     match (nid, parameter) {
@@ -28,6 +31,13 @@ pub(crate) fn codec_parameter(nid: u8, parameter: u8) -> u32 {
         (CODEC_SPEAKER, 0x0c) => SPEAKER_PIN_CAPABILITIES,
         (CODEC_SPEAKER, 0x0d | 0x12) => 0,
         (CODEC_SPEAKER, 0x0e) => 1, // one short-form connection.
+        (CODEC_ADC, 0x09) => ADC_WIDGET_CAPABILITIES,
+        (CODEC_ADC, 0x0a) => ADC_PCM_SIZE_RATES,
+        (CODEC_ADC, 0x0b) => CODEC_STREAM_FORMATS,
+        (CODEC_ADC, 0x0e) => 1, // one short-form connection: the mic pin.
+        (CODEC_MIC, 0x09) => MIC_WIDGET_CAPABILITIES,
+        (CODEC_MIC, 0x0c) => MIC_PIN_CAPABILITIES,
+        (CODEC_ADC | CODEC_MIC, 0x0f) => CODEC_WIDGET_POWER_STATES,
         _ => 0,
     }
 }
@@ -35,7 +45,7 @@ pub(crate) fn codec_parameter(nid: u8, parameter: u8) -> u32 {
 pub(crate) fn afg_parameter(parameter: u8) -> Option<u32> {
     Some(match parameter {
         0x01 => CODEC_IMPLEMENTATION_ID,    // AC_PAR_SUBSYSTEM_ID
-        0x04 => CODEC_AFG_CHILD_NODE_COUNT, // NID 2 DAC, NID 3 pin
+        0x04 => CODEC_AFG_CHILD_NODE_COUNT, // NIDs 2 DAC, 3 speaker, 4 ADC, 5 mic
         0x05 => 0x0000_0001,                // audio function group
         0x08 => CODEC_AFG_CAPABILITIES,
         0x0a => CODEC_PCM_SIZE_RATES,

@@ -158,16 +158,18 @@ BRIDGEVM_CODESIGN_IDENTITY="$IDENTITY" \
 BRIDGEVM_CODESIGN_IDENTITY="$IDENTITY" "$MACOS_DIR/scripts/install-windows-catalog-verifier.sh" "$stage_app" "$stage_root" >/dev/null
 sign_artifact() {
   if [[ "$IDENTITY" == "-" ]]; then
-    codesign --force --sign - "$1" >/dev/null
+    codesign --force --sign - "$@" >/dev/null
   else
-    codesign --force --sign "$IDENTITY" --options runtime --timestamp "$1" >/dev/null
+    codesign --force --sign "$IDENTITY" --options runtime --timestamp "$@" >/dev/null
   fi
 }
+# The app asks macOS for microphone access when the user turns a VM's microphone on.
+APP_ENTITLEMENTS="$MACOS_DIR/BridgeVMControl.entitlements"
 sign_artifact "$stage_app/Contents/Resources/target/release/bridgevm"
 "$MACOS_DIR/scripts/bundle-wimlib-runtime.sh" --runtime "$WIMLIB_RUNTIME" --app "$stage_app" --identity "$IDENTITY"
-sign_artifact "$stage_app/Contents/MacOS/BridgeVMControl"
+sign_artifact --entitlements "$APP_ENTITLEMENTS" "$stage_app/Contents/MacOS/BridgeVMControl"
 "$MACOS_DIR/scripts/package-hvf-product-e2e.sh" "$stage_app" "$swift_bin_dir" "$IDENTITY"
-sign_artifact "$stage_app"
+sign_artifact --entitlements "$APP_ENTITLEMENTS" "$stage_app"
 codesign --verify --deep --strict "$stage_app"
 "$ROOT/scripts/verify-app-hvf-entitlements.sh" "$stage_app" >/dev/null
 "$MACOS_DIR/scripts/bundle-swtpm-runtime.sh" --verify-only "$stage_app" >/dev/null

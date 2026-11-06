@@ -4,7 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 MACOS_DIR="$ROOT/apps/macos"
 DEBUG_ENTITLEMENTS="$MACOS_DIR/HvfRunner.entitlements"
-RELEASE_ENTITLEMENTS="$MACOS_DIR/HvfRunner.release.entitlements"
+# The release probe runs under the hardened runtime and opens the guest
+# microphone's AudioQueue input, so it alone also carries audio-input.
+RELEASE_ENTITLEMENTS="$MACOS_DIR/HvfProbe.release.entitlements"
 IDENTITY="${BRIDGEVM_CODESIGN_IDENTITY:--}"
 CODESIGN_OPTIONS="${BRIDGEVM_HVF_PROBE_CODESIGN_OPTIONS:-}"
 RELEASE=0
@@ -87,8 +89,10 @@ verify_probe() {
     echo "hvf_gic_boot_probe signature verification failed: $bin" >&2
     exit 1
   }
+  local required=(com.apple.security.hypervisor)
+  [[ "$RELEASE" == "1" ]] && required+=(com.apple.security.device.audio-input)
   codesign -d --entitlements :- "$bin" 2>/dev/null |
-    python3 "$ROOT/scripts/verify-signing-entitlements.py" com.apple.security.hypervisor --profile "$RELEASE"
+    python3 "$ROOT/scripts/verify-signing-entitlements.py" "${required[@]}" --profile "$RELEASE"
   if [[ "$bin" == */Contents/Resources/target/release/examples/hvf_gic_boot_probe ]]; then
     local frameworks="${bin%/Contents/Resources/target/release/examples/hvf_gic_boot_probe}/Contents/Frameworks"
     local dependency

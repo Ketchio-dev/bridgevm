@@ -374,6 +374,8 @@ build_installed_boot_env_args() {
   [[ -z "${BRIDGEVM_HDA:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA=$BRIDGEVM_HDA")
   [[ -z "${BRIDGEVM_HDA_PCM_OUT:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_PCM_OUT=$BRIDGEVM_HDA_PCM_OUT")
   [[ -z "${BRIDGEVM_HDA_COREAUDIO:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_COREAUDIO=$BRIDGEVM_HDA_COREAUDIO")
+  [[ -z "${BRIDGEVM_HDA_MICROPHONE:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_MICROPHONE=$BRIDGEVM_HDA_MICROPHONE")
+  [[ -z "${BRIDGEVM_HDA_CAPTURE_TEST_WAV:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_CAPTURE_TEST_WAV=$BRIDGEVM_HDA_CAPTURE_TEST_WAV")
   # Test-only: the CoreAudio sink rebuilds its queue as on a default-output change.
   [[ -z "${BRIDGEVM_HDA_COREAUDIO_TEST_REBUILD_MS:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_COREAUDIO_TEST_REBUILD_MS=$BRIDGEVM_HDA_COREAUDIO_TEST_REBUILD_MS")
   [[ -z "${BRIDGEVM_TRACE_HDA:-}" ]] || ENV_ARGS+=("BRIDGEVM_TRACE_HDA=$BRIDGEVM_TRACE_HDA")
@@ -451,6 +453,9 @@ build_installed_boot_env_args() {
   # --hda-coreaudio (or the inherited BRIDGEVM_HDA* env forwarded above).
   if [[ "${HDA_AUDIO:-0}" == "1" ]]; then
     ENV_ARGS+=('BRIDGEVM_HDA=1')
+  fi
+  if [[ "${HDA_MICROPHONE:-0}" == "1" ]]; then
+    ENV_ARGS+=('BRIDGEVM_HDA_MICROPHONE=1')
   fi
   if [[ "${HDA_COREAUDIO:-0}" == "1" ]]; then
     ENV_ARGS+=('BRIDGEVM_HDA_COREAUDIO=1')

@@ -32,6 +32,7 @@ pub(crate) unsafe fn prepare_platform(
             panic!("BRIDGEVM_HDA_COREAUDIO is only supported on macOS");
         }
     }
+    hda_capture_setup::install_hda_capture(&mut platform, platform_cfg.devices.hda_present);
     if platform_cfg.devices.ramfb_present {
         println!("ramfb fw_cfg: enabled");
     } else if env_flag("BRIDGEVM_RAMFB") {

@@ -32,6 +32,8 @@ assert metadata['CFBundleIdentifier'] == 'dev.bridgevm.control'
 assert metadata['CFBundleIconFile'] == 'BridgeVM.icns'
 # macOS 15+ shows this when the VM's NAT reaches a LAN address (router DNS).
 assert metadata['NSLocalNetworkUsageDescription'].strip()
+# Without it macOS ends the app when it asks for microphone access.
+assert metadata['NSMicrophoneUsageDescription'].strip()
 assert (app / 'Contents/Resources' / metadata['CFBundleIconFile']).is_file()
 expected = {f'icon_{p}x{p}{"@2x" if s == 2 else ""}.png': p*s
             for p in (16, 32, 128, 256, 512) for s in (1, 2)}

@@ -24,6 +24,9 @@ mod hda_coreaudio_fill;
 mod hda_coreaudio_frames;
 #[path = "hda_coreaudio_producer.rs"]
 mod hda_coreaudio_producer;
+/// The guest microphone's input queue, which reuses this module's ring and FFI.
+#[path = "hda_microphone.rs"]
+pub(crate) mod hda_microphone;
 use hda_coreaudio_producer::PcmProducer;
 #[path = "hda_coreaudio_atomic_ring.rs"]
 mod hda_coreaudio_atomic_ring;

@@ -63,6 +63,9 @@ pub(super) fn env(surfaces: &DeviceSurfaces) -> Vec<(&'static str, String)> {
     if surfaces.hda_audio {
         env.push(("BRIDGEVM_HDA", "1".to_string()));
         env.push(("BRIDGEVM_HDA_COREAUDIO", "1".to_string()));
+        if surfaces.hda_microphone {
+            env.push(("BRIDGEVM_HDA_MICROPHONE", "1".to_string()));
+        }
     }
     if surfaces.nvme_buffered_io {
         env.push(("BRIDGEVM_NVME_BUFFERED_IO", "1".to_string()));

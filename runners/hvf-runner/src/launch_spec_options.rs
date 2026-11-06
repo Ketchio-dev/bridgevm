@@ -41,6 +41,7 @@ pub(super) fn build(args: &crate::Args, helper: &Path) -> HelperLaunch {
                 }),
             virtio_net: args.virtio_net,
             hda_audio: args.typed.helper_hda,
+            hda_microphone: args.typed.helper_hda_microphone,
             // clap requires the marker and the session with the folder.
             agent_update: match &args.typed {
                 crate::launch_spec::LaunchSpecArgs {
@@ -72,6 +73,13 @@ mod tests {
         argv.extend(gpu_flags);
         let args = crate::Args::try_parse_from(argv).unwrap();
         super::build(&args, Path::new("p")).surfaces.unwrap()
+    }
+
+    #[test]
+    fn the_owned_launch_carries_the_microphone_setting() {
+        assert!(!surfaces(&["--helper-hda"]).hda_microphone);
+        let on = surfaces(&["--helper-hda", "--helper-hda-microphone"]);
+        assert!(on.hda_audio && on.hda_microphone);
     }
 
     #[test]

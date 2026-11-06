@@ -87,6 +87,14 @@ assert_plist_value CFBundleIconFile "$(basename "$ICON_FILE")"
 assert_hvf_lab_plist_value CFBundleIdentifier "$BUNDLE_IDENTIFIER.hvf-lab"
 assert_hvf_lab_plist_value CFBundleShortVersionString "$SHORT_VERSION"
 assert_hvf_lab_plist_value CFBundleVersion "$BUNDLE_VERSION"
+# The nested app runs BridgeVMControl: every privacy purpose string of the standalone app must be there too.
+CONTROL_INFO_PLIST="$ROOT/apps/macos/BridgeVMControl-Info.plist"
+usage_keys="$(plutil -convert json -o - "$CONTROL_INFO_PLIST" |
+  python3 -c 'import json, sys; print("\n".join(k for k in json.load(sys.stdin) if k.endswith("UsageDescription")))')"
+[[ -n "$usage_keys" ]] || fail "no purpose strings found in $CONTROL_INFO_PLIST"
+for key in $usage_keys; do
+  assert_hvf_lab_plist_value "$key" "$(plutil -extract "$key" raw -o - "$CONTROL_INFO_PLIST")"
+done
 [[ -f "$APP/Contents/Resources/$(basename "$ICON_FILE")" ]] || {
   fail "icon file was not copied into app resources"
 }

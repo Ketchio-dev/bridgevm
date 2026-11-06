@@ -15,8 +15,11 @@ impl HdaController {
             && self.stream.ctl & SDCTL_IOCE != 0)
             || (self.stream.sts & SDSTS_FIFOE != 0 && self.stream.ctl & SDCTL_FEIE != 0)
             || (self.stream.sts & SDSTS_DESE != 0 && self.stream.ctl & SDCTL_DEIE != 0);
-        if stream_pending && self.intctl & INTCTL_STREAM0 != 0 {
-            sources |= INTCTL_STREAM0;
+        if stream_pending && self.intctl & INTCTL_PLAYBACK_STREAM != 0 {
+            sources |= INTCTL_PLAYBACK_STREAM;
+        }
+        if self.capture_interrupt_pending() && self.intctl & INTCTL_CAPTURE_STREAM != 0 {
+            sources |= INTCTL_CAPTURE_STREAM;
         }
         sources
     }

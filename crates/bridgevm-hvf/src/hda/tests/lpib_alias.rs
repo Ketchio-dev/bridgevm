@@ -1,7 +1,9 @@
-//! The SD0 LPIB alias at 0x2084 reads the stream position, as LPIB does.
+//! The playback LPIB alias reads the stream position, as LPIB does. Playback
+//! is SD1 since the capture stream took SD0, so its alias is 0x20a4; the
+//! capture alias at 0x2084 is covered in capture.rs.
 //!
-//! The Windows guest reads the position only through the alias: live, it read
-//! 0x2084 once per IOC and 0x84 never. While the alias read 0, its audio
+//! The Windows guest reads the position only through the alias: live, with
+//! playback at SD0, it read 0x2084 once per IOC and 0x84 never. While the alias read 0, its audio
 //! engine wrote every 10 ms packet into the same entry of its two-entry cyclic
 //! buffer, so every other 10 ms of guest playback reached the host as silence.
 

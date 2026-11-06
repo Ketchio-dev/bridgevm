@@ -213,6 +213,7 @@ final class HvfWindowsBackend: VMBackend {
             virtioGpu2d: HvfEngineConfig.virtioGpu2d(for: config),
             nvmeBufferedIO: false,
             durableDiskWrites: config.durableDiskWritesEnabled ?? false,
+            microphoneEnabled: config.microphoneEnabled ?? false,
             guestResolution: config.guestResolution,
             retinaResolution: config.retinaResolution,
             commandKeyMode: HvfCommandKeyMode(saved: config.commandKeyMode),

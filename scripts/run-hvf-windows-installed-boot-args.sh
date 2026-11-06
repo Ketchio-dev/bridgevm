@@ -17,6 +17,7 @@ init_installed_boot_defaults() {
   VIRTIO_NET="0"
   HDA_AUDIO="0"
   HDA_COREAUDIO="0"
+  HDA_MICROPHONE="0"
   NVME_BUFFERED_IO="0"
   NVME_DURABLE_FLUSH="0"
   GUEST_RESOLUTION=""
@@ -185,6 +186,7 @@ parse_installed_boot_args() {
       --virtio-net) VIRTIO_NET="1"; shift ;;
       --hda) HDA_AUDIO="1"; shift ;;
       --hda-coreaudio) HDA_AUDIO="1"; HDA_COREAUDIO="1"; shift ;;
+      --hda-microphone) HDA_AUDIO="1"; HDA_MICROPHONE="1"; shift ;;
       --nvme-buffered-io) NVME_BUFFERED_IO="1"; shift ;;
       --nvme-durable-flush) NVME_DURABLE_FLUSH="1"; shift ;;
       --guest-resolution)

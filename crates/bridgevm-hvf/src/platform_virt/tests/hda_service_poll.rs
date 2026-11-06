@@ -52,7 +52,11 @@ fn running() -> (VirtPlatform, FlatGuestRam) {
         (cfg(msi + 12), 2, u64::from(DATA)),
         (cfg(msi + 2), 2, 1),
         (BAR + REG_GCTL, 4, 1),
-        (BAR + REG_INTCTL, 4, u64::from(INTCTL_GIE | INTCTL_STREAM0)),
+        (
+            BAR + REG_INTCTL,
+            4,
+            u64::from(INTCTL_GIE | INTCTL_PLAYBACK_STREAM),
+        ),
         (BAR + REG_SD_BDPL, 4, BDL),
         (BAR + REG_SD_CBL, 4, 3840),
         (BAR + REG_SD_LVI, 2, 1),
