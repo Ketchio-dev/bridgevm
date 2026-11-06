@@ -16,11 +16,7 @@ pub(super) fn temp_path(name: &str) -> PathBuf {
 }
 
 fn path_at(directory: &Path, name: &str, nanos: u128) -> PathBuf {
-    let sequence = NEXT
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
-            next.checked_add(1)
-        })
-        .expect("NVMe test scratch path sequence exhausted");
+    let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
     directory.join(format!(
         "bridgevm-hvf-nvme-{name}-{}-{nanos}-{sequence}",
         std::process::id()
