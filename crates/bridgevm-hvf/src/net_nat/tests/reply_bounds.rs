@@ -148,8 +148,15 @@ fn tcp_payload_past_the_write_backlog_is_left_unacknowledged() {
         b"more",
     ));
 
-    let flow = &backend.outbound_ipv4_handler().tcp_flows[&key];
+    // Not taken: the ACK it draws still points at the dropped segment, and
+    // its window (the full backlog leaves none) tells the guest to wait.
+    let flow = backend
+        .outbound_ipv4_handler_mut()
+        .tcp_flows
+        .get_mut(&key)
+        .unwrap();
     assert_eq!(flow.guest_next, guest_next);
-    assert!(!flow.pending_ack);
+    assert!(flow.pending_ack);
+    assert_eq!(flow.window_field(), 0);
     assert!(flow.write_buf.len() <= MAX_TCP_WRITE_BACKLOG);
 }

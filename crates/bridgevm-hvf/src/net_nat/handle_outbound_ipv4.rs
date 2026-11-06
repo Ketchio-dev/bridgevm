@@ -154,26 +154,26 @@ impl TcpFlow {
     /// still takes, so a guest that honours it is never dropped. Records the
     /// announced window for the window update rule.
     pub(crate) fn window_field(&mut self) -> u16 {
-        let shift = if self.send.window_shift.is_some() {
-            OUR_WINDOW_SHIFT
-        } else {
-            0
-        };
+        let shift = self.our_shift();
         let field = u16::try_from(self.free_window() >> shift).unwrap_or(u16::MAX);
         self.advertised = u32::from(field) << shift;
         field
     }
 
-    /// The backlog drained by a quarter since the window we last announced:
-    /// tell the guest, which may be waiting on a closed window.
+    /// The window grew by a quarter of the most this flow can announce since
+    /// the last announcement: tell the guest, which may be waiting on a
+    /// closed window. Unscaled flows therefore update in 16 KiB steps.
     pub(crate) fn window_grew(&self) -> bool {
-        let shift = if self.send.window_shift.is_some() {
+        let limit = MAX_TCP_WRITE_BACKLOG.min(usize::from(u16::MAX) << self.our_shift());
+        self.free_window().min(limit) >= self.advertised as usize + limit / 4
+    }
+
+    fn our_shift(&self) -> u8 {
+        if self.send.window_shift.is_some() {
             OUR_WINDOW_SHIFT
         } else {
             0
-        };
-        let announceable = self.free_window().min(usize::from(u16::MAX) << shift);
-        announceable >= self.advertised as usize + MAX_TCP_WRITE_BACKLOG / 4
+        }
     }
 
     fn free_window(&self) -> usize {

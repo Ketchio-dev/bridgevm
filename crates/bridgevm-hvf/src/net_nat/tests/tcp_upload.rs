@@ -35,13 +35,55 @@ fn upload_until_stalled(nat: &mut HostNat, guest: &mut FakeGuest, data: &[u8], s
 
 #[test]
 fn upload_window_is_scaled_and_follows_the_write_backlog() {
+    upload_through_a_backlog_that_fills_and_drains(Some(7));
+}
+
+#[test]
+fn an_unscaled_upload_window_reopens_after_it_closed() {
+    // At most 64 KiB fits the field: the update must not wait for 1 MiB.
+    upload_through_a_backlog_that_fills_and_drains(None);
+}
+
+#[test]
+fn a_segment_the_nat_cannot_take_is_answered_with_an_ack() {
+    let handler = HostSocketOutboundIpv4Handler::with_dns_resolver(StdIpv4Addr::LOCALHOST);
+    let Some((mut nat, mut guest, server)) =
+        connect_with(handler, 64 * 1024, Some(7), |mut stream| {
+            let _ = stream.read_to_end(&mut Vec::new());
+        })
+    else {
+        return;
+    };
+    let start = guest.acked;
+    let data = payload(2 * MSS);
+    let lost = guest.upload(&data[..MSS]).unwrap();
+    // The next segment arrives first: the NAT drops it and says where it is.
+    nat.transmit(&guest.upload(&data[MSS..]).unwrap());
+    nat.poll_host_sockets();
+    let ack = nat
+        .poll_receive()
+        .expect("no ACK for the out-of-order segment");
+    guest.receive(&ack);
+    assert_eq!(guest.acked, start);
+    assert!(guest.nat_window >= MAX_TCP_WRITE_BACKLOG / 2);
+    nat.transmit(&lost);
+    nat.poll_host_sockets();
+    let ack = nat.poll_receive().expect("no ACK for the missing segment");
+    guest.receive(&ack);
+    assert_eq!(guest.acked, start.wrapping_add(MSS as u32));
+    nat.transmit(&guest.upload_fin());
+    drop(nat);
+    server.join().unwrap();
+}
+
+fn upload_through_a_backlog_that_fills_and_drains(shift: Option<u8>) {
     let data = payload(24 << 20);
     let (go, wait) = mpsc::channel::<()>();
     let (done, received) = mpsc::channel();
     let handler = HostSocketOutboundIpv4Handler::with_dns_resolver(StdIpv4Addr::LOCALHOST);
     // The host application reads nothing until `go`, then everything.
     let Some((mut nat, mut guest, server)) =
-        connect_with(handler, 64 * 1024, Some(7), move |mut stream| {
+        connect_with(handler, 64 * 1024, shift, move |mut stream| {
             wait.recv().unwrap();
             let mut sink = Vec::new();
             stream.read_to_end(&mut sink).unwrap();
@@ -75,7 +117,7 @@ fn upload_window_is_scaled_and_follows_the_write_backlog() {
     // probe from the guest, and the upload completes intact.
     go.send(()).unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
-    while guest.nat_window < MAX_TCP_WRITE_BACKLOG / 4 {
+    while guest.nat_window < 16 * 1024 {
         assert!(
             Instant::now() < deadline,
             "no window update after the host drained"

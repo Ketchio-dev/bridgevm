@@ -677,15 +677,19 @@ impl HostSocketOutboundIpv4Handler {
         if !tcp.payload.is_empty() && tcp.seq == flow.guest_next {
             if flow.write_buf.len() >= MAX_TCP_WRITE_BACKLOG {
                 // The host peer is not reading: drop the whole segment, FIN
-                // included, unacknowledged so the guest retransmits it later.
+                // included. The ACK tells the guest the window is shut.
+                flow.pending_ack = true;
                 return;
             }
             flow.guest_next = flow.guest_next.wrapping_add(tcp.payload.len() as u32);
             flow.write_buf.extend(tcp.payload);
             flow.pending_ack = true;
             flow.flush_host_write();
-            // Out-of-order payload is intentionally dropped; the guest TCP stack
-            // will retransmit from the last ACKed byte.
+        } else if !tcp.payload.is_empty() || tcp.seq == flow.guest_next.wrapping_sub(1) {
+            // Out of order, a retransmission, a window probe or a keepalive:
+            // dropped and answered with an ACK and the current window (RFC
+            // 9293 3.10.7.4), so the guest resends from there at once.
+            flow.pending_ack = true;
         }
         if tcp.flags & TCP_FLAG_FIN != 0 && tcp.seq == flow.guest_next {
             flow.guest_next = flow.guest_next.wrapping_add(1);
