@@ -143,6 +143,18 @@ class Guest:
             return "timeout", body or []
 
 
+def stop_runner(proc):
+    """TERM the runner's process group, KILL it after 60 s, and reap it."""
+    if proc is None or proc.poll() is not None:
+        return
+    os.killpg(proc.pid, signal.SIGTERM)
+    try:
+        proc.wait(timeout=60)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+
+
 def parse_capture(body):
     endpoints, capture, error, formats, shared = [], None, None, [], None
     for line in body:
@@ -279,14 +291,8 @@ def main():
     except Exception as error:  # recorded; cleanup below
         summary["error"] = f"{type(error).__name__}: {error}"
         log(summary["error"])
-        if proc is not None and proc.poll() is None:
-            os.killpg(proc.pid, signal.SIGTERM)
-            try:
-                proc.wait(timeout=60)
-            except subprocess.TimeoutExpired:
-                os.killpg(proc.pid, signal.SIGKILL)
-                proc.wait()
     finally:
+        stop_runner(proc)  # also on Ctrl-C: the runner has its own session, so SIGINT never reaches it
         run_log = lane / "hvf" / "run.log"
         host_lines = []
         if created and run_log.exists():

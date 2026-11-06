@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts/live-gates/hda-microphone-live-check.py"
 
@@ -32,13 +33,18 @@ class LaneCleanup(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def check(self, name):
-        """main()'s exit code for `--name name` when the host never gets quiet."""
+    def load(self):
         spec = importlib.util.spec_from_file_location("hda_microphone_live_check", SCRIPT)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         module.CANON = self.canon
-        module.wait_for_quiet_host = lambda *args, **kwargs: False
+        return module
+
+    def check(self, name, module=None):
+        """main()'s exit code for `--name name` when the host never gets quiet."""
+        if module is None:
+            module = self.load()
+            module.wait_for_quiet_host = lambda *args, **kwargs: False
         self.runs += 1
         argv, sys.argv = sys.argv, ["hda-microphone-live-check.py", "--probe", str(self.probe),
                                     "--out", str(self.root / f"out-{self.runs}"), "--name", name]
@@ -64,6 +70,49 @@ class LaneCleanup(unittest.TestCase):
         self.assert_kept()
         self.assertNotEqual(self.check("fresh"), 0)
         self.assertFalse((self.canon / "lanes" / "fresh").exists(), "a wait that times out creates no lane")
+
+    def test_ctrl_c_after_the_boot_stops_the_runner_before_the_lane_goes(self):
+        module = self.load()
+        module.wait_for_quiet_host = lambda *args, **kwargs: True
+        module.other_vms = lambda own=(): []
+        lane = self.canon / "lanes" / "interrupted"
+        events = []
+
+        class Proc:
+            def __init__(self, pid):
+                self.pid, self.returncode = pid, None
+
+            def poll(self):
+                return self.returncode
+
+            def wait(self, timeout=None):
+                events.append(("wait", self.pid, lane.exists()))
+                self.returncode = 0
+                return 0
+
+            def kill(self):
+                self.returncode = -9
+
+        procs = iter([Proc(100), Proc(200)])  # the sentinel, then the runner
+
+        def interrupt(*args, **kwargs):
+            raise KeyboardInterrupt
+
+        def run(argv, **kwargs):  # git, codesign and cp -c; cp leaves an empty clone
+            if argv[0] == "cp":
+                Path(argv[-1]).write_bytes(b"")
+            return mock.Mock(stdout="", returncode=0)
+
+        with mock.patch.object(module.subprocess, "run", run), \
+                mock.patch.object(module.subprocess, "Popen", lambda *a, **k: next(procs)), \
+                mock.patch.object(module.os, "killpg", lambda pid, sig: events.append(("kill", pid, lane.exists()))), \
+                mock.patch.object(module.Guest, "wait_for", interrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                self.check("interrupted", module)
+        self.assertIn(("kill", 200, True), events, "the runner was not signalled while its lane existed")
+        self.assertIn(("wait", 200, True), events, "the runner was not reaped while its lane existed")
+        self.assertFalse(lane.exists())
+        self.assert_kept()
 
 
 if __name__ == "__main__":
