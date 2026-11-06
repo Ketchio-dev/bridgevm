@@ -2,6 +2,7 @@
 
 mod fake_guest;
 mod helpers;
+mod host_wake_download;
 mod idle_sweep;
 mod ingress_policy;
 mod part_1;

@@ -15,6 +15,8 @@ fn udp_flow(port: u16) -> (UdpFlowKey, UdpFlow) {
         UdpFlow {
             socket,
             last_activity: 0,
+            readable: true,
+            watched: false,
         },
     )
 }

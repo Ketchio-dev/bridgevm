@@ -269,12 +269,16 @@ impl TcpFlow {
                 stats.tcp_window_full = stats.tcp_window_full.saturating_add(1);
                 break;
             }
+            if !self.readable {
+                break;
+            }
             let read = self.stream.read(&mut scratch[..room.min(TCP_MSS)]);
             let (flags, len) = match read {
                 Ok(0) => (TCP_FLAG_FIN | TCP_FLAG_ACK, 0),
                 Ok(len) => (TCP_FLAG_PSH | TCP_FLAG_ACK, len),
                 Err(e) if would_block(&e) => {
                     stats.tcp_read_again = stats.tcp_read_again.saturating_add(1);
+                    self.readable = !self.watched;
                     break;
                 }
                 Err(e) => return HostRead::Failed(HostError::from(&e)),

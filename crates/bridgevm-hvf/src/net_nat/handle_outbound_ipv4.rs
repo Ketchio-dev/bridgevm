@@ -34,6 +34,7 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
         reply_queue: &mut VecDeque<Vec<u8>>,
         stats: &mut NatStats,
     ) {
+        self.take_ready_sockets();
         if self.pending_socket_errors != 0 {
             stats.socket_errors = stats
                 .socket_errors
@@ -76,6 +77,11 @@ pub(crate) struct UdpFlowKey {
 pub(crate) struct UdpFlow {
     pub(crate) socket: UdpSocket,
     pub(crate) last_activity: u64,
+    /// The host socket may have data. A socket the wake thread watches
+    /// (`watched`) is read only after its event and until a read would block;
+    /// any other socket is read on every poll.
+    pub(crate) readable: bool,
+    pub(crate) watched: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -125,6 +131,11 @@ pub(crate) struct TcpFlow {
     pub(crate) pending_ack: bool,
     pub(crate) guest_fin: bool,
     pub(crate) last_activity: u64,
+    /// The host socket may have data. A socket the wake thread watches
+    /// (`watched`) is read only after its event and until a read would block;
+    /// any other socket is read on every poll.
+    pub(crate) readable: bool,
+    pub(crate) watched: bool,
 }
 
 impl TcpFlow {
@@ -146,6 +157,8 @@ impl TcpFlow {
             pending_ack: false,
             guest_fin: false,
             last_activity,
+            readable: true,
+            watched: false,
         }
     }
 
