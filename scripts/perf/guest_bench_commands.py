@@ -163,6 +163,16 @@ def stall_under_flush(ms: int) -> str:
     )
 
 
+# Overlap guard (vm_bench --overlap-guard): the PIDs of the agent's PowerShell children other than this one. Every
+# suite script runs as one `powershell ... -EncodedCommand` child that the agent waits for, so a new PID still
+# alive when the next measured window opens means an earlier phase overlapped that window.
+OVERLAP_GUARD = (
+    "$p = @(Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | Where-Object"
+    " { $_.ProcessId -ne $PID -and $_.CommandLine -match '-EncodedCommand' } | ForEach-Object { $_.ProcessId });"
+    "'BVGUARD pids=' + ($p -join ',')"
+)
+
+
 def stall_idle(ms: int) -> str:
     """The same Sleep(1) loop as `stall_under_flush` with no writer: how late an otherwise idle
     guest's timer wakes a thread. Separates the timer and wake path from disk interference."""
@@ -274,6 +284,7 @@ def parse_bvbench(text: str) -> dict[str, tuple[float, str]]:
 def _self_test() -> None:
     assert parse_bvbench("noise\r\nBVBENCH cpu-sha256-1t 812.5 MB/s\r\n") == {"cpu-sha256-1t": (812.5, "MB/s")}
     assert parse_bvbench("BVBENCH x 1,5 MB/s") == {}
+    assert "'BVGUARD pids=' + ($p -join ',')" in OVERLAP_GUARD and "$_.ProcessId -ne $PID" in OVERLAP_GUARD
     decoded = base64.b64decode(command_line("x").rsplit(" ", 1)[1]).decode("utf-16-le")
     assert "CurrentCulture=[Globalization.CultureInfo]::InvariantCulture; x" in decoded
     net = net_download("http://h/blob", "ab" * 32)

@@ -41,8 +41,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_wire import AgentWire  # noqa: E402
 from guest_bench_commands import (  # noqa: E402
-    HIGHER_IS_BETTER, SUITE, audio_loop, command_line, cursor_logger, desktop_mode, display_animation, net_download,
-    parse_bvbench,
+    HIGHER_IS_BETTER, OVERLAP_GUARD, SUITE, audio_loop, command_line, cursor_logger, desktop_mode, display_animation,
+    net_download, parse_bvbench,
     stall_under_flush, stall_idle)
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -472,114 +472,141 @@ def display_test(engine: Engine, record: dict) -> None:
     record["bench"].update(host)
 
 
+def guard_pids(engine: Engine):
+    """The agent's PowerShell children other than the guard itself, or None when the guest gives no answer."""
+    try:
+        _, text = engine.run(command_line(OVERLAP_GUARD), time.monotonic() + 60)
+    except (TimeoutError, RuntimeError, ConnectionError, OSError):
+        return None
+    match = re.search(r"BVGUARD pids=([0-9,]*)", text)
+    return None if match is None else {int(p) for p in match.group(1).split(",") if p}
+
+
+class GuardLost(Exception):
+    """The overlap guard got no answer. Its late reply may still be in the agent stream, where the next command
+    would take it as its own, so the boot is invalid and sends no more guest commands before its shutdown."""
+
+
+def guard_lost(record: dict, window: str) -> GuardLost:
+    record["errors"].append(f"overlap guard before {window}: no answer")
+    record["invalid"] = f"the overlap guard gave no answer before {window}"
+    return GuardLost(window)
+
+
+def overlap_check(engine: Engine, record: dict, baseline, window: str) -> None:
+    """--overlap-guard: a guest process started after READY and still alive as `window` opens marks the boot invalid."""
+    pids = guard_pids(engine)
+    if pids is None:
+        raise guard_lost(record, window)
+    if pids - baseline:
+        record["errors"].append(f"overlap guard before {window}: processes {sorted(pids - baseline)} still running")
+        record.setdefault("invalid", f"a bench process was still running when {window} opened")
+
+
 def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
     record = {"boot": int(boot_dir.name.split("-")[1]), "loadavg_start": os.getloadavg(), "bench": {}, "errors": []}
     try:
         engine.start(boot_dir)
         record.update(engine.wait_ready(time.monotonic() + args.ready_timeout))
-        time.sleep(args.settle_s)
-        first = cpu_and_rss(engine.vmm_pid) if engine.vmm_pid else None
-        diag = os.environ.get("BVBENCH_SAMPLE") and engine.vmm_pid
-        if diag:  # where the idle time goes: per-thread times around the window, plus a stack sample
-            threads_before = subprocess.run(["ps", "-M", "-p", str(engine.vmm_pid)], capture_output=True,
-                                            text=True).stdout
-            subprocess.Popen(["/usr/bin/sample", str(engine.vmm_pid), "5", "-file", str(boot_dir / "idle-sample.txt")],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(args.idle_s)
-        second = cpu_and_rss(engine.vmm_pid) if engine.vmm_pid else None
-        if diag:
-            after = subprocess.run(["ps", "-M", "-p", str(engine.vmm_pid)], capture_output=True, text=True).stdout
-            (boot_dir / "idle-threads.txt").write_text(threads_before + "\n----\n" + after)
-        if first and second:
-            record["idle_cpu_pct"] = round((second[0] - first[0]) / args.idle_s * 100, 1)
-            record["rss_mib"] = round(second[1] / 1024)
-        if args.pointer:
-            try:
-                pointer_test(engine, record)
-            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
-                record["errors"].append(f"pointer: {type(error).__name__}: {error}")
-        if args.desktop_mode:
-            try:
-                _, text = engine.run(command_line(desktop_mode(args.desktop_mode == "native")), time.monotonic() + 60)
-                record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
-                if isinstance(engine, BridgeVM) and engine.display_fb.exists():
-                    save_display_frame(engine.display_fb, boot_dir / "desktop.pnm")
-            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
-                record["errors"].append(f"desktop-mode: {type(error).__name__}: {error}")
-        if args.display:
-            try:
-                display_test(engine, record)
-            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
-                record["errors"].append(f"display: {type(error).__name__}: {error}")
-        if args.shutdown_diag:  # how the previous shutdown of this disk spent its time (guest's own log)
-            script = ("Get-WinEvent -LogName 'Microsoft-Windows-Diagnostics-Performance/Operational' -MaxEvents 12 "
-                      "-ErrorAction SilentlyContinue | Where-Object { $_.Id -ge 200 -and $_.Id -le 206 } | "
-                      "ForEach-Object { $x = [xml]$_.ToXml(); $d = ($x.Event.EventData.Data | Where-Object { $_.'#text' } | "
-                      "ForEach-Object { $_.Name + '=' + $_.'#text' }) -join ' '; "
-                      "'{0:o} {1} {2}' -f $_.TimeCreated, $_.Id, $d }")
-            try:
-                _, text = engine.run(command_line(script), time.monotonic() + 60)
-                record["shutdown_diag"] = text.strip()[-4000:]
-            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
-                record["errors"].append(f"shutdown-diag: {type(error).__name__}: {error}")
-        if args.audio:
-            try:
-                code, text = engine.run(command_line(audio_loop(1800)), time.monotonic() + 60)
-                if code != 0 or "BVAUDIO rv=0" not in text:
-                    record["errors"].append(f"audio: exit={code} {text.strip()[:200]}")
-            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
-                record["errors"].append(f"audio: {type(error).__name__}: {error}")
-        if args.stall_idle:
-            try:
-                _, text = engine.run(command_line(stall_idle(8000)), time.monotonic() + 120)
-                record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
-            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
-                record["errors"].append(f"stall-idle: {type(error).__name__}: {error}")
-        if args.stall:
-            try:
-                _, text = engine.run(command_line(stall_under_flush(8000)), time.monotonic() + 120)
-                record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
-            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
-                record["errors"].append(f"stall: {type(error).__name__}: {error}")
-        suite = SUITE + ([("net-download", net_download(args.blob_url, hashlib.sha256(_Blob.payload).hexdigest()))]
-                         if args.net else [])
-        only = None if args.only is None else set(args.only.split(","))
-        for name, script in ([] if args.skip_suite else [t for t in suite if only is None or t[0] in only]):
-            started = time.monotonic()
-            try:
-                code, text = engine.run(command_line(script), time.monotonic() + 600)
-                values = parse_bvbench(text)
-                record["bench"].update({metric: value for metric, (value, _) in values.items()})
-                if not values:
-                    record["errors"].append(f"{name}: exit={code} no value: {text.strip()[:300]}")
-            except (TimeoutError, RuntimeError, ConnectionError) as error:
-                record["errors"].append(f"{name}: {error}")
-                break
-            record.setdefault("bench_wall_s", {})[name] = round(time.monotonic() - started, 2)
-        if args.hw_cursor and record["boot"] == 1:  # applies from the next Windows start: boot 2 on
-            try:
-                _, text = engine.run(hw_cursor_command(), time.monotonic() + 120)
-                record["hw_cursor"] = next((line.strip() for line in text.splitlines()
-                                            if line.startswith("BVCURSOR ")), "")
-                if record["hw_cursor"] not in ("BVCURSOR result=set", "BVCURSOR result=already"):
-                    record["errors"].append(f"hw-cursor: {text.strip()[:300]}")
-            except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
-                record["errors"].append(f"hw-cursor: {type(error).__name__}: {error}")
-        stop_started = time.monotonic()
-        engine.request_shutdown()
-        while engine.vmm_alive() and time.monotonic() < stop_started + SHUTDOWN_TIMEOUT_S:
-            if "guest_off_ms" not in record and getattr(engine, "guest_off_seen", lambda: False)():
-                record["guest_off_ms"] = round((time.monotonic() - stop_started) * 1000)
-            time.sleep(0.1)
-        if engine.vmm_alive():  # no shutdown time: the shutdown never completed
-            record["errors"].append(f"shutdown: the VMM still ran {SHUTDOWN_TIMEOUT_S} s after the request")
-        else:
-            record["shutdown_ms"] = round((time.monotonic() - stop_started) * 1000)
-        record["clean_exit"] = engine.stop(time.monotonic() + SHUTDOWN_TIMEOUT_S)
-        if isinstance(engine, BridgeVM) and engine.log.exists():  # the probe's end-of-run cursor counts
-            counts = re.findall(rb"virtio-gpu cursor updates=(\d+) moves=(\d+) hides=(\d+)", engine.log.read_bytes())
-            if counts:
-                record["virtio_gpu_cursor"] = dict(zip(("updates", "moves", "hides"), map(int, counts[-1])))
+        try:
+            baseline = guard_pids(engine) if args.overlap_guard else None
+            if args.overlap_guard and baseline is None:
+                raise guard_lost(record, "the settle window")
+            time.sleep(args.settle_s)
+            if baseline is not None:
+                overlap_check(engine, record, baseline, "idle")
+            first = cpu_and_rss(engine.vmm_pid) if engine.vmm_pid else None
+            diag = os.environ.get("BVBENCH_SAMPLE") and engine.vmm_pid
+            if diag:  # where the idle time goes: per-thread times around the window, plus a stack sample
+                threads_before = subprocess.run(["ps", "-M", "-p", str(engine.vmm_pid)], capture_output=True,
+                                                text=True).stdout
+                subprocess.Popen(["/usr/bin/sample", str(engine.vmm_pid), "5", "-file", str(boot_dir / "idle-sample.txt")],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(args.idle_s)
+            second = cpu_and_rss(engine.vmm_pid) if engine.vmm_pid else None
+            if diag:
+                after = subprocess.run(["ps", "-M", "-p", str(engine.vmm_pid)], capture_output=True, text=True).stdout
+                (boot_dir / "idle-threads.txt").write_text(threads_before + "\n----\n" + after)
+            if first and second:
+                record["idle_cpu_pct"] = round((second[0] - first[0]) / args.idle_s * 100, 1)
+                record["rss_mib"] = round(second[1] / 1024)
+            if args.pointer:
+                try:
+                    pointer_test(engine, record)
+                except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                    record["errors"].append(f"pointer: {type(error).__name__}: {error}")
+            if args.desktop_mode:
+                try:
+                    _, text = engine.run(command_line(desktop_mode(args.desktop_mode == "native")), time.monotonic() + 60)
+                    record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
+                    if isinstance(engine, BridgeVM) and engine.display_fb.exists():
+                        save_display_frame(engine.display_fb, boot_dir / "desktop.pnm")
+                except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                    record["errors"].append(f"desktop-mode: {type(error).__name__}: {error}")
+            if args.display:
+                try:
+                    display_test(engine, record)
+                except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                    record["errors"].append(f"display: {type(error).__name__}: {error}")
+            if args.shutdown_diag:  # how the previous shutdown of this disk spent its time (guest's own log)
+                script = ("Get-WinEvent -LogName 'Microsoft-Windows-Diagnostics-Performance/Operational' -MaxEvents 12 "
+                          "-ErrorAction SilentlyContinue | Where-Object { $_.Id -ge 200 -and $_.Id -le 206 } | "
+                          "ForEach-Object { $x = [xml]$_.ToXml(); $d = ($x.Event.EventData.Data | Where-Object { $_.'#text' } | "
+                          "ForEach-Object { $_.Name + '=' + $_.'#text' }) -join ' '; "
+                          "'{0:o} {1} {2}' -f $_.TimeCreated, $_.Id, $d }")
+                try:
+                    _, text = engine.run(command_line(script), time.monotonic() + 60)
+                    record["shutdown_diag"] = text.strip()[-4000:]
+                except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                    record["errors"].append(f"shutdown-diag: {type(error).__name__}: {error}")
+            if args.audio:
+                try:
+                    code, text = engine.run(command_line(audio_loop(1800)), time.monotonic() + 60)
+                    if code != 0 or "BVAUDIO rv=0" not in text:
+                        record["errors"].append(f"audio: exit={code} {text.strip()[:200]}")
+                except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                    record["errors"].append(f"audio: {type(error).__name__}: {error}")
+            if args.stall_idle:
+                try:
+                    _, text = engine.run(command_line(stall_idle(8000)), time.monotonic() + 120)
+                    record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
+                except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                    record["errors"].append(f"stall-idle: {type(error).__name__}: {error}")
+            if args.stall:
+                try:
+                    _, text = engine.run(command_line(stall_under_flush(8000)), time.monotonic() + 120)
+                    record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
+                except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                    record["errors"].append(f"stall: {type(error).__name__}: {error}")
+            suite = SUITE + ([("net-download", net_download(args.blob_url, hashlib.sha256(_Blob.payload).hexdigest()))]
+                             if args.net else [])
+            only = None if args.only is None else set(args.only.split(","))
+            for name, script in ([] if args.skip_suite else [t for t in suite if only is None or t[0] in only]):
+                if baseline is not None:
+                    overlap_check(engine, record, baseline, name)
+                started = time.monotonic()
+                try:
+                    code, text = engine.run(command_line(script), time.monotonic() + 600)
+                    values = parse_bvbench(text)
+                    record["bench"].update({metric: value for metric, (value, _) in values.items()})
+                    if not values:
+                        record["errors"].append(f"{name}: exit={code} no value: {text.strip()[:300]}")
+                except (TimeoutError, RuntimeError, ConnectionError) as error:
+                    record["errors"].append(f"{name}: {error}")
+                    break
+                record.setdefault("bench_wall_s", {})[name] = round(time.monotonic() - started, 2)
+            if args.hw_cursor and record["boot"] == 1:  # applies from the next Windows start: boot 2 on
+                try:
+                    _, text = engine.run(hw_cursor_command(), time.monotonic() + 120)
+                    record["hw_cursor"] = next((line.strip() for line in text.splitlines()
+                                                if line.startswith("BVCURSOR ")), "")
+                    if record["hw_cursor"] not in ("BVCURSOR result=set", "BVCURSOR result=already"):
+                        record["errors"].append(f"hw-cursor: {text.strip()[:300]}")
+                except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                    record["errors"].append(f"hw-cursor: {type(error).__name__}: {error}")
+        except GuardLost:
+            pass  # invalid: no more guest commands, straight to the shutdown
+        shutdown_boot(engine, record)
     except BaseException as error:
         record["errors"].append(f"boot: {type(error).__name__}: {error}")
         if getattr(engine, "proc", None) is not None and engine.proc.poll() is None:
@@ -589,6 +616,25 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
             raise
     record["loadavg_end"] = os.getloadavg()
     return record
+
+
+def shutdown_boot(engine: Engine, record: dict) -> None:
+    """The guest's own shutdown, timed, then the runner's exit."""
+    stop_started = time.monotonic()
+    engine.request_shutdown()
+    while engine.vmm_alive() and time.monotonic() < stop_started + SHUTDOWN_TIMEOUT_S:
+        if "guest_off_ms" not in record and getattr(engine, "guest_off_seen", lambda: False)():
+            record["guest_off_ms"] = round((time.monotonic() - stop_started) * 1000)
+        time.sleep(0.1)
+    if engine.vmm_alive():  # no shutdown time: the shutdown never completed
+        record["errors"].append(f"shutdown: the VMM still ran {SHUTDOWN_TIMEOUT_S} s after the request")
+    else:
+        record["shutdown_ms"] = round((time.monotonic() - stop_started) * 1000)
+    record["clean_exit"] = engine.stop(time.monotonic() + SHUTDOWN_TIMEOUT_S)
+    if isinstance(engine, BridgeVM) and engine.log.exists():  # the probe's end-of-run cursor counts
+        counts = re.findall(rb"virtio-gpu cursor updates=(\d+) moves=(\d+) hides=(\d+)", engine.log.read_bytes())
+        if counts:
+            record["virtio_gpu_cursor"] = dict(zip(("updates", "moves", "hides"), map(int, counts[-1])))
 
 
 def other_vmms(text) -> str:
@@ -655,7 +701,8 @@ def run(args) -> None:
 
 def summary(path: str) -> dict:
     data = json.loads(Path(path).read_text())
-    boots = [b for b in data["boots"] if b["boot"] > 1 or len(data["boots"]) == 1]
+    measured = [b for b in data["boots"] if b["boot"] > 1 or len(data["boots"]) == 1]
+    boots = [b for b in measured if "invalid" not in b]  # --overlap-guard marked it
     for boot in boots:  # results written before multi-metric scripts were recorded
         for error in boot["errors"]:
             boot["bench"].update({k: v for k, (v, _) in parse_bvbench(error.split("no value: ", 1)[-1]).items()})
@@ -664,12 +711,18 @@ def summary(path: str) -> dict:
     for name in sorted({n for b in boots for n in b["bench"]}):
         table[name] = [b["bench"][name] for b in boots if name in b["bench"]]
     return {"identity": data["identity"], "median": {k: statistics.median(v) for k, v in table.items() if v},
-            "samples": {k: v for k, v in table.items() if v}}
+            "samples": {k: v for k, v in table.items() if v},
+            "invalid": [f"boot {b['boot']}: {b['invalid']}" for b in measured if "invalid" in b]}
 
 
 def compare(a: str, b: str) -> None:
     left, right = summary(a), summary(b)
     names = (left["identity"]["engine"], right["identity"]["engine"])
+    for name, side in zip(names, (left, right)):
+        for reason in side["invalid"]:
+            print(f"{name}: left out, {reason}")
+        if not side["median"]:
+            print(f"{name}: no valid measured boot")
     print(f"{'metric':28} {names[0]:>12} {names[1]:>12}  better")
     lower_better = {"ready_wall_ms", "boot_timer_desktop_ms", "idle_cpu_pct", "rss_mib", "guest_off_ms", "shutdown_ms",
                     "cursor-interval-p50", "cursor-interval-p95", "agent-rtt-p50", "agent-rtt-p95",
@@ -707,6 +760,9 @@ def main() -> None:
     r.add_argument("--desktop-mode", choices=["report", "native"],
                    help="Windows desktop resolution (native: first switch to the display's largest mode)")
     r.add_argument("--skip-suite", action="store_true", help="only boot, idle, optional pointer/net, shutdown")
+    r.add_argument("--overlap-guard", action="store_true",
+                   help="mark a boot invalid if a guest process started after READY is still running when the idle"
+                        " window or a suite test opens")
     r.add_argument("--only", help="comma-separated suite tests to run (e.g. mem-first-touch,net-download)")
     r.add_argument("--boot-timer-ms", type=int, default=60000, help="BridgeVM framebuffer sample period (diagnostics)")
     r.add_argument("--no-xhci", action="store_true", help="BridgeVM without the USB controller (diagnostics)")

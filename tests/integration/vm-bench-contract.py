@@ -25,7 +25,7 @@ import vm_bench  # noqa: E402
 GUEST_OFF = "guest powered off; host teardown follows"
 BOOT_ARGS = dict(ready_timeout=600, settle_s=0, idle_s=0, pointer=False, desktop_mode=None, display=False,
                  shutdown_diag=False, stall_idle=False, stall=False, net=False, only=None, skip_suite=True,
-                 audio=False, hw_cursor=False)
+                 audio=False, hw_cursor=False, overlap_guard=False)
 
 
 class Clock:
@@ -81,6 +81,59 @@ class VmBenchContract(unittest.TestCase):
         self.assertNotIn("shutdown_ms", record)
         self.assertEqual(record["errors"], ["shutdown: the VMM still ran 240 s after the request"])
         self.assertFalse(record["clean_exit"])
+
+    def test_the_overlap_guard_marks_a_boot_whose_process_outlives_its_window_invalid(self):
+        engine = NeverOff()
+        answers = iter(["BVGUARD pids=7", "BVGUARD pids=7,9"])  # after READY, then as the idle window opens
+        engine.run = lambda command, deadline: (0, next(answers))
+        with mock.patch.dict(BOOT_ARGS, overlap_guard=True):
+            record = self.boot(engine)
+        self.assertEqual(record["invalid"], "a bench process was still running when idle opened")
+        self.assertIn("overlap guard before idle: processes [9] still running", record["errors"])
+
+    def test_a_guard_with_no_answer_ends_the_boot_invalid_through_its_shutdown(self):
+        # A late guard reply would stay in QEMU's agent stream and become the next command's output.
+        for answers, window in (([TimeoutError("guard")], "the settle window"),
+                                (["BVGUARD pids=7", TimeoutError("guard")], "idle")):
+            with self.subTest(window=window):
+                engine, replies, sent = NeverOff(), iter(answers), []
+                engine.request_shutdown = mock.Mock()
+
+                def run(command, deadline):
+                    sent.append(command)
+                    reply = next(replies)
+                    if isinstance(reply, Exception):
+                        raise reply
+                    return 0, reply
+                engine.run = run
+                with mock.patch.dict(BOOT_ARGS, overlap_guard=True, skip_suite=False, only="process-spawn"):
+                    record = self.boot(engine)
+                self.assertEqual(len(sent), len(answers), "a guest command followed the unanswered guard")
+                engine.request_shutdown.assert_called_once()
+                self.assertEqual(record["invalid"], f"the overlap guard gave no answer before {window}")
+                self.assertEqual(record["errors"][0], f"overlap guard before {window}: no answer")
+                self.assertNotIn("boot: ", " ".join(record["errors"]))
+
+    def test_a_guard_invalid_boot_is_left_out_of_the_comparison_and_named(self):
+        def results(boots):
+            path = Path(self.tmp.name) / f"r{len(os.listdir(self.tmp.name))}.json"
+            path.write_text(vm_bench.json.dumps({"identity": {"engine": "bridgevm"}, "boots": boots}))
+            return str(path)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        boot = lambda n, cpu, **extra: dict(boot=n, errors=[], bench={}, idle_cpu_pct=cpu, **extra)  # noqa: E731
+        mixed = vm_bench.summary(results([boot(1, 1.0), boot(2, 99.0, invalid="a bench process was still running "
+                                                                "when idle opened"), boot(3, 5.0)]))
+        self.assertEqual(mixed["median"]["idle_cpu_pct"], 5.0)
+        self.assertEqual(mixed["invalid"], ["boot 2: a bench process was still running when idle opened"])
+        only_invalid = results([boot(1, 1.0), boot(2, 99.0, invalid="x")])
+        self.assertEqual(vm_bench.summary(only_invalid)["median"], {})
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            vm_bench.compare(only_invalid, results([boot(1, 1.0), boot(2, 4.0)]))
+        self.assertIn("bridgevm: left out, boot 2: x", printed.getvalue())
+        self.assertIn("bridgevm: no valid measured boot", printed.getvalue())
+        self.assertNotIn("99.0", printed.getvalue())
 
     def test_sigterm_or_ctrl_c_during_a_boot_kills_the_vm_and_ends_the_campaign(self):
         for error in (SystemExit(143), KeyboardInterrupt()):
