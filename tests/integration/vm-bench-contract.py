@@ -110,6 +110,27 @@ class VmBenchContract(unittest.TestCase):
                 self.assertEqual(record["errors"][0], "overlap guard after READY: no answer; no guard this boot"
                                  if len(answers) == 1 else "overlap guard before idle: no answer")
 
+    def test_a_guard_invalid_boot_is_left_out_of_the_comparison_and_named(self):
+        def results(boots):
+            path = Path(self.tmp.name) / f"r{len(os.listdir(self.tmp.name))}.json"
+            path.write_text(vm_bench.json.dumps({"identity": {"engine": "bridgevm"}, "boots": boots}))
+            return str(path)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        boot = lambda n, cpu, **extra: dict(boot=n, errors=[], bench={}, idle_cpu_pct=cpu, **extra)  # noqa: E731
+        mixed = vm_bench.summary(results([boot(1, 1.0), boot(2, 99.0, invalid="a bench process was still running "
+                                                                "when idle opened"), boot(3, 5.0)]))
+        self.assertEqual(mixed["median"]["idle_cpu_pct"], 5.0)
+        self.assertEqual(mixed["invalid"], ["boot 2: a bench process was still running when idle opened"])
+        only_invalid = results([boot(1, 1.0), boot(2, 99.0, invalid="x")])
+        self.assertEqual(vm_bench.summary(only_invalid)["median"], {})
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            vm_bench.compare(only_invalid, results([boot(1, 1.0), boot(2, 4.0)]))
+        self.assertIn("bridgevm: left out, boot 2: x", printed.getvalue())
+        self.assertIn("bridgevm: no valid measured boot", printed.getvalue())
+        self.assertNotIn("99.0", printed.getvalue())
+
     def test_sigterm_or_ctrl_c_during_a_boot_kills_the_vm_and_ends_the_campaign(self):
         for error in (SystemExit(143), KeyboardInterrupt()):
             with self.subTest(error=type(error).__name__), self.assertRaises(type(error)):

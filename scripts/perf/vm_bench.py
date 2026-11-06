@@ -682,7 +682,8 @@ def run(args) -> None:
 
 def summary(path: str) -> dict:
     data = json.loads(Path(path).read_text())
-    boots = [b for b in data["boots"] if b["boot"] > 1 or len(data["boots"]) == 1]
+    measured = [b for b in data["boots"] if b["boot"] > 1 or len(data["boots"]) == 1]
+    boots = [b for b in measured if "invalid" not in b]  # --overlap-guard marked it
     for boot in boots:  # results written before multi-metric scripts were recorded
         for error in boot["errors"]:
             boot["bench"].update({k: v for k, (v, _) in parse_bvbench(error.split("no value: ", 1)[-1]).items()})
@@ -691,12 +692,18 @@ def summary(path: str) -> dict:
     for name in sorted({n for b in boots for n in b["bench"]}):
         table[name] = [b["bench"][name] for b in boots if name in b["bench"]]
     return {"identity": data["identity"], "median": {k: statistics.median(v) for k, v in table.items() if v},
-            "samples": {k: v for k, v in table.items() if v}}
+            "samples": {k: v for k, v in table.items() if v},
+            "invalid": [f"boot {b['boot']}: {b['invalid']}" for b in measured if "invalid" in b]}
 
 
 def compare(a: str, b: str) -> None:
     left, right = summary(a), summary(b)
     names = (left["identity"]["engine"], right["identity"]["engine"])
+    for name, side in zip(names, (left, right)):
+        for reason in side["invalid"]:
+            print(f"{name}: left out, {reason}")
+        if not side["median"]:
+            print(f"{name}: no valid measured boot")
     print(f"{'metric':28} {names[0]:>12} {names[1]:>12}  better")
     lower_better = {"ready_wall_ms", "boot_timer_desktop_ms", "idle_cpu_pct", "rss_mib", "guest_off_ms", "shutdown_ms",
                     "cursor-interval-p50", "cursor-interval-p95", "agent-rtt-p50", "agent-rtt-p95",
