@@ -339,6 +339,10 @@ pub(crate) fn run() -> ExitCode {
             let _ = bridgevm_hvf::nvme::FLUSH_DONE_HOOK.set(Box::new(move || {
                 hv_vcpus_exit(&vcpu, 1);
             }));
+            // A NAT host socket has data for the guest: vCPU0's drain polls it.
+            let _ = bridgevm_hvf::net_nat::NET_RX_HOOK.set(Box::new(move || {
+                hv_vcpus_exit(&vcpu, 1);
+            }));
             if let Some(state) = gpu_vblank_wake_state.as_ref() {
                 gpu_vblank_wake.ensure_started(vcpu, Arc::clone(state));
             }

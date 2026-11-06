@@ -6,6 +6,7 @@ use std::{
     collections::{hash_map::Entry, HashMap, VecDeque},
     io,
     net::{IpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr, Shutdown, SocketAddr, UdpSocket},
+    os::fd::AsRawFd,
     path::PathBuf,
     time::Instant,
 };
@@ -415,8 +416,23 @@ pub struct HostSocketOutboundIpv4Handler {
     pub(crate) max_flows: usize,
     pub(crate) max_icmp_flows: usize,
     pub(crate) tcp_isn_counter: u32,
+    /// Started with the first flow once the VMM set `NET_RX_HOOK`.
+    pub(crate) wake: std::cell::OnceCell<Option<HostWake>>,
+    pub(crate) ready_scratch: Vec<i32>,
     #[cfg(test)]
     pub(crate) idle_sweep_count: u64,
+}
+
+/// Has the wake thread (started on first use) watch a new flow's socket.
+/// False when there is no wake thread: the flow is then read on every poll.
+pub(crate) fn watch_socket(
+    wake: &std::cell::OnceCell<Option<HostWake>>,
+    fd: i32,
+    connecting: bool,
+) -> bool {
+    wake.get_or_init(HostWake::start)
+        .as_ref()
+        .is_some_and(|wake| wake.watch(fd, connecting))
 }
 
 pub(crate) const HOST_SOCKET_UDP_RECV_SCRATCH_LEN: usize = 2048;
@@ -470,6 +486,8 @@ impl HostSocketOutboundIpv4Handler {
             max_flows: Self::DEFAULT_MAX_FLOWS,
             max_icmp_flows: Self::DEFAULT_MAX_ICMP_FLOWS,
             tcp_isn_counter: 0x4256_0000,
+            wake: std::cell::OnceCell::new(),
+            ready_scratch: Vec::new(),
             #[cfg(test)]
             idle_sweep_count: 0,
         }
@@ -484,6 +502,25 @@ impl HostSocketOutboundIpv4Handler {
     #[cfg(test)]
     pub(crate) fn udp_flow_count(&self) -> usize {
         self.udp_flows.len()
+    }
+
+    /// Answers the wake thread's kick and marks the flows whose sockets it saw
+    /// become readable (or finish connecting).
+    pub(crate) fn take_ready_sockets(&mut self) {
+        let Some(Some(wake)) = self.wake.get() else {
+            return;
+        };
+        wake.polled();
+        wake.take_ready(&mut self.ready_scratch);
+        if self.ready_scratch.is_empty() {
+            return;
+        }
+        for flow in self.tcp_flows.values_mut() {
+            flow.readable |= self.ready_scratch.contains(&flow.stream.as_raw_fd());
+        }
+        for flow in self.udp_flows.values_mut() {
+            flow.readable |= self.ready_scratch.contains(&flow.socket.as_raw_fd());
+        }
     }
 
     pub(crate) fn now_ms(&self) -> u64 {
@@ -504,10 +541,14 @@ impl HostSocketOutboundIpv4Handler {
         now: u64,
     ) -> io::Result<&mut IcmpFlow> {
         get_or_insert_lru(&mut self.icmp_flows, key, self.max_icmp_flows, || {
-            RawIcmpSocket::new_nonblocking().map(|socket| IcmpFlow {
-                socket,
-                guest_ip,
-                last_activity: now,
+            RawIcmpSocket::new_nonblocking().map(|socket| {
+                #[cfg(target_os = "macos")]
+                let _ = watch_socket(&self.wake, socket.fd, false);
+                IcmpFlow {
+                    socket,
+                    guest_ip,
+                    last_activity: now,
+                }
             })
         })?
         .ok_or_else(|| io::Error::other("icmp flow missing after insert"))
@@ -567,9 +608,12 @@ impl HostSocketOutboundIpv4Handler {
                     Ok(socket) => socket,
                     Err(_) => return,
                 };
+                let watched = watch_socket(&self.wake, socket.as_raw_fd(), false);
                 entry.insert(UdpFlow {
                     socket,
                     last_activity: now,
+                    readable: true,
+                    watched,
                 })
             }
         };
@@ -609,10 +653,11 @@ impl HostSocketOutboundIpv4Handler {
             };
             let shift = syn_window_shift(tcp.segment);
             let guest_next = tcp.seq.wrapping_add(1);
-            self.tcp_flows.insert(
-                key,
-                TcpFlow::new(stream, guest_next, our_seq, tcp.window, shift, now),
-            );
+            let fd = stream.as_raw_fd();
+            let mut flow = TcpFlow::new(stream, guest_next, our_seq, tcp.window, shift, now);
+            flow.watched =
+                watch_socket(&self.wake, fd, true) && watch_socket(&self.wake, fd, false);
+            self.tcp_flows.insert(key, flow);
             self.evict_idle_flows();
             return;
         }
@@ -660,7 +705,7 @@ impl HostSocketOutboundIpv4Handler {
         let now = self.now_ms();
         let recv_scratch = &mut self.udp_recv_scratch;
         for (key, flow) in &mut self.udp_flows {
-            loop {
+            while flow.readable {
                 match flow.socket.recv(recv_scratch) {
                     Ok(len) => {
                         flow.last_activity = now;
@@ -681,6 +726,7 @@ impl HostSocketOutboundIpv4Handler {
                     }
                     Err(e) if would_block(&e) => {
                         stats.udp_recv_again = stats.udp_recv_again.saturating_add(1);
+                        flow.readable = !flow.watched;
                         break;
                     }
                     Err(_) => {
@@ -744,7 +790,7 @@ impl HostSocketOutboundIpv4Handler {
                 // resets). Guest-driven activity is stamped in the packet
                 // handlers.
                 let mut active = false;
-                if flow.state == TcpProxyState::Connecting {
+                if flow.state == TcpProxyState::Connecting && flow.readable {
                     let failed = match tcp_connect_error(&flow.stream) {
                         Ok(Some(0)) => {
                             active = true;
@@ -757,6 +803,7 @@ impl HostSocketOutboundIpv4Handler {
                         Err(e) => Some(HostError::from(&e)),
                         Ok(None) => {
                             stats.tcp_connect_again = stats.tcp_connect_again.saturating_add(1);
+                            flow.readable = !flow.watched;
                             None
                         }
                     };

@@ -168,17 +168,25 @@ pub(super) fn connect(
     capacity: usize,
     shift: Option<u8>,
 ) -> Option<(HostNat, FakeGuest, JoinHandle<()>)> {
-    let listener = loopback_tcp_listener()?;
-    let port = listener.local_addr().unwrap().port();
     let bytes = payload.to_vec();
-    let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
+    let handler = HostSocketOutboundIpv4Handler::with_dns_resolver(StdIpv4Addr::LOCALHOST);
+    connect_with(handler, capacity, shift, move |mut stream| {
         stream.write_all(&bytes).unwrap();
         stream.shutdown(Shutdown::Write).unwrap();
-    });
-    let mut backend = NatBackend::with_outbound_handler(
-        HostSocketOutboundIpv4Handler::with_dns_resolver(StdIpv4Addr::LOCALHOST),
-    );
+    })
+}
+
+/// `connect` through `handler`, with `serve` run on the accepted stream.
+pub(super) fn connect_with(
+    handler: HostSocketOutboundIpv4Handler,
+    capacity: usize,
+    shift: Option<u8>,
+    serve: impl FnOnce(std::net::TcpStream) + Send + 'static,
+) -> Option<(HostNat, FakeGuest, JoinHandle<()>)> {
+    let listener = loopback_tcp_listener()?;
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || serve(listener.accept().unwrap().0));
+    let mut backend = NatBackend::with_outbound_handler(handler);
     let mut guest = FakeGuest::new(port, capacity, shift);
     backend.transmit(&guest.syn());
     let deadline = Instant::now() + Duration::from_secs(2);
