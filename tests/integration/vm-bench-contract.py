@@ -91,24 +91,28 @@ class VmBenchContract(unittest.TestCase):
         self.assertEqual(record["invalid"], "a bench process was still running when idle opened")
         self.assertIn("overlap guard before idle: processes [9] still running", record["errors"])
 
-    def test_a_guard_that_times_out_is_an_error_and_the_boot_goes_on_to_its_shutdown(self):
-        for answers in ([TimeoutError("guard")], ["BVGUARD pids=7", TimeoutError("guard")]):
-            with self.subTest(timeouts_after=len(answers) - 1):
-                engine, replies = NeverOff(), iter(answers)
+    def test_a_guard_with_no_answer_ends_the_boot_invalid_through_its_shutdown(self):
+        # A late guard reply would stay in QEMU's agent stream and become the next command's output.
+        for answers, window in (([TimeoutError("guard")], "the settle window"),
+                                (["BVGUARD pids=7", TimeoutError("guard")], "idle")):
+            with self.subTest(window=window):
+                engine, replies, sent = NeverOff(), iter(answers), []
                 engine.request_shutdown = mock.Mock()
 
                 def run(command, deadline):
+                    sent.append(command)
                     reply = next(replies)
                     if isinstance(reply, Exception):
                         raise reply
                     return 0, reply
                 engine.run = run
-                with mock.patch.dict(BOOT_ARGS, overlap_guard=True):
+                with mock.patch.dict(BOOT_ARGS, overlap_guard=True, skip_suite=False, only="process-spawn"):
                     record = self.boot(engine)
+                self.assertEqual(len(sent), len(answers), "a guest command followed the unanswered guard")
                 engine.request_shutdown.assert_called_once()
-                self.assertNotIn("invalid", record)
-                self.assertEqual(record["errors"][0], "overlap guard after READY: no answer; no guard this boot"
-                                 if len(answers) == 1 else "overlap guard before idle: no answer")
+                self.assertEqual(record["invalid"], f"the overlap guard gave no answer before {window}")
+                self.assertEqual(record["errors"][0], f"overlap guard before {window}: no answer")
+                self.assertNotIn("boot: ", " ".join(record["errors"]))
 
     def test_a_guard_invalid_boot_is_left_out_of_the_comparison_and_named(self):
         def results(boots):
