@@ -173,6 +173,26 @@ OVERLAP_GUARD = (
 )
 
 
+# vm_bench --guest-dns-block: every guest adapter's DNS points at the guest's own loopback, where no server listens,
+# so Windows cannot resolve its update, Defender or Edge hosts (T49: 98 lookups and ~2.5x the bench's own traffic);
+# the benches reach the host by IP. The answer lists each adapter's servers per address family (2 IPv4, 23 IPv6).
+GUEST_DNS_BLOCK = (
+    "$n = @(Get-NetAdapter -ErrorAction SilentlyContinue);"
+    " foreach ($a in $n) { try { Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex"
+    " -ServerAddresses ('127.0.0.1','::1') } catch { 'BVDNS error ' + $a.ifIndex + ': ' + $_.Exception.Message } };"
+    " try { Clear-DnsClientCache } catch { 'BVDNS error cache: ' + $_.Exception.Message };"
+    " $r = @(foreach ($a in $n) { Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ErrorAction SilentlyContinue"
+    " | ForEach-Object { '{0}/{1}={2}' -f $a.ifIndex, $_.AddressFamily, ($_.ServerAddresses -join ',') } });"
+    " 'BVDNS adapters=' + $n.Count + ' ' + ($r -join ' ')"
+)
+# The guest adapters' received and sent bytes so far (--guest-dns-block takes them around the suite).
+GUEST_NET_BYTES = (
+    "$t = @(Get-NetAdapterStatistics -ErrorAction SilentlyContinue);"
+    " 'BVNET rx={0} tx={1}' -f [uint64](($t | Measure-Object -Property ReceivedBytes -Sum).Sum),"
+    " [uint64](($t | Measure-Object -Property SentBytes -Sum).Sum)"
+)
+
+
 def stall_idle(ms: int) -> str:
     """The same Sleep(1) loop as `stall_under_flush` with no writer: how late an otherwise idle
     guest's timer wakes a thread. Separates the timer and wake path from disk interference."""
@@ -285,6 +305,8 @@ def _self_test() -> None:
     assert parse_bvbench("noise\r\nBVBENCH cpu-sha256-1t 812.5 MB/s\r\n") == {"cpu-sha256-1t": (812.5, "MB/s")}
     assert parse_bvbench("BVBENCH x 1,5 MB/s") == {}
     assert "'BVGUARD pids=' + ($p -join ',')" in OVERLAP_GUARD and "$_.ProcessId -ne $PID" in OVERLAP_GUARD
+    assert "-ServerAddresses ('127.0.0.1','::1')" in GUEST_DNS_BLOCK and "'BVDNS adapters=' + $n.Count" in GUEST_DNS_BLOCK
+    assert "'BVNET rx={0} tx={1}'" in GUEST_NET_BYTES
     decoded = base64.b64decode(command_line("x").rsplit(" ", 1)[1]).decode("utf-16-le")
     assert "CurrentCulture=[Globalization.CultureInfo]::InvariantCulture; x" in decoded
     net = net_download("http://h/blob", "ab" * 32)

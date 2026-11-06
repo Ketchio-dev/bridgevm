@@ -7,6 +7,7 @@ completes, a relative --out, and the probe line that times the guest's power-off
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import io
 import os
@@ -25,7 +26,11 @@ import vm_bench  # noqa: E402
 GUEST_OFF = "guest powered off; host teardown follows"
 BOOT_ARGS = dict(ready_timeout=600, settle_s=0, idle_s=0, pointer=False, desktop_mode=None, display=False,
                  shutdown_diag=False, stall_idle=False, stall=False, net=False, only=None, skip_suite=True,
-                 audio=False, hw_cursor=False, overlap_guard=False)
+                 audio=False, hw_cursor=False, overlap_guard=False, guest_dns_block=False)
+
+
+def decoded(command):
+    return base64.b64decode(command.rsplit(" ", 1)[1]).decode("utf-16-le")
 
 
 class Clock:
@@ -113,6 +118,34 @@ class VmBenchContract(unittest.TestCase):
                 self.assertEqual(record["invalid"], f"the overlap guard gave no answer before {window}")
                 self.assertEqual(record["errors"][0], f"overlap guard before {window}: no answer")
                 self.assertNotIn("boot: ", " ".join(record["errors"]))
+
+    def test_the_guest_dns_block_marks_a_boot_whose_guest_keeps_a_dns_server_invalid(self):
+        net = "BVNET rx=10 tx=5"
+        for dns, invalid in (("BVDNS adapters=1 5/2=127.0.0.1 5/23=::1", None),
+                             ("BVDNS adapters=1 5/2=127.0.0.1 5/23=fec0:0:0:ffff::1", "the guest DNS block did not apply")):
+            with self.subTest(dns=dns), mock.patch.dict(BOOT_ARGS, guest_dns_block=True):
+                engine = NeverOff()
+                engine.run = lambda command, deadline, dns=dns: (0, dns if "BVDNS" in decoded(command) else net)
+                record = self.boot(engine)
+                self.assertEqual(record.get("invalid"), invalid)
+                self.assertEqual(record["guest_net_bytes"], {w: {"rx": 10, "tx": 5} for w in ("ready", "before", "after")})
+        self.assertEqual(vm_bench.nat_stats(b"x\nvirtio-net NAT stats: guest_frames=7 dns_queries=0\n"),
+                         {"guest_frames": "7", "dns_queries": "0"})
+
+    def test_a_dns_block_with_no_answer_ends_the_boot_invalid_through_its_shutdown(self):
+        engine, sent = NeverOff(), []
+        engine.request_shutdown = mock.Mock()
+
+        def run(command, deadline):
+            sent.append(command)
+            raise TimeoutError("dns")
+        engine.run = run
+        with mock.patch.dict(BOOT_ARGS, guest_dns_block=True, skip_suite=False, only="process-spawn"):
+            record = self.boot(engine)
+        self.assertEqual(len(sent), 1, "a guest command followed the unanswered DNS block")
+        engine.request_shutdown.assert_called_once()
+        self.assertEqual(record["invalid"], "the guest DNS block gave no answer")
+        self.assertNotIn("boot: ", " ".join(record["errors"]))
 
     def test_a_guard_invalid_boot_is_left_out_of_the_comparison_and_named(self):
         def results(boots):
