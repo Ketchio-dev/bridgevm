@@ -212,10 +212,14 @@ function Get-PortInfoRaw($handle) {
     return @{ Id = $id; OutVqFull = $buf[4]; Host = $buf[5]; Guest = $buf[6]; Name = $name }
 }
 
+# Idle polls (every ~2 s) log the port state only when it changed, so a
+# quiet agent adds no lines; a line each poll was ~43k lines a day.
 function Log-PortInfo($handle, [string]$when) {
     $info = Get-PortInfoRaw $handle
-    if ($null -eq $info) { Log "PORTINFO[$when] unavailable"; return }
-    Log "PORTINFO[$when] id=$($info.Id) HostConnected=$($info.Host) GuestConnected=$($info.Guest) OutVqFull=$($info.OutVqFull) name='$($info.Name)'"
+    $state = if ($null -eq $info) { 'unavailable' } else { "id=$($info.Id) HostConnected=$($info.Host) GuestConnected=$($info.Guest) OutVqFull=$($info.OutVqFull) name='$($info.Name)'" }
+    if ($when -eq 'idle' -and $state -eq $script:LastPortState) { return }
+    $script:LastPortState = $state
+    Log "PORTINFO[$when] $state"
 }
 
 # Discover and open the agent port. Prefer the enumerated device-interface whose
