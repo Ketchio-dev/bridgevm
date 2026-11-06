@@ -65,8 +65,33 @@ pub(crate) fn queue_tcp_reply(
     flags: u8,
     payload: &[u8],
 ) {
+    queue_tcp_segment(
+        reply_queue,
+        guest_mac,
+        key,
+        seq,
+        ack,
+        flags,
+        u16::MAX,
+        payload,
+    );
+}
+
+/// `queue_tcp_reply` with a flow's window field.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn queue_tcp_segment(
+    reply_queue: &mut VecDeque<Vec<u8>>,
+    guest_mac: MacAddr,
+    key: &TcpFlowKey,
+    seq: u32,
+    ack: u32,
+    flags: u8,
+    window: u16,
+    payload: &[u8],
+) {
     let (source, destination) = tcp_reply_endpoints(guest_mac, key);
-    let Some(frame) = build_tcp_reply_frame(source, destination, seq, ack, flags, &[], payload)
+    let Some(frame) =
+        build_tcp_reply_frame(source, destination, seq, ack, flags, window, &[], payload)
     else {
         return;
     };

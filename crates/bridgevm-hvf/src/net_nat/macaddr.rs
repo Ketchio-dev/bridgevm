@@ -428,11 +428,11 @@ pub struct HostSocketOutboundIpv4Handler {
 pub(crate) fn watch_socket(
     wake: &std::cell::OnceCell<Option<HostWake>>,
     fd: i32,
-    connecting: bool,
+    writable: bool,
 ) -> bool {
     wake.get_or_init(HostWake::start)
         .as_ref()
-        .is_some_and(|wake| wake.watch(fd, connecting))
+        .is_some_and(|wake| wake.watch(fd, writable))
 }
 
 pub(crate) const HOST_SOCKET_UDP_RECV_SCRATCH_LEN: usize = 2048;
@@ -516,7 +516,10 @@ impl HostSocketOutboundIpv4Handler {
             return;
         }
         for flow in self.tcp_flows.values_mut() {
-            flow.readable |= self.ready_scratch.contains(&flow.stream.as_raw_fd());
+            if self.ready_scratch.contains(&flow.stream.as_raw_fd()) {
+                flow.readable = true;
+                flow.write_armed = false;
+            }
         }
         for flow in self.udp_flows.values_mut() {
             flow.readable |= self.ready_scratch.contains(&flow.socket.as_raw_fd());
@@ -836,14 +839,20 @@ impl HostSocketOutboundIpv4Handler {
                     if flow.write_buf.len() != write_backlog {
                         active = true;
                     }
-                    if flow.pending_ack {
-                        queue_tcp_reply(
+                    if !flow.write_buf.is_empty() && flow.watched && !flow.write_armed {
+                        // The host socket is full: wake when it drains.
+                        flow.write_armed = watch_socket(&self.wake, flow.stream.as_raw_fd(), true);
+                    }
+                    if flow.pending_ack || flow.window_grew() {
+                        let window = flow.window_field();
+                        queue_tcp_segment(
                             reply_queue,
                             guest_mac,
                             key,
                             flow.send.next,
                             flow.guest_next,
                             TCP_FLAG_ACK,
+                            window,
                             &[],
                         );
                         stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);

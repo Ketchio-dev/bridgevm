@@ -70,11 +70,12 @@ impl HostWake {
         imp::start()
     }
 
-    /// Tell the thread when `fd` has data to read (`connecting`: when its
-    /// connect completes). The registration ends when the socket is closed.
+    /// Tell the thread when `fd` has data to read (`writable`: once, when it
+    /// can be written, as when a connect completes or a full socket drains).
+    /// The registration ends when the socket is closed.
     /// False when the kqueue refused it: the socket is then read on every poll.
-    pub(crate) fn watch(&self, fd: i32, connecting: bool) -> bool {
-        imp::watch(self.shared.queue, fd, connecting)
+    pub(crate) fn watch(&self, fd: i32, writable: bool) -> bool {
+        imp::watch(self.shared.queue, fd, writable)
     }
 
     /// A poll of the host sockets is starting: the kick it answers is done.
@@ -187,8 +188,8 @@ mod imp {
         })
     }
 
-    pub(super) fn watch(queue: i32, fd: i32, connecting: bool) -> bool {
-        let watched = if connecting {
+    pub(super) fn watch(queue: i32, fd: i32, writable: bool) -> bool {
+        let watched = if writable {
             change(
                 fd as usize,
                 libc::EVFILT_WRITE,
@@ -227,7 +228,7 @@ mod imp {
         None
     }
 
-    pub(super) fn watch(_queue: i32, _fd: i32, _connecting: bool) -> bool {
+    pub(super) fn watch(_queue: i32, _fd: i32, _writable: bool) -> bool {
         false
     }
 

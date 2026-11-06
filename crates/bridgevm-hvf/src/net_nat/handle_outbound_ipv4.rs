@@ -1,5 +1,6 @@
 //! Split out of net_nat.rs to keep files under 850 lines.
 
+use super::reply_queue::MAX_TCP_WRITE_BACKLOG;
 use super::*;
 
 use std::{
@@ -136,9 +137,49 @@ pub(crate) struct TcpFlow {
     /// any other socket is read on every poll.
     pub(crate) readable: bool,
     pub(crate) watched: bool,
+    /// The receive window (bytes) our last segment to the guest announced.
+    pub(crate) advertised: u32,
+    /// A one-shot writable event is armed for a write backlog.
+    pub(crate) write_armed: bool,
 }
 
+/// Our window scale when the guest's SYN offered one (RFC 7323): the window
+/// field then counts 64-byte units and can announce the whole write backlog.
+/// A fixed 64 KiB window held guest uploads to about 60 MB/s
+/// (net-profile-20261106, QEMU/HVF about 135).
+pub(crate) const OUR_WINDOW_SHIFT: u8 = 6;
+
 impl TcpFlow {
+    /// The window field our next segment carries: what the write backlog
+    /// still takes, so a guest that honours it is never dropped. Records the
+    /// announced window for the window update rule.
+    pub(crate) fn window_field(&mut self) -> u16 {
+        let shift = if self.send.window_shift.is_some() {
+            OUR_WINDOW_SHIFT
+        } else {
+            0
+        };
+        let field = u16::try_from(self.free_window() >> shift).unwrap_or(u16::MAX);
+        self.advertised = u32::from(field) << shift;
+        field
+    }
+
+    /// The backlog drained by a quarter since the window we last announced:
+    /// tell the guest, which may be waiting on a closed window.
+    pub(crate) fn window_grew(&self) -> bool {
+        let shift = if self.send.window_shift.is_some() {
+            OUR_WINDOW_SHIFT
+        } else {
+            0
+        };
+        let announceable = self.free_window().min(usize::from(u16::MAX) << shift);
+        announceable >= self.advertised as usize + MAX_TCP_WRITE_BACKLOG / 4
+    }
+
+    fn free_window(&self) -> usize {
+        MAX_TCP_WRITE_BACKLOG.saturating_sub(self.write_buf.len())
+    }
+
     pub(crate) fn new(
         stream: TcpStream,
         guest_next: u32,
@@ -159,6 +200,8 @@ impl TcpFlow {
             last_activity,
             readable: true,
             watched: false,
+            advertised: MAX_TCP_WRITE_BACKLOG as u32,
+            write_armed: false,
         }
     }
 
@@ -636,12 +679,14 @@ pub(crate) fn build_dhcp_reply_frame(
 }
 
 /// `options` is whole 32-bit words of TCP options.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_tcp_reply_frame(
     source: EthernetIpv4Endpoint,
     destination: EthernetIpv4Endpoint,
     seq: u32,
     ack: u32,
     flags: u8,
+    window: u16,
     options: &[u8],
     payload: &[u8],
 ) -> Option<Vec<u8>> {
@@ -675,7 +720,7 @@ pub(crate) fn build_tcp_reply_frame(
     frame.extend_from_slice(&ack.to_be_bytes());
     frame.push(((header_len / 4) as u8) << 4);
     frame.push(flags);
-    frame.extend_from_slice(&65535u16.to_be_bytes());
+    frame.extend_from_slice(&window.to_be_bytes());
     frame.extend_from_slice(&0u16.to_be_bytes());
     frame.extend_from_slice(&0u16.to_be_bytes());
     frame.extend_from_slice(options);
