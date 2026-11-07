@@ -37,6 +37,10 @@ pub(super) const DEFAULT_CLIPSYNC_MS: u64 = 1000;
 pub(super) const DEFAULT_CLIPSYNC_MAX_KB: u64 = 8;
 
 pub(super) const CLIPSYNC_MS_FLOOR: u64 = 100;
+/// How often the pasteboard thread checks the Mac's pasteboard (its change
+/// count, under a microsecond) and applies guest copies to it. Faster than the
+/// guest poll: each tick of either waited a whole CLIPSYNC interval before.
+pub(super) const HOST_PASTEBOARD_POLL_MS: u64 = 100;
 
 pub(super) const DEFAULT_SHARE_MS: u64 = 3000;
 
@@ -85,7 +89,7 @@ pub struct AgentConsoleHarness {
     pub(super) service: bool,
     /// Bidirectional clipboard auto-sync inside service mode.
     pub(super) clipsync: bool,
-    /// CLIPGET poll cadence (also the pasteboard thread poll interval).
+    /// CLIPGET poll cadence.
     pub(super) clip_interval: Duration,
     /// Host->guest clipboard payload ceiling (bytes); see the skip print for why.
     pub(super) clip_max_bytes: usize,

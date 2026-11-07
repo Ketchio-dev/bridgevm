@@ -56,9 +56,7 @@ impl AgentConsoleHarness {
         // Clipboard auto-sync only makes sense inside the resident service loop.
         let clipsync = service && env_flag(CLIPSYNC_ENV);
         let clip_ms = env_u64(CLIPSYNC_MS_ENV, DEFAULT_CLIPSYNC_MS).max(CLIPSYNC_MS_FLOOR);
-        // The one cadence drives both the pasteboard poll thread and our CLIPGET
-        // rate, so host and guest are sampled in step.
-        let pasteboard = clipsync.then(|| HostPasteboard::spawn(clip_ms));
+        let pasteboard = clipsync.then(|| HostPasteboard::spawn(host_pasteboard_poll_ms(clip_ms)));
         if clipsync && std::env::var_os(host_pasteboard::TEST_PASTEBOARD_ENV).is_some() {
             println!("BVAGENT CLIPSYNC test pasteboard (not the user's clipboard)");
         }
@@ -486,5 +484,25 @@ impl AgentConsoleHarness {
             return;
         }
         accum.bytes.extend_from_slice(&bytes);
+    }
+}
+
+/// The pasteboard thread's cadence: a Mac copy reaches the guest, and a guest
+/// copy the Mac, within about this much plus a service tick. Never slower than
+/// the guest poll, which tests shorten.
+pub(super) fn host_pasteboard_poll_ms(clip_ms: u64) -> u64 {
+    clip_ms.min(HOST_PASTEBOARD_POLL_MS)
+}
+
+#[cfg(test)]
+mod pasteboard_poll_tests {
+    use super::*;
+
+    #[test]
+    fn the_mac_pasteboard_is_checked_ten_times_per_guest_poll() {
+        // It used to share the guest's 1 s cadence, so a Mac copy pasted in
+        // Windows within a second was still the old clipboard.
+        assert_eq!(host_pasteboard_poll_ms(DEFAULT_CLIPSYNC_MS), 100);
+        assert_eq!(host_pasteboard_poll_ms(CLIPSYNC_MS_FLOOR), CLIPSYNC_MS_FLOOR);
     }
 }
