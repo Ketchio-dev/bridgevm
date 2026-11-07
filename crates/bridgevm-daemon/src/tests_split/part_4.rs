@@ -274,6 +274,7 @@ fn reconcile_reassembles_a_guest_hello_split_across_reads() {
     let listener = UnixListener::bind(&guest_tools.socket_path).unwrap();
 
     let (start_send, await_send) = std::sync::mpsc::channel::<()>();
+    let (finish_send, await_finish) = std::sync::mpsc::channel::<()>();
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         await_send.recv().unwrap();
@@ -297,7 +298,10 @@ fn reconcile_reassembles_a_guest_hello_split_across_reads() {
         thread::sleep(Duration::from_millis(120));
         stream.write_all(&bytes[mid..]).unwrap();
         stream.flush().unwrap();
-        thread::sleep(Duration::from_millis(250));
+        // Stay connected, as an agent does, until the test is done (or fails):
+        // a close the daemon sees right after the hello is a guest that went
+        // away, and it drops the session (seen on a loaded CI runner).
+        let _ = await_finish.recv();
     });
 
     let child = Command::new("sh").arg("-c").arg("sleep 5").spawn().unwrap();
@@ -350,6 +354,7 @@ fn reconcile_reassembles_a_guest_hello_split_across_reads() {
         "linux"
     );
 
+    finish_send.send(()).unwrap();
     state.cleanup_owned_backend("legacy", false).unwrap();
     server.join().unwrap();
 }
