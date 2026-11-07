@@ -33,23 +33,32 @@ fn one_socket_event_kicks_once_until_a_poll_takes_it() {
         while kicks.load(SeqCst) == 0 && started.elapsed() < Duration::from_secs(1) {
             std::thread::yield_now();
         }
-        // The poll that answers the kick, as `HostWake::polled` does it.
+        // The poll that answers the kick, as `HostWake::polled` does it. A
+        // runner that runs this late sees re-kicks first, which is intended.
         assert!(
             shared.pending.swap(false, SeqCst),
             "no kick pending after the event"
         );
+        let answered = kicks.load(SeqCst);
         watcher.thread().unpark();
         std::thread::sleep(REKICK * 3);
         shared.stop.store(true, SeqCst);
         watcher.thread().unpark();
+        // At most one kick was already under way when the poll took it.
+        assert!(
+            kicks.load(SeqCst) <= answered + 1,
+            "kicks went on after a poll answered"
+        );
     });
-    assert_eq!(kicks.load(SeqCst), 1, "one event, one poll: one kick");
 }
 
 #[test]
 fn a_kick_no_poll_answers_is_sent_again() {
     let shared = shared();
     let kicks = AtomicUsize::new(0);
+    // Timed from before the watcher starts until it has stopped, so every
+    // counted kick falls inside the measured time.
+    let started = Instant::now();
     std::thread::scope(|scope| {
         let watcher = scope.spawn(|| {
             let mut first = true;
@@ -61,15 +70,21 @@ fn a_kick_no_poll_answers_is_sent_again() {
                 },
             );
         });
-        std::thread::sleep(REKICK * 5);
+        // Wait for the re-kick rather than a fixed time: a loaded runner ran
+        // the watcher late enough that 5 periods saw only the first kick.
+        while kicks.load(SeqCst) < 2 && started.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(REKICK);
+        }
         shared.stop.store(true, SeqCst);
         watcher.thread().unpark();
+        watcher.join().unwrap();
     });
+    let elapsed = started.elapsed();
     let kicks = kicks.load(SeqCst);
-    assert!(
-        (2..=8).contains(&kicks),
-        "{kicks} kicks in 5 re-kick periods"
-    );
+    assert!(kicks >= 2, "no re-kick in {elapsed:?}");
+    // Paced by REKICK, not a spin.
+    let periods = (elapsed.as_millis() / REKICK.as_millis()) as usize;
+    assert!(kicks <= periods + 3, "{kicks} kicks in {elapsed:?}");
 }
 
 #[cfg(target_os = "macos")]
@@ -80,9 +95,11 @@ fn a_watched_socket_that_becomes_readable_marks_a_kick_pending() {
     let wake = imp::start().expect("kqueue");
     let (mut peer, ours) = std::os::unix::net::UnixStream::pair().unwrap();
     wake.watch(ours.as_raw_fd(), false);
-    let pending = || {
+    // Up to `wait` for a kick to become pending: 200 ms to show none comes,
+    // 5 s for one that must (a loaded runner may run the thread late).
+    let pending = |wait: Duration| {
         let started = Instant::now();
-        while started.elapsed() < Duration::from_millis(200) {
+        while started.elapsed() < wait {
             if wake.shared.pending.load(SeqCst) {
                 return true;
             }
@@ -90,15 +107,19 @@ fn a_watched_socket_that_becomes_readable_marks_a_kick_pending() {
         }
         false
     };
-    assert!(!pending(), "a socket with nothing to read woke the thread");
+    let (none, some) = (Duration::from_millis(200), Duration::from_secs(5));
+    assert!(
+        !pending(none),
+        "a socket with nothing to read woke the thread"
+    );
     peer.write_all(b"x").unwrap();
     assert!(
-        pending(),
+        pending(some),
         "data on a watched socket did not wake the thread"
     );
     wake.polled();
     // Edge-triggered: the unread byte alone does not wake it again.
-    assert!(!pending(), "the same data woke the thread twice");
+    assert!(!pending(none), "the same data woke the thread twice");
     peer.write_all(b"y").unwrap();
-    assert!(pending(), "new data did not wake the thread again");
+    assert!(pending(some), "new data did not wake the thread again");
 }

@@ -13,10 +13,17 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 /// Sends upload segments while the window has room, then lets the NAT poll
-/// and the guest take its answers, until nothing moved for 200 ms.
-fn upload_until_stalled(nat: &mut HostNat, guest: &mut FakeGuest, data: &[u8], sent: &mut usize) {
+/// and the guest take its answers, until `done` or nothing moved for `quiet`.
+fn upload_until(
+    nat: &mut HostNat,
+    guest: &mut FakeGuest,
+    data: &[u8],
+    sent: &mut usize,
+    quiet: Duration,
+    done: impl Fn(&FakeGuest, usize) -> bool,
+) {
     let mut last_move = Instant::now();
-    while last_move.elapsed() < Duration::from_millis(200) && *sent < data.len() {
+    while last_move.elapsed() < quiet && !done(guest, *sent) {
         let before = (*sent, guest.acked, guest.nat_window);
         while *sent < data.len() {
             let chunk = &data[*sent..data.len().min(*sent + MSS)];
@@ -31,6 +38,11 @@ fn upload_until_stalled(nat: &mut HostNat, guest: &mut FakeGuest, data: &[u8], s
             last_move = Instant::now();
         }
     }
+}
+
+/// The window is shut and everything sent is acknowledged.
+fn shut(guest: &FakeGuest, _: usize) -> bool {
+    guest.nat_window < MSS && guest.in_flight() == 0
 }
 
 #[test]
@@ -93,7 +105,10 @@ fn upload_through_a_backlog_that_fills_and_drains(shift: Option<u8>) {
         return;
     };
     let mut sent = 0;
-    upload_until_stalled(&mut nat, &mut guest, &data, &mut sent);
+    // Until the window shuts; 10 s without progress ends it on main, where
+    // it never does (a loaded runner may pause the test for a while).
+    let quiet = Duration::from_secs(10);
+    upload_until(&mut nat, &mut guest, &data, &mut sent, quiet, shut);
     // A 64 KiB window held live uploads to about 60 MB/s. The backlog alone
     // takes 4 MiB, and the guest got all of it acknowledged: nothing it sent
     // within the window was dropped, and the window then closed.
@@ -116,7 +131,7 @@ fn upload_through_a_backlog_that_fills_and_drains(shift: Option<u8>) {
     // The host drains: the NAT reopens the window on its own, without a
     // probe from the guest, and the upload completes intact.
     go.send(()).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + Duration::from_secs(5);
     while guest.nat_window < 16 * 1024 {
         assert!(
             Instant::now() < deadline,
@@ -124,9 +139,14 @@ fn upload_through_a_backlog_that_fills_and_drains(shift: Option<u8>) {
         );
         tick(&mut nat, &mut guest, 0);
     }
-    while sent < data.len() {
-        upload_until_stalled(&mut nat, &mut guest, &data, &mut sent);
-    }
+    upload_until(&mut nat, &mut guest, &data, &mut sent, quiet, |_, sent| {
+        sent == data.len()
+    });
+    assert_eq!(
+        sent,
+        data.len(),
+        "the upload stalled after the window reopened"
+    );
     nat.transmit(&guest.upload_fin());
     let deadline = Instant::now() + Duration::from_secs(5);
     let sink = loop {
