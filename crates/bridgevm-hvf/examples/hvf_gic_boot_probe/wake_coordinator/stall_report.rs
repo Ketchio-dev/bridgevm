@@ -22,11 +22,11 @@ pub(crate) unsafe fn report_stall_diagnostics(
 ) {
     report_wake_attribution(coordinator, claims);
     crate::usgic_bridge::stall_report(vcpu);
-    // Two captures, so a vCPU that is still executing is not called parked.
-    let before = crate::gic_snapshot::capture(vcpu, 2, coordinator.generation());
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    let after = crate::gic_snapshot::capture(vcpu, 2, coordinator.generation());
-    for line in crate::gic_snapshot::render(&before, &after) {
+    // One capture: vCPU0 is this thread's and out of hv_vcpu_run, and the
+    // secondaries are joined, so a second one later cannot see it move (it
+    // only made every stop, a guest shutdown too, 50 ms slower).
+    let snapshot = crate::gic_snapshot::capture(vcpu, 2, coordinator.generation());
+    for line in crate::gic_snapshot::render(&snapshot, &snapshot) {
         println!("{line}");
     }
     // The layer below: is the GIC itself refusing, holding, or empty?
