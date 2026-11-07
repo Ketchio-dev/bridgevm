@@ -33,6 +33,8 @@ pub(crate) use bridge::PasteboardWorker;
 #[path = "host_pasteboard_image.rs"]
 mod image;
 pub use image::*;
+#[path = "host_pasteboard_rtf.rs"]
+mod rtf;
 
 /// Test-only: the name of a private pasteboard used instead of the user's.
 pub const TEST_PASTEBOARD_ENV: &str = "BRIDGEVM_TEST_CLIP_PASTEBOARD";
@@ -56,7 +58,8 @@ pub trait PasteboardBackend: Send {
         let _ = (png, text);
         false
     }
-    /// The pasteboard's `public.html` (only read while rich text is on).
+    /// The pasteboard's `public.html`, else its RTF as HTML (only read while
+    /// rich text is on).
     fn get_html(&mut self) -> Option<String> {
         None
     }
@@ -180,7 +183,7 @@ impl PasteboardBackend for NsPasteboardBackend {
             }
             let ns_html = msg_send_id_id(pb, sel(b"stringForType:\0"), html_type_string());
             if ns_html.is_null() {
-                return None;
+                return rtf::rtf_as_html(pb);
             }
             let bytes = msg_send_cstr(ns_html, sel(b"UTF8String\0"));
             (!bytes.is_null()).then(|| CStr::from_ptr(bytes).to_string_lossy().into_owned())
