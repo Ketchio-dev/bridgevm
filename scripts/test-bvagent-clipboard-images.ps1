@@ -68,6 +68,7 @@ namespace System.Windows.Forms {
         public bool GetDataPresent(string format, bool autoConvert) { return items.ContainsKey(format); }
         public object GetData(string format, bool autoConvert) { object found; return items.TryGetValue(format, out found) ? found : null; }
     }
+    public static class Application { public static int Exits; public static void ExitThread() { Exits++; } }
     public static class Clipboard {
         public static IDataObject Current;
         public static int Reads;
@@ -180,7 +181,7 @@ try {
         for ($i = 0; $i -lt 200; $i++) { [BridgeVM.BvClipText]::Set("handles $i") }
         $kept = (Get-LiveHandles) - $handlesBefore
         Assert ($kept -lt 100) "400 clipboard calls kept $kept handles"
-        Assert ((Get-Clipboard -Raw) -ceq 'handles 199') 'the last copy is on the clipboard'
+        Assert ([Windows.Forms.Clipboard]::GetText() -ceq 'handles 199') 'the last copy is on the clipboard'
 
         # CLIPCAPS PUSH starts the watcher. A read waiting on a synchronous handle
         # is cancelled once the clipboard changes; without a change it waits for
