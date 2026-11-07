@@ -749,7 +749,10 @@ function Write-CommandResult($handle, $result) {
 # clipboard becomes its owner, and a later copy in any guest app first waits for the
 # owner to answer. This agent's thread sits in ReadFile without pumping messages, so
 # each such copy stalled about 5 s (the hung-window timeout). A thread that has
-# exited owns nothing.
+# exited owns nothing. Each such thread ends with Application.ExitThread(): WinForms
+# keeps a context with a duplicate of the thread's handle for every thread that touched
+# the clipboard until the thread disposes it, so without it each call kept one handle
+# (a 2-hour soak: 1,048 thread handles).
 $script:BvClipTextSource = @'
 using System;
 using System.Threading;
@@ -762,7 +765,7 @@ namespace BridgeVM {
                 try {
                     if (string.IsNullOrEmpty(text)) { Clipboard.Clear(); }
                     else { Clipboard.SetDataObject(new DataObject(DataFormats.UnicodeText, text), true, 10, 100); }
-                } catch (Exception e) { failure = e; }
+                } catch (Exception e) { failure = e; } finally { Application.ExitThread(); }
             });
             thread.TrySetApartmentState(ApartmentState.STA);
             thread.IsBackground = true;
@@ -805,7 +808,8 @@ namespace BridgeVM {
         static void OnSta(ThreadStart body) {
             Exception failure = null;
             Thread thread = new Thread(delegate () {
-                try { body(); } catch (Exception e) { failure = e; }
+                // ExitThread releases the thread's WinForms context (see BvClipTextSource).
+                try { body(); } catch (Exception e) { failure = e; } finally { Application.ExitThread(); }
             });
             // Always succeeds on Windows before Start; Clipboard refuses a non-STA thread anyway.
             thread.TrySetApartmentState(ApartmentState.STA);
