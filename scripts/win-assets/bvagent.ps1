@@ -796,6 +796,7 @@ using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -804,6 +805,15 @@ namespace BridgeVM {
     public static class BvClipImage {
         public const int MaxBytes = 33554432;
         public const int MaxSide = 16384;
+        public const int HtmlMaxBytes = 4194304;
+
+        [DllImport("user32.dll", SetLastError = true)] static extern bool OpenClipboard(IntPtr owner);
+        [DllImport("user32.dll")] static extern bool CloseClipboard();
+        [DllImport("user32.dll")] static extern IntPtr GetClipboardData(uint format);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern uint RegisterClipboardFormat(string name);
+        [DllImport("kernel32.dll")] static extern IntPtr GlobalLock(IntPtr memory);
+        [DllImport("kernel32.dll")] static extern bool GlobalUnlock(IntPtr memory);
+        [DllImport("kernel32.dll")] static extern UIntPtr GlobalSize(IntPtr memory);
 
         static void OnSta(ThreadStart body) {
             Exception failure = null;
@@ -896,6 +906,57 @@ namespace BridgeVM {
             height = h;
             return result;
         }
+
+        // One clipboard write of the text (when not empty) and the exact "HTML Format"
+        // bytes, NUL-terminated as browsers write them. Windows Forms' own HTML path
+        // would encode the string as ANSI; the format is UTF-8.
+        public static void SetHtml(string text, byte[] html) {
+            if (html == null || html.Length == 0 || html.Length > HtmlMaxBytes) {
+                throw new InvalidDataException("no HTML within the clipboard limit");
+            }
+            byte[] terminated = new byte[html.Length + 1];
+            Buffer.BlockCopy(html, 0, terminated, 0, html.Length);
+            OnSta(delegate () {
+                DataObject data = new DataObject();
+                if (!string.IsNullOrEmpty(text)) { data.SetData(DataFormats.UnicodeText, true, text); }
+                data.SetData("HTML Format", false, new MemoryStream(terminated));
+                Clipboard.SetDataObject(data, true, 10, 100);
+            });
+        }
+
+        // The clipboard's "HTML Format" bytes up to the first NUL, read raw (Windows
+        // Forms would decode them as ANSI). Null without HTML, or over HtmlMaxBytes
+        // with size set.
+        public static byte[] GetHtml(out int size) {
+            byte[] result = null;
+            int n = 0;
+            OnSta(delegate () {
+                uint format = RegisterClipboardFormat("HTML Format");
+                bool open = false;
+                for (int i = 0; i < 10 && !(open = OpenClipboard(IntPtr.Zero)); i++) { Thread.Sleep(20); }
+                if (!open) { throw new IOException("the clipboard is busy"); }
+                try {
+                    IntPtr memory = GetClipboardData(format);
+                    if (memory == IntPtr.Zero) { return; }
+                    IntPtr p = GlobalLock(memory);
+                    if (p == IntPtr.Zero) { return; }
+                    try {
+                        long total = (long)GlobalSize(memory).ToUInt64();
+                        byte[] bytes = new byte[(int)Math.Min(total, (long)HtmlMaxBytes + 1)];
+                        Marshal.Copy(p, bytes, 0, bytes.Length);
+                        int end = Array.IndexOf(bytes, (byte)0);
+                        if (end < 0) { end = bytes.Length; }
+                        if (end > HtmlMaxBytes) { n = (int)Math.Min(total, int.MaxValue); return; }
+                        if (end == 0) { return; }
+                        n = end;
+                        result = new byte[end];
+                        Buffer.BlockCopy(bytes, 0, result, 0, end);
+                    } finally { GlobalUnlock(memory); }
+                } finally { CloseClipboard(); }
+            });
+            size = n;
+            return result;
+        }
     }
 }
 '@
@@ -950,6 +1011,34 @@ function Get-ClipImageDescriptor {
     $script:BvClipImgDesc = $desc
     $script:BvClipImgSeq = $seq
     return $desc
+}
+
+$script:BvClipHtmlSeq = [uint32]4294967295
+$script:BvClipHtmlPart = '0 -'
+# The clipboard's "HTML Format" bytes (Bytes, null without) and their size.
+function Read-ClipHtml {
+    $size = 0
+    $bytes = [BridgeVM.BvClipImage]::GetHtml([ref]$size)
+    return @{ Bytes = $bytes; Size = $size }
+}
+# The HTML part of CLIPXH: <bytes> <b64(cf_html)|->, read again only after a change.
+# Over the limit it names the size only; a failed read counts as no HTML.
+function Get-ClipHtmlPart {
+    $seq = $K::GetClipboardSequenceNumber()
+    if ($seq -eq $script:BvClipHtmlSeq) { return $script:BvClipHtmlPart }
+    $part = '0 -'
+    if ($script:BvClipImageReady) {
+        try {
+            $html = Read-ClipHtml
+            if ($null -ne $html.Bytes) { $part = '{0} {1}' -f $html.Bytes.Length, [System.Convert]::ToBase64String($html.Bytes) }
+            elseif ($html.Size -gt 0) { $part = '{0} -' -f $html.Size }
+        } catch {
+            Log ('CLIPXH html read failed: ' + $_.Exception.Message)
+        }
+    }
+    $script:BvClipHtmlPart = $part
+    $script:BvClipHtmlSeq = $seq
+    return $part
 }
 # <<< clipboard images
 
@@ -1125,15 +1214,30 @@ while ($true) {
                     $image = Get-ClipImageDescriptor
                     Write-Line $h ('CLIPX ' + $image + ' ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipCache))) 'CLIPX'
                 }
+                'CLIPXH' {
+                    # CLIPX plus the clipboard's HTML, for hosts that saw CF_HTML: CLIPXH <w> <h>
+                    # <bytes> <sha256|-> <b64(path)|-> <html-bytes> <b64(html)|-> <b64(utf8 text)>.
+                    $seq = $K::GetClipboardSequenceNumber()
+                    if ($seq -ne $script:BvClipSeq) {
+                        $clip = ''
+                        try { $c = Get-Clipboard -Raw -ErrorAction SilentlyContinue; if ($null -ne $c) { $clip = [string]$c } } catch { }
+                        $script:BvClipCache = $clip
+                        $script:BvClipSeq = $seq
+                    }
+                    $image = Get-ClipImageDescriptor
+                    $html = Get-ClipHtmlPart
+                    Write-Line $h ('CLIPXH ' + $image + ' ' + $html + ' ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipCache))) 'CLIPXH'
+                }
                 'CLIPCAPS' {
-                    # CLIPCAPS [PUSH] -> CLIPCAPS [IMAGE_PNG <b64(dir)>] [CLIPPUSH]: IMAGE_PNG
-                    # when this agent can move clipboard images; CLIPPUSH when the host asked
+                    # CLIPCAPS [PUSH] -> CLIPCAPS [IMAGE_PNG <b64(dir)> CF_HTML] [CLIPPUSH]: IMAGE_PNG
+                    # when this agent can move clipboard images, CF_HTML when it serves CLIPXH and
+                    # CLIPSETH (both need the same helper); CLIPPUSH when the host asked
                     # for PUSH and the watcher runs, so Read-Line writes CLIPCHANGED after each
                     # guest clipboard change. A bare CLIPCAPS (older host) turns notices off.
                     $script:BvClipPush = ($arg -ceq 'PUSH') -and (Initialize-ClipWatch)
                     $caps = 'CLIPCAPS'
                     if (Initialize-ClipImage) {
-                        $caps += ' IMAGE_PNG ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipDir))
+                        $caps += ' IMAGE_PNG ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipDir)) + ' CF_HTML'
                     }
                     if ($script:BvClipPush) { $caps += ' CLIPPUSH' }
                     Write-Line $h $caps 'CLIPCAPS'
@@ -1160,6 +1264,26 @@ while ($true) {
                         $script:BvClipImgSeq = $seq
                         Write-Line $h ('OK CLIPSETIMG ' + $size) 'OK'
                     } catch { Write-Line $h ('ERR CLIPSETIMG ' + $_.Exception.Message) 'ERR' }
+                }
+                'CLIPSETH' {
+                    # CLIPSETH <b64(utf8 text)|-> <b64(html)> -> OK CLIPSETH: one clipboard write of
+                    # the text and the exact "HTML Format" bytes, which CLIPXH then serves as sent.
+                    try {
+                        if (-not (Initialize-ClipImage)) { throw 'clipboard html unavailable' }
+                        $parts = $arg.Split(' ')
+                        $txt = ''
+                        if ($parts[0] -ne '-') { $txt = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0])) }
+                        $html = [System.Convert]::FromBase64String($parts[1])
+                        [BridgeVM.BvClipImage]::SetHtml($txt, $html)
+                        $seq = $K::GetClipboardSequenceNumber()
+                        $script:BvClipCache = $txt
+                        $script:BvClipSeq = $seq
+                        $script:BvClipImgDesc = '0 0 0 - -'
+                        $script:BvClipImgSeq = $seq
+                        $script:BvClipHtmlPart = '{0} {1}' -f $html.Length, $parts[1]
+                        $script:BvClipHtmlSeq = $seq
+                        Write-Line $h 'OK CLIPSETH' 'OK'
+                    } catch { Write-Line $h ('ERR CLIPSETH ' + $_.Exception.Message) 'ERR' }
                 }
                 'CLIPSET' {
                     # Set the guest Windows clipboard from CLIPSET <base64(utf8)>.
