@@ -1,0 +1,15 @@
+name: Guest agent drop decode contract
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/win-assets/bvagent.ps1', 'tests/integration/agent-drop-decode-contract.ps1', '.github/workflows/agent-drop-decode-contract.yml']}}
+permissions:
+  contents: read
+jobs:
+  drop-decode:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Decoder against Convert.FromBase64String (Windows PowerShell 5.1)
+        shell: powershell
+        run: tests/integration/agent-drop-decode-contract.ps1
+      - name: The same as C# 5 (PowerShell 7)
+        shell: pwsh
+        run: tests/integration/agent-drop-decode-contract.ps1

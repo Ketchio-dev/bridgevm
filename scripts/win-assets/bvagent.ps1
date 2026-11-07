@@ -351,17 +351,21 @@ namespace BridgeVM {
         public static long ReadTicks;
         public static long DecodeTicks;
 
-        // Completes one base64 payload line of exactly `want` characters plus its newline. `prefix`
-        // is what the line reader already holds; `rest` returns whatever arrived after the newline.
+        // Completes one base64 payload line of exactly `want` characters plus its newline, decoding
+        // each read as it arrives: Convert.FromBase64String over the whole line was more than half
+        // of a chunk's guest time. `prefix` is what the line reader already holds; `rest` returns
+        // whatever arrived after the newline. A bad payload is still read to its newline before
+        // the error, so the wire stays on a line boundary.
         public static byte[] ReadPayload(IntPtr h, string prefix, int want, int idleMs, out string rest) {
             long start = Stopwatch.GetTimestamp();
-            byte[] text = new byte[want + 1];
-            int have = Math.Min(prefix.Length, want + 1);
-            for (int i = 0; i < have; i++) { text[i] = (byte)prefix[i]; }
+            long decode = 0;
+            BvDropPayload payload = new BvDropPayload(want);
+            byte[] held = Encoding.ASCII.GetBytes(prefix);
+            int used = payload.Take(held, 0, held.Length);
             StringBuilder extra = new StringBuilder();
-            if (prefix.Length > have) { extra.Append(prefix, have, prefix.Length - have); }
+            if (used < prefix.Length) { extra.Append(prefix, used, prefix.Length - used); }
             long idleSince = 0;
-            while (have < want + 1) {
+            while (!payload.Done) {
                 uint read;
                 if (!ReadFile(h, Scratch, (uint)Scratch.Length, out read, IntPtr.Zero) || read == 0) {
                     long now = Stopwatch.GetTimestamp();
@@ -373,18 +377,107 @@ namespace BridgeVM {
                     continue;
                 }
                 idleSince = 0;
-                int take = Math.Min((int)read, want + 1 - have);
-                Buffer.BlockCopy(Scratch, 0, text, have, take);
-                have += take;
+                long t = Stopwatch.GetTimestamp();
+                int take = payload.Take(Scratch, 0, (int)read);
+                decode += Stopwatch.GetTimestamp() - t;
                 if (take < (int)read) { extra.Append(Encoding.ASCII.GetString(Scratch, take, (int)read - take)); }
             }
             rest = extra.ToString();
-            if (text[want] != (byte)'\n') { throw new FormatException("drop-payload-frame"); }
-            long mid = Stopwatch.GetTimestamp();
-            byte[] data = Convert.FromBase64String(Encoding.ASCII.GetString(text, 0, want));
-            ReadTicks += mid - start;
-            DecodeTicks += Stopwatch.GetTimestamp() - mid;
+            byte[] data = payload.Result();
+            DecodeTicks += decode;
+            ReadTicks += Stopwatch.GetTimestamp() - start - decode;
             return data;
+        }
+    }
+
+    // One base64 payload line of `want` characters and its newline, decoded as it arrives, with
+    // Convert.FromBase64String's rules: the base64 alphabet only, '=' only as the last one or two
+    // characters, and a length that is a multiple of 4.
+    public sealed class BvDropPayload {
+        static readonly int[] Sextets = BuildSextets();
+        readonly int want;
+        readonly byte[] data;
+        int have, outPos, acc, quad, pad;
+        string error;
+
+        static int[] BuildSextets() {
+            int[] map = new int[256];
+            for (int i = 0; i < 256; i++) { map[i] = -1; }
+            string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            for (int i = 0; i < 64; i++) { map[alphabet[i]] = i; }
+            return map;
+        }
+
+        public BvDropPayload(int want) {
+            this.want = want;
+            data = new byte[want / 4 * 3];
+            if (want % 4 != 0) { error = "drop-payload-length"; }
+        }
+
+        public bool Done { get { return have == want + 1; } }
+
+        // Takes bytes up to the end of the line; returns how many it took.
+        public int Take(byte[] src, int offset, int count) {
+            int take = Math.Min(count, want + 1 - have);
+            int i = 0;
+            while (i < take) {
+                // Whole quads ahead of the last one, the only one that can hold padding.
+                if (quad == 0 && error == null) {
+                    int quads = Math.Min(take - i, want - 4 - have) / 4;
+                    for (; quads > 0; quads--) {
+                        int p = offset + i;
+                        int s0 = Sextets[src[p]], s1 = Sextets[src[p + 1]], s2 = Sextets[src[p + 2]], s3 = Sextets[src[p + 3]];
+                        if ((s0 | s1 | s2 | s3) < 0) { break; }
+                        int v = (s0 << 18) | (s1 << 12) | (s2 << 6) | s3;
+                        data[outPos] = (byte)(v >> 16);
+                        data[outPos + 1] = (byte)(v >> 8);
+                        data[outPos + 2] = (byte)v;
+                        outPos += 3;
+                        i += 4;
+                        have += 4;
+                    }
+                    if (i >= take) { break; }
+                }
+                One(src[offset + i]);
+                i++;
+            }
+            return take;
+        }
+
+        void One(int c) {
+            int at = have++;
+            if (at == want) {
+                if (c != '\n' && error == null) { error = "drop-payload-frame"; }
+                return;
+            }
+            if (error != null) { return; }
+            int v = Sextets[c];
+            if (v < 0) {
+                if (c != '=' || at < want - 2) { error = "drop-payload-char"; return; }
+                pad++;
+                v = 0;
+            } else if (pad > 0) {
+                error = "drop-payload-char";
+                return;
+            }
+            acc = (acc << 6) | v;
+            if (++quad == 4) {
+                data[outPos] = (byte)(acc >> 16);
+                data[outPos + 1] = (byte)(acc >> 8);
+                data[outPos + 2] = (byte)acc;
+                outPos += 3;
+                quad = 0;
+                acc = 0;
+            }
+        }
+
+        public byte[] Result() {
+            if (!Done) { throw new InvalidOperationException("drop-payload-incomplete"); }
+            if (error != null) { throw new FormatException(error); }
+            if (pad == 0) { return data; }
+            byte[] exact = new byte[data.Length - pad];
+            Buffer.BlockCopy(data, 0, exact, 0, exact.Length);
+            return exact;
         }
     }
 }
