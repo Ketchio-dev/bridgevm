@@ -56,6 +56,9 @@ fn one_socket_event_kicks_once_until_a_poll_takes_it() {
 fn a_kick_no_poll_answers_is_sent_again() {
     let shared = shared();
     let kicks = AtomicUsize::new(0);
+    // Timed from before the watcher starts until it has stopped, so every
+    // counted kick falls inside the measured time.
+    let started = Instant::now();
     std::thread::scope(|scope| {
         let watcher = scope.spawn(|| {
             let mut first = true;
@@ -69,19 +72,19 @@ fn a_kick_no_poll_answers_is_sent_again() {
         });
         // Wait for the re-kick rather than a fixed time: a loaded runner ran
         // the watcher late enough that 5 periods saw only the first kick.
-        let started = Instant::now();
         while kicks.load(SeqCst) < 2 && started.elapsed() < Duration::from_secs(5) {
             std::thread::sleep(REKICK);
         }
-        let elapsed = started.elapsed();
         shared.stop.store(true, SeqCst);
         watcher.thread().unpark();
-        let kicks = kicks.load(SeqCst);
-        assert!(kicks >= 2, "no re-kick in {elapsed:?}");
-        // Paced by REKICK, not a spin.
-        let periods = (elapsed.as_millis() / REKICK.as_millis()) as usize;
-        assert!(kicks <= periods + 3, "{kicks} kicks in {elapsed:?}");
+        watcher.join().unwrap();
     });
+    let elapsed = started.elapsed();
+    let kicks = kicks.load(SeqCst);
+    assert!(kicks >= 2, "no re-kick in {elapsed:?}");
+    // Paced by REKICK, not a spin.
+    let periods = (elapsed.as_millis() / REKICK.as_millis()) as usize;
+    assert!(kicks <= periods + 3, "{kicks} kicks in {elapsed:?}");
 }
 
 #[cfg(target_os = "macos")]
