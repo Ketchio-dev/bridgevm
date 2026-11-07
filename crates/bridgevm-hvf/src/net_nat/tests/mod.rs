@@ -6,6 +6,7 @@ mod host_wake_download;
 mod idle_sweep;
 mod ingress_policy;
 mod part_1;
+mod port_forward;
 mod reply_bounds;
 mod tcp_connect_failure;
 mod tcp_download;

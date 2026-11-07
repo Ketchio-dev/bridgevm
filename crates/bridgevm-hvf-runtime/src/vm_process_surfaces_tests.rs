@@ -15,6 +15,7 @@ fn surfaces() -> DeviceSurfaces {
         clipboard_sync: false,
         share: None,
         virtio_net: false,
+        net_forwards: Vec::new(),
         hda_audio: false,
         hda_microphone: false,
         agent_update: None,
@@ -35,6 +36,23 @@ fn the_microphone_opens_only_with_the_users_setting_on_an_audio_vm() {
         microphone(&surfaces).is_empty(),
         "no HDA device, no microphone"
     );
+}
+
+#[test]
+fn port_forwards_reach_the_nat_of_a_networked_vm() {
+    let mut surfaces = surfaces();
+    surfaces.net_forwards = vec![(8080, 80), (3390, 3389)];
+    assert!(
+        values(&surfaces, "BRIDGEVM_NET_FORWARD").is_empty(),
+        "no NIC, no forwards"
+    );
+    surfaces.virtio_net = true;
+    assert_eq!(
+        values(&surfaces, "BRIDGEVM_NET_FORWARD"),
+        ["8080:80,3390:3389"]
+    );
+    surfaces.net_forwards.clear();
+    assert!(values(&surfaces, "BRIDGEVM_NET_FORWARD").is_empty());
 }
 
 /// Every value `key` takes in the helper environment, in order.

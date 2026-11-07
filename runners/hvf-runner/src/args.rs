@@ -218,6 +218,10 @@ pub(crate) struct Args {
     pub(crate) enable_xhci: bool,
     #[arg(long)]
     pub(crate) virtio_net: bool,
+    /// An inbound TCP port forward of the NAT, `HOST:GUEST` (host 127.0.0.1
+    /// only); repeatable (`BRIDGEVM_NET_FORWARD`).
+    #[arg(long = "net-forward", value_name = "HOST:GUEST", value_parser = parse_net_forward)]
+    pub(crate) net_forwards: Vec<(u16, u16)>,
     #[arg(long)]
     pub(crate) nvme_buffered_io: bool,
     /// The user's opt-in: every guest flush waits for F_FULLFSYNC (`BRIDGEVM_NVME_FLUSH=durable`).
@@ -778,4 +782,14 @@ pub(crate) fn env_truthy(name: &str) -> bool {
         ),
         Err(_) => false,
     }
+}
+
+fn parse_net_forward(value: &str) -> Result<(u16, u16), String> {
+    let ports = value.split_once(':').and_then(|(host, guest)| {
+        Some((
+            host.parse().ok()?,
+            guest.parse().ok().filter(|&port: &u16| port != 0)?,
+        ))
+    });
+    ports.ok_or_else(|| format!("'{value}' is not HOST:GUEST port numbers"))
 }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// A library VM's runtime-view launch preferences (clipboard sync, network, durable disk writes,
-/// microphone, display resolution, Retina resolution, Command key, shared folder, display driver) are saved in vm.json, so every start path (runtime view,
+/// microphone, display resolution, Retina resolution, Command key, shared folder, port forwards, display driver) are saved in vm.json, so every start path (runtime view,
 /// dashboard, native CLI, relaunch) uses them. The experimental non-library entry keeps
 /// view-local options.
 extension HvfEngineSession {
@@ -75,6 +75,7 @@ extension VMConfig {
         copy.hardwareCursor = other.hardwareCursor
         copy.sharedFolderHostPath = other.sharedFolderHostPath
         copy.sharedFolderGuestPath = other.sharedFolderGuestPath
+        copy.portForwards = other.portForwards
         return copy
     }
 }
@@ -92,6 +93,7 @@ extension HvfEngineConfig {
         if saved.guestResolution != previous.guestResolution { rebound.guestResolution = launch.guestResolution }
         if saved.retinaResolution != previous.retinaResolution { rebound.retinaResolution = launch.retinaResolution }
         if saved.commandKeyMode != previous.commandKeyMode { rebound.commandKeyMode = launch.commandKeyMode }
+        if saved.portForwards != previous.portForwards { rebound.portForwards = launch.portForwards }
         if saved.virtioDisplayDriverInstalled != previous.virtioDisplayDriverInstalled { rebound.virtioGpu2d = launch.virtioGpu2d }
         if saved.sharedFolderHostPath != previous.sharedFolderHostPath
             || saved.sharedFolderGuestPath != previous.sharedFolderGuestPath {

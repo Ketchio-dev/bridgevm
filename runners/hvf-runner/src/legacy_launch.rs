@@ -18,7 +18,16 @@ pub(crate) fn launch_installed_windows(args: &Args) -> Result<()> {
     }
 
     let wrapper_args = installed_boot_launch_args(args, &invocation_dir)?;
-    let status = Command::new(&wrapper)
+    let mut command = Command::new(&wrapper);
+    if !args.net_forwards.is_empty() {
+        // The wrapper hands the probe BRIDGEVM_NET_FORWARD with --virtio-net.
+        let pairs = args
+            .net_forwards
+            .iter()
+            .map(|(host, guest)| format!("{host}:{guest}"));
+        command.env("BRIDGEVM_NET_FORWARD", pairs.collect::<Vec<_>>().join(","));
+    }
+    let status = command
         .args(&wrapper_args)
         .current_dir(&repo_root)
         .status()

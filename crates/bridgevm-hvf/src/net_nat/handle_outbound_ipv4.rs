@@ -50,6 +50,9 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
         let now = self.now_ms();
         self.dns.server_at(now);
         self.poll_udp(guest_mac, reply_queue, stats);
+        if let Some(guest_mac) = guest_mac {
+            self.accept_forwarded(guest_mac, reply_queue, stats);
+        }
         self.poll_tcp(guest_mac, reply_queue, stats);
         self.poll_icmp(guest_mac, reply_queue, stats);
         self.evict_idle_flows();
@@ -117,6 +120,8 @@ pub(crate) struct PendingTcpReset {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TcpProxyState {
     Connecting,
+    /// A forwarded host connection: the NAT's SYN waits for the guest's SYN-ACK.
+    Opening,
     Established,
 }
 

@@ -222,6 +222,70 @@ impl TcpFlow {
         }
     }
 
+    /// The NAT's SYN for a forwarded connection: MSS 1460 and our window
+    /// scale offer.
+    pub(crate) fn queue_syn(
+        &self,
+        key: &TcpFlowKey,
+        guest_mac: MacAddr,
+        reply_queue: &mut VecDeque<Vec<u8>>,
+    ) {
+        const OPTIONS: [u8; 8] = [
+            2,
+            4,
+            (TCP_MSS >> 8) as u8,
+            TCP_MSS as u8,
+            1,
+            3,
+            3,
+            OUR_WINDOW_SHIFT,
+        ];
+        let (source, destination) = tcp_reply_endpoints(guest_mac, key);
+        if let Some(frame) = build_tcp_reply_frame(
+            source,
+            destination,
+            self.our_seq,
+            0,
+            TCP_FLAG_SYN,
+            u16::MAX,
+            &OPTIONS,
+            &[],
+        ) {
+            reply_queue.push_back(frame);
+        }
+    }
+
+    /// The SYN of a forwarded connection went out: its resend timer starts.
+    pub(crate) fn syn_sent(&mut self, now: u64) {
+        self.send.deadline_ms = Some(now.saturating_add(self.send.rto_ms));
+    }
+
+    /// An unanswered SYN is due again: true to resend it (backing off),
+    /// false once the back-off is spent and the connection is given up.
+    pub(crate) fn syn_due(&mut self, now: u64) -> Option<bool> {
+        if !self.send.deadline_ms.is_some_and(|due| now >= due) {
+            return None;
+        }
+        if self.send.rto_ms >= MAX_RTO_MS {
+            return Some(false);
+        }
+        self.send.rto_ms *= 2;
+        self.syn_sent(now);
+        Some(true)
+    }
+
+    /// The guest's SYN-ACK to a forwarded connection's SYN: the connection is
+    /// open, with the window scale both sides offered (RFC 7323).
+    pub(crate) fn open_from_syn_ack(&mut self, tcp: &TcpSegment<'_>) {
+        self.guest_next = tcp.seq.wrapping_add(1);
+        self.send.window_shift = syn_window_shift(tcp.segment);
+        self.send.window = u32::from(tcp.window);
+        self.send.deadline_ms = None;
+        self.send.rto_ms = INITIAL_RTO_MS;
+        self.state = TcpProxyState::Established;
+        self.pending_ack = true;
+    }
+
     /// Repairs losses, then forwards host data while the guest's window and
     /// `unacked_budget` have room. Retransmissions and probes are not
     /// activity: a guest that stops answering still idles out.

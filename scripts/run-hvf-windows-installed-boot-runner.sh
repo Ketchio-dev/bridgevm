@@ -448,6 +448,8 @@ build_installed_boot_env_args() {
   fi
   if [[ "${VIRTIO_NET:-0}" == "1" ]]; then
     ENV_ARGS+=('BRIDGEVM_VIRTIO_NET=1' 'BRIDGEVM_VIRTIO_NET_BACKEND=nat')
+    # Inbound TCP port forwards (HOST:GUEST,...), inherited like BRIDGEVM_HDA.
+    [[ -z "${BRIDGEVM_NET_FORWARD:-}" ]] || ENV_ARGS+=("BRIDGEVM_NET_FORWARD=$BRIDGEVM_NET_FORWARD")
   fi
   # The Intel HDA audio device + CoreAudio playback are opt-in via --hda /
   # --hda-coreaudio (or the inherited BRIDGEVM_HDA* env forwarded above).
