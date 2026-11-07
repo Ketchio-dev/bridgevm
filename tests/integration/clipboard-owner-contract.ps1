@@ -9,7 +9,7 @@ $setter = [regex]::Match($source, '(?s)\r?\nfunction Set-ClipText\(.*?\r?\n\}\r?
 if (-not $helperSource -or -not $setter) { throw 'Expected the agent clipboard text helper' }
 $holder = $helperSource + $setter + @'
 function Log([string]$m) { [Console]::Error.WriteLine($m) }
-Set-ClipText 'held-by-agent'
+Set-Clipboard -Value 'held-by-agent'  # NEGATIVE CONTROL: the old CLIPSET
 Add-Type -Namespace BvOwner -Name K -MemberDefinition '[DllImport("kernel32.dll")] public static extern System.IntPtr CreateEvent(System.IntPtr a, bool m, bool i, string n); [DllImport("kernel32.dll")] public static extern uint WaitForSingleObject(System.IntPtr h, uint ms);'
 [void][BvOwner.K]::WaitForSingleObject([BvOwner.K]::CreateEvent([IntPtr]::Zero, $true, $false, $null), 60000)
 '@
