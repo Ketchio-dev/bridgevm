@@ -537,6 +537,49 @@ function Write-CommandResult($handle, $result) {
 # clipboard on its own STA thread: Windows Forms needs STA, and a wedged
 # clipboard call must not hold this loop. It is compiled on the first CLIPCAPS;
 # when that fails the agent answers a bare CLIPCAPS and the host keeps text only.
+# CLIPSET writes the text from a short-lived STA thread. The thread that sets the
+# clipboard becomes its owner, and a later copy in any guest app first waits for the
+# owner to answer. This agent's thread sits in ReadFile without pumping messages, so
+# each such copy stalled about 5 s (the hung-window timeout). A thread that has
+# exited owns nothing.
+$script:BvClipTextSource = @'
+using System;
+using System.Threading;
+using System.Windows.Forms;
+namespace BridgeVM {
+    public static class BvClipText {
+        public static void Set(string text) {
+            Exception failure = null;
+            Thread thread = new Thread(delegate () {
+                try {
+                    if (string.IsNullOrEmpty(text)) { Clipboard.Clear(); }
+                    else { Clipboard.SetDataObject(new DataObject(DataFormats.UnicodeText, text), true, 10, 100); }
+                } catch (Exception e) { failure = e; }
+            });
+            thread.TrySetApartmentState(ApartmentState.STA);
+            thread.IsBackground = true;
+            thread.Start();
+            if (!thread.Join(20000)) { throw new TimeoutException("the clipboard did not answer"); }
+            if (failure != null) { throw new InvalidOperationException(failure.Message, failure); }
+        }
+    }
+}
+'@
+
+# Without the helper (it failed to compile), Set-Clipboard as before.
+function Set-ClipText([string]$text) {
+    if ($null -eq $script:BvClipTextReady) {
+        try {
+            Add-Type -TypeDefinition $script:BvClipTextSource -ReferencedAssemblies System.Windows.Forms -ErrorAction Stop
+            $script:BvClipTextReady = $true
+        } catch {
+            Log ('CLIP TEXT helper unavailable, using Set-Clipboard: ' + $_.Exception.Message)
+            $script:BvClipTextReady = $false
+        }
+    }
+    if ($script:BvClipTextReady) { [BridgeVM.BvClipText]::Set($text) } else { Set-Clipboard -Value $text -ErrorAction Stop }
+}
+
 $script:BvClipImageSource = @'
 using System;
 using System.Drawing;
@@ -906,7 +949,7 @@ while ($true) {
                     # following poll serves it without reopening the clipboard.
                     try {
                         $txt = if ([string]::IsNullOrEmpty($arg)) { '' } else { [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg)) }
-                        Set-Clipboard -Value $txt -ErrorAction Stop
+                        Set-ClipText $txt
                         $script:BvClipCache = $txt
                         $script:BvClipSeq = $K::GetClipboardSequenceNumber()
                         Write-Line $h 'OK CLIPSET' 'OK'
