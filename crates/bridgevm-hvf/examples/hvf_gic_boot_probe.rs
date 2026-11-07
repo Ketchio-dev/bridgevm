@@ -194,6 +194,8 @@ pub(crate) use cancel_stop::{cancel_stop_reason, stall_gic_report};
 mod display_checkpoints;
 #[path = "hvf_gic_boot_probe/guest_text.rs"]
 mod guest_text;
+#[path = "hvf_gic_boot_probe/open_file_limit.rs"]
+mod open_file_limit;
 #[path = "hvf_gic_boot_probe/platform_lock_holds.rs"]
 mod platform_lock_holds;
 use platform_lock_holds::lock_platform;
@@ -225,6 +227,7 @@ fn main() -> ExitCode {
         println!("virtio_gpu_3d_compiled={}", cfg!(feature = "venus"));
         ExitCode::SUCCESS
     } else {
+        open_file_limit::raise();
         probe_runtime::run()
     }
 }
