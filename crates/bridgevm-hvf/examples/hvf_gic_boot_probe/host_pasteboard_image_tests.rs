@@ -110,7 +110,7 @@ fn poller_without_images_never_reads_or_reports_one() {
     board.text = Some("text".into());
     assert_eq!(
         poller.on_tick_clip(&mut board),
-        Some(HostClip { text: Some("text".into()), image: None })
+        Some(HostClip { text: Some("text".into()), ..HostClip::default() })
     );
     assert_eq!(board.image_reads, 0);
 }

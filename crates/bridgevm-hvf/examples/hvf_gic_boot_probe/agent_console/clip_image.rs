@@ -17,6 +17,8 @@
 //! keeps text only, exactly as before.
 
 use super::*;
+use super::clip_html::GuestHtml;
+use super::clip_sync::html_digest;
 use host_pasteboard::{
     admit_png, parse_digest_hex, within_limits, HostImage, PngImage, PngRefusal,
     CLIP_IMAGE_MAX_BYTES, CLIP_IMAGE_MAX_SIDE,
@@ -29,6 +31,8 @@ mod tests;
 pub(super) const CLIP_CAPS_IMAGE_MARKER: &str = "IMAGE_PNG";
 /// CLIPCAPS PUSH asks for change notices; a reply with CLIPPUSH grants them.
 pub(super) const CLIP_CAPS_PUSH_MARKER: &str = "CLIPPUSH";
+/// The agent serves CLIPXH and CLIPSETH (rich text, clip_html.rs).
+pub(super) const CLIP_CAPS_HTML_MARKER: &str = "CF_HTML";
 /// Longest clipboard directory the agent may announce, in bytes.
 const MAX_CLIP_DIR_BYTES: usize = 1024;
 
@@ -222,17 +226,15 @@ pub(super) fn host_image_skip_line(
 }
 
 impl AgentConsoleHarness {
-    /// CLIPCAPS reply: IMAGE_PNG switches images on and CLIPPUSH change notices;
-    /// a bare CLIPCAPS, or the unknown-token OUT of an agent that predates it,
-    /// keeps a polled text-only sync.
+    /// CLIPCAPS reply: IMAGE_PNG switches images on, CF_HTML (with it) rich
+    /// text and CLIPPUSH change notices; a bare CLIPCAPS, or the unknown-token
+    /// OUT of an agent that predates it, keeps a polled text-only sync.
     pub(super) fn handle_clip_caps_reply(&mut self, line: &str, now: Instant) {
-        let (images, push) = if let Some(rest) = line.strip_prefix("CLIPCAPS") {
-            (
-                parse_clip_caps(rest),
-                rest.split_whitespace().any(|word| word == CLIP_CAPS_PUSH_MARKER),
-            )
+        let (images, push, html) = if let Some(rest) = line.strip_prefix("CLIPCAPS") {
+            let has = |marker| rest.split_whitespace().any(|word| word == marker);
+            (parse_clip_caps(rest), has(CLIP_CAPS_PUSH_MARKER), has(CLIP_CAPS_HTML_MARKER))
         } else if line.starts_with("OUT ") || line.starts_with("ERR") {
-            (None, false)
+            (None, false, false)
         } else {
             return;
         };
@@ -259,8 +261,23 @@ impl AgentConsoleHarness {
             self.last_synced.png = None;
         }
         self.clip_images = images;
+        let html = html && on;
+        if !html {
+            // A queued rich push becomes the plain one this agent can take.
+            for req in self.queue.iter_mut() {
+                if let ServiceReq::ClipPush(_, html) = req {
+                    *html = None;
+                }
+            }
+            self.last_synced.html = None;
+        }
+        if html != self.clip_html {
+            println!("BVAGENT CLIPSYNC rich text {} t={}", if html { "on" } else { "off" }, self.t_ms(now));
+        }
+        self.clip_html = html;
         if let Some(pasteboard) = self.pasteboard.as_ref() {
             pasteboard.set_images(on);
+            pasteboard.set_rich_text(html);
         }
         println!(
             "BVAGENT CLIPSYNC images {} t={}",
@@ -296,13 +313,13 @@ impl AgentConsoleHarness {
         });
         let normalized = text.as_deref().map(normalize_clip);
         let settled = !self.last_synced.rebaseline && !self.clip_push_pending();
-        if settled && self.last_synced.holds(normalized.as_deref(), Some(png.digest)) {
+        if settled && self.last_synced.holds(normalized.as_deref(), Some(png.digest), None) {
             return self.host_copy_unchanged(now);
         }
         let text_held = settled && self.last_synced.text == normalized;
         self.drop_queued_host_pushes();
         if let Some(text) = text.as_ref().filter(|_| !text_held) {
-            self.queue.push_back(ServiceReq::ClipPush(text.clone()));
+            self.queue.push_back(ServiceReq::ClipPush(text.clone(), None));
         }
         self.queue
             .push_back(ServiceReq::ClipImagePush(ClipImagePush::new(png, text)));
@@ -325,20 +342,21 @@ impl AgentConsoleHarness {
         self.queue.retain(|req| {
             !matches!(
                 req,
-                ServiceReq::ClipPush(_) | ServiceReq::ClipImagePush(_)
+                ServiceReq::ClipPush(..) | ServiceReq::ClipImagePush(_)
             )
         });
     }
 
-    /// A CLIPX reply: the guest clipboard as one (text, image) pair. Whenever
-    /// it differs from the pair last synced, the Mac gets exactly that pair:
-    /// the text at once, the image from the cache when its digest matches or
-    /// else fetched and written with that text. An empty clipboard never
-    /// clears the Mac.
+    /// A CLIPX reply: the guest clipboard as one (text, image) pair, with
+    /// CLIPXH a text's HTML too. Whenever it differs from what was last
+    /// synced, the Mac gets exactly that: the text (with its HTML) at once, the
+    /// image from the cache when its digest matches or else fetched and
+    /// written with that text. An empty clipboard never clears the Mac.
     pub(super) fn handle_guest_clip(
         &mut self,
         b64: &str,
         image: Option<GuestImage>,
+        html: GuestHtml<'_>,
         later: bool,
         echo: bool,
         now: Instant,
@@ -357,14 +375,18 @@ impl AgentConsoleHarness {
         });
         let text = admitted.as_deref().filter(|text| !text.is_empty()).map(normalize_clip);
         let digest = image.as_ref().and_then(|image| image.digest);
+        // Rich text rides with a text copy, never with an image (v1).
+        let html = if text.is_some() && !copied_image { html } else { GuestHtml::None };
+        let html_held = html.b64().map(html_digest);
         if self.last_synced.rebaseline {
             // Learned whole, never published; a refused text keeps it pending.
             self.last_synced.rebaseline = admitted.is_none();
             self.last_synced.text = text;
             self.last_synced.image = digest;
+            self.last_synced.html = html_held;
             return;
         }
-        let held = self.last_synced.holds(text.as_deref(), digest);
+        let held = self.last_synced.holds(text.as_deref(), digest, html_held);
         if held || (text.is_none() && !copied_image) {
             if echo && held {
                 // A completed push back from the guest: still the Mac's copy.
@@ -380,15 +402,16 @@ impl AgentConsoleHarness {
             }
             return;
         }
-        let fresh_text = self.last_synced.text != text;
+        let fresh_text = self.last_synced.text != text || self.last_synced.html != html_held;
         let had_image = self.last_synced.image.is_some();
         // Recorded now, so a refused fetch is not retried every poll.
         self.last_synced.text = text.clone();
         self.last_synced.image = digest;
+        self.last_synced.html = html_held;
         let (Some(image), Some(digest)) = (image, digest) else {
             // Text only: the guest's image is gone, or stays in Windows.
             if let Some(text) = text.filter(|_| fresh_text || had_image) {
-                self.publish_guest_text(text, now);
+                self.publish_guest_rich_text(text, &html, now);
             }
             return;
         };
@@ -538,6 +561,7 @@ impl AgentConsoleHarness {
                 };
                 self.last_synced.text = push.text.as_deref().map(normalize_clip);
                 self.last_synced.image = Some(push.png.digest);
+                self.last_synced.html = None;
                 self.last_synced.rebaseline = false;
                 self.last_synced.echo = true;
                 clip_line(format!(

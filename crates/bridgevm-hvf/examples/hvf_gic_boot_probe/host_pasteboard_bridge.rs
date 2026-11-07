@@ -19,13 +19,16 @@ pub struct HostPasteboard {
     observed: Cell<u64>,
     recopy: Arc<AtomicU64>,
     images: Arc<AtomicBool>,
+    html: Arc<AtomicBool>,
 }
 
-/// One Mac pasteboard change: its text and, while images are on, its image.
+/// One Mac pasteboard change: its text and, while images are on, its image;
+/// while rich text is on, a text copy's `public.html`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HostClip {
     pub text: Option<String>,
     pub image: Option<HostImage>,
+    pub html: Option<String>,
 }
 
 struct ClipboardText {
@@ -39,6 +42,8 @@ struct PasteboardWrite {
     /// Empty when an image is written without text.
     text: String,
     image: Option<PngImage>,
+    /// The text's `public.html` (never with an image).
+    html: Option<String>,
 }
 
 impl HostPasteboard {
@@ -56,6 +61,7 @@ impl HostPasteboard {
         let (cmds, cmd_rx) = channel();
         let recopy = Arc::new(AtomicU64::new(0));
         let images = Arc::new(AtomicBool::new(false));
+        let html = Arc::new(AtomicBool::new(false));
         (
             Self {
                 events,
@@ -63,6 +69,7 @@ impl HostPasteboard {
                 observed: Cell::new(0),
                 recopy: Arc::clone(&recopy),
                 images: Arc::clone(&images),
+                html: Arc::clone(&html),
             },
             PasteboardWorker {
                 events: event_tx,
@@ -72,6 +79,7 @@ impl HostPasteboard {
                 initialized: false,
                 recopy,
                 images,
+                html,
             },
         )
     }
@@ -91,12 +99,17 @@ impl HostPasteboard {
 
     /// Queue a guest-to-host write without blocking.
     pub fn set(&self, text: String) {
-        self.write(text, None);
+        self.write(text, None, None);
     }
 
     /// Queue a guest-to-host image write, with the guest's text when it has one.
     pub fn set_image(&self, png: PngImage, text: Option<String>) {
-        self.write(text.unwrap_or_default(), Some(png));
+        self.write(text.unwrap_or_default(), Some(png), None);
+    }
+
+    /// Queue a guest-to-host rich text write: the text and its HTML at once.
+    pub fn set_text_html(&self, text: String, html: String) {
+        self.write(text, None, Some(html));
     }
 
     /// Read the Mac pasteboard's image too: the agent can take images.
@@ -104,13 +117,19 @@ impl HostPasteboard {
         self.images.store(on, Ordering::Release);
     }
 
-    fn write(&self, text: String, image: Option<PngImage>) {
+    /// Read the Mac pasteboard's HTML too: the agent can take rich text.
+    pub fn set_rich_text(&self, on: bool) {
+        self.html.store(on, Ordering::Release);
+    }
+
+    fn write(&self, text: String, image: Option<PngImage>, html: Option<String>) {
         let _ = self.cmds.send(PasteboardWrite {
             revision: self.observed.get(),
             // Orders suppressed host ownership changes, not native event time.
             recopy: self.recopy.load(Ordering::Acquire),
             text,
             image,
+            html,
         });
     }
 

@@ -13,7 +13,6 @@ pub(super) enum Base64DecodeError {
     Padding,
 }
 
-#[cfg(test)]
 pub(super) fn base64_encode(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     base64_encode_into(bytes, &mut out);

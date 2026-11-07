@@ -11,6 +11,8 @@
 //   set(&self, text: String)                     // guest->host text sync
 //   set_image(&self, png, text: Option<String>)  // guest->host image (+text)
 //   set_images(&self, on: bool)                  // read images too (IMAGE_PNG)
+//   set_text_html(&self, text, html)             // guest->host rich text
+//   set_rich_text(&self, on: bool)               // read public.html too (CF_HTML)
 //
 // Echo suppression contract: content written via set()/set_image() must NOT
 // come back out of try_changed_clip(), and neither must content equal to the
@@ -52,6 +54,15 @@ pub trait PasteboardBackend: Send {
     /// Replace the content with `text` (first, when given) and `png`.
     fn set_image(&mut self, png: &[u8], text: Option<&str>) -> bool {
         let _ = (png, text);
+        false
+    }
+    /// The pasteboard's `public.html` (only read while rich text is on).
+    fn get_html(&mut self) -> Option<String> {
+        None
+    }
+    /// Replace the content with `text` and its `html` in one write.
+    fn set_text_html(&mut self, text: &str, html: &str) -> bool {
+        let _ = (text, html);
         false
     }
 }
@@ -152,25 +163,44 @@ impl PasteboardBackend for NsPasteboardBackend {
                 return false;
             }
             let ty = plain_text_type_string();
-            if ty.is_null() {
-                return false;
-            }
-            let sanitized: Vec<u8> = text
-                .as_bytes()
-                .iter()
-                .copied()
-                .filter(|byte| *byte != 0)
-                .collect();
-            let c_text = match CString::new(sanitized) {
-                Ok(c_text) => c_text,
-                Err(_) => return false,
-            };
-            let ns_text = ns_string_from_utf8(c_text.as_ptr());
-            if ns_text.is_null() {
+            let ns_text = ns_string(text);
+            if ty.is_null() || ns_text.is_null() {
                 return false;
             }
             let _ = msg_send_i64(pb, sel(b"clearContents\0"));
             msg_send_bool_id_id(pb, sel(b"setString:forType:\0"), ns_text, ty)
+        })
+    }
+
+    fn get_html(&mut self) -> Option<String> {
+        with_autorelease_pool(|| unsafe {
+            let pb = self.pasteboard();
+            if pb.is_null() {
+                return None;
+            }
+            let ns_html = msg_send_id_id(pb, sel(b"stringForType:\0"), html_type_string());
+            if ns_html.is_null() {
+                return None;
+            }
+            let bytes = msg_send_cstr(ns_html, sel(b"UTF8String\0"));
+            (!bytes.is_null()).then(|| CStr::from_ptr(bytes).to_string_lossy().into_owned())
+        })
+    }
+
+    fn set_text_html(&mut self, text: &str, html: &str) -> bool {
+        with_autorelease_pool(|| unsafe {
+            let pb = self.pasteboard();
+            if pb.is_null() {
+                return false;
+            }
+            let (text_type, html_type) = (plain_text_type_string(), html_type_string());
+            let (ns_text, ns_html) = (ns_string(text), ns_string(html));
+            if text_type.is_null() || html_type.is_null() || ns_text.is_null() || ns_html.is_null() {
+                return false;
+            }
+            let _ = msg_send_i64(pb, sel(b"clearContents\0"));
+            msg_send_bool_id_id(pb, sel(b"setString:forType:\0"), ns_text, text_type)
+                && msg_send_bool_id_id(pb, sel(b"setString:forType:\0"), ns_html, html_type)
         })
     }
 
@@ -206,6 +236,19 @@ unsafe fn plain_text_type_string() -> ObjcId {
     // NSPasteboardTypeString constant symbol; this keeps the FFI surface to
     // Objective-C runtime calls and avoids an extra AppKit extern symbol.
     ns_string_from_utf8(c"public.utf8-plain-text".as_ptr().cast())
+}
+
+unsafe fn html_type_string() -> ObjcId {
+    ns_string_from_utf8(c"public.html".as_ptr().cast())
+}
+
+/// An autoreleased NSString of `text` without its NUL bytes (null on failure).
+unsafe fn ns_string(text: &str) -> ObjcId {
+    let sanitized: Vec<u8> = text.bytes().filter(|byte| *byte != 0).collect();
+    match CString::new(sanitized) {
+        Ok(c_text) => ns_string_from_utf8(c_text.as_ptr()),
+        Err(_) => std::ptr::null_mut(),
+    }
 }
 
 unsafe fn ns_string_from_utf8(bytes: *const c_char) -> ObjcId {

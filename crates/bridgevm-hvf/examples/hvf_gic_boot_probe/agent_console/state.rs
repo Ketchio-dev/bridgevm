@@ -120,6 +120,9 @@ pub struct AgentConsoleHarness {
     /// each guest clipboard change, so the clipboard poll is only a 10 s safety
     /// net and keepalive.
     pub(super) clip_push: bool,
+    /// The agent answered CLIPCAPS with CF_HTML (and IMAGE_PNG): rich text moves
+    /// as CLIPXH polls and CLIPSETH pushes (clip_html.rs).
+    pub(super) clip_html: bool,
     /// Optional control file tailed for injected commands.
     pub(super) ctl_path: Option<String>,
     /// Byte offset consumed so far from the control file.
@@ -254,8 +257,9 @@ pub(super) enum ServiceReq {
     /// Poll the guest clipboard (CLIPGET) for guest->host sync.
     ClipPoll,
     /// Push host clipboard text to the guest (CLIPSET). Carries the host (LF)
-    /// text; the CRLF conversion happens at send time.
-    ClipPush(String),
+    /// text; the CRLF conversion happens at send time. With the base64 of the
+    /// copy's CF_HTML (rich text on), the push is a CLIPSETH.
+    ClipPush(String, Option<String>),
     /// Ask the agent whether it can move clipboard images (CLIPCAPS).
     ClipCaps,
     /// Push a Mac image, with the copy's text, to the guest clipboard.
@@ -330,7 +334,7 @@ impl InFlightSnapshot {
     pub(super) fn from_req(req: &ServiceReq) -> Self {
         match req {
             ServiceReq::ClipPoll => Self::ClipPoll,
-            ServiceReq::ClipPush(text) => Self::ClipPush {
+            ServiceReq::ClipPush(text, _) => Self::ClipPush {
                 guest_bytes: to_guest_crlf_len(text),
             },
             ServiceReq::ClipCaps => Self::ClipCaps,

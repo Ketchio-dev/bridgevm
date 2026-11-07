@@ -33,6 +33,8 @@ mod agent_update;
 mod clip_guest_admission;
 #[path = "agent_console/clip_guest_fingerprint.rs"]
 mod clip_guest_fingerprint;
+#[path = "agent_console/clip_html.rs"]
+mod clip_html;
 #[path = "agent_console/clip_image.rs"]
 mod clip_image;
 #[path = "agent_console/clip_operator_reply.rs"]
