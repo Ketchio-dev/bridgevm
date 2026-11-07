@@ -90,9 +90,9 @@ impl AgentConsoleHarness {
             return self.host_copy_unchanged(now);
         }
         if text.len() > self.clip_max_bytes {
-            // Never pushed: the guest agent reads the wire with per-call
-            // P/Invoke cost, so a huge CLIPSET line wedges the whole channel.
-            // The Mac keeps its copy; queued older pushes are obsolete.
+            // Never pushed (over the 8 MiB the guest may send back, or the
+            // operator's CLIPSYNC_MAX_KB): the Mac keeps its copy; queued
+            // older pushes are obsolete.
             clip_line(format!(
                 "BVAGENT CLIPSYNC skip bytes={} too-large copy={} t={}",
                 text.len(),
