@@ -32,6 +32,14 @@ final class HvfPortForwardsTests: XCTestCase {
         XCTAssertNotNil(refused.message)
         XCTAssertEqual(library.latestConfiguration(for: saved).portForwards, "8080:80, 3390:3389")
 
+        // At Start a typo does not stop the VM: it starts with the saved forwards and says so.
+        let start = session.savePortForwardsBeforeStart("8080:")
+        XCTAssertEqual(start.text, "8080:80, 3390:3389")
+        XCTAssertNotNil(start.notice)
+        XCTAssertEqual(library.latestConfiguration(for: saved).portForwards, "8080:80, 3390:3389")
+        XCTAssertTrue(session.savePortForwardsBeforeStart("2222:22") == ("2222:22", nil), "a valid draft is saved")
+        XCTAssertEqual(library.latestConfiguration(for: saved).portForwards, "2222:22")
+
         // Clearing the field restores the never-touched registration.
         XCTAssertTrue(session.applyPortForwards("") == ("", nil))
         XCTAssertNil(library.latestConfiguration(for: saved).portForwards)

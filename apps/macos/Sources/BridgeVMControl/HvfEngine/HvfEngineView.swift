@@ -22,6 +22,7 @@ struct HvfEngineView: View {
     @State private var durableDiskWrites = false
     @State private var microphoneEnabled = false
     @State private var portForwards = ""
+    @State private var portForwardNotice: String?
     @State private var guestResolution: String?
     @State private var retinaResolution: Bool?
     @State private var commandKeyMode = HvfCommandKeyMode.mac
@@ -67,6 +68,13 @@ struct HvfEngineView: View {
         .onChange(of: confirmVTPMRestore) { _, shown in if !shown { releaseVTPMReservation() } }
         .onChange(of: confirmVTPMReset) { _, shown in if !shown { releaseVTPMReservation() } }
         .onDisappear { releaseVTPMReservation() }
+        .alert("포트 포워딩 설정", isPresented: Binding(
+            get: { portForwardNotice != nil }, set: { if !$0 { portForwardNotice = nil } }
+        )) {
+            Button("확인") { portForwardNotice = nil }
+        } message: {
+            Text(portForwardNotice ?? "")
+        }
         .onAppear {
             loadStateFromSession()
             readiness.request(configuration: currentConfig(), repoRoot: session.repoRoot)
@@ -331,7 +339,11 @@ struct HvfEngineView: View {
         startRefusal = nil
         let share = shareEnabled ? HvfSharedFolderSelection(hostPath: shareHostDir, guestPath: shareGuestDir) : nil
         if let refusal = session.saveSharedFolderBeforeStart(share) { startRefusal = refusal; return }
-        if let refusal = session.savePortForwardsBeforeStart(portForwards) { startRefusal = refusal; return }
+        if virtioNet {
+            let forwards = session.savePortForwardsBeforeStart(portForwards)
+            portForwards = forwards.text
+            portForwardNotice = forwards.notice
+        }
         if case let .refused(reason) = session.requestGUIStart(configuration: currentConfig()) {
             startRefusal = reason; return
         }

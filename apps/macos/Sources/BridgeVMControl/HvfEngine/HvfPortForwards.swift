@@ -47,16 +47,18 @@ extension HvfEngineSession {
         return (HvfPortForwards.text(HvfPortForwards.saved(config.libraryContext?.config.portForwards)), message)
     }
 
-    /// Runtime-view Start launches only what vm.json holds, so typed but unsaved forwards are
-    /// saved first. Returns nil when the start may proceed, otherwise why it may not.
-    func savePortForwardsBeforeStart(_ visible: String) -> String? {
-        guard persistsLibraryPreferences, let saved = config.libraryContext?.config,
-              HvfPortForwards.parse(visible) != HvfPortForwards.saved(saved.portForwards) else { return nil }
+    /// Runtime-view Start launches what vm.json holds, so typed but unsaved forwards are saved
+    /// first. Forwards never stop the VM from starting: when they cannot be saved, it starts with
+    /// the saved ones. Returns the forwards it starts with and a notice for the user, if any.
+    func savePortForwardsBeforeStart(_ visible: String) -> (text: String, notice: String?) {
+        guard persistsLibraryPreferences, let saved = config.libraryContext?.config else { return (visible, nil) }
+        let savedText = HvfPortForwards.text(HvfPortForwards.saved(saved.portForwards))
+        guard HvfPortForwards.parse(visible) != HvfPortForwards.saved(saved.portForwards) else { return (savedText, nil) }
         let result = applyPortForwards(visible)
-        guard HvfPortForwards.parse(result.text) == HvfPortForwards.parse(visible) else {
-            return result.message ?? "포트 포워딩 설정을 저장하지 못했습니다. 설정을 확인한 뒤 다시 시작하세요."
-        }
-        return result.message
+        guard result.message != nil else { return (result.text, nil) }
+        let started = HvfPortForwards.text(HvfPortForwards.saved(config.libraryContext?.config.portForwards))
+        let using = started.isEmpty ? "포트 포워딩 없이" : "저장된 포트 포워딩(\(started))으로"
+        return (started, "입력한 포트 포워딩을 저장하지 못해 \(using) 시작합니다. \(result.message ?? "")")
     }
 }
 
