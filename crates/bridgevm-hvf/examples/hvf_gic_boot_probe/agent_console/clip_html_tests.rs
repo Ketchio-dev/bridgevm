@@ -1,4 +1,5 @@
 use super::*;
+use crate::agent_console::protocol::base64_encode;
 
 /// The header's value for `name`, and the slice between two offsets.
 fn field(cf: &[u8], name: &str) -> usize {
@@ -85,4 +86,16 @@ fn unusable_guest_html_is_refused() {
     assert_eq!(mac_html_from_cf(cf.as_bytes()), None, "an offset inside a character");
     let cf = "Version:0.9\r\nStartHTML:0000000900\r\nEndHTML:0000000999\r\n<b>x</b>";
     assert_eq!(mac_html_from_cf(cf.as_bytes()), None, "offsets past the end");
+}
+
+#[test]
+fn the_html_limit_holds_against_the_payload_not_the_declared_size() {
+    let big = base64_encode(&vec![b'a'; CLIP_HTML_MAX_BYTES + 1]);
+    let text = base64_encode(b"t");
+    // A guest that declares 1 byte for a payload over the limit.
+    let reply = format!("1 {big} {text}");
+    assert_eq!(parse_html_part(&reply), Some((GuestHtml::TooLarge(CLIP_HTML_MAX_BYTES + 1), text.as_str())));
+    let fits = base64_encode(&vec![b'a'; CLIP_HTML_MAX_BYTES]);
+    let reply = format!("{CLIP_HTML_MAX_BYTES} {fits} {text}");
+    assert_eq!(parse_html_part(&reply), Some((GuestHtml::Present(&fits), text.as_str())));
 }

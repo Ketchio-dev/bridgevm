@@ -41,10 +41,13 @@ pub(super) fn parse_html_part(rest: &str) -> Option<(GuestHtml<'_>, &str)> {
     let size = fields.next()?.parse::<usize>().ok()?;
     let body = fields.next()?;
     let text = fields.next()?;
+    // The payload, not the declared size, decides: the guest may name either.
+    let padding = body.bytes().rev().take_while(|byte| *byte == b'=').count().min(2);
+    let decoded = (body.len() / 4 * 3).saturating_sub(padding);
     let html = match (size, body) {
         (0, _) => GuestHtml::None,
         (bytes, "-") => GuestHtml::TooLarge(bytes),
-        (bytes, _) if bytes > CLIP_HTML_MAX_BYTES => GuestHtml::TooLarge(bytes),
+        (bytes, _) if bytes.max(decoded) > CLIP_HTML_MAX_BYTES => GuestHtml::TooLarge(bytes.max(decoded)),
         (_, b64) => GuestHtml::Present(b64),
     };
     Some((html, text))
