@@ -270,7 +270,7 @@ pub(super) unsafe fn named_pasteboard(name: &CString) -> ObjcId {
     msg_send_id(pb, sel(b"retain\0"))
 }
 
-unsafe fn class(name: &std::ffi::CStr) -> ObjcId {
+pub(super) unsafe fn class(name: &std::ffi::CStr) -> ObjcId {
     objc_getClass(name.as_ptr())
 }
 
@@ -280,7 +280,7 @@ unsafe fn has_type(pb: ObjcId, ty: &std::ffi::CStr) -> bool {
     !types.is_null() && !ty.is_null() && msg_send_bool_id(types, sel(b"containsObject:\0"), ty)
 }
 
-unsafe fn data_for_type(pb: ObjcId, ty: &std::ffi::CStr) -> Option<ObjcId> {
+pub(super) unsafe fn data_for_type(pb: ObjcId, ty: &std::ffi::CStr) -> Option<ObjcId> {
     let ty = ns_string_from_utf8(ty.as_ptr());
     if ty.is_null() {
         return None;
@@ -289,12 +289,12 @@ unsafe fn data_for_type(pb: ObjcId, ty: &std::ffi::CStr) -> Option<ObjcId> {
     (!data.is_null()).then_some(data)
 }
 
-unsafe fn data_len(data: ObjcId) -> usize {
+pub(super) unsafe fn data_len(data: ObjcId) -> usize {
     msg_send_usize(data, sel(b"length\0"))
 }
 
 /// The first `len` bytes of an NSData, copied out of the autoreleased object.
-unsafe fn data_bytes(data: ObjcId, len: usize) -> Vec<u8> {
+pub(super) unsafe fn data_bytes(data: ObjcId, len: usize) -> Vec<u8> {
     let ptr = msg_send_ptr(data, sel(b"bytes\0")).cast::<u8>();
     if ptr.is_null() || len == 0 {
         return Vec::new();

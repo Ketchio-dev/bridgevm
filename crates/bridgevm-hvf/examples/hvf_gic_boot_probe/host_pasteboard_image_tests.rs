@@ -246,6 +246,35 @@ fn private_pasteboard_round_trips_text_and_png_in_one_write() {
 }
 
 #[test]
+fn private_pasteboard_round_trips_text_and_html_in_one_write() {
+    let mut pasteboard = PrivatePasteboard::new("html");
+    if pasteboard.raw().is_null() || !pasteboard.backend.set_string("probe") {
+        eprintln!("no pasteboard server in this session; skipped");
+        return;
+    }
+    assert_eq!(pasteboard.backend.get_html(), None, "plain text has no HTML");
+    let html = "<meta charset=\"utf-8\"><b>굵게</b> 😀";
+    assert!(pasteboard.backend.set_text_html("굵게 😀", html));
+    assert_eq!(pasteboard.backend.get_string().as_deref(), Some("굵게 😀"));
+    assert_eq!(pasteboard.backend.get_html().as_deref(), Some(html));
+}
+
+#[test]
+fn private_pasteboard_rtf_alone_reads_as_html() {
+    let mut pasteboard = PrivatePasteboard::new("rtf");
+    let pb = pasteboard.raw();
+    // TextEdit's kind of copy: RTF with bold and a Korean character, no HTML.
+    let rtf = br"{\rtf1\ansi\ansicpg1252{\fonttbl\f0\fswiss Helvetica;}\f0\b bold\b0  and \uc0\u44405 }";
+    if pb.is_null() || !unsafe { set_data_for_type(pb, rtf, c"public.rtf") } {
+        eprintln!("no pasteboard server in this session; skipped");
+        return;
+    }
+    let html = pasteboard.backend.get_html().expect("RTF as HTML");
+    assert!(html.contains("<b>bold</b>") && html.contains("and 굵"), "{html}");
+    assert!(html.to_ascii_lowercase().contains("charset=utf-8"), "{html}");
+}
+
+#[test]
 fn private_pasteboard_tiff_becomes_png_and_file_copies_have_no_image() {
     let mut pasteboard = PrivatePasteboard::new("tiff");
     let pb = pasteboard.raw();
