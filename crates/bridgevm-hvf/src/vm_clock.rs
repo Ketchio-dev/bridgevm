@@ -97,6 +97,7 @@ mod tests {
 
     #[test]
     fn a_pause_is_left_out_and_held_while_paused() {
+        let wall = Instant::now();
         let start = active_now();
         std::thread::sleep(Duration::from_millis(20));
         pause();
@@ -107,8 +108,10 @@ mod tests {
         assert!(paused >= Duration::from_millis(200));
         let after = active_now();
         assert!(after >= held);
+        // Against the measured wall time, so a loaded runner that runs the
+        // sleeps late cannot fail it (a fixed 150 ms bound did, on CI).
         assert!(
-            after.duration_since(start) < Duration::from_millis(150),
+            after.duration_since(start) <= wall.elapsed() - paused,
             "the 200 ms pause is not VM time"
         );
         assert_eq!(resume(), Duration::ZERO, "not paused");
