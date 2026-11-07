@@ -1,0 +1,12 @@
+name: Clipboard owner contract
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/win-assets/bvagent.ps1', 'tests/integration/clipboard-owner-contract.ps1', '.github/workflows/clipboard-owner-contract.yml']}}
+permissions:
+  contents: read
+jobs:
+  clipboard-owner:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: A copy after the agent's CLIPSET does not wait for the agent
+        shell: powershell
+        run: tests/integration/clipboard-owner-contract.ps1
