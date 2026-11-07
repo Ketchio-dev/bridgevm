@@ -214,6 +214,7 @@ final class HvfWindowsBackend: VMBackend {
             nvmeBufferedIO: false,
             durableDiskWrites: config.durableDiskWritesEnabled ?? false,
             microphoneEnabled: config.microphoneEnabled ?? false,
+            portForwards: HvfPortForwards.saved(config.portForwards),
             guestResolution: config.guestResolution,
             retinaResolution: config.retinaResolution,
             commandKeyMode: HvfCommandKeyMode(saved: config.commandKeyMode),

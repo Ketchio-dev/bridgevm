@@ -49,6 +49,7 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     var guestResolution: String? = nil  // Windows display "WxH"; nil == automatic: the VMM's 1280x800 unless the VM's firmware already has one (HVF only)
     var commandKeyMode: String? = nil  // nil == Mac-like: Command chords are Ctrl chords, a bare Command tap is the Windows key; "windows": Command is the Windows key (HVF only)
     var sharedFolderHostPath: String? = nil, sharedFolderGuestPath: String? = nil  // user-chosen pair; nil == no sharing (HVF only)
+    var portForwards: String? = nil  // "8080:80, 3390:3389": the Mac's 127.0.0.1:8080 reaches the guest's TCP port 80; nil == none (HVF only)
     /// A config can be imported or hand-edited, so never trust its persisted ID
     /// as a filesystem component. Normalizing here keeps every caller inside the
     /// VM library even when an ID contains separators or traversal components.

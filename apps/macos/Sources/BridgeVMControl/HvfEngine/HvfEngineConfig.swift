@@ -37,6 +37,8 @@ struct HvfEngineConfig: Equatable {
     /// The user's microphone setting. It reaches the VM only with macOS's permission
     /// (HvfMicrophoneSetting.swift); otherwise the guest has no microphone.
     var microphoneEnabled: Bool = false
+    /// The user's TCP port forwards (HvfPortForwards.swift); only with `virtioNet`.
+    var portForwards: [HvfPortForward] = []
     /// The user's Windows display resolution ("WxH"); nil lets the VMM keep the
     /// firmware's resolution or add its 1280x800 default.
     var guestResolution: String? = nil
@@ -114,6 +116,9 @@ struct HvfEngineConfig: Equatable {
         if durableDiskWrites { args.append("--nvme-durable-flush") }
         if let guestResolution { args.append(contentsOf: ["--guest-resolution", guestResolution]) }
         if virtioNet { args.append("--virtio-net") }
+        if virtioNet {
+            for forward in portForwards { args.append(contentsOf: ["--net-forward", "\(forward.host):\(forward.guest)"]) }
+        }
         if audioEnabled { args.append("--helper-hda") }
         if audioEnabled && microphoneEnabled && microphone.status == .authorized { args.append("--helper-hda-microphone") }
         if let libraryContext, let agentAssetsDir {

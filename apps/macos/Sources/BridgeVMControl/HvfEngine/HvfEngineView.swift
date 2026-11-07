@@ -21,6 +21,7 @@ struct HvfEngineView: View {
     @State private var virtioNet = false
     @State private var durableDiskWrites = false
     @State private var microphoneEnabled = false
+    @State private var portForwards = ""
     @State private var guestResolution: String?
     @State private var retinaResolution: Bool?
     @State private var commandKeyMode = HvfCommandKeyMode.mac
@@ -146,6 +147,7 @@ struct HvfEngineView: View {
                     Spacer()
                 }
                 HvfSharedFolderSettings(session: session, enabled: $shareEnabled, hostDir: $shareHostDir, guestDir: $shareGuestDir)
+                if virtioNet { HvfPortForwardSetting(session: session, text: $portForwards) }
                 HvfRuntimeKeyboardInput(session: session, draft: $keyboardInput)
                 HvfRuntimeSpecialKeys(session: session)
             }
@@ -329,6 +331,7 @@ struct HvfEngineView: View {
         startRefusal = nil
         let share = shareEnabled ? HvfSharedFolderSelection(hostPath: shareHostDir, guestPath: shareGuestDir) : nil
         if let refusal = session.saveSharedFolderBeforeStart(share) { startRefusal = refusal; return }
+        if let refusal = session.savePortForwardsBeforeStart(portForwards) { startRefusal = refusal; return }
         if case let .refused(reason) = session.requestGUIStart(configuration: currentConfig()) {
             startRefusal = reason; return
         }
@@ -357,6 +360,7 @@ struct HvfEngineView: View {
         config.virtioNet = virtioNet
         config.durableDiskWrites = durableDiskWrites
         config.microphoneEnabled = microphoneEnabled
+        config.portForwards = HvfPortForwards.parse(portForwards) ?? config.portForwards
         config.guestResolution = guestResolution
         config.retinaResolution = retinaResolution
         config.commandKeyMode = commandKeyMode
@@ -382,6 +386,7 @@ struct HvfEngineView: View {
         virtioNet = cfg.virtioNet
         durableDiskWrites = cfg.durableDiskWrites
         microphoneEnabled = cfg.microphoneEnabled
+        portForwards = HvfPortForwards.text(cfg.portForwards)
         guestResolution = cfg.guestResolution
         retinaResolution = cfg.retinaResolution
         commandKeyMode = cfg.commandKeyMode
