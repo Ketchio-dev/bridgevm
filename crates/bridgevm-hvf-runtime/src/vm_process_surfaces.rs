@@ -59,6 +59,13 @@ pub(super) fn env(surfaces: &DeviceSurfaces) -> Vec<(&'static str, String)> {
     if surfaces.virtio_net {
         env.push(("BRIDGEVM_VIRTIO_NET", "1".to_string()));
         env.push(("BRIDGEVM_VIRTIO_NET_BACKEND", "nat".to_string()));
+        if !surfaces.net_forwards.is_empty() {
+            let pairs = surfaces
+                .net_forwards
+                .iter()
+                .map(|(host, guest)| format!("{host}:{guest}"));
+            env.push(("BRIDGEVM_NET_FORWARD", pairs.collect::<Vec<_>>().join(",")));
+        }
     }
     if surfaces.hda_audio {
         env.push(("BRIDGEVM_HDA", "1".to_string()));

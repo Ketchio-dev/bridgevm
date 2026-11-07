@@ -73,6 +73,9 @@ pub struct DeviceSurfaces {
     pub share: Option<ShareSurface>,
     /// virtio-net with the NAT backend.
     pub virtio_net: bool,
+    /// The NAT's inbound TCP port forwards, (host port, guest port): host
+    /// 127.0.0.1 only. Only with `virtio_net`.
+    pub net_forwards: Vec<(u16, u16)>,
     /// Intel HDA audio played through CoreAudio.
     pub hda_audio: bool,
     /// The user's opt-in: the guest microphone records the Mac's default input

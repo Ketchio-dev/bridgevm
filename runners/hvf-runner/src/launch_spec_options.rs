@@ -40,6 +40,7 @@ pub(super) fn build(args: &crate::Args, helper: &Path) -> HelperLaunch {
                     max_kb: args.agent_share_max_kb.unwrap_or(65536),
                 }),
             virtio_net: args.virtio_net,
+            net_forwards: args.net_forwards.clone(),
             hda_audio: args.typed.helper_hda,
             hda_microphone: args.typed.helper_hda_microphone,
             // clap requires the marker and the session with the folder.
@@ -73,6 +74,22 @@ mod tests {
         argv.extend(gpu_flags);
         let args = crate::Args::try_parse_from(argv).unwrap();
         super::build(&args, Path::new("p")).surfaces.unwrap()
+    }
+
+    #[test]
+    fn the_owned_launch_carries_the_port_forwards() {
+        assert!(surfaces(&[]).net_forwards.is_empty());
+        let forwards = &[
+            "--virtio-net",
+            "--net-forward",
+            "8080:80",
+            "--net-forward",
+            "2222:22",
+        ];
+        assert_eq!(surfaces(forwards).net_forwards, [(8080, 80), (2222, 22)]);
+        let mut argv = vec!["hvf-runner", "--launch-spec", "m.json", "--helper", "p"];
+        argv.extend(["--net-forward", "80"]);
+        assert!(crate::Args::try_parse_from(argv).is_err());
     }
 
     #[test]

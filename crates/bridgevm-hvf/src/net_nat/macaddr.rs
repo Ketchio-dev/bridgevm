@@ -304,7 +304,11 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
             return;
         }
 
-        if packet.protocol == IPV4_PROTOCOL_TCP && is_non_local_ipv4_destination(packet.dst) {
+        // The gateway too: forwarded connections come from it, so the guest's
+        // side of them is addressed to it (handle_tcp opens no flow there).
+        if packet.protocol == IPV4_PROTOCOL_TCP
+            && (is_non_local_ipv4_destination(packet.dst) || packet.dst == GATEWAY_IP)
+        {
             self.stats.tcp_segments = self.stats.tcp_segments.saturating_add(1);
             self.outbound_ipv4.handle_outbound_ipv4(&packet);
         } else {
@@ -392,8 +396,10 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
 }
 
 impl NatBackend<HostSocketOutboundIpv4Handler> {
+    /// The live NAT, with the port forwards `BRIDGEVM_NET_FORWARD` lists.
     pub fn new_host_socket() -> Self {
-        Self::with_outbound_handler(HostSocketOutboundIpv4Handler::new())
+        let handler = HostSocketOutboundIpv4Handler::new().with_forwards(&forwards_from_env());
+        Self::with_outbound_handler(handler)
     }
 }
 
@@ -419,6 +425,9 @@ pub struct HostSocketOutboundIpv4Handler {
     /// Started with the first flow once the VMM set `NET_RX_HOOK`.
     pub(crate) wake: std::cell::OnceCell<Option<HostWake>>,
     pub(crate) ready_scratch: Vec<i32>,
+    /// Host listeners of the inbound port forwards.
+    pub(crate) forwards: Vec<ForwardListener>,
+    pub(crate) forward_source_cursor: u16,
     #[cfg(test)]
     pub(crate) idle_sweep_count: u64,
 }
@@ -488,6 +497,8 @@ impl HostSocketOutboundIpv4Handler {
             tcp_isn_counter: 0x4256_0000,
             wake: std::cell::OnceCell::new(),
             ready_scratch: Vec::new(),
+            forwards: Vec::new(),
+            forward_source_cursor: 0,
             #[cfg(test)]
             idle_sweep_count: 0,
         }
@@ -523,6 +534,9 @@ impl HostSocketOutboundIpv4Handler {
         }
         for flow in self.udp_flows.values_mut() {
             flow.readable |= self.ready_scratch.contains(&flow.socket.as_raw_fd());
+        }
+        for forward in &mut self.forwards {
+            forward.readable |= self.ready_scratch.contains(&forward.listener.as_raw_fd());
         }
     }
 
@@ -637,7 +651,10 @@ impl HostSocketOutboundIpv4Handler {
             self.tcp_flows.remove(&key);
             return;
         }
-        if tcp.flags & TCP_FLAG_SYN != 0 && !self.tcp_flows.contains_key(&key) {
+        if tcp.flags & TCP_FLAG_SYN != 0
+            && !self.tcp_flows.contains_key(&key)
+            && is_non_local_ipv4_destination(packet.dst)
+        {
             let our_seq = self.next_tcp_isn();
             let stream = match nonblocking_tcp_connect(StdIpv4Addr::from(packet.dst), tcp.dst_port)
             {
@@ -669,6 +686,14 @@ impl HostSocketOutboundIpv4Handler {
             return;
         };
         flow.last_activity = now;
+        if flow.state == TcpProxyState::Opening {
+            // Only the SYN-ACK to the NAT's SYN opens a forwarded connection.
+            let syn_ack = TCP_FLAG_SYN | TCP_FLAG_ACK;
+            if tcp.flags & syn_ack == syn_ack && tcp.ack == flow.our_seq.wrapping_add(1) {
+                flow.open_from_syn_ack(tcp);
+            }
+            return;
+        }
         if tcp.flags & TCP_FLAG_ACK != 0 {
             let bare = tcp.payload.is_empty() && tcp.flags & (TCP_FLAG_SYN | TCP_FLAG_FIN) == 0;
             let window = flow.send.guest_window(tcp.window);
@@ -797,6 +822,19 @@ impl HostSocketOutboundIpv4Handler {
                 // resets). Guest-driven activity is stamped in the packet
                 // handlers.
                 let mut active = false;
+                if flow.state == TcpProxyState::Opening {
+                    // A forwarded connection's SYN the guest has not answered:
+                    // resent, backing off, then given up (closing the host side).
+                    match flow.syn_due(now) {
+                        Some(true) => {
+                            flow.queue_syn(key, guest_mac, reply_queue);
+                            stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
+                        }
+                        Some(false) => remove_scratch.push(*key),
+                        None => {}
+                    }
+                    continue;
+                }
                 if flow.state == TcpProxyState::Connecting && flow.readable {
                     let failed = match tcp_connect_error(&flow.stream) {
                         Ok(Some(0)) => {
