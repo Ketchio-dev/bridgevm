@@ -1,7 +1,7 @@
 //! Guest write admission and self-write suppression, unchanged by read handling.
 
 use super::super::PngImage;
-use super::{PasteboardBackend, Poller};
+use super::{html_digest, PasteboardBackend, Poller};
 use crate::agent_console::clip_guest_admission::GUEST_CLIP_MAX_BYTES;
 
 impl Poller {
@@ -20,6 +20,23 @@ impl Poller {
             self.last_seen = Some(text.to_owned());
             self.last_image = None;
             self.last_oversized = false;
+            self.last_html = None;
+            self.last_count = backend.change_count();
+        }
+    }
+
+    /// The rich form of apply_set: the guest's text and its HTML in one write,
+    /// under the same newer-Mac-copy rule and echo suppression.
+    pub fn apply_set_html<B: PasteboardBackend>(&mut self, backend: &mut B, text: &str, html: &str) {
+        if !self.owns_pasteboard(backend) {
+            return;
+        }
+        if text.len() <= GUEST_CLIP_MAX_BYTES && backend.set_text_html(text, html) {
+            self.empty_rereads = 0;
+            self.last_seen = Some(text.to_owned());
+            self.last_image = None;
+            self.last_oversized = false;
+            self.last_html = Some(html_digest(html));
             self.last_count = backend.change_count();
         }
     }
@@ -41,6 +58,7 @@ impl Poller {
             self.last_seen = text.map(str::to_owned);
             self.last_image = Some(png.digest);
             self.last_oversized = false;
+            self.last_html = None;
             self.last_count = backend.change_count();
         }
     }
@@ -53,6 +71,7 @@ impl Poller {
             self.last_seen = None;
             self.last_image = None;
             self.last_oversized = false;
+            self.last_html = None;
             return false;
         }
         true

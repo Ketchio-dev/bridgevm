@@ -24,6 +24,7 @@ pub(crate) struct PasteboardWorker {
     pub(super) initialized: bool,
     pub(super) recopy: Arc<AtomicU64>,
     pub(super) images: Arc<AtomicBool>,
+    pub(super) html: Arc<AtomicBool>,
 }
 
 impl PasteboardWorker {
@@ -41,11 +42,11 @@ impl PasteboardWorker {
                 Err(TryRecvError::Disconnected) => return false,
             }
         }
-        // Images just switched on (seen after the drain, so after any write
-        // sent since): read the Mac's image before a guest write lands. A
-        // startup Mac image is then reported and wins, as startup text does,
-        // and writes queued against the older read are stale.
-        if self.images.load(Ordering::Acquire) && !self.poller.images && !self.poll(backend) {
+        // Images or rich text just switched on (seen after the drain, so after
+        // any write sent since): read the Mac's content before a guest write
+        // lands. A startup Mac image or rich copy is then reported and wins, as
+        // startup text does, and writes queued against the older read are stale.
+        if self.switched_on() && !self.poll(backend) {
             return false;
         }
         let (mut refused, mut fresh) = (false, false);
@@ -54,12 +55,13 @@ impl PasteboardWorker {
             // Only the service's last received revision can authorize a write.
             if Some(write.revision) == self.revision {
                 if write.recopy == self.recopy.load(Ordering::Acquire) {
-                    match &write.image {
-                        Some(png) => {
+                    match (&write.image, &write.html) {
+                        (Some(png), _) => {
                             let text = Some(write.text.as_str()).filter(|text| !text.is_empty());
                             self.poller.apply_set_image(backend, png, text);
                         }
-                        None => self.poller.apply_set(backend, &write.text),
+                        (None, Some(html)) => self.poller.apply_set_html(backend, &write.text, html),
+                        (None, None) => self.poller.apply_set(backend, &write.text),
                     }
                     fresh = true;
                 } else {
@@ -77,14 +79,22 @@ impl PasteboardWorker {
         true
     }
 
+    fn switched_on(&self) -> bool {
+        (self.images.load(Ordering::Acquire) && !self.poller.images)
+            || (self.html.load(Ordering::Acquire) && !self.poller.html)
+    }
+
     pub(crate) fn poll<B: PasteboardBackend>(&mut self, backend: &mut B) -> bool {
         self.initialized = true;
-        let images = self.images.load(Ordering::Acquire);
-        let change = if images && !self.poller.images {
-            self.poller.report_images_on(backend)
+        let (images, html) = (self.images.load(Ordering::Acquire), self.html.load(Ordering::Acquire));
+        let change = if self.switched_on() {
+            self.poller.report_formats_on(backend, images, html)
         } else {
             if !images && self.poller.images {
                 self.poller.images_off();
+            }
+            if !html && self.poller.html {
+                self.poller.rich_text_off();
             }
             self.poller.on_tick_clip(backend)
         };
@@ -106,7 +116,7 @@ impl PasteboardWorker {
     pub(crate) fn report(&mut self, text: String) -> bool {
         self.report_clip(HostClip {
             text: Some(text),
-            image: None,
+            ..HostClip::default()
         })
     }
 

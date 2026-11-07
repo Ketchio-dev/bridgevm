@@ -242,7 +242,13 @@ impl AgentConsoleHarness {
         match req {
             ServiceReq::ClipPoll => {
                 self.last_clip_poll = Some(now);
-                let verb = if self.clip_images.is_some() { "CLIPX\n" } else { "CLIPGET\n" };
+                let verb = if self.clip_html {
+                    "CLIPXH\n"
+                } else if self.clip_images.is_some() {
+                    "CLIPX\n"
+                } else {
+                    "CLIPGET\n"
+                };
                 self.service_line_scratch.push_str(verb);
                 true
             }
@@ -253,13 +259,18 @@ impl AgentConsoleHarness {
             ServiceReq::ClipImagePush(_) | ServiceReq::ClipImagePull { .. } => {
                 self.write_clip_image_line(req)
             }
-            ServiceReq::ClipPush(text) => {
-                self.service_line_scratch.push_str("CLIPSET ");
+            ServiceReq::ClipPush(text, html) => {
+                let verb = if html.is_some() { "CLIPSETH " } else { "CLIPSET " };
+                self.service_line_scratch.push_str(verb);
                 to_guest_crlf_into(text, &mut self.clip_crlf_scratch);
                 base64_encode_into(
                     self.clip_crlf_scratch.as_bytes(),
                     &mut self.service_line_scratch,
                 );
+                if let Some(html) = html {
+                    self.service_line_scratch.push(' ');
+                    self.service_line_scratch.push_str(html);
+                }
                 self.service_line_scratch.push('\n');
                 true
             }

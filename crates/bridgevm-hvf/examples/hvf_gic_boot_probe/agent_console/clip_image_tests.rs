@@ -51,6 +51,10 @@ struct Mac {
     image: Option<PasteboardImage>,
     image_reads: usize,
     writes: Vec<(Option<String>, Option<Vec<u8>>)>,
+    html: Option<String>,
+    html_reads: usize,
+    /// Rich writes, (text, html).
+    rich_writes: Vec<(String, String)>,
 }
 
 impl Mac {
@@ -58,6 +62,11 @@ impl Mac {
         self.count += 1;
         self.text = text.map(str::to_owned);
         self.image = image;
+        self.html = None;
+    }
+    fn copy_rich(&mut self, text: &str, html: &str) {
+        self.copy(Some(text), None);
+        self.html = Some(html.to_owned());
     }
 }
 
@@ -82,6 +91,15 @@ impl PasteboardBackend for Mac {
         self.writes.push((text.map(str::to_owned), Some(png.to_vec())));
         true
     }
+    fn get_html(&mut self) -> Option<String> {
+        self.html_reads += 1;
+        self.html.clone()
+    }
+    fn set_text_html(&mut self, text: &str, html: &str) -> bool {
+        self.copy_rich(text, html);
+        self.rich_writes.push((text.to_owned(), html.to_owned()));
+        true
+    }
 }
 
 /// The guest side of the wire, as bvagent.ps1 answers it.
@@ -98,6 +116,10 @@ struct Guest {
     /// The image part CLIPX reports instead, as the agent describes an image
     /// it does not write.
     described: Option<String>,
+    /// The agent announces CF_HTML and serves CLIPXH and CLIPSETH.
+    html_caps: bool,
+    /// The clipboard's HTML Format bytes.
+    html: Option<Vec<u8>>,
 }
 
 impl Guest {
@@ -111,6 +133,32 @@ impl Guest {
             announce: None,
             serve: None,
             described: None,
+            html_caps: false,
+            html: None,
+        }
+    }
+    /// CLIPX's image part, as bvagent.ps1 describes the clipboard image.
+    fn descriptor(&mut self) -> String {
+        let guest_path = format!("{DIR}\\guest.png");
+        match &self.image {
+            _ if self.described.is_some() => self.described.clone().unwrap(),
+            // As bvagent.ps1: over the side limit it is never encoded or hashed.
+            Some(bytes)
+                if host_pasteboard::png_size(bytes)
+                    .is_some_and(|(w, h)| w.max(h) > CLIP_IMAGE_MAX_SIDE) =>
+            {
+                let (w, h) = host_pasteboard::png_size(bytes).unwrap();
+                format!("{w} {h} 0 - -")
+            }
+            Some(bytes) => {
+                self.files.insert(guest_path.clone(), bytes.clone());
+                let (w, h) = host_pasteboard::png_size(bytes).unwrap();
+                let path = self.announce.clone().unwrap_or(guest_path);
+                let sha: [u8; 32] = Sha256::digest(bytes).into();
+                let hex: String = sha.iter().map(|b| format!("{b:02x}")).collect();
+                format!("{w} {h} {} {hex} {}", bytes.len(), base64_encode(path.as_bytes()))
+            }
+            None => "0 0 0 - -".to_owned(),
         }
     }
     fn b64_text(s: &str) -> String {
@@ -120,36 +168,35 @@ impl Guest {
         let line = line.trim_end();
         let (verb, arg) = line.split_once(' ').unwrap_or((line, ""));
         let reply = match verb {
-            "CLIPCAPS" if self.images => format!("CLIPCAPS IMAGE_PNG {}", base64_encode(DIR.as_bytes())),
+            "CLIPCAPS" if self.images => {
+                let html = if self.html_caps { " CF_HTML" } else { "" };
+                format!("CLIPCAPS IMAGE_PNG {}{html}", base64_encode(DIR.as_bytes()))
+            }
             "CLIPGET" => format!("CLIP {}", base64_encode(self.text.as_bytes())),
             "CLIPX" if self.images => {
-                let guest_path = format!("{DIR}\\guest.png");
-                let descriptor = match &self.image {
-                    _ if self.described.is_some() => self.described.clone().unwrap(),
-                    // As bvagent.ps1: over the side limit it is never encoded or hashed.
-                    Some(bytes)
-                        if host_pasteboard::png_size(bytes)
-                            .is_some_and(|(w, h)| w.max(h) > CLIP_IMAGE_MAX_SIDE) =>
-                    {
-                        let (w, h) = host_pasteboard::png_size(bytes).unwrap();
-                        format!("{w} {h} 0 - -")
-                    }
-                    Some(bytes) => {
-                        self.files.insert(guest_path.clone(), bytes.clone());
-                        let (w, h) = host_pasteboard::png_size(bytes).unwrap();
-                        let path = self.announce.clone().unwrap_or(guest_path);
-                        let sha: [u8; 32] = Sha256::digest(bytes).into();
-                        let hex: String = sha.iter().map(|b| format!("{b:02x}")).collect();
-                        format!("{w} {h} {} {hex} {}", bytes.len(), base64_encode(path.as_bytes()))
-                    }
-                    None => "0 0 0 - -".to_owned(),
-                };
+                let descriptor = self.descriptor();
                 format!("CLIPX {descriptor} {}", base64_encode(self.text.replace('\n', "\r\n").as_bytes()))
+            }
+            "CLIPXH" if self.images && self.html_caps => {
+                let descriptor = self.descriptor();
+                let html = match &self.html {
+                    Some(html) => format!("{} {}", html.len(), base64_encode(html)),
+                    None => "0 -".to_owned(),
+                };
+                format!("CLIPXH {descriptor} {html} {}", base64_encode(self.text.replace('\n', "\r\n").as_bytes()))
             }
             "CLIPSET" => {
                 self.text = Self::b64_text(arg).replace("\r\n", "\n");
                 self.image = None;
+                self.html = None;
                 "OK CLIPSET".to_owned()
+            }
+            "CLIPSETH" if self.html_caps => {
+                let (text, html) = arg.split_once(' ').unwrap();
+                self.text = Self::b64_text(text).replace("\r\n", "\n");
+                self.image = None;
+                self.html = Some(base64_decode(html).unwrap());
+                "OK CLIPSETH".to_owned()
             }
             "PUTBEG" => {
                 let path = Self::b64_text(arg.split(' ').next().unwrap());
@@ -172,6 +219,7 @@ impl Guest {
                 let bytes = self.files.remove(&Self::b64_text(path)).unwrap();
                 self.text = if text == "-" { String::new() } else { Self::b64_text(text).replace("\r\n", "\n") };
                 self.image = Some(bytes);
+                self.html = None;
                 "OK CLIPSETIMG 1 1".to_owned()
             }
             "GET" => {
@@ -260,7 +308,7 @@ impl Rig {
             .wire
             .iter()
             .map(|line| line.split(' ').next().unwrap().to_owned())
-            .filter(|verb| verb != "CLIPX" && verb != "CLIPGET")
+            .filter(|verb| verb != "CLIPX" && verb != "CLIPXH" && verb != "CLIPGET")
             .collect();
         self.wire.clear();
         verbs
@@ -669,6 +717,7 @@ fn agent_restart_mid_push_resends_the_image_from_putbeg() {
     assert!(rig.worker.report_clip(HostClip {
         text: None,
         image: Some(HostImage::Png(host_pasteboard::admit_png(image.clone()).unwrap())),
+        html: None,
     }));
     rig.h.service_enqueue(rig.now);
     let mut sent = Vec::new();
@@ -719,3 +768,6 @@ fn notice_lines_keep_the_prefixes_the_app_matches() {
          limit-bytes=33554432 limit-side=16384 copy=4 t=913"
     );
 }
+
+#[path = "clip_html_flow_tests.rs"]
+mod html;

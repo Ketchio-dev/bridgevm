@@ -32,6 +32,7 @@ pub(super) mod tests {
             pasteboard: None,
             clip_images: None,
             clip_push: false,
+            clip_html: false,
             ctl_path: None,
             ctl_offset: 0,
             ctl_framer: LineFramer::new(),
@@ -83,7 +84,7 @@ pub(super) mod tests {
             .iter()
             .map(|r| match r {
                 ServiceReq::ClipPoll => "poll".to_string(),
-                ServiceReq::ClipPush(t) => format!("push:{t}"),
+                ServiceReq::ClipPush(t, _) => format!("push:{t}"),
                 ServiceReq::Ctl(c) => format!("ctl:{c}"),
                 ServiceReq::Ping => "ping".to_string(),
                 ServiceReq::ShareLs => "share-ls".to_string(),
@@ -115,7 +116,7 @@ pub(super) mod tests {
     fn service_req_lines_reuse_output_scratch() {
         let mut h = harness();
         let now = Instant::now();
-        let long = ServiceReq::ClipPush("x".repeat(256));
+        let long = ServiceReq::ClipPush("x".repeat(256), None);
         assert!(h.write_service_req_line(&long, now));
         assert!(h.service_line_scratch.starts_with("CLIPSET "));
         let ptr = h.service_line_scratch.as_ptr();
@@ -129,7 +130,7 @@ pub(super) mod tests {
         assert_eq!(h.service_line_scratch.as_ptr(), ptr);
         assert_eq!(h.service_line_scratch.capacity(), capacity);
 
-        let shorter = ServiceReq::ClipPush("y".into());
+        let shorter = ServiceReq::ClipPush("y".into(), None);
         assert!(h.write_service_req_line(&shorter, now));
         assert_eq!(h.clip_crlf_scratch.as_ptr(), crlf_ptr);
         assert_eq!(h.clip_crlf_scratch.capacity(), crlf_capacity);
@@ -364,16 +365,16 @@ pub(super) mod tests {
     fn clip_push_enqueue_coalesces_and_spares_inflight() {
         let mut h = harness();
         // A push already on the wire must NOT be touched by a newer host change.
-        h.in_flight = Some((ServiceReq::ClipPush("inflight".into()), Instant::now()));
-        h.queue.push_back(ServiceReq::ClipPush("old".into()));
+        h.in_flight = Some((ServiceReq::ClipPush("inflight".into(), None), Instant::now()));
+        h.queue.push_back(ServiceReq::ClipPush("old".into(), None));
         h.queue.push_back(ServiceReq::Ctl("dir".into()));
 
-        h.enqueue_clip_push("new".into());
+        h.enqueue_clip_push("new".into(), None);
 
         // "old" dropped, "new" appended after the untouched Ctl; latest wins.
         assert_eq!(queue_kinds(&h), vec!["ctl:dir", "push:new"]);
         match h.in_flight.as_ref() {
-            Some((ServiceReq::ClipPush(t), _)) => assert_eq!(t, "inflight"),
+            Some((ServiceReq::ClipPush(t, _), _)) => assert_eq!(t, "inflight"),
             _ => panic!("in-flight push was disturbed"),
         }
     }

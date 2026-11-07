@@ -24,7 +24,7 @@ fn share_backlog_keeps_clipboard_then_control_order_without_preempting_the_wire(
             name: i.to_string(),
         });
     }
-    h.queue.push_back(ServiceReq::ClipPush("copied".into()));
+    h.queue.push_back(ServiceReq::ClipPush("copied".into(), None));
     let path =
         std::env::temp_dir().join(format!("bvagent-share-priority-{}.ctl", std::process::id()));
     let mut ctl = std::fs::OpenOptions::new()
@@ -51,7 +51,7 @@ fn share_backlog_keeps_clipboard_then_control_order_without_preempting_the_wire(
     );
     h.service_pump(&mut platform, &mut mem, now + Duration::from_millis(1));
     assert!(
-        matches!(h.in_flight.as_ref(), Some((ServiceReq::ClipPush(_), _))),
+        matches!(h.in_flight.as_ref(), Some((ServiceReq::ClipPush(..), _))),
         "control preempted the clipboard transaction"
     );
     h.handle_service_reply("OK CLIPSET", None, None, now + Duration::from_millis(2));

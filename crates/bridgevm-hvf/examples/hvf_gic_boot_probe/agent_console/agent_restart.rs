@@ -17,11 +17,11 @@ impl AgentConsoleHarness {
         match self.in_flight.take() {
             // An unconfirmed push may not have landed, so the guest's text is
             // re-learned.
-            Some((ServiceReq::ClipPush(text), _)) => {
+            Some((push @ ServiceReq::ClipPush(..), _)) => {
                 self.last_synced.rebaseline = true;
-                let is_push = |req: &ServiceReq| matches!(req, ServiceReq::ClipPush(_));
+                let is_push = |req: &ServiceReq| matches!(req, ServiceReq::ClipPush(..));
                 if !self.queue.iter().any(is_push) {
-                    self.queue.push_front(ServiceReq::ClipPush(text));
+                    self.queue.push_front(push);
                 }
             }
             // The old agent may have truncated the file before it stopped.
