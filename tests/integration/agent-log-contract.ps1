@@ -1,5 +1,8 @@
 # The guest agent's log: successful writes and unchanged idle port polls add
 # no line, and a log past 8 MB moves to bvagent.log.old when the agent starts.
+# Write-Bytes also sends a long line in writes of at most 32 KiB and finishes
+# a short write: hosts dropped one write over 64 KiB, and vioser never moved a
+# 5.6 MB one, so a large guest clipboard wedged the agent channel.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $source = [IO.File]::ReadAllText((Join-Path $root 'scripts/win-assets/bvagent.ps1'))
@@ -44,7 +47,31 @@ try {
     [IO.File]::WriteAllBytes($bvLog, (New-Object byte[] 1024))
     . ([scriptblock]::Create($rotation))
     if ((Get-Item -LiteralPath $bvLog).Length -ne 1024) { throw 'A small log was moved' }
-    'agent log contract: PASS (4 cases)'
+
+    # Every third write completes only half of what it was given.
+    Add-Type @'
+public static class AgentWriteFixture {
+    public static System.IO.MemoryStream Sent = new System.IO.MemoryStream();
+    public static int Largest, Calls;
+    public static bool WriteFile(System.IntPtr h, byte[] b, uint n, ref uint w, System.IntPtr o) {
+        Calls++;
+        if (n > Largest) Largest = (int)n;
+        w = (Calls % 3 == 0) ? n / 2 : n;
+        Sent.Write(b, 0, (int)w);
+        return true;
+    }
+}
+'@
+    $K = [AgentWriteFixture]
+    $line = New-Object byte[] 100000
+    for ($i = 0; $i -lt $line.Length; $i++) { $line[$i] = [byte](65 + $i % 26) }
+    Write-Bytes ([IntPtr]1) $line 'CLIP'
+    $sent = [AgentWriteFixture]::Sent.ToArray()
+    if ([AgentWriteFixture]::Largest -gt 32768) { throw ('One write carried ' + [AgentWriteFixture]::Largest + ' bytes') }
+    if ($sent.Length -ne $line.Length -or [Convert]::ToBase64String($sent) -ne [Convert]::ToBase64String($line)) {
+        throw ('A 100000-byte line arrived as ' + $sent.Length + ' different bytes')
+    }
+    'agent log contract: PASS (5 cases)'
 } finally {
     Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
 }

@@ -592,15 +592,15 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn guest_agent_emits_chunked_output_and_retries_partial_writes() {
+    fn guest_agent_emits_chunked_output() {
+        // Write-Bytes' 32 KiB writes and short-write retry are exercised by
+        // tests/integration/agent-log-contract.ps1.
         let script = include_str!("../../../../scripts/win-assets/bvagent.ps1");
         for contract in [
             "function Write-CommandResult",
             "OUTBEG ",
             "OUTCHUNK ",
             "OUTEND ",
-            "$totalWritten += [int]$written",
-            "$remaining = $suffix",
         ] {
             assert!(
                 script.contains(contract),

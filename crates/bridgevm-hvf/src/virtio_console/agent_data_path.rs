@@ -82,6 +82,17 @@ impl VirtioConsole {
                 }
                 console_trace!("agent-tx<-guest len={}", bytes.len());
                 self.host_inbound.extend_from_slice(&bytes);
+            } else {
+                self.agent_tx_dropped += 1;
+                let dropped = self.agent_tx_dropped;
+                if dropped <= 8 || dropped.is_power_of_two() {
+                    let total: u64 = descs.iter().map(|desc| u64::from(desc.len)).sum();
+                    eprintln!(
+                        "virtio-console: dropped guest agent write {} ({total} bytes in {} descriptors; the limit is {MAX_AGENT_MESSAGE_LEN})",
+                        dropped,
+                        descs.len()
+                    );
+                }
             }
             Self::write_used(mem, &queue, head, 0);
             self.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
