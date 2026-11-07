@@ -170,9 +170,6 @@ try {
         # CLIPCAPS PUSH starts the watcher. A read waiting on a synchronous handle
         # is cancelled once the clipboard changes; without a change it waits for
         # data, and bytes written after a cancel arrive whole.
-        $caps = Run 'CLIPCAPS' 'PUSH'
-        Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir) + ' CLIPPUSH')) "CLIPCAPS PUSH: $caps"
-        Assert $script:BvClipPush 'CLIPCAPS PUSH turns notices on'
         Add-Type -ReferencedAssemblies System.Windows.Forms -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -183,6 +180,14 @@ namespace BridgeVM {
         public static extern bool CreatePipe(out IntPtr r, out IntPtr w, IntPtr sa, uint size);
         [DllImport("kernel32.dll", SetLastError = true)]
         static extern bool WriteFile(IntPtr h, byte[] b, uint n, out uint w, IntPtr o);
+        // A short-lived STA thread owns the copy, as the agent's CLIPSET does: an owner whose
+        // thread then blocks (this session in Read) stalls every later copy for about 5 s.
+        public static void CopyNow(string text) {
+            Thread t = new Thread(() => System.Windows.Forms.Clipboard.SetText(text));
+            t.SetApartmentState(ApartmentState.STA);
+            t.Start();
+            t.Join();
+        }
         public static void CopyLater(string text, int ms) {
             Thread t = new Thread(() => { Thread.Sleep(ms); System.Windows.Forms.Clipboard.SetText(text); });
             t.SetApartmentState(ApartmentState.STA);
@@ -194,6 +199,13 @@ namespace BridgeVM {
     }
 }
 '@
+        # Earlier cases copied from this session's thread; hand the clipboard to an ended one
+        # before the watcher starts.
+        [BridgeVM.BvPushFixture]::CopyNow('push-0')
+        Start-Sleep -Milliseconds 1000
+        $caps = Run 'CLIPCAPS' 'PUSH'
+        Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir) + ' CLIPPUSH')) "CLIPCAPS PUSH: $caps"
+        Assert $script:BvClipPush 'CLIPCAPS PUSH turns notices on'
         $r = [IntPtr]::Zero; $w = [IntPtr]::Zero
         Assert ([BridgeVM.BvPushFixture]::CreatePipe([ref]$r, [ref]$w, [IntPtr]::Zero, 0)) 'CreatePipe'
         $buf = New-Object byte[] 64
