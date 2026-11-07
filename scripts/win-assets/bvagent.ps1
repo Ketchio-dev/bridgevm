@@ -252,30 +252,33 @@ function Try-OpenPort {
     return ([System.IntPtr]::Zero)
 }
 
+# vioser hands each WriteFile to the device as one transfer. A whole 4 MiB
+# clipboard reply (a 5.6 MB line) never left the guest, and hosts before
+# 2026-11-07 dropped any write over 64 KiB, a 48 KiB clipboard, so the channel
+# waited for that reply forever. Long lines therefore go out in 32 KiB writes;
+# the host joins them at the newline.
 function Write-Bytes($handle, [byte[]]$data, [string]$what) {
     if (Is-BadHandle $handle) { Log "WriteFile[$what] SKIPPED bad handle"; return }
     $want = $data.Length
-    $totalWritten = 0
-    $remaining = $data
-    while ($remaining.Length -gt 0) {
+    $done = 0
+    while ($done -lt $want) {
+        $count = [Math]::Min(32768, $want - $done)
+        $buf = $data
+        if ($done -ne 0 -or $count -ne $want) {
+            if ($null -eq $script:BvWriteSlice) { $script:BvWriteSlice = New-Object byte[] 32768 }
+            [System.Array]::Copy($data, $done, $script:BvWriteSlice, 0, $count)
+            $buf = $script:BvWriteSlice
+        }
         $written = [uint32]0
-        $ok = $K::WriteFile($handle, $remaining, [uint32]$remaining.Length, [ref]$written, [IntPtr]::Zero)
+        $ok = $K::WriteFile($handle, $buf, [uint32]$count, [ref]$written, [IntPtr]::Zero)
         $gle = Gle
         if (-not $ok -or $written -eq 0) {
-            Log "WriteFile[$what] FAILED ok=$ok written=$written total=$totalWritten want=$want gle=$gle"
+            Log "WriteFile[$what] FAILED ok=$ok written=$written total=$done want=$want gle=$gle"
             return
         }
-        $totalWritten += [int]$written
-        if ($written -lt $remaining.Length) {
-            # Synchronous WriteFile is allowed to complete only a prefix. Keep
-            # writing the suffix; otherwise the missing newline leaves the host
-            # protocol permanently waiting on a partial frame.
-            $suffix = New-Object byte[] ($remaining.Length - [int]$written)
-            [System.Array]::Copy($remaining, [int]$written, $suffix, 0, $suffix.Length)
-            $remaining = $suffix
-        } else {
-            $remaining = New-Object byte[] 0
-        }
+        # A synchronous WriteFile may complete only a prefix; the loop writes the
+        # rest, since a missing newline leaves the host waiting on a partial frame.
+        $done += [int]$written
     }
     # Only failures are logged: a line per message (every PONG, clipboard and
     # share poll) grew C:\bvagent.log by about 130k lines a day.

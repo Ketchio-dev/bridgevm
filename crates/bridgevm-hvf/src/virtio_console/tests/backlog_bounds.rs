@@ -55,7 +55,7 @@ fn undrained_agent_tx_stops_consuming_at_the_inbound_bound_and_resumes() {
     let mut dev = VirtioPciConsole::new();
     let mut mem = TestMem::new(0x4000_0000, 0x20000);
     let data = 0x4000_8000;
-    let chunk = MAX_AGENT_MESSAGE_LEN;
+    let chunk = 64 * 1024;
     mem.write(data, &vec![b'x'; chunk]);
     let queue = QUEUE_AGENT_TX as u16;
     let (avail, _) = ring_with_repeated_chain(&mut dev, &mut mem, queue, data, chunk as u32);
@@ -82,5 +82,38 @@ fn undrained_agent_tx_stops_consuming_at_the_inbound_bound_and_resumes() {
     assert_eq!(
         dev.stats().queues[QUEUE_AGENT_TX].used_produced,
         chains_to_fill as u64 + u64::from(RING)
+    );
+}
+
+#[test]
+fn an_agent_write_over_64_kib_reaches_the_host_whole() {
+    // vioser hands each WriteFile over as one chain: a 48 KiB guest clipboard
+    // is one 65,542-byte CLIP line, which the old 64 KiB bound dropped.
+    let mut dev = VirtioPciConsole::new();
+    let mut mem = TestMem::new(0x4000_0000, 0x40000);
+    let line: Vec<u8> = (0..100 * 1024).map(|i| b'A' + (i % 26) as u8).collect();
+    let queue = QUEUE_AGENT_TX as u16;
+    let (avail, _) =
+        ring_with_repeated_chain(&mut dev, &mut mem, queue, 0x4000_8000, line.len() as u32);
+    mem.write(0x4000_8000, &line);
+    kick(&mut dev, &mut mem, queue, avail, 1);
+    assert_eq!(dev.take_inbound(), line);
+    assert_eq!(dev.stats().agent_tx_dropped, 0);
+}
+
+#[test]
+fn an_agent_write_over_the_bound_is_counted_not_silently_lost() {
+    let mut dev = VirtioPciConsole::new();
+    let mut mem = TestMem::new(0x4000_0000, 0x10000);
+    let queue = QUEUE_AGENT_TX as u16;
+    let len = (MAX_AGENT_MESSAGE_LEN + 1) as u32;
+    let (avail, _) = ring_with_repeated_chain(&mut dev, &mut mem, queue, 0x4000_8000, len);
+    kick(&mut dev, &mut mem, queue, avail, 1);
+    assert!(dev.take_inbound().is_empty());
+    assert_eq!(dev.stats().agent_tx_dropped, 1);
+    assert_eq!(
+        dev.stats().queues[QUEUE_AGENT_TX].used_produced,
+        1,
+        "the chain is still returned"
     );
 }

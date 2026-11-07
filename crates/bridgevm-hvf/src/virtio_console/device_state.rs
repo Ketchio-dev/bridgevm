@@ -27,6 +27,9 @@ pub struct VirtioConsole {
     // proof that our PORT_OPEN(host) took effect. Until then we keep
     // re-asserting PORT_OPEN; afterwards we stop (see maybe_reassert_host_open).
     pub(crate) agent_connected_confirmed: bool,
+    /// Guest agent writes the host could not take (malformed, or over
+    /// MAX_AGENT_MESSAGE_LEN): their bytes are lost, so each is logged.
+    pub(crate) agent_tx_dropped: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +89,7 @@ pub struct VirtioConsoleStats {
     pub port1_guest_open: bool,
     pub port1_host_open: bool,
     pub agent_connected_confirmed: bool,
+    pub agent_tx_dropped: u64,
     pub pending_control: usize,
     pub host_to_guest_len: usize,
     pub host_inbound_len: usize,
@@ -137,6 +141,7 @@ impl Default for VirtioConsoleStats {
             port1_guest_open: false,
             port1_host_open: false,
             agent_connected_confirmed: false,
+            agent_tx_dropped: 0,
             pending_control: 0,
             host_to_guest_len: 0,
             host_inbound_len: 0,
@@ -172,6 +177,7 @@ impl VirtioConsole {
             descriptor_scratch: Vec::new(),
             read_scratch: Vec::new(),
             agent_connected_confirmed: false,
+            agent_tx_dropped: 0,
         }
     }
 
@@ -185,6 +191,7 @@ impl VirtioConsole {
             port1_guest_open: self.ports[1].guest_open,
             port1_host_open: self.ports[1].host_open,
             agent_connected_confirmed: self.agent_connected_confirmed,
+            agent_tx_dropped: self.agent_tx_dropped,
             pending_control: self.pending_control.len(),
             host_to_guest_len: self.host_to_guest.len(),
             host_inbound_len: self.host_inbound.len(),

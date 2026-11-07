@@ -148,11 +148,14 @@ pub(crate) const CONTROL_LEN: usize = 8;
 
 pub(crate) const MAX_CONTROL_MESSAGE_LEN: usize = CONTROL_LEN + AGENT_PORT_NAME.len();
 
-// Agent replies are line-oriented. The largest current wire line is one
-// base64-encoded 24 KiB file chunk, so 64 KiB leaves protocol headroom while
-// preventing a guest-controlled descriptor length from growing host memory
-// without bound.
-pub(crate) const MAX_AGENT_MESSAGE_LEN: usize = 64 * 1024;
+// The most one guest TX chain may carry. vioser hands each WriteFile over as
+// one chain. Agents since 2026-11-07 write at most 32 KiB at a time, but older
+// ones write a whole reply line at once: a 48 KiB guest clipboard is a
+// 65,542-byte CLIP line, which the old 64 KiB bound dropped, so the agent channel
+// waited for that reply forever. 16 MiB carries the largest guest clipboard the
+// host takes (GUEST_CLIP_MAX_BYTES, 8 MiB as base64) and still bounds a
+// guest-controlled descriptor length.
+pub(crate) const MAX_AGENT_MESSAGE_LEN: usize = 16 * 1024 * 1024;
 
 pub(crate) fn offered_features_word(select: u32) -> u32 {
     match select {
