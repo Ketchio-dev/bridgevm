@@ -16,6 +16,7 @@ impl Poller {
             return;
         }
         if text.len() <= GUEST_CLIP_MAX_BYTES && backend.set_string(text) {
+            self.empty_rereads = 0;
             self.last_seen = Some(text.to_owned());
             self.last_image = None;
             self.last_oversized = false;
@@ -36,6 +37,7 @@ impl Poller {
         }
         let text = text.filter(|text| !text.is_empty() && text.len() <= GUEST_CLIP_MAX_BYTES);
         if backend.set_image(&png.bytes, text) {
+            self.empty_rereads = 0;
             self.last_seen = text.map(str::to_owned);
             self.last_image = Some(png.digest);
             self.last_oversized = false;

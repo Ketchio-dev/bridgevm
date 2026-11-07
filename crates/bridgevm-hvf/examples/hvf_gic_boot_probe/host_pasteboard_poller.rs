@@ -2,6 +2,12 @@
 
 use super::{host_image, HostClip, HostImage, PasteboardBackend};
 
+/// Ticks to keep reading a pasteboard that a new changeCount showed empty: a
+/// Mac copy is clearContents (which moves changeCount) and then the write
+/// (which does not), so a tick between the two sees nothing, and the copy
+/// never shows up as a change. About 3 s at the 100 ms poll.
+pub(super) const EMPTY_REREADS: u8 = 30;
+
 /// Pure poll/suppress state machine, generic over the backend for testability.
 pub struct Poller {
     last_count: i64,
@@ -13,6 +19,8 @@ pub struct Poller {
     pub(super) observed_suppressed_change: bool,
     /// Also read the pasteboard's image: the guest agent advertised IMAGE_PNG.
     pub(super) images: bool,
+    /// Reads left for a copy that may still be between clear and write.
+    pub(super) empty_rereads: u8,
 }
 
 impl Poller {
@@ -26,6 +34,7 @@ impl Poller {
             last_oversized: false,
             observed_suppressed_change: false,
             images: false,
+            empty_rereads: 0,
         }
     }
 
@@ -71,10 +80,14 @@ impl Poller {
     fn observe<B: PasteboardBackend>(&mut self, backend: &mut B, force: bool) -> Option<HostClip> {
         self.observed_suppressed_change = false;
         let count = backend.change_count();
-        if !force && count == self.last_count {
-            return None;
+        let new_count = count != self.last_count;
+        if !force && !new_count {
+            if self.empty_rereads == 0 {
+                return None;
+            }
+            self.empty_rereads -= 1;
         }
-        let changed = self.last_count != -1 && count != self.last_count;
+        let changed = self.last_count != -1 && new_count;
         self.last_count = count;
         let text = backend.get_string().filter(|text| !text.is_empty());
         let image = if self.images {
@@ -83,6 +96,9 @@ impl Poller {
             None
         };
         if text.is_none() && image.is_none() {
+            if new_count {
+                self.empty_rereads = EMPTY_REREADS;
+            }
             // A changed owner is newer even when no transferable content exists.
             // Preserve initial empty-startup behavior and never send a clear.
             self.last_seen = None;
@@ -91,6 +107,7 @@ impl Poller {
             self.observed_suppressed_change = changed && !force;
             return None;
         }
+        self.empty_rereads = 0;
         let digest = match &image {
             Some(HostImage::Png(png)) => Some(png.digest),
             _ => None,

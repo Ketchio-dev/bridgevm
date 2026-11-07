@@ -156,3 +156,27 @@ fn set_after_observed_count_still_applies_without_echo() {
     backend.external_change(backend.count + 1, Some("host-2"));
     assert_eq!(poller.on_tick(&mut backend), Some("host-2".to_owned()));
 }
+
+#[test]
+fn a_copy_read_between_clear_and_write_is_reported_once_written() {
+    // NSPasteboard: clearContents moves changeCount, setString does not.
+    let mut poller = Poller::new();
+    let mut backend = MockBackend::new(1, Some("old"));
+    assert_eq!(poller.on_tick(&mut backend), Some("old".to_owned()));
+    backend.external_change(2, None);
+    assert_eq!(poller.on_tick(&mut backend), None);
+    backend.text = Some("new".to_owned());
+    assert_eq!(poller.on_tick(&mut backend), Some("new".to_owned()));
+    assert_eq!(poller.on_tick(&mut backend), None);
+}
+
+#[test]
+fn an_empty_pasteboard_is_read_again_only_for_a_while() {
+    let mut poller = Poller::new();
+    let mut backend = MockBackend::new(1, None);
+    for _ in 0..=super::poller::EMPTY_REREADS {
+        assert_eq!(poller.on_tick(&mut backend), None);
+    }
+    backend.text = Some("late".to_owned());
+    assert_eq!(poller.on_tick(&mut backend), None, "a write long after the clear needs a new count");
+}
