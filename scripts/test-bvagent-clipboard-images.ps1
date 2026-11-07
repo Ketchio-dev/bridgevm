@@ -167,6 +167,21 @@ try {
     Assert ((@($script:BvClipSeq, $script:BvClipCache, $script:BvClipImgDesc) -join '|') -ceq ($before -join '|')) 'a refusal keeps the caches'
 
     if ($desktop) {
+        # Each clipboard call runs on a thread of its own. WinForms keeps a context with its own
+        # thread handle for every thread that touches the clipboard until the thread disposes it;
+        # no collection frees it. (Handles a collection frees are not counted.)
+        $cs = [regex]::Match($source, "(?s)\`$script:BvClipTextSource = @'\r?\n(?<cs>.*?)\r?\n'@")
+        Assert $cs.Success 'BvClipTextSource found'
+        Add-Type -TypeDefinition $cs.Groups['cs'].Value -ReferencedAssemblies System.Windows.Forms
+        $self = Get-Process -Id $PID
+        function Get-LiveHandles { [GC]::Collect(); [GC]::WaitForPendingFinalizers(); [GC]::Collect(); Start-Sleep -Milliseconds 300; $self.Refresh(); $self.HandleCount }
+        $handlesBefore = Get-LiveHandles
+        for ($i = 0; $i -lt 200; $i++) { $w = 0; $hh = 0; [void][BridgeVM.BvClipImage]::Get([ref]$w, [ref]$hh) }
+        for ($i = 0; $i -lt 200; $i++) { [BridgeVM.BvClipText]::Set("handles $i") }
+        $kept = (Get-LiveHandles) - $handlesBefore
+        Assert ($kept -lt 100) "400 clipboard calls kept $kept handles"
+        Assert ((Get-Clipboard -Raw) -ceq 'handles 199') 'the last copy is on the clipboard'
+
         # CLIPCAPS PUSH starts the watcher. A read waiting on a synchronous handle
         # is cancelled once the clipboard changes; without a change it waits for
         # data, and bytes written after a cancel arrive whole.
