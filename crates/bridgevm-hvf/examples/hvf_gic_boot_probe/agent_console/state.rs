@@ -34,7 +34,10 @@ pub(super) const DEFAULT_TIMEOUT_MS: u64 = 180_000;
 
 pub(super) const DEFAULT_CLIPSYNC_MS: u64 = 1000;
 
-pub(super) const DEFAULT_CLIPSYNC_MAX_KB: u64 = 8;
+/// The largest Mac copy pushed to Windows: the same 8 MiB a Windows copy may
+/// bring to the Mac. (It was 8 KiB, for an agent whose line reader a huge
+/// CLIPSET wedged; an 8 MB copy now lands in under a second.)
+pub(super) const DEFAULT_CLIPSYNC_MAX_KB: u64 = (super::clip_guest_admission::GUEST_CLIP_MAX_BYTES / 1024) as u64;
 
 pub(super) const CLIPSYNC_MS_FLOOR: u64 = 100;
 /// How often the pasteboard thread checks the Mac's pasteboard (its change
