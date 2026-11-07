@@ -1,5 +1,5 @@
-# Contract for the guest agent's clipboard image verbs (CLIPCAPS, CLIPX, CLIPSETIMG)
-# and the CLIPCAPS PUSH change watcher (BridgeVM.BvClipWatch).
+# Contract for the guest agent's clipboard image and HTML verbs (CLIPCAPS, CLIPX,
+# CLIPSETIMG, CLIPXH, CLIPSETH) and the CLIPCAPS PUSH change watcher (BridgeVM.BvClipWatch).
 # PowerShell 7: compiles BridgeVM.BvClipImage as C# 5 (/langversion:5) against an
 # in-memory Windows Forms stand-in and drives the three verbs through it.
 # Windows PowerShell 5.1 (Windows): the agent's own Add-Type compile and the real
@@ -17,7 +17,7 @@ if (-not $block.Success) { throw 'clipboard image block not found' }
 $watchBlock = [regex]::Match($source, '(?s)# >>> clipboard watch.*?# <<< clipboard watch')
 if (-not $watchBlock.Success) { throw 'clipboard watch block not found' }
 $cases = @{}
-foreach ($verb in @('CLIPX', 'CLIPCAPS', 'CLIPSETIMG')) {
+foreach ($verb in @('CLIPX', 'CLIPCAPS', 'CLIPSETIMG', 'CLIPXH', 'CLIPSETH')) {
     $found = [regex]::Matches($source, "(?s)\n                '$verb' \{(?<body>.*?)\r?\n                \}\r?\n")
     if ($found.Count -ne 1) { throw "expected exactly one $verb implementation" }
     $cases[$verb] = [scriptblock]::Create($found[0].Groups['body'].Value)
@@ -113,11 +113,19 @@ public static class BvTestSeq { public static uint Seq = 1; public static uint G
         Set-Fake $data
     }
     function Copy-Text([string]$text) { $data = $TDataObject::new(); $data.SetData('UnicodeText', $true, $text); Set-Fake $data; $script:fakeText = $text }
+    function Read-ClipHtml {
+        $data = $TClipboard::Current
+        if ($null -eq $data -or -not $data.GetDataPresent('HTML Format', $false)) { return @{ Bytes = $null; Size = 0 } }
+        $bytes = $data.GetData('HTML Format', $false).ToArray()
+        $end = [Array]::IndexOf($bytes, [byte]0)
+        if ($end -ge 0) { $bytes = [byte[]]$bytes[0..($end - 1)] }
+        return @{ Bytes = $bytes; Size = $bytes.Length }
+    }
 }
 
 try {
     $caps = Run 'CLIPCAPS' ''
-    Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir))) "CLIPCAPS marker: $caps"
+    Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir) + ' CF_HTML')) "CLIPCAPS marker: $caps"
 
     # Mac to Windows: the PUT file becomes text and image in one clipboard write.
     $png = New-Png 3 2
@@ -166,6 +174,42 @@ try {
     $reply = Run 'CLIPSETIMG' ((B64 $hostPath) + ' -')
     Assert ($reply.Count -eq 1 -and $reply[0] -clike 'ERR CLIPSETIMG *') "refusal: $reply"
     Assert ((@($script:BvClipSeq, $script:BvClipCache, $script:BvClipImgDesc) -join '|') -ceq ($before -join '|')) 'a refusal keeps the caches'
+
+    # HTML: CLIPSETH writes the text and the exact "HTML Format" bytes in one clipboard
+    # write; CLIPXH serves them as sent, and reads them back unchanged after a change.
+    $u8 = [Text.Encoding]::UTF8
+    $fragment = '<b>' + [char]0xAD75 + [char]0xAC8C + '</b> and <i>' + [char]0xD55C + [char]0xAE00 + '</i> ' + [char]0xD83D + [char]0xDE42
+    $doc = "<html><body>`r`n<!--StartFragment-->" + $fragment + "<!--EndFragment-->`r`n</body>`r`n</html>"
+    $sf = 105 + $u8.GetByteCount("<html><body>`r`n<!--StartFragment-->")
+    $cf = $u8.GetBytes(("Version:0.9`r`nStartHTML:{0:D10}`r`nEndHTML:{1:D10}`r`nStartFragment:{2:D10}`r`nEndFragment:{3:D10}`r`n" -f 105, (105 + $u8.GetByteCount($doc)), $sf, ($sf + $u8.GetByteCount($fragment))) + $doc)
+    $htmlText = [char]0xAD75 + [char]0xAC8C + ' and ' + [char]0xD55C + [char]0xAE00 + "`r`nline 2"
+    $cfB64 = [Convert]::ToBase64String($cf)
+    $reply = Run 'CLIPSETH' ((B64 $htmlText) + ' ' + $cfB64)
+    Assert ($reply.Count -eq 1 -and $reply[0] -ceq 'OK CLIPSETH') "CLIPSETH reply: $reply"
+    $wantXh = 'CLIPXH 0 0 0 - - {0} {1} {2}' -f $cf.Length, $cfB64, (B64 $htmlText)
+    $reads = if ($desktop) { 0 } else { $TClipboard::Reads }
+    Assert ((Run 'CLIPXH' '')[0] -ceq $wantXh) 'CLIPXH serves the pushed HTML and text'
+    if (-not $desktop) { Assert ($TClipboard::Reads -eq $reads) 'served without reopening the clipboard' }
+    if ($desktop) {
+        Assert ([Windows.Forms.Clipboard]::GetText() -ceq $htmlText) 'the copy keeps its text'
+        Assert ([Windows.Forms.Clipboard]::ContainsText([Windows.Forms.TextDataFormat]::Html)) 'Windows sees HTML Format'
+    } else {
+        $stored = $TClipboard::Current.GetData('HTML Format', $false).ToArray()
+        Assert ($stored.Length -eq $cf.Length + 1 -and $stored[$cf.Length] -eq 0 -and [Convert]::ToBase64String([byte[]]$stored[0..($cf.Length - 1)]) -ceq $cfB64) 'HTML Format holds the bytes and a NUL'
+    }
+    # The stand-in Get-Clipboard (top) serves the text; the HTML is read from the clipboard.
+    $script:fakeText = $htmlText
+    $script:BvClipSeq = [uint32]4294967295; $script:BvClipImgSeq = [uint32]4294967295; $script:BvClipHtmlSeq = [uint32]4294967295
+    Assert ((Run 'CLIPXH' '')[0] -ceq $wantXh) 'read again, the HTML and text are byte-identical'
+    Assert ((Run 'CLIPX' '')[0] -ceq ('CLIPX 0 0 0 - - ' + (B64 $htmlText))) 'CLIPX keeps its fields'
+    Copy-Text 'plain'
+    Assert ((Run 'CLIPXH' '')[0] -ceq ('CLIPXH 0 0 0 - - 0 - ' + (B64 'plain'))) 'a text copy has no HTML part'
+    $before = @($script:BvClipSeq, $script:BvClipCache, $script:BvClipHtmlPart)
+    foreach ($bad in @(((B64 'x') + ' ' + [Convert]::ToBase64String((New-Object byte[] 4194305))), (B64 'x'), ((B64 'x') + ' !!'))) {
+        $reply = Run 'CLIPSETH' $bad
+        Assert ($reply.Count -eq 1 -and $reply[0] -clike 'ERR CLIPSETH *') "CLIPSETH refusal: $reply"
+    }
+    Assert ((@($script:BvClipSeq, $script:BvClipCache, $script:BvClipHtmlPart) -join '|') -ceq ($before -join '|')) 'a CLIPSETH refusal keeps the caches'
 
     if ($desktop) {
         # Each clipboard call runs on a thread of its own. WinForms keeps a context with its own
@@ -220,7 +264,7 @@ namespace BridgeVM {
         [BridgeVM.BvPushFixture]::CopyNow('push-0')
         Start-Sleep -Milliseconds 1000
         $caps = Run 'CLIPCAPS' 'PUSH'
-        Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir) + ' CLIPPUSH')) "CLIPCAPS PUSH: $caps"
+        Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir) + ' CF_HTML CLIPPUSH')) "CLIPCAPS PUSH: $caps"
         Assert $script:BvClipPush 'CLIPCAPS PUSH turns notices on'
         $r = [IntPtr]::Zero; $w = [IntPtr]::Zero
         Assert ([BridgeVM.BvPushFixture]::CreatePipe([ref]$r, [ref]$w, [IntPtr]::Zero, 0)) 'CreatePipe'
