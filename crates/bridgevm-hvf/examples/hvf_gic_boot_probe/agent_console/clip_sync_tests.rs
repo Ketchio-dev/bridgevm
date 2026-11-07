@@ -16,6 +16,8 @@ mod paste;
 mod recopy;
 #[path = "clip_nontext_tests.rs"]
 mod nontext;
+#[path = "clip_push_tests.rs"]
+mod push;
 
 /// Service loop wired to a channel-only pasteboard and a modelled guest
 /// clipboard that answers CLIPGET/CLIPSET the way `bvagent.ps1` does.
@@ -69,7 +71,7 @@ impl ClipRig {
     fn answer(&mut self, line: &str) {
         let reply = if line == "CLIPGET\n" {
             format!("CLIP {}", base64_encode(self.guest.as_bytes()))
-        } else if line == "CLIPCAPS\n" {
+        } else if line == "CLIPCAPS PUSH\n" {
             // A text-only agent: bvagent.ps1 before CLIPCAPS.
             format!("OUT 255 {}", base64_encode(b"unknown token: CLIPCAPS"))
         } else if let Some(b64) = line.trim_end().strip_prefix("CLIPSET ") {

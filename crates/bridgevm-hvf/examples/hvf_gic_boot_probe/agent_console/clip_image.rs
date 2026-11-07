@@ -27,6 +27,8 @@ use host_pasteboard::{
 mod tests;
 
 pub(super) const CLIP_CAPS_IMAGE_MARKER: &str = "IMAGE_PNG";
+/// CLIPCAPS PUSH asks for change notices; a reply with CLIPPUSH grants them.
+pub(super) const CLIP_CAPS_PUSH_MARKER: &str = "CLIPPUSH";
 /// Longest clipboard directory the agent may announce, in bytes.
 const MAX_CLIP_DIR_BYTES: usize = 1024;
 
@@ -220,17 +222,29 @@ pub(super) fn host_image_skip_line(
 }
 
 impl AgentConsoleHarness {
-    /// CLIPCAPS reply: IMAGE_PNG switches images on; a bare CLIPCAPS, or the
-    /// unknown-token OUT of an agent that predates it, keeps text only.
+    /// CLIPCAPS reply: IMAGE_PNG switches images on and CLIPPUSH change notices;
+    /// a bare CLIPCAPS, or the unknown-token OUT of an agent that predates it,
+    /// keeps a polled text-only sync.
     pub(super) fn handle_clip_caps_reply(&mut self, line: &str, now: Instant) {
-        let images = if let Some(rest) = line.strip_prefix("CLIPCAPS") {
-            parse_clip_caps(rest)
+        let (images, push) = if let Some(rest) = line.strip_prefix("CLIPCAPS") {
+            (
+                parse_clip_caps(rest),
+                rest.split_whitespace().any(|word| word == CLIP_CAPS_PUSH_MARKER),
+            )
         } else if line.starts_with("OUT ") || line.starts_with("ERR") {
-            None
+            (None, false)
         } else {
             return;
         };
         self.complete_in_flight();
+        if push != self.clip_push {
+            println!(
+                "BVAGENT CLIPSYNC guest push {} t={}",
+                if push { "on" } else { "off" },
+                self.t_ms(now)
+            );
+        }
+        self.clip_push = push;
         let on = images.is_some();
         if !on {
             // Nothing queued for the old agent can be served; the baseline

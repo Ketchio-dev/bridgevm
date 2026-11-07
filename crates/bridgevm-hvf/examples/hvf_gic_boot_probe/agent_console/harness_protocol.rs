@@ -101,6 +101,7 @@ impl AgentConsoleHarness {
             last_synced: ClipBaseline::default(),
             pasteboard,
             clip_images: None,
+            clip_push: false,
             ctl_path,
             ctl_offset,
             ctl_framer: LineFramer::new(),

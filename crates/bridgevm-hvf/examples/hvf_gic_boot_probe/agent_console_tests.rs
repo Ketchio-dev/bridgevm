@@ -31,6 +31,7 @@ pub(super) mod tests {
             last_synced: ClipBaseline::default(),
             pasteboard: None,
             clip_images: None,
+            clip_push: false,
             ctl_path: None,
             ctl_offset: 0,
             ctl_framer: LineFramer::new(),

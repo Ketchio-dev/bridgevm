@@ -113,6 +113,10 @@ pub struct AgentConsoleHarness {
     /// Clipboard images: Some once the agent's CLIPCAPS reply carried
     /// IMAGE_PNG and its clipboard directory (clip_image.rs).
     pub(super) clip_images: Option<ClipImages>,
+    /// The agent's CLIPCAPS reply carried CLIPPUSH: it writes CLIPCHANGED after
+    /// each guest clipboard change, so the clipboard poll is only a 10 s safety
+    /// net and keepalive.
+    pub(super) clip_push: bool,
     /// Optional control file tailed for injected commands.
     pub(super) ctl_path: Option<String>,
     /// Byte offset consumed so far from the control file.

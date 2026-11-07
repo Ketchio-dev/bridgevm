@@ -45,11 +45,17 @@ impl AgentConsoleHarness {
         self.enqueue_file_drop(now);
 
         // 3. Periodic guest clipboard poll. With clipsync on this doubles as the
-        //    keepalive, so step 4 stays quiet.
+        //    keepalive, so step 4 stays quiet. An agent that sends CLIPCHANGED
+        //    is polled on each notice, and otherwise as often as the heartbeat.
         if self.clipsync {
+            let interval = if self.clip_push {
+                HEARTBEAT_INTERVAL
+            } else {
+                self.clip_interval
+            };
             let due = self
                 .last_clip_poll
-                .is_none_or(|t| now.duration_since(t) >= self.clip_interval);
+                .is_none_or(|t| now.duration_since(t) >= interval);
             if due && !self.any_pending(|r| matches!(r, ServiceReq::ClipPoll)) {
                 self.queue.push_back(ServiceReq::ClipPoll);
             }
@@ -241,7 +247,7 @@ impl AgentConsoleHarness {
                 true
             }
             ServiceReq::ClipCaps => {
-                self.service_line_scratch.push_str("CLIPCAPS\n");
+                self.service_line_scratch.push_str("CLIPCAPS PUSH\n");
                 true
             }
             ServiceReq::ClipImagePush(_) | ServiceReq::ClipImagePull { .. } => {
@@ -443,6 +449,15 @@ impl AgentConsoleHarness {
     ) {
         if let Some(hostname) = line.strip_prefix("READY ") {
             self.resync_after_agent_restart(hostname, now);
+            return;
+        }
+        // The guest clipboard changed (CLIPCAPS PUSH). The agent writes this only
+        // between replies, before it reads our next request, so a poll already
+        // queued or on the wire sees the change.
+        if line == "CLIPCHANGED" {
+            if self.clipsync && !self.any_pending(|req| matches!(req, ServiceReq::ClipPoll)) {
+                self.queue.push_back(ServiceReq::ClipPoll);
+            }
             return;
         }
         if matches!(
