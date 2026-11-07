@@ -58,7 +58,9 @@ impl AgentConsoleHarness {
         self.get_accum = None;
         self.out_accum = None;
         self.note_agent_ready(hostname, now);
-        // The new agent answers CLIPCAPS before any other request.
+        // The new agent answers CLIPCAPS before any other request, and sends no
+        // change notices until it has.
+        self.clip_push = false;
         if self.clipsync {
             self.queue.retain(|req| !matches!(req, ServiceReq::ClipCaps));
             self.queue.push_front(ServiceReq::ClipCaps);

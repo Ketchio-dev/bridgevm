@@ -458,6 +458,112 @@ function Resolve-DropTarget([string]$Root, [string]$Rel, [bool]$IsDir) {
     return $target
 }
 
+# >>> clipboard watch
+# CLIPCAPS PUSH: a background thread checks the clipboard sequence number every
+# 100 ms. On a change it cancels the main thread's ReadFile on the port, and
+# Read-Line writes CLIPCHANGED, so the main thread stays the port's only writer
+# and the notice never lands inside a reply. Only that ReadFile can be cancelled:
+# inRead covers nothing else, and the lock keeps a cancel from reaching later
+# I/O. vioser marks a waiting read cancelable, and a cancelled read takes no
+# bytes. Compiled on the first CLIPCAPS PUSH, so boot does not pay for it.
+$script:BvClipPush = $false
+$script:BvClipWatchReady = $null
+$script:BvClipWatchSource = @'
+using System;
+using System.Runtime.InteropServices;
+using System.Threading;
+namespace BridgeVM {
+    public static class BvClipWatch {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool ReadFile(IntPtr h, byte[] buf, uint toRead, out uint read, IntPtr overlapped);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool CancelSynchronousIo(IntPtr thread);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern IntPtr OpenThread(uint access, bool inherit, uint id);
+        [DllImport("kernel32.dll")]
+        static extern uint GetCurrentThreadId();
+        [DllImport("kernel32.dll")]
+        static extern bool CloseHandle(IntPtr h);
+        [DllImport("user32.dll")]
+        static extern uint GetClipboardSequenceNumber();
+        const uint ThreadTerminate = 0x0001;
+        const int OperationAborted = 995;
+        static readonly object Gate = new object();
+        static IntPtr reader = IntPtr.Zero;
+        static uint readerId;
+        static bool inRead;
+        static bool pending;
+        static Thread watcher;
+        public static long Notices;
+
+        public static void Start() {
+            lock (Gate) {
+                if (watcher != null) { return; }
+                watcher = new Thread(Watch);
+                watcher.IsBackground = true;
+                watcher.Name = "BvClipWatch";
+                watcher.Start();
+            }
+        }
+
+        static void Watch() {
+            uint seen = GetClipboardSequenceNumber();
+            while (true) {
+                Thread.Sleep(100);
+                // An exception here would end the agent process, not just the watcher.
+                try {
+                    uint seq = GetClipboardSequenceNumber();
+                    lock (Gate) {
+                        if (seq != seen) { seen = seq; pending = true; }
+                        if (pending && inRead) { CancelSynchronousIo(reader); }
+                    }
+                } catch (Exception) { }
+            }
+        }
+
+        // Bytes read, 0 when the read failed, or -1 when it was cancelled for a
+        // clipboard change.
+        public static int Read(IntPtr h, byte[] buf) {
+            lock (Gate) {
+                uint id = GetCurrentThreadId();
+                if (id != readerId || reader == IntPtr.Zero) {
+                    if (reader != IntPtr.Zero) { CloseHandle(reader); }
+                    reader = OpenThread(ThreadTerminate, false, id);
+                    readerId = id;
+                }
+                inRead = true;
+            }
+            uint read;
+            bool ok = ReadFile(h, buf, (uint)buf.Length, out read, IntPtr.Zero);
+            int error = ok ? 0 : Marshal.GetLastWin32Error();
+            lock (Gate) {
+                inRead = false;
+                if (!ok && error == OperationAborted && pending) {
+                    pending = false;
+                    Notices++;
+                    return -1;
+                }
+            }
+            return ok ? (int)read : 0;
+        }
+    }
+}
+'@
+function Initialize-ClipWatch {
+    if ($null -eq $script:BvClipWatchReady) {
+        try {
+            Add-Type -TypeDefinition $script:BvClipWatchSource -ErrorAction Stop
+            [BridgeVM.BvClipWatch]::Start()
+            $script:BvClipWatchReady = $true
+        } catch {
+            Log ('CLIP WATCH unavailable: ' + $_.Exception.Message)
+            $script:BvClipWatchReady = $false
+        }
+    }
+    return $script:BvClipWatchReady
+}
+# <<< clipboard watch
+
 function Read-Line($handle) {
     # Full line, or $null after ~2s idle so the caller can poll port state.
     if ($script:BvLines.Count -gt 0) { return $script:BvLines.Dequeue() }
@@ -465,7 +571,13 @@ function Read-Line($handle) {
     while ($true) {
         if (Is-BadHandle $handle) { return $null }
         $read = 0
-        $ok = $K::ReadFile($handle, $script:BvReadBuffer, [uint32]$script:BvReadBuffer.Length, [ref]$read, [IntPtr]::Zero)
+        if ($script:BvClipPush) {
+            $read = [BridgeVM.BvClipWatch]::Read($handle, $script:BvReadBuffer)
+            if ($read -lt 0) { Write-Line $handle 'CLIPCHANGED' 'CLIPCHANGED'; continue }
+            $ok = $read -gt 0
+        } else {
+            $ok = $K::ReadFile($handle, $script:BvReadBuffer, [uint32]$script:BvReadBuffer.Length, [ref]$read, [IntPtr]::Zero)
+        }
         if (-not $ok -or $read -eq 0) {
             if ($script:BvLines.Count -eq 0) {
                 $spins++
@@ -917,11 +1029,17 @@ while ($true) {
                     Write-Line $h ('CLIPX ' + $image + ' ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipCache))) 'CLIPX'
                 }
                 'CLIPCAPS' {
-                    # CLIPCAPS -> CLIPCAPS IMAGE_PNG <b64(dir)> when this agent can move
-                    # clipboard images, else a bare CLIPCAPS (text only).
+                    # CLIPCAPS [PUSH] -> CLIPCAPS [IMAGE_PNG <b64(dir)>] [CLIPPUSH]: IMAGE_PNG
+                    # when this agent can move clipboard images; CLIPPUSH when the host asked
+                    # for PUSH and the watcher runs, so Read-Line writes CLIPCHANGED after each
+                    # guest clipboard change. A bare CLIPCAPS (older host) turns notices off.
+                    $script:BvClipPush = ($arg -ceq 'PUSH') -and (Initialize-ClipWatch)
+                    $caps = 'CLIPCAPS'
                     if (Initialize-ClipImage) {
-                        Write-Line $h ('CLIPCAPS IMAGE_PNG ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipDir))) 'CLIPCAPS'
-                    } else { Write-Line $h 'CLIPCAPS' 'CLIPCAPS' }
+                        $caps += ' IMAGE_PNG ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipDir))
+                    }
+                    if ($script:BvClipPush) { $caps += ' CLIPPUSH' }
+                    Write-Line $h $caps 'CLIPCAPS'
                 }
                 'CLIPSETIMG' {
                     # CLIPSETIMG <b64(path)> <b64(utf8 text)|-> -> OK CLIPSETIMG <w> <h>: one

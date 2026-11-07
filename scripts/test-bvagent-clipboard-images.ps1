@@ -1,4 +1,5 @@
-# Contract for the guest agent's clipboard image verbs (CLIPCAPS, CLIPX, CLIPSETIMG).
+# Contract for the guest agent's clipboard image verbs (CLIPCAPS, CLIPX, CLIPSETIMG)
+# and the CLIPCAPS PUSH change watcher (BridgeVM.BvClipWatch).
 # PowerShell 7: compiles BridgeVM.BvClipImage as C# 5 (/langversion:5) against an
 # in-memory Windows Forms stand-in and drives the three verbs through it.
 # Windows PowerShell 5.1 (Windows): the agent's own Add-Type compile and the real
@@ -13,6 +14,8 @@ if ($errors.Count -ne 0) { throw "bvagent.ps1 does not parse: $($errors[0])" }
 
 $block = [regex]::Match($source, '(?s)# >>> clipboard images.*?# <<< clipboard images')
 if (-not $block.Success) { throw 'clipboard image block not found' }
+$watchBlock = [regex]::Match($source, '(?s)# >>> clipboard watch.*?# <<< clipboard watch')
+if (-not $watchBlock.Success) { throw 'clipboard watch block not found' }
 $cases = @{}
 foreach ($verb in @('CLIPX', 'CLIPCAPS', 'CLIPSETIMG')) {
     $found = [regex]::Matches($source, "(?s)\n                '$verb' \{(?<body>.*?)\r?\n                \}\r?\n")
@@ -20,6 +23,7 @@ foreach ($verb in @('CLIPX', 'CLIPCAPS', 'CLIPSETIMG')) {
     $cases[$verb] = [scriptblock]::Create($found[0].Groups['body'].Value)
 }
 . ([scriptblock]::Create($block.Value))
+. ([scriptblock]::Create($watchBlock.Value))
 $script:BvClipDir = Join-Path ([IO.Path]::GetTempPath()) ('bv-clip-test-' + [Guid]::NewGuid().ToString('N'))
 $script:logged = New-Object System.Collections.Generic.List[string]
 function Log([string]$m) { $script:logged.Add($m) }
@@ -161,6 +165,70 @@ try {
     $reply = Run 'CLIPSETIMG' ((B64 $hostPath) + ' -')
     Assert ($reply.Count -eq 1 -and $reply[0] -clike 'ERR CLIPSETIMG *') "refusal: $reply"
     Assert ((@($script:BvClipSeq, $script:BvClipCache, $script:BvClipImgDesc) -join '|') -ceq ($before -join '|')) 'a refusal keeps the caches'
+
+    if ($desktop) {
+        # CLIPCAPS PUSH starts the watcher. A read waiting on a synchronous handle
+        # is cancelled once the clipboard changes; without a change it waits for
+        # data, and bytes written after a cancel arrive whole.
+        Add-Type -ReferencedAssemblies System.Windows.Forms -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Threading;
+namespace BridgeVM {
+    public static class BvPushFixture {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool CreatePipe(out IntPtr r, out IntPtr w, IntPtr sa, uint size);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool WriteFile(IntPtr h, byte[] b, uint n, out uint w, IntPtr o);
+        // A short-lived STA thread owns the copy, as the agent's CLIPSET does: an owner whose
+        // thread then blocks (this session in Read) stalls every later copy for about 5 s.
+        public static void CopyNow(string text) {
+            Thread t = new Thread(() => System.Windows.Forms.Clipboard.SetText(text));
+            t.SetApartmentState(ApartmentState.STA);
+            t.Start();
+            t.Join();
+        }
+        public static void CopyLater(string text, int ms) {
+            Thread t = new Thread(() => { Thread.Sleep(ms); System.Windows.Forms.Clipboard.SetText(text); });
+            t.SetApartmentState(ApartmentState.STA);
+            t.Start();
+        }
+        public static void WriteLater(IntPtr h, byte[] data, int ms) {
+            new Thread(() => { Thread.Sleep(ms); uint w; WriteFile(h, data, (uint)data.Length, out w, IntPtr.Zero); }).Start();
+        }
+    }
+}
+'@
+        # Earlier cases copied from this session's thread; hand the clipboard to an ended one
+        # before the watcher starts.
+        [BridgeVM.BvPushFixture]::CopyNow('push-0')
+        Start-Sleep -Milliseconds 1000
+        $caps = Run 'CLIPCAPS' 'PUSH'
+        Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir) + ' CLIPPUSH')) "CLIPCAPS PUSH: $caps"
+        Assert $script:BvClipPush 'CLIPCAPS PUSH turns notices on'
+        $r = [IntPtr]::Zero; $w = [IntPtr]::Zero
+        Assert ([BridgeVM.BvPushFixture]::CreatePipe([ref]$r, [ref]$w, [IntPtr]::Zero, 0)) 'CreatePipe'
+        $buf = New-Object byte[] 64
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        [BridgeVM.BvPushFixture]::CopyLater('push-1', 300)
+        $got = [BridgeVM.BvClipWatch]::Read($r, $buf)
+        $ms = $clock.ElapsedMilliseconds
+        Assert ($got -eq -1 -and $ms -ge 250 -and $ms -lt 3000) "a clipboard change cancels the waiting read: $got after $ms ms"
+        # One copy can move the sequence number again a little later (clipboard
+        # history), so let it settle; any late notice still must not lose bytes.
+        Start-Sleep -Milliseconds 1000
+        $clock.Restart()
+        [BridgeVM.BvPushFixture]::WriteLater($w, [Text.Encoding]::ASCII.GetBytes("PING`n"), 500)
+        do { $got = [BridgeVM.BvClipWatch]::Read($r, $buf) } while ($got -eq -1)
+        $ms = $clock.ElapsedMilliseconds
+        Assert ($got -eq 5 -and [Text.Encoding]::ASCII.GetString($buf, 0, 5) -ceq "PING`n" -and $ms -ge 450) "the read waits for data and gets it whole: $got after $ms ms"
+        $caps = Run 'CLIPCAPS' ''
+        Assert (-not $script:BvClipPush -and $caps[0] -cnotlike '*CLIPPUSH*') 'a bare CLIPCAPS turns notices off'
+    } else {
+        $rejected = $false
+        try { Add-Type -TypeDefinition $script:BvClipWatchSource -CompilerOptions '/langversion:5' -ErrorAction Stop } catch { $rejected = $_ }
+        Assert ($rejected -eq $false) "BvClipWatch compiles as C# 5: $rejected"
+    }
 } finally {
     Remove-Item -LiteralPath $script:BvClipDir -Recurse -Force -ErrorAction SilentlyContinue
 }
