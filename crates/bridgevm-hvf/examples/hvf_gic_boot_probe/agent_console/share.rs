@@ -82,6 +82,12 @@ pub(super) fn host_rel_path(root: &Path, path: &Path) -> Option<String> {
         if component.contains('\\') {
             return None;
         }
+        // A stand-in character in a Mac name would come back from the guest
+        // as the character it stands for, renaming the Mac file
+        // (share_guest_names.rs); such a name is left out of the share.
+        if component.chars().any(share_sync::is_stand_in) {
+            return None;
+        }
         if !out.is_empty() {
             out.push('/');
         }
@@ -115,14 +121,28 @@ mod share_listing_reply_tests;
 #[path = "share/share_listing_report.rs"]
 mod share_listing_report;
 
-/// The guest path for a share key: the name the guest listed for it when that
-/// is not the key's own guest form (a decomposed Windows name), else that form.
+/// The guest path for a share key. Where the guest listed the key, or the
+/// folder it is in, under a spelling other than the key's own guest form (a
+/// decomposed Windows name), that spelling is used, so a new file goes into
+/// the existing folder rather than a composed twin of it.
 pub(super) fn write_share_guest_path_into(share: &ShareState, name: &str, out: &mut String) {
-    let name = share.guest_names.get(name).map_or(name, String::as_str);
     out.clear();
     out.reserve(share.guest_dir.len() + 1 + name.len());
     out.push_str(&share.guest_dir);
     out.push('\\');
+    let mut end = name.len();
+    while !share.guest_names.is_empty() {
+        if let Some(listed) = share.guest_names.get(&name[..end]) {
+            share_sync::append_guest_rel_into(listed, out);
+            if end < name.len() {
+                out.push('\\');
+                share_sync::append_guest_rel_into(&name[end..], out);
+            }
+            return;
+        }
+        let Some(slash) = name[..end].rfind('/') else { break };
+        end = slash;
+    }
     share_sync::append_guest_rel_into(name, out);
 }
 

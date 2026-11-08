@@ -5,7 +5,9 @@
 //!   keys are composed (NFC). APFS finds a file under either form.
 //! - Windows refuses `" * : < > ? |`, all legal in a Mac name (Finder shows `:`
 //!   as `/`). The guest name carries them as the private-use characters the
-//!   macOS SMB client uses (U+F020...), and a guest name maps back.
+//!   macOS SMB client uses (U+F020...), and a guest name maps back. A Mac
+//!   name that already holds one of those characters stays out of the share:
+//!   it would come back renamed.
 
 use std::borrow::Cow;
 
@@ -26,6 +28,11 @@ pub fn guest_char(c: char) -> char {
         .iter()
         .find(|(mac, _)| *mac == c)
         .map_or(c, |(_, guest)| *guest)
+}
+
+/// A character that stands in for one Windows refuses.
+pub fn is_stand_in(c: char) -> bool {
+    FORBIDDEN.iter().any(|(_, guest)| *guest == c)
 }
 
 fn mac_char(c: char) -> char {

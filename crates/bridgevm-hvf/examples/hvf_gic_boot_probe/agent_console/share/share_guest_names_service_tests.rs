@@ -80,3 +80,31 @@ fn when_both_forms_are_listed_the_composed_copy_is_the_file() {
         rig.assert_settled();
     }
 }
+
+#[test]
+fn a_new_mac_file_goes_into_the_decomposed_windows_folder_it_belongs_to() {
+    // "사진" decomposed, as a Mac archive unpacked in Windows leaves it.
+    let folder = "\u{1109}\u{1161}\u{110C}\u{1175}\u{11AB}";
+    let mut rig = Rig::new("names-folder");
+    rig.guest.write(&format!("{folder}\\old.txt"), b"from windows");
+    rig.run(12);
+    assert_eq!(rig.host("사진/old.txt").as_deref(), Some(&b"from windows"[..]));
+    std::fs::write(rig.dir.join("사진/new.txt"), b"from the mac").unwrap();
+    rig.run(12);
+    assert_eq!(rig.guest.content(&format!("{folder}\\new.txt")), Some(&b"from the mac"[..]), "{:?}", rig.guest.puts);
+    assert_eq!(rig.guest.files.len(), 2, "a composed twin folder was made");
+    rig.assert_settled();
+}
+
+#[test]
+fn a_mac_name_holding_a_stand_in_character_stays_out_and_is_never_renamed() {
+    let mut rig = Rig::new("names-literal");
+    std::fs::write(rig.dir.join("why\u{F025}.txt"), b"literal").unwrap();
+    std::fs::write(rig.dir.join("why?.txt"), b"question").unwrap();
+    rig.run(12);
+    assert_eq!(rig.guest.content("why\u{F025}.txt"), Some(&b"question"[..]), "{:?}", rig.guest.puts);
+    assert_eq!(rig.guest.files.len(), 1);
+    rig.assert_settled();
+    assert_eq!(rig.host("why\u{F025}.txt").as_deref(), Some(&b"literal"[..]));
+    assert_eq!(rig.host("why?.txt").as_deref(), Some(&b"question"[..]));
+}

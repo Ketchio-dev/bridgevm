@@ -298,7 +298,7 @@ pub use share_rel_path::to_guest_rel;
 pub use share_rel_path::{append_guest_rel_into, from_guest_rel, normalize_rel};
 #[path = "share_guest_names.rs"]
 mod share_guest_names;
-pub use share_guest_names::{composed, guest_char, key_from_guest};
+pub use share_guest_names::{composed, guest_char, is_stand_in, key_from_guest};
 
 #[path = "share_hash.rs"]
 mod share_hash;

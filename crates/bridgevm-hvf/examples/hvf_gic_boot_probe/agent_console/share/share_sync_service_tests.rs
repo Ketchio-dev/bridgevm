@@ -107,8 +107,18 @@ impl NtfsGuest {
             // The folder create after a failed first listing (share_listing_reply.rs).
             "RUN" => vec!["OUT 0 ".into()],
             "LSR" => {
-                let listing: String =
+                let mut listing: String =
                     self.files.iter().map(|(n, b, m)| format!("{n}|{}|0|{}\n", b.len(), self.listed_time(n, *m))).collect();
+                // As the agent: each folder is listed too.
+                let mut folders = std::collections::BTreeSet::new();
+                for (name, _, _) in &self.files {
+                    for (i, _) in name.match_indices('\\') {
+                        folders.insert(name[..i].to_string());
+                    }
+                }
+                for folder in folders {
+                    listing.push_str(&format!("{folder}|0|1|m0\n"));
+                }
                 vec![format!("LSOK {}", b64(listing.as_bytes()))]
             }
             "GET" => {
