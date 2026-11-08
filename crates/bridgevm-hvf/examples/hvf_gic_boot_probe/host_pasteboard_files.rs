@@ -26,6 +26,9 @@ pub enum HostFiles {
     Read(HostFileCopy),
     /// Over a limit: what the walk counted when it stopped.
     TooLarge { entries: usize, bytes: u64 },
+    /// Something below the copied items could not be listed or read (its
+    /// permissions, say): sent whole or not at all. What the walk counted.
+    Unreadable { entries: usize, bytes: u64 },
 }
 
 /// A copy within the limits, read whole.
@@ -100,15 +103,23 @@ pub fn host_files(tops: &[PathBuf]) -> Option<HostFiles> {
         .collect();
     pending.reverse();
     while let Some((path, rel)) = pending.pop() {
+        let unreadable = |found: &Vec<_>| Some(HostFiles::Unreadable { entries: found.len() + 1, bytes });
         let Ok(meta) = std::fs::symlink_metadata(&path) else {
-            continue;
+            // A copied item deleted since the copy is left out.
+            if !rel.contains('\\') {
+                continue;
+            }
+            return unreadable(&found);
         };
         if meta.is_dir() {
-            let mut names: Vec<(String, String)> = std::fs::read_dir(&path)
+            let listed = std::fs::read_dir(&path)
+                .and_then(|dir| dir.map(|entry| entry.map(|entry| entry.file_name())).collect::<std::io::Result<Vec<_>>>());
+            let Ok(listed) = listed else {
+                return unreadable(&found);
+            };
+            let mut names: Vec<(String, String)> = listed
                 .into_iter()
-                .flatten()
-                .flatten()
-                .filter_map(|entry| entry.file_name().into_string().ok())
+                .filter_map(|name| name.into_string().ok())
                 .filter_map(|name| Some((windows_name(&name)?, name)))
                 .collect();
             names.sort();
@@ -137,7 +148,7 @@ pub fn host_files(tops: &[PathBuf]) -> Option<HostFiles> {
             None
         } else {
             let Some(data) = read_regular(&path, CLIP_FILES_MAX_BYTES - bytes) else {
-                continue;
+                return Some(HostFiles::Unreadable { entries: entries.len() + 1, bytes });
             };
             bytes += data.len() as u64;
             if bytes > CLIP_FILES_MAX_BYTES {

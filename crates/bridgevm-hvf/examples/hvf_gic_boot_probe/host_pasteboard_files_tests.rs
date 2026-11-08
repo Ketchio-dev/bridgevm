@@ -144,6 +144,21 @@ fn names_go_as_win32_keeps_them() {
 }
 
 #[test]
+fn a_folder_that_cannot_be_listed_fails_the_copy() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = scratch("unlisted");
+    let folder = dir.join("folder");
+    let inner = folder.join("inner");
+    std::fs::create_dir_all(&inner).unwrap();
+    std::fs::write(inner.join("x.txt"), b"x").unwrap();
+    std::fs::set_permissions(&inner, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let files = host_files(&[folder]);
+    std::fs::set_permissions(&inner, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(!matches!(files, Some(HostFiles::Read(_))), "part of the folder read as all of it: {files:?}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn a_copy_over_a_limit_is_counted_not_read() {
     let dir = scratch("limits");
     let many = dir.join("many");

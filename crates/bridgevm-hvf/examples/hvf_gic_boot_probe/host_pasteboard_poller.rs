@@ -179,7 +179,7 @@ impl Poller {
             _ => None,
         };
         let oversized = matches!(image, Some(HostImage::TooLarge { .. }))
-            || matches!(files, Some(HostFiles::TooLarge { .. }));
+            || matches!(files, Some(HostFiles::TooLarge { .. } | HostFiles::Unreadable { .. }));
         let new_image =
             digest != self.last_image || files_digest != self.last_files || oversized || self.last_oversized;
         let html_digest = html.as_deref().map(html_digest);

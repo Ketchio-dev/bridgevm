@@ -152,6 +152,32 @@ fn a_copy_over_the_limits_goes_as_its_names_without_files_or_icon() {
 }
 
 #[test]
+fn a_copy_with_a_file_that_cannot_be_read_goes_as_its_names_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut rig = rig();
+    let dir = mac_dir("unreadable");
+    let folder = dir.join("folder");
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::write(folder.join("ok.txt"), b"ok").unwrap();
+    let locked = folder.join("locked.txt");
+    std::fs::write(&locked, b"secret").unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    rig.mac.copy_files("folder", vec![folder]);
+    rig.settle();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o600)).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(rig.verbs(), verbs(&["CLIPSET"]), "part of the folder went as if it were all of it");
+    assert!(rig.guest.set_files.is_empty());
+    assert_eq!(
+        take_lines(&mut Vec::new()),
+        [
+            "BVAGENT CLIPSYNC skip host-files unreadable files=2 bytes=0 copy=a",
+            "BVAGENT CLIPSYNC host->guest bytes=6 copy=a",
+        ]
+    );
+}
+
+#[test]
 fn a_newer_mac_copy_mid_push_ends_it_and_goes_alone() {
     let mut rig = rig();
     let dir = mac_dir("newer");

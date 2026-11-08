@@ -86,11 +86,17 @@ impl AgentConsoleHarness {
         };
         self.last_synced.host_copy = self.last_synced.next_copy();
         // File copies arrive only while the agent advertises CLIPSETFILES. Over
-        // a limit the copy goes as a plain copy would: its names as text.
+        // a limit, or with a file that cannot be read, the copy goes as a plain
+        // copy would: its names as text.
         match clip.files.filter(|_| self.clip_files_push) {
             Some(HostFiles::Read(files)) => return self.enqueue_host_files(clip.text, files, now),
             Some(HostFiles::TooLarge { entries, bytes }) => clip_line(format!(
                 "BVAGENT CLIPSYNC skip host-files too-large files={entries} bytes={bytes} copy={} t={}",
+                self.last_synced.host_copy,
+                self.t_ms(now)
+            )),
+            Some(HostFiles::Unreadable { entries, bytes }) => clip_line(format!(
+                "BVAGENT CLIPSYNC skip host-files unreadable files={entries} bytes={bytes} copy={} t={}",
                 self.last_synced.host_copy,
                 self.t_ms(now)
             )),
