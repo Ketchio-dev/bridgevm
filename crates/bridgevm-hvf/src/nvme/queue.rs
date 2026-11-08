@@ -164,6 +164,12 @@ impl NvmeController {
                 sq.head = new_head;
             }
 
+            // A WRITE's bytes leave the pending punches before any path below
+            // runs it (deferred_trim.rs).
+            if qid != 0 && cmd.opcode == NVM_OP_WRITE && self.trim.pending() {
+                self.keep_written(&cmd);
+            }
+
             // Completed when the worker's sync returns (flush_worker.rs): a
             // FLUSH, and a write that must reach media first (FUA or write cache
             // off), whose data goes to the file now.

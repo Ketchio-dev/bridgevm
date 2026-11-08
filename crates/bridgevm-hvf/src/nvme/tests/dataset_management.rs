@@ -9,13 +9,13 @@ use std::fs::{self, File, OpenOptions};
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::path::{Path, PathBuf};
 
-const AD: u32 = 1 << 2;
-const MIB: u64 = 1 << 20;
+pub(super) const AD: u32 = 1 << 2;
+pub(super) const MIB: u64 = 1 << 20;
 /// Logical blocks per MiB.
-const BPM: u64 = MIB / LBA_SIZE as u64;
+pub(super) const BPM: u64 = MIB / LBA_SIZE as u64;
 
 /// A range of `blocks` logical blocks from `slba`.
-fn range(slba: u64, blocks: u64) -> [u8; 16] {
+pub(super) fn range(slba: u64, blocks: u64) -> [u8; 16] {
     let mut raw = [0u8; 16];
     raw[4..8].copy_from_slice(&u32::try_from(blocks).unwrap().to_le_bytes());
     raw[8..16].copy_from_slice(&slba.to_le_bytes());
@@ -23,9 +23,26 @@ fn range(slba: u64, blocks: u64) -> [u8; 16] {
 }
 
 /// One Deallocate of `ranges` from I/O SQ slot `slot`.
-fn dsm(ctrl: &mut NvmeController, mem: &mut FakeMem, slot: u16, ranges: &[[u8; 16]]) -> u16 {
+pub(super) fn dsm(
+    ctrl: &mut NvmeController,
+    mem: &mut FakeMem,
+    slot: u16,
+    ranges: &[[u8; 16]],
+) -> u16 {
+    dsm_on(ctrl, mem, slot, NSID, ranges)
+}
+
+/// The same on namespace `nsid`.
+pub(super) fn dsm_on(
+    ctrl: &mut NvmeController,
+    mem: &mut FakeMem,
+    slot: u16,
+    nsid: u32,
+    ranges: &[[u8; 16]],
+) -> u16 {
     let nr = u32::try_from(ranges.len() - 1).unwrap();
-    dsm_with(ctrl, mem, slot, ranges, [nr, AD], DATA_BASE + 0x800)
+    let sqe = dsm_sqe(mem, slot, nsid, ranges, [nr, AD], DATA_BASE + 0x800);
+    submit_io(ctrl, mem, slot, &sqe)
 }
 
 /// The range list starts mid-page at `prp1`; what does not fit continues at
@@ -35,45 +52,56 @@ fn dsm_with(
     mem: &mut FakeMem,
     slot: u16,
     ranges: &[[u8; 16]],
-    [cdw10, cdw11]: [u32; 2],
+    dwords: [u32; 2],
     prp1: u64,
 ) -> u16 {
+    let sqe = dsm_sqe(mem, slot, NSID, ranges, dwords, prp1);
+    submit_io(ctrl, mem, slot, &sqe)
+}
+
+fn dsm_sqe(
+    mem: &mut FakeMem,
+    slot: u16,
+    nsid: u32,
+    ranges: &[[u8; 16]],
+    [cdw10, cdw11]: [u32; 2],
+    prp1: u64,
+) -> [u8; 64] {
     let list = ranges.concat();
     let prp2 = DATA_BASE + 0x2000;
     let first = list.len().min(PAGE_SIZE - 0x800);
     assert!(mem.write_bytes(DATA_BASE + 0x800, &list[..first]));
     assert!(mem.write_bytes(prp2, &list[first..]));
     let cid = 0x90 + slot;
-    let sqe = encode_sqe_with_prps(
+    encode_sqe_with_prps(
         NVM_OP_DATASET_MANAGEMENT,
         cid,
-        NSID,
+        nsid,
         prp1,
         prp2,
         [cdw10, cdw11, 0],
-    );
-    submit_io(ctrl, mem, slot, &sqe)
+    )
 }
 
 /// A sparse image file of `len` bytes.
-fn image(name: &str, len: u64) -> PathBuf {
+pub(super) fn image(name: &str, len: u64) -> PathBuf {
     let path = temp_path(name);
     File::create(&path).unwrap().set_len(len).unwrap();
     path
 }
 
 /// Non-zero bytes that differ by position.
-fn pattern(at: u64, len: u64) -> Vec<u8> {
+pub(super) fn pattern(at: u64, len: u64) -> Vec<u8> {
     (at..at + len).map(|i| (i % 251 + 1) as u8).collect()
 }
 
-fn write_pattern(path: &Path, at: u64, len: u64) {
+pub(super) fn write_pattern(path: &Path, at: u64, len: u64) {
     let file = OpenOptions::new().write(true).open(path).unwrap();
     file.write_all_at(&pattern(at, len), at).unwrap();
     file.sync_all().unwrap();
 }
 
-fn read(path: &Path, at: u64, len: u64) -> Vec<u8> {
+pub(super) fn read(path: &Path, at: u64, len: u64) -> Vec<u8> {
     let mut bytes = vec![0; usize::try_from(len).unwrap()];
     File::open(path)
         .unwrap()
@@ -83,26 +111,26 @@ fn read(path: &Path, at: u64, len: u64) -> Vec<u8> {
 }
 
 /// The bytes at `at..at + len` are still those `write_pattern` wrote.
-fn intact(path: &Path, at: u64, len: u64) -> bool {
+pub(super) fn intact(path: &Path, at: u64, len: u64) -> bool {
     read(path, at, len) == pattern(at, len)
 }
 
-fn zeros(path: &Path, at: u64, len: u64) -> bool {
+pub(super) fn zeros(path: &Path, at: u64, len: u64) -> bool {
     read(path, at, len).iter().all(|&byte| byte == 0)
 }
 
 /// Bytes the host file system has allocated to the file.
-fn allocated(path: &Path) -> u64 {
+pub(super) fn allocated(path: &Path) -> u64 {
     fs::metadata(path).unwrap().blocks() * 512
 }
 
-fn raw_controller(path: &Path, write_back: bool) -> (NvmeController, FakeMem) {
+pub(super) fn raw_controller(path: &Path, write_back: bool) -> (NvmeController, FakeMem) {
     let (mut ctrl, mut mem) = enabled_controller_with_raw_file(path, write_back, 0x10000);
     create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
     (ctrl, mem)
 }
 
-fn record_field(name: &str) -> u64 {
+pub(super) fn record_field(name: &str) -> u64 {
     let record = dsm_record();
     let value = record
         .split(' ')

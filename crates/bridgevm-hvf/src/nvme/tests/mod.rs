@@ -6,6 +6,7 @@ mod async_flush;
 mod completion_backpressure;
 mod create_queue_identity;
 mod dataset_management;
+mod deferred_trim;
 mod export_case;
 mod export_collision;
 mod export_failure;

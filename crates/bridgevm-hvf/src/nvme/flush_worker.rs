@@ -272,12 +272,15 @@ impl NvmeController {
     /// The worker thread holds the disk handles it started with: a namespace
     /// change waits for its flushes and lets it go (it first runs the full
     /// syncs its disks still owe); the next FLUSH starts a thread on the
-    /// current disks. Completions not yet posted stay queued.
+    /// current disks. Completions not yet posted stay queued. The punch
+    /// thread goes too, once the wait has punched its ranges into the old
+    /// files.
     pub(crate) fn restart_flush_worker(&mut self) {
         self.wait_for_flushes();
         if let Some(worker) = self.flush_worker.as_mut() {
             worker.jobs = None;
         }
+        self.trim = DeferredTrim::default();
     }
 
     /// Completion slots held for flushes in flight on `cqid`.
@@ -374,9 +377,11 @@ impl NvmeController {
     }
 
     /// Wait for the flushes, READs and WRITEs in flight; their completions
-    /// stay queued for `complete_flushes`.
+    /// stay queued for `complete_flushes`. The pending punches run first, so
+    /// a shutdown's sync covers them.
     pub(crate) fn wait_for_flushes(&mut self) {
         self.fail_untaken_io();
+        self.trim.drain();
         let Some(worker) = self.flush_worker.as_ref() else {
             return;
         };
@@ -391,8 +396,9 @@ impl NvmeController {
     }
 
     /// Wait for the flushes in flight and drop their completions: a reset
-    /// takes the queues they would post to.
+    /// takes the queues they would post to. The pending punches go too.
     pub(crate) fn discard_flushes(&mut self) {
+        self.trim.discard();
         drop(self.take_finished(true));
     }
 

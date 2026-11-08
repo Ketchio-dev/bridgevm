@@ -67,6 +67,8 @@ pub struct NvmeController {
     /// READ and WRITE without the platform lock (unlocked_io.rs); off until
     /// the VMM opts in.
     pub(crate) unlocked_io: bool,
+    /// Deallocate punches waiting for their thread (deferred_trim.rs).
+    pub(crate) trim: DeferredTrim,
     #[cfg(test)]
     pub(crate) io_gate: std::sync::Arc<super::unlocked_io::test_gate::IoGate>,
 }
@@ -125,6 +127,7 @@ impl NvmeController {
             flush_worker: None,
             flush_reserved: Vec::new(),
             unlocked_io: false,
+            trim: DeferredTrim::default(),
             #[cfg(test)]
             io_gate: Default::default(),
         }
@@ -156,7 +159,8 @@ impl NvmeController {
     }
 
     /// Wait for the jobs in flight and drop their completions (the queues
-    /// go), keeping the data-path settings for the replacement state.
+    /// go) and the pending punches, keeping the data-path settings for the
+    /// replacement state.
     fn discard_keeping_config(&mut self) -> (bool, bool, bool) {
         self.discard_flushes();
         (self.direct_dma_enabled, self.async_flush, self.unlocked_io)
