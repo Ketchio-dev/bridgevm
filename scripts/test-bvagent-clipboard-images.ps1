@@ -1,5 +1,6 @@
-# Contract for the guest agent's clipboard image, HTML and file-list verbs (CLIPCAPS, CLIPX,
-# CLIPSETIMG, CLIPXH, CLIPSETH, CLIPXF) and the CLIPCAPS PUSH change watcher (BridgeVM.BvClipWatch).
+# Contract for the guest agent's clipboard image, HTML and file verbs (CLIPCAPS, CLIPX,
+# CLIPSETIMG, CLIPXH, CLIPSETH, CLIPXF, CLIPSETFILES) and the CLIPCAPS PUSH change watcher
+# (BridgeVM.BvClipWatch).
 # PowerShell 7: compiles BridgeVM.BvClipImage as C# 5 (/langversion:5) against an
 # in-memory Windows Forms stand-in and drives the three verbs through it.
 # Windows PowerShell 5.1 (Windows): the agent's own Add-Type compile and the real
@@ -17,7 +18,7 @@ if (-not $block.Success) { throw 'clipboard image block not found' }
 $watchBlock = [regex]::Match($source, '(?s)# >>> clipboard watch.*?# <<< clipboard watch')
 if (-not $watchBlock.Success) { throw 'clipboard watch block not found' }
 $cases = @{}
-foreach ($verb in @('CLIPX', 'CLIPCAPS', 'CLIPSETIMG', 'CLIPXH', 'CLIPSETH', 'CLIPXF')) {
+foreach ($verb in @('CLIPX', 'CLIPCAPS', 'CLIPSETIMG', 'CLIPXH', 'CLIPSETH', 'CLIPXF', 'CLIPSETFILES')) {
     $found = [regex]::Matches($source, "(?s)\n                '$verb' \{(?<body>.*?)\r?\n                \}\r?\n")
     if ($found.Count -ne 1) { throw "expected exactly one $verb implementation" }
     $cases[$verb] = [scriptblock]::Create($found[0].Groups['body'].Value)
@@ -70,7 +71,7 @@ if ($desktop) {
     $stub = @'
 namespace System.Windows.Forms {
     public interface IDataObject { bool GetDataPresent(string format, bool autoConvert); object GetData(string format, bool autoConvert); }
-    public static class DataFormats { public const string UnicodeText = "UnicodeText"; public const string Bitmap = "Bitmap"; }
+    public static class DataFormats { public const string UnicodeText = "UnicodeText"; public const string Bitmap = "Bitmap"; public const string FileDrop = "FileDrop"; }
     public class DataObject : IDataObject {
         readonly System.Collections.Generic.Dictionary<string, object> items = new System.Collections.Generic.Dictionary<string, object>();
         public void SetData(string format, bool autoConvert, object data) { items[format] = data; }
@@ -141,7 +142,7 @@ public static class BvTestSeq { public static uint Seq = 1; public static uint G
 
 try {
     $caps = Run 'CLIPCAPS' ''
-    Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir) + ' CF_HTML CF_HDROP')) "CLIPCAPS marker: $caps"
+    Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir) + ' CF_HTML CF_HDROP CLIPSETFILES')) "CLIPCAPS marker: $caps"
 
     # Mac to Windows: the PUT file becomes text and image in one clipboard write.
     $png = New-Png 3 2
@@ -259,6 +260,56 @@ try {
     Copy-Text 'plain'
     Assert ((Run 'CLIPXF' '')[0] -ceq ('CLIPXF 0 0 0 - - 0 - 0 - ' + (B64 'plain'))) 'a text copy has no files part'
 
+    # Mac to Windows files: the host PUTs each file below files\<copy>, then CLIPSETFILES makes the
+    # copied items an Explorer copy (Preferred DropEffect copy, the names as text) that CLIPXF lists
+    # back. The agent builds its paths with '\', which macOS keeps in names: there the folder
+    # tree is flat, so the nested entries and the older copy's folder are checked on Windows only.
+    $win = [IO.Path]::DirectorySeparatorChar -eq '\'
+    $older = $script:BvClipDir + '\files\6'
+    [void][IO.Directory]::CreateDirectory($older)
+    $root = $script:BvClipDir + '\files\7'
+    $name = [string][char]0xBCF4 + [char]0xACE0 + [char]0xC11C + '.txt'
+    [void][IO.Directory]::CreateDirectory($root + '\a folder')
+    [IO.File]::WriteAllBytes($root + '\' + $name, [byte[]](1, 2, 3))
+    [IO.File]::WriteAllBytes($root + '\a folder\inner.txt', [byte[]](4, 5))
+    $names = "$name`r`na folder"
+    $reply = Run 'CLIPSETFILES' ('7 ' + (B64 "0|$name`n1|a folder`n0|a folder\inner.txt`n1|a folder\empty`n") + ' ' + (B64 $names))
+    Assert ($reply.Count -eq 1 -and $reply[0] -ceq 'OK CLIPSETFILES 2') "CLIPSETFILES reply: $reply"
+    Assert ([IO.Directory]::Exists($root + '\a folder\empty')) 'the listed empty folder exists'
+    if ($desktop) {
+        $drop = @([Windows.Forms.Clipboard]::GetFileDropList())
+        $effect = [Windows.Forms.Clipboard]::GetData('Preferred DropEffect').ToArray()
+        $text = [Windows.Forms.Clipboard]::GetText()
+    } else {
+        $drop = @($TClipboard::Current.GetData('FileDrop', $true))
+        $effect = $TClipboard::Current.GetData('Preferred DropEffect', $false).ToArray()
+        $text = $TClipboard::Current.GetData('UnicodeText', $true)
+    }
+    Assert (($drop -join '|') -ceq ($root + '\' + $name + '|' + $root + '\a folder')) "the top-level items are the file drop: $drop"
+    Assert (($effect -join ',') -eq '1,0,0,0') "Preferred DropEffect is copy: $effect"
+    Assert ($text -ceq $names) 'the names come as text'
+    $mtime = { param($p) & $tick (Get-IoPath $p) }
+    $list = "0|1|3|$(& $mtime "$root\$name")|$root\$name`n1|1|0|0|$root\a folder`n"
+    if ($win) {
+        $list += "1|0|0|0|$root\a folder\empty`n0|0|2|$(& $mtime "$root\a folder\inner.txt")|$root\a folder\inner.txt`n"
+        Assert (-not [IO.Directory]::Exists($older)) "an older copy's folder is deleted"
+    }
+    $count = $list.Split("`n").Length - 1
+    $want = 'CLIPXF 0 0 0 - - 0 - {0} {1} {2}' -f $count, [Convert]::ToBase64String($u8.GetBytes($list)), (B64 $names)
+    $got = (Run 'CLIPXF' '')[0]
+    Assert ($got -ceq $want) "CLIPXF lists the pushed files: $got"
+    # Beside a good file, a path that leaves the copy's folder, a missing file or a bad copy number
+    # refuses the whole copy and changes nothing.
+    $outside = $script:BvClipDir + '\files\outside'
+    foreach ($bad in @('1|..\outside', '1|a\..\..\outside', '0|\rooted.txt', '0|C:\Windows\win.ini', "0|$name`:stream",
+            '0|gone.txt', '2|a folder', 'x')) {
+        $copy = if ($bad -eq 'x') { 'x' } else { '7' }
+        $reply = Run 'CLIPSETFILES' ($copy + ' ' + (B64 "0|$name`n$bad`n") + ' -')
+        Assert ($reply.Count -eq 1 -and $reply[0] -clike 'ERR CLIPSETFILES *') "CLIPSETFILES refuses $bad : $reply"
+    }
+    Assert (-not [IO.Directory]::Exists($outside)) 'nothing is created outside the copy folder'
+    Assert ((Run 'CLIPXF' '')[0] -ceq $want) 'a refusal keeps the clipboard'
+
     if ($desktop) {
         # Each clipboard call runs on a thread of its own. WinForms keeps a context with its own
         # thread handle for every thread that touches the clipboard until the thread disposes it;
@@ -312,7 +363,7 @@ namespace BridgeVM {
         [BridgeVM.BvPushFixture]::CopyNow('push-0')
         Start-Sleep -Milliseconds 1000
         $caps = Run 'CLIPCAPS' 'PUSH'
-        Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir) + ' CF_HTML CF_HDROP CLIPPUSH')) "CLIPCAPS PUSH: $caps"
+        Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir) + ' CF_HTML CF_HDROP CLIPSETFILES CLIPPUSH')) "CLIPCAPS PUSH: $caps"
         Assert $script:BvClipPush 'CLIPCAPS PUSH turns notices on'
         $r = [IntPtr]::Zero; $w = [IntPtr]::Zero
         Assert ([BridgeVM.BvPushFixture]::CreatePipe([ref]$r, [ref]$w, [IntPtr]::Zero, 0)) 'CreatePipe'
@@ -339,6 +390,11 @@ namespace BridgeVM {
     }
 } finally {
     Remove-Item -LiteralPath $script:BvClipDir -Recurse -Force -ErrorAction SilentlyContinue
+    # macOS keeps the agent's '\' paths as names beside the test folder.
+    $leaf = [IO.Path]::GetFileName($script:BvClipDir)
+    foreach ($left in [IO.Directory]::GetFileSystemEntries([IO.Path]::GetTempPath(), $leaf + '?*')) {
+        if ([IO.Directory]::Exists($left)) { [IO.Directory]::Delete($left, $true) } else { [IO.File]::Delete($left) }
+    }
 }
 $mode = if ($desktop) { 'Windows PowerShell, real clipboard' } else { 'PowerShell 7, C# 5 with a stand-in clipboard' }
 Write-Output "bvagent clipboard images: PASS ($mode)"
