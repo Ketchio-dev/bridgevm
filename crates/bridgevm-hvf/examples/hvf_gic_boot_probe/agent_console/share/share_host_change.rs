@@ -7,7 +7,8 @@
 //! files vCPU 0, whose thread runs this service, spent 80 % of its time in
 //! lstat and readdir. The scan is redone once its actions run out or are a
 //! poll interval old, so a Mac edit made meanwhile waits no longer than it
-//! does while the share is idle.
+//! does while the share is idle. A cached PUT reads the file afresh, and a
+//! cached guest deletion is dropped when the file is back on the Mac.
 
 use super::*;
 
@@ -77,6 +78,11 @@ impl AgentConsoleHarness {
                     }
                 }
                 SyncAction::DeleteGuest { name } => {
+                    // The scan may be older than this step: a file back on the Mac (an undo)
+                    // keeps its guest copy, and the next scan sees it again.
+                    if std::fs::symlink_metadata(share.host_dir.join(&name)).is_ok() {
+                        continue;
+                    }
                     self.queue.push_back(ServiceReq::ShareDel {
                         name,
                         direction: ShareDelDirection::HostToGuest,

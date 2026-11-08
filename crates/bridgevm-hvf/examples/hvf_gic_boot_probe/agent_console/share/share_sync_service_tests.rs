@@ -480,3 +480,35 @@ fn one_host_scan_serves_a_run_of_puts_and_a_mac_edit_still_lands() {
     rig.run(40);
     assert_eq!(rig.guest.content("f00.txt"), Some(&b"edited"[..]));
 }
+
+#[test]
+fn a_mac_file_restored_during_a_run_of_deletes_keeps_its_guest_copy() {
+    let mut rig = Rig::new("scan-once-restore");
+    rig.h.share.as_mut().unwrap().interval = Duration::from_secs(30);
+    for name in ["a.txt", "b.txt", "c.txt"] {
+        std::fs::write(rig.dir.join(name), name).unwrap();
+    }
+    rig.run(70);
+    assert_eq!(rig.guest.files.len(), 3);
+    let aside = rig.dir.with_extension("aside");
+    std::fs::create_dir_all(&aside).unwrap();
+    for name in ["a.txt", "b.txt", "c.txt"] {
+        std::fs::rename(rig.dir.join(name), aside.join(name)).unwrap();
+    }
+    // The next scan, a poll interval on, queues the three deletions; one goes out per step.
+    for _ in 0..40 {
+        rig.run(1);
+        if rig.guest.files.len() < 3 {
+            break;
+        }
+    }
+    assert_eq!(rig.guest.files.len(), 2);
+    // Undo for a file whose deletion has not gone out yet, which Windows edited meanwhile.
+    let kept = rig.guest.files.last().unwrap().0.clone();
+    rig.guest.write(&kept, b"windows edit");
+    std::fs::rename(aside.join(&kept), rig.dir.join(&kept)).unwrap();
+    rig.run(70);
+    assert_eq!(rig.guest.content(&kept), Some(&b"windows edit"[..]), "the restored file's guest copy was deleted");
+    assert_eq!(rig.host(&kept).as_deref(), Some(&b"windows edit"[..]));
+    let _ = std::fs::remove_dir_all(&aside);
+}
