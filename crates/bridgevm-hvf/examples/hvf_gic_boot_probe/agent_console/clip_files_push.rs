@@ -158,7 +158,8 @@ impl AgentConsoleHarness {
                 self.last_synced.text = push.text.as_deref().map(normalize_clip);
                 self.last_synced.image = None;
                 self.last_synced.html = None;
-                self.last_synced.files = None;
+                // The guest holds a file drop now, which no text copy matches.
+                self.last_synced.files = Some(push.files.digest);
                 self.last_synced.rebaseline = false;
                 self.last_synced.echo = true;
                 clip_line(format!(

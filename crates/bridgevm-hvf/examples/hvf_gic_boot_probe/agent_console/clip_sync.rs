@@ -30,7 +30,9 @@ pub(super) struct ClipBaseline {
     /// ends write canonical base64, so the wire form is compared as it is.
     pub(super) html: Option<[u8; 32]>,
     /// SHA-256 of the CLIPXF files part the guest is known to hold, alone
-    /// (clip_files.rs): published, refused or on its way.
+    /// (clip_files.rs): published, refused or on its way; after a Finder copy
+    /// went to the guest (clip_files_push.rs), that copy's digest until the
+    /// guest lists it.
     pub(super) files: Option<[u8; 32]>,
     /// The PNG last synced either way, reused while it is `image`: a caption
     /// change needs no second transfer.
@@ -60,9 +62,9 @@ impl ClipBaseline {
     }
 
     /// The clipboard as one unit, either way: (text, image, html) is what was
-    /// last synced. Anything else is written whole.
+    /// last synced, and no file drop. Anything else is written whole.
     pub(super) fn holds(&self, text: Option<&str>, image: Option<[u8; 32]>, html: Option<[u8; 32]>) -> bool {
-        self.text.as_deref() == text && self.image == image && self.html == html
+        self.text.as_deref() == text && self.image == image && self.html == html && self.files.is_none()
     }
 }
 

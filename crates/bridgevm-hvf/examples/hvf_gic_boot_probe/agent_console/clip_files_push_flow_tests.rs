@@ -104,6 +104,30 @@ fn a_finder_copy_goes_as_its_puts_then_one_clipsetfiles_and_never_comes_back() {
 }
 
 #[test]
+fn text_equal_to_the_pushed_names_still_replaces_the_file_drop() {
+    for settle_between in [false, true] {
+        let mut rig = rig();
+        let dir = mac_dir(&format!("names-{settle_between}"));
+        let file = dir.join("a.txt");
+        std::fs::write(&file, b"x").unwrap();
+        rig.mac.copy_files("a.txt", vec![file]);
+        rig.settle();
+        if settle_between {
+            // The guest's CLIPXF has listed the pushed files since.
+            rig.settle();
+        }
+        rig.verbs();
+        // Plain text equal to the copy's names, copied on the Mac next.
+        rig.mac.copy(Some("a.txt"), None);
+        rig.settle();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(rig.verbs(), verbs(&["CLIPSET"]), "the guest kept the file drop (settled {settle_between})");
+        assert!(rig.guest.listing.is_none());
+        take_lines(&mut Vec::new());
+    }
+}
+
+#[test]
 fn a_copy_over_the_limits_goes_as_its_names_without_files_or_icon() {
     let mut rig = rig();
     let dir = mac_dir("many");
