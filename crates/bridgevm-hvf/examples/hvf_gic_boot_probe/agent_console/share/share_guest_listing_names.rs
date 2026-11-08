@@ -29,18 +29,19 @@ impl ShareState {
         for (i, _) in &listed {
             other_form[*i] = true;
         }
+        // Twins are told apart as remembered spellings are looked up: by windows_key.
         let mut taken: HashSet<String> = self
             .guest_ls_scratch
             .iter()
             .zip(&other_form)
             .filter(|(_, other)| !**other)
-            .map(|(entry, _)| entry.name.clone())
+            .map(|(entry, _)| share_sync::windows_key(&entry.name))
             .collect();
         let mut keep = vec![true; self.guest_ls_scratch.len()];
         for (i, guest) in listed {
-            let key = &self.guest_ls_scratch[i].name;
+            let key = share_sync::windows_key(&self.guest_ls_scratch[i].name);
             if taken.insert(key.clone()) {
-                self.guest_names.insert(share_sync::windows_key(key), guest);
+                self.guest_names.insert(key, guest);
             } else {
                 keep[i] = false;
             }

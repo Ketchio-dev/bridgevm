@@ -142,3 +142,18 @@ fn a_mac_name_below_a_decomposed_windows_folder_keeps_its_own_form() {
     rig.assert_settled();
     assert_eq!(rig.host(&format!("café/{bengali}")).as_deref(), Some(&b"from the mac"[..]), "the Mac file was deleted");
 }
+
+#[test]
+fn a_composed_twin_that_differs_in_case_keeps_its_own_file() {
+    let mut rig = Rig::new("names-case-twins");
+    rig.guest.write("Café.txt", b"composed");
+    rig.guest.write("cafe\u{301}.txt", b"decomposed");
+    rig.run(12);
+    assert_eq!(rig.host("Café.txt").as_deref(), Some(&b"composed"[..]), "{:?}", rig.guest.gets);
+    rig.assert_settled();
+    std::fs::write(rig.dir.join("Café.txt"), b"mac edit").unwrap();
+    rig.run(12);
+    assert_eq!(rig.guest.content("Café.txt"), Some(&b"mac edit"[..]));
+    assert_eq!(rig.guest.content("cafe\u{301}.txt"), Some(&b"decomposed"[..]), "the other Windows file was overwritten");
+    rig.assert_settled();
+}
