@@ -154,6 +154,34 @@ fn a_same_size_edit_copied_again_is_fetched_again() {
 }
 
 #[test]
+fn a_long_listing_edited_in_the_middle_stages_apart_from_the_published_copy() {
+    let mut rig = rig();
+    // Over 8 KiB of listing, so the edit is far from both ends of it.
+    let files: Vec<String> = (0..160).map(|n| format!(r"C:\s\a fairly long folder name\file-{n:03}.txt")).collect();
+    for path in &files {
+        rig.guest.files.insert(path.clone(), b"one".to_vec());
+    }
+    let listed = |middle: u64| {
+        let list: String =
+            files.iter().enumerate().map(|(n, path)| format!("0|1|3|{}|{path}\n", if n == 80 { middle } else { 1 })).collect();
+        format!("{} {}", files.len(), base64_encode(list.as_bytes()))
+    };
+    rig.guest.listing = Some(listed(1));
+    rig.settle();
+    let first = rig.mac.file_writes.last().expect("published").clone();
+    // The middle file edited in Windows to the same length and the copy taken again.
+    rig.guest.files.insert(files[80].clone(), b"two".to_vec());
+    rig.guest.listing = Some(listed(2));
+    rig.settle();
+    let second = rig.mac.file_writes.last().expect("published again").clone();
+    assert_ne!(first[0].parent(), second[0].parent(), "the edited copy reused the published copy's directory");
+    assert_eq!(std::fs::read(&first[80]).unwrap(), b"one", "the published copy changed under the pasteboard");
+    assert_eq!(std::fs::read(&second[80]).unwrap(), b"two");
+    take_lines(&mut Vec::new());
+    std::fs::remove_dir_all(&rig.h.clip_files_stage.dir).unwrap();
+}
+
+#[test]
 fn a_guest_file_copy_over_a_limit_leaves_the_mac_alone() {
     let mut rig = rig();
     let mut names = Vec::new();

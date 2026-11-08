@@ -195,8 +195,10 @@ impl AgentConsoleHarness {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             std::hash::Hash::hash(part, &mut hasher);
             guest_clip_fingerprint(html, &mut hasher);
+            // The whole files part: an edit deep in a long listing is a new copy, with its own
+            // staging directory (only the copy number names it).
             if !files.is_empty() {
-                guest_clip_fingerprint(files, &mut hasher);
+                std::hash::Hash::hash(files, &mut hasher);
             }
             guest_clip_fingerprint(text, &mut hasher)
         };
