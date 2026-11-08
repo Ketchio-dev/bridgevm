@@ -681,6 +681,9 @@ pub(super) mod tests {
             "C:\\share".into(),
             Duration::from_millis(500),
         ));
+        // The session's first listing (an empty guest folder) lets unrecorded files go.
+        let engine = &mut h.share.as_mut().unwrap().engine;
+        assert!(engine.on_guest_listing_normalized([]).is_empty());
 
         h.service_enqueue(Instant::now());
         std::fs::write(&path, b"second").unwrap();

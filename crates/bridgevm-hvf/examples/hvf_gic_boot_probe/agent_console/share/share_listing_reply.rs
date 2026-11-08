@@ -8,6 +8,12 @@ use refusal::report_listing_limit;
 
 impl AgentConsoleHarness {
     pub(in crate::agent_console) fn handle_share_listing_reply(&mut self, line: &str) {
+        // Whatever the listing holds, a new session stops holding Mac files back.
+        if line.starts_with("LSOK ") || line.starts_with("ERR") {
+            if let Some(share) = self.share.as_mut() {
+                share.engine.end_first_listing_wait();
+            }
+        }
         if let Some(b64) = line.strip_prefix("LSOK ") {
             self.apply_share_listing(b64);
             self.complete_in_flight();

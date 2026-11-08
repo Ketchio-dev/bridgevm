@@ -46,7 +46,7 @@ fn guest_entry(rig: &Rig, name: &str) -> LsEntry {
         name: name.into(),
         size: bytes.len() as u64,
         is_dir: false,
-        mtime: format!("m{mtime}"),
+        mtime: rig.guest.listed_time(name, *mtime),
     }
 }
 

@@ -105,6 +105,8 @@ impl ShareSync {
             // The guest truncates before writing: its copy is unknown until PUTOK.
             record.put_unconfirmed = true;
         }
+        // For the same reason the listed copy may be gone: never adopt it (share_adopt.rs).
+        self.guest_file_entries_scratch.remove(&name);
         Some(PushGuest { bytes, hash })
     }
 }
