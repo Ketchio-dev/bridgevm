@@ -14,7 +14,11 @@ pub fn guest_mtime_ms(listed: &str) -> Option<u128> {
     let (clock, fraction) = time.split_once('.').unwrap_or((time, ""));
     let mut clock = clock.splitn(3, ':').map(|part| part.parse::<i64>().ok());
     let (hour, minute, second) = (clock.next()??, clock.next()??, clock.next()??);
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 60 {
+    // The guest sends this text: .NET's DateTime range (years 1-9999) bounds the arithmetic.
+    if !(1..=9999).contains(&year) || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    if !(0..=23).contains(&hour) || !(0..=59).contains(&minute) || !(0..=60).contains(&second) {
         return None;
     }
     if !fraction.bytes().all(|b| b.is_ascii_digit()) || fraction.len() > 7 {
