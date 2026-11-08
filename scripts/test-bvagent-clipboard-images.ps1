@@ -1,5 +1,5 @@
-# Contract for the guest agent's clipboard image and HTML verbs (CLIPCAPS, CLIPX,
-# CLIPSETIMG, CLIPXH, CLIPSETH) and the CLIPCAPS PUSH change watcher (BridgeVM.BvClipWatch).
+# Contract for the guest agent's clipboard image, HTML and file-list verbs (CLIPCAPS, CLIPX,
+# CLIPSETIMG, CLIPXH, CLIPSETH, CLIPXF) and the CLIPCAPS PUSH change watcher (BridgeVM.BvClipWatch).
 # PowerShell 7: compiles BridgeVM.BvClipImage as C# 5 (/langversion:5) against an
 # in-memory Windows Forms stand-in and drives the three verbs through it.
 # Windows PowerShell 5.1 (Windows): the agent's own Add-Type compile and the real
@@ -17,12 +17,15 @@ if (-not $block.Success) { throw 'clipboard image block not found' }
 $watchBlock = [regex]::Match($source, '(?s)# >>> clipboard watch.*?# <<< clipboard watch')
 if (-not $watchBlock.Success) { throw 'clipboard watch block not found' }
 $cases = @{}
-foreach ($verb in @('CLIPX', 'CLIPCAPS', 'CLIPSETIMG', 'CLIPXH', 'CLIPSETH')) {
+foreach ($verb in @('CLIPX', 'CLIPCAPS', 'CLIPSETIMG', 'CLIPXH', 'CLIPSETH', 'CLIPXF')) {
     $found = [regex]::Matches($source, "(?s)\n                '$verb' \{(?<body>.*?)\r?\n                \}\r?\n")
     if ($found.Count -ne 1) { throw "expected exactly one $verb implementation" }
     $cases[$verb] = [scriptblock]::Create($found[0].Groups['body'].Value)
 }
 . ([scriptblock]::Create($block.Value))
+$ioPath = [regex]::Match($source, "(?s)\nfunction Get-IoPath\b.*?\r?\n\}\r?\n")
+if (-not $ioPath.Success) { throw 'Get-IoPath not found' }
+. ([scriptblock]::Create($ioPath.Value))
 . ([scriptblock]::Create($watchBlock.Value))
 $script:BvClipDir = Join-Path ([IO.Path]::GetTempPath()) ('bv-clip-test-' + [Guid]::NewGuid().ToString('N'))
 $script:logged = New-Object System.Collections.Generic.List[string]
@@ -52,6 +55,12 @@ if ($desktop) {
     }
     function Copy-Bitmap([int]$width, [int]$height) { [Windows.Forms.Clipboard]::SetImage((New-Object Drawing.Bitmap $width, $height)) }
     function Copy-Text([string]$text) { [Windows.Forms.Clipboard]::SetText($text); $script:fakeText = $text }
+    function Copy-Files([string[]]$paths) {
+        $list = New-Object System.Collections.Specialized.StringCollection
+        $list.AddRange($paths)
+        [Windows.Forms.Clipboard]::SetFileDropList($list)
+        $script:fakeText = $null
+    }
 } else {
     # C# 5 is what Windows PowerShell 5.1 compiles; prove the option bites first.
     $rejected = $false
@@ -74,6 +83,12 @@ namespace System.Windows.Forms {
         public static int Reads;
         public static void SetDataObject(object data, bool copy, int retryTimes, int retryDelay) { Current = (IDataObject)data; BvTestSeq.Seq++; }
         public static IDataObject GetDataObject() { Reads++; return Current; }
+        public static bool ContainsFileDropList() { return Current != null && Current.GetDataPresent("FileDrop", true); }
+        public static System.Collections.Specialized.StringCollection GetFileDropList() {
+            System.Collections.Specialized.StringCollection list = new System.Collections.Specialized.StringCollection();
+            if (ContainsFileDropList()) { list.AddRange((string[])Current.GetData("FileDrop", true)); }
+            return list;
+        }
     }
 }
 namespace System.Drawing.Imaging { public sealed class ImageFormat { public static readonly ImageFormat Png = new ImageFormat(); } }
@@ -113,6 +128,7 @@ public static class BvTestSeq { public static uint Seq = 1; public static uint G
         Set-Fake $data
     }
     function Copy-Text([string]$text) { $data = $TDataObject::new(); $data.SetData('UnicodeText', $true, $text); Set-Fake $data; $script:fakeText = $text }
+    function Copy-Files([string[]]$paths) { $data = $TDataObject::new(); $data.SetData('FileDrop', $true, [string[]]$paths); Set-Fake $data; $script:fakeText = $null }
     function Read-ClipHtml {
         $data = $TClipboard::Current
         if ($null -eq $data -or -not $data.GetDataPresent('HTML Format', $false)) { return @{ Bytes = $null; Size = 0 } }
@@ -125,7 +141,7 @@ public static class BvTestSeq { public static uint Seq = 1; public static uint G
 
 try {
     $caps = Run 'CLIPCAPS' ''
-    Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir) + ' CF_HTML')) "CLIPCAPS marker: $caps"
+    Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir) + ' CF_HTML CF_HDROP')) "CLIPCAPS marker: $caps"
 
     # Mac to Windows: the PUT file becomes text and image in one clipboard write.
     $png = New-Png 3 2
@@ -211,6 +227,30 @@ try {
     }
     Assert ((@($script:BvClipSeq, $script:BvClipCache, $script:BvClipHtmlPart) -join '|') -ceq ($before -join '|')) 'a CLIPSETH refusal keeps the caches'
 
+    # Files: an Explorer copy is CF_HDROP. CLIPXF lists each copied item that exists (top 1) and
+    # everything below a copied folder (top 0, sorted, after its folder); a folder has 0 bytes.
+    $filesDir = Join-Path $script:BvClipDir ([string][char]0xD30C + [char]0xC77C + ' files')
+    $folder = Join-Path $filesDir 'a folder'
+    [void][IO.Directory]::CreateDirectory((Join-Path $folder 'sub'))
+    [IO.File]::WriteAllBytes((Join-Path $folder 'inner.txt'), [byte[]](7, 8, 9))
+    $file = Join-Path $filesDir ([string][char]0xBCF4 + [char]0xACE0 + [char]0xC11C + ' 1.txt')
+    [IO.File]::WriteAllBytes($file, [byte[]](1, 2, 3, 4, 5))
+    Copy-Files @($file, $folder, (Join-Path $filesDir 'gone.txt'))
+    $list = "0|1|5|$file`n1|1|0|$folder`n0|0|3|$(Join-Path $folder 'inner.txt')`n1|0|0|$(Join-Path $folder 'sub')`n"
+    $want = 'CLIPXF 0 0 0 - - 0 - 4 {0} ' -f [Convert]::ToBase64String($u8.GetBytes($list))
+    $got = (Run 'CLIPXF' '')[0]
+    Assert ($got -ceq $want) "CLIPXF lists the copied files: $got"
+    Assert ((Run 'CLIPXH' '')[0] -ceq 'CLIPXH 0 0 0 - - 0 - ') 'CLIPXH keeps its fields'
+    # Past FilesMax entries the listing stops and names the count only.
+    $many = Join-Path $filesDir 'many'
+    [void][IO.Directory]::CreateDirectory($many)
+    for ($i = 0; $i -lt 300; $i++) { [IO.File]::WriteAllBytes((Join-Path $many "$i.txt"), [byte[]]@()) }
+    Copy-Files @($many)
+    $got = (Run 'CLIPXF' '')[0]
+    Assert ($got -ceq 'CLIPXF 0 0 0 - - 0 - 257 - ') "past FilesMax: $got"
+    Copy-Text 'plain'
+    Assert ((Run 'CLIPXF' '')[0] -ceq ('CLIPXF 0 0 0 - - 0 - 0 - ' + (B64 'plain'))) 'a text copy has no files part'
+
     if ($desktop) {
         # Each clipboard call runs on a thread of its own. WinForms keeps a context with its own
         # thread handle for every thread that touches the clipboard until the thread disposes it;
@@ -264,7 +304,7 @@ namespace BridgeVM {
         [BridgeVM.BvPushFixture]::CopyNow('push-0')
         Start-Sleep -Milliseconds 1000
         $caps = Run 'CLIPCAPS' 'PUSH'
-        Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir) + ' CF_HTML CLIPPUSH')) "CLIPCAPS PUSH: $caps"
+        Assert ($caps.Count -eq 1 -and $caps[0] -ceq ('CLIPCAPS IMAGE_PNG ' + (B64 $script:BvClipDir) + ' CF_HTML CF_HDROP CLIPPUSH')) "CLIPCAPS PUSH: $caps"
         Assert $script:BvClipPush 'CLIPCAPS PUSH turns notices on'
         $r = [IntPtr]::Zero; $w = [IntPtr]::Zero
         Assert ([BridgeVM.BvPushFixture]::CreatePipe([ref]$r, [ref]$w, [IntPtr]::Zero, 0)) 'CreatePipe'

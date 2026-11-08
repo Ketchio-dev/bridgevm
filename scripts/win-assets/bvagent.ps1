@@ -918,6 +918,7 @@ namespace BridgeVM {
         public const int MaxBytes = 33554432;
         public const int MaxSide = 16384;
         public const int HtmlMaxBytes = 4194304;
+        public const int FilesMax = 256;
 
         [DllImport("user32.dll", SetLastError = true)] static extern bool OpenClipboard(IntPtr owner);
         [DllImport("user32.dll")] static extern bool CloseClipboard();
@@ -1069,6 +1070,18 @@ namespace BridgeVM {
             size = n;
             return result;
         }
+
+        // The clipboard's file list (CF_HDROP, an Explorer copy) as full paths; null without one.
+        public static string[] GetFiles() {
+            string[] result = null;
+            OnSta(delegate () {
+                if (!Clipboard.ContainsFileDropList()) { return; }
+                System.Collections.Specialized.StringCollection list = Clipboard.GetFileDropList();
+                result = new string[list.Count];
+                list.CopyTo(result, 0);
+            });
+            return result;
+        }
     }
 }
 '@
@@ -1150,6 +1163,54 @@ function Get-ClipHtmlPart {
     }
     $script:BvClipHtmlPart = $part
     $script:BvClipHtmlSeq = $seq
+    return $part
+}
+
+$script:BvClipFilesSeq = [uint32]4294967295
+$script:BvClipFilesPart = '0 -'
+# The files part of CLIPXF: <count> <b64(list)|->, read again only after a change. The list has one
+# line per entry, <isDir>|<top>|<bytes>|<full path>: each copied item that still exists (top 1), and
+# below a copied folder every file and folder in it (top 0, after their folder). A folder has 0
+# bytes. Past FilesMax entries the listing stops and names the count only (FilesMax + 1). A failed
+# read counts as no files.
+function Get-ClipFilesPart {
+    $seq = $K::GetClipboardSequenceNumber()
+    if ($seq -eq $script:BvClipFilesSeq) { return $script:BvClipFilesPart }
+    $part = '0 -'
+    if ($script:BvClipImageReady) {
+        try {
+            $files = [BridgeVM.BvClipImage]::GetFiles()
+            if ($null -ne $files) {
+                $max = [BridgeVM.BvClipImage]::FilesMax
+                $sb = New-Object System.Text.StringBuilder
+                $count = 0
+                $pending = New-Object System.Collections.Generic.Stack[object]
+                for ($i = $files.Length - 1; $i -ge 0; $i--) { $pending.Push(@($files[$i], 1)) }
+                while ($pending.Count -gt 0 -and $count -le $max) {
+                    $entry = $pending.Pop()
+                    $path = [string]$entry[0]
+                    $io = Get-IoPath $path
+                    if ([System.IO.Directory]::Exists($io)) {
+                        [void]$sb.Append('1|').Append($entry[1]).Append('|0|').Append($path).Append("`n")
+                        $children = @([System.IO.Directory]::GetFileSystemEntries($io))
+                        [System.Array]::Sort($children, [System.StringComparer]::OrdinalIgnoreCase)
+                        for ($j = $children.Length - 1; $j -ge 0; $j--) {
+                            $pending.Push(@([System.IO.Path]::Combine($path, [System.IO.Path]::GetFileName($children[$j])), 0))
+                        }
+                    } elseif ([System.IO.File]::Exists($io)) {
+                        [void]$sb.Append('0|').Append($entry[1]).Append('|').Append((New-Object System.IO.FileInfo $io).Length).Append('|').Append($path).Append("`n")
+                    } else { continue }
+                    $count++
+                }
+                if ($count -gt $max) { $part = '{0} -' -f $count }
+                elseif ($count -gt 0) { $part = '{0} {1}' -f $count, [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($sb.ToString())) }
+            }
+        } catch {
+            Log ('CLIPXF files read failed: ' + $_.Exception.Message)
+        }
+    }
+    $script:BvClipFilesPart = $part
+    $script:BvClipFilesSeq = $seq
     return $part
 }
 # <<< clipboard images
@@ -1340,16 +1401,33 @@ while ($true) {
                     $html = Get-ClipHtmlPart
                     Write-Line $h ('CLIPXH ' + $image + ' ' + $html + ' ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipCache))) 'CLIPXH'
                 }
+                'CLIPXF' {
+                    # CLIPXH plus the clipboard's file list (an Explorer copy), for hosts that saw
+                    # CF_HDROP: CLIPXF <w> <h> <bytes> <sha256|-> <b64(path)|-> <html-bytes>
+                    # <b64(html)|-> <file-count> <b64(list)|-> <b64(utf8 text)>.
+                    $seq = $K::GetClipboardSequenceNumber()
+                    if ($seq -ne $script:BvClipSeq) {
+                        $clip = ''
+                        try { $c = Get-Clipboard -Raw -ErrorAction SilentlyContinue; if ($null -ne $c) { $clip = [string]$c } } catch { }
+                        $script:BvClipCache = $clip
+                        $script:BvClipSeq = $seq
+                    }
+                    $image = Get-ClipImageDescriptor
+                    $html = Get-ClipHtmlPart
+                    $files = Get-ClipFilesPart
+                    Write-Line $h ('CLIPXF ' + $image + ' ' + $html + ' ' + $files + ' ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipCache))) 'CLIPXF'
+                }
                 'CLIPCAPS' {
-                    # CLIPCAPS [PUSH] -> CLIPCAPS [IMAGE_PNG <b64(dir)> CF_HTML] [CLIPPUSH]: IMAGE_PNG
-                    # when this agent can move clipboard images, CF_HTML when it serves CLIPXH and
-                    # CLIPSETH (both need the same helper); CLIPPUSH when the host asked
+                    # CLIPCAPS [PUSH] -> CLIPCAPS [IMAGE_PNG <b64(dir)> CF_HTML CF_HDROP] [CLIPPUSH]:
+                    # IMAGE_PNG when this agent can move clipboard images, CF_HTML when it serves
+                    # CLIPXH and CLIPSETH and CF_HDROP when it serves CLIPXF (all need the same
+                    # helper); CLIPPUSH when the host asked
                     # for PUSH and the watcher runs, so Read-Line writes CLIPCHANGED after each
                     # guest clipboard change. A bare CLIPCAPS (older host) turns notices off.
                     $script:BvClipPush = ($arg -ceq 'PUSH') -and (Initialize-ClipWatch)
                     $caps = 'CLIPCAPS'
                     if (Initialize-ClipImage) {
-                        $caps += ' IMAGE_PNG ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipDir)) + ' CF_HTML'
+                        $caps += ' IMAGE_PNG ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipDir)) + ' CF_HTML CF_HDROP'
                     }
                     if ($script:BvClipPush) { $caps += ' CLIPPUSH' }
                     Write-Line $h $caps 'CLIPCAPS'
