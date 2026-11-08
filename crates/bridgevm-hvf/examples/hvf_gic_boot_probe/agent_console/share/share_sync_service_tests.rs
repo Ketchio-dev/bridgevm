@@ -569,3 +569,32 @@ fn a_mac_folder_restored_during_a_run_of_deletes_keeps_its_guest_copies() {
     assert_eq!(rig.guest.files.len(), 4, "{:?}", rig.guest.files.iter().map(|f| &f.0).collect::<Vec<_>>());
     assert_eq!(rig.guest.content(&kept), Some(&b"windows edit"[..]), "a restored file's guest copy was deleted");
 }
+
+#[test]
+fn a_new_folder_beside_a_cached_puts_folder_replans_the_run() {
+    let mut rig = Rig::new("scan-once-ancestor");
+    rig.h.share.as_mut().unwrap().interval = Duration::from_secs(30);
+    std::fs::create_dir_all(rig.dir.join("x")).unwrap();
+    let names: Vec<String> = (0..6).map(|i| format!("x/f{i}")).collect();
+    for name in &names {
+        std::fs::write(rig.dir.join(name), b"ORIGINAL").unwrap();
+    }
+    rig.run(100);
+    rig.run(40);
+    let scans = rig.h.share.as_ref().unwrap().host_scans;
+    for name in &names {
+        std::fs::write(rig.dir.join(name), b"MAC EDIT").unwrap();
+    }
+    for _ in 0..40 {
+        rig.run(1);
+        if rig.h.share.as_ref().unwrap().host_scans > scans {
+            break;
+        }
+    }
+    rig.run(1);
+    // A folder made at the root, a level above the cached PUTs' folder, also replans.
+    let before = rig.h.share.as_ref().unwrap().host_scans;
+    std::fs::create_dir_all(rig.dir.join("y")).unwrap();
+    rig.run(1);
+    assert_eq!(rig.h.share.as_ref().unwrap().host_scans, before + 1);
+}

@@ -106,15 +106,19 @@ impl AgentConsoleHarness {
     }
 }
 
-/// True when the folder holding the action's file changed after `scanned` (or is gone).
+/// True when a folder on the action's path, the share root included, changed
+/// after `scanned` (or is gone). A Windows twin of the path needs a new name in
+/// one of them: `foo.` beside `foo`, or `X` beside `x` for `x/foo`.
 fn folder_changed_since(root: &Path, action: &SyncAction, scanned: std::time::SystemTime) -> bool {
     let (SyncAction::Get { name } | SyncAction::DeleteGuest { name }) = action else {
         return false;
     };
-    let folder = name.rsplit_once('/').map_or("", |(folder, _)| folder);
-    std::fs::metadata(root.join(folder))
-        .and_then(|meta| meta.modified())
-        .map_or(true, |modified| modified >= scanned)
+    let changed = |folder: &str| {
+        std::fs::metadata(root.join(folder))
+            .and_then(|meta| meta.modified())
+            .map_or(true, |modified| modified >= scanned)
+    };
+    changed("") || name.match_indices('/').any(|(end, _)| changed(&name[..end]))
 }
 
 #[cfg(test)]
