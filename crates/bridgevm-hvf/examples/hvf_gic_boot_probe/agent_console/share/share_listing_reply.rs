@@ -14,6 +14,7 @@ impl AgentConsoleHarness {
         } else if line.starts_with("ERR") {
             println!("BVAGENT SHARE ls-error {line}");
             self.complete_in_flight();
+            self.create_guest_share_root_once();
         } else if parse_out_line(line).is_some_and(|(exit, _)| exit == 255) {
             if !self.share_old_agent_warned {
                 println!("BVAGENT SHARE agent-too-old (needs v3-share2); share disabled");
@@ -23,6 +24,28 @@ impl AgentConsoleHarness {
             self.queue.retain(|req| !is_share_req(req));
             self.complete_in_flight();
         }
+    }
+
+    /// Only a PUT made the guest folder, so with an empty Mac folder Windows
+    /// never got one. Until a file has synced an empty listing deletes
+    /// nothing, so a failed listing may create the folder; never later, when
+    /// a folder the user deleted would come back empty and empty the Mac one.
+    fn create_guest_share_root_once(&mut self) {
+        let Some(share) = self.share.as_mut() else {
+            return;
+        };
+        if share.guest_root_create_sent || share.engine.has_synced() {
+            return;
+        }
+        share.guest_root_create_sent = true;
+        let mut path = String::new();
+        base64_encode_into(share.guest_dir.as_bytes(), &mut path);
+        let script = format!(
+            "[void][IO.Directory]::CreateDirectory([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{path}')))"
+        );
+        println!("BVAGENT SHARE create-guest-folder");
+        self.queue
+            .push_back(ServiceReq::Ctl(crate::agent_console::desktop_switch::powershell_command(&script)));
     }
 
     fn apply_share_listing(&mut self, b64: &str) {

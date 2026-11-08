@@ -20,6 +20,8 @@ pub(in crate::agent_console) struct ShareState {
     pub(in crate::agent_console) host_scan_work: Vec<HostFile>,
     root: root::ShareRoot,
     root_blocked: bool,
+    /// A missing guest folder is created at most once per session.
+    pub(in crate::agent_console) guest_root_create_sent: bool,
 }
 
 impl ShareState {
@@ -42,6 +44,7 @@ impl ShareState {
             host_scan_work: Vec::new(),
             root,
             root_blocked: false,
+            guest_root_create_sent: false,
         }
     }
 }
