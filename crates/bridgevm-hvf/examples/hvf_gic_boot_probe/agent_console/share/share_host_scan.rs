@@ -8,14 +8,15 @@ mod accept;
 #[path = "share_host_scan_walk.rs"]
 mod walk;
 
-/// False when the bound root is unavailable, replaced, or incompletely listed.
-pub(in crate::agent_console) fn scan_share_host_dir(share: &mut ShareState, now: Instant) -> bool {
+/// None when the bound root is unavailable, replaced, or incompletely listed;
+/// else whether the folder was walked (false: the kept walk was reused).
+pub(in crate::agent_console) fn scan_share_host_dir(share: &mut ShareState, now: Instant) -> Option<bool> {
     if !share.root_matches() {
-        return false;
+        return None;
     }
     // Nothing below the root changed since the last complete walk (share_host_watch.rs).
     if let Some(unseen) = share.reuse_host_walk(now) {
-        return accept::accept_scan(share, true, unseen);
+        return accept::accept_scan(share, true, unseen).then_some(false);
     }
     #[cfg(test)]
     {
@@ -40,5 +41,5 @@ pub(in crate::agent_console) fn scan_share_host_dir(share: &mut ShareState, now:
     if !accepted {
         share.forget_host_walk();
     }
-    accepted
+    accepted.then_some(true)
 }

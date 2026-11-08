@@ -91,3 +91,16 @@ fn a_twin_seen_before_fsevents_reports_it_still_holds_the_cached_put() {
     assert!(!rig.guest.puts[puts..].contains(&waiting), "{waiting}: {:?}", rig.guest.puts);
     assert_eq!(rig.guest.content(&waiting), Some(&b"ORIGINAL"[..]));
 }
+
+#[test]
+fn a_plan_from_a_kept_walk_is_revalidated_before_its_first_put() {
+    let (mut rig, _changes) = watched("watch-kept-plan");
+    // The first walk finds foo; its PUT waits for the first guest listing.
+    std::fs::write(rig.dir.join("foo"), b"MAC").unwrap();
+    rig.run(1);
+    assert!(rig.guest.puts.is_empty());
+    // foo. arrives before FSEvents reports it: the next plan comes from the kept walk.
+    std::fs::write(rig.dir.join("foo."), b"TWIN").unwrap();
+    rig.run(20);
+    assert!(rig.guest.puts.is_empty(), "a Windows twin was overwritten: {:?}", rig.guest.puts);
+}
