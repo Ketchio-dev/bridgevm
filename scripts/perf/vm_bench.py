@@ -267,6 +267,23 @@ class BridgeVM(Engine):
                 handle.flush()
                 self.sent_moves.append((x, y, time.clock_gettime_ns(time.CLOCK_UPTIME_RAW)))
 
+    def resize(self, request: str, deadline: float) -> dict:
+        """Ask for a guest display mode as the app does when its window changes size (`RESIZE WxH[@P]` in the
+        live input file, like verify-a8-window-resize.sh) and wait for the agent's BVDISPLAY line, and with @P its
+        BVDPI line, reporting it."""
+        mode, _, scale = request.partition("@")
+        with open(self.input_ctl, "a") as handle:
+            handle.write(f"RESIZE {request}\n")
+        seen = {}
+        for line in self._lines(deadline):
+            if "display" not in seen and line.startswith(f"BVDISPLAY target={mode} "):
+                seen["display"] = line.strip()
+            elif "display" in seen and scale and line.startswith("BVDPI "):
+                seen["dpi"] = line.strip()
+            if "display" in seen and ("dpi" in seen or not scale):
+                return seen
+        return seen
+
     def guest_off_seen(self) -> bool:
         """PSCI SYSTEM_OFF reached the VMM; the rest of shutdown_ms is host teardown."""
         try:
@@ -459,6 +476,19 @@ def consume_display(path: Path, seconds: float, hz: float = 120.0) -> dict:
     return out
 
 
+def resize_display(engine: Engine, record: dict, request: str) -> None:
+    """--resize: the requested guest mode (and scale) must apply before the display test; a mode or scale that did
+    not apply is an error in the record. Then 5 s for Windows' repaint at the new size."""
+    mode, _, scale = request.partition("@")
+    seen = engine.resize(request, time.monotonic() + 120)
+    record["resize"] = seen
+    if not re.search(rf" after={mode} .*result=0$", seen.get("display", "")):
+        record["errors"].append(f"resize {request}: mode not applied: {seen.get('display', 'no BVDISPLAY')}"[:300])
+    elif scale and not re.search(rf" after={scale} .*result=0$", seen.get("dpi", "")):
+        record["errors"].append(f"resize {request}: scale not applied: {seen.get('dpi', 'no BVDPI')}"[:300])
+    time.sleep(5)
+
+
 def display_test(engine: Engine, record: dict) -> None:
     host = {}
     consumer = None
@@ -585,8 +615,19 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                         save_display_frame(engine.display_fb, boot_dir / "desktop.pnm")
                 except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
                     record["errors"].append(f"desktop-mode: {type(error).__name__}: {error}")
+            # Before the display test, so the HDA tick (it runs only while a guest stream does) charges the
+            # platform-lock holds of the mode switch and the animation.
+            if args.audio:
+                try:
+                    code, text = engine.run(command_line(audio_loop(1800)), time.monotonic() + 60)
+                    if code != 0 or "BVAUDIO rv=0" not in text:
+                        record["errors"].append(f"audio: exit={code} {text.strip()[:200]}")
+                except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
+                    record["errors"].append(f"audio: {type(error).__name__}: {error}")
             if args.display:
                 try:
+                    if args.resize:
+                        resize_display(engine, record, args.resize)
                     display_test(engine, record)
                 except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
                     record["errors"].append(f"display: {type(error).__name__}: {error}")
@@ -601,13 +642,6 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                     record["shutdown_diag"] = text.strip()[-4000:]
                 except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
                     record["errors"].append(f"shutdown-diag: {type(error).__name__}: {error}")
-            if args.audio:
-                try:
-                    code, text = engine.run(command_line(audio_loop(1800)), time.monotonic() + 60)
-                    if code != 0 or "BVAUDIO rv=0" not in text:
-                        record["errors"].append(f"audio: exit={code} {text.strip()[:200]}")
-                except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
-                    record["errors"].append(f"audio: {type(error).__name__}: {error}")
             if args.stall_idle:
                 try:
                     _, text = engine.run(command_line(stall_idle(8000)), time.monotonic() + 120)
@@ -684,6 +718,9 @@ def shutdown_boot(engine: Engine, record: dict) -> None:
             record["virtio_gpu_cursor"] = dict(zip(("updates", "moves", "hides"), map(int, counts[-1])))
         if nat_stats(log):
             record["nat_stats"] = nat_stats(log)
+        holds = re.findall(rb"platform lock holds: ([^\n]*)", log)  # printed by the HDA tick as it stops
+        if holds:
+            record["platform_lock_holds"] = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", holds[-1].decode())}
 
 
 def other_vmms(text) -> str:
@@ -820,6 +857,9 @@ def main() -> None:
     r.add_argument("--no-xhci", action="store_true", help="BridgeVM without the USB controller (diagnostics)")
     r.add_argument("--qemu-arg", action="append", default=[], help="extra QEMU argument; {boot} expands to the boot dir")
     r.add_argument("--display", action="store_true", help="guest animation; BridgeVM also counts frames reaching the host")
+    r.add_argument("--resize", metavar="WxH[@P]",
+                   help="BridgeVM with --display: before the animation ask for this guest mode (and Windows scale P%%)"
+                        " as the app does, and wait until the agent applied it")
     r.add_argument("--stall", action="store_true", help="guest timer gaps while another thread flushes files")
     r.add_argument("--stall-idle", action="store_true", help="the same timer gaps with no other load")
     r.add_argument("--shutdown-diag", action="store_true", help="record the guest's own shutdown timing events")
@@ -840,6 +880,11 @@ def main() -> None:
     unknown = set((getattr(args, "only", None) or "").split(",")) - {n for n, _ in SUITE} - {"net-download", ""}
     if unknown:  # a typo would boot every VM of a campaign and measure nothing
         parser.error(f"--only: unknown tests {sorted(unknown)}; known: {[n for n, _ in SUITE] + ['net-download']}")
+    if getattr(args, "resize", None):
+        if not re.fullmatch(r"[1-9]\d*x[1-9]\d*(@[1-9]\d*)?", args.resize):
+            parser.error(f"--resize: expected WxH or WxH@P, got {args.resize!r}")
+        if args.engine != "bridgevm" or not args.display or args.no_xhci:
+            parser.error("--resize needs --engine bridgevm, --display and the live input file (no --no-xhci)")
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # kill the VM and drop media clones
     run(args) if args.mode == "run" else compare(args.a, args.b)
 
