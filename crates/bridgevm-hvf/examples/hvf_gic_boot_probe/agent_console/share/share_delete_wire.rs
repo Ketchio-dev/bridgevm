@@ -10,7 +10,7 @@ impl AgentConsoleHarness {
         if !share.root_matches() {
             return false;
         }
-        write_share_guest_path_into(&share.guest_dir, name, &mut self.share_guest_path_scratch);
+        write_share_guest_path_into(share, name, &mut self.share_guest_path_scratch);
         self.service_line_scratch.push_str("DEL ");
         base64_encode_into(
             self.share_guest_path_scratch.as_bytes(),

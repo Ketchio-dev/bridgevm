@@ -296,7 +296,7 @@ impl AgentConsoleHarness {
                 // A new resident GET cannot inherit an earlier request's fragments.
                 self.get_accum = None;
                 write_share_guest_path_into(
-                    &share.guest_dir,
+                    share,
                     name,
                     &mut self.share_guest_path_scratch,
                 );
@@ -319,7 +319,7 @@ impl AgentConsoleHarness {
                     return false;
                 };
                 write_share_guest_path_into(
-                    &share.guest_dir,
+                    share,
                     name,
                     &mut self.share_guest_path_scratch,
                 );

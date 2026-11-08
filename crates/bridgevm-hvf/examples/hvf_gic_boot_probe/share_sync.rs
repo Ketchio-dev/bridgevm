@@ -296,6 +296,9 @@ mod share_rel_path;
 #[cfg(test)]
 pub use share_rel_path::to_guest_rel;
 pub use share_rel_path::{append_guest_rel_into, from_guest_rel, normalize_rel};
+#[path = "share_guest_names.rs"]
+mod share_guest_names;
+pub use share_guest_names::{composed, guest_char, is_stand_in, key_from_guest};
 
 #[path = "share_hash.rs"]
 mod share_hash;
@@ -323,6 +326,7 @@ mod share_sync_host;
 mod share_win_alias;
 #[path = "share_win_names.rs"]
 mod share_win_names;
+pub use share_win_names::windows_key;
 #[path = "share_write_failures.rs"]
 mod share_write_failures;
 #[cfg(test)]
