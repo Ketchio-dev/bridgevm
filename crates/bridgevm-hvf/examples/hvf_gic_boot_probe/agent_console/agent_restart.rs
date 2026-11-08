@@ -30,8 +30,9 @@ impl AgentConsoleHarness {
             Some((put @ ServiceReq::SharePut { .. }, _)) => {
                 self.queue.push_front(rewind_share_put_for_retransmit(put));
             }
-            // Like a text push: re-learn the guest, resend unless a newer copy waits.
-            Some((push @ ServiceReq::ClipImagePush(_), _)) => {
+            // Like a text push: re-learn the guest, resend from the first PUTBEG
+            // unless a newer copy waits.
+            Some((push @ (ServiceReq::ClipImagePush(_) | ServiceReq::ClipFilesPush(_)), _)) => {
                 self.last_synced.rebaseline = true;
                 if !self.clip_push_pending() {
                     self.queue.push_front(rewind_clip_image_push(push));

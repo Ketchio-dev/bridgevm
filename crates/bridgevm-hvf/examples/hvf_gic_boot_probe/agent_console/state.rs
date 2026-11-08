@@ -282,6 +282,8 @@ pub(super) enum ServiceReq {
     ClipImagePull { digest: [u8; 32], bytes: usize },
     /// Fetch the next file of the guest file copy under way (clip_files.rs).
     ClipFilesPull,
+    /// Push a Mac file copy, with its names, to the guest clipboard.
+    ClipFilesPush(ClipFilesPush),
     /// A command injected via the control file (same semantics as a scripted
     /// command: raw verb sent verbatim, else RUN-wrapped).
     Ctl(String),
@@ -333,6 +335,7 @@ pub(super) enum InFlightSnapshot {
     ClipImagePush,
     ClipImagePull,
     ClipFilesPull,
+    ClipFilesPush,
     Ctl(String),
     Ping,
     ShareLs,
@@ -360,6 +363,7 @@ impl InFlightSnapshot {
             ServiceReq::ClipImagePush(_) => Self::ClipImagePush,
             ServiceReq::ClipImagePull { .. } => Self::ClipImagePull,
             ServiceReq::ClipFilesPull => Self::ClipFilesPull,
+            ServiceReq::ClipFilesPush(_) => Self::ClipFilesPush,
             ServiceReq::Ctl(command) => Self::Ctl(command.clone()),
             ServiceReq::Ping => Self::Ping,
             ServiceReq::ShareLs => Self::ShareLs,

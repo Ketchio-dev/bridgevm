@@ -82,11 +82,15 @@ impl ClipImagePush {
     }
 }
 
-/// Restart an interrupted image push from PUTBEG, which truncates the file.
+/// Restart an interrupted image or file push from PUTBEG, which truncates the file.
 pub(super) fn rewind_clip_image_push(mut req: ServiceReq) -> ServiceReq {
-    if let ServiceReq::ClipImagePush(push) = &mut req {
-        push.next_chunk = 0;
-        push.phase = ClipImagePhase::Beg;
+    match &mut req {
+        ServiceReq::ClipImagePush(push) => {
+            push.next_chunk = 0;
+            push.phase = ClipImagePhase::Beg;
+        }
+        ServiceReq::ClipFilesPush(push) => push.rewind(),
+        _ => {}
     }
     req
 }
@@ -292,6 +296,9 @@ impl AgentConsoleHarness {
         if set_files != self.clip_files_push {
             println!("BVAGENT CLIPSYNC mac files {} t={}", if set_files { "on" } else { "off" }, self.t_ms(now));
         }
+        if !set_files {
+            self.queue.retain(|req| !matches!(req, ServiceReq::ClipFilesPush(_)));
+        }
         self.clip_files_push = set_files;
         if let Some(pasteboard) = self.pasteboard.as_ref() {
             pasteboard.set_images(on);
@@ -318,18 +325,7 @@ impl AgentConsoleHarness {
     /// A Mac copy with an image: text first under the text rules, then the
     /// image with that text. Called only while images are on.
     pub(super) fn enqueue_host_image(&mut self, text: Option<String>, png: PngImage, now: Instant) {
-        let text = text.filter(|text| {
-            let fits = text.len() <= self.clip_max_bytes;
-            if !fits {
-                clip_line(format!(
-                    "BVAGENT CLIPSYNC skip bytes={} too-large copy={} t={}",
-                    text.len(),
-                    self.last_synced.host_copy,
-                    self.t_ms(now)
-                ));
-            }
-            fits
-        });
+        let text = self.host_text_that_fits(text, now);
         let normalized = text.as_deref().map(normalize_clip);
         let settled = !self.last_synced.rebaseline && !self.clip_push_pending();
         if settled && self.last_synced.holds(normalized.as_deref(), Some(png.digest), None) {
@@ -342,6 +338,22 @@ impl AgentConsoleHarness {
         }
         self.queue
             .push_back(ServiceReq::ClipImagePush(ClipImagePush::new(png, text)));
+    }
+
+    /// A Mac copy's text when it fits; an oversized one stays on the Mac, with one line.
+    pub(super) fn host_text_that_fits(&self, text: Option<String>, now: Instant) -> Option<String> {
+        text.filter(|text| {
+            let fits = text.len() <= self.clip_max_bytes;
+            if !fits {
+                clip_line(format!(
+                    "BVAGENT CLIPSYNC skip bytes={} too-large copy={} t={}",
+                    text.len(),
+                    self.last_synced.host_copy,
+                    self.t_ms(now)
+                ));
+            }
+            fits
+        })
     }
 
     /// A Mac image over a limit stays on the Mac, as an oversized text does.
@@ -358,12 +370,7 @@ impl AgentConsoleHarness {
     }
 
     pub(super) fn drop_queued_host_pushes(&mut self) {
-        self.queue.retain(|req| {
-            !matches!(
-                req,
-                ServiceReq::ClipPush(..) | ServiceReq::ClipImagePush(_)
-            )
-        });
+        self.queue.retain(|req| !is_host_push(req));
     }
 
     /// A CLIPX reply: the guest clipboard as one (text, image) pair, with

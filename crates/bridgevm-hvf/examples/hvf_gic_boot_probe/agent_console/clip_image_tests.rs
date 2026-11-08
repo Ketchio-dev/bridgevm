@@ -58,6 +58,8 @@ struct Mac {
     rich_writes: Vec<(String, String)>,
     /// Files writes, their top-level paths.
     file_writes: Vec<Vec<PathBuf>>,
+    /// The file URLs on the pasteboard (a Finder copy, or our files write).
+    urls: Vec<PathBuf>,
 }
 
 impl Mac {
@@ -66,6 +68,12 @@ impl Mac {
         self.text = text.map(str::to_owned);
         self.image = image;
         self.html = None;
+        self.urls.clear();
+    }
+    /// A Finder copy: the items' URLs and their names as text.
+    fn copy_files(&mut self, text: &str, urls: Vec<PathBuf>) {
+        self.copy(Some(text), None);
+        self.urls = urls;
     }
     fn copy_rich(&mut self, text: &str, html: &str) {
         self.copy(Some(text), None);
@@ -105,8 +113,12 @@ impl PasteboardBackend for Mac {
     }
     fn set_files(&mut self, paths: &[PathBuf]) -> bool {
         self.copy(None, None);
+        self.urls = paths.to_vec();
         self.file_writes.push(paths.to_vec());
         true
+    }
+    fn get_files(&mut self) -> Vec<PathBuf> {
+        self.urls.clone()
     }
 }
 
@@ -135,6 +147,10 @@ struct Guest {
     /// The file list the clipboard changes to once a GET was served, with a
     /// CLIPCHANGED notice after the reply.
     then_listing: Option<String>,
+    /// The agent announces CLIPSETFILES (with CF_HDROP) and serves it.
+    set_files_caps: bool,
+    /// Each CLIPSETFILES: the folder and its list.
+    set_files: Vec<(String, String)>,
 }
 
 impl Guest {
@@ -153,6 +169,8 @@ impl Guest {
             files_caps: false,
             listing: None,
             then_listing: None,
+            set_files_caps: false,
+            set_files: Vec::new(),
         }
     }
     /// CLIPX's image part, as bvagent.ps1 describes the clipboard image.
@@ -187,9 +205,10 @@ impl Guest {
         let (verb, arg) = line.split_once(' ').unwrap_or((line, ""));
         let reply = match verb {
             "CLIPCAPS" if self.images => {
-                let html = match (self.html_caps, self.files_caps) {
-                    (true, true) => " CF_HTML CF_HDROP",
-                    (true, false) => " CF_HTML",
+                let html = match (self.html_caps, self.files_caps, self.set_files_caps) {
+                    (true, true, true) => " CF_HTML CF_HDROP CLIPSETFILES",
+                    (true, true, false) => " CF_HTML CF_HDROP",
+                    (true, false, _) => " CF_HTML",
                     _ => "",
                 };
                 format!("CLIPCAPS IMAGE_PNG {}{html}", base64_encode(DIR.as_bytes()))
@@ -231,6 +250,33 @@ impl Guest {
                 self.html = Some(base64_decode(html).unwrap());
                 self.listing = None;
                 "OK CLIPSETH".to_owned()
+            }
+            // As bvagent.ps1: listed files must have been PUT, and the copied items become
+            // the file drop that CLIPXF lists (the folders' contents after them).
+            "CLIPSETFILES" if self.set_files_caps => {
+                let mut fields = arg.split(' ');
+                let (folder, list, text) = (fields.next().unwrap(), fields.next().unwrap(), fields.next().unwrap());
+                let list = Self::b64_text(list);
+                let root = format!("{DIR}\\files\\{folder}");
+                let mut entries = Vec::new();
+                for line in list.lines() {
+                    let (dir, rel) = line.split_once('|').unwrap();
+                    let path = format!("{root}\\{rel}");
+                    let bytes = match self.files.get(&path) {
+                        Some(bytes) => bytes.len(),
+                        None if dir == "1" => 0,
+                        None => return vec![format!("ERR CLIPSETFILES missing {rel}")],
+                    };
+                    let (top, mtime) = (u8::from(!rel.contains('\\')), if dir == "1" { 0 } else { 1 });
+                    entries.push(format!("{dir}|{top}|{bytes}|{mtime}|{path}\n"));
+                }
+                let tops = entries.iter().filter(|entry| entry[2..].starts_with('1')).count();
+                self.listing = Some(format!("{} {}", entries.len(), base64_encode(entries.concat().as_bytes())));
+                self.text = if text == "-" { String::new() } else { Self::b64_text(text).replace("\r\n", "\n") };
+                self.image = None;
+                self.html = None;
+                self.set_files.push((folder.to_owned(), list));
+                format!("OK CLIPSETFILES {tops}")
             }
             "PUTBEG" => {
                 let path = Self::b64_text(arg.split(' ').next().unwrap());
@@ -845,3 +891,6 @@ mod html;
 
 #[path = "clip_files_flow_tests.rs"]
 mod files;
+
+#[path = "clip_files_push_flow_tests.rs"]
+mod files_push;
