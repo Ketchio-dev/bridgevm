@@ -127,3 +127,18 @@ fn a_case_only_rename_in_windows_keeps_reaching_the_decomposed_file() {
     assert_eq!(rig.guest.files.len(), 1, "a composed twin was written");
     rig.assert_settled();
 }
+
+#[test]
+fn a_mac_name_below_a_decomposed_windows_folder_keeps_its_own_form() {
+    // A Bengali vowel sign pair NFC composes, outside the characters that start composing.
+    let bengali = "\u{995}\u{9C7}\u{9BE}.txt";
+    let mut rig = Rig::new("names-mixed");
+    rig.guest.write("cafe\u{301}\\old.txt", b"from windows");
+    rig.run(12);
+    assert_eq!(rig.host("café/old.txt").as_deref(), Some(&b"from windows"[..]));
+    std::fs::write(rig.dir.join("café").join(bengali), b"from the mac").unwrap();
+    rig.run(12);
+    assert_eq!(rig.guest.content(&format!("cafe\u{301}\\{bengali}")), Some(&b"from the mac"[..]), "{:?}", rig.guest.puts);
+    rig.assert_settled();
+    assert_eq!(rig.host(&format!("café/{bengali}")).as_deref(), Some(&b"from the mac"[..]), "the Mac file was deleted");
+}

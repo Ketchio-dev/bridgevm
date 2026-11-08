@@ -44,7 +44,8 @@ fn mac_char(c: char) -> char {
 
 /// Combining marks that NFC can fold into the letter before them: accents,
 /// Hangul jamo and kana sound marks. Any other name is kept as it is, which
-/// keeps `composed` idempotent and nearly free for most names.
+/// keeps `composed` idempotent and nearly free for most names. Both sides
+/// apply it per path component, so a name it leaves alone stays alone.
 fn may_compose(c: char) -> bool {
     matches!(c, '\u{0300}'..='\u{036F}' | '\u{0653}'..='\u{0655}' | '\u{1100}'..='\u{11FF}' | '\u{3099}'..='\u{309A}')
 }
@@ -57,13 +58,22 @@ pub fn composed(name: &str) -> Cow<'_, str> {
     nfc(name).map_or(Cow::Borrowed(name), Cow::Owned)
 }
 
-/// The share key for a listed guest name.
+/// The share key for a listed guest name (`/` separated). Each component is
+/// composed on its own, as the host scan composes it, so one component's
+/// marks never decide another's form.
 pub fn key_from_guest(name: &str) -> Cow<'_, str> {
     if !name.chars().any(|c| may_compose(c) || mac_char(c) != c) {
         return Cow::Borrowed(name);
     }
-    let mac: String = name.chars().map(mac_char).collect();
-    Cow::Owned(composed(&mac).into_owned())
+    let mut key = String::with_capacity(name.len());
+    for (i, part) in name.split('/').enumerate() {
+        if i > 0 {
+            key.push('/');
+        }
+        let mac: String = part.chars().map(mac_char).collect();
+        key.push_str(&composed(&mac));
+    }
+    Cow::Owned(key)
 }
 
 fn nfc(name: &str) -> Option<String> {

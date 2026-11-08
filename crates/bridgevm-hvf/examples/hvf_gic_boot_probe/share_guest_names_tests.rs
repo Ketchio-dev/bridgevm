@@ -20,3 +20,11 @@ fn characters_windows_refuses_travel_as_private_use_and_come_back() {
     assert_eq!(key_from_guest("\u{1112}\u{1161}\u{11AB}\u{F025}.txt"), "한?.txt");
     assert!(matches!(key_from_guest("한글.txt"), Cow::Borrowed(_)));
 }
+
+#[test]
+fn each_component_is_composed_on_its_own() {
+    // The folder's accent composes; the Bengali pair below it is left as the host scan leaves it.
+    let bengali = "\u{995}\u{9C7}\u{9BE}.txt";
+    assert_eq!(composed(bengali), bengali);
+    assert_eq!(key_from_guest(&format!("cafe\u{301}/{bengali}")), format!("café/{bengali}"));
+}
