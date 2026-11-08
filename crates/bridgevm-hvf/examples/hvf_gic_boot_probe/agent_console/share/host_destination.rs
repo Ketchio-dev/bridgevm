@@ -60,10 +60,21 @@ impl Destination {
     }
 
     pub(super) fn write(&self, bytes: &[u8]) -> io::Result<Option<u128>> {
-        self.write_with(|file| file.write_all(bytes))
+        self.write_at(bytes, None)
     }
 
+    /// `mtime`: the guest file's modification time, which the Mac copy keeps.
+    pub(super) fn write_at(&self, bytes: &[u8], mtime: Option<std::time::SystemTime>) -> io::Result<Option<u128>> {
+        self.write_with_at(|file| file.write_all(bytes), mtime)
+    }
+
+    #[cfg(test)]
     fn write_with(&self, write: impl FnOnce(&mut File) -> io::Result<()>) -> io::Result<Option<u128>> {
+        self.write_with_at(write, None)
+    }
+
+    fn write_with_at(&self, write: impl FnOnce(&mut File) -> io::Result<()>,
+                     mtime: Option<std::time::SystemTime>) -> io::Result<Option<u128>> {
         // Require write access to an existing destination before replacing it.
         let existing = self.existing(libc::O_WRONLY)?;
         let (temporary, mut file) = self.temporary()?;
@@ -71,6 +82,10 @@ impl Destination {
             write(&mut file)?;
             // The guest write policy's mode and quarantine mark, or no write.
             policy::seal(existing.as_ref(), &file, &self.parent)?;
+            // Only the date shown in Finder: the content is what must land.
+            if let Some(mtime) = mtime {
+                let _ = file.set_modified(mtime);
+            }
             file.sync_all()?;
             let mtime = file.metadata()?.modified().ok()
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|t| t.as_millis());

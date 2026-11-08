@@ -647,6 +647,7 @@ pub(super) mod tests {
             "queued.txt".into(),
             b"queued".to_vec(),
             share_sync::fnv1a64(b"queued"),
+            None,
         ));
         h.service_enqueue(Instant::now());
         assert_eq!(
@@ -762,10 +763,15 @@ pub(super) mod tests {
             "sub/x.txt".into(),
             b"small".to_vec(),
             share_sync::fnv1a64(b"small"),
+            Some(1_794_096_312_123),
         );
         let line = h.service_req_line(&req, Instant::now()).unwrap();
         assert!(line.starts_with("PUT "));
         assert!(!line.starts_with("PUTBEG "));
+        // The Mac file's time goes last, where agents before it ignore it.
+        let fields: Vec<&str> = line.trim_end().split(' ').collect();
+        assert_eq!(fields[2], base64_encode(b"small"));
+        assert_eq!(fields[3..], ["1794096312123"]);
         match req {
             ServiceReq::SharePut { phase, .. } => assert_eq!(phase, SharePutPhase::Legacy),
             _ => panic!("expected SharePut"),
@@ -778,10 +784,13 @@ pub(super) mod tests {
         h.share = Some(test_share_state("chunk-put"));
         let bytes = vec![7u8; SHARE_PUT_CHUNK_BYTES * 2 + 1];
         let hash = share_sync::fnv1a64(&bytes);
-        let req = share_put_req("big.bin".into(), bytes, hash);
+        let req = share_put_req("big.bin".into(), bytes, hash, Some(7));
         let t0 = Instant::now();
         let line = h.service_req_line(&req, t0).unwrap();
         assert!(line.starts_with("PUTBEG "));
+        let fields: Vec<&str> = line.trim_end().split(' ').collect();
+        let total = SHARE_PUT_CHUNK_BYTES * 2 + 1;
+        assert_eq!(fields[2..], [total.to_string().as_str(), "3", "7"]);
         h.in_flight = Some((req, t0));
 
         let t1 = t0 + Duration::from_millis(1);

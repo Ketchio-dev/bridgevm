@@ -2,6 +2,10 @@
 
 use super::*;
 
+#[cfg(test)]
+#[path = "share_get_mtime_tests.rs"]
+mod mtime_tests;
+
 impl AgentConsoleHarness {
     pub(in crate::agent_console) fn apply_finished_share_get(
         &mut self,
@@ -35,7 +39,10 @@ impl AgentConsoleHarness {
             GuestFileOutcome::Skip(reason) => return print_share_skip(name, reason),
             GuestFileOutcome::WriteHost(bytes) => bytes,
         };
-        match Destination::from_root(root, name, true).and_then(|d| d.write(&bytes)) {
+        let mtime = (share.engine.guest_mtime(name))
+            .and_then(share_sync::share_mtime::guest_mtime_ms)
+            .and_then(share_sync::share_mtime::system_time);
+        match Destination::from_root(root, name, true).and_then(|d| d.write_at(&bytes, mtime)) {
             Ok(mtime) => {
                 share.engine.on_host_write_succeeded(name, mtime);
                 println!(

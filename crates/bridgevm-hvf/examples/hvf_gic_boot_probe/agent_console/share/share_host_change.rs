@@ -35,7 +35,12 @@ impl AgentConsoleHarness {
                             .on_host_file(name.clone(), snapshot.bytes, snapshot.mtime_ms)
                     {
                         self.queue
-                            .push_back(share_put_req(name, push.bytes, push.hash));
+                            .push_back(share_put_req(
+                            name,
+                            push.bytes,
+                            push.hash,
+                            Some(snapshot.mtime_ms),
+                        ));
                         return true;
                     }
                 }

@@ -309,7 +309,11 @@ impl AgentConsoleHarness {
                 true
             }
             ServiceReq::SharePut {
-                name, bytes, phase, ..
+                name,
+                bytes,
+                phase,
+                mtime_ms,
+                ..
             } => {
                 let Some(share) = self.share.as_ref() else {
                     return false;
@@ -328,6 +332,10 @@ impl AgentConsoleHarness {
                         );
                         self.service_line_scratch.push(' ');
                         base64_encode_into(bytes, &mut self.service_line_scratch);
+                        // Agents before the modification time ignore the extra token.
+                        if let Some(mtime_ms) = mtime_ms {
+                            let _ = write!(&mut self.service_line_scratch, " {mtime_ms}");
+                        }
                         self.service_line_scratch.push('\n');
                         true
                     }
@@ -337,12 +345,16 @@ impl AgentConsoleHarness {
                             self.share_guest_path_scratch.as_bytes(),
                             &mut self.service_line_scratch,
                         );
-                        let _ = writeln!(
+                        let _ = write!(
                             &mut self.service_line_scratch,
                             " {} {}",
                             bytes.len(),
                             bytes.len().div_ceil(SHARE_PUT_CHUNK_BYTES)
                         );
+                        if let Some(mtime_ms) = mtime_ms {
+                            let _ = write!(&mut self.service_line_scratch, " {mtime_ms}");
+                        }
+                        self.service_line_scratch.push('\n');
                         true
                     }
                     SharePutPhase::Chunk | SharePutPhase::End => false,

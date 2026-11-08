@@ -6,6 +6,7 @@ pub(in crate::agent_console) fn share_put_req(
     name: String,
     bytes: Vec<u8>,
     hash: u64,
+    mtime_ms: Option<u128>,
 ) -> ServiceReq {
     let phase = if bytes.len() <= SHARE_PUT_CHUNK_BYTES {
         SharePutPhase::Legacy
@@ -16,6 +17,7 @@ pub(in crate::agent_console) fn share_put_req(
         name,
         bytes,
         hash,
+        mtime_ms,
         next_chunk: 0,
         phase,
     }

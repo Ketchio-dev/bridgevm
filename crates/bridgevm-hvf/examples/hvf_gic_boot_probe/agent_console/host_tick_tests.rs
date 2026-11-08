@@ -63,7 +63,7 @@ fn advance_sends_every_chunk_and_end_before_completing_the_put() {
         .collect();
     let path = base64_encode(b"C:\\share\\big.bin");
     h.queue
-        .push_back(share_put_req("big.bin".into(), source.clone(), 1));
+        .push_back(share_put_req("big.bin".into(), source.clone(), 1, None));
     assert_eq!(
         advance(&mut h, "", now),
         [format!("PUTBEG {path} {} 2\n", source.len())]

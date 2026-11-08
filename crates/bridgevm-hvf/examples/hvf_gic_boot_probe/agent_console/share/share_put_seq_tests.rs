@@ -11,7 +11,7 @@ fn chunk_zero_in_flight(t0: Instant) -> AgentConsoleHarness {
     let mut h = harness();
     h.state = AgentConsoleState::Service;
     let bytes = vec![7u8; SHARE_PUT_CHUNK_BYTES * 2 + 1];
-    h.in_flight = Some((share_put_req("big.bin".into(), bytes, 1), t0));
+    h.in_flight = Some((share_put_req("big.bin".into(), bytes, 1, None), t0));
     h.handle_service_reply("OK PUTBEG", None, None, t0);
     assert!(h.service_line_scratch.starts_with("PUTCHUNK 0 "));
     h

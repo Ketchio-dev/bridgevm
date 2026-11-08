@@ -280,6 +280,8 @@ pub(super) enum ServiceReq {
         name: String,
         bytes: Vec<u8>,
         hash: u64,
+        /// The Mac file's modification time, which the guest copy keeps.
+        mtime_ms: Option<u128>,
         next_chunk: usize,
         phase: SharePutPhase,
     },

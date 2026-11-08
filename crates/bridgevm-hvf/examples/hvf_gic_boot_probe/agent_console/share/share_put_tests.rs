@@ -9,6 +9,7 @@ fn chunked_req() -> ServiceReq {
         "big.bin".into(),
         vec![7u8; SHARE_PUT_CHUNK_BYTES + 1],
         1,
+        None,
     )
 }
 
@@ -64,7 +65,7 @@ fn acknowledgements_are_phase_specific() {
 
 #[test]
 fn legacy_errors_do_not_match_chunked_phases() {
-    let legacy = share_put_req("small.bin".into(), vec![1, 2, 3], 2);
+    let legacy = share_put_req("small.bin".into(), vec![1, 2, 3], 2, None);
     assert!(share_put_reply_matches_phase(&legacy, "ERR PUT access-denied"));
     assert!(!share_put_reply_matches_phase(&legacy, "ERR PUTBEG stale"));
     assert!(!share_put_reply_matches_phase(&legacy, "ERR PUTEND stale"));

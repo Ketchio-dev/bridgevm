@@ -262,6 +262,11 @@ impl ShareSync {
         !self.records.is_empty()
     }
 
+    /// The listed guest time of a file this engine knows.
+    pub fn guest_mtime(&self, name: &str) -> Option<&str> {
+        self.records.get(&normalize_rel(name))?.guest_mtime.as_deref()
+    }
+
     pub fn on_guest_deleted(&mut self, name: &str) {
         let name = normalize_rel(name);
         self.records.remove(&name);
@@ -285,6 +290,8 @@ pub use share_rel_path::{append_guest_rel_into, from_guest_rel, normalize_rel};
 
 #[path = "share_hash.rs"]
 mod share_hash;
+#[path = "share_mtime.rs"]
+pub mod share_mtime;
 pub use share_hash::fnv1a64;
 #[path = "share_host_unseen.rs"]
 mod share_host_unseen;
