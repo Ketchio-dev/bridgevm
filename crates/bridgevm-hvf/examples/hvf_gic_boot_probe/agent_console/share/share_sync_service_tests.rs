@@ -458,3 +458,143 @@ fn an_agent_that_takes_putdata_gets_large_files_in_mib_chunks_and_others_as_befo
         assert_eq!(rig.guest.data_chunks, if put_data { 3 } else { 0 });
     }
 }
+
+#[test]
+fn one_host_scan_serves_a_run_of_puts_and_a_mac_edit_still_lands() {
+    let mut rig = Rig::new("scan-once");
+    rig.h.share.as_mut().unwrap().interval = Duration::from_secs(30);
+    for i in 0..60 {
+        std::fs::write(rig.dir.join(format!("f{i:02}.txt")), format!("file {i}")).unwrap();
+    }
+    // The first scan waits for the first guest listing (share_adopt.rs); the next one, a poll
+    // interval later, sends all 60.
+    rig.run(100);
+    for i in 0..60 {
+        assert_eq!(rig.guest.content(&format!("f{i:02}.txt")), Some(format!("file {i}").as_bytes()));
+    }
+    let scans = rig.h.share.as_ref().unwrap().host_scans;
+    // One scan per poll interval (30 ticks here), not one per PUT (62 before).
+    assert!(scans <= 6, "{scans} host scans for 60 PUTs");
+    // An edit made during a run waits at most one poll interval.
+    std::fs::write(rig.dir.join("f00.txt"), b"edited").unwrap();
+    rig.run(40);
+    assert_eq!(rig.guest.content("f00.txt"), Some(&b"edited"[..]));
+}
+
+#[test]
+fn a_mac_file_restored_during_a_run_of_deletes_keeps_its_guest_copy() {
+    let mut rig = Rig::new("scan-once-restore");
+    rig.h.share.as_mut().unwrap().interval = Duration::from_secs(30);
+    for name in ["a.txt", "b.txt", "c.txt"] {
+        std::fs::write(rig.dir.join(name), name).unwrap();
+    }
+    rig.run(70);
+    assert_eq!(rig.guest.files.len(), 3);
+    let aside = rig.dir.with_extension("aside");
+    std::fs::create_dir_all(&aside).unwrap();
+    for name in ["a.txt", "b.txt", "c.txt"] {
+        std::fs::rename(rig.dir.join(name), aside.join(name)).unwrap();
+    }
+    // The next scan, a poll interval on, queues the three deletions; one goes out per step.
+    for _ in 0..40 {
+        rig.run(1);
+        if rig.guest.files.len() < 3 {
+            break;
+        }
+    }
+    assert_eq!(rig.guest.files.len(), 2);
+    // Undo for a file whose deletion has not gone out yet, which Windows edited meanwhile.
+    let kept = rig.guest.files.last().unwrap().0.clone();
+    rig.guest.write(&kept, b"windows edit");
+    std::fs::rename(aside.join(&kept), rig.dir.join(&kept)).unwrap();
+    rig.run(70);
+    assert_eq!(rig.guest.content(&kept), Some(&b"windows edit"[..]), "the restored file's guest copy was deleted");
+    assert_eq!(rig.host(&kept).as_deref(), Some(&b"windows edit"[..]));
+    let _ = std::fs::remove_dir_all(&aside);
+}
+
+#[test]
+fn a_windows_twin_made_during_a_run_holds_a_cached_put() {
+    let mut rig = Rig::new("scan-once-twin");
+    rig.h.share.as_mut().unwrap().interval = Duration::from_secs(30);
+    let names: Vec<String> = (0..6).map(|i| format!("f{i}")).collect();
+    for name in &names {
+        std::fs::write(rig.dir.join(name), b"ORIGINAL").unwrap();
+    }
+    rig.run(100);
+    assert_eq!(rig.guest.files.len(), 6);
+    rig.run(40); // past a poll interval: the next scan plans the run below
+    let puts = rig.guest.puts.len();
+    for name in &names {
+        std::fs::write(rig.dir.join(name), b"MAC EDIT").unwrap();
+    }
+    for _ in 0..40 {
+        rig.run(1);
+        if rig.guest.puts.len() > puts {
+            break;
+        }
+    }
+    // A name whose PUT is still waiting gets a twin that is the same Windows name: both are held.
+    let waiting = names.iter().find(|n| !rig.guest.puts[puts..].contains(n)).unwrap().clone();
+    std::fs::write(rig.dir.join(format!("{waiting}.")), b"TWIN").unwrap();
+    rig.run(40);
+    assert!(!rig.guest.puts[puts..].contains(&waiting), "{waiting}: {:?}", rig.guest.puts);
+    assert_eq!(rig.guest.content(&waiting), Some(&b"ORIGINAL"[..]));
+}
+
+#[test]
+fn a_mac_folder_restored_during_a_run_of_deletes_keeps_its_guest_copies() {
+    let mut rig = Rig::new("scan-once-folder");
+    rig.h.share.as_mut().unwrap().interval = Duration::from_secs(30);
+    std::fs::create_dir_all(rig.dir.join("x")).unwrap();
+    for name in ["a", "b", "c", "d"] {
+        std::fs::write(rig.dir.join("x").join(name), name).unwrap();
+    }
+    rig.run(70);
+    assert_eq!(rig.guest.files.len(), 4);
+    let aside = rig.dir.with_extension("aside-folder");
+    std::fs::rename(rig.dir.join("x"), &aside).unwrap();
+    for _ in 0..40 {
+        rig.run(1);
+        if rig.guest.files.len() < 4 {
+            break;
+        }
+    }
+    assert_eq!(rig.guest.files.len(), 3);
+    // Undo: the folder comes back, and Windows had edited a file still waiting for its deletion.
+    let kept = rig.guest.files.last().unwrap().0.clone();
+    rig.guest.write(&kept, b"windows edit");
+    std::fs::rename(&aside, rig.dir.join("x")).unwrap();
+    rig.run(70);
+    assert_eq!(rig.guest.files.len(), 4, "{:?}", rig.guest.files.iter().map(|f| &f.0).collect::<Vec<_>>());
+    assert_eq!(rig.guest.content(&kept), Some(&b"windows edit"[..]), "a restored file's guest copy was deleted");
+}
+
+#[test]
+fn a_new_folder_beside_a_cached_puts_folder_replans_the_run() {
+    let mut rig = Rig::new("scan-once-ancestor");
+    rig.h.share.as_mut().unwrap().interval = Duration::from_secs(30);
+    std::fs::create_dir_all(rig.dir.join("x")).unwrap();
+    let names: Vec<String> = (0..6).map(|i| format!("x/f{i}")).collect();
+    for name in &names {
+        std::fs::write(rig.dir.join(name), b"ORIGINAL").unwrap();
+    }
+    rig.run(100);
+    rig.run(40);
+    let scans = rig.h.share.as_ref().unwrap().host_scans;
+    for name in &names {
+        std::fs::write(rig.dir.join(name), b"MAC EDIT").unwrap();
+    }
+    for _ in 0..40 {
+        rig.run(1);
+        if rig.h.share.as_ref().unwrap().host_scans > scans {
+            break;
+        }
+    }
+    rig.run(1);
+    // A folder made at the root, a level above the cached PUTs' folder, also replans.
+    let before = rig.h.share.as_ref().unwrap().host_scans;
+    std::fs::create_dir_all(rig.dir.join("y")).unwrap();
+    rig.run(1);
+    assert_eq!(rig.h.share.as_ref().unwrap().host_scans, before + 1);
+}

@@ -1,6 +1,14 @@
-//! One host-scan step of the resident share service: record Mac files the guest
+//! One host step of the resident share service: record Mac files the guest
 //! already holds (share_adopt.rs), then queue at most one PUT or guest
 //! deletion, otherwise let the caller queue the guest listing.
+//!
+//! One scan serves a whole run of steps. A step sends one request, and a scan
+//! per step made a first sync of N files cost N scans of N files: with 2000
+//! files vCPU 0, whose thread runs this service, spent 80 % of its time in
+//! lstat and readdir. The scan is redone once its actions run out or are a
+//! poll interval old, so a Mac edit made meanwhile waits no longer than it
+//! does while the share is idle. A cached PUT reads the file afresh, and a
+//! cached guest deletion is dropped when the file is back on the Mac.
 
 use super::*;
 
@@ -8,27 +16,45 @@ use super::*;
 const SHARE_ADOPT_STEP_BYTES: usize = 64 << 20;
 
 impl AgentConsoleHarness {
-    pub(in crate::agent_console) fn enqueue_one_share_host_change(&mut self) -> bool {
-        self.enqueue_one_share_host_change_with(read_share_host_snapshot)
+    pub(in crate::agent_console) fn enqueue_one_share_host_change(&mut self, now: Instant) -> bool {
+        self.enqueue_one_share_host_change_with(now, read_share_host_snapshot)
     }
 
     pub(in crate::agent_console) fn enqueue_one_share_host_change_with(
         &mut self,
+        now: Instant,
         mut read: impl FnMut(&mut ShareState, &str) -> Result<HostSnapshot, ShareFileReadError>,
     ) -> bool {
         let Some(share) = self.share.as_mut() else {
             return false;
         };
-        // An unmounted or renamed root is not the user deleting every file.
-        if !scan_share_host_dir(share) {
-            return false;
+        let fresh = share
+            .host_actions_at
+            .is_some_and(|at| now.duration_since(at) < share.interval);
+        let scanned = share.host_actions.is_empty() || !fresh;
+        if scanned {
+            share.host_actions.clear();
+            share.host_actions_scanned = std::time::SystemTime::now();
+            // An unmounted or renamed root is not the user deleting every file.
+            if !scan_share_host_dir(share) {
+                return false;
+            }
+            let actions = share
+                .engine
+                .on_host_scan_normalized(share.host_scan_scratch.drain(..));
+            share.host_actions.extend(actions);
+            share.host_actions_at = Some(now);
         }
         // Files found already synced are read, not sent: a bounded amount per step.
         let mut adopted_bytes = 0usize;
-        for action in share
-            .engine
-            .on_host_scan_normalized(share.host_scan_scratch.drain(..))
-        {
+        while let Some(action) = share.host_actions.front() {
+            // A name added, removed or renamed in the action's folder since the scan (a Windows
+            // twin, an undo) can change what the scan decided: plan again from a new scan.
+            if !scanned && folder_changed_since(&share.host_dir, action, share.host_actions_scanned) {
+                share.host_actions.clear();
+                return self.enqueue_one_share_host_change_with(now, read);
+            }
+            let action = share.host_actions.pop_front().expect("front was Some");
             match action {
                 SyncAction::Get { name } => {
                     if share.engine.waits_for_first_listing(&name) {
@@ -61,6 +87,11 @@ impl AgentConsoleHarness {
                     }
                 }
                 SyncAction::DeleteGuest { name } => {
+                    // The scan may be older than this step: a file back on the Mac (an undo)
+                    // keeps its guest copy, and the next scan sees it again.
+                    if std::fs::symlink_metadata(share.host_dir.join(&name)).is_ok() {
+                        continue;
+                    }
                     self.queue.push_back(ServiceReq::ShareDel {
                         name,
                         direction: ShareDelDirection::HostToGuest,
@@ -73,6 +104,21 @@ impl AgentConsoleHarness {
         }
         false
     }
+}
+
+/// True when a folder on the action's path, the share root included, changed
+/// after `scanned` (or is gone). A Windows twin of the path needs a new name in
+/// one of them: `foo.` beside `foo`, or `X` beside `x` for `x/foo`.
+fn folder_changed_since(root: &Path, action: &SyncAction, scanned: std::time::SystemTime) -> bool {
+    let (SyncAction::Get { name } | SyncAction::DeleteGuest { name }) = action else {
+        return false;
+    };
+    let changed = |folder: &str| {
+        std::fs::metadata(root.join(folder))
+            .and_then(|meta| meta.modified())
+            .map_or(true, |modified| modified >= scanned)
+    };
+    changed("") || name.match_indices('/').any(|(end, _)| changed(&name[..end]))
 }
 
 #[cfg(test)]

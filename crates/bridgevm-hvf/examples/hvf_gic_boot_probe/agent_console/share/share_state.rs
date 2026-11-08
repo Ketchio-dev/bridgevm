@@ -27,6 +27,13 @@ pub(in crate::agent_console) struct ShareState {
     /// Windows key of a share key -> the name the last listing showed for it,
     /// where that is not the key's own guest form (share_guest_listing_names.rs).
     pub(in crate::agent_console) guest_names: std::collections::HashMap<String, String>,
+    /// What the last host scan left to do, and when it ran (share_host_change.rs).
+    pub(in crate::agent_console) host_actions: VecDeque<SyncAction>,
+    pub(in crate::agent_console) host_actions_at: Option<Instant>,
+    /// Wall clock at that scan's start, against folder modification times.
+    pub(in crate::agent_console) host_actions_scanned: std::time::SystemTime,
+    #[cfg(test)]
+    pub(in crate::agent_console) host_scans: usize,
 }
 
 impl ShareState {
@@ -51,6 +58,11 @@ impl ShareState {
             root_blocked: false,
             guest_root_create_sent: false,
             guest_names: std::collections::HashMap::new(),
+            host_actions: VecDeque::new(),
+            host_actions_at: None,
+            host_actions_scanned: std::time::UNIX_EPOCH,
+            #[cfg(test)]
+            host_scans: 0,
         }
     }
 }

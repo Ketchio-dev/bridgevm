@@ -34,7 +34,7 @@ fn a_restored_root_or_delivered_delete_alone_keeps_the_notice_until_a_scan() {
     let mut rig = Rig::synced("root-notice-queued-delete", "a.txt", b"A");
     assert!(ShareState::take_root_notices().is_empty());
     std::fs::remove_file(rig.dir.join("a.txt")).unwrap();
-    assert!(rig.h.enqueue_one_share_host_change());
+    assert!(rig.h.enqueue_one_share_host_change(rig.now));
     let holder = OwnedHolder::new("notice-queued-delete");
     let original = holder.replace_root(&rig);
     for _ in 0..3 {

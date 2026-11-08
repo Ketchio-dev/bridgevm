@@ -83,7 +83,7 @@ impl AgentConsoleHarness {
                 .last_poll
                 .is_none_or(|t| now.duration_since(t) >= share.interval)
         });
-        if share_due && !self.share_pending() && !self.enqueue_one_share_host_change() {
+        if share_due && !self.share_pending() && !self.enqueue_one_share_host_change(now) {
             self.queue.push_back(ServiceReq::ShareLs);
         }
 

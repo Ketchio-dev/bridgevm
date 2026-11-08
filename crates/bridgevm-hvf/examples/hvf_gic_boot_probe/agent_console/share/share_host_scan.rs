@@ -13,6 +13,10 @@ pub(in crate::agent_console) fn scan_share_host_dir(share: &mut ShareState) -> b
     if !share.root_matches() {
         return false;
     }
+    #[cfg(test)]
+    {
+        share.host_scans += 1;
+    }
     share.host_scan_work.clear();
     let mut unseen = Vec::new();
     let listed = walk::scan_share_host_dir_inner(

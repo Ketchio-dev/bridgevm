@@ -76,7 +76,7 @@ fn a_replacement_empty_root_keeps_guest_data_and_recovers_on_the_original() {
 fn a_queued_guest_delete_waits_for_the_original_root_to_return() {
     let mut rig = Rig::synced("root-queued-delete", "a.txt", b"A");
     std::fs::remove_file(rig.dir.join("a.txt")).unwrap();
-    assert!(rig.h.enqueue_one_share_host_change());
+    assert!(rig.h.enqueue_one_share_host_change(rig.now));
     assert!(matches!(rig.h.queue.front(), Some(ServiceReq::ShareDel {
         name, direction: ShareDelDirection::HostToGuest
     }) if name == "a.txt"));

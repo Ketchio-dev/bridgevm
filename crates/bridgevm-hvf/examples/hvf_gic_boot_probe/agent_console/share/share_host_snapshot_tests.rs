@@ -45,7 +45,7 @@ fn a_replacement_after_read_cannot_be_mistaken_for_the_synced_host_snapshot() {
         .set_modified(new_stamp)
         .unwrap();
     let mut reads = 0;
-    rig.h.enqueue_one_share_host_change_with(|share, name| {
+    rig.h.enqueue_one_share_host_change_with(rig.now, |share, name| {
         read_share_host_snapshot_with(share, name, |file, bytes, limit| {
             reads += 1;
             file.take(limit).read_to_end(bytes)?;
