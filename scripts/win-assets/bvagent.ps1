@@ -302,11 +302,23 @@ $script:BvPutTotal = [int64]0
 $script:BvPutWritten = [int64]0
 $script:BvPutSeq = 0
 
+function Get-IoPath([string]$path, [bool]$always = $false) {
+    # Win32 refuses a path of 260 characters or more (a folder from 248) unless it starts with
+    # \\?\, which .NET 4.6.2 and later accept. \\?\ also skips Win32's name rules (trailing dots
+    # and spaces trimmed), which the host's name rules expect, so the path gets them from
+    # GetFullPath first. Shorter paths stay as they are.
+    if ((-not $always -and $path.Length -lt 248) -or $path.StartsWith('\\?\')) { return $path }
+    $full = [System.IO.Path]::GetFullPath($path)
+    if ($full -match '^[A-Za-z]:\\') { return '\\?\' + $full }
+    if ($full.StartsWith('\\')) { return '\\?\UNC\' + $full.Substring(2) }
+    return $path
+}
+
 function Set-PutTime([string]$path, [string]$ms) {
     # The Mac file's modification time (ms since 1970) when the host sends one; only the
     # date Explorer shows, so a failure leaves the written file as it is.
     if (-not $ms) { return }
-    try { [System.IO.File]::SetLastWriteTimeUtc($path, [DateTimeOffset]::FromUnixTimeMilliseconds([long]$ms).UtcDateTime) } catch { }
+    try { [System.IO.File]::SetLastWriteTimeUtc((Get-IoPath $path), [DateTimeOffset]::FromUnixTimeMilliseconds([long]$ms).UtcDateTime) } catch { }
 }
 
 function Close-PutStream {
@@ -1424,10 +1436,13 @@ while ($true) {
                             $line = $script:BvLsrLine
                         } else {
                             $sb = New-Object System.Text.StringBuilder
-                            foreach ($e in Get-ChildItem -LiteralPath $rootFull -Recurse -Force -ErrorAction Stop) {
-                                $full = [System.IO.Path]::GetFullPath($e.FullName)
-                                if (-not $full.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
-                                $rel = $full.Substring($rootFull.Length)
+                            # Listed below \\?\ so a path past 260 characters is listed, not an error
+                            # that fails the whole listing.
+                            $listRoot = Get-IoPath $rootFull $true
+                            foreach ($e in Get-ChildItem -LiteralPath $listRoot -Recurse -Force -ErrorAction Stop) {
+                                $full = $e.FullName
+                                if (-not $full.StartsWith($listRoot, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+                                $rel = $full.Substring($listRoot.Length)
                                 if ([string]::IsNullOrEmpty($rel)) { continue }
                                 $sz = if ($e.PSIsContainer) { 0 } else { $e.Length }
                                 [void]$sb.AppendLine(('{0}|{1}|{2}|{3}' -f $rel, $sz, [int]$e.PSIsContainer, $e.LastWriteTimeUtc.ToString('o')))
@@ -1449,7 +1464,7 @@ while ($true) {
                     # Chunks are 24 KiB raw so each base64 line stays reasonable.
                     try {
                         $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg))
-                        $bytes = [System.IO.File]::ReadAllBytes($path)
+                        $bytes = [System.IO.File]::ReadAllBytes((Get-IoPath $path))
                         $total = $bytes.Length
                         $chunk = 24576
                         $n = [int][System.Math]::Ceiling($total / [double]$chunk)
@@ -1473,9 +1488,10 @@ while ($true) {
                         $parts = $arg.Split(' ')
                         $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))
                         $data = if ($parts.Length -ge 2 -and $parts[1]) { [System.Convert]::FromBase64String($parts[1]) } else { New-Object byte[] 0 }
-                        $dir = [System.IO.Path]::GetDirectoryName($path)
-                        if ($dir -and -not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
-                        [System.IO.File]::WriteAllBytes($path, $data)
+                        $io = Get-IoPath $path
+                        $dir = [System.IO.Path]::GetDirectoryName($io)
+                        if ($dir) { [void][System.IO.Directory]::CreateDirectory($dir) }
+                        [System.IO.File]::WriteAllBytes($io, $data)
                         if ($parts.Length -ge 3) { Set-PutTime $path $parts[2] }
                         Write-Line $h ('PUTOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($path)) + ' ' + $data.Length) 'PUTOK'
                     } catch { Write-Line $h ('ERR PUT ' + $_.Exception.Message) 'ERR' }
@@ -1489,9 +1505,10 @@ while ($true) {
                         $parts = $arg.Split(' ')
                         $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))
                         $total = [int64]$parts[1]
-                        $dir = [System.IO.Path]::GetDirectoryName($path)
-                        if ($dir -and -not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
-                        $script:BvPutStream = [System.IO.File]::Open($path, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+                        $io = Get-IoPath $path
+                        $dir = [System.IO.Path]::GetDirectoryName($io)
+                        if ($dir) { [void][System.IO.Directory]::CreateDirectory($dir) }
+                        $script:BvPutStream = [System.IO.File]::Open($io, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
                         $script:BvPutPath = $path
                         $script:BvPutTotal = $total
                         $script:BvPutWritten = [int64]0
@@ -1648,7 +1665,7 @@ while ($true) {
                     # removed recursively by the shared-folder protocol.
                     $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
-                        $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg))
+                        $path = Get-IoPath ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg)))
                         if (Test-Path -LiteralPath $path -PathType Container) {
                             Write-Line $h 'ERR DEL is-dir' 'ERR'
                         } elseif (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
