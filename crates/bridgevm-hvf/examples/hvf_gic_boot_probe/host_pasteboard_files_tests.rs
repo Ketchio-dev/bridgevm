@@ -122,6 +122,28 @@ fn names_that_meet_in_windows_inside_a_folder_get_numbered() {
 }
 
 #[test]
+fn names_go_as_win32_keeps_them() {
+    let dir = scratch("win32");
+    let folder = dir.join("folder");
+    std::fs::create_dir(&folder).unwrap();
+    // Win32 drops trailing dots and spaces, and a device name is no file there.
+    for (name, bytes) in [("report.txt", "a"), ("report.txt.", "b"), ("report.txt ", "c"), ("...", "d"), ("nul.txt", "e"), ("Com1", "f"), ("com10", "g")] {
+        std::fs::write(folder.join(name), bytes).unwrap();
+    }
+    assert_eq!(
+        entries(host_files(&[folder])),
+        [
+            ("folder".to_owned(), None),
+            ("folder\\com10".to_owned(), Some(b"g".to_vec())),
+            ("folder\\report.txt".to_owned(), Some(b"a".to_vec())),
+            ("folder\\report (2).txt".to_owned(), Some(b"c".to_vec())),
+            ("folder\\report (3).txt".to_owned(), Some(b"b".to_vec())),
+        ]
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn a_copy_over_a_limit_is_counted_not_read() {
     let dir = scratch("limits");
     let many = dir.join("many");

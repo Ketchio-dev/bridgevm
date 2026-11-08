@@ -1506,7 +1506,8 @@ while ($true) {
                     # copy. The list has one line per entry, <isDir>|<path in that folder>; a path
                     # that would leave it is refused, listed folders are created (an empty one too)
                     # and listed files must be there. The n top-level items go on the clipboard
-                    # with the text in one write; the folders of older copies are deleted.
+                    # with the text in one write. Older copies' folders stay for a paste that may
+                    # still read them: the 3 put on the clipboard last; older ones are deleted.
                     try {
                         if (-not (Initialize-ClipImage)) { throw 'clipboard files unavailable' }
                         $parts = $arg.Split(' ')
@@ -1529,9 +1530,10 @@ while ($true) {
                         if ($parts.Length -ge 3 -and $parts[2] -ne '-') { $txt = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[2])) }
                         [BridgeVM.BvClipImage]::SetFiles($tops.ToArray(), $txt)
                         try {
-                            foreach ($old in [System.IO.Directory]::GetDirectories($base)) {
-                                if ([System.IO.Path]::GetFileName($old) -ne $parts[0]) { [System.IO.Directory]::Delete((Get-IoPath $old $true), $true) }
-                            }
+                            [System.IO.Directory]::SetLastWriteTimeUtc((Get-IoPath $root $true), [DateTime]::UtcNow)
+                            $olds = @([System.IO.Directory]::GetDirectories($base) | Where-Object { [System.IO.Path]::GetFileName($_) -ne $parts[0] } |
+                                Sort-Object { [System.IO.Directory]::GetLastWriteTimeUtc($_) } -Descending)
+                            for ($i = 3; $i -lt $olds.Count; $i++) { [System.IO.Directory]::Delete((Get-IoPath $olds[$i] $true), $true) }
                         } catch { Log ('CLIPSETFILES cleanup failed: ' + $_.Exception.Message) }
                         $seq = $K::GetClipboardSequenceNumber()
                         $script:BvClipCache = $txt

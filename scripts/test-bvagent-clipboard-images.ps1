@@ -265,8 +265,14 @@ try {
     # back. The agent builds its paths with '\', which macOS keeps in names: there the folder
     # tree is flat, so the nested entries and the older copy's folder are checked on Windows only.
     $win = [IO.Path]::DirectorySeparatorChar -eq '\'
-    $older = $script:BvClipDir + '\files\6'
-    [void][IO.Directory]::CreateDirectory($older)
+    # Older copies' folders, each last put on the clipboard some minutes ago: the newest 3 stay
+    # for a paste that may still read them.
+    $older = @{ '6' = 1; '5' = 20; '4' = 2; '3' = 3; '2' = 4 }
+    foreach ($copy in $older.Keys) {
+        $dir = $script:BvClipDir + '\files\' + $copy
+        [void][IO.Directory]::CreateDirectory($dir)
+        if ($win) { [IO.Directory]::SetLastWriteTimeUtc($dir, [DateTime]::UtcNow.AddMinutes(-$older[$copy])) }
+    }
     $root = $script:BvClipDir + '\files\7'
     $name = [string][char]0xBCF4 + [char]0xACE0 + [char]0xC11C + '.txt'
     [void][IO.Directory]::CreateDirectory($root + '\a folder')
@@ -292,7 +298,8 @@ try {
     $list = "0|1|3|$(& $mtime "$root\$name")|$root\$name`n1|1|0|0|$root\a folder`n"
     if ($win) {
         $list += "1|0|0|0|$root\a folder\empty`n0|0|2|$(& $mtime "$root\a folder\inner.txt")|$root\a folder\inner.txt`n"
-        Assert (-not [IO.Directory]::Exists($older)) "an older copy's folder is deleted"
+        $kept = @('6', '5', '4', '3', '2' | Where-Object { [IO.Directory]::Exists($script:BvClipDir + '\files\' + $_) })
+        Assert (($kept -join ',') -ceq '6,4,3') "the newest 3 older copies' folders stay: $kept"
     }
     $count = $list.Split("`n").Length - 1
     $want = 'CLIPXF 0 0 0 - - 0 - {0} {1} {2}' -f $count, [Convert]::ToBase64String($u8.GetBytes($list)), (B64 $names)

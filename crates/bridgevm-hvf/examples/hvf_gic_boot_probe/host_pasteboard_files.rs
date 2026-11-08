@@ -54,9 +54,19 @@ pub fn composed_path(path: &Path) -> PathBuf {
 
 /// A Mac name as Windows can store and show it; None when Windows cannot. A
 /// `\` (legal in a Mac name) would be a separator in the guest path, so such
-/// a name is left out like a control character.
+/// a name is left out like a control character. Win32 drops a name's trailing
+/// dots and spaces (two names would meet in one file), so they go here, and a
+/// device name (`nul.txt`) is no file there.
 fn windows_name(name: &str) -> Option<String> {
-    (!name.chars().any(|c| c.is_control() || c == '\\')).then(|| composed(name).chars().map(guest_char).collect())
+    if name.chars().any(|c| c.is_control() || c == '\\') {
+        return None;
+    }
+    let name: String = composed(name).chars().map(guest_char).collect();
+    let name = name.trim_end_matches(['.', ' ']);
+    let stem = name.split('.').next().unwrap_or_default().trim_end_matches(' ').to_ascii_uppercase();
+    let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || matches!(stem.as_bytes(), [b'C', b'O', b'M', b'1'..=b'9'] | [b'L', b'P', b'T', b'1'..=b'9']);
+    (!name.is_empty() && !device).then(|| name.to_owned())
 }
 
 /// `name`, or as Explorer numbers a second item of the name, `name (2)`
