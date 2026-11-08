@@ -201,6 +201,16 @@ try {
         & $verbs['DEL']
         Assert ($script:sent -ceq 'OK DEL') "long DEL reply: $script:sent"
         Assert (-not (List).Entries.ContainsKey(($deep.Replace('\', '/') + '/long.bin'))) 'long path deleted'
+        # Win32's name rules still apply: a trailing dot is trimmed, as for a short path.
+        $dotted = Join-Path $root ($deep + '\dotted.')
+        $arg = (& $b64 $dotted) + ' ' + [Convert]::ToBase64String([byte[]](1))
+        & $verbs['PUT']
+        Assert ($script:sent -clike 'PUTOK *') "long dotted PUT reply: $script:sent"
+        Assert ((List).Entries[($deep.Replace('\', '/') + '/dotted')] -eq '1') 'a long dotted name is stored trimmed'
+        $arg = & $b64 $dotted
+        & $verbs['DEL']
+        Assert ($script:sent -ceq 'OK DEL') "long dotted DEL reply: $script:sent"
+        Assert (-not (List).Entries.ContainsKey(($deep.Replace('\', '/') + '/dotted'))) 'the trimmed file is deleted by its dotted name'
         $cases++
     }
 

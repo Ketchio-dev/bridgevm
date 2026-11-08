@@ -304,11 +304,13 @@ $script:BvPutSeq = 0
 
 function Get-IoPath([string]$path, [bool]$always = $false) {
     # Win32 refuses a path of 260 characters or more (a folder from 248) unless it starts with
-    # \\?\, which .NET 4.6.2 and later accept. Shorter paths stay as they are: \\?\ also stops
-    # Win32 from trimming trailing dots and spaces, which the host's name rules expect.
+    # \\?\, which .NET 4.6.2 and later accept. \\?\ also skips Win32's name rules (trailing dots
+    # and spaces trimmed), which the host's name rules expect, so the path gets them from
+    # GetFullPath first. Shorter paths stay as they are.
     if ((-not $always -and $path.Length -lt 248) -or $path.StartsWith('\\?\')) { return $path }
-    if ($path -match '^[A-Za-z]:\\') { return '\\?\' + $path }
-    if ($path.StartsWith('\\')) { return '\\?\UNC\' + $path.Substring(2) }
+    $full = [System.IO.Path]::GetFullPath($path)
+    if ($full -match '^[A-Za-z]:\\') { return '\\?\' + $full }
+    if ($full.StartsWith('\\')) { return '\\?\UNC\' + $full.Substring(2) }
     return $path
 }
 
