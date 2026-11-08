@@ -100,6 +100,28 @@ fn copied_items_of_one_name_get_numbered_as_explorer_does() {
 }
 
 #[test]
+fn names_that_meet_in_windows_inside_a_folder_get_numbered() {
+    let dir = scratch("same-child");
+    let folder = dir.join("folder");
+    std::fs::create_dir(&folder).unwrap();
+    // `:` goes as U+F022, which a Mac name may already hold.
+    std::fs::write(folder.join("a:b.txt"), b"colon").unwrap();
+    std::fs::write(folder.join("a\u{F022}b.txt"), b"stand-in").unwrap();
+    std::fs::create_dir(folder.join("sub:1")).unwrap();
+    std::fs::write(folder.join("sub:1").join("x"), b"x1").unwrap();
+    std::fs::create_dir(folder.join("sub\u{F022}1")).unwrap();
+    std::fs::write(folder.join("sub\u{F022}1").join("x"), b"x2").unwrap();
+    let entries = entries(host_files(&[folder]));
+    let rels: Vec<&str> = entries.iter().map(|(rel, _)| rel.as_str()).collect();
+    let unique: std::collections::HashSet<String> = rels.iter().map(|rel| rel.to_lowercase()).collect();
+    assert_eq!(unique.len(), rels.len(), "two entries share a Windows path: {rels:?}");
+    assert_eq!(entries.len(), 7);
+    let bytes: std::collections::HashSet<&[u8]> = entries.iter().filter_map(|(_, data)| data.as_deref()).collect();
+    assert_eq!(bytes.len(), 4, "a file's bytes were lost");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn a_copy_over_a_limit_is_counted_not_read() {
     let dir = scratch("limits");
     let many = dir.join("many");

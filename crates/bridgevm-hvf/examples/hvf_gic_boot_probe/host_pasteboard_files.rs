@@ -80,7 +80,8 @@ fn unique_name(name: String, taken: &mut std::collections::HashSet<String>) -> S
 pub fn host_files(tops: &[PathBuf]) -> Option<HostFiles> {
     let mut found: Vec<(String, PathBuf, bool)> = Vec::new();
     let mut bytes = 0u64;
-    // Copied items of one name (from two folders, as in search results) stay apart.
+    // Copied items of one name (from two folders, as in search results) stay apart, as do
+    // the names in each folder below.
     let mut taken = std::collections::HashSet::new();
     let mut pending: Vec<(PathBuf, String)> = tops
         .iter()
@@ -101,6 +102,10 @@ pub fn host_files(tops: &[PathBuf]) -> Option<HostFiles> {
                 .filter_map(|name| Some((windows_name(&name)?, name)))
                 .collect();
             names.sort();
+            // Two Mac names may meet in Windows (`a:b` and a literal stand-in, or a case pair).
+            let mut taken = std::collections::HashSet::new();
+            let names: Vec<(String, String)> =
+                names.into_iter().map(|(win, name)| (unique_name(win, &mut taken), name)).collect();
             pending.extend(names.iter().rev().map(|(win, name)| (path.join(name), format!("{rel}\\{win}"))));
         } else if meta.is_file() {
             bytes = bytes.saturating_add(meta.len());
