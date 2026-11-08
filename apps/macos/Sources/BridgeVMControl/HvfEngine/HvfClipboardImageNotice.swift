@@ -1,17 +1,20 @@
 import Combine
 import SwiftUI
 
-/// One plain notice when a copied image stayed where it was copied because it is over the
-/// clipboard image limits. It follows the probe's exact skip and refusal lines
-/// (agent_console/clip_image.rs) and is keyed to the copy they number (` copy=N`): that
+/// One plain notice when a copied image, or a file copy, stayed where it was copied because it
+/// is over the clipboard limits. It follows the probe's exact skip and refusal lines
+/// (agent_console/clip_image.rs, clip_files.rs) and is keyed to the copy they number (` copy=N`): that
 /// copy's own text sync keeps it; a line about a later copy, a guest reset or a session
 /// reset clears it.
 @MainActor
 final class HvfClipboardImageNotice: ObservableObject {
-    enum Kind: Equatable { case macImageTooLarge, windowsImageTooLarge }
+    enum Kind: Equatable { case macImageTooLarge, windowsImageTooLarge, macFilesTooLarge, windowsFilesTooLarge }
 
     static let macTooLargePrefix = "BVAGENT CLIPSYNC skip image too-large "
     static let windowsTooLargePrefix = "BVAGENT CLIPSYNC refused guest-image too-large "
+    /// A Finder copy over the file limits goes to Windows as its names only.
+    static let macFilesTooLargePrefix = "BVAGENT CLIPSYNC skip host-files too-large "
+    static let windowsFilesTooLargePrefix = "BVAGENT CLIPSYNC refused guest-files too-large "
 
     @Published private(set) var shown: Kind?
     /// The copy the notice is about; nil from a probe without copy numbers.
@@ -29,6 +32,10 @@ final class HvfClipboardImageNotice: ObservableObject {
                 show(.macImageTooLarge, copy: Self.copy(in: line))
             } else if line.hasPrefix(Self.windowsTooLargePrefix) {
                 show(.windowsImageTooLarge, copy: Self.copy(in: line))
+            } else if line.hasPrefix(Self.macFilesTooLargePrefix) {
+                show(.macFilesTooLarge, copy: Self.copy(in: line))
+            } else if line.hasPrefix(Self.windowsFilesTooLargePrefix) {
+                show(.windowsFilesTooLarge, copy: Self.copy(in: line))
             } else if line.hasPrefix("BVAGENT CLIPSYNC "), let lineCopy = Self.copy(in: line) {
                 clear(unlessAbout: lineCopy) // a later copy refused for another reason
             }
@@ -49,11 +56,16 @@ final class HvfClipboardImageNotice: ObservableObject {
         reset()
     }
 
-    var displayed: (text: String, help: String)? {
+    var displayed: (text: String, help: String, symbol: String)? {
         let help = "클립보드 이미지는 32MB, 16384×16384 픽셀까지 주고받습니다. 복사한 쪽의 클립보드는 그대로입니다."
+        let filesHelp = "파일 복사는 한 번에 256개, 모두 합쳐 64MB까지 주고받습니다. 복사한 쪽의 클립보드는 그대로입니다."
         switch shown {
-        case .macImageTooLarge: return ("Mac에서 복사한 이미지가 너무 커서 Windows로 보내지 않았습니다.", help)
-        case .windowsImageTooLarge: return ("Windows에서 복사한 이미지가 너무 커서 Mac으로 가져오지 않았습니다.", help)
+        case .macImageTooLarge: return ("Mac에서 복사한 이미지가 너무 커서 Windows로 보내지 않았습니다.", help, "photo")
+        case .windowsImageTooLarge: return ("Windows에서 복사한 이미지가 너무 커서 Mac으로 가져오지 않았습니다.", help, "photo")
+        case .macFilesTooLarge:
+            return ("Mac에서 복사한 파일이 너무 많거나 커서 Windows에는 파일 이름만 보냈습니다.", filesHelp, "doc.on.doc")
+        case .windowsFilesTooLarge:
+            return ("Windows에서 복사한 파일이 너무 많거나 커서 Mac으로 가져오지 않았습니다.", filesHelp, "doc.on.doc")
         case nil: return nil
         }
     }
@@ -75,7 +87,7 @@ struct HvfClipboardImageNoticeView: View {
     var body: some View {
         if let shown = notice.displayed {
             VStack(alignment: .leading, spacing: 4) {
-                Label(shown.text, systemImage: "photo")
+                Label(shown.text, systemImage: shown.symbol)
                     .font(.callout).foregroundStyle(.orange)
                 Text(shown.help)
                     .font(.caption).foregroundStyle(.secondary)
