@@ -48,9 +48,11 @@ impl AgentConsoleHarness {
         let mut adopted_bytes = 0usize;
         while let Some(action) = share.host_actions.front() {
             // A name added, removed or renamed in the action's folder since the scan (a Windows
-            // twin, an undo) can change what the scan decided: plan again from a new scan.
+            // twin, an undo) can change what the scan decided: plan again from a new scan, a real
+            // walk even if FSEvents has not reported the change yet (share_host_watch.rs).
             if !scanned && folder_changed_since(&share.host_dir, action, share.host_actions_scanned) {
                 share.host_actions.clear();
+                share.forget_host_walk();
                 return self.enqueue_one_share_host_change_with(now, read);
             }
             let action = share.host_actions.pop_front().expect("front was Some");

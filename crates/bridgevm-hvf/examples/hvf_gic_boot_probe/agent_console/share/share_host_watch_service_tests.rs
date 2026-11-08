@@ -62,3 +62,32 @@ fn the_services_own_write_and_delete_on_the_mac_bring_a_new_walk() {
     rig.run(10);
     assert_eq!(walks(&rig), walked + 2);
 }
+
+#[test]
+fn a_twin_seen_before_fsevents_reports_it_still_holds_the_cached_put() {
+    let (mut rig, changes) = watched("watch-twin");
+    rig.h.share.as_mut().unwrap().interval = Duration::from_secs(30);
+    let names: Vec<String> = (0..6).map(|i| format!("f{i}")).collect();
+    for name in &names {
+        std::fs::write(rig.dir.join(name), b"ORIGINAL").unwrap();
+    }
+    rig.run(100);
+    assert_eq!(rig.guest.files.len(), 6);
+    let puts = rig.guest.puts.len();
+    for name in &names {
+        std::fs::write(rig.dir.join(name), b"MAC EDIT").unwrap();
+    }
+    changes.fetch_add(1, Ordering::Release);
+    for _ in 0..40 {
+        rig.run(1);
+        if rig.guest.puts.len() > puts {
+            break;
+        }
+    }
+    // The twin's folder change is seen before FSEvents delivers it: the counter stays put.
+    let waiting = names.iter().find(|n| !rig.guest.puts[puts..].contains(n)).unwrap().clone();
+    std::fs::write(rig.dir.join(format!("{waiting}.")), b"TWIN").unwrap();
+    rig.run(20);
+    assert!(!rig.guest.puts[puts..].contains(&waiting), "{waiting}: {:?}", rig.guest.puts);
+    assert_eq!(rig.guest.content(&waiting), Some(&b"ORIGINAL"[..]));
+}
