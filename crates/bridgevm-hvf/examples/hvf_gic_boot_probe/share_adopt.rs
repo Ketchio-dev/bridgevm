@@ -6,6 +6,13 @@
 //! synced instead of sent. Any other file is sent as before, and the Mac keeps
 //! winning for a file both sides hold: the waiting name is held from that
 //! listing like any changed host file.
+//!
+//! Only that first listing is adopted from. The service lists again only once
+//! no host change is left to send, so the first sync pass ends before a second
+//! listing replaces it. Later, a listed copy may since have been deleted (a
+//! Mac file deleted and restored with its time), and adopting it would make
+//! the next listing delete the restored Mac file. A confirmed deletion also
+//! drops the name's listed entry, for the same case within the first pass.
 
 use super::*;
 
@@ -25,7 +32,7 @@ impl ShareSync {
     /// when the last listing holds a guest copy of that size and time.
     pub fn adopt_listed_copy(&mut self, name: &str, bytes: &[u8], mtime_ms: u128) -> bool {
         let size = bytes.len() as u64;
-        if self.records.contains_key(name) {
+        if self.listings != 1 || self.records.contains_key(name) {
             return false;
         }
         let Some(entry) = self.guest_file_entries_scratch.get(name) else {

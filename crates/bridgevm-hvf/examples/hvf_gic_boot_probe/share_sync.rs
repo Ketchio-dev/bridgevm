@@ -83,6 +83,8 @@ pub struct ShareSync {
     refused_writes: share_write_failures::RefusedWrites,
     /// This session has had a guest listing reply, even a refused one (share_adopt.rs).
     listed: bool,
+    /// Guest listings applied this session; only the first one is adopted from.
+    listings: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -205,6 +207,7 @@ impl ShareSync {
             actions.push(SyncAction::DeleteHost { name: name.clone() });
         }
         self.listed = true;
+        self.listings = self.listings.saturating_add(1);
 
         actions
     }
@@ -272,6 +275,8 @@ impl ShareSync {
 
     pub fn on_guest_deleted(&mut self, name: &str) {
         let name = normalize_rel(name);
+        // The listed copy is gone: it must never be adopted (share_adopt.rs).
+        self.guest_file_entries_scratch.remove(&name);
         self.records.remove(&name);
         self.pending_host_changed.remove(&name);
         self.pending_guest_mtime.remove(&name);
@@ -279,6 +284,7 @@ impl ShareSync {
 
     pub fn on_host_deleted(&mut self, name: &str) {
         let name = normalize_rel(name);
+        self.guest_file_entries_scratch.remove(&name);
         self.records.remove(&name);
         self.pending_host_changed.remove(&name);
         self.pending_guest_mtime.remove(&name);
