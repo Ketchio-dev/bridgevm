@@ -257,6 +257,11 @@ impl ShareSync {
         }
     }
 
+    /// No file has synced either way yet, so an empty guest listing deletes nothing.
+    pub fn has_synced(&self) -> bool {
+        !self.records.is_empty()
+    }
+
     pub fn on_guest_deleted(&mut self, name: &str) {
         let name = normalize_rel(name);
         self.records.remove(&name);
