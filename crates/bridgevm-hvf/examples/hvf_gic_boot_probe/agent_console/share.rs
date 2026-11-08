@@ -85,7 +85,8 @@ pub(super) fn host_rel_path(root: &Path, path: &Path) -> Option<String> {
         if !out.is_empty() {
             out.push('/');
         }
-        out.push_str(&component);
+        // Keys are composed; the file is found under either form (share_guest_names.rs).
+        out.push_str(&share_sync::composed(&component));
     }
     Some(out)
 }
@@ -114,10 +115,13 @@ mod share_listing_reply_tests;
 #[path = "share/share_listing_report.rs"]
 mod share_listing_report;
 
-pub(super) fn write_share_guest_path_into(dir: &str, name: &str, out: &mut String) {
+/// The guest path for a share key: the name the guest listed for it when that
+/// is not the key's own guest form (a decomposed Windows name), else that form.
+pub(super) fn write_share_guest_path_into(share: &ShareState, name: &str, out: &mut String) {
+    let name = share.guest_names.get(name).map_or(name, String::as_str);
     out.clear();
-    out.reserve(dir.len() + 1 + name.len());
-    out.push_str(dir);
+    out.reserve(share.guest_dir.len() + 1 + name.len());
+    out.push_str(&share.guest_dir);
     out.push('\\');
     share_sync::append_guest_rel_into(name, out);
 }

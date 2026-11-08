@@ -11,8 +11,15 @@ pub fn to_guest_rel(name: &str) -> String {
     normalize_rel_with_sep(name, '\\')
 }
 
+/// The guest form of a share key: backslashes, and the private-use stand-ins
+/// for characters Windows refuses (share_guest_names.rs).
 pub fn append_guest_rel_into(name: &str, out: &mut String) {
-    append_rel_with_sep_into(name, '\\', out);
+    if name.contains(['"', '*', ':', '<', '>', '?', '|']) {
+        let guest: String = name.chars().map(super::guest_char).collect();
+        append_rel_with_sep_into(&guest, '\\', out);
+    } else {
+        append_rel_with_sep_into(name, '\\', out);
+    }
 }
 
 /// Convert a guest listing path to a share key. A `..` component would let a

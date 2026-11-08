@@ -37,7 +37,7 @@ impl AgentConsoleHarness {
         let Some(share) = self.share.as_ref() else {
             return false;
         };
-        write_share_guest_path_into(&share.guest_dir, name, &mut self.share_guest_path_scratch);
+        write_share_guest_path_into(share, name, &mut self.share_guest_path_scratch);
         if !self
             .get_accum
             .as_ref()

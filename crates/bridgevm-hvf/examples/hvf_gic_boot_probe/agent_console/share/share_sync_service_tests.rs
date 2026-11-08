@@ -11,6 +11,8 @@ mod alias_tests;
 mod get_cap_tests;
 #[path = "share_get_reply_identity_tests.rs"]
 mod get_reply_identity;
+#[path = "share_guest_names_service_tests.rs"]
+mod guest_names_tests;
 #[path = "share_guest_destination_identity_tests.rs"]
 mod guest_destination_identity;
 #[path = "share_root_identity_tests.rs"]
@@ -34,7 +36,9 @@ const ROOT: &str = "C:\\share";
 
 /// Win32/NTFS as `bvagent.ps1` sees it under PowerShell 5.1: lookups ignore
 /// case but keep the stored spelling, the last component loses trailing dots
-/// and spaces, `<>:"|?*` are rejected, and a write truncates before writing.
+/// and spaces, `<>:"|?*` and a bare device name such as `nul` are rejected,
+/// code points are kept as given (no normalization), and a write truncates
+/// before writing.
 #[derive(Default)]
 struct NtfsGuest {
     files: Vec<(String, Vec<u8>, u64)>,
@@ -126,6 +130,9 @@ impl NtfsGuest {
                 self.puts.push(rel.clone());
                 if rel.contains(['<', '>', ':', '"', '|', '?', '*']) {
                     return vec!["ERR PUT Illegal characters in path.".into()];
+                }
+                if ["CON", "PRN", "AUX", "NUL"].contains(&rel.rsplit('\\').next().unwrap().to_uppercase().as_str()) {
+                    return vec!["ERR PUT FileStream was asked to open a device that was not a file.".into()];
                 }
                 let bytes = base64_decode(data).unwrap();
                 self.write(&rel, &bytes[..self.landed(&rel, &bytes)]);
@@ -358,14 +365,14 @@ fn lone_trailing_dot_name_is_never_deleted_or_duplicated() {
 #[test]
 fn rejected_put_waits_for_a_host_change_and_guest_listing_continues() {
     let mut rig = Rig::new("rejected");
-    std::fs::write(rig.dir.join("Q?.txt"), b"q1").unwrap();
+    std::fs::write(rig.dir.join("nul"), b"q1").unwrap();
     rig.run(12);
     rig.guest.write("new.txt", b"from guest");
     rig.run(12);
     assert_eq!(rig.host("new.txt").as_deref(), Some(&b"from guest"[..]));
-    let rejected = |rig: &Rig| rig.guest.puts.iter().filter(|p| p.as_str() == "Q?.txt").count();
+    let rejected = |rig: &Rig| rig.guest.puts.iter().filter(|p| p.as_str() == "nul").count();
     assert_eq!(rejected(&rig), 1, "{:?}", rig.guest.puts);
-    std::fs::write(rig.dir.join("Q?.txt"), b"q2 changed").unwrap();
+    std::fs::write(rig.dir.join("nul"), b"q2 changed").unwrap();
     rig.run(12);
     assert_eq!(rejected(&rig), 2, "{:?}", rig.guest.puts);
     rig.assert_settled();

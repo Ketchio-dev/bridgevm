@@ -96,6 +96,7 @@ impl AgentConsoleHarness {
         for line in refused_name_lines(&mut share.engine, &refused) {
             println!("{line}");
         }
+        share.key_guest_listing();
         let actions = share
             .engine
             .on_guest_listing_normalized(share.guest_ls_scratch.drain(..));
