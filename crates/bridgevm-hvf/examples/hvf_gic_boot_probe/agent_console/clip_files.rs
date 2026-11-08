@@ -20,6 +20,9 @@ pub(super) const CLIP_CAPS_FILES_MARKER: &str = "CF_HDROP";
 pub(super) const CLIP_FILES_MAX_ENTRIES: usize = 256;
 /// Most file bytes one copy brings over.
 pub(super) const CLIP_FILES_MAX_BYTES: u64 = 64 << 20;
+/// Published copies kept for a paste still reading them: at most this many, each this long.
+pub(super) const CLIP_FILES_KEEP_COPIES: usize = 4;
+const CLIP_FILES_KEEP_FOR: Duration = Duration::from_secs(10 * 60);
 
 /// One line of a CLIPXF list: `<isDir>|<top>|<bytes>|<full Windows path>`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -148,12 +151,13 @@ pub(super) struct ClipFilesStage {
     /// `<temp>/bridgevm-clip-files/<pid>`; each copy stages in `<copy>/` below.
     pub(super) dir: PathBuf,
     pub(super) pull: Option<FilesPull>,
-    pub(super) published: Option<PathBuf>,
+    /// The copies published, oldest first: Finder may still be pasting from an earlier one.
+    pub(super) published: VecDeque<(PathBuf, Instant)>,
 }
 
 impl ClipFilesStage {
     pub(super) fn new(dir: PathBuf) -> Self {
-        Self { dir, pull: None, published: None }
+        Self { dir, pull: None, published: VecDeque::new() }
     }
 
     /// This process's staging directory, after deleting those of processes
@@ -322,9 +326,16 @@ impl AgentConsoleHarness {
         if let Some(pasteboard) = self.pasteboard.as_ref() {
             pasteboard.set_files(tops);
         }
-        let earlier = self.clip_files_stage.published.replace(pull.staging.clone());
-        if let Some(earlier) = earlier.filter(|earlier| *earlier != pull.staging) {
-            let _ = std::fs::remove_dir_all(earlier);
+        // Earlier copies stay a while: a paste into Finder (onto a slow disk, say) may still be
+        // reading one. Kept: the newest few, each for some minutes.
+        let published = &mut self.clip_files_stage.published;
+        published.retain(|(dir, _)| *dir != pull.staging);
+        published.push_back((pull.staging.clone(), now));
+        while published.len() > CLIP_FILES_KEEP_COPIES
+            || published.front().is_some_and(|(_, at)| now.duration_since(*at) >= CLIP_FILES_KEEP_FOR && published.len() > 1)
+        {
+            let (dir, _) = published.pop_front().expect("front was Some");
+            let _ = std::fs::remove_dir_all(dir);
         }
         clip_line(format!(
             "BVAGENT CLIPSYNC guest->host files={} bytes={} copy={} t={}",

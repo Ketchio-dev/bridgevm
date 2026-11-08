@@ -115,6 +115,26 @@ fn two_copied_folders_of_one_name_stay_two_items() {
 }
 
 #[test]
+fn earlier_published_copies_stay_for_a_paste_still_reading_them() {
+    let mut rig = rig();
+    let file = r"C:\s\a.txt";
+    rig.guest.files.insert(file.into(), b"abc".to_vec());
+    let mut published = Vec::new();
+    for mtime in 1..=CLIP_FILES_KEEP_COPIES as u64 + 1 {
+        rig.guest.listing = Some(listing_at(&[(0, 1, 3, file)], mtime));
+        rig.settle();
+        published.push(rig.mac.file_writes.last().expect("published")[0].clone());
+    }
+    // Finder may still be pasting from an earlier copy: only the oldest past the bound is gone.
+    assert!(!published[0].exists(), "the oldest copy is kept past the bound");
+    for path in &published[1..] {
+        assert_eq!(std::fs::read(path).unwrap(), b"abc", "{path:?} was deleted while it may be pasting");
+    }
+    take_lines(&mut Vec::new());
+    std::fs::remove_dir_all(&rig.h.clip_files_stage.dir).unwrap();
+}
+
+#[test]
 fn a_same_size_edit_copied_again_is_fetched_again() {
     let mut rig = rig();
     let file = r"C:\s\a.txt";
