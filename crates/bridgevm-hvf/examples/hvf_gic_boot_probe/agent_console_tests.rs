@@ -32,6 +32,7 @@ pub(super) mod tests {
             pasteboard: None,
             clip_images: None,
             clip_push: false,
+            put_data: false,
             clip_html: false,
             ctl_path: None,
             ctl_offset: 0,
@@ -753,6 +754,18 @@ pub(super) mod tests {
         scan_share_host_dir(&mut share);
         assert!(share.host_scan_scratch.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn putdata_follows_each_ready_so_a_rolled_back_agent_gets_putchunk_again() {
+        let mut h = harness();
+        let now = Instant::now();
+        h.note_agent_ready("BRIDGEVM v3-share2 putdata agent=0123456789abcdef", now);
+        assert!(h.put_data);
+        assert_eq!(h.share_put_chunk_bytes(), SHARE_PUT_DATA_CHUNK_BYTES);
+        h.note_agent_ready("BRIDGEVM v3-share2 agent=0123456789abcdef", now);
+        assert!(!h.put_data);
+        assert_eq!(h.share_put_chunk_bytes(), SHARE_PUT_CHUNK_BYTES);
     }
 
     #[test]

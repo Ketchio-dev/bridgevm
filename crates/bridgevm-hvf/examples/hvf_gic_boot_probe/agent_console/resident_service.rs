@@ -340,6 +340,7 @@ impl AgentConsoleHarness {
                         true
                     }
                     SharePutPhase::Beg => {
+                        let chunk = self.share_put_chunk_bytes();
                         self.service_line_scratch.push_str("PUTBEG ");
                         base64_encode_into(
                             self.share_guest_path_scratch.as_bytes(),
@@ -349,7 +350,7 @@ impl AgentConsoleHarness {
                             &mut self.service_line_scratch,
                             " {} {}",
                             bytes.len(),
-                            bytes.len().div_ceil(SHARE_PUT_CHUNK_BYTES)
+                            bytes.len().div_ceil(chunk)
                         );
                         if let Some(mtime_ms) = mtime_ms {
                             let _ = write!(&mut self.service_line_scratch, " {mtime_ms}");

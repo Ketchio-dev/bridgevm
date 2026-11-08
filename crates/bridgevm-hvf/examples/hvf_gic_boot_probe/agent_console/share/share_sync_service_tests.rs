@@ -42,6 +42,8 @@ struct NtfsGuest {
     /// Names whose writes fail part-way (disk full) after truncation.
     failing: HashSet<String>,
     stream: Option<(String, usize, usize)>,
+    /// PUTDATA chunks received.
+    data_chunks: usize,
 }
 
 impl NtfsGuest {
@@ -121,6 +123,14 @@ impl NtfsGuest {
                 self.write(&rel, &[]);
                 self.stream = Some((rel, parts.next().unwrap().parse().unwrap(), 0));
                 vec!["OK PUTBEG".into()]
+            }
+            // As the agent: the header names the payload length, the payload is its own line.
+            "PUTDATA" => {
+                let (header, payload) = arg.split_once('\n').unwrap();
+                let (seq, chars) = header.split_once(' ').unwrap();
+                assert_eq!(payload.len(), chars.parse::<usize>().unwrap(), "PUTDATA {header}");
+                self.data_chunks += 1;
+                self.reply(&format!("PUTCHUNK {seq} {payload}"))
             }
             "PUTCHUNK" => {
                 let (seq, data) = arg.split_once(' ').unwrap();
@@ -370,4 +380,20 @@ fn vanished_share_root_never_deletes_guest_copies() {
     rig.run(12);
     assert_eq!(rig.guest.content("a.txt"), Some(&b"A"[..]));
     assert_eq!(rig.host("a.txt").as_deref(), Some(&b"A"[..]));
+}
+
+#[test]
+fn an_agent_that_takes_putdata_gets_large_files_in_mib_chunks_and_others_as_before() {
+    for put_data in [false, true] {
+        let mut rig = Rig::new(if put_data { "putdata" } else { "putchunk" });
+        rig.h.share = Some(ShareState::new(ShareSync::new(4096), rig.dir.clone(), ROOT.into(), Duration::from_millis(500)));
+        rig.h.put_data = put_data;
+        let bytes: Vec<u8> = (0..2 * SHARE_PUT_DATA_CHUNK_BYTES + 7).map(|i| (i * 31 % 251) as u8).collect();
+        std::fs::write(rig.dir.join("big.bin"), &bytes).unwrap();
+        std::fs::write(rig.dir.join("small.txt"), b"one line").unwrap();
+        rig.run(8);
+        assert_eq!(rig.guest.content("big.bin"), Some(&bytes[..]));
+        assert_eq!(rig.guest.content("small.txt"), Some(&b"one line"[..]));
+        assert_eq!(rig.guest.data_chunks, if put_data { 3 } else { 0 });
+    }
 }

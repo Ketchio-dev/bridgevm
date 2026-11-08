@@ -102,6 +102,7 @@ impl AgentConsoleHarness {
             pasteboard,
             clip_images: None,
             clip_push: false,
+            put_data: false,
             clip_html: false,
             ctl_path,
             ctl_offset,

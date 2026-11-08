@@ -1,0 +1,15 @@
+name: Guest agent put data contract
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/win-assets/bvagent.ps1', 'tests/integration/agent-put-data-contract.ps1', '.github/workflows/agent-put-data-contract.yml']}}
+permissions:
+  contents: read
+jobs:
+  put-data:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: PUTBEG, PUTDATA and PUTEND on a pipe (Windows PowerShell 5.1)
+        shell: powershell
+        run: tests/integration/agent-put-data-contract.ps1
+      - name: The same, C# 5 checked (PowerShell 7)
+        shell: pwsh
+        run: tests/integration/agent-put-data-contract.ps1
