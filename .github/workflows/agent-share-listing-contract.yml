@@ -1,0 +1,15 @@
+name: Guest agent share listing contract
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/win-assets/bvagent.ps1', 'tests/integration/agent-share-listing-contract.ps1', '.github/workflows/agent-share-listing-contract.yml']}}
+permissions:
+  contents: read
+jobs:
+  share-listing:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: LSR and its change watcher (Windows PowerShell 5.1)
+        shell: powershell
+        run: tests/integration/agent-share-listing-contract.ps1
+      - name: The same, C# 5 checked (PowerShell 7)
+        shell: pwsh
+        run: tests/integration/agent-share-listing-contract.ps1

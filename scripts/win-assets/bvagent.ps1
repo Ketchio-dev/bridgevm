@@ -657,6 +657,75 @@ function Initialize-ClipWatch {
 }
 # <<< clipboard watch
 
+# >>> share watch
+# The host lists the shared folder (LSR) every 2 s. Enumerating it costs the guest about
+# 35 us per file each time (8,000 files: 111 ms/s while idle), so LSR re-sends its last
+# listing while this watcher saw no change below the root. Events arrive on pool threads;
+# the counter is read before each listing, so a change made during one is listed next time.
+$script:BvShareWatchSource = @'
+using System;
+using System.IO;
+using System.Threading;
+namespace BridgeVM {
+    public static class BvShareWatch {
+        static FileSystemWatcher watcher;
+        static string root;
+        static long changes;
+        static volatile bool broken;
+
+        // Watch `path` (anew when it is another root or the watcher failed); false when it cannot.
+        public static bool Watch(string path) {
+            if (watcher != null && !broken && string.Equals(root, path, StringComparison.OrdinalIgnoreCase)) { return true; }
+            if (watcher != null) { watcher.Dispose(); watcher = null; }
+            Interlocked.Increment(ref changes);
+            if (!Directory.Exists(path)) { return false; }
+            FileSystemWatcher next = new FileSystemWatcher(path);
+            next.IncludeSubdirectories = true;
+            next.NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size | NotifyFilters.LastWrite;
+            next.InternalBufferSize = 65536;
+            next.Changed += Bump;
+            next.Created += Bump;
+            next.Deleted += Bump;
+            next.Renamed += delegate (object sender, RenamedEventArgs e) { Interlocked.Increment(ref changes); };
+            // A lost event (buffer overflow) or a dead watcher (root removed): list again, rewatch.
+            next.Error += delegate (object sender, ErrorEventArgs e) { broken = true; Interlocked.Increment(ref changes); };
+            broken = false;
+            next.EnableRaisingEvents = true;
+            watcher = next;
+            root = path;
+            return true;
+        }
+
+        static void Bump(object sender, FileSystemEventArgs e) { Interlocked.Increment(ref changes); }
+
+        public static long Changes { get { return Interlocked.Read(ref changes); } }
+    }
+}
+'@
+$script:BvShareWatchReady = $null
+$script:BvLsrRoot = $null
+$script:BvLsrChanges = [long]-1
+$script:BvLsrAt = [long]0
+$script:BvLsrLine = $null
+# Re-sent for at most this long without a fresh enumeration, whatever the watcher says.
+$script:BvLsrMaxAgeTicks = [long](60 * [System.Diagnostics.Stopwatch]::Frequency)
+
+# True while `root` is watched; the listing is then cached between changes.
+function Watch-ShareRoot([string]$root) {
+    if ($null -eq $script:BvShareWatchReady) {
+        try {
+            Add-Type -TypeDefinition $script:BvShareWatchSource -ErrorAction Stop
+            $script:BvShareWatchReady = $true
+        } catch {
+            Log ('SHARE WATCH unavailable: ' + $_.Exception.Message)
+            $script:BvShareWatchReady = $false
+        }
+    }
+    if (-not $script:BvShareWatchReady) { return $false }
+    try { return [BridgeVM.BvShareWatch]::Watch($root) } catch { Log ('SHARE WATCH failed: ' + $_.Exception.Message); return $false }
+}
+# <<< share watch
+
 function Read-Line($handle) {
     # Full line, or $null after ~2s idle so the caller can poll port state.
     if ($script:BvLines.Count -gt 0) { return $script:BvLines.Dequeue() }
@@ -1318,16 +1387,31 @@ while ($true) {
                         $root = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg))
                         $rootFull = [System.IO.Path]::GetFullPath($root)
                         if (-not $rootFull.EndsWith('\')) { $rootFull = $rootFull + '\' }
-                        $sb = New-Object System.Text.StringBuilder
-                        foreach ($e in Get-ChildItem -LiteralPath $rootFull -Recurse -Force -ErrorAction Stop) {
-                            $full = [System.IO.Path]::GetFullPath($e.FullName)
-                            if (-not $full.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
-                            $rel = $full.Substring($rootFull.Length)
-                            if ([string]::IsNullOrEmpty($rel)) { continue }
-                            $sz = if ($e.PSIsContainer) { 0 } else { $e.Length }
-                            [void]$sb.AppendLine(('{0}|{1}|{2}|{3}' -f $rel, $sz, [int]$e.PSIsContainer, $e.LastWriteTimeUtc.ToString('o')))
+                        # Unchanged since the last listing (share watch): the same reply again.
+                        $watched = Watch-ShareRoot $rootFull
+                        $changes = if ($watched) { [BridgeVM.BvShareWatch]::Changes } else { [long]-1 }
+                        $now = [System.Diagnostics.Stopwatch]::GetTimestamp()
+                        if ($watched -and $script:BvLsrRoot -eq $rootFull -and $script:BvLsrChanges -eq $changes -and ($now - $script:BvLsrAt) -lt $script:BvLsrMaxAgeTicks) {
+                            $line = $script:BvLsrLine
+                        } else {
+                            $sb = New-Object System.Text.StringBuilder
+                            foreach ($e in Get-ChildItem -LiteralPath $rootFull -Recurse -Force -ErrorAction Stop) {
+                                $full = [System.IO.Path]::GetFullPath($e.FullName)
+                                if (-not $full.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+                                $rel = $full.Substring($rootFull.Length)
+                                if ([string]::IsNullOrEmpty($rel)) { continue }
+                                $sz = if ($e.PSIsContainer) { 0 } else { $e.Length }
+                                [void]$sb.AppendLine(('{0}|{1}|{2}|{3}' -f $rel, $sz, [int]$e.PSIsContainer, $e.LastWriteTimeUtc.ToString('o')))
+                            }
+                            $line = 'LSOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($sb.ToString()))
+                            if ($watched) {
+                                $script:BvLsrRoot = $rootFull
+                                $script:BvLsrChanges = $changes
+                                $script:BvLsrAt = $now
+                                $script:BvLsrLine = $line
+                            }
                         }
-                        Write-Line $h ('LSOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($sb.ToString()))) 'LSOK'
+                        Write-Line $h $line 'LSOK'
                     } catch { Write-Line $h ('ERR LSR ' + $_.Exception.Message) 'ERR' }
                 }
                 'GET' {
@@ -1355,6 +1439,7 @@ while ($true) {
                 'PUT' {
                     # PUT <b64(path)> <b64(rawbytes)> -> PUTOK <b64(path)> <bytes>.
                     # Single-chunk write; the host sends the whole file in one line.
+                    $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
                         $parts = $arg.Split(' ')
                         $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))
@@ -1368,6 +1453,7 @@ while ($true) {
                 'PUTBEG' {
                     # PUTBEG <b64(path)> <total> <nchunks> -> OK PUTBEG.
                     # Opens/truncates a stream; PUTCHUNK/PUTEND complete it.
+                    $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
                         Close-PutStream
                         $parts = $arg.Split(' ')
@@ -1388,6 +1474,7 @@ while ($true) {
                 }
                 'PUTCHUNK' {
                     # PUTCHUNK <seq> <b64(rawbytes)> -> OK PUTCHUNK <seq>.
+                    $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
                         if ($null -eq $script:BvPutStream) { throw 'no-open-put' }
                         $sp2 = $arg.IndexOf(' ')
@@ -1408,6 +1495,7 @@ while ($true) {
                 'PUTEND' {
                     # PUTEND <seq> -> PUTOK <b64(path)> <bytes> after byte-count
                     # verification. The terminal reply matches legacy PUT.
+                    $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
                         if ($null -eq $script:BvPutStream) { throw 'no-open-put' }
                         $seq = [int]$arg
@@ -1520,6 +1608,7 @@ while ($true) {
                 'DEL' {
                     # DEL <b64(path)> deletes files only. Directories are never
                     # removed recursively by the shared-folder protocol.
+                    $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
                         $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg))
                         if (Test-Path -LiteralPath $path -PathType Container) {
