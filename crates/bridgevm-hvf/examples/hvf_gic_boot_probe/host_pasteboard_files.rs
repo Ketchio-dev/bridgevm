@@ -52,9 +52,27 @@ pub fn composed_path(path: &Path) -> PathBuf {
     path.to_str().map_or_else(|| path.to_path_buf(), |path| PathBuf::from(composed(path).into_owned()))
 }
 
-/// A Mac name as Windows can store and show it; None when Windows cannot.
+/// A Mac name as Windows can store and show it; None when Windows cannot. A
+/// `\` (legal in a Mac name) would be a separator in the guest path, so such
+/// a name is left out like a control character.
 fn windows_name(name: &str) -> Option<String> {
-    (!name.chars().any(char::is_control)).then(|| composed(name).chars().map(guest_char).collect())
+    (!name.chars().any(|c| c.is_control() || c == '\\')).then(|| composed(name).chars().map(guest_char).collect())
+}
+
+/// `name`, or as Explorer numbers a second item of the name, `name (2)`
+/// before its extension: Windows names ignore case. `taken` holds those used.
+fn unique_name(name: String, taken: &mut std::collections::HashSet<String>) -> String {
+    if taken.insert(name.to_lowercase()) {
+        return name;
+    }
+    let (stem, ext) = match name.rfind('.') {
+        Some(dot) if dot > 0 => name.split_at(dot),
+        _ => (name.as_str(), ""),
+    };
+    (2u32..)
+        .map(|n| format!("{stem} ({n}){ext}"))
+        .find(|candidate| taken.insert(candidate.to_lowercase()))
+        .expect("a free number")
 }
 
 /// The copied items and everything below them, depth first with each folder's
@@ -62,11 +80,14 @@ fn windows_name(name: &str) -> Option<String> {
 pub fn host_files(tops: &[PathBuf]) -> Option<HostFiles> {
     let mut found: Vec<(String, PathBuf, bool)> = Vec::new();
     let mut bytes = 0u64;
+    // Copied items of one name (from two folders, as in search results) stay apart.
+    let mut taken = std::collections::HashSet::new();
     let mut pending: Vec<(PathBuf, String)> = tops
         .iter()
-        .rev()
         .filter_map(|top| Some((top.clone(), windows_name(top.file_name()?.to_str()?)?)))
+        .map(|(top, name)| (top, unique_name(name, &mut taken)))
         .collect();
+    pending.reverse();
     while let Some((path, rel)) = pending.pop() {
         let Ok(meta) = std::fs::symlink_metadata(&path) else {
             continue;

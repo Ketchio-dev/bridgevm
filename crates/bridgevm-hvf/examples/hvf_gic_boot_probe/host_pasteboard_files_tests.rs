@@ -53,6 +53,53 @@ fn a_copy_is_its_items_and_their_tree_without_links_or_names_windows_cannot_hold
 }
 
 #[test]
+fn a_name_holding_a_windows_separator_is_left_out() {
+    let dir = scratch("separator");
+    // Legal in a Mac name; in a Windows path it would climb out of the copy.
+    let evil = dir.join(r"..\..\victim.txt");
+    std::fs::write(&evil, b"evil").unwrap();
+    let folder = dir.join("folder");
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::write(folder.join(r"..\up.txt"), b"up").unwrap();
+    std::fs::write(folder.join("ok.txt"), b"ok").unwrap();
+    assert_eq!(
+        entries(host_files(&[evil, folder])),
+        [("folder".to_owned(), None), ("folder\\ok.txt".to_owned(), Some(b"ok".to_vec()))]
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn copied_items_of_one_name_get_numbered_as_explorer_does() {
+    let dir = scratch("same-name");
+    let mut tops = Vec::new();
+    for (sub, name) in [("a", "a.txt"), ("b", "a.txt"), ("c", "A.txt"), ("d", "photos"), ("e", "photos")] {
+        std::fs::create_dir_all(dir.join(sub)).unwrap();
+        let path = dir.join(sub).join(name);
+        if name == "photos" {
+            std::fs::create_dir(&path).unwrap();
+            std::fs::write(path.join("one.jpg"), sub.as_bytes()).unwrap();
+        } else {
+            std::fs::write(&path, sub.as_bytes()).unwrap();
+        }
+        tops.push(path);
+    }
+    assert_eq!(
+        entries(host_files(&tops)),
+        [
+            ("a.txt".to_owned(), Some(b"a".to_vec())),
+            ("a (2).txt".to_owned(), Some(b"b".to_vec())),
+            ("A (3).txt".to_owned(), Some(b"c".to_vec())),
+            ("photos".to_owned(), None),
+            ("photos\\one.jpg".to_owned(), Some(b"d".to_vec())),
+            ("photos (2)".to_owned(), None),
+            ("photos (2)\\one.jpg".to_owned(), Some(b"e".to_vec())),
+        ]
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn a_copy_over_a_limit_is_counted_not_read() {
     let dir = scratch("limits");
     let many = dir.join("many");
