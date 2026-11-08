@@ -12,7 +12,9 @@
 //! listing replaces it. Later, a listed copy may since have been deleted (a
 //! Mac file deleted and restored with its time), and adopting it would make
 //! the next listing delete the restored Mac file. A confirmed deletion also
-//! drops the name's listed entry, for the same case within the first pass.
+//! drops the name's listed entry, for the same case within the first pass, and
+//! so does a PUT: the guest truncates before it writes, so a failed one leaves
+//! a copy the listing does not describe.
 
 use super::*;
 

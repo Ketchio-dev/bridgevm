@@ -109,3 +109,19 @@ fn only_the_first_listing_is_adopted_from_and_never_a_copy_deleted_since() {
     assert!(later.on_guest_listing_normalized([listed()]).is_empty());
     assert!(!later.adopt_listed_copy("x.txt", b"abc", 1_794_096_312_123), "adopted from a second listing");
 }
+
+#[test]
+fn a_name_the_host_tried_to_send_is_never_adopted_from_the_listing() {
+    let mut engine = ShareSync::new(1024);
+    let host = |size, mtime_ms| HostFile { name: "x.txt".into(), size, mtime_ms };
+    assert_eq!(engine.on_host_scan_normalized([host(4, 1_794_096_400_000)]).len(), 1);
+    let listed = LsEntry { name: "x.txt".into(), size: 3, is_dir: false, mtime: "2026-11-08T00:05:12.1230000Z".into() };
+    assert!(engine.on_guest_listing_normalized([listed]).is_empty());
+    // The Mac file differs: the host sends it, and the PUT fails after the guest truncated its copy.
+    assert!(!engine.adopt_listed_copy("x.txt", b"abcd", 1_794_096_400_000));
+    assert!(engine.on_host_file("x.txt".into(), b"abcd".to_vec(), 1_794_096_400_000).is_some());
+    engine.on_put_rejected("x.txt");
+    // Restored to the listed size and time (cp -p): the guest copy is not the listed one any more.
+    assert_eq!(engine.on_host_scan_normalized([host(3, 1_794_096_312_123)]).len(), 1);
+    assert!(!engine.adopt_listed_copy("x.txt", b"abc", 1_794_096_312_123), "adopted a copy the PUT may have cut short");
+}
