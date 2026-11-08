@@ -458,3 +458,25 @@ fn an_agent_that_takes_putdata_gets_large_files_in_mib_chunks_and_others_as_befo
         assert_eq!(rig.guest.data_chunks, if put_data { 3 } else { 0 });
     }
 }
+
+#[test]
+fn one_host_scan_serves_a_run_of_puts_and_a_mac_edit_still_lands() {
+    let mut rig = Rig::new("scan-once");
+    rig.h.share.as_mut().unwrap().interval = Duration::from_secs(30);
+    for i in 0..60 {
+        std::fs::write(rig.dir.join(format!("f{i:02}.txt")), format!("file {i}")).unwrap();
+    }
+    // The first scan waits for the first guest listing (share_adopt.rs); the next one, a poll
+    // interval later, sends all 60.
+    rig.run(100);
+    for i in 0..60 {
+        assert_eq!(rig.guest.content(&format!("f{i:02}.txt")), Some(format!("file {i}").as_bytes()));
+    }
+    let scans = rig.h.share.as_ref().unwrap().host_scans;
+    // One scan per poll interval (30 ticks here), not one per PUT (62 before).
+    assert!(scans <= 6, "{scans} host scans for 60 PUTs");
+    // An edit made during a run waits at most one poll interval.
+    std::fs::write(rig.dir.join("f00.txt"), b"edited").unwrap();
+    rig.run(40);
+    assert_eq!(rig.guest.content("f00.txt"), Some(&b"edited"[..]));
+}
