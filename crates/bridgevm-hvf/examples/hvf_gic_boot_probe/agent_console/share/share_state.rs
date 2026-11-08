@@ -9,6 +9,9 @@ mod feedback;
 mod root;
 #[path = "share_guest_listing_names.rs"]
 mod guest_listing_names;
+#[path = "share_host_watch.rs"]
+pub(in crate::agent_console) mod host_watch;
+use host_watch::{HostWalk, HostWatch};
 
 pub(in crate::agent_console) struct ShareState {
     pub(in crate::agent_console) engine: ShareSync,
@@ -32,6 +35,9 @@ pub(in crate::agent_console) struct ShareState {
     pub(in crate::agent_console) host_actions_at: Option<Instant>,
     /// Wall clock at that scan's start, against folder modification times.
     pub(in crate::agent_console) host_actions_scanned: std::time::SystemTime,
+    /// FSEvents on `host_dir` and the last walk it vouches for (share_host_watch.rs).
+    pub(in crate::agent_console) host_watch: HostWatch,
+    host_walk: Option<HostWalk>,
     #[cfg(test)]
     pub(in crate::agent_console) host_scans: usize,
 }
@@ -61,6 +67,8 @@ impl ShareState {
             host_actions: VecDeque::new(),
             host_actions_at: None,
             host_actions_scanned: std::time::UNIX_EPOCH,
+            host_watch: HostWatch::Off,
+            host_walk: None,
             #[cfg(test)]
             host_scans: 0,
         }

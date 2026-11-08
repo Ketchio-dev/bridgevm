@@ -726,13 +726,13 @@ pub(super) mod tests {
             "C:\\share".into(),
             Duration::from_millis(500),
         );
-        scan_share_host_dir(&mut share);
+        scan_share_host_dir(&mut share, Instant::now());
         assert_eq!(share.host_scan_scratch.len(), 1);
         assert_eq!(share.host_scan_scratch[0].name, "sub/dir/x.txt");
         let capacity = share.host_scan_scratch.capacity();
         assert!(capacity > 0);
 
-        scan_share_host_dir(&mut share);
+        scan_share_host_dir(&mut share, Instant::now());
         assert_eq!(share.host_scan_scratch.capacity(), capacity);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -754,7 +754,7 @@ pub(super) mod tests {
             Duration::from_millis(500),
         );
 
-        scan_share_host_dir(&mut share);
+        scan_share_host_dir(&mut share, Instant::now());
         assert!(share.host_scan_scratch.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }

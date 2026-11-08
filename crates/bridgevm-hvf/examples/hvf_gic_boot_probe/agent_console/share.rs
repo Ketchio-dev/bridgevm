@@ -49,12 +49,14 @@ pub(super) fn init_share_from_env() -> Option<ShareState> {
     };
     let interval_ms = env_u64(SHARE_MS_ENV, DEFAULT_SHARE_MS).max(SHARE_MS_FLOOR);
     let max_kb = env_u64(SHARE_MAX_KB_ENV, DEFAULT_SHARE_MAX_KB);
-    Some(ShareState::new(
+    let mut share = ShareState::new(
         ShareSync::new(max_kb),
         PathBuf::from(host),
         guest,
         Duration::from_millis(interval_ms),
-    ))
+    );
+    share.host_watch = HostWatch::Pending;
+    Some(share)
 }
 
 pub(super) fn parse_share_spec(spec: &str) -> Option<(String, String)> {

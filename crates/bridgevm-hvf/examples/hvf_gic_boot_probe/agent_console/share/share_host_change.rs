@@ -31,13 +31,15 @@ impl AgentConsoleHarness {
         let fresh = share
             .host_actions_at
             .is_some_and(|at| now.duration_since(at) < share.interval);
-        let scanned = share.host_actions.is_empty() || !fresh;
-        if scanned {
+        // A new plan from a real walk needs no revalidation; one from a kept walk
+        // (share_host_watch.rs) is checked as a cached plan is, against that walk's start.
+        let mut walked = false;
+        if share.host_actions.is_empty() || !fresh {
             share.host_actions.clear();
-            share.host_actions_scanned = std::time::SystemTime::now();
             // An unmounted or renamed root is not the user deleting every file.
-            if !scan_share_host_dir(share) {
-                return false;
+            match scan_share_host_dir(share, now) {
+                Some(real) => walked = real,
+                None => return false,
             }
             let actions = share
                 .engine
@@ -49,9 +51,11 @@ impl AgentConsoleHarness {
         let mut adopted_bytes = 0usize;
         while let Some(action) = share.host_actions.front() {
             // A name added, removed or renamed in the action's folder since the scan (a Windows
-            // twin, an undo) can change what the scan decided: plan again from a new scan.
-            if !scanned && folder_changed_since(&share.host_dir, action, share.host_actions_scanned) {
+            // twin, an undo) can change what the scan decided: plan again from a new scan, a real
+            // walk even if FSEvents has not reported the change yet (share_host_watch.rs).
+            if !walked && folder_changed_since(&share.host_dir, action, share.host_actions_scanned) {
                 share.host_actions.clear();
+                share.forget_host_walk();
                 return self.enqueue_one_share_host_change_with(now, read);
             }
             let action = share.host_actions.pop_front().expect("front was Some");
