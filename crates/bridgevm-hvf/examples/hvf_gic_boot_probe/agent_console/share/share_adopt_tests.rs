@@ -44,3 +44,21 @@ fn a_failed_first_listing_still_lets_the_mac_files_go() {
     rig.run(8);
     assert_eq!(rig.guest.puts, ["a.txt"]);
 }
+
+#[test]
+fn a_mac_file_deleted_while_it_waits_for_the_first_listing_releases_its_guest_copy() {
+    let mut rig = Rig::new("left-while-waiting");
+    rig.guest.write("left.txt", b"guest copy");
+    std::fs::write(rig.dir.join("left.txt"), b"mac copy, never sent").unwrap();
+    // One tick: the host scan holds the file back, the first listing sees the guest copy held.
+    rig.run(1);
+    assert!(rig.guest.puts.is_empty() && rig.guest.gets.is_empty());
+    std::fs::remove_file(rig.dir.join("left.txt")).unwrap();
+    rig.run(8);
+    assert_eq!(rig.guest.gets, ["left.txt"], "the guest copy stayed held");
+    assert_eq!(rig.host("left.txt").as_deref(), Some(&b"guest copy"[..]));
+    // And it syncs from then on: a guest edit reaches the Mac.
+    rig.guest.write("left.txt", b"guest edit");
+    rig.run(8);
+    assert_eq!(rig.host("left.txt").as_deref(), Some(&b"guest edit"[..]));
+}
