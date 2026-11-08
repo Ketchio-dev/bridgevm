@@ -8,6 +8,8 @@ enum HvfPerformanceRisk: String, Equatable {
 struct HvfEngineConfig: Equatable {
     /// Matches the typed product runtime's launch-manifest CPU contract.
     static let supportedCPURange = 1...64
+    /// The largest shared-folder file the runtime copies, either way (`--agent-share-max-kb`).
+    static let shareMaxKiB = 65536
 
     var targetDiskPath: String
     var uefiVarsPath: String
@@ -130,7 +132,7 @@ struct HvfEngineConfig: Equatable {
                 "--agent-share-host", host,
                 "--agent-share-guest", guest,
                 "--agent-share-ms", "2000",
-                "--agent-share-max-kb", "65536"
+                "--agent-share-max-kb", String(HvfEngineConfig.shareMaxKiB)
             ])
         }
         if let vtpmStateDir {
@@ -191,7 +193,7 @@ struct HvfEngineConfig: Equatable {
                 "--agent-share-host", host,
                 "--agent-share-guest", guest,
                 "--agent-share-ms", "2000",
-                "--agent-share-max-kb", "65536"
+                "--agent-share-max-kb", String(HvfEngineConfig.shareMaxKiB)
             ])
         }
         if virtioNet {
