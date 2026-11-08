@@ -33,6 +33,8 @@ mod agent_update;
 mod clip_guest_admission;
 #[path = "agent_console/clip_guest_fingerprint.rs"]
 mod clip_guest_fingerprint;
+#[path = "agent_console/clip_files.rs"]
+mod clip_files;
 #[path = "agent_console/clip_html.rs"]
 mod clip_html;
 #[path = "agent_console/clip_image.rs"]
@@ -90,6 +92,7 @@ mod window_protocol;
 use agent_update::*;
 use clip_guest_admission::*;
 use clip_guest_fingerprint::*;
+use clip_files::*;
 use clip_image::*;
 use host_pasteboard::HostImage;
 use clip_operator_reply::*;

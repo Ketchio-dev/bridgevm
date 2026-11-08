@@ -242,7 +242,9 @@ impl AgentConsoleHarness {
         match req {
             ServiceReq::ClipPoll => {
                 self.last_clip_poll = Some(now);
-                let verb = if self.clip_html {
+                let verb = if self.clip_files {
+                    "CLIPXF\n"
+                } else if self.clip_html {
                     "CLIPXH\n"
                 } else if self.clip_images.is_some() {
                     "CLIPX\n"
@@ -259,6 +261,7 @@ impl AgentConsoleHarness {
             ServiceReq::ClipImagePush(_) | ServiceReq::ClipImagePull { .. } => {
                 self.write_clip_image_line(req)
             }
+            ServiceReq::ClipFilesPull => self.write_clip_files_line(),
             ServiceReq::ClipPush(text, html) => {
                 let verb = if html.is_some() { "CLIPSETH " } else { "CLIPSET " };
                 self.service_line_scratch.push_str(verb);
@@ -486,7 +489,12 @@ impl AgentConsoleHarness {
         }
         if matches!(
             self.in_flight.as_ref().map(|(req, _)| req),
-            Some(ServiceReq::Ctl(_) | ServiceReq::ShareGet { .. } | ServiceReq::ClipImagePull { .. })
+            Some(
+                ServiceReq::Ctl(_)
+                    | ServiceReq::ShareGet { .. }
+                    | ServiceReq::ClipImagePull { .. }
+                    | ServiceReq::ClipFilesPull
+            )
         ) && self.handle_unlabelled_get_fragment(line).is_some()
         {
             return;
@@ -506,6 +514,7 @@ impl AgentConsoleHarness {
             InFlightSnapshot::ClipCaps => self.handle_clip_caps_reply(line, now),
             InFlightSnapshot::ClipImagePush => self.handle_clip_image_push_reply(line, now, send),
             InFlightSnapshot::ClipImagePull => self.handle_clip_image_pull_reply(line, now),
+            InFlightSnapshot::ClipFilesPull => self.handle_clip_files_pull_reply(line, now),
             InFlightSnapshot::Ctl(command) => match self.handle_reply_line(line, &command) {
                 ReplyProgress::Complete => self.complete_in_flight(),
                 ReplyProgress::Incomplete | ReplyProgress::Ignored => {}

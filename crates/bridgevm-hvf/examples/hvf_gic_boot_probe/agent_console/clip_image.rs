@@ -227,14 +227,16 @@ pub(super) fn host_image_skip_line(
 
 impl AgentConsoleHarness {
     /// CLIPCAPS reply: IMAGE_PNG switches images on, CF_HTML (with it) rich
-    /// text and CLIPPUSH change notices; a bare CLIPCAPS, or the unknown-token
-    /// OUT of an agent that predates it, keeps a polled text-only sync.
+    /// text, CF_HDROP (with both) file copies and CLIPPUSH change notices; a
+    /// bare CLIPCAPS, or the unknown-token OUT of an agent that predates it,
+    /// keeps a polled text-only sync.
     pub(super) fn handle_clip_caps_reply(&mut self, line: &str, now: Instant) {
-        let (images, push, html) = if let Some(rest) = line.strip_prefix("CLIPCAPS") {
+        let (images, push, html, files) = if let Some(rest) = line.strip_prefix("CLIPCAPS") {
             let has = |marker| rest.split_whitespace().any(|word| word == marker);
-            (parse_clip_caps(rest), has(CLIP_CAPS_PUSH_MARKER), has(CLIP_CAPS_HTML_MARKER))
+            let caps = (has(CLIP_CAPS_PUSH_MARKER), has(CLIP_CAPS_HTML_MARKER), has(CLIP_CAPS_FILES_MARKER));
+            (parse_clip_caps(rest), caps.0, caps.1, caps.2)
         } else if line.starts_with("OUT ") || line.starts_with("ERR") {
-            (None, false, false)
+            (None, false, false, false)
         } else {
             return;
         };
@@ -275,6 +277,15 @@ impl AgentConsoleHarness {
             println!("BVAGENT CLIPSYNC rich text {} t={}", if html { "on" } else { "off" }, self.t_ms(now));
         }
         self.clip_html = html;
+        let files = files && html;
+        if !files {
+            self.abandon_files_pull();
+            self.last_synced.files = None;
+        }
+        if files != self.clip_files {
+            println!("BVAGENT CLIPSYNC files {} t={}", if files { "on" } else { "off" }, self.t_ms(now));
+        }
+        self.clip_files = files;
         if let Some(pasteboard) = self.pasteboard.as_ref() {
             pasteboard.set_images(on);
             pasteboard.set_rich_text(html);
@@ -562,6 +573,7 @@ impl AgentConsoleHarness {
                 self.last_synced.text = push.text.as_deref().map(normalize_clip);
                 self.last_synced.image = Some(push.png.digest);
                 self.last_synced.html = None;
+                self.last_synced.files = None;
                 self.last_synced.rebaseline = false;
                 self.last_synced.echo = true;
                 clip_line(format!(

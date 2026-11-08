@@ -56,6 +56,7 @@ impl PasteboardWorker {
             if Some(write.revision) == self.revision {
                 if write.recopy == self.recopy.load(Ordering::Acquire) {
                     match (&write.image, &write.html) {
+                        _ if !write.files.is_empty() => self.poller.apply_set_files(backend, &write.files),
                         (Some(png), _) => {
                             let text = Some(write.text.as_str()).filter(|text| !text.is_empty());
                             self.poller.apply_set_image(backend, png, text);

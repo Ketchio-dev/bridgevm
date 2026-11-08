@@ -129,6 +129,11 @@ pub struct AgentConsoleHarness {
     /// The agent answered CLIPCAPS with CF_HTML (and IMAGE_PNG): rich text moves
     /// as CLIPXH polls and CLIPSETH pushes (clip_html.rs).
     pub(super) clip_html: bool,
+    /// The agent answered CLIPCAPS with CF_HDROP (and CF_HTML): Explorer file
+    /// copies come as CLIPXF polls (clip_files.rs).
+    pub(super) clip_files: bool,
+    /// Where guest file copies are staged, and the transfer under way.
+    pub(super) clip_files_stage: ClipFilesStage,
     /// Optional control file tailed for injected commands.
     pub(super) ctl_path: Option<String>,
     /// Byte offset consumed so far from the control file.
@@ -272,6 +277,8 @@ pub(super) enum ServiceReq {
     ClipImagePush(ClipImagePush),
     /// Fetch the guest clipboard image a CLIPX reply announced.
     ClipImagePull { digest: [u8; 32], bytes: usize },
+    /// Fetch the next file of the guest file copy under way (clip_files.rs).
+    ClipFilesPull,
     /// A command injected via the control file (same semantics as a scripted
     /// command: raw verb sent verbatim, else RUN-wrapped).
     Ctl(String),
@@ -322,6 +329,7 @@ pub(super) enum InFlightSnapshot {
     ClipCaps,
     ClipImagePush,
     ClipImagePull,
+    ClipFilesPull,
     Ctl(String),
     Ping,
     ShareLs,
@@ -348,6 +356,7 @@ impl InFlightSnapshot {
             ServiceReq::ClipCaps => Self::ClipCaps,
             ServiceReq::ClipImagePush(_) => Self::ClipImagePush,
             ServiceReq::ClipImagePull { .. } => Self::ClipImagePull,
+            ServiceReq::ClipFilesPull => Self::ClipFilesPull,
             ServiceReq::Ctl(command) => Self::Ctl(command.clone()),
             ServiceReq::Ping => Self::Ping,
             ServiceReq::ShareLs => Self::ShareLs,

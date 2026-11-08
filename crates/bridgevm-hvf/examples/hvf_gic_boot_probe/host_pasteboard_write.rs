@@ -3,6 +3,7 @@
 use super::super::PngImage;
 use super::{html_digest, PasteboardBackend, Poller};
 use crate::agent_console::clip_guest_admission::GUEST_CLIP_MAX_BYTES;
+use std::path::PathBuf;
 
 impl Poller {
     /// Write guest text to the pasteboard, recording the post-write changeCount so the write
@@ -57,6 +58,23 @@ impl Poller {
             self.empty_rereads = 0;
             self.last_seen = text.map(str::to_owned);
             self.last_image = Some(png.digest);
+            self.last_oversized = false;
+            self.last_html = None;
+            self.last_count = backend.change_count();
+        }
+    }
+
+    /// The files form of apply_set: the guest's copied items as file URLs,
+    /// under the same newer-Mac-copy rule and echo suppression. The URLs carry
+    /// no text or image, so the pasteboard then reads as empty.
+    pub fn apply_set_files<B: PasteboardBackend>(&mut self, backend: &mut B, files: &[PathBuf]) {
+        if !self.owns_pasteboard(backend) {
+            return;
+        }
+        if backend.set_files(files) {
+            self.empty_rereads = 0;
+            self.last_seen = None;
+            self.last_image = None;
             self.last_oversized = false;
             self.last_html = None;
             self.last_count = backend.change_count();

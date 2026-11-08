@@ -3,6 +3,7 @@
 
 use super::{default_backend, HostImage, PngImage, Poller};
 use std::cell::Cell;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
@@ -44,6 +45,8 @@ struct PasteboardWrite {
     image: Option<PngImage>,
     /// The text's `public.html` (never with an image).
     html: Option<String>,
+    /// Files to put on the pasteboard as file URLs, instead of all the above.
+    files: Vec<PathBuf>,
 }
 
 impl HostPasteboard {
@@ -99,17 +102,22 @@ impl HostPasteboard {
 
     /// Queue a guest-to-host write without blocking.
     pub fn set(&self, text: String) {
-        self.write(text, None, None);
+        self.write(text, None, None, Vec::new());
     }
 
     /// Queue a guest-to-host image write, with the guest's text when it has one.
     pub fn set_image(&self, png: PngImage, text: Option<String>) {
-        self.write(text.unwrap_or_default(), Some(png), None);
+        self.write(text.unwrap_or_default(), Some(png), None, Vec::new());
     }
 
     /// Queue a guest-to-host rich text write: the text and its HTML at once.
     pub fn set_text_html(&self, text: String, html: String) {
-        self.write(text, None, Some(html));
+        self.write(text, None, Some(html), Vec::new());
+    }
+
+    /// Queue a guest-to-host files write: the copy's top-level items.
+    pub fn set_files(&self, files: Vec<PathBuf>) {
+        self.write(String::new(), None, None, files);
     }
 
     /// Read the Mac pasteboard's image too: the agent can take images.
@@ -122,7 +130,7 @@ impl HostPasteboard {
         self.html.store(on, Ordering::Release);
     }
 
-    fn write(&self, text: String, image: Option<PngImage>, html: Option<String>) {
+    fn write(&self, text: String, image: Option<PngImage>, html: Option<String>, files: Vec<PathBuf>) {
         let _ = self.cmds.send(PasteboardWrite {
             revision: self.observed.get(),
             // Orders suppressed host ownership changes, not native event time.
@@ -130,6 +138,7 @@ impl HostPasteboard {
             text,
             image,
             html,
+            files,
         });
     }
 

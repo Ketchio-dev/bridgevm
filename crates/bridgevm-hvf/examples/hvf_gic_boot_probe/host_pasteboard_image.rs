@@ -314,7 +314,7 @@ unsafe fn msg_send_ptr(receiver: ObjcId, selector: Sel) -> *const c_void {
     send(receiver, selector)
 }
 
-unsafe fn msg_send_bool_id(receiver: ObjcId, selector: Sel, arg: ObjcId) -> bool {
+pub(super) unsafe fn msg_send_bool_id(receiver: ObjcId, selector: Sel, arg: ObjcId) -> bool {
     type MsgSend = unsafe extern "C" fn(ObjcId, Sel, ObjcId) -> c_char;
     let send: MsgSend = std::mem::transmute(super::objc_msgSend as *const ());
     send(receiver, selector, arg) != 0
@@ -326,7 +326,7 @@ unsafe fn msg_send_id_u64_id(receiver: ObjcId, selector: Sel, arg1: u64, arg2: O
     send(receiver, selector, arg1, arg2)
 }
 
-unsafe fn msg_send_id_ptr_usize(
+pub(super) unsafe fn msg_send_id_ptr_usize(
     receiver: ObjcId,
     selector: Sel,
     arg1: *const c_void,
