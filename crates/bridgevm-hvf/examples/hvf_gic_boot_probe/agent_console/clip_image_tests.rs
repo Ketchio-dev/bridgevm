@@ -208,6 +208,14 @@ impl Guest {
                 self.put.as_mut().unwrap().1.extend(base64_decode(b64).unwrap());
                 format!("OK PUTCHUNK {seq}")
             }
+            // The header names the payload length; the payload is its own line.
+            "PUTDATA" => {
+                let (header, payload) = arg.split_once('\n').unwrap();
+                let (seq, chars) = header.split_once(' ').unwrap();
+                assert_eq!(payload.len(), chars.parse::<usize>().unwrap(), "PUTDATA {header}");
+                self.put.as_mut().unwrap().1.extend(base64_decode(payload).unwrap());
+                format!("OK PUTCHUNK {seq}")
+            }
             "PUTEND" => {
                 let (path, bytes) = self.put.take().unwrap();
                 let reply = format!("PUTOK {} {}", base64_encode(path.as_bytes()), bytes.len());
@@ -374,6 +382,20 @@ fn mac_image_reaches_the_guest_after_its_text() {
     assert_eq!(rig.verbs(), verbs(&["PUTBEG", "PUTCHUNK", "PUTEND", "CLIPSETIMG"]));
     assert_eq!(rig.guest.image.as_deref(), Some(second.as_slice()));
     assert_eq!(rig.guest.text, "");
+}
+
+#[test]
+fn an_agent_that_takes_putdata_gets_the_image_in_mib_chunks() {
+    let mut rig = Rig::new(true);
+    rig.h.put_data = true;
+    let image = png(1920, 1080, 2 * SHARE_PUT_DATA_CHUNK_BYTES + 5, 3);
+    rig.mac.copy(Some("caption"), Some(PasteboardImage::Png(image.clone())));
+    rig.settle();
+    assert_eq!(
+        rig.verbs(),
+        verbs(&["CLIPCAPS", "CLIPSET", "PUTBEG", "PUTDATA", "PUTDATA", "PUTDATA", "PUTEND", "CLIPSETIMG"])
+    );
+    assert_eq!(rig.guest.image.as_deref(), Some(image.as_slice()));
 }
 
 #[test]

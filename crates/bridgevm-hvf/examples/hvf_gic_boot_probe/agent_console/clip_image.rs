@@ -77,8 +77,8 @@ impl ClipImagePush {
             phase: ClipImagePhase::Beg,
         }
     }
-    fn chunks(&self) -> usize {
-        self.png.bytes.len().div_ceil(SHARE_PUT_CHUNK_BYTES)
+    fn chunks(&self, chunk: usize) -> usize {
+        self.png.bytes.len().div_ceil(chunk)
     }
 }
 
@@ -490,6 +490,8 @@ impl AgentConsoleHarness {
         now: Instant,
         send: &mut dyn FnMut(&[u8]),
     ) {
+        // As a shared file's: PUTDATA chunks of 1 MiB for an agent that takes them.
+        let (put_data, chunk) = (self.put_data, self.share_put_chunk_bytes());
         let Some((ServiceReq::ClipImagePush(push), sent_at)) = self.in_flight.as_mut() else {
             return;
         };
@@ -523,18 +525,16 @@ impl AgentConsoleHarness {
         let line_out = &mut self.service_line_scratch;
         line_out.clear();
         match push.phase {
-            ClipImagePhase::Beg | ClipImagePhase::Chunk if push.next_chunk < push.chunks() => {
+            ClipImagePhase::Beg | ClipImagePhase::Chunk if push.next_chunk < push.chunks(chunk) => {
                 let seq = push.next_chunk;
-                let start = seq * SHARE_PUT_CHUNK_BYTES;
-                let end = (start + SHARE_PUT_CHUNK_BYTES).min(push.png.bytes.len());
-                let _ = write!(line_out, "PUTCHUNK {seq} ");
-                base64_encode_into(&push.png.bytes[start..end], line_out);
-                line_out.push('\n');
+                let start = seq * chunk;
+                let end = (start + chunk).min(push.png.bytes.len());
+                put_chunk_line_into(line_out, put_data, seq, &push.png.bytes[start..end]);
                 push.next_chunk += 1;
                 push.phase = ClipImagePhase::Chunk;
             }
             ClipImagePhase::Beg | ClipImagePhase::Chunk => {
-                let _ = writeln!(line_out, "PUTEND {}", push.chunks());
+                let _ = writeln!(line_out, "PUTEND {}", push.chunks(chunk));
                 push.phase = ClipImagePhase::End;
             }
             ClipImagePhase::End => {
@@ -627,6 +627,7 @@ impl AgentConsoleHarness {
 
     /// The wire line of a queued image request; false drops it (images off).
     pub(super) fn write_clip_image_line(&mut self, req: &ServiceReq) -> bool {
+        let chunk = self.share_put_chunk_bytes();
         let Some(images) = self.clip_images.as_ref() else {
             return false;
         };
@@ -636,7 +637,7 @@ impl AgentConsoleHarness {
                 debug_assert_eq!(push.phase, ClipImagePhase::Beg);
                 line.push_str("PUTBEG ");
                 base64_encode_into(images.host_path().as_bytes(), line);
-                let _ = writeln!(line, " {} {}", push.png.bytes.len(), push.chunks());
+                let _ = writeln!(line, " {} {}", push.png.bytes.len(), push.chunks(chunk));
             }
             ServiceReq::ClipImagePull { .. } => {
                 // A new GET cannot inherit an earlier request's fragments.

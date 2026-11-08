@@ -23,6 +23,24 @@ pub(in crate::agent_console) fn share_put_req(
     }
 }
 
+/// One file chunk on the wire: PUTDATA (as a drop's chunk: the agent reads
+/// the payload line with BvDropReader) for an agent whose READY carried
+/// `putdata`, else PUTCHUNK. Both are answered `OK PUTCHUNK <seq>`.
+pub(in crate::agent_console) fn put_chunk_line_into(
+    out: &mut String,
+    put_data: bool,
+    seq: usize,
+    chunk: &[u8],
+) {
+    if put_data {
+        let _ = writeln!(out, "PUTDATA {seq} {}", chunk.len().div_ceil(3) * 4);
+    } else {
+        let _ = write!(out, "PUTCHUNK {seq} ");
+    }
+    base64_encode_into(chunk, out);
+    out.push('\n');
+}
+
 pub(in crate::agent_console) fn rewind_share_put_for_retransmit(mut req: ServiceReq) -> ServiceReq {
     if let ServiceReq::SharePut {
         next_chunk, phase, ..
@@ -255,15 +273,7 @@ impl AgentConsoleHarness {
             return false;
         }
         self.service_line_scratch.clear();
-        if self.put_data {
-            // As a drop's chunk: the agent reads the payload line with BvDropReader.
-            let chars = (end - start).div_ceil(3) * 4;
-            let _ = writeln!(&mut self.service_line_scratch, "PUTDATA {seq} {chars}");
-        } else {
-            let _ = write!(&mut self.service_line_scratch, "PUTCHUNK {seq} ");
-        }
-        base64_encode_into(&bytes[start..end], &mut self.service_line_scratch);
-        self.service_line_scratch.push('\n');
+        put_chunk_line_into(&mut self.service_line_scratch, self.put_data, seq, &bytes[start..end]);
         true
     }
 
