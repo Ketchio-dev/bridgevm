@@ -115,7 +115,9 @@ impl VirtioGpu {
         control: bool,
     ) {
         let queue = self.queues[queue_index];
-        if !queue.ready || queue.desc == 0 || queue.driver == 0 {
+        // While a 2D copy runs without the lock, both queues wait for its
+        // finish, which runs them (unlocked_copy.rs).
+        if !queue.ready || queue.desc == 0 || queue.driver == 0 || self.copy_pending() {
             return;
         }
         // A driver may enable the queue without writing COMMON_QUEUE_SIZE (EDK2's
@@ -128,7 +130,7 @@ impl VirtioGpu {
             return;
         };
         for _ in 0..pending_entries(queue.last_avail_idx, avail_idx, queue_size) {
-            if control && self.parked_chains_fill_queue(queue_size) {
+            if self.copy_pending() || (control && self.parked_chains_fill_queue(queue_size)) {
                 break;
             }
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
@@ -198,6 +200,11 @@ impl VirtioGpu {
             &response,
             handle_ns,
         );
+        if control && self.defer_chain_to_copy(queue, head, &mut descs, &mut response) {
+            request.clear();
+            self.request_scratch = request;
+            return ChainCompletion::Parked;
+        }
         // viogpu3d uses an empty context-0 SUBMIT_3D as its control-queue
         // synchronization NOP. Its used-ring completion drives the guest's
         // DXGK CRTC_VSYNC notification, so park that completion when host

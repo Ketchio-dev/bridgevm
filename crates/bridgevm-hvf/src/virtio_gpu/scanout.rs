@@ -59,6 +59,8 @@ pub(crate) fn scanout_len(width: u32, height: u32) -> usize {
 }
 
 impl VirtioGpu {
+    /// The bound scanout's pixels. While a 2D flush copies without the lock
+    /// (unlocked_copy.rs) `bytes` is empty; readers check its length.
     pub fn scanout(&self) -> Option<VirtioGpuScanout<'_>> {
         (self.scanout_resource.is_some() || self.blob_scanout.is_some()).then_some(
             VirtioGpuScanout {
@@ -226,6 +228,10 @@ impl VirtioGpu {
         });
         let resource_id = read_le_u32(request, 40).unwrap_or(0);
         if self.scanout_resource == Some(resource_id) {
+            if self.queue_flush(resource_id, rect) {
+                response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
+                return;
+            }
             if let Some(resource) = self.resources.get(&resource_id) {
                 composite_resource_to_scanout(
                     &mut self.scanout,

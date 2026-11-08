@@ -3,6 +3,7 @@
 use super::*;
 use crate::display_fb::DisplayFramebuffer;
 use crate::fwcfg::GuestMemoryMut;
+use crate::virtio_gpu::GpuCopy;
 use crate::virtio_gpu::VblankWakeState;
 use crate::virtio_gpu::VirtioGpuResult;
 use crate::virtio_gpu::VirtioGpuScanout;
@@ -62,6 +63,36 @@ impl VirtPlatform {
         };
         gpu.set_shm_map_port(port, window_size);
         true
+    }
+
+    /// 2D virtio-gpu frame copies run without the platform lock (live VMM
+    /// only; virtio_gpu/unlocked_copy.rs). Only the 2D device takes it: the 3D
+    /// paths share the scanout with their readbacks. Returns whether it is on.
+    pub fn set_virtio_gpu_unlocked_copy(&mut self, enabled: bool) -> bool {
+        self.virtio_gpu
+            .as_mut()
+            .is_some_and(|gpu| gpu.set_unlocked_copy(enabled))
+    }
+
+    /// The 2D copy the last virtio-gpu kick queued. The vCPU takes it before it
+    /// unlocks the platform, runs it ([`GpuCopy::run`]) in its own view of
+    /// guest RAM, locks again and hands it to [`Self::finish_virtio_gpu_copy`].
+    /// Until then neither virtio-gpu queue runs; a copy never finished leaves
+    /// the display stopped.
+    pub fn take_virtio_gpu_copy(&mut self) -> Option<GpuCopy> {
+        self.virtio_gpu.as_mut()?.take_copy()
+    }
+
+    /// Complete `copy`'s command with its MSI-X and run the queues that
+    /// waited for it; returns the next copy they queued, to run the same way.
+    pub fn finish_virtio_gpu_copy(
+        &mut self,
+        copy: GpuCopy,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> Option<GpuCopy> {
+        self.virtio_gpu.as_mut()?.finish_copy(copy, mem);
+        self.flush_virtio_gpu_pending_msix();
+        self.take_virtio_gpu_copy()
     }
 
     pub fn virtio_gpu_host_visible_bar_base(&self) -> Option<u64> {
