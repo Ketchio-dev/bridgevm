@@ -24,8 +24,8 @@ pub(in crate::agent_console) struct ShareState {
     root_blocked: bool,
     /// A missing guest folder is created at most once per session.
     pub(in crate::agent_console) guest_root_create_sent: bool,
-    /// Share key -> the name the last listing showed for it, where that is not
-    /// the key's own guest form (share_guest_listing_names.rs).
+    /// Windows key of a share key -> the name the last listing showed for it,
+    /// where that is not the key's own guest form (share_guest_listing_names.rs).
     pub(in crate::agent_console) guest_names: std::collections::HashMap<String, String>,
 }
 

@@ -6,7 +6,9 @@ use std::borrow::Cow;
 impl ShareState {
     /// Keys for the listing in `guest_ls_scratch`. A guest name that is not
     /// its key's own guest form (a decomposed name a Windows program wrote) is
-    /// remembered, so requests for that key reach the file. When both a
+    /// remembered, so requests for that key reach the file; it is looked up
+    /// as NTFS looks names up, so a record a case-only rename kept under the
+    /// old spelling still finds it (share_win_names.rs). When both a
     /// decomposed and a composed copy are listed, the composed one is the
     /// file and the other is left alone.
     pub(in crate::agent_console) fn key_guest_listing(&mut self) {
@@ -38,7 +40,7 @@ impl ShareState {
         for (i, guest) in listed {
             let key = &self.guest_ls_scratch[i].name;
             if taken.insert(key.clone()) {
-                self.guest_names.insert(key.clone(), guest);
+                self.guest_names.insert(share_sync::windows_key(key), guest);
             } else {
                 keep[i] = false;
             }

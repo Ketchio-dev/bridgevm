@@ -108,3 +108,22 @@ fn a_mac_name_holding_a_stand_in_character_stays_out_and_is_never_renamed() {
     assert_eq!(rig.host("why\u{F025}.txt").as_deref(), Some(&b"literal"[..]));
     assert_eq!(rig.host("why?.txt").as_deref(), Some(&b"question"[..]));
 }
+
+#[test]
+fn a_case_only_rename_in_windows_keeps_reaching_the_decomposed_file() {
+    let nfd = "cafe\u{301}.txt";
+    let mut rig = Rig::new("names-case");
+    rig.guest.write(nfd, b"from windows");
+    rig.run(12);
+    assert_eq!(rig.host("café.txt").as_deref(), Some(&b"from windows"[..]));
+    rig.guest.files[0].0 = "Cafe\u{301}.txt".into(); // NTFS rename keeps LastWriteTime
+    rig.run(12);
+    rig.guest.write("Cafe\u{301}.txt", b"windows edit");
+    rig.run(12);
+    assert_eq!(rig.host("café.txt").as_deref(), Some(&b"windows edit"[..]));
+    std::fs::write(rig.dir.join("café.txt"), b"mac edit").unwrap();
+    rig.run(12);
+    assert_eq!(rig.guest.content("Cafe\u{301}.txt"), Some(&b"mac edit"[..]), "{:?}", rig.guest.puts);
+    assert_eq!(rig.guest.files.len(), 1, "a composed twin was written");
+    rig.assert_settled();
+}

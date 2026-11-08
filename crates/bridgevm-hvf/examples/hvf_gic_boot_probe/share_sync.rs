@@ -326,6 +326,7 @@ mod share_sync_host;
 mod share_win_alias;
 #[path = "share_win_names.rs"]
 mod share_win_names;
+pub use share_win_names::windows_key;
 #[path = "share_write_failures.rs"]
 mod share_write_failures;
 #[cfg(test)]

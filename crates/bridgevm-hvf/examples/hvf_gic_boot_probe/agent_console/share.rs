@@ -132,7 +132,7 @@ pub(super) fn write_share_guest_path_into(share: &ShareState, name: &str, out: &
     out.push('\\');
     let mut end = name.len();
     while !share.guest_names.is_empty() {
-        if let Some(listed) = share.guest_names.get(&name[..end]) {
+        if let Some(listed) = share.guest_names.get(&share_sync::windows_key(&name[..end])) {
             share_sync::append_guest_rel_into(listed, out);
             if end < name.len() {
                 out.push('\\');
