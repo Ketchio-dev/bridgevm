@@ -30,6 +30,8 @@ pub(in crate::agent_console) struct ShareState {
     /// What the last host scan left to do, and when it ran (share_host_change.rs).
     pub(in crate::agent_console) host_actions: VecDeque<SyncAction>,
     pub(in crate::agent_console) host_actions_at: Option<Instant>,
+    /// Wall clock at that scan's start, against folder modification times.
+    pub(in crate::agent_console) host_actions_scanned: std::time::SystemTime,
     #[cfg(test)]
     pub(in crate::agent_console) host_scans: usize,
 }
@@ -58,6 +60,7 @@ impl ShareState {
             guest_names: std::collections::HashMap::new(),
             host_actions: VecDeque::new(),
             host_actions_at: None,
+            host_actions_scanned: std::time::UNIX_EPOCH,
             #[cfg(test)]
             host_scans: 0,
         }

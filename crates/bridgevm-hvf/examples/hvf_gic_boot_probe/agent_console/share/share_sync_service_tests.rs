@@ -512,3 +512,60 @@ fn a_mac_file_restored_during_a_run_of_deletes_keeps_its_guest_copy() {
     assert_eq!(rig.host(&kept).as_deref(), Some(&b"windows edit"[..]));
     let _ = std::fs::remove_dir_all(&aside);
 }
+
+#[test]
+fn a_windows_twin_made_during_a_run_holds_a_cached_put() {
+    let mut rig = Rig::new("scan-once-twin");
+    rig.h.share.as_mut().unwrap().interval = Duration::from_secs(30);
+    let names: Vec<String> = (0..6).map(|i| format!("f{i}")).collect();
+    for name in &names {
+        std::fs::write(rig.dir.join(name), b"ORIGINAL").unwrap();
+    }
+    rig.run(100);
+    assert_eq!(rig.guest.files.len(), 6);
+    rig.run(40); // past a poll interval: the next scan plans the run below
+    let puts = rig.guest.puts.len();
+    for name in &names {
+        std::fs::write(rig.dir.join(name), b"MAC EDIT").unwrap();
+    }
+    for _ in 0..40 {
+        rig.run(1);
+        if rig.guest.puts.len() > puts {
+            break;
+        }
+    }
+    // A name whose PUT is still waiting gets a twin that is the same Windows name: both are held.
+    let waiting = names.iter().find(|n| !rig.guest.puts[puts..].contains(n)).unwrap().clone();
+    std::fs::write(rig.dir.join(format!("{waiting}.")), b"TWIN").unwrap();
+    rig.run(40);
+    assert!(!rig.guest.puts[puts..].contains(&waiting), "{waiting}: {:?}", rig.guest.puts);
+    assert_eq!(rig.guest.content(&waiting), Some(&b"ORIGINAL"[..]));
+}
+
+#[test]
+fn a_mac_folder_restored_during_a_run_of_deletes_keeps_its_guest_copies() {
+    let mut rig = Rig::new("scan-once-folder");
+    rig.h.share.as_mut().unwrap().interval = Duration::from_secs(30);
+    std::fs::create_dir_all(rig.dir.join("x")).unwrap();
+    for name in ["a", "b", "c", "d"] {
+        std::fs::write(rig.dir.join("x").join(name), name).unwrap();
+    }
+    rig.run(70);
+    assert_eq!(rig.guest.files.len(), 4);
+    let aside = rig.dir.with_extension("aside-folder");
+    std::fs::rename(rig.dir.join("x"), &aside).unwrap();
+    for _ in 0..40 {
+        rig.run(1);
+        if rig.guest.files.len() < 4 {
+            break;
+        }
+    }
+    assert_eq!(rig.guest.files.len(), 3);
+    // Undo: the folder comes back, and Windows had edited a file still waiting for its deletion.
+    let kept = rig.guest.files.last().unwrap().0.clone();
+    rig.guest.write(&kept, b"windows edit");
+    std::fs::rename(&aside, rig.dir.join("x")).unwrap();
+    rig.run(70);
+    assert_eq!(rig.guest.files.len(), 4, "{:?}", rig.guest.files.iter().map(|f| &f.0).collect::<Vec<_>>());
+    assert_eq!(rig.guest.content(&kept), Some(&b"windows edit"[..]), "a restored file's guest copy was deleted");
+}

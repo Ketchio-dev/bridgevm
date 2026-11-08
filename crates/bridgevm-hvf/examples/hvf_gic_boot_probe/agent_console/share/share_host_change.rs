@@ -31,8 +31,10 @@ impl AgentConsoleHarness {
         let fresh = share
             .host_actions_at
             .is_some_and(|at| now.duration_since(at) < share.interval);
-        if share.host_actions.is_empty() || !fresh {
+        let scanned = share.host_actions.is_empty() || !fresh;
+        if scanned {
             share.host_actions.clear();
+            share.host_actions_scanned = std::time::SystemTime::now();
             // An unmounted or renamed root is not the user deleting every file.
             if !scan_share_host_dir(share) {
                 return false;
@@ -45,7 +47,14 @@ impl AgentConsoleHarness {
         }
         // Files found already synced are read, not sent: a bounded amount per step.
         let mut adopted_bytes = 0usize;
-        while let Some(action) = share.host_actions.pop_front() {
+        while let Some(action) = share.host_actions.front() {
+            // A name added, removed or renamed in the action's folder since the scan (a Windows
+            // twin, an undo) can change what the scan decided: plan again from a new scan.
+            if !scanned && folder_changed_since(&share.host_dir, action, share.host_actions_scanned) {
+                share.host_actions.clear();
+                return self.enqueue_one_share_host_change_with(now, read);
+            }
+            let action = share.host_actions.pop_front().expect("front was Some");
             match action {
                 SyncAction::Get { name } => {
                     if share.engine.waits_for_first_listing(&name) {
@@ -95,6 +104,17 @@ impl AgentConsoleHarness {
         }
         false
     }
+}
+
+/// True when the folder holding the action's file changed after `scanned` (or is gone).
+fn folder_changed_since(root: &Path, action: &SyncAction, scanned: std::time::SystemTime) -> bool {
+    let (SyncAction::Get { name } | SyncAction::DeleteGuest { name }) = action else {
+        return false;
+    };
+    let folder = name.rsplit_once('/').map_or("", |(folder, _)| folder);
+    std::fs::metadata(root.join(folder))
+        .and_then(|meta| meta.modified())
+        .map_or(true, |modified| modified >= scanned)
 }
 
 #[cfg(test)]
