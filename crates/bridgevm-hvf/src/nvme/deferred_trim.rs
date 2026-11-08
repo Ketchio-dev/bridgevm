@@ -6,29 +6,32 @@
 //! DSM on a write-back raw file checks its range list as before, records the
 //! valid byte ranges as pending punches of that namespace and completes at
 //! once. A background thread, started on the first such DSM, punches them in
-//! pieces of at most [`PIECE_BYTES`], each holding the one mutex that guards
-//! the pending ranges for the whole `F_PUNCHHOLE`.
+//! pieces of at most [`PIECE_BYTES`]. One mutex guards the pending ranges
+//! and the piece in progress, and covers only that bookkeeping: the thread
+//! takes a piece out of the pending ranges and records it as in progress,
+//! unlocks, punches, locks again to clear it and wakes any waiter. A punch
+//! usually takes microseconds, but one took 33 ms (likely behind a full sync
+//! of the same file), and nothing under the platform lock may wait that long
+//! for an unrelated piece.
 //!
 //! Deallocation is advisory (DLFEAT 0), so a range punched late, or never,
 //! leaves the guest's data as valid as a punched one. What must never happen
 //! is a punch of bytes the guest wrote after the DSM. Every WRITE fetched
 //! from a submission queue takes its byte range out of the pending punches
-//! in `process_sq`, before any path (inline, unlocked or FUA) runs it, under
-//! the same mutex: it either waits for the piece being punched, which ends
-//! before its data is written, or comes first, and no later piece touches
-//! its bytes. Each piece is rounded inward to whole host blocks, so a block
-//! that a WRITE covers only in part keeps all its bytes. When nothing is
-//! pending the check costs one atomic load. A WRITE fetched before the DSM
-//! and still in flight may land before or after a punch of the same bytes:
-//! NVMe orders nothing in flight, so both results are valid.
-//!
-//! The mutex does not queue its waiters, so between pieces the thread lets a
-//! waiting WRITE, DSM or settle point in first: each waits for the piece
-//! being punched (or one that started just as it came), never for the whole
-//! list. The final report's `nvme dsm:` record has the longest piece.
+//! in `process_sq`, under the mutex, before any path (inline, unlocked or
+//! FUA) runs it, so no later piece touches its bytes. Only if the piece in
+//! progress overlaps them does it wait, still before it runs, until that
+//! punch returns: that is the guest writing into space it deallocated
+//! milliseconds earlier, which is rare. Any other WRITE, and every DSM, only
+//! waits for the bookkeeping. Each piece is rounded inward to whole host
+//! blocks, so a block that a WRITE covers only in part keeps all its bytes.
+//! When nothing is pending the check costs one atomic load. A WRITE fetched
+//! before the DSM and still in flight may land before or after a punch of
+//! the same bytes: NVMe orders nothing in flight, so both results are valid.
+//! The final report's `nvme dsm:` record has the longest piece.
 //!
 //! Settling: a reset, a CC.EN 1 to 0 write or a snapshot restore drops the
-//! pending punches once the piece being punched ends; a wait for the jobs in
+//! pending punches and waits for the piece in progress; a wait for the jobs in
 //! flight (shutdown through CC.SHN, the VM's exit sync, an export, a
 //! namespace change) first punches them all, so a clean shutdown still gives
 //! the space back before its durable sync. A namespace change also lets the
@@ -39,13 +42,15 @@
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Instant;
 
 use super::dataset_management::{punch_ranges, DSM_STATS};
 use super::flush_worker::lock;
+#[cfg(test)]
+use super::unlocked_io::test_gate::IoGate;
 use super::*;
 
 /// The most one piece punches. A piece ends at a multiple of it, which is a
@@ -138,12 +143,20 @@ struct Namespace {
     ranges: PendingRanges,
 }
 
+/// The piece the thread is punching, with the mutex released.
+struct Punching {
+    slot: usize,
+    start: u64,
+    end: u64,
+}
+
 #[derive(Default)]
 struct State {
     /// NSID 1 and 2.
     disks: [Option<Namespace>; 2],
+    punching: Option<Punching>,
     stop: bool,
-    /// Tests hold the thread's pieces.
+    /// Tests hold the thread before it takes a piece.
     #[cfg(test)]
     paused: bool,
 }
@@ -165,89 +178,82 @@ impl State {
         self.any_pending()
     }
 
-    /// Punch the next piece; `false` when nothing is pending. The caller
-    /// holds the mutex throughout.
-    fn run_piece(&mut self) -> bool {
-        let Some(disk) = self
-            .disks
-            .iter_mut()
-            .flatten()
-            .find(|disk| !disk.ranges.is_empty())
-        else {
-            return false;
-        };
-        let Some(piece) = disk.ranges.take_piece() else {
-            return false;
-        };
-        let started = Instant::now();
-        let punched = punch_ranges(&disk.file, &[piece]);
-        DSM_STATS.note_piece(punched, started);
-        true
+    /// The next piece, its namespace and its file.
+    fn take_piece(&mut self) -> Option<(usize, Arc<File>, (u64, u64))> {
+        let (slot, disk) = self.disks.iter_mut().enumerate().find_map(|(slot, disk)| {
+            Some((slot, disk.as_mut()?)).filter(|(_, d)| !d.ranges.is_empty())
+        })?;
+        let piece = disk.ranges.take_piece()?;
+        Some((slot, Arc::clone(&disk.file), piece))
     }
+
+    /// The piece being punched overlaps `start..end` of namespace `slot`.
+    fn punching_into(&self, slot: usize, start: u64, end: u64) -> bool {
+        self.punching
+            .as_ref()
+            .is_some_and(|p| p.slot == slot && p.start < end && start < p.end)
+    }
+}
+
+fn punch_piece(file: &File, piece: (u64, u64)) {
+    let started = Instant::now();
+    let punched = punch_ranges(file, &[piece]);
+    DSM_STATS.note_piece(punched, started);
 }
 
 #[derive(Default)]
 struct Shared {
     state: Mutex<State>,
-    wake: Condvar,
+    /// New ranges, the end of a piece, or stop.
+    changed: Condvar,
     /// Some range is pending or being punched. Stored only under `state`,
     /// and cleared only after the last piece's punch has returned.
     pending: AtomicBool,
-    /// I/O-path callers waiting for `state`; the thread lets them in before
-    /// its next piece.
-    waiting: AtomicUsize,
-    /// The thread's pieces so far; the `lock_first` calls, and the most
-    /// pieces the thread finished while one of them waited.
+    /// Tests hold a piece after it is taken, before its punch.
     #[cfg(test)]
-    pieces: std::sync::atomic::AtomicU64,
-    #[cfg(test)]
-    first_locks: std::sync::atomic::AtomicU64,
-    #[cfg(test)]
-    most_passed: std::sync::atomic::AtomicU64,
+    gate: Arc<IoGate>,
 }
 
 impl Shared {
     fn publish(&self, state: &State) {
-        self.pending.store(state.any_pending(), Ordering::Release);
+        let busy = state.any_pending() || state.punching.is_some();
+        self.pending.store(busy, Ordering::Release);
     }
 
-    /// Lock `state` from the I/O path (a DSM, a WRITE, a settle point, all
-    /// under the platform lock), ahead of the thread's next piece.
-    fn lock_first(&self) -> MutexGuard<'_, State> {
-        self.waiting.fetch_add(1, Ordering::AcqRel);
-        #[cfg(test)]
-        let seen = self.pieces.load(Ordering::Relaxed);
-        let state = lock(&self.state);
-        #[cfg(test)]
-        {
-            let passed = self.pieces.load(Ordering::Relaxed) - seen;
-            self.most_passed.fetch_max(passed, Ordering::Relaxed);
-            self.first_locks.fetch_add(1, Ordering::Relaxed);
-        }
-        self.waiting.fetch_sub(1, Ordering::AcqRel);
-        state
+    /// Wait, with the mutex released, while the piece being punched
+    /// satisfies `busy`.
+    fn wait_while<'a>(
+        &self,
+        state: MutexGuard<'a, State>,
+        mut busy: impl FnMut(&State) -> bool,
+    ) -> MutexGuard<'a, State> {
+        self.changed
+            .wait_while(state, |state| busy(state))
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// Take a piece under the mutex, punch it without, and clear it under
+    /// the mutex again.
     fn run(&self) {
+        let mut state = lock(&self.state);
         loop {
-            let mut state = lock(&self.state);
-            while !state.stop && !state.ready() {
-                state = self
-                    .wake
-                    .wait(state)
-                    .unwrap_or_else(PoisonError::into_inner);
-            }
+            state = self.wait_while(state, |state| !state.stop && !state.ready());
             if state.stop {
                 return;
             }
-            state.run_piece();
-            self.publish(&state);
+            let Some((slot, file, piece)) = state.take_piece() else {
+                continue;
+            };
+            let (start, end) = piece;
+            state.punching = Some(Punching { slot, start, end });
             drop(state);
             #[cfg(test)]
-            self.pieces.fetch_add(1, Ordering::Relaxed);
-            while self.waiting.load(Ordering::Acquire) != 0 {
-                std::thread::yield_now();
-            }
+            self.gate.pass();
+            punch_piece(&file, piece);
+            state = lock(&self.state);
+            state.punching = None;
+            self.publish(&state);
+            self.changed.notify_all();
         }
     }
 }
@@ -277,7 +283,7 @@ impl DeferredTrim {
 
     /// Queue `ranges` of namespace `slot`'s `file` for the thread and return
     /// the ranges dropped at the bound, or `None` (punch inline) when the
-    /// thread cannot start.
+    /// thread cannot start. Never waits for a piece.
     fn defer(&mut self, slot: usize, file: &Arc<File>, ranges: &[(u64, u64)]) -> Option<u64> {
         if self.thread.is_none() {
             match self.start() {
@@ -288,7 +294,7 @@ impl DeferredTrim {
                 }
             }
         }
-        let mut state = self.shared.lock_first();
+        let mut state = lock(&self.shared.state);
         let entry = &mut state.disks[slot];
         if entry
             .as_ref()
@@ -306,7 +312,7 @@ impl DeferredTrim {
         }
         self.shared.publish(&state);
         drop(state);
-        self.shared.wake.notify_one();
+        self.shared.changed.notify_all();
         Some(dropped)
     }
 
@@ -317,68 +323,81 @@ impl DeferredTrim {
             .spawn(move || shared.run())
     }
 
-    /// Take `start..end` of namespace `slot` out of the pending punches,
-    /// after the piece being punched.
+    /// Take `start..end` of namespace `slot` out of the pending punches; if
+    /// the piece being punched overlaps it, wait until that punch returns.
     fn keep(&self, slot: usize, start: u64, end: u64) {
-        let mut state = self.shared.lock_first();
+        let mut state = lock(&self.shared.state);
         if let Some(disk) = state.disks[slot].as_mut() {
             DSM_STATS.note_dropped(disk.ranges.remove(start, end));
         }
+        let state = self
+            .shared
+            .wait_while(state, |state| state.punching_into(slot, start, end));
         self.shared.publish(&state);
     }
 
-    /// Drop the pending punches once the piece being punched ends.
+    /// Drop the pending punches and wait for the piece being punched, so
+    /// nothing is punched after this returns.
     pub(crate) fn discard(&self) {
-        let mut state = self.shared.lock_first();
+        let mut state = lock(&self.shared.state);
         for disk in state.disks.iter_mut().flatten() {
             disk.ranges = PendingRanges::default();
         }
+        let state = self
+            .shared
+            .wait_while(state, |state| state.punching.is_some());
         self.shared.publish(&state);
     }
 
-    /// Punch every pending range on this thread before returning.
+    /// Punch every pending range before returning: wait for the piece being
+    /// punched, then punch the rest on this thread.
     pub(crate) fn drain(&self) {
-        let mut state = self.shared.lock_first();
-        while state.run_piece() {}
+        let state = lock(&self.shared.state);
+        let mut state = self
+            .shared
+            .wait_while(state, |state| state.punching.is_some());
+        while let Some((_, file, piece)) = state.take_piece() {
+            punch_piece(&file, piece);
+        }
         self.shared.publish(&state);
     }
 }
 
 impl Drop for DeferredTrim {
+    /// Stop the thread after the piece it is punching, and join it.
     fn drop(&mut self) {
         let Some(thread) = self.thread.take() else {
             return;
         };
-        self.shared.lock_first().stop = true;
-        self.shared.wake.notify_all();
+        lock(&self.shared.state).stop = true;
+        self.shared.changed.notify_all();
         let _ = thread.join();
     }
 }
 
 #[cfg(test)]
 impl DeferredTrim {
-    /// Hold or release the thread's pieces; a drain still runs them.
+    /// Hold or release the thread before it takes a piece; a drain still
+    /// runs them.
     pub(crate) fn pause(&self, paused: bool) {
         lock(&self.shared.state).paused = paused;
-        self.shared.wake.notify_all();
+        self.shared.changed.notify_all();
     }
 
     pub(crate) fn started(&self) -> bool {
         self.thread.is_some()
     }
 
-    /// The pieces the thread has punched.
-    pub(crate) fn thread_pieces(&self) -> u64 {
-        self.shared.pieces.load(Ordering::Relaxed)
+    /// Closed, it holds each piece after the thread took it (it is in
+    /// progress) and before its punch.
+    pub(crate) fn piece_gate(&self) -> Arc<IoGate> {
+        Arc::clone(&self.shared.gate)
     }
 
-    /// The I/O path's locks so far, and the most pieces one waited for.
-    pub(crate) fn first_locks(&self) -> (u64, u64) {
-        let shared = &self.shared;
-        (
-            shared.first_locks.load(Ordering::Relaxed),
-            shared.most_passed.load(Ordering::Relaxed),
-        )
+    /// The piece being punched.
+    pub(crate) fn punching(&self) -> Option<(usize, u64, u64)> {
+        let state = lock(&self.shared.state);
+        state.punching.as_ref().map(|p| (p.slot, p.start, p.end))
     }
 
     /// Namespace `slot`'s pending ranges.

@@ -353,8 +353,8 @@ impl DsmStats {
 /// commands' total and longest time and how many took over 20 ms, and the
 /// pieces punched later with their total and longest time. A command runs
 /// under the platform lock, so each is a lock hold at least that long. A
-/// piece runs off it, except in the drain of a shutdown or exit, and a WRITE
-/// or DSM fetched during one waits for it.
+/// piece runs off it, except in the drain of a shutdown or exit, and only a
+/// WRITE to the bytes of the piece in progress waits for it.
 pub fn dsm_record() -> String {
     let s = &DSM_STATS;
     let [commands, rejected, ranges, bytes, deferred, dropped, punched] = [

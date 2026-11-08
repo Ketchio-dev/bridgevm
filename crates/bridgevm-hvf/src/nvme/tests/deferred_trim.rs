@@ -1,9 +1,11 @@
 //! Deallocate punches deferred to the punch thread (deferred_trim.rs): the
 //! command completes before anything is punched, a later WRITE's bytes are
 //! never punched, and resets drop the punches while shutdowns run them. The
-//! tests hold the thread's pieces with `pause` and release them when ready.
+//! tests hold the thread before it takes a piece with `pause`, or hold a
+//! piece in progress at its gate, and release it when ready.
 
 use super::super::deferred_trim::{PendingRanges, MAX_RANGES, PIECE_BYTES};
+use super::super::unlocked_io::test_gate::IoGate;
 use super::super::*;
 use super::dataset_management::{
     allocated, dsm, dsm_on, image, intact, range, raw_controller, read, record_field,
@@ -13,6 +15,7 @@ use super::helpers::*;
 use crate::fwcfg::GuestMemoryMut;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// A raw write-back file with unlocked I/O on, as live VMMs run it, and the
@@ -152,38 +155,140 @@ fn a_write_after_the_deallocate_keeps_its_bytes_when_the_punches_run() {
     let _ = fs::remove_file(path);
 }
 
-/// The thread's mutex does not queue its waiters: a DSM or WRITE, under the
-/// platform lock, must get in between two pieces, not after the whole list.
-/// Live, a ReTrim's DSM once waited 17 ms behind back-to-back pieces.
+/// Holds the thread's next piece in progress: taken, its punch not begun.
+/// The gate opens when this drops, so a failed assertion never leaves the
+/// controller's drop waiting for the thread.
+struct HeldPiece(Arc<IoGate>);
+
+impl HeldPiece {
+    /// Close the gate, release the paused thread and wait until it has taken
+    /// its first piece.
+    fn take(ctrl: &NvmeController) -> Self {
+        let gate = ctrl.trim.piece_gate();
+        gate.close();
+        ctrl.trim.pause(false);
+        assert!(gate.reached(1), "the thread took no piece");
+        Self(gate)
+    }
+
+    /// Let the held punch run `after` from now, from another thread.
+    fn release_after(&self, after: Duration) {
+        let gate = Arc::clone(&self.0);
+        std::thread::spawn(move || {
+            std::thread::sleep(after);
+            gate.open();
+        });
+    }
+}
+
+impl Drop for HeldPiece {
+    fn drop(&mut self) {
+        self.0.open();
+    }
+}
+
+/// A punch can stall for tens of ms (one took 33 ms live), and the WRITEs
+/// and DSMs that take the mutex run under the platform lock: only a WRITE
+/// into the piece in progress may wait for it.
 #[cfg(target_os = "macos")]
 #[test]
-fn a_deallocate_or_a_write_waits_for_a_piece_not_the_whole_list() {
-    // 64 GiB of holes: 8192 quick pieces keep the thread busy.
-    let len = 64u64 << 30;
-    let path = image("trim-busy", len);
+fn a_slow_piece_holds_up_only_a_write_into_its_own_bytes() {
+    let path = image("trim-held-piece", 64 * MIB);
+    write_pattern(&path, 16 * MIB, 32 * MIB);
     let (mut ctrl, mut mem) = held_controller(&path);
-    let blocks = len / LBA_SIZE as u64;
     assert_eq!(
-        dsm(&mut ctrl, &mut mem, 0, &[range(0, blocks - BPM)]),
+        dsm(&mut ctrl, &mut mem, 0, &[range(16 * BPM, 16 * BPM)]),
         SC_SUCCESS
     );
-    ctrl.trim.pause(false);
-    wait_until(|| ctrl.trim.thread_pieces() > 0);
-    let (locks, _) = ctrl.trim.first_locks();
-    let more = [range(blocks - 8, 8)];
-    assert_eq!(dsm(&mut ctrl, &mut mem, 1, &more), SC_SUCCESS);
-    let write = write_sqe(0x51, blocks - 16, 1, DATA_BASE + 0x4000);
-    assert_eq!(submit_io(&mut ctrl, &mut mem, 2, &write), SC_SUCCESS);
-    let (after, most_passed) = ctrl.trim.first_locks();
-    assert!(ctrl.trim.pending(), "the thread was still busy");
-    assert_eq!(after, locks + 2, "the DSM and the WRITE go ahead");
-    // The piece being punched, and one that started just as each came.
+    let held = HeldPiece::take(&ctrl);
+    assert_eq!(ctrl.trim.punching(), Some((0, 16 * MIB, 24 * MIB)));
+    let started = Instant::now();
+    held.release_after(Duration::from_secs(1));
+
+    // A DSM, and a WRITE into the pending piece after the held one: neither
+    // waits for the held punch.
+    assert_eq!(
+        dsm(&mut ctrl, &mut mem, 1, &[range(40 * BPM, 8 * BPM)]),
+        SC_SUCCESS
+    );
+    let buf = DATA_BASE + 0x4000;
+    assert!(mem.write_bytes(buf, &[0x5a; 4096]));
+    let sqe = write_sqe(0x61, 28 * BPM, 8, buf);
+    assert_eq!(submit_io(&mut ctrl, &mut mem, 2, &sqe), SC_SUCCESS);
+    let unrelated = started.elapsed();
+    let still_held = ctrl.trim.punching().is_some() && intact(&path, 16 * MIB, 8 * MIB);
+
+    // A WRITE into the held piece waits until its punch has returned, and
+    // only then lands.
+    assert!(mem.write_bytes(buf, &[0xa5; 4096]));
+    let sqe = write_sqe(0x62, 18 * BPM, 8, buf);
+    assert_eq!(submit_io(&mut ctrl, &mut mem, 3, &sqe), SC_SUCCESS);
+    let overlapping = started.elapsed();
+
+    run_punches(&ctrl);
     assert!(
-        most_passed <= 2,
-        "{most_passed} pieces ran while one waited"
+        read(&path, 18 * MIB, 4096) == [0xa5; 4096],
+        "the WRITE into the held piece landed before its punch"
+    );
+    assert!(read(&path, 28 * MIB, 4096) == [0x5a; 4096]);
+    assert!(zeros(&path, 16 * MIB, 2 * MIB) && zeros(&path, 18 * MIB + 4096, 10 * MIB - 4096));
+    assert!(zeros(&path, 28 * MIB + 4096, 4 * MIB - 4096) && zeros(&path, 40 * MIB, 8 * MIB));
+    assert!(intact(&path, 32 * MIB, 8 * MIB));
+    assert!(
+        unrelated < Duration::from_millis(500) && still_held,
+        "the DSM and the unrelated WRITE waited {unrelated:?} for the held piece"
+    );
+    assert!(
+        overlapping >= Duration::from_millis(900),
+        "the overlapping WRITE returned after {overlapping:?}, before the punch"
     );
     drop(ctrl);
     let _ = fs::remove_file(path);
+}
+
+/// A reset and a shutdown wait for the piece in progress: nothing is punched
+/// after a reset returns, and a shutdown's sync comes after every punch.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_reset_or_a_shutdown_waits_for_the_piece_in_progress() {
+    for exit in [false, true] {
+        let path = image(&format!("trim-held-settle-{exit}"), 64 * MIB);
+        write_pattern(&path, 16 * MIB, 16 * MIB);
+        let (mut ctrl, mut mem) = held_controller(&path);
+        assert_eq!(
+            dsm(&mut ctrl, &mut mem, 0, &[range(16 * BPM, 16 * BPM)]),
+            SC_SUCCESS
+        );
+        let held = HeldPiece::take(&ctrl);
+        let started = Instant::now();
+        held.release_after(Duration::from_millis(300));
+        if exit {
+            ctrl.flush_disk().unwrap();
+        } else {
+            ctrl.mmio_write(REG_CC, 4, 0);
+        }
+        let waited = started.elapsed();
+        assert!(
+            waited >= Duration::from_millis(250),
+            "returned after {waited:?}"
+        );
+        assert!(!ctrl.trim.pending() && ctrl.trim.punching().is_none());
+        assert!(zeros(&path, 16 * MIB, 8 * MIB), "the held piece ran first");
+        if exit {
+            assert!(
+                zeros(&path, 24 * MIB, 8 * MIB),
+                "the drain punched the rest"
+            );
+        } else {
+            run_punches(&ctrl);
+            assert!(
+                intact(&path, 24 * MIB, 8 * MIB),
+                "the reset dropped the rest"
+            );
+        }
+        drop(ctrl);
+        let _ = fs::remove_file(path);
+    }
 }
 
 #[test]
