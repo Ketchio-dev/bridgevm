@@ -18,8 +18,11 @@ final class HvfShareTooLargeNoticeTests: XCTestCase {
     @MainActor
     func testOtherSkipsAndCommandOutputAreNotTooLarge() {
         let notice = HvfShareRootNotice()
+        // A Mac file name can hold a newline, so a whole line can come from one: "skip too-large 1"
+        // has its marker on the prefix's own space.
         for line in ["BVAGENT SHARE skip foo alias [\"foo\", \"foo.\"]", "BVAGENT SHARE skip  too-large 9",
-                     "BVAGENT SHARE skip a.bin too-large ", "BVAGENT SHARE skip a.bin too-large 12x"] {
+                     "BVAGENT SHARE skip a.bin too-large ", "BVAGENT SHARE skip a.bin too-large 12x",
+                     "BVAGENT SHARE skip too-large 123", "BVAGENT SHARE skip a.bin too-large \u{0663}"] {
             notice.consume(.unknown(line))
         }
         for event in BvAgentEvent.parse(lines: ["BVAGENT CMD type log.txt exit=0",

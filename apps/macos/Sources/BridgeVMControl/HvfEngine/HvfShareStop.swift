@@ -42,10 +42,13 @@ struct HvfShareTooLarge: Equatable {
 
     static func name(in line: String) -> String? {
         let prefix = "BVAGENT SHARE skip "
-        guard line.hasPrefix(prefix), let marker = line.range(of: " too-large ", options: .backwards) else { return nil }
-        let size = line[marker.upperBound...]
-        guard !size.isEmpty, size.allSatisfy(\.isNumber) else { return nil }
-        let name = line[line.index(line.startIndex, offsetBy: prefix.count)..<marker.lowerBound]
+        guard line.hasPrefix(prefix) else { return nil }
+        // Only after the prefix: a line that is all marker must not slice backwards.
+        let rest = line.dropFirst(prefix.count)
+        guard let marker = rest.range(of: " too-large ", options: .backwards) else { return nil }
+        let size = rest[marker.upperBound...]
+        guard !size.isEmpty, size.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }) else { return nil }
+        let name = rest[..<marker.lowerBound]
         return name.isEmpty ? nil : String(name)
     }
 }
