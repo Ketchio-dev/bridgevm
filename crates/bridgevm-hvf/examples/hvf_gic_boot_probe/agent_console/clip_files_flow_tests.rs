@@ -71,17 +71,19 @@ fn a_guest_file_and_folder_copy_lands_on_the_mac_as_its_top_level_items() {
     assert_eq!(gets(&mut rig), [file, inner]);
     assert_eq!(rig.mac.file_writes.len(), 1, "one files write");
     let tops = rig.mac.file_writes[0].clone();
-    let staging = tops[0].parent().unwrap().to_path_buf();
+    let staging = tops[0].parent().unwrap().parent().unwrap().to_path_buf();
     assert_eq!(staging.parent(), Some(rig.h.clip_files_stage.dir.as_path()));
-    assert_eq!(tops, [staging.join("보고서 1.txt"), staging.join("a folder")]);
+    assert_eq!(tops, [staging.join("0/보고서 1.txt"), staging.join("1/a folder")]);
     assert_eq!(std::fs::metadata(&staging).unwrap().permissions().mode() & 0o777, 0o700);
     assert_eq!(
         tree(&staging),
         [
-            ("a folder".to_owned(), None),
-            ("a folder/inner.txt".to_owned(), Some(vec![7, 8, 9])),
-            ("a folder/sub".to_owned(), None),
-            ("보고서 1.txt".to_owned(), Some(vec![1, 2, 3, 4, 5])),
+            ("0".to_owned(), None),
+            ("0/보고서 1.txt".to_owned(), Some(vec![1, 2, 3, 4, 5])),
+            ("1".to_owned(), None),
+            ("1/a folder".to_owned(), None),
+            ("1/a folder/inner.txt".to_owned(), Some(vec![7, 8, 9])),
+            ("1/a folder/sub".to_owned(), None),
         ]
     );
     assert_eq!(take_lines(&mut Vec::new()), ["BVAGENT CLIPSYNC guest->host files=4 bytes=8 copy=a"]);
@@ -91,6 +93,24 @@ fn a_guest_file_and_folder_copy_lands_on_the_mac_as_its_top_level_items() {
     assert!(rig.verbs().is_empty(), "neither fetched again nor pushed back");
     assert_eq!(rig.mac.file_writes.len(), 1);
     assert!(rig.mac.writes.is_empty() && rig.mac.rich_writes.is_empty());
+    std::fs::remove_dir_all(&rig.h.clip_files_stage.dir).unwrap();
+}
+
+#[test]
+fn two_copied_folders_of_one_name_stay_two_items() {
+    let mut rig = rig();
+    let (a, b) = (r"C:\a\photos", r"C:\b\photos");
+    let (a1, b1) = (r"C:\a\photos\one.jpg", r"C:\b\photos\one.jpg");
+    rig.guest.files.insert(a1.into(), b"from a".to_vec());
+    rig.guest.files.insert(b1.into(), b"from b".to_vec());
+    rig.guest.listing = Some(listing(&[(1, 1, 0, a), (0, 0, 6, a1), (1, 1, 0, b), (0, 0, 6, b1)]));
+    rig.settle();
+    let tops = rig.mac.file_writes.last().expect("published").clone();
+    assert_eq!(tops.len(), 2);
+    assert_ne!(tops[0], tops[1], "both items are one URL");
+    assert_eq!(std::fs::read(tops[0].join("one.jpg")).unwrap(), b"from a");
+    assert_eq!(std::fs::read(tops[1].join("one.jpg")).unwrap(), b"from b");
+    take_lines(&mut Vec::new());
     std::fs::remove_dir_all(&rig.h.clip_files_stage.dir).unwrap();
 }
 
@@ -197,10 +217,10 @@ fn a_newer_guest_copy_mid_transfer_abandons_the_older_one() {
     assert_eq!(take_lines(&mut Vec::new()), ["BVAGENT CLIPSYNC guest->host files=1 bytes=2 copy=a"]);
     let copy = rig.h.last_synced.guest_copy;
     let staging = rig.h.clip_files_stage.dir.join(copy.to_string());
-    assert_eq!(rig.mac.file_writes, [vec![staging.join("b.txt")]]);
+    assert_eq!(rig.mac.file_writes, [vec![staging.join("0/b.txt")]]);
     assert_eq!(
         tree(&rig.h.clip_files_stage.dir),
-        [(copy.to_string(), None), (format!("{copy}/b.txt"), Some(b"bb".to_vec()))],
+        [(copy.to_string(), None), (format!("{copy}/0"), None), (format!("{copy}/0/b.txt"), Some(b"bb".to_vec()))],
         "the older copy's staging directory is gone"
     );
     std::fs::remove_dir_all(&rig.h.clip_files_stage.dir).unwrap();

@@ -93,8 +93,8 @@ pub(super) struct FilesPlan {
     tops: Vec<PathBuf>,
 }
 
-/// Where each entry goes: a copied item by its name, an entry below a copied
-/// folder by its path from that folder's parent (a byte-exact prefix plus
+/// Where each entry goes: a copied item by its name in its own numbered folder,
+/// an entry below a copied folder by its path from that folder's parent (a byte-exact prefix plus
 /// `\`). None when an entry is not below the copied folder before it, or a
 /// part of its path is empty, `.`, `..`, or holds `/` or NUL.
 pub(super) fn plan_guest_files(list: &[GuestFile]) -> Option<FilesPlan> {
@@ -103,20 +103,26 @@ pub(super) fn plan_guest_files(list: &[GuestFile]) -> Option<FilesPlan> {
         files: VecDeque::new(),
         tops: Vec::new(),
     };
-    // The copied folder the entries after it belong to, and where its name starts.
-    let mut folder: Option<(&str, usize)> = None;
+    // The copied folder the entries after it belong to, where its name starts and its slot.
+    let mut folder: Option<(&str, usize, usize)> = None;
+    let mut slots = 0usize;
     for entry in list {
         let path = entry.path.as_str();
-        let name_at = if entry.top {
+        // Each copied item stages in its own numbered folder: two items of one name (from two
+        // Windows folders, as in search results) stay two items.
+        let (name_at, slot) = if entry.top {
             let name_at = path.rfind('\\')? + 1;
-            folder = entry.dir.then_some((path, name_at));
-            name_at
+            let slot = slots;
+            slots += 1;
+            plan.dirs.push(PathBuf::from(slot.to_string()));
+            folder = entry.dir.then_some((path, name_at, slot));
+            (name_at, slot)
         } else {
-            let (top, name_at) = folder?;
+            let (top, name_at, slot) = folder?;
             path.strip_prefix(top)?.strip_prefix('\\')?;
-            name_at
+            (name_at, slot)
         };
-        let mut rel = PathBuf::new();
+        let mut rel = PathBuf::from(slot.to_string());
         for part in path[name_at..].split('\\') {
             if part.is_empty() || part == "." || part == ".." || part.contains(['/', '\0']) {
                 return None;
