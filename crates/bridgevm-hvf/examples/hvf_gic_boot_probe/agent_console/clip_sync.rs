@@ -29,6 +29,9 @@ pub(super) struct ClipBaseline {
     /// (clip_html.rs). The agent hands back the bytes it was given, and both
     /// ends write canonical base64, so the wire form is compared as it is.
     pub(super) html: Option<[u8; 32]>,
+    /// SHA-256 of the CLIPXF files part the guest is known to hold, alone
+    /// (clip_files.rs): published, refused or on its way.
+    pub(super) files: Option<[u8; 32]>,
     /// The PNG last synced either way, reused while it is `image`: a caption
     /// change needs no second transfer.
     pub(super) png: Option<host_pasteboard::PngImage>,
@@ -145,13 +148,15 @@ impl AgentConsoleHarness {
     }
     pub(super) fn handle_clip_poll_reply(&mut self, line: &str, now: Instant) {
         // CLIP <b64> answers CLIPGET; CLIPX adds the guest image (clip_image.rs),
-        // and CLIPXH its HTML (clip_html.rs).
-        let (b64, clipx, clipxh) = if let Some(b64) = line.strip_prefix("CLIP ") {
-            (b64, false, false)
+        // CLIPXH its HTML (clip_html.rs) and CLIPXF its files (clip_files.rs).
+        let (b64, clipx, clipxh, clipxf) = if let Some(b64) = line.strip_prefix("CLIP ") {
+            (b64, false, false, false)
         } else if let Some(rest) = line.strip_prefix("CLIPX ") {
-            (rest, true, false)
+            (rest, true, false, false)
         } else if let Some(rest) = line.strip_prefix("CLIPXH ") {
-            (rest, true, true)
+            (rest, true, true, false)
+        } else if let Some(rest) = line.strip_prefix("CLIPXF ") {
+            (rest, true, true, true)
         } else {
             if line.starts_with("ERR") {
                 println!("BVAGENT CLIPSYNC guest->host {line}");
@@ -170,22 +175,31 @@ impl AgentConsoleHarness {
         // changed reply is a new guest copy, unless a completed push comes back.
         let parsed = if clipx { parse_clipx(b64).ok() } else { Some((None, b64)) };
         let parsed = parsed.and_then(|(image, rest)| {
-            let (html, text) = if clipxh { parse_html_part(rest)? } else { (GuestHtml::None, rest) };
-            Some((image, html, rest, text))
+            let (html, after_html) = if clipxh { parse_html_part(rest)? } else { (GuestHtml::None, rest) };
+            let (files, files_part, text) =
+                if clipxf { parse_files_part(after_html)? } else { (GuestFiles::None, "", after_html) };
+            Some((image, html, rest, after_html, files, files_part, text))
         });
         let reply = {
-            let (part, html, text) = match &parsed {
-                Some((_, html, rest, text)) if clipx => {
-                    // Without HTML a CLIPXH reply keys like the CLIPX it extends.
-                    let html = if *html == GuestHtml::None { "" } else { rest.strip_suffix(*text).unwrap_or("") };
-                    (b64.strip_suffix(*rest).unwrap_or(b64), html, *text)
+            let (part, html, files, text) = match &parsed {
+                Some((_, html, rest, after_html, files, files_part, text)) if clipx => {
+                    // Without HTML a CLIPXH reply keys like the CLIPX it extends,
+                    // and without files a CLIPXF reply like the CLIPXH.
+                    let html = if *html == GuestHtml::None { "" } else { rest.strip_suffix(*after_html).unwrap_or("") };
+                    let files = if *files == GuestFiles::None { "" } else { *files_part };
+                    (b64.strip_suffix(*rest).unwrap_or(b64), html, files, *text)
                 }
-                Some((_, _, _, text)) => ("0 0 0 - - ", "", *text),
-                None => (b64, "", ""),
+                Some((.., text)) => ("0 0 0 - - ", "", "", *text),
+                None => (b64, "", "", ""),
             };
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             std::hash::Hash::hash(part, &mut hasher);
             guest_clip_fingerprint(html, &mut hasher);
+            // The whole files part: an edit deep in a long listing is a new copy, with its own
+            // staging directory (only the copy number names it).
+            if !files.is_empty() {
+                std::hash::Hash::hash(files, &mut hasher);
+            }
             guest_clip_fingerprint(text, &mut hasher)
         };
         // Only a later copy, never the first poll, counts for the app's notice.
@@ -197,9 +211,20 @@ impl AgentConsoleHarness {
             self.last_synced.guest_copy = self.last_synced.next_copy();
         }
         if clipx {
-            let Some((image, html, _, b64)) = parsed else {
+            let Some((image, html, _, _, files, files_part, b64)) = parsed else {
                 return self.refuse_guest_image(GuestImageRefusal::Malformed, None, now);
             };
+            if changed && files == GuestFiles::Malformed {
+                // Counts as no files: the copy's text and image still sync.
+                clip_line(format!(
+                    "BVAGENT CLIPSYNC refused guest-files malformed copy={} t={}",
+                    self.last_synced.guest_copy,
+                    self.t_ms(now)
+                ));
+            }
+            if self.handle_guest_files(files, files_part, later, now) {
+                return;
+            }
             return self.handle_guest_clip(b64, image, html, later, echo, now);
         }
         let Some(text) = self.admit_guest_clip(b64, now) else {
@@ -264,6 +289,7 @@ impl AgentConsoleHarness {
                 self.last_synced.text = Some(normalize_clip(&text));
                 // CLIPSET and CLIPSETH replace the whole guest clipboard.
                 self.last_synced.image = None;
+                self.last_synced.files = None;
                 self.last_synced.html = html.as_deref().map(html_digest);
                 self.last_synced.echo = true;
                 self.last_synced.rebaseline = false;

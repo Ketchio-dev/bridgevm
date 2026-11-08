@@ -13,8 +13,9 @@
 //   set_images(&self, on: bool)                  // read images too (IMAGE_PNG)
 //   set_text_html(&self, text, html)             // guest->host rich text
 //   set_rich_text(&self, on: bool)               // read public.html too (CF_HTML)
+//   set_files(&self, paths, owner)               // guest->host files, as file URLs
 //
-// Echo suppression contract: content written via set()/set_image() must NOT
+// Echo suppression contract: content written via set()/set_image()/set_files() must NOT
 // come back out of try_changed_clip(), and neither must content equal to the
 // last one emitted/set. A refused queued write may re-report that content to
 // restore host ownership. The first poll after spawn reports the pasteboard's
@@ -25,9 +26,10 @@
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};
+use std::path::PathBuf;
 #[path = "host_pasteboard_bridge.rs"]
 mod bridge;
-pub use bridge::{HostClip, HostPasteboard};
+pub use bridge::{HostClip, HostPasteboard, PasteboardOwner};
 #[cfg(test)]
 pub(crate) use bridge::PasteboardWorker;
 #[path = "host_pasteboard_image.rs"]
@@ -66,6 +68,11 @@ pub trait PasteboardBackend: Send {
     /// Replace the content with `text` and its `html` in one write.
     fn set_text_html(&mut self, text: &str, html: &str) -> bool {
         let _ = (text, html);
+        false
+    }
+    /// Replace the content with these files, as file URLs Finder pastes.
+    fn set_files(&mut self, paths: &[PathBuf]) -> bool {
+        let _ = paths;
         false
     }
 }
@@ -223,6 +230,46 @@ impl PasteboardBackend for NsPasteboardBackend {
             !pb.is_null() && image::write_image(pb, png, text)
         })
     }
+
+    fn set_files(&mut self, paths: &[PathBuf]) -> bool {
+        with_autorelease_pool(|| unsafe {
+            let pb = self.pasteboard();
+            !pb.is_null() && write_file_urls(pb, paths)
+        })
+    }
+}
+
+/// clearContents, then writeObjects: with one `[NSURL fileURLWithPath:]` per path.
+unsafe fn write_file_urls(pb: ObjcId, paths: &[PathBuf]) -> bool {
+    let url_class = image::class(c"NSURL");
+    let array_class = image::class(c"NSArray");
+    if url_class.is_null() || array_class.is_null() {
+        return false;
+    }
+    let mut urls = Vec::with_capacity(paths.len());
+    for path in paths {
+        let ns_path = path.to_str().map_or(std::ptr::null_mut(), |path| ns_string(path));
+        let url = if ns_path.is_null() {
+            ns_path
+        } else {
+            msg_send_id_id(url_class, sel(b"fileURLWithPath:\0"), ns_path)
+        };
+        if url.is_null() {
+            return false;
+        }
+        urls.push(url);
+    }
+    let array = image::msg_send_id_ptr_usize(
+        array_class,
+        sel(b"arrayWithObjects:count:\0"),
+        urls.as_ptr().cast(),
+        urls.len(),
+    );
+    if array.is_null() {
+        return false;
+    }
+    let _ = msg_send_i64(pb, sel(b"clearContents\0"));
+    image::msg_send_bool_id(pb, sel(b"writeObjects:\0"), array)
 }
 
 fn with_autorelease_pool<R>(body: impl FnOnce() -> R) -> R {

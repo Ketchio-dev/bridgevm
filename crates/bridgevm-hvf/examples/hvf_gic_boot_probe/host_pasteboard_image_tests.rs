@@ -289,3 +289,26 @@ fn private_pasteboard_tiff_becomes_png_and_file_copies_have_no_image() {
     assert!(unsafe { set_data_for_type(pb, b"file:///tmp/x.png", c"public.file-url") });
     assert_eq!(pasteboard.backend.get_image(), None, "a Finder copy's icon is no image");
 }
+
+#[test]
+fn private_pasteboard_holds_files_as_file_urls_and_no_text() {
+    let mut pasteboard = PrivatePasteboard::new("files");
+    if pasteboard.raw().is_null() || !pasteboard.backend.set_string("probe") {
+        eprintln!("no pasteboard server in this session; skipped");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("bridgevm-pasteboard-files-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("폴더")).unwrap();
+    std::fs::write(dir.join("a b.txt"), b"a").unwrap();
+    let before = pasteboard.backend.change_count();
+    assert!(pasteboard.backend.set_files(&[dir.join("a b.txt"), dir.join("폴더")]));
+    assert!(pasteboard.backend.change_count() > before);
+    assert_eq!(pasteboard.backend.get_string(), None, "a file copy carries no text");
+    assert_eq!(pasteboard.backend.get_image(), None, "nor an image");
+    // Reading a URL back would make AppKit log a sandbox extension it cannot take.
+    let pb = pasteboard.raw();
+    let items = unsafe { msg_send_usize(msg_send_id(pb, sel(b"pasteboardItems\0")), sel(b"count\0")) };
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(items, 2, "one item per file");
+    assert!(unsafe { has_type(pb, c"public.file-url") }, "as file URLs");
+}

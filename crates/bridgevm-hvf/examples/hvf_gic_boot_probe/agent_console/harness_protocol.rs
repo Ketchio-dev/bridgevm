@@ -104,6 +104,12 @@ impl AgentConsoleHarness {
             clip_push: false,
             put_data: false,
             clip_html: false,
+            clip_files: false,
+            clip_files_stage: if clipsync {
+                ClipFilesStage::for_this_process()
+            } else {
+                ClipFilesStage::new(PathBuf::new())
+            },
             ctl_path,
             ctl_offset,
             ctl_framer: LineFramer::new(),

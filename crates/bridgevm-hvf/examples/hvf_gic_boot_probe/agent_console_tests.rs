@@ -6,6 +6,12 @@ use super::*;
 pub(super) mod tests {
     use super::*;
     include!("agent_console/input_receipt_transcript_test.rs");
+    /// A staging directory of this harness's own: tests run side by side.
+    fn test_clip_files_dir() -> PathBuf {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        std::env::temp_dir().join(format!("bridgevm-clip-files-test-{}-{n}", std::process::id()))
+    }
     pub(crate) fn harness() -> AgentConsoleHarness {
         AgentConsoleHarness {
             start: Instant::now(),
@@ -34,6 +40,8 @@ pub(super) mod tests {
             clip_push: false,
             put_data: false,
             clip_html: false,
+            clip_files: false,
+            clip_files_stage: ClipFilesStage::new(test_clip_files_dir()),
             ctl_path: None,
             ctl_offset: 0,
             ctl_framer: LineFramer::new(),

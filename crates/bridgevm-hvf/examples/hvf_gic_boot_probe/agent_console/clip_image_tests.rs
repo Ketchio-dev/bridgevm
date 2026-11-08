@@ -8,6 +8,7 @@ use crate::agent_console::host_pasteboard::{
 };
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 const DIR: &str = r"C:\Users\u\AppData\Local\Temp\BridgeVM-clip";
 
@@ -55,6 +56,8 @@ struct Mac {
     html_reads: usize,
     /// Rich writes, (text, html).
     rich_writes: Vec<(String, String)>,
+    /// Files writes, their top-level paths.
+    file_writes: Vec<Vec<PathBuf>>,
 }
 
 impl Mac {
@@ -100,6 +103,11 @@ impl PasteboardBackend for Mac {
         self.rich_writes.push((text.to_owned(), html.to_owned()));
         true
     }
+    fn set_files(&mut self, paths: &[PathBuf]) -> bool {
+        self.copy(None, None);
+        self.file_writes.push(paths.to_vec());
+        true
+    }
 }
 
 /// The guest side of the wire, as bvagent.ps1 answers it.
@@ -120,6 +128,13 @@ struct Guest {
     html_caps: bool,
     /// The clipboard's HTML Format bytes.
     html: Option<Vec<u8>>,
+    /// The agent announces CF_HDROP (with CF_HTML) and serves CLIPXF.
+    files_caps: bool,
+    /// The clipboard's file list as CLIPXF names it: `<count> <b64(list)|->`.
+    listing: Option<String>,
+    /// The file list the clipboard changes to once a GET was served, with a
+    /// CLIPCHANGED notice after the reply.
+    then_listing: Option<String>,
 }
 
 impl Guest {
@@ -135,6 +150,9 @@ impl Guest {
             described: None,
             html_caps: false,
             html: None,
+            files_caps: false,
+            listing: None,
+            then_listing: None,
         }
     }
     /// CLIPX's image part, as bvagent.ps1 describes the clipboard image.
@@ -169,7 +187,11 @@ impl Guest {
         let (verb, arg) = line.split_once(' ').unwrap_or((line, ""));
         let reply = match verb {
             "CLIPCAPS" if self.images => {
-                let html = if self.html_caps { " CF_HTML" } else { "" };
+                let html = match (self.html_caps, self.files_caps) {
+                    (true, true) => " CF_HTML CF_HDROP",
+                    (true, false) => " CF_HTML",
+                    _ => "",
+                };
                 format!("CLIPCAPS IMAGE_PNG {}{html}", base64_encode(DIR.as_bytes()))
             }
             "CLIPGET" => format!("CLIP {}", base64_encode(self.text.as_bytes())),
@@ -185,10 +207,21 @@ impl Guest {
                 };
                 format!("CLIPXH {descriptor} {html} {}", base64_encode(self.text.replace('\n', "\r\n").as_bytes()))
             }
+            "CLIPXF" if self.images && self.html_caps && self.files_caps => {
+                let descriptor = self.descriptor();
+                let html = match &self.html {
+                    Some(html) => format!("{} {}", html.len(), base64_encode(html)),
+                    None => "0 -".to_owned(),
+                };
+                let files = self.listing.as_deref().unwrap_or("0 -");
+                let text = base64_encode(self.text.replace('\n', "\r\n").as_bytes());
+                format!("CLIPXF {descriptor} {html} {files} {text}")
+            }
             "CLIPSET" => {
                 self.text = Self::b64_text(arg).replace("\r\n", "\n");
                 self.image = None;
                 self.html = None;
+                self.listing = None;
                 "OK CLIPSET".to_owned()
             }
             "CLIPSETH" if self.html_caps => {
@@ -196,6 +229,7 @@ impl Guest {
                 self.text = Self::b64_text(text).replace("\r\n", "\n");
                 self.image = None;
                 self.html = Some(base64_decode(html).unwrap());
+                self.listing = None;
                 "OK CLIPSETH".to_owned()
             }
             "PUTBEG" => {
@@ -228,17 +262,24 @@ impl Guest {
                 self.text = if text == "-" { String::new() } else { Self::b64_text(text).replace("\r\n", "\n") };
                 self.image = Some(bytes);
                 self.html = None;
+                self.listing = None;
                 "OK CLIPSETIMG 1 1".to_owned()
             }
             "GET" => {
                 let path = Self::b64_text(arg);
-                let bytes = self.serve.take().unwrap_or_else(|| self.files[&path].clone());
+                let Some(bytes) = self.serve.take().or_else(|| self.files.get(&path).cloned()) else {
+                    return vec!["ERR GET Could not find file".to_owned()];
+                };
                 let chunks: Vec<&[u8]> = bytes.chunks(24 * 1024).collect();
                 let mut lines = vec![format!("GETBEG {arg} {} {}", bytes.len(), chunks.len())];
                 for (seq, chunk) in chunks.iter().enumerate() {
                     lines.push(format!("GETCHUNK {seq} {}", base64_encode(chunk)));
                 }
                 lines.push(format!("GETEND {}", chunks.len()));
+                if let Some(listing) = self.then_listing.take() {
+                    self.listing = Some(listing);
+                    lines.push("CLIPCHANGED".to_owned());
+                }
                 return lines;
             }
             _ => format!("OUT 255 {}", base64_encode(format!("unknown token: {verb}").as_bytes())),
@@ -254,6 +295,9 @@ struct Rig {
     guest: Guest,
     wire: Vec<String>,
     now: Instant,
+    /// A Mac copy with nothing the guest takes (a Finder copy before file
+    /// copies go to Windows), seen by the Mac poll after the next GET.
+    mac_copy_after_get: bool,
 }
 
 impl Rig {
@@ -280,6 +324,7 @@ impl Rig {
             guest: Guest::new(images),
             wire: Vec::new(),
             now,
+            mac_copy_after_get: false,
         }
     }
     /// One clip interval: the Mac poll, a service pass, every reply in
@@ -305,6 +350,10 @@ impl Rig {
                         more.push(bytes.to_vec())
                     });
                     wire.extend(more);
+                    if reply.starts_with("GETEND ") && std::mem::take(&mut self.mac_copy_after_get) {
+                        self.mac.copy(None, None);
+                        assert!(self.worker.poll(&mut self.mac));
+                    }
                 }
             }
         }
@@ -316,7 +365,7 @@ impl Rig {
             .wire
             .iter()
             .map(|line| line.split(' ').next().unwrap().to_owned())
-            .filter(|verb| verb != "CLIPX" && verb != "CLIPXH" && verb != "CLIPGET")
+            .filter(|verb| !["CLIPX", "CLIPXH", "CLIPXF", "CLIPGET"].contains(&verb.as_str()))
             .collect();
         self.wire.clear();
         verbs
@@ -793,3 +842,6 @@ fn notice_lines_keep_the_prefixes_the_app_matches() {
 
 #[path = "clip_html_flow_tests.rs"]
 mod html;
+
+#[path = "clip_files_flow_tests.rs"]
+mod files;

@@ -53,6 +53,11 @@ impl AgentConsoleHarness {
             Some((ServiceReq::AgentUpdate(step), _)) => self.agent_update_interrupted(step, now),
             _ => {}
         }
+        // A guest file copy starts over: the next CLIPXF announces it again.
+        if self.clip_files_stage.pull.is_some() {
+            self.abandon_files_pull();
+            self.last_synced.files = None;
+        }
         // The new agent holds no open drop file; end the job instead of guessing its state.
         self.fail_drop("agent-restarted", now);
         self.get_accum = None;
