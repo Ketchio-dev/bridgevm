@@ -83,6 +83,15 @@ impl AgentConsoleHarness {
             return;
         };
         self.last_synced.host_copy = self.last_synced.next_copy();
+        // File copies arrive only while the agent advertises CLIPSETFILES. Over
+        // a limit the copy goes as a plain copy would: its names as text.
+        if let Some(HostFiles::TooLarge { entries, bytes }) = clip.files.as_ref().filter(|_| self.clip_files_push) {
+            clip_line(format!(
+                "BVAGENT CLIPSYNC skip host-files too-large files={entries} bytes={bytes} copy={} t={}",
+                self.last_synced.host_copy,
+                self.t_ms(now)
+            ));
+        }
         // Images arrive only while the agent advertises IMAGE_PNG.
         match clip.image.filter(|_| self.clip_images.is_some()) {
             Some(HostImage::Png(png)) => return self.enqueue_host_image(clip.text, png, now),

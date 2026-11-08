@@ -94,7 +94,7 @@ use clip_guest_admission::*;
 use clip_guest_fingerprint::*;
 use clip_files::*;
 use clip_image::*;
-use host_pasteboard::HostImage;
+use host_pasteboard::{HostFiles, HostImage};
 use clip_operator_reply::*;
 use clip_sync::*;
 use clipboard::*;

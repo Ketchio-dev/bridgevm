@@ -25,6 +25,7 @@ pub(crate) struct PasteboardWorker {
     pub(super) recopy: Arc<AtomicU64>,
     pub(super) images: Arc<AtomicBool>,
     pub(super) html: Arc<AtomicBool>,
+    pub(super) files: Arc<AtomicBool>,
 }
 
 impl PasteboardWorker {
@@ -42,7 +43,7 @@ impl PasteboardWorker {
                 Err(TryRecvError::Disconnected) => return false,
             }
         }
-        // Images or rich text just switched on (seen after the drain, so after
+        // Images, rich text or file copies just switched on (seen after the drain, so after
         // any write sent since): read the Mac's content before a guest write
         // lands. A startup Mac image or rich copy is then reported and wins, as
         // startup text does, and writes queued against the older read are stale.
@@ -83,14 +84,19 @@ impl PasteboardWorker {
     fn switched_on(&self) -> bool {
         (self.images.load(Ordering::Acquire) && !self.poller.images)
             || (self.html.load(Ordering::Acquire) && !self.poller.html)
+            || (self.files.load(Ordering::Acquire) && !self.poller.files)
     }
 
     pub(crate) fn poll<B: PasteboardBackend>(&mut self, backend: &mut B) -> bool {
         self.initialized = true;
         let (images, html) = (self.images.load(Ordering::Acquire), self.html.load(Ordering::Acquire));
+        let files = self.files.load(Ordering::Acquire);
         let change = if self.switched_on() {
-            self.poller.report_formats_on(backend, images, html)
+            self.poller.report_formats_on(backend, images, html, files)
         } else {
+            if !files && self.poller.files {
+                self.poller.file_copies_off();
+            }
             if !images && self.poller.images {
                 self.poller.images_off();
             }

@@ -105,6 +105,7 @@ impl AgentConsoleHarness {
             put_data: false,
             clip_html: false,
             clip_files: false,
+            clip_files_push: false,
             clip_files_stage: if clipsync {
                 ClipFilesStage::for_this_process()
             } else {

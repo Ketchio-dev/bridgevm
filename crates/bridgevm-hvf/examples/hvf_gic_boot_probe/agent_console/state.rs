@@ -132,6 +132,9 @@ pub struct AgentConsoleHarness {
     /// The agent answered CLIPCAPS with CF_HDROP (and CF_HTML): Explorer file
     /// copies come as CLIPXF polls (clip_files.rs).
     pub(super) clip_files: bool,
+    /// The agent also answered CLIPSETFILES: Finder file copies go to Windows
+    /// (clip_files_push.rs).
+    pub(super) clip_files_push: bool,
     /// Where guest file copies are staged, and the transfer under way.
     pub(super) clip_files_stage: ClipFilesStage,
     /// Optional control file tailed for injected commands.

@@ -41,6 +41,7 @@ pub(super) mod tests {
             put_data: false,
             clip_html: false,
             clip_files: false,
+            clip_files_push: false,
             clip_files_stage: ClipFilesStage::new(test_clip_files_dir()),
             ctl_path: None,
             ctl_offset: 0,

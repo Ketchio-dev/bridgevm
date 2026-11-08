@@ -17,6 +17,8 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 
 /// The agent serves CLIPXF (with CF_HTML).
 pub(super) const CLIP_CAPS_FILES_MARKER: &str = "CF_HDROP";
+/// The agent serves CLIPSETFILES (with CF_HDROP): Mac file copies go to Windows.
+pub(super) const CLIP_CAPS_SET_FILES_MARKER: &str = "CLIPSETFILES";
 /// Most entries (files and folders) one copy brings over: the agent's FilesMax.
 pub(super) const CLIP_FILES_MAX_ENTRIES: usize = 256;
 /// Most file bytes one copy brings over.

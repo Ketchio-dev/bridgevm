@@ -290,6 +290,7 @@ fn private_pasteboard_tiff_becomes_png_and_file_copies_have_no_image() {
     assert_eq!(pasteboard.backend.get_image(), None, "a Finder copy's icon is no image");
 }
 
+/// Reading the URLs back makes AppKit log one sandbox_extension_consume line each.
 #[test]
 fn private_pasteboard_holds_files_as_file_urls_and_no_text() {
     let mut pasteboard = PrivatePasteboard::new("files");
@@ -305,10 +306,12 @@ fn private_pasteboard_holds_files_as_file_urls_and_no_text() {
     assert!(pasteboard.backend.change_count() > before);
     assert_eq!(pasteboard.backend.get_string(), None, "a file copy carries no text");
     assert_eq!(pasteboard.backend.get_image(), None, "nor an image");
-    // Reading a URL back would make AppKit log a sandbox extension it cannot take.
     let pb = pasteboard.raw();
     let items = unsafe { msg_send_usize(msg_send_id(pb, sel(b"pasteboardItems\0")), sel(b"count\0")) };
+    let read = pasteboard.backend.get_files();
     std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(items, 2, "one item per file");
-    assert!(unsafe { has_type(pb, c"public.file-url") }, "as file URLs");
+    assert_eq!(read, [dir.join("a b.txt"), dir.join("폴더")], "read back as the same paths");
+    assert!(pasteboard.backend.set_string("text"));
+    assert!(pasteboard.backend.get_files().is_empty(), "a text copy has no files");
 }

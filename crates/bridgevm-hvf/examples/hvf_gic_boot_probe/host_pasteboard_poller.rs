@@ -1,7 +1,8 @@
 //! Pasteboard observation and self-write suppression without native API access.
 
-use super::{host_image, HostClip, HostImage, PasteboardBackend};
+use super::{host_files, host_image, HostClip, HostFiles, HostImage, PasteboardBackend};
 use sha2::{Digest, Sha256};
+use std::path::PathBuf;
 
 /// Ticks to keep reading a pasteboard that a new changeCount showed empty: a
 /// Mac copy is clearContents (which moves changeCount) and then the write
@@ -15,15 +16,21 @@ pub struct Poller {
     last_seen: Option<String>,
     /// Digest of the image last reported or written (images on only).
     last_image: Option<[u8; 32]>,
-    /// The last report held an image over the limits (it has no digest).
+    /// The last report held an image or files over the limits (no digest).
     last_oversized: bool,
     /// Digest of the `public.html` last reported or written (rich text on only).
     last_html: Option<[u8; 32]>,
+    /// Digest of the file copy last reported (file copies on only).
+    last_files: Option<[u8; 32]>,
+    /// The files apply_set_files put on the pasteboard (composed): never a Mac copy.
+    own_files: Vec<PathBuf>,
     pub(super) observed_suppressed_change: bool,
     /// Also read the pasteboard's image: the guest agent advertised IMAGE_PNG.
     pub(super) images: bool,
     /// Also read the pasteboard's HTML: the guest agent advertised CF_HTML.
     pub(super) html: bool,
+    /// Also read the pasteboard's file URLs: the agent advertised CLIPSETFILES.
+    pub(super) files: bool,
     /// Reads left for a copy that may still be between clear and write.
     pub(super) empty_rereads: u8,
 }
@@ -38,9 +45,12 @@ impl Poller {
             last_image: None,
             last_oversized: false,
             last_html: None,
+            last_files: None,
+            own_files: Vec::new(),
             observed_suppressed_change: false,
             images: false,
             html: false,
+            files: false,
             empty_rereads: 0,
         }
     }
@@ -70,18 +80,19 @@ impl Poller {
         &mut self,
         backend: &mut B,
     ) -> Option<HostClip> {
-        self.report_formats_on(backend, true, self.html)
+        self.report_formats_on(backend, true, self.html, self.files)
     }
 
-    /// Images or rich text were just switched on: report the current content
-    /// once when it holds what is now read, so a Mac image or rich copy reaches
-    /// the guest the way startup text does. A text change this read happens to
-    /// see is reported as on a tick.
+    /// Images, rich text or file copies were just switched on: report the
+    /// current content once when it holds what is now read, so a Mac image,
+    /// rich or file copy reaches the guest the way startup text does. A text
+    /// change this read happens to see is reported as on a tick.
     pub(super) fn report_formats_on<B: PasteboardBackend>(
         &mut self,
         backend: &mut B,
         images: bool,
         html: bool,
+        files: bool,
     ) -> Option<HostClip> {
         if !images {
             self.images_off();
@@ -89,10 +100,13 @@ impl Poller {
         if !html {
             self.rich_text_off();
         }
-        (self.images, self.html) = (images, html);
+        if !files {
+            self.file_copies_off();
+        }
+        (self.images, self.html, self.files) = (images, html, files);
         let seen = self.last_seen.clone();
         let clip = self.observe(backend, true)?;
-        (clip.image.is_some() || clip.html.is_some() || clip.text != seen).then_some(clip)
+        (clip.image.is_some() || clip.html.is_some() || clip.files.is_some() || clip.text != seen).then_some(clip)
     }
 
     pub(super) fn images_off(&mut self) {
@@ -104,6 +118,11 @@ impl Poller {
     pub(super) fn rich_text_off(&mut self) {
         self.html = false;
         self.last_html = None;
+    }
+
+    pub(super) fn file_copies_off(&mut self) {
+        self.files = false;
+        self.last_files = None;
     }
 
     fn observe<B: PasteboardBackend>(&mut self, backend: &mut B, force: bool) -> Option<HostClip> {
@@ -119,18 +138,22 @@ impl Poller {
         let changed = self.last_count != -1 && new_count;
         self.last_count = count;
         let text = backend.get_string().filter(|text| !text.is_empty());
-        let image = if self.images {
+        // A Finder copy: its files, with its names as text. Our own set_files is no copy.
+        let urls = if self.files { backend.get_files() } else { Vec::new() };
+        let files = if urls.is_empty() || urls == self.own_files { None } else { host_files(&urls) };
+        // The files win over the copy's icon.
+        let image = if self.images && files.is_none() {
             backend.get_image().and_then(host_image)
         } else {
             None
         };
         // Rich text rides with its text, never with an image (which keeps its own path).
-        let html = if self.html && text.is_some() && image.is_none() {
+        let html = if self.html && text.is_some() && image.is_none() && files.is_none() {
             backend.get_html().filter(|html| !html.trim().is_empty())
         } else {
             None
         };
-        if text.is_none() && image.is_none() {
+        if text.is_none() && image.is_none() && files.is_none() {
             if new_count {
                 self.empty_rereads = EMPTY_REREADS;
             }
@@ -140,6 +163,7 @@ impl Poller {
             self.last_image = None;
             self.last_oversized = false;
             self.last_html = None;
+            self.last_files = None;
             self.observed_suppressed_change = changed && !force;
             return None;
         }
@@ -150,8 +174,14 @@ impl Poller {
         };
         // A too-large image is reported once per copy so its skip is logged,
         // and so is its going away (the copy that replaced it).
-        let oversized = matches!(image, Some(HostImage::TooLarge { .. }));
-        let new_image = digest != self.last_image || oversized || self.last_oversized;
+        let files_digest = match &files {
+            Some(HostFiles::Read(copy)) => Some(copy.digest),
+            _ => None,
+        };
+        let oversized = matches!(image, Some(HostImage::TooLarge { .. }))
+            || matches!(files, Some(HostFiles::TooLarge { .. }));
+        let new_image =
+            digest != self.last_image || files_digest != self.last_files || oversized || self.last_oversized;
         let html_digest = html.as_deref().map(html_digest);
         if !force && self.last_seen == text && !new_image && self.last_html == html_digest {
             self.observed_suppressed_change = true;
@@ -161,7 +191,8 @@ impl Poller {
         self.last_image = digest;
         self.last_oversized = oversized;
         self.last_html = html_digest;
-        Some(HostClip { text, image, html })
+        self.last_files = files_digest;
+        Some(HostClip { text, image, html, files })
     }
 }
 

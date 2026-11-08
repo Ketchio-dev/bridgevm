@@ -788,7 +788,7 @@ fn agent_restart_mid_push_resends_the_image_from_putbeg() {
     assert!(rig.worker.report_clip(HostClip {
         text: None,
         image: Some(HostImage::Png(host_pasteboard::admit_png(image.clone()).unwrap())),
-        html: None,
+        ..HostClip::default()
     }));
     rig.h.service_enqueue(rig.now);
     let mut sent = Vec::new();
