@@ -99,7 +99,9 @@ impl NtfsGuest {
                 }
             }
             "PUT" => {
-                let (path, data) = arg.split_once(' ').unwrap();
+                // As the agent: by position, ignoring the Mac time after the data.
+                let mut parts = arg.split(' ');
+                let (path, data) = (parts.next().unwrap(), parts.next().unwrap_or(""));
                 let rel = Self::rel(&text(path));
                 self.puts.push(rel.clone());
                 if rel.contains(['<', '>', ':', '"', '|', '?', '*']) {

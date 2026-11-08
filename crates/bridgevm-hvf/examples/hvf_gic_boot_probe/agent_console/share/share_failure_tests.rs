@@ -9,7 +9,7 @@ mod fixture;
 fn failed_destination_limit_disables_share_and_drops_queued_puts_and_deletes() {
     let (mut h, _root) = fixture::nearly_exhausted_share();
     h.queue.push_back(ServiceReq::ShareLs);
-    h.queue.push_back(share_put_req("a".into(), vec![1], 1));
+    h.queue.push_back(share_put_req("a".into(), vec![1], 1, None));
     h.queue.push_back(ServiceReq::ShareDel { name: "a".into(), direction: ShareDelDirection::HostToGuest });
     h.queue.push_back(ServiceReq::Ping);
     // A real root verifies, then the invalid component exhausts the same budget.

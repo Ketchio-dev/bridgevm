@@ -302,6 +302,13 @@ $script:BvPutTotal = [int64]0
 $script:BvPutWritten = [int64]0
 $script:BvPutSeq = 0
 
+function Set-PutTime([string]$path, [string]$ms) {
+    # The Mac file's modification time (ms since 1970) when the host sends one; only the
+    # date Explorer shows, so a failure leaves the written file as it is.
+    if (-not $ms) { return }
+    try { [System.IO.File]::SetLastWriteTimeUtc($path, [DateTimeOffset]::FromUnixTimeMilliseconds([long]$ms).UtcDateTime) } catch { }
+}
+
 function Close-PutStream {
     if ($null -ne $script:BvPutStream) {
         try { $script:BvPutStream.Close() } catch { }
@@ -311,6 +318,7 @@ function Close-PutStream {
     $script:BvPutTotal = [int64]0
     $script:BvPutWritten = [int64]0
     $script:BvPutSeq = 0
+    $script:BvPutTime = ''
 }
 
 # Finder drops land on the logged-on user's Desktop through their own stream, apart from the
@@ -1437,7 +1445,7 @@ while ($true) {
                     } catch { Write-Line $h ('ERR GET ' + $_.Exception.Message) 'ERR' }
                 }
                 'PUT' {
-                    # PUT <b64(path)> <b64(rawbytes)> -> PUTOK <b64(path)> <bytes>.
+                    # PUT <b64(path)> <b64(rawbytes)> [<mtime ms>] -> PUTOK <b64(path)> <bytes>.
                     # Single-chunk write; the host sends the whole file in one line.
                     $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
@@ -1447,11 +1455,12 @@ while ($true) {
                         $dir = [System.IO.Path]::GetDirectoryName($path)
                         if ($dir -and -not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
                         [System.IO.File]::WriteAllBytes($path, $data)
+                        if ($parts.Length -ge 3) { Set-PutTime $path $parts[2] }
                         Write-Line $h ('PUTOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($path)) + ' ' + $data.Length) 'PUTOK'
                     } catch { Write-Line $h ('ERR PUT ' + $_.Exception.Message) 'ERR' }
                 }
                 'PUTBEG' {
-                    # PUTBEG <b64(path)> <total> <nchunks> -> OK PUTBEG.
+                    # PUTBEG <b64(path)> <total> <nchunks> [<mtime ms>] -> OK PUTBEG.
                     # Opens/truncates a stream; PUTCHUNK/PUTEND complete it.
                     $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
@@ -1466,6 +1475,7 @@ while ($true) {
                         $script:BvPutTotal = $total
                         $script:BvPutWritten = [int64]0
                         $script:BvPutSeq = 0
+                        if ($parts.Length -ge 4) { $script:BvPutTime = $parts[3] }
                         Write-Line $h 'OK PUTBEG' 'OK'
                     } catch {
                         Close-PutStream
@@ -1503,12 +1513,14 @@ while ($true) {
                         $written = $script:BvPutWritten
                         $total = $script:BvPutTotal
                         $expectedSeq = $script:BvPutSeq
+                        $time = $script:BvPutTime
                         Close-PutStream
                         if ($seq -ne $expectedSeq) {
                             Write-Line $h 'ERR PUTEND seq' 'ERR'
                         } elseif ($written -ne $total) {
                             Write-Line $h 'ERR PUTEND short' 'ERR'
                         } else {
+                            Set-PutTime $path $time
                             Write-Line $h ('PUTOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($path)) + ' ' + $written) 'PUTOK'
                         }
                     } catch {

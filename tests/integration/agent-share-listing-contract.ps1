@@ -1,8 +1,9 @@
 # The guest agent's shared-folder listing (LSR) with its change watcher (BridgeVM.BvShareWatch):
 # an unchanged folder gets the last listing again without being enumerated, and any change
 # below the root (a new, grown, deleted or renamed file, a new folder, a change made while the
-# folder was being listed) gets a fresh, correct listing. Runs the agent's own LSR case and
-# share watch block against a temporary folder.
+# folder was being listed) gets a fresh, correct listing. A file the host writes (PUT, or
+# PUTBEG/PUTCHUNK/PUTEND) keeps the Mac file's modification time when the host sends one. Runs
+# the agent's own verb cases and share watch block against a temporary folder.
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $source = [IO.File]::ReadAllText((Join-Path $repo 'scripts/win-assets/bvagent.ps1'))
@@ -12,12 +13,17 @@ $found = [regex]::Matches($source, "(?s)\n                'LSR' \{(?<body>.*?)\r
 if ($found.Count -ne 1) { throw 'expected exactly one LSR implementation' }
 $lsr = [scriptblock]::Create($found[0].Groups['body'].Value)
 $verbs = @{}
-foreach ($verb in @('PUT', 'DEL')) {
+foreach ($verb in @('PUT', 'DEL', 'PUTBEG', 'PUTCHUNK', 'PUTEND')) {
     $one = [regex]::Matches($source, "(?s)\n                '$verb' \{(?<body>.*?)\r?\n                \}\r?\n")
     if ($one.Count -ne 1) { throw "expected exactly one $verb implementation" }
     $verbs[$verb] = [scriptblock]::Create($one[0].Groups['body'].Value)
 }
 . ([scriptblock]::Create($block.Value))
+foreach ($name in @('Set-PutTime', 'Close-PutStream')) {
+    $function = [regex]::Match($source, "(?s)\nfunction $name\b.*?\r?\n\}\r?\n")
+    if (-not $function.Success) { throw "$name not found" }
+    . ([scriptblock]::Create($function.Value))
+}
 if ($PSVersionTable.PSEdition -eq 'Core') {
     # Windows PowerShell 5.1 compiles C# 5; prove the helper does too.
     Add-Type -TypeDefinition $script:BvShareWatchSource -CompilerOptions '/langversion:5' -ErrorAction Stop
@@ -142,6 +148,31 @@ try {
     Assert ($script:sent -ceq 'OK DEL') "DEL reply: $script:sent"
     $listing = List
     Assert ($listing.Enumerated -and -not $listing.Entries.ContainsKey('put.bin')) 'the LSR right after a DEL no longer lists the file'
+    $cases++
+
+    # A written file keeps the Mac file's time: 2026-11-08T00:05:12.123Z, as the host sends it.
+    $macTime = [DateTime]::new(2026, 11, 8, 0, 5, 12, 123, [DateTimeKind]::Utc)
+    $timed = Join-Path $root 'timed.bin'
+    $arg = (& $b64 $timed) + ' ' + [Convert]::ToBase64String([byte[]](1, 2)) + ' 1794096312123'
+    & $verbs['PUT']
+    Assert ($script:sent -clike 'PUTOK *') "timed PUT reply: $script:sent"
+    Assert ([IO.File]::GetLastWriteTimeUtc($timed) -eq $macTime) "PUT kept $([IO.File]::GetLastWriteTimeUtc($timed).ToString('o'))"
+    $cases++
+    $arg = (& $b64 $timed) + ' ' + [Convert]::ToBase64String([byte[]](3)) + ' not-a-time'
+    & $verbs['PUT']
+    Assert ($script:sent -clike 'PUTOK *' -and [IO.File]::ReadAllBytes($timed).Length -eq 1) "a bad time still writes: $script:sent"
+    $left = [IO.File]::GetLastWriteTimeUtc($timed)
+    Assert ([Math]::Abs(([DateTime]::UtcNow - $left).TotalMinutes) -lt 5) "a bad time leaves the write time, not $($left.ToString('o'))"
+    $cases++
+    $arg = (& $b64 $timed) + ' 3 1 1794096312123'
+    & $verbs['PUTBEG']
+    Assert ($script:sent -ceq 'OK PUTBEG') "PUTBEG reply: $script:sent"
+    $arg = '0 ' + [Convert]::ToBase64String([byte[]](4, 5, 6))
+    & $verbs['PUTCHUNK']
+    $arg = '1'
+    & $verbs['PUTEND']
+    Assert ($script:sent -clike 'PUTOK *' -and [IO.File]::ReadAllBytes($timed).Length -eq 3) "PUTEND reply: $script:sent"
+    Assert ([IO.File]::GetLastWriteTimeUtc($timed) -eq $macTime) "PUTEND kept $([IO.File]::GetLastWriteTimeUtc($timed).ToString('o'))"
     $cases++
 
     # Never older than the age limit, whatever the watcher says.
