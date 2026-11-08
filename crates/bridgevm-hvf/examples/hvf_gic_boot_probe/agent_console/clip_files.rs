@@ -67,13 +67,13 @@ fn decode_file_list(b64: &str, count: usize) -> Option<Vec<GuestFile>> {
         .strip_suffix('\n')?
         .split('\n')
         .map(|line| {
-            let mut fields = line.splitn(4, '|');
-            Some(GuestFile {
-                dir: flag(fields.next())?,
-                top: flag(fields.next())?,
-                bytes: fields.next()?.parse().ok()?,
-                path: fields.next().filter(|path| !path.is_empty())?.to_owned(),
-            })
+            // <isDir>|<top>|<bytes>|<mtime>|<path>: the mtime is only part of the copy's key (the
+            // part's digest), so a same-size edit copied again is fetched again.
+            let mut fields = line.splitn(5, '|');
+            let (dir, top, bytes) = (flag(fields.next())?, flag(fields.next())?, fields.next()?.parse().ok()?);
+            fields.next()?.parse::<u64>().ok()?;
+            let path = fields.next().filter(|path| !path.is_empty())?.to_owned();
+            Some(GuestFile { dir, top, bytes, path })
         })
         .collect::<Option<Vec<_>>>()?;
     (files.len() == count).then_some(files)

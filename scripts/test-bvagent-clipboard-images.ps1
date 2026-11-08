@@ -236,11 +236,19 @@ try {
     $file = Join-Path $filesDir ([string][char]0xBCF4 + [char]0xACE0 + [char]0xC11C + ' 1.txt')
     [IO.File]::WriteAllBytes($file, [byte[]](1, 2, 3, 4, 5))
     Copy-Files @($file, $folder, (Join-Path $filesDir 'gone.txt'))
-    $list = "0|1|5|$file`n1|1|0|$folder`n0|0|3|$(Join-Path $folder 'inner.txt')`n1|0|0|$(Join-Path $folder 'sub')`n"
+    $tick = { param($p) [IO.File]::GetLastWriteTimeUtc($p).Ticks }
+    $inner = Join-Path $folder 'inner.txt'
+    $list = "0|1|5|$(& $tick $file)|$file`n1|1|0|0|$folder`n0|0|3|$(& $tick $inner)|$inner`n1|0|0|0|$(Join-Path $folder 'sub')`n"
     $want = 'CLIPXF 0 0 0 - - 0 - 4 {0} ' -f [Convert]::ToBase64String($u8.GetBytes($list))
     $got = (Run 'CLIPXF' '')[0]
     Assert ($got -ceq $want) "CLIPXF lists the copied files: $got"
     Assert ((Run 'CLIPXH' '')[0] -ceq 'CLIPXH 0 0 0 - - 0 - ') 'CLIPXH keeps its fields'
+    # The same copy after a same-size edit lists a new mtime, so the host fetches the new bytes.
+    [IO.File]::WriteAllBytes($file, [byte[]](5, 4, 3, 2, 1))
+    [IO.File]::SetLastWriteTimeUtc($file, [IO.File]::GetLastWriteTimeUtc($file).AddSeconds(1))
+    Copy-Files @($file)
+    $again = (Run 'CLIPXF' '')[0]
+    Assert ($again -ceq ('CLIPXF 0 0 0 - - 0 - 1 {0} ' -f [Convert]::ToBase64String($u8.GetBytes("0|1|5|$(& $tick $file)|$file`n")))) "a same-size edit lists its new mtime: $again"
     # Past FilesMax entries the listing stops and names the count only.
     $many = Join-Path $filesDir 'many'
     [void][IO.Directory]::CreateDirectory($many)

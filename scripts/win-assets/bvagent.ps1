@@ -1169,9 +1169,10 @@ function Get-ClipHtmlPart {
 $script:BvClipFilesSeq = [uint32]4294967295
 $script:BvClipFilesPart = '0 -'
 # The files part of CLIPXF: <count> <b64(list)|->, read again only after a change. The list has one
-# line per entry, <isDir>|<top>|<bytes>|<full path>: each copied item that still exists (top 1), and
-# below a copied folder every file and folder in it (top 0, after their folder). A folder has 0
-# bytes. Past FilesMax entries the listing stops and names the count only (FilesMax + 1). A failed
+# line per entry, <isDir>|<top>|<bytes>|<mtime>|<full path>: each copied item that still exists (top
+# 1), and below a copied folder every file and folder in it (top 0, after their folder). A folder has
+# 0 bytes and mtime 0; a file's mtime (LastWriteTimeUtc ticks) tells the host an edited file from
+# the copy it already has. Past FilesMax entries the listing stops and names the count only (FilesMax + 1). A failed
 # read counts as no files.
 function Get-ClipFilesPart {
     $seq = $K::GetClipboardSequenceNumber()
@@ -1191,14 +1192,15 @@ function Get-ClipFilesPart {
                     $path = [string]$entry[0]
                     $io = Get-IoPath $path
                     if ([System.IO.Directory]::Exists($io)) {
-                        [void]$sb.Append('1|').Append($entry[1]).Append('|0|').Append($path).Append("`n")
+                        [void]$sb.Append('1|').Append($entry[1]).Append('|0|0|').Append($path).Append("`n")
                         $children = @([System.IO.Directory]::GetFileSystemEntries($io))
                         [System.Array]::Sort($children, [System.StringComparer]::OrdinalIgnoreCase)
                         for ($j = $children.Length - 1; $j -ge 0; $j--) {
                             $pending.Push(@([System.IO.Path]::Combine($path, [System.IO.Path]::GetFileName($children[$j])), 0))
                         }
                     } elseif ([System.IO.File]::Exists($io)) {
-                        [void]$sb.Append('0|').Append($entry[1]).Append('|').Append((New-Object System.IO.FileInfo $io).Length).Append('|').Append($path).Append("`n")
+                        $info = New-Object System.IO.FileInfo $io
+                        [void]$sb.Append('0|').Append($entry[1]).Append('|').Append($info.Length).Append('|').Append($info.LastWriteTimeUtc.Ticks).Append('|').Append($path).Append("`n")
                     } else { continue }
                     $count++
                 }

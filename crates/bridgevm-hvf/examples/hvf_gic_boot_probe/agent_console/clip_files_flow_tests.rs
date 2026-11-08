@@ -20,8 +20,15 @@ fn rig() -> Rig {
 
 /// CLIPXF's files part for `(isDir, top, bytes, path)` entries, as bvagent.ps1 lists them.
 fn listing(entries: &[(u8, u8, u64, &str)]) -> String {
-    let list: String =
-        entries.iter().map(|(dir, top, bytes, path)| format!("{dir}|{top}|{bytes}|{path}\n")).collect();
+    listing_at(entries, 0)
+}
+
+/// The same with every file's mtime `mtime`.
+fn listing_at(entries: &[(u8, u8, u64, &str)], mtime: u64) -> String {
+    let list: String = entries
+        .iter()
+        .map(|(dir, top, bytes, path)| format!("{dir}|{top}|{bytes}|{}|{path}\n", if *dir == 1 { 0 } else { mtime }))
+        .collect();
     format!("{} {}", entries.len(), base64_encode(list.as_bytes()))
 }
 
@@ -84,6 +91,25 @@ fn a_guest_file_and_folder_copy_lands_on_the_mac_as_its_top_level_items() {
     assert!(rig.verbs().is_empty(), "neither fetched again nor pushed back");
     assert_eq!(rig.mac.file_writes.len(), 1);
     assert!(rig.mac.writes.is_empty() && rig.mac.rich_writes.is_empty());
+    std::fs::remove_dir_all(&rig.h.clip_files_stage.dir).unwrap();
+}
+
+#[test]
+fn a_same_size_edit_copied_again_is_fetched_again() {
+    let mut rig = rig();
+    let file = r"C:\s\a.txt";
+    rig.guest.files.insert(file.into(), b"one".to_vec());
+    rig.guest.listing = Some(listing_at(&[(0, 1, 3, file)], 1));
+    rig.settle();
+    assert_eq!(gets(&mut rig), [file]);
+    // Edited in Windows to the same length and copied again: only its mtime tells.
+    rig.guest.files.insert(file.into(), b"two".to_vec());
+    rig.guest.listing = Some(listing_at(&[(0, 1, 3, file)], 2));
+    rig.settle();
+    assert_eq!(gets(&mut rig), [file], "the edited file was not fetched again");
+    let tops = rig.mac.file_writes.last().unwrap().clone();
+    assert_eq!(std::fs::read(&tops[0]).unwrap(), b"two");
+    take_lines(&mut Vec::new());
     std::fs::remove_dir_all(&rig.h.clip_files_stage.dir).unwrap();
 }
 
@@ -184,7 +210,7 @@ fn a_newer_guest_copy_mid_transfer_abandons_the_older_one() {
 fn a_malformed_file_list_counts_as_no_files() {
     let mut rig = rig();
     // A list one entry short of its count, a count that is no number, and no base64.
-    let one = base64_encode(format!("0|1|2|{}\n", r"C:\s\a.txt").as_bytes());
+    let one = base64_encode(format!("0|1|2|0|{}\n", r"C:\s\a.txt").as_bytes());
     for part in [format!("2 {one}"), "x -".to_owned(), "1 not-base64".to_owned()] {
         rig.guest.text = format!("t {part}");
         rig.guest.listing = Some(part);
