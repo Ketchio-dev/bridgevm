@@ -345,7 +345,7 @@ function Close-DropStream([bool]$Keep) {
     if ($null -ne $script:BvDropStream) {
         try { $script:BvDropStream.Close() } catch { }
         $script:BvDropStream = $null
-        if (-not $Keep -and $script:BvDropPath) { try { [System.IO.File]::Delete($script:BvDropPath) } catch { } }
+        if (-not $Keep -and $script:BvDropPath) { try { [System.IO.File]::Delete((Get-IoPath $script:BvDropPath)) } catch { } }
     }
     $script:BvDropPath = ''
     $script:BvDropTotal = [int64]0
@@ -539,7 +539,9 @@ function Test-DropName([string]$Name) {
 }
 
 # The full path for a dropped item below the Desktop. Every parent must be a real folder, never a
-# reparse point; an existing name becomes "name (2).ext" ("name (2)" for a folder).
+# reparse point; an existing name becomes "name (2).ext" ("name (2)" for a folder). The path is
+# returned as is; every file system call on it goes through Get-IoPath, so a dropped folder deeper
+# than 260 characters lands too.
 function Get-DropRoot {
     $dir = [Environment]::GetFolderPath('Desktop')
     if ([string]::IsNullOrEmpty($dir) -or -not [System.IO.Directory]::Exists($dir)) { throw 'no-desktop' }
@@ -552,7 +554,7 @@ function Resolve-DropTarget([string]$Root, [string]$Rel, [bool]$IsDir) {
     foreach ($part in $parts) { if (-not (Test-DropName $part)) { throw 'bad-name' } }
     for ($i = 0; $i -lt $parts.Length - 1; $i++) {
         $dir = [System.IO.Path]::Combine($dir, $parts[$i])
-        $attr = [System.IO.File]::GetAttributes($dir)
+        $attr = [System.IO.File]::GetAttributes((Get-IoPath $dir))
         if (($attr -band [System.IO.FileAttributes]::Directory) -eq 0 -or ($attr -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'bad-parent' }
     }
     $leaf = $parts[$parts.Length - 1]
@@ -564,7 +566,7 @@ function Resolve-DropTarget([string]$Root, [string]$Rel, [bool]$IsDir) {
     }
     $target = [System.IO.Path]::Combine($dir, $leaf)
     $n = 2
-    while ([System.IO.File]::Exists($target) -or [System.IO.Directory]::Exists($target)) {
+    while ([System.IO.File]::Exists((Get-IoPath $target)) -or [System.IO.Directory]::Exists((Get-IoPath $target))) {
         $target = [System.IO.Path]::Combine($dir, ('{0} ({1}){2}' -f $stem, $n, $ext))
         $n++
     }
@@ -1593,7 +1595,7 @@ while ($true) {
                     # DROPDIR <b64(rel)> -> OK DROPDIR <b64(final name)>: a new folder below the Desktop.
                     try {
                         $target = Resolve-DropTarget (Get-DropRoot) ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg))) $true
-                        [void][System.IO.Directory]::CreateDirectory($target)
+                        [void][System.IO.Directory]::CreateDirectory((Get-IoPath $target))
                         Write-Line $h ('OK DROPDIR ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([System.IO.Path]::GetFileName($target)))) 'OK'
                     } catch { Write-Line $h ('ERR DROPDIR ' + $_.Exception.Message) 'ERR' }
                 }
@@ -1605,7 +1607,7 @@ while ($true) {
                         $parts = $arg.Split(' ')
                         $total = [int64]$parts[1]
                         $target = Resolve-DropTarget (Get-DropRoot) ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))) $false
-                        $script:BvDropStream = [System.IO.File]::Open($target, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+                        $script:BvDropStream = [System.IO.File]::Open((Get-IoPath $target), [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
                         $script:BvDropPath = $target
                         $script:BvDropTotal = $total
                         $script:BvDropStart = [System.Diagnostics.Stopwatch]::GetTimestamp()
