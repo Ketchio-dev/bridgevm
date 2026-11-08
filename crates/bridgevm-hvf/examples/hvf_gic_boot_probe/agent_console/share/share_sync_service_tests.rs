@@ -31,6 +31,8 @@ mod unseen_tests;
 mod write_refusal_tests;
 #[path = "share_adopt_tests.rs"]
 mod adopt_tests;
+#[path = "share_host_watch_service_tests.rs"]
+mod host_watch_tests;
 
 const ROOT: &str = "C:\\share";
 

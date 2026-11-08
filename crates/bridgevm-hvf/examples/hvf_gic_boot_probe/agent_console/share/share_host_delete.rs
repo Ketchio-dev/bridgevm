@@ -19,6 +19,7 @@ impl AgentConsoleHarness {
             println!("BVAGENT SHARE del-deferred <root-unavailable>");
             return;
         };
+        share.forget_host_walk();
         match Destination::from_root(root, name, false).and_then(|d| d.delete()) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}

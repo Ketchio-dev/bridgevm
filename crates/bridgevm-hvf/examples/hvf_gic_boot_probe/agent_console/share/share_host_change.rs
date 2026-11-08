@@ -34,9 +34,8 @@ impl AgentConsoleHarness {
         let scanned = share.host_actions.is_empty() || !fresh;
         if scanned {
             share.host_actions.clear();
-            share.host_actions_scanned = std::time::SystemTime::now();
             // An unmounted or renamed root is not the user deleting every file.
-            if !scan_share_host_dir(share) {
+            if !scan_share_host_dir(share, now) {
                 return false;
             }
             let actions = share

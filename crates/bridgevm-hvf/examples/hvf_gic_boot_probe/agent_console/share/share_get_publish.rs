@@ -42,6 +42,7 @@ impl AgentConsoleHarness {
         let mtime = (share.engine.guest_mtime(name))
             .and_then(share_sync::share_mtime::guest_mtime_ms)
             .and_then(share_sync::share_mtime::system_time);
+        share.forget_host_walk();
         match Destination::from_root(root, name, true).and_then(|d| d.write_at(&bytes, mtime)) {
             Ok(mtime) => {
                 share.engine.on_host_write_succeeded(name, mtime);
