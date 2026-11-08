@@ -1,0 +1,46 @@
+//! A new session (a VM start or guest restart) sends nothing for files both
+//! sides already hold, and still sends or fetches what changed while the VM
+//! was off.
+
+use super::*;
+
+#[test]
+fn a_new_session_sends_only_what_changed_while_the_vm_was_off() {
+    assert_eq!(dotnet_time(1_794_096_312_123), "2026-11-08T00:05:12.1230000Z");
+    let mut rig = Rig::new("new-session");
+    let chunked = vec![5u8; SHARE_PUT_CHUNK_BYTES + 3];
+    for (name, bytes) in [("a.txt", &b"alpha"[..]), ("same-size.txt", b"12345"), ("big.bin", &chunked)] {
+        std::fs::write(rig.dir.join(name), bytes).unwrap();
+    }
+    rig.run(16);
+    assert_eq!(rig.guest.puts.len(), 3, "{:?}", rig.guest.puts);
+
+    // With the VM off a Mac file changes at its size, and the guest gained a file.
+    let changed = rig.dir.join("same-size.txt");
+    let later = std::fs::metadata(&changed).unwrap().modified().unwrap() + Duration::from_secs(2);
+    std::fs::write(&changed, b"54321").unwrap();
+    std::fs::File::options().write(true).open(&changed).unwrap().set_modified(later).unwrap();
+    rig.guest.write("guest-only.txt", b"g");
+    rig.h.share = Some(ShareState::new(ShareSync::new(512), rig.dir.clone(), ROOT.into(), Duration::from_millis(500)));
+    let sent = rig.guest.puts.len();
+    rig.run(16);
+    assert_eq!(rig.guest.puts[sent..], ["same-size.txt"]);
+    assert_eq!(rig.guest.content("same-size.txt"), Some(&b"54321"[..]));
+    assert_eq!(rig.guest.gets, ["guest-only.txt"]);
+    assert_eq!(rig.host("guest-only.txt").as_deref(), Some(&b"g"[..]));
+    rig.assert_settled();
+
+    // A file recorded this way syncs as before: a Mac edit is sent.
+    std::fs::write(rig.dir.join("a.txt"), b"alpha 2").unwrap();
+    rig.run(8);
+    assert_eq!(rig.guest.content("a.txt"), Some(&b"alpha 2"[..]));
+}
+
+#[test]
+fn a_failed_first_listing_still_lets_the_mac_files_go() {
+    let mut rig = Rig::new("first-listing-fails");
+    rig.guest.ls_error = true;
+    std::fs::write(rig.dir.join("a.txt"), b"alpha").unwrap();
+    rig.run(8);
+    assert_eq!(rig.guest.puts, ["a.txt"]);
+}

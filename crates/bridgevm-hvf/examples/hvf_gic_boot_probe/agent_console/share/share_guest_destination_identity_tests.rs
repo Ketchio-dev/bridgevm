@@ -74,7 +74,7 @@ fn a_pending_get_refuses_a_replacement_root_without_adopting_its_version() {
         name: "a.txt".into(),
         size: bytes.len() as u64,
         is_dir: false,
-        mtime: format!("m{stamp}"),
+        mtime: rig.guest.listed_time("a.txt", *stamp),
     };
     rig.guest.write("a.txt", b"guest changed A");
     rig.run(1);

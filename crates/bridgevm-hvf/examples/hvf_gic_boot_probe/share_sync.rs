@@ -81,6 +81,8 @@ pub struct ShareSync {
     refused_names_seen: (usize, u64),
     fetched_over_cap: HashMap<String, String>,
     refused_writes: share_write_failures::RefusedWrites,
+    /// This session has had a guest listing reply, even a refused one (share_adopt.rs).
+    listed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -202,6 +204,7 @@ impl ShareSync {
             }
             actions.push(SyncAction::DeleteHost { name: name.clone() });
         }
+        self.listed = true;
 
         actions
     }
@@ -292,6 +295,8 @@ pub use share_rel_path::{append_guest_rel_into, from_guest_rel, normalize_rel};
 mod share_hash;
 #[path = "share_mtime.rs"]
 pub mod share_mtime;
+#[path = "share_adopt.rs"]
+mod share_adopt;
 pub use share_hash::fnv1a64;
 #[path = "share_host_unseen.rs"]
 mod share_host_unseen;

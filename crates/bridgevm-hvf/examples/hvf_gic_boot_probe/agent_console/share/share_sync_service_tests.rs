@@ -27,6 +27,8 @@ mod put_unconfirmed_tests;
 mod unseen_tests;
 #[path = "share_write_refusal_tests.rs"]
 mod write_refusal_tests;
+#[path = "share_adopt_tests.rs"]
+mod adopt_tests;
 
 const ROOT: &str = "C:\\share";
 
@@ -44,6 +46,11 @@ struct NtfsGuest {
     stream: Option<(String, usize, usize)>,
     /// PUTDATA chunks received.
     data_chunks: usize,
+    /// Modification times the host sent (ms), as the agent sets them; listed in .NET's form.
+    stamps: std::collections::HashMap<String, u128>,
+    stream_time: Option<u128>,
+    /// LSR fails, as for a folder the agent cannot read.
+    ls_error: bool,
 }
 
 impl NtfsGuest {
@@ -57,6 +64,7 @@ impl NtfsGuest {
     }
     fn write(&mut self, rel: &str, bytes: &[u8]) {
         self.clock += 1;
+        self.stamps.remove(&rel.to_uppercase());
         match self.find(rel) {
             Some(i) => (self.files[i].1, self.files[i].2) = (bytes.to_vec(), self.clock),
             None => self.files.push((rel.to_string(), bytes.to_vec(), self.clock)),
@@ -66,6 +74,13 @@ impl NtfsGuest {
         let mut data = self.content(rel).unwrap_or_default().to_vec();
         data.extend_from_slice(bytes);
         self.write(rel, &data);
+    }
+    /// The time LSR lists: the one the host sent, else the write counter.
+    fn listed_time(&self, name: &str, clock: u64) -> String {
+        match self.stamps.get(&name.to_uppercase()) {
+            Some(&ms) => dotnet_time(ms),
+            None => format!("m{clock}"),
+        }
     }
     fn content(&self, rel: &str) -> Option<&[u8]> {
         self.find(rel).map(|i| self.files[i].1.as_slice())
@@ -84,9 +99,12 @@ impl NtfsGuest {
         };
         match verb {
             "PING" => vec!["PONG".into()],
+            "LSR" if self.ls_error => vec!["ERR LSR Access to the path is denied.".into()],
+            // The folder create after a failed first listing (share_listing_reply.rs).
+            "RUN" => vec!["OUT 0 ".into()],
             "LSR" => {
                 let listing: String =
-                    self.files.iter().map(|(n, b, m)| format!("{n}|{}|0|m{m}\n", b.len())).collect();
+                    self.files.iter().map(|(n, b, m)| format!("{n}|{}|0|{}\n", b.len(), self.listed_time(n, *m))).collect();
                 vec![format!("LSOK {}", b64(listing.as_bytes()))]
             }
             "GET" => {
@@ -114,6 +132,9 @@ impl NtfsGuest {
                 if self.failing.contains(&rel) {
                     return vec!["ERR PUT There is not enough space on the disk.".into()];
                 }
+                if let Some(ms) = parts.next().and_then(|t| t.parse().ok()) {
+                    self.stamps.insert(rel.to_uppercase(), ms);
+                }
                 vec![format!("PUTOK {path} {}", bytes.len())]
             }
             "PUTBEG" => {
@@ -122,6 +143,7 @@ impl NtfsGuest {
                 self.puts.push(rel.clone());
                 self.write(&rel, &[]);
                 self.stream = Some((rel, parts.next().unwrap().parse().unwrap(), 0));
+                self.stream_time = parts.nth(1).and_then(|t| t.parse().ok());
                 vec!["OK PUTBEG".into()]
             }
             // As the agent: the header names the payload length, the payload is its own line.
@@ -143,7 +165,12 @@ impl NtfsGuest {
             }
             "PUTEND" => match self.stream.take().unwrap() {
                 (_, total, written) if written != total => vec!["ERR PUTEND short".into()],
-                (rel, _, written) => vec![format!("PUTOK {} {written}", b64(rel.as_bytes()))],
+                (rel, _, written) => {
+                    if let Some(ms) = self.stream_time.take() {
+                        self.stamps.insert(rel.to_uppercase(), ms);
+                    }
+                    vec![format!("PUTOK {} {written}", b64(rel.as_bytes()))]
+                }
             },
             "DEL" => match self.find(&Self::rel(&text(arg))) {
                 Some(i) => {
@@ -155,6 +182,23 @@ impl NtfsGuest {
             other => panic!("unexpected guest request {other}"),
         }
     }
+}
+
+/// `LastWriteTimeUtc.ToString('o')` of a time in ms since 1970 (H. Hinnant's civil_from_days).
+fn dotnet_time(ms: u128) -> String {
+    let (secs, millis) = ((ms / 1000) as i64, ms % 1000);
+    let (days, clock) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z - era * 146_097;
+    let year_of_era = (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let mp = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    let (hour, minute, second) = (clock / 3600, clock / 60 % 60, clock % 60);
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}0000Z")
 }
 
 struct Rig {
