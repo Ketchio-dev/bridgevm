@@ -3,7 +3,8 @@
 # below the root (a new, grown, deleted or renamed file, a new folder, a change made while the
 # folder was being listed) gets a fresh, correct listing. A file the host writes (PUT, or
 # PUTBEG/PUTCHUNK/PUTEND) keeps the Mac file's modification time when the host sends one. Runs
-# the agent's own verb cases and share watch block against a temporary folder.
+# the agent's own verb cases and share watch block against a temporary folder. On Windows, a
+# path longer than 260 characters is written, listed and deleted, and its listing does not fail.
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $source = [IO.File]::ReadAllText((Join-Path $repo 'scripts/win-assets/bvagent.ps1'))
@@ -19,7 +20,7 @@ foreach ($verb in @('PUT', 'DEL', 'PUTBEG', 'PUTCHUNK', 'PUTEND')) {
     $verbs[$verb] = [scriptblock]::Create($one[0].Groups['body'].Value)
 }
 . ([scriptblock]::Create($block.Value))
-foreach ($name in @('Set-PutTime', 'Close-PutStream')) {
+foreach ($name in @('Get-IoPath', 'Set-PutTime', 'Close-PutStream')) {
     $function = [regex]::Match($source, "(?s)\nfunction $name\b.*?\r?\n\}\r?\n")
     if (-not $function.Success) { throw "$name not found" }
     . ([scriptblock]::Create($function.Value))
@@ -175,6 +176,34 @@ try {
     Assert ([IO.File]::GetLastWriteTimeUtc($timed) -eq $macTime) "PUTEND kept $([IO.File]::GetLastWriteTimeUtc($timed).ToString('o'))"
     $cases++
 
+    # Past 260 characters: Win32 refuses the path unless it starts with \\?\. One such file used to
+    # fail every listing of the folder, and its PUT failed.
+    if ([IO.Path]::DirectorySeparatorChar -eq '\') {
+        $deep = (@(('d' * 60)) * 5) -join '\'
+        $long = Join-Path $root ($deep + '\long.bin')
+        Assert ($long.Length -gt 300) "long path is $($long.Length) characters"
+        $arg = (& $b64 $long) + ' ' + [Convert]::ToBase64String([byte[]](5, 6)) + ' 1794096312123'
+        & $verbs['PUT']
+        Assert ($script:sent -clike 'PUTOK *') "long PUT reply: $script:sent"
+        $listing = List
+        Assert ($listing.Entries[($deep.Replace('\', '/') + '/long.bin')] -eq '2') "long path listed: $(@($listing.Entries.Keys) -join ',')"
+        $arg = (& $b64 $long) + ' 3 1 1794096312123'
+        & $verbs['PUTBEG']
+        Assert ($script:sent -ceq 'OK PUTBEG') "long PUTBEG reply: $script:sent"
+        $arg = '0 ' + [Convert]::ToBase64String([byte[]](7, 8, 9))
+        & $verbs['PUTCHUNK']
+        $arg = '1'
+        & $verbs['PUTEND']
+        Assert ($script:sent -clike 'PUTOK *') "long PUTEND reply: $script:sent"
+        Assert ((List).Entries[($deep.Replace('\', '/') + '/long.bin')] -eq '3') 'long PUTBEG file listed'
+        Assert ([IO.File]::GetLastWriteTimeUtc('\\?\' + $long) -eq $macTime) 'long PUTEND kept the time'
+        $arg = & $b64 $long
+        & $verbs['DEL']
+        Assert ($script:sent -ceq 'OK DEL') "long DEL reply: $script:sent"
+        Assert (-not (List).Entries.ContainsKey(($deep.Replace('\', '/') + '/long.bin'))) 'long path deleted'
+        $cases++
+    }
+
     # Never older than the age limit, whatever the watcher says.
     $script:BvLsrMaxAgeTicks = [long]1
     Start-Sleep -Milliseconds 5
@@ -187,6 +216,6 @@ try {
     Assert ((List).Enumerated -and (List).Enumerated) 'without the watcher every LSR enumerates'
     $cases++
 } finally {
-    Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Get-IoPath $root $true) -Recurse -Force -ErrorAction SilentlyContinue
 }
 Write-Output "agent share listing contract: PASS ($cases cases, $($PSVersionTable.PSEdition))"

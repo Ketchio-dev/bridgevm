@@ -9,7 +9,7 @@ $source = [IO.File]::ReadAllText((Join-Path $repo 'scripts/win-assets/bvagent.ps
 $reader = [regex]::Match($source, "(?s)\`$script:BvDropReaderSource = @'\r?\n(?<cs>.*?)\r?\n'@")
 if (-not $reader.Success) { throw 'BvDropReaderSource not found' }
 $script:BvDropReaderSource = $reader.Groups['cs'].Value
-foreach ($name in @('Is-BadHandle', 'Test-DropReader', 'Read-DataPayload', 'Read-Line', 'Set-PutTime', 'Close-PutStream')) {
+foreach ($name in @('Is-BadHandle', 'Test-DropReader', 'Read-DataPayload', 'Read-Line', 'Get-IoPath', 'Set-PutTime', 'Close-PutStream')) {
     $function = [regex]::Match($source, "(?s)\nfunction $name\b.*?\r?\n\}\r?\n")
     if (-not $function.Success) { throw "$name not found" }
     . ([scriptblock]::Create($function.Value))
