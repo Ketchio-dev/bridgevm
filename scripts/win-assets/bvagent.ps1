@@ -734,6 +734,27 @@ function Watch-ShareRoot([string]$root) {
 }
 # <<< share watch
 
+function Read-DataPayload($h, [int]$want) {
+    # The payload line after a DROPCHUNK or PUTDATA header, <want> base64 characters: decoded as
+    # it arrives (BvDropReader), else read as a line.
+    if ($script:BvLines.Count -gt 0) { return , [System.Convert]::FromBase64String($script:BvLines.Dequeue()) }
+    if (Test-DropReader) {
+        $rest = ''
+        $data = [BridgeVM.BvDropReader]::ReadPayload($h, $script:BvPending.ToString(), $want, 30000, [ref]$rest)
+        $script:BvPending.Length = 0
+        if ($rest.Contains("`n")) {
+            $restParts = $rest.Split([char]10)
+            for ($i = 0; $i -lt $restParts.Length - 1; $i++) { $script:BvLines.Enqueue($restParts[$i].TrimEnd([char]13)) }
+            $rest = $restParts[$restParts.Length - 1]
+        }
+        [void]$script:BvPending.Append($rest)
+        return , $data
+    }
+    $payload = $null
+    for ($i = 0; $null -eq $payload -and $i -lt 15; $i++) { $payload = Read-Line $h }
+    return , [System.Convert]::FromBase64String([string]$payload)
+}
+
 function Read-Line($handle) {
     # Full line, or $null after ~2s idle so the caller can poll port state.
     if ($script:BvLines.Count -gt 0) { return $script:BvLines.Dequeue() }
@@ -1172,7 +1193,7 @@ function Get-BvAgentId([string]$Dir) {
 # for the host's Confirm (bvagent-update.ps1 keeps update\pending.txt beside
 # the version folders): the host then confirms it whatever it recorded itself.
 function Get-BvReady([string]$Dir, [string]$Id) {
-    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2'
+    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata'
     if (-not $Id) { return $ready }
     $ready += ' agent=' + $Id
     $root = Split-Path -Parent $Dir
@@ -1502,6 +1523,28 @@ while ($true) {
                         }
                     } catch { Write-Line $h ('ERR PUTCHUNK ' + $_.Exception.Message) 'ERR' }
                 }
+                'PUTDATA' {
+                    # PUTDATA <seq> <chars>, then the payload as its own line of <chars> base64
+                    # characters -> OK PUTCHUNK <seq>, as PUTCHUNK. The payload is decoded as it
+                    # arrives, as a drop chunk's: a PUTCHUNK line went through Read-Line and
+                    # Convert.FromBase64String, about 140 ms per MiB. It is read before any check,
+                    # so a refused chunk still leaves the wire on a line boundary.
+                    $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
+                    try {
+                        $p = $arg.Split(' ')
+                        $seq = [int]$p[0]
+                        $data = Read-DataPayload $h ([int]$p[1])
+                        if ($null -eq $script:BvPutStream) { throw 'no-open-put' }
+                        if ($seq -ne $script:BvPutSeq) {
+                            Write-Line $h 'ERR PUTCHUNK seq' 'ERR'
+                        } else {
+                            $script:BvPutStream.Write($data, 0, $data.Length)
+                            $script:BvPutWritten += [int64]$data.Length
+                            $script:BvPutSeq++
+                            Write-Line $h ('OK PUTCHUNK ' + $seq) 'OK'
+                        }
+                    } catch { Write-Line $h ('ERR PUTCHUNK ' + $_.Exception.Message) 'ERR' }
+                }
                 'PUTEND' {
                     # PUTEND <seq> -> PUTOK <b64(path)> <bytes> after byte-count
                     # verification. The terminal reply matches legacy PUT.
@@ -1565,24 +1608,7 @@ while ($true) {
                     try {
                         $p = $arg.Split(' ')
                         $dropSeq = [int64]$p[0]
-                        $want = [int]$p[1]
-                        if ($script:BvLines.Count -gt 0) {
-                            $data = [System.Convert]::FromBase64String($script:BvLines.Dequeue())
-                        } elseif (Test-DropReader) {
-                            $rest = ''
-                            $data = [BridgeVM.BvDropReader]::ReadPayload($h, $script:BvPending.ToString(), $want, 30000, [ref]$rest)
-                            $script:BvPending.Length = 0
-                            if ($rest.Contains("`n")) {
-                                $restParts = $rest.Split([char]10)
-                                for ($i = 0; $i -lt $restParts.Length - 1; $i++) { $script:BvLines.Enqueue($restParts[$i].TrimEnd([char]13)) }
-                                $rest = $restParts[$restParts.Length - 1]
-                            }
-                            [void]$script:BvPending.Append($rest)
-                        } else {
-                            $payload = $null
-                            for ($i = 0; $null -eq $payload -and $i -lt 15; $i++) { $payload = Read-Line $h }
-                            $data = [System.Convert]::FromBase64String([string]$payload)
-                        }
+                        $data = Read-DataPayload $h ([int]$p[1])
                         if ($null -eq $script:BvDropStream) { throw 'no-open-drop' }
                         if ($dropSeq -ne $script:BvDropSeq) { throw 'seq' }
                         if ($script:BvDropWritten + $data.Length -gt $script:BvDropTotal) { throw 'too-long' }

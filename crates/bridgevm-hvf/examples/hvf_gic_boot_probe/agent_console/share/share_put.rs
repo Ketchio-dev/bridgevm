@@ -145,6 +145,7 @@ impl AgentConsoleHarness {
         &mut self,
         now: Instant,
     ) -> Option<(usize, usize, usize)> {
+        let chunk = self.share_put_chunk_bytes();
         let Some((
             ServiceReq::SharePut {
                 bytes,
@@ -161,8 +162,8 @@ impl AgentConsoleHarness {
             return None;
         }
         let seq = *next_chunk;
-        let start = seq.saturating_mul(SHARE_PUT_CHUNK_BYTES);
-        let end = (start + SHARE_PUT_CHUNK_BYTES).min(bytes.len());
+        let start = seq.saturating_mul(chunk);
+        let end = (start + chunk).min(bytes.len());
         if start > end || start >= bytes.len() {
             return None;
         }
@@ -191,6 +192,7 @@ impl AgentConsoleHarness {
         seq: usize,
         now: Instant,
     ) -> Option<SharePutWireLine> {
+        let chunk = self.share_put_chunk_bytes();
         let Some((
             ServiceReq::SharePut {
                 bytes,
@@ -206,11 +208,11 @@ impl AgentConsoleHarness {
         if *phase != SharePutPhase::Chunk || seq.checked_add(1) != Some(*next_chunk) {
             return None;
         }
-        let nchunks = bytes.len().div_ceil(SHARE_PUT_CHUNK_BYTES);
+        let nchunks = bytes.len().div_ceil(chunk);
         let line = if *next_chunk < nchunks {
             let send_seq = *next_chunk;
-            let start = send_seq * SHARE_PUT_CHUNK_BYTES;
-            let end = (start + SHARE_PUT_CHUNK_BYTES).min(bytes.len());
+            let start = send_seq * chunk;
+            let end = (start + chunk).min(bytes.len());
             *next_chunk = send_seq + 1;
             *phase = SharePutPhase::Chunk;
             SharePutWireLine::Chunk {
@@ -253,9 +255,26 @@ impl AgentConsoleHarness {
             return false;
         }
         self.service_line_scratch.clear();
-        let _ = write!(&mut self.service_line_scratch, "PUTCHUNK {seq} ");
+        if self.put_data {
+            // As a drop's chunk: the agent reads the payload line with BvDropReader.
+            let chars = (end - start).div_ceil(3) * 4;
+            let _ = writeln!(&mut self.service_line_scratch, "PUTDATA {seq} {chars}");
+        } else {
+            let _ = write!(&mut self.service_line_scratch, "PUTCHUNK {seq} ");
+        }
         base64_encode_into(&bytes[start..end], &mut self.service_line_scratch);
         self.service_line_scratch.push('\n');
         true
+    }
+
+    /// PUTCHUNK lines go through the agent's PowerShell line reader and
+    /// Convert.FromBase64String, about 140 ms per MiB in a guest; PUTDATA
+    /// payloads are decoded as they arrive.
+    pub(in crate::agent_console) fn share_put_chunk_bytes(&self) -> usize {
+        if self.put_data {
+            SHARE_PUT_DATA_CHUNK_BYTES
+        } else {
+            SHARE_PUT_CHUNK_BYTES
+        }
     }
 }

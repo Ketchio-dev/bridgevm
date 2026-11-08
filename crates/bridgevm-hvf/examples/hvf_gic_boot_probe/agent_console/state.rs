@@ -53,6 +53,10 @@ pub(super) const DEFAULT_SHARE_MAX_KB: u64 = 8192;
 
 pub(super) const SHARE_PUT_CHUNK_BYTES: usize = 24 * 1024;
 
+/// Raw bytes per PUTDATA chunk, for agents whose READY carries `putdata`: as a
+/// Finder drop's chunk, read and decoded in compiled code (share_put.rs).
+pub(super) const SHARE_PUT_DATA_CHUNK_BYTES: usize = 1024 * 1024;
+
 pub(super) const COMMAND_OUTPUT_CHUNK_BYTES: usize = 24 * 1024;
 
 pub(super) const COMMAND_OUTPUT_CHUNK_B64_BYTES: usize = COMMAND_OUTPUT_CHUNK_BYTES.div_ceil(3) * 4;
@@ -120,6 +124,8 @@ pub struct AgentConsoleHarness {
     /// each guest clipboard change, so the clipboard poll is only a 10 s safety
     /// net and keepalive.
     pub(super) clip_push: bool,
+    /// The agent's READY carried `putdata`: shared-folder chunks go as PUTDATA.
+    pub(super) put_data: bool,
     /// The agent answered CLIPCAPS with CF_HTML (and IMAGE_PNG): rich text moves
     /// as CLIPXH polls and CLIPSETH pushes (clip_html.rs).
     pub(super) clip_html: bool,

@@ -75,6 +75,11 @@ pub(super) fn ready_update_pending(rest: &str) -> bool {
     rest.split(' ').any(|token| token == "update=pending")
 }
 
+/// Whether the READY agent takes PUTDATA, a chunk whose payload is its own line.
+pub(super) fn ready_has_put_data(rest: &str) -> bool {
+    rest.split(' ').any(|token| token == "putdata")
+}
+
 /// Whether the READY agent has the chunked file verbs (PUTBEG/PUTCHUNK/PUTEND).
 pub(super) fn ready_has_file_verbs(rest: &str) -> bool {
     rest.split(' ').any(|token| token == "v3-share2")
@@ -376,6 +381,7 @@ pub(super) fn is_clip_image_req(req: &ServiceReq) -> bool {
 impl AgentConsoleHarness {
     /// READY or re-READY: an Armed update learns whether the new agent came up.
     pub(super) fn note_agent_ready(&mut self, rest: &str, now: Instant) {
+        self.put_data = ready_has_put_data(rest);
         let t = self.t_ms(now);
         let Some(update) = self.agent_update.as_mut() else {
             return;
