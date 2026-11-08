@@ -14,6 +14,14 @@
 //! of the same file), and nothing under the platform lock may wait that long
 //! for an unrelated piece.
 //!
+//! The thread also takes a piece only once no I/O queue has fetched a
+//! command for [`IDLE`] (5 ms): inside APFS a punch contends with the
+//! guest's reads of the same file, and a sequential read slowed down when
+//! Windows' own small deallocations were punched during it. `process_sq`
+//! stamps the time of each I/O command it fetches (one relaxed store), and
+//! the thread sleeps until the I/O has paused. Under steady I/O the punches
+//! wait, which Deallocate allows; a drain does not wait.
+//!
 //! Deallocation is advisory (DLFEAT 0), so a range punched late, or never,
 //! leaves the guest's data as valid as a punched one. What must never happen
 //! is a punch of bytes the guest wrote after the DSM. Every WRITE fetched
@@ -42,10 +50,10 @@
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::dataset_management::{punch_ranges, DSM_STATS};
 use super::flush_worker::lock;
@@ -61,6 +69,11 @@ pub(super) const PIECE_BYTES: u64 = 8 << 20;
 /// Pending ranges per namespace (about 1.5 MiB at most); past it new ranges
 /// are dropped, which only leaves their blocks allocated.
 pub(super) const MAX_RANGES: usize = 65_536;
+
+/// The thread punches a piece only once no I/O queue has fetched a command
+/// for this long: inside APFS a punch contends with the guest's reads and
+/// writes of the same file.
+const IDLE: Duration = Duration::from_millis(5);
 
 /// Disjoint byte ranges, start to end, none touching another.
 #[derive(Default)]
@@ -156,9 +169,11 @@ struct State {
     disks: [Option<Namespace>; 2],
     punching: Option<Punching>,
     stop: bool,
-    /// Tests hold the thread before it takes a piece.
+    /// Tests hold the thread before it takes a piece, or change [`IDLE`].
     #[cfg(test)]
     paused: bool,
+    #[cfg(test)]
+    idle: Option<Duration>,
 }
 
 impl State {
@@ -167,6 +182,15 @@ impl State {
             .iter()
             .flatten()
             .any(|disk| !disk.ranges.is_empty())
+    }
+
+    /// How long the guest's I/O must have paused before the next piece.
+    fn idle(&self) -> Duration {
+        #[cfg(test)]
+        if let Some(idle) = self.idle {
+            return idle;
+        }
+        IDLE
     }
 
     /// The thread has a piece to punch.
@@ -201,7 +225,6 @@ fn punch_piece(file: &File, piece: (u64, u64)) {
     DSM_STATS.note_piece(punched, started);
 }
 
-#[derive(Default)]
 struct Shared {
     state: Mutex<State>,
     /// New ranges, the end of a piece, or stop.
@@ -209,12 +232,39 @@ struct Shared {
     /// Some range is pending or being punched. Stored only under `state`,
     /// and cleared only after the last piece's punch has returned.
     pending: AtomicBool,
+    /// When an I/O queue last fetched a command, in ns since `epoch`.
+    last_io: AtomicU64,
+    epoch: Instant,
     /// Tests hold a piece after it is taken, before its punch.
     #[cfg(test)]
     gate: Arc<IoGate>,
 }
 
+impl Default for Shared {
+    fn default() -> Self {
+        Self {
+            state: Mutex::default(),
+            changed: Condvar::new(),
+            pending: AtomicBool::new(false),
+            last_io: AtomicU64::new(0),
+            epoch: Instant::now(),
+            #[cfg(test)]
+            gate: Arc::default(),
+        }
+    }
+}
+
 impl Shared {
+    fn now_ns(&self) -> u64 {
+        self.epoch.elapsed().as_nanos() as u64
+    }
+
+    /// How long the guest's I/O has paused.
+    fn quiet(&self) -> Duration {
+        let last = self.last_io.load(Ordering::Relaxed);
+        Duration::from_nanos(self.now_ns().saturating_sub(last))
+    }
+
     fn publish(&self, state: &State) {
         let busy = state.any_pending() || state.punching.is_some();
         self.pending.store(busy, Ordering::Release);
@@ -232,14 +282,23 @@ impl Shared {
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Take a piece under the mutex, punch it without, and clear it under
-    /// the mutex again.
+    /// Once the guest's I/O has paused, take a piece under the mutex, punch
+    /// it without, and clear it under the mutex again.
     fn run(&self) {
         let mut state = lock(&self.state);
         loop {
             state = self.wait_while(state, |state| !state.stop && !state.ready());
             if state.stop {
                 return;
+            }
+            let (quiet, idle) = (self.quiet(), state.idle());
+            if quiet < idle {
+                state = self
+                    .changed
+                    .wait_timeout(state, idle - quiet)
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .0;
+                continue;
             }
             let Some((slot, file, piece)) = state.take_piece() else {
                 continue;
@@ -279,6 +338,13 @@ impl DeferredTrim {
     /// makes. A `false` read after the last piece means its punch returned.
     pub(crate) fn pending(&self) -> bool {
         self.shared.pending.load(Ordering::Acquire)
+    }
+
+    /// An I/O queue fetched a command: the thread's next piece waits until
+    /// the I/O has paused for [`IDLE`].
+    pub(crate) fn note_io(&self) {
+        let shared = &*self.shared;
+        shared.last_io.store(shared.now_ns(), Ordering::Relaxed);
     }
 
     /// Queue `ranges` of namespace `slot`'s `file` for the thread and return
@@ -386,6 +452,12 @@ impl DeferredTrim {
 
     pub(crate) fn started(&self) -> bool {
         self.thread.is_some()
+    }
+
+    /// Make the thread wait for `idle` of quiet I/O instead of [`IDLE`].
+    pub(crate) fn set_idle(&self, idle: Duration) {
+        lock(&self.shared.state).idle = Some(idle);
+        self.shared.changed.notify_all();
     }
 
     /// Closed, it holds each piece after the thread took it (it is in

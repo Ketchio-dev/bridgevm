@@ -291,6 +291,82 @@ fn a_reset_or_a_shutdown_waits_for_the_piece_in_progress() {
     }
 }
 
+/// A READ of LBA 0 from I/O SQ slot `slot`, its completion consumed so the
+/// queue never fills, as a guest keeps the disk busy.
+fn read_and_consume(ctrl: &mut NvmeController, mem: &mut FakeMem, slot: u16) {
+    let sqe = encode_sqe(NVM_OP_READ, 0x70, NSID, DATA_BASE + 0x4000, 0, 0, 0);
+    assert!(mem.write_bytes(IO_SQ_BASE + u64::from(slot) * SQ_ENTRY_SIZE, &sqe));
+    let next = u64::from((slot + 1) % QDEPTH);
+    ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, next);
+    ctrl.process(mem);
+    ctrl.mmio_write(REG_DOORBELL_BASE + 3 * 4, 4, next);
+}
+
+/// Inside APFS a punch contends with reads of the same file: the thread
+/// punches only once the I/O queues have paused, and a drain never waits.
+#[cfg(target_os = "macos")]
+#[test]
+fn the_thread_punches_only_once_the_io_pauses_and_a_drain_never_waits() {
+    let path = image("trim-idle", 64 * MIB);
+    write_pattern(&path, 16 * MIB, 8 * MIB);
+    let before = allocated(&path);
+    let (mut ctrl, mut mem) = held_controller(&path);
+    // A long pause, which a busy test host cannot fake between two READs.
+    ctrl.trim.set_idle(Duration::from_millis(100));
+    assert_eq!(
+        dsm(&mut ctrl, &mut mem, 0, &[range(16 * BPM, 8 * BPM)]),
+        SC_SUCCESS
+    );
+    ctrl.trim.pause(false);
+    // A READ every millisecond for 300 ms.
+    let started = Instant::now();
+    let mut slot = 1;
+    while started.elapsed() < Duration::from_millis(300) {
+        read_and_consume(&mut ctrl, &mut mem, slot);
+        slot = (slot + 1) % QDEPTH;
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    // The READs stop: the thread punches after the pause. Only quick checks
+    // here, which the pause outlasts.
+    let stopped = Instant::now();
+    assert!(
+        ctrl.trim.pending() && allocated(&path) == before && intact(&path, 20 * MIB, 4096),
+        "punched while the READs kept coming"
+    );
+    wait_until(|| !ctrl.trim.pending());
+    let waited = stopped.elapsed();
+    assert!(
+        zeros(&path, 16 * MIB, 8 * MIB),
+        "punched once the I/O paused"
+    );
+    assert!(waited >= Duration::from_millis(50), "after {waited:?}");
+    drop(ctrl);
+    let _ = fs::remove_file(path);
+
+    // The exit sync's drain punches at once, right after I/O, while the
+    // thread waits for a minute of quiet; the drop does not wait for it.
+    let path = image("trim-idle-drain", 32 * MIB);
+    write_pattern(&path, 8 * MIB, 8 * MIB);
+    let (mut ctrl, mut mem) = raw_controller(&path, true);
+    ctrl.set_unlocked_io(true);
+    ctrl.trim.set_idle(Duration::from_secs(60));
+    assert_eq!(
+        dsm(&mut ctrl, &mut mem, 0, &[range(8 * BPM, 8 * BPM)]),
+        SC_SUCCESS
+    );
+    read_and_consume(&mut ctrl, &mut mem, 1);
+    let started = Instant::now();
+    ctrl.flush_disk().unwrap();
+    assert!(zeros(&path, 8 * MIB, 8 * MIB) && !ctrl.trim.pending());
+    drop(ctrl);
+    let took = started.elapsed();
+    assert!(
+        took < Duration::from_secs(5),
+        "drain and drop took {took:?}"
+    );
+    let _ = fs::remove_file(path);
+}
+
 #[test]
 fn a_reset_or_a_restore_drops_the_pending_punches() {
     for settle in ["disable", "restore", "reset"] {

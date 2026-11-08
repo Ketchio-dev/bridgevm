@@ -164,10 +164,14 @@ impl NvmeController {
                 sq.head = new_head;
             }
 
-            // A WRITE's bytes leave the pending punches before any path below
-            // runs it (deferred_trim.rs).
-            if qid != 0 && cmd.opcode == NVM_OP_WRITE && self.trim.pending() {
-                self.keep_written(&cmd);
+            // The punch thread waits for a pause in the I/O, and a WRITE's
+            // bytes leave the pending punches before any path below runs it
+            // (deferred_trim.rs).
+            if qid != 0 {
+                self.trim.note_io();
+                if cmd.opcode == NVM_OP_WRITE && self.trim.pending() {
+                    self.keep_written(&cmd);
+                }
             }
 
             // Completed when the worker's sync returns (flush_worker.rs): a
