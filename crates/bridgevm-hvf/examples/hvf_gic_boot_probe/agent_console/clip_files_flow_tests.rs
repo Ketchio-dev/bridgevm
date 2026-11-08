@@ -182,6 +182,24 @@ fn a_long_listing_edited_in_the_middle_stages_apart_from_the_published_copy() {
 }
 
 #[test]
+fn a_mac_copy_mid_transfer_wins_even_with_nothing_to_send() {
+    let mut rig = rig();
+    let files: Vec<String> = (1..=3).map(|n| format!(r"C:\s\{n}.txt")).collect();
+    for path in &files {
+        rig.guest.files.insert(path.clone(), b"aa".to_vec());
+    }
+    rig.guest.listing = Some(listing(&[(0, 1, 2, &files[0]), (0, 1, 2, &files[1]), (0, 1, 2, &files[2])]));
+    // A Finder copy while the first file comes over: nothing for the guest, but newer.
+    rig.mac_copy_after_get = true;
+    rig.settle();
+    rig.settle();
+    assert!(rig.mac.file_writes.is_empty(), "the Windows copy replaced a newer Mac copy");
+    assert_eq!(gets(&mut rig), [files[0].as_str()], "fetching went on after the Mac copy");
+    take_lines(&mut Vec::new());
+    let _ = std::fs::remove_dir_all(&rig.h.clip_files_stage.dir);
+}
+
+#[test]
 fn a_guest_file_copy_over_a_limit_leaves_the_mac_alone() {
     let mut rig = rig();
     let mut names = Vec::new();

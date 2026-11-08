@@ -32,6 +32,14 @@ pub struct HostClip {
     pub html: Option<String>,
 }
 
+/// What the service had seen of the Mac pasteboard: a write made as of it loses
+/// to any Mac copy since, even one with nothing the guest takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PasteboardOwner {
+    revision: u64,
+    recopy: u64,
+}
+
 struct ClipboardText {
     revision: u64,
     clip: HostClip,
@@ -115,9 +123,19 @@ impl HostPasteboard {
         self.write(text, None, Some(html), Vec::new());
     }
 
-    /// Queue a guest-to-host files write: the copy's top-level items.
-    pub fn set_files(&self, files: Vec<PathBuf>) {
-        self.write(String::new(), None, None, files);
+    /// The Mac pasteboard as the service has seen it so far.
+    pub fn owner(&self) -> PasteboardOwner {
+        PasteboardOwner {
+            revision: self.observed.get(),
+            // Orders suppressed host ownership changes, not native event time.
+            recopy: self.recopy.load(Ordering::Acquire),
+        }
+    }
+
+    /// Queue a guest-to-host files write, the copy's top-level items, as of
+    /// `owner` (when its transfer began): the worker drops it after a newer Mac copy.
+    pub fn set_files(&self, files: Vec<PathBuf>, owner: PasteboardOwner) {
+        self.send(owner, String::new(), None, None, files);
     }
 
     /// Read the Mac pasteboard's image too: the agent can take images.
@@ -131,10 +149,13 @@ impl HostPasteboard {
     }
 
     fn write(&self, text: String, image: Option<PngImage>, html: Option<String>, files: Vec<PathBuf>) {
+        self.send(self.owner(), text, image, html, files);
+    }
+
+    fn send(&self, owner: PasteboardOwner, text: String, image: Option<PngImage>, html: Option<String>, files: Vec<PathBuf>) {
         let _ = self.cmds.send(PasteboardWrite {
-            revision: self.observed.get(),
-            // Orders suppressed host ownership changes, not native event time.
-            recopy: self.recopy.load(Ordering::Acquire),
+            revision: owner.revision,
+            recopy: owner.recopy,
             text,
             image,
             html,

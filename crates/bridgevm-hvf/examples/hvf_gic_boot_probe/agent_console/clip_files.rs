@@ -11,6 +11,7 @@
 //! stays in Windows with one line.
 
 use super::*;
+use super::host_pasteboard::PasteboardOwner;
 use std::io::Write as _;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 
@@ -190,6 +191,8 @@ pub(super) struct FilesPull {
     tops: Vec<PathBuf>,
     entries: usize,
     bytes: u64,
+    /// The Mac pasteboard when the transfer began: any Mac copy since wins.
+    owner: Option<PasteboardOwner>,
 }
 
 /// A fresh, empty 0700 `<dir>/<copy>`, below directories that are no links.
@@ -304,6 +307,7 @@ impl AgentConsoleHarness {
             tops: plan.tops,
             entries,
             bytes,
+            owner: self.pasteboard.as_ref().map(HostPasteboard::owner),
         });
         if made.is_err() {
             return self.fail_files_pull("staging-error", now);
@@ -323,8 +327,8 @@ impl AgentConsoleHarness {
             return;
         };
         let tops = pull.tops.iter().map(|top| pull.staging.join(top)).collect();
-        if let Some(pasteboard) = self.pasteboard.as_ref() {
-            pasteboard.set_files(tops);
+        if let (Some(pasteboard), Some(owner)) = (self.pasteboard.as_ref(), pull.owner) {
+            pasteboard.set_files(tops, owner);
         }
         // Earlier copies stay a while: a paste into Finder (onto a slow disk, say) may still be
         // reading one. Kept: the newest few, each for some minutes.
@@ -351,7 +355,9 @@ impl AgentConsoleHarness {
         self.clip_files_stage
             .pull
             .as_ref()
-            .is_some_and(|pull| self.last_synced.files == Some(pull.digest))
+            .is_some_and(|pull| {
+                self.last_synced.files == Some(pull.digest) && pull.owner == self.pasteboard.as_ref().map(HostPasteboard::owner)
+            })
             && !self.last_synced.rebaseline
             && !self.clip_push_pending()
     }

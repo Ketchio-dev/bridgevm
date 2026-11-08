@@ -295,6 +295,9 @@ struct Rig {
     guest: Guest,
     wire: Vec<String>,
     now: Instant,
+    /// A Mac copy with nothing the guest takes (a Finder copy before file
+    /// copies go to Windows), seen by the Mac poll after the next GET.
+    mac_copy_after_get: bool,
 }
 
 impl Rig {
@@ -321,6 +324,7 @@ impl Rig {
             guest: Guest::new(images),
             wire: Vec::new(),
             now,
+            mac_copy_after_get: false,
         }
     }
     /// One clip interval: the Mac poll, a service pass, every reply in
@@ -346,6 +350,10 @@ impl Rig {
                         more.push(bytes.to_vec())
                     });
                     wire.extend(more);
+                    if reply.starts_with("GETEND ") && std::mem::take(&mut self.mac_copy_after_get) {
+                        self.mac.copy(None, None);
+                        assert!(self.worker.poll(&mut self.mac));
+                    }
                 }
             }
         }

@@ -13,7 +13,7 @@
 //   set_images(&self, on: bool)                  // read images too (IMAGE_PNG)
 //   set_text_html(&self, text, html)             // guest->host rich text
 //   set_rich_text(&self, on: bool)               // read public.html too (CF_HTML)
-//   set_files(&self, paths)                      // guest->host files, as file URLs
+//   set_files(&self, paths, owner)               // guest->host files, as file URLs
 //
 // Echo suppression contract: content written via set()/set_image()/set_files() must NOT
 // come back out of try_changed_clip(), and neither must content equal to the
@@ -29,7 +29,7 @@ use std::os::raw::{c_char, c_void};
 use std::path::PathBuf;
 #[path = "host_pasteboard_bridge.rs"]
 mod bridge;
-pub use bridge::{HostClip, HostPasteboard};
+pub use bridge::{HostClip, HostPasteboard, PasteboardOwner};
 #[cfg(test)]
 pub(crate) use bridge::PasteboardWorker;
 #[path = "host_pasteboard_image.rs"]
