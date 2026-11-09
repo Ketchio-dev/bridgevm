@@ -173,7 +173,7 @@ try {
 
     $listing = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($reply.Substring(5)))
     $listed = @($listing -split "`r?`n" | Where-Object { $_ } | ForEach-Object { [IO.Path]::GetFileName(($_ -split '\|')[0].Replace('\', '/')) } | Where-Object { $_.StartsWith('.bridgevm-part-', [StringComparison]::OrdinalIgnoreCase) })
-    Assert ($reply -clike 'LSOK *' -and $listing -notmatch 'bridgevm-part-[0-9a-f]{32}\|') "listed a temporary: $listing"
+    Assert ($reply -clike 'LSOK *' -and $listing -cnotmatch 'bridgevm-part-[0-9a-f]{32}\|') "listed a temporary: $listing"
     if ([IO.Path]::DirectorySeparatorChar -eq '\') {
         # LSR roots its listing at <root>\, which only Windows paths match (macOS pwsh lists nothing).
         Assert ((($listed | Sort-Object) -join ',') -ceq (($users | Sort-Object) -join ',')) "listed: $($listed -join ',')"
