@@ -37,6 +37,17 @@ impl ShareSync {
         }
     }
 
+    /// Before a listing is applied: the names whose PUT the service holds, queued or in flight
+    /// (or a large one under way). Taken from the transfers themselves, each time, so a name is
+    /// never fetched while its PUT may still go out, and leaves as the transfer ends, whichever
+    /// way: confirmed, refused, abandoned, or with the session. The record and pending sets may
+    /// drop such a name sooner (on_host_file clears its pending mark, and a name new this
+    /// session has no record until PUTOK), and a PUT can wait long now (share_state.rs).
+    pub fn set_puts_under_way(&mut self, names: impl IntoIterator<Item = String>) {
+        self.puts_under_way.clear();
+        self.puts_under_way.extend(names.into_iter().map(|name| normalize_rel(&name)));
+    }
+
     /// Windows keys, because the guest may store a held host name in another case.
     pub(super) fn pull_held_keys(&self) -> HashSet<String> {
         let unconfirmed = self
@@ -45,6 +56,7 @@ impl ShareSync {
             .filter(|(_, record)| record.put_unconfirmed);
         (self.pending_host_changed.iter())
             .chain(self.put_rejected.keys())
+            .chain(self.puts_under_way.iter())
             .chain(unconfirmed.map(|(name, _)| name))
             .map(|name| share_win_names::windows_key(name))
             .collect()

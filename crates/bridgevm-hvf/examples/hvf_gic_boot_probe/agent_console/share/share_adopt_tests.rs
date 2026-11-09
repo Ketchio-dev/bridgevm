@@ -643,3 +643,53 @@ fn a_session_that_ended_writes_no_more_marks() {
     assert!(crate::agent_console::state::sync_file::mark(&marks, ["late.bin"]).is_err());
     assert_eq!(std::fs::read(&path).unwrap(), before, "an ended session wrote its marks file");
 }
+
+#[test]
+fn a_name_whose_put_is_held_is_not_fetched_while_other_windows_files_still_are() {
+    // Codex on #572: the state folder turned unwritable mid-session, so this PUT is held while
+    // the listings go on. For a name new this session nothing else kept its older guest copy
+    // from being fetched over the Mac file the PUT waits to send.
+    use std::os::unix::fs::PermissionsExt as _;
+    let mut rig = Rig::new("held-put-pull");
+    let vm = rig.dir.with_extension("vm");
+    let _ = std::fs::remove_dir_all(&vm);
+    std::fs::create_dir(&vm).unwrap();
+    let vars = vm.join("vars.fd");
+    new_session(&mut rig, Some(&vars));
+    rig.run(4);
+    // A state on disk, so that once the folder is unwritable it cannot be removed either.
+    std::fs::write(rig.dir.join("first.txt"), b"synced").unwrap();
+    rig.run(8);
+    assert_eq!(rig.guest.content("first.txt"), Some(&b"synced"[..]));
+    let _writable = WritableAgain(vm.clone());
+    std::fs::set_permissions(&vm, std::fs::Permissions::from_mode(0o555)).unwrap();
+    std::fs::write(rig.dir.join("conflict.txt"), b"the Mac's, newest").unwrap();
+    // Its mark fails on the state thread, then removing the state fails: held, stuck.
+    for _ in 0..10 {
+        rig.run(1);
+        if rig.h.share.as_ref().unwrap().sync_state_stuck() {
+            break;
+        }
+    }
+    let share = rig.h.share.as_ref().unwrap();
+    assert!(share.sync_state_stuck() && share.held_put.is_some(), "the PUT is not held");
+    rig.guest.write("conflict.txt", b"an older guest copy");
+    rig.guest.stamps.insert("CONFLICT.TXT".into(), now_ms() - HOUR_MS);
+    rig.guest.write("other.txt", b"from windows");
+    let gets = rig.guest.gets.len();
+    rig.run(8);
+    let fetched = &rig.guest.gets[gets..];
+    assert!(!fetched.iter().any(|name| name == "conflict.txt"), "fetched while its PUT was held: {fetched:?}");
+    assert_eq!(rig.host("conflict.txt").as_deref(), Some(&b"the Mac's, newest"[..]));
+    assert_eq!(rig.host("other.txt").as_deref(), Some(&b"from windows"[..]), "the other Windows file stopped");
+    std::fs::set_permissions(&vm, std::fs::Permissions::from_mode(0o755)).unwrap();
+    rig.run(6);
+    assert_eq!(rig.guest.content("conflict.txt"), Some(&b"the Mac's, newest"[..]));
+    // The exclusion went with the PUT: a later Windows edit of the name is fetched.
+    rig.guest.write("conflict.txt", b"edited in windows afterwards");
+    rig.guest.stamps.insert("CONFLICT.TXT".into(), now_ms() + 60_000);
+    rig.run(8);
+    assert_eq!(rig.host("conflict.txt").as_deref(), Some(&b"edited in windows afterwards"[..]));
+    rig.h.share = None;
+    std::fs::remove_dir_all(&vm).unwrap();
+}

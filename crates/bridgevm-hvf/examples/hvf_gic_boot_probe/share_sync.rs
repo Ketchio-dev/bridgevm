@@ -104,6 +104,8 @@ pub struct ShareSync {
     synced_dirty: bool,
     /// Guest edits preferred at the first listing, with the Mac file's stat then.
     guest_changed: HashMap<String, HostFileStat>,
+    /// Names with a PUT held, queued or in flight, as the service holds them at each listing.
+    puts_under_way: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
