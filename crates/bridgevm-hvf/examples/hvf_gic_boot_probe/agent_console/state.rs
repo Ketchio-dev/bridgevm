@@ -277,7 +277,8 @@ pub(super) enum ServiceReq {
     /// Push a Mac image, with the copy's text, to the guest clipboard.
     ClipImagePush(ClipImagePush),
     /// Fetch the guest clipboard image a CLIPX reply announced.
-    ClipImagePull { digest: [u8; 32], bytes: usize },
+    /// `owner`: the Mac pasteboard when the fetch was queued; any Mac copy since wins.
+    ClipImagePull { digest: [u8; 32], bytes: usize, owner: Option<host_pasteboard::PasteboardOwner> },
     /// Fetch the next file of the guest file copy under way (clip_files.rs).
     ClipFilesPull,
     /// A command injected via the control file (same semantics as a scripted

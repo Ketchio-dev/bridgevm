@@ -444,6 +444,7 @@ impl AgentConsoleHarness {
         self.queue.push_front(ServiceReq::ClipImagePull {
             digest,
             bytes: image.bytes,
+            owner: self.pasteboard.as_ref().map(HostPasteboard::owner),
         });
     }
 
@@ -599,7 +600,7 @@ impl AgentConsoleHarness {
         if !error && !line.starts_with("GETEND ") {
             return;
         }
-        let Some((ServiceReq::ClipImagePull { digest, bytes }, _)) = self.in_flight.take() else {
+        let Some((ServiceReq::ClipImagePull { digest, bytes, owner }, _)) = self.in_flight.take() else {
             return;
         };
         let finished = self.take_finished_get();
@@ -627,10 +628,12 @@ impl AgentConsoleHarness {
                 return self.refuse_guest_image(GuestImageRefusal::NotPng, None, now)
             }
         };
-        // A newer guest poll, a pending Mac copy or an app paste replaced it.
+        // A newer guest poll, a pending Mac copy or an app paste replaced it, or a
+        // Mac copy with nothing the guest takes (no push, but newer all the same).
         if self.last_synced.image != Some(digest)
             || self.last_synced.rebaseline
             || self.clip_push_pending()
+            || owner != self.pasteboard.as_ref().map(HostPasteboard::owner)
         {
             return;
         }
