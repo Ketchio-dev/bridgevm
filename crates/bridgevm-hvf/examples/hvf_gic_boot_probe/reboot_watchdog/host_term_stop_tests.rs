@@ -24,7 +24,11 @@ fn before_term_the_watcher_sleeps_instead_of_polling() {
 }
 
 #[test]
-fn after_term_the_watcher_kicks_vcpu0_within_50_ms_and_keeps_kicking() {
+fn after_term_the_watcher_kicks_vcpu0_promptly_and_keeps_kicking() {
+    // The watcher kicks at once on TERM and then every WATCH_INTERVAL (10 ms); one that missed
+    // the TERM, or kicked once and went back to its wait, would take ARMED_CHECK (1 s). Half a
+    // second tells the two apart and holds on a loaded CI runner (a 50 ms window did not).
+    let prompt = ARMED_CHECK / 2;
     let (requested, run) = (AtomicBool::new(false), BootProgressWatchdog::new());
     let (term_tx, term_rx) = mpsc::channel::<()>();
     let (kick_tx, kick_rx) = mpsc::channel::<Instant>();
@@ -40,12 +44,12 @@ fn after_term_the_watcher_kicks_vcpu0_within_50_ms_and_keeps_kicking() {
         let sent = Instant::now();
         requested.store(true, Ordering::SeqCst);
         term_tx.send(()).unwrap();
-        let first = kick_rx.recv_timeout(Duration::from_millis(50));
-        let second = kick_rx.recv_timeout(Duration::from_millis(50));
+        let first = kick_rx.recv_timeout(prompt);
+        let second = kick_rx.recv_timeout(prompt);
         run.disarm(); // before any assert: the scope joins the watcher
         assert!(!early, "kicked before TERM");
-        let first = first.expect("no kick within 50 ms of TERM");
-        assert!(first - sent <= Duration::from_millis(50));
+        let first = first.expect("no prompt kick after TERM");
+        assert!(first - sent < prompt);
         assert!(second.is_ok(), "one kick only; a kick lost between two runs would stall the stop");
     });
 }
