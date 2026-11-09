@@ -124,12 +124,17 @@ pub(crate) fn run() -> ExitCode {
         let mut agent_service_wake = agent_console::ServiceWake::new();
         let mut input_control_wake = input_control_wake::InputControlWake::new();
         // Same probe-lifetime rule as ServiceWake above; the wake-state Arc is
-        // shared with the virtio-gpu device and survives platform resets.
+        // shared with the virtio-gpu device and survives platform resets. So
+        // does the flag the NVMe controller raises while it holds guest writes
+        // because the Mac's disk is full: vCPU0 then pauses the VM.
         let mut gpu_vblank_wake = vblank_wake::VblankWake::new();
-        let gpu_vblank_wake_state = platform
-            .lock()
-            .expect("platform mutex for vblank wake state")
-            .virtio_gpu_vblank_wake();
+        let (gpu_vblank_wake_state, nvme_storage_full) = {
+            let platform = platform.lock().expect("platform mutex for vblank wake state");
+            (
+                platform.virtio_gpu_vblank_wake(),
+                platform.nvme_storage_full_flag(),
+            )
+        };
         // KD (kernel-debug) serial bridge, probe-lifetime like the wakers: it
         // owns the PL011 for the run when BRIDGEVM_KD_SERIAL_SOCKET is set, so
         // a WinDbg peer can attach to the guest's KDCOM stream. None otherwise,
@@ -355,16 +360,67 @@ pub(crate) fn run() -> ExitCode {
             let mut stop_reason_code = None;
             let mut requested_system_reset = false;
             let mut cpu0_offset_version = 0u64;
+            let mut pause_requested = false;
 
             loop {
+                let mut drain_pc = 0u64;
+                hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
+                last_pre_run_pc = drain_pc;
+                // An input.ctl PAUSE read at the end of the last pass, or guest
+                // disk writes held for a full Mac disk (nvme disk_full.rs).
+                let disk_full = nvme_storage_full
+                    .load(Ordering::Acquire)
+                    .then(|| {
+                        lock_platform(&platform, smp_trace.as_deref(), 0, HoldSite::Automation)
+                            .nvme_disk_full()
+                    })
+                    .flatten();
+                if std::mem::take(&mut pause_requested) || disk_full.is_some() {
+                    if let Some(full) = &disk_full {
+                        crate::pause_gate::report_storage_full(full);
+                    }
+                    // No HDA DMA or MSI while paused; with no PCM written, the
+                    // CoreAudio supervisor pauses the AudioQueue (IDLE_PAUSE).
+                    let hda_quiesced = hda_service_tick.quiesce();
+                    let paused = crate::pause_gate::pause_and_wait(
+                        &mut live_input,
+                        secondary_vcpus.as_ref(),
+                        || {
+                            cancel_stop_reason(
+                                &watchdog_fired,
+                                stall_kill_fired.as_ref(),
+                                diagnostic_stop_fired.as_ref(),
+                                &HOST_TERM_REQUESTED,
+                            )
+                            .is_some()
+                        },
+                        // The held writes complete before any vCPU runs.
+                        || {
+                            lock_platform(&platform, smp_trace.as_deref(), 0, HoldSite::Automation)
+                                .retry_nvme_held(&mut guest_ram)
+                        },
+                    );
+                    drop(hda_quiesced);
+                    match paused {
+                        crate::pause_gate::PausedExit::Reset => {
+                            requested_system_reset = true;
+                            stop_reason = "host reset (input.ctl RESET)".into();
+                            break;
+                        }
+                        // Windows' wall clock fell behind by the pause, as after
+                        // a host sleep: the agent puts it back on host time.
+                        crate::pause_gate::PausedExit::Resumed(paused) => {
+                            if let Some(agent) = agent_console.as_mut() {
+                                agent.note_vm_pause(paused);
+                            }
+                        }
+                    }
+                }
                 // After a resume vCPU0 takes the shifted vTimer offset on its
                 // own thread, outside hv_vcpu_run (pause_gate.rs).
                 crate::pause_gate::GATE.take_offset(&mut cpu0_offset_version, |offset| {
                     crate::pause_gate::set_vtimer_offset(vcpu, offset)
                 });
-                let mut drain_pc = 0u64;
-                hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
-                last_pre_run_pc = drain_pc;
                 crate::usgic_bridge::pre_run(0, vcpu);
                 // CPU0 always drains here. A renderer worker can finish an
                 // asynchronous present after the post-MMIO drain but before
@@ -871,39 +927,9 @@ pub(crate) fn run() -> ExitCode {
                 {
                     crate::pause_gate::answer_running();
                 }
-                if crate::pause_gate::request(host_pause, false) == crate::pause_gate::Request::Pause {
-                    // No HDA DMA or MSI while paused; with no PCM written, the
-                    // CoreAudio supervisor pauses the AudioQueue (IDLE_PAUSE).
-                    let hda_quiesced = hda_service_tick.quiesce();
-                    let paused = crate::pause_gate::pause_and_wait(
-                        &mut live_input,
-                        secondary_vcpus.as_ref(),
-                        || {
-                            cancel_stop_reason(
-                                &watchdog_fired,
-                                stall_kill_fired.as_ref(),
-                                diagnostic_stop_fired.as_ref(),
-                                &HOST_TERM_REQUESTED,
-                            )
-                            .is_some()
-                        },
-                    );
-                    drop(hda_quiesced);
-                    match paused {
-                        crate::pause_gate::PausedExit::Reset => {
-                            requested_system_reset = true;
-                            stop_reason = "host reset (input.ctl RESET)".into();
-                            break;
-                        }
-                        // Windows' wall clock fell behind by the pause, as after
-                        // a host sleep: the agent puts it back on host time.
-                        crate::pause_gate::PausedExit::Resumed(paused) => {
-                            if let Some(agent) = agent_console.as_mut() {
-                                agent.note_vm_pause(paused);
-                            }
-                        }
-                    }
-                }
+                // Paused at the top of the next pass, before vCPU0 runs again.
+                pause_requested |=
+                    crate::pause_gate::request(host_pause, false) == crate::pause_gate::Request::Pause;
             }
 
             // Freeze the measured duration at the VM stop boundary. Media

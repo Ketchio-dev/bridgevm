@@ -9,7 +9,13 @@
 //! before it runs again, as QEMU's `hvf_vm_state_change` does. The guest's
 //! counter, and every timer deadline it programmed, continue where they
 //! stopped. A vCPU created later takes the same offset before its first run.
+//!
+//! A full Mac disk pauses the VM the same way (the NVMe controller holds the
+//! guest's writes, nvme disk_full.rs): vCPU0 says so in a `BVSTORAGE full`
+//! line first, and RESUME retries the held writes before any vCPU runs. While
+//! the disk is still full the VM stays paused and says so again.
 
+use bridgevm_hvf::nvme::DiskFull;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::Duration;
@@ -279,16 +285,34 @@ pub(crate) fn resumed_line(paused_ms: u128, offset: u64) -> String {
     format!("BVPAUSE resumed paused_ms={paused_ms} vtimer_offset={offset:#x}")
 }
 
+/// The line before a pause for a full Mac disk; the app shows its notice for
+/// the `BVPAUSE paused` that follows.
+pub(crate) fn storage_full_line(full: &DiskFull) -> String {
+    format!(
+        "BVSTORAGE full errno={} free={} path={}",
+        full.errno,
+        full.free_bytes,
+        full.volume.display()
+    )
+}
+
+pub(crate) fn report_storage_full(full: &DiskFull) {
+    println!("{}", storage_full_line(full));
+    flush_stdout();
+}
+
 /// A RESUME for a running VM: nothing was paused.
 pub(crate) fn answer_running() {
     println!("{}", resumed_line(0, GATE.offset()));
     flush_stdout();
 }
 
-/// vCPU0, outside `hv_vcpu_run`, after a PAUSE line: stop every vCPU, then
-/// read input.ctl until RESUME or RESET. A host stop (SIGTERM when the app
-/// went away, a diagnostic stop) resumes too, so the run loop ends the run as
-/// it does for a running VM. Every exit resumes before it returns.
+/// vCPU0, outside `hv_vcpu_run`, after a PAUSE line or with disk writes held:
+/// stop every vCPU, then read input.ctl until RESUME or RESET. A RESUME first
+/// runs `retry_held`, still under the pause; while it finds the disk full the
+/// VM stays paused. A host stop (SIGTERM when the app went away, a diagnostic
+/// stop) resumes too, so the run loop ends the run as it does for a running
+/// VM. Every exit resumes before it returns.
 ///
 /// The diagnostic watchdog (`--watchdog-ms`) and the stall kill count wall
 /// time, a pause included: a diagnostic run paused longer than its watchdog
@@ -297,6 +321,7 @@ pub(crate) fn pause_and_wait(
     live_input: &mut crate::LiveInputController,
     secondaries: Option<&crate::SecondaryVcpuSet>,
     host_stop: impl Fn() -> bool,
+    mut retry_held: impl FnMut() -> Option<DiskFull>,
 ) -> PausedExit {
     let kick = || {
         for control in secondaries.map_or(&[][..], |set| set.controls.as_slice()) {
@@ -319,7 +344,14 @@ pub(crate) fn pause_and_wait(
             break PausedExit::Reset;
         }
         match request(live_input.take_host_pause(), true) {
-            Request::Resume => break PausedExit::Resumed(Duration::ZERO),
+            Request::Resume => match retry_held() {
+                None => break PausedExit::Resumed(Duration::ZERO),
+                Some(full) => {
+                    report_storage_full(&full);
+                    println!("BVPAUSE paused");
+                    flush_stdout();
+                }
+            },
             Request::AlreadyPaused => {
                 println!("BVPAUSE paused");
                 flush_stdout();

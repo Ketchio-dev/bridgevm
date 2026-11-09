@@ -187,3 +187,18 @@ fn a_resume_for_a_running_vm_and_a_repeated_pause_are_answered() {
     assert_eq!(request(None, false), Request::None);
     assert_eq!(super::resumed_line(0, 0x2b), "BVPAUSE resumed paused_ms=0 vtimer_offset=0x2b");
 }
+
+/// A pause for a full Mac disk says why first, in the line the app reads
+/// (HvfGuestPause.swift): the errno, the bytes free and the volume.
+#[test]
+fn a_disk_full_pause_names_the_errno_free_space_and_volume() {
+    let full = bridgevm_hvf::nvme::DiskFull {
+        errno: libc::ENOSPC,
+        free_bytes: 4096,
+        volume: "/Volumes/Mac SSD".into(),
+    };
+    assert_eq!(
+        super::storage_full_line(&full),
+        "BVSTORAGE full errno=28 free=4096 path=/Volumes/Mac SSD"
+    );
+}

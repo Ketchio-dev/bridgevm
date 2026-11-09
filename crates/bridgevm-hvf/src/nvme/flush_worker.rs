@@ -31,7 +31,9 @@ use super::*;
 use crate::fwcfg::GuestMemoryMut;
 
 /// Called by the worker after each batch of syncs; the live VMM kicks a vCPU
-/// so its pre-run drain posts the completions.
+/// so its pre-run drain posts the completions. The controller also calls it
+/// when it holds a command for a full disk (disk_full.rs): vCPU0 then pauses
+/// the VM before it runs again.
 pub static FLUSH_DONE_HOOK: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
 
 #[derive(Clone, Copy)]

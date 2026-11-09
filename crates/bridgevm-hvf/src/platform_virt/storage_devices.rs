@@ -297,14 +297,14 @@ impl VirtPlatform {
     }
 
     /// RESUME, before any vCPU runs: retry the NVMe commands held for host
-    /// space and post their completions with MSI-X. False while the disk is
-    /// still full; the rest stay held.
-    pub fn retry_nvme_held(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
+    /// space and post their completions with MSI-X. While the disk is still
+    /// full the rest stay held, and this says where.
+    pub fn retry_nvme_held(&mut self, mem: &mut dyn GuestMemoryMut) -> Option<DiskFull> {
         self.nvme_completion_scratch.clear();
-        let done = self.nvme.retry_held(mem, &mut self.nvme_completion_scratch);
+        self.nvme.retry_held(mem, &mut self.nvme_completion_scratch);
         self.queue_nvme_completion_msix();
         self.flush_nvme_pending_msix();
-        done
+        self.nvme.disk_full()
     }
 
     pub(crate) fn nvme_access(
