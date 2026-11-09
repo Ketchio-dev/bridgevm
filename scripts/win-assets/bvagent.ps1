@@ -342,7 +342,6 @@ function Close-PutStream {
 # such a file and deletes one no PUT holds once it is a few minutes old (an earlier agent's). Any
 # other name, a user's .bridgevm-part-notes too, is a file like any other.
 $script:BvLPut = $null
-$script:BvLPutTempName = '^\.bridgevm-part-[0-9a-f]{32}$'
 
 function Close-LargePut {
     $put = $script:BvLPut
@@ -1634,7 +1633,9 @@ while ($true) {
                             # that fails the whole listing.
                             $listRoot = Get-IoPath $rootFull $true
                             foreach ($e in Get-ChildItem -LiteralPath $listRoot -Recurse -Force -ErrorAction Stop) {
-                                if (-not $e.PSIsContainer -and $e.Name -cmatch $script:BvLPutTempName) {
+                                # The pattern is written out here: a variable that was ever unset would make
+                                # -cmatch match every name and leave every file out of the listing.
+                                if (-not $e.PSIsContainer -and $e.Name -cmatch '^\.bridgevm-part-[0-9a-f]{32}$') {
                                     # A large PUT's temporary (large put), never listed; an old one no PUT holds is a leftover.
                                     $held = $null -ne $script:BvLPut -and [string]::Equals([System.IO.Path]::GetFileName($script:BvLPut.Temp), $e.Name, [System.StringComparison]::OrdinalIgnoreCase)
                                     if (-not $held -and $e.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddMinutes(-5)) { try { $e.Delete() } catch { } }
