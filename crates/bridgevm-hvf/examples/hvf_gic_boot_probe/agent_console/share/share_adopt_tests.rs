@@ -413,3 +413,90 @@ fn a_put_waits_until_the_state_thread_has_its_mark_on_disk() {
     let text = std::fs::read_to_string(path).unwrap();
     assert!(text.lines().any(|line| line.starts_with("mark ")), "{text}");
 }
+
+/// Makes a folder writable again when dropped, so a failing test leaves nothing behind.
+struct WritableAgain(PathBuf);
+
+impl Drop for WritableAgain {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt as _;
+        let _ = std::fs::set_permissions(&self.0, std::fs::Permissions::from_mode(0o755));
+    }
+}
+
+#[test]
+fn a_put_waits_while_a_state_that_is_off_cannot_be_removed_and_goes_once_it_is() {
+    // The state folder turns unwritable: a mark fails (this PUT's, or first a copy's from
+    // Windows), and so does removing the state. A PUT sent without its mark, cut short, would
+    // leave a guest copy the stale state takes for a guest edit; it waits instead, while the
+    // copies from Windows go on.
+    use std::os::unix::fs::PermissionsExt as _;
+    for windows_first in [false, true] {
+        let mut rig = Rig::new(if windows_first { "state-stuck-get" } else { "state-stuck-put" });
+        let vm = rig.dir.with_extension("vm");
+        let _ = std::fs::remove_dir_all(&vm);
+        std::fs::create_dir(&vm).unwrap();
+        let vars = vm.join("vars.fd");
+        let side = |suffix: &str| {
+            let mut path = vars.as_os_str().to_owned();
+            path.push(suffix);
+            PathBuf::from(path)
+        };
+        new_session(&mut rig, Some(&vars));
+        rig.run(4);
+        std::fs::write(rig.dir.join("first.txt"), b"synced").unwrap();
+        rig.run(8);
+        assert_eq!(rig.guest.content("first.txt"), Some(&b"synced"[..]));
+        assert!(side(".share-sync-puts").exists());
+        let _writable = WritableAgain(vm.clone());
+        std::fs::set_permissions(&vm, std::fs::Permissions::from_mode(0o555)).unwrap();
+        if windows_first {
+            rig.guest.write("from-windows.txt", b"still fetched");
+            rig.run(6);
+            assert!(rig.h.share.as_ref().unwrap().sync_state_stuck(), "the copy's mark did not fail");
+        }
+        std::fs::write(rig.dir.join("held.txt"), b"after the state is gone").unwrap();
+        if !windows_first {
+            rig.guest.write("from-windows.txt", b"still fetched");
+        }
+        rig.run(8);
+        let puts = &rig.guest.puts;
+        assert!(!puts.iter().any(|name| name.ends_with("held.txt")), "windows first {windows_first}: a PUT went out past a stale state: {puts:?}");
+        assert!(rig.h.share.as_ref().unwrap().held_put.is_some());
+        assert_eq!(rig.host("from-windows.txt").as_deref(), Some(&b"still fetched"[..]), "the copies from Windows stopped");
+        std::fs::set_permissions(&vm, std::fs::Permissions::from_mode(0o755)).unwrap();
+        rig.run(4);
+        assert_eq!(rig.guest.content("held.txt"), Some(&b"after the state is gone"[..]));
+        for suffix in [".share-sync", ".share-sync-puts"] {
+            assert!(!side(suffix).exists(), "{suffix} outlived the state");
+        }
+        rig.h.share = None;
+        std::fs::remove_dir_all(&vm).unwrap();
+    }
+}
+
+#[test]
+fn a_versions_write_in_flight_when_the_state_turns_off_leaves_no_file_behind() {
+    use crate::agent_console::state::sync_file::SyncStateFile;
+    use std::sync::atomic::Ordering;
+    let rig = Rig::new("state-off-race");
+    let vars = vars(&rig);
+    let (mut file, _, _) = SyncStateFile::open(&vars, &rig.dir);
+    let mut engine = ShareSync::new(512);
+    let marks = file.marks();
+    marks.hold.store(true, Ordering::Release);
+    let now = Instant::now();
+    engine.put_confirmed("doc.bin", 3, Some(1_794_096_312_123), now);
+    assert!(file.flush(&mut engine, now), "a versions write queued (held in the state thread)");
+    file.turn_off();
+    assert!(file.invalidate().unwrap());
+    // A large copy from Windows published now marks nothing (and goes on: mark_fetched).
+    assert!(crate::agent_console::state::sync_file::mark(&marks, ["fetched.bin"]).is_err());
+    marks.hold.store(false, Ordering::Release);
+    file.join_writer();
+    for suffix in [".share-sync", ".share-sync-puts"] {
+        let mut path = vars.as_os_str().to_owned();
+        path.push(suffix);
+        assert!(!Path::new(&path).exists(), "{suffix} written after the state was removed");
+    }
+}

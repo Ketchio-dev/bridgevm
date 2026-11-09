@@ -38,7 +38,10 @@ impl AgentConsoleHarness {
         };
         share.flush_sync_state(now);
         if share.held_put.is_some() {
-            return true; // released by release_held_share_put once its marks are on disk
+            // Released by release_held_share_put once its marks are on disk (a tick or two), or
+            // once a state that is off is removed, which can take long: the listing, and so the
+            // copies from Windows, go on meanwhile.
+            return !share.sync_state_stuck();
         }
         let fresh = share
             .host_actions_at

@@ -12,8 +12,10 @@
 //! they are then: settled marks leave the disk that way. Losing that write is safe: the marks file
 //! then still holds every mark it has not dropped, and an old version only makes the Mac win. A
 //! file that is missing, unreadable or for another Mac folder is ignored (the share works as
-//! before), and a mark that cannot be written turns the state off and deletes it, so no session
-//! trusts a state that missed one.
+//! before), and a mark that cannot be written turns the state off, so no session trusts a state
+//! that missed one: from then on no thread writes either file (each write checks under the write
+//! lock), and the service thread removes both, retrying until it can; PUTs wait for that
+//! (share_state.rs).
 
 use super::*;
 use share_sync::share_synced::{SyncedFile, SyncedVersion};
@@ -33,8 +35,6 @@ enum ToWriter {
     Flush { changes: Vec<(String, Option<SyncedFile>)>, marks: Vec<String>, seq: u64 },
     /// The PUT marks asked for so far, to be written.
     Marks,
-    /// The state is off: delete both files after any write still queued.
-    Remove,
 }
 
 /// The marks asked for, their number and the names (less those settled since).
@@ -55,6 +55,8 @@ pub(in crate::agent_console) struct MarksFile {
     durable: AtomicU64,
     /// A mark could not be written: the state must go.
     failed: AtomicBool,
+    /// The state is off: nothing more is written, by any thread.
+    off: AtomicBool,
     /// Tests hold the state thread's writes here.
     #[cfg(test)]
     pub(in crate::agent_console) hold: AtomicBool,
@@ -78,9 +80,15 @@ impl MarksFile {
         held.seq
     }
 
-    /// Every mark asked so far on disk, unless it already is. An error also sets `failed`.
+    /// Every mark asked so far on disk, unless it already is. An error also sets `failed`. Once
+    /// the state is off nothing is written: a fetched copy is then published without its mark,
+    /// which is safe, because the versions on disk predate it (a later session finds the Mac copy
+    /// newer than its last synced version: the Mac wins).
     pub(in crate::agent_console) fn write_through(&self) -> std::io::Result<()> {
         let _one = self.write.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.off.load(Ordering::Acquire) {
+            return Err(std::io::Error::other("the share state is off"));
+        }
         let (path, text, seq) = {
             let held = self.lock();
             if held.seq <= self.durable.load(Ordering::Acquire) {
@@ -127,6 +135,8 @@ pub(in crate::agent_console) struct SyncStateFile {
     base: Option<HashMap<String, SyncedFile>>,
     writer: Option<mpsc::Sender<ToWriter>>,
     thread: Option<std::thread::JoinHandle<()>>,
+    /// `invalidate` removed a file and its folder is not synced yet.
+    removed_unsynced: bool,
     last_flush: Option<Instant>,
 }
 
@@ -157,6 +167,7 @@ impl SyncStateFile {
                 write: Mutex::new(()),
                 durable: AtomicU64::new(0),
                 failed: AtomicBool::new(false),
+                off: AtomicBool::new(false),
                 #[cfg(test)]
                 hold: AtomicBool::new(false),
             }),
@@ -164,6 +175,7 @@ impl SyncStateFile {
             base: None,
             writer: None,
             thread: None,
+            removed_unsynced: false,
             last_flush: None,
         };
         let (files, marks, seq) = file.load().unwrap_or_else(|| {
@@ -310,14 +322,55 @@ impl SyncStateFile {
         self.writer.as_ref()
     }
 
-    /// The state is off for this session: delete it, so no later session trusts it.
-    pub(in crate::agent_console) fn remove(mut self) {
-        let _ = std::fs::remove_file(&self.lock().path);
-        let _ = std::fs::remove_file(&self.versions);
-        if let Some(writer) = self.writer.take() {
-            let _ = writer.send(ToWriter::Remove);
+    /// The state is off for this session: no thread writes it any more. The state thread ends
+    /// once it has seen what is queued (writing none of it); `invalidate` removes the files.
+    pub(in crate::agent_console) fn turn_off(&mut self) {
+        self.marks.off.store(true, Ordering::Release);
+        self.writer = None;
+    }
+
+    /// Both files removed (missing counts) and, when one was, their folder synced, so no later
+    /// session trusts them: Ok(true). Ok(false) while a write holds the lock (never waited for
+    /// here: try on a later tick); an error when they cannot be removed.
+    pub(in crate::agent_console) fn invalidate(&mut self) -> std::io::Result<bool> {
+        let marks_path = self.lock().path.clone();
+        let _one = match self.marks.write.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return Ok(false),
+        };
+        for path in [&self.versions, &marks_path] {
+            match std::fs::remove_file(path) {
+                Ok(()) => self.removed_unsynced = true,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
         }
-        drop(self.thread.take());
+        if let Some(dir) = self.versions.parent().filter(|_| self.removed_unsynced) {
+            std::fs::File::open(dir)?.sync_all()?;
+        }
+        self.removed_unsynced = false;
+        Ok(true)
+    }
+
+    /// Tests: the state thread has ended (after `turn_off`).
+    #[cfg(test)]
+    pub(in crate::agent_console) fn join_writer(&mut self) {
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// Tests hold the state thread before each write (bounded, so a failing test ends instead of
+/// waiting here for good).
+#[cfg(test)]
+fn test_hold(marks: &MarksFile) {
+    for _ in 0..5000 {
+        if !marks.hold.load(Ordering::Acquire) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
     }
 }
 
@@ -327,22 +380,11 @@ fn run(versions: &Path, marks: &MarksFile, root: &str, mut files: HashMap<String
         let (changes, marked, seq) = match message {
             ToWriter::Flush { changes, marks, seq } => (changes, marks, seq),
             ToWriter::Marks => {
-                // Bounded, so a failing test ends instead of waiting here for good.
                 #[cfg(test)]
-                for _ in 0..5000 {
-                    if !marks.hold.load(Ordering::Acquire) {
-                        break;
-                    }
-                    std::thread::sleep(Duration::from_millis(1));
-                }
+                test_hold(marks);
                 // A failure sets `failed`; the service thread then turns the state off.
                 let _ = marks.write_through();
                 continue;
-            }
-            ToWriter::Remove => {
-                let _ = std::fs::remove_file(&marks.lock().path);
-                let _ = std::fs::remove_file(versions);
-                return;
             }
         };
         for (name, file) in changes {
@@ -359,6 +401,13 @@ fn run(versions: &Path, marks: &MarksFile, root: &str, mut files: HashMap<String
             base64_encode_into(name.as_bytes(), &mut b64);
             let prev = file.prev.map_or("- -".to_string(), |v| format!("{} {}", v.size, v.mtime_ms));
             let _ = writeln!(text, "file {b64} {} {} {prev}", file.last.size, file.last.mtime_ms);
+        }
+        #[cfg(test)]
+        test_hold(marks);
+        // Under the write lock: once the state is off (and its files removed) nothing re-creates it.
+        let _one = marks.write.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if marks.off.load(Ordering::Acquire) {
+            continue;
         }
         if let Err(error) = write_replace(versions, text.as_bytes()) {
             if !warned {

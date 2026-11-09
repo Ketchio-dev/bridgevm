@@ -50,6 +50,9 @@ pub(in crate::agent_console) struct ShareState {
     marks_due: Option<(u64, Instant)>,
     /// A PUT held until its marks are on disk.
     pub(in crate::agent_console) held_put: Option<ServiceReq>,
+    /// A state turned off whose files are not removed yet: no PUT goes out until they are.
+    sync_off: Option<sync_file::SyncStateFile>,
+    sync_stuck_told: bool,
     #[cfg(test)]
     pub(in crate::agent_console) host_scans: usize,
 }
@@ -89,6 +92,8 @@ impl ShareState {
             sync_file: None,
             marks_due: None,
             held_put: None,
+            sync_off: None,
+            sync_stuck_told: false,
             #[cfg(test)]
             host_scans: 0,
         }
@@ -131,7 +136,7 @@ impl ShareState {
 
     /// `req`, a PUT, to send now, or None: held until its marks are on disk (`release_held_put`).
     pub(in crate::agent_console) fn after_marks(&mut self, req: ServiceReq) -> Option<ServiceReq> {
-        if self.marks_due.is_none() {
+        if self.marks_due.is_none() && self.sync_off.is_none() {
             return Some(req);
         }
         debug_assert!(self.held_put.is_none());
@@ -139,9 +144,10 @@ impl ShareState {
         None
     }
 
-    /// The held PUT once its marks are on disk. Never held for good: when a write failed, the
-    /// state thread is gone or the write takes longer than MARKS_WAIT, the state turns off and
-    /// the PUT goes (the share works as without a state).
+    /// The held PUT once its marks are on disk. When a write failed, the state thread is gone or
+    /// the write takes longer than MARKS_WAIT, the state turns off, and the PUT goes once its
+    /// files are removed (the share then works as without a state). Not before: a PUT without
+    /// its mark, cut short, would leave a guest copy the stale state takes for a guest edit.
     pub(in crate::agent_console) fn release_held_put(&mut self, now: Instant) -> Option<ServiceReq> {
         self.held_put.as_ref()?;
         if let Some((seq, since)) = self.marks_due {
@@ -152,10 +158,45 @@ impl ShareState {
                 None => self.sync_state_off("a mark could not be written"),
             }
         }
+        if !self.invalidate_sync_state() {
+            return None;
+        }
         self.held_put.take()
     }
 
+    /// A state that is off but still on disk: PUTs wait, while the listing and the copies from
+    /// Windows go on.
+    pub(in crate::agent_console) fn sync_state_stuck(&self) -> bool {
+        self.sync_off.is_some()
+    }
+
+    /// No state that is off is left on disk (tried again on every tick a PUT waits: an unlink,
+    /// on this failure path only). A folder that stays unwritable keeps the PUTs held, which
+    /// is the safe side.
+    fn invalidate_sync_state(&mut self) -> bool {
+        let Some(file) = self.sync_off.as_mut() else {
+            return true;
+        };
+        match file.invalidate() {
+            Ok(true) => {
+                self.sync_off = None;
+                true
+            }
+            Ok(false) => false,
+            Err(error) => {
+                if !self.sync_stuck_told {
+                    println!("BVAGENT SHARE sync-state stuck {error}");
+                    self.sync_stuck_told = true;
+                }
+                false
+            }
+        }
+    }
+
     /// Before a fetched copy of `name` is published here: marked on disk, settling from `now`.
+    /// The publish goes on when the mark fails (the state turns off): unlike a PUT it needs no
+    /// wait, because the versions on disk predate the copy it publishes, so a later session that
+    /// still found them would see the Mac copy differ from its last synced version: the Mac wins.
     pub(in crate::agent_console) fn mark_fetched(&mut self, name: &str, now: Instant) {
         self.engine.mark_settling(name, now);
         self.mark_on_disk(&[share_sync::normalize_rel(name)]);
@@ -178,8 +219,10 @@ impl ShareState {
     fn sync_state_off(&mut self, why: &str) {
         println!("BVAGENT SHARE sync-state off {why}");
         self.marks_due = None;
-        if let Some(file) = self.sync_file.take() {
-            file.remove();
+        if let Some(mut file) = self.sync_file.take() {
+            file.turn_off();
+            self.sync_off = Some(file);
+            self.invalidate_sync_state();
         }
     }
 

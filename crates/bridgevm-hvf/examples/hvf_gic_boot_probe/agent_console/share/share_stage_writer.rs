@@ -124,6 +124,7 @@ fn run(
                 }
                 // A mark that cannot be written turns the state off (the service sees it).
                 if let Some((marks, name)) = &marks {
+                    // A failed mark is safe to publish past (share_state.rs mark_fetched).
                     let _ = mark(marks, [name.as_str()]);
                 }
                 let result = destination.publish(staged, mtime);
