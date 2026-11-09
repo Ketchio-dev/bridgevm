@@ -64,7 +64,8 @@ final class HvfClipboardImageNotice: ObservableObject {
 
     var displayed: (text: String, help: String, symbol: String)? {
         let help = "클립보드 이미지는 32MB, 16384×16384 픽셀까지 주고받습니다. 복사한 쪽의 클립보드는 그대로입니다."
-        let filesHelp = "파일 복사는 한 번에 256개, 모두 합쳐 64MB까지 주고받습니다. 복사한 쪽의 클립보드는 그대로입니다."
+        // The shared folder carries files up to 16 GB (HvfEngineConfig.shareMaxKiB) the other way.
+        let windowsFilesHelp = "파일 복사는 한 번에 256개, 모두 합쳐 64MB까지 가져옵니다. 더 큰 파일은 공유 폴더를 켜고 그 안에 넣으면 Mac으로 옮겨집니다."
         // Finder drops have no size limit (file_drop.rs streams them to the guest Desktop).
         let macFilesHelp = "파일 복사는 한 번에 256개, 모두 합쳐 64MB까지 보냅니다. 더 큰 파일은 VM 창으로 끌어다 놓으면 Windows 바탕 화면에 복사됩니다."
         switch shown {
@@ -73,7 +74,7 @@ final class HvfClipboardImageNotice: ObservableObject {
         case .macFilesTooLarge:
             return ("Mac에서 복사한 파일이 너무 많거나 커서 Windows에는 파일 이름만 보냈습니다.", macFilesHelp, "doc.on.doc")
         case .windowsFilesTooLarge:
-            return ("Windows에서 복사한 파일이 너무 많거나 커서 Mac으로 가져오지 않았습니다.", filesHelp, "doc.on.doc")
+            return ("Windows에서 복사한 파일이 너무 많거나 커서 Mac으로 가져오지 않았습니다.", windowsFilesHelp, "doc.on.doc")
         case .macFilesUnreadable:
             return ("Mac에서 복사한 파일 중 읽을 수 없는 것이 있어 Windows에는 파일 이름만 보냈습니다.",
                     "읽기 권한이 없는 파일이나 폴더가 있는지 확인한 뒤 다시 복사하세요.", "doc.on.doc")
