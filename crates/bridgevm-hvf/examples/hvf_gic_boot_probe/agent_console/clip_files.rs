@@ -244,9 +244,14 @@ impl AgentConsoleHarness {
             GuestFiles::Listed(list) => Ok(list),
             GuestFiles::Unlisted(count) => Err(count),
             GuestFiles::None | GuestFiles::Malformed => {
-                // A newer copy without files ends any transfer.
+                // A newer copy without files ends any transfer. When the guest's file drop
+                // gave way to text, that text is new to the Mac even if it reads as the
+                // drop's names did.
                 if self.last_synced.files.take().is_some() {
                     self.abandon_files_pull();
+                    if matches!(files, GuestFiles::None) {
+                        self.last_synced.text = None;
+                    }
                 }
                 return false;
             }

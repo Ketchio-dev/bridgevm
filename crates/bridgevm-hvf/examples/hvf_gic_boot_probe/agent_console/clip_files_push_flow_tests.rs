@@ -178,6 +178,29 @@ fn a_copy_with_a_file_that_cannot_be_read_goes_as_its_names_only() {
 }
 
 #[test]
+fn windows_text_after_a_pushed_file_copy_reaches_the_mac_even_as_the_names() {
+    let mut rig = rig();
+    let dir = mac_dir("names-back");
+    let file = dir.join("a.txt");
+    std::fs::write(&file, b"x").unwrap();
+    rig.mac.copy_files("a.txt", vec![file]);
+    rig.settle();
+    // The guest's CLIPXF has listed the pushed file since.
+    rig.settle();
+    rig.verbs();
+    take_lines(&mut Vec::new());
+    let writes = rig.mac.writes.len();
+    // Windows copies the plain text `a.txt`: the file drop is gone, the text reads as before.
+    rig.guest.listing = None;
+    rig.guest.text = "a.txt".to_owned();
+    rig.settle();
+    std::fs::remove_dir_all(&dir).unwrap();
+    let texts: Vec<Option<&str>> = rig.mac.writes[writes..].iter().map(|(text, _)| text.as_deref()).collect();
+    assert_eq!(texts, [Some("a.txt")], "the Mac kept the file copy");
+    take_lines(&mut Vec::new());
+}
+
+#[test]
 fn a_newer_mac_copy_mid_push_ends_it_and_goes_alone() {
     let mut rig = rig();
     let dir = mac_dir("newer");

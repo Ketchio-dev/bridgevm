@@ -72,10 +72,24 @@ fn windows_name(name: &str) -> Option<String> {
     (!name.is_empty() && !device).then(|| name.to_owned())
 }
 
+/// A name as NTFS compares it: each character by its simple uppercase, as the
+/// volume's upcase table maps it (`σ` and `ς` are both `Σ`; `ß` stays `ß`).
+fn ntfs_key(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            let mut upper = c.to_uppercase();
+            match (upper.next(), upper.next()) {
+                (Some(upper), None) if (c as u32) < 0x1_0000 => upper,
+                _ => c,
+            }
+        })
+        .collect()
+}
+
 /// `name`, or as Explorer numbers a second item of the name, `name (2)`
 /// before its extension: Windows names ignore case. `taken` holds those used.
 fn unique_name(name: String, taken: &mut std::collections::HashSet<String>) -> String {
-    if taken.insert(name.to_lowercase()) {
+    if taken.insert(ntfs_key(&name)) {
         return name;
     }
     let (stem, ext) = match name.rfind('.') {
@@ -84,7 +98,7 @@ fn unique_name(name: String, taken: &mut std::collections::HashSet<String>) -> S
     };
     (2u32..)
         .map(|n| format!("{stem} ({n}){ext}"))
-        .find(|candidate| taken.insert(candidate.to_lowercase()))
+        .find(|candidate| taken.insert(ntfs_key(candidate)))
         .expect("a free number")
 }
 

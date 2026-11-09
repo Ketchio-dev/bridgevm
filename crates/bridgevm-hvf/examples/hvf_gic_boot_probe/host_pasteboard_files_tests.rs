@@ -159,6 +159,21 @@ fn a_folder_that_cannot_be_listed_fails_the_copy() {
 }
 
 #[test]
+fn names_meet_as_ntfs_compares_them() {
+    let dir = scratch("ntfs-case");
+    let mut tops = Vec::new();
+    // NTFS compares by each character's simple uppercase: σ and ς are both Σ, but ß is not SS.
+    for (sub, name) in [("a", "σ.txt"), ("b", "ς.txt"), ("c", "ß.txt"), ("d", "SS.txt")] {
+        std::fs::create_dir_all(dir.join(sub)).unwrap();
+        std::fs::write(dir.join(sub).join(name), sub.as_bytes()).unwrap();
+        tops.push(dir.join(sub).join(name));
+    }
+    let rels: Vec<String> = entries(host_files(&tops)).into_iter().map(|(rel, _)| rel).collect();
+    assert_eq!(rels, ["σ.txt", "ς (2).txt", "ß.txt", "SS.txt"]);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn a_copy_over_a_limit_is_counted_not_read() {
     let dir = scratch("limits");
     let many = dir.join("many");
