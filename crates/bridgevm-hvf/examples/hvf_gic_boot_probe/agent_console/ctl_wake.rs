@@ -1,8 +1,8 @@
-//! Event-driven agent service: a control-file append wakes the service thread
-//! at once, and a guest agent reply wakes vCPU0, which drains it from the
-//! device and hands it to the service (service_thread.rs). Neither waits for
-//! the service's 250 ms tick or the 200 ms control-file poll. Input on the
-//! ordered agent route was bounded by those (one command per round trip, about 4 Hz).
+//! Event-driven agent service: a control-file append or a guest agent reply
+//! wakes the service thread at once, which reads the file or drains the device
+//! itself (service_thread.rs). Neither waits for the service's 250 ms tick or
+//! the 200 ms control-file poll, and neither exits vCPU0. Input on the ordered
+//! agent route was bounded by those (one command per round trip, about 4 Hz).
 
 use std::os::fd::AsRawFd;
 use std::ptr::{null, null_mut};
@@ -37,11 +37,17 @@ pub(super) fn request_wake(vcpu: HvVcpuT, fired: &AtomicBool) {
     }
 }
 
+/// The guest-reply hook, under the notifying vCPU's platform guard: the bytes
+/// are in the device, and the service drains them itself.
+pub(super) fn guest_replied(service: &ServiceSlot) {
+    service.unpark();
+}
+
 /// Install the guest-reply hook and watch the control file, when service mode has one.
-pub(super) fn start(vcpu: HvVcpuT, fired: &Arc<AtomicBool>, service: &Arc<ServiceSlot>) {
-    let hook_fired = Arc::clone(fired);
+pub(super) fn start(service: &Arc<ServiceSlot>) {
+    let hook = Arc::clone(service);
     let _ = bridgevm_hvf::virtio_console::AGENT_INBOUND_HOOK
-        .set(Box::new(move || request_wake(vcpu, &hook_fired)));
+        .set(Box::new(move || guest_replied(&hook)));
     let Some(path) = std::env::var(CTL_ENV).ok().filter(|path| !path.is_empty()) else {
         return;
     };

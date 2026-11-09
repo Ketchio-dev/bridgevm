@@ -8,9 +8,10 @@ use super::*;
 /// without a userspace exit. Work that needs vCPU0 then waits for the guest to
 /// kick a virtqueue (live-observed as 5-minute log/service stalls).
 ///
-/// The agent service needs vCPU0 only to move its bytes: the guest-reply hook
-/// and the service's own sends wake it (`spawn_service`). Its host work runs on
-/// its own thread and tick (service_thread.rs), so it needs no ticker. The
+/// The agent service needs vCPU0 only for guest RAM: to send its bytes, and to
+/// poll a ring a full device stopped taking; the service wakes it for those
+/// (`spawn_service`). Guest replies, its host work and its tick are its own
+/// (service_thread.rs), so it needs no ticker. The
 /// ticker serves BOOT_TIMER, the PPM display export and a KD bridge
 /// (service_wake_interval.rs). One `fired` flag lets the exit dispatcher tell
 /// all these benign wakes apart from the watchdog's EXIT_CANCELED.
@@ -49,14 +50,19 @@ impl ServiceWake {
             unsafe { hv_vcpus_exit(&v, 1) };
         });
     }
-    /// This boot's agent service thread. The guest-reply hook and the ctl
-    /// watcher are installed once, for the probe's lifetime.
-    pub fn spawn_service(&mut self, vcpu: HvVcpuT, harness: AgentConsoleHarness) -> ServiceThread {
+    /// This boot's agent service thread, on `platform`. The guest-reply hook
+    /// and the ctl watcher are installed once, for the probe's lifetime.
+    pub fn spawn_service(
+        &mut self,
+        vcpu: HvVcpuT,
+        harness: AgentConsoleHarness,
+        platform: &Arc<std::sync::Mutex<VirtPlatform>>,
+    ) -> ServiceThread {
         if !std::mem::replace(&mut self.agent_started, true) {
-            super::ctl_wake::start(vcpu, &self.fired, &self.service);
+            super::ctl_wake::start(&self.service);
         }
         let fired = Arc::clone(&self.fired);
-        ServiceThread::spawn(harness, &self.service, move || {
+        ServiceThread::spawn(harness, Arc::clone(platform), &self.service, move || {
             super::ctl_wake::request_wake(vcpu, &fired);
         })
     }

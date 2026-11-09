@@ -55,18 +55,40 @@ fn harness_in(state: AgentConsoleState) -> AgentConsoleHarness {
     h
 }
 
+/// The device and the platform lock around it, as the service reaches them.
+type Device = Arc<Mutex<Wire>>;
+
+impl AgentDevice for Device {
+    fn drain_into(&self, rx: &Mutex<Vec<u8>>) -> usize {
+        let mut wire = lock(self);
+        drain(rx, |out| wire.drain_inbound_into(out))
+    }
+}
+
 fn spawn(h: AgentConsoleHarness) -> (ServiceThread, Receiver<()>) {
     spawn_ticking(h, &Arc::default(), SERVICE_TICK)
 }
 
+/// A service on its own device, which these tests leave empty: vCPU0's
+/// exchange with a test's `Wire` drained the guest's bytes first.
 fn spawn_ticking(
     h: AgentConsoleHarness,
+    slot: &Arc<ServiceSlot>,
+    tick: Duration,
+) -> (ServiceThread, Receiver<()>) {
+    spawn_on(h, &Device::default(), slot, tick)
+}
+
+fn spawn_on(
+    h: AgentConsoleHarness,
+    device: &Device,
     slot: &Arc<ServiceSlot>,
     tick: Duration,
 ) -> (ServiceThread, Receiver<()>) {
     let (woke, wakes) = channel();
     let service = ServiceThread::start(
         h,
+        Arc::clone(device),
         slot,
         move || {
             let _ = woke.send(());
@@ -87,13 +109,15 @@ fn bytes_keep_their_order_both_ways_over_many_rounds() {
     let (woke, wakes) = channel();
     let go = Arc::new(AtomicBool::new(false));
     let gate = Arc::clone(&go);
-    let mut service = ServiceThread::spawn(h, &Arc::default(), move || {
+    let wait_for_go = move || {
         let _ = woke.send(());
         let deadline = Instant::now() + WAIT;
         while !gate.swap(false, Ordering::AcqRel) && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(1));
         }
-    });
+    };
+    let mut service =
+        ServiceThread::start(h, Device::default(), &Arc::default(), wait_for_go, SERVICE_TICK);
     let mut wire = Wire::default();
     let mut expected = b"PING\n".to_vec();
     let mut reply = b"PONG\n".to_vec();
@@ -143,10 +167,12 @@ fn drop_returns_once_the_thread_and_its_harness_are_gone() {
     let mut h = harness_in(AgentConsoleState::WaitingReady);
     h.pasteboard = Some(pasteboard);
     let (entered, in_wake) = channel();
-    let service = ServiceThread::spawn(h, &Arc::default(), move || {
+    let slow_wake = move || {
         let _ = entered.send(());
         std::thread::sleep(Duration::from_millis(200));
-    });
+    };
+    let service =
+        ServiceThread::start(h, Device::default(), &Arc::default(), slow_wake, SERVICE_TICK);
     in_wake.recv_timeout(WAIT).expect("the service never woke vCPU0");
     assert!(worker.report("before".into()), "the harness is alive while its thread runs");
     drop(service);
@@ -253,4 +279,73 @@ fn a_ctl_append_wakes_the_service_not_vcpu0() {
     drop(service);
     assert!(lock(&slot.0).is_none(), "the slot outlived its boot's service thread");
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn a_guest_reply_reaches_the_service_with_no_vcpu0_exit() {
+    let device = Device::default();
+    let slot = Arc::default();
+    // No PING owed: the service sends only once it reads the reply.
+    let mut h = harness_in(AgentConsoleState::WaitingReady);
+    h.last_ping = Some(Instant::now());
+    let (mut service, wakes) = spawn_on(h, &device, &slot, PARKED);
+    // The notify exit put the reply in the device and ran the reply hook.
+    lock(&device).guest_writes(b"READY BRIDGEVM v3\n");
+    crate::agent_console::ctl_wake::guest_replied(&slot);
+    // The service drained and read it with no vCPU0 exchange; its first wake
+    // is for the PING it owes now, and READY.
+    wakes.recv_timeout(WAIT).expect("the reply did not reach the service");
+    assert!(service.desktop_ready());
+    assert!(lock(&device).inbound.is_empty());
+    let mut wire = lock(&device);
+    service.exchange_with(&mut *wire);
+    assert_eq!(wire.sent, b"PING\n");
+}
+
+#[test]
+fn bytes_keep_their_order_when_vcpu0_and_the_service_both_drain() {
+    let device = Device::default();
+    let slot = Arc::default();
+    // A finished harness leaves `rx` alone, so it shows every drained byte.
+    let (mut service, _wakes) = spawn_on(harness_in(AgentConsoleState::Done), &device, &slot, PARKED);
+    let mut expected = Vec::new();
+    for i in 0..2000 {
+        let bytes = format!("{i},");
+        expected.extend_from_slice(bytes.as_bytes());
+        let mut wire = lock(&device);
+        wire.guest_writes(bytes.as_bytes());
+        if i % 3 == 0 {
+            service.exchange_with(&mut *wire);
+        }
+        drop(wire);
+        crate::agent_console::ctl_wake::guest_replied(&slot);
+    }
+    service.exchange_with(&mut *lock(&device));
+    assert!(lock(&device).inbound.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&lock(&service.shared.rx)),
+        String::from_utf8_lossy(&expected)
+    );
+}
+
+#[test]
+fn a_full_device_the_service_drained_wakes_vcpu0_to_poll_the_ring() {
+    let device = Device::default();
+    let chain = vec![b'x'; MAX_HOST_INBOUND_LEN / 4];
+    for _ in 0..5 {
+        lock(&device).guest_writes(&chain);
+    }
+    // The device is full, one chain waits in the ring, and no notify will come.
+    // A timed-out harness leaves `rx` alone and is not ready: the drain's is
+    // the only wake.
+    let slot = Arc::default();
+    let h = harness_in(AgentConsoleState::TimedOut);
+    let (mut service, wakes) = spawn_on(h, &device, &slot, PARKED);
+    slot.unpark();
+    wakes.recv_timeout(WAIT).expect("a full drain did not wake vCPU0");
+    let mut wire = lock(&device);
+    assert_eq!((wire.inbound.len(), wire.ring.len()), (0, 1));
+    // `rx` is full, so vCPU0 drains nothing, but it polls the ring.
+    service.exchange_with(&mut *wire);
+    assert!(wire.ring.is_empty(), "the chain stayed in the ring");
 }

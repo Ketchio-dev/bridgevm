@@ -335,8 +335,8 @@ pub(crate) fn run() -> ExitCode {
             }
             // Joined on drop, at `continue 'reboot` or after the stop report:
             // always before the next generation's from_env.
-            let mut agent_console =
-                agent_harness.map(|harness| agent_service_wake.spawn_service(vcpu, harness));
+            let mut agent_console = agent_harness
+                .map(|harness| agent_service_wake.spawn_service(vcpu, harness, &platform));
             input_control_wake.ensure_started(vcpu);
             // A finished NVMe flush completes at the next pre-run drain: run one now.
             // (vCPU0's live handle; the call only asks it to leave hv_vcpu_run.)

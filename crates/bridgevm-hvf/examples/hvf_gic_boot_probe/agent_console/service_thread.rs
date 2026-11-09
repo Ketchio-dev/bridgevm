@@ -1,19 +1,26 @@
 //! The guest-agent host service runs on its own thread, off vCPU0.
 //!
-//! vCPU0 keeps only what needs the platform guard. Under it, `exchange` moves
-//! the device's guest bytes into `rx` and sends what the service queued in
-//! `tx`, in one call. The rest is `AgentConsoleHarness::advance`, which touches
-//! neither the platform nor guest RAM, and runs here: share walks, PUT reads
-//! and hashing, GET publishes with their F_FULLFSYNC, clipboard and drops. The
-//! thread is the harness's only owner, so the pasteboard's `Cell` never has
-//! two (`spawn` needs `AgentConsoleHarness: Send`). Readiness, the NAT's DNS
-//! switches and VM pauses cross as atomics.
+//! vCPU0 keeps only what needs guest RAM. Under the platform guard, `exchange`
+//! moves the device's guest bytes into `rx` and sends what the service queued
+//! in `tx`, in one call, and polls the ring a full device stopped taking. The
+//! rest is `AgentConsoleHarness::advance`, which touches neither the platform
+//! nor guest RAM, and runs here: share walks, PUT reads and hashing, GET
+//! publishes with their F_FULLFSYNC, clipboard and drops. The thread is the
+//! harness's only owner, so the pasteboard's `Cell` never has two (`spawn`
+//! needs `AgentConsoleHarness: Send`). Readiness, the NAT's DNS switches and VM
+//! pauses cross as atomics.
 //!
-//! The thread steps when there is news for it, never on every vCPU0 tick: when
-//! `exchange` moved bytes or saw a DNS switch or desktop request, on a VM
-//! pause, on a ctl append (ctl_wake.rs, through `ServiceSlot`), and otherwise
-//! every `SERVICE_TICK`. That tick replaces the vCPU0 wake the agent used to
-//! need (service_wake_interval.rs).
+//! A guest reply needs no vCPU0 exit: its notify exit already copied the bytes
+//! into the device, so the reply hook unparks the service (ctl_wake.rs), and
+//! each step first drains the device itself, briefly under the platform lock.
+//! Both drains append to `rx` only under that lock, so the bytes keep the
+//! device's order. Lock order: platform, then `rx`.
+//!
+//! The thread steps when there is news for it, never on every vCPU0 tick: a
+//! guest reply, an `exchange` that moved bytes or saw a DNS switch or desktop
+//! request, a VM pause, a ctl append (both hooks reach it through
+//! `ServiceSlot`), and otherwise every `SERVICE_TICK`. That tick replaces the
+//! vCPU0 wake the agent used to need (service_wake_interval.rs).
 
 use super::*;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
@@ -26,7 +33,7 @@ use std::thread::{JoinHandle, Thread};
 /// heartbeats, timeouts) runs at least this often.
 const SERVICE_TICK: Duration = Duration::from_millis(250);
 
-/// The current boot's service thread, for the probe-lifetime ctl watcher.
+/// The current boot's service thread, for the probe-lifetime reply hook and ctl watcher.
 #[derive(Default)]
 pub(super) struct ServiceSlot(Mutex<Option<Thread>>);
 
@@ -40,8 +47,11 @@ impl ServiceSlot {
 
 #[derive(Default)]
 struct Shared {
-    /// Guest bytes vCPU0 drained, for the service.
+    /// Guest bytes drained from the device (`drain`), for the service.
     rx: Mutex<Vec<u8>>,
+    /// The service's drain found the device full: chains may wait in the ring
+    /// for vCPU0's poll.
+    ring_waiting: AtomicBool,
     /// Wire bytes the service queued, for vCPU0 to send.
     tx: Mutex<Vec<u8>>,
     desktop_ready: AtomicBool,
@@ -59,18 +69,20 @@ pub struct ServiceThread {
 }
 
 impl ServiceThread {
-    /// Move `harness` onto its own thread, found through `slot` until dropped;
-    /// `wake` asks vCPU0 to exchange soon.
+    /// Move `harness` onto its own thread, which drains `platform`'s device and
+    /// is found through `slot` until dropped; `wake` asks vCPU0 to exchange soon.
     pub(super) fn spawn(
         harness: AgentConsoleHarness,
+        platform: Arc<Mutex<VirtPlatform>>,
         slot: &Arc<ServiceSlot>,
         wake: impl Fn() + Send + 'static,
     ) -> Self {
-        Self::start(harness, slot, wake, SERVICE_TICK)
+        Self::start(harness, platform, slot, wake, SERVICE_TICK)
     }
 
     fn start(
         harness: AgentConsoleHarness,
+        device: impl AgentDevice,
         slot: &Arc<ServiceSlot>,
         wake: impl Fn() + Send + 'static,
         tick: Duration,
@@ -80,7 +92,7 @@ impl ServiceThread {
             .name("bv-agent-service".into())
             .spawn({
                 let shared = Arc::clone(&shared);
-                move || serve(harness, &shared, &wake, tick)
+                move || serve(harness, &shared, &device, &wake, tick)
             })
             .expect("spawn the agent service thread");
         *lock(&slot.0) = Some(thread.thread().clone());
@@ -92,25 +104,18 @@ impl ServiceThread {
         }
     }
 
-    /// Under the platform guard: hand the guest's bytes to the service and
-    /// send what it queued.
+    /// Under the platform guard: hand the guest's bytes to the service, poll
+    /// the ring a full device left, and send what the service queued.
     pub fn exchange(&mut self, platform: &mut VirtPlatform, mem: &mut dyn GuestMemoryMut) {
         self.exchange_with(&mut (platform, mem));
     }
 
     fn exchange_with(&mut self, wire: &mut impl AgentWire) {
-        // While the service holds a full `rx`, the guest's bytes wait in the
-        // device, which holds the guest back at the same bound (agent_inbound.rs).
-        let drained = {
-            let mut rx = lock(&self.shared.rx);
-            let before = rx.len();
-            if before < MAX_HOST_INBOUND_LEN {
-                wire.drain_inbound_into(&mut rx);
-            }
-            rx.len() - before
-        };
-        // A full device stopped taking the guest's chains; take those left in the ring.
-        if drained >= MAX_HOST_INBOUND_LEN {
+        let drained = drain(&self.shared.rx, |out| wire.drain_inbound_into(out));
+        // A full device stopped taking the guest's chains, found here or by the
+        // service's drain; take those left in the ring.
+        let ring_waiting = self.shared.ring_waiting.swap(false, Ordering::AcqRel);
+        if ring_waiting || drained >= MAX_HOST_INBOUND_LEN {
             wire.poll();
         }
         let dns_switched = wire.dns_server_changes().is_some_and(|changes| {
@@ -168,7 +173,13 @@ impl Drop for ServiceThread {
     }
 }
 
-fn serve(mut harness: AgentConsoleHarness, shared: &Shared, wake: &dyn Fn(), tick: Duration) {
+fn serve(
+    mut harness: AgentConsoleHarness,
+    shared: &Shared,
+    device: &dyn AgentDevice,
+    wake: &dyn Fn(),
+    tick: Duration,
+) {
     raise_qos();
     loop {
         // Nothing else on this thread parks (channels are polled with try_recv),
@@ -176,6 +187,12 @@ fn serve(mut harness: AgentConsoleHarness, shared: &Shared, wake: &dyn Fn(), tic
         std::thread::park_timeout(tick);
         if shared.stop.load(Ordering::Acquire) {
             return;
+        }
+        // A guest reply's bytes are in the device already; no vCPU0 exit needed.
+        if device.drain_into(&shared.rx) >= MAX_HOST_INBOUND_LEN {
+            // Only vCPU0 polls the ring (guest RAM), and no notify will come.
+            shared.ring_waiting.store(true, Ordering::Release);
+            wake();
         }
         let taken = harness.take_inbound(&mut lock(&shared.rx));
         harness.dns_flush.seen = shared.dns_server_changes.load(Ordering::Relaxed);
@@ -213,6 +230,32 @@ fn raise_qos() {
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Every append to `rx`, by vCPU0 or the service, runs under the platform
+/// guard, so the guest's bytes keep the device's order. Returns how many.
+fn drain(rx: &Mutex<Vec<u8>>, drain_inbound: impl FnOnce(&mut Vec<u8>)) -> usize {
+    let mut rx = lock(rx);
+    let before = rx.len();
+    // While the service holds a full `rx`, the guest's bytes wait in the
+    // device, which holds the guest back at the same bound (agent_inbound.rs).
+    if before < MAX_HOST_INBOUND_LEN {
+        drain_inbound(&mut rx);
+    }
+    rx.len() - before
+}
+
+/// The device as the service reaches it; tests model the device and its lock.
+trait AgentDevice: Send + 'static {
+    /// Take the platform lock and `drain` into `rx` under it.
+    fn drain_into(&self, rx: &Mutex<Vec<u8>>) -> usize;
+}
+
+impl AgentDevice for Arc<Mutex<VirtPlatform>> {
+    fn drain_into(&self, rx: &Mutex<Vec<u8>>) -> usize {
+        let mut platform = crate::lock_platform(self, None, 0, crate::HoldSite::AgentService);
+        drain(rx, |out| platform.virtio_console_agent_drain_inbound_into(out))
+    }
 }
 
 /// What `exchange` needs of the platform under its guard; tests model the device.

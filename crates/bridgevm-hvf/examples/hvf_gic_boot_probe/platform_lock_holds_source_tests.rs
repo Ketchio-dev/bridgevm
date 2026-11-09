@@ -38,6 +38,13 @@ fn every_lock_site_beside_the_tick_holds_through_the_record() {
         (count(display, copy), count(display, ".try_lock()")),
         (1, 0)
     );
+    // The agent service thread's one acquisition, its drain of the guest's bytes.
+    let service = include_str!("agent_console/service_thread.rs");
+    let drain = "crate::lock_platform(self, None, 0, crate::HoldSite::AgentService)";
+    assert_eq!(
+        (count(service, drain), count(service, "lock_platform(")),
+        (1, 1)
+    );
     let tick = include_str!("hda_service_tick.rs");
     let port = "service_once(&self.platform, &PLATFORM_HOLDS, &mut self.memory, now)";
     assert_eq!(count(tick, port), 1);
