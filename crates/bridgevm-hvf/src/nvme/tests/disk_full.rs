@@ -206,6 +206,28 @@ fn held_commands_retry_in_order_and_a_reset_drops_them() {
     let _ = fs::remove_file(path);
 }
 
+/// A transfer that fails once the pause has begun (published, not yet
+/// drained) joins the same RESUME's retry, after the one held before it.
+#[test]
+fn a_write_that_fails_during_the_pause_joins_the_retry() {
+    let (mut ctrl, mut mem, path) = controller("disk-full-late", true);
+    faults::set(&path, Op::Write, Some(libc::ENOSPC));
+    ring(&mut ctrl, &mut mem, 0, &write(0x81, 1, 0));
+    assert!(mem.write_bytes(IO_SQ_BASE + SQ_ENTRY_SIZE, &write(0x82, 2, 0)));
+    ctrl.mmio_write(IO_SQ_DOORBELL, 4, 2);
+    ctrl.process(&mut mem);
+    // SAFETY: run here, in this FakeMem's view, while the FakeMem lives.
+    unsafe { ctrl.take_io() }
+        .expect("a queued WRITE")
+        .run(&mem.view());
+
+    faults::set(&path, Op::Write, None);
+    assert_eq!(retry(&mut ctrl, &mut mem), (true, 2));
+    assert_eq!(cqe(&mem, 0), Some((0x81, SC_SUCCESS)));
+    assert_eq!(cqe(&mem, 1), Some((0x82, SC_SUCCESS)));
+    let _ = fs::remove_file(path);
+}
+
 /// Other host errors complete as before: a WRITE with Invalid Field, a sync
 /// with Internal Device Error; nothing is held.
 #[test]
