@@ -160,4 +160,26 @@ impl ShareSync {
     pub(super) fn guest_copy_preferred(&self, name: &str) -> bool {
         self.guest_changed.contains_key(name)
     }
+
+    /// For the publish of a fetched copy of `name` (asked before on_guest_version drops the
+    /// preference): the Mac file's size and time when its guest edit was preferred. The copy
+    /// is published only over that same file, checked right before the rename: a Mac edit made
+    /// since (scans wait while the fetch runs) wins, as it did before the synced state. None for
+    /// an ordinary fetch, which keeps its behaviour from before the state.
+    pub fn preferred_mac_stat(&self, name: &str) -> Option<(u64, u128)> {
+        let stat = self.guest_changed.get(&normalize_rel(name))?;
+        Some((stat.size, stat.mtime_ms))
+    }
+
+    /// A preferred copy was not published (the Mac file changed): the Mac copy wins. The guest
+    /// copy stays known by its listed time, so it is not fetched again, and the Mac file no
+    /// longer matches the record, so the next scan sends it.
+    pub fn on_host_copy_kept(&mut self, name: &str) {
+        let name = normalize_rel(name);
+        self.guest_changed.remove(&name);
+        if let Some(record) = self.records.get_mut(&name) {
+            record.host_write_failed = false;
+            record.host_mtime_ms = None;
+        }
+    }
 }

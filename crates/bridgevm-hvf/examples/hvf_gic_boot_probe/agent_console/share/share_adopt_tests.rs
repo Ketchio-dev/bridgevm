@@ -500,3 +500,27 @@ fn a_versions_write_in_flight_when_the_state_turns_off_leaves_no_file_behind() {
         assert!(!Path::new(&path).exists(), "{suffix} written after the state was removed");
     }
 }
+
+#[test]
+fn a_mac_edit_made_while_a_preferred_guest_copy_is_fetched_wins_and_is_sent() {
+    // Codex on #572: the first scan found the Mac copy at its last synced version, so the
+    // guest's edit was preferred; the Mac file changed while that copy was fetched. Without a
+    // check right before the publish, the guest copy replaced the Mac edit.
+    let (mut rig, vars) = synced_from_guest("mac-edit-mid-fetch", now_ms() - 2 * HOUR_MS, true);
+    settle(&mut rig);
+    rig.guest.write("doc.bin", b"new version, longer");
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms() - HOUR_MS);
+    let mac = rig.dir.join("doc.bin");
+    rig.guest.on_get = Some(Box::new(move |name: &str| {
+        if name == "doc.bin" {
+            std::fs::write(&mac, b"edited on the Mac mid-fetch").unwrap();
+        }
+    }));
+    let fetches = |rig: &Rig| rig.guest.gets.iter().filter(|name| *name == "doc.bin").count();
+    let before = fetches(&rig);
+    new_session(&mut rig, Some(&vars));
+    rig.run(16);
+    assert_eq!(fetches(&rig), before + 1, "the preferred copy was not fetched once: {:?}", rig.guest.gets);
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"edited on the Mac mid-fetch"[..]), "the guest copy replaced the Mac edit");
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"edited on the Mac mid-fetch"[..]), "the Mac edit was not sent");
+}

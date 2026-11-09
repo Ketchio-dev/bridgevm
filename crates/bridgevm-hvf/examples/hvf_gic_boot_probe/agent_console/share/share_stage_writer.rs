@@ -8,7 +8,7 @@
 //! share's synced state on, the name is marked on disk right before the publish
 //! (share_synced.rs), here, so the service thread writes nothing more for it.
 
-use super::host_destination::{Destination, Staged};
+use super::host_destination::{Destination, MacStat, Staged};
 use crate::agent_console::state::sync_file::{mark, SharedMarks};
 use super::*;
 use std::io::{self, Write as _};
@@ -17,7 +17,9 @@ use std::time::SystemTime;
 
 enum ToWriter {
     Chunk(String),
-    Publish(Option<SystemTime>),
+    /// The guest's time for the Mac copy, and for a preferred guest copy the Mac file it may
+    /// replace (host_destination.rs MacChanged).
+    Publish(Option<SystemTime>, Option<MacStat>),
 }
 
 pub(in crate::agent_console) enum FromWriter {
@@ -65,8 +67,8 @@ impl StageWriter {
         let _ = self.to.send(ToWriter::Chunk(b64));
     }
 
-    pub(in crate::agent_console) fn publish(&mut self, mtime: Option<SystemTime>) {
-        let _ = self.to.send(ToWriter::Publish(mtime));
+    pub(in crate::agent_console) fn publish(&mut self, mtime: Option<SystemTime>, mac: Option<MacStat>) {
+        let _ = self.to.send(ToWriter::Publish(mtime, mac));
     }
 
     /// The thread's next answer, without waiting.
@@ -118,7 +120,7 @@ fn run(
                 let answer = (written == size).then_some(FromWriter::Hashed(hash));
                 let _ = outbox.send((bytes.len() as u64, answer));
             }
-            ToWriter::Publish(mtime) => {
+            ToWriter::Publish(mtime, mac) => {
                 if written != size {
                     break;
                 }
@@ -127,7 +129,8 @@ fn run(
                     // A failed mark is safe to publish past (share_state.rs mark_fetched).
                     let _ = mark(marks, [name.as_str()]);
                 }
-                let result = destination.publish(staged, mtime);
+                // The Mac file is checked last, in the publish, right before its rename.
+                let result = destination.publish(staged, mtime, mac);
                 let _ = outbox.send((0, Some(FromWriter::Published(result))));
                 return;
             }

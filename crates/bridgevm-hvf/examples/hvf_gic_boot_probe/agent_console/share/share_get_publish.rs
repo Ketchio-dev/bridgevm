@@ -31,6 +31,8 @@ impl AgentConsoleHarness {
                 return;
             }
         };
+        // A preferred guest edit goes only over the Mac file it was preferred to (share_synced.rs).
+        let mac = share.engine.preferred_mac_stat(name);
         let bytes = match share
             .engine
             .on_guest_file(name.to_string(), finished.bytes, None)
@@ -45,7 +47,9 @@ impl AgentConsoleHarness {
         share.forget_host_walk();
         // The guest's copy may not be on its disk yet: marked first (share_synced.rs).
         share.mark_fetched(name, now);
-        match Destination::from_root(root, name, true).and_then(|d| d.write_at(&bytes, mtime)) {
+        let written = Destination::from_root(root, name, true)
+            .and_then(|d| d.write_at_unless_changed(&bytes, mtime, mac));
+        match written {
             Ok(mtime) => {
                 share.engine.on_host_write_succeeded(name, mtime);
                 println!(
@@ -53,6 +57,10 @@ impl AgentConsoleHarness {
                     bytes.len(),
                     self.t_ms(now)
                 );
+            }
+            Err(e) if crate::agent_console::share::host_destination::is_mac_changed(&e) => {
+                share.engine.on_host_copy_kept(name);
+                println!("BVAGENT SHARE skip {name} mac-changed");
             }
             Err(e) => {
                 let exhausted = share.engine.on_host_write_error(name, is_persistent(&e));

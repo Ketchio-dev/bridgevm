@@ -25,6 +25,26 @@ mod seal_host;
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
+/// The Mac file a preferred guest copy is to replace, as the session's first scan saw it: size
+/// and modification time (ms), as the scan reads them (share_synced.rs).
+pub(super) type MacStat = (u64, u128);
+
+/// A preferred guest copy was not published: the Mac file changed since the first scan.
+#[derive(Debug)]
+pub(super) struct MacChanged;
+
+impl std::fmt::Display for MacChanged {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the Mac file changed")
+    }
+}
+
+impl std::error::Error for MacChanged {}
+
+pub(super) fn is_mac_changed(error: &io::Error) -> bool {
+    error.get_ref().is_some_and(|inner| inner.is::<MacChanged>())
+}
+
 /// The prefix of the host's unpublished temporaries, `.bridgevm-sync-<pid>-<n>`.
 pub(super) const TEMP_PREFIX: &str = ".bridgevm-sync-";
 
@@ -109,20 +129,27 @@ impl Destination {
 
     /// `mtime`: the guest file's modification time, which the Mac copy keeps.
     pub(super) fn write_at(&self, bytes: &[u8], mtime: Option<std::time::SystemTime>) -> io::Result<Option<u128>> {
-        self.write_with_at(|file| file.write_all(bytes), mtime)
+        self.write_at_unless_changed(bytes, mtime, None)
+    }
+
+    /// As `write_at`, but with `mac` (a preferred guest copy) not over a Mac file that is no
+    /// longer as `mac` says: MacChanged.
+    pub(super) fn write_at_unless_changed(&self, bytes: &[u8], mtime: Option<std::time::SystemTime>,
+                                          mac: Option<MacStat>) -> io::Result<Option<u128>> {
+        self.write_with_at(|file| file.write_all(bytes), mtime, mac)
     }
 
     #[cfg(test)]
     fn write_with(&self, write: impl FnOnce(&mut File) -> io::Result<()>) -> io::Result<Option<u128>> {
-        self.write_with_at(write, None)
+        self.write_with_at(write, None, None)
     }
 
     fn write_with_at(&self, write: impl FnOnce(&mut File) -> io::Result<()>,
-                     mtime: Option<std::time::SystemTime>) -> io::Result<Option<u128>> {
+                     mtime: Option<std::time::SystemTime>, mac: Option<MacStat>) -> io::Result<Option<u128>> {
         // Require write access to an existing destination before replacing it.
         let existing = self.existing(libc::O_WRONLY)?;
         let (temporary, mut file) = self.temporary()?;
-        let result = write(&mut file).and_then(|()| self.seal_and_rename(existing.as_ref(), &file, &temporary, mtime));
+        let result = write(&mut file).and_then(|()| self.seal_and_rename(existing.as_ref(), &file, &temporary, mtime, mac));
         if result.is_err() {
             // SAFETY: remove the unpublished exclusive temporary name.
             unsafe { libc::unlinkat(self.parent.as_raw_fd(), temporary.as_ptr(), 0) };
@@ -131,7 +158,7 @@ impl Destination {
     }
 
     fn seal_and_rename(&self, existing: Option<&File>, file: &File, temporary: &CStr,
-                       mtime: Option<std::time::SystemTime>) -> io::Result<Option<u128>> {
+                       mtime: Option<std::time::SystemTime>, mac: Option<MacStat>) -> io::Result<Option<u128>> {
         // The guest write policy's mode and quarantine mark, or no write.
         policy::seal(existing, file, &self.parent)?;
         // Only the date shown in Finder: the content is what must land.
@@ -142,6 +169,12 @@ impl Destination {
         file.sync_all()?;
         let mtime = file.metadata()?.modified().ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|t| t.as_millis());
+        // Last, right before the rename: a Mac edit since the first scan wins over a preferred copy.
+        if let Some(mac) = mac {
+            if self.mac_stat() != Some(mac) {
+                return Err(io::Error::other(MacChanged));
+            }
+        }
         // SAFETY: both names and the owning directory remain live. renameat
         // replaces a concurrently inserted leaf symlink instead of following it.
         let status = unsafe { libc::renameat(self.parent.as_raw_fd(), temporary.as_ptr(),
@@ -161,10 +194,19 @@ impl Destination {
         Ok(Staged { temporary, file })
     }
 
-    /// Seal, date, F_FULLFSYNC and rename the filled temporary; on failure it is removed.
-    pub(super) fn publish(&self, staged: Staged, mtime: Option<std::time::SystemTime>) -> io::Result<Option<u128>> {
+    /// The destination's size and modification time (ms) now; None when it is missing or not a
+    /// plain file.
+    fn mac_stat(&self) -> Option<MacStat> {
+        let meta = self.existing(libc::O_RDONLY).ok()??.metadata().ok()?;
+        Some((meta.len(), super::file_mtime_ms_from_meta(&meta)?))
+    }
+
+    /// Seal, date, F_FULLFSYNC and rename the filled temporary, not over a Mac file that is no
+    /// longer as `mac` says (MacChanged); on failure it is removed.
+    pub(super) fn publish(&self, staged: Staged, mtime: Option<std::time::SystemTime>,
+                          mac: Option<MacStat>) -> io::Result<Option<u128>> {
         let result = self.existing(libc::O_WRONLY)
-            .and_then(|existing| self.seal_and_rename(existing.as_ref(), &staged.file, &staged.temporary, mtime));
+            .and_then(|existing| self.seal_and_rename(existing.as_ref(), &staged.file, &staged.temporary, mtime, mac));
         if result.is_err() {
             self.discard(staged);
         }

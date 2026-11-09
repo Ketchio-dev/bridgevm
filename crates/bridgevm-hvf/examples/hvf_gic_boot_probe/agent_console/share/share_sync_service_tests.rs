@@ -57,6 +57,8 @@ struct NtfsGuest {
     stream_time: Option<u128>,
     /// LSR fails, as for a folder the agent cannot read.
     ls_error: bool,
+    /// Runs as a GET is served (its name): a Mac edit made while the guest's copy is fetched.
+    on_get: Option<Box<dyn FnMut(&str)>>,
 }
 
 impl NtfsGuest {
@@ -125,6 +127,9 @@ impl NtfsGuest {
             }
             "GET" => {
                 self.gets.push(Self::rel(&text(arg)));
+                if let Some(hook) = self.on_get.as_mut() {
+                    hook(&Self::rel(&text(arg)));
+                }
                 match self.find(&Self::rel(&text(arg))) {
                     Some(i) => vec![
                         format!("GETBEG {arg} {} 1", self.files[i].1.len()),
