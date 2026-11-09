@@ -587,10 +587,10 @@ bad_share_max_output="$(
     --vars "$VARS" \
     --evidence-dir "$EVIDENCE" \
     --agent-service-control "$CONTROL" \
-    --agent-share-max-kb 1048577 \
+    --agent-share-max-kb 16777217 \
     --print-policy 2>&1
 )" && fail "installed boot unexpectedly accepted an oversized share maximum: $bad_share_max_output"
-assert_contains "$bad_share_max_output" "--agent-share-max-kb requires an integer from 1 to 1048576" "share maximum policy"
+assert_contains "$bad_share_max_output" "--agent-share-max-kb requires an integer from 1 to 16777216" "share maximum policy"
 
 orphan_share_max_output="$(
   scripts/run-hvf-windows-installed-boot.sh \

@@ -81,9 +81,9 @@ pub(crate) fn installed_boot_launch_args(
     }
     if args
         .agent_share_max_kb
-        .is_some_and(|max_kb| !(1..=1_048_576).contains(&max_kb))
+        .is_some_and(|max_kb| !(1..=16_777_216).contains(&max_kb))
     {
-        bail!("--agent-share-max-kb requires an integer from 1 to 1048576");
+        bail!("--agent-share-max-kb requires an integer from 1 to 16777216");
     }
     if args.agent_share_max_kb.is_some() && args.agent_share_host.is_none() {
         bail!("--agent-share-max-kb requires --agent-share-host and --agent-share-guest");

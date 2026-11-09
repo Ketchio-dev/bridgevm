@@ -63,8 +63,8 @@ agent_share_interval_ms() {
 
 agent_share_max_kb() {
   positive_integer "$1" || return 1
-  (( ${#1} <= 7 )) || return 1
-  (( 10#$1 <= 1048576 ))
+  (( ${#1} <= 8 )) || return 1
+  (( 10#$1 <= 16777216 ))
 }
 
 u64_literal() {

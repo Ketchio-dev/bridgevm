@@ -256,14 +256,14 @@ fn launch_rejects_agent_share_maximum_outside_wrapper_range() {
         "--agent-share-guest",
         "C:\\bridgevm-share",
         "--agent-share-max-kb",
-        "1048577",
+        "16777217",
     ])
     .unwrap();
 
     let error = installed_boot_launch_args(&args, Path::new("/work"))
         .unwrap_err()
         .to_string();
-    assert!(error.contains("integer from 1 to 1048576"));
+    assert!(error.contains("integer from 1 to 16777216"));
 }
 
 #[test]
