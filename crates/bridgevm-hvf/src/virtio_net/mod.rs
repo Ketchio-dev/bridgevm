@@ -16,6 +16,7 @@ mod transport_regs;
 mod tx_gather;
 mod virtqueue;
 
+use crate::virtio_queue::address::read_avail_idx;
 use crate::virtio_queue::address::read_descriptor;
 use crate::virtio_queue::address::read_u16_at as read_u16;
 use crate::virtio_queue::address::write_used;

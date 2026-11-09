@@ -124,7 +124,7 @@ impl VirtioGpu {
         // never drained: firmware submitted GET_DISPLAY_INFO, polled the used ring
         // forever, and the guest hung before reaching the boot manager.
         let queue_size = queue.effective_size();
-        let Some(avail_idx) = read_u16(mem, queue.driver, 2) else {
+        let Some(avail_idx) = read_avail_idx(mem, queue.driver) else {
             return;
         };
         for _ in 0..pending_entries(queue.last_avail_idx, avail_idx, queue_size) {

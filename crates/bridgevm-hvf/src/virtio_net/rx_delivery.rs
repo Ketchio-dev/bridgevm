@@ -9,7 +9,7 @@ impl<B: NetBackend> VirtioNet<B> {
         if !queue.ready || queue.size == 0 || queue.desc == 0 {
             return false;
         }
-        let Some(avail_idx) = read_u16(mem, queue.driver, 2) else {
+        let Some(avail_idx) = read_avail_idx(mem, queue.driver) else {
             return false;
         };
         if self.queues[queue_index].last_avail_idx == avail_idx {

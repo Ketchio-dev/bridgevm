@@ -44,6 +44,7 @@ mod vblank_wake_state;
 mod venus_start_trace;
 mod virtqueue;
 
+use crate::virtio_queue::address::read_avail_idx;
 use crate::virtio_queue::address::read_u16_at as read_u16;
 use crate::virtio_queue::address::write_used;
 pub(crate) use async_present::*;
