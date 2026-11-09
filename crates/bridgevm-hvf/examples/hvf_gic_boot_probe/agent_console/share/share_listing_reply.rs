@@ -54,6 +54,25 @@ impl AgentConsoleHarness {
             .push_back(ServiceReq::Ctl(crate::agent_console::desktop_switch::powershell_command(&script)));
     }
 
+    /// The names of the PUTs the service holds now: held for their marks, queued, in flight,
+    /// or the large one under way (ShareSync::set_puts_under_way).
+    fn share_puts_under_way(&self) -> Vec<String> {
+        let Some(share) = self.share.as_ref() else {
+            return Vec::new();
+        };
+        let put = |req: &ServiceReq| match req {
+            ServiceReq::SharePut { name, .. } => Some(name.clone()),
+            _ => None,
+        };
+        let mut names: Vec<String> = share.held_put.iter().filter_map(put).collect();
+        names.extend(self.queue.iter().filter_map(put));
+        names.extend(self.in_flight.iter().filter_map(|(req, _)| put(req)));
+        if let Some(BigTransfer::Put(big)) = share.big.as_ref() {
+            names.push(big.name.clone());
+        }
+        names
+    }
+
     fn apply_share_listing(&mut self, b64: &str) {
         let max_encoded = share_sync::MAX_LISTING_BYTES.div_ceil(3) * 4;
         if b64.len() > max_encoded {
@@ -83,6 +102,7 @@ impl AgentConsoleHarness {
                 return;
             }
         };
+        let puts = self.share_puts_under_way();
         let Some(share) = self.share.as_mut() else {
             return;
         };
@@ -101,6 +121,7 @@ impl AgentConsoleHarness {
             .guest_ls_scratch
             .retain(|entry| entry.is_dir || !host_destination::is_share_temporary(&entry.name));
         share.key_guest_listing();
+        share.engine.set_puts_under_way(puts);
         let actions = share
             .engine
             .on_guest_listing_normalized(share.guest_ls_scratch.drain(..));

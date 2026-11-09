@@ -145,6 +145,32 @@ pub const DISK_NAME: &str = "disk.raw";
 pub const VARS_NAME: &str = "vars.fd";
 pub const MANIFEST_NAME: &str = "manifest.json";
 
+/// The shared-folder sync state the VM keeps beside its vars, as `<vars><suffix>`: the versions
+/// it last synced, then the marks of transfers under way. It describes the guest disk it was
+/// written with. A restore rolls that disk back while the Mac folder stays current, so the state
+/// would take the guest's older copy for an edit and fetch it over the Mac file: a restore removes
+/// it (versions first) and the next start begins without one, the Mac copy winning. A copied
+/// bundle or a Time Machine restore of the bundle moves the state with its disk.
+pub const SHARE_STATE_SUFFIXES: [&str; 2] = [".share-sync", ".share-sync-puts"];
+
+/// Removes the share state beside `vars`, durably. Missing is fine; any other error is returned.
+fn remove_share_state(vars: &Path) -> io::Result<()> {
+    let mut removed = false;
+    for suffix in SHARE_STATE_SUFFIXES {
+        let mut path = vars.as_os_str().to_owned();
+        path.push(suffix);
+        match fs::remove_file(&path) {
+            Ok(()) => removed = true,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    match vars.parent() {
+        Some(dir) if removed => File::open(dir)?.sync_all(),
+        _ => Ok(()),
+    }
+}
+
 /// fsync a directory, so a rename inside it survives a crash.
 fn sync_dir(dir: &Path) -> io::Result<()> {
     File::open(dir)?.sync_all()

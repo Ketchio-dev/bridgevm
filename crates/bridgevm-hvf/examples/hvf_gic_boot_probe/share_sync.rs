@@ -96,6 +96,16 @@ pub struct ShareSync {
     listed: bool,
     /// Guest listings applied this session; only the first one is adopted from.
     listings: u32,
+    /// Synced versions and unconfirmed PUTs across sessions (share_synced.rs).
+    synced: HashMap<String, share_synced::SyncedFile>,
+    /// Marked names: an unconfirmed PUT or a loaded mark (None), or a settling copy (until when).
+    marks: HashMap<String, Option<std::time::Instant>>,
+    synced_changes: HashMap<String, Option<share_synced::SyncedFile>>,
+    synced_dirty: bool,
+    /// Guest edits preferred at the first listing, with the Mac file's stat then.
+    guest_changed: HashMap<String, HostFileStat>,
+    /// Names with a PUT held, queued or in flight, as the service holds them at each listing.
+    puts_under_way: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -174,6 +184,7 @@ impl ShareSync {
                 .insert(name, GuestFileStat { size, mtime });
         }
         self.alias_guest_renames();
+        self.prefer_changed_guest_copies();
         let held = self.pull_held_keys();
         self.drop_fetched_over_cap();
         self.drop_refused_writes();
@@ -268,11 +279,14 @@ impl ShareSync {
             .map(str::to_string)
             .or_else(|| self.pending_guest_mtime.remove(&name));
         self.pending_host_changed.remove(&name);
+        // A preferred copy keeps its guard (the Mac stat) until it is published, through retries
+        // of a failed publish (share_synced.rs preferred_mac_stat).
         if let Some(record) = self.records.get_mut(&name) {
             if !record.host_write_failed && record.hash == Some(hash) {
                 record.size = size;
                 record.guest_mtime = guest_mtime;
                 record.awaiting_guest_stamp = false;
+                self.guest_changed.remove(&name);
                 return GuestVersion::AlreadySynced;
             }
         }
@@ -297,9 +311,18 @@ impl ShareSync {
     }
 
     pub fn on_host_write_succeeded(&mut self, name: &str, mtime_ms: Option<u128>) {
-        if let Some(record) = self.records.get_mut(&normalize_rel(name)) {
-            record.host_write_failed = false;
-            record.host_mtime_ms = mtime_ms;
+        let name = normalize_rel(name);
+        let Some(record) = self.records.get_mut(&name) else {
+            return;
+        };
+        record.host_write_failed = false;
+        record.host_mtime_ms = mtime_ms;
+        // Published: a preferred copy needs its guard no more.
+        self.guest_changed.remove(&name);
+        // Both sides now hold this version (the Mac copy keeps the guest's time).
+        let size = record.size;
+        if let Some(mtime_ms) = mtime_ms {
+            self.note_synced(name, share_synced::SyncedVersion { size, mtime_ms });
         }
     }
 
@@ -320,6 +343,7 @@ impl ShareSync {
         self.records.remove(&name);
         self.pending_host_changed.remove(&name);
         self.pending_guest_mtime.remove(&name);
+        self.forget_synced(&name);
     }
 
     pub fn on_host_deleted(&mut self, name: &str) {
@@ -328,6 +352,7 @@ impl ShareSync {
         self.records.remove(&name);
         self.pending_host_changed.remove(&name);
         self.pending_guest_mtime.remove(&name);
+        self.forget_synced(&name);
     }
 }
 
@@ -346,6 +371,8 @@ mod share_hash;
 pub mod share_mtime;
 #[path = "share_adopt.rs"]
 mod share_adopt;
+#[path = "share_synced.rs"]
+pub mod share_synced;
 pub use share_hash::{fnv1a64, fnv1a64_continue, FNV1A64_START};
 #[path = "share_host_unseen.rs"]
 mod share_host_unseen;

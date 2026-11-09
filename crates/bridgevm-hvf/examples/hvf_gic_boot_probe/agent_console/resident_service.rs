@@ -78,7 +78,9 @@ impl AgentConsoleHarness {
         //    The engine compares guest mtimes as strings because the frozen
         //    PowerShell agent already emits a stable ISO form and the host does
         //    not need to understand Windows timestamp semantics.
-        // A large copy's writer answers and its next range (share_big.rs).
+        // A PUT whose marks are now on disk, then a large copy's writer answers and its next
+        // range (share_big.rs).
+        self.release_held_share_put(now);
         self.advance_big_share(now);
         let share_due = self.share.as_ref().is_some_and(|share| {
             share

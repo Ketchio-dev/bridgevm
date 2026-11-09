@@ -16,6 +16,13 @@ use super::*;
 const SHARE_ADOPT_STEP_BYTES: usize = 64 << 20;
 
 impl AgentConsoleHarness {
+    /// A PUT held for its marks goes out once they are on disk (share_state.rs).
+    pub(in crate::agent_console) fn release_held_share_put(&mut self, now: Instant) {
+        if let Some(req) = self.share.as_mut().and_then(|share| share.release_held_put(now)) {
+            self.queue.push_back(req);
+        }
+    }
+
     pub(in crate::agent_console) fn enqueue_one_share_host_change(&mut self, now: Instant) -> bool {
         self.enqueue_one_share_host_change_with(now, read_share_host_snapshot)
     }
@@ -29,6 +36,13 @@ impl AgentConsoleHarness {
         let Some(share) = self.share.as_mut() else {
             return false;
         };
+        share.flush_sync_state(now);
+        if share.held_put.is_some() {
+            // Released by release_held_share_put once its marks are on disk (a tick or two), or
+            // once a state that is off is removed, which can take long: the listing, and so the
+            // copies from Windows, go on meanwhile.
+            return !share.sync_state_stuck();
+        }
         let fresh = share
             .host_actions_at
             .is_some_and(|at| now.duration_since(at) < share.interval);
@@ -71,7 +85,9 @@ impl AgentConsoleHarness {
                         // Larger than one range: streamed from the file (share_big_put.rs).
                         Some(Err(_)) => match start_big_put(share, &name, now) {
                             BigPutStart::Started => {
-                                self.queue.push_back(ServiceReq::ShareBigPut(BigPutStep::Beg));
+                                if let Some(req) = share.after_marks(ServiceReq::ShareBigPut(BigPutStep::Beg)) {
+                                    self.queue.push_back(req);
+                                }
                                 return true;
                             }
                             BigPutStart::Adopted => continue,
@@ -90,13 +106,12 @@ impl AgentConsoleHarness {
                             .engine
                             .on_host_file(name.clone(), snapshot.bytes, snapshot.mtime_ms)
                     {
-                        self.queue
-                            .push_back(share_put_req(
-                            name,
-                            push.bytes,
-                            push.hash,
-                            Some(snapshot.mtime_ms),
-                        ));
+                        // The guest truncates before it writes (share_synced.rs).
+                        share.mark_put(&name, now);
+                        let req = share_put_req(name, push.bytes, push.hash, Some(snapshot.mtime_ms));
+                        if let Some(req) = share.after_marks(req) {
+                            self.queue.push_back(req);
+                        }
                         return true;
                     }
                 }

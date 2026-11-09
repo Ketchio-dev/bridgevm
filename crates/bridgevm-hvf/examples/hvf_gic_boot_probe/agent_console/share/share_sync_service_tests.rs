@@ -57,6 +57,8 @@ struct NtfsGuest {
     stream_time: Option<u128>,
     /// LSR fails, as for a folder the agent cannot read.
     ls_error: bool,
+    /// Runs as a GET is served (its name): a Mac edit made while the guest's copy is fetched.
+    on_get: Option<Box<dyn FnMut(&str)>>,
 }
 
 impl NtfsGuest {
@@ -125,6 +127,9 @@ impl NtfsGuest {
             }
             "GET" => {
                 self.gets.push(Self::rel(&text(arg)));
+                if let Some(hook) = self.on_get.as_mut() {
+                    hook(&Self::rel(&text(arg)));
+                }
                 match self.find(&Self::rel(&text(arg))) {
                     Some(i) => vec![
                         format!("GETBEG {arg} {} 1", self.files[i].1.len()),
@@ -246,6 +251,10 @@ impl Rig {
     /// are written by the reply handler and forwarded like `service_pump`.
     fn run(&mut self, ticks: usize) {
         for _ in 0..ticks {
+            // The state thread's mark writes land between ticks (unless a test holds them).
+            if let Some(file) = self.h.share.as_ref().and_then(|share| share.sync_file.as_ref()) {
+                file.wait_marks();
+            }
             self.now += Duration::from_secs(1);
             self.h.service_enqueue(self.now);
             let Some(req) = self.h.queue.pop_front() else { continue };

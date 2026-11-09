@@ -222,8 +222,9 @@ impl AgentConsoleHarness {
             return false;
         };
         share.forget_host_walk();
+        let marks = share.sync_marks().map(|marks| (marks, name.to_string()));
         let writer = Destination::from_root(root, name, true)
-            .and_then(|destination| StageWriter::start(destination, range.size));
+            .and_then(|destination| StageWriter::start(destination, range.size, marks));
         let writer = match writer {
             Ok(writer) => writer,
             Err(error) => {
@@ -327,6 +328,8 @@ impl AgentConsoleHarness {
             return;
         };
         let name = get.name.clone();
+        // A preferred guest edit goes only over the Mac file it was preferred to (share_synced.rs).
+        let mac = share.engine.preferred_mac_stat(&name);
         match share.engine.on_guest_version(name.clone(), get.size, hash, None) {
             GuestVersion::AlreadySynced => share.big = None,
             GuestVersion::Skip(reason) => {
@@ -337,7 +340,7 @@ impl AgentConsoleHarness {
                 let mtime = (share.engine.guest_mtime(&name))
                     .and_then(share_sync::share_mtime::guest_mtime_ms)
                     .and_then(share_sync::share_mtime::system_time);
-                get.writer.publish(mtime);
+                get.writer.publish(mtime, mac);
                 get.publishing = true;
             }
         }
@@ -352,6 +355,8 @@ impl AgentConsoleHarness {
             return;
         };
         share.forget_host_walk();
+        // Marked on disk by the writer thread before it published (share_stage_writer.rs).
+        share.engine.mark_settling(&get.name, now);
         match result {
             Ok(mtime) => {
                 share.engine.on_host_write_succeeded(&get.name, mtime);
@@ -363,6 +368,10 @@ impl AgentConsoleHarness {
                     get.size,
                     get.size as f64 / 1e3 / ms as f64
                 );
+            }
+            Err(error) if super::host_destination::is_mac_changed(&error) => {
+                share.engine.on_host_copy_kept(&get.name);
+                println!("BVAGENT SHARE skip {} mac-changed", get.name);
             }
             Err(error) => self.big_get_write_failed(&get.name, get.size, &error),
         }

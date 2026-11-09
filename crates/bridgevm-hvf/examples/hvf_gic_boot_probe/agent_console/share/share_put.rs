@@ -113,7 +113,7 @@ impl AgentConsoleHarness {
         if let Some(rest) = line.strip_prefix("PUTOK ") {
             let Some((
                 ServiceReq::SharePut {
-                    name, bytes, hash, ..
+                    name, bytes, hash, mtime_ms, ..
                 },
                 _,
             )) = self.in_flight.take()
@@ -130,6 +130,7 @@ impl AgentConsoleHarness {
                 self.t_ms(now)
             );
             if let Some(share) = self.share.as_mut() {
+                share.engine.put_confirmed(&name, len as u64, mtime_ms, now);
                 share.engine.on_put_ok(name, len as u64, hash);
             }
             return;

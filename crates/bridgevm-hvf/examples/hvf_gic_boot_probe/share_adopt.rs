@@ -56,6 +56,11 @@ impl ShareSync {
         }
         let guest_mtime = Some(entry.mtime.clone());
         let hash = hash();
+        self.note_synced(name.to_string(), share_synced::SyncedVersion { size, mtime_ms });
+        // Both copies agree: a mark an earlier session left settles like a finished transfer.
+        if self.marks.contains_key(name) {
+            self.mark_settling(name, std::time::Instant::now());
+        }
         self.pending_host_changed.remove(name);
         self.pending_guest_mtime.remove(name);
         self.records.insert(
