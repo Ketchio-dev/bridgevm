@@ -46,10 +46,15 @@ impl ShareSync {
             self.host_files_scratch
                 .insert(name, HostFileStat { size, mtime_ms });
         }
+        // A Mac file changed since its guest edit was preferred wins again (share_synced.rs).
+        let host = &self.host_files_scratch;
+        self.guest_changed.retain(|name, stat| host.get(name) == Some(stat));
         self.hold_windows_aliases(&mut actions);
 
         for (name, file) in &self.host_files_scratch {
-            if self.records.get(name).is_some_and(|record| record.host_write_failed) {
+            if self.records.get(name).is_some_and(|record| record.host_write_failed)
+                || self.guest_copy_preferred(name)
+            {
                 continue;
             }
             // An unconfirmed PUT is re-sent even if the host stat is the synced one.
@@ -90,7 +95,9 @@ impl ShareSync {
         mtime_ms: u128,
     ) -> Option<PushGuest> {
         let name = normalize_rel(&name);
-        if self.records.get(&name).is_some_and(|record| record.host_write_failed) {
+        if self.records.get(&name).is_some_and(|record| record.host_write_failed)
+            || self.guest_copy_preferred(&name)
+        {
             return None;
         }
         self.pending_host_changed.remove(&name);
@@ -114,7 +121,9 @@ impl ShareSync {
     /// to compare yet: it is sent whenever the scan found it changed (on_put_ok records it).
     pub fn on_host_push_streamed(&mut self, name: &str) -> bool {
         let name = normalize_rel(name);
-        if self.records.get(&name).is_some_and(|record| record.host_write_failed) {
+        if self.records.get(&name).is_some_and(|record| record.host_write_failed)
+            || self.guest_copy_preferred(&name)
+        {
             return false;
         }
         self.pending_host_changed.remove(&name);

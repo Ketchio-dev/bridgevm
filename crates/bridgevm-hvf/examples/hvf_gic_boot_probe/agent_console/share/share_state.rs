@@ -11,6 +11,8 @@ mod root;
 mod guest_listing_names;
 #[path = "share_host_watch.rs"]
 pub(in crate::agent_console) mod host_watch;
+#[path = "share_sync_file.rs"]
+pub(in crate::agent_console) mod sync_file;
 use host_watch::{HostWalk, HostWatch};
 
 pub(in crate::agent_console) struct ShareState {
@@ -42,6 +44,8 @@ pub(in crate::agent_console) struct ShareState {
     pub(in crate::agent_console) big: Option<BigTransfer>,
     /// Large guest files reported as skipped for the Mac's free space: name and listed time.
     pub(in crate::agent_console) low_space_seen: HashSet<(String, Option<String>)>,
+    /// Synced versions and PUT marks beside the VM's UEFI vars (share_sync_file.rs).
+    pub(in crate::agent_console) sync_file: Option<sync_file::SyncStateFile>,
     #[cfg(test)]
     pub(in crate::agent_console) host_scans: usize,
 }
@@ -75,8 +79,47 @@ impl ShareState {
             host_walk: None,
             big: None,
             low_space_seen: HashSet::new(),
+            sync_file: None,
             #[cfg(test)]
             host_scans: 0,
+        }
+    }
+
+    /// Keep the synced state beside the VM's UEFI vars at `vars`, and take what it holds.
+    pub(in crate::agent_console) fn attach_sync_state(&mut self, vars: &Path) {
+        let (file, files, marks) = sync_file::SyncStateFile::open(vars, &self.host_dir);
+        self.engine.load_synced(files, marks);
+        self.sync_file = Some(file);
+    }
+
+    /// Before a PUT of `name` goes out: its mark on disk first. A mark that cannot be written
+    /// turns the state off; the share goes on as without one.
+    pub(in crate::agent_console) fn mark_put(&mut self, name: &str) {
+        if !self.engine.mark_put(name) {
+            return;
+        }
+        let Some(file) = self.sync_file.as_mut() else {
+            return;
+        };
+        if let Err(error) = file.write_marks(self.engine.put_marks()) {
+            println!("BVAGENT SHARE sync-state off {error}");
+            if let Some(file) = self.sync_file.take() {
+                file.remove();
+            }
+        }
+    }
+
+    pub(in crate::agent_console) fn flush_sync_state(&mut self, now: Instant) {
+        if let Some(file) = self.sync_file.as_mut() {
+            file.flush(&mut self.engine, now);
+        }
+    }
+}
+
+impl Drop for ShareState {
+    fn drop(&mut self) {
+        if let Some(file) = self.sync_file.as_mut() {
+            file.finish(&mut self.engine);
         }
     }
 }

@@ -125,3 +125,159 @@ fn a_name_the_host_tried_to_send_is_never_adopted_from_the_listing() {
     assert_eq!(engine.on_host_scan_normalized([host(3, 1_794_096_312_123)]).len(), 1);
     assert!(!engine.adopt_listed_copy("x.txt", b"abc", 1_794_096_312_123), "adopted a copy the PUT may have cut short");
 }
+
+fn now_ms() -> u128 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()
+}
+
+const HOUR_MS: u128 = 3_600_000;
+
+/// The VM's UEFI vars beside the share folder (never inside it); its synced state goes next to it.
+fn vars(rig: &Rig) -> PathBuf {
+    let vars = rig.dir.with_extension("vars.fd");
+    for suffix in ["", ".share-sync", ".share-sync-puts"] {
+        let mut path = vars.as_os_str().to_owned();
+        path.push(suffix);
+        let _ = std::fs::remove_file(path);
+    }
+    vars
+}
+
+/// A new session (a VM start or guest restart), with the state at `vars` when given.
+fn new_session(rig: &mut Rig, vars: Option<&Path>) {
+    rig.h.share = None; // the old session ends first and leaves its state on disk
+    let mut share = ShareState::new(ShareSync::new(512), rig.dir.clone(), ROOT.into(), Duration::from_millis(500));
+    if let Some(vars) = vars {
+        share.attach_sync_state(vars);
+    }
+    rig.h.share = Some(share);
+}
+
+/// A file Windows made at `guest_ms` (its clock), synced to the Mac with that time.
+fn synced_from_guest(label: &str, guest_ms: u128, state: bool) -> (Rig, PathBuf) {
+    let mut rig = Rig::new(label);
+    let vars = vars(&rig);
+    new_session(&mut rig, state.then_some(vars.as_path()));
+    rig.guest.write("doc.bin", b"old version");
+    rig.guest.stamps.insert("DOC.BIN".into(), guest_ms);
+    rig.run(8);
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"old version"[..]));
+    (rig, vars)
+}
+
+#[test]
+fn a_guest_edit_a_restart_cut_off_reaches_the_mac_instead_of_the_older_mac_copy_overwriting_it() {
+    // Live (share-interrupt-20261109 s2): Windows replaced a synced file, the guest rebooted while
+    // the new version was copied to the Mac, and the next session sent the older Mac copy over it.
+    // No clock decides: the guest's runs hours behind or ahead (a time zone read as UTC).
+    for skew in [-5 * HOUR_MS as i128, 5 * HOUR_MS as i128] {
+        let guest_now = |offset: u128| (now_ms() as i128 + skew) as u128 + offset;
+        let (mut rig, vars) = synced_from_guest("guest-edit", guest_now(0), true);
+        rig.guest.write("doc.bin", b"new version, longer");
+        rig.guest.stamps.insert("DOC.BIN".into(), guest_now(60_000));
+        new_session(&mut rig, Some(&vars));
+        let sent = rig.guest.puts.len();
+        rig.run(16);
+        assert_eq!(rig.guest.content("doc.bin"), Some(&b"new version, longer"[..]), "skew {skew}: the older Mac copy overwrote the guest edit");
+        assert_eq!(rig.guest.puts[sent..], [] as [String; 0]);
+        assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"new version, longer"[..]));
+        rig.assert_settled();
+    }
+}
+
+#[test]
+fn a_mac_edit_while_the_vm_was_off_is_sent_though_the_guest_clock_runs_ahead() {
+    let (mut rig, vars) = synced_from_guest("mac-edit", now_ms() + 5 * HOUR_MS, true);
+    std::fs::write(rig.dir.join("doc.bin"), b"edited on the Mac").unwrap();
+    new_session(&mut rig, Some(&vars));
+    rig.run(16);
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"edited on the Mac"[..]));
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"edited on the Mac"[..]));
+    assert_eq!(rig.guest.gets.iter().filter(|name| *name == "doc.bin").count(), 1, "the older guest copy was fetched again");
+}
+
+/// v0 then v1 made in Windows and synced; then the guest copy is back at v0 (a crash undid v1).
+fn reverted(label: &str) -> (Rig, PathBuf, u128) {
+    let v0 = now_ms() - 2 * HOUR_MS;
+    let (mut rig, vars) = synced_from_guest(label, v0, true);
+    rig.guest.write("doc.bin", b"version one");
+    rig.guest.stamps.insert("DOC.BIN".into(), v0 + 60_000);
+    rig.run(8);
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"version one"[..]));
+    rig.guest.write("doc.bin", b"old version");
+    rig.guest.stamps.insert("DOC.BIN".into(), v0);
+    (rig, vars, v0)
+}
+
+#[test]
+fn a_guest_copy_back_at_the_previous_synced_version_gets_the_mac_copy_again() {
+    let (mut rig, vars, _) = reverted("reverted");
+    new_session(&mut rig, Some(&vars));
+    let gets = rig.guest.gets.len();
+    rig.run(16);
+    assert_eq!(rig.guest.gets.len(), gets, "{:?}", rig.guest.gets);
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"version one"[..]));
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"version one"[..]));
+}
+
+#[test]
+fn a_put_cut_short_leaves_a_guest_copy_that_is_never_fetched() {
+    // The Mac copy goes back to the reverted guest and is cut short: the guest truncated, wrote
+    // part of it and stamped it with its own clock; then the session ends (a probe kill).
+    let (mut rig, vars, _) = reverted("cut-short");
+    rig.guest.failing.insert("doc.bin".into());
+    new_session(&mut rig, Some(&vars));
+    rig.run(4);
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"versi"[..]), "the PUT did not cut the copy short");
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms() + 3 * HOUR_MS);
+    rig.guest.failing.clear();
+    new_session(&mut rig, Some(&vars));
+    let gets = rig.guest.gets.len();
+    rig.run(16);
+    assert_eq!(rig.guest.gets.len(), gets, "the partial guest copy was fetched: {:?}", rig.guest.gets);
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"version one"[..]));
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"version one"[..]));
+}
+
+#[test]
+fn a_missing_corrupt_foreign_or_unwritable_state_keeps_the_mac_winning_and_the_share_going() {
+    for case in ["missing", "corrupt", "other-share", "unwritable"] {
+        let (mut rig, vars) = synced_from_guest(&format!("state-{case}"), now_ms() - HOUR_MS, true);
+        let mut versions = vars.as_os_str().to_owned();
+        versions.push(".share-sync");
+        let mut marks = vars.as_os_str().to_owned();
+        marks.push(".share-sync-puts");
+        rig.h.share = None;
+        let vars = match case {
+            "missing" => {
+                std::fs::remove_file(&versions).unwrap();
+                vars
+            }
+            "corrupt" => {
+                std::fs::write(&versions, b"bridgevm-share-sync 1\nroot \nseq x\n").unwrap();
+                vars
+            }
+            "other-share" => {
+                let text = std::fs::read_to_string(&versions).unwrap();
+                let mut other = String::new();
+                base64_encode_into(b"/elsewhere", &mut other);
+                let root = text.lines().nth(1).unwrap().to_string();
+                std::fs::write(&versions, text.replace(&root, &format!("root {other}"))).unwrap();
+                vars
+            }
+            _ => rig.dir.with_extension("no-such-dir").join("vars.fd"),
+        };
+        rig.guest.write("doc.bin", b"new version, longer");
+        rig.guest.stamps.insert("DOC.BIN".into(), now_ms());
+        new_session(&mut rig, Some(&vars));
+        rig.run(16);
+        // As without a state: the Mac copy wins, and the share keeps syncing.
+        assert_eq!(rig.guest.content("doc.bin"), Some(&b"old version"[..]), "{case}");
+        std::fs::write(rig.dir.join("after.txt"), b"still syncing").unwrap();
+        rig.run(8);
+        assert_eq!(rig.guest.content("after.txt"), Some(&b"still syncing"[..]), "{case}");
+        if case == "unwritable" {
+            assert!(!Path::new(&marks).exists());
+        }
+    }
+}

@@ -56,6 +56,7 @@ impl ShareSync {
         }
         let guest_mtime = Some(entry.mtime.clone());
         let hash = hash();
+        self.note_synced(name.to_string(), share_synced::SyncedVersion { size, mtime_ms });
         self.pending_host_changed.remove(name);
         self.pending_guest_mtime.remove(name);
         self.records.insert(

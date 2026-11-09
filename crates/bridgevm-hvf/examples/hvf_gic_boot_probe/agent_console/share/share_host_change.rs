@@ -29,6 +29,7 @@ impl AgentConsoleHarness {
         let Some(share) = self.share.as_mut() else {
             return false;
         };
+        share.flush_sync_state(now);
         let fresh = share
             .host_actions_at
             .is_some_and(|at| now.duration_since(at) < share.interval);
@@ -90,6 +91,8 @@ impl AgentConsoleHarness {
                             .engine
                             .on_host_file(name.clone(), snapshot.bytes, snapshot.mtime_ms)
                     {
+                        // The guest truncates before it writes (share_synced.rs).
+                        share.mark_put(&name);
                         self.queue
                             .push_back(share_put_req(
                             name,

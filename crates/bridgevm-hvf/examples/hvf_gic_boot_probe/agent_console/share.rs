@@ -62,6 +62,10 @@ pub(super) fn init_share_from_env() -> Option<ShareState> {
         Duration::from_millis(interval_ms),
     );
     share.host_watch = HostWatch::Pending;
+    // What synced in earlier sessions, kept beside the VM's own UEFI vars (share_sync_file.rs).
+    if let Some(vars) = std::env::var_os("BRIDGEVM_AARCH64_UEFI_VARS").filter(|vars| !vars.is_empty()) {
+        share.attach_sync_state(Path::new(&vars));
+    }
     // Until a READY says the agent moves files in ranges (share_big.rs).
     share.engine.set_whole_file_limit(Some(harness_protocol::MAX_AGENT_GET_BYTES as u64));
     Some(share)

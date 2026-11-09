@@ -74,6 +74,7 @@ pub(in crate::agent_console) fn start_big_put(share: &mut ShareState, name: &str
     if !share.engine.on_host_push_streamed(name) {
         return BigPutStart::No;
     }
+    share.mark_put(name);
     println!("BVAGENT SHARE transfer host->guest {name} bytes={size}");
     share.big = Some(BigTransfer::Put(BigPut {
         name: name.to_string(),
@@ -229,6 +230,7 @@ impl AgentConsoleHarness {
             return;
         }
         share.engine.on_put_ok(put.name.clone(), put.size, put.hash);
+        share.engine.put_confirmed(&put.name, put.size, Some(put.mtime_ms));
         // The Mac file is the one opened at the start (its version was checked before LPUTEND):
         // the next scan finds it synced instead of sending it again.
         share.engine.on_host_write_succeeded(&put.name, Some(put.mtime_ms));
