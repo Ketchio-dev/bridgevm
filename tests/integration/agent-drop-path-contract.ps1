@@ -40,10 +40,14 @@ $root = Join-Path ([IO.Path]::GetTempPath()) ('bv-drop-' + [Guid]::NewGuid().ToS
 function Get-DropRoot { return $root }
 $staging = Join-Path ([IO.Path]::GetTempPath()) ('bv-drop-staging-' + [Guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($staging)
+$lookalike = Join-Path $root '.bridgevm-drop'
+[void][IO.Directory]::CreateDirectory($lookalike)
+$script:BvDropStagingMarker = '.bridgevm-staging'
+[IO.File]::WriteAllBytes((Join-Path $staging $script:BvDropStagingMarker), [byte[]]@())
 function Get-DropStaging { return $staging }
-function Get-DropStagingDirs { return @($staging) }
+function Get-DropStagingDirs { return @($staging, $lookalike) }
+function Staged { @([IO.Directory]::GetFiles($staging) | Where-Object { $_ -notlike '*.bridgevm-staging' }).Count }
 function Test-DropReader { return $false }
-function Staged { @([IO.Directory]::GetFiles($staging)).Count }
 $script:BvDropReader = $false
 $script:BvDropTemp = ''
 $cases = 0
@@ -101,8 +105,12 @@ try {
     $script:BvDropStream.Close(); $script:BvDropStream = $null; $script:BvDropTemp = ''; $script:BvDropPath = ''
     Assert (-not (Exists (Join-Path $root 'cut.bin'))) 'a cut-short drop is at its Desktop name'
     [IO.File]::WriteAllText((Join-Path $staging 'notes.txt'), 'not ours')
+    # A user's own folder of the staging name, without the agent's marker, keeps a .part-named file.
+    $theirs = Join-Path $lookalike ('0123456789abcdef0123456789abcdef.part')
+    [IO.File]::WriteAllText($theirs, 'theirs')
     Assert ((Send 'DROPCAPS' '') -ceq 'BVDROP_CAPS 1') "DROPCAPS: $script:sent"
     Assert ((Staged) -eq 1 -and [IO.File]::Exists((Join-Path $staging 'notes.txt'))) 'DROPCAPS did not clear exactly the staged copies'
+    Assert ([IO.File]::Exists($theirs)) 'DROPCAPS emptied a folder the agent did not make'
     $cases++
 
     # The staging folder is on the target's volume, so DROPEND's move is a rename: the user's temp

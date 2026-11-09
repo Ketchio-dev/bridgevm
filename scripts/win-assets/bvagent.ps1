@@ -610,11 +610,16 @@ function Get-DropStagingDirs {
     return @([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'BridgeVM-drop'), [System.IO.Path]::Combine((Get-DropRoot), '.bridgevm-drop'))
 }
 
+# A folder the agent made for staging holds this marker; only such a folder is ever cleared, so a
+# user's own folder of that name (made by hand, or dropped) keeps its files.
+$script:BvDropStagingMarker = '.bridgevm-staging'
+
 function Get-DropStaging([string]$Target) {
     $desktop = Get-DropRoot
     $dir = Select-DropStaging ([System.IO.Path]::GetTempPath()) $desktop $Target
     if (-not [System.IO.Directory]::Exists($dir)) {
         $info = [System.IO.Directory]::CreateDirectory($dir)
+        [System.IO.File]::WriteAllBytes([System.IO.Path]::Combine($dir, $script:BvDropStagingMarker), [byte[]]@())
         if ($dir.StartsWith($desktop)) { $info.Attributes = $info.Attributes -bor [System.IO.FileAttributes]::Hidden }
     }
     return $dir
@@ -623,7 +628,7 @@ function Get-DropStaging([string]$Target) {
 # A drop job starts with no file open: anything left here is from an agent that stopped mid-drop.
 function Clear-DropStaging {
     foreach ($dir in (Get-DropStagingDirs)) {
-        if (-not [System.IO.Directory]::Exists($dir)) { continue }
+        if (-not [System.IO.File]::Exists([System.IO.Path]::Combine($dir, $script:BvDropStagingMarker))) { continue }
         foreach ($file in [System.IO.Directory]::GetFiles($dir)) {
             if ([System.IO.Path]::GetFileName($file) -cmatch '^[0-9a-f]{32}\.part$') { try { [System.IO.File]::Delete($file) } catch { } }
         }
