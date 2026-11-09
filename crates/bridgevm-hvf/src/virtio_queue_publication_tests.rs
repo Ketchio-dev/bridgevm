@@ -105,15 +105,25 @@ impl GuestMemoryMut for SharedRam {
 fn a_used_index_is_never_visible_before_its_element() {
     const USED: u64 = 64;
     const SIZE: u16 = 256;
+    // How far the device may run ahead of the last index the driver checked.
+    // The element the driver reads is then at most LEAD newer than the
+    // index it saw, far inside the i16 range that tells newer from older, even
+    // when the driver is descheduled between the two loads.
+    const LEAD: u16 = 1024;
     let ram = SharedRam::new(USED as usize + 4 + 8 * usize::from(SIZE));
     let stop = Arc::new(AtomicBool::new(false));
+    let acked = Arc::new(AtomicU16::new(0));
     let device = {
-        let (mut ram, stop) = (ram.clone(), Arc::clone(&stop));
+        let (mut ram, stop, acked) = (ram.clone(), Arc::clone(&stop), Arc::clone(&acked));
         std::thread::spawn(move || {
             // Each element names the index it is published under, so an
             // element of an earlier lap is recognisable.
             let mut next = 0u16;
             while !stop.load(Relaxed) {
+                if next.wrapping_sub(acked.load(Relaxed)) >= LEAD {
+                    std::thread::yield_now();
+                    continue;
+                }
                 super::super::address::write_used(&mut ram, USED, SIZE, next, u32::from(next));
                 next = next.wrapping_add(1);
             }
@@ -133,6 +143,7 @@ fn a_used_index_is_never_visible_before_its_element() {
         // Newer is fine (the device lapped the driver); older is stale.
         stale += u64::from((id.wrapping_sub(published) as i16) < 0);
         checks += 1;
+        acked.store(idx, Relaxed);
     }
     stop.store(true, Relaxed);
     device.join().unwrap();
