@@ -26,6 +26,12 @@ pub(super) fn scan_share_host_dir_inner(
             continue;
         };
         let meta = std::fs::symlink_metadata(&path);
+        // A temporary, the host's or the agent's (host_destination.rs), is never shared; the
+        // host's own is removed once the process that wrote it is gone.
+        if meta.as_ref().is_ok_and(|meta| meta.is_file()) && host_destination::is_share_temporary(&name) {
+            remove_stale_temporary(&path, &entry.file_name());
+            continue;
+        }
         if meta.as_ref().is_ok_and(|meta| meta.is_dir()) {
             if !scan_share_host_dir_inner(root, &path, max_bytes, host_skip_seen, files, unseen) {
                 unseen.push(name);
@@ -56,4 +62,18 @@ pub(super) fn scan_share_host_dir_inner(
         });
     }
     complete
+}
+
+/// `.bridgevm-sync-<pid>-<n>` of a process that no longer runs: an interrupted copy.
+fn remove_stale_temporary(path: &Path, name: &std::ffi::OsStr) {
+    let Some(pid) = name.to_str().and_then(host_destination::host_temporary_pid) else {
+        return;
+    };
+    // SAFETY: signal 0 only checks that the process exists.
+    let gone = unsafe { libc::kill(pid, 0) } < 0
+        && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+    let regular = std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_file());
+    if gone && regular && std::fs::remove_file(path).is_ok() {
+        println!("BVAGENT SHARE removed-stale-temporary");
+    }
 }

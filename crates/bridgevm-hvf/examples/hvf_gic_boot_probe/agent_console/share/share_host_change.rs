@@ -23,8 +23,9 @@ impl AgentConsoleHarness {
     pub(in crate::agent_console) fn enqueue_one_share_host_change_with(
         &mut self,
         now: Instant,
-        mut read: impl FnMut(&mut ShareState, &str) -> Result<HostSnapshot, ShareFileReadError>,
+        mut read: impl FnMut(&mut ShareState, &str, u64) -> Result<HostSnapshot, ShareFileReadError>,
     ) -> bool {
+        let streams = self.share_big;
         let Some(share) = self.share.as_mut() else {
             return false;
         };
@@ -64,9 +65,18 @@ impl AgentConsoleHarness {
                     if share.engine.waits_for_first_listing(&name) {
                         continue;
                     }
-                    let Some(snapshot) = read_share_snapshot_or_skip(share, &name, &mut read)
-                    else {
-                        continue;
+                    let snapshot = match read_share_snapshot_or_skip(share, &name, streams, &mut read) {
+                        None => continue,
+                        Some(Ok(snapshot)) => snapshot,
+                        // Larger than one range: streamed from the file (share_big_put.rs).
+                        Some(Err(_)) => match start_big_put(share, &name, now) {
+                            BigPutStart::Started => {
+                                self.queue.push_back(ServiceReq::ShareBigPut(BigPutStep::Beg));
+                                return true;
+                            }
+                            BigPutStart::Adopted => continue,
+                            BigPutStart::No => continue,
+                        },
                     };
                     if share.engine.adopt_listed_copy(&name, &snapshot.bytes, snapshot.mtime_ms) {
                         adopted_bytes += snapshot.bytes.len();

@@ -38,6 +38,10 @@ pub(in crate::agent_console) struct ShareState {
     /// FSEvents on `host_dir` and the last walk it vouches for (share_host_watch.rs).
     pub(in crate::agent_console) host_watch: HostWatch,
     host_walk: Option<HostWalk>,
+    /// The large copy under way, either way (share_big.rs).
+    pub(in crate::agent_console) big: Option<BigTransfer>,
+    /// Large guest files reported as skipped for the Mac's free space: name and listed time.
+    pub(in crate::agent_console) low_space_seen: HashSet<(String, Option<String>)>,
     #[cfg(test)]
     pub(in crate::agent_console) host_scans: usize,
 }
@@ -69,6 +73,8 @@ impl ShareState {
             host_actions_scanned: std::time::UNIX_EPOCH,
             host_watch: HostWatch::Off,
             host_walk: None,
+            big: None,
+            low_space_seen: HashSet::new(),
             #[cfg(test)]
             host_scans: 0,
         }

@@ -97,7 +97,7 @@ impl ShareSync {
         self.pending_guest_mtime.remove(&name);
         let hash = fnv1a64(&bytes);
         if let Some(record) = self.records.get_mut(&name) {
-            if record.hash == hash && !record.put_unconfirmed {
+            if record.hash == Some(hash) && !record.put_unconfirmed {
                 record.size = bytes.len() as u64;
                 record.host_mtime_ms = Some(mtime_ms);
                 return None;
@@ -108,5 +108,21 @@ impl ShareSync {
         // For the same reason the listed copy may be gone: never adopt it (share_adopt.rs).
         self.guest_file_entries_scratch.remove(&name);
         Some(PushGuest { bytes, hash })
+    }
+
+    /// A large host file streams to the guest without being read first, so it has no hash
+    /// to compare yet: it is sent whenever the scan found it changed (on_put_ok records it).
+    pub fn on_host_push_streamed(&mut self, name: &str) -> bool {
+        let name = normalize_rel(name);
+        if self.records.get(&name).is_some_and(|record| record.host_write_failed) {
+            return false;
+        }
+        self.pending_host_changed.remove(&name);
+        self.pending_guest_mtime.remove(&name);
+        if let Some(record) = self.records.get_mut(&name) {
+            record.put_unconfirmed = true;
+        }
+        self.guest_file_entries_scratch.remove(&name);
+        true
     }
 }

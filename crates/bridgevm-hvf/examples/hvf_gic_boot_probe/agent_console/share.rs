@@ -22,6 +22,8 @@ pub(super) fn req_kind(req: &ServiceReq) -> &'static str {
         ServiceReq::Ping => "ping",
         ServiceReq::ShareLs => "share-ls",
         ServiceReq::ShareGet { .. } => "share-get",
+        ServiceReq::ShareRange { .. } => "share-range",
+        ServiceReq::ShareBigPut(_) => "share-big-put",
         ServiceReq::SharePut { .. } => "share-put",
         ServiceReq::ShareDel { .. } => "share-del",
         ServiceReq::TimeSync => "time-sync",
@@ -35,6 +37,8 @@ pub(super) fn is_share_req(req: &ServiceReq) -> bool {
         req,
         ServiceReq::ShareLs
             | ServiceReq::ShareGet { .. }
+            | ServiceReq::ShareRange { .. }
+            | ServiceReq::ShareBigPut(_)
             | ServiceReq::SharePut { .. }
             | ServiceReq::ShareDel { .. }
     )
@@ -58,6 +62,8 @@ pub(super) fn init_share_from_env() -> Option<ShareState> {
         Duration::from_millis(interval_ms),
     );
     share.host_watch = HostWatch::Pending;
+    // Until a READY says the agent moves files in ranges (share_big.rs).
+    share.engine.set_whole_file_limit(Some(harness_protocol::MAX_AGENT_GET_BYTES as u64));
     Some(share)
 }
 
@@ -74,6 +80,14 @@ mod share_host_scan;
 pub(super) use share_host_scan::*;
 #[path = "share/share_delete_wire.rs"]
 mod share_delete_wire;
+#[path = "share/share_big.rs"]
+mod share_big;
+pub(super) use share_big::{BigTransfer, SHARE_RANGE_BYTES};
+#[path = "share/share_big_put.rs"]
+mod share_big_put;
+pub(super) use share_big_put::{start_big_put, BigPutStart, BigPutStep};
+#[path = "share/share_stage_writer.rs"]
+mod share_stage_writer;
 
 pub(super) fn host_rel_path(root: &Path, path: &Path) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;

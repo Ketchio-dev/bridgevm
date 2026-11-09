@@ -76,7 +76,7 @@ Options:
   --agent-share-host DIR  Host directory for bidirectional agent sharing.
   --agent-share-guest DIR Guest directory paired with --agent-share-host.
   --agent-share-ms N      Share scan interval, 500..60000 (default: 2000).
-  --agent-share-max-kb N  Largest file synchronized in KiB, 1..1048576
+  --agent-share-max-kb N  Largest file synchronized in KiB, 1..16777216
                           (default: 8192). Use at least 32768 for the staged
                           viogpu3d render package.
   --no-guest-disk-harvest Skip raw-disk log mounts; incompatible with title gates.

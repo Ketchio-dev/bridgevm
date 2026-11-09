@@ -10,9 +10,9 @@ final class HvfShareTooLargeNoticeTests: XCTestCase {
         XCTAssertNil(notice.displayed)
         notice.consume(.unknown("BVAGENT SHARE skip 휴가 영상.mov too-large 200000000\r"))
         XCTAssertEqual(notice.tooLarge, HvfShareTooLarge(count: 1, last: "휴가 영상.mov"))
-        XCTAssertEqual(notice.displayed?.text, "64 MB보다 큰 파일은 공유 폴더로 옮기지 않습니다: 휴가 영상.mov")
+        XCTAssertEqual(notice.displayed?.text, "16 GB보다 큰 파일은 공유 폴더로 옮기지 않습니다: 휴가 영상.mov")
         notice.consume(.unknown("BVAGENT SHARE skip big/disk.iso too-large 5000000000"))
-        XCTAssertEqual(notice.displayed?.text, "64 MB보다 큰 파일은 공유 폴더로 옮기지 않습니다: big/disk.iso 외 1개")
+        XCTAssertEqual(notice.displayed?.text, "16 GB보다 큰 파일은 공유 폴더로 옮기지 않습니다: big/disk.iso 외 1개")
     }
 
     @MainActor
@@ -46,6 +46,6 @@ final class HvfShareTooLargeNoticeTests: XCTestCase {
     }
 
     func testTheRunnerGetsTheSameLimitTheNoticeNames() {
-        XCTAssertEqual(HvfEngineConfig.shareMaxKiB, 64 * 1024)
+        XCTAssertEqual(HvfEngineConfig.shareMaxKiB, 16 * 1024 * 1024)
     }
 }

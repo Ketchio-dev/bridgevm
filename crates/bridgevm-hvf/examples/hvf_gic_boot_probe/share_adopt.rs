@@ -33,7 +33,18 @@ impl ShareSync {
     /// Record the Mac file `name` (as read: `bytes`, `mtime_ms`) as synced
     /// when the last listing holds a guest copy of that size and time.
     pub fn adopt_listed_copy(&mut self, name: &str, bytes: &[u8], mtime_ms: u128) -> bool {
-        let size = bytes.len() as u64;
+        self.adopt_listed_version(name, bytes.len() as u64, mtime_ms, || Some(fnv1a64(bytes)))
+    }
+
+    /// The same for a file known by its size and time; `hash` runs only when it is adopted.
+    /// A large file is adopted without reading it (no hash).
+    pub fn adopt_listed_version(
+        &mut self,
+        name: &str,
+        size: u64,
+        mtime_ms: u128,
+        hash: impl FnOnce() -> Option<u64>,
+    ) -> bool {
         if self.listings != 1 || self.records.contains_key(name) {
             return false;
         }
@@ -44,7 +55,7 @@ impl ShareSync {
             return false;
         }
         let guest_mtime = Some(entry.mtime.clone());
-        let hash = fnv1a64(bytes);
+        let hash = hash();
         self.pending_host_changed.remove(name);
         self.pending_guest_mtime.remove(name);
         self.records.insert(

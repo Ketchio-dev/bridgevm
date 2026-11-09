@@ -17,7 +17,9 @@ mod host_pasteboard;
 mod share_sync;
 
 use host_pasteboard::HostPasteboard;
-use share_sync::{GuestFileOutcome, HostFile, LsEntry, ShareSync, SkipReason, SyncAction};
+use share_sync::{
+    GuestFileOutcome, GuestVersion, HostFile, LsEntry, ShareSync, SkipReason, SyncAction,
+};
 
 #[cfg(test)]
 #[path = "agent_console_tests.rs"]

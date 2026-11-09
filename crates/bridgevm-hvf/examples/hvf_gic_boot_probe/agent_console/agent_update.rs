@@ -80,6 +80,11 @@ pub(super) fn ready_has_put_data(rest: &str) -> bool {
     rest.split(' ').any(|token| token == "putdata")
 }
 
+/// Whether the READY agent moves large shared-folder files in pieces (GETRANGE, LPUT*).
+pub(super) fn ready_has_big_files(rest: &str) -> bool {
+    rest.split(' ').any(|token| token == "bigfile")
+}
+
 /// Whether the READY agent has the chunked file verbs (PUTBEG/PUTCHUNK/PUTEND).
 pub(super) fn ready_has_file_verbs(rest: &str) -> bool {
     rest.split(' ').any(|token| token == "v3-share2")
@@ -385,6 +390,11 @@ impl AgentConsoleHarness {
     /// READY or re-READY: an Armed update learns whether the new agent came up.
     pub(super) fn note_agent_ready(&mut self, rest: &str, now: Instant) {
         self.put_data = ready_has_put_data(rest);
+        self.share_big = ready_has_big_files(rest);
+        if let Some(share) = self.share.as_mut() {
+            let limit = (!self.share_big).then_some(harness_protocol::MAX_AGENT_GET_BYTES as u64);
+            share.engine.set_whole_file_limit(limit);
+        }
         let t = self.t_ms(now);
         let Some(update) = self.agent_update.as_mut() else {
             return;
@@ -467,6 +477,9 @@ impl AgentConsoleHarness {
         }
         if self.any_pending(is_clip_image_req) {
             return Some("clipboard-image");
+        }
+        if self.big_share_active() {
+            return Some("share-transfer");
         }
         None
     }

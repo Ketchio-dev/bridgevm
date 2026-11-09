@@ -126,6 +126,8 @@ pub struct AgentConsoleHarness {
     pub(super) clip_push: bool,
     /// The agent's READY carried `putdata`: shared-folder chunks go as PUTDATA.
     pub(super) put_data: bool,
+    /// The agent's READY carried `bigfile`: large shared-folder files move in ranges (share_big.rs).
+    pub(super) share_big: bool,
     /// The agent answered CLIPCAPS with CF_HTML (and IMAGE_PNG): rich text moves
     /// as CLIPXH polls and CLIPSETH pushes (clip_html.rs).
     pub(super) clip_html: bool,
@@ -182,6 +184,8 @@ pub(super) struct GetAccum {
     pub(super) nchunks: usize,
     pub(super) bytes: Vec<u8>,
     pub(super) chunks_seen: usize,
+    /// Where a GETRANGE reply sits in its file.
+    pub(super) range: Option<GetRange>,
 }
 
 pub(super) struct FinishedGet {
@@ -190,6 +194,22 @@ pub(super) struct FinishedGet {
     pub(super) nchunks: usize,
     pub(super) bytes: Vec<u8>,
     pub(super) chunks_seen: usize,
+    pub(super) range: Option<GetRange>,
+}
+
+/// A GETRANGE reply's GETBEG tail: the range's offset, and the file's size and time after the read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct GetRange {
+    pub(super) offset: u64,
+    pub(super) size: u64,
+    pub(super) mtime: String,
+}
+
+impl GetRange {
+    /// The reply holds the whole file.
+    pub(super) fn whole(&self, total: usize) -> bool {
+        self.offset == 0 && self.size == total as u64
+    }
 }
 
 /// Reassembly state for a chunked command reply
@@ -295,6 +315,10 @@ pub(super) enum ServiceReq {
     ShareLs,
     /// Pull one guest file into the host shared directory.
     ShareGet { name: String },
+    /// The next range of a large guest file being copied (share_big.rs).
+    ShareRange { name: String, offset: u64 },
+    /// One step of a large Mac file streamed to the guest (share_big_put.rs).
+    ShareBigPut(BigPutStep),
     /// Push one captured host file payload into the guest shared directory.
     SharePut {
         name: String,
@@ -345,6 +369,7 @@ pub(super) enum InFlightSnapshot {
         name: String,
     },
     SharePut,
+    ShareBigPut,
     ShareDel {
         name: String,
         direction: ShareDelDirection,
@@ -369,8 +394,11 @@ impl InFlightSnapshot {
             ServiceReq::Ctl(command) => Self::Ctl(command.clone()),
             ServiceReq::Ping => Self::Ping,
             ServiceReq::ShareLs => Self::ShareLs,
-            ServiceReq::ShareGet { name } => Self::ShareGet { name: name.clone() },
+            ServiceReq::ShareGet { name } | ServiceReq::ShareRange { name, .. } => {
+                Self::ShareGet { name: name.clone() }
+            }
             ServiceReq::SharePut { .. } => Self::SharePut,
+            ServiceReq::ShareBigPut(_) => Self::ShareBigPut,
             ServiceReq::ShareDel { name, direction } => Self::ShareDel {
                 name: name.clone(),
                 direction: *direction,

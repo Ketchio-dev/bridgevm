@@ -24,6 +24,50 @@ mod policy;
 mod seal_host;
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+
+/// The prefix of the host's unpublished temporaries, `.bridgevm-sync-<pid>-<n>`.
+pub(super) const TEMP_PREFIX: &str = ".bridgevm-sync-";
+
+/// Whether the last part of `name` is exactly a temporary one side writes: the host's
+/// `.bridgevm-sync-<pid>-<n>` or the agent's `.bridgevm-part-<32 lowercase hex>` (a large PUT).
+/// Such a file is never shared either way; any other name, a user's `.bridgevm-part-notes` too,
+/// is a file like any other.
+pub(super) fn is_share_temporary(name: &str) -> bool {
+    let leaf = name.rsplit('/').next().unwrap_or(name);
+    match leaf.strip_prefix(".bridgevm-part-") {
+        Some(hex) => hex.len() == 32 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')),
+        None => host_temporary_pid(leaf).is_some(),
+    }
+}
+
+/// The writer's pid in a host temporary's exact name.
+pub(super) fn host_temporary_pid(leaf: &str) -> Option<libc::pid_t> {
+    let (pid, n) = leaf.strip_prefix(TEMP_PREFIX)?.split_once('-')?;
+    let digits = |s: &str, most: usize| (1..=most).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_digit());
+    if !digits(pid, 10) || !digits(n, 20) {
+        return None;
+    }
+    pid.parse().ok().filter(|pid| *pid > 0)
+}
+
+/// A temporary written in parts, published or discarded by its Destination.
+pub(super) struct Staged {
+    temporary: CString,
+    pub(super) file: File,
+}
+
+/// Bytes free for an unprivileged writer on the volume holding `dir`.
+pub(super) fn free_bytes(dir: &File) -> io::Result<u64> {
+    // statfs, not statvfs: macOS statvfs counts blocks in 32 bits.
+    let mut stat = std::mem::MaybeUninit::<libc::statfs>::uninit();
+    // SAFETY: a live descriptor and writable statfs storage.
+    if unsafe { libc::fstatfs(dir.as_raw_fd(), stat.as_mut_ptr()) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: fstatfs succeeded and filled the storage.
+    let stat = unsafe { stat.assume_init() };
+    Ok(stat.f_bavail.saturating_mul(u64::from(stat.f_bsize)))
+}
 pub(super) struct Destination {
     parent: File,
     leaf: CString,
@@ -78,26 +122,7 @@ impl Destination {
         // Require write access to an existing destination before replacing it.
         let existing = self.existing(libc::O_WRONLY)?;
         let (temporary, mut file) = self.temporary()?;
-        let result = (|| {
-            write(&mut file)?;
-            // The guest write policy's mode and quarantine mark, or no write.
-            policy::seal(existing.as_ref(), &file, &self.parent)?;
-            // Only the date shown in Finder: the content is what must land.
-            if let Some(mtime) = mtime {
-                let _ = file.set_modified(mtime);
-            }
-            file.sync_all()?;
-            let mtime = file.metadata()?.modified().ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|t| t.as_millis());
-            // SAFETY: both names and the owning directory remain live. renameat
-            // replaces a concurrently inserted leaf symlink instead of following it.
-            let status = unsafe { libc::renameat(self.parent.as_raw_fd(), temporary.as_ptr(),
-                                                self.parent.as_raw_fd(), self.leaf.as_ptr()) };
-            if status < 0 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(mtime)
-        })();
+        let result = write(&mut file).and_then(|()| self.seal_and_rename(existing.as_ref(), &file, &temporary, mtime));
         if result.is_err() {
             // SAFETY: remove the unpublished exclusive temporary name.
             unsafe { libc::unlinkat(self.parent.as_raw_fd(), temporary.as_ptr(), 0) };
@@ -105,11 +130,58 @@ impl Destination {
         result
     }
 
+    fn seal_and_rename(&self, existing: Option<&File>, file: &File, temporary: &CStr,
+                       mtime: Option<std::time::SystemTime>) -> io::Result<Option<u128>> {
+        // The guest write policy's mode and quarantine mark, or no write.
+        policy::seal(existing, file, &self.parent)?;
+        // Only the date shown in Finder: the content is what must land.
+        if let Some(mtime) = mtime {
+            let _ = file.set_modified(mtime);
+        }
+        // F_FULLFSYNC on macOS.
+        file.sync_all()?;
+        let mtime = file.metadata()?.modified().ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|t| t.as_millis());
+        // SAFETY: both names and the owning directory remain live. renameat
+        // replaces a concurrently inserted leaf symlink instead of following it.
+        let status = unsafe { libc::renameat(self.parent.as_raw_fd(), temporary.as_ptr(),
+                                            self.parent.as_raw_fd(), self.leaf.as_ptr()) };
+        if status < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(mtime)
+    }
+
+    /// An unpublished temporary beside the destination for a file written in parts (a large
+    /// guest file, share_stage_writer.rs). Write access to an existing destination is checked
+    /// now and again at `publish`.
+    pub(super) fn stage(&self) -> io::Result<Staged> {
+        self.existing(libc::O_WRONLY)?;
+        let (temporary, file) = self.temporary()?;
+        Ok(Staged { temporary, file })
+    }
+
+    /// Seal, date, F_FULLFSYNC and rename the filled temporary; on failure it is removed.
+    pub(super) fn publish(&self, staged: Staged, mtime: Option<std::time::SystemTime>) -> io::Result<Option<u128>> {
+        let result = self.existing(libc::O_WRONLY)
+            .and_then(|existing| self.seal_and_rename(existing.as_ref(), &staged.file, &staged.temporary, mtime));
+        if result.is_err() {
+            self.discard(staged);
+        }
+        result
+    }
+
+    pub(super) fn discard(&self, staged: Staged) {
+        drop(staged.file);
+        // SAFETY: remove the unpublished exclusive temporary name.
+        unsafe { libc::unlinkat(self.parent.as_raw_fd(), staged.temporary.as_ptr(), 0) };
+    }
+
     fn temporary(&self) -> io::Result<(CString, File)> {
         for _ in 0..32 {
             // Uniqueness only: O_EXCL, not unpredictability, protects existing files.
             let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
-            let temporary = CString::new(format!(".bridgevm-sync-{}-{id}", std::process::id())).unwrap();
+            let temporary = CString::new(format!("{TEMP_PREFIX}{}-{id}", std::process::id())).unwrap();
             if temporary == self.leaf { continue; }
             match open_at(&self.parent, &temporary,
                           libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW, policy::NEW_FILE_MODE) {

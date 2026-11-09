@@ -177,7 +177,7 @@ parse_installed_boot_args() {
         ;;
       --agent-share-max-kb)
         [[ $# -ge 2 ]] || { usage; exit 2; }
-        agent_share_max_kb "$2" || { echo "FAIL: --agent-share-max-kb requires an integer from 1 to 1048576" >&2; exit 2; }
+        agent_share_max_kb "$2" || { echo "FAIL: --agent-share-max-kb requires an integer from 1 to 16777216" >&2; exit 2; }
         AGENT_SHARE_MAX_KB="$2"; AGENT_SHARE_MAX_KB_EXPLICIT="1"; shift 2
         ;;
       --diagnostic-output-bounds) DIAGNOSTIC_OUTPUT_BOUNDS="1"; shift ;;

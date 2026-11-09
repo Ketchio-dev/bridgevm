@@ -11,7 +11,10 @@ pub(in crate::agent_console) struct HostSnapshot {
     pub(in crate::agent_console) mtime_ms: u128,
 }
 
-fn version(metadata: &Metadata) -> (u64, i64, i64, i64, i64) {
+/// What changes with any write to a file: size, modification and change times.
+pub(in crate::agent_console) type SourceVersion = (u64, i64, i64, i64, i64);
+
+pub(in crate::agent_console) fn version(metadata: &Metadata) -> SourceVersion {
     (
         metadata.len(),
         metadata.mtime(),
@@ -22,6 +25,16 @@ fn version(metadata: &Metadata) -> (u64, i64, i64, i64, i64) {
 }
 
 impl Destination {
+    /// The regular file at the destination, never through a symlink, with its version.
+    pub(in crate::agent_console::share) fn open_source(&self) -> Result<(File, Metadata), ShareFileReadError> {
+        let file = self
+            .existing(libc::O_RDONLY)
+            .map_err(|_| ShareFileReadError::Io)?
+            .ok_or(ShareFileReadError::Io)?;
+        let meta = file.metadata().map_err(|_| ShareFileReadError::Io)?;
+        Ok((file, meta))
+    }
+
     pub(in crate::agent_console::share) fn snapshot(
         &self,
         max_bytes: u64,

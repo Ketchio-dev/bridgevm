@@ -103,6 +103,7 @@ impl AgentConsoleHarness {
             clip_images: None,
             clip_push: false,
             put_data: false,
+            share_big: false,
             clip_html: false,
             clip_files: false,
             clip_files_push: false,
@@ -372,19 +373,32 @@ impl AgentConsoleHarness {
             .unwrap_or_default();
         let total = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
         let nchunks = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-        // The guest declares `total`; never reserve or accept past the bound.
-        // An oversized GET accumulates nothing and ends as a short read.
-        self.get_accum = Some(GetAccum {
+        // A GETRANGE reply names its place in the file (share_big.rs).
+        let range = match (it.next(), it.next(), it.next()) {
+            (Some(offset), Some(size), Some(mtime)) => offset
+                .parse()
+                .ok()
+                .zip(size.parse().ok())
+                .map(|(offset, size)| GetRange {
+                    offset,
+                    size,
+                    mtime: mtime.to_string(),
+                }),
+            _ => None,
+        };
+        let accum = GetAccum {
             path,
             total,
             nchunks,
-            bytes: Vec::with_capacity(if total <= MAX_AGENT_GET_BYTES {
-                total
-            } else {
-                0
-            }),
+            bytes: Vec::new(),
             chunks_seen: 0,
-        });
+            range,
+        };
+        // The guest declares `total`; never reserve or accept past the bound.
+        // An oversized GET, or a part of a file, accumulates nothing and ends as a short read.
+        let mut accum = accum;
+        accum.bytes.reserve(accum.limit());
+        self.get_accum = Some(accum);
     }
     /// GETCHUNK <seq> <b64(rawbytes)> — append one chunk.
     pub(super) fn accum_get_chunk(&mut self, rest: &str) {
@@ -393,11 +407,7 @@ impl AgentConsoleHarness {
         };
         let payload = rest.split_once(' ').map_or(rest, |(_, b64)| b64);
         if let Ok(bytes) = base64_decode(payload) {
-            let limit = if accum.total <= MAX_AGENT_GET_BYTES {
-                accum.total
-            } else {
-                0
-            };
+            let limit = accum.limit();
             if accum.bytes.len().saturating_add(bytes.len()) > limit {
                 return;
             }
@@ -412,6 +422,7 @@ impl AgentConsoleHarness {
             nchunks: accum.nchunks,
             bytes: accum.bytes,
             chunks_seen: accum.chunks_seen,
+            range: accum.range,
         })
     }
     /// OUTBEG <exit> <total> <nchunks> — start bounded command-output
@@ -494,6 +505,18 @@ impl AgentConsoleHarness {
             return;
         }
         accum.bytes.extend_from_slice(&bytes);
+    }
+}
+
+impl GetAccum {
+    /// The bytes this reply may bring: none past the GET bound, none for a part of a file.
+    pub(super) fn limit(&self) -> usize {
+        let whole = self.range.as_ref().is_none_or(|range| range.whole(self.total));
+        if whole && self.total <= MAX_AGENT_GET_BYTES {
+            self.total
+        } else {
+            0
+        }
     }
 }
 

@@ -39,6 +39,7 @@ pub(super) mod tests {
             clip_images: None,
             clip_push: false,
             put_data: false,
+            share_big: false,
             clip_html: false,
             clip_files: false,
             clip_files_push: false,
@@ -523,6 +524,7 @@ pub(super) mod tests {
             nchunks: 1,
             bytes: vec![1],
             chunks_seen: 1,
+            range: None,
         });
         h.out_accum = Some(OutAccum {
             exit_code: 0,

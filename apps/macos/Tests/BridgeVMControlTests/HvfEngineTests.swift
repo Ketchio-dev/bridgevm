@@ -189,7 +189,7 @@ final class HvfEngineConfigTests: XCTestCase {
         XCTAssertEqual(value(after: "--agent-share-host", in: args), "/Users/me/share")
         XCTAssertEqual(value(after: "--agent-share-guest", in: args), "C:\\share")
         XCTAssertEqual(value(after: "--agent-share-ms", in: args), "2000")
-        XCTAssertEqual(value(after: "--agent-share-max-kb", in: args), "65536")
+        XCTAssertEqual(value(after: "--agent-share-max-kb", in: args), "16777216")
     }
 
     func testPartialShareDoesNotEmitShareArguments() {
@@ -746,7 +746,7 @@ final class HvfEngineSessionPathTests: XCTestCase {
             "--agent-share-host", "/host/share",
             "--agent-share-guest", "C:/BVShare",
             "--agent-share-ms", "2000",
-            "--agent-share-max-kb", "65536",
+            "--agent-share-max-kb", "16777216",
             "--helper-vtpm-state", "/vm/vtpm",
             "--helper-swtpm-bin", "/opt/homebrew/bin/swtpm",
             "--helper-vtpm-key-stdin"

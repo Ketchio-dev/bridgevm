@@ -8,8 +8,9 @@ enum HvfPerformanceRisk: String, Equatable {
 struct HvfEngineConfig: Equatable {
     /// Matches the typed product runtime's launch-manifest CPU contract.
     static let supportedCPURange = 1...64
-    /// The largest shared-folder file the runtime copies, either way (`--agent-share-max-kb`).
-    static let shareMaxKiB = 65536
+    /// The largest shared-folder file the runtime copies, either way (`--agent-share-max-kb`):
+    /// 16 GiB. Files over 8 MiB move in pieces, so this bounds no memory.
+    static let shareMaxKiB = 16 * 1024 * 1024
 
     var targetDiskPath: String
     var uefiVarsPath: String

@@ -48,6 +48,10 @@ impl AgentConsoleHarness {
         let Some(finished) = self.take_finished_get() else {
             return false;
         };
+        // Part of a file whose large copy could not start: nothing was kept, nothing is written.
+        if finished.range.as_ref().is_some_and(|range| !range.whole(finished.total)) {
+            return true;
+        }
         self.apply_finished_share_get(name, finished, now);
         true
     }
