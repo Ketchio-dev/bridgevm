@@ -227,6 +227,7 @@ pub(super) struct OutAccum {
 mod share_state;
 pub(super) use share_state::ShareState;
 pub(super) use share_state::host_watch::HostWatch;
+pub(super) use share_state::sync_file;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum HostSkipKind {

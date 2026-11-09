@@ -4,9 +4,12 @@
 //! F_FULLFSYNCs and renames it (host_destination.rs). The service polls for the answers, so
 //! neither the writes of a GB-sized file nor its final sync stop the guest's vCPU 0.
 //!
-//! Dropping the writer abandons the file: the thread removes its temporary and ends.
+//! Dropping the writer abandons the file: the thread removes its temporary and ends. With the
+//! share's synced state on, the name is marked on disk right before the publish
+//! (share_synced.rs), here, so the service thread writes nothing more for it.
 
 use super::host_destination::{Destination, Staged};
+use crate::agent_console::state::sync_file::{mark, SharedMarks};
 use super::*;
 use std::io::{self, Write as _};
 use std::sync::mpsc;
@@ -34,14 +37,19 @@ pub(in crate::agent_console) struct StageWriter {
 }
 
 impl StageWriter {
-    /// Stage `size` bytes for `destination` (checking it can be replaced) and start the thread.
-    pub(in crate::agent_console) fn start(destination: Destination, size: u64) -> io::Result<Self> {
+    /// Stage `size` bytes for `destination` (checking it can be replaced) and start the thread;
+    /// `marks` and the name mark it on disk before the publish.
+    pub(in crate::agent_console) fn start(
+        destination: Destination,
+        size: u64,
+        marks: Option<(SharedMarks, String)>,
+    ) -> io::Result<Self> {
         let staged = destination.stage()?;
         let (to, inbox) = mpsc::channel();
         let (outbox, from) = mpsc::channel();
         let spawned = std::thread::Builder::new()
             .name("bvagent-share-stage".into())
-            .spawn(move || run(&destination, staged, size, &inbox, &outbox));
+            .spawn(move || run(&destination, staged, size, marks, &inbox, &outbox));
         // A failed spawn drops the closure, and with it the staged file, unremoved.
         spawned?;
         Ok(Self {
@@ -84,6 +92,7 @@ fn run(
     destination: &Destination,
     mut staged: Staged,
     size: u64,
+    marks: Option<(SharedMarks, String)>,
     inbox: &mpsc::Receiver<ToWriter>,
     outbox: &mpsc::Sender<(u64, Option<FromWriter>)>,
 ) {
@@ -112,6 +121,10 @@ fn run(
             ToWriter::Publish(mtime) => {
                 if written != size {
                     break;
+                }
+                // A mark that cannot be written turns the state off (the service sees it).
+                if let Some((marks, name)) = &marks {
+                    let _ = mark(marks, name);
                 }
                 let result = destination.publish(staged, mtime);
                 let _ = outbox.send((0, Some(FromWriter::Published(result))));

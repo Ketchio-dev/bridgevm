@@ -173,6 +173,7 @@ fn a_guest_edit_a_restart_cut_off_reaches_the_mac_instead_of_the_older_mac_copy_
     for skew in [-5 * HOUR_MS as i128, 5 * HOUR_MS as i128] {
         let guest_now = |offset: u128| (now_ms() as i128 + skew) as u128 + offset;
         let (mut rig, vars) = synced_from_guest("guest-edit", guest_now(0), true);
+        settle(&mut rig);
         rig.guest.write("doc.bin", b"new version, longer");
         rig.guest.stamps.insert("DOC.BIN".into(), guest_now(60_000));
         new_session(&mut rig, Some(&vars));
@@ -204,6 +205,7 @@ fn reverted(label: &str) -> (Rig, PathBuf, u128) {
     rig.guest.stamps.insert("DOC.BIN".into(), v0 + 60_000);
     rig.run(8);
     assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"version one"[..]));
+    settle(&mut rig);
     rig.guest.write("doc.bin", b"old version");
     rig.guest.stamps.insert("DOC.BIN".into(), v0);
     (rig, vars, v0)
@@ -245,8 +247,6 @@ fn a_missing_corrupt_foreign_or_unwritable_state_keeps_the_mac_winning_and_the_s
         let (mut rig, vars) = synced_from_guest(&format!("state-{case}"), now_ms() - HOUR_MS, true);
         let mut versions = vars.as_os_str().to_owned();
         versions.push(".share-sync");
-        let mut marks = vars.as_os_str().to_owned();
-        marks.push(".share-sync-puts");
         rig.h.share = None;
         let vars = match case {
             "missing" => {
@@ -277,7 +277,64 @@ fn a_missing_corrupt_foreign_or_unwritable_state_keeps_the_mac_winning_and_the_s
         rig.run(8);
         assert_eq!(rig.guest.content("after.txt"), Some(&b"still syncing"[..]), "{case}");
         if case == "unwritable" {
+            let mut marks = vars.as_os_str().to_owned();
+            marks.push(".share-sync-puts");
             assert!(!Path::new(&marks).exists());
         }
     }
+}
+
+/// Past SYNC_SETTLE: the last transfer's mark is gone (in memory and, at the session end, on disk).
+fn settle(rig: &mut Rig) {
+    rig.run(share_sync::share_synced::SYNC_SETTLE.as_secs() as usize + 4);
+    assert!(!rig.h.share.as_ref().unwrap().engine.marked("doc.bin"), "the mark did not settle");
+}
+
+/// The guest copy cut short by a force-stop before it reached the guest's disk: part of it,
+/// stamped with the guest's clock (hours ahead).
+fn cut_short(rig: &mut Rig) {
+    let whole = rig.guest.content("doc.bin").unwrap().to_vec();
+    rig.guest.write("doc.bin", &whole[..whole.len() / 2]);
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms() + 4 * HOUR_MS);
+}
+
+#[test]
+fn a_put_the_guest_had_not_settled_when_the_session_ended_is_sent_again_not_fetched() {
+    let mut rig = Rig::new("put-unsettled");
+    let vars = vars(&rig);
+    new_session(&mut rig, Some(&vars));
+    std::fs::write(rig.dir.join("doc.bin"), b"the Mac's version").unwrap();
+    rig.run(8);
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"the Mac's version"[..]));
+    // Confirmed, then a force-stop within SYNC_SETTLE: Windows had not written it all.
+    cut_short(&mut rig);
+    new_session(&mut rig, Some(&vars));
+    rig.run(16);
+    assert!(rig.guest.gets.is_empty(), "the cut-short guest copy was fetched: {:?}", rig.guest.gets);
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"the Mac's version"[..]));
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"the Mac's version"[..]));
+}
+
+#[test]
+fn a_fetched_copy_the_guest_had_not_settled_when_the_session_ended_is_not_fetched_again() {
+    let (mut rig, vars) = synced_from_guest("get-unsettled", now_ms() - HOUR_MS, true);
+    cut_short(&mut rig);
+    new_session(&mut rig, Some(&vars));
+    let gets = rig.guest.gets.len();
+    rig.run(16);
+    assert_eq!(rig.guest.gets.len(), gets, "the cut-short guest copy was fetched: {:?}", rig.guest.gets);
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"old version"[..]));
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"old version"[..]));
+}
+
+#[test]
+fn a_guest_edit_after_the_last_transfer_settled_is_still_fetched() {
+    let (mut rig, vars) = synced_from_guest("settled", now_ms() - HOUR_MS, true);
+    settle(&mut rig);
+    rig.guest.write("doc.bin", b"edited after it settled");
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms() - HOUR_MS + 60_000);
+    new_session(&mut rig, Some(&vars));
+    rig.run(16);
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"edited after it settled"[..]));
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"edited after it settled"[..]));
 }

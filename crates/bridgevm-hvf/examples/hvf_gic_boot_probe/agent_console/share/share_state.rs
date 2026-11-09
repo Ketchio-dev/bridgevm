@@ -95,23 +95,43 @@ impl ShareState {
     /// Before a PUT of `name` goes out: its mark on disk first. A mark that cannot be written
     /// turns the state off; the share goes on as without one.
     pub(in crate::agent_console) fn mark_put(&mut self, name: &str) {
-        if !self.engine.mark_put(name) {
-            return;
-        }
-        let Some(file) = self.sync_file.as_mut() else {
+        self.engine.mark_put(name);
+        self.mark_on_disk(name);
+    }
+
+    /// Before a fetched copy of `name` is published here: marked on disk, settling from `now`.
+    pub(in crate::agent_console) fn mark_fetched(&mut self, name: &str, now: Instant) {
+        self.engine.mark_settling(name, now);
+        self.mark_on_disk(name);
+    }
+
+    fn mark_on_disk(&mut self, name: &str) {
+        let Some(file) = self.sync_file.as_ref() else {
             return;
         };
-        if let Err(error) = file.write_marks(self.engine.put_marks()) {
-            println!("BVAGENT SHARE sync-state off {error}");
-            if let Some(file) = self.sync_file.take() {
-                file.remove();
-            }
+        if let Err(error) = file.mark(&share_sync::normalize_rel(name)) {
+            self.sync_state_off(&error.to_string());
+        }
+    }
+
+    /// The marks writer for a thread that publishes a fetched copy (share_stage_writer.rs).
+    pub(in crate::agent_console) fn sync_marks(&self) -> Option<sync_file::SharedMarks> {
+        self.sync_file.as_ref().map(sync_file::SyncStateFile::marks)
+    }
+
+    fn sync_state_off(&mut self, why: &str) {
+        println!("BVAGENT SHARE sync-state off {why}");
+        if let Some(file) = self.sync_file.take() {
+            file.remove();
         }
     }
 
     pub(in crate::agent_console) fn flush_sync_state(&mut self, now: Instant) {
-        if let Some(file) = self.sync_file.as_mut() {
-            file.flush(&mut self.engine, now);
+        let Some(file) = self.sync_file.as_mut() else {
+            return;
+        };
+        if !file.flush(&mut self.engine, now) {
+            self.sync_state_off("a mark could not be written");
         }
     }
 }

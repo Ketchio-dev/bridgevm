@@ -98,7 +98,8 @@ pub struct ShareSync {
     listings: u32,
     /// Synced versions and unconfirmed PUTs across sessions (share_synced.rs).
     synced: HashMap<String, share_synced::SyncedFile>,
-    put_marks: HashSet<String>,
+    /// Marked names: an unconfirmed PUT or a loaded mark (None), or a settling copy (until when).
+    marks: HashMap<String, Option<std::time::Instant>>,
     synced_changes: HashMap<String, Option<share_synced::SyncedFile>>,
     synced_dirty: bool,
     /// Guest edits preferred at the first listing, with the Mac file's stat then.

@@ -8,12 +8,24 @@
 //! its last and previous synced version (size and modification time, which both sides share
 //! once synced, share_mtime.rs), and every PUT is marked before it can touch the guest copy
 //! until it is confirmed. At the first listing, a name whose Mac copy is still the last synced
-//! one, whose guest copy is neither that nor the previous one and that no PUT may have cut short
-//! is a guest edit: it is fetched, not overwritten, unless the Mac file changes first. Anything
-//! else, an unknown name, a marked PUT, a guest copy back at the previous version, a changed
-//! Mac file, keeps the Mac winning as before.
+//! one, whose guest copy is neither that nor the previous one and that is not marked is a guest
+//! edit: it is fetched, not overwritten, unless the Mac file changes first. Anything else, an
+//! unknown name, a marked name, a guest copy back at the previous version, a changed Mac file,
+//! keeps the Mac winning as before.
+//!
+//! A confirmed transfer is not yet on the guest's disk: a PUT's data and the guest's own edit
+//! (that a GET just copied) can sit in Windows' cache, and a force-stop or a probe kill then
+//! brings back a cut-short copy with the guest's time. So a name stays marked for `SYNC_SETTLE`
+//! after a confirmed PUT and after its fetched copy is published (marked on disk before the
+//! publish). A fetch under way is not marked: a copy a restart cut off stays fetchable.
 
 use super::*;
+use std::time::{Duration, Instant};
+
+/// How long a name stays marked after a PUT or a fetch completes: well past Windows' lazy writer
+/// (dirty pages written within about a second, then every second) and the NTFS log flush, so the
+/// guest copy both sides now share is on the guest's disk before it can be told from an edit.
+pub const SYNC_SETTLE: Duration = Duration::from_secs(20);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SyncedVersion {
@@ -29,28 +41,46 @@ pub struct SyncedFile {
 
 impl ShareSync {
     /// The state a previous session left (empty when there is none or it cannot be trusted).
+    /// What an earlier session left: a loaded mark holds until this session syncs the name.
     pub fn load_synced(&mut self, files: HashMap<String, SyncedFile>, marks: HashSet<String>) {
         self.synced = files;
-        self.put_marks = marks;
+        self.marks = marks.into_iter().map(|name| (name, None)).collect();
     }
 
-    /// Before a PUT of `name` goes out: true when the mark is new and must reach the disk first.
-    pub fn mark_put(&mut self, name: &str) -> bool {
-        let added = self.put_marks.insert(normalize_rel(name));
-        self.synced_dirty |= added;
-        added
+    /// Before a PUT of `name` goes out (the caller puts the mark on disk first).
+    pub fn mark_put(&mut self, name: &str) {
+        self.marks.insert(normalize_rel(name), None);
     }
 
-    /// Names whose PUT may have touched the guest copy without confirmation.
-    pub fn put_marks(&self) -> &HashSet<String> {
-        &self.put_marks
+    /// `name`'s copy is settling until `now + SYNC_SETTLE` (the caller has it marked on disk).
+    pub fn mark_settling(&mut self, name: &str, now: Instant) {
+        self.marks.insert(normalize_rel(name), Some(now + SYNC_SETTLE));
     }
 
-    /// A PUT of the Mac version (`size`, `mtime_ms`) confirmed: the guest holds it whole, with
-    /// the Mac's time when one was sent (otherwise no version both sides share is known).
-    pub fn put_confirmed(&mut self, name: &str, size: u64, mtime_ms: Option<u128>) {
+    /// Settled marks leave (the next versions write drops them on disk): their names.
+    pub fn expire_marks(&mut self, now: Instant) -> Vec<String> {
+        let mut expired = Vec::new();
+        self.marks.retain(|name, until| {
+            let keep = until.is_none_or(|until| until > now);
+            if !keep {
+                expired.push(name.clone());
+            }
+            keep
+        });
+        self.synced_dirty |= !expired.is_empty();
+        expired
+    }
+
+    #[cfg(test)]
+    pub fn marked(&self, name: &str) -> bool {
+        self.marks.contains_key(name)
+    }
+
+    /// A PUT of the Mac version (`size`, `mtime_ms`) confirmed: the guest holds it, with the
+    /// Mac's time when one was sent (otherwise no version both sides share is known). It settles.
+    pub fn put_confirmed(&mut self, name: &str, size: u64, mtime_ms: Option<u128>, now: Instant) {
         let key = normalize_rel(name);
-        self.synced_dirty |= self.put_marks.remove(&key);
+        self.marks.insert(key.clone(), Some(now + SYNC_SETTLE));
         match mtime_ms {
             Some(mtime_ms) => self.note_synced(key, SyncedVersion { size, mtime_ms }),
             None => self.forget_synced(&key),
@@ -94,7 +124,7 @@ impl ShareSync {
             return;
         }
         for (name, entry) in listed {
-            if self.records.contains_key(name) || self.put_marks.contains(name) {
+            if self.records.contains_key(name) || self.marks.contains_key(name) {
                 continue;
             }
             let (Some(host), Some(synced)) = (self.host_files_scratch.get(name), self.synced.get(name)) else {

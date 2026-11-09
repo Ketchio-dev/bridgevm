@@ -222,8 +222,9 @@ impl AgentConsoleHarness {
             return false;
         };
         share.forget_host_walk();
+        let marks = share.sync_marks().map(|marks| (marks, name.to_string()));
         let writer = Destination::from_root(root, name, true)
-            .and_then(|destination| StageWriter::start(destination, range.size));
+            .and_then(|destination| StageWriter::start(destination, range.size, marks));
         let writer = match writer {
             Ok(writer) => writer,
             Err(error) => {
@@ -352,6 +353,8 @@ impl AgentConsoleHarness {
             return;
         };
         share.forget_host_walk();
+        // Marked on disk by the writer thread before it published (share_stage_writer.rs).
+        share.engine.mark_settling(&get.name, now);
         match result {
             Ok(mtime) => {
                 share.engine.on_host_write_succeeded(&get.name, mtime);

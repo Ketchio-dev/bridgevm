@@ -230,7 +230,7 @@ impl AgentConsoleHarness {
             return;
         }
         share.engine.on_put_ok(put.name.clone(), put.size, put.hash);
-        share.engine.put_confirmed(&put.name, put.size, Some(put.mtime_ms));
+        share.engine.put_confirmed(&put.name, put.size, Some(put.mtime_ms), now);
         // The Mac file is the one opened at the start (its version was checked before LPUTEND):
         // the next scan finds it synced instead of sending it again.
         share.engine.on_host_write_succeeded(&put.name, Some(put.mtime_ms));
