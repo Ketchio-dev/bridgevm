@@ -31,6 +31,9 @@ impl LockedPair {
         publish: impl FnOnce(&Path, &Path) -> io::Result<()>,
     ) -> Result<SnapshotManifest, SnapshotError> {
         let (snapshot, manifest) = self.admit_restore(snapshot, available_bytes)?;
+        // Gone before the disk changes: a crash in between leaves the old disk without its state,
+        // which only lets the Mac copy win.
+        super::super::remove_share_state(&self.vars)?;
         init::initialize(&self.root, |_| {})?;
         let (staged, copied) = self.stage_restore(&snapshot, &manifest, copy)?;
         staged.publish(&self.root.join("current"), publish)?;

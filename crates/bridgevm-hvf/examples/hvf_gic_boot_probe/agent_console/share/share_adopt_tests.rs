@@ -355,3 +355,39 @@ fn one_scan_pass_of_several_puts_writes_the_marks_once() {
     let text = std::fs::read_to_string(marks).unwrap();
     assert_eq!(text.lines().nth(2), Some("seq 1"), "one mark write per PUT: {text}");
 }
+
+#[test]
+fn a_snapshot_restore_drops_the_synced_state_so_the_rolled_back_guest_copy_is_not_fetched() {
+    // snapshot_pair_cli restore rolls the guest disk and the vars back while the Mac folder stays
+    // current; a state left beside the vars would take the guest's older copy for an edit.
+    use bridgevm_hvf::snapshot_pair::{create_snapshot, restore_snapshot};
+    let mut rig = Rig::new("snapshot-restore");
+    let vm = rig.dir.with_extension("vm");
+    let _ = std::fs::remove_dir_all(&vm);
+    std::fs::create_dir(&vm).unwrap();
+    let (disk, vars, snap) = (vm.join("disk.raw"), vm.join("vars.fd"), vm.join("snap"));
+    std::fs::write(&disk, b"guest disk").unwrap();
+    std::fs::write(&vars, b"uefi vars").unwrap();
+    create_snapshot(&disk, &vars, &snap, "vm", false, 1 << 20).unwrap();
+    // Since the snapshot, two Windows versions synced to the Mac.
+    new_session(&mut rig, Some(&vars));
+    for (content, age) in [(&b"version two"[..], 2 * HOUR_MS), (b"version three, current", HOUR_MS)] {
+        rig.guest.write("doc.bin", content);
+        rig.guest.stamps.insert("DOC.BIN".into(), now_ms() - age);
+        rig.run(8);
+        assert_eq!(rig.host("doc.bin").as_deref(), Some(content));
+        settle(&mut rig);
+    }
+    rig.h.share = None;
+    restore_snapshot(&snap, &disk, &vars, false).unwrap();
+    // The restored guest disk holds the copy from before: neither version the state lists.
+    rig.guest.write("doc.bin", b"version one, in the snapshot");
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms() - 3 * HOUR_MS);
+    new_session(&mut rig, Some(&vars));
+    let gets = rig.guest.gets.len();
+    rig.run(16);
+    assert_eq!(rig.guest.gets[gets..], [] as [String; 0], "the rolled-back guest copy was fetched");
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"version three, current"[..]));
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"version three, current"[..]));
+    std::fs::remove_dir_all(&vm).unwrap();
+}

@@ -96,10 +96,12 @@ impl SyncStateFile {
         };
         let mut root = String::new();
         base64_encode_into(host_dir.as_os_str().as_bytes(), &mut root);
+        // One list with the snapshot restore, which removes these files when it rolls the disk back.
+        let [versions, marks] = bridgevm_hvf::snapshot_pair::SHARE_STATE_SUFFIXES;
         let mut file = Self {
-            versions: side(".share-sync"),
+            versions: side(versions),
             marks: Arc::new(Mutex::new(Marks {
-                path: side(".share-sync-puts"),
+                path: side(marks),
                 root: root.clone(),
                 seq: 0,
                 names: HashSet::new(),

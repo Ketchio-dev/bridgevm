@@ -152,6 +152,47 @@ fn restore_refuses_a_tampered_snapshot_without_touching_the_live_pair() {
     assert_eq!(fs::read(&vars).unwrap(), b"live vars");
 }
 
+fn share_state(vars: &Path, suffix: &str) -> PathBuf {
+    let mut path = vars.as_os_str().to_owned();
+    path.push(suffix);
+    PathBuf::from(path)
+}
+
+#[test]
+fn restore_removes_the_share_state_beside_the_vars() {
+    let s = Scratch::new("restore-share-state");
+    let disk = s.write("disk", b"original disk");
+    let vars = s.write("vars", b"original vars");
+    create_snapshot(&disk, &vars, &s.path("snap"), "vm", false, QUOTA).unwrap();
+    for suffix in SHARE_STATE_SUFFIXES {
+        fs::write(share_state(&vars, suffix), b"synced since the snapshot").unwrap();
+    }
+    restore_snapshot(&s.path("snap"), &disk, &vars, false).expect("restore");
+    for suffix in SHARE_STATE_SUFFIXES {
+        assert!(
+            !share_state(&vars, suffix).exists(),
+            "{suffix} outlived the restore"
+        );
+    }
+}
+
+#[test]
+fn a_share_state_that_cannot_be_removed_fails_the_restore_before_the_pair_changes() {
+    let s = Scratch::new("restore-share-state-stuck");
+    let disk = s.write("disk", b"original disk");
+    let vars = s.write("vars", b"original vars");
+    create_snapshot(&disk, &vars, &s.path("snap"), "vm", false, QUOTA).unwrap();
+    fs::write(&disk, b"changed since").unwrap();
+    fs::write(&vars, b"also changed").unwrap();
+    fs::create_dir(share_state(&vars, SHARE_STATE_SUFFIXES[1])).unwrap();
+
+    assert!(restore_snapshot(&s.path("snap"), &disk, &vars, false).is_err());
+    let pair = managed::LockedPair::open(&disk, &vars).unwrap();
+    let (disk, vars) = pair.paths().unwrap();
+    assert_eq!(fs::read(&disk).unwrap(), b"changed since");
+    assert_eq!(fs::read(&vars).unwrap(), b"also changed");
+}
+
 #[test]
 fn restore_refuses_while_the_vm_is_running() {
     let s = Scratch::new("restore-running");
