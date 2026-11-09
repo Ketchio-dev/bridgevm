@@ -29,7 +29,8 @@ static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 /// and modification time (ms), as the scan reads them (share_synced.rs).
 pub(super) type MacStat = (u64, u128);
 
-/// A preferred guest copy was not published: the Mac file changed since the first scan.
+/// A preferred guest copy was not published: the Mac file changed since the first scan (or is
+/// no longer a plain file).
 #[derive(Debug)]
 pub(super) struct MacChanged;
 
@@ -169,9 +170,10 @@ impl Destination {
         file.sync_all()?;
         let mtime = file.metadata()?.modified().ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|t| t.as_millis());
-        // Last, right before the rename: a Mac edit since the first scan wins over a preferred copy.
+        // Last, right before the rename: a Mac edit since the first scan wins over a preferred
+        // copy. A Mac file deleted since does not: the guest's edit wins over the deletion.
         if let Some(mac) = mac {
-            if self.mac_stat() != Some(mac) {
+            if self.mac_stat().is_some_and(|now| now != Some(mac)) {
                 return Err(io::Error::other(MacChanged));
             }
         }
@@ -194,11 +196,16 @@ impl Destination {
         Ok(Staged { temporary, file })
     }
 
-    /// The destination's size and modification time (ms) now; None when it is missing or not a
-    /// plain file.
-    fn mac_stat(&self) -> Option<MacStat> {
-        let meta = self.existing(libc::O_RDONLY).ok()??.metadata().ok()?;
-        Some((meta.len(), super::file_mtime_ms_from_meta(&meta)?))
+    /// The destination's size and modification time (ms) now: None when it is missing,
+    /// Some(None) when it is not a plain file (or cannot be read).
+    fn mac_stat(&self) -> Option<Option<MacStat>> {
+        let file = match self.existing(libc::O_RDONLY) {
+            Ok(Some(file)) => file,
+            Ok(None) => return None,
+            Err(_) => return Some(None),
+        };
+        let stat = file.metadata().ok().and_then(|meta| Some((meta.len(), super::file_mtime_ms_from_meta(&meta)?)));
+        Some(stat)
     }
 
     /// Seal, date, F_FULLFSYNC and rename the filled temporary, not over a Mac file that is no

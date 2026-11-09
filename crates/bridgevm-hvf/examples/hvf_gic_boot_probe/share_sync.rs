@@ -279,12 +279,14 @@ impl ShareSync {
             .map(str::to_string)
             .or_else(|| self.pending_guest_mtime.remove(&name));
         self.pending_host_changed.remove(&name);
-        self.guest_changed.remove(&name);
+        // A preferred copy keeps its guard (the Mac stat) until it is published, through retries
+        // of a failed publish (share_synced.rs preferred_mac_stat).
         if let Some(record) = self.records.get_mut(&name) {
             if !record.host_write_failed && record.hash == Some(hash) {
                 record.size = size;
                 record.guest_mtime = guest_mtime;
                 record.awaiting_guest_stamp = false;
+                self.guest_changed.remove(&name);
                 return GuestVersion::AlreadySynced;
             }
         }
@@ -315,6 +317,8 @@ impl ShareSync {
         };
         record.host_write_failed = false;
         record.host_mtime_ms = mtime_ms;
+        // Published: a preferred copy needs its guard no more.
+        self.guest_changed.remove(&name);
         // Both sides now hold this version (the Mac copy keeps the guest's time).
         let size = record.size;
         if let Some(mtime_ms) = mtime_ms {

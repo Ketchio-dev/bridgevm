@@ -505,24 +505,30 @@ fn a_versions_write_in_flight_when_the_state_turns_off_leaves_no_file_behind() {
 fn a_mac_edit_made_while_a_preferred_guest_copy_is_fetched_wins_and_is_sent() {
     // Codex on #572: the first scan found the Mac copy at its last synced version, so the
     // guest's edit was preferred; the Mac file changed while that copy was fetched. Without a
-    // check right before the publish, the guest copy replaced the Mac edit.
-    let (mut rig, vars) = synced_from_guest("mac-edit-mid-fetch", now_ms() - 2 * HOUR_MS, true);
-    settle(&mut rig);
-    rig.guest.write("doc.bin", b"new version, longer");
-    rig.guest.stamps.insert("DOC.BIN".into(), now_ms() - HOUR_MS);
-    let mac = rig.dir.join("doc.bin");
-    rig.guest.on_get = Some(Box::new(move |name: &str| {
-        if name == "doc.bin" {
-            std::fs::write(&mac, b"edited on the Mac mid-fetch").unwrap();
-        }
-    }));
-    let fetches = |rig: &Rig| rig.guest.gets.iter().filter(|name| *name == "doc.bin").count();
-    let before = fetches(&rig);
-    new_session(&mut rig, Some(&vars));
-    rig.run(16);
-    assert_eq!(fetches(&rig), before + 1, "the preferred copy was not fetched once: {:?}", rig.guest.gets);
-    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"edited on the Mac mid-fetch"[..]), "the guest copy replaced the Mac edit");
-    assert_eq!(rig.guest.content("doc.bin"), Some(&b"edited on the Mac mid-fetch"[..]), "the Mac edit was not sent");
+    // check right before the publish, the guest copy replaced the Mac edit. A Mac file deleted
+    // meanwhile is not an edit to keep: the guest's edit wins over the deletion, as always.
+    for deleted in [false, true] {
+        let (mut rig, vars) = synced_from_guest("mac-edit-mid-fetch", now_ms() - 2 * HOUR_MS, true);
+        settle(&mut rig);
+        rig.guest.write("doc.bin", b"new version, longer");
+        rig.guest.stamps.insert("DOC.BIN".into(), now_ms() - HOUR_MS);
+        let mac = rig.dir.join("doc.bin");
+        rig.guest.on_get = Some(Box::new(move |name: &str| {
+            if name == "doc.bin" && !deleted {
+                std::fs::write(&mac, b"edited on the Mac mid-fetch").unwrap();
+            } else if name == "doc.bin" {
+                let _ = std::fs::remove_file(&mac);
+            }
+        }));
+        let fetches = |rig: &Rig| rig.guest.gets.iter().filter(|name| *name == "doc.bin").count();
+        let before = fetches(&rig);
+        new_session(&mut rig, Some(&vars));
+        rig.run(16);
+        let want: &[u8] = if deleted { b"new version, longer" } else { b"edited on the Mac mid-fetch" };
+        assert_eq!(fetches(&rig), before + 1, "deleted {deleted}: not fetched once: {:?}", rig.guest.gets);
+        assert_eq!(rig.host("doc.bin").as_deref(), Some(want), "deleted {deleted}: on the Mac");
+        assert_eq!(rig.guest.content("doc.bin"), Some(want), "deleted {deleted}: in Windows");
+    }
 }
 
 #[test]
@@ -692,4 +698,29 @@ fn a_name_whose_put_is_held_is_not_fetched_while_other_windows_files_still_are()
     assert_eq!(rig.host("conflict.txt").as_deref(), Some(&b"edited in windows afterwards"[..]));
     rig.h.share = None;
     std::fs::remove_dir_all(&vm).unwrap();
+}
+
+#[test]
+fn a_mac_edit_made_after_a_preferred_copy_failed_to_publish_survives_its_retry() {
+    // Codex on #572: the publish of a preferred guest copy failed (the Mac folder took no new
+    // file for a while). The guard went with that first attempt, the scan skipped the name as
+    // a failed write, and the retry replaced the Mac edit made meanwhile.
+    use std::os::unix::fs::PermissionsExt as _;
+    let (mut rig, vars) = synced_from_guest("preferred-retry", now_ms() - 2 * HOUR_MS, true);
+    settle(&mut rig);
+    rig.guest.write("doc.bin", b"new version, longer");
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms() - HOUR_MS);
+    let fetches = |rig: &Rig| rig.guest.gets.iter().filter(|name| *name == "doc.bin").count();
+    let before = fetches(&rig);
+    let _writable = WritableAgain(rig.dir.clone());
+    std::fs::set_permissions(&rig.dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    new_session(&mut rig, Some(&vars));
+    rig.run(8);
+    assert!(fetches(&rig) > before, "the preferred copy was not fetched");
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"old version"[..]), "the publish did not fail");
+    std::fs::write(rig.dir.join("doc.bin"), b"edited on the Mac meanwhile").unwrap();
+    std::fs::set_permissions(&rig.dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    rig.run(16);
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"edited on the Mac meanwhile"[..]), "the retry replaced the Mac edit");
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"edited on the Mac meanwhile"[..]), "the Mac edit was not sent");
 }
