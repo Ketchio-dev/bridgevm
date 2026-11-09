@@ -8,13 +8,17 @@ import SwiftUI
 /// reset clears it.
 @MainActor
 final class HvfClipboardImageNotice: ObservableObject {
-    enum Kind: Equatable { case macImageTooLarge, windowsImageTooLarge, macFilesTooLarge, windowsFilesTooLarge }
+    enum Kind: Equatable {
+        case macImageTooLarge, windowsImageTooLarge, macFilesTooLarge, windowsFilesTooLarge, macFilesUnreadable
+    }
 
     static let macTooLargePrefix = "BVAGENT CLIPSYNC skip image too-large "
     static let windowsTooLargePrefix = "BVAGENT CLIPSYNC refused guest-image too-large "
     /// A Finder copy over the file limits goes to Windows as its names only.
     static let macFilesTooLargePrefix = "BVAGENT CLIPSYNC skip host-files too-large "
     static let windowsFilesTooLargePrefix = "BVAGENT CLIPSYNC refused guest-files too-large "
+    /// A Finder copy with a file or folder that cannot be read also goes as its names only.
+    static let macFilesUnreadablePrefix = "BVAGENT CLIPSYNC skip host-files unreadable "
 
     @Published private(set) var shown: Kind?
     /// The copy the notice is about; nil from a probe without copy numbers.
@@ -36,6 +40,8 @@ final class HvfClipboardImageNotice: ObservableObject {
                 show(.macFilesTooLarge, copy: Self.copy(in: line))
             } else if line.hasPrefix(Self.windowsFilesTooLargePrefix) {
                 show(.windowsFilesTooLarge, copy: Self.copy(in: line))
+            } else if line.hasPrefix(Self.macFilesUnreadablePrefix) {
+                show(.macFilesUnreadable, copy: Self.copy(in: line))
             } else if line.hasPrefix("BVAGENT CLIPSYNC "), let lineCopy = Self.copy(in: line) {
                 clear(unlessAbout: lineCopy) // a later copy refused for another reason
             }
@@ -66,6 +72,9 @@ final class HvfClipboardImageNotice: ObservableObject {
             return ("Mac에서 복사한 파일이 너무 많거나 커서 Windows에는 파일 이름만 보냈습니다.", filesHelp, "doc.on.doc")
         case .windowsFilesTooLarge:
             return ("Windows에서 복사한 파일이 너무 많거나 커서 Mac으로 가져오지 않았습니다.", filesHelp, "doc.on.doc")
+        case .macFilesUnreadable:
+            return ("Mac에서 복사한 파일 중 읽을 수 없는 것이 있어 Windows에는 파일 이름만 보냈습니다.",
+                    "읽기 권한이 없는 파일이나 폴더가 있는지 확인한 뒤 다시 복사하세요.", "doc.on.doc")
         case nil: return nil
         }
     }
