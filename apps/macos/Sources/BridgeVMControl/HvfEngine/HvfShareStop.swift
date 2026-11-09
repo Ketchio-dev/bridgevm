@@ -26,8 +26,14 @@ extension HvfShareRootNotice {
                 return ("공유 폴더를 확인할 수 없어 일부 동기화를 기다리고 있습니다.",
                         "원래 폴더의 연결을 확인하세요. 다른 폴더를 쓰려면 VM을 종료한 뒤 다시 선택하세요.")
             }
+            if let lowSpace {
+                let files = lowSpace.count == 1 ? "'\(lowSpace.last)'" : "'\(lowSpace.last)' 외 \(lowSpace.count - 1)개"
+                return ("Mac 디스크 공간이 부족해 \(files)을(를) 공유 폴더로 가져오지 않았습니다.",
+                        "공간을 확보하면 다시 가져옵니다.")
+            }
             guard let tooLarge else { return nil }
-            let limit = "\(HvfEngineConfig.shareMaxKiB / 1024) MB"
+            let kib = HvfEngineConfig.shareMaxKiB
+            let limit = kib % (1024 * 1024) == 0 ? "\(kib / (1024 * 1024)) GB" : "\(kib / 1024) MB"
             let files = tooLarge.count == 1 ? tooLarge.last : "\(tooLarge.last) 외 \(tooLarge.count - 1)개"
             return ("\(limit)보다 큰 파일은 공유 폴더로 옮기지 않습니다: \(files)",
                     "Mac의 파일은 VM 창에 끌어다 놓으면 Windows 바탕 화면으로 옮겨집니다.")
@@ -40,15 +46,27 @@ struct HvfShareTooLarge: Equatable {
     let count: Int
     let last: String
 
-    static func name(in line: String) -> String? {
-        let prefix = "BVAGENT SHARE skip "
-        guard line.hasPrefix(prefix) else { return nil }
-        // Only after the prefix: a line that is all marker must not slice backwards.
-        let rest = line.dropFirst(prefix.count)
-        guard let marker = rest.range(of: " too-large ", options: .backwards) else { return nil }
-        let size = rest[marker.upperBound...]
-        guard !size.isEmpty, size.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }) else { return nil }
-        let name = rest[..<marker.lowerBound]
-        return name.isEmpty ? nil : String(name)
-    }
+    static func name(in line: String) -> String? { hvfShareSkippedName(in: line, reason: "too-large") }
+}
+
+/// A large Windows file the Mac had no room for: its size plus 2 GiB must be free
+/// (`BVAGENT SHARE skip <name> low-space <bytes>`). The runtime asks again at each guest listing.
+struct HvfShareLowSpace: Equatable {
+    let count: Int
+    let last: String
+
+    static func name(in line: String) -> String? { hvfShareSkippedName(in: line, reason: "low-space") }
+}
+
+/// The name in `BVAGENT SHARE skip <name> <reason> <ASCII digits>`.
+private func hvfShareSkippedName(in line: String, reason: String) -> String? {
+    let prefix = "BVAGENT SHARE skip "
+    guard line.hasPrefix(prefix) else { return nil }
+    // Only after the prefix: a line that is all marker must not slice backwards.
+    let rest = line.dropFirst(prefix.count)
+    guard let marker = rest.range(of: " \(reason) ", options: .backwards) else { return nil }
+    let size = rest[marker.upperBound...]
+    guard !size.isEmpty, size.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }) else { return nil }
+    let name = rest[..<marker.lowerBound]
+    return name.isEmpty ? nil : String(name)
 }
