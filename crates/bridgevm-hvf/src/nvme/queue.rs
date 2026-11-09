@@ -191,6 +191,10 @@ impl NvmeController {
             } else {
                 self.execute_io(&cmd, mem)
             };
+            // A full host disk: no completion until RESUME retries it.
+            if self.hold_if_full(qid as u16, cqid, &cmd, result.status) {
+                continue;
+            }
             if nvme_trace_enabled() {
                 let kind = if qid == 0 { "admin" } else { "io" };
                 println!(

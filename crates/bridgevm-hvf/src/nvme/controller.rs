@@ -6,6 +6,12 @@ use crate::pcie::NVME_MSIX_VECTOR_COUNT;
 use std::collections::VecDeque;
 use std::io;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+
+/// What a reset or disk change keeps: the data-path settings and the flag
+/// vCPU0 polls.
+type Config = (bool, bool, bool, Arc<AtomicBool>);
 
 /// A modelled minimal NVMe controller.
 #[derive(Debug)]
@@ -67,6 +73,10 @@ pub struct NvmeController {
     /// READ and WRITE without the platform lock (unlocked_io.rs); off until
     /// the VMM opts in.
     pub(crate) unlocked_io: bool,
+    /// WRITEs and FLUSHes waiting for host space (disk_full.rs), oldest first.
+    pub(crate) held: Vec<super::disk_full::HeldCommand>,
+    /// Raised while any is held; kept across a reset or disk change.
+    pub(crate) storage_full: Arc<AtomicBool>,
     #[cfg(test)]
     pub(crate) io_gate: std::sync::Arc<super::unlocked_io::test_gate::IoGate>,
 }
@@ -125,6 +135,8 @@ impl NvmeController {
             flush_worker: None,
             flush_reserved: Vec::new(),
             unlocked_io: false,
+            held: Vec::new(),
+            storage_full: Default::default(),
             #[cfg(test)]
             io_gate: Default::default(),
         }
@@ -157,15 +169,21 @@ impl NvmeController {
 
     /// Wait for the jobs in flight and drop their completions (the queues
     /// go), keeping the data-path settings for the replacement state.
-    fn discard_keeping_config(&mut self) -> (bool, bool, bool) {
+    fn discard_keeping_config(&mut self) -> Config {
         self.discard_flushes();
-        (self.direct_dma_enabled, self.async_flush, self.unlocked_io)
+        (
+            self.direct_dma_enabled,
+            self.async_flush,
+            self.unlocked_io,
+            Arc::clone(&self.storage_full),
+        )
     }
 
-    fn restore_config(&mut self, (direct_dma, async_flush, unlocked_io): (bool, bool, bool)) {
+    fn restore_config(&mut self, (direct_dma, async_flush, unlocked_io, storage_full): Config) {
         self.direct_dma_enabled = direct_dma;
         self.async_flush = async_flush;
         self.unlocked_io = unlocked_io;
+        self.storage_full = storage_full;
     }
 
     /// Select the NVMe data path without changing queue or media state. This is

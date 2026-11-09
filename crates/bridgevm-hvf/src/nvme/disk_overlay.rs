@@ -8,6 +8,11 @@ impl RawFileDisk {
             return Ok(());
         }
         if self.write_back {
+            #[cfg(test)]
+            crate::nvme::disk_full::faults::check(
+                std::os::fd::AsRawFd::as_raw_fd(&*self.file),
+                crate::nvme::disk_full::faults::Op::Write,
+            )?;
             self.file.write_all_at(data, offset)?;
             return Ok(());
         }

@@ -63,8 +63,9 @@ impl IoJob {
             let Some(ptr) = mem.host_ptr(gpa, len) else {
                 return SC_INVALID_FIELD;
             };
-            if copy_all(fd, ptr, len, offset, self.write).is_err() {
-                return SC_INVALID_FIELD;
+            // A full disk holds the WRITE (disk_full.rs); a READ never finds it.
+            if let Err(error) = copy_all(fd, ptr, len, offset, self.write) {
+                return host_failure(&error, SC_INVALID_FIELD);
             }
             offset += len as u64;
         }
@@ -75,6 +76,10 @@ impl IoJob {
 /// `pread` into, or `pwrite` from, the `len` bytes at `ptr`, across short
 /// transfers and EINTR.
 fn copy_all(fd: RawFd, ptr: *mut u8, len: usize, offset: u64, write: bool) -> io::Result<()> {
+    #[cfg(test)]
+    if write {
+        super::disk_full::faults::check(fd, super::disk_full::faults::Op::Write)?;
+    }
     let mut done = 0;
     while done < len {
         let at = libc::off_t::try_from(offset + done as u64)
