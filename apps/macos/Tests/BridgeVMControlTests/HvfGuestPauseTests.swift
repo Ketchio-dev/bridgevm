@@ -83,6 +83,42 @@ final class HvfGuestPauseTests: XCTestCase {
         }
     }
 
+    /// A full Mac disk pauses the VM (`BVSTORAGE full …`, then `BVPAUSE paused`) and the app says so in
+    /// one sentence. A Resume while the disk is still full is answered the same way and stays paused;
+    /// once there is space it runs again. A plain Pause says nothing.
+    func testAFullMacDiskPauseSaysSoAndAPlainPauseDoesNot() throws {
+        let fixture = try HvfRuntimeKeyboardDraftFixture()
+        defer { fixture.remove() }
+        try fixture.withSession { session in
+            session.beginOwnedInputBoot()
+            session.connectionState = .booting
+            let full = "BVSTORAGE full errno=28 free=0 path=/Volumes/Mac SSD\nBVPAUSE paused\n"
+            try fixture.appendLog(full)
+            session.poll()
+            XCTAssertEqual(session.pause, .paused)
+            XCTAssertEqual(session.pauseNotice, HvfEngineSession.diskFullNotice)
+
+            XCTAssertEqual(session.requestResume(), .requested)
+            XCTAssertNil(session.pauseNotice)
+            try fixture.appendLog(full)
+            session.poll()
+            XCTAssertEqual(session.pause, .paused, "still full: still paused")
+            XCTAssertEqual(session.pauseNotice, HvfEngineSession.diskFullNotice)
+
+            XCTAssertEqual(session.requestResume(), .requested)
+            try fixture.appendLog("BVPAUSE resumed paused_ms=9000 vtimer_offset=0x2b\n")
+            session.poll()
+            XCTAssertEqual(session.pause, .running)
+            XCTAssertNil(session.pauseNotice)
+
+            XCTAssertEqual(session.requestPause(), .requested)
+            try fixture.appendLog("BVPAUSE paused\n")
+            session.poll()
+            XCTAssertEqual(session.pause, .paused)
+            XCTAssertNil(session.pauseNotice, "a plain pause says nothing")
+        }
+    }
+
     /// A guest reset (RESET while paused, or Windows restarting) ends the pause: the probe resumes first.
     func testAGuestResetEndsThePause() throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
