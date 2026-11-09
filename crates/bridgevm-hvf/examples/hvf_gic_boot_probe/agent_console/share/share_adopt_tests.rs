@@ -338,3 +338,20 @@ fn a_guest_edit_after_the_last_transfer_settled_is_still_fetched() {
     assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"edited after it settled"[..]));
     assert_eq!(rig.guest.content("doc.bin"), Some(&b"edited after it settled"[..]));
 }
+
+#[test]
+fn one_scan_pass_of_several_puts_writes_the_marks_once() {
+    let mut rig = Rig::new("mark-batch");
+    let vars = vars(&rig);
+    new_session(&mut rig, Some(&vars));
+    rig.run(4);
+    for k in 0..5 {
+        std::fs::write(rig.dir.join(format!("f{k}.txt")), b"burst").unwrap();
+    }
+    rig.run(16);
+    assert_eq!(rig.guest.puts.len(), 5, "{:?}", rig.guest.puts);
+    let mut marks = vars.as_os_str().to_owned();
+    marks.push(".share-sync-puts");
+    let text = std::fs::read_to_string(marks).unwrap();
+    assert_eq!(text.lines().nth(2), Some("seq 1"), "one mark write per PUT: {text}");
+}

@@ -52,6 +52,17 @@ impl ShareSync {
         self.marks.insert(normalize_rel(name), None);
     }
 
+    /// A PUT of `name` may follow soon (the caller marks it on disk with the PUT it is about to
+    /// send, in one write): marked until `now + SYNC_SETTLE` unless it is marked already.
+    pub fn mark_ahead(&mut self, name: &str, now: Instant) -> bool {
+        let key = normalize_rel(name);
+        if self.marks.contains_key(&key) {
+            return false;
+        }
+        self.marks.insert(key, Some(now + SYNC_SETTLE));
+        true
+    }
+
     /// `name`'s copy is settling until `now + SYNC_SETTLE` (the caller has it marked on disk).
     pub fn mark_settling(&mut self, name: &str, now: Instant) {
         self.marks.insert(normalize_rel(name), Some(now + SYNC_SETTLE));

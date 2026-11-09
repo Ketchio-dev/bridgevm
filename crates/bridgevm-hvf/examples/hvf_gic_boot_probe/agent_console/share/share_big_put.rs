@@ -74,7 +74,7 @@ pub(in crate::agent_console) fn start_big_put(share: &mut ShareState, name: &str
     if !share.engine.on_host_push_streamed(name) {
         return BigPutStart::No;
     }
-    share.mark_put(name);
+    share.mark_put(name, now);
     println!("BVAGENT SHARE transfer host->guest {name} bytes={size}");
     share.big = Some(BigTransfer::Put(BigPut {
         name: name.to_string(),

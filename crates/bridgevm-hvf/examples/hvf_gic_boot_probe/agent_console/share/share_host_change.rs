@@ -92,7 +92,7 @@ impl AgentConsoleHarness {
                             .on_host_file(name.clone(), snapshot.bytes, snapshot.mtime_ms)
                     {
                         // The guest truncates before it writes (share_synced.rs).
-                        share.mark_put(&name);
+                        share.mark_put(&name, now);
                         self.queue
                             .push_back(share_put_req(
                             name,

@@ -124,7 +124,7 @@ fn run(
                 }
                 // A mark that cannot be written turns the state off (the service sees it).
                 if let Some((marks, name)) = &marks {
-                    let _ = mark(marks, name);
+                    let _ = mark(marks, [name.as_str()]);
                 }
                 let result = destination.publish(staged, mtime);
                 let _ = outbox.send((0, Some(FromWriter::Published(result))));

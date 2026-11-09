@@ -45,12 +45,13 @@ pub(in crate::agent_console) struct Marks {
 pub(in crate::agent_console) type SharedMarks = Arc<Mutex<Marks>>;
 
 impl Marks {
-    /// `name` marked on disk, written now unless it already is. An error also sets `failed`.
-    pub(in crate::agent_console) fn add(&mut self, name: &str) -> std::io::Result<()> {
-        if self.names.contains(name) {
+    /// Every one of `names` marked on disk, in one write if any is new. An error also sets `failed`.
+    pub(in crate::agent_console) fn add_all<'a>(&mut self, names: impl IntoIterator<Item = &'a str>) -> std::io::Result<()> {
+        let before = self.names.len();
+        self.names.extend(names.into_iter().map(str::to_string));
+        if self.names.len() == before {
             return Ok(());
         }
-        self.names.insert(name.to_string());
         self.seq += 1;
         let mut text = format!("{MARKS_HEADER}\nroot {}\nseq {}\n", self.root, self.seq);
         push_marks(&mut text, self.names.iter());
@@ -66,9 +67,9 @@ impl Marks {
     }
 }
 
-/// Mark `name` on disk through the shared writer (from any thread).
-pub(in crate::agent_console) fn mark(marks: &SharedMarks, name: &str) -> std::io::Result<()> {
-    marks.lock().unwrap_or_else(std::sync::PoisonError::into_inner).add(name)
+/// Mark `names` on disk through the shared writer (from any thread), in one write.
+pub(in crate::agent_console) fn mark<'a>(marks: &SharedMarks, names: impl IntoIterator<Item = &'a str>) -> std::io::Result<()> {
+    marks.lock().unwrap_or_else(std::sync::PoisonError::into_inner).add_all(names)
 }
 
 pub(in crate::agent_console) struct SyncStateFile {
@@ -154,9 +155,9 @@ impl SyncStateFile {
         Some((files, marked, seq.max(later_seq)))
     }
 
-    /// Mark `name` on disk before a PUT goes out or a fetched copy is published here.
-    pub(in crate::agent_console) fn mark(&self, name: &str) -> std::io::Result<()> {
-        self.lock().add(name)
+    /// Mark `names` on disk (one write) before a PUT goes out or a fetched copy is published here.
+    pub(in crate::agent_console) fn mark<'a>(&self, names: impl IntoIterator<Item = &'a str>) -> std::io::Result<()> {
+        self.lock().add_all(names)
     }
 
     /// Settled marks leave, and the versions changed since the last flush go to the writer, at
